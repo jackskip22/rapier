@@ -171,7 +171,7 @@
       }
       try {
         const value = current();
-        kernel.reconcile(value, {actor: 'system', principal: 'bootstrap'});
+        reconcileKernel(value, {actor: 'system', principal: 'bootstrap'});
         kernel.humanContext({contextId: doorSession, sequence: contextSequence, expectedRevision: value.revision,
           visible: visible(), editing: editing(), navigationSequence: drawingNavigationSequence,
           drawing: value.drawing, drawingReceipts: value.drawingReceipts, objects: objectPlayback()}, {actor: 'human', principal: 'local', transport: 'platform'});
@@ -324,11 +324,20 @@
     return read.value;
   }
 
+  function reconcileKernel(value, context) {
+    try { kernel.reconcile(value, context); return; }
+    catch (error) { if (error?.message !== 'history_invalid') throw error; }
+    kernel = createKernel({state: createState({id: value.documentId, filename: value.filename, text: value.text,
+      docKind: value.docKind, revision: value.revision}), host, clock: kernelClock, mintId: kernelMintId,
+      invocationJournal: kernel.invocationJournal()});
+    kernel.reconcile(value, {actor: 'system', principal: 'bootstrap'});
+  }
+
   async function undoHistoryAct(target) {
     await ready;
     const captured = await _rapierWithSettledExternalDocument(current, {quiet: true});
     if (!captured.settled) return {outcome: 'conflict', reason: 'document_not_settled'};
-    kernel.reconcile(captured.value);
+    reconcileKernel(captured.value);
     const result = await kernel.undoHistoryAct(target, {signal: idleSignal, author: _rapierLive.author()}, captured.value);
     await refresh();
     return result;
@@ -788,6 +797,11 @@
     const owner = request.principal || 'apps';
     if (rapier.compare?.active && !ownsComparison(owner)) return fail('human_comparison_open');
     abort(request);
+    const answer = owner === 'carried-comparison' || request.invited ? 'looking' : await invitation('comparison', !covered() && rapier.compare?.active === true,
+      'compare:' + (request.compareId || request.incomingText?.length + ':' + request.incomingName));
+    const refused = invitationRefused(answer);
+    if (refused) return refused;
+    if (!matches(request)) return fail('document_changed', 'conflict');
     const read = await _rapierWithSettledExternalDocument(() => matches(request), {quiet: true});
     if (!read.settled || !read.value) return fail('document_changed', 'conflict');
     const compare = rapier.compare;
@@ -802,7 +816,7 @@
     comparisonGeneration = _rapierCompareRuntime.jobId;
     _rapierCompareRuntime.agentOpened = true;
     _rapierCompareRuntime.agentScope = scope(request);
-    return {ok: true, presented: visible() && rapier.compare.active === true};
+    return {ok: true, presented: visible() && rapier.compare.active === true, ...invitationTaken(answer)};
   }
 
   async function closeComparison(request) {
@@ -839,6 +853,12 @@
     if (!visible() || editing() || drawingContext()?.open || notesFact()?.busy || _rapierUiViewTransition.busy) return fail('human_edit_in_progress', 'yielded');
     if (!['formatted', 'source', 'notes'].includes(request.view)) return fail('view_invalid', 'invalid');
     if (viewMode() === request.view) return {ok: true};
+    const answer = await invitation(request.view, false, request.id ? 'mode:' + request.id : '');
+    const refused = invitationRefused(answer);
+    if (refused) return refused;
+    if (!matches(request, null)) return fail('document_changed', 'conflict');
+    if (!visible() || editing() || drawingContext()?.open || notesFact()?.busy || _rapierUiViewTransition.busy) return fail('human_edit_in_progress', 'yielded');
+    if (viewMode() === request.view) return {ok: true, ...invitationTaken(answer)};
     const fromView = viewMode(), sequence = humanSequence;
     const guard = () => !request.signal?.aborted && !admission() && matches(request, null) && visible() &&
       !editing() && !drawingContext()?.open && !notesFact()?.busy &&
@@ -866,7 +886,7 @@
     if (viewMode() !== request.view) return fail('view_unavailable');
     _rapierSeenViewMovedByAgent();
     contextChanged('view');
-    return {ok: true};
+    return {ok: true, ...invitationTaken(answer)};
   }
 
   async function drainView() {
@@ -896,19 +916,53 @@
     return await drainView();
   }
 
-  async function reveal(request) {
+  async function invitation(kind, looking, key = '', until = 0) {
+    if (typeof _rapierAgentInvite !== 'function') return 'following';
+    const answer = await _rapierAgentInvite(kind, {looking, key, until});
+    if (answer === 'accepted' && kind !== 'notes' && kind !== 'note' && notesFact()?.open && typeof _rapierNotesClose === 'function') _rapierNotesClose();
+    return answer;
+  }
+  const invitationRefused = answer => answer === 'typing' ? fail('human_edit_in_progress', 'yielded') : answer === 'declined' ? fail('invitation_not_taken') : null;
+  const invitationTaken = answer => answer === 'accepted' ? {reason: 'invitation_accepted'} : {};
+
+  function revealResolved(request) {
+    if (rapier.document.docKind !== 'markdown' || rapier.view.mode === 'source') return {kind: 'document-range', start: request.start, end: request.end};
+    const start = _rapierBodyOffsetOfCanonical(request.start), end = _rapierBodyOffsetOfCanonical(request.end);
+    return Number.isSafeInteger(start) && Number.isSafeInteger(end) ? {kind: 'markdown-range', start, end} : null;
+  }
+  function revealInView(resolved) {
+    if (!resolved || covered() || rapier.compare?.active) return false;
+    if (resolved.kind === 'document-range') {
+      const textarea = document.getElementById('source-textarea'), local = textarea ? _rapierTaPos(resolved.start) : -1;
+      if (local < 0 || local > textarea.value.length) return false;
+      const lineHeight = parseFloat(getComputedStyle(textarea).lineHeight) || 20, top = _rapierLineFromPos(textarea.value, local) * lineHeight;
+      return top + lineHeight > textarea.scrollTop && top < textarea.scrollTop + textarea.clientHeight;
+    }
+    const region = _rapierMarkdownRangeBlockIndices(resolved.start, resolved.end), host = document.getElementById('editor-blocks');
+    const wrapper = region && document.querySelector('#editor-blocks > [data-block-id="' + CSS.escape(String(rapier.document.blocks[region.first].id)) + '"]');
+    if (!wrapper || !host || !wrapper.getClientRects().length) return false;
+    const box = wrapper.getBoundingClientRect(), view = host.getBoundingClientRect();
+    return box.bottom > view.top && box.top < view.bottom;
+  }
+
+  async function reveal(request, invited = false) {
     if (!matches(request) || rapier.compare?.active) return fail('view_changed');
     abort(request);
     if (request.pointer?.expiresAt <= Date.now()) return fail('pointer_expired');
     if (request.pointer && typeof _rapierDrawEditingAsset === 'function' && _rapierDrawEditingAsset()) {
-      return agentCaret(request.pointer.id, request.pointer.words, request) ? {ok: true} : fail('target_not_visible');
+      return agentCaret(request.pointer.id, '', request) ? {ok: true} : fail('target_not_visible');
     }
-    let resolved = {kind: 'document-range', start: request.start, end: request.end};
-    if (rapier.document.docKind === 'markdown' && rapier.view.mode !== 'source') {
-      const start = _rapierBodyOffsetOfCanonical(request.start), end = _rapierBodyOffsetOfCanonical(request.end);
-      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end)) return fail('target_not_visible');
-      resolved = {kind: 'markdown-range', start, end};
+    let answer = invited;
+    if (!answer) {
+      answer = await invitation(request.pointer ? 'pointer' : 'passage', revealInView(revealResolved(request)), '', request.pointer?.expiresAt || 0);
+      const refused = invitationRefused(answer);
+      if (refused) return refused;
+      if (!matches(request) || rapier.compare?.active) return fail('view_changed');
+      abort(request);
     }
+    if (request.pointer?.expiresAt <= Date.now()) request = {...request, pointer: null};
+    const resolved = revealResolved(request);
+    if (!resolved) return fail('target_not_visible');
     const travel = _rapierTravelBegin('agent reveal'), token = rapier.view.restoreToken;
     _rapierSeenViewMovedByAgent();
     const scroll = _rapierScrollResolvedIntoView(resolved);
@@ -916,13 +970,13 @@
     if (!await _rapierSettleRevealScroll(scroll, request.signal || idleSignal, token) || !matches(request)) return fail('view_changed');
     abort(request);
     if (request.pointer) {
-      if (!agentCaret(request.pointer.id, request.pointer.words, request, scroll.element)) return fail('target_not_visible');
+      if (!agentCaret(request.pointer.id, '', request, scroll.element)) return fail('target_not_visible');
     } else {
       if (resolved.kind === 'markdown-range') _rapierRestoreCanonicalSelection(request.start, request.end);
       _rapierRevealMarker(resolved, scroll.element);
     }
     if (scroll.scrolled) _rapierTravelCommit(travel, _rapierTravelDestinationForResolved(resolved));
-    return {ok: true};
+    return {ok: true, ...invitationTaken(answer)};
   }
 
   function comparisonHunks(compare) {
@@ -1015,7 +1069,7 @@
     if (intent.kind === 'mode') {
       if (value?.documentId !== expected?.expectedDocumentId || !expectedCurrent(expected)) return fail('document_changed', 'conflict');
       if (viewMode() !== intent.fromView && viewMode() !== intent.view) return fail('human_view_changed');
-      return applyViewMode({documentId: value.documentId, view: intent.view, guard: () => expectedCurrent(expected)});
+      return applyViewMode({documentId: value.documentId, view: intent.view, id: intent.id, guard: () => expectedCurrent(expected)});
     }
     const hand = await humanContext();
     if (!value || value.documentId !== expected?.expectedDocumentId || value.text !== expected.expectedText ||
@@ -1023,6 +1077,14 @@
     if (!visible()) return fail('view_hidden');
     if (!hand.ok || hand.context.editing) return fail('human_edit_in_progress', 'yielded');
     if (!Number.isFinite(intent.expiresAt) || intent.expiresAt <= Date.now()) return fail('view_expired');
+    let answer = 'looking';
+    if (intent.kind === 'document' && !(intent.pointer && typeof _rapierDrawEditingAsset === 'function' && _rapierDrawEditingAsset())) {
+      answer = await invitation(intent.pointer ? 'pointer' : 'passage',
+        revealInView(revealResolved({start: intent.start, end: intent.end})), 'view:' + intent.id, intent.expiresAt);
+      const refused = invitationRefused(answer);
+      if (refused) return refused;
+      if (!visible() || !expectedCurrent(expected)) return fail('view_changed');
+    }
     viewFlight?.abort();
     const controller = new AbortController();
     viewFlight = controller;
@@ -1035,7 +1097,7 @@
       if (intent.kind === 'document') {
         if (!Number.isSafeInteger(intent.start) || !Number.isSafeInteger(intent.end) || intent.start < 0 ||
             intent.end < intent.start || intent.end > value.text.length) return fail('view_range_invalid', 'invalid');
-        result = await reveal({...request, start: intent.start, end: intent.end});
+        result = await reveal({...request, start: intent.start, end: intent.end}, answer);
       } else {
         const compare = value.compare;
         const change = compare?.id === intent.compareId && compare.changes?.find(row => row.id === intent.changeId);
@@ -1045,8 +1107,8 @@
         if (result.ok) await new Promise(resolve => requestAnimationFrame(resolve));
       }
       controller.signal.throwIfAborted();
-      if (!visible() || !expectedCurrent(expected) || intent.expiresAt <= Date.now()) return fail('view_changed');
-      return result.ok ? {ok: true, presented: true, viewId: intent.id} : result;
+      if (!visible() || !expectedCurrent(expected) || answer !== 'accepted' && intent.expiresAt <= Date.now()) return fail('view_changed');
+      return result.ok ? {ok: true, presented: true, viewId: intent.id, ...invitationTaken(answer)} : result;
     } catch (error) {
       return fail(error?.name === 'AbortError' ? 'human_interaction' : error?.code || 'view_failed');
     } finally {
@@ -1189,7 +1251,7 @@
       }
       if (!bounds && request.scope === 'focus') {
         const spans = _rapierExcerptCanonicalBlockSpans();
-        const wrappers = [...root.querySelectorAll(':scope > .block-wrapper')].filter(wrapper => {
+        const wrappers = _blockWrapperChildren(root).filter(wrapper => {
           const span = spans.get(_rapierBoundBlock(wrapper)?.id);
           return span && span.start < target.end && span.end > target.start;
         });
@@ -1349,7 +1411,7 @@
     const current = await snapshot();
     if (request.signal?.aborted || current.documentId !== local.documentId || current.revision !== local.revision || current.text !== local.text)
       throw Object.assign(new Error('The document changed during export.'), {code: request.signal?.aborted ? 'cancelled' : 'document_changed'});
-    return page.blob;
+    return page;
   }
 
   async function exportFile(request) {
@@ -1381,7 +1443,7 @@
       const base = request.base || comparisonRecord()?.base;
       fontState = _rapierDocumentFonts.stateKey();
       fontStamp = _rapierMutationStamp();
-      try { artifact = await portablePage({...request, base}, local); }
+      try { const page = await portablePage({...request, base}, local); artifact = page.blob; fidelity = {...fidelity, carries: page.included}; }
       catch (error) { return {reason: typeof error?.code === 'string' ? error.code : 'export_page_unavailable'}; }
       bytes = new Uint8Array(await artifact.arrayBuffer());
       mimeType = 'text/html; charset=utf-8';
@@ -1409,21 +1471,11 @@
     return {id, url, expiresAt, name, mimeType, bytes, fidelity, ...(pages ? {pages} : {}), ...(issues?.length ? {issues} : {})};
   }
 
-  async function authorizeWaterPro(feature, options = {}) {
-    options.signal?.throwIfAborted();
-    if (_rapierDrawOffered() && !_rapierDrawPresent()) await part('drawing');
-    options.signal?.throwIfAborted();
-    if (typeof _rapierWaterProAuthorize !== 'function') return false;
-    await _rapierWaterProAuthorize(feature);
-    options.signal?.throwIfAborted();
-    return true;
-  }
-
   const part = async id => { if (_rapierPartAvailable(id)) await RapierParts.need(id); };
   const notesDoor = async () => { if (!globalThis.rapierNotesHost) await part('notes'); return globalThis.rapierNotesHost; };
   const host = {
     ready: part,
-    snapshot, commit, reveal, setView, view: viewContext, exportFile, editorContext, presentDrawing, authorizeWaterPro,
+    snapshot, commit, reveal, setView, view: viewContext, exportFile, editorContext, presentDrawing,
     drawingPresentationBinding: () => !apps && visible() && !admission()
       ? {contextId: doorSession, navigationSequence: drawingNavigationSequence} : undefined,
     paintRaster: (raster, options) => globalThis.RapierEmbeddedImages.validatePaintRaster(raster, options),
@@ -1491,10 +1543,14 @@
       };
       if (request.expected_foreground?.binding !== before.binding || request.expected_foreground?.generation !== before.generation || !foreground())
         return {refused: 'notes_foreground_changed'};
+      const answer = await invitation('note', !!notesFact()?.open);
+      if (answer === 'typing') return {refused: 'human_edit_in_progress'};
+      if (answer === 'declined') return {refused: 'invitation_not_taken'};
+      if (!foreground()) return {refused: 'notes_foreground_changed'};
       return door.open({note_ref: request.note_ref}, {signal: request.signal, guard: request.guard,
         foregroundGuard: foreground, presentationGuard: () => humanSequence === before.generation && visible()});
     },
-    note: text => { _rapierAgentNoteSet(String(text || '')); _rapierAgentNoteShow(); },
+    note: text => { _rapierAgentNoteSet(String(text || ''), 'ask'); _rapierAgentNoteShow(); },
     markdown: async input => {
       abort(input);
       if (_rapierSourceText() !== input.text) return {entries: [], complete: false, reason: 'document_changed'};
@@ -1516,7 +1572,7 @@
       if (request.pointer && value.target) {
         if (value.scrolled && !await _rapierAwaitScrollRest(value.scroller, request.signal || idleSignal)) return fail('view_changed');
         if (!matches(request, null) || request.pointer.expiresAt <= Date.now()) return fail('pointer_expired');
-        return agentCaret(request.pointer.id, request.pointer.words, request, value.target) ? {ok: true} : fail('target_not_visible');
+        return agentCaret(request.pointer.id, '', request, value.target) ? {ok: true} : fail('target_not_visible');
       }
       return value.target ? {ok: true} : fail('change_not_visible');
     },
@@ -1643,12 +1699,13 @@
 
       return result;
     };
-    const result = await (who.actor === 'agent'
-      ? _rapierAgentInvocationTracked(name, args, run, who.requestId) : run());
+    const result = await (who.actor === 'agent' ? _rapierAgentInvocationTracked(name, args, run, who.requestId,
+      (typeof args.agent === 'string' && args.agent.trim()) || who.hostAgent || doorName) : run());
     if (name === 'edit' && ['applied', 'rebased'].includes(result.outcome)) {
-      _rapierAgentNoteSet(typeof args.label === 'string' ? args.label : '');
-      _rapierAgentNoteShow();
-      try { agentCaret(result.act?.id, (typeof args.agent === 'string' && args.agent.trim()) || who.hostAgent || doorName); } catch (_) {}
+      try { if (who.actor === 'agent') agentCaret(result.act?.id, (typeof args.agent === 'string' && args.agent.trim()) || who.hostAgent || doorName); } catch (_) {}
+    }
+    if (who.actor === 'agent' && result?.reason === 'document_law' && Number.isSafeInteger(result.region)) {
+      try { _rapierAgentWillKept(result.region); } catch (_) {}
     }
     return result;
   }
@@ -1794,6 +1851,7 @@
     return refreshing;
   }
 
+  let invitedComparison = null;
   async function syncComparison(value) {
     const compare = value.compare;
     if (!compare) {
@@ -1807,16 +1865,29 @@
     if (typeof incomingText !== 'string') return {...fail('comparison_invalid'), visible: false};
     if (remoteComparison === compare.id && ownsComparison('mcp') && rapier.compare?.active &&
         rapier.compare.incomingText === incomingText && rapier.compare.currentText === compare.baseline) return {ok: true, visible: true};
-    const result = await showComparison({documentId: value.documentId, revision: Number(rapier.revision.settled),
+    const request = {documentId: value.documentId, revision: Number(rapier.revision.settled),
       compareId: compare.id,
       currentText: typeof compare.baseline === 'string' ? compare.baseline : _rapierSourceText(),
       incomingText, incomingName: compare.name || 'comparison.md',
-      principal: 'mcp', actor: 'agent', transport: 'platform'});
+      principal: 'mcp', actor: 'agent', transport: 'platform'};
+    if (!rapier.compare?.active && typeof _rapierAgentFollowing === 'function' && !_rapierAgentFollowing()) {
+      if (invitedComparison !== compare.id) {
+        invitedComparison = compare.id;
+        void invitation('comparison', false, 'compare:' + compare.id).then(async answer => {
+          if (answer === 'typing') { invitedComparison = null; return; }
+          if (answer !== 'accepted' || remoteComparison === compare.id) return;
+          const shown = await showComparison({...request, revision: Number(rapier.revision.settled), invited: true});
+          if (shown.ok) remoteComparison = compare.id;
+        });
+      }
+      return {ok: true, visible: false};
+    }
+    const result = await showComparison(request);
     if (result.ok) remoteComparison = compare.id;
     return {...result, visible: result.ok === true};
   }
 
-  const caret = {el: null, from: null, frame: 0, rest: 0, last: null, point: null, pointResult: null};
+  const caret = {el: null, from: null, frame: 0, rest: 0, last: null, point: null, pointResult: null, at: 0};
   function caretPut(reason = 'view_changed') {
     cancelAnimationFrame(caret.frame); clearTimeout(caret.rest); caret.frame = caret.rest = 0;
     const point = caret.point, completed = caret.pointResult;
@@ -1837,7 +1908,7 @@
     }
   }
   for (const [target, type] of [[window, 'scroll'], [window, 'resize'], [window, 'pagehide'], [document, 'visibilitychange']]) {
-    target.addEventListener(type, () => { if (caret.el) caretPut(); }, {capture: true, passive: true});
+    target.addEventListener(type, () => { if (caret.el && (type !== 'scroll' || performance.now() - caret.at > 300)) caretPut(); }, {capture: true, passive: true});
   }
   document.addEventListener('rapier-playback', () => contextChanged('playback'));
   document.addEventListener('pointerdown', event => {
@@ -1884,7 +1955,7 @@
       }
       if (!box) return null;
       const height = Math.max(14, Math.min(40, box.height || 18));
-      const point = {x: box.left, y: box.top, height, top: home ? home.getBoundingClientRect().top : box.top};
+      const point = {x: box.left, y: box.top, height, left: home ? home.getBoundingClientRect().left : box.left, blockId: home?.dataset.blockId ?? null};
       return point.y >= 0 && point.y + height <= window.innerHeight && point.x >= 0 && point.x <= window.innerWidth ? point : null;
     }
     if (covered()) return null;
@@ -1904,12 +1975,13 @@
       if (text) { range.setStart(text, text.data.length); range.collapse(true); } else range.selectNodeContents(host);
       const rects = range.getClientRects(), box = rects.length ? rects[rects.length - 1] : host.getBoundingClientRect();
       const height = Math.max(14, Math.min(40, box.height || 18));
-      const point = {x: text ? box.right : box.left, y: box.top + (box.height - height) / 2, height, top: host.getBoundingClientRect().top};
+      const point = {x: text ? box.right : box.left, y: box.top + (box.height - height) / 2, height, left: host.getBoundingClientRect().left, blockId: block.id};
       return point.y >= 0 && point.y + height <= window.innerHeight && point.x >= 0 && point.x <= window.innerWidth ? point : null;
     }
     return null;
   }
   function agentCaret(change, label, request, element) {
+    if (!request && change) { _rapierAgentNamed(label); _rapierAgentBarActed(change); }
     if (!change || document.visibilityState === 'hidden') return false;
     if (change === caret.last) return !!caret.el;
     if (request?.pointer && request.pointer.expiresAt <= Date.now()) return false;
@@ -1921,26 +1993,31 @@
       const style = document.createElement('style');
       style.id = 'rapier-agent-caret-style';
       style.textContent = '.rapier-agent-caret{position:fixed;left:0;top:0;z-index:150;pointer-events:none;width:2px;background:var(--color-accent,#12A594);transition:opacity .4s}' +
-        '.rapier-agent-caret::before{content:"";position:absolute;left:0;bottom:100%;width:1px;height:var(--lead,0px);background:inherit;opacity:.55}' +
-        '.rapier-agent-caret span{position:absolute;left:var(--tag-x,0px);bottom:calc(100% + var(--lead,0px));box-sizing:border-box;max-width:calc(100vw - 32px);overflow:hidden;text-overflow:ellipsis;padding:2px 4px;white-space:nowrap;background:var(--color-accent,#12A594);color:#fff;font:700 9px/1.2 Geist,system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase}' +
+        '.rapier-agent-caret>span{position:absolute;left:var(--tag-x,0px);top:calc(50% - 10px)}.rapier-agent-caret[data-tag=off]>span{display:none}' +
         '.rapier-agent-caret[data-fading]{opacity:0}body.rapier-draw-open .rapier-agent-caret{z-index:905}@media (prefers-reduced-motion:reduce){.rapier-agent-caret{transition:none}}';
       document.head.append(style);
     }
     if (!caret.el) {
       caret.el = document.createElement('div'); caret.el.className = 'rapier-agent-caret'; caret.el.setAttribute('aria-hidden', 'true');
-      caret.el.append(document.createElement('span'));
+      const tag = document.createElement('span'); tag.className = 'agent-tag';
+      caret.el.append(tag);
       document.body.append(caret.el);
     }
     caret.el.removeAttribute('data-fading');
-    caret.el.firstChild.textContent = String(label || 'agent').slice(0, request?.pointer ? 240 : 24);
+    caret.at = performance.now();
+    _rapierAgentWho(caret.el.firstChild);
+    if (request?.pointer?.words) { _rapierAgentNoteSet(request.pointer.words); _rapierAgentNoteShow(); }
+    _rapierAgentBarWrote(target.blockId);
     caret.el.style.height = target.height + 'px';
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    const motion = globalThis.RapierCursorMotion.createCursorMotion(caret.from || target, target, 'arc', {reducedMotion: reduced || !caret.from});
+    const circle = document.getElementById('scroll-fab'), disc = circle?.classList.contains('visible') ? circle.getBoundingClientRect() : null;
+    const from = caret.from || (disc?.width ? {x: disc.left + disc.width / 2, y: disc.top + (disc.height - target.height) / 2, height: target.height} : null);
+    const motion = globalThis.RapierCursorMotion.createCursorMotion(from || target, target, 'arc', {reducedMotion: reduced || !from});
+    const tag = caret.el.firstChild, tagX = target.left - 28 - tag.offsetWidth;
+    caret.el.dataset.tag = tagX >= 8 ? 'on' : 'off';
     const place = point => {
-      const tag = caret.el.firstChild;
       caret.el.style.transform = 'translate(' + point.x + 'px,' + point.y + 'px)';
-      caret.el.style.setProperty('--lead', Math.round(Math.max(0, Math.min(point.y - target.top, point.y - tag.offsetHeight - 2))) + 'px');
-      caret.el.style.setProperty('--tag-x', Math.round(Math.max(16, Math.min(point.x, window.innerWidth - 16 - tag.offsetWidth)) - point.x) + 'px');
+      caret.el.style.setProperty('--tag-x', Math.round(tagX - point.x) + 'px');
     };
     cancelAnimationFrame(caret.frame); clearTimeout(caret.rest);
     if (request?.pointer) {
@@ -2172,6 +2249,18 @@
       entries, committedReference: asset, committedPosition: position};
   }
 
+  let credited = null;
+  function remoteAgentActs(value) {
+    if (!Array.isArray(value.journal) || !Number.isSafeInteger(value.revision)) return [];
+    if (credited?.documentId !== value.documentId) { credited = {documentId: value.documentId, revision: value.revision}; return []; }
+    const from = credited.revision;
+    credited.revision = Math.max(from, value.revision);
+    return value.journal.filter(row => row?.revision > from && row.actor === 'agent').flatMap(row => {
+      const entry = rapier.undo.ledger.findLast(item => item.transaction?.remoteTransactionId === row.id || item.transaction?.id === row.id);
+      return entry ? [{id: entry.transaction.id, name: row.agent || row.hostAgent || entry.transaction.actor?.name || doorName}] : [];
+    });
+  }
+
   async function replaceDocument(value, expected = {}) {
     await ready;
     if (composing() || _rapierMutationBarrierActive() || Date.now() - lastInputAt < 900 ||
@@ -2257,8 +2346,11 @@
       }
       const comparison = !exact ? {...fail('document_changed'), visible: false} : await syncComparison(value);
       await refresh();
-      if (landed && exact) {
-        try { agentCaret(landed.id, landed.actor.name || doorName); } catch (_) {}
+      if (exact) {
+        const fresh = remoteAgentActs(value);
+        if (landed && !fresh.some(row => row.id === landed.id)) fresh.push({id: landed.id, name: landed.actor.name || doorName});
+        for (const row of fresh.slice(0, -1)) { _rapierAgentNamed(row.name); _rapierAgentBarActed(row.id); }
+        if (fresh.length) try { agentCaret(fresh.at(-1).id, fresh.at(-1).name); } catch (_) {}
       }
       return {ok: true, outcome: 'applied', comparison, snapshot: await snapshot(), ...(drawingReceipts.length ? {drawingReceipts} : {})};
     } catch (error) {
@@ -2307,11 +2399,13 @@
   function noteRemoteCall(report) {
     if (!report || typeof report.id !== 'string' || !report.id || report.id === remoteCall || typeof report.operation !== 'string' || !(report.ago >= 0)) return;
     remoteCall = report.id;
+    const name = typeof report.name === 'string' ? report.name.trim().slice(0, 24) : '';
     if (report.ago >= _RAPIER_AGENT_CONNECTED_MS) return;
     if (report.ago < _RAPIER_ACORN_LINGER_MS) {
-      void _rapierAgentInvocationTracked(report.operation, typeof report.kind === 'string' ? {kind: report.kind} : {}, () => new Promise(done => setTimeout(done, 1600)), report.id);
+      void _rapierAgentInvocationTracked(report.operation, typeof report.kind === 'string' ? {kind: report.kind} : {}, () => new Promise(done => setTimeout(done, 1600)), report.id, name);
       return;
     }
+    _rapierAgentNamed(name);
     _rapierAgentBarMarkConnected({documentAuthority: String(rapier.identity.authority || ''), documentEpoch: Number(rapier.identity.epoch || 0)});
     _rapierAgentBar.connectedUntil -= report.ago;
     _rapierAgentBarRender();
@@ -2421,7 +2515,8 @@
     isSavePrepared: text => _rapierDocumentFonts.isPrepared(text),
     sheet: houseSheet,
     presence: host.presence,
-    trackInvocation: (operation, input, run, invocationId) => _rapierAgentInvocationTracked(operation, input, run, invocationId),
+    trackInvocation: (operation, input, run, invocationId) => _rapierAgentInvocationTracked(operation, input, run, invocationId,
+      typeof input?.agent === 'string' ? input.agent.trim() : ''),
     pointState: () => caret.point ? {...caret.point} : null,
     clearPoint: (id, reason = 'view_changed') => { if (!id || caret.point?.id === id) caretPut(reason); },
     nameAtDoor, noteRemoteCall, doorName: () => doorName, presentCarriedComparison, comparisonExport,

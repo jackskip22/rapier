@@ -21,7 +21,8 @@ function needs(selector) {
 }
 
 export async function readerStyles({vocabulary, tokens, reader}) {
-	const prefixes = [...vocabulary].filter(word => word.length > 2 && /[-_]$/.test(word));
+	const prefixes = [...vocabulary].filter(word => /[-_]$/.test(word) && word.length >= 6 && /[A-Za-z]{3,}/.test(word) &&
+		!/^u[0-9a-f]{2,}-$/i.test(word) && !/^x[0-9a-f]+-$/i.test(word) && (word.split('-').length > 2 || word.length >= 16));
 	const known = name => vocabulary.has(name) || prefixes.some(prefix => name.startsWith(prefix));
 	const report = {};
 	const parts = [];

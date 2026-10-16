@@ -4,6 +4,7 @@ function _rapierPortableRequiredPlugins(source, options = {}) {
   const parser = assets.markdownParser();
   const drawing = text => {
     const recipe = globalThis.RapierDrawCore?._rapierDrawReadRecipeFromSVGText(text);
+    if (recipe) required.add('drawing');
     for (const shape of recipe?.shapes || []) {
       if (typeof shape.textFont === 'string' && shape.textFont.startsWith('letters:')) required.add('letters-' + shape.textFont.slice(8));
     }
@@ -25,7 +26,7 @@ function _rapierPortableRequiredPlugins(source, options = {}) {
 }
 
 async function _rapierPackPortablePlugins(groups) {
-  const inventory = [], payloads = [];
+  const out = {groups: [], bodies: new Map()};
   for (const group of groups) {
     const element = 'rapier-plugin-' + group.id, files = group.files.map(({value, ...file}) => file);
     const bytes = files.reduce((sum, file) => sum + file.bytes, 0);
@@ -39,42 +40,113 @@ async function _rapierPackPortablePlugins(groups) {
       offset += file.bytes;
     }
     payload += '/* RAPIER_VENDOR_SPANS_END */\n</script>\n';
-    payloads.push(payload);
-    inventory.push({id: group.id, delivery: 'built-in', kind: group.kind, element, bytes, packedBytes: new TextEncoder().encode(payload).length, files});
+    out.bodies.set(group.id, payload);
+    out.groups.push({id: group.id, delivery: 'built-in', kind: group.kind, element, bytes, packedBytes: new TextEncoder().encode(payload).length, files});
   }
-  return inventory.length ? '<script type="application/json" id="rapier-builtin-plugins">' +
-    JSON.stringify(inventory).replace(/</g, '\\u003c') + '</script>\n' + payloads.join('') : '';
+  return out;
+}
+
+async function _rapierPackPlainGroups(html) {
+  const plain = /(<script\b[^>]*\bid="([^"]+)"[^>]*>)\n?(\/\* RAPIER_VENDOR_GROUP bytes=\d+ stored=plain \*\/\n[^<]*)<\/script>/g;
+  const groups = new Map();
+  for (const [, , id, text] of html.matchAll(plain)) groups.set(id, await _rapierInflateVendor(id, text));
+  if (!groups.size) return html;
+  const pack = async spans => {
+    const stream = new Blob(spans.map(span => span.bytes)).stream().pipeThrough(new CompressionStream('gzip'));
+    let offset = 0, group = '/* RAPIER_VENDOR_GROUP bytes=' + spans.reduce((sum, span) => sum + span.bytes.length, 0) + ' stored=gzip+base124 */\n' +
+      _rapierBase124.encodeBase124(new Uint8Array(await new Response(stream).arrayBuffer())) + '\n/* RAPIER_VENDOR_GROUP_END */\n';
+    for (const span of spans) {
+      group += '/* RAPIER_VENDOR_SPAN ' + span.name + ' offset=' + offset + ' bytes=' + span.bytes.length + ' */\n';
+      offset += span.bytes.length;
+    }
+    return group + '/* RAPIER_VENDOR_SPANS_END */\n';
+  };
+  const pin = ({file, bytes, sri}) => 'file:' + JSON.stringify(file) + ',bytes:' + bytes + ',sri:' + JSON.stringify(sri);
+  const packed = new Map(), pins = [];
+  for (const [id, spans] of groups) {
+    if (!id.startsWith('rapier-part-')) continue;
+    const body = await pack(spans), bytes = new TextEncoder().encode(body);
+    packed.set(id, body);
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-384', bytes)), held = RapierParts.pin(id.slice('rapier-part-'.length));
+    pins.push([pin(held), pin({file: held.file, bytes: bytes.length, sri: btoa(String.fromCharCode(...digest))})]);
+  }
+  for (const [id, spans] of groups) {
+    if (packed.has(id)) continue;
+    packed.set(id, await pack(spans.map(span => {
+      if (span.name !== 'rapier-parts.js') return span;
+      const source = pins.reduce((text, [from, to]) => {
+        if (text.split(from).length !== 2) throw new Error('Offline editor not written: the part pins could not be carried.');
+        return text.replace(from, () => to);
+      }, span.source);
+      pins.length = 0;
+      return {...span, bytes: new TextEncoder().encode(source)};
+    })));
+  }
+  if (pins.length) throw new Error('Offline editor not written: the part pins could not be carried.');
+  return html.replace(plain, (whole, open, id) => open + (id.startsWith('rapier-part-') ? '' : '\n') + packed.get(id) + '</script>');
 }
 
 const _RAPIER_PORTABLE_PAYLOAD_TYPES = new Set(['application/rapier-runtime', 'application/rapier-jxl-worker', 'text/rapier-vendor', 'application/speedracer-app+json']);
 
-async function _rapierPortableTemplate(source, options = {}) {
+const _RAPIER_PORTABLE_CHOICES = [{id: 'drawing', label: 'Draw'}, {id: 'math', label: 'Math'}, {id: 'mermaid', label: 'Mermaid'}];
+
+async function _rapierPortableChoices(source, options = {}) {
   const {head, first} = globalThis.RapierPortableShell;
   for (const id of ['rapier-platform-runtime', 'rapier-codec-runtime', 'rapier-jxl-worker', 'rapier-styles-runtime', 'rapier-style-rest-runtime', 'rapier-ui-runtime', 'rapier-editor-runtime']) {
     await _rapierWhenRuntime(id);
   }
   await _rapierWhenRuntime('lib-acorn');
-  let payloads = Array.from(document.querySelectorAll('script')).filter(row =>
-    (_RAPIER_PORTABLE_PAYLOAD_TYPES.has(row.type) || row.type === 'application/json' && row.id === 'rapier-builtin-plugins') &&
-    row.id !== 'rapier-apps-runtime' && row.parentNode !== document.head);
-  const required = _rapierPortableRequiredPlugins(source, options), manifest = document.getElementById('rapier-builtin-plugins');
-  const groups = manifest ? JSON.parse(manifest.textContent) : [];
-  const available = new Set(groups.flatMap(group => group.id === 'letters' ? group.files.map(file => file.id.slice(7)) : [group.id]));
-  let carried = '';
-  if (groups.some(group => group.asset) || !manifest || [...required].some(key => !available.has(key))) {
-    carried = groups.some(group => group.asset) ? await RapierBundledPlugins.portable()
-      : await _rapierPackPortablePlugins(await globalThis.RapierPluginLoader.portable(required));
-    const replaced = new Set(['rapier-builtin-plugins', ...groups.map(group => group.element)]);
-    payloads = payloads.filter(row => !replaced.has(row.id));
+  const manifest = document.getElementById('rapier-builtin-plugins'), groups = manifest ? JSON.parse(manifest.textContent) : [];
+  const optional = new Set(['rapier-builtin-plugins', ...groups.map(group => group.element)]);
+  const payloads = Array.from(document.querySelectorAll('script')).filter(row =>
+    _RAPIER_PORTABLE_PAYLOAD_TYPES.has(row.type) && row.id !== 'rapier-apps-runtime' && row.parentNode !== document.head &&
+    !optional.has(row.id) && !/^rapier-(?:part|plugin)-/.test(row.id));
+  const required = _rapierPortableRequiredPlugins(source, options);
+  const used = new Set([...required].map(key => key.startsWith('letters-') ? 'drawing' : key));
+  for (const id of options.also || []) used.add(id);
+  const keys = [...used].filter(id => id !== 'drawing').concat(used.has('drawing') ? ['letters'] : []);
+  const plugins = groups.length ? await RapierBundledPlugins.portable(keys) : {groups: [], bodies: new Map()};
+  const rest = keys.filter(id => !plugins.bodies.has(id));
+  if (rest.length && globalThis.RapierPluginLoader) {
+    const packed = await _rapierPackPortablePlugins((await globalThis.RapierPluginLoader.portable([])).filter(group => rest.includes(group.id)));
+    plugins.groups.push(...packed.groups);
+    for (const [id, body] of packed.bodies) plugins.bodies.set(id, body);
   }
-  let parts = '';
-  for (const id of typeof RapierParts === 'undefined' ? [] : RapierParts.ids()) {
-    if (document.getElementById('rapier-part-' + id)) continue;
-    try { parts += await RapierParts.element(id); }
-    catch (cause) { throw Object.assign(new Error('Offline editor not written; open ' + RapierParts.pin(id).label + ' once while connected, then export again.', {cause}), {code: 'offline_part_unavailable', part: id}); }
+  const choices = [];
+  for (const choice of _RAPIER_PORTABLE_CHOICES) {
+    if (!used.has(choice.id)) continue;
+    let html;
+    if (choice.id === 'drawing') {
+      if (typeof RapierParts === 'undefined' || !RapierParts.has('drawing')) continue;
+      try { html = await RapierParts.element('drawing'); }
+      catch (cause) { if (options.also?.includes('drawing')) throw Object.assign(new Error('Offline editor not written; open Draw once while connected, then save again.', {cause}), {code: 'offline_part_unavailable', part: 'drawing'}); continue; }
+    }
+    const carried = plugins.groups.filter(group => group.id === choice.id || choice.id === 'drawing' && group.id === 'letters');
+    if (choice.id !== 'drawing' && !carried.length) continue;
+    choices.push({...choice, html: html || '', needed: choice.id !== 'drawing' && required.has(choice.id), groups: carried});
   }
-  return globalThis.RapierPortablePage.offlineTemplate('<!doctype html><html lang="en"><head>' + head + '</head><body>' + first +
-    '\n<template id="rapier-ui-slot"></template>\n' + payloads.map(row => row.outerHTML).join('\n') + '\n' + parts + carried + '</body></html>');
+  const SEP = '\n<!--rapier-piece-->\n', pieces = [head, first, ...payloads.map(row => row.outerHTML), ...choices.map(choice => choice.html)];
+  const packed = (await _rapierPackPlainGroups(pieces.join(SEP))).split(SEP);
+  if (packed.length !== pieces.length) throw new Error('The offline editor could not be packed.');
+  const [shellHead, shellFirst, ...packedRest] = packed, payloadHtml = packedRest.slice(0, payloads.length);
+  choices.forEach((choice, index) => { choice.html = packedRest[payloads.length + index]; });
+  const encoder = new TextEncoder(), length = text => encoder.encode(text).length;
+  for (const choice of choices) choice.bytes = length(choice.html) + choice.groups.reduce((sum, group) => sum + length(plugins.bodies.get(group.id)) + length(JSON.stringify(group)) + 1, 0);
+  const held = /<script type="application\/json" id="rapier-builtin-plugins">[^<]*<\/script>\n?/.exec(shellHead);
+  const assemble = ids => {
+    const chosen = choices.filter(choice => ids.has(choice.id)), carried = chosen.flatMap(choice => choice.groups);
+    const inventory = carried.length ? '<script type="application/json" id="rapier-builtin-plugins">' + JSON.stringify(carried).replace(/</g, '\\u003c') + '</script>\n' : '';
+    const shell = held ? shellHead.slice(0, held.index) + inventory + shellHead.slice(held.index + held[0].length) : shellHead;
+    return globalThis.RapierPortablePage.offlineTemplate('<!doctype html><html lang="en"><head>' + shell + '</head><body>' + shellFirst +
+      '\n<template id="rapier-ui-slot"></template>\n' + payloadHtml.join('\n') + '\n' + chosen.map(choice => choice.html).join('') +
+      (held ? '' : inventory) + carried.map(group => plugins.bodies.get(group.id)).join('') + '</body></html>');
+  };
+  return {choices, assemble, needs: new Set(choices.filter(choice => choice.needed || options.also?.includes(choice.id)).map(choice => choice.id))};
+}
+
+async function _rapierPortableTemplate(source, options = {}) {
+  const portable = await _rapierPortableChoices(source, options);
+  return portable.assemble(options.include ? new Set(options.include) : portable.needs);
 }
 
 function _rapierPandocDialectEnabled() {
@@ -131,7 +203,12 @@ async function _rapierReadSharedDocument(text, filename) {
 	return {source: bom ? source.slice(1) : source, filename, name, kind, bom, ...parts, comparisonBase, editablePage: true};
 }
 
-async function _rapierBuildEditablePage(captured) {
+async function _rapierBuildEditablePage(captured, options = {}) {
+	const page = await _rapierPrepareEditablePage(captured, options);
+	return page.write(options.include ? new Set(options.include) : page.needs);
+}
+
+async function _rapierPrepareEditablePage(captured, options = {}) {
 	if (!globalThis.RapierPortableShell || !globalThis.RapierPortablePage)
 		throw new Error('The offline editor package is unavailable on this host.');
 	const pictured = text => /!\[|<(?:img|image|source)\b/i.test(text);
@@ -144,17 +221,80 @@ async function _rapierBuildEditablePage(captured) {
 		const base = await _rapierPrepareInterchangeContext({kind: 'page', imageCompat: false, comparison: true, preserveObjects: true}, {...captured, canonical: captured.comparisonBase.text});
 		await _rapierRenderModule('render')._rapierRequireOfflinePageImages(base.semanticRoot);
 	}
-	const template = await _rapierPortableTemplate(captured.canonical,
-		{docKind: captured.metadata.docKind, base: captured.comparisonBase?.text});
+	const portable = await _rapierPortableChoices(captured.canonical,
+		{docKind: captured.metadata.docKind, base: captured.comparisonBase?.text, also: options.also});
 	const text = (captured.metadata.bom ? '\uFEFF' : '') + captured.canonical;
 	const {filename, codeLang} = captured.metadata, ext = codeLang && Object.keys(EXT_TO_LANG).find(e => EXT_TO_LANG[e] === codeLang);
-	const html = globalThis.RapierPortablePage.wrap(template, text, ext ? filename.replace(/\.rapier\.html$/i, '.' + ext) : filename, {
-		kind: captured.metadata.docKind, base: captured.comparisonBase || undefined,
-		..._rapierLedgerParts(text, captured.ledger, captured.carried),
+	const parts = _rapierLedgerParts(text, captured.ledger, captured.carried);
+	const write = ids => {
+		const html = globalThis.RapierPortablePage.wrap(portable.assemble(ids), text, ext ? filename.replace(/\.rapier\.html$/i, '.' + ext) : filename, {
+			kind: captured.metadata.docKind, base: captured.comparisonBase || undefined, ...parts,
+		});
+		const blob = new Blob([html], {type: 'text/html; charset=utf-8'});
+		if (blob.size > RapierTextCodec.maxDocumentBytes) throw new Error('This HTML editor file exceeds 64 MiB.');
+		return {blob, filename: _rapierEditablePageFilename(captured.metadata.filename), mime: blob.type, canonical: captured.canonical,
+			included: portable.choices.filter(choice => ids.has(choice.id)).map(choice => choice.id)};
+	};
+	return {choices: portable.choices, needs: portable.needs, write};
+}
+
+function _rapierPortableLacks(name) {
+	if (typeof RapierParts === 'undefined' || !RapierParts.sealed()) return false;
+	showToast('This file was saved without ' + name + '. Open it at rapier.website to see it.', 'info');
+	return true;
+}
+
+function _rapierEditablePageKeeps() {
+	return typeof RapierParts !== 'undefined' && RapierParts.has('drawing') &&
+		(document.getElementById('rapier-part-drawing') || RapierParts.ready('drawing')) ? ['drawing'] : [];
+}
+
+async function _rapierEditablePageChosen(captured, action, task) {
+	const page = await _rapierPrepareEditablePage(captured, {also: _rapierEditablePageKeeps()});
+	task.check(); task.end();
+	const overlay = document.getElementById('editor-file-overlay');
+	if (!page.choices.length || !overlay) return page.write(page.needs);
+	const list = overlay.querySelector('.editor-file-choices'), go = overlay.querySelector('[data-editor-file="go"]');
+	const chosen = new Set(page.needs);
+	list.replaceChildren(...page.choices.map(choice => {
+		const row = document.createElement('button'), text = document.createElement('span'), label = document.createElement('span');
+		const hint = document.createElement('span'), state = document.createElement('span');
+		row.type = 'button'; row.className = 'export-choice-toggle'; row.dataset.editorFile = choice.id;
+		text.className = 'export-choice-toggle__text'; label.className = 'export-choice-toggle__label'; hint.className = 'export-choice-toggle__hint';
+		state.className = 'export-choice-toggle__state';
+		label.textContent = choice.label; hint.textContent = _rapierShareSize(choice.bytes);
+		text.append(label, hint); row.append(text, state);
+		return row;
+	}));
+	go.querySelector('.export-choice__label').textContent = action;
+	let written = null;
+	const paint = () => {
+		for (const row of list.children) {
+			const on = chosen.has(row.dataset.editorFile);
+			row.setAttribute('aria-pressed', on ? 'true' : 'false');
+			row.querySelector('.export-choice-toggle__state').textContent = on ? 'ON' : 'OFF';
+		}
+		written = page.write(chosen);
+		go.querySelector('.export-choice__description').textContent = _rapierShareSize(written.blob.size);
+	};
+	paint();
+	return new Promise(resolve => {
+		const done = value => {
+			overlay.removeEventListener('click', click);
+			closeDialog(overlay);
+			resolve(value);
+		};
+		const click = event => {
+			const control = event.target.closest?.('[data-editor-file]');
+			if (!control) return;
+			const id = control.dataset.editorFile;
+			if (id === 'go') done(written);
+			else if (id === 'close') done(null);
+			else { if (chosen.has(id)) chosen.delete(id); else chosen.add(id); paint(); }
+		};
+		overlay.addEventListener('click', click);
+		openDialog(overlay, {onEscape: () => done(null)});
 	});
-	const blob = new Blob([html], {type: 'text/html; charset=utf-8'});
-	if (blob.size > RapierTextCodec.maxDocumentBytes) throw new Error('This HTML editor file exceeds 64 MiB.');
-	return {blob, filename: _rapierEditablePageFilename(captured.metadata.filename), mime: blob.type, canonical: captured.canonical};
 }
 
 
@@ -214,8 +354,10 @@ async function _rapierShareFile(options) {
 
 function _rapierShareProduced(filename, blob) {
 	const bytes = blob && Number.isFinite(blob.size) ? blob.size : 0;
-	const size = bytes < 1024 ? bytes + ' B' : bytes < 1048576 ? (bytes / 1024).toFixed(1) + ' KiB' : (bytes / 1048576).toFixed(1) + ' MiB';
-	return bytes ? filename + ' (' + size + ')' : filename;
+	return bytes ? filename + ' (' + _rapierShareSize(bytes) + ')' : filename;
+}
+function _rapierShareSize(bytes) {
+	return bytes < 1024 ? bytes + ' B' : bytes < 1048576 ? (bytes / 1024).toFixed(1) + ' KiB' : (bytes / 1048576).toFixed(1) + ' MiB';
 }
 
 function _rapierAnnounceShared(filename, blob) {
@@ -373,7 +515,8 @@ async function rapierShare(kind) {
 			filename: sourceName, mime: sourceMime,
 			});
 		}
-		const page = await (kind === 'editor' ? _rapierBuildEditablePage(captured) : _rapierRenderModule('render')._rapierBuildSharedPage(captured));
+		const page = await (kind === 'editor' ? _rapierEditablePageChosen(captured, 'share', task) : _rapierRenderModule('render')._rapierBuildSharedPage(captured));
+		if (!page) return false;
 		task.check(); task.end();
 		return await _rapierShareFile({...page, mime: 'text/html'});
 	} catch (error) {
@@ -453,7 +596,7 @@ function _rapierQuoteWiden() {
 	return true;
 }
 function _rapierQuotePicture(range) {
-	const all = Array.from(_editorHostEl()?.querySelectorAll(':scope > .block-wrapper') || []);
+	const all = _blockWrapperChildren(_editorHostEl());
 	const chosen = range ? _rangeSelectedWrappers(range) : [];
 	if (!chosen.length) return null;
 	const drawing = wrapper => [...wrapper.querySelectorAll('img')].find(_rapierDrawImageIsOurs);

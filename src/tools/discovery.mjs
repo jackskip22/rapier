@@ -2,6 +2,8 @@
 import {VERSION} from '../version.mjs';
 
 export const MCP_DOOR = 'https://mcp.rapier.website/mcp';
+export const CURRENT_DOOR = 'https://mcp.rapier.website/door/mcp';
+export const MUSE_DOOR = 'https://mcp.rapier.website/muse';
 export const DISCOVERY_LINKS = '<link rel="describedby" href="https://rapier.website/llms.txt" type="text/plain">\n' +
   '<link rel="ai-catalog" href="https://rapier.website/.well-known/ai-catalog.json" type="application/ai-catalog+json">';
 export const PLAY_URL = 'https://play.google.com/store/apps/details?id=app.rapier';

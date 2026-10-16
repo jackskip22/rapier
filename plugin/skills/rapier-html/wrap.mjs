@@ -41,6 +41,56 @@ export function offlineTemplate(pageHtml, address = null) {
 		head.slice(at) + pageHtml.slice(end);
 }
 
+// What a carried page may hold beyond the base editor: Draw (its part and its letter sets) and the plug-ins a document
+// displays with. Notes and the font subsetter never travel; without the subsetter a page keeps its fonts whole.
+export const CHOICES = Object.freeze(['drawing', 'math', 'mermaid']);
+const INVENTORY = '<script type="application/json" id="rapier-builtin-plugins">';
+const element = (html, id) => {
+	const start = html.indexOf('<script type="application/rapier-runtime" id="' + id + '">');
+	if (start < 0) return null;
+	const end = html.indexOf(END, start) + END.length;
+	return {start, end: html[end] === '\n' ? end + 1 : end};
+};
+
+// The full carried editor cut to the base editor and `include` (ids from CHOICES). Only whole inert elements and the
+// inventory rows naming them are removed; every kept byte is unchanged.
+export function carry(pageHtml, include = []) {
+	const kept = new Set(include);
+	for (const id of kept) if (!CHOICES.includes(id)) throw new Error('a carried page includes ' + CHOICES.join(', ') + '; not ' + id);
+	if (kept.has('drawing')) kept.add('letters');
+	let html = pageHtml;
+	const cut = id => { const at = element(html, id); if (at) html = html.slice(0, at.start) + html.slice(at.end); };
+	cut('rapier-part-notes');
+	if (!kept.has('drawing')) cut('rapier-part-drawing');
+	const start = html.indexOf(INVENTORY);
+	if (start < 0) return html;
+	const close = html.indexOf(END, start), end = html[close + END.length] === '\n' ? close + END.length + 1 : close + END.length;
+	const groups = JSON.parse(html.slice(start + INVENTORY.length, close)), carried = groups.filter(group => kept.has(group.id));
+	html = html.slice(0, start) + (carried.length ? INVENTORY + JSON.stringify(carried).replace(/</g, '\\u003c') + END + '\n' : '') + html.slice(end);
+	for (const group of groups) if (!kept.has(group.id)) cut(group.element);
+	return html;
+}
+
+// The plug-ins a Markdown text displays with, read without a Markdown parser, so it leans toward carrying: math for a `$`
+// or `$$` span outside code, Mermaid for a mermaid fence (`flowchart(fence)` true marks one Rapier draws natively).
+export function portableNeeds(text, {base, flowchart} = {}) {
+	const needs = new Set();
+	for (const source of [text, base]) {
+		if (typeof source !== 'string') continue;
+		let prose = '';
+		const lines = source.split(/\r\n|\r|\n/);
+		for (let at = 0; at < lines.length; at++) {
+			const open = /^ {0,3}(`{3,}|~{3,})\s*([^\s`]*)/.exec(lines[at]);
+			if (!open) { prose += lines[at] + '\n'; continue; }
+			const body = [];
+			for (at++; at < lines.length && !new RegExp('^ {0,3}' + open[1][0] + '{' + open[1].length + ',}\\s*$').test(lines[at]); at++) body.push(lines[at]);
+			if (open[2].toLowerCase() === 'mermaid' && flowchart?.(body.join('\n')) !== true) needs.add('mermaid');
+		}
+		if (/\$\$[\s\S]+?\$\$|(?:^|[^\\$])\$(?![\s$])[^$\n]*[^\s\\$]\$(?!\d)/.test(prose.replace(/(`+)[\s\S]*?\1/g, ''))) needs.add('math');
+	}
+	return CHOICES.filter(id => needs.has(id));
+}
+
 export function wrap(pageHtml, text, name, options) {
 	if (typeof pageHtml !== 'string' || !pageHtml.includes('</body>')) throw new Error('not a Rapier page: no </body>');
 	if (typeof text !== 'string') throw new Error('the document must be text');

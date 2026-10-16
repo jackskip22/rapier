@@ -3,6 +3,46 @@
 const _RAPIER_SHARE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const _RAPIER_SHARE_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
+const _RAPIER_STORAGE_BUCKETS = ['notesText', 'notesAudio', 'notesAttachments', 'notesImports', 'notesHistory', 'notesOther', 'recordings', 'palettes', 'preferences', 'otherSaved', 'protected', 'temporary', 'cacheKept'];
+
+function _rapierStorageFormatBytes(value, incomplete) {
+	if (!Number.isSafeInteger(value) || value < 0) return 'unavailable';
+	var text;
+	if (value < 1024) text = value + ' B';
+	else {
+		var units = ['KB', 'MB', 'GB', 'TB'], shown = value / 1024, index = 0;
+		while (shown >= 1024 && index < units.length - 1) { shown /= 1024; index += 1; }
+		text = (shown >= 10 ? shown.toFixed(0) : shown.toFixed(1)) + ' ' + units[index];
+	}
+	return incomplete ? text + ' incomplete' : text;
+}
+
+function _rapierStorageTotals(report, pageUsage) {
+	var buckets = report && report.buckets;
+	if (!buckets || typeof buckets !== 'object') return null;
+	var values = {}, i, value, notes = 0, kept = 0;
+	for (i = 0; i < _RAPIER_STORAGE_BUCKETS.length; i += 1) {
+		value = buckets[_RAPIER_STORAGE_BUCKETS[i]];
+		if (!Number.isSafeInteger(value) || value < 0) return null;
+		values[_RAPIER_STORAGE_BUCKETS[i]] = value;
+	}
+	notes = values.notesText + values.notesAudio + values.notesAttachments + values.notesImports + values.notesHistory + values.notesOther + values.recordings;
+	kept = values.palettes + values.preferences + values.otherSaved + values.protected + values.cacheKept;
+	if (!Number.isSafeInteger(notes) || !Number.isSafeInteger(kept) || !Number.isSafeInteger(notes + kept + values.temporary)) return null;
+	return {
+		app: notes + kept + values.temporary,
+		notes: notes,
+		kept: kept,
+		temporary: values.temporary,
+		page: Number.isSafeInteger(pageUsage) && pageUsage >= 0 ? pageUsage : null,
+		incomplete: report.incomplete === true || report.complete === false || report.errors > 0,
+	};
+}
+
+function _rapierStorageSameReply(current, seen) {
+	return Number.isSafeInteger(current) && current === seen;
+}
+
 function _rapierTextHasDocumentScalars(value) {
 	const text = String(value == null ? '' : value);
 	return !/[\0\ud800-\udfff]/u.test(text);
@@ -592,6 +632,10 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 		}
 		if (name === 'document.printFailed') {
 			try { window.dispatchEvent(new CustomEvent('rapier:platform-print-failed', { detail: detail || {} })); } catch (_) {}
+			return;
+		}
+		if (name === 'storage.returned') {
+			try { window.dispatchEvent(new CustomEvent('rapier:storage-returned')); } catch (_) {}
 		}
 	}
 
@@ -2633,6 +2677,10 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 			get requestReminderPermission() { return method('requestReminderPermission'); },
 			get openReminderSettings() { return method('openReminderSettings'); },
 			get openMicrophoneSettings() { return method('openMicrophoneSettings'); },
+			get storageReport() { return method('storageReport'); },
+			get storageClearTemporary() { return method('storageClearTemporary'); },
+			get storageCancel() { return method('storageCancel'); },
+			get openAppStorage() { return method('openAppStorage'); },
 			get approveClose() { return method('approveClose'); },
 			get reviewSaved() { return method('reviewSaved'); },
 			get reviewFinished() { return method('reviewFinished'); },
@@ -3052,6 +3100,24 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 					if (answer?.opened !== true) throw new Error('Microphone settings could not be opened');
 				} : null;
 			},
+			get storageReport() {
+				return _nativeCapability('storage') ? function () { return _nativeHostCall('storage.report', {}, 120000); } : null;
+			},
+			get storageClearTemporary() {
+				return _nativeCapability('storage') ? function () { return _nativeHostCall('storage.clearTemporary', {}, 120000); } : null;
+			},
+			get storageCancel() {
+				return _nativeCapability('storage') ? function () { return _nativeHostCall('storage.cancel', {}, 15000); } : null;
+			},
+			get openAppStorage() {
+				return _nativeCapability('storage') ? async function () {
+					const answer = await _nativeHostCall('platform.appStorage', {});
+					const opened = answer && answer.opened;
+					if (opened !== 'storage' && opened !== 'app-info' && opened !== 'unavailable') return 'unavailable';
+					if (answer.cleared === true) throw new Error('Android storage handoff must not clear data');
+					return opened;
+				} : null;
+			},
 			get reminderState() {
 				return _nativeCapability('reminders') ? function () { return _nativeHostCall('reminders.state', {}); } : null;
 			},
@@ -3128,8 +3194,9 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 				} : null;
 			},
 			get openSync() {
-				return _nativeCapability('sync') ? function () {
-					return _nativeHostCall('sync.open', {});
+				return _nativeCapability('sync') ? function (vault) {
+					if (vault != null && (typeof vault !== 'string' || !/^[a-f0-9]{32}$/.test(vault))) return Promise.reject(new Error('invalid public vault identifier'));
+					return _nativeHostCall('sync.open', vault == null ? {} : {vault});
 				} : null;
 			},
 			get syncTransport() {

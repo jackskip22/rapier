@@ -1447,7 +1447,7 @@
       "role": "overlay",
       "interactive": false,
       "edge": "none",
-      "reason": "Source-offset carets are measured in viewport coordinates and cannot intercept the writer’s pointer."
+      "reason": "Source-offset carets are measured in viewport coordinates and cannot intercept the writer\u2019s pointer."
     },
     {
       "id": "live-presence-selection",
@@ -1619,7 +1619,7 @@
           },
           {
             "property": "top",
-            "value": "calc(calc(0.15 * var(--md-unit)) + (var(--md-line) - calc(2 * var(--md-unit))) / 2)",
+            "value": "0",
             "important": false
           }
         ]
@@ -2728,7 +2728,7 @@
         ]
       },
       "owner": ".rapier-live-caret",
-      "reason": "An offscreen collaborator’s upper-edge label stays inside the caret’s right boundary."
+      "reason": "An offscreen collaborator\u2019s upper-edge label stays inside the caret\u2019s right boundary."
     },
     {
       "id": "live-presence-label-down",
@@ -2752,7 +2752,7 @@
         ]
       },
       "owner": ".rapier-live-caret",
-      "reason": "An offscreen collaborator’s lower-edge label stays inside the caret’s right boundary."
+      "reason": "An offscreen collaborator\u2019s lower-edge label stays inside the caret\u2019s right boundary."
     },
     {
       "id": "changes-away-next-reach",
@@ -2926,6 +2926,54 @@
       },
       "owner": ".rapier-notes-section-head",
       "reason": "The reorder grip belongs to its own section heading and follows its logical end in RTL."
+    },
+    {
+      "id": "docx-ordered-marker",
+      "file": "editor/styles/rapier-document.css",
+      "selector": "html[data-layout=\"docx\"] .md-render ol>li::before",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "inset-inline-start",
+            "value": "calc(-2 * var(--md-text-body) + var(--md-marker,0px))",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".md-render li",
+      "reason": "Word layout uses the existing item marker coordinate without the Rapier circle."
+    },
+    {
+      "id": "navigator-outline-grip",
+      "file": "editor/styles/rapier-source.css",
+      "selector": ".navigator-outline__grip",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset-block",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "inset-inline-end",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".navigator-outline__item",
+      "reason": "The section grip belongs to its own outline row and follows the row's logical end in RTL."
     }
   ]
 }

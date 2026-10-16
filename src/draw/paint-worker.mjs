@@ -139,8 +139,8 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
    const alive=()=> {if(signal?.aborted)throw paintAbort();};
    alive();
    const prepared=request.target
-    ? await prepareAgentLayerPainting(request.strokes,request.target,request.seed,{contribution:request.contribution,signal})
-    : prepareAgentPainting(request.strokes,request.seed,{contribution:request.contribution,signal});
+    ? await prepareAgentLayerPainting(request.strokes,request.target,request.seed,{contribution:request.contribution,signal,picture:request.picture})
+    : prepareAgentPainting(request.strokes,request.seed,{contribution:request.contribution,signal,picture:request.picture});
    alive();
    if(!prepared) return null;
    const run=prepared.run,total=run.strokes.reduce((n,stroke)=>n+stroke.points.length,0);
@@ -176,7 +176,7 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
   if(operation==='replayAgent') {
    const signal=agentJobs.get(request.id)?.signal;
    if(signal?.aborted)throw paintAbort();
-   const value=await replayAgentPainting(request.shape,request.omitIds,{signal,requireEmptyBase:request.requireEmptyBase===true,
+   const value=await replayAgentPainting(request.shape,request.omitIds,{signal,requireEmptyBase:request.requireEmptyBase===true,picture:request.picture,
     onProgress:request.progress===true?value=>postMessage({id:request.id,progress:true,value}):undefined});
    if(signal?.aborted)throw paintAbort();
    return value;
@@ -199,7 +199,7 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
   if(operation==='drop') { for(const id of request.surfaceIds||[]) { const surface=surfaces.get(id); if(surface) pool?.detach(surface); dropDisplay(id); surfaces.delete(id); checkpoints.delete(id); runs.delete(id); } for(const id of request.brushIds||[]) brushes.delete(id); return {}; }
   throw new Error('Unknown paint operation');
  }
- return request => {
+ const receive = request => {
   if(request?.operation==='cancel') {
    const job=agentJobs.get(request.requestId);
    if(job)job.abort();
@@ -222,6 +222,8 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
   };
   chain=chain.then(run); return chain;
  };
+ receive.close=async()=>{failed=paintAbort();for(const job of agentJobs.values())job.abort();await chain;await pool?.close();for(const id of displays.keys())dropDisplay(id);surfaces.clear();brushes.clear();runs.clear();checkpoints.clear();};
+ return receive;
 }
 
 export function createLocalPaintClient() {
@@ -242,4 +244,5 @@ export function installPaintWorker(scope=globalThis) {
   worker.postMessage({operation:'init',...init});
  })});
  scope.onmessage=({data})=>receive(data);
+ return () => receive.close();
 }

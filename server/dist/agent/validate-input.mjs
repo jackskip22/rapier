@@ -130,7 +130,7 @@ export function validateInput(schema, value, path = 'arguments', agent = false) 
     } else if (type === 'integer') {
       if (!Number.isSafeInteger(value) || value < (schema.minimum ?? -Infinity) || value > (schema.maximum ?? Infinity) || value <= (schema.exclusiveMinimum ?? -Infinity) || value >= (schema.exclusiveMaximum ?? Infinity)) invalid('integer outside bounds');
     } else if (type === 'boolean' && typeof value !== 'boolean') invalid('expected a boolean');
-    if (schema.enum && !schema.enum.includes(value)) invalid('unknown value');
+    if (schema.enum && !schema.enum.includes(value)) invalid('unknown value; use ' + schema.enum.join(', '));
     if (Object.hasOwn(schema, 'const') && schema.const !== value) invalid('unexpected value');
     return value;
   };

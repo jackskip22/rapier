@@ -32,7 +32,7 @@ export const PREFERENCE_DEFINITIONS = Object.freeze({
 	highlightColor: Object.freeze({ key: 'rapier:preference:highlight-color', fallback: 'default', values: Object.freeze(['default', 'green', 'red', 'blue', 'yellow', 'purple']) }),
 	headings:       Object.freeze({ key: 'rapier:preference:headings', fallback: 'expanded', values: Object.freeze(['off', 'collapsed', 'expanded']) }),
 	invertImageAlpha: Object.freeze({ key: 'rapier:preference:invert-image-alpha', fallback: true }),
-	layout:         Object.freeze({ key: 'rapier:preference:layout', fallback: 'rapier', values: Object.freeze(['rapier', 'plain']) }),
+	layout:         Object.freeze({ key: 'rapier:preference:layout', fallback: 'rapier', values: Object.freeze(['rapier', 'plain', 'docx']) }),
 	notesSkills:    Object.freeze({ key: 'rapier:preference:notes-skills', fallback: false, agent: false }),
 	startIn:        Object.freeze({ key: 'rapier:preference:notes-start', fallback: 'editor', values: Object.freeze(['editor', 'notes', 'paint']) }),
 	notesSort:      Object.freeze({ key: 'rapier:preference:notes-sort', fallback: 'custom', values: Object.freeze(['custom', 'created', 'modified']) }),

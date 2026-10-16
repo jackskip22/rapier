@@ -38,7 +38,7 @@ function _rapierSheetAtScrollStart(target, panel) {
 
 function _rapierSheetTargetLocked(target) {
 	if (!(target instanceof Element)) return false;
-	if (target.closest('input[type="range"],.range-wrap,[data-range-owner]')) return true;
+	if (target.closest('input[type="range"],.range-wrap,[data-range-owner],.navigator-outline__grip')) return true;
 	return !!target.closest(
 		'.link-dialog input:not([type="checkbox"]):not([type="radio"]),.link-dialog select,.link-dialog textarea'
 	);

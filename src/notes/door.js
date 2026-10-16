@@ -32,7 +32,7 @@ const _rapierNotesDoor = (() => {
 	_rapierBootFactsPublished.then(() => {
 		_rapierNotesShowDoors();
 		const beside = document.getElementById('notes-beside-btn');
-		if (beside) beside.hidden = globalThis.RapierPlatform?.environment.id !== 'web' || window.self !== window.top;
+		if (beside) beside.hidden = !['web', 'linux', 'windows'].includes(globalThis.RapierPlatform?.environment.id) || window.self !== window.top;
 	});
 	document.addEventListener('click', evt => {
 		if (_rapierNotesPart) return;

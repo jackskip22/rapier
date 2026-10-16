@@ -246,39 +246,63 @@ const _rapierNotesPending = {
 			return false;
 		}
 	},
-	retain(proof, stamp, text, settled = false, paste = null) {
+	canonical() {
+		const snapshot = rapier.undo.captureTypingPrefix?.() || _rapierCreatePersistenceSnapshot({historyComplete: true});
+		const text = snapshot.canonicalText, ledger = _rapierEmbedCaptureLedger(snapshot);
+		if (!ledger) throw new Error('The unfinished note has no complete authored history.');
+		return {text, ledger};
+	},
+	ledger(record, text, {input = false} = {}) {
+		const H = globalThis.RapierNotesHistory, canonical = record.canonical;
+		if (!canonical || canonical.unverified || typeof canonical.text !== 'string' || !canonical.ledger)
+			throw new Error("The unfinished note’s authored history is kept but cannot be checked.");
+		const preparation = H.createHistoryPreparation();
+		const ledger = preparation.captureLedger(canonical.ledger, canonical.text);
+		if (canonical.text === text) return ledger;
+		const start = H.parseManifest(null, {noteId: record.id, now: Date.now()});
+		const carried = H.adoptCanonical(start, ledger, canonical.text);
+		return H.appendCanonical(carried.manifest, {text, input, author: {kind: 'human', id: _rapierNotesStore.folder.deviceId || 'notes-local'}, now: Date.now()}).ledger;
+	},
+	retain(proof, stamp, text, settled = false, paste = null, canonical = undefined) {
 		if (!proof?.id) return false;
 		const state = _rapierNotes, kind = this.kind(), file = proof.file || state.current;
 		if (!['native', 'opfs', 'indexeddb'].includes(kind)) return false;
 		try {
 			const digest = !paste && this.known(proof, stamp, text) || this.digest(paste ? JSON.stringify({text, paste}) : text);
 			const token = proof.id + ':' + stamp.documentEpoch, prior = this.held.get(token), key = prior?.key || this.prefix + crypto.randomUUID();
+			if (canonical === undefined) {
+				try { canonical = this.canonical(); }
+				catch (_) { canonical = null; }
+			}
+			if (!canonical && prior?.canonical) canonical = {...prior.canonical, unverified: true};
+			const expectedLedger = [...new Set([proof.ledger, state.attemptedLedger.get(file), state.savingLedger, canonical?.ledger.sha256].filter(value => typeof value === 'string'))];
+			const historySaved = !canonical?.unverified && canonical?.text === text && canonical.ledger.sha256 === proof.ledger;
 			if (!paste && state.savingText === text) state.savingDigest = digest;
 			if (settled && prior && (prior.stamp.docGeneration > stamp.docGeneration ||
 				prior.stamp.docGeneration === stamp.docGeneration && prior.digest !== digest)) return false;
 			const expectedDigest = [...new Set([proof.digest, state.attempted.get(file),
 				...(state.savingText == null ? [] : [state.savingDigest || this.digest(state.savingText)])].filter(value => typeof value === 'string'))];
-			if (digest === proof.digest && expectedDigest.every(value => value === digest) && !prior) return true;
+			if (digest === proof.digest && historySaved && expectedDigest.every(value => value === digest) && !prior) return true;
 			if (!this.live) throw new Error('This page could not claim its unfinished note.');
-			const same = prior && prior.digest === digest && prior.text === text && prior.paste === paste && prior.store === kind &&
+			const same = prior && prior.digest === digest && prior.text === text && prior.paste === paste && prior.canonical?.ledger.sha256 === canonical?.ledger.sha256 && prior.canonical?.text === canonical?.text && prior.canonical?.unverified === canonical?.unverified && JSON.stringify(prior.expectedLedger) === JSON.stringify(expectedLedger) && prior.store === kind &&
 				prior.owner === this.live.id && prior.file === file && prior.expectedDigest.length === expectedDigest.length &&
 				prior.expectedDigest.every((value, i) => value === expectedDigest[i]);
-			const serial = same ? prior.serial : JSON.stringify({version: 1, store: kind, owner: this.live.id, file, id: proof.id, expectedDigest, text, digest, ...(paste ? {paste} : {})});
+			const serial = same ? prior.serial : JSON.stringify({version: 1, store: kind, owner: this.live.id, file, id: proof.id, documentAuthority: stamp.documentAuthority, expectedDigest, expectedLedger, canonical, text, digest, ...(paste ? {paste} : {})});
 			if (localStorage.getItem(key) !== serial) localStorage.setItem(key, serial);
-			this.held.set(token, {key, serial, id: proof.id, stamp, digest, text, paste, store: kind, owner: this.live.id, file, expectedDigest});
-			if (digest === proof.digest && expectedDigest.every(value => value === digest)) this.forget(proof, stamp, digest);
+			this.held.set(token, {key, serial, id: proof.id, stamp, digest, text, paste, canonical, expectedLedger, store: kind, owner: this.live.id, file, expectedDigest});
+			if (digest === proof.digest && historySaved && expectedDigest.every(value => value === digest)) this.forget(proof, stamp, digest, proof.ledger);
 			return true;
 		} catch (error) {
 			showToast('This note could not be kept for restart: ' + String(error?.message || error) + '. Keep this page open until the note is saved.', 'error', {outlive: 'save-failed'});
 			return false;
 		}
 	},
-	forget(proof, stamp, digest) {
+	forget(proof, stamp, digest, ledger = proof?.ledger) {
 		if (!proof?.id || !stamp) return;
 		for (const [token, record] of this.held) {
 			if (record.id !== proof.id || record.stamp.documentEpoch !== stamp.documentEpoch ||
 				record.stamp.documentAuthority !== stamp.documentAuthority || record.stamp.docGeneration > stamp.docGeneration ||
-				record.stamp.docGeneration === stamp.docGeneration && record.digest !== digest) continue;
+				record.stamp.docGeneration === stamp.docGeneration && (record.digest !== digest || record.canonical?.unverified || record.canonical?.text !== record.text || record.canonical?.ledger.sha256 !== ledger)) continue;
 			try {
 				if (localStorage.getItem(record.key) === record.serial) localStorage.removeItem(record.key);
 				this.held.delete(token);
@@ -331,7 +355,10 @@ const _rapierNotesPending = {
 					const recover = async () => {
 						if (localStorage.getItem(key) !== serial) return;
 						const text = await this.resolve(record);
-						const saved = await _rapierNotesStore.folder.save({...record, text});
+						const ledger = this.ledger(record, text);
+						if (!Array.isArray(record.expectedLedger) || !record.expectedLedger.length || record.expectedLedger.some(value => !/^[a-f0-9]{64}$/.test(value)) ||
+							typeof record.documentAuthority !== 'string' || record.documentAuthority !== ledger.documentAuthority) throw new Error('The unfinished note has no complete history admission proof.');
+						const saved = await _rapierNotesStore.folder.save({...record, text, ledger});
 						changed = true;
 						if (localStorage.getItem(key) === serial) localStorage.removeItem(key);
 						if (saved.copied) showToast('An unfinished edit of ' + record.file + ' met a changed note. Your words were kept as ' + saved.file + '.', 'info');
@@ -1170,7 +1197,7 @@ const RAPIER_NOTES_ROW_ICONS = {
 	'boxes': 'tick'
 };
 const RAPIER_NOTES_ADD_ICONS = {
-	note: RAPIER_NOTES_ICONS.page, drawing: RAPIER_NOTES_ICONS.pen, picture: 'image',
+	note: RAPIER_NOTES_ICONS.page, list: 'tick', drawing: RAPIER_NOTES_ICONS.pen, picture: 'image',
 	photo: RAPIER_NOTES_ICONS.camera, recording: RAPIER_NOTES_ICONS.mic, attachment: RAPIER_NOTES_ICONS.link, files: RAPIER_NOTES_ICONS.link
 };
 const RAPIER_NOTES_SECTIONS = [['skills', 'Skills'], ['pinned', 'Pinned'], ['others', 'Other'], ['archive', 'Archived']];
@@ -1196,7 +1223,7 @@ function _rapierNotesBuildSurface() {
 	const search = _rapierNotesEl('input', 'find-input rapier-notes-search'); search.type = 'search'; search.placeholder = 'search…'; search.setAttribute('aria-label', 'Search notes'); search.autocomplete = 'off';
 	find.appendChild(search);
 	const addsBar = _rapierNotesEl('div', 'find-bar rapier-notes-addsbar'); addsBar.id = 'rapier-notes-addsbar'; addsBar.hidden = true; addsBar.setAttribute('role', 'group'); addsBar.setAttribute('aria-label', 'add a note'); addBtn.setAttribute('aria-controls', addsBar.id);
-	for (const [kind, word] of [['note', 'Note'], ['recording', 'Record'], ['picture', 'Image'], ['drawing', 'Draw']]) {
+	for (const [kind, word] of [['note', 'Note'], ['list', 'List'], ['recording', 'Record'], ['picture', 'Image'], ['drawing', 'Draw']]) {
 		const b = _rapierNotesEl('button', 'rapier-notes-add'); b.type = 'button'; b.dataset.notesAct = 'add'; b.dataset.notesAdd = kind;
 		b.append(_rapierNotesIcon(RAPIER_NOTES_ADD_ICONS[kind]), document.createTextNode(word));
 		addsBar.appendChild(b);
@@ -1857,6 +1884,21 @@ function _rapierNotesCard(file) {
 		el.appendChild(row);
 	}
 	if (typeof _rapierAttachmentsCard === 'function') _rapierAttachmentsCard(el, file, state.texts.get(file) || '');
+	const tags = globalThis.RapierNotesFrontMatter?.tagsOf(held || '') || [];
+	if (tags.length) {
+		const chips = _rapierNotesEl('div', 'rapier-notes-chips rapier-notes-card-tags');
+		for (const tag of tags) {
+			const chip = _rapierNotesEl('button', 'rapier-notes-chip', tag); chip.type = 'button';
+			chip.setAttribute('aria-label', 'Filter by tag ' + tag);
+			chip.addEventListener('pointerdown', event => event.stopPropagation());
+			chip.addEventListener('click', event => {
+				event.stopPropagation(); _rapierNotesSearchToggle(true);
+				_rapierNotesLibraryChipTerm('tag:' + JSON.stringify(tag));
+			});
+			chips.appendChild(chip);
+		}
+		el.appendChild(chips);
+	}
 	if (_rapierNotesIsApp() && entry.remind) {
 		const words = M.reminderCardWords(entry, Date.now());
 		if (words) {
@@ -2383,7 +2425,12 @@ function _rapierNotesRender() {
 		else head.removeAttribute('aria-expanded');
 		grid.replaceChildren();
 		if (!files.length) {
-			const empty = _rapierNotesEl('div', 'rapier-notes-empty', id === 'skills' ? 'A note your agent can fetch. Write one here.' : id === 'others' ? (state.query ? (state.reading && !state.reading.complete ? 'Reading notes, ' + state.reading.done + ' of ' + state.reading.total + '.' : (typeof _rapierNotesLibraryNotice === 'function' && _rapierNotesLibraryNotice() && _rapierNotesLibraryNotice().stage !== 'complete') ? _rapierNotesLibraryNotice().message : (typeof _rapierNotesLibraryPartial === 'function' && _rapierNotesLibraryPartial()) ? (_rapierNotesLibraryPartial().unread ? 'Some notes unsearched. Open Notes again.' : 'Searching, ' + _rapierNotesLibraryPartial().done + ' of ' + _rapierNotesLibraryPartial().total + '.') : 'Nothing matches.') : 'Press + to add a note.') : own ? 'No notes yet.' : '');
+			const empty = _rapierNotesEl('div', 'rapier-notes-empty', id === 'skills' ? 'A note your agent can fetch. Write one here.' : id === 'others' ? (state.query ? (state.reading && !state.reading.complete ? 'Reading notes, ' + state.reading.done + ' of ' + state.reading.total + '.' : (typeof _rapierNotesLibraryNotice === 'function' && _rapierNotesLibraryNotice() && _rapierNotesLibraryNotice().stage !== 'complete') ? _rapierNotesLibraryNotice().message : (typeof _rapierNotesLibraryPartial === 'function' && _rapierNotesLibraryPartial()) ? (_rapierNotesLibraryPartial().unread ? 'Some notes unsearched. Open Notes again.' : 'Searching, ' + _rapierNotesLibraryPartial().done + ' of ' + _rapierNotesLibraryPartial().total + '.') : 'Nothing matches.') : '') : own ? 'No notes yet.' : '');
+			if (id === 'others' && !state.query && !Object.keys(state.index.notes).length) {
+				const importOthers = _rapierNotesEl('button', 'rapier-notes-btn', 'Import from other notes apps'); importOthers.type = 'button';
+				importOthers.dataset.action = 'notes-import';
+				empty.appendChild(importOthers);
+			}
 			grid.appendChild(empty); grid.style.height = ''; delete state.windows[id]; continue;
 		}
 		if (closed) { delete state.windows[id]; continue; }
@@ -3338,6 +3385,20 @@ function _rapierNotesWhen(time) {
 	try { return sameDay ? then.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'}) : then.toLocaleString([], {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'}); }
 	catch (_) { return then.toISOString(); }
 }
+async function _rapierNotesAdmitInverse(inverse) {
+	if (!_rapierNotesInANote()) return true;
+	const state = _rapierNotes, proof = state.currentProof, stamp = _rapierMutationStamp();
+	if (!proof?.id || !_rapierNotesDocumentBound()) return false;
+	try {
+		const canonical = _rapierNotesPending.canonical();
+		await _rapierNotesStore.kind();
+		await _rapierNotesStore.folder.checkEditorInverse({file: state.current, id: proof.id, ...canonical, inverse});
+		return state.currentProof === proof && _rapierMutationStampIsCurrent(stamp) && _rapierNotesDocumentBound();
+	} catch (error) {
+		showToast('This edit cannot be restored: ' + String(error?.message || error), 'error');
+		return false;
+	}
+}
 function _rapierNotesInputCapture() {
 	if (_rapierUserMutationBlocked(false)) return null;
 	const captured = _rapierNotesPending.text();
@@ -3345,7 +3406,9 @@ function _rapierNotesInputCapture() {
 	const proof = _rapierNotes.currentProof, stamp = Object.freeze(_rapierMutationStamp());
 	_rapierNotesPending.retain(proof, stamp, captured.text, false);
 	if (_rapierNotes.currentProof !== proof || !_rapierMutationStampIsCurrent(stamp)) return null;
-	const ledger = _rapierSourceText() === captured.text ? _rapierLedgerCapture() : null;
+	const canonical = _rapierNotesPending.canonical();
+	const ledger = _rapierNotesPending.ledger({id: proof.id, canonical}, captured.text, {input: true});
+	_rapierNotesPending.retain(proof, stamp, captured.text, false, null, {text: captured.text, ledger});
 	return Object.freeze({canonical: captured.text, generation: stamp.docGeneration, stamp, ledger});
 }
 function _rapierNotesInputChanged(event) {
@@ -3407,15 +3470,18 @@ async function _rapierNotesAutosaveNow({settle = false, input = null, replacing 
 		}
 		return;
 	}
-	state.savingGen = gen; state.savingText = text; state.savingDigest = null;
-	_rapierNotesPending.retain(proof, stamp, text, true);
+	state.savingGen = gen; state.savingText = text; state.savingDigest = null; state.savingLedger = captured.ledger?.sha256 || null;
+	_rapierNotesPending.retain(proof, stamp, text, true, null, captured.ledger ? {text, ledger: captured.ledger} : null);
 	try {
 		const revived = !!state.index.notes[file]?.trashed;
 		let saved;
-		try { saved = await _rapierNotesSave(file, text, captured.ledger, {input: !!input, exact: unchanged}); }
+		try {
+			if (!captured.ledger) throw Object.assign(new Error('The unfinished note has no complete authored history. Its restart copy was kept.'), {code: 'notes_history_unavailable'});
+			saved = await _rapierNotesSave(file, text, captured.ledger, {input: !!input, exact: unchanged});
+		}
 		catch (error) {
 			if (!replacing || !unchanged || error?.code !== 'notes_changed') throw error;
-			state.attempted.delete(file); state.attemptedLedger.delete(file);
+			state.attempted.delete(file); state.attemptedLedger.delete(file); state.untitled.delete(file);
 			_rapierNotesMarkClean(captured); _rapierNotesPending.forget(proof, stamp, proof?.digest);
 			return;
 		}
@@ -3431,14 +3497,14 @@ async function _rapierNotesAutosaveNow({settle = false, input = null, replacing 
 		state.captured?.delete(entry?.id);
 		if (state.restoring?.id === entry?.id && state.restoring.text === text) state.restoring = null;
 		_rapierNotesMarkClean(captured); _rapierNotesHold(kept, text); state.saveFailed = false;
-		_rapierNotesPending.forget(proof, stamp, saved.digest);
+		_rapierNotesPending.forget(proof, stamp, saved.digest, saved.ledger?.sha256);
 		if (typeof _rapierNotesLibraryTouch === 'function') _rapierNotesLibraryTouch(kept);
 		if (revived && !saved.copied) showToast('This note was in the recycle bin; writing in it has put it back.', 'info');
 		if (!input && state.untitled.has(kept) && state.current === kept && !state.renaming) await _rapierNotesNameByWords(kept, text, {settle});
 	} catch (error) {
 		if (!state.saveFailed) showToast('This note is not being saved to the notes folder: ' + String(error?.message || error), 'error', {outlive: 'save-failed'});
 		state.saveFailed = true;
-	} finally { state.savingGen = -1; state.savingText = state.savingDigest = null; }
+	} finally { state.savingGen = -1; state.savingText = state.savingDigest = state.savingLedger = null; }
 }
 async function _rapierNotesFlush({replacing = false} = {}) {
 	const state = _rapierNotes;
@@ -4904,7 +4970,7 @@ async function _rapierNotesApplyText(next, operation, label, {settle = false} = 
 	if (before === next) return true;
 	const settling = settle ? _rapierNotes.current : null, settlingId = settling && _rapierNotes.index?.notes[settling]?.id;
 	const row = _rapierPrefixSuffixDiff(before, next);
-	const context = { actor: { kind: 'human', id: 'notes' }, transport: 'platform', operation };
+	const context = { actor: { kind: 'human' }, transport: 'platform', operation };
 	const changeSet = { label };
 	try {
 		await _rapierWithCompoundTransaction(context, async compound => {
@@ -5461,9 +5527,9 @@ async function _rapierNotesBackupWorkerStart() {
 	const W = globalThis.RapierNotesBackupWorker;
 	if (!W || typeof Worker !== 'function') return null;
 	if (!await _rapierNotesStore.kind() || _rapierNotesStore.native) return null;
-	const url = URL.createObjectURL(new Blob([W.workerSource()], {type: 'text/javascript'}));
-	try { return {worker: new Worker(url), url}; }
-	catch (_) { URL.revokeObjectURL(url); return null; }
+	const worker = globalThis.RapierWorkerExecution.createWorkerExecution({source: W.workerSource, name: 'rapier-notes-backup'});
+	try { await worker.ready; return {worker}; }
+	catch (_) { worker.terminate(); return null; }
 }
 async function _rapierNotesBackupStageHandles() {
 	const root = await navigator.storage.getDirectory(), dir = await root.getDirectoryHandle('rapier-backup-staging', {create: true});
@@ -5728,7 +5794,7 @@ async function _rapierNotesBackup() {
 		if (started) {
 			try { handles = await _rapierNotesBackupStageHandles(); }
 			catch (error) {
-				started.worker.terminate(); URL.revokeObjectURL(started.url);
+				started.worker.terminate();
 				console.warn('[rapier] notes backup: the worker could not take its private staging', error);
 			}
 		}
@@ -5743,7 +5809,7 @@ async function _rapierNotesBackup() {
 			} catch (error) {
 				if (error?.disposition === 'removed' || error?.disposition === 'untouched') { try { await handles.remove(); } catch (_) {} }
 				throw error;
-			} finally { started.worker.terminate(); URL.revokeObjectURL(started.url); }
+			} finally { started.worker.terminate(); }
 			if (outcome.status === 'unavailable') { try { await handles.remove(); } catch (_) {} }
 			else {
 				state.backupPath = 'worker';
@@ -6040,7 +6106,7 @@ async function _rapierNotesNew(kind, capture = false, lift = null, captured = fa
 	const state = _rapierNotes, M = _rapierNotesModel();
 	if (kind === 'recording') { _rapierRecorderOpen(true); return; }
 	if (kind === 'drawing' && !capture) return _rapierNotesNewDrawing(lift);
-	const text = '';
+	const text = kind === 'list' ? '- [ ] \n' : '';
 	const names = Object.keys(state.index.notes);
 	let file;
 	try {
@@ -6059,6 +6125,11 @@ async function _rapierNotesNew(kind, capture = false, lift = null, captured = fa
 	if (lift && kind !== 'note') { await lift.grown; if (state.current === file) _rapierNotesDrawOver(lift, () => _rapierNotesTrigger(kind, true)); else lift.drop(); return true; }
 	if (kind === 'note' && typeof rapierInsertBlock === 'function') { try { if (rapier.view.mode !== 'edit' && typeof rapierSetMode === 'function') rapierSetMode('edit', { announce: false }); if (!rapier.document.blocks.length) rapierInsertBlock('paragraph', { immediateFocus: true }); } catch (_) {} }
 	if (kind === 'note') _rapierNotesHeadStart();
+	if (kind === 'list') {
+		if (rapier.view.mode !== 'edit') rapierSetMode('edit', {announce: false});
+		const first = rapier.document.blocks[0];
+		if (first) _enterBlockEditAtOffset(first.id, Infinity);
+	}
 	if (kind === 'drawing' || kind === 'picture') {
 		requestAnimationFrame(() => requestAnimationFrame(() => { if (state.current === file) _rapierNotesTrigger(kind, true); }));
 	}
@@ -6830,7 +6901,7 @@ async function _rapierNotesOpen(capture = false, {unseen = false, guard, departu
 	state.opening = true;
 	let lift = null, presented = false;
 	try {
-	if (!kept && state.mode && state.current && !state.open) { try { await _rapierNotesFlush(); } catch (_) { return; } }
+	if (!kept && state.mode && state.current && !state.open) { try { await _rapierNotesFlush({replacing: true}); } catch (_) { return; } }
 	if (guard && !guard()) return false;
 	if (_rapierNotesReturnToCards()) {
 		if (!unseen) queueMicrotask(() => globalThis.RapierPlatform?.host?.reviewFinished?.('saved-document-left'));
@@ -6843,7 +6914,7 @@ async function _rapierNotesOpen(capture = false, {unseen = false, guard, departu
 	const surface = _rapierNotesEnsure();
 	try { await _rapierNotesReady(); } catch (error) { lift?.end(); _rapierNotesStartClass(false); showToast(String(error.message || error), 'error'); return; }
 	if (guard && !guard()) return false;
-	if (!kept) { try { await _rapierNotesFlush(); } catch (_) { lift?.end(); _rapierNotesStartClass(false); return; } }
+	if (!kept) { try { await _rapierNotesFlush({replacing: back}); } catch (_) { lift?.end(); _rapierNotesStartClass(false); return; } }
 	if (state.loading) await state.loading;
 	if (guard && !guard()) return false;
 	const warm = back && !!state.index && state.loadGen > 0 && !state.reloading;
@@ -7668,7 +7739,7 @@ async function _rapierNotesRemindConfirm(at, files) {
     }
 }
 _rapierNotesPart = Object.freeze({
-	state: _rapierNotes, pending: _rapierNotesPending, store: _rapierNotesStore, fields: _rapierNotesFields,
+	state: _rapierNotes, pending: _rapierNotesPending, admitInverse: _rapierNotesAdmitInverse, store: _rapierNotesStore, fields: _rapierNotesFields,
 	search: globalThis.RapierNotesSearch, syncSession: globalThis.RapierNotesSyncSession, get sync() { return _rapierNotesSyncUi; },
 	open: _rapierNotesOpen, openNote: _rapierNotesOpenNote, leaveNote: _rapierNotesLeaveNote, editor: _rapierNotesEditor, documentBound: _rapierNotesDocumentBound,
 	currentFile: _rapierNotesCurrentFile, flush: _rapierNotesFlush, back: _rapierNotesHandleBack, backOver: _rapierNotesBackOver,

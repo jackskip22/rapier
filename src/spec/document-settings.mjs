@@ -5,6 +5,87 @@ import {normalizeFontFamily, fontFamilyCss, FONT_STACKS} from './md-marks.mjs';
 const NUMBER = /^(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
 export const DOCUMENT_LEADING = 1.75 / 1.1;
 
+export const SPACING_TYPES = Object.freeze(['paragraph', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+	'list', 'item', 'table', 'picture', 'drawing', 'quote', 'code', 'rule', 'footnote', 'toc']);
+export const SPACING_PRESETS = Object.freeze({compact: .7, standard: 1, roomy: 1.5});
+const SPACING_SELECTORS = Object.freeze({paragraph: 'p', h1: 'h1', h2: 'h2', h3: 'h3', h4: 'h4', h5: 'h5', h6: 'h6',
+	list: ':is(ul,ol)', item: 'li', table: ':is(table,.table-scroll-wrap)', picture: 'p[data-md-picture]',
+	drawing: ':is(.diagram-block,p[data-md-picture]:has(img[data-md-svg],img[src^="data:image/svg+xml"]))', quote: 'blockquote',
+	code: 'pre', rule: 'hr:not(.footnotes-sep):not([data-md-break])', footnote: '.footnotes', toc: '.rapier-jump-list'});
+const HEADING_LINE = [2 / 2.6, 1.5 / 1.9, 1.2 / 1.5, 1 / 1.25, .9 / 1.1, .82];
+
+export function normalizeDocumentSpacing(value) {
+	if (typeof value === 'string') {
+		if (Object.hasOwn(SPACING_PRESETS, value)) value = {preset: value};
+		else { try { value = JSON.parse(value); } catch (_) { return null; } }
+	}
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+	const result = {};
+	for (const [key, entry] of Object.entries(value)) {
+		if (key === 'preset') {
+			if (!Object.hasOwn(SPACING_PRESETS, entry)) return null;
+			result.preset = entry; continue;
+		}
+		if (!SPACING_TYPES.includes(key) || !entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
+		const row = {};
+		for (const [field, number] of Object.entries(entry)) {
+			if (!['before', 'after', 'line'].includes(field) || typeof number !== 'number' || !Number.isFinite(number) ||
+				number < (field === 'line' ? .5 : 0) || number > (field === 'line' ? 4 : 720)) return null;
+			row[field] = number;
+		}
+		result[key] = Object.freeze(row);
+	}
+	return Object.freeze(result);
+}
+
+export function documentSpacing(settings, kind = 'paragraph') {
+	const type = SPACING_TYPES.includes(kind) ? kind : 'paragraph', spacing = settings?.spacing;
+	const preset = spacing?.preset || 'standard', scale = SPACING_PRESETS[preset];
+	const size = (settings?.fontsize?.unit || 1.1) / 1.1;
+	const heading = /^h([1-6])$/.exec(type), leading = settings?.linestretch?.factor ??
+		(preset === 'compact' ? 1.3 : preset === 'roomy' ? 1.85 : DOCUMENT_LEADING);
+	const before = heading ? 15 : type === 'footnote' ? 9 : 0;
+	const after = heading ? 3 : type === 'paragraph' ? 6 : type === 'item' ? 3 : type === 'footnote' ? 0 : 9;
+	const line = heading ? leading * HEADING_LINE[Number(heading[1]) - 1] : type === 'code' ? leading * .75 / .7386 : leading;
+	if (settings?.word) return {before: (heading ? 12 : type === 'footnote' ? 9 : 0) * scale,
+		after: (heading ? 6 : type === 'paragraph' ? 8 : type === 'item' || type === 'footnote' ? 0 : 9) * scale,
+		line: leading, ...spacing?.[type]};
+	return {before: before * scale * size, after: after * scale * size, line, ...spacing?.[type]};
+}
+
+export function wordDocumentSettings(settings) {
+	return {...settings, word: true, fontsize: settings?.fontsize || fontSize('11pt'),
+		mainfont: settings?.mainfont || documentFont('Calibri'), sansfont: settings?.sansfont || documentFont('Calibri'),
+		linestretch: settings?.linestretch || leading('1.08')};
+}
+export function documentHeadingSize(settings, level) {
+	const body = (settings?.fontsize?.unit || 1.1) * 12;
+	return body * (settings?.word ? [16/11,13/11,12/11,1,1,1] : [2.6,1.9,1.5,1.25,1.1,1])[level - 1];
+}
+
+export function documentSpacingCss(settings, scope = '.md-render', defaults = false) {
+	if (!defaults && !settings?.spacing && !settings?.linestretch && !settings?.fontsize) return '';
+	const length = points => 'calc(' + Number((points / 12).toFixed(8)) + ' * var(--md-unit))';
+	let css = '';
+	for (const type of SPACING_TYPES) {
+		const row = documentSpacing(settings, type), selector = scope + ' ' + SPACING_SELECTORS[type];
+		css += selector + '{margin-block:' + length(row.before) + ' ' + length(row.after) + ';line-height:' + row.line + '}';
+		if (settings?.word && /^h[1-6]$/.test(type)) css += selector + '{font-size:' + length(documentHeadingSize(settings, Number(type[1]))) + '}';
+	}
+	css += scope + ' :is(li,td,th,blockquote)>:last-child{margin-bottom:0}' +
+		scope + ' li:last-child{margin-bottom:0}' + scope + ' li>:is(ul,ol){margin-bottom:0}' +
+		scope + ' .table-scroll-wrap>table{margin-block:0}' +
+		scope + ' pre{font-size:calc(var(--md-text-body) * .7386)}' +
+		scope + ' pre code{line-height:inherit}' + scope + ' .footnotes{padding-top:0}' +
+		scope + ' .footnotes-list{margin-block:0}' + scope + ' blockquote:not(.callout){padding-block:0}';
+	const item = documentSpacing(settings, 'item');
+	css += scope + ' ul.rapier-jump-list>li{padding-block:0;margin-block:' + length(item.before) + ' ' + length(item.after) + '}' +
+		scope + ' ul.rapier-jump-list>li:last-child{margin-bottom:0}';
+	for (const [type, selector] of [['item','li>p'], ['table',':is(td,th)>p'], ['quote','blockquote>p'], ['footnote','.footnotes p'], ['toc','.rapier-jump-list li']])
+		css += scope + ' ' + selector + '{line-height:' + documentSpacing(settings, type).line + '}';
+	return css;
+}
+
 function measure(value, positive = false) {
 	const text = unquote(value);
 	const number = NUMBER.test(text) ? Number(text) : NaN;
@@ -35,7 +116,7 @@ const PAPERS = Object.freeze({
 });
 const EMPTY = Object.freeze({
 	title: null, subtitle: null, lang: null, fontsize: null, mainfont: null, sansfont: null, monofont: null, defaultfont: null, linestretch: null,
-	papersize: null, geometry: null, pagestyle: null,
+	papersize: null, geometry: null, pagestyle: null, spacing: null,
 });
 
 function unquote(value) {
@@ -246,6 +327,7 @@ export function readDocumentSettings(markdown) {
 	return Object.freeze({
 		title: take('title') || null, subtitle: take('subtitle') || null, lang: languageTag(take('lang')),
 		fontsize, mainfont, sansfont, monofont, defaultfont, linestretch, papersize, geometry,
+		spacing: normalizeDocumentSpacing(take('spacing')),
 		pagestyle: page === 'plain' || page === 'empty' ? page : null,
 	});
 }
@@ -264,14 +346,14 @@ export function updateDocumentSettings(markdown, patch) {
 		text: (source[field.start - 1] === ':' ? ' ' : '') + text + (source[field.end] === '#' ? ' ' : '')});
 	for (const [key, supplied] of Object.entries(patch || {})) {
 		const font = ['mainfont', 'sansfont', 'monofont', 'defaultfont'].includes(key);
-		if (!font && !['fontsize', 'linestretch'].includes(key)) throw new TypeError('Unknown document setting: ' + key);
+		if (!font && !['fontsize', 'linestretch', 'spacing'].includes(key)) throw new TypeError('Unknown document setting: ' + key);
 		const matches = fields.filter(item => item.key === key);
 		if (matches.length > 1) throw new RangeError('Duplicate document setting: ' + key);
 		const field = matches[0];
-		const value = supplied === null ? null : font ? documentFont(supplied) : key === 'fontsize' ? fontSize(supplied) : leading(supplied);
+		const value = supplied === null ? null : font ? documentFont(supplied) : key === 'fontsize' ? fontSize(supplied) : key === 'spacing' ? normalizeDocumentSpacing(supplied) : leading(supplied);
 		if (supplied !== null && !value) throw new TypeError('Invalid document setting: ' + key);
-		const encoded = value === null ? '' : font ? JSON.stringify(value.family) : key === 'fontsize' ? value.step : String(value.factor);
-		if (value !== null && before[key] && (font ? before[key].family === value.family : key === 'fontsize' ? same(before.fontsize.unit, value.unit) : before.linestretch.factor === value.factor)) continue;
+		const encoded = value === null ? '' : font ? JSON.stringify(value.family) : key === 'fontsize' ? value.step : key === 'spacing' ? JSON.stringify(value) : String(value.factor);
+		if (value !== null && before[key] && (font ? before[key].family === value.family : key === 'fontsize' ? same(before.fontsize.unit, value.unit) : key === 'spacing' ? JSON.stringify(before.spacing) === encoded : before.linestretch.factor === value.factor)) continue;
 		if (key === 'fontsize' && value !== null && fontSize(encoded)?.unit !== value.unit) refuse(key);
 		if (!field) { if (value !== null) append.push(key + ': ' + encoded + eol); continue; }
 		if (field.opaque || field.invalid || field.multiline || field.block) refuse(key);
@@ -311,7 +393,7 @@ export function documentSettingsStyle(settings, defaultFont) {
 	if (sans) decls.push('--md-font-sans:' + (sans.css || fontFamilyCss(sans.family)));
 	if (main) decls.push('font-family:' + (main.css || fontFamilyCss(main.family)));
 	if (mono) decls.push('--md-font-mono:' + (mono.css || fontFamilyCss(mono.family)));
-	return decls.length ? '.md-render{' + decls.join(';') + '}' : '';
+	return (decls.length ? '.md-render{' + decls.join(';') + '}' : '') + documentSpacingCss(settings);
 }
 
 export function documentSettingsPageRule(settings) {

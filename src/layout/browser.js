@@ -1163,12 +1163,12 @@ const _rapierImageFlow = (() => {
       if (hasProse(node)) return 'prose';
       if (!node.hidden && pictureOnly(node)) return 'picture';
       return null;
-    });
+    }, _rapierAdjacentBlockWrapper);
   }
 
   function nextProse(wrapper, direction = 1) {
-    for (let node = wrapper?.[direction > 0 ? 'nextElementSibling' : 'previousElementSibling']; node;
-      node = node[direction > 0 ? 'nextElementSibling' : 'previousElementSibling']) {
+    for (let node = _rapierAdjacentBlockWrapper(wrapper, direction); node;
+      node = _rapierAdjacentBlockWrapper(node, direction)) {
       if (!node.classList.contains('block-wrapper')) continue;
       if (emptyParagraph(node)) continue;
       if (node.classList.contains('block-wrapper--editing')) return editProse(node) ? node : null;
@@ -1195,8 +1195,8 @@ const _rapierImageFlow = (() => {
 
     for (const wrapper of [...wrappers]) {
       if (!wrapper) continue;
-      for (const side of ['nextElementSibling', 'previousElementSibling']) {
-        for (let node = wrapper[side]; node?.classList?.contains('block-wrapper') && pictureOnly(node); node = node[side]) {
+      for (const direction of [1, -1]) {
+        for (let node = _rapierAdjacentBlockWrapper(wrapper, direction); node && pictureOnly(node); node = _rapierAdjacentBlockWrapper(node, direction)) {
           if (hasLayoutImage(node)) wrappers.add(node);
         }
       }
@@ -1269,7 +1269,7 @@ const _rapierImageFlow = (() => {
     for (const element of document.elementsFromPoint(x, y)) {
       if (element === host) break;
       if (element.tagName === 'IMG' || element.classList?.contains('rapier-flow-tail')) continue;
-      const wrapper = element.closest?.('#editor-blocks > .block-wrapper');
+      const wrapper = element.closest?.(':is(#editor-blocks, #editor-blocks > .block-sleep-group) > .block-wrapper');
       if (wrapper && rect(wrapper).height >= 1) return wrapper;
     }
     return null;
@@ -1281,7 +1281,7 @@ const _rapierImageFlow = (() => {
     if (!pending && !moving && !anchorWrapper && !ownedStyles.size && !projections.size && !lastPictures.length &&
       !host?.querySelector('img[data-rapier-image-layout]')) { frame = 0; positionGrip(); return; }
     const settledWrapper = !pending && !moving && !anchorWrapper && performance.now() - settledAt < 400 && settledImage?.isConnected
-      ? settledImage.closest('#editor-blocks > .block-wrapper') : null;
+      ? settledImage.closest(':is(#editor-blocks, #editor-blocks > .block-sleep-group) > .block-wrapper') : null;
     const viewport = pending ? null : moving ? _rapierCaptureEditorViewport(gestureAnchor() || viewAnchor(), false, true)
       : anchorWrapper?.isConnected ? _rapierCaptureEditorViewport(anchorWrapper, false, true)
       : settledWrapper ? _rapierCaptureEditorViewport(settledWrapper, false, true)
@@ -2179,7 +2179,7 @@ const _rapierImageFlow = (() => {
   function freeStep(own, direction) {
     let node = own;
     for (;;) {
-      node = node?.[direction > 0 ? 'nextElementSibling' : 'previousElementSibling'];
+      node = _rapierAdjacentBlockWrapper(node, direction);
       if (!node) return null;
       if (node.classList?.contains('block-wrapper') && !node.hidden &&
         !node.classList.contains('block-wrapper--metadata') && _rapierBoundBlock(node)) return node;
@@ -2219,9 +2219,9 @@ const _rapierImageFlow = (() => {
     else if (source[removeStart - 1] === ' ' && removeStart - 1 >= from.start) removeStart--;
     if (removeEnd <= removeStart) return false;
     const splices = [{pos: removeStart, removed: source.slice(removeStart, removeEnd), inserted: ''}];
-    const wrapper = document.querySelector('#editor-blocks > .block-wrapper[data-block-id="' + record.block.id + '"]');
-    let previous = wrapper?.previousElementSibling;
-    while (previous && (!previous.classList.contains('block-wrapper') || previous.hidden)) previous = previous.previousElementSibling;
+    const wrapper = document.querySelector(':is(#editor-blocks, #editor-blocks > .block-sleep-group) > .block-wrapper[data-block-id="' + record.block.id + '"]');
+    let previous = _rapierAdjacentBlockWrapper(wrapper, -1);
+    while (previous?.hidden) previous = _rapierAdjacentBlockWrapper(previous, -1);
     const area = rect(host);
     const viewport = previous && rect(previous).bottom > area.top && rect(previous).top < area.bottom
       ? _rapierCaptureEditorViewport(previous, true, true) : _rapierCaptureEditorViewport();
@@ -3074,7 +3074,7 @@ const _rapierImageFlow = (() => {
       const target = record.target?.nodeType === 1 ? record.target : record.target?.parentElement;
       const edit = target?.closest?.('.block-edit');
       if (!edit) return null;
-      const owner = edit.closest('#editor-blocks > .block-wrapper');
+      const owner = edit.closest(':is(#editor-blocks, #editor-blocks > .block-sleep-group) > .block-wrapper');
       if (!owner || (wrapper && wrapper !== owner)) return null;
       wrapper = owner;
     }
@@ -3140,7 +3140,7 @@ const _rapierImageFlow = (() => {
     if (caretPlaced && selection?.anchorNode === caretPlaced.anchor && selection.anchorOffset === caretPlaced.anchorOffset &&
         selection.focusNode === caretPlaced.focus && selection.focusOffset === caretPlaced.focusOffset) return;
     const anchor = selection?.anchorNode, element = anchor?.nodeType === 1 ? anchor : anchor?.parentElement;
-    const wrapper = element?.closest?.('#editor-blocks > .block-wrapper');
+    const wrapper = element?.closest?.(':is(#editor-blocks, #editor-blocks > .block-sleep-group) > .block-wrapper');
     if (wrapper && wrapper === element.closest('.block-wrapper--editing') && !wrapper.querySelector('img[data-rapier-image-layout]') &&
         wrappedBlock(wrapper) && !frame) replanWrapper = wrapper;
     schedule();

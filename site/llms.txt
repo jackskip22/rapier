@@ -16,7 +16,7 @@ Muse uses OAuth at `https://mcp.rapier.website/muse`, without an embedded editor
 - [4. Put the editor or reader in your app](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed): install `rapier-embed` and call `Rapier.mount`. Your app owns storage and revisions. `agent: true` gives your own agent the same tools over WebMCP; the reader has no agent tools.
 - [5. Keep pictures, drawings and layout in one Markdown file](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-markdown-kit): `rapier-markdown-kit` reads, writes and renders Self-contained Markdown. Anything beyond CommonMark and GFM is an HTML comment or a reference definition that other apps ignore.
 - [6. Respect Will/1](https://rapier.website/will): `<!-- will/1 keep -->` … `<!-- /will -->` marks text an agent must leave alone; `append` allows additions at its end; `edit` allows changes within the task. Rapier enforces it on every agent edit. Will can narrow your task, never widen it.
-- [7. Export a file](https://rapier.website/agents): `export` writes `markdown` (exact source), `html` (the offline editor), `txt`, `page` (a web page), `docx` or `pdf` (with the source attached). Complete pages, Word and PDF need an open editor or the server's renderer. Hosted exports are at most 16 MiB; give the person the `resource_link.uri` download URL.
+- [7. Export a file](https://rapier.website/agents): `export` writes `markdown` (exact source), `html` (the offline editor), `txt`, `page` (a web page), `docx` or `pdf` (with the source attached). `page`, `docx` and `pdf` need the person's open editor; a self-hosted `rapier-server` renders them with its own Chromium. Hosted exports are at most 16 MiB; give the person the `resource_link.uri` download URL.
 - [8. Encode JPEG XL](https://github.com/jackskip22/rapier-jxl): `rapier-jxl` encodes pixels, photos and existing JPEGs, offline, anywhere JavaScript runs.
 - [9. Run the door on your own storage](https://github.com/jackskip22/rapier/tree/main/server): `rapier-server` serves the same tools over your own folder or S3-compatible bucket.
 
@@ -46,7 +46,7 @@ For a painting, the person needs a visible full editor with WebGPU: open `editor
 
 - [Agent guide](https://rapier.website/agents): every tool, workflow and limit.
 - [Tool catalog](https://rapier.website/AGENT-TOOLS.json): each tool's schema and effect. The connected server's `tools/list` is what your connection offers.
-- [Embedding](https://github.com/jackskip22/rapier-plugins/blob/main/npm/rapier-embed/README.md): the three builds, `Rapier.mount`, styling and plugins. The [embed contract](https://github.com/jackskip22/rapier/blob/main/docs/embed-contract.md) is the wire protocol.
+- [Embedding](https://github.com/jackskip22/rapier-plugins/blob/main/npm/rapier-embed/README.md): the editor and reader builds, `Rapier.mount`, styling and plugins. The [embed contract](https://github.com/jackskip22/rapier/blob/main/docs/embed-contract.md) is the wire protocol.
 - [Self-contained Markdown](https://rapier.website/markdown-standard): the file format.
 - [Will/1](https://rapier.website/will): the region standard, with a reference reader and a GitHub check.
 - [rapier-markdown-kit](https://github.com/jackskip22/rapier-plugins/blob/main/npm/rapier-markdown-kit/README.md): the format without the editor (MIT).

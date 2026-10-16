@@ -169,9 +169,9 @@ export function wrapTextBlock(element) {
 
 // The one wrap-owner rule (layout/browser.js, kit/render.mjs, editor/share.js): text after, else before, skipping pictures,
 // metadata and empty paragraphs; any other block is a barrier in that direction.
-export function wrapNeighbour(node, classify) {
-  for (const step of [n => n && n.nextElementSibling, n => n && n.previousElementSibling]) {
-    for (let sibling = step(node); sibling; sibling = step(sibling)) {
+export function wrapNeighbour(node, classify, step = (n, direction) => n && n[direction > 0 ? 'nextElementSibling' : 'previousElementSibling']) {
+  for (const direction of [1, -1]) {
+    for (let sibling = step(node, direction); sibling; sibling = step(sibling, direction)) {
       const kind = classify(sibling);
       if (kind && typeof kind === 'object') return kind.stop;
       if (kind === 'metadata') continue;

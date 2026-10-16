@@ -2,7 +2,7 @@ const _rapierDocumentImport = {active: null};
 
 function _rapierImportKind(name, mime = '') {
   mime = String(mime).toLowerCase().split(';')[0].trim();
-  if (/\.docx$/i.test(String(name)) || mime === RAPIER_DOCX_MIME) return 'docx';
+  if (/\.do[ct]x$/i.test(String(name)) || mime === RAPIER_DOCX_MIME || mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.template') return 'docx';
   if (/\.pdf$/i.test(String(name)) || mime === 'application/pdf') return 'pdf';
   if (/\.(textpack|zip)$/i.test(String(name)) || ['application/zip', 'application/x-zip-compressed'].includes(mime)) return 'textpack';
   return null;
@@ -181,7 +181,7 @@ async function _rapierReadImportedDocument(file, name = file?.name || '') {
     };
     _rapierImportProgress(run, words);
     const reader = kind === 'docx' ? globalThis.RapierDocxImport.readDocx : globalThis.RapierPdf.readPdf;
-    const result = await reader(file, {mode, embedImage, checkCurrent, signal: work.signal, onProgress, work});
+    const result = await reader(file, {name, mode, embedImage, checkCurrent, signal: work.signal, onProgress, work});
     await work.checkpoint();
     let text = result.canonical;
     if (typeof text !== 'string') {

@@ -785,15 +785,27 @@ pagestyle: plain
   not limited to 10, 11 or 12pt, and not a global multiplier for explicit run sizes.
 - `linestretch`: a positive decimal factor, such as `1`, `1.5` or `2`, times the body size. It sets the line, and
   everything measured in lines follows it, including a picture's `lines` (see "The line").
+- `spacing`: `compact`, `standard`, `roomy`, or one JSON object on one line. For example:
+  `spacing: {"preset":"compact","paragraph":{"before":0,"after":6,"line":1.4},"h2":{"before":18,"after":4}}`.
+  `before` and `after` are points (0–720); `line` is a multiple of the element's type size (0.5–4).
+  Types are `paragraph`, `h1`–`h6`, `list`, `item`, `table`, `picture`, `drawing`, `quote`, `code`, `rule`,
+  `footnote`, and `toc`. Missing values use the named set, or `standard`. Adjacent block gaps use the
+  larger value. Explicit point values stay fixed when you change the body size. Word writes explicit
+  line values as exact point heights; its default lines remain minimum heights so inline pictures fit.
 - `papersize`: `letter`, `a4`, `a5` or `legal`.
 - `geometry`: `margin=` a nonnegative decimal length in `in`, `cm`, `mm` or `pt`, at most `6in` once converted.
 - `pagestyle`: `plain` (page numbers) or `empty`.
 - `title` and `subtitle`: the window title, the exported page's `<title>`, Word's document title and subject, and the
   PDF's title. The visible title is still the document's first `# ` heading.
 
-The view applies the type keys and ignores the page keys, since a scroll has no pages. The exported page applies the
+Rapier and Plain apply type and spacing keys. DOCX also uses the paper size and margins. The exported page applies the
 type keys and, when printed, the page keys. Word and the PDF apply all of them. Superscript and subscript are the
 standard's raw `<sup>` and `<sub>`.
+
+Use **Spacing** in Settings or the formatting commands to change these values with one Undo. DOCX layout
+uses Letter paper, one-inch margins, Calibri 11pt, and 1.08 line spacing unless your document sets them.
+Carlito substitutes for Calibri where needed. DOCX page boundaries are estimates; inspect the exported
+file for final pagination. Word cannot keep every interactive object or Rapier wrap contour.
 
 An equivalent `fontsize` request keeps that field's original source. Before changing it, the reference writer reads
 its own output with the same size reader and refuses with `RangeError` when the requested size can't be recovered.

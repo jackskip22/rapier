@@ -50,7 +50,7 @@ function _rapierDocumentPrintCss(hostSelector) {
 @page{size:auto;margin:12mm 14mm 14mm}
 @media print{
 	${p('.md-render')}{--md-color-line:#000000!important}
-	${list('.md-render h1','.md-render h2','.md-render h3','.md-render h4','.md-render h5','.md-render h6')}{break-after:avoid-page;page-break-after:avoid;color:#111}
+	${list('.md-render h1','.md-render h2','.md-render h3','.md-render h4','.md-render h5','.md-render h6')}{page-break-after:avoid;break-after:avoid-page;color:#111}
 	${list('.md-render p','.md-render li','.md-render blockquote')}{orphans:3;widows:3}
 	${p('.md-render img')}{max-width:100%!important;height:auto!important;break-inside:avoid-page}
 	${list('.md-render pre','.artifact-flat')}{white-space:pre-wrap!important;overflow-wrap:anywhere!important;word-break:break-word!important;overflow:visible!important;max-height:none!important}
@@ -62,7 +62,7 @@ function _rapierDocumentPrintCss(hostSelector) {
 	${list('.md-render th','.md-render td')}{overflow-wrap:anywhere;word-break:normal}
 	${p('.md-render thead')}{display:table-header-group}
 	${p('.md-render tfoot')}{display:table-footer-group}
-	${p('.md-render tr')}{break-inside:avoid-page;page-break-inside:avoid}
+	${p('.md-render tr')}{page-break-inside:avoid;break-inside:avoid-page}
 	${p('.md-render details>*:not(summary)')}{display:block!important}
 	${p('.md-render details')}{break-inside:auto}
 	${p('.md-render a')}{color:#111!important;text-decoration:underline}

@@ -10,7 +10,7 @@ import {buildLinkIndex, resolveLinkIndex, renameLinks} from './links.mjs';
 import {inspectTextConflicts, mapTextConflictVariants, canonicalJSON} from './merge.mjs';
 import {appendImportReceipt, finishImportReceipt, importUndoReadiness, planImportUndo, recordImportUndo, importUndoSections, prepareImportWrites, prepareImportHistory, recordImportSections} from './import-receipt.mjs';
 import {validRecordingName, recordingName, audioMime, rewriteRecordingNames, recordingsOf} from './audio.mjs';
-import {manifestName, parseManifest, parseCanonical, materialize, recordVersion, serializeManifest, readCanonical, freshCanonical, appendCanonical, carryCanonical, adoptCanonical, canonicalSources, createHistoryPreparation, controlsAct, thin, bindMedia, checkVersionMedia} from './history.mjs';
+import {manifestName, parseManifest, parseCanonical, materialize, recordVersion, serializeManifest, readCanonical, freshCanonical, appendCanonical, carryCanonical, adoptCanonical, canonicalSources, createHistoryPreparation, controlsAct, thin, bindMedia, checkVersionMedia, checkInverseMedia} from './history.mjs';
 import {applyReminderActions, changeReminders} from './model.mjs';
 import {restoreSnapshot as planSnapshot, restoreSnapshotStream as planSnapshotStream} from './restore.mjs';
 import {backupNames} from './backup-folder.mjs';
@@ -425,6 +425,17 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		}));
 		return admitted;
 	};
+	const checkEditorInverse = async ({file, id, text, ledger, inverse}) => {
+		const history = createHistoryPreparation();
+		ledger = history.captureLedger(ledger, text); inverse = copy(inverse);
+		return underLease(async lease => {
+			const current = await readCanonicalOwned(lease, {file, id}, history);
+			const manifest = history.parseManifest(await store.read('history/' + manifestName(current.id)), {noteId: current.id, now: clock()});
+			history.carryCanonical(manifest, ledger, text);
+			if (!isCodeFile(file)) await checkInverseMedia(manifest, ledger, {inverse, names: mediaNames, digest: path => storedFileDigest(store, path)});
+			return true;
+		});
+	};
 	const readCanonicalNote = async target => {
 		try {
 			return await underLease(async lease => {
@@ -539,6 +550,8 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 				const appended = ledger || !proved ? null : await history.appendCanonical(manifest, {text, metadata, undo, ...context, requestDigest, input: options.input === true});
 				if (appended?.replayed) { result = appended; return {index, historyPreparation: history}; }
 				const landed = !!carried?.unchanged;
+				const inverseMedia = !landed && (ledger || appended) && !isCodeFile(destination) ? await checkInverseMedia(manifest || parseManifest(prior, {noteId: id, now: clock()}), ledger || appended.ledger, {names: mediaNames, digest: path => storedFileDigest(store, path)}) : manifest?.media;
+				await active();
 				const stale = !proved || !landed && (!!carryFault || !admitted.includes(actual) || expectedLedgers.length > 0 && !expectedLedgers.includes(proved.ledger.sha256));
 				if (stale) {
 					if (undo || options.canonical || !ledger && expectedLedgers.length) throw fail('notes_changed', 'The note changed since its exact source and history were read.');
@@ -548,8 +561,9 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 					const keptName = isCodeFile(destination) ? codeFileName(stem + ' kept' + ext, names, {ascii: store.ascii}) : noteFileName(stem + ' kept', names, {ascii: store.ascii});
 					const now = clock(), made = createEntry(index, keptName, {created: now, modified: now, keptFrom: {file: destination, digest: actual}});
 					const keptId = made.notes[keptName].id, start = history.parseManifest(null, {noteId: keptId, now});
-					const first = ledger ? history.adoptCanonical(start, ledger, text)
+					let first = ledger ? history.adoptCanonical(start, ledger, text)
 						: await history.appendCanonical(history.freshCanonical(start, {filename: keptName, docKind: isCodeFile(keptName) ? 'code' : 'markdown'}), {text, ...context, requestDigest});
+					if (inverseMedia?.length) first = {...first, manifest: {...first.manifest, media: inverseMedia}};
 					const source = await history.source(text);
 					made.notes[keptName].canonicalHistory = first.ledger.sha256;
 					made.notes[keptName].revision = 'sha256:' + source.hash;
@@ -559,6 +573,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 					return {kind: 'canonical-create', index: made, writes: [{file: keptName, bytes: source.bytes, createOnly: true}, ...writes], canonical: [canonicalProof(keptName, keptId, first.ledger)], historyPreparation: history};
 				}
 				result = carried ?? appended;
+				if (inverseMedia !== result.manifest.media) result = {...result, manifest: {...result.manifest, media: inverseMedia}};
 				if (result.unchanged && !index.notes[destination].trashed) return {index, historyPreparation: history};
 				text = result.text ?? text;
 				await options.sourceGuard?.(proved.text, text, proved.metadata); await active();
@@ -1183,5 +1198,5 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 	const recordingCustody = createRecordings({store, owned, underLease, locks, scope, shared: isShared, clock, audioName, discardAudio,
 		canOwn: () => store.writable !== false && (!isShared() || !!(locks?.request && channel?.postMessage)), readSnapshot: () => owner.read(scope)});
 	return {beginRecording: recordingCustody.begin, recoverRecordings: recordingCustody.recover, openRecording: recordingCustody.open, readRecording: recordingCustody.preview, acknowledgeRecording: recordingCustody.acknowledge,
-		owner, store, scope, read, readCanonical: readCanonicalNote, rebuildIndex, metadata, controls, controlsUndo, reminderActions, reminderChange, leaveVault, create, createShared, save, recordHistory, historyInventory, tidyHistory, rename, trash, discardEmpty, mark, createAudio, createAttachment, attachmentReferences, fileReferences, reviewAttachmentDeletion, deleteAttachment, reviewRecordingDeletion, deleteRecording, asset, discardAudio, importBatch, checkpointImportReceipt, readImportReceipt, restoreSnapshot, previewImportUndo, undoImport, backupSnapshot, capture, readFile, settle, get deviceId() { return deviceId; }, get pending() { return pending.size; }, close: () => { recordingCustody.close(); owner.close(); channel?.close?.(); }};
+		owner, store, scope, read, readCanonical: readCanonicalNote, checkEditorInverse, rebuildIndex, metadata, controls, controlsUndo, reminderActions, reminderChange, leaveVault, create, createShared, save, recordHistory, historyInventory, tidyHistory, rename, trash, discardEmpty, mark, createAudio, createAttachment, attachmentReferences, fileReferences, reviewAttachmentDeletion, deleteAttachment, reviewRecordingDeletion, deleteRecording, asset, discardAudio, importBatch, checkpointImportReceipt, readImportReceipt, restoreSnapshot, previewImportUndo, undoImport, backupSnapshot, capture, readFile, settle, get deviceId() { return deviceId; }, get pending() { return pending.size; }, close: () => { recordingCustody.close(); owner.close(); channel?.close?.(); }};
 }

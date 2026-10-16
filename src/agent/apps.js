@@ -196,7 +196,7 @@
 
   async function joinLive() {
     const link = liveBindings.get(token);
-    if (!link || !base || flight) return false;
+    if (!link || !base || flight || globalThis.RapierWorkerExecution.workerStartupRefused('rapier-live')) return false;
     if (liveJoin) return liveJoin;
     const documentId = base.documentId;
     holdBaseLedger();
@@ -998,7 +998,7 @@
     if (viewed.size > 64) viewed.delete(viewed.values().next().value);
     viewFlight = {document: token, expectedRevision: base.revision, viewId: intent.id,
       status: ended ? 'expired' : result?.ok ? 'presented' : 'refused',
-      ...(ended ? {reason: ended.reason || 'pointer_expired'} : result?.ok ? {} : {reason: String(result?.reason || 'view_unavailable').slice(0, 128)})};
+      ...(ended ? {reason: ended.reason || 'pointer_expired'} : result?.ok ? (result.reason ? {reason: String(result.reason).slice(0, 128)} : {}) : {reason: String(result?.reason || 'view_unavailable').slice(0, 128)})};
     await acknowledgeView();
   }
 
@@ -1492,6 +1492,7 @@
             if (!await sync()) return false;
             await loadIncoming(false, null, force);
           }
+          if (!joined && status === 'ready') setStatus('reconnecting');
         }
       } else {
         const local = await host.snapshot();

@@ -51,6 +51,7 @@
     } catch (_) { return {keys: new Set(), spans: []}; }
   }
   function isSeen(place) {
+    if (place.wordId != null) return false;
     return seen.keys.has(place.key) || (place.kind === 'text' && place.coverage?.length > 0 &&
       place.coverage.every(range => seen.spans.some(span => span.actId === range.actId && span.from <= range.from && span.to >= range.to)));
   }
@@ -211,7 +212,18 @@
       const others = records.some(record => otherAuthor(record.transaction?.actor));
       const projected = globalThis.RapierLedger.historyPlaces(input, others ? blockRows() : []);
       if (!projected.ok) return projected;
-      const fallback = await snapshotPlaces(input, blockRows, id, rev, gen), next = fallback.places;
+      const word = globalThis.RapierDocxImport.wordReview(source);
+      const fallback = await snapshotPlaces(input, blockRows, id, rev, gen), next = fallback.places.filter(place => place.from < word.body.length);
+      for (const row of word.changes) {
+        const block = blockRows().find(block => block.from <= row.from && row.from < block.to)
+          || blockRows().find(block => block.from >= row.from) || blockRows().filter(block => block.from < word.body.length).at(-1);
+        if (!block) continue;
+        next.push({kind: 'text', key: JSON.stringify(['word', row.id]), wordId: row.id,
+          blockId: block.id, from: block.from, to: block.to, displayAfter: [row.from, row.to],
+          before: source.slice(block.from, row.from) + row.before + source.slice(row.to, block.to),
+          after: block.raw, current: block.raw, actor: {kind: 'human', name: row.author},
+          createdAt: row.date ? Date.parse(row.date) : null});
+      }
       if (!valid()) { dirty = true; schedule(); return {ok: false, reason: 'document_changed'}; }
       for (const block of projected.blocks) {
         if (globalThis.RapierImageAssets.isAssetBlock(block.source)) continue;
@@ -309,7 +321,7 @@
     const obscured = rapier.compare.active || document.hidden || !bounds.height ||
       document.getElementById('settings-overlay')?.getAttribute('aria-hidden') === 'false';
     let left = Math.max(16, bounds.left + 16), right = bounds.right - 16;
-    const firstBlock = host.querySelector(':scope > .block-wrapper');
+    const firstBlock = host.querySelector(':is(:scope, :scope > .block-sleep-group) > .block-wrapper');
     const firstRead = firstBlock?.querySelector('.rapier-changes-before') || firstBlock?.querySelector('.block-read');
     if (!inDraw() && rapier.view.mode !== 'source' && firstRead) {
       const readBox = firstRead.getBoundingClientRect(); left = Math.max(16, readBox.left); right = readBox.right;
@@ -369,6 +381,7 @@
     scheduleLocate();
   }
   function beforeText(place) {
+    if (place.wordId != null) return place.before;
     if (place.actId || !snapshot) return place.before;
     let [from, to] = place.displayAfter, value = snapshot.after.slice(from, to);
     for (const row of RapierDiff.restoreEdits(snapshot.before, snapshot.after, snapshot.result, place.diffIds)) {
@@ -384,7 +397,8 @@
   async function renderBefore(place) {
     const ledger = globalThis.RapierLedger, input = {source: _rapierSourceText(), records: rapier.undo.ledger,
       revision: rapier.revision.settled, earliestRevision: rapier.undo.earliestRevision, metadata: _rapierDocumentMetadata()};
-    const history = place.actId ? ledger.sourceBefore(input, place.actId) : {ok: !!snapshot, source: snapshot?.before};
+    const history = place.wordId != null ? {ok: true, source: globalThis.RapierDocxImport.wordReview(input.source).base}
+      : place.actId ? ledger.sourceBefore(input, place.actId) : {ok: !!snapshot, source: snapshot?.before};
     if (!history.ok) throw new Error(history.reason);
     const references = _rapierBuildReferenceIndex(await splitMarkdownBlocksAsync(history.source), history.source);
     const node = document.createElement('div');
@@ -490,7 +504,8 @@
     who.append(name, document.createTextNode(' · ' + String(index + 1).padStart(2, '0') + ' / ' + String(rows.length).padStart(2, '0')));
     who.title = place.act?.turnLabel || place.act?.label || '';
     const undoButton = button('Undo', place.act?.turnId ? 'Undo this turn, keeping later edits' : 'Undo this change, keeping later edits');
-    const doneButton = button('Done', 'Mark this change seen');
+    const doneButton = button('Done', place.wordId != null ? 'Accept this Word change' : 'Mark this change seen');
+    if (place.wordId != null) undoButton.setAttribute('aria-label', 'Reject this Word change');
     undoButton.addEventListener('click', () => void undo(key)); doneButton.addEventListener('click', () => done(key));
     controls.append(who, undoButton, doneButton);
     (place.kind === 'drawing' ? layer : home).append(controls);
@@ -510,7 +525,15 @@
     const place = currentRows().find(place => place.key === key);
     if (!place || documentId !== identity())
       return {ok: false, reason: 'act_unavailable'};
+    if (place.wordId != null) return decideWord(place, true);
     remember([place]); close(); renderMarks(); return {ok: true, documentId, key};
+  }
+  async function decideWord(place, accept) {
+    const intent = {documentId, revision, generation, source: _rapierSourceText()};
+    close();
+    const result = await _rapierDecideWordChange(intent, place.wordId, accept);
+    if (result.outcome !== 'applied') showToast(result.message || 'The document changed. Open this change again.', 'info');
+    dirty = true; await refresh(); return result;
   }
   async function undo(key = active?.key) {
     const selected = currentRows().find(place => place.key === key);
@@ -522,6 +545,7 @@
       return {ok: false, reason: 'document_changed'};
     const rows = currentRows(), place = rows.find(row => row.key === key), priorRows = [...places, ...rows];
     if (!place) return {ok: false, reason: 'act_unavailable'};
+    if (place.wordId != null) return decideWord(place, false);
     const id = documentId;
     if (active?.controls) for (const control of active.controls.querySelectorAll('button')) control.disabled = true;
     const target = place.kind === 'drawing' ? globalThis.RapierChangesDraw.undoTarget(place)
@@ -576,7 +600,7 @@
     }
     if (target.closest?.('.rapier-changes-before')) { event.preventDefault(); event.stopPropagation(); return; }
     cancelHold();
-    const home = target.closest?.('#editor-blocks > .block-wrapper');
+    const home = target.closest?.(':is(#editor-blocks, #editor-blocks > .block-sleep-group) > .block-wrapper');
     const place = home && currentRows().find(row => row.blockId === Number(home.dataset.blockId) && row.kind === 'text');
     if (!place || target.closest('button, a, input, textarea, .block-edit')) return;
     hold = {x: event.clientX, y: event.clientY, timer: setTimeout(() => {
@@ -606,6 +630,8 @@
     seen = stored(documentId); if (active && isSeen(active.place)) close(); renderMarks();
   });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) schedule(); else close(); });
+  const settings = document.getElementById('settings-overlay');
+  if (settings) new MutationObserver(scheduleLocate).observe(settings, {attributes: true, attributeFilter: ['aria-hidden']});
   new ResizeObserver(scheduleLocate).observe(host);
   new MutationObserver(() => { if (active && !active.preview?.isConnected && active.place.kind !== 'drawing') close(); schedule(); })
     .observe(host, {childList: true});

@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 export function packedHeader(text) {
-  const marker = /\/\* RAPIER_VENDOR_GROUP bytes=(\d+) stored=(gzip|brotli)\+base124(?: inflated=(\d+) crc32=([0-9a-f]{8}))?(?: prefilter=([a-z0-9]+))? \*\//.exec(text);
+  const marker = /\/\* RAPIER_VENDOR_GROUP bytes=(\d+) stored=(?:(gzip|brotli)\+base124|plain)(?: inflated=(\d+) crc32=([0-9a-f]{8}))?(?: prefilter=([a-z0-9]+))? \*\//.exec(text);
   const fail = () => { throw new Error('Packed header is invalid'); };
   if (!marker) fail();
-  const bytes = Number(marker[1]), compression = marker[2], prefilter = marker[5] || '';
+  const bytes = Number(marker[1]), compression = marker[2] || 'plain', prefilter = marker[5] || '';
+  if (compression === 'plain' && (prefilter || marker[3] !== undefined)) fail();
   if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > 64 * 1024 * 1024 || prefilter && prefilter !== 'words2') fail();
   if ((compression === 'brotli') !== (marker[3] !== undefined)) fail();
   const inflated = marker[3] === undefined ? null : Number(marker[3]);
@@ -13,4 +14,7 @@ export function packedHeader(text) {
   const to = text.indexOf('\n/* RAPIER_VENDOR_GROUP_END */', from);
   if (text[from - 1] !== '\n' || to < from) throw new Error('Packed resource is incomplete');
   return {bytes, compression, prefilter, inflated, crc32: marker[4] === undefined ? null : parseInt(marker[4], 16), limit, from, to};
+}
+export function packedPlainText(body) {
+  return body.replace(/\x01([\s\S]?)/g, (_, code) => ({l: '<', r: '\r', z: '\0', '\x01': '\x01'})[code] ?? (() => { throw new Error('Packed plain body is invalid'); })());
 }

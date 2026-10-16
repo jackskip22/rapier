@@ -143,7 +143,7 @@ async function _rapierBuildArtifact(options, providedContext) {
 		+ (printWidth > 0 ? '.rapier-page.md-render{width:' + printWidth + 'px!important}' : '') + '}' : '';
 	const pageTitle = settings && settings.title ? globalThis.RapierMarkdownSpec.documentTitle(settings) : metadata.filename;
 	let css = _rapierArtifactStyles(theme, includeFonts, !!opts.print || completePage, false, opts.print && opts.kind === 'standalone' ? '' : null)
-		+ (completePage ? '\n\n' + _rapierSharedPageFallbackCss() : '')
+		+ (completePage || opts.print ? '\n\n' + _rapierSharedPageFallbackCss(!completePage) : '')
 		+ (opts.extraCss ? '\n\n' + opts.extraCss : '')
 		+ (willFont ? '\n\n@font-face{font-family:' + willFont.family + ';src:url(' + await _rapierBlobDataUrl(new Blob([willFont.bytes], { type: 'font/ttf' })) + ') format("truetype")}' : '')
 		+ (settingsCss ? '\n' + settingsCss : '')
@@ -607,13 +607,13 @@ async function _rapierReadSharedDocument(text, filename) {
 	return {source, filename: name, kind, bom, ...parts, comparisonBase};
 }
 
-function _rapierSharedPageFallbackCss() {
-	return `
+function _rapierSharedPageFallbackCss(clearOnly = false) {
+	const clear = '.rapier-page>:is(pre,table,hr,figure,.table-scroll-wrap,.math-display-wrap){clear:both}\n';
+	return clearOnly ? clear : `
 .rapier-page{display:flow-root}
 .rapier-page>:first-child{margin-top:0}
 .md-render h1{display:flow-root}
-.rapier-page>:is(pre,table,hr,figure,.table-scroll-wrap,.math-display-wrap){clear:both}
-`;
+` + clear;
 }
 
 function _rapierShareWrapKind(element) {

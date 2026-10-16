@@ -4,12 +4,14 @@ import acorn from '../agent/vendor/acorn.mjs';
 const {minify} = createRequire(import.meta.url)('./vendor/terser/bundle.min.js');
 
 export const PARTS = Object.freeze([
+  {id: 'document', label: 'Document layout', scripts: ['editor/document-layout.js'], styles: ['rapier-document-style'],
+    globals: {RapierClipboardPictures: 'interchange/clipboard-pictures.mjs'}},
   {id: 'drawing', label: 'Drawing',
     scripts: ['draw/draw.js', 'draw/effects-tool.js', 'draw/liquid-live.js', 'draw/copier-live.js', 'draw/background-tool.js',
       'draw/paint-tool.js', 'draw/water-tool.js', 'draw/water-pro.js'],
     styles: ['rapier-draw-style'],
     globals: {RapierDrawFit: 'draw/fit.mjs', RapierDrawWaterVideo: 'draw/water-video.mjs', RapierDrawPaint: 'draw/paint.mjs',
-      RapierDrawBrushes: 'draw/brushes.mjs', RapierDrawColouring: 'draw/colouring.mjs', RapierDrawAgentPaint: 'draw/agent-paint.mjs', RapierDrawPaintWorker: 'draw/paint-worker.mjs',
+      RapierDrawBrushes: 'draw/brushes.mjs', RapierDrawAgentPaint: 'draw/agent-paint.mjs', RapierDrawPaintWorker: 'draw/paint-worker.mjs',
       RapierDrawPaintRows: 'draw/paint-parallel.mjs', RapierDrawPaintRemote: 'draw/paint-remote.mjs', RapierDrawLiquid: 'draw/liquid-gpu.mjs',
       RapierDrawLiquidWorker: 'draw/liquid-worker.mjs', RapierDrawCopier: 'draw/copier-gpu.mjs', RapierDrawWater: 'draw/water.mjs',
       RapierDrawWaterWorker: 'draw/water-worker.mjs', RapierDrawWaterPaths: 'draw/water-paths.mjs'}},

@@ -10,7 +10,7 @@ import {RAPIER_MARKDOWN_SPEC, applyMarkdownSpec} from '../agent/markdown-spec.mj
 import {installMarkdownLayout} from '../layout/markdown.mjs';
 import {installMarkdownImages} from '../spec/md-assets.mjs';
 import {DOORS} from '../door-worker.js';
-import {APP_DESCRIPTION, PLAY_URL} from './discovery.mjs';
+import {APP_DESCRIPTION, PLAY_URL, CURRENT_DOOR, MUSE_DOOR} from './discovery.mjs';
 
 const SUMMARY = `${APP_DESCRIPTION}
 
@@ -46,7 +46,7 @@ No account, no analytics, no advertising. Local editing and Notes stay on your d
 
 ## Agents
 
-An AI agent edits notes, text, diagrams and paintings live, beside you or while you are away. See its presence and changes, tap a change to see what was there before, and undo anything. It reads the passages it needs, changes exactly what it read and preserves what you are typing. It can show a diff of any part with \`show {target:"comparison"}\`. Native SVG diagrams stay editable shapes; Mermaid diagrams stay in Markdown fences. Will regions carry your instructions. Connect Claude, ChatGPT, Muse, Cursor or another MCP client to https://mcp.rapier.website/mcp with no account, or use WebMCP in the browser. Live collaboration needs an internet connection.
+An AI agent edits notes, text, diagrams and paintings live, beside you or while you are away. See its presence and changes, tap a change to see what was there before, and undo anything. It reads the passages it needs, changes exactly what it read and preserves what you are typing. It can show a diff of any part with \`show {target:"comparison"}\`. Native SVG diagrams stay editable shapes; Mermaid diagrams stay in Markdown fences. Will regions carry your instructions. Connect Claude, Cursor or another MCP client to ${CURRENT_DOOR} with no account, Muse to ${MUSE_DOOR}, or use WebMCP in the browser. Live collaboration needs an internet connection.
 
 ## Where it runs
 

@@ -28,12 +28,12 @@ const SHELL_URLS = [
   './icon-192.png',
   './icon-512.png',
 ];
-const SHELL_RELEASE_SHA256 = 'a05137047b899f0f639718b4e0859480b27c9e93dfe1ad8342d75df043f508d9';
-const SHELL_PAGE_SHA256 = '17576fa5f2c348aecd6d2af767e119d0ef3a5dd825426dd38fb40b8a0b1d30dd';
-const SHELL_BOOT_ID = 'ff1db1beabeb9a19edc5dd7db969e44aa9419c4bf48c4944835de4bc8ca3fb9e';
-const SHELL_DOOR_SHA256 = {"/privacy":"22ba6ed3ade711dc490b07cd60fdd764df54dd6f9e752a7330033f9ac0f4e638","/commercial":"0b2b980ed79d453e39de8a8d3096436404069543c6283cbe87eef7200b4c4d45","/notes":"8bc0d43b0710785efacc99f57957e7c33886e048cb14d2ed43880c753746577b","/draw":"7ba52317b85721bef15028f7fc72fdd6513cde0df9630cff1a1d993768f45d6a","/watercolor":"86a4c4a5295838cc003782ab7ce34445f90d78c4494883fc502e7e93aa25b6f2"};
+const SHELL_RELEASE_SHA256 = 'd9008b4918679e23e2db59a65ca2fcb4c35cb536d593407d595cc4834526c593';
+const SHELL_PAGE_SHA256 = '71b1da307479ba90833826e178f0191440bcb4d6f9167419c4b6f4fb6ea71f20';
+const SHELL_BOOT_ID = 'b3b4e47179bf85b3e8434244c52862d30adca5e38a7c35021e214721bcfdcd9a';
+const SHELL_DOOR_SHA256 = {"/privacy":"bb3ea9313de6a22685d4d0d22ba8ccd1364c9b3c154ed074b3a743e216e42721","/commercial":"2c23d156b3a85831b1f9ddb98dae1b24ebbdb9a06b7941fe66a6c59e7afdb32f","/notes":"a1aeb73251853094d5f7887215c8398293d0f605b767800c5e8b7e24ffbc6189","/draw":"b798aff39bf7cf0bff01a492a128e6a1c155101b2d40226bb3d0a9f09a71a40b","/watercolor":"62424dcc1740e52f121ce751cf7b9a511b4841e5436f8304b9c55b8f26af0472"};
 /* The parts' pins (shell/parts.js). Install brings this release's copy of each part the person has used. */
-const SHELL_PARTS = [{"id":"drawing","file":"rapier-drawing-9e69c3b26503f91b.txt","bytes":301512,"sri":"QRaIzzee31b1jbZhmHU0UBoX7SfzLNVJw8oOR4MX1PrRAFT3e5zOAp9uzdRQV9Em"},{"id":"notes","file":"rapier-notes-09b5ba07bb02db3e.txt","bytes":355826,"sri":"G8TCN86eG2BF+nYvls38zbus/C00AyRkzsLQ1KtQ1iwarz9RgXnsd6H3xsxM0sGZ"}];
+const SHELL_PARTS = [{"id":"document","file":"rapier-document-af865846595d638d.txt","bytes":900038,"sri":"pxhKM75Btdaknh8Jow/j1bBJTWdS3oNMzy6HupBuqn6jR6ojNCHO8lOv7X8tO929"},{"id":"drawing","file":"rapier-drawing-a1aa4217d281f1d2.txt","bytes":299930,"sri":"TXhMxU+oGJtpVdEXAxy6lG8lqnwQe65+4h5RqKAXn9jB1pkt5j8Z933xllmLLO2I"},{"id":"notes","file":"rapier-notes-579ce3efd962eef2.txt","bytes":357086,"sri":"gT8waukqYCM6J7lPtbFX9CPQwAeyKmTyU+bHuCb9wGyXn78a7yKc9S8Rs6BrUXkh"}];
 /* Only this generation receives writes. Retirement names are captured during
    install, so a delayed success cannot erase a newer worker's cache. */
 const SHELL_GENERATION = SHELL_CACHE_PREFIX + SHELL_RELEASE_SHA256.slice(0, 32);

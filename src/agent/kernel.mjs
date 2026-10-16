@@ -11,7 +11,7 @@ import { parseWill, willMarkerOf, willRegionsIn, willTouchesMarker, willGovern, 
 import { diff } from '../packages/rapier-diff/index.mjs';
 import { summary as summarize } from '../packages/rapier-diff/summary.mjs';
 import { outlineMarkdown, structureMarkdown } from './markdown.mjs';
-import { changedReferenceRegion } from './references.mjs';
+import { changedReferenceRegion, changedWillFraming } from './references.mjs';
 import { assetOmissions, retireDeletedImageDefinitions, documentAssets, markdownParser, normalizeLabel, createAsset, appendAsset, appendAssetText, escapeImageAlt, decodeDataImage, inspectSVG, editSVGNodes } from '../images/assets.mjs';
 import { RAPIER_DRAW_PAPERS, RAPIER_DRAW_NIB_DEFAULT, RAPIER_DRAW_SMOOTH_DEFAULT, _rapierDrawNormalizeAgentRecipe, _rapierDrawRecipeFault, _rapierDrawAdmitRecipe, _rapierDrawAssetGeneration, _rapierDrawMergeAgentRecipe, _rapierDrawUndoRecipe, _rapierDrawRecipeDelta, _rapierDrawBuildSVG, _rapierDrawTextAlternative, _rapierDrawNextAssetName, _rapierDrawApplyShapesPatch, _rapierDrawReadRecipeFromSVGText, _rapierDrawFigureFault } from '../draw/core.mjs';
 import { applyOperations } from '../draw/edit.mjs';
@@ -36,7 +36,7 @@ import {EDITOR_TOOL_ACTIONS, editorRequest, editorResult, editorContext as proje
 import {TOOL_RESULT_BYTES, PAGE_RESULT_BYTES, resultBytes, boundedResult, modelReply} from './page-result.mjs';
 export {PAGE_RESULT_BYTES, resultBytes, boundedResult, modelReply};
 import {materialRequest, materialDescription, materialMatches, admitMaterialResult} from './material.mjs';
-import {waterActionsFault, waterPaperById} from '../draw/water-data.mjs';
+import {waterActionsFault, waterPaperById, waterProFeature} from '../draw/water-data.mjs';
 import {journalOperations} from '../kit/ledger/journal-records.mjs';
 
 export { transformSplices };
@@ -161,7 +161,7 @@ export const HINTS = {
   paint_sample_unavailable: 'Material sampling is unavailable in this editor. Read the drawing recipe for its pigment and paper settings.',
   paint_sample_invalid: 'Sample an existing Paint or Water layer at a point in its drawing coordinates.',
   water_webgpu_unavailable: 'Water needs WebGPU in the active editor. The drawing is unchanged.',
-  water_pro_unavailable: 'This Water add-on is unavailable on the current surface. The drawing is unchanged.',
+  water_pro_unavailable: 'Specialty pigments, Pro papers and Trace are only in the Android app, which agents cannot reach. Use the standard pigments and papers. The drawing is unchanged.',
   WATER_BUDGET: 'This Water operation exceeds the live material budget. Use a smaller stroke or a new layer; the drawing is unchanged.',
   WATER_REPLAY_BUDGET: 'This Water journal is full. Continue on a new layer; the drawing is unchanged.',
   WATER_GPU_MEMORY: 'The graphics device could not allocate this Water operation. Use a smaller layer; the drawing is unchanged.',
@@ -709,32 +709,35 @@ function pendingAssetSplices(text, drawAssets) {
   return additions;
 }
 
-export function willRestores(restores, was, now) {
-  if (!Array.isArray(restores) || was === now) return false;
-  const moved = minimalSplice(was, now);
-  return restores.some(row => {
-    const wrote = minimalSplice(row.removed, row.inserted);
-    return wrote.inserted && wrote.removed === moved.removed && wrote.inserted === moved.inserted;
-  });
+export function willRestores(restores, region, splices) {
+  if (!Array.isArray(restores) || region.law !== 'append') return null;
+  const reaching = splices.filter(row => row.pos <= region.end && row.pos + row.removed.length >= region.start && (row.removed || row.inserted))
+    .toSorted((a, b) => a.pos - b.pos);
+  if (!reaching.length || reaching.some((row, i) => row.pos < region.start || row.pos + row.removed.length > region.end ||
+      (i && row.pos !== reaching[i - 1].pos + reaching[i - 1].removed.length) ||
+      !restores.some(back => back.removed === row.removed && back.inserted === row.inserted)) ||
+      !/^(?:\r\n|\r|\n)?$/.test(region.text.slice(reaching.at(-1).pos + reaching.at(-1).removed.length - region.start))) return null;
+  return reaching;
 }
 
 export function enforceWillReferences(beforeText, afterText, {before = parseWill(beforeText), after = parseWill(afterText),
-  restores = null, bodyOnly = false, referenceCheck} = {}) {
+  restored = new Map(), bodyOnly = false, referenceCheck} = {}) {
   const regions = [];
   for (const region of before.regions) {
     if (region.law === 'edit') continue;
     const was = beforeText.slice(region.start, region.end), following = after.regions[region.index];
     if (!following) return {law: region.law, rule: 'law_violated', region: region.index, ...lawBounds(region)};
-    const now = afterText.slice(following.start, following.end);
-    if (region.law === 'keep' && was !== now) continue;
-    if (region.law === 'append' && willRestores(restores, was, now)) {
-      const moved = minimalSplice(was, now), content = stripOneTerminator(was).length;
-      const suffix = moved.pos + moved.removed.length;
-      if (moved.pos) regions.push({...region, end: region.start + moved.pos, retained: true});
-      if (suffix < content) regions.push({...region, start: region.start + suffix, end: region.start + content, retained: true});
+    if (restored.has(region.index)) {
+      const content = region.start + stripOneTerminator(was).length;
+      let from = region.start;
+      for (const row of restored.get(region.index).toSorted((a, b) => a.pos - b.pos)) {
+        if (row.pos > from) regions.push({...region, start: from, end: row.pos, retained: true});
+        from = Math.max(from, row.pos + row.removed.length);
+      }
+      if (from < content) regions.push({...region, start: from, end: content, retained: true});
       continue;
     }
-    let length = region.law === 'append' ? stripOneTerminator(was).length : was.length;
+    const length = region.law === 'append' ? stripOneTerminator(was).length : was.length;
     if (length) regions.push({...region, end: region.start + length});
   }
   if (!regions.length) return null;
@@ -773,18 +776,22 @@ export function enforceWill(beforeText, afterText, splices, { docKind = 'markdow
     })) {
     return { law: 'keep', rule: 'marker_sequence_mismatch', start: 0, end: beforeText.length };
   }
+  const restored = new Map();
   for (let index = 0; index < before.regions.length; index++) {
     const region = before.regions[index];
     const was = beforeText.slice(region.start, region.end);
     const now = afterText.slice(after.regions[index].start, after.regions[index].end);
-    if (region.law === 'append' && !stripOneTerminator(now).startsWith(stripOneTerminator(was)) && !willRestores(restores, was, now)) {
-      return { law: 'append', rule: 'law_violated', region: index, ...lawBounds(region) };
-    }
-    if (region.law !== 'keep') continue;
-    if (was === now || willRestores(restores, was, now)) continue;
-    return { law: 'keep', rule: 'law_violated', region: index, ...lawBounds(region) };
+    if (region.law === 'keep' && was !== now) return { law: 'keep', rule: 'law_violated', region: index, ...lawBounds(region) };
+    if (region.law !== 'append' || stripOneTerminator(now).startsWith(stripOneTerminator(was))) continue;
+    const reaching = willRestores(restores, {...region, text: was}, splices);
+    if (!reaching) return { law: 'append', rule: 'law_violated', region: index, ...lawBounds(region) };
+    restored.set(index, reaching);
   }
-  return enforceWillReferences(beforeText, afterText, {before, after, restores, referenceCheck});
+  let framed;
+  try { framed = changedWillFraming(beforeText, afterText, before.regions, after.regions); }
+  catch (_) { framed = before.regions.find(region => region.law !== 'edit')?.index ?? null; }
+  if (framed != null) return { law: before.regions[framed].law, rule: 'law_violated', region: framed, ...lawBounds(before.regions[framed]) };
+  return enforceWillReferences(beforeText, afterText, {before, after, restored, referenceCheck});
 }
 
 function overlap(range, splice) {
@@ -3473,10 +3480,27 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     return fields ? accepted(fields) : failure('compare_not_open');
   };
 
+  async function storedAlternative(text, who, context) {
+    if (who.actor === 'human' || state.docKind !== 'markdown' || text.includes('<!-- rapier-block:')) return {text};
+    const {projection, targets} = publicSurface();
+    if (projection.text === state.text) return {text};
+    const plan = planTextChanges(projection.text, [{text}], targets);
+    if (plan.reason) return {text};
+    let blocks; try {blocks = fencedBlocks(text);} catch {return {text};}
+    if (blocks.some(row => /^rapier-(?:paint|water)$/.test(row.kind) && !projection.segments.some(prior => prior.id === row.id))) return {text};
+    let compiled; try {compiled = await compileTextPlan(projection, plan, who, context);} catch {return {text};}
+    if (compiled.outcome) return {text};
+    const operation = compiled.commentsChanged ? (compiled.options.authoredCount ? 'document.edit' : 'comments.write') : 'document.replace';
+    const computed = committedText(state.text, compiled.splices, compiled.options.authoredCount ?? compiled.splices.length, who.actor, state.docKind,
+      operation, false, null, compiled.options.drawAssets);
+    return {text: computed && !computed.reason ? computed.text : text};
+  }
+
   async function compareText(input, who, context, baseline = state.text) {
     const invalid = admissibleText(input.text);
     if (invalid) return failure(invalid, 'invalid');
     if (state.compare && who.actor !== 'human' && state.compare.owner !== ownerOf(who)) return failure('compare_not_owned');
+    if (baseline === state.text) input = {...input, text: (await storedAlternative(input.text, who, context)).text};
     const compared = buildComparison(baseline, input.text, input.name, who);
     if (compared.outcome) return compared;
     const presentation = {presentation: {status: 'unconfirmed', acknowledged: false}};
@@ -3486,7 +3510,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         ...who, signal: context.signal });
       if (!result?.ok) return failure(result?.reason || 'compare_open_refused');
       presentation.presentation = {status: result.pending ? 'pending' : result.presented === true || result.visible === true ? 'presented' : 'unconfirmed',
-        acknowledged: result.presented === true || result.visible === true, ...(result.viewId ? {id: result.viewId} : {})};
+        acknowledged: result.presented === true || result.visible === true, ...(result.viewId ? {id: result.viewId} : {}), ...(result.reason ? {reason: result.reason} : {})};
     }
     state.compare = compared;
     return { ...comparisonContext(), mode: 'alternative', sourceChanged: false, ...presentation };
@@ -3699,8 +3723,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (state.docKind !== 'markdown') return failure('draw_requires_markdown', 'invalid');
     if (changeOf(input.recipe_handle) || changeOf(input.svg_handle) || changeOf(input.context_handle)) return failure('context_handle_wrong_kind', 'invalid');
     const retained = typeof host.drawingPresentationBinding === 'function' ? host.drawingPresentationBinding() : undefined;
+    const open = input.kind === 'edit' ? input.presentation?.open !== false : input.presentation?.open === true;
     context = {...context, drawingPresentation: {binding: retained === undefined ? drawingPresentationBinding() : retained,
-      presentation: {open: input.presentation?.open !== false, replay: input.presentation?.replay !== false}}};
+      presentation: {open, replay: input.presentation?.replay !== false}}};
     return drawingReceipt(await (input.kind === 'edit' ? drawEdit(input, who, context) : drawCreate(input, who, context)));
   }
 
@@ -3764,8 +3789,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         const fault = waterActionsFault(actions, at + '.actions');
         if (fault) return {refusal: failure('paint_strokes_invalid', 'invalid', {field: fault.field, ...(fault.hint ? {hint: fault.hint} : {})})};
         if (paper != null && !waterPaperById(paper)) return {refusal: failure('paint_strokes_invalid', 'invalid', {field: at + '.paper'})};
-        const traceRefusal = actions.some(action => action?.kind === 'trace' || action?.source === 'trace') && await authorizeWaterPro('trace', context);
-        if (traceRefusal) return {refusal: traceRefusal};
+        if (waterProFeature(actions, paper)) return {refusal: failure('water_pro_unavailable')};
       }
       let shape = null;
       cancelled(context);
@@ -3801,21 +3825,11 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     return {list: out};
   }
 
-  async function authorizeWaterPaper(recipe, previous, context) {
+  function waterPaperRefusal(recipe, previous) {
     const paper = recipe?.background?.kind === 'paper' ? recipe.background.paper : null;
     if (!RAPIER_DRAW_PAPERS.some(row => row.id === paper && row.pro) ||
         previous?.background?.kind === 'paper' && previous.background.paper === paper) return null;
-    return authorizeWaterPro('papers', context);
-  }
-
-  async function authorizeWaterPro(feature, context) {
-    cancelled(context);
-    try {
-      if (typeof host.authorizeWaterPro !== 'function' || await host.authorizeWaterPro(feature, {signal: context.signal}) !== true)
-        return failure('water_pro_unavailable');
-    } catch { cancelled(context); return failure('water_pro_unavailable'); }
-    cancelled(context);
-    return null;
+    return failure('water_pro_unavailable');
   }
 
   function paintSheetsHold(recipe) {
@@ -3894,7 +3908,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (operations.refusal) return operations.refusal;
       recipe = applyOperations(recipe, operations.list).recipe;
       if (!recipe.shapes.length || recipe.shapes.length > 128) return failure('draw_shape_limit', 'invalid');
-      const paperRefusal = await authorizeWaterPaper(recipe, null, context);
+      const paperRefusal = waterPaperRefusal(recipe, null);
       if (paperRefusal) return paperRefusal;
       if (!paintSheetsHold(recipe)) return failure('paint_sheet_invalid', 'invalid');
       const rasterRefusal = await paintRastersHold(recipe, null, context);
@@ -4043,7 +4057,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         recipe = _rapierDrawMergeAgentRecipe(writeBase, inspected, recipe);
         if (!recipe) return failure('draw_surface_changed', 'conflict');
       }
-      const paperRefusal = await authorizeWaterPaper(recipe, writeBase, context);
+      const paperRefusal = waterPaperRefusal(recipe, writeBase);
       if (paperRefusal) return paperRefusal;
       if (!paintSheetsHold(recipe)) return failure('paint_sheet_invalid', 'invalid');
       const rasterRefusal = await paintRastersHold(recipe, writeBase, context);
@@ -4512,8 +4526,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const budget = bounded(input.budget_bytes, 6144, 2048, LIMITS.resultBytes);
     const together = collaboration(), pointing = together.presence, will = sourceWill();
     const focused = pointing?.focus || state.focus, selected = pointing?.selection || state.selection;
-    const focus = focused && reference(focused.start, focused.end, who, {kind: 'focus'});
-    const selection = selected && reference(selected.start, selected.end, who, {kind: 'selection'});
+    const located = (row, kind) => input.refs === false ? {start: row.start, end: row.end} : reference(row.start, row.end, who, {kind});
+    const focus = focused && located(focused, 'focus'), selection = selected && located(selected, 'selection');
     const editor = projectEditorContext(typeof host.editorContext === 'function' ? await host.editorContext() : null);
     const drawing = drawingSummary(), sha = sourceSha256(), paint = typeof host.paintBrushes === 'function' ? host.paintBrushes() : null;
     const drawingCore = drawing ? Object.fromEntries(['open', 'session', 'occurrence', 'assetGeneration', 'surfaceGeneration', 'recipeDigest', 'recipeUnavailable', 'mode', 'busy']
@@ -4598,7 +4612,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     fitContext(result, budget - 128);
     for (const row of result.sourceChanges?.changes || []) {
       row.targets = sourceChangeTargets(row.act.id);
-      for (const target of row.targets) {
+      if (input.refs !== false) for (const target of row.targets) {
         const ref = reference(target.start, target.end, who, {kind: 'change'});
         if (ref) {target.ref = ref.id; delete target.start; delete target.end;}
       }
@@ -4783,7 +4797,17 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       }
       const ownsComments = parsed.record && range.pos <= parsed.record.start && range.until >= parsed.record.end;
       const commentOwner = ownsComments && (commentGroups.find(row => row.ids.some(id => threads.some(thread => thread.id === id))) || commentGroups[0]);
-      for (const row of commentGroups.reverse()) replace(row.start, row.end, row === commentOwner ? parsed.record.raw : '');
+      const typed = minimalSplice(removed, inserted), suffix = inserted.length - typed.pos - typed.inserted.length;
+      for (const row of commentGroups.reverse()) {
+        let from = row.start, until = row.end;
+        if (row !== commentOwner && !row.ids.some(id => threads.some(thread => thread.id === id))) {
+          const end = inserted.length - suffix, lead = /(?:\r?\n)*$/.exec(inserted.slice(Math.min(typed.pos, from), from))[0].length;
+          const trail = /^(?:\r?\n)*/.exec(inserted.slice(until, Math.max(until, end)))[0].length;
+          if (!(from - lead > typed.pos && until + trail < end)) from -= lead;
+          until += trail;
+        }
+        replace(from, until, row === commentOwner ? parsed.record.raw : '');
+      }
       for (const gap of framing.toReversed()) replace(gap.start, gap.end, '');
       if (ownsComments && !commentOwner) {
         const at = framing.find(gap => gap.start === gap.end).start;
@@ -4814,16 +4838,20 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       for (const block of commentBlocks) {
         let thread = wanted.find(row => row.id === block.id), messages;
         try {messages = JSON.parse(block.body).messages;} catch {}
+        if (!Array.isArray(messages)) messages = [{text: block.body}];
+        if (!thread && messages.some(message => typeof message?.text !== 'string' || !message.text.trim() || bytes(message.text) > 4096)) return failure('comment_text_invalid', 'invalid');
         if (!thread) {
-          const requested = block.attrs.on || '', linked = requested.startsWith('#') ? fencedBlocks(computed.text).find(row => row.id === requested.slice(1)) : null;
-          const on = linked ? linked.text : requested, positions = on ? exactMatches(computed.text, on, undefined, 2) : [];
+          const requested = block.attrs.on || '', id = requested.startsWith('#') ? requested.slice(1) : '';
+          const drawn = id && new RegExp('<!-- rapier-block:' + id.replace(/[^A-Za-z0-9_-]/g, '\\$&') + ' rapier-(?:draw|water|paint|svg) -->\\n\\n(!\\[[^\\n]+)').exec(computed.text);
+          const linked = id ? fencedBlocks(computed.text).find(row => row.id === id) || (drawn && {text: drawn[1]}) : null;
+          const record = current.record, scopes = record ? [{start: 0, end: record.start}, {start: record.end, end: computed.text.length}] : [undefined];
+          const on = linked ? linked.text : requested, positions = on ? scopes.flatMap(scope => exactMatches(computed.text, on, scope, 2)).slice(0, 2) : [];
           if (on && positions.length !== 1) return failure(positions.length ? 'comment_anchor_ambiguous' : 'comment_anchor_missing', 'conflict', {block: block.id});
           thread = {id: block.id, anchor: commentAnchor(on ? 'text' : 'document', positions[0], positions[0] + on.length, computed.text, current), resolved: false, messages: []}; wanted.push(thread);
         }
-        if (!Array.isArray(messages)) messages = [{text: block.body}];
         const previousMessages = thread.messages;
         for (const message of previousMessages) if (message.author.kind === 'human' && !messages.some(row => canonicalJson(row) === canonicalJson(message))) return failure('human_comment_preserved', 'refused');
-        if (messages.some(message => !previousMessages.some(row => canonicalJson(row) === canonicalJson(message)) && bytes(String(message?.text ?? '')) > 4096)) return failure('comment_text_invalid', 'invalid');
+        if (messages.some(message => !previousMessages.some(row => canonicalJson(row) === canonicalJson(message)) && (typeof message?.text !== 'string' || !message.text.trim() || bytes(message.text) > 4096))) return failure('comment_text_invalid', 'invalid');
         thread.messages = messages.map(message => {
           const old = previousMessages.find(row => row.id === message.id);
           if (old && canonicalJson(old) === canonicalJson(message)) return old;
@@ -4979,19 +5007,21 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         current: textHead(current, limit), alternative: textHead(alternative, limit),
         complete: textBytes(current) <= limit && textBytes(alternative) <= limit}});
     }
-    const observed = await observe({since:input.since,facets: ['receipts','changes','brief', ...(input.history ? ['history'] : []), ...(input.state ? ['returns', 'capabilities', 'drawing'] : [])], budget_bytes: context.transport === 'webmcp' ? 4096 : 12288}, who, context);
+    const observed = await observe({since:input.since,refs:false,facets: ['receipts','changes','brief', ...(input.history ? ['history'] : []), ...(input.state ? ['returns', 'capabilities', 'drawing'] : [])], budget_bytes: context.transport === 'webmcp' ? 4096 : 12288}, who, context);
     if (observed.outcome !== 'ok') return observed;
     const surface = publicSurface(), {projection, targets} = surface, source = projection.text;
     const sourceDigest = () => surface.digest ??= sha256(source);
     const lineAt = offset => targets.lines.number(offset);
-    const rangeText = range => range ? (({ref, ...value}) => ({...value, text: clip(disclose(state.text, value.start, value.end).text, 1200)}))(range) : null;
-    const continuation = {...observed.continuation, person: {...observed.continuation.person, intentsRead: {tool: 'read', arguments: {}}}};
+    const located = ({start, end, ...rest}) => {const at = sourcePosition(projection, start, false, true), until = sourcePosition(projection, end, true, true); return {...rest, start: at, end: until, line: lineAt(at)};};
+    const rangeText = range => range ? {...located(range), text: clip(disclose(state.text, range.start, range.end).text, 1200)} : null;
+    const sourceChanges = observed.sourceChanges && {...observed.sourceChanges, changes: observed.sourceChanges.changes.map(row => ({...row, targets: row.targets.map(located)}))};
+    const continuation = {...observed.continuation, person: {...observed.continuation.person, intents: observed.continuation.person.intents.map(located), intentsRead: {tool: 'read', arguments: {}}}};
     if (continuation.next) continuation.next = {tool: 'read', arguments: {since: observed.observation_cursor}};
     const info = {revision: surfaceRevision(projection), filename: state.filename, selection: rangeText(observed.selection),
       human: observed.human, focus: rangeText(observed.focus), ...(observed.foreground ? {foreground: observed.foreground} : {}), continuation,
       ...(observed.omissions ? {omissions: observed.omissions} : {}),
-      view: observed.view || observed.collaboration?.view || null, collaboration: observed.collaboration, will: observed.law, surface:observed.surface, sourceChanges:observed.sourceChanges, observation_cursor:observed.observation_cursor, brief:observed.brief,
-      ...(observed.receipts ? {receipts: observed.receipts} : {}), ...(observed.history ? {history: {...observed.history, acts: state.journal.slice(-32).map(publicAct), more: state.journal.length > 32}} : {})};
+      view: observed.view || observed.collaboration?.view || null, collaboration: observed.collaboration, will: observed.law, surface:observed.surface, sourceChanges, observation_cursor:observed.observation_cursor, brief:observed.brief,
+      ...(observed.history ? {history: {...observed.history, acts: state.journal.slice(-32).map(publicAct), more: state.journal.length > 32}} : {})};
     if (info.history) while (info.history.acts.length && bytes(JSON.stringify(info.history)) > 3072) {
       info.history.acts.shift(); info.history.more = true;
     }
@@ -5067,6 +5097,14 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   }
 
   const previousBlockUnchanged = (row, projection) => projection.segments.some(prior => prior.id === row.id && prior.fence === row.text.trimEnd());
+  function writtenBlocks(before) {
+    const after = publicSurface().projection;
+    return fencedBlocks(after.text).filter(row => !previousBlockUnchanged(row, before)).map(({id, text}) => {
+      const paint = after.segments.find(row => row.id === id)?.recipe?.shapes.filter(shape => shape.recognized === 'paint') || [];
+      const kept = [...new Set(paint.map(shape => shape.raster.startsWith('data:image/png;') ? 'png' : 'jxl'))];
+      return {id, text: textHead(text, 6000), complete: textBytes(text) <= 6000, ...(kept.length ? {picture: kept.join(',')} : {})};
+    });
+  }
 
   async function doorEdit(input, who, context) {
     if (input.note) {
@@ -5122,7 +5160,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const blocksOf = text => {try {return fencedBlocks(text);} catch {return [];}};
     const written = ['applied', 'rebased'].includes(result.outcome) ? publicSurface().projection.text : '', before = new Set(written ? blocksOf(source).map(row => row.text) : []);
     const removed = [...new Set(blocksOf(written).filter(row => row.kind === 'html' && !before.has(row.text)).flatMap(row => htmlRemoved(row.body)))];
-    return {...result, revision: surfaceRevision(), ...(removed.length ? {removed} : {}), ...(['applied', 'rebased', 'unchanged'].includes(result.outcome) ? {lines: plan.lines, ...(moved ? {others: plan.others} : {}), ...(compiled.options.drawAssets?.length ? {blocks: fencedBlocks(publicSurface().projection.text).filter(row => !previousBlockUnchanged(row, projection)).map(({id, text}) => ({id, text: textHead(text, 6000), complete: textBytes(text) <= 6000}))} : {})} : {})};
+    return {...result, revision: surfaceRevision(), ...(removed.length ? {removed} : {}), ...(['applied', 'rebased', 'unchanged'].includes(result.outcome) ? {lines: plan.lines, ...(moved ? {others: plan.others} : {}), ...(compiled.options.drawAssets?.length ? {blocks: writtenBlocks(projection)} : {})} : {})};
   }
 
   function passageHandle(input, who) {
@@ -5227,7 +5265,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         const view = {...(typeof host.view === 'function' ? host.view() : {}), requested: input.view,
           ...(value?.viewId ? {id: value.viewId} : {}), status: value?.pending ? 'pending' : value?.ok ? 'presented' : 'refused'};
         result = value?.pending ? {outcome: 'pending', reason: 'presentation_pending', view}
-          : value?.ok ? accepted({view}) : failure(value?.reason || 'view_unavailable', value?.outcome || 'refused',
+          : value?.ok ? accepted({view, ...(value.reason ? {reason: value.reason} : {})}) : failure(value?.reason || 'view_unavailable', value?.outcome || 'refused',
             {view, hint: value?.hint || 'Open the document in its connected editor and select an available view.'});
         break;
       }
@@ -5252,7 +5290,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         const value = await host.reveal({ documentId: state.documentId, revision: state.revision, start: range.start, end: range.end,
           ...who, signal: context.signal });
         result = value?.pending && value.viewId ? { outcome: 'pending', reason: 'presentation_pending', view: {id: value.viewId, status: 'pending'} }
-          : value?.ok ? accepted({ revealed: true }) : failure(value?.reason || 'view_changed'); break;
+          : value?.ok ? accepted({ revealed: true, ...(value.reason ? {reason: value.reason} : {}) }) : failure(value?.reason || 'view_changed'); break;
       }
       case 'document.create_return':
         result = typeof host.createReturn === 'function' ? await host.createReturn() : failure('return_unavailable');
@@ -5395,7 +5433,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   }
 
   function invoke(name, input = {}, context = {}) {
-    const waiting = name === 'document.wait_for_user' || name === 'show' && input.target === 'ask';
+    const waiting = name === 'document.wait_for_user' || name === 'show' && showTarget(input) === 'ask';
     if (waiting && waitPending) return Promise.resolve(stamp(failure('wait_already_pending')));
     if (waiting) waitPending = true;
     const run = async () => {

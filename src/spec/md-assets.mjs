@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Pure text and markdown-it tokens: no DOM, no byte decoding, no globalThis.Rapier* (MIT kit; decoders stay in images/assets.mjs).
+import {isWordSidecarBlock} from './word-sidecar.mjs';
 
 export const IMAGE_LIMITS = Object.freeze({bytes: 16 * 1024 * 1024, sourceChars: 64 * 1024 * 1024, dimension: 16384, pixels: 24000000, assets: 1024});
 const parsers = new WeakMap();
@@ -78,6 +79,10 @@ const unheldLines = new Proxy(Array.prototype, {
 });
 
 export function eachBlockWindow(source, bodyOffset, parser, env, visit, keepNul = false) {
+  for (const window of blockWindows(source, bodyOffset, parser, env, keepNul)) visit(window);
+}
+
+export function* blockWindows(source, bodyOffset, parser, env, keepNul = false) {
   const lineEnds = source.slice(bodyOffset).replace(/\r\n?/g, '\n'), body = keepNul ? lineEnds : lineEnds.replace(/\0/g, '\ufffd');
   let pair = source.indexOf('\r\n', bodyOffset), shift = bodyOffset;
   const sourceOffset = at => {
@@ -87,7 +92,7 @@ export function eachBlockWindow(source, bodyOffset, parser, env, visit, keepNul 
   };
   const tokens = [];
   let origin = 0, first = 0, state;
-  const report = () => visit({tokens, firstLine: first, lineStart: line => {
+  const report = () => ({tokens, firstLine: first, lineStart: line => {
     if (!line) return sourceOffset(origin);
     const end = Object.hasOwn(state.eMarks, line - 1) ? state.eMarks[line - 1] : body.length;
     return end < body.length ? sourceOffset(end + 1) : undefined;
@@ -97,7 +102,7 @@ export function eachBlockWindow(source, bodyOffset, parser, env, visit, keepNul 
   if (lines <= BLOCK_WINDOW) {
     state = new parser.block.State(body, parser, env, tokens);
     parser.block.tokenize(state, state.line, state.lineMax);
-    return report();
+    yield report(); return;
   }
   state = new parser.block.State(body.slice(body.lastIndexOf('\n') + 1), parser, env, tokens);
   lines += state.lineMax;
@@ -155,14 +160,14 @@ export function eachBlockWindow(source, bodyOffset, parser, env, visit, keepNul 
       else if (!parser.utils.isSpace(code)) break;
     }
     frontier = origin; ended = false; betweenBlocks = false;
-    state.line = 0; state.lineMax = lines - first;
+    state.line = 0; state.lineMax = lines - first; state.rapierFirstLine = first;
     const outer = unheldLine;
     unheldLine = answer;
     let finished = true;
     try { parser.block.tokenize(state, 0, state.lineMax); }
     catch (error) { if (error !== WINDOW_END) throw error; finished = false; }
     finally { unheldLine = outer; }
-    report();
+    yield report();
     if (finished) return;
     tokens.length = 0;
     origin = state.eMarks[state.line - 1] + 1; first += state.line;
@@ -183,6 +188,19 @@ export function dataImage(url) {
 }
 
 export function parseAssets(source, factory = configured || globalThis.markdownit, bodyOffset = 0) {
+  const steps = assetSteps(source, factory, bodyOffset);
+  let next = steps.next();
+  while (!next.done) next = steps.next();
+  return next.value;
+}
+export async function parseAssetsWork(source, factory, bodyOffset, work) {
+  const steps = assetSteps(source, factory, bodyOffset);
+  work.signal?.throwIfAborted();
+  let next = steps.next();
+  while (!next.done) { await work.yield(); work.signal?.throwIfAborted(); next = steps.next(); }
+  return next.value;
+}
+function* assetSteps(source, factory = configured || globalThis.markdownit, bodyOffset = 0) {
   if (typeof source !== 'string') return fail('image_source_invalid');
   if (source.length > IMAGE_LIMITS.sourceChars) return fail('image_source_limit');
   if (!source.includes(']:')) return {assets: new Map(), blocks: [], duplicateLabels: new Set(), appendixStart: source.length, references: Object.create(null)};
@@ -192,7 +210,7 @@ export function parseAssets(source, factory = configured || globalThis.markdowni
   if (definition) return definition.index;
   const parser = parserFor(factory), env = {};
   const assets = new Map(), blocks = [], seen = new Set(), duplicateLabels = new Set();
-  eachBlockWindow(source, bodyOffset, parser, env, ({tokens, lineStart}) => {
+  for (const {tokens, lineStart} of blockWindows(source, bodyOffset, parser, env)) {
     for (const token of tokens) {
       if (token.type !== 'reference_definition' || !token.map) continue;
       const id = token.meta.label, definition = token.meta.mdImageDefinition, first = !seen.has(id);
@@ -214,7 +232,8 @@ export function parseAssets(source, factory = configured || globalThis.markdowni
       blocks.push(row);
       if (first) assets.set(id, row);
     }
-  });
+    yield;
+  }
   const references = env.references || Object.create(null);
   if (assets.size > IMAGE_LIMITS.assets) for (const asset of assets.values()) asset.status = 'asset_count_limit';
   let appendixStart = source.length;
@@ -505,6 +524,7 @@ export function assetOmissions(source) {
   return spans;
 }
 export function isAssetBlock(raw) {
+  if (isWordSidecarBlock(raw)) return true;
   if (typeof raw !== 'string' || !/data:image\//i.test(raw)) return false;
   const parsed = parseAssets(raw);
   if (!parsed.blocks.length) return false;

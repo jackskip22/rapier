@@ -1,4 +1,5 @@
 import {createNativeByteStore as nativeByteStore, createNativeNotesLocks as nativeNotesLocks} from './native-store.mjs';
+import {createWorkerExecution} from '../shell/worker-execution.mjs';
 import {exactBytes, blobByteChunks, checkByteAbort} from './integrity.mjs';
 import {parts, FOLDERS} from './opfs-paths.mjs';
 import {stampFor} from './search-store.mjs';
@@ -13,9 +14,7 @@ const missing = error => error?.name === 'NotFoundError';
 function fileWorker() {
  const source = globalThis.RapierNotesOPFSWorker?.workerSource;
  if (typeof source !== 'function' || typeof Worker !== 'function') throw fail('atomic', notesHostWords().Device + ' cannot safely replace a note. These notes are read-only here; opening, search and backup still work.');
- const url = URL.createObjectURL(new Blob([source()], {type: 'text/javascript'}));
- try { return new Worker(url, {name: nativeWorkerName('rapier-notes-files')}); }
- finally { URL.revokeObjectURL(url); }
+ return createWorkerExecution({source, name: nativeWorkerName('rapier-notes-files')});
 }
 const errorRecord = error => ({name: String(error?.name || 'Error'), message: String(error?.message || error), ...(error?.code !== undefined ? {code: error.code} : {})});
 function workerPort(directory, createWorker) {

@@ -8,7 +8,7 @@ function contactRadius(p,params,tool,radiusScale,pressure,speed){
  const m=3**(2*(params.size-.5))*radiusScale;
  if(tool==='lift'||tool==='erase')return (.012+.03*pressure)*m;
  if(tool==='pen')return (.0016+.0042*pressure)*clip(1.12-.3*speed,.55,1.12)*m;
- const radius=.8*m*(p.size[0]+(p.size[1]-p.size[0])*clip(pressure)**p.pressureSize)*clip(1-speed*p.speedThin,.4,1);
+ const radius=(p.size[0]+(p.size[1]-p.size[0])*clip(pressure)**p.pressureSize)*clip(1-speed*p.speedThin,.4,1)*m*.8;
  return tool==='water'?radius*1.3*(1+.12*Math.min(speed,2.5)):radius;
 }
 export function waterContactReach(profile,params,tool,radiusScale){
@@ -109,7 +109,7 @@ export class WaterContact {
    const s=this.state;if(Math.hypot(q.tiltX,q.tiltY)>12)s.azimuth=Math.atan2(-q.tiltY,q.tiltX);
    const elapsed=Math.max(1,q.time-s.time)/1000;s.time=q.time;
    const smoothing=this.inputKind==='mouse'?.5:.65;
-   const x=s.cx+smoothing*(q.x-s.cx),y=s.cy+smoothing*(q.y-s.cy),distance=Math.hypot((x-s.cx)*this.gpu.width/this.gpu.height,y-s.cy);
+   const x=s.cx+smoothing*(q.x-s.cx),y=s.cy+smoothing*(q.y-s.cy),distance=Math.hypot((x-s.cx)*(this.gpu.width/this.gpu.height),y-s.cy);
    s.speed+=(distance/elapsed-s.speed)*(1-Math.exp(-10*elapsed));s.synthetic+=(clip(1.18-.95*s.speed,.12,1)-s.synthetic)*(1-Math.exp(-6*elapsed));
    const vx=(x-s.cx)/elapsed,vy=(y-s.cy)/elapsed;
    const pressure=this.inputKind==='mouse'||this.inputKind==='touch'?s.synthetic:q.pressure;

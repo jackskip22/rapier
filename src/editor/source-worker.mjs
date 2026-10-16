@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {createMarkdownRenderer} from '../kit/render-markdown.mjs';
+import {parseMarkdownWork} from '../kit/parse-work.mjs';
 import {RAPIER_MARKDOWN_SPEC, RAPIER_HIGHLIGHT_COLORS, applyMarkdownSpec, installMarkdownMath,
   sourceCharEscaped, splitOpeningFrontmatter, parseInkBody, normalizeFontFamily, fontFamilyCss} from '../agent/markdown-spec.mjs';
-import {documentAssets, packAssetIndex, installMarkdownImages, configureParser, dataImage} from '../spec/md-assets.mjs';
+import {parseAssets, parseAssetsWork, packAssetIndex, installMarkdownImages, dataImage} from '../spec/md-assets.mjs';
 import {readFontAssets} from '../spec/document-fonts.mjs';
 import {installMarkdownLayout, parseLayout, parseLayoutAttribute, imageStyle} from '../layout/markdown.mjs';
-import {_rapierVisibleSourceProjection, _rapierVisibleMarkText, _rapierFindFlexibleSeparatorHits} from './visible-source.mjs';
+import {visibleSourceProjectionWork, _rapierVisibleMarkText, _rapierFindFlexibleSeparatorHits} from './visible-source.mjs';
 import {textRoot} from '../kit/ledger/hash.mjs';
 import {_splitByTokenStream} from './source-facts.mjs';
 import {_rapierNormalizePlainTextPaste} from './plain-paste.mjs';
@@ -13,8 +14,13 @@ import {_rapierScanSourceHeadings} from '../agent/markdown.mjs';
 
 const spec = {RAPIER_MARKDOWN_SPEC, RAPIER_HIGHLIGHT_COLORS, applyMarkdownSpec, installMarkdownMath,
   sourceCharEscaped, splitOpeningFrontmatter, parseInkBody, normalizeFontFamily, fontFamilyCss};
-const assets = {documentAssets, installMarkdownImages, configureParser, dataImage};
+const assets = {documentAssets: (source, parser) => parseAssets(source, parser, splitOpeningFrontmatter(source).bodyOffset),
+  installMarkdownImages, dataImage};
 const layout = {installMarkdownLayout, parseLayout, parseLayoutAttribute, imageStyle};
+
+export function sourceWorkerScope(root) {
+  return Object.fromEntries(['markdownit', ...RAPIER_MARKDOWN_SPEC.plugins.map(plugin => plugin.global)].map(key => [key, root[key]]));
+}
 
 export function sourceAssetSummary(source, floor = 0, parser, index = null) {
   if (!source.includes(']:')) return null;
@@ -39,22 +45,28 @@ export function sourceAssetSummary(source, floor = 0, parser, index = null) {
 
 export function installSourceWorker(scope) {
   let parser = null, input = null, parts = [], find = null, parse = null;
+  const work = {signal: scope.signal, yield: scope.yield || (() => Promise.resolve())};
+  let serial = Promise.resolve();
   const ensureParser = () => {
     if (parser) return parser;
     const renderer = createMarkdownRenderer({window: scope,
-      globalThis: {RapierImageAssets: assets, RapierMarkdownSpec: spec, RapierMarkdownLayout: layout},
+      globalThis: {RapierImageAssets: {...assets, configureParser() {}}, RapierMarkdownSpec: spec, RapierMarkdownLayout: layout},
       RAPIER_MARKDOWN_SPEC: spec.RAPIER_MARKDOWN_SPEC,
       RAPIER_HIGHLIGHT_COLOR_BY_MARKER: Object.fromEntries(Object.entries(spec.RAPIER_HIGHLIGHT_COLORS).map(([key, value]) => [value, key])),
       _rapierApplyMarkdownSpec: spec.applyMarkdownSpec, _rapierInstallMarkdownMath: spec.installMarkdownMath,
       _rapierSourceCharEscaped: spec.sourceCharEscaped, _rapierSplitOpeningFrontmatter: spec.splitOpeningFrontmatter});
     renderer.initMarkdownIt(); parser = renderer.parser();
-    assets.configureParser(parser, spec.splitOpeningFrontmatter);
     return parser;
   };
   const progress = fraction => scope.postMessage({id: input?.id, progress: fraction});
   scope.onmessage = event => {
+    serial = serial.then(() => receive(event));
+    return serial;
+  };
+  const receive = async event => {
+    work.signal?.throwIfAborted();
     const data = event.data || {};
-    if (data.reqId !== undefined) return (parse ||= blockParser(ensureParser()))(data, scope);
+    if (data.reqId !== undefined) return (parse ||= blockParser(ensureParser(), work))(data, scope);
     if (data.operation === 'begin') { input = data; parts = []; find = null; return; }
     if (data.operation === 'part') { if (input) parts.push(String(data.text || '')); return; }
     if (data.operation === 'find' && find) input = {...data, kind: 'find', surface: find.surface};
@@ -62,10 +74,12 @@ export function installSourceWorker(scope) {
     try {
       const source = find ? find.source : parts.join(''); parts = [];
       progress(.3);
+      await work.yield();
       if (input.kind === 'prepare') {
         const floor = Math.max(0, Number(input.floor) || 0);
-        const index = input.includeAssets === false ? null : assets.documentAssets(source, source.includes(']:') ? ensureParser() : null);
         const bodyOffset = spec.splitOpeningFrontmatter(source).bodyOffset;
+        const index = input.includeAssets === false ? null : await parseAssetsWork(source,
+          source.includes(']:') ? ensureParser() : null, bodyOffset, work);
         const summary = input.includeAssets === false ? null
           : sourceAssetSummary(source, floor, ensureParser(), index);
         progress(.75);
@@ -88,6 +102,7 @@ export function installSourceWorker(scope) {
           }
           if (sourceStarts) sourceStarts[count] = next;
           starts[count++] = next - collapsed;
+          if (count % 256 === 0) await work.yield();
         }
         if (count !== starts.length) {
           starts = starts.slice(0, count);
@@ -104,7 +119,7 @@ export function installSourceWorker(scope) {
         const reused = !!find;
         const visible = reused ? find.visible : input.surface === 'source' ? null : input.hidden
           ? {source, parser: ensureParser(), hidden: input.hidden, read: _rapierVisibleMarkText(source, input.hidden)}
-          : _rapierVisibleSourceProjection(source, ensureParser());
+          : await visibleSourceProjectionWork(source, ensureParser(), work);
         find = {source, visible, surface: input.surface};
         progress(.75);
         const read = visible?.read;
@@ -133,7 +148,7 @@ export function installSourceWorker(scope) {
   };
 }
 
-function blockParser(md) {
+function blockParser(md, work) {
   let budget = null;
   const refuse = (reason, observed, limit) => {
     throw Object.assign(new Error(reason), {rapierProjectionRefusal: true, reason, observed, limit});
@@ -145,6 +160,10 @@ function blockParser(md) {
     if (budget.used[dimension] > budget.limits[dimension]) refuse(reason, budget.used[dimension], budget.limits[dimension]);
     if (budget.used.nodes > budget.limits.nodes) refuse('wysiwyg_node_limit', budget.used.nodes, budget.limits.nodes);
   };
+  const BlockState = md.block.State, InlineState = md.inline.State;
+  md.block = Object.create(md.block); md.inline = Object.create(md.inline);
+  md.block.State = class extends BlockState {};
+  md.inline.State = class extends InlineState {};
   const blockState = md.block.State.prototype, inlineState = md.inline.State.prototype;
   const blockPush = blockState.push;
   blockState.push = function (...args) {
@@ -179,23 +198,19 @@ function blockParser(md) {
     }
     return linkTest.call(this, text);
   };
-  const split = (markdown, references, tokens = null) => _splitByTokenStream(markdown, md, {references: references || Object.create(null)}, tokens);
-  const blockTokens = (markdown, references) => {
-    const env = {references: references || Object.create(null)}, state = new md.core.State(markdown, md, env);
-    for (const rule of md.core.ruler.__rules__) {
-      if (rule.name === 'inline') break;
-      if (rule.enabled) rule.fn(state);
-    }
-    const tokens = state.tokens;
+  const split = (markdown, env, tokens) => _splitByTokenStream(markdown, md, env, tokens);
+  const blockTokens = async (markdown, env) => {
+    const tokens = await parseMarkdownWork(md, markdown, env, work, true);
     for (let i = 1; i < tokens.length; i++) {
       if (tokens[i].type === 'inline' && tokens[i - 1].type === 'heading_open') {
         tokens[i].children = [];
         md.inline.parse(tokens[i].content, md, env, tokens[i].children);
       }
+      if (i % 128 === 0) await work.yield();
     }
     return tokens;
   };
-  return (data, scope) => {
+  return async (data, scope) => {
     const reqId = data.reqId;
     if (data.headingsOnly) {
       const scanned = _rapierScanSourceHeadings(String(data.markdown || ''), Number(data.limit) || 0);
@@ -212,7 +227,9 @@ function blockParser(md) {
     try {
       if (data.plainText) markdown = _rapierNormalizePlainTextPaste(markdown);
       const t0 = performance.now();
-      blocks = split(markdown, data.references, data.twoPhase ? blockTokens(markdown, data.references) : null);
+      const env = {references: data.references || Object.create(null)};
+      const tokens = data.twoPhase ? await blockTokens(markdown, env) : await parseMarkdownWork(md, markdown, env, work);
+      blocks = split(markdown, env, tokens);
       timing.parseMs = performance.now() - t0;
       if (data.timeBlockOnly) {
         const t1 = performance.now(), state = new md.core.State(markdown, md, {});
@@ -247,7 +264,10 @@ function blockParser(md) {
       facts: blocks._rapierFacts || [], metrics, source: data.plainText ? markdown : null, error}, [blockSpans.buffer]);
     if (!data.twoPhase || error) return;
     try {
-      const t2 = performance.now(), full = split(markdown, data.references);
+      const t2 = performance.now();
+      const env = {references: data.references || Object.create(null)};
+      const tokens = await parseMarkdownWork(md, markdown, env, work);
+      const full = split(markdown, env, tokens);
       scope.postMessage({reqId, phase: 2, facts: full._rapierFacts || [], metrics: {timing: {inlineMs: performance.now() - t2}}});
     } catch (err) {
       scope.postMessage({reqId, phase: 2, facts: null, error: String(err?.message || err)});

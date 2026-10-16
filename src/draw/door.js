@@ -85,6 +85,7 @@ async function _rapierDrawResumeFinishes() {
 		return scope === rapier.identity.authority && !_rapierDrawShown() && embedded.canFinishLater();
 	};
 	try {
+		if (await embedded.whenJxlDisplayKnown?.() === false) return;
 		for (const label of [...embedded.index().index.assets.keys()]) {
 			await pause(0);
 			if (scope !== rapier.identity.authority) return;

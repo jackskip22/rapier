@@ -1462,7 +1462,14 @@ function _tableSetAlignment(blockId, alignment, position) {
 	const next = Array.from({ length: info.cols }, (_unused, index) => info.alignments[index] || '');
 	next[activeCol] = next[activeCol] === alignment ? '' : alignment;
 	const lines = info.lines.slice();
-	lines[info.sepIdx] = _tableSeparator(info.cols, next);
+	let seen = -1;
+	const line = lines[info.sepIdx].replace(/:?-+:?/g, marker => {
+		if (++seen !== activeCol) return marker;
+		const dashes = '-'.repeat(marker.replace(/:/g, '').length);
+		return next[activeCol] === 'center' ? ':' + dashes + ':' : next[activeCol] === 'left' ? ':' + dashes
+			: next[activeCol] === 'right' ? dashes + ':' : dashes;
+	});
+	lines[info.sepIdx] = seen >= activeCol ? line : _tableSeparator(info.cols, next);
 	_tableApply(blockId, lines.join('\n'), {
 		rowIndex: Math.max(0, Number(position?.rowIndex) || 0),
 		cellIndex: activeCol,
@@ -1663,6 +1670,33 @@ function _rapierHtmlTablePasteGrid(table, mapCell = null) {
 	return rows;
 }
 
+function _rapierTsvRows(body) {
+	const lines = () => body.split('\n').map(line => line.split('\t'));
+	const rows = [];
+	let row = [], at = 0;
+	for (;;) {
+		let cell = '';
+		if (body[at] === '"') {
+			for (let from = at + 1;;) {
+				const quote = body.indexOf('"', from);
+				if (quote < 0) return lines();
+				cell += body.slice(from, quote);
+				if (body[quote + 1] !== '"') { at = quote + 1; break; }
+				cell += '"'; from = quote + 2;
+			}
+			if (at < body.length && body[at] !== '\t' && body[at] !== '\n') return lines();
+		} else {
+			let end = at;
+			while (end < body.length && body[end] !== '\t' && body[end] !== '\n') end++;
+			cell = body.slice(at, end); at = end;
+		}
+		row.push(cell);
+		if (at >= body.length) { rows.push(row); return rows; }
+		if (body[at] === '\n') { rows.push(row); row = []; }
+		at++;
+	}
+}
+
 function _rapierTabularPasteGrid(payload) {
 	const html = String(payload?.html || '');
 	let table = null;
@@ -1676,8 +1710,7 @@ function _rapierTabularPasteGrid(payload) {
 	}
 	const plain = String(payload?.plain || '').replace(/\r\n?/g, '\n');
 	if (plain.includes('\t')) {
-		const body = plain.replace(/\n+$/g, '');
-		const rows = body.split('\n').map(line => line.split('\t'));
+		const rows = _rapierTsvRows(plain.replace(/\n+$/g, ''));
 		if (rows.length && rows.some(row => row.length > 1)) return rows;
 	}
 	return _rapierHtmlTablePasteGrid(table) || _rapierTableDelimitedGrid(plain);

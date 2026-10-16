@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 const RapierParts = (() => {
 	const PINS = /* RAPIER_PARTS */ null;
-	const CDN = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.6/';
+	const CDN = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.7/';
 	const pins = new Map((PINS || []).map((pin, order) => [pin.id, {...pin, order}]));
 	const runs = new Map(), states = new Map(), kept = new Set();
-	const local = () => ['android', 'windows', 'native'].includes(window.RapierPlatform?.environment.id);
+	const local = () => ['android', 'windows', 'linux', 'native'].includes(window.RapierPlatform?.environment.id);
 	let cache = null;
 	const store = () => cache ||= RapierBundleIO.store('parts');
 	const say = (id, status, error, progress = null) => {
@@ -13,6 +13,10 @@ const RapierParts = (() => {
 	};
 	const verified = (pin, bytes, source) => RapierBundleIO.verifySha384(bytes, pin.sri,
 		{source, byteLength: pin.bytes, sizeMessage: 'unexpected size from ' + source});
+	const sealed = () => {
+		const policy = /(?:^|;)\s*connect-src([^;]*)/.exec(document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content || '');
+		return !!policy && !/'self'|cdn\.jsdelivr\.net/.test(policy[1]);
+	};
 	const carried = pin => {
 		const element = document.getElementById('rapier-part-' + pin.id);
 		return element?.type === 'application/rapier-runtime' ? element : null;
@@ -47,6 +51,7 @@ const RapierParts = (() => {
 		if (document.readyState === 'loading') await new Promise(done => document.addEventListener('DOMContentLoaded', done, {once: true}));
 		const element = carried(pin);
 		if (element) return verified(pin, new TextEncoder().encode(element.textContent), 'carried ' + pin.id);
+		if (sealed()) throw Object.assign(new Error('not in this file'), {code: 'part_not_carried'});
 		if (local()) return fetched(pin);
 		let bytes = await stored(pin);
 		if (!bytes) {
@@ -83,7 +88,10 @@ const RapierParts = (() => {
 			if (!pin.started) runs.delete(id);
 			say(id, 'error', error);
 			try { console.error('[rapier] the ' + id + ' part did not start', error); } catch (_) {}
-			throw Object.assign(new Error(pin.started ? 'The ' + pin.label + ' part could not start. Reload Rapier.' : 'The ' + pin.label + ' part could not be loaded: ' + String(error?.message || error)), {code: 'part_unavailable', part: id, cause: error});
+			const noun = id === 'drawing' ? 'Draw' : pin.label;
+			throw Object.assign(new Error(pin.started ? 'The ' + pin.label + ' part could not start. Reload Rapier.'
+				: error?.code === 'part_not_carried' ? 'This file was saved without ' + noun + '. Open it at rapier.website to use ' + noun + '.'
+				: 'The ' + pin.label + ' part could not be loaded: ' + String(error?.message || error)), {code: 'part_unavailable', part: id, cause: error});
 		});
 		runs.set(id, running);
 		return running;
@@ -117,6 +125,6 @@ const RapierParts = (() => {
 		ids: () => [...pins.keys()],
 		pin: id => pins.has(id) ? {id, label: pins.get(id).label, file: pins.get(id).file, bytes: pins.get(id).bytes, sri: pins.get(id).sri} : null,
 		deletable: id => kept.has(id),
-		need, check, forget, element,
+		need, check, forget, element, sealed,
 	});
 })();

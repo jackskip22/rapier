@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { PaintSurface, PaintBrush, parseBrush, serializeBrush, PAINT_BRUSH_CONTROLS, PAINT_DIP_FULL, paintSizeDefault, paintBrushRadiusOffset, paintBrushDip, paintBrushFeel, paintBrushHead } from './paint.mjs';
+import { PaintSurface, PaintBrush, parseBrush, serializeBrush, createPaintPNGCodec, PAINT_BRUSH_CONTROLS, PAINT_DIP_FULL, paintSizeDefault, paintBrushRadiusOffset, paintBrushDip, paintBrushFeel, paintBrushHead } from './paint.mjs';
 import { RAPIER_PAINT_BRUSHES, paintBrushById } from './brushes.mjs';
 import {admitPaintReplay, paintReplayFits, PAINT_REPLAY_MAX_BYTES} from './paint-history.mjs';
 import {AGENT_PAINT_LIMITS, storedPaintPointCount} from './paint-limits.mjs';
@@ -596,7 +596,12 @@ async function applyWaterActions(surface,actions,options={}) {
 		await yieldPainting();
 	}
 }
+const pngCodec = createPaintPNGCodec();
 export async function encodePaintRaster(pixels,options={}) {
+	if(options.picture==='png') {
+		const url=typeof CompressionStream==='function'?await pngCodec.compressed(pixels):pngCodec.encode(pixels);
+		cancelled(options.signal); return url;
+	}
 	const job=encodePaintingSteps(pixels.data,pixels.width,pixels.height,{quality:100});
 	for(let result=job.next();!result.done;result=job.next()) {cancelled(options.signal);await yieldPainting();}
 	cancelled(options.signal);

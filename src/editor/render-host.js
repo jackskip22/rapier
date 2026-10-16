@@ -134,19 +134,16 @@ async function _rapierExportParse(source, options = {}) {
   const work = options.work || options;
   if (work.signal?.aborted) throw Object.assign(new Error('The operation was canceled.'), {name: 'AbortError', code: 'cancelled'});
   const tokens = [], text = [], prototype = new md.core.State('', md, {}).Token.prototype;
-  const body = _rapierParseRuntime.markdownSource + '\n' + globalThis.RapierExportWorker.workerSource();
-  let url = URL.createObjectURL(new Blob([body], {type: 'text/javascript'}));
-  const release = () => { if (url) { URL.revokeObjectURL(url); url = ''; } };
-  let worker;
-  try { worker = new Worker(url, {name: 'rapier-export'}); }
-  catch (error) { release(); throw error; }
+  const worker = globalThis.RapierWorkerExecution.createWorkerExecution({name: 'rapier-export',
+    source: () => _rapierParseRuntime.markdownSource + '\n' + globalThis.RapierExportWorker.workerSource(),
+    install: globalThis.RapierExportWorker.installExportWorker, scope: globalThis.RapierSourceWorker.sourceWorkerScope(window)});
   let env = {};
   return new Promise((resolve, reject) => {
     let settled = false;
     const finish = (value, error) => {
       if (settled) return;
       settled = true;
-      worker.terminate(); release(); work.signal?.removeEventListener('abort', abort);
+      worker.terminate(); work.signal?.removeEventListener('abort', abort);
       if (error) reject(error); else resolve(value);
     };
     const abort = () => finish(null, Object.assign(new Error('The operation was canceled.'), {name: 'AbortError', code: 'cancelled'}));
@@ -156,7 +153,6 @@ async function _rapierExportParse(source, options = {}) {
     worker.onmessageerror = () => finish(null, new Error('The document parser returned invalid data.'));
     worker.onmessage = async event => {
       if (settled) return;
-      release();
       try {
         if (work.signal?.aborted) return abort();
         const data = event.data;

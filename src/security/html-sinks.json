@@ -377,10 +377,10 @@
 			}
 		},
 		"interchange/docx.mjs": {
-			"render": {
+			"docxSourceModel": {
 				"count": 1,
 				"kind": "untrusted-parse",
-				"reason": "The shared Markdown parser's output is parsed into detached template.content to derive Word comment ranges and message blocks. The inert fragment is never attached or executed; the DOCX writer reads supported nodes and admits links and embedded image bytes through its existing owners."
+				"reason": "The shared Markdown parser's output is parsed into detached template.content to derive Word comment/revision ranges and style projections. The inert fragment is never attached or executed; the DOCX writer reads supported nodes and admits links and embedded image bytes through its existing owners."
 			}
 		},
 		"interchange/browser.js": {
@@ -586,6 +586,13 @@
 				"count": 1,
 				"kind": "sanitized-document",
 				"reason": "preview.innerHTML receives sanitizeRapierHtml()'s own output for the verified maths plug-in's SVG of the formula at the caret, or ''."
+			}
+		},
+		"editor/document-layout.js": {
+			"_rapierClipboardPictures": {
+				"count": 2,
+				"kind": "untrusted-parse",
+				"reason": "Raw clipboard HTML is parsed only in detached template.content. Local picture addresses are replaced with admitted PNG/JPEG bytes from the same clipboard. The fragment is never attached; the result still passes the existing paste sanitizer."
 			}
 		}
 	}

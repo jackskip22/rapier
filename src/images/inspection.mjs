@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import {createWorkerExecution} from '../shell/worker-execution.mjs';
 import {decodeDataImageBytes, imageDimensions, inspectJPEGXL, normalizeSVG, encodeBase64, createAsset, UNSTATED_SIZE} from './assets.mjs';
 import {inspectDrawingSource} from '../draw/inspection.mjs';
 import {RAPIER_DRAW_PAINT_INK_FILTER} from '../draw/core.mjs';
@@ -113,6 +114,7 @@ export function installImageInspectionWorker(scope) {
     };
     queue = queue.then(run, run);
   };
+  return () => inputs.clear();
 }
 
 let client = null, serial = 0, idle = 0;
@@ -135,10 +137,8 @@ export function close(reason = cancelled()) {
 function openWorker() {
   if (client) return client;
   const source = globalThis.RapierImageInspection?.workerSource;
-  if (typeof source !== 'function' || typeof Worker !== 'function') throw new Error('Image inspection worker is unavailable');
-  const url = URL.createObjectURL(new Blob([source()], {type: 'text/javascript'}));
-  try { client = new Worker(url, {name: 'rapier-images'}); }
-  finally { URL.revokeObjectURL(url); }
+  if (typeof source !== 'function') throw new Error('Image inspection is unavailable');
+  client = createWorkerExecution({source, name: 'rapier-images', install: installImageInspectionWorker});
   client.onmessage = ({data}) => finish(data?.id, data?.error ? Object.assign(new Error(data.error.message), data.error) : null, data?.result);
   client.onerror = event => { event.preventDefault?.(); close(new Error(event.message || 'Image inspection worker stopped')); };
   client.onmessageerror = () => close(new Error('Image inspection worker returned an unreadable result'));

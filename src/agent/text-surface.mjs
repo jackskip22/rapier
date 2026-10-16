@@ -250,12 +250,13 @@ export function projectSegments(source, replacements) {
   text += source.slice(end);
   return {text, segments};
 }
-export function sourcePosition(projection, at, end = false) {
+export function sourcePosition(projection, at, end = false, toSurface = false) {
+  const [from, to, start, stop] = toSurface ? ['start', 'end', 'from', 'to'] : ['from', 'to', 'start', 'end'];
   let delta = 0;
   for (const row of projection.segments) {
-    if (at < row.from || at === row.from && !end) break;
-    if (at < row.to) return end ? row.end : row.start;
-    delta += row.end - row.start - (row.to - row.from);
+    if (at < row[from] || at === row[from] && !end) break;
+    if (at < row[to]) return end ? row[stop] : row[start];
+    delta += row[stop] - row[start] - (row[to] - row[from]);
   }
   return at + delta;
 }

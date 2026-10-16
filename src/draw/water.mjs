@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import {WaterGPU,waterReady,waterUnfilteredTest,waterTiming,waterTimingOn,waterCapture,waterCaptureOn,waterNote,waterHandSheetFits,WATER_GPU_MAX_BYTES} from './water-gpu.mjs';
+import {WaterGPU,waterReady,waterUnfilteredTest,waterTiming,waterTimingOn,waterCapture,waterCaptureOn,waterNote,waterHandSheetFits,waterGpuBudget,waterSheetShows} from './water-gpu.mjs';
 import {WaterContact,waterContactReach} from './water-contact.mjs';
 import {getBrush,makeTip,CUSTOM_PARAMS} from './water-materials.mjs';
 import {WATER_PAPER_UNITS,WATER_PAPER_SEED,WATER_PAPER_PERIOD} from './paper-field.mjs';
@@ -7,9 +7,9 @@ import {encodeRgb,toLinear,waterMixes} from './water-color.mjs';
 export {waterMixes};
 import {buildWaterFill} from './water-fill.mjs';
 import {waterTimeFits} from './water-data.mjs';
-import {WATER_TICK_HZ,WATER_BANDS,WATER_ACTION_MAX_POINTS,WATER_TIP_MAX_PIXELS,WATER_SOURCE_MAX_BYTES,WATER_PAPERS,WATER_PIGMENTS,WATER_BRUSHES,WATER_TOOLS,WATER_CONTROLS,waterBrushById,waterPigmentById,waterPaperById,waterError,waterRadius,waterHandSize,waterHandUi,waterHandFromUi,admitWaterPigment,admitWaterTip,admitWaterControls,admitWaterBrush,waterBrushDefinition,admitWaterAction,admitWaterActions,waterActionsFault,admitWaterState} from './water-data.mjs';
-export {WATER_TICK_HZ,WATER_BANDS,WATER_ACTION_MAX_POINTS,WATER_TIP_MAX_PIXELS,WATER_SOURCE_MAX_BYTES,WATER_PAPERS,WATER_PIGMENTS,WATER_BRUSHES,WATER_TOOLS,WATER_CONTROLS,waterBrushById,waterPigmentById,waterPaperById,waterError,waterRadius,waterHandSize,waterHandUi,waterHandFromUi,admitWaterPigment,admitWaterTip,admitWaterControls,admitWaterBrush,waterBrushDefinition,admitWaterAction,admitWaterActions,waterActionsFault,admitWaterState};
-export {waterReady,waterUnfilteredTest,waterTiming,waterTimingOn,waterCapture,waterCaptureOn,waterNote,waterHandSheetFits,WATER_PAPER_UNITS,WATER_PAPER_SEED};
+import {WATER_TICK_HZ,WATER_BANDS,WATER_ACTION_MAX_POINTS,WATER_TIP_MAX_PIXELS,WATER_SOURCE_MAX_BYTES,WATER_PAPERS,WATER_PIGMENTS,WATER_BRUSHES,WATER_TOOLS,WATER_CONTROLS,waterBrushById,waterPigmentById,waterPaperById,waterError,waterRadius,waterHandSize,waterHandUi,waterHandFromUi,admitWaterPigment,admitWaterTip,admitWaterControls,admitWaterBrush,waterBrushDefinition,admitWaterAction,admitWaterActions,waterActionsFault,waterProFeature,admitWaterState} from './water-data.mjs';
+export {WATER_TICK_HZ,WATER_BANDS,WATER_ACTION_MAX_POINTS,WATER_TIP_MAX_PIXELS,WATER_SOURCE_MAX_BYTES,WATER_PAPERS,WATER_PIGMENTS,WATER_BRUSHES,WATER_TOOLS,WATER_CONTROLS,waterBrushById,waterPigmentById,waterPaperById,waterError,waterRadius,waterHandSize,waterHandUi,waterHandFromUi,admitWaterPigment,admitWaterTip,admitWaterControls,admitWaterBrush,waterBrushDefinition,admitWaterAction,admitWaterActions,waterActionsFault,waterProFeature,admitWaterState};
+export {waterReady,waterUnfilteredTest,waterTiming,waterTimingOn,waterCapture,waterCaptureOn,waterNote,waterHandSheetFits,waterGpuBudget,WATER_PAPER_UNITS,WATER_PAPER_SEED,waterSheetShows};
 import {WATER_SPECIALTY_PIGMENTS,WATER_PRO_PAPERS,waterSpecialtyById,waterPigmentFinish,isWaterSpecialtyPigment,mixWaterPigments} from './water-data.mjs';
 export {WATER_SPECIALTY_PIGMENTS,WATER_PRO_PAPERS,waterSpecialtyById,waterPigmentFinish,isWaterSpecialtyPigment,mixWaterPigments};
 const clone=value=>structuredClone(value);
@@ -57,7 +57,7 @@ export class WaterSurface {
  constructor(width,height,options={}){
   Object.assign(this,WaterSurface._admitFrame(width,height,options));
   this.cell=1;this.tick=0;this.revision=0;this.toothOX=this.origin[0];this.toothOY=this.origin[1];this.paper=null;
-  this.maxBytes=options.maxBytes??WATER_GPU_MAX_BYTES;this.wetPending=0;this._wetWork=null;this._dirty=null;this._bounds=null;this.growBox=null;
+  this.wetPending=0;this._wetWork=null;this._dirty=null;this._bounds=null;this.growBox=null;
   this._actions=[];this._bytes=2;this._actionStart=0;this._tips=new Map();this._transaction=null;this._brush=null;this._pendingDt=0;this._disposed=false;
   this.gpu=new WaterGPU(width,height,{...options,paper:this.paperId,seed:options.paperSeed??WATER_PAPER_SEED,paperScale:options.paperScale??WATER_PAPER_UNITS/this.pixelScale,paperOrigin:options.paperOrigin??[this.origin[0],-height-this.origin[1]]});
   this.ready=this.gpu.ready.then(async()=>{
@@ -66,6 +66,7 @@ export class WaterSurface {
    this._sync();return this;
   }).catch(error=>{try{this.gpu.dispose();}catch(_){}this._disposed=true;throw error;});
  }
+ get maxBytes(){return this.gpu.maxBytes;}
  get pixelScale(){return this.scale*3;}
  get wet(){return !!this.gpu.active;}
  get wetState(){return this.wet?{tick:this.tick}:null;}

@@ -400,6 +400,7 @@ globals.RapierTypography = 'layout/typography.mjs';
 globals.RapierExportWorker = 'editor/export-worker.mjs';
 globals.RapierExportDialect = 'editor/export-dialect.mjs';
 globals.RapierSourceWorker = 'editor/source-worker.mjs';
+globals.RapierWorkerExecution = 'shell/worker-execution.mjs';
 globals.RapierPlainPaste = 'editor/plain-paste.mjs';
 globals.RapierImageInspection = 'images/inspection.mjs';
 globals.RapierRecoveryWorker = 'editor/recovery-worker.mjs';

@@ -707,7 +707,6 @@ function _rapierDrawRenderShapes(onlyIds) {
 			else if (state.effectsPreviewNode) _rapierDrawEffectsPreviewRelease(false);
 			if (refused) showToast(refused.code === 'drawing_route_blocked' ? 'That move blocks a connector. Your diagram was kept.' : refused.message, 'error');
 			globalThis.RapierChanges?.locate();
-			if (typeof _rapierColouringRestack === 'function') _rapierColouringRestack();
 			return;
 		} catch (error) {
 			if (!['drawing_work_limit', 'drawing_geometry_limit', 'drawing_route_blocked'].includes(error.code)) throw error;
@@ -909,7 +908,6 @@ async function _rapierDrawRequestClear() {
 	if (live && !live.settled && !live.failure) await live.sync().catch(() => {});
 	if (state.finishing || !state.open || state.session !== session || !state.recipe?.shapes?.length && !state.paintLayer?.surface?.bounds()) return;
 	await _rapierDrawClearAll();
-	if (typeof _rapierColouringOffer === 'function') _rapierColouringOffer(true);
 }
 function _rapierDrawShapeById(id) { return _rapierDrawState.recipe.shapes.find(s => s.id === id) || null; }
 
@@ -1000,29 +998,20 @@ function _rapierDrawPaintClient(purpose = 'human', mode = 'paint') {
 	const holder = {client: null, ready: null};
 	_rapierDrawPaintWorkers.set(role, holder);
 	if (typeof W?.workerSource !== 'function') return holder.ready = Promise.resolve(null);
-	const local = async () => {
-		const client = holder.client = water ? W.createLocalWaterClient() : W.createLocalPaintClient();
-		if (water) await client.request('configure', {preview: purpose === 'preview', unfilteredTest: globalThis.__rapierWaterUnfilteredTest === true, slowTest: globalThis.__rapierWaterSlowTest, stats: purpose === 'human' && new URLSearchParams(location.search).has('waterstats'), capture: purpose === 'human' && new URLSearchParams(location.search).has('water-capture')});
-		return client;
-	};
-	if (typeof Worker !== 'function') {
-		holder.ready = local().catch(error => { if (_rapierDrawPaintWorkers.get(role) === holder) _rapierDrawPaintWorkers.delete(role); throw error; });
-		return holder.ready;
-	}
 	holder.ready = (async () => {
-		const url = URL.createObjectURL(new Blob([W.workerSource()], {type: 'text/javascript'}));
-		let worker = null;
+		const worker = globalThis.RapierWorkerExecution.createWorkerExecution({source: W.workerSource, name: 'rapier-' + role,
+			install: water ? W.installWaterWorker : W.installPaintWorker});
+		const client = holder.client = W.createWorkerClient({postMessage: (message, transfer) => worker.postMessage(message, transfer), terminate: () => worker.terminate()});
+		worker.onmessage = ({data}) => client.receive(data);
+		worker.onerror = event => { client.fail(event.error || new Error(event.message || 'The painter stopped')); if (_rapierDrawPaintWorkers.get(role) === holder) _rapierDrawPaintWorkers.delete(role); };
+		worker.onmessageerror = () => client.fail(new Error('The painter returned unreadable data'));
 		try {
-			worker = new Worker(url);
-			const client = holder.client = W.createWorkerClient({postMessage: (message, transfer) => worker.postMessage(message, transfer), terminate: () => worker.terminate()});
-			worker.onmessage = ({data}) => client.receive(data);
-			worker.onerror = event => { event.preventDefault?.(); client.fail(new Error(event.message || 'The painter stopped')); if (_rapierDrawPaintWorkers.get(role) === holder) _rapierDrawPaintWorkers.delete(role); };
-			const isolated = globalThis.crossOriginIsolated === true && typeof rows?.workerSource === 'function';
+			const mode = await worker.ready;
+			const isolated = mode === 'worker' && globalThis.crossOriginIsolated === true && typeof rows?.workerSource === 'function';
 			const helpers = !water && purpose !== 'preview' && isolated ? 4 : 0;
 			await client.request('configure', {preview: water && purpose === 'preview', unfilteredTest: water && globalThis.__rapierWaterUnfilteredTest === true, slowTest: water ? globalThis.__rapierWaterSlowTest : undefined, stats: water && purpose === 'human' && new URLSearchParams(location.search).has('waterstats'), capture: water && purpose === 'human' && new URLSearchParams(location.search).has('water-capture'), helpers, ...(helpers ? {helperSource: rows.workerSource()} : {})});
 			return client;
-		} catch (error) { worker?.terminate(); if (water && error.code === 'water_webgpu_unavailable') throw error; return local(); }
-		finally { URL.revokeObjectURL(url); }
+		} catch (error) { worker.terminate(); throw error; }
 	})().catch(error => { if (_rapierDrawPaintWorkers.get(role) === holder) _rapierDrawPaintWorkers.delete(role); throw error; });
 	return holder.ready;
 }
@@ -1030,18 +1019,24 @@ function _rapierDrawPaintRelease(client) {
 	for (const [role, holder] of _rapierDrawPaintWorkers) if (holder.client === client || !client && role === 'human') _rapierDrawPaintWorkers.delete(role);
 	if (client) void Promise.resolve(client.close?.()).catch(() => {});
 }
+async function _rapierDrawAgentPicture() {
+	const shows = await globalThis.RapierEmbeddedImages?.whenJxlDisplayKnown?.();
+	return shows === false ? 'png' : 'jxl';
+}
 async function _rapierDrawPaintAgentStrokes(strokes, seed = 1, target = null, options = {}) {
 	options.signal?.throwIfAborted();
+	const picture = _rapierDrawAgentPicture();
+	picture.catch(() => {});
 	if (options.mode === 'water') {
 		strokes = structuredClone(strokes);
 		options = {...options, actions: options.actions == null ? undefined : structuredClone(options.actions), waterSession: _rapierWaterSession(), waterAuthorized: globalThis.RapierDrawAgentPaint.waterPaintingIsLive(target, _rapierWaterSession())};
-		await _rapierWaterProAuthorizeActions(options.actions ?? strokes, options);
-		options.signal?.throwIfAborted();
+		_rapierWaterProRefuseAgent(options.actions ?? strokes, options);
 	}
+	options = {...options, picture: await picture};
 	const client = await _rapierDrawPaintClient('agent', options.mode);
 	if (!client) return globalThis.RapierDrawAgentPaint.paintAgentStrokes(strokes, seed, target, options);
 	try {
-		const shape = await client.request('agent', {strokes, seed, target, contribution: options.contribution, mode:options.mode, paper:options.paper, actions:options.actions, recipe:options.recipe, waterSession:options.waterSession, waterAuthorized:options.waterAuthorized}, [], options.onProgress, {signal: options.signal});
+		const shape = await client.request('agent', {strokes, seed, target, contribution: options.contribution, mode:options.mode, paper:options.paper, actions:options.actions, recipe:options.recipe, picture:options.picture, waterSession:options.waterSession, waterAuthorized:options.waterAuthorized}, [], options.onProgress, {signal: options.signal});
 		if (options.mode === 'water' && shape) globalThis.RapierDrawAgentPaint.rememberWaterPainting(shape, options.waterSession);
 		return shape;
 	}
@@ -1049,15 +1044,18 @@ async function _rapierDrawPaintAgentStrokes(strokes, seed = 1, target = null, op
 }
 async function _rapierDrawPaintReplay(shape, omitIds, options = {}) {
 	options.signal?.throwIfAborted();
+	const picture = _rapierDrawAgentPicture();
+	picture.catch(() => {});
 	if (shape?.paint?.mode === 'water') {
 		const waterSession = _rapierWaterSession();
 		if (!globalThis.RapierDrawAgentPaint.waterPaintingIsLive(shape, waterSession)) return null;
 		options = {...options, waterSession, waterAuthorized: true};
 	}
+	options = {...options, picture: await picture};
 	const client = await _rapierDrawPaintClient('agent', shape?.paint?.mode);
 	if (!client) return globalThis.RapierDrawAgentPaint.replayAgentPainting(shape, omitIds, options);
 	try {
-		const replayed = await client.request('replayAgent', {shape, omitIds, requireEmptyBase: options.requireEmptyBase === true, waterSession:options.waterSession, waterAuthorized:options.waterAuthorized}, [], options.onProgress, {signal: options.signal});
+		const replayed = await client.request('replayAgent', {shape, omitIds, requireEmptyBase: options.requireEmptyBase === true, picture: options.picture, waterSession:options.waterSession, waterAuthorized:options.waterAuthorized}, [], options.onProgress, {signal: options.signal});
 		if (replayed?.paint?.mode === 'water') globalThis.RapierDrawAgentPaint.rememberWaterPainting(replayed, options.waterSession);
 		return replayed;
 	}
@@ -1457,7 +1455,7 @@ function _rapierDrawAgentReceipt(options, status, reason, presentationStatus) {
 	const state = _rapierDrawState, transactionId = String(options.remoteTransactionId || options.transactionId || '');
 	const drawing = _rapierDrawContext();
 	const presentation = {status: presentationStatus || (status === 'incorporated' ? 'completed' : status === 'presentation_deferred' ? 'deferred' : 'unavailable'),
-		session: drawing?.session || null, surfaceGeneration: drawing?.surfaceGeneration || 0};
+		session: drawing?.session || options.presentationSession || null, surfaceGeneration: drawing?.surfaceGeneration || 0};
 	const target = options.targetOccurrence || options.occurrence;
 	if (target && Number.isSafeInteger(target.start) && Number.isSafeInteger(target.end)) {
 		const start = Number.isSafeInteger(options.committedPosition) ? options.committedPosition : target.start;
@@ -1492,7 +1490,10 @@ async function _rapierDrawPresentCommitted(intent, {current, onReceipt, signal} 
 		}
 		return structuredClone(prior);
 	}
-	if (typeof current !== 'function' || !current() || signal?.aborted) return refuse('drawing_navigation_changed');
+	if (typeof current !== 'function' || !current() || signal?.aborted) {
+		_rapierDrawInviteFor(intent);
+		return refuse('drawing_navigation_changed');
+	}
 	const position = intent.occurrence?.start, end = intent.occurrence?.end, assets = globalThis.RapierImageAssets;
 	if (!Number.isSafeInteger(position) || !Number.isSafeInteger(end) || end <= position || !intent.reference) return refuse('drawing_occurrence_changed');
 	const source = _rapierSourceText(), root = rapier.document.source?.rootId, spans = _rapierExcerptCanonicalBlockSpans();
@@ -1520,14 +1521,24 @@ async function _rapierDrawPresentCommitted(intent, {current, onReceipt, signal} 
 		if (_rapierDrawBusy().human || state.replay) return _rapierDrawAgentReceipt(options, 'presentation_deferred', 'drawing_busy');
 		return _rapierDrawAgentReceipt(options, 'incorporated');
 	}
+	const painting = recipe.shapes.some(shape => shape.recognized === 'paint');
+	if (intent.presentation?.open !== true || painting) _rapierDrawInviteFor(intent);
 	if (intent.presentation?.open !== true) return refuse('drawing_not_open');
+	if (painting) return _rapierDrawAgentReceipt({...options, presentationSession: 'document'}, 'incorporated', undefined, 'skipped');
+	const editing = {blockId: block.id, imageIndex: image.renderIndex,
+		title: _rapierRenderModule('render-markdown')._rapierImageAltText(_rapierRenderModule('render-markdown')._rapierImageAltSourceParts(image.altSource).alt), asset: intent.reference, sourceUrl: asset.url};
+	if (!_rapierAgentFollowing()) {
+		void _rapierAgentInvite('drawing', {go: () => {
+			if (state.open || _rapierSourceText() !== source) { _rapierAgentInviteToBlockNow(block.id); return; }
+			_rapierDrawOpenSurface({recipe, editing, notes: _rapierDrawInANote()});
+		}});
+		return _rapierDrawAgentReceipt({...options, presentationSession: 'document'}, 'incorporated', 'person_invited', 'skipped');
+	}
 	const opened = await new Promise(resolve => {
 		const abort = () => resolve(false);
 		signal?.addEventListener('abort', abort, {once: true});
 		const done = value => {signal?.removeEventListener('abort', abort); resolve(value);};
-		_rapierDrawOpenSurface({recipe, editing: {blockId: block.id, imageIndex: image.renderIndex,
-			title: _rapierRenderModule('render-markdown')._rapierImageAltText(_rapierRenderModule('render-markdown')._rapierImageAltSourceParts(image.altSource).alt), asset: intent.reference, sourceUrl: asset.url},
-			notes: _rapierDrawInANote(), onReady: done});
+		_rapierDrawOpenSurface({recipe, editing, notes: _rapierDrawInANote(), onReady: done});
 	});
 	if (!opened || !current() || signal?.aborted || root !== rapier.document.source?.rootId || _rapierSourceText() !== source) return refuse('drawing_navigation_changed');
 	if (_rapierDrawBusy().human) return _rapierDrawAgentReceipt(options, 'presentation_deferred', 'drawing_busy');
@@ -1539,6 +1550,16 @@ async function _rapierDrawPresentCommitted(intent, {current, onReceipt, signal} 
 	catch (_) { state.recipe = finalRecipe; _rapierDrawRenderAll(); return refuse('drawing_presentation_failed'); }
 	if (!playing) { state.recipe = finalRecipe; _rapierDrawRenderAll(); }
 	return _rapierDrawAgentReceipt(options, 'incorporated', undefined, playing ? 'replaying' : 'completed');
+}
+function _rapierDrawInviteFor(intent) {
+	try {
+		const position = intent.occurrence?.start, spans = _rapierExcerptCanonicalBlockSpans(), assets = globalThis.RapierImageAssets;
+		const block = Number.isSafeInteger(position) && rapier.document.blocks.find(row => {const span = spans.get(row.id); return span && span.start <= position && position < span.end;});
+		if (!block) return;
+		const asset = assets.documentAssets(_rapierSourceText()).assets.get(assets.normalizeLabel(intent.reference || ''));
+		const recipe = asset && _rapierDrawReadRecipeFromSVGText(new TextDecoder().decode(assets.decodeDataImage(asset.url)));
+		_rapierAgentInviteToBlock(recipe?.shapes?.some(shape => shape.recognized === 'paint') ? 'painting' : 'drawing', block.id);
+	} catch (_) {}
 }
 function _rapierDrawAdmitAgentPatch(patch, options) {
 	try {
@@ -2499,8 +2520,6 @@ async function _rapierDrawSetTool(name, remember = true) {
 		_rapierDrawUpdateInkBtn();
 		if (name === 'effects') _rapierDrawEffectsSync();
 		_rapierDrawEffectsPreviewSchedule();
-		if (name === 'paint') { if (typeof _rapierColouringOffer === 'function') _rapierColouringOffer(); }
-		else if (typeof _rapierColouringDismiss === 'function') _rapierColouringDismiss(false);
 	} finally { if (state.toolChange === change) state.toolChange = null; }
 }
 
@@ -2895,13 +2914,16 @@ function _rapierDrawChain(side) {
 	const recipe = state.recipe, before = _rapierDrawHistoryRecipe(), box = _rapierDrawShapeBBoxIn(from, recipe), gap = 48;
 	const along = step[0] ? box.maxX - box.minX + gap : box.maxY - box.minY + gap;
 	const taken = recipe.shapes.filter(shape => shape !== from && shape.geom && !['line', 'arrow'].includes(shape.recognized)).map(shape => _rapierDrawShapeBBoxIn(shape, recipe)).filter(Boolean);
-	let dx = 0, dy = 0;
+	let dx = 0, dy = 0, free = false;
 	for (let i = 1; i <= 24; i++) {
 		dx = step[0] * along * i; dy = step[1] * along * i;
-		if (!taken.some(b => b.minX < box.maxX + dx + gap / 2 && b.maxX > box.minX + dx - gap / 2 && b.minY < box.maxY + dy + gap / 2 && b.maxY > box.minY + dy - gap / 2)) break;
+		if (!taken.some(b => b.minX < box.maxX + dx + gap / 2 && b.maxX > box.minX + dx - gap / 2 && b.minY < box.maxY + dy + gap / 2 && b.maxY > box.minY + dy - gap / 2)) { free = true; break; }
 	}
+	if (!free) return;
 	const next = JSON.parse(JSON.stringify(from)), g = next.geom;
-	for (const key of ['label', 'labelIn', 'labelPos', 'labelBeside', 'labelGrow', 'group']) delete next[key];
+	for (const key of ['label', 'labelIn', 'labelPos', 'labelBeside', 'labelGrow', 'step', 'group']) delete next[key];
+	const diagram = globalThis.RapierDrawCore.RAPIER_DRAW_DIAGRAM;
+	if (next.ink === diagram.accent[0] && !next.authorStyle?.fill && next.authorInk !== true) next.ink = diagram.box[0];
 	Object.assign(next, { id: _rapierDrawNextId(), stroke: null, seed: _rapierDrawMintSeed() });
 	next.geom = g.p ? { ...g, p: g.p.map(p => [p[0] + dx, p[1] + dy]) } : { ...g, cx: g.cx + dx, cy: g.cy + dy };
 	const port = ([x, y]) => ({ ax: (x + 1) / 2, ay: (y + 1) / 2 });
@@ -3194,7 +3216,7 @@ function _rapierDrawLetterGlyph(set) {
 	const sample = set && globalThis.RapierDrawLetters.LETTER_PREVIEWS[set.id];
 	return sample ? '<svg class="rapier-draw-glyph" viewBox="0 0 ' + sample.glyph[0] + ' ' + sample.em + '" aria-hidden="true"><path fill="currentColor" transform="translate(' + sample.bearing + ',0)" d="' + sample.glyph[1] + '"/></svg>' : '';
 }
-const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.6/letters/';
+const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.7/letters/';
 const _rapierDrawLettersDoor = { allowed: false, asking: null, providers: new Map(), bringing: new Map() };
 function _rapierDrawLettersProvider(set) {
 	const door = _rapierDrawLettersDoor;
@@ -4084,8 +4106,7 @@ function _rapierDrawHandleSpecs() {
 	}
 	const frame = _rapierDrawSelectionFrame(_rapierDrawState.recipe, _rapierDrawSelection()) || { theta: 0, pivot: null, box };
 	const w = frame.box.maxX - frame.box.minX, h = frame.box.maxY - frame.box.minY;
-	const used = new Set(_rapierDrawState.recipe.shapes.flatMap(arrow => [arrow.bind?.start, arrow.bind?.end]).filter(end => end?.to === shape.id).map(end => end.ax + ',' + end.ay));
-	const chain = _rapierDrawChainable(shapes) ? Object.entries(RAPIER_DRAW_CHAIN_SIDES).filter(([, step]) => !used.has((step[0] + 1) / 2 + ',' + (step[1] + 1) / 2)).map(([side, step]) => ({ id: 'add-' + side, side: step,
+	const chain = _rapierDrawChainable(shapes) ? Object.entries(RAPIER_DRAW_CHAIN_SIDES).map(([side, step]) => ({ id: 'add-' + side, side: step,
 		label: 'Add a shape ' + { n: 'above', e: 'to the right', s: 'below', w: 'to the left' }[side], point: [(box.minX + box.maxX + step[0] * w) / 2, (box.minY + box.maxY + step[1] * h) / 2] })) : [];
 	return chain.concat([['nw', 0, 0], ['n', .5, 0], ['ne', 1, 0], ['e', 1, .5], ['se', 1, 1], ['s', .5, 1], ['sw', 0, 1], ['w', 0, .5], ['rotate', .5, 0]].map(([id, x, y]) => {
 		const local = [frame.box.minX + w * x, frame.box.minY + h * y];
@@ -4197,6 +4218,7 @@ function _rapierDrawApplyMove(point, evt = {}) {
 	const snapTolerance = (gesture.touch ? RAPIER_DRAW_MOVE_THRESHOLD_PX : 6) / gesture.scale;
 	const snap = state.snap && !evt.ctrlKey && !evt.metaKey ? _rapierDrawSnapMove(gesture.source, gesture.ids, dx, dy, snapTolerance) : { dx, dy, guides: [] };
 	for (const shape of _rapierDrawRestoreTransformShapes()) { _rapierDrawTranslateShape(shape, state.recipe, snap.dx, snap.dy); _rapierDrawReleaseBindings(shape, gesture.ids); }
+	globalThis.RapierDrawEdit._rapierDrawRefaceArrows(new Set(gesture.ids), state.recipe);
 	state.guides = snap.guides; _rapierDrawRenderShapes(gesture.ids); _rapierDrawPaintGuides();
 }
 function _rapierDrawPlusMark(x, y, r) {
@@ -5155,7 +5177,6 @@ function _rapierDrawBuildSurface() {
 		'<div class="rapier-draw-hint" aria-hidden="true">Tap to paint</div><div class="rapier-draw-resize" hidden aria-hidden="true"></div></div><div class="rapier-draw-handles"></div><div class="rapier-draw-menu" hidden></div><input class="rapier-draw-font-input" type="file" accept=".ttf,.otf,.woff,.woff2,.ttc,.otc,.zip,font/ttf,font/otf,font/woff,font/woff2,application/zip" multiple hidden><input class="rapier-draw-brush-input" type="file" accept=".myb,application/json" hidden><input class="rapier-draw-image-input" type="file" accept="image/png,image/jpeg,image/webp,image/jxl,.jxl" multiple hidden>';
 	const dials = document.createElement('span'); dials.className = 'rapier-draw-head-dials';
 	dials.append(_rapierDrawDialButton('undo'), _rapierDrawDialButton('redo'));
-	dials.appendChild(surface.querySelector('.rapier-draw-head-clear'));
 	surface.querySelector('.rapier-draw-head-end').before(dials);
 	_rapierDrawEffectsBuild(surface);
 	document.body.appendChild(surface);
@@ -5510,7 +5531,6 @@ function _rapierDrawBuildSurface() {
 			evt.preventDefault();
 			if (state.toolMenuOpen) _rapierDrawSetToolMenu(false);
 			else if (state.canvasMenuOpen) _rapierDrawSetCanvasMenu(false);
-			else if (typeof _rapierColouringDismiss === 'function' && _rapierColouringDismiss(true)) return;
 			else if (state.gesture || state.markerPress) _rapierDrawCancelGesture();
 			else if (_rapierDrawSelection().length) { _rapierDrawSetSelection([]); _rapierDrawRenderAll(); }
 			else _rapierDrawHandleBack();
@@ -5691,7 +5711,6 @@ function _rapierDrawOpenSurface(options) {
 		}
 		globalThis.RapierChanges?.close(); globalThis.RapierChanges?.schedule();
 		opts.onReady?.(true);
-		if (typeof _rapierColouringOffer === 'function') _rapierColouringOffer();
 	});
 }
 const RAPIER_DRAW_FADE_MS = 200;
@@ -5874,39 +5893,34 @@ onmessage = async ({ data }) => {
 		postMessage({ id });
 	} catch (error) { postMessage({ id, error: { name: String(error && error.name || 'Error'), message: String(error && error.message || error) } }); }
 };`;
-function _rapierDrawBackupWorkerCall(message) {
+async function _rapierDrawBackupWorkerCall(message) {
 	const state = _rapierDrawState;
 	if (state.backupWorker === undefined) {
-		state.backupWorker = null;
-		try {
-			if (typeof Worker === 'function' && typeof Blob === 'function' && typeof URL?.createObjectURL === 'function') {
-				const url = URL.createObjectURL(new Blob([RAPIER_DRAW_BACKUP_WORKER], { type: 'text/javascript' }));
-				const client = { worker: new Worker(url), url, pending: new Map(), serial: 0 };
-				const lose = () => {
-					if (state.backupWorker === client) state.backupWorker = null;
-					for (const row of client.pending.values()) { clearTimeout(row.timer); row.reject(new Error('The recovery writer stopped.')); }
-					client.pending.clear();
-					try { client.worker.terminate(); } catch (_) {}
-					try { URL.revokeObjectURL(url); } catch (_) {}
-				};
-				client.lose = lose;
-				client.worker.onmessage = ({ data }) => {
-					const row = client.pending.get(data.id);
-					if (!row) return;
-					client.pending.delete(data.id); clearTimeout(row.timer);
-					if (data.error) row.reject(Object.assign(new Error(data.error.message), { name: data.error.name })); else row.resolve(data);
-				};
-				client.worker.onerror = lose; client.worker.onmessageerror = lose;
-				state.backupWorker = client;
-			}
-		} catch (_) { state.backupWorker = null; }
+		const client = {worker: globalThis.RapierWorkerExecution.createWorkerExecution({
+			source: RAPIER_DRAW_BACKUP_WORKER, name: 'rapier-draw-recovery'}), pending: new Map(), serial: 0, failure: null};
+		client.lose = (error = new Error('The recovery writer stopped.')) => {
+			if (error.code !== 'worker_startup_refused') error.mayHaveCommitted = true;
+			client.failure ||= error;
+			for (const row of client.pending.values()) { clearTimeout(row.timer); row.reject(client.failure); }
+			client.pending.clear(); client.worker.terminate();
+		};
+		client.worker.onmessage = ({data}) => {
+			const row = client.pending.get(data.id);
+			if (!row) return;
+			client.pending.delete(data.id); clearTimeout(row.timer);
+			if (data.error) row.reject(Object.assign(new Error(data.error.message), {name: data.error.name})); else row.resolve(data);
+		};
+		client.worker.onerror = event => client.lose(event.error || new Error(event.message || 'The recovery writer stopped.'));
+		client.worker.onmessageerror = () => client.lose();
+		state.backupWorker = client;
 	}
 	const client = state.backupWorker;
-	if (!client) return Promise.reject(new Error('No recovery writer.'));
+	await client.worker.ready;
+	if (client.failure) throw client.failure;
 	return new Promise((resolve, reject) => {
 		const id = ++client.serial, timer = setTimeout(() => client.lose(), 30000);
-		client.pending.set(id, { resolve, reject, timer });
-		try { client.worker.postMessage({ ...message, id }); }
+		client.pending.set(id, {resolve, reject, timer});
+		try { client.worker.postMessage({...message, id}); }
 		catch (error) { client.pending.delete(id); clearTimeout(timer); reject(error); }
 	});
 }
@@ -5961,7 +5975,10 @@ function _rapierDrawBackupIDB() {
 			return names.map(name => ({ name: String(name), text: () => run('readonly', store => store.get(name)).then(value => typeof value === 'string' ? value : '') }));
 		},
 		async write(name, record, { background = false, remove = [] } = {}) {
-			if (background) { try { await _rapierDrawBackupWorkerCall({ name, record, remove }); return; } catch (_) {} }
+			if (background) {
+				try { await _rapierDrawBackupWorkerCall({name, record, remove}); return; }
+				catch (error) { if (error.code !== 'worker_startup_refused') throw error; }
+			}
 			const text = typeof record === 'string' ? record : JSON.stringify(record);
 			await run('readwrite', store => { const put = store.put(text, name); for (const older of remove) store.delete(older); return put; });
 		},
@@ -6137,8 +6154,10 @@ async function _rapierDrawBackupWrite(closing = false, sealed = false) {
 				if (state.open && state.backupRecovery === owner && state.session === owner.session && record.revision === owner.revision && record.revision > owner.cleared) _rapierDrawBackupTouch();
 				return false;
 			}
-			if (store) await _rapierDrawBackupRemove(store, [name], owner, { quiet: true });
-			else owner.files.delete(name);
+			if (!error?.mayHaveCommitted) {
+				if (store) await _rapierDrawBackupRemove(store, [name], owner, { quiet: true });
+				else owner.files.delete(name);
+			}
 			if (state.session === owner.session && record.revision > owner.cleared) state.backupDirty = true;
 			_rapierDrawBackupProblem(failure);
 			return false;
@@ -6743,7 +6762,8 @@ async function _rapierDrawSavePainting(leaving = false) {
 	} catch (error) { if (live()) showToast('The painting could not be prepared. It is still open: ' + String(error?.message || error), 'error'); return; }
 	finally { preparing.end(); if (state.painterOpening === opening) state.painterOpening = null; }
 	if (!live()) return;
-	if (leaving && !state.finishHandoff && (state.editing ? !_rapierDrawChangedSinceOpen() : !_rapierDrawHasContent(state.recipe))) { void _rapierDrawFinish(); return; }
+	const untouched = () => !state.finishHandoff && (state.editing ? !_rapierDrawChangedSinceOpen() : !_rapierDrawHasContent(state.recipe));
+	if (leaving && untouched() && (state.editing || !state.undoStack.length && !state.redoStack.length)) { void _rapierDrawFinish(); return; }
 	const jxl = typeof _rapierJxlEncoderPresent !== 'function' || _rapierJxlEncoderPresent(), shows = globalThis.RapierEmbeddedImages?.jxlDisplayable?.() !== false;
 	const choice = state.painterChoice ||= {format: jxl && shows ? 'jxl' : 'png', canvas: true}, native = window.RapierPlatform?.environment.native === true;
 	if (!jxl && choice.format === 'jxl') choice.format = 'png';
@@ -6773,7 +6793,12 @@ async function _rapierDrawSavePainting(leaving = false) {
 		if (target.dataset.act === 'close') { dialog.cancel(true); return; }
 		if (target.dataset.act === 'add' && !_rapierDrawHasPlace(state.notes)) { say('This document is plain text, so it cannot hold a drawing. ' + (native ? 'Save' : 'Download') + ' keeps your drawing.'); return; }
 		if (target.dataset.act === 'add') { dialog.cancel(false); if (live()) await _rapierDrawFinish(); return; }
-		if (target.dataset.act === 'exit') { dialog.cancel(false); if (live()) await _rapierDrawClose({ recover: true }); return; }
+		if (target.dataset.act === 'exit') {
+			dialog.cancel(false);
+			if (live() && untouched()) { await _rapierDrawBackupClear(); await _rapierDrawClose(); }
+			else if (live()) await _rapierDrawClose({ recover: true });
+			return;
+		}
 		if (target.dataset.act !== 'download') return;
 		const controller = work = new AbortController(), {format, canvas} = choice, name = 'painting' + (canvas ? '' : '-transparent') + '.' + format;
 		const row = progress.open({label: 'Saving picture', after: _rapierPainterBig() ? 0 : 500, cancel: () => controller.abort()});

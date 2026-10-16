@@ -13,10 +13,16 @@
 		window.addEventListener('rapier:platform-resources', function (event) { fn((event && event.detail) || {}); });
 	}
 
-	function _friendly(m, err) {
+	function _friendly(m, err, host) {
 		var s = String(err && err.message || err || 'unknown error'), d = m.dash;
 		if (/^Google Play(?: |'s )/.test(s)) return s;
 		if (/^The plug-in directory /.test(s)) return s;
+		if (host) {
+			if (/SHA-384 mismatch|unexpected size/.test(s)) return 'this app’s ' + m.noun + ' plug-in failed verification' + d + 'refusing to run it';
+			if (/secure hash API unavailable/.test(s)) return 'this device cannot securely verify the plug-in';
+			if (m.missing && s === m.missing) return 'this app’s ' + m.noun + ' plug-in could not run' + d + 'tap retry';
+			return 'this app could not read its ' + m.noun + ' plug-in' + d + 'tap retry';
+		}
 		if (/AbortError|aborted|timeout/i.test(s))
 			return 'connection timed out' + d + 'check your internet and tap retry';
 		if (/Failed to fetch|NetworkError|ERR_INTERNET|Unable to resolve|UnknownHost|networkerror/i.test(s))
@@ -54,7 +60,7 @@
 		files: [{name: MATH_FILE, file: MATH_FILE, version: MATH_VERSION,
 			bytes: 691650,
 			sri: 'C92x26+pBI4q9FoWypMhBb8CqSGaaPLw8dpYigWiYNsYQRTcPVrFyPVjrhc/Tnwh',
-			url: 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.6/math/rapier-math-2.4.0.js'}],
+			url: 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.7/math/rapier-math-2.4.0.js'}],
 		missing: 'Rapier math loaded but its SVG renderer is missing — cache purged',
 		usable: function () { return !!(window.RapierMath && window.RapierMath.version === MATH_VERSION &&
 			typeof window.RapierMath.renderToString === 'function' && typeof window.RapierMath.renderWithMathML === 'function'); },
@@ -562,12 +568,13 @@
 		function install(force) {
 			if (removing) return removing.then(function () { return install(force); });
 			if (pending) return pending;
+			var via = null;
 			pending = (checking || Promise.resolve()).then(function () {
 				if (force && m.discard) m.discard();
 				return keeper();
-			}).then(function (host) { return host ? hostInstall(host) : fetchInstall(force); }).catch(function (err) {
+			}).then(function (host) { via = host; return host ? hostInstall(host) : fetchInstall(force); }).catch(function (err) {
 				try { console.error('[rapier] ' + m.noun + ' plug-in install failed:', err); } catch (_) {}
-				set('error', _friendly(m, err));
+				set('error', _friendly(m, err, via));
 				throw err;
 			});
 			pending.then(function () { pending = null; }, function () { pending = null; });
@@ -628,7 +635,7 @@
 					return RapierBundleIO.resourceBytes(value, file.name);
 				}).then(function (value) { return verified(file, value); }).then(function (value) { out[file.name] = value; });
 			}, Promise.resolve()).then(function () { return out; }, function (err) {
-				Plugin.progress = 0; set('error', _friendly(m, err)); throw err;
+				Plugin.progress = 0; set('error', _friendly(m, err, host)); throw err;
 			});
 		}
 		function heldBytes() {
@@ -659,7 +666,7 @@
 				if (Plugin.status === 'ready' || Plugin.status === 'installing') return;
 				Plugin.progress = Math.max(0, Math.min(100, Math.floor(Number(detail.progress) || 0))); set('downloading');
 			} else if (pending || removing) return;
-			else if (detail.status === 'error') { if (Plugin.status === 'downloading') { Plugin.progress = 0; set('error', detail.error || _friendly(m, detail.error)); } }
+			else if (detail.status === 'error') { if (Plugin.status === 'downloading') { Plugin.progress = 0; set('error', detail.error || _friendly(m, detail.error, true)); } }
 			else { Plugin.progress = 0; check(); }
 		});
 		check();

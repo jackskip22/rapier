@@ -76,6 +76,13 @@ function shape(value, font, preserve, ligatures) {
   const result = [];
   for (let at = 0; at < value.length;) {
     const code = value.codePointAt(at), character = String.fromCodePoint(code), start = at;
+    if (code === 0x00ad) {
+      at += character.length;
+      const own = font.glyph(code), hyphen = font.glyph(0x2d), glyph = own || hyphen;
+      if (!glyph || glyph >= font.glyphCount) return null;
+      result.push({start, end: at, text: own ? character : '-', glyph, soft: true});
+      continue;
+    }
     if (/[\p{Mark}\p{Format}]/u.test(character) || (/[\p{Letter}]/u.test(character) && !/\p{Script=Latin}/u.test(character)) || code === 0xfb01 || code === 0xfb02) return null;
     at += character.length;
     if (!preserve && /[ \t\r\n\f]/.test(character)) {while (at < value.length && /[ \t\r\n\f]/.test(value[at])) at++;}
@@ -96,7 +103,13 @@ export async function collectPdfGlyphs(main, {width, check, faces = []}) {
   const document = main.ownerDocument, window = document.defaultView, origin = main.getBoundingClientRect();
   const nodes = new Map(), hidden = [], canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
   const context = canvas.getContext('2d', {willReadFrequently: true});
-  const restore = () => {for (const row of hidden) {if (row.value) row.node.style.setProperty('-webkit-text-fill-color', row.value, row.priority); else row.node.style.removeProperty('-webkit-text-fill-color');} canvas.width = canvas.height = 0;};
+  const restore = () => {
+    for (const row of hidden) {
+      if (row.wrap) {row.wrap.replaceWith(...row.wrap.childNodes); continue;}
+      if (row.value) row.node.style.setProperty('-webkit-text-fill-color', row.value, row.priority); else row.node.style.removeProperty('-webkit-text-fill-color');
+    }
+    canvas.width = canvas.height = 0;
+  };
   if (!context) return {nodes, restore};
   const colorCache = new Map(), styles = new Map(), styleOf = node => {if (!styles.has(node)) styles.set(node, window.getComputedStyle(node)); return styles.get(node);};
   const color = value => {if (!colorCache.has(value)) {context.clearRect(0, 0, 1, 1); context.fillStyle = value; context.fillRect(0, 0, 1, 1); colorCache.set(value, Array.from(context.getImageData(0, 0, 1, 1).data, item => item / 255));} return colorCache.get(value);};
@@ -115,7 +128,7 @@ export async function collectPdfGlyphs(main, {width, check, faces = []}) {
     let visited = 0;
     for (const element of main.querySelectorAll('*')) {
       if (++visited % 128 === 0) {await new Promise(resolve => setTimeout(resolve, 0)); check();}
-      if (element.namespaceURI !== 'http://www.w3.org/1999/xhtml' || element.children.length || element.closest('svg,pre,.rapier-will-carrier') || element.localName === 'li') continue;
+      if (element.namespaceURI !== 'http://www.w3.org/1999/xhtml' || element.children.length || element.closest('svg,pre,.rapier-will-carrier')) continue;
       const textNodes = Array.from(element.childNodes).filter(node => node.nodeType === 3);
       if (textNodes.length !== 1 || !textNodes[0].data.trim() || !safe(element)) continue;
       const language = (element.closest('[lang]')?.getAttribute('lang') || document.documentElement.lang || '').toLowerCase();
@@ -139,15 +152,35 @@ export async function collectPdfGlyphs(main, {width, check, faces = []}) {
       if (!Number.isFinite(ascent)) continue;
       const rgba = color(style.webkitTextFillColor || style.color), range = document.createRange();
       let valid = true;
+      const placed = [];
       for (const item of shaped) {
         range.setStart(node, item.start); range.setEnd(node, item.end);
-        const rects = Array.from(range.getClientRects()).filter(rect => rect.height > 0), first = rects[0];
-        if (!first || rects.some(rect => Math.abs(rect.top - first.top) > .25)) {valid = false; break;}
+        const ink = Array.from(range.getClientRects()).filter(rect => rect.height > 0);
+        const lines = [];
+        for (const rect of ink) {
+          const line = lines.find(row => Math.abs(row[0].top - rect.top) <= .25);
+          if (line) line.push(rect); else lines.push([rect]);
+        }
+        lines.sort((a, b) => b.reduce((sum, rect) => sum + rect.width, 0) - a.reduce((sum, rect) => sum + rect.width, 0));
+        const previous = shaped[shaped.indexOf(item) - 1];
+        if (lines.length > 1 && !item.soft && !previous?.soft) {valid = false; break;}
+        const rects = lines[0] || [];
+        const first = (item.soft ? rects.find(rect => rect.width > 0) : null) || rects[0];
+        if (item.soft && !(first?.width > 0)) continue;
+        if (!first) {valid = false; break;}
         const page = Math.max(0, Math.floor((first.left - origin.left + .01) / width));
         Object.assign(item, {font, size, rgba, x: first.left - origin.left - page * width, baseline: first.top - origin.top + ascent});
+        placed.push(item);
       }
-      if (!valid) continue;
-      nodes.set(node, shaped);
+      if (!valid || !placed.length) continue;
+      nodes.set(node, placed);
+      if (element.localName === 'li') {
+        const wrap = document.createElement('span');
+        node.replaceWith(wrap); wrap.append(node);
+        wrap.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
+        hidden.push({wrap});
+        continue;
+      }
       hidden.push({node: element, value: element.style.getPropertyValue('-webkit-text-fill-color'), priority: element.style.getPropertyPriority('-webkit-text-fill-color')});
       element.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
     }

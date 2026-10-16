@@ -208,7 +208,7 @@ globalThis.RapierChangesDraw = (() => {
   }
   function wrapper(place) {
     if (place.blockId == null) return null;
-    return [...document.querySelectorAll('#editor-blocks > .block-wrapper')].find(node => node.dataset.blockId === String(place.blockId)) || null;
+    return [...document.querySelectorAll(':is(#editor-blocks, #editor-blocks > .block-sleep-group) > .block-wrapper')].find(node => node.dataset.blockId === String(place.blockId)) || null;
   }
   function deletedDrawing(place) {return !place.live && !place.currentRecipe && !place.occurrence && !!place.beforeRecipe;}
   function container(place) { return place.live ? drawState()?.surface || null : wrapper(place) ||

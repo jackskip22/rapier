@@ -67,18 +67,19 @@ fn srgb(rgb:vec3<f32>) -> vec3<f32> {
  return select(12.92*c,1.055*pow(c,vec3<f32>(1.0/2.4))-0.055,c>=vec3<f32>(0.0031308));
 }
 fn brushDistance(p:vec2<f32>) -> vec2<f32> {
- return (p-u.v[4].xy)*vec2<f32>(u.v[0].x/u.v[0].y,1)/u.v[4].z;
+ return (p-u.v[4].xy)*vec2<f32>(u.v[0].x/u.v[0].y,1);
 }
 fn footprint(p:vec2<f32>) -> f32 {
  let d=brushDistance(p); let axis=u.v[5].xy;
- let q=vec2<f32>(dot(d,axis),dot(d,vec2<f32>(-axis.y,axis.x))/u.v[4].w);
+ var q=vec2<f32>(dot(d,axis),dot(d,vec2<f32>(-axis.y,axis.x)))/u.v[4].z;
+ q.y/=u.v[4].w;
  if(any(abs(q)>vec2<f32>(1))) { return 0; }
  let tip=textureSampleLevel(t0,linearSampler,q*0.5+0.5,0).r;
  let wet=1-smoothstep(0.15,1.0,dot(q,q));
  let tooth=smoothstep(u.v[6].x-0.08,u.v[6].x+0.08,sample(t1,p).g);
  return mix(tip,wet,u.v[5].z)*mix(1.0,tooth,u.v[5].w);
 }
-fn gaussian(p:vec2<f32>) -> f32 { let d=brushDistance(p); return exp(-pow(dot(d,d),u.v[6].z)); }
+fn gaussian(p:vec2<f32>) -> f32 { let d=brushDistance(p); return exp(-pow(dot(d,d)/(u.v[4].z*u.v[4].z),u.v[6].z)); }
 // Full erasure clears the contact's centre, with one native pixel of antialiasing at its edge.
 // The same passes still carry Water Lift's gradual pigment removal when the erase flag is absent.
 fn liftAmount(p:vec2<f32>) -> f32 {
@@ -271,9 +272,16 @@ const body = {
   // The live view shows wet paper a little darker and cooler, as the reference sheet does; kept pixels never carry it.
   let wetness=select(0.0,smoothstep(0.02,0.7,wetRead)*u.v[12].x,u.v[12].x>0.0);
   if(u.v[9].z==2 && wetness<=0.0 && all(a==vec4<f32>(0)) && all(b==vec4<f32>(0)) && all(flakes==vec4<f32>(0))){return textureLoad(t6,pixel,0);}
-  // Edge darkening reads the density gradient across one reference texel.
-  let h=u.v[3].w/u.v[0].xy;
-  let gradient=vec2<f32>(density(q+vec2<f32>(h.x,0))-density(q-vec2<f32>(h.x,0)),density(q+vec2<f32>(0,h.y))-density(q-vec2<f32>(0,h.y)));
+  // Edge darkening reads the density gradient across one reference texel. A slow live frame (its own pipeline, quickEdge) reads it from whole texels.
+  var gradient=vec2<f32>(0);
+  if(quickEdge){
+   let k=i32(max(1.0,round(u.v[3].w)));let side=vec2<i32>(k,0);let up=vec2<i32>(0,k);
+   gradient=vec2<f32>(loadTexel(t0,pixel+side).r+loadTexel(t2,pixel+side).r-loadTexel(t0,pixel-side).r-loadTexel(t2,pixel-side).r,
+    loadTexel(t0,pixel-up).r+loadTexel(t2,pixel-up).r-loadTexel(t0,pixel+up).r-loadTexel(t2,pixel+up).r);
+  }else{
+   let h=u.v[3].w/u.v[0].xy;
+   gradient=vec2<f32>(density(q+vec2<f32>(h.x,0))-density(q-vec2<f32>(h.x,0)),density(q+vec2<f32>(0,h.y))-density(q-vec2<f32>(0,h.y)));
+  }
   let edge=min(length(gradient)/(a.x+1.0),1.0);
   let strength=mix((1+u.v[9].x*(0.5-paper.g)*2.2)*(1+u.v[9].y*edge),1.0,flat);
   let transmission=waterColor(a*strength,b*strength);
@@ -319,7 +327,7 @@ const body = {
 export function waterShaderSources(){
  const common = head + manualSample + rest;
  const sources=Object.fromEntries(Object.entries(body).filter(([name])=>name!=='pigment'&&name!=='display').map(([name,source])=>[name,common+source]));
- sources.displayCompute=common+body.display+`
+ sources.displayCompute=common+`override quickEdge:bool=false;`+body.display+`
  @group(0) @binding(11) var output:texture_storage_2d<rgba8unorm,write>;
  @compute @workgroup_size(8,8) fn compute(@builtin(global_invocation_id) id:vec3<u32>){
   let coord=id.xy+vec2<u32>(u.v[2].xy);

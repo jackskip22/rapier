@@ -863,9 +863,12 @@ export function updateSearchPictures(sidx, file, words, {own = false} = {}) {
 }
 
 function readQuoted(s, i) {
-	let j = i + 1;
-	while (j < s.length && s[j] !== '"') j++;
-	return {value: s.slice(i + 1, j), next: j < s.length ? j + 1 : j};
+	let j = i + 1, value = '';
+	while (j < s.length && s[j] !== '"') {
+		if (s[j] === '\\' && (s[j + 1] === '"' || s[j + 1] === '\\')) j++;
+		value += s[j++];
+	}
+	return {value, next: j < s.length ? j + 1 : j};
 }
 
 export function parseQuery(q) {
@@ -1005,9 +1008,13 @@ function matchesFilter(proj, file, sidx, key, value) {
 		default: return false;
 	}
 }
-function passesFilters(proj, file, sidx, f, excluded) {
-	if (proj.trashed && !f.is.some(x => x === 'trash' || x === 'trashed')) return false;
-	if (proj.archived && !f.is.includes('archived')) return false;
+function passesFilters(proj, file, sidx, f, excluded, allSections) {
+	if (allSections) {
+		if (proj.trashed && proj.archived) return false;
+	} else {
+		if (proj.trashed && !f.is.some(x => x === 'trash' || x === 'trashed')) return false;
+		if (proj.archived && !f.is.includes('archived')) return false;
+	}
 	for (const key of FILTER_FIELDS) for (const value of f[key]) if (!matchesFilter(proj, file, sidx, key, value)) return false;
 	for (const [key, value] of excluded) if (matchesFilter(proj, file, sidx, key, value)) return false;
 	const when = proj.modified != null ? proj.modified : proj.created;
@@ -1078,7 +1085,7 @@ export function snippetFor(note, query, text) {
 
 function rankNote(proj, file, sidx, q, bodyReady, words) {
 	const f = q.filters, pictures = f.pictures !== 'off';
-	if (!passesFilters(proj, file, sidx, f, q.excludedFilters)) return null;
+	if (!passesFilters(proj, file, sidx, f, q.excludedFilters, q.allSections)) return null;
 	let pending = false;
 	for (const n of q.negations) {
 		const field = phraseIn(proj, n, bodyReady, pictures);
@@ -1108,10 +1115,10 @@ function rankNote(proj, file, sidx, q, bodyReady, words) {
 	}
 	if (!q.words.length && !q.phrases.length) score = 1;
 	const modified = proj.modified != null ? proj.modified : (proj.created != null ? proj.created : 0);
-	return {pending, row: {file, score, matched, _mod: modified}};
+	return {pending, row: {file, score, matched, _mod: modified, ...(q.allSections ? {_group: proj.trashed ? 2 : proj.archived ? 1 : 0} : {})}};
 }
 
-const compareRank = (a, b) => b.score - a.score || b._mod - a._mod || (a.file < b.file ? -1 : a.file > b.file ? 1 : 0);
+const compareRank = (a, b) => (a._group || 0) - (b._group || 0) || b.score - a.score || b._mod - a._mod || (a.file < b.file ? -1 : a.file > b.file ? 1 : 0);
 function rankedAnswer(rows, pending, query, limit, sections, coverage) {
 	rows.sort(compareRank);
 	const answer = {results: rows.slice(0, limit).map(({file, score, matched}) => ({file, score, matched: [...matched]})),
@@ -1127,9 +1134,10 @@ function searchQuery(query) {
 		excludedFilters: structuredClone(parsed.excludedFilters || []),
 		filters: {tag: [], in: [], is: [], has: [], colour: [], before: null, after: null, ...structuredClone(parsed.filters || {})}};
 }
-export function search(sidx, query, {limit = 50, now, candidateOrder = false} = {}) {
+export function search(sidx, query, {limit = 50, now, candidateOrder = false, includeArchivedTrash = false} = {}) {
 	void now;
 	const q = searchQuery(query);
+	if (includeArchivedTrash && !q.filters.is.some(x => x === 'archived' || x === 'trash' || x === 'trashed')) q.allSections = true;
 	if (limit === 0) return rankedAnswer([], [], q, limit, [], sidx);
 	const wordList = q.words.map(fold);
 	const last = wordList.at(-1);

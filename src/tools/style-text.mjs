@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {resolve, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import parseCSS from './vendor/postcss-parse.cjs';
+import {documentSpacingCss} from '../spec/document-settings.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -27,7 +28,7 @@ export function packStyleWhitespace(source) {
 }
 
 export function inlineFonts(css, path) {
-  for (const [url, file] of new Map([...css.matchAll(/url\('([\w.-]+\.woff2)'\)/g)].map(m => [m[0], m[1]])))
+  for (const [url, file] of new Map([...css.matchAll(/url\('([\w./-]+\.woff2)'\)/g)].map(m => [m[0], m[1]])))
     css = css.replaceAll(url, "url('data:font/woff2;base64," + readFileSync(resolve(root, dirname(path), file)).toString('base64') + "')");
   return css;
 }
@@ -56,5 +57,6 @@ export function stripStyleComments(source) {
 }
 
 export function styleText(path) {
-  return packStyleWhitespace(inlineFonts(stripStyleComments(readFileSync(resolve(root, path), 'utf8')), path));
+  const spacing = path === 'spec/markdown-style.css' ? documentSpacingCss(null, '.md-render', true) : '';
+  return packStyleWhitespace(inlineFonts(stripStyleComments(readFileSync(resolve(root, path), 'utf8')), path) + spacing);
 }

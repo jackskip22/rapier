@@ -19,27 +19,30 @@ async function _rapierInflateVendor(id, text = document.getElementById(id)?.text
   let combined, record;
   try {
     record = packedHeader(text);
-    if (id === 'rapier-codec-runtime' && record.compression !== 'gzip') throw new Error('Packed codec must use gzip');
-    const compressed = _rapierBase124.decodeBase124(text.slice(record.from, record.to), {maxBytes: 64 * 1024 * 1024});
+    if (id === 'rapier-codec-runtime' && record.compression === 'brotli') throw new Error('Packed codec must not use Brotli');
     const codecs = record.compression === 'brotli' ? await _rapierLoadCodecs() : null;
-    let transform;
-    try { transform = new DecompressionStream(record.compression); }
-    catch (error) { if (!codecs) throw error; }
-    const limit = record.inflated ?? record.limit;
-    if (!transform) combined = codecs.decodeBrotli(compressed, limit);
+    if (record.compression === 'plain') combined = new TextEncoder().encode(packedPlainText(text.slice(record.from, record.to)));
     else {
-      const reader = new Blob([compressed]).stream().pipeThrough(transform).getReader(), parts = [];
-      let used = 0;
-      try {
-        for (;;) {
-          const {done, value} = await reader.read(); if (done) break;
-          used += value.length;
-          if (used > limit) throw new Error('Packed resource exceeds its declared size');
-          parts.push(value);
-        }
-      } catch (error) { await reader.cancel().catch(() => {}); throw error; }
-      combined = new Uint8Array(used);
-      let at = 0; for (const part of parts) { combined.set(part, at); at += part.length; }
+      const compressed = _rapierBase124.decodeBase124(text.slice(record.from, record.to), {maxBytes: 64 * 1024 * 1024});
+      let transform;
+      try { transform = new DecompressionStream(record.compression); }
+      catch (error) { if (!codecs) throw error; }
+      const limit = record.inflated ?? record.limit;
+      if (!transform) combined = codecs.decodeBrotli(compressed, limit);
+      else {
+        const reader = new Blob([compressed]).stream().pipeThrough(transform).getReader(), parts = [];
+        let used = 0;
+        try {
+          for (;;) {
+            const {done, value} = await reader.read(); if (done) break;
+            used += value.length;
+            if (used > limit) throw new Error('Packed resource exceeds its declared size');
+            parts.push(value);
+          }
+        } catch (error) { await reader.cancel().catch(() => {}); throw error; }
+        combined = new Uint8Array(used);
+        let at = 0; for (const part of parts) { combined.set(part, at); at += part.length; }
+      }
     }
     if (record.inflated !== null && combined.length !== record.inflated) throw new Error('Packed intermediate length differs');
     if (record.prefilter) combined = decodeTextPack(combined, record.bytes);
@@ -47,6 +50,7 @@ async function _rapierInflateVendor(id, text = document.getElementById(id)?.text
     if (codecs && codecs.crc32(combined) !== record.crc32) throw new Error('Packed content differs');
   } catch (error) { throw new Error(id, {cause: error}); }
   const marked = new RegExp(_RAPIER_STORED_SPAN_MARKER.source, 'g');
+  marked.lastIndex = record.to;
   const sources = [];
   let covered = 0;
   for (let marker; (marker = marked.exec(text));) {

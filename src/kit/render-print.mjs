@@ -41,8 +41,10 @@ function _rapierPrintWillAdmit(canonical, plan) {
 	if (new Set(plan.markers.flatMap(marker => Array.from(marker))).size > 65000) throw _rapierPrintWillLost('the markers use more distinct characters than a font can hold', 'Shorten them');
 }
 
-function _rapierPrintWillFont(markers) {
-	const { size, advance } = _rapierPrintWillMetrics(markers);
+function _rapierPrintWillFont(markers, advanceOverride) {
+	const metrics = _rapierPrintWillMetrics(markers);
+	const size = metrics.size;
+	const advance = advanceOverride ?? metrics.advance;
 	const scalars = Array.from(new Set(markers.flatMap(marker => Array.from(marker, ch => ch.codePointAt(0)))));
 	const order = scalars.filter(code => code < 0x10000).sort((a, b) => a - b)
 		.concat(scalars.filter(code => code >= 0x10000).sort((a, b) => b - a));
@@ -277,7 +279,7 @@ async function _rapierWritePrintPdf({root, css, fontCss = '', canonical, bom = f
 			glyphs.add(character);
 			if (glyphs.size > 65000) refuse('pdf_text_glyph_limit');
 		}
-		const font = _rapierPrintWillFont(text);
+		const font = _rapierPrintWillFont(text, 500);
 		strip.style.width = count * bodyWidth + 'px';
 		strip.style.transform = 'none';
 		if (typeof film !== 'function') refuse('pdf_render_unavailable');

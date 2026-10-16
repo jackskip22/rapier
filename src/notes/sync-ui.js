@@ -46,7 +46,7 @@ const _rapierNotesSyncUi = (() => {
 		try { vault = address ? api().readConnectionCode(address).vaultId : null; } catch (_) {}
 		if (vault && companion?.state === 'ready') await askCompanion(vault);
 	}
-	function openCompanion() { if (typeof _rapierUiSyncOpen === 'function') _rapierUiSyncOpen(); }
+	function openCompanion() { if (typeof _rapierUiSyncOpen === 'function') _rapierUiSyncOpen(companionVaultId(session?.status()) || null); }
 	function deviceLabel() {
 		const agent = String(navigator.userAgent || '');
 		if (platformId() === 'android') return /Mobile/.test(agent) ? 'Android phone' : 'Android tablet';
@@ -291,14 +291,8 @@ const _rapierNotesSyncUi = (() => {
 				if (!navigator.clipboard?.writeText) throw new Error('select the device code above and copy it.');
 				await navigator.clipboard.writeText(state.address); message = 'device code copied.';
 			});
-			if (mode() === 'companion' && companionVaultId(state)) {
-				const vaultId = companionVaultId(state);
-				value('vault id — rapier sync asks for it when you approve this vault’s storage', vaultId);
-				choice('copy vault id', 'then approve storage for it in rapier sync', async () => {
-					if (!navigator.clipboard?.writeText) throw new Error('select the vault id above and copy it.');
-					await navigator.clipboard.writeText(vaultId); message = 'vault id copied.';
-				});
-			}
+			if (mode() === 'companion' && companion?.approved !== true)
+				choice('choose storage', 'opens rapier sync for this vault', openCompanion, {enabled: !acting});
 			choice('sync now', pendingWords(state.pending), async () => {
 				await connectAndSync(); conflicts = await session.conflicts();
 			}, {key: 'sync'});

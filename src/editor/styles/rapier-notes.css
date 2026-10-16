@@ -119,7 +119,7 @@ body.rapier-notes-mode #editor-blocks>.rapier-notes-slot{appearance:none;display
 body.rapier-notes-mode #editor-blocks>.rapier-notes-slot:focus-visible{outline:2px solid var(--color-focus);outline-offset:-2px}
 body.rapier-notes-mode #editor-blocks>:is(.rapier-notes-title,.rapier-notes-slot--title){margin-bottom:var(--space-3)}
 body.rapier-notes-mode #editor-blocks>.rapier-notes-title>:is(.block-read,.block-edit),
-body.rapier-notes-mode #editor-blocks>.rapier-notes-slot--title{font:var(--fw-semibold,600) 1.75rem/1.12 var(--font-sans);letter-spacing:-.02em;border-color:transparent}
+body.rapier-notes-mode #editor-blocks>.rapier-notes-slot--title{font:var(--fw-semibold,600) 1.75rem/1.12 var(--font-sans);letter-spacing:-.02em}
 body.rapier-notes-mode #editor-blocks>.rapier-notes-title :is(h1,p){margin:0;padding:0;border:0;font:inherit;letter-spacing:inherit}
 body.rapier-notes-mode #editor-blocks>.rapier-notes-title>.section-fold-btn,body.rapier-notes-mode #empty-doc-prompt{display:none}
 body.rapier-notes-mode #editor-blocks>.rapier-notes-title.block-wrapper--empty>.block-edit::before,
@@ -128,7 +128,6 @@ body.rapier-notes-mode #editor-blocks>.rapier-notes-note.block-wrapper--editing.
 body.rapier-notes-mode #editor-blocks>.rapier-notes-note.block-wrapper--empty:not(.block-wrapper--editing)>.block-read::before,
 body.rapier-notes-mode #editor-blocks>.rapier-notes-slot--note::before{content:'Note'}
 body.rapier-notes-mode #editor-blocks>:is(.rapier-notes-title,.rapier-notes-note)>:is(.block-read,.block-edit)::before{position:absolute;color:var(--color-text-subtle);pointer-events:none}
-body.rapier-notes-mode #editor-blocks>.block-wrapper--editing>.block-edit{border-color:transparent}
 .rapier-notes-check{display:flex;flex-wrap:wrap;align-items:flex-start;gap:var(--space-2);margin:0;padding:4.5px 0;font:var(--text-sm) var(--font-sans);line-height:1.35}
 .rapier-notes-check>ul,.rapier-notes-check>ol{flex:0 0 calc(100% - 1.5em);margin-inline-start:1.5em;margin-block:0}
 .rapier-notes-check--done{text-decoration:line-through}
@@ -172,6 +171,8 @@ body.rapier-notes-mode #editor-blocks>.block-wrapper--editing>.block-edit{border
 .rapier-notes-chips{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:var(--space-1);padding:0 var(--space-1)}
 .rapier-notes-chip{appearance:none;display:inline-flex;align-items:center;gap:4px;min-height:44px;padding:0 var(--space-2);border:0;border-radius:0;background:color-mix(in srgb,var(--color-text) 10%,transparent);color:var(--color-text);font:var(--text-sm) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;cursor:pointer;touch-action:manipulation}
 .rapier-notes-chip--worn{background:var(--color-icon);color:var(--color-bg)}
+.rapier-notes-card-tags{padding:var(--space-1) 0 0}
+.rapier-notes-card-tags .rapier-notes-chip{max-width:100%;overflow-wrap:anywhere;text-align:left}
 .rapier-notes-chip svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2}
 .rapier-notes-label-form{flex:1 1 100%;display:flex;gap:var(--space-1);padding:0 var(--space-1)}
 .rapier-notes-label-form .rapier-notes-search{height:44px}

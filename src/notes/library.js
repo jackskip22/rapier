@@ -120,9 +120,7 @@ function _rapierNotesLibrarySearchIndex() {
 function _rapierNotesLibraryWorker() {
 	const S = _rapierNotesSearchModule(), parser = typeof _rapierParseRuntime !== 'undefined' && _rapierParseRuntime.markdownSource;
 	if (typeof Worker !== 'function' || typeof S?.workerSource !== 'function' || !parser) throw new Error('Search worker is unavailable');
-	const url = URL.createObjectURL(new Blob([parser, '\n', S.workerSource()], {type: 'text/javascript'}));
-	try { return new Worker(url, {name: 'rapier-notes-search'}); }
-	finally { URL.revokeObjectURL(url); }
+	return globalThis.RapierWorkerExecution.createWorkerExecution({source: () => parser + '\n' + S.workerSource(), name: 'rapier-notes-search'});
 }
 function _rapierNotesLibraryRunner() {
 	const lib = _rapierNotesLib, state = _rapierNotes, from = state.texts, gen = state.loadGen;
@@ -267,7 +265,8 @@ function _rapierNotesLibraryLinkIndex() {
 	const L = _rapierNotesLinksModule(), lib = _rapierNotesLib;
 	if (!L) return null;
 	_rapierNotesLibraryFresh();
-	if (!lib.lidx) lib.lidx = L.buildLinkIndex(new Map([..._rapierNotes.texts].filter(([file, text]) => !_rapierNotesModel().isCodeFile(file) && text.length <= _rapierNotesSearchModule().SEARCH_WORKER_CHARS)));
+	if (!lib.lidx) lib.lidx = L.buildLinkIndex(typeof _rapierNotesTextsComplete === 'function' && !_rapierNotesTextsComplete() ? new Map() :
+		new Map([..._rapierNotes.texts].filter(([file, text]) => !_rapierNotesModel().isCodeFile(file) && text.length <= _rapierNotesSearchModule().SEARCH_WORKER_CHARS)));
 	return lib.lidx;
 }
 function _rapierNotesLibraryTouch(file, gone) {
@@ -307,8 +306,7 @@ function _rapierNotesLibraryRun() {
 	if (!sidx) { lib.results = null; return null; }
 	const asked = state.searchPictures ? query : 'pictures:off ' + query;
 	const total = Object.keys(state.index.notes).length;
-	const answers = [S.search(sidx, asked, {limit: total, candidateOrder: true})];
-	if (!S.parseQuery(query).filters.is.some(is => is === 'archived' || is === 'trash' || is === 'trashed')) for (const also of ['is:archived', 'is:trash']) answers.push(S.search(sidx, also + ' ' + asked, {limit: total, candidateOrder: true}));
+	const answers = [S.search(sidx, asked, {limit: total, candidateOrder: true, includeArchivedTrash: true})];
 	const found = _rapierNotesLibraryCompose(answers);
 	const confirm = new Set(answers.flatMap(a => a.confirm));
 	lib.partial = state.reading && (!state.reading.complete || sidx.notes.size < total) ? {done: sidx.notes.size, total, ...(state.reading.complete && (lib.build.done || sidx.progress?.unread) ? {unread: true} : {})} : answers[0].partial ? answers[0].progress : null;
@@ -438,7 +436,10 @@ function _rapierNotesLibraryTerms(text) {
 		while (s[i] === ' ' || s[i] === '\t') i++;
 		if (i >= s.length) break;
 		let j = i, quoted = false;
-		while (j < s.length && (quoted || (s[j] !== ' ' && s[j] !== '\t'))) { if (s[j] === '"') quoted = !quoted; j++; }
+		while (j < s.length && (quoted || (s[j] !== ' ' && s[j] !== '\t'))) {
+			if (quoted && s[j] === '\\' && (s[j + 1] === '"' || s[j + 1] === '\\')) { j += 2; continue; }
+			if (s[j] === '"') quoted = !quoted; j++;
+		}
 		out.push(s.slice(i, j));
 		i = j;
 	}

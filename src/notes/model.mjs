@@ -1,5 +1,6 @@
 import {parseFrontMatter, stripFrontMatter, tagsOf, setTags} from './frontmatter.mjs';
 import {stripInkMarkers} from '../spec/md-marks.mjs';
+import {markdownParser} from '../spec/md-assets.mjs';
 function frontLineCount(pieces, raw, body) {
 	if (body.length >= raw.length) return 0;
 	const hidden = raw.length - body.length;
@@ -454,6 +455,8 @@ export function remindChoices(now, options) {
 	choices.push({id: 'tomorrow', label: 'Tomorrow morning', at: tomorrow.getTime()});
 	const week = new Date(now); week.setDate(week.getDate() + 7); week.setHours(morning, 0, 0, 0);
 	choices.push({id: 'week', label: 'Next ' + WEEKDAY_LONG[week.getDay()], at: week.getTime()});
+	const monday = new Date(now); monday.setDate(monday.getDate() + ((8 - monday.getDay()) % 7 || 7)); monday.setHours(morning, 0, 0, 0);
+	if (!choices.some(choice => choice.at === monday.getTime())) choices.splice(choices.length - 1, 0, {id: 'monday', label: 'Monday morning', at: monday.getTime()});
 	return choices;
 }
 
@@ -751,15 +754,29 @@ export function projectCard(file, text, {bodyLines = 6, taskDepth = false} = {})
 		if (/^!\[/.test(raw)) { body.push('\u{1F5BC}'); continue; }
 		body.push(cutText(cardInkWords(raw.replace(/^#{1,6}\s+/, '').replace(/^[-*>]\s+/, '')).replace(/[*_`~]/g, ''), 280, 280));
 	}
-	return {file, title: title || (body.length || checks.length ? '' : file.replace(/\.md$/i, '')), body, checks, empty: !title && !body.length && !checks.length, needsReview, start, lead};
+	return {file, title: linkCardLines(lines)?.title || title || (body.length || checks.length ? '' : file.replace(/\.md$/i, '')), body, checks, empty: !title && !body.length && !checks.length, needsReview, start, lead};
 }
 
 export function linkCard(text) {
-	const lines = cardSource(text).visible.map(line => line.trim()).filter(Boolean);
+	return linkCardLines(cardSource(text).visible);
+}
+function linkCardLines(visible) {
+	const lines = visible.map(line => line.trim()).filter(Boolean);
 	const m = lines.length === 1 && /^(?:#\s+)?<?(https?:\/\/[^\s<>]+?)>?$/i.exec(lines[0]);
-	let url = null; try { url = m && new URL(m[1]); } catch (_) {}
+	let one = null;
+	if (!m && lines.length === 1 && lines[0].startsWith('[')) {
+		try {
+			const tokens = markdownParser().parseInline(lines[0], {})[0]?.children || [];
+			if (tokens[0]?.type === 'link_open' && tokens.at(-1)?.type === 'link_close' && tokens.filter(token => token.type === 'link_open').length === 1 && !tokens.some(token => token.type === 'image'))
+				one = {dest: tokens[0].attrGet('href'), text: tokens.filter(token => token.type === 'text' || token.type === 'code_inline').map(token => token.content).join('')};
+		} catch (_) {}
+	}
+	if (!m && !one) return null;
+	let url = null; try { url = new URL(m ? m[1] : one.dest); } catch (_) {}
+	if (url && !['http:', 'https:'].includes(url.protocol)) return null;
 	if (!url) return null;
 	const host = url.hostname.replace(/^www\./, '');
+	if (one?.text && one.text !== one.dest) return {title: one.text, host};
 	const parts = url.pathname.split('/').filter(Boolean).slice(-3).map(part => { try { part = decodeURIComponent(part); } catch (_) {} return /^\d+$/.test(part) ? '#' + part : part; });
 	return parts.length ? {title: parts.join(' \u00b7 '), host} : {title: host, host: ''};
 }

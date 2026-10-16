@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "release": "1.2.6",
+  "release": "1.2.7",
   "directory": "Put every file in one directory, keeping each file's folder, and give the page its address with `plugins`. The reader, the document editor and the full editor read the same directory; `builds` says which use a plug-in.",
   "plugins": [
     {
@@ -11,11 +11,11 @@
       ],
       "files": [
         {
-          "file": "rapier-flowchart-1.2.6.js",
-          "bytes": 294802,
-          "sha384": "f490ae4ebbf5146756376c7dcd5e994c63e4153234844d2f65dd61a38e3efb764f5043f487f0f88436c23070a7a8d0be",
-          "sri": "9JCuTrv1FGdWN2x9zV6ZTGPkFTI0hE0vZd1ho44++3ZPUEP0h/D4hDbCMHCnqNC+",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.6/flowchart/rapier-flowchart-1.2.6.js"
+          "file": "rapier-flowchart-1.2.7.js",
+          "bytes": 295920,
+          "sha384": "eab21f99b1dc26d7daa65127aeffde04aec0b28f4b235a7dd39d07d4ada5560857f01d6dc81e6b6d7d6948c829792190",
+          "sri": "6rIfmbHcJtfaplEnrv/eBK7Aso9LI1p9050H1K2lVghX8B1tyB5rbX1pSMgpeSGQ",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.7/flowchart/rapier-flowchart-1.2.7.js"
         }
       ]
     },
@@ -27,11 +27,11 @@
       ],
       "files": [
         {
-          "file": "rapier-docx-1.2.6.js",
-          "bytes": 584903,
-          "sha384": "05a31b2d7f725257a69aa1289e43f7c383ac159465edbfea21a1be989cf050d83d54a8984fd940a3c07b24cf62574320",
-          "sri": "BaMbLX9yUlemmqEonkP3w4OsFZRl7b/qIaG+mJzwUNg9VKiYT9lAo8B7JM9iV0Mg",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.6/docx/rapier-docx-1.2.6.js"
+          "file": "rapier-docx-1.2.7.js",
+          "bytes": 614506,
+          "sha384": "a7bd2568a68d7f333adda3e52f0c3f1a7fdee64e27518b0fe55eabc07e076525cb189e78de0307c488d50fff1fb59a2f",
+          "sri": "p70laKaNfzM63aPlLww/Gn/e5k4nUYsP5V6rwH4HZSXLGJ543gMHxIjVD/8ftZov",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.7/docx/rapier-docx-1.2.7.js"
         }
       ]
     },
@@ -49,7 +49,7 @@
           "bytes": 691650,
           "sha384": "0bddb1dbafa9048e2af45a16ca932105bf02a9219a68f2f0f1da588a05a260db184114dc3d5ac5c8f563ae173f4e7c21",
           "sri": "C92x26+pBI4q9FoWypMhBb8CqSGaaPLw8dpYigWiYNsYQRTcPVrFyPVjrhc/Tnwh",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.6/math/rapier-math-2.4.0.js"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.7/math/rapier-math-2.4.0.js"
         }
       ]
     },
@@ -74,7 +74,7 @@
           "bytes": 1896464,
           "sha384": "f0fb63861d733533afcb577114785781829fb36f740d2969ce8c39ac5f45bcfdfc72886d6ec056dfcd568729b5588e84",
           "sri": "8Ptjhh1zNTOvy1dxFHhXgYKfs290DSlpzow5rF9FvP38cohtbsBW381Whym1WI6E",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.6/site/plugins/rapier-zenuml-4.5.0-2.js"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.7/site/plugins/rapier-zenuml-4.5.0-2.js"
         }
       ]
     },
@@ -88,11 +88,11 @@
       ],
       "files": [
         {
-          "file": "rapier-pdf-1.2.6.js",
-          "bytes": 38425,
-          "sha384": "a434d69c6dd23f1471bcc69cb33e567186a2128e95b7f9da9df6c2767f30381c8b4db384e1273f3134e4bdd9aa507ced",
-          "sri": "pDTWnG3SPxRxvMacsz5WcYaiEo6Vt/nanfbCdn8wOByLTbOE4Sc/MTTkvdmqUHzt",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.6/pdf/rapier-pdf-1.2.6.js",
+          "file": "rapier-pdf-1.2.7.js",
+          "bytes": 38463,
+          "sha384": "5b2e756367b3abebce93a5eb6c6f515981dcbe6dfefd529702139e3a9b0856686517c0b5ae2ce98aae3d382761fe6d84",
+          "sri": "Wy51Y2ezq+vOk6XrbG9RWYHcvm3+/VKXAhOeOpsIVmhlF8C1rizpiq49OCdh/m2E",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.7/pdf/rapier-pdf-1.2.7.js",
           "builds": [
             "reader"
           ]
@@ -1470,11 +1470,11 @@
           "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/wasm/openjpeg_nowasm_fallback.js"
         },
         {
-          "file": "pdfjs-dist-6.3.289/rapier-pdf-reader-cde0a32c6204aced.mjs",
-          "bytes": 46570,
-          "sha384": "63afb7423fb9b56aee9a0014e34dafb812177936b43a2758095af144ff0e3939028ac447dc1ef3938efffcd31c2f720e",
-          "sri": "Y6+3Qj+5tWrumgAU402vuBIXeTa0OidYCVrxRP8OOTkCisRH3B7zk47//NMcL3IO",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.6/pdfjs-dist-6.3.289/rapier-pdf-reader-cde0a32c6204aced.mjs"
+          "file": "pdfjs-dist-6.3.289/rapier-pdf-reader-4661471513961856.mjs",
+          "bytes": 47588,
+          "sha384": "3872a5302e3edf91c5deb81db65a8cae985d197b5722bd46e0003589ce8732ef8492199c91de3c93d93499616138ddaf",
+          "sri": "OHKlMC4+35HF3rgdtlqMrphdGXtXIr1G4AA1ic6HMu+Ekhmckd48k9k0mWFhON2v",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.7/pdfjs-dist-6.3.289/rapier-pdf-reader-4661471513961856.mjs"
         }
       ]
     },
@@ -1572,7 +1572,7 @@
           "bytes": 1214356,
           "sha384": "ab8987037faedcddd8b7ccf5c22b0211742a58da395211d9d275044a277c046359cfa06d57c75252554ebf29dd7344e3",
           "sri": "q4mHA3+u3N3Yt8z1wisCEXQqWNo5UhHZ0nUESid8BGNZz6BtV8dSUlVOvyndc0Tj",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.6/site/plugins/rapier-font-subset-2.js"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.7/site/plugins/rapier-font-subset-2.js"
         }
       ]
     },
@@ -1588,28 +1588,28 @@
           "bytes": 96902,
           "sha384": "545b0213fef34ba2a4abf116d7fecd7d81d51a85573549b4a561ddb499b35f085680958148a84d1ee534383b8609aaf4",
           "sri": "VFsCE/7zS6Kkq/EW1/7NfYHVGoVXNUm0pWHdtJmzXwhWgJWBSKhNHuU0ODuGCar0",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.6/letters/field.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.7/letters/field.json"
         },
         {
           "file": "letters-relief.json",
           "bytes": 95172,
           "sha384": "b5072d05a91eda0bbb07fbf9ff58c2e9716de6c995e6e560ed6ec67495ec259059eb665cedcad23f7cd19193e042a82a",
           "sri": "tQctBake2gu7B/v5/1jC6XFt5smV5uVg7W7GdJXsJZBZ62Zc7crSP3zRkZPgQqgq",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.6/letters/relief.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.7/letters/relief.json"
         },
         {
           "file": "letters-leaf.json",
           "bytes": 134918,
           "sha384": "0ed48a5ad5a18a2b6534e7e3c7da3925fd0561ca562f0e27996023a3578003714ebecd8e8c1da175d1e54429ebb59ee0",
           "sri": "DtSKWtWhiitlNOfjx9o5Jf0FYcpWLw4nmWAjo1eAA3FOvs2OjB2hddHlRCnrtZ7g",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.6/letters/leaf.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.7/letters/leaf.json"
         },
         {
           "file": "letters-arabesque.json",
           "bytes": 136035,
           "sha384": "671db3d9b1290f854d90871c2de8dc518ebc7aa005ada3c437b86ab2a91c56a1ce286bec48ca9b2cb8975e496f648365",
           "sri": "Zx2z2bEpD4VNkIccLejcUY68eqAFraPEN7hqsqkcVqHOKGvsSMqbLLiXXklvZINl",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.6/letters/arabesque.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.7/letters/arabesque.json"
         }
       ]
     }

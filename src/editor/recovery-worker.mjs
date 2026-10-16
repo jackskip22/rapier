@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import {createWorkerExecution} from '../shell/worker-execution.mjs';
 import {prepareLedgerAsync, readLedger, textRoot} from '../kit/ledger/format.mjs';
 import {jsonParts, plainPrototype} from '../kit/ledger/data.mjs';
 import {_rapierRecoveryBomManifest, _rapierRecoveryStamp} from './recovery-policy.mjs';
@@ -145,20 +146,27 @@ function recoveryDatabase(idb, {name, version}) {
   databases.set(name, opening);
   return opening;
 }
-function storeRecords(text, write, db) {
+function storeRecords(text, write, db, signal) {
+  signal?.throwIfAborted();
   return new Promise((resolve, reject) => {
     let tx;
     try { tx = db.transaction(write.stores, 'readwrite', {durability: write.durability}); }
     catch (_) { tx = db.transaction(write.stores, 'readwrite'); }
+    const cancel = () => { try { tx.abort(); } catch (_) {} };
+    const finish = (error, value) => {
+      signal?.removeEventListener('abort', cancel);
+      if (error) reject(error); else resolve(value);
+    };
+    signal?.addEventListener('abort', cancel, {once: true});
     const current = tx.objectStore('meta').get(write.docId);
     current.onsuccess = () => {
-      if (write.base != null && _rapierRecoveryStamp(current.result) !== write.base) { resolve(true); tx.abort(); return; }
+      if (write.base != null && _rapierRecoveryStamp(current.result) !== write.base) { finish(null, true); tx.abort(); return; }
       try {
         for (const row of write.records) tx.objectStore(row.store).put(row.text ? {...row.value, canonicalText: text} : row.value);
-      } catch (error) { try { tx.abort(); } catch (_) {} reject(error); }
+      } catch (error) { try { tx.abort(); } catch (_) {} finish(error); }
     };
-    tx.oncomplete = () => resolve(false);
-    tx.onerror = tx.onabort = () => reject(tx.error || new Error('IndexedDB transaction failed'));
+    tx.oncomplete = () => finish(null, false);
+    tx.onerror = tx.onabort = () => finish(signal?.aborted ? signal.reason : tx.error || new Error('IndexedDB transaction failed'));
   });
 }
 export function installRecoveryWorker(scope) {
@@ -185,7 +193,7 @@ export function installRecoveryWorker(scope) {
         }
         if (request.write) {
           if (!scope.indexedDB) throw new Error('IndexedDB unavailable');
-          const newer = await storeRecords(core.input.text, request.write, await recoveryDatabase(scope.indexedDB, request.write.db));
+          const newer = await storeRecords(core.input.text, request.write, await recoveryDatabase(scope.indexedDB, request.write.db), controller.signal);
           await sendPacket(port, packet({newer}), current);
           if (current()) revisions.set(request.revisionId, core);
           return;
@@ -202,6 +210,7 @@ export function installRecoveryWorker(scope) {
     } catch (error) { receiving.delete(data.id); scope.postMessage({id: data.id, error: error.message, code: error.code, name: error.name}); }
   };
   scope.postMessage({ready: true});
+  return () => { for (const job of running.values()) job.abort(); receiving.clear(); revisions.clear(); };
 }
 
 const prepared = new WeakMap(), captures = new WeakMap(), revisions = new WeakMap();
@@ -267,37 +276,19 @@ export function preparedSnapshot(value, text, ledger, state, docId) {
 const RECOVERY_TIMEOUT_MS = 120000;
 let client = null, sequence = 0;
 async function sharedWorker(workerSource) {
-  if (typeof Worker !== 'function' || typeof workerSource !== 'function') throw new Error('Recovery worker is unavailable');
-  if (client?.source === workerSource && client.constructor === Worker) return client.ready;
-  const owner = {source: workerSource, constructor: Worker, jobs: new Map(), worker: null};
+  if (typeof workerSource !== 'function') throw new Error('Recovery execution is unavailable');
+  if (client?.source === workerSource && client.constructor === globalThis.Worker) return client.ready;
+  const owner = {source: workerSource, constructor: globalThis.Worker, jobs: new Map(), worker: null};
   client = owner;
-  let url = '', startupTimer = null;
-  const releaseURL = () => {
-    clearTimeout(startupTimer); startupTimer = null;
-    if (url) { URL.revokeObjectURL(url); url = ''; }
-  };
   owner.stop = error => {
-    releaseURL();
     if (client === owner) client = null;
     if (owner.worker) { owner.worker.onmessage = owner.worker.onerror = owner.worker.onmessageerror = null; owner.worker.terminate(); }
     for (const job of owner.jobs.values()) job.finish(error);
   };
   owner.ready = (async () => {
-    await new Promise(resolve => setTimeout(resolve, 0));
-    const source = workerSource(), parts = [];
-    let turn = performance.now();
-    for (let at = 0; at < source.length;) {
-      let end = Math.min(source.length, at + 65536);
-      const tail = source.charCodeAt(end - 1), next = source.charCodeAt(end);
-      if (tail >= 0xd800 && tail <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) end++;
-      parts.push(new Blob([source.slice(at, end)])); at = end;
-      if (performance.now() - turn >= 4) { await new Promise(resolve => setTimeout(resolve, 0)); turn = performance.now(); }
-    }
-    url = URL.createObjectURL(new Blob(parts, {type: 'text/javascript'}));
-    owner.worker = new Worker(url, {name: 'rapier-recovery'});
-    startupTimer = setTimeout(() => owner.stop(new Error('Recovery preparation took too long')), RECOVERY_TIMEOUT_MS);
+    owner.worker = createWorkerExecution({source: workerSource, name: 'rapier-recovery',
+      install: installRecoveryWorker, scope: {indexedDB: globalThis.indexedDB}});
     owner.worker.onmessage = ({data}) => {
-      releaseURL();
       const job = owner.jobs.get(data?.id);
       if (!job) return;
       try {
@@ -308,6 +299,7 @@ async function sharedWorker(workerSource) {
     };
     owner.worker.onerror = event => { event.preventDefault?.(); owner.stop(new Error(event.message || 'Recovery worker stopped')); };
     owner.worker.onmessageerror = () => owner.stop(new Error('Recovery worker returned unreadable data'));
+    await owner.worker.ready;
     return owner;
   })().catch(error => { owner.stop(error); throw error; });
   return owner.ready;
@@ -371,7 +363,7 @@ export async function writeRecoveryRecords(prepared, write, {workerSource, signa
   const held = captures.get(prepared);
   if (!alive(held) || !held.entry.input) throw new Error('Recovery capture is not owned');
   const {entry} = held;
-  if (typeof document === 'undefined') return storeRecords(entry.input.text, write, db);
+  if (typeof document === 'undefined') return storeRecords(entry.input.text, write, db, signal);
   const owner = await sharedWorker(workerSource);
   signal?.throwIfAborted();
   return (await ask(owner, entry, entry.remote === owner, {write}, signal)).newer;

@@ -41,10 +41,10 @@ const frameGeometry=v=>object(v)&&integer(v.width)&&integer(v.height)&&v.width>0
 const jsonFits=paintReplayFits;
 export function waterError(code,message){return Object.assign(new RangeError(message),{code,recoverable:true});}
 export function waterRadius(size=50){return 1100*.04/WATER_PAPER_UNITS*Math.pow(3,2*(size/100-.5));}
-export const WATER_HAND_SIZE_MAX=50;
+export const WATER_HAND_SIZE_MAX=100;
 export function waterHandSize(size){const n=Number(size);return Number.isFinite(n)?Math.min(WATER_HAND_SIZE_MAX,Math.max(0,n)):null;}
-export function waterHandUi(size){const hand=waterHandSize(size);return hand==null?null:hand*2;}
-export function waterHandFromUi(ui){const n=Number(ui);return Number.isFinite(n)?waterHandSize(n/2):null;}
+export function waterHandUi(size){const hand=waterHandSize(size);return hand==null?null:hand*100/WATER_HAND_SIZE_MAX;}
+export function waterHandFromUi(ui){const n=Number(ui);return Number.isFinite(n)?waterHandSize(n*WATER_HAND_SIZE_MAX/100):null;}
 export function admitWaterPigment(raw){
  if(typeof raw==='string')return waterPigmentById(raw)?raw:null;
  if(!object(raw)||!ownKeys(raw,['coefficients','granulation','staining','source','finish'])||!Array.isArray(raw.coefficients)||raw.coefficients.length!==WATER_BANDS||!raw.coefficients.every((n,i)=>finite(n)&&Math.abs(n)<=10000&&(i<7||n>=0)))return null;
@@ -147,6 +147,16 @@ export function admitWaterAction(raw){
 export function admitWaterActions(raw){
  if(!Array.isArray(raw)||!jsonFits(raw))return null;
  const out=raw.map(admitWaterAction);return out.every(Boolean)?out:null;
+}
+export function waterProFeature(actions, paper = null){
+ const named = value => isWaterSpecialtyPigment(value?.pigment) ? 'pigments' : waterPaperById(value?.paper)?.pro ? 'papers' :
+  value?.kind === 'trace' || value?.source === 'trace' ? 'trace' : null;
+ if (waterPaperById(paper)?.pro) return 'papers';
+ for (const action of Array.isArray(actions) ? actions : []) {
+  const feature = named(action) || (action?.kind === 'tip' ? named(action.brush?.water) || named(action.brush) : null);
+  if (feature) return feature;
+ }
+ return null;
 }
 export function waterActionsFault(raw, prefix = 'actions'){
  if(!Array.isArray(raw)||!jsonFits(raw))return {field: prefix};

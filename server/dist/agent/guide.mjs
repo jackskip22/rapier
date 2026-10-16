@@ -106,7 +106,8 @@ stay the person's decisions.
 
 ## Export
 
-Export makes an independent file; html carries the offline editor. Complete pages,
+Export makes an independent file; html carries the offline editor with the plug-ins
+the document displays with, named in fidelity.carries, not Draw or Notes. Complete pages,
 Word and PDF need an open editor or the server's isolated renderer; without either
 they return editor_unavailable. Saving uses the bound location; check destination
 and verified. Clipboard copying uses an exact passage; plain, formatted and complete

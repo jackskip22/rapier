@@ -35,6 +35,8 @@ function _rapierOpenInfoSheet(kind) {
       ..._RAPIER_WILL_INFO.laws.map(entry => _rapierProtectionWord(entry.law) + ' — ' + entry.line)],
     layout: ['layout',
       'PLAIN — Pictures sit upright on separate lines.',
+      'DOCX — Word\'s page and type. Page breaks are estimates.',
+      'In Word, tight wrap becomes square and interactive parts become still pictures.',
       'Your saved sizes, positions and rotations stay unchanged.'],
     /* RAPIER_NOTES_BEGIN */
     'notes-sort': ['sort by',

@@ -36,6 +36,10 @@ async function _rapierWaterProAuthorizeActions(actions, options = {}) {
 	}
 	for (const feature of features) await _rapierWaterProAuthorize(feature);
 }
+function _rapierWaterProRefuseAgent(actions, options = {}) {
+	if (_rapierWaterEngine().waterProFeature(actions, options.paper))
+		throw Object.assign(new Error('Specialty pigments, Pro papers and Trace are only in the Android app, which agents cannot reach.'), {code:'water_pro_unavailable'});
+}
 async function _rapierWaterProChoose(key, value) {
 	const state = _rapierDrawState, session = state.session, engine = _rapierWaterEngine();
 	const choice = state.waterProChoice = (state.waterProChoice || 0) + 1;

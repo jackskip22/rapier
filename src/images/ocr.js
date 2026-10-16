@@ -139,7 +139,7 @@ function _rapierOcrPaint() {
 	const M = _rapierOcrModule();
 	const hostWords = phase => window.RapierPlatform?.resources.installMessage?.('ocr', phase) || '';
 	document.getElementById('ocr-plugin-body').textContent = status === 'error'
-		? hostWords('error') || 'Rapier could not reach or verify the text reader. Check your internet connection and tap retry.'
+		? hostWords('error') || (window.RapierPlatform?.environment.native === true ? 'Rapier could not read or verify its text reader. Tap retry.' : 'Rapier could not reach or verify the text reader. Check your internet connection and tap retry.')
 		: hostWords('prompt') || '• Search finds words in pictures.\n• ' + Math.round((M ? M.OCR_TRANSFER_BYTES : 0) / 1e6) + ' MB, once.\n• Pictures never leave your device.';
 	document.getElementById('ocr-plugin-body').style.whiteSpace = 'pre-line';
 	const progress = document.getElementById('ocr-plugin-progress'), error = document.getElementById('ocr-plugin-error'), install = document.getElementById('ocr-plugin-install');

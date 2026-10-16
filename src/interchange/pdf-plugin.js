@@ -47,7 +47,7 @@ globalThis.RapierPdfPlugin = (() => {
         if (status?.status === 'ready') {
           const held = Object.create(null);
           for (const [path] of manifest) {
-            const value = await resources.read('rapier-pdf-' + path.replaceAll('/', '-'));
+            const value = await resources.read('rapier-pdf-' + path.replaceAll('/', '-').replace(/-[0-9a-f]{16}(?=\.mjs$)/, ''));
             held[path] = await RapierBundleIO.resourceBytes(value, 'PDF reader resource');
           }
           files = await verified({version, files: held});
@@ -75,7 +75,7 @@ globalThis.RapierPdfPlugin = (() => {
     let reader;
     try {
       const hostedPath = 'pdfjs-dist-' + version + '/' + path;
-      const address = path === readerFile ? 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.6/' + hostedPath : base + path;
+      const address = path === readerFile ? 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.7/' + hostedPath : base + path;
       const response = await fetch(RapierBundleIO.pluginUrl(hostedPath) || address, {mode: 'cors', credentials: 'omit',
         referrerPolicy: 'no-referrer', cache: 'default', signal: controller.signal});
       if (!response.ok) throw new Error('PDF reader download returned HTTP ' + response.status + '.');

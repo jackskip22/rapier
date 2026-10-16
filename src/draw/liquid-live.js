@@ -171,8 +171,7 @@ function _rapierDrawLiquidSteps(effect, rgba, width, height, work) {
 	const source = globalThis.RapierDrawLiquidWorker?.workerSource;
 	if (!_rapierLiquid.worker && source && !_rapierLiquid.noWorker) {
 		try {
-			const url = URL.createObjectURL(new Blob([source()], { type: 'text/javascript' }));
-			_rapierLiquid.worker = new Worker(url); URL.revokeObjectURL(url);
+			_rapierLiquid.worker = globalThis.RapierWorkerExecution.createWorkerExecution({source, name: 'rapier-liquid', install: globalThis.RapierDrawLiquidWorker.installLiquidWorker});
 			_rapierLiquid.calls = new Map(); _rapierLiquid.call = 0;
 			_rapierLiquid.worker.onmessage = ({ data }) => {
 				const call = _rapierLiquid.calls.get(data.id);

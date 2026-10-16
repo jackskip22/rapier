@@ -1,14 +1,40 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {splitOpeningFrontmatter as _rapierSplitOpeningFrontmatter, pairMarkers as _rapierPairMarkers, RAPIER_HIGHLIGHT_COLORS} from '../agent/markdown-spec.mjs';
 import {markdownTableSources} from '../spec/md-source.mjs';
+import {parseMarkdownWork} from '../kit/parse-work.mjs';
 function _rapierHiddenSourceRanges(sourceText, parser = null) {
+	const steps = hiddenSourceSteps(sourceText, parser);
+	let next = steps.next();
+	while (!next.done) {
+		const read = next.value;
+		next = steps.next(read ? markdownTableSources(read.source, parser, read.environment, read.lines) : undefined);
+	}
+	return next.value;
+}
+
+async function visibleSourceProjectionWork(source, parser, work) {
+	const steps = hiddenSourceSteps(source, parser);
+	let next = steps.next(), count = 0;
+	while (!next.done) {
+		work.signal?.throwIfAborted();
+		const read = next.value;
+		const parsed = read ? await markdownTableSources(source, parser, read.environment, read.lines,
+			(owner, text, env) => parseMarkdownWork(owner, text, env, work)) : undefined;
+		if (++count % 32 === 0) await work.yield();
+		next = steps.next(parsed);
+	}
+	const hidden = next.value;
+	return {source, parser, hidden, read: _rapierVisibleMarkText(source, hidden)};
+}
+
+function* hiddenSourceSteps(sourceText, parser = null) {
 	const source = String(sourceText == null ? '' : sourceText);
 	const ranges = [];
 	if (!parser) throw new Error('Visible replacement requires the document parser');
 	const environment = {};
 	const lines = [0];
 	for (const row of source.matchAll(/\r\n?|\n/g)) lines.push(row.index + row[0].length);
-	const {tokens, cells} = markdownTableSources(source, parser, environment, lines);
+	const {tokens, cells} = yield {source, environment, lines};
 	const lineAt = line => lines[line] ?? source.length;
 	const push = (start, end, kind) => { if (end > start) ranges.push({ start, end, kind }); };
 	const front = _rapierSplitOpeningFrontmatter(source);
@@ -28,7 +54,7 @@ function _rapierHiddenSourceRanges(sourceText, parser = null) {
 			if (last > start && new RegExp('^' + token.markup[0] + '{' + token.markup.length + ',}\\s*$').test(closing)) push(last, end, 'fence');
 		}
 	}
-	const inline = _rapierInlineSourceRanges(source, parser, environment, tokens, lines, cells);
+	const inline = yield* inlineSourceSteps(source, parser, environment, tokens, lines, cells);
 	for (const range of inline) {
 		if (range.kind === 'literal') code.push([range.start, range.end]);
 		else push(range.start, range.end, range.kind);
@@ -53,6 +79,13 @@ function _rapierHiddenSourceRanges(sourceText, parser = null) {
 }
 
 function _rapierInlineSourceRanges(source, parser, environment, tokens, lineStarts, cells) {
+	const steps = inlineSourceSteps(source, parser, environment, tokens, lineStarts, cells);
+	let next = steps.next();
+	while (!next.done) next = steps.next();
+	return next.value;
+}
+
+function* inlineSourceSteps(source, parser, environment, tokens, lineStarts, cells) {
 	if (!parser) throw new Error('Visible replacement requires the document parser');
 	const owner = Object.create(parser), inline = Object.create(parser.inline), ruler = Object.create(parser.inline.ruler);
 	owner.inline = inline; inline.ruler = ruler;
@@ -92,6 +125,7 @@ function _rapierInlineSourceRanges(source, parser, environment, tokens, lineStar
 		jobs.push({ content: source.slice(start, end).replace(/\r?\n$/, ''), offsets: [start], localStarts: [0] });
 	}
 	for (const job of jobs) {
+		yield;
 		records = [];
 		inline.parse(job.content, owner, { ...environment }, []);
 		const rawOffset = job.rawOffset || (pos => {
@@ -224,7 +258,27 @@ function _rapierHiddenMarkPairs(source, hidden) {
 	for (const range of hidden) if (range.kind === 'comment') comments.set(range.start, range.end);
 	return _rapierPairMarkers(source, 'ink').runs.filter(pair =>
 		comments.get(pair.start) === pair.innerStart && comments.get(pair.innerEnd) === pair.end)
+		.concat(_rapierHiddenSpanPairs(source, hidden))
 		.sort((a, b) => a.start - b.start);
+}
+
+function _rapierHiddenSpanPairs(source, hidden) {
+	const pairs = [], open = [];
+	let last = 0, reach = 0;
+	for (const range of hidden) {
+		const inside = range.start < reach;
+		reach = Math.max(reach, range.end);
+		if (range.kind !== 'tag' || inside) continue;
+		if (open.length && /\n[ \t]*\r?\n/.test(source.slice(last, range.start))) open.length = 0;
+		last = range.end;
+		const tag = source.slice(range.start, range.end);
+		if (/^<span(?=[\s>])/i.test(tag) && !/\/\s*>$/.test(tag)) open.push(range);
+		else if (/^<\/span\s*>$/i.test(tag) && open.length) {
+			const opener = open.pop();
+			pairs.push({ start: opener.start, innerStart: opener.end, innerEnd: range.start, end: range.end });
+		}
+	}
+	return pairs;
 }
 
 function _rapierPairMarks(pairs) {
@@ -237,7 +291,7 @@ function _rapierPairMarks(pairs) {
 function _rapierVisibleMarkText(source, hidden) {
 	const pairs = _rapierHiddenMarkPairs(source, hidden);
 	if (!pairs.length) return null;
-	const marks = _rapierPairMarks(pairs), cuts = [], starts = new Set(marks.map(mark => mark.start));
+	const marks = _rapierPairMarks(pairs), cuts = [], starts = new Map(marks.map(mark => [mark.start, mark.end]));
 	let text = '', at = 0, total = 0;
 	for (const { start, end } of marks) {
 		text += source.slice(at, start); at = end; total += end - start;
@@ -252,7 +306,7 @@ function _rapierVisibleMarkText(source, hidden) {
 	const rest = [];
 	let seen = 0;
 	for (const range of hidden) {
-		if (range.kind === 'comment' && starts.has(range.start)) continue;
+		if (starts.get(range.start) === range.end) continue;
 		while (seen < cuts.length && cuts[seen].end <= range.start) seen++;
 		const cut = seen ? cuts[seen - 1].total : 0;
 		rest.push({ start: range.start - cut, end: range.end - cut, kind: range.kind });
@@ -338,6 +392,6 @@ function _rapierPlanVisibleReplacement(sourceText, matches, replacement, markdow
 	return { splices, refused };
 }
 
-export { _rapierHiddenSourceRanges, _rapierInlineSourceRanges, _rapierVisibleHits, _RAPIER_FIND_MATCH_LIMIT, _rapierFindPatternHits,
-	_rapierFindLiteralHits, _rapierFindFlexibleSeparatorHits, _rapierEscapeRegExp, _rapierHiddenMarkPairs,
+export { hiddenSourceSteps, inlineSourceSteps, visibleSourceProjectionWork, _rapierHiddenSourceRanges, _rapierInlineSourceRanges, _rapierVisibleHits, _RAPIER_FIND_MATCH_LIMIT, _rapierFindPatternHits,
+	_rapierFindLiteralHits, _rapierFindFlexibleSeparatorHits, _rapierEscapeRegExp, _rapierHiddenMarkPairs, _rapierHiddenSpanPairs,
 	_rapierPairMarks, _rapierVisibleMarkText, _rapierVisibleSourceProjection, _rapierPairSplices, _rapierPlanVisibleReplacement };

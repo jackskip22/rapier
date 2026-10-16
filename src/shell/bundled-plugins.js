@@ -99,11 +99,16 @@ const RapierBundledPlugins = (() => {
 	}
 	return Object.freeze({
 		has: id => known.has(id), need,
-		async portable() {
-			const bodies = await Promise.all(groups.map(load));
-			const inventory = groups.map(({asset, ...group}) => group);
-			return '<script type="application/json" id="rapier-builtin-plugins">' + JSON.stringify(inventory).replace(/</g, '\\u003c') + '</script>\n' +
-				groups.map((group, index) => '<script type="application/rapier-runtime" id="' + group.element + '">' + bodies[index] + '</script>\n').join('');
+		async portable(ids) {
+			const out = {groups: [], bodies: new Map()};
+			for (const group of groups.filter(group => ids.includes(group.id))) {
+				let body;
+				try { body = await load(group); } catch (_) { continue; }
+				const {asset, ...carried} = group;
+				out.groups.push(carried);
+				out.bodies.set(group.id, '<script type="application/rapier-runtime" id="' + group.element + '">' + body + '</script>\n');
+			}
+			return out;
 		},
 		async ready() {
 			await carried;

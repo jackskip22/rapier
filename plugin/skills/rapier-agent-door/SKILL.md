@@ -94,6 +94,6 @@ Most `show` targets need no pairing. A pairing code works once, within a minute.
 `target:"pair"` is an ordinary show and reports `editor_not_present`. Expect `confirmation_required`, or
 `owner_confirmation_required` with `owner_approval_url` on OAuth.
 
-Complete page, Word and PDF exports need an open editor or the server's isolated renderer. Hosted files are at most
-16 MiB; source is at most 64 MiB. Check where the file went and whether it arrived. Page export doesn't publish a
-website.
+Complete page, Word and PDF exports need the person's open editor, or a self-hosted `rapier-server`'s isolated
+renderer. Hosted files are at most 16 MiB; source is at most 64 MiB. Check where the file went and whether it arrived.
+Page export doesn't publish a website.

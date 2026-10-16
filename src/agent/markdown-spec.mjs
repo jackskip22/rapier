@@ -1,4 +1,5 @@
 import {createMathMatcher} from '../math/delimiters.mjs';
+import {SPACING_TYPES, SPACING_PRESETS, documentSpacing, documentSpacingCss, wordDocumentSettings} from '../spec/document-settings.mjs';
 import {installMathRules} from '../math/markdown-rules.mjs';
 import {splitOpeningFrontmatter as _rapierSplitOpeningFrontmatter} from '../spec/frontmatter.mjs';
 import {readDocumentSettings as _rapierReadDocumentSettings, updateDocumentSettings as _rapierUpdateDocumentSettings, DOCUMENT_LEADING as RAPIER_DOCUMENT_LEADING, documentTitle as _rapierDocumentTitle, documentLanguage as _rapierDocumentLanguage, documentSettingsStyle as _rapierDocumentSettingsStyle, documentSettingsPageRule as _rapierDocumentSettingsPageRule,
@@ -413,6 +414,7 @@ function safeCodeFence(body, authored = '```', info = '') {
 }
 
 export {
+	SPACING_TYPES, SPACING_PRESETS, documentSpacing, documentSpacingCss, wordDocumentSettings,
 	createMathMatcher, installMathRules,
 	safeCodeFence,
 	RAPIER_HIGHLIGHT_COLORS, RAPIER_MARKDOWN_SPEC, _rapierApplyMarkdownSpec as applyMarkdownSpec,

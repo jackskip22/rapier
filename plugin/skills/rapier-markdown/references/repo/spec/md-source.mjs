@@ -115,9 +115,13 @@ export function markdownSourcePositions(source, parser) {
 
 // Capture only table-cell provenance while the parser still owns container-adjusted row
 // bounds. Looking for cell text in a whole row aliases literal pipes and quote/list markers.
-export function markdownTableSources(source, parser, environment, lineStarts = null) {
+export function markdownTableSources(source, parser, environment, lineStarts = null, parse = null) {
   const cells = new WeakMap();
-  if (!source.includes('|')) return {tokens: parser.parse(source, environment), cells};
+  const read = owner => {
+    if (parse) return parse(owner, source, environment).then(tokens => ({tokens, cells}));
+    return {tokens: owner.parse(source, environment), cells};
+  };
+  if (!source.includes('|')) return read(parser);
   const lines = lineStarts || [0];
   if (!lineStarts) for (const row of source.matchAll(/\r\n?|\n/g)) lines.push(row.index + row[0].length);
   const owner = Object.create(parser), block = Object.create(parser.block), ruler = Object.create(parser.block.ruler);
@@ -131,14 +135,14 @@ export function markdownTableSources(source, parser, environment, lineStarts = n
         if (token.type === 'tr_open') {
           const row = token.map[0], from = state.bMarks[row] + state.tShift[row];
           const line = state.src.lastIndexOf('\n', from - 1) + 1;
-          cell = tableSource(state.src.slice(from, state.eMarks[row]), lines[row] + from - line);
+          cell = tableSource(state.src.slice(from, state.eMarks[row]), lines[row + (state.rapierFirstLine || 0)] + from - line);
         } else if (token.type === 'inline' && cell) cells.set(token, cell(token.content));
         else if (token.type === 'tr_close') cell = null;
       }
     }
     return matched;
   });
-  return {tokens: owner.parse(source, environment), cells};
+  return read(owner);
 }
 
 function tableSource(row, base) {

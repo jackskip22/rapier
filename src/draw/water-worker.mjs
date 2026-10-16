@@ -248,8 +248,8 @@ export function createWaterWorker({postMessage}={}){
    const b=new WaterBrush(request.definition);if(request.radius!=null)b.setBaseValue('radius_logarithmic',request.radius);b.setHead(request.held??null,false);const aspect=1;return {radius:b.radius*3,aspect,angle:request.held??0};
   }
   if(op==='sampleAgent')return sampleAgentPainting(request.shape,request.point,{...request.options,signal:jobs.get(request.id)?.signal});
-  if(op==='agent')return paintAgentStrokes(request.strokes,request.seed,request.target,{...request.options,signal:jobs.get(request.id)?.signal,contribution:request.contribution??request.contributionId,recipe:request.recipe,mode:'water',actions:request.actions,paper:request.paper,waterSession:request.waterSession,waterAuthorized:request.waterAuthorized===true,onProgress:request.progress?value=>postMessage({id:request.id,progress:true,value}):undefined});
-  if(op==='replayAgent')return replayAgentPainting(request.shape,request.omitIds,{...request.options,signal:jobs.get(request.id)?.signal,requireEmptyBase:request.requireEmptyBase===true,waterSession:request.waterSession,waterAuthorized:request.waterAuthorized===true});
+  if(op==='agent')return paintAgentStrokes(request.strokes,request.seed,request.target,{...request.options,signal:jobs.get(request.id)?.signal,contribution:request.contribution??request.contributionId,recipe:request.recipe,mode:'water',actions:request.actions,paper:request.paper,picture:request.picture,waterSession:request.waterSession,waterAuthorized:request.waterAuthorized===true,onProgress:request.progress?value=>postMessage({id:request.id,progress:true,value}):undefined});
+  if(op==='replayAgent')return replayAgentPainting(request.shape,request.omitIds,{...request.options,signal:jobs.get(request.id)?.signal,requireEmptyBase:request.requireEmptyBase===true,picture:request.picture,waterSession:request.waterSession,waterAuthorized:request.waterAuthorized===true});
   if(op==='replayCreate'){
    const frame=request.frame;if(!frame||!integer(request.surfaceId)||surfaces.has(request.surfaceId))throw waterError('WATER_INPUT','The Water replay frame is not valid');
    const run=await agentPaintReplayRun({mode:'water',paper:request.paper,actions:request.actions,strokes:request.strokes,px:[frame.w,frame.h],scale:request.scale,seed:request.seed,replay:request.replay});
@@ -319,4 +319,4 @@ export function createLocalWaterClient(){
  const receive=createWaterWorker({postMessage:(m,t)=>deliver(value=>client.receive(value),m,t)});
  client=createWorkerClient({postMessage:(m,t)=>deliver(value=>receive(value),m,t),terminate:()=>receive.close()});return client;
 }
-export function installWaterWorker(scope=globalThis){if(typeof scope.document!=='undefined')throw new Error('Water needs a dedicated worker');const receive=createWaterWorker({postMessage:(m,t)=>scope.postMessage(m,t)});scope.onmessage=({data})=>receive(data);}
+export function installWaterWorker(scope=globalThis){if(typeof scope.document!=='undefined')throw new Error('Water needs a dedicated worker');const receive=createWaterWorker({postMessage:(m,t)=>scope.postMessage(m,t)});scope.onmessage=({data})=>receive(data);return ()=>receive.close();}

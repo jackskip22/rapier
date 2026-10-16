@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-var _rapierDrawPart = null, _rapierNotesPart = null;
+var _rapierDrawPart = null, _rapierNotesPart = null, _rapierDocumentPart = null;
+async function _rapierOpenSpacing() {
+	if (await _rapierPartReady('document')) return _rapierDocumentPart.spacing();
+}
 function _rapierPartAvailable(id) { return typeof RapierParts !== 'undefined' && RapierParts.has(id); }
 function _rapierDrawOffered() { return !!_rapierDrawPart || _rapierPartAvailable('drawing'); }
 function _rapierPartWait(id) {
@@ -40,3 +43,8 @@ addEventListener('pointerdown', event => {
 	const id = !control ? null : control.matches('[data-action="notes-open"]') ? 'notes' : 'drawing';
 	if (id && _rapierPartAvailable(id) && !RapierParts.ready(id)) RapierParts.need(id).catch(() => {});
 }, true);
+
+function _rapierSyncDocumentMode() {
+	if (_rapierDocumentPart) _rapierDocumentPart.sync();
+	else if (RapierPreferences.read('layout') === 'docx') void _rapierPartReady('document').then(ready => { if (ready) _rapierDocumentPart.sync(); });
+}

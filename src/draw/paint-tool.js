@@ -1852,7 +1852,6 @@ function _rapierPaintPositionMount(mount, id) {
 	const shape = id != null ? _rapierDrawShapeById(id) : null;
 	if (shape?.opacity != null && !mount.closest('[data-rapier-effect-layer]')) mount.setAttribute('opacity', String(shape.opacity));
 	else mount.removeAttribute('opacity');
-	_rapierColouringRestack();
 }
 function _rapierPaintReattachLive() {
 	for (const layer of _rapierPaintRevisionLayers()) {
@@ -2343,7 +2342,10 @@ function _rapierPaintEventPoint(evt, geom, layer) {
 }
 // lighter one still -- see RAPIER_PAINT_SIM_LIGHT_* above).
 function _rapierPaintPressure(evt, paint, p) {
-	if (evt.pointerType === 'pen' && Number.isFinite(evt.pressure)) return _rapierPaintPressed(Math.min(1, Math.max(0, evt.pressure)), 'pen', 0);
+	if (evt.pointerType === 'pen' && Number.isFinite(evt.pressure)) {
+		if (evt.pressure > 0 && evt.pressure !== .5) paint.ownPressure = true;
+		return _rapierPaintPressed(Math.min(1, Math.max(0, evt.pressure)), 'pen', 0);
+	}
 	const level = paint.settings.touch;
 	const speedConst = _rapierPaintTouchAt(level).speed;
 	const elapsed = _rapierDrawClamp((p.t - paint.last) / 1000, 0, 0.5);
@@ -2940,7 +2942,16 @@ function _rapierPaintGrowToHold(layer, paint, p) {
 	_rapierPaintPrepareNextSheet(layer, paint, p);
 	const growth = _rapierPaintGrowthAt(layer, paint, p);
 	if (!growth) return layer;
-	const {left: L, top: T, right: R, bottom: B} = growth;
+	let {left: L, top: T, right: R, bottom: B} = growth;
+	if (layer.mode === 'water') {
+		const shows = (l, t, r, b) => globalThis.RapierDrawWater.waterSheetShows(surface.width + l + r, surface.height + t + b, surface.width, surface.height);
+		if (!shows(L, T, R, B)) {
+			const x = Math.floor(p.x * k), y = Math.floor(p.y * k);
+			L = Math.max(0, -x + 1); T = Math.max(0, -y + 1); R = Math.max(0, x + 2 - surface.width); B = Math.max(0, y + 2 - surface.height);
+			if (!(L || T || R || B)) return layer;
+			if (!shows(L, T, R, B)) throw Object.assign(new Error('This Water layer cannot grow further. Set it and paint on a new layer.'), {code:'WATER_BUDGET',recoverable:true});
+		}
+	}
 	const w = surface.width + L + R, h = surface.height + T + B;
 	if (w * h > RAPIER_PAINT_AREA_MAX * 2) {
 		if (layer.mode === 'water') throw Object.assign(new Error('This Water layer cannot grow further. Set it and paint on a new layer.'), {code:'WATER_BUDGET',recoverable:true});
@@ -3055,7 +3066,7 @@ async function _rapierPaintEncodeShapeLater(shapeId, was, captured = null, strok
 function _rapierPaintSample(paint, layer, s, lift) {
 	layer = _rapierPaintLayer() || layer;
 	layer = _rapierPaintGrowToHold(layer, paint, s.p) || layer;
-	const land = RAPIER_PAINT_TOUCH_FLOOR + (1 - RAPIER_PAINT_TOUCH_FLOOR) * _rapierPaintSmooth(_rapierDrawClamp(s.at / paint.land, 0, 1));
+	const land = paint.ownPressure ? 1 : RAPIER_PAINT_TOUCH_FLOOR + (1 - RAPIER_PAINT_TOUCH_FLOOR) * _rapierPaintSmooth(_rapierDrawClamp(s.at / paint.land, 0, 1));
 	paint.brush.strokeTo(layer.surface, s.p.x * RAPIER_PAINT_GRAIN, s.p.y * RAPIER_PAINT_GRAIN, s.press * land * lift, s.p.tiltX, s.p.tiltY, s.dt, 1, 0, s.p.twist);
 	paint.drawn = s;
 }
@@ -3117,7 +3128,7 @@ function _rapierPaintEnd(evt, gesture) {
 	const end = paint.travel;
 	const span = Math.max(1e-4, Math.min(paint.lift, end - (paint.tail.length ? paint.tail[0].at : end)));
 	paint.tail.forEach((s, i) => _rapierPaintSample(paint, layer, s,
-		i === 0 && !paint.drained ? 1 : _rapierPaintSmooth(_rapierDrawClamp((end - s.at) / span, 0, 1))));
+		i === 0 && !paint.drained || paint.ownPressure ? 1 : _rapierPaintSmooth(_rapierDrawClamp((end - s.at) / span, 0, 1))));
 	paint.tail.length = 0;
 	_rapierPaintReleaseStroke(gesture);
 	const ended = _rapierPaintLayer() || layer;
@@ -3353,7 +3364,6 @@ function _rapierPaintPublish(layer, keep, kept, custody, synced = false, record 
 	else {
 		shape = { id: _rapierDrawNextId(), stroke: null, recognized: 'paint', asDrawn: false, brush: 'ink', style: null, geom, raster, paint: _rapierPaintMetadata(layer, layer.brushId, pw, ph, s, replay) };
 		state.recipe.shapes.push(shape);
-		_rapierColouringSeat(shape);
 		_rapierPaintChooseCreated(shape);
 	}
 	layer.id = shape.id; layer.raster = raster; layer.geom = JSON.stringify(geom);
@@ -3370,7 +3380,6 @@ function _rapierPaintPublish(layer, keep, kept, custody, synced = false, record 
 		remapRefractionRecipeSources(state.recipe, new Map([...gone].map(id => [id, shape.id])));
 	}
 	if (grown || made || retired) _rapierDrawRenderAll(); else { _rapierDrawRenderShapes([shape.id]); _rapierDrawUpdateMenu(); }
-	_rapierColouringRestack();
 	_rapierPaintSealRevision(layer, stroke, priorShift, grown);
 	if (layer.mode === 'water') _rapierPaintSyncPaper();
 	_rapierPaintHandBack(layer, made ? made.map(row => row.id) : [shape.id]);
@@ -3439,134 +3448,3 @@ function _rapierPaintWarmTarget() {
 	}
 }
 
-const RAPIER_COLOURING_MARK = 'colouring';
-let _rapierColouringSheet = null;
-function _rapierColouringSeat(shape) {
-	const shapes = _rapierDrawState.recipe?.shapes;
-	if (!shapes || !shape) return;
-	const at = shapes.findIndex(row => row.group === RAPIER_COLOURING_MARK);
-	const index = shapes.indexOf(shape);
-	if (at < 0 || index <= at) return;
-	shapes.splice(index, 1);
-	shapes.splice(at, 0, shape);
-}
-function _rapierColouringRestack() {
-	const state = _rapierDrawState, shapes = state.recipe?.shapes;
-	if (!shapes?.some(shape => shape.group === RAPIER_COLOURING_MARK)) return;
-	const host = state.svg;
-	if (!host?.children || typeof host.querySelector === 'function' && host.querySelector('[data-rapier-effect-scene],[data-rapier-effect-layer]')) return;
-	const nodes = new Map();
-	for (const node of [...host.children]) {
-		const id = node.getAttribute?.('data-shape-id');
-		if (id) nodes.set(id, node);
-	}
-	for (const shape of shapes) { const node = nodes.get(shape.id); if (node) host.appendChild(node); }
-	const mount = state.paintLayer?.mount, first = shapes.find(shape => shape.group === RAPIER_COLOURING_MARK);
-	const line = first && nodes.get(first.id);
-	if (mount && line && mount.parentNode === host) line.before(mount);
-}
-function _rapierColouringHide() {
-	const sheet = _rapierColouringSheet;
-	if (!sheet) return;
-	sheet.hidden = true;
-	sheet.classList.remove('rapier-notes-sheet--open');
-}
-function _rapierColouringDismiss(chosen) {
-	const sheet = _rapierColouringSheet;
-	if (!sheet || sheet.hidden) return false;
-	_rapierColouringHide();
-	if (chosen) _rapierDrawState.colouringFor = _rapierDrawState.session;
-	_rapierDrawState.surface?.focus({preventScroll: true});
-	return true;
-}
-function _rapierColouringGlyph(page) {
-	const glyph = globalThis.RapierDrawColouring?.colouringGlyph?.(page);
-	if (!glyph) return null;
-	const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-	svg.setAttribute('viewBox', '0 0 ' + glyph.w + ' ' + glyph.h);
-	svg.setAttribute('width', '26'); svg.setAttribute('height', '26'); svg.setAttribute('aria-hidden', 'true');
-	svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor');
-	svg.setAttribute('stroke-width', glyph.width); svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('stroke-linejoin', 'round');
-	const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-	path.setAttribute('d', glyph.d);
-	svg.appendChild(path);
-	return svg;
-}
-function _rapierColouringButton(name, page) {
-	const button = document.createElement('button');
-	button.type = 'button';
-	button.className = 'settings-action-btn';
-	button.dataset.colouring = name;
-	const glyph = page && _rapierColouringGlyph(page);
-	if (glyph) button.appendChild(glyph);
-	button.appendChild(document.createTextNode(name));
-	return button;
-}
-function _rapierColouringShow(pages) {
-	const state = _rapierDrawState;
-	let sheet = _rapierColouringSheet;
-	if (!sheet?.isConnected) {
-		sheet = document.createElement('div');
-		sheet.className = 'rapier-notes-sheet rapier-notes-sheet--open';
-		sheet.hidden = true;
-		sheet.setAttribute('role', 'dialog');
-		sheet.setAttribute('aria-label', 'Paint');
-		for (const page of pages) sheet.appendChild(_rapierColouringButton(page.name, page));
-		sheet.appendChild(_rapierColouringButton('none'));
-		sheet.addEventListener('click', evt => {
-			const name = evt.target.closest('[data-colouring]')?.dataset.colouring;
-			if (!name) return;
-			evt.preventDefault();
-			evt.stopPropagation();
-			_rapierColouringChoose(name);
-		});
-		state.surface.appendChild(sheet);
-		_rapierColouringSheet = sheet;
-	}
-	sheet.hidden = false;
-	sheet.classList.add('rapier-notes-sheet--open');
-	sheet.querySelector('button')?.focus({preventScroll: true});
-}
-function _rapierColouringOffer(again) {
-	const state = _rapierDrawState;
-	if (!state?.open || state.finishing || _rapierDrawTool() !== 'paint') { _rapierColouringHide(); return; }
-	const pages = globalThis.RapierDrawColouring?.RAPIER_COLOURING_PAGES;
-	if (!pages?.length) return;
-	if (_rapierColouringSheet && !_rapierColouringSheet.hidden) return;
-	if (!again && state.colouringFor === state.session) return;
-	const recipe = state.recipe;
-	if (!recipe || recipe.shapes?.length || recipe.strokes?.length) { _rapierColouringHide(); return; }
-	if (!(recipe.canvas?.w > 40 && recipe.canvas?.h > 40)) return;
-	_rapierColouringShow(pages);
-}
-function _rapierColouringPlace(name) {
-	const state = _rapierDrawState;
-	const page = (globalThis.RapierDrawColouring?.RAPIER_COLOURING_PAGES || []).find(row => row.name === name);
-	const box = state.recipe?.canvas;
-	if (!page || !(box?.w > 0) || !(box?.h > 0)) return false;
-	const s = Math.min(box.w * 0.84 / page.w, box.h * 0.84 / page.h);
-	if (!(s > 0)) return false;
-	const ox = (box.w - page.w * s) / 2, oy = (box.h - page.h * s) / 2;
-	const width = Math.max(3.2, Math.min(8, Math.min(box.w, box.h) * 0.014));
-	return _rapierDrawCommand(() => {
-		const recipe = state.recipe;
-		for (const part of page.parts) {
-			const pts = [];
-			for (const [x, y] of part) {
-				const px = ox + x * s, py = oy + y * s, last = pts[pts.length - 1];
-				if (last && Math.abs(last[0] - px) < 0.05 && Math.abs(last[1] - py) < 0.05) continue;
-				pts.push([px, py, 0]);
-			}
-			if (pts.length < 2) continue;
-			recipe.strokes.push({pts});
-			recipe.shapes.push({id: _rapierDrawNextId(), stroke: recipe.strokes.length - 1, recognized: 'ink', brush: 'ink', cut: true, cutWidth: width, locked: true, group: RAPIER_COLOURING_MARK, ink: '#000000', smooth: 0});
-		}
-	});
-}
-function _rapierColouringChoose(name) {
-	if (name === 'none') { _rapierColouringDismiss(true); return; }
-	const placed = _rapierColouringPlace(name);
-	const finish = ok => { if (ok) _rapierColouringDismiss(true); };
-	if (placed && typeof placed.then === 'function') placed.then(finish);
-	else finish(placed);
-}

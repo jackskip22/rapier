@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import {createWorkerExecution} from '../shell/worker-execution.mjs';
 import {sha256State} from '../kit/ledger/hash.mjs';
 export {sha256State};
 
@@ -29,7 +30,7 @@ function workerDigest(input) {
 	if (!digestWorker) {
 		try {
 			const source = "self.onmessage = async e => { let hex = null; try { const bytes = typeof e.data.text === 'string' ? new TextEncoder().encode(e.data.text) : e.data.bytes; hex = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), b => b.toString(16).padStart(2, '0')).join(''); } catch (_) {} self.postMessage({id: e.data.id, hex}); };";
-			const worker = new Worker(URL.createObjectURL(new Blob([source], {type: 'text/javascript'})));
+			const worker = createWorkerExecution({source, name: 'rapier-digest'});
 			const owner = digestWorker = {worker, serial: 0, pending: new Map()};
 			worker.onmessage = event => { const done = owner.pending.get(event.data?.id); owner.pending.delete(event.data?.id); done?.(typeof event.data?.hex === 'string' ? event.data.hex : null); };
 			worker.onerror = worker.onmessageerror = () => { digestWorker = false; for (const done of owner.pending.values()) done(null); owner.pending.clear(); try { worker.terminate(); } catch (_) {} };

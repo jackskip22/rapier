@@ -379,13 +379,13 @@ function _rapierTodoLayoutTicked(file, key, list, tickedCount) {
 	if (!tickedCount) { if (row) row.remove(); list.classList.remove('rapier-todo-list--closed'); return; }
 	if (!row) {
 		row = _rapierNotesEl('li', 'rapier-todo-ticked-row'); row.setAttribute('role', 'presentation');
-		const btn = _rapierNotesEl('button', 'rapier-todo-ticked'); btn.type = 'button';
+		const btn = _rapierNotesEl('button', 'rapier-notes-chip rapier-todo-ticked'); btn.type = 'button';
 		btn.appendChild(_rapierTodoChevronIcon()); btn.appendChild(document.createElement('span'));
 		row.appendChild(btn); list.appendChild(row);
 	}
 	const btn = row.querySelector('.rapier-todo-ticked');
 	const closed = _rapierTodoIsCollapsed(file, key);
-	btn.querySelector('span').textContent = tickedCount === 1 ? '1 ticked item' : tickedCount + ' ticked items';
+	btn.querySelector('span').textContent = 'Checked (' + tickedCount + ')';
 	btn.setAttribute('aria-expanded', String(!closed));
 	btn.classList.toggle('rapier-todo-ticked--closed', closed);
 	btn.onclick = evt => { evt.stopPropagation(); _rapierTodoToggleCollapsed(file, key); _rapierTodoScheduleScan(); };

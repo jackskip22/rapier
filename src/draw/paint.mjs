@@ -1335,7 +1335,7 @@ export class PaintSurface {
 		const options = this.wetOptions, maxBytes = options.maxBytes ?? 96000000;
 		let next = this._wetWindowFor(box, win), carry = state, carryWin = win, carryBase = this.wetRasterBase;
 		if (this._wetBytes(next) > maxBytes) {
-			if (state) { this.settleWet(); carry = null; carryWin = null; carryBase = null; }
+			if (state) { this.wetPending = 0; this.settleWet(); carry = null; carryWin = null; carryBase = null; }
 			next = this._wetWindowFor(box, null);
 			if (this._wetBytes(next) > maxBytes) { const error = new RangeError('Painting is too large for wet media'); error.code = 'PAINT_WET_BUDGET'; throw error; }
 		}

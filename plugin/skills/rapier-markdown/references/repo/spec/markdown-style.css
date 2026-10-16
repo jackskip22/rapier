@@ -361,15 +361,15 @@
 	position:relative;
 	--md-marker:0px;
 	counter-increment:rapier-ol;
-	min-height:calc(2 * var(--md-unit));
-	padding-top:calc(0.15 * var(--md-unit));
+	min-height:0;
+	padding-top:0;
 }
 .md-render ol>li::before{
 	content:counter(rapier-ol);
 	position:absolute;
 	/* The circle is centered on the item's first line: the li's own padding, plus half of what the 2rem circle is taller than one line. */
-	inset-inline-start:calc(-2.75 * var(--md-unit) + var(--md-marker, 0px)); top:calc(calc(0.15 * var(--md-unit)) + (var(--md-line) - calc(2 * var(--md-unit))) / 2);
-	width:calc(2 * var(--md-unit)); height:calc(2 * var(--md-unit));
+	inset-inline-start:calc(-2.75 * var(--md-unit) + var(--md-marker, 0px)); top:0;
+	width:min(2 * var(--md-unit), 1lh); height:min(2 * var(--md-unit), 1lh);
 	display:flex; align-items:center; justify-content:center;
 	border:2px solid var(--md-color-line);
 	border-radius:999px;
@@ -650,9 +650,6 @@ html[data-invert-image-alpha="off"] :is(img,.md-render svg.rapier-native-flowcha
 	vertical-align:middle;
 }
 .md-render img[data-rapier-image-size]{width:min(var(--md-image-width),100%);height:auto}
-/* AUTO stays relative to its column. Authored and gesture-owned inline sizing wins;
-   Plain reads the intrinsic attributes without rerendering ordinary image blocks. */
-html:not([data-layout="plain"]) .md-render img[data-rapier-image-geometry="auto"]{width:min(var(--rapier-image-auto-width),var(--rapier-image-natural-width));height:auto}
 .md-render img:is([data-rapier-asset],[data-rapier-image-url]):not([data-rapier-asset-state="ready"]){background:color-mix(in srgb,var(--md-color-text) 5%,transparent)}
 
 .md-render dl{margin:0 0 var(--md-gap-block)}

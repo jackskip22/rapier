@@ -372,6 +372,8 @@ const _rapierLive = (() => {
     }
   }
   async function join(options, resumeAuthority = null) {
+    if (globalThis.RapierWorkerExecution.workerStartupRefused('rapier-live'))
+      throw Object.assign(new Error('Live worker unavailable'), {code: 'worker_startup_refused'});
     const url = new URL(String(options?.url || ''));
     if (!['wss:', 'ws:'].includes(url.protocol) || url.username || url.password || url.hash || url.search ||
         (url.protocol === 'ws:' && !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) ||
@@ -401,14 +403,13 @@ const _rapierLive = (() => {
       slot = sessionStorage.getItem(slotKey);
       if (!slot) { slot = crypto.randomUUID(); sessionStorage.setItem(slotKey, slot); }
     } catch (_) { slot = crypto.randomUUID(); }
-    const blob = new Blob([globalThis.RapierLiveSession.workerSource()], {type: 'text/javascript'});
-    const workerUrl = URL.createObjectURL(blob);
-    try { worker = new Worker(workerUrl); } finally { URL.revokeObjectURL(workerUrl); }
+    worker = globalThis.RapierWorkerExecution.createWorkerExecution({name: 'rapier-live',
+      source: globalThis.RapierLiveSession.workerSource});
     worker.onmessage = event => { void receive(event.data, currentEpoch); };
     worker.onerror = event => {
       if (epoch !== currentEpoch) return;
       state = {...state, state: 'stopped', error: event.message || 'Live worker unavailable'};
-      loading = false; rejectJoin?.(new Error(state.error)); resolveJoin = rejectJoin = null; joining = null; publish();
+      loading = false; rejectJoin?.(event.error || new Error(state.error)); resolveJoin = rejectJoin = null; joining = null; publish();
     };
     joining = new Promise((resolve, reject) => { resolveJoin = resolve; rejectJoin = reject; });
     const local = _rapierLedgerCapture();
@@ -655,10 +656,8 @@ const _rapierLive = (() => {
   }
   function invitation(captured) {
     return new Promise((resolve, reject) => {
-      const workerUrl = URL.createObjectURL(new Blob([globalThis.RapierLiveSession.workerSource()], {type: 'text/javascript'}));
-      let creator;
-      try { creator = new Worker(workerUrl); } catch (error) { URL.revokeObjectURL(workerUrl); reject(error); return; }
-      URL.revokeObjectURL(workerUrl);
+      const creator = globalThis.RapierWorkerExecution.createWorkerExecution({name: 'rapier-live-invitation',
+        source: globalThis.RapierLiveSession.workerSource});
       const requestId = crypto.randomUUID();
       const finish = (value, error) => { clearTimeout(timeout); creator.terminate(); error ? reject(error) : resolve(value); };
       const timeout = setTimeout(() => finish(null, new Error('The live link could not be prepared. Try again.')), 30000);

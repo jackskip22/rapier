@@ -19,7 +19,7 @@ function bundlePin(loader, key, versionName) {
 
 function pdfFiles(pins, version, root) {
 	if (pins.version !== version) throw new Error('interchange/pdf-pins.json is not the pinned pdfjs-dist version');
-	return pins.files.map(([path, bytes, sri]) => ({id: 'rapier-pdf-' + path.replaceAll('/', '-'),
+	return pins.files.map(([path, bytes, sri]) => ({id: 'rapier-pdf-' + path.replaceAll('/', '-').replace(/-[0-9a-f]{16}(?=\.mjs$)/, ''),
 		plugin: 'pdf', hostFile: 'pdfjs-dist-' + pins.version + '/' + path,
 		url: path === pins.reader ? PLUGIN_ORIGIN + 'pdfjs-dist-' + pins.version + '/' + path : 'https://cdn.jsdelivr.net/npm/pdfjs-dist@' + pins.version + '/' + path,
 		...(path === pins.reader ? {path: join(root, 'interchange/pdf-reader.mjs')} : {}), sri, bytes}));

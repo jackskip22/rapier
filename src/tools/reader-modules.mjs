@@ -109,8 +109,25 @@ export async function bundleModules({root, entries, used, drop = () => false}) {
 			request(dependency, node.specifiers.map(item => item.imported?.name ?? 'default'));
 		}
 	}
+	const dependencies = new Map();
+	for (const path of order) {
+		const list = [];
+		for (const node of parse(cut.get(path)).body) if (node.type === 'ImportDeclaration') {
+			list.push(relative(root, resolve(root, dirname(path), node.source.value)).replaceAll('\\', '/'));
+		}
+		dependencies.set(path, list);
+	}
+	const reached = new Set();
+	const visit = path => {
+		if (!path || reached.has(path) || !cut.has(path)) return;
+		reached.add(path);
+		for (const dependency of dependencies.get(path) || []) visit(dependency);
+	};
+	for (const path of Object.values(entries)) visit(path);
+
 	const text = [], sizes = {}, blocks = {};
 	for (const path of order) {
+		if (!reached.has(path)) continue;
 		const source = cut.get(path), tree = parse(source), changes = [], exported = [];
 		for (const node of tree.body) {
 			if (node.type === 'ImportDeclaration') {

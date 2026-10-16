@@ -110,7 +110,7 @@ function _rapierPinchAnchor(host, x, y) {
 		if (box && Math.abs(box.top + box.height / 2 - y) < 40) at = { range, drop: y - box.top };
 	}
 	if (at) return at;
-	const wrapper = document.elementFromPoint(x, y)?.closest('#editor-blocks > .block-wrapper');
+	const wrapper = document.elementFromPoint(x, y)?.closest(':is(#editor-blocks, #editor-blocks > .block-sleep-group) > .block-wrapper');
 	if (!wrapper) return null;
 	const box = wrapper.getBoundingClientRect();
 	return { wrapper, share: Math.min(1, Math.max(0, (y - box.top) / Math.max(1, box.height))) };

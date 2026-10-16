@@ -40,11 +40,16 @@ const MODULES = {
 	RapierTypography: 'layout/typography.mjs',
 	RapierOcr: 'images/ocr.mjs', RapierPictureMarks: 'images/picture-marks.mjs',
 	RapierPreferenceDefinitions: 'shell/preferences.mjs', RapierEmbedContract: 'packages/rapier-embed/contract.mjs',
-	RapierImageLayout: 'layout/model.mjs', RapierMdLayoutSpec: 'spec/md-layout.mjs', RapierPretext: 'agent/vendor/pretext/rich-inline.js',
+	RapierImageLayout: 'layout/model.mjs', RapierMdLayoutSpec: 'spec/md-layout.mjs',
 	RapierTextPreparation: 'layout/preparation.mjs',
 	RapierHtmlBlocks: 'spec/html-blocks.mjs',
 };
-const READ_ALL = new Set(['RapierImageLayout', 'RapierMdLayoutSpec', 'RapierPretext', 'RapierTextPreparation', 'RapierOcr']);
+const READ_ALL = new Set(['RapierOcr']);
+const PLANNER_EXPORTS = {
+	RapierImageLayout: ['alphaProfile', 'boxClearance', 'edgeLines', 'edgeMarks', 'flowLines', 'frameScale', 'imageBox', 'imageOnly', 'lineMetrics', 'linesSlices', 'linesTop', 'mapFragment', 'parseProfile', 'pictureSlices', 'polygonProfile', 'rasterReserved', 'rasterTiltProfile', 'rotatedBoundsRad', 'rotatedRasterAlpha', 'serializeProfile', 'wrapShape'],
+	RapierMdLayoutSpec: ['formatLayout', 'objectHeight', 'parseLayout', 'parseLayoutAttribute', 'wrapColumnFloor', 'wrapNeighbour', 'wrapTextBlock'],
+	RapierTextPreparation: ['captureFontAuthority', 'createPreparationScope', 'fontReady', 'invalidateRichMetrics', 'paragraphItems', 'prepareRichParagraph', 'supportsRichStyle'],
+};
 export const READER_CAPABILITIES = Object.freeze(Object.keys(MODULES));
 const BROWSER = new Set(('window document globalThis self location navigator history localStorage sessionStorage console performance crypto Node Element HTMLElement HTMLInputElement ' +
 	'Range Highlight CSS CSSStyleSheet DOMParser URL URLSearchParams TextEncoder TextDecoder Blob Response FontFace Image Event CustomEvent MessageChannel DecompressionStream CompressionStream AbortSignal requestIdleCallback ' +
@@ -210,7 +215,11 @@ export async function buildReader({root = here, unchecked = [], toolchainCanonic
 
 	const used = new Map();
 	const everything = linked.text + '\n' + ownScript;
-	for (const global of Object.keys(MODULES)) used.set(global, READ_ALL.has(global) ? null : readNames(everything, global));
+	for (const global of Object.keys(MODULES)) {
+		const read = READ_ALL.has(global) ? null : readNames(everything, global);
+		if (read && PLANNER_EXPORTS[global]) for (const name of PLANNER_EXPORTS[global]) read.add(name);
+		used.set(global, read);
+	}
 	const registry = await bundleModules({root, entries: MODULES, used});
 	const script = "'use strict';\n" + registry.text + '\n' + everything;
 	new vm.Script('(()=>{' + script + '})', {filename: 'rapier-reader.js'});
@@ -237,7 +246,8 @@ export async function buildReader({root = here, unchecked = [], toolchainCanonic
 		'markdown-it-sup-2.0.0.min.js', 'markdown-it-emoji-3.1.0-light.min.js', 'markdown-it-abbr-2.0.0.min.js', 'markdown-it-ins-4.0.0.min.js', 'markdown-it-deflist-4.0.0.min.js']);
 	const purify = await vendor(['dompurify-3.4.16.dist.purify.min.js']);
 
-	const lazy = licensesSheet(licenses, await read('agent/vendor/pretext/LICENSE'), await mitNotice(here));
+	const carriesPretext = /agent\/vendor\/pretext\/|Pretext bac1774/.test(scriptPackage);
+	const lazy = licensesSheet(licenses, carriesPretext ? await read('agent/vendor/pretext/LICENSE') : '', await mitNotice(here), carriesPretext);
 	const sprites = spriteFor(sprite, blocks, lazy, scriptPackage.replace(/['"]#(i-[a-z0-9-]+)['"]/g, 'href="#$1"'));
 	const markup = sprites + '\n' + blocks.replace(/\n\s*\n+/g, '\n');
 	const words = text => new Set(text.match(/[A-Za-z_][\w-]*/g) || []);
@@ -297,12 +307,14 @@ export async function buildReader({root = here, unchecked = [], toolchainCanonic
 }
 
 // The licences the file carries, as a markup part: the editor's own sheet, cut to the parts this file carries, with the notices of
-function licensesSheet(sheet, pretextLicense, notice) {
+function licensesSheet(sheet, pretextLicense, notice, includePretext) {
 	const drop = /Turndown|gpu-lexer|acorn 8|Geist|AndroidX|Google Play/;
 	let text = dropElements(sheet, (row, markup) => /\blicense-(?:entry|row)\b/.test(row.cls) && drop.test(markup.slice(0, 400)));
-	const pretext = '<details class="license-entry"><summary><span class="license-name">Pretext bac1774c · Unreleased</span><span class="license-id">MIT · BSD · Unicode · ICU</span></summary><pre class="license-text">' + escapeHtml(pretextLicense.trim()) + '</pre></details>\n';
 	text = text.replaceAll('<pre class="license-text" data-license="rapier-mit"></pre>', () => '<pre class="license-text">' + escapeHtml(notice) + '</pre>');
-	text = text.replace('<div class="licenses-list">', () => '<div class="licenses-list">\n' + pretext);
+	if (includePretext) {
+		const pretext = '<details class="license-entry"><summary><span class="license-name">Pretext bac1774c · Unreleased</span><span class="license-id">MIT · BSD · Unicode · ICU</span></summary><pre class="license-text">' + escapeHtml(pretextLicense.trim()) + '</pre></details>\n';
+		text = text.replace('<div class="licenses-list">', () => '<div class="licenses-list">\n' + pretext);
+	}
 	text = text.replace(/<button type="button" class="licenses-link" data-action="licenses-source">source<\/button>/, '<a class="licenses-link" href="https://github.com/jackskip22/rapier" target="_blank" rel="noopener noreferrer">source</a>');
 	text = text.replace('<strong id="licenses-app-title">Rapier ·', () => '<strong id="licenses-app-title">Rapier v' + VERSION + ' ·');
 	// Blank lines between tags go; the licence texts keep theirs.

@@ -1766,7 +1766,8 @@ function _rapierDrawFindOrthogonalRoute(shape, recipe, occupied, rail, scene, op
 	const gap = Math.max(24, RAPIER_DRAW_ARROW_HEAD_LEN * Math.sqrt(_rapierDrawNibScale(shape, recipe) * _rapierDrawEffectiveWidth(shape, true) / 2) + 8) + _rapierDrawStrokeHalf(shape, recipe), obstacles = [];
 	for (const {target, box: b, half} of scene?.targets || _rapierDrawRouteTargets(recipe)) {
 		if (target === shape) continue;
-		const pad = gap + half;
+		const terminal = ['start', 'end'].some(end => shape.bind?.[end]?.to === target.id);
+		const pad = (terminal ? gap : 8 + _rapierDrawStrokeHalf(shape, recipe)) + half;
 		if (target.recognized === 'rect' && target.group && ['start', 'end'].some(end => {
 			const member = recipe.shapes.find(other => other.id === shape.bind?.[end]?.to);
 			if (!member || member === target || member.group !== target.group) return false;
@@ -2754,6 +2755,38 @@ function _rapierDrawFigurePort(shape, scene, ax, ay) {
 	return {ax: _rapierDrawClamp((x * f.vy - y * f.vx) / det, 0, 1), ay: _rapierDrawClamp((y * f.ux - x * f.uy) / det, 0, 1)};
 }
 
+function _rapierDrawFaceFigureBindings(edges, scene) {
+	const targets = new Map(scene.shapes.map(shape => [shape.id, shape])), groups = new Map(), pending = new Set(edges);
+	for (const edge of edges) for (const end of ['start', 'end']) {
+		const bind = edge.bind?.[end], target = targets.get(bind?.to), frame = target && _rapierDrawAnchorFrame(target, scene);
+		if (!frame) continue;
+		const other = edge.bind?.[end === 'start' ? 'end' : 'start'], partner = targets.get(other?.to), box = partner && _rapierDrawShapeBBoxIn(partner, scene);
+		const point = box ? [(box.minX + box.maxX) / 2, (box.minY + box.maxY) / 2] : end === 'start' ? [edge.geom.x2, edge.geom.y2] : [edge.geom.x1, edge.geom.y1];
+		const x = point[0] - frame.x - (frame.ux + frame.vx) / 2, y = point[1] - frame.y - (frame.uy + frame.vy) / 2, det = frame.ux * frame.vy - frame.uy * frame.vx;
+		const u = (x * frame.vy - y * frame.vx) / det, v = (y * frame.ux - x * frame.uy) / det;
+		const axis = partner === target ? end === 'start' ? 0 : 1 : Math.abs(u) >= Math.abs(v) ? 0 : 1, side = partner === target || (axis ? v : u) >= 0 ? 1 : 0;
+		const key = target.id + ':' + axis + ':' + side;
+		if (!groups.has(key)) groups.set(key, []);
+		groups.get(key).push({bind, target, axis, side, order: axis ? point[0] : point[1]});
+	}
+	for (const rows of groups.values()) {
+		rows.sort((a, b) => a.order - b.order);
+		const {target, axis, side} = rows[0], normal = axis ? 'ay' : 'ax', tangent = axis ? 'ax' : 'ay';
+		const used = scene.shapes.filter(shape => !pending.has(shape)).flatMap(shape => Object.values(shape.bind || {}))
+			.filter(bind => bind.to === target.id && bind[normal] === side).map(bind => bind[tangent]);
+		for (const [index, row] of rows.entries()) {
+			let fraction = (index + 1) / (rows.length + 1);
+			if (used.some(at => Math.abs(at - fraction) < 1e-6)) {
+				const stops = [0, ...used, 1].sort((a, b) => a - b);
+				let widest = -1;
+				for (let i = 1; i < stops.length; i++) if (stops[i] - stops[i - 1] > widest) { widest = stops[i] - stops[i - 1]; fraction = (stops[i] + stops[i - 1]) / 2; }
+			}
+			used.push(fraction);
+			Object.assign(row.bind, _rapierDrawFigurePort(target, scene, axis ? fraction : side, axis ? side : fraction));
+		}
+	}
+}
+
 function _rapierDrawChooseReturnSides(edges, alternatives, scene) {
 	const current = new Map(edges.map(shape => [shape, _rapierDrawArrowRoutePoints(shape, scene)]));
 	for (const [shape, ports] of alternatives) {
@@ -2782,7 +2815,7 @@ function _rapierDrawLayoutFigures(shapes, automatic, groups, existing, direction
 	}
 	const fixed = [...existing, ...shapes.filter(shape => !nodeMap.has(shape.id) && !edges.includes(shape))];
 	const scene = {version: RAPIER_DRAW_VERSION, canvas: {w: 4096, h: 4096}, strokes: [], shapes: [...existing, ...shapes]};
-	const bottom = Math.max(0, ...fixed.map(shape => _rapierDrawShapeBBoxIn(shape, scene).maxY));
+	const bottom = Math.max(0, ...fixed.filter(shape => !['line', 'arrow'].includes(shape.recognized)).map(shape => _rapierDrawShapeBBoxIn(shape, scene).maxY));
 	const owner = new Map(), grouped = new Set();
 	for (const group of groups) for (const id of group.members) { owner.set(id, group.id); grouped.add(id); }
 	for (const {title} of groups) { Object.assign(title, {textFont: 'mono', textCase: 'upper', letterSpacing: .16, textSize: Math.max(11, captionSize)}); delete title.textBold; }
@@ -2915,6 +2948,7 @@ function _rapierDrawLayoutFigures(shapes, automatic, groups, existing, direction
 				if (g.p) g.p.forEach(p => { p[1] += dy; }); else if (g.cy != null) g.cy += dy; else { g.y1 += dy; g.y2 += dy; }
 			}
 		}
+		_rapierDrawFaceFigureBindings(shapes.filter(shape => shape.bind && (!nodeMap.has(shape.bind.start?.to) || !nodeMap.has(shape.bind.end?.to))), scene);
 		_rapierDrawRerouteBoundArrows(scene);
 		try {
 			_rapierDrawChooseReturnSides(edges, alternatives, scene);
@@ -3027,7 +3061,12 @@ function _rapierDrawLowerFiguresOrFault(figures, existing = [], direction = 'dow
 			shape.effect = effect;
 		}
 		if (shape.authorStyle?.fill) shape.style = 'solid';
-		if (figure.fill != null) { if (!_rapierDrawValidInk(figure.fill)) return fault(index, 'fill', INK); shape.ink = figure.fill; shape.style = 'solid'; }
+		if (figure.fill != null) {
+			const fill = _rapierDrawValidInk(figure.fill);
+			if (!fill) return fault(index, 'fill', INK);
+			shape.ink = figure.fill; shape.style = 'solid';
+			if ((RAPIER_DRAW_INK_NAMES[fill] || fill) === RAPIER_DRAW_DIAGRAM.accent[0]) shape.authorInk = true;
+		}
 		else if (figure.stroke != null) { if (!_rapierDrawValidInk(figure.stroke)) return fault(index, 'stroke', INK); shape.ink = figure.stroke; }
 		if (figure.border !== undefined) {
 			const border = _rapierDrawValidInk(figure.border);
@@ -3088,6 +3127,7 @@ function _rapierDrawLowerFiguresOrFault(figures, existing = [], direction = 'dow
 		try { return {shapes: _rapierDrawDiagramSet(_rapierDrawLayoutFigures(shapes, automatic, groups, existing, direction, captionSize, compact), steps, direction)}; }
 		catch (error) { if (/^drawing_(?:geometry_limit|work_limit|route_blocked)/.test(error.code || '')) return fault(-1, 'figures', 'a diagram within the drawing geometry and routing limits'); throw error; }
 	}
+	_rapierDrawFaceFigureBindings(shapes.filter(shape => shape.bind), {shapes: [...existing, ...shapes], strokes: []});
 	return { shapes };
 }
 function _rapierDrawLowerFigures(figures, existing = [], direction = 'down', captionSize = 10, compact = false) { return _rapierDrawLowerFiguresOrFault(figures, existing, direction, captionSize, compact).shapes || null; }
@@ -3507,6 +3547,7 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 		if (shape.brush === 'brush' && stroke !== null) for (const end of ['cutStart', 'cutEnd']) if (raw[end] === true) shape[end] = true;
 		const ink = _rapierDrawValidInk(raw.ink);
 		if (ink) shape.ink = ink;
+		if (raw.authorInk === true && shape.ink === RAPIER_DRAW_DIAGRAM.accent[0]) shape.authorInk = true;
 		if (raw.border !== undefined) {
 			const border = _rapierDrawValidInk(raw.border);
 			if (!border || !_rapierDrawBorderActive(shape)) return null;

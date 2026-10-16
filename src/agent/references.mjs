@@ -32,15 +32,14 @@ function snapshot(source, parser, bodyOnly) {
   }
   const text = source.slice(offset).replace(/\r\n?/g, '\n').replace(/\0/g, '\ufffd');
   parser.block.parse(text, parser, env, tokens);
-  const contexts = new WeakMap(), stack = [];
-  let collecting = false, label, body;
+  const contexts = new WeakMap(), stack = [], open = [];
   for (const token of tokens) {
     if (token.nesting < 0) stack.pop();
     if (token.type === 'inline') contexts.set(token, stack.slice());
     if (token.nesting > 0) stack.push(token);
-    if (token.type === 'footnote_reference_open') { collecting = true; label = token.meta.label; body = []; }
-    else if (token.type === 'footnote_reference_close') { collecting = false; notes[label] = body; }
-    else if (collecting && token.type !== 'reference_definition') body.push(token);
+    if (token.type === 'footnote_reference_open') open.push({label: token.meta.label, body: []});
+    else if (token.type === 'footnote_reference_close') { const done = open.pop(); if (done) notes[done.label] = done.body; }
+    else if (open.length && token.type !== 'reference_definition') open.at(-1).body.push(token);
   }
   return {env, tokens, starts, notes, contexts, text};
 }
@@ -100,6 +99,32 @@ export function changedReferenceRegion(before, after, regions, factory, bodyOnly
       const content = before.slice(from, to).replace(/\r\n?/g, '\n').replace(/\0/g, '\ufffd').replace(/\n$/, '');
       const clipped = {type: 'inline', tag: '', nesting: 0, content, children: [], level: token.level || 0};
       if (!sameInline(clipped, clipped, was, was)) return region.index;
+    }
+  }
+  return null;
+}
+
+function lineContext(frame, position) {
+  if (position < frame.starts[0]) return 'front';
+  let low = 0, high = frame.starts.length - 1;
+  while (low < high) { const mid = (low + high + 1) >> 1; if (frame.starts[mid] <= position) low = mid; else high = mid - 1; }
+  const line = low, held = [];
+  for (const token of frame.tokens) {
+    if (token.nesting < 0 || !token.map || token.type === 'inline' || token.map[0] > line || line >= token.map[1]) continue;
+    held.push(token.type + ':' + token.level + (token.map[0] === line ? '^' : ''));
+  }
+  return held.join(' ');
+}
+
+export function changedWillFraming(before, after, beforeRegions, afterRegions, factory) {
+  const governed = beforeRegions.filter(region => region.law !== 'edit');
+  if (!governed.length) return null;
+  const parser = markdownParser(factory), was = snapshot(before, parser, false), now = snapshot(after, parser, false);
+  for (const region of governed) {
+    const following = afterRegions[region.index];
+    if (!following) return region.index;
+    for (const [from, to] of [[region.openerStart, following.openerStart], [region.closerStart, following.closerStart]]) {
+      if (lineContext(was, from) !== lineContext(now, to)) return region.index;
     }
   }
   return null;

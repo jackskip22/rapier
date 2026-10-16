@@ -4,15 +4,16 @@ import {zipStored, zipStoredAsync} from '../notes/zip-records.mjs';
 import {finish, finishAsync, cloneTree, encodeUtf8Steps, pause, check} from '../kit/render-work.mjs';
 import {formatLayout, parseLayout, decodeLayoutAttribute, indentLevel, textStyle as indentStyle, textLayout, wrapColumnFloor} from '../spec/md-layout.mjs';
 import {parseInkBody, normalizeFontFamily, fontFamilyCss, FONT_STACKS, typography} from '../spec/md-marks.mjs';
-import {readDocumentSettings, DOCUMENT_LEADING, documentLanguage, languageTag} from '../spec/document-settings.mjs';
+import {readDocumentSettings, documentSpacing, wordDocumentSettings, documentHeadingSize, DOCUMENT_LEADING, documentLanguage, languageTag} from '../spec/document-settings.mjs';
 import {writeFontAssets, documentFontUsage} from '../spec/document-fonts.mjs';
 import {DOCX_FONT_TYPE, writeDocxFonts, readDocxFontPart, obfuscateDocxFont} from './docx-fonts.mjs';
 import {frontMatterFrame} from '../spec/frontmatter.mjs';
+import {WORD_SIDECAR_OPEN} from '../spec/word-sidecar.mjs';
 import {initialRange, firstLineEnd, protectInitial, apply as applyTypography} from '../layout/typography.mjs';
 import {willMarkerOf} from '../agent/will.mjs';
 import {IMAGE_LIMITS, inspectRaster, inspectSVG, inspectJPEGXL, isJxl, dataImage, sanitizeSvgText, svgElements, validAssetDimensions} from '../images/assets.mjs';
-import {markdownParser, markdownBodyOffset, documentAssets} from '../spec/md-assets.mjs';
-import {parseComments, commentThreads, commentAnchor, writeComments, validCommentDate, validCommentTimestamp} from '../agent/comments.mjs';
+import {markdownParser, markdownBodyOffset, documentAssets, normalizeLabel} from '../spec/md-assets.mjs';
+import {parseComments, commentThreads, commentAnchor, writeComments, commentSplices, validCommentDate, validCommentTimestamp} from '../agent/comments.mjs';
 import {DOCX_FONTS} from '../shell/fonts/docx-fonts.mjs';
 
 const DOCX_LIMITS = Object.freeze({xmlBytes: 8 * 1024 * 1024, totalXmlBytes: 12 * 1024 * 1024,
@@ -29,14 +30,27 @@ const NS = Object.freeze({
   rapier: ['https://rapier.website/ns/docx'],
   rel: ['http://schemas.openxmlformats.org/package/2006/relationships'],
   ct: ['http://schemas.openxmlformats.org/package/2006/content-types'],
+  custom: ['http://schemas.openxmlformats.org/officeDocument/2006/custom-properties'],
+  vt: ['http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes'],
   mc: ['http://schemas.openxmlformats.org/markup-compatibility/2006'],
   w14: ['http://schemas.microsoft.com/office/word/2010/wordml'],
   w15: ['http://schemas.microsoft.com/office/word/2012/wordml'],
+  thm15: ['http://schemas.microsoft.com/office/thememl/2012/main'],
   w16cid: ['http://schemas.microsoft.com/office/word/2016/wordml/cid'],
   w16cex: ['http://schemas.microsoft.com/office/word/2018/wordml/cex'],
   v: ['urn:schemas-microsoft-com:vml'], o: ['urn:schemas-microsoft-com:office:office']
 });
 const utf8 = new TextEncoder();
+const descendants = function* (node, family, name) {
+  const stack = [{nodes: node.children, at: 0}];
+  while (stack.length) {
+    const frame = stack.at(-1), item = frame.nodes[frame.at++];
+    if (!item) { stack.pop(); continue; }
+    if (!family || is(item, family, name)) yield item;
+    const nested = item.children;
+    if (nested.length) stack.push({nodes: nested, at: 0});
+  }
+};
 const MARKERS = ['bookmarkStart','bookmarkEnd','proofErr','permStart','permEnd','moveFromRangeStart','moveFromRangeEnd','moveToRangeStart','moveToRangeEnd','customXmlPr','smartTagPr'];
 const FONT_KINDS = 'Fonts the Word file names but does not contain became Rapier’s fonts of the same kind.';
 const STRUCTURAL_EMPHASIS = 'RapierStructuralEmphasis';
@@ -46,6 +60,47 @@ const DOCX_SOURCE = Object.freeze({path: 'rapier/source.json',
   relationship: 'https://rapier.website/relationships/markdown-source'});
 const sha256 = async bytes => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)),
   byte => byte.toString(16).padStart(2, '0')).join('');
+
+async function wordRecoveryBytes(stream, limit, work) {
+  const reader = stream.getReader(), chunks = []; let length = 0;
+  try {
+    for (;;) {
+      await pause(work);
+      const {value, done} = await reader.read();
+      if (done) break;
+      if (value.length > limit - length) return fail('Word recovery exceeds its limit.', 'docx_recovery_limit');
+      chunks.push(value); length += value.length;
+    }
+    const bytes = new Uint8Array(length); let at = 0;
+    for (const chunk of chunks) { bytes.set(chunk, at); at += chunk.length; }
+    return bytes;
+  } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+}
+
+async function wordRecoveryRecord(source, work) {
+  const bytes = utf8.encode(source);
+  const packed = await wordRecoveryBytes(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip')),
+    Math.floor((DOCX_LIMITS.xmlBytes - 512) * .75), work);
+  const parts = [];
+  for (let at = 0; at < packed.length; at += 49152) parts.push(btoa(String.fromCharCode(...packed.subarray(at, at + 49152))));
+  return JSON.stringify({gzip: parts.join(''), sha256: await sha256(bytes)});
+}
+
+async function readWordRecovery(text, work) {
+  const record = JSON.parse(text);
+  if (JSON.stringify(record) !== text || !/^[a-f0-9]{64}$/.test(record?.sha256)) return null;
+  let source = record.source;
+  if (typeof record.gzip === 'string' && source === undefined) {
+    if (record.gzip.length % 4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(record.gzip)) return null;
+    const packed = Uint8Array.from(atob(record.gzip), c => c.charCodeAt(0));
+    const bytes = await wordRecoveryBytes(new Blob([packed]).stream().pipeThrough(new DecompressionStream('gzip')), ARCHIVE_LIMITS.bytes, work);
+    source = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(bytes);
+  } else if (record.gzip !== undefined) return null;
+  if (typeof source !== 'string' || source.length > ARCHIVE_LIMITS.bytes || source.includes('\u0000')) return null;
+  const bytes = utf8.encode(source);
+  if (bytes.length > ARCHIVE_LIMITS.bytes || new TextDecoder('utf-8', {fatal:true, ignoreBOM:true}).decode(bytes) !== source || await sha256(bytes) !== record.sha256) return null;
+  return source;
+}
 
 async function docxSourceRecord(entries, source, work = null, equations = []) {
   const bytes = work ? await finishAsync(encodeUtf8Steps(source), work) : utf8.encode(source);
@@ -201,7 +256,7 @@ function splitTextRuns(runs, boundary) {
   return [before, after];
 }
 
-export async function prepareDocxTypography(root, canonical, {work, willTokens = []} = {}) {
+export async function prepareDocxTypography(root, canonical, {work, willTokens = [], wordLayout = false} = {}) {
   const carriers = new Set(willTokens);
   const pictureCaps = new Map();
   for (const paragraph of root.querySelectorAll('p')) {
@@ -219,7 +274,7 @@ export async function prepareDocxTypography(root, canonical, {work, willTokens =
   });
   const document = root.ownerDocument, view = document?.defaultView;
   if (!paragraphs.length || !document?.body || !view?.getComputedStyle) return;
-  const settings = readDocumentSettings(canonical), type = referenceType(settings);
+  const authored = readDocumentSettings(canonical), settings = wordLayout ? wordDocumentSettings(authored) : authored, type = referenceType(settings);
   const width = ((settings.papersize?.width || 12240) - 2 * (settings.geometry?.twips ?? 1440)) / 15;
   const measure = root.cloneNode(true);
   measure.classList.add('md-render');
@@ -566,7 +621,7 @@ function mathTex(node) {
   return fail('DOCX contains an unsupported equation structure: ' + name, 'docx_math_unsupported');
 }
 
-export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgress, work} = {}) {
+export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgress, work, name = 'Word.dotx'} = {}) {
   if (!(blob instanceof Blob) || blob.size > ARCHIVE_LIMITS.bytes) return fail('DOCX exceeds the 25 MB import limit.');
   if (typeof DOMParser !== 'function') return fail('DOCX import requires an XML parser.');
   work ||= createImportWork({signal, checkCurrent, onProgress});
@@ -581,6 +636,19 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
   const stats = {paragraphs: 0, images: 0, uniqueImages: 0, tables: 0, footnotes: 0, endnotes: 0, comments: 0};
   let xmlBytes = 0, elements = 0, outputBytes = 0;
   const warn = text => warnings.add(text);
+  let revisionMode = 'accepted';
+  const revisionNodes = new WeakMap(), revisionMarkers = new WeakMap(), revisions = [], reviewMarker = '\uFFFERapierWordRevision\uFFFF';
+  const revision = node => {
+    let row = revisionNodes.get(node);
+    if (!row) {
+      const author = attr(node, 'w', 'author') || 'Word', date = attr(node, 'w', 'date') || null;
+      if (author.length > 256 || /[\u0000-\u001f]/.test(author) || date && !validCommentDate(date))
+        return fail('DOCX contains invalid revision metadata.', 'docx_revision_invalid');
+      row = {id: String(revisions.length), author, date};
+      revisionNodes.set(node, row); revisions.push(row);
+    }
+    return row;
+  };
   const account = html => {
     if (html.length > ARCHIVE_LIMITS.bytes - outputBytes) return fail('Converted DOCX exceeds the 25 MB document limit.');
     outputBytes += utf8.encode(html).length;
@@ -613,6 +681,11 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       if (!node) { stack.pop(); continue; }
       if (++elements > DOCX_LIMITS.elements || stack.length > DOCX_LIMITS.depth) return fail('DOCX XML structure exceeds the import limit.');
       if (node.localName === 'parsererror') return fail('DOCX contains invalid XML: ' + path, 'docx_xml_invalid');
+      if (is(node, 'w') && /^(?:(?:pPr|rPr|sectPr|tblPr|tblGrid|trPr|tcPr)Change|cellIns|cellDel|cellMerge|numberingChange)$/.test(node.localName))
+        return fail('Decide formatting and structural revisions before importing this Word file.', 'docx_revision_structure');
+      if (is(node, 'w') && ['ins','del','moveTo','moveFrom'].includes(node.localName) &&
+          (['comments','footnotes','endnotes'].includes(rootName) || is(node.parentNode, 'w') && ['trPr','tcPr'].includes(node.parentNode.localName)))
+        return fail('Decide revisions in notes, comments or table structure before importing this Word file.', 'docx_revision_structure');
       const nested = node.children;
       if (nested.length) stack.push({nodes: nested, at: 0});
       if ((elements & 127) === 0) await work.checkpoint();
@@ -659,8 +732,8 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     }
   }
   const contentType = path => (type => type === 'image/svg' ? 'image/svg+xml' : type)(overrides.get(path) || defaults.get(path.slice(path.lastIndexOf('.') + 1).toLowerCase()) || '');
-  if (contentType(mainPath) !== 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml')
-    return fail('Only ordinary DOCX documents can be imported.');
+  if (!['document', 'template'].some(kind => contentType(mainPath) === 'application/vnd.openxmlformats-officedocument.wordprocessingml.' + kind + '.main+xml'))
+    return fail('Only ordinary DOCX documents and DOTX templates can be imported.');
   const sourceParts = [...(await relationships('')).values()].filter(row => row.type === DOCX_SOURCE.relationship);
   let canonical = null, base = null, equations = new Map();
   if (sourceParts.length) {
@@ -669,10 +742,37 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     if (stored?.exact) canonical = stored.source; else { base = stored?.source ?? null; equations = stored?.equations ?? equations; }
     if (canonical === null) warn('The stored Markdown does not match this Word file. Current Word content was imported.');
   }
-  const project = canonical === null;
+  const customPath = await related('', 'custom-properties');
+  if (customPath) {
+    const priorBytes = xmlBytes, priorElements = elements;
+    let properties;
+    try { properties = await readXml(customPath, 'custom', 'Properties'); }
+    catch (error) {
+      if (!['docx_invalid','docx_xml_invalid'].includes(error.code)) throw error;
+      work.check(); xmlBytes = priorBytes; elements = priorElements;
+      warn('Invalid Word recovery metadata was ignored. Current Word content was imported.');
+    }
+    const saved = children(properties, 'custom', 'property').filter(node => node.getAttribute('name') === 'RapierMarkdown');
+    if (saved.length) {
+      let source = null;
+      if (saved.length === 1) try { source = await readWordRecovery(child(saved[0], 'vt', 'lpwstr')?.textContent || '', work); }
+      catch (_) { work.check(); }
+      if (source === null) {
+        xmlBytes = priorBytes; elements = priorElements; xmlCache.delete(customPath);
+        warn('Invalid Word recovery metadata was ignored. Current Word content was imported.');
+      }
+      else if (canonical !== null && source !== canonical || base !== null && source !== base) {
+        canonical = base = null;
+        warn('Conflicting Word recovery metadata was ignored. Current Word content was imported.');
+      } else if (canonical === null && base === null) base = source;
+    }
+  }
   progress(.2, 'native');
   const main = await readXml(mainPath, 'w', 'document'), body = child(main, 'w', 'body');
   if (!body) return fail('DOCX has no document body.');
+  if (canonical !== null && Array.from(descendants(body, 'w')).some(node => ['ins','del','moveFrom','moveTo'].includes(node.localName)) &&
+      !wordReview(canonical).changes.length) { base = canonical; canonical = null; }
+  const project = canonical === null;
   const stylesPath = await related(mainPath, 'styles'), numberingPath = await related(mainPath, 'numbering');
   const settingsPath = await related(mainPath, 'settings');
   const nativeSettings = settingsPath ? await readXml(settingsPath, 'w', 'settings') : null;
@@ -880,10 +980,10 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       if (is(node, 'w', 'p') || is(node, 'w', 'tbl')) blocks.push(node);
       else if (is(node, 'w', 'sdt')) stack.push({nodes: child(node, 'w', 'sdtContent')?.children || [], at: 0});
       else if (is(node, 'mc', 'AlternateContent')) stack.push({nodes: chooseAlternate(node).children, at: 0});
-      else if (is(node, 'w') && ['customXml','ins','moveTo'].includes(node.localName)) {
-        if (node.localName !== 'customXml') warn('Revision history was removed; current text was retained.');
+      else if (is(node, 'w', 'customXml')) {
         stack.push({nodes: node.children, at: 0});
-      } else if (is(node, 'w') && ['del','moveFrom'].includes(node.localName)) warn('Revision history was removed; current text was retained.');
+      } else if (is(node, 'w') && ['ins','del','moveTo','moveFrom'].includes(node.localName))
+        return fail('Decide structural revisions before importing this Word file.', 'docx_revision_structure');
       else if (is(node, 'w') && ['commentRangeStart','commentRangeEnd'].includes(node.localName)) blocks.push(node);
       else if (is(node, 'w') && ['sectPr','tcPr','tblPr','tblGrid','trPr',...MARKERS].includes(node.localName)) continue;
       else return fail('DOCX contains an unsupported document block: ' + node.localName);
@@ -1053,16 +1153,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
   };
   const commentPart = await notePart('comment', false);
   const commentInfo = new Map(), commentByParagraph = new Map(), activeComments = new Set(), commentGroups = [];
-  const descendants = function* (node, family, name) {
-    const stack = [{nodes: node.children, at: 0}];
-    while (stack.length) {
-      const frame = stack.at(-1), item = frame.nodes[frame.at++];
-      if (!item) { stack.pop(); continue; }
-      if (!family || is(item, family, name)) yield item;
-      const nested = item.children;
-      if (nested.length) stack.push({nodes: nested, at: 0});
-    }
-  };
+
   for (const [id, node] of commentPart?.records || []) {
     let paragraph;
     for (const item of descendants(node)) { if (is(item, 'w', 'p')) paragraph = item; await work.checkpoint(); }
@@ -1161,6 +1252,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
   const inline = async (container, context, inherited = {}, pieces = []) => {
     for (const node of container.children) {
       if ((inlineSteps++ & 127) === 0) await work.checkpoint();
+      if (revisionMarkers.has(node)) { if (project) pieces.push({html: sourceToken(revisionMarkers.get(node)), semantic: true}); continue; }
       if (is(node, 'w', 'r')) {
         const properties = child(node, 'w', 'rPr'), named = style(val(child(properties, 'w', 'rStyle')));
         const direct = propertiesOf(properties), formatting = {...mergeRunStyle(inherited, named.r), ...direct};
@@ -1193,7 +1285,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         const wrap = words => (href ? '<a href="' + escape(href) + '">' : '') + textStyle(words, projected) + (href ? '</a>' : '');
         const flush = () => { if (!text) return;
           if (project && last?.runKey === runKey && last === pieces.at(-1)) { last.words += text; last.html = wrap(last.words); }
-          else pieces.push(project ? {html: wrap(text), words: text, runKey} : {html:
+          else pieces.push(project ? {html: wrap(text), words: text, runKey, formatting: projected, href} : {html:
             projected.smallCaps || projected.highlight && projected.highlight !== 'default' && !Object.values(DOCX_HIGHLIGHT_TO_RAPIER).includes(projected.highlight) ? 'x' : text});
           text = ''; };
         for (const piece of await inline(node, context, formatting)) {
@@ -1201,7 +1293,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
           else text += piece.html;
         }
         flush();
-      } else if (is(node, 'w', 't')) pieces.push({html: await imported(node.textContent)});
+      } else if (is(node, 'w', 't') || is(node, 'w', 'delText')) pieces.push({html: await imported(node.textContent)});
       else if (is(node, 'w', 'tab') || is(node, 'w', 'ptab')) { pieces.push({html: project ? sourceToken('&#9;') : 'x'}); warn('Tab characters were retained; custom tab stops became ordinary text flow.'); }
       else if (is(node, 'w', 'sym')) {
         const encoded = attr(node, 'w', 'char'), code = /^[0-9a-f]{1,4}$/i.test(encoded || '') ? parseInt(encoded, 16) : -1;
@@ -1230,7 +1322,10 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         const href = relation?.kind === 'hyperlink' && relation.external && LINK_SCHEMES.test(relation.target) && !/[\u0000-\u0020\u007f]/.test(relation.target) ? relation.target : null;
         if (!href) warn('Internal document links became plain text.');
         for (const piece of await inline(node, context, inherited)) {
-          if (project && href && !piece.semantic) { if (piece.image) piece.image = '<a href="' + escape(href) + '">' + piece.image + '</a>'; else piece.html = '<a href="' + escape(href) + '">' + piece.html + '</a>'; }
+          if (project && href && !piece.semantic) {
+            if (piece.image) piece.image = '<a href="' + escape(href) + '">' + piece.image + '</a>';
+            else { piece.html = '<a href="' + escape(href) + '">' + piece.html + '</a>'; piece.href = href; }
+          }
           pieces.push(piece);
         }
       } else if (is(node, 'w', 'sdt')) {
@@ -1242,11 +1337,16 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         } else await inline(child(node, 'w', 'sdtContent') || node, context, inherited, pieces);
       }
       else if (is(node, 'mc', 'AlternateContent')) await inline(chooseAlternate(node), context, inherited, pieces);
-      else if (is(node, 'w') && ['smartTag','customXml','fldSimple','ins','moveTo'].includes(node.localName)) {
-        if (['ins','moveTo'].includes(node.localName)) warn('Revision history was removed; current text was retained.');
+      else if (is(node, 'w') && ['ins','del','moveTo','moveFrom'].includes(node.localName)) {
+        const row = revision(node), included = ['ins','moveTo'].includes(node.localName) === (revisionMode === 'accepted');
+        if (project) pieces.push({html: sourceToken(reviewMarker + row.id + 'S' + reviewMarker), semantic: true});
+        if (included) await inline(node, context, inherited, pieces);
+        if (project) pieces.push({html: sourceToken(reviewMarker + row.id + 'E' + reviewMarker), semantic: true});
+      }
+      else if (is(node, 'w') && ['smartTag','customXml','fldSimple'].includes(node.localName)) {
         if (node.localName === 'fldSimple') warn('Fields became their stored displayed text.');
         await inline(node, context, inherited, pieces);
-      } else if (is(node, 'w') && ['del','moveFrom'].includes(node.localName)) warn('Revision history was removed; current text was retained.');
+      }
       else if (is(node, 'w', 'commentReference') && activeComments.has(integer(attr(node, 'w', 'id')))) continue;
       else if (is(node, 'w') && ['footnoteReference','endnoteReference','commentReference'].includes(node.localName)) pieces.push({html: await noteReference(node, context), semantic: true});
       else if (is(node, 'w') && ['instrText','fldChar'].includes(node.localName)) {
@@ -1302,14 +1402,48 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     const inherited = mergeRunStyle(defaultRun, named.r);
     const pieces = await inline(node, {...context, fields: [], initial: !!effective.dropLines, structuralBold: !!named.structuralBold && !!inherited.bold &&
       !!(inferredHeading || context.tableHeader)}, inherited), output = [];
+    const marks = [['bold','strong'], ['italic','em'], ['strike','s']];
+    const formatted = runs => {
+      let html = '';
+      for (let at = 0; at < runs.length;) {
+        let length = 1, shared = null;
+        for (const [key, tag] of marks) {
+          let end = at; while (end < runs.length && runs[end].formatting[key] && runs[end].href === runs[at].href) end++;
+          if (end - at > length) { length = end - at; shared = [key, tag]; }
+        }
+        if (shared) {
+          const [key, tag] = shared;
+          html += '<' + tag + '>' + formatted(runs.slice(at, at + length).map(run => ({...run, formatting: {...run.formatting, [key]: false}}))) + '</' + tag + '>';
+        } else {
+          const run = runs[at], value = textStyle(run.words, run.formatting);
+          html += run.href ? '<a href="' + escape(run.href) + '">' + value + '</a>' : value;
+        }
+        at += length;
+      }
+      return html;
+    };
+    for (let at = 0; at < pieces.length;) {
+      let end = at; while (end < pieces.length && pieces[end].formatting) end++;
+      if (end > at) {
+        pieces[at].html = formatted(pieces.slice(at, end));
+        for (let i = at + 1; i < end; i++) pieces[i].html = '';
+      }
+      at = Math.max(at + 1, end);
+    }
     const bottom = val(child(child(properties, 'w', 'pBdr'), 'w', 'bottom') || child(child(child(styles.get(id), 'w', 'pPr'), 'w', 'pBdr'), 'w', 'bottom'));
     if (!pieces.length && !list && bottom && !['nil','none'].includes(bottom)) return {html: () => project ? '<hr>' : '', list: null};
     const codeStyle = /^(?:Source Code|HTML Preformatted|Plain Text)$|^Source Code \(([^()\s]+)\)$/.exec(val(child(styles.get(id), 'w', 'name')) || '');
     if (!list && !context.tableCell && !inferredHeading && pieces.every(piece => !piece.image && !piece.semantic) && codeStyle) {
       let code = '';
       const words = parent => { for (const part of parent.children) {
-        if (is(part, 'w') && ['pPr','rPr','del','moveFrom','instrText'].includes(part.localName)) continue;
-        if (is(part, 'w', 't')) code += part.textContent;
+        if (is(part, 'w') && ['pPr','rPr','instrText'].includes(part.localName)) continue;
+        if (is(part, 'w') && ['ins','del','moveTo','moveFrom'].includes(part.localName)) {
+          const row = revision(part);
+          code += reviewMarker + row.id + 'S' + reviewMarker;
+          if (['ins','moveTo'].includes(part.localName) === (revisionMode === 'accepted')) words(part);
+          code += reviewMarker + row.id + 'E' + reviewMarker;
+        } else if (revisionMarkers.has(part)) code += revisionMarkers.get(part);
+        else if (is(part, 'w', 't') || is(part, 'w', 'delText')) code += part.textContent;
         else if (is(part, 'w', 'tab')) code += '\t';
         else if (is(part, 'w', 'br') || is(part, 'w', 'cr')) code += '\n';
         else words(part);
@@ -1345,7 +1479,9 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       output.push(base => '<' + tag + annotation(paragraphLayout(effective, inferredHeading, list, base)) + '>' + body + '</' + tag + '>');
       text = '';
     } };
-    for (const piece of pieces) {
+    const padding = html => typeof html === 'string' && html.replace(/<span class="rapier-source-token" data-rapier-source="[^"]*" data-rapier-visible="[^"]*">[^<]*<\/span>/g, '') === '';
+    for (let index = 0; index < pieces.length; index++) {
+      const piece = pieces[index];
       if (piece.displayMath) { flush(); output.push('<p>' + piece.html + '</p>'); continue; }
       if (piece.rule) { flush(); output.push('<hr>'); continue; }
       if (piece.pageBreak) {
@@ -1354,18 +1490,21 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         continue;
       }
       if (!piece.image) { text += piece.html; continue; }
-      flush();
+      const lead = padding(text) ? text : '';
+      if (lead) text = ''; else flush();
+      let tail = '';
+      while (padding(pieces[index + 1]?.html)) tail += pieces[++index].html;
       const layout = {}, imageAlign = piece.align || align;
       if (imageAlign && imageAlign !== 'justify') layout.align = imageAlign;
       if (piece.width !== null) layout.width = piece.width;
       if (piece.rotate) layout.rotate = piece.rotate;
       if (piece.opacity < 100) layout.opacity = piece.opacity;
       if (context.figure) Object.assign(layout, context.figure);
-      output.push('<p' + annotation(layout) + '>' + piece.image + '</p>');
+      output.push('<p' + annotation(layout) + '>' + lead + piece.image + tail + '</p>');
     }
     flush();
     if (!output.length) output.push('<p><br></p>');
-    if (pieces.some(piece => piece.image) && pieces.some(piece => piece.html?.trim())) warn('Pictures within text became separate source-order paragraphs.');
+    if (pieces.some(piece => piece.image) && pieces.some(piece => piece.html?.trim() && !padding(piece.html))) warn('Pictures within text became separate source-order paragraphs.');
     const prose = tag === 'p' && !context.tableCell && output.length === 1 && pieces.every(piece => !piece.image && !piece.pageBreak && !piece.displayMath && !piece.rule);
     const initial = prose && effective.dropLines ? pieces.map(piece => piece.html || '').join('') : null;
     const spacing = side => on(child(properties, 'w', 'contextualSpacing')) ? 0 : Number(/^\d+$/.exec(attr(child(properties, 'w', 'spacing'), 'w', side) || '')?.[0] || 0);
@@ -1437,6 +1576,43 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     return project ? parts.join('') : (hasImage ? '<img>' : '') + (hasText ? 'x' : '');
   };
   const renderBlocks = async (nodes, context, sectionContexts = null) => {
+    nodes = nodes.slice(); sectionContexts = sectionContexts?.slice();
+    const copy = node => {
+      const cloned = node.cloneNode(true), pair = (a, b) => {
+        if (revisionMarkers.has(a)) revisionMarkers.set(b, revisionMarkers.get(a));
+        if (is(a, 'w') && ['ins','del','moveTo','moveFrom'].includes(a.localName)) revisionNodes.set(b, revision(a));
+        Array.from(a.children).forEach((n, i) => pair(n, b.children[i]));
+      };
+      pair(node, cloned); return cloned;
+    };
+    const marker = (row, edge) => {
+      const node = new DOMParser().parseFromString('<w:r xmlns:w="' + NS.w[0] + '"/>', 'application/xml').documentElement;
+      revisionMarkers.set(node, reviewMarker + row.id + edge + reviewMarker); return node;
+    };
+    for (let i = 0; i < nodes.length; i++) {
+      const p = nodes[i], properties = child(child(p, 'w', 'pPr'), 'w', 'rPr');
+      const mark = child(properties, 'w', 'ins') || child(properties, 'w', 'del');
+      if (!is(p, 'w', 'p') || !mark) continue;
+      const row = revision(mark), keepBreak = is(mark, 'w', 'ins') === (revisionMode === 'accepted');
+      const next = nodes[i + 1] || new DOMParser().parseFromString('<w:p xmlns:w="' + NS.w[0] + '"/>', 'application/xml').documentElement;
+      if (!is(next, 'w', 'p')) return fail('A tracked paragraph break crosses a table boundary.', 'docx_revision_structure');
+      const left = copy(p), right = copy(next), pr = child(left, 'w', 'pPr'), rPr = child(pr, 'w', 'rPr');
+      (child(rPr, 'w', 'ins') || child(rPr, 'w', 'del')).remove();
+      left.appendChild(marker(row, 'S'));
+      if (right.firstChild) right.insertBefore(marker(row, 'E'), right.firstChild); else right.appendChild(marker(row, 'E'));
+      if (keepBreak) { nodes[i] = left; nodes[i + 1] = right; }
+      else {
+        for (const node of Array.from(right.children)) if (!is(node, 'w', 'pPr')) left.appendChild(node);
+        const nextMark = child(child(right, 'w', 'pPr'), 'w', 'rPr');
+        const nextRevision = child(nextMark, 'w', 'ins') || child(nextMark, 'w', 'del');
+        if (nextRevision) {
+          let ownPr = child(left, 'w', 'pPr');
+          if (!ownPr) { ownPr = child(copy(right), 'w', 'pPr'); left.insertBefore(ownPr, left.firstChild); }
+          else { let ownRun = child(ownPr, 'w', 'rPr'); if (!ownRun) { ownRun = copy(nextMark); ownPr.appendChild(ownRun); } else ownRun.appendChild(copy(nextRevision)); }
+        }
+        nodes.splice(i, 2, left); sectionContexts?.splice(i + 1, 1); i--;
+      }
+    }
     const blocks = async function* () {
     let previous = null;
     for (let index = 0; index < nodes.length; index++) {
@@ -1494,11 +1670,11 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         const content = child(node, 'w', 'sdtContent');
         if (!content) return fail('DOCX table content control has no content.');
         stack.push({nodes: content.children, at: 0});
-      } else if (is(node, 'w') && ['customXml','ins','moveTo'].includes(node.localName)) {
-        if (node.localName !== 'customXml') warn('Revision history was removed; current text was retained.');
+      } else if (is(node, 'w', 'customXml')) {
         stack.push({nodes: node.children, at: 0});
       } else if (is(node, 'mc', 'AlternateContent')) stack.push({nodes: chooseAlternate(node).children, at: 0});
-      else if (is(node, 'w') && ['del','moveFrom'].includes(node.localName)) warn('Revision history was removed; current text was retained.');
+      else if (is(node, 'w') && ['ins','del','moveTo','moveFrom'].includes(node.localName))
+        return fail('Decide table structure revisions before importing this Word file.', 'docx_revision_structure');
       else if (is(node, 'w') && ['commentRangeStart','commentRangeEnd'].includes(node.localName)) continue;
       else return fail('DOCX contains unsupported table content: ' + node.localName);
     }
@@ -1611,6 +1787,12 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
   }
   progress(.4, 'content');
   let html = await renderBlocks(nodes, {path: mainPath, p: {}}, contexts);
+  let rejectedHtml = null;
+  if (revisions.length) {
+    revisionMode = 'rejected';
+    rejectedHtml = await renderBlocks(nodes, {path: mainPath, p: {}}, contexts);
+    revisionMode = 'accepted';
+  }
   const unplaced = [];
   for (const id of commentPart?.records.keys() || []) if (!activeComments.has(id) && !notes.has('docx-comment-' + id))
     unplaced.push(await registerNote('comment', id, {path: mainPath, p: {}, ...currentSection}));
@@ -1672,6 +1854,13 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     progress(1, 'complete');
     return {html: '', warnings: [], stats, canonical, ...(nativeLanguage ? {language: nativeLanguage} : {})};
   }
+  const wordStyle = stylesPath ? {name: String(name).replace(/\.(?:docx|dotx)$/i, '') + '.dotx',
+    styles: await xmlText(await files.read(stylesPath), work),
+    paragraphs: Array.from(descendants(body)).filter(node => is(node, 'w', 'p')).map(wordParagraph)} : null;
+  const wordTheme = await related(mainPath, 'theme');
+  if (wordStyle && wordTheme) wordStyle.theme = await xmlText(await files.read(wordTheme), work);
+  if (wordStyle && numberingPath) wordStyle.numbering = await xmlText(await files.read(numberingPath), work);
+  if (wordStyle) admitWordStyle(wordStyle);
   xmlCache.clear(); relationCache.clear(); styles.clear(); styleCache.clear();
   notes.clear(); noteParts.clear(); commentInfo.clear(); commentRoots.clear(); groupsById.clear();
   commentGroups.length = 0; commentByParagraph.clear(); activeComments.clear();
@@ -1701,56 +1890,65 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     const replaceTables = value => value.replace(/<p><span class="rapier-source-token" data-rapier-source="[^"]*" data-rapier-visible="[^"]*">[^<]*<\/span><\/p>/g,
       token => replacements.get(token) || token);
     html = replaceTables(html);
+    if (rejectedHtml !== null) rejectedHtml = replaceTables(rejectedHtml);
     for (const thread of comments.threads) for (const message of thread.messages) {
       await work.checkpoint(); message.html = replaceTables(message.html);
     }
     rawTables.length = 0;
   }
   html = html.replace(/data-rapier-asset="(docx-pending-\d+)"/g, (_, key) => 'data-rapier-asset="' + references.get(key) + '"');
+  if (rejectedHtml !== null) rejectedHtml = rejectedHtml.replace(/data-rapier-asset="(docx-pending-\d+)"/g, (_, key) => 'data-rapier-asset="' + references.get(key) + '"');
   if (html.length > ARCHIVE_LIMITS.bytes || new Blob([html]).size > ARCHIVE_LIMITS.bytes) return fail('Converted DOCX exceeds the 25 MB document limit.');
   for (const thread of comments.threads) for (const message of thread.messages)
     message.html = message.html.replace(/data-rapier-asset="(docx-pending-\d+)"/g, (_, key) => 'data-rapier-asset="' + references.get(key) + '"');
+  const acceptedHtml = html;
+  for (const row of revisions) for (const edge of ['S', 'E']) html = html.split(sourceToken(reviewMarker + row.id + edge + reviewMarker)).join('');
   progress(1, 'complete');
   return {html, warnings: [...warnings], stats, ...(comments.threads.length ? {comments} : {}),
+    ...(wordStyle ? {wordStyle} : {}), ...(revisions.length ? {review: {marker: reviewMarker, changes: revisions, html: rejectedHtml, acceptedHtml}} : {}),
     ...(fontAssets.length ? {fontAssets} : {}),
     ...(nativeLanguage ? {language: nativeLanguage} : {}), ...(mainfont ? {mainfont} : {}), ...(base !== null ? {base} : {})};
   } finally { files.close(); }
 }
 
-function mergeDocxBase(edited, base) {
+function docxSourceBlocks(text) {
   let parser;
-  try { parser = markdownParser(); } catch (_) { return edited; }
-  if (base.includes('\r')) return edited;
-  const blocks = text => {
-    const offset = frontMatterFrame(text).closing?.next ?? 0, body = text.slice(offset), starts = [0];
-    for (const line of body.split('\n')) starts.push(starts.at(-1) + line.length + 1);
-    const tokens = parser.parse(body, {}), result = [];
-    for (let at = 0; at < tokens.length; at++) {
-      const open = tokens[at];
-      if (open.level !== 0 || !open.map) continue;
-      let end = at;
-      for (let depth = 0; end < tokens.length; end++) if ((depth += tokens[end].nesting) <= 0) break;
-      const parts = [], words = [];
-      const flush = () => { if (words.length) parts.push(words.join('').replace(/\s+/g, ' ').trim()); words.length = 0; };
-      const visit = token => {
-        // An escaped character is the character (markdown-it's text_special, Rapier's own rapier_escape).
-        if (['text', 'text_special', 'rapier_escape', 'softbreak'].includes(token.type)) { words.push(token.type === 'softbreak' ? ' ' : token.content); return; }
-        flush();
-        if (token.children) { parts.push(token.type); token.children.forEach(visit); flush(); return; }
-        parts.push([token.type, token.tag, token.hidden, token.info, token.attrGet?.('href'), token.attrGet?.('src'), token.type === 'inline' ? '' : token.content].join('\u0000'));
-      };
-      tokens.slice(at, end + 1).forEach(visit); flush();
-      const start = offset + starts[open.map[0]], stop = offset + Math.min(body.length, starts[open.map[1]] - 1), raw = text.slice(start, stop);
-      const links = tokens.slice(at, end + 1).flatMap(token => token.children || [token]).filter(token => token.type === 'link_open' || token.type === 'image').length;
-      result.push({start, stop, key: parts.join('\u0001'), inline: links <= raw.split('](').length - 1});
-      at = end;
-    }
-    return result;
-  };
-  const kept = blocks(base).filter(block => block.inline), byKey = new Map();
+  try { parser = markdownParser(); } catch (_) { return null; }
+  const offset = frontMatterFrame(text).closing?.next ?? 0, body = text.slice(offset), starts = [0];
+  for (const line of body.split('\n')) starts.push(starts.at(-1) + line.length + 1);
+  const tokens = parser.parse(body, {}), result = [];
+  for (let at = 0; at < tokens.length; at++) {
+    const open = tokens[at];
+    if (open.level !== 0 || !open.map) continue;
+    let end = at;
+    for (let depth = 0; end < tokens.length; end++) if ((depth += tokens[end].nesting) <= 0) break;
+    const parts = [], words = []; let linkDepth = 0;
+    const flush = () => { if (words.length) parts.push(words.join('').replace(/\s+/g, ' ').trim()); words.length = 0; };
+    const visit = token => {
+      if (token.type === 'link_open') linkDepth++;
+      else if (token.type === 'link_close') linkDepth--;
+      if (linkDepth && token.type === 'html_inline' && /^<\/?u>$/.test(token.content)) return;
+      // An escaped character is the character (markdown-it's text_special, Rapier's own rapier_escape).
+      if (['text', 'text_special', 'rapier_escape', 'softbreak'].includes(token.type)) { words.push(token.type === 'softbreak' ? ' ' : token.content); return; }
+      flush();
+      if (token.children) { parts.push(token.type); token.children.forEach(visit); flush(); return; }
+      parts.push([token.type, token.tag, token.hidden, token.info, token.attrGet?.('href'), token.attrGet?.('src'), token.type === 'inline' ? '' : token.content].join('\u0000'));
+    };
+    tokens.slice(at, end + 1).forEach(visit); flush();
+    const start = offset + starts[open.map[0]], stop = offset + Math.min(body.length, starts[open.map[1]] - 1), raw = text.slice(start, stop);
+    const links = tokens.slice(at, end + 1).flatMap(token => token.children || [token]).filter(token => token.type === 'link_open' || token.type === 'image').length;
+    result.push({start, stop, key: parts.join('\u0001'), inline: links <= raw.split('](').length - 1, type: open.type});
+    at = end;
+  }
+  return result;
+}
+function mergeDocxBase(edited, base) {
+  const editedBlocks = docxSourceBlocks(edited), baseBlocks = docxSourceBlocks(base);
+  if (!editedBlocks || !baseBlocks) return edited;
+  const kept = baseBlocks.filter(block => block.inline), byKey = new Map();
   kept.forEach((block, index) => { if (!byKey.has(block.key)) byKey.set(block.key, []); byKey.get(block.key).push(index); });
   let merged = '', cursor = 0, floor = 0;
-  for (const block of blocks(edited)) {
+  for (const block of editedBlocks) {
     const index = byKey.get(block.key)?.find(candidate => candidate >= floor);
     if (index === undefined) continue;
     merged += edited.slice(cursor, block.start) + base.slice(kept[index].start, kept[index].stop);
@@ -1758,8 +1956,60 @@ function mergeDocxBase(edited, base) {
   }
   return merged + edited.slice(cursor);
 }
+function scopeReviewCustody(merged, plain, changes, base) {
+  const plainBlocks = docxSourceBlocks(plain), mergedBlocks = docxSourceBlocks(merged);
+  if (!plainBlocks || !mergedBlocks || plainBlocks.length !== mergedBlocks.length) return null;
+  const touches = block => changes.some(change => change.from === change.to
+    ? change.from >= block.start && change.from <= block.stop
+    : change.from < block.stop && change.to > block.start);
+  let out = '', cursor = 0;
+  const carried = [];
+  for (let i = 0; i < plainBlocks.length; i++) {
+    const current = plainBlocks[i], prior = mergedBlocks[i];
+    if (current.key !== prior.key) return null;
+    const changed = touches(current);
+    const body = changed ? plain.slice(current.start, current.stop) : merged.slice(prior.start, prior.stop);
+    out += plain.slice(cursor, current.start);
+    const start = out.length;
+    out += body;
+    carried.push({start, stop: out.length, changed});
+    cursor = current.stop;
+  }
+  out += plain.slice(cursor);
+  const baseBlocks = docxSourceBlocks(base);
+  if (!baseBlocks) return out;
+  const commentText = block => {
+    if (block.type !== 'html_block') return null;
+    const raw = base.slice(block.start, block.stop);
+    return /<!--[\s\S]*?-->/.test(raw) && !raw.replace(/<!--[\s\S]*?-->/g, '').trim() ? raw : null;
+  };
+  if (!baseBlocks.some(block => { const raw = commentText(block); return raw && !out.includes(raw.trim()); })) return out;
+  const missing = [];
+  let at = 0;
+  for (let i = 0; i < baseBlocks.length; i++) {
+    const block = baseBlocks[i], raw = commentText(block);
+    if (raw && !out.includes(raw.trim())) {
+      const gap = base.slice(block.stop, baseBlocks[i + 1] ? baseBlocks[i + 1].start : base.length);
+      if (gap.trim()) return null;
+      missing.push({at, text: raw + gap});
+      continue;
+    }
+    if (at >= carried.length) return null;
+    const piece = carried[at], same = base.slice(block.start, block.stop) === out.slice(piece.start, piece.stop);
+    if (!same && !piece.changed) return null;
+    at++;
+  }
+  if (carried.slice(at).some(piece => piece.changed)) return null;
+  const placed = new Map();
+  for (const item of missing) {
+    const pos = item.at < carried.length ? carried[item.at].start : out.length;
+    placed.set(pos, (placed.get(pos) || '') + item.text);
+  }
+  for (const pos of [...placed.keys()].sort((a, b) => b - a)) out = out.slice(0, pos) + placed.get(pos) + out.slice(pos);
+  return out;
+}
 
-export function finishDocxMarkdown(source, result, {convertHtml} = {}) {
+function finishDocxText(source, result, {convertHtml} = {}) {
   if (typeof result?.canonical === 'string') return result.canonical;
   const finishFonts = value => {
     if (!result?.fontAssets?.length) return value;
@@ -1816,16 +2066,585 @@ export function finishDocxMarkdown(source, result, {convertHtml} = {}) {
   return finishFonts(body.slice(0, splice.pos) + splice.inserted + body.slice(splice.pos + splice.removed.length));
 }
 
+const WORD_SIDECAR = '\n\n' + WORD_SIDECAR_OPEN;
+const wordXml = node => node ? '<' + node.nodeName + Array.from(node.attributes || [], a => ' ' + a.name + '="' + escape(a.value) + '"').join('') + '>' +
+  Array.from(node.childNodes || [], n => n.nodeType === 1 ? wordXml(n) : n.nodeType === 3 ? escape(n.nodeValue ?? n.textContent) : '').join('') + '</' + node.nodeName + '>' : '';
+function wordText(node) {
+  if (is(node, 'w') && ['pPr','rPr','del','moveFrom'].includes(node.localName)) return '';
+  if (is(node, 'w', 't') || is(node, 'w', 'delText')) return node.textContent;
+  if (is(node, 'w', 'tab')) return '\t';
+  if (is(node, 'w', 'br') || is(node, 'w', 'cr')) return '\n';
+  if (is(node, 'w') && ['drawing','pict','object','footnoteReference','endnoteReference'].includes(node.localName) || is(node, 'm', 'oMath')) return '\uFFFC';
+  return Array.from(node.children || [], wordText).join('');
+}
+function wordParagraph(node) {
+  const runs = []; let text = '';
+  const properties = node => {
+    if (!node) return '';
+    const copy = node.cloneNode(true);
+    for (const part of Array.from(descendants(copy))) if (is(part, 'w') && ['sectPr','pPrChange','rPrChange','ins','del','moveFrom','moveTo'].includes(part.localName)) part.remove();
+    return wordXml(copy);
+  };
+  const walk = parent => {
+    for (const n of parent.children) {
+      if (is(n, 'w') && ['del','moveFrom','pPr'].includes(n.localName)) continue;
+      if (is(n, 'w', 'r')) {
+        const value = wordText(n); runs.push({from: text.length, to: text.length + value.length, pr: properties(child(n, 'w', 'rPr'))}); text += value;
+      } else walk(n);
+    }
+  };
+  walk(node);
+  return {text, pr: properties(child(node, 'w', 'pPr')), runs};
+}
+function wordPart(source, kind) {
+  if (typeof source !== 'string' || source.length > DOCX_LIMITS.xmlBytes || /<!\s*(?:DOCTYPE|ENTITY)\b/i.test(source))
+    return fail('The carried Word template contains invalid XML.', 'docx_template_invalid');
+  const xml = new DOMParser().parseFromString(source, 'application/xml'), root = xml.documentElement;
+  if (!is(root, kind === 'theme' ? 'a' : 'w', kind)) return fail('The carried Word template has an invalid part.', 'docx_template_invalid');
+  let count = 0;
+  const walk = (node, depth) => {
+    if (++count > DOCX_LIMITS.elements || depth > DOCX_LIMITS.depth || node.localName === 'parsererror' ||
+        !['w','a','w14','w15','w16cid','w16cex','mc','thm15'].flatMap(key => NS[key]).includes(node.namespaceURI) ||
+        /^(?:object|OLEObject|altChunk|pict|drawing|hyperlink|subDoc|attachedTemplate|control|fldSimple|fldChar|instrText|delInstrText)$/.test(node.localName) ||
+        Array.from(node.attributes).some(a => NS.r.includes(a.namespaceURI) || /^(?:href|src)$/i.test(a.localName)))
+      return fail('The carried Word template contains active or unsupported content.', 'docx_template_invalid');
+    for (const n of node.children) walk(n, depth + 1);
+  };
+  walk(root, 1); return root;
+}
+function admitWordStyle(style) {
+  wordPart(style.styles, 'styles');
+  if (style.theme) wordPart(style.theme, 'theme');
+  if (style.numbering) wordPart(style.numbering, 'numbering');
+  if (!Array.isArray(style.paragraphs) || style.paragraphs.length > DOCX_LIMITS.paragraphs)
+    return fail('The carried Word template exceeds the paragraph limit.', 'docx_template_invalid');
+  let runs = 0;
+  for (const p of style.paragraphs) {
+    if (typeof p.text !== 'string' || !Array.isArray(p.runs)) return fail('Invalid Word style binding.', 'docx_template_invalid');
+    let end = 0;
+    for (const r of p.runs) {
+      if (++runs > DOCX_LIMITS.elements || !Number.isSafeInteger(r.from) || !Number.isSafeInteger(r.to) ||
+          r.from < end || r.to < r.from || r.to > p.text.length || typeof r.pr !== 'string')
+        return fail('Invalid Word character style binding.', 'docx_template_invalid');
+      end = r.to;
+    }
+    for (const [kind, value] of [['pPr', p.pr], ...p.runs.map(r => ['rPr', r.pr])])
+      if (value) wordPart('<w:' + kind + ' xmlns:w="' + NS.w[0] + '" xmlns:w14="' + NS.w14[0] + '">' + value + '</w:' + kind + '>', kind);
+  }
+  return style;
+}
+function readWordSidecar(source) {
+  const at = source.lastIndexOf(WORD_SIDECAR);
+  if (at < 0) return {body: source, record: null};
+  const offset = markdownBodyOffset(source), line = source.slice(offset, at + 2).split('\n').length - 1;
+  if (at < offset || !markdownParser().parse(source.slice(offset), {}).some(token =>
+      token.type === 'html_block' && token.level === 0 && token.map?.[0] === line)) return {body: source, record: null};
+  const tail = source.slice(at + WORD_SIDECAR.length);
+  if (!tail.endsWith('\n-->\n') || tail.length > ARCHIVE_LIMITS.bytes) return fail('The Word sidecar is incomplete.', 'docx_sidecar_invalid');
+  let record;
+  try { record = JSON.parse(tail.slice(0, -5)); } catch (_) { return fail('The Word sidecar is invalid.', 'docx_sidecar_invalid'); }
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return fail('The Word sidecar is invalid.', 'docx_sidecar_invalid');
+  return {body: wordSplice(source, at, source.slice(at), ''), record};
+}
+function wordSplice(source, pos, removed, inserted) {
+  const derived = commentSplices(source, [{pos, removed, inserted}]);
+  let next = source.slice(0, pos) + inserted + source.slice(pos + removed.length);
+  for (const row of derived) next = next.slice(0, row.pos) + row.inserted + next.slice(row.pos + row.removed.length);
+  return next;
+}
+function writeWordSidecar(body, record) {
+  const suffix = WORD_SIDECAR + JSON.stringify(record).replace(/[<>&-]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0')) + '\n-->\n';
+  const source = wordSplice(body, body.length, '', suffix);
+  if (source.length > ARCHIVE_LIMITS.bytes || utf8.encode(source).length > ARCHIVE_LIMITS.bytes) return fail('The Word sidecar exceeds the document limit.');
+  return source;
+}
+function wordRange(from, to, map, length) {
+  const start = from === map.length ? length : map[from], end = to === 0 ? 0 : map[to - 1] + 1;
+  if (from === to) {
+    if (start >= 0 && (from === 0 || end === start)) return [start, start];
+    return null;
+  }
+  if (start < 0 || end - start !== to - from) return null;
+  for (let i = from; i < to; i++) if (map[i] !== start + i - from) return null;
+  return [start, end];
+}
+export function wordReview(source) {
+  const {body, record} = readWordSidecar(String(source)), pending = record?.review;
+  if (!pending) return {body, base: body, changes: []};
+  if (typeof pending.source !== 'string' || !Array.isArray(pending.changes) || pending.changes.length > DOCX_LIMITS.elements)
+    return fail('The Word review is invalid.', 'docx_revision_invalid');
+  const map = alignedText(pending.source, body), ids = new Set(); let end = 0;
+  const changes = pending.changes.map(row => {
+    if (!row || typeof row.id !== 'string' || ids.has(row.id) || !Number.isSafeInteger(row.from) || !Number.isSafeInteger(row.to) ||
+        row.from < end || row.to < row.from || row.to > pending.source.length || typeof row.before !== 'string' ||
+        typeof row.author !== 'string' || row.author.length > 256 || row.date && !validCommentDate(row.date))
+      return fail('The Word review contains an invalid range.', 'docx_revision_invalid');
+    end = row.to; ids.add(row.id);
+    const range = wordRange(row.from, row.to, map, body.length);
+    return {...row, from: range?.[0] ?? row.from, to: range?.[1] ?? row.to, conflict: !range};
+  });
+  let base = body;
+  for (const row of changes.slice().reverse()) if (!row.conflict) base = wordSplice(base, row.from, base.slice(row.from, row.to), row.before);
+  return {body, base, changes};
+}
+export function decideWordChange(source, id, accept) {
+  const {record} = readWordSidecar(source), review = wordReview(source), row = review.changes.find(row => row.id === id);
+  if (!row || review.changes.some(row => row.conflict)) return fail('This Word change overlaps a later edit. Undo that edit before deciding it.', 'docx_revision_conflict');
+  const body = accept ? review.body : wordSplice(review.body, row.from, review.body.slice(row.from, row.to), row.before);
+  const shift = accept ? 0 : row.before.length - (row.to - row.from);
+  const selected = review.changes.indexOf(row);
+  const changes = review.changes.flatMap(({conflict, ...other}, index) => index === selected ? [] :
+    [other.from > row.to || other.from === row.to && (row.from !== row.to || index > selected)
+      ? {...other, from: other.from + shift, to: other.to + shift} : other]);
+  return writeWordSidecar(body, {...record, review: {source: body, changes}});
+}
+function stripDecorativeLinkUnderline(record) {
+  const hits = [...record.text.matchAll(/\[<u>((?:(?!<\/u>)[\s\S])*?)<\/u>\]\(/g)];
+  for (const hit of hits.reverse()) {
+    const openAt = hit.index + 1, closeAt = openAt + 3 + hit[1].length;
+    record.text = record.text.slice(0, openAt) + hit[1] + record.text.slice(closeAt + 4);
+    for (const edge of record.edges.values()) for (const key of ['S', 'E']) {
+      const pos = edge[key];
+      edge[key] = pos > closeAt ? pos - 7 : pos > openAt ? pos - 3 : pos;
+    }
+  }
+}
+export function finishDocxMarkdown(source, result, options = {}) {
+  if (typeof result?.canonical === 'string') return result.canonical;
+  const strip = text => {
+    const edges = new Map(), marker = result.review?.marker;
+    if (!marker) return {text, edges};
+    let clean = '', cursor = 0;
+    const pattern = new RegExp(marker + '(\\d+)([SE])' + marker, 'g');
+    for (const hit of text.matchAll(pattern)) {
+      clean += text.slice(cursor, hit.index);
+      const range = edges.get(hit[1]) || {}; if (range[hit[2]] != null) return fail('Repeated Word revision boundary.', 'docx_revision_invalid');
+      range[hit[2]] = clean.length; edges.set(hit[1], range); cursor = hit.index + hit[0].length;
+    }
+    return {text: clean + text.slice(cursor), edges};
+  };
+  if (result.review && typeof options.convertHtml !== 'function') throw new TypeError('docx_review_writer_required');
+  const accepted = strip(result.review ? options.convertHtml(result.review.acceptedHtml) + '\n' : source), finish = text => finishDocxText(text, result, options);
+  const project = text => {
+    let body = text;
+    if (result.wordStyle) {
+      const frame = frontMatterFrame(body), field = 'word-template: ' + JSON.stringify(result.wordStyle.name.replace(/[\r\n]/g, ' ')) + '\n';
+      if (!/^word-template:/m.test(frame.closing ? body.slice(0, frame.closing.start) : ''))
+        body = frame.closing ? body.slice(0, frame.closing.start) + field + body.slice(frame.closing.start) : '---\n' + field + '---\n\n' + body;
+    }
+    return finish(body);
+  };
+  let body = project(source);
+  const record = result.wordStyle ? {style: {...result.wordStyle, source: body}} : {};
+  if (result.review) {
+    if (typeof options.convertHtml !== 'function') throw new TypeError('docx_review_writer_required');
+    const rejected = strip(options.convertHtml(result.review.html) + '\n');
+    const clone = record => ({text: record.text, edges: new Map([...record.edges].map(([id, edge]) => [id, {S: edge.S, E: edge.E}]))});
+    const acceptedOriginal = clone(accepted), rejectedOriginal = clone(rejected);
+    const emptyParagraphs = (one, other) => {
+      for (const [id, edge] of one.edges) {
+        if (edge.S !== edge.E) continue;
+        const peer = other.edges.get(id); if (!peer) continue;
+        let at = -1;
+        if ((edge.S === 0 || one.text.slice(edge.S - 2, edge.S) === '\n\n') &&
+            one.text.slice(edge.E, edge.E + 2) === '\n\n' && other.text.slice(peer.E, peer.E + 2) === '\n\n') {
+          at = edge.E; peer.E += 2;
+        } else if (one.text.slice(edge.S - 2, edge.S) === '\n\n' && /^\n?$/.test(one.text.slice(edge.E)) &&
+            other.text.slice(peer.S - 2, peer.S) === '\n\n') { at = edge.S - 2; peer.S -= 2; }
+        if (at < 0) continue;
+        one.text = one.text.slice(0, at) + one.text.slice(at + 2);
+        for (const row of one.edges.values()) for (const key of ['S','E']) if (row[key] > at) row[key] -= Math.min(2, row[key] - at);
+      }
+    };
+    const place = text => {
+      const accepted = clone(acceptedOriginal), rejected = clone(rejectedOriginal);
+      emptyParagraphs(accepted, rejected); emptyParagraphs(rejected, accepted);
+      if (!text.includes('<u>')) { stripDecorativeLinkUnderline(accepted); stripDecorativeLinkUnderline(rejected); }
+      const map = alignedText(accepted.text, text);
+      const changes = [];
+      for (const row of result.review.changes) {
+        const a = accepted.edges.get(row.id), b = rejected.edges.get(row.id), range = a && wordRange(a.S, a.E, map, text.length);
+        if (!range || !b || b.E < b.S) return null;
+        changes.push({...row, from: range[0], to: range[1], before: rejected.text.slice(b.S, b.E)});
+      }
+      return changes.sort((a, b) => a.from - b.from || a.to - b.to);
+    };
+    let changes = place(body);
+    if (!changes && typeof result.base === 'string') {
+      const saved = result.base;
+      result.base = undefined;
+      let plain = null, retry = null;
+      try { plain = project(source); retry = place(plain); }
+      finally { result.base = saved; }
+      const hybrid = retry && scopeReviewCustody(body, plain, retry, saved);
+      const scoped = hybrid && place(hybrid);
+      if (scoped) { body = hybrid; changes = scoped; if (record.style) record.style.source = body; }
+    }
+    if (!changes) return fail('Word revision boundaries could not be preserved.', 'docx_revision_invalid');
+    record.review = {source: body, changes};
+  }
+  return Object.keys(record).length ? writeWordSidecar(body, record) : body;
+}
+
+function nativeWordDocument(source) {
+  const root = new DOMParser().parseFromString(source, 'application/xml').documentElement;
+  if (!is(root, 'w', 'document')) return fail('Invalid native Word projection.', 'docx_review_projection');
+  return root;
+}
+const wordParagraphs = root => Array.from(descendants(root, 'w', 'p'));
+const wordOpen = node => '<' + node.nodeName + Array.from(node.attributes, a => ' ' + a.name + '="' + escape(a.value) + '"').join('') + '>';
+const wordParagraphNode = inner => new DOMParser().parseFromString('<w:p ' + ['w','r','a','wp','pic','m','w14','mc'].map(key => 'xmlns:' + key + '="' + NS[key][0] + '"').join(' ') + '>' + inner + '</w:p>', 'application/xml').documentElement;
+const wordStream = rows => rows.map(row => typeof row.text === 'string' ? row.text : wordText(row)).join('\u2029');
+function wordMatches(before, after) {
+  const a = wordStream(before), b = wordStream(after), map = alignedText(a, b), targets = [];
+  let offset = 0;
+  for (let index = 0; index < after.length; index++) {
+    const size = (after[index].text ?? wordText(after[index])).length;
+    targets.push({from: offset, to: offset + size, index}); offset += size + 1;
+  }
+  const matches = new Map(), quality = new Map(); offset = 0;
+  for (let index = 0; index < before.length; index++) {
+    const size = (before[index].text ?? wordText(before[index])).length, scores = new Map();
+    for (let i = offset; i <= offset + size; i++) if (map[i] >= 0) {
+      let lo = 0, hi = targets.length;
+      while (lo < hi) { const mid = (lo + hi) >>> 1; if (targets[mid].to < map[i]) lo = mid + 1; else hi = mid; }
+      const target = targets[lo];
+      if (target) scores.set(target.index, (scores.get(target.index) || 0) + 1);
+    }
+    const best = [...scores].sort((a, b) => b[1] - a[1])[0];
+    if (best && best[1] > (quality.get(best[0]) || 0)) { matches.set(best[0], index); quality.set(best[0], best[1]); }
+    offset += size + 1;
+  }
+  if (before.length === after.length) for (let i = 0; i < before.length; i++) if (!matches.has(i) && ![...matches.values()].includes(i)) matches.set(i, i);
+  return matches;
+}
+function propertyDelta(original, before, after, kind) {
+  const read = source => source ? wordPart('<w:' + kind + ' xmlns:w="' + NS.w[0] + '" xmlns:w14="' + NS.w14[0] + '">' + source + '</w:' + kind + '>', kind).firstElementChild : null;
+  const key = node => node.namespaceURI + ':' + node.localName;
+  const entries = node => new Map(Array.from(node?.children || [], child => [key(child), wordXml(child)]));
+  const old = entries(read(original)), base = entries(read(before)), now = entries(read(after));
+  const attributes = xml => new Map(Array.from(read(xml)?.attributes || [], a => [a.name, a.value]).filter(([name]) => !name.startsWith("xmlns")));
+  const spacing = (name, original, before, after) => {
+    const merged = attributes(original), was = attributes(before), next = attributes(after);
+    for (const key of new Set([...was.keys(), ...next.keys()])) {
+      if (was.get(key) === next.get(key)) continue;
+      if (next.has(key)) merged.set(key, next.get(key)); else merged.delete(key);
+    }
+    return merged.size ? '<' + name + [...merged].map(([key, value]) => ' ' + key + '="' + escape(value) + '"').join('') + '/>' : null;
+  };
+  for (const name of new Set([...base.keys(), ...now.keys()])) {
+    if (base.get(name) === now.get(name)) continue;
+    if (name === NS.w[0] + ':spacing' && old.has(name) && base.has(name) && now.has(name)) {
+      const merged = spacing('w:spacing', old.get(name), base.get(name), now.get(name));
+      if (merged) old.set(name, merged); else old.delete(name);
+      continue;
+    }
+    if (now.has(name)) old.set(name, now.get(name));
+    else if (kind === 'rPr' && /:(?:b|i|strike|smallCaps|caps|vanish)$/.test(name)) old.set(name, '<w:' + name.slice(name.lastIndexOf(':') + 1) + ' w:val="0"/>');
+    else old.delete(name);
+  }
+  return old.size ? '<w:' + kind + '>' + [...old.values()].join('') + '</w:' + kind + '>' : '';
+}
+function restoreWordStyle(currentXml, baselineXml, house) {
+  const current = nativeWordDocument(currentXml), after = wordParagraphs(current), baseline = wordParagraphs(nativeWordDocument(baselineXml));
+  const original = house.paragraphs, nativeMatches = wordMatches(original, after), baselineMatches = wordMatches(baseline, after);
+  for (let index = 0; index < after.length; index++) {
+    const prior = original[nativeMatches.get(index)], baselineNode = baseline[baselineMatches.get(index)], node = after[index];
+    if (!prior || !baselineNode) continue;
+    const actual = wordParagraph(node), projected = wordParagraph(baselineNode), originalMap = alignedText(actual.text, prior.text), baselineMap = alignedText(actual.text, projected.text);
+    let at = 0, previous = prior.runs[0]; const properties = new Map();
+    const runAt = (rows, pos) => rows.find(row => row.from <= pos && pos < row.to);
+    const walk = parent => {
+      let xml = '';
+      for (const n of parent.children) {
+        if (is(n, 'w', 'pPr')) continue;
+        if (is(n, 'w', 'r')) {
+          const text = wordText(n), start = at; at += text.length;
+          if (Array.from(n.children).some(child => !is(child, 'w') || !['rPr','t','tab','br','cr'].includes(child.localName) ||
+              is(child, 'w', 'br') && (attr(child, 'w', 'type') || attr(child, 'w', 'clear')))) { xml += wordXml(n); continue; }
+          let buffer = '', props = null;
+          const flush = () => { if (buffer) xml += '<w:r>' + props + tXml(buffer).replace(/^<w:r>|<\/w:r>$/g, ''); buffer = ''; if (props !== null) xml += '</w:r>'; };
+          for (let i = 0; i < text.length; i++) {
+            const origin = runAt(prior.runs, originalMap[start + i]) || previous, base = runAt(projected.runs, baselineMap[start + i]);
+            const values = [origin?.pr || '', base?.pr ?? projected.runs.at(-1)?.pr ?? '', wordXml(child(n, 'w', 'rPr'))], key = JSON.stringify(values);
+            if (!properties.has(key)) properties.set(key, propertyDelta(...values, 'rPr'));
+            const pr = properties.get(key);
+            if (pr !== props) { if (props !== null) flush(); props = pr; }
+            buffer += text[i]; previous = origin;
+          }
+          if (props !== null) flush();
+          if (!text) xml += wordXml(n);
+        } else if (n.children.length && !is(n, 'm')) xml += wordOpen(n) + walk(n) + '</' + n.nodeName + '>';
+        else xml += wordXml(n);
+      }
+      return xml;
+    };
+    const inner = propertyDelta(prior.pr, projected.pr, actual.pr, 'pPr') + walk(node);
+    const replacement = wordParagraphNode(inner);
+    node.parentNode.replaceChild(replacement, node);
+  }
+  return wordXml(current);
+}
+function wordTemplateProjection(xml, source) {
+  if (readDocumentSettings(source).mainfont || [...documentFontUsage(source).keys()].some(name => name.toLowerCase() === 'geist')) return xml;
+  return xml.replace(/<w:rFonts\b[^>]*\/>/g, tag =>
+    ['ascii','hAnsi','eastAsia','cs'].every(name => tag.includes('w:' + name + '="Geist"')) ? '' : tag);
+}
+function appendWordNumbering(existing, generated) {
+  const root = wordPart(existing, 'numbering'), extra = wordPart(generated, 'numbering'), maps = new Map();
+  for (const [kind, attribute] of [['abstractNum','abstractNumId'], ['num','numId']]) {
+    const used = new Set(children(root, 'w', kind).map(n => attr(n, 'w', attribute))), ids = new Map();
+    let next = 1;
+    for (const n of children(extra, 'w', kind)) {
+      while (used.has(String(next))) next++;
+      const id = String(next++); ids.set(attr(n, 'w', attribute), id); used.add(id);
+      n.setAttributeNS(NS.w[0], 'w:' + attribute, id);
+    }
+    maps.set(kind, ids);
+  }
+  for (const n of descendants(extra, 'w', 'abstractNumId')) {
+    const id = maps.get('abstractNum').get(val(n));
+    if (id) n.setAttributeNS(NS.w[0], 'w:val', id);
+  }
+  for (const n of Array.from(extra.children)) root.appendChild(n);
+  return {xml: wordXml(root), added: [...maps].flatMap(([kind, ids]) => [...ids.values()].map(id => [kind, id])),
+    remap: xml => xml.replace(/(<w:numId\b[^>]*\bw:val=")([^"]+)(")/g,
+    (whole, before, id, after) => before + (maps.get('num').get(id) || id) + after)};
+}
+function wordInlineSlice(paragraph, from, to, deleted = false) {
+  if (from === to) return '';
+  let at = 0;
+  const walk = node => {
+    if (is(node, 'w', 'pPr')) return '';
+    if (is(node, 'w', 'rPr')) return wordXml(node);
+    const atom = is(node, 'w') && ['t','delText','tab','br','cr','drawing','pict','object','footnoteReference','endnoteReference'].includes(node.localName) || is(node, 'm', 'oMath');
+    if (atom) {
+      const text = wordText(node), start = at; at += text.length;
+      if (at <= from || start >= to) return '';
+      if (is(node, 'w', 't') || is(node, 'w', 'delText')) return '<w:' + (deleted ? 'delText' : 't') + ' xml:space="preserve">' + escape(text.slice(Math.max(0, from - start), to - start)) + '</w:' + (deleted ? 'delText' : 't') + '>';
+      if (deleted && (is(node, 'w', 'footnoteReference') || is(node, 'w', 'endnoteReference'))) return fail('Decide changes to note references before exporting Word review.', 'docx_review_note');
+      return wordXml(node);
+    }
+    if (!node.children.length) return !deleted && is(node, 'w') &&
+      ['bookmarkStart','bookmarkEnd','commentRangeStart','commentRangeEnd','commentReference'].includes(node.localName) &&
+      at >= from && (at < to || to === wordText(paragraph).length && at === to) ? wordXml(node) : '';
+    const start = at, value = Array.from(node.children, walk).join('');
+    if (at <= from || start >= to) return at === start && value.includes('<w:commentReference') && at === to ? wordOpen(node) + value + '</' + node.nodeName + '>' : '';
+    return wordOpen(node) + value + '</' + node.nodeName + '>';
+  };
+  return Array.from(paragraph.children, walk).join('');
+}
+async function reviewRelationKeys(relsXml, entries) {
+  const keys = new Map();
+  if (!relsXml) return keys;
+  const root = new DOMParser().parseFromString(relsXml, 'application/xml').documentElement;
+  for (const relation of root.children) {
+    const id = relation.getAttribute('Id'), type = relation.getAttribute('Type') || '', target = relation.getAttribute('Target') || '';
+    let key = type + '\n' + target;
+    if (relation.getAttribute('TargetMode') !== 'External' && type.endsWith('/image')) {
+      const path = target.replace(/^\//, '');
+      const file = entries.find(row => row.name === 'word/' + path);
+      key = type + '\n' + (file ? await sha256(file.bytes) : 'missing');
+    }
+    keys.set(id, key);
+  }
+  return keys;
+}
+function reviewParagraphMarkup(node, spacing = true) {
+  return Array.from(child(node, 'w', 'pPr')?.children || [])
+    .filter(n => !(is(n, 'w') && ['numPr','sectPr','pStyle','outlineLvl','pageBreakBefore'].includes(n.localName)))
+    .filter(n => spacing || !is(n, 'w', 'spacing'))
+    .map(wordXml).join('');
+}
+function paragraphLineMetrics(node) {
+  const spacing = child(child(node, 'w', 'pPr'), 'w', 'spacing');
+  if (!spacing) return null;
+  const line = attr(spacing, 'w', 'line'), rule = attr(spacing, 'w', 'lineRule');
+  return line || rule ? (line || '') + '\n' + (rule || '') : null;
+}
+function reviewAtom(node, relKey) {
+  return wordXml(node).replace(/\br:(?:embed|link|id)="([^"]*)"/g, (_, id) => 'r:ref="' + relKey(id) + '"')
+    .replace(/ (?:id|name)="[^"]*"/g, '');
+}
+function wordReviewSigs(paragraph, relKey) {
+  const sigs = [];
+  const add = (text, sig) => { for (let i = 0; i < text.length; i++) sigs.push(sig); };
+  const walk = (node, link, props) => {
+    if (is(node, 'w') && ['pPr','rPr','del','moveFrom'].includes(node.localName)) return;
+    if (is(node, 'w', 'hyperlink')) {
+      const next = [relKey(attr(node, 'r', 'id')), attr(node, 'w', 'anchor') || '', attr(node, 'w', 'tooltip') || ''].join('\n');
+      for (const childNode of node.children) walk(childNode, next, props);
+      return;
+    }
+    if (is(node, 'w', 'r')) {
+      const pr = wordXml(child(node, 'w', 'rPr'));
+      for (const childNode of node.children) walk(childNode, link, pr);
+      return;
+    }
+    if (is(node, 'w', 't') || is(node, 'w', 'delText') || is(node, 'w', 'tab') || is(node, 'w', 'br') || is(node, 'w', 'cr')) {
+      add(wordText(node), (props || '') + '\n' + (link || ''));
+      return;
+    }
+    if (is(node, 'w') && ['drawing','pict','object','footnoteReference','endnoteReference'].includes(node.localName) || is(node, 'm', 'oMath') || is(node, 'm', 'oMathPara')) {
+      add(wordText(node), (props || '') + '\n' + (link || '') + '\n' + reviewAtom(node, relKey));
+      return;
+    }
+    for (const childNode of node.children || []) walk(childNode, link, props);
+  };
+  for (const childNode of paragraph.children) walk(childNode, '', '');
+  return sigs;
+}
+function trackedWordXml(currentXml, beforeXml, options, review, source, projectSource, numberingXml = '', relKeys = new Map()) {
+  const current = nativeWordDocument(currentXml), before = nativeWordDocument(beforeXml), a = wordParagraphs(before), b = wordParagraphs(current);
+  const refuseStructure = () => fail('Decide structural changes before exporting Word review.', 'docx_review_structure');
+  const numbering = numberingXml ? new DOMParser().parseFromString(numberingXml, 'application/xml').documentElement : null;
+  const nativeShape = node => {
+    if (!node) return null;
+    if (is(node, 'w', 'numId')) {
+      const num = children(numbering, 'w', 'num').find(row => attr(row, 'w', 'numId') === val(node));
+      const abstract = children(numbering, 'w', 'abstractNum').find(row => attr(row, 'w', 'abstractNumId') === val(child(num, 'w', 'abstractNumId')));
+      if (!num || !abstract) return refuseStructure();
+      return ['numbering', Array.from(num.children).filter(row => !is(row, 'w', 'abstractNumId')).map(nativeShape),
+        Array.from(abstract.children, nativeShape)];
+    }
+    return [node.namespaceURI, node.localName,
+      Array.from(node.attributes || []).filter(a => !a.name.startsWith('xmlns')).map(a => [a.namespaceURI, a.localName, a.value]).sort(),
+      Array.from(node.children || [], nativeShape), Array.from(node.childNodes || []).filter(n => n.nodeType === 3).map(n => n.textContent).join('')];
+  };
+  const properties = node => Array.from(child(node, 'w', 'pPr')?.children || [])
+    .filter(n => is(n, 'w') && ['numPr','sectPr','pStyle','outlineLvl','pageBreakBefore'].includes(n.localName)).map(nativeShape);
+  const topology = node => is(node, 'w', 'p') ? is(node.parentNode, 'w', 'body') ? null : ['p', properties(node)] :
+    is(node, 'w') && ['document','body','tbl','tr','tc'].includes(node.localName)
+      ? [node.localName, Array.from(node.children, topology).filter(row => row !== null)] : nativeShape(node);
+  const context = node => {
+    const path = [];
+    for (let at = node; at.parentNode && !is(at, 'w', 'body'); at = at.parentNode) {
+      if (is(at, 'w', 'p') && is(at.parentNode, 'w', 'body')) continue;
+      path.push([at.localName, Array.from(at.parentNode.children).filter(n => n.localName === at.localName).indexOf(at)]);
+    }
+    return path;
+  };
+  if (JSON.stringify(topology(before)) !== JSON.stringify(topology(current)) ||
+      a.length !== b.length && wordStream(a).replace(/\s/g, '') === wordStream(b).replace(/\s/g, '')) refuseStructure();
+  const authors = [], stream = wordStream(b);
+  const ranges = [...review.changes, ...(options.authors || [])];
+  for (const row of ranges) {
+    let marker = '\uFFFERapierWordAuthor\uFFFF'; while (source.includes(marker)) marker += 'x';
+    const marked = source.slice(0, row.from) + marker + source.slice(row.from, row.to) + marker + source.slice(row.to);
+    const projected = commentProjection(projectSource(marked).blocks).text, first = projected.indexOf(marker), last = projected.lastIndexOf(marker);
+    if (first < 0 || first === last) continue;
+    const clean = projected.slice(0, first) + projected.slice(first + marker.length, last) + projected.slice(last + marker.length);
+    const range = wordRange(first, last - marker.length, alignedText(clean, stream), stream.length);
+    if (range) authors.push({...row, from: range[0], to: range[1]});
+  }
+  let id = 0, offset = 0;
+  const attributes = (start, end) => {
+    const row = authors.find(row => row.from <= start && row.to >= end) || options;
+    const author = row.author || 'Unattributed', date = row.date;
+    if (typeof author !== 'string' || author.length > 256 || date && !validCommentDate(date)) return fail('Invalid Word review author.', 'docx_revision_invalid');
+    return ' w:id="' + id++ + '" w:author="' + escape(author) + '"' + (date ? ' w:date="' + escape(date) + '"' : '');
+  };
+  const revision = (kind, value, start, end) => value ? '<w:' + kind + attributes(start, end) + '>' + value + '</w:' + kind + '>' : '';
+  const pairs = []; let ai = 0, bi = 0;
+  while (ai < a.length || bi < b.length) {
+    if (ai < a.length && bi < b.length && wordText(a[ai]) === wordText(b[bi])) { pairs.push([ai++, bi++]); continue; }
+    let anchor = null;
+    for (let span = 1; span <= 32 && !anchor; span++) for (let x = 0; x <= span && !anchor; x++) {
+      const y = span - x;
+      if (ai + x < a.length && bi + y < b.length && wordText(a[ai + x]) === wordText(b[bi + y])) anchor = [ai + x, bi + y];
+    }
+    const [ae, be] = anchor || [a.length, b.length];
+    while (ai < ae || bi < be) pairs.push([ai < ae ? ai++ : null, bi < be ? bi++ : null]);
+  }
+  for (const [oldIndex, index] of pairs) if (oldIndex !== null && index !== null &&
+      (JSON.stringify(context(a[oldIndex])) !== JSON.stringify(context(b[index])) ||
+       JSON.stringify(properties(a[oldIndex])) !== JSON.stringify(properties(b[index])))) refuseStructure();
+  const relKey = id => relKeys.get(id) || '';
+  const refuseFormat = () => fail('Decide formatting changes before exporting Word review.', 'docx_review_format');
+  for (const [oldIndex, index] of pairs) if (oldIndex !== null && index !== null &&
+      reviewParagraphMarkup(a[oldIndex]) !== reviewParagraphMarkup(b[index])) {
+    const oldNode = a[oldIndex], newNode = b[index];
+    const oldLine = paragraphLineMetrics(oldNode), newLine = paragraphLineMetrics(newNode);
+    const sameWords = wordText(oldNode) === wordText(newNode);
+    const spacingOnly = sameWords && reviewParagraphMarkup(oldNode, false) === reviewParagraphMarkup(newNode, false);
+    if (!spacingOnly || (oldLine && newLine && oldLine !== newLine)) refuseFormat();
+  }
+  const paragraphMark = (node, kind, at) => {
+    let props = wordXml(child(node, 'w', 'pPr')) || '<w:pPr></w:pPr>';
+    const mark = '<w:' + kind + attributes(at, at) + '/>';
+    return props.includes('</w:rPr>') ? props.replace('</w:rPr>', mark + '</w:rPr>') : props.replace('</w:pPr>', '<w:rPr>' + mark + '</w:rPr></w:pPr>');
+  };
+  const markExisting = (node, kind, at) => {
+    if (!is(node, 'w', 'p')) return fail('A tracked paragraph has no preceding paragraph.', 'docx_review_structure');
+    const inner = paragraphMark(node, kind, at) + Array.from(node.children).filter(n => !is(n, 'w', 'pPr')).map(wordXml).join('');
+    node.parentNode.replaceChild(wordParagraphNode(inner), node);
+  };
+  for (let pair = 0; pair < pairs.length; pair++) {
+    const [oldIndex, index] = pairs[pair], old = a[oldIndex], next = b[index];
+    if (oldIndex === null || index === null) {
+      const node = oldIndex === null ? next : old, kind = oldIndex === null ? 'ins' : 'del', length = wordText(node).length;
+      if (!is(node.parentNode, 'w', 'body')) return fail('Decide table structure changes before exporting Word review.', 'docx_review_structure');
+      const tail = pairs.slice(pair).every(row => row[kind === 'ins' ? 0 : 1] === null);
+      if (tail && (!pair || pairs[pair - 1][kind === 'ins' ? 0 : 1] !== null)) {
+        const preceding = next ? next.previousElementSibling : wordParagraphs(current).at(-1);
+        markExisting(preceding, kind, Math.max(0, offset - 1));
+      }
+      const props = tail && pair === pairs.length - 1 ? wordXml(child(node, 'w', 'pPr')) : paragraphMark(node, kind, offset + (kind === 'ins' ? length : 0));
+      const inner = props + revision(kind, wordInlineSlice(node, 0, length, kind === 'del'), offset, offset + (kind === 'ins' ? length : 0));
+      const replacement = wordParagraphNode(inner);
+      if (next) { next.parentNode.replaceChild(replacement, next); offset += length + 1; }
+      else {
+        const after = pairs.slice(pair + 1).find(row => row[1] !== null), following = after ? b[after[1]] : null, body = child(current, 'w', 'body');
+        if (following && following.parentNode !== body) return fail('A deleted paragraph crosses a table boundary.', 'docx_review_structure');
+        body.insertBefore(replacement, following || child(body, 'w', 'sectPr'));
+      }
+      continue;
+    }
+    const left = wordText(old), right = wordText(next), map = alignedText(left, right);
+    const leftSig = wordReviewSigs(old, relKey), rightSig = wordReviewSigs(next, relKey);
+    if (leftSig.length !== left.length || rightSig.length !== right.length) refuseFormat();
+    if (!is(next.parentNode, 'w', 'body')) for (let i = 0; i < left.length; i++) if (map[i] >= 0 && leftSig[i] !== rightSig[map[i]]) refuseFormat();
+    if (left === right && leftSig.every((sig, i) => sig === rightSig[i])) { offset += right.length + 1; continue; }
+    let x = 0, y = 0, inner = wordXml(child(next, 'w', 'pPr'));
+    const change = (toX, toY) => {
+      inner += revision('del', wordInlineSlice(old, x, toX, true), offset + y, offset + y);
+      const edges = [...new Set([y, toY, ...authors.flatMap(row => [row.from - offset, row.to - offset]).filter(at => at > y && at < toY)])].sort((a,b) => a-b);
+      for (let i = 1; i < edges.length; i++) inner += revision('ins', wordInlineSlice(next, edges[i-1], edges[i]), offset + edges[i-1], offset + edges[i]);
+    };
+    while (x < left.length || y < right.length) {
+      const startX = x, startY = y;
+      let keep = x; while (keep < left.length && map[keep] < 0) keep++;
+      let target = keep < left.length ? map[keep] : right.length;
+      while (keep < left.length && target < right.length && map[keep] === target && leftSig[keep] !== rightSig[target]) { keep++; target++; }
+      change(keep, target); x = keep; y = target;
+      let end = x; while (end < left.length && map[end] === y + end - x && leftSig[end] === rightSig[y + end - x]) end++;
+      inner += wordInlineSlice(next, y, y + end - x); y += end - x; x = end;
+      if (x === startX && y === startY) refuseFormat();
+    }
+    change(left.length, right.length);
+    const replacement = wordParagraphNode(inner);
+    next.parentNode.replaceChild(replacement, next); offset += right.length + 1;
+  }
+  return wordXml(current);
+}
+
 export function docxPortableHtml(html, imageUrls = new Map()) {
   html = html.replace(/<span class="math-rendered" data-math-src="([^"]*)">([\s\S]*?)<\/span>/g, (_, encoded, visible) => {
     const source = decodeURIComponent(encoded);
     if (escape(source) !== visible) return fail('DOCX equation source proof does not match.', 'docx_source_token');
     return escape(source);
   });
-  html = html.replace(/<span class="rapier-source-token" data-rapier-source="([^"]*)" data-rapier-visible="\1">([\s\S]*?)<\/span>/g,
-    (whole, encoded, visible) => {
-      const source = decodeURIComponent(encoded);
-      if (escape(source) !== visible) return fail('DOCX source token proof does not match.', 'docx_source_token');
+  html = html.replace(/<span class="rapier-source-token" data-rapier-source="([^"]*)" data-rapier-visible="([^"]*)">([\s\S]*?)<\/span>/g,
+    (whole, encoded, visibleEncoded, visible) => {
+      const source = decodeURIComponent(encoded), shown = decodeURIComponent(visibleEncoded);
+      if (escape(shown) !== visible) return fail('DOCX source token proof does not match.', 'docx_source_token');
+      if (source.startsWith('`')) {
+        const tokens = markdownParser().parseInline(source, {})[0]?.children;
+        if (tokens?.length !== 1 || tokens[0].type !== 'code_inline' || shown !== source.replace(/[ \t]/g, '\u00a0'))
+          return fail('DOCX code source proof does not match.', 'docx_source_token');
+        return '<code>' + escape(tokens[0].content) + '</code>';
+      }
+      if (source !== shown) return fail('DOCX source token proof does not match.', 'docx_source_token');
       return source;
     });
   html = html.replace(/<span data-md-color="(#[0-9a-f]{6})">/g, '<span style="color:$1">');
@@ -2025,7 +2844,7 @@ function commentProjection(blocks) {
 function alignedText(a, b) {
   const kept = new Int32Array(a.length).fill(-1), split = text => {
     const parts = []; let at = 0;
-    for (const part of text.split('\u2029')) { parts.push({part, at}); at += part.length + 1; }
+    for (const part of text.split(/[\u2029\n]/)) { parts.push({part, at}); at += part.length + 1; }
     return parts;
   };
   const pa = split(a), pb = split(b);
@@ -2203,14 +3022,24 @@ function commentMessageBlocks(model) {
   return blocks;
 }
 
+function docxSourceModel(root, source, options = {}, env = {}) {
+  const template = root.ownerDocument.createElement('template');
+  template.innerHTML = markdownParser().render(source.slice(markdownBodyOffset(source)), env);
+  for (const image of template.content.querySelectorAll('img')) {
+    const id = image.getAttribute('data-rapier-asset');
+    const url = id ? env.references?.[normalizeLabel(id)]?.href : image.getAttribute('data-rapier-image-url');
+    if (dataImage(url)) image.setAttribute('src', url);
+  }
+  for (const token of template.content.querySelectorAll('.rapier-source-token--softbreak'))
+    if (token.getAttribute('data-rapier-source') === '%0A') token.textContent = ' ';
+  return docxBlocksFromDom(template.content, options);
+}
 function projectDocxComments(root, model, canonical) {
   const parsed = parseComments(canonical), threads = commentThreads(canonical, parsed);
   if (!threads.length) return model;
-  const parser = markdownParser(), references = documentAssets(canonical).references, render = (source, env = {}) => {
-    const template = root.ownerDocument.createElement('template');
+  const references = documentAssets(canonical).references, render = (source, env = {}) => {
     env.references = {...references};
-    template.innerHTML = parser.render(source.slice(markdownBodyOffset(source)), env);
-    return docxBlocksFromDom(template.content);
+    return docxSourceModel(root, source, {}, env);
   };
   const source = parsed.body, original = commentProjection(render(source).blocks);
   const actual = commentProjection(model.blocks);
@@ -2707,9 +3536,14 @@ function referenceType(settings) {
   return {body, line: settings?.linestretch ? body * settings.linestretch.factor : settings?.fontsize ? body * DOCUMENT_LEADING : 21};
 }
 
+function nativeDocumentSpacing(settings, kind = 'paragraph', size = referenceType(settings).body) {
+  const row = documentSpacing(settings, kind);
+  return {before: Math.round(row.before * 20), after: Math.round(row.after * 20), line: Math.round(size * row.line * 20),
+    lineRule: settings?.spacing?.[kind]?.line != null ? 'exact' : 'atLeast'};
+}
 function referenceSpacing(settings) {
-  const unit = referenceType(settings).body / 13.2 * 15, measure = value => integer(Math.round(value * unit));
-  return {paragraph: measure(8), block: measure(12), heading: [measure(20), measure(4)]};
+  return {paragraph: nativeDocumentSpacing(settings).after, block: nativeDocumentSpacing(settings, 'list').after,
+    heading: [nativeDocumentSpacing(settings, 'h1').before, nativeDocumentSpacing(settings, 'h1').after]};
 }
 
 function documentDefaultsXml(settings, hyphens) {
@@ -2720,9 +3554,7 @@ function documentDefaultsXml(settings, hyphens) {
   if (family) run.push(fontFamilyXml(family));
   run.push('<w:sz w:val="' + half + '"/><w:szCs w:val="' + half + '"/>');
   if (languageTag(settings?.lang)) run.push('<w:lang w:val="' + documentLanguage(settings) + '"/>');
-  const line = Math.max(1, Math.round(type.line * 20));
-  const spacing = spacingXml({line, lineRule: 'atLeast',
-    before: 0, after: referenceSpacing(settings).paragraph});
+  const spacing = spacingXml(nativeDocumentSpacing(settings));
   return '<w:docDefaults>' +
     (run.length ? '<w:rPrDefault><w:rPr>' + run.join('') + '</w:rPr></w:rPrDefault>' : '') +
     '<w:pPrDefault><w:pPr>' + (hyphens ? '<w:suppressAutoHyphens/>' : '') + spacing + '</w:pPr></w:pPrDefault>' +
@@ -2757,8 +3589,12 @@ function corePropertiesXml(settings) {
     '</cp:coreProperties>';
 }
 
-export async function writeDocx(input, {convertImage, rewriteDocument, canonical, bom = false, work} = {}) {
+export function writeDocx(input, options = {}) { return buildDocx(input, options); }
+
+async function buildDocx(input, {convertImage, rewriteDocument, canonical, comparison, bom = false, work, wordLayout = false} = {}, native = false) {
   check(work);
+  const carriedWord = typeof canonical === 'string' ? readWordSidecar(canonical) : null;
+  if (carriedWord?.record?.style) admitWordStyle(carriedWord.record.style);
   const equations = [];
   const encodeXml = text => work ? finishAsync(encodeUtf8Steps(text), work) : xmlBytes(text);
   let yieldedAt = performance.now(), emitted = 0;
@@ -2776,7 +3612,8 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
   const {blocks, refs, notes} = model;
   const comments = model.comments || (typeof canonical === 'string' ? commentThreads(canonical).map((thread, id) =>
     ({id, resolved: thread.resolved, messages: thread.messages, attached: false})) : []);
-  const settings = typeof canonical === 'string' ? readDocumentSettings(canonical) : null;
+  const authored = typeof canonical === 'string' ? readDocumentSettings(canonical) : null;
+  const settings = wordLayout ? wordDocumentSettings(authored) : authored;
   const fonts = await writeDocxFonts(canonical, {check: () => check(work)});
   const authoredFamilies = new Set(fonts.map(font => font.family.toLowerCase()));
   const baseFamilies = new Map();
@@ -3074,7 +3911,7 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
     return pXml('', {styleId: 'RapierBlockSpacing', before: 0, after: 0, line, lineRule: 'exact'});
   };
   const boundary = (previous, next) => Math.max(previous.after || 0, next.before || 0);
-  const writeBlocks = (parts, inCell = false) => {
+  const writeBlocks = (parts, inCell = false, firstGap = false) => {
     if (!settings) return parts.map(part => part.xml ?? paragraphXml(part)).join('');
     const visible = parts.filter(part => !part.transparent);
     let index = 0, xml = '';
@@ -3084,7 +3921,7 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
         continue;
       }
       const previous = visible[index - 1], next = visible[++index];
-      const before = previous ? boundary(previous, part) : 0;
+      const before = previous ? boundary(previous, part) : firstGap ? part.before || 0 : 0;
       const after = next?.xml ? boundary(part, next) : next || inCell ? 0 : part.after || 0;
       if (part.xml) {
         if (previous?.xml) xml += tableSpacing(before);
@@ -3251,7 +4088,8 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
         if (item.nativeQuote) quotations = true;
         bodyParts.push(await prose(item, {styleId: item.heading ? 'Heading' + item.heading : item.nativeQuote ? 'Quote' : 'ListParagraph',
           outline: item.heading ? item.heading - 1 : null, numId, ilvl: item.level, align: jcOf(item.layout), ind, numTab, direction: item.direction,
-          after: item.loose || block.items.at(-1) === item ? lineTwips : Math.round(lineTwips / 4),
+          ...nativeDocumentSpacing(settings, item.heading ? 'h' + item.heading : 'item'),
+          ...(item.loose && !item.heading ? {after: Math.max(lineTwips, 240)} : {}),
           ...(!item.heading && !item.code ? typography(item.layout) : {}),
           borders: item.quote ? quoteBorders(item.quoteColor) : null, shading: item.code ? codeShading : null},
           !tableCell && !item.heading && !item.code, prefix));
@@ -3296,6 +4134,8 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
         const parts = value.continuation ? [paragraphPart('')] : value.blocks ?
           await emitBlocks(value.blocks, 0, targets, cellWidth, {...decoration, runs, after: 0}, true) :
           [paragraphPart(await emitRuns(value.runs || [], targets, cellWidth, runs), {after: 0})];
+        for (const part of parts) if (part.props && !part.props.styleId?.startsWith('Heading'))
+          part.props = {...part.props, line: nativeDocumentSpacing(settings, 'table', 10.5).line, lineRule: nativeDocumentSpacing(settings, 'table', 10.5).lineRule};
         const inner = writeBlocks(parts, true);
         const tailParagraph = value.blocks?.at(-1)?.type === 'table' ? writeBlocks([paragraph('')], true) : '';
         return '<w:tc><w:tcPr><w:tcW w:w="' + width * span + '" w:type="dxa"/>' +
@@ -3327,7 +4167,7 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
       let inner = '';
       if (block.language && !codeLanguages.has(block.language)) codeLanguages.set(block.language, 'SourceCode' + (codeLanguages.size + 1));
       const styleId = block.language ? codeLanguages.get(block.language) : 'SourceCode';
-      const line = after => paragraphPart(inner, {styleId, shading: codeShading, ind: paragraphInd(null), line: Math.round(lineTwips * .75), after});
+      const line = after => paragraphPart(inner, {styleId, shading: codeShading, ind: paragraphInd(null), ...nativeDocumentSpacing(settings, 'code', bodyPointSize * .7386), after});
       sourceCode = true;
       for (const run of block.runs || [{...block, text: String(block.text || '')}]) {
         let at = 0;
@@ -3343,7 +4183,7 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
       continue;
     }
     if (block.rule) {
-      bodyParts.push(paragraphPart('', {borders: '<w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="999999"/></w:pBdr>', ind: paragraphInd(null)}));
+      bodyParts.push(paragraphPart('', {borders: '<w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="999999"/></w:pBdr>', ind: paragraphInd(null), line: 1, lineRule: 'exact'}));
       continue;
     }
     if (block.definition) definitions = true;
@@ -3358,12 +4198,16 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
        for (const part of parts) part.transparent = true;
        continue;
      }
-     const heading = block.type === 'heading', body = block.type === 'paragraph' && !block.rule;
-     const before = heading ? blockSpace.heading[0] : 0;
-     const after = heading ? blockSpace.heading[1] : body ? blockSpace.paragraph : blockSpace.block;
+     const kind = block.type === 'heading' ? 'h' + block.level : block.rule ? 'rule' : block.type === 'image'
+       ? /^data:image\/svg\+xml/i.test(block.src || '') ? 'drawing' : 'picture'
+       : block.type === 'list' && block.items.every(item => item.runs.some(run => run.href?.startsWith('#'))) ? 'toc'
+       : ['list', 'table', 'quote', 'code'].includes(block.type) ? block.type : 'paragraph';
+     const space = nativeDocumentSpacing(settings, kind);
      if (block.type === 'code') for (const part of parts) { part.before = 0; part.after = 0; }
-     parts[0].before = before;
-     parts.at(-1).after = after;
+     if (!['list', 'table', 'code', 'rule'].includes(kind) && !kind.startsWith('h'))
+       for (const part of parts) if (part.props) part.props = {...part.props, line: space.line, lineRule: space.lineRule};
+     parts[0].before = space.before;
+     parts.at(-1).after = space.after;
    }
    return bodyParts.length ? bodyParts : [paragraphPart('')];
   };
@@ -3391,7 +4235,9 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
   }
   const noteXml = {footnote: [], endnote: []};
   for (const note of noteMap.values()) {
-    const body = typeof note.content === 'string' ? writeBlocks([paragraph(tXml(note.content))]) : writeBlocks(await emitBlocks(note.content.blocks));
+    const parts = typeof note.content === 'string' ? [paragraph(tXml(note.content))] : await emitBlocks(note.content.blocks);
+    for (const part of parts) if (part.props) { const space = nativeDocumentSpacing(settings, 'footnote'); part.props = {...part.props, line: space.line, lineRule: space.lineRule}; part.before = space.before; part.after = space.after; }
+    const body = writeBlocks(parts, false, true);
     const marked = body.replace(/<w:p>(<w:pPr>[\s\S]*?<\/w:pPr>)?/, (open) => open + '<w:r><w:' + note.kind + 'Ref/></w:r>');
     noteXml[note.kind].push('<w:' + note.kind + ' w:id="' + note.id + '">' + marked + '</w:' + note.kind + '>');
   }
@@ -3407,12 +4253,12 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
   const headingFace = settings?.sansfont?.word || (bodyFace === 'Geist' ? bodyFace : null);
   const headingEmphasis = !!type && baseFamilies.has(headingFace);
   const headingStyles = [1, 2, 3, 4, 5, 6].map(level => {
-    const size = type ? integer(Math.max(1, Math.round(type.body * DOCX_HEADING_SCALE[level - 1] * 2))) : 0;
-    const line = type ? Math.max(1, Math.round(type.line * [2, 1.5, 1.5, 1, 1, 1][level - 1] * 20)) : 0;
+    const size = type ? integer(Math.max(1, Math.round(documentHeadingSize(settings, level) * 2))) : 0;
+    const space = nativeDocumentSpacing(settings, 'h' + level, type ? documentHeadingSize(settings, level) : 13.2);
     const face = headingFace;
     return '<w:style w:type="paragraph" w:styleId="Heading' + level + '"><w:name w:val="heading ' + level + '"/>' +
       '<w:basedOn w:val="' + (headingEmphasis ? STRUCTURAL_EMPHASIS : 'Normal') + '"/><w:pPr><w:keepNext/>' +
-      (type ? spacingXml({line, lineRule: 'atLeast', before: blockSpace.heading[0], after: blockSpace.heading[1]}) : '') +
+      (type ? spacingXml(space) : '') +
       '<w:outlineLvl w:val="' + (level - 1) + '"/></w:pPr>' +
       (type ? '<w:rPr>' + (face ? fontFamilyXml(face) : '') +
         '<w:sz w:val="' + size + '"/><w:szCs w:val="' + size + '"/></w:rPr>' : '') + '</w:style>';
@@ -3503,7 +4349,8 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
 
   const packageRels = relXml([{id: 'rIdDoc', type: 'officeDocument', target: 'word/document.xml'}])
     .replace('</Relationships>', (coreXml ? '<Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>' : '') +
-      (carrySource ? '<Relationship Id="rIdRapierSource" Type="' + DOCX_SOURCE.relationship + '" Target="' + DOCX_SOURCE.path + '"/>' : '') + '</Relationships>');
+      (carrySource ? '<Relationship Id="rIdRapierSource" Type="' + DOCX_SOURCE.relationship + '" Target="' + DOCX_SOURCE.path + '"/>' +
+        '<Relationship Id="rIdRapierMarkdown" Type="' + NS.r[0] + '/custom-properties" Target="docProps/custom.xml"/>' : '') + '</Relationships>');
   const entries = [
     {name: '[Content_Types].xml', bytes: await encodeXml(contentTypesXml)},
     {name: '_rels/.rels', bytes: await encodeXml(packageRels)},
@@ -3546,7 +4393,118 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
     if (commentRels.length) entries.push({name: 'word/_rels/comments.xml.rels', bytes: await encodeXml(relXml(commentRels))});
   }
   if (coreXml) entries.push({name: 'docProps/core.xml', bytes: await encodeXml(coreXml)});
+  if (carrySource && !native) {
+    const source = (bom ? '\uFEFF' : '') + canonical;
+    entries.push({name: 'docProps/custom.xml', bytes: await encodeXml('<?xml version="1.0" encoding="UTF-8"?>' +
+      '<Properties xmlns="' + NS.custom[0] + '" xmlns:vt="' + NS.vt[0] + '"><property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="2" name="RapierMarkdown"><vt:lpwstr>' +
+      escape(await wordRecoveryRecord(source, work)) + '</vt:lpwstr></property></Properties>')});
+    entries[0].bytes = await encodeXml(contentTypesXml.replace('</Types>', '<Override PartName="/docProps/custom.xml" ContentType="application/vnd.openxmlformats-officedocument.custom-properties+xml"/></Types>'));
+  }
   for (const row of media) entries.push({name: 'word/media/' + row.name, bytes: row.bytes});
+  if (native) return entries;
+  if (typeof canonical === 'string') {
+    const carried = carriedWord, review = wordReview(canonical);
+    const projectSource = source => {
+      if (!projection?.root?.ownerDocument) return fail('Word review export requires the document’s semantic root.', 'docx_review_projection');
+      return docxSourceModel(projection.root, source, {canonical: source});
+    };
+    const get = (rows, path) => new TextDecoder().decode(rows.find(row => row.name === path)?.bytes || new Uint8Array());
+    const set = (path, value) => {
+      const row = entries.find(row => row.name === path);
+      if (row) row.bytes = utf8.encode(value); else entries.push({name: path, bytes: utf8.encode(value)});
+    };
+    let house = null, originalXml = null;
+    const addedNumbering = [];
+    if (carried.record?.style) {
+      house = admitWordStyle(carried.record.style);
+      if (typeof house.source !== 'string') return fail('The Word template has no source binding.', 'docx_template_invalid');
+      const original = await buildDocx(projectSource(house.source), {canonical: house.source, convertImage, work, wordLayout}, true);
+      originalXml = wordTemplateProjection(get(original, 'word/document.xml'), house.source);
+      let documentXml = wordTemplateProjection(get(entries, 'word/document.xml'), canonical), baselineXml = originalXml;
+      if (house.numbering) {
+        const numbering = appendWordNumbering(house.numbering, get(entries, 'word/numbering.xml'));
+        addedNumbering.push(...numbering.added);
+        set('word/numbering.xml', numbering.xml);
+        documentXml = numbering.remap(documentXml); baselineXml = numbering.remap(originalXml);
+      }
+      set('word/document.xml', restoreWordStyle(documentXml, baselineXml, house));
+      const generated = wordPart(get(entries, 'word/styles.xml'), 'styles'), template = wordPart(house.styles, 'styles');
+      const known = new Set(children(template, 'w', 'style').map(node => attr(node, 'w', 'styleId')));
+      const extras = children(generated, 'w', 'style').filter(node => !known.has(attr(node, 'w', 'styleId'))).map(wordXml).join('');
+      set('word/styles.xml', wordXml(template).replace(/<\/[^>]+>$/, extras + '</' + template.nodeName + '>'));
+      if (house.theme) {
+        set('word/theme/theme1.xml', house.theme);
+        set('word/_rels/document.xml.rels', get(entries, 'word/_rels/document.xml.rels').replace('</Relationships>',
+          '<Relationship Id="rIdWordTheme" Type="' + NS.r[0] + '/theme" Target="theme/theme1.xml"/></Relationships>'));
+        set('[Content_Types].xml', get(entries, '[Content_Types].xml').replace('</Types>',
+          '<Override PartName="/word/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/></Types>'));
+      }
+    }
+    if (comparison || review.changes.length) {
+      if (review.changes.some(row => row.conflict)) return fail('A Word change overlaps a later edit. Decide it before exporting.', 'docx_revision_conflict');
+      const beforeSource = comparison?.source ?? review.base, beforeModel = comparison?.model || projectSource(beforeSource);
+      const before = await buildDocx(beforeModel, {canonical: beforeSource, convertImage, work, wordLayout}, true);
+      let beforeXml = get(before, 'word/document.xml'), reviewRelations = '', mediaId = 0;
+      const noteIdentity = async (rows, part) => {
+        let xml = get(rows, 'word/' + part + '.xml');
+        const rels = get(rows, 'word/_rels/' + part + '.xml.rels');
+        if (rels) for (const r of new DOMParser().parseFromString(rels, 'application/xml').documentElement.children) {
+          const target = r.getAttribute('Target'), file = rows.find(row => row.name === 'word/' + target);
+          const value = r.getAttribute('TargetMode') === 'External' ? target : file ? await sha256(file.bytes) : '';
+          if (!value) return fail('A Word note has an unresolved asset.', 'docx_review_note');
+          const key = await sha256(utf8.encode(r.getAttribute('Type') + ':' + value));
+          xml = xml.replace(new RegExp('(r:(?:id|embed|link)=")' + r.getAttribute('Id') + '"', 'g'), '$1' + key + '"');
+        }
+        return xml.replace(/<(?:wp:docPr|pic:cNvPr)\b[^>]*>/g, tag => tag.replace(/\b(?:id|name)="[^"]*"/g, ''));
+      };
+      for (const part of ['footnotes','endnotes','comments']) if (await noteIdentity(before, part) !== await noteIdentity(entries, part))
+        return fail('Decide changes in notes and comments before exporting Word review.', 'docx_review_note');
+      const numbering = appendWordNumbering(get(entries, 'word/numbering.xml'), get(before, 'word/numbering.xml'));
+      addedNumbering.push(...numbering.added);
+      set('word/numbering.xml', numbering.xml); beforeXml = numbering.remap(beforeXml);
+      if (house) beforeXml = restoreWordStyle(wordTemplateProjection(beforeXml, beforeSource), numbering.remap(originalXml), house);
+      const relationships = new DOMParser().parseFromString(get(before, 'word/_rels/document.xml.rels'), 'application/xml').documentElement;
+      for (const relation of relationships.children) {
+        const type = relation.getAttribute('Type'), oldId = relation.getAttribute('Id');
+        if (!['hyperlink','image'].some(kind => type === NS.r[0] + '/' + kind)) continue;
+        const id = 'rIdWordReview' + mediaId++, target = relation.getAttribute('Target'), external = relation.getAttribute('TargetMode') === 'External';
+        beforeXml = beforeXml.replace(new RegExp('(r:(?:id|embed|link)=")' + oldId + '"', 'g'), '$1' + id + '"');
+        if (!external) {
+          const file = before.find(row => row.name === 'word/' + target);
+          if (!file) return fail('A deleted picture has no embedded bytes.', 'docx_review_image');
+          entries.push({name: 'word/review/' + target, bytes: file.bytes});
+        }
+        reviewRelations += '<Relationship Id="' + id + '" Type="' + type + '" Target="' + escape(external ? target : 'review/' + target) + '"' + (external ? ' TargetMode="External"' : '') + '/>';
+      }
+      if (reviewRelations) {
+        set('word/_rels/document.xml.rels', get(entries, 'word/_rels/document.xml.rels').replace('</Relationships>', reviewRelations + '</Relationships>'));
+        const oldTypes = new DOMParser().parseFromString(get(before, '[Content_Types].xml'), 'application/xml').documentElement;
+        const newTypes = new DOMParser().parseFromString(get(entries, '[Content_Types].xml'), 'application/xml').documentElement;
+        const extensions = new Set(Array.from(newTypes.children, row => row.getAttribute('Extension')));
+        const extra = Array.from(oldTypes.children).filter(row => row.localName === 'Default' && !extensions.has(row.getAttribute('Extension'))).map(wordXml).join('');
+        set('[Content_Types].xml', get(entries, '[Content_Types].xml').replace('</Types>', extra + '</Types>'));
+      }
+      set('word/document.xml', trackedWordXml(get(entries, 'word/document.xml'), beforeXml,
+        comparison || {}, review, canonical, projectSource, get(entries, 'word/numbering.xml'),
+        await reviewRelationKeys(get(entries, 'word/_rels/document.xml.rels'), entries)));
+    }
+    if (addedNumbering.length) {
+      const root = wordPart(get(entries, 'word/numbering.xml'), 'numbering'), used = new Set();
+      for (const row of entries) if (/^word\/.*\.xml$/.test(row.name) && row.name !== 'word/numbering.xml')
+        for (const hit of new TextDecoder().decode(row.bytes).matchAll(/<w:numId\b[^>]*\bw:val="([^"]+)"/g)) used.add(hit[1]);
+      const added = new Set(addedNumbering.map(([kind,id]) => kind + ':' + id));
+      for (const n of children(root, 'w', 'num')) if (added.has('num:' + attr(n, 'w', 'numId')) && !used.has(attr(n, 'w', 'numId'))) n.remove();
+      const abstracts = new Set(children(root, 'w', 'num').map(n => val(child(n, 'w', 'abstractNumId'))));
+      for (const n of children(root, 'w', 'abstractNum')) if (added.has('abstractNum:' + attr(n, 'w', 'abstractNumId')) && !abstracts.has(attr(n, 'w', 'abstractNumId'))) n.remove();
+      set('word/numbering.xml', wordXml(root));
+    }
+  }
+  let nativeXmlBytes = 0;
+  for (const entry of entries) if (/\.(?:xml|rels)$/.test(entry.name)) {
+    nativeXmlBytes += entry.bytes.length;
+    if (entry.bytes.length > DOCX_LIMITS.xmlBytes || nativeXmlBytes > DOCX_LIMITS.totalXmlBytes)
+      return fail('DOCX XML exceeds the import limit.');
+  }
   await pause(work, .87);
   const packed = work ? await zipStoredAsync(entries.map(entry => ({...entry, modified: 0})), {utf8Flag: false, work}) : packDocx(entries);
   if (packed.length > ARCHIVE_LIMITS.bytes) return fail('DOCX exceeds the 25 MB document limit.');

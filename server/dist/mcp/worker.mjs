@@ -16,7 +16,8 @@ import { paintAgentStrokes, agentPaintSheetHolds, agentPaintBrushRegistry, agent
 import { VERSION } from '../version.mjs';
 import { INSTRUCTIONS, GUIDE_RESOURCES, guideResource, guideResult, PROMPTS, promptResult } from '../agent/guide.mjs';
 import { RETURN_ORIGIN } from '../skills/rapier-html/return-address.mjs';
-import { wrap } from '../skills/rapier-html/wrap.mjs';
+import { wrap, carry, portableNeeds } from '../skills/rapier-html/wrap.mjs';
+import { parseFlowchart } from '../spec/flowchart.mjs';
 import { HOST_TOOLS, TOOLS, HUMAN_OPERATIONS, ICONS, MAX_TEXT_BYTES, MAX_EXPORT_BYTES, MAX_FILENAME_CHARS, UI_RESOURCE, getTool, getHumanOperation, inputGuide, mcpDescriptors, publishedSchema, validateInput } from '../agent/catalog.mjs';
 import { analyzeDocument } from '../agent/structure.mjs';
 import { analyzeMarkdown, checkMarkdownReferences } from '../agent/markdown-server.mjs';
@@ -50,7 +51,7 @@ const SERVER_DESCRIPTORS = Object.freeze(mcpDescriptors({uiResource: UI_RESOURCE
 const TOOL_BY_NAME = new Map([...DESCRIPTORS, ...mcpDescriptors({editor: true}), ...HUMAN_OPERATIONS.map(entry => ({...entry, inputSchema: {...entry.inputSchema, properties: {document: {type: 'string'}, ...entry.inputSchema.properties}, required: ['document', ...(entry.inputSchema.required || [])]}, annotations: {readOnlyHint: entry.effect === 'read'}}))].map(tool => [tool.name, tool]));
 const EDITOR_ONLY_TOOLS = new Set(HOST_TOOLS.filter(tool => tool.visibility?.includes('app')).map(tool => tool.name));
 const EDITOR_REQUEST_TOOLS = new Set(['editor.set_view', 'editor.set_preferences', ...Object.keys(EDITOR_TOOL_ACTIONS)]);
-const MUSE_WAIT_MS = 15000;
+const MUSE_WAIT_MS = 14000;
 const museDescriptor = tool => { const {ui, ...meta} = tool._meta || {}; return {...tool, _meta: meta}; };
 const published = tool => ({...tool, inputSchema: publishedSchema(tool.inputSchema)});
 const MUSE_DESCRIPTORS = Object.freeze(mcpDescriptors({auth: 'oauth'}).filter(tool => !EDITOR_ONLY_TOOLS.has(tool.name)).map(museDescriptor).map(published));
@@ -101,6 +102,7 @@ export const MAX_RPC_BODY_BYTES = MAX_TEXT_BYTES * 3 + 1024 * 1024;
 const VIEW_LEASE_MS = 15000;
 const HUMAN_MESSAGE_CHARS = 1500;
 const HUMAN_MESSAGE_KEEP = 5;
+const ASK_KEPT_MS = 10 * 60 * 1000;
 
 function admitHumanReferent(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -220,7 +222,9 @@ async function exportFile(env, { format, filename, docKind, text, base, file: su
       const response = await env.ASSETS?.fetch?.(new Request('https://rapier.internal/rapier.html', {signal}));
       if (!response?.ok || !/^text\/html(?:;|$)/i.test(response.headers.get('Content-Type') || '')) return { reason: 'export_page_unavailable' };
       const page = await readTextBody(response, MAX_EXPORT_BYTES, 'export page', 'EXPORT_PAGE_TOO_LARGE', false, signal);
-      file = { name: exportFilename(filename, format), mimeType: 'text/html', bytes: encoder.encode(wrap(page, text, filename, base ? {base} : undefined)) };
+      const carries = docKind === 'markdown' ? portableNeeds(text, {base: typeof base === 'string' ? base : base?.text, flowchart: fence => parseFlowchart(fence).ok === true}) : [];
+      file = { name: exportFilename(filename, format), mimeType: 'text/html', bytes: encoder.encode(wrap(carry(page, carries), text, filename, base ? {base} : undefined)),
+        fidelity: {...exportFidelity(format, docKind), carries} };
     } catch (error) {
       return error?.code === 'EXPORT_PAGE_TOO_LARGE' ? { reason: 'export_too_large', limitBytes: MAX_EXPORT_BYTES } : { reason: 'export_page_unavailable' };
     }
@@ -376,7 +380,7 @@ function returnedEditorFact(row) {
 
 function agentReport(head) {
   const call = head?.agentCall;
-  return call ? { agent: { id: call.id, ago: Math.max(0, Date.now() - call.at), operation: call.operation, ...(call.kind ? { kind: call.kind } : {}) } } : {};
+  return call ? { agent: { id: call.id, ago: Math.max(0, Date.now() - call.at), operation: call.operation, ...(call.kind ? { kind: call.kind } : {}), ...(call.name ? { name: call.name } : {}) } } : {};
 }
 
 
@@ -461,7 +465,7 @@ function envelope(value, head, meta = {}, { modelFacing = false, fallbackCollabo
 
 function operationEnvelope(operation, recorded, head) {
   const {hostedDownload, drawingPatch, ...value} = recorded;
-  if (operation === 'document.save' && value.saved) Object.assign(value, {verified: true, destination: 'workspace', durable: true});
+  if (['document.save', 'export'].includes(operation) && value.saved) Object.assign(value, {verified: true, destination: 'workspace', durable: true});
   const result = envelope(value, hostedDownload ? {...head, filename: hostedDownload.name} : head, drawingPatch ? {drawingPatch} : {}, {modelFacing: true, fallbackCollaboration: operation !== 'document.observe'});
   if (hostedDownload) result.content.push(hostedDownload);
   return result;
@@ -704,13 +708,14 @@ async function initialObservation(kernel, input) {
 }
 
 async function waitedRead(args, env, request, authority, hostAgent, door, editorProof, editorActivity, task) {
-  const {wait_ms: wait, after_revision: after, operation_id: name, ...plainArgs} = args, started = Date.now();
+  const {wait_ms: asked, after_revision: after, operation_id: name, ...plainArgs} = args, started = Date.now();
+  const wait = door === '/muse' && Number.isFinite(asked) ? Math.min(asked, MUSE_WAIT_MS) : asked;
   if (after === undefined) return toolError(failure('INVALID_DOCUMENT_INPUT', 'wait_ms needs after_revision, the revision you last read.'));
   for (let polled = false;;) {
     const result = await callTool('read', polled && name !== undefined ? {...plainArgs, operation_id: name} : plainArgs,
       env, request, authority, hostAgent, door, editorProof, editorActivity, task, !polled);
     const value = result.structuredContent, waited = Date.now() - started;
-    const changed = !!(value && (value.revision ?? value.documentRevision) > after);
+    const changed = !!(value && (value.documentRevision ?? value.revision) > after);
     const editing = value?.human?.editing === true;
     if (polled || result.isError || !value) {
       if (value && !result.isError) result.structuredContent = {...value, waited_ms: waited, changed};
@@ -829,7 +834,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
       adapter_enrolled: status?.adapterEnrolled === true, hint, message: hint});
   }
   const requestKey = mintId('request_'), requestExpiresAt = Date.now() + REQUEST_LEASE_MS;
-  const payload = { operation: name === 'show' && args.target === 'pair' ? PAIR_BROWSER : name, args: name === 'show' && args.target === 'pair' ? {code: input.code} : input, create, ...(name === 'show' && args.target === 'ask' ? {waitBound: door === '/muse' ? MUSE_WAIT_MS : 120000} : {}), ...(file ? {hostFileBinding: await digest(JSON.stringify(file))} : {}), ...(page ? {page: {...page.authority, ...(pageRotation ? {rotationEpoch: pageRotation.epoch, rotationRetry: pageRotation.retry} : {})}} : {ownerKey, capabilityHash, ...(connectionKey ? {connectionKey, oauthGrant: authority.grant} : {})}), ...(create ? {prefix: document.slice(0, ADDRESS_CHARS), ...(anonymous ? {bearer: true} : {})} : {}), ...(hostAgent ? {hostAgent} : {}), ...(humanTool ? {humanTool: true} : {}), ...(EDITOR_ONLY_TOOLS.has(name) || humanTool ? {editorAuthorized: true} : {}), ...(editorSource === 'page' && editorActivity === true && ['document.commit', 'document.human_context'].includes(name) ? {editorActivity: true} : {}), ...(name === 'show' && args.target === 'return' ? { returnAddress: documentAddress } : {}), ...(name === 'export' ? { exportAddress: documentAddress, exportOrigin: new URL(request.url).origin } : {}), ...(createBudget ? { createBudget } : {}), ...(successor ? { rotateToHash: await digest(successor) } : {}), ...(operationName !== undefined ? { operationId: operationName } : {}), requestKey, requestExpiresAt, ...(task ? {task} : {}), ...(peek ? {peek: true} : {}) };
+  const payload = { operation: name === 'show' && args.target === 'pair' ? PAIR_BROWSER : name, args: name === 'show' && args.target === 'pair' ? {code: input.code} : input, create, ...(name === 'show' && args.target === 'ask' ? {waitBound: door === '/muse' ? MUSE_WAIT_MS : 120000} : {}), ...(door === '/muse' && ['edit', 'undo'].includes(name) ? {holdBound: MUSE_WAIT_MS} : {}), ...(file ? {hostFileBinding: await digest(JSON.stringify(file))} : {}), ...(page ? {page: {...page.authority, ...(pageRotation ? {rotationEpoch: pageRotation.epoch, rotationRetry: pageRotation.retry} : {})}} : {ownerKey, capabilityHash, ...(connectionKey ? {connectionKey, oauthGrant: authority.grant} : {})}), ...(create ? {prefix: document.slice(0, ADDRESS_CHARS), ...(anonymous ? {bearer: true} : {})} : {}), ...(hostAgent ? {hostAgent} : {}), ...(humanTool ? {humanTool: true} : {}), ...(EDITOR_ONLY_TOOLS.has(name) || humanTool ? {editorAuthorized: true} : {}), ...(editorSource === 'page' && editorActivity === true && ['document.commit', 'document.human_context'].includes(name) ? {editorActivity: true} : {}), ...(name === 'show' && args.target === 'return' ? { returnAddress: documentAddress } : {}), ...(name === 'export' ? { exportAddress: documentAddress, exportOrigin: new URL(request.url).origin } : {}), ...(createBudget ? { createBudget } : {}), ...(successor ? { rotateToHash: await digest(successor) } : {}), ...(operationName !== undefined ? { operationId: operationName } : {}), requestKey, requestExpiresAt, ...(task ? {task} : {}), ...(peek ? {peek: true} : {}) };
   const workspace = env.DOCUMENTS.get(env.DOCUMENTS.idFromName(documentAddress));
   let cancellation;
   const cancel = () => cancellation ||= workspace.fetch(new Request('https://rapier.internal/operation/cancel', {
@@ -2163,6 +2168,7 @@ export class RapierDocument {
       if (!plain(input) || !/^[a-f0-9]{64}$/.test(input.ownerKey || '') || !/^[a-f0-9]{64}$/.test(input.capabilityHash || '') || (input.connectionKey !== undefined && (!/^[a-f0-9]{64}$/.test(input.connectionKey) || !validGrantReference(input.oauthGrant))) || typeof input.operation !== 'string' || !plain(input.args) || (input.prefix !== undefined && !/^rpr_[A-Za-z0-9_-]{22}$/.test(input.prefix)) || (input.rotateToHash !== undefined && !/^[a-f0-9]{64}$/.test(input.rotateToHash)) || (input.operationId !== undefined && (typeof input.operationId !== 'string' || !input.operationId.length || input.operationId.length > 256 || [...input.operationId].length > 128)) || (input.returnAddress !== undefined && !/^[a-f0-9]{64}$/.test(input.returnAddress)) || (input.exportAddress !== undefined && !/^[a-f0-9]{64}$/.test(input.exportAddress))) return new Response(null, { status: 400 });
       if (input.create === true && (!plain(input.createBudget) || !/^take_[a-f0-9]{32}$/.test(input.createBudget.takeId || '') || !/^[a-f0-9]{64}$/.test(input.createBudget.principalKey || '') || typeof input.createBudget.retryable !== 'boolean')) return new Response(null, { status: 400 });
       if (input.waitBound !== undefined && (!(input.operation === 'show' && input.args.target === 'ask') || ![MUSE_WAIT_MS, 120000].includes(input.waitBound))) return new Response(null, {status: 400});
+      if (input.holdBound !== undefined && (!['edit', 'undo'].includes(input.operation) || input.holdBound !== MUSE_WAIT_MS)) return new Response(null, {status: 400});
       if (input.peek !== undefined && (input.peek !== true || input.operation !== 'read')) return new Response(null, {status: 400});
       input.operationId ??= crypto.randomUUID();
       if (input.task !== undefined && (!plain(input.task) || !/^[a-f0-9]{64}$/.test(input.task.key || '') ||
@@ -2457,11 +2463,14 @@ export class RapierDocument {
         head.askIntent = {id: waiter.askId, question: typeof input.args.question === 'string' ? input.args.question.slice(0, 500) : ''};
         head.version++; this.ctx.storage.kv.put('head', head);
         const askId = waiter.askId;
-        waiter.promise.finally(() => void this.exclusive(async () => {
+        const settle = result => void this.exclusive(async () => {
           const current = this.ctx.storage.kv.get('head');
           if (current?.askIntent?.id !== askId) return;
-          delete current.askIntent; current.version++; this.ctx.storage.kv.put('head', current);
-        }));
+          if (result?.kind === 'timeout') current.askIntent = {...current.askIntent, keptUntil: Date.now() + ASK_KEPT_MS};
+          else delete current.askIntent;
+          current.version++; this.ctx.storage.kv.put('head', current);
+        });
+        waiter.promise.then(settle, () => settle(null));
       }
       waiter.operationId = input.operationId;
       waiter.caller = {...resolveCaller({actor: 'agent', principal: remotePrincipal(input),
@@ -2471,7 +2480,8 @@ export class RapierDocument {
     });
     const result = prepared.promise ? await prepared.promise : {kind: 'value', value: prepared.value};
     if (prepared.aborted || signal?.aborted || result.kind === 'aborted') return abandoned();
-    const value = result.kind === 'timeout' ? {outcome: 'timeout', reason: 'wait_timed_out'} : result.value;
+    const value = result.kind === 'timeout' ? {outcome: 'timeout', reason: 'wait_timed_out',
+      ...((input.args.wait || 'message') === 'message' ? {status: 'awaiting_reply', next: 'The question stays shown in the editor. The person\'s reply arrives in messages on your next read.'} : {})} : result.value;
     return this.exclusive(async () => signal?.aborted ? abandoned() : json(await this.operate(input, value)));
   }
 
@@ -2487,7 +2497,7 @@ export class RapierDocument {
   async requestMaterials(input, signal) {
     if (signal?.aborted) return new Response(null, {status: 499});
     const writing = ['edit', 'undo'].includes(input.operation);
-    const until = Math.min(Date.now() + MATERIAL_RETRY_WAIT_MS, Number.isSafeInteger(input.requestExpiresAt) ? input.requestExpiresAt : Infinity);
+    const until = Math.min(Date.now() + (input.holdBound ?? MATERIAL_RETRY_WAIT_MS), Number.isSafeInteger(input.requestExpiresAt) ? input.requestExpiresAt : Infinity);
     for (;;) {
       if (writing) await this.resumeMaterial();
       const step = await this.exclusive(async () => {
@@ -2776,22 +2786,32 @@ export class RapierDocument {
         await this.persist(head, kernel.snapshot(), kernel.invocationJournal(), false, null, undefined, input);
         return envelope({...observation, outcome: observation.outcome === 'ok' ? 'resumed' : observation.outcome, created: false, resumed: true, replayed: true}, head, { snapshot: snapshot(state, collaboration) });
       }
+      const invalid = admissibleText(args.text ?? '');
+      if (invalid) throw failure('INVALID_DOCUMENT_INPUT', invalid);
+      let fenced;
+      try { fenced = fencedBlocks(args.text || '').length > 0; }
+      catch (error) { return toolError(failure('INVALID_DOCUMENT_INPUT', String(error?.message || 'A Rapier block is malformed.').slice(0, 200))); }
       const budget = await takeCreateBudget(this.env, input.createBudget);
       if (budget === 'no-binding') return toolError(failure('WORKSPACE_CREATION_UNAVAILABLE', 'The workspace creation budget binding is unavailable.'));
       if (budget === 'uncertain') return toolError(failure('WORKSPACE_UNAVAILABLE', input.createBudget.retryable ? 'The creation budget did not answer. Retry with the same createToken.' : 'The creation budget did not answer, so no workspace was made. Retry; a createToken makes the next create retryable.'));
       if (budget !== 'ok') return toolError(failure('CREATE_BUDGET_EXCEEDED', 'The creation budget is full for this hour. Reopen an existing document capability, or create later.'));
-      const invalid = admissibleText(args.text ?? '');
-      if (invalid) throw failure('INVALID_DOCUMENT_INPUT', invalid);
-      const kernel = createKernel({ state: createState({ id: crypto.randomUUID(), filename: args.filename ?? 'Untitled.md', text: fencedBlocks(args.text || '').length ? '' : args.text ?? '', docKind: args.docKind }), host: {retainHistory: true, liveSession: true}, clock: Date.now, mintId });
+      const kernel = createKernel({ state: createState({ id: crypto.randomUUID(), filename: args.filename ?? 'Untitled.md', text: fenced ? '' : args.text ?? '', docKind: args.docKind }), host: {retainHistory: true, liveSession: true}, clock: Date.now, mintId });
       const observation = await initialObservation(kernel, input);
       const collaboration = kernel.collaboration(), state = kernel.snapshot();
       head = this.describe(state, { stateFormat: WORKSPACE_STATE_FORMAT, ownerKey, capabilityHash, ...(input.bearer === true ? { bearer: true } : {}), prefix: input.prefix, pairEpoch: 0, createdAt: Date.now(), receipts: [], parts: 0, viewIntent: null,
         ...(input.hostFileBinding ? {fileHydration: {id: mintId('hydrate_'), binding: input.hostFileBinding, status: 'pending', baseRevision: state.revision}} : {}) }, 1, collaboration);
       await this.persist(head, state, kernel.invocationJournal(), false, null, undefined, input);
-      if (fencedBlocks(args.text || '').length) {
+      if (fenced) {
         const edited = await this.advanceMaterial({...input, create: false, operation: 'edit', args: {revision: state.revision, changes: [{text: args.text}], ...(args.agent ? {agent: args.agent} : {})}});
         const latest = this.ctx.storage.kv.get('head'), currentState = this.readState(latest);
-        return {...edited, structuredContent: {...edited.structuredContent, ...(edited.structuredContent?.outcome === 'applied' ? {outcome: 'created'} : {}), created: true, resumed: false},
+        let seen = null;
+        if (edited.structuredContent?.outcome === 'applied') {
+          try {
+            const {outcome: _o, created: _c, resumed: _r, ...fields} = await initialObservation(createKernel({state: currentState, host: {retainHistory: true, liveSession: true}, clock: Date.now, mintId}), input);
+            seen = fields;
+          } catch (_) {}
+        }
+        return {...edited, structuredContent: {...seen, ...edited.structuredContent, ...(edited.structuredContent?.outcome === 'applied' ? {outcome: 'created'} : {}), created: true, resumed: false},
           _meta: {rapier: {...edited._meta?.rapier, snapshot: snapshot(currentState, latest.collaboration), editorIssuedAt: latest.editorIssuedAt ?? latest.createdAt}}};
       }
       return envelope({...observation, outcome: observation.outcome === 'ok' ? 'created' : observation.outcome, created: true, resumed: false}, head, { snapshot: snapshot(state, collaboration) });
@@ -3072,7 +3092,7 @@ export class RapierDocument {
       ...(head.materialIntent ? {materialIntent: {...head.materialIntent,
         ...(head.materialIntent.status === 'pending' ? {payload: this.readMaterial(head)?.request.payload} : {})}} : {}),
       ...(head.bearer ? {} : {agentAccess: head.agentAccess !== false}),
-      ...(head.askIntent && this.returnWaiter?.askId === head.askIntent.id ? {askIntent: head.askIntent} : {}),
+      ...(head.askIntent && (this.returnWaiter?.askId === head.askIntent.id || head.askIntent.keptUntil > Date.now()) ? {askIntent: {id: head.askIntent.id, question: head.askIntent.question}} : {}),
       ...(head.humanMessages?.length ? {messagesQueued: head.humanMessages.length} : {})});
     if (operation === 'document.human_message') {
       const raw = String(args.text);
@@ -3085,6 +3105,7 @@ export class RapierDocument {
         ...(referent ? {referent: resolveHumanReferent(referent, state)} : {}),
       }))
         return envelope({outcome: 'ok', delivered: 'answered', ...(truncated ? {truncated: true} : {})}, head, {snapshot: current()});
+      delete head.askIntent;
       const queued = [...head.humanMessages || [], {
         id: mintId('msg_'), text, at: Date.now(), truncated,
         ...(referent ? {referent} : {}),
@@ -3500,7 +3521,8 @@ export class RapierDocument {
       }
     }
     if (state.documentId !== documentId) return toolError(failure('DOCUMENT_IDENTITY_CHANGED', 'This operation cannot replace the remote workspace identity.'));
-    if (actor === 'agent' && !value.replayed) head.agentCall = { id: input.operationId, at: Date.now(), operation, ...(operation === 'document.find' && typeof args.kind === 'string' ? { kind: args.kind.slice(0, 24) } : {}) };
+    const calledBy = typeof args.agent === 'string' && args.agent.trim() ? args.agent.trim().slice(0, 24) : typeof input.hostAgent === 'string' ? input.hostAgent.slice(0, 24) : '';
+    if (actor === 'agent' && !value.replayed) head.agentCall = { id: input.operationId, at: Date.now(), operation, ...(operation === 'document.find' && typeof args.kind === 'string' ? { kind: args.kind.slice(0, 24) } : {}), ...(calledBy ? { name: calledBy } : {}) };
     let download = null, publication = null;
     const exportId = value.exportId;
     if (operation === 'export' && value.exportId) {
@@ -3528,11 +3550,11 @@ export class RapierDocument {
     if (!value.replayed) {
       const journal = kernel.invocationJournal();
       this.live.observe(state, journal, {...agentCaller(), ...(args.agent ? {agent: args.agent} : {})}, value);
-      if (exportId) {
+      if (exportId || operation === 'read' && value.messages) {
         const caller = agentCaller(), owner = JSON.stringify([caller.transport, caller.actor, caller.principal]);
-        const record = journal.find(row => row.key === caller.invocationKey && row.owner === owner && row.documentId === documentId && row.operation === operation && row.output?.exportId === exportId);
-        if (!record) throw failure('WORKSPACE_UNAVAILABLE', 'The exported result was not retained. Retry with the same operation identity.');
-        record.output = structuredClone(value);
+        const record = journal.find(row => row.key === caller.invocationKey && row.owner === owner && row.documentId === documentId && row.operation === operation && (!exportId || row.output?.exportId === exportId));
+        if (exportId && !record) throw failure('WORKSPACE_UNAVAILABLE', 'The exported result was not retained. Retry with the same operation identity.');
+        if (record) record.output = structuredClone(value);
       }
       let retainedMaterial;
       if (material && !material.failure) {

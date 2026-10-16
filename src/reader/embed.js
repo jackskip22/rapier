@@ -110,6 +110,7 @@ function readerEmbedConnect(event) {
 		try { port.close(); } catch (_) {}
 		_rapierEmbed.connected = false;
 		_rapierEmbed.port = null;
+		if (readerSpeech.active) readerStopReading();
 	});
 	port.start();
 	_rapierEmbedPost('connected', {appVersion: READER_VERSION || '0.0.0', contract: CONTRACT, capabilities, settings: _rapierEmbed.settings});
@@ -154,6 +155,7 @@ function readerEmbedMessage(event, port, generation) {
 		try { port.close(); } catch (_) {}
 		_rapierEmbed.connected = false;
 		if (_rapierEmbed.port === port) _rapierEmbed.port = null;
+		if (readerSpeech.active) readerStopReading();
 	}
 }
 

@@ -22,6 +22,7 @@ const overlaps = (a, b) => Math.max(0, Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.
   Math.max(0, Math.min(a.y+a.h,b.y+b.h)-Math.max(a.y,b.y));
 const willLine = text => /^<!-- ?(?:will\/|\/will)/.test(text);
 const carried = line => line.runs.every(run => run.carrier) && willLine(inline(line).text);
+const carrierFont = (page, name) => { try { return /RapierWillCarrier/.test(page.commonObjs.get(name)?.name || ''); } catch (_) { return false; } };
 const sourceToken = text => '<span class="rapier-source-token" data-rapier-source="' + escape(encodeURIComponent(text)) +
   '" data-rapier-visible="' + escape(encodeURIComponent(text)) + '">' + escape(text) + '</span>';
 const plain = lines => lines.map(l=>l.runs.map(r=>r.str).join('')).join(' ').trim();
@@ -688,6 +689,11 @@ export async function readPdf(blob, {mode = 'text', embedImage, checkCurrent = (
             annotationMode: session.api.AnnotationMode.ENABLE});
           await step(render.promise, 'draw page ' + index);
           render = null;
+          if (!stats.willLost && (await step(page.getTextContent(), 'read text on page ' + index)).items.some(item =>
+            typeof item.str === 'string' && willLine(item.str.trim()) && carrierFont(page, item.fontName))) {
+            stats.willLost = true;
+            warnings.add('WILL LOST — this PDF has Will markers, and page images keep no text. Import it as editable text to keep them.');
+          }
           const raster = await step(new Promise((resolve, reject) => canvas.toBlob(value =>
             value ? resolve(value) : reject(new Error('The PDF page could not be encoded as an image.')), 'image/png')), 'encode page ' + index);
           if (!raster.size || raster.size > PDF_LIMITS.rasterBytes)
@@ -709,6 +715,7 @@ export async function readPdf(blob, {mode = 'text', embedImage, checkCurrent = (
     }
     if (mode === 'text') {
       if (!stats.pagesWithText) throw failure('This PDF has no selectable text. Import it as page images.', 'PDF_NO_TEXT');
+      const markers = pages.reduce((count, data) => count + linesFrom(data.runs).filter(carried).length, 0);
       const removed = runningMatter(pages);
       for (const data of pages) data.runs = data.runs.filter(r => !removed.has(r));
       footnotes(pages);
@@ -729,6 +736,8 @@ export async function readPdf(blob, {mode = 'text', embedImage, checkCurrent = (
         } else blocks = geometricBlocks(data.runs, data.pictures, data.width, data.height);
         append(renderBlocks(blocks, styles));
       }
+      if (html.join('').split('class="rapier-source-token"').length - 1 < markers)
+        warnings.add('WILL LOST — a Will marker in this PDF sits inside a table or a note, where the import cannot keep it. Check the protected passages.');
       warnings.add('PDF structure is reconstructed from tags and page positions. Check reading order and tables; vector artwork and page styling may differ.');
       if (stats.pagesWithText < stats.pages)
         warnings.add((stats.pages - stats.pagesWithText) + ' page(s) had no selectable text and were left out.');
