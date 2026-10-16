@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 const ORIGIN = 'https://rapier.website';
 const PAGE = '/rapier.html';
+export function doorAssetPath(path) {
+	return '/door-' + path.slice(1) + '.html';
+}
 const BEGIN = '<!-- RAPIER_SEO_BEGIN -->';
 const END = '<!-- RAPIER_SEO_END -->';
 const HEAD_WINDOW = 65536;
@@ -30,11 +33,62 @@ const text = value => String(value).replace(/&quot;/g, '"').replace(/&lt;/g, '<'
 const jsonInScript = value => JSON.stringify(value).replace(/</g, '\\u003c');
 
 function indexOf(bytes, needle, from = 0) {
-	outer: for (let at = from; at <= bytes.length - needle.length; at++) {
-		for (let i = 0; i < needle.length; i++) if (bytes[at + i] !== needle[i]) continue outer;
-		return at;
+	const width = needle.length;
+	if (width === 0) return from <= bytes.length ? from : -1;
+	const last = bytes.length - width;
+	if (from > last) return -1;
+	const first = needle[0];
+	let at = from;
+	while (at <= last) {
+		const hit = bytes.indexOf(first, at);
+		if (hit < 0 || hit > last) return -1;
+		let i = 1;
+		for (; i < width; i++) if (bytes[hit + i] !== needle[i]) break;
+		if (i === width) return hit;
+		at = hit + 1;
 	}
 	return -1;
+}
+
+function findAcross(carry, chunk, needle, fromRel = 0) {
+	const width = needle.length;
+	const carryLength = carry.length;
+	const total = carryLength + chunk.length;
+	if (fromRel < 0) fromRel = 0;
+	if (width === 0 || fromRel > total - width) return -1;
+	const first = needle[0];
+	const boundary = Math.min(carryLength, total - width + 1);
+	for (let start = fromRel; start < boundary; start++) {
+		let matched = true;
+		for (let i = 0; i < width; i++) {
+			const pos = start + i;
+			const byte = pos < carryLength ? carry[pos] : chunk[pos - carryLength];
+			if (byte !== needle[i]) { matched = false; break; }
+		}
+		if (matched) return start;
+	}
+	let at = Math.max(0, fromRel - carryLength);
+	const last = chunk.length - width;
+	while (at <= last) {
+		const hit = chunk.indexOf(first, at);
+		if (hit < 0 || hit > last) return -1;
+		let i = 1;
+		for (; i < width; i++) if (chunk[hit + i] !== needle[i]) break;
+		if (i === width) return carryLength + hit;
+		at = hit + 1;
+	}
+	return -1;
+}
+
+function overlapTail(carry, chunk, width) {
+	if (width <= 0) return new Uint8Array(0);
+	if (chunk.length >= width) return chunk.subarray(chunk.length - width);
+	const length = Math.min(width, carry.length + chunk.length);
+	const out = new Uint8Array(length);
+	const take = length - chunk.length;
+	if (take > 0) out.set(carry.subarray(carry.length - take), 0);
+	out.set(chunk, take);
+	return out;
 }
 
 export function doorHead(head, path) {
@@ -110,9 +164,15 @@ export function doorPage(bytes, path) {
 }
 
 function doorStream(source, path) {
-	const reader = source.getReader(), marker = endBytes;
-	let held = new Uint8Array(0), passing = false;
-	const join = (a, b) => { const out = new Uint8Array(a.length + b.length); out.set(a, 0); out.set(b, a.length); return out; };
+	const reader = source.getReader(), marker = endBytes, overlap = marker.length - 1;
+	const chunks = [];
+	let total = 0, carry = new Uint8Array(0), headAt = -1, bodyAt = -1, passing = false;
+	const concat = () => {
+		const out = new Uint8Array(total);
+		let offset = 0;
+		for (const chunk of chunks) { out.set(chunk, offset); offset += chunk.length; }
+		return out;
+	};
 	return new ReadableStream({
 		async pull(controller) {
 			try {
@@ -122,15 +182,33 @@ function doorStream(source, path) {
 					return;
 				}
 				for (;;) {
-					const {value, done} = await reader.read();
-					if (value) held = join(held, value);
-					const headAt = indexOf(held, marker);
-					const at = headAt < 0 ? -1 : indexOf(held, marker, headAt + marker.length);
-					if (at >= 0 || done || held.length > WINDOW || (headAt >= 0 && headAt + marker.length > HEAD_WINDOW) || (headAt < 0 && held.length > HEAD_WINDOW)) {
+					const read = await reader.read();
+					const value = read.value, done = read.done;
+					if (value && value.length) {
+						const owned = new Uint8Array(value.byteLength);
+						owned.set(value);
+						const carryAt = total - carry.length;
+						if (headAt < 0) {
+							const rel = findAcross(carry, owned, marker, 0);
+							if (rel >= 0) headAt = carryAt + rel;
+						}
+						if (headAt >= 0 && bodyAt < 0) {
+							const rel = findAcross(carry, owned, marker, headAt + marker.length - carryAt);
+							if (rel >= 0) bodyAt = carryAt + rel;
+						}
+						chunks.push(owned);
+						total += owned.length;
+						carry = overlapTail(carry, owned, overlap);
+					}
+					const headCut = headAt < 0 ? -1 : headAt + marker.length;
+					const bodyCut = bodyAt < 0 ? -1 : bodyAt + marker.length;
+					if (bodyAt >= 0 || done || total > WINDOW || (headAt >= 0 && headCut > HEAD_WINDOW) || (headAt < 0 && total > HEAD_WINDOW)) {
 						passing = true;
-						const changed = at >= 0 && at + marker.length <= WINDOW ? doorPage(held, path) : held;
+						const held = total ? concat() : new Uint8Array(0);
+						const changed = bodyAt >= 0 && bodyCut <= WINDOW ? doorPage(held, path) : held;
 						if (changed.length) controller.enqueue(changed);
-						held = new Uint8Array(0);
+						chunks.length = 0;
+						total = 0;
 						if (done) controller.close();
 						return;
 					}
@@ -141,9 +219,21 @@ function doorStream(source, path) {
 	});
 }
 
+function contentEncoded(response) {
+	const encoding = response.headers.get('content-encoding');
+	return !!(encoding && encoding !== 'identity');
+}
+function htmlResponse(response) {
+	return /^text\/html/i.test(response.headers.get('content-type') || '');
+}
+async function release(response) {
+	try { if (response && response.body) await response.body.cancel(); } catch (_) {}
+}
+
 export default {
 	async fetch(request, env) {
 		const url = new URL(request.url);
+		if (env && env.DOOR_TRACE) console.log('door-worker ' + url.pathname);
 		const plain = () => env.ASSETS.fetch(request);
 		try {
 			const method = request.method.toUpperCase();
@@ -151,12 +241,21 @@ export default {
 			const path = url.pathname.replace(/\/+$/, '');
 			if (!DOORS[path]) return plain();
 			if (url.pathname !== path) return Response.redirect(url.origin + path + url.search, 308);
-			const asset = await env.ASSETS.fetch(new Request(new URL(PAGE, url), {method: 'GET', headers: {accept: 'text/html'}}));
-			const encoding = asset.headers.get('content-encoding');
-			if (!asset.ok || !asset.body || (encoding && encoding !== 'identity') || !/^text\/html/i.test(asset.headers.get('content-type') || '')) return plain();
+			const published = await env.ASSETS.fetch(new Request(new URL(doorAssetPath(path), url), request));
+			if (published.status === 304 || published.status === 206 || (published.ok && !contentEncoded(published) && htmlResponse(published))) return published;
+			await release(published);
+			const asset = await env.ASSETS.fetch(new Request(new URL(PAGE, url), {method: method === 'HEAD' ? 'HEAD' : 'GET', headers: {accept: 'text/html'}}));
+			if (!asset.ok || (method !== 'HEAD' && !asset.body) || contentEncoded(asset) || !htmlResponse(asset)) {
+				await release(asset);
+				return plain();
+			}
 			const headers = new Headers(asset.headers);
 			headers.delete('content-length'); headers.delete('etag');
-			return new Response(method === 'HEAD' ? null : doorStream(asset.body, path), {status: 200, headers});
+			if (method === 'HEAD') {
+				await release(asset);
+				return new Response(null, {status: 200, headers});
+			}
+			return new Response(doorStream(asset.body, path), {status: 200, headers});
 		} catch (_) { return plain(); }
 	},
 };

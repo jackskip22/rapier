@@ -25,12 +25,27 @@ function* checkedRecords(ledger, prepared) {
   }
   if (ledger.head.revision !== revision || ledger.head.root !== root) throw fault('history does not describe this document');
 }
+const proofs = new WeakMap();
 function readLedgerState(input, expectedText, expectedMetadata) {
   const ledger = plainData(input);
   if (!exactKeys(ledger, ['format','documentAuthority','start','records','head','complete','sha256']) || ledger.format !== 'rapier-ledger/2' ||
       typeof ledger.documentAuthority !== 'string' || !ledger.documentAuthority || ledger.documentAuthority.length > 256 ||
       typeof ledger.complete !== 'boolean' || !Array.isArray(ledger.records) ||
       !exactKeys(ledger.start, ['text','revision','root','sha256','metadata']) || !exactKeys(ledger.head, ['revision','root','sha256','metadata'])) throw fault('unsupported or invalid envelope');
+  const shell = canonicalJSON({...ledger, start: {...ledger.start, text: ''}});
+  let proof = typeof input === 'object' ? proofs.get(input) : undefined;
+  if (!proof || proof.shell !== shell || proof.startText !== ledger.start.text) {
+    proof = {shell, startText: ledger.start.text, ...proveLedger(ledger)};
+    if (typeof input === 'object') proofs.set(input, proof);
+  }
+  proofs.set(ledger, proof);
+  const {text, metadata, root, revision, prepared, source} = proof;
+  if (expectedMetadata !== undefined && (!_rapierValidMetadata(expectedMetadata) || canonicalJSON(metadata) !== canonicalJSON(expectedMetadata)))
+    throw fault('metadata does not describe this document');
+  if (expectedText !== undefined && text !== expectedText) throw fault('history does not describe this document');
+  return {value: {ledger, text, metadata: {...metadata}, root, revision, complete: ledger.complete}, prepared, source};
+}
+function proveLedger(ledger) {
   const {sha256: claimed, ...payload} = ledger;
   if (claimed !== digest(payload)) throw fault('envelope checksum differs');
   let text = documentText(ledger.start.text), root = ledger.start.root, revision = ledger.start.revision;
@@ -53,12 +68,9 @@ function readLedgerState(input, expectedText, expectedMetadata) {
     try { authoredHistory(ledger.start.text, ledger.records); } catch (_) { throw fault('authored origin differs'); }
   }
   const metadata = prepared.replayMetadata(ledger.start.metadata);
-  if (!metadata || canonicalJSON(metadata) !== canonicalJSON(ledger.head.metadata) ||
-      (expectedMetadata !== undefined && (!_rapierValidMetadata(expectedMetadata) || canonicalJSON(metadata) !== canonicalJSON(expectedMetadata))))
-    throw fault('metadata does not describe this document');
-  if (ledger.head.revision !== revision || ledger.head.root !== root || ledger.head.sha256 !== sha256(text) ||
-      (expectedText !== undefined && text !== expectedText)) throw fault('history does not describe this document');
-  return {value: {ledger, text, metadata, root, revision, complete: ledger.complete}, prepared, source};
+  if (!metadata || canonicalJSON(metadata) !== canonicalJSON(ledger.head.metadata)) throw fault('metadata does not describe this document');
+  if (ledger.head.revision !== revision || ledger.head.root !== root || ledger.head.sha256 !== sha256(text)) throw fault('history does not describe this document');
+  return {text, metadata, root, revision, prepared, source};
 }
 export function ledgerWithStart(input, text) {
   let source = new HistorySource(documentText(text));
@@ -162,7 +174,6 @@ function finish(producer) {
   return step.value;
 }
 export function exportLedger(input) { return finish(produceLedger(input)).ledger; }
-export function prepareLedger(input) { return finish(produceLedger(input)); }
 export async function prepareLedgerAsync(input, {yield: yieldWork, signal} = {}) {
   const producer = produceLedger(input);
   let step;

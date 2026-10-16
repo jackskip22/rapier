@@ -3,6 +3,8 @@ import {PaintSurface, PaintBrush, paintStroke} from './paint.mjs';
 import {AgentPaintRun, admitAgentStrokes, prepareAgentPainting, prepareAgentLayerPainting, encodeAgentPainting, agentPaintReplayRun, replayAgentPainting} from './agent-paint.mjs';
 import {sha256Yielding} from '../notes/integrity.mjs';
 import {createPaintRowPool, PAINT_SPLIT_PIXELS} from './paint-parallel.mjs';
+import {createWorkerClient} from './worker-client.mjs';
+export {createWorkerClient};
 const hash = data => sha256Yielding(new Uint8Array(data.buffer,data.byteOffset,data.byteLength));
 const surfaceMethods = new Set(['clear','fromRGBA8','grow','tilt','settleWet','_finishWetWork','stepWet','composeWet','advanceWet']);
 const brushMethods = new Set(['seed','setColor','setBaseValue','reset','newStroke','rebase','setHead']);
@@ -128,7 +130,8 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
   }
   if(operation==='read') {
    const surface=need(surfaces,request.surfaceId), box=request.bounds ? surface.bounds() : request.box || null;
-   const quality=request.quality==='live' ? 'live' : 'final', pixels=request.bounds && !box ? null : box ? surface.toRGBA8(box,true,quality) : surface.toRGBA8(undefined,true,quality);
+   const quality=request.quality==='live' ? 'live' : 'final', read=quality==='final' ? b=>{const p=surface.readCommitted(b);return {width:p.width,height:p.height,data:p.data.slice()};} : b=>surface.toRGBA8(b,true,quality);
+   const pixels=request.bounds && !box ? null : read(box || undefined);
    return {pixels,box,digest:pixels && request.verify !== false ? await hash(pixels.data) : null,meta:metaOf(surface),...(request.material ? {material:new Float32Array(surface.data),volume:surface.volume ? new Uint8Array(surface.volume) : null,oil:surface.oil ? new Uint16Array(surface.oil) : null} : {})};
   }
   if(operation==='agent') {
@@ -221,47 +224,11 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
  };
 }
 
-export function createPaintWorkerClient({postMessage,terminate=()=>{}}) {
- let serial=0, failure=null, closed=false;
- const pending=new Map();
- const fail=error=> { failure=error instanceof Error ? error : new Error(String(error)); for(const job of pending.values()){job.cleanup?.();job.reject(failure);} pending.clear(); };
- return {
-  request(operation,payload={},transfer=[],onProgress=null,{signal}={}) {
-   if(failure||closed)return Promise.reject(failure||new Error('Paint worker is closed'));
-   if(signal&&!['agent','replayAgent'].includes(operation))return Promise.reject(new Error('Only independent agent material can be cancelled'));
-   if(signal?.aborted)return Promise.reject(paintAbort());
-   const id=++serial;
-   return new Promise((resolve,reject)=> {
-    const abort=()=>{try{postMessage({operation:'cancel',requestId:id});}catch(error){fail(error);}};
-    const cleanup=()=>signal?.removeEventListener('abort',abort);
-    pending.set(id,{resolve,reject,onProgress,cleanup,cancel:['agent','replayAgent'].includes(operation)?abort:null});
-    try {
-     signal?.addEventListener('abort',abort,{once:true});
-     postMessage({...payload,id,operation,progress:typeof onProgress==='function'},transfer);
-     if(signal?.aborted)abort();
-    } catch(error) {fail(error);}
-   });
-  },
-  receive(message) {
-   if(message?.displayState){try{this.onDisplay?.(message.displayState);}catch(error){fail(error);}return true;}
-   const job=pending.get(message?.id); if(!job) return false;
-   if(message.error) {
-    const error=Object.assign(new Error(message.error.message),{name:message.error.name||'Error',...(typeof message.error.code==='string'?{code:message.error.code}:{})});
-    if(message.recoverable===true&&(error.name==='AbortError'||error.code==='paint_history_full')){pending.delete(message.id);job.cleanup?.();job.reject(error);}
-    else fail(error);
-   }
-   else if(message.progress===true) { try { job.onProgress?.(message.value); } catch(error) { fail(error); } }
-   else { pending.delete(message.id); job.cleanup?.(); job.resolve(message.value); }
-   return true;
-  },
-  fail, async close() { closed=true; for(const job of [...pending.values()])job.cancel?.(); fail(new Error('Paint worker is closed')); await terminate(); }
- };
-}
 export function createLocalPaintClient() {
  let client=null;
  const deliver=(target,message,transfer=[])=> { const copy=structuredClone(message,transfer.length ? {transfer} : undefined); queueMicrotask(()=>target(copy)); };
  const receive=createPaintWorker({isolated:false,postMessage:(message,transfer)=>deliver(reply=>client.receive(reply),message,transfer)});
- client=createPaintWorkerClient({postMessage:(message,transfer)=>deliver(request=>{ void receive(request); },message,transfer)});
+ client=createWorkerClient({postMessage:(message,transfer)=>deliver(request=>{ void receive(request); },message,transfer)});
  return client;
 }
 export function installPaintWorker(scope=globalThis) {

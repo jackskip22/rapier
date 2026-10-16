@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 import {BitWriter, packSigned} from './bits.mjs';
-import {buildCode, writePrefixCode, writeHistograms, uintConfig, hybridToken, countToken, writeHybrid, writeUintConfig} from './prefix.mjs';
+import {buildCode, priceCode, canonicalCodes, writePrefixCode, writeHistograms, uintConfig, hybridToken, countToken, writeHybrid, writeUintConfig} from './prefix.mjs';
 import {ALPHABET, LZ77, RESIDUAL_CONFIG, leaf, channelTree, writeTree} from './modular.mjs';
 import {kernelHooks} from './kernel-hooks.mjs';
 const SCREEN_DISTANCE_CONFIG = uintConfig(4),
@@ -28,7 +28,7 @@ export function screenResiduals(plane, width, height, predictor) {
   return out;
 }
 
-export function screenMatches(values, emit, depth = 4) {
+export function screenMatches(values, emit, depth = 4, minLength = 7) {
   const head = new Int32Array(SCREEN_HASH_SIZE).fill(-1),
     prev = new Int32Array(values.length).fill(-1);
   const hash = i =>
@@ -45,7 +45,7 @@ export function screenMatches(values, emit, depth = 4) {
   for (let i = 0; i < values.length; ) {
     let length = 0,
       distance = 0;
-    if (i + 7 <= values.length) {
+    if (i + minLength <= values.length) {
       let at = head[hash(i)];
       for (let n = 0; n < depth && at >= 0; n++, at = prev[at]) {
         if (values[at] !== values[i] || values[at + 1] !== values[i + 1] || values[at + 2] !== values[i + 2]) continue;
@@ -58,7 +58,7 @@ export function screenMatches(values, emit, depth = 4) {
         }
       }
     }
-    if (length >= 7) {
+    if (length >= minLength) {
       emit(0, length, distance);
       for (let k = 0; k < length; k++) insert(i + k);
       i += length;
@@ -71,6 +71,7 @@ export function screenMatches(values, emit, depth = 4) {
 
 export const screenLZ77 = {
   create(options = {}) {
+    const lz77 = {...LZ77, minLength: options.minLength ?? 7};
     const distances = options.distances instanceof Uint32Array && options.distances.length === 64
       ? options.distances : new Uint32Array(64);
     let distanceCode = options.distanceCode;
@@ -81,15 +82,15 @@ export const screenLZ77 = {
           if (length) {
             const d = distance === 1 ? 1 : distance + 119;
             if (writer) {
-              writeHybrid(writer, target, LZ77.lengthConfig, length - LZ77.minLength, LZ77.minSymbol);
+              writeHybrid(writer, target, lz77.lengthConfig, length - lz77.minLength, lz77.minSymbol);
               writeHybrid(writer, distanceCode, SCREEN_DISTANCE_CONFIG, d);
             } else {
-              countToken(LZ77.lengthConfig, length - LZ77.minLength, target, LZ77.minSymbol);
+              countToken(lz77.lengthConfig, length - lz77.minLength, target, lz77.minSymbol);
               countToken(SCREEN_DISTANCE_CONFIG, d, distances);
             }
           } else if (writer) writeHybrid(writer, target, RESIDUAL_CONFIG, value);
           else countToken(RESIDUAL_CONFIG, value, target);
-        });
+        }, 4, lz77.minLength);
       },
       histograms(writer, ordered, freqs, histogramOf) {
         const contextMap = new Uint8Array(ordered.length + 1);
@@ -98,7 +99,7 @@ export const screenLZ77 = {
         const histograms = [{config: SCREEN_DISTANCE_CONFIG, code: distanceCode}];
         for (let i = 0; i < Math.max(...contextMap); i++)
           histograms.push({config: RESIDUAL_CONFIG, code: buildCode(freqs[i])});
-        writeHistograms(writer, {lz77: LZ77, contextMap, histograms});
+        writeHistograms(writer, {lz77, contextMap, histograms});
         return histograms;
       }
     };
@@ -119,7 +120,7 @@ function matchSpan(values, i, at) {
   return n;
 }
 
-function screenRowMatches(values, width, emit, depth) {
+function screenRowMatches(values, width, emit, depth, minLength) {
   const head = new Int32Array(SCREEN_HASH_SIZE).fill(-1),
     previous = new Int32Array(values.length),
     rows = new Int32Array(Math.ceil(values.length / width)).fill(-1),
@@ -153,12 +154,12 @@ function screenRowMatches(values, width, emit, depth) {
   };
   for (; i < values.length; ) {
     length = 0; distance = 0;
-    if (i + LZ77.minLength <= values.length) {
+    if (i + minLength <= values.length) {
       const row = rows[(i / width) | 0];
       if (row >= 0) probe(row + (i % width));
       for (let at = head[hash(i)], n = 0; at >= 0 && n < depth && i + length < values.length; at = previous[at], n++) probe(at);
     }
-    if (length >= LZ77.minLength) {
+    if (length >= minLength) {
       emit(0, length, distance);
       for (let n = 0; n < length; n++) insert(i + n);
       i += length;
@@ -166,7 +167,7 @@ function screenRowMatches(values, width, emit, depth) {
   }
 }
 
-export function screenModel(plane, width, height, depth = 4) {
+export function screenModel(plane, width, height, depth = 4, minLength = 7) {
   let best;
   for (const predictor of [0, 1, 2, 5]) {
     const pieces = [], freqs = new Uint32Array(ALPHABET), distances = new Uint32Array(64), token = [0, 0, 0];
@@ -176,19 +177,19 @@ export function screenModel(plane, width, height, depth = 4) {
     };
     const emit = (value, length, distance) => {
       if (length) {
-        pieces.push(length - LZ77.minLength, distance);
-        count(LZ77.lengthConfig, length - LZ77.minLength, freqs, LZ77.minSymbol);
+        pieces.push(length - minLength, distance);
+        count(LZ77.lengthConfig, length - minLength, freqs, LZ77.minSymbol);
         count(SCREEN_DISTANCE_CONFIG, distance === 1 ? 1 : distance + 119, distances);
       } else { pieces.push(value, 0); count(RESIDUAL_CONFIG, value, freqs); }
     };
-    if (!kernelHooks.screen?.(plane, width, height, predictor, depth, emit))
-      screenRowMatches(screenResiduals(plane, width, height, predictor), width, emit, depth);
+    if (!kernelHooks.screen?.(plane, width, height, predictor, depth, emit, minLength))
+      screenRowMatches(screenResiduals(plane, width, height, predictor), width, emit, depth, minLength);
     const code = buildCode(freqs), distance = buildCode(distances), writer = new BitWriter(256);
     writePrefixCode(writer, code); writePrefixCode(writer, distance);
     let bits = writer.bitLength + raw;
     for (let s = 0; s < freqs.length; s++) if (freqs[s]) bits += freqs[s] * code.lengths[s];
     for (let s = 0; s < distances.length; s++) if (distances[s]) bits += distances[s] * distance.lengths[s];
-    if (!best || bits < best.bits) best = {leaf: leaf(predictor), code, distances, pieces, bits, width};
+    if (!best || bits < best.bits) best = {leaf: leaf(predictor), code, distances, pieces, bits, width, minLength};
   }
   return best;
 }
@@ -223,7 +224,7 @@ function screenDistanceMap(width) {
 }
 
 function screenIntegerPrice(freqs, config, raw) {
-  const code = buildCode(freqs), writer = new BitWriter(256);
+  const code = priceCode(freqs), writer = new BitWriter(256);
   writeHistograms(writer, {contextMap: new Uint8Array(1), histograms: [{config, code}]});
   let bits = writer.bitLength + raw;
   for (let s = 0; s < freqs.length; s++) if (freqs[s]) bits += freqs[s] * code.lengths[s];
@@ -231,39 +232,51 @@ function screenIntegerPrice(freqs, config, raw) {
 }
 
 export function writeScreenModel(writer, models) {
+  const minLength = models[0].minLength;
+  if (models.some(model => model.minLength !== minLength)) throw new Error('A screen stream has one copy minimum.');
   const ordered = writeTree(writer, channelTree(models.map(model => model.leaf))),
     counts = [], distances = new Map(), token = [0, 0, 0];
   for (const model of models) {
-    const literals = new Uint32Array(512), lengths = new Map();
-    let raw = 0;
+    const values = new Map(), lengths = new Map();
     for (let i = 0; i < model.pieces.length; i += 2) {
       const value = model.pieces[i], distance = model.pieces[i + 1];
       if (distance) {
         lengths.set(value, (lengths.get(value) || 0) + 1);
         distances.set(distance, (distances.get(distance) || 0) + 1);
-      } else {
-        hybridToken(RESIDUAL_CONFIG, value, token);
-        literals[token[0]]++; raw += token[1];
-      }
+      } else values.set(value, (values.get(value) || 0) + 1);
     }
-    counts.push({literals, lengths, raw});
+    const literals = SCREEN_INTEGER_CONFIGS.map(config => {
+      const freqs = new Uint32Array(512); let raw = 0;
+      for (const [value, n] of values) { hybridToken(config, value, token); if (token[0] >= LZ77.minSymbol) return null; freqs[token[0]] += n; raw += token[1] * n; }
+      return {config, freqs, raw};
+    }).filter(Boolean);
+    counts.push({literals, lengths});
   }
-  let length;
-  for (const config of distances.size ? SCREEN_INTEGER_CONFIGS : [LZ77.lengthConfig]) {
-    const codes = [], parameter = new BitWriter(16);
-    writeUintConfig(parameter, config, 8);
-    let bits = parameter.bitLength;
-    for (const count of counts) {
-      const freqs = count.literals.slice();
-      let raw = count.raw;
+  const cheapest = (count, config) => {
+    let best;
+    for (const literal of count.literals) {
+      const freqs = literal.freqs.slice();
+      let raw = literal.raw;
       for (const [value, n] of count.lengths) {
         hybridToken(config, value, token);
         freqs[LZ77.minSymbol + token[0]] += n; raw += token[1] * n;
       }
-      const price = screenIntegerPrice(freqs, RESIDUAL_CONFIG, raw);
-      bits += price.bits; codes.push(price.code);
+      const price = screenIntegerPrice(freqs, literal.config, raw);
+      if (!best || price.bits < best.bits) best = {...price, config: literal.config};
     }
-    if (!length || bits < length.bits) length = {config, codes, bits};
+    return best;
+  };
+  for (const count of counts) count.fixed = count.lengths.size ? null : cheapest(count);
+  let length;
+  for (const config of distances.size ? SCREEN_INTEGER_CONFIGS : [LZ77.lengthConfig]) {
+    const codes = [], configs = [], parameter = new BitWriter(16);
+    writeUintConfig(parameter, config, 8);
+    let bits = parameter.bitLength;
+    for (const count of counts) {
+      const best = count.fixed || cheapest(count, config);
+      bits += best.bits; codes.push(best.code); configs.push(best.config);
+    }
+    if (!length || bits < length.bits) length = {config, codes, configs, bits};
   }
   let distance;
   const map = distances.size ? screenDistanceMap(Math.max(...models.map(model => model.width))) : null;
@@ -278,20 +291,21 @@ export function writeScreenModel(writer, models) {
     const price = screenIntegerPrice(freqs, config, raw);
     if (!distance || price.bits < distance.bits) distance = {...price, config, spatial};
   }
+  for (const code of distance ? [distance.code, ...length.codes] : length.codes) code.codes ||= canonicalCodes(code.lengths);
   const offset = distance ? 1 : 0, contextMap = new Uint8Array(ordered.length + offset);
   for (const leaf of ordered) contextMap[leaf.context] = models.findIndex(model => model.leaf === leaf) + offset;
   writeHistograms(writer, {
-    lz77: distance ? {...LZ77, lengthConfig: length.config} : null,
+    lz77: distance ? {...LZ77, minLength, lengthConfig: length.config} : null,
     contextMap,
     histograms: [
       ...(distance ? [{config: distance.config, code: distance.code}] : []),
-      ...length.codes.map(code => ({config: RESIDUAL_CONFIG, code}))
+      ...length.codes.map((code, m) => ({config: length.configs[m], code}))
     ]
   });
   return () => {
     for (let m = 0; m < models.length; m++) for (let i = 0; i < models[m].pieces.length; i += 2) {
       const value = models[m].pieces[i], d = models[m].pieces[i + 1];
-      writeHybrid(writer, length.codes[m], d ? length.config : RESIDUAL_CONFIG, value, d ? LZ77.minSymbol : 0);
+      writeHybrid(writer, length.codes[m], d ? length.config : length.configs[m], value, d ? LZ77.minSymbol : 0);
       if (d) writeHybrid(writer, distance.code, distance.config, distance.spatial ? (map.get(d) ?? d + 119) : d === 1 ? 1 : d + 119);
     }
   };

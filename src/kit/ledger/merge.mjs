@@ -3,7 +3,7 @@ import {readLedger, exportLedger, rootAfter} from './format.mjs';
 import {_rapierTransformSplices, _rapierTransformMetadata, _rapierMetadataDelta, _rapierHistoryEffects, _rapierMetadataState} from './journal-records.mjs';
 import {mergeText} from './text-merge.mjs';
 import {transposeAuthored, authoredPlacements} from './transport.mjs';
-import {parseWill} from '../../agent/will.mjs';
+import {parseWill, stripOneTerminator} from '../../agent/will.mjs';
 import {sha256} from './hash.mjs';
 import {canonicalJSON, fault} from './data.mjs';
 export function transportInterval(start, end, splices) {
@@ -38,6 +38,14 @@ function actFingerprint(record, effects) {
     metadata: references.length ? null : Object.fromEntries(Object.entries(record.metadata || {}).map(([key, pair]) => [key, pair.after]))}));
 }
 const mergeIdentity = (localDigest, incomingDigest) => 'merge:' + sha256(canonicalJSON([localDigest, incomingDigest]));
+function coincidentEffect(origin, left, right) {
+  const authored = origin?.splices;
+  if (!authored?.some(row => row.removed.length)) return false;
+  const same = (rows, expected) => rows.length === expected.length && rows.every((row, index) =>
+    row.pos === expected[index].pos && row.removed === expected[index].removed && row.inserted === expected[index].inserted);
+  const lists = [left, right];
+  return lists.every(rows => !rows.length || same(rows, authored)) && lists.some(rows => same(rows, authored));
+}
 function checkpointList(read) {
   const list = [{root: read.ledger.start.root, text: read.ledger.start.text, metadata: read.ledger.start.metadata,
     revision: read.ledger.start.revision, identity: null, index: 0}], records = read.ledger.records;
@@ -53,7 +61,13 @@ function checkpointList(read) {
 function kept(text) {
   const will = parseWill(text);
   if (will.fault) return {fault: will.fault, text};
-  return will.regions.filter(region => region.law === 'keep').map(region => text.slice(region.start, region.end));
+  return will.regions.filter(region => region.law !== 'edit').map(({law, intent, start, end}) =>
+    law === 'keep' ? {law, intent, text: text.slice(start, end)} : {law, intent});
+}
+function appended(from, to) {
+  const regions = text => parseWill(text).regions.filter(region => region.law === 'append');
+  const was = regions(from), now = regions(to), core = (text, region) => stripOneTerminator(text.slice(region.start, region.end));
+  return was.length === now.length && was.every((region, index) => core(to, now[index]).startsWith(core(from, region)));
 }
 function expandRetainedStart(shorter, longer) {
   if (shorter.ledger.documentAuthority !== longer.ledger.documentAuthority ||
@@ -92,7 +106,11 @@ export function merge(first, second) {
         conflicts: [{kind: 'identity', code: 'act_order_conflict', actId: record.transaction.id}],
         review: {required: true, base: ours.text, proposed: theirs.text}};
     if (local && (canonicalJSON(local.splices) !== canonicalJSON(record.splices) ||
-        canonicalJSON(local.metadata || {}) !== canonicalJSON(record.metadata || {}))) unproved.add(record.transaction.id);
+        canonicalJSON(local.metadata || {}) !== canonicalJSON(record.metadata || {}))) {
+      const metadataSame = canonicalJSON(local.metadata || {}) === canonicalJSON(record.metadata || {});
+      if (!(metadataSame && coincidentEffect(localOrigins.get(local.transaction.id), local.splices, record.splices)))
+        unproved.add(record.transaction.id);
+    }
   }
   const a = checkpointList(ours), b = checkpointList(theirs);
   for (const [index, record] of ours.ledger.records.entries()) {
@@ -174,7 +192,8 @@ export function merge(first, second) {
     if (local) mappedIds.set(record.transaction.id, local.transaction.id);
   }
   const incomingKept = canonicalJSON(kept(theirs.text));
-  const keepDiffers = incomingKept !== canonicalJSON(kept(ours.text)) && incomingKept !== canonicalJSON(kept(common.text));
+  const keepDiffers = incomingKept !== canonicalJSON(kept(ours.text)) && incomingKept !== canonicalJSON(kept(common.text)) ||
+    !appended(common.text, theirs.text) && !appended(ours.text, theirs.text);
   let conflicted = keepDiffers && unseen.length > 0, incomingSource = common.text;
   if (!conflicted) for (const record of incoming) {
     const beforeSource = incomingSource;
@@ -220,17 +239,27 @@ export function merge(first, second) {
       return settled(theirs);
     }
   }
-  let conflicts = [];
   if (conflicted) {
     if (unseen.length !== incoming.length) return refused('history', 'record_transport_conflict');
     if (incomingFields.size) return metadataConflict('record_transport_conflict', {fields: [...incomingFields]});
-    records.splice(ours.ledger.records.length); text = ours.text; metadata = {...ours.metadata}; root = ours.root;
     const merged = mergeText(keepDiffers ? null : common.text, ours.text, theirs.text, {oursId: 'copy-' + ours.ledger.sha256.slice(0, 16), theirsId: 'copy-' + theirs.ledger.sha256.slice(0, 16)});
-    conflicts = merged.conflicts;
-    if (!conflicts.length) return refused('history', 'record_transport_conflict');
-    if (merged.text !== text) append([{pos: 0, removed: text, inserted: merged.text}], {transaction: {
-      id: mergeIdentity(ours.ledger.sha256, theirs.ledger.sha256), actor: {kind: 'system', id: 'merge'}, transport: 'platform', operation: 'document.merge', requestId: null,
-      affectedBlockIds: [], createdAt: null}});
+    if (!merged.conflicts.length) return refused('history', 'record_transport_conflict');
+    return {text: ours.text, metadata: ours.metadata, ledger: ours.ledger, clean: false,
+      conflicts: merged.conflicts.map(row => ({...row, code: 'text_overlap_unpreserved'})),
+      review: {required: true, base: ours.text, proposed: theirs.text}};
+  }
+  let conflicts = [];
+  if (records.some(row => !row.splices.length && row.authored?.splices?.some(splice => splice.removed.length))) {
+    const origins = authoredPlacements(ours.ledger.start.text, records);
+    for (let index = 0; index < records.length; index++) {
+      const record = records[index];
+      if (record.authored) continue;
+      const origin = origins.get(record.transaction.id);
+      if (!origin?.splices.some(splice => splice.removed.length)) continue;
+      const key = canonicalJSON(origin);
+      if (records.some(other => other.transaction.id !== record.transaction.id && canonicalJSON(origins.get(other.transaction.id)) === key))
+        records[index] = {...record, authored: origin};
+    }
   }
   const ledger = exportLedger({text, metadata, records, documentAuthority: ours.ledger.documentAuthority, root,
     revision: records.at(-1)?.transaction.revision ?? ours.revision, complete: ours.complete});

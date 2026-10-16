@@ -4,30 +4,42 @@ Write, draw and paint on your phone. Free, in your browser, in your own files.
 
 ## Make things
 
-Write without learning Markdown, or edit the source directly. Add, move and resize pictures; wrap words around their shape. Draw with a pen, brush, shapes and text. Set size, font, weight, slant, case, spacing and kerning; press words into the paper like letterpress; use four alphabets of ornamental capitals traced from old books (downloaded on first use, then available offline); drop a leading letter into a paragraph. Paint with watercolour, bristles, smudging and blending. Keep documents in Notes, with search, checklists, links, recordings and imports from other notes apps.
+- **Write** on the formatted page, or edit the Markdown source.
+- **Pictures:** add, move and resize them, and wrap words around their shape.
+- **Draw** with a pen, brush, shapes and text. Set size, font, weight, slant, case, spacing and kerning. Press words
+  into the paper like letterpress, drop a large first letter into a paragraph, or use four sets of ornamental capitals
+  traced from old books (downloaded on first use, then offline).
+- **Paint** with watercolour, bristles, smudging and blending.
+- **Notes** keeps your documents, with search, checklists, links, recordings and imports from other note apps.
 
-An optional agent can work through Rapier’s tools and your Will: Intent, Add only or Lock.
+A connected agent can help. It uses Rapier's tools and follows your Will: Intent, Add only or Lock.
 
 ## Your work stays yours
 
-No Rapier account. No Rapier server needed to write, draw or save. The editor works offline; first installation and optional maths, diagram or PDF resources can need a download.
+No account or server is needed to write, draw or save. The editor works offline; installing it and optional maths,
+diagram or PDF resources may need a download.
 
-**Save keeps editable Markdown** that any text editor can read. Pictures can travel inside the same file. Enhanced layout and image formats may display differently in other Markdown readers.
+- **Save** writes Markdown any text editor can read, with pictures inside. Other Markdown apps may show layout and
+  some image formats differently.
+- **Share** makes an offline web page with the editable source inside. It never contacts a server.
 
-**Share makes an offline web page** with the editable source inside. Shared pages and standalone HTML exports never contact a server.
+## Back up your notes
 
-## Save a separate copy
+Your browser can clear notes it stores. To keep a separate copy:
 
-Notes kept in a browser can be cleared by that browser. Back them up from the Notes settings, or sync with Cloudflare.
+1. Open **Notes settings** and tap **BACKUP**. Each backup is a new file, named with the date and time; it never
+   replaces an earlier one.
+2. Save the file somewhere you control, and check that it arrived.
 
-Use **BACKUP** in the Notes settings at the end of your session. Save it somewhere you control and check it arrived. A local save or an opened share sheet is not a separate backup. Without browser storage, notes can exist only until the page closes.
+A local save or an open share sheet is not a backup. Without browser storage, notes last only until you close the page.
 
-Every new backup makes a dated, timed file without asking or replacing an earlier backup.
-
-**Sync with Cloudflare**, in the Notes settings, keeps an encrypted copy in your own Cloudflare R2 bucket; Rapier never sees it. Sync is not a backup: keep backing up.
+**Sync with Cloudflare**, in Notes settings, keeps an encrypted copy in your own Cloudflare R2 bucket that Rapier
+never sees. Sync is not a backup; keep backing up.
 
 ## Put it on your phone
 
-Open `rapier.website` in your phone’s browser. Use the browser menu’s **Add to Home screen** or install command. Let the first load finish, then check it opens without a connection. You can also open `rapier.html` directly; do not assume file-opened Notes has persistent storage.
+1. Open `rapier.website` in your phone's browser.
+2. In the browser menu, tap **Add to Home screen** or **Install**.
+3. Let the first load finish, then check that it opens without a connection.
 
-*The build receipt, `docs/build.json` in the repository, names the file’s exact assembly.*
+You can also open `rapier.html` directly, but Notes may not keep its storage there.

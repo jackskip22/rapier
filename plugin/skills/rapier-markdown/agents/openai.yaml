@@ -1,7 +1,7 @@
 {
   "interface": {
-    "display_name": "Rapier Markdown",
-    "short_description": "Write portable Markdown."
+    "display_name": "Rapier portable Markdown",
+    "short_description": "Keep text, pictures and editable art together."
   },
   "dependencies": {
     "tools": [

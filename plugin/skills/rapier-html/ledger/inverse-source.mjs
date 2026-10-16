@@ -2,7 +2,9 @@
 // Exact source projection shared by canonical history and causal transport.
 // Callers admit and order the records first; this projection retains no state.
 import {_rapierTransformSplices, _rapierHistoryEffects} from './journal-records.mjs';
-import {diff} from './diff.mjs';
+import {authoredPlacements} from './authored-origin.mjs';
+import {canonicalJSON} from './data.mjs';
+import {diff} from './diff/index.mjs';
 
 const historyFailure = reason => ({ok: false, reason});
 const historyBoundary = (source, at) => Number.isSafeInteger(at) && at >= 0 && !Object.is(at, -0) && at <= source.length &&
@@ -174,6 +176,24 @@ export function projectInverseSource(prepared, selected, projectedEffects, optio
 	try {
 		let pieces = prepared.initialSource ? [{text: prepared.initialSource, owner: null, lineage: []}] : [];
 		const all = [], byId = new Map(), byAct = new Map(), processed = [], keptInverseAncestors = new Set();
+		const recordsForCover = prepared.records || prepared.rows.map(({record, splices}) => record.splices === splices ? record : {...record, splices});
+		const coverGroups = new Map();
+		let coverOrigins = null;
+		// An empty document is a real causal source. Fresh notes start there, and a
+		// shared replacement authored against that source still has to stay covered.
+		if (typeof prepared.initialSource === 'string' && recordsForCover.some(record => record.authored?.splices?.some(row => row.removed.length))) {
+			try { coverOrigins = authoredPlacements(prepared.initialSource, recordsForCover); } catch { coverOrigins = null; }
+		}
+		const coverIdsFor = id => {
+			const origin = coverOrigins?.get(id);
+			if (!origin?.splices.some(row => row.removed.length)) return null;
+			const key = canonicalJSON({basis: origin.basis, splices: origin.splices});
+			if (!coverGroups.has(key)) coverGroups.set(key, []);
+			const ids = coverGroups.get(key);
+			if (!ids.includes(id)) ids.push(id);
+			return ids;
+		};
+		const coverHeld = hunk => hunk.coverIds?.length > 1 && hunk.coverIds.some(id => projectedEffects.active.has(id));
 		const texts = rows => rows.map(row => row.text || '');
 		const textOf = rows => texts(rows).join('');
 		const lengthOf = (rows, to = rows.length) => { let size = 0; for (let i = 0; i < to; i++) size += rows[i].text?.length || 0; return size; };
@@ -234,8 +254,16 @@ export function projectInverseSource(prepared, selected, projectedEffects, optio
 			return next && effects.active.has(next.actId) && !prepared.effects.references.get(next.actId)?.length;
 		});
 		const reactivate = (actIds, effects) => {
+			// Any author of one shared removal or replacement restores that one physical
+			// hunk, including an author who stored no splice. A later independent act
+			// keeps the bytes it wrote until that act itself is withdrawn.
+			const wanted = new Set(actIds);
+			for (const id of actIds) for (const hunk of all) {
+				if (hunk.reversedHunk || hunk.derived || !hunk.coverIds?.includes(id) || wanted.has(hunk.actId)) continue;
+				if (hunk.coverIds.some(cover => effects.active.has(cover))) wanted.add(hunk.actId);
+			}
 			for (const hunk of all) {
-				if (!actIds.has(hunk.actId) || hunk.derived || prepared.effects.references.get(hunk.actId)?.length) continue;
+				if (!wanted.has(hunk.actId) || hunk.derived || prepared.effects.references.get(hunk.actId)?.length) continue;
 				if (keptInverseAncestors.has(hunk.id)) continue;
 				if (laterSource(hunk, effects) || pieces.some(piece => piece.text && piece.owner === hunk.id) ||
 					(!hunk.inserted && hunk.active)) continue;
@@ -245,8 +273,9 @@ export function projectInverseSource(prepared, selected, projectedEffects, optio
 					// inverse's marker. Its exact ancestry also preserves later inserted runs.
 					const inverse = all.findLast(prior => prior.reversedHunk === hunk.id && pieces.includes(prior.marker));
 					if (!inverse) throw Error('reactivation');
-					if (laterSource(inverse, effects)) continue;
-					restoreHunk(inverse); inverse.active = false;
+					const runs = all.filter(prior => prior.actId === inverse.actId && prior.reversedHunk === hunk.id && pieces.includes(prior.marker));
+					if (runs.some(prior => laterSource(prior, effects))) continue;
+					for (const prior of runs) { restoreHunk(prior); prior.active = false; }
 					hunk.active = true; delete hunk.undoneBy;
 					continue;
 				}
@@ -291,51 +320,65 @@ export function projectInverseSource(prepared, selected, projectedEffects, optio
 			if (references.size) {
 				// Exact inverse rows restore the previous run identities. Retain the inverse's
 				// own transient marker too, so reversing it restores that same ancestry again.
-				const targets = all.filter(hunk => hunk.active && references.has(hunk.actId));
-				let restored = targets.length ? pieces.slice() : null;
-				const inverses = [], priorSplices = options.keepHunk ? [] : null;
-				for (let index = targets.length - 1; restored && index >= 0; index--) {
-					const target = targets[index], first = restored.indexOf(target.marker);
-					if (first < 0) { restored = null; break; }
-					let last = first;
-					for (let at = first; at < restored.length; at++) if (owns(restored[at], target)) last = at;
-					const pos = lengthOf(restored, first);
-					const before = restored.slice(first, last + 1), replacement = [];
-					for (const piece of before) {
-						if (piece === target.marker) replacement.push(...target.before);
-						else if (!owns(piece, target)) replacement.push(piece);
+				const invert = targets => {
+					const restored = pieces.slice(), inverses = [], priorSplices = options.keepHunk ? [] : null;
+					for (let index = targets.length - 1; index >= 0; index--) {
+						const target = targets[index], first = restored.indexOf(target.marker);
+						if (first < 0) return null;
+						// Each run of the target's own pieces inverts alone: a later author's pieces between
+						// its runs stay in place, outside every inverse, so reversing it cannot move them.
+						const runs = [];
+						for (let at = first; at < restored.length; at++) if (owns(restored[at], target))
+							if (runs.at(-1)?.[1] === at) runs.at(-1)[1]++; else runs.push([at, at + 1]);
+						for (let run = runs.length - 1; run >= 0; run--) {
+							const [from, to] = runs[run], before = restored.slice(from, to), pos = lengthOf(restored, from);
+							const replacement = run ? [] : target.before;
+							const id = tx.id + '#inverse:' + index + (run ? '.' + run : ''), lineage = new Set([id]);
+							for (const piece of before) for (const parent of piece.lineage || piece.mark?.lineage || []) lineage.add(parent);
+							const hunk = {id, actId: tx.id, removed: textOf(before), inserted: textOf(replacement), before, reversedHunk: target.id,
+								chosen: selected.has(tx.id), lineage: [...lineage], supersededBy: new Set(), active: true,
+								restoredMarkers: new Set(replacement.filter(piece => !piece.text))};
+							if (hunk.chosen && options.keepHunk) {
+								const spliceIndex = splices.findIndex(row => row.pos <= pos && row.pos + row.removed.length >= pos);
+								const keep = options.keepHunk({actId: tx.id, spliceIndex: Math.max(0, spliceIndex), hunkIndex: index,
+									splice: {pos, removed: hunk.removed, inserted: hunk.inserted}, beforeSource: textOf(restored), actSource, priorSplices});
+								if (typeof keep !== 'boolean') throw Error('hunk_selection');
+								hunk.chosen = !keep;
+							}
+							hunk.kept = selected.has(tx.id) && !hunk.chosen;
+							// A semantic owner retaining this inverse also retains the exact ancestors
+							// it restored; effect reactivation must not change them behind that owner.
+							if (hunk.kept) for (let prior = target; prior; prior = byId.get(prior.reversedHunk)) keptInverseAncestors.add(prior.id);
+							hunk.marker = {mark: hunk};
+							const insertion = replacement.map(piece => piece.text ? {...piece,
+								lineage: [...new Set([...(piece.lineage || []), id])],
+								restoredBy: [...(piece.restoredBy || []), id]} : piece);
+							restored.splice(from, to - from, hunk.marker, ...insertion);
+							inverses.push(hunk); priorSplices?.push({pos, removed: hunk.removed, inserted: hunk.inserted});
+						}
 					}
-					const id = tx.id + '#inverse:' + index, lineage = new Set([id]);
-					for (const piece of before) for (const parent of piece.lineage || piece.mark?.lineage || []) lineage.add(parent);
-					const hunk = {id, actId: tx.id, removed: textOf(before), inserted: textOf(replacement), before, reversedHunk: target.id,
-						chosen: selected.has(tx.id), lineage: [...lineage], supersededBy: new Set(), active: true,
-						restoredMarkers: new Set(replacement.filter(piece => !piece.text))};
-					if (hunk.chosen && options.keepHunk) {
-						const spliceIndex = splices.findIndex(row => row.pos <= pos && row.pos + row.removed.length >= pos);
-						const keep = options.keepHunk({actId: tx.id, spliceIndex: Math.max(0, spliceIndex), hunkIndex: index,
-							splice: {pos, removed: hunk.removed, inserted: hunk.inserted}, beforeSource: textOf(restored), actSource, priorSplices});
-						if (typeof keep !== 'boolean') throw Error('hunk_selection');
-						hunk.chosen = !keep;
-					}
-					hunk.kept = selected.has(tx.id) && !hunk.chosen;
-					// A semantic owner retaining this inverse also retains the exact ancestors
-					// it restored; effect reactivation must not change them behind that owner.
-					if (hunk.kept) for (let prior = target; prior; prior = byId.get(prior.reversedHunk)) keptInverseAncestors.add(prior.id);
-					hunk.marker = {mark: hunk};
-					const insertion = replacement.map(piece => piece.text ? {...piece,
-						lineage: [...new Set([...(piece.lineage || []), id])],
-						restoredBy: [...(piece.restoredBy || []), id]} : piece);
-					restored.splice(first, last + 1 - first, hunk.marker, ...insertion);
-					inverses.push(hunk); priorSplices?.push({pos, removed: hunk.removed, inserted: hunk.inserted});
-				}
-				if (restored && replays(pieces, restored, splices)) {
-					pieces = restored;
-					for (const target of targets) { target.active = false; target.undoneBy = tx.id; }
+					return replays(pieces, restored, splices) ? {restored, inverses} : null;
+				};
+				// An inverse taken while a later edit had replaced some of the act's hunks restored only
+				// the rest. Those replaced hunks survive it: no later projection treats them as undone.
+				// Recorded splices decide. An author who stored no splice still inverts the one
+				// shared hunk; an empty inverse does not match that text change and leaves it.
+				const direct = all.filter(hunk => hunk.active && references.has(hunk.actId));
+				const targets = direct.length ? direct : all.filter(hunk => hunk.active && !hunk.reversedHunk && !hunk.derived &&
+					hunk.coverIds?.some(id => references.has(id)));
+				const free = targets.filter(hunk => ![...hunk.supersededBy].some(id => byId.get(id)?.active));
+				let found = targets.length ? invert(targets) : null, survivors = [];
+				if (!found && free.length && free.length < targets.length && (found = invert(free)))
+					survivors = targets.filter(hunk => !free.includes(hunk));
+				if (found) {
+					pieces = found.restored;
+					for (const target of targets) if (survivors.includes(target)) target.survived = true;
+					else { target.active = false; target.undoneBy = tx.id; }
 					for (const piece of pieces) if (piece.mark) {
 						piece.mark.active = true; delete piece.mark.undoneBy;
 					}
-					for (const hunk of inverses) { all.push(hunk); byId.set(hunk.id, hunk); }
-					byAct.set(tx.id, inverses);
+					for (const hunk of found.inverses) { all.push(hunk); byId.set(hunk.id, hunk); }
+					byAct.set(tx.id, found.inverses);
 					continue;
 				}
 			}
@@ -354,6 +397,7 @@ export function projectInverseSource(prepared, selected, projectedEffects, optio
 					for (const [hunk, active, undoneBy] of priorStates) { hunk.active = active; hunk.undoneBy = undoneBy; }
 				}
 			}
+			if (!references.size) coverIdsFor(tx.id);
 			const priorSplices = options.keepHunk ? [] : null;
 			// An admitted codec finish replaces the complete embedded definition/reference.
 			// Keep its inserted run whole, including byte-identical prefixes of a re-edit;
@@ -395,7 +439,8 @@ export function projectInverseSource(prepared, selected, projectedEffects, optio
 					const lineage = new Set([id]);
 					for (const piece of removed) for (const parent of piece.lineage || piece.mark?.lineage || []) lineage.add(parent);
 					const hunk = {id, actId: tx.id, removed: row.removed, inserted: row.inserted, before: removed, derived,
-						chosen, kept: selected.has(tx.id) && !chosen, lineage: [...lineage], supersededBy: new Set(), active: true};
+						chosen, kept: selected.has(tx.id) && !chosen, lineage: [...lineage], supersededBy: new Set(), active: true,
+						...(coverIdsFor(tx.id) ? {coverIds: coverIdsFor(tx.id)} : {})};
 					hunk.marker = {mark: hunk};
 					all.push(hunk); byId.set(id, hunk);
 					if (!byAct.has(tx.id)) byAct.set(tx.id, []);
@@ -414,9 +459,22 @@ export function projectInverseSource(prepared, selected, projectedEffects, optio
 		let offset = 0;
 		for (const piece of pieces) if (piece.text) { origins.set(piece, offset); offset += piece.text.length; }
 		const superseded = [];
+		// Survival means an inverse left this hunk in place because a later independent
+		// edit still covered it. Once that edit is gone, deactivating its last owner through
+		// any inverse path withdraws every exposed hunk. Undoing only the later
+		// edit reveals the survived insertion and does not discard it.
+		for (const hunk of all) if (hunk.survived) {
+			const covered = [...hunk.supersededBy].some(id => {
+				const next = byId.get(id);
+				return next?.active && projectedEffects.active.has(next.actId) && !prepared.effects.references.get(next.actId)?.length;
+			});
+			const owners = hunk.coverIds?.length ? hunk.coverIds : [hunk.actId];
+			if (!covered && owners.some(id => prepared.effects.active.has(id)) && !owners.some(id => projectedEffects.active.has(id))) hunk.survived = false;
+		}
 		for (let index = all.length - 1; index >= 0; index--) {
 			const hunk = all[index];
-			const inheritedInactive = !hunk.derived && !hunk.kept && !keptInverseAncestors.has(hunk.id) && !projectedEffects.active.has(hunk.actId) &&
+			if (coverHeld(hunk)) continue;
+			const inheritedInactive = !hunk.derived && !hunk.kept && !hunk.survived && !keptInverseAncestors.has(hunk.id) && !projectedEffects.active.has(hunk.actId) &&
 				!prepared.effects.references.get(hunk.actId)?.length;
 			if (!hunk.chosen && !inheritedInactive) continue;
 			hunk.active = prepared.effects.active.has(hunk.actId);
@@ -432,9 +490,13 @@ export function projectInverseSource(prepared, selected, projectedEffects, optio
 			restoreHunk(hunk);
 		}
 		// A hidden withdrawal can have no splice of its own. Reversing that withdrawal
-		// reactivates the original hunk at its retained marker, never at a text search.
-		reactivate(new Set(records.filter(record => !prepared.effects.active.has(record.transaction.id) &&
-			projectedEffects.active.has(record.transaction.id)).map(record => record.transaction.id)), projectedEffects);
+		// reactivates the shared hunk through the inverse that still carries it.
+		// Withdrawing a later act reveals that same hunk while any original author remains.
+		const reactivated = new Set(records.filter(record => !prepared.effects.active.has(record.transaction.id) &&
+			projectedEffects.active.has(record.transaction.id)).map(record => record.transaction.id));
+		for (const hunk of all) if (!hunk.reversedHunk && !hunk.derived && hunk.coverIds?.length > 1 &&
+			hunk.coverIds.some(id => projectedEffects.active.has(id))) reactivated.add(hunk.actId);
+		reactivate(reactivated, projectedEffects);
 		const after = textOf(pieces), changes = [];
 		let cursor = 0, inserted = '';
 		for (const piece of pieces) {

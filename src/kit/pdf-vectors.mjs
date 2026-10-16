@@ -131,7 +131,7 @@ export async function collectPdfVectors(main, {width, height, count, capture, si
         root = document.importNode(parsed.documentElement, true);
         root.style.setProperty('width', originalBox.width + 'px', 'important'); root.style.setProperty('height', originalBox.height + 'px', 'important');
         mount = document.createElement('div'); mount.style.cssText = `position:fixed;left:${originalBox.left}px;top:${originalBox.top}px;width:${originalBox.width}px;height:${originalBox.height}px;pointer-events:none`;
-        mount.append(root); document.body.append(mount); temporary.push(mount); await document.fonts.ready;
+        mount.attachShadow({mode: 'open'}).append(root); document.body.append(mount); temporary.push(mount); await document.fonts.ready;
         textRoots.push(root);
       }
       const box = root.getBoundingClientRect(), nodes = [root, ...root.querySelectorAll('*')], sequence = [];

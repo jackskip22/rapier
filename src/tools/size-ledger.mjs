@@ -12,7 +12,7 @@ import {restoreSymbols} from './runtime-symbols.mjs';
 import {buildJPEGXLArtifact} from '../images/codec-build.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-export const OUTPUT = {full: 'rapier.html', document: 'rapier-document.html'};
+export const OUTPUT = {full: 'rapier.html'};
 const RECEIPT = {release: {mode: 'release', packing: 'zopfli'}, fast: {mode: 'development', packing: 'fast (zlib; not a release)'}};
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const n = x => x == null ? '—' : x.toLocaleString('en-US');
@@ -36,7 +36,7 @@ function edits(source, ranges) {
 export function omitEncoder(source) {
   const call = one(find(source, n => n.type === 'CallExpression' && n.callee.name === 'buildJPEGXLArtifact'), 'JPEG XL worker build');
   assert.equal(call.arguments[1]?.type, 'ObjectExpression', 'the worker build takes its profile as an options object');
-  return edits(source, [[call.arguments[1].start, call.arguments[1].end, "{profile: 'document'}"]]);
+  return edits(source, [[call.arguments[1].start, call.arguments[1].end, '{encoder: false}']]);
 }
 export function omitQR(source) {
   const node = one(find(source, n => n.type === 'ImportDeclaration' && n.source.value === './qr-code.mjs'), 'QR encoder import');
@@ -196,7 +196,7 @@ export const GROUPS = [
   {id: 'jxl', name: 'JPEG XL encoder (the worker, its adapter and its refusal stay)', edits: {'tools/build.mjs': omitEncoder},
     inputs: (a, ctx) => ctx.jxlModules,
     carries: a => a.jxl?.modules.includes('images/jxl/rapier.mjs') === true,
-    leaves: (a, ctx) => hash(a.text('rapier-jxl-worker.js')) === ctx.documentWorkerSha256},
+    leaves: (a, ctx) => hash(a.text('rapier-jxl-worker.js')) === ctx.encoderlessWorkerSha256},
   {id: 'fonts', name: 'Geist + Geist Mono (four static 400/560 faces, shared by native layout and exports)',
     edits: {'shell/fonts/docx-fonts.mjs': () => 'export const DOCX_FONTS = Object.freeze([]);\n'},
     inputs: () => ['shell/fonts/docx-fonts.mjs'],
@@ -228,8 +228,8 @@ export async function context(root) {
   const buildSource = await readFile(join(root, 'tools/build.mjs'), 'utf8');
   const vendors = one(find(buildSource, node => node.type === 'VariableDeclarator' && node.id?.name === 'VENDOR_GROUPS'), 'vendor groups').init;
   assert.equal(vendors.type, 'ObjectExpression', 'vendor groups are an explicit inventory');
-  const [completeWorker, documentWorker] = await Promise.all([buildJPEGXLArtifact(root), buildJPEGXLArtifact(root, {profile: 'document'})]);
-  return {jxlModules: completeWorker.modules.map(name => 'images/jxl/' + name), documentWorkerSha256: documentWorker.sha256, vendors: Object.fromEntries(vendors.properties.map(row => [row.key.value, row.value.elements.map(node => node.value)])),
+  const [completeWorker, encoderlessWorker] = await Promise.all([buildJPEGXLArtifact(root), buildJPEGXLArtifact(root, {encoder: false})]);
+  return {jxlModules: completeWorker.modules.map(name => 'images/jxl/' + name), encoderlessWorkerSha256: encoderlessWorker.sha256, vendors: Object.fromEntries(vendors.properties.map(row => [row.key.value, row.value.elements.map(node => node.value)])),
     styles: JSON.parse(await readFile(join(root, STYLES), 'utf8')),
     drawScripts: await Promise.all(scripts.map(async path => ({path, functions: scriptFunctions(await readFile(join(root, path), 'utf8'))})))};
 }
@@ -363,8 +363,8 @@ export function report(r) {
     '## Reading it', '',
     '- Marginals do not add up: payloads share compression with their neighbours, and the build-derived search-cache identity moves with any edit to the build inputs. A negative marginal would mean growth.',
     '- The partition does add up, and it is the only table that does. A payload that crosses parts -- Draw lives in the editor runtime and the shared runtime -- is not another part to add to them.',
-    '- The encoder build ships the worker the document profile ships (adapter and refusal, no encoder); the Draw build drops both classic scripts and every draw/ factory and keeps their callers, the Draw CSS and the notices; the styles build keeps the critical boot style and the fonts sheet; the PDF build drops the module and its global, not the export caller; the plug-in loader is the loader and its two manifests, not the maths and Mermaid engines fetched on demand.',
-    '- A zero where a profile ships none of a payload (the document profile has no encoder) is a measurement: that omission build is byte-identical to its baseline.',
+    '- The encoder omission ships the decoder worker (adapter and refusal, no encoder); the Draw build drops both classic scripts and every draw/ factory and keeps their callers, the Draw CSS and the notices; the styles build keeps the critical boot style and the fonts sheet; the PDF build drops the module and its global, not the export caller; the plug-in loader is the loader and its two manifests, not the maths and Mermaid engines fetched on demand.',
+    '- A zero where a profile ships none of a payload is a measurement: that omission build is byte-identical to its baseline.',
     '- Each vendor omission removes its packed element after the normal pinned derivation; the parser identities used by the search cache and all callers stay. The input column names the upstream files; the marginal measures the shipped derivation, not the upstream source size.',
     '- The gzip -9 column concatenates the listed inputs in the listed order: a proxy, not an allocation of the file.',
     '- Prior dated receipts are in [size-ledger-history.md](size-ledger-history.md); they describe their own trees and packings.', '');
@@ -372,15 +372,15 @@ export function report(r) {
 }
 
 export function options(args) {
-  const out = {profiles: ['document', 'full'], packing: 'release'};
+  const out = {profiles: ['full'], packing: 'release'};
   for (const arg of args) {
     let m;
     if (arg === '--ledger') continue;
-    if ((m = /^--profile=(full|document)$/.exec(arg))) out.profiles = [m[1]];
+    if ((m = /^--profile=(full)$/.exec(arg))) out.profiles = [m[1]];
     else if ((m = /^--packing=(release|fast)$/.exec(arg))) out.packing = m[1];
-    else throw new Error('usage: node tools/size-ledger.mjs [--profile=full|document] [--packing=release|fast]; not ' + JSON.stringify(arg));
+    else throw new Error('usage: node tools/size-ledger.mjs [--profile=full] [--packing=release|fast]; not ' + JSON.stringify(arg));
   }
-  return {...out, publishes: out.packing === 'release' && out.profiles.length === 2};
+  return {...out, publishes: out.packing === 'release' && out.profiles.length === 1 && out.profiles[0] === 'full'};
 }
 export async function main(args = process.argv.slice(2)) {
   const opts = options(args), out = join(ROOT, 'dist/size-ledger'), name = [opts.packing, ...opts.profiles].join('-');

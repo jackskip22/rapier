@@ -62,7 +62,7 @@ const TEXT_COLOR_HEX_TO_NAME = Object.freeze(
 );
 const PAGE_BREAK_MARKER = '<!--md-break:v1 page-->';
 
-export { TEXT_COLOR_NAMES, TEXT_COLOR_HEX_TO_NAME, PAGE_BREAK_MARKER };
+export { TEXT_COLOR_NAMES, PAGE_BREAK_MARKER };
 
 export function formatColorRun(hex, content) {
 	return typography.wrap({color: hex}, content);

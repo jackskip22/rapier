@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {canonicalNote, canonicalIndex, canonicalJSON} from './merge.mjs';
 import {projectCard, isNoteFile, validNoteId as validId, NOTE_CONTROL_GROUPS, NOTE_CONTROL_FIELDS} from './model.mjs';
-import {sha256State, sha256Yielding, checkByteAbort} from './integrity.mjs';
+import {sha256, sha256State, sha256Yielding, checkByteAbort} from './integrity.mjs';
+export {sha256};
 import {diff} from '../packages/rapier-diff/index.mjs';
 import {exportLedger, prepareLedgerAsync, readLedger, textRoot, rootAfter} from '../kit/ledger/format.mjs';
 import {utf8Length} from '../kit/ledger/data.mjs';
@@ -114,14 +115,8 @@ export function emptyManifest(noteId) {
 	return {version: HISTORY_VERSION, noteId, file: null, next: 1, current: null, versions: [], objects: {}, protected: [], thinned: [], canonical: null};
 }
 
-export function sha256Fallback(value) {
+function sha256Fallback(value) {
 	const hash = sha256State(); hash.update(bytesOf(value)); return hash.finish();
-}
-export async function sha256(value, {subtle = globalThis.crypto?.subtle} = {}) {
-	const bytes = bytesOf(value);
-	if (!subtle) return sha256Fallback(bytes);
-	const digest = new Uint8Array(await subtle.digest('SHA-256', bytes));
-	return Array.from(digest, x => x.toString(16).padStart(2, '0')).join('');
 }
 
 function dataSpans(text) {
@@ -198,10 +193,11 @@ function inspectManifest(raw, state) {
 		const proved = canonical;
 		requireThat(proved.complete && proved.ledger.documentAuthority.startsWith('notes:'), 'The complete Notes history is unavailable');
 	}
+	if (own(m, 'media')) requireThat(canonical !== null && validMedia(m.media), 'Invalid history media binding');
 	const ids = new Map(), referenced = new Set(), seen = new Set();
 	let previous = 0;
 	for (const v of m.versions) {
-		requireThat(record(v) && integer(v.id) && v.id > previous && v.id < m.next && validHash(v.hash) && REASONS.includes(v.reason) && integer(v.size) && typeof v.title === 'string', 'Invalid history event');
+		requireThat(record(v) && integer(v.id) && v.id > previous && v.id < m.next && validHash(v.hash) && REASONS.includes(v.reason) && integer(v.size) && typeof v.title === 'string' && (v.act === undefined || typeof v.act === 'string'), 'Invalid history event');
 		time(v.time); entryCopy(v.file, v.entry, m.noteId);
 		if (v.controls !== undefined) validateControls(v.controls, v.id);
 		requireThat(own(m.objects, v.hash), 'A history event has no content object');
@@ -314,6 +310,7 @@ async function recordVersionIn(state, manifest, {file, text, entry, reason, now,
 		m.objects[hash] = made.object;
 	}
 	const version = {id: m.next++, file, time: now, reason, hash, size, entry: snapshot, title: projectCard(file, exact).title};
+	if (admitted.canonical?.text === exact) version.act = admitted.canonical.ledger.records.at(-1)?.transaction.id ?? '';
 	if (state) { m.versions = [...m.versions]; m.protected = [...m.protected]; }
 	if (reason === 'restore') { version.restoredFrom = restoredFrom; if (!m.protected.includes(restoredFrom)) m.protected.push(restoredFrom); m.protected.sort((a, b) => a - b); }
 	if (controls !== undefined) { validateControls(controls, version.id); version.controls = clone(controls); }
@@ -408,11 +405,12 @@ export async function rewriteHistoryReferences(manifest, rewrite, readObject) {
 	const checked = validateManifest(m);
 	return {manifest: checked, writes: [...writes.values(), manifestWrite(checked)], changed: true};
 }
-export async function restorePlan(manifest, id, current, readObject) {
+export async function restorePlan(manifest, id, current, readObject, media) {
 	const m = validateManifest(manifest);
 	requireThat(record(current), 'Pass the current note snapshot', 'current');
 	const entry = entryCopy(current.file, current.entry, m.noteId), hash = await sha256(ENC.encode(canonicalNote(current.text)));
 	const target = await materialize(m, id, readObject);
+	if (media) await checkVersionMedia(m, id, target.text, media);
 	return {...target, file: current.file, historicalFile: target.file, restoredFrom: id,
 		recordFirst: !m.versions.some(v => v.hash === hash && v.file === current.file && equal(v.entry, entry)),
 		expected: {file: current.file, hash, entry}, reason: 'restore'};
@@ -622,7 +620,7 @@ function carryCanonicalIn(state, manifest, ledger, text) {
 }
 export function carryCanonical(manifest, ledger, text) { return carryCanonicalIn(null, manifest, ledger, text); }
 function appendCanonicalIn(state, manifest, {text, metadata, author, transport = 'platform', requestId = null, requestScope = null,
- requestDigest = null, turn_id, label, operation = 'notes.write', now, undo, input = false} = {}) {
+ requestDigest = null, turn_id, label, operation = 'notes.write', now, undo, input = false, id = null} = {}) {
  const admitted = inspectManifest(manifest, state), m = draft(admitted.manifest, state), held = canonicalFrom(admitted);
  const before = input ? withoutInput(held) : canonicalBase(held);
  if (input) operation = INPUT_OPERATION;
@@ -658,7 +656,7 @@ function appendCanonicalIn(state, manifest, {text, metadata, author, transport =
    canonicalResult(state, m, produced(ledger, text), {act: null, unchanged: false, text}));
  }
  let root = before.root; for (const row of splices) root = rootAfter(root, row);
- const tx = {id: 'act:' + globalThis.crypto.randomUUID(), documentAuthority: before.documentAuthority,
+ const tx = {id: id ?? 'act:' + globalThis.crypto.randomUUID(), documentAuthority: before.documentAuthority,
   baseRevision: before.revision, revision: before.revision + 1, actor: clone(author), transport, operation,
   requestId, sourceTransactionId: inverse.length === 1 ? inverse[0] : null,
   ...(inverse.length > 1 ? {sourceTransactionIds: inverse} : {}),
@@ -731,4 +729,71 @@ export function *canonicalSources(manifest) {
   requireThat(text !== null, 'The retained canonical source cannot be proved', 'notes_history_unavailable');
   yield {text, act: row.transaction.id, time: row.transaction.createdAt};
  }
+}
+
+const MEDIA_FILE = /^(?:audio|attachments)\/[^/\\\x00-\x1f\x7f]+$/;
+const mediaKey = row => row.file + '\0' + row.act;
+function validMedia(rows) {
+ const keys = new Set();
+ return Array.isArray(rows) && rows.every(row => record(row) && Object.keys(row).every(key => ['file', 'act', 'content', 'end'].includes(key)) && MEDIA_FILE.test(row.file) &&
+  typeof row.act === 'string' && validHash(row.content) && (row.end === undefined || typeof row.end === 'string') && !keys.has(mediaKey(row)) && keys.add(mediaKey(row)));
+}
+function mediaStretches(ledger, rows, names) {
+ const bound = new Map(rows.map(row => [mediaKey(row), row])), open = new Map(), all = [];
+ let text = ledger.start.text, act = '';
+ const step = () => {
+  const named = new Set(names(text));
+  for (const file of open.keys()) if (!named.has(file)) open.delete(file);
+  for (const file of named) {
+   let stretch = open.get(file);
+   if (!stretch) { stretch = {file, act, acts: [], row: bound.get(file + '\0' + act) || null}; open.set(file, stretch); all.push(stretch); }
+   stretch.acts.push(act);
+   if (stretch.row?.end === act) open.delete(file);
+  }
+ };
+ step();
+ for (const row of ledger.records) {
+  text = _rapierTransformSplices(text, row.splices); act = row.transaction.id;
+  requireThat(text !== null, 'The retained canonical source cannot be proved', 'notes_history_unavailable');
+  step();
+ }
+ return {all, open};
+}
+const sortedMedia = rows => rows.slice().sort((a, b) => a.file < b.file ? -1 : a.file > b.file ? 1 : a.act < b.act ? -1 : a.act > b.act ? 1 : 0);
+export function bindMedia(ledger, rows = [], file, content, names, {close = false} = {}) {
+ requireThat(MEDIA_FILE.test(file) && validHash(content) && validMedia(rows), 'Invalid media binding', 'media');
+ const {all, open} = mediaStretches(ledger, rows, names), next = new Map(rows.map(row => [mediaKey(row), row]));
+ let changed = false;
+ for (const stretch of all) if (stretch.file === file && !stretch.row) { next.set(mediaKey(stretch), {file, act: stretch.act, content}); changed = true; }
+ const latest = open.get(file);
+ const row = close && latest && next.get(mediaKey(latest));
+ if (row) { next.set(mediaKey(latest), {...row, end: latest.acts.at(-1)}); changed = true; }
+ return changed ? sortedMedia([...next.values()]) : rows;
+}
+export function joinMedia(lists) {
+ const out = new Map();
+ for (const rows of lists) for (const row of rows || []) {
+  const key = mediaKey(row), prior = out.get(key);
+  if (prior && (prior.content !== row.content || prior.end !== undefined && row.end !== undefined && prior.end !== row.end))
+   throw fault('notes_media_conflict', 'One stretch of a note\'s history names two different files');
+  if (!prior || row.end !== undefined) out.set(key, {...row});
+ }
+ return sortedMedia([...out.values()]);
+}
+export async function checkVersionMedia(manifest, id, text, {names, digest}) {
+ const m = validateManifest(manifest);
+ if (m.canonical) for (const [file, content] of versionMedia(m.canonical, m.media, {...m.versions.find(v => v.id === id), text}, names)) {
+  requireThat(content !== undefined, 'this version\'s files can\'t be checked', 'notes_media_unverified');
+  requireThat(content === null || await digest(file) === content, file.slice(file.indexOf('/') + 1) + ' changed since this version', 'notes_media_replaced');
+ }
+}
+export function versionMedia(ledger, rows = [], version, names) {
+ const {all} = mediaStretches(ledger, rows, names), meant = new Map(), opened = new Set(all.map(mediaKey));
+ const bound = new Set(rows.map(row => row.file)), lost = new Set(rows.filter(row => !opened.has(mediaKey(row))).map(row => row.file));
+ if (version.act === undefined || version.act !== '' && !ledger.records.some(row => row.transaction.id === version.act)) {
+  for (const file of names(version.text)) meant.set(file, bound.has(file) ? undefined : null);
+  return meant;
+ }
+ for (const stretch of all) if (stretch.acts.includes(version.act)) meant.set(stretch.file, stretch.row ? stretch.row.content : lost.has(stretch.file) ? undefined : null);
+ return meant;
 }

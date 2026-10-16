@@ -66,12 +66,12 @@ const _rapierLive = (() => {
   }
   function noteResumeCurrent(candidate) {
     if (!birthNote) return true;
-    const state = typeof _rapierNotes === 'undefined' ? null : _rapierNotes, proof = state?.currentProof;
+    const state = _rapierNotesPart?.state, proof = state?.currentProof;
     let currentNote;
     try { currentNote = decodeURIComponent(/^#n\/([^/]+)/.exec(location.hash)?.[1] || ''); } catch (_) { return false; }
     return !!state && !state.open && !state.noteOpening && !state.opening && !state.returning &&
       currentNote === birthNote && proof?.id === birthNote && proof.authority === candidate.documentId && proof.epoch === Number(rapier.identity.epoch || 0) &&
-      typeof _rapierNotesDocumentBound === 'function' && _rapierNotesDocumentBound();
+      _rapierNotesPart.documentBound();
   }
   async function resumeCurrent() {
     if (!resumeCandidate || !resumeReady || resumeOpening || !addressOwned()) return;
@@ -220,7 +220,7 @@ const _rapierLive = (() => {
       }
       const result = await transaction;
       done = true;
-      if (rows.length && typeof _rapierDrawFollow === 'function') _rapierDrawFollow(rows);
+      if (rows.length) _rapierDrawPart?.follow(rows);
       return result;
     } finally {
       if (epoch === currentEpoch) {

@@ -16,7 +16,7 @@ const COEFF_NUM_NONZERO_CONTEXT = [0, 0, 31, 62, 62, 93, 93, 93, 93, 123, 123, 1
 
 const SCAN = ZIGZAG.map(n => ((n & 7) << 3) | (n >> 3));
 
-const zeroDensityContext = (left, k, prev) => (COEFF_NUM_NONZERO_CONTEXT[left] + COEFF_FREQ_CONTEXT[k]) * 2 + prev;
+export const zeroDensityContext = (left, k, prev) => (COEFF_NUM_NONZERO_CONTEXT[left] + COEFF_FREQ_CONTEXT[k]) * 2 + prev;
 
 function blockContexts(luma, thresholdsWanted, grey) {
   const thresholds = [];
@@ -70,7 +70,8 @@ export function* varDCTSteps(jpeg, plan = {}) {
   const comps = map.map(i => components[i]);
   const orders = plan.orders ? map.map(i => plan.orders[i].map(k => SCAN[k])) : [SCAN, SCAN, SCAN];
   const log2 = v => v === 1 ? 0 : v === 2 ? 1 : -1;
-  const rawH = comps.map(c => log2(c.h)), rawV = comps.map(c => log2(c.v));
+  const minH = Math.min(...comps.map(c => c.h)), minV = Math.min(...comps.map(c => c.v));
+  const rawH = comps.map(c => c.h % minH ? -1 : log2(c.h / minH)), rawV = comps.map(c => c.v % minV ? -1 : log2(c.v / minV));
   if (rawH.includes(-1) || rawV.includes(-1)) throw jpegError('sampling factors other than one or two');
   const maxhs = Math.max(...rawH), maxvs = Math.max(...rawV);
   const hshift = c => maxhs - rawH[c], vshift = c => maxvs - rawV[c];
@@ -84,8 +85,8 @@ export function* varDCTSteps(jpeg, plan = {}) {
   const gcd1024 = q => { let d = 1024; while (q % d) d >>= 1; return d; };
   const dcScale = comps.map(c => ycbcr ? 1 : c.quant[0] / gcd1024(c.quant[0]));
   const dcLift = comps.map(c => ycbcr ? 0 : 1024 / gcd1024(c.quant[0]));
-  const lumaDc = new Int32Array(xsizeBlocks * ysizeBlocks);
-  for (let by = 0; by < ysizeBlocks; by++) for (let bx = 0; bx < xsizeBlocks; bx++) lumaDc[by * xsizeBlocks + bx] = comps[1].coeffs[blockAt(1, bx, by)] * dcScale[1] + dcLift[1];
+  const lumaW = xsizeBlocks >> hshift(1), lumaH = ysizeBlocks >> vshift(1), lumaDc = new Int32Array(lumaW * lumaH);
+  for (let by = 0; by < lumaH; by++) for (let bx = 0; bx < lumaW; bx++) lumaDc[by * lumaW + bx] = comps[1].coeffs[blockAt(1, bx, by)] * dcScale[1] + dcLift[1];
   const lumaQuant = comps[1].quant, quantSum = (lumaQuant[8] + lumaQuant[16] + lumaQuant[24] + lumaQuant[32] + lumaQuant[40]) / quantScale;
   const blocksTotal = xsizeBlocks * ysizeBlocks;
   const wanted = blocksTotal < 256 ? 0 : Math.max(1, Math.min(7, ceilLog2(blocksTotal) - ceilLog2(quantSum) - 7));
@@ -121,7 +122,7 @@ export function* varDCTSteps(jpeg, plan = {}) {
       }
       const row = nzeros[c], predicted = sbx === 0 ? (sby === 0 ? 32 : row[(sby - 1) * 32]) : sby === 0 ? row[sby * 32 + sbx - 1] : (row[(sby - 1) * 32 + sbx] + row[sby * 32 + sbx - 1] + 1) >> 1;
       row[sby * 32 + sbx] = count;
-      const blockCtx = contexts.contextOf(c, contexts.bucketOf(lumaDc[(by0 + by) * xsizeBlocks + bx0 + bx]));
+      const blockCtx = contexts.contextOf(c, contexts.bucketOf(lumaDc[((by0 + by) >> vshift(1)) * lumaW + ((bx0 + bx) >> hshift(1))]));
       emit(contexts.nonZero(predicted, blockCtx), count);
       const offset = contexts.zeroDensityOffset(blockCtx);
       let prev = count > 4 ? 0 : 1, left = count;

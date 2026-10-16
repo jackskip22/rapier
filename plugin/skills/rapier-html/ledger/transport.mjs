@@ -2,6 +2,7 @@
 // Paired source placement, shared by live editing and canonical-history proof.
 import {_rapierTransformSplices, _rapierValidAuthored, _rapierHistoryEffects} from './journal-records.mjs';
 import {projectInverseSource} from './inverse-source.mjs';
+import {authoredBasis, authoredPlacement, authoredPlacements} from './authored-origin.mjs';
 import {sha256} from './hash.mjs';
 import {canonicalJSON} from './data.mjs';
 
@@ -74,6 +75,18 @@ export function transposeRecord(base, splices, id, records) {
     if (next === null) throw new RangeError('canonical_transport_invalid');
     current = next;
   }
+  // A concurrent act that already removed these same authored units and wrote the
+  // same replacement is one physical edit. This act stays in history with no second
+  // deletion. Pure insertions are never collapsed: each one is its own unit. An
+  // inverse of that act means the replacement is not still in force.
+  const sameRows = (left, right) => left.length === right.length && left.every((row, index) =>
+    row.pos === right[index].pos && row.removed === right[index].removed && row.inserted === right[index].inserted);
+  const matched = crossed.filter(record => sameRows(record.splices, splices));
+  const targetsOf = record => record.transaction.sourceTransactionIds || (record.transaction.sourceTransactionId ? [record.transaction.sourceTransactionId] : []);
+  const withdrawn = matched.some(record => crossed.some(other => targetsOf(other).includes(record.transaction.id) ||
+    other.transaction.reverts === record.transaction.id || other.transaction.reapplies === record.transaction.id));
+  if (splices.some(row => row.removed.length) && matched.length && !withdrawn)
+    return {splices: [], sourceIndices: [], against: crossed, text: current};
   const moved = [], sourceIndices = [];
   for (const [sourceIndex, row] of splices.entries()) {
     const submitted = _rapierTransformSplices(source, [row]);
@@ -120,49 +133,7 @@ export function transposeSource(base, splices, client, log) {
   return transposeRecord(base, splices, client, records);
 }
 
-// The frontier names only causal maxima. Linear history needs one predecessor,
-// and concurrent predecessors remain separate until an act observes both.
-function authoredFrontier(records, visit = null) {
-  const dependencies = new Map(), frontier = new Set();
-  for (const record of records) {
-    const id = record.transaction.id, basis = record.authored?.basis;
-    if (visit) visit(record, basis ?? [...frontier].sort());
-    if (!basis) { dependencies.set(id, [...frontier]); frontier.clear(); }
-    else {
-      const pending = [...basis], seen = new Set();
-      while (pending.length) {
-        const prior = pending.pop();
-        if (seen.has(prior)) continue;
-        if (!dependencies.has(prior)) throw new RangeError('canonical_origin_invalid');
-        seen.add(prior); frontier.delete(prior); pending.push(...dependencies.get(prior));
-      }
-      dependencies.set(id, basis);
-    }
-    frontier.add(id);
-  }
-  return [...frontier].sort();
-}
-
-export function authoredBasis(records) { return authoredFrontier(records); }
-
-export function authoredPlacements(base, records) {
-  const origins = new Map(); let source = base;
-  authoredFrontier(records, (record, basis) => {
-    origins.set(record.transaction.id, record.authored ?? authoredPlacement(source, record.splices, basis));
-    source = _rapierTransformSplices(source, record.splices);
-    if (source === null) throw new RangeError('canonical_origin_invalid');
-  });
-  return origins;
-}
-
-// Immutable authored placement stays on its own act. Basis IDs refer only to this
-// canonical history; no source snapshot or duplicate history is stored.
-export function authoredPlacement(source, splices, basis) {
-  const origin = {basis: basis.slice().sort(), source: sha256(source), splices: splices.map(row => ({...row}))};
-  if (!_rapierValidAuthored(origin) || _rapierTransformSplices(source, splices) === null)
-    throw new RangeError('canonical_origin_invalid');
-  return origin;
-}
+export {authoredBasis, authoredPlacement, authoredPlacements};
 
 // Reconstruct an authored view from the same records, then prove its exact physical
 // placement. Equality of resulting text alone cannot prove a repeated-text anchor.
@@ -233,6 +204,19 @@ function authoredReplay(base, records, append = null) {
       if (source === null) throw new RangeError('canonical_origin_invalid');
     }
   }
+  const coverKey = origin => origin?.splices.some(row => row.removed.length)
+    ? canonicalJSON({basis: origin.basis, splices: origin.splices}) : null;
+  const coverCounts = new Map();
+  for (const [id, origin] of origins) {
+    if (effects.references.get(id)?.length) continue;
+    const key = coverKey(origin);
+    if (key) coverCounts.set(key, (coverCounts.get(key) || 0) + 1);
+  }
+  // Two inverses can name different acts and still withdraw one physical replacement.
+  const sharesCover = id => (effects.references.get(id) || []).some(ref => {
+    const key = coverKey(origins.get(ref));
+    return !!key && coverCounts.get(key) > 1;
+  });
   const ordered = (ids, selected = null) => {
     const order = [], known = new Set(ids), waiting = new Map(), dependents = new Map(), ready = [];
     const rank = id => selected ? Number(selected.has(id)) : Number(origins.get(id).splices.some(row => row.removed.length));
@@ -351,10 +335,11 @@ function authoredReplay(base, records, append = null) {
       if (aligned.text !== text) throw new RangeError('canonical_origin_invalid');
       const crossed = aligned.records.slice(basisOrder.length);
       let moved;
-      if (sharedInverses && effects.references.get(id)?.length) {
+      if (effects.references.get(id)?.length && (sharedInverses || sharesCover(id))) {
         // Each inverse retains its own targets. First prove the exact intention
         // in its causal source, then place that choice in the accepted effect
-        // graph. Another inverse may already suppress the same original bytes.
+        // graph. Another inverse may already suppress the same original bytes,
+        // including when the two inverses name different authors of one replacement.
         const authored = projectInverse(basis.text, basis.records, id);
         if (!same(origin.splices, authored.splices) ||
             _rapierTransformSplices(basis.text, origin.splices) !== authored.after)

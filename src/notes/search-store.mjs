@@ -30,10 +30,3 @@ export function planIndexReuse(folder, stored) {
 	for (const file of rows.keys()) if (!seen.has(file)) drop.push(file);
 	return {reuse, reread, drop, total: folder.length, reused: reuse.length};
 }
-
-export function verifyOrder(reuse, limit = 0) {
-	if (!Number.isSafeInteger(limit) || limit < 0) throw new RangeError('verify limit must be a nonnegative safe integer');
-	if (!limit) return [];
-	return reuse.slice().sort((a, b) => a.modified - b.modified || (a.file < b.file ? -1 : a.file > b.file ? 1 : 0))
-		.slice(0, limit).map(row => row.file);
-}

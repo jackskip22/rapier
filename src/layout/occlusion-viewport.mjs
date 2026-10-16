@@ -3,7 +3,7 @@ import {placeTransient, validRect as rect, copyRect as cloneRect} from './occlus
 const finite = value => typeof value === 'number' && Number.isFinite(value);
 const pixel = (value = 0) => { if (!finite(value) || value < 0) throw new TypeError('invalid inset'); return value; };
 
-export function viewportSample(input) {
+function viewportSample(input) {
 	if (!input || !rect(input.layout) || !rect(input.visual ?? input.layout) || !finite(input.visibleBottom)) throw new TypeError('invalid viewport sample');
 	const safeArea = Object.fromEntries(['top', 'right', 'bottom', 'left'].map(key => [key, pixel(input.safeArea?.[key])]));
 	return {layout: cloneRect(input.layout), visual: cloneRect(input.visual ?? input.layout), visibleBottom: input.visibleBottom,

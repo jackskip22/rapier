@@ -1756,7 +1756,7 @@
           },
           {
             "property": "top",
-            "value": "calc(env(safe-area-inset-top,0px) + 58px)",
+            "value": "calc(var(--native-inset-top,env(safe-area-inset-top,0px)) + 58px)",
             "important": false
           }
         ]

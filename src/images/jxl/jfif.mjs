@@ -69,10 +69,10 @@ export function profileSpace(profile) {
   return near(SRGB) ? 'srgb' : near(P3) ? 'display-p3' : null;
 }
 
-export function parseJPEG(bytes) {
+export function parseJPEG(bytes, retainScans = false) {
   if (!(bytes.length > 4) || bytes[0] !== 0xFF || bytes[1] !== 0xD8) throw jpegError('not a JPEG');
-  const quant = [], huffman = [[], []], badDC = new Set(), icc = {count: 0, parts: []};
-  let frame = null, restartInterval = 0, adobeTransform = -1, jfif = false, orientation = 1, pos = 2;
+  const quant = [], huffman = [[], []], badDC = new Set(), icc = {count: 0, parts: []}, scanChoices = retainScans ? [] : null;
+  let frame = null, restartInterval = 0, adobeTransform = -1, jfif = false, orientation = null, pos = 2;
   const u16 = at => (bytes[at] << 8) | bytes[at + 1];
   const signatureAt = (at, signature) => {
     for (let i = 0; i < signature.length; i++) if (bytes[at + i] !== signature.charCodeAt(i)) return false;
@@ -126,16 +126,13 @@ export function parseJPEG(bytes) {
       if (width > JPEG_LIMITS.edge || height > JPEG_LIMITS.edge) throw jpegError('a picture past ' + JPEG_LIMITS.edge + ' pixels on a side', 'JXL_DIMENSIONS');
       if (width * height > JPEG_LIMITS.pixels) throw jpegError('a picture past ' + JPEG_LIMITS.pixels + ' pixels', 'JXL_DIMENSIONS');
       const components = [];
-      let blocksPerMcu = 0;
       for (let i = 0, at = segment + 6; i < count; i++, at += 3) {
         const h = bytes[at + 1] >> 4, v = bytes[at + 1] & 15, tq = bytes[at + 2];
         if (h < 1 || h > 4 || v < 1 || v > 4) throw jpegError('bad sampling');
         if (tq > 3) throw jpegError('bad quantisation table');
         if (components.some(c => c.id === bytes[at])) throw jpegError('two components with one id');
-        blocksPerMcu += h * v;
         components.push({id: bytes[at], h, v, tq, pred: 0, coverage: new Int8Array(64).fill(-1)});
       }
-      if (blocksPerMcu > 10) throw jpegError('bad sampling');
       const hmax = Math.max(...components.map(c => c.h)), vmax = Math.max(...components.map(c => c.v));
       const mcusX = Math.ceil(width / (8 * hmax)), mcusY = Math.ceil(height / (8 * vmax));
       for (const c of components) {
@@ -161,14 +158,17 @@ export function parseJPEG(bytes) {
         if (!component.quant) throw jpegError('a scan without its quantisation table');
         scan.push({component, dc: huffman[0][bytes[at + 1] >> 4], ac: huffman[1][bytes[at + 1] & 15], dcSlot: bytes[at + 1] >> 4});
       }
+      if (n > 1 && scan.reduce((sum, s) => sum + s.component.h * s.component.v, 0) > 10) throw jpegError('bad sampling');
       const ss = bytes[at], se = bytes[at + 1], ah = bytes[at + 2] >> 4, al = bytes[at + 2] & 15;
       if ((!frame.progressive || (ss === 0 && ah === 0)) && scan.some(s => badDC.has(s.dcSlot))) throw jpegError('bad Huffman table');
-      pos = decodeScan(bytes, end, frame, scan, ss, se, ah, al, restartInterval);
+      const choices = scanChoices ? {resets: [], zeros: []} : null;
+      pos = decodeScan(bytes, end, frame, scan, ss, se, ah, al, restartInterval, choices);
+      if (choices) scanChoices.push(choices);
       frame.scans++;
     } else if (marker === 0xE0) {
       if (signatureAt(segment, 'JFIF')) jfif = true;
     } else if (marker === 0xE1) {
-      if (orientation === 1 && signatureAt(segment, 'Exif')) orientation = exifOrientation(bytes, segment + 6, end);
+      if (signatureAt(segment, 'Exif') && bytes[segment + 4] === 0) orientation ??= exifOrientation(bytes, segment + 6, end);
     } else if (marker === 0xE2) {
       if (length >= 16 && signatureAt(segment, 'ICC_PROFILE\0')) {
         const seq = bytes[segment + 12], count = bytes[segment + 13];
@@ -197,22 +197,21 @@ export function parseJPEG(bytes) {
     if (adobeTransform >= 0) rgb = adobeTransform === 0;
     else rgb = frame.components[0].id === 0x52 && frame.components[1].id === 0x47 && frame.components[2].id === 0x42;
   }
-  return {width: frame.width, height: frame.height, components: frame.components, progressive: frame.progressive, ycbcr: !rgb, orientation, colorSpace};
+  return {width: frame.width, height: frame.height, components: frame.components, progressive: frame.progressive, ycbcr: !rgb, orientation: orientation ?? 1, colorSpace, ...(scanChoices ? {scanChoices} : {})};
 }
 
 function exifOrientation(bytes, start, end) {
   const big = bytes[start] === 0x4D && bytes[start + 1] === 0x4D;
-  if (!big && !(bytes[start] === 0x49 && bytes[start + 1] === 0x49)) return 1;
+  if (!big && !(bytes[start] === 0x49 && bytes[start + 1] === 0x49)) return null;
   const u16 = at => at + 2 > end ? 0 : big ? (bytes[at] << 8) | bytes[at + 1] : bytes[at] | (bytes[at + 1] << 8);
   const u32 = at => at + 4 > end ? 0 : big ? ((bytes[at] << 24) | (bytes[at + 1] << 16) | (bytes[at + 2] << 8) | bytes[at + 3]) >>> 0 : (bytes[at] | (bytes[at + 1] << 8) | (bytes[at + 2] << 16) | (bytes[at + 3] << 24)) >>> 0;
-  if (u16(start + 2) !== 42) return 1;
+  if (u16(start + 2) !== 42 || u32(start + 4) < 8) return null;
   const ifd = start + u32(start + 4), entries = u16(ifd);
   for (let i = 0, at = ifd + 2; i < entries && at + 12 <= end; i++, at += 12) {
-    if (u16(at) !== 0x0112) continue;
     const value = u16(at + 8);
-    return value >= 1 && value <= 8 ? value : 1;
+    if (u16(at) === 0x0112 && u16(at + 2) === 3 && u32(at + 4) === 1 && value >= 1 && value <= 8) return value;
   }
-  return 1;
+  return null;
 }
 
 function admitScan(frame, scan, ss, se, ah, al) {
@@ -241,7 +240,7 @@ function admitScan(frame, scan, ss, se, ah, al) {
   }
 }
 
-function decodeScan(bytes, start, frame, scan, ss, se, ah, al, restartInterval) {
+function decodeScan(bytes, start, frame, scan, ss, se, ah, al, restartInterval, choices) {
   admitScan(frame, scan, ss, se, ah, al);
   let pos = start, buffer = 0, count = 0, pad = 0, marker = false;
   const fill = () => {
@@ -275,7 +274,7 @@ function decodeScan(bytes, start, frame, scan, ss, se, ah, al, restartInterval) 
   const atMarker = () => {
     const remaining = count - pad;
     if (remaining >= 8) throw jpegError('bytes left over in a scan');
-    if (eobrun) throw jpegError('an end-of-band run past its interval');
+    if (eobrun > 0) throw jpegError('an end-of-band run past its interval');
     if (remaining && ((buffer >>> pad) & ((1 << remaining) - 1)) !== (1 << remaining) - 1) throw jpegError('bad scan padding');
     while (pos + 1 < bytes.length && bytes[pos] === 0xFF && bytes[pos + 1] === 0xFF) pos++;
   };
@@ -284,7 +283,7 @@ function decodeScan(bytes, start, frame, scan, ss, se, ah, al, restartInterval) 
     if (!(bytes[pos] === 0xFF && bytes[pos + 1] === 0xD0 + (index & 7))) throw jpegError('a restart marker missing or out of order');
     pos += 2; buffer = 0; count = 0; pad = 0; marker = false;
     for (const s of scan) s.component.pred = 0;
-    eobrun = 0;
+    eobrun = -1;
   };
   const dcValue = (s, t) => {
     if (t > 11) throw jpegError('a DC value out of range');
@@ -299,7 +298,7 @@ function decodeScan(bytes, start, frame, scan, ss, se, ah, al, restartInterval) 
     if (value > 1023 || value < -1023) throw jpegError('an AC value out of range');
     return value;
   };
-  let eobrun = 0;
+  let eobrun = -1, blockIndex = 0;
   const single = scan.length === 1, progressive = frame.progressive;
   const baseline = (s, coeffs, at) => {
     coeffs[at] = dcValue(s, decode(s.dc));
@@ -314,31 +313,39 @@ function decodeScan(bytes, start, frame, scan, ss, se, ah, al, restartInterval) 
   const pastBand = () => jpegError('coefficients past the ' + (progressive ? 'band' : 'block'));
   const acFirst = (s, coeffs, at) => {
     if (eobrun > 0) { eobrun--; return; }
+    const ended = eobrun === 0;
+    eobrun = -1;
+    let zeroRuns = 0;
     for (let k = ss || 1; k <= se;) {
       const rs = decode(s.ac), r = rs >> 4, size = rs & 15;
       if (!size) {
         if (r < 15) {
           if (r && !progressive) throw jpegError('an end-of-band run in a sequential scan');
+          if (progressive && k === ss && ended) choices?.resets.push(blockIndex);
           eobrun = (1 << r) - 1 + (r ? receive(r) : 0); break;
         }
-        k += 16; if (k > se + 1) throw pastBand(); continue;
+        k += 16; zeroRuns++; if (k > se + 1) throw pastBand(); continue;
       }
       k += r;
       if (k > se) throw pastBand();
       coeffs[at + ZIGZAG[k]] = acValue(size, al);
+      zeroRuns = 0;
       k++;
     }
+    if (zeroRuns) choices?.zeros.push({block: blockIndex, count: zeroRuns});
   };
   const acRefine = (s, coeffs, at) => {
     const p1 = 1 << al, m1 = -1 << al;
     let k = ss;
     if (eobrun <= 0) {
+      const ended = eobrun === 0;
+      eobrun = -1;
       for (; k <= se; k++) {
         const rs = decode(s.ac);
         let r = rs >> 4, value = 0;
         const size = rs & 15;
         if (size) { if (size !== 1) throw jpegError('a bad refinement code'); value = receive(1) ? p1 : m1; }
-        else if (r !== 15) { eobrun = 1 << r; if (r) eobrun += receive(r); break; }
+        else if (r !== 15) { if (k === ss && ended) choices?.resets.push(blockIndex); eobrun = 1 << r; if (r) eobrun += receive(r); break; }
         for (; k <= se; k++) {
           const z = at + ZIGZAG[k];
           if (coeffs[z] !== 0) { if (receive(1) && (coeffs[z] & p1) === 0) coeffs[z] += coeffs[z] >= 0 ? p1 : m1; }
@@ -356,7 +363,8 @@ function decodeScan(bytes, start, frame, scan, ss, se, ah, al, restartInterval) 
       eobrun--;
     }
   };
-  const block = !progressive ? baseline : ss === 0 ? (ah === 0 ? dcFirst : dcRefine) : (ah === 0 ? acFirst : acRefine);
+  const decodeBlock = !progressive ? baseline : ss === 0 ? (ah === 0 ? dcFirst : dcRefine) : (ah === 0 ? acFirst : acRefine);
+  const block = (s, coeffs, at) => { decodeBlock(s, coeffs, at); blockIndex++; };
   for (const s of scan) s.component.pred = 0;
   const first = scan[0].component;
   const total = single ? first.blocksW * first.blocksH : frame.mcusX * frame.mcusY;
@@ -376,6 +384,7 @@ function decodeScan(bytes, start, frame, scan, ss, se, ah, al, restartInterval) 
   atMarker();
   if (bytes[pos] === 0xFF && bytes[pos + 1] >= 0xD0 && bytes[pos + 1] <= 0xD7) {
     if (!restartInterval || total % restartInterval || bytes[pos + 1] !== 0xD0 + ((total / restartInterval - 1) & 7)) throw jpegError('a restart marker out of order');
+    if (choices) choices.finalRestart = bytes[pos + 1];
     pos += 2;
     while (pos + 1 < bytes.length && bytes[pos] === 0xFF && bytes[pos + 1] === 0xFF) pos++;
   }

@@ -75,7 +75,7 @@ globalThis.RapierPdfPlugin = (() => {
     let reader;
     try {
       const hostedPath = 'pdfjs-dist-' + version + '/' + path;
-      const address = path === readerFile ? 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.3/' + hostedPath : base + path;
+      const address = path === readerFile ? 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.5/' + hostedPath : base + path;
       const response = await fetch(RapierBundleIO.pluginUrl(hostedPath) || address, {mode: 'cors', credentials: 'omit',
         referrerPolicy: 'no-referrer', cache: 'default', signal: controller.signal});
       if (!response.ok) throw new Error('PDF reader download returned HTTP ' + response.status + '.');
@@ -204,7 +204,7 @@ globalThis.RapierPdfPlugin = (() => {
       const prelude = 'const _rapierPdfFallbacks=Object.freeze(' + JSON.stringify(fallback) + ');\n' +
         'function _rapierPdfModuleUrl(name){if(!Object.hasOwn(_rapierPdfFallbacks,name))throw new Error("Unknown PDF decoder");return _rapierPdfFallbacks[name];}\n' +
         'globalThis.fetch=()=>Promise.reject(new Error("PDF import cannot access the network"));\n' +
-        'globalThis.XMLHttpRequest=class{constructor(){throw new Error("PDF import cannot access the network")}};\n';
+        'globalThis.XMLHttpRequest=globalThis.WebSocket=globalThis.EventSource=class{constructor(){throw new Error("PDF import cannot access the network")}};\n';
       nativeWorker = new Worker(moduleUrl(prelude + source), {type: 'module', name: 'rapier-pdf-import'});
       nativeWorker.addEventListener('error', event => {
         event.preventDefault();

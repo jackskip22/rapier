@@ -27,12 +27,34 @@ function* checkedRecords(ledger, prepared) {
   }
   if (ledger.head.revision !== revision || ledger.head.root !== root) throw fault('history does not describe this document');
 }
+// A ledger object read again is proved once: a boot reads one stored history through several records. The proof holds only
+// while that object still carries the exact proved data (its start text compared whole, the rest as canonical JSON), so a
+// changed byte is proved again, and refused. The proof lives as long as the object does.
+const proofs = new WeakMap();
 function readLedgerState(input, expectedText, expectedMetadata) {
   const ledger = plainData(input);
+  // The identifier rapier-ledger/2 is unchanged and is not backward compatible. This reader
+  // admits an empty physical splice whose authored rows name the same replacement. A reader
+  // from before that rule rejects the chain. Mixed-version sync throws notes_history_unavailable
+  // and leaves the older store unchanged; that refusal is not a held or caughtUp result.
   if (!exactKeys(ledger, ['format','documentAuthority','start','records','head','complete','sha256']) || ledger.format !== 'rapier-ledger/2' ||
       typeof ledger.documentAuthority !== 'string' || !ledger.documentAuthority || ledger.documentAuthority.length > 256 ||
       typeof ledger.complete !== 'boolean' || !Array.isArray(ledger.records) ||
       !exactKeys(ledger.start, ['text','revision','root','sha256','metadata']) || !exactKeys(ledger.head, ['revision','root','sha256','metadata'])) throw fault('unsupported or invalid envelope');
+  const shell = canonicalJSON({...ledger, start: {...ledger.start, text: ''}});
+  let proof = typeof input === 'object' ? proofs.get(input) : undefined;
+  if (!proof || proof.shell !== shell || proof.startText !== ledger.start.text) {
+    proof = {shell, startText: ledger.start.text, ...proveLedger(ledger)};
+    if (typeof input === 'object') proofs.set(input, proof);
+  }
+  proofs.set(ledger, proof);
+  const {text, metadata, root, revision, prepared, source} = proof;
+  if (expectedMetadata !== undefined && (!_rapierValidMetadata(expectedMetadata) || canonicalJSON(metadata) !== canonicalJSON(expectedMetadata)))
+    throw fault('metadata does not describe this document');
+  if (expectedText !== undefined && text !== expectedText) throw fault('history does not describe this document');
+  return {value: {ledger, text, metadata: {...metadata}, root, revision, complete: ledger.complete}, prepared, source};
+}
+function proveLedger(ledger) {
   const {sha256: claimed, ...payload} = ledger;
   if (claimed !== digest(payload)) throw fault('envelope checksum differs');
   let text = documentText(ledger.start.text), root = ledger.start.root, revision = ledger.start.revision;
@@ -55,12 +77,9 @@ function readLedgerState(input, expectedText, expectedMetadata) {
     try { authoredHistory(ledger.start.text, ledger.records); } catch (_) { throw fault('authored origin differs'); }
   }
   const metadata = prepared.replayMetadata(ledger.start.metadata);
-  if (!metadata || canonicalJSON(metadata) !== canonicalJSON(ledger.head.metadata) ||
-      (expectedMetadata !== undefined && (!_rapierValidMetadata(expectedMetadata) || canonicalJSON(metadata) !== canonicalJSON(expectedMetadata))))
-    throw fault('metadata does not describe this document');
-  if (ledger.head.revision !== revision || ledger.head.root !== root || ledger.head.sha256 !== sha256(text) ||
-      (expectedText !== undefined && text !== expectedText)) throw fault('history does not describe this document');
-  return {value: {ledger, text, metadata, root, revision, complete: ledger.complete}, prepared, source};
+  if (!metadata || canonicalJSON(metadata) !== canonicalJSON(ledger.head.metadata)) throw fault('metadata does not describe this document');
+  if (ledger.head.revision !== revision || ledger.head.root !== root || ledger.head.sha256 !== sha256(text)) throw fault('history does not describe this document');
+  return {text, metadata, root, revision, prepared, source};
 }
 // A stored copy may hold the head text alone. Its start is that text with every record reversed; readLedger proves it.
 export function ledgerWithStart(input, text) {
@@ -172,9 +191,7 @@ function finish(producer) {
   return step.value;
 }
 export function exportLedger(input) { return finish(produceLedger(input)).ledger; }
-// Both synchronous public export and cooperative recovery use the same producer.
 // Its returned facts were computed while admitting/hashing the exact head, never supplied.
-export function prepareLedger(input) { return finish(produceLedger(input)); }
 export async function prepareLedgerAsync(input, {yield: yieldWork, signal} = {}) {
   const producer = produceLedger(input);
   let step;

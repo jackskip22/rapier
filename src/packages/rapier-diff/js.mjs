@@ -3,7 +3,7 @@
 export function js(acorn) {
   return (text, {language} = {}) => {
     if (language != null && !/^(?:js|javascript|mjs|cjs|ecmascript|html?|xhtml)$/i.test(language)) return null;
-    const parts = [], links = [], uses = [], annex = [], evals = [], members = new Map(), identities = new Map();
+    const parts = [], links = [], uses = [], annex = [], evals = [], members = new Map(), roots = new Set(), identities = new Map();
     const identity = name => { const n = identities.get(name) || 0; identities.set(name, n + 1); return '@' + name + (n ? '~' + n : ''); };
     const scope = (parent, label = '', variable = false, strict = false, owner = '') => {
       const ordinal = parent ? parent.id + '/s' + parent.scopes++ : 's0';
@@ -80,6 +80,16 @@ export function js(acorn) {
       }
       return false;
     };
+    const accessor = (member, name, label, accessors, into) => {
+      const first = !member.computed && /^[gs]et$/.test(member.kind) && accessors.get(name);
+      if (first?.kind === member.kind || !first) {
+        const p = part(member, 'declaration', name, into, member.computed ? null : member.key);
+        if (/^[gs]et$/.test(member.kind) && !member.computed) accessors.set(name, {kind: member.kind, part: p});
+        return p;
+      }
+      links.push({at: span(member.key), to: name, key: first.part.key});
+      return part(member, 'declaration', label + member.kind + ':' + keyText(member.key), into);
+    };
     const keyText = (node, computed) => !computed && (node.type === 'Identifier' || node.type === 'PrivateIdentifier')
       ? (node.type === 'PrivateIdentifier' ? '#' : '') + node.name
       : node.type === 'Literal' ? String(node.value) : '[' + text.slice(...span(node)) + ']';
@@ -107,12 +117,14 @@ export function js(acorn) {
     }
     function classBody(node, outer, into, owner) {
       const s = scope(outer, owner || named(outer, '(class:' + outer.scopes + ')'), false, true, owner && owner + '/class');
+      roots.add(s.label + '/').add(s.label + '/static:');
       if (node.id) {
         const existing = node.type === 'ClassDeclaration' ? lookup(outer, node.id.name) : null;
         if (existing) s.names.set(node.id.name, existing);
         else binding(node.id, s, into);
       }
       if (node.superClass) walk(node.superClass, s, into);
+      const accessors = new Map();
       for (const member of node.body.body) {
         if (member.type === 'StaticBlock') {
           const p = part(member, 'scope', s.label + '/static', into);
@@ -121,11 +133,11 @@ export function js(acorn) {
           for (const n of member.body) walk(n, block, p.children);
           continue;
         }
-        const name = s.label + '/' + (member.static ? 'static:' : '') + keyText(member.key, member.computed);
-        const p = part(member, 'declaration', name, into, member.computed ? null : member.key);
+        const label = s.label + '/' + (member.static ? 'static:' : ''), name = label + keyText(member.key, member.computed);
+        const p = accessor(member, name, label, accessors, into);
         if (member.computed) walk(member.key, s, p.children);
         p.key = s.id + '/b' + s.bindings++;
-        members.set(name, p);
+        members.set(p.name, p);
         if (member.value) {
           const own = scope(s, name);
           own.self = s.label + '/' + (member.static ? 'static:' : ''); own.method = true;
@@ -138,14 +150,16 @@ export function js(acorn) {
       else if (node.type === 'ClassExpression') classBody(node, s, into, owner);
       else if (node.type === 'ObjectExpression' && owner) {
         const id = identity(owner + '/object');
+        roots.add(owner + '/');
         let index = 0;
+        const accessors = new Map();
         for (const property of node.properties) {
           if (property.type === 'SpreadElement') { walk(property.argument, s, into); continue; }
           const name = owner + '/' + keyText(property.key, property.computed);
-          const p = part(property, 'declaration', name, into, property.computed ? null : property.key);
+          const p = accessor(property, name, owner + '/', accessors, into);
           if (property.computed) walk(property.key, s, p.children);
           p.key = id + '/property' + index++;
-          members.set(name, p);
+          members.set(p.name, p);
           const own = property.value.type === 'FunctionExpression' ? scope(s, name) : s;
           if (own !== s) { own.self = owner + '/'; own.method = true; }
           value(property.value, own, p.children, name);
@@ -171,14 +185,16 @@ export function js(acorn) {
       if (type === 'FunctionExpression' || type === 'ArrowFunctionExpression') { functionBody(node, s, into); return; }
       if (type === 'ClassExpression') { classBody(node, s, into); return; }
       if (type === 'VariableDeclaration') {
+        const lone = node.declarations.length === 1, group = lone ? into
+          : part(node, 'statement', node.declarations.map(d => text.slice(...span(d.id))).join(', '), into).children;
         for (const declarator of node.declarations) {
-          const target = node.kind === 'var' ? s.variable : s;
+          const target = node.kind === 'var' ? s.variable : s, whole = lone ? node : declarator;
           const p = declarator.id.type === 'Identifier'
-            ? binding(declarator.id, target, into, declarator)
-            : part(declarator, 'declaration', named(s, text.slice(...span(declarator.id))), into);
+            ? binding(declarator.id, target, group, whole)
+            : part(whole, 'declaration', named(s, text.slice(...span(declarator.id))), group);
           if (declarator.id.type !== 'Identifier') for (const id of pattern(declarator.id)) binding(id, target, p.children);
-          patternExpressions(declarator.id, s, p?.children || into);
-          if (declarator.init) value(declarator.init, s, p?.children || into, p?.name);
+          patternExpressions(declarator.id, s, p?.children || group);
+          if (declarator.init) value(declarator.init, s, p?.children || group, p?.name);
         }
         return;
       }
@@ -333,10 +349,10 @@ export function js(acorn) {
     for (const use of uses) {
       const resolved = use.member ? null : lookup(use.s, use.node.name);
       if (resolved?.ambiguous) continue;
-      const found = use.member ? members.get(memberName(use.node, use.s))
-        || members.get(memberName(use.node.object, use.s) + '/static:' + keyText(use.node.property, use.node.computed))
-        : resolved?.part;
-      if (!use.member || found) links.push({at: use.at, to: found?.name || use.node.name, ...(found?.key ? {key: found.key} : {})});
+      const base = use.member && memberName(use.node.object, use.s), name = use.member ? memberName(use.node, use.s) : use.node.name;
+      const found = use.member ? members.get(name) || members.get(base + '/static:' + keyText(use.node.property, use.node.computed)) : resolved?.part;
+      if (!use.member || found || name && roots.has(/[/:]$/.test(base) ? base : base + '/'))
+        links.push({at: use.at, to: found?.name || name, ...(found?.key ? {key: found.key} : {})});
     }
     const tidy = rows => { rows.sort((a, b) => a.start - b.start || b.end - a.end); for (const row of rows) { tidy(row.children); if (!row.children.length) delete row.children; } };
     tidy(parts);

@@ -109,7 +109,7 @@ export function paintRecompressionWorker(makePNG) {
 	};
 	async function read(bytes) {
 		if (typeof ImageDecoder !== 'function' || !await ImageDecoder.isTypeSupported('image/jxl')) return null;
-		const decoder = new ImageDecoder({data: bytes, type: 'image/jxl', colorSpaceConversion: 'none', preferAnimation: false});
+		const decoder = new ImageDecoder({data: bytes, type: 'image/jxl', premultiplyAlpha: 'none', preferAnimation: false});
 		try {
 			const result = await decoder.decode({frameIndex: 0, completeFramesOnly: true}), image = result.image;
 			try {

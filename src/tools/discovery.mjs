@@ -4,19 +4,21 @@ import {VERSION} from '../version.mjs';
 export const MCP_DOOR = 'https://mcp.rapier.website/mcp';
 export const DISCOVERY_LINKS = '<link rel="describedby" href="https://rapier.website/llms.txt" type="text/plain">\n' +
   '<link rel="ai-catalog" href="https://rapier.website/.well-known/ai-catalog.json" type="application/ai-catalog+json">';
-export const SITE_TITLE = 'Rapier: fast offline Markdown editor and notes';
-export const SITE_DESCRIPTION = 'A fast offline Markdown editor for notes, SVG drawing and watercolor. ' +
-  'Import Word and PDF; export Word, PDF and HTML for free. No ads or tracking.';
-export const APP_DESCRIPTION = 'Fast Markdown editor and note-taking app for writing, Mermaid diagrams, editable SVG drawing and watercolor painting. ' +
-  'Keep text and embedded pictures in plain Markdown. Import Word and PDF; export Word, PDF, text and offline HTML for free. ' +
-  'Work offline, or collaborate online with AI agents over MCP and WebMCP. No ads or tracking.';
+export const PLAY_URL = 'https://play.google.com/store/apps/details?id=app.rapier';
+export const SITE_TITLE = 'Rapier: Markdown editor and notes app for Android and web';
+export const SITE_DESCRIPTION = 'Free Markdown editor and notes app for Android and the web. Write on the formatted page, ' +
+  'draw and paint, and work offline. No account, ads or tracking.';
+export const APP_DESCRIPTION = 'Free Markdown editor and notes app for Android, the web and Windows. ' +
+  'Write on the formatted page or in the Markdown source, make Mermaid diagrams, draw editable SVG and paint watercolor. ' +
+  'Text and pictures stay in one plain Markdown file. Import Word and PDF; export Word, PDF, text and offline HTML for free. ' +
+  'Works offline, with no account, ads or tracking. Optionally, an AI agent edits with you over MCP and WebMCP.';
 
 export function mcpServer({endpoint = MCP_DOOR, packageVersion = VERSION} = {}) {
   return {
     $schema: 'https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json',
     name: 'io.github.jackskip22/rapier',
-    title: 'Rapier',
-    description: 'Fast Markdown editor you share live with your AI agent: notes, diagrams, drawing and watercolor.',
+    title: 'Rapier - Markdown Editor & Art',
+    description: 'Markdown editor for writing, notes, editable diagrams, drawing and painting with your AI assistant.',
     version: packageVersion,
     websiteUrl: 'https://rapier.website/agents',
     repository: {url: 'https://github.com/jackskip22/rapier-plugins', source: 'github'},

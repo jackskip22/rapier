@@ -73,7 +73,14 @@ export async function importNotion(entries, options) {
 	}
 
 	const mdEntries = named.filter(e => /\.md$/i.test(e.name) && typeof e.text === 'string');
-	const csvEntries = named.filter(e => /\.csv$/i.test(e.name) && typeof e.text === 'string');
+	let csvEntries = named.filter(e => /\.csv$/i.test(e.name) && typeof e.text === 'string');
+	const views = [];
+	for (const all of csvEntries.filter(e => /[ _][0-9a-f]{32}_all\.csv$/i.test(e.name))) {
+		all.name = all.name.replace(/_all\.csv$/i, '.csv');
+		const view = csvEntries.find(e => e !== all && e.name === all.name);
+		if (view) views.push({view, all});
+	}
+	csvEntries = csvEntries.filter(e => !views.some(row => row.view === e));
 	const pictureEntries = named.filter(e => e.bytes && imageMime(splitExt(basename(e.name))[1]));
 
 	const pictures = pictureEntries.map(e => ({name: e.sourceName, sourceName: e.sourceName, rootId: e.rootId ?? '', bytes: e.bytes, mime: imageMime(splitExt(e.name)[1])}));
@@ -172,5 +179,6 @@ export async function importNotion(entries, options) {
 	let last = lastOrder;
 	for (const n of byNewest) { last = orderAfter(last); n.entry.order = last; if (Number.isFinite(n.created) && n.entry.created === undefined) n.entry.created = Math.round(n.created); }
 
-	return finishImportCharacters({notes: built.map(({created, ...note}) => note), skipped, sections, pictures, consumed: csvEntries.filter(csv => built.some(note => note.propertySourceName === csv.sourceName || note.sourceName === csv.sourceName)).map(csv => ({name: csv.sourceName, rootId: csv.rootId ?? '', files: built.filter(note => note.propertySourceName === csv.sourceName || note.sourceName === csv.sourceName).map(note => note.file)}))});
+	const read = csv => built.filter(note => note.propertySourceName === csv.sourceName || note.sourceName === csv.sourceName).map(note => note.file);
+	return finishImportCharacters({notes: built.map(({created, ...note}) => note), skipped, sections, pictures, consumed: [...views.map(({view, all}) => ({name: view.sourceName, rootId: view.rootId ?? '', files: read(all)})), ...csvEntries.filter(csv => read(csv).length).map(csv => ({name: csv.sourceName, rootId: csv.rootId ?? '', files: read(csv)}))]});
 }

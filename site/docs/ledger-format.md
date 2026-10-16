@@ -111,7 +111,9 @@ the authorship projection recomputed from the ledger must agree exactly.
 text. Runs are `[start, end, actorKind, actorId, at]`, in order, nonoverlapping and
 covering every current character. A start without earlier authorship is attributed
 to `system/unattributed`, time zero. Insertions take the inserting record's actor
-and time; deleted runs disappear. Thus the projection contains **no removed text**.
+and time, except text an Undo or Redo puts back: a splice inserting exactly the text
+that a splice of the referenced act removed keeps the runs that text had. Deleted
+runs disappear. Thus the projection contains **no removed text**.
 An authorship-only import becomes a clearly incomplete insertion ledger; future
 attribution is again derived from that one ledger, never a mutable blame database.
 

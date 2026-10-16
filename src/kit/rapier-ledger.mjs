@@ -10,6 +10,8 @@ export {_rapierTransformSplices, _rapierRecordSplices, _rapierValidLedgerRecord,
 import {replayHistory, sourceBefore, historyProjection, historyProjections, historyPlaces, selectiveUndo, groupHistoryActs, pictureHistorySplices} from './ledger/history.mjs';
 export {replayHistory, sourceBefore, historyProjection, historyProjections, historyPlaces, selectiveUndo, groupHistoryActs, pictureHistorySplices};
 
+import {sha256State} from './ledger/hash.mjs';
+export {sha256State};
 import {transposeSource} from './ledger/transport.mjs';
 export {transposeSource};
 

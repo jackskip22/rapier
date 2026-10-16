@@ -143,15 +143,10 @@
 				"kind": "sanitized-document",
 				"reason": "Only caller is _rapierFinishSanitizedBlock, which passes already-sanitized HTML to the string branch; a retained tree is never reparsed."
 			},
-			"_loadFlatDoc": {
+			"_rapierClearRichSurface": {
 				"count": 1,
 				"kind": "empty",
-				"reason": "blocksHost.innerHTML = '' clears the editor host when loading a fresh document."
-			},
-			"_createTableToolbar": {
-				"count": 1,
-				"kind": "static-template",
-				"reason": "Fixed SVG/button markup plus the block's numeric id and numeric row/col stats; no document text is concatenated in."
+				"reason": "blocksHost.innerHTML = '' clears the editor host for a flat load or a new document."
 			},
 			"_createBlockReadSurface": {
 				"count": 1,
@@ -187,11 +182,6 @@
 				"count": 1,
 				"kind": "probe",
 				"reason": "Detached div parses markdown-it inline output restricted to an allowlist of safe token types (no links/images/raw html) purely to read back textContent; never attached."
-			},
-			"_rapierHighlightPlanRoundTrips": {
-				"count": 1,
-				"kind": "probe",
-				"reason": "Detached div's innerHTML is renderBlock(raw) (sanitized) used only to compare projections for a round-trip safety check; never attached to the page."
 			},
 			"_rapierRenderedHighlightProbe": {
 				"count": 1,
@@ -257,11 +247,6 @@
 				"count": 1,
 				"kind": "static-template",
 				"reason": "prompt.innerHTML is a fixed constant SVG/button string with no interpolation."
-			},
-			"_setFindCount": {
-				"count": 1,
-				"kind": "static-template",
-				"reason": "el.innerHTML concatenates only the numeric cur/total search counts inside fixed spans."
 			},
 			"_rapierEnsureImageUi": {
 				"count": 2,
@@ -348,11 +333,6 @@
 				"kind": "sanitized-document",
 				"reason": "root.innerHTML = _rapierPreparePasteHtml(chunk), which sanitizes via sanitizeRapierHtml(chunk,'paste') before this assignment."
 			},
-			"_rapierTabularPasteGrid": {
-				"count": 1,
-				"kind": "sanitized-document",
-				"reason": "root.innerHTML = _rapierPreparePasteHtml(html), sanitized via sanitizeRapierHtml(html,'paste') before this assignment."
-			},
 			"_refreshCodeHighlight": {
 				"count": 3,
 				"kind": "static-template",
@@ -373,16 +353,6 @@
 				"kind": "static-template",
 				"reason": "target.innerHTML is the line's text through _rapierCodeHtml or _rapierEscapeHtml, both escaping it before any span markup, wrapped via _rapierLineHtml."
 			},
-			"rapierHighlight": {
-				"count": 1,
-				"kind": "sanitized-document",
-				"reason": "plan.live.innerHTML receives the highlight-mark plan's html, which _rapierHighlightPlanRoundTrips has already round-tripped through the sanitizer and verified against the live block before the write."
-			},
-			"rapierNewDocument": {
-				"count": 1,
-				"kind": "empty",
-				"reason": "blocksHost.innerHTML = '' clears the editor host for a new document."
-			},
 			"_rapierRenderCommandPalette": {
 				"count": 1,
 				"kind": "static-template",
@@ -396,7 +366,7 @@
 			"_rapierBlockLiveText": {
 				"count": 1,
 				"kind": "sanitized-document",
-				"reason": "A sleeping block is read through the canonical renderBlock(block.raw) renderer and sanitizer before its HTML enters a detached template. The transient tree supplies semantic text only, registers no resource observers, and never authorizes a source mutation."
+				"reason": "A sleeping block is read through the canonical renderBlock(block.raw) renderer and sanitizer, or that renderer's _rapierRenderBlocksBatched sanitized batch, before its HTML enters a detached template. The transient tree supplies semantic text only, registers no resource observers, and never authorizes a source mutation."
 			}
 		},
 		"images/interchange.js": {
@@ -456,14 +426,12 @@
 				"reason": "document.body.insertAdjacentHTML receives the reader's own packed interface markup (editor/ui.html cut at build time), inflated at boot; no document or network text ever reaches it."
 			}
 		},
-		"reader/pdf.js": {
-			"markdownOfPdf": {
+		"reader/app.js": {
+			"readerCarriedDocument": {
 				"count": 1,
 				"kind": "untrusted-parse",
-				"reason": "DOMParser.parseFromString reads the PDF reader's own output (interchange/pdf.mjs writes each page's text through its escape function into paragraphs, line breaks and rules) into an inert document that is never attached; only its text and the page-picture references are read, and the result is Markdown text, never markup."
-			}
-		},
-		"reader/app.js": {
+				"reason": "template.innerHTML parses an opened HTML editor file into an inert <template>, never attached; only its one #rapier-document carrier's text and data-name are read, as the editor's own reader (editor/share.js) reads them."
+			},
 			"readerOpenLicenses": {
 				"count": 1,
 				"kind": "static-template",
@@ -495,6 +463,11 @@
 			}
 		},
 		"kit/render-markdown.mjs": {
+			"_rapierInertParse": {
+				"count": 1,
+				"kind": "untrusted-parse",
+				"reason": "Copy's interior blocks: the Markdown renderer's markup of source with no authored HTML, parsed by DOMParser into a document without a browsing context, so nothing runs or loads. The engine builds the clipboard tree in that document and never attaches it; its text becomes text/plain and its HTML flavour is sanitizeRapierHtml('render') output."
+			},
 			"_rapierRemoveCalloutMarker": {
 				"count": 1,
 				"kind": "sanitized-document",
@@ -568,6 +541,11 @@
 				"count": 1,
 				"kind": "untrusted-parse",
 				"reason": "The HTML editor file is parsed into an inert template. Only the uniquely identified non-executable source and validated ledger/baseline carriers are read; no imported markup or script is attached or executed."
+			},
+			"_rapierShareQuoteCard": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "The quote card's srcdoc carries the shared-page writer's sanitized body and stylesheet for the selected words, an escaped drawing data URL and fixed card rules. The iframe is sandboxed without scripts under a CSP admitting only data: images and fonts, and is removed when the picture is made."
 			}
 		},
 		"shell/plugin-loader.js": {
@@ -582,6 +560,32 @@
 				"count": 1,
 				"kind": "probe",
 				"reason": "The pinned native ZenUML renderer supplies escaped SVG markup in its owned render realm after public-parser validation and the resource preflight. The completed SVG passes Rapier's diagram sanitizer before reaching the document or export."
+			}
+		},
+		"editor/tables.js": {
+			"_createTableToolbar": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "Fixed SVG/button markup plus the block's numeric id and numeric row/col stats; no document text is concatenated in."
+			},
+			"_rapierTabularPasteGrid": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "root.innerHTML = _rapierPreparePasteHtml(html), sanitized via sanitizeRapierHtml(html,'paste') before this assignment."
+			}
+		},
+		"editor/find-controller.js": {
+			"_setFindCount": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "el.innerHTML concatenates only the numeric cur/total search counts inside fixed spans."
+			}
+		},
+		"editor/math-keys.js": {
+			"update": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "preview.innerHTML receives sanitizeRapierHtml()'s own output for the verified maths plug-in's SVG of the formula at the caret, or ''."
 			}
 		}
 	}

@@ -3,7 +3,7 @@ import {stampFor, stampsMatch, stampDurable, planIndexReuse} from './search-stor
 import {packSearchProjection, unpackSearchProjection} from './search.mjs';
 import {packLinkProjection, unpackLinkProjection} from './links.mjs';
 
-export const SEARCH_CACHE_VERSION = '__RAPIER_SEARCH_CACHE_VERSION__';
+const SEARCH_CACHE_VERSION = '__RAPIER_SEARCH_CACHE_VERSION__';
 export const SEARCH_CACHE_LIMITS = Object.freeze({bytes: 50_000 * 832, batchBytes: 256 * 832, batchRows: 256});
 const DATABASE = 'rapier-notes-search', STORE = 'rows', META = 'account';
 const uint = n => Number.isSafeInteger(n) && n >= 0;

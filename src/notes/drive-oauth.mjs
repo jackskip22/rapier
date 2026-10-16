@@ -3,7 +3,6 @@ export const AUTHORIZE_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth'
 export const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 export const REVOKE_ENDPOINT = 'https://oauth2.googleapis.com/revoke';
 export const SCOPES = 'https://www.googleapis.com/auth/drive.file';
-export const SETUP_NOTICE = 'Google Drive needs a registered Google app and a proved native authorization return. Google web code flow requires a backend; Rapier will not embed its secret or silently switch to implicit tokens.';
 export function authorizeUrl(options = {}) {
 	const params = authorizeParams(options, SCOPES);
 	params.set('access_type', 'offline'); params.set('prompt', 'consent');

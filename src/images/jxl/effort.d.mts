@@ -12,13 +12,13 @@ export interface EffortOptions extends EncodeOptions {
    * Requires quality 100. Uses core lossless prediction and palette selection without the effort ladder. */
   losslessProfile?: 'painting' | undefined;
 }
-/** Lossless encoding: effort 1 writes the core's bytes; 2 adds weighted prediction; 3 adds contexts and screen
- * coding; 4 adds color-transform search and local palettes; 5 learns a predictor/context model per group with
- * prefix/ANS selection and broader screen matching; 6 learns it under the color transform that sampled residuals rank
- * first; 7 adds predictors and properties; 8 uses all 14 predictors; 9 also learns it under the second-ranked
- * transform.
- * Levels 1 to 4 accumulate; from 5 each level's learned model replaces the level below's. Complete streams compete
- * by size, with the earlier result winning ties.
+/** Lossless encoding: effort 1 writes the core's bytes; 2 adds weighted prediction; 3 learns a small tree per group
+ * with ANS instead (a screen keeps error contexts and screen coding); 4 adds error contexts, color-transform search and
+ * local palettes; 5 learns a predictor/context model per group with prefix/ANS selection and broader screen
+ * matching; 6 learns it under the color transform that sampled residuals rank first; 7 adds predictors and
+ * properties; 8 uses all 14 predictors; 9 also learns it under the second-ranked transform.
+ * Levels 3 and 4 accumulate on effort 1's stream; from 5 each level's learned model replaces the level below's.
+ * Complete streams compete by size, with the earlier result winning ties.
  * Native integer effort 2 also tries untransformed RGB; floats have no additional lossless search. */
 export function encode(data: Pixels, width: number, height: number, options?: EffortOptions): Bytes;
 /** Incremental encode. Above effort 1, lossless progress up to 0.5 writes effort 1's stream; the rest searches.

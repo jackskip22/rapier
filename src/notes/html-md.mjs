@@ -121,7 +121,7 @@ function styleMarks(styles) {
 			const decoration = (value.includes('underline') ? 4 : 0) | (value.includes('line-through') ? 8 : 0);
 			set = (set & ~12) | decoration; clear = (clear & ~12) | (12 ^ decoration); continue;
 		} else {
-			if (!(name === 'font-variant' && value === 'normal' || name === 'vertical-align' && value === 'baseline' || name === 'background-color' && value === 'transparent')) unrepresented.push(name);
+			if (!(name === 'font-variant' && value === 'normal' || name === 'vertical-align' && value === 'baseline' || name === 'background-color' && value === 'transparent' || name === 'white-space' && value === 'pre-wrap' || name === 'line-height' && value === '1.38' || /^(?:margin-top|margin-bottom)$/.test(name) && /^0(?:\.0+)?(?:pt|px)?$/.test(value))) unrepresented.push(name);
 			continue;
 		}
 		if (on) { set |= bit; clear &= ~bit; } else { clear |= bit; set &= ~bit; }
@@ -143,7 +143,7 @@ function materializeStyles(tree) {
 		if (node.tag === 'code') return wrap([node], mask & (heading ? ~1 : -1));
 		const children = (node.children || []).flatMap(child => walk(child, mask, heading));
 		if (highlightOf(node) && node.tag !== 'mark') { node.tag = 'span'; node.children = children; return [node]; }
-		if (STYLE_TAGS[node.tag] || ((node.tag === 'span' || node.tag === 'font') && !textColorOf(node))) return children;
+		if (STYLE_TAGS[node.tag] || ((node.tag === 'span' || node.tag === 'font') && !textColorOf(node) && !Object.keys(typography.parseStyle(attrText(node, 'style'))).length)) return children;
 		node.children = children; return [node];
 	};
 	walk(tree);
@@ -163,7 +163,7 @@ function materializeStyles(tree) {
 
 function plainProjection(node) {
 	if (typeof node === 'string') return node;
-	if (node.literal || node.cssMarks?.set || textColorOf(node) || highlightOf(node) || !['#root', 'p', 'div', 'span', 'font', 'br'].includes(node.tag)) return null;
+	if (node.literal || node.cssMarks?.set || textColorOf(node) || highlightOf(node) || Object.keys(typography.parseStyle(attrText(node, 'style'))).length || !['#root', 'p', 'div', 'span', 'font', 'br'].includes(node.tag)) return null;
 	if (node.cssMarks?.unrepresented.some(name => /^(?:font-weight|font-style|text-decoration(?:-line)?|style)$/.test(name))) return null;
 	if (node.tag === 'br') return '\n';
 	if ((node.tag === 'p' || node.tag === 'div') && node.children?.length === 1 && node.children[0]?.tag === 'br') return '';
@@ -272,6 +272,10 @@ function highlightOf(node) {
 	const style = attrText(node, 'style');
 	return style ? highlightOfStyle(style, node.tag) : '';
 }
+function runHighlight(node) {
+	for (let at = node.parent; at && (at.tag === 'span' || at.tag === 'font'); at = at.parent) { const colour = highlightOf(at); if (colour) return colour; }
+	return '';
+}
 function holdsMark(node) { return (node.children || []).some(c => typeof c !== 'string' && (c.tag === 'mark' || holdsMark(c))); }
 function insideMark(node) { for (let at = node.parent; at; at = at.parent) if (at.tag === 'mark') return true; return false; }
 function highlighted(node, text, colour) {
@@ -293,7 +297,7 @@ function renderInline(node) {
 	if (tag === 'i' || tag === 'em') return marked(inner(), '*', node);
 	if (tag === 'u' || tag === 'ins') return marked(inner(), '++', node);
 	if (tag === 's' || tag === 'strike' || tag === 'del') return marked(inner(), '~~', node);
-	if (tag === 'mark') return holdsMark(node) ? inner() : highlighted(node, inner(), highlightOf(node));
+	if (tag === 'mark') return holdsMark(node) ? inner() : highlighted(node, inner(), highlightOf(node) || runHighlight(node));
 	if (tag === 'sub') return scriptRun(inner(), '~') ?? node.raw;
 	if (tag === 'sup') return scriptRun(inner(), '^') ?? node.raw;
 	if (tag === 'a') { const href = attrText(node, 'href'), s = inner(); return href ? '[' + (s || escapeInline(href)) + '](' + encodeUrl(href) + linkTitle(attrText(node, 'title')) + ')' : s; }

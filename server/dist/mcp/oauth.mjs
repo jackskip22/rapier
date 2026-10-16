@@ -49,6 +49,40 @@ async function authorizationServer(env) {
   return servers.get(issuer);
 }
 
+const GRANT_RECORD = /^(?:grant|token):([^:]+):([^:]+)(?::[^:]+)?$/;
+export function consistentGrants(env) {
+  const kv = env.OAUTH_KV;
+  if (!kv || !env.BUDGET?.get || !env.BUDGET?.idFromName) return env;
+  const tokens = new Map();
+  const ask = async (key, body) => {
+    const [, userId, grantId] = GRANT_RECORD.exec(key);
+    const response = await env.BUDGET.get(env.BUDGET.idFromName('oauth-grant:' + userId + ':' + grantId)).fetch(new Request('https://rapier.internal/grant',
+      {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({...body, key})}));
+    if (!response.ok) throw new Error('The grant record is unavailable.');
+    return response.json();
+  };
+  return {...env, OAUTH_KV: {
+    async get(key, options) {
+      if (!GRANT_RECORD.test(key)) return kv.get(key, options);
+      if (key.startsWith('token:') && !tokens.has(key)) tokens.set(key, ask(key, {op: 'get'}));
+      const answer = await (tokens.get(key) || ask(key, {op: 'get'}));
+      const value = answer.state === 'unknown' ? await kv.get(key) : answer.state === 'value' ? answer.value : null;
+      return value !== null && (options === 'json' || options?.type === 'json') ? JSON.parse(value) : value;
+    },
+    async put(key, value, options = {}) {
+      if (key.startsWith('grant:') && (await ask(key, {op: 'put', value, expires: options.expiration ? options.expiration * 1000 :
+          options.expirationTtl ? Date.now() + options.expirationTtl * 1000 : undefined})).state !== 'stored') return;
+      return kv.put(key, value, options);
+    },
+    async delete(key) {
+      tokens.clear();
+      if (GRANT_RECORD.test(key)) await ask(key, {op: 'delete'});
+      return kv.delete(key);
+    },
+    list: options => kv.list(options),
+  }};
+}
+
 export function validGrantReference(value) {
   return value !== null && typeof value === 'object' && OWNER_PATTERN.test(value.ownerId || '') &&
     CONNECTION_PATTERN.test(value.connectionId || '') && /^[A-Za-z0-9_-]{1,128}$/.test(value.grantId || '') &&
@@ -61,7 +95,7 @@ export async function oauthGrantCurrent(reference, env) {
   const origin = oauthOrigin(env);
   if (![origin + '/mcp', origin + '/muse'].includes(reference.audience)) return false;
   if (!env.OAUTH_KV) return false;
-  const grant = await env.OAUTH_KV.get('grant:' + reference.ownerId + ':' + reference.grantId, 'json');
+  const grant = await consistentGrants(env).OAUTH_KV.get('grant:' + reference.ownerId + ':' + reference.grantId, 'json');
   return !!grant && grant.id === reference.grantId && grant.userId === reference.ownerId && grant.clientId === reference.clientId &&
     grant.metadata?.connectionId === reference.connectionId &&
     (grant.expiresAt === undefined || Number.isSafeInteger(grant.expiresAt) && grant.expiresAt > Math.floor(Date.now() / 1000)) &&
@@ -304,7 +338,7 @@ async function disconnect(request, env, api) {
     const grantId = form.get('grant');
     if (form.getAll('grant').length !== 1 || !/^[A-Za-z0-9_-]{1,128}$/.test(grantId || '')) return json(400, {error: 'invalid_request'});
     await api.revokeGrant(grantId, ownerId);
-    return html(200, 'Connection revoked', '<p>The revocation was recorded. Access tokens expire within 15 minutes; distributed storage may take time to apply the revocation everywhere.</p><p><a href="/oauth/disconnect">View connections</a></p>');
+    return html(200, 'Connection revoked', '<p>The connection is revoked. Its tokens no longer work.</p><p><a href="/oauth/disconnect">View connections</a></p>');
   }
   if (request.method !== 'GET') return json(405, {error: 'method_not_allowed'}, {Allow: 'GET, POST'});
   const query = new URL(request.url).searchParams;
@@ -318,6 +352,7 @@ async function disconnect(request, env, api) {
 }
 
 export async function handleOAuth(request, env, ctx, next) {
+  env = consistentGrants(env);
   const url = new URL(request.url);
   let origin;
   try { origin = oauthOrigin(env); } catch {

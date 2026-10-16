@@ -2,11 +2,11 @@
 // Unicode mathematical alphabets shared by SVG and MathML. No font lookup.
 const MATH_STYLED_RANGES = {
   italic: [0x1d434, 0x1d44e, null], bold: [0x1d400, 0x1d41a, 0x1d7ce],
-  'bold-italic': [0x1d468, 0x1d482, null], script: [0x1d49c, 0x1d4b6, null],
+  'bold-italic': [0x1d468, 0x1d482, 0x1d7ce], script: [0x1d49c, 0x1d4b6, null],
   'bold-script': [0x1d4d0, 0x1d4ea, null], fraktur: [0x1d504, 0x1d51e, null],
   'bold-fraktur': [0x1d56c, 0x1d586, null], 'double-struck': [0x1d538, 0x1d552, 0x1d7d8],
   'sans-serif': [0x1d5a0, 0x1d5ba, 0x1d7e2], 'sans-serif-bold': [0x1d5d4, 0x1d5ee, 0x1d7ec],
-  'sans-serif-italic': [0x1d608, 0x1d622, null], 'sans-serif-bold-italic': [0x1d63c, 0x1d656, null],
+  'sans-serif-italic': [0x1d608, 0x1d622, null], 'sans-serif-bold-italic': [0x1d63c, 0x1d656, 0x1d7ec],
   monospace: [0x1d670, 0x1d68a, 0x1d7f6],
 };
 const MATH_STYLED_LEGACY = {

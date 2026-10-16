@@ -225,7 +225,7 @@ function _rapierSheetGestureFinishWithoutPoint(cancelled) {
 
 function renderEdgeSwipe() {
 	const host = _rapierSheetGesture.host;
-	if (!host) return;
+	if (!host?.edge) return;
 	host.edge.classList.toggle('active',
 		!_rapierUiDialogIsOpen(host.settings().overlay) && !_rapierSheetGesture.settling);
 }
@@ -254,7 +254,7 @@ function _rapierSheetGestureInstall(host) {
 			return;
 		}
 
-		if (document.querySelector('.settings-overlay.open') || host.edgeBlocked?.()) return;
+		if (!host.edge || document.querySelector('.settings-overlay.open') || host.edgeBlocked?.()) return;
 		if (!host.edge.classList.contains('active')) return;
 		const rect = host.edge.getBoundingClientRect();
 

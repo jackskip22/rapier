@@ -5,7 +5,7 @@ export type {Bytes, Limits, ErrorCode, EncoderError, Job} from './index.mjs';
 export const LIMITS: Limits;
 export type Orientation = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 export interface Transcoded {
-  /** JPEG XL file bytes as a bare codestream. */ bytes: Bytes;
+  /** JPEG XL container with the coefficients and original JPEG reconstruction data. */ bytes: Bytes;
   /** Display dimensions, adjusted for Exif orientation. */ width: number; height: number;
   /** Exif orientation preserved in the JPEG XL header. */ orientation: Orientation;
 }
@@ -18,3 +18,5 @@ export function transcode(jpeg: Uint8Array, options?: TranscodeOptions): Transco
 /** Incremental transcode. The first step reads scans and sets display dimensions and orientation. */
 export interface TranscodeJob extends Job { width?: number; height?: number; orientation?: Orientation; }
 export function transcodeSteps(jpeg: Uint8Array, options?: TranscodeOptions): TranscodeJob;
+/** Restore an original JPEG from this encoder's reconstruction data; null if there is none. */
+export function reconstructJPEG(bytes: Uint8Array): Bytes | null;

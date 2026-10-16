@@ -32,7 +32,9 @@ globalThis.RapierUnpack = readerUnpack;
 
 async function readerBoot() {
 	try {
-		for (const {kind, name, text} of await readerUnpack('rapier-pack')) {
+		const spans = await readerUnpack('rapier-pack');
+		document.getElementById('rapier-pack').textContent = '';
+		for (const {kind, name, text} of spans) {
 			if (kind === 'css') {
 				const style = document.createElement('style');
 				style.id = name;

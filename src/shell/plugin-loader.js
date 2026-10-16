@@ -2,17 +2,7 @@
 (function () {
 	'use strict';
 	var _portableReaders = Object.create(null);
-
-	function _announce(m, Plugin, listeners, s, err) {
-		Plugin.status = s;
-		Plugin.error  = err || null;
-		var detail = { status: s, installed: (s === 'ready'), error: Plugin.error };
-		if (typeof Plugin.progress === 'number') detail.progress = Plugin.progress;
-		try { window.dispatchEvent(new CustomEvent('rapier:' + m.key + 'plugin', { detail: detail })); } catch (_) {}
-		for (var i = 0; i < listeners.length; i++) {
-			try { listeners[i](Plugin.status, Plugin); } catch (_) {}
-		}
-	}
+	function _policy() { return window.RapierPlatform?.environment.native === true ? 'this app’s policy' : 'this browser policy'; }
 
 	function _host() {
 		var r = window.RapierPlatform && window.RapierPlatform.resources;
@@ -34,251 +24,37 @@
 		if (/HTTP 4\d\d/.test(s)) return 'the download request was rejected' + d + 'tap retry';
 		if (/HTTP 5\d\d/.test(s)) return 'jsDelivr is temporarily unavailable' + d + 'tap retry';
 		if (/SHA-384 mismatch|unexpected size/.test(s)) return 'downloaded file failed verification' + d + 'refusing to install';
-		if (/secure hash API unavailable/.test(s)) return 'this browser cannot securely verify the plug-in';
+		if (/secure hash API unavailable/.test(s)) return (window.RapierPlatform?.environment.native === true ? 'this device' : 'this browser') + ' cannot securely verify the plug-in';
 		if (/QuotaExceeded|quota/i.test(s)) return 'this device has no room to keep the ' + m.noun + d + 'free some space and tap retry';
 		if (m.missing && s === m.missing) return 'the saved plug-in could not run' + d + 'removed; tap retry';
 		return m.noun + ' plug-in could not be installed' + d + 'tap retry';
 	}
 
-	function _rapierVerifiedPlugin(m) {
-		var KEY = m.cacheKey;
-		var RESOURCE = 'rapier-' + m.key;
-		var FETCH_TIMEOUT_MS = 25000;
-		var Cache = RapierBundleIO.store(m.key);
-		var d = m.dash, present = m.present || m.usable;
-
-		var _listeners = [];
-		var Plugin = _rapierProviders[m.key] = Object.seal({
-			status: 'checking',
-			version: m.version,
-			error: null,
-			downloadBytes: m.bytes,
-			_pendingInstall: null,
-			get installed() { return this.status === 'ready'; },
-			on:        function (fn) { _listeners.push(fn); },
-			install:   function () { return _install(false); },
-			reinstall: function () { return _install(true); },
-			isNeeded:  function () { return Plugin.status !== 'ready'; },
-			get deletable() { var host = _host(); return !host || typeof host.remove === 'function'; },
-			forget:    function () { return _forget(); },
-			renderToString: function (src, opts) { return m.render(src, opts, Plugin.status === 'ready'); },
-			renderWithMathML: m.renderWithMathML ? function (src, opts) { return m.renderWithMathML(src, opts, Plugin.status === 'ready'); } : undefined,
+	function _runScript(bytes, name) {
+		var script = document.createElement('script');
+		if (globalThis.RAPIER_APPS_HOST === true) {
+			script.textContent = new TextDecoder('utf-8', {fatal: true}).decode(bytes) + '\n//# sourceURL=' + name;
+			try { document.head.appendChild(script); } finally { script.remove(); }
+			return Promise.resolve();
+		}
+		return new Promise(function (resolve, reject) {
+			var url = URL.createObjectURL(new Blob([bytes], {type: 'text/javascript'}));
+			script.async = false; script.src = url;
+			script.onload = function () { URL.revokeObjectURL(url); resolve(); };
+			script.onerror = function () { URL.revokeObjectURL(url); reject(new Error((window.RapierPlatform?.environment.native === true ? 'this app' : 'this browser') + ' blocked the verified ' + name)); };
+			document.head.appendChild(script);
 		});
-		_portableReaders[m.key] = function () {
-			return _verifiedCachedBytes().then(function (value) {
-				return value ? [{id: RESOURCE, name: m.file, version: m.version, bytes: m.bytes, sri: m.sri, value: value}] : [];
-			});
-		};
-
-		function _setStatus(s, err) { _announce(m, Plugin, _listeners, s, err); }
-
-		function _idbGet(key) { return Cache.get(key).catch(function () { return null; }); }
-		function _idbPut(key, value) { return Cache.put(key, value).catch(function () { return false; }); }
-		function _idbDel(key) { return Cache.remove(key).catch(function () { return false; }); }
-
-		function _remember(bytes) {
-			_idbPut(KEY, { bytes: bytes, sri: m.sri, version: m.version, savedAt: Date.now() });
-		}
-		function _forgetCache() {
-			if (window.RapierPlatform && typeof window.RapierPlatform.resources.ensure === 'function') return;
-			_idbDel(KEY);
-		}
-
-		function _forget() {
-			if (!Plugin.deletable) return Promise.resolve(false);
-			var pending = Plugin._pendingInstall ? Plugin._pendingInstall.catch(function () {}) : Promise.resolve();
-			var host = _host();
-			return pending.then(function () {
-				if (host) return host.remove(RESOURCE);
-				return _idbDel(KEY);
-			}).then(function () { _setStatus('absent'); return true; });
-		}
-
-		function _verifyBytes(value, source) {
-			return RapierBundleIO.verifySha384(value, m.sri, { source: source, byteLength: m.bytes, sizeMessage: 'unexpected size from ' + source });
-		}
-		function _hostResourceBytes(value) {
-			return RapierBundleIO.resourceBytes(value, m.noun + ' resource');
-		}
-		function _cacheRefused(err, what) {
-			if (/secure hash API unavailable/.test(String(err && err.message || err))) throw err;
-			_forgetCache();
-			try { console.warn('[rapier] cached ' + m.noun + ' ' + what + ' failed verification:', err); } catch (_) {}
-			return null;
-		}
-		function _verifiedCachedBytes() {
-			if (window.RapierPlatform && typeof window.RapierPlatform.resources.read === 'function') {
-				return window.RapierPlatform.resources.read(RESOURCE).then(function (value) {
-					if (!value) return null;
-					return _hostResourceBytes(value).then(function (bytes) {
-						return _verifyBytes(bytes, 'platform cache');
-					});
-				}).catch(function (err) {
-					if (/secure hash API unavailable/.test(String(err && err.message || err))) throw err;
-					try { console.warn('[rapier] cached platform ' + m.noun + ' bundle failed verification:', err); } catch (_) {}
-					return null;
-				});
-			}
-			return _idbGet(KEY).then(function (rec) {
-				if (!rec || !rec.bytes || rec.sri !== m.sri || rec.version !== m.version) return null;
-				return _verifyBytes(rec.bytes, 'IndexedDB cache').catch(function (err) { return _cacheRefused(err, 'bundle'); });
-			});
-		}
-
-		function _sourceUrls() {
-			var hosted = RapierBundleIO.pluginUrl(String(m.file || '').split('/').pop());
-			if (hosted) return [hosted];
-			var urls = [];
-			var localUrl = RapierBundleIO.sameOriginUrl(m.file);
-			if (localUrl) urls.push(localUrl);
-			urls.push(m.cdn);
-			var seen = Object.create(null);
-			return urls.filter(function (u) {
-				if (!u || seen[u]) return false;
-				seen[u] = true;
-				return true;
-			});
-		}
-
-		function _fetchAndVerify() {
-			_setStatus('downloading');
-			if (window.RapierPlatform && typeof window.RapierPlatform.resources.ensure === 'function') {
-				return window.RapierPlatform.resources.ensure(RESOURCE).then(_hostResourceBytes).then(function (bytes) {
-					return _verifyBytes(bytes, 'platform resource');
-				});
-			}
-			var urls;
-			try { urls = _sourceUrls(); } catch (err) { return Promise.reject(err); }
-			var lastErr = null;
-			var chain = Promise.resolve(null);
-			urls.forEach(function (url) {
-				chain = chain.then(function (bytes) {
-					if (bytes) return bytes;
-					return RapierBundleIO.fetchBytes(url, FETCH_TIMEOUT_MS, { length: m.bytes })
-						.then(function (bytes) { return _verifyBytes(bytes, RapierBundleIO.shortUrl(url)); })
-						.catch(function (err) { lastErr = err; return null; });
-				});
-			});
-			return chain.then(function (bytes) {
-				if (bytes) { _remember(bytes); return bytes; }
-				throw lastErr || new Error('could not download ' + m.noun + ' plug-in');
-			});
-		}
-
-		function _check() {
-			if (!m.usable()) {
-				_forgetCache();
-				throw new Error(m.missing);
-			}
-			if (m.configure) m.configure();
-		}
-
-		function _loadVerifiedBundle(bytes) {
-			if (present()) {
-				if (m.configure) _check();
-				return Promise.resolve();
-			}
-			if (m.prepare) m.prepare();
-			/* RAPIER_BUILTIN_PLUGIN_EXECUTE */
-			var url = URL.createObjectURL(new Blob([bytes], { type: 'text/javascript' }));
-			return new Promise(function (resolve, reject) {
-				var s = document.createElement('script');
-				s.src = url;
-				s.async = false;
-				s.onload = function () {
-					URL.revokeObjectURL(url);
-					Promise.resolve(m.started && m.started()).then(function () {
-						if (m.configure) _check();
-					}).then(resolve, reject);
-				};
-				s.onerror = function () {
-					URL.revokeObjectURL(url);
-					reject(new Error('the verified ' + m.name + ' bundle was blocked by this browser policy'));
-				};
-				document.head.appendChild(s);
-			});
-		}
-
-		function _finishReady() {
-			_check();
-			_setStatus('ready');
-		}
-
-		function _install(force) {
-			if (Plugin._pendingInstall) return Plugin._pendingInstall;
-
-			var p = (function () {
-				if (force) { _forgetCache(); return _fetchAndVerify(); }
-				return _verifiedCachedBytes().then(function (bytes) {
-					return bytes || _fetchAndVerify();
-				});
-			})().then(function (bytes) {
-				_setStatus('installing');
-				return _loadVerifiedBundle(bytes).then(function () {
-					try { _finishReady(); }
-					catch (_loadErr) {
-						return _fetchAndVerify().then(function (fresh) {
-							return _loadVerifiedBundle(fresh).then(_finishReady);
-						});
-					}
-				});
-			}).catch(function (err) {
-				var msg = _friendlyError(err);
-				try { console.error('[rapier] ' + m.noun + ' plug-in install failed:', err); } catch (_) {}
-				_setStatus('error', msg);
-				throw err;
-			});
-
-			Plugin._pendingInstall = p;
-			p.then(function () { Plugin._pendingInstall = null; },
-				function () { Plugin._pendingInstall = null; });
-			return p;
-		}
-
-		function _friendlyError(err) { return _friendly(m, err); }
-
-		var _hostSaid = null;
-		function _followHost(detail) {
-			if (!_host() || Plugin._pendingInstall || Plugin.status === 'checking' || Plugin.status === 'installing') return;
-			if (detail.status === 'ready' && Plugin.status !== 'ready') _install(false).catch(function () {});
-			else if (detail.status === 'absent' && Plugin.status !== 'absent') _setStatus('absent');
-			else if (detail.status === 'downloading' && Plugin.status !== 'ready') _setStatus('downloading');
-			else if (detail.status === 'error' && Plugin.status === 'downloading') _setStatus('error', detail.error || _friendly(m, detail.error));
-		}
-		_onHostChange(function (detail) { _hostSaid = detail; _followHost(detail); });
-
-		(function boot() {
-			_verifiedCachedBytes().then(function (bytes) {
-				if (!bytes) {
-					_setStatus('absent');
-					if (_hostSaid) _followHost(_hostSaid);
-					return;
-				}
-				_setStatus('installing');
-				_loadVerifiedBundle(bytes).then(function () {
-					try { _finishReady(); }
-					catch (loadErr) {
-						try { console.warn('[rapier] cached ' + m.noun + ' bundle unusable, purged:', loadErr); } catch (_) {}
-						_setStatus('absent');
-					}
-				}).catch(function (err) {
-					try { console.warn('[rapier] cached ' + m.noun + ' bundle load failed:', err); } catch (_) {}
-					_forgetCache();
-					_setStatus('absent');
-				});
-			}).catch(function () { _setStatus('absent'); });
-		})();
 	}
 
-	var MATH_VERSION = '2.2.0';
-	_rapierVerifiedPlugin({
-		key: 'math', noun: 'math', name: 'Rapier maths', dash: ' — ',
+	var MATH_VERSION = '2.4.0';
+	var MATH_FILE = 'rapier-math-' + MATH_VERSION + '.js';
+	_rapierVerifiedFiles({
+		key: 'math', noun: 'math', dash: ' — ',
 		version: MATH_VERSION,
-		cdn: 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.3/math/rapier-math-2.2.0.js',
-		file: 'rapier-math-' + MATH_VERSION + '.js',
-		bytes: 749536,
-		sri: 'pzYte7azbAoS8XSwIKjFg7mxGOxAxBKo9/IUy07H4j0WoyguAS/zwkR1O6kDXq9S',
-		cacheKey: 'rapier-math-v' + MATH_VERSION,
+		files: [{name: MATH_FILE, file: MATH_FILE, version: MATH_VERSION,
+			bytes: 691650,
+			sri: 'C92x26+pBI4q9FoWypMhBb8CqSGaaPLw8dpYigWiYNsYQRTcPVrFyPVjrhc/Tnwh',
+			url: 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.5/math/rapier-math-2.4.0.js'}],
 		missing: 'Rapier maths loaded but its SVG renderer is missing — cache purged',
 		usable: function () { return !!(window.RapierMath && window.RapierMath.version === MATH_VERSION &&
 			typeof window.RapierMath.renderToString === 'function' && typeof window.RapierMath.renderWithMathML === 'function'); },
@@ -304,7 +80,7 @@
 		return String(src || '')
 			.replace(/%%[^\n]*/g, '')
 			.replace(/"[^"\n]*"/g, '""')
-			.replace(/\[[^\]]*\]/g, '[]')
+			.replace(/\[[^\]\n]*\]/g, '[]')
 			.replace(/\([^)\n]*\)/g, '()')
 			.replace(/\{[^}\n]*\}/g, '{}')
 			.replace(/\|[^|\n]*\|/g, '||');
@@ -528,7 +304,7 @@
 		};
 	}
 
-	var _mermaidRealm = null, _mermaidStarting = null, _mermaidGeneration = 0;
+	var _mermaidRealm = null, _mermaidStarting = null, _mermaidGeneration = 0, _mermaidRendering = 0;
 	var _mermaidPresentation = null, _mermaidFontFaces = [], _mermaidScriptCancels = new Set();
 	function _disposeMermaid() {
 		_mermaidGeneration++;
@@ -566,7 +342,7 @@
 				url = URL.createObjectURL(new Blob([bytes], {type: 'text/javascript'}));
 				script.src = url; script.async = false;
 				script.onload = function () { finish(thrown); };
-				script.onerror = function () { finish(new Error('The verified diagram bundle was blocked by this browser policy')); };
+				script.onerror = function () { finish(new Error('The verified diagram bundle was blocked by ' + _policy())); };
 				owner.head.appendChild(script);
 			} catch (error) { finish(error); }
 		});
@@ -584,7 +360,7 @@
 			policy.content = "default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval' blob:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'";
 			owner.head.appendChild(policy);
 			return _executeDiagramBundle(owner, files.core, 'mermaid.min.js').then(function () {
-				return _executeDiagramBundle(owner, files.zenuml, 'rapier-zenuml-4.5.0-1.js');
+				return _executeDiagramBundle(owner, files.zenuml, 'rapier-zenuml-4.5.0-2.js');
 			}).then(function () {
 				if (!runtime.mermaid || typeof runtime.mermaid.render !== 'function' || !runtime.RapierZenUML ||
 					typeof runtime.RapierZenUML.register !== 'function' || typeof runtime.RapierZenUML.allowSvgStyleAttribute !== 'function')
@@ -592,9 +368,6 @@
 				return runtime.RapierZenUML.register(runtime.mermaid);
 			}).then(function () {
 				if (generation !== _mermaidGeneration) throw new Error('The diagram renderer was released');
-				runtime.document.fonts.forEach(function (face) {
-					if (face.status === 'loaded' && !document.fonts.has(face)) { document.fonts.add(face); _mermaidFontFaces.push(face); }
-				});
 				return runtime;
 			});
 		}).catch(function (error) { if (generation === _mermaidGeneration) _disposeMermaid(); throw error; });
@@ -654,6 +427,7 @@
 		key: 'mermaid', noun: 'diagram', dash: ' -- ',
 		version: MERMAID_RESOURCES.version, files: MERMAID_RESOURCES.files,
 		prepare: _prepareMermaid, discard: _disposeMermaid,
+		release: function () { if (_mermaidRendering || !_mermaidRealm) return false; _disposeMermaid(); return true; },
 		presentationPaint: function (hex, alpha, context) { return _mermaidPresentation ? _mermaidPresentation.paint(hex, alpha, context) : null; },
 		exportFontCss: function () { return _mermaidRealm && _mermaidRealm.contentWindow.RapierZenUML ? _mermaidRealm.contentWindow.RapierZenUML.fontCss : ''; },
 		render: function (src, opts, ready) {
@@ -661,6 +435,7 @@
 			var resourceHit = _diagramResourceHit(src); if (resourceHit) return Promise.reject(new Error(resourceHit));
 			if (!ready || !_mermaidStarting) return Promise.reject(new Error('diagram plug-in is unavailable'));
 			var id = 'rapier-d' + (++_renderSeq), generation = _mermaidGeneration;
+			_mermaidRendering++;
 			return _mermaidStarting.then(function (runtime) {
 				return document.fonts.load(MERMAID_FONT_SIZE + 'px ' + MERMAID_FONT_FAMILY).then(function () { return document.fonts.ready; }).then(function () {
 					if (generation !== _mermaidGeneration) throw new Error('The diagram renderer was released');
@@ -668,10 +443,16 @@
 					_configureMermaid(runtime);
 					var container = runtime.document.createElement('div'); runtime.document.body.appendChild(container);
 					return Promise.resolve().then(function () { return runtime.mermaid.render(id, String(src == null ? '' : src), container); })
-						.then(function (out) { if (generation !== _mermaidGeneration) throw new Error('The diagram renderer was released'); return out.svg; })
+						.then(function (out) {
+							if (generation !== _mermaidGeneration) throw new Error('The diagram renderer was released');
+							runtime.document.fonts.forEach(function (face) {
+								if (face.status === 'loaded' && !document.fonts.has(face)) { document.fonts.add(face); _mermaidFontFaces.push(face); }
+							});
+							return out.svg;
+						})
 						.finally(function () { container.remove(); });
 				});
-			});
+			}).finally(function () { _mermaidRendering--; });
 		},
 	});
 	function _rapierVerifiedFiles(m) {
@@ -681,7 +462,23 @@
 		var Cache = m.store || RapierBundleIO.store(m.key);
 		var pack = m.pack || function (bytes) { return bytes; };
 		var unpack = m.unpack || function (value) { return value; };
-		var listeners = [], pending = null, checking = null, removing = null;
+		var prepare = m.prepare || m.usable && function (files) {
+			var name = m.files[0].name;
+			return Promise.resolve(m.usable() || _runScript(files[name], name)).then(function () { if (!m.usable()) throw new Error(m.missing); });
+		};
+		var pending = null, checking = null, removing = null, released = false, reviving = null;
+		if (m.release) window.addEventListener('rapier:memory-trimmed', function () {
+			if (Plugin.status === 'ready' && !pending && !checking && !reviving && m.release()) released = true;
+		});
+		function render(src, opts) {
+			var ready = Plugin.status === 'ready';
+			if (released && ready) {
+				released = false;
+				reviving = bytes().then(prepare).catch(function (err) { released = true; throw err; });
+				reviving.then(function () { reviving = null; }, function () { reviving = null; });
+			}
+			return (reviving || Promise.resolve()).then(function () { return m.render(src, opts, ready); });
+		}
 		function id(file) { return 'rapier-' + m.key + (m.files.length > 1 ? '-' + file.name : ''); }
 		var viaHost = null;
 		function keeper() {
@@ -700,14 +497,14 @@
 			files: m.files,
 			get deletable() { return !viaHost || typeof viaHost.remove === 'function'; },
 			get installed() { return this.status === 'ready'; },
-			on:        function (fn) { listeners.push(fn); },
 			install:   function () { return install(false); },
 			reinstall: function () { return install(true); },
 			check:     check,
 			bytes:     bytes,
 			forget:    forget,
 			isNeeded: function () { return Plugin.status !== 'ready'; },
-			renderToString: m.render ? function (src, opts) { return m.render(src, opts, Plugin.status === 'ready'); } : undefined,
+			renderToString: !m.render ? undefined : m.release ? render : function (src, opts) { return m.render(src, opts, Plugin.status === 'ready'); },
+			renderWithMathML: m.renderWithMathML ? function (src, opts) { return m.renderWithMathML(src, opts, Plugin.status === 'ready'); } : undefined,
 			presentationPaint: m.presentationPaint,
 			exportFontCss: m.exportFontCss,
 		});
@@ -718,7 +515,10 @@
 				});
 			});
 		};
-		function set(s, err) { _announce(m, Plugin, listeners, s, err); }
+		function set(s, err) {
+			Plugin.status = s; Plugin.error = err || null;
+			try { window.dispatchEvent(new CustomEvent('rapier:' + m.key + 'plugin', {detail: {status: s, installed: s === 'ready', error: Plugin.error, progress: Plugin.progress}})); } catch (_) {}
+		}
 		function complete(record) {
 			return !!record && record.version === KEY && !!record.files && m.files.every(function (file) {
 				return !!RapierBundleIO.bytes(record.files[file.name]);
@@ -728,9 +528,8 @@
 			return RapierBundleIO.verifySha384(value, file.sri, { byteLength: file.bytes, sizeMessage: 'unexpected size of ' + file.name, source: file.name });
 		}
 		function prepared() {
-			if (!m.prepare) { set('ready'); return Promise.resolve(Plugin); }
 			set('installing');
-			return bytes().then(m.prepare).then(function () { set('ready'); return Plugin; });
+			return bytes().then(function (files) { return prepare && prepare(files); }).then(function () { set('ready'); return Plugin; });
 		}
 		function check() {
 			if (pending || removing) return (removing || pending).then(function () { return Plugin.status; }, function () { return Plugin.status; });
@@ -786,18 +585,20 @@
 					urls = hosted ? [hosted] : localUrl ? [localUrl, file.url] : [file.url];
 				} catch (error) { failure = failure || error; return Promise.resolve(); }
 				function attempt(index) {
-					return RapierBundleIO.fetchBytes(urls[index], m.timeoutMs || 180000, { length: file.bytes, cache: 'no-store', onBytes: function (n) { tick(file, n); } })
+					return RapierBundleIO.fetchBytes(urls[index], m.timeoutMs || 180000, { length: file.bytes, cache: 'no-store', onBytes: !m.usable && function (n) { tick(file, n); } })
 						.then(function (value) { return verified(file, value); }).catch(function (error) {
 							if (index + 1 < urls.length) return attempt(index + 1);
 							throw error;
 						});
 				}
 				return attempt(0)
-					.then(function (value) { held[file.name] = value; tick(file, file.bytes); }, function (err) { failure = failure || err; })
+					.then(function (value) { held[file.name] = value; if (!m.usable) tick(file, file.bytes); }, function (err) { failure = failure || err; })
 					.then(lane);
 			}
 			return (force ? Promise.resolve(null) : Cache.get(KEY).catch(function () { return null; })).then(function (record) {
-				if (complete(record)) return prepared();
+				return complete(record) ? prepared().then(null, function () { return fetchInstall(true); }) : download();
+			});
+			function download() {
 				return Cache.remove(KEY).catch(function () {}).then(function () {
 					Plugin.progress = 0; set('downloading');
 					return Promise.all([lane(), lane(), lane()]);
@@ -809,7 +610,7 @@
 						return chain.then(function () { return pack(held[file.name]); }).then(function (value) { record.files[file.name] = value; });
 					}, Promise.resolve()).then(function () { return Cache.put(KEY, record); });
 				}).then(prepared);
-			});
+			}
 		}
 		function bytes() {
 			return keeper().then(function (host) { return host ? hostBytes(host) : heldBytes(); });

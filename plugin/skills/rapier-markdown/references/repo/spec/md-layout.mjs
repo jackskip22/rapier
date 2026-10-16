@@ -167,7 +167,7 @@ export function wrapTextBlock(element) {
     element.textContent.trim() && !element.querySelector('img,table,pre,figure,math,.math-rendered') ? element : null;
 }
 
-// The one wrap-owner rule (layout/browser.js, layout/interchange.js, editor/share.js): text after, else before, skipping pictures,
+// The one wrap-owner rule (layout/browser.js, kit/render.mjs, editor/share.js): text after, else before, skipping pictures,
 // metadata and empty paragraphs; any other block is a barrier in that direction.
 export function wrapNeighbour(node, classify) {
   for (const step of [n => n && n.nextElementSibling, n => n && n.previousElementSibling]) {

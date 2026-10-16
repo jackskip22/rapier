@@ -138,7 +138,10 @@ export function fencedBlocks(text, all = false) {
       if (!attrs.id || !/^[A-Za-z0-9_-]{1,128}$/.test(attrs.id)) throw new TypeError('A Rapier block needs a stable id.');
       if (result.some(row => row.id === attrs.id)) throw new TypeError('Rapier block ids must be unique.');
       if (!closed) throw new TypeError('Close the Rapier block fence.');
-      result.push({id: attrs.id, kind, attrs, body: text.slice(bodyStart, bodyEnd).replace(/\r?\n$/, ''), start, end, text: text.slice(start, end)});
+      const next = lineEnd(end), layout = kind !== 'rapier-comment' && /^(<!--md-layout:v1 [^>\r\n]{1,180}-->)[ \t]*\r?\n?$/.exec(text.slice(end, next))?.[1];
+      const bodyText = text.slice(bodyStart, bodyEnd).replace(/\r?\n$/, '');
+      if (layout) {end = next; line++;}
+      result.push({id: attrs.id, kind, attrs, body: bodyText, start, end, text: text.slice(start, end), ...(layout ? {layout} : {})});
     }
     if (all && !result.some(row => row.start === start) && !/^rapier-(draw|water|paint|comment|svg)(?:\s|$)/.test(info) && closed) {
       const id = /(?:^|[\s{])#([A-Za-z][\w-]*)|(?:^|\s)id=([A-Za-z][\w-]*)/.exec(info);
@@ -229,10 +232,10 @@ function droppedObjectLayout(text, planned) {
   if (!text.includes('<!--md-layout:v1')) return null;
   let blocks; try {blocks = fencedBlocks(text);} catch (_) {return null;}
   for (const block of blocks) {
-    const fence = block.kind === 'html' && htmlFence(block.text), marker = fence?.marker; if (!marker) continue;
-    const to = block.start + marker.end;
-    const row = planned.find(row => row.removed !== text && row.pos < block.start + fence.fenceEnd && row.pos + row.removed.length >= to &&
-      /^ {0,3}(?:`{3,}|~{3,})html/im.test(row.inserted) && !row.inserted.includes('<!--md-layout:v1'));
+    const fence = block.kind === 'html' && htmlFence(block.text), marker = fence?.marker; if (!marker && !block.layout) continue;
+    const at = marker ? null : block.start + block.text.lastIndexOf(block.layout), to = marker ? block.start + marker.end : at + block.layout.length, fenceEnd = marker ? block.start + fence.fenceEnd : at;
+    const row = planned.find(row => row.removed !== text && row.pos < fenceEnd && row.pos + row.removed.length >= to &&
+      new RegExp('^ {0,3}(?:`{3,}|~{3,})' + block.kind, 'im').test(row.inserted) && !row.inserted.includes('<!--md-layout:v1'));
     if (row) return row.index;
   }
   return null;

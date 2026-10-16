@@ -10,10 +10,11 @@
    Each build's shell lives in its own cache generation, named for the bytes it
    holds. The release digest below deliberately changes this worker whenever any
    shell member changes; qualification derives and verifies it from those bytes.
-   A natural open serves the installed verified generation. A failed release uses
-   its verified predecessor; only a completed start retires that predecessor.
-   Open pages keep running. Install alone writes shell bytes; startup receipts
-   live beside them.
+   A natural open serves the installed verified generation. A start the page
+   reports failed moves this release to its verified predecessor; a start a
+   person reloads or closes is not a failure. Only a completed start retires
+   that predecessor. Open pages keep running. Install alone writes shell bytes;
+   startup receipts live beside them.
 */
 
 /* CacheStorage is shared by every service-worker scope on an origin. Include
@@ -27,10 +28,12 @@ const SHELL_URLS = [
   './icon-192.png',
   './icon-512.png',
 ];
-const SHELL_RELEASE_SHA256 = '2821a951a3a84410e6547c9e749f60546cf8d98d621014a49d2df64838c846b6';
-const SHELL_PAGE_SHA256 = '5cb4a4f88470d03afae8e6077b7f8a49214da4158b46dd4ac494fc543d603b45';
-const SHELL_BOOT_ID = 'c66df32ff7369d6847643cc2d6cb31b4530276535ff9f19e86a6dc734a832c55';
-const SHELL_DOOR_SHA256 = {"/privacy":"6e5c690fcb7824bc7f8c882f10c88b700a72192a15e3ee69133bb13e9d187660","/commercial":"8ef6c564f9240f5cb5b02a1615ea4014e4acbb23077fc510d583b26ede34e296","/notes":"d0e7e345decc2562764381a9d636615c94d836cbd15a5efe2e7f9400e71a9430","/draw":"603a94bae1240ded19918a4e23a1f7189d44473e10e1b5e107565e186b927bc4","/watercolor":"49da7c4ba15c102d992f5f5098b656a6ad1f724434aeabfa55a7379244111f96"};
+const SHELL_RELEASE_SHA256 = 'e3e832b2afef4d4ec2b302f245301bbfbf9cf15dbbeb36002547c1bca9bbd6e0';
+const SHELL_PAGE_SHA256 = '3950580c405d2de45e42d7d9bec58cac43602625bc426d93dae824fff54208f7';
+const SHELL_BOOT_ID = '94e31d662d59158141ef1ead804abbc216095d2e99d09b67ba35009a6b800c71';
+const SHELL_DOOR_SHA256 = {"/privacy":"7d2f53534446f4378cda8802350603bd6b91e4968d7f402c2196c43986570123","/commercial":"3f0f4905ffd226852dac10f5c2551e8230cd63747cc033521e83e23656495cf4","/notes":"4c3ddc6c22ce35d8a7f253f3da027ad2961872e67e2abe964d0fd324c03443ac","/draw":"6e96e4fe13c1e4efb7e47bca5ea1006441cc54aade6565685c6c1041498d8bd2","/watercolor":"f8bbc7523262ccbc500882a59e81cf08f46cc300fc9496ed7a1ec3835b6dc08c"};
+/* The parts' pins (shell/parts.js). Install brings this release's copy of each part the person has used. */
+const SHELL_PARTS = [{"id":"drawing","file":"rapier-drawing-db1f76694afaf27b.txt","bytes":301351,"sri":"JYVBkL6uFxDhH3HH6g7vFt8diPRkj4BvN+Noxn+fIUDNlgDcKVNY1io+VguWTpBs"},{"id":"notes","file":"rapier-notes-8c573b1eba6e50ea.txt","bytes":356113,"sri":"MuFGNqNhZGRClnMdaCgENVmRf+/Wu2peym13nry+pcASguegZoGIrhcMFEfasJbY"}];
 /* Only this generation receives writes. Retirement names are captured during
    install, so a delayed success cannot erase a newer worker's cache. */
 const SHELL_GENERATION = SHELL_CACHE_PREFIX + SHELL_RELEASE_SHA256.slice(0, 32);
@@ -71,6 +74,7 @@ self.addEventListener('install', event => {
        bytes before it can activate; retrying cannot bless an incomplete shell. */
     const predecessors = (await caches.keys()).filter(name =>
       name.startsWith(SHELL_CACHE_PREFIX) && name !== SHELL_GENERATION);
+    await keepParts();
     const cache = await caches.open(SHELL_GENERATION);
     await Promise.all(members.map(member => cache.put(member.request, member.response)));
     if (!await startupState(cache)) {
@@ -120,7 +124,7 @@ self.addEventListener('fetch', event => {
     event.respondWith((async () => {
       const state = await inspectStartup(event).catch(() => null);
       // Probation changes retirement, not delivery. A natural open takes this
-      // generation until two failed starts persist the predecessor selection.
+      // generation until a failed start persists the predecessor selection.
       const selected = state?.rollback ? state.previous : null;
       const copy = await cachedNavigationResponse(req, selected).catch(() => null);
       if (copy) return rememberNavigation(event, copy);
@@ -201,6 +205,35 @@ async function cachedNavigationResponse(request, release = null) {
   return copy;
 }
 
+/* shell/parts.js keeps a verified copy of each part the person has used in the one cache database (shell/bundle-io.js).
+   The new page holds new pins, so its copy is fetched and verified here, before this release can open; the earlier copy
+   stays for pages still running it (a page keeps the newest other copy beside its own). A copy that fails its pin fails
+   the install, and the person keeps the release whose parts they have. */
+async function keepParts() {
+  const db = await new Promise((resolve, reject) => {
+    const request = indexedDB.open('rapier:cache', 1);
+    request.onupgradeneeded = () => request.result.createObjectStore('files');
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  const run = (mode, act) => new Promise((resolve, reject) => {
+    const tx = db.transaction('files', mode), request = act(tx.objectStore('files'));
+    tx.oncomplete = () => resolve(request.result);
+    tx.onerror = tx.onabort = () => reject(tx.error || new Error('IndexedDB refused the parts'));
+  });
+  try {
+    const keys = await run('readonly', store => store.getAllKeys());
+    for (const pin of SHELL_PARTS) {
+      if (keys.includes('parts/' + pin.file) || !keys.some(key => String(key).startsWith('parts/rapier-' + pin.id + '-'))) continue;
+      const response = await fetch(new Request(new URL(pin.file, self.location), {cache: 'reload'}));
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      const sri = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest('SHA-384', bytes))));
+      if (!response.ok || bytes.byteLength !== pin.bytes || sri !== pin.sri) throw new Error('invalid part: ' + pin.file);
+      await run('readwrite', store => store.put({bytes, savedAt: Date.now()}, 'parts/' + pin.file));
+    }
+  } finally { db.close(); }
+}
+
 /* The same four-member digest proves every cached predecessor, including a
    cache with no completed-start receipt. A known failure is never promoted. */
 async function previousShell(names) {
@@ -269,7 +302,7 @@ function failStartup(state, client, attempt) {
   if (state.failures.length < 2 && !state.failures.some(failure => failure.client === client)) {
     state.failures.push({client, attempt});
   }
-  if (state.failures.length >= 2 && state.previous) state.rollback = true;
+  if (state.previous) state.rollback = true;
 }
 
 async function inspectStartup(event) {
@@ -281,14 +314,9 @@ async function inspectStartup(event) {
       // execution-ready clients without blocking delivery of their pages.
       const ready = new Set((await self.clients.matchAll({type: 'window', includeUncontrolled: true})).map(client => client.id));
       for (const [id, client] of entries) {
-        const replaced = id === event.replacesClientId;
-        if (!client.attempt && !replaced && !ready.has(id)) continue;
-        if (replaced || !ready.has(id)) {
-          // A live slow tab is not a failure. Replacing a pending document, or
-          // losing a client that began boot, proves an abandoned start.
-          if (!client.result && matchesPage(client.url, client.page) && (replaced || client.attempt)) {
-            failStartup(state, id, client.attempt);
-          }
+        // A reloaded or closed start is forgotten: a person waiting out a slow start is not a failed
+        // release. A recorded navigation that has not yet executed is kept.
+        if (id === event.replacesClientId || client.attempt && !ready.has(id)) {
           delete state.clients[id];
           changed = true;
         }

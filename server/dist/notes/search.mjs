@@ -5,7 +5,6 @@ import {attachmentsOf} from './attachments.mjs';
 import {scanLinks, linkMask, hasHtmlTag, headingAnchors, isLineStart, asMap, projectLinks, stageLinkIndex, stageLinkNote, packLinkProjection} from './links.mjs';
 import {documentAssets, IMAGE_LIMITS, markdownParser, configureParser, installMarkdownImages} from '../spec/md-assets.mjs';
 import {RAPIER_MARKDOWN_SPEC, applyMarkdownSpec, installMarkdownMath, splitOpeningFrontmatter} from '../agent/markdown-spec.mjs';
-import {libraryReadRow} from './library-reads.mjs';
 
 const BYTE_PAYLOAD_STUB = 'A'.repeat(128);
 const ascii = bytes => String.fromCharCode(...bytes);
@@ -108,11 +107,31 @@ function wordSegments(s) {
 	wordSegmenter ||= new Intl.Segmenter(undefined, {granularity: 'word'});
 	return wordSegmenter.segment(String(s ?? ''));
 }
-function wordsOf(s) {
-	const words = [];
-	for (const part of wordSegments(s)) if (part.isWordLike) words.push(part.segment);
-	return words;
+const ASCII_WORD = /[A-Za-z0-9_]+(?:(?:(?<=[A-Za-z])[.:'](?=[A-Za-z])|(?<=[0-9])[.,;'](?=[0-9]))[A-Za-z0-9_]+)*/g;
+const OTHER = /[^\x00-\x7f]/g;
+function* asciiWords(s) { for (const match of s.matchAll(ASCII_WORD)) if (match[0] !== '_') yield match[0]; }
+function* wordParts(s) {
+	s = String(s ?? '');
+	for (let at = 0; at < s.length;) {
+		OTHER.lastIndex = at;
+		const other = OTHER.exec(s);
+		if (!other) { yield* asciiWords(at ? s.slice(at) : s); return; }
+		const start = s.lastIndexOf('\n', other.index) + 1;
+		if (start > at) yield* asciiWords(s.slice(at, start));
+		let end = s.indexOf('\n', other.index);
+		while (end >= 0) {
+			const next = s.indexOf('\n', end + 1);
+			OTHER.lastIndex = end;
+			const more = OTHER.exec(s);
+			if (!more || next >= 0 && more.index > next) break;
+			end = next;
+		}
+		if (end < 0) end = s.length;
+		for (const part of wordSegments(start || end < s.length ? s.slice(start, end) : s)) if (part.isWordLike) yield part.segment;
+		at = end;
+	}
 }
+function wordsOf(s) { return [...wordParts(s)]; }
 
 
 function lineIsHeading(text, i) {
@@ -211,7 +230,7 @@ function projectBody(text, mask, links, from = 0, omit = null) {
 		}
 		const L = atLink.get(i);
 		if (L) {
-			if (L.kind === 'inline' || L.kind === 'reference' || L.kind === 'wikilink' || L.kind === 'embed') body += (L.text || '') + ' ';
+			if (L.kind === 'inline' || L.kind === 'reference' || L.kind === 'wikilink' || L.kind === 'embed') body += (L.text || '') + (L.text && !/\s/.test(text[L.end] || ' ') ? ' ' : '');
 			else body += L.text || '';
 			i = L.end;
 			continue;
@@ -250,8 +269,7 @@ export function projectText(text, entry = {}, file = '', snippet = false) {
 	const restAt = s.length - rest.length;
 	const mask = linkMask(s);
 	const links = scanLinks(s);
-	const source = snippet ? cardSource(s) : null;
-	const head = source ? cardHead(source.visible, source.lines) : cardHead(rest.replace(/\r\n?/g, '\n').split('\n'));
+	const source = cardSource(s), head = cardHead(source.visible, source.lines);
 	const title = head.title;
 	const heads = headingAnchors(s).filter(h => h.text && h.text !== title).map(h => derived ? derived.mapLink(h) : h);
 	const tags = [...tagsOf(s), ...bodyTags(s, mask, restAt)];
@@ -264,7 +282,7 @@ export function projectText(text, entry = {}, file = '', snippet = false) {
 		tagList.push(t.replace(/^#/, ''));
 	}
 	let omit = null;
-	if (source && head.title) {
+	if (snippet && head.title) {
 		const from = source.pieces.slice(0, head.at).reduce((n, line) => n + line.length, 0);
 		omit = {from, to: from + source.pieces.slice(head.at, head.start).reduce((n, line) => n + line.length, 0)};
 	}
@@ -357,8 +375,8 @@ export function unpackSearchProjection(value) {
 
 function counted(texts) {
 	const m = new Map();
-	for (const text of texts) for (const part of wordSegments(text)) if (part.isWordLike) {
-		const w = fold(part.segment), count = m.get(w);
+	for (const text of texts) for (const part of wordParts(text)) {
+		const w = fold(part), count = m.get(w);
 		if (count === undefined) m.set(copyText(w), 1); else m.set(w, count + 1);
 	}
 	return m;
@@ -369,11 +387,9 @@ function* tokenBagWalk(proj) {
 	let walked = 0;
 	for (const field of Object.keys(texts)) {
 		const words = new Map();
-		for (const text of texts[field]) for (const part of wordSegments(text)) {
-			if (part.isWordLike) {
-				const word = fold(part.segment), count = words.get(word);
-				if (count === undefined) words.set(copyText(word), 1); else words.set(word, count + 1);
-			}
+		for (const text of texts[field]) for (const part of wordParts(text)) {
+			const word = fold(part), count = words.get(word);
+			if (count === undefined) words.set(copyText(word), 1); else words.set(word, count + 1);
 			if (++walked % 128 === 0) yield;
 		}
 		if (field !== 'pictures' || words.size) bag[field] = words;
@@ -919,8 +935,9 @@ function inSection(proj, file, sidx, want) {
 	return false;
 }
 
-function fieldHasPrefix(bag, prefix, pictures = true) {
+function fieldHasPrefix(bag, prefix, pictures = true, before = '') {
 	for (const field of fieldsOf(bag, pictures)) {
+		if (field === before) break;
 		for (const tok of bag[field].keys()) if (tok.startsWith(prefix)) return field;
 	}
 	return '';
@@ -1084,10 +1101,10 @@ function rankNote(proj, file, sidx, q, bodyReady, words) {
 		add(field, 1);
 	}
 	if (last !== undefined) {
-		const exact = fieldHasWord(proj.bag, last, pictures);
-		const field = exact || fieldHasPrefix(proj.bag, last, pictures);
-		if (!field) return null;
-		add(field, exact ? 1 : 0.5);
+		const exact = fieldHasWord(proj.bag, last, pictures), prefix = fieldHasPrefix(proj.bag, last, pictures, exact);
+		if (prefix && !(exact && WEIGHT[exact] >= WEIGHT[prefix] / 2)) add(prefix, 0.5);
+		else if (exact) add(exact, 1);
+		else return null;
 	}
 	if (!q.words.length && !q.phrases.length) score = 1;
 	const modified = proj.modified != null ? proj.modified : (proj.created != null ? proj.created : 0);
@@ -1177,73 +1194,12 @@ export function confirmSearch(answer, texts) {
 	return confirmed;
 }
 
-export function createSearchQuery(sidx, query, {id, files, visible = [], limit = 50} = {}) {
-	if (typeof id !== 'string' || !id.trim() || !Array.isArray(files) || !Array.isArray(visible) || !Number.isSafeInteger(limit) || limit < 1) throw new TypeError('invalid search query run');
-	const current = new Map();
-	for (const file of files) {
-		const read = libraryReadRow(file);
-		if (current.has(read.key)) throw new TypeError('query scope repeats a file');
-		current.set(read.key, {...read, entry: structuredClone(file.entry || {})});
-	}
-	const q = searchQuery(query), evidence = search(sidx, q, {limit: Infinity, candidateOrder: true});
-	const candidates = new Set(evidence.candidates), onScreen = new Set(visible), pending = [], seen = new Set();
-	for (const key of [...evidence.candidates, ...current.keys()]) {
-		if (seen.has(key)) continue; seen.add(key);
-		const file = current.get(key); if (!file) continue;
-		const indexed = sidx.notes.has(key) && JSON.stringify(file.entry) === JSON.stringify(sidx.sidecar?.notes?.[key] || {});
-		if (indexed && !candidates.has(key) && !onScreen.has(key)) continue;
-		pending.push({file: key, entry: file.entry, revision: file.revision, bytes: file.bytes, priority: indexed && candidates.has(key)});
-	}
-	const answer = rankedAnswer([], pending, q, current.size, structuredClone(sidx.sections || []), {});
-	const state = {id, limit, total: current.size, answer, results: [], failed: [], firstHit: false};
-	state.notice = queryNotice(state, 'searching');
-	return state;
-}
-
-function queryNotice(state, stage) {
-	return {id: state.id, stage, done: state.total - state.answer.confirm.length, total: state.total,
-		confirmed: state.answer.results.length, unread: state.failed.length};
-}
-
-export function searchQueryReads(state) {
-	const failed = new Set(state.failed);
-	return (state.answer.continuation?.pending || []).filter(row => !failed.has(row.file))
-		.map(row => ({key: row.file, revision: row.revision, bytes: row.bytes, priority: row.priority}));
-}
-
-export function confirmSearchQuery(previous, {id, rows = [], texts = new Map(), complete = false} = {}) {
-	if (id !== previous.id) return {state: previous, notices: []};
-	if (!Array.isArray(rows) || !(texts instanceof Map) || typeof complete !== 'boolean') throw new TypeError('invalid search read receipt');
-	const pending = new Map((previous.answer.continuation?.pending || []).map(row => [row.file, row]));
-	const exact = new Map(), failed = new Set(previous.failed); let accepted = false;
-	for (const row of rows) {
-		const read = libraryReadRow(row), wanted = pending.get(read.key);
-		if (!wanted || wanted.revision !== read.revision || wanted.bytes !== read.bytes || failed.has(read.key)) continue;
-		accepted = true;
-		if (!texts.has(read.key)) { failed.add(read.key); continue; }
-		const text = texts.get(read.key);
-		if (typeof text !== 'string') throw new TypeError('Search confirmation needs exact text for ' + read.key);
-		exact.set(read.key, text);
-	}
-	if (!accepted && (!complete || previous.notice.stage === 'complete' || previous.notice.stage === 'incomplete')) return {state: previous, notices: []};
-	const answer = confirmSearch(previous.answer, exact);
-	if (complete) for (const key of answer.confirm) failed.add(key);
-	const first = !previous.firstHit && answer.results.length > 0;
-	const state = {...previous, answer, results: answer.results.slice(0, previous.limit), failed: [...failed], firstHit: previous.firstHit || first};
-	const stage = !answer.confirm.length ? 'complete' : answer.confirm.every(key => failed.has(key)) ? 'incomplete' : 'searching';
-	const notices = first ? [queryNotice(state, 'first-hit')] : [];
-	if (!first || stage !== 'searching') notices.push(queryNotice(state, stage));
-	state.notice = notices.at(-1);
-	return {state, notices};
-}
-
 export const SWITCHER_LIMIT = 8;
 
 function switcherQueryWords(query) {
 	const words = [];
-	for (const part of wordSegments(query)) {
-		if (!part.isWordLike) continue;
-		const word = fold(part.segment);
+	for (const part of wordParts(query)) {
+		const word = fold(part);
 		if (word) words.push(word);
 	}
 	return words;

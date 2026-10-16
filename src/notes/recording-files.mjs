@@ -12,5 +12,5 @@ export function recordingPaths(note, id) {
 	const stem = '.rapier-recording-' + id + '-' + hint;
 	return {stem, partial: stem + '.partial', marker: stem + '.json'};
 }
-export const RECORDING_STORAGE_NOTICE = 'This storage cannot keep an unfinished recording. Keep this page open while recording.';
+const RECORDING_STORAGE_NOTICE = 'This storage cannot keep an unfinished recording. Keep this page open while recording.';
 export function recordingStorageError() { return Object.assign(new Error(RECORDING_STORAGE_NOTICE), {code: 'recording-storage', fallback: 'whole-blob'}); }

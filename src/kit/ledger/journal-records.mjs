@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+import {fields, scalar, plainPrototype} from './data.mjs';
 
 const _RAPIER_TRANSACTION_ACTOR_LIMIT = 160;
 const _RAPIER_TRANSACTION_OPERATION_LIMIT = 96;
@@ -28,32 +29,15 @@ function _rapierTransformSplices(text, splices, inverse = false) {
 }
 
 function _rapierPlainLedgerData(record) {
-	try {
-		const active = new Set(), pending = [[record, false]];
-		while (pending.length) {
-			const [value, leaving] = pending.pop();
-			if (leaving) { active.delete(value); continue; }
-			if (value === null || typeof value === 'boolean') continue;
-			if (typeof value === 'string') { if (/[\uD800-\uDFFF]/u.test(value)) return false; continue; }
-			if (typeof value === 'number') { if (!Number.isFinite(value) || Object.is(value, -0)) return false; continue; }
-			if (!value || typeof value !== 'object' || active.has(value)) return false;
-			const array = Array.isArray(value), proto = Object.getPrototypeOf(value);
-			if (!array && proto !== null && (Object.getPrototypeOf(proto) !== null ||
-				Object.getOwnPropertyDescriptor(proto, 'constructor')?.value?.name !== 'Object')) return false;
-			const keys = Reflect.ownKeys(value);
-			if (array && keys.length !== value.length + 1) return false;
-			active.add(value); pending.push([value, true]);
-			for (const key of keys) {
-				if (array && key === 'length') continue;
-				if (typeof key !== 'string' || ['__proto__', 'constructor', 'prototype'].includes(key) ||
-					(array && (!Number.isSafeInteger(Number(key)) || Number(key) < 0 || Number(key) >= value.length || String(Number(key)) !== key))) return false;
-				const field = Object.getOwnPropertyDescriptor(value, key);
-				if (!field || !Object.hasOwn(field, 'value') || !field.enumerable) return false;
-				pending.push([field.value, false]);
-			}
-		}
-		return true;
-	} catch (_) { return false; }
+	const active = new Set();
+	const walk = (value, depth) => {
+		if (scalar(value)) return;
+		const {descriptors, keys} = fields(value, depth, active, false);
+		active.add(value);
+		for (const key of keys) walk(descriptors[key].value, depth + 1);
+		active.delete(value);
+	};
+	try { walk(record, 0); return true; } catch (_) { return false; }
 }
 
 const _rapierMetadataValue = (key, value) => key === 'filename'
@@ -150,6 +134,12 @@ function _rapierRecordSplices(entry, ledger) {
 function journalOperations(before, after, journal) {
 	if (typeof before !== 'string' || typeof after !== 'string' || !Array.isArray(journal)) return;
 	if (before === after) return [];
+	const forward = journalWalk(before, after, journal);
+	if (forward) return forward;
+	return journalWalk(after, before, journal)?.reverse().map(({pos, removed, inserted}) => ({pos, removed: inserted, inserted: removed}));
+}
+
+function journalWalk(before, after, journal) {
 	try {
 		let text = after;
 		const lookup = _rapierRecordIndex(journal), groups = [];
@@ -445,8 +435,7 @@ const _rapierPrepareHistoryRecords = (() => {
 			}
 			frame.frozen = frame.immutable = Object.isFrozen(value);
 			const array = Array.isArray(value), proto = Object.getPrototypeOf(value);
-			if (!array && proto !== null && (Object.getPrototypeOf(proto) !== null ||
-				Object.getOwnPropertyDescriptor(Object.getOwnPropertyDescriptor(proto, 'constructor')?.value || {}, 'name')?.value !== 'Object')) throw Error('history_data');
+			if (!array && !plainPrototype(proto)) throw Error('history_data');
 			const descriptors = Object.getOwnPropertyDescriptors(value), keys = Reflect.ownKeys(descriptors);
 			if (array && keys.length !== descriptors.length.value + 1) throw Error('history_data');
 			for (const key of keys) {
@@ -541,7 +530,10 @@ function _rapierCheckLedgerRecord(record, prior, documentAuthority, maxDocumentB
 		const own = Array.isArray(record.splices), navigation = !!(record.transaction?.reverts || record.transaction?.reapplies);
 		if ((!own && !navigation) || (own && record.splices.length > 64) ||
 			(record.transaction?.reverts && record.transaction?.reapplies)) return false;
-		if (metadata === undefined || (!splices?.length && !Object.values(metadata || {}).some(pair => pair.before !== pair.after) && !semantic) ||
+		const metadataChanged = Object.values(metadata || {}).some(pair => pair.before !== pair.after);
+		const coincidentWitness = !splices?.length && record.beforeHash === record.afterHash &&
+			record.authored && _rapierValidAuthored(record.authored) && record.authored.splices.some(row => row.removed.length);
+		if (metadata === undefined || (!splices?.length && !metadataChanged && !semantic && !coincidentWitness) ||
 			(record.beforeHash === record.afterHash && splices?.length) ||
 			(record.beforeHash !== record.afterHash && !splices?.length) ||
 			((record.transaction?.sourceTransactionId || record.transaction?.sourceTransactionIds?.length || navigation) && !semantic)) return false;

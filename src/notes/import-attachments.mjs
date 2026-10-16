@@ -14,6 +14,9 @@ export function missingRecordingPaths(note) {
 	return new Set((note.warnings || []).filter(row => row?.code === 'recording_missing' && typeof row.sourcePath === 'string')
 		.map(row => resolveAssetPath(note.sourceName, row.sourcePath)).filter(path => !path.outside && path.path).map(path => path.path));
 }
+export function ownedRecordingStarts(note, links) {
+	return new Set((note.ownedRecordings || []).map(dest => links.findLast(link => link.dest === dest)?.start).filter(start => start !== undefined));
+}
 export function importAttachments(notes, sources, {existing = [], ascii = false} = {}) {
 	const paths = new Map(), aliases = new Map(), byInput = new Map(), objects = [], used = [], files = [], unread = [], taken = [...existing];
 	for (const original of sources || []) {
@@ -41,8 +44,10 @@ export function importAttachments(notes, sources, {existing = [], ascii = false}
 		if (note.exactBackup || isCodeFile(note.file)) return note;
 		let text = note.text; const edits = new Map(), warnings = [...(note.warnings || [])], linked = [];
 		const missingRecordings = missingRecordingPaths(note);
-		for (const link of scanLinks(text)) {
+		const links = scanLinks(text), owned = ownedRecordingStarts(note, links);
+		for (const link of links) {
 			if (link.unresolvedDecode || !link.dest || /^(?:data:|#)/i.test(link.dest)) continue;
+			if (owned.has(link.start)) continue;
 			if (!link.image && resolveLink(link, {from: note.file, files: finalNames, sourceFiles: true}).file) continue;
 			const aliased = aliases.get(key(root(note), link.dest));
 			const resolved = aliased ? {} : resolveAssetPath(note.sourceName, link.dest);

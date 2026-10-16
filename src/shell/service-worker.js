@@ -11,6 +11,7 @@ const SHELL_RELEASE_SHA256 = '20a02a518285ee3904dbfbdfa84d459935a5526ca6a0e77bc3
 const SHELL_PAGE_SHA256 = 'de1f732bce1e8292ff1d967eca0e2c5d2251d52dd9cbf24cdb880120ededb4c4';
 const SHELL_BOOT_ID = '__RAPIER_BOOT_ID__';
 const SHELL_DOOR_SHA256 = __RAPIER_DOOR_SHA256__;
+const SHELL_PARTS = __RAPIER_PARTS__;
 const SHELL_GENERATION = SHELL_CACHE_PREFIX + SHELL_RELEASE_SHA256.slice(0, 32);
 const SHELL_PAGE_URL = new URL('./rapier.html', self.location).href;
 const SHELL_ROOT_URL = new URL('./', self.location).href;
@@ -43,6 +44,7 @@ self.addEventListener('install', event => {
     }
     const predecessors = (await caches.keys()).filter(name =>
       name.startsWith(SHELL_CACHE_PREFIX) && name !== SHELL_GENERATION);
+    await keepParts();
     const cache = await caches.open(SHELL_GENERATION);
     await Promise.all(members.map(member => cache.put(member.request, member.response)));
     if (!await startupState(cache)) {
@@ -156,6 +158,31 @@ async function cachedNavigationResponse(request, release = null) {
   return copy;
 }
 
+async function keepParts() {
+  const db = await new Promise((resolve, reject) => {
+    const request = indexedDB.open('rapier:cache', 1);
+    request.onupgradeneeded = () => request.result.createObjectStore('files');
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  const run = (mode, act) => new Promise((resolve, reject) => {
+    const tx = db.transaction('files', mode), request = act(tx.objectStore('files'));
+    tx.oncomplete = () => resolve(request.result);
+    tx.onerror = tx.onabort = () => reject(tx.error || new Error('IndexedDB refused the parts'));
+  });
+  try {
+    const keys = await run('readonly', store => store.getAllKeys());
+    for (const pin of SHELL_PARTS) {
+      if (keys.includes('parts/' + pin.file) || !keys.some(key => String(key).startsWith('parts/rapier-' + pin.id + '-'))) continue;
+      const response = await fetch(new Request(new URL(pin.file, self.location), {cache: 'reload'}));
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      const sri = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest('SHA-384', bytes))));
+      if (!response.ok || bytes.byteLength !== pin.bytes || sri !== pin.sri) throw new Error('invalid part: ' + pin.file);
+      await run('readwrite', store => store.put({bytes, savedAt: Date.now()}, 'parts/' + pin.file));
+    }
+  } finally { db.close(); }
+}
+
 async function previousShell(names) {
   let unconfirmed = null;
   for (const name of [...names].reverse()) {
@@ -220,7 +247,7 @@ function failStartup(state, client, attempt) {
   if (state.failures.length < 2 && !state.failures.some(failure => failure.client === client)) {
     state.failures.push({client, attempt});
   }
-  if (state.failures.length >= 2 && state.previous) state.rollback = true;
+  if (state.previous) state.rollback = true;
 }
 
 async function inspectStartup(event) {
@@ -230,12 +257,7 @@ async function inspectStartup(event) {
     if (!state.ready && entries.length) {
       const ready = new Set((await self.clients.matchAll({type: 'window', includeUncontrolled: true})).map(client => client.id));
       for (const [id, client] of entries) {
-        const replaced = id === event.replacesClientId;
-        if (!client.attempt && !replaced && !ready.has(id)) continue;
-        if (replaced || !ready.has(id)) {
-          if (!client.result && matchesPage(client.url, client.page) && (replaced || client.attempt)) {
-            failStartup(state, id, client.attempt);
-          }
+        if (id === event.replacesClientId || client.attempt && !ready.has(id)) {
           delete state.clients[id];
           changed = true;
         }

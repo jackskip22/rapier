@@ -83,7 +83,7 @@ export function orderAfter(last) { return last ? orderStep(last, true) : orderFi
 export function emptyIndex() { return {version: NOTES_INDEX_VERSION, notes: {}, sections: [], collapsed: {skills: true, pinned: false, others: false, archive: true, trash: true}}; }
 
 const BUILTIN_SECTION_NAMES = ['skills', 'pinned', 'other', 'others', 'archive', 'archived', 'trash', 'deleted'];
-function isBuiltinSectionName(name) { return typeof name === 'string' && BUILTIN_SECTION_NAMES.includes(name.trim().toLowerCase()); }
+export function isBuiltinSectionName(name) { return typeof name === 'string' && BUILTIN_SECTION_NAMES.includes(name.trim().toLowerCase()); }
 
 const REMIND_REPEATS = ['daily', 'weekly', 'monthly', 'yearly', 'weekdays', 'custom'];
 const REMIND_MAX_DATE = 8_640_000_000_000_000, REMIND_MAX_STEP = 2_147_483_647;
@@ -189,6 +189,7 @@ export function codeFileName(wanted, existing = [], {ascii = false} = {}) {
 	return isCodeFile(name) ? name : null;
 }
 
+const arrivalCollator = new Intl.Collator('en', {numeric: true, sensitivity: 'base'});
 export function reconcile(index, files) {
 	const present = new Set(files.filter(isNoteFile));
 	const out = {...index, notes: {}}, added = [], dropped = [];
@@ -202,7 +203,7 @@ export function reconcile(index, files) {
 			present.delete(file);
 		} else dropped.push(file);
 	}
-	for (const file of [...present].sort()) {
+	for (const file of [...present].sort((a, b) => arrivalCollator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0))) {
 		last = orderAfter(last);
 		out.notes[file] = {order: last, pinned: false, skill: false, archived: false, trashed: false, colour: ''};
 		added.push(file);
@@ -413,16 +414,6 @@ export function setNoteControls(index, file, fields, {text, app = false} = {}) {
 	return {index: next, text};
 }
 
-export function jumpOrder(index, options) {
-	const skillsOn = !!(options && options.skillsOn);
-	const ids = [];
-	if (skillsOn) ids.push('skills');
-	ids.push('pinned');
-	for (const s of (Array.isArray(index.sections) ? index.sections : [])) ids.push(s.name);
-	ids.push('others');
-	return ids;
-}
-
 export function setCollapsed(index, id, collapsed) {
 	const flag = collapsed === true;
 	if (id === 'skills' || id === 'pinned' || id === 'others' || id === 'archive' || id === 'trash') return {...index, collapsed: {...index.collapsed, [id]: flag}};
@@ -466,10 +457,37 @@ export function remindChoices(now, options) {
 	return choices;
 }
 
+const DAY_WORD = '(today|tonight|tomorrow|(?:next\\s+)?(?:mon|tues|wednes|thurs|fri|satur|sun)day)';
+const TIME_WORD = '(?:(\\d{1,2})(?::([0-5]\\d))?\\s*([ap])\\.?m\\.?|([01]?\\d|2[0-3]):([0-5]\\d)|(noon|midday))';
+const SAID_TIMES = [
+	new RegExp('\\b' + DAY_WORD + '\\s+(?:at\\s+)?' + TIME_WORD + '(?![\\w:])', 'i'),
+	new RegExp('\\b(?:at\\s+)?' + TIME_WORD + '\\s+' + DAY_WORD + '\\b', 'i'),
+	new RegExp('\\bat\\s+' + TIME_WORD + '(?![\\w:])', 'i'),
+];
+export function remindFromWords(text, now) {
+	for (const [n, re] of SAID_TIMES.entries()) {
+		const m = re.exec(String(text || ''));
+		if (!m) continue;
+		const day = (n === 0 ? m[1] : n === 1 ? m[7] : '')?.toLowerCase().replace(/\s+/g, ' ') || '', t = n === 0 ? m.slice(2) : m.slice(1);
+		const twelve = t[0] != null && Number(t[0]) >= 1 && Number(t[0]) <= 12;
+		if (t[0] != null && !twelve) continue;
+		const hour = t[5] ? 12 : t[0] != null ? Number(t[0]) % 12 + (t[2].toLowerCase() === 'p' ? 12 : 0) : Number(t[3]);
+		const at = new Date(now); at.setHours(hour, Number(t[1] ?? t[4] ?? 0), 0, 0);
+		const weekday = WEEKDAY_LONG.findIndex(name => day.endsWith(name.toLowerCase()));
+		if (day === 'tomorrow') at.setDate(at.getDate() + 1);
+		else if (weekday >= 0) at.setDate(at.getDate() + (((weekday - at.getDay() + 7) % 7) || (day.startsWith('next') || at.getTime() <= now ? 7 : 0)));
+		else if (!day && at.getTime() <= now) at.setDate(at.getDate() + 1);
+		if (at.getTime() <= now) return null;
+		const offset = localDayNumber(at) - localDayNumber(new Date(now));
+		return {at: at.getTime(), words: m[0].trim(), label: (offset === 0 ? 'Today' : offset === 1 ? 'Tomorrow' : WEEKDAY_LONG[at.getDay()]) + ', ' + clockWords(at)};
+	}
+	return null;
+}
+
 function localDayNumber(date) { return Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000); }
 const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-function clockWords(date) {
+export function clockWords(date) {
 	const hour = date.getHours() % 12 || 12;
 	return hour + ':' + String(date.getMinutes()).padStart(2, '0') + ' ' + (date.getHours() < 12 ? 'am' : 'pm');
 }
@@ -734,6 +752,16 @@ export function projectCard(file, text, {bodyLines = 6, taskDepth = false} = {})
 		body.push(cutText(cardInkWords(raw.replace(/^#{1,6}\s+/, '').replace(/^[-*>]\s+/, '')).replace(/[*_`~]/g, ''), 280, 280));
 	}
 	return {file, title: title || (body.length || checks.length ? '' : file.replace(/\.md$/i, '')), body, checks, empty: !title && !body.length && !checks.length, needsReview, start, lead};
+}
+
+export function linkCard(text) {
+	const lines = cardSource(text).visible.map(line => line.trim()).filter(Boolean);
+	const m = lines.length === 1 && /^(?:#\s+)?<?(https?:\/\/[^\s<>]+?)>?$/i.exec(lines[0]);
+	let url = null; try { url = m && new URL(m[1]); } catch (_) {}
+	if (!url) return null;
+	const host = url.hostname.replace(/^www\./, '');
+	const parts = url.pathname.split('/').filter(Boolean).slice(-3).map(part => { try { part = decodeURIComponent(part); } catch (_) {} return /^\d+$/.test(part) ? '#' + part : part; });
+	return parts.length ? {title: parts.join(' \u00b7 '), host} : {title: host, host: ''};
 }
 
 export function toggleCheck(text, n) {

@@ -256,7 +256,7 @@ async function assertNoteBindings(current, incoming, source, store, stamp) {
 	}
 }
 
-export async function restoreAndroidSnapshot(folder, source, {now = Date.now} = {}) {
+async function restoreAndroidSnapshot(folder, source, {now = Date.now} = {}) {
 	const incoming = await inspectSource(source), store = folder.store, lease = await folder.owner.acquire(folder.scope);
 	let restored = 0, merged = 0, copied = 0;
 	try {

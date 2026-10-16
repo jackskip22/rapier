@@ -3,7 +3,6 @@ import {fail} from './provider-http.mjs';
 export const AUTHORIZE_ENDPOINT = 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize';
 export const TOKEN_ENDPOINT = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
 export const REVOKE_ENDPOINT = null;
-export const LOGOUT_ENDPOINT = 'https://login.microsoftonline.com/common/oauth2/v2.0/logout';
 export const SCOPES = 'https://graph.microsoft.com/Files.ReadWrite.AppFolder offline_access';
 export const REVOCATION = Object.freeze({revoked: false, actionRequired: true,
 	personal: 'https://account.live.com/consent/Manage', organization: 'https://myapps.microsoft.com',

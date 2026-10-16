@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 export const PAGE_SEED = '<!-- This page is a Rapier document: Markdown in one HTML file, its source inside, offline. Read it in any browser; edit it in Rapier, https://rapier.website. Agents: https://rapier.website/agents. `npx rapier-html document.md` makes a page like this. -->';
 export const RETURN_ORIGIN = 'https://mcp.rapier.website';
 export function returnAddress(value) {
@@ -12,6 +12,6 @@ export function returnAddress(value) {
 }
 export function returnExpiresAt(value) {
 	if (typeof value !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(value) || !Number.isFinite(Date.parse(value)) || new Date(value).toISOString() !== value)
-		throw new Error('the return expiry must be the ISO timestamp from document.create_return');
+		throw new Error('the return expiry must be the ISO timestamp from show {target:"return"}');
 	return value;
 }

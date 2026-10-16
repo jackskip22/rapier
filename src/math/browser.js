@@ -42,9 +42,10 @@ function mathSnapRule(original, matrix, ratio) {
     'v' + mathNumber(height) + 'h' + mathNumber(-width) + 'Z'};
 }
 
-function mathSnapRules(svg) {
-  const ratio=svg.ownerDocument.defaultView.devicePixelRatio || 1;
-  for(const rule of svg.querySelectorAll('[data-math-rule],[data-math-line]')) {
+// Every rule is measured before any is rewritten, so the browser lays the page out once, not once per formula.
+function mathSnapRules(svgs) {
+  const measured=[];
+  for(const svg of svgs)for(const rule of svg.querySelectorAll('[data-math-rule],[data-math-line]')) {
     let original=mathRuleOriginals.get(rule);
     if(!original) {
       const box=rule.getBBox(), axis=rule.getAttribute('data-math-line'), thickness=Number(rule.getAttribute('stroke-width'));
@@ -53,7 +54,10 @@ function mathSnapRules(svg) {
       if(axis==='vertical') {original.x-=thickness/2;original.width=thickness;}
       mathRuleOriginals.set(rule,original);
     }
-    const snapped=mathSnapRule(original,rule.getScreenCTM(),ratio);
+    measured.push([rule,original,rule.getScreenCTM(),svg.ownerDocument.defaultView.devicePixelRatio || 1]);
+  }
+  for(const [rule,original,matrix,ratio] of measured) {
+    const snapped=mathSnapRule(original,matrix,ratio);
     if(!snapped)continue;
     let path=snapped.d;
     if(original.axis==='horizontal') {
@@ -69,13 +73,18 @@ function mathSnapRules(svg) {
   }
 }
 
-function mathFitElement(svg, printing = false) {
+// Reads only: the column, font and paper of one formula.
+function mathFitMeasure(svg, printing) {
   if(!svg.isConnected)return null;
-  const doc=svg.ownerDocument,view=doc.defaultView,column=mathColumn(svg),style=view.getComputedStyle(column),font=parseFloat(view.getComputedStyle(svg).fontSize);
+  const view=svg.ownerDocument.defaultView,column=mathColumn(svg),style=view.getComputedStyle(column),font=parseFloat(view.getComputedStyle(svg).fontSize);
   const available=column.clientWidth-(parseFloat(style.paddingLeft) || 0)-(parseFloat(style.paddingRight) || 0);
-  if(!(available>0 && font>0))return column;
-  const width=Math.max(.1,(available-.25)/font),source=svg.getAttribute('aria-label'),display=svg.getAttribute('data-rapier-math')==='display';
-  const dark=!printing && mathDarkPaper(svg),ratio=view.devicePixelRatio || 1;
+  if(!(available>0 && font>0))return {column};
+  return {svg,column,font,width:Math.max(.1,(available-.25)/font),dark:!printing && mathDarkPaper(svg),ratio:view.devicePixelRatio || 1};
+}
+
+// Writes only: re-render and restyle one measured formula.
+function mathFitApply({svg,font,width,dark,ratio}, printing) {
+  const doc=svg.ownerDocument,view=doc.defaultView,source=svg.getAttribute('aria-label'),display=svg.getAttribute('data-rapier-math')==='display';
   const screen=printing?undefined:{fontSize:font/mathFontRatio,pixelRatio:ratio,dark};
   const screenKey=printing?'':mathNumber(font)+'|'+mathNumber(ratio)+'|'+dark;
   let state=mathBrowserStates.get(svg);
@@ -112,13 +121,19 @@ function mathFitElement(svg, printing = false) {
       node.setAttribute('fill-opacity','1');node.setAttribute('stroke-opacity','1');
     }
   }
-  if(!printing)mathSnapRules(svg);
-  return column;
+}
+
+// All formulas are measured, then all rewritten, then all rules snapped: three layouts for any number of formulas.
+function mathFitElements(svgs, printing) {
+  const measured=svgs.map(svg=>mathFitMeasure(svg,printing)).filter(Boolean),fitted=measured.filter(item=>item.svg);
+  for(const item of fitted)mathFitApply(item,printing);
+  if(!printing)mathSnapRules(fitted.map(item=>item.svg));
+  return measured.map(item=>item.column);
 }
 
 function mathFit(root) {
   const nodes=mathElements(root);
-  for(const svg of nodes)mathFitElement(svg,svg.ownerDocument.defaultView.matchMedia('print').matches);
+  if(nodes.length)mathFitElements(nodes,nodes[0].ownerDocument.defaultView.matchMedia('print').matches);
   return nodes.length;
 }
 
@@ -129,11 +144,7 @@ function mathObserveDocument(doc) {
     if(!active)return;
     if(frame!==null)view.cancelAnimationFrame(frame);
     frame=null;
-    const wanted=new Set();
-    for(const svg of nodes.keys()) {
-      if(!svg.isConnected || svg.ownerDocument!==doc || !svg.matches(mathSvgSelector))continue;
-      const column=mathFitElement(svg,printing);if(column)wanted.add(column);
-    }
+    const wanted=new Set(mathFitElements([...nodes.keys()].filter(svg=>svg.isConnected && svg.ownerDocument===doc && svg.matches(mathSvgSelector)),printing));
     for(const column of columns)if(!wanted.has(column)) {resize.unobserve(column);columns.delete(column);}
     for(const column of wanted)if(!columns.has(column)) {resize.observe(column);columns.add(column);}
   };

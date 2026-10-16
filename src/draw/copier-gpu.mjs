@@ -116,13 +116,13 @@ void main() {
  float toner = q8(broken * alpha);
  float banded = banding > 0. ? q8(toner * q8(banding * 1.6 * noiseB.x + 1. - banding * 1.5)) : toner;
  float worn = wear > 0. ? q8(banded * q8(wear * 3. * noiseB.y + 1. - wear * 2.)) : banded;
- o = vec4(0., 0., 0., worn);
+ o = vec4(worn);
 }`;
 const CHARGED = `void main() {
  vec2 px = pixel(), u = user(px);
  float scatter = p[2].x, toner = p[2].y;
- float edge = scatter > 0. ? inside(t0, u + scatter * 5. * (at(t1, u).zw - .5)).a : texelFetch(t0, ivec2(px), 0).a;
- o = vec4(0., 0., 0., q8(edge * toner));
+ float edge = scatter > 0. ? inside(t0, u + scatter * 5. * (at(t1, u).zw - .5)).r : texelFetch(t0, ivec2(px), 0).r;
+ o = vec4(q8(edge * toner));
 }`;
 const BLUR = `void main() {
  vec2 px = pixel(); vec2 step = p[3].xy; float sigma = p[3].z;
@@ -132,20 +132,20 @@ const BLUR = `void main() {
   if (i < -reach || i > reach) continue;
   float w = exp(-.5 * float(i * i) / (sigma * sigma));
   vec2 q = px + step * float(i);
-  sum += (any(lessThan(q, vec2(0.))) || any(greaterThanEqual(q, size)) ? 0. : texelFetch(t0, ivec2(q), 0).a) * w; weight += w;
+  sum += (any(lessThan(q, vec2(0.))) || any(greaterThanEqual(q, size)) ? 0. : texelFetch(t0, ivec2(q), 0).r) * w; weight += w;
  }
- o = vec4(0., 0., 0., q8(sum / weight));
+ o = vec4(q8(sum / weight));
 }`;
 const IMPRESSION = `void main() {
  vec2 px = pixel(), u = user(px);
  float a = 0.;
  for (int i = 12; i > 0; i--) {
   vec4 row = p[13 + (12 - i) / 2]; vec2 offset = (12 - i) % 2 == 0 ? row.xy : row.zw;
-  float layer = q8(inside(t0, u - offset).a * p[2].z * (1. - float(i) / 13.) * .12);
+  float layer = q8(inside(t0, u - offset).r * p[2].z * (1. - float(i) / 13.) * .12);
   a = layer + a * (1. - layer);
  }
- float charged = texelFetch(t1, ivec2(px), 0).a;
- o = vec4(0., 0., 0., q8(charged + a * (1. - charged)));
+ float charged = texelFetch(t1, ivec2(px), 0).r;
+ o = vec4(q8(charged + a * (1. - charged)));
 }`;
 const FINAL = `float erfApprox(float x) {
  float t = 1. / (1. + .3275911 * abs(x));
@@ -173,10 +173,10 @@ void main() {
   if (i >= copies) continue;
   vec4 row = p[24 + (i - 1) / 2]; vec2 offset = (i - 1) % 2 == 0 ? row.xy : row.zw;
   vec3 tint = p[21].w > .5 ? (i % 2 == 1 ? vec3(21., 149., 181.) / 255. : vec3(132., 102., 162.) / 255.) : p[19].rgb;
-  float a = q8(inside(t0, u - offset).a * pow(1. - p[19].a, float(i)) * .8);
+  float a = q8(inside(t0, u - offset).r * pow(1. - p[19].a, float(i)) * .8);
   print = over(vec4(tint * a, a), print);
  }
- float impression = texelFetch(t0, ivec2(px), 0).a;
+ float impression = texelFetch(t0, ivec2(px), 0).r;
  print = over(vec4(p[19].rgb * impression, impression), print);
  float strength = p[2].w;
  if (strength < 1.) {
@@ -233,8 +233,8 @@ export class CopierGPU {
 		const gl = this.gl;
 		for (const t of Object.values(this.tex || {})) gl.deleteTexture(t);
 		this.size = [w, h]; this.canvas.width = w; this.canvas.height = h; this.noiseKey = '';
-		const rgba = () => this.texture(w, h, gl.RGBA8, gl.LINEAR);
-		this.tex = { source: rgba(), noiseA: rgba(), noiseB: rgba(), worn: rgba(), charged: rgba(), blurred: rgba(), drag: rgba(), impression: rgba() };
+		const rgba = () => this.texture(w, h, gl.RGBA8, gl.LINEAR), one = () => this.texture(w, h, gl.R8, gl.LINEAR);
+		this.tex = { source: rgba(), noiseA: rgba(), noiseB: rgba(), scratch: one(), charged: one(), drag: one() };
 	}
 	setSource(image) {
 		const gl = this.gl;
@@ -277,20 +277,20 @@ export class CopierGPU {
 			this.pass('noiseB', this.tex.noiseB, [null, null, null, this.lattices], region);
 			this.noiseKey = key;
 		}
-		this.pass('worn', this.tex.worn, [this.tex.source, this.tex.noiseA, this.tex.noiseB], region);
-		this.pass('charged', this.tex.charged, [this.tex.worn, this.tex.noiseA], region);
+		this.pass('worn', this.tex.scratch, [this.tex.source, this.tex.noiseA, this.tex.noiseB], region);
+		this.pass('charged', this.tex.charged, [this.tex.scratch, this.tex.noiseA], region);
 		let impression = this.tex.charged;
 		if (e.smear) {
 			const sigma = (.6 + e.smear * 1.5) / unitX;
-			p.set([1, 0, sigma, 0], 12); this.pass('blur', this.tex.blurred, [this.tex.charged], region);
-			p.set([0, 1, sigma, 0], 12); this.pass('blur', this.tex.drag, [this.tex.blurred], region);
+			p.set([1, 0, sigma, 0], 12); this.pass('blur', this.tex.scratch, [this.tex.charged], region);
+			p.set([0, 1, sigma, 0], 12); this.pass('blur', this.tex.drag, [this.tex.scratch], region);
 			const angle = e.angle * Math.PI / 180;
 			for (let i = 12; i > 0; i--) {
 				const reach = e.smear * 42 * i / 12, slot = 52 + (12 - i) * 2;
 				p[slot] = Math.cos(angle) * reach; p[slot + 1] = Math.sin(angle) * reach;
 			}
-			this.pass('impression', this.tex.impression, [this.tex.drag, this.tex.charged], region);
-			impression = this.tex.impression;
+			this.pass('impression', this.tex.scratch, [this.tex.drag, this.tex.charged], region);
+			impression = this.tex.scratch;
 		}
 		const ink = blueprint ? hexRgb('#e1edf4') : hexRgb('#191919');
 		const base = blueprint ? [.075, .19, .34] : [.99, .985 - e.warmth * .05, .97 - e.warmth * .13];

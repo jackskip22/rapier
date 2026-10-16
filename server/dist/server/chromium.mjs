@@ -72,7 +72,7 @@ export class Renderer {
     const actual=/\b(\d+\.\d+\.\d+\.\d+)\b/.exec(result.stdout)?.[1];
     if(actual!==this.version)throw refusal('CHROMIUM_VERSION_MISMATCH','The installed Chromium version differs from the configured pin.',503);
     this.runtime=await readFile(this.runtimeFile,'utf8');
-    if(!this.runtime.includes('name="rapier-version" content="'+VERSION+'"'))throw refusal('RENDER_RUNTIME_MISSING','Build the document profile before starting the server.',503);
+    if(!this.runtime.includes('name="rapier-version" content="'+VERSION+'"'))throw refusal('RENDER_RUNTIME_MISSING','Build the full profile before starting the server.',503);
     const bundled=await readFile(new URL('../dist/chatgpt/rapier-app.html',import.meta.url),'utf8');
     if(!bundled.includes('name="rapier-version" content="'+VERSION+'"'))throw refusal('RENDER_RUNTIME_MISSING','Build the matching full profile before starting the server.',503);
     const scripts=(source,id)=>[...source.matchAll(new RegExp('<script\\b[^>]*id="'+id+'"[^>]*>([^<]*)<\\/script>','g'))];
@@ -140,8 +140,8 @@ export class Renderer {
     this.active--;
   }
   async withPage(operation,signal) {
-    const deadline=AbortSignal.timeout(this.timeout);
-    const combined=AbortSignal.any([this.stopping.signal,deadline,...(signal ? [signal] : [])]);
+    const deadline=new AbortController(),timer=setTimeout(()=>deadline.abort(refusal('RENDER_TIMEOUT','The export exceeded its time limit.',504)),this.timeout);timer.unref();
+    const combined=AbortSignal.any([this.stopping.signal,deadline.signal,...(signal ? [signal] : [])]);
     await this.slot(combined);let contextId,sessionId,pipe,listener;
     try {
       pipe=await this.start();contextId=(await pipe.call('Target.createBrowserContext',{},undefined,combined)).browserContextId;
@@ -231,6 +231,7 @@ export class Renderer {
       };
       return await operation({evaluate,print,attempts,call});
     } finally {
+      clearTimeout(timer);
       if(listener)pipe?.listeners.delete(listener);
       if(contextId)await pipe.call('Target.disposeBrowserContext',{browserContextId:contextId}).catch(()=>{});
       this.release();

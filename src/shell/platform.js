@@ -11,12 +11,8 @@ function _rapierTextHasDocumentScalars(value) {
 const RAPIER_DOCUMENT_NAME_MAX_CHARS = 512;
 function _rapierDocumentNameIsAdmissible(value) {
 	const name = String(value == null ? '' : value);
-	 
-	 
-	 
-	 
-	return !!name.trim() && name.length <= RAPIER_DOCUMENT_NAME_MAX_CHARS &&
-		!/[\\/<>"\u0000-\u001f\u007f\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff]/.test(name);
+	return !!name.trim() && name.length <= RAPIER_DOCUMENT_NAME_MAX_CHARS && name !== '.' && name !== '..' &&
+		!/[\\/<>"\u0000-\u001f\u007f\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff\ud800-\udfff]/u.test(name);
 }
 
 function _rapierNormalizeAdmittedText(value, admittedBytes, accepts, bomSeparated = false) {
@@ -56,17 +52,18 @@ const RapierTextCodec = Object.freeze({
 		);
 	},
 	normalizeDocumentAsync: async function (value, admittedBytes, options = {}) {
-		let text = String(value == null ? '' : value), bytes = 0;
+		let text = String(value == null ? '' : value), bytes = 0, buffer = new Uint8Array(0);
 		const encoder = new TextEncoder();
 		for (let start = 0; start < text.length;) {
 			if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
-			let end = Math.min(text.length, start + 65536);
+			let end = Math.min(text.length, start + 1048576);
 			if (end < text.length && text.charCodeAt(end - 1) >= 0xd800 &&
 					text.charCodeAt(end - 1) <= 0xdbff && text.charCodeAt(end) >= 0xdc00 &&
 					text.charCodeAt(end) <= 0xdfff) end++;
 			const part = text.slice(start, end);
 			if (!RapierTextCodec.isDocumentFragment(part)) throw new Error('document is not plain UTF-8 text');
-			bytes += encoder.encode(part).length;
+			if (buffer.length < 3 * part.length) buffer = new Uint8Array(3 * part.length);
+			bytes += encoder.encodeInto(part, buffer).written;
 			if (bytes > RapierTextCodec.maxDocumentBytes) throw new Error('document is too large for Rapier (max 64 MiB)');
 			start = end;
 			options.onProgress?.(start / text.length);
@@ -106,11 +103,11 @@ const RapierTextCodec = Object.freeze({
 		}
 		const decoder = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}), parts = [];
 		let bom = false, bytes = 0;
-		for (let start = 0; start < size; start += 65536) {
+		for (let start = 0; start < size; start += 1048576) {
 			if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
-			const chunk = new Uint8Array(await blob.slice(start, start + 65536).arrayBuffer());
+			const chunk = new Uint8Array(await blob.slice(start, start + 1048576).arrayBuffer());
 			if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
-			if (chunk.length !== Math.min(65536, size - start)) throw new Error('document byte length is invalid');
+			if (chunk.length !== Math.min(1048576, size - start)) throw new Error('document byte length is invalid');
 			if (!start) bom = chunk.length >= 3 && chunk[0] === 0xef && chunk[1] === 0xbb && chunk[2] === 0xbf;
 			bytes += chunk.length;
 			let part;
@@ -171,14 +168,7 @@ Object.defineProperty(window, 'RapierPlatform', {
 });
 
 const RAPIER_ACCENT_PRESETS = globalThis.RapierPreferenceDefinitions.PREFERENCE_ACCENTS;
-const RAPIER_ACCENT_VALUES = Object.freeze(RAPIER_ACCENT_PRESETS.map(function (preset) { return preset.accent; }));
 
- 
- 
- 
- 
- 
- 
 const RAPIER_STORAGE_SCOPE = (function () {
 	try {
 		if (!/^https?:$/.test(location.protocol)) return '';
@@ -205,20 +195,23 @@ const RapierStorage = Object.freeze({
 	embedDraftPrefix: 'rapier:embed:draft' + RAPIER_STORAGE_SCOPE + ':',
 });
 
-
-
-
-
-
 const RapierBootAttempts = (function () {
 	var key = RapierStorage.bootAttempt, HOLD_AFTER = 2;
 	function read() {
+		var raw = null;
+		try { raw = sessionStorage.getItem(key); } catch (_) {}
 		try {
-			var raw = localStorage.getItem(key), value = raw ? JSON.parse(raw) : null;
+			raw = raw || localStorage.getItem(key);
+			var value = raw ? JSON.parse(raw) : null;
 			return value && typeof value === 'object' && typeof value.stamp === 'string' && Number.isInteger(value.count) ? value : null;
 		} catch (_) { return null; }
 	}
-	function write(value) { try { if (value) localStorage.setItem(key, JSON.stringify(value)); else localStorage.removeItem(key); } catch (_) {} }
+	function write(value) {
+		var text = value ? JSON.stringify(value) : null;
+		try { sessionStorage.removeItem(key); } catch (_) {}
+		try { if (text) localStorage.setItem(key, text); else localStorage.removeItem(key); return; } catch (_) {}
+		try { if (text) sessionStorage.setItem(key, text); } catch (_) {}
+	}
 	return Object.freeze({
 		holdAfter: HOLD_AFTER,
 		begin: function (stamp) {
@@ -388,7 +381,6 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 	const _nativeHostRuntime = Object.seal({
 		sequence: 0,
 		pending: new Map(),
-		dictationSession: '',
 		ready: null,
 		transport: null,
 		state: Object.seal({
@@ -501,6 +493,14 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 		});
 	}
 
+	function _rapierExternalIntakeReleaseDeferred(payload) {
+		var waiting = globalThis._rapierHeldExternalFiles;
+		if (!payload || !waiting?.length) return false;
+		var id = Number(payload.nativeIntakeId) || 0;
+		if (!(id > 0) || !waiting.some(held => Number(held.nativeIntakeId) === id)) return false;
+		return globalThis._rapierAcceptedExternalIntakeId !== id;
+	}
+
 	function _nativeHostEvent(name, detail) {
 		if (name === 'reminders.actionsChanged') {
 			if (typeof window.rapierNotesReceiveReminderActions === 'function') window.rapierNotesReceiveReminderActions();
@@ -580,6 +580,10 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 			if (Number.isSafeInteger(checkpoint) && checkpoint > 0) kept.then(function (value) {
 				_nativeHostNotify('window.checkpointCompleted', {checkpoint: checkpoint, kept: value});
 			});
+			return;
+		}
+		if (name === 'window.memoryTrimmed') {
+			try { window.dispatchEvent(new CustomEvent('rapier:memory-trimmed')); } catch (_) {}
 			return;
 		}
 		if (name === 'document.printFinished') {
@@ -743,7 +747,8 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 				generation: _nativeIntakeRuntime.generation,
 				deliveryGeneration: Number(message.deliveryGeneration),
 				frameGeneration: message.generation == null ? null : String(message.generation),
-				name: String(message.name || 'shared.md'),
+				name: typeof _nativeIntakeDocumentName === 'function'
+					? _nativeIntakeDocumentName(message.name, message.contentType) : String(message.name || 'shared'),
 				path: message.path == null ? null : String(message.path),
 				documentAuthority: message.documentAuthority == null ? '' : String(message.documentAuthority),
 				fileGeneration: message.fileGeneration == null ? null : message.fileGeneration,
@@ -779,6 +784,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 					nativeIntakeId: finished.id,
 					purpose: finished.purpose,
 					transient: finished.transient === true,
+					contentType: finished.contentType,
 					admittedBytes: finished.receivedBytes,
 				};
 				if (finished.decoder) {
@@ -1043,33 +1049,15 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 	}
 
 	async function _blobFingerprint(blob) {
-		if (blob.size > 8 * 1024 * 1024 && typeof globalThis.RapierNotesIntegrity?.sha256State === 'function') {
-			var hash = globalThis.RapierNotesIntegrity.sha256State();
-			for (var at = 0; at < blob.size; at += 4194304) hash.update(new Uint8Array(await blob.slice(at, at + 4194304).arrayBuffer()));
-			return { bytes: blob.size, algorithm: 'sha256', digest: hash.finish() };
-		}
-		var buffer = await blob.arrayBuffer();
-		if (window.crypto && window.crypto.subtle) {
+		if (blob.size <= 8 * 1024 * 1024 && window.crypto && window.crypto.subtle) {
 			try {
-				var digest = await window.crypto.subtle.digest('SHA-256', buffer);
-				return { bytes: buffer.byteLength, algorithm: 'sha256', digest: _hexBytes(new Uint8Array(digest)) };
+				var digest = await window.crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+				return { bytes: blob.size, algorithm: 'sha256', digest: _hexBytes(new Uint8Array(digest)) };
 			} catch (_) {}
 		}
-		var data = new Uint8Array(buffer);
-		var fnv = 0x811c9dc5;
-		var adlerA = 1;
-		var adlerB = 0;
-		for (var i = 0; i < data.length; i++) {
-			fnv ^= data[i];
-			fnv = Math.imul(fnv, 0x01000193) >>> 0;
-			adlerA = (adlerA + data[i]) % 65521;
-			adlerB = (adlerB + adlerA) % 65521;
-		}
-		return {
-			bytes: data.length,
-			algorithm: 'fnv-adler',
-			digest: fnv.toString(16).padStart(8, '0') + ':' + (((adlerB << 16) | adlerA) >>> 0).toString(16).padStart(8, '0'),
-		};
+		var hash = globalThis.RapierLedger.sha256State();
+		for (var at = 0; at < blob.size; at += 4194304) hash.update(new Uint8Array(await blob.slice(at, at + 4194304).arrayBuffer()));
+		return { bytes: blob.size, algorithm: 'sha256', digest: hash.finish() };
 	}
 
 	function _webGenerationFromFingerprint(fingerprint) {
@@ -1081,7 +1069,6 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 		if (!file) return null;
 		if (Number(file.size || 0) > RapierTextCodec.maxDocumentBytes) {
 			
-
 
 			return 'web:oversize:' + String(file.size) + ':' + String(file.lastModified || 0);
 		}
@@ -1443,7 +1430,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 		var status = detail.status;
 		if (status === 'confirmed' && detail.ok === true && detail.verified === true) {
 			if (String(detail.purpose || '') !== 'export') {
-				if (detail.bindingPublished === true) {
+				if (detail.bindingPublished === true && _engineOwnsDocumentAuthority(pending.documentAuthority)) {
 					_setNativeCurrentFileBinding(pending.documentAuthority, detail.fileGeneration);
 				} else {
 					_clearPlatformFileBinding(pending.documentAuthority);
@@ -1477,9 +1464,6 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 		if (options.beforeWrite) await options.beforeWrite;
 		if (options.check) options.check();
 		var fingerprint = await _blobFingerprint(blob);
-		if (fingerprint.algorithm !== 'sha256') {
-			throw new Error('SHA-256 is unavailable for verified native saving');
-		}
 		var mime = (blob && blob.type) || 'application/octet-stream';
 		var requestId = 'save-' + Date.now().toString(36) + '-' + (++_nativeSaveRuntime.sequence).toString(36);
 		var resultPromise = new Promise(function (resolve, reject) {
@@ -1549,7 +1533,6 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 	async function _nativeShare(blob, filename, mime, options) {
 		if (!hasNative) return false;
 		var fingerprint = await _blobFingerprint(blob);
-		if (fingerprint.algorithm !== 'sha256') throw new Error('SHA-256 is unavailable for native sharing');
 		var requestId = 'share-' + Date.now().toString(36) + '-' + (++_nativeSaveRuntime.sequence).toString(36);
 		var result = await _sendNativeTransfer(
 			'share', blob, filename || 'document.md', mime || (blob && blob.type), options || {}, requestId, fingerprint
@@ -1848,7 +1831,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 		const idle = () => document.visibilityState === 'visible' && typeof rapier !== 'undefined' &&
 			!rapier.composition.block && !rapier.composition.source &&
 			!(typeof _rapierMutationBarrierActive === 'function' && _rapierMutationBarrierActive()) &&
-			!(typeof _rapierDrawState !== 'undefined' && (_rapierDrawState.open || _rapierDrawState.finishing)) &&
+			!(_rapierDrawPart?.state.open || _rapierDrawPart?.state.finishing) &&
 			!(typeof _rapierDialogRuntime !== 'undefined' && _rapierDialogRuntime.open.size) &&
 			!document.activeElement?.matches?.('input, textarea, [contenteditable]:not([contenteditable="false"])');
 		const cancel = () => {
@@ -2264,16 +2247,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 			get ownsPreferenceStore() { return _srState.granted !== false; },
 			get ownsRecoveryStore() { return _srState.granted !== false; },
 			get ownsRecoveryWriterBoundary() { return _srState.granted !== false; },
-			allowsEmbed: false,
-			allowsBrowserIntake: false,
-			allowsServiceWorker: false,
-			allowsWebShareFallback: false,
-			allowsBrowserDownloadFallback: false,
 			allowsBrowserPrintFallback: true,
-			defersBrowserPrintCleanup: false,
-			showsUploadUi: false,
-			canShare: false,
-			proSupported: false,
 			ready: function () { return _srReady; },
 			preference: function (key, fallback) {
 				return Object.prototype.hasOwnProperty.call(_srState.preferences, key) ? _srState.preferences[key] : fallback;
@@ -2414,15 +2388,13 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 		_nativeIntakeRuntime.last = null;
 		_nativeIntakeRuntime.failure = null;
 		try { _rapierBootstrapRuntime.pendingIntake = null; } catch (_) {}
-		var watching = purpose === 'read-current';
-		if (watching) _nativeIntakeRuntime.expecting = true;
+		_nativeIntakeRuntime.expecting = true;
 		try {
 			var result = await _nativeHostCall(operation, Object.assign({ purpose: purpose }, args || {}), 120000);
-			if (!result || result.cancelled === true) return null;
-			if (watching && result.started === false) return null;
+			if (!result || result.cancelled === true || result.started === false) return null;
 			return await _waitForNativeIntake();
 		} finally {
-			if (watching) _nativeIntakeRuntime.expecting = false;
+			_nativeIntakeRuntime.expecting = false;
 		}
 	}
 
@@ -2557,8 +2529,10 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 		var environment = Object.freeze({
 			get id() { return String(raw.id || 'unknown').toLowerCase(); },
 			get android() { return environment.id === 'android'; },
+			get native() { return raw.native === true; },
 			get here() { return environment.id === 'web' ? 'This browser' : 'This app'; },
-			get updateEngine() { return environment.android ? 'Update Android System WebView in Google Play, then reopen Rapier.' : ''; },
+			get updateEngine() { return environment.android ? 'Update Android System WebView in Google Play, then reopen Rapier.'
+				: environment.id === 'windows' ? 'Update Microsoft Edge WebView2 Runtime, then reopen Rapier.' : ''; },
 			ready: function () { return method('ready') ? raw.ready() : Promise.resolve(); },
 			get allowsEmbed() { return raw.allowsEmbed === true; },
 			get allowsBrowserIntake() { return raw.allowsBrowserIntake === true; },
@@ -2648,6 +2622,9 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 			get unlockNotes() { return method('unlockNotes'); },
 			get captureReady() { return method('captureReady'); },
 			get requestNotesRole() { return method('requestNotesRole'); },
+			get pinNote() { return method('pinNote'); },
+			get noteOpened() { return method('noteOpened'); },
+			get noteGone() { return method('noteGone'); },
 			get openSync() { return method('openSync'); },
 			get scheduleReminder() { return method('scheduleReminder'); },
 			get reminderState() { return method('reminderState'); },
@@ -2656,10 +2633,6 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 			get requestReminderPermission() { return method('requestReminderPermission'); },
 			get openReminderSettings() { return method('openReminderSettings'); },
 			get openMicrophoneSettings() { return method('openMicrophoneSettings'); },
-			get dictationState() { return method('dictationState'); },
-			get startDictation() { return method('startDictation'); },
-			get stopDictation() { return method('stopDictation'); },
-			get cancelDictation() { return method('cancelDictation'); },
 			get approveClose() { return method('approveClose'); },
 			get reviewSaved() { return method('reviewSaved'); },
 			get reviewFinished() { return method('reviewFinished'); },
@@ -2777,6 +2750,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 		var preferencesReady;
 		return {
 			get id() { return _nativeHostRuntime.state.platformId; },
+			native: true,
 			get recoveryAutoResume() { return _nativeHostRuntime.state.recoveryAutoResume === true; },
 			ready: function () {
 				if (!preferencesReady) preferencesReady = _nativeHostRuntime.ready.then(async function () {
@@ -2825,7 +2799,6 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 				var authorization = await _nativeHostCall('water.pro.authorize', {feature:'video'});
 				if (authorization?.authorized !== true) throw new Error('Pro watercolour is unavailable.');
 				var fingerprint = await _blobFingerprint(blob);
-				if (fingerprint.algorithm !== 'sha256') throw new Error('The video could not be verified.');
 				var result = await _sendNativeTransfer('waterVideo', blob, name || 'painting.mp4', 'video/mp4', options || {},
 					'water-video-' + Date.now().toString(36) + '-' + (++_nativeSaveRuntime.sequence).toString(36), fingerprint);
 				if (result?.shared !== true) throw new Error('The video could not be shared.');
@@ -2997,6 +2970,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 					_nativeHostRuntime.state.pendingIntake = !!_nativeIntakeRuntime.transfer;
 				}
 				if (lastMatches || shareMatches || transferMatches) _nativeIntakeRuntime.failure = null;
+				if (_rapierExternalIntakeReleaseDeferred(payload)) return true;
 				_nativeHostNotify('intake.clear', { intakeId: intakeId });
 			},
 			getRecentFiles: function () {
@@ -3012,8 +2986,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 			},
 			openRecent: function (entry) {
 				if (!entry || !_nativeCapability('recents')) return false;
-				_nativeHostNotify('recent.open', { path: entry.path || entry.name });
-				return true;
+				return _nativeHostCall('recent.open', { path: entry.path || entry.name }).then(function () { return true; });
 			},
 			launcherIconState: function () {
 				if (!_nativeCapability('launcherIcon')) return null;
@@ -3082,34 +3055,6 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 			get reminderState() {
 				return _nativeCapability('reminders') ? function () { return _nativeHostCall('reminders.state', {}); } : null;
 			},
-			get dictationState() {
-				return _nativeCapability('nativeDictation') ? function () { return _nativeHostCall('dictation.state', {}); } : null;
-			},
-			get startDictation() {
-				return _nativeCapability('nativeDictation') ? function () {
-					if (_nativeHostRuntime.dictationSession) return Promise.reject(new Error('Transcription is already listening.'));
-					var session = 'dictation-' + Date.now().toString(36) + '-' + (++_nativeHostRuntime.sequence).toString(36);
-					_nativeHostRuntime.dictationSession = session;
-					return _nativeHostCall('dictation.start', {session: session}, 300000).catch(function (error) {
-						_nativeHostNotify('dictation.cancel', {session: session}); throw error;
-					}).finally(function () {
-						if (_nativeHostRuntime.dictationSession === session) _nativeHostRuntime.dictationSession = '';
-					});
-				} : null;
-			},
-			get stopDictation() {
-				return _nativeCapability('nativeDictation') ? function () {
-					var session = _nativeHostRuntime.dictationSession;
-					return session ? _nativeHostCall('dictation.stop', {session: session}) : Promise.resolve({});
-				} : null;
-			},
-			get cancelDictation() {
-				return _nativeCapability('nativeDictation') ? function () {
-					var session = _nativeHostRuntime.dictationSession;
-					_nativeHostRuntime.dictationSession = '';
-					return session ? _nativeHostCall('dictation.cancel', {session: session}) : Promise.resolve({});
-				} : null;
-			},
 			get requestReminderPermission() {
 				return _nativeCapability('reminders') ? function () { return _nativeHostCall('reminders.permission', {}, 300000); } : null;
 			},
@@ -3165,6 +3110,17 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 			},
 			get captureReady() {
 				return _nativeCapability('notesCapture') ? function (token, ready) { return _nativeHostCall('notes.captureReady', {token, ready}); } : null;
+			},
+			get pinNote() {
+				return _nativeCapability('notesPin') ? async function (file, id, title) {
+					return (await _nativeHostCall('notes.pinShortcut', {file: String(file), id: String(id)}))?.requested === true;
+				} : null;
+			},
+			get noteOpened() {
+				return _nativeCapability('notesPin') ? function (file, id) { _nativeHostNotify('notes.opened', {file: String(file), id: String(id)}); } : null;
+			},
+			get noteGone() {
+				return _nativeCapability('notesPin') ? function (id) { _nativeHostNotify('notes.gone', {id: String(id)}); } : null;
 			},
 			get requestNotesRole() {
 				return _nativeCapability('notesRole') ? function () {

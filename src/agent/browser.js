@@ -1,7 +1,7 @@
 (() => {
   const {createKernel, createState, measurementsRequired, receiptStructureEligible, receiptStructureFact, exportFilename, exportFidelity, PAGE_RESULT_BYTES, resultBytes, boundedResult, modelReply} = globalThis.RapierKernel;
   const {resolveCaller} = globalThis.RapierDoorIdentity;
-  const {TOOLS, PAGE_TOOLS, MAX_EXPORT_BYTES, getHumanOperation, getOwnedOperation, annotations} = globalThis.RapierAgentCatalog;
+  const {TOOLS, PAGE_TOOLS, MAX_EXPORT_BYTES, getHumanOperation, getOwnedOperation, annotations, publishedSchema} = globalThis.RapierAgentCatalog;
   const editorProtocol = globalThis.RapierAgentEditor;
   const kernelClock = () => Date.now();
   const kernelMintId = prefix => prefix + crypto.randomUUID().replaceAll('-', '');
@@ -19,7 +19,7 @@
   let kernel, previous, refreshing, registrationOwner, registrationExposure = '';
   let readyResolve, readyReject, readyDone = false, replacing = false, refreshAgain = false;
   let comparisonOwner = null, comparisonKernelId = null, comparisonGeneration = -1, remoteComparison = null;
-  let contextSequence = 0, humanSequence = 0, contextQueued = false, contextTimer = 0, lastInputAt = 0, lastPointerAt = 0;
+  let contextSequence = 0, humanSequence = 0, checkpointedSequence = -1, contextQueued = false, contextTimer = 0, lastInputAt = 0, lastPointerAt = 0;
   let retainedPointer = null, projecting = 0, viewFlight = null;
   let visualFlight = null, materialFlight = null;
   let drawingNavigationSequence = 0;
@@ -68,7 +68,8 @@
   const visible = () => document.visibilityState !== 'hidden';
   const composing = () => !!(rapier.composition.source || rapier.composition.block);
   const editing = (settled = false) => composing() || _rapierMutationBarrierActive() ||
-    (!settled && (globalThis.RapierFlowchartEditor?.editing() === true || rapier.document.blocks.some(block => block.dirty))) ||
+    (!settled && (globalThis.RapierFlowchartEditor?.editing() === true ||
+      humanSequence !== checkpointedSequence && rapier.document.blocks.some(block => block.dirty))) ||
     Date.now() - lastInputAt < 900 ||
     globalThis.RapierImageFlow?.status().moving === true;
   const pointerCurrent = () => retainedPointer && retainedPointer.documentId === String(rapier.identity.authority) &&
@@ -84,7 +85,7 @@
     const ta = document.getElementById('source-textarea');
     if (ta && document.activeElement === ta &&
         (rapier.document.docKind !== 'markdown' || rapier.view.mode === 'source')) {
-      const start = _rapierAbsPos(ta.selectionStart), end = _rapierAbsPos(ta.selectionEnd);
+      const {start, end} = _rapierHeavyRuntime.selection(ta);
       const active = editing();
       return {selection: {start, end, active}, focus: {start, end, active}};
     }
@@ -234,8 +235,9 @@
     const busy = () => ({...fail('document_not_settled', 'yielded'), ...documentState(),
       context: {...editorFocus(), sequence: contextSequence, navigationSequence: drawingNavigationSequence, drawingReceipts: drawingPresentationReceipts(), visible: visible(), editing: visible() && editing(), view: viewMode()}});
     if (composing() || Date.now() - lastInputAt < 900) return busy();
-    const captured = await _rapierWithSettledExternalDocument(documentState, {quiet: true});
+    const sequence = humanSequence, captured = await _rapierWithSettledExternalDocument(documentState, {quiet: true});
     if (!captured.settled) return busy();
+    checkpointedSequence = sequence;
     const value = captured.value;
     if (Date.now() - lastPointerAt < 1500) rememberPointer();
     const pointer = visible() && pointerCurrent() ? {selection: retainedPointer.selection, focus: retainedPointer.focus}
@@ -710,7 +712,7 @@
           {kind: 'document-range', start: row.pos, end: row.pos + row.removed.length}, row.inserted)) return fail('document_law');
         text = text.slice(0, row.pos) + row.inserted + text.slice(row.pos + row.removed.length);
       }
-      proof = _rapierWillProofBefore(resolved, restoring);
+      proof = _rapierWillProofBefore(resolved, restoring ? request.restored || [] : null);
     }
     const drafts = request.splices.map(row => ({kind: 'document-range',
       startBlockId: null, endBlockId: null, beforeText: row.removed, afterText: row.inserted,
@@ -1654,7 +1656,7 @@
     if (!drawing?.open || drawing.session !== session || !drawing.undoStack.includes(entry)) return false;
     const id = entry?.agent?.transactionId;
     const row = id && current().journal.find(row => row.id === id);
-    if (!row || row.actor !== 'agent' || !row.drawingPatch) return false;
+    if (!row || row.actor !== 'agent' || row.operation !== 'document.draw') return false;
     const result = await invoke('undo', {act: id},
       {actor: row.actor, principal: row.principal, transport: row.transport});
     return result.outcome === 'applied';
@@ -1689,7 +1691,7 @@
       registrations.set(tool.name, controller);
       try {
         await owner.registerTool({name: tool.name, title: tool.title, description: tool.description,
-          inputSchema: tool.inputSchema, annotations: annotations(tool.effect, 'webmcp'),
+          inputSchema: publishedSchema(tool.inputSchema), annotations: annotations(tool.effect, 'webmcp'),
           execute: async (args, options = {}) => {
             if (controller.signal.aborted || owner !== registrationOwner || admission())
               return {outcome: 'refused', reason: 'host_not_connected'};

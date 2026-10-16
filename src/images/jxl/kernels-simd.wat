@@ -278,7 +278,7 @@
   (func (export "screen")
     (param $values i32) (param $n i32) (param $w i32) (param $depth i32)
     (param $head i32) (param $previous i32) (param $rows i32)
-    (param $map i32) (param $mask i32) (param $output i32) (result i32)
+    (param $map i32) (param $mask i32) (param $output i32) (param $minimum i32) (result i32)
     (local $start i32) (local $end i32) (local $j i32) (local $h i32)
     (local $slot i32) (local $entry i32) (local $row i32)
     (local $i i32) (local $length i32) (local $distance i32)
@@ -309,7 +309,7 @@
     (loop $positions
       (local.set $length (i32.const 0))
       (local.set $distance (i32.const 0))
-      (if (i32.le_u (i32.add (local.get $i) (i32.const 7)) (local.get $n))
+      (if (i32.le_u (i32.add (local.get $i) (local.get $minimum)) (local.get $n))
         (then
           (local.set $at (i32.load (i32.add (local.get $rows) (i32.shl (i32.div_u (local.get $i) (local.get $w)) (i32.const 2)))))
           (if (i32.ge_s (local.get $at) (i32.const 0))
@@ -351,7 +351,7 @@
               (br_if $matched (i32.lt_s (local.get $at) (i32.const 0)))
               (local.set $probes (i32.add (local.get $probes) (i32.const 1)))
               (br $candidates)))))
-      (if (i32.ge_u (local.get $length) (i32.const 7))
+      (if (i32.ge_u (local.get $length) (local.get $minimum))
         (then
           (i32.store (local.get $output) (local.get $length))
           (i32.store offset=4 (local.get $output) (local.get $distance)))

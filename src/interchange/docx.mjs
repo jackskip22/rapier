@@ -15,7 +15,7 @@ import {markdownParser, markdownBodyOffset, documentAssets} from '../spec/md-ass
 import {parseComments, commentThreads, commentAnchor, writeComments, validCommentDate, validCommentTimestamp} from '../agent/comments.mjs';
 import {DOCX_FONTS} from '../shell/fonts/docx-fonts.mjs';
 
-export const DOCX_LIMITS = Object.freeze({xmlBytes: 8 * 1024 * 1024, totalXmlBytes: 12 * 1024 * 1024,
+const DOCX_LIMITS = Object.freeze({xmlBytes: 8 * 1024 * 1024, totalXmlBytes: 12 * 1024 * 1024,
   elements: 200000, depth: 96, styles: 2048, paragraphs: 50000, images: 1024, tableColumns: 64});
 
 const NS = Object.freeze({
@@ -47,14 +47,14 @@ const DOCX_SOURCE = Object.freeze({path: 'rapier/source.json',
 const sha256 = async bytes => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)),
   byte => byte.toString(16).padStart(2, '0')).join('');
 
-async function docxSourceRecord(entries, source, work = null) {
+async function docxSourceRecord(entries, source, work = null, equations = []) {
   const bytes = work ? await finishAsync(encodeUtf8Steps(source), work) : utf8.encode(source);
   if (bytes.length > ARCHIVE_LIMITS.bytes || source.includes('\u0000') || new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(bytes) !== source)
     return fail('DOCX source is not an admitted UTF-8 document.', 'docx_source_invalid');
   const parts = [];
   for (const entry of [...entries].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
     parts.push({name: entry.name, bytes: entry.bytes.length, sha256: await sha256(entry.bytes)});
-  const record = JSON.stringify({format: 'md-source:v1', source, sha256: await sha256(bytes), parts});
+  const record = JSON.stringify({format: 'md-source:v1', source, sha256: await sha256(bytes), parts, ...(equations.length ? {equations} : {})});
   return work ? finishAsync(encodeUtf8Steps(record), work) : utf8.encode(record);
 }
 
@@ -73,7 +73,7 @@ async function readDocxSource(files, path, work) {
       !Array.isArray(record.parts)) return null;
   const native = files.entries.filter(entry => !entry.directory && entry.name !== path)
     .sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
-  if (record.parts.length !== native.length) return null;
+  let exact = record.parts.length === native.length;
   let size = 0, nextCheck = 0;
   for (let at = 0; at < record.source.length; at++) {
     const code = record.source.charCodeAt(at);
@@ -98,14 +98,18 @@ async function readDocxSource(files, path, work) {
   }
   if (await sha256(source) !== record.sha256) return null;
   source = null;
-  for (let index = 0; index < native.length; index++) {
+  for (let index = 0; exact && index < native.length; index++) {
     await work.checkpoint();
     const entry = native[index], part = record.parts[index];
-    if (!part || part.name !== entry.name || part.bytes !== entry.size || typeof part.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(part.sha256)) return null;
-    if (await sha256(await files.read(entry.name)) !== part.sha256) return null;
+    if (!part || part.name !== entry.name || part.bytes !== entry.size || typeof part.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(part.sha256)) { exact = false; break; }
+    if (await sha256(await files.read(entry.name)) !== part.sha256) exact = false;
   }
   work.check();
-  return record.source;
+  const equations = new Map();
+  if (Array.isArray(record.equations) && record.equations.length <= DOCX_LIMITS.elements)
+    for (const pair of record.equations)
+      if (Array.isArray(pair) && typeof pair[0] === 'string' && typeof pair[1] === 'string' && SINGLE_EQUATION.test(pair[1]) && record.source.includes(pair[1])) equations.set(pair[0], pair[1]);
+  return {source: record.source, exact, equations};
 }
 const is = (node, family, name) => node?.nodeType === 1 && NS[family].includes(node.namespaceURI) && (!name || node.localName === name);
 const children = (node, family, name) => Array.from(node?.children || []).filter(child => is(child, family, name));
@@ -399,16 +403,18 @@ function themeColor(node, colors) {
   return channels.map(channel => Math.round(255 * (minimum + (delta ? (channel - low) / delta * chroma : 0))).toString(16).padStart(2,'0')).join('');
 }
 
-function runProperties(node, themeColors = new Map(), inlineSize = true) {
+function runProperties(node, theme = new Map(), inlineSize = true) {
   const out = {};
   const size = child(node, 'w', 'sz'), complexSize = child(node, 'w', 'szCs');
   if (inlineSize && (size || complexSize)) {
     out.halfPoints = integer(val(size || complexSize), null, 1, 3276);
     if (out.halfPoints === null) return fail('DOCX run sizes must have one supported half-point value.', 'docx_run_size');
   }
-  const fonts = child(node, 'w', 'rFonts');
-  const family = normalizeFontFamily(attr(fonts, 'w', 'ascii') || attr(fonts, 'w', 'hAnsi') ||
-    attr(fonts, 'w', 'eastAsia') || attr(fonts, 'w', 'cs'));
+  const fonts = child(node, 'w', 'rFonts'), font = (name, themed = name + 'Theme') => attr(fonts, 'w', name) || theme.get(attr(fonts, 'w', themed));
+  const letter = is(node?.parentNode, 'w', 'r') && /\p{L}/u.exec(children(node.parentNode, 'w', 't').map(text => text.textContent).join(''))?.[0];
+  const slot = letter && /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Bopomofo}]/u.test(letter) ? font('eastAsia') :
+    letter && !/[\p{Script=Latin}\p{Script=Greek}\p{Script=Cyrillic}]/u.test(letter) ? font('cs', 'cstheme') : null;
+  const family = normalizeFontFamily(slot || font('ascii') || font('hAnsi') || font('eastAsia') || font('cs', 'cstheme'));
   if (family) out.family = family;
   for (const [name, key] of [['b', 'bold'], ['i', 'italic'], ['strike', 'strike'], ['vanish', 'hidden'], ['smallCaps', 'smallCaps']]) {
     const value = on(child(node, 'w', name));
@@ -417,7 +423,7 @@ function runProperties(node, themeColors = new Map(), inlineSize = true) {
   const underline = child(node, 'w', 'u'), vertical = val(child(node, 'w', 'vertAlign'));
   if (underline) out.underline = val(underline) !== 'none';
   if (vertical != null) out.vertical = vertical;
-  const color = themeColor(child(node, 'w', 'color'), themeColors);
+  const color = themeColor(child(node, 'w', 'color'), theme);
   if (color && /^[0-9a-f]{6}$/i.test(color)) out.color = '#' + color.toLowerCase();
   else if (color === 'auto') out.color = null;
   const highlight = val(child(node, 'w', 'highlight'));
@@ -468,6 +474,8 @@ function importedText(text) {
       ? sourceToken('&#' + part.codePointAt(0) + ';') : escape(part)).join('');
 }
 
+const ommlSource = node => (is(node, 'm', 'oMathPara') ? '$$' : '$') + mathTex(node).trim() + (is(node, 'm', 'oMathPara') ? '$$' : '$');
+const SINGLE_EQUATION = /^(?:\$\$(?:(?!\$\$)[\s\S])+\$\$|\$[^$]+\$)$/;
 function mathTex(node) {
   const text = value => String(value).replace(/[\\{}$%#&_^~]/g, c => ({'\\':'\\backslash{}',
     '^':'\\text{\\textasciicircum}', '~':'\\text{\\textasciitilde}'}[c] || '\\' + c));
@@ -477,7 +485,7 @@ function mathTex(node) {
     return bit ? !['0', 'false', 'off'].includes(attr(bit, 'm', 'val')) : false;
   };
   const contents = parent => Array.from(parent?.children || []).filter(n =>
-    !(is(n, 'm') && n.localName.endsWith('Pr')) && !is(n, 'w', 'rPr')).map(mathTex).join('');
+    !(is(n, 'm') && n.localName.endsWith('Pr')) && !(is(n, 'w') && (n.localName === 'rPr' || MARKERS.includes(n.localName)))).map(mathTex).join('');
   const part = name => contents(child(node, 'm', name));
   if (is(node, 'm', 't') || is(node, 'w', 't')) return text(node.textContent);
   if (!is(node, 'm')) return fail('DOCX contains unsupported equation content: ' + node.localName, 'docx_math_unsupported');
@@ -654,11 +662,11 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
   if (contentType(mainPath) !== 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml')
     return fail('Only ordinary DOCX documents can be imported.');
   const sourceParts = [...(await relationships('')).values()].filter(row => row.type === DOCX_SOURCE.relationship);
-  let canonical = null;
+  let canonical = null, base = null, equations = new Map();
   if (sourceParts.length) {
     const sourcePart = sourceParts[0];
-    if (sourceParts.length === 1 && !sourcePart.external && contentType(sourcePart.path) === DOCX_SOURCE.type)
-      canonical = await readDocxSource(files, sourcePart.path, work);
+    const stored = sourceParts.length === 1 && !sourcePart.external && contentType(sourcePart.path) === DOCX_SOURCE.type ? await readDocxSource(files, sourcePart.path, work) : null;
+    if (stored?.exact) canonical = stored.source; else { base = stored?.source ?? null; equations = stored?.equations ?? equations; }
     if (canonical === null) warn('The stored Markdown does not match this Word file. Current Word content was imported.');
   }
   const project = canonical === null;
@@ -713,17 +721,22 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       }
     }
   }
-  const themePath = await related(mainPath, 'theme'), themeColors = new Map();
+  const themePath = await related(mainPath, 'theme'), theme = new Map();
   if (themePath) {
     const themeRoot = await readXml(themePath, 'a', 'theme'), scheme = child(child(themeRoot, 'a', 'themeElements'), 'a', 'clrScheme');
     for (const entry of children(scheme, 'a')) {
       const rgb = child(entry, 'a', 'srgbClr')?.getAttribute('val') || child(entry, 'a', 'sysClr')?.getAttribute('lastClr');
-      if (rgb && /^[0-9a-f]{6}$/i.test(rgb)) themeColors.set(entry.localName, rgb);
+      if (rgb && /^[0-9a-f]{6}$/i.test(rgb)) theme.set(entry.localName, rgb);
     }
     for (const [name, key] of [['dark1','dk1'], ['dark2','dk2'], ['light1','lt1'], ['light2','lt2'], ['text1','dk1'], ['text2','dk2'], ['background1','lt1'], ['background2','lt2'], ['hyperlink','hlink'], ['followedHyperlink','folHlink']])
-      if (themeColors.has(key)) themeColors.set(name, themeColors.get(key));
+      if (theme.has(key)) theme.set(name, theme.get(key));
+    const fontScheme = child(child(themeRoot, 'a', 'themeElements'), 'a', 'fontScheme');
+    for (const level of ['major', 'minor']) for (const [script, names] of [['latin', ['Ascii', 'HAnsi']], ['ea', ['EastAsia']], ['cs', ['Bidi']]]) {
+      const typeface = child(child(fontScheme, 'a', level + 'Font'), 'a', script)?.getAttribute('typeface');
+      if (typeface) for (const name of names) theme.set(level + name, typeface);
+    }
   }
-  const propertiesOf = (node, inlineSize = true) => runProperties(node, themeColors, inlineSize);
+  const propertiesOf = (node, inlineSize = true) => runProperties(node, theme, inlineSize);
   const docDefaults = child(stylesRoot, 'w', 'docDefaults');
   const defaultParagraph = paragraphProperties(child(child(docDefaults, 'w', 'pPrDefault'), 'w', 'pPr'));
   const defaultRun = propertiesOf(child(child(docDefaults, 'w', 'rPrDefault'), 'w', 'rPr'), false);
@@ -924,6 +937,13 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       if (!id || attr(blip, 'r', 'link')) return fail('DOCX contains a linked picture without self-contained image bytes.');
       const properties = child(drawing, 'wp', 'docPr'), nonVisual = child(child(image, 'pic', 'nvPicPr'), 'pic', 'cNvPr');
       alt = properties?.getAttribute('descr') || properties?.getAttribute('title') || nonVisual?.getAttribute('descr') || nonVisual?.getAttribute('title') || '';
+      const display = /^\$\$[\s\S]+\$\$$/.test(alt);
+      if (plain && vectors.length === 1 && (display || /^\$[^$]+\$$/.test(alt))) {
+        const relation = (await relationships(context.path)).get(attr(vectors[0], 'r', 'embed'));
+        if (relation?.kind === 'image' && !relation.external && entries.has(relation.path) && contentType(relation.path) === 'image/svg+xml' &&
+            new RegExp('^<svg\\b[^>]*\\sdata-rapier-math="' + (display ? 'display' : 'inline') + '"').test(new TextDecoder().decode((await files.read(relation.path)).subarray(0, 4096))))
+          return {html: project ? account('<span class="math-rendered" data-math-src="' + escape(encodeURIComponent(alt)) + '">' + escape(alt) + '</span>') : 'x', semantic: true, displayMath: display};
+      }
       extent = integer(child(drawing, 'wp', 'extent')?.getAttribute('cx'), null, 1, 27273042316900);
       extentHeight = integer(child(drawing, 'wp', 'extent')?.getAttribute('cy'), null, 1, 27273042316900);
       if (is(drawing, 'wp', 'anchor')) {
@@ -1117,7 +1137,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     if (info !== root) group.records.push(info);
     activeComments.add(info.id); activeComments.add(root.id);
   }
-  const commentMarker = '\uFDD0RapierWordComment0\uFDD1';
+  const commentMarker = '\uFFFERapierWordComment\uFFFF';
   const commentBoundary = node => {
     const id = integer(attr(node, 'w', 'id'));
     return groupsById.has(id) ? project ? sourceToken(commentMarker + id + (node.localName === 'commentRangeStart' ? 'S' : 'E') + commentMarker) : 'x' : '';
@@ -1190,8 +1210,8 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         pieces.push({html: await imported(String.fromCodePoint(code))});
       }
       else if (is(node, 'm', 'oMath') || is(node, 'm', 'oMathPara')) {
-        const displayMath = is(node, 'm', 'oMathPara'), delimiter = displayMath ? '$$' : '$';
-        const source = delimiter + mathTex(node) + delimiter;
+        const displayMath = is(node, 'm', 'oMathPara'), projected = ommlSource(node);
+        const source = equations.get(projected) ?? projected;
         pieces.push({html: project ? account('<span class="math-rendered" data-math-src="' + escape(encodeURIComponent(source)) + '">' +
           escape(source) + '</span>') : 'x', semantic: true, displayMath});
       }
@@ -1340,6 +1360,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       if (piece.width !== null) layout.width = piece.width;
       if (piece.rotate) layout.rotate = piece.rotate;
       if (piece.opacity < 100) layout.opacity = piece.opacity;
+      if (context.figure) Object.assign(layout, context.figure);
       output.push('<p' + annotation(layout) + '>' + piece.image + '</p>');
     }
     flush();
@@ -1431,6 +1452,13 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         index = end - 1;
         continue;
       }
+      const caption = is(node, 'w', 'p') && captionOf(node, nodes[index - 1]);
+      if (caption) {
+        if (previous) yield previous;
+        const text = await imported(caption);
+        previous = {html: () => project ? '<p>' + text + '</p>' : text, list: null};
+        continue;
+      }
       if (is(node, 'w', 'p')) {
         const block = await paragraph(node, active), initial = previous;
         if (initial?.initial && !initial.list && block.prose && !block.dropLines) {
@@ -1477,13 +1505,20 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     return result;
   };
   const calloutRule = node => {
-    const left = child(child(child(node, 'w', 'pPr'), 'w', 'pBdr'), 'w', 'left');
+    const properties = child(node, 'w', 'pPr'), left = child(child(properties, 'w', 'pBdr'), 'w', on(child(properties, 'w', 'bidi')) ? 'right' : 'left');
     return left && val(left) === 'single' && attr(left, 'w', 'sz') === '24' && attr(left, 'w', 'space') === '8' ? attr(left, 'w', 'color') || '' : null;
   };
   const calloutKind = node => {
     const runs = children(node, 'w', 'r'), label = runs.length === 1 && on(child(child(runs[0], 'w', 'rPr'), 'w', 'b')) &&
       children(runs[0], 'w', 't').map(text => text.textContent).join('');
     return calloutRule(node) != null && /^(?:Note|Tip|Important|Warning|Caution|Danger|Info)$/.test(label || '') ? label.toLowerCase() : null;
+  };
+  const captionOf = (node, prior) => {
+    const kind = is(prior, 'w', 'tbl') ? 'Table: ' : is(prior, 'w', 'p') && !descendants(prior, 'w', 'drawing').next().done ? 'Figure: ' : null;
+    const parts = Array.from(node.children).filter(part => !is(part, 'w', 'pPr')), run = kind && parts.length === 1 && is(parts[0], 'w', 'r') && parts[0];
+    if (!run || !Array.from(run.children).every(part => is(part, 'w', 'rPr') || is(part, 'w', 't'))) return null;
+    const format = child(run, 'w', 'rPr'), text = children(run, 'w', 't').map(part => part.textContent).join('');
+    return on(child(format, 'w', 'i')) && val(child(format, 'w', 'sz')) === '21' && text.startsWith(kind) ? text : null;
   };
   const callout = async (kind, nodes, context) => project
     ? '<blockquote class="callout callout-' + kind + '"><div class="callout__label">' + kind + '</div>' + await renderBlocks(nodes, context) + '</blockquote>' : renderBlocks(nodes, context);
@@ -1494,6 +1529,11 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     const only = children(node, 'w', 'tr'), cell = only.length === 1 && children(only[0], 'w', 'tc').length === 1 && child(only[0], 'w', 'tc');
     const inner = cell && children(cell, 'w').filter(part => part.localName !== 'tcPr');
     if (inner.length > 1 && inner.every(part => is(part, 'w', 'p')) && calloutKind(inner[0])) return callout(calloutKind(inner[0]), inner.slice(1), context);
+    const float = child(properties, 'w', 'tblpPr'), cellWidth = float && integer(attr(child(properties, 'w', 'tblW'), 'w', 'w'), 0);
+    if (float && cellWidth && inner.length === 2 && inner.every(part => is(part, 'w', 'p')) && !descendants(inner[0], 'w', 'drawing').next().done && captionOf(inner[1], inner[0])) {
+      const percent = value => Math.max(0, Math.min(100, Math.round(value / context.width * 10000) / 100));
+      return renderBlocks(inner, {...context, figure: {wrap: 'around', x: percent((integer(attr(float, 'w', 'tblpX'), 0) + cellWidth / 2) * 635), width: percent(cellWidth * 635)}});
+    }
     if (children(styles.get(styleId), 'w', 'tblStylePr').length) warn('Conditional table styling was not imported.');
     const rows = await tableParts(node, 'tr', ['tblPr','tblGrid',...MARKERS]), output = [], spanning = new Map();
     for (const row of rows) {
@@ -1601,57 +1641,6 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     }
     comments.threads.push({id: 'word-thread-' + group.id, wordId: group.id, resolved: group.resolved, messages});
   }
-  if (project && comments.threads.length) {
-    const prefix = '\uFDD0RapierWordComment', usedMarkers = new Set(), markerDigits = String(DOCX_LIMITS.totalXmlBytes).length;
-    const state = () => ({at: 0, digits: '', invalid: false});
-    const scanMarkers = async (value, scan) => {
-      if (!scan.at && !value.includes(prefix[0])) return;
-      for (let offset = 0; offset < value.length; offset += 65536) {
-        const end = Math.min(value.length, offset + 65536);
-        for (let at = offset; at < end; at++) {
-          const character = value[at];
-          if (scan.at < prefix.length) {
-            scan.at = character === prefix[scan.at] ? scan.at + 1 : character === prefix[0] ? 1 : 0;
-          } else if (character >= '0' && character <= '9') {
-            if (scan.digits === '0' || scan.digits.length >= markerDigits) scan.invalid = true;
-            if (!scan.invalid) scan.digits += character;
-          } else {
-            if (character === '\uFDD1' && scan.digits && !scan.invalid) usedMarkers.add(scan.digits);
-            scan.at = character === prefix[0] ? 1 : 0; scan.digits = ''; scan.invalid = false;
-          }
-        }
-        await work.checkpoint();
-      }
-    };
-    let visited = 0;
-    for (const root of xmlCache.values()) {
-      const text = state(), stack = [{nodes: [root], at: 0}];
-      while (stack.length) {
-        const frame = stack.at(-1), node = frame.nodes[frame.at++];
-        if (!node) { stack.pop(); continue; }
-        if ((visited++ & 127) === 0) await work.checkpoint();
-        if (node.nodeType === 3 || node.nodeType === 4) await scanMarkers(node.nodeValue, text);
-        else if (node.nodeType === 1) {
-          for (const attribute of node.attributes) await scanMarkers(attribute.value, state());
-          if (node.childNodes.length) stack.push({nodes: node.childNodes, at: 0});
-        }
-      }
-    }
-    let counter = 0;
-    while (usedMarkers.has(String(counter))) { counter++; if ((counter & 127) === 0) await work.checkpoint(); }
-    comments.marker = prefix + counter + '\uFDD1';
-    if (comments.marker !== commentMarker) {
-      const spans = new Map(comments.threads.flatMap(thread => ['S', 'E'].map(edge => {
-        const boundary = thread.wordId + edge;
-        return [sourceToken(commentMarker + boundary + commentMarker), sourceToken(comments.marker + boundary + comments.marker)];
-      })));
-      const restage = value => value.replace(/<span class="rapier-source-token" data-rapier-source="[^"]*" data-rapier-visible="[^"]*">[^<]*<\/span>/g,
-        span => spans.get(span) || span);
-      html = restage(html);
-      for (const table of rawTables) table.html = restage(table.html);
-      for (const thread of comments.threads) for (const message of thread.messages) message.html = restage(message.html);
-    }
-  }
   work.check();
   if (html.length > ARCHIVE_LIMITS.bytes || new Blob([html]).size > ARCHIVE_LIMITS.bytes) return fail('Converted DOCX exceeds the 25 MB document limit.');
   progress(.75, 'integrity');
@@ -1681,7 +1670,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
   const nativeLanguage = defaultRun.language;
   if (!project) {
     progress(1, 'complete');
-    return {html: '', warnings: [...warnings], stats, canonical, ...(nativeLanguage ? {language: nativeLanguage} : {})};
+    return {html: '', warnings: [], stats, canonical, ...(nativeLanguage ? {language: nativeLanguage} : {})};
   }
   xmlCache.clear(); relationCache.clear(); styles.clear(); styleCache.clear();
   notes.clear(); noteParts.clear(); commentInfo.clear(); commentRoots.clear(); groupsById.clear();
@@ -1724,8 +1713,50 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
   progress(1, 'complete');
   return {html, warnings: [...warnings], stats, ...(comments.threads.length ? {comments} : {}),
     ...(fontAssets.length ? {fontAssets} : {}),
-    ...(nativeLanguage ? {language: nativeLanguage} : {}), ...(mainfont ? {mainfont} : {})};
+    ...(nativeLanguage ? {language: nativeLanguage} : {}), ...(mainfont ? {mainfont} : {}), ...(base !== null ? {base} : {})};
   } finally { files.close(); }
+}
+
+function mergeDocxBase(edited, base) {
+  let parser;
+  try { parser = markdownParser(); } catch (_) { return edited; }
+  if (base.includes('\r')) return edited;
+  const blocks = text => {
+    const offset = frontMatterFrame(text).closing?.next ?? 0, body = text.slice(offset), starts = [0];
+    for (const line of body.split('\n')) starts.push(starts.at(-1) + line.length + 1);
+    const tokens = parser.parse(body, {}), result = [];
+    for (let at = 0; at < tokens.length; at++) {
+      const open = tokens[at];
+      if (open.level !== 0 || !open.map) continue;
+      let end = at;
+      for (let depth = 0; end < tokens.length; end++) if ((depth += tokens[end].nesting) <= 0) break;
+      const parts = [], words = [];
+      const flush = () => { if (words.length) parts.push(words.join('').replace(/\s+/g, ' ').trim()); words.length = 0; };
+      const visit = token => {
+        // An escaped character is the character (markdown-it's text_special, Rapier's own rapier_escape).
+        if (['text', 'text_special', 'rapier_escape', 'softbreak'].includes(token.type)) { words.push(token.type === 'softbreak' ? ' ' : token.content); return; }
+        flush();
+        if (token.children) { parts.push(token.type); token.children.forEach(visit); flush(); return; }
+        parts.push([token.type, token.tag, token.hidden, token.info, token.attrGet?.('href'), token.attrGet?.('src'), token.type === 'inline' ? '' : token.content].join('\u0000'));
+      };
+      tokens.slice(at, end + 1).forEach(visit); flush();
+      const start = offset + starts[open.map[0]], stop = offset + Math.min(body.length, starts[open.map[1]] - 1), raw = text.slice(start, stop);
+      const links = tokens.slice(at, end + 1).flatMap(token => token.children || [token]).filter(token => token.type === 'link_open' || token.type === 'image').length;
+      result.push({start, stop, key: parts.join('\u0001'), inline: links <= raw.split('](').length - 1});
+      at = end;
+    }
+    return result;
+  };
+  const kept = blocks(base).filter(block => block.inline), byKey = new Map();
+  kept.forEach((block, index) => { if (!byKey.has(block.key)) byKey.set(block.key, []); byKey.get(block.key).push(index); });
+  let merged = '', cursor = 0, floor = 0;
+  for (const block of blocks(edited)) {
+    const index = byKey.get(block.key)?.find(candidate => candidate >= floor);
+    if (index === undefined) continue;
+    merged += edited.slice(cursor, block.start) + base.slice(kept[index].start, kept[index].stop);
+    cursor = block.stop; floor = index + 1;
+  }
+  return merged + edited.slice(cursor);
 }
 
 export function finishDocxMarkdown(source, result, {convertHtml} = {}) {
@@ -1741,6 +1772,7 @@ export function finishDocxMarkdown(source, result, {convertHtml} = {}) {
     const frame = frontMatterFrame(source);
     source = frame.closing ? source.slice(0, frame.closing.start) + fields + source.slice(frame.closing.start) : '---\n' + fields + '---\n\n' + source;
   }
+  if (typeof result?.base === 'string' && typeof source === 'string') source = mergeDocxBase(source, result.base);
   const review = result?.comments;
   if (!review?.threads.length) return finishFonts(source);
   if (typeof source !== 'string' || typeof convertHtml !== 'function') throw new TypeError('docx_comments_writer_required');
@@ -1805,8 +1837,6 @@ export function docxPortableHtml(html, imageUrls = new Map()) {
   });
   return html.replace(/ data-(?:rapier|md)-[a-z-]+="[^"]*"/g, '');
 }
-
-export const DOCX_EXPORT = Object.freeze({drawingCodec: 'svg', pictureCodec: 'png'});
 
 const DOCX_HEADING_SCALE = Object.freeze([2.6, 1.9, 1.5, 1.25, 1.1, 1]);
 const PNG_SIG = Object.freeze([137, 80, 78, 71, 13, 10, 26, 10]);
@@ -1873,6 +1903,13 @@ function mathRunFromDom(node, style, pointSize) {
   }
   const display = source.startsWith('$$') && source.endsWith('$$');
   const run = {...style, type: 'math', source, display};
+  const tex = /^\$\$([\s\S]+)\$\$$|^\$([^$]+)\$$/.exec(source), toMathML = globalThis.RapierMath?.toMathML;
+  if (tex && typeof toMathML === 'function') {
+    try {
+      const {mathml, status} = toMathML(tex[1] ?? tex[2], {displayMode: display});
+      if (status === 'complete') return {...run, omml: nativeEquationXml(mathmlRecord(new DOMParser().parseFromString(mathml, 'application/xml').documentElement, style))};
+    } catch (_) {}
+  }
   const rendered = node.querySelector('svg');
   if (!rendered) return run;
   const em = name => {
@@ -2059,9 +2096,14 @@ function mathmlRecord(root, style = {}) {
     const name = node.localName.toLowerCase(), elements = Array.from(node.children), own = node.getAttribute('mathvariant');
     const variant = own || inherited;
     if (variant && !Object.hasOwn(variants, variant)) return refuse('mathvariant=' + variant);
-    const specific = {math: ['display'], mfrac: ['linethickness', 'bevelled'], mfenced: ['open', 'close', 'separators']}[name] || [];
+    const specific = {math: ['display'], mfrac: ['linethickness', 'bevelled'], mfenced: ['open', 'close', 'separators'],
+      mo: ['form', 'stretchy', 'fence', 'separator', 'symmetric', 'largeop', 'movablelimits', 'lspace', 'rspace', 'minsize', 'maxsize', 'accent'],
+      mover: ['accent'], munder: ['accentunder'], munderover: ['accent', 'accentunder'], mspace: ['width', 'height', 'depth'],
+      mstyle: ['displaystyle'], mtable: ['columnalign', 'rowalign', 'columnspacing', 'rowspacing', 'displaystyle', 'width', 'equalrows', 'equalcolumns'],
+      mtr: ['columnalign', 'rowalign'], mtd: ['columnalign', 'rowalign', 'style']}[name] || [];
     for (const attribute of Array.from(node.attributes)) {
-      if (attribute.name === 'xmlns' || attribute.name.startsWith('xmlns:') || ['id', 'title', 'mathvariant'].includes(attribute.name) || specific.includes(attribute.name)) continue;
+      if (attribute.name === 'xmlns' || attribute.name.startsWith('xmlns:') || attribute.name.startsWith('data-') || ['id', 'title', 'mathvariant'].includes(attribute.name) || specific.includes(attribute.name) ||
+        attribute.name === 'scriptlevel' && attribute.value === '0') continue;
       return refuse('<' + name + '> attribute ' + attribute.name);
     }
     const arity = n => { if (elements.length !== n) refuse('<' + name + '> needs ' + n + ' arguments'); };
@@ -2080,6 +2122,14 @@ function mathmlRecord(root, style = {}) {
       return childrenXml();
     }
     if (name === 'mrow' || name === 'mstyle') return childrenXml();
+    if (name === 'mspace') return '';
+    if (name === 'munder' || name === 'mover' || name === 'munderover') {
+      arity(name === 'munderover' ? 3 : 2);
+      const accent = name === 'mover' && node.getAttribute('accent') === 'true' && elements[1].localName === 'mo' && Array.from(elements[1].textContent.trim()).length === 1;
+      if (accent) return '<m:acc><m:accPr><m:chr m:val="' + escape(elements[1].textContent.trim()) + '"/></m:accPr>' + argument('e', elements[0]) + '</m:acc>';
+      const lower = name === 'mover' ? convert(elements[0], variant, depth + 1) : '<m:limLow>' + argument('e', elements[0]) + argument('lim', elements[1]) + '</m:limLow>';
+      return name === 'munder' ? lower : '<m:limUpp><m:e>' + lower + '</m:e>' + argument('lim', elements[name === 'mover' ? 1 : 2]) + '</m:limUpp>';
+    }
     if (name === 'semantics') {
       if (!elements.length || elements.slice(1).some(element => !['annotation', 'annotation-xml'].includes(element.localName))) return refuse('semantics alternatives');
       return convert(elements[0], variant, depth + 1);
@@ -2621,7 +2671,7 @@ function pPrXml({styleId, outline, align, numId, ilvl, vanish, borders, shading,
   if (ind) bits.push(ind);
   if (outline != null) bits.push('<w:outlineLvl w:val="' + outline + '"/>');
   if (vanish) bits.push('<w:rPr><w:vanish/></w:rPr>');
-  if (borders) bits.push(borders);
+  if (borders) bits.push(direction === 'rtl' ? borders.replace('<w:left ', '<w:right ') : borders);
   if (shading) bits.push(shading);
   return bits.length ? '<w:pPr>' + bits.join('') + '</w:pPr>' : '';
 }
@@ -2709,6 +2759,7 @@ function corePropertiesXml(settings) {
 
 export async function writeDocx(input, {convertImage, rewriteDocument, canonical, bom = false, work} = {}) {
   check(work);
+  const equations = [];
   const encodeXml = text => work ? finishAsync(encodeUtf8Steps(text), work) : xmlBytes(text);
   let yieldedAt = performance.now(), emitted = 0;
   const tick = async () => {
@@ -2964,10 +3015,13 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
         continue;
       }
       if (run.type === 'math') {
-        const source = mathSourceOf(run);
-        if (run.svg) {
+        const source = mathSourceOf(run), events = run.commentEvents || [];
+        if (run.omml) {
+          xml += link(events.filter(event => event.start).map(commentEventXml).join('') + run.omml + events.filter(event => !event.start).map(commentEventXml).join(''));
+          equations.push([ommlSource(new DOMParser().parseFromString(run.omml, 'application/xml').documentElement), source]);
+        }
+        else if (run.svg) {
           const picture = pictureXml(await mathAssetFor(run), run.alternative || source, null, availableWidth, run.display ? 0 : -(run.depth || 0));
-          const events = run.commentEvents || [];
           xml += link(events.filter(event => event.start).map(commentEventXml).join('') + picture + events.filter(event => !event.start).map(commentEventXml).join(''));
         } else xml += link(commentedTextXml(source, run));
         continue;
@@ -3125,7 +3179,7 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
     if (block.blocks && (block.type === 'quote' || block.type === 'callout')) {
       const color = cssColorHex(block.color) || '#0969da';
       const borders = block.type === 'callout' ? '<w:pBdr><w:left w:val="single" w:sz="24" w:space="8" w:color="' + color.slice(1) + '"/></w:pBdr>' : quoteBorders(block.color);
-      if (block.type === 'callout') bodyParts.push(paragraphPart(tXml(block.kind.charAt(0) + block.kind.slice(1).toLowerCase(), {bold: true, ...(block.color ? {color} : {})}), {borders}));
+      if (block.type === 'callout') bodyParts.push(paragraphPart(tXml(block.kind.charAt(0) + block.kind.slice(1).toLowerCase(), {bold: true, ...(block.color ? {color} : {})}), {borders, direction: block.direction}));
       bodyParts.push(...await emitBlocks(block.blocks, inset, targets, availableWidth, {...decoration, borders, direction: block.direction}, tableCell));
       continue;
     }
@@ -3134,10 +3188,10 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
       const label = tXml(block.kind.charAt(0) + block.kind.slice(1).toLowerCase(), {bold: true, ...(block.color ? {color} : {})});
       const body = await renderRuns(block.runs);
       const border = '<w:pBdr><w:left w:val="single" w:sz="24" w:space="8" w:color="' + color.slice(1) + '"/></w:pBdr>';
-      const parts = [paragraphPart(label, {borders: border}), paragraphPart(body || tXml(''), {borders: border})];
+      const parts = [paragraphPart(label, {borders: border, direction: block.direction}), paragraphPart(body || tXml(''), {borders: border, direction: block.direction})];
       bodyParts.push({xml: '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>' + tableInd + '<w:tblBorders>' +
-        '<w:left w:val="single" w:sz="24" w:space="0" w:color="' + color.slice(1) + '"/>' +
-        '<w:top w:val="nil"/><w:right w:val="nil"/><w:bottom w:val="nil"/>' +
+        (block.direction === 'rtl' ? '<w:left w:val="nil"/><w:right' : '<w:right w:val="nil"/><w:left') + ' w:val="single" w:sz="24" w:space="0" w:color="' + color.slice(1) + '"/>' +
+        '<w:top w:val="nil"/><w:bottom w:val="nil"/>' +
         '</w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr>' +
         writeBlocks(parts, true) + '</w:tc></w:tr></w:tbl>'});
       continue;
@@ -3501,7 +3555,7 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
     const at = entries.findIndex(entry => entry.name === 'word/document.xml');
     entries[at] = {name: entries[at].name, bytes: await encodeXml(rewriteDocument(new TextDecoder('utf-8').decode(entries[at].bytes)))};
   }
-  if (carrySource) entries.push({name: DOCX_SOURCE.path, bytes: await docxSourceRecord(entries, (bom === true ? '\uFEFF' : '') + canonical, work)});
+  if (carrySource) entries.push({name: DOCX_SOURCE.path, bytes: await docxSourceRecord(entries, (bom === true ? '\uFEFF' : '') + canonical, work, equations)});
   await pause(work, .94);
   const complete = work ? await zipStoredAsync(entries.map(entry => ({...entry, modified: 0})), {utf8Flag: false, work}) : packDocx(entries);
   if (complete.length > ARCHIVE_LIMITS.bytes) return fail('DOCX exceeds the 25 MB document limit.');

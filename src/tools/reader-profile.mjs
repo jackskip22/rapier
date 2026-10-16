@@ -91,8 +91,8 @@ export function dropElements(markup, test) {
 	return markup;
 }
 
-const BLOCKS = ['sr-live', 'embed-refused', 'top-bar', 'find-bar', 'editor-blocks', 'scroll-fab', 'scroll-fab-label', 'settings-overlay', 'navigator-overlay',
-	'math-plugin-overlay', 'mermaid-plugin-overlay', 'ocr-plugin-overlay', 'plugin-delete-overlay', 'copy-overlay', 'share-overlay', 'privacy-overlay', 'licenses-overlay', 'toast-root', 'file-input'];
+const BLOCKS = ['sr-live', 'embed-refused', 'top-bar', 'find-bar', 'document-main', 'scroll-fab', 'scroll-fab-label', 'settings-overlay', 'navigator-overlay',
+	'math-plugin-overlay', 'mermaid-plugin-overlay', 'ocr-plugin-overlay', 'plugin-delete-overlay', 'copy-overlay', 'share-overlay', 'privacy-overlay', 'licenses-overlay', 'info-overlay', 'toast-root', 'file-input'];
 const CUT = [
 	'layout-info', 'code-info', 'copy-info', 'scroll-fab-acorn',
 	'filename-input', 'filename-dirty', 'filename-ext-wrap',

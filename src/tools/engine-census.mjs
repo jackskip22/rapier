@@ -556,7 +556,7 @@ function main() {
 const DRAW_UI_FILES = ['draw/draw.js', 'draw/paint-tool.js'];
 const DRAW_PAINT_ONLY_GLOBALS = ['RapierDrawPaint', 'RapierDrawBrushes'];
 const ALWAYS_BUNDLED_FILES = ['editor/engine.js', 'editor/info.js', 'editor/tables.js', 'layout/actions.js', 'layout/alignment.js',
-	'images/browser.js', 'images/interchange.js', 'layout/browser.js', 'layout/interchange.js',
+	'images/browser.js', 'images/interchange.js', 'layout/browser.js',
 	'interchange/raster.js', 'interchange/pdf-plugin.js', 'interchange/browser.js', 'editor/source-assets.js', 'agent/browser.js'];
 const DRAW_PRESENCE_PREDICATE = '_rapierDrawPresent';
 const ENCODER_PRESENCE_PREDICATE = '_rapierJxlEncoderPresent';
@@ -598,7 +598,9 @@ export function checkProfileSeams() {
 				const guardedByPredicate = before.includes(DRAW_PRESENCE_PREDICATE + '(');
 				const guardedByTypeof = new RegExp('typeof\\s+' + name + '\\s*(?:===|!==)\\s*[\'"]function[\'"]').test(before);
 				const guardedByTry = ancestors.some(a => a.type === 'TryStatement' && a.handler && node.start >= a.block.start && node.end <= a.block.end);
-				if (!guardedByPredicate && !guardedByTypeof && !guardedByTry) {
+				const guardedByBranch = ancestors.some(a => (a.type === 'ConditionalExpression' || a.type === 'IfStatement') &&
+					node.start >= a.consequent.start && node.end <= a.consequent.end && /\b_rapierDraw(?:Offered|Present)\(/.test(source.slice(a.test.start, a.test.end)));
+				if (!guardedByPredicate && !guardedByTypeof && !guardedByTry && !guardedByBranch) {
 					problems.push(`${rel}:${node.loc.start.line}: unguarded call to Draw-only \`${name}\` -- add a ${DRAW_PRESENCE_PREDICATE}() or typeof guard`);
 				}
 			}

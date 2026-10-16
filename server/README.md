@@ -147,11 +147,10 @@ All pictures must be embedded. The server does not fetch remote pictures, fonts,
 
 ## Build and stage from the source repository
 
-Build the document profile, then the full profile, so the current receipt includes both and names the full MCP App:
+Build the full profile, so the current receipt names the full page and the MCP App:
 
 ```sh
-RAPIER_PROFILE=document node tools/build.mjs
-RAPIER_PROFILE=full node tools/build.mjs
+node tools/build.mjs
 node tools/stage-server.mjs
 ```
 
@@ -160,8 +159,7 @@ The output is `dist/rapier-server`, including runtime dependencies, licence noti
 Release staging refuses noncanonical or development-packed profiles. For a deliberately nonrelease local build only:
 
 ```sh
-RAPIER_PACK=fast RAPIER_PROFILE=document node tools/build.mjs
-RAPIER_PACK=fast RAPIER_PROFILE=full node tools/build.mjs
+RAPIER_PACK=fast node tools/build.mjs
 node tools/stage-server.mjs --development
 ```
 

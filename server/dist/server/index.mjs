@@ -62,7 +62,7 @@ export async function createServer(options={}) {
     for(const name of ['rapier-app.html','rapier.html','rapier-skills.json','icon-192.png','icon-512.png']) {
       const path=resolve(assetsDirectory,name);
       const bytes=await readFile(path).catch(error=>{
-        if(error.code==='ENOENT')throw refusal('SERVER_ASSETS_MISSING','Build both profiles, full last, and stage the server before starting it.',503);throw error;
+        if(error.code==='ENOENT')throw refusal('SERVER_ASSETS_MISSING','Build the full profile and stage the server before starting it.',503);throw error;
       });
       assets.set('/'+name,{bytes,type:name.endsWith('.html') ? 'text/html; charset=utf-8' : name.endsWith('.json') ? 'application/json; charset=utf-8' : 'image/png'});
     }
@@ -132,6 +132,9 @@ export async function createServer(options={}) {
           return forward(response,reply);
         }
         if(!['GET','HEAD'].includes(request.method))return json(response,{error:'METHOD_NOT_ALLOWED'},405,{Allow:'GET, HEAD'});
+        const site=request.headers['sec-fetch-site'];
+        if(site && site!=='same-origin' && site!=='none' && !(request.headers['sec-fetch-mode']==='navigate' && request.headers['sec-fetch-dest']==='document'))
+          throw refusal('CROSS_SITE_REFUSED','Another site cannot read this server.',403);
         if(url.pathname==='/health')return json(response,{service:'rapier-server',version:VERSION,...deployment(environment(),{authentication:'server-bearer'}),...(api.maintenanceError ? {maintenanceError:api.maintenanceError} : {}),renderer:{version:renderer.version,runtime:renderer.runtimeHash},...(store.poisoned ? {ready:false,recoveryRequired:true} : {})},store.poisoned ? 503 : 200);
         if(url.pathname==='/search') {
           const q=url.searchParams.get('q') || '',limit=Number(url.searchParams.get('limit') || 50);
@@ -172,7 +175,7 @@ export async function createServer(options={}) {
       async listen(){
         if(server.listening)return api;
         await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(port,host,()=>{server.removeListener('error',reject);resolve();});});
-        const address=server.address();origin=configuredOrigin || 'http://'+(address.address.includes(':') ? '['+address.address+']' : address.address)+':'+address.port;
+        const address=server.address();origin=configuredOrigin || 'http://'+(host==='localhost' ? host : address.address.includes(':') ? '['+address.address+']' : address.address)+':'+address.port;
         timer=setInterval(()=>store.expire(environment()).catch(error=>{api.maintenanceError=error.public ? error.code : 'MAINTENANCE_FAILED';}),60000);timer.unref();return api;
       },
       async close(){

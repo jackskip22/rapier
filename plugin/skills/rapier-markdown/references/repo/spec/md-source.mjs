@@ -28,6 +28,10 @@ export function markdownSourcePositions(source, parser) {
     }
     return matched;
   });
+  // A core rule may rewrite an inline token's content after its children were parsed (a task item drops
+  // its `[ ] `). Map rows from the text the inline rules read.
+  const read = new WeakMap();
+  inline.parse = function (text, md, env, children) { read.set(children, text); return parser.inline.parse.call(this, text, md, env, children); };
   const {tokens, cells} = markdownTableSources(body, owner, {}, lines);
   const readInline = (children, content, rawOffset) => {
     for (const child of children || []) {
@@ -68,26 +72,30 @@ export function markdownSourcePositions(source, parser) {
       }
       continue;
     }
-    if (token.type !== 'inline' || !token.content) continue;
+    const content = read.get(token.children) ?? token.content;
+    if (token.type !== 'inline' || !content) continue;
     let rawOffset;
     if (token.map) {
-      const offsets = [], starts = [], rows = token.content.split('\n');
+      const offsets = [], starts = [], spaces = [], rows = content.split('\n');
       let local = 0;
       for (let i = 0; i < rows.length; i++) {
-        const start = lineAt(token.map[0] + i), end = lineAt(token.map[0] + i + 1);
-        const at = source.slice(start, end).replace(/\0/g, '\ufffd').indexOf(rows[i]);
+        const start = lineAt(token.map[0] + i), end = lineAt(token.map[0] + i + 1), line = source.slice(start, end).replace(/\0/g, '\ufffd');
+        let at = line.indexOf(rows[i]), lead = 0;
+        // A container that consumes part of a tab leaves the rest as spaces the source does not hold.
+        // They all stand for that tab.
+        if (at < 0) { const rest = rows[i].replace(/^ +/, ''); lead = rows[i].length - rest.length; at = line.indexOf(rest); if (!lead || line[at - 1] !== '\t') at = -1; }
         if (at < 0) throw new Error('Markdown inline source mapping failed');
-        starts.push(local); offsets.push(start + at); local += rows[i].length + 1;
+        starts.push(local); spaces.push(lead); offsets.push(start + at - lead); local += rows[i].length + 1;
       }
       rawOffset = pos => {
         let row = starts.length - 1;
         while (row > 0 && starts[row] > pos) row--;
-        return offsets[row] + pos - starts[row];
+        return offsets[row] + Math.max(pos - starts[row], spaces[row] - 1);
       };
     } else if (cells.has(token)) {
       rawOffset = cells.get(token);
     } else continue;
-    readInline(token.children, token.content, rawOffset);
+    readInline(token.children, content, rawOffset);
   }
   literal.sort((a, b) => a.start - b.start || b.end - a.end);
   const merged = [];

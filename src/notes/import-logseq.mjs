@@ -7,7 +7,7 @@ import {importDate, literalInline} from './import.mjs';
 import {readImportText, reportCharacterChange, finishImportCharacters} from './import-characters.mjs';
 
 const encoder = new TextEncoder();
-const taskMarks = {TODO: ' ', DOING: ' ', LATER: ' ', NOW: ' ', DONE: 'x'};
+const taskMarks = {TODO: ' ', DOING: ' ', LATER: ' ', NOW: ' ', WAITING: ' ', DONE: 'x'};
 
 function *lines(text, start = 0) {
   while (start < text.length) { const line = frontMatterLine(text, start); yield line; start = line.next; }
@@ -79,7 +79,7 @@ function portableProperties(source, warnings) {
 function convertTasks(text) {
   const mask = linkMask(text), patches = [];
   for (const line of lines(text)) {
-    const match = /^([ \t]*[-*][ \t]+)(TODO|DOING|LATER|NOW|DONE)(?=[ \t]|$)/.exec(line.text);
+    const match = /^([ \t]*[-*][ \t]+)(TODO|DOING|LATER|NOW|WAITING|DONE)(?=[ \t]|$)/.exec(line.text);
     if (!match) continue;
     const start = line.start + match[1].length, end = start + match[2].length;
     let clear = true;
@@ -148,7 +148,8 @@ export async function importLogseq(entries, options = {}) {
       const bom = !parsed.present && parsed.body[0] === '\uFEFF' ? '\uFEFF' : '';
       const body = bom ? parsed.body.slice(1) : parsed.body;
       const separator = /^[\r\n]/.test(body) ? parsed.eol : parsed.eol + parsed.eol;
-      const text = prefix + bom + '# ' + literalInline(title) + separator + convertTasks(body);
+      const heading = '# ' + literalInline(title), titled = body === heading || body.startsWith(heading + '\n') || body.startsWith(heading + '\r');
+      const text = prefix + bom + (titled ? '' : heading + separator) + convertTasks(body);
       const file = noteFileName('# ' + title, pool); pool.push(file);
       const entry = {order: '', pinned: false, skill: false, archived: false, trashed: false, colour: ''};
       const category = tagsOf(text).find(tag => tag.length <= 48);

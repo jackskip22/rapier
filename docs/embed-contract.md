@@ -9,7 +9,7 @@ editor owns its document history and before views.
 
 ## 1. Two origins, one parent, one channel
 
-The parent frames a served page with `?embed=1`: no origin is declared in the URL or in the handshake. The published document profile is `https://rapier.website/embed/rapier-document.html`; the read-only reader is `https://rapier.website/embed/rapier-reader.html` (section 2.4). Each release's own copies stay at its tag, `https://cdn.jsdelivr.net/gh/jackskip22/rapier@v<version>/site/embed/`, to download and self-host. A self-hosted copy speaks the same protocol. The frame binds to the origin of the first valid `rapier-connect` from its parent and holds it for the session; a later connect from any other origin is ignored.
+The parent frames a served page with `?embed=1`: no origin is declared in the URL or in the handshake. The editor embed is the full page with its parts inline, `https://rapier.website/embed/rapier.html`; the read-only reader is `https://rapier.website/embed/rapier-reader.html` (section 2.4). Each release's own copies stay at its tag, `https://cdn.jsdelivr.net/gh/jackskip22/rapier@v<version>/site/embed/`, to download and self-host. A self-hosted copy speaks the same protocol. The frame binds to the origin of the first valid `rapier-connect` from its parent and holds it for the session; a later connect from any other origin is ignored.
 
 That origin must be HTTPS, or HTTP only for `localhost`, `127.0.0.1` and `[::1]` development. A port is part of an origin. `null` and opaque origins are refused. This admits a window, not a person.
 
@@ -70,7 +70,7 @@ Ordering of feature names is immaterial. Host settings never execute code or cre
 
 | Field | Accepted values and behavior |
 |---|---|
-| `features` | A duplicate-free subset of `draw`, `paint`, `notes`, `readAloud`, `share`, `find`. Absent means everything that profile carries; `[]` selects none. Known but unbuilt features are omitted from the echo. The document profile has no Draw, Paint or Notes. |
+| `features` | A duplicate-free subset of `draw`, `paint`, `notes`, `readAloud`, `share`, `find`. Absent means everything that build carries; `[]` selects none. Known but unbuilt features are omitted from the echo. The editor embed carries Draw, Paint and Notes. |
 | `language` | A well-formed BCP 47 language tag, at most 63 code units. This release carries English (`en`) only; another valid tag falls back to `en`. This does not translate document content. |
 | `limits` | Optional positive safe integers `documentBytes` and `pictureBytes`. Omitted limits use the native maximum: **67,108,864 UTF-8 document bytes (64 MiB)**, Rapier's one document limit, and **16,777,216 encoded picture bytes (16 MiB)**. Higher requests are clamped and echoed, never allowed to enlarge the native boundary. |
 | `palette` | Exactly `{accent}` with a preset name: `Teal`, `Blue`, `Amber`, `Green`, `Red`, `Purple`, `Pink`, or `Gray` (case-sensitive). Absent uses the person's existing accent. A subsequent human accent choice takes over, including choosing the already-stored personal value. |

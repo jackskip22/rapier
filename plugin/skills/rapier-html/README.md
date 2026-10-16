@@ -1,79 +1,62 @@
 # rapier-html
 
-Turn Markdown into one offline HTML file with the full Rapier editor. It opens in any browser on a phone or
-computer, with no account. People read, edit, draw and paint watercolor. Agents deliver documents, show what
-changed and receive the person's edited copy through the door. Start with `npx rapier-html@1.2.3 notes.md`.
+Turn Markdown into one offline HTML file that contains the full Rapier editor. It opens in any browser, on a phone or
+computer, with no account. People read, edit, draw and paint; agents hand over documents, show what changed and get
+the edited copy back. Start with `npx rapier-html@1.2.5 notes.md`.
 
-Use it for a plan to rearrange, an illustrated guide to annotate, a draft to continue writing, or a revision
-to review. Text and drawings stay editable, and the file remains usable independently of a hosted workspace.
+Use it for a plan to rearrange, a guide to annotate, a draft to keep writing, or a revision to review. The file works
+without any hosted workspace.
 
-- The page writes, draws and paints, saves Markdown, exports Word, PDF and a web page, and prints, with no account
-  and nothing fetched to open, edit or save.
-- `--return` adds a one-use Send back address from the agent door: the person edits offline, presses Send back,
-  and the agent reads the returned copy.
-- `--view draw` opens on Draw; `--compare original.md` opens the edited document showing what changed;
-  `--by <name>` attributes the comparison with the time the page was made.
-- `wrap` and `unwrap` carry a document into a page and out again, exactly, for programs.
+- The page writes, draws and paints, saves Markdown, exports Word, PDF and a web page, and prints. It needs no account
+  and fetches nothing to open, edit or save.
+- `--return` adds a one-use Send back address from the agent door.
+- `--view draw` opens on Draw. `--compare original.md` opens the edit with its diff; `--by <name>` attributes it.
+- `wrap` and `unwrap` move a document into a page and back out, exactly.
 
-Node 22 or newer.
+Needs Node 22 or newer.
 
 ```sh
-npx -- rapier-html@1.2.3 notes.md                          # the editor, notes.md inside it, written beside the file
-npx -- rapier-html@1.2.3 notes.md --view draw              # opens on Draw: sketch and paint, the document behind it
-npx -- rapier-html@1.2.3 notes.md --view notes             # opens the Notes library
-npx -- rapier-html@1.2.3 notes.md --drawing sketch.svg     # carries a drawing, opened on Draw over the document
-npx -- rapier-html@1.2.3 revised.md --compare original.md # opens showing what changed
-npx -- rapier-html@1.2.3 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT" # Send back
-npx -- rapier-html@1.2.3 notes.md out.html                 # a named output
-npm install rapier-html@1.2.3                              # as a library: wrap, unwrap
+npx -- rapier-html@1.2.5 notes.md                          # the editor, notes.md inside it, written beside the file
+npx -- rapier-html@1.2.5 notes.md --view draw              # opens on Draw: sketch and paint, the document behind it
+npx -- rapier-html@1.2.5 notes.md --view notes             # opens the Notes library
+npx -- rapier-html@1.2.5 notes.md --drawing sketch.svg     # carries a drawing, opened on Draw over the document
+npx -- rapier-html@1.2.5 revised.md --compare original.md # opens showing what changed
+npx -- rapier-html@1.2.5 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT" # Send back
+npx -- rapier-html@1.2.5 notes.md out.html                 # a named output
+npm install rapier-html@1.2.5                              # as a library: wrap, unwrap
 ```
 
 The first `--` is for npm, so `--help` reaches the command. It never overwrites a file.
 
-For live shared editing, open the document through Rapier's MCP tools. The agent edits beside the person or
-while they are away. Rapier shows its presence and change marks; the person taps a change to see the before
-and undoes anything. Use `show {target:"comparison"}` to show a diff deliberately. Export Markdown or an offline
-editor when the result needs an independent copy. Send back returns the edited copy alongside the hosted
-document, preserving both.
-
-Will markers in the Markdown control agent edits: `keep`, `append`, `edit`.
+Will markers in the Markdown (`keep`, `append`, `edit`) control what agents may change.
 
 ## Choose a Rapier workflow
 
-Rapier is a phone-first Markdown editor for notes, diagrams, drawing and watercolor painting. It runs offline
-as one HTML file on Android, Web and Windows.
-Collaborate over MCP and WebMCP, use optional encrypted sync to your own Cloudflare account, or embed the
-editor and lightweight reader (about 190 kB gzipped). The agent edits live; the person sees its presence and
-changes, taps a change to see the before and undoes anything. Use `show {target:"comparison"}` to show a diff deliberately.
-
 1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
-2. **Deliver an offline editor.** Run `npx rapier-html@1.2.3 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
-3. **Embed in your app.** Install [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed); mount the editor or reader, with your app's agent over WebMCP in the editor.
-4. **Keep portable Markdown.** Use [rapier-markdown-kit](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-markdown-kit) for pictures, editable SVG drawings and layout in one `.md` file. Respect [Will/1](https://github.com/jackskip22/will) `keep`, `append` and `edit` regions.
-5. **Encode JPEG XL.** Install [rapier-jxl](https://github.com/jackskip22/rapier-jxl) to encode pixels, photographs and existing JPEGs in JavaScript.
-6. **Host the door.** Run [rapier-server](https://github.com/jackskip22/rapier/tree/main/server) over your own folder or S3-compatible bucket.
+2. **Hand over an offline editor.** Use this package.
+3. **Embed the editor.** [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed)
+   mounts the editor or reader in your app.
+4. **Keep portable Markdown.** [rapier-markdown-kit](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-markdown-kit)
+   keeps pictures, drawings and layout in one `.md` file.
 
 ## Send an edited document back
 
-Call `show {target:"return"}` on the Rapier agent door for the document's workspace and pass its `return_url`
-and `return_expires_at` as `--return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT"`, or
-`wrap(..., {return: return_url, return_expires_at})`. Only the worker's HTTPS return route at
-`https://mcp.rapier.website/return/…` is accepted. The page then shows Send back in Share; a page without an
-address has no such action.
+1. Call `show {target:"return"}` on the Rapier agent door for the document's workspace.
+2. Pass its `return_url` and `return_expires_at` as `--return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT"`,
+   or `wrap(..., {return: return_url, return_expires_at})`. Only `https://mcp.rapier.website/return/…` is accepted.
+   Share then shows Send back; a page without an address doesn't.
+3. The person edits offline and taps Send back. The source and filename go once; the page shows acceptance or
+   refusal and never sends again.
+4. `show {target:"ask",wait:"message"}` returns a `returned` receipt with the `return_id`, name and time, and
+   `read {state:true}` lists receipts. Read the source with `read {return_id}`, then `cursor` alone until complete.
 
-The person edits offline and presses Send back: the current source and filename go once, the page shows the
-acceptance or the worker's refusal, and it sends nothing again. The return lasts up to one day, takes one
-document with a 64 MiB decoded-source ceiling, subject to the workspace’s remaining storage quota, and grants no
-access to the agent's workspace. After the expiry, or a refusal, Share offers
-Save instead; bring that file back to the assistant for a fresh return.
-
-`show {target:"ask",wait:"message"}` returns a `returned` receipt with the `return_id`, name and time;
-`read {state:true}` lists returned-copy receipts. Use `read {return_id}` for the source, then `cursor`
-alone to continue until complete. The returned copy stays separate from the workspace's current document.
+A return lasts up to one day and takes one document of up to 64 MiB of decoded source, within the workspace's
+remaining storage. It grants no access to the workspace, and the returned copy stays separate from the workspace's
+current document. After expiry or a refusal, Share offers Save instead; bring that file back for a fresh return.
 
 ## As a library
 
-Save this as `example.mjs` in the folder you installed into and run `node example.mjs`:
+Save this as `example.mjs` in the folder you installed into, then run `node example.mjs`:
 
 ```js
 import {readFile, writeFile} from 'node:fs/promises';
@@ -86,50 +69,47 @@ console.log('words back exactly:', unwrap(page).text === words);
 await writeFile('hello.rapier.html', page, {flag: 'wx'});        // 'wx': never over an existing file
 ```
 
-`wrap(rapierHtml, text, name, {view, drawing, drawingName, base, baseName, by, at, return: returnURL, return_expires_at})`
-and `unwrap(pageHtml)`, which returns the same fields plus the validated `comparisonBase` record, with `null`
-for what a page does not carry. Also exported:
-`encodeCarried`, `decodeCarried`, `main`.
+- `wrap(rapierHtml, text, name, {view, drawing, drawingName, base, baseName, by, at, return: returnURL, return_expires_at})`
+- `unwrap(pageHtml)` returns the same fields, plus the validated `comparisonBase` record, with `null` for anything the
+  page doesn't carry.
+- Also exported: `encodeCarried`, `decodeCarried` and `main`.
 
 ## How the page carries the document
 
-One `<script type="text/markdown" id="rapier-document">` block at the top of the body, never executed,
-read once at boot. A drawing rides in `id="rapier-drawing"`, the original text for comparison in
-`id="rapier-base"`, the view to open on in the document block's `data-view`, the optional return URL
-in `data-return` and its exact expiry in `data-return-expires-at`. The block holds no `<`
-before `/` or `!`, no carriage return and no NUL: `\\`, `\/`, `\!`, `\r` and `\0` stand for them, one
-reversible pass each way, so a note about HTML is as safe as any other. A byte-order mark is kept as a
-fact of the file and written back on Save.
-
-`comparisonBase` contains the original `text`, `sha256`, `revision`, `name`, `by` and `at`. Rewrapping retains
-its original text, hash and revision; a baseline equal to the current text is omitted. It is a display
-reference, never a write grant or a history record. The edited document remains the source used by Save and
-Send back.
+- One `<script type="text/markdown" id="rapier-document">` block at the top of the body, never run, read once at
+  start-up.
+- A drawing goes in `id="rapier-drawing"` and the comparison original in `id="rapier-base"`. The document block's
+  `data-view` names the opening view, `data-return` the return URL, and `data-return-expires-at` its expiry.
+- The block holds no `<` before `/` or `!`, no carriage return and no NUL: `\\`, `\/`, `\!`, `\r` and `\0` stand for
+  them, one reversible pass each way. A byte-order mark is kept and written back on Save.
+- `comparisonBase` holds the original `text`, `sha256`, `revision`, `name`, `by` and `at`. Rewrapping keeps the
+  original text, hash and revision; a baseline equal to the current text is left out. It is for display only, never a
+  write grant or history. Save and Send back use the edited document.
 
 ## Safety
 
-- It never overwrites: an existing output, the document itself included, is refused, as are unknown options, a
-  `--view` other than `draw` or `notes`, a `--drawing` or `--compare` with no file, a return without its expiry, an
+- It never overwrites: an existing output, including the document itself, is refused. So are unknown options, a
+  `--view` other than `draw` or `notes`, `--drawing` or `--compare` without a file, a return without its expiry, an
   invalid expiry, an unsafe return URL and a third filename.
-- Opening and rendering use carried resources; the page cannot fetch pictures, media, fonts or plug-ins.
-  The staged editor includes verified math, Mermaid and lettering resources. Embed any document pictures.
-  An explicit Send back connects only to the minted return origin. Its URL names the worker's exact route;
-  credentials, query strings and fragments are refused.
+- The page opens and renders from what it carries; it can't fetch pictures, media, fonts or plugins. The editor
+  includes verified math, Mermaid and lettering resources. Embed any document pictures.
+- Send back connects only to the return origin it was given. Credentials, query strings and fragments in the return
+  URL are refused.
 
 ## Optional edit history
 
-`wrap(page, text, filename, {ledger, authorship})` accepts the public kit's
-`rapier-ledger/1` and `rapier-authorship/1` objects. `unwrap(page)` returns the
-checked parts beside its text. Neither is on by default. An authorship projection
-contains only attribution of current characters; a full ledger contains deleted
-text too. A wrong-text, malformed, duplicate or inconsistent part throws instead
-of attaching false history. Saved Markdown written with the kit's
-`ledger/carried.writeDocument` is read automatically when wrapping. Rewrapping a
-page without parts drops its previous document's parts. Published npm files carry
-their own staged MIT validator closure; no source checkout is needed.
+`wrap(page, text, filename, {ledger, authorship})` accepts the kit's `rapier-ledger/2` and `rapier-authorship/1`
+objects, and `unwrap(page)` returns the checked parts beside the text. Both are off by default.
+
+- An authorship projection holds only who wrote the current characters; a full ledger also holds deleted text.
+- A part that doesn't match the text, or is malformed, duplicated or inconsistent, throws instead of attaching false
+  history.
+- Markdown saved with the kit's `ledger/carried.writeDocument` is read automatically when wrapping. Rewrapping a page
+  without parts drops the old parts.
+- The published package carries its own MIT validator; no source checkout is needed.
 
 ## Licence
 
-AGPL-3.0-only (`LICENSE`): the page is the Rapier editor with the notices of the libraries it carries.
-The Markdown standard without the editor is `rapier-markdown-kit` (MIT). Rapier is https://rapier.website.
+AGPL-3.0-only (`LICENSE`): the page is the Rapier editor, with the notices of the libraries it carries. For the
+Markdown standard without the editor, use `rapier-markdown-kit` (MIT). Rapier is at https://rapier.website.
 `BUILD.json` records the page's size, SHA-256, build time and Node version.

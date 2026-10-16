@@ -101,14 +101,20 @@ coordinates if present. Missing italic corrections are zero; missing accent atta
 Assembly parts retain the OpenType order: bottom to top vertically, left to right horizontally. Latin Modern has
 no MATH Device adjustments. Hint programs and general text shaping tables are not used by the SVG renderer.
 
-Contour profiles cover 1,187 ASCII alphanumeric, mathematical italic and script glyphs, including optical and
-dotless forms. Entry `i + 1` bounds the original contour within `[y0 + i * edgeStep, y0 + (i + 1) * edgeStep]`;
+Contour profiles cover 1,190 ASCII alphanumeric, mathematical italic and script glyphs, with U+210E (the
+italic h) and the optical and dotless forms. Entry `i + 1` bounds the original contour within `[y0 + i * edgeStep, y0 + (i + 1) * edgeStep]`;
 `null` means no ink. Cubic intersections and horizontal extrema determine the bounds. Values round outward
 with a small numerical guard. Profiles are derived spacing data; they do not replace outlines or pretend to be
 an original MATH kern table. Layout compares intersecting strips from both glyphs when placing scripts.
 
-Character mappings, optical substitutions and record offsets occupy a compact index decoded at module load.
-Glyph metrics, outlines and contour profiles stay in independent raw DEFLATE pages until requested. Every page
+The asset stores neither bounds nor profiles. The decoder derives both from the outline: bounds with the
+arithmetic of fontTools' `BoundsPen`, profiles with the strip algorithm above, operation for operation in
+IEEE double precision. For this font every derived bound and profile equals the value the 2.2.0 asset stored
+(2.2.0 had no profile for U+210E and its two optical forms).
+
+Character mappings, optical substitutions, stretch constructions, the profiled glyph set and record offsets
+occupy a compact index decoded at module load. Glyph metrics and outlines stay in independent raw DEFLATE pages
+until requested. Every page
 ends at a record boundary and contains at most 16,384 decoded bytes. The complete set of pages travels in the
 same asset; rare characters, stretch parts and optical forms require no additional download.
 
@@ -118,19 +124,19 @@ exact differences from an earlier contour with the same structure. Parent chains
 The generator prefers small coordinate differences as well as short records, because the smallest initial
 record does not necessarily produce the smallest compressed page. Glyph assembly restores the original
 absolute `M/L/H/V/C/Z` paths, including contour order; existing outline-part consumers use those commands.
+A contour whose closing curve ends at its start omits that end point; the decoder returns the curve to the start.
 
-Glyph metrics use reversible bearing and half-advance predictors with a median origin per metric field.
-They retain the complete original bounds, advance, italic and accent measurements. Signed record integers
+Glyph metrics use a reversible half-advance accent predictor with a median origin per metric field.
+They retain the complete original advance, italic and accent measurements. Signed record integers
 use zigzag values: values below 240 take one byte, the next 3,840 values take two bytes, and larger values use
 an escape followed by unsigned LEB128. The coordinate unit is exact; this encoding performs no quantization.
 
-Profiles retain the original left/right strip coordinates and exact differences from matching strip structures.
-Identical arrays share storage: all 1,187 glyph-to-profile mappings are represented by 1,080 unique records.
 The renderer only asks for profiles when side-script placement can use them.
 
-The font owns three bounded least-recently-used caches: eight inflated pages, 256 completed glyph records and
-128 contour profiles. Temporary parent coordinates and page views are discarded after a glyph is assembled;
-cached glyphs contain the completed path and metrics. Reusing an evicted record reconstructs the same data.
+Each inflated page, completed glyph record and contour profile stays for the life of the module, so the font
+itself bounds these caches: the pages inflate to about 520 KB. Temporary parent coordinates and page views are
+discarded after a glyph is assembled; cached glyphs keep the completed path and metrics, and profiled glyphs
+also keep the outline segments their profile is derived from.
 These caches contain font data only. They retain no formula source, parse tree, layout result, SVG element or
 document. Returned internal records are read-only to consumers.
 

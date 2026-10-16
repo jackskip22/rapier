@@ -1,5 +1,5 @@
 function _rapierOpenInfoSheet(kind) {
-  if (kind === 'notes' && typeof _rapierNotesStorageAnswer !== 'function' && _rapierPartAvailable('notes')) {
+  if (kind === 'notes' && !_rapierNotesPart && _rapierPartAvailable('notes')) {
     void _rapierPartReady('notes').then(ready => { if (ready) _rapierOpenInfoSheet(kind); });
     return;
   }
@@ -67,7 +67,7 @@ function _rapierOpenInfoSheet(kind) {
       'SKILLS — Shows instruction notes, hidden by default. Connected agents can read notes.',
       'SYNC — Encrypts notes before uploading to your storage.',
       (() => {
-        const S = globalThis.RapierNotesSyncSession, platform = globalThis.RapierPlatform?.environment.id;
+        const S = _rapierNotesPart?.syncSession, platform = globalThis.RapierPlatform?.environment.id;
         const where = {url: location.href, native: ['android', 'windows'].includes(platform), framed: window.top !== window};
         if (where.native) return platform === 'android' ? 'Rapier Sync for Android is coming soon; use BACKUP for now.' : 'Open rapier.website to sync.';
         if (!S) return 'Sync could not load. Reopen Rapier.';
@@ -78,14 +78,14 @@ function _rapierOpenInfoSheet(kind) {
       'Cloudflare access covers your account’s storage.',
       'Deleting notes leaves online history.',
       'BACKUP — Unencrypted. Keep every part elsewhere.',
-      typeof _rapierNotesStorageSentence === 'function' ? _rapierNotesStorageSentence() : 'Storage is unconfirmed. Keep a backup elsewhere.'],
+      _rapierNotesPart?.storageSentence() ?? 'Storage is unconfirmed. Keep a backup elsewhere.'],
     /* RAPIER_NOTES_END */
   }[kind];
   if (!content) return;
   const list = _rapierInfoSheetShow(content[0], content.slice(1));
   if (kind === 'notes') {
     list.lastElementChild.id = 'notes-storage-note';
-    if (typeof _rapierNotesStorageAnswer === 'function') void _rapierNotesStorageAnswer(false);
+    void _rapierNotesPart?.storageAnswer(false);
   }
 }
 function _rapierInfoSheetShow(title, lines) {

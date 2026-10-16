@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import {_rapierSelectRestoreCandidate, _rapierRecoveryBomManifest} from '../editor/recovery-policy.mjs';
+import {_rapierSelectRestoreCandidate, _rapierRecoveryBomManifest, _rapierRecoveryStateFields} from '../editor/recovery-policy.mjs';
 import {crc32} from '../images/crc32.mjs';
 import {sha256State} from '../notes/integrity.mjs';
 import {dosDateTime, localHeader, centralHeader, dataDescriptor, endRecord, commentBytes} from '../notes/zip-records.mjs';
@@ -36,8 +36,7 @@ function stateMatches(row) {
 	if (!Number.isSafeInteger(row.generation) || row.generation < 0 || !Number.isSafeInteger(row.documentRevision)
 		|| row.documentRevision < 0 || !Number.isSafeInteger(row.nextBlockId) || row.nextBlockId < 1
 		|| !(row.savedGeneration === null || Number.isSafeInteger(row.savedGeneration) && row.savedGeneration >= -1)) return false;
-	return matches(row.stateIntegrity, JSON.stringify([row.filename, row.documentAuthority, row.virtualDocumentKind, row.saveAsRequired,
-		row.docKind, row.generation, row.documentRevision, row.savedGeneration, row.nextBlockId, row.historyComplete, row.segmentIdentity || []]));
+	return matches(row.stateIntegrity, _rapierRecoveryStateFields(row));
 }
 function candidate(row, kind) {
 	if (!row || row.docId !== 'current' || String(row.documentAuthority || '').startsWith('notes:')) return null;
@@ -58,18 +57,18 @@ function candidate(row, kind) {
 async function openDatabase(name) {
 	const factory = globalThis.indexedDB;
 	if (!factory) throw new Error('This browser does not allow saved storage to be read.');
-	if (typeof factory.databases === 'function' && !(await factory.databases()).some(row => row.name === name)) return null;
 	return new Promise((resolve, reject) => {
 		let request, settled = false, absent = false;
 		const done = (error, db) => { if (settled) { db?.close(); return; } settled = true; clearTimeout(timer); error ? reject(error) : resolve(db); };
 		const timer = setTimeout(() => done(new Error('Saved storage did not answer. Close other Rapier tabs and try again.')), 5000);
-		try {
+		(async () => {
+			if (typeof factory.databases === 'function' && !(await factory.databases()).some(row => row.name === name)) return done(null, null);
 			request = factory.open(name);
 			request.onupgradeneeded = () => { absent = true; request.transaction.abort(); };
 			request.onsuccess = () => done(null, request.result);
 			request.onerror = () => absent ? done(null, null) : done(request.error || new Error('Saved storage could not be read.'));
 			request.onblocked = () => done(new Error('Saved storage is held by another tab. Close it and try again.'));
-		} catch (error) { done(error); }
+		})().catch(done);
 	});
 }
 function readRecords(db, tables) {

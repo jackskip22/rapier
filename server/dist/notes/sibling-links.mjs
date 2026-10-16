@@ -1,6 +1,17 @@
 import {splitOpeningFrontmatter, frontMatterLine} from '../spec/frontmatter.mjs';
-import {scanLinks} from './links.mjs';
+import {scanLinks, escapeLinkAttribute} from './links.mjs';
 
+export const siblingHref = (dir, name) => dir + '/' + encodeURIComponent(name).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+export function renameSiblings(text, rows, mapping, href) {
+	let out = String(text ?? ''); const seen = new Set();
+	for (const row of rows.sort((a, b) => b.destStart - a.destStart)) {
+		const name = mapping instanceof Map ? mapping.get(row.name) : mapping?.[row.name];
+		if (!name || seen.has(row.destStart)) continue;
+		seen.add(row.destStart); const to = href(name);
+		out = out.slice(0, row.destStart) + (row.kind === 'html' ? escapeLinkAttribute(to) : to) + out.slice(row.destEnd);
+	}
+	return out;
+}
 function openFenceStart(text) {
 	let open = null, offset = 0;
 	while (offset < text.length) {

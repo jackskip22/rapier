@@ -138,7 +138,11 @@ function _rapierInlineSourceRanges(source, parser, environment, tokens, lineStar
 			if (marks.some(token => token.nesting === 1) && marks.some(token => token.nesting === -1)) {
 				add(record.start, record.start + marks[0].markup.length, 'mark');
 				add(record.end - marks.at(-1).markup.length, record.end, 'mark');
-			} else add(record.start, record.end, 'mark');
+			} else {
+				const hidden = Math.min(record.end - record.start, marks.reduce((sum, token) => sum + token.markup.length, 0));
+				if (marks[0].nesting === 1) add(record.end - hidden, record.end, 'mark');
+				else add(record.start, record.start + hidden, 'mark');
+			}
 		}
 		if (parser.options.linkify) for (const link of parser.linkify.match(job.content) || []) {
 			if (!parser.validateLink(link.url) || records.some(record => link.index < record.end && link.lastIndex > record.start &&

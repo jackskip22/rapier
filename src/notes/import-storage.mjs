@@ -7,7 +7,7 @@ const integer = value => Number.isSafeInteger(value) && value >= 0;
 const same = (a,b) => JSON.stringify(a) === JSON.stringify(b);
 const error = (file, why) => Object.assign(new Error('Import receipt ' + file + ' ' + why + '. Nothing was undone.'), {code:'import-receipt'});
 const idOK = id => typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(id);
-export const importReceiptFile = id => {
+const importReceiptFile = id => {
  if (!idOK(id)) throw error(String(id), 'has an invalid identity');
  return 'imports/' + id + '.json';
 };

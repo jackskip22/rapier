@@ -1,5 +1,6 @@
 import {noteFileName, orderAfter} from './model.mjs';
 import {zipOversizeSkip} from './zip.mjs';
+import {scanLinks} from './links.mjs';
 import {htmlToMarkdown} from './html-md.mjs';
 import {audioMime, appendImportedRecording} from './audio.mjs';
 import {expandImportZips, importTags, literalInline, literalDestination, importMetadata, importAlarm, uniquePictureName} from './import.mjs';
@@ -227,7 +228,7 @@ export async function importEnex(entries, options) {
 	const list = await expandImportZips(Array.isArray(entries) ? entries : []);
 	const existing = Array.isArray(options && options.existing) ? options.existing.filter(n => typeof n === 'string') : [];
 	const lastOrder = typeof (options && options.lastOrder) === 'string' ? options.lastOrder : '';
-	const skipped = [], built = [], pool = existing.slice();
+	const skipped = [], built = [], pool = existing.slice(), titles = new Map();
 	const sections = [], seenSections = new Set();
 	const pictures = [], attachments = [], usedPictureNames = new Set(), audio = [], audioPool = [...(Array.isArray(options?.audioExisting) ? options.audioExisting : [])];
 
@@ -323,6 +324,7 @@ export async function importEnex(entries, options) {
 					const modified = Number.isFinite(updated) ? updated : Number.isFinite(created) ? created : undefined;
 					if (modified !== undefined) entry.modified = modified;
 					built.push({file, text: importTags(noteText, tagNames, warnings, label), entry, sourceName: f.name, rootId, sourceItem: label, warnings, created: Number.isFinite(created) ? created : -Infinity});
+					titles.set(built.at(-1), title);
 				} catch (_) {
 					skipped.push({name: label, why: 'could not be read'});
 				}
@@ -330,6 +332,13 @@ export async function importEnex(entries, options) {
 		} catch (error) {
 			skipped.push({name: f && typeof f.name === 'string' ? f.name : '(unnamed)', why: 'not a readable ENEX export: ' + String(error?.message || error)});
 		}
+	}
+
+	const byTitle = new Map();
+	for (const [note, title] of titles) { const key = JSON.stringify([note.rootId, note.sourceName, title]); byTitle.set(key, byTitle.has(key) ? null : note); }
+	for (const note of built) for (const link of scanLinks(note.text)) if (/^evernote:\/\/\/view\//i.test(link.dest)) {
+		const target = byTitle.get(JSON.stringify([note.rootId, note.sourceName, link.text]));
+		if (target && !target.sourceAliases?.includes(link.dest)) (target.sourceAliases ||= []).push(link.dest);
 	}
 
 	const byNewest = built.slice().sort((a, b) => b.created - a.created);

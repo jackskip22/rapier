@@ -12,6 +12,7 @@ export function mathPackagePath(file) {
     'math/package-check.mjs': 'tests/check.mjs',
     'math/package-verify.mjs': 'tests/verify.mjs',
     'math/adoption-verify.mjs': 'tests/adoption.mjs',
+    'math/typeset-verify.mjs': 'tests/typeset.mjs',
   };
   if (owners[file]) return owners[file];
   if (file.startsWith('math/examples/')) return file.slice(5);

@@ -121,13 +121,13 @@ export function screenGroup(setup) {
     if (!planes || planes[0].length < w * h) planes = Array.from({length: setup.plan.count}, () => new Int16Array(w * h));
     fill(planes, rgba, stride, x0, y0, w, h);
     if (setup.depth !== undefined) {
-      const models = planes.map(plane => screenModel(plane, w, h, setup.depth));
+      const models = planes.map(plane => screenModel(plane, w, h, setup.depth, setup.minLength));
       const section = new BitWriter(w * h * planes.length + 256);
       writeModularHeader(section, {useGlobalTree: false});
       writeScreenModel(section, models)();
       return section.finish();
     }
-    const custom = setup.lz ? screenLZ77.create({distances: target?.at(-1), distanceCode: setup.distanceCode}) : null;
+    const custom = setup.lz ? screenLZ77.create({minLength: setup.minLength, distances: target?.at(-1), distanceCode: setup.distanceCode}) : null;
     const writer = setup.codes ? new BitWriter(w * h * planes.length + 64) : null;
     if (writer) writeModularHeader(writer);
     for (let c = 0; c < planes.length; c++) {
@@ -156,9 +156,9 @@ export function* screenFrameSteps(
   shape,
   colorSpace,
   plan,
-  {predictor = null, frameHeader = null, globalPrefix = null, imageHeader = true, tokenCodec = null, search = null, pooled = false} = {}
+  {predictor = null, frameHeader = null, globalPrefix = null, imageHeader = true, tokenCodec = null, search = null, pooled = false, minLength = 7} = {}
 ) {
-  if (search) return yield* screenDetailedFrameSteps(rgba, width, height, shape, colorSpace, plan, {frameHeader, globalPrefix, imageHeader, pooled, ...search});
+  if (search) return yield* screenDetailedFrameSteps(rgba, width, height, shape, colorSpace, plan, {frameHeader, globalPrefix, imageHeader, pooled, minLength, ...search});
   const layout = groupLayout(width, height),
     groups = layout.groupsX * layout.groupsY;
   const count = layout.single ? plan.meta.length + plan.count : Math.max(plan.meta.length, plan.count);
@@ -200,9 +200,9 @@ export function* screenFrameSteps(
     }
   }
   const freqs = leaves.map(() => new Uint32Array(ALPHABET));
-  const distances = tokenCodec ? new Uint32Array(64) : null, custom = tokenCodec?.create({distances});
+  const distances = tokenCodec ? new Uint32Array(64) : null, custom = tokenCodec?.create({distances, minLength});
   const parallel = pooled && !layout.single && (!tokenCodec || tokenCodec === screenLZ77);
-  const setup = {plan: plan.setup, leaves, lz: !!tokenCodec};
+  const setup = {plan: plan.setup, leaves, lz: !!tokenCodec, minLength};
   const code = (writer, target, plane, w, h, l, s) =>
     custom ? custom.code(writer, target, plane, w, h, l, s) : codeChannel(writer, target, plane, w, h, l);
   for (let c = 0; c < plan.meta.length; c++) {
@@ -261,7 +261,7 @@ export function* screenFrameSteps(
 }
 
 function* screenDetailedFrameSteps(rgba, width, height, shape, colorSpace, plan,
-  {dim = 1024, depth = 4, frameHeader = null, globalPrefix = null, imageHeader = true, pooled = false}) {
+  {dim = 1024, depth = 4, frameHeader = null, globalPrefix = null, imageHeader = true, pooled = false, minLength = 7}) {
   const layout = groupLayout(width, height, dim), groups = layout.groupsX * layout.groupsY,
     header = new BitWriter(256), global = new BitWriter(4096), sections = [];
   let planes;
@@ -270,23 +270,23 @@ function* screenDetailedFrameSteps(rgba, width, height, shape, colorSpace, plan,
   else writeModularFrameHeader(header, {alpha: shape.alpha, shift: dim === 1024 ? 3 : dim === 512 ? 2 : 1});
   if (globalPrefix) globalPrefix(global);
   global.write(1, 1); global.write(1, 1);
-  const meta = plan.meta.map(m => screenModel(m.plane, m.width, m.height, depth));
+  const meta = plan.meta.map(m => screenModel(m.plane, m.width, m.height, depth, minLength));
   let sectionBytes = 0;
   const append = section => { sectionBytes += section.length; admitOutputSize(sectionBytes); sections.push(section); };
   if (!layout.single) {
-    const write = writeScreenModel(global, meta.length ? meta : [screenModel(new Int16Array(1), 1, 1, depth)]);
+    const write = writeScreenModel(global, meta.length ? meta : [screenModel(new Int16Array(1), 1, 1, depth, minLength)]);
     writeModularHeader(global, {transforms: plan.transforms});
     if (meta.length) write();
     append(global.finish());
     for (let i = 0; i < layout.dcGroupsX * layout.dcGroupsY + 1; i++) sections.push(new Uint8Array(0));
   }
   if ((yield* groupPass({pooled: pooled && !layout.single, kind: 'screen', data: rgba, width, height, dim,
-    setup: {plan: plan.setup, depth}, at: g => (g + 1) / groups, stop: () => true}, groups, g => {
+    setup: {plan: plan.setup, depth, minLength}, at: g => (g + 1) / groups, stop: () => true}, groups, g => {
     const x = g % layout.groupsX * dim, y = ((g / layout.groupsX) | 0) * dim,
       w = Math.min(dim, width - x), h = Math.min(dim, height - y);
     planes ||= Array.from({length: plan.count}, () => new Int16Array(Math.min(width, dim) * Math.min(height, dim)));
     plan.fill(planes, x, y, w, h);
-    const models = planes.map(plane => screenModel(plane, w, h, depth)),
+    const models = planes.map(plane => screenModel(plane, w, h, depth, minLength)),
       section = layout.single ? global : new BitWriter(w * h * plan.count + 256);
     if (!layout.single) writeModularHeader(section, {useGlobalTree: false});
     const write = writeScreenModel(section, layout.single ? [...meta, ...models] : models);

@@ -1,7 +1,7 @@
 const RAPIER_NOTES_LIB_RECENT = 8, RAPIER_NOTES_LIB_MENTION_MIN = 4;
 const _rapierNotesLib = {
 	sidx: null, lidx: null, from: null, generation: null, sidecar: null, query: null, results: null, build: null, slice: null, runner: null, hydrate: null, partial: null, painted: 0, job: null, snips: null,
-	chips: null, bar: null, picker: null, renamed: null, connections: null, secs: null, trustedPaint: false,
+	chips: null, bar: null, picker: null, connections: null, secs: null, trustedPaint: false,
 	run: null, runs: 0, hit: false, said: null,
 };
 function _rapierNotesSearchModule() { return globalThis.RapierNotesSearch; }
@@ -100,7 +100,7 @@ function _rapierNotesLibraryFresh() {
 	const state = _rapierNotes, lib = _rapierNotesLib;
 	if (lib.from === state.texts && lib.generation === state.loadGen) return true;
 	lib.slice?.cancel?.(); lib.runner?.cancel(); lib.hydrate?.stop();
-	lib.from = state.texts; lib.generation = state.loadGen; lib.sidecar = null; lib.linksPending = null; lib.slice = null; lib.runner = null; lib.sidx = null; lib.lidx = null; lib.build = null; lib.partial = null; lib.results = null; lib.query = null; lib.job = null; lib.snips = null; lib.secs = null;
+	lib.from = state.texts; lib.generation = state.loadGen; lib.sidecar = null; lib.slice = null; lib.runner = null; lib.sidx = null; lib.lidx = null; lib.build = null; lib.partial = null; lib.results = null; lib.query = null; lib.job = null; lib.snips = null; lib.secs = null;
 	return false;
 }
 function _rapierNotesLibraryIdle(run) {
@@ -137,12 +137,10 @@ function _rapierNotesLibraryRunner() {
 		streaming: () => typeof _rapierNotesTextsComplete === 'function' && !_rapierNotesTextsComplete(),
 		completed: (file, prepared) => {
 			if (prepared) { state.titles?.set(file, prepared.title); state.readFailed?.delete(file); }
-			lib.linksPending?.delete(file);
 			_rapierNotesLibraryRemember(file, prepared);
 			if (typeof _rapierNotesLetGo === 'function') _rapierNotesLetGo(file);
 		},
 		unreadable: file => {
-			lib.linksPending?.delete(file);
 			if (typeof _rapierNotesHold === 'function') _rapierNotesHold(file, '');
 			state.unreadable?.add(file);
 		},
@@ -210,7 +208,7 @@ function _rapierNotesLibraryRead(file, text = _rapierNotes.texts.get(file)) {
 	}
 	const large = deferred || !!text?.searchBytes || (typeof text === 'string' ? text.length : text.searchText.length) > S.SEARCH_WORKER_CHARS;
 	if (lib.lidx && L && !lib.lidx.out.has(file) && !large) { lib.lidx = L.updateLinkIndex(lib.lidx, file, typeof text === 'string' ? text : text.searchText, {stream: !_rapierNotesTextsComplete(), mapLink: text.mapLink}); changed = true; }
-	if (changed) { lib.results = null; if (!lib.build?.pending.has(file) && lib.lidx?.out.has(file)) lib.linksPending?.delete(file); }
+	if (changed) lib.results = null;
 	if (changed && typeof _rapierOcrJoined === 'function') _rapierOcrJoined(file);
 	return !!lib.build && !!lib.lidx;
 }
@@ -307,10 +305,10 @@ function _rapierNotesLibraryRun() {
 	if (!query) { lib.results = null; lib.partial = null; lib.run = null; return null; }
 	const sidx = _rapierNotesLibrarySearchIndex();
 	if (!sidx) { lib.results = null; return null; }
-	const asked = state.searchPictures ? query : query + ' pictures:off';
+	const asked = state.searchPictures ? query : 'pictures:off ' + query;
 	const total = Object.keys(state.index.notes).length;
 	const answers = [S.search(sidx, asked, {limit: total, candidateOrder: true})];
-	if (!S.parseQuery(query).filters.is.some(is => is === 'archived' || is === 'trash' || is === 'trashed')) for (const also of ['is:archived', 'is:trash']) answers.push(S.search(sidx, asked + ' ' + also, {limit: total, candidateOrder: true}));
+	if (!S.parseQuery(query).filters.is.some(is => is === 'archived' || is === 'trash' || is === 'trashed')) for (const also of ['is:archived', 'is:trash']) answers.push(S.search(sidx, also + ' ' + asked, {limit: total, candidateOrder: true}));
 	const found = _rapierNotesLibraryCompose(answers);
 	const confirm = new Set(answers.flatMap(a => a.confirm));
 	lib.partial = state.reading && (!state.reading.complete || sidx.notes.size < total) ? {done: sidx.notes.size, total, ...(state.reading.complete && (lib.build.done || sidx.progress?.unread) ? {unread: true} : {})} : answers[0].partial ? answers[0].progress : null;
@@ -578,17 +576,10 @@ function _rapierNotesLibraryBarPaint() {
 	if (pin) { pin.setAttribute('aria-pressed', String(!!pinned)); pin.setAttribute('aria-label', pinned ? 'unpin' : 'pin'); if (pinned) pin.dataset.active = 'true'; else delete pin.dataset.active; }
 }
 
-function _rapierNotesLibraryRenameWho(oldFile) {
-	const index = _rapierNotesLibraryLinkIndex();
-	if (!index || _rapierNotesLib.linksPending?.size || _rapierNotesLib.runner?.linksPending || _rapierNotesLib.build?.pending.size || Object.keys(_rapierNotes.index?.notes || {}).some(file => !index.files.has(file))) return undefined;
-	const who = new Set((index.in.get(oldFile) || []).map(r => r.from));
-	for (const L of index.out.get(oldFile) || []) if (L.resolved && L.resolved.file === oldFile) who.add(oldFile);
-	return [...who];
-}
 function _rapierNotesLibraryLinksReady() {
 	const lib = _rapierNotesLib;
 	return lib.from === _rapierNotes.texts && lib.generation === _rapierNotes.loadGen &&
-		!lib.linksPending?.size && !lib.runner?.linksPending && !lib.build?.pending.size;
+		!lib.runner?.linksPending && !lib.build?.pending.size;
 }
 function _rapierNotesLibraryRefit(text, changed) {
 	let next = String(text);
@@ -597,29 +588,6 @@ function _rapierNotesLibraryRefit(text, changed) {
 		next = next.slice(0, span.start) + span.now + next.slice(span.end);
 	}
 	return next;
-}
-async function _rapierNotesLibraryRenamed(report) {
-	const lib = _rapierNotesLib, state = _rapierNotes, L = _rapierNotesLinksModule();
-	lib.renamed = report; lib.results = null; lib.job = null;
-	if (typeof _rapierOcrTouched === 'function') _rapierOcrTouched(report.from, true);
-	if (!lib.lidx || !L || lib.from !== state.texts) return;
-	const from = state.texts, gen = state.loadGen;
-	const affected = new Set([report.to, ...((report.linking || Object.keys(state.index.notes)).filter(file => file !== report.from))]);
-	lib.linksPending = affected;
-	for (const file of [report.from, ...affected]) {
-		const S = _rapierNotesSearchModule();
-		if (lib.build && S) _rapierNotesLibraryRunner().queue(file, null, undefined);
-	}
-	for (const file of [...affected]) {
-		if (state.texts !== from || state.loadGen !== gen || lib.linksPending !== affected) return;
-		state.texts.delete(file); state.readFailed.delete(file);
-		await _rapierNotesReadOne(file, {search: true});
-		if (state.texts !== from || state.loadGen !== gen || lib.linksPending !== affected) return;
-		if (!lib.build?.pending.has(file) && lib.lidx.out.has(file) && !state.readFailed.has(file) && !state.unreadable?.has(file)) affected.delete(file);
-		_rapierNotesLetGo(file);
-	}
-	_rapierNotesLibraryRunner().resolve();
-	lib.results = null; lib.query = null;
 }
 function _rapierNotesLibraryTitle(file) {
 	const M = _rapierNotesModel(), state = _rapierNotes;
@@ -639,10 +607,10 @@ function _rapierNotesLibraryConnections(file) {
 		if (!to || to === file || seen.has(to) || _rapierNotes.index?.notes[to]?.trashed) continue;
 		seen.add(to); out.push(to);
 	}
-	const back = [], from = new Set();
+	const back = [], spans = [], from = new Set();
 	for (const rec of index.in.get(file) || []) {
 		if (rec.from === file || from.has(rec.from) || _rapierNotes.index?.notes[rec.from]?.trashed) continue;
-		from.add(rec.from); back.push(rec.from);
+		from.add(rec.from); back.push(rec.from); spans.push(rec);
 	}
 	let mentions = [];
 	try { if (_rapierNotesLibraryLinksReady()) {
@@ -651,7 +619,19 @@ function _rapierNotesLibraryConnections(file) {
 			.slice(0, 20).map(hit => { const row = _rapierNotesReadRow(hit.file); return {...hit, was: title, revision: row.revision, bytes: row.bytes, generation: _rapierNotes.loadGen}; });
 	} }
 	catch (_) { mentions = []; }
-	return {file, out, back, mentions: mentions.slice(0, 20), incomplete: !!_rapierNotesLib.linksPending?.size || !!_rapierNotesLib.runner?.linksPending || !!_rapierNotesLib.build?.pending.size};
+	return {file, out, back, spans, mentions: mentions.slice(0, 20), incomplete: !!_rapierNotesLib.runner?.linksPending || !!_rapierNotesLib.build?.pending.size};
+}
+function _rapierNotesLibraryContext(file, start, end, linked) {
+	const text = _rapierNotes.texts?.get(file);
+	if (text == null || !(end > start)) return null;
+	const words = s => s.replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[*_`~]+/g, '').replace(/\s+/g, ' ');
+	const a = text.lastIndexOf('\n', start - 1) + 1, b = (n => n < 0 ? text.length : n)(text.indexOf('\n', end));
+	let before = words(text.slice(a, start).replace(/^\s*(?:#{1,6}\s+|[-*+>]\s+|\d+[.)]\s+)*(?:\[[ xX]\]\s+)?/, '')).trimStart(), after = words(text.slice(end, b)).trimEnd();
+	if (before.length > 40) before = '\u2026' + before.slice(-40).replace(/^\S*\s/, '');
+	if (after.length > 40) after = after.slice(0, 40).replace(/\s\S*$/, '') + '\u2026';
+	const line = _rapierNotesEl('span', 'rapier-notes-conn-context', before);
+	line.append(_rapierNotesEl(linked ? 'u' : 'span', '', words(text.slice(start, end))), after);
+	return line;
 }
 function _rapierNotesLibraryConnectionsFace(sheet, file) {
 	const lib = _rapierNotesLib, found = _rapierNotesLibraryConnections(file);
@@ -669,13 +649,13 @@ function _rapierNotesLibraryConnectionsFace(sheet, file) {
 	if (found.out.length) for (const to of found.out) sheet.appendChild(row(to));
 	else sheet.appendChild(_rapierNotesEl('div', 'rapier-notes-conn-none', found.incomplete ? 'Some links have not been read back yet. Open Notes again to retry.' : 'This note links to nothing yet. Type [[ in it to link another.'));
 	sheet.appendChild(title('linked from'));
-	if (found.back.length) for (const to of found.back) sheet.appendChild(row(to));
+	if (found.back.length) found.back.forEach((to, i) => sheet.appendChild(row(to, _rapierNotesLibraryContext(to, found.spans[i].start, found.spans[i].end, true))));
 	else sheet.appendChild(_rapierNotesEl('div', 'rapier-notes-conn-none', found.incomplete ? 'Some backlinks have not been read back yet. Open Notes again to retry.' : 'No note links here yet.'));
 	if (found.mentions.length) {
 		sheet.appendChild(title('mentioned in'));
 		for (const hit of found.mentions) {
 			const line = _rapierNotesEl('div', 'rapier-notes-conn-row');
-			const open = row(hit.file);
+			const open = row(hit.file, _rapierNotesLibraryContext(hit.file, hit.start, hit.end, false));
 			const link = _rapierNotesEl('button', 'rapier-notes-btn rapier-notes-btn--accent', 'link it');
 			link.type = 'button'; link.dataset.notesConn = 'link'; link.dataset.notesConnFile = hit.file;
 			link.setAttribute('aria-label', 'Link it: ' + _rapierNotesLibraryTitle(hit.file));
@@ -686,6 +666,7 @@ function _rapierNotesLibraryConnectionsFace(sheet, file) {
 	}
 }
 function _rapierNotesFollowLink(href) {
+	if (typeof _rapierRecorderPlayAt === 'function' && _rapierRecorderPlayAt(href)) return true;
 	const state = _rapierNotes, L = _rapierNotesLinksModule(), current = _rapierNotesCurrentFile();
 	if (!L || !current) return false;
 	const link = L.scanLinks('[x](' + String(href).replace(/[()\s<>]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')) + ')')[0];
@@ -695,8 +676,9 @@ function _rapierNotesFollowLink(href) {
 	if (!found || !found.file) return false;
 	if (state.index.notes[found.file]?.trashed) { showToast('That note is in the recycle bin.', 'info'); return true; }
 	if (found.file === current) return true;
-	const trail = state.noteTrail || [];
-	state.noteTrail = [...trail, current]; state.trailKeep = true;
+	const trail = state.noteTrail || [], places = (state.notePlaces || []).slice(0, trail.length);
+	let place = null; try { place = {view: _rapierCaptureViewContinuity(), text: _rapierSourceText()}; } catch (_) {}
+	state.noteTrail = [...trail, current]; state.notePlaces = [...places, place]; state.trailKeep = true;
 	void _rapierNotesOpenNote(found.file).then(opened => { if (opened !== true && state.current === current) state.noteTrail = trail; }, () => { state.noteTrail = trail; });
 	return true;
 }
@@ -731,9 +713,22 @@ function _rapierNotesPickerCaret() {
 	const host = node.parentElement && node.parentElement.closest ? node.parentElement.closest('.block-edit') : null;
 	if (!host || !host.isContentEditable) return null;
 	const before = String(node.nodeValue || '').slice(0, sel.focusOffset);
-	const m = /\[\[([^[\]\n]*)$/.exec(before);
+	const m = /\[\[([^[\]\n]*)\]{0,2}$/.exec(before);
+	const tag = !m && /(?:^|\s)#([\p{L}\p{N}_/-]+)$/u.exec(before);
+	if (tag) return {node, offset: sel.focusOffset, query: tag[1], span: tag[1].length + 1, tag: true};
 	if (!m) return null;
 	return {node, offset: sel.focusOffset, query: m[1], span: m[0].length};
+}
+function _rapierNotesTagChoices(query, max = RAPIER_NOTES_PICKER_MAX) {
+	const sidx = _rapierNotesLibrarySearchIndex(), counts = new Map(), q = String(query).toLowerCase();
+	for (const [file, note] of sidx?.notes || []) {
+		if (_rapierNotes.index?.notes[file]?.trashed) continue;
+		for (const tag of note.tags || []) {
+			const key = tag.toLowerCase();
+			if (key.startsWith(q) && key !== q && !/\s/.test(key)) { const row = counts.get(key); if (row) row.count++; else counts.set(key, {tag, count: 1}); }
+		}
+	}
+	return [...counts.values()].sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag)).slice(0, max);
 }
 function _rapierNotesPickerCandidates(current) {
 	const state = _rapierNotes, files = Object.keys((state.index && state.index.notes) || {}).filter(f => f !== current && !state.index.notes[f].trashed);
@@ -786,34 +781,60 @@ function _rapierNotesPickerOpen() {
 	const L = _rapierNotesLinksModule(), current = _rapierNotesCurrentFile();
 	if (!L || !current) { _rapierNotesPickerClose(); return; }
 	const caret = _rapierNotesPickerCaret();
-	if (!caret) { _rapierNotesPickerClose(); return; }
-	const {candidates, recent} = _rapierNotesPickerCandidates(current);
-	const ranked = L.rankTargets(caret.query, candidates, {recent}).slice(0, RAPIER_NOTES_PICKER_MAX);
+	const tags = caret?.tag ? _rapierNotesTagChoices(caret.query) : null;
+	if (!caret || tags && !tags.length) { _rapierNotesPickerClose(); return; }
+	const {candidates, recent} = tags ? {candidates: []} : _rapierNotesPickerCandidates(current);
+	const ranked = tags ? [] : L.rankTargets(caret.query, candidates, {recent}).slice(0, RAPIER_NOTES_PICKER_MAX);
 	const picker = _rapierNotesPickerEl(), active = document.activeElement;
 	const host = active?.isContentEditable && active.contains(caret.node) ? active
 		: picker.el.contains(active) && picker.host?.isContentEditable && picker.host.contains(caret.node) ? picker.host : null;
 	if (!host) { _rapierNotesPickerClose(); return; }
 	if (picker.host !== host) {
 		_rapierNotesPickerReleaseHost(picker); picker.host = host;
-		picker.hostAttributes = ['role', 'aria-label', 'aria-multiline', 'aria-controls', 'aria-expanded', 'aria-autocomplete', 'aria-haspopup', 'aria-activedescendant'].map(name => [name, host.getAttribute(name)]);
+		picker.hostAttributes = ['role', 'aria-label', 'aria-labelledby', 'aria-multiline', 'aria-controls', 'aria-expanded', 'aria-autocomplete', 'aria-haspopup', 'aria-activedescendant'].map(name => [name, host.getAttribute(name)]);
 	}
-	if (!host.hasAttribute('aria-label') && !host.hasAttribute('aria-labelledby')) host.setAttribute('aria-label', 'Link a note');
+	host.removeAttribute('aria-labelledby');
+	host.setAttribute('aria-label', tags ? 'Choose a tag' : 'Link a note');
 	host.removeAttribute('aria-multiline');
 	host.setAttribute('role', 'combobox'); host.setAttribute('aria-controls', picker.el.id); host.setAttribute('aria-expanded', 'true'); host.setAttribute('aria-autocomplete', 'list'); host.setAttribute('aria-haspopup', 'listbox');
 	picker.caret = caret;
-	picker.rows = ranked.map(r => r.file);
-	picker.aliases = ranked.map(r => r.alias || null);
+	picker.tags = tags && tags.map(row => row.tag);
+	picker.el.setAttribute('aria-label', tags ? 'tags' : 'link a note');
+	if (tags) {
+		picker.rows = picker.tags; picker.aliases = []; picker.create = null; picker.at = 0;
+		picker.el.replaceChildren(...tags.map((row, i) => {
+			const b = _rapierNotesEl('button', 'rapier-notes-btn'); b.type = 'button'; b.id = 'rapier-notes-pick-' + i; b.tabIndex = -1;
+			b.setAttribute('role', 'option'); b.setAttribute('aria-selected', String(i === 0));
+			const name = _rapierNotesEl('span', '');
+			name.append(_rapierNotesEl('b', '', '#' + row.tag.slice(0, caret.query.length)), row.tag.slice(caret.query.length));
+			name.append(' ' + row.count);
+			b.append(name);
+			b.onmousedown = evt => evt.preventDefault();
+			b.onclick = evt => { evt.preventDefault(); _rapierNotesPickerChoose(i); };
+			return b;
+		}), Object.assign(_rapierNotesEl('div', 'rapier-notes-picker-empty', 'Tags already in your notes'), {ariaHidden: 'true'}));
+		picker.el.hidden = false;
+		_rapierNotesPickerPlace(picker);
+		_rapierNotesPickerAnnounce(picker);
+		return;
+	}
+	const name = caret.query.trim();
+	picker.create = name && !ranked.some(r => r.why === 'exact' || r.why === 'alias') ? name : null;
+	const rows = picker.create ? ranked.some(r => /prefix/.test(r.why)) ? [...ranked, null] : [null, ...ranked] : ranked;
+	picker.rows = rows.map(r => r && r.file);
+	picker.aliases = rows.map(r => r?.alias || null);
 	picker.at = 0;
 	picker.el.replaceChildren();
-	if (!ranked.length) {
+	if (!rows.length) {
 		const empty = _rapierNotesEl('div', 'rapier-notes-picker-empty', candidates.length ? 'No note by that name' : 'No other note to link yet');
 		empty.setAttribute('role', 'option'); empty.setAttribute('aria-disabled', 'true'); picker.el.appendChild(empty);
-	} else ranked.forEach((row, i) => {
-		const b = _rapierNotesEl('button', 'rapier-notes-picker-row'); b.type = 'button';
+	} else rows.forEach((row, i) => {
+		const b = _rapierNotesEl('button', 'rapier-notes-btn', row ? '' : 'New note “' + picker.create + '”'); b.type = 'button';
 		b.id = 'rapier-notes-pick-' + i; b.tabIndex = -1;
-		b.dataset.notesPick = row.file; b.setAttribute('role', 'option'); b.setAttribute('aria-selected', String(i === 0));
-		b.appendChild(_rapierNotesEl('span', '', _rapierNotesLibraryTitle(row.file)));
-		if (row.alias) b.appendChild(_rapierNotesEl('span', 'rapier-notes-picker-alias', row.alias));
+		if (row) b.dataset.notesPick = row.file;
+		b.setAttribute('role', 'option'); b.setAttribute('aria-selected', String(i === 0));
+		if (row) b.appendChild(_rapierNotesEl('span', '', _rapierNotesLibraryTitle(row.file)));
+		if (row?.alias) b.appendChild(_rapierNotesEl('span', 'rapier-notes-picker-alias', row.alias));
 		b.onmousedown = evt => evt.preventDefault();
 		b.onclick = evt => { evt.preventDefault(); _rapierNotesPickerChoose(i); };
 		picker.el.appendChild(b);
@@ -838,7 +859,7 @@ function _rapierNotesPickerAnnounce(picker) {
 	const file = picker.rows[picker.at], option = picker.el.querySelector('[aria-selected="true"]');
 	if (picker.host) { if (option?.id) picker.host.setAttribute('aria-activedescendant', option.id); else picker.host.removeAttribute('aria-activedescendant'); }
 	const alias = picker.aliases?.[picker.at];
-	const message = file ? 'Link to ' + _rapierNotesLibraryTitle(file) + (alias ? ', as ' + alias : '') + '. ' + (picker.at + 1) + ' of ' + picker.rows.length + '.'
+	const message = picker.tags ? '#' + file + '. ' + (picker.at + 1) + ' of ' + picker.rows.length + '.' : file || picker.create ? (file ? 'Link to ' + _rapierNotesLibraryTitle(file) + (alias ? ', as ' + alias : '') : 'New note ' + picker.create) + '. ' + (picker.at + 1) + ' of ' + picker.rows.length + '.'
 		: picker.el.firstChild?.textContent || '';
 	if (picker.status.textContent !== message) picker.status.textContent = message;
 }
@@ -854,7 +875,28 @@ async function _rapierNotesPickerChoose(index) {
 	const lib = _rapierNotesLib, L = _rapierNotesLinksModule();
 	const picker = lib.picker;
 	if (!picker || !L || typeof L.markdownLink !== 'function') return;
-	const at = index == null ? picker.at : index, file = picker.rows[at], alias = picker.aliases?.[at] || null;
+	const at = index == null ? picker.at : index, alias = picker.aliases?.[at] || null, name = picker.rows[at] === null ? picker.create : null;
+	if (picker.tags) {
+		const caret = _rapierNotesPickerCaret(), host = picker.host, tag = picker.tags[at];
+		_rapierNotesPickerClose();
+		if (!caret?.tag || !tag || !host?.isContentEditable || !host.contains(caret.node) || host.closest('[inert]')) return;
+		const range = document.createRange(), sel = window.getSelection();
+		range.setStart(caret.node, caret.offset - caret.span); range.setEnd(caret.node, caret.offset);
+		sel.removeAllRanges(); sel.addRange(range);
+		document.execCommand('insertText', false, '#' + tag + ' ');
+		return;
+	}
+	let file = picker.rows[at];
+	if (name) {
+		if (picker.creating) return;
+		const state = _rapierNotes, text = '# ' + name + '\n', from = state.current;
+		picker.creating = true;
+		try { file = await _rapierNotesWriteNew(text, _rapierNotesModel().noteFileName(text, Object.keys(state.index.notes)), _rapierNotesPlaceFirst()); }
+		catch (error) { showToast('The note could not be written: ' + String(error?.message || error), 'error'); return; }
+		finally { picker.creating = false; }
+		_rapierNotesAdmit(file, text);
+		if (lib.picker !== picker || picker.rows[at] !== null || picker.create !== name || state.current !== from) return;
+	}
 	if (file && !alias && !_rapierNotes.texts.has(file)) {
 		try { await _rapierNotesTexts([file]); } catch (_) {  }
 		if (lib.picker !== picker || picker.rows[at] !== file) return;
@@ -874,7 +916,7 @@ async function _rapierNotesPickerChoose(index) {
 	const title = alias || _rapierNotesLibraryTitle(file);
 	const dest = typeof L.linkDest === 'function' ? L.linkDest(file) : file;
 	const escape = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-	if (typeof _rangeInsertHTML === 'function') _rangeInsertHTML('<a href="' + escape(dest) + '">' + escape(title) + '</a>');
+	if (typeof _rangeInsertHTML === 'function' && !caret.node.parentElement?.closest('.block-wrapper--source-edit')) _rangeInsertHTML('<a href="' + escape(dest) + '">' + escape(title) + '</a>');
 	else document.execCommand('insertText', false, L.markdownLink(title, file));
 }
 function _rapierNotesPickerKey(evt) {
@@ -897,6 +939,8 @@ function _rapierNotesPickerInstall() {
 	document.addEventListener('input', evt => { if (evt.isComposing) _rapierNotesPickerClose(); else refresh(); }, true);
 	window.addEventListener('keydown', _rapierNotesPickerKey, true);
 	document.addEventListener('pointerdown', evt => { if (!evt.target.closest || !evt.target.closest('.rapier-notes-picker')) _rapierNotesPickerClose(); }, true);
+	document.addEventListener('focusin', evt => { const picker = _rapierNotesLib.picker; if (picker && !picker.el.hidden && evt.target !== picker.host && !picker.el.contains(evt.target)) _rapierNotesPickerClose(); }, true);
+	document.addEventListener('focusout', evt => { const picker = _rapierNotesLib.picker; if (picker && !picker.el.hidden && evt.target === picker.host && !picker.el.contains(evt.relatedTarget)) _rapierNotesPickerClose(); }, true);
 	window.addEventListener('resize', () => { if (_rapierNotesLib.picker && !_rapierNotesLib.picker.el.hidden) _rapierNotesPickerOpen(); });
 }
 
@@ -912,7 +956,6 @@ function _rapierNotesLibraryFacts() {
 		ranked: found ? [...found.entries()].sort((a, b) => a[1].rank - b[1].rank).map(([f]) => f) : null,
 		indexed: lib.sidx ? lib.sidx.notes.size : 0,
 		links: lib.lidx ? lib.lidx.files.size : 0,
-		renamed: lib.renamed,
 		connections: lib.connections,
 		picker: lib.picker && !lib.picker.el.hidden ? lib.picker.rows : null,
 	};

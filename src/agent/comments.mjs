@@ -678,6 +678,12 @@ export function commentSpliceParts(source, splice) {
   const exact = parsed => ({...parsed.record, text: parsed.record.raw});
   const before = prior.record && following.record ? exact(prior) : commentEnvelope(source, prior);
   const after = prior.record && following.record ? exact(following) : commentEnvelope(next, following);
+  if (prior.record && following.record) {
+    const ranges = [[before.end, source.slice(before.end), next.slice(after.end)],
+      [before.start, before.text, after.text], [0, source.slice(0, before.start), next.slice(0, after.start)]];
+    return ranges.map(([offset, old, value]) => {const row = bodyDelta(old, value); return {...row, pos: offset + row.pos};})
+      .filter(row => row.removed || row.inserted);
+  }
   const body = before ? source.slice(0, before.start) + source.slice(before.end) : source;
   const target = after ? next.slice(0, after.start) + next.slice(after.end) : next;
   const changed = bodyDelta(body, target);
@@ -694,7 +700,8 @@ function bodyTransport(source, anchor, splices) {
     if (following.reason) return null;
     const record = parsed.record, end = row.pos + row.removed.length;
     let bodyRow;
-    if (record && row.pos >= record.start && end <= record.end && following.record) {
+    if (record && row.pos >= record.start && end <= record.end && following.record &&
+        (row.removed.length || row.pos > record.start && row.pos < record.end)) {
       if (parsed.body !== following.body) return null;
     } else if ((!record || end <= record.start || row.pos >= record.end) &&
         !!record === !!following.record) {
@@ -712,6 +719,12 @@ function writeRestoredComments(source, threads, current, before, change) {
   if (!change.later?.some(row => !change.selectedIds.has(row.id)) &&
       current.record && before.record && current.body === before.body &&
       JSON.stringify(threads) === JSON.stringify(before.threads)) {
+    const original = commentEnvelope(change.beforeSource, before), live = commentEnvelope(source, current);
+    if (source.slice(0, live.start) === change.beforeSource.slice(0, original.start) &&
+        source.slice(live.end) === change.beforeSource.slice(original.end)) {
+      const row = bodyDelta(live.text, original.text);
+      return {...row, pos: live.start + row.pos};
+    }
     return {pos: current.record.start, removed: current.record.raw, inserted: before.record.raw};
   }
   return writeComments(source, threads, current);
@@ -723,6 +736,9 @@ export function commentUndoSplice(source, change, later = []) {
   const changed = commentChanges(beforeSource, afterSource);
   if (!changed?.length || current.reason) return null;
   const threads = commentThreads(source, current);
+  const restoredBody = before.current && before.body === current.body &&
+    !change.later?.some(row => !change.selectedIds.has(row.id));
+  const originalThreads = restoredBody ? commentThreads(beforeSource, before) : [];
   for (const id of changed) {
     const prior = before.threads.find(thread => thread.id === id), authored = after.threads.find(thread => thread.id === id);
     const live = threads.find(thread => thread.id === id);
@@ -745,13 +761,15 @@ export function commentUndoSplice(source, change, later = []) {
     if (expectedAnchor.status === 'attached' && !objectPresent(source, expectedAnchor, current))
       expectedAnchor = {...expectedAnchor, status: 'stale', reason: 'object_missing'};
     if (live && anchorValue(live.anchor) !== anchorValue(expectedAnchor)) return null;
+    const original = originalThreads.find(thread => thread.id === id)?.anchor;
+    const anchor = original?.kind === 'text' && original.status === 'attached' ? {...original} : live?.anchor || expectedAnchor;
     const index = threads.findIndex(thread => thread.id === id);
     if (!prior) threads.splice(index, 1);
-    else if (live) threads[index] = {...live, resolved: prior.resolved, messages: prior.messages.slice()};
+    else if (live) threads[index] = {...live, anchor, resolved: prior.resolved, messages: prior.messages.slice()};
     else {
       const following = before.threads.slice(before.threads.indexOf(prior) + 1).find(thread => threads.some(live => live.id === thread.id));
       const index = following ? threads.findIndex(thread => thread.id === following.id) : threads.length;
-      threads.splice(index, 0, {...prior, anchor: expectedAnchor, messages: prior.messages.slice()});
+      threads.splice(index, 0, {...prior, anchor, messages: prior.messages.slice()});
     }
   }
   if (!current.record && before.record) {

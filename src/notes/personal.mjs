@@ -8,7 +8,7 @@ const encode = value => new TextEncoder().encode(JSON.stringify(value));
 const fail = message => { throw Object.assign(new Error(message), {code: 'personal_invalid'}); };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const DAY = 86400000;
-export async function personalDigest(bytes) { return [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(n => n.toString(16).padStart(2, '0')).join(''); }
+async function personalDigest(bytes) { return [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(n => n.toString(16).padStart(2, '0')).join(''); }
 export function admitPersonal(input = {}, {local = false} = {}) {
 	if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length > 1024) fail('Personal settings are not a readable collection.');
 	const out = {};

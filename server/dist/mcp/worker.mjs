@@ -6,7 +6,7 @@ import {sha256} from '../kit/ledger/hash.mjs';
 import {agentActorId} from '../kit/ledger/format.mjs';
 import {_rapierValidAuthored, _rapierValidMetadata, _rapierValidMetadataEffect, _rapierMetadataDelta, _rapierTransformMetadata,
   _rapierReplayMetadata, _rapierHasHistoryEffect} from '../kit/ledger/journal-records.mjs';
-import { createKernel, createState, canonicalJson, serializeJson, admissibleText, minimalSplice, transformSplices, waitTimeout, exportFilename, exportFidelity, admitExportArtifact, LIMITS } from '../agent/kernel.mjs';
+import { createKernel, createState, canonicalJson, serializeJson, admissibleText, minimalSplice, transformSplices, waitTimeout, exportFilename, exportFidelity, admitExportArtifact, showTarget, LIMITS } from '../agent/kernel.mjs';
 import {fencedBlocks} from '../agent/text-surface.mjs';
 import {prepareDoorLetters} from './letters.mjs';
 import {inputErrorResult, modelReply, parseReply} from '../agent/page-result.mjs';
@@ -18,7 +18,7 @@ import { VERSION } from '../version.mjs';
 import { INSTRUCTIONS, GUIDE_RESOURCES, guideResource, PROMPTS, promptResult } from '../agent/guide.mjs';
 import { RETURN_ORIGIN } from '../skills/rapier-html/return-address.mjs';
 import { wrap } from '../skills/rapier-html/wrap.mjs';
-import { HOST_TOOLS, TOOLS, HUMAN_OPERATIONS, ICONS, MAX_TEXT_BYTES, MAX_EXPORT_BYTES, MAX_FILENAME_CHARS, UI_RESOURCE, getTool, getHumanOperation, inputGuide, mcpDescriptors, validateInput } from '../agent/catalog.mjs';
+import { HOST_TOOLS, TOOLS, HUMAN_OPERATIONS, ICONS, MAX_TEXT_BYTES, MAX_EXPORT_BYTES, MAX_FILENAME_CHARS, UI_RESOURCE, getTool, getHumanOperation, inputGuide, mcpDescriptors, publishedSchema, validateInput } from '../agent/catalog.mjs';
 import { analyzeDocument } from '../agent/structure.mjs';
 import { analyzeMarkdown, checkMarkdownReferences } from '../agent/markdown-server.mjs';
 import { resolveCaller, validateOrigin, WORKER_PRESENCE, sealForEditor, fromBase64url } from '../agent/door-identity.mjs';
@@ -63,7 +63,8 @@ const museDescriptor = tool => {
   return tool.name !== 'show' ? tool : {...tool, inputSchema: {...tool.inputSchema, properties: {...tool.inputSchema.properties,
     timeout_ms: {...tool.inputSchema.properties.timeout_ms, maximum: MUSE_WAIT_MS, default: MUSE_WAIT_MS, description: 'One bounded wait on Muse.'}}}};
 };
-const MUSE_DESCRIPTORS = Object.freeze(mcpDescriptors({auth: 'oauth'}).filter(tool => !EDITOR_ONLY_TOOLS.has(tool.name)).map(museDescriptor));
+const published = tool => ({...tool, inputSchema: publishedSchema(tool.inputSchema)});
+const MUSE_DESCRIPTORS = Object.freeze(mcpDescriptors({auth: 'oauth'}).filter(tool => !EDITOR_ONLY_TOOLS.has(tool.name)).map(museDescriptor).map(published));
 const PAIR_BROWSER = 'editor.pair', PAIR_STATUS = 'document.pair_status';
 const MUSE_EXPORT_TEXT_CHARS = 60000;
 const ANONYMOUS = Object.freeze({source: 'anonymous', scopes: Object.freeze(['rapier:read', 'rapier:write'])});
@@ -614,10 +615,11 @@ function declaresAppsUi(params) {
   const ui = plain(capabilities.extensions) ? capabilities.extensions['io.modelcontextprotocol/ui'] : null;
   return !!(plain(ui) && Array.isArray(ui.mimeTypes) && ui.mimeTypes.includes(UI_MIME));
 }
-function listedTools(env, appsClient, authority) {
+const CURRENT_DOOR = 'X-Rapier-Current-Door';
+function listedTools(env, appsClient, authority, request) {
   const descriptors = authority?.source === 'server' ? SERVER_DESCRIPTORS : DESCRIPTORS;
-  if (env.HOST_TOOLS_LISTING === 'all') return descriptors;
-  return appsClient ? descriptors : descriptors.filter(tool => !EDITOR_ONLY_TOOLS.has(tool.name));
+  const listed = env.HOST_TOOLS_LISTING === 'all' || appsClient ? descriptors : descriptors.filter(tool => !EDITOR_ONLY_TOOLS.has(tool.name));
+  return authority?.source === 'server' || request.headers.get(CURRENT_DOOR) === '1' ? listed.map(published) : listed;
 }
 
 async function takeCreateBudget(env, { takeId, principalKey }) {
@@ -668,7 +670,7 @@ async function takeToolBudget(request, env, authority, name, args, door, editorP
       const admitted = await pageAdmission(env, authority, retry);
       editor = admitted.admitted === true;
       if (editor && !admitted.bearer) principal = 'page-owner:' + admitted.ownerKey;
-      if (!editor && !['rapier.guide', PAIR_STATUS].includes(name)) return null;
+      if (!editor && name !== PAIR_STATUS) return null;
     }
     if (EDITOR_ONLY_TOOLS.has(name) && name !== PAIR_STATUS || human) {
       if (!editorSecret(env) || (page ? args.document !== authority.id : !WORKSPACE_HANDLE.test(args.document || ''))) return null;
@@ -857,7 +859,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
       {retryable, ...(identity ? {retryIdentity: identity} : {})}));
   }
   const result = await parseJsonStream(response, {inlineBytes: 65536});
-  if (result.isError) return result;
+  if (result.isError && !(create && result.structuredContent?.created === true)) return result;
   const writer = authority.scopes?.includes('rapier:write') === true;
   if ((authority.source === 'server' || !writer) && result._meta?.rapier) delete result._meta.rapier.live;
   if (result._meta?.rapier?.live?.key) {
@@ -967,7 +969,7 @@ function requestScope(request, authority, door, modern) {
 }
 
 async function requestTool(name, args, env, request, authority, hostAgent, door, editorProof, editorActivity, scope, id) {
-  if (!scope || name === 'rapier.guide') return callTool(name, args, env, request, authority, hostAgent, door, editorProof, editorActivity);
+  if (!scope) return callTool(name, args, env, request, authority, hostAgent, door, editorProof, editorActivity);
   const owner = env.DOCUMENTS.get(env.DOCUMENTS.idFromName('request:' + scope));
   const key = sha256(JSON.stringify(id)), occurrence = 'request_' + crypto.randomUUID().replaceAll('-', '');
   let cancellation;
@@ -1447,21 +1449,23 @@ async function handleRequest(request, env, authority, route) {
         result = {}; break;
       case 'tools/list':
         if (Object.hasOwn(params, 'cursor')) return rpcError(id, -32602, 'Rapier returns its full fixed tool catalog in one page.');
-        result = projected ? cacheable({ tools: projectedTools(listedTools(env, appsClient, authority)) }, 0, 'private')
+        result = projected ? cacheable({ tools: projectedTools(listedTools(env, appsClient, authority, request)) }, 0, 'private')
           : door === '/muse' ? cacheable({ tools: MUSE_DESCRIPTORS }, 3600000, 'public')
-          : cacheable({ tools: listedTools(env, appsClient, authority) }, env.HOST_TOOLS_LISTING === 'all' ? 3600000 : 0, env.HOST_TOOLS_LISTING === 'all' ? 'public' : 'private'); break;
+          : cacheable({ tools: listedTools(env, appsClient, authority, request) }, env.HOST_TOOLS_LISTING === 'all' ? 3600000 : 0, env.HOST_TOOLS_LISTING === 'all' ? 'public' : 'private'); break;
       case 'tools/call':
         if (typeof params.name !== 'string' || (params.arguments !== undefined && !plain(params.arguments))) return rpcError(id, -32602, 'tools/call requires name and an arguments object.');
         if (projected) {
-          const call = projectCall(params.name, params.arguments, listedTools(env, appsClient, authority));
+          const call = projectCall(params.name, params.arguments, listedTools(env, appsClient, authority, request));
           if (call.unknown) throw failure('UNKNOWN_TOOL', 'Unknown tool.');
           if (call.error) { result = inputErrorResult(call.error); break; }
           params.name = call.name; params.arguments = call.arguments;
         }
+        if (params.name === 'show' && plain(params.arguments) && params.arguments.target === undefined)
+          params.arguments = {...params.arguments, target: showTarget(params.arguments)};
         if (!TOOL_BY_NAME.has(params.name) || !['page', '/editor'].includes(door) && !TOOLS.some(tool => tool.name === params.name)) throw failure('UNKNOWN_TOOL', 'Unknown tool.');
         if (TOOL_BY_NAME.has(params.name)) {
           const reads = TOOL_BY_NAME.get(params.name).annotations.readOnlyHint || params.name === 'open' &&
-            params.arguments?.document !== undefined && params.arguments.note === undefined;
+            (params.arguments?.document !== undefined || params.arguments?.url !== undefined) && params.arguments.note === undefined;
           const refusal = requireScope(authorityRequest, env, authority, reads ? ['rapier:read'] : ['rapier:read', 'rapier:write']);
           if (refusal) return challenged(refusal);
         }
@@ -1700,6 +1704,7 @@ export class RapierBudget {
   constructor(ctx, env) { this.ctx = ctx; this.env = env; }
   async fetch(request) {
     let takeId = null;
+    if (request.method === 'POST' && new URL(request.url).pathname === '/grant') return this.grant(await parseJsonStream(request, {inlineBytes: 65536}));
     try {
       if (this.ctx.storage) this.ctx.storage.operation = 'budget.take';
       if (request.method !== 'POST' || new URL(request.url).pathname !== '/take') return new Response('Not found', { status: 404 });
@@ -1739,6 +1744,27 @@ export class RapierBudget {
       }
       return json({ allowed: false, code: 'WORKSPACE_UNAVAILABLE', message: 'The budget operation was not acknowledged.' });
     }
+  }
+  async grant({op, key, value, expires}) {
+    const kv = this.ctx.storage.kv, now = Date.now(), grant = key.startsWith('grant:');
+    let answer, keep;
+    if (kv.get('revoked')) answer = {state: 'gone'};
+    else if (op === 'get') {
+      const record = grant ? kv.get('grant') : null;
+      answer = !grant ? {state: kv.get(key) ? 'gone' : 'unknown'} : !record ? {state: 'unknown'}
+        : record.expires <= now ? {state: 'gone'} : {state: 'value', value: record.value};
+    } else if (op === 'put') {
+      kv.put('grant', {value, expires: expires ?? Infinity});
+      answer = {state: 'stored'}, keep = expires;
+    } else {
+      kv.put(grant ? 'revoked' : key, true);
+      answer = {state: 'gone'}, keep = now + 86400000;
+    }
+    if (keep > (kv.get('resetAt') ?? 0)) {
+      kv.put('resetAt', keep);
+      await this.ctx.storage.setAlarm(keep);
+    }
+    return json(answer);
   }
   async alarm() {
     try { if (this.ctx.storage) this.ctx.storage.operation = 'budget.alarm'; } catch {}
@@ -2740,7 +2766,7 @@ export class RapierDocument {
       if (fencedBlocks(args.text || '').length) {
         const edited = await this.advanceMaterial({...input, create: false, operation: 'edit', args: {revision: state.revision, changes: [{text: args.text}], ...(args.agent ? {agent: args.agent} : {})}});
         const latest = this.ctx.storage.kv.get('head'), currentState = this.readState(latest);
-        return {...edited, structuredContent: {...edited.structuredContent, created: true, resumed: false},
+        return {...edited, structuredContent: {...edited.structuredContent, ...(edited.structuredContent?.outcome === 'applied' ? {outcome: 'created'} : {}), created: true, resumed: false},
           _meta: {rapier: {...edited._meta?.rapier, snapshot: snapshot(currentState, latest.collaboration), editorIssuedAt: latest.editorIssuedAt ?? latest.createdAt}}};
       }
       return envelope({...observation, outcome: observation.outcome === 'ok' ? 'created' : observation.outcome, created: true, resumed: false}, head, { snapshot: snapshot(state, collaboration) });

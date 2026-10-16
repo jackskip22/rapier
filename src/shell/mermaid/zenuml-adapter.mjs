@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // ZenUML owns parsing, text measurement and SVG geometry. This adapter only admits a
 // complete parse, registers that renderer with Mermaid, and carries its measured font.
-import {renderToSvg, ensureDiagramFontsLoaded} from '@zenuml/core';
-import {validate} from '@zenuml/core/parser';
+// ZenUML runs when a document first draws one of its diagrams, not at every renderer start.
 
 export const fontCss = RAPIER_ZENUML_FONT_CSS;
 export const fontFamily = 'IBM Plex Sans';
@@ -14,7 +13,7 @@ export function allowSvgStyleAttribute(attributeName, tagName) {
 }
 const sourceCode = text => String(text).replace(/^\s*zenuml\b/, '');
 
-function parse(text) {
+function parse(validate, text) {
   const result = validate(sourceCode(text));
   if (!result.pass) {
     const first = result.errorDetails[0];
@@ -24,33 +23,36 @@ function parse(text) {
 }
 
 export async function register(mermaid) {
-  await ensureDiagramFontsLoaded();
   let getConfig;
   await mermaid.registerExternalDiagrams([{
     id: 'zenuml',
     detector: text => /^\s*zenuml\b/.test(text),
-    loader: async () => ({id: 'zenuml', diagram: {
-      db: {clear() {}},
-      parser: {parse},
-      styles: () => '',
-      injectUtils(log, setLogLevel, config) { getConfig = config; },
-      renderer: {
-        async draw(text, id) {
-          const result = renderToSvg(sourceCode(text), {theme: 'theme-default'});
-          const svg = document.getElementById(id);
-          if (!svg) throw new Error('The ZenUML render container is missing');
-          svg.setAttribute('viewBox', result.viewBox);
-          if (getConfig().sequence?.useMaxWidth !== false) {
-            svg.setAttribute('width', '100%');
-            svg.style.maxWidth = result.width + 'px';
-            svg.removeAttribute('height');
-          } else {
-            svg.setAttribute('width', String(result.width));
-            svg.setAttribute('height', String(result.height));
-          }
-          svg.innerHTML = result.innerSvg;
+    loader: async () => {
+      const {renderToSvg, ensureDiagramFontsLoaded, validate} = await import('./zenuml-core.mjs');
+      await ensureDiagramFontsLoaded();
+      return {id: 'zenuml', diagram: {
+        db: {clear() {}},
+        parser: {parse: text => parse(validate, text)},
+        styles: () => '',
+        injectUtils(log, setLogLevel, config) { getConfig = config; },
+        renderer: {
+          async draw(text, id) {
+            const result = renderToSvg(sourceCode(text), {theme: 'theme-default'});
+            const svg = document.getElementById(id);
+            if (!svg) throw new Error('The ZenUML render container is missing');
+            svg.setAttribute('viewBox', result.viewBox);
+            if (getConfig().sequence?.useMaxWidth !== false) {
+              svg.setAttribute('width', '100%');
+              svg.style.maxWidth = result.width + 'px';
+              svg.removeAttribute('height');
+            } else {
+              svg.setAttribute('width', String(result.width));
+              svg.setAttribute('height', String(result.height));
+            }
+            svg.innerHTML = result.innerSvg;
+          },
         },
-      },
-    }}),
+      }};
+    },
   }]);
 }

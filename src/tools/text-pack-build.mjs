@@ -7,7 +7,7 @@ export function encodeTextPack(bytes) {
     .sort((a, b) => b[1] - a[1]);
   const dictionary = []; let size = 0;
   for (const [word] of candidates) {
-    if (dictionary.length === 8192 || size + word.length + (dictionary.length ? 1 : 0) > 1024 * 1024) break;
+    if (dictionary.length === 5000 || size + word.length + (dictionary.length ? 1 : 0) > 1024 * 1024) break;
     size += word.length + (dictionary.length ? 1 : 0); dictionary.push(word);
   }
   if (!dictionary.length) return null;

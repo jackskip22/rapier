@@ -65,9 +65,9 @@ globalThis.RapierChangesDraw = (() => {
     if (previous.some(row => !ledger.transportInterval(row.start, row.end, splices) ||
       row.definition && !ledger.transportInterval(row.definition.start, row.definition.end, splices))) return true;
     if (splices.length !== 1 || !/^[\p{L}\p{N}]*$/u.test(splices[0].removed) || !/^[\p{L}\p{N}]*$/u.test(splices[0].inserted)) return true;
-    const row = splices[0], start = Math.max(source.lastIndexOf('\n', row.pos - 1), source.lastIndexOf('\r', row.pos - 1)) + 1;
-    const end = source.indexOf('\n', row.pos + row.removed.length);
-    return /[\[\]!<>()`~\\\r]/.test(source.slice(start, end < 0 ? source.length : end));
+    const row = splices[0], start = row.pos && Math.max(source.lastIndexOf('\n', row.pos - 1), source.lastIndexOf('\r', row.pos - 1)) + 1;
+    const end = source.indexOf('\n', row.pos + row.removed.length), line = source.slice(start, end < 0 ? source.length : end);
+    return /[\[\]!<>()`~\\\r]/.test(line) || !line.trim() || !row.inserted && !line.replace(row.removed, '').trim();
   }
   function pairDrawings(previous, following, splices) {
     const ledger = globalThis.RapierLedger, assets = globalThis.RapierImageAssets;
@@ -183,7 +183,8 @@ globalThis.RapierChangesDraw = (() => {
     return places;
   }
   function drawState() {
-    return typeof _rapierDrawState !== 'undefined' && _rapierDrawState.open && _rapierDrawState.recipe ? _rapierDrawState : null;
+    const state = _rapierDrawPart?.state;
+    return state?.open && state.recipe ? state : null;
   }
   function currentPlaces(places = []) {
     const state = drawState();
@@ -285,8 +286,8 @@ globalThis.RapierChangesDraw = (() => {
     closeBefore();
     if (!valid(place)) return false;
     let recipe = place.beforeRecipe;
-    if (place.drawingActId != null && typeof _rapierDrawHistoryProject === 'function') {
-      const projected = _rapierDrawHistoryProject({actId: place.drawingActId});
+    if (place.drawingActId != null && _rapierDrawPart) {
+      const projected = _rapierDrawPart.history({actId: place.drawingActId});
       if (!projected.ok || projected.session !== place.session) return false;
       recipe = projected.before;
     }
@@ -296,8 +297,8 @@ globalThis.RapierChangesDraw = (() => {
     try {
       const built = globalThis.RapierDrawCore._rapierDrawBuildSVG(recipe, undefined, true);
       let shown;
-      if (place.live && typeof _rapierDrawDarkPaper === 'function') {
-        const dark = _rapierDrawDarkPaper();
+      if (place.live && _rapierDrawPart) {
+        const dark = _rapierDrawPart.darkPaper();
         shown = built.replace(/<style>@media \(prefers-color-scheme:dark\)\{([^<]*)\}<\/style>/,
           (_, rules) => dark ? '<style>' + rules + '</style>' : '');
       } else {

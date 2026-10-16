@@ -3,6 +3,7 @@ import {parseJPEG} from './jfif.mjs';
 import {admitEffort} from './effort-level.mjs';
 import {JPEG_LIMITS, complete} from './bits.mjs';
 import {fault, admitSize, job} from './admit.mjs';
+import {carryJPEG} from './jpeg-reconstruction.mjs';
 
 export function jpegAnswer(it) {
   complete(it);
@@ -18,9 +19,9 @@ export function jpegJob(jpeg, options, coefficients) {
 }
 
 function* carry(jpeg, effort, shown, coefficients) {
-  const parsed = parseJPEG(jpeg);
+  const parsed = parseJPEG(jpeg, true);
   admitSize(parsed.width, parsed.height, JPEG_LIMITS);
   const swapped = parsed.orientation >= 5;
   shown({width: swapped ? parsed.height : parsed.width, height: swapped ? parsed.width : parsed.height, orientation: parsed.orientation});
-  return yield* coefficients(parsed, effort);
+  return carryJPEG(jpeg, parsed, yield* coefficients(parsed, effort));
 }

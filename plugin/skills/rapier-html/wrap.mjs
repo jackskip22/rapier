@@ -54,7 +54,7 @@ export function wrap(pageHtml, text, name, options) {
 	if (opts.view != null && !['draw', 'notes'].includes(opts.view)) throw new Error('the view is draw or notes');
 	const address = opts.return == null ? null : returnAddress(opts.return);
 	const expiry = opts.return_expires_at == null ? null : returnExpiresAt(opts.return_expires_at);
-	if (!!address !== !!expiry) throw new Error('a return needs its URL and return_expires_at from document.create_return');
+	if (!!address !== !!expiry) throw new Error('a return needs return_url and return_expires_at from show {target:"return"}');
 	const block = START + ' data-name="' + docName + '"' + (opts.kind ? ' data-kind="' + opts.kind + '"' : '') + (opts.view ? ' data-view="' + opts.view + '"' : '') +
 		(address ? ' data-return="' + address + '" data-return-expires-at="' + expiry + '"' : '') + '>' + encodeCarried(text) + END;
 	let carriedBlocks = '\n' + writeParts(text, opts);

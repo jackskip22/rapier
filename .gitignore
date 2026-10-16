@@ -4,5 +4,4 @@ node_modules/
 src/dist/
 src/node_modules/
 src/AGENT-TOOLS.json
-src/rapier-document.html
 src/rapier-reader.html

@@ -97,8 +97,8 @@ function _rapierArtifactStyles(theme, includeFonts, printMode, houseDefaults = f
 :root,.md-render{--md-font-sans:'Geist','Geist/Roboto','Geist/Helvetica Neue','Geist/Segoe UI','Geist/Arial','Geist/Noto Sans','Geist/Ubuntu','Geist/Liberation Sans','Geist/DejaVu Sans',system-ui,sans-serif}`);
 	const highlightCss = _rapierStyleText('rapier-highlight-style');
 	parts.push(highlightCss);
-	const light = theme === 'system' && /html\[data-highlights="standard"\] body\.light\s*\{([^}]*)\}/.exec(highlightCss);
-	if (light) parts.push('@media (prefers-color-scheme:light){html[data-rapier-theme="system"][data-highlights="standard"] body{' + light[1].trim() + '}}');
+	if (theme === 'system') for (const [, palette, light] of highlightCss.matchAll(/html\[data-highlights="(standard|accent)"\] body\.light\s*\{([^}]*)\}/g))
+		parts.push('@media (prefers-color-scheme:light){html[data-rapier-theme="system"][data-highlights="' + palette + '"] body{' + light.trim() + '}}');
 	if (printMode) parts.push(_rapierArtifactPrintCss());
 	return parts.filter(Boolean).join('\n\n');
 }

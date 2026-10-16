@@ -171,11 +171,11 @@ function group(w, targets, rgba, imageWidth, x0, y0, width, height, setup) {
   return true;
 }
 
-function screen(plane, width, height, predictor, depth, emit) {
+function screen(plane, width, height, predictor, depth, emit, minLength = 7) {
   const n = width * height;
   if (!(plane instanceof Int16Array) || !Number.isInteger(width) || !Number.isInteger(height) ||
       width < 1 || height < 1 || width > 16384 || height > 16384 || n > 1048576 || plane.length < n ||
-      ![0, 1, 2, 3, 5].includes(predictor) || !Number.isInteger(depth) || depth < 0 || depth > 2147483647) return false;
+      ![0, 1, 2, 3, 5].includes(predictor) || ![4, 7].includes(minLength) || !Number.isInteger(depth) || depth < 0 || depth > 2147483647) return false;
   const residual = P + n * 4, output = P + n * 8, head = P + n * 16, rows = head + 262144,
     map = rows + height * 4, capacity = 1 << (32 - Math.clz32(height * 2 - 1)), needed = map + capacity * 8;
   if (needed > engine.memory.buffer.byteLength) {
@@ -189,7 +189,7 @@ function screen(plane, width, height, predictor, depth, emit) {
   backend.residual(P, width, height, predictor, 0, residual);
   i32.fill(-1, head >> 2, (head + 262144) >> 2);
   i32.fill(-1, map >> 2, (map + capacity * 8) >> 2);
-  const count = backend.screen(residual, n, width, depth, head, P, rows, map, capacity - 1, output);
+  const count = backend.screen(residual, n, width, depth, head, P, rows, map, capacity - 1, output, minLength);
   for (let i = output >> 2, end = i + count * 2; i < end; i += 2) {
     const value = i32[i] >>> 0, distance = i32[i + 1];
     if (distance) emit(0, value, distance);
@@ -204,7 +204,7 @@ function sampled(members, histograms, symbolSets, columns, table, rawPrice, choi
       !alphabet || alphabet > 256 || !(table instanceof Float64Array) || table.length < total + 1 ||
       !(rawPrice instanceof Float64Array) || histograms.length !== kinds || !Number.isSafeInteger(choiceBits)) return false;
   const count = symbolSets[0].length;
-  if (count > 65536 || count < total || table.length < count + 1 || symbolSets.some(s => !(s instanceof Uint8Array) || s.length !== count) ||
+  if (count > 1 << 20 || count < total || symbolSets.some(s => !(s instanceof Uint8Array) || s.length !== count) ||
       histograms.some(h => !(h instanceof Uint32Array) || h.length !== alphabet)) return false;
   let maxCuts = 0;
   for (const column of columns) {
@@ -214,7 +214,7 @@ function sampled(members, histograms, symbolSets, columns, table, rawPrice, choi
   if (!maxCuts) return null;
   const align = n => Math.ceil(n / 8) * 8;
   const symbols = P, indices = symbols + total * kinds, histogram = align(indices + total);
-  const entropy = align(histogram + kinds * alphabet * 4), raw = entropy + (count + 1) * 8;
+  const entropy = align(histogram + kinds * alphabet * 4), raw = entropy + (total + 1) * 8;
   const output = raw + alphabet * 8, scratch = output + 24, bins = maxCuts + 1;
   const needed = scratch + kinds * 32 + kinds * alphabet * 8 + bins * kinds * alphabet * 4 + total * 4 + (2 * bins + 1) * 4;
   if (needed > engine.memory.buffer.byteLength) {
@@ -230,7 +230,7 @@ function sampled(members, histograms, symbolSets, columns, table, rawPrice, choi
     for (let i = 0; i < total; i++) { const symbol = source[members[i]]; if (symbol >= alphabet) return false; u8[at + i] = symbol; }
     i32.set(histograms[c], (histogram >> 2) + c * alphabet);
   }
-  f64.set(table.subarray(0, count + 1), entropy >> 3); f64.set(rawPrice, raw >> 3);
+  f64.set(table.subarray(0, total + 1), entropy >> 3); f64.set(rawPrice, raw >> 3);
   const backend = active === 'simd' ? engine.simd : engine.scalar;
   let best = null;
   for (const column of columns) {
@@ -267,7 +267,7 @@ function configureKernels(mode = 'auto', parts) {
     if (!enabled || enabled.get('fill')) kernelHooks.fill = fill;
     if (kernelHooks.fill && kernelHooks.channel) kernelHooks.group = group;
     if (!enabled || enabled.get('screen')) kernelHooks.screen = screen;
-    if (enabled ? enabled.get('sampled') : mode !== 'auto') kernelHooks.sampled = sampled;
+    if (!enabled || enabled.get('sampled')) kernelHooks.sampled = sampled;
   } catch { active = 'off'; kernelHooks.channel = kernelHooks.weighted = kernelHooks.fill = kernelHooks.group = kernelHooks.screen = kernelHooks.sampled = null; }
   return active;
 }

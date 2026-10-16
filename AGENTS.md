@@ -33,13 +33,12 @@ The editor uses a separate private transport that is never listed to models.
 
 ## Build and edit the source
 
-`rapier.html`, `rapier-document.html` and `rapier-reader.html` sit at the public repository root. The complete source
+`rapier.html` and `rapier-reader.html` sit at the public repository root. The complete source
 is in `src/`. The reader is about 190 kB gzipped, with optional fonts and plug-ins.
 
 Use Node 22.23.3. In `src/`, run these commands in order:
 
 ```sh
-RAPIER_PROFILE=document node tools/build.mjs
 RAPIER_PROFILE=reader node tools/build.mjs
 node tools/build.mjs
 node --test tools/test-public.mjs

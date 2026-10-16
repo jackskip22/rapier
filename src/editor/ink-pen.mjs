@@ -408,11 +408,11 @@ function _rapierInkPenSelect(range) {
 function _rapierInkPenArrow(host, points, doors, em, hex, width) {
 	if (typeof doors.applyArrow !== 'function') return null;
 	const stroke = doors.ink.bounds(points), words = [];
+	const apart = box => box.right < stroke.x || box.left > stroke.x + stroke.width || box.bottom < stroke.y || box.top > stroke.y + stroke.height;
 	for (const wrapper of host.querySelectorAll('.block-wrapper')) {
+		if (apart(wrapper.getBoundingClientRect())) continue;
 		const live = doors.liveOf ? doors.liveOf(wrapper) : wrapper;
-		if (!live || !_rapierInkPenCarries(wrapper)) continue;
-		const box = live.getBoundingClientRect();
-		if (box.right < stroke.x || box.left > stroke.x + stroke.width || box.bottom < stroke.y || box.top > stroke.y + stroke.height) continue;
+		if (!live || !_rapierInkPenCarries(wrapper) || apart(live.getBoundingClientRect())) continue;
 		words.push(..._rapierInkPenWords(live).words);
 	}
 	const arrow = doors.ink.arrowStroke(points, words, em);
@@ -433,8 +433,8 @@ function _rapierInkSourceRanges(ranges) {
 		if (!range || range.collapsed) return null;
 		const wrapper = _blockWrapperOf(range.startContainer), live = wrapper && _liveBlockEl(wrapper);
 		if (!live || !_nodeInside(live, range.startContainer) || !_nodeInside(live, range.endContainer)) return null;
-		locations.push({ wrapper, start: _rapierStructuralOffsetForRangePoint(live, range.startContainer, range.startOffset),
-			end: _rapierStructuralOffsetForRangePoint(live, range.endContainer, range.endOffset),
+		locations.push({ wrapper, start: _charOffsetForRangePoint(live, range.startContainer, range.startOffset),
+			end: _charOffsetForRangePoint(live, range.endContainer, range.endOffset),
 			first: { node: range.startContainer, offset: range.startOffset }, last: { node: range.endContainer, offset: range.endOffset } });
 		wrappers.add(wrapper);
 	}

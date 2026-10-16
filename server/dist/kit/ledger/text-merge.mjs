@@ -146,38 +146,75 @@ function textUnits(text) {
 	return out;
 }
 
-function textEdits(base, side) {
-	const n = base.length, m = side.length;
-	if ((n + 1) * (m + 1) > 1000000) return null;
-	const width = m + 1, score = new Uint32Array((n + 1) * width);
+const TEXT_WINDOW_CELLS = 1000000, TEXT_CELLS = 4000000;
+function textWindowMatches(base, side, b0, b1, s0, s1, out, budget) {
+	const n = b1 - b0, m = s1 - s0, cells = (n + 1) * (m + 1);
+	if (cells > TEXT_WINDOW_CELLS || (budget.cells -= cells) < 0) return false;
+	const width = m + 1, score = new Uint32Array(cells), content = i => !textSpace(base[b0 + i]), same = (i, j) => base[b0 + i] === side[s0 + j];
 	for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) {
 		const p = i * width + j;
-		score[p] = base[i] === side[j] ? score[p + width + 1] + 1 : Math.max(score[p + width], score[p + 1]);
+		score[p] = content(i) && same(i, j) ? score[p + width + 1] + 1 : Math.max(score[p + width], score[p + 1]);
 	}
-	const walk = () => {
-		const pairs = []; let i = 0, j = 0;
-		while (i < n && j < m) {
-			const value = score[i * width + j]; if (!value) break;
-			if (base[i] === side[j]) { pairs.push([i++, j++]); continue; }
-			if (score[(i + 1) * width + j] >= score[i * width + j + 1]) i++; else j++;
-		}
-		return pairs;
-	};
-	const pairs = walk(), meaningful = pairs.filter(([i]) => !textSpace(base[i]));
-	const seen = new Uint32Array(score.length); seen.fill(0xffffffff); seen[0] = 0;
+	const meaningful = [];
+	for (let i = 0, j = 0; i < n && j < m;) {
+		const p = i * width + j; if (!score[p]) break;
+		if (content(i) && same(i, j) && score[p] === score[p + width + 1] + 1) meaningful.push([i++, j++]);
+		else if (score[p + width] >= score[p + 1]) i++; else j++;
+	}
+	const seen = new Uint32Array(cells); seen.fill(0xffffffff); seen[0] = 0;
 	for (let i = 0; i <= n; i++) for (let j = 0; j <= m; j++) {
 		const p = i * width + j, at = seen[p]; if (at === 0xffffffff) continue;
 		const visit = (next, count) => { if (seen[next] !== 0xffffffff && seen[next] !== count) return false; seen[next] = count; return true; };
-		if (i < n && score[p + width] === score[p] && !visit(p + width, at)) return null;
-		if (j < m && score[p + 1] === score[p] && !visit(p + 1, at)) return null;
-		if (i < n && j < m && base[i] === side[j] && score[p] === score[p + width + 1] + 1) {
-			const content = !textSpace(base[i]);
-			if (content && (meaningful[at]?.[0] !== i || meaningful[at]?.[1] !== j)) return null;
-			if (!visit(p + width + 1, at + (content ? 1 : 0))) return null;
+		if (i < n && score[p + width] === score[p] && !visit(p + width, at)) return false;
+		if (j < m && score[p + 1] === score[p] && !visit(p + 1, at)) return false;
+		if (i < n && j < m && content(i) && same(i, j) && score[p] === score[p + width + 1] + 1) {
+			if (meaningful[at]?.[0] !== i || meaningful[at]?.[1] !== j) return false;
+			if (!visit(p + width + 1, at + 1)) return false;
 		}
 	}
-	if (seen[n * width + m] !== meaningful.length) return null;
-	const edits = []; let i = 0, j = 0;
+	if (seen[n * width + m] !== meaningful.length) return false;
+	for (const [i, j] of meaningful) out.push([b0 + i, s0 + j]);
+	return true;
+}
+
+function textMatches(base, side, b0, b1, s0, s1, out, budget) {
+	if ((b1 - b0 + 1) * (s1 - s0 + 1) <= TEXT_WINDOW_CELLS) return textWindowMatches(base, side, b0, b1, s0, s1, out, budget);
+	const once = (units, from, to) => {
+		const found = new Map();
+		for (let k = from; k < to; k++) if (!textSpace(units[k])) found.set(units[k], found.has(units[k]) ? -1 : k);
+		return found;
+	};
+	const inBase = once(base, b0, b1), pairs = [];
+	for (const [unit, j] of once(side, s0, s1)) { const i = inBase.get(unit); if (j >= 0 && i >= 0) pairs.push([i, j]); }
+	const tails = [], prev = new Int32Array(pairs.length);
+	for (let k = 0; k < pairs.length; k++) {
+		let lo = 0, hi = tails.length;
+		while (lo < hi) { const mid = (lo + hi) >>> 1; if (pairs[tails[mid]][0] < pairs[k][0]) lo = mid + 1; else hi = mid; }
+		prev[k] = lo ? tails[lo - 1] : -1; tails[lo] = k;
+	}
+	if (!tails.length) return false;
+	const chain = [];
+	for (let k = tails[tails.length - 1]; k >= 0; k = prev[k]) chain.push(pairs[k]);
+	let i = b0, j = s0;
+	for (const [bi, sj] of chain.reverse()) {
+		if (!textMatches(base, side, i, bi, j, sj, out, budget)) return false;
+		out.push([bi, sj]); i = bi + 1; j = sj + 1;
+	}
+	return textMatches(base, side, i, b1, j, s1, out, budget);
+}
+
+function textEdits(base, side) {
+	const n = base.length, m = side.length, meaningful = [];
+	if (!textMatches(base, side, 0, n, 0, m, meaningful, {cells: TEXT_CELLS})) return null;
+	const pairs = [];
+	let i = 0, j = 0;
+	for (let k = 0; k < meaningful.length; k++) {
+		const [bi, sj] = meaningful[k], [ni, nj] = meaningful[k + 1] || [n, m];
+		if (bi > i && sj > j && textSpace(base[bi - 1]) && base[bi - 1] === side[sj - 1]) pairs.push([bi - 1, sj - 1]);
+		pairs.push([bi, sj]); i = bi + 1; j = sj + 1;
+		if (i < ni && j < nj && textSpace(base[i]) && base[i] === side[j]) pairs.push([i++, j++]);
+	}
+	const edits = []; i = 0; j = 0;
 	for (const [bi, sj] of [...pairs, [n, m]]) {
 		if (i !== bi || j !== sj) edits.push({start: i, end: bi, text: side.slice(j, sj).join('')});
 		i = bi + 1; j = sj + 1;
@@ -227,10 +264,11 @@ function textEnvelope(id, variants) {
 	return out + '<!-- /note-conflict:v1 -->\n';
 }
 
-function textDeclarations(text) {
-	text = textUnits(text).filter(unit => !textEnvelopeAt(unit)).join('');
+function textDeclarations(units) {
+	const kept = units.filter(unit => !textEnvelopeAt(unit)).map(unit =>
+		textFence(unit.split(/\r\n|\r|\n/, 1)[0].replace(/^\ufeff/, '')) ? '\n' : unit), text = kept.join('');
 	const definitions = text.match(/^\ufeff? {0,3}\[(?:\\.|[^\]\\])+\]:[^\r\n]*(?:(?:\r\n|\r|\n)(?![ 	]*(?:\r\n|\r|\n|$))[^\r\n]*)*/gm) || [];
-	const continuations = textUnits(text).filter(unit => /^\ufeff? {0,3}\[\^/.test(unit));
+	const continuations = (kept.length === units.length ? kept : textUnits(text)).filter(unit => /^\ufeff? {0,3}\[\^/.test(unit));
 	return [...definitions, ...continuations, ...(text.match(/<!--[\s\S]*?(?:-->|$)/g) || [])].join('\0');
 }
 
@@ -273,10 +311,12 @@ export function mergeText(base, ours, theirs, options = {}) {
 		conflicts.push({kind, base: before, variants, start, end: start + block.length, block});
 		text += block;
 	};
+	const [units, oursUnits, theirsUnits] = base === null ? [] : [base, ours, theirs].map(textUnits);
+	const declared = base !== null && textDeclarations(units);
 	if (base === null) conflict(null, ours, theirs, 'no-ancestor');
-	else if (textDeclarations(ours) !== textDeclarations(base) || textDeclarations(theirs) !== textDeclarations(base)) conflict(base, ours, theirs, 'document-bindings');
+	else if (textDeclarations(oursUnits) !== declared || textDeclarations(theirsUnits) !== declared) conflict(base, ours, theirs, 'document-bindings');
 	else {
-		const units = textUnits(base), a = textEdits(units, textUnits(ours)), b = textEdits(units, textUnits(theirs));
+		const a = textEdits(units, oursUnits), b = textEdits(units, theirsUnits);
 		if (!a || !b) conflict(base, ours, theirs, 'ambiguous-alignment-or-budget');
 		else {
 			const changes = [...a.map(e => ({...e, side: 0})), ...b.map(e => ({...e, side: 1}))].sort((x, y) => x.start - y.start || x.end - y.end || x.side - y.side);

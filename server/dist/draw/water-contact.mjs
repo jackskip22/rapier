@@ -118,7 +118,7 @@ export class WaterContact {
   }
   this.queue=[];const s=this.state;if(!s)return;
   if((!moved||this.ending)&&(s.x!==s.cx||s.y!==s.cy))this._trace(s.cx,s.cy,s.cx,s.cy,s.pressure,0,0);
-  if(!moved&&!this.ending)this._dab(s,s.x,s.y,s.synthetic,0,0,dt*8,false);
+  if(!moved&&!this.ending)this._dab(s,s.x,s.y,s.pressure,0,0,dt*8,false);
   if(this.ending){this.state=null;this.ending=false;}
  }
  snapshot(){return {state:structuredClone(this.state),queue:structuredClone(this.queue),ending:this.ending,lastDirection:this.lastDirection.slice(),loadFuel:this.loadFuel};}

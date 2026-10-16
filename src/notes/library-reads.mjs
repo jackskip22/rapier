@@ -3,7 +3,7 @@ const defaults = Object.freeze({concurrency:2, maxReadBytes:8*1024*1024, maxEntr
 const integer = (n, min = 0) => Number.isSafeInteger(n) && n >= min;
 const same = (a,b) => a.key === b.key && a.revision === b.revision && a.bytes === b.bytes;
 const freeze = Object.freeze;
-export const libraryReadRow = file => {
+const libraryReadRow = file => {
 	if (typeof file?.key !== 'string' || !file.key || typeof file.revision !== 'string' || !file.revision || !integer(file.bytes)) throw new TypeError('card reads need folder identity, revision and byte length');
 	return freeze({key:file.key, revision:file.revision, bytes:file.bytes});
 };
@@ -77,7 +77,7 @@ export function createLibraryReadPass(read) {
 	return pass;
 }
 
-export function planSearchReads(files, {visible = [], arrived = [], limit = 16} = {}) {
+function planSearchReads(files, {visible = [], arrived = [], limit = 16} = {}) {
 	if (!integer(limit) || !Array.isArray(files) || !Array.isArray(visible) || !Array.isArray(arrived)) throw new TypeError('invalid search read plan');
 	const pending = new Map();
 	for (const file of files) {

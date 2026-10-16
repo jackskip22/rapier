@@ -2,7 +2,7 @@
 import {buildCode, uintConfig, hybridToken, writeHybrid} from './prefix.mjs';
 import {floorLog2} from './bits.mjs';
 
-const CONFIGS = [uintConfig(0), uintConfig(1), uintConfig(2), uintConfig(3), uintConfig(4), uintConfig(4, 1, 1), uintConfig(5, 1, 1), uintConfig(2, 0, 1), uintConfig(3, 0, 1)];
+const CONFIGS = [uintConfig(0), uintConfig(1), uintConfig(2), uintConfig(3), uintConfig(4), uintConfig(4, 1, 1), uintConfig(4, 2, 0), uintConfig(4, 1, 2), uintConfig(5, 1, 1), uintConfig(2, 0, 1), uintConfig(3, 0, 1)];
 const CLUSTER_CONFIG = uintConfig(4, 1, 1);
 
 export class TokenCounts {
@@ -13,7 +13,7 @@ export class TokenCounts {
     const map = this.large[ctx] || (this.large[ctx] = new Map());
     map.set(value, (map.get(value) || 0) + 1);
   }
-  tokens(contexts, config, size = 64) {
+  tokens(contexts, config, size = 128) {
     const freqs = new Uint32Array(size);
     for (const ctx of contexts) {
       const base = ctx * 64;
@@ -65,7 +65,7 @@ export function buildTokenCoding(counts, {maxClusters = 48, newClusterCost = 320
   used.sort((a, b) => counts.totals[b] - counts.totals[a]);
   const clusters = [];
   for (const ctx of used) {
-    const own = counts.tokens([ctx], CLUSTER_CONFIG), ownBits = entropyBits(own);
+    const own = counts.tokens([ctx], CLUSTER_CONFIG, 64), ownBits = entropyBits(own);
     let best = -1, bestIncrease = Infinity;
     for (let i = 0; i < clusters.length; i++) {
       const cluster = clusters[i], merged = new Uint32Array(64);
@@ -88,7 +88,7 @@ export function buildTokenCoding(counts, {maxClusters = 48, newClusterCost = 320
     for (const ctx of cluster.contexts) contextMap[ctx] = index;
     let config = CONFIGS[0], bestCost = Infinity;
     for (const candidate of CONFIGS) { const cost = counts.cost(cluster.contexts, candidate); if (cost < bestCost) { bestCost = cost; config = candidate; } }
-    const code = buildCode(counts.tokens(cluster.contexts, config, 128));
+    const code = buildCode(counts.tokens(cluster.contexts, config));
     bits += bestCost + code.alphabetSize * 3 + 40;
     return {config, code};
   });

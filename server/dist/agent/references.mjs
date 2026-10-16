@@ -87,8 +87,20 @@ export function changedReferenceRegion(before, after, regions, factory, bodyOnly
     if (token.map) map = token.map;
     if (token.type !== 'inline' || !map) continue;
     const start = was.starts[map[0]], end = was.starts[map[1]] ?? before.length;
-    const region = regions.find(row => row.start < end && start < row.end);
-    if (region && !sameInline(token, token, was, was)) return region.index;
+    const hits = regions.filter(row => row.start < end && start < row.end);
+    if (!hits.length) continue;
+    const retained = hits.filter(row => row.retained);
+    if (!retained.length) {
+      if (!sameInline(token, token, was, was)) return hits[0].index;
+      continue;
+    }
+    for (const region of retained) {
+      const from = Math.max(start, region.start), to = Math.min(end, region.end);
+      if (from >= to) continue;
+      const content = before.slice(from, to).replace(/\r\n?/g, '\n').replace(/\0/g, '\ufffd').replace(/\n$/, '');
+      const clipped = {type: 'inline', tag: '', nesting: 0, content, children: [], level: token.level || 0};
+      if (!sameInline(clipped, clipped, was, was)) return region.index;
+    }
   }
   return null;
 }

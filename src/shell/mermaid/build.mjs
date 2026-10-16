@@ -29,7 +29,7 @@ try {
     const actual = JSON.parse(await readFile(join(dependencies, 'node_modules', name, 'package.json'), 'utf8'));
     if (actual.version !== version) throw new Error(name + ' is not version ' + version);
   }
-  const source = await readFile(join(here, 'zenuml-adapter.mjs'), 'utf8');
+  const source = await readFile(join(here, 'zenuml-adapter.mjs'), 'utf8'), coreSource = await readFile(join(here, 'zenuml-core.mjs'), 'utf8');
   const font = await readFile(join(dependencies, 'node_modules/@zenuml/core/dist/fonts/IBMPlexSans-Regular-Latin1.woff2'));
   const fontCss = '@font-face{font-family:"IBM Plex Sans";src:url(data:font/woff2;base64,' + font.toString('base64') + ') format("woff2");font-weight:400;font-style:normal;font-display:block}';
   const esbuild = await import(pathToFileURL(join(dependencies, 'node_modules/esbuild/lib/main.js')).href);
@@ -37,10 +37,15 @@ try {
     bundle: true, write: false, format: 'iife', globalName: 'RapierZenUML', target: 'es2022', platform: 'browser',
     minify: true, legalComments: 'inline', charset: 'utf8', metafile: true,
     define: {RAPIER_ZENUML_FONT_CSS: JSON.stringify(fontCss)},
+    // The adapter's on-demand import, resolved against the same frozen install.
+    plugins: [{name: 'zenuml-core', setup(build) {
+      build.onResolve({filter: /^\.\/zenuml-core\.mjs$/}, () => ({path: 'zenuml-core.mjs', namespace: 'rapier'}));
+      build.onLoad({filter: /.*/, namespace: 'rapier'}, () => ({contents: coreSource, resolveDir: dependencies}));
+    }}],
     banner: {js: '/* Rapier native ZenUML adapter. Licenses: rapier-zenuml-NOTICES.txt. */'}});
   if (Object.values(result.metafile.outputs).some(output => output.imports.length)) throw new Error('The ZenUML adapter must be self-contained');
   const bytes = Buffer.from(result.outputFiles[0].contents);
-  const output = join(repo, 'shell/vendor/zenuml/rapier-zenuml-4.5.0-1.js');
+  const output = join(repo, 'shell/vendor/zenuml/rapier-zenuml-4.5.0-2.js');
   const manifestPath = join(repo, 'shell/mermaid-resources.json');
   const resources = JSON.parse(await readFile(manifestPath, 'utf8'));
   const file = resources.files.find(file => file.name === 'zenuml');
@@ -57,7 +62,7 @@ try {
   notices.push('ANTLR4 4.11.0\n\n' + await readFile(join(here, 'ANTLR4-LICENSE.txt'), 'utf8'));
   notices.push(upstreamNotices.toString('utf8'));
   const noticeBytes = Buffer.from(notices.join('\n\n---\n\n'));
-  const provenance = {adapter: '4.5.0-1', npmLockSha256: sha(lock), sourceSha256: sha(source), esbuild: esbuild.version,
+  const provenance = {adapter: '4.5.0-2', npmLockSha256: sha(lock), sourceSha256: sha(source + coreSource), esbuild: esbuild.version,
     core: packageJson.dependencies['@zenuml/core'], coreGitHead: upstream.gitHead, upstreamLockSha256: upstream.lockSha256,
     antlr4: packageJson.dependencies.antlr4, noticesSha256: sha(noticeBytes),
     bytes: bytes.length, sha256: sha(bytes), sha384: sha(bytes, 'sha384', 'base64'),

@@ -46,7 +46,7 @@ export const TOOLS = Object.freeze([
     filename: string(MAX_FILENAME_CHARS),
   }, ['revision']),
   tool('undo', 'Undo Rapier work', 'Undo one act id string or turn_id (act or turn_id, not both), preserving later work. Inspect conflicts before retrying.', 'write', {act: string(256), turn_id: string(160)}),
-  tool('show', 'Show or ask in Rapier', 'Present work or ask for a reply, selection or device action. A 4-letter code from the person\'s browser pairs that editor: show {target:"pair", code}; they then choose ALLOW. Inspect actual presentation; a request is not proof the person saw it. Playback: value false pauses, true plays, here only. A comparison leaves source unchanged. Later human navigation wins.', 'view', {
+  tool('show', 'Show or ask in Rapier', 'Present work or ask for a reply, selection or device action. A 4-letter code from the person\'s browser pairs that editor: show {target:"pair", code}; for a connected workspace its owner first approves at owner_approval_url, then the person chooses ALLOW. Inspect actual presentation; a request is not proof the person saw it. Playback: value false pauses, true plays, here only. A comparison leaves source unchanged. Later human navigation wins.', 'view', {
     target: {...string(48), enum: ['passage', 'block', 'pointer', 'read_aloud', 'playback', 'comparison', 'view', 'preferences', 'plugin', 'file', 'return', 'note', 'ask', 'pair']}, text, ...scope, revision, act: string(256), turn_id: string(160), name: string(256, 'Comparison title or target:plugin name: ' + EDITOR_PLUGINS.join('|') + '.'), words: string(160),
     view: {...string(32), enum: ['formatted', 'source', 'notes']}, question: string(4096), wait: {...string(32), enum: ['selection', 'message']}, timeout_ms: {...integer(1000, 120000), default:20000},
     preference: SET_PREFERENCES_SCHEMA.properties.preference, value: {type: ['string', 'boolean']}, note: noteRef, code: string(4, 'Browser pairing code; only with target:"pair".'),
@@ -75,6 +75,7 @@ export const PAGE_TOOLS = Object.freeze(TOOLS.map(entry => entry.name !== 'open'
     ],
   },
 })));
+export const publishedSchema = ({allOf, ...schema}) => schema;
 export const getTool = name => TOOLS.find(entry => entry.name === name) || EDITOR_TOOLS.find(entry => entry.name === name);
 export function inputGuide(name, {mcp = false} = {}) {
   const entry = (mcp ? TOOLS : PAGE_TOOLS).find(tool => tool.name === name);

@@ -761,8 +761,8 @@ function _rapierDrawStrokeSamples(pts, step) {
 	return out;
 }
 
-function _rapierDrawPenPathD(pts, smooth, last, size) {
-	return penPath(pts, {size, last: !!last});
+function _rapierDrawPenPathD(pts, smooth, last, size, ends) {
+	return penPath(pts, {size, last: !!last, cutStart: !!ends?.cutStart, cutEnd: !!ends?.cutEnd});
 }
 
 function _rapierDrawBrushPenPath(shape, recipe) {
@@ -1238,8 +1238,10 @@ function _rapierDrawFitPolynomial(pts, degree) {
   const basis = u => { const out = [1]; for (let k = 1; k <= degree; k++) out.push(out[k - 1] * u); return out; };
   const fit = _rapierDrawLeastSquares(us, vs, basis, terms);
   if (!fit) return null;
-  const u0 = Math.min(...us), u1 = Math.max(...us);
+  const u0 = Math.min(...us), u1 = Math.max(...us), v = u => basis(u).reduce((sum, b, k) => sum + fit.coef[k] * b, 0);
+  const slope = u => { let s = 0; for (let k = 1; k < terms; k++) s += k * fit.coef[k] * u ** (k - 1); return s; }, w = (u1 - u0) / 3;
   return { kind: 'poly' + degree, residual: fit.residual, frame: f,
+    bezier: () => [[u0, v(u0)], [u0 + w, v(u0) + w * slope(u0)], [u1 - w, v(u1) - w * slope(u1)], [u1, v(u1)]].map(([u, y]) => _rapierDrawFromFrame(u, y, f)),
     sample(n) { const out = []; for (let i = 0; i <= n; i++) { const u = u0 + (u1 - u0) * i / n; const bs = basis(u);
       let v = 0; for (let k = 0; k < terms; k++) v += fit.coef[k] * bs[k]; out.push(_rapierDrawFromFrame(u, v, f)); } return out; } };
 }
@@ -1251,14 +1253,24 @@ function _rapierDrawFitWave(pts) {
   const span = Math.max(...us) - Math.min(...us);
   if (!(span > 0)) return null;
   let best = null;
-
+  const n = us.length, sin = new Float64Array(n), cos = new Float64Array(n);
   for (let cycles = 0.5; cycles <= 6.01; cycles += 0.05) {
     const w = 2 * Math.PI * cycles / span;
-    const basis = u => [1, Math.sin(w * u), Math.cos(w * u)];
-    const fit = _rapierDrawLeastSquares(us, vs, basis, 3);
-    if (fit && (!best || fit.residual < best.fit.residual)) best = { w, fit, basis };
+    let a01 = 0, a02 = 0, a11 = 0, a12 = 0, a22 = 0, b0 = 0, b1 = 0, b2 = 0;
+    for (let i = 0; i < n; i++) {
+      const sn = sin[i] = Math.sin(w * us[i]), cs = cos[i] = Math.cos(w * us[i]), v = vs[i];
+      b0 += v; b1 += sn * v; b2 += cs * v;
+      a01 += sn; a02 += cs; a11 += sn * sn; a12 += sn * cs; a22 += cs * cs;
+    }
+    const coef = _rapierDrawSolveLinear([[n, a01, a02], [a01, a11, a12], [a02, a12, a22]], [b0, b1, b2]);
+    if (!coef) continue;
+    let ss = 0;
+    for (let i = 0; i < n; i++) ss += (coef[0] + coef[1] * sin[i] + coef[2] * cos[i] - vs[i]) ** 2;
+    const residual = Math.sqrt(ss / n);
+    if (!best || residual < best.fit.residual) best = { w, fit: { coef, residual } };
   }
   if (!best) return null;
+  best.basis = u => [1, Math.sin(best.w * u), Math.cos(best.w * u)];
   const u0 = Math.min(...us), u1 = Math.max(...us);
   return { kind: 'wave', residual: best.fit.residual, frame: f,
     sample(n) { const out = []; for (let i = 0; i <= n; i++) { const u = u0 + (u1 - u0) * i / n; const bs = best.basis(u);
@@ -1266,7 +1278,8 @@ function _rapierDrawFitWave(pts) {
 }
 
 function _rapierDrawIdealise(pts, tolerance) {
-  const candidates = [_rapierDrawFitPolynomial(pts, 1), _rapierDrawFitPolynomial(pts, 2), _rapierDrawFitPolynomial(pts, 3), _rapierDrawFitWave(pts)].filter(Boolean);
+  const line = _rapierDrawFitPolynomial(pts, 1);
+  const candidates = [line, _rapierDrawFitPolynomial(pts, 2), _rapierDrawFitPolynomial(pts, 3), line?.residual <= 0.35 ? null : _rapierDrawFitWave(pts)].filter(Boolean);
   if (!candidates.length) return null;
   const best = Math.min(...candidates.map(c => c.residual));
   const competitive = Math.max(best * 1.35, 0.35);
@@ -1278,8 +1291,18 @@ function _rapierDrawFitStroke(pts, plan) {
 	if (plan.fit == null || !pts || _rapierDrawIsClosedStroke(pts)) return null;
 	const deduped = _rapierDrawDedupeStroke(pts);
 	const fitInput = deduped.length > 320 ? _rapierDrawResamplePolyline(deduped, 320) : deduped;
-	if (fitInput.length <= 5) return null;
+	if (fitInput.length <= 5 || _rapierDrawHasCorner(fitInput)) return null;
 	return _rapierDrawIdealise(fitInput, plan.fit);
+}
+
+function _rapierDrawHasCorner(pts, w = 5) {
+	for (let i = w; i < pts.length - w; i++) {
+		const ax = pts[i][0] - pts[i - w][0], ay = pts[i][1] - pts[i - w][1];
+		const bx = pts[i + w][0] - pts[i][0], by = pts[i + w][1] - pts[i][1];
+		const la = Math.hypot(ax, ay), lb = Math.hypot(bx, by);
+		if (la > 4 && lb > 4 && (ax * bx + ay * by) / (la * lb) < RAPIER_DRAW_CORNER_COS) return true;
+	}
+	return false;
 }
 
 function _rapierDrawRelaxStroke(pts, passes = 2) {
@@ -1320,7 +1343,9 @@ function _rapierDrawTangents(pts, closed) {
 			const la = Math.hypot(ax, ay), lb = Math.hypot(bx, by);
 			if (la > 0 && lb > 0) corner = (ax * bx + ay * by) / (la * lb) < RAPIER_DRAW_CORNER_COS;
 		}
-		m.push(corner ? [0, 0] : [(next[0] - prev[0]) / 6, (next[1] - prev[1]) / 6]);
+		const mx = (next[0] - prev[0]) / 6, my = (next[1] - prev[1]) / 6, lm = Math.hypot(mx, my);
+		const cap = Math.min(Math.hypot(pts[i][0] - prev[0], pts[i][1] - prev[1]), Math.hypot(next[0] - pts[i][0], next[1] - pts[i][1])) / 2;
+		m.push(corner ? [0, 0] : lm > cap && cap > 0 ? [mx * cap / lm, my * cap / lm] : [mx, my]);
 	}
 	return m;
 }
@@ -2178,7 +2203,8 @@ function _rapierDrawShapeMarkup(shape, recipe, renderOptions) {
 		const fitted = _rapierDrawFitStroke(stroke.pts, plan);
 
 		if (fitted) {
-			body = '<path d="' + _rapierDrawSmoothPathD(fitted.sample(48), false, true) +
+			const b = fitted.bezier?.();
+			body = '<path d="' + (b ? 'M' + b[0].map(_rapierDrawFmt).join(' ') + ' C' + b.slice(1).flat().map(_rapierDrawFmt).join(' ') + ' ' : _rapierDrawSmoothPathD(fitted.sample(48), false, true)) +
 				'" fill="none" stroke="' + ink + '" stroke-width="6.4" stroke-linecap="round"/>';
 		} else {
 			const streamed = _rapierDrawStreamlineStroke(stroke.pts, plan.streamline);
@@ -2400,12 +2426,13 @@ export function requiredRefractionScopes(recipe) {
 	return scopes;
 }
 
+const RAPIER_DRAW_SCENE_BYTES = 16 * 1024 * 1024;
 function _rapierDrawSceneMarkup(recipe, includeFonts = true, keepRasters = false, renderOptions = {}) {
 	_rapierDrawSceneWork(recipe);
 	renderOptions = {...renderOptions, renditions: currentRefractionRenditions(recipe)};
 	let body = includeFonts ? fontDefs(recipe.fonts) : '';
 	let work = body.length;
-	_rapierDrawWorkCount(work, 16 * 1024 * 1024);
+	_rapierDrawWorkCount(work, RAPIER_DRAW_SCENE_BYTES);
 	for (let i = 0; i < recipe.shapes.length; i++) {
 		const shape = recipe.shapes[i], pieces = [shape];
 		if (shape.recognized === 'paint' && shape.paint?.group && shape.effect) {
@@ -2545,7 +2572,8 @@ function _rapierDrawLayered(nodes, edges, across, gap, sibling = gap, compact = 
 		}
 		state.set(id, 2); order.push(id);
 	};
-	for (const node of nodes) if (!state.has(node.id)) visit(node.id);
+	const into = new Set(edges.filter(edge => byId.has(edge.from) && edge.from !== edge.to).map(edge => edge.to));
+	for (const node of [...nodes.filter(node => !into.has(node.id)), ...nodes]) if (!state.has(node.id)) visit(node.id);
 	const ranks = new Map(nodes.map(node => [node.id, 0]));
 	for (const id of order.reverse()) for (const edge of next.get(id)) if (!backward.has(edge)) ranks.set(edge.to, Math.max(ranks.get(edge.to), ranks.get(id) + 1));
 	const rows = [];
@@ -2905,7 +2933,8 @@ function _rapierDrawDiagramDress(shapes, automatic, groups, captionSize) {
 	const next = new Map(nodes.map(node => [node.id, []])), state = new Map(), back = new Set();
 	for (const arrow of arrows) next.get(arrow.bind.start.to).push(arrow);
 	const visit = id => { state.set(id, 1); for (const arrow of next.get(id)) { const to = arrow.bind.end.to; if (state.get(to) === 1) back.add(arrow); else if (!state.has(to)) visit(to); } state.set(id, 2); };
-	for (const node of nodes) if (!state.has(node.id)) visit(node.id);
+	const into = new Set(arrows.map(arrow => arrow.bind.end.to));
+	for (const node of [...nodes.filter(node => !into.has(node.id)), ...nodes]) if (!state.has(node.id)) visit(node.id);
 	const forward = arrows.filter(arrow => !back.has(arrow)), starts = nodes.filter(node => !forward.some(arrow => arrow.bind.end.to === node.id));
 	const outcome = nodes.find(node => node.recognized !== 'diamond' && arrows.some(arrow => arrow.bind.end.to === node.id) && !arrows.some(arrow => arrow.bind.start.to === node.id));
 	for (const node of nodes) if (node.ink == null) {
@@ -3475,6 +3504,7 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 			if (Math.abs((p[1][0] - p[0][0]) * (p[3][1] - p[0][1]) - (p[1][1] - p[0][1]) * (p[3][0] - p[0][0])) < 1e-8) return null;
 		}
 		if (Number.isInteger(raw.seed) && raw.seed >= 0 && raw.seed <= 0xffffffff) shape.seed = raw.seed;
+		if (shape.brush === 'brush' && stroke !== null) for (const end of ['cutStart', 'cutEnd']) if (raw[end] === true) shape[end] = true;
 		const ink = _rapierDrawValidInk(raw.ink);
 		if (ink) shape.ink = ink;
 		if (raw.border !== undefined) {
@@ -3577,6 +3607,7 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 	try {
 		const fonts = admitFonts(input.fonts, new Set(out.shapes.map(shape => shape.textFont).filter(id => id?.startsWith('f'))));
 		if (fonts.length) out.fonts = fonts;
+		_rapierDrawWorkCount(fonts.reduce((bytes, font) => bytes + font.data.length + 256, 0), RAPIER_DRAW_SCENE_BYTES);
 		_rapierDrawSceneWork(out);
 		_rapierDrawRerouteBoundArrows(out);
 		for (const shape of out.shapes) {

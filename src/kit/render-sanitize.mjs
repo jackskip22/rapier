@@ -28,11 +28,6 @@ const RAPIER_SANITIZE_OPTIONS = Object.freeze({
 		FORBID_TAGS: RAPIER_SANITIZE_FORBID_TAGS,
 		FORBID_ATTR: RAPIER_SANITIZE_FORBID_ATTR,
 	}),
-	snippet: Object.freeze({
-		..._rapierSanitizeProfile('html'),
-		FORBID_TAGS: RAPIER_SANITIZE_FORBID_TAGS,
-		FORBID_ATTR: Object.freeze([...'style']),
-	}),
 	diagram: Object.freeze({
 		..._rapierSanitizeProfile('html', 'svg'),
 		FORBID_TAGS: Object.freeze(['form', 'dialog', 'template', 'iframe', 'script', 'foreignobject']),
@@ -57,6 +52,8 @@ const DIAGRAM_LABEL_CSS = new Set(('color fill stroke background-color font-fami
 const DIAGRAM_LABEL_SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 const DIAGRAM_LABEL_HTML_NAMESPACE = 'http://www.w3.org/1999/xhtml';
 const DIAGRAM_LABEL_MATH_NAMESPACE = 'http://www.w3.org/1998/Math/MathML';
+
+const purifyConfigured = new WeakMap();
 
 function _rapierImageDataAttributeAllowed(tag, attribute, value, verify) {
 	return (tag === 'img' && attribute === 'src' || tag === 'image' && /^(?:href|xlink:href)$/.test(attribute)
@@ -343,6 +340,8 @@ function _rapierInstallSanitizeHooks() {
 	});
 }
 
+const purifyOptions = new Map();
+
 function sanitizeRapierHtml(value, context = 'render') {
 	return sanitize(value, context, false);
 }
@@ -353,22 +352,27 @@ function sanitizeRapierFragment(value, context = 'render') {
 
 function sanitize(value, context, fragment) {
 	const selected = context === 'raw' || context === 'export' || context === 'source' || RAPIER_SANITIZE_OPTIONS[context] ? context : 'render';
-	let options = selected === 'raw' ? { ...RAPIER_SANITIZE_OPTIONS.render, ALLOW_DATA_ATTR: false } : RAPIER_SANITIZE_OPTIONS[selected] || RAPIER_SANITIZE_OPTIONS.render;
-	if (selected === 'source') options = {...options, ADD_DATA_URI_TAGS: ['image']};
-	const labels = selected === 'diagram' || selected === 'export';
-	if (labels) {
-		options = {...options, ALLOWED_TAGS: [...new Set([...options.ALLOWED_TAGS, ...RAPIER_SANITIZE_PROFILES.mathTags])],
+	const labels = selected === 'diagram' || selected === 'export', key = selected + (fragment ? ' fragment' : '');
+	let options = purifyOptions.get(key);
+	if (!options) {
+		options = selected === 'raw' ? { ...RAPIER_SANITIZE_OPTIONS.render, ALLOW_DATA_ATTR: false } : RAPIER_SANITIZE_OPTIONS[selected] || RAPIER_SANITIZE_OPTIONS.render;
+		if (selected === 'source') options = {...options, ADD_DATA_URI_TAGS: ['image']};
+		if (labels) options = {...options, ALLOWED_TAGS: [...new Set([...options.ALLOWED_TAGS, ...RAPIER_SANITIZE_PROFILES.mathTags])],
 			ALLOWED_ATTR: [...new Set([...options.ALLOWED_ATTR, ...RAPIER_SANITIZE_PROFILES.mathAttributes])], ADD_TAGS: ['foreignobject'], ADD_DATA_URI_TAGS: ['image'],
 			HTML_INTEGRATION_POINTS: {foreignobject: true}, FORBID_TAGS: options.FORBID_TAGS.filter(tag => tag !== 'foreignobject')};
+		if (fragment) options = {...options, RETURN_DOM_FRAGMENT: true};
+		purifyOptions.set(key, options);
+	}
+	if (labels) {
 		DOMPurify.addHook('uponSanitizeElement', diagramLabelElement);
 		DOMPurify.addHook('uponSanitizeAttribute', diagramLabelAttribute);
 		DOMPurify.addHook('afterSanitizeAttributes', diagramLabelContained);
 	}
-	if (fragment) options = {...options, RETURN_DOM_FRAGMENT: true};
+	if (purifyConfigured.get(DOMPurify) !== options) { DOMPurify.setConfig(options); purifyConfigured.set(DOMPurify, options); }
 	const previous = _rapierSanitizeRuntime.context;
 	_rapierSanitizeRuntime.context = selected;
 	try {
-		return DOMPurify.sanitize(value == null ? '' : String(value), options);
+		return DOMPurify.sanitize(value == null ? '' : String(value));
 	} finally {
 		if (labels) {
 			DOMPurify.removeHook('uponSanitizeElement', diagramLabelElement);

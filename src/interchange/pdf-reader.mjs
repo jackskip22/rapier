@@ -21,6 +21,7 @@ const bounds = rows => rows.reduce((b, r) => ({x: Math.min(b.x,r.x), y: Math.min
 const overlaps = (a, b) => Math.max(0, Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x)) *
   Math.max(0, Math.min(a.y+a.h,b.y+b.h)-Math.max(a.y,b.y));
 const willLine = text => /^<!-- ?(?:will\/|\/will)/.test(text);
+const carried = line => line.runs.every(run => run.carrier) && willLine(inline(line).text);
 const sourceToken = text => '<span class="rapier-source-token" data-rapier-source="' + escape(encodeURIComponent(text)) +
   '" data-rapier-visible="' + escape(encodeURIComponent(text)) + '">' + escape(text) + '</span>';
 const plain = lines => lines.map(l=>l.runs.map(r=>r.str).join('')).join(' ').trim();
@@ -70,7 +71,7 @@ function linesFrom(runs) {
   return lines;
 }
 
-function inline(line, {code = false, strip = 0} = {}) {
+function inline(line, {code = false, strip = 0, heading = false} = {}) {
   let html='', last=null, text='';
   for (const run of line.runs) {
     let value=run.str;
@@ -80,6 +81,10 @@ function inline(line, {code = false, strip = 0} = {}) {
     const space=last && gap>run.size*.12 ? separator(text,value) : '';
     let part=escape(value.replace(/\u00ad$/u,''));
     if (!code && run.mono) part='<code>'+part+'</code>';
+    else if (!code && !heading && /\p{L}/u.test(value)) {
+      if (run.italic) part='<em>'+part+'</em>';
+      if (run.bold) part='<strong>'+part+'</strong>';
+    }
     if (!code && run.link) part='<a href="'+escape(run.link)+'">'+part+'</a>';
     if (!code && run.note) part='<sup class="footnote-ref"><a href="#fn'+run.note+'" id="fnref'+run.note+'">['+run.note+']</a></sup>';
     html+=space+part; text+=space+value;last=run;
@@ -87,10 +92,10 @@ function inline(line, {code = false, strip = 0} = {}) {
   return {html:html.trim(),text:text.trim()};
 }
 
-function paragraph(lines, strip = 0) {
+function paragraph(lines, strip = 0, heading = false) {
   let html='',text='';
   for (let i=0;i<lines.length;i++) {
-    const part=inline(lines[i],{strip:i?0:strip});
+    const part=inline(lines[i],{strip:i?0:strip,heading});
     const glue=separator(text,part.text,true);
     html+=glue+part.html;text+=glue+part.text;
   }
@@ -181,7 +186,7 @@ function tagBlocks(tree, runs, pictures) {
     return {type,lines,tagged:true,...extra};
   };
   let visited=0;
-  function visit(node,depth=0) {
+  function visit(node,depth=0,level=0) {
     if(++visited>100000 || depth>64)throw failure('The PDF structure is too complex to import.','PDF_TEXT_LIMIT');
     const children=node.children||[], role=node.role||'';
     if(/^H[1-6]$/.test(role))return [block(role.toLowerCase(),node)];
@@ -193,9 +198,9 @@ function tagBlocks(tree, runs, pictures) {
         const table=cells.map(row=>row.map(c=>block('p',c)));
         return [{type:'table',cells:table,lines:table.flatMap(r=>r.flatMap(c=>c.lines))}];
       }
-      return rows.flatMap(r=>(r.children||[]).flatMap(c=>visit(c,depth+1)));
+      return rows.flatMap(r=>(r.children||[]).flatMap(c=>visit(c,depth+1,level)));
     }
-    if(role==='L')return children.flatMap(c=>visit(c,depth+1));
+    if(role==='L')return children.flatMap(c=>visit(c,depth+1,level+1));
     if(role==='LI'){
       const label=children.find(c=>c.role==='Lbl');
       const nested=[];
@@ -205,8 +210,8 @@ function tagBlocks(tree, runs, pictures) {
       const body=withoutLists({children:children.filter(c=>c.role!=='Lbl')});
       const marker=label?plain(linesFrom(items(label))):'';
       if(label)for(const r of items(label))used.add(r);
-      const result=block('li',body,{marker});
-      return [result,...nested.flatMap(c=>visit(c,depth+1))];
+      const result=block('li',body,{marker,level});
+      return [result,...nested.flatMap(c=>visit(c,depth+1,level))];
     }
     if(role==='Figure'){
       const ids=new Set(content(node));
@@ -218,10 +223,10 @@ function tagBlocks(tree, runs, pictures) {
       return [block('footnote',{children:children.filter(c=>c!==label)},{note:node.note})];
     }
     if(['P','H','Caption','Note','FENote','TD','TH','Code','BlockQuote'].includes(role)){
-      if(children.some(c=>c.role==='Figure'))return children.flatMap(c=>visit(c,depth+1));
+      if(children.some(c=>c.role==='Figure'))return children.flatMap(c=>visit(c,depth+1,level));
       return [block(role==='Code'?'code':role==='BlockQuote'?'quote':role==='H'?'heading':'p',node)];
     }
-    return children.flatMap(c=>visit(c,depth+1));
+    return children.flatMap(c=>visit(c,depth+1,level));
   }
   const blocks=visit(tree).filter(b=>b.type==='image'||b.lines?.length);
   if(!pictures.length)blocks.sort((a,b)=>Math.min(...a.lines.flatMap(l=>l.runs.map(r=>r.order)))-Math.min(...b.lines.flatMap(l=>l.runs.map(r=>r.order))));
@@ -265,6 +270,9 @@ function geometricBlocks(runs, pictures, width, height) {
       grid.push(row);y=row[0].y;
     }
     if(grid.length<3)continue;
+    let flowing=0;
+    for(let r=1;r<grid.length;r++)for(let c=0;c<grid[r].length;c++)if(/[\p{Ll},;]$/u.test(plain([grid[r-1][c]]))&&/^\p{Ll}/u.test(plain([grid[r][c]])))flowing++;
+    if(flowing*2>(grid.length-1)*first.length)continue;
     grid.flat().forEach(l=>taken.add(l));
     tables.push({type:'table',cells:grid.map(row=>row.map(l=>({lines:[l]}))),lines:grid.flat(),y:grid[0][0].y,h:0});
   }
@@ -319,6 +327,19 @@ function documentStyles(pages) {
   return {body,headings:[...sizes].filter(n=>n>body*1.1).sort((a,b)=>b-a)};
 }
 
+function dropCaps(runs) {
+  const body=documentStyles([{runs}]).body;
+  for(const cap of runs.filter(r=>!r.vertical&&/^\p{L}$/u.test(r.str)&&r.size>=body*1.8)){
+    const beside=runs.filter(r=>r.str&&!r.vertical&&r.size<cap.size*.6&&r.x>=cap.x+cap.w-1&&r.x-cap.x-cap.w<cap.size&&
+      r.baseline>cap.y&&r.baseline<=cap.baseline+1).sort((a,b)=>a.baseline-b.baseline||a.x-b.x);
+    const indent=beside[0]&&beside[0].x;
+    if(!beside.length)continue;
+    for(const r of beside)if(r.x===indent)Object.assign(r,{w:r.x+r.w-cap.x,x:cap.x});
+    beside[0].str=cap.str+beside[0].str;cap.str='';
+  }
+  return runs.filter(r=>r.str);
+}
+
 function runningMatter(pages) {
   const seen=new Map();
   for(const [index,page] of pages.entries())for(const line of [...linesFrom(page.runs),...page.runs.filter(r=>r.str.length>=6).map(r=>({...r,runs:[r]}))]){
@@ -344,11 +365,11 @@ function renderBlocks(blocks, styles) {
   for(const b of blocks)if(b.type==='li'&&b.lines.length){const x=b.lines[0].x;if(!listIndents.some(n=>Math.abs(n-x)<b.lines[0].size*.6))listIndents.push(x);}
   listIndents.sort((a,b)=>a-b);
   blocks=blocks.flatMap(b=>{
-    if(!b.lines?.some(l=>willLine(inline(l).text)))return [b];
+    if(!b.lines?.some(carried))return [b];
     if(b.type==='table'||b.type==='footnote')return [b];
     const out=[];
     for(const line of b.lines){
-      if(willLine(inline(line).text))out.push({type:'will',lines:[line]});
+      if(carried(line))out.push({type:'will',lines:[line]});
       else if(out.at(-1)?.type===b.type&&out.at(-1)!==b)out.at(-1).lines.push(line);
       else out.push({...b,lines:[line],...(out.length?{strip:0}:{})});
     }
@@ -372,7 +393,7 @@ function renderBlocks(blocks, styles) {
     flushCode();
     if(b.type==='li'){
       const match=/^\s*(\d{1,9})[.)]?/.exec(b.marker),tag=match?'ol':'ul';
-      const depth=Math.min(16,listIndents.findIndex(n=>Math.abs(n-b.lines[0].x)<b.lines[0].size*.6)+1||1);
+      const depth=Math.min(16,b.level||listIndents.findIndex(n=>Math.abs(n-b.lines[0].x)<b.lines[0].size*.6)+1||1);
       while(lists.length>depth)output.push('</li></'+lists.pop().tag+'>');
       if(lists.length===depth&&lists.at(-1).tag!==tag){output.push('</li></'+lists.pop().tag+'>');}
       if(lists.length===depth)output.push('</li><li>');
@@ -393,7 +414,7 @@ function renderBlocks(blocks, styles) {
     }
     if(tag==='quote')tag='blockquote';
     if(!/^(?:p|h[1-6]|blockquote)$/.test(tag))tag='p';
-    output.push('<'+tag+(b.lines[0].rtl?' dir="rtl"':'')+'>'+paragraph(b.lines)+'</'+tag+'>');
+    output.push('<'+tag+(b.lines[0].rtl?' dir="rtl"':'')+'>'+paragraph(b.lines,0,tag[0]==='h')+'</'+tag+'>');
   }
   closeLists();flushCode();
   if(notes.length)output.push('<section class="footnotes"><ol>'+notes.join('')+'</ol></section>');
@@ -638,6 +659,8 @@ export async function readPdf(blob, {mode = 'text', embedImage, checkCurrent = (
           let font; try { font = page.commonObjs.get(run.font); } catch (_) {}
           run.mono = /Mono|Courier|Consolas/i.test(font?.name || '') || !font?.name && styles[run.font]?.fontFamily === 'monospace';
           run.bold = /Bold|Black|Heavy|Demi|Semibold|(?:^|[.+-])(?:B|Bd|Blk)(?:[.+-]|$)/i.test(font?.name || '');
+          run.italic = /Italic|Oblique|(?:^|[.+-])(?:It|Obl)(?:[.+-]|$)/i.test(font?.name || '');
+          run.carrier = /RapierWillCarrier/.test(font?.name || '');
         }
         const pictures = await pagePictures(page, viewport, session.api, operators, ids,
           {embedImage, step, checkpoint, limits: PDF_LIMITS, stats, setRender:value=>{render=value;}});
@@ -689,6 +712,7 @@ export async function readPdf(blob, {mode = 'text', embedImage, checkCurrent = (
       const removed = runningMatter(pages);
       for (const data of pages) data.runs = data.runs.filter(r => !removed.has(r));
       footnotes(pages);
+      for (const data of pages) data.runs = dropCaps(data.runs);
       const styles = documentStyles(pages);
       for (const data of pages) {
         await checkpoint();

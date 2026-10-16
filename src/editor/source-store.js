@@ -6,27 +6,37 @@ const sourceEncoder = new TextEncoder();
 const PIECE_CHARS = 65536;
 const MERGE_CHARS = 4096;
 
+const SPACE = new Uint8Array(65536);
+for (const code of [9, 10, 11, 12, 13, 32, 0xa0, 0x1680, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009,
+	0x200a, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff]) SPACE[code] = 1;
+
 function fnv1a32(str) {
 	let h = 0x811c9dc5;
 	for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 16777619);
 	return (h >>> 0).toString(36);
 }
 
-function adler32(value) {
-	const text = String(value == null ? '' : value);
-	const n = text.length;
-	let a = 1, b = 0, i = 0;
-	while (i < n) {
-		const end = Math.min(n, i + 4096);
-		for (; i < end; i++) { a += text.charCodeAt(i); b += a; }
+const scanState = () => ({fnv: 0x811c9dc5, a: 1, b: 0, bytes: 0});
+function scanSpan(text, start, end, state, countBytes = false) {
+	let {fnv, a, b, bytes} = state;
+	for (let at = start; at < end;) {
+		const stop = Math.min(end, at + 4096);
+		for (; at < stop; at++) {
+			const code = text.charCodeAt(at);
+			fnv = Math.imul(fnv ^ code, 16777619); a += code; b += a;
+			if (countBytes) bytes += code < 0x80 ? 1 : code < 0x800 ? 2
+				: (code & 0xfc00) === 0xdc00 && at > 0 && (text.charCodeAt(at - 1) & 0xfc00) === 0xd800 ? 1 : 3;
+		}
 		a %= 65521; b %= 65521;
 	}
-	return (((b << 16) | a) >>> 0).toString(36);
+	state.fnv = fnv; state.a = a; state.b = b; state.bytes = bytes;
+	return state;
 }
+const finishIntegrity = (chars, state) => ({chars, fnv: (state.fnv >>> 0).toString(36), adler: (((state.b << 16) | state.a) >>> 0).toString(36)});
 
 function textIntegrity(value) {
 	const text = String(value == null ? '' : value);
-	return { chars: text.length, fnv: fnv1a32(text), adler: adler32(text) };
+	return finishIntegrity(text.length, scanSpan(text, 0, text.length, scanState()));
 }
 
 function rowHash(value) {
@@ -67,18 +77,12 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 	};
 	const initialRootNow = () => { if (initialRoot == null) rootNow(); return initialRoot; };
 	const bytesNow = () => {
-		if (utf8Bytes == null) utf8Bytes = sourceEncoder.encode(read()).length;
-		return utf8Bytes;
-	};
-	const indexWords = text => {
-		const checkpoints = new Uint32Array(Math.ceil(text.length / 1024) + 1), runs = /\S+/g;
-		let words = 0, next = 1, match;
-		while ((match = runs.exec(text))) {
-			while (next * 1024 <= match.index) checkpoints[next++] = words;
-			words++;
+		if (utf8Bytes == null) {
+			const text = read(), state = scanSpan(text, 0, text.length, scanState(), true);
+			utf8Bytes = state.bytes;
+			if (cachedIntegrityKey !== cacheKey) { cachedIntegrityValue = finishIntegrity(text.length, state); cachedIntegrityKey = cacheKey; }
 		}
-		while (next < checkpoints.length) checkpoints[next++] = words;
-		return {text, checkpoints, words};
+		return utf8Bytes;
 	};
 	const wordsBefore = (index, at) => {
 		const slot = Math.floor(at / 1024), start = slot * 1024;
@@ -90,18 +94,26 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 	};
 	const makePiece = (buffer, start, pieceLength) => {
 		const text = buffers[buffer].slice(start, start + pieceLength);
-		const ends = [], crlfEnds = [], projectedEnds = [], lines = /\r\n?|\n/g;
-		let match;
-		while ((match = lines.exec(text))) {
-			ends.push(lines.lastIndex);
-			if (match[0].length === 2) {
-				crlfEnds.push(lines.lastIndex); projectedEnds.push(lines.lastIndex - crlfEnds.length);
+		const ends = [], crlfEnds = [], projectedEnds = [], checkpoints = new Uint32Array(Math.ceil(text.length / 1024) + 1);
+		let words = 0, next = 1, word = false;
+		for (let at = 0; at < text.length; at++) {
+			const code = text.charCodeAt(at);
+			if (code === 10 || code === 13) {
+				if (code === 13 && text.charCodeAt(at + 1) === 10) {
+					at++; ends.push(at + 1); crlfEnds.push(at + 1); projectedEnds.push(at + 1 - crlfEnds.length);
+				} else ends.push(at + 1);
+				word = false;
+			} else if (SPACE[code] === 1) word = false;
+			else if (!word) {
+				word = true;
+				while (next * 1024 <= at) checkpoints[next++] = words;
+				words++;
 			}
 		}
-		const wordIndex = indexWords(text);
+		while (next < checkpoints.length) checkpoints[next++] = words;
 		return { buffer, start, length: pieceLength, projected: pieceLength - crlfEnds.length, breaks: ends.length,
 			lineEnds: new Uint32Array(ends), crlfEnds: new Uint32Array(crlfEnds), projectedEnds: new Uint32Array(projectedEnds),
-			wordIndex, wordOffset: 0, words: wordIndex.words, headWord: /^\S/.test(text), tailWord: /\S$/.test(text) };
+			wordIndex: {text, checkpoints, words}, wordOffset: 0, words, headWord: /^\S/.test(text), tailWord: /\S$/.test(text) };
 	};
 	const chunk = (buffer, start, span) => {
 		const rows = [];
@@ -229,20 +241,13 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 	const integrityAsync = async ({yield: yieldWork, signal, onProgress} = {}) => {
 		if (signal?.aborted) throw Object.assign(new Error('Cancelled'), {name: 'AbortError'});
 		if (cachedIntegrityKey === cacheKey) return cachedIntegrityValue;
-		const pending = pieces, chars = length;
-		let fnv = 0x811c9dc5, a = 1, b = 0, processed = 0;
+		const pending = pieces, chars = length, state = scanState();
+		let processed = 0;
 		for (const piece of pending) {
 			const text = buffers[piece.buffer], end = piece.start + piece.length;
 			for (let start = piece.start; start < end;) {
 				const stop = Math.min(end, start + PIECE_CHARS);
-				for (let at = start; at < stop;) {
-					const bound = Math.min(stop, at + 4096);
-					for (; at < bound; at++) {
-						const code = text.charCodeAt(at);
-						fnv = Math.imul(fnv ^ code, 16777619); a += code; b += a;
-					}
-					a %= 65521; b %= 65521;
-				}
+				scanSpan(text, start, stop, state);
 				processed += stop - start; start = stop;
 				onProgress?.(processed / chars);
 				if (yieldWork && processed < chars) await yieldWork();
@@ -251,7 +256,7 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 			}
 		}
 		cachedIntegrityKey = cacheKey;
-		cachedIntegrityValue = {chars, fnv: (fnv >>> 0).toString(36), adler: (((b << 16) | a) >>> 0).toString(36)};
+		cachedIntegrityValue = finishIntegrity(chars, state);
 		return cachedIntegrityValue;
 	};
 	const readSlice = (start = 0, end = length) => {
@@ -465,54 +470,16 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 		cacheKey = Object.freeze({});
 		return { pos: at, removed: oldText, inserted: newText };
 	};
-	const measureBytesAsync = async ({yield: yieldWork, signal, onProgress} = {}) => {
-		if (signal?.aborted) throw Object.assign(new Error('Cancelled'), {name: 'AbortError'});
-		if (utf8Bytes != null) return utf8Bytes;
-		const pending = cacheKey;
-		const text = read();
-		let bytes = 0;
-		for (let start = 0; start < text.length;) {
-			if (signal?.aborted) throw Object.assign(new Error('Cancelled'), {name: 'AbortError'});
-			let end = Math.min(text.length, start + PIECE_CHARS);
-			if (end < text.length && text.charCodeAt(end - 1) >= 0xd800 &&
-					text.charCodeAt(end - 1) <= 0xdbff && text.charCodeAt(end) >= 0xdc00 &&
-					text.charCodeAt(end) <= 0xdfff) end++;
-			bytes += sourceEncoder.encode(text.slice(start, end)).length;
-			start = end;
-			onProgress?.(start / text.length);
-			if (yieldWork && start < text.length) await yieldWork();
-			if (cacheKey !== pending) return null;
-		}
-		if (signal?.aborted) throw Object.assign(new Error('Cancelled'), {name: 'AbortError'});
-		if (cacheKey !== pending) return null;
-		utf8Bytes = bytes;
-		return bytes;
-	};
-	const warm = () => { rootNow(); bytesNow(); };
+	const warm = () => { bytesNow(); rootNow(); };
 	const warmAsync = async ({yield: yieldWork, signal, onProgress} = {}) => {
 		if (signal?.aborted) throw Object.assign(new Error('Cancelled'), {name: 'AbortError'});
 		if (cachedIntegrityKey === cacheKey && utf8Bytes != null && rootId != null) return true;
 		const pending = cacheKey;
-		const text = read();
-		const countBytes = utf8Bytes == null;
-		let fnv = 0x811c9dc5, a = 1, b = 0, bytes = countBytes ? 0 : utf8Bytes;
+		const text = read(), countBytes = utf8Bytes == null, state = scanState();
 		for (let start = 0; start < text.length;) {
 			if (signal?.aborted) throw Object.assign(new Error('Cancelled'), {name: 'AbortError'});
-			let end = Math.min(text.length, start + PIECE_CHARS);
-			if (end < text.length && text.charCodeAt(end - 1) >= 0xd800 &&
-					text.charCodeAt(end - 1) <= 0xdbff && text.charCodeAt(end) >= 0xdc00 &&
-					text.charCodeAt(end) <= 0xdfff) end++;
-			for (let at = start; at < end;) {
-				const stop = Math.min(end, at + 4096);
-				for (; at < stop; at++) {
-					const code = text.charCodeAt(at);
-					if (countBytes) bytes += code < 0x80 ? 1 : code < 0x800 ? 2
-						: (code & 0xfc00) === 0xdc00 && at > 0 && (text.charCodeAt(at - 1) & 0xfc00) === 0xd800 ? 1 : 3;
-					fnv = Math.imul(fnv ^ code, 16777619);
-					a += code; b += a;
-				}
-				a %= 65521; b %= 65521;
-			}
+			const end = Math.min(text.length, start + PIECE_CHARS);
+			scanSpan(text, start, end, state, countBytes);
 			start = end;
 			if (onProgress) onProgress(start / text.length);
 			if (yieldWork) await yieldWork();
@@ -521,14 +488,14 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 		if (signal?.aborted) throw Object.assign(new Error('Cancelled'), {name: 'AbortError'});
 		if (cacheKey !== pending) return false;
 		cachedIntegrityKey = pending;
-		cachedIntegrityValue = {chars: text.length, fnv: (fnv >>> 0).toString(36), adler: (((b << 16) | a) >>> 0).toString(36)};
-		utf8Bytes = bytes;
+		cachedIntegrityValue = finishIntegrity(text.length, state);
+		if (countBytes) utf8Bytes = state.bytes;
 		rootNow();
 		return true;
 	};
 	const store = Object.freeze({
 		read, integrity, integrityAsync, readSlice, contains, splice, capture, fork, lineAt, lineStart, lineEnd, sourceOffsetFromProjection,
-		projectionOffsetFromSource, warm, warmAsync, measureBytesAsync,
+		projectionOffsetFromSource, warm, warmAsync,
 		get length() { return length; },
 		get lineCount() { return totalBreaks + 1; },
 		get wordCount() { return totalWords; },
@@ -543,28 +510,20 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 			if (preparation.signal?.aborted) throw Object.assign(new Error('Cancelled'), {name: 'AbortError'});
 		};
 		check();
-		let fnv = 0x811c9dc5, a = 1, b = 0, bytes = 0;
+		const state = scanState();
 		for (let at = 0; at < initial.length;) {
 			let end = Math.min(initial.length, at + PIECE_CHARS);
 			if (end < initial.length && initial.charCodeAt(end - 1) === 13 && initial.charCodeAt(end) === 10) end++;
 			pieces.push(makePiece(0, at, end - at));
-			for (; at < end;) {
-				const stop = Math.min(end, at + 4096);
-				for (; at < stop; at++) {
-					const code = initial.charCodeAt(at);
-					fnv = Math.imul(fnv ^ code, 16777619); a += code; b += a;
-					bytes += code < 0x80 ? 1 : code < 0x800 ? 2
-						: (code & 0xfc00) === 0xdc00 && at > 0 && (initial.charCodeAt(at - 1) & 0xfc00) === 0xd800 ? 1 : 3;
-				}
-				a %= 65521; b %= 65521;
-			}
+			scanSpan(initial, at, end, state, true); at = end;
+			if (pieces.length % 4 && at < initial.length) continue;
 			preparation.onProgress?.(at / initial.length);
 			if (preparation.yield) await preparation.yield();
 			check();
 		}
-		utf8Bytes = bytes;
+		utf8Bytes = state.bytes;
 		cachedIntegrityKey = cacheKey;
-		cachedIntegrityValue = {chars: length, fnv: (fnv >>> 0).toString(36), adler: (((b << 16) | a) >>> 0).toString(36)};
+		cachedIntegrityValue = finishIntegrity(length, state);
 		rootNow();
 		reindex();
 		return store;
@@ -573,7 +532,7 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 
 return Object.freeze({
 	create, createAsync: (value, options = {}) => create(value, '', null, options),
-	textIntegrity, fnv1a32, adler32, rootAfter, PIECE_CHARS, MAX_BYTES,
+	textIntegrity, fnv1a32, rootAfter, PIECE_CHARS, MAX_BYTES,
 	encoder: sourceEncoder,
 });
 

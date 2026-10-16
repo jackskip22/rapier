@@ -3,6 +3,7 @@ import {getTool, validateInput} from '../agent/operation-contracts.mjs';
 import {resolveCaller} from '../agent/door-identity.mjs';
 import {seal, open, VDK_BYTES} from './vault.mjs';
 import {sealLiveEnvelope, openLiveEnvelope, verifyLiveEnvelope} from './live-envelope.mjs';
+import {sha256 as hash} from './integrity.mjs';
 
 const encoder = new TextEncoder(), decoder = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true});
 const METHODS = new Set(['notes.find', 'notes.read', 'notes.write', 'notes.set', 'notes.history', 'notes.sync', 'notes.open']);
@@ -25,9 +26,6 @@ const LOCKED_HINT = 'Unlock Notes at the enrolled endpoint and reconnect through
 const locked = () => ({outcome: 'refused', availability: 'locked', reason: 'notes_locked', hint: LOCKED_HINT, message: LOCKED_HINT});
 const encode = value => encoder.encode(JSON.stringify(value));
 const decode = bytes => JSON.parse(decoder.decode(bytes));
-async function hash(bytes) {
-  return [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(byte => byte.toString(16).padStart(2, '0')).join('');
-}
 
 export function createOwnedNotesAdapter({scope: givenScope, documentKey, signingKey, actors,
   invoke, custody, isCurrent = () => true, recover, checkpointSequence,

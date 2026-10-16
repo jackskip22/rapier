@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import {WaterSurface,WaterBrush,paintWaterBrushPreview,waterError,waterReady,waterUnfilteredTest,waterTiming,waterTimingOn} from './water.mjs';
+import {WaterSurface,WaterBrush,paintWaterBrushPreview,waterError,waterReady,waterUnfilteredTest,waterTiming,waterTimingOn,waterCapture,waterCaptureOn,waterNote} from './water.mjs';
 import {sha256Yielding} from '../notes/integrity.mjs';
 import {paintAgentStrokes,replayAgentPainting,sampleAgentPainting,agentPaintReplayRun,restoreWaterReplay,waterReplayAt} from './agent-paint.mjs';
-import {canonicalJSON} from '../kit/ledger/data.mjs';
+import {createWorkerClient} from './worker-client.mjs';
+export {createWorkerClient};
 const hash=data=>sha256Yielding(new Uint8Array(data.buffer,data.byteOffset,data.byteLength));
 const integer=n=>Number.isSafeInteger(n)&&n>0;
 const transferOf=value=>{const result=new Set();const walk=v=>{if(!v||typeof v!=='object')return;if(typeof ImageBitmap==='function'&&v instanceof ImageBitmap){result.add(v);return;}if(ArrayBuffer.isView(v)){if(v.buffer instanceof ArrayBuffer)result.add(v.buffer);return;}for(const item of Object.values(v))walk(item);};walk(value);return [...result];};
-const closeFrames=value=>{for(const row of value?.surfaces??[value])row?.display?.bitmap?.close();};
 const brushState=b=>b.snapshot();
 const restoreBrushes=(checkpoint,brushes)=>{for(const [id,state]of checkpoint.brushes||[])brushes.get(id)?.fromSnapshot(state);};
 const yieldWork=()=>new Promise(resolve=>setTimeout(resolve,0));
 const WATER_CHECKPOINT_BYTES=128*1024*1024;
-const publicationKey=replay=>canonicalJSON(JSON.parse(JSON.stringify(replay)));
+const publicationKey=replay=>JSON.stringify(replay,(_,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v);
 export function createWaterWorker({postMessage}={}){
  const surfaces=new Map(),brushes=new Map(),checkpoints=new Map(),runs=new Map(),jobs=new Map(),queued=new Set(),displayed=new Map(),displays=new Map(),controls=[];let serial=0,chain=Promise.resolve(),completed=0,closed=false,device=null,slowTest=1,wakeDisplay=null,displayWork=0;
  const publications=new Map();let publicationBytes=0;
@@ -44,8 +44,9 @@ export function createWaterWorker({postMessage}={}){
    await material.reframe(width,height,offset[0]-restored.crop[0],offset[1]-restored.crop[1]);material.takeWaterReplay();return material;
   }catch(error){restored?.surface.dispose();throw error;}
  };
- const watchDevice=next=>{if(device===next)return;device=next;next.lost.then(()=>{if(!closed&&device===next)postMessage({failure:{name:'Error',code:'WATER_DEVICE_LOST',message:'The GPU stopped. The last published painting is safe; reopen Water to continue.'}});});};
- const releaseDisplay=(display,keepShown=false)=>{if(display){display.context.unconfigure();display.canvas.width=display.canvas.height=0;display.gpu?._reservePresentation(keepShown?display.shown?.bytes||0:0);}};
+ const lostCapture=()=>waterCapture.on?{capture:waterCapture.rows.slice()}:{};
+ const watchDevice=next=>{if(device===next)return;device=next;next.lost.then(()=>{if(!closed&&device===next)postMessage({failure:{name:'Error',code:'WATER_DEVICE_LOST',message:'The GPU stopped. The last published painting is safe; reopen Water to continue.'},...lostCapture()});});};
+ const releaseDisplay=(display,keepShown=false)=>{if(display){if(waterCapture.on)waterNote({ev:'release',generation:display.generation,keepShown});display.context.unconfigure();display.canvas.width=display.canvas.height=0;display.gpu?._reservePresentation(keepShown?display.shown?.bytes||0:0);}};
  const dropDisplay=id=>{releaseDisplay(displays.get(id));displays.delete(id);};
  const reserveDisplay=(bound,gpu,bytes)=>{gpu._reservePresentation(bytes);if(bound.gpu!==gpu)bound.gpu?._reservePresentation(0);bound.gpu=gpu;};
  const sendValue=(id,value,progress=false)=>{
@@ -94,16 +95,21 @@ export function createWaterWorker({postMessage}={}){
     reserveDisplay(bound,s.gpu,(bound.shown?.bytes||0)+bytes*2);
     if(bound.material!==s||bound.width!==s.width||bound.height!==s.height){
      bound.canvas.width=s.width;bound.canvas.height=s.height;bound.width=s.width;bound.height=s.height;
-     bound.producerBytes=bytes;bound.context.configure({device:s.gpu.device,format:'rgba8unorm',alphaMode:'premultiplied',colorSpace:'srgb'});bound.material=s;
+     const configuration={format:'rgba8unorm',alphaMode:'premultiplied',colorSpace:'srgb'};
+     bound.producerBytes=bytes;bound.context.configure({device:s.gpu.device,...configuration});bound.material=s;
+     if(waterCapture.on)waterNote({ev:'configure',surface:id,generation:bound.generation,canvas:[bound.canvas.width,bound.canvas.height],...configuration,usage:bound.context.getConfiguration?.()?.usage});
     }
+    if(waterCapture.on&&(bound.canvas.width!==s.width||bound.canvas.height!==s.height))waterNote({ev:'mismatch',canvas:[bound.canvas.width,bound.canvas.height],sheet:[s.width,s.height]});
     const bitmap=await s.gpu.present(bound.context.getCurrentTexture(),full||relight?null:[box.x0,box.y0,box.x1+1,box.y1+1],()=>bound.canvas.transferToImageBitmap());
     if(!bitmap||bitmap.width!==s.width||bitmap.height!==s.height){bitmap?.close();throw waterError('WATER_DISPLAY','The Water frame is unavailable');}
     bound.toothOX=s.toothOX;bound.toothOY=s.toothOY;bound.full=false;
     const meta=metadata(s),frame={generation:bound.generation,canvasGeneration:bound.canvasGeneration,frame:++bound.sequence,revision:meta.revision,width:meta.width,height:meta.height,bytes};
     bound.pending=frame;displayed.set(id,performance.now());
+    if(waterCapture.on)waterNote({ev:'send',surface:id,frame:frame.frame,generation:frame.generation,revision:frame.revision,full:!!full});
     return {surfaceId:id,meta,patch:null,display:{...frame,submitted:true,complete:true,bitmap}};
    }catch(error){
     bound.full=true;
+    if(waterCapture.on)waterNote({ev:'refused',surface:id,code:error.code,message:String(error?.message??error)});
     bound.gpu?._reservePresentation((bound.shown?.bytes||0)+(bound.producerBytes||0));
     s.gpu._check();
     return {surfaceId:id,meta:metadata(s),patch:null,display:{generation:bound.generation,submitted:false,refused:error.code||'WATER_DISPLAY'}};
@@ -165,7 +171,7 @@ export function createWaterWorker({postMessage}={}){
  }
  async function execute(request){
   const op=request.operation;
-  if(op==='configure'){if(request.preview===true)return {helpers:0,backend:'contact'};waterUnfilteredTest(request.unfilteredTest===true);slowTest=Number.isFinite(request.slowTest)&&request.slowTest>1?request.slowTest:1;waterTimingOn(request.stats===true);const ready=await waterReady();watchDevice(ready);return {helpers:0,backend:'webgpu',filterable:ready.features.has('float32-filterable'),features:[...ready.features].sort()};}
+  if(op==='configure'){if(request.preview===true)return {helpers:0,backend:'contact'};waterUnfilteredTest(request.unfilteredTest===true);slowTest=Number.isFinite(request.slowTest)&&request.slowTest>1?request.slowTest:1;waterTimingOn(request.stats===true);waterCaptureOn(request.capture===true);const ready=await waterReady();watchDevice(ready);return {helpers:0,backend:'webgpu',filterable:ready.features.has('float32-filterable'),features:[...ready.features].sort()};}
   if(op==='preview'){
    if(!integer(request.width)||!integer(request.height))throw waterError('WATER_INPUT','The Water preview size is not valid');
    const canvas=typeof OffscreenCanvas==='function'?new OffscreenCanvas(request.width,request.height):globalThis.document?.createElement('canvas');
@@ -184,6 +190,7 @@ export function createWaterWorker({postMessage}={}){
    releaseDisplay(current,true);
    const bound={canvas:request.canvas,context,generation:request.generation,canvasGeneration:request.generation,material:null,full:true,sequence:current?.sequence||0,shown:current?.shown||null,pending:null,producerBytes:0,gpu:current?.gpu||null};
    displays.set(request.surfaceId,bound);
+   if(waterCapture.on)waterNote({ev:'bind',surface:request.surfaceId,generation:request.generation,canvas:[request.canvas.width,request.canvas.height]});
    return displayState(request.surfaceId,true);
   }
   if(op==='display'){
@@ -195,6 +202,7 @@ export function createWaterWorker({postMessage}={}){
    const bound=displays.get(request.surfaceId),frame=bound?.pending;
    if(!frame||request.canvasGeneration!==frame.canvasGeneration||request.frame!==frame.frame||typeof request.accepted!=='boolean')return {};
    bound.pending=null;
+   if(waterCapture.on)waterNote({ev:'adopt',surface:request.surfaceId,frame:frame.frame,accepted:request.accepted});
    if(request.accepted)bound.shown=frame;else bound.full=true;
    bound.gpu?._reservePresentation((bound.shown?.bytes||0)+(bound.producerBytes||0));
    return request.accepted||frame.generation!==bound.generation?displayState(request.surfaceId):{};
@@ -234,6 +242,7 @@ export function createWaterWorker({postMessage}={}){
    await capturePublication(s,request,waterReplay,box);
    return {pixels,box,digest:pixels&&request.verify!==false?await hash(pixels.data):null,meta,stats:meta.stats,waterReplay,...(request.snapshot||request.material?{waterState:await s.snapshot(box)}:{})};
   }
+  if(op==='capture')return {rows:waterCapture.rows.slice()};
   if(op==='stats'){const s=need(surfaces,request.surfaceId),meta=metadata(s);return {...meta.stats,meta,commands:completed};}
   if(op==='footprint'){
    const b=new WaterBrush(request.definition);if(request.radius!=null)b.setBaseValue('radius_logarithmic',request.radius);b.setHead(request.held??null,false);const aspect=1;return {radius:b.radius*3,aspect,angle:request.held??0};
@@ -282,7 +291,7 @@ export function createWaterWorker({postMessage}={}){
     }
     const reopen=['WATER_GPU_MEMORY','WATER_GPU_FAILED','WATER_DEVICE_LOST'].includes(error.code);
     if(reopen){for(const id of displays.keys())dropDisplay(id);for(const surface of surfaces.values())surface.dispose();surfaces.clear();brushes.clear();checkpoints.clear();runs.clear();displayed.clear();}
-    postMessage({id,error:{name:error.name||'Error',code:error.code||'WATER_INPUT',message:String(error.message||error)},recoverable:!reopen&&error.recoverable!==false});
+    postMessage({id,error:{name:error.name||'Error',code:error.code||'WATER_INPUT',message:String(error.message||error)},recoverable:!reopen&&error.recoverable!==false,...(reopen?lostCapture():{})});
    }finally{if(control)displayWork+=performance.now()-started;jobs.delete(id);}
  };
  const receive=request=>{
@@ -305,28 +314,9 @@ export function createWaterWorker({postMessage}={}){
  receive.close=async()=>{closed=true;await Promise.resolve();for(const job of jobs.values())job.abort();await chain;for(const id of displays.keys())dropDisplay(id);for(const surface of surfaces.values())surface.dispose();surfaces.clear();brushes.clear();checkpoints.clear();runs.clear();displayed.clear();publications.clear();publicationBytes=0;};
  return receive;
 }
-export function createWaterWorkerClient({postMessage,terminate=()=>{}}){
- let serial=0,closed=false,failure=null,failureListener=null;const pending=new Map();
- const fail=error=>{if(failure)return;failure=error;for(const job of pending.values()){job.cleanup?.();job.reject(error);}pending.clear();failureListener?.(error);};
- return {
-  watchFailure(listener){failureListener=listener;if(failure)listener(failure);},
-  request(operation,payload={},transfer=[],onProgress=null,{signal}={}){
-   if(failure)return Promise.reject(failure);
-   if(closed)return Promise.reject(new Error('Water is closed'));
-   if(signal?.aborted)return Promise.reject(Object.assign(new Error('Water painting cancelled'),{name:'AbortError'}));
-   const id=++serial;return new Promise((resolve,reject)=>{
-    const abort=()=>postMessage({operation:'cancel',requestId:id}),cleanup=()=>signal?.removeEventListener('abort',abort);
-    pending.set(id,{resolve,reject,onProgress,cleanup,abort});signal?.addEventListener('abort',abort,{once:true});
-    try{postMessage({...payload,id,operation,progress:typeof onProgress==='function'},transfer);}catch(error){pending.delete(id);cleanup();reject(error);}
-   });
-  },
-  receive(message){if(closed){closeFrames(message?.value);return false;}if(message?.failure){fail(Object.assign(new Error(message.failure.message),message.failure));return true;}const job=pending.get(message?.id);if(!job){closeFrames(message?.value);return false;}if(message.progress){job.onProgress?.(message.value);return true;}pending.delete(message.id);job.cleanup?.();if(message.error)job.reject(Object.assign(new Error(message.error.message),message.error,{recoverable:message.recoverable===true}));else job.resolve(message.value);return true;},
-  fail,async close(){closed=true;failureListener=null;for(const job of pending.values())job.abort?.();fail(new Error('Water is closed'));await terminate();}
- };
-}
 export function createLocalWaterClient(){
  let client;const deliver=(fn,message,transfer=[])=>{const value=structuredClone(message,transfer.length?{transfer}:undefined);queueMicrotask(()=>fn(value));};
  const receive=createWaterWorker({postMessage:(m,t)=>deliver(value=>client.receive(value),m,t)});
- client=createWaterWorkerClient({postMessage:(m,t)=>deliver(value=>receive(value),m,t),terminate:()=>receive.close()});return client;
+ client=createWorkerClient({postMessage:(m,t)=>deliver(value=>receive(value),m,t),terminate:()=>receive.close()});return client;
 }
 export function installWaterWorker(scope=globalThis){if(typeof scope.document!=='undefined')throw new Error('Water needs a dedicated worker');const receive=createWaterWorker({postMessage:(m,t)=>scope.postMessage(m,t)});scope.onmessage=({data})=>receive(data);}

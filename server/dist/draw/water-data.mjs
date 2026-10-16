@@ -41,6 +41,10 @@ const frameGeometry=v=>object(v)&&integer(v.width)&&integer(v.height)&&v.width>0
 const jsonFits=paintReplayFits;
 export function waterError(code,message){return Object.assign(new RangeError(message),{code,recoverable:true});}
 export function waterRadius(size=50){return 1100*.04/WATER_PAPER_UNITS*Math.pow(3,2*(size/100-.5));}
+export const WATER_HAND_SIZE_MAX=50;
+export function waterHandSize(size){const n=Number(size);return Number.isFinite(n)?Math.min(WATER_HAND_SIZE_MAX,Math.max(0,n)):null;}
+export function waterHandUi(size){const hand=waterHandSize(size);return hand==null?null:hand*2;}
+export function waterHandFromUi(ui){const n=Number(ui);return Number.isFinite(n)?waterHandSize(n/2):null;}
 export function admitWaterPigment(raw){
  if(typeof raw==='string')return waterPigmentById(raw)?raw:null;
  if(!object(raw)||!ownKeys(raw,['coefficients','granulation','staining','source','finish'])||!Array.isArray(raw.coefficients)||raw.coefficients.length!==WATER_BANDS||!raw.coefficients.every((n,i)=>finite(n)&&Math.abs(n)<=10000&&(i<7||n>=0)))return null;
@@ -148,7 +152,7 @@ export function waterActionsFault(raw, prefix = 'actions'){
  if(!Array.isArray(raw)||!jsonFits(raw))return {field: prefix};
  for(let index = 0; index < raw.length; index++){
   const at = prefix + '[' + index + ']', action = raw[index];
-  if(admitWaterAction(action))continue;
+  if(admitWaterAction(action)||['text','trace'].includes(action?.kind))continue;
   if(!object(action)||typeof action.kind!=='string')return {field: at};
   if(action.kind==='stroke'&&Array.isArray(action.paths)){
    let last=-1;

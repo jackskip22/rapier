@@ -1,8 +1,9 @@
 import {zipEntries, readZipEntries, zipOversizeSkip, ZIP_MAX_ENTRIES, ZIP_READ_MAX_BYTES, ZIP_WRITE_METADATA_BYTES} from './zip.mjs';
 import {walkZipEntries} from './zip-walk.mjs';
 import {noteFileName, orderAfter, isCodeFile, codeFileName} from './model.mjs';
-import {importAttachments} from './import-attachments.mjs';
+import {importAttachments, ownedRecordingStarts} from './import-attachments.mjs';
 import {attachmentHref} from './attachments.mjs';
+import {recordingHref} from './audio.mjs';
 import {importLinkPatches, scanLinks, resolveAssetPath} from './links.mjs';
 import {addBackup, backupSetId, verifyBackupStream, BACKUP_MANIFEST_FILE} from './restore.mjs';
 import {createImportReceipt} from './import-receipt.mjs';
@@ -63,7 +64,9 @@ export const IMPORT_MAX_BYTES = ZIP_READ_MAX_BYTES;
 export const IMPORT_JSON_MAX_BYTES = 25 * 1024 * 1024;
 const TEXT_EXT = /\.(?:json|md|markdown|txt|text|csv|html?|mht|mhtml|enex|xml|yaml|yml|opml)$/i;
 const IMAGE_EXT = /\.(?:png|jpe?g|gif|webp|jxl|bmp|svg|heic|heif|avif|ico)$/i;
-const CONTAINER_EXT = /\.(?:zip|textpack)$/i;
+const CONTAINER_EXT = /\.(?:zip|textpack|bear2bk)$/i;
+const SYSTEM_FILE = /(?:^|\/)(?:__MACOSX\/|(?:\.DS_Store|Thumbs\.db|desktop\.ini)$)/i;
+const SYSTEM_WHY = 'operating system file, not a note; it stays in the original export';
 const enc = new TextEncoder();
 const baseOf = name => String(name).split(/[\\/]/).pop();
 const extOf = name => /\.([^./\\]+)$/.exec(String(name))?.[1].toLowerCase() || '';
@@ -80,7 +83,7 @@ const sameInput = (a, b) => a.inputId && a.inputId === b.inputId;
 
 const emptySourceValue = value => value === undefined || value === null || value === ''
 	|| Array.isArray(value) && !value.length || object(value) && !Object.keys(value).length;
-const FIELD_LABELS = {publicURL:'publishing link',collaboratorEmails:'collaborator email addresses',
+const FIELD_LABELS = {publicURL:'publishing link',collaboratorEmails:'collaborator email addresses',sharees:'collaborator email addresses',
 	created_time:'storage creation time',updated_time:'storage edit time',deleted_time:'original deletion time',
 	'reminder-order':'reminder order',protected:'protection setting'};
 const fieldLabel = key => Object.hasOwn(FIELD_LABELS, key) ? FIELD_LABELS[key] : key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]/g, ' ').toLowerCase();
@@ -91,15 +94,6 @@ export function importMetadata(source, represented, warnings, subject, {unset, l
 	if (kept.length) warnings.push({code: 'source_metadata', subject, fields: Object.fromEntries(kept.map(([path, value]) => [path, value])),
 		labels: Object.fromEntries(kept.map(([path, , label]) => [path, label])),
 		message: subject + ' not applied: ' + [...new Set(kept.map(([, , label]) => label))].join(', ') + '. Their values stay in the original export and in this import record.'});
-}
-export function appendImportMetadata(text, fields) {
-	if (!fields || !Object.keys(fields).length) return text;
-	const source = JSON.stringify(fields, null, 2);
-	let width = 3;
-	for (const run of source.matchAll(/`+/g)) width = Math.max(width, run[0].length + 1);
-	const fence = '`'.repeat(width);
-	return text + (text.endsWith('\n\n') ? '' : text.endsWith('\n') ? '\n' : '\n\n')
-		+ '## Source metadata\n\n' + fence + 'json\n' + source + '\n' + fence + '\n';
 }
 export function importDate(value, parsed, warnings, field) {
 	if (Number.isSafeInteger(parsed) && parsed >= 0) return parsed;
@@ -245,6 +239,7 @@ export async function openContainers(entries, limits = {}) {
 		if (raw?.bytes !== undefined && !(raw.bytes instanceof Uint8Array) && !(raw.bytes instanceof ArrayBuffer)) entry.unreadable ||= 'unsupported byte buffer';
 		if (raw?.bytes === undefined && typeof raw?.text !== 'string') entry.unreadable ||= 'input has no text or bytes';
 		if (!pathOK(name)) entry.unreadable = 'not a relative source path';
+		else if (SYSTEM_FILE.test(name)) { entry.unreadable = SYSTEM_WHY; entry.system = true; }
 		if (++sequence > maxEntries || total + byteLength(entry) > maxBytes) entry.unreadable ||= 'import exceeds the admitted entry or byte bound';
 		else total += byteLength(entry);
 		if (!entry.unreadable && TEXT_EXT.test(name)) {
@@ -383,6 +378,7 @@ function simplenoteTwins(entries, classified) {
 export function sniff(entries, options = {}) {
 	const roots = new Map(), batches = [], unread = [], attachments = [];
 	for (const entry of entries || []) {
+		if (entry.system) { unread.push({...entry, why: entry.unreadable}); continue; }
 		const rootId = String(entry.rootId || '');
 		if (!roots.has(rootId)) roots.set(rootId, []);
 		roots.get(rootId).push(entry);
@@ -421,7 +417,11 @@ export function sniff(entries, options = {}) {
 		if (list.some(e => classified.get(e) === 'rapier')) {
 			const refused = list.find(e => e.unreadable);
 			if (refused) for (const e of list) unread.push({...e, why: refused.unreadable});
-			else batches.push({source: 'rapier', rootId, entries: list, primary: list});
+			else {
+				const sidecar = list.find(e => classified.get(e) === 'rapier').name, folder = sidecar.slice(0, sidecar.lastIndexOf('/') + 1);
+				const files = folder && list.every(e => e.name.startsWith(folder)) ? list.map(e => ({...e, name: e.name.slice(folder.length)})) : list;
+				batches.push({source: 'rapier', rootId, entries: files, primary: files});
+			}
 			continue;
 		}
 		const shared = list.filter(e => classified.get(e) === 'picture' || (!classified.get(e) && !e.unreadable));
@@ -447,7 +447,7 @@ export function sniff(entries, options = {}) {
 				else attachments.push(e);
 				continue;
 			}
-			if (['keep', 'simplenote', 'standardnotes', 'dayone', 'roam', 'evernote', 'html', 'zoho'].includes(source) || /\.jex$/i.test(e.name)) {
+			if (['simplenote', 'standardnotes', 'dayone', 'roam', 'evernote', 'html', 'zoho'].includes(source) || /\.jex$/i.test(e.name)) {
 				batches.push({source, rootId, entries: [e, ...shared.filter(p => p !== e)], primary: [e], single: true});
 				continue;
 			}
@@ -455,7 +455,7 @@ export function sniff(entries, options = {}) {
 			if (!batch) { batch = {source, rootId, entries: [], primary: []}; batches.push(batch); }
 			batch.entries.push(e); batch.primary.push(e);
 		}
-		for (const batch of batches.filter(b => b.rootId === rootId && ['markdown', 'notion', 'joplin', 'textbundle', 'logseq', 'paper'].includes(b.source))) {
+		for (const batch of batches.filter(b => b.rootId === rootId && ['keep', 'markdown', 'notion', 'joplin', 'textbundle', 'logseq', 'paper'].includes(b.source))) {
 			for (const e of shared) if (!batch.entries.includes(e)) batch.entries.push(e);
 		}
 		const textDirectories = new Set(list.filter(e => classified.get(e) === 'textbundle' && /(?:^|\/)text\.(?:md|markdown)$/i.test(e.name)).map(e => e.name.slice(0, e.name.lastIndexOf('/') + 1)));
@@ -476,6 +476,9 @@ export async function importAny(entries, options = {}, importers = {}) {
 	const existing = (Array.isArray(options.existing) ? options.existing : Object.keys(options.index?.notes || {})).filter(n => typeof n === 'string');
 	const attachmentSources = [];
 	const warnings = [], notes = [], skipped = unread.map(e => skippedRow(e, e.why)), pictures = [], sections = [], sources = {}, unoffered = [], backups = [], backupFiles = [], sectionsAdded = [];
+	for (const task of opened.filter(e => /(?:^|\/)Tasks\/Tasks\.json$/i.test(e.name) && batches.some(b => b.source === 'keep' && b.rootId === e.rootId))) {
+		warnings.push({code: 'keep_tasks', rootId: task.rootId, sourceName: task.name, message: 'Google Tasks reminders were kept in the Tasks file. Set reminders on the matching notes; task titles do not reliably identify a Keep note.'});
+	}
 	const audio = [], audioPool = [...(Array.isArray(options.audioExisting) ? options.audioExisting : [])];
 	const consumed = new Map(), refused = new Map(unread.map(e => [e.inputId, e.why]));
 	const spelling = new Map(sectionNames(options).map(name => [name.toLowerCase(), name]));
@@ -521,7 +524,13 @@ export async function importAny(entries, options = {}, importers = {}) {
 			if (n.entry.category) { admitSection(n.entry.category); n.entry.category = spelling.get(n.entry.category.toLowerCase()); }
 			notes.push(n);
 		}
-		for (const row of result?.audio || []) { if (!row?.name || audioPool.some(n => n.toLowerCase() === String(row.name).toLowerCase())) continue; audio.push({...row, rootId}); audioPool.push(row.name); }
+		for (const row of result?.audio || []) {
+			if (!row?.name || audioPool.some(n => n.toLowerCase() === String(row.name).toLowerCase())) continue;
+			audio.push({...row, rootId}); audioPool.push(row.name);
+			const inputs = row.sourceName ? batch.entries.filter(e => e.name === row.sourceName) : [], owner = got.find(n => n.file === row.note);
+			if (owner) (owner.ownedRecordings ||= []).push(recordingHref(row.name));
+			if (inputs.length === 1 && owner) recordConsumed(inputs[0].inputId, owner);
+		}
 		sources[source] = (sources[source] || 0) + got.length;
 		lastOrder = lastKeyOf(got, lastOrder);
 		for (const raw of result?.sections || []) admitSection(raw);
@@ -624,8 +633,8 @@ export async function importAny(entries, options = {}, importers = {}) {
 	});
 	final.notes = attached.notes.map(note => {
 		if (!note.unresolvedLinks?.length) return note;
-		const links = scanLinks(note.text), copied = new Set((note.linkedAttachments || []).map(attachmentHref));
-		const unresolvedLinks = note.unresolvedLinks.filter(row => links.some(link => link.dest === row.dest && (link.anchor || '') === (row.anchor || '') && !copied.has(link.dest)));
+		const links = scanLinks(note.text), owned = ownedRecordingStarts(note, links), copied = new Set((note.linkedAttachments || []).map(attachmentHref));
+		const unresolvedLinks = note.unresolvedLinks.filter(row => links.some(link => link.dest === row.dest && (link.anchor || '') === (row.anchor || '') && !copied.has(link.dest) && !owned.has(link.start)));
 		return {...note, unresolvedLinks};
 	});
 	for (const row of attached.unread) skipped.push({name: row.object.sourceName, rootId: row.object.rootId, inputId: row.object.inputId, attachment: true, why: row.why + ' Keep the original source file.'});

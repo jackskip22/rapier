@@ -42,6 +42,7 @@ import {journalOperations} from '../kit/ledger/journal-records.mjs';
 export { transformSplices };
 export { materialMatches, admitMaterialResult };
 
+export const showTarget = input => input.target || (input.view ? 'view' : input.question ? 'ask' : input.act || input.turn_id ? 'comparison' : 'passage');
 export function exportFilename(filename, format) {
   if (format === 'markdown') return filename;
   const suffix = format === 'html' ? '.rapier.html' : '.' + (format === 'page' ? 'html' : format);
@@ -697,8 +698,17 @@ function pendingAssetSplices(text, drawAssets) {
   return additions;
 }
 
+export function willRestores(restores, was, now) {
+  if (!Array.isArray(restores) || was === now) return false;
+  const moved = minimalSplice(was, now);
+  return restores.some(row => {
+    const wrote = minimalSplice(row.removed, row.inserted);
+    return wrote.inserted && wrote.removed === moved.removed && wrote.inserted === moved.inserted;
+  });
+}
+
 export function enforceWillReferences(beforeText, afterText, {before = parseWill(beforeText), after = parseWill(afterText),
-  restores = false, bodyOnly = false, referenceCheck} = {}) {
+  restores = null, bodyOnly = false, referenceCheck} = {}) {
   const regions = [];
   for (const region of before.regions) {
     if (region.law === 'edit') continue;
@@ -706,8 +716,14 @@ export function enforceWillReferences(beforeText, afterText, {before = parseWill
     if (!following) return {law: region.law, rule: 'law_violated', region: region.index, ...lawBounds(region)};
     const now = afterText.slice(following.start, following.end);
     if (region.law === 'keep' && was !== now) continue;
+    if (region.law === 'append' && willRestores(restores, was, now)) {
+      const moved = minimalSplice(was, now), content = stripOneTerminator(was).length;
+      const suffix = moved.pos + moved.removed.length;
+      if (moved.pos) regions.push({...region, end: region.start + moved.pos, retained: true});
+      if (suffix < content) regions.push({...region, start: region.start + suffix, end: region.start + content, retained: true});
+      continue;
+    }
     let length = region.law === 'append' ? stripOneTerminator(was).length : was.length;
-    if (restores && region.law === 'append') length = Math.min(length, minimalSplice(was, now).pos);
     if (length) regions.push({...region, end: region.start + length});
   }
   if (!regions.length) return null;
@@ -721,13 +737,13 @@ export function enforceWillReferences(beforeText, afterText, {before = parseWill
 
 const lawBounds = region => ({start: region.start, end: region.end});
 const willFaults = will => will.faults.slice(0, 4).map(fault => ({ mode: fault.mode, line: fault.line }));
-export function enforceWill(beforeText, afterText, splices, { docKind = 'markdown', actor = 'agent', restores = false, referenceCheck, markerSplices = splices } = {}) {
+export function enforceWill(beforeText, afterText, splices, { docKind = 'markdown', actor = 'agent', restores = null, referenceCheck, markerSplices = splices } = {}) {
   if (actor !== 'agent' || docKind !== 'markdown') return null;
   const before = parseWill(beforeText), after = parseWill(afterText);
   if (!before.present && !after.present) return null;
   if (before.faults.length) return { law: 'keep', rule: 'before_faulted', faults: willFaults(before), start: 0, end: beforeText.length };
   let touched = null;
-  if (!restores) for (let index = 0; index < splices.length; index++) {
+  for (let index = 0; index < splices.length; index++) {
     const row = splices[index], marker = willTouchesMarker(before, row.pos, row.pos + row.removed.length);
     if (marker && (!touched || (marker.index ?? Infinity) < (touched.region ?? Infinity))) {
       touched = { law: marker.law, rule: 'marker_span_touched', editIndex: index,
@@ -740,7 +756,7 @@ export function enforceWill(beforeText, afterText, splices, { docKind = 'markdow
   if (before.markers.length !== after.markers.length || before.markers.some((marker, index) => {
       const following = after.markers[index];
       return marker.kind !== following.kind || beforeText.slice(marker.start, marker.end) !==
-        afterText.slice(following.start, following.end) || !restores &&
+        afterText.slice(following.start, following.end) ||
         (markerOffsetBefore(markerSplices, following.start) !== marker.start ||
           markerOffsetBefore(markerSplices, following.end - 1) !== marker.end - 1);
     })) {
@@ -750,18 +766,11 @@ export function enforceWill(beforeText, afterText, splices, { docKind = 'markdow
     const region = before.regions[index];
     const was = beforeText.slice(region.start, region.end);
     const now = afterText.slice(after.regions[index].start, after.regions[index].end);
-    if (region.law === 'append' && !restores && !stripOneTerminator(now).startsWith(stripOneTerminator(was))) {
+    if (region.law === 'append' && !stripOneTerminator(now).startsWith(stripOneTerminator(was)) && !willRestores(restores, was, now)) {
       return { law: 'append', rule: 'law_violated', region: index, ...lawBounds(region) };
     }
     if (region.law !== 'keep') continue;
-    if (was === now) continue;
-    const moved = minimalSplice(was, now);
-    if (restores && splices.some(row => {
-      const wrote = minimalSplice(row.removed, row.inserted);
-      return row.pos + wrote.pos === region.start + moved.pos &&
-        row.pos >= region.start && row.pos + row.removed.length <= region.end &&
-        wrote.removed === moved.removed && wrote.inserted === moved.inserted;
-    })) continue;
+    if (was === now || willRestores(restores, was, now)) continue;
     return { law: 'keep', rule: 'law_violated', region: index, ...lawBounds(region) };
   }
   return enforceWillReferences(beforeText, afterText, {before, after, restores, referenceCheck});
@@ -2766,7 +2775,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         options.restores !== true && !options.sourceTransactionId &&
         touchesCommentRecord(beforeText, authoredSplices, options.metadata?.docKind || state.docKind)) return failure('comments_record');
     const law = enforceWill(beforeText, text, authoredSplices, { docKind: state.docKind, actor: who.actor,
-      restores: options.restores === true, referenceCheck: host.referenceCheck, markerSplices: splices });
+      restores: options.restores === true ? options.restored : null, referenceCheck: host.referenceCheck, markerSplices: splices });
     if (law) return failure('document_law', 'refused', law);
     const fenced = commitFenceRefusal({...options.fence, splices});
     if (fenced) return fenced;
@@ -2787,6 +2796,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
           sourceTransactionId: options.sourceTransactionId || null,
           metadata, beforeMetadata, afterMetadata,
           ...(options.sourceTransactionIds?.length ? {sourceTransactionIds: options.sourceTransactionIds} : {}),
+          ...(options.restores === true ? {restored: clone(options.restored || [])} : {}),
           ...(options.turnId ? {turnId: options.turnId} : {}), fence: options.fence || null });
         const ok = result?.ok;
         if (ok === false) {
@@ -3297,6 +3307,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (group?.outcome) return group;
     const entry = input.change_id ? changes.find(row => row.id === input.change_id) : group?.at(-1);
     if (!entry) return failure('act_unavailable', 'target_gone');
+    if (who.actor === 'agent' && (group || [entry]).some(row => row.actor !== 'agent')) return failure('act_not_agent_authored', 'refused');
     const selectedIds = new Set((group || [entry]).map(row => row.id));
     const commentEntries = [], commentRestorations = [];
     if (state.text.includes('<!-- md-comments:v1 ') || (group || [entry]).some(row =>
@@ -3384,6 +3395,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       commentInverses: commentEntries.slice().reverse(), commentRestorations: commentRestorations.slice().reverse(),
       sourceTransactionId: reversedIds.length === 1 ? reversedIds[0] : null,
       ...(reversedIds.length ? {sourceTransactionIds: reversedIds} : {}), restores: true, editCount: splices.length,
+      restored: (group || [entry]).flatMap(row => row.splices.map(({removed, inserted}) => ({removed: inserted, inserted: removed}))),
       ...(inversePatch ? {drawingPresentation: {...presentationBinding, presentation: {open: false, replay: false},
         reference: inversePatch.reference}} : {}),
       ...(painting ? {authoredCount: painting.authoredCount, drawAssets: painting.drawAssets, fence: painting.fence, drawingPatch: painting.drawingPatch}
@@ -3732,6 +3744,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         const fault = waterActionsFault(actions, at + '.actions');
         if (fault) return {refusal: failure('paint_strokes_invalid', 'invalid', {field: fault.field, ...(fault.hint ? {hint: fault.hint} : {})})};
         if (paper != null && !waterPaperById(paper)) return {refusal: failure('paint_strokes_invalid', 'invalid', {field: at + '.paper'})};
+        const traceRefusal = actions.some(action => action?.kind === 'trace' || action?.source === 'trace') && await authorizeWaterPro('trace', context);
+        if (traceRefusal) return {refusal: traceRefusal};
       }
       let shape = null;
       cancelled(context);
@@ -3771,9 +3785,13 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const paper = recipe?.background?.kind === 'paper' ? recipe.background.paper : null;
     if (!RAPIER_DRAW_PAPERS.some(row => row.id === paper && row.pro) ||
         previous?.background?.kind === 'paper' && previous.background.paper === paper) return null;
+    return authorizeWaterPro('papers', context);
+  }
+
+  async function authorizeWaterPro(feature, context) {
     cancelled(context);
     try {
-      if (typeof host.authorizeWaterPro !== 'function' || await host.authorizeWaterPro('papers', {signal: context.signal}) !== true)
+      if (typeof host.authorizeWaterPro !== 'function' || await host.authorizeWaterPro(feature, {signal: context.signal}) !== true)
         return failure('water_pro_unavailable');
     } catch { cancelled(context); return failure('water_pro_unavailable'); }
     cancelled(context);
@@ -4609,9 +4627,10 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       const attrs = {id, alt: match[1].replace(/\\([\[\]\\])/g, '$1')};
       const start = marker ? item.start - marker[0].length : item.start;
       const leading = start && source[start - 1] !== '\n' ? '\n' : '';
-      const trailing = item.end < source.length && !/[\r\n]/.test(source[item.end]) ? '\n' : '';
-      const fence = blockText(kind, attrs, JSON.stringify(body, null, 2));
-      replacements.push({start, end: item.end, imageStart: item.start,
+      const placed = /^[ \t]*(<!--md-layout:v1[^>\r\n]*-->)[ \t]*(?=\r?\n|$)/.exec(source.slice(item.end)), end = item.end + (placed?.[0].length || 0);
+      const trailing = end < source.length && !/[\r\n]/.test(source[end]) ? '\n' : '';
+      const fence = blockText(kind, attrs, JSON.stringify(body, null, 2)) + (placed ? '\n' + placed[1] : '');
+      replacements.push({start, end, imageStart: item.start,
         raw, id, kind, asset, recipe, live, leading, trailing, fence, text: leading + fence + trailing});
     }
     for (const span of imageSpans(source)) if (!replacements.some(row => row.start <= span.start && row.end >= span.end)) replacements.push({...span, id: sha256(source.slice(span.start, span.end)), kind: 'asset', text: '<!-- rapier-image:' + sha256(source.slice(span.start, span.end)) + ' -->'});
@@ -4722,7 +4741,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         inserted = inserted.slice(0, from) + text + inserted.slice(until);
       };
       for (const block of fencedBlocks(inserted).filter(row => row.kind !== 'rapier-comment').reverse()) {
-        const raw = prepared.get(block.id);
+        const kept = prepared.get(block.id), raw = block.kind === 'html' || !kept ? kept : kept.replace(/[ \t]*<!--md-layout:v1[^>]*-->$/, '') + (block.layout ? ' ' + block.layout : '');
         const prior = previous.get(block.id), leading = prior?.leading || '';
         const from = leading && inserted.slice(block.start - leading.length, block.start) === leading ? block.start - leading.length : block.start;
         const eol = prior?.trailing ? '' : /\r?\n$/.exec(block.text)?.[0] || '';
@@ -4792,8 +4811,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         thread.resolved = block.attrs.resolved === 'true';
       }
       const row = writeComments(computed.text, wanted, current);
-      splices.splice(0, splices.length, ...computed.splices, row);
       options.authoredCount = splices.length;
+      splices.splice(0, splices.length, ...computed.splices, row);
     }
     const markerOnly = splices.length === 2 && splices.some(row => !row.removed && /^<!-- rapier-block:[A-Za-z0-9_-]+ rapier-(?:draw|water|paint) -->\n\n$/.test(row.inserted));
     if (options.drawingPatch && (splices.length !== 1 && !markerOnly || commentsChanged)) {delete options.drawingPatch; delete options.fence;}
@@ -5060,7 +5079,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (plan.reason) return surfaceFailure(plan.reason, source, input, plan, targets);
     const compiled = await compileTextPlan(projection, plan, who, context);
     if (compiled.outcome) return compiled;
-    const result = await commit(compiled.splices, who, context, compiled.commentsChanged ? 'comments.write' : input.changes.some(row => Object.hasOwn(row, 'text')) ? 'document.replace' : compiled.options.drawingPatch && !input.filename ? 'document.draw' : 'document.edit', {
+    const result = await commit(compiled.splices, who, context, compiled.commentsChanged ? (compiled.options.authoredCount ? 'document.edit' : 'comments.write') : input.changes.some(row => Object.hasOwn(row, 'text')) ? 'document.replace' : compiled.options.drawingPatch && !input.filename ? 'document.draw' : 'document.edit', {
       ...compiled.options, rebased: moved,
       turnId: input.turn_id, label: input.label || 'Agent edit', editCount: input.changes.length,
       ...(input.filename ? {metadata: {filename: input.filename, docKind: state.docKind}, metadataAssignments: ['filename']} : {}),
@@ -5086,7 +5105,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   }
 
   async function doorShow(input, who, context) {
-    const target = input.target || (input.view ? 'view' : input.question ? 'ask' : input.act || input.turn_id ? 'comparison' : 'passage');
+    const target = showTarget(input);
     if (target === 'view' && (input.preference !== undefined || input.value !== undefined)) return failure('show_arguments_invalid', 'invalid', {field: input.preference !== undefined ? 'preference' : 'value'});
     if (target === 'preferences' && input.view !== undefined) return failure('show_arguments_invalid', 'invalid', {field: 'view'});
     if (target === 'comparison') return dispatchOperation('comparison.present', input.close ? {action: 'close', compare_id: input.compare_id}

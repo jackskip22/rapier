@@ -248,7 +248,7 @@ function _rapierKeepPortableTemplate() {
       else if (screen) screen.after(deferred);
       else throw new Error('Editor interface slot is missing');
     };
-    await fonts;
+    await Promise.race([fonts, new Promise(resolve => setTimeout(resolve, 1500))]);
     await _rapierExecuteBootSource(editor[1], mountInterface);
     if (globalThis.RAPIER_APPS_HOST === true) {
       await _rapierWhenRuntime('rapier-apps-runtime');

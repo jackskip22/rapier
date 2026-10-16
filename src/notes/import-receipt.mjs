@@ -127,6 +127,15 @@ export async function prepareImportWrite(receipt, note, {entry = note.entry, cre
 	return recordWrite(receipt, note, {bytes: bytesOf(note.bytes ?? note.text), entry, created}, {digest});
 }
 
+export async function prepareImportWrites(receipt, rows, {digest = digestBytes} = {}) {
+	const out = copy(receipt), pending = new Set(out.notes.map(row => row.file)), recorded = new Set(out.written.map(row => row.file));
+	for (const {note, entry = note.entry, created = true} of rows) {
+		const proof = await writeProof(out, note, {bytes: bytesOf(note.bytes ?? note.text), entry, created}, {digest, pending, recorded});
+		out.status = 'writing'; out.written.push(proof); recorded.add(proof.file);
+	}
+	return out;
+}
+
 export async function verifyImportWrite(receipt, note, observed, {digest = digestBytes} = {}) {
 	return recordWrite(receipt, note, observed, {digest});
 }
@@ -380,12 +389,6 @@ function identities(current) {
 	return out;
 }
 
-export function eligibleImportUndo(receipt, current) {
-	if (importUndoReadiness(receipt)) return [];
-	const ids = identities(current);
-	return receipt.written.filter(row => !writeProblem(row, get(current, row.file), ids)).map(row => row.file);
-}
-
 function whenWords(stamp, now) {
 	if (!Number.isSafeInteger(stamp) || stamp < 0 || stamp > 8640000000000000) return 'time not recorded';
 	if (Number.isSafeInteger(now) && now >= stamp) {
@@ -533,4 +536,14 @@ export function importUndoSections(receipt, index) {
 export function importUndoRows(receipt, plan) {
 	return [...plan.remove.map(file => ({file, name: noteName(receipt, file), action: 'remove', why: 'is unchanged since this import'})),
 		...plan.kept.map(row => ({file: row.file, name: noteName(receipt, row.file), action: 'keep', why: row.why}))];
+}
+export function describeImportUndo(receipt, plan) {
+	const rows = importUndoRows(receipt, plan).map(({name, action, why}) => ({name, action, why,
+		text: name + (action === 'remove' ? ' — remove: ' : ' — keep: ') + why}));
+	return {title: 'undo import', rows, canConfirm: !plan.refuse,
+		confirm: plan.remove.length ? 'Undo import' : 'Keep notes and finish undo',
+		summary: plan.refuse || count(plan.remove.length, 'note') + ' will be removed; ' + count(plan.kept.length, 'note') + ' will be kept',
+		lines: ['only the unchanged notes selected here will be removed',
+			'unchanged imported history, empty sections and unused imported files may be removed',
+			'notes outside this import will not be changed']};
 }

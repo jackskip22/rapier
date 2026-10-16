@@ -27,7 +27,7 @@ function mathSvg(box,source,error,utf16,options={}) {
 
 function mathRenderPrepared(prepared,options={}) {
   const {text,safe,tree,error:parseError}=prepared;
-  const context={size:1,level:0,variant:'normal',cramped:false,display:!!options?.displayMode,cache:new WeakMap(),budget:{nodes:0,outlineBytes:0}};
+  const context={size:1,level:0,variant:'normal',cramped:false,display:!!options?.displayMode,spans:!!options?.spans,cache:new WeakMap(),budget:{nodes:0,outlineBytes:0}};
   try {
     if(safe.error)throw safe.error;
     if(options?.screen!==undefined) {
@@ -60,7 +60,7 @@ function mathRenderPrepared(prepared,options={}) {
 }
 
 function renderMath(source,options={}) {
-  return mathRenderPrepared(mathPrepare(source),options);
+  return mathRenderPrepared(mathPrepare(source,options),options);
 }
 function mathRenderToString(source,options) { return renderMath(source,options).svg; }
 

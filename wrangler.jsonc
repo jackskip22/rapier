@@ -2,14 +2,13 @@
   "name": "rapier",
   "compatibility_date": "2026-08-08",
   "workers_dev": false,
-  // door-worker.js gives each dedicated page its own title, description, canonical address and guide.
-  // It runs first on those paths and their trailing-slash redirects, and
-  // serves the plain page on any doubt. Every other address, "/" included, is the static asset alone.
+  // Dedicated pages are static files named by _redirects. Assets answer them, including
+  // trailing-slash redirects, and the worker is not invoked for those requests.
+  // The worker runs only when no asset matches.
   "main": "door-worker.js",
   "assets": {
     "directory": "./site",
     "binding": "ASSETS",
-    "html_handling": "none",
-    "run_worker_first": ["/privacy", "/privacy/", "/commercial", "/commercial/", "/notes", "/notes/", "/draw", "/draw/", "/watercolor", "/watercolor/"]
+    "html_handling": "none"
   }
 }

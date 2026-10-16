@@ -686,7 +686,7 @@ function snapMove(recipe, ids, dx, dy, tolerance) {
 			if (Math.abs(delta) <= tolerance && (!best || Math.abs(delta) < Math.abs(best.delta))) best = { axis, kind: 'point', at, delta, box: unit.box };
 		}
 		const row = units.filter(unit => unit.box[clo] < box[chi] && box[clo] < unit.box[chi]);
-		if (row.length > 40) row.length = 40;
+		if (row.length > 40) { const mid = unit => Math.abs(unit.box[lo] + unit.box[hi] - box[lo] - box[hi]); row.sort((p, q) => mid(p) - mid(q)).length = 40; }
 		for (const L of row) for (const R of row) {
 			if (L === R) continue;
 			const span = R.box[lo] - L.box[hi];

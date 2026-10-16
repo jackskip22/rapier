@@ -48,6 +48,8 @@ function mathDiagnostic(cause) {
     offset:Number.isFinite(cause?.offset)?cause.offset:0};
   if(message.length>1024 || cause?.messageTruncated)error.messageTruncated=true;
   if(cause?.sourceOmitted)error.sourceOmitted=true;
+  const suggestion=cause?.suggestion ?? (cause?.code==='unsupported-command'?mathSuggest(cause.command):cause?.code==='unsupported-environment'?mathSuggest(cause.environment,true):undefined);
+  if(suggestion)error.suggestion=suggestion;
   if(rawCommand!==undefined) {
     const command=String(rawCommand);
     error.command=command.slice(0,128).replace(/[\ud800-\udbff]$/,'');
@@ -56,12 +58,15 @@ function mathDiagnostic(cause) {
   return error;
 }
 
-function mathPrepare(source) {
+function mathPrepare(source, options) {
   const text = String(source ?? ''), safe = mathAdmitSource(text);
   let tree, error = safe.error;
-  if (!error) try { tree = parseMathTex(text); } catch (cause) { error = mathDiagnostic(cause); }
+  if (!error) try { tree = parseMathTex(text); } catch (cause) {
+    tree = options?.preview ? parseMathTexPreview(text, cause, options.caret ?? text.length) : null;
+    if (!tree) { tree = undefined; error = mathDiagnostic(cause); }
+  }
   return {text, safe, tree, error};
 }
 
-import {parseMathTex} from './parser.js';
+import {parseMathTex, parseMathTexPreview, mathSuggest} from './parser.js';
 export {mathDiagnostic, mathPrepare, mathSourceUTF16};

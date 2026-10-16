@@ -51,3 +51,15 @@ export function restoreSymbols(code, map) {
   }
   return parts.join('') + code.slice(end);
 }
+
+export function prefixSymbols(code, map, slice) {
+  assert.equal(hash(code), map.sha256, 'symbol metadata belongs to different compiled bytes');
+  assert(code.startsWith(slice.replace(/;$/, '')), 'a slice map needs a leading slice');
+  const offsets = [];
+  for (let i = 0, start = 0; i < map.offsets.length; i += 3) {
+    start += map.offsets[i];
+    if (start + map.offsets[i + 1] > slice.length) break;
+    offsets.push(map.offsets[i], map.offsets[i + 1], map.offsets[i + 2]);
+  }
+  return {sha256: hash(slice), names: map.names, offsets};
+}

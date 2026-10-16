@@ -2,11 +2,13 @@
 import {exactBytes, BYTE_CHUNK_BYTES, sha256State, blobByteChunks, digestByteChunks, checkByteAbort, byteCopyError} from './integrity.mjs';
 import {isRecordingPartial, recordingStem, recordingStorageError} from './recording-files.mjs';
 import {FOLDERS, parts} from './opfs-paths.mjs';
+import {notesHostWords} from './host-words.mjs';
 
 const fail = (code, message) => Object.assign(new Error(message), {code});
 
 const PROBE = '\u0000rapier-idb-probe';
 const reserved = key => typeof key !== 'string' || key.startsWith('\u0000');
+const within = (name, prefix) => !reserved(name) && (prefix ? name.startsWith(prefix + '/') : !name.includes('/'));
 
 const same = (a, b) => a != null && b != null && a.length === b.length && a.every((n, i) => n === b[i]);
 
@@ -41,13 +43,13 @@ function run(db, table, mode, act) {
 	});
 }
 
-function readAll(db, table) {
+function readAll(db, table, prefix) {
 	return new Promise((resolve, reject) => {
 		let tx;
 		try { tx = db.transaction(table, 'readonly'); } catch (error) { reject(error); return; }
 		const os = tx.objectStore(table), keys = os.getAllKeys(); let names = [], values = [];
 		keys.onsuccess = () => {
-			names = (keys.result || []).filter(name => !reserved(name)); values = new Array(names.length);
+			names = (keys.result || []).filter(name => within(name, prefix)); values = new Array(names.length);
 			names.forEach((name, i) => { const r = os.get(name); r.onsuccess = () => { values[i] = r.result; }; });
 		};
 		tx.onabort = () => reject(tx.error);
@@ -174,7 +176,7 @@ export function createIndexedDbByteStore({database = 'rapier-notes-preview', tab
 		const idb = factory === undefined ? (typeof indexedDB === 'undefined' ? null : indexedDB) : factory;
 		if (!idb) {
 			entry.db = null; entry.durable = false;
-			say('this page has no browser storage for notes, so they live in this page until it closes', fail('no-idb', 'no indexedDB on this page'));
+			say('this page has no ' + notesHostWords().kind + ' storage for notes, so they live in this page until it closes', fail('no-idb', 'no indexedDB on this page'));
 			return entry;
 		}
 		let db = null;
@@ -184,20 +186,20 @@ export function createIndexedDbByteStore({database = 'rapier-notes-preview', tab
 		} catch (error) {
 			try { db?.close?.(); } catch (_) {}
 			entry.db = null;
-			if (!incapable(error)) return unadmit('this browser\'s own storage for notes could not be opened this time, so nothing new can be written until it can', error);
+			if (!incapable(error)) return unadmit(notesHostWords().device + '\'s own storage for notes could not be opened this time, so nothing new can be written until it can', error);
 			entry.durable = false;
-			say('the notes could not be kept in this browser\'s own storage, so they live in this page until it closes', error);
+			say('the notes could not be kept in ' + notesHostWords().device + '\'s own storage, so they live in this page until it closes', error);
 			return entry;
 		}
 		try {
 			await probeDatabase(db, table);
 		} catch (error) {
 			let held = null;
-			try { held = await hasKeptWork(db, table); } catch (why) { entry.db = db; return unadmit('this browser\'s own storage for notes refused a write and could not be read either, so nothing new can be written until it can', why); }
-			if (held) { entry.db = db; entry.probeQuota = error?.name === 'QuotaExceededError'; return unadmit('this browser\'s own storage for notes refused a write while it still holds your notes, so nothing new can be written until it can', error); }
+			try { held = await hasKeptWork(db, table); } catch (why) { entry.db = db; return unadmit(notesHostWords().device + '\'s own storage for notes refused a write and could not be read either, so nothing new can be written until it can', why); }
+			if (held) { entry.db = db; entry.probeQuota = error?.name === 'QuotaExceededError'; return unadmit(notesHostWords().device + '\'s own storage for notes refused a write while it still holds your notes, so nothing new can be written until it can', error); }
 			try { db.close(); } catch (_) {}
 			entry.db = null; entry.durable = false;
-			say('the notes could not be kept in this browser\'s own storage, so they live in this page until it closes', error);
+			say('the notes could not be kept in ' + notesHostWords().device + '\'s own storage, so they live in this page until it closes', error);
 			return entry;
 		}
 		entry.db = db; entry.durable = true;
@@ -250,7 +252,6 @@ export function createIndexedDbByteStore({database = 'rapier-notes-preview', tab
 		return out;
 	};
 
-	const within = (name, prefix) => !reserved(name) && (prefix ? name.startsWith(prefix + '/') : !name.includes('/'));
 	const list = async (prefix = '') => {
 		if (!FOLDERS.has(prefix)) throw fail('name', 'This folder is not part of Notes.');
 		await readable();
@@ -264,11 +265,29 @@ export function createIndexedDbByteStore({database = 'rapier-notes-preview', tab
 		const record = header ? null : chunkRecord(value), bytes = recordBytes(value);
 		return header ? {size: header.size, modified: null} : record ? {size: record.size, modified: null, sha256: record.digest} : bytes == null ? null : {size: bytes.length, modified: null};
 	};
+	const statMany = async names => {
+		if (!Array.isArray(names)) throw new TypeError('A size read needs explicit file names.');
+		const wanted = [...new Set(names)]; wanted.forEach(parts); await readable();
+		if (!entry.db) return new Map(wanted.filter(name => entry.memory.has(name)).map(name => [name, {size: entry.memory.get(name).length, modified: null}]));
+		return recordingTransaction(entry.db, table, 'readonly', (os, take, done) => {
+			const out = new Map(); let at = 0;
+			const next = () => {
+				if (at === wanted.length) { done(out); return; }
+				const name = wanted[at++];
+				take(os.get(name), value => {
+					const header = isRecordingPartial(name) ? recordingHeader(value) : null;
+					const record = header || chunkRecord(value), bytes = recordBytes(value);
+					if (record || bytes) out.set(name, {size: record ? record.size : bytes.length, modified: null});
+					next();
+				});
+			}; next();
+		});
+	};
 	const statAll = async (prefix = '') => {
 		if (!FOLDERS.has(prefix)) throw fail('name', 'This folder is not part of Notes.');
 		await readable();
 		const out = new Map();
-		const pairs = entry.db ? await readAll(entry.db, table) : [[...entry.memory.keys()], [...entry.memory.values()]];
+		const pairs = entry.db ? await readAll(entry.db, table, prefix) : [[...entry.memory.keys()], [...entry.memory.values()]];
 		const [names, values] = pairs;
 		for (let i = 0; i < names.length; i++) {
 			const name = names[i];
@@ -480,7 +499,7 @@ export function createIndexedDbByteStore({database = 'rapier-notes-preview', tab
 		},
 	};
 
-	return {read, readChunks, write, compareWrite, writeBlob, remove, list, stat, statAll, prepare, recoverIntakes, recording,
+	return {read, readChunks, write, compareWrite, writeBlob, remove, list, stat, statMany, statAll, prepare, recoverIntakes, recording,
 		get streamingAttachments() { return !!entry.db && !entry.fault; },
 		get writable() { return !entry.fault; },
 		get reclaimable() { return !!entry.fault && entry.probeQuota; },

@@ -2,7 +2,8 @@
 import {createPreparationScope, supportsRichStyle, captureFontAuthority} from './preparation.mjs';
 import {createParagraphFitter} from './paragraph-fit.mjs';
 
-export function createTypography(fitter = createParagraphFitter()) {
+export function createTypography() {
+  const fitter = createParagraphFitter();
   const mark = 'data-rapier-typography', boundary = mark + '-break', hang = mark + '-hang';
   const protectedInitial = mark + '-protected-initial';
   const gapMark = mark + '-gap', fitMark = mark + '-fit';

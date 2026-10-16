@@ -1,6 +1,13 @@
 # Deploy the page, embeds, public guides, installation companions and discovery files.
 /*
 !/rapier.html
+!/door-notes.html
+!/door-draw.html
+!/door-watercolor.html
+!/door-privacy.html
+!/door-commercial.html
+!/rapier-notes-*.txt
+!/rapier-drawing-*.txt
 !/rapier-bench.html
 !/sw.js
 !/manifest.json

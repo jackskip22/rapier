@@ -3,7 +3,7 @@ import {BitWriter, floorLog2} from './bits.mjs';
 import {uintConfig, hybridToken, buildCode, writePrefixCode, writeUintConfig} from './prefix.mjs';
 import {ALPHABET} from './modular.mjs';
 
-const LOSSLESS_INTEGER_CONFIGS = [uintConfig(0), uintConfig(4), uintConfig(4, 1, 1), uintConfig(3, 0, 1)];
+const LOSSLESS_INTEGER_CONFIGS = [uintConfig(0), uintConfig(4), uintConfig(4, 1, 1), uintConfig(3, 0, 1), uintConfig(4, 2, 0), uintConfig(4, 2, 1), uintConfig(4, 1, 2)];
 
 export function losslessCoding(raw) {
   const end = raw.length - 33, token = [0, 0, 0];

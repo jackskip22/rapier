@@ -16,9 +16,10 @@
 .info-action-body{margin:8px 0 2px;color:var(--color-text);font:var(--fw-regular) var(--text-sm)/1.55 var(--font-sans);}
 .info-action-body ul{margin:0;padding-left:1.2em;list-style:disc;}
 .info-action-body li+li{margin-top:8px;}
+.info-action-body .settings-action-btn{margin-top:16px;}
 body:not(.light) .info-action-body{color:#fff;}
 body.light .info-action-body{color:#000;}
-.info-action-overlay .close-button,.info-action-overlay .close-button:hover,.info-action-overlay .close-button:active,.info-action-overlay .close-button:focus,.info-action-overlay .close-button:focus-visible{appearance:none!important;-webkit-tap-highlight-color:transparent!important;border:0!important;outline:0!important;box-shadow:none!important;background:transparent!important;}
+.info-action-overlay .close-button,.info-action-overlay .close-button:hover,.info-action-overlay .close-button:active,.info-action-overlay .close-button:focus,.info-action-overlay .close-button:focus-visible{appearance:none!important;-webkit-tap-highlight-color:transparent!important;border:0!important;background:transparent!important;}
 .info-action-overlay .close-button::before,.info-action-overlay .close-button::after{display:none!important;}
 .info-action-overlay .close-button:focus-visible .icon{stroke-width:2.4;}
 @media(min-width:760px){.info-action-sheet{max-width:560px;margin:0 auto;}}

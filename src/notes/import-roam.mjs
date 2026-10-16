@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {noteFileName, orderAfter} from './model.mjs';
-import {readJsonInputs, literalInline, importDate, importMetadata, appendImportMetadata} from './import.mjs';
+import {readJsonInputs, literalInline, importDate, importMetadata} from './import.mjs';
 import {finishImportCharacters, literalImportSource} from './import-characters.mjs';
 
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -18,7 +18,24 @@ function closeOpenFence(content) {
   return fence ? content + (/\r\n$|\r$|\n$/.test(content) ? '' : '\n') + fence : content;
 }
 
-function pageNote(page, input, ordinal, pool) {
+function roamInline(text, blocks) {
+  if (text.includes('`')) return text;
+  return text.replace(/^\{\{\[\[(TODO|DONE)\]\]\}\} ?/, (_, state) => state === 'DONE' ? '[x] ' : '[ ] ')
+    .replace(/\^\^([^^\n]+?)\^\^/g, '==$1==')
+    .replace(/\(\(([\w-]{6,})\)\)/g, (ref, uid) => blocks.has(uid) && !blocks.get(uid).includes('((') ? blocks.get(uid) : ref);
+}
+function blockWords(pages) {
+  const blocks = new Map(), stack = [...pages];
+  while (stack.length) {
+    const block = stack.pop();
+    if (!object(block)) continue;
+    if (typeof block.uid === 'string' && typeof block.string === 'string' && !/[\r\n`]/.test(block.string)) blocks.set(block.uid, block.string);
+    if (Array.isArray(block.children)) stack.push(...block.children);
+  }
+  return blocks;
+}
+
+function pageNote(page, input, ordinal, pool, blocks) {
   const sourceItem = 'pages[' + ordinal + ']', warnings = [...(input.characterWarnings || [])];
   if (!object(page) || typeof page.title !== 'string') {
     const kept = literalImportSource({...input, bytes: undefined, text: JSON.stringify(page, null, 2)}, pool,
@@ -34,7 +51,7 @@ function pageNote(page, input, ordinal, pool) {
   const title = page.title.replace(/\r\n|\r|\n/g, ' ');
   if (title !== page.title) represented.delete('title');
   let text = '# ' + literalInline(title) + '\n';
-  const metadata = {}, keptBlocks = [], lines = [], stack = [];
+  const lines = [], stack = [];
   if (Array.isArray(page.children)) {
     represented.add('children');
     for (let i = page.children.length - 1; i >= 0; i--) stack.push({block: page.children[i], path: [i]});
@@ -43,8 +60,8 @@ function pageNote(page, input, ordinal, pool) {
     const {block, path} = stack.pop(), indent = '  '.repeat(path.length - 1), fields = new Set();
     let content = '', heading = '';
     if (object(block)) {
-      if (typeof block.string === 'string') { content = block.string; fields.add('string'); }
-      else warnings.push({code: 'roam-block-retained', message: 'A block without readable text was kept in the note metadata.', path});
+      if (typeof block.string === 'string') { content = roamInline(block.string, blocks); if (content === block.string) fields.add('string'); }
+      else warnings.push({code: 'roam-block-retained', message: 'A block without readable text was kept in the import record.', path});
       if (Number.isInteger(block.heading) && block.heading >= 0 && block.heading <= 3) {
         heading = block.heading ? '#'.repeat(block.heading) + ' ' : ''; fields.add('heading');
       }
@@ -52,28 +69,23 @@ function pageNote(page, input, ordinal, pool) {
         fields.add('children');
         for (let i = block.children.length - 1; i >= 0; i--) stack.push({block: block.children[i], path: [...path, i]});
       }
-    } else warnings.push({code: 'roam-block-retained', message: 'An unreadable block was kept in the note metadata.', path});
+    } else warnings.push({code: 'roam-block-retained', message: 'An unreadable block was kept in the import record.', path});
     let projected = heading + content;
     if (object(block) && Array.isArray(block.children) && block.children.length) {
       const closed = closeOpenFence(projected);
       if (closed !== projected) {
         projected = closed; fields.delete('string');
         warnings.push({code: 'roam-fence-retained', path,
-          message: 'An unclosed block code fence was completed before its children. Its full original text remains in the note metadata.'});
+          message: 'An unclosed block code fence was completed before its children. Its full original text remains in the import record.'});
       }
     }
     lines.push(indent + '- ' + projected.replace(/\r\n|\r|\n/g, ending => ending + indent + '  ') + '\n');
     const kept = object(block) ? unrepresented(block, fields) : {value: block};
-    if (Object.keys(kept).length) {
-      keptBlocks.push({path, fields: kept});
-      importMetadata(kept, [], warnings, 'Roam block fields', {at: path.map(i => 'children[' + i + ']').join('.')});
-    }
+    if (Object.keys(kept).length) importMetadata(kept, [], warnings, 'Roam block fields', {at: path.map(i => 'children[' + i + ']').join('.')});
   }
   if (lines.length) text += '\n' + lines.join('');
   const keptPage = unrepresented(page, represented);
-  if (Object.keys(keptPage).length) { metadata.page = keptPage; importMetadata(keptPage, [], warnings, 'Roam page fields'); }
-  if (keptBlocks.length) metadata.blocks = keptBlocks;
-  text = appendImportMetadata(text, metadata);
+  if (Object.keys(keptPage).length) importMetadata(keptPage, [], warnings, 'Roam page fields');
   const file = noteFileName('# ' + literalInline(title), pool); pool.push(file);
   return {file, text, entry, sourceName: input.name, sourceItem, sourceWikiAliases: [page.title], rootId: input.rootId ?? '', warnings};
 }
@@ -92,7 +104,8 @@ export async function importRoam(entries, options = {}) {
     if (!Array.isArray(pages)) { skipped.push({name: input.name, why: 'not a Roam page array'}); continue; }
     const start = notes.length, used = pool.length;
     try {
-      for (let i = 0; i < pages.length; i++) notes.push(pageNote(pages[i], input, i, pool));
+      const blocks = blockWords(pages);
+      for (let i = 0; i < pages.length; i++) notes.push(pageNote(pages[i], input, i, pool, blocks));
     } catch {
       notes.length = start; pool.length = used;
       notes.push(literalImportSource(input, pool, 'This Roam graph could not be projected completely.', input.characterWarnings, 'json'));

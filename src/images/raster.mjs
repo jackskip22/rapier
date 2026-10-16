@@ -29,7 +29,7 @@ function fourCC(bytes, start) {
 }
 
 function exifOrientation(bytes, start, end) {
-  if (end - start >= 6 && fourCC(bytes, start) === 'Exif' && bytes[start + 4] === 0 && bytes[start + 5] === 0) start += 6;
+  if (end - start >= 6 && fourCC(bytes, start) === 'Exif' && bytes[start + 4] === 0) start += 6;
   if (end - start < 8) return null;
   const order = String.fromCharCode(bytes[start], bytes[start + 1]);
   if (order !== 'II' && order !== 'MM') return null;
@@ -78,7 +78,7 @@ function jpeg(bytes, view) {
       const frame = dimensions(view.getUint16(start + 3), view.getUint16(start + 1), JPEG_XL_PICTURE_LIMITS);
       width ??= frame.width; height ??= frame.height;
     } else if (marker === 0xe1) {
-      if (end - start >= 6 && fourCC(bytes, start) === 'Exif' && bytes[start + 4] === 0 && bytes[start + 5] === 0) {
+      if (end - start >= 6 && fourCC(bytes, start) === 'Exif' && bytes[start + 4] === 0) {
         orientation ??= exifOrientation(bytes, start, end);
       } else {
         const metadata = new TextDecoder().decode(bytes.subarray(start, end));

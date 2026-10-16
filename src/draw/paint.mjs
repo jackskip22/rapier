@@ -335,7 +335,9 @@ export class PaintBrush {
 		this.loadPoint = new Float64Array(2); this.holdPoint = new Float64Array(2);
 		this.bristlePoint = new Float64Array(2); this.bristleDirection = new Float64Array(2); this.blade = null;
 		this.oilHairs = null; this.oilPoint = new Float64Array(2); this.oilAt = null; this.oilTravel = 0; this.oilSample = new Float64Array(5);
-		this.holdDab = { store: null, velocity: 0, strength: 0, col0: 0, col1: 0, initial: 0, stepped: false };
+		this.holdDab = { store: null, velocity: 0, strength: 0, col0: 0, col1: 0, initial: 0, stepped: false, tint: null,
+			adjust: color => { const d = this.holdDab; this._colourDab(color, d.smudge, d.legacy, d.paint, d.linear);
+				if (d.tint) { color[0] *= d.tint.tr; color[1] *= d.tint.tg; color[2] *= d.tint.tb; } } };
 		this.dynamicMappings = [];
 		this.buckets = new Float32Array(NUM_BUCKETS * SMUDGE_BUCKET_SIZE);
 		this.minBucket = -1; this.maxBucket = -1;
@@ -404,7 +406,8 @@ export class PaintBrush {
 		const ST_ = this.states;
 		ST_[ST.x] += dx; ST_[ST.y] += dy; ST_[ST.actual_x] += dx; ST_[ST.actual_y] += dy;
 		if (this.skip > 0.001) { this.skipLastX += dx; this.skipLastY += dy; }
-		if (this.holdAt) { this.holdAt[0] += dx; this.holdAt[1] += dy; }
+		for (const at of [this.holdAt, this.loadAt, this.oilAt, this.bristleAt]) if (at) { at[0] += dx; at[1] += dy; }
+		if (this.opHas) { this.opX += dx; this.opY += dy; }
 		if (this.blade?.has || this.blade?.seen) { this.blade.cx += dx; this.blade.cy += dy; for (const c of this.blade.hairs) if (c.has) { c.px += dx; c.py += dy; } }
 	}
 	newStroke() {
@@ -518,7 +521,7 @@ export class PaintBrush {
 			if (cover > 0 && c.has && (pick > 0 || feed > 0)) {
 				const run = Math.hypot(end[0] - ox, end[1] - oy), travelled = 1 - Math.exp(-Math.min(3, run / rad));
 				if (pick > 0 && run > 1e-6) {
-					const sample = surface.getColor(end[0] + (end[0] - ox) / run * rad * 1.1, end[1] + (end[1] - oy) / run * rad * 1.1, rad * .8, -1, this.rng);
+					const sample = surface.getColor(end[0] + (end[0] - ox) / run * rad * 1.1, end[1] + (end[1] - oy) / run * rad * 1.1, rad * .8, paintFactor > 0 ? paintFactor : -1, this.rng);
 					if (sample[3] > .02) {
 						const m = mixColors(sample[0], sample[1], sample[2], 1, c.col[0], c.col[1], c.col[2], 1, pick * travelled * clamp(sample[3], 0, 1), paintFactor);
 						c.col[0] = m[0]; c.col[1] = m[1]; c.col[2] = m[2];
@@ -593,8 +596,9 @@ export class PaintBrush {
 		else this.holdVelocity = Math.hypot(x - this.holdAt[0], y - this.holdAt[1]);
 		const at = this.holdPoint; at[0] = x; at[1] = y; this.holdAt = at;
 	}
-	_holdOn(surface, u, width) {
+	_holdOn(surface, u, width, tint = null) {
 		if (!this.holdStore) return;
+		this.holdDab.tint = tint;
 		const n = this.holdStore.n;
 		let col0 = 0, col1 = n;
 		if (u != null) {
@@ -742,7 +746,7 @@ export class PaintBrush {
 					this.opDX, this.opDY, this.paperSeed, c.opBucket || (c.opBucket = this._opLoad()))) painted = true;
 				continue;
 			}
-			this._holdOn(surface, c.u, width);
+			this._holdOn(surface, c.u, width, c);
 			surface.bite = this._bite(opaque * carry); surface.body = this.erasing ? 0 : this.rapier?.rapier_body || 0;
 			if (surface.drawDab(hx, hy, hr,
 				clamp(cr * c.tr, 0, 1), clamp(cg * c.tg, 0, 1), clamp(cb * c.tb, 0, 1),
@@ -776,10 +780,7 @@ export class PaintBrush {
 			_holdStep: (...args) => surface._holdStep(...args),
 			get hold() { return surface.hold; }, set hold(v) { surface.hold = v; },
 			get scale() { return surface.scale; }};
-		if (this.rapier?.rapier_load > 0) {
-			const fuel = RAPIER_DRY_FLOOR + (1 - RAPIER_DRY_FLOOR) * clamp(this.loadFuel ?? 1, 0, 1);
-			this.wetStroke.pigment *= fuel; this.wetStroke.water *= .5 + .5 * fuel;
-		}
+		if (this.rapier?.rapier_load > 0) this.wetStroke.water *= .5 + .5 * (RAPIER_DRY_FLOOR + (1 - RAPIER_DRY_FLOOR) * clamp(this.loadFuel ?? 1, 0, 1));
 		const painted = this._prepareAndDrawDab(target, linear);
 		const elapsed = Math.min(Math.max(0, dt * 1000), this.wetRemaining);
 		surface.wetPending = (surface.wetPending || 0) + elapsed; this.wetRemaining -= elapsed;
@@ -982,6 +983,33 @@ export class PaintBrush {
 		} else { color[0] = 1; color[1] = 0; color[2] = 0; }
 		return targetAlpha;
 	}
+	_colourDab(color, smudgeValue, legacy, paintFactor, linear) {
+		const V = this.values;
+		let targetAlpha = smudgeValue > 0 ? this._applySmudge(this._bucket(), smudgeValue, legacy, paintFactor, color) : 1;
+		const erase = this.erasing ? 1 : V[S.eraser];
+		if (erase) targetAlpha *= 1 - erase;
+		const usingHsv = V[S.change_color_h] || V[S.change_color_hsv_s] || V[S.change_color_v];
+		const usingHsl = V[S.change_color_l] || V[S.change_color_hsl_s];
+		let cr = color[0], cg = color[1], cb = color[2];
+		if (usingHsv || usingHsl) {
+			if (linear) { cr = Math.pow(cr, 1 / 2.2); cg = Math.pow(cg, 1 / 2.2); cb = Math.pow(cb, 1 / 2.2); }
+			if (usingHsv) {
+				const hsv = rgbToHsv(cr, cg, cb, this.dabColorSpace);
+				let h = hsv[0], s = hsv[1], v = hsv[2];
+				h += V[S.change_color_h]; s += s * v * V[S.change_color_hsv_s]; v += V[S.change_color_v];
+				hsvToRgb(h, s, v, color); cr = color[0]; cg = color[1]; cb = color[2];
+			}
+			if (usingHsl) {
+				const hsl = rgbToHsl(cr, cg, cb, this.dabColorSpace);
+				let h = hsl[0], s = hsl[1], l = hsl[2];
+				l += V[S.change_color_l]; s += s * Math.min(Math.abs(1 - l), Math.abs(l)) * 2 * V[S.change_color_hsl_s];
+				hslToRgb(h, s, l, color); cr = color[0]; cg = color[1]; cb = color[2];
+			}
+			if (linear) { cr = Math.pow(cr, 2.2); cg = Math.pow(cg, 2.2); cb = Math.pow(cb, 2.2); }
+		}
+		color[0] = cr; color[1] = cg; color[2] = cb;
+		return targetAlpha;
+	}
 	_prepareAndDrawDab(surface, linear) {
 		const V = this.values, ST_ = this.states, M = this.mappings;
 		surface.pigment = V[S.paint_mode] > 0;
@@ -1024,34 +1052,13 @@ export class PaintBrush {
 			const at = this._bucket();
 			if (this._updateSmudgeColor(surface, at, smudgeLength, Math.round(x), Math.round(y), radius, legacy, paintFactor)) return false;
 		}
-		let targetAlpha = 1;
 		let smudgeValue = thin ? V[S.smudge] + (1 - V[S.smudge]) * thin * RAPIER_THIN_BLEND : V[S.smudge];
 		if (smudgeValue > 0) {
 			const at = this._bucket();
 			if (this.rapier && M[S.smudge].base < RAPIER_SMUDGE_MOVER) smudgeValue *= clamp(this.buckets[at + SMUDGE_A], 0, 1);
-			if (smudgeValue > 0) targetAlpha = this._applySmudge(at, smudgeValue, legacy, paintFactor, color);
 		}
-		const erase = this.erasing ? 1 : V[S.eraser];
-		if (erase) targetAlpha *= 1 - erase;
-		const usingHsv = V[S.change_color_h] || V[S.change_color_hsv_s] || V[S.change_color_v];
-		const usingHsl = V[S.change_color_l] || V[S.change_color_hsl_s];
-		let cr = color[0], cg = color[1], cb = color[2];
-		if (usingHsv || usingHsl) {
-			if (linear) { cr = Math.pow(cr, 1 / 2.2); cg = Math.pow(cg, 1 / 2.2); cb = Math.pow(cb, 1 / 2.2); }
-			if (usingHsv) {
-				const hsv = rgbToHsv(cr, cg, cb, this.dabColorSpace);
-				let h = hsv[0], s = hsv[1], v = hsv[2];
-				h += V[S.change_color_h]; s += s * v * V[S.change_color_hsv_s]; v += V[S.change_color_v];
-				hsvToRgb(h, s, v, color); cr = color[0]; cg = color[1]; cb = color[2];
-			}
-			if (usingHsl) {
-				const hsl = rgbToHsl(cr, cg, cb, this.dabColorSpace);
-				let h = hsl[0], s = hsl[1], l = hsl[2];
-				l += V[S.change_color_l]; s += s * Math.min(Math.abs(1 - l), Math.abs(l)) * 2 * V[S.change_color_hsl_s];
-				hslToRgb(h, s, l, color); cr = color[0]; cg = color[1]; cb = color[2];
-			}
-			if (linear) { cr = Math.pow(cr, 2.2); cg = Math.pow(cg, 2.2); cb = Math.pow(cb, 2.2); }
-		}
+		const targetAlpha = this._colourDab(color, smudgeValue, legacy, paintFactor, linear);
+		const [cr, cg, cb] = color;
 		let hardness = clamp(V[S.hardness], 0, 1);
 		const softness = clamp(V[S.softness], 0, 1);
 		const currentFadeout = radius * (1 - hardness), minFadeout = V[S.anti_aliasing];
@@ -1089,7 +1096,8 @@ export class PaintBrush {
 		}
 		if (this.rapier?.rapier_oil > 0 && !this.erasing) return this._drawOil(surface, x, y, radius, cr, cg, cb, opaque, hardness, paintFactor);
 		this._holdBegin(x, y); this._holdOn(surface);
-		if (this.holdStore && !this.bristles && !this.wetStroke && typeof surface._renderMask === 'function') {
+		const held = this.holdDab; held.smudge = smudgeValue; held.legacy = legacy; held.paint = paintFactor; held.linear = linear;
+		if (this.holdStore && !this.wetStroke && typeof surface._renderMask === 'function') {
 			const sc = surface.scale || 1;
 			const box = surface._renderMask(x * sc, y * sc, radius * sc, hardness, softness, ST_[ST.actual_elliptical_dab_ratio], ST_[ST.actual_elliptical_dab_angle]);
 			if (box && surface.hold) { surface._holdStep(box, opaque); surface.hold.stepped = true; }
@@ -1288,7 +1296,7 @@ export class PaintSurface {
 		return true;
 	}
 
-	clear() { this._finishWetWork(); this._keepStrokePixels(0, 0, this.width - 1, this.height - 1); this.wetState = null; this.wetWindow = null; this.wetRasterBase = null; this.wetCover = null; this.wetDeposited = null; this.wetPending = 0; this.wetTouched = null; this.wetOwedBox = false; this.wetBandY = 0; this.wetBandBox = null; delete this.drawDab; this.data.fill(0); this.transparentRGB = null; if (this.oil) this.oil.fill(0); this._readout = null; this.sinceRead = null; this._touch(0, 0, this.width - 1, this.height - 1); }
+	clear() { this._finishWetWork(); this._keepStrokePixels(0, 0, this.width - 1, this.height - 1); this.wetState = null; this.wetWindow = null; this.wetRasterBase = null; this.wetCover = null; this.wetDeposited = null; this.wetPending = 0; this.wetTouched = null; this.wetOwedBox = false; this.wetBandY = 0; this.wetBandBox = null; delete this.drawDab; this.data.fill(0); this.transparentRGB = null; if (this.oil) this.oil.fill(0); if (this.volume) this.volume.fill(0); this._readout = null; this.sinceRead = null; this._touch(0, 0, this.width - 1, this.height - 1); }
 	_wetWindowFor(box, previous) {
 		const C = this.wetCell, margin = 16 * C;
 		let x0 = Math.max(0, box.x0 - margin), y0 = Math.max(0, box.y0 - margin);
@@ -1886,7 +1894,7 @@ export class PaintSurface {
 	_toothTile(x, y) { const T = RAPIER_TOOTH_TILE; return this._toothTileFor(x, y)[(y - ((y / T) | 0) * T) * T + (x - ((x / T) | 0) * T)]; }
 	_toothTileFor(x, y) {
 		const T = RAPIER_TOOTH_TILE, tx = (x / T) | 0, ty = (y / T) | 0;
-		if (!this.toothTiles) { this.toothTilesW = Math.ceil(this.width / T); this.toothTiles = new Array(this.toothTilesW * Math.ceil(this.height / T)).fill(null); }
+		if (!this.toothTiles) { this.toothTilesW = Math.ceil(this.width / T); this.toothTiles = new Array(this.toothTilesW * Math.ceil(this.height / T)).fill(null); this._readout = null; }
 		const at = ty * this.toothTilesW + tx;
 		let t = this.toothTiles[at];
 		if (!t) {
@@ -2086,6 +2094,7 @@ export class PaintSurface {
 			for (let j = 0; j < h && !contact; j++) for (let i = 0; i < w; i++)
 				if (mask[j * w + i] >= .15 && D[((y0 + j) * W + x0 + i) * 4 + 3] > 0) { contact = true; break; }
 			if (!contact) return false;
+			this._keepStrokePixels(0, 0, this.width - 1, this.height - 1);
 			const visible = this.toRGBA8().data;
 			for (let p = 0; p < D.length; p += 4) {
 				const a = D[p + 3];
@@ -2210,8 +2219,8 @@ export class PaintSurface {
 		const { x0, y0, w, h, mask } = box, D = this.data, W = this.width, V = this.volume;
 		const n = w * h, bands = this.pigment ? PAINT_PIGMENT_CHANNELS : 3;
 		if (!this.opSpec || this.opSpec.length < n * bands) this.opSpec = new Float64Array(n * bands);
-		if (!this.opAlpha || this.opAlpha.length < n) this.opAlpha = new Float64Array(n);
-		const logs = this.opSpec, A = this.opAlpha;
+		if (!this.opAlpha || this.opAlpha.length < 2 * n) this.opAlpha = new Float64Array(2 * n);
+		const logs = this.opSpec, A = this.opAlpha, Y = this.opAlpha.subarray(n, 2 * n);
 		let touched = 0;
 		for (let j = 0; j < h; j++) {
 			let p = ((y0 + j) * W + x0) * 4, m = j * w;
@@ -2219,6 +2228,7 @@ export class PaintSurface {
 				if (!mask[m]) { A[m] = -1; continue; }
 				const a = D[p + 3];
 				A[m] = a; touched++;
+				Y[m] = this.pigment && a > 0 ? a * Math.max(.0001, (.2126 * D[p] + .7152 * D[p + 1] + .0722 * D[p + 2]) / a) : a;
 				if (a > 0) {
 					if (this.pigment) writePaintPigment(D[p] / a, D[p + 1] / a, D[p + 2] / a, logs, m * bands);
 					else { logs[m * bands] = D[p] / a; logs[m * bands + 1] = D[p + 1] / a; logs[m * bands + 2] = D[p + 2] / a; }
@@ -2228,14 +2238,15 @@ export class PaintSurface {
 		if (touched < 2) return false;
 		const rate = strength * RAPIER_OP_BLEND_RATE;
 		const trade = (a, b, f) => {
-			const ma = A[a], mb = A[b], ga = f * ma, gb = f * mb, na = ma - ga + gb, nb = mb - gb + ga;
-			const ka = ma - ga, kb = mb - gb;
+			const ma = A[a], mb = A[b], ga = f * ma, gb = f * mb;
+			const ya = Y[a], yb = Y[b], ha = f * ya, hb = f * yb, na = ya - ha + hb, nb = yb - hb + ha;
+			const ka = ya - ha, kb = yb - hb;
 			for (let k = 0; k < bands; k++) {
 				const la = logs[a * bands + k], lb = logs[b * bands + k];
-				if (na > 0) logs[a * bands + k] = (la * ka + lb * gb) / na;
-				if (nb > 0) logs[b * bands + k] = (lb * kb + la * ga) / nb;
+				if (na > 0) logs[a * bands + k] = (la * ka + lb * hb) / na;
+				if (nb > 0) logs[b * bands + k] = (lb * kb + la * ha) / nb;
 			}
-			A[a] = na; A[b] = nb;
+			A[a] = ma - ga + gb; A[b] = mb - gb + ga; Y[a] = na; Y[b] = nb;
 		};
 		const reach = Math.min(w, h) >> 1;
 		let strides = 0;
@@ -2363,10 +2374,10 @@ export class PaintSurface {
 		if (!box) return false;
 		if (this.hold) {
 			if (!this.hold.stepped) { this._holdStep(box, opaque * alpha); this.hold.stepped = true; }
-			const rgb = this._holdColor(opaque * alpha);
-			if (rgb) { if (paint > 0) this._blendNormalPaint(box, rgb[0], rgb[1], rgb[2], rgb[3]); else this._blendNormal(box, rgb[0], rgb[1], rgb[2], rgb[3]); }
-			this._touch(box.x0, box.y0, box.x0 + box.w - 1, box.y0 + box.h - 1);
-			return true;
+			const rgb = this._holdColor(opaque);
+			if (!rgb) return false;
+			this.hold.adjust?.(rgb);
+			r = clamp(rgb[0], 0, 1); g = clamp(rgb[1], 0, 1); b = clamp(rgb[2], 0, 1); opaque = rgb[3];
 		}
 		if (paint < 1) {
 			if (normal) {
@@ -2423,7 +2434,7 @@ export class PaintSurface {
 		const out = this.holdColor; out.fill(0);
 		for (let by = 0; by < n; by++) for (let bx = col0; bx < col1; bx++) {
 			const cell = by * n + bx, m = store.amount[cell], at = cell * 3;
-			if (!(m > 1e-8) || !(store.start[cell] - m > 1e-8)) continue;
+			if (!(m > 1e-8)) continue;
 			const t = m / (mass + m), c = store.colour;
 			if (this.pigment) mixPaintPigment(out[0], out[1], out[2], c[at], c[at + 1], c[at + 2], t, out);
 			else for (let k = 0; k < 3; k++) out[k] += (c[at + k] - out[k]) * t;
@@ -2661,7 +2672,9 @@ export class PaintSurface {
 		this.revision++;
 		this._readout = null; this.sinceRead = null;
 		this.toothOX -= left; this.toothOY -= top;
-		this.toothTiles = null; this.toothTilesW = 0; this.weaveTiles = null;
+		this.toothTiles = this.toothTiles && new Array((this.toothTilesW = Math.ceil(nw / RAPIER_TOOTH_TILE)) * Math.ceil(nh / RAPIER_TOOTH_TILE)).fill(null);
+		if (!this.toothTiles) this.toothTilesW = 0;
+		this.weaveTiles = null;
 		if (this.dirty) { this.dirty.x0 += left; this.dirty.x1 += left; this.dirty.y0 += top; this.dirty.y1 += top; }
 		if (this.wetWindow) { this.wetWindow.x0 += left; this.wetWindow.y0 += top; }
 		if (this.wetTouched) {  }
@@ -2736,10 +2749,10 @@ export class PaintSurface {
 			} else fill(box.x0, box.y0, box.x1, box.y1);
 			cache = this._readout = { box: { x0: box.x0, y0: box.y0, x1: box.x1, y1: box.y1 }, width: w, height: h, data: next };
 		}
-		const dirty = this.sinceRead;
+		const dirty = this.sinceRead, pad = this.oil ? 8 : 1;
 		if (dirty) {
-			const x0 = Math.max(box.x0, dirty.x0 - 1), y0 = Math.max(box.y0, dirty.y0 - 1);
-			const x1 = Math.min(box.x1, dirty.x1 + 1), y1 = Math.min(box.y1, dirty.y1 + 1);
+			const x0 = Math.max(box.x0, dirty.x0 - pad), y0 = Math.max(box.y0, dirty.y0 - pad);
+			const x1 = Math.min(box.x1, dirty.x1 + pad), y1 = Math.min(box.y1, dirty.y1 + pad);
 			if (x1 >= x0 && y1 >= y0) {
 				const part = this.toRGBA8({ x0, y0, x1, y1 });
 				const pw = part.width;

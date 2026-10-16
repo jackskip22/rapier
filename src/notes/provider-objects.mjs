@@ -1,4 +1,5 @@
 import {asBytes, byteCount, refuse} from './provider-http.mjs';
+import {sha256} from './integrity.mjs';
 const OBJECT = /^(?:objects|keys)\/[a-f0-9]{64}$|^heads\/[A-Za-z0-9][A-Za-z0-9_-]{0,63}\/[0-9]{12}-[a-f0-9]{64}$/;
 const PREFIX = /^(?:objects\/|keys\/|heads\/(?:[A-Za-z0-9][A-Za-z0-9_-]{0,63}\/)?)/;
 export function objectKey(key) {
@@ -44,8 +45,7 @@ export function tokenFor(token, provider) {
 }
 export async function verifyBytes(key, value) {
 	objectKey(key); const bytes = asBytes(value);
-	const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(b => b.toString(16).padStart(2, '0')).join('');
-	if (hash !== key.slice(-64)) refuse('ciphertext', 'the immutable object address contains different bytes; nothing was overwritten');
+	if (await sha256(bytes) !== key.slice(-64)) refuse('ciphertext', 'the immutable object address contains different bytes; nothing was overwritten');
 	return bytes;
 }
 export async function writeBytes(key, value, condition, max) {

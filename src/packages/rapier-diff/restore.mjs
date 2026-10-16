@@ -36,20 +36,36 @@ function project(before, after, result, ids, splices) {
       else fail();
     }
     old.sort((x, y) => x - y); next.sort((x, y) => x - y);
-    if (!old.length || old.length !== next.length) fail();
+    const blank = (index, side) => !/\S/.test((side === 'before' ? before : after).slice(...edits[index][side]));
+    let ends;
+    search: for (const [p, q] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+      if (p && !blank(old[0], 'before') || q && !blank(next[0], 'after')) continue;
+      for (let k = Math.min(old.length - p, next.length - q); k > 0; k--) {
+        const r = old.length - p - k, s = next.length - q - k;
+        if (r > 1 || s > 1) break;
+        if (r && !blank(old.at(-1), 'before') || s && !blank(next.at(-1), 'after')) continue;
+        let i = 0;
+        while (i < k && before.slice(...edits[old[p + i]].before) === after.slice(...edits[next[q + i]].after)) i++;
+        if (i === k) { ends = [p, q, k]; break search; }
+      }
+    }
+    if (!ends) fail();
+    const [p, q, k] = ends, oldBody = old.slice(p, p + k), nextBody = next.slice(q, q + k);
     let text = '';
-    for (let i = 0; i < old.length; i++) {
-      const x = edits[old[i]].before, y = edits[next[i]].after;
-      if (before.slice(...x) !== after.slice(...y)) fail();
+    for (let i = 0; i < k; i++) {
+      const x = edits[oldBody[i]].before, y = edits[nextBody[i]].after;
       text += after.slice(...y);
-      if (i + 1 === old.length) continue;
+      if (i + 1 === k) continue;
       const concerns = new Set();
-      for (const list of [old, next]) for (let j = list[i] + 1; j < list[i + 1]; j++) concerns.add(owners[j]);
+      for (const list of [oldBody, nextBody]) for (let j = list[i] + 1; j < list[i + 1]; j++) concerns.add(owners[j]);
       if (concerns.size > 1 || concerns.has(move)) fail();
       const undo = selected.has([...concerns][0]?.id);
-      text += undo ? before.slice(x[1], edits[old[i + 1]].before[0])
-        : after.slice(y[1], edits[next[i + 1]].after[0]);
+      text += undo ? before.slice(x[1], edits[oldBody[i + 1]].before[0])
+        : after.slice(y[1], edits[nextBody[i + 1]].after[0]);
     }
+    const [kept, from, end, source] = selected.has(move.id) ? [old, p, 'before', before] : [next, q, 'after', after];
+    const outer = indices => indices.map(index => source.slice(...edits[index][end])).join('');
+    text = outer(kept.slice(0, from)) + text + outer(kept.slice(from + k));
     for (const [list, side] of [[old, 'before'], [next, 'after']]) {
       let end = edits[list[0]][side][0];
       for (let i = list[0]; i <= list.at(-1); i++) {

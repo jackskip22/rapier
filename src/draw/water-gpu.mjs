@@ -56,12 +56,22 @@ function keepPaperRegion(regions,rect){
  regions.push(rect);
 }
 const watchLoss=(device,reference)=>device.lost.then(info=>{const surface=reference.deref();if(surface)surface.lost=info;});
-const watchErrors=reference=>event=>{reference.deref()?._poison(event.error);};
+const watchErrors=reference=>event=>{reference.deref()?._poison(event.error,'uncaptured');};
 
 let unfilteredTest=false;
 export function waterUnfilteredTest(on){if(on===unfilteredTest)return;unfilteredTest=on;deviceTask=null;}
 export const waterTiming={on:false,presents:0,gpu:0,gpuFrames:0,stamp:0,stampBuffers:0,stampSkipped:0};
 export function waterTimingOn(on){if(on===waterTiming.on)return;waterTiming.on=on;deviceTask=null;}
+export const waterCapture={on:false,rows:[],frame:null,textures:new WeakMap(),texture:0};
+export function waterCaptureOn(on){if(on===waterCapture.on)return;waterCapture.on=on;waterCapture.frame=on?{passes:{},submits:0}:null;deviceTask=null;}
+const captureTime=()=>Math.round((performance.timeOrigin+performance.now())*10)/10;
+export function waterNote(row){const rows=waterCapture.rows;rows.push({t:captureTime(),...row});if(rows.length>4096)rows.shift();return rows.at(-1);}
+const capturePass=(name,loadOp,storeOp='store')=>{const passes=waterCapture.frame?.passes,key=name+' '+loadOp+'/'+storeOp;if(passes)passes[key]=(passes[key]||0)+1;};
+function captureSample(bitmap){
+ try{const c=new OffscreenCanvas(16,16).getContext('2d',{willReadFrequently:true});c.drawImage(bitmap,0,0,16,16);const d=c.getImageData(0,0,16,16).data;
+  let hash=2166136261,clear=0,alpha=0;for(let i=0;i<d.length;i++){hash=Math.imul(hash^d[i],16777619)>>>0;if((i&3)===3){alpha+=d[i];if(!d[i])clear++;}}
+  return {hash:hash.toString(16).padStart(8,'0'),clear,alpha:Math.round(alpha/256)};}catch(error){return {error:String(error?.message??error)};}
+}
 export async function waterReady(){
  const owner=globalThis.navigator?.gpu;
  if(!owner)throw failure('water_webgpu_unavailable','Water needs WebGPU. Open this document in a browser with WebGPU enabled.');
@@ -69,9 +79,11 @@ export async function waterReady(){
  if(!deviceTask)deviceTask=(async()=>{
   const adapter=await owner.requestAdapter({powerPreference:'high-performance'});
   if(!adapter)throw failure('water_webgpu_unavailable','Water could not obtain a WebGPU adapter. Enable GPU acceleration and reopen the document.');
+  if(waterCapture.on){const i=adapter.info??{};waterNote({ev:'adapter',vendor:i.vendor,architecture:i.architecture,device:i.device,description:i.description,fallback:i.isFallbackAdapter??adapter.isFallbackAdapter,features:[...adapter.features].sort(),maxTexture:adapter.limits.maxTextureDimension2D,agent:globalThis.navigator?.userAgent,preferred:globalThis.navigator?.gpu?.getPreferredCanvasFormat?.()});}
   const features=['float32-filterable','float32-blendable',...(waterTiming.on?['timestamp-query']:[])].filter(name=>adapter.features.has(name)&&!(unfilteredTest&&name==='float32-filterable'));
   const device=await adapter.requestDevice(features.length?{requiredFeatures:features}:{});
-  device.lost.then(()=>{deviceTask=null;});return device;
+  device.lost.then(info=>{deviceTask=null;if(waterCapture.on)waterNote({ev:'lost',reason:info?.reason,message:info?.message});});
+  if(waterCapture.on)waterNote({ev:'device',features:[...device.features].sort()});return device;
  })().catch(error=>{deviceTask=null;throw error?.code?error:failure('water_webgpu_unavailable','Water could not start WebGPU: '+error.message);});
  return deviceTask;
 }
@@ -101,12 +113,12 @@ async function programLibrary(device,firstPaper){
    eraseFixed:['rgba16float','rgba16float','lift'],eraseBase:['rgba8unorm','lift','alpha'],
    stampFinish:['rgba16float','add'],fillFinish:['rgba16float','add'],liftFinish:['rgba16float','lift'],
    velocity:['rg16float'],curl:['r16float'],vorticity:['rg16float'],divergence:['r16float'],pressureDecay:['r16float'],pressure:['r16float'],project:['rg16float'],
-   wet:['r16float'],bleach:['rgba16float','rgba16float','multiply'],fix:['rgba16float','rgba16float','add'],
+   wet:['r16float'],fix:['rgba16float','rgba16float','add'],dried:['rgba16float','rgba16float','add'],driedKeep:['rgba16float','rgba16float'],
    mask:['rgba8unorm'],paperField:['rgba16float'],paperLight:['rgba8unorm'],present:['rgba8unorm']};
   const blend={add:{srcFactor:'one',dstFactor:'one',operation:'add'},max:{srcFactor:'one',dstFactor:'one',operation:'max'},
-   lift:{srcFactor:'zero',dstFactor:'one-minus-src',operation:'add'},multiply:{srcFactor:'zero',dstFactor:'src',operation:'add'}};
+   lift:{srcFactor:'zero',dstFactor:'one-minus-src',operation:'add'}};
   const modules=new Map(),pipelines={},loadOps={};let paperDescription;
-  const sources=waterShaderSources(!device.features.has('float32-filterable'));
+  const sources=waterShaderSources();
   for(const [name,source] of Object.entries(sources))modules.set(name,device.createShaderModule({label:'Water '+name,code:source}));
   const compile=await Promise.allSettled(Object.entries(descriptions).map(async([name,settings])=>{
    const kind=name==='paperField'?firstPaper:null;
@@ -114,7 +126,7 @@ async function programLibrary(device,firstPaper){
    const mode=blend[blendSettings.at(-1)]?blendSettings.at(-1):null;
    const formats=mode?blendSettings.slice(0,-1):blendSettings;
    loadOps[name]=mode||alphaOnly?'load':'clear';
-   const module=modules.get(name==='velocitySplat'||name==='wetSplat'?'splat':name==='eraseFixed'?'liftInk':name==='eraseBase'||name==='liftFinish'?'liftWet':name);
+   const module=modules.get(name==='velocitySplat'||name==='wetSplat'?'splat':name==='eraseFixed'?'liftInk':name==='driedKeep'?'dried':name==='eraseBase'||name==='liftFinish'?'liftWet':name);
    const description={label:'Water '+name,layout:name.startsWith('fill')?fillPipelineLayout:pipelineLayout,vertex:{module,entryPoint:'vertex'},
     fragment:{module,entryPoint:'fragment',...(kind===null?{}:{constants:{paperKind:kind}}),targets:formats.map(format=>({format,...(mode?{blend:{color:blend[mode],alpha:blend[mode]}}:{}),...(alphaOnly?{writeMask:8}:{})}))},primitive:{topology:'triangle-list'}};
    if(name==='paperField')paperDescription=description;
@@ -156,6 +168,7 @@ export class WaterGPU {
  }
  _check(){if(this.disposed)throw failure('WATER_CLOSED','The Water surface is closed.');if(this.lost)throw failure('WATER_DEVICE_LOST','The GPU stopped. The last published painting is safe; reopen Water to continue.');if(this.gpuError)throw this.gpuError;}
  _poison(error,kind){
+  if(waterCapture.on)waterNote({ev:'error',kind:kind??error?.constructor?.name,message:String(error?.message??error),first:!this.gpuError});
   if(this.disposed||this.gpuError)return;
   const memory=kind==='out-of-memory'||error?.constructor?.name==='GPUOutOfMemoryError';
   this.gpuError=failure(memory?'WATER_GPU_MEMORY':'WATER_GPU_FAILED',memory?
@@ -237,7 +250,7 @@ export class WaterGPU {
     curl:make(sw,sh,'r16float'),divergence:make(sw,sh,'r16float'),ink:this._pair(w,h,['rgba16float','rgba16float'],make,true),
     wet:this._pair(w,h,['r16float'],make),fixed:[make(w,h,'rgba16float'),make(w,h,'rgba16float')],
     paper:make(w,h,'rgba8unorm'),base:make(w,h,'rgba8unorm'),output:make(w,h,'rgba8unorm',FULL()|GPUTextureUsage.STORAGE_BINDING),mask:make(Math.ceil(w/16),Math.ceil(h/16),'rgba8unorm'),finish:withFinish?make(w,h,'rgba16float'):null};
-   Object.assign(this,sheet);this.flowMayMove=false;return sheet;
+   Object.assign(this,sheet);this.flowMayMove=false;this.outputCanonical=false;return sheet;
   }catch(error){made.forEach(t=>this._drop(t));throw error;}
  }
  _sheet(){return Object.fromEntries(['width','height','sw','sh','velocity','pressure','curl','divergence','ink','wet','fixed','paper','base','output','mask','finish'].map(key=>[key,this[key]]));}
@@ -310,6 +323,7 @@ export class WaterGPU {
   try{this._guard(()=>{
    if(slots)this.device.queue.writeBuffer(this.uniforms,0,this.uniformData.buffer,0,slots*256);
    this.device.queue.submit([encoder.finish()]);
+   if(waterCapture.frame){const f=waterCapture.frame;f.submits++;f.firstSubmit??=captureTime();}
   });if(stamp)this._timeRead(stamp);}finally{for(const t of this.pendingRetire)this._drop(t);this.pendingRetire=[];}
  }
  _markWritten(target,rect=null){
@@ -344,7 +358,7 @@ export class WaterGPU {
   const group=this._group(name,inputs);
   const full=!rect||(Math.floor(rect[0])<=0&&Math.floor(rect[1])<=0&&Math.ceil(rect[2])>=target.w&&Math.ceil(rect[3])>=target.h);
   const loadOp=full?this.library.loadOps[name]:'load';
-  const pass=encoder.beginRenderPass({colorAttachments:targets.map(t=>({view:t.view,loadOp,storeOp:'store'}))});
+  const pass=encoder.beginRenderPass({colorAttachments:targets.map(t=>({view:t.view,loadOp,storeOp:'store'}))});capturePass(name,loadOp);
   pass.setPipeline(name==='paperField'?this.library.pipelines[name][data[50]]:this.library.pipelines[name]);pass.setBindGroup(0,group,[slot*256]);
   if(rect){const x0=clamp(Math.floor(rect[0]),0,target.w),y0=clamp(Math.floor(rect[1]),0,target.h),x1=clamp(Math.ceil(rect[2]),x0,target.w),y1=clamp(Math.ceil(rect[3]),y0,target.h);if(x1===x0||y1===y0){pass.end();return;}pass.setScissorRect(x0,y0,x1-x0,y1-y0);}
   pass.draw(3);pass.end();
@@ -393,7 +407,7 @@ export class WaterGPU {
   const encoder=this._command();
   if(scratch&&blended)targets.forEach((t,i)=>encoder.copyTextureToTexture({texture:t.texture,origin:[R[0],R[1]]},{texture:scratch[i].texture,origin:[0,0]},[rw,rh]));
   const origin=scratch?R:[0,0],loadOp=scratch?(blended?'load':'clear'):(full||clear)&&!blended?'clear':'load';
-  const pass=encoder.beginRenderPass({colorAttachments:(scratch??targets).map(t=>({view:t.view,loadOp,clearValue:[0,0,0,0],storeOp:'store'}))});
+  const pass=encoder.beginRenderPass({colorAttachments:(scratch??targets).map(t=>({view:t.view,loadOp,clearValue:[0,0,0,0],storeOp:'store'}))});capturePass([...new Set(entries.map(e=>e.name))].join('+')+(scratch?' scratch':''),loadOp);
   for(const e of entries){
    const r=e.rect?[Math.max(R[0],Math.floor(e.rect[0])),Math.max(R[1],Math.floor(e.rect[1])),Math.min(R[2],Math.ceil(e.rect[2])),Math.min(R[3],Math.ceil(e.rect[3]))]:R;
    if(r[2]<=r[0]||r[3]<=r[1])continue;
@@ -438,7 +452,7 @@ export class WaterGPU {
   data[0]=this.width;data[1]=this.height;data.set(rect,56);data[60]=Math.floor(rect[0]/16)*16;data[61]=Math.floor(rect[1]/16)*16;
   const slot=this.slots++;this.uniformData.set(data,slot*64);
   const encoder=this._command();encoder.clearBuffer(dispatch,0,4);
-  const classify=encoder.beginComputePass();classify.setPipeline(this.library.pipelines.pigmentTiles);classify.setBindGroup(0,groups[0],[slot*256]);
+  capturePass('pigment','compute','-');const classify=encoder.beginComputePass();classify.setPipeline(this.library.pipelines.pigmentTiles);classify.setBindGroup(0,groups[0],[slot*256]);
   classify.dispatchWorkgroups(Math.ceil((rect[2]-data[60])/16),Math.ceil((rect[3]-data[61])/16));classify.end();
   const pigment=encoder.beginComputePass();pigment.setPipeline(this.library.pipelines.pigmentCompute);pigment.setBindGroup(0,groups[1],[slot*256]);pigment.dispatchWorkgroupsIndirect(dispatch,0);pigment.end();
   this.ink.write.forEach(t=>this._markWritten(t,rect));
@@ -456,7 +470,7 @@ export class WaterGPU {
   }
   data[0]=this.width;data[1]=this.height;data.set(rect,8);data[60]=0;data[61]=0;
   const slot=this.slots++;this.uniformData.set(data,slot*64);
-  const pass=this._command().beginComputePass();pass.setPipeline(this.library.pipelines.displayCompute);pass.setBindGroup(0,group,[slot*256]);
+  capturePass('display','compute','-');const pass=this._command().beginComputePass();pass.setPipeline(this.library.pipelines.displayCompute);pass.setBindGroup(0,group,[slot*256]);
   pass.dispatchWorkgroups(Math.ceil((rect[2]-rect[0])/8),Math.ceil((rect[3]-rect[1])/8));pass.end();this._markWritten(this.output,rect);
  }
  _queue(name,destinations,inputs,data,rect){
@@ -483,7 +497,7 @@ export class WaterGPU {
    if(kept[2]>kept[0]&&kept[3]>kept[1])this._markWritten(destination,[to[0]+kept[0]-r[0],to[1]+kept[1]-r[1],to[0]+kept[2]-r[0],to[1]+kept[3]-r[1]]);}
  }
  _swap(pair){[pair.read,pair.write]=[pair.write,pair.read];}
- _clear(target){this._flushStamps();const pass=this._command().beginRenderPass({colorAttachments:[{view:target.view,loadOp:'clear',clearValue:[0,0,0,0],storeOp:'store'}]});pass.end();target.written=null;}
+ _clear(target){this._flushStamps();capturePass('clear','clear');const pass=this._command().beginRenderPass({colorAttachments:[{view:target.view,loadOp:'clear',clearValue:[0,0,0,0],storeOp:'store'}]});pass.end();target.written=null;}
  _material(){return [...this.ink.read,...this.fixed,...this.wet.read,this.base,...(this.finish?[this.finish]:[])];}
  _meta(){return {active:this.active?.slice()??null,dirty:this.dirty?.slice()??null,painted:this.painted?.slice()??null,wetPeak:this.wetPeak,fixTimer:this.fixTimer,elapsed:this.elapsed,lastWet:this.lastWet,awakeUntil:this.awakeUntil,flowSpeed:this.flowSpeed,growCarry:this.growCarry,frame:this.frame,brushNow:this.brushNow.slice(),params:{...this.params},paperId:this.paperId,paperOrigin:this.paperOrigin.slice(),paperScale:this.paperScale,seed:this.seed};}
  beginTransaction(){
@@ -643,12 +657,12 @@ export class WaterGPU {
   const settings=profile.params??profile;
   if(finish&&(!admitWaterFinish(finish)||!Number.isFinite(dose)||dose<0))throw failure('WATER_INPUT','The Water mineral dose is invalid.');
   const sheen=coefficients&&finish?.sheen.some(v=>v>0);if(sheen)this._ensureFinish();
-  const rect=this._rect(x,y,r,circular?3.2:1.5);this._touch(rect,lift?(erase?undefined:[0,1,4,...(this.finish?[6]:[])]):[...(coefficients?[0,1]:[]),...(coefficients&&finish?.settling>0?[2,3]:[]),...(sheen?[6]:[]),...(water>0?[4]:[])]);
+  const rect=this._rect(x,y,r,circular?3.2:1.5);this._touch(rect,lift?(erase?undefined:[0,1,2,3,4,...(this.finish?[6]:[])]):[...(coefficients?[0,1]:[]),...(coefficients&&finish?.settling>0?[2,3]:[]),...(sheen?[6]:[]),...(water>0?[4]:[])]);
   const data=this._parameters();data.set([x,y,r,settings.aspect??1],16);data.set([Math.cos(angle),Math.sin(angle),round,grain],20);data.set([threshold,water,hardness,finish?0:settle],24);
   data[54]=(finish?.settling??0)*(getPaper(this.paperId).params.tooth??1);
   if(lift){data[25]=lift;data[26]=2;data[27]=erase?1:0;this._queue('liftInk',this.ink.read,[],data,rect);data[25]=lift*.8;this._queue('liftWet',this.wet.read,[],data,rect);
    if(this.finish){data[25]=lift;this._queue('liftFinish',this.finish,[],data,rect);}
-   if(erase){data[25]=lift;this._queue('eraseFixed',this.fixed,[],data,rect);this._queue('eraseBase',this.base,[],data,rect);}return;}
+   data[25]=erase?lift:lift*.3;this._queue('eraseFixed',this.fixed,[],data,rect);if(erase)this._queue('eraseBase',this.base,[],data,rect);return;}
   const tip=circular?null:this._tip(profile),inputs=tip?[tip,this.paper]:finish?[this.dummy,this.paper]:[];
   if(coefficients){
    data.set(coefficients.slice(0,4),28);data.set(coefficients.slice(4,8),32);this._queue(circular?'splatInk':'stampInk',this.ink.read,inputs,data,rect);
@@ -712,10 +726,11 @@ export class WaterGPU {
   this.active=[Math.max(0,this.active[0]-grow),Math.max(0,this.active[1]-grow),Math.min(this.width,this.active[2]+grow),Math.min(this.height,this.active[3]+grow)];
   this._flushStamps();
   const rect=this.active;this._ensurePaper(rect);this._protect(rect,fixing?[0,1,2,3,4]:[0,1,4]);
-  const data=this._parameters();data[4]=dt;const settle=1-Math.exp(-5*fixedAge);
+  const data=this._parameters();data[4]=dt;data.set([this.frame,...this.paperOrigin],16);const settle=1-Math.exp(-5*fixedAge);
   const decay=Math.exp(-fixedAge/.25-(aged-fixedAge)/this.dryingTime);
   const damping=Math.exp(-aged*(3-2.4*this.params.flow)-7*fixedAge);data.set([decay,damping,settle,1-settle],8);
   const sim=this.simBox=union(this.simBox,this._simRect(rect));
+  if(this.flowMayMove&&!this.painting&&this.flowSpeed<.05){for(const pair of [this.velocity,this.pressure])for(const t of [...pair.read,...pair.write])this._clear(t);this.flowMayMove=false;}
   if(this.flowMayMove){
   this._region('velocity',this.velocity.write,[this.velocity.read[0],this.wet.read[0]],data,sim);this._swap(this.velocity);
   this._region('curl',this.curl,this.velocity.read,data,[Math.max(0,sim[0]-1),Math.max(0,sim[1]-1),Math.min(this.sw,sim[2]+1),Math.min(this.sh,sim[3]+1)]);
@@ -726,10 +741,7 @@ export class WaterGPU {
   this._region('project',this.velocity.write,[this.velocity.read[0],this.pressure.read[0]],data,sim);this._swap(this.velocity);
   }
   this._region('wet',this.wet.write,[this.velocity.read[0],this.wet.read[0]],data,rect);this._swap(this.wet);
-  if(fixing)this._regionPass([
-   {name:'bleach',inputs:[this.ink.read[1]],data:Float32Array.from(data),rect:null},
-   {name:'fix',inputs:this.ink.read,data:Float32Array.from(data),rect:null}
-  ],this.fixed,rect);
+  if(fixing)this._regionPass([{name:'fix',inputs:this.ink.read,data:Float32Array.from(data),rect:null}],this.fixed,rect);
   this._pigment(data,rect);this._swap(this.ink);
   this.brushNow=[0,0,0];
   this.dirty=union(this.dirty,rect);this.painted=union(this.painted,rect);
@@ -768,11 +780,16 @@ export class WaterGPU {
   for(let y=0;y<this.mask.h;y++)for(let x=0;x<this.mask.w;x++)if(pixels[(y*this.mask.w+x)*4]){x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x);y1=Math.max(y1,y);}
   const next=x1>=0?[Math.max(previous[0],x0*16-24),Math.max(previous[1],y0*16-24),Math.min(previous[2],(x1+1)*16+24),Math.min(previous[3],(y1+1)*16+24)]:null;
   if(next&&next.every((v,i)=>v===previous[i]))return;
-  for(const pair of [this.ink,this.wet])pair.read.forEach((t,i)=>this._copy(t,pair.write[i],previous));
+  this._bind(previous);for(const pair of [this.ink,this.wet])pair.read.forEach((t,i)=>this._copy(t,pair.write[i],previous));
   if(next&&next[2]>next[0]&&next[3]>next[1])this.active=next;else this.sleep();
+ }
+ _bind(rect){
+  this._protect(rect,[0,1,2,3]);const data=this._parameters(),inputs=[...this.ink.read,this.wet.read[0]];
+  data[10]=1;this._region('dried',this.fixed,inputs,data,rect);data[10]=0;this._region('driedKeep',this.ink.write,inputs,data,rect);this._swap(this.ink);
  }
  sleep(){
   this.trimEpoch++;
+  if(this.active)this._bind(this.active);
   if(this.active)for(const pair of [this.ink,this.wet])pair.read.forEach((t,i)=>this._copy(t,pair.write[i],this.active));
   for(const pair of [this.velocity,this.pressure])for(const t of [...pair.read,...pair.write])this._clear(t);
   this.active=null;this.wetPeak=0;this.flowSpeed=0;this.flowMayMove=false;this.simBox=null;
@@ -832,7 +849,7 @@ export class WaterGPU {
  }
  render({paper=false,white=false,flat=false,box=null,live=false}={}){
   this._check();const profile=getPaper(this.paperId),p=profile.params??profile;
-  const lightMode=live?'live':'fixed';if(this.finish&&(this.outputLight!==lightMode||live&&this.lightDirty))box=null;
+  const lightMode=live?'live':'fixed';if(this.outputLight!==lightMode||this.finish&&live&&this.lightDirty)box=null;
   if(paper||white||this.paper.field.unknown)this._ensurePaper(box);
   const data=this._parameters();data.set([live?1:0,this.finish?1:0,this.paperScale,0],48);data.set(live?this.light:WATER_FINISH_LIGHT,52);data.set([...this.paperOrigin,this.seed,this.height],56);
   data.set([this.params.granulation*.55*(p.tooth??1),.8,paper?1:white?3:2,flat?1:0],36);
@@ -848,9 +865,16 @@ export class WaterGPU {
   this.submit();
   const frame=capture?.();
   if(waterTiming.on){const submitted=performance.now();waterTiming.presents++;this.device.queue.onSubmittedWorkDone().then(()=>{waterTiming.gpu+=performance.now()-submitted;waterTiming.gpuFrames++;},()=>{});}
+  let row=null;
+  if(waterCapture.on){
+   const c=waterCapture,known=c.textures.get(texture);if(!known)c.textures.set(texture,++c.texture);
+   row=waterNote({ev:'present',...c.frame,texture:{id:known??c.texture,reused:!!known,width:texture.width,height:texture.height,format:texture.format,usage:texture.usage},sheet:[this.width,this.height],box,canonical:this.outputCanonical,bitmap:frame?[frame.width,frame.height]:null});
+   c.frame={passes:{},submits:0};this.device.queue.onSubmittedWorkDone().then(()=>{row.done=captureTime();},()=>{});
+  }
   try{
    if(capture){await this.device.queue.onSubmittedWorkDone();await this._settleErrors();}
    else await this._pace();
+   if(row&&frame)row.sample=captureSample(frame);
    return frame;
   }catch(error){frame?.close();throw error;}
  }

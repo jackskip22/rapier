@@ -90,10 +90,10 @@ const inkGeometry = () => {
 		}
 		return fragments.map(f => fit(mark.path, mark.box, f, em));
 	}
-	return { INK_LAYOUT_EM, bounds, unionBox, decodePath, deriveMark, arrowEndpoints };
+	return { INK_LAYOUT_EM, bounds, unionBox, decodePath, deriveMark };
 };
-const { INK_LAYOUT_EM, bounds, unionBox, decodePath, deriveMark, arrowEndpoints } = inkGeometry();
-export { bounds, unionBox, decodePath, deriveMark, arrowEndpoints };
+const { INK_LAYOUT_EM, bounds, unionBox, decodePath, deriveMark } = inkGeometry();
+export { bounds, unionBox, decodePath, deriveMark };
 
 export const INK_EM = Object.freeze({
 	dot: 0.3,

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {linkMask} from './links.mjs';
-import {importTags, appendImportMetadata, IMPORT_JSON_MAX_BYTES} from './import.mjs';
+import {importTags, importMetadata, importDate, importTrash, IMPORT_JSON_MAX_BYTES} from './import.mjs';
 import {importMarkdown, tagsIn} from './import-markdown.mjs';
 import {readImportText, finishImportCharacters} from './import-characters.mjs';
 
@@ -29,10 +29,26 @@ function readManifest(group, warnings) {
   catch (error) { return unreadable('is not valid JSON (' + String(error?.message || error) + ')'); }
   if (!info || typeof info !== 'object' || Array.isArray(info)) return unreadable('is not a JSON object');
   if (![1, 2].includes(info.version))
-    say('textbundle-manifest-version', 'The info.json of this bundle ' + (info.version === undefined ? 'has no version' : 'says version ' + quoted(info.version)) + '; this reader knows versions 1 and 2. Its text was read as Markdown and the manifest is kept in the note.');
+    say('textbundle-manifest-version', 'The info.json of this bundle ' + (info.version === undefined ? 'has no version' : 'says version ' + quoted(info.version)) + '; this reader knows versions 1 and 2. Its text was read as Markdown and the manifest is kept in the import record.');
   if (info.type !== undefined && info.type !== 'net.daringfireball.markdown')
-    say('textbundle-manifest-type', 'The info.json of this bundle says type ' + quoted(info.type) + ', not Markdown. Its text was read as Markdown and the manifest is kept in the note.');
+    say('textbundle-manifest-type', 'The info.json of this bundle says type ' + quoted(info.type) + ', not Markdown. Its text was read as Markdown and the manifest is kept in the import record.');
   return {info, row, kept: []};
+}
+
+const BEAR = 'net.shinyfrog.bear';
+function applyManifest(info, entry, warnings, options) {
+  const bear = info[BEAR] && typeof info[BEAR] === 'object' && !Array.isArray(info[BEAR]) ? info[BEAR] : null, applied = [];
+  if (bear) {
+    const created = importDate(bear.creationDate, Date.parse(bear.creationDate), warnings, 'Bear creation date');
+    const modified = importDate(bear.modificationDate, Date.parse(bear.modificationDate), warnings, 'Bear edit date');
+    if (created !== undefined) { entry.created = created; applied.push('creationDate'); }
+    if (modified !== undefined) { entry.modified = modified; applied.push('modificationDate'); }
+    for (const flag of ['pinned', 'archived', 'trashed']) if ([0, 1, false, true].includes(bear[flag])) { entry[flag] = !!bear[flag]; applied.push(flag); }
+    importTrash(entry, options, warnings);
+    importMetadata(bear, applied, warnings, 'Bear note details', {at: BEAR});
+  }
+  importMetadata(info, [BEAR, ...([1, 2].includes(info.version) ? ['version'] : []), ...(info.type === 'net.daringfireball.markdown' ? ['type'] : [])],
+    warnings, 'Bundle details');
 }
 
 export async function importTextBundle(entries, options = {}) {
@@ -94,9 +110,9 @@ export async function importTextBundle(entries, options = {}) {
   const result = await importMarkdown(markdown, {...options, flavour: 'markdown'});
   for (const note of result.notes) {
     const source = sources.get(keyOf(rootOf(note), note.sourceName));
-    if (source.info) note.text = appendImportMetadata(note.text, source.info);
-    note.bytes = encoder.encode(note.text);
-    note.warnings = [...source.warnings, ...(note.warnings || [])];
+    const warnings = [...source.warnings];
+    if (source.info) applyManifest(source.info, note.entry, warnings, options);
+    note.warnings = [...warnings, ...(note.warnings || [])];
     for (const row of source.claimed) consumed.push({name: row.name, rootId: rootOf(note), sourceName: note.sourceName});
   }
   return finishImportCharacters({...result, skipped: [...skipped, ...result.skipped], pictures: [...pictures, ...result.pictures], attachments, consumed});

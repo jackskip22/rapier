@@ -583,7 +583,8 @@ function readerFindRun(keep) {
 	if (!query || $('find-bar').hidden) { readerSetFindCount(0, 0); return; }
 	const host = $('editor-blocks'), nodes = [];
 	let text = '';
-	const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT, {acceptNode: node => node.parentElement?.closest('script,style,.diagram-cache[hidden],[hidden],.section-fold-btn,.rapier-ink-layer') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT});
+	const skipped = node => { const out = node.parentElement?.closest('script,style,.diagram-cache[hidden],[hidden],.section-fold-btn,.rapier-ink-layer'); return out && !(out.parentElement === host && out.matches('[hidden]:not(.diagram-cache,.rapier-ink-layer)')); };
+	const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT, {acceptNode: node => skipped(node) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT});
 	for (let node; (node = walker.nextNode());) { nodes.push({node, start: text.length}); text += node.data; }
 	const escape = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 	const separators = String.raw`[\t  _.:/\\\-‐-―]+`;
@@ -797,6 +798,22 @@ function readerOpenSettings() {
 	readerOpenDialog($('settings-overlay'), '#settings-panel');
 }
 
+const READER_ANSWER_ONLY = new Set(['math-plugin-overlay', 'mermaid-plugin-overlay', 'ocr-plugin-overlay', 'pdf-plugin-overlay']);
+function readerInstallSheetGesture() {
+	const settings = $('settings-overlay');
+	_rapierSheetGestureInstall({
+		settings: () => ({overlay: settings, panel: $('settings-panel')}),
+		sheetFor: target => {
+			const panel = target instanceof Element ? target.closest('.settings-panel') : null, overlay = panel?.closest('.settings-overlay');
+			if (!overlay || !_rapierUiDialogIsOpen(overlay)) return null;
+			return {overlay, panel, plane: overlay.classList.contains('restore-modal-overlay') ? 'y' : 'x', anchor: 'edge'};
+		},
+		dismissable: overlay => readerDialogs.at(-1)?.overlay === overlay && !READER_ANSWER_ONLY.has(overlay.id),
+		dismiss: () => readerCloseTop(),
+		setSettingsOpen: open => { if (!open) readerCloseDialog(settings); },
+	});
+}
+
 
 function readerPlugin(key, label, noun) {
 	const view = {
@@ -991,20 +1008,37 @@ function readerOpenWord(file, opening) {
 	}, 'Word reader', opening?.ticket?.controller.signal);
 }
 
-function readerOpenPdf(file, opening) {
+function readerOpenPdf(file, opening, mode = 'text') {
 	return readerWithImport(async run => {
 		if (!await readerEnsurePdf(run.controller.signal, readerPdfProgress)) return false;
 		const options = {signal: run.controller.signal, onProgress: progress => readerPdfProgress(typeof progress === 'string' ? progress : 'Reading page ' + progress.page + (progress.pages ? ' of ' + progress.pages : '') + '…')};
 		readerPdfProgress('Reading PDF…');
-		let result, mode = 'text';
+		let result;
 		try { result = await globalThis.RapierPdfReader.read(file, {...options, mode}); }
 		catch (error) { if (error?.code !== 'PDF_NO_TEXT') throw error; mode = 'pages'; result = await globalThis.RapierPdfReader.read(file, {...options, mode}); }
 		const name = file.name.replace(/\.pdf$/i, '').replace(/[\u0000-\u001f\u007f/\\]/g, '_').slice(0, 180) || 'document';
 		if (!await readerCommitOpen(readerDocumentText(result.markdown), name + '.md', opening)) return false;
-		readerToast('PDF opened as ' + (mode === 'pages' ? 'page pictures' : 'text') + (result.warnings[0] ? ' · ' + result.warnings[0] : ''), 'info');
+		const notes = result.warnings.map(note => typeof note === 'string' ? note : note.message);
+		readerToast('PDF opened as ' + (mode === 'pages' ? 'page pictures' : 'text') + (notes.length ? ' · ' + notes.length + (notes.length === 1 ? ' note' : ' notes') : ''), 'info',
+			notes.length ? {label: 'SHOW', fn: () => readerPdfNotes(file, mode, notes)} : null);
 		return true;
 	}, 'PDF reader', opening?.ticket?.controller.signal);
 }
+
+function readerPdfNotes(file, mode, notes) {
+	const overlay = $('info-overlay'), list = document.createElement('ul'), other = document.createElement('button');
+	overlay.querySelector('#info-sheet-title').textContent = 'notes';
+	list.append(...notes.map(note => { const item = document.createElement('li'); item.textContent = note; return item; }));
+	other.type = 'button';
+	other.className = 'settings-action-btn';
+	other.textContent = mode === 'pages' ? 'text' : 'page pictures';
+	other.addEventListener('click', () => { readerCloseDialog(overlay); void readerOpenPdf(file, {generation: reader.generation}, mode === 'pages' ? 'text' : 'pages'); });
+	overlay.querySelector('.info-action-body').replaceChildren(list, other);
+	readerOpenDialog(overlay, '.info-action-sheet');
+}
+$('info-overlay').addEventListener('click', event => {
+	if (event.target === $('info-overlay') || event.target.closest('[data-info-close]')) readerCloseDialog($('info-overlay'));
+});
 
 
 const readerSpeech = {active: false, paused: false, blocks: [], position: -1, utterance: null, lastWordStart: 0, timer: 0, follow: true, armed: false};
@@ -1206,19 +1240,23 @@ function readerExportText() {
 	return true;
 }
 
-function readerPrint() {
-	const root = document.documentElement, body = document.body, hidden = [...$('editor-blocks').children].filter(block => block.hidden), dark = !body.classList.contains('light');
+function readerPrintPrepare() {
+	const root = document.documentElement, body = document.body;
+	if (root.dataset.rapierPrinting) return;
+	const hidden = [...$('editor-blocks').children].filter(block => block.hidden), dark = !body.classList.contains('light'), scheme = root.style.colorScheme;
 	for (const block of hidden) block.hidden = false;
 	root.dataset.rapierPrinting = 'on';
 	body.classList.add('light');
-	const restore = () => {
+	root.style.colorScheme = 'light';
+	addEventListener('afterprint', () => {
 		delete root.dataset.rapierPrinting;
 		if (dark) body.classList.remove('light');
+		root.style.colorScheme = scheme;
 		for (const block of hidden) block.hidden = true;
-		removeEventListener('afterprint', restore);
-	};
-	addEventListener('afterprint', restore);
-	try { print(); } catch (_) { restore(); readerToast('printing is unavailable', 'error'); }
+	}, {once: true});
+}
+function readerPrint() {
+	try { print(); } catch (_) { readerToast('printing is unavailable', 'error'); }
 }
 
 function readerOpenSheet(overlay) {
@@ -1227,7 +1265,7 @@ function readerOpenSheet(overlay) {
 }
 
 
-function readerToast(message, type = 'info') {
+function readerToast(message, type = 'info', action = null) {
 	const root = $('toast-root');
 	const toast = document.createElement('div');
 	toast.className = 'toast toast--' + type;
@@ -1240,7 +1278,16 @@ function readerToast(message, type = 'info') {
 	close.className = 'toast__close';
 	close.setAttribute('aria-label', 'dismiss');
 	close.textContent = '×';
-	toast.append(text, close);
+	toast.append(text);
+	if (action) {
+		const button = document.createElement('button');
+		button.type = 'button';
+		button.className = 'toast__action';
+		button.textContent = action.label;
+		button.addEventListener('click', () => { remove(); action.fn(); });
+		toast.append(button);
+	}
+	toast.append(close);
 	root.append(toast);
 	let timer = 0;
 	const remove = () => {
@@ -1255,7 +1302,7 @@ function readerToast(message, type = 'info') {
 	};
 	const expire = () => {
 		clearTimeout(timer);
-		if (type !== 'error' && !toast.contains(document.activeElement)) timer = setTimeout(remove, 4500);
+		if (type !== 'error' && !action && !toast.contains(document.activeElement)) timer = setTimeout(remove, 4500);
 	};
 	toast.addEventListener('focusin', () => clearTimeout(timer));
 	toast.addEventListener('focusout', expire);
@@ -1273,6 +1320,18 @@ async function readerCommitOpen(text, filename, opening) {
 	if (ticket) ticket.committing = true;
 	try { return await readerLoad(text, filename); }
 	finally { if (ticket) ticket.committing = false; }
+}
+
+async function readerCarriedDocument(text, filename) {
+	const start = text.indexOf('<script type="text/markdown" id="rapier-document"');
+	if (start < 0) return _rapierRenderModule('render')._rapierReadSharedDocument(text, filename);
+	const open = text.indexOf('>', start), end = text.indexOf('</script>', open);
+	const template = document.createElement('template');
+	template.innerHTML = text;
+	const carriers = template.content.querySelectorAll('#rapier-document');
+	if (open < 0 || end < 0 || carriers.length !== 1 || carriers[0].textContent !== text.slice(open + 1, end))
+		throw new Error('This HTML editor file has no complete editable document.');
+	return {source: _rapierDecodeCarried(carriers[0].textContent), filename: carriers[0].getAttribute('data-name') || 'document.md'};
 }
 
 async function readerOpenFile(file, opening = {generation: reader.generation}) {
@@ -1293,7 +1352,8 @@ async function readerOpenFile(file, opening = {generation: reader.generation}) {
 			return readerCommitOpen(text, 'untitled.md', opening);
 		}
 		const text = await RapierTextCodec.readDocumentBlob(file);
-		return await readerCommitOpen(text, file.name, opening);
+		const carried = /\.html?$/i.test(file.name) ? await readerCarriedDocument(text, file.name) : null;
+		return await readerCommitOpen(carried ? readerDocumentText(carried.source) : text, carried ? carried.filename : file.name, opening);
 	} catch (error) { readerToast(String(error?.message || error), 'error'); return false; }
 }
 
@@ -1382,9 +1442,9 @@ function readerBind() {
 			try { id = decodeURIComponent(id); } catch (_) {}
 			const element = id && $('editor-blocks').querySelector('[id="' + CSS.escape(id) + '"]');
 			if (element) readerScrollTo(element);
-		} else if (/^(?:https?|mailto):/i.test(href)) {
+		} else {
 			event.preventDefault();
-			window.open(link.href, '_blank', 'noopener,noreferrer');
+			if (/^(?:https?|mailto):/i.test(href)) window.open(href, '_blank', 'noopener,noreferrer');
 		}
 	});
 	$('editor-blocks').addEventListener('click', readerSeekReading);
@@ -1400,6 +1460,7 @@ function readerBind() {
 		if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'f' && !readerDialogs.length) { event.preventDefault(); readerFindOpen(true); }
 	});
 	addEventListener('hashchange', readerFragment);
+	addEventListener('beforeprint', readerPrintPrepare);
 	addEventListener('dragover', event => {
 		if (_rapierEmbed.active || !Array.from(event.dataTransfer?.types || []).includes('Files')) return;
 		event.preventDefault();
@@ -1422,6 +1483,7 @@ function readerStart() {
 	readerApplyView();
 	readerBind();
 	readerBindFab();
+	readerInstallSheetGesture();
 	readerRenderFilename();
 	readerRenderSettings();
 	readerRenderEmpty();

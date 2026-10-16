@@ -72,7 +72,7 @@ function _rapierPrintWillFont(markers) {
 	const bounds = [0, -400, 10, 0];
 	const outline = cat(u16(1), bounds.map(u16), u16(2), u16(0), [1, 1, 1], u16(0), u16(10), u16(-5), u16(bounds[1]), u16(bounds[3] - bounds[1]), u16((bounds[1] - bounds[3]) / 2), [0]);
 	const utf16 = text => Array.from(text, ch => u16(ch.charCodeAt(0)));
-	const names = [[1, 'RapierWill'], [2, 'Regular'], [4, 'RapierWill Regular'], [6, 'RapierWill-Regular']];
+	const names = [[1, 'RapierWillCarrier'], [2, 'Regular'], [4, 'RapierWillCarrier Regular'], [6, 'RapierWillCarrier-Regular']];
 	let offset = 0;
 	const tables = {
 		'OS/2': cat(u16(4), u16(advance), u16(400), u16(5), u16(0), u16(650), u16(600), u16(0), u16(75), u16(650), u16(600), u16(0), u16(350),
@@ -416,7 +416,15 @@ async function _rapierPrintTextPages(main, pageWidth, count, check, origin = mai
 			prev = run;
 		}
 	}
-	return pages.map(page => page.map(({block, carrier, ...run}) => run));
+	const ROLES = {TABLE: 'Table', TR: 'TR', TD: 'TD', TH: 'TH', UL: 'L', OL: 'L', LI: 'LI', BLOCKQUOTE: 'BlockQuote', P: 'P', PRE: 'Code', FIGCAPTION: 'Caption',
+		H1: 'H1', H2: 'H2', H3: 'H3', H4: 'H4', H5: 'H5', H6: 'H6'};
+	const tags = block => {
+		const chain = [];
+		for (let node = block; node && node !== main; node = node.parentElement)
+			if (ROLES[node.tagName] || node === block && node.matches('.rapier-will-carrier')) chain.unshift({node, role: ROLES[node.tagName] || 'P'});
+		return chain;
+	};
+	return pages.map(page => page.map(({block, ...run}) => ({...run, tags: tags(block)})));
 }
 
 function _rapierPrintLinkPages(main, width, height, count) {
@@ -505,6 +513,9 @@ async function writeRasterPdf({pages, textPages, linkPages = [], vectorPages = [
 	const descriptor = add('<< /Type /FontDescriptor /FontName /RapierText /Flags 4 /FontBBox [' + font.bounds.join(' ') + '] /ItalicAngle 0 /Ascent 500 /Descent -500 /CapHeight 500 /StemV 80 /FontFile2 ' + fontFile + ' 0 R >>');
 	const descendant = add('<< /Type /Font /Subtype /CIDFontType2 /BaseFont /RapierText /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor ' + descriptor + ' 0 R /DW 500 /CIDToGIDMap /Identity >>');
 	const type = add('<< /Type /Font /Subtype /Type0 /BaseFont /RapierText /Encoding /Identity-H /DescendantFonts [' + descendant + ' 0 R] /ToUnicode ' + mapping + ' 0 R >>');
+	const carrierDescriptor = add('<< /Type /FontDescriptor /FontName /RapierWillCarrier /Flags 4 /FontBBox [' + font.bounds.join(' ') + '] /ItalicAngle 0 /Ascent 500 /Descent -500 /CapHeight 500 /StemV 80 /FontFile2 ' + fontFile + ' 0 R >>');
+	const carrierDescendant = add('<< /Type /Font /Subtype /CIDFontType2 /BaseFont /RapierWillCarrier /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor ' + carrierDescriptor + ' 0 R /DW 500 /CIDToGIDMap /Identity >>');
+	const carrierType = add('<< /Type /Font /Subtype /Type0 /BaseFont /RapierWillCarrier /Encoding /Identity-H /DescendantFonts [' + carrierDescendant + ' 0 R] /ToUnicode ' + mapping + ' 0 R >>');
 	const numberFont = pageNumbers ? add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>') : null;
 	const kids = pages.map(() => { objects.push(null); return objects.length - 1; }), decimal = value => Number(value.toFixed(4));
 	const nativeFonts = new Map();
@@ -534,12 +545,24 @@ async function writeRasterPdf({pages, textPages, linkPages = [], vectorPages = [
 		nativeResources.push(entry.name + ' ' + type + ' 0 R');
 	}
 	const sharedImages = new Map();
+	const structs = new Map(), documentElement = {role: 'Document', kids: []}, parentTree = [];
+	const structOf = tags => {
+		let parent = documentElement;
+		for (const {node, role} of tags) {
+			let element = structs.get(node);
+			if (!element) {element = {role, kids: [], parent}; structs.set(node, element); parent.kids.push(element);}
+			parent = element;
+		}
+		return parent === documentElement ? null : parent;
+	};
 	for (let index = 0; index < pages.length; index++) {
 		check();
+		const marked = [];
+		parentTree.push(marked);
 		const held = pages[index], flate = !!held?.rgb;
 		const picture = stream('/Type /XObject /Subtype /Image /Width ' + pixelWidth + ' /Height ' + pixelHeight + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /' + (flate ? 'FlateDecode' : 'DCTDecode'), flate ? held.rgb : held);
 		pages[index] = null;
-		let commands = 'q\n' + [decimal(pixelWidth * .75), 0, 0, decimal(pixelHeight * .75), decimal(margins.left), decimal(height - margins.top - pixelHeight * .75)].join(' ') + ' cm\n/Im0 Do\nQ\n';
+		let commands = '/Artifact BMC\nq\n' + [decimal(pixelWidth * .75), 0, 0, decimal(pixelHeight * .75), decimal(margins.left), decimal(height - margins.top - pixelHeight * .75)].join(' ') + ' cm\n/Im0 Do\nQ\nEMC\n';
 		const pictures = ['/Im0 ' + picture + ' 0 R'], states = [];
 		for (const drawing of vectorPages[index] || []) {
 			commands += `q\n.75 0 0 -.75 ${decimal(margins.left)} ${decimal(height - margins.top)} cm\n0 0 ${pixelWidth} ${pixelHeight} re W n\n1 0 0 1 ${decimal(drawing.x)} 0 cm\n`;
@@ -569,6 +592,8 @@ async function writeRasterPdf({pages, textPages, linkPages = [], vectorPages = [
 		const textAlphas = new Map();
 		for (const run of textPages[index]) {
 			if (!run.text) continue;
+			const element = structOf(run.tags || []);
+			if (element) {element.kids.push({page: index, mcid: marked.length}); commands += `/${element.role} << /MCID ${marked.length} >> BDC\n`; marked.push(element);}
 			commands += `q\n/Span << /ActualText <feff${hex(run.text)}> >> BDC\nBT\n100 Tz\n`;
 			for (const part of run.parts || [run]) {
 				if (part.font) {
@@ -583,11 +608,11 @@ async function writeRasterPdf({pages, textPages, linkPages = [], vectorPages = [
 					const baseline = decimal(height - margins.top - (part.y + part.height * .8) * .75);
 					for (let letter = 0; letter < characters.length; letter++) {
 						const value = codes.get(characters[letter].codePointAt(0)).toString(16).padStart(4, '0');
-						commands += `/F1 ${decimal(size)} Tf\n3 Tr\n1 0 0 ${decimal(scaleY)} ${decimal(margins.left + part.x * .75 + slots[letter] * advance)} ${baseline} Tm\n<${value}> Tj\n`;
+						commands += `${run.carrier ? '/Fc' : '/F1'} ${decimal(size)} Tf\n3 Tr\n1 0 0 ${decimal(scaleY)} ${decimal(margins.left + part.x * .75 + slots[letter] * advance)} ${baseline} Tm\n<${value}> Tj\n`;
 					}
 				}
 			}
-			commands += 'ET\nEMC\nQ\n';
+			commands += 'ET\nEMC\nQ\n' + (element ? 'EMC\n' : '');
 		}
 		if (numberFont) commands += `BT\n/F2 9 Tf\n0 Tr\n1 0 0 1 ${decimal(width / 2 - String(index + 1).length * 2.5)} ${decimal(margins.bottom / 2)} Tm\n(${index + 1}) Tj\nET\n`;
 		const content = stream('/Filter /FlateDecode', await compressed(encode(commands)));
@@ -598,10 +623,17 @@ async function writeRasterPdf({pages, textPages, linkPages = [], vectorPages = [
 				: '/Dest [' + kids[link.target.page] + ' 0 R /XYZ ' + decimal(margins.left + link.target.x * .75) + ' ' + decimal(height - margins.top - link.target.y * .75) + ' null]';
 			return add('<< /Type /Annot /Subtype /Link /Border [0 0 0] /Rect [' + rect.join(' ') + '] ' + target + ' >>');
 		});
-		put(kids[index], '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + decimal(width) + ' ' + decimal(height) + '] /Resources << /XObject << ' + pictures.join(' ') + ' >> /ExtGState << ' + states.join(' ') + ' >> /Font << /F1 ' + type + ' 0 R' + (numberFont ? ' /F2 ' + numberFont + ' 0 R' : '') + ' ' + nativeResources.join(' ') + ' >> >> /Contents ' + content + ' 0 R' + (annotations.length ? ' /Annots [' + annotations.map(id => id + ' 0 R').join(' ') + ']' : '') + ' >>');
+		put(kids[index], '<< /Type /Page /Parent 2 0 R /StructParents ' + index + ' /MediaBox [0 0 ' + decimal(width) + ' ' + decimal(height) + '] /Resources << /XObject << ' + pictures.join(' ') + ' >> /ExtGState << ' + states.join(' ') + ' >> /Font << /F1 ' + type + ' 0 R /Fc ' + carrierType + ' 0 R' + (numberFont ? ' /F2 ' + numberFont + ' 0 R' : '') + ' ' + nativeResources.join(' ') + ' >> >> /Contents ' + content + ' 0 R' + (annotations.length ? ' /Annots [' + annotations.map(id => id + ' 0 R').join(' ') + ']' : '') + ' >>');
 	}
 	put(2, '<< /Type /Pages /Count ' + kids.length + ' /Kids [' + kids.map(id => id + ' 0 R').join(' ') + '] >>');
-	put(1, '<< /Type /Catalog /Pages 2 0 R /Names << /EmbeddedFiles << /Names [<feff' + hex(filename) + '> ' + file + ' 0 R] >> >> /AF [' + file + ' 0 R] >>');
+	const tree = add(''), ids = new Map([[documentElement, add('')]]);
+	const reserve = element => { for (const kid of element.kids) if (kid.kids) { ids.set(kid, add('')); reserve(kid); } };
+	reserve(documentElement);
+	for (const [element, id] of ids) put(id, '<< /Type /StructElem /S /' + element.role + ' /P ' + (element.parent ? ids.get(element.parent) : tree) + ' 0 R /K [' +
+		element.kids.map(kid => kid.kids ? ids.get(kid) + ' 0 R' : '<< /Type /MCR /Pg ' + kids[kid.page] + ' 0 R /MCID ' + kid.mcid + ' >>').join(' ') + '] >>');
+	const parents = add('<< /Nums [' + parentTree.map((marked, index) => index + ' [' + marked.map(element => ids.get(element) + ' 0 R').join(' ') + ']').join(' ') + '] >>');
+	put(tree, '<< /Type /StructTreeRoot /K [' + ids.get(documentElement) + ' 0 R] /ParentTree ' + parents + ' 0 R /ParentTreeNextKey ' + parentTree.length + ' >>');
+	put(1, '<< /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true >> /StructTreeRoot ' + tree + ' 0 R /Names << /EmbeddedFiles << /Names [<feff' + hex(filename) + '> ' + file + ' 0 R] >> >> /AF [' + file + ' 0 R] >>');
 	const info = add('<< /Producer (Rapier) /Title <feff' + hex(title || filename.replace(/\.[^.]*$/, '')) + '> >>');
 	const header = encode('%PDF-1.7\n%\u00e2\u00e3\u00cf\u00d3\n'), offsets = new Array(objects.length);
 	let cursor = header.length;

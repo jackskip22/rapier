@@ -33,11 +33,6 @@ export function reviveTrashed(index, file, digest) {
 	return {...index, notes: {...index.notes, [file]: active(index.notes[file], digest)}};
 }
 
-export function retentionCandidates(index, now, days = 30) {
-	if (!validTime(now) || !Number.isFinite(days) || days < 0) throw fail('time', 'A retention query needs a valid time.');
-	return Object.entries(index.tombstones || {}).flatMap(([id, rows]) => rows.filter(row => !row.pending && validTime(row.deletedAt) && row.deletedAt <= now - days * 86400000).map(row => ({id, opId: row.opId})));
-}
-
 function committer(commitIndex) {
 	if (typeof commitIndex !== 'function') throw fail('owner', 'Trash removal needs the notes folder owner.');
 	return async (index, options) => {
@@ -47,20 +42,22 @@ function committer(commitIndex) {
 	};
 }
 function verifyPending(index, opId, row) {
-	if (!row || !isNoteFile(row.file) || !hex(row.digest) || typeof row.id !== 'string' || typeof row.revision !== 'string' || !row.entry || row.entry.id !== row.id || row.history !== undefined && row.history !== 'erase') throw fail('corrupt', 'A pending trash operation is unreadable; its files have been kept.');
+	if (!row || !isNoteFile(row.file) || !hex(row.digest) || typeof row.id !== 'string' || typeof row.revision !== 'string' || !row.entry || row.entry.id !== row.id || row.history !== undefined && row.history !== 'erase' || row.sync !== undefined && row.sync !== true) throw fail('corrupt', 'A pending trash operation is unreadable; its files have been kept.');
 	const proof = index.tombstones?.[row.id]?.find(record => record.opId === opId);
 	if (!proof || proof.file !== row.file || proof.revision !== row.revision || proof.digest !== row.digest || proof.pending !== true) throw fail('corrupt', 'The pending trash operation has no matching tombstone; its files have been kept.');
 }
 function alterProof(index, id, opId, change) {
-	index.tombstones[id] = index.tombstones[id].map(row => row.opId === opId ? change({...row}) : row);
+	index.tombstones[id] = index.tombstones[id].map(row => row.opId === opId ? change({...row}) : row).filter(Boolean);
+	if (!index.tombstones[id].length) delete index.tombstones[id];
 }
+const settle = (row, change) => proof => row.sync ? null : change(proof);
 const HEX_NAMES = /[0-9a-f]{64}/g;
 const textOf = bytes => new TextDecoder('utf-8', {fatal: false}).decode(bytes);
 async function listed(store, folder) {
 	try { return (await store.list(folder)).filter(name => !/^\..*\.tmp$/.test(name)); }
 	catch (error) { if (error?.code === 'name') return []; throw error; }
 }
-export async function eraseNoteHistory({store, index, noteId} = {}) {
+async function eraseNoteHistory({store, index, noteId} = {}) {
 	let own;
 	try { own = 'history/' + manifestName(noteId); } catch (_) { return {erased: true, removed: []}; }
 	if (Object.values(index?.notes || {}).some(entry => entry?.id === noteId)) return {erased: false, kept: 'identity', removed: []};
@@ -106,7 +103,7 @@ export async function recoverTrash({store, index, commitIndex, clock = Date.now,
 			if (bytes != null && (!sameEntry || digest !== row.digest)) {
 				const entry = next.notes[row.file] || row.entry;
 				next.notes[row.file] = active(entry, digest);
-				alterProof(next, row.id, opId, proof => { delete proof.pending; proof.revivedAt = clock(); return proof; });
+				alterProof(next, row.id, opId, settle(row, proof => { delete proof.pending; proof.revivedAt = clock(); return proof; }));
 				discardPending(next, opId);
 				result.index = await commit(next, {changed: [row.file], kind: 'trash-revive'});
 				result.revived.push(row.file); continue;
@@ -123,7 +120,7 @@ export async function recoverTrash({store, index, commitIndex, clock = Date.now,
 			if (!validTime(completedAt)) throw fail('time', 'The deletion completion time is not readable.');
 			if (current && current.id !== row.id) { next.missingFiles = {...next.missingFiles, [row.file]: {entry: current, noticedAt: completedAt}}; result.missing.push(row.file); }
 			delete next.notes[row.file];
-			alterProof(next, row.id, opId, proof => { delete proof.pending; proof.deletedAt = completedAt; return proof; });
+			alterProof(next, row.id, opId, settle(row, proof => { delete proof.pending; proof.deletedAt = completedAt; return proof; }));
 			discardPending(next, opId);
 			result.index = await commit(next, {changed: [row.file], kind: 'trash-delete'});
 			result.deleted.push(row.file);
@@ -132,7 +129,7 @@ export async function recoverTrash({store, index, commitIndex, clock = Date.now,
 	} catch (error) { error.index = result.index; error.partial = result; throw error; }
 }
 
-export async function runTrash({store, index, files, now, deviceId, mode = 'expiry', commitIndex, clock = Date.now, keep = null, expected = null, checkpoint = null} = {}) {
+export async function runTrash({store, index, files, now, deviceId, mode = 'expiry', commitIndex, clock = Date.now, keep = null, expected = null, checkpoint = null, sync = false} = {}) {
 	if (now === undefined) now = clock();
 	if (!validTime(now) || !['expiry', 'confirmed'].includes(mode)) throw fail('trash', 'Trash needs a valid time and removal choice.');
 	if (mode === 'confirmed' && !Array.isArray(files)) throw fail('trash', 'Confirmed deletion must name the chosen files.');
@@ -168,7 +165,7 @@ export async function runTrash({store, index, files, now, deviceId, mode = 'expi
 			const opId = nextID(next, deviceId);
 			const row = {opId, file, revision: entry.revision, digest, device: deviceId, at: now, ...(checkpoint ? {checkpoint} : {}), pending: true};
 			next.tombstones = {...next.tombstones, [entry.id]: [...(next.tombstones?.[entry.id] || []), row]};
-			next.deletions = {...next.deletions, [opId]: {id: entry.id, file, revision: entry.revision, digest, entry: clone(entry), startedAt: now, history: 'erase'}};
+			next.deletions = {...next.deletions, [opId]: {id: entry.id, file, revision: entry.revision, digest, entry: clone(entry), startedAt: now, history: 'erase', ...(sync ? {sync: true} : {})}};
 		}
 		if (serializeIndex(next) !== serializeIndex(result.index)) result.index = await commit(next, {changed: candidates, kind: 'trash-prepare'});
 		appendOutcome(result, await recoverTrash({store, index: result.index, commitIndex, clock, keep}));

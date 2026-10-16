@@ -1,21 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+var _rapierDrawPart = null, _rapierNotesPart = null;
 function _rapierPartAvailable(id) { return typeof RapierParts !== 'undefined' && RapierParts.has(id); }
-function _rapierDrawOffered() { return _rapierDrawPresent() || _rapierPartAvailable('drawing'); }
+function _rapierDrawOffered() { return !!_rapierDrawPart || _rapierPartAvailable('drawing'); }
 function _rapierPartWait(id) {
 	const noun = RapierParts.pin(id)?.label || id, popup = _rapierProgressOpen({label: 'Loading ' + noun, after: 500});
-	const off = RapierParts.on((part, {status, progress}) => {
+	const follow = ({detail: {id: part, status, progress}}) => {
 		if (part !== id) return;
 		if (status === 'downloading') popup.set(progress > 0 ? progress : null, 'Downloading ' + noun);
 		else if (status === 'installing') popup.set(null, 'Starting ' + noun);
-	});
-	return RapierParts.need(id).finally(() => { off(); popup.end(); });
+	};
+	addEventListener('rapier:part', follow);
+	return RapierParts.need(id).finally(() => { removeEventListener('rapier:part', follow); popup.end(); });
 }
 async function _rapierPartReady(id) {
 	try { await _rapierPartWait(id); return true; }
 	catch (error) { showToast(String(error?.message || error), 'error'); return false; }
 }
 function _rapierOpenDrawPart() {
-	if (_rapierDrawOffered()) void _rapierPartReady('drawing').then(ready => { if (ready) rapierOpenDraw(); });
+	if (_rapierDrawOffered()) void _rapierPartReady('drawing').then(ready => { if (ready) _rapierDrawPart.open(); });
 }
 function _rapierDrawingRowPaint() {
 	const row = document.getElementById('drawing-plugin-row'), action = document.getElementById('drawing-plugin-action'), installed = document.getElementById('drawing-plugin-installed');

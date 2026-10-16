@@ -28,13 +28,17 @@ export interface Encoder {
   encode(image: Image, options?: Options): Promise<Bytes>;
   /** Preserves admitted JPEG coefficients and orientation, using effort 7. */
   transcode(input: {bytes: Uint8Array | Uint8ClampedArray | ArrayBuffer}, options?: ProgressOptions): Promise<Transcoded>;
+  /** Restore a carried JPEG; null when the file has no JPEG reconstruction data. */
+  reconstruct(input: {bytes: Uint8Array | Uint8ClampedArray | ArrayBuffer}): Promise<Bytes | null>;
   failure(error: unknown): Failure;
 }
 export type Request = {id: string | number; operation: 'encode'; width: number; height: number; data: Pixels | ArrayBuffer; options?: Omit<Options, 'progress'>; /** Ask for `Progress` replies while the encode runs. */ progress?: boolean}
-  | {id: string | number; operation: 'transcode'; bytes: Uint8Array | Uint8ClampedArray | ArrayBuffer; progress?: boolean};
+  | {id: string | number; operation: 'transcode'; bytes: Uint8Array | Uint8ClampedArray | ArrayBuffer; progress?: boolean}
+  | {id: string | number; operation: 'reconstruct'; bytes: Uint8Array | Uint8ClampedArray | ArrayBuffer};
 /** Completed work from 0 to 1, before its `Response`; sent only to a request that asked. */
 export type Progress = {id: string | number; progress: number};
 export type Response = {id: string | number; ok: true; bytes: Bytes; width?: number; height?: number; orientation?: number}
+  | {id: string | number; ok: true; bytes: null}
   | {id: string | number; ok: false; error: Failure};
 /** Complete encoder: optional WASM, effort search, photographic coding, JPEG and automatic parallel groups. */
 export function createEncoder(options?: WorkerOptions): Encoder;

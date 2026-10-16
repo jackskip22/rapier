@@ -16,7 +16,7 @@ import {registerHooks, syncBuiltinESMExports, builtinModules} from 'node:module'
 import {dirname, relative, resolve, isAbsolute} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 
-export const BUILD_PROFILES = Object.freeze({reader: 'rapier-reader.html', document: 'rapier-document.html', full: 'rapier.html'});
+export const BUILD_PROFILES = Object.freeze({reader: 'rapier-reader.html', full: 'rapier.html'});
 const HERE = fileURLToPath(import.meta.url), ROOT = resolve(dirname(HERE), '..');
 const SCHEMA = 'rapier-build-reuse/1';
 const ownImport = value => typeof value === 'string' && (value.startsWith('file:') ? value === pathToFileURL(HERE).href : resolve(value) === HERE);
@@ -244,6 +244,8 @@ function install() {
 const preload = process.execArgv.some((value, at, args) => value === '--import' && ownImport(args[at + 1]));
 if (preload) install();
 if (!preload && process.argv[1] && resolve(process.argv[1]) === resolve(ROOT, 'tools/build.mjs')) process.exit(runObservedBuild());
+
+export const unobservedBuildIO = fn => quiet(fn);
 
 export function buildObservationActive() { return Boolean(state()); }
 export function runObservedBuild() {

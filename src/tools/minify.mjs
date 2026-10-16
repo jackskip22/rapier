@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import {symbolMap} from './runtime-symbols.mjs';
 import {compileProgram} from './closure-compiler.mjs';
 import acorn from '../agent/vendor/acorn.mjs';
+import {cachedRecord, keepRecord, codeIdentity, runtimeIdentity, sha256} from './build-cache.mjs';
 const {minify} = createRequire(import.meta.url)('./vendor/terser/bundle.min.js');
 const parseCSS = createRequire(import.meta.url)('./vendor/postcss-parse.cjs');
 const parse = source => acorn.parse(source, {ecmaVersion: 'latest'});
@@ -102,7 +103,20 @@ export function scriptMinifier(sources, keepsComment) {
   const trees = function* (inputs) { for (const source of inputs) yield parse(source); };
   const names = reflectedNames(trees(sources)), maps = {};
   const format = {comments: (_, row) => keepsComment(row.value)};
+  let compiler = null;
+  const latest = new Map();
   const lean = async function lean(source, filename, options = {}) {
+    const call = Symbol(filename);
+    latest.set(filename, call);
+    compiler ||= Promise.all([codeIdentity([import.meta.url]), runtimeIdentity()]);
+    const key = sha256(JSON.stringify({compiler: await compiler, keepsComment: String(keepsComment), names: [...names].sort(), filename, options, source: sha256(source)}));
+    const hit = await cachedRecord(key, record => typeof record.code === 'string' && record.map?.sha256 === sha256(record.code));
+    const {code, map} = hit || await compile(source, filename, options);
+    if (!hit) await keepRecord(key, {code, map});
+    if (latest.get(filename) === call) maps[filename] = map;
+    return code;
+  };
+  const compile = async (source, filename, options) => {
     source = dropTemplateCssComments(source, keepsComment, filename);
     if (filename === 'rapier-editor.js') source = packWelcomePictures(source);
     let tree = parse(source);
@@ -131,8 +145,7 @@ export function scriptMinifier(sources, keepsComment) {
       for (const ref of await freeNames(code.slice(fn.start, fn.end))) if (!refs.has(ref))
         throw new Error(filename + ': serialized function acquired a free binding: ' + name + ' -> ' + ref);
     }
-    maps[filename] = symbolMap(ast, code, format);
-    return code;
+    return {code, map: symbolMap(ast, code, format)};
   };
   lean.symbols = maps;
   return lean;

@@ -1,6 +1,6 @@
 # Privacy and terms
 
-Rapier needs no account signup and uses no analytics or advertising. Your files stay on your device until you save, share, back up or sync them. Sync uses your bucket, encrypted with a key that never leaves your devices. You keep or delete local files; Delete forever removes notes and their history.
+Rapier needs no account signup and uses no analytics or advertising. It collects no personal information from anyone, children included. Your files stay on your device until you save, share, back up or sync them. Sync uses your bucket, encrypted with a key that never leaves your devices. You keep or delete local files; Delete forever removes notes and their history.
 
 The Android editor has no Internet permission. It records audio only when you press Record, into your notes. Google Play handles purchases, reviews and optional plugin downloads under its policy.
 
@@ -16,6 +16,6 @@ Cloudflare serves the page and door and sees what web requests show.
 
 Rapier is free software: AGPL-3.0-only for the editor; MIT for the Markdown standard and embed helper. Provided as is, without warranty where law allows. Keep your own copies. The door may change or close.
 
-Jack Skipworth · hello@rapier.website · effective 10 October 2026
+Jack Skipworth · hello@rapier.website · effective 15 October 2026
 
 The same words are the page's own privacy sheet, at [mcp.rapier.website/privacy.html](https://mcp.rapier.website/privacy.html).

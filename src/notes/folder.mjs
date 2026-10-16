@@ -8,9 +8,9 @@ import {NOTES_INDEX_FILE, isNoteFile, isMarkdownNote, isCodeFile, codeFileName, 
 import {recoverTrash, runTrash, markTrashed, reviveTrashed} from './trash.mjs';
 import {buildLinkIndex, resolveLinkIndex, renameLinks} from './links.mjs';
 import {inspectTextConflicts, mapTextConflictVariants, canonicalJSON} from './merge.mjs';
-import {appendImportReceipt, finishImportReceipt, importUndoReadiness, planImportUndo, recordImportUndo, importUndoSections, prepareImportWrite, prepareImportHistory, recordImportSections} from './import-receipt.mjs';
+import {appendImportReceipt, finishImportReceipt, importUndoReadiness, planImportUndo, recordImportUndo, importUndoSections, prepareImportWrites, prepareImportHistory, recordImportSections} from './import-receipt.mjs';
 import {validRecordingName, recordingName, audioMime, rewriteRecordingNames, recordingsOf} from './audio.mjs';
-import {manifestName, parseManifest, parseCanonical, materialize, recordVersion, serializeManifest, readCanonical, freshCanonical, appendCanonical, carryCanonical, adoptCanonical, canonicalSources, createHistoryPreparation, controlsAct} from './history.mjs';
+import {manifestName, parseManifest, parseCanonical, materialize, recordVersion, serializeManifest, readCanonical, freshCanonical, appendCanonical, carryCanonical, adoptCanonical, canonicalSources, createHistoryPreparation, controlsAct, thin, bindMedia, checkVersionMedia} from './history.mjs';
 import {applyReminderActions, changeReminders} from './model.mjs';
 import {restoreSnapshot as planSnapshot, restoreSnapshotStream as planSnapshotStream} from './restore.mjs';
 import {backupNames} from './backup-folder.mjs';
@@ -369,9 +369,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		return {...value, transport: value.transport === 'webmcp' ? 'webmcp' : 'platform', author: value.author || canonicalAuthor(), now: value.now ?? clock(),
 			...(value.requestId ? {requestScope: await sha256(JSON.stringify([value.principal || '', value.transport || 'platform', value.requestId]))} : {})};
 	};
-	const canonicalWrites = async (manifest, {file, text, entry, prior, now, reason = 'save', restoredFrom, history}) => {
-		const details = {file, text, entry, reason, now, ...(restoredFrom === undefined ? {} : {restoredFrom})};
-		const recorded = history ? await history.recordVersion(manifest, details) : await recordVersion(manifest, details);
+	const historyWrites = async (recorded, {entry, prior, history}) => {
 		const path = manifestName(entry.id), rows = new Map(recorded.writes.map(row => [row.name, row]));
 		rows.set(path, history ? history.writeManifest(recorded.manifest) : {name: path, bytes: exactBytes(serializeManifest(recorded.manifest))});
 		const writes = [];
@@ -383,10 +381,18 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			}
 			writes.push({file: 'history/' + name, bytes: row.bytes, expectedDigest: await digest(held)});
 		}
+		const readObject = name => rows.has(name) ? rows.get(name).bytes : store.read('history/' + name);
+		await (history ? history.materialize(recorded.manifest, recorded.version.id, readObject) : materialize(recorded.manifest, recorded.version.id, readObject));
 		return writes;
 	};
+	const canonicalWrites = async (manifest, {file, text, entry, prior, now, reason = 'save', restoredFrom, history}) => {
+		const details = {file, text, entry, reason, now, ...(restoredFrom === undefined ? {} : {restoredFrom})};
+		if (reason === 'restore') await checkVersionMedia(manifest, restoredFrom, text, {names: mediaNames, digest: path => storedFileDigest(store, path)});
+		const recorded = history ? await history.recordVersion(manifest, details) : await recordVersion(manifest, details);
+		return historyWrites(recorded, {entry, prior, history});
+	};
 	const canonicalProof = (file, id, ledger) => ({file, id, history: 'history/' + manifestName(id), ledger: ledger.sha256});
-	const readCanonicalOwned = async (lease, {file, id}, history = createHistoryPreparation()) => {
+	const readCanonicalOwned = async (lease, {file, id, checkpoint = false}, history = createHistoryPreparation()) => {
 		const snapshot = await lease.read({bodies: [file]});
 		if (!snapshot.index.notes[file] || id && snapshot.index.notes[file].id !== id || !snapshot.bodies.has(file)) throw fail('notes_changed', 'This note moved or changed.');
 		id = snapshot.index.notes[file].id;
@@ -398,11 +404,34 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		catch (cause) { throw Object.assign(fail('notes_history_unavailable', 'The canonical history could not be read. Its original bytes were kept.'), {cause}); }
 		if (bytes == null) throw fail('notes_history_unavailable', 'This note has no canonical history. Its original bytes were kept.');
 		const text = decode(body), proved = history.parseCanonical(bytes, {noteId: id, now: clock(), text});
+		if (checkpoint) {
+			const held = await history.materialize(proved.manifest, proved.manifest.current, name => store.read('history/' + name));
+			if (held.hash !== proved.ledger.head.sha256) throw fail('notes_history_unavailable', 'The current checkpoint does not hold these words.');
+		}
 		if (snapshot.index.notes[file].canonicalHistory !== proved.ledger.sha256 || !sameBytes(await store.read(file), body) || !sameBytes(await store.read(path), bytes) || !sameBytes(await store.read(NOTES_INDEX_FILE), indexBytes) || await store.read(OWNER_JOURNAL_FILE) != null) throw fail('notes_changed', 'The note changed while its history was read.');
 		return {...snapshot, file, id, text, digest: proved.ledger.head.sha256, ledger: proved.ledger, metadata: proved.metadata, documentAuthority: proved.ledger.documentAuthority};
 	};
+	const admitHistory = async (lease, {file, id}) => {
+		let admitted = false;
+		await lease.transact(({index, readBodies}) => prepareMutation(async () => {
+			const entry = index.notes[file];
+			if (!entry || id && entry.id !== id || entry.canonicalHistory || await store.read('history/' + manifestName(entry.id)) != null) return {index};
+			const text = decode((await readBodies([file])).get(file)), now = clock();
+			const result = appendCanonical(freshCanonical(parseManifest(null, {noteId: entry.id, now}), {filename: file, docKind: isCodeFile(file) ? 'code' : 'markdown'}), {text, author: canonicalAuthor(), operation: 'notes.admit', now});
+			const next = {...index, notes: {...index.notes, [file]: {...entry, canonicalHistory: result.ledger.sha256, revision: 'sha256:' + await sha256(text)}}};
+			const writes = await canonicalWrites(result.manifest, {file, text, entry: next.notes[file], prior: null, now});
+			admitted = true;
+			return {kind: 'admit', index: next, writes, canonical: [canonicalProof(file, entry.id, result.ledger)]};
+		}));
+		return admitted;
+	};
 	const readCanonicalNote = async target => {
-		try { return await underLease(lease => readCanonicalOwned(lease, target)); }
+		try {
+			return await underLease(async lease => {
+				try { return await readCanonicalOwned(lease, target); }
+				catch (error) { if (error?.code !== 'notes_history_unavailable' || !await admitHistory(lease, target)) throw error; return readCanonicalOwned(lease, target); }
+			});
+		}
 		catch (error) { if (error?.code !== 'read-only') throw error; return readCanonicalOwned({read: options => owner.read(scope, options)}, target); }
 	};
 	const createOwned = async (lease, text, wanted, extra = {}, request, media = null, options = {}) => {
@@ -430,7 +459,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			await active();
 			return {kind: 'canonical-create', index: next, writes: [{file, bytes: exactBytes(text), createOnly: true}, ...writes], canonical: [canonicalProof(file, id, result.ledger)]};
 		}), {admissionGuard: () => prepareMutation(active)});
-		const proved = await readCanonicalOwned(lease, {file, id: snapshot.index.notes[file]?.id});
+		const proved = await readCanonicalOwned(lease, {file, id: snapshot.index.notes[file]?.id, checkpoint: true});
 		return {...snapshot, file, id: proved.id, text: proved.text, digest: proved.digest, ledger: proved.ledger, act: result.act, replayed: !!result.replayed};
 	};
 	const create = (text, wanted, extra = {}, request, options) => owned(lease => createOwned(lease, text, wanted, extra, request, null, options));
@@ -540,7 +569,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 				await active();
 				return {kind: 'canonical-save', index, writes: [{file: destination, bytes: source.bytes, expectedDigest: actual}, ...writes], canonical: [canonicalProof(destination, id, result.ledger)], historyPreparation: history};
 			}), {bodies: [], ordinarySave: {file, id, expectedDigest: admitted}, admit: () => { checkByteAbort(options.signal); options.guard?.(); }, admissionGuard: () => prepareMutation(active)});
-			const proved = await readCanonicalOwned(lease, {file: destination, id}, history);
+			const proved = await readCanonicalOwned(lease, {file: destination, id, checkpoint: true}, history);
 			if (result.replayed) {
 				const original = result.ledger.records.find(row => row.transaction.id === result.act?.id);
 				const kept = proved.ledger.records.find(row => row.transaction.id === result.act?.id);
@@ -548,6 +577,70 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			} else if (proved.ledger.sha256 !== result.ledger.sha256) throw fail('notes_changed', 'The saved history could not be verified.');
 			return {...snapshot, index: proved.index, files: proved.files, generation: proved.generation, readOnly: proved.readOnly,
 				file: destination, copied, id, digest: proved.digest, text: proved.text, ledger: proved.ledger, act: result.act, unchanged: !!result.unchanged, replayed: !!result.replayed};
+		});
+	};
+	const recordHistory = ({file, id, expectedDigest, reason = 'save', restoredFrom}) => underLease(async lease => {
+		if (await store.read('history/' + manifestName(id)) == null) await admitHistory(lease, {file, id});
+		const history = createHistoryPreparation(); let recorded;
+		const snapshot = await lease.transact(({index, readBodies}) => prepareMutation(async () => {
+			const entry = index.notes[file];
+			if (!entry || entry.id !== id || reason === 'trash' && !entry.trashed || reason === 'untrash' && entry.trashed)
+				throw fail('notes_changed', 'The note changed before its history could be recorded.');
+			const body = (await readBodies([file])).get(file), text = decode(body), prior = await store.read('history/' + manifestName(id));
+			const proved = history.parseCanonical(prior, {noteId: id, now: clock(), text});
+			if (proved.ledger.sha256 !== entry.canonicalHistory || expectedDigest !== undefined && proved.ledger.head.sha256 !== expectedDigest)
+				throw fail('notes_changed', 'The note changed before its history could be recorded.');
+			recorded = await history.recordVersion(proved.manifest, {file, text, entry, reason, now: clock(), ...(restoredFrom === undefined ? {} : {restoredFrom})});
+			if (recorded.unchanged) {
+				await history.materialize(recorded.manifest, recorded.version.id, name => store.read('history/' + name));
+				return {index};
+			}
+			const writes = await historyWrites(recorded, {entry, prior, history});
+			return {kind: 'history-checkpoint', index, writes, canonical: [canonicalProof(file, id, proved.ledger)], historyPreparation: history};
+		}), {bodies: []});
+		if (snapshot.dropped?.length) throw fail('notes_changed', 'The note history changed before its checkpoint could be recorded.');
+		await readCanonicalOwned(lease, {file, id, checkpoint: true}, history);
+		return {...snapshot, version: recorded.version, unchanged: recorded.unchanged};
+	});
+	const historyInventory = async (includeBytes = false, index) => {
+		index ||= (await owner.read(scope)).index;
+		const list = [], unreadable = [], bytes = includeBytes ? new Map() : null;
+		const listed = new Set((await store.list('history/manifests')).filter(name => !name.startsWith('.')).map(name => 'manifests/' + name));
+		const entries = new Map([...Object.values(index.missingFiles || {}).map(row => row.entry), ...Object.values(index.notes)]
+			.filter(entry => entry?.id).map(entry => [manifestName(entry.id), entry]));
+		const roots = new Set([...listed, ...entries.keys(), ...Object.keys(index.tombstones || {}).map(manifestName)]);
+		for (const path of roots) {
+			const held = await store.read('history/' + path), entry = entries.get(path); bytes?.set(path, held);
+			if (held == null && !listed.has(path) && !entry?.canonicalHistory) continue;
+			try {
+				const noteId = path.slice('manifests/'.length).replace(/\.json$/, '').replace('!', ':');
+				if (held == null || manifestName(noteId) !== path) throw fail('history', 'History manifest missing or misnamed.');
+				const manifest = parseManifest(held, {noteId, now: clock()});
+				if (entry?.canonicalHistory && manifest.canonical?.sha256 !== entry.canonicalHistory) throw fail('history', 'The indexed history changed.');
+				list.push(manifest);
+			} catch (_) { unreadable.push(path); }
+		}
+		return {list, unreadable, ...(bytes ? {bytes} : {})};
+	};
+	const historyRoots = list => canonicalJSON([...list].sort((a, b) => a.noteId < b.noteId ? -1 : a.noteId > b.noteId ? 1 : 0));
+	const tidyHistory = (expected, {now, dayOf}) => {
+		const reviewed = historyRoots(expected);
+		return underLease(async lease => {
+			let plan;
+			const snapshot = await lease.transact(async ({index}) => {
+				const fresh = await historyInventory(true, index);
+				if (fresh.unreadable.length || historyRoots(fresh.list) !== reviewed) throw fail('history_changed', 'History changed while Tidy was open.');
+				plan = thin(fresh.list, undefined, {now, dayOf, complete: true});
+				const writes = await Promise.all(plan.writes.map(async row => ({file: 'history/' + row.name, bytes: row.bytes, expectedDigest: await digest(fresh.bytes.get(row.name))})));
+				return {kind: 'history-tidy', index, writes};
+			});
+			const fresh = await historyInventory(false, (await lease.read()).index);
+			if (snapshot.dropped?.length || fresh.unreadable.length || historyRoots(fresh.list) !== historyRoots(plan.manifests))
+				throw fail('history_cleanup_refused', 'History changed before Tidy could remove its unused objects.');
+			let stuck = 0;
+			for (const path of [...plan.textsFree.map(hash => 'history/texts/' + hash), ...plan.blobsFree.map(hash => 'history/blobs/' + hash)])
+				try { await store.remove(path); } catch (_) { stuck++; }
+			return {...snapshot, stuck};
 		});
 	};
 	const rename = ({file, id, expectedDigest, wanted, linking}) => owned(async (lease, before) => {
@@ -659,7 +752,8 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			for (const which of ['attachments', 'recordings']) for (const [name, n] of names[which]) add(which, name, kind, {file, count: n});
 			measure(names);
 		}
-		const checked = new Map();
+		const checked = new Map(), owners = new Map();
+		for (const name of Object.keys(before.index.notes)) if (!owners.has(before.index.notes[name].id)) owners.set(before.index.notes[name].id, name);
 		for (const leaf of (await store.list('history/manifests')).filter(name => !/^\..*\.tmp$/.test(name)).sort()) {
 			checkByteAbort(signal);
 			const id = leaf.replace(/\.json$/, '').replace('!', ':'); let manifest;
@@ -668,7 +762,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 				const raw = await store.read('history/manifests/' + leaf); if (raw === null) throw new Error('missing manifest');
 				manifest = parseManifest(raw, {noteId: id, now: clock()});
 			} catch (error) { throw fail('unreadable', 'Retained history ' + leaf + ' could not be checked. No file was deleted.'); }
-			const owner = Object.keys(before.index.notes).find(name => before.index.notes[name].id === id) ?? manifest.file;
+			const owner = owners.get(id) ?? manifest.file;
 			for (const historical of owner && isCodeFile(owner) ? [] : canonicalSources(manifest)) {
 				const names = namesIn(historical.text);
 				for (const which of ['attachments', 'recordings']) for (const [name, n] of names[which]) add(which, name, 'history', {file: manifest.file, noteId: id, act: historical.act, time: historical.time, count: n});
@@ -709,13 +803,24 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		return index;
 	};
 
+	const mediaNames = text => [...recordingsOf(text).map(row => 'audio/' + row.name), ...attachmentsOf(text).map(row => 'attachments/' + row.name)];
+	const bindHistoryMedia = async (history, path, content) => {
+		const writes = [];
+		for (const id of new Set(history.map(row => row.noteId))) {
+			const name = 'history/' + manifestName(id), prior = await store.read(name), manifest = parseManifest(prior, {noteId: id, now: clock()});
+			const media = manifest.canonical && bindMedia(manifest.canonical, manifest.media, path, content, mediaNames, {close: true});
+			if (media && media !== manifest.media) writes.push({file: name, bytes: exactBytes(serializeManifest({...manifest, media})), expectedDigest: await digest(prior)});
+		}
+		return writes;
+	};
 	const deleteAttachment = (reviewed, {confirmed = false, signal} = {}) => {
 		if (confirmed !== true) return Promise.reject(fail('confirmation', 'Deleting a file forever needs its explicit confirmation. Nothing was deleted.'));
 		return owned(async (lease, before) => {
 			const current = await deletionReview(reviewed?.name, before, {signal});
 			if (!eq(current, reviewed)) throw fail('changed', 'This file or the places that name it changed. Review Delete forever again; nothing was deleted.');
 			checkByteAbort(signal);
-			const snapshot = await lease.transact(async ({index}) => ({kind: 'attachment-delete', index: await forgetMedia(index, 'attachments/' + current.name, current.digest), removes: [{file: 'attachments/' + current.name, expectedDigest: current.digest}]}));
+			const path = 'attachments/' + current.name;
+			const snapshot = await lease.transact(async ({index}) => ({kind: 'attachment-delete', index: await forgetMedia(index, path, current.digest), removes: [{file: path, expectedDigest: current.digest}], writes: await bindHistoryMedia(current.history, path, current.digest)}));
 			if (snapshot.dropped?.includes('attachments/' + current.name) || await store.stat('attachments/' + current.name) !== null)
 				throw fail('changed', 'The file changed, so it was not deleted.');
 			return {...snapshot, name: current.name};
@@ -740,7 +845,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			if (!eq(current, reviewed)) throw fail('changed', 'This recording or the places that play it changed. Review Delete forever again; nothing was deleted.');
 			checkByteAbort(signal);
 			const path = 'audio/' + current.name;
-			const snapshot = await lease.transact(async ({index}) => ({kind: 'discard-recording', index: await forgetMedia(index, path, current.digest), removes: [{file: path, expectedDigest: current.digest}]}));
+			const snapshot = await lease.transact(async ({index}) => ({kind: 'discard-recording', index: await forgetMedia(index, path, current.digest), removes: [{file: path, expectedDigest: current.digest}], writes: await bindHistoryMedia(current.history, path, current.digest)}));
 			if (snapshot.dropped?.includes(path) || await store.stat(path) !== null) throw fail('changed', 'The recording changed, so it was not deleted.');
 			return {...snapshot, name: current.name};
 		});
@@ -845,6 +950,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		}
 		let receiptCommit; const canonical = [], historyTargets = new Map(), createdHistory = new Map();
 		const snapshot = await lease.transact(async ({index,readImportReceipt}) => {
+			const historyPreparation = createHistoryPreparation();
 			if (result.index) { const generation = index.folderGeneration; index = copy(result.index); if (result.attachments?.length || result.backupFiles?.some(row => row.name.startsWith('attachments/'))) index.folderGeneration = generation; }
 			for (const section of result.sections || []) index = addSection(index, section);
 			for (const note of result.notes) {
@@ -859,15 +965,19 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 				let text; try { text = decode(writes.get(note.file).bytes); } catch (_) { continue; }
 				let manifest, ledger;
 				if (prior != null) {
-					manifest = parseManifest(prior, {noteId: id, now}); ledger = readCanonical(manifest, text).ledger;
+					manifest = historyPreparation.parseManifest(prior, {noteId: id, now}); ledger = historyPreparation.readCanonical(manifest, text).ledger;
 				} else {
 					if (entry.canonicalHistory) throw fail('notes_history_unavailable', 'The imported note is missing its canonical history.');
-					manifest = freshCanonical(parseManifest(null, {noteId: id, now}), {filename: note.file, docKind: isCodeFile(note.file) ? 'code' : 'markdown'});
-					const created = appendCanonical(manifest, {text, author: canonicalAuthor(), operation: 'notes.import', now});
+					manifest = historyPreparation.freshCanonical(historyPreparation.parseManifest(null, {noteId: id, now}), {filename: note.file, docKind: isCodeFile(note.file) ? 'code' : 'markdown'});
+					const created = await historyPreparation.appendCanonical(manifest, {text, author: canonicalAuthor(), operation: 'notes.import', now});
 					manifest = created.manifest; ledger = created.ledger;
 				}
 				entry.canonicalHistory = ledger.sha256; entry.revision = 'sha256:' + await sha256(text);
-				const history = await canonicalWrites(manifest, {file: note.file, text, entry, prior, now, reason: 'import'});
+				if (entry.trashed && !note.exactBackup) {
+					index = markTrashed(index, note.file, {digest: entry.revision.slice(7), now: entry.trashedAt ?? now});
+					Object.assign(entry, index.notes[note.file]);
+				}
+				const history = await canonicalWrites(manifest, {file: note.file, text, entry, prior, now, reason: 'import', history: historyPreparation});
 				for (const row of history) {
 					writes.set(row.file, {...row, ...(row.expectedDigest === null ? {} : {replace: true})});
 					historyTargets.set(row.file, row);
@@ -880,12 +990,12 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			for (const row of writes.values()) if (/^(?:audio|attachments)\//.test(row.file)) index = reviveMedia(index, row.file, await digest(row.bytes));
 			if (result.importReceipt) {
 				let receipt = result.importReceipt;
-				for (const note of result.notes) receipt = await prepareImportWrite(receipt, {...note, bytes: writes.get(note.file).bytes}, {entry: index.notes[note.file]});
+				receipt = await prepareImportWrites(receipt, result.notes.map(note => ({note: {...note, bytes: writes.get(note.file).bytes}, entry: index.notes[note.file]})));
 				receipt = await prepareImportHistory(receipt, [...historyTargets.values()]);
 				receipt = recordImportSections(receipt, index.sections.filter(section => !before.index.sections.some(old => old.name === section.name)));
 				receiptCommit = await receiptPlan(index, receipt, result.receiptCheckpoint, readImportReceipt); index = receiptCommit.index;
 			}
-			return {kind: 'import', index, writes: [...writes.values(), ...(receiptCommit?.writes || [])], removes: receiptCommit?.removes || [], ...(canonical.length ? {canonical} : {})};
+			return {kind: 'import', index, writes: [...writes.values(), ...(receiptCommit?.writes || [])], removes: receiptCommit?.removes || [], ...(canonical.length ? {canonical, historyPreparation} : {})};
 		});
 		for (const row of writes.values()) if (/^audio\//.test(row.file) && !(snapshot.dropped || []).includes(row.file)) result.createdFiles.push({file: row.file, bytes: row.bytes});
 		result.createdHistory = await Promise.all([...createdHistory.values()].map(async row => ({file: row.file, bytes: row.bytes, actual: await store.read(row.file)})));
@@ -1073,5 +1183,5 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 	const recordingCustody = createRecordings({store, owned, underLease, locks, scope, shared: isShared, clock, audioName, discardAudio,
 		canOwn: () => store.writable !== false && (!isShared() || !!(locks?.request && channel?.postMessage)), readSnapshot: () => owner.read(scope)});
 	return {beginRecording: recordingCustody.begin, recoverRecordings: recordingCustody.recover, openRecording: recordingCustody.open, readRecording: recordingCustody.preview, acknowledgeRecording: recordingCustody.acknowledge,
-		owner, store, scope, read, readCanonical: readCanonicalNote, rebuildIndex, metadata, controls, controlsUndo, reminderActions, reminderChange, leaveVault, create, createShared, save, rename, trash, discardEmpty, mark, createAudio, createAttachment, attachmentReferences, fileReferences, reviewAttachmentDeletion, deleteAttachment, reviewRecordingDeletion, deleteRecording, asset, discardAudio, importBatch, checkpointImportReceipt, readImportReceipt, restoreSnapshot, previewImportUndo, undoImport, backupSnapshot, capture, readFile, settle, get deviceId() { return deviceId; }, get pending() { return pending.size; }, close: () => { recordingCustody.close(); owner.close(); channel?.close?.(); }};
+		owner, store, scope, read, readCanonical: readCanonicalNote, rebuildIndex, metadata, controls, controlsUndo, reminderActions, reminderChange, leaveVault, create, createShared, save, recordHistory, historyInventory, tidyHistory, rename, trash, discardEmpty, mark, createAudio, createAttachment, attachmentReferences, fileReferences, reviewAttachmentDeletion, deleteAttachment, reviewRecordingDeletion, deleteRecording, asset, discardAudio, importBatch, checkpointImportReceipt, readImportReceipt, restoreSnapshot, previewImportUndo, undoImport, backupSnapshot, capture, readFile, settle, get deviceId() { return deviceId; }, get pending() { return pending.size; }, close: () => { recordingCustody.close(); owner.close(); channel?.close?.(); }};
 }

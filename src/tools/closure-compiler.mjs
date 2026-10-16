@@ -9,7 +9,7 @@ export const localCompression = {
   hoist_funs: false, hoist_vars: false, unused: false,
   keep_fnames: true, keep_classnames: true,
 };
-const optimizing = {keep_fargs: true, keep_fnames: true, keep_classnames: true};
+const optimizing = {keep_fargs: true, keep_fnames: true, keep_classnames: true, passes: 2};
 const factoryOwners = new Set(['artifactFactories', 'workerFactories']);
 const rootMarker = '__RAPIER_COMPILE_ROOTS__';
 const functionTypes = new Set(['Function', 'Arrow', 'Defun']);

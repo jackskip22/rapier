@@ -198,18 +198,18 @@ function* patchFraction(steps, start, span) {
   return step.value;
 }
 
-export function* patchSteps(rgba, width, height, shape, colorSpace, {tokenCodec = null, stats = null, search = null, limit = Infinity, pooled = false} = {}) {
+export function* patchSteps(rgba, width, height, shape, colorSpace, {tokenCodec = null, stats = null, search = null, limit = Infinity, pooled = false, minLength = 7} = {}) {
   const dict = glyphDictionary(rgba, width, height);
   if (yield 0.05) return null;
   if (!dict) return null;
-  if (search) return yield* patchSearchSteps(dict, width, height, shape, colorSpace, search, limit, stats, pooled);
+  if (search) return yield* patchSearchSteps(dict, width, height, shape, colorSpace, {...search, minLength}, limit, stats, pooled);
   const atlasPlan = screenPlan(dict.atlas, dict.width, dict.height, shape, 'global');
   const bodyPlan = screenPlan(dict.body, width, height, shape, 'global');
   if (!atlasPlan || !bodyPlan) return null;
   const atlas = yield* patchFraction(
     screenFrameSteps(dict.atlas, dict.width, dict.height, shape, colorSpace, atlasPlan, {
       imageHeader: false,
-      tokenCodec, pooled,
+      tokenCodec, pooled, minLength,
       frameHeader: w => writePatchFrameHeader(w, shape.alpha, {reference: true, width: dict.width, height: dict.height})
     }),
     0.05,
@@ -219,7 +219,7 @@ export function* patchSteps(rgba, width, height, shape, colorSpace, {tokenCodec 
   const body = yield* patchFraction(
     screenFrameSteps(dict.body, width, height, shape, colorSpace, bodyPlan, {
       imageHeader: false,
-      tokenCodec, pooled,
+      tokenCodec, pooled, minLength,
       frameHeader: w => writePatchFrameHeader(w, shape.alpha),
       globalPrefix: w => writePatchDictionary(w, dict, shape.alpha)
     }),

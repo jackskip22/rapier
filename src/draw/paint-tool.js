@@ -50,9 +50,13 @@ function _rapierPaintPatch(evt) {
 }
 const RAPIER_PAINT_BRUSH_KEY = 'rapier:draw.paintbrush', RAPIER_PAINT_OWN_KEY = 'rapier:draw.paintbrushes' + RapierStorage.scope;
 const RAPIER_PAINT_STRENGTH_KEY = 'rapier:draw.paintstrength';
-const RAPIER_PAINT_PINNED = ['rapier/oil', 'rapier/acrylic', 'rapier/bristle', 'rapier/flat', 'rapier/scumble', 'rapier/pencil', 'rapier/pen',
+const RAPIER_PAINT_PINNED = ['rapier/oil', 'rapier/acrylic', 'rapier/flat', 'rapier/bristle', 'rapier/scumble', 'rapier/pencil', 'rapier/pen', 'rapier/watercolour',
 	'rapier/smudge', 'rapier/smear', 'rapier/blend', 'rapier/eraser', 'rapier/dissolve', 'rapier/erode'];
-const RAPIER_PAINT_DEFAULT_ID = 'rapier/scumble';
+const RAPIER_PAINT_COLOURS = [['#e53935', 'Red'], ['#f57c00', 'Orange'], ['#ffdd33', 'Yellow'], ['#a4d65e', 'Lime'],
+	['#218c4a', 'Green'], ['#62c5ed', 'Sky'], ['#2463d3', 'Blue'], ['#7040b5', 'Purple'],
+	['#f399b5', 'Pink'], ['#d32a91', 'Magenta'], ['#20b8aa', 'Turquoise'], ['#80502f', 'Brown'],
+	['#d6ad7b', 'Tan'], ['#808080', 'Grey'], ['#000000', 'Black'], ['#ffffff', 'White']];
+const RAPIER_PAINT_DEFAULT_ID = 'rapier/oil';
 const RAPIER_PAINT_SIZES_KEY = 'rapier:draw.paintsizes';
 function _rapierPaintSizeDefault(id) { return paintSizeDefault(id); }
 function _rapierPaintSizesRead() { try { const raw = JSON.parse(localStorage.getItem(RAPIER_PAINT_SIZES_KEY) || '{}'); return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}; } catch (_) { return {}; } }
@@ -159,6 +163,15 @@ function _rapierPaintStoreOwn(rows) {
 	void _rapierPersonal.brushes(rows, before).catch(error => showToast(String(error.message || error), 'error'));
 	return true;
 }
+function _rapierPaintAdoptBrushes(keep, brushes) {
+	let local; try { local = _rapierPaintStoredBrushes(); } catch (_) {}
+	if (local) { localStorage.setItem(RAPIER_PAINT_OWN_KEY, JSON.stringify(local.filter(keep).concat(brushes))); _rapierDrawState.paintOwn = null; }
+}
+function _rapierPaintAdoptFits(value) {
+	let fits; try { fits = JSON.parse(value); } catch (_) { return; }
+	if (!fits || typeof fits !== 'object' || Array.isArray(fits)) return;
+	for (const [id, on] of Object.entries(fits)) if (/^[A-Za-z0-9_./-]+$/.test(id) && typeof on === 'boolean') { if (on) localStorage.removeItem(RAPIER_PAINT_FIT_KEY + id); else localStorage.setItem(RAPIER_PAINT_FIT_KEY + id, 'off'); }
+}
 // Every brush the strip can show: Rapier's own finger set first (RAPIER_PAINT_PINNED), then the
 function _rapierPaintEntries() {
 	const all = RAPIER_PAINT_BRUSHES.concat(_rapierPaintOwnBrushes());
@@ -219,6 +232,7 @@ function _rapierPaintBrushId() { const id = _rapierDrawState.paintBrush; return 
 function _rapierPaintSetBrush(id) {
 	if (!_rapierPaintEntry(id)) return;
 	_rapierDrawState.paintBrush = id;
+	if (!RAPIER_PAINT_PINNED.includes(id)) _rapierDrawState.paintMore = true;
 	_rapierDrawState.paintSize = _rapierPaintSizeFor(id);
 	try { localStorage.setItem(RAPIER_PAINT_BRUSH_KEY, id); } catch (_) {}
 	_rapierPersonal.rememberDrawing('paintBrush', id);
@@ -264,7 +278,7 @@ function _rapierPaintHeadOval(head, rx, ry) {
 }
 function _rapierPaintHeadChipHTML() {
 	const head = _rapierPaintHead(), open = !_rapierPaintAnglePanel()?.hidden;
-	return '<button type="button" class="rapier-draw-chip rapier-draw-chip--icon rapier-draw-chip--angle" data-draw-paint-head aria-haspopup="true" aria-expanded="' + open + '"' +
+	return '<button type="button" class="rapier-draw-chip rapier-draw-chip--icon rapier-draw-chip--angle" data-draw-paint-head data-draw-act="paintAngle" aria-haspopup="true" aria-expanded="' + open + '"' +
 		' aria-label="Brush angle, ' + head.angle + ' degrees, ' + (head.follow ? 'follows the finger' : 'held') + '. Opens the angle dial" data-tip="angle">' +
 		'<svg class="rapier-draw-angle" viewBox="-14 -14 28 28" aria-hidden="true">' + _rapierPaintHeadOval(head, 11.5, 3.2) + '</svg>' +
 		'<span class="rapier-draw-chip-name">' + (head.follow ? 'follow' : head.angle + '\u00b0') + '</span></button>';
@@ -640,9 +654,9 @@ function _rapierPaintFeelOptions(id, overrides = false) {
 		stabilisation: _rapierDrawClamp((settings.slow_tracking?.base_value || 0) / globalThis.RapierDrawPaint.PAINT_BRUSH_CONTROLS.stabilisation.trackingMax, 0, 1),
 		response: settings.rapier_pressure?.base_value || 1};
 }
-function _rapierPaintMixMarkup(ink) {
+function _rapierPaintMixMarkup(ink, controls = '') {
 	const state = _rapierDrawState, mix = state.paintMix || (state.paintMix = {a: ink, b: '#ffffff', amount: 50});
-	return '<details class="rapier-paint-mixer"><summary>Mix colours</summary><div class="rapier-paint-mix-colours">' +
+	return '<details class="rapier-paint-mixer"><summary>Mix</summary>' + controls + '<div class="rapier-paint-mix-colours">' +
 		'<label class="rapier-draw-colour-custom"><input type="color" data-paint-mix="a" value="' + mix.a + '" aria-label="First paint colour"></label>' +
 		'<label class="rapier-draw-colour-custom"><input type="color" data-paint-mix="b" value="' + mix.b + '" aria-label="Second paint colour"></label>' +
 		'<button type="button" class="rapier-draw-chip" data-paint-mix-use><span class="rapier-paint-mix-result"></span>Use mix</button></div>' +
@@ -694,7 +708,7 @@ function _rapierPaintDipButtonArt(id, color) {
 	const jar = 'M6 5h12v12.5a2.5 2.5 0 0 1-2.5 2.5h-7A2.5 2.5 0 0 1 6 17.5z';
 	return '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
 		'<path d="' + jar + '" fill="rgb(' + paper.join(',') + ')" stroke="none"></path>' +
-		'<rect x="6" y="' + (20 - h).toFixed(1) + '" width="12" height="' + h.toFixed(1) + '" rx="1.5" fill="' + ink + '" stroke="none"></rect>' +
+		'<rect x="6" y="' + (20 - h).toFixed(1) + '" width="12" height="' + h.toFixed(1) + '" fill="' + ink + '" stroke="none"></rect>' +
 		'<path d="' + jar + '"></path><path d="M4 5h16"></path></svg>';
 }
 function _rapierPaintDipSyncButton() {
@@ -770,6 +784,12 @@ function _rapierPaintDipSyncPanel(repaintSample = true) {
 	const id = _rapierPaintBrushId(), color = _rapierPaintColor(), [load, water] = _rapierPaintDip(id);
 	const paper = _rapierPaintDipPaper();
 	_rapierPaintSyncSet();
+	const head = _rapierPaintHead(), chip = panel.querySelector('[data-draw-paint-head]'), oval = chip.querySelector('ellipse');
+	oval.setAttribute('transform', 'rotate(' + head.angle + ')');
+	if (head.follow) oval.setAttribute('stroke-dasharray', '3 2'); else oval.removeAttribute('stroke-dasharray');
+	chip.querySelector('.rapier-draw-chip-name').textContent = head.follow ? 'follow' : head.angle + '\u00b0';
+	chip.setAttribute('aria-label', 'Brush angle, ' + head.angle + ' degrees, ' + (head.follow ? 'follows the finger' : 'held') + '. Opens the angle dial');
+	chip.setAttribute('aria-expanded', 'false');
 	const pad = panel.querySelector('.rapier-draw-dip-pad'), knob = panel.querySelector('.rapier-draw-dip-knob'), track = panel.querySelector('.rapier-draw-dip-track');
 	const ink = color.join(',');
 	if (panel.dataset.dipInk !== ink) { panel.dataset.dipInk = ink; _rapierPaintDipField(panel.querySelector('.rapier-draw-dip-field'), color); }
@@ -1266,7 +1286,10 @@ function _rapierPaintUpdateStrip() {
 	row.setAttribute('aria-label', mode === 'tools' ? 'Paint tools' : 'Brushes');
 	row.hidden = false;
 	const chosen = _rapierPaintBrushId(), color = _rapierPaintColor(), strengthLight = _rapierDrawState.paintStrength === 'light';
-	const entries = _rapierPaintEntries().filter(entry => _rapierPaintIsTool(entry.id) === (mode === 'tools'));
+	const all = _rapierPaintEntries().filter(entry => _rapierPaintIsTool(entry.id) === (mode === 'tools'));
+	const core = all.filter(entry => RAPIER_PAINT_PINNED.includes(entry.id)), more = all.filter(entry => !RAPIER_PAINT_PINNED.includes(entry.id));
+	if (_rapierDrawState.paintMore == null) _rapierDrawState.paintMore = more.some(entry => entry.id === chosen);
+	const expanded = _rapierDrawState.paintMore, entries = mode === 'tools' || expanded ? all : core;
 	const tabStop = entries.some(entry => entry.id === chosen) ? chosen : entries[0]?.id;
 	const own = mode === 'brushes' && _rapierPaintEntry(chosen)?.own;
 	const chip = entry => {
@@ -1279,7 +1302,8 @@ function _rapierPaintUpdateStrip() {
 	};
 	const focused = row.contains(document.activeElement) ? document.activeElement : null;
 	const wasKey = focused ? (focused.dataset.drawPaintBrush ? 'brush:' + focused.dataset.drawPaintBrush : focused.dataset.drawPaintAct ? 'act:' + focused.dataset.drawPaintAct : '') : '';
-	row.innerHTML = (mode === 'brushes' ? _rapierPaintHeadChipHTML() : '') + entries.map(chip).join('') +
+	row.innerHTML = (mode === 'tools' ? entries.map(chip).join('') : core.map(chip).join('') +
+		'<button type="button" class="rapier-draw-chip" data-draw-paint-act="more" aria-expanded="' + expanded + '">' + (expanded ? '\u2212 Fewer brushes' : '+ More brushes') + '</button>' + (expanded ? more.map(chip).join('') : '')) +
 		(own ? '<button type="button" class="rapier-draw-chip rapier-draw-chip--icon" data-draw-paint-act="fit" role="switch" aria-checked="' + _rapierPaintFitsFinger(chosen) + '" aria-label="' +
 			(_rapierPaintFitsFinger(chosen) ? 'This brush is fitted for a finger. Turn that off to use its authored response' : 'Use finger fitting for this brush') + '">' + (_rapierPaintFitsFinger(chosen) ? RAPIER_PAINT_ICON_GAUGE_FIRM : RAPIER_PAINT_ICON_GAUGE_LIGHT) + '<span class="rapier-draw-chip-name">fit</span></button>' : '') +
 		(own ? '<button type="button" class="rapier-draw-chip rapier-draw-chip--icon rapier-draw-chip--delete" data-draw-paint-act="remove" aria-label="Remove this brush from your set">' + RAPIER_DRAW_ICONS.trash + '<span class="rapier-draw-chip-name">remove</span></button>' : '') +
@@ -1298,10 +1322,10 @@ function _rapierPaintUpdateStrip() {
 			row.querySelector('[data-draw-paint-brush="' + _rapierDrawEscapeAttr(ids[to]) + '"]')?.focus({preventScroll: true});
 		});
 		_rapierDrawBindTap(row, evt => {
-			if (evt.target.closest('[data-draw-paint-head]')) { if (!_rapierDrawState.finishing) _rapierPaintAngleOpen(true); return; }
 			const act = evt.target.closest('[data-draw-paint-act]')?.dataset.drawPaintAct;
 			if (!act || _rapierDrawState.finishing) return;
-			if (act === 'remove') _rapierPaintRemoveOwn(_rapierPaintBrushId());
+			if (act === 'more') { _rapierDrawState.paintMore = !_rapierDrawState.paintMore; _rapierPaintUpdateStrip(); }
+			else if (act === 'remove') _rapierPaintRemoveOwn(_rapierPaintBrushId());
 			else if (act === 'fit') _rapierPaintSetFitsFinger(_rapierPaintBrushId(), !_rapierPaintFitsFinger(_rapierPaintBrushId()));
 			else if (act === 'upload') void _rapierDrawPaintUpload();
 			else if (act === 'export') _rapierPaintExportBrush(_rapierPaintBrushId());
@@ -1324,7 +1348,6 @@ function _rapierPaintUpdateStrip() {
 }
 
 function _rapierPaintPixelsToDataURL(px) { return _rapierPaintPNG.encode(px); }
-async function _rapierPaintSurfaceToDataURL(surface, box) { return _rapierPaintPixelsToDataURL(await surface.readRGBA8(box || undefined)); }
 function _rapierPaintPlace(layer) {
 	return {scale: layer.scale, origin: layer.origin ? layer.origin.slice() : null, frame: layer.frame ? {...layer.frame, c0: layer.frame.c0.slice()} : null};
 }
@@ -1589,6 +1612,7 @@ function _rapierPaintPublishFrozen(layer, job, raster) {
 		layer.retire = null;
 	}
 	if (grown || retired) _rapierDrawRenderAll(); else { _rapierDrawRenderShapes([shape.id]); _rapierDrawUpdateMenu(); }
+	_rapierPaintReattachLive();
 	_rapierPaintSealRevision(layer, stroke, priorShift, grown);
 	_rapierPaintSyncPaper();
 	if (layer.nextFlip) void _rapierPaintEncodeShapeLater(shape.id, raster, job.px, stroke);
@@ -1828,6 +1852,7 @@ function _rapierPaintPositionMount(mount, id) {
 	const shape = id != null ? _rapierDrawShapeById(id) : null;
 	if (shape?.opacity != null && !mount.closest('[data-rapier-effect-layer]')) mount.setAttribute('opacity', String(shape.opacity));
 	else mount.removeAttribute('opacity');
+	_rapierColouringRestack();
 }
 function _rapierPaintReattachLive() {
 	for (const layer of _rapierPaintRevisionLayers()) {
@@ -2047,6 +2072,7 @@ function _rapierPaintWaterFrame(layer, reply) {
 		_rapierPaintPlaceLive(layer); _rapierPaintShowLive(layer.liveWanted, layer);
 		if (layer.setPending) { layer.setPending = false; _rapierPaintAfterFrame(_rapierPaintSyncSet); }
 	} finally {
+		if (RAPIER_WATER_CAPTURE) _rapierWaterNote({ev: 'frame', frame: display.frame, accepted, shown: layer.displayFrame, revision: display.revision, meta: meta.revision, kept: layer.checkpoint?.revision ?? null, generation: display.generation, current: surface.displayGeneration, complete: !!display.complete, canvas: [layer.canvas?.width, layer.canvas?.height]});
 		bitmap.close(); surface.adoptDisplay(display.canvasGeneration, display.frame, accepted);
 	}
 }
@@ -2091,11 +2117,35 @@ function _rapierWaterStatsTick() {
 	stats.frames = 0; stats.at = now; stats.last = timing ? {...timing} : null;
 }
 function _rapierWaterStatsStart() {
+	_rapierWaterCaptureStart();
 	if (!RAPIER_WATER_STATS || _rapierWaterStats.timer) return;
 	globalThis.__rapierWaterStats = _rapierWaterStats;
 	const count = () => { _rapierWaterStats.frames++; requestAnimationFrame(count); };
 	requestAnimationFrame(count);
 	_rapierWaterStats.timer = setInterval(_rapierWaterStatsTick, 250);
+}
+const RAPIER_WATER_CAPTURE = typeof location !== 'undefined' && new URLSearchParams(location.search).has('water-capture');
+const _rapierWaterCapture = {rows: [], on: false, live: ''};
+function _rapierWaterNote(row) {
+	const rows = _rapierWaterCapture.rows;
+	rows.push({t: Math.round((performance.timeOrigin + performance.now()) * 10) / 10, ...row});
+	if (rows.length > 4096) rows.shift();
+}
+function _rapierWaterCaptureStart() {
+	if (!RAPIER_WATER_CAPTURE || _rapierWaterCapture.on) return;
+	_rapierWaterCapture.on = true;
+	const size = ev => _rapierWaterNote({ev, visibility: document.visibilityState, view: [innerWidth, innerHeight], dpr: devicePixelRatio});
+	size('page'); addEventListener('resize', () => size('resize')); document.addEventListener('visibilitychange', () => size('visibility'));
+	let last = 0;
+	const frame = now => { if (last && now - last > 34) _rapierWaterNote({ev: 'gap', ms: Math.round(now - last)}); last = now; requestAnimationFrame(frame); };
+	requestAnimationFrame(frame);
+}
+async function _rapierWaterCaptureSave() {
+	const client = _rapierDrawPaintWorkers.get('human-water')?.client;
+	let painter = null;
+	try { painter = client ? (await client.request('capture')).rows : null; } catch (error) { painter = {error: String(error?.message || error)}; }
+	const text = JSON.stringify({rapierWaterCapture: 1, saved: new Date().toISOString(), painter, lostPainter: globalThis.__rapierWaterCaptureLost ?? null, page: _rapierWaterCapture.rows});
+	return _download(new Blob([text], {type: 'application/json'}), 'water-capture.json');
 }
 let _rapierPaintFrameReadable = null, _rapierPaintFrameProbe = null;
 const RAPIER_PAINT_FRAME_WAIT = 120;
@@ -2184,7 +2234,7 @@ function _rapierPaintDryTick(layer) {
 		if (!done) { layer.dryRaf = requestAnimationFrame(() => _rapierPaintDryTick(layer)); return; }
 		layer.dryFinishing = false;
 		_rapierPaintCommitSoon(layer);
-	}, () => { layer.dryBusy = false; });
+	}, error => { layer.dryBusy = false; _rapierPaintWetWake(layer); _rapierPaintNotKept(layer, error); });
 }
 function _rapierPaintWetWake(layer) {
 	if (layer.surface?._wetWork || !layer.wetWaiters?.length) return;
@@ -2224,6 +2274,10 @@ function _rapierPaintShowLive(on, layer = _rapierDrawState.paintLayer) {
 	if (layer.canvas.style.visibility !== visibility) layer.canvas.style.visibility = visibility;
 	const aside = on && !_rapierPaintOverlayLost(layer);
 	if (layer.id != null) { const g = state.svg?.querySelector('[data-shape-id="' + layer.id + '"]'); if (g && g.hasAttribute('data-paint-live') !== !!aside) { if (aside) g.setAttribute('data-paint-live', ''); else g.removeAttribute('data-paint-live'); } }
+	if (RAPIER_WATER_CAPTURE && layer.mode === 'water') {
+		const row = {ev: 'live', wanted: layer.liveRequest, visible: !visibility, keptAside: aside, ready: !!layer.displayReady, decoding: !!layer.decoding, lost: !!_rapierPaintOverlayLost(layer), shown: layer.displayMeta?.revision ?? null, kept: layer.checkpoint?.revision ?? null}, key = JSON.stringify(row);
+		if (key !== _rapierWaterCapture.live) { _rapierWaterCapture.live = key; _rapierWaterNote(row); }
+	}
 }
 const RAPIER_PAINT_FINGER_DABS = 1.5;
 function _rapierPaintFitFinger(def, finger) {
@@ -2555,7 +2609,6 @@ function _rapierPaintRehydrateFor(target, pendingGesture = null) {
 	if (state.paintRehydrate === key) { if (pendingGesture) (state.paintRehydrateWaiters = state.paintRehydrateWaiters || []).push(pendingGesture); return; }
 	if (state.paintRehydrateFailed === key) { if (pendingGesture) { if (mode === 'water') _rapierPaintDiscardChangedTarget(pendingGesture); else _rapierPaintQueueFallback(pendingGesture); } return; }
 	state.paintRehydrate = key;
-	const material = _rapierPaintIsMaterialTool(pendingGesture?.paint?.settings?.brushId, pendingGesture?.paint?.settings);
 	const waiters = state.paintRehydrateWaiters = pendingGesture ? [pendingGesture] : [];
 	const session = state.session, tool = _rapierDrawTool(), targetId = target.id;
 	const decoded = () => { if (state.paintRehydrate === key) state.paintRehydrate = null; };
@@ -2590,6 +2643,7 @@ function _rapierPaintRehydrateFor(target, pendingGesture = null) {
 				return state.paintRehydrateTask;
 			}
 			const erasing = waiters.some(g => g.eraseInk && g.paint?.pending && !g.paint.discarded && g.paint.tool === _rapierDrawTool());
+			const material = waiters.some(g => _rapierPaintIsMaterialTool(g.paint?.settings?.brushId, g.paint?.settings));
 			if (!(_rapierPaintToolPaints() || erasing) || _rapierPaintLayerValid(material || erasing, null, mode)) { await Promise.all(waiters.map(g => _rapierPaintApplyQueued(g).catch(() => {}))); return; }
 			const closing = _rapierPaintCloseLayer();
 			if (closing) { await closing; return adopt(loaded); }
@@ -3164,7 +3218,7 @@ function _rapierPaintDiscardOverflow(current = null) {
 	});
 }
 function _rapierPaintMetadata(layer, brush, width, height, scale, replay) {
-	return {brush, px:[width,height], scale, ...(layer.mode === 'water' ? {mode:'water',paper:replay?.entries.at(-1)?.sheet?.waterFrame?.paper || layer.waterPaper || 'cold-press'} : {}), ...(replay ? {replay} : {})};
+	return {brush, px:[width,height], scale, ...(layer.mode === 'water' ? {mode:'water',paper:replay?.entries.at(-1)?.sheet?.options?.paper || replay?.paper || layer.waterPaper || 'cold-press'} : {}), ...(replay ? {replay} : {})};
 }
 function _rapierPaintWaterReplay(layer, capture, box, sheet = layer.surface.waterSheet()) {
 	if (!capture) return layer.paintReplay || null;
@@ -3299,6 +3353,7 @@ function _rapierPaintPublish(layer, keep, kept, custody, synced = false, record 
 	else {
 		shape = { id: _rapierDrawNextId(), stroke: null, recognized: 'paint', asDrawn: false, brush: 'ink', style: null, geom, raster, paint: _rapierPaintMetadata(layer, layer.brushId, pw, ph, s, replay) };
 		state.recipe.shapes.push(shape);
+		_rapierColouringSeat(shape);
 		_rapierPaintChooseCreated(shape);
 	}
 	layer.id = shape.id; layer.raster = raster; layer.geom = JSON.stringify(geom);
@@ -3315,6 +3370,7 @@ function _rapierPaintPublish(layer, keep, kept, custody, synced = false, record 
 		remapRefractionRecipeSources(state.recipe, new Map([...gone].map(id => [id, shape.id])));
 	}
 	if (grown || made || retired) _rapierDrawRenderAll(); else { _rapierDrawRenderShapes([shape.id]); _rapierDrawUpdateMenu(); }
+	_rapierColouringRestack();
 	_rapierPaintSealRevision(layer, stroke, priorShift, grown);
 	if (layer.mode === 'water') _rapierPaintSyncPaper();
 	_rapierPaintHandBack(layer, made ? made.map(row => row.id) : [shape.id]);
@@ -3381,4 +3437,136 @@ function _rapierPaintWarmTarget() {
 		const view = _rapierPaintWarmView();
 		try { _rapierPaintOpenLayer().warmView = view; } catch (_) { _rapierPaintCloseLayer(); }
 	}
+}
+
+const RAPIER_COLOURING_MARK = 'colouring';
+let _rapierColouringSheet = null;
+function _rapierColouringSeat(shape) {
+	const shapes = _rapierDrawState.recipe?.shapes;
+	if (!shapes || !shape) return;
+	const at = shapes.findIndex(row => row.group === RAPIER_COLOURING_MARK);
+	const index = shapes.indexOf(shape);
+	if (at < 0 || index <= at) return;
+	shapes.splice(index, 1);
+	shapes.splice(at, 0, shape);
+}
+function _rapierColouringRestack() {
+	const state = _rapierDrawState, shapes = state.recipe?.shapes;
+	if (!shapes?.some(shape => shape.group === RAPIER_COLOURING_MARK)) return;
+	const host = state.svg;
+	if (!host?.children || typeof host.querySelector === 'function' && host.querySelector('[data-rapier-effect-scene],[data-rapier-effect-layer]')) return;
+	const nodes = new Map();
+	for (const node of [...host.children]) {
+		const id = node.getAttribute?.('data-shape-id');
+		if (id) nodes.set(id, node);
+	}
+	for (const shape of shapes) { const node = nodes.get(shape.id); if (node) host.appendChild(node); }
+	const mount = state.paintLayer?.mount, first = shapes.find(shape => shape.group === RAPIER_COLOURING_MARK);
+	const line = first && nodes.get(first.id);
+	if (mount && line && mount.parentNode === host) line.before(mount);
+}
+function _rapierColouringHide() {
+	const sheet = _rapierColouringSheet;
+	if (!sheet) return;
+	sheet.hidden = true;
+	sheet.classList.remove('rapier-notes-sheet--open');
+}
+function _rapierColouringDismiss(chosen) {
+	const sheet = _rapierColouringSheet;
+	if (!sheet || sheet.hidden) return false;
+	_rapierColouringHide();
+	if (chosen) _rapierDrawState.colouringFor = _rapierDrawState.session;
+	_rapierDrawState.surface?.focus({preventScroll: true});
+	return true;
+}
+function _rapierColouringGlyph(page) {
+	const glyph = globalThis.RapierDrawColouring?.colouringGlyph?.(page);
+	if (!glyph) return null;
+	const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+	svg.setAttribute('viewBox', '0 0 ' + glyph.w + ' ' + glyph.h);
+	svg.setAttribute('width', '26'); svg.setAttribute('height', '26'); svg.setAttribute('aria-hidden', 'true');
+	svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor');
+	svg.setAttribute('stroke-width', glyph.width); svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('stroke-linejoin', 'round');
+	const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+	path.setAttribute('d', glyph.d);
+	svg.appendChild(path);
+	return svg;
+}
+function _rapierColouringButton(name, page) {
+	const button = document.createElement('button');
+	button.type = 'button';
+	button.className = 'settings-action-btn';
+	button.dataset.colouring = name;
+	const glyph = page && _rapierColouringGlyph(page);
+	if (glyph) button.appendChild(glyph);
+	button.appendChild(document.createTextNode(name));
+	return button;
+}
+function _rapierColouringShow(pages) {
+	const state = _rapierDrawState;
+	let sheet = _rapierColouringSheet;
+	if (!sheet?.isConnected) {
+		sheet = document.createElement('div');
+		sheet.className = 'rapier-notes-sheet rapier-notes-sheet--open';
+		sheet.hidden = true;
+		sheet.setAttribute('role', 'dialog');
+		sheet.setAttribute('aria-label', 'Paint');
+		for (const page of pages) sheet.appendChild(_rapierColouringButton(page.name, page));
+		sheet.appendChild(_rapierColouringButton('none'));
+		sheet.addEventListener('click', evt => {
+			const name = evt.target.closest('[data-colouring]')?.dataset.colouring;
+			if (!name) return;
+			evt.preventDefault();
+			evt.stopPropagation();
+			_rapierColouringChoose(name);
+		});
+		state.surface.appendChild(sheet);
+		_rapierColouringSheet = sheet;
+	}
+	sheet.hidden = false;
+	sheet.classList.add('rapier-notes-sheet--open');
+	sheet.querySelector('button')?.focus({preventScroll: true});
+}
+function _rapierColouringOffer(again) {
+	const state = _rapierDrawState;
+	if (!state?.open || state.finishing || _rapierDrawTool() !== 'paint') { _rapierColouringHide(); return; }
+	const pages = globalThis.RapierDrawColouring?.RAPIER_COLOURING_PAGES;
+	if (!pages?.length) return;
+	if (_rapierColouringSheet && !_rapierColouringSheet.hidden) return;
+	if (!again && state.colouringFor === state.session) return;
+	const recipe = state.recipe;
+	if (!recipe || recipe.shapes?.length || recipe.strokes?.length) { _rapierColouringHide(); return; }
+	if (!(recipe.canvas?.w > 40 && recipe.canvas?.h > 40)) return;
+	_rapierColouringShow(pages);
+}
+function _rapierColouringPlace(name) {
+	const state = _rapierDrawState;
+	const page = (globalThis.RapierDrawColouring?.RAPIER_COLOURING_PAGES || []).find(row => row.name === name);
+	const box = state.recipe?.canvas;
+	if (!page || !(box?.w > 0) || !(box?.h > 0)) return false;
+	const s = Math.min(box.w * 0.84 / page.w, box.h * 0.84 / page.h);
+	if (!(s > 0)) return false;
+	const ox = (box.w - page.w * s) / 2, oy = (box.h - page.h * s) / 2;
+	const width = Math.max(3.2, Math.min(8, Math.min(box.w, box.h) * 0.014));
+	return _rapierDrawCommand(() => {
+		const recipe = state.recipe;
+		for (const part of page.parts) {
+			const pts = [];
+			for (const [x, y] of part) {
+				const px = ox + x * s, py = oy + y * s, last = pts[pts.length - 1];
+				if (last && Math.abs(last[0] - px) < 0.05 && Math.abs(last[1] - py) < 0.05) continue;
+				pts.push([px, py, 0]);
+			}
+			if (pts.length < 2) continue;
+			recipe.strokes.push({pts});
+			recipe.shapes.push({id: _rapierDrawNextId(), stroke: recipe.strokes.length - 1, recognized: 'ink', brush: 'ink', cut: true, cutWidth: width, locked: true, group: RAPIER_COLOURING_MARK, ink: '#000000', smooth: 0});
+		}
+	});
+}
+function _rapierColouringChoose(name) {
+	if (name === 'none') { _rapierColouringDismiss(true); return; }
+	const placed = _rapierColouringPlace(name);
+	const finish = ok => { if (ok) _rapierColouringDismiss(true); };
+	if (placed && typeof placed.then === 'function') placed.then(finish);
+	else finish(placed);
 }

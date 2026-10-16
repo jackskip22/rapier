@@ -6,7 +6,7 @@ export function createVerifier(random = n => crypto.getRandomValues(new Uint8Arr
 	if (!(bytes instanceof Uint8Array) || bytes.length !== 32) refuse('random', 'the random source must return 32 bytes');
 	return b64url(bytes);
 }
-export function verifierCheck(verifier) {
+function verifierCheck(verifier) {
 	if (typeof verifier !== 'string' || !/^[A-Za-z0-9._~-]{43,128}$/.test(verifier)) refuse('verifier', 'the PKCE verifier must be 43 to 128 unreserved characters');
 	return verifier;
 }
@@ -16,7 +16,7 @@ export async function challengeFor(verifier, digest = bytes => crypto.subtle.dig
 	if (hash.length !== 32) refuse('digest', 'SHA-256 must return 32 bytes');
 	return b64url(hash);
 }
-export function redirectCheck(value) {
+function redirectCheck(value) {
 	let url; try { url = new URL(value); } catch { refuse('redirect', 'the exact registered redirect URI is required'); }
 	const https = url.protocol === 'https:';
 	const loopback = url.protocol === 'http:' && ['127.0.0.1', '[::1]'].includes(url.hostname);
@@ -24,7 +24,7 @@ export function redirectCheck(value) {
 	if ((!https && !loopback && !native) || url.username || url.password || url.hash || url.search) refuse('redirect', 'use an exact registered HTTPS, native-app, or desktop loopback redirect without query or fragment');
 	return value;
 }
-export function clientCheck(options) {
+function clientCheck(options) {
 	publicOptions(options);
 	if (typeof options.clientId !== 'string' || !options.clientId || /[\x00-\x20\x7f]/.test(options.clientId)) refuse('client', 'a registered public client id is required');
 	redirectCheck(options.redirectUri);

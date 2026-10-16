@@ -1,5 +1,5 @@
 // Prefix codes and histogram bundles. MIT (images/jxl/LICENSE).
-import {floorLog2, ceilLog2} from './bits.mjs';
+import {BitWriter, floorLog2, ceilLog2} from './bits.mjs';
 
 const CODE_LENGTH_ORDER = [1, 2, 3, 4, 0, 5, 17, 6, 16, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 const CLCL_BITS = [2, 4, 3, 2, 2, 4], CLCL_CODE = [0, 7, 3, 2, 1, 15];
@@ -50,6 +50,11 @@ export function canonicalCodes(lengths) {
 }
 
 export function buildCode(freqs) {
+  const code = priceCode(freqs);
+  code.codes = canonicalCodes(code.lengths);
+  return code;
+}
+export function priceCode(freqs) {
   const used = [];
   for (let i = 0; i < freqs.length; i++) if (freqs[i] > 0) used.push(i);
   const count = used.length, alphabetSize = used[count - 1] + 1 || 1;
@@ -62,7 +67,7 @@ export function buildCode(freqs) {
     used.forEach((symbol, index) => { lengths[symbol] = depths[index]; });
     used.sort((a, b) => lengths[a] - lengths[b] || a - b);
   }
-  return {alphabetSize, lengths, codes: canonicalCodes(lengths), simple: count && count <= 4 ? used : null, treeSelect};
+  return {alphabetSize, lengths, codes: null, simple: count && count <= 4 ? used : null, treeSelect};
 }
 
 export function writePrefixCode(w, code) {
@@ -139,10 +144,17 @@ export function writeContextMap(w, contextMap) {
   for (const index of contextMap) widest = Math.max(widest, index);
   const bits = widest ? ceilLog2(widest + 1) : 0;
   if (bits <= 3) {
+    const coded = new BitWriter(64);
+    if (bits && contextMap.length >= 64) writeCodedContextMap(coded, contextMap, widest);
+    if (bits && contextMap.length >= 64 && coded.bitLength < 3 + bits * contextMap.length) { w.append(coded); return; }
     w.write(1, 1); w.write(2, bits);
     if (bits) for (const index of contextMap) w.write(bits, index);
     return;
   }
+  writeCodedContextMap(w, contextMap, widest);
+}
+
+function writeCodedContextMap(w, contextMap, widest) {
   w.write(1, 0); w.write(1, 0);
   const config = uintConfig(8), length = uintConfig(4), minLength = 7, minSymbol = 224;
   const runs = contextMap.length >= 64 && widest < minSymbol, freqs = new Uint32Array(runs ? minSymbol + 33 : widest + 1);

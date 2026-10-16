@@ -45,6 +45,12 @@ function _rapierDrawLiquidStop() {
 	for (const live of [..._rapierLiquid.live.values()]) _rapierDrawLiquidDrop(live);
 	if (_rapierLiquid.frame) cancelAnimationFrame(_rapierLiquid.frame);
 	_rapierLiquid.frame = 0; _rapierLiquid.last = 0;
+	if (!_rapierLiquid.calls?.size) _rapierDrawLiquidEndWorker();
+}
+function _rapierDrawLiquidEndWorker() {
+	_rapierLiquid.worker?.terminate(); _rapierLiquid.worker = null;
+	for (const call of _rapierLiquid.calls?.values() || []) call.reject(new Error('Liquid light still failed'));
+	_rapierLiquid.calls?.clear();
 }
 async function _rapierDrawLiquidStart(live) {
 	try {
@@ -174,6 +180,9 @@ function _rapierDrawLiquidSteps(effect, rgba, width, height, work) {
 				if (data.progress != null) { call.work?.progress?.(data.progress * .9); return; }
 				_rapierLiquid.calls.delete(data.id);
 				if (data.pixels) call.resolve(data.pixels); else call.reject(new Error(data.error || 'Liquid light still failed'));
+			};
+			_rapierLiquid.worker.onerror = _rapierLiquid.worker.onmessageerror = () => {
+				_rapierDrawLiquidEndWorker(); _rapierLiquid.noWorker = true;
 			};
 		} catch (_) { _rapierLiquid.noWorker = true; }
 	}

@@ -2,11 +2,12 @@
 import {parts} from './opfs-paths.mjs';
 import {sha256State, blobByteChunks, checkByteAbort, byteCopyError} from './integrity.mjs';
 import {isRecordingPartial} from './recording-files.mjs';
+import {notesHostWords} from './host-words.mjs';
 
 const fail = (code, message) => Object.assign(new Error(message), {code});
 const missing = error => error?.name === 'NotFoundError';
 const same = (a, b) => a.length === b.length && a.every((byte, i) => byte === b[i]);
-const atomic = () => fail('atomic', 'This browser cannot safely replace a note. These notes are read-only here; opening, search and backup still work.');
+const atomic = () => fail('atomic', notesHostWords().Device + ' cannot safely replace a note. These notes are read-only here; opening, search and backup still work.');
 const failure = error => ({name: String(error?.name || 'Error'), message: String(error?.message || error), ...(error?.code !== undefined ? {code: error.code} : {})});
 const synchronous = value => { if (value !== undefined) throw fail('atomic', 'The notes folder did not provide synchronous file access.'); };
 
@@ -64,14 +65,14 @@ async function prepare(directory, token) {
     const old = new Uint8Array([239,187,191,13,10,0,255]), next = new Uint8Array([65,13,10]);
     access = await accessFor(target); put(access, old); seal(access, old.length); access = null;
     access = await accessFor(first); put(access, next); synchronous(access.flush());
-    if (!same(new Uint8Array(await (await target.getFile()).arrayBuffer()), old)) throw fail('atomic', 'The browser exposed an unfinished file write. These notes are read-only here.');
+    if (!same(new Uint8Array(await (await target.getFile()).arrayBuffer()), old)) throw fail('atomic', notesHostWords().keeper + ' exposed an unfinished file write. These notes are read-only here.');
     synchronous(access.close()); access = null;
-    if (!same(new Uint8Array(await (await target.getFile()).arrayBuffer()), old)) throw fail('atomic', 'The browser did not keep the file after an abandoned write. These notes are read-only here.');
+    if (!same(new Uint8Array(await (await target.getFile()).arrayBuffer()), old)) throw fail('atomic', notesHostWords().keeper + ' did not keep the file after an abandoned write. These notes are read-only here.');
     await first.move(directory, b); owned.delete(a); owned.set(b, first);
-    if (!same(new Uint8Array(await (await fileAt(directory, b)).arrayBuffer()), next) || await fileAt(directory, a) !== null) throw fail('atomic', 'The browser did not replace the whole file. These notes are read-only here.');
+    if (!same(new Uint8Array(await (await fileAt(directory, b)).arrayBuffer()), next) || await fileAt(directory, a) !== null) throw fail('atomic', notesHostWords().keeper + ' did not replace the whole file. These notes are read-only here.');
     const empty = await create(a); access = await accessFor(empty); seal(access, 0); access = null;
     await empty.move(directory, b); owned.delete(a); owned.set(b, empty);
-    if ((await fileAt(directory, b)).size !== 0) throw fail('atomic', 'The browser did not keep an empty file. These notes are read-only here.');
+    if ((await fileAt(directory, b)).size !== 0) throw fail('atomic', notesHostWords().keeper + ' did not keep an empty file. These notes are read-only here.');
     try { await create(u); }
     catch (error) { if (['TypeMismatchError', 'InvalidCharacterError', 'TypeError'].includes(error?.name)) ascii = true; else throw error; }
     return {ascii};

@@ -1392,7 +1392,7 @@
           },
           {
             "property": "top",
-            "value": "calc(env(safe-area-inset-top,0px) + 58px)",
+            "value": "calc(var(--native-inset-top,env(safe-area-inset-top,0px)) + 58px)",
             "important": false
           }
         ]
@@ -2529,30 +2529,6 @@
       "reason": "The non-interactive edge fade belongs to its scroll container and creates no viewport surface."
     },
     {
-      "id": "link-dialog-toggle-thumb",
-      "file": "editor/styles/rapier-app.css",
-      "selector": ".link-dialog__toggle input::before",
-      "rule": {
-        "origin": "stylesheet",
-        "at": [],
-        "occurrence": 1,
-        "declarations": [
-          {
-            "property": "position",
-            "value": "absolute",
-            "important": false
-          },
-          {
-            "property": "inset",
-            "value": "3px auto 3px 3px",
-            "important": false
-          }
-        ]
-      },
-      "owner": ".link-dialog__toggle input",
-      "reason": "The switch thumb is positioned inside its own relative input; it creates no viewport surface."
-    },
-    {
       "id": "footnote-backref-reach",
       "file": "spec/markdown-style.css",
       "selector": ".md-render .footnote-backref::after",
@@ -2729,6 +2705,179 @@
       },
       "owner": ".rapier-live-caret",
       "reason": "An offscreen collaborator’s lower-edge label stays inside the caret’s right boundary."
+    },
+    {
+      "id": "changes-away-next-reach",
+      "file": "editor/styles/rapier-changes.css",
+      "selector": ".rapier-changes-away button::before",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "inset",
+            "value": "0 0 -12px",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".rapier-changes-away button",
+      "reason": "A transparent hit area larger than what is drawn, inside its own positioned button; it creates no viewport surface."
+    },
+    {
+      "id": "changes-mark-reach",
+      "file": "editor/styles/rapier-changes.css",
+      "selector": ".rapier-changes-mark::before",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "inset",
+            "value": "-6px -4px -14px -12px",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".rapier-changes-mark",
+      "reason": "A transparent hit area larger than what is drawn, inside its own positioned button; it creates no viewport surface."
+    },
+    {
+      "id": "changes-presence-reach",
+      "file": "editor/styles/rapier-changes.css",
+      "selector": ".rapier-changes-presence::before",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "inset",
+            "value": "-6px -4px -14px -12px",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".rapier-changes-presence",
+      "reason": "A transparent hit area larger than what is drawn, inside its own positioned button; it creates no viewport surface."
+    },
+    {
+      "id": "live-bar-reach",
+      "file": "editor/styles/rapier-live.css",
+      "selector": ".rapier-live-bar::before",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "-4px 0 -16px",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".rapier-live-bar",
+      "reason": "A transparent hit area larger than what is drawn, inside its own positioned button; it creates no viewport surface."
+    },
+    {
+      "id": "notes-card-pin",
+      "file": "editor/styles/rapier-notes.css",
+      "selector": ".rapier-notes-mark",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "var(--space-2)",
+            "important": false
+          },
+          {
+            "property": "inset-inline-end",
+            "value": "var(--space-2)",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".rapier-notes-card",
+      "reason": "The title owns the pin direction; the logical end reserves the same side as the title padding."
+    },
+    {
+      "id": "navigator-current-mark",
+      "file": "editor/styles/rapier-source.css",
+      "selector": ".navigator-outline__item[data-current=\"true\"]::before",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset-inline-start",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "50%",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "translateY(-50%)",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".navigator-outline__item",
+      "reason": "The current heading mark occupies the logical start of its own outline row, including RTL."
+    },
+    {
+      "id": "notes-section-grip",
+      "file": "editor/styles/rapier-notes.css",
+      "selector": ".rapier-notes-section-grip",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset-inline-end",
+            "value": "var(--space-2)",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "50%",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".rapier-notes-section-head",
+      "reason": "The reorder grip belongs to its own section heading and follows its logical end in RTL."
     }
   ]
 }

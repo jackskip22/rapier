@@ -1,5 +1,5 @@
 {
-  "release": "1.2.3",
+  "release": "1.2.5",
   "core": [
     {
       "name": "open",
@@ -482,7 +482,7 @@
     {
       "name": "show",
       "title": "Show or ask in Rapier",
-      "description": "Present work or ask for a reply, selection or device action. A 4-letter code from the person's browser pairs that editor: show {target:\"pair\", code}; they then choose ALLOW. Inspect actual presentation; a request is not proof the person saw it. Playback: value false pauses, true plays, here only. A comparison leaves source unchanged. Later human navigation wins.",
+      "description": "Present work or ask for a reply, selection or device action. A 4-letter code from the person's browser pairs that editor: show {target:\"pair\", code}; for a connected workspace its owner first approves at owner_approval_url, then the person chooses ALLOW. Inspect actual presentation; a request is not proof the person saw it. Playback: value false pauses, true plays, here only. A comparison leaves source unchanged. Later human navigation wins.",
       "effect": "view",
       "class": "sensitive-write",
       "inputSchema": {
@@ -604,7 +604,7 @@
               "headings",
               "invertImageAlpha",
               "layout",
-              "notesStart",
+              "startIn",
               "notesSort",
               "notesLayout",
               "notesColour"
@@ -1412,7 +1412,7 @@
     {
       "name": "show",
       "title": "Show or ask in Rapier",
-      "description": "Present work or ask for a reply, selection or device action. A 4-letter code from the person's browser pairs that editor: show {target:\"pair\", code}; they then choose ALLOW. Inspect actual presentation; a request is not proof the person saw it. Playback: value false pauses, true plays, here only. A comparison leaves source unchanged. Later human navigation wins.",
+      "description": "Present work or ask for a reply, selection or device action. A 4-letter code from the person's browser pairs that editor: show {target:\"pair\", code}; for a connected workspace its owner first approves at owner_approval_url, then the person chooses ALLOW. Inspect actual presentation; a request is not proof the person saw it. Playback: value false pauses, true plays, here only. A comparison leaves source unchanged. Later human navigation wins.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1536,7 +1536,7 @@
               "headings",
               "invertImageAlpha",
               "layout",
-              "notesStart",
+              "startIn",
               "notesSort",
               "notesLayout",
               "notesColour"

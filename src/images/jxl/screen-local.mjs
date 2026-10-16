@@ -42,7 +42,7 @@ function localPlan(rgba, width, height, shape, mode) {
 
 const MODES = ['global', 'frequency', 'scalar', 'direct-ranked', 'luma', 'scan'];
 function* localScreenCandidate(rgba, width, height, shape, colorSpace,
-  {dim = 1024, depths = [64], ceiling = Infinity, stats = null} = {}) {
+  {dim = 1024, depths = [64], ceiling = Infinity, stats = null, minLength = 7} = {}) {
   const layout = groupLayout(width, height, dim), groups = layout.groupsX * layout.groupsY;
   const header = new BitWriter(128), sections = [];
   writeImageHeader(header, width, height, shape.colour, shape.alpha, {colorSpace});
@@ -74,7 +74,7 @@ function* localScreenCandidate(rgba, width, height, shape, colorSpace,
         const writer = new BitWriter(256);
         if (layout.single) { writer.write(1, 1); writer.write(1, 1); }
         else writeModularHeader(writer, {useGlobalTree: false, transforms: choice.transforms});
-        const write = writeScreenModel(writer, planes.map(({plane, width, height}) => screenModel(plane, width, height, depth)));
+        const write = writeScreenModel(writer, planes.map(({plane, width, height}) => screenModel(plane, width, height, depth, minLength)));
         if (layout.single) writeModularHeader(writer, {transforms: choice.transforms});
         write();
         const bytes = writer.finish();

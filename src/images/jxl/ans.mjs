@@ -4,8 +4,8 @@ import {hybridToken, writeContextMap, writeUintConfig} from './prefix.mjs';
 import {buildTokenCoding} from './entropy.mjs';
 import {LZ77, RESIDUAL_CONFIG} from './modular.mjs';
 
-const LOG_LENGTHS = [5, 4, 4, 4, 4, 4, 3, 3, 3, 3, 3, 6, 7];
-const LOG_CODES = [17, 11, 15, 3, 9, 7, 4, 2, 5, 6, 0, 33, 1];
+export const LOG_LENGTHS = [5, 4, 4, 4, 4, 4, 3, 3, 3, 3, 3, 6, 7];
+export const LOG_CODES = [17, 11, 15, 3, 9, 7, 4, 2, 5, 6, 0, 33, 1];
 const GROUP_TOKENS = 3 * 32 * 32 * 64;
 
 function varUint8(w, value) {
@@ -74,7 +74,7 @@ function writeDistribution(w, counts, runs = false) {
   }
 }
 
-function reverseAlias(counts, logAlphabet) {
+export function reverseAlias(counts, logAlphabet) {
   const size = 1 << logAlphabet, entry = 4096 >> logAlphabet;
   const starts = new Uint16Array(counts.length + 1), reverse = new Uint16Array(4096);
   let single = -1;
@@ -119,7 +119,7 @@ export function buildAnsCoding(counts, options) {
   if (prefix.contextMap.length > 1) writeContextMap(header, prefix.contextMap);
   header.write(1, 0); header.write(2, logAlphabet - 5);
   for (const histogram of histograms) writeUintConfig(header, histogram.config, logAlphabet);
-  for (const histogram of histograms) writeDistribution(header, histogram.counts);
+  for (const histogram of histograms) writeDistribution(header, histogram.counts, true);
 
   const values = new Uint32Array(GROUP_TOKENS), metadata = new Uint8Array(GROUP_TOKENS), emitted = new Uint16Array(GROUP_TOKENS);
   const slots = [0, 0, 0];

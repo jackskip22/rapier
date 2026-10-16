@@ -45,16 +45,26 @@ function* effortSteps(data, width, height, quality, colorSpace, effort, pooled, 
   if (effort < 2) return yield* losslessSteps(data, width, height, {shape, colorSpace, pooled});
   if (treeLearning === 'sampled') return yield* sampledSearch(data, width, height, shape, colorSpace, effort, pooled, retainHurry);
   const analysis = {};
-  let best = yield* part(losslessSteps(data, width, height, {shape, colorSpace, pooled, analysis}), 0, 2);
+  const core = losslessSteps(data, width, height, {shape, colorSpace, pooled, analysis});
+  let step, reply, hurried = false;
+  while (!(step = core.next(reply)).done) { reply = yield scaled(step.value, done => done / 2); hurried ||= hurryOf(reply); }
+  let best = step.value;
+  if (hurried) return best;
   const direct = shape.palette ? {...shape, palette: null} : shape;
   const screen = effort >= 3 && screenEligible(data, width, height, shape, effort);
-  if (effort >= 4 || screen) {
-    const searches = [() => searchSteps(data, width, height, direct, colorSpace, 3, pooled, analysis, screen ? best.length : Infinity)];
+  if (effort >= 3) {
+    const searches = effort >= 4 || screen ? [() => searchSteps(data, width, height, direct, colorSpace, 3, pooled, analysis, screen ? best.length : Infinity)] : [];
     if (effort >= 4 && shape.palette) searches.push(() => localSteps(data, width, height, shape, colorSpace, 4, true, pooled, best.length));
     if (effort >= 6 && shape.palette) searches.push(() => localSteps(data, width, height, shape, colorSpace, 6, true, pooled, best.length));
     if (effort >= 4) searches.push(() => rctSearchSteps(data, width, height, shape, colorSpace, pooled));
-    const rungs = learnedRungs(effort, data, width, height, shape), parallel = helpers && rungs.length > 1;
-    if (!parallel) for (const rung of rungs) searches.push(() => sampledSteps(data, width, height, shape, colorSpace, rung, pooled, best.length));
+    const rungs = effort > 3 || !screen ? learnedRungs(effort, data, width, height, shape) : [], parallel = helpers && rungs.length > 1;
+    if (!parallel) {
+      const budgets = rungs.map(() => ({reached: pooled})), key = rung => JSON.stringify({...rung, leaves: 0});
+      rungs.forEach((rung, i) => {
+        const narrower = rungs.findIndex((other, j) => j < i && other.leaves < rung.leaves && key(other) === key(rung));
+        searches.push(() => narrower >= 0 && !budgets[narrower].reached ? none() : sampledSteps(data, width, height, shape, colorSpace, {...rung, budget: budgets[i]}, pooled, best.length));
+      });
+    }
     if (screen) searches.unshift(() => screenSteps(data, width, height, shape, colorSpace, {fastFloor: effort === 3 ? best.length : 0, effort, pooled}));
     const count = searches.length + (parallel ? rungs.length : 0);
     for (let i = 0; i < searches.length; i++) {
@@ -86,14 +96,19 @@ function* effortSteps(data, width, height, quality, colorSpace, effort, pooled, 
   return best;
 }
 
+function* none() { return null; }
+
 const sharing = Object.freeze([160, 320, 640, 1280, 2560]);
 const SEARCH_RUNGS = Object.freeze({...SAMPLE_RUNGS,
   sampled: Object.freeze({...SAMPLE_RUNGS.precise, clustered: true, samples: 131072, leaves: 192, depth: 24, sharing}),
   branching: Object.freeze({...SAMPLE_RUNGS.broad, clustered: true, samples: 131072, leaves: 512, depth: 24, sharing}),
   dense: Object.freeze({...SAMPLE_RUNGS.precise, clustered: true, samples: 262144, leaves: 192, depth: 24, sharing}),
   deep: Object.freeze({...SAMPLE_RUNGS.precise, clustered: true, samples: 262144, leaves: 1024, depth: 24, sharing}),
+  shallow: SAMPLE_RUNGS.deep,
 });
 const LADDER = Object.freeze({
+  3: [{rung: 'shallow'}],
+  4: [{rung: 'shallow'}],
   5: [{rung: 'maximum'}],
   6: [{rung: 'maximum', ranked: 0}],
   7: [{rung: 'broad', ranked: 0}],
@@ -101,7 +116,7 @@ const LADDER = Object.freeze({
   9: [{rung: 'precise', ranked: 1}, {rung: 'dense', ranked: 0}, {rung: 'deep', ranked: 0}],
 });
 function learnedRungs(effort, data, width, height, shape) {
-  const steps = Array.from({length: Math.max(0, effort - 4)}, (_, i) => LADDER[i + 5] || []).flat(), ranking = shape.colour === 3 && steps.some(step => step.ranked !== undefined) ? sampleTransformRanking(data, width, height) : [6];
+  const steps = effort <= 4 ? LADDER[effort] : Array.from({length: Math.max(0, effort - 4)}, (_, i) => LADDER[i + 5] || []).flat(), ranking = shape.colour === 3 && steps.some(step => step.ranked !== undefined) ? sampleTransformRanking(data, width, height) : [6];
   const rungs = [], types = [], bases = [];
   for (const step of steps) {
     const base = SEARCH_RUNGS[step.rung], type = step.ranked === undefined ? 6 : ranking[step.ranked] ?? 6;

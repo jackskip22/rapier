@@ -68,7 +68,8 @@ function mathFlowAtoms(n,box,x=0,y=0) {
     return n.children.flatMap((child,i)=>{const [b,dx,dy]=box.rowItems[i];return mathFlowAtoms(child,b,x+dx,y+dy);});
   if(n.type==='style' && n.width===undefined && !n.border && !n.background && !n.class && !n.limits) {
     const atoms=mathFlowAtoms(n.body,box,x,y);
-    if(n.color) {
+    // A box the body did not unpack already carries this colour from mathLayout.
+    if(n.color && !(atoms.length===1 && atoms[0][0]===box)) {
       const paint=b=>({...b,svg:'<g fill="'+mathEscape(n.color)+'" color="'+mathEscape(n.color)+'" fill-opacity="1" stroke-opacity="1">'+b.svg+'</g>',
         ...(b.refit?{refit:ratio=>paint(b.refit(ratio))}:{}),...(b.flowWrap?{flowWrap:width=>paint(b.flowWrap(width))}:{})});
       return atoms.map(([b,dx,dy])=>[paint(b),dx,dy]);
@@ -77,8 +78,9 @@ function mathFlowAtoms(n,box,x=0,y=0) {
   }
   if(n.type==='frac' && n.bar!==false && n.barThickness!==0)box={...box,flowFactor:true};
   if(n.type==='glyph' && n.value==='⋯')box={...box,flowDots:true};
+  // An explicit \bigl or \bigr class wins; an ordinary \big( still pairs by its glyph.
   if(n.type==='glyph' && '([{⌈⌊⟨⦅⟦⟪⦃)]}⌉⌋⟩⦆⟧⟫⦄'.includes(n.value))
-    box={...box,flowFence:')]}⌉⌋⟩⦆⟧⟫⦄'.includes(n.value)?'close':'open'};
+    box={...box,flowFence:n.class==='open' || n.class==='close'?n.class:')]}⌉⌋⟩⦆⟧⟫⦄'.includes(n.value)?'close':'open'};
   return [[box,x,y]];
 }
 
@@ -93,15 +95,15 @@ function mathRefitRow(items,advance,ratio) {
 
 function mathWrapRow(box,c,width,{relationIndent,binaryIndent}={}) {
   if(mathInkWidth(box)<=width || !box.rowItems?.length)return mathFitBox(box,width,c);
-  const atoms=box.rowItems.map(item=>[...item]),breaks=[0];let ink=false,depth=0,previous=null;
+  const atoms=box.rowItems.map(item=>[...item]),found=[];let ink=false,depth=0,previous=null;
   for(let i=0;i<atoms.length;i++) {
     const b=atoms[i][0],next=atoms[i+1]?.[0],fence=b.flowFence || b.class;
     if(fence==='close')depth=Math.max(0,depth-1);
-    if(ink && !depth && (b.class==='rel' || b.class==='bin' || b.flowDots && (previous?.flowFactor && next?.flowFactor || (previous?.flowFence || previous?.class)==='close' && (next?.flowFence || next?.class)==='open')))breaks.push(i);
+    if(ink && (b.class==='rel' || b.class==='bin' || b.flowDots && (previous?.flowFactor && next?.flowFactor || (previous?.flowFence || previous?.class)==='close' && (next?.flowFence || next?.class)==='open')))found.push([i,depth]);
     if(fence==='open')depth++;
     if(b.svg){ink=true;previous=b;}
   }
-  breaks.push(atoms.length);
+  const breaks=[0,...found.map(([i])=>i),atoms.length],levels=[0,...found.map(([,level])=>level),0];
   // Reuse structural wrapping before shrinking an oversized, otherwise indivisible atom.
   const deltas=Array(atoms.length).fill(0);let changed=false;
   for(let segment=0;segment<breaks.length-1;segment++) {
@@ -150,7 +152,8 @@ function mathWrapRow(box,c,width,{relationIndent,binaryIndent}={}) {
         left=Math.min(left,x-origin+b.left);right=Math.max(right,x-origin+b.right,x-origin+b.w);
       }
       const extent=right-left,over=Math.max(0,extent-available)/available,slack=Math.max(0,available-extent)/available;
-      const last=end===breaks.length-1,penalty=last?0:atoms[breaks[end]][0].class==='rel'?0:18;
+      // A break inside brackets costs more than any fitting line, yet less than overflowing one.
+      const last=end===breaks.length-1,penalty=last?0:(atoms[breaks[end]][0].class==='rel'?0:18)+200*levels[end];
       const cost=costs[end]+12+penalty+(last?8:60)*slack*slack+(over?100000*(1+over*over):0);
       if(cost<costs[start]) {costs[start]=cost;next[start]=end;}
       if(extent>available && end>start+1)break;
@@ -252,4 +255,4 @@ function mathResponsiveLayout(n,c,width,natural=mathLayout(n,c)) {
 
 import {MATH_FONT} from './font.js';
 import {mathNumber, mathEscape, mathScale, mathScreenStroke, mathConstant, mathScreenRelayout, mathCompose, mathSpace, mathRow, mathFraction, mathFenceBoxes, mathLayout} from './layout.js';
-export {mathResponsiveLayout, mathInkWidth};
+export {mathResponsiveLayout, mathInkWidth, mathHasMiddle};

@@ -1,10 +1,10 @@
 {
   "version": 1,
   "limits": {
-    "mutableRoots": 97,
-    "domSinks": 65,
+    "mutableRoots": 92,
+    "domSinks": 59,
     "storageKeys": 7,
-    "remainderBytes": 73612
+    "remainderBytes": 73317
   },
   "engineRoots": {
     "_pendingLeaves@module/iife1": {
@@ -98,14 +98,6 @@
     "_rapierFileLaunchRuntime@module/iife1": {
       "name": "_rapierFileLaunchRuntime",
       "reason": "The Open owner retains the current external file launch."
-    },
-    "_rapierFindRuntime@module/iife1": {
-      "name": "_rapierFindRuntime",
-      "reason": "The live search surface owns query, result, reveal and input state."
-    },
-    "_rapierForegroundIntentRuntime@module/iife1": {
-      "name": "_rapierForegroundIntentRuntime",
-      "reason": "The foreground interaction owner tracks the human intent serial and signature."
     },
     "_rapierFormatToolbarFadeSurface@module/iife1": {
       "name": "_rapierFormatToolbarFadeSurface",
@@ -207,10 +199,6 @@
       "name": "_rapierRevealRuntime",
       "reason": "The viewport owner retains cleanup for the currently revealed agent target."
     },
-    "_rapierSanitizeRuntime@module/iife1": {
-      "name": "_rapierSanitizeRuntime",
-      "reason": "The editor's existing sanitizer call path owns its active rendering context."
-    },
     "_rapierSaveRuntime@module/iife1": {
       "name": "_rapierSaveRuntime",
       "reason": "The document owner serializes native/browser saves and their current request state."
@@ -230,10 +218,6 @@
     "_rapierSelectionVirtualizationFrame@module/iife1": {
       "name": "_rapierSelectionVirtualizationFrame",
       "reason": "The editor owns the scheduled selection virtualization frame."
-    },
-    "_rapierSelectionVirtualizedBlocks@module/iife1": {
-      "name": "_rapierSelectionVirtualizedBlocks",
-      "reason": "The editor owns the current DOM blocks participating in selection virtualization."
     },
     "_rapierSemanticRuntime@module/iife1": {
       "name": "_rapierSemanticRuntime",
@@ -374,10 +358,6 @@
     "ABBR_DEF_RE@module/iife1": {
       "name": "ABBR_DEF_RE",
       "reason": "The abbreviation scan resets this shared regular expression's lastIndex before parsing."
-    },
-    "FT@module/iife1": {
-      "name": "FT",
-      "reason": "Formatting-toolbar DOM surfaces and state are coordinated by the editor's interaction owner."
     },
     "md@module/iife1": {
       "name": "md",

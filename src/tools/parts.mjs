@@ -9,7 +9,7 @@ export const PARTS = Object.freeze([
       'draw/paint-tool.js', 'draw/water-tool.js', 'draw/water-pro.js'],
     styles: ['rapier-draw-style'],
     globals: {RapierDrawFit: 'draw/fit.mjs', RapierDrawWaterVideo: 'draw/water-video.mjs', RapierDrawPaint: 'draw/paint.mjs',
-      RapierDrawBrushes: 'draw/brushes.mjs', RapierDrawAgentPaint: 'draw/agent-paint.mjs', RapierDrawPaintWorker: 'draw/paint-worker.mjs',
+      RapierDrawBrushes: 'draw/brushes.mjs', RapierDrawColouring: 'draw/colouring.mjs', RapierDrawAgentPaint: 'draw/agent-paint.mjs', RapierDrawPaintWorker: 'draw/paint-worker.mjs',
       RapierDrawPaintRows: 'draw/paint-parallel.mjs', RapierDrawPaintRemote: 'draw/paint-remote.mjs', RapierDrawLiquid: 'draw/liquid-gpu.mjs',
       RapierDrawLiquidWorker: 'draw/liquid-worker.mjs', RapierDrawCopier: 'draw/copier-gpu.mjs', RapierDrawWater: 'draw/water.mjs',
       RapierDrawWaterWorker: 'draw/water-worker.mjs', RapierDrawWaterPaths: 'draw/water-paths.mjs'}},
@@ -19,11 +19,11 @@ export const PARTS = Object.freeze([
     globals: Object.fromEntries(Object.entries({Model: 'model', LibraryWindow: 'library-window', LibraryReads: 'library-reads', Takeout: 'takeout',
       ImportNotion: 'import-notion', ImportSimplenote: 'import-simplenote', ImportStandardNotes: 'import-standardnotes', ImportJoplin: 'import-joplin',
       ImportTextBundle: 'import-textbundle', ImportDayOne: 'import-dayone', ImportRoam: 'import-roam', ImportLogseq: 'import-logseq', Import: 'import',
-      ImportPictures: 'import-pictures', ImportReceipt: 'import-receipt', ImportUndoFace: 'import-undo-face', ImportPlan: 'import-plan',
+      ImportPictures: 'import-pictures', ImportReceipt: 'import-receipt', ImportPlan: 'import-plan',
       FrontMatter: 'frontmatter', Links: 'links', Search: 'search', SearchCache: 'search-cache', ImportMarkdown: 'import-markdown', ImportEnex: 'import-enex',
       ImportHtml: 'import-html', Restore: 'restore', Trash: 'trash', History: 'history', Integrity: 'integrity', Zip: 'zip', Backup: 'backup',
       BackupWorker: 'backup-worker', OPFSWorker: 'opfs-worker', Owner: 'owner', OPFS: 'opfs', IdbStore: 'idb-store', Folder: 'folder', Todo: 'todo',
-      Audio: 'audio', Attachments: 'attachments', Sync: 'sync', Vault: 'vault', Merge: 'merge', SyncSession: 'sync-session'})
+      Audio: 'audio', Attachments: 'attachments', HostWords: 'host-words', Sync: 'sync', Vault: 'vault', Merge: 'merge', SyncSession: 'sync-session'})
       .map(([name, file]) => ['RapierNotes' + name, 'notes/' + file + '.mjs']).concat([['RapierCloudProviders', 'notes/cloud-providers.mjs'],
         ['RapierWebDAVTransport', 'notes/transport-webdav.mjs'], ['RapierOwnedNotesAdapter', 'notes/owned-adapter.mjs'],
         ['RapierOwnedNotesCheckpoint', 'notes/owned-checkpoint.mjs']]))},
@@ -115,4 +115,31 @@ export function topLevelNames(sources) {
     else if (node.type === 'VariableDeclaration') for (const row of node.declarations) names.push(...ids(row.id));
   }
   return names;
+}
+
+export function partElement(id, body) {
+  if (typeof id !== 'string' || !/^[a-z]+$/.test(id)) throw new Error('A part id is one word: ' + id);
+  if (typeof body !== 'string' || body.includes('<')) throw new Error('A part element is not one inert body: ' + id);
+  const element = '<script type="application/rapier-runtime" id="rapier-part-' + id + '">' + body + '</script>\n';
+  if (element.split('id="rapier-part-' + id + '"').length !== 2) throw new Error('A part element is not one inert body: ' + id);
+  return element;
+}
+
+const EDITOR_RUNTIME = /<script type="application\/rapier-runtime" id="rapier-editor-runtime">[^<]*<\/script>\n/;
+
+export function inlineParts(html, parts) {
+  if (typeof html !== 'string' || html.split('id="rapier-editor-runtime"').length !== 2 || !EDITOR_RUNTIME.test(html))
+    throw new Error('The full page has no single editor runtime to carry its parts');
+  if (!Array.isArray(parts) || !parts.length) throw new Error('The full page has parts to carry');
+  const seen = new Set();
+  let extra = '';
+  for (const part of parts) {
+    if (!part || seen.has(part.id)) throw new Error('Each part is inlined once: ' + (part && part.id));
+    seen.add(part.id);
+    if (html.includes('id="rapier-part-' + part.id + '"')) continue;
+    extra += part.element || partElement(part.id, part.body);
+  }
+  if ([...seen].join() !== PART_IDS.join()) throw new Error('The carried page must hold every part: ' + [...seen].join(', '));
+  if (!extra) return html;
+  return html.replace(EDITOR_RUNTIME, element => element + extra);
 }

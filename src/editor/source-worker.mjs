@@ -134,7 +134,6 @@ export function installSourceWorker(scope) {
 }
 
 function blockParser(md) {
-  md.core.ruler.disable('md_layout');
   let budget = null;
   const refuse = (reason, observed, limit) => {
     throw Object.assign(new Error(reason), {rapierProjectionRefusal: true, reason, observed, limit});

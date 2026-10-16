@@ -2,7 +2,7 @@
   "id": "./rapier.html",
   "name": "Rapier",
   "short_name": "Rapier",
-  "description": "A fast offline Markdown editor for notes, SVG drawing and watercolor. Import Word and PDF; export Word, PDF and HTML for free. No ads or tracking.",
+  "description": "Free Markdown editor and notes app for Android and the web. Write on the formatted page, draw and paint, and work offline. No account, ads or tracking.",
   "start_url": "./rapier.html",
   "scope": "./",
   "display": "standalone",

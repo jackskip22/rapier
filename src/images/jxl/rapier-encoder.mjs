@@ -2,7 +2,7 @@
 import {configureKernels} from './kernels.mjs';
 import {encodeSteps} from './effort.mjs';
 import {encodePool, servePool} from './pool.mjs';
-import {transcodeSteps} from './jpeg.mjs';
+import {transcodeSteps, reconstructJPEG} from './jpeg.mjs';
 import {encodePhotoSteps} from './photo.mjs';
 import {inspectPixels} from './lossless.mjs';
 
@@ -35,6 +35,7 @@ export function createJPEGXLEncoder({spawn} = {}) {
       const bytes = await complete(job, options.progress);
       return {bytes, width: job.width, height: job.height, orientation: job.orientation};
     },
+    reconstruct: reconstructJPEG,
     serve: servePool,
   };
 }

@@ -56,6 +56,7 @@ const MATH_TEX_TEXT_VARIANTS = Object.freeze({
   textbf: 'bold', textit: 'italic', emph: 'italic', textsl: 'italic', textsf: 'sans-serif', texttt: 'monospace',
   textsc: 'roman'
 });
+const MATH_TEX_TEXT_LETTERS = Object.freeze({ss: 'ß', ae: 'æ', AE: 'Æ', oe: 'œ', OE: 'Œ', o: 'ø', O: 'Ø', aa: 'å', AA: 'Å', l: 'ł', L: 'Ł', i: 'ı', j: 'ȷ'});
 const MATH_TEX_DECLARATIONS = Object.freeze({
   rm: {variant: 'roman'}, rmfamily: {variant: 'roman'}, normalfont: {variant: 'roman'},
   it: {variant: 'italic'}, itshape: {variant: 'italic'}, sl: {variant: 'italic'},
@@ -76,18 +77,36 @@ const MATH_TEX_ACCENTS = Object.freeze({
   underrightarrow: ['→', 'under', true], underleftarrow: ['←', 'under', true], underleftrightarrow: ['↔', 'under', true],
   overleftharpoon: ['↼', 'over', true], overrightharpoon: ['⇀', 'over', true], utilde: ['̃', 'under', true]
 });
-const MATH_TEX_LONG_ARROWS = {iff: 'Longleftrightarrow', implies: 'Longrightarrow', impliedby: 'Longleftarrow'};
+const MATH_TEX_LONG_ARROWS = {iff: 'Longleftrightarrow', implies: 'Longrightarrow', impliedby: 'Longleftarrow', And: 'And'};
+// mathtools: a colon or double colon joined to a relation, 1.2 mu apart.
+const MATH_TEX_COLONS = {coloneq: '∶−', Coloneq: '∷−', Coloneqq: '∷=', Eqqcolon: '=∷', eqcolon: '−∶', Eqcolon: '−∷', colonapprox: '∶≈', Colonapprox: '∷≈', colonsim: '∶∼', Colonsim: '∷∼'};
+// dvipsnames in CMYK percent (LaTeX graphics bundle), converted as xcolor does: each RGB channel is 1 − min(1, CMY + K).
+const MATH_TEX_DVIPSNAMES = Object.create(null);
+for (const [, name, ...cmyk] of `GreenYellow 15 0 69 0 Yellow 0 0 100 0 Goldenrod 0 10 84 0 Dandelion 0 29 84 0 Apricot 0 32 52 0 Peach 0 50 70 0
+Melon 0 46 50 0 YellowOrange 0 42 100 0 Orange 0 61 87 0 BurntOrange 0 51 100 0 Bittersweet 0 75 100 24 RedOrange 0 77 87 0 Mahogany 0 85 87 35
+Maroon 0 87 68 32 BrickRed 0 89 94 28 Red 0 100 100 0 OrangeRed 0 100 50 0 RubineRed 0 100 13 0 WildStrawberry 0 96 39 0 Salmon 0 53 38 0
+CarnationPink 0 63 0 0 Magenta 0 100 0 0 VioletRed 0 81 0 0 Rhodamine 0 82 0 0 Mulberry 34 90 0 2 RedViolet 7 90 0 34 Fuchsia 47 91 0 8
+Lavender 0 48 0 0 Thistle 12 59 0 0 Orchid 32 64 0 0 DarkOrchid 40 80 20 0 Purple 45 86 0 0 Plum 50 100 0 0 Violet 79 88 0 0 RoyalPurple 75 90 0 0
+BlueViolet 86 91 0 4 Periwinkle 57 55 0 0 CadetBlue 62 57 23 0 CornflowerBlue 65 13 0 0 MidnightBlue 98 13 0 43 NavyBlue 94 54 0 0 RoyalBlue 100 50 0 0
+Blue 100 100 0 0 Cerulean 94 11 0 0 Cyan 100 0 0 0 ProcessBlue 96 0 0 0 SkyBlue 62 0 12 0 Turquoise 85 0 20 0 TealBlue 86 0 34 2 Aquamarine 82 0 30 0
+BlueGreen 85 0 33 0 Emerald 100 0 50 0 JungleGreen 99 0 52 0 SeaGreen 69 0 50 0 Green 100 0 100 0 ForestGreen 91 0 88 12 PineGreen 92 0 59 25
+LimeGreen 50 0 100 0 YellowGreen 44 0 74 0 SpringGreen 26 0 76 0 OliveGreen 64 0 95 40 RawSienna 0 72 100 45 Sepia 0 83 100 70 Brown 0 81 100 60
+Tan 14 42 56 0 Gray 0 0 0 50 Black 0 0 0 100 White 0 0 0 0`.matchAll(/(\w+) (\d+) (\d+) (\d+) (\d+)/g))
+  MATH_TEX_DVIPSNAMES[name] = '#' + cmyk.slice(0, 3).map(value => Math.round(255 * (1 - Math.min(1, (+value + +cmyk[3]) / 100))).toString(16).padStart(2, '0')).join('');
 const MATH_TEX_SPACES = Object.freeze({
   ',': 3 / 18, ':': 4 / 18, ';': 5 / 18, '!': -3 / 18, ' ': 1 / 3,
   quad: 1, qquad: 2, enspace: .5, enskip: .5, thinspace: 3 / 18, medspace: 4 / 18, thickspace: 5 / 18,
   negthinspace: -3 / 18, negmedspace: -4 / 18, negthickspace: -5 / 18
 });
-const MATH_TEX_PACKAGES = new Set(('ams amsmath amssymb amsfonts mathtools color newcommand unicode mhchem physics bbm bboldx dsfont cancel bbox boldsymbol').split(' '));
-const MATH_TEX_ENVIRONMENTS = new Set(('matrix pmatrix bmatrix Bmatrix vmatrix Vmatrix smallmatrix psmallmatrix bsmallmatrix Bsmallmatrix vsmallmatrix Vsmallmatrix array aligned alignedat align alignat flalign gathered gather split cases dcases rcases drcases subarray substack eqnarray multline equation').split(' '));
+const mathSITable = text => Object.freeze(Object.fromEntries(text.split(' ').map(entry => entry.split('='))));
+const MATH_SI_UNITS = mathSITable('gram=g metre=m meter=m second=s ampere=A kelvin=K mole=mol candela=cd newton=N joule=J watt=W pascal=Pa hertz=Hz volt=V ohm=Ω coulomb=C farad=F henry=H tesla=T weber=Wb siemens=S celsius=°C litre=L liter=L electronvolt=eV degree=° percent=% minute=min hour=h day=d hectare=ha tonne=t becquerel=Bq gray=Gy sievert=Sv katal=kat lumen=lm lux=lx radian=rad steradian=sr arcminute=′ arcsecond=″ bar=bar angstrom=Å dalton=Da bel=B decibel=dB astronomicalunit=au atomicmassunit=u neper=Np');
+const MATH_SI_PREFIXES = mathSITable('quecto=q ronto=r yocto=y zepto=z atto=a femto=f pico=p nano=n micro=µ milli=m centi=c deci=d deca=da deka=da hecto=h kilo=k mega=M giga=G tera=T peta=P exa=E zetta=Z yotta=Y ronna=R quetta=Q');
+const MATH_TEX_PACKAGES = new Set(('ams amsmath amssymb amsfonts mathtools color newcommand unicode mhchem physics siunitx bbm bboldx dsfont cancel bbox boldsymbol').split(' '));
+const MATH_TEX_ENVIRONMENTS = new Set(('matrix pmatrix bmatrix Bmatrix vmatrix Vmatrix smallmatrix psmallmatrix bsmallmatrix Bsmallmatrix vsmallmatrix Vsmallmatrix array aligned alignedat align alignat flalign gathered lgathered rgathered gather split cases dcases rcases drcases subarray substack eqnarray multline multlined equation darray CD').split(' '));
 const MATH_TEX_LITERAL_CLASSES = Object.freeze({
   '+': 'bin', '−': 'bin', '-': 'bin', '±': 'bin', '∓': 'bin', '×': 'bin', '÷': 'bin', '*': 'bin', '⋅': 'bin',
   '=': 'rel', '<': 'rel', '>': 'rel', '≤': 'rel', '≥': 'rel', '≠': 'rel', ':': 'rel',
-  '(': 'open', '[': 'open', '⟨': 'open', ')': 'close', ']': 'close', '⟩': 'close', ',': 'punct', ';': 'punct',
+  '(': 'open', '[': 'open', '{': 'open', '⟨': 'open', ')': 'close', ']': 'close', '}': 'close', '⟩': 'close', ',': 'punct', ';': 'punct',
   '∑': 'op', '∏': 'op', '∫': 'op', '∮': 'op', '∬': 'op', '∭': 'op'
 });
 
@@ -179,7 +198,9 @@ class MathTexParser {
       if (token.kind === 'command' && (Object.hasOwn(MATH_TEX_DECLARATIONS, token.value) || token.value === 'color')) {
         this.take();
         const fields = token.value === 'color' ? {color: this.readColor()} : MATH_TEX_DECLARATIONS[token.value];
-        children.push(this.node('style', {...fields, body: this.nested(() => this.parseRow(stop, allowFraction))}));
+        // A declaration styles each following atom; the atoms keep their own classes and spacing.
+        const rest = this.nested(() => this.parseRow(stop, allowFraction));
+        for (const body of rest.type === 'row' ? rest.children : [rest]) children.push(this.node('style', {...fields, body}));
         break;
       }
       if (token.kind === 'command' && /^(over|atop|choose|brace|brack|above|overwithdelims|atopwithdelims|abovewithdelims)$/.test(token.value)) {
@@ -207,6 +228,8 @@ class MathTexParser {
         continue;
       }
       const atom = this.parseAtom();
+      // A symbol remembers where its source begins, so a tap on it can find its place in the source.
+      if (atom && (atom.type === 'glyph' || atom.type === 'text') && atom.at === undefined) atom.at = token.offset;
       if (atom) children.push(this.readScripts(atom));
     }
     // An equation tag follows its equation wherever \tag was written.
@@ -261,6 +284,7 @@ class MathTexParser {
     }
     const atom = this.parseAtom();
     if (!atom) this.error('missing-argument', 'An argument must contain a mathematical expression.', token);
+    if ((atom.type === 'glyph' || atom.type === 'text') && atom.at === undefined) atom.at = token.offset;
     return atom;
   }
   rawArgument() {
@@ -351,7 +375,12 @@ class MathTexParser {
       if (centred) return this.node('glyph', MATH_SYMBOLS.cdots);
     }
     if (Object.hasOwn(MATH_SYMBOLS, name)) return this.node('glyph', MATH_SYMBOLS[name]);
-    if (Object.hasOwn(MATH_TEX_VARIANTS, name)) return this.node('style', {variant: MATH_TEX_VARIANTS[name], body: this.argument()});
+    if (Object.hasOwn(MATH_TEX_VARIANTS, name)) {
+      let body = this.argument();
+      // amsmath's \boldsymbol and \pmb, and bm's \bm, keep one symbol's class (\binrel@); a plain group is ordinary.
+      if (/^(boldsymbol|bm|pmb)$/.test(name) && body.type === 'row' && body.children.length === 1 && body.children[0].type === 'glyph') body = body.children[0];
+      return this.node('style', {variant: MATH_TEX_VARIANTS[name], body});
+    }
     if (Object.hasOwn(MATH_TEX_TEXT_VARIANTS, name)) return this.subparse(this.rawArgument(), true, MATH_TEX_TEXT_VARIANTS[name]);
     if (MATH_NAMED_OPERATORS.has(name) || MATH_LIMIT_OPERATORS.has(name)) {
       const values = {limsup: 'lim sup', liminf: 'lim inf', injlim: 'lim', projlim: 'lim', varlimsup: 'lim', varliminf: 'lim', varinjlim: 'lim', varprojlim: 'lim'};
@@ -369,7 +398,7 @@ class MathTexParser {
     if (name === 'frac' || name === 'dfrac' || name === 'tfrac' || name === 'cfrac') {
       const align = name === 'cfrac' ? this.optionalRaw() : null;
       if (align && !/^[lr]$/.test(mathTexTokenText(align).trim())) this.error('invalid-option', 'Continued-fraction alignment must be l or r.', token);
-      return this.node('frac', {num: this.argument(), den: this.argument(), bar: true, ...(name === 'dfrac' || name === 'cfrac' ? {style: 'display'} : name === 'tfrac' ? {style: 'text'} : {}), ...(align ? {align: mathTexTokenText(align).trim()} : {})});
+      return this.node('frac', {num: this.argument(), den: this.argument(), bar: true, ...(name === 'dfrac' || name === 'cfrac' ? {style: 'display'} : name === 'tfrac' ? {style: 'text'} : {}), ...(align ? {align: mathTexTokenText(align).trim()} : {}), ...(name === 'cfrac' ? {strut: true} : {})});
     }
     if (/^(binom|dbinom|tbinom)$/.test(name)) return this.node('frac', {num: this.argument(), den: this.argument(), bar: false, left: '(', right: ')', ...(name[0] === 'd' ? {style: 'display'} : name[0] === 't' ? {style: 'text'} : {})});
     if (name === 'genfrac') {
@@ -409,8 +438,8 @@ class MathTexParser {
     if (name === 'begin') return this.environment(this.plainArgument(), token);
     if (name === 'substack') return this.tableFromTokens(this.rawArgument(), 'substack');
     if (/^(matrix|pmatrix|bmatrix|Bmatrix|vmatrix|Vmatrix|cases|smallmatrix)$/.test(name)) return this.tableFromTokens(this.rawArgument(), name);
-    if (name === 'operatorname') {
-      const starred = this.is('*'); if (starred) this.take();
+    if (name === 'operatorname' || name === 'operatornamewithlimits') {
+      const starred = name !== 'operatorname' || this.is('*'); if (starred && name === 'operatorname') this.take();
       const body = this.subparse(this.rawArgument(), true, 'roman');
       return this.node('style', {body, variant: 'roman', class: 'op', limits: starred ? 'display' : 'never', operatorName: true});
     }
@@ -450,7 +479,7 @@ class MathTexParser {
     }
     if (name === 'raisebox') {
       const amount = this.dimension(this.plainArgument(), token), height = this.optionalRaw(), depth = this.optionalRaw();
-      return this.node('raise', {body: this.argument(), amount, ...(height ? {height: this.dimension(mathTexTokenText(height), token)} : {}), ...(depth ? {depth: this.dimension(mathTexTokenText(depth), token)} : {})});
+      return this.node('raise', {body: this.subparse(this.rawArgument(), true, 'roman'), amount, ...(height ? {height: this.dimension(mathTexTokenText(height), token)} : {}), ...(depth ? {depth: this.dimension(mathTexTokenText(depth), token)} : {})});
     }
     if (name === 'raise' || name === 'lower') return this.node('raise', {amount: this.readDimension() * (name === 'lower' ? -1 : 1), body: this.argument()});
     if (name === 'textcolor') { const color = this.readColor(); return this.node('style', {body: this.argument(), color}); }
@@ -463,10 +492,28 @@ class MathTexParser {
       if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(colorName)) this.error('invalid-color', 'Invalid colour name.', token);
       this.colors[colorName] = this.color(value, model, token); return null;
     }
+    // MathJax's bbox: a background colour, a padding length and a CSS border whose last word is its colour.
+    if (name === 'bbox') {
+      const fields = {padding: 0}, options = this.optionalRaw();
+      for (const option of options ? mathTexTokenText(options).split(',') : []) {
+        const value = option.trim(), border = /^border\s*:(.*)$/i.exec(value);
+        if (border) fields.border = this.color(border[1].trim().split(/\s+/).pop(), '', token);
+        else if (/^[+-]?[\d.]/.test(value)) fields.padding = this.dimension(value, token);
+        else if (value) fields.background = this.color(value, '', token);
+      }
+      return this.node('style', {body: this.argument(), ...fields});
+    }
     if (name === 'boxed' || name === 'fbox') return this.node('style', {body: name === 'fbox' ? this.subparse(this.rawArgument(), true, 'roman') : this.argument(), border: 'currentColor', padding: .25});
     if (name === 'cancel' || name === 'bcancel' || name === 'xcancel' || name === 'sout') return this.node('accent', {base: this.argument(), value: name === 'bcancel' ? '╲' : name === 'xcancel' ? '╳' : name === 'sout' ? '─' : '╱', position: 'over', overlay: true, stretch: true});
     if (name === 'cancelto') { const over = this.argument(); return this.node('overunder', {base: this.node('accent', {base: this.argument(), value: '↗', position: 'over', overlay: true, stretch: true}), over}); }
-    if (['newcommand', 'renewcommand', 'providecommand', 'def', 'gdef', 'DeclareMathOperator', 'let'].includes(name)) { this.define(name, token); return null; }
+    if (['newcommand', 'renewcommand', 'providecommand', 'def', 'gdef', 'edef', 'xdef', 'DeclareMathOperator', 'DeclarePairedDelimiter', 'let'].includes(name)) { this.define(name, token); return null; }
+    // Assignment prefixes: \global makes the next definition global; \long and \outer change nothing here.
+    if (name === 'global' || name === 'long' || name === 'outer') {
+      let next = token, global = false;
+      while (next.kind === 'command' && /^(global|long|outer)$/.test(next.value)) { global ||= next.value === 'global'; next = this.rawTake(); }
+      if (next.kind !== 'command' || !/^[egx]?def$/.test(next.value)) this.error('invalid-macro', '\\' + name + ' needs a \\def.', token);
+      this.define(global ? {def: 'gdef', edef: 'xdef'}[next.value] || next.value : next.value, next); return null;
+    }
     if (name === 'require') {
       const value = this.plainArgument();
       if (!MATH_TEX_PACKAGES.has(value)) this.error('unsupported-package', 'Unsupported maths package: ' + value + '.', token, name);
@@ -487,11 +534,86 @@ class MathTexParser {
       const body = this.subparse(this.rawArgument(), true);
       return {...this.row([this.node('space', {width: 2}), starred ? body : this.node('fence', {left: '(', right: ')', body})]), semanticRole: 'tag'};
     }
+    if (Object.hasOwn(MATH_TEX_COLONS, name))
+      return this.node('style', {class: 'rel', body: this.row([...MATH_TEX_COLONS[name]].flatMap((value, i) => [...(i ? [this.node('space', {width: -1.2 / 18})] : []), this.literal(value, {class: 'ord', variant: 'roman'})]))});
+    const make = (value, kind = 'command') => ({kind, value, offset: token.offset});
+    // mathtools: \cmd{x} keeps the declared delimiters' size, \cmd*{x} stretches them and \cmd[\big]{x} sets it.
+    if (name === '@paired') {
+      const left = this.rawArgument(), right = this.rawArgument(), starred = this.is('*');
+      if (starred) this.take();
+      const size = starred ? null : this.optionalRaw()?.filter(item => item.kind !== 'space'), body = this.rawArgument();
+      if (size && (size.length !== 1 || !/^(big|Big|bigg|Bigg)$/.test(size[0].value))) this.error('invalid-option', 'A delimiter size must be \\big, \\Big, \\bigg or \\Bigg.', token);
+      const group = tokens => [make('{', 'char'), ...tokens, make('}', 'char')];
+      return this.subparse(starred ? [make('left'), ...left, ...body, make('right'), ...right] : size ? [make(size[0].value + 'l'), ...left, ...group(body), make(size[0].value + 'r'), ...right] :
+        [make('mathopen'), ...group(left), ...group(body), make('mathclose'), ...group(right)]);
+    }
+    // braket: \Bra, \Ket, \Braket and \Set stretch their delimiters; bars inside \Braket, and the first in \Set and \set, divide.
+    if (/^(Bra|Ket|Braket|Set|set)$/.test(name)) {
+      const [left, right] = {Bra: ['langle', '|'], Ket: ['|', 'rangle'], Braket: ['langle', 'rangle'], Set: ['{', '}'], set: ['{', '}']}[name], body = [];
+      const raw = this.rawArgument(), delimiter = value => value === '|' ? make('|', 'char') : make(value);
+      let divided = false;
+      for (let i = 0; i < raw.length; i++) {
+        const item = raw[i], bar = item.kind === 'char' && item.value === '|', double = bar && raw[i + 1]?.kind === 'char' && raw[i + 1].value === '|';
+        if (!bar || divided || (name !== 'Braket' && name !== 'Set' && name !== 'set')) { body.push(item); continue; }
+        if (double) i++;
+        divided = name !== 'Braket';
+        body.push(...(name === 'set' ? [make('mid')] : [make(name === 'Set' ? ';' : ','), make('middle'), double ? make('|') : make('|', 'char'), make(name === 'Set' ? ';' : ',')]));
+      }
+      if (name === 'set') return this.subparse([make('{'), make(','), ...body, make(','), make('}')]);
+      return this.subparse([make('left'), delimiter(left), ...(name === 'Set' ? [make(',')] : []), ...body, ...(name === 'Set' ? [make(',')] : []), make('right'), delimiter(right)]);
+    }
+    // units' \nicefrac (and xfrac's \sfrac): a script numerator raised 0.5 ex, a solidus, a script denominator lowered 0.25 ex.
+    if (name === 'nicefrac' || name === 'sfrac') {
+      const script = body => this.node('style', {mathStyle: 'script', body}), num = this.argument(), den = this.argument();
+      return this.row([this.node('raise', {amount: .225, body: script(num)}), this.node('space', {width: -.1}), this.literal('/'), this.node('space', {width: -.15}), this.node('raise', {amount: -.1125, body: script(den)})]);
+    }
+    if (name === 'vcenter') return this.node('raise', {body: this.argument(), center: true});
+    // mathtools \prescript{sup}{sub}{base}: scripts before the base, right aligned, at the base's height.
+    if (name === 'prescript') {
+      const sup = this.argument(), sub = this.argument(), base = this.argument();
+      return this.row([this.node('scripts', {base: this.node('phantom', {body: base, mode: 'v'}), sup, sub, pre: true}), base]);
+    }
+    // amsmath \sideset{_a^b}{_c^d}\sum: corner scripts beside the operator; later scripts become its limits.
+    if (name === 'sideset') {
+      const before = this.argument(), after = this.argument(), op = this.argument(), corners = (side, base) => {
+        const scripts = side.type === 'row' && side.children.length === 1 ? side.children[0] : side;
+        return scripts.type === 'scripts' ? {...scripts, base} : this.row([base, side]);
+      };
+      return this.node('style', {class: 'op', limits: 'display', body: this.row([corners(before, this.node('phantom', {body: op, mode: 'v'})), corners(after, {...op, limits: 'never'})])});
+    }
+    // accents.sty: \accentset sets any symbol over its base; \underaccent sets an accent or symbol under it.
+    if (name === 'accentset' || name === 'underaccent') {
+      const mark = this.rawArgument().filter(item => item.kind !== 'space');
+      if (mark.length === 1 && mark[0].kind === 'command' && Object.hasOwn(MATH_TEX_ACCENTS, mark[0].value)) {
+        const [value, , stretch] = MATH_TEX_ACCENTS[mark[0].value];
+        return this.node('accent', {base: this.argument(), value, position: name === 'accentset' ? 'over' : 'under', stretch});
+      }
+      const decoration = this.subparse(mark);
+      return this.node('overunder', {base: this.argument(), [name === 'accentset' ? 'over' : 'under']: decoration});
+    }
+    if (name === 'slashed') return this.node('accent', {base: this.argument(), value: '/', position: 'through'});
     if (name === 'mod' || name === 'bmod') return this.row([this.node('space', {width: name === 'bmod' ? 5 / 18 : 1}), this.node('text', {value: 'mod', variant: 'roman', class: name === 'bmod' ? 'bin' : 'op'}), this.node('space', {width: name === 'bmod' ? 5 / 18 : 1 / 3})]);
     if (name === 'pmod' || name === 'pod') return this.row([this.node('space', {width: 1}), this.node('fence', {left: '(', right: ')', body: this.row([...(name === 'pmod' ? [this.node('text', {value: 'mod', variant: 'roman'}), this.node('space', {width: 1 / 3})] : []), this.argument()])})]);
-    if (name === 'bmod') return this.node('text', {value: 'mod', variant: 'roman', class: 'bin'});
     if (name === 'ce') return {...this.chemistry(this.rawArgument()), semanticRole: 'chemistry'};
     if (name === 'pu') return {...this.units(this.rawArgument()), semanticRole: 'units'};
+    if (/^(SI|si|num|unit|ang)$/.test(name)) return {...this.siunitx(name, token), semanticRole: 'units'};
+    // mathtools \smashoperator[lr]{op}: the limits overhang the operator's own width on the named sides.
+    if (name === 'smashoperator') {
+      const sides = mathTexTokenText(this.optionalRaw() || []).trim() || 'lr';
+      if (!/^(l|r|lr|rl)$/.test(sides)) this.error('invalid-option', 'A smashed operator side must be l, r or lr.', token);
+      return this.node('style', {body: this.argument(), smashOperator: sides});
+    }
+    if (name === 'mathmakebox') {
+      const width = this.optionalRaw(), position = mathTexTokenText(this.optionalRaw() || []).trim() || 'c';
+      if (!/^[lrcs]$/.test(position)) this.error('invalid-option', 'A box position must be l, r, c or s.', token);
+      const body = this.argument();
+      return width ? this.node('style', {body, width: this.dimension(mathTexTokenText(width), token), align: {l: 'left', r: 'right'}[position] || 'center'}) : body;
+    }
+    // amsmath \idotsint: two integral signs joined by centred dots, one operator.
+    if (name === 'idotsint') {
+      const integral = () => this.literal('∫', {large: true, limits: 'never', class: 'op'});
+      return this.node('style', {class: 'op', limits: 'never', body: this.row([integral(), this.node('space', {width: -1 / 6}), this.node('glyph', MATH_SYMBOLS.cdots), this.node('space', {width: -1 / 6}), integral()])});
+    }
     if (this.physicsCommand(name)) return {...this.physics(name, token), semanticRole: 'physics'};
     if (name === 'mmlToken') return this.mathmlToken(token);
     if (name === 'unicode' || name === 'char') return this.character(name, token);
@@ -543,6 +665,7 @@ class MathTexParser {
   color(value, model, token) {
     if (!model) {
       if (Object.hasOwn(this.colors, value)) return this.colors[value];
+      if (MATH_TEX_DVIPSNAMES[value]) return MATH_TEX_DVIPSNAMES[value];
       if (/^#[a-fA-F0-9]{3,8}$/.test(value) && [4, 5, 7, 9].includes(value.length)) return value;
       if (/^[A-Za-z]{1,32}$/.test(value) && !/^(inherit|unset|initial|revert)$/i.test(value)) return value;
     } else if (model === 'HTML' && /^[a-fA-F0-9]{6}$/.test(value)) return '#' + value;
@@ -559,28 +682,73 @@ class MathTexParser {
 
   environment(fullName, token) {
     const env = fullName.replace(/\*$/, '');
-    if (!MATH_TEX_ENVIRONMENTS.has(env)) this.error('unsupported-environment', 'Unsupported maths environment: ' + fullName + '.', token, 'begin');
+    if (!MATH_TEX_ENVIRONMENTS.has(env)) throw Object.assign(new MathTexError('unsupported-environment', 'Unsupported maths environment: ' + fullName + '.', token.offset, 'begin'), {environment: env});
     return this.nested(() => {
       let options = {};
       const position = this.optionalRaw();
       if (position) {
         const value = mathTexTokenText(position).trim();
-        if (!/^[tbc l r]$/.test(value)) this.error('invalid-option', 'Invalid matrix alignment.', token);
+        if (!/^[tbclr]$/.test(value)) this.error('invalid-option', 'Invalid matrix alignment.', token);
         if (['l', 'r', 'c'].includes(value)) options.columnAlign = value;
         else options.position = value;
       }
-      if (env === 'array' || env === 'subarray') options = {...options, ...this.columnSpec(this.rawArgument(), token)};
+      if (env === 'CD') return this.commutativeDiagram(fullName, token);
+      if (env === 'array' || env === 'subarray' || env === 'darray') options = {...options, ...this.columnSpec(this.rawArgument(), token)};
       if (env === 'alignedat' || env === 'alignat') {
         const value = this.plainArgument();
         if (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 256) this.error('invalid-alignment', 'An alignedat environment needs its number of column pairs.', token);
         options.pairs = Number(value);
       }
-      const body = this.readTable(env, options, item => item.kind === 'command' && item.value === 'end');
+      const body = this.readTable(env, options, item => item.kind === 'command' && item.value === 'end', /cases\*$/.test(fullName) ? 1 : -1);
       this.expect('end', 'command');
       const ending = this.plainArgument();
       if (ending !== fullName) this.error('mismatched-environment', 'Expected \\end{' + fullName + '}, received \\end{' + ending + '}.', token);
       return body;
     });
+  }
+  // amscd: rows of objects joined by @>>>, @<<< and @= arrows, between rows of @VVV, @AAA, @| and @. arrows.
+  commutativeDiagram(fullName, token) {
+    const rows = [], make = (value, kind = 'command') => ({kind, value, offset: token.offset});
+    let cells = [], current = [];
+    const arrow = (kind, labels) => {
+      const label = tokens => tokens.length ? this.subparse(tokens) : null;
+      if (kind === '>' || kind === '<' || kind === '=')
+        return this.node('overunder', {base: this.literal(kind === '>' ? '→' : kind === '<' ? '←' : '=', {class: 'rel', stretch: true}), ...(labels[0]?.length ? {over: label(labels[0])} : {}), ...(labels[1]?.length ? {under: label(labels[1])} : {}), class: 'rel', minWidth: 3});
+      if (kind === '.') return this.row([]);
+      const side = (tokens, align) => tokens?.length ? [this.node('style', {width: 0, align, body: this.node('style', {mathStyle: 'script', body: label(tokens)})})] : [];
+      return this.row([...side(labels[0], 'right'), this.literal(kind === 'V' ? '↓' : kind === 'A' ? '↑' : '‖', {delimiterSize: 3, class: 'ord'}), ...side(labels[1], 'left')]);
+    };
+    for (;;) {
+      const item = this.rawTake(false);
+      if (item.kind === 'eof') this.error('unclosed-environment', 'A closing \\end command is missing.', token);
+      const end = item.kind === 'command' && item.value === 'end';
+      if (end || item.kind === 'command' && item.value === '\\') {
+        if (current.some(part => part.kind !== 'space')) cells.push(this.subparse(current));
+        if (cells.length) rows.push(cells);
+        if (end) break;
+        cells = []; current = []; continue;
+      }
+      if (!(item.kind === 'char' && item.value === '@')) { current.push(item); continue; }
+      const kind = this.rawTake(false), name = kind.kind === 'command' && kind.value === '|' ? '|' : kind.value;
+      if (!'><=VA|.'.includes(name) || kind.kind === 'eof') this.error('invalid-diagram', 'Expected an amscd arrow after @.', kind);
+      const labels = [];
+      if ('><VA'.includes(name)) for (let part = 0; part < 2; part++) {
+        const tokens = [];
+        for (let depth = 0, next = this.rawTake(false); depth || !(next.kind === 'char' && next.value === name); next = this.rawTake(false)) {
+          if (next.kind === 'eof') this.error('invalid-diagram', 'An amscd arrow is missing its closing ' + name + '.', kind);
+          if (next.kind === 'char') depth += next.value === '{' ? 1 : next.value === '}' ? -1 : 0;
+          tokens.push(next);
+        }
+        labels.push(tokens);
+      }
+      if ('VA|'.includes(name) || name === '.' && rows.length % 2) { cells.push(arrow(name, labels), this.row([])); current = []; continue; }
+      cells.push(current.some(part => part.kind !== 'space') ? this.subparse(current) : this.row([]), arrow(name, labels)); current = [];
+    }
+    const ending = this.plainArgument();
+    if (ending !== fullName) this.error('mismatched-environment', 'Expected \\end{' + fullName + '}, received \\end{' + ending + '}.', token);
+    for (const row of rows) if (row.length % 2 === 0 && row.at(-1).type === 'row' && !row.at(-1).children.length) row.pop();
+    const columns = Math.max(...rows.map(row => row.length));
+    return this.node('table', {env: 'CD', rows, align: Array(columns).fill('c'), rowGaps: [], rowRules: []});
   }
   tableFromTokens(tokens, env) {
     return this.nested(() => {
@@ -621,7 +789,18 @@ class MathTexParser {
     if (!align.length) this.error('invalid-alignment', 'An array needs a column specification.', token);
     return {align, columnRules, columnInsertions};
   }
-  readTable(env, options, end) {
+  // mathtools' starred cases set their condition column as text, with $...$ for maths.
+  textCell(separator) {
+    const tokens = [];
+    for (let depth = 0, token = this.rawPeek(false); token.kind !== 'eof' && (depth > 0 || !separator(token)); token = this.rawPeek(false)) {
+      if (token.kind === 'char') depth += token.value === '{' ? 1 : token.value === '}' ? -1 : 0;
+      tokens.push(this.rawTake(false));
+    }
+    while (tokens[0]?.kind === 'space') tokens.shift();
+    while (tokens.at(-1)?.kind === 'space') tokens.pop();
+    return this.subparse(tokens, true);
+  }
+  readTable(env, options, end, textColumn = -1) {
     const rows = [], rowGaps = [], rowRules = [];
     let cells = [], endedAfterBreak = false;
     const separator = item => (item.kind === 'char' && item.value === '&') || (item.kind === 'command' && ['\\', 'cr', 'crcr'].includes(item.value)) || end(item);
@@ -639,7 +818,7 @@ class MathTexParser {
         if (cells.length || (!rows.length && !endedAfterBreak)) { cells.push(this.row([])); rows.push(cells); }
         break;
       }
-      cells.push(this.nested(() => this.parseRow(separator)));
+      cells.push(cells.length === textColumn ? this.textCell(separator) : this.nested(() => this.parseRow(separator)));
       endedAfterBreak = false;
       const next = this.peek();
       if (next.kind === 'char' && next.value === '&') { this.take(); continue; }
@@ -659,7 +838,7 @@ class MathTexParser {
     if (options.align && rows.some(row => row.length > options.align.length)) this.error('invalid-alignment', 'This row has more cells than the array declares.');
     if (options.pairs && rows.some(row => row.length > options.pairs * 2)) this.error('invalid-alignment', 'This row has more cells than alignedat declares.');
     let align = options.align;
-    if (!align) align = Array.from({length: columns}, (_, index) => /^(align|aligned|alignat|alignedat|flalign|split)$/.test(env) ? (index % 2 ? 'l' : 'r') : /cases$/.test(env) ? 'l' : options.columnAlign || 'c');
+    if (!align) align = Array.from({length: columns}, (_, index) => /^(align|aligned|alignat|alignedat|flalign|split)$/.test(env) ? (index % 2 ? 'l' : 'r') : /cases$/.test(env) || env === 'lgathered' ? 'l' : env === 'rgathered' ? 'r' : options.columnAlign || 'c');
     return this.node('table', {env, rows, ...options, align, rowGaps, rowRules});
   }
 
@@ -669,11 +848,16 @@ class MathTexParser {
     const nameTokens = this.rawArgument().filter(item => item.kind !== 'space');
     if (nameTokens.length !== 1 || nameTokens[0].kind !== 'command') this.error('invalid-macro', 'A macro name must be one command.', token);
     const macroName = nameTokens[0].value;
+    const make = value => ({kind: 'command', value, offset: token.offset});
+    const literal = value => ({kind: 'char', value, offset: token.offset});
     if (name === 'DeclareMathOperator') {
       const body = this.rawArgument();
-      const make = value => ({kind: 'command', value, offset: token.offset});
-      const literal = value => ({kind: 'char', value, offset: token.offset});
       this.scopes[this.scopes.length - 1][macroName] = {params: [], prefix: [], body: [make('operatorname'), ...(starred ? [literal('*')] : []), literal('{'), ...body, literal('}')], optional: null};
+      return;
+    }
+    if (name === 'DeclarePairedDelimiter') {
+      const left = this.rawArgument(), right = this.rawArgument();
+      this.scopes[this.scopes.length - 1][macroName] = {params: [], prefix: [], body: [make('@paired'), literal('{'), ...left, literal('}'), literal('{'), ...right, literal('}')], optional: null};
       return;
     }
     if (name === 'let') {
@@ -685,7 +869,7 @@ class MathTexParser {
       return;
     }
     let params = [], prefix = [], optional = null, body;
-    if (name === 'def' || name === 'gdef') {
+    if (/^[egx]?def$/.test(name)) {
       const specification = [];
       while (!(this.rawPeek().kind === 'char' && this.rawPeek().value === '{')) {
         const item = this.rawTake(false);
@@ -703,6 +887,12 @@ class MathTexParser {
         } else current.push(item);
       }
       body = this.rawArgument();
+      if (name === 'edef' || name === 'xdef') {
+        // \edef expands the macros in its replacement when it is defined.
+        const parser = new MathTexParser(this.source, {tokens: body, scopes: this.scopes, budget: this.budget});
+        body = [];
+        for (let item = parser.take(false); item.kind !== 'eof'; item = parser.take(false)) body.push(item);
+      }
     } else {
       const countTokens = this.optionalRaw();
       const count = countTokens ? mathTexTokenText(countTokens).trim() : '0';
@@ -720,7 +910,7 @@ class MathTexParser {
     const existing = this.macro(macroName) || Object.hasOwn(MATH_SYMBOLS, macroName) || Object.hasOwn(MATH_TEX_VARIANTS, macroName) || MATH_NAMED_OPERATORS.has(macroName) || MATH_LIMIT_OPERATORS.has(macroName);
     if (name === 'providecommand' && existing) return;
     if (name === 'newcommand' && existing) this.error('duplicate-macro', '\\' + macroName + ' is already defined.', token);
-    this.scopes[name === 'gdef' ? 0 : this.scopes.length - 1][macroName] = {params, prefix, body, optional};
+    this.scopes[name === 'gdef' || name === 'xdef' ? 0 : this.scopes.length - 1][macroName] = {params, prefix, body, optional};
   }
   expand(macro, token) {
     if (++this.budget.expansions > 4096) this.error('resource-limit', 'Macro expansion did not finish within the rendering limit.', token);
@@ -779,7 +969,8 @@ class MathTexParser {
   parseText(variant = 'roman') {
     const children = [];
     let value = '';
-    const flush = () => { if (value) children.push(this.node('text', {value, variant})); value = ''; };
+    // TeX's text fonts join --- and -- into dashes and turn `` '' ` ' into curly quotes; typewriter text keeps them.
+    const flush = () => { if (value) children.push(this.node('text', {value: variant === 'monospace' ? value : value.replace(/---|--|``|''|`|'/g, run => ({'---': '—', '--': '–', '``': '“', "''": '”', '`': '‘', "'": '’'})[run]), variant})); value = ''; };
     for (;;) {
       const token = this.take(false);
       if (token.kind === 'eof') break;
@@ -850,6 +1041,7 @@ class MathTexParser {
         if ([...letters].length !== 1) this.error('invalid-accent', 'A text accent needs one character.', token);
         value += (letters + marks[name]).normalize('NFC'); continue;
       }
+      if (Object.hasOwn(MATH_TEX_TEXT_LETTERS, name)) { value += MATH_TEX_TEXT_LETTERS[name]; continue; }
       if (Object.hasOwn(MATH_SYMBOLS, name) && !MATH_SYMBOLS[name].large) { value += MATH_SYMBOLS[name].value; continue; }
       flush();
       const body = this.command(token);
@@ -860,7 +1052,7 @@ class MathTexParser {
   }
 
   physicsCommand(name) {
-    return /^(dv|derivative|pdv|pderivative|fdv|functionalderivative|dd|differential|qty|quantity|pqty|bqty|Bqty|vqty|abs|absolutevalue|norm|bra|ket|braket|innerproduct|ketbra|dyad|outerproduct|expval|expectationvalue|comm|commutator|acomm|anticommutator|vb|va|vu|vectorbold|vectorarrow|vectorunit|grad|gradient|divergence|curl|laplacian|eval|evaluated|order|Tr|tr|trace|rank|diag|mqty|pmqty|bmqty|vmqty|smqty)$/.test(name);
+    return /^(dv|derivative|pdv|pderivative|fdv|functionalderivative|dd|differential|qty|quantity|pqty|bqty|Bqty|vqty|abs|absolutevalue|norm|bra|ket|braket|innerproduct|ip|ketbra|dyad|outerproduct|op|expval|expectationvalue|ev|mel|matrixel|matrixelement|comm|commutator|acomm|anticommutator|pb|poissonbracket|vb|va|vu|vectorbold|vectorarrow|vectorunit|grad|gradient|divergence|curl|laplacian|eval|evaluated|order|Tr|tr|trace|rank|diag|Res|mqty|pmqty|bmqty|vmqty|smqty|qq|qc|qcc|q(?:if|then|else|otherwise|unless|given|using|assume|since|let|for|all|even|odd|integer|and|or|as|in))$/.test(name);
   }
   physics(name, token) {
     const starred = this.is('*'); if (starred) this.take();
@@ -887,30 +1079,40 @@ class MathTexParser {
       if (name === 'laplacian') base = this.node('scripts', {base, sup: this.literal('2', {variant: 'roman'})});
       return this.row([base, ...(/^(divergence|curl)$/.test(name) ? [this.literal(name === 'curl' ? '×' : '⋅', {class: 'bin', variant: 'roman'})] : []), ...(this.is('{') ? [this.argument()] : [])]);
     }
-    if (['Tr', 'tr', 'trace', 'rank', 'diag'].includes(name)) return this.node('text', {value: name === 'trace' ? 'tr' : name, variant: 'roman', class: 'op', limits: 'never'});
-    if (name === 'eval' || name === 'evaluated') return this.node('fence', {left: '', right: '|', body: this.argument()});
-    if (name === 'order') return this.row([this.literal('O'), this.node('fence', {left: '(', right: ')', body: this.argument()})]);
-    if (/^(mqty|pmqty|bmqty|vmqty|smqty)$/.test(name)) {
-      const env = name === 'bmqty' ? 'bmatrix' : name === 'vmqty' ? 'vmatrix' : name === 'smqty' ? 'smallmatrix' : name === 'pmqty' ? 'pmatrix' : 'matrix';
-      return this.tableFromTokens(this.rawArgument(), env);
-    }
+    if (['Tr', 'tr', 'trace', 'rank', 'diag', 'Res'].includes(name)) return this.node('text', {value: name === 'trace' ? 'tr' : name, variant: 'roman', class: 'op', limits: 'never'});
     if (name === 'qty' || name === 'quantity') {
-      if (this.is('{')) return this.node('fence', {left: '(', right: ')', body: this.argument()});
+      if (this.is('{')) return this.node('fence', {left: '{', right: '}', body: this.argument()});
       const left = this.readDelimiter(), right = {'(': ')', '[': ']', '{': '}', '|': '|', '‖': '‖', '⟨': '⟩'}[left];
       if (!right) this.error('invalid-delimiter', 'A quantity needs paired delimiters.', token);
       const body = this.nested(() => this.parseRow(item => item.kind === 'char' && item.value === right));
       this.expect(right);
       return this.node('fence', {left, right, body});
     }
+    // \qq{text} and the \qif family: text between quads; \qc is a comma and a quad.
+    if (/^q/.test(name)) {
+      const quad = () => this.node('space', {width: 1}), words = {qcc: 'c.c.'};
+      if (name === 'qc') return this.node('style', {class: 'punct', body: this.row([this.literal(',', {class: 'punct'}), quad()])});
+      return this.row([quad(), name === 'qq' ? this.subparse(this.rawArgument(), true) : this.node('text', {value: words[name] || name.slice(1), variant: 'roman'}), quad()]);
+    }
+    if (name === 'eval' || name === 'evaluated') return this.node('fence', {left: '', right: '|', body: this.argument()});
+    if (name === 'order') return this.row([this.literal('O'), this.node('fence', {left: '(', right: ')', body: this.argument()})]);
+    if (/^(mqty|pmqty|bmqty|vmqty|smqty)$/.test(name)) {
+      const env = name === 'bmqty' ? 'bmatrix' : name === 'vmqty' ? 'vmatrix' : name === 'smqty' ? 'smallmatrix' : name === 'pmqty' ? 'pmatrix' : 'matrix';
+      return this.tableFromTokens(this.rawArgument(), env);
+    }
     const first = this.argument();
     if (/^(bra|ket|pqty|bqty|Bqty|vqty|abs|absolutevalue|norm)$/.test(name)) {
       const ends = {bra: ['⟨', '|'], ket: ['|', '⟩'], pqty: ['(', ')'], bqty: ['[', ']'], Bqty: ['{', '}'], vqty: ['|', '|'], abs: ['|', '|'], absolutevalue: ['|', '|'], norm: ['‖', '‖']}[name];
       return this.node('fence', {left: ends[0], right: ends[1], body: first});
     }
-    if (/^(comm|commutator|acomm|anticommutator)$/.test(name)) return this.node('fence', {left: /^(acomm|anticommutator)$/.test(name) ? '{' : '[', right: /^(acomm|anticommutator)$/.test(name) ? '}' : ']', body: this.row([first, this.literal(',', {class: 'punct'}), this.argument()])});
+    if (/^(comm|commutator|acomm|anticommutator|pb|poissonbracket)$/.test(name)) return this.node('fence', {left: /^(comm|commutator)$/.test(name) ? '[' : '{', right: /^(comm|commutator)$/.test(name) ? ']' : '}', body: this.row([first, this.literal(',', {class: 'punct'}), this.argument()])});
+    if (/^(mel|matrixel|matrixelement)$/.test(name)) {
+      const operator = this.argument(), right = this.argument();
+      return this.node('fence', {left: '⟨', right: '⟩', body: this.row([first, this.literal('|', {delimiter: true}), operator, this.literal('|', {delimiter: true}), right])});
+    }
     const second = this.is('{') ? this.argument() : null;
-    if (/^(ketbra|dyad|outerproduct)$/.test(name)) return this.row([this.node('fence', {left: '|', right: '⟩', body: first}), this.node('fence', {left: '⟨', right: '|', body: second || first})]);
-    if (/^(expval|expectationvalue)$/.test(name)) return this.node('fence', {left: '⟨', right: '⟩', body: second ? this.row([second, this.literal('|', {delimiter: true}), first, this.literal('|', {delimiter: true}), second]) : first});
+    if (/^(ketbra|dyad|outerproduct|op)$/.test(name)) return this.row([this.node('fence', {left: '|', right: '⟩', body: first}), this.node('fence', {left: '⟨', right: '|', body: second || first})]);
+    if (/^(expval|expectationvalue|ev)$/.test(name)) return this.node('fence', {left: '⟨', right: '⟩', body: second ? this.row([second, this.literal('|', {delimiter: true}), first, this.literal('|', {delimiter: true}), second]) : first});
     return this.node('fence', {left: '⟨', right: '⟩', body: second ? this.row([first, this.literal('|', {delimiter: true}), second]) : first});
   }
 
@@ -922,7 +1124,7 @@ class MathTexParser {
   }
   chemicalRow(stop) {
     const children = [];
-    let spaced = true, subAllowed = false, moleculeParts = 0;
+    let spaced = true, subAllowed = false, moleculeParts = 0, isotope = null;
     const script = (key, body) => {
       let base = children.pop() || this.row([]);
       if (base.type !== 'scripts') base = this.node('scripts', {base});
@@ -938,6 +1140,7 @@ class MathTexParser {
       const next = this.peek(false);
       if (next.kind === 'eof' || stop(next)) break;
       const token = this.take(false);
+      if (isotope && !(token.kind === 'char' && /^[\^_A-Za-z]$/.test(token.value))) isotope = null;
       if (token.kind === 'space') {
         spaced = true; subAllowed = false; moleculeParts = 0;
         // An operator or arrow already carries its own spacing; a separating space adds none beside it.
@@ -983,6 +1186,12 @@ class MathTexParser {
           const value = consumeRun(character => /^[0-9+\-−IVX]$/.test(character));
           body = value ? this.node('text', {value: value.replace(/-/g, '−'), variant: 'roman'}) : this.argument();
         }
+        // Scripts that open a term are an isotope's mass and atomic numbers, set before the next element.
+        if (spaced) {
+          if (!isotope) children.push(isotope = this.node('scripts', {base: this.row([]), pre: true}));
+          if (isotope[key]) this.error('duplicate-script', 'An isotope cannot have two ' + (key === 'sub' ? 'subscripts' : 'superscripts') + '.', token);
+          isotope[key] = body; continue;
+        }
         script(key, body); spaced = false; continue;
       }
       if (/^[0-9]$/.test(token.value)) {
@@ -1018,7 +1227,9 @@ class MathTexParser {
       }
       if (/^[A-Za-z]$/.test(token.value)) {
         const word = token.value + consumeRun(character => /^[a-z]$/.test(character));
-        children.push(this.node('text', {value: word === 'v' && spaced ? '↓' : word, variant: 'roman'}));
+        const element = this.node('text', {value: word === 'v' && spaced && !isotope ? '↓' : word, variant: 'roman'});
+        if (isotope) { isotope.base = this.node('phantom', {body: element, mode: 'v'}); isotope = null; }
+        children.push(element);
         moleculeParts++; spaced = false; subAllowed = true; continue;
       }
       if (token.value === '#') children.push(this.literal('≡', {class: 'ord', variant: 'roman'}));
@@ -1028,6 +1239,57 @@ class MathTexParser {
       spaced = false;
     }
     return this.row(children);
+  }
+  // siunitx: \num groups digits, \si and \unit set units upright (macros or literal), \SI joins them, \ang marks degrees.
+  // Formatting options are accepted and not reproduced.
+  siunitx(name, token) {
+    this.optionalRaw();
+    if (name === 'num') return this.siNumber(this.rawArgument());
+    if (name === 'si' || name === 'unit') return this.siUnit(this.rawArgument(), token);
+    if (name === 'ang') {
+      const parts = mathTexTokenText(this.rawArgument()).split(';');
+      if (parts.length > 3) this.error('invalid-number', 'An angle has at most degrees, minutes and seconds.', token);
+      return this.row(parts.flatMap((part, i) => part.trim() ? [this.siNumber(mathTexTokens(part.trim(), token.offset)), this.literal('°′″'[i], {variant: 'roman'})] : []));
+    }
+    const value = this.siNumber(this.rawArgument()), before = this.optionalRaw();
+    return this.row([...(before ? [this.siUnit(before, token), this.node('space', {width: 3 / 18})] : []), value, this.node('space', {width: 3 / 18}), this.siUnit(this.rawArgument(), token)]);
+  }
+  siNumber(tokens) {
+    const text = mathTexTokenText(tokens).replace(/\s+/g, '');
+    if (!/^[-+]?(\d+[.,]?\d*|[.,]\d+)(\+-\d+[.,]?\d*)?([eE][-+]?\d+)?$/.test(text)) return this.subparse(tokens);
+    const group = (digits, fromLeft) => digits.length < 5 ? digits : (fromLeft ? digits.match(/\d{1,3}/g) : digits.split('').reverse().join('').match(/\d{1,3}/g).map(part => part.split('').reverse().join('')).reverse()).join('\\,');
+    const [, sign = '', whole = '', fraction, uncertainty, exponent] = /^([-+]?)(\d*)(?:[.,](\d*))?(?:\+-(\d+[.,]?\d*))?(?:[eE]([-+]?\d+))?$/.exec(text);
+    const value = (sign === '-' ? '-' : sign) + (group(whole) || '0') + (fraction === undefined ? '' : '.' + group(fraction, true)) +
+      (uncertainty ? '{\\pm}' + uncertainty.replace(',', '.') : '') + (exponent ? '\\times 10^{' + exponent.replace('+', '') + '}' : '');
+    return this.subparse(mathTexTokens(value, tokens[0]?.offset || 0));
+  }
+  siUnit(tokens, token) {
+    const units = MATH_SI_UNITS, prefixes = MATH_SI_PREFIXES, items = [];
+    if (!tokens.some(item => item.kind === 'command' && (Object.hasOwn(units, item.value) || Object.hasOwn(prefixes, item.value) || /^(per|square|cubic|squared|cubed|tothe|raiseto)$/.test(item.value))))
+      return this.node('style', {variant: 'roman', body: this.subparse(tokens.map(item => item.kind === 'char' && (item.value === '.' || item.value === '~') ? {...item, kind: 'command', value: ','} : item))});
+    let prefix = '', power = 1, per = false;
+    const number = at => { const group = tokens[at]?.value === '{' ? tokens.slice(at + 1, tokens.findIndex((item, i) => i > at && item.value === '}')) : [tokens[at]]; return [mathTexTokenText(group.filter(Boolean)).trim(), at + (group.length > 1 || tokens[at]?.value === '{' ? group.length + 1 : 0)]; };
+    for (let at = 0; at < tokens.length; at++) {
+      const item = tokens[at], value = item.value;
+      if (item.kind === 'space' || item.kind === 'char' && (value === '.' || value === '~')) continue;
+      if (item.kind === 'command' && Object.hasOwn(prefixes, value)) prefix += prefixes[value];
+      else if (item.kind === 'command' && value === 'per') per = true;
+      else if (item.kind === 'command' && (value === 'square' || value === 'cubic')) power = value === 'square' ? 2 : 3;
+      else if (item.kind === 'command' && /^(squared|cubed|tothe|raiseto)$/.test(value) && items.length) {
+        let exponent = value === 'squared' ? '2' : '3';
+        if (value === 'tothe' || value === 'raiseto') [exponent, at] = number(at + 1);
+        if (!/^-?\d+(\.\d+)?$/.test(exponent)) this.error('invalid-unit', 'A unit power must be a number.', item);
+        items.at(-1).power = exponent;
+      } else if (item.kind === 'command' && Object.hasOwn(units, value) || item.kind === 'char' && /^[A-Za-z]$/.test(value)) {
+        items.push({symbol: prefix + (item.kind === 'command' ? units[value] : value), power: String(power), per});
+        prefix = ''; power = 1; per = false;
+      } else this.error('invalid-unit', 'Unsupported unit: ' + mathTexTokenText([item]).trim() + '.', item);
+    }
+    if (prefix || per || !items.length) this.error('invalid-unit', 'A unit prefix or \\per needs a unit.', token);
+    return this.row(items.flatMap((unit, i) => {
+      const exponent = (unit.per ? '−' : '') + unit.power.replace('-', '−'), base = this.node('text', {value: unit.symbol, variant: 'roman'});
+      return [...(i ? [this.node('space', {width: 3 / 18})] : []), exponent === '1' ? base : this.node('scripts', {base, sup: this.node('text', {value: exponent, variant: 'roman'})})];
+    }));
   }
   units(tokens) {
     let value = mathTexTokenText(tokens);
@@ -1076,5 +1338,58 @@ function parseMathTex(source) {
   return new MathTexParser(source).parse();
 }
 
+// While a person types, a formula is unfinished where they are typing. Preview mends it there: a half-typed command
+// before the caret waits (blanked, so later offsets hold), a missing argument shows a placeholder box, and groups,
+// options, fences and environments left open at the end close. Any other fault stays a fault.
+function parseMathTexPreview(source, error, caret = source.length) {
+  if (source.length > 4096) return null;
+  caret = Math.max(0, Math.min(source.length, Math.floor(caret) || 0));
+  let text = source;
+  const tail = /(?<!\\)\\(?:[A-Za-z]*|(?:begin|end)\{[A-Za-z*]*)$/.exec(text.slice(0, caret));
+  if (tail) text = text.slice(0, tail.index) + ' '.repeat(tail[0].length) + text.slice(caret);
+  const atEnd = (cause, length) => /^unclosed-(group|option|environment)$/.test(cause.code) || cause.offset >= length;
+  for (let attempt = 0; attempt < 24; attempt++) {
+    try { return new MathTexParser(text).parse(); } catch (cause) { error = cause; }
+    if (error.code === 'missing-argument' && error.offset < text.length) { text = text.slice(0, error.offset) + '{\\square}' + text.slice(error.offset); continue; }
+    if (!atEnd(error, text.length)) return null;
+    if (/[\^_]$/.test(text)) { text += '{\\square}'; continue; }
+    if (/[{[]$/.test(text)) { text += '\\square'; continue; }
+    const open = [...text.matchAll(/\\(begin|end)\{([A-Za-z*]+)\}/g)].reduce((stack, [, kind, name]) => (kind === 'begin' ? stack.push(name) : stack.pop(), stack), []).at(-1);
+    const expected = /^Expected (.+)\.$/.exec(error.message)?.[1], fixes = ['}', ']', '\\right.', ...(open ? ['\\end{' + open + '}'] : []), '$', '{\\square}'];
+    const first = error.code === 'unclosed-option' ? ']' : error.code === 'missing-argument' ? '{\\square}' : error.code === 'unclosed-environment' && open ? '\\end{' + open + '}' : expected && fixes.includes(expected === '\\right' ? '\\right.' : expected) ? (expected === '\\right' ? '\\right.' : expected) : '}';
+    let next = null;
+    for (const fix of [first, ...fixes.filter(fix => fix !== first)]) {
+      try { return new MathTexParser(text + fix).parse(); }
+      catch (cause) { if (!next && atEnd(cause, text.length + fix.length)) next = text + fix; }
+    }
+    if (!next) return null;
+    text = next;
+  }
+  return null;
+}
+
+// The command or environment a mistyped name most likely meant: one edit away (two for longer names), where swapping
+// two neighbouring letters is one edit.
+const MATH_TEX_STRUCTURE = 'frac dfrac tfrac cfrac binom dbinom tbinom genfrac sqrt root left right middle big Big bigg Bigg bigl bigr Bigl Bigr begin end text textbf textit mathrm mathbf operatorname overset underset stackrel xrightarrow xleftarrow not phantom smash hspace quad qquad color textcolor colorbox boxed cancel newcommand renewcommand def ce pu SI si num unit ang dv pdv qty abs norm bra ket braket substack tag label href';
+let mathTexNames;
+function mathSuggest(name, environment = false) {
+  if (typeof name !== 'string' || name.length < 2 || name.length > 32) return undefined;
+  mathTexNames ||= {command: [...new Set([...MATH_TEX_STRUCTURE.split(' '), ...Object.keys(MATH_SYMBOLS), ...Object.keys(MATH_TEX_VARIANTS), ...Object.keys(MATH_TEX_TEXT_VARIANTS),
+    ...Object.keys(MATH_TEX_ACCENTS), ...MATH_NAMED_OPERATORS, ...MATH_LIMIT_OPERATORS, ...Object.keys(MATH_TEX_SPACES), ...Object.keys(MATH_TEX_LONG_ARROWS)])], environment: [...MATH_TEX_ENVIRONMENTS]};
+  const limit = name.length > 5 ? 2 : 1;
+  let best, bestDistance = limit + 1;
+  for (const candidate of mathTexNames[environment ? 'environment' : 'command']) {
+    if (Math.abs(candidate.length - name.length) > limit) continue;
+    const d = Array.from({length: name.length + 1}, (_, i) => [i, ...Array(candidate.length).fill(0)]);
+    for (let j = 1; j <= candidate.length; j++) d[0][j] = j;
+    for (let i = 1; i <= name.length; i++) for (let j = 1; j <= candidate.length; j++) {
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (name[i - 1] === candidate[j - 1] ? 0 : 1));
+      if (i > 1 && j > 1 && name[i - 1] === candidate[j - 2] && name[i - 2] === candidate[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+    if (d[name.length][candidate.length] < bestDistance) { best = candidate; bestDistance = d[name.length][candidate.length]; }
+  }
+  return best === undefined ? undefined : (environment ? best : '\\' + best);
+}
+
 import {MATH_SYMBOLS, MATH_NAMED_OPERATORS, MATH_LIMIT_OPERATORS} from './symbols.js';
-export {parseMathTex};
+export {parseMathTex, parseMathTexPreview, mathSuggest};

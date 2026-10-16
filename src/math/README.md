@@ -249,7 +249,10 @@ concatenation without normalization; an interim preview may contain an incomplet
 | `version` | The package version. Default export provides the same API. |
 
 `displayMode`, `maxWidth` in mathematical ems, and optional `screen: {fontSize, pixelRatio, dark}` configure
-rendering. Screen numbers must be positive finite values; `dark` must be boolean. Omit screen options for
+rendering. `preview: true` renders a formula that is still being typed: a missing argument shows a box, groups,
+fences and environments left open close, and a half-typed command before `caret` (default: the end) waits.
+Any other fault is still an error. `spans: true` marks each symbol with `data-math-at`, its offset in the source, so a tap
+on a symbol can place the cursor there. Screen numbers must be positive finite values; `dark` must be boolean. Omit screen options for
 SSR and the initial hydration render. Long rows break at available relations/operators; indivisible
 oversized groups scale to fit. Fit after hydration, stop observation before replacement, then observe the
 new formulas. Stop on unmount. [Browser](../examples/browser.html), [worker](../examples/worker.mjs) and
@@ -258,7 +261,8 @@ new formulas. Stop on unmount. [Browser](../examples/browser.html), [worker](../
 ## Errors, source and accessibility
 
 Check `errors` before treating a formula as successful. Errors include `code`, `message`, UTF-16 `offset`
-and sometimes `command`. Render-result messages are limited to 1024 code units plus an ellipsis and command
+and sometimes `command`. An unknown command or environment close to a known one has a `suggestion`
+(`\farc` suggests `\frac`). Render-result messages are limited to 1024 code units plus an ellipsis and command
 names to 128, with explicit `messageTruncated`/`commandTruncated` flags. Exact admitted source is retained
 independently. `parse` throws the parser's details, bounded by its source admission limit. Do not use a
 diagnostic message as a source archive.

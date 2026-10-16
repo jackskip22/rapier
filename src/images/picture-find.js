@@ -18,15 +18,11 @@ const _rapierPictureFind = (() => {
 	function rawImages(raw) {
 		if (!raw.includes('<')) return [];
 		const markup = _rapierRenderBlockSpecial(raw) ?? _rapierRenderBlockMarkup(raw).html;
-		const prior = _rapierSanitizeRuntime.context;
-		_rapierSanitizeRuntime.context = 'render';
-		try {
-			const fragment = DOMPurify.sanitize(markup, {...RAPIER_SANITIZE_OPTIONS.render, RETURN_DOM_FRAGMENT: true});
-			return Array.from(fragment.querySelectorAll('img:not([data-rapier-markdown-image])'), image => ({
-				destination: image.getAttribute('src') || '', srcset: image.getAttribute('srcset') || '',
-				responsive: image.hasAttribute('srcset') || !!image.closest('picture')?.querySelector('source[srcset]'),
-			}));
-		} finally { _rapierSanitizeRuntime.context = prior; }
+		const fragment = _rapierRenderModule('render-sanitize').sanitizeRapierFragment(markup, 'render');
+		return Array.from(fragment.querySelectorAll('img:not([data-rapier-markdown-image])'), image => ({
+			destination: image.getAttribute('src') || '', srcset: image.getAttribute('srcset') || '',
+			responsive: image.hasAttribute('srcset') || !!image.closest('picture')?.querySelector('source[srcset]'),
+		}));
 	}
 	function imageFor(entry, wake = false, parked = false) {
 		if (entries.get(entry.key) !== entry || entry.authority !== rapier.identity.authority) return null;

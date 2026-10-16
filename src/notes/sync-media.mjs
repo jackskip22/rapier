@@ -111,7 +111,7 @@ export async function planSyncMedia(local, heads, capabilities = {}) {
 				if (!localMember) fail('incomplete_asset', 'a kept media version has no complete bytes');
 				uploads.push({file, bytes: localMember.bytes, content, source});
 			}
-			if (!Object.hasOwn(local.assets || {}, file)) {
+			if (!Object.hasOwn(local.assets || {}, file) || removes.some(row => row.file === file)) {
 				if (localMember) copies.push({file, bytes: localMember.bytes});
 				else downloads.push({file, ...output[file]});
 			} else if (await assetDigest(local.assets[file]) !== content) fail('asset_conflict', 'a new media name would overwrite kept bytes');

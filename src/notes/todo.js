@@ -3,7 +3,7 @@ const _rapierTodo = {
 	observer: null, scheduled: false, decorated: false,
 	collapsed: new Map(),
 	hidden: new Map(),
-	drag: null, keyBusy: false,
+	press: null, drag: null, keyBusy: false,
 };
 
 function _rapierTodoModel() { return globalThis.RapierNotesTodo; }
@@ -34,9 +34,10 @@ function _rapierTodoText() {
 	try { return typeof _rapierSourceText === 'function' ? _rapierSourceText() : null; } catch (_) { return null; }
 }
 async function _rapierTodoPersist(file, next) {
-	const before = _rapierTodoText();
+	const before = _rapierTodoText(), intent = _rapierMutationStamp();
+	if (before == null || _rapierNotesCurrentFile() !== file) return false;
 	try { if (typeof _rapierNotesFlush === 'function') await _rapierNotesFlush(); } catch (_) { return false; }
-	if (_rapierTodoText() !== before) { if (typeof showToast === 'function') showToast('The list changed. Try again.', 'info'); return false; }
+	if (!_rapierMutationStampSharesDocument(intent) || _rapierNotesCurrentFile() !== file || _rapierTodoText() !== before) { if (typeof showToast === 'function') showToast('The list changed. Try again.', 'info'); return false; }
 	if (typeof _rapierNotesApplyText === 'function' && typeof _rapierNotes !== 'undefined' && _rapierNotes.current === file) {
 		return await _rapierNotesApplyText(next, 'notes.checklist', 'List', {settle: true});
 	}
@@ -145,7 +146,8 @@ function _rapierTodoScan() {
 function _rapierTodoScanBody() {
 	const file = _rapierNotesCurrentFile();
 	const host = document.getElementById('editor-blocks');
-	const T = _rapierTodoModel();
+	const T = _rapierTodoModel(), gesture = _rapierTodo.press || _rapierTodo.drag;
+	if (gesture && (file !== gesture.file || !_rapierMutationStampSharesDocument(gesture.intent) || !gesture.wrapper.isConnected)) _rapierTodoCancelGesture();
 	if (!file || !host || !T) { if (host && _rapierTodo.decorated) { for (const w of host.querySelectorAll(':scope > .block-wrapper')) _rapierTodoStrip(w); _rapierTodo.decorated = false; } return; }
 	const text = _rapierTodoText();
 	if (text == null) return;
@@ -413,14 +415,7 @@ function _rapierTodoDecoratePlain(key, read, list) {
 }
 
 function _rapierTodoFirstList(text) {
-	const T = _rapierTodoModel(); if (!T) return null;
-	const lines = String(text ?? '').split('\n');
-	let fenced = false;
-	for (let i = 0; i < lines.length; i++) {
-		if (/^\s*(```|~~~)/.test(lines[i])) { fenced = !fenced; continue; }
-		if (!fenced && /^\s*[-*]\s/.test(lines[i])) return T.listAt(text, i);
-	}
-	return null;
+	const T = _rapierTodoModel(); return T ? T.firstList(text) : null;
 }
 function _rapierTodoBoxesWord() {
 	if (!_rapierNotesCurrentFile()) return '';
@@ -517,33 +512,42 @@ function _rapierTodoCaretIntoLine(line) {
 }
 
 function _rapierTodoHandleDown(evt) {
-	if (evt.button != null && evt.button !== 0) return;
+	if (evt.isPrimary === false || evt.button != null && evt.button !== 0 || _rapierTodo.press || _rapierTodo.drag) return;
 	const handle = evt.target && evt.target.closest ? evt.target.closest('.rapier-todo-handle') : null; if (!handle) return;
-	const wrapper = handle.closest('.block-wrapper'); if (!wrapper) return;
+	const wrapper = handle.closest('.block-wrapper'), file = _rapierNotesCurrentFile();
+	if (!wrapper?.isConnected || !file) return;
 	if (wrapper.classList.contains('block-wrapper--editing') && handle.closest('.block-edit')) {
 		evt.preventDefault();
 		evt.stopPropagation();
-		const press = {target: evt.target, button: evt.button, clientX: evt.clientX, clientY: evt.clientY, pointerId: evt.pointerId, preventDefault() {}, stopPropagation() {}};
-		const stop = () => {
+		const press = {file, wrapper, intent: _rapierMutationStamp(), target: evt.target, button: evt.button, clientX: evt.clientX, clientY: evt.clientY, pointerId: evt.pointerId, preventDefault() {}, stopPropagation() {}};
+		const stop = event => {
+			if (event && event.pointerId !== press.pointerId) return;
+			if (_rapierTodo.press === press) _rapierTodo.press = null;
 			window.removeEventListener('pointermove', move, true);
 			window.removeEventListener('pointerup', stop, true);
 			window.removeEventListener('pointercancel', stop, true);
+			window.removeEventListener('lostpointercapture', lost, true);
 		};
+		const lost = event => { if (event.target === press.target) stop(event); };
 		const move = moved => {
+			if (_rapierTodo.press !== press) return;
+			if (!wrapper.isConnected || !_rapierMutationStampSharesDocument(press.intent) || _rapierNotesCurrentFile() !== file) { stop(); return; }
 			if (moved.pointerId !== press.pointerId || Math.max(Math.abs(moved.clientX - press.clientX), Math.abs(moved.clientY - press.clientY)) <= 12) return;
 			stop();
 			_rapierTodoGrab(press, wrapper);
 			if (_rapierTodo.drag) _rapierTodoDragMove(moved);
 		};
+		press.stop = stop; _rapierTodo.press = press;
 		window.addEventListener('pointermove', move, true);
 		window.addEventListener('pointerup', stop, true);
 		window.addEventListener('pointercancel', stop, true);
+		window.addEventListener('lostpointercapture', lost, true);
 		return;
 	}
 	_rapierTodoGrab(evt, wrapper);
 }
 function _rapierTodoLocateHandle(handle) {
-	const wrapper = handle?.closest('.block-wrapper'); if (!wrapper) return;
+	const wrapper = handle?.closest('.block-wrapper'); if (!wrapper?.isConnected) return;
 	let li = handle.closest('li.rapier-todo-item'); if (!li) return;
 	let container = li.parentElement; if (!container) return;
 	const surface = li.closest('.block-read, .block-edit');
@@ -575,28 +579,30 @@ function _rapierTodoLocateHandle(handle) {
 	const allRows = [...wrapper.querySelectorAll('.block-read li.rapier-todo-item')];
 	const group = siblings.map(row => range.items[allRows.indexOf(row)]).filter(Boolean);
 	if (group.length !== siblings.length) return;
-	return {file, text, range, group, container, li, siblings, fromIndex, done, listIndex: [...li.closest('.block-read, .block-edit').querySelectorAll('ul, ol')].indexOf(container)};
+	return {file, text, intent: _rapierMutationStamp(), wrapper, range, group, container, li, siblings, fromIndex, done, listIndex: [...li.closest('.block-read, .block-edit').querySelectorAll('ul, ol')].indexOf(container)};
 }
 function _rapierTodoGrab(evt, wrapper) {
 	const located = _rapierTodoLocateHandle(evt.target.closest('.rapier-todo-handle')); if (!located) return;
-	const {file, text, range, group, container, li, siblings, fromIndex} = located;
+	const {file, text, intent, range, group, container, li, siblings, fromIndex} = located;
 	const handle = li.querySelector(':scope > .rapier-todo-handle');
 	evt.preventDefault();
 	evt.stopPropagation();
 	const tops = siblings.map(el => el.getBoundingClientRect().top);
 	const gap = parseFloat(getComputedStyle(li).marginBottom) || 0;
 	const slots = siblings.map((el, i) => i + 1 < siblings.length ? tops[i + 1] - tops[i] : el.getBoundingClientRect().height + gap);
-	_rapierTodo.drag = {file, text, range, group, container, li, siblings, fromIndex, currentIndex: fromIndex,
+	_rapierTodo.drag = {file, text, intent, wrapper, handle, range, group, container, li, siblings, fromIndex, currentIndex: fromIndex,
 		startX: evt.clientX, startY: evt.clientY, axis: '', tops, slots, pointerId: evt.pointerId};
 	li.classList.add('rapier-todo-dragging');
 	try { handle.setPointerCapture(evt.pointerId); } catch (_) {}
 	window.addEventListener('pointermove', _rapierTodoDragMove);
 	window.addEventListener('pointerup', _rapierTodoDragEnd);
 	window.addEventListener('pointercancel', _rapierTodoDragEnd);
+	window.addEventListener('lostpointercapture', _rapierTodoDragEnd, true);
 }
 function _rapierTodoDragMove(evt) {
 	const drag = _rapierTodo.drag; if (!drag) return;
 	if (evt.pointerId !== drag.pointerId) return;
+	if (!drag.wrapper.isConnected || !_rapierMutationStampSharesDocument(drag.intent) || _rapierNotesCurrentFile() !== drag.file) { _rapierTodoCancelGesture(); return; }
 	const dx = evt.clientX - drag.startX, dy = evt.clientY - drag.startY;
 	if (!drag.axis && Math.max(Math.abs(dx), Math.abs(dy)) > 12) drag.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
 	if (drag.axis === 'x') { drag.indent = Math.abs(dx) >= 40 ? dx > 0 : null; drag.li.style.transform = 'translateX(' + Math.max(-48, Math.min(48, dx)) + 'px)'; return; }
@@ -619,27 +625,40 @@ function _rapierTodoDragMove(evt) {
 async function _rapierTodoDragEnd(evt) {
 	const drag = _rapierTodo.drag; if (!drag) return;
 	if (evt && evt.pointerId !== drag.pointerId) return;
+	if (evt?.type === 'lostpointercapture' && evt.target !== drag.handle) return;
 	_rapierTodo.drag = null;
 	window.removeEventListener('pointermove', _rapierTodoDragMove);
 	window.removeEventListener('pointerup', _rapierTodoDragEnd);
 	window.removeEventListener('pointercancel', _rapierTodoDragEnd);
+	window.removeEventListener('lostpointercapture', _rapierTodoDragEnd, true);
+	try { if (drag.handle.hasPointerCapture(drag.pointerId)) drag.handle.releasePointerCapture(drag.pointerId); } catch (_) {}
 	drag.li.classList.remove('rapier-todo-dragging'); drag.li.style.transform = '';
 	drag.siblings.forEach(el => { el.classList.remove('rapier-todo-shift'); el.style.transform = ''; });
-	if (evt?.type === 'pointercancel') return;
+	if (evt?.type !== 'pointerup') return;
 	const changed = drag.axis === 'x' ? typeof drag.indent === 'boolean' : drag.fromIndex !== drag.currentIndex;
 	if (!changed) return;
-	if (_rapierNotesCurrentFile() !== drag.file || _rapierTodoText() !== drag.text) { showToast('The list changed during the drag. Try again.', 'info'); return; }
+	if (!drag.wrapper.isConnected || !_rapierMutationStampSharesDocument(drag.intent) || _rapierNotesCurrentFile() !== drag.file || _rapierTodoText() !== drag.text) { showToast('The list changed during the drag. Try again.', 'info'); return; }
 	if (drag.axis === 'x') { if (typeof drag.indent === 'boolean') await _rapierTodoIndentLine(drag.group[drag.fromIndex].line, drag.indent); return; }
 	if (drag.fromIndex === drag.currentIndex) return;
 	await _rapierTodoCommitMove(drag);
 }
 
+function _rapierTodoCancelGesture(event) {
+	const gesture = _rapierTodo.press || _rapierTodo.drag; if (!gesture) return;
+	if (event?.type === 'keydown' && (event.key !== 'Escape' || event.isComposing)) return;
+	if (event?.type === 'visibilitychange' && !document.hidden) return;
+	if (event?.type === 'pointerdown' && event.pointerId === gesture.pointerId) return;
+	if (event?.type === 'keydown') { event.preventDefault(); event.stopPropagation(); }
+	_rapierTodo.press?.stop();
+	void _rapierTodoDragEnd();
+}
+
 async function _rapierTodoIndentLine(line, indent, caret = true) {
 	const file = _rapierNotesCurrentFile(), T = _rapierTodoModel(), text = _rapierTodoText();
 	if (!file || !T || text == null) return false;
-	const next = T.indentItem(text, line, indent);
+	const intent = _rapierMutationStamp(), next = T.indentItem(text, line, indent);
 	if (next == null || !await _rapierTodoPersist(file, next)) return false;
-	if (caret) _rapierTodoCaretIntoLine(line);
+	if (caret && _rapierMutationStampSharesDocument(intent) && _rapierNotesCurrentFile() === file && _rapierTodoText() === next) _rapierTodoCaretIntoLine(line);
 	return true;
 }
 function _rapierTodoIndentKey(evt) {
@@ -661,7 +680,8 @@ function _rapierTodoIndentKey(evt) {
 async function _rapierTodoCommitMove(drag) {
 	const {file, range, group, fromIndex, currentIndex} = drag;
 	const T = _rapierTodoModel();
-	const text = _rapierTodoText(); if (text == null) return;
+	const text = _rapierTodoText();
+	if (text == null || text !== drag.text || !_rapierMutationStampSharesDocument(drag.intent) || _rapierNotesCurrentFile() !== file) return false;
 	const fullFrom = group[fromIndex].line - range.start;
 	const fullTo = group[currentIndex].line - range.start;
 	const next = T.moveItem(text, range, fullFrom, fullTo);
@@ -686,7 +706,7 @@ async function _rapierTodoHandleKey(event) {
 		const changed = vertical ? await _rapierTodoCommitMove({...located, currentIndex: index}) : await _rapierTodoIndentLine(line, event.key === 'ArrowRight', false);
 		if (!changed) return;
 		await new Promise(resolve => requestAnimationFrame(resolve));
-		if (_rapierNotes.index?.notes[_rapierNotesCurrentFile()]?.id !== noteId || document.activeElement !== from && (from.isConnected || document.activeElement !== document.body)) return;
+		if (!_rapierMutationStampSharesDocument(located.intent) || _rapierNotes.index?.notes[_rapierNotesCurrentFile()]?.id !== noteId || document.activeElement !== from && (from.isConnected || document.activeElement !== document.body)) return;
 		_rapierTodoScan();
 		const text = _rapierTodoText(), host = document.getElementById('editor-blocks');
 		for (const wrapper of host?.querySelectorAll(':scope > .block-wrapper') || []) {
@@ -720,6 +740,11 @@ function _rapierTodoInit() {
 		host.addEventListener('keydown', _rapierTodoIndentKey, true);
 		host.addEventListener('compositionend', _rapierTodoScheduleScan);
 		window.addEventListener('keydown', _rapierTodoHandleKey, true);
+		window.addEventListener('keydown', _rapierTodoCancelGesture, true);
+		window.addEventListener('pointerdown', _rapierTodoCancelGesture, true);
+		window.addEventListener('blur', _rapierTodoCancelGesture);
+		window.addEventListener('pagehide', _rapierTodoCancelGesture);
+		document.addEventListener('visibilitychange', _rapierTodoCancelGesture);
 	}
 	_rapierTodoScheduleScan();
 }

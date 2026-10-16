@@ -36,6 +36,8 @@ const CORNER_CAP_SEGMENTS = 13
 
 const END_NOISE_THRESHOLD = 3
 
+const START_DEAD_ZONE = 2.25
+
 const MIN_STREAMLINE_T = 0.15
 
 const STREAMLINE_T_RANGE = 0.85
@@ -268,7 +270,7 @@ function getStrokePoints
     runningLength += distance
 
     if (i < max && !hasReachedMinimumLength) {
-      if (runningLength < size) continue
+      if (runningLength < Math.min(START_DEAD_ZONE, size)) continue
       hasReachedMinimumLength = true
 
     }
@@ -431,7 +433,7 @@ function getStrokeOutlinePoints(
   let radius = getStrokeRadius(
     size,
     thinning,
-    points[points.length - 1].pressure,
+    prevPressure,
     easing
   )
 

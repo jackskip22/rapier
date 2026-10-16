@@ -12,9 +12,9 @@ export const PLUGIN_ORIGIN = cdnOrigin('rapier-plugins');
 
 function bundlePin(loader, key, versionName) {
 	const version = new RegExp(versionName + " = '([^']+)'").exec(loader)?.[1];
-	const block = new RegExp("key: '" + key + "'[\\s\\S]*?cdn: '([^']+)'[\\s\\S]*?bytes: (\\d+),[\\s\\S]*?sri: '([^']+)'").exec(loader);
+	const block = new RegExp("key: '" + key + "'[\\s\\S]*?bytes: (\\d+),[\\s\\S]*?sri: '([^']+)'[\\s\\S]*?url: '([^']+)'").exec(loader);
 	if (!version || !block) throw new Error('the ' + key + ' pin is not readable in shell/plugin-loader.js');
-	return {id: 'rapier-' + key, url: block[1], version, sri: block[3], bytes: Number(block[2])};
+	return {id: 'rapier-' + key, url: block[3], version, sri: block[2], bytes: Number(block[1])};
 }
 
 function pdfFiles(pins, version, root) {

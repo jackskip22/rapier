@@ -35,6 +35,11 @@ export function listAt(text, lineIndex) {
 	return {start, end, boxed: false, items};
 }
 
+export function firstList(text) {
+	const first = checklistSource(text).items.find(item => item.parsed);
+	return first ? listAt(text, first.line) : null;
+}
+
 function checklistSource(text) {
 	const source = cardSource(text), raw = String(text ?? ''), items = [], lists = [], tasks = [];
 	const bodyStart = splitOpeningFrontmatter(raw).bodyOffset || (raw.startsWith('\uFEFF') ? 1 : 0);
@@ -135,6 +140,7 @@ function appendLine(text, range, value) {
 	const start = Number(range.start), end = Number(range.end);
 	if (!(Number.isInteger(start) && Number.isInteger(end) && end >= start)) return null;
 	const raw = String(text ?? ''), {pieces, lines} = cardSource(raw);
+	if (start < 0 || end > pieces.length) return null;
 	const seed = end > start ? parseLine(lines[start]) : null;
 	const indent = seed?.indent ?? '', marker = seed?.marker ?? '-', eol = /\r\n|\r|\n/.exec(pieces[start] || raw)?.[0] || '\n';
 	const ending = end < pieces.length || !raw || /(?:\r\n|\r|\n)$/.test(raw) ? eol : '';
@@ -168,30 +174,27 @@ export function hideBoxes(text, range) {
 export function showBoxes(text, range) {
 	if (!range || range.boxed !== false) return null;
 	const start = Number(range.start), end = Number(range.end);
-	if (!(Number.isInteger(start) && Number.isInteger(end) && end > start)) return null;
-	const lines = String(text ?? '').split('\n');
+	const {pieces, lines} = cardSource(text);
+	if (!(Number.isInteger(start) && Number.isInteger(end) && start >= 0 && end > start && end <= pieces.length)) return null;
 	for (let i = start; i < end; i++) {
-		const p = parseLine(lines[i]);
-		if (!p || p.boxed) return null;
-		lines[i] = p.indent + p.marker + ' [ ] ' + p.label + p.cr;
+		const p = parseLine(lines[i]), prefix = /^(?:\uFEFF)?[ \t]*[-*][ \t]+/.exec(lines[i]);
+		if (!p || p.boxed || !prefix) return null;
+		const at = prefix[0].length;
+		pieces[i] = pieces[i].slice(0, at) + '[ ] ' + pieces[i].slice(at);
 	}
-	return lines.join('\n');
+	return pieces.join('');
 }
 
 export function boxNote(text) {
 	const raw = String(text ?? '');
-	if (!raw.trim()) return '- [ ] \n';
 	const start = splitOpeningFrontmatter(raw).bodyOffset || (raw[0] === '\uFEFF' ? 1 : 0);
 	const body = raw.slice(start), eol = /\r\n|\r|\n/.exec(raw)?.[0] || '\n';
 	const md = markdownParser(), rows = [], edits = [];
 	for (let at = 0; at < body.length;) { const row = frontMatterLine(body, at); rows.push(row); at = row.next; }
 	const tokens = md.parse(body, {});
-	const blocks = tokens.filter(token => token.type === 'paragraph_open' && token.level === 0 && token.map);
-	const titleLine = blocks.length > 1 && blocks[0].map[1] - blocks[0].map[0] === 1 ? blocks[0].map[0] : -1;
 	let convertedParagraph = false;
 	for (const token of tokens) {
 		if (token.level !== 0 || token.nesting < 0 || !token.map) continue;
-		if (titleLine >= 0 && token.type === 'paragraph_open' && token.map[0] === titleLine) { convertedParagraph = false; continue; }
 		if (token.type === 'code_block' && convertedParagraph)
 			edits.push({at: rows[token.map[0]].start, text: '<!-- -->' + eol + eol});
 		convertedParagraph = false;

@@ -102,7 +102,7 @@ function* prepare(state) {
 	const sigma = e.blur * ratio, step = Math.max(1, e.blur) * ratio, pad = Math.ceil(step) + 2;
 	const lw = w + 2 * pad, lh = h + 2 * pad, count = lw * lh;
 	if (count > 32 * 1024 * 1024) throw Object.assign(new RangeError('The refracted light lens is too large.'), {code: 'drawing_work_limit'});
-	let height = new Float64Array(count);
+	const height = new Float64Array(count);
 	for (let y = 0; y < h; y++) {
 		for (let x = 0; x < w; x++) {
 			const p = (y * w + x) * 4;
@@ -115,7 +115,7 @@ function* prepare(state) {
 		let total = 0;
 		for (let i = -radius; i <= radius; i++) { kernel[i + radius] = Math.exp(-.5 * (i / sigma) ** 2); total += kernel[i + radius]; }
 		for (let i = 0; i < kernel.length; i++) kernel[i] /= total;
-		const horizontal = new Float64Array(count), vertical = new Float64Array(count);
+		const horizontal = new Float64Array(count);
 		for (let y = pad; y < h + pad; y++) {
 			for (let x = 0; x < lw; x++) {
 				let value = 0;
@@ -128,11 +128,10 @@ function* prepare(state) {
 			for (let x = 0; x < lw; x++) {
 				let value = 0;
 				for (let k = Math.max(-radius, pad - y); k <= Math.min(radius, h + pad - 1 - y); k++) value += horizontal[(y + k) * lw + x] * kernel[k + radius];
-				vertical[y * lw + x] = value;
+				height[y * lw + x] = value;
 			}
 			if (!(y % 4)) yield;
 		}
-		height = vertical;
 	}
 	const slope = new Float64Array(w * h * 2);
 	for (let y = 0; y < h; y++) {
@@ -154,7 +153,7 @@ function* prepare(state) {
 }
 
 function* optics(state) {
-	const {e, width, height, ratio, options, slope} = state, field = new Float64Array(width * height * 4);
+	const {e, width, height, ratio, options, slope} = state, field = new Float32Array(width * height * 4);
 	const angle = e.angle * Math.PI / 180, cos = Math.cos(angle), sin = Math.sin(angle);
 	let maxDisplacement = 0;
 	for (let p = 0; p < width * height; p++) {
@@ -333,7 +332,7 @@ async function webgpu(state, owner) {
 			device.queue.writeTexture({texture: source, mipLevel: level}, image.data, {bytesPerRow: image.width * 16}, [image.width, image.height]);
 		}
 		const field = own(device.createTexture({size: [width, height], format: 'rgba32float', usage: 6}));
-		device.queue.writeTexture({texture: field}, new Float32Array(state.field), {bytesPerRow: width * 16}, [width, height]);
+		device.queue.writeTexture({texture: field}, state.field, {bytesPerRow: width * 16}, [width, height]);
 		const upload = (data, usage) => { const buffer = own(device.createBuffer({size: data.byteLength, usage: usage | 8})); device.queue.writeBuffer(buffer, 0, data); return buffer; };
 		const nodes = upload(new Float32Array(state.nodes.flat()), 128), params = upload(parameters(state), 64);
 		const output = own(device.createBuffer({size: width * height * 4, usage: 128 | 4}));

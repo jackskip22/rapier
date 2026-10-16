@@ -50,7 +50,7 @@ async function _rapierAttachmentsOpen(name) {
 		const file = new File([source], name, {type: _rapierAttachmentsModel().attachmentMime(name)});
 		let share = false;
 		try { share = typeof navigator.share === 'function' && navigator.canShare?.({files: [file]}) === true; } catch (_) {}
-		status.textContent = share ? 'Choose an app through your device’s share menu, or save a copy to open from Files. The original stays in Notes.' : 'This browser cannot hand this file directly to an app. Save a copy, then open it from Files. The original stays in Notes.';
+		status.textContent = share ? 'Choose an app through your device’s share menu, or save a copy to open from Files. The original stays in Notes.' : _rapierNotesWords().Device + ' cannot hand this file directly to an app. Save a copy, then open it from Files. The original stays in Notes.';
 		if (share) d.appendChild(_rapierAttachmentsButton('Open or share', async () => {
 			try { await navigator.share({files: [file], title: name}); d.close(); }
 			catch (error) { if (error?.name !== 'AbortError') throw new Error('The device did not accept the file. Use Save file instead.'); }
@@ -183,7 +183,7 @@ async function _rapierAttachmentsAdd(files, {fresh = false, owner = _rapierAttac
 	await _rapierNotesReady();
 	const kind = await _rapierNotesStorageKind();
 	if (kind === 'fault') throw new Error('The Notes folder could not be opened. Nothing was added; keep the original files.');
-	if (kind === 'memory') throw new Error('This tab’s storage is temporary, so it cannot keep files. Nothing was added.');
+	if (kind === 'memory') throw new Error('This ' + _rapierNotesWords().pane + '’s storage is temporary, so it cannot keep files. Nothing was added.');
 	if (!fresh && (!owner || _rapierAttachmentsOwner() !== owner)) throw new Error('Open the intended note before adding a file. Nothing was copied.');
 	const kept = [], controller = new AbortController();
 	const sheet = _rapierAttachmentsDialog('Keeping files'), status = _rapierNotesEl('p', '', 'Preparing the file copy');

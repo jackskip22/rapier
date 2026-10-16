@@ -49,7 +49,10 @@
   touch-action: manipulation;
   pointer-events: auto;
 }
-.rapier-changes-away button { min-height: 32px; padding-inline-end: 0; }
+.rapier-changes-away button { position: relative; min-height: 32px; padding-inline-end: 0; }
+.rapier-changes-away button::before, .rapier-changes-mark::before, .rapier-changes-presence::before { content: ""; position: absolute; }
+.rapier-changes-away button::before { inset: 0 0 -12px; }
+.rapier-changes-mark::before, .rapier-changes-presence::before { inset: -6px -4px -14px -12px; }
 .rapier-changes-away svg, .rapier-changes-presence svg {
   display: block;
   width: 14px;

@@ -212,9 +212,9 @@ export function normalizeSVG(bytes) {
   return new TextEncoder().encode(text.slice(0, root.index) + tag + text.slice(root.index + root[0].length));
 }
 
-export const SVG_NODE_LIMITS = Object.freeze({nodes: 256, chars: 262000, value: 16384, edits: 128, fields: 64, depth: 64});
-export const SVG_NODE_STYLE_FIELDS = Object.freeze(('alignment-baseline baseline-shift clip-path clip-rule color color-interpolation color-interpolation-filters direction display dominant-baseline fill fill-opacity fill-rule filter flood-color flood-opacity font-family font-size font-size-adjust font-stretch font-style font-variant font-weight image-rendering letter-spacing lighting-color marker-start marker-mid marker-end mask opacity overflow paint-order pointer-events shape-rendering stop-color stop-opacity stroke stroke-dasharray stroke-dashoffset stroke-linecap stroke-linejoin stroke-miterlimit stroke-opacity stroke-width text-anchor text-decoration text-rendering transform transform-box transform-origin unicode-bidi vector-effect visibility white-space word-spacing writing-mode').split(' '));
-export const SVG_NODE_GEOMETRY_FIELDS = Object.freeze(('x y x1 y1 x2 y2 cx cy r rx ry fx fy fr width height dx dy d points pathLength transform viewBox preserveAspectRatio rotate textLength lengthAdjust refX refY markerWidth markerHeight orient gradientTransform patternTransform startOffset offset').split(' '));
+const SVG_NODE_LIMITS = Object.freeze({nodes: 256, chars: 262000, value: 16384, edits: 128, fields: 64, depth: 64});
+const SVG_NODE_STYLE_FIELDS = Object.freeze(('alignment-baseline baseline-shift clip-path clip-rule color color-interpolation color-interpolation-filters direction display dominant-baseline fill fill-opacity fill-rule filter flood-color flood-opacity font-family font-size font-size-adjust font-stretch font-style font-variant font-weight image-rendering letter-spacing lighting-color marker-start marker-mid marker-end mask opacity overflow paint-order pointer-events shape-rendering stop-color stop-opacity stroke stroke-dasharray stroke-dashoffset stroke-linecap stroke-linejoin stroke-miterlimit stroke-opacity stroke-width text-anchor text-decoration text-rendering transform transform-box transform-origin unicode-bidi vector-effect visibility white-space word-spacing writing-mode').split(' '));
+const SVG_NODE_GEOMETRY_FIELDS = Object.freeze(('x y x1 y1 x2 y2 cx cy r rx ry fx fy fr width height dx dy d points pathLength transform viewBox preserveAspectRatio rotate textLength lengthAdjust refX refY markerWidth markerHeight orient gradientTransform patternTransform startOffset offset').split(' '));
 const SVG_NS = 'http://www.w3.org/2000/svg', XLINK_NS = 'http://www.w3.org/1999/xlink';
 const SVG_XML_NAME = /^[A-Za-z_][A-Za-z0-9_.:-]*$/;
 const SVG_NODE_TEXT = new Set(['text', 'tspan', 'textPath', 'title', 'desc']);
@@ -242,7 +242,7 @@ function svgCharacters(value, field) {
   }
   return value;
 }
-export function svgXmlValue(raw, field = 'node_edits') {
+function svgXmlValue(raw, field = 'node_edits') {
   if (/&(?!amp;|lt;|gt;|quot;|apos;|#(?:[0-9]+|x[0-9a-fA-F]+);)/.test(raw)) svgNodeFail(field, 'The SVG contains an invalid XML entity.');
   return svgCharacters(raw.replace(/&(#(?:[0-9]+|x[0-9a-fA-F]+)|amp|lt|gt|quot|apos);/g, (entity, token) => {
     if (token[0] !== '#') return {amp:'&',lt:'<',gt:'>',quot:'"',apos:"'"}[token];
@@ -610,8 +610,8 @@ export async function hashAsset(value) {
   return [...hash].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-export function imageDimensions(bytes, codec) {
-  const info = codec === 'image/jxl' ? inspectJPEGXL(bytes) : codec === 'image/svg+xml' ? inspectSVG(bytes) : inspectRaster(bytes);
+export function imageDimensions(bytes, codec, prefix = false) {
+  const info = codec === 'image/jxl' ? inspectJPEGXL(bytes, prefix) : codec === 'image/svg+xml' ? inspectSVG(bytes) : inspectRaster(bytes);
   if (codec !== 'image/jxl' && info.type !== codec) return fail('image_codec_invalid');
   const width = info.orientation >= 5 ? info.height : info.width, height = info.orientation >= 5 ? info.width : info.height;
   if (!(codec === 'image/jxl' || codec === 'image/jpeg' ? validCarriedDimensions(width, height) : validAssetDimensions(width, height))) return fail('image_dimensions_invalid');
@@ -621,17 +621,26 @@ export function imagePlaceholderDimensions(url) {
   if (typeof url !== 'string') return null;
   const header = /^data:(image\/(?:jxl|png|jpeg|webp|gif|svg\+xml));base64,/i.exec(url);
   if (!header) return null;
-  const length = Math.min(8192, url.length - header[0].length);
-  try {
+  const codec = header[1].toLowerCase(), read = length => {
+    length = Math.min(length, url.length - header[0].length);
     const binary = atob(url.slice(header[0].length, header[0].length + length - length % 4));
     const bytes = new Uint8Array(binary.length);
     for (let at = 0; at < binary.length; at++) bytes[at] = binary.charCodeAt(at);
-    if (header[1].toLowerCase() === 'image/svg+xml') {
+    return bytes;
+  };
+  try {
+    const bytes = read(8192);
+    if (codec === 'image/svg+xml') {
       const text = new TextDecoder('utf-8', {fatal: true}).decode(bytes, {stream: true});
       const {width, height} = svgGeometry(text);
       return {width, height};
     }
-    return imageDimensions(bytes, header[1].toLowerCase());
+    if (codec === 'image/gif') {
+      const width = bytes[6] + bytes[7] * 256, height = bytes[8] + bytes[9] * 256;
+      return bytes.length >= 10 && validAssetDimensions(width, height) ? {width, height} : null;
+    }
+    try { return imageDimensions(bytes, codec, true); } catch (error) { if (codec !== 'image/jpeg' && codec !== 'image/jxl') throw error; }
+    return imageDimensions(read(349528), codec, true);
   } catch (_) { return null; }
 }
 export function decodeDataImageBytes(url) {
@@ -648,7 +657,7 @@ export function decodeDataImage(url) {
   imageDimensions(bytes, codec);
   return bytes;
 }
-export async function decodeAssetBytes(source, record) {
+async function decodeAssetBytes(source, record) {
   if (typeof record === 'string') record = documentAssets(source).assets.get(normalizeLabel(record));
   if (!record || record.status !== 'unverified') return fail('image_missing');
   if (source.slice(record.start, record.end) !== record.source) return fail('image_source_changed');

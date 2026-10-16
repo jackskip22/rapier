@@ -42,7 +42,7 @@ export function inkForPaper(text, {dark = true, paperInk = null} = {}) {
   return out.replace(/\u0000(\d+)\u0000/g, (_, i) => kept[Number(i)]);
 }
 
-export async function inspectImageSource(url, {dark = false, paperInk = null} = {}) {
+async function inspectImageSource(url, {dark = false, paperInk = null} = {}) {
   const {bytes, codec} = decodeDataImageBytes(url);
   let size, containerDamaged = false;
   try { size = imageDimensions(bytes, codec); }

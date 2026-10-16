@@ -312,7 +312,7 @@ function learnSampleTree(quantized, symbolSets, candidates, population, options)
     const one = leaf(candidates[item.choice.selected]), left = leaf(candidates[best.hi.selected]), right = leaf(candidates[best.lo.selected]);
     const branch = split(best.column.property, best.column.cuts[best.bin], left, right);
     const signal = Math.max(0, sampleModelBits(branch, [left, right], [sampleFullFreq(best.high[best.hi.selected]), sampleFullFreq(best.low[best.lo.selected])], config) - sampleModelBits(one, [one], [sampleFullFreq(item.hist[item.choice.selected])], config));
-    const score = best.gain * population - (signal + 32) * SAMPLE_Q * count * (options.signalRepeats || 1);
+    const score = best.gain * population - (options.clustered ? Math.min(signal + 32, 96) : signal + 32) * SAMPLE_Q * count * (options.signalRepeats || 1);
     return score > 0 ? {...best, score} : null;
   }
   active[0].proposal = propose(active[0]);
@@ -328,6 +328,7 @@ function learnSampleTree(quantized, symbolSets, candidates, population, options)
     if (leaves + 1 < options.leaves - reserve) for (const child of children) child.proposal = propose(child);
     active.splice(chosen, 1, ...children); leaves++;
   }
+  if (options.budget && leaves + 1 >= options.leaves - reserve) options.budget.reached = true;
   const ordered = active.map((item, slot) => { item.node.slot = slot; return item.node; });
   return sampleGuardReferences({tree: root, leaves: ordered}, predictor);
 }

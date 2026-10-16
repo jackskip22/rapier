@@ -1,18 +1,18 @@
 import {attachmentFileName, isAttachmentName, NOTES_ATTACHMENT_DIR} from './model.mjs';
-import {scanLinks, escapeLinkAttribute, linkRemovalEnd} from './links.mjs';
-import {addSiblingLinkLine} from './sibling-links.mjs';
+import {scanLinks, linkRemovalEnd} from './links.mjs';
+import {addSiblingLinkLine, siblingHref, renameSiblings} from './sibling-links.mjs';
 import {escapeImageAlt} from '../spec/md-assets.mjs';
 import {ZIP_ENTRY_MEMORY_BYTES} from './zip.mjs';
 import {attachmentSizeWords} from './size-words.mjs';
+import {notesHostWords} from './host-words.mjs';
 
 export const ATTACHMENT_MAX_BYTES = 300_000_000;
-export const ATTACHMENT_BATCH_BYTES = ATTACHMENT_MAX_BYTES;
-export const ATTACHMENT_MEMORY_BYTES = ZIP_ENTRY_MEMORY_BYTES;
-export const ATTACHMENT_LARGE_BYTES = 1024 * 1024;
-const encode = value => encodeURIComponent(value).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+const ATTACHMENT_BATCH_BYTES = ATTACHMENT_MAX_BYTES;
+const ATTACHMENT_MEMORY_BYTES = ZIP_ENTRY_MEMORY_BYTES;
+const ATTACHMENT_LARGE_BYTES = 1024 * 1024;
 export function attachmentHref(name) {
 	if (!isAttachmentName(name)) throw new Error('This attachment name is not a portable sibling file.');
-	return NOTES_ATTACHMENT_DIR + '/' + encode(name);
+	return siblingHref(NOTES_ATTACHMENT_DIR, name);
 }
 export function attachmentFromHref(href) {
 	if (typeof href !== 'string' || !/^(?:\.\/)?attachments\//.test(href) || href.includes('?')) return null;
@@ -44,14 +44,7 @@ export function removeAttachmentLink(text, entry) {
 	return s.slice(0, row.start) + s.slice(end);
 }
 export function rewriteAttachmentNames(text, mapping) {
-	let out = String(text ?? ''); const seen = new Set();
-	for (const row of attachmentsOf(out).sort((a, b) => b.destStart - a.destStart)) {
-		const name = mapping instanceof Map ? mapping.get(row.name) : mapping?.[row.name];
-		if (!name || seen.has(row.destStart)) continue;
-		seen.add(row.destStart); const href = attachmentHref(name);
-		out = out.slice(0, row.destStart) + (row.kind === 'html' ? escapeLinkAttribute(href) : href) + out.slice(row.destEnd);
-	}
-	return out;
+	return renameSiblings(text, attachmentsOf(String(text ?? '')), mapping, attachmentHref);
 }
 const KINDS = {pdf: 'PDF', xls: 'Spreadsheet', xlsx: 'Spreadsheet', ods: 'Spreadsheet', csv: 'Spreadsheet', tsv: 'Spreadsheet',
 	doc: 'Document', docx: 'Document', odt: 'Document', rtf: 'Document', ppt: 'Presentation', pptx: 'Presentation', odp: 'Presentation',
@@ -82,7 +75,7 @@ export function attachmentIntake(files, {streaming = false, memoryBackupRemainin
 			: 'here one file can be at most ' + attachmentSizeWords(limit) + ', or ' + attachmentSizeWords(ATTACHMENT_MAX_BYTES) + ' through + → Add file.') + ' Nothing was added.');
 	}
 	if (!Number.isSafeInteger(bytes) || bytes > (streaming ? ATTACHMENT_BATCH_BYTES : ATTACHMENT_MEMORY_BYTES)) return result('These files total ' + attachmentSizeWords(bytes) + '; add at most ' + attachmentSizeWords(streaming ? ATTACHMENT_BATCH_BYTES : ATTACHMENT_MEMORY_BYTES) + ' at a time. Nothing was added.');
-	if (memoryBackupRemaining !== null && (!Number.isSafeInteger(memoryBackupRemaining) || memoryBackupRemaining < bytes)) return result('These files would make the notes in this tab too large to back up. Nothing was added.');
+	if (memoryBackupRemaining !== null && (!Number.isSafeInteger(memoryBackupRemaining) || memoryBackupRemaining < bytes)) return result('These files would make the notes in this ' + notesHostWords().pane + ' too large to back up. Nothing was added.');
 	return result('');
 }
 export function attachmentTransfer(transfer) {

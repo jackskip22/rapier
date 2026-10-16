@@ -54,11 +54,13 @@ export function createWidgetNotes(folder, {mayRead = widgetMayRead, limits = WID
 			return Number(y.pinned) - Number(x.pinned) || (y.modified || y.created || 0) - (x.modified || x.created || 0) || (a < b ? -1 : a > b ? 1 : 0);
 		});
 		const planned = [], wanted = [];
+		const selectedFiles = files.slice(0, limits.notes);
+		const stats = typeof folder.store.statMany === 'function' ? await folder.store.statMany(selectedFiles) : null;
 		let previewRemaining = limits.previewBytes;
-		for (const file of files.slice(0, limits.notes)) {
+		for (const file of selectedFiles) {
 			const entry = fresh.index.notes[file];
 			const row = {file, id: entry.id, colour: entry.colour, pinned: entry.pinned, title: cutText(file.replace(/\.md$/i, ''), 512, 512), body: '', checks: []};
-			const stat = await folder.store.stat?.(file);
+			const stat = stats ? stats.get(file) : await folder.store.stat?.(file);
 			if (!stat || stat.size > previewRemaining) { row.body = 'Open this note to view its content'; planned.push({row}); continue; }
 			previewRemaining -= stat.size;
 			planned.push({row, entry}); wanted.push(file);

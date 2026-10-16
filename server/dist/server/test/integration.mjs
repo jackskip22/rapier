@@ -10,7 +10,7 @@ import {inflateSync} from 'node:zlib';
 import {createServer} from '../index.mjs';
 import {renderCorpusCells} from './render-corpus.mjs';
 import {UI_RESOURCE} from '../../mcp/worker.mjs';
-import {mcpDescriptors} from '../../agent/catalog.mjs';
+import {mcpDescriptors, publishedSchema} from '../../agent/catalog.mjs';
 import {parseReply} from '../../agent/page-result.mjs';
 import {unsealForEditor} from '../../agent/door-identity.mjs';
 import {unwrap} from '../../skills/rapier-html/wrap.mjs';
@@ -39,7 +39,7 @@ export async function serverCells({rendering=true}={}) {
   const options = {root, port: 0, chromium, chromiumVersion, timeoutMs: 120000,
     noSandbox: process.env.RAPIER_SERVER_NO_SANDBOX === '1'};
   let server;
-  const descriptors=mcpDescriptors({auth:'server-bearer',uiResource:UI_RESOURCE}),editorTransports=new Map();
+  const descriptors=mcpDescriptors({auth:'server-bearer',uiResource:UI_RESOURCE}).map(tool=>({...tool,inputSchema:publishedSchema(tool.inputSchema)})),editorTransports=new Map();
   const retainTransport = wire => {
     const privateResult=wire._meta?.rapier;
     if(privateResult)assert.equal(Object.hasOwn(privateResult,'live'),false,'the server only advertises its implemented private editor transport');

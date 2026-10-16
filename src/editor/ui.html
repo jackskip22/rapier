@@ -301,7 +301,7 @@
 	<button type="button" tabindex="-1" role="menuitem" class="fmt-btn" data-cmd="color-none" data-action="pick-color" data-value="none" data-tip="remove text color" aria-label="remove text color"><span class="color-swatch color-swatch--remove" aria-hidden="true"></span></button>
 </div>
 
-<!-- ── Highlight derivative strip. Colors use Bear-compatible UTF-8 Markdown markers. -->
+<!-- ── Highlight strip. A colour writes `<mark style="background-color:…">`; plain highlight writes `==`. -->
 <div class="highlight-picker" id="highlight-picker" role="menu" aria-label="highlight color" aria-orientation="horizontal"
 		 onmousedown="event.preventDefault()">
 	<button type="button" tabindex="-1" role="menuitemradio" aria-checked="false" class="fmt-btn" data-cmd="highlight-default" data-action="pick-highlight" data-value="default" data-tip="default highlight" aria-label="default highlight"><span class="highlight-swatch highlight-swatch--default" aria-hidden="true"></span></button>
@@ -373,9 +373,11 @@
 
 <!-- WYSIWYG (edit + read modes) -->
 <!-- Edit mode uses one native document selection root. -->
-<main class="editor-area md-render" id="editor-blocks"
-			aria-label="document editor" aria-describedby="editor-keyboard-help" tabindex="0" spellcheck="false"></main>
-<span id="editor-keyboard-help" class="sr-only">Press Escape, then Tab to leave the editor. Tab within a table moves between cells; Tab within a list changes its indent.</span>
+<main id="document-main" class="editor-landmark" aria-label="document">
+<div class="editor-area md-render" id="editor-blocks"
+			aria-label="document editor" aria-describedby="editor-keyboard-help" tabindex="0" spellcheck="false"></div>
+</main>
+<span id="editor-keyboard-help" class="sr-only">Press Escape, then Tab to leave the editor. Tab within a table moves between cells; Tab within a list changes its indent. Control or Command with Shift and slash lists every keyboard shortcut.</span>
 <!-- RAPIER_FIRST_SCREEN_END -->
 
 <!-- Source mode. Markdown enters it through the eye toggle; text and code documents live here full-time. -->
@@ -397,6 +399,15 @@
 	<div class="compare-summary" id="compare-summary">
 		<div class="compare-summary__names" id="compare-summary-names"></div>
 		<div class="compare-summary__counts" id="compare-summary-counts"></div>
+		<div id="compare-controls"></div>
+		<div class="compare-history" id="compare-history" hidden>
+			<span class="ink-seek"><span class="ink-seek__track" aria-hidden="true"></span><svg class="ink-seek__head" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle></svg><input id="compare-history-input" type="range" aria-label="version" min="0" max="1" step="1" value="0" aria-describedby="compare-history-who"></span>
+			<div class="compare-history__row">
+				<span class="compare-history__who" id="compare-history-who"></span>
+				<button type="button" class="compare-state__action" id="compare-history-restore" data-action="compare-history-restore">restore</button>
+				<button type="button" class="compare-state__action" data-action="compare-history-file">choose a file</button>
+			</div>
+		</div>
 	</div>
 	<div class="compare-state" id="compare-state" data-visible="false"></div>
 	<div class="compare-content" id="compare-content"></div>
@@ -436,6 +447,7 @@
 					<span class="settings-stats__label">WORDS:</span><span class="settings-stats__val" id="stat-words">0</span>
 					<span class="settings-stats__label">CHARS:</span><span class="settings-stats__val" id="stat-chars">0</span>
 					<span class="settings-stats__label">LINES:</span><span class="settings-stats__val" id="stat-lines">0</span>
+					<span class="settings-stats__label" id="stat-read-label" hidden>READ:</span><span class="settings-stats__val" id="stat-read" hidden>0 MIN</span>
 				</div>
 				<!-- View toggle: joined control, 2× size, right-aligned with X above -->
 	<div class="theme-switcher settings-view-toggle" id="view-mode-toggle" role="group" aria-label="document view">
@@ -555,12 +567,17 @@
 				</div>
 				<div class="settings-action-row">
 					<button type="button" class="settings-action-btn" id="notes-open-btn" data-action="notes-open" hidden>open</button>
+					<button type="button" class="settings-action-btn" id="notes-beside-btn" data-action="notes-beside" aria-pressed="false" hidden>beside</button>
 				</div>
-				<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-notes-start" data-switch="notesStart" role="group" aria-label="start in" style="width:100%" hidden>
-					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="editor" style="flex:1;width:auto">EDITOR FIRST</button>
-					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="notes" style="flex:1;width:auto">NOTES FIRST</button>
+				<button type="button" class="settings-action-btn rapier-notes-sync rapier-cloudflare" id="notes-sync-btn" data-action="notes-sync" hidden>SYNC</button>
+			</div>
+			<div id="settings-start-section" hidden>
+				<div class="settings-section__title">start in</div>
+				<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-start-in" data-switch="startIn" role="group" aria-label="start in" style="width:100%;margin-bottom:var(--space-4)">
+					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="editor" style="flex:1;width:auto">EDITOR</button>
+					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="notes" style="flex:1;width:auto">NOTES</button>
+					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="paint" style="flex:1;width:auto">PAINT</button>
 				</div>
-				<button type="button" class="settings-action-btn rapier-notes-sync rapier-cloudflare" id="notes-sync-btn" data-action="notes-sync" hidden>SIGN IN WITH CLOUDFLARE</button>
 			</div>
 			<!-- RAPIER_NOTES_END -->
 
@@ -753,6 +770,12 @@
 							<div class="settings-action-row" id="pro-status-actions">
 								<button type="button" class="settings-action-btn" data-action="pro-open" aria-haspopup="dialog">get pro</button>
 							</div>
+							<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-focus" data-switch="focus" data-switch-label="Sentence focus" data-on="true" data-off="false" role="group" aria-label="sentence focus" style="width:100%" hidden>
+								<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="true" role="switch" aria-checked="false" style="flex:1;width:auto">SENTENCE FOCUS OFF</button>
+							</div>
+							<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-typewriter" data-switch="typewriter" data-switch-label="Typewriter scrolling" data-on="true" data-off="false" role="group" aria-label="typewriter scrolling" style="width:100%" hidden>
+								<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="true" role="switch" aria-checked="false" style="flex:1;width:auto">TYPEWRITER SCROLLING OFF</button>
+							</div>
 							<div class="settings-action-row" id="pro-icon-row" hidden>
 								<button type="button" class="settings-action-btn" id="pro-icon-colour" data-action="icon-colour" aria-haspopup="dialog">app icon colour</button>
 							</div>
@@ -896,7 +919,8 @@
 				</button>
 			</div>
 			<div class="licenses-app privacy-words">
-				<p>Rapier needs no account signup and uses no analytics or advertising. Your files stay on your device until you save, share,
+				<p>Rapier needs no account signup and uses no analytics or advertising. It collects no personal information from anyone,
+					children included. Your files stay on your device until you save, share,
 					back up or sync them. Sync uses your bucket, encrypted with a key that never leaves your devices. You keep
 					or delete local files; Delete forever removes notes and their history.</p>
 				<p>The Android editor has no Internet permission. It records audio only when you press Record, into your
@@ -921,7 +945,7 @@
 				<h3 class="licenses-given">terms</h3>
 				<p>Rapier is free software: AGPL-3.0-only for the editor; MIT for the Markdown standard and embed helper.
 					Provided as is, without warranty where law allows. Keep your own copies. The door may change or close.</p>
-				<p><strong>Jack Skipworth · hello@rapier.website · effective 10 October 2026</strong></p>
+				<p><strong>Jack Skipworth · hello@rapier.website · effective 15 October 2026</strong></p>
 			</div>
 		</div>
 	</div>
@@ -2250,6 +2274,10 @@ SOFTWARE.</pre>
 					<span class="export-choice__label">HTML editor</span>
 					<span class="export-choice__description">the document and Rapier together in one editable offline .rapier.html file</span>
 				</button>
+				<button type="button" class="export-choice" id="share-quote-card" data-action="share-choice" data-value="card" hidden>
+					<span class="export-choice__label">Quote card</span>
+					<span class="export-choice__description">the words you selected as a picture on paper, ready to post</span>
+				</button>
 				<button type="button" class="export-choice" id="share-live-document">
 					<span class="export-choice__label">live document</span>
 					<span class="export-choice__description">write together through a private link</span>
@@ -2379,6 +2407,13 @@ SOFTWARE.</pre>
 		 role="dialog" aria-modal="true" aria-labelledby="navigator-title">
 	<div class="settings-panel navigator-panel">
 		<div class="settings-panel__body">
+			<div class="navigator-title-row">
+				<div id="navigator-title" class="settings-section__title" tabindex="-1">headings</div>
+				<button type="button" class="navigator-close" id="navigator-close"
+								data-action="navigator-close" aria-label="close navigation">
+					<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+				</button>
+			</div>
 			<div class="agent-access" id="agent-access" hidden>
 				<button type="button" class="settings-action-btn" id="agent-access-disconnect">DISCONNECT AGENTS</button>
 				<button type="button" class="settings-action-btn" id="agent-access-share" hidden>SHARE WITH AN AGENT</button>
@@ -2400,13 +2435,6 @@ SOFTWARE.</pre>
 								 aria-label="note to your agent">
 					<button type="submit" class="settings-action-btn agent-row__send" id="agent-row-send" disabled>send</button>
 				</form>
-			</div>
-			<div class="navigator-title-row">
-				<div id="navigator-title" class="settings-section__title" tabindex="-1">headings</div>
-				<button type="button" class="navigator-close" id="navigator-close"
-								data-action="navigator-close" aria-label="close navigation">
-					<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-				</button>
 			</div>
 			<div class="navigator-outline-tools" id="navigator-outline-tools">
 				<input class="navigator-outline-filter" id="navigator-outline-filter" type="search"

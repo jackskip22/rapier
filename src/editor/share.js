@@ -101,12 +101,16 @@ function _rapierSetPandocDialectEnabled(value) {
 function _rapierEditablePageFilename(name) {
 	const filename = String(name || 'document');
 	if (/\.rapier\.html$/i.test(filename)) return filename;
-	const stem = filename.replace(/\.[a-z0-9]+$/i, '') || 'document';
+	const stem = filename.replace(/(.)\.[a-z0-9]+$/i, '$1') || 'document';
 	return [...stem].slice(0, 244).join('') + '.rapier.html';
 }
 
 async function _rapierReadSharedDocument(text, filename) {
-	if (!/\.rapier\.html$/i.test(String(filename || ''))) return _rapierRenderModule('render')._rapierReadSharedDocument(text, filename);
+	if (!/\.rapier\.html$/i.test(String(filename || ''))) {
+		if (!/\.html?$/i.test(String(filename || '')) || !String(text).includes('<script type="text/markdown" id="rapier-document"'))
+			return _rapierRenderModule('render')._rapierReadSharedDocument(text, filename);
+		filename = _rapierEditablePageFilename(filename);
+	}
 	const template = document.createElement('template');
 	template.innerHTML = String(text);
 	const carriers = Array.from(template.content.querySelectorAll('#rapier-document'));
@@ -123,7 +127,7 @@ async function _rapierReadSharedDocument(text, filename) {
 		throw new Error('This HTML editor file has invalid source text.');
 	const parts = RapierLedgerCarried.readParts(source, Array.from(template.content.querySelectorAll('#rapier-ledger, #rapier-authorship')));
 	const comparisonBase = RapierLedgerCarried.readBaseElements(Array.from(template.content.querySelectorAll('#rapier-base')));
-	return {source: bom ? source.slice(1) : source, filename, kind, bom, ...parts, comparisonBase, editablePage: true};
+	return {source: bom ? source.slice(1) : source, filename, name, kind, bom, ...parts, comparisonBase, editablePage: true};
 }
 
 async function _rapierBuildEditablePage(captured) {
@@ -142,7 +146,8 @@ async function _rapierBuildEditablePage(captured) {
 	const template = await _rapierPortableTemplate(captured.canonical,
 		{docKind: captured.metadata.docKind, base: captured.comparisonBase?.text});
 	const text = (captured.metadata.bom ? '\uFEFF' : '') + captured.canonical;
-	const html = globalThis.RapierPortablePage.wrap(template, text, captured.metadata.filename, {
+	const {filename, codeLang} = captured.metadata, ext = codeLang && Object.keys(EXT_TO_LANG).find(e => EXT_TO_LANG[e] === codeLang);
+	const html = globalThis.RapierPortablePage.wrap(template, text, ext ? filename.replace(/\.rapier\.html$/i, '.' + ext) : filename, {
 		kind: captured.metadata.docKind, base: captured.comparisonBase || undefined,
 		..._rapierLedgerParts(text, captured.ledger, captured.carried),
 	});
@@ -408,6 +413,158 @@ function _rapierShareLedgerReset() {
 		});
 	}
 }
+const _rapierQuote = {held: null};
+function _rapierQuoteHold() {
+	_rapierQuote.held = null;
+	const metadata = _rapierGetDocumentMetadata();
+	if (metadata.docKind !== 'markdown') return;
+	const exact = _rapierResolveExactCanonicalSelection() || _rapierQuoteWiden() && _rapierResolveExactCanonicalSelection();
+	if (!exact) return;
+	const source = _rapierGetCanonicalText();
+	if (source.length !== exact.canonicalLength) return;
+	const plan = _rapierPlanCompleteExcerpt(exact, rapier.semantic.facts, rapier.semantic.index);
+	const excerpt = (plan && _rapierMaterializeCompleteExcerpt(exact, plan, source)?.excerpt) || source.slice(exact.start, exact.end);
+	if (!excerpt.trim()) return;
+	const {frontmatter, bodyOffset} = RapierMarkdownSpec.splitOpeningFrontmatter(source);
+	const selection = window.getSelection(), range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+	_rapierQuote.held = {authority: exact.authority, revision: exact.revision, generation: exact.generation,
+		markdown: (frontmatter && exact.start >= bodyOffset ? frontmatter : '') + excerpt, picture: _rapierQuotePicture(range),
+		name: metadata.filename.replace(/\.[a-z0-9]+$/i, '') || 'document'};
+}
+function _rapierQuoteWiden() {
+	const selection = window.getSelection();
+	if (!selection?.rangeCount) return false;
+	const range = selection.getRangeAt(0).cloneRange(), inline = 'em,strong,a,code,del,s,u,mark,sub,sup,kbd,abbr';
+	const outer = (node, offset, end) => {
+		let moved = null;
+		while (node.parentElement?.matches(inline) && (end
+			? offset === (node.nodeType === 3 ? node.length : node.childNodes.length) && node === node.parentNode.lastChild
+			: offset === 0 && node === node.parentNode.firstChild)) {
+			node = moved = node.parentNode; offset = end ? node.childNodes.length : 0;
+		}
+		return moved;
+	};
+	const start = outer(range.startContainer, range.startOffset, false), end = outer(range.endContainer, range.endOffset, true);
+	if (!start && !end) return false;
+	if (start) start.previousSibling?.nodeType === 3 ? range.setStart(start.previousSibling, start.previousSibling.length) : range.setStartBefore(start);
+	if (end) end.nextSibling?.nodeType === 3 ? range.setEnd(end.nextSibling, 0) : range.setEndAfter(end);
+	selection.removeAllRanges(); selection.addRange(range);
+	return true;
+}
+function _rapierQuotePicture(range) {
+	const all = Array.from(_editorHostEl()?.querySelectorAll(':scope > .block-wrapper') || []);
+	const chosen = range ? _rangeSelectedWrappers(range) : [];
+	if (!chosen.length) return null;
+	const drawing = wrapper => [...wrapper.querySelectorAll('img')].find(_rapierDrawImageIsOurs);
+	const heading = wrapper => !!wrapper.querySelector('h1,h2,h3,h4,h5,h6');
+	for (const wrapper of chosen) { const image = drawing(wrapper); if (image) return _rapierDrawImageDataUrl(image); }
+	let before = all.indexOf(chosen[0]), after = all.indexOf(chosen.at(-1));
+	const open = {before: !heading(chosen[0]), after: true};
+	while (open.before || open.after) {
+		for (const side of ['before', 'after']) {
+			if (!open[side]) continue;
+			const wrapper = all[side === 'before' ? --before : ++after];
+			if (!wrapper) { open[side] = false; continue; }
+			const image = drawing(wrapper);
+			if (image) return _rapierDrawImageDataUrl(image);
+			if (heading(wrapper)) open[side] = false;
+		}
+	}
+	return null;
+}
+function _rapierQuoteCurrent() {
+	const held = _rapierQuote.held;
+	return held && held.authority === String(rapier.identity.authority || '') && held.revision === Number(rapier.revision.settled || 0) &&
+		held.generation === Number(rapier.revision.generation || 0) ? held : null;
+}
+function _rapierQuoteOffer() {
+	const choice = document.getElementById('share-quote-card');
+	if (choice) choice.hidden = !_rapierQuoteCurrent();
+}
+
+const _RAPIER_QUOTE_SHAPES = [{height: 540, smallest: 17}, {height: 675, smallest: 13}];
+async function _rapierShareQuoteCard() {
+	const held = _rapierQuoteCurrent();
+	if (!held) return false;
+	const task = _rapierProgressTask({label: 'Making quote card', size: held.markdown.length, current: () => _rapierQuoteCurrent() === held});
+	let frame;
+	try {
+		await task.yield(0);
+		const metadata = {..._rapierGetDocumentMetadata(), bom: false};
+		const context = await _rapierPrepareInterchangeContext({kind: 'share', work: task}, {canonical: held.markdown, metadata, work: task});
+		const artifact = await _rapierRenderModule('render')._rapierBuildArtifact({kind: 'page', scripts: false}, context);
+		const paper = await RapierDrawCore._rapierDrawPaperRequest('hot-press', {now: () => performance.now(), pause: () => task.yield()});
+		task.check();
+		const escape = _rapierRenderModule('render-sanitize').escapeRapierHtmlText;
+		frame = document.createElement('iframe');
+		frame.setAttribute('sandbox', 'allow-same-origin');
+		frame.setAttribute('aria-hidden', 'true'); frame.tabIndex = -1;
+		frame.style.cssText = 'position:fixed;left:-100000px;top:0;width:540px;height:675px;border:0;pointer-events:none';
+		const loaded = new Promise(resolve => frame.addEventListener('load', resolve, {once: true}));
+		frame.srcdoc = '<!doctype html><html lang="' + escape(artifact.language) + '" data-rapier-theme="light"><head><meta charset="utf-8">' +
+			'<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data:; font-src data:; style-src \'unsafe-inline\'">' +
+			'<style>' + artifact.css + '\nhtml,body{background:none!important;margin:0}' +
+			'.card{position:relative;display:flex;flex-direction:column;justify-content:center;width:540px;padding:64px 60px;overflow:hidden}' +
+			'.card figure{display:flex;justify-content:center;margin:0 0 32px}.card figure img{width:100%;height:220px;object-fit:contain}' +
+			'.card .rapier-page{width:auto;margin:0;padding:0;text-wrap:pretty}.card .footnotes,.card .footnotes-sep{display:none}' +
+			'.card .mark{position:absolute;right:60px;bottom:30px;margin:0;font:500 10px/1 var(--md-font-sans);letter-spacing:.16em;color:var(--md-color-text-subtle)}' +
+			'</style></head><body class="light"><div class="card">' +
+			(held.picture ? '<figure><img alt="" src="' + escape(held.picture) + '"></figure>' : '') +
+			'<main class="' + artifact.docClass + '" data-md-theme="light">' + artifact.bodyHtml + '</main><p class="mark">rapier</p></div></body></html>';
+		document.body.append(frame);
+		await loaded;
+		const page = frame.contentDocument, card = page.querySelector('.card'), main = card.querySelector('main');
+		for (const image of page.querySelectorAll('img')) await image.decode();
+		await page.fonts.ready;
+		task.check();
+		const fits = (shape, unit) => {
+			main.style.setProperty('--md-unit', unit + 'px');
+			card.style.height = shape.height + 'px';
+			const inner = card.clientHeight - 128, used = [...card.children].filter(node => !node.matches('.mark'))
+				.reduce((sum, node) => sum + node.getBoundingClientRect().height, 0) + (held.picture ? 32 : 0);
+			return used <= inner && main.scrollWidth <= main.clientWidth;
+		};
+		let shape = null, unit = 0;
+		for (const candidate of _RAPIER_QUOTE_SHAPES) {
+			for (unit = 26; unit >= candidate.smallest && !fits(candidate, unit); unit--);
+			if (unit >= candidate.smallest) { shape = candidate; break; }
+		}
+		if (!shape) throw new Error('select fewer words.');
+		fits(shape, unit);
+		const words = await RapierVisualCapture.captureVisual({root: card, clip: {x: 0, y: 0, width: 540, height: shape.height},
+			scale: 2, transparent: true, pixels: true, signal: task.signal});
+		task.check();
+		const canvas = document.createElement('canvas'), context2d = canvas.getContext('2d');
+		canvas.width = words.width; canvas.height = words.height;
+		context2d.fillStyle = await _rapierQuotePaper(paper, context2d);
+		context2d.fillRect(0, 0, canvas.width, canvas.height);
+		const rgba = new Uint8ClampedArray(words.width * words.height * 4);
+		for (let at = 0; at < words.alpha.length; at++) rgba.set([words.rgb[at * 3], words.rgb[at * 3 + 1], words.rgb[at * 3 + 2], words.alpha[at]], at * 4);
+		context2d.drawImage(await createImageBitmap(new ImageData(rgba, words.width, words.height)), 0, 0);
+		const blob = await _rapierCanvasBlob(canvas, 'image/png');
+		canvas.width = canvas.height = 0;
+		task.check(); task.end();
+		return await _rapierShareFile({blob, filename: held.name + '-quote.png', mime: 'image/png'});
+	} catch (error) {
+		if (error?.name !== 'AbortError') showToast('Could not make the quote card: ' + error.message, 'error');
+		return false;
+	} finally { task.end(); frame?.remove(); }
+}
+async function _rapierQuotePaper(paper, context2d) {
+	const image = new Image();
+	image.src = paper.url;
+	await image.decode();
+	const tile = new OffscreenCanvas(image.width, image.height), pen = tile.getContext('2d');
+	pen.drawImage(image, 0, 0);
+	const pixels = pen.getImageData(0, 0, tile.width, tile.height), data = pixels.data;
+	for (let at = 0; at < data.length; at += 4) {
+		const grey = data[at] / 255;
+		for (let c = 0; c < 3; c++) data[at + c] = 255 * (paper.gain[c] * grey + paper.offset[c]);
+	}
+	pen.putImageData(pixels, 0, 0);
+	return context2d.createPattern(tile, 'repeat');
+}
+
 function _rapierLedgerCapture() {
 	return RapierLedger.exportLedger({text: _rapierGetCanonicalText(), metadata: _rapierDocumentMetadata(),
 		records: rapier.undo.ledger.map(_rapierJournalRecord), documentAuthority: String(rapier.identity.authority),
@@ -469,7 +626,7 @@ async function _rapierLedgerMergeCopy(incoming, name) {
 	const ctx = {actor: {kind: 'human', id: 'local'}, transport: 'platform', operation: 'document.merge', requestId: null};
 	const splice = _rapierPrefixSuffixDiff(captured.canonical, merged.text), rows = splice.removed || splice.inserted ? [splice] : [];
 	const metadata = RapierLedger._rapierMetadataDelta(_rapierDocumentMetadata(), merged.metadata);
-	if (metadata?.docKind && typeof _rapierDrawState !== 'undefined' && _rapierDrawState.open) return false;
+	if (metadata?.docKind && _rapierDrawShown()) return false;
 	await _rapierWithCompoundTransaction(ctx, async compound => {
 		if (!_rapierMutationStampIsCurrent(captured.stamp)) throw new Error('The document changed before merging.');
 		if (rows.length && !await _rapierApplyCanonicalSplices(rows, {keepSourceMode: rapier.view.mode === 'source', retiredImages: []}))
@@ -482,4 +639,24 @@ async function _rapierLedgerMergeCopy(incoming, name) {
 	}, {carriedLedger: merged.ledger});
 	await rapierFlushDirty({snapshot: true, durable: true});
 	return true;
+}
+function _rapierReturnedActs(incoming) {
+	if (!incoming || incoming.documentAuthority !== String(rapier.identity.authority)) return null;
+	const seen = new Set(rapier.undo.ledger.map(row => row.transaction.id));
+	const acts = incoming.records.filter(({transaction: tx}) => !seen.has(tx.id) && tx.revision > rapier.undo.earliestRevision && tx.actor.kind !== 'system');
+	if (!acts.length) return null;
+	const names = new Set(acts.map(({transaction: {actor}}) => actor.name || (actor.kind === 'agent' ? 'an agent' : 'a person')));
+	return {ledger: incoming, ids: acts.map(row => row.transaction.id), by: new Intl.ListFormat('en').format([...names])};
+}
+function _rapierOfferReturnedCompare(returned) {
+	showToast('New edits by ' + returned.by, 'info', {label: 'Compare changes', fn: async () => {
+		const {ledger, ids} = returned, head = RapierLedger.readLedger(ledger);
+		const before = RapierLedger.selectiveUndo({source: head.text, metadata: head.metadata, records: ledger.records,
+			revision: ledger.head.revision, earliestRevision: ledger.start.revision, complete: ledger.complete}, ids);
+		if (!before.ok) return showToast('Could not compare these edits', 'error');
+		const c = rapier.compare;
+		c.lens = 'file'; c.changeId = null;
+		if (!c.active) c.snapshot = _rapierCompareCaptureView();
+		await _rapierCompareStart(before.after, head.metadata.filename, head.text, 'edits by ' + returned.by);
+	}});
 }

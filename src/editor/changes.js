@@ -37,7 +37,7 @@
     svg.append(path); return svg;
   }
   function identity() { return String(rapier.identity.authority || ''); }
-  function inDraw() { return typeof _rapierDrawState !== 'undefined' && _rapierDrawState.open; }
+  function inDraw() { return _rapierDrawShown(); }
   function busy() {
     return !!(rapier.composition.block || rapier.composition.source ||
       _rapierMutationBarrierActive() || performance.now() < typingUntil);
@@ -133,9 +133,10 @@
     }) : RapierDiff.compare(before, after, {...options,
       ...(globalThis.RapierDiffStructure ? {structure: source => globalThis.RapierDiffStructure.diffStructure(source, options)} : {})}));
   }
-  async function snapshotPlaces(input, blocks, id, rev, gen) {
+  async function snapshotPlaces(input, blockRows, id, rev, gen) {
     const before = rapier.review?.seen ? _rapierReviewText(rapier.review.seen) : null, after = input.source;
     if (before == null || before === after) return {review: null, places: []};
+    const blocks = blockRows();
     if (!comparison || comparison.before !== before || comparison.after !== after || comparison.revision !== rev || comparison.documentId !== id) {
       const options = {docKind: rapier.document.docKind, language: rapier.document.codeLang || '',
         from: globalThis.RapierJournalRecords.journalOperations(before, after, input.records)};
@@ -149,23 +150,28 @@
     const recorded = new Set(lineage.blocks.filter(block => block.acts.some(act =>
       act.operation !== 'document.restore-change')).map(block => block.id));
     if (seenKey.text !== before) seenKey = {text: before, key: _rapierSeenDigest(before)};
-    const rows = [], baselineKey = seenKey.key;
+    const rows = [], baselineKey = seenKey.key, regionsOf = new Map();
+    for (const region of result.regions) for (const id of new Set(region.changeIds)) {
+      if (!regionsOf.has(id)) regionsOf.set(id, []);
+      regionsOf.get(id).push(region);
+    }
     for (const change of result.changes) {
-      if (change.edits.some(index => recorded.has(index))) continue;
-      const changeKey = [baselineKey, change.kind, change.edits.map(index => {
+      const family = change.kind === 'move' ? result.changes.filter(row => row === change || row.move === change.id) : [change];
+      if (change.move || family.some(row => row.edits.some(index => recorded.has(index)))) continue;
+      const changeKey = [baselineKey, change.kind, family.flatMap(row => row.edits).map(index => {
         const edit = result.edits[index];
         return [edit.before, _rapierSeenDigest(before.slice(...edit.before)), _rapierSeenDigest(after.slice(...edit.after))];
       })];
       const visited = new Set();
-      for (const region of result.regions) {
-        if (!region.changeIds?.includes(change.id)) continue;
+      for (const region of regionsOf.get(change.id) || []) {
+        if (region.moved && region.before) continue;
         const start = region.after?.from ?? region.afterAnchor, end = region.after?.to ?? start;
         const block = blocks.find(block => block.from <= start && start < block.to)
           || blocks.find(block => block.from >= start) || blocks.at(-1);
         if (!block || visited.has(block.id) || globalThis.RapierImageAssets.isAssetBlock(block.raw)) continue;
         visited.add(block.id);
         rows.push({kind: 'text', key: JSON.stringify(['snapshot', changeKey, region.before?.from ?? region.beforeAnchor]),
-          diffIds: [change.id], change: {kind: change.kind, unit: change.unit, ...(change.name ? {name: change.name} : {})},
+          diffIds: family.map(row => row.id), change: {kind: change.kind, unit: change.unit, ...(change.name ? {name: change.name} : {})},
           blockId: block.id, from: block.from, to: block.to, displayAfter: [start, end],
           before: region.before?.text || '', after: region.after?.text || '', current: region.after?.text || '',
           actor: {name: change.name || 'Changes'}});
@@ -186,16 +192,19 @@
     running = (async () => {
       const records = rapier.undo.ledger.slice();
       const source = _rapierSourceText();
-      const spans = _rapierExcerptCanonicalBlockSpans();
-      const blocks = rapier.document.docKind === 'markdown' ? rapier.document.blocks.map(block => ({
-        id: block.id, raw: block.raw, from: spans.get(block.id)?.start, to: spans.get(block.id)?.end,
-      })).filter(block => Number.isSafeInteger(block.from) && Number.isSafeInteger(block.to))
-        : [{id: null, raw: source, from: 0, to: source.length}];
+      let blocks = null;
+      const blockRows = () => blocks ||= rapier.document.docKind !== 'markdown' ? [{id: null, raw: source, from: 0, to: source.length}] : (() => {
+        const spans = _rapierExcerptCanonicalBlockSpans();
+        return rapier.document.blocks.map(block => ({
+          id: block.id, raw: block.raw, from: spans.get(block.id)?.start, to: spans.get(block.id)?.end,
+        })).filter(block => Number.isSafeInteger(block.from) && Number.isSafeInteger(block.to));
+      })();
       const input = {source, records, revision: rev, earliestRevision: rapier.undo.earliestRevision, earliestRoot: _rapierUndoEarliestHash(),
         metadata: _rapierDocumentMetadata()};
-      const projected = globalThis.RapierLedger.historyPlaces(input, blocks);
+      const others = records.some(record => otherAuthor(record.transaction?.actor));
+      const projected = globalThis.RapierLedger.historyPlaces(input, others ? blockRows() : []);
       if (!projected.ok) return projected;
-      const fallback = await snapshotPlaces(input, blocks, id, rev, gen), next = fallback.places;
+      const fallback = await snapshotPlaces(input, blockRows, id, rev, gen), next = fallback.places;
       if (!valid()) { dirty = true; schedule(); return {ok: false, reason: 'document_changed'}; }
       for (const block of projected.blocks) {
         if (globalThis.RapierImageAssets.isAssetBlock(block.source)) continue;
@@ -216,7 +225,7 @@
           next.push(group);
         }
       }
-      const drawing = await globalThis.RapierChangesDraw?.sourcePlaces({...input, blocks, replay: projected,
+      const drawing = !others ? [] : await globalThis.RapierChangesDraw?.sourcePlaces({...input, blocks: blockRows(), replay: projected,
         acts: projected.acts.filter(act => otherAuthor(act.actor) && !projected.reversed.includes(act.id)), current: valid}) || [];
       if (!valid()) { dirty = true; schedule(); return {ok: false, reason: 'document_changed'}; }
       snapshot = fallback.review;
@@ -274,7 +283,7 @@
     scheduleLocate();
   }
   function viewport() {
-    const surface = inDraw() ? _rapierDrawState.stageEl || _rapierDrawState.surface
+    const surface = inDraw() ? _rapierDrawPart.state.stageEl || _rapierDrawPart.state.surface
       : rapier.view.mode === 'source' ? document.getElementById('source-mode') : host;
     const bounds = surface?.getBoundingClientRect() || host.getBoundingClientRect();
     const tools = inDraw() ? null : document.querySelector('.rapier-image-tools:not([hidden])');
@@ -285,7 +294,7 @@
   }
   function locate() {
     frame = 0;
-    const parent = inDraw() ? _rapierDrawState.surface : document.body;
+    const parent = inDraw() ? _rapierDrawPart.state.surface : document.body;
     if (parent && layer.parentElement !== parent) { parent.append(layer); layer.inert = false; layer.removeAttribute('aria-hidden'); }
     const rows = currentRows(), bounds = viewport();
     const live = new Set(rows.map(place => place.key));
@@ -366,15 +375,21 @@
     return value;
   }
   async function renderBefore(place) {
-    const history = place.actId ? globalThis.RapierLedger.sourceBefore({source: _rapierSourceText(), records: rapier.undo.ledger,
-      revision: rapier.revision.settled, earliestRevision: rapier.undo.earliestRevision, metadata: _rapierDocumentMetadata()}, place.actId)
-      : {ok: !!snapshot, source: snapshot?.before};
+    const ledger = globalThis.RapierLedger, input = {source: _rapierSourceText(), records: rapier.undo.ledger,
+      revision: rapier.revision.settled, earliestRevision: rapier.undo.earliestRevision, metadata: _rapierDocumentMetadata()};
+    const history = place.actId ? ledger.sourceBefore(input, place.actId) : {ok: !!snapshot, source: snapshot?.before};
     if (!history.ok) throw new Error(history.reason);
     const references = _rapierBuildReferenceIndex(await splitMarkdownBlocksAsync(history.source), history.source);
     const node = document.createElement('div');
     node.className = 'block-read rapier-changes-before'; node.contentEditable = 'false';
     const after = document.createElement('div');
-    const previous = beforeText(place);
+    let previous = beforeText(place);
+    if (place.actId && place.after !== place.current) {
+      const undone = ledger.selectiveUndo(input, place.actIds || [place.actId]);
+      const range = undone.ok && ledger.transportTouchedInterval(place.from, place.to, undone.splices);
+      const text = range && undone.after.slice(range.start, range.end);
+      if (text && text !== place.current) previous = text;
+    }
     node.innerHTML = _rapierRenderModule('render-sanitize').sanitizeRapierHtml(renderBlock(previous, references));
     after.innerHTML = _rapierRenderModule('render-sanitize').sanitizeRapierHtml(renderBlock(place.current));
     if (!previous.trim()) {
@@ -392,6 +407,18 @@
     const {edits} = RapierDiff.diff(prior, current, {as: 'prose', limit: 1000000});
     if (edits.some(edit => edit.coarse)) {
       node.classList.add('rapier-changes-removed'); return node;
+    }
+    if (!edits.length) {
+      const targets = root => [...root.querySelectorAll('a[href], img[src]')], target = element => element.getAttribute(element.localName === 'a' ? 'href' : 'src');
+      const was = targets(node), now = targets(after);
+      const changed = was.length === now.length ? was.flatMap((element, i) => target(element) === target(now[i]) ? [] : [[element, now[i]]]) : [];
+      if (!changed.length) node.classList.add('rapier-changes-added');
+      for (const [element, next] of changed) {
+        const removed = document.createElement('del'), added = document.createElement('ins');
+        removed.className = 'rapier-changes-removed'; added.className = 'rapier-changes-added';
+        element.replaceWith(removed); removed.append(element); added.append(next); removed.after(added);
+      }
+      return node;
     }
     const point = at => {
       for (const text of texts) { if (at <= text.length) return [text, at]; at -= text.length; }
@@ -446,7 +473,10 @@
     if (preview) { preview.tabIndex = -1; preview.setAttribute('role', 'region'); preview.setAttribute('aria-label', 'Before this change'); }
     const controls = document.createElement('div'); controls.className = 'rapier-changes-controls'; controls.contentEditable = 'false';
     controls.addEventListener('click', event => event.stopPropagation());
-    if (place.kind === 'drawing') controls.classList.add('rapier-changes-controls--drawing');
+    if (place.kind === 'drawing') {
+      controls.classList.add('rapier-changes-controls--drawing');
+      controls.setAttribute('role', 'group'); controls.setAttribute('aria-label', 'Drawing change');
+    }
     const who = document.createElement('span'); who.className = 'rapier-changes-controls__who';
     const name = document.createElement('strong'); name.textContent = place.actor?.name || place.act?.actor?.name || (place.actor?.kind === 'human' ? 'Person' : 'Agent');
     const rows = currentRows(), index = rows.findIndex(row => row.key === key);
@@ -477,11 +507,11 @@
   }
   async function undo(key = active?.key) {
     const selected = currentRows().find(place => place.key === key);
-    const intent = {documentId: identity(), viewTicket, drawSession: inDraw() ? _rapierDrawState.session : null,
+    const intent = {documentId: identity(), viewTicket, drawSession: inDraw() ? _rapierDrawPart.state.session : null,
       review: selected?.diffIds ? snapshot : null, diffIds: selected?.diffIds};
     const state = await refresh(); if (!state.ok) return state;
     if (intent.documentId !== identity() || intent.viewTicket !== viewTicket ||
-      intent.drawSession !== (inDraw() ? _rapierDrawState.session : null))
+      intent.drawSession !== (inDraw() ? _rapierDrawPart.state.session : null))
       return {ok: false, reason: 'document_changed'};
     const rows = currentRows(), place = rows.find(row => row.key === key), priorRows = [...places, ...rows];
     if (!place) return {ok: false, reason: 'act_unavailable'};
@@ -534,7 +564,7 @@
     const target = event.target;
     if (target.closest?.('.rapier-changes-layer, .rapier-changes-controls')) {
       event.preventDefault();
-      if (inDraw() && _rapierDrawState.surface?.contains(target) && target.closest?.('.rapier-changes-mark')) return;
+      if (inDraw() && _rapierDrawPart.state.surface?.contains(target) && target.closest?.('.rapier-changes-mark')) return;
       event.stopPropagation(); return;
     }
     if (target.closest?.('.rapier-changes-before')) { event.preventDefault(); event.stopPropagation(); return; }

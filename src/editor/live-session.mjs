@@ -241,12 +241,14 @@ export function createLiveClient({post, socket: Socket, store, clock, timer, can
     const typed = row => row?.act?.operation === 'document.edit-block' && row.act.affectedBlockIds?.length === 1 &&
       !row.undoTarget && !row.undoTargets && !row.act.metadata;
     const time = row => Number(row.act.createdAt);
+    const breaks = text => String(text || '').split(/\r\n?|\n/).length;
+    const entered = row => (row.splices || []).some(splice => breaks(splice.inserted) > breaks(splice.removed));
     if (index < 0 || !typed(history[index])) return null;
     const group = [history[index]];
     while (index > 0) {
       const before = history[index - 1], after = history[index];
       if (before.client !== last.client) break;
-      if (!typed(before) || before.act.affectedBlockIds[0] !== after.act.affectedBlockIds[0] ||
+      if (!typed(before) || entered(before) || before.act.affectedBlockIds[0] !== after.act.affectedBlockIds[0] ||
           before.act.author?.id !== after.act.author?.id || !(time(after) - time(before) <= 2000)) break;
       group.unshift(before); index--;
     }

@@ -37,7 +37,8 @@ export function inspectGIF(bytes) {
     at += 9; if (packed & 128) at += 3 * (2 << (packed & 7));
     need(1); if (bytes[at] < 2 || bytes[at] > 8) fail('Invalid GIF code size');
     at++; blocks(); frames++;
-    duration += control ? Math.max(20, (control[4] + control[5] * 256) * 10) : 100;
+    const delay = control ? control[4] + control[5] * 256 : 0;
+    duration += delay > 1 ? delay * 10 : 100;
     if (frames > 240 || width * height * frames > 96000000 || duration > 120000) fail('GIF animation exceeds the frame, work or duration budget');
     first ||= {control, image: bytes.subarray(start, at)}; control = null;
   }

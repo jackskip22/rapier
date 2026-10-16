@@ -13,6 +13,7 @@
     if (held.input.value === held.value) return true;
     const changed = globalThis.RapierFlowchart.editFlowchartLabel(held.body, held.target, held.input.value);
     if (!changed.ok) {
+      held.refused = changed.reason;
       held.input.setCustomValidity(changed.reason);
       if (announce) { showToast(changed.reason, 'info'); held.input.focus({preventScroll: true}); }
       return false;
@@ -35,10 +36,16 @@
     return true;
   }
 
-  function close() {
+  function close(leaving = false) {
     ++opening;
     const held = active;
-    if (!held || !flush()) return !held;
+    if (!held) return true;
+    held.refused = '';
+    if (!flush(!leaving)) {
+      if (!leaving || !held.refused) return false;
+      showToast(held.refused, 'info');
+      held.input.value = held.value;
+    }
     active = null;
     clearTimeout(held.timer);
     held.listeners.abort();
@@ -139,13 +146,20 @@
       clearTimeout(held.timer);
       held.timer = setTimeout(() => { if (active === held) flush(false); }, 600);
     }
-    input.addEventListener('input', schedule, {signal: listeners.signal});
+    const {width, height} = input.style;
+    input.addEventListener('input', () => {
+      Object.assign(input.style, {width, height});
+      if (input.scrollWidth > input.clientWidth) input.style.width = input.scrollWidth + 2 + 'px';
+      if (input.scrollHeight > input.clientHeight) input.style.height = input.scrollHeight + 'px';
+      input.scrollLeft = 0;
+      schedule();
+    }, {signal: listeners.signal});
     input.addEventListener('keydown', event => {
       if (event.isComposing) return;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') close();
-      if (event.key === 'Enter' || event.key === 'Escape') { event.preventDefault(); close(); }
+      if (event.key === 'Enter' && !event.shiftKey || event.key === 'Escape') { event.preventDefault(); close(event.key === 'Escape'); }
     }, {signal: listeners.signal});
-    input.addEventListener('blur', () => { if (active === held) close(); }, {signal: listeners.signal});
+    input.addEventListener('blur', () => { if (active === held) close(true); }, {signal: listeners.signal});
     input.addEventListener('click', event => event.stopPropagation(), {signal: listeners.signal});
     input.focus({preventScroll: true});
     input.select();

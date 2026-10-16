@@ -7,7 +7,7 @@ import {packStyleWhitespace, stripStyleComments, inlineFonts} from './style-text
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const WHOLE = ['spec/markdown-style.css', 'editor/styles/rapier-highlight.css'];
-const CUT = ['editor/styles/rapier-app.css', 'editor/styles/rapier-editor.css', 'editor/styles/rapier-source.css'];
+const CUT = ['editor/styles/rapier-app.css', 'editor/styles/rapier-editor.css', 'editor/styles/rapier-source.css', 'editor/styles/rapier-info.css'];
 
 function needs(selector) {
 	if (selector.includes('\\')) return [];

@@ -85,8 +85,8 @@ export async function jxlModuleTexts(directory) {
   return Object.fromEntries(await Promise.all(names.map(async file => [file.slice(0, -4),
     (await readFile(join(directory, file), 'utf8')).replaceAll('MIT (images/jxl/LICENSE)', 'MIT (LICENSE)')])));
 }
-export async function buildRapierWorker(directory, {profile = 'full'} = {}) {
-  const texts = await jxlModuleTexts(directory), full = profile !== 'document';
+export async function buildRapierWorker(directory, {encoder = true} = {}) {
+  const texts = await jxlModuleTexts(directory), full = encoder !== false;
   const modules = graph(texts, [full ? 'rapier' : 'worker']);
   const {version} = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
   const license = (await readFile(join(directory, 'LICENSE'), 'utf8')).trim().replace(/\s+/g, ' ');

@@ -28,7 +28,7 @@ export function ocrCore() {
 	'use strict';
 	const MEAN = [0.485, 0.456, 0.406], STD = [0.229, 0.224, 0.225];
 	function detInput(rgba, w, h, limit) {
-		const scale = Math.min(1, limit / Math.max(w, h));
+		const scale = Math.min(1, limit / Math.sqrt(w * h), 4 * limit / Math.max(w, h));
 		const tw = Math.max(32, Math.round(w * scale / 32) * 32), th = Math.max(32, Math.round(h * scale / 32) * 32);
 		const data = new Float32Array(3 * tw * th), plane = tw * th, sx = w / tw, sy = h / th;
 		for (let y = 0; y < th; y++) {
@@ -68,7 +68,7 @@ export function ocrCore() {
 		if (!best) return {cx: h[0][0], cy: h[0][1], ux: 1, uy: 0, w: 0, hgt: 0};
 		const cu = (best.minU + best.maxU) / 2, cv = (best.minV + best.maxV) / 2;
 		let r = {cx: cu * best.ux - cv * best.uy, cy: cu * best.uy + cv * best.ux, ux: best.ux, uy: best.uy, w: best.maxU - best.minU, hgt: best.maxV - best.minV};
-		if (r.hgt > r.w) r = {...r, ux: -r.uy, uy: r.ux, w: r.hgt, hgt: r.w};
+		if (Math.abs(r.ux) < Math.abs(r.uy)) r = {...r, ux: -r.uy, uy: r.ux, w: r.hgt, hgt: r.w};
 		if (r.ux < 0) r = {...r, ux: -r.ux, uy: -r.uy};
 		return r;
 	}
@@ -116,7 +116,7 @@ export function ocrCore() {
 		const data = new Float32Array(3 * height * width), plane = height * width;
 		for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
 			let u = (x + .5) / width, v = (y + .5) / height;
-			if (turned) { const t = u; u = v; v = 1 - t; }
+			if (turned) { const t = u; u = 1 - v; v = t; }
 			const px = tl[0] + (tr[0] - tl[0]) * u + (bl[0] - tl[0]) * v + (br[0] - tr[0] - bl[0] + tl[0]) * u * v;
 			const py = tl[1] + (tr[1] - tl[1]) * u + (bl[1] - tl[1]) * v + (br[1] - tr[1] - bl[1] + tl[1]) * u * v;
 			const fx = Math.min(w - 1.001, Math.max(0, px - .5)), fy = Math.min(h - 1.001, Math.max(0, py - .5));
@@ -168,8 +168,16 @@ export function ocrCore() {
 		rows.sort((a, b) => a.top - b.top);
 		return rows.flatMap(r => r.items.sort((a, b) => a.b.left - b.b.left).map(i => i.l));
 	}
+	function flatten(rgba) {
+		let light = 0, weight = 0, clear = false;
+		for (let i = 0; i < rgba.length; i += 4) { const a = rgba[i + 3]; if (a < 255) clear = true; light += a * (rgba[i] * .299 + rgba[i + 1] * .587 + rgba[i + 2] * .114); weight += a; }
+		if (!clear) return;
+		const back = weight && light / weight > 127.5 ? 0 : 255;
+		for (let i = 0; i < rgba.length; i += 4) { const a = rgba[i + 3] / 255; for (let c = 0; c < 3; c++) rgba[i + c] = Math.round(rgba[i + c] * a + back * (1 - a)); rgba[i + 3] = 255; }
+	}
 	async function read(rgba, w, h, runDet, runRec, dict, {limit = 960, thresh = .2, boxThresh = .4, unclip = 1.4, floor = .5, batch = 6} = {}) {
 		const t0 = Date.now();
+		flatten(rgba);
 		const input = detInput(rgba, w, h, limit);
 		const prob = await runDet(input.data, input.th, input.tw);
 		const boxes = detBoxes(prob, input.tw, input.th, input.sx, input.sy, {thresh, boxThresh, unclip});
@@ -186,13 +194,13 @@ export function ocrCore() {
 				if (!text || line.score < floor) return;
 				const lead = line.text.length - line.text.trimStart().length;
 				const spans = charSpans(line.text, line.at, steps, padded.width, g.crop.width).slice(lead, lead + text.length);
-				const quad = g.crop.turned ? [g.box.quad[3], g.box.quad[0], g.box.quad[1], g.box.quad[2]] : g.box.quad;
+				const quad = g.crop.turned ? [g.box.quad[1], g.box.quad[2], g.box.quad[3], g.box.quad[0]] : g.box.quad;
 				lines.push({text, score: Math.round(line.score * 1000) / 1000, quad: quad.map(([x, y]) => [Math.round(x / w * 1e4) / 1e4, Math.round(y / h * 1e4) / 1e4]), spans: spans.map(([a, b]) => [Math.round(a * 1e4) / 1e4, Math.round(b * 1e4) / 1e4])});
 			});
 		}
 		return {lines: readingOrder(lines), ms: {detect: t1 - t0, recognise: Date.now() - t1}, boxes: boxes.length};
 	}
-	return {detInput, detBoxes, lineCrop, recBatch, ctcDecode, charSpans, readingOrder, read, hull, minRect, corners};
+	return {detInput, detBoxes, lineCrop, recBatch, ctcDecode, charSpans, readingOrder, read, hull, minRect, corners, flatten};
 }
 
 function ocrWorkerMain(scope, core) {
@@ -246,11 +254,6 @@ function ocrWorkerMain(scope, core) {
 				if (event.data.jxl) {
 					const image = await decodeJxl(event.data.jxl, event.data.max || 2048);
 					width = image.width; height = image.height; rgba = image.data;
-					for (let at = 0; at < rgba.length; at += 4) if (rgba[at + 3] !== 255) {
-						const alpha = rgba[at + 3] / 255;
-						for (let channel = 0; channel < 3; channel++) rgba[at + channel] = Math.round(rgba[at + channel] * alpha + 255 * (1 - alpha));
-						rgba[at + 3] = 255;
-					}
 				}
 				const runDet = async (data, th, tw) => { const out = await det.run({[det.inputNames[0]]: new ort.Tensor('float32', data, [1, 3, th, tw])}); return out[det.outputNames[0]].data; };
 				const runRec = async (data, n, width) => { const out = await rec.run({[rec.inputNames[0]]: new ort.Tensor('float32', data, [n, 3, 48, width])}); return out[rec.outputNames[0]]; };
@@ -273,26 +276,31 @@ export function pictureText(reading) {
 export function pictureMarks(reading, needle, fold = s => String(s).toLowerCase(), limit = Infinity) {
 	const want = fold(needle), marks = [];
 	if (!want || !(limit > 0) || !reading || !Array.isArray(reading.lines)) return marks;
-	for (const line of reading.lines) {
-		const text = String(line.text || ''), folded = fold(text);
-		let offsets = null;
-		if (folded.length !== text.length) {
-			offsets = []; let start = 0;
-			for (const character of text) {
-				const end = start + character.length, part = fold(character);
-				if (!part && offsets.length) offsets[offsets.length - 1][1] = end;
-				for (let at = 0; at < part.length; at++) offsets.push([start, end]);
-				start = end;
-			}
+	const lines = reading.lines, from = [];
+	let folded = '';
+	lines.forEach((line, row) => {
+		const text = String(line.text || ''), whole = fold(text), units = [];
+		let start = 0;
+		for (const character of text) {
+			const end = start + character.length, part = fold(character);
+			if (!part && units.length) units[units.length - 1][2] = end;
+			for (let at = 0; at < part.length; at++) units.push([row, start, end]);
+			start = end;
 		}
-		let at = folded.indexOf(want);
-		while (at >= 0) {
-			const first = offsets ? offsets[at]?.[0] : at, last = offsets ? offsets[at + want.length - 1]?.[1] - 1 : at + want.length - 1;
-			const [a, b] = line.spans?.[first] && line.spans?.[last] ? [line.spans[first][0], line.spans[last][1]] : [0, 1];
+		if (row) { folded += ' '; from.push(null); }
+		folded += whole;
+		for (let at = 0; at < whole.length; at++) from.push(units.length === whole.length ? units[at] : [row, Math.min(at, text.length - 1), Math.min(at + 1, text.length)]);
+	});
+	for (let at = folded.indexOf(want); at >= 0; at = folded.indexOf(want, at + Math.max(1, want.length))) {
+		for (let k = at; k < at + want.length;) {
+			if (!from[k]) { k++; continue; }
+			const row = from[k][0], first = from[k][1];
+			let last = from[k][2] - 1;
+			for (; k < at + want.length && from[k]?.[0] === row; k++) last = Math.max(last, from[k][2] - 1);
+			const line = lines[row], [a, b] = line.spans?.[first] && line.spans?.[last] ? [line.spans[first][0], line.spans[last][1]] : [0, 1];
 			const [tl, tr, br, bl] = line.quad, lerp = (p, q, t) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
 			marks.push([lerp(tl, tr, a), lerp(tl, tr, b), lerp(bl, br, b), lerp(bl, br, a)]);
 			if (marks.length >= limit) return marks;
-			at = folded.indexOf(want, at + Math.max(1, want.length));
 		}
 	}
 	return marks;

@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {admitPaintReplay} from './paint-history.mjs';
 import {replayWaterFrames} from './agent-paint.mjs';
-import {paperTileFromGPU} from './water.mjs';
-import {decodePaintRaster} from '../images/paint-raster.mjs';
 import {WaterMP4,WATER_VIDEO_MAX_BYTES} from './water-mp4.mjs';
 export {WATER_VIDEO_MAX_BYTES};
 const failure=(code,message)=>Object.assign(new Error(message),{code});
@@ -45,48 +43,36 @@ export function waterVideoPlan(raw,{framing='square',duration=15}={}){
  return {replay,entries,total,view:{x,y,width,height},width:framing==='square'?720:540,height:framing==='square'?720:960,fps,frames,intro,outro,duration:frames/fps};
 }
 
-async function videoConfig(plan){
+const FRAMES={square:[[1080,1080,'avc1.420028',8e6],[720,720,'avc1.42001f',6e6]],portrait:[[1080,1920,'avc1.420028',8e6],[540,960,'avc1.42001f',6e6]]};
+async function videoConfig(framing,fps=30){
  if(typeof VideoEncoder!=='function'||typeof VideoFrame!=='function'||typeof OffscreenCanvas!=='function')throw failure('water_video_unavailable','This Android WebView cannot encode a video. Update Android System WebView and try again.');
- const config={codec:'avc1.42001f',width:plan.width,height:plan.height,framerate:plan.fps,bitrate:6000000,bitrateMode:'variable',latencyMode:'quality',hardwareAcceleration:'prefer-hardware',avc:{format:'avc'},alpha:'discard'};
- const supported=await VideoEncoder.isConfigSupported(config);
- if(!supported.supported)throw failure('water_video_unavailable','This Android WebView cannot encode H.264 video. Update Android System WebView and try again.');
- return config;
+ for(const [width,height,codec,bitrate] of FRAMES[framing]??[]){
+  const config={codec,width,height,framerate:fps,bitrate,bitrateMode:'variable',latencyMode:'quality',avc:{format:'avc'},alpha:'discard'};
+  for(const hardwareAcceleration of ['prefer-hardware','no-preference'])if((await VideoEncoder.isConfigSupported({...config,hardwareAcceleration})).supported)return {...config,hardwareAcceleration};
+ }
+ throw failure('water_video_unavailable','This Android WebView cannot encode H.264 video. Update Android System WebView and try again.');
 }
+export async function waterVideoFrame(framing){const {width,height}=await videoConfig(framing);return {width,height};}
 
-export async function exportWaterVideo({replay,raster,framing='square',duration=15,signal,onProgress}={}){
- stopped(signal);const plan=waterVideoPlan(replay,{framing,duration}),config=await videoConfig(plan);stopped(signal);
- if(typeof raster!=='string'||!/^data:image\/(png|jxl);base64,/.test(raster))throw failure('water_video_source','The finished painting is required to export its video.');
- const muxer=new WaterMP4(plan),canvas=new OffscreenCanvas(plan.width,plan.height),context=canvas.getContext('2d',{alpha:false});
- const readout=new OffscreenCanvas(1,1),readContext=readout.getContext('2d',{alpha:false});
- if(!context||!readContext)throw failure('water_video_unavailable','Video export could not open its drawing surface.');
- const scale=Math.min(plan.width/plan.view.width,plan.height/plan.view.height),left=(plan.width-plan.view.width*scale)/2,top=(plan.height-plan.view.height*scale)/2;
- let encoder=null,error=null,frame=0,encoded=0,paperId=null,tile=null,pattern=null,entryAnchor=null,entryIndex=0,initial=false;
+export async function exportDrawingVideo({steps=[],ground,final,framing='square',duration=15,signal,onProgress}={}){
+ stopped(signal);
+ if(!['square','portrait'].includes(framing)||!Number.isFinite(duration)||duration<3||duration>59)throw failure('water_video_options','Choose a video from 3 to 59 seconds, square or 9:16.');
+ if(!steps.length)throw failure('water_video_source','Draw or paint something first.');
+ const fps=30,config=await videoConfig(framing,fps),plan={fps,frames:Math.round(duration*fps),width:config.width,height:config.height},intro=12,outro=30,fade=12;stopped(signal);
+ const weights=steps.map(step=>{
+  if(step.kind==='water')step.plan=waterVideoPlan(step.replay);
+  return Math.max(24,step.kind==='water'?Math.max(step.plan.total*6,Math.hypot(step.matrix[0],step.matrix[1])*step.plan.view.width):step.kind==='mark'?step.line.reduce((n,p,i)=>i?n+Math.hypot(p[0]-step.line[i-1][0],p[1]-step.line[i-1][1]):0,0):step.box.w);
+ }),total=weights.reduce((a,b)=>a+b,0),body=plan.frames-intro-outro;
+ const muxer=new WaterMP4(plan),surface=()=>{const c=new OffscreenCanvas(plan.width,plan.height);return [c,c.getContext('2d',{alpha:false})];};
+ const [canvas,context]=surface(),[done,doneContext]=surface(),readout=new OffscreenCanvas(1,1),readContext=readout.getContext('2d');
+ if(!context||!doneContext||!readContext)throw failure('water_video_unavailable','Video export could not open its drawing surface.');
+ let encoder=null,error=null,frame=0,encoded=0;
  const check=()=>{stopped(signal);if(error)throw error;};
  const abort=()=>{if(encoder&&encoder.state!=='closed')encoder.close();};
  const progress=phase=>onProgress?.({phase,completed:frame,total:plan.frames,fraction:Math.min(.99,frame/plan.frames)});
  async function drain(){
   try{await encoder.flush();}catch(cause){check();throw cause;}
   check();if(encoded!==frame)throw failure('water_video_invalid','The video encoder omitted a frame.');
- }
- async function paper(surface){
-  if(paperId===surface.paperId)return;
-  check();const pixels=await paperTileFromGPU(surface.paperId);check();
-  tile ||= new OffscreenCanvas(pixels.width,pixels.height);const rgba=new Uint8ClampedArray(pixels.width*pixels.height*4);
-  for(let index=0;index<pixels.width*pixels.height;index++){rgba[index*4]=pixels.rgb[index*3];rgba[index*4+1]=pixels.rgb[index*3+1];rgba[index*4+2]=pixels.rgb[index*3+2];rgba[index*4+3]=255;}
-  tile.getContext('2d',{alpha:false}).putImageData(new ImageData(rgba,pixels.width,pixels.height),0,0);pattern=context.createPattern(tile,'repeat');paperId=surface.paperId;
- }
- async function draw(surface){
-  check();await paper(surface);
-  const placement=plan.entries[entryIndex],x=placement.x+surface.origin[0]-entryAnchor[0],y=placement.y+surface.origin[1]-entryAnchor[1];
-  const dx=left+(x-plan.view.x)*scale,dy=top+(y-plan.view.y)*scale,paperScale=surface.gpu.paperScale,unit=scale/paperScale;
-  const tx=dx-surface.gpu.paperOrigin[0]*scale,ty=dy+(surface.height+surface.gpu.paperOrigin[1])*scale;
-  context.setTransform(unit,0,0,unit,tx,ty);context.fillStyle=pattern;context.fillRect(-tx/unit,-ty/unit,plan.width/unit,plan.height/unit);context.resetTransform();
-  const x0=Math.max(0,plan.view.x-x),y0=Math.max(0,plan.view.y-y),x1=Math.min(surface.width,plan.view.x+plan.view.width-x),y1=Math.min(surface.height,plan.view.y+plan.view.height-y);
-  if(x1>x0&&y1>y0){
-   const pixels=await surface.gpu.read({paper:true,box:[x0,y0,x1,y1]});check();
-   const width=x1-x0,height=y1-y0;readout.width=width;readout.height=height;readContext.putImageData(new ImageData(new Uint8ClampedArray(pixels.buffer,pixels.byteOffset,pixels.byteLength),width,height),0,0);
-   context.save();context.beginPath();context.rect(left,top,plan.view.width*scale,plan.view.height*scale);context.clip();context.imageSmoothingEnabled=true;context.imageSmoothingQuality='high';context.drawImage(readout,dx+x0*scale,dy+y0*scale,width*scale,height*scale);context.restore();
-  }
  }
  async function encodeTo(count){
   while(frame<count){
@@ -97,6 +83,27 @@ export async function exportWaterVideo({replay,raster,framing='square',duration=
    frame++;progress('encoding');if(frame%4===0)await pause();
   }
  }
+ const begin=()=>{context.globalAlpha=1;context.drawImage(done,0,0);};
+ async function water(step,first,last){
+  const plan_=step.plan;let entryIndex=0,entryAnchor=null;
+  async function draw(live){
+   check();begin();
+   const placement=plan_.entries[entryIndex],x=placement.x+live.origin[0]-entryAnchor[0]-plan_.view.x,y=placement.y+live.origin[1]-entryAnchor[1]-plan_.view.y;
+   const x0=Math.max(0,-x),y0=Math.max(0,-y),x1=Math.min(live.width,plan_.view.width-x),y1=Math.min(live.height,plan_.view.height-y);
+   if(x1<=x0||y1<=y0)return;
+   const pixels=await live.gpu.read({box:[x0,y0,x1,y1]});check();
+   readout.width=x1-x0;readout.height=y1-y0;readContext.putImageData(new ImageData(new Uint8ClampedArray(pixels.buffer,pixels.byteOffset,pixels.byteLength),x1-x0,y1-y0),0,0);
+   context.setTransform(...step.matrix);context.imageSmoothingEnabled=true;context.imageSmoothingQuality='high';context.drawImage(readout,x+x0,y+y0);context.resetTransform();
+  }
+  await replayWaterFrames(step.replay,{signal,
+   async onEntry({surface:live,index}){check();entryIndex=index;entryAnchor=live.origin.slice();},
+   async onStep({surface:live,index,action,step:at,complete}){
+    check();const laid=plan_.entries[index].actions[action];if(!laid.units)return;
+    const units=complete?laid.units:Number.isSafeInteger(at?.path)&&Number.isSafeInteger(at?.point)?laid.paths.slice(0,at.path).reduce((n,count)=>n+count,0)+at.point+1:0;
+    const count=first+Math.floor((laid.start+units)/plan_.total*(last-first));
+    if(count>frame){await draw(live);await encodeTo(count);}
+   }});
+ }
  try{
   encoder=new VideoEncoder({output(chunk,metadata){
    if(error||signal?.aborted)return;
@@ -104,26 +111,29 @@ export async function exportWaterVideo({replay,raster,framing='square',duration=
    catch(cause){error=cause;abort();}
   },error(cause){error=cause;}});
   signal?.addEventListener('abort',abort,{once:true});check();encoder.configure(config);progress('preparing');
-  await replayWaterFrames(plan.replay,{signal,
-   async onEntry({surface,index}){check();entryIndex=index;entryAnchor=surface.origin.slice();if(!initial){await draw(surface);await encodeTo(plan.intro);initial=true;}},
-   async onStep({surface,index,action,step,complete}){
-    check();const progress=plan.entries[index].actions[action];if(!progress.units)return;
-    const laid=complete?progress.units:Number.isSafeInteger(step?.path)&&Number.isSafeInteger(step?.point)?progress.paths.slice(0,step.path).reduce((n,count)=>n+count,0)+step.point+1:0;
-    const count=plan.intro+Math.floor((progress.start+laid)/plan.total*(plan.frames-plan.intro-plan.outro));
-    if(count>frame){await draw(surface);await encodeTo(count);}
-   },
-   async onFinish({surface,crop}){
-    const pixels=await decodePaintRaster(raster,{signal});check();
-    if(!pixels||pixels.width!==plan.view.width||pixels.height!==plan.view.height)throw failure('water_video_source','The finished painting does not match its replay.');
-    await surface.clear();await surface.reframe(pixels.width,pixels.height,-crop[0],-crop[1]);await surface.fromRGBA8(pixels.data,pixels.width,pixels.height);
-    entryAnchor=surface.origin.slice();const last=plan.entries[entryIndex];last.x=plan.view.x;last.y=plan.view.y;
-    await draw(surface);await encodeTo(plan.frames);
+  doneContext.drawImage(await ground(),0,0);check();begin();await encodeTo(intro);
+  let reached=0;
+  for(const [index,step]of steps.entries()){
+   const first=intro+Math.round(reached/total*body),last=intro+Math.round((reached+=weights[index])/total*body),image=await step.image();check();
+   if(step.kind==='water')await water(step,first,last);
+   else for(let at=frame;at<last;at++){
+    const t=(at-first+1)/Math.max(1,last-first);begin();
+    if(step.kind==='reveal'){context.save();context.beginPath();context.rect(step.box.x,step.box.y,step.box.w*t,step.box.h);context.clip();context.drawImage(image,0,0);context.restore();}
+    else{
+     const line=step.line,length=weights[index]*t;context.beginPath();context.moveTo(...line[0]);
+     for(let i=1,run=0;i<line.length;i++){const a=line[i-1],b=line[i],span=Math.hypot(b[0]-a[0],b[1]-a[1]);if(run+span>=length){const k=span?(length-run)/span:1;context.lineTo(a[0]+(b[0]-a[0])*k,a[1]+(b[1]-a[1])*k);break;}context.lineTo(...b);run+=span;}
+     context.lineCap=context.lineJoin='round';context.lineWidth=step.width;context.strokeStyle=step.colour;context.stroke();
+    }
+    await encodeTo(at+1);
    }
-  });
+   doneContext.drawImage(image,0,0);begin();await encodeTo(last);
+  }
+  const kept=await final();check();
+  for(let at=0;frame<plan.frames;at++){begin();context.globalAlpha=Math.min(1,(at+1)/fade);context.drawImage(kept,0,0);await encodeTo(frame+1);}
   check();progress('finishing');await drain();const blob=muxer.finish(plan.frames);
   onProgress?.({phase:'complete',completed:plan.frames,total:plan.frames,fraction:1});
-  return {blob,type:'video/mp4',width:plan.width,height:plan.height,duration:plan.duration,frames:plan.frames};
+  return {blob,type:'video/mp4',width:plan.width,height:plan.height,duration:plan.frames/fps,frames:plan.frames};
  }finally{
-  signal?.removeEventListener('abort',abort);try{if(encoder&&encoder.state!=='closed')encoder.close();}finally{muxer.close();canvas.width=canvas.height=readout.width=readout.height=1;if(tile)tile.width=tile.height=1;}
+  signal?.removeEventListener('abort',abort);try{if(encoder&&encoder.state!=='closed')encoder.close();}finally{muxer.close();for(const c of [canvas,done,readout])c.width=c.height=1;}
  }
 }

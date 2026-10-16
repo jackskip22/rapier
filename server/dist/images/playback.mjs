@@ -27,7 +27,7 @@ export function createMediaPlayback(win, inspectGIF) {
     })();
     admitted.catch(error => {if (!closed) {state.status = 'admission-failed'; state.error = String(error.message).slice(0, 160); changed(state);}});
     let inflight = null;
-    const closeDecoder = () => {ticket++; win.clearTimeout(timer); timer = 0; const old = decoder; decoder = null; if (old) inflight ? inflight.then(() => old.close()) : old.close();};
+    const closeDecoder = () => {ticket++; win.clearTimeout(timer); timer = 0; active.delete(canvas); const old = decoder; decoder = null; if (old) inflight ? inflight.then(() => old.close()) : old.close();};
     const settle = async promise => {
       let timeout;
       try {return await Promise.race([promise, new Promise((_, reject) => {timeout = win.setTimeout(() => reject(new Error('Animation decode timeout')), 5000);})]);}
@@ -67,7 +67,7 @@ export function createMediaPlayback(win, inspectGIF) {
           if (canvas.height !== h) canvas.height = h;
           const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, w, h); ctx.drawImage(frame, 0, 0);
           if (!state.first && next === 0) state.first = canvas.toDataURL('image/png');
-          const delay = Math.max(20, (frame.duration || 100000) / 1000);
+          const delay = frame.duration > 10000 ? Math.max(20, frame.duration / 1000) : 100;
           duration += delay; if (duration > 120000) throw new Error('Animation exceeds the duration budget');
           state.status = 'ready'; state.frame = next; changed(state);
           if (single) {paused = true; closeDecoder(); return;}
@@ -86,8 +86,8 @@ export function createMediaPlayback(win, inspectGIF) {
     return {state, play() {if (!closed && paused && !['decode-failed', 'admission-failed'].includes(state.status)) {paused = false; void step();}},
       async first() {if (!state.first && !closed) {single = true; next = 0; paused = false; try {await step();} finally {single = false; paused = true; closeDecoder(); if (held) {held = false; this.suspend();}}} return state.first;},
       pause() {paused = true; ticket++; win.clearTimeout(timer); timer = 0;},
-      suspend() {if (single) {held = true; return;} paused = true; closeDecoder(); canvas.width = canvas.height = 0; active.delete(canvas); state.status = 'suspended'; changed(state);},
-      close() {closed = true; paused = true; closeDecoder(); canvas.width = canvas.height = 0; active.delete(canvas);},
+      suspend() {if (single) {held = true; return;} paused = true; closeDecoder(); canvas.width = canvas.height = 0; state.status = 'suspended'; changed(state);},
+      close() {closed = true; paused = true; closeDecoder(); canvas.width = canvas.height = 0;},
       get paused() {return paused;}};
   }
   return {raster, inspectGIF, encode, source: '(' + createMediaPlayback.toString() + ')(window, ' + inspectGIF.toString() + ')'};

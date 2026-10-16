@@ -15,7 +15,7 @@ export function geometry(quad, image) {
 	return {left, right, top, bottom, width: right - left, height: bottom - top, points};
 }
 
-export function clippingAncestors(image, host) {
+function clippingAncestors(image, host) {
 	const rows = [];
 	for (let node = image.parentElement; node; node = node.parentElement) {
 		const style = getComputedStyle(node), x = style.overflowX !== 'visible', y = style.overflowY !== 'visible';

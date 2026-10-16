@@ -14,7 +14,7 @@
   X-Robots-Tag: noindex
 
 # Matching rules combine headers; remove the inherited cache policy before setting this one.
-/embed/rapier-document.html
+/embed/rapier.html
   ! Cache-Control
   Cache-Control: public, max-age=300
 

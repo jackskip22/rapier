@@ -148,20 +148,6 @@ export function createParagraphFitter() {
     return {lines, work, cost: totalCost, approximate: false};
   }
 
-  function solve(prepared, width, options, observe) {
-    const work = solveSteps(prepared, width, options);
-    try {
-      let step = work.next();
-      while (!step.done) {
-        if (step.value && !observe) return null;
-        step = work.next(step.value ? observe(step.value) : undefined);
-      }
-      return step.value;
-    } finally { work.return(); }
-  }
-  return {prepare, solve, solveSteps};
+  return {prepare, solveSteps};
 }
 
-const fitter = createParagraphFitter();
-export const prepareParagraph = fitter.prepare;
-export const fitParagraph = fitter.solve;

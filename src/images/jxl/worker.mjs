@@ -31,6 +31,14 @@ export function createJPEGXLCodec({encoderFactory}) {
       stage = 'carrying the JPEG';
       return encoder.transcode(jpeg, options);
     },
+    async reconstruct(input) {
+      stage = 'restoring the JPEG';
+      const bytes = byteView(input?.bytes);
+      if (!bytes.byteLength || bytes.byteLength > JPEG_XL_LIMITS.bytes) throw codecError('JXL_INPUT', 'The JPEG XL is empty or exceeds 16 MiB.');
+      if (typeof encoderFactory !== 'function') throw codecError('JXL_UNAVAILABLE', 'The bundled JPEG XL codec is unavailable.');
+      encoder ||= encoderFactory();
+      return encoder.reconstruct(bytes);
+    },
     serve(message, report) {
       if (typeof encoderFactory !== 'function') return null;
       encoder ||= encoderFactory();
@@ -82,6 +90,9 @@ export function installJPEGXLWorker(configuration) {
         const carried = await codec.transcode({bytes: request.bytes}, {progress: advance});
         progress?.(1);
         globalThis.postMessage({id, ok: true, ...carried}, [carried.bytes.buffer]);
+      } else if (request.operation === 'reconstruct') {
+        const bytes = await codec.reconstruct({bytes: request.bytes});
+        globalThis.postMessage({id, ok: true, bytes}, bytes ? [bytes.buffer] : []);
       } else throw codecError('JXL_OPERATION', 'Unknown JPEG XL operation.');
     } catch (error) {
       globalThis.postMessage({id, ok: false, error: codec.failure(error)});

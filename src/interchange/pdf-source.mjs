@@ -8,9 +8,10 @@ export async function readAttachedSource(blob, {checkCurrent = () => {}, signal}
   check();
   if (!(blob instanceof Blob) || !blob.size || blob.size > LIMIT) return null;
   const bytes = new Uint8Array(await blob.arrayBuffer()); check();
+  const ending = [...new TextDecoder('latin1').decode(bytes.subarray(-1024)).matchAll(/startxref\s+(\d+)\s+%%EOF/g)].at(-1);
+  if (!ending) return null;
   const text = new TextDecoder('latin1').decode(bytes);
-  const ending = /startxref\s+(\d+)\s+%%EOF\s*$/.exec(text);
-  if (!ending || !text.startsWith('xref', Number(ending[1]))) return null;
+  if (!text.startsWith('xref', Number(ending[1]))) return null;
   let at = Number(ending[1]) + 4, tokens = 0;
   const space = () => { while (at < text.length) {
     if (/[\0\t\n\f\r ]/.test(text[at])) at++;
@@ -53,7 +54,7 @@ export async function readAttachedSource(blob, {checkCurrent = () => {}, signal}
       return {string: Uint8Array.from(out)};
     }
     const word = token();
-    if (/^[+-]?\d+(?:\.\d*)?$/.test(word)) {
+    if (/^[+-]?(?:\d+\.?\d*|\.\d+)$/.test(word)) {
       const number = Number(word), after = at; space();
       const ref = /^(\d+)\s+R\b/.exec(text.slice(at));
       if (ref) { at += ref[0].length; return {ref: number, generation: Number(ref[1])}; }
@@ -106,18 +107,20 @@ export async function readAttachedSource(blob, {checkCurrent = () => {}, signal}
     catalog = resolve(trailer.Root);
   } catch (_) { return null; }
   const candidates = [...(Array.isArray(catalog?.AF) ? catalog.AF : [])], visited = new Set();
-  const names = entry => {
+  const names = (entry, depth = 0) => {
     if (!entry || visited.has(entry.ref ?? entry)) return;
+    if (depth > 32) fail('PDF_SOURCE_FORMAT', 'The attached PDF source is damaged.');
     visited.add(entry.ref ?? entry); const tree = resolve(entry);
     if (Array.isArray(tree?.Names)) for (let index = 1; index < tree.Names.length; index += 2) candidates.push(tree.Names[index]);
-    if (Array.isArray(tree?.Kids)) for (const child of tree.Kids) names(child);
+    if (Array.isArray(tree?.Kids)) for (const child of tree.Kids) names(child, depth + 1);
   };
   names(resolve(catalog?.Names)?.EmbeddedFiles);
   let original = null, filename = '';
   for (const ref of new Set(candidates)) {
     check(); const file = resolve(ref), name = string(file?.UF) || string(file?.F);
-    if (file?.AFRelationship?.name !== 'Source' || !/\.(?:md|markdown)$/i.test(name)) continue;
+    if (file?.AFRelationship?.name !== 'Source' || !name) continue;
     const links = resolve(file.EF), stream = object(links?.UF || links?.F), length = resolve(stream.dict?.Length);
+    if (!/\.(?:md|markdown)$/i.test(name) && !['text/markdown', 'text/plain'].includes(stream.dict?.Subtype?.name)) continue;
     if (!Number.isSafeInteger(length) || length < 0 || stream.start == null || stream.start + length > bytes.length ||
         !/^\s*endstream\b/.test(text.slice(stream.start + length, stream.start + length + 24))) fail('PDF_SOURCE_FORMAT', 'The attached PDF source is damaged.');
     let data = bytes.slice(stream.start, stream.start + length);

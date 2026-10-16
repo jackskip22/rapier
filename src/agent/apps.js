@@ -2418,6 +2418,7 @@
     pop.overlay.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); void decide('cancel'); } }, {signal: listeners.signal});
     pairDialog = pop.overlay;
     pop.show(lead, code, words, ownerApproval);
+    document.body.prepend(pop.overlay);
     lock();
     while (open && !closed) {
       if (deciding) { await new Promise(resolve => setTimeout(resolve, 2000)); continue; }

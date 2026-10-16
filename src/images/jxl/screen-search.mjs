@@ -6,9 +6,9 @@ import {scaled} from './bits.mjs';
 import {paletteSteps} from './palette-search.mjs';
 import {localScreenSteps} from './screen-local.mjs';
 export function screenEligible(rgba, width, height, shape, effort = 3) {
-  if (effort >= 5 && shape.palette) return true;
+  if (shape.palette) return true;
   if (effort >= 8 && screenPlan(rgba, width, height, shape, 'global')) return true;
-  if ((shape.palette || effort >= 5) && screenLike(rgba, width, height)) return true;
+  if (effort >= 5 && screenLike(rgba, width, height)) return true;
   if (effort < 5 || width < 32 || height < 32) return false;
   let flat = 0, soft = 0;
   for (let s = 0; s < 256; s++) {
@@ -23,6 +23,21 @@ export function screenEligible(rgba, width, height, shape, effort = 3) {
 }
 
 export function* screenSteps(rgba, width, height, shape, colorSpace, {fastFloor = 0, effort = 3, pooled = false} = {}) {
+  let best = null;
+  for (const [pass, minLength] of [7, 4].entries()) {
+    const steps = screenPass(rgba, width, height, shape, colorSpace, {fastFloor, effort, pooled, minLength});
+    let step, reply, hurried = false;
+    while (!(step = steps.next(reply)).done) {
+      reply = yield scaled(step.value, done => (pass + done) / 2);
+      hurried = reply === null || (typeof reply === 'object' ? reply.hurried : reply);
+    }
+    if (step.value && (!best || step.value.length < best.length)) best = step.value;
+    if (hurried) break;
+  }
+  return best;
+}
+
+function* screenPass(rgba, width, height, shape, colorSpace, {fastFloor, effort, pooled, minLength}) {
   let best = null, bestMode, deepen;
   const plans = new Map();
   const modes = ['global-lz', 'patch-lz', 'scalar-lz', 'global', 'scalar'];
@@ -33,6 +48,7 @@ export function* screenSteps(rgba, width, height, shape, colorSpace, {fastFloor 
   if (effort === 9) modes.push('local-fine', 'local-deeper');
   for (let i = 0; i < modes.length; i++) {
     if (yield (i + 0.01) / modes.length) return best;
+    if (minLength === 4 && ['global', 'scalar', 'palette'].includes(modes[i])) continue;
     const deeper = modes[i].endsWith('-deeper') && !modes[i].startsWith('local-');
     if (deeper) {
       deepen ??= plans.get('global')?.meta[0].width <= 64 || bestMode === 'global-deep' || bestMode === 'frequency-deep';
@@ -40,9 +56,9 @@ export function* screenSteps(rgba, width, height, shape, colorSpace, {fastFloor 
     }
     let steps;
     if (modes[i].startsWith('local-')) steps = localScreenSteps(rgba, width, height, shape, colorSpace,
-      {dim: modes[i] === 'local-fine' ? 512 : 1024, depths: modes[i] === 'local-copy' ? [64] : [64, 256], ceiling: best?.length ?? Infinity});
-    else if (modes[i] === 'patch-lz') steps = patchSteps(rgba, width, height, shape, colorSpace, {tokenCodec: screenLZ77, pooled});
-    else if (modes[i] === 'patch-deep') steps = patchSteps(rgba, width, height, shape, colorSpace, {search: {}, limit: best?.length ?? Infinity, pooled});
+      {dim: modes[i] === 'local-fine' ? 512 : 1024, depths: modes[i] === 'local-copy' ? [64] : [64, 256], ceiling: best?.length ?? Infinity, minLength});
+    else if (modes[i] === 'patch-lz') steps = patchSteps(rgba, width, height, shape, colorSpace, {tokenCodec: screenLZ77, pooled, minLength});
+    else if (modes[i] === 'patch-deep') steps = patchSteps(rgba, width, height, shape, colorSpace, {search: {}, limit: best?.length ?? Infinity, pooled, minLength});
     else if (modes[i] === 'palette') steps = paletteSteps(rgba, width, height, shape, colorSpace,
       {plan: plans.get('global'), pooled, ceiling: best?.length ?? Infinity});
     else {
@@ -52,7 +68,7 @@ export function* screenSteps(rgba, width, height, shape, colorSpace, {fastFloor 
       if (!plan) continue;
       steps = screenFrameSteps(rgba, width, height, shape, colorSpace, plan, {
         tokenCodec: modes[i].endsWith('-lz') ? screenLZ77 : null,
-        search: deeper ? {depth: 64} : modes[i].endsWith('-deep') ? {} : null, pooled
+        search: deeper ? {depth: 64} : modes[i].endsWith('-deep') ? {} : null, pooled, minLength
       });
     }
     let step, reply, hurry = false;

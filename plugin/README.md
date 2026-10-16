@@ -1,44 +1,27 @@
-# Rapier, the Claude plugin
+# Rapier - Markdown Editor & Art: Claude plugin
 
-Paint with Claude, then pick up the brush yourself.
+Rapier is a Markdown editor for writing, drawing and painting with your AI assistant. Edit the page yourself, add editable diagrams and illustrations, and keep your work as portable Markdown.
 
-[Rapier](https://rapier.website) is a fast Markdown editor for notes, diagrams, drawing and painting.
-You and Claude work on the same page. Keep writing by hand, move a diagram's boxes, or continue a painting
-with your own brush. Review exact changes and undo recorded work while keeping later independent edits.
+Work together on plans, notes, drafts and visual explanations. Read exact source, make focused revision-checked edits, compare proposed text and undo recorded work while keeping later independent edits. Download Markdown or plain text, or create an editable offline HTML file through supported export tools or the included local helpers. Running local helpers requires Node and npm; an MCP connection alone does not provide a shell.
 
-## Paint your first page
+Painting needs an open full editor. Water requires WebGPU. Word, PDF and rendered-page exports depend on the available editor or renderer. A successful tool call does not by itself prove that the inline editor appeared. Connected Notes require a configured store.
 
-Ask Claude:
+Rapier accesses only the document or configured store you share. It cannot search unshared device files, send email or make purchases. Hosted workspaces expire after 30 idle days; download an independent copy to keep it. The four skills include the published offline helper packages.
 
-> Paint a small watercolour sunset over the sea in Rapier. Leave room for me to add a boat, then show me where to pick up the brush.
+## Try it together
 
-Open the editor link Claude returns and keep it visible while the paint is made. Water is marked **Testing**
-and requires a WebGPU-capable browser. A queued painting is not finished: Claude checks that it committed
-before handing you the brush. If Water is unavailable, Claude can offer regular brushes or a movable diagram.
+- “Revise this introduction and show me exactly what changed.”
+- “Draw our signup flow as a diagram whose boxes I can move.”
+- “Paint a small watercolour sunset over the sea in Rapier. Leave room for me to add a boat.”
+- “Find my garden Note and add this list.” (Requires a configured Notes store.)
+- “Give me this document as one editable offline HTML file.”
+
+Open the returned editor link and keep it visible while painting. A queued painting is not finished: Claude checks
+that it committed before handing you the brush. If Water is unavailable, use regular brushes or an editable diagram.
+Later marks on the same paint surface can make an undo conflict; Rapier reports it rather than discarding your work.
 Live collaboration needs an internet connection; downloaded files remain yours to edit offline.
 
-Try a revision before adding your boat: “Add a small sun, then undo that change.”
-Claude checks the result, leaving the painting ready for your own brush. Later marks on the same paint
-surface can make an undo conflict; Rapier reports the conflict rather than discarding your work.
-
-## Write, draw and keep it
-
-- “Turn this signup process into a diagram whose boxes I can move: enter email, verify email, create profile, welcome.”
-- “In my Rapier draft, fix only the typos in section 2 and show me exactly what changed.”
-- “Give me this document as one offline HTML file I can keep editing.”
-
-Mermaid flowcharts stay in Markdown. SVG drawings remain editable. Pictures, drawings and paintings travel
-with the source in one `.md` file. Tables, footnotes, code and LaTeX can sit beside them.
-
-The connector exports Markdown, plain text and an offline HTML editor. Word, PDF and rendered-page exports
-need an open editor; Claude checks the actual delivery receipt. A rendered
-page export is a file. Notes and note history use your configured store; connecting the hosted editor alone
-does not connect your Notes.
-
-The `rapier-html` skill can also package a document with its editor when the host has Node and npm.
-You can edit, save and, with an optional one-use return address, send your copy back to Claude. Export links
-last up to 24 hours within the workspace lifetime; shared workspaces expire after 30 idle days.
-Download a file to keep an independent copy.
+Export links last up to 24 hours within the workspace lifetime. Download a file to keep an independent copy.
 
 ## The four skills
 

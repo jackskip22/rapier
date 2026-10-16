@@ -9,11 +9,19 @@ export interface MathError {
   commandTruncated?: boolean;
   /** True only when refused oversized source is not embedded in diagnostic SVG. */
   sourceOmitted?: boolean;
+  /** For an unknown command or environment: the known name one or two edits away, such as `\\frac` for `\\farc`. */
+  suggestion?: string;
 }
 export interface RenderOptions {
   displayMode?: boolean;
   maxWidth?: number;
   screen?: {fontSize: number; pixelRatio: number; dark: boolean};
+  /** Mend what is unfinished where a person is typing: at `caret`, or at the end. */
+  preview?: boolean;
+  /** With preview: the UTF-16 offset where the person is typing. */
+  caret?: number;
+  /** Mark each symbol with `data-math-at`, its UTF-16 offset in the source. */
+  spans?: boolean;
 }
 export interface RenderResult {
   svg: string;

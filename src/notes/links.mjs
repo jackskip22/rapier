@@ -1057,18 +1057,19 @@ export function unlinkedMentions(index, texts, file, {titles, minLength = 4} = {
 		.filter(t => t && t.length >= minLength);
 	const hits = [];
 	if (!names.length) return hits;
+	const patterns = names.map(title => new RegExp('(?<![\\p{L}\\p{N}_])' + escapeRe(title) + '(?![\\p{L}\\p{N}_])', 'gu'));
 	for (const [other, src] of map) {
 		if (other === file) continue;
-		const mask = linkMask(src);
+		let mask = null;
 		const links = index.out.get(other) || [];
 		const covered = (pos, len) => {
-			if (mask[pos]) return true;
+			mask ||= linkMask(src);
 			for (let k = 0; k < len; k++) if (mask[pos + k]) return true;
 			for (const L of links) if (pos < L.end && pos + len > L.start) return true;
 			return false;
 		};
-		for (const title of names) {
-			const re = new RegExp('(?<![\\p{L}\\p{N}_])' + escapeRe(title) + '(?![\\p{L}\\p{N}_])', 'gu');
+		for (const re of patterns) {
+			re.lastIndex = 0;
 			let m;
 			while ((m = re.exec(src))) {
 				if (covered(m.index, m[0].length)) continue;

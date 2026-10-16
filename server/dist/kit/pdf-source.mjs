@@ -63,7 +63,7 @@ function pdfStructure(input) {
     return dictionary(place.at + header[0].length);
   };
   const root = readDictionary(rootId, generation);
-  return {bytes, text, root, rootId, generation, trailer, size, xref, readDictionary, dictionary, fail};
+  return {bytes, text, offsets, root, rootId, generation, trailer, size, xref, readDictionary, dictionary, fail};
 }
 
 export function readPdfPageCount(input) {
@@ -76,7 +76,7 @@ export function readPdfPageCount(input) {
 }
 
 export async function attachPdfSource(input, {source, filename, maxBytes = Infinity, check = () => {}}) {
-  const {bytes, text, root, rootId, generation, trailer, size, xref, readDictionary, dictionary, fail} = pdfStructure(input);
+  const {bytes, text, offsets, root, rootId, generation, trailer, size, readDictionary, dictionary, fail} = pdfStructure(input);
   if (typeof source !== 'string' || typeof filename !== 'string' || !filename) fail();
   const ascii = value => Uint8Array.from(value, character => character.charCodeAt(0));
   const encode = new TextEncoder(), hex = value => Array.from({length: value.length}, (_, i) => value.charCodeAt(i).toString(16).padStart(4, '0')).join('');
@@ -91,18 +91,31 @@ export async function attachPdfSource(input, {source, filename, maxBytes = Infin
   const original = remove ? text.slice(root.start, remove.start) + text.slice(remove.end, root.end - 2) : text.slice(root.start, root.end - 2);
   const payload = encode.encode(source); check();
   const compressed = new Uint8Array(await new Response(new Blob([payload]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer()); check();
-  const fileId = size, streamId = size + 1;
+  const fileId = size, streamId = size + 1, infoId = size + 2, totalSize = size + 3;
+  let infoBody = '<< /Producer (Rapier) >>';
+  const existingInfo = trailer.fields.get('Info');
+  if (existingInfo) {
+    const ref = /^(\d+)\s+(\d+)\s+R$/.exec(existingInfo.value);
+    const held = ref ? readDictionary(Number(ref[1]), Number(ref[2])) : dictionary(existingInfo.from);
+    const producer = held.fields.get('Producer');
+    const kept = producer ? text.slice(held.start, producer.start) + text.slice(producer.end, held.end - 2) : text.slice(held.start, held.end - 2);
+    infoBody = kept + ' /Producer (Rapier) >>';
+  }
   const escaped = '(' + filename.replace(/[^\x20-\x7e]/g, '_').replace(/[\\()]/g, '\\$&') + ')';
-  const parts = [bytes, ascii('\n')], added = [];
+  const parts = [bytes, ascii('\n')], merged = new Map(offsets);
   let length = bytes.length + 1;
-  const append = (id, gen, chunks) => { added.push({id, gen, offset: length}); const body = [ascii(id + ' ' + gen + ' obj\n'), ...chunks, ascii('\nendobj\n')]; for (const chunk of body) {parts.push(chunk); length += chunk.length;} };
+  const append = (id, gen, chunks) => { merged.set(id, {at: length, generation: gen}); const body = [ascii(id + ' ' + gen + ' obj\n'), ...chunks, ascii('\nendobj\n')]; for (const chunk of body) {parts.push(chunk); length += chunk.length;} };
   append(rootId, generation, [ascii(original + ' /Names ' + names + ' /EmbeddedFiles << /Names [<feff' + hex(filename) + '> ' + fileId + ' 0 R] >> >> /AF [' + fileId + ' 0 R] >>')]);
   append(fileId, 0, [ascii('<< /Type /Filespec /F ' + escaped + ' /UF <feff' + hex(filename) + '> /AFRelationship /Source /EF << /F ' + streamId + ' 0 R /UF ' + streamId + ' 0 R >> >>')]);
   append(streamId, 0, [ascii('<< /Type /EmbeddedFile /Subtype /text#2Fmarkdown /Params << /Size ' + payload.length + ' >> /Filter /FlateDecode /Length ' + compressed.length + ' >>\nstream\n'), compressed, ascii('\nendstream')]);
-  let table = 'xref\n';
-  for (const row of added.sort((a, b) => a.id - b.id)) table += row.id + ' 1\n' + String(row.offset).padStart(10, '0') + ' ' + String(row.gen).padStart(5, '0') + ' n \n';
-  const info = trailer.fields.get('Info'), identity = trailer.fields.get('ID');
-  table += 'trailer\n<< /Size ' + (size + 2) + ' /Root ' + rootId + ' ' + generation + ' R /Prev ' + xref + (info ? ' /Info ' + info.value : '') + (identity ? ' /ID ' + identity.value : '') + ' >>\nstartxref\n' + length + '\n%%EOF\n';
+  append(infoId, 0, [ascii(infoBody)]);
+  let table = 'xref\n0 ' + totalSize + '\n0000000000 65535 f \n';
+  for (let id = 1; id < totalSize; id++) {
+    const place = merged.get(id);
+    table += place ? String(place.at).padStart(10, '0') + ' ' + String(place.generation).padStart(5, '0') + ' n \n' : '0000000000 00000 f \n';
+  }
+  const identity = trailer.fields.get('ID');
+  table += 'trailer\n<< /Size ' + totalSize + ' /Root ' + rootId + ' ' + generation + ' R /Info ' + infoId + ' 0 R' + (identity ? ' /ID ' + identity.value : '') + ' >>\nstartxref\n' + length + '\n%%EOF\n';
   parts.push(ascii(table)); length += table.length;
   if (length > maxBytes) throw Object.assign(new Error('The exported file exceeds the file limit.'), {code: 'export_too_large'});
   const result = new Uint8Array(length); let at = 0;

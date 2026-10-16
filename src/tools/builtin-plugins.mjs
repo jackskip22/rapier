@@ -2,11 +2,6 @@
 import {basename, join} from 'node:path';
 import {pluginPackFiles, readPluginFile} from './stage-plugin-pack.mjs';
 
-export const builtinExecution = `if (RapierBundledPlugins.has(RESOURCE)) {
-	_rapierExecuteVendorSource(m.file, new TextDecoder('utf-8', {fatal: true}).decode(bytes));
-	return Promise.resolve(m.started && m.started()).then(function () { if (m.configure) _check(); });
-}`;
-
 export const builtinFilesReuse = `if (m.files.length === 1 && RapierBundledPlugins.has('rapier-' + m.key) && _rapierProviders[m.key])
 	return _rapierProviders[m.key];`;
 

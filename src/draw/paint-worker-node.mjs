@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {Worker, parentPort, workerData, isMainThread} from 'node:worker_threads';
-import {createPaintWorker,createPaintWorkerClient} from './paint-worker.mjs';
+import {createPaintWorker,createWorkerClient} from './paint-worker.mjs';
 import {installPaintRowWorker} from './paint-parallel.mjs';
 import {readFile} from 'node:fs/promises';
 import {configureHostedPaintRaster} from '../mcp/paint-raster.mjs';
@@ -25,7 +25,7 @@ export function openNodePaintRow(init) {
 }
 export async function openNodePaintWorker(options={}) {
  const worker=new Worker(new URL(import.meta.url),{execArgv:[]});
- const client=createPaintWorkerClient({postMessage:(m,t)=>worker.postMessage(m,t),terminate:()=>worker.terminate()});
+ const client=createWorkerClient({postMessage:(m,t)=>worker.postMessage(m,t),terminate:()=>worker.terminate()});
  worker.on('message',message=>client.receive(message)); worker.on('error',error=>client.fail(error)); worker.on('exit',code=>{client.fail(new Error('Paint worker exited: '+code));});
  try { await client.request('configure',options); return client; } catch(error) {await client.close();throw error;}
 }

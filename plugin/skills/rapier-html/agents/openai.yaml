@@ -1,7 +1,7 @@
 {
   "interface": {
-    "display_name": "Rapier HTML",
-    "short_description": "Make an editable offline page."
+    "display_name": "Rapier offline HTML",
+    "short_description": "Create one editable offline HTML document."
   },
   "dependencies": {
     "tools": [

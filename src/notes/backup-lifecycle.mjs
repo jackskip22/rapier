@@ -55,30 +55,37 @@ function backupSequenceRecord(value) {
 }
 
 export async function detachBackupFile(file, record, {onProgress, signal} = {}) {
+	check(signal);
 	const chunks = [], hash = sha256State(), step = 4 * 1024 * 1024;
 	if (file.size !== record.bytes) throw new Error('the private backup size changed before export');
 	for (let at = 0; at < file.size; at += step) {
 		check(signal);
 		const bytes = new Uint8Array(await file.slice(at, Math.min(file.size, at + step)).arrayBuffer());
+		check(signal);
 		if (bytes.length !== Math.min(step, file.size - at)) throw new Error('the private backup could not be copied for export');
 		hash.update(bytes); chunks.push(new Blob([bytes]));
 		onProgress?.({phase:'Preparing download', bytes:at + bytes.length, totalBytes:file.size});
 	}
+	check(signal);
 	if (hash.finish() !== record.digest) throw new Error('the private backup bytes changed before export');
 	return new File(chunks, record.name, {type:'application/zip'});
 }
 
-export async function verifyBackupFile(file, {bytes, digest}, {onProgress} = {}) {
+export async function verifyBackupFile(file, {bytes, digest}, {onProgress, signal} = {}) {
+	check(signal);
 	if (!Number.isSafeInteger(bytes) || bytes < 0 || typeof digest !== 'string' || !/^[0-9a-f]{64}$/.test(digest)) throw new TypeError('backup verification needs an exact byte count and SHA-256');
 	if (!file || file.size !== bytes) throw new Error('the private backup size no longer matches its completion record');
 	const hash = sha256State(), step = 4 * 1024 * 1024;
 	onProgress?.({phase: 'Verifying backup', bytes: 0, totalBytes: bytes});
 	for (let at = 0; at < bytes; at += step) {
+		check(signal);
 		const part = new Uint8Array(await file.slice(at, at + step).arrayBuffer());
+		check(signal);
 		if (part.length !== Math.min(step, bytes - at)) throw new Error('the private backup could not be read back completely');
 		hash.update(part);
 		onProgress?.({phase: 'Verifying backup', bytes: Math.min(bytes, at + step), totalBytes: bytes});
 	}
+	check(signal);
 	if (hash.finish() !== digest) throw new Error('the private backup bytes no longer match its completion record');
 	return file;
 }
@@ -92,7 +99,7 @@ export function retainedBackupSink(target, value) {
 	return {
 		get state() { return discarded ? 'discarded' : 'sealed'; },
 		get bytes() { return record.bytes; }, get digest() { return record.digest; },
-		file: ({onProgress} = {}) => run(async () => verifyBackupFile(await target.file(), record, {onProgress})),
+		file: ({onProgress, signal} = {}) => run(async () => { check(signal); return verifyBackupFile(await target.file(), record, {onProgress, signal}); }),
 		discard: () => run(async () => { await target.remove(); discarded = true; })
 	};
 }

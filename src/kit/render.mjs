@@ -8,38 +8,6 @@ import {documentLanguage, documentSettingsFonts} from '../spec/document-settings
 import {createLineMeasurer, linesHeight} from '../layout/model.mjs';
 import {markPrintCapitals, createPrintCapitals, followingPrintProse} from './print-capitals.mjs';
 import {freezePublishedInk} from './render-ink.mjs';
-export function presentNativeDiagram(drawing) {
-  const winners=new Map();
-  for(const style of drawing.querySelectorAll('style')){
-    const media=/^\s*@media\s*\(\s*prefers-color-scheme\s*:\s*dark\s*\)\s*\{([\s\S]*)\}\s*$/.exec(style.textContent);
-    if(media)for(const rule of media[1].matchAll(/([^{}]+)\{([^{}]*)\}/g)){
-      const properties=[...rule[2].matchAll(/(?:^|;)\s*(fill|stroke|color|stop-color)\s*:\s*(#[\da-f]{3,8}|rgba?\([\d.,%/\s]+\)|none)\s*(?:!important)?(?=;|$)/gi)];
-      for(const selector of rule[1].split(',')){
-        if(!/^\s*\[[^\[\]{};]+\](?:\s*(?:>\s*)?\[[^\[\]{};]+\])*\s*$/.test(selector))continue;
-        const rank=(selector.match(/\[/g)||[]).length;
-        for(const element of [...(drawing.matches(selector)?[drawing]:[]),...drawing.querySelectorAll(selector)]){
-          let paints=winners.get(element);if(!paints)winners.set(element,paints=new Map());
-          for(const [,property,dark] of properties){const light=element.getAttribute(property);
-            if(light&&(paints.get(property)?.rank??-1)<=rank)paints.set(property,{light,dark,rank});}
-        }
-      }
-    }
-    style.remove();
-  }
-  for(const [element,paints] of winners)for(const [property,{light,dark}] of paints)
-    element.style.setProperty(property,'light-dark('+light+', '+dark+')','important');
-  drawing.classList.add('rapier-native-flowchart');drawing.setAttribute('role','img');
-  drawing.setAttribute('aria-roledescription',drawing.getAttribute('data-rapier-diagram-kind')||'flowchart');
-  const width=Number(drawing.getAttribute('width')),
-    sizes=[...drawing.querySelectorAll('text[font-size]')].map(text=>Number(text.getAttribute('font-size'))).filter(size=>Number.isFinite(size)&&size>0),
-    minimum=sizes.reduce((smallest,size)=>Math.min(smallest,size),Infinity);
-  if(Number.isFinite(width)&&width>0){
-    const readable=Math.ceil(width*14/(Number.isFinite(minimum)?minimum:14)*1000)/1000;
-    drawing.style.width='clamp('+readable+'px, 100%, '+width+'px)';
-  }
-  drawing.style.maxWidth='none';
-}
-
 export function positionNativeDiagram(drawing) {
   const surface=drawing?.closest?.('.diagram-block,.diagram-live-preview');
   if(!surface?.clientWidth)return;
@@ -596,10 +564,11 @@ function _rapierSharedResolve(text, ids, images, definitions) {
 		return found;
 	};
 	const inline = new RegExp('(\\]\\([ \\t\\r\\n]*(?:&lt;)?)#' + id + '(?=>?[ \\t\\r\\n]*\\)|>?[ \\t\\r\\n]+["\'(])', 'g');
-	const definition = new RegExp('(^[ \\t>]*\\[((?:\\\\.|[^\\]\\\\])+)\\]:[ \\t]*(?:(?:\\r\\n|\\r|\\n)[ \\t>]*)?(?:&lt;)?)#' + id + '(?=>?[ \\t]*$|>?[ \\t]+["\'(])', 'gm');
+	const definition = new RegExp('(^[ \\t>]*(?:(?:[-+*]|\\d{1,9}[.)])[ \\t]+[ \\t>]*)*\\[((?:\\\\.|[^\\]\\\\])+)\\]:[ \\t]*(?:(?:\\r\\n|\\r|\\n)[ \\t>]*)?(?:&lt;)?)#' + id + '(?=>?[ \\t]*$|>?[ \\t]+["\'(])', 'gm');
 	const swapInline = (match, lead, value) => { const found = src(value); return found == null ? match : lead + found; };
 	const swapDefinition = (match, lead, label, value) => {
-		if (!definitions.has(md.utils.normalizeReference(_rapierSharedDecode(label)))) return match;
+		const decoded = _rapierSharedDecode(label), quoted = decoded.replace(/\r?\n[ \t]*(?:>[ \t]*)+/g, ' ');
+		if (!definitions.has(md.utils.normalizeReference(decoded)) && !definitions.has(md.utils.normalizeReference(quoted))) return match;
 		const found = src(value);
 		return found == null ? match : lead + found;
 	};

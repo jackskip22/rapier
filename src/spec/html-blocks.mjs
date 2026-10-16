@@ -94,7 +94,7 @@ export function htmlLayoutEdit(record, value) {
     text: info + fence.source.slice(fence.infoEnd, fence.fenceEnd) + (marker ? line + marker : '') + tail};
 }
 
-export function htmlInfoEdit(info, changes) {
+function htmlInfoEdit(info, changes) {
   let text = info;
   for (const [key, value] of Object.entries(changes)) {
     const pattern = new RegExp('(^|[\\s{])\\s*' + key + '=(?:"[^"]*"|\'[^\']*\'|[^\\s}]+)', 'g');

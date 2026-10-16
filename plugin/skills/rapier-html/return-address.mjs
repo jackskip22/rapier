@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Shared by the writer and the page. Every page Rapier writes (page.mjs's wrap, the editor's Share and HTML export) carries
 // PAGE_SEED once, after its charset (which must stay in the first 1024 bytes): an HTML comment no person sees that tells an
 // agent what the file is and how to make one, never part of the carried document.
@@ -16,6 +16,6 @@ export function returnAddress(value) {
 }
 export function returnExpiresAt(value) {
 	if (typeof value !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(value) || !Number.isFinite(Date.parse(value)) || new Date(value).toISOString() !== value)
-		throw new Error('the return expiry must be the ISO timestamp from document.create_return');
+		throw new Error('the return expiry must be the ISO timestamp from show {target:"return"}');
 	return value;
 }

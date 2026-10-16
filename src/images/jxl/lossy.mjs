@@ -51,7 +51,7 @@ export function* lossySteps(rgba, width, height, options = {}) {
   const params = thin ? defaultSqueezeParams(channels).filter(p => !p.horizontal) : (width === 1 || height === 1) && colour === 3 ? defaultSqueezeParams(channels) : [];
   const squeezed = forwardSqueeze(channels, params.length ? params : undefined);
   const predictorOf = ch => ch.residual ? ZERO_PREDICTOR : GRADIENT_PREDICTOR;
-  const quantiserOf = ch => quantiserFor(ch.component, ch.hshift + (thin && ch.component > 0 && ch.component < 3 ? 1 : 0), ch.vshift, distance);
+  const quantiserOf = ch => !ch.residual ? 1 : quantiserFor(ch.component, ch.hshift + (thin && ch.component > 0 && ch.component < 3 ? 1 : 0), ch.vshift, distance);
   const transforms = [...(colour === 3 ? [{type: 'rct', beginC: 0, rctType: 6}] : []), {type: 'squeeze', params}];
 
   const layout = groupLayout(width, height, SQUEEZE_GROUP), dcGroups = layout.dcGroupsX * layout.dcGroupsY, acGroups = layout.groupsX * layout.groupsY;

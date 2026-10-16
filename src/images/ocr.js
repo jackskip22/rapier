@@ -225,7 +225,7 @@ async function _rapierOcrPixels(source) {
 		canvas.width = width; canvas.height = height;
 		const ctx = canvas.getContext('2d', {willReadFrequently: true});
 		if (!ctx) return null;
-		ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, width, height); ctx.drawImage(image, 0, 0, width, height);
+		ctx.drawImage(image, 0, 0, width, height);
 		return {rgba: ctx.getImageData(0, 0, width, height).data, width, height};
 	} catch (_) { return null; }
 	finally { canvas.width = 0; canvas.height = 0; image.removeAttribute('src'); URL.revokeObjectURL(url); }

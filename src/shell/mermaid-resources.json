@@ -1,5 +1,5 @@
 {
-  "version": "mermaid-12.1.0-zenuml-4.5.0-1",
+  "version": "mermaid-12.1.0-zenuml-4.5.0-2",
   "files": [
     {
       "name": "core",
@@ -11,12 +11,12 @@
     },
     {
       "name": "zenuml",
-      "version": "4.5.0-1",
-      "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.3/site/plugins/rapier-zenuml-4.5.0-1.js",
-      "file": "plugins/rapier-zenuml-4.5.0-1.js",
-      "path": "shell/vendor/zenuml/rapier-zenuml-4.5.0-1.js",
-      "bytes": 1890966,
-      "sri": "MVn/Or1nIHTDvy84lSSJAH2Fx1Y7AGoaMfd7hW7i3LJe7M/dau8VDFnF8Q+X0qOl"
+      "version": "4.5.0-2",
+      "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.5/site/plugins/rapier-zenuml-4.5.0-2.js",
+      "file": "plugins/rapier-zenuml-4.5.0-2.js",
+      "path": "shell/vendor/zenuml/rapier-zenuml-4.5.0-2.js",
+      "bytes": 1896464,
+      "sri": "8Ptjhh1zNTOvy1dxFHhXgYKfs290DSlpzow5rF9FvP38cohtbsBW381Whym1WI6E"
     }
   ]
 }

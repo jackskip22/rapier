@@ -19,9 +19,6 @@ import unicodedata
 import urllib.request
 import zlib
 
-from fontTools.misc.bezierTools import calcCubicParameters, solveQuadratic
-from fontTools.pens.basePen import BasePen
-from fontTools.pens.boundsPen import BoundsPen
 from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.ttLib import TTFont
 
@@ -110,15 +107,10 @@ def extract(font: TTFont):
     glyph_set = font.getGlyphSet()
     glyphs = []
     for name in names:
-        glyph = glyph_set[name]
-        bounds = BoundsPen(glyph_set)
-        glyph.draw(bounds)
-        rect = bounds.bounds or (0, 0, 0, 0)
-        bounds_values = [math.floor(rect[0]), math.floor(rect[1]), math.ceil(rect[2]), math.ceil(rect[3])]
         path = SVGPathPen(glyph_set, ntos=number)
-        glyph.draw(path)
+        glyph_set[name].draw(path)
         advance = font["hmtx"].metrics[name][0]
-        glyphs.append([advance, *bounds_values, italic.get(name, 0), accent.get(name, advance / 2), path.getCommands()])
+        glyphs.append([advance, italic.get(name, 0), accent.get(name, advance / 2), path.getCommands()])
     data = {
         "units": font["head"].unitsPerEm,
         "xHeight": font["OS/2"].sxHeight,
@@ -134,7 +126,6 @@ def extract(font: TTFont):
         "dotless": {ids[name]: ids[alternates[0]] for name, alternates in dotless.items() if name in ids},
         "extendedShapes": {ids[name]: 1 for name in (info.ExtendedShapeCoverage.glyphs if info.ExtendedShapeCoverage else []) if name in ids},
         "edgeStep": EDGE_STEP,
-        "edgeProfiles": {},
     }
     for axis, key in (("Vert", "vertical"), ("Horiz", "horizontal")):
         coverage = getattr(variants, axis + "GlyphCoverage")
@@ -159,102 +150,18 @@ def extract(font: TTFont):
                     corner = getattr(record, key)
                     corners.append([list(map(scalar, corner.CorrectionHeight)), list(map(scalar, corner.KernValue))] if corner else None)
                 data["kern"][ids[name]] = corners
+    # Script kerning reads a contour profile for Latin letters and digits, the italic and script alphabets
+    # (with U+210E, the italic h), and their optical and dotless forms. The decoder derives each profile.
     profiled = {
         name for cp, name in cmap.items()
-        if (cp < 128 and chr(cp).isalnum())
+        if (cp < 128 and chr(cp).isalnum()) or cp == 0x210E
         or any(style in unicodedata.name(chr(cp), "") for style in ("ITALIC", "SCRIPT"))
     }
     for name in list(profiled):
         profiled.update(scripts.get(name, ()))
         profiled.update(dotless.get(name, ()))
-    for name in sorted(profiled, key=font.getGlyphID):
-        profile = edge_profile(glyph_set, name)
-        if profile:
-            data["edgeProfiles"][ids[name]] = profile
+    data["profiled"] = sorted(ids[name] for name in profiled)
     return data
-
-
-class OutlinePen(BasePen):
-    def __init__(self, glyph_set):
-        super().__init__(glyph_set)
-        self.segments = []
-        self.start = None
-
-    def _moveTo(self, point):
-        self.start = point
-
-    def _lineTo(self, point):
-        self.segments.append((self._getCurrentPoint(), point))
-
-    def _curveToOne(self, first, second, end):
-        self.segments.append((self._getCurrentPoint(), first, second, end))
-
-    def _closePath(self):
-        if self._getCurrentPoint() != self.start:
-            self.segments.append((self._getCurrentPoint(), self.start))
-
-    def _endPath(self):
-        pass
-
-
-def edge_profile(glyph_set, name):
-    """Bound the original outline inside each horizontal strip."""
-    pen = OutlinePen(glyph_set)
-    glyph_set[name].draw(pen)
-    bounds = BoundsPen(glyph_set)
-    glyph_set[name].draw(bounds)
-    if not bounds.bounds:
-        return None
-    first = math.floor(bounds.bounds[1] / EDGE_STEP) * EDGE_STEP
-    count = max(1, math.ceil((bounds.bounds[3] - first) / EDGE_STEP))
-    strips = [[] for _ in range(count)]
-    for segment in pen.segments:
-        if len(segment) == 2:
-            (x, y), (end_x, end_y) = segment
-            for index, strip in enumerate(strips):
-                lower, upper = first + index * EDGE_STEP, first + (index + 1) * EDGE_STEP
-                values = [0, 1]
-                if end_y != y:
-                    values.extend(((lower - y) / (end_y - y), (upper - y) / (end_y - y)))
-                strip.extend(x + t * (end_x - x) for t in values if 0 <= t <= 1 and lower - 1e-7 <= y + t * (end_y - y) <= upper + 1e-7)
-            continue
-        a, b, c, d = calcCubicParameters(*segment)
-        extrema = [0, 1, *solveQuadratic(3 * a[0], 2 * b[0], c[0])]
-        critical = sorted([0, 1, *(t for t in solveQuadratic(3 * a[1], 2 * b[1], c[1]) if 0 < t < 1)])
-        intersections = {}
-
-        def vertical(t):
-            return ((a[1] * t + b[1]) * t + c[1]) * t + d[1]
-
-        def crossing(height):
-            if height not in intersections:
-                roots = []
-                for low, high in zip(critical, critical[1:]):
-                    y_low, y_high = vertical(low), vertical(high)
-                    if not min(y_low, y_high) <= height <= max(y_low, y_high):
-                        continue
-                    for _ in range(45):
-                        middle = (low + high) / 2
-                        if (vertical(middle) < height) == (y_low < y_high):
-                            low = middle
-                        else:
-                            high = middle
-                    roots.append((low + high) / 2)
-                intersections[height] = roots
-            return intersections[height]
-
-        y_min, y_max = min(point[1] for point in segment), max(point[1] for point in segment)
-        for index, strip in enumerate(strips):
-            lower, upper = first + index * EDGE_STEP, first + (index + 1) * EDGE_STEP
-            if lower > y_max or upper < y_min:
-                continue
-            values = [*extrema, *crossing(lower), *crossing(upper)]
-            for t in values:
-                if 0 <= t <= 1:
-                    y = ((a[1] * t + b[1]) * t + c[1]) * t + d[1]
-                    if lower - 1e-7 <= y <= upper + 1e-7:
-                        strip.append(((a[0] * t + b[0]) * t + c[0]) * t + d[0])
-    return [first, *([math.floor(min(strip) - 1e-7), math.ceil(max(strip) + 1e-7)] if strip else None for strip in strips)]
 
 
 PAGE_BYTES = 16384
@@ -263,57 +170,72 @@ PARENT_DEPTH = 4
 SCALAR_MAPS = ("chars", "dotless", "flatAccents", "extendedShapes")
 
 
+def unsigned(value, target):
+    if value < 0 or value > 2**53 - 1 or value != int(value):
+        raise ValueError("Font integer exceeds exact JavaScript arithmetic")
+    value = int(value)
+    while value >= 128:
+        target.append((value & 127) | 128)
+        value >>= 7
+    target.append(value)
+
+
+def signed(value, target):
+    if value != int(value):
+        raise ValueError("Font value is not an integer")
+    value = int(value)
+    value = value * 2 if value >= 0 else -value * 2 - 1
+    if value > 2**53 - 1:
+        raise ValueError("Font integer exceeds exact JavaScript arithmetic")
+    if value < 240:
+        target.append(value)
+    elif value < 4080:
+        value -= 240
+        target.extend((240 + (value >> 8), value & 255))
+    else:
+        target.append(255)
+        unsigned(value - 4080, target)
+
+
+def text(data):
+    """Raw DEFLATE in base64."""
+    return base64.b64encode(zlib.compress(data, level=9, wbits=-15)).decode("ascii")
+
+
 def pack_font(data):
     """Share translated contours and retain independently inflatable record pages."""
-    glyphs, profiles = data["glyphs"], data["edgeProfiles"]
+    glyphs = data["glyphs"]
     commands = "MLHVCZ"
     lengths = (2, 2, 1, 1, 6, 0)
-
-    def unsigned(value, target):
-        if value < 0 or value > 2**53 - 1:
-            raise ValueError("Font integer exceeds exact JavaScript arithmetic")
-        while value >= 128:
-            target.append((value & 127) | 128)
-            value >>= 7
-        target.append(value)
-
-    def signed(value, target):
-        value = value * 2 if value >= 0 else -value * 2 - 1
-        if value > 2**53 - 1:
-            raise ValueError("Font integer exceeds exact JavaScript arithmetic")
-        if value < 240:
-            target.append(value)
-        elif value < 4080:
-            value -= 240
-            target.extend((240 + (value >> 8), value & 255))
-        else:
-            target.append(255)
-            unsigned(value - 4080, target)
-
-    paths = [re.findall(r"[MLHVCZ]|-?\d+(?:\.\d+)?", glyph[7]) for glyph in glyphs]
+    paths = [re.findall(r"[MLHVCZ]|-?\d+(?:\.\d+)?", glyph[3]) for glyph in glyphs]
     unit = 1
     for glyph, tokens in zip(glyphs, paths):
-        if "".join(tokens) != re.sub(r"[ ,]", "", glyph[7]):
+        if "".join(tokens) != re.sub(r"[ ,]", "", glyph[3]):
             raise ValueError("Font path has an unsupported coordinate or command")
         for token in tokens:
             if "." in token:
                 unit = math.lcm(unit, Fraction(token).denominator)
-    metric_unit = math.lcm(2, *(Fraction(value).denominator for glyph in glyphs for value in glyph[:7]))
-    metrics = [[int(value * metric_unit) for value in glyph[:7]] for glyph in glyphs]
+    # Derived bounds and profiles divide by the unit; a power of two keeps every coordinate exact.
+    if unit & (unit - 1):
+        raise ValueError("Font coordinates need a power-of-two unit")
+    metric_unit = math.lcm(2, *(Fraction(value).denominator for glyph in glyphs for value in glyph[:3]))
+    metrics = [[int(value * metric_unit) for value in glyph[:3]] for glyph in glyphs]
     for values in metrics:
-        values[3] -= values[0] - values[1]
-        values[6] -= values[0] // 2
-    metric_bases = [sorted(values[column] for values in metrics)[len(metrics) // 2] for column in range(7)]
+        values[2] -= values[0] // 2
+    metric_bases = [sorted(values[column] for values in metrics)[len(metrics) // 2] for column in range(3)]
     contours, contour_ids, references = [], {}, []
     for tokens in paths:
         cursor, previous = 0, None
         structure, coordinates, refs = [], [], []
         first_x = first_y = x = y = 0
+        closing = None
 
         def keep_contour():
             if not structure:
                 return
-            key = bytes(structure), tuple(coordinates)
+            # A closing curve that ends at the start stores no end point; the decoder returns it to the start.
+            closes = structure[-2:] == [4, 5] and closing == (first_x, first_y)
+            key = bytes(structure), tuple(coordinates[:-2] if closes else coordinates), closes
             if key not in contour_ids:
                 contour_ids[key] = len(contours)
                 contours.append(key)
@@ -350,22 +272,22 @@ def pack_font(data):
                         coordinates.append(value - x)
                         x = value
                 if command == 5:
-                    x, y = first_x, first_y
+                    closing, x, y = (x, y), first_x, first_y
             previous = command
         keep_contour()
         references.append(refs)
 
     contour_records, shapes, depths = [], {}, []
-    for contour_id, (structure, coordinates) in enumerate(contours):
+    for contour_id, (structure, coordinates, closes) in enumerate(contours):
         record = bytearray()
-        unsigned(len(structure) * 2, record)
+        unsigned((len(structure) * 2 + closes) * 2, record)
         record.extend(structure)
         for value in coordinates:
             signed(value, record)
         # Small residuals compress better even when their first encoding costs another byte.
         best = (len(record) + sum(abs(value).bit_length() for value in coordinates), len(record))
         parent_depth = -1
-        for parent, previous_coordinates in shapes.setdefault(structure, []):
+        for parent, previous_coordinates in shapes.setdefault((structure, closes), []):
             if depths[parent] >= PARENT_DEPTH:
                 continue
             shared = bytearray()
@@ -378,60 +300,14 @@ def pack_font(data):
                 best = score
                 record, parent_depth = shared, depths[parent]
         depths.append(parent_depth + 1)
-        shapes[structure].append((contour_id, coordinates))
+        shapes[(structure, closes)].append((contour_id, coordinates))
         contour_records.append(record)
 
-    profile_records, profile_ids, profile_shapes, profile_depths = [], {}, {}, []
-    profile_values = {}
-    for glyph_id, profile in sorted(profiles.items()):
-        key = profile[0], tuple(None if strip is None else tuple(strip) for strip in profile[1:])
-        if key in profile_values:
-            profile_ids[glyph_id] = profile_values[key]
-            continue
-        profile_id = len(profile_records)
-        profile_ids[glyph_id] = profile_id
-        profile_values[key] = profile_id
-        record = bytearray()
-        unsigned((len(profile) - 1) * 2, record)
-        signed(profile[0], record)
-        left = right = 0
-        for strip in profile[1:]:
-            if strip is None:
-                unsigned(0, record)
-                continue
-            delta = strip[0] - left
-            unsigned((delta * 2 if delta >= 0 else -delta * 2 - 1) + 1, record)
-            signed(strip[1] - right, record)
-            left, right = strip
-        shape = profile[0], tuple(strip is not None for strip in profile[1:])
-        parent_depth = -1
-        for parent_id, parent in profile_shapes.setdefault(shape, []):
-            if profile_depths[parent_id] >= PARENT_DEPTH:
-                continue
-            shared = bytearray()
-            unsigned(parent_id * 2 + 1, shared)
-            left = right = 0
-            for strip, previous_strip in zip(profile[1:], parent[1:]):
-                if strip is None:
-                    continue
-                next_left, next_right = strip[0] - previous_strip[0], strip[1] - previous_strip[1]
-                signed(next_left - left, shared)
-                signed(next_right - right, shared)
-                left, right = next_left, next_right
-                if len(shared) >= len(record):
-                    break
-            if len(shared) < len(record):
-                record, parent_depth = shared, profile_depths[parent_id]
-        profile_depths.append(parent_depth + 1)
-        profile_shapes[shape].append((profile_id, profile))
-        profile_records.append(record)
-
     glyph_records = []
-    for glyph_id, (values, refs) in enumerate(zip(metrics, references)):
+    for values, refs in zip(metrics, references):
         record = bytearray()
         for value, base in zip(values, metric_bases):
             signed(value - base, record)
-        unsigned(profile_ids.get(glyph_id, -1) + 1, record)
         unsigned(len(refs), record)
         for contour_id, x, y in refs:
             unsigned(contour_id, record)
@@ -460,7 +336,31 @@ def pack_font(data):
         for index, value in enumerate(values):
             signed(value - previous_values[index], indices)
             previous_values[index] = value
-    for records in (glyph_records, contour_records, profile_records):
+    unsigned(len(data["profiled"]), indices)
+    previous_key = -1
+    for key in data["profiled"]:
+        unsigned(key - previous_key - 1, indices)
+        previous_key = key
+    for name in ("vertical", "horizontal"):
+        unsigned(len(data[name]), indices)
+        previous_key = 0
+        for key, record in sorted(data[name].items()):
+            unsigned(key - previous_key, indices)
+            previous_key = key
+            unsigned(len(record["variants"]), indices)
+            for glyph, advance in record["variants"]:
+                signed(glyph - key, indices)
+                unsigned(advance, indices)
+            assembly = record.get("assembly")
+            unsigned(len(assembly["parts"]) + 1 if assembly else 0, indices)
+            if assembly:
+                signed(assembly["italic"], indices)
+                for glyph, start, end, full, flags in assembly["parts"]:
+                    signed(glyph - key, indices)
+                    unsigned(start, indices)
+                    unsigned(end, indices)
+                    unsigned(full * 2 + flags, indices)
+    for records in (glyph_records, contour_records):
         page, offsets = bytearray(), []
         for record in records:
             if len(record) > PAGE_BYTES:
@@ -478,12 +378,9 @@ def pack_font(data):
             unsigned(offset - previous, indices)
             previous = offset
 
-    def compressed(data):
-        return base64.b64encode(zlib.compress(data, level=9, wbits=-15)).decode("ascii")
-
-    packed = [(len(page), compressed(page)) for page in pages]
-    return packed, compressed(indices), len(indices), {
-        "contours": len(contours), "contourReferences": sum(map(len, references)), "profileRecords": len(profile_records),
+    packed = [(len(page), text(page)) for page in pages]
+    return packed, text(indices), len(indices), {
+        "contours": len(contours), "contourReferences": sum(map(len, references)), "profiledGlyphs": len(data["profiled"]),
         "pages": len(pages), "pageBytes": PAGE_BYTES, "indexBytes": len(indices),
         "recordBytes": sum(map(len, pages)), "maxParentDepth": PARENT_DEPTH,
     }
@@ -526,57 +423,89 @@ if(written!==bytes.length||position-Math.floor(available/8)!==source.length)inva
 const unsigned=r=>{let value=0,shift=0,byte;do{if(r[1]>=r[2]||shift>49)invalid();byte=r[0][r[1]++];value+=(byte&127)*2**shift;shift+=7;}while(byte&128);if(!Number.isSafeInteger(value))invalid();return value;};
 const signed=r=>{if(r[1]>=r[2])invalid();let value=r[0][r[1]++];if(value>=240){if(value===255){value=4080+unsigned(r);if(!Number.isSafeInteger(value))invalid();}else{if(r[1]>=r[2])invalid();value=240+(value-240)*256+r[0][r[1]++];}}return value%2?-(value+1)/2:value/2;};
 const complete=r=>{if(r[1]!==r[2])invalid();};
-const [unit,metricUnit,metricBases,glyphs,contours,profiles]=(()=>{
-const bytes=inflate(__INDEX__,__SIZE__),r=[bytes,0,bytes.length],unit=unsigned(r),metricUnit=unsigned(r);if(!unit||!metricUnit)invalid();const metricBases=Array.from({length:7},()=>signed(r));
+const [unit,metricUnit,metricBases,profiled,glyphs,contours]=(()=>{
+const bytes=inflate(__INDEX__,__SIZE__),r=[bytes,0,bytes.length],unit=unsigned(r),metricUnit=unsigned(r);if(!unit||!metricUnit)invalid();const metricBases=Array.from({length:3},()=>signed(r));
 for(const name of __MAP_FIELDS__){const count=unsigned(r),map=MATH_FONT[name]={};if(count>bytes.length)invalid();let key=0,value=0;
 for(let i=0;i<count;i++){key+=unsigned(r);value+=signed(r);map[key]=value;}}
 const scripts=MATH_FONT.scriptAlternates={},scriptCount=unsigned(r),previous=[0,0];let key=0;if(scriptCount>bytes.length)invalid();
 for(let i=0;i<scriptCount;i++){key+=unsigned(r);const count=unsigned(r);if(count<1||count>2)invalid();const values=[];for(let j=0;j<count;j++){previous[j]+=signed(r);values.push(previous[j]);}scripts[key]=values;}
-const tables=Array.from({length:3},()=>{const count=unsigned(r);if(count<1||count>bytes.length)invalid();const offsets=new Uint32Array(count);let previous=0;
-for(let i=0;i<count;i++){previous+=unsigned(r);if(previous>=pages.length*32768)invalid();offsets[i]=previous;}return offsets;});complete(r);return [unit,metricUnit,metricBases,...tables];
+const profiled=new Set,profileCount=unsigned(r);key=-1;if(profileCount>bytes.length)invalid();for(let i=0;i<profileCount;i++)profiled.add(key+=unsigned(r)+1);
+for(const name of ['vertical','horizontal']){const map=MATH_FONT[name]={},count=unsigned(r);key=0;if(count>bytes.length)invalid();
+for(let i=0;i<count;i++){key+=unsigned(r);const variants=Array.from({length:unsigned(r)},()=>[key+signed(r),unsigned(r)]),parts=unsigned(r);if(variants.length>bytes.length||parts>bytes.length)invalid();
+const record=map[key]={variants};if(parts)record.assembly={italic:signed(r),parts:Array.from({length:parts-1},()=>{const part=[key+signed(r),unsigned(r),unsigned(r)],full=unsigned(r);return [...part,Math.floor(full/2),full%2];})};}}
+const tables=Array.from({length:2},()=>{const count=unsigned(r);if(count<1||count>bytes.length)invalid();const offsets=new Uint32Array(count);let previous=0;
+for(let i=0;i<count;i++){previous+=unsigned(r);if(previous>=pages.length*32768)invalid();offsets[i]=previous;}return offsets;});complete(r);return [unit,metricUnit,metricBases,profiled,...tables];
 })();
-const pageCache=new Map(),glyphCache=new Map(),profileCache=new Map();
-const remember=(cache,id,value,limit)=>{if(cache.size>=limit)cache.delete(cache.keys().next().value);cache.set(id,value);return value;};
-const touch=(cache,id)=>{const value=cache.get(id);if(value!==undefined){cache.delete(id);cache.set(id,value);}return value;};
+// Each page, glyph and profile decodes once and stays: the font itself bounds every cache.
+const pageCache=[],glyphCache=new Map(),profileCache=new Map();
 const record=(offsets,id)=>{
 if(!Number.isInteger(id)||id<0||id+1>=offsets.length)return;
-const offset=offsets[id],page=offset>>>15,next=offsets[id+1];let bytes=touch(pageCache,page);
-if(!bytes){const source=pages[page];if(!source||source[0]>16384)invalid();bytes=remember(pageCache,page,inflate(source[1],source[0]),8);}
+const offset=offsets[id],page=offset>>>15,next=offsets[id+1];let bytes=pageCache[page];
+if(!bytes){const source=pages[page];if(!source||source[0]>16384)invalid();bytes=pageCache[page]=inflate(source[1],source[0]);}
 const begin=offset&32767,end=next>>>15===page?next&32767:bytes.length;if(begin>=end||end>bytes.length)invalid();return [bytes,begin,end];
 };
 const commandLengths=[2,2,1,1,6,0],commandNames='MLHVCZ';
 const contour=(id,local,depth=0)=>{
-if(local.has(id))return local.get(id);if(depth>4)invalid();const r=record(contours,id);if(!r)invalid();const header=unsigned(r);let commands,coordinates;
-if(header%2){const parentId=Math.floor(header/2);if(parentId>=id)invalid();const parent=contour(parentId,local,depth+1);commands=parent[0];coordinates=new Float64Array(parent[1].length);
+if(local.has(id))return local.get(id);if(depth>4)invalid();const r=record(contours,id);if(!r)invalid();const header=unsigned(r);let commands,coordinates,closes;
+if(header%2){const parentId=Math.floor(header/2);if(parentId>=id)invalid();const parent=contour(parentId,local,depth+1);[commands,,closes]=parent;coordinates=new Float64Array(parent[1].length);
 for(let i=0;i<coordinates.length;i++)coordinates[i]=parent[1][i]+signed(r);}
-else{const count=header/2;if(r[1]+count>r[2])invalid();commands=r[0].subarray(r[1],r[1]+count);r[1]+=count;let values=0;
-for(const command of commands){if(command<1||command>5)invalid();values+=commandLengths[command];}if(values>r[2]-r[1])invalid();coordinates=new Float64Array(values);
+else{const count=Math.floor(header/4);closes=header/2%2;if(r[1]+count>r[2])invalid();commands=r[0].subarray(r[1],r[1]+count);r[1]+=count;let values=0;
+for(const command of commands){if(command<1||command>5)invalid();values+=commandLengths[command];}values-=2*closes;if(values<0||values>r[2]-r[1]||closes&&(commands[count-2]!==4||commands[count-1]!==5))invalid();coordinates=new Float64Array(values);
 for(let i=0;i<values;i++)coordinates[i]=signed(r);}
-complete(r);const value=[commands,coordinates];local.set(id,value);return value;
+complete(r);const value=[commands,coordinates,closes];local.set(id,value);return value;
+};
+// Bounds and contour profiles derive from the outline with fontTools' BoundsPen and the generator's strip
+// profile, operation for operation, so each value is the one the generator would have stored.
+const quadratic=(a,b,c)=>{if(Math.abs(a)<1e-10)return Math.abs(b)<1e-10?[]:[-c/b];const d=b*b-4*a*c;if(d<0)return [];const root=Math.sqrt(d);return [(-b+root)/2/a,(-b-root)/2/a];};
+const cubic=s=>{const cx=(s[2]-s[0])*3,cy=(s[3]-s[1])*3,bx=(s[4]-s[2])*3-cx,by=(s[5]-s[3])*3-cy;return [s[6]-s[0]-cx-bx,s[7]-s[1]-cy-by,bx,by,cx,cy,s[0],s[1]];};
+const add=(box,x,y)=>box?[Math.min(box[0],x),Math.min(box[1],y),Math.max(box[2],x),Math.max(box[3],y)]:[x,y,x,y];
+const inside=(box,x,y)=>box[0]<=x&&x<=box[2]&&box[1]<=y&&y<=box[3];
+const curveBox=(box,s)=>{const [ax,ay,bx,by,cx,cy,dx,dy]=cubic(s),roots=[...quadratic(ax*3,bx*2,cx).filter(t=>0<=t&&t<1),...quadratic(ay*3,by*2,cy).filter(t=>0<=t&&t<1)];
+let curve=add(add(null,s[0],s[1]),s[6],s[7]);for(const t of roots)curve=add(curve,ax*t*t*t+bx*t*t+cx*t+dx,ay*t*t*t+by*t*t+cy*t+dy);
+return [Math.min(box[0],curve[0]),Math.min(box[1],curve[1]),Math.max(box[2],curve[2]),Math.max(box[3],curve[3])];};
+const profileOf=(segments,bottom,top)=>{
+const step=__EDGE_STEP__,first=Math.floor(bottom/step)*step,strips=Array.from({length:Math.max(1,Math.ceil((top-first)/step))},()=>[]);
+for(const s of segments){
+if(s.length===4){const [x,y,endX,endY]=s;strips.forEach((strip,i)=>{const lower=first+i*step,upper=lower+step,values=[0,1];
+if(endY!==y)values.push((lower-y)/(endY-y),(upper-y)/(endY-y));
+for(const t of values){const at=y+t*(endY-y);if(0<=t&&t<=1&&lower-1e-7<=at&&at<=upper+1e-7)strip.push(x+t*(endX-x));}});continue;}
+const [a0,a1,b0,b1,c0,c1,d0,d1]=cubic(s),vertical=t=>((a1*t+b1)*t+c1)*t+d1,extrema=[0,1,...quadratic(3*a0,2*b0,c0)],
+critical=[0,1,...quadratic(3*a1,2*b1,c1).filter(t=>0<t&&t<1)].sort((p,q)=>p-q),crossings=new Map,
+crossing=height=>{if(crossings.has(height))return crossings.get(height);const roots=[];
+for(let i=1;i<critical.length;i++){let low=critical[i-1],high=critical[i];const yLow=vertical(low),yHigh=vertical(high);
+if(!(Math.min(yLow,yHigh)<=height&&height<=Math.max(yLow,yHigh)))continue;
+for(let k=0;k<45;k++){const middle=(low+high)/2;if((vertical(middle)<height)===(yLow<yHigh))low=middle;else high=middle;}roots.push((low+high)/2);}
+crossings.set(height,roots);return roots;},ys=[s[1],s[3],s[5],s[7]],yMin=Math.min(...ys),yMax=Math.max(...ys);
+strips.forEach((strip,i)=>{const lower=first+i*step,upper=lower+step;if(lower>yMax||upper<yMin)return;
+for(const t of [...extrema,...crossing(lower),...crossing(upper)])if(0<=t&&t<=1){const y=((a1*t+b1)*t+c1)*t+d1;if(lower-1e-7<=y&&y<=upper+1e-7)strip.push(((a0*t+b0)*t+c0)*t+d0);}});}
+return [first,...strips.map(strip=>strip.length?[Math.floor(Math.min(...strip)-1e-7),Math.ceil(Math.max(...strip)+1e-7)]:null)];
 };
 const glyphRecord=id=>{
-let cached=touch(glyphCache,id);if(cached)return cached;const r=record(glyphs,id);if(!r)return;
-const glyph=[];for(let i=0;i<7;i++)glyph.push(signed(r)+metricBases[i]);glyph[3]+=glyph[0]-glyph[1];glyph[6]+=glyph[0]/2;for(let i=0;i<7;i++)glyph[i]/=metricUnit;const profile=unsigned(r)-1,count=unsigned(r),local=new Map();let path='';
-if(profile>=profiles.length-1||count>r[2]-r[1])invalid();
-for(let part=0;part<count;part++){const id=unsigned(r),firstX=signed(r),firstY=signed(r),[commands,coordinates]=contour(id,local);let x=firstX,y=firstY,cursor=0;
-path+='M'+x/unit+' '+y/unit;
-for(const command of commands){path+=commandNames[command];for(let index=0;index<commandLengths[command];index++){if(index)path+=' ';
-if(command===3||(command!==2&&command!==3&&index%2)){y+=coordinates[cursor++];path+=y/unit;}else{x+=coordinates[cursor++];path+=x/unit;}}
-if(command===5){x=firstX;y=firstY;}}
-}complete(r);glyph.push(path);cached={glyph,profile};return remember(glyphCache,id,cached,256);
-};
-const profileRecord=(id,depth=0)=>{
-const cached=touch(profileCache,id);if(cached)return cached;if(depth>4)invalid();const r=record(profiles,id);if(!r)invalid();const header=unsigned(r);let profile,left=0,right=0;
-if(header%2){const parentId=Math.floor(header/2);if(parentId>=id)invalid();const parent=profileRecord(parentId,depth+1);profile=[parent[0]];
-for(let i=1;i<parent.length;i++){const strip=parent[i];if(!strip){profile.push(null);continue;}left+=signed(r);right+=signed(r);profile.push([strip[0]+left,strip[1]+right]);}}
-else{profile=[signed(r)];const count=header/2;if(count>r[2]-r[1])invalid();for(let i=0;i<count;i++){const token=unsigned(r);if(!token){profile.push(null);continue;}const value=token-1;left+=value%2?-(value+1)/2:value/2;right+=signed(r);profile.push([left,right]);}}
-complete(r);return remember(profileCache,id,profile,128);
+let cached=glyphCache.get(id);if(cached)return cached;const r=record(glyphs,id);if(!r)return;
+const metrics=[];for(let i=0;i<3;i++)metrics.push(signed(r)+metricBases[i]);metrics[2]+=metrics[0]/2;
+const count=unsigned(r),local=new Map(),keep=profiled.has(id),segments=[];let path='',box=null;
+if(count>r[2]-r[1])invalid();
+for(let part=0;part<count;part++){const contourId=unsigned(r),firstX=signed(r),firstY=signed(r),[commands,coordinates,closes]=contour(contourId,local);let x=firstX,y=firstY,cursor=0;
+path+='M'+x/unit+' '+y/unit;box=add(box,x/unit,y/unit);
+for(let c=0;c<commands.length;c++){const command=commands[c],from=[x/unit,y/unit];path+=commandNames[command];
+for(let index=0;index<commandLengths[command];index++){if(index)path+=' ';
+const last=closes&&c===commands.length-2&&index>3;
+if(command===3||(command!==2&&command!==3&&index%2)){y=last?firstY:y+coordinates[cursor++];path+=y/unit;from.push(x/unit,y/unit);}else{x=last?firstX:x+coordinates[cursor++];path+=x/unit;if(command===2)from.push(x/unit,y/unit);}}
+if(command===5){if(from[0]!==firstX/unit||from[1]!==firstY/unit)segments.push([...from,firstX/unit,firstY/unit]);x=firstX;y=firstY;continue;}
+if(command===4){const end=add(box,from[6],from[7]);box=inside(end,from[2],from[3])&&inside(end,from[4],from[5])?end:curveBox(end,from);}else box=add(box,from[2],from[3]);
+if(keep)segments.push(from);}
+}complete(r);box??=[0,0,0,0];
+const glyph=[metrics[0]/metricUnit,Math.floor(box[0]),Math.floor(box[1]),Math.ceil(box[2]),Math.ceil(box[3]),metrics[1]/metricUnit,metrics[2]/metricUnit,path];
+// Keep the unrounded bounds for the derived profile; only profiled glyphs keep their segments.
+cached={glyph,segments:keep?segments:null,bottom:box[1],top:box[3]};glyphCache.set(id,cached);return cached;
 };
 MATH_FONT.glyph=id=>glyphRecord(id)?.glyph;
-MATH_FONT.profile=id=>{const glyph=glyphRecord(id);return glyph&&glyph.profile>=0?profileRecord(glyph.profile):undefined;};
+MATH_FONT.profile=id=>{
+if(profileCache.has(id))return profileCache.get(id);const glyph=glyphRecord(id),profile=glyph?.segments?.length?profileOf(glyph.segments,glyph.bottom,glyph.top):undefined;
+profileCache.set(id,profile);return profile;
+};
 }
 """
-
 
 
 def main():
@@ -606,16 +535,14 @@ def main():
               "Conversion details: FONT-SOURCE.md.\n\n").encode("utf-8") + gust + b"\n" + lppl
     pages, index, size, packing = pack_font(data)
     glyph_count = len(data["glyphs"])
-    profile_count = len(data["edgeProfiles"])
     character_count = len(data["chars"])
-    del data["glyphs"], data["edgeProfiles"]
-    for name in (*SCALAR_MAPS, "scriptAlternates"):
+    for name in ("glyphs", "profiled", "vertical", "horizontal", *SCALAR_MAPS, "scriptAlternates"):
         del data[name]
-    output = (b"/*!\n" + notice + b"\n*/\nconst MATH_FONT=" + json.dumps(data, ensure_ascii=True, separators=(",", ":")).encode("utf-8") + b";\n" + PATH_DECODER.replace("__PAGES__", json.dumps(pages, separators=(",", ":"))).replace("__INDEX__", json.dumps(index)).replace("__SIZE__", str(size)).replace("__MAP_FIELDS__", json.dumps(SCALAR_MAPS, separators=(",", ":"))).encode("utf-8"))
+    output = (b"/*!\n" + notice + b"\n*/\nconst MATH_FONT=" + json.dumps(data, ensure_ascii=True, separators=(",", ":")).encode("utf-8") + b";\n" + PATH_DECODER.replace("__PAGES__", json.dumps(pages, separators=(",", ":"))).replace("__INDEX__", json.dumps(index)).replace("__SIZE__", str(size)).replace("__MAP_FIELDS__", json.dumps(SCALAR_MAPS, separators=(",", ":"))).replace("__EDGE_STEP__", str(EDGE_STEP)).encode("utf-8") + b"\n\nexport {MATH_FONT};\n")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_bytes(output)
     args.out.with_name("FONT-LICENSE.txt").write_bytes(notice)
-    print(json.dumps({"sourceSha256": hashlib.sha256(font_bytes).hexdigest(), "licenseSha256": hashlib.sha256(notice).hexdigest(), "glyphs": glyph_count, "characters": character_count, "edgeProfiles": profile_count, "packing": packing, "bytes": len(output), "gzipBytes": len(gzip.compress(output, compresslevel=9, mtime=0))}, indent=2))
+    print(json.dumps({"sourceSha256": hashlib.sha256(font_bytes).hexdigest(), "licenseSha256": hashlib.sha256(notice).hexdigest(), "glyphs": glyph_count, "characters": character_count, "packing": packing, "bytes": len(output), "gzipBytes": len(gzip.compress(output, compresslevel=9, mtime=0))}, indent=2))
 
 
 if __name__ == "__main__":

@@ -30,8 +30,9 @@ fn loadTexel(image:texture_2d<f32>, coord:vec2<i32>) -> vec4<f32> {
 `;
 
 const manualSample = `
-// Reconstruction without a float filter. A phone that cannot filter float textures
-// must not invent rows or a one-pixel lattice.
+// Reconstruction in f32 on every GPU. A sampler's filter weighs texels at the hardware's own sub-texel precision, so a
+// journal would replay to different pixels with and without one; a phone that cannot filter float textures must not
+// invent rows or a one-pixel lattice.
 fn sample(image:texture_2d<f32>,p:vec2<f32>) -> vec4<f32> {
  let size=vec2<f32>(textureDimensions(image));
  let xy=vec2<f32>(p.x,1.0-p.y)*size-0.5;
@@ -48,15 +49,6 @@ fn sample(image:texture_2d<f32>,p:vec2<f32>) -> vec4<f32> {
 fn nearest(image:texture_2d<f32>,p:vec2<f32>) -> vec4<f32> {
  let size=vec2<f32>(textureDimensions(image));
  return loadTexel(image,vec2<i32>(floor(vec2<f32>(p.x,1.0-p.y)*size)));
-}
-`;
-
-const filteredSample = `
-fn sample(image:texture_2d<f32>,p:vec2<f32>) -> vec4<f32> {
- return textureSampleLevel(image, linearSampler, vec2<f32>(p.x,1.0-p.y), 0.0);
-}
-fn nearest(image:texture_2d<f32>,p:vec2<f32>) -> vec4<f32> {
- return textureSampleLevel(image, nearestSampler, vec2<f32>(p.x,1.0-p.y), 0.0);
 }
 `;
 
@@ -169,15 +161,21 @@ const body = {
  let q=origin-0.6*u.v[1].x*sample(t0,origin).xy/u.v[0].zw;
  let h=vec2<f32>(1.6*u.v[3].w*u.v[12].x)/u.v[0].xy;
  var sum=0.0;for(var i=0u;i<4u;i++){sum+=sample(t1,q+cardinal(i,h)).r;}
- return vec4<f32>(mix(sample(t1,q).r,0.25*sum,0.12*clamp(u.v[1].x*60.0,0.0,1.0))*u.v[2].x,0,0,1);
- }`,
- bleach: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> Pair {
- let k=vec4<f32>(1-(1-exp(-2.2*sample(t0,uv(p)).a))*u.v[2].z);return Pair(k,k);
+ let w=mix(sample(t1,q).r,0.25*sum,0.12*clamp(u.v[1].x*60.0,0.0,1.0))*u.v[2].x;
+ // Wetness is kept in 16 bits: one fast frame's evaporation can be under half a step, and the wash would round back to the same
+ // wetness every frame and never dry. The rounding is made stochastic, by a hash of the paper's own texel and the frame, so a
+ // replay rounds as the painting did.
+ let at=vec2<i32>(floor(px(p)));let cell=vec2<u32>(bitcast<u32>(at.x+i32(u.v[4].y)),bitcast<u32>(i32(u.v[0].y)-1-at.y+i32(u.v[4].z)));
+ var n=cell.x*1664525u+cell.y*1013904223u+u32(u.v[4].x)*2654435769u;n=(n^(n>>16u))*2246822519u;n=(n^(n>>13u))*3266489917u;n^=n>>16u;
+ let unit=exp2(floor(log2(max(w,0.0001)))-10.0);
+ return vec4<f32>(select(w,max(0.0,w+(f32(n>>8u)/16777216.0-0.5)*unit),w>0.0),0,0,1);
  }`,
  fix: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> Pair {
- let q=uv(p);let a=sample(t0,q);let b=sample(t1,q);
- let fraction=u.v[2].z*(1-(1-exp(-2.2*b.a))*u.v[2].z);
- return Pair(a*fraction,vec4<f32>(b.rgb*fraction,0));
+ let q=uv(p);return Pair(sample(t0,q)*u.v[2].z,sample(t1,q)*u.v[2].z);
+ }`,
+ dried: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> Pair {
+ let pix=vec2<i32>(px(p));let dry=smoothstep(0.02,0.45,loadTexel(t2,pix).r)<0.002;let k=select(f32(!dry),f32(dry),u.v[2].z>0.0);
+ return Pair(loadTexel(t0,pix)*k,loadTexel(t1,pix)*k);
  }`,
  pigment: `
  fn mobility(w:f32)->f32{return smoothstep(0.02,0.45,w);}
@@ -190,16 +188,15 @@ const body = {
   let back=q-u.v[1].x*sample(t0,q).xy/u.v[0].zw*m;
   let advectedA=sample(t1,back);let advectedB=sample(t2,back);
   var resultA=mix(a,advectedA,m);var resultB=mix(b,advectedB,m);
-  // The step may not create an extreme: what it writes stays within the pigment it drew from (this texel, the one it was carried
-  // from, the faces it exchanged with). Advection and exchange together can overshoot, and where the flow is fast the overshoot
-  // alternates in sign and grows each frame.
+  // Advection and bleeding may not create an extreme: what they write stays within the pigment they drew from (this texel, the
+  // one it was carried from, the faces it exchanged with). Together they can overshoot, and where the flow is fast the overshoot
+  // alternates in sign and grows each frame. The drying-edge flow is added after that bound: it is upwind and paired, so pigment
+  // it carries to a drying rim piles up there, the tideline, and arrives exactly as it left.
   var lowA=min(a,advectedA);var highA=max(a,advectedA);var lowB=min(b,advectedB);var highB=max(b,advectedB);
-  var proximity=0.0;
-  if(u.v[3].z>0){let d=(q-u.v[3].xy)*vec2<f32>(u.v[0].x/u.v[0].y,1)/u.v[3].z;proximity=exp(-dot(d,d));}
+  var driftA=vec4<f32>(0);var driftB=vec4<f32>(0);
   // The reference applies bleeding and the drying-edge flow once per 60 Hz display frame. A shorter step applies its
   // share, so a step rate above 60 Hz never bleeds or piles pigment faster; longer steps keep the reference's per-frame cap.
   let pace=clamp(u.v[1].x*60.0,0.0,1.0);
-  let diffusion=clamp(u.v[1].z*(0.25+1.3*proximity)*0.3,0.0,0.15)*pace;
   // Bleeding and the drying-edge flow keep the reference texel's reach on a finer sheet. Exchanges stay
   // between whole texels, paired in both directions, so pigment that leaves one texel arrives at another.
   let reach=u.v[3].w;let near=floor(reach);var spread=vec2<f32>(0.0,reach*reach);var carry=vec2<f32>(0.0,reach);
@@ -209,15 +206,20 @@ const body = {
    if(distance<1.0||(spread[j]<=0.0&&carry[j]<=0.0)){continue;}
    for(var i=0u;i<4u;i++){
     let step=vec2<i32>(i32(i==1u)-i32(i==0u),i32(i==3u)-i32(i==2u))*i32(distance);
-    let nw=loadTexel(t3,pix+step).r;let gate=m*mobility(nw);
+    // A texel too dry to move (the early return above) exchanges with nothing, from either side.
+    let nw=loadTexel(t3,pix+step).r;let gate=select(0.0,m*mobility(nw),mobility(nw)>=0.002);
     let na=loadTexel(t1,pix+step);let nb=loadTexel(t2,pix+step);
+    // The brush's nearness is read at the face the pair shares, so both texels of a pair bleed at one rate.
+    var proximity=0.0;
+    if(u.v[3].z>0){let d=(q+0.5*vec2<f32>(f32(step.x),-f32(step.y))/u.v[0].xy-u.v[3].xy)*vec2<f32>(u.v[0].x/u.v[0].y,1)/u.v[3].z;proximity=exp(-dot(d,d));}
+    let diffusion=clamp(u.v[1].z*(0.25+1.3*proximity)*0.3,0.0,0.15)*pace;
     let drift=carry[j]*clamp(u.v[1].w*(water-nw)*reach/distance,-0.08,0.08)*gate*pace;
-    resultA+=spread[j]*diffusion*gate*(na-a)-drift*select(na,a,drift>0);
-    resultB+=spread[j]*diffusion*gate*(nb-b)-drift*select(nb,b,drift>0);
+    resultA+=spread[j]*diffusion*gate*(na-a);driftA-=drift*select(na,a,drift>0);
+    resultB+=spread[j]*diffusion*gate*(nb-b);driftB-=drift*select(nb,b,drift>0);
     lowA=min(lowA,na);highA=max(highA,na);lowB=min(lowB,nb);highB=max(highB,nb);
    }
   }
-  resultA=bounded(clamp(resultA,lowA,highA));resultB=bounded(clamp(resultB,lowB,highB));resultB.a=max(resultB.a,0.0);
+  resultA=bounded(clamp(resultA,lowA,highA)+driftA);resultB=bounded(clamp(resultB,lowB,highB)+driftB);resultB.a=max(resultB.a,0.0);
   return Pair(resultA*keep,resultB*keep);
  }`,
  mask: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> {
@@ -263,28 +265,32 @@ const body = {
   return vec4<f32>(reflection,alpha);
  }
  fn display(p:vec4<f32>) -> vec4<f32> {
-  let q=uv(p);let flat=u.v[9].w;let paper=mix(sample(t5,q),vec4<f32>(0.5),flat);
-  let pixel=vec2<i32>(px(p));let inkB=textureLoad(t1,pixel,0);let a=textureLoad(t0,pixel,0)+textureLoad(t2,pixel,0);let b=inkB+textureLoad(t3,pixel,0);
+  let q=uv(p);let flat=u.v[9].w;let pixel=vec2<i32>(px(p));let paper=mix(textureLoad(t5,pixel,0),vec4<f32>(0.5),flat);
+  let wetRead=textureLoad(t4,pixel,0).r;let a=textureLoad(t0,pixel,0)+textureLoad(t2,pixel,0);let b=textureLoad(t1,pixel,0)+textureLoad(t3,pixel,0);
   var flakes=vec4<f32>(0);if(u.v[12].y>0.0){flakes=textureLoad(t7,pixel,0);}
   // The live view shows wet paper a little darker and cooler, as the reference sheet does; kept pixels never carry it.
-  let wetness=select(0.0,smoothstep(0.02,0.7,sample(t4,q).r)*u.v[12].x,u.v[12].x>0.0);
-  if(u.v[9].z==2 && wetness<=0.0 && all(a==vec4<f32>(0)) && all(b.rgb==vec3<f32>(0)) && inkB.a==0 && all(flakes==vec4<f32>(0))){return textureLoad(t6,pixel,0);}
+  let wetness=select(0.0,smoothstep(0.02,0.7,wetRead)*u.v[12].x,u.v[12].x>0.0);
+  if(u.v[9].z==2 && wetness<=0.0 && all(a==vec4<f32>(0)) && all(b==vec4<f32>(0)) && all(flakes==vec4<f32>(0))){return textureLoad(t6,pixel,0);}
   // Edge darkening reads the density gradient across one reference texel.
   let h=u.v[3].w/u.v[0].xy;
   let gradient=vec2<f32>(density(q+vec2<f32>(h.x,0))-density(q-vec2<f32>(h.x,0)),density(q+vec2<f32>(0,h.y))-density(q-vec2<f32>(0,h.y)));
   let edge=min(length(gradient)/(a.x+1.0),1.0);
   let strength=mix((1+u.v[9].x*(0.5-paper.g)*2.2)*(1+u.v[9].y*edge),1.0,flat);
   let transmission=waterColor(a*strength,b*strength);
-  let cover=clamp((1-exp(-2.2*inkB.a))*(1+0.5*(paper.g-0.5)),0.0,1.0);
-  let white=vec3<f32>(0.96,0.955,0.94)*(1+0.1*(paper.r-0.5)*u.v[10].w);
+  // White gouache settles into the paper's valleys and lies thin on its peaks. Thick, it hides what is under it; thin, a dark
+  // ground shows through it cool, as a turbid layer over dark reads blue.
+  let cover=clamp(1-exp(-2.2*b.a*max(0.0,1+1.8*(0.5-paper.g)+1.2*(paper.b-0.5))),0.0,1.0);
+  let under=dot(transmission,vec3<f32>(0.2126,0.7152,0.0722));
+  let white=vec3<f32>(0.96,0.955,0.94)*(1+0.1*(paper.r-0.5)*u.v[10].w)*mix(vec3<f32>(1),vec3<f32>(0.8,0.87,1.0),(1-cover)*(1-clamp(under,0.0,1.0)));
   var reflection=vec4<f32>(0);if(u.v[12].y>0.0 && flat<1.0){reflection=mineralReflection(q,pixel,flakes,cover);}
   if(u.v[9].z==2){
-   let t=srgb(transmission);let alpha=1-min(t.x,min(t.y,t.z));
-   let premul=(t-vec3<f32>(1-alpha))*(1-cover)+srgb(white)*cover;
-   let total=cover+alpha*(1-cover);
-   let coat=vec4<f32>(select(vec3<f32>(0),premul/max(total,0.0001),total>0.0001),total);
-   let base=sample(t6,q);let pigmentAlpha=coat.a+base.a*(1-coat.a);
-   let pigmentRGB=coat.rgb*coat.a+base.rgb*base.a*(1-coat.a);
+   // Transparent paint multiplies the saved raster under it (its colour over white), as it multiplies the paper; the result keeps
+   // the raster's alpha where the paint adds none. White gouache lies on top.
+   let base=textureLoad(t6,pixel,0);let t=srgb(transmission);let held=base.rgb*base.a+vec3<f32>(1-base.a);
+   let glazed=srgb(transmission*select(held/12.92,pow((held+0.055)/1.055,vec3<f32>(2.4)),held>vec3<f32>(0.04045)));
+   let alpha=base.a+(1-min(t.x,min(t.y,t.z)))*(1-base.a);
+   let pigmentAlpha=cover+alpha*(1-cover);
+   let pigmentRGB=srgb(white)*cover+clamp(glazed-vec3<f32>(1-alpha),vec3<f32>(0),vec3<f32>(1))*(1-cover);
    let layered=reflection.a+pigmentAlpha*(1-reflection.a);
    let under=srgb(reflection.rgb)*reflection.a+pigmentRGB*(1-reflection.a);
    if(wetness<=0.0){return vec4<f32>(select(vec3<f32>(0),under/max(layered,0.0001),layered>0.0001),layered);}
@@ -300,18 +306,18 @@ const body = {
   var backing=tint*(1+u.v[10].w*((paper.r-0.5)*0.32+(paper.b-0.5)*u.v[11].w*2));
   let fleck=(paper.a-0.5)*2*u.v[10].w;
   backing=select(mix(backing,u.v[11].xyz,-fleck),mix(backing,min(tint*1.1+0.02,vec3<f32>(1)),fleck),fleck>=0);
-  let base=sample(t6,q);let baseLinear=select(base.rgb/12.92,pow((base.rgb+0.055)/1.055,vec3<f32>(2.4)),base.rgb>vec3<f32>(0.04045));
+  let base=textureLoad(t6,pixel,0);let baseLinear=select(base.rgb/12.92,pow((base.rgb+0.055)/1.055,vec3<f32>(2.4)),base.rgb>vec3<f32>(0.04045));
   backing=mix(backing,baseLinear,base.a);
   var color=mix(transmission*backing,select(white,vec3<f32>(1),u.v[9].z==3),cover);
-  let damp=select(smoothstep(0.02,0.7,sample(t4,q).r)*(1-flat),0.0,u.v[9].z==3);
+  let damp=select(smoothstep(0.02,0.7,wetRead)*(1-flat),0.0,u.v[9].z==3);
   color*=vec3<f32>(1)-damp*vec3<f32>(0.12,0.11,0.08);
   color=mix(color,reflection.rgb,reflection.a);
   return vec4<f32>(srgb(color),1);
  }`,
 };
 
-export function waterShaderSources(manualFilter){
- const common = head + (manualFilter ? manualSample : filteredSample) + rest;
+export function waterShaderSources(){
+ const common = head + manualSample + rest;
  const sources=Object.fromEntries(Object.entries(body).filter(([name])=>name!=='pigment'&&name!=='display').map(([name,source])=>[name,common+source]));
  sources.displayCompute=common+body.display+`
  @group(0) @binding(11) var output:texture_storage_2d<rgba8unorm,write>;

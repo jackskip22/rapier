@@ -99,14 +99,15 @@ function flowchartIds(cursor) {
   return ids;
 }
 
-function flowchartLabel(value) {
-  if (value.length > FLOWCHART_LIMITS.labelChars) flowchartFail('flowchart_label_limit');
+function flowchartLabel(source) {
+  if (source.length > FLOWCHART_LIMITS.labelChars) flowchartFail('flowchart_label_limit');
+  const value = source.replace(/<br\s*\/?>/gi, ' ');
   if (!value.trim()) flowchartFail('flowchart_empty_label');
   if (/\$\$.*?\$\$/.test(value)) flowchartFail('flowchart_unsupported');
   if (/[<>\x00-\x1f\x7f-\x9f\ud800-\udfff\ufffe\uffff]/u.test(value) ||
       /&(?:#[xX]?[0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]*;)|&(?:amp|lt|gt|quot|apos)(?:;|(?=[^A-Za-z0-9]|$))|#[A-Za-z0-9]+;/i.test(value) ||
       /(?:https?|ftp|file|javascript|vbscript|data|blob|mailto|tel):|\/\/|\bwww\./i.test(value)) flowchartFail('flowchart_unsafe_label');
-  return value;
+  return source.replace(/<br\s*\/?>/gi, '\n');
 }
 
 function flowchartDelimited(cursor, close, shape) {
@@ -319,8 +320,9 @@ export function editFlowchartLabel(source, target, value) {
   const labels = {}, parsed = parseFlowchart(source, labels);
   if (!parsed.ok) return parsed;
   const span = labels[target?.kind + 's']?.get(target.id);
-  if (!span || typeof value !== 'string' || value.includes('"') || /[\r\n]/.test(value))
-    return {ok: false, reason: 'Use a single plain-text label without double quotes.'};
+  if (!span || typeof value !== 'string' || value.includes('"'))
+    return {ok: false, reason: 'Use a plain-text label without double quotes.'};
+  value = value.replace(/\r\n?|\n/g, '<br>');
   const inserted = span.implicit ? '["' + value + '"]' : '"' + value + '"';
   const next = source.slice(0, span.start) + inserted + source.slice(span.end);
   const admitted = parseFlowchart(next);

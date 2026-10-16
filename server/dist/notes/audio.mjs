@@ -1,6 +1,6 @@
 import {noteFileName} from './model.mjs';
-import {scanLinks, escapeLinkAttribute, linkRemovalEnd} from './links.mjs';
-import {addSiblingLinkLine} from './sibling-links.mjs';
+import {scanLinks, linkRemovalEnd} from './links.mjs';
+import {addSiblingLinkLine, siblingHref, renameSiblings} from './sibling-links.mjs';
 
 export const RECORDING_TYPES = Object.freeze(['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/webm', 'audio/mp4']);
 import {streamingRecordingType, inspectRecording} from './recording-container.mjs';
@@ -27,7 +27,7 @@ export function recordingName(noteFile, existing = [], mime) {
 }
 export function recordingHref(name) {
 	if (!validRecordingName(name)) throw new Error('This recording name is not a sibling file');
-	return 'audio/' + encodeURIComponent(name).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+	return siblingHref('audio', name);
 }
 export function recordingFromHref(href) {
 	if (typeof href !== 'string' || !/^(?:\.\/)?audio\//.test(href) || /[?#]/.test(href)) return null;
@@ -71,16 +71,11 @@ export function removeRecordingLine(text, entry) {
 	return !s.slice(a, row.start).trim() && !s.slice(row.end, b).trim() ? s.slice(0, a) + s.slice(b) : s.slice(0, row.start) + s.slice(row.end);
 }
 export function rewriteRecordingNames(text, mapping) {
-	let out = String(text ?? '');
-	const seen = new Set();
-	for (const row of recordingsOf(out).sort((a, b) => b.destStart - a.destStart)) {
-		const name = mapping instanceof Map ? mapping.get(row.name) : mapping[row.name];
-		if (!name || seen.has(row.destStart)) continue;
-		seen.add(row.destStart);
-		const href = recordingHref(name);
-		out = out.slice(0, row.destStart) + (row.kind === 'html' ? escapeLinkAttribute(href) : href) + out.slice(row.destEnd);
+	const s = String(text ?? ''), rows = recordingsOf(s);
+	for (const link of scanLinks(s)) if (link.kind === 'inline' && !link.image && /^t=\d+$/.test(link.anchor || '') && !link.unresolvedDecode) {
+		const name = recordingFromHref(link.dest); if (name) rows.push({...link, name});
 	}
-	return out;
+	return renameSiblings(s, rows, mapping, recordingHref);
 }
 export function recordingBytes(list) {
 	let total = 0;

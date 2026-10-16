@@ -11,10 +11,10 @@ import {mathModules, mathClassicSource} from '../math/package-build.mjs';
 import {mathReadme} from '../math/package-readme.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-export const MATH_VERSION = '2.2.0';
+export const MATH_VERSION = '2.4.1';
 export const MATH_BUNDLE = 'rapier-math-' + MATH_VERSION + '.js';
 export const MATH_SOURCES = ['font.js', 'symbols.js', 'parser.js', 'source.js', 'variants.js', 'layout.js', 'fallbacks.js', 'responsive.js', 'api.js', 'browser.js', 'mathml.js', 'semantic-api.js', 'combined.js', 'classic.js'].map(name => 'math/' + name);
-export const MATH_RECIPE = ['math/build-font.py', 'math/FONT-SOURCE.md', 'math/FONT-LICENSE.txt', 'math/package-verify.mjs', 'tools/build-math.mjs', 'math/LICENSE-MIT', 'math/adoption-verify.mjs', 'math/package-build.mjs', 'math/package-layout.mjs', 'math/package-check.mjs', 'math/package-readme.mjs', 'math/README.md', 'math/SEMANTICS.md', 'math/semantic-verify.mjs'];
+export const MATH_RECIPE = ['math/build-font.py', 'math/FONT-SOURCE.md', 'math/FONT-LICENSE.txt', 'math/package-verify.mjs', 'tools/build-math.mjs', 'math/LICENSE-MIT', 'math/adoption-verify.mjs', 'math/package-build.mjs', 'math/package-layout.mjs', 'math/package-check.mjs', 'math/package-readme.mjs', 'math/README.md', 'math/SEMANTICS.md', 'math/semantic-verify.mjs', 'math/typeset-verify.mjs'];
 export const MATH_ADOPTION = ['delimiters.mjs', 'markdown-rules.mjs', 'reuse.mjs', 'integration.mjs', 'markdown-it.mjs', 'rehype.mjs', 'stream.mjs',
   'accessible.mjs', 'accessible.css', 'mathml.d.ts', 'combined.d.ts', 'accessible.d.ts',
   'index.d.ts', 'classic.d.ts', 'delimiters.d.ts', 'integration.d.ts', 'markdown-it.d.ts', 'rehype.d.ts', 'stream.d.ts',
@@ -120,7 +120,7 @@ export async function buildMath({root = ROOT, updatePins = true, packageLayout =
     if (!block.test(loader)) throw new Error('The math loader pin could not be located');
     const version = /var MATH_VERSION = '[^']+';/;
     if (!version.test(loader)) throw new Error('The math loader version could not be located');
-    const cdn = /(key: 'math',[\s\S]*?cdn: '(https:\/\/cdn\.jsdelivr\.net\/gh\/jackskip22\/rapier-plugins@[^/']+\/)math\/)[^']+(')/;
+    const cdn = /(key: 'math',[\s\S]*?url: '(https:\/\/cdn\.jsdelivr\.net\/gh\/jackskip22\/rapier-plugins@[^/']+\/)math\/)[^']+(')/;
     if (!cdn.test(loader)) throw new Error('The math loader CDN pin could not be located');
     await writeFile(loaderPath, loader.replace(version, "var MATH_VERSION = '" + MATH_VERSION + "';")
       .replace(block, (_, before, middle, after) => before + bytes.length + middle + sha384 + after)

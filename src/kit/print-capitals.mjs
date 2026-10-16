@@ -78,4 +78,3 @@ export function createPrintCapitals(lineMetrics, linesHeight, followingProse) {
 
 const capitals = createPrintCapitals(lineMetrics, linesHeight, followingPrintProse);
 export const applyPrintCapitals = capitals.apply;
-export const clearPrintCapitals = capitals.clear;

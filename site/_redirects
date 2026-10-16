@@ -2,11 +2,11 @@
 /bench/ /bench 308
 /bench /rapier-bench.html 200
 /notes/ /notes 308
-/notes /rapier.html 200
+/notes /door-notes.html 200
 /draw/ /draw 308
-/draw /rapier.html 200
+/draw /door-draw.html 200
 /watercolor/ /watercolor 308
-/watercolor /rapier.html 200
+/watercolor /door-watercolor.html 200
 /agents/ /agents 308
 /agents https://github.com/jackskip22/rapier/blob/main/docs/agents.md 302
 /gemini/ /gemini 308
@@ -16,7 +16,7 @@
 /will/ /will 308
 /will https://github.com/jackskip22/rapier/blob/main/docs/will.md 302
 /privacy/ /privacy 308
-/privacy /rapier.html 200
+/privacy /door-privacy.html 200
 /commercial/ /commercial 308
-/commercial /rapier.html 200
+/commercial /door-commercial.html 200
 /favicon.ico /icon-192.png 200

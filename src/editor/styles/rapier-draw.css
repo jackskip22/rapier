@@ -18,21 +18,21 @@ html.rapier-draw-open{overscroll-behavior:none}
 .rapier-draw-surface--closed{pointer-events:none}
 @media(prefers-reduced-motion:reduce){.rapier-draw-surface--notes{transition:none}}
 .rapier-draw-toolbar{position:relative;flex:none;padding:var(--draw-safe-top) 0 0;background:var(--color-surface-2)}
-.rapier-draw-head{--draw-history:48px;--draw-canvas-gap:calc((var(--draw-cell) + 2 * var(--space-1)) / 2 - 11.8px - (var(--draw-history) - 24px) / 2 - .2px);--draw-tool-w:clamp(36px,calc((var(--draw-safe-width) - 2 * var(--draw-history)) / 2 - var(--draw-history) - var(--draw-canvas-gap)),72px);display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;height:calc(var(--draw-cell) + 2 * var(--space-1))}
+.rapier-draw-head{--draw-history:48px;--draw-canvas-gap:calc((var(--draw-cell) + 2 * var(--space-1)) / 2 - 11.8px - (var(--draw-history) - 24px) / 2 - .2px);--draw-tool-w:clamp(36px,calc((var(--draw-safe-width) - 2 * var(--draw-history)) / 2 - var(--draw-history) - var(--draw-canvas-gap)),72px);display:grid;grid-template-columns:auto auto minmax(0,1fr);align-items:center;height:calc(var(--draw-cell) + 2 * var(--space-1))}
 @media(max-width:359px){.rapier-draw-head{--draw-history:44px}}
 .rapier-draw-head-start{display:flex;align-items:center;gap:0;height:100%;min-width:0}
 .rapier-draw-head-start>.rapier-draw-canvas-toggle{margin-left:var(--draw-canvas-gap)}
 .rapier-draw-head-dials{display:flex;align-items:center;height:100%}
 .rapier-draw-head-dials>.rapier-dial{flex:none;margin:0}
-.rapier-draw-head-end{flex:1;min-width:0;height:100%;display:flex;align-items:stretch}
-.rapier-draw-head-clear{flex:1;min-width:0;display:flex;justify-content:flex-end;padding-right:calc(var(--space-4) - var(--space-2));align-items:center;container-type:inline-size}
+.rapier-draw-head-end{flex:1;min-width:0;height:100%;display:flex;align-items:stretch;justify-content:flex-end}
+.rapier-draw-head-clear{flex:none;display:flex;align-items:center;margin-inline-start:var(--space-1)}
 .rapier-draw-btn,.rapier-draw-chip{appearance:none;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;padding:0 var(--space-3);border:0;border-radius:0;background:var(--color-surface-2);color:var(--color-text);font:var(--fw-semibold) var(--text-sm) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;white-space:nowrap;cursor:pointer;touch-action:manipulation;transition:background var(--dur-micro) var(--ease-micro),opacity var(--dur-micro) var(--ease-micro)}
 .rapier-draw-btn--icon{width:var(--draw-cell);min-width:var(--draw-cell);height:var(--draw-cell);min-height:var(--draw-cell);padding:0;background:transparent;color:var(--color-icon)}
 .rapier-draw-btn--icon svg{width:24px;height:24px;display:block}
 .rapier-draw-btn--quiet,.rapier-draw-chip{background:transparent}
 .rapier-draw-chip{color:var(--color-text-secondary)}
 .rapier-draw-btn--stowed{display:none}
-.rapier-draw-btn--clear{min-width:0;max-width:100%;padding:0 var(--space-2);background:transparent;color:var(--color-text);font-size:min(var(--text-sm),100cqi / 4.6)}
+.rapier-draw-btn--clear{min-width:44px;padding:0 var(--space-2);background:transparent;color:var(--color-text)}
 .rapier-draw-btn--done{min-width:0;padding:0 var(--space-4);margin:0;background:var(--color-accent);color:#000}
 body.light .rapier-draw-btn--done{color:#fff}
 .rapier-draw-btn:disabled,.rapier-draw-chip:disabled{opacity:.5;cursor:default}
@@ -89,6 +89,10 @@ body.light .rapier-draw-btn--done{color:#fff}
 .rapier-draw-settings--even .rapier-draw-settings-controls{width:calc(100% * var(--draw-settings-count) / (var(--draw-settings-count) + 1))}
 .rapier-draw-settings--even:not(.rapier-draw-settings--collapsed) .rapier-draw-settings-collapse{left:calc(var(--space-1) + (100% - 2 * var(--space-1)) * (var(--draw-settings-count) + .5) / (var(--draw-settings-count) + 1) - var(--draw-cell) / 2)}
 @media(prefers-reduced-motion:reduce){.rapier-draw-settings,.rapier-draw-settings-controls,.rapier-draw-settings-collapse{transition:none}}
+@media(min-width:900px){
+.rapier-draw-settings-controls,.rapier-draw-settings--even .rapier-draw-settings-controls{width:100%;grid-template-columns:repeat(var(--draw-settings-count,1),80px);justify-content:center}
+.rapier-draw-settings--even:not(.rapier-draw-settings--collapsed) .rapier-draw-settings-collapse{left:calc(100% - var(--draw-cell) - var(--space-1))}
+}
 .rapier-draw-btn-name{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:var(--fw-semibold) 9px var(--font-mono);letter-spacing:var(--track-caps-ui);text-transform:uppercase;line-height:1;padding:0 1px}
 .rapier-draw-settings-controls .rapier-draw-btn-name{font-size:var(--draw-caption);padding:0}
 .rapier-draw-panels{position:relative;z-index:6;flex:none;height:0;overflow:visible}
@@ -112,11 +116,11 @@ body.light .rapier-draw-btn--done{color:#fff}
 .rapier-draw-replay-nib,.rapier-draw-replay-paint{pointer-events:none}
 .rapier-draw-nib path{stroke-width:1.4px;vector-effect:non-scaling-stroke;stroke-linejoin:round}
 .rapier-draw-nib-ring{fill:none;stroke-width:1px;stroke-opacity:.35;vector-effect:non-scaling-stroke}
-.rapier-draw-nib-tag{position:absolute;left:0;top:0;z-index:7;pointer-events:none;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 8px;border-radius:999px;background:color-mix(in srgb,var(--color-text) 90%,transparent);color:var(--color-bg);font:var(--fw-semibold) var(--text-xs) var(--font-mono);letter-spacing:var(--track-caps);line-height:1.25;transition:opacity 120ms linear}
+.rapier-draw-nib-tag{position:absolute;left:0;top:0;z-index:7;pointer-events:none;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 8px;border-radius:0;background:color-mix(in srgb,var(--color-text) 90%,transparent);color:var(--color-bg);font:var(--fw-semibold) var(--text-xs) var(--font-mono);letter-spacing:var(--track-caps);line-height:1.25;transition:opacity 120ms linear}
 .rapier-draw-surface--paper .rapier-draw-nib-tag{background:rgba(17,19,22,.9);color:#fff}
 .rapier-draw-nib-tag--quiet{opacity:.6}
 .rapier-draw-replay-bar{position:absolute;right:var(--space-2);bottom:var(--space-2);z-index:8;display:flex;gap:var(--space-1)}
-.rapier-draw-replay-btn{appearance:none;border:0;padding:var(--space-1) var(--space-3);border-radius:999px;background:color-mix(in srgb,var(--color-text) 82%,transparent);color:var(--color-bg);font:var(--fw-semibold) var(--text-xs) var(--font-mono);letter-spacing:var(--track-caps-ui);text-transform:uppercase;cursor:pointer;min-height:32px}
+.rapier-draw-replay-btn{appearance:none;border:0;padding:var(--space-1) var(--space-3);border-radius:0;background:color-mix(in srgb,var(--color-text) 82%,transparent);color:var(--color-bg);font:var(--fw-semibold) var(--text-xs) var(--font-mono);letter-spacing:var(--track-caps-ui);text-transform:uppercase;cursor:pointer;min-height:32px}
 .rapier-draw-surface--paper .rapier-draw-replay-btn{background:rgba(17,19,22,.82);color:#fff}
 .rapier-draw-replay-btn[aria-disabled="true"]{opacity:.45}
 @media(prefers-reduced-motion:reduce){.rapier-draw-nib-tag{transition:none}}
@@ -155,12 +159,12 @@ body.light .rapier-draw-btn--done{color:#fff}
 .rapier-paint-mix-colours{display:flex;align-items:center;gap:var(--space-2);min-height:48px}
 .rapier-paint-mix-colours [data-paint-mix-use]{margin-left:auto;gap:var(--space-2)}
 .rapier-paint-mix-colours .rapier-draw-colour-custom::before{background:var(--paint-well);border-radius:0;box-shadow:inset 0 0 0 1px var(--color-border)}
-.rapier-paint-mix-result{display:inline-block;width:24px;height:24px;border:1px solid var(--color-border)}
+.rapier-paint-mix-result{display:inline-block;width:24px;height:24px}
 .rapier-draw-dip-firmness{display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);min-height:44px;color:var(--color-text-secondary);font:var(--fw-semibold) var(--text-sm) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase}
 .rapier-draw-dip-firmness-choices{display:flex;align-items:center;gap:var(--space-1)}
 .rapier-draw-dip-firmness .rapier-draw-chip[aria-pressed="true"]{background:var(--color-icon);color:var(--color-bg)}
-.rapier-draw-dip-sample{display:block;width:100%;height:auto;background:var(--color-bg);-webkit-user-drag:none;user-select:none}
-.rapier-draw-dip-pad{position:relative;width:100%;height:116px;touch-action:none;cursor:pointer;user-select:none}
+.rapier-draw-dip-sample{display:block;width:100%;height:auto;background:var(--color-bg);-webkit-user-drag:none;-webkit-user-select:none;user-select:none}
+.rapier-draw-dip-pad{position:relative;width:100%;height:116px;touch-action:none;cursor:pointer;-webkit-user-select:none;user-select:none}
 .rapier-draw-dip-pad:focus-visible{outline:0}
 .rapier-draw-dip-field{position:absolute;inset:0;display:block;width:100%;height:100%}
 .rapier-draw-dip-pad{--dip-knob:26px}
@@ -177,6 +181,7 @@ body.light .rapier-draw-btn--done{color:#fff}
 .rapier-draw-dip-foot{display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);min-height:36px}
 .rapier-draw-dip-word{font:var(--fw-semibold) var(--text-sm) var(--font-mono);text-transform:uppercase;color:var(--color-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rapier-draw-dip-actions{display:flex;align-items:center;gap:var(--space-1)}
+.rapier-draw-dip-actions .rapier-draw-btn--icon{flex-direction:column;gap:var(--space-1)}
 .rapier-draw-dip-redip{min-width:0;min-height:36px;padding:0 var(--space-3)}
 .rapier-draw-ink-dot{display:inline-block;width:22px;height:22px;border-radius:50%;background:var(--color-text-muted);box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--color-text) 45%,transparent)}
 /* COLOUR's wash (draw.js _rapierDrawUpdateInkBtn): the old colour stands under the new one, which spreads from the dot's
@@ -187,12 +192,10 @@ body.light .rapier-draw-btn--done{color:#fff}
 .rapier-draw-chip--glyph{width:44px;min-width:44px;padding:0;color:var(--color-icon)}
 .rapier-draw-chip--paint{flex-direction:column;justify-content:center;gap:1px;width:60px;min-width:60px;height:44px;min-height:44px;padding:0}
 .rapier-draw-chip--icon{flex-direction:column;justify-content:center;gap:1px;width:44px;min-width:44px;height:44px;min-height:44px}
-.rapier-draw-chip--icon svg{width:20px;height:20px}
 .rapier-draw-chip-name{display:block;white-space:nowrap;font:var(--fw-semibold) 9px var(--font-mono);letter-spacing:var(--track-caps-ui);text-transform:uppercase;line-height:1;padding:0 2px}
 .rapier-draw-glyph--tool{display:flex;align-items:center;justify-content:center;width:32px;height:22px}
 .rapier-draw-glyph--tool svg{width:20px;height:20px}
 .rapier-draw-chip-head{display:flex;align-items:center;flex:none;align-self:stretch;margin:0 var(--space-1) 0 var(--space-2);padding:0 var(--space-2);background:var(--color-surface-2);color:var(--color-text-secondary);font:var(--fw-semibold) var(--text-2xs,10px) var(--font-mono);letter-spacing:var(--track-caps-ui);text-transform:uppercase;white-space:nowrap}
-.rapier-draw-chip-head:first-child{margin-left:0}
 .rapier-draw-chip-head:first-child{padding-left:var(--space-2);margin-left:var(--space-1)}
 .rapier-draw-chip--icon svg,.rapier-draw-chip--glyph svg{width:22px;height:22px;display:block;margin:auto}
 .rapier-draw-chip--paint .rapier-draw-glyph--paint{width:54px;height:22px;object-fit:cover}
@@ -221,11 +224,19 @@ body.light .rapier-draw-btn--done{color:#fff}
 .rapier-draw-palette{display:flex;align-items:center;flex-wrap:nowrap;gap:var(--space-1);width:100%;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;overscroll-behavior-x:contain}
 .rapier-draw-palette::-webkit-scrollbar{display:none}
 .rapier-draw-palette>*{flex:none}
+.rapier-paint-colours{max-width:600px;margin:auto}
+.rapier-paint-colours>.rapier-draw-palette{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:0;max-width:384px;margin:auto;overflow:visible}
+.rapier-paint-colours>.rapier-draw-palette>.rapier-draw-swatch{width:100%;min-width:44px;height:44px}
+.rapier-paint-colours>.rapier-draw-palette>.rapier-draw-swatch>span{width:36px;height:36px;border-radius:50%;box-shadow:none}
 .rapier-draw-swatch,.rapier-draw-colour-custom{appearance:none;display:flex;align-items:center;justify-content:center;position:relative;box-sizing:border-box;width:44px;height:44px;padding:0;border:0;border-radius:0;background:transparent;cursor:pointer;touch-action:manipulation}
 .rapier-draw-swatch>span{width:24px;height:24px;pointer-events:none;box-shadow:inset 0 0 0 1px rgba(128,128,128,.35)}
 .rapier-draw-swatch[aria-pressed="true"],.rapier-draw-swatch:focus-visible{background:var(--color-surface-hover)}
 .rapier-draw-colour-custom:before{content:'';width:26px;height:26px;border-radius:50%;background:conic-gradient(#df3340,#e6bb38,#28a36d,#2996d1,#8b55dc,#df3340)}
 .rapier-draw-colour-custom input{position:absolute;inset:0;width:44px;height:44px;opacity:0;cursor:pointer}
+@media (pointer:coarse){
+	.rapier-draw-btn,.rapier-draw-chip,.rapier-draw-settings-collapse{min-width:48px;min-height:48px}
+	.rapier-draw-swatch,.rapier-draw-colour-custom,.rapier-draw-colour-custom input,.rapier-draw-handle{min-width:48px;min-height:48px}
+}
 .rapier-draw-colour-custom:focus-within{background:var(--color-surface-hover)}
 :is(.rapier-draw-colour-custom,.rapier-draw-garden-colour):has(> input[type="color"]:focus-visible){outline:2px solid var(--color-focus);outline-offset:2px}
 .rapier-draw-kinds{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:0;padding:0 var(--space-2);background:var(--color-surface-2)}
@@ -238,7 +249,7 @@ body.light .rapier-draw-btn--done{color:#fff}
 .rapier-draw-surface--paper .rapier-draw-handle>span{background:#111;box-shadow:0 0 0 1px #fff}
 .rapier-draw-surface--paper .rapier-draw-handle-ghost{border-color:#666}
 .rapier-draw-handle--round>span{border-radius:50%}
-.rapier-draw-handle--pill>span{width:6px;height:20px;border-radius:3px}
+.rapier-draw-handle--pill>span{width:6px;height:20px}
 .rapier-draw-handle:focus-visible>span{background:var(--color-accent);width:12px;height:12px}
 .rapier-draw-text-editor{position:fixed;inset:0;z-index:902;pointer-events:none}
 .rapier-draw-text-box{position:absolute;box-sizing:border-box;pointer-events:auto;transform-origin:0 0;touch-action:none}
@@ -294,8 +305,9 @@ body.light .rapier-draw-btn--done{color:#fff}
 .rapier-draw-effects .rapier-draw-effect{width:100%;min-width:0;height:auto;min-height:64px;flex-direction:column;gap:var(--space-1)}
 .rapier-draw-menu{--color-text:#fff;--color-text-secondary:#fff;--color-text-muted:#fff;--color-icon:#fff}
 body.light .rapier-draw-menu{--color-text:#000;--color-text-secondary:#000;--color-text-muted:#000;--color-icon:#000}
-.rapier-draw-menu .rapier-draw-control-label,.rapier-draw-menu .rapier-draw-chip-head{color:var(--color-text)}
-.rapier-draw-handle--rotate{color:var(--draw-paper-ink,var(--color-text))}
+.rapier-draw-menu .rapier-draw-chip-head{color:var(--color-text)}
+.rapier-draw-handle--rotate,.rapier-draw-handle--add{color:var(--draw-paper-ink,var(--color-text))}
+.rapier-draw-handle--add svg{width:18px;height:18px;pointer-events:none}
 .rapier-draw-handle--rotate svg{width:24px;height:24px;pointer-events:none}
 .rapier-draw-text-spacing{flex:none;display:flex;flex-direction:column;gap:0;padding:var(--space-1) var(--space-3);background:var(--color-surface-2)}
 .rapier-draw-metric{display:grid;grid-template-columns:minmax(92px,auto) minmax(0,1fr) minmax(62px,auto);align-items:center;gap:var(--space-2);min-height:44px;color:var(--color-text-secondary);font:var(--fw-semibold) var(--text-sm) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase}
@@ -306,7 +318,7 @@ body.light .rapier-draw-menu{--color-text:#000;--color-text-secondary:#000;--col
 .rapier-draw-copy-panel [hidden]{display:none}
 .rapier-draw-copy-choices{display:flex;flex-wrap:wrap;gap:var(--space-2)}
 .rapier-draw-copy-choices label{flex:1 1 140px;display:flex;flex-direction:column;gap:var(--space-1);font:var(--fw-semibold) var(--text-sm) var(--font-mono);color:var(--color-text-secondary)}
-.rapier-draw-copy-choices select{width:100%;min-height:44px;font:inherit;color:var(--color-text);background:var(--color-surface-2);border:1px solid var(--color-border);padding:var(--space-1)}
+.rapier-draw-copy-choices select{width:100%;min-height:44px;font:inherit;color:var(--color-text);background:var(--color-surface-2);border:0;padding:var(--space-1)}
 .rapier-draw-copy-tabs,.rapier-draw-copy-actions{display:flex;flex-wrap:wrap;gap:var(--space-1);padding:var(--space-1) 0}
 .rapier-draw-copy-tabs>*,.rapier-draw-copy-actions>*{flex:1;min-height:44px}
 .rapier-draw-copy-tabs [aria-selected="true"],.rapier-draw-copy-actions [aria-pressed="true"]{color:var(--color-accent)}
@@ -337,11 +349,12 @@ body.light .rapier-draw-menu{--color-text:#000;--color-text-secondary:#000;--col
 .rapier-draw-surface--paper .rapier-draw-marquee{fill:#2c70d9}
 .rapier-draw-surface--paper .rapier-draw-scribble,.rapier-draw-surface--paper .rapier-draw-press-ring,.rapier-draw-surface--paper .rapier-draw-guides{stroke:#2c70d9}
 .rapier-draw-brushes{flex:none;min-width:0;display:flex;flex-wrap:nowrap;align-items:stretch;gap:0;min-height:52px;padding:0 var(--space-2);box-sizing:border-box;background:var(--color-surface-2);overflow-x:auto;overflow-y:hidden;scrollbar-width:none;overscroll-behavior-x:contain}
-.rapier-draw-brushes>.rapier-draw-chip{height:auto}
+.rapier-draw-brushes>.rapier-draw-chip{height:auto;flex-shrink:0}
 .rapier-draw-brushes::-webkit-scrollbar{display:none}
 .rapier-draw-brushes .rapier-draw-chip--glyph{flex:1 0 auto;width:auto;min-width:76px}
 .rapier-draw-brushes[data-draw-panel="paintTools"] .rapier-draw-chip--glyph{min-width:44px;padding:0 var(--space-1)}
-.rapier-draw-chip--glyph img.rapier-draw-glyph--paint{width:48px;height:30px;display:block;margin:auto;background:#fff}
+.rapier-draw-chip--glyph img.rapier-draw-glyph--paint{width:96px;height:60px;display:block;margin:auto;background:#fff}
+.rapier-draw-brushes[data-draw-panel="paintBrushes"] .rapier-draw-chip--paint{width:112px;min-width:112px;height:auto;gap:var(--space-1);padding:var(--space-2)}
 .rapier-draw-brushes .rapier-draw-chip--icon{flex:none}
 .rapier-draw-chip--own:not([aria-checked="true"]){background:color-mix(in srgb,var(--color-accent) 22%,transparent)}
 .rapier-draw-paint-live{position:absolute;left:0;top:0;pointer-events:none;image-rendering:auto}
@@ -351,7 +364,7 @@ body.light .rapier-draw-menu{--color-text:#000;--color-text-secondary:#000;--col
 .rapier-draw-chip--angle svg{width:28px;height:22px;display:block;margin:auto}
 .rapier-draw-chip--angle ellipse{fill:none;stroke:currentColor;stroke-width:1.6;vector-effect:non-scaling-stroke}
 .rapier-draw-anglepanel{flex:none;display:flex;align-items:center;gap:var(--space-4);padding:var(--space-2) var(--space-3) var(--space-3);background:var(--color-surface-2)}
-.rapier-draw-anglepanel-dial{flex:none;width:136px;height:136px;touch-action:none;user-select:none;cursor:grab;color:var(--color-text)}
+.rapier-draw-anglepanel-dial{flex:none;width:136px;height:136px;touch-action:none;-webkit-user-select:none;user-select:none;cursor:grab;color:var(--color-text)}
 .rapier-draw-anglepanel-dial:focus-visible{outline:0;color:var(--color-icon)}
 .rapier-draw-anglepanel-dial svg{display:block;width:100%;height:100%}
 .rapier-draw-angle-ring{fill:var(--color-bg);stroke:var(--color-text-secondary);stroke-width:1.5}
@@ -440,9 +453,16 @@ body.rapier-draw-open .settings-overlay.restore-modal-overlay{z-index:950}
 .rapier-draw-water-pigment-name>span{min-width:0;overflow-wrap:anywhere}
 .rapier-draw-water-tools .rapier-draw-chip--glyph{min-width:44px;padding:0 var(--space-1)}
 .rapier-draw-water-load .rapier-draw-metric{padding:0}
-.rapier-draw-water-stats{position:absolute;left:var(--space-2);top:50%;transform:translateY(-50%);z-index:2;pointer-events:none;white-space:pre;padding:var(--space-1) var(--space-2);border-radius:var(--radius-sm,4px);background:color-mix(in srgb,var(--color-bg) 82%,transparent);color:var(--color-text-secondary);font:var(--fw-semibold) var(--text-xs,11px)/1.35 var(--font-mono);font-variant-numeric:tabular-nums}
+.rapier-draw-water-stats{position:absolute;left:var(--space-2);top:50%;transform:translateY(-50%);z-index:2;pointer-events:none;white-space:pre;padding:var(--space-1) var(--space-2);border-radius:0;background:color-mix(in srgb,var(--color-bg) 82%,transparent);color:var(--color-text-secondary);font:var(--fw-semibold) var(--text-xs,11px)/1.35 var(--font-mono);font-variant-numeric:tabular-nums}
 .rapier-draw-water-palette-actions{display:flex;flex-wrap:wrap;gap:var(--space-1);padding:var(--space-1) 0}
+.rapier-draw-water-palette-actions>[aria-pressed="true"]{background:var(--color-icon);color:var(--color-bg)}
+.rapier-draw-values:not(.rapier-draw-sampling) .rapier-draw-stage{filter:grayscale(1)}
+.rapier-draw-water-find-chip{flex:none;width:2.5em;height:1.5em;border-radius:0}
 .rapier-draw-water-palette-tabs{display:flex;gap:var(--space-1);overflow-x:auto;overscroll-behavior-x:contain;padding-bottom:var(--space-2)}
 .rapier-draw-water-palette-tabs>.rapier-draw-chip{flex:none;max-width:72%;white-space:normal;overflow-wrap:anywhere}
 .rapier-draw-water-palette-tabs>[aria-pressed="true"]{background:var(--color-surface-hover);color:var(--color-text)}
 .rapier-draw-water-palette-empty{color:var(--color-text-secondary);font-size:var(--text-sm)}
+#rapier-draw-surface>.rapier-notes-sheet{position:relative;z-index:7;flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:6px;max-height:none;overflow:auto;overscroll-behavior:contain;padding:var(--space-2) var(--space-5) calc(var(--space-5) + var(--draw-safe-bottom));background:var(--color-surface);color:var(--color-text);touch-action:pan-y}
+#rapier-draw-surface>.rapier-notes-sheet .settings-action-btn{flex:none;height:auto;min-height:56px;gap:16px;justify-content:flex-start;padding:0 14px;background:color-mix(in srgb,var(--color-text) 10%,var(--color-surface));font:var(--fw-semibold) 22px/1.15 var(--font-mono);letter-spacing:var(--track-caps);text-align:start}
+#rapier-draw-surface>.rapier-notes-sheet .settings-action-btn svg{flex:none;width:26px;height:26px}
+@media (hover:hover) and (pointer:fine){#rapier-draw-surface>.rapier-notes-sheet .settings-action-btn:hover{background:color-mix(in srgb,var(--color-text) 16%,var(--color-surface))}}

@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MIT
 export function fault(message) { return Object.assign(new Error('Ledger: ' + message), {code: 'ledger_invalid'}); }
-function fields(value, depth, active, sorted = true) {
+export const plainPrototype = proto => proto === null || Object.getPrototypeOf(proto) === null &&
+  Object.getOwnPropertyDescriptor(Object.getOwnPropertyDescriptor(proto, 'constructor')?.value || {}, 'name')?.value === 'Object';
+export function fields(value, depth, active, sorted = true) {
   if (!value || typeof value !== 'object' || depth > 64 || active.has(value)) throw fault('not plain JSON data');
-  const array = Array.isArray(value), proto = Object.getPrototypeOf(value);
-  if (!array && proto !== null && (Object.getPrototypeOf(proto) !== null || Object.getOwnPropertyDescriptor(proto, 'constructor')?.value?.name !== 'Object')) throw fault('not a plain object');
+  const array = Array.isArray(value);
+  if (!array && !plainPrototype(Object.getPrototypeOf(value))) throw fault('not a plain object');
   const descriptors = Object.getOwnPropertyDescriptors(value), keys = Reflect.ownKeys(descriptors);
   for (const key of keys) {
     if (array && key === 'length') continue;
@@ -13,7 +15,7 @@ function fields(value, depth, active, sorted = true) {
   if (array && (keys.length !== value.length + 1 || keys.some(k => k !== 'length' && (!/^(0|[1-9]\d*)$/.test(k) || +k >= value.length)))) throw fault('sparse array');
   return {array, descriptors, keys: array ? keys.filter(key => key !== 'length') : sorted ? keys.sort() : keys};
 }
-function scalar(value) {
+export function scalar(value) {
   if (value === null || typeof value === 'boolean') return true;
   if (typeof value === 'string') { if (/[\uD800-\uDFFF]/u.test(value)) throw fault('unpaired surrogate'); return true; }
   return typeof value === 'number' && Number.isFinite(value) && !Object.is(value, -0);

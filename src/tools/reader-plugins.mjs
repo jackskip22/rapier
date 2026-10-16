@@ -18,7 +18,7 @@ const PLUGINS = {
 };
 export function builtPlugin(key, bytes, version) {
 	const file = 'rapier-' + key + '-' + version + '.js', sum = digest(bytes);
-	return {key, version, file, bytes: bytes.length, sri: sum.toString('base64'), sha384: sum.toString('hex'), url: PLUGIN_ORIGIN + PLUGINS[key].folder + '/' + file, cacheKey: 'rapier-' + key + '-v' + version, ...PLUGINS[key]};
+	return {key, version, file, bytes: bytes.length, sri: sum.toString('base64'), sha384: sum.toString('hex'), url: PLUGIN_ORIGIN + PLUGINS[key].folder + '/' + file, ...PLUGINS[key]};
 }
 
 const replaceOnce = (text, from, to, what) => {
@@ -29,17 +29,12 @@ const replaceOnce = (text, from, to, what) => {
 export function readerPluginLoader(loader, built) {
 	const definition = plugin => [
 		'\t// ---- ' + plugin.name + '. One file, pinned by the build that wrote this page.',
-		'\t_rapierVerifiedPlugin({',
-		'\t\tkey: ' + JSON.stringify(plugin.key) + ', noun: ' + JSON.stringify(plugin.noun) + ', name: ' + JSON.stringify(plugin.name) + ', dash: \' \\u2014 \',',
+		'\t_rapierVerifiedFiles({',
+		'\t\tkey: ' + JSON.stringify(plugin.key) + ', noun: ' + JSON.stringify(plugin.noun) + ', dash: \' \\u2014 \',',
 		'\t\tversion: ' + JSON.stringify(plugin.version) + ',',
-		'\t\tcdn: ' + JSON.stringify(plugin.url) + ',',
-		'\t\tfile: ' + JSON.stringify(plugin.file) + ',',
-		'\t\tbytes: ' + plugin.bytes + ',',
-		'\t\tsri: ' + JSON.stringify(plugin.sri) + ',',
-		'\t\tcacheKey: ' + JSON.stringify(plugin.cacheKey) + ',',
+		'\t\tfiles: [' + JSON.stringify({name: plugin.file, file: plugin.file, url: plugin.url, bytes: plugin.bytes, sri: plugin.sri}) + '],',
 		'\t\tmissing: ' + JSON.stringify('The ' + plugin.noun + ' loaded but is incomplete \u2014 removed') + ',',
 		'\t\tusable: function () { return ' + plugin.usable + '; },',
-		'\t\trender: function () { throw new Error(\'this plug-in is not a renderer\'); },',
 		'\t});',
 		'',
 	].join('\n');

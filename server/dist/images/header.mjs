@@ -5,10 +5,10 @@ export const JPEG_XL_PICTURE_LIMITS = JPEG_LIMITS;
 
 export {codecError, byteView, boundedDimensions};
 
-export function inspectJPEGXL(input) {
+export function inspectJPEGXL(input, prefix = false) {
   const bytes = byteView(input);
   if (bytes.length < 3 || bytes.length > JPEG_XL_LIMITS.bytes) throw codecError('JXL_SIZE', 'JPEG XL data is empty or exceeds 16 MiB.');
-  const parts = jxlCodestreamParts(bytes);
+  const parts = jxlCodestreamParts(bytes, prefix);
   let header = parts[0];
   if (parts.length > 1) {
     header = new Uint8Array(128);
@@ -53,7 +53,7 @@ export function inspectJPEGXL(input) {
 }
 
 
-export function jxlCodestreamParts(input) {
+export function jxlCodestreamParts(input, prefix = false) {
   const bytes = byteView(input);
   if (bytes[0] === 255 && bytes[1] === 10) return [bytes];
   const signature = [0, 0, 0, 12, 74, 88, 76, 32, 13, 10, 135, 10];
@@ -69,8 +69,9 @@ export function jxlCodestreamParts(input) {
       length = view.getUint32(offset + 12);
       start += 8;
     } else if (length === 0) length = bytes.length - offset;
-    if (length < start - offset || length > bytes.length - offset) throw codecError('JXL_CONTAINER', 'JPEG XL container length is invalid.');
-    const end = offset + length;
+    const cut = prefix && length > bytes.length - offset && (type === 'jxlc' || type === 'jxlp');
+    if (length < start - offset || length > bytes.length - offset && !cut) throw codecError('JXL_CONTAINER', 'JPEG XL container length is invalid.');
+    const end = cut ? bytes.length : offset + length;
     if (type === 'jxlc' || type === 'jxlp') {
       if (complete || (type === 'jxlc' && codestream)) throw codecError('JXL_CONTAINER', 'JPEG XL contains conflicting codestreams.');
       if (type === 'jxlp') {
@@ -82,6 +83,7 @@ export function jxlCodestreamParts(input) {
       } else complete = true;
       codestream = true;
       parts.push(bytes.subarray(start, end));
+      if (cut) return parts;
     }
     offset = end;
   }

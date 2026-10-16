@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {prepareLedgerAsync, readLedger, textRoot} from '../kit/ledger/format.mjs';
-import {jsonParts} from '../kit/ledger/data.mjs';
-import {_rapierRecoveryBomManifest} from './recovery-policy.mjs';
+import {jsonParts, plainPrototype} from '../kit/ledger/data.mjs';
+import {_rapierRecoveryBomManifest, _rapierRecoveryStamp} from './recovery-policy.mjs';
 
 const abort = () => Object.assign(new Error('Cancelled'), {name: 'AbortError'});
 const freeze = value => {
@@ -19,9 +19,7 @@ function packet(value) {
     if (value === null || typeof value !== 'object') return value;
     if (settled.has(value) && Object.isFrozen(value)) return value;
     if (active.has(value)) throw new TypeError('Recovery contains a cycle');
-    const proto = Object.getPrototypeOf(value);
-    if (!Array.isArray(value) && proto !== null && (Object.getPrototypeOf(proto) !== null || Object.getOwnPropertyDescriptor(proto, 'constructor')?.value?.name !== 'Object'))
-      throw new TypeError('Recovery needs plain data');
+    if (!Array.isArray(value) && !plainPrototype(Object.getPrototypeOf(value))) throw new TypeError('Recovery needs plain data');
     active.add(value);
     const out = Array.isArray(value) ? new Array(value.length) : {}, descriptors = Object.getOwnPropertyDescriptors(value), long = strings.length;
     for (const key of Reflect.ownKeys(descriptors)) {
@@ -131,6 +129,38 @@ async function preparation(core, state, signal) {
   signal?.throwIfAborted();
   return {ledger, integrity, undoIntegrity, seenIntegrity, encoded: null, parts: snapshot ? jsonParts(snapshot) : null};
 }
+const databases = new Map();
+function recoveryDatabase(idb, {name, version}) {
+  if (databases.has(name)) return databases.get(name);
+  const opening = new Promise((resolve, reject) => {
+    const request = idb.open(name, version);
+    request.onupgradeneeded = () => request.transaction.abort();
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => { try { db.close(); } catch (_) {} databases.delete(name); };
+      resolve(db);
+    };
+    request.onerror = () => { databases.delete(name); reject(request.error || new Error('IndexedDB unavailable')); };
+  });
+  databases.set(name, opening);
+  return opening;
+}
+function storeRecords(text, write, db) {
+  return new Promise((resolve, reject) => {
+    let tx;
+    try { tx = db.transaction(write.stores, 'readwrite', {durability: write.durability}); }
+    catch (_) { tx = db.transaction(write.stores, 'readwrite'); }
+    const current = tx.objectStore('meta').get(write.docId);
+    current.onsuccess = () => {
+      if (write.base != null && _rapierRecoveryStamp(current.result) !== write.base) { resolve(true); tx.abort(); return; }
+      try {
+        for (const row of write.records) tx.objectStore(row.store).put(row.text ? {...row.value, canonicalText: text} : row.value);
+      } catch (error) { try { tx.abort(); } catch (_) {} reject(error); }
+    };
+    tx.oncomplete = () => resolve(false);
+    tx.onerror = tx.onabort = () => reject(tx.error || new Error('IndexedDB transaction failed'));
+  });
+}
 export function installRecoveryWorker(scope) {
   const receiving = new Map(), running = new Map(), revisions = new Map();
   scope.onmessage = ({data}) => {
@@ -152,6 +182,13 @@ export function installRecoveryWorker(scope) {
         if (!core) {
           if (!request.core) throw new Error('Recovery revision expired');
           core = {input: request.core, ledger: null, integrity: null};
+        }
+        if (request.write) {
+          if (!scope.indexedDB) throw new Error('IndexedDB unavailable');
+          const newer = await storeRecords(core.input.text, request.write, await recoveryDatabase(scope.indexedDB, request.write.db));
+          await sendPacket(port, packet({newer}), current);
+          if (current()) revisions.set(request.revisionId, core);
+          return;
         }
         const result = await preparation(core, request.state, controller.signal);
         const {parts, ...value} = result;
@@ -293,9 +330,18 @@ async function prepareEntry(entry, state, {workerSource, signal} = {}) {
   }
   const owner = await sharedWorker(workerSource);
   signal?.throwIfAborted();
-  const id = ++sequence, reuse = entry.remote === owner;
-  const packed = packet({revisionId: entry.id, core: reuse ? null : entry.input,
-    reuseLedger: reuse && !!entry.ledger, state});
+  const reuse = entry.remote === owner;
+  const value = await ask(owner, entry, reuse, {reuseLedger: reuse && !!entry.ledger, state}, signal);
+  signal?.throwIfAborted();
+  if (value.reusedLedger) {
+    if (!entry.ledger || !reuse) throw new Error('Recovery ledger expired');
+    value.ledger = entry.ledger; delete value.reusedLedger;
+  } else if (value.ledger) entry.ledger = value.ledger;
+  return keep(value, entry, state);
+}
+async function ask(owner, entry, reuse, request, signal) {
+  const id = ++sequence;
+  const packed = packet({revisionId: entry.id, core: reuse ? null : entry.input, ...request});
   const value = await new Promise((resolve, reject) => {
     let settled = false, timer = 0;
     const cancel = () => finish(abort());
@@ -319,12 +365,16 @@ async function prepareEntry(entry, state, {workerSource, signal} = {}) {
     void sendPacket(port, packed, () => !settled).catch(error => finish(error));
   });
   entry.remote = owner;
+  return value;
+}
+export async function writeRecoveryRecords(prepared, write, {workerSource, signal, db} = {}) {
+  const held = captures.get(prepared);
+  if (!alive(held) || !held.entry.input) throw new Error('Recovery capture is not owned');
+  const {entry} = held;
+  if (typeof document === 'undefined') return storeRecords(entry.input.text, write, db);
+  const owner = await sharedWorker(workerSource);
   signal?.throwIfAborted();
-  if (value.reusedLedger) {
-    if (!entry.ledger || !reuse) throw new Error('Recovery ledger expired');
-    value.ledger = entry.ledger; delete value.reusedLedger;
-  } else if (value.ledger) entry.ledger = value.ledger;
-  return keep(value, entry, state);
+  return (await ask(owner, entry, entry.remote === owner, {write}, signal)).newer;
 }
 export async function prepareRecoveryCapture(input, options = {}) {
   options.signal?.throwIfAborted();

@@ -173,7 +173,7 @@ export async function writeBackupStream(source, sink, {appVersion, stamp, assert
 		await put(commentData);
 		onProgress?.({phase: 'Checking folder'});
 		if (await assertCurrent() !== true) throw new Error('the folder snapshot changed before backup completion');
-		checkAbort(signal); const file = await sink.close({onProgress});
+		checkAbort(signal); const file = await sink.close({onProgress, signal});
 		return {status: 'staged', files: inputFiles + 1, bytes: offset, payloadBytes: rawBytes, manifest, file};
 	} catch (error) {
 		try { await sink.abort(error); }

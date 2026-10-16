@@ -16,7 +16,26 @@ export function createPaintPNGCodec() {
 	}
 	const encodeBytes = (px, deflate = stored) => png(px, new Uint8Array(deflate(rows(px))));
 	const encode = px => url(encodeBytes(px));
-	async function compressed(px) { const raw = rows(px), stream = new Blob([raw]).stream().pipeThrough(new CompressionStream('deflate')); return url(png(px, new Uint8Array(await new Response(stream).arrayBuffer()))); }
+	function filtered(px) {
+		const raw = rows(px), stride = px.width * 4, d = px.data, cost = new Float64Array(5);
+		const paeth = (a, b, c) => { const p = a + b - c, x = Math.abs(p - a), y = Math.abs(p - b), z = Math.abs(p - c); return x <= y && x <= z ? a : y <= z ? b : c; };
+		const predict = (filter, a, b, c) => filter === 0 ? 0 : filter === 1 ? a : filter === 2 ? b : filter === 3 ? (a + b) >> 1 : paeth(a, b, c);
+		const size = v => (v &= 255) < 128 ? v : 256 - v;
+		for (let y = 0; y < px.height; y++) {
+			const at = y * stride, out = y * (stride + 1) + 1;
+			cost.fill(0);
+			for (let x = 0; x < stride; x++) {
+				const v = d[at + x], a = x >= 4 ? d[at + x - 4] : 0, b = y ? d[at + x - stride] : 0, c = y && x >= 4 ? d[at + x - stride - 4] : 0;
+				cost[0] += size(v); cost[1] += size(v - a); cost[2] += size(v - b); cost[3] += size(v - ((a + b) >> 1)); cost[4] += size(v - paeth(a, b, c));
+			}
+			let filter = 0;
+			for (let f = 1; f < 5; f++) if (cost[f] < cost[filter]) filter = f;
+			raw[out - 1] = filter;
+			if (filter) for (let x = 0; x < stride; x++) raw[out + x] = d[at + x] - predict(filter, x >= 4 ? d[at + x - 4] : 0, y ? d[at + x - stride] : 0, y && x >= 4 ? d[at + x - stride - 4] : 0);
+		}
+		return raw;
+	}
+	async function compressed(px) { const raw = filtered(px), stream = new Blob([raw]).stream().pipeThrough(new CompressionStream('deflate')); return url(png(px, new Uint8Array(await new Response(stream).arrayBuffer()))); }
 	async function decode(raster) {
 		if (!raster.startsWith('data:image/png;base64,')) return null;
 		const binary = atob(raster.slice(22)), bytes = new Uint8Array(binary.length);
@@ -32,7 +51,7 @@ export function createPaintPNGCodec() {
 			const n = v.getUint32(at);
 			if (at + n + 12 > bytes.length || crc(bytes.subarray(at + 4, at + n + 8)) !== v.getUint32(at + n + 8)) throw new Error('Damaged painting PNG');
 			const tag = v.getUint32(at + 4);
-			if ([0x69434350,0x67414d41,0x6348524d,0x65584966].includes(tag)) profiled = true;
+			if ([0x69434350,0x67414d41,0x6348524d,0x65584966].includes(tag) || tag === 0x63494350 && v.getUint32(at + 8) !== 0x010d0001) profiled = true;
 			if (tag === 0x74524e53) {
 				if ((colour !== 0 && colour !== 2) || n !== channels * 2 || transparent) throw new Error('Invalid painting PNG transparency');
 				transparent = Array.from({length: channels}, (_, channel) => v.getUint16(at + 8 + channel * 2) & 255);

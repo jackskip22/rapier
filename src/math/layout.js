@@ -25,7 +25,7 @@ const mathConstant = (name, c, fallback) => (MATH_FONT.constants[name] ?? fallba
 const mathScriptStyle = (c, cramped = c.cramped) => ({...c, level: Math.min(2, c.level + 1), display: false, cramped});
 const mathScreenRelayout = (n,c,ratio) => mathLayout(n,{...c,screen:{...c.screen,fontSize:c.screen.fontSize*ratio},cache:new WeakMap()});
 const mathBox = (w = 0, h = 0, d = 0, svg = '', extra = {}) => ({w, h, d, svg, left: 0, right: w, inkTop: -h, inkBottom: d, class: 'ord', ...extra});
-const mathMove = (b, x, y) => b.svg ? '<g transform="translate(' + mathNumber(x) + ' ' + mathNumber(y) + ')">' + b.svg + '</g>' : '';
+const mathMove = (b, x, y) => !b.svg || x === 0 && y === 0 ? b.svg : '<g transform="translate(' + mathNumber(x) + ' ' + mathNumber(y) + ')">' + b.svg + '</g>';
 
 function mathCompose(items, width, extra = {}) {
   let h = 0, d = 0, left = 0, right = width, inkTop=Infinity, inkBottom=-Infinity, svg = '';
@@ -65,8 +65,10 @@ function mathGlyphIndex(id, c, extra = {}) {
 function mathGlyph(value, c, extra = {}) {
   const cp = value.codePointAt(0);
   if (value.length !== (cp > 0xffff ? 2 : 1)) return mathText(value, c, extra);
-  const mapped = mathStyledCodePoint(cp, extra.variant || c.variant);
-  const id = MATH_FONT.chars[mapped] ?? MATH_FONT.chars[cp];
+  const variant = extra.variant || c.variant, mapped = mathStyledCodePoint(cp, variant);
+  // A styled dotless i or j is the styled letter's dotless form (Unicode has italic ones only).
+  const dotless = (cp === 0x1d6a4 || cp === 0x1d6a5) && !/^(normal|italic|roman)$/.test(variant) ? MATH_FONT.dotless[MATH_FONT.chars[mathStyledCodePoint(cp - 0x1d6a4 + 105, variant)]] : undefined;
+  const id = dotless ?? MATH_FONT.chars[mapped] ?? MATH_FONT.chars[cp];
   if (id === undefined) {
     const composed = mathFallbackGlyph(value, c, extra);
     if (composed) return composed;
@@ -206,7 +208,9 @@ function mathStretch(value, target, c, horizontal = false) {
 function mathDelimiter(value, target, c) {
   if(!value || value==='.')return mathBox();
   const b=mathStretch(value,target,c), axis=mathConstant('AxisHeight',c,0.25);
-  return mathCompose([[b,0,-(b.inkTop+b.inkBottom)/2-axis]],b.w,{class:'inner',extended:true,italic:b.italic});
+  // TeXbook rule 19 centres a delimiter's box on the axis; a corner's box keeps it at its corner.
+  const centre=b.extended || b.glyph===undefined?(b.inkTop+b.inkBottom)/2:(b.d-b.h)/2;
+  return mathCompose([[b,0,-centre-axis]],b.w,{class:'inner',extended:true,italic:b.italic});
 }
 
 // The TeXbook's inter-atom spacing table (chapter 18). Rows: the left atom; columns: the right atom, in
@@ -245,7 +249,8 @@ function mathRow(children,c) {
   const items=[];let x=0,previous=null;
   for (const b of boxes) {
     if (!b.space) {
-      if(previous?.italic && previous.class!=='op' && !(b.italic && b.class!=='op'))x+=previous.italic;
+      // TeXbook Appendix G rule 17: a character's italic correction follows it, whatever comes next.
+      if(previous?.italic && previous.class!=='op')x+=previous.italic;
       x+=mathSpace(previous?.class,b.class,c);
     }
     items.push([b,x,0]);x+=b.w;
@@ -253,7 +258,7 @@ function mathRow(children,c) {
   }
   const last=boxes.at(-1);
   return mathCompose(items,x,{class:boxes.length===1?boxes[0].class:'ord',italic:boxes.length!==1 && last?.class==='op'?0:last?.italic || 0,rowItems:items,
-    ...(boxes.length===1 ? {accent:last.accent,limits:last.limits,large:last.large,scriptBase:last.scriptBase} : {})});
+    ...(boxes.length===1 ? {accent:last.accent,limits:last.limits,large:last.large,scriptBase:last.scriptBase,accentInk:last.accentInk} : {})});
 }
 
 function mathKern(b,corner,height) {
@@ -278,12 +283,13 @@ function mathContourBands(box, dy = 0) {
   return bands;
 }
 
+const mathScriptGap = c => c.screen ? Math.max(.035 * mathScale(c), .9 / (c.screen.fontSize * c.screen.pixelRatio)) : .025 * mathScale(c);
 function mathContourScript(base, script, dy, nominal, c) {
   const a = mathContourBands(base);
   if (!a) return nominal;
   const b = mathContourBands(script, dy) || [{top: script.inkTop + dy, bottom: script.inkBottom + dy,
     left: script.left, right: script.right}];
-  const gap = c.screen ? Math.max(.035 * mathScale(c), .9 / (c.screen.fontSize * c.screen.pixelRatio)) : .025 * mathScale(c);
+  const gap = mathScriptGap(c);
   let j = 0, edge = -Infinity;
   for (const left of a) {
     while (j < b.length && b[j].bottom + gap < left.top) j++;
@@ -328,7 +334,10 @@ function mathScripts(n,c) {
     const kern=Math.min(mathKern(base,0,rise-upDescent)+mathKern(up,3,-upDescent),mathKern(base,0,baseAscent)+mathKern(up,3,baseAscent-rise));
     // A large operator's italic correction moves its subscript left, not its superscript right.
     const nominal=b.w+(b.large?0:b.italic || 0)+kern;
-    const x=MATH_FONT.kern[base.glyph]?nominal:mathContourScript(base,up,-rise,nominal,c);
+    let x=MATH_FONT.kern[base.glyph]?nominal:mathContourScript(base,up,-rise,nominal,c);
+    // A superscript beside an over-accent clears the accent's ink as well as the letter's.
+    const a=b.accentInk,gap=mathScriptGap(c);
+    if(a && up.inkTop-rise<a.bottom+gap && up.inkBottom-rise+gap>a.top)x=Math.max(x,a.right+gap-up.left);
     items.push([up,x,-rise]);w=Math.max(w,x+up.w);
   }
   if (down) {
@@ -337,14 +346,20 @@ function mathScripts(n,c) {
     const x=MATH_FONT.kern[base.glyph]?nominal:mathContourScript(base,down,drop,nominal,c);
     items.push([down,x,drop]);w=Math.max(w,x+down.w);
   }
-  return mathCompose(items,w+mathConstant('SpaceAfterScript',c,0.05),{class:b.class});
+  // \prescript's scripts end together at its base.
+  if (n.pre) for (const item of items.slice(1)) item[1]=w-item[0].w;
+  // A subscript tucked under a slanted letter leaves the letter's top overhang for the next atom to clear.
+  const advance=w+mathConstant('SpaceAfterScript',c,0.05);
+  return mathCompose(items,advance,{class:b.class,italic:n.pre || b.large?0:Math.max(0,b.w+(b.italic || 0)-advance)});
 }
 
 function mathFraction(n,c,width) {
   if (n.style) c={...c,level:({display:0,text:0,script:1,scriptscript:2})[n.style],display:n.style==='display',cramped:false};
   const display=c.display && c.level===0, child=display?{...c,display:false}:mathScriptStyle(c);
-  const top=width===undefined?mathLayout(n.num,child):mathResponsiveLayout(n.num,child,Math.max(.05,width-.2*mathScale(c))),
-    bottom=mathLayout(n.den,{...child,cramped:true}),axis=mathConstant('AxisHeight',c,0.25);
+  let top=width===undefined?mathLayout(n.num,child):mathResponsiveLayout(n.num,child,Math.max(.05,width-.2*mathScale(c)));
+  // amsmath's \cfrac opens its numerator with LaTeX's \strut: 0.7 and 0.3 of a 1.2 em baseline skip.
+  if(n.strut)top={...top,h:Math.max(top.h,.84*mathScale(child)),d:Math.max(top.d,.36*mathScale(child))};
+  const bottom=mathLayout(n.den,{...child,cramped:true}),axis=mathConstant('AxisHeight',c,0.25);
   const line=n.bar===false?0:n.barThickness===undefined?mathConstant('FractionRuleThickness',c,0.04):n.barThickness*mathScale(c);
   let rise=mathConstant(line?(display?'FractionNumeratorDisplayStyleShiftUp':'FractionNumeratorShiftUp'):(display?'StackTopDisplayStyleShiftUp':'StackTopShiftUp'),c,display?0.68:0.4),
     drop=mathConstant(line?(display?'FractionDenominatorDisplayStyleShiftDown':'FractionDenominatorShiftDown'):(display?'StackBottomDisplayStyleShiftDown':'StackBottomShiftDown'),c,display?0.68:0.35);
@@ -360,20 +375,24 @@ function mathFraction(n,c,width) {
   const numeratorX=n.align==='l'?pad:n.align==='r'?w-pad-top.w:(w-top.w)/2;
   const items=[[top,numeratorX,-rise],[bottom,(w-bottom.w)/2,drop]];
   if (line) items.push([mathRule(w,line,-axis-line/2),0,0]);
-  const b=mathCompose(items,w,{class:'inner',innerLines:top.lines || 1,fitted:!!top.fitted});
+  // LaTeX's \frac, \binom and \genfrac brace their fraction: an ordinary atom, not TeX's bare inner.
+  const b=mathCompose(items,w,{class:'ord',innerLines:top.lines || 1,fitted:!!top.fitted});
   if(width!==undefined && c.screen)b.refit=ratio=>mathFraction(n,{...c,screen:{...c.screen,fontSize:c.screen.fontSize*ratio},cache:new WeakMap()},width);
   // TeX's generalized fractions fence at least its delim1 (display) or delim2 size.
-  if (n.left || n.right) return mathFenceBoxes(n.left || '',n.right || '',b,c,undefined,display?2.39:1.01);
+  if (n.left || n.right) return {...mathFenceBoxes(n.left || '',n.right || '',b,c,undefined,display?2.39:1.01),class:'ord'};
   return b;
 }
 
 function mathRoot(n,c) {
-  const body=mathLayout(n.body,{...c,cramped:true}),line=mathConstant('RadicalRuleThickness',c,0.04),
-    gap=mathConstant(c.display && !c.level?'RadicalDisplayStyleVerticalGap':'RadicalVerticalGap',c,0.1),extra=mathConstant('RadicalExtraAscender',c,0.05);
-  const sign=mathStretch('√',body.h+body.d+gap+line,c),rise=-sign.inkTop-body.h-gap-line,
+  const body=mathLayout(n.body,{...c,cramped:true}),line=mathConstant('RadicalRuleThickness',c,0.04),extra=mathConstant('RadicalExtraAscender',c,0.05);
+  let gap=mathConstant(c.display && !c.level?'RadicalDisplayStyleVerticalGap':'RadicalVerticalGap',c,0.1);
+  const sign=mathStretch('√',body.h+body.d+gap+line,c);
+  // TeXbook Appendix G rule 11: a sign taller than needed splits its excess evenly above and below the radicand.
+  gap+=Math.max(0,sign.inkBottom-sign.inkTop-(body.h+body.d+gap+line))/2;
+  const rise=-sign.inkTop-body.h-gap-line,
     index=n.index?mathLayout(n.index,{...c,level:2,display:false}):null;
   let before=0,idxX=0;
-  if(index) {idxX=Math.max(0,mathConstant('RadicalKernBeforeDegree',c,0.2));before=idxX+index.w+Math.max(-index.w,mathConstant('RadicalKernAfterDegree',c,-0.3));}
+  if(index) {idxX=Math.max(0,mathConstant('RadicalKernBeforeDegree',c,0.2));before=Math.max(0,idxX+index.w+mathConstant('RadicalKernAfterDegree',c,-0.3));}
   const bodyX=before+sign.w,w=bodyX+body.w,items=[[sign,before,rise],[body,bodyX,0]];
   items.push([mathRule(body.w,line,-body.h-gap-line),bodyX,0]);
   if(index) {const ratio=(MATH_FONT.constants.RadicalDegreeBottomRaisePercent ?? 60)/100;items.push([index,idxX,sign.inkBottom+rise-(sign.inkBottom-sign.inkTop)*ratio-index.inkBottom]);}
@@ -390,7 +409,8 @@ function mathAccent(n,c) {
   const position=n.position || 'over';let nucleus=n.base;
   while(nucleus?.type==='style' || (nucleus?.type==='row' && nucleus.children.length===1))nucleus=nucleus.type==='style'?nucleus.body:nucleus.children[0];
   const b=mathLayout(n.base,position==='under'?c:{...c,cramped:true,dotless:nucleus?.type==='glyph' && !n.overlay && /^[\u0300-\u036f\u20d0-\u20ff]$/u.test(n.value)}),s=mathScale(c);
-  const semantics={class:n.class || b.class,limits:n.limits || b.limits,italic:b.italic,accent:b.accent,scriptBase:b.scriptBase || b};
+  // A brace is an operator: centred on its base, with no italic correction to shift its labels.
+  const brace=n.limits==='always',semantics={class:n.class || b.class,limits:n.limits || b.limits,italic:brace?0:b.italic,accent:b.accent,scriptBase:b.scriptBase || b};
   if(n.overlay) {
     const w=Math.max(b.w,0.2*s),line=mathConstant('FractionRuleThickness',c,0.04);
     const rising='M0 '+mathNumber(b.d)+'L'+mathNumber(w)+' '+mathNumber(-b.h),
@@ -409,21 +429,29 @@ function mathAccent(n,c) {
     return result;
   }
   const names={hat:'̂',widehat:'̂',tilde:'̃',widetilde:'̃',bar:'̄',vec:'⃗',dot:'̇',ddot:'̈',dddot:'⃛',ddddot:'⃜',acute:'́',grave:'̀',breve:'̆',check:'̌',overbrace:'⏞',underbrace:'⏟',overrightarrow:'→',overleftarrow:'←',overleftrightarrow:'↔'};
+  // An under-accent (or \slashed's stroke) centres on its base, as in TeX and MathML Core: attachment points are for top accents.
   const value=names[n.value] || n.value,accentStyle={...c,flattenAccent:position!=='under' && b.h>mathConstant('FlattenedAccentBaseHeight',c,0.65)},
     a=n.stretch?mathStretch(value,Math.max(b.w,s*0.3),accentStyle,true):mathGlyph(value,accentStyle,{variant:'roman'}),
-    x=(b.accent ?? b.w/2)-(a.accent ?? a.w/2),combining=/^[\u0300-\u036f\u20d0-\u20ff]$/u.test(value);
+    x=position!=='over' || brace?(b.w-a.w)/2:(b.accent ?? b.w/2)-(a.accent ?? a.w/2),combining=/^[\u0300-\u036f\u20d0-\u20ff]$/u.test(value);
   let y;
-  if(position==='under')y=b.d+mathConstant('UnderbarVerticalGap',c,0.1)-a.inkTop;
+  if(position==='through')y=0;
+  else if(position==='under')y=b.d+mathConstant('UnderbarVerticalGap',c,0.1)-a.inkTop;
   else if(combining)y=-Math.max(0,b.h-mathConstant('AccentBaseHeight',c,0.48));
   else y=-b.h-mathConstant('OverbarVerticalGap',c,0.1)-a.inkBottom;
+  // A combining under-accent's box is its ink: its advance box rests far below the mark.
+  if(position==='under')return mathCompose([[b,0,0],[{...a,h:-a.inkTop,d:a.inkBottom},x,y]],b.w,semantics);
+  if(position==='over') {
+    const g=a.glyph===undefined?null:MATH_FONT.glyph(a.glyph),left=g?(a.glyphX || 0)+g[1]*a.unitScale:a.left,right=g?(a.glyphX || 0)+g[3]*a.unitScale:a.right;
+    semantics.accentInk={left:x+left,right:x+right,top:y+a.inkTop,bottom:y+a.inkBottom};
+  }
   return mathCompose([[b,0,0],[a,x,y]],b.w,semantics);
 }
 
 function mathTable(n,c) {
   const small=/smallmatrix$/.test(n.env) || n.env==='subarray' || n.env==='substack',
     paired=/^(align(?:ed)?(?:at)?|flalign|split)$/.test(n.env),
-    display=paired || /^(gather(?:ed)?|eqnarray|multline|equation|drcases|dcases)$/.test(n.env),
-    cellStyle={...c,level:small?Math.max(1,c.level):c.level,display:small?false:display};
+    display=paired || /^([lr]?gather(?:ed)?|eqnarray|multline(?:d)?|equation|drcases|dcases|darray)$/.test(n.env),
+    cellStyle={...c,level:small?Math.max(1,c.level):c.level,display:small?false:display,cramped:false};
   const rows=n.rows.map(row=>row.map((cell,i)=>{
     // The second cell in each equation pair continues the first math list.
     // An empty ordinary atom supplies the left neighbour of a leading relation.
@@ -441,7 +469,7 @@ function mathTable(n,c) {
     insertions[insertion.before].push({...insertion,box:mathLayout(insertion.body,cellStyle)});
   }
   const gaps=Array.from({length:cols+1},(_,i)=>{
-    let gap=i===0 || i===cols?0:paired?(i%2?0:/^(alignat|alignedat)$/.test(n.env)?0:2*s):small?cs/3:s;
+    let gap=i===0 || i===cols?0:paired?(i%2?0:/^(alignat|alignedat)$/.test(n.env)?0:2*s):small?cs/3:n.env==='CD'?5/18*s:s;
     if(insertions[i].some(item=>item.replaceGap))gap=0;
     return gap+insertions[i].reduce((sum,item)=>sum+item.box.w,0);
   });
@@ -464,7 +492,7 @@ function mathTable(n,c) {
   const offset=n.position==='t'?-(baselines[0] || 0):n.position==='b'?-(baselines.at(-1) || 0):-total/2-mathConstant('AxisHeight',c,0.25),items=[];
   for(let r=0;r<rows.length;r++) {
     for(let i=0;i<cols;i++) {
-      const b=rows[r][i] || mathBox(),a=n.env==='multline' && cols===1?(r===0?'l':r===rows.length-1?'r':'c'):align[i] || 'c',
+      const b=rows[r][i] || mathBox(),a=/^multlined?$/.test(n.env) && cols===1?(r===0?'l':r===rows.length-1?'r':'c'):align[i] || 'c',
         dx=a==='r'?widths[i]-b.w:a==='l'?0:(widths[i]-b.w)/2;
       items.push([b,starts[i]+dx,baselines[r]+offset]);
     }
@@ -497,11 +525,17 @@ function mathTable(n,c) {
 
 function mathLayout(n,c) {
   if(!n)return mathBox();
+  // With spans, each symbol carries its source offset for the host's tap-to-place.
+  if(c.spans && n.at!==undefined && (n.type==='glyph' || n.type==='text')) {
+    const b=mathLayout({...n,at:undefined},c);
+    return {...b,svg:'<g data-math-at="'+n.at+'">'+b.svg+'</g>'};
+  }
   if(c.budget && ++c.budget.nodes>100000)throw Object.assign(new Error('Mathematical layout exceeds the rendering budget'),{code:'resource-limit'});
   switch(n.type) {
     case 'row': return mathRow(n.children,c);
     case 'glyph': {
-      if(n.delimiterSize || (n.delimiter && c.delimiterTarget))return {...mathDelimiter(n.value,n.delimiterSize?n.delimiterSize*mathScale(c):c.delimiterTarget,c),class:n.class || 'ord'};
+      // Latin Modern's designed \big to \Bigg parentheses are 5 to 9 units short of 1.2, 1.8, 2.4 and 3 em.
+      if(n.delimiterSize || (n.delimiter && c.delimiterTarget))return {...mathDelimiter(n.value,n.delimiterSize?(n.delimiterSize-.01)*mathScale(c):c.delimiterTarget,c),class:n.class || 'ord'};
       if(n.stretch)return {...mathStretch(n.value,c.stretchTarget || mathScale(c),c,true),class:n.class || 'rel',limits:n.limits,stretchAxis:'horizontal'};
       if(n.value==='…' || n.value==='⋯') {
         // TeX's \ldots and \cdots are three punctuation dots with punctuation spacing, wider than the font's ellipses.
@@ -526,7 +560,8 @@ function mathLayout(n,c) {
       const cache=c.cache || (c.cache=new WeakMap()),key=[c.size,c.level,c.variant,c.display,c.cramped,c.stretchTarget].join('|');
       let entries=cache.get(n);if(entries?.has(key))return {...entries.get(key)};
       const local={...c,delimiterTarget:undefined};let b=mathLayout(n.body,local);
-      if(n.body) {
+      // Only a \middle needs the second pass, sized to the first pass's body.
+      if(n.body && mathHasMiddle(n.body)) {
         const axis=mathConstant('AxisHeight',c,0.25),reach=Math.max(b.h-axis,b.d+axis),target=Math.max(mathScale(c),2*reach*0.901,2*reach-0.5*mathScale(c));
         b=mathLayout(n.body,{...local,delimiterTarget:target});
       }
@@ -539,6 +574,10 @@ function mathLayout(n,c) {
       const style={...c};if(n.variant)style.variant=n.variant;if(n.absoluteSize!==undefined)style.size=n.absoluteSize;if(n.size!==undefined)style.size*=n.size;
       if(n.mathStyle) {style.level=({display:0,text:0,script:1,scriptscript:2})[n.mathStyle];style.display=n.mathStyle==='display';style.cramped=false;}
       const b=mathLayout(n.body,style);if(n.class)b.class=n.class;if(n.limits)b.limits=n.limits;
+      if(n.smashOperator) {
+        const op=mathLayout(n.body.type==='scripts'?n.body.base:n.body,style),extra=Math.max(0,(b.w-op.w)/2),left=n.smashOperator.includes('l')?extra:0;
+        Object.assign(b,mathCompose([[{...b},-left,0]],b.w-left-(n.smashOperator.includes('r')?extra:0),{class:b.class}));
+      }
       if(n.width!==undefined) {
         const width=n.width*mathScale(style),shift=n.align==='right'?width-b.w:n.align==='center'?(width-b.w)/2:0;
         Object.assign(b,mathCompose([[{...b},shift,0]],width,{class:b.class}));
@@ -553,7 +592,7 @@ function mathLayout(n,c) {
     }
     case 'overunder': {
       const over=n.over?mathLayout(n.over,mathScriptStyle(c)):null,under=n.under?mathLayout(n.under,mathScriptStyle(c,true)):null,
-        b=mathLayout(n.base,{...c,stretchTarget:Math.max(mathScale(c),Math.max(over?.w || 0,under?.w || 0)+0.4*mathScale(c))});
+        b=mathLayout(n.base,{...c,stretchTarget:Math.max((n.minWidth || 1)*mathScale(c),Math.max(over?.w || 0,under?.w || 0)+0.4*mathScale(c))});
       const w=Math.max(b.w,over?.w || 0,under?.w || 0),items=[[b,(w-b.w)/2,0]],stretched=b.stretchAxis==='horizontal';
       if(over) {
         const rise=stretched?Math.max(mathConstant('StretchStackTopShiftUp',c,0.8),b.h+over.inkBottom+mathConstant('StretchStackGapAboveMin',c,0.1)):
@@ -569,7 +608,8 @@ function mathLayout(n,c) {
     }
     case 'phantom': {const b=mathLayout(n.body,c);return mathBox(n.mode==='v'?0:b.w,n.mode==='h'?0:b.h,n.mode==='h'?0:b.d);}
     case 'smash': {const b=mathLayout(n.body,c);return {...b,h:n.mode==='b'?b.h:0,d:n.mode==='t'?b.d:0};}
-    case 'raise': {const b=mathLayout(n.body,c),s=mathScale(c);return mathCompose([[b,0,-n.amount*s]],b.w,{class:b.class,...(n.height===undefined?{}:{h:n.height*s}),...(n.depth===undefined?{}:{d:n.depth*s})});}
+    // \vcenter centres its box on the maths axis.
+    case 'raise': {const b=mathLayout(n.body,c),s=mathScale(c);return mathCompose([[b,0,n.center?(b.h-b.d)/2-mathConstant('AxisHeight',c,0.25):-n.amount*s]],b.w,{class:b.class,...(n.height===undefined?{}:{h:n.height*s}),...(n.depth===undefined?{}:{d:n.depth*s})});}
     case 'rule': {const s=mathScale(c);return mathRule(n.width*s,(n.height+n.depth)*s,-n.height*s);}
     case 'link': {const b=mathLayout(n.body,c);const url=new URL(n.href);if(!['http:','https:'].includes(url.protocol))throw Object.assign(new Error('Unsupported equation link'),{code:'unsafe-url'});b.svg='<a href="'+mathEscape(n.href)+'" aria-label="'+mathEscape(n.href)+'" tabindex="0" target="_blank" rel="noopener noreferrer">'+b.svg+'</a>';return b;}
     default: throw Object.assign(new Error('Unsupported maths construct: '+n.type),{code:'unsupported-construct'});
@@ -579,5 +619,5 @@ function mathLayout(n,c) {
 import {MATH_FONT} from './font.js';
 import {mathStyledCodePoint} from './variants.js';
 import {mathFallbackGlyph} from './fallbacks.js';
-import {mathResponsiveLayout} from './responsive.js';
+import {mathResponsiveLayout, mathHasMiddle} from './responsive.js';
 export {mathNumber, mathScale, mathScreenStroke, mathConstant, mathBox, mathCompose, mathGlyphIndex, mathRule, mathStretch, mathEscape, mathScreenRelayout, mathSpace, mathRow, mathFraction, mathFenceBoxes, mathLayout, mathFontRatio, mathText};

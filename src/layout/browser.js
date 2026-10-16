@@ -3015,6 +3015,7 @@ const _rapierImageFlow = (() => {
     .rapier-image-grip[data-corner="ne"],.rapier-image-grip[data-corner="sw"]{cursor:nesw-resize}
     .rapier-flow-float{pointer-events:none;user-select:none;-webkit-user-select:none}
     .rapier-image-grip[hidden]{display:none}
+    @media (pointer:coarse){.rapier-image-grip{min-width:48px;min-height:48px}}
     .rapier-image-move{position:fixed;z-index:152;width:44px;height:44px;transform:translate(-50%,-50%);padding:0;border:0;border-radius:0;background:transparent;color:var(--color-accent);display:grid;place-items:center;cursor:grab;touch-action:none;-webkit-tap-highlight-color:transparent}
     .rapier-image-move::before{content:'';grid-area:1/1;width:32px;height:32px;border-radius:50%;background:var(--color-bg);border:1px solid currentColor}
     .rapier-image-move svg{grid-area:1/1;width:18px;height:18px;position:relative}

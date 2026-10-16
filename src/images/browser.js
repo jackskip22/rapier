@@ -280,7 +280,7 @@ const _rapierEmbeddedImages = (() => {
       assertCurrent(stamp, capturedAuthority);
       const row = {url, displayUrl: undisplayable ? url : displayUrl, width: dimensions.width, height: dimensions.height, type, signature, used: ++clock,
         animated: prepared.animated, recipe: prepared.recipe, recipeError: prepared.recipeError, resources: prepared.resources, undisplayable, damaged,
-        cost: (url.length + signature.length) * 2 + prepared.blob.size};
+        cost: (url === signature ? 0 : url.length) + signature.length + prepared.blob.size};
       const displaced = cache.get(signature);
       if (displaced) releasePresentation(displaced);
       cache.delete(signature);
@@ -339,6 +339,8 @@ const _rapierEmbeddedImages = (() => {
   async function portable(source, id, {png = false} = {}) {
     const row = await rasterRecord(source, id, indexForSource(source));
     if (row.damaged) throw Object.assign(new Error('This JPEG XL picture is damaged and cannot be converted. Its bytes are kept unchanged.'), {code: 'IMAGE_DAMAGED'});
+    if (!png && !row.animated && assets.dataImage(row.signature)?.codec === 'image/jxl')
+      return smallestPortable({...row, type: 'image/jxl', url: row.signature});
     if (row.undisplayable) throw Object.assign(new Error(here() + ' cannot read JPEG XL, so this picture cannot be converted. ' + jxlRemedy() + ' The picture is unchanged.'), {code: 'IMAGE_JXL_UNREADABLE'});
     const nested = nestedJxl(row);
     if (nested) return portableSvg(row, nested);
@@ -661,7 +663,7 @@ const _rapierEmbeddedImages = (() => {
       if (!live) return false;
       const record = recordFor(id, documentIndex().index);
       const canonical = record && cache.get(record.url);
-      if (canonical && canonical.type === 'image/svg+xml') {
+      if (canonical && canonical.type !== 'image/jxl') {
         image.src = canonical.url;
         image.removeAttribute('data-rapier-asset'); image.removeAttribute('data-rapier-image-url'); image.removeAttribute('data-rapier-image-source'); image.removeAttribute('data-rapier-asset-state');
         continue;
@@ -691,17 +693,24 @@ const _rapierEmbeddedImages = (() => {
     const nested = nestedJxl(row);
     if (nested) result = await portableSvg(row, nested);
     else {
-      try {
-        const image = await nativeImage(row.url);
+      if (row.type === 'image/jxl') {
+        const restored = await codec('reconstruct', {bytes: assets.decodeDataImage(row.url)});
+        if (restored.bytes) result = {...row, type: 'image/jpeg', url: 'data:image/jpeg;base64,' + RapierBundleIO.toBase64(restored.bytes), undisplayable: false};
+      }
+      if (!result && !row.undisplayable) {
         try {
-          const made = rasterPortable(image, row.width, row.height);
-          if (made && (row.type === 'image/jxl' || made.type === 'image/jpeg' && made.url.length < row.url.length)) result = {...row, ...made};
-          else if (row.type !== 'image/jxl') result = row;
-        } finally { image.removeAttribute('src'); }
-      } catch (_) {}
+          const image = await nativeImage(row.url);
+          try {
+            const made = rasterPortable(image, row.width, row.height);
+            if (made && (row.type === 'image/jxl' || made.type === 'image/jpeg' && made.url.length < row.url.length)) result = {...row, ...made};
+            else if (row.type !== 'image/jxl') result = row;
+          } finally { image.removeAttribute('src'); }
+        } catch (_) {}
+      }
     }
+    if (!result && row.type === 'image/jxl') throw Object.assign(new Error(here() + ' cannot read JPEG XL, so this picture cannot be converted. ' + jxlRemedy() + ' The picture is unchanged.'), {code: 'IMAGE_JXL_UNREADABLE'});
     if (!result) result = row;
-    const entry = {value: result, used: ++clock, cost: (result.url.length + key.length) * 2};
+    const entry = {value: result, used: ++clock, cost: result.url === key ? 0 : result.url.length};
     portableCache.delete(key);
     let total = entry.cost;
     for (const item of portableCache.values()) total += item.cost;
@@ -727,10 +736,11 @@ const _rapierEmbeddedImages = (() => {
         const row = await rasterRecord(source, id, index, {signal});
         const jxl = compat && !row.animated && (assets.dataImage(row.signature)?.codec === 'image/jxl' || !!nestedJxl(row));
         let shown;
-        if (row.undisplayable || row.damaged) {
+        if (jxl && !row.damaged) shown = await smallestPortable(assets.dataImage(row.signature)?.codec === 'image/jxl' ? {...row, type: 'image/jxl', url: row.signature} : row);
+        else if (row.undisplayable || row.damaged) {
           if (jxl) throw Object.assign(new Error(row.damaged ? 'This JPEG XL picture is damaged and cannot be converted. Its bytes are kept unchanged.' : here() + ' cannot read JPEG XL, so this picture cannot be converted. ' + jxlRemedy() + ' The picture is unchanged.'), {code: row.damaged ? 'IMAGE_DAMAGED' : 'IMAGE_JXL_UNREADABLE'});
           shown = row.animated ? row : {...row, url: row.signature};
-        } else shown = jxl ? await smallestPortable(row) : row;
+        } else shown = row;
         resolved.set(id, shown);
         if (substitutions && jxl) substitutions.set(row.signature, shown.url);
       }
@@ -1196,17 +1206,21 @@ const _rapierEmbeddedImages = (() => {
     const row = recordFor(id, documentIndex().index);
     if (!row) { showToast('This picture is not stored in the document, so it cannot be downloaded', 'info'); return; }
     let bytes;
-    const codec = row.codec || assets.dataImage(row.url)?.codec || '';
+    let mime = row.codec || assets.dataImage(row.url)?.codec || '';
     try {
       bytes = assets.decodeDataImage(row.url);
-      if (codec === 'image/svg+xml') {
+      if (mime === 'image/jxl') {
+        const restored = await codec('reconstruct', {bytes: bytes.slice()});
+        if (restored.bytes) { bytes = restored.bytes; mime = 'image/jpeg'; }
+      }
+      if (mime === 'image/svg+xml') {
         const text = assets.sanitizeSvgText(new TextDecoder('utf-8', {fatal: true}).decode(bytes));
         if (!text) throw new Error('Choose a valid SVG image.');
         bytes = new TextEncoder().encode(text);
       }
     } catch (error) { showToast('Picture could not be read: ' + String(error.message || error), 'error'); return; }
-    const ext = codec === 'image/jxl' ? 'jxl' : codec === 'image/svg+xml' ? 'svg' : codec === 'image/jpeg' ? 'jpg' :
-      codec === 'image/webp' ? 'webp' : codec === 'image/gif' ? 'gif' : 'png';
+    const ext = mime === 'image/jxl' ? 'jxl' : mime === 'image/svg+xml' ? 'svg' : mime === 'image/jpeg' ? 'jpg' :
+      mime === 'image/webp' ? 'webp' : mime === 'image/gif' ? 'gif' : 'png';
     let position = 0;
     for (const block of rapier.document.blocks) {
       if (block.id === record.block.id) { position += record.imageIndex; break; }
@@ -1214,7 +1228,7 @@ const _rapierEmbeddedImages = (() => {
     }
     const title = String(record.image.title || '').trim();
     const base = title || (String(rapier.document.filename || '').replace(/\.[a-z0-9]+$/i, '') || 'document') + ' ' + (position + 1);
-    await _download(new Blob([bytes], {type: codec}), base + '.' + ext);
+    await _download(new Blob([bytes], {type: mime}), base + '.' + ext);
   }
   schedule();
   async function present(source, id) {
@@ -1286,7 +1300,7 @@ const _rapierEmbeddedImages = (() => {
       const context = _activeBlockEditContext(), selection = window.getSelection();
       const range = context && selection?.isCollapsed && selection.rangeCount ? selection.getRangeAt(0) : null;
       if (range && context.editDiv.contains(range.startContainer))
-        caret = {blockId: context.block.id, offset: _rapierStructuralOffsetForRangePoint(context.editDiv, range.startContainer, range.startOffset)};
+        caret = {blockId: context.block.id, offset: _charOffsetForRangePoint(context.editDiv, range.startContainer, range.startOffset)};
     } catch (_) {}
     return () => {
       try {

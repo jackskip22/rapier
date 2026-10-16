@@ -20,15 +20,16 @@ import {encodeBase124} from './base124.mjs';
 import {minifyVendor, BROWSER_MINIFY} from './minify-vendor.mjs';
 import {entitiesVendor} from './entities-vendor.mjs';
 import {fillMermaidResources} from './mermaid-resources.mjs';
-import {builtPlugin, readerPluginLoader, pluginManifest} from './reader-plugins.mjs';
+import {readerPluginLoader, pluginManifest} from './reader-plugins.mjs';
 import {fillMathLicense} from './build-math.mjs';
 import {SIZE_BUDGETS} from './profile-budgets.mjs';
 import {readBuildNotice, buildReceiptTimestamp, buildTimingNow} from './build-reuse.mjs';
+import {squeezed, mitNotice} from './reader-build-shared.mjs';
+import {buildReaderPlugins} from './reader-plugin-generator.mjs';
 
 const {minify} = createRequire(import.meta.url)('./vendor/terser/bundle.min.js');
 const here = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const sha256 = value => createHash('sha256').update(value).digest('hex');
-
 const KIT = {
 	'render-sanitize': ['kit/render-sanitize.mjs', 'createRenderSanitizer'],
 	'render-markdown': ['kit/render-markdown.mjs', 'createMarkdownRenderer'],
@@ -45,11 +46,6 @@ const MODULES = {
 };
 const READ_ALL = new Set(['RapierImageLayout', 'RapierMdLayoutSpec', 'RapierPretext', 'RapierTextPreparation', 'RapierOcr']);
 export const READER_CAPABILITIES = Object.freeze(Object.keys(MODULES));
-const FLOWCHART_MODULES = {RapierFlowchart: 'draw/flowchart.mjs'};
-const FLOWCHART_READS = new Set(['parseFlowchart', 'renderFlowchart']);
-const PDF_MODULES = {RapierPdf: 'interchange/pdf.mjs'};
-const DOCX_MODULES = {RapierDocxImport: 'interchange/docx.mjs'};
-const DOCX_READS = new Set(['readDocx', 'finishDocxMarkdown']);
 const BROWSER = new Set(('window document globalThis self location navigator history localStorage sessionStorage console performance crypto Node Element HTMLElement HTMLInputElement ' +
 	'Range Highlight CSS CSSStyleSheet DOMParser URL URLSearchParams TextEncoder TextDecoder Blob Response FontFace Image Event CustomEvent MessageChannel DecompressionStream CompressionStream AbortSignal requestIdleCallback ' +
 	'NodeFilter ResizeObserver IntersectionObserver MutationObserver matchMedia getComputedStyle requestAnimationFrame cancelAnimationFrame setTimeout clearTimeout setInterval clearInterval ' +
@@ -185,24 +181,7 @@ export async function buildReader({root = here, unchecked = [], toolchainCanonic
 
 	const fragment = async path => '/* ' + path + ' */\n' + await read(path);
 	const hostText = await fragment('reader/host.js'), ownText = hostText + '\n' + await fragment('reader/embed.js') + '\n' + await fragment('images/ocr.js') + '\n' + await fragment('reader/picture-find.js') + '\n' + await fragment('reader/app.js') + '\n' + await fragment('layout/typography-browser.js');
-	const squeeze = async text => process.env.RAPIER_READER_NOMINIFY === '1' ? text : (await minify(text, {compress: {passes: 2, ecma: 2022}, mangle: true, ecma: 2022, format: {comments: (_, row) => /@license|@preserve|SPDX-License-Identifier|^!/.test(row.value), ascii_only: false}})).code;
-	const flowRegistry = await bundleModules({root, entries: FLOWCHART_MODULES, used: new Map([['RapierFlowchart', FLOWCHART_READS]])});
-	const flowText = "(() => {\n'use strict';\n" + flowRegistry.text + '\n})();';
-	new vm.Script(flowText, {filename: 'rapier-flowchart.js'});
-	const flowFile = Buffer.from('/* SPDX-License-Identifier: AGPL-3.0-only. The Rapier flowchart plug-in: Mermaid flowchart syntax drawn by Rapier\'s own SVG engine. */\n' + await squeeze(flowText) + '\n');
-	const pdfRegistry = await bundleModules({root, entries: PDF_MODULES, used: new Map([['RapierPdf', null]])});
-	const pdfPlugin = await read('interchange/pdf-plugin.js');
-	const pdfText = "(() => {\n'use strict';\n" + pdfRegistry.text + '\n' + pdfPlugin + '\n' + await read('reader/pdf.js') + '\n})();';
-	new vm.Script(pdfText, {filename: 'rapier-pdf.js'});
-	const pdfFile = Buffer.from('/* SPDX-License-Identifier: AGPL-3.0-only. The Rapier PDF reader plug-in: opens a PDF as a Markdown document. */\n' + await squeeze(pdfText) + '\n');
-	const docxRegistry = await bundleModules({root, entries: DOCX_MODULES, used: new Map([['RapierDocxImport', DOCX_READS]])});
-	const turndownText = (await read('shell/vendor/turndown-7.2.4.lib.turndown.browser.umd.js'));
-	const docxText = "(() => {\n'use strict';\n" + turndownText + '\n' + docxRegistry.text + '\n' + await read('reader/docx.js') + '\n})();';
-	new vm.Script(docxText, {filename: 'rapier-docx.js'});
-	const turndownNotice = await mitNotice(entry => /Turndown|collapse-whitespace/.test(entry));
-	const docxFile = Buffer.from('/* SPDX-License-Identifier: AGPL-3.0-only. The Rapier Word reader plug-in: opens a .docx as a Markdown document.\n   It carries Turndown, under this notice:\n\n' + turndownNotice.replaceAll('*/', '* /') + '\n*/\n' + await squeeze(docxText) + '\n');
-	const built = [builtPlugin('flowchart', flowFile, VERSION), builtPlugin('pdf', pdfFile, VERSION), builtPlugin('docx', docxFile, VERSION)], [flowchart, pdf, docx] = built;
-	const files = {[flowchart.file]: flowFile, [pdf.file]: pdfFile, [docx.file]: docxFile};
+	const {built, files, flowRegistry, pdfRegistry} = await buildReaderPlugins({root, minify: process.env.RAPIER_READER_NOMINIFY !== '1'});
 	const loaderSource = await read('shell/plugin-loader.js');
 	const pluginParts = (await read('shell/bundle-io.js')) + '\n' + readerPluginLoader(fillMermaidResources(loaderSource), built);
 
@@ -235,10 +214,10 @@ export async function buildReader({root = here, unchecked = [], toolchainCanonic
 	const registry = await bundleModules({root, entries: MODULES, used});
 	const script = "'use strict';\n" + registry.text + '\n' + everything;
 	new vm.Script('(()=>{' + script + '})', {filename: 'rapier-reader.js'});
-	const scriptPackage = process.env.RAPIER_READER_NOMINIFY === '1' ? '(() => {\n' + script + '\n})();' : (await minify('(() => {\n' + script + '\n})();', {
+	const scriptPackage = process.env.RAPIER_READER_NOMINIFY === '1' ? '(() => {\n' + script + '\n})();' : await squeezed('(() => {\n' + script + '\n})();', {
 		compress: {passes: 2, ecma: 2022}, mangle: true, ecma: 2022,
 		format: {comments: (_, row) => /@license|@preserve|SPDX-License-Identifier|^!/.test(row.value), ascii_only: false},
-	})).code;
+	});
 	report.plugins = Object.fromEntries(built.map(plugin => [plugin.key, {file: plugin.file, bytes: plugin.bytes, gzip: gzipSync(files[plugin.file], {level: 9}).length}]));
 	report.used = Object.fromEntries([...used].map(([name, names]) => [name, names ? [...names].sort() : null]));
 	report.script = {linked: everything.length, modules: registry.text.length, minified: scriptPackage.length, sizes: registry.sizes, kept: linked.kept.length};
@@ -258,7 +237,7 @@ export async function buildReader({root = here, unchecked = [], toolchainCanonic
 		'markdown-it-sup-2.0.0.min.js', 'markdown-it-emoji-3.1.0-light.min.js', 'markdown-it-abbr-2.0.0.min.js', 'markdown-it-ins-4.0.0.min.js', 'markdown-it-deflist-4.0.0.min.js']);
 	const purify = await vendor(['dompurify-3.4.16.dist.purify.min.js']);
 
-	const lazy = licensesSheet(licenses, await read('agent/vendor/pretext/LICENSE'), await mitNotice());
+	const lazy = licensesSheet(licenses, await read('agent/vendor/pretext/LICENSE'), await mitNotice(here));
 	const sprites = spriteFor(sprite, blocks, lazy, scriptPackage.replace(/['"]#(i-[a-z0-9-]+)['"]/g, 'href="#$1"'));
 	const markup = sprites + '\n' + blocks.replace(/\n\s*\n+/g, '\n');
 	const words = text => new Set(text.match(/[A-Za-z_][\w-]*/g) || []);
@@ -270,7 +249,7 @@ export async function buildReader({root = here, unchecked = [], toolchainCanonic
 	const packedCore = await pack('rapier-pack', core), packedLicenses = await pack('rapier-pack-licenses', [['html', 'licenses', lazy]]);
 	const base124 = (await read('tools/base124.mjs')).replace(/^export /gm, '');
 	const decoder = dropFunction(base124, 'encodeBase124');
-	const loader = (await minify(decoder + '\n' + await read('reader/loader.js'), {compress: {passes: 2}, mangle: {reserved: ['RapierUnpack']}, format: {comments: false}})).code;
+	const loader = await squeezed(decoder + '\n' + await read('reader/loader.js'), {compress: {passes: 2}, mangle: {reserved: ['RapierUnpack']}, format: {comments: false}});
 	let html = await read('reader/shell.html');
 	const notice = /^<!DOCTYPE html>\n<!--\n[\s\S]*?-->\n/.exec(html)[0];
 	await checkNotice(notice);
@@ -328,19 +307,6 @@ function licensesSheet(sheet, pretextLicense, notice) {
 	text = text.replace('<strong id="licenses-app-title">Rapier ·', () => '<strong id="licenses-app-title">Rapier v' + VERSION + ' ·');
 	// Blank lines between tags go; the licence texts keep theirs.
 	return text.split(/(<pre[\s\S]*?<\/pre>)/).map((part, at) => at % 2 ? part : part.replace(/\n\s*\n+/g, '\n')).join('');
-}
-// The notice the editor writes into its MIT entries, cut to the components this file carries: each component is its lines up to its
-// copyright line.
-async function mitNotice(keep = entry => !/gpu-lexer|acorn|Turndown|collapse-whitespace/.test(entry)) {
-	const found = /const RAPIER_MIT_NOTICE = `([^`$\\]*)`;/.exec(await read('editor/engine.js'));
-	if (!found) throw new Error('editor/engine.js has no RAPIER_MIT_NOTICE the licences sheet can carry');
-	const notice = found[1], mark = 'copyright notice:\n\n', start = notice.indexOf(mark) + mark.length, end = notice.indexOf('\n\nPermission is hereby');
-	if (start < mark.length || end < start) throw new Error('editor/engine.js: RAPIER_MIT_NOTICE no longer has a header, a list and the terms');
-	const entries = [];
-	let current = [];
-	for (const line of notice.slice(start, end).split('\n')) { current.push(line); if (/^\tCopyright/.test(line)) { entries.push(current.join('\n')); current = []; } }
-	if (current.length) throw new Error('editor/engine.js: RAPIER_MIT_NOTICE lists a component with no copyright line');
-	return notice.slice(0, start) + entries.filter(keep).join('\n') + notice.slice(end);
 }
 const escapeHtml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 

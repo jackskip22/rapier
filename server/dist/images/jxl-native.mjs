@@ -162,8 +162,9 @@ function walk(bytes, total) {
 		if (!flag()) {
 			if (flag()) throw FORM;
 			const space = en();
-			if (space !== 3) { const white = en(); if (white === 2) bits(64); else if (white === 7) throw FORM; }
-			if (space !== 1 && space !== 3) { const primaries = en(); if (primaries === 2) throw FORM; }
+			const xy = count => { for (let i = 0; i < 2 * count; i++) u32([[19, 0], [19, 524288], [20, 1048576], [21, 2097152]]); };
+			if (space !== 3) { const white = en(); if (white === 2) xy(1); else if (white === 7) throw FORM; }
+			if (space !== 1 && space !== 3) { const primaries = en(); if (primaries === 2) xy(3); }
 			if (flag()) bits(24); else en();
 			en();
 		}
@@ -172,43 +173,61 @@ function walk(bytes, total) {
 	}
 	if (!flag()) throw FORM;
 	bit = (bit + 7) & ~7;
-	let encoding = 0, shift = 1, upsampling = 1, passes = 1, last = true, type = 0;
-	if (!flag()) {
-		type = bits(2); encoding = bits(1);
-		const flags = u64();
-		if (flags & ~0x10) throw FORM;
-		const ycbcr = !xyb && flag();
-		if (ycbcr) bits(6);
-		upsampling = [1, 2, 4, 8][bits(2)];
-		for (let c = 0; c < extra; c++) bits(2);
-		if (encoding === 1) shift = bits(2);
-		if (encoding === 0 && xyb) bits(6);
-		if (type !== 2) {
-			passes = u32([[0, 1], [0, 2], [0, 3], [3, 4]]);
-			if (passes !== 1) throw FORM;
-		}
-		if (type === 1) throw FORM;
-		if (flag()) throw FORM;
-		if (type === 0 || type === 3) {
-			for (let c = 0; c <= extra; c++) if (u32([[0, 0], [0, 1], [0, 2], [2, 3]]) !== 0) throw FORM;
-			last = flag();
-		}
-		if (!last) throw FORM;
-		const name = u32([[0, 0], [4, 0], [5, 16], [10, 48]]); bits(8 * name);
+	for (let last = false; !last;) {
+		let encoding = 0, shift = 1, upsampling = 1, passes = 1, type = 0, w = width, h = height;
+		last = true;
 		if (!flag()) {
-			if (flag() && flag()) bits(96);
-			if (bits(2)) throw FORM;
+			type = bits(2); encoding = bits(1);
+			const lf = u64() & 0x20;
+			const ycbcr = !xyb && flag();
+			if (ycbcr && !lf) bits(6);
+			if (!lf) {
+				upsampling = [1, 2, 4, 8][bits(2)];
+				for (let c = 0; c < extra; c++) bits(2);
+			}
+			if (encoding === 1) shift = bits(2);
+			if (encoding === 0 && xyb) bits(6);
+			if (type !== 2) {
+				passes = u32([[0, 1], [0, 2], [0, 3], [3, 4]]);
+				if (passes !== 1) {
+					const steps = u32([[0, 0], [0, 1], [0, 2], [1, 3]]);
+					bits(2 * (passes - 1 + steps));
+					for (let i = 0; i < steps; i++) u32([[0, 0], [0, 1], [0, 2], [3, 0]]);
+				}
+			}
+			if (type === 1) {
+				const scale = 8 ** (bits(2) + 1);
+				w = Math.ceil(w / scale); h = Math.ceil(h / scale); last = false;
+			} else if (flag()) {
+				if (type !== 2) throw FORM;
+				const dim = () => u32([[8, 0], [11, 256], [14, 2304], [30, 18688]]);
+				w = dim(); h = dim();
+			}
+			if (type === 0 || type === 3) {
+				for (let c = 0; c <= extra; c++) if (u32([[0, 0], [0, 1], [0, 2], [2, 3]]) !== 0) throw FORM;
+				last = flag();
+				if (!last) throw FORM;
+			} else if (type === 2) { last = false; bits(2); bits(1); }
+			const name = u32([[0, 0], [4, 0], [5, 16], [10, 48]]); bits(8 * name);
+			if (!flag()) {
+				if (flag() && flag()) bits(96);
+				if (bits(2)) {
+					if (!encoding && flag() || flag() || flag()) throw FORM;
+					if (encoding) bits(16);
+				}
+				none(u64());
+			}
 			none(u64());
 		}
-		none(u64());
+		const dim = 128 << shift, fw = Math.ceil(w / upsampling), fh = Math.ceil(h / upsampling);
+		const groups = Math.ceil(fw / dim) * Math.ceil(fh / dim), dcGroups = Math.ceil(fw / (8 * dim)) * Math.ceil(fh / (8 * dim));
+		const entries = groups === 1 && passes === 1 ? 1 : 2 + dcGroups + groups * passes;
+		if (flag()) throw FORM;
+		bit = (bit + 7) & ~7;
+		let sum = 0;
+		for (let e = 0; e < entries; e++) sum += u32([[10, 0], [14, 1024], [22, 17408], [30, 4211712]]);
+		bit = ((bit + 7) & ~7) + sum * 8;
+		if (bit > total * 8) return false;
 	}
-	const dim = 128 << shift, w = Math.ceil(width / upsampling), h = Math.ceil(height / upsampling);
-	const groups = Math.ceil(w / dim) * Math.ceil(h / dim), dcGroups = Math.ceil(w / (8 * dim)) * Math.ceil(h / (8 * dim));
-	const entries = groups === 1 && passes === 1 ? 1 : 2 + dcGroups + groups * passes;
-	if (flag()) throw FORM;
-	bit = (bit + 7) & ~7;
-	let sum = 0;
-	for (let e = 0; e < entries; e++) sum += u32([[10, 0], [14, 1024], [22, 17408], [30, 4211712]]);
-	bit = (bit + 7) & ~7;
-	return bit / 8 + sum <= total;
+	return true;
 }

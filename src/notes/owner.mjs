@@ -1,7 +1,8 @@
 import {isImportReceiptFile, readImportReceiptFile, assertImportReferences} from './import-storage.mjs';
-import {NOTES_INDEX_FILE, emptyIndex, isNoteFile, validNoteId, noteFileName, attachmentFileName, parseIndex, reconcile, serializeIndex, stampNoteControls, NOTE_CONTROL_GROUPS} from './model.mjs';
+import {NOTES_INDEX_FILE, emptyIndex, isNoteFile, validNoteId, noteFileName, attachmentFileName, parseIndex, reconcile, serializeIndex, stampNoteControls, NOTE_CONTROL_GROUPS, admitIdentities} from './model.mjs';
 import {exactBytes, sha256, sha256State, sha256Yielding, storedFileDigest} from './integrity.mjs';
 import {manifestName, createHistoryPreparation, resolveHistoryPreparation} from './history.mjs';
+import {notesHostWords} from './host-words.mjs';
 
 const decode = value => new TextDecoder('utf-8', {fatal: true, ignoreBOM: false}).decode(exactBytes(value));
 const copy = value => JSON.parse(JSON.stringify(value));
@@ -206,7 +207,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 		if (typeof scope !== 'string' || !scope) throw fail('scope', 'A notes folder needs a stable lock scope.');
 		if (store.writable === false && !store.reclaimable) throw fail('read-only', store.reason || 'These notes are read-only here.');
 		if (isShared() && !channel?.postMessage) throw fail('read-only', 'Shared notes need their commit notification channel before this writer can open them.');
-		if (isShared() && !locks?.request) throw fail('read-only', 'This browser cannot coordinate writes to shared notes. Open them in a browser with Web Locks; reading and backup remain available.');
+		if (isShared() && !locks?.request) throw fail('read-only', notesHostWords().native ? 'This device cannot coordinate writes to shared notes. Reading and backup remain available.' : 'This browser cannot coordinate writes to shared notes. Open them in a browser with Web Locks; reading and backup remain available.');
 		let unlock, settled, granted = false, releaseStarted = false, released = false;
 		const held = new Promise(resolve => { unlock = resolve; });
 		if (isShared() && locks?.request) {
@@ -339,6 +340,78 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			if (!Number.isSafeInteger(index.folderGeneration)) throw fail('generation', 'The notes folder generation is exhausted.');
 			return publish(index, changed, kind);
 		};
+		const rescueCanonical = async (index, journal, current, preparation) => {
+			if (!['save', 'canonical-save', 'create', 'canonical-create', 'keep-both'].includes(journal.kind) || journal.staging === 'preparing' || journal.removes.length) return null;
+			const published = journal.publicationDigest === current, conflicts = [];
+			for (const proof of canonicalRows(journal)) {
+				const row = journal.writes.find(row => row.file === proof.file);
+				if (!row) continue;
+				const bytes = await readBytes(row.file), digest = await digestOf(bytes);
+				if (bytes !== null && digest !== row.digest && (published || digest !== row.before)) conflicts.push({proof, row, bytes, digest});
+			}
+			if (!conflicts.length) return null;
+			if (!published && (journal.baseGeneration !== folderGeneration(index) || current !== journal.baseDigest)) throw fail('changed', 'The folder metadata changed during recovery. Its pending words were kept.');
+			if (published && folderGeneration(index) !== journal.generation) throw fail('corrupt', 'The published save names a different generation.');
+			const payloads = new Map();
+			const payload = async row => {
+				if (!row) throw fail('corrupt', 'The pending canonical save has no history bytes.');
+				if (payloads.has(row.file)) return payloads.get(row.file);
+				let bytes = row.stage ? await readBytes(row.stage) : unpack(row.data);
+				if (row.stage && bytes === null) bytes = await readBytes(row.file);
+				if (bytes === null || await digestOf(bytes) !== row.digest) throw fail('corrupt', 'The pending recovery bytes failed verification: ' + row.file + '.');
+				payloads.set(row.file, bytes); return bytes;
+			};
+			for (const conflict of conflicts) {
+				const {proof, row} = conflict, history = journal.writes.find(write => write.file === proof.history);
+				const proved = preparation.parseCanonical(await payload(history), {noteId: proof.id, now: clock()});
+				const intended = exactBytes(proved.text);
+				if (proved.ledger.sha256 !== proof.ledger || await digestOf(intended) !== row.digest) throw fail('corrupt', 'The saved words do not match their canonical history.');
+				if (row.stage && await readBytes(row.stage) === null) payloads.set(row.file, intended);
+				else await payload(row);
+			}
+			for (const row of journal.writes) { fileName(row.file); await payload(row); }
+			const after = published ? copy(index) : applyIndexDelta(index, journal), names = new Set([...(await store.list()).filter(isNoteFile), ...Object.keys(after.notes)]), now = clock();
+			for (const conflict of conflicts) {
+				const {proof, row, digest} = conflict, entry = after.notes[proof.file];
+				if (entry?.id !== proof.id || entry.canonicalHistory !== proof.ledger) throw fail('corrupt', 'The saved note identity does not match its pending history.');
+				conflict.name = noteFileName(proof.file.replace(/\.md$/i, '') + ' kept', [...names], {ascii: store.ascii}); names.add(conflict.name);
+				after.notes[conflict.name] = {...entry, keptFrom: {file: proof.file, ...(row.before === null ? {} : {digest: row.before})}};
+				after.notes[proof.file] = {created: now, modified: now, revision: 'sha256:' + digest};
+			}
+			admitIdentities(after, after.folderDeviceId);
+			const next = {...journal, kind: 'canonical-recovery', baseGeneration: folderGeneration(index), generation: folderGeneration(index) + 1, baseDigest: current,
+				writes: journal.writes.map(row => ({...row})), canonical: canonicalRows(journal).map(row => ({...row}))};
+			delete next.publicationDigest; delete next.after;
+			for (const {proof, row, bytes, digest, name} of conflicts) {
+				const saved = next.writes.find(write => write.file === proof.file);
+				Object.assign(saved, {file: name, before: null});
+				if (saved.stage && await readBytes(saved.stage) === null) { delete saved.stage; delete saved.size; saved.data = pack(payloads.get(row.file)); }
+				next.canonical.find(item => item.id === proof.id).file = name;
+				const entry = after.notes[proof.file], id = entry.id, text = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(bytes);
+				const manifest = preparation.freshCanonical(preparation.parseManifest(null, {noteId: id, now}), {filename: proof.file, docKind: 'markdown'});
+				const appended = await preparation.appendCanonical(manifest, {text, author: {kind: 'system', id: 'notes-recovery'}, operation: 'notes.admit', now});
+				entry.canonicalHistory = appended.ledger.sha256;
+				const recorded = await preparation.recordVersion(appended.manifest, {file: proof.file, text, entry, reason: 'save', now});
+				next.writes.push({file: proof.file, before: digest, digest, data: pack(bytes)});
+				for (const write of recorded.writes) {
+					const file = 'history/' + write.name, held = await readBytes(file), digest = await digestOf(write.bytes), existing = next.writes.find(row => row.file === file);
+					if (existing) { if (existing.digest !== digest) throw fail('corrupt', 'Recovered history objects disagree.'); continue; }
+					if (held !== null) { if (!write.immutable || !equal(held, write.bytes)) throw fail('changed', 'The recovery history destination is occupied.'); continue; }
+					next.writes.push({file, before: null, digest, data: pack(write.bytes)});
+				}
+				await preparation.materialize(recorded.manifest, recorded.version.id, name => {
+					const row = next.writes.find(row => row.file === 'history/' + name);
+					return row ? payloads.get(row.file) || unpack(row.data) : readBytes('history/' + name);
+				});
+				next.canonical.push({file: proof.file, id, history: 'history/' + manifestName(id), ledger: appended.ledger.sha256});
+			}
+			if (next.staging && !next.writes.some(row => row.stage)) delete next.staging;
+			after.folderGeneration = next.generation; next.delta = indexDelta(index, after);
+			if (await digestOf(await readBytes(NOTES_INDEX_FILE)) !== current) throw fail('changed', 'The folder metadata changed before recovery publication.');
+			for (const {proof, digest, name} of conflicts) if (await digestOf(await readBytes(proof.file)) !== digest || await readBytes(name) !== null) throw fail('changed', 'The recovery destination changed. Both bodies remain in their original custody.');
+			await writeJournal(next);
+			return next;
+		};
 		const recover = async (ours = null) => {
 			active();
 			const preparation = resolveHistoryPreparation(ours?.historyPreparation) || createHistoryPreparation();
@@ -349,10 +422,12 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				if (journal.version !== 2 || !Number.isSafeInteger(journal.baseGeneration) || journal.baseGeneration < 0 || journal.generation !== journal.baseGeneration + 1 || !Number.isSafeInteger(journal.generation) ||
 					!(journal.baseDigest === null || /^[0-9a-f]{64}$/.test(journal.baseDigest)) || !Array.isArray(journal.writes) || !Array.isArray(journal.removes) ||
 					journal.publicationDigest !== undefined && !/^[0-9a-f]{64}$/.test(journal.publicationDigest) ||
-					journal.staging !== undefined && (!['save', 'canonical-save'].includes(journal.kind) || !['preparing', 'ready'].includes(journal.staging) || journal.removes.length || journal.staging === 'preparing' && journal.publicationDigest !== undefined)) throw fail('corrupt', 'The pending notes transaction is not readable; its files have been kept.');
+					journal.staging !== undefined && (!['save', 'canonical-save', 'canonical-recovery'].includes(journal.kind) || !['preparing', 'ready'].includes(journal.staging) || journal.removes.length || journal.staging === 'preparing' && journal.publicationDigest !== undefined)) throw fail('corrupt', 'The pending notes transaction is not readable; its files have been kept.');
 				canonicalRows(journal);
 				saveStages(journal);
 				const current = ours ? journal.baseDigest : await digestOf(indexReceipt);
+				const rescued = await rescueCanonical(index, journal, current, preparation);
+				if (rescued) { journal = rescued; ours = null; }
 				if (journal.publicationDigest && current === journal.publicationDigest) {
 					if (journal.exactIndex ? current !== journal.exactIndex.digest : folderGeneration(index) !== journal.generation) throw fail('corrupt', 'The completed notes journal names a different generation.');
 					await verifyCanonical(journal, index, preparation);
@@ -909,7 +984,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 		const requested = requestedBodies(options);
 		if (store.writable === false || isShared() && (!locks?.request || !channel?.postMessage)) {
 			const pending = await readBytes(OWNER_JOURNAL_FILE), first = await readBytes(NOTES_INDEX_FILE), index = parseIndex(first == null ? null : decode(first));
-			if (pending != null || index.transaction || index.deletions && Object.keys(index.deletions).length) throw fail('read-only', 'This notes folder needs a browser with Web Locks to finish a pending operation.');
+			if (pending != null || index.transaction || index.deletions && Object.keys(index.deletions).length) throw fail('read-only', 'This notes folder needs ' + (notesHostWords().native ? 'Web Locks' : 'a browser with Web Locks') + ' to finish a pending operation.');
 			const listing = await store.list(), files = listing.filter(isNoteFile).sort(), bodies = await readBodies(files, requested);
 			if (!equal(first, await readBytes(NOTES_INDEX_FILE)) || !equal(pending, await readBytes(OWNER_JOURNAL_FILE))) throw fail('busy', 'The notes folder is changing. Try opening it again.');
 			return {index: reconcile(index, files).index, files, listing, bodies, generation: folderGeneration(index), readOnly: true, notice: null};

@@ -37,10 +37,13 @@ const HIGHLIGHT_HUES = Object.freeze({
 	purple: 274,
 });
 
+const CSS_BASIC_COLORS = new Map('maroon:800000 red:f00 purple:800080 fuchsia:f0f magenta:f0f green:008000 lime:0f0 olive:808000 yellow:ff0 navy:000080 blue:00f teal:008080 aqua:0ff cyan:0ff'
+	.split(' ').map(pair => pair.split(':')));
+
 export function parseCssColor(value) {
 	const source = String(value || '').trim().toLowerCase();
 	if (!source || source === 'transparent') return null;
-	let match = /^#([0-9a-f]{3,8})$/i.exec(source);
+	let match = /^#([0-9a-f]{3,8})$/i.exec(CSS_BASIC_COLORS.has(source) ? '#' + CSS_BASIC_COLORS.get(source) : source);
 	if (match) {
 		let hex = match[1];
 		if (hex.length === 3 || hex.length === 4) hex = [...hex].map(char => char + char).join('');

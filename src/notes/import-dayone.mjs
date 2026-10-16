@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {noteFileName, noteTitle, orderAfter} from './model.mjs';
 import {scanLinks} from './links.mjs';
-import {importTags, importDate, appendImportMetadata, IMPORT_JSON_MAX_BYTES} from './import.mjs';
+import {importTags, importDate, importMetadata, IMPORT_JSON_MAX_BYTES} from './import.mjs';
 import {readImportText, finishImportCharacters} from './import-characters.mjs';
 
 const encoder = new TextEncoder();
@@ -9,7 +9,9 @@ const object = value => value !== null && typeof value === 'object' && !Array.is
 const rootOf = row => String(row.rootId || '');
 const keyOf = (root, path) => JSON.stringify([root, path]);
 const mime = {png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', jxl: 'image/jxl', svg: 'image/svg+xml', gif: 'image/gif', bmp: 'image/bmp', avif: 'image/avif', heic: 'image/heic', heif: 'image/heif'};
-const photoId = dest => /^dayone-moment:\/\/([^/?#\s]+)$/i.exec(dest)?.[1].toLowerCase();
+const photoId = dest => /^dayone-moment:(?:\/\/|\/photo\/)([^/?#\s]+)$/i.exec(dest)?.[1].toLowerCase();
+const MEDIA = {audio: ['audios', 'audios/'], pdfAttachment: ['pdfAttachments', 'pdfs/'], video: ['videos', 'videos/']};
+const mediaRef = dest => /^dayone-moment:\/(audio|pdfAttachment|video)\/([^/?#\s]+)$/i.exec(dest);
 
 export async function importDayOne(entries, options = {}) {
   const named = (Array.isArray(entries) ? entries : []).filter(row => row && typeof row.name === 'string');
@@ -35,13 +37,7 @@ export async function importDayOne(entries, options = {}) {
     const directory = input.name.slice(0, input.name.lastIndexOf('/') + 1), rootId = rootOf(input);
     for (let index = 0; index < sourceEntries.length; index++) {
       const raw = sourceEntries[index], sourceItem = typeof raw?.uuid === 'string' && raw.uuid ? raw.uuid : 'entries[' + index + ']';
-      if (!object(raw)) {
-        const title = 'Journal entry ' + (index + 1), file = noteFileName('# ' + title, pool); pool.push(file);
-        notes.push({file, title, text: appendImportMetadata('', {export: exportFields, entry: raw}), sourceName: input.name, sourceItem, rootId,
-          entry: {order: '', pinned: false, skill: false, archived: false, trashed: false, colour: ''},
-          warnings: [...sourceWarnings, {code: 'entry_not_object', name: sourceItem, message: 'This entry was not an object. Its complete JSON value was kept in the note.'}]});
-        continue;
-      }
+      if (!object(raw)) { skipped.push({name: input.name, rootId, sourceItem, why: sourceItem + ' is not a journal entry; it stays in the original export.'}); continue; }
       const warnings = [...sourceWarnings], entry = {order: '', pinned: raw.isPinned === true, skill: false, archived: false, trashed: false, colour: ''};
       const created = importDate(raw.creationDate, Date.parse(raw.creationDate), warnings, 'Day One creation date');
       const modified = importDate(raw.modifiedDate, Date.parse(raw.modifiedDate), warnings, 'Day One edit date');
@@ -79,6 +75,18 @@ export async function importDayOne(entries, options = {}) {
         } else if (!choices.length) warnings.push({code: 'attachment_missing', name: link.dest, message: 'This photo reference has no matching metadata in the export. The reference was kept.'});
         else if (paths.size > 1) warnings.push({code: 'attachment_ambiguous', name: link.dest, message: 'More than one photo claims this identifier. The reference was kept without choosing a file.'});
       }
+      const media = new Map();
+      for (const [kind, [field, folder]] of Object.entries(MEDIA)) for (const item of Array.isArray(raw[field]) ? raw[field] : []) {
+        if (!object(item) || typeof item.identifier !== 'string' || typeof item.md5 !== 'string' || !/^[0-9a-f]{32}$/i.test(item.md5)) continue;
+        const prefix = directory + folder + item.md5 + '.';
+        const found = named.filter(row => rootOf(row) === rootId && row.name.startsWith(prefix) && !row.name.slice(prefix.length).includes('/'));
+        if (found.length === 1) media.set(kind.toLowerCase() + '/' + item.identifier.toLowerCase(), found[0].name.slice(directory.length));
+      }
+      for (const link of scanLinks(body).reverse()) {
+        const ref = mediaRef(link.dest), path = ref && media.get(ref[1].toLowerCase() + '/' + ref[2].toLowerCase());
+        if (ref && !path) warnings.push({code: 'attachment_missing', name: link.dest, message: 'This file is not in the export. Its reference was kept.'});
+        if (path) body = body.slice(0, link.start) + '[' + path.slice(path.lastIndexOf('/') + 1) + '](' + path + ')' + body.slice(link.end);
+      }
       for (const photo of photos.sort((a, b) => a.order - b.order || a.ordinal - b.ordinal)) {
         if (photo.id && referenced.has(photo.id)) continue;
         const destination = photo.picture ? photo.relative : photo.id ? 'dayone-moment://' + photo.id : '';
@@ -90,8 +98,9 @@ export async function importDayOne(entries, options = {}) {
         entry.category = category;
         if (!sections.some(name => name.toLowerCase() === category.toLowerCase())) sections.push(category);
       }
-      const fields = Object.fromEntries(Object.entries(raw).filter(([key, value]) => key !== 'text' || typeof value !== 'string'));
-      const text = appendImportMetadata(importTags(body, tags, warnings, sourceItem), {export: exportFields, entry: fields});
+      importMetadata(raw, ['text', 'creationDate', 'modifiedDate', 'isPinned', 'tags'].filter(key => key !== 'text' || typeof raw.text === 'string'), warnings, 'Day One entry details');
+      importMetadata(exportFields, [], warnings, 'Day One export details');
+      const text = importTags(body, tags, warnings, sourceItem);
       const file = noteFileName('# ' + title, pool); pool.push(file);
       notes.push({file, title, text, entry, sourceName: input.name, sourceItem, rootId, warnings});
     }

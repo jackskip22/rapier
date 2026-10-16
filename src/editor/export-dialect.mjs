@@ -3,7 +3,7 @@ import {RAPIER_HIGHLIGHT_COLORS, typography, typographySourceRanges,
   isPageBreakBlock as _rapierIsPageBreakBlock, splitOpeningFrontmatter as _rapierSplitOpeningFrontmatter} from '../agent/markdown-spec.mjs';
 
 export function createPandocDialect(md, progress = null) {
-const RAPIER_PANDOC_MARK_RE = /(?<!=)==(?!\s|=)([\s\S]*?[^\s=])==(?!=)/g;
+const RAPIER_PANDOC_MARK_RE = /(?<!=)==(?!\s|=)((?:(?!==)[\s\S])*?[^\s=])==(?!=)/g;
 
 function _rapierPandocDialectMaskCode(paragraph) {
 	const store = [], state = new md.inline.State(paragraph, md, {}, []);

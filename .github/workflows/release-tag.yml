@@ -1,0 +1,27 @@
+# A release tags itself. A push to release-tag or main whose head commit's subject is "Rapier <version>" (the
+# publication commit) creates the lightweight tag v<version> at that commit. An existing tag is never moved: the run
+# passes when it already names this commit and fails when it names another. Every page's jsDelivr routes name this
+# tag, so the publisher pushes release-tag first and moves main (the website, npm) only once the tag exists.
+name: release-tag
+on:
+  push:
+    branches: [main, release-tag]
+permissions:
+  contents: write
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: |
+          set -eu
+          subject=$(git log -1 --format=%s "$GITHUB_SHA")
+          version=$(printf '%s\n' "$subject" | sed -n 's/^Rapier \([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$/\1/p')
+          if [ -z "$version" ]; then echo "not a release commit: $subject"; exit 0; fi
+          tag="v$version"
+          existing=$(git ls-remote origin "refs/tags/$tag" | cut -f1)
+          if [ "$existing" = "$GITHUB_SHA" ]; then echo "$tag already names $GITHUB_SHA"; exit 0; fi
+          if [ -n "$existing" ]; then echo "::error::$tag already names $existing, not $GITHUB_SHA"; exit 1; fi
+          git tag "$tag" "$GITHUB_SHA"
+          git push origin "refs/tags/$tag"
+          echo "tagged $tag at $GITHUB_SHA"

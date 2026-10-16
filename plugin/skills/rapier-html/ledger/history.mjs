@@ -3,8 +3,8 @@
 import {_rapierTransformSplices, _rapierValidMetadata, _rapierTransformMetadata, _rapierMetadataDelta, _rapierHistoryEffects, _rapierMetadataState, _rapierPrepareHistoryRecords} from './journal-records.mjs';
 import {projectInverseSource, HistorySource} from './inverse-source.mjs';
 import {textRootParts, rootAfter} from './hash.mjs';
-import {authoredHistory} from './transport.mjs';
-import {plainData} from './data.mjs';
+import {authoredHistory, authoredPlacements} from './transport.mjs';
+import {plainData, canonicalJSON} from './data.mjs';
 
 const historyFailure = reason => ({ok: false, reason});
 const historyInteger = value => Number.isSafeInteger(value) && value >= 0 && !Object.is(value, -0);
@@ -104,8 +104,11 @@ function prepareHistory(input) {
 				!(tx.createdAt === null || historyInteger(tx.createdAt)) ||
 				(tx.turnId != null && (typeof tx.turnId !== 'string' || !tx.turnId || tx.turnId.length > 160))) return historyFailure('history_invalid');
 			if (tx.baseRevision !== prior) complete = false;
+			const coincidentWitness = !splices.length && record.authored && Array.isArray(record.authored.splices) &&
+				record.authored.splices.some(row => row.removed.length);
 			if (!splices || effect === undefined || (!splices.length &&
-				!Object.values(effect || {}).some(pair => pair.before !== pair.after) && !effects.references.get(tx.id)?.length)) return historyFailure('history_unavailable');
+				!Object.values(effect || {}).some(pair => pair.before !== pair.after) && !effects.references.get(tx.id)?.length &&
+				!coincidentWitness)) return historyFailure('history_unavailable');
 			const row = {record, splices, metadata: effect};
 			rows.push(row); byId.set(tx.id, row); prior = tx.revision;
 		}
@@ -293,10 +296,13 @@ export function historyPlaces(input, blocks) {
 			if (!slices.has(key)) slices.set(key, source.slice(from, to));
 			return slices.get(key);
 		};
+		// One record's act is read once; the blocks it touched share its fields (a whole-document delete touches every block).
+		let act = null;
 		for (const [node, afterRange] of touched) {
 			const beforeRange = ranges.range(node), previous = {...beforeRange, source: cut(beforeSource, 'b', beforeRange.from, beforeRange.to)},
 				after = {...afterRange, source: cut(afterSource, 'a', afterRange.from, afterRange.to)};
-			if (previous.source !== after.source) node.block.acts.push({...historyAct(record), before: previous, after});
+			// A point (where words were deleted) has no words to compare: the act that touched it wrote there.
+			if (previous.source !== after.source || afterRange.from === afterRange.to) node.block.acts.push({...(act ||= historyAct(record)), before: previous, after});
 		}
 	}
 
@@ -334,7 +340,27 @@ export function selectiveUndo(input, actIds, options = {}) {
 	const metadata = _rapierMetadataDelta(prepared.metadata, afterMetadata), effectChanged = selected.size > 0;
 	const sourceEffectChanged = records.some(record => record.splices.length && !prepared.effects.references.get(record.transaction.id)?.length &&
 		prepared.effects.active.has(record.transaction.id) !== projectedEffects.active.has(record.transaction.id));
-	if (!sourceEffectChanged) return {ok: true, splices: [], after: prepared.source, actIds: [...requested],
+	// One shared replacement is visible while any of its authors is active. That
+	// includes an author stored with no second physical splice, and an inverse
+	// whose only effect is to make such an author active again.
+	let coverVisibilityChanged = false;
+	if (!sourceEffectChanged && selected.size) {
+		let origins = null;
+		try { origins = authoredPlacements(prepared.initialSource, records); } catch { origins = null; }
+		const groups = new Map();
+		if (origins) for (const record of records) {
+			const tx = record.transaction, origin = origins.get(tx.id);
+			if (!origin?.splices.some(row => row.removed.length) || tx.reverts || tx.reapplies ||
+				tx.sourceTransactionId || tx.sourceTransactionIds?.length) continue;
+			const key = canonicalJSON({basis: origin.basis, splices: origin.splices});
+			if (!groups.has(key)) groups.set(key, []);
+			groups.get(key).push(tx.id);
+		}
+		const covered = (effects, ids) => ids.some(id => effects.active.has(id));
+		for (const ids of groups.values()) if (ids.length > 1 && covered(prepared.effects, ids) !== covered(projectedEffects, ids))
+			coverVisibilityChanged = true;
+	}
+	if (!sourceEffectChanged && !coverVisibilityChanged) return {ok: true, splices: [], after: prepared.source, actIds: [...requested],
 		sourceTransactionIds: [...selected], metadata, afterMetadata, effectChanged, unchanged: !metadata && !effectChanged,
 		superseded: [], overlaps: []};
 	try {

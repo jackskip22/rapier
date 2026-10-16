@@ -323,6 +323,24 @@ function _rapierBgBindPanel(panel) {
 		};
 		bar.addEventListener('pointermove', move); bar.addEventListener('pointerup', up); bar.addEventListener('pointercancel', up);
 	});
+	bar.addEventListener('click', evt => {
+		const handle = evt.detail === 0 && evt.target.closest('[data-draw-bg-stop]'), bg = handle && _rapierBgCopy(_rapierBgCurrent());
+		if (!bg?.stops) return;
+		const index = Number(handle.dataset.drawBgStop);
+		_rapierBgPickColour(bg.stops[index].color, (color, done) => { const next = _rapierBgCopy(bg); next.stops[index].color = color; done ? _rapierBgCommit(next) : _rapierBgDraft(next); });
+	});
+	bar.addEventListener('keydown', evt => {
+		const handle = evt.target.closest('[data-draw-bg-stop]'), bg = handle && _rapierBgCopy(_rapierBgCurrent());
+		const step = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1 }[evt.key], remove = evt.key === 'Delete' || evt.key === 'Backspace';
+		if (!bg?.stops || !step && !remove) return;
+		evt.preventDefault(); evt.stopPropagation();
+		const index = Number(handle.dataset.drawBgStop), stop = bg.stops[index];
+		if (remove) { if (bg.stops.length <= 2) return; bg.stops.splice(index, 1); }
+		else stop.at = Math.round(Math.min(1, Math.max(0, stop.at + step * (evt.shiftKey ? 0.1 : 0.01))) * 1000) / 1000;
+		_rapierBgCommit(bg);
+		const stops = _rapierBgCurrent()?.stops || [], at = remove ? Math.max(0, index - 1) : stops.findIndex(s => s.at === stop.at && s.color === stop.color);
+		bar.querySelector('[data-draw-bg-stop="' + Math.max(0, at) + '"]')?.focus({ preventScroll: true });
+	});
 }
 
 function _rapierBgHandleSpots(bg) {

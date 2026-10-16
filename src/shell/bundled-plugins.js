@@ -41,7 +41,7 @@ const RapierBundledPlugins = (() => {
 				else if (provider.status === 'error' || provider.status === 'absent')
 					reject(new Error('The editor plug-in could not start: ' + key));
 			}
-			provider.on(check); check();
+			addEventListener('rapier:' + key + 'plugin', check); check();
 		});
 	}
 	return Object.freeze({

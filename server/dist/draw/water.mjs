@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import {WaterGPU,waterReady,waterUnfilteredTest,waterTiming,waterTimingOn,waterHandSheetFits,WATER_GPU_MAX_BYTES} from './water-gpu.mjs';
+import {WaterGPU,waterReady,waterUnfilteredTest,waterTiming,waterTimingOn,waterCapture,waterCaptureOn,waterNote,waterHandSheetFits,WATER_GPU_MAX_BYTES} from './water-gpu.mjs';
 import {WaterContact,waterContactReach} from './water-contact.mjs';
 import {getBrush,makeTip,CUSTOM_PARAMS} from './water-materials.mjs';
 import {WATER_PAPER_UNITS,WATER_PAPER_SEED,WATER_PAPER_PERIOD} from './paper-field.mjs';
-import {encodeRgb,toLinear} from './water-color.mjs';
+import {encodeRgb,toLinear,waterMixes} from './water-color.mjs';
+export {waterMixes};
 import {buildWaterFill} from './water-fill.mjs';
 import {waterTimeFits} from './water-data.mjs';
-import {WATER_TICK_HZ,WATER_BANDS,WATER_ACTION_MAX_POINTS,WATER_TIP_MAX_PIXELS,WATER_SOURCE_MAX_BYTES,WATER_PAPERS,WATER_PIGMENTS,WATER_BRUSHES,WATER_TOOLS,WATER_CONTROLS,waterBrushById,waterPigmentById,waterPaperById,waterError,waterRadius,admitWaterPigment,admitWaterTip,admitWaterControls,admitWaterBrush,waterBrushDefinition,admitWaterAction,admitWaterActions,waterActionsFault,admitWaterState} from './water-data.mjs';
-export {WATER_TICK_HZ,WATER_BANDS,WATER_ACTION_MAX_POINTS,WATER_TIP_MAX_PIXELS,WATER_SOURCE_MAX_BYTES,WATER_PAPERS,WATER_PIGMENTS,WATER_BRUSHES,WATER_TOOLS,WATER_CONTROLS,waterBrushById,waterPigmentById,waterPaperById,waterError,waterRadius,admitWaterPigment,admitWaterTip,admitWaterControls,admitWaterBrush,waterBrushDefinition,admitWaterAction,admitWaterActions,waterActionsFault,admitWaterState};
-export {waterReady,waterUnfilteredTest,waterTiming,waterTimingOn,waterHandSheetFits,WATER_PAPER_UNITS,WATER_PAPER_SEED};
+import {WATER_TICK_HZ,WATER_BANDS,WATER_ACTION_MAX_POINTS,WATER_TIP_MAX_PIXELS,WATER_SOURCE_MAX_BYTES,WATER_PAPERS,WATER_PIGMENTS,WATER_BRUSHES,WATER_TOOLS,WATER_CONTROLS,waterBrushById,waterPigmentById,waterPaperById,waterError,waterRadius,waterHandSize,waterHandUi,waterHandFromUi,admitWaterPigment,admitWaterTip,admitWaterControls,admitWaterBrush,waterBrushDefinition,admitWaterAction,admitWaterActions,waterActionsFault,admitWaterState} from './water-data.mjs';
+export {WATER_TICK_HZ,WATER_BANDS,WATER_ACTION_MAX_POINTS,WATER_TIP_MAX_PIXELS,WATER_SOURCE_MAX_BYTES,WATER_PAPERS,WATER_PIGMENTS,WATER_BRUSHES,WATER_TOOLS,WATER_CONTROLS,waterBrushById,waterPigmentById,waterPaperById,waterError,waterRadius,waterHandSize,waterHandUi,waterHandFromUi,admitWaterPigment,admitWaterTip,admitWaterControls,admitWaterBrush,waterBrushDefinition,admitWaterAction,admitWaterActions,waterActionsFault,admitWaterState};
+export {waterReady,waterUnfilteredTest,waterTiming,waterTimingOn,waterCapture,waterCaptureOn,waterNote,waterHandSheetFits,WATER_PAPER_UNITS,WATER_PAPER_SEED};
 import {WATER_SPECIALTY_PIGMENTS,WATER_PRO_PAPERS,waterSpecialtyById,waterPigmentFinish,isWaterSpecialtyPigment,mixWaterPigments} from './water-data.mjs';
 export {WATER_SPECIALTY_PIGMENTS,WATER_PRO_PAPERS,waterSpecialtyById,waterPigmentFinish,isWaterSpecialtyPigment,mixWaterPigments};
 const clone=value=>structuredClone(value);
@@ -24,7 +25,7 @@ function dimensions(w,h){if(!Number.isSafeInteger(w)||!Number.isSafeInteger(h)||
 function randomStream(seed){let state=seed>>>0;const random=()=>{state=(state+0x6d2b79f5)>>>0;let n=Math.imul(state^state>>>15,1|state);n^=n+Math.imul(n^n>>>7,61|n);return ((n^n>>>14)>>>0)/4294967296;};random.get=()=>state;random.set=value=>{state=value>>>0;};return random;}
 function coefficients(pigment){return (typeof pigment==='string'?waterPigmentById(pigment):pigment).coefficients;}
 function granulation(pigment){return (typeof pigment==='string'?waterPigmentById(pigment):pigment)?.granulation??0;}
-export function waterPigmentColour(value){const pigment=admitWaterPigment(value);if(!pigment)return null;return '#'+waterPigmentRGB(coefficients(pigment)).map(v=>Math.round(v*255).toString(16).padStart(2,'0')).join('');}
+export function waterPigmentColour(value){const pigment=admitWaterPigment(value);if(!pigment)return null;if(typeof pigment==='string')return waterPigmentById(pigment).colour;return '#'+waterPigmentRGB(coefficients(pigment)).map(v=>Math.round(v*255).toString(16).padStart(2,'0')).join('');}
 function halfValue(bits){const sign=bits&0x8000?-1:1,exponent=(bits>>>10)&31,mantissa=bits&1023;return sign*(exponent===0?mantissa*2**-24:exponent===31?mantissa?NaN:Infinity:(1+mantissa/1024)*2**(exponent-15));}
 function reframeContact(contact,oldWidth,oldHeight,width,height,x,y){if(!contact)return;const s=contact.state;if(s){s.x=(s.x*oldWidth+x)/width;s.cx=(s.cx*oldWidth+x)/width;s.y=1-((1-s.y)*oldHeight+y)/height;s.cy=1-((1-s.cy)*oldHeight+y)/height;s.carry*=oldHeight/height;s.distance*=oldHeight/height;}contact.radiusScale*=oldHeight/height;}
 async function installWaterState(surface,state){
@@ -130,7 +131,11 @@ export class WaterSurface {
   await this.ready;if(!Number.isFinite(ms)||ms<0)throw waterError('WATER_INPUT','The Water frame time is not valid.');
   if(!ms)return !this.wet;const dt=ms/1000;
   if(this._brush?.contact){this._brush.contact.framed=true;if(!this._brush.absoluteInputTime)this._brush.time+=ms;await this._flushContact(seconds(dt));}
-  else if(this.wet){this.gpu._age(dt);this._appendAction({kind:'advance',ticks:1,dt});await this._advance(dt);}
+  else if(this.wet){
+   const due=(this._dryCarry||0)+ms*WATER_TICK_HZ,ticks=Math.round(due/1000);this._dryCarry=due-ticks*1000;
+   if(!ticks)return false;
+   const step=ticks/WATER_TICK_HZ;this.gpu._age(step);this._appendAction(ticks===1?{kind:'advance',ticks:1}:{kind:'advance',ticks:1,dt:step});await this._advance(step);
+  }
   return !this.wet;
  }
  async advanceWet(ms){return this.stepWet(ms);}
@@ -238,7 +243,7 @@ export class WaterSurface {
    if(flake.some(v=>v>0)){const strength=Math.max(1,...flake);finish={settling:clip(Math.hypot(...fixed)/Math.max(.0001,Math.hypot(...values))),sheen:flake.slice(0,3).map(v=>clip(v/strength)),iridescence:clip(flake[3]/strength)};}
   }
   const pixels=await this.toRGBA8({x0:x,y0:y,x1:x,y1:y}),rgba=Array.from(pixels.data),hasMaterial=values.some(v=>Math.abs(v)>1e-8);
-  if(!hasMaterial&&!finish){if(!rgba[3])return null;const alpha=rgba[3]/255,pigment=waterPigmentFromRGB(...rgba.slice(0,3).map(v=>v/255*alpha+1-alpha));return {...pigment,rgba,colour:'#'+rgba.slice(0,3).map(v=>v.toString(16).padStart(2,'0')).join('')};}
+  if(!hasMaterial&&!finish){if(!rgba[3])return null;const alpha=rgba[3]/255,rgb=rgba.slice(0,3).map(v=>v/255*alpha+1-alpha),pigment=waterPigmentFromRGB(...rgb);return {...pigment,rgba,colour:'#'+rgb.map(v=>Math.round(v*255).toString(16).padStart(2,'0')).join('')};}
   return {coefficients:Array.from(values),granulation:0,staining:0,source:'pigment',...(finish?{finish}:{}),rgba,colour:'#'+waterPigmentRGB(values).map(v=>Math.round(v*255).toString(16).padStart(2,'0')).join('')};
  }
  async snapshot(_box=null,options={}){await this.ready;await this._flushContact();return {kind:'water-gpu',frame:this._frame(),tick:this.tick,material:await this.gpu.snapshot(options),tips:clone([...this._tips]),bounds:clone(this._bounds)};}
@@ -278,7 +283,7 @@ export class WaterBrush {
  }
  async strokeTo(surface,x,y,p,xtilt=0,ytilt=0,dtime=.001,_viewZoom=1,_viewRotation=0,_barrel=0,inputKind='script',inputTime=null){
   await surface.ready;if(![x,y,p,xtilt,ytilt,dtime].every(Number.isFinite)||p<0||p>1||dtime<0||!['script','pen','mouse','touch'].includes(inputKind)||inputTime!=null&&(!Number.isFinite(inputTime)||inputTime<0))throw waterError('WATER_INPUT','The Water sample is not valid.');
-  if(p===0&&inputKind!=='script'){if(surface._brush===this)await surface._finishContact();return true;}
+  if(p===0&&inputKind!=='script'){if(surface._brush===this){if(this.last&&(x!==this.last.x||y!==this.last.y))await this.strokeTo(surface,x,y,this.last.raw,xtilt,ytilt,dtime,_viewZoom,_viewRotation,_barrel,inputKind,inputTime);await surface._finishContact();}return true;}
   if(surface._brush&&surface._brush!==this)await surface._finishContact();
   const ax=x*surface.scale+surface.origin[0],ay=y*surface.scale+surface.origin[1];if(Math.abs(ax/surface.pixelScale)>1e6||Math.abs(ay/surface.pixelScale)>1e6||this.action?.paths[0].length>=WATER_ACTION_MAX_POINTS)throw waterError('WATER_LIMIT','The Water gesture exceeds its complete-source limit.');
   if(!this.contact)await surface.gpu.setPaper(this.water.paper);
@@ -289,7 +294,7 @@ export class WaterBrush {
   if(inputTime!=null){this.absoluteInputTime=true;this.time=inputTime;}else this.time+=dtime*1000;
   const pressure=inputKind==='pen'?p**.8:p,point=[ax/surface.pixelScale,ay/surface.pixelScale,pressure,surface.tick,clip(xtilt,-1,1),clip(ytilt,-1,1),this.time],path=this.action.paths[0];
   const extra=sourceBytes(point)+(path.length?1:0);surface._sourceRoom(extra);path.push(point);surface._bytes+=extra;
-  this.contact.sample(x*surface.scale/surface.width,1-y*surface.scale/surface.height,inputKind==='script'?clip(pressure,.02,1):pressure,this.time,point[4]*90,point[5]*90);surface._pendingDt+=dtime;this.last={x,y,p:pressure};return true;
+  this.contact.sample(x*surface.scale/surface.width,1-y*surface.scale/surface.height,inputKind==='script'?clip(pressure,.02,1):pressure,this.time,point[4]*90,point[5]*90);surface._pendingDt+=dtime;this.last={x,y,p:pressure,raw:p};return true;
  }
  snapshot(){return {seedValue:this.seedValue,randomState:this.random.get(),water:clone(this.water),radius:this.radius,held:this.held,lastDirection:this.lastDirection.slice(),last:clone(this.last),time:this.time,absoluteInputTime:this.absoluteInputTime,loadFuel:this.loadFuel,contact:this.contact?.snapshot()??null,action:clone(this.action)};}
  fromSnapshot(state){this.seedValue=state.seedValue;this.random=randomStream(state.seedValue);this.random.set(state.randomState);for(const key of ['water','radius','held','lastDirection','last','time','absoluteInputTime','loadFuel','action'])this[key]=clone(state[key]);if(this.contact&&state.contact){this.contact.restore(state.contact);this.contact.rng=this.random;}else this.contact=null;}

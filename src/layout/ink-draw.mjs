@@ -151,7 +151,7 @@ const inkDrawing = () => {
 			doc.fonts?.removeEventListener?.('loadingdone', schedule);
 		} });
 	}
-	return { LAYER_CLASS, SPAN_SELECTOR, DEFAULT_HEX, inkPath, inkLayerOf, inkFragments, drawInk, watchInk };
+	return { LAYER_CLASS, SPAN_SELECTOR, inkPath, inkLayerOf, inkFragments, drawInk, watchInk };
 };
-const { LAYER_CLASS, SPAN_SELECTOR, DEFAULT_HEX, inkPath, inkLayerOf, inkFragments, drawInk, watchInk } = inkDrawing();
-export { LAYER_CLASS, SPAN_SELECTOR, DEFAULT_HEX, inkPath, inkLayerOf, inkFragments, drawInk, watchInk };
+const { LAYER_CLASS, SPAN_SELECTOR, inkPath, inkLayerOf, inkFragments, drawInk, watchInk } = inkDrawing();
+export { LAYER_CLASS, SPAN_SELECTOR, inkPath, inkLayerOf, inkFragments, drawInk, watchInk };

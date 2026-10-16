@@ -35,8 +35,9 @@ own MIT notices. The edit-ledger module (`kit/rapier-ledger.mjs`, `kit/ledger/*.
 its editor compatibility import (`editor/journal-records.mjs`) are also covered. The
 record validator/replayer and text-only conflict merger were moved, not copied,
 into that module; the Notes index merger and the rest of the agent/editor remain
-AGPL-3.0-only. The wrapper's carrier-staging helper
-(`skills/rapier-html/package-files.mjs`) is MIT. The kit's MIT-marked facades,
+AGPL-3.0-only. The page wrapper (`skills/rapier-html/wrap.mjs`, `skills/rapier-html/page.mjs`,
+`skills/rapier-html/return-address.mjs`) and its carrier-staging helper
+(`skills/rapier-html/package-files.mjs`) are MIT. The kit's MIT-marked facades,
 `kit/render-entry.mjs`, `kit/render*.mjs`, `kit/export-fonts.mjs`, `kit/print-capitals.mjs`,
 `kit/pdf-vectors.mjs`, `kit/pdf-glyphs.mjs`, `kit/stage.mjs` and MIT-marked conformance
 modules are covered too. These names describe the Rapier-owned files carrying the

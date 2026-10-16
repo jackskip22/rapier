@@ -55,6 +55,7 @@ assert(Object.isFrozen(module.default));
 const context = createContext({atob, URL});
 new Script(classicSource, {filename: resources.bundle}).runInContext(context);
 const classic = context.RapierMath;
+assert.equal(classic.version, pkg.version, 'classic/package release identity');
 const plain = value => JSON.parse(JSON.stringify(value));
 const unescape = text => text.replace(/&(amp|lt|gt|quot|apos|#\d+|#x[\da-f]+);/gi, (_, entity) =>
   entity[0] === '#' ? String.fromCodePoint(entity[1] === 'x' ? parseInt(entity.slice(2), 16) : Number(entity.slice(1))) :

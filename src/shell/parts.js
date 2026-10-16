@@ -1,16 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 const RapierParts = (() => {
 	const PINS = /* RAPIER_PARTS */ null;
-	const CDN = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.3/';
+	const CDN = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.5/';
 	const pins = new Map((PINS || []).map((pin, order) => [pin.id, {...pin, order}]));
-	const runs = new Map(), states = new Map(), listeners = new Set(), kept = new Set();
-	const local = () => ['android', 'windows'].includes(window.RapierPlatform?.environment.id);
+	const runs = new Map(), states = new Map(), kept = new Set();
+	const local = () => ['android', 'windows', 'native'].includes(window.RapierPlatform?.environment.id);
 	let cache = null;
 	const store = () => cache ||= RapierBundleIO.store('parts');
 	const say = (id, status, error, progress = null) => {
 		states.set(id, {status, error: error ? String(error.message || error) : null, progress});
-		for (const listener of listeners) { try { listener(id, states.get(id)); } catch (_) {} }
-		try { window.dispatchEvent(new CustomEvent('rapier:part', {detail: {id, ...states.get(id)}})); } catch (_) {}
+		dispatchEvent(new CustomEvent('rapier:part', {detail: {id, ...states.get(id)}}));
 	};
 	const verified = (pin, bytes, source) => RapierBundleIO.verifySha384(bytes, pin.sri,
 		{source, byteLength: pin.bytes, sizeMessage: 'unexpected size from ' + source});
@@ -36,24 +35,29 @@ const RapierParts = (() => {
 			const onBytes = at => say(pin.id, 'downloading', null, at / pin.bytes);
 			try { return await verified(pin, await RapierBundleIO.fetchBytes(url, 60000, {length: pin.bytes, cache: 'no-store', onBytes}), RapierBundleIO.shortUrl(url)); }
 			catch (error) {
-				const pinned = value => /SHA-384|unexpected size/.test(String(value?.message));
-				if (!failure || (pinned(error) && !pinned(failure))) failure = error;
+				if (!/SHA-384|unexpected size/.test(String(failure?.message))) failure = error;
 			}
 		}
 		throw failure || new Error('could not download ' + pin.id);
 	}
-	async function body(pin) {
+	function body(pin) {
+		return pin.held ||= held(pin).catch(error => { pin.held = null; throw error; });
+	}
+	async function held(pin) {
 		if (document.readyState === 'loading') await new Promise(done => document.addEventListener('DOMContentLoaded', done, {once: true}));
 		const element = carried(pin);
 		if (element) return verified(pin, new TextEncoder().encode(element.textContent), 'carried ' + pin.id);
-		const held = local() ? null : await stored(pin);
-		if (held) { kept.add(pin.id); return held; }
-		if (!local()) say(pin.id, 'downloading');
-		const bytes = await fetched(pin);
-		if (local()) return bytes;
-		if (await store().put(pin.file, {bytes, savedAt: Date.now()}).catch(() => false)) kept.add(pin.id);
-		for (const key of await store().keys().catch(() => [])) if (String(key).startsWith('rapier-' + pin.id + '-') && key !== pin.file)
-			await store().remove(key).catch(() => {});
+		if (local()) return fetched(pin);
+		let bytes = await stored(pin);
+		if (!bytes) {
+			say(pin.id, 'downloading');
+			bytes = await fetched(pin);
+			if (!await store().put(pin.file, {bytes, savedAt: Date.now()}).catch(() => false)) return bytes;
+		}
+		kept.add(pin.id);
+		const others = (await store().keys().catch(() => [])).filter(key => String(key).startsWith('rapier-' + pin.id + '-') && key !== pin.file);
+		const dated = await Promise.all(others.map(async key => [key, (await store().get(key).catch(() => null))?.savedAt || 0]));
+		for (const [key] of dated.sort((a, b) => b[1] - a[1]).slice(1)) await store().remove(key).catch(() => {});
 		return bytes;
 	}
 	async function run(pin) {
@@ -65,7 +69,8 @@ const RapierParts = (() => {
 		pin.started = true;
 		await _rapierExecuteBootSource(spans[0]);
 		const later = [...document.querySelectorAll('style[data-rapier-part]')].find(sheet => Number(sheet.dataset.rapierPart) > pin.order);
-		const sheets = _rapierStyleElements(spans[1].source, later ? later.previousElementSibling : document.querySelector('head > style[id^="rapier-"]:last-of-type'));
+		const sheets = _rapierStyleElements(spans[1].source, later ? later.previousElementSibling
+			: [...document.querySelectorAll('head > style[id^="rapier-"]:not([data-rapier-part])')].at(-1));
 		for (const sheet of sheets) sheet.dataset.rapierPart = String(pin.order);
 		await _rapierExecuteBootSource(spans[2]);
 	}
@@ -107,11 +112,10 @@ const RapierParts = (() => {
 	return Object.freeze({
 		has: id => pins.has(id),
 		ready: id => states.get(id)?.status === 'ready',
-		status: id => states.get(id) || (pins.has(id) ? {status: carried(pins.get(id)) ? 'carried' : 'absent', error: null} : null),
+		status: id => states.get(id) || (pins.has(id) ? {status: carried(pins.get(id)) || local() ? 'carried' : 'absent', error: null} : null),
 		ids: () => [...pins.keys()],
 		pin: id => pins.has(id) ? {id, label: pins.get(id).label, file: pins.get(id).file, bytes: pins.get(id).bytes, sri: pins.get(id).sri} : null,
 		deletable: id => kept.has(id),
 		need, check, forget, element,
-		on: listener => { listeners.add(listener); return () => listeners.delete(listener); },
 	});
 })();

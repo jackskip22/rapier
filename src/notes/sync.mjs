@@ -6,7 +6,7 @@ import {seal, open} from './vault.mjs';
 import {recordingsOf} from './audio.mjs';
 import {attachmentsOf} from './attachments.mjs';
 import {runTrash} from './trash.mjs';
-import {manifestName, parseManifest, parseCanonical, recordVersion, serializeManifest, appendCanonical, canonicalSources} from './history.mjs';
+import {manifestName, parseManifest, parseCanonical, recordVersion, serializeManifest, appendCanonical, canonicalSources, bindMedia, joinMedia} from './history.mjs';
 import {readLedger} from '../kit/ledger/format.mjs';
 import {joinCanonical, preservesActs} from './canonical-merge.mjs';
 import {buildLinkIndex, resolveLinkIndex, renameLinks} from './links.mjs';
@@ -57,6 +57,7 @@ const DEVICE_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const HEAD_RE = /^heads\/([A-Za-z0-9][A-Za-z0-9_-]{0,63})\/([0-9]{12})-([a-f0-9]{64})$/;
 const safeFile = file => isNoteFile(file) && !/[\0-\x1f\x7f]/.test(file);
 const WRITER_RE = /^[a-f0-9]{32}$/;
+const HELD_REASONS = ['history', 'media', 'deleted-media'];
 export const headLabel = value => typeof value === 'string' && value.length > 0 && value.length <= 64 && value.trim() === value && !/[\0-\x1f\x7f]/.test(value) ? value : null;
 const safeAsset = file => typeof file === 'string' && /^(?:audio|attachments)\/[^/\\\x00-\x1f\x7f]+$/.test(file) && !file.split('/')[1].startsWith('.');
 const record = value => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -97,7 +98,7 @@ export function encodeHead(head) {
 	const tombstones = {};
 	for (const id of Object.keys(head.tombstones || {}).sort()) tombstones[id] = head.tombstones[id];
 	return te.encode(JSON.stringify({v: HEAD_VERSION, device: head.device, generation: head.generation ?? 0, previous: head.previous ?? null, seen: head.seen || [], notes, tombstones, assets: sortObject(head.assets || {}), assetTombstones: sortObject(head.assetTombstones || {}), assetRevivals: head.assetRevivals || [], ancestry: sortObject(head.ancestry || {}), metadata: head.metadata || portableIndex(null), personal: admitPersonal(head.personal || {}),
-		...(head.writer ? {writer: head.writer} : {}), ...(head.label ? {label: head.label} : {})}));
+		...(head.writer ? {writer: head.writer} : {}), ...(head.label ? {label: head.label} : {}), ...(head.held ? {held: sortObject(head.held)} : {})}));
 }
 function inspectHeadJSON(value, depth = 0) {
 	if (depth > 64) refuse('corrupt', 'head metadata nesting exceeds this reader’s budget; kept data was not truncated');
@@ -129,6 +130,7 @@ export function decodeHead(bytes) {
 			!Array.isArray(r.parents) || r.parents.some(p => !HASH_RE.test(p) || p === r.object)) refuse('corrupt', 'the head has an invalid ' + kind + ' record');
 		if (kind === 'note') {
 			if (r.revivals !== undefined && (!Array.isArray(r.revivals) || r.revivals.some(op => !validId(op)) || new Set(r.revivals).size !== r.revivals.length)) refuse('corrupt', 'the note has invalid revival proofs');
+			if (r.media !== undefined && (!Array.isArray(r.media) || r.media.some(row => !record(row) || !safeAsset(row.file) || typeof row.act !== 'string' || !HASH_RE.test(row.content) || row.end !== undefined && typeof row.end !== 'string'))) refuse('corrupt', 'the note has an invalid media binding');
 			if (!record(r.sidecar) || r.sidecar.id !== id || (r.conflicts !== undefined && !Array.isArray(r.conflicts))) refuse('corrupt', 'the head sidecar has an invalid identity or conflict ledger');
 			verifyCanonicalNote(r.ledger, undefined, r.sidecar, r.content);
 			const name = r.file.normalize('NFC').toLowerCase();
@@ -156,6 +158,8 @@ export function decodeHead(bytes) {
 	for (const [object, parents] of Object.entries(raw.ancestry)) if (!HASH_RE.test(object) || !Array.isArray(parents) || parents.some(parent => !HASH_RE.test(parent) || parent === object)) refuse('corrupt', 'the head has an invalid causal graph');
 	if (!record(raw.metadata) || !Array.isArray(raw.metadata.sections) || !record(raw.metadata.collapsed)) refuse('corrupt', 'the head has no readable portable metadata');
 	if (!record(raw.personal)) refuse('corrupt', 'the head has no readable personal settings map');
+	if (raw.held !== undefined && (!record(raw.held) || Object.entries(raw.held).some(([id, r]) => !validId(id) || !record(r) || !HELD_REASONS.includes(r.reason) || !safeFile(r.file) ||
+		!HASH_RE.test(r.content) || !HASH_RE.test(r.ledger) || typeof r.published !== 'boolean'))) refuse('corrupt', 'the head has an invalid held note');
 	raw.personal = admitPersonal(raw.personal);
 	if (raw.writer !== undefined && !(typeof raw.writer === 'string' && WRITER_RE.test(raw.writer))) delete raw.writer;
 	if (raw.label !== undefined && headLabel(raw.label) === null) delete raw.label;
@@ -241,12 +245,10 @@ function verifyCanonicalBinding(proved, entry, content) {
 	return proved;
 }
 
+const mediaNames = text => [...recordingsOf(text).map(row => 'audio/' + row.name), ...attachmentsOf(text).map(row => 'attachments/' + row.name)];
 function canonicalMedia(ledger, id) {
 	const names = new Set(), manifest = {...parseManifest(null, {noteId: id, now: 0}), canonical: ledger};
-	for (const {text} of canonicalSources(manifest)) {
-		for (const row of recordingsOf(text)) names.add('audio/' + row.name);
-		for (const row of attachmentsOf(text)) names.add('attachments/' + row.name);
-	}
+	for (const {text} of canonicalSources(manifest)) for (const file of mediaNames(text)) names.add(file);
 	return names;
 }
 
@@ -262,7 +264,7 @@ function localNotes(local) {
 		if (!safeFile(file) || typeof text !== 'string') refuse('bytes', 'a local note must have a safe filename and exact text');
 		const entry = copyEntry(index.notes[file]), proved = verifyCanonicalNote(rec.ledger, text, entry);
 		if (bytes && !sameFile({bytes}, {text})) refuse('notes_history_unavailable', 'non-UTF-8 source has no exact canonical history');
-		out.push({file, text, ledger: proved.ledger, ...(bytes ? {bytes} : {}), entry});
+		out.push({file, text, ledger: proved.ledger, ...(bytes ? {bytes} : {}), entry, media: rec.media});
 	}
 	return out;
 }
@@ -283,7 +285,7 @@ async function hashedLocals(local, historyParents) {
 		out.push({
 			id, file: row.file, text: row.text, ledger: row.ledger, ...(row.bytes ? {bytes: row.bytes} : {}), content, entry: {...row.entry, id},
 			object: known && known.content === content ? known.object : adopted,
-			revivals: known?.revivals || [], key: ourHead._key || null,
+			revivals: known?.revivals || [], key: ourHead._key || null, media: row.media,
 			changedFromHead: !!known && (row.file !== known.file || content !== known.content || row.ledger.sha256 !== known.ledger?.sha256 || !same(deletionMetadata(row.entry), deletionMetadata(known.sidecar)) || known.sidecar.trashed === true && row.entry.trashed !== true), parents,
 		});
 	}
@@ -302,7 +304,7 @@ function collectById(localRows, heads) {
 	for (const row of localRows) touch(row.id, {source: 'local', ...row});
 	for (const head of heads) {
 		for (const [id, rec] of Object.entries(head.notes || {})) {
-			touch(id, {source: 'head', device: head.device, key: head._key || null, id, file: rec.file, object: rec.object, content: rec.content, entry: rec.sidecar, ledger: rec.ledger, parents: rec.parents, conflicts: rec.conflicts || [], revivals: rec.revivals || []});
+			touch(id, {source: 'head', device: head.device, key: head._key || null, id, file: rec.file, object: rec.object, content: rec.content, entry: rec.sidecar, ledger: rec.ledger, parents: rec.parents, conflicts: rec.conflicts || [], revivals: rec.revivals || [], media: rec.media});
 		}
 		for (const [id, rec] of Object.entries(head.tombstones || {})) {
 			for (const t of rec.deletions) touch(id, {source: 'head', ...t, id, tombstone: true});
@@ -314,7 +316,16 @@ function collectById(localRows, heads) {
 function deletionMetadata(entry) {
 	return Object.fromEntries(Object.entries(entry || {}).filter(([key]) => !['revision', 'trashed', 'archived', 'trashedAt', 'trashDigest', 'trashRevision', 'modified', 'created'].includes(key)));
 }
-function tombstoneWins(localRow, tombstones, liveVersions, parents) {
+function seenBy(t, live, known) {
+	if (!live.id || !Array.isArray(t.observed)) return false;
+	const frontier = t.observed.map(parseHeadKey);
+	return known.some(head => {
+		const rec = head?._key && head.notes?.[live.id], at = rec && parseHeadKey(head._key);
+		return rec && frontier.some(o => o.device === at.device && o.generation >= at.generation) && rec.file === live.file &&
+			rec.content === live.content && same(deletionMetadata(rec.sidecar), deletionMetadata(live.entry));
+	});
+}
+function tombstoneWins(localRow, tombstones, liveVersions, parents, known = []) {
 	if (!tombstones.length) return false;
 	const lives = [...(localRow ? [localRow] : []), ...(liveVersions || [])].filter(v => v && (v.object || v.content));
 	if (!lives.length) return true;
@@ -322,7 +333,7 @@ function tombstoneWins(localRow, tombstones, liveVersions, parents) {
 		if (live.source === 'local' && live.changedFromHead) return false;
 		let covered = false;
 		for (const t of tombstones) {
-			const observed = live.key && (t.observed || []).includes(live.key);
+			const observed = live.key && (t.observed || []).includes(live.key) || seenBy(t, live, known);
 			if (!observed && live.file !== t.file && live.file !== t.priorFile || (live.revivals || []).includes(t.opId)) continue;
 			if (!observed && t.baseEntry && live.entry && !same(deletionMetadata(t.baseEntry), deletionMetadata(live.entry))) continue;
 			if (live.object && [t.object, ...(t.parents || [])].some(object => object && (object === live.object || isAncestor(live.object, object, parents)))) { covered = true; break; }
@@ -333,7 +344,7 @@ function tombstoneWins(localRow, tombstones, liveVersions, parents) {
 	return true;
 }
 
-function headPayload(head) { return sortObject({notes: head.notes, tombstones: head.tombstones, assets: head.assets || {}, assetTombstones: head.assetTombstones || {}, assetRevivals: head.assetRevivals || [], metadata: head.metadata, personal: head.personal || {}, writer: head.writer ?? null, label: head.label ?? null}); }
+function headPayload(head) { return sortObject({notes: head.notes, tombstones: head.tombstones, assets: head.assets || {}, assetTombstones: head.assetTombstones || {}, assetRevivals: head.assetRevivals || [], metadata: head.metadata, personal: head.personal || {}, writer: head.writer ?? null, label: head.label ?? null, held: head.held ?? null}); }
 function same(left, right) { return JSON.stringify(sortObject(left)) === JSON.stringify(sortObject(right)); }
 function uniqueConflicts(rows, active = null) {
 	const unique = [...new Map(rows.map(c => [JSON.stringify(sortObject(c)), c])).values()];
@@ -353,14 +364,16 @@ export async function plan(local, heads, capabilities) {
 	const published = allHeads.find(h => h && h.device === deviceId);
 	if (local.head?._key && published?._key !== local.head._key) refuse('rollback', 'this install checkpoint and its published head differ; keep both copies and reconnect the restored copy with a fresh install identity');
 	const assets = await planSyncMedia(local, allHeads, capabilities);
-	const mediaHistories = [
+	const rebound = new Set(), held = new Set(), unbound = new Set(), reasons = new Map();
+	const present = new Set([...Object.keys(assets.output), ...assets.skipped]), deletedPaths = new Set(Object.values(assets.tombstones).flatMap(t => [t.file, t.source]));
+	for (const row of [
 		...Object.entries(local.files || {}).map(([file, value]) => ({file, id: local.index.notes[file]?.id, ledger: value.ledger, mapping: assets.mappings.local})),
 		...allHeads.flatMap(head => Object.entries(head.notes || {}).map(([id, row]) => ({file: row.file, id, ledger: row.ledger, mapping: assets.mappings.heads[head.device]}))),
-	];
-	for (const row of mediaHistories) {
+	]) {
 		if (isCodeFile(row.file)) continue;
-		for (const file of canonicalMedia(row.ledger, row.id)) if (row.mapping?.[file] && row.mapping[file] !== file || assets.removes.some(remove => remove.file === file))
-			refuse('notes_history_media_conflict', 'retained canonical history still names these media bytes; both copies were kept');
+		const media = [...canonicalMedia(row.ledger, row.id)];
+		if (media.some(file => row.mapping?.[file] && row.mapping[file] !== file)) { rebound.add(row.id); reasons.set(row.id, 'media'); }
+		else if (media.some(file => !present.has(file) && deletedPaths.has(file))) unbound.add(row.id);
 	}
 
 	const localForHash = {...local, head: local.head?.device === deviceId ? local.head : published || local.head || emptyHead(deviceId)};
@@ -377,9 +390,23 @@ export async function plan(local, heads, capabilities) {
 		peerBases.set(tip.device, base || null);
 	}
 	const graphHeads = [ourHead, ...others];
+	const knownHeads = [...graphHeads, ...peerBases.values(), ...allHeads.flatMap(head => [head._seenHead, head._previousHead])].filter(head => head?.notes);
 	const parents = parentGraph(graphHeads, locals);
 	const byId = collectById(locals, graphHeads);
 	for (const row of locals) if (!byId.has(row.id)) byId.set(row.id, {versions: [{source: 'local', ...row}], tombstones: []});
+	const localMedia = new Map(), mediaOut = {}, removing = new Map(assets.removes.map(row => [row.file, row.content]));
+	for (const row of locals) {
+		if (isCodeFile(row.file)) continue;
+		const named = canonicalMedia(row.ledger, row.id), fresh = ourHead.notes[row.id]?.ledger?.sha256 !== row.ledger.sha256;
+		let media = row.media || [];
+		for (const file of named) if (removing.has(file)) media = bindMedia(row.ledger, media, file, removing.get(file), mediaNames, {close: true});
+		if (media !== (row.media || [])) mediaOut[row.id] = media;
+		for (const file of named) {
+			const bytes = local.assets?.[file];
+			if (fresh && !removing.has(file) && bytes && (bytes instanceof Uint8Array || HASH_RE.test(bytes.content))) media = bindMedia(row.ledger, media, file, await assetDigest(bytes), mediaNames);
+		}
+		localMedia.set(row.id, media);
+	}
 
 	for (const [id, rows] of Object.entries(local.index?.tombstones || {})) for (const row of rows) {
 		if (row.pending || row.revivedAt !== undefined || !Number.isSafeInteger(row.deletedAt)) continue;
@@ -407,7 +434,7 @@ export async function plan(local, heads, capabilities) {
 	};
 	const publish = (row, extra = {}) => {
 		const object = row.object || extra.object || knownObjectFor(row.content, row);
-		const rec = {file: row.file, object: object || null, content: row.content, ledger: row.ledger, sidecar: copyEntry(row.entry), parents: row.parents || extra.parents || [], ...((extra.conflicts || []).length ? {conflicts: extra.conflicts} : {})};
+		const rec = {file: row.file, object: object || null, content: row.content, ledger: row.ledger, sidecar: copyEntry(row.entry), parents: row.parents || extra.parents || [], ...((extra.conflicts || []).length ? {conflicts: extra.conflicts} : {}), ...(row.media?.length ? {media: row.media} : {})};
 		notesOut[row.id] = rec;
 		const alreadyPublished = !!(object && ourHead.notes[row.id] && ourHead.notes[row.id].object === object && ourHead.notes[row.id].content === row.content);
 		if (row.text != null && !alreadyPublished && extra.adopted !== true) {
@@ -429,11 +456,12 @@ export async function plan(local, heads, capabilities) {
 		revivalById.set(id, [...revivals].sort());
 		const activeTombs = tombs.filter(t => !revivals.has(t.opId));
 
-		if (activeTombs.length && tombstoneWins(localRow, activeTombs, remoteVersions, parents)) {
+		if (activeTombs.length && tombstoneWins(localRow, activeTombs, remoteVersions, parents, knownHeads)) {
 			const t = activeTombs.slice().sort((a, b) => String(a.file || '').localeCompare(String(b.file || '')))[0];
 			if (localRow) localTrash.push({id, file: localRow.file, content: localRow.content, at: t.at});
 			const clean = row => ({file: row.file, ...(row.observed ? {observed: row.observed} : {}), priorFile: row.priorFile, ...(row.baseEntry ? {baseEntry: row.baseEntry} : {}), at: row.at, object: row.object, content: row.content, parents: row.parents, opId: row.opId, device: row.device});
 			tombstonesOut[id] = {...clean(t), deletions: [...new Map(activeTombs.map(row => [JSON.stringify(clean(row)), clean(row)])).entries()].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([, row]) => row)};
+			rebound.delete(id); unbound.delete(id); reasons.delete(id);
 			continue;
 		}
 		if (activeTombs.length && (localRow || remoteVersions.length)) {
@@ -443,19 +471,26 @@ export async function plan(local, heads, capabilities) {
 		}
 		if (!localRow && !remoteVersions.length) continue;
 
+		if (rebound.has(id)) continue;
+		if (unbound.has(id)) { held.add(id); reasons.set(id, 'deleted-media'); continue; }
 		const candidates = [...(localRow ? [localRow] : []), ...remoteVersions];
 		for (const row of candidates) verifyCanonicalNote(row.ledger, row.source === 'local' ? row.text : undefined, row.entry, row.content);
 		let ledger = candidates[0].ledger;
-		for (const row of candidates.slice(1)) ledger = joinCanonical(ledger, row.ledger);
+		try { for (const row of candidates.slice(1)) ledger = joinCanonical(ledger, row.ledger); }
+		catch (error) { if (error?.code !== 'notes_history_conflict') throw error; held.add(id); reasons.set(id, 'history'); continue; }
 		const proved = readLedger(ledger), content = ledger.head.sha256;
 		const seed = localRow || candidates.find(row => row.ledger.sha256 === ledger.sha256) || candidates[0];
+		let media;
+		try { media = joinMedia([localMedia.get(id), ...slot.versions.filter(row => row.source === 'head').map(row => row.media)]); }
+		catch (error) { if (error?.code !== 'notes_media_conflict') throw error; held.add(id); reasons.set(id, 'media'); continue; }
+		mediaOut[id] = media;
 		const exact = candidates.find(row => row.content === content && row.object && !(localRow?.parents || []).some(parent => isAncestor(row.object, parent, parents)));
 		canonicalInputs[id] = candidates.map(row => ({ledger: row.ledger, file: row.file, device: row.source === 'local' ? null : row.device}));
 		const context = candidates.find(row => row.ledger.sha256 === ledger.sha256) || seed;
 		canonicalContexts[id] = context.source === 'local' ? null : context.device;
 		const entry = {...copyEntry(seed.entry), id, canonicalHistory: ledger.sha256};
 		const parentObjects = tipsOf(candidates.flatMap(row => row.object ? [row.object] : row.parents || []), parents);
-		const body = {id, file: seed.file, text: proved.text, ledger, content, entry,
+		const body = {id, file: seed.file, text: proved.text, ledger, content, entry, media,
 			object: exact?.object || null, parents: exact?.parents || parentObjects};
 		publish(body, {adopted: !!exact});
 		if (exact?.source === 'head' && (!localRow || content !== localRow.content)) {
@@ -470,10 +505,10 @@ export async function plan(local, heads, capabilities) {
 
 	}
 
-	const deferredIds = new Set(), deferredFiles = new Set();
+	const deferredIds = new Set([...rebound, ...held]), deferredFiles = new Set();
 	for (const [file, value] of Object.entries(local.files || {})) {
 		if (isCodeFile(file)) continue;
-		if ([...canonicalMedia(value.ledger, local.index.notes[file]?.id)].some(name => assets.skipped.includes(name))) {
+		if (!tombstonesOut[local.index.notes[file]?.id] && [...canonicalMedia(value.ledger, local.index.notes[file]?.id)].some(name => assets.skipped.includes(name))) {
 			deferredIds.add(local.index.notes[file]?.id); deferredFiles.add(file);
 		}
 	}
@@ -510,7 +545,8 @@ export async function plan(local, heads, capabilities) {
 		conflicts = uniqueConflicts(conflicts);
 		if (conflicts.length) rec.conflicts = conflicts;
 	}
-	const reserved = Object.keys(local.files || {}).filter(file => !locals.some(row => row.file === file && notesOut[row.id]));
+	const keptHeld = [...held].filter(id => !rebound.has(id) && ourHead.notes[id] && locals.find(row => row.id === id)?.file === ourHead.notes[id].file);
+	const reserved = [...Object.keys(local.files || {}).filter(file => !locals.some(row => row.file === file && notesOut[row.id])), ...keptHeld.map(id => ourHead.notes[id].file)];
 	for (const named of assignNoteFilenames(Object.entries(notesOut).map(([id, rec]) => ({file: rec.file, entry: {...rec.sidecar, id}})), reserved)) {
 		const id = named.entry.id, rec = notesOut[id], localRow = locals.find(row => row.id === id), entry = rec.sidecar;
 		rec.file = named.file;
@@ -524,6 +560,8 @@ export async function plan(local, heads, capabilities) {
 		if (localRow && !same(entry, localRow.entry)) localWrites.push({file: rec.file, sidecar: entry});
 		if (!download && conflicts.length) merges.push({id, file: rec.file, conflicts});
 	}
+
+	for (const id of keptHeld) notesOut[id] = structuredClone(ourHead.notes[id]);
 
 	const aliases = new Map(), addAliases = rows => {
 		for (const [id, row] of rows) {
@@ -554,6 +592,12 @@ export async function plan(local, heads, capabilities) {
 	const head = {v: HEAD_VERSION, device: deviceId, generation, previous, seen: allHeads.map(head => head._key).filter(Boolean).sort(), notes: notesOut, tombstones: tombstonesOut, assets: assets.output, assetTombstones: assets.tombstones, assetRevivals: assets.assetRevivals, metadata};
 	if (typeof local.writer === 'string' && WRITER_RE.test(local.writer)) head.writer = local.writer;
 	if (headLabel(local.label)) head.label = local.label;
+	const declared = {};
+	for (const id of deferredIds) {
+		const row = locals.find(row => row.id === id);
+		if (row && reasons.has(id)) declared[id] = {reason: reasons.get(id), file: row.file, content: row.content, ledger: row.ledger.sha256, published: !!notesOut[id]};
+	}
+	if (Object.keys(declared).length) head.held = sortObject(declared);
 	head.personal = mergePersonal(ourHead.personal, ...allHeads.map(head => head.personal), local.personal?.records);
 	const personalObjects = new Set([ourHead, ...allHeads].flatMap(head => Object.values(head.personal || {}).filter(row => row.value?.object).map(row => row.value.content + ':' + row.value.object)));
 	for (const [key, row] of Object.entries(head.personal)) if (personalAsset(key) && row.value?.object && !personalObjects.has(row.value.content + ':' + row.value.object)) row.value.object = null;
@@ -562,8 +606,11 @@ export async function plan(local, heads, capabilities) {
 	for (const list of [uploads, downloads, merges, localWrites, localTrash, renames]) omit(list);
 	head.ancestry = Object.fromEntries([...parents].map(([object, list]) => [object, [...list]]));
 	return {
-		returned,
-		expected, canonicalInputs, canonicalContexts, sourceReads, skipped: assets.skipped, renames, linkRenames, linkContexts, assetRemoves: assets.removes, verified: heads.verified || local.verified || null, rootConflicts, assetUploads: assets.uploads, assetDownloads: assets.downloads, assetCopies: assets.copies, assetAliases: assets.aliases, assetMappings: assets.mappings, observed: allHeads.map(h => h._key).filter(Boolean),
+		returned, held: [...new Set([...rebound, ...held])].sort(),
+		heldElsewhere: [...new Set(others.flatMap(other => Object.keys(other.held || {})))].filter(id => !deferredIds.has(id)).sort(),
+		heldNotes: Object.fromEntries([...others.flatMap(other => Object.entries(other.held || {}).map(([id, row]) => [id, {file: row.file, reason: row.reason, here: false}])),
+			...[...reasons].filter(([id]) => deferredIds.has(id)).map(([id, reason]) => [id, {file: locals.find(row => row.id === id)?.file ?? byId.get(id)?.versions[0]?.file ?? null, reason, here: !!declared[id]}])]),
+		expected, canonicalInputs, canonicalContexts, sourceReads, skipped: assets.skipped, renames, linkRenames, linkContexts, assetRemoves: assets.removes, media: mediaOut, verified: heads.verified || local.verified || null, rootConflicts, assetUploads: assets.uploads, assetDownloads: assets.downloads, assetCopies: assets.copies, assetAliases: assets.aliases, assetMappings: assets.mappings, observed: allHeads.map(h => h._key).filter(Boolean),
 		devices: [head, ...others].map(h => ({device: h.device, writer: h.writer ?? null, label: h.label ?? null})),
 		uploads: uploads.map(sortObject).sort((a, b) => (a.id || '').localeCompare(b.id || '') || a.file.localeCompare(b.file)),
 		downloads: downloads.map(sortObject).sort((a, b) => a.key.localeCompare(b.key) || a.file.localeCompare(b.file)),
@@ -685,15 +732,14 @@ export async function execute(inputPlan, transport, store, options = {}) {
 		personal.blobs[ref.content] = value;
 	}
 
+	const relocate = (device, file, text) => noteText(file, text, source => rewriteLinks(rewriteSyncMedia(source,
+		device === null ? plan.assetMappings?.local : plan.assetMappings?.heads[device]), device === null ? plan.linkContexts.local : plan.linkContexts.heads[device]));
 	for (const [id, inputs] of Object.entries(plan.canonicalInputs || {})) {
 		const rec = plan.head.notes[id];
-		if (!rec) continue;
-		const joined = inputs.every(row => row.ledger.sha256 !== rec.ledger.sha256);
-		if (!joined) continue;
+		if (!rec || inputs.some(row => row.ledger.sha256 === rec.ledger.sha256)) continue;
 		for (const row of inputs) {
-			const text = readLedger(row.ledger).text, mapping = row.device === null ? plan.assetMappings?.local : plan.assetMappings?.heads[row.device];
-			const context = row.device === null ? plan.linkContexts.local : plan.linkContexts.heads[row.device];
-			if (noteText(row.file, text, source => rewriteLinks(rewriteSyncMedia(source, mapping), context)) !== text)
+			const text = readLedger(row.ledger).text;
+			if (relocate(row.device, row.file, text) !== relocate(plan.canonicalContexts[id], row.file, text))
 				refuse('notes_history_conflict', 'both source histories were kept; concurrent relative links need a proven common namespace');
 		}
 	}
@@ -784,6 +830,7 @@ export async function execute(inputPlan, transport, store, options = {}) {
 
 
 	for (const [id, rec] of Object.entries(plan.head.notes)) {
+		if (plan.held.includes(id)) continue;
 		const body = files[rec.file];
 		if (!body) refuse('incomplete', 'a canonical note is missing its planned body');
 		const source = verifyCanonicalNote(rec.ledger, body.text, rec.sidecar, rec.content);
@@ -794,7 +841,7 @@ export async function execute(inputPlan, transport, store, options = {}) {
 		if (text !== source.text) {
 			const manifest = {...parseManifest(null, {noteId: id, now: 0}), canonical: ledger};
 			ledger = appendCanonical(manifest, {text, metadata: source.metadata, author: {kind: 'system', id: 'notes-sync'},
-				operation: 'notes.sync.relocate', now: Date.now()}).ledger;
+				operation: 'notes.sync.relocate', now: null, id: 'relocate:' + await sha256Hex(te.encode(JSON.stringify([ledger.sha256, text])))}).ledger;
 		}
 		files[rec.file] = {text, ledger, ...(isCodeFile(rec.file) ? {bytes: te.encode(text)} : {})};
 		rec.ledger = ledger; rec.sidecar.canonicalHistory = ledger.sha256;
@@ -803,12 +850,24 @@ export async function execute(inputPlan, transport, store, options = {}) {
 		const {sealed, object} = await sealUpload({...files[rec.file], content, ancestors: [rec.object]}, vdk, store);
 		if (store.rememberObject) await store.rememberObject(content, object, sealed);
 		await putVerified(transport, objectKey(object), sealed);
+		if (rec.object) plan.head.ancestry[rec.object] = [...new Set([...(plan.head.ancestry[rec.object] || []), ...(rec.parents || [])])];
 		rec.parents = [rec.object]; rec.object = object; rec.content = content;
 	}
 
+	for (const id of plan.held) {
+		const file = Object.keys(index.notes).find(name => index.notes[name].id === id), body = file && files[file];
+		if (!body || isCodeFile(file)) continue;
+		const source = verifyCanonicalNote(body.ledger, body.text, index.notes[file]), text = rewriteLinks(source.text, plan.linkContexts.local);
+		if (text === source.text) continue;
+		const ledger = appendCanonical({...parseManifest(null, {noteId: id, now: 0}), canonical: source.ledger}, {text, metadata: source.metadata, author: {kind: 'system', id: 'notes-sync'},
+			operation: 'notes.sync.relocate', now: null, id: 'relocate:' + await sha256Hex(te.encode(JSON.stringify([source.ledger.sha256, text])))}).ledger;
+		files[file] = {text, ledger};
+		index.notes[file] = {...index.notes[file], revision: 'sha256:' + ledger.head.sha256, canonicalHistory: ledger.sha256};
+		if (plan.head.held?.[id]) plan.head.held[id] = {...plan.head.held[id], content: await fileHash(files[file]), ledger: ledger.sha256};
+	}
 	if (plan.head && plan.head.notes) {
 		for (const [nid, rec] of Object.entries(plan.head.notes)) {
-			if (rec && rec.file && files[rec.file]) {
+			if (rec && !plan.held.includes(nid) && rec.file && files[rec.file]) {
 				if (!index.notes[rec.file]) index.notes[rec.file] = defaultEntry();
 				const revision = 'sha256:' + rec.content;
 				index.notes[rec.file] = {...index.notes[rec.file], id: nid, revision, canonicalHistory: rec.ledger.sha256};
@@ -826,13 +885,14 @@ export async function execute(inputPlan, transport, store, options = {}) {
 		index.conflicts = uniqueConflicts([...(index.conflicts || []), ...resolvedConflicts].map(rebind), activeConflicts);
 	}
 	for (const rec of Object.values(plan.head.notes)) if (rec.conflicts) rec.conflicts = uniqueConflicts(rec.conflicts.map(rebind), activeConflicts);
-	for (const value of markdown) for (const recording of recordingsOf(value.text)) {
-		if (!Object.hasOwn(assets, 'audio/' + recording.name) && !Object.values(plan.head.assetTombstones || {}).some(t => t.file === 'audio/' + recording.name)) refuse('incomplete_asset', 'a note names a recording whose complete bytes are not available; nothing was replaced');
+	const checked = Object.entries(files).filter(([file]) => !isCodeFile(file) && !plan.held.includes(index.notes[file]?.id)).map(([, value]) => value);
+	for (const value of checked) for (const recording of recordingsOf(value.text)) {
+		if (!Object.hasOwn(assets, 'audio/' + recording.name)) refuse('incomplete_asset', 'a note names a recording whose complete bytes are not available; nothing was replaced');
 	}
-	for (const value of markdown) for (const attachment of attachmentsOf(value.text)) {
-		if (!Object.hasOwn(assets, 'attachments/' + attachment.name) && !Object.values(plan.head.assetTombstones || {}).some(t => t.file === 'attachments/' + attachment.name)) refuse('incomplete_asset', 'a note links to a file whose complete bytes are not available; nothing was replaced');
+	for (const value of checked) for (const attachment of attachmentsOf(value.text)) {
+		if (!Object.hasOwn(assets, 'attachments/' + attachment.name)) refuse('incomplete_asset', 'a note links to a file whose complete bytes are not available; nothing was replaced');
 	}
-	for (const [file, value] of Object.entries(files)) if (!isCodeFile(file) && plan.head.notes[index.notes[file].id]) {
+	for (const [file, value] of Object.entries(files)) if (!isCodeFile(file) && plan.head.notes[index.notes[file].id] && !plan.held.includes(index.notes[file].id)) {
 		for (const mediaFile of canonicalMedia(value.ledger, index.notes[file].id)) if (!Object.hasOwn(assets, mediaFile))
 			refuse('incomplete_asset', 'retained canonical history names missing media; no note or history was replaced');
 	}
@@ -850,7 +910,7 @@ export async function execute(inputPlan, transport, store, options = {}) {
 			for (let i = named.length - 1; i > 0; i--) { const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i + 1); [named[i], named[j]] = [named[j], named[i]]; }
 			for (const object of named.slice(0, AUDIT_SAMPLE)) if (!await transport.stat(objectKey(object))) missing.push(object);
 		}
-		return {ok: true, caughtUp: !snapshot.personal || same((await store.snapshot()).personal?.records || {}, personal.records), downloaded: 0, uploaded: 0, conflicts: [], head: snapshot.head._key, skipped: plan.skipped, unchanged: true, devices: plan.devices, ...(missing.length ? {missing} : {})};
+		return {ok: true, caughtUp: !plan.held?.length && !plan.heldElsewhere?.length && (!snapshot.personal || same((await store.snapshot()).personal?.records || {}, personal.records)), downloaded: 0, uploaded: 0, conflicts: [], head: snapshot.head._key, skipped: plan.skipped, unchanged: true, devices: plan.devices, ...(missing.length ? {missing} : {}), ...heldResult(plan)};
 	}
 	for (const rec of [...Object.values(plan.head.notes), ...Object.values(plan.head.tombstones)]) if (rec.object)
 		plan.head.ancestry[rec.object] = [...new Set([...(plan.head.ancestry[rec.object] || []), ...(rec.parents || [])])];
@@ -867,13 +927,17 @@ export async function execute(inputPlan, transport, store, options = {}) {
 	verified.paths = [...new Set([...(verified.paths || []), ...plan.head.seen, ...(plan.head.previous ? [plan.head.previous] : [])])].sort();
 	verified.digests = Object.fromEntries(verified.keys.map(key => [key, parseHeadKey(key).hash]));
 	verified.head = await sha256Hex(encodeHead(plan.head));
-	const next = {files, assets, index, personal, personalBase: snapshot.personal, renames: plan.renames, deletions: plan.localTrash, assetRemoves: plan.assetRemoves, trashedAt, head: plan.head, pending, observed: plan.observed, assetAliases: plan.assetAliases, verified: await authenticateHeads(verified, snapshot.deviceId, key, vdk)};
+	for (const [file, value] of Object.entries(files)) if (plan.media?.[index.notes[file]?.id]?.length) files[file] = {...value, media: plan.media[index.notes[file].id]};
+	const next = {files, assets, index, personal, personalBase: snapshot.personal, renames: plan.renames, deletions: plan.localTrash, assetRemoves: plan.assetRemoves, media: plan.media, trashedAt, head: plan.head, pending, observed: plan.observed, assetAliases: plan.assetAliases, verified: await authenticateHeads(verified, snapshot.deviceId, key, vdk)};
 	await store.commit(next, {expected: plan.expected});
 	await resumePending(transport, store, {vdk});
 	const current = await store.snapshot();
 	const caughtUp = (!current.personal || same(current.personal.records, personal.records)) && same(current.files, files) && same(portableIndex(current.index), portableIndex(index)) && same(current.index.notes, index.notes);
-	return {ok: true, caughtUp, downloaded: downloaded.size, uploaded: sealedUploads.length, conflicts: resolvedConflicts, head: key, skipped: plan.skipped, devices: plan.devices};
+	return {ok: true, caughtUp: caughtUp && !plan.held?.length && !plan.heldElsewhere?.length, downloaded: downloaded.size, uploaded: sealedUploads.length, conflicts: resolvedConflicts, head: key, skipped: plan.skipped, devices: plan.devices, ...heldResult(plan)};
 }
+
+const heldResult = plan => ({...(plan.held?.length ? {held: plan.held} : {}), ...(plan.heldElsewhere?.length ? {heldElsewhere: plan.heldElsewhere} : {}),
+	...(plan.held?.length || plan.heldElsewhere?.length ? {heldNotes: plan.heldNotes} : {})});
 
 export async function putVerified(transport, key, bytes) {
 	const hash = await sha256Hex(bytes);
@@ -1141,7 +1205,7 @@ export async function loadHeads(transport, vdk, {anchors = [], verified = null, 
 		if (!absent.length && prior && prior !== tip._key) bases.push([tip, '_previousHead', prior]);
 		if (!absent.length && tip.device !== deviceId) {
 			const seen = tip.seen.find(key => parseHeadKey(key).device === deviceId);
-			if (seen && (!prior || seen === checkpoint) && (found.has(seen) || !expired(seen))) bases.push([tip, '_seenHead', seen]);
+			if (seen && (!prior || seen === checkpoint || prior !== tip._key) && (found.has(seen) || !expired(seen))) bases.push([tip, '_seenHead', seen]);
 		}
 	}
 	for (const [, , key] of bases) full.add(key);
@@ -1259,7 +1323,7 @@ export function createOwnerSyncStore({folder, deviceId, personal = null, label =
 			const entry = current.index.notes[name], path = 'history/' + manifestName(entry.id), history = await folder.store.read(path);
 			const body = fileBody(name, bytes), proved = parseCanonical(history, {noteId: entry.id, now: Date.now(), text: td.decode(bytes)});
 			verifyCanonicalBinding(proved, entry, await sha256Hex(bytes));
-			files[name] = {...body, ledger: proved.ledger}; historyDigests.set(path, await sha256Hex(history));
+			files[name] = {...body, ledger: proved.ledger, ...(proved.manifest.media ? {media: proved.manifest.media} : {})}; historyDigests.set(path, await sha256Hex(history));
 		}
 		for (const [file, value] of Object.entries(files)) if (await storedFileDigest(folder.store, file) !== await fileHash(value)) refuse('changed', 'source changed while canonical history was captured');
 		for (const [path, digest] of historyDigests) if (await storedFileDigest(folder.store, path) !== digest) refuse('changed', 'canonical history changed while source was captured');
@@ -1285,7 +1349,7 @@ export function createOwnerSyncStore({folder, deviceId, personal = null, label =
 					assertActive();
 					const result = await runTrash({store: folder.store, index: fresh.index,
 						files: next.deletions.map(row => row.file), expected: new Map(next.deletions.map(row => [row.file, row])),
-						mode: 'confirmed', deviceId: folder.deviceId, commitIndex: lease.commitIndex});
+						mode: 'confirmed', deviceId: folder.deviceId, commitIndex: lease.commitIndex, sync: true});
 					if (result.revived.length || result.missing.length || result.deferred.length) refuse('changed', 'a note changed before deletion and was kept; sync again to keep both decisions');
 					fresh = await capture(lease);
 				}
@@ -1309,9 +1373,10 @@ export function createOwnerSyncStore({folder, deviceId, personal = null, label =
 					if (prior && retained.ledger.sha256 !== prior.ledger.sha256) refuse('changed', 'canonical history changed before sync admission');
 					if (!prior && retained && !preservesActs(retained.ledger, proved.ledger)) refuse('notes_history_conflict', 'the incoming identity does not extend its retained local history');
 					canonical.push({file, id: entry.id, history: path, ledger: proved.ledger.sha256});
-					if (prior && priorFile === file && prior.ledger.sha256 === proved.ledger.sha256) continue;
-					manifest = {...manifest, canonical: proved.ledger};
-					const recorded = await recordVersion(manifest, {file, text: value.text, entry, reason: 'merge', now: Date.now()});
+					const media = next.media?.[entry.id] ?? manifest.media ?? [], kept = prior && priorFile === file && prior.ledger.sha256 === proved.ledger.sha256;
+					if (kept && same(media, manifest.media ?? [])) continue;
+					manifest = {...manifest, canonical: proved.ledger, ...(media.length ? {media} : {})};
+					const recorded = kept ? {manifest, writes: []} : await recordVersion(manifest, {file, text: value.text, entry, reason: 'merge', now: Date.now()});
 					const rows = new Map(recorded.writes.map(row => ['history/' + row.name, row]));
 					rows.set(path, {bytes: te.encode(serializeManifest(recorded.manifest))});
 					for (const [name, row] of rows) {
@@ -1336,11 +1401,13 @@ export function createOwnerSyncStore({folder, deviceId, personal = null, label =
 				}
 				for (const [file, bytes] of Object.entries(next.assets || {})) {
 					if (!safeAsset(file)) refuse('name', 'sync media must be complete bytes in the owner’s media directories');
-					if (fresh.assets[file]) {
+					const removed = fresh.assets[file] && next.assetRemoves?.find(row => row.file === file);
+					if (removed) writes.set(file, {file, bytes: await assetBytes(bytes), expectedDigest: removed.content});
+					else if (fresh.assets[file]) {
 						if (fresh.assets[file] !== bytes && !bytes.skipped && await assetDigest(fresh.assets[file]) !== await assetDigest(bytes)) refuse('asset_conflict', 'sync cannot overwrite kept media');
 					} else writes.set(file, {file, bytes: await assetBytes(bytes), createOnly: true});
 				}
-				for (const row of next.assetRemoves || []) if (fresh.assets[row.file]) removes.push({file: row.file, expectedDigest: row.content});
+				for (const row of next.assetRemoves || []) if (fresh.assets[row.file] && !writes.has(row.file)) removes.push({file: row.file, expectedDigest: row.content});
 				const previous = await readSyncStateBytes(folder.store);
 				const state = {...previous.state, deviceId, assetAliases: next.assetAliases, verified: next.verified, head: next.head, pending: next.pending,
 					observed: [...(next.observed || []).filter(key => parseHeadKey(key).device !== deviceId), next.pending.key]};

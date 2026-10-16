@@ -73,16 +73,17 @@ export function markdown(md, {code} = {}) {
     const closeHeads = (frame, at, level = 0) => {
       while (frame.heads.length && frame.heads.at(-1).level >= level) frame.heads.pop().part.end = at;
     };
-    function mapping(content, map, row, fence = false) {
+    function mapping(content, map, row, fence = false, atx = false) {
       if (!map) {
         if (!row) return null;
-        const found = row.text.indexOf(content, row.at);
+        const found = content ? row.text.indexOf(content, row.at) : row.at + (row.text[row.at] === ' ' && row.text[row.at + 1] !== '|');
         if (found < 0) return null;
-        row.at = found + content.length;
+        const close = row.text.indexOf('|', found + content.length);
+        row.at = close < 0 ? found + content.length : close + 1;
         return pos => {
           const at = found + pos;
           let lo = 0, hi = row.skips.length;
-          while (lo < hi) { const mid = (lo + hi) >>> 1; if (row.skips[mid] <= at) lo = mid + 1; else hi = mid; }
+          while (lo < hi) { const mid = (lo + hi) >>> 1; if (row.skips[mid] < at) lo = mid + 1; else hi = mid; }
           return row.start + at + lo;
         };
       }
@@ -92,7 +93,7 @@ export function markdown(md, {code} = {}) {
         const from = line(map[0] + i), to = line(map[0] + i + 1);
         const value = contentLines[i], end = to - (source[to - 1] === '\n' ? 1 : 0);
         const found = fence ? i === contentLines.length - 1 && !value ? 0 : end - from - value.length
-          : source.slice(from, to).indexOf(value);
+          : (atx ? source.slice(from, end).replace(/[ \t]+#+[ \t]*$/, '') : source.slice(from, end)).lastIndexOf(value);
         if (found < 0 || source.slice(from + found, from + found + value.length) !== value) return null;
         starts.push(consumed); where.push(from + found); consumed += contentLines[i].length + 1;
       }
@@ -107,20 +108,26 @@ export function markdown(md, {code} = {}) {
       const value = source.slice(start, line(map[1])).replace(/\\\|/g, (_, at) => {
         skips.push(at - skips.length); return '|';
       });
-      return {text: value, start, skips, at: 0};
+      return {text: value, start, skips, at: /^[ \t]*\|?/.exec(value)[0].length};
     }
     const decode = value => { try { return decodeURIComponent(value); } catch { return value; } };
     function relation(at, kind, target, labelAt) { pending.push({at, kind, target, labelAt}); }
-    function refLabel(raw) {
-      const first = raw[0] === '!' ? 1 : 0;
+    function bracketEnd(raw, first) {
       let depth = 1, end = first + 1;
-      if (raw[first] !== '[') return null;
       for (; end < raw.length; end++) {
         if (raw[end] === '\\') end++;
-        else if (raw[end] === '[') depth++;
+        else if (raw[end] === '`') {
+          const ticks = /^`+/.exec(raw.slice(end))[0], close = raw.indexOf(ticks, end + ticks.length);
+          if (close > 0) end = close + ticks.length - 1;
+        } else if (raw[end] === '[') depth++;
         else if (raw[end] === ']' && --depth === 0) break;
       }
-      const tail = raw.slice(end + 1);
+      return end;
+    }
+    function refLabel(raw) {
+      const first = raw[0] === '!' ? 1 : 0;
+      if (raw[first] !== '[') return null;
+      const end = bracketEnd(raw, first), tail = raw.slice(end + 1);
       if (tail[0] === '(') return null;
       if (tail[0] === '[' && tail.endsWith(']') && tail.length > 2)
         return {label: tail.slice(1, -1), from: end + 2, to: raw.length - 1};
@@ -150,12 +157,13 @@ export function markdown(md, {code} = {}) {
         if (ref && Object.hasOwn(env.references || {}, normalize(ref.label))) {
           relation([original(positions(spot.start + ref.from)), original(positions(spot.start + ref.to))], 'reference', normalize(ref.label));
         } else if (href[0] === '#') {
-          const hash = raw.lastIndexOf('#');
-          let end = hash;
-          while (end < raw.length && !/[\s)>]/.test(raw[end])) end++;
-          const labelEnd = raw.indexOf(']('), labelStart = image ? 2 : 1;
+          const labelStart = image ? 2 : 1, labelEnd = bracketEnd(raw, labelStart - 1);
+          let hash = labelEnd + 2;
+          while (/\s/.test(raw[hash] || '')) hash++;
+          const destination = parser.helpers.parseLinkDestination(raw, hash, raw.length), angle = raw[hash] === '<';
           const labelAt = labelEnd > labelStart ? [original(positions(spot.start + labelStart)), original(positions(spot.start + labelEnd))] : undefined;
-          relation(hash < 0 ? at : [original(positions(spot.start + hash + 1)), original(positions(spot.start + end))], 'heading', decode(href.slice(1)), labelAt);
+          relation(destination.ok && raw[hash + angle] === '#' ? [original(positions(spot.start + hash + angle + 1)), original(positions(spot.start + destination.pos - angle))] : at,
+            'heading', decode(href.slice(1)), labelAt);
         } else if (href) links.push({at, to: href});
       }
     }
@@ -167,7 +175,8 @@ export function markdown(md, {code} = {}) {
       def.part = p;
       if (def.footnote) footnotes.set(def.label, p);
       const id = (def.footnote ? 'footnote:' : 'reference:') + (def.footnote ? def.label : normalize(def.label));
-      if (!targets.has(id)) targets.set(id, p);
+      if (targets.has(id)) continue;
+      targets.set(id, p);
       if (!def.footnote) {
         const reference = env.references?.[normalize(def.label)];
         if (reference?.href?.startsWith('#')) {
@@ -189,11 +198,11 @@ export function markdown(md, {code} = {}) {
         const plain = label(next), baseName = '#'.repeat(level) + ' ' + plain;
         const repeated = usedNames.get(baseName) || 0; usedNames.set(baseName, repeated + 1);
         const p = add(start, frame.part.end, 'section', baseName + (repeated ? ' [' + (repeated + 1) + ']' : ''));
-        const mapped = next?.type === 'inline' && mapping(next.content, next.map);
+        const mapped = next?.type === 'inline' && mapping(next.content, next.map, null, false, (token.markup ? token.markup[0] === '#' : /^ {0,3}#{1,6}(?:[ \t]|$)/.test(source.slice(line(token.map[0])))));
         if (mapped) p.nameAt = [original(mapped(0)), original(mapped(next.content.length))];
         let slug = token.attrGet?.('id');
         if (!slug) {
-          const base = plain.toLowerCase().replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'heading';
+          const base = plain.toLowerCase().replace(/[^\p{L}\p{N}\p{M}\s_-]/gu, '').trim().replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'heading';
           slug = base;
           let suffix = 0;
           while (usedSlugs.has(slug)) slug = base + '-' + ++suffix;

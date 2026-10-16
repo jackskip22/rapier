@@ -3,9 +3,9 @@ import {readFile, writeFile, mkdir, cp, readdir, rm} from 'node:fs/promises';
 import {resolve, dirname, relative} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
-import {spawnSync} from 'node:child_process';
+import {execFile} from 'node:child_process';
 import {searchCacheVersion} from './search-cache-version.mjs';
-import {zopfliGzip, FAST_PACK} from './zopfli.mjs';
+import {zopfliGzip, brotliPack, BROTLI_SETTINGS, FAST_PACK} from './zopfli.mjs';
 import vm from 'node:vm';
 import {scriptMinifier, reflectedNames} from './minify.mjs';
 import {buildJPEGXLArtifact} from '../images/codec-build.mjs';
@@ -14,7 +14,6 @@ import {TOOLS, UI_RESOURCE, mcpDescriptors} from '../agent/catalog.mjs';
 import {encodeBase124} from './base124.mjs';
 import {encodeTextPack} from './text-pack-build.mjs';
 import {decodeTextPack} from './text-pack.mjs';
-import {brotliCompressSync, constants as brotliOptions} from 'node:zlib';
 import {decodeBrotli} from '../draw/font-brotli.mjs';
 import {crc32} from '../images/crc32.mjs';
 import {minifyVendor, BROWSER_MINIFY} from './minify-vendor.mjs';
@@ -31,18 +30,20 @@ import {shakeModule} from './tree-shake.mjs';
 import {commercialPage} from './commercial-page.mjs';
 import {seoSection, seoDoorSections} from './seo-page.mjs';
 import {DOORS, doorPage} from '../door-worker.js';
+import {writeDoorAssets} from './door-assets.mjs';
 import {fillMermaidResources} from './mermaid-resources.mjs';
 import {fillFontSubsetResources} from './font-subset-resources.mjs';
-import {builtinPlugins, builtinExecution, builtinFilesReuse, fillBuiltinSlot} from './builtin-plugins.mjs';
+import {builtinPlugins, builtinFilesReuse, fillBuiltinSlot} from './builtin-plugins.mjs';
 import {pluginPackFiles, readPluginFile} from './stage-plugin-pack.mjs';
 import {fillMathLicense} from './build-math.mjs';
 import {buildExportAssets} from './build-export-assets.mjs';
 import {satelliteSlots} from './engine-slots.mjs';
 import {editorOnlyMarkup} from './reader-profile.mjs';
-import {APP_DESCRIPTION, SITE_TITLE, SITE_DESCRIPTION, DISCOVERY_LINKS} from './discovery.mjs';
+import {APP_DESCRIPTION, SITE_TITLE, SITE_DESCRIPTION, DISCOVERY_LINKS, PLAY_URL} from './discovery.mjs';
 import {lexicalBindings} from './engine-census.mjs';
 import {bundleModules} from './reader-modules.mjs';
-import {PARTS, PART_IDS, partition, partMark, splitProgram, realmNames, topLevelNames} from './parts.mjs';
+import {PARTS, PART_IDS, partition, partMark, partElement, inlineParts, splitProgram, realmNames, topLevelNames} from './parts.mjs';
+import {prefixSymbols} from './runtime-symbols.mjs';
 
 if (!buildObservationActive()) process.exit(runObservedBuild());
 buildPhase('prepare');
@@ -56,11 +57,11 @@ if (process.argv.includes('--ledger')) {
 }
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-// Build profiles: `full` is byte-identical with RAPIER_PROFILE unset; `document` drops Draw, Paint and the
-const PROFILE_PAGES = {full: 'rapier.html', document: 'rapier-document.html', reader: 'rapier-reader.html'};
+// Build profiles: `full` is byte-identical with RAPIER_PROFILE unset; `reader` is the read-only viewer, built by
+const PROFILE_PAGES = {full: 'rapier.html', reader: 'rapier-reader.html'};
 const RAPIER_PROFILE_RAW = process.env.RAPIER_PROFILE;
 if (RAPIER_PROFILE_RAW !== undefined && !Object.hasOwn(PROFILE_PAGES, RAPIER_PROFILE_RAW)) {
-  throw new Error('RAPIER_PROFILE must be "full", "document" or "reader"; got ' + JSON.stringify(RAPIER_PROFILE_RAW));
+  throw new Error('RAPIER_PROFILE must be "full" or "reader"; got ' + JSON.stringify(RAPIER_PROFILE_RAW));
 }
 const PROFILE = RAPIER_PROFILE_RAW || 'full';
 const OUTPUT_FILE = PROFILE_PAGES[PROFILE];
@@ -82,11 +83,13 @@ if (versionSync.absent.length) unchecked.push('one version (tools/version-sync.m
 }
 const htmlSinks = checkHtmlSinks();
 if (htmlSinks.problems.length) throw new Error('HTML sink law: ' + htmlSinks.problems.join('; '));
-{
-  const collisions = spawnSync(process.execPath, [fileURLToPath(new URL('probes/scan-assembled-collisions.mjs', import.meta.url)), '--json'], {encoding: 'utf8', maxBuffer: 16 * 1024 * 1024});
+const collisionScan = new Promise(answer => execFile(process.execPath, [fileURLToPath(new URL('probes/scan-assembled-collisions.mjs', import.meta.url)), '--json'],
+  {encoding: 'utf8', maxBuffer: 16 * 1024 * 1024}, (error, stdout) => answer({error, stdout})));
+async function collisionLaw() {
+  const collisions = await collisionScan;
   let report = null;
   try { report = JSON.parse(collisions.stdout); } catch (_) {}
-  if (!report) throw new Error('assembled-scope law: the collision scanner did not run (' + String(collisions.error?.message || collisions.status) + '); a scanner that did not run is not a scanner that found nothing');
+  if (!report) throw new Error('assembled-scope law: the collision scanner did not run (' + String(collisions.error?.message || collisions.error?.code) + '); a scanner that did not run is not a scanner that found nothing');
   if (report.offenders) throw new Error('assembled-scope law: ' + report.rows.map(r => r.name + ' declared in ' + r.sites.map(s => s.file + ':' + s.line).join(' and ') + ' (' + r.winner + ' wins by hoisting)').join('; '));
 }
 const read = path => readFile(resolve(root, path), 'utf8');
@@ -194,9 +197,12 @@ if (PROFILE !== 'reader') {
   const {checkEngineOwnership} = await import('./check-engine-ownership.mjs');
   checkEngineOwnership();
 }
+await collisionLaw();
 await captureBuildGateOutputs({root, paths: [...VERSIONED_FILES, 'packages/rapier-embed/README.md', 'mcp/render-assets.mjs',
   ...(PROFILE === 'reader' ? [] : ['tools/engine-ownership.json'])]});
 if (await reuseBuildAssembly({root, profile: PROFILE})) process.exit(0);
+const packings = new Map();
+if (PROFILE === 'full') builtinPlugins(root, prepack).catch(() => {});
 if (PROFILE === 'reader') {
   await (await import('./reader-build.mjs')).buildReader({root, unchecked, toolchainCanonical});
   await finishBuildReuse({root, profile: PROFILE});
@@ -405,7 +411,7 @@ globals.RapierLiveMerge = 'kernel/live-merge.mjs';
 globals.RapierLiveSession = 'editor/live-session.mjs';
 globals.RapierAgentEditor = 'agent/editor.mjs';
 globals.RapierSourceFacts = 'editor/source-facts.mjs';
-const partGlobals = PROFILE === 'full' ? Object.assign({}, ...PARTS.map(part => part.globals)) : {};
+const partGlobals = Object.assign({}, ...PARTS.map(part => part.globals));
 Object.assign(globals, partGlobals);
 for (const path of Object.values(globals)) await bundle(path);
 const shakenExports = {};
@@ -448,6 +454,7 @@ async function deriveVendorGroup(id) {
   vendorSpans.set(id, spans);
   return spans;
 }
+for (const id of Object.keys(VENDOR_GROUPS)) deriveVendorGroup(id).then(spans => prepack(id, 'text/rapier-vendor', spans), () => {});
 if (PROFILE === 'full') {
   const parserSpans = (await deriveVendorGroup('lib-markdownit')).map(({name, source}) => [name, checksum(Buffer.from(source))]);
   if (!parserSpans.length) throw new Error('Search cache needs the parser identities of the spans this build packs');
@@ -503,10 +510,10 @@ const sharedText = (part, head) => '(() => {\n' + head + [...MODULES].filter(([p
   workerEntries.filter(([entry]) => partOf.get(entry) === part).map(([entry]) => workerSourceOf.get(entry)).join('') + '\n' +
   Object.entries(globals).filter(([, path]) => partOf.get(path) === part).map(([name, path]) => `globalThis.${name} = Object.freeze(modules[${JSON.stringify(path)}]);`).join('\n');
 const bundleText = await lean(sharedText(undefined, 'const modules = {...globalThis.RapierCodecs.modules}, artifactFactories = {}' + (workerPaths.size ? ', workerFactories = {...globalThis.RapierCodecs.factories}' : '') + ';\n') +
-  (PROFILE === 'full' ? '\nglobalThis.RapierModuleRegistry = Object.freeze({modules, workerFactories});' : '') +
+  '\nglobalThis.RapierModuleRegistry = Object.freeze({modules, workerFactories});' +
   '\nglobalThis.RapierArtifactLayoutDependencies = Object.freeze({factories:Object.freeze(artifactFactories),groups:' + JSON.stringify(retainedGroups) + ',license:' + JSON.stringify(pretextLicense) + ',inkLicense:' + JSON.stringify(freehandNotice) + '});\n})();', 'rapier-shared.js');
 const partShared = new Map();
-for (const part of PROFILE === 'full' ? PART_IDS : [])
+for (const part of PART_IDS)
   partShared.set(part, await lean(sharedText(part, 'const {modules, workerFactories} = globalThis.RapierModuleRegistry, artifactFactories = {};\n') + '\n})();', 'rapier-part-' + part + '-shared.js'));
 new vm.Script(bundleText, {filename: 'rapier-agent-bundle.js'});
 
@@ -522,16 +529,16 @@ const policySlot = /<meta http-equiv="Content-Security-Policy" content="[^"]*">/
 if ([...html.matchAll(policySlot)].length !== 1) throw new Error('The page must have exactly one policy slot');
 html = html.replace(policySlot, () => '<meta http-equiv="Content-Security-Policy" content="' + csp('web') + '">');
 let ui = await fillMathLicense(await read('editor/ui.html'), {root});
-// Notes' markup sits between RAPIER_NOTES
+// Notes' markup sits between RAPIER_NOTES markers in editor/ui.html. The reader drops the regions
 const notesMarkup = /<!-- RAPIER_NOTES_BEGIN -->([\s\S]*?)<!-- RAPIER_NOTES_END -->/g, notesRegions = [...ui.matchAll(notesMarkup)];
 if (!notesRegions.length || notesRegions.some(([, inner]) => inner.includes('<!-- RAPIER_NOTES_')) ||
   ui.split('<!-- RAPIER_NOTES_').length - 1 !== 2 * notesRegions.length) throw new Error('Notes markup markers are unbalanced');
-ui = PROFILE === 'full' ? ui.replace(/<!-- RAPIER_NOTES_(?:BEGIN|END) -->/g, '') : ui.replace(notesMarkup, '');
+ui = ui.replace(/<!-- RAPIER_NOTES_(?:BEGIN|END) -->/g, '');
 // The markers for what the reader leaves out (RAPIER_EDITOR_ONLY, RAPIER_READER_SKIP) stay out of every other profile's page.
 ui = editorOnlyMarkup(ui);
 const commercialMarkup = /<!-- RAPIER_COMMERCIAL_BEGIN -->[\s\S]*?<!-- RAPIER_COMMERCIAL_END -->\n?/g;
 if ([...ui.matchAll(commercialMarkup)].length !== 1 || ui.split('<!-- RAPIER_COMMERCIAL_').length !== 3) throw new Error('Commercial sheet markers are unbalanced');
-ui = PROFILE === 'full' ? commercialPage(ui, JSON.parse(await read('commercial-checkout.json'))) : ui.replace(commercialMarkup, '');
+ui = commercialPage(ui, JSON.parse(await read('commercial-checkout.json')));
 const escapeHtml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 const roughNotice = /^\/\*([\s\S]*?)\*\//.exec(await read('draw/rough.mjs'))?.[1].replace(/^ {3}/gm, '').trim();
 if (!roughNotice?.includes('MIT License') || !roughNotice.includes('Copyright (c) 2019 Preet Shihn')) throw new Error('Missing rough.js notice');
@@ -547,9 +554,9 @@ ui = ui.replace('<div class="licenses-list">', () => '<div class="licenses-list"
     '<details class="license-entry"><summary><span class="license-name">Pretext bac1774c · Unreleased</span><span class="license-id">MIT · BSD · Unicode · ICU</span></summary><pre class="license-text" data-license="pretext"></pre></details>\n' +
   '<details class="license-entry"><summary><span class="license-name">perfect-freehand</span><span class="license-id">MIT</span></summary><pre class="license-text">' + escapeHtml(freehandNotice) + '</pre></details>\n' +
   '<details class="license-entry"><summary><span class="license-name">rough.js generator</span><span class="license-id">MIT</span></summary><pre class="license-text">' + escapeHtml(roughNotice) + '</pre></details>\n' +
-  (PROFILE === 'full' ? '<details class="license-entry"><summary><span class="license-name">libmypaint brush engine (port)</span><span class="license-id">ISC</span></summary><pre class="license-text">' + escapeHtml(mypaintNotice) + '</pre></details>\n' : '') +
-  (PROFILE === 'full' ? '<details class="license-entry"><summary><span class="license-name">Factory brushes · Brien Dieterle</span><span class="license-id">CC0 1.0</span></summary><pre class="license-text">' + escapeHtml(dieterleNotice) + '</pre></details>\n' : '') +
-  (PROFILE === 'full' ? '<details class="license-entry"><summary><span class="license-name">Spectral.js color data</span><span class="license-id">MIT</span></summary><pre class="license-text">' + escapeHtml(spectralNotice) + '</pre></details>\n' : ''));
+  '<details class="license-entry"><summary><span class="license-name">libmypaint brush engine (port)</span><span class="license-id">ISC</span></summary><pre class="license-text">' + escapeHtml(mypaintNotice) + '</pre></details>\n' +
+  '<details class="license-entry"><summary><span class="license-name">Factory brushes · Brien Dieterle</span><span class="license-id">CC0 1.0</span></summary><pre class="license-text">' + escapeHtml(dieterleNotice) + '</pre></details>\n' +
+  '<details class="license-entry"><summary><span class="license-name">Spectral.js color data</span><span class="license-id">MIT</span></summary><pre class="license-text">' + escapeHtml(spectralNotice) + '</pre></details>\n');
 {
   const words = text => text.replace(/\s+/g, ' ');
   const sheet = words(ui.replace(/<[^>]*>/g, ' ').replaceAll('&lt;', '<').replaceAll('&gt;', '>')
@@ -559,7 +566,7 @@ ui = ui.replace('<div class="licenses-list">', () => '<div class="licenses-list"
     throw new Error('The Licences sheet does not carry the notice of ' + path + ', which the shared runtime no longer repeats');
 }
 if (/<script\b/i.test(ui)) throw new Error('Editor interface markup must not contain scripts');
-let appsUi = PROFILE === 'full' ? dropIndentation(stripMarkupComments(ui.replace(commercialMarkup, ''))) : null;
+let appsUi = dropIndentation(stripMarkupComments(ui.replace(commercialMarkup, '')));
 if (appsUi !== null && /commercial-overlay|RAPIER_COMMERCIAL|buy\.stripe\.com/.test(appsUi)) throw new Error('The ChatGPT copy\'s interface must carry no commercial sheet and no link that starts a purchase');
 ui = dropIndentation(stripMarkupComments(ui.replace(/<!-- RAPIER_COMMERCIAL_(?:BEGIN|END) -->\n?/g, '')));
 const firstScreenMarker = '<!-- RAPIER_FIRST_SCREEN_END -->';
@@ -582,7 +589,7 @@ const partStyleIds = new Set(PARTS.flatMap(part => part.styles));
 if ([...partStyleIds].some(id => !styleRowsAll.some(row => row.id === id))) throw new Error('A part names a style row editor/styles.json does not');
 const styleRows = styleRowsAll.filter(row => !partStyleIds.has(row.id));
 const styles = await Promise.all(styleRows.map(async row => ({...row, css: row.id === 'rapier-font-style' ? '' : styleText(row.path)})));
-const partStyles = new Map(PROFILE === 'full' ? PARTS.map(part => [part.id, styleRowsAll.filter(row => part.styles.includes(row.id)).map(row => ({id: row.id, css: styleText(row.path)}))]) : []);
+const partStyles = new Map(PARTS.map(part => [part.id, styleRowsAll.filter(row => part.styles.includes(row.id)).map(row => ({id: row.id, css: styleText(row.path)}))]));
 if (new Set(styles.map(row => row.id)).size !== styles.length || styles.some(row => !/^rapier-[a-z-]+-style$/.test(row.id)))
   throw new Error('Editor style rows are invalid');
 const styleSlots = /<style id="rapier-boot-style">[\s\S]*?<\/style>/;
@@ -606,8 +613,6 @@ const seoRegions = [...html.matchAll(seoRegion)], bodyAt = html.indexOf('<body')
 if (seoRegions.length !== 2 || bodyAt < 0 || seoRegions[0].index > bodyAt || seoRegions[1].index < bodyAt || !/<script type="application\/ld\+json">/.test(seoRegions[0][0]) ||
     html.split('<!-- RAPIER_SEO_').length !== 5) throw new Error('The shell must carry its two RAPIER_SEO regions: metadata in the head, the guide in the body');
 html = html.replace(/<title>[^<]*<\/title>/, () => '<title>' + escapeHtml(SITE_TITLE) + '</title>');
-if (PROFILE === 'document') html = html.replace(seoRegion, '');
-else {
   const siteAttribute = value => escapeHtml(value).replaceAll('"', '&quot;');
   for (const [attribute, name, value] of [
     ['name', 'description', SITE_DESCRIPTION], ['property', 'og:title', SITE_TITLE],
@@ -645,7 +650,7 @@ else {
           ...[['/agents', 'Rapier for agents'], ['/markdown-standard', 'Self-contained Markdown'], ['/will', 'Will/1']]
             .map(([path, name]) => ({'@type': 'TechArticle', '@id': origin + path + '#webpage', url: origin + path, name}))]},
       {'@type': 'Organization', '@id': publisher, name: data.name, url: origin + '/', logo: {'@type': 'ImageObject', url: origin + '/icon-512.png', width: 512, height: 512}, sameAs}]};
-    return open + JSON.stringify({...data, '@id': origin + '/#application', softwareVersion: VERSION, sameAs, publisher: {'@id': publisher}}) + close + '\n' + open + JSON.stringify(identity) + close;
+    return open + JSON.stringify({...data, '@id': origin + '/#application', softwareVersion: VERSION, sameAs: [...sameAs, PLAY_URL], publisher: {'@id': publisher}}) + close + '\n' + open + JSON.stringify(identity) + close;
   });
   const [guide] = [...html.matchAll(seoRegion)].slice(1), engineSource = await read('editor/engine.js');
   const doors = Object.entries(seoDoorSections(engineSource, ui)).map(([path, section]) => {
@@ -653,7 +658,6 @@ else {
     return '<!-- ' + name + '_BEGIN -->\n<template>\n' + section + '\n</template>\n<!-- ' + name + '_END -->';
   }).join('\n');
   html = html.slice(0, guide.index) + '<!-- RAPIER_SEO_BEGIN -->\n' + seoSection(engineSource) + '\n' + doors + '\n<!-- RAPIER_SEO_END -->\n' + html.slice(guide.index + guide[0].length);
-}
 {
   const shellPolicy = /<meta http-equiv="Content-Security-Policy" content="([^"]*)">/.exec(html);
   if (!shellPolicy || shellPolicy[1] !== csp('web')) throw new Error('rapier.html <meta> Content-Security-Policy differs from security/csp.mjs csp("web")');
@@ -688,7 +692,6 @@ let source = await read('editor/engine.js');
 {
   const marker = 'const RAPIER_JXL_ENCODER = true;';
   if (source.split(marker).length - 1 !== 1) throw new Error('editor/engine.js must contain exactly one `' + marker + '` marker');
-  if (PROFILE === 'document') source = source.replace(marker, 'const RAPIER_JXL_ENCODER = false;');
 }
 const structureSource = await read('agent/structure.mjs');
 const structureNode = parse(structureSource, 'module').body.find(node => node.type === 'FunctionDeclaration' && node.id.name === '_rapierStructureAnalyze');
@@ -759,10 +762,9 @@ const editorScriptsAll = JSON.parse(await read('editor/scripts.json'));
 if (!Array.isArray(editorScriptsAll) || new Set(editorScriptsAll).size !== editorScriptsAll.length || editorScriptsAll.some(path =>
   typeof path !== 'string' || !/^(?:agent|draw|editor|images|interchange|layout|notes)\/[a-z-]+\.js$/.test(path)))
   throw new Error('Editor script sources are invalid');
-const DOCUMENT_PROFILE_DROPPED_SCRIPTS = new Set(['editor/personal.js', 'draw/draw.js', 'draw/effects-tool.js', 'draw/liquid-live.js', 'draw/copier-live.js', 'draw/background-tool.js', 'draw/paint-tool.js', 'draw/water-tool.js', 'draw/water-pro.js', 'notes/notes.js', 'notes/todo.js', 'notes/library.js', 'notes/ocr.js', 'notes/recorder.js', 'notes/sync-ui.js',  'notes/attachments.js']);
 const partScripts = new Set(PARTS.flatMap(part => part.scripts));
 if (PARTS.some(part => part.scripts.some(path => !editorScriptsAll.includes(path)))) throw new Error('A part names an editor script editor/scripts.json does not');
-const editorScripts = PROFILE === 'full' ? editorScriptsAll.filter(path => !partScripts.has(path)) : editorScriptsAll.filter(path => !DOCUMENT_PROFILE_DROPPED_SCRIPTS.has(path));
+const editorScripts = editorScriptsAll.filter(path => !partScripts.has(path));
 // as ui.html's RAPIER_NOTES markup is.
 const notesInfoMarkup = /\/\* RAPIER_NOTES_BEGIN \*\/([\s\S]*?)\/\* RAPIER_NOTES_END \*\//g;
 const extensionText = async paths => (await Promise.all(paths.map(async path => {
@@ -771,13 +773,13 @@ const extensionText = async paths => (await Promise.all(paths.map(async path => 
     const regions = [...text.matchAll(notesInfoMarkup)];
     if (!regions.length || regions.some(([, inner]) => inner.includes('RAPIER_NOTES_')) ||
       text.split('RAPIER_NOTES_').length - 1 !== 2 * regions.length) throw new Error('editor/info.js Notes markers are unbalanced');
-    text = PROFILE === 'full' ? text.replace(/\/\* RAPIER_NOTES_(?:BEGIN|END) \*\//g, '') : text.replace(notesInfoMarkup, '');
+    text = text.replace(/\/\* RAPIER_NOTES_(?:BEGIN|END) \*\//g, '');
   }
   return '/* ' + path + ' */\n' + text;
 }))).join('\n');
 const extensions = await extensionText(editorScripts);
-const partExtensions = PROFILE === 'full' ? await Promise.all(PARTS.map(part => extensionText(part.scripts))) : [];
-const benchExtensions = PROFILE === 'full' ? await extensionText(PHONE_BENCH_SCRIPTS) : '';
+const partExtensions = await Promise.all(PARTS.map(part => extensionText(part.scripts)));
+const benchExtensions = await extensionText(PHONE_BENCH_SCRIPTS);
 for (const text of [extensions, ...partExtensions, benchExtensions]) walk(parse(text), node => {
   if (node.type !== 'VariableDeclarator' || node.id.type !== 'ObjectPattern' || node.init?.type !== 'MemberExpression' ||
       node.init.object.name !== 'globalThis' || node.init.computed || !globals[node.init.property.name]) return;
@@ -812,6 +814,8 @@ const compiledEditor = await lean("'use strict';\ndocument.currentScript._rapier
   'rapier-editor.js', {toplevel: true, reserved: [...realm.read, ...realm.declared]});
 const editorSlices = splitProgram(compiledEditor, PROFILE === 'full' ? [...PART_IDS, 'benchmark'] : []);
 source = editorSlices.core;
+if (source !== compiledEditor) lean.symbols['rapier-editor.js'] = prefixSymbols(compiledEditor, lean.symbols['rapier-editor.js'], source);
+prepack('rapier-editor-runtime', 'application/rapier-runtime', [{name: 'rapier-shared.js', source: bundleText}, {name: 'rapier-editor.js', source}]);
 {
   const taken = topLevelNames([source, ...editorSlices.parts.values()]).filter(name => realm.declared.has(name));
   if (taken.length) throw new Error('The editor takes a global name another script in its realm declares: ' + taken.join(', '));
@@ -820,24 +824,33 @@ source = editorSlices.core;
 const safeScript = value => value.replace(/<\/script/gi, '<\\/script');
 function checksum(value) { return createHash('sha256').update(value).digest('hex'); }
 const packedRecord = [];
+function candidatePacking(id, combined) {
+  const key = id + '\0' + checksum(combined);
+  if (!packings.has(key)) {
+    const words = encodeTextPack(combined);
+    if (words && !Buffer.from(decodeTextPack(words, combined.length)).equals(combined)) throw new Error('Word packing changed ' + id);
+    const bootstrap = id === 'rapier-codec-runtime' || id === 'rapier-phone-bench-runtime';
+    const inputs = [[combined, ''], ...(words ? [[words, ' prefilter=words2']] : [])];
+    packings.set(key, Promise.all(inputs.map(([input, prefilter]) => Promise.all([zopfliGzip(input), bootstrap ? null : brotliPack(input)])
+      .then(([gzip, brotli]) => ({input, prefilter, gzip, brotli})))));
+  }
+  return packings.get(key);
+}
+function prepack(id, type, spans) {
+  try { candidatePacking(id, Buffer.concat(spans.map(({source}) => Buffer.from(source)))).catch(() => {}); } catch (_) {}
+  return '';
+}
 async function packedSpans(id, type, spans) {
   let out = `<script type="${type}" id="${id}">\n`;
   const buffers = spans.map(({source}) => Buffer.from(source));
+  for (const [i, bytes] of buffers.entries()) packedRecord.push({element: id, name: spans[i].name, bytes: bytes.length, sha256: checksum(bytes)});
   const combined = Buffer.concat(buffers);
-  const words = encodeTextPack(combined);
-  if (words && !Buffer.from(decodeTextPack(words, combined.length)).equals(combined)) throw new Error('Word packing changed ' + id);
   let selected = null;
-  const bootstrap = id === 'rapier-codec-runtime' || id === 'rapier-platform-runtime' || id === 'rapier-phone-bench-runtime';
-  for (const [input, prefilter] of [[combined, ''], ...(words ? [[words, ' prefilter=words2']] : [])]) {
-    const candidates = [['gzip', await zopfliGzip(input)]];
-    if (!bootstrap) {
-      const packed = brotliCompressSync(input, {params: {
-        [brotliOptions.BROTLI_PARAM_QUALITY]: FAST_PACK ? 5 : 11,
-        [brotliOptions.BROTLI_PARAM_MODE]: brotliOptions.BROTLI_MODE_TEXT,
-        [brotliOptions.BROTLI_PARAM_LGWIN]: 22,
-      }});
-      if (!Buffer.from(decodeBrotli(packed, input.length)).equals(input)) throw new Error('Brotli packing changed ' + id);
-      candidates.push(['brotli', packed]);
+  for (const {input, prefilter, gzip, brotli} of await candidatePacking(id, combined)) {
+    const candidates = [['gzip', gzip]];
+    if (brotli) {
+      if (!Buffer.from(decodeBrotli(brotli, input.length)).equals(input)) throw new Error('Brotli packing changed ' + id);
+      candidates.push(['brotli', brotli]);
     }
     for (const [compression, packed] of candidates) {
       const metadata = compression === 'brotli' ? ' inflated=' + input.length + ' crc32=' + crc32(combined).toString(16).padStart(8, '0') : '';
@@ -849,42 +862,39 @@ async function packedSpans(id, type, spans) {
   out += selected;
   let offset = 0;
   for (let i = 0; i < spans.length; i++) {
-    const bytes = buffers[i];
-    out += `/* RAPIER_VENDOR_SPAN ${spans[i].name} offset=${offset} bytes=${bytes.length} */\n`;
-    packedRecord.push({element: id, name: spans[i].name, bytes: bytes.length, sha256: checksum(bytes)});
-    offset += bytes.length;
+    out += `/* RAPIER_VENDOR_SPAN ${spans[i].name} offset=${offset} bytes=${buffers[i].length} */\n`;
+    offset += buffers[i].length;
   }
   return out + '/* RAPIER_VENDOR_SPANS_END */\n</script>\n';
 }
 function packedScript(id, type, name, source) {
   return packedSpans(id, type, [{name, source}]);
 }
-for (const id of Object.keys(VENDOR_GROUPS)) {
-  const spans = await deriveVendorGroup(id);
-  const element = new RegExp(String.raw`<script (?:id="${id}" type="text/rapier-vendor"|type="text/rapier-vendor" id="${id}")>\n[\s\S]*?</script>\n`);
-  if (!element.test(html)) throw new Error('The shell has no vendor slot ' + id);
-  const packed = await packedSpans(id, 'text/rapier-vendor', spans);
-  html = html.replace(element, () => packed);
-}
-const jxlArtifact = await buildJPEGXLArtifact(root, {profile: PROFILE});
+const vendorIds = Object.keys(VENDOR_GROUPS), vendorElement = id => new RegExp(String.raw`<script (?:id="${id}" type="text/rapier-vendor"|type="text/rapier-vendor" id="${id}")>\n[\s\S]*?</script>\n`);
+for (const id of vendorIds) if (!vendorElement(id).test(html)) throw new Error('The shell has no vendor slot ' + id);
+const vendorGroupSpans = await Promise.all(vendorIds.map(deriveVendorGroup));
+const vendorPacks = Promise.all(vendorIds.map((id, at) => packedSpans(id, 'text/rapier-vendor', vendorGroupSpans[at])));
+const jxlArtifact = await buildJPEGXLArtifact(root, {encoder: true});
 const jxlWorker = jxlArtifact.bytes.toString('utf8');
-const jxl = PROFILE === 'full' ? {version: jxlArtifact.version, modules: jxlArtifact.modules.map(name => 'images/jxl/' + name),
-  worker: {bytes: jxlArtifact.bytes.length, sha256: jxlArtifact.sha256}} : null;
-const codecScript = '<!-- RAPIER_JXL_BEGIN -->\n' +
-  await packedScript('rapier-jxl-worker', 'application/rapier-jxl-worker', 'rapier-jxl-worker.js', jxlWorker) +
-  '<!-- RAPIER_JXL_END -->\n';
+const jxl = {version: jxlArtifact.version, modules: jxlArtifact.modules.map(name => 'images/jxl/' + name),
+  worker: {bytes: jxlArtifact.bytes.length, sha256: jxlArtifact.sha256}};
+const jxlPack = packedScript('rapier-jxl-worker', 'application/rapier-jxl-worker', 'rapier-jxl-worker.js', jxlWorker);
 // shell's RAPIER_PLATFORM slot; the runtime
+const partPacks = Promise.all(PARTS.map(part => packedSpans('rapier-part-' + part.id, 'application/rapier-runtime', [
+  {name: 'rapier-part-' + part.id + '-shared.js', source: partShared.get(part.id)},
+  {name: 'rapier-part-' + part.id + '-styles.json', source: JSON.stringify(partStyles.get(part.id))},
+  {name: 'rapier-part-' + part.id + '.js', source: editorSlices.parts.get(part.id)},
+])));
+for (const [at, packed] of (await vendorPacks).entries()) html = html.replace(vendorElement(vendorIds[at]), () => packed);
+const codecScript = '<!-- RAPIER_JXL_BEGIN -->\n' + await jxlPack + '<!-- RAPIER_JXL_END -->\n';
 const partFiles = [];
-for (const part of PROFILE === 'full' ? PARTS : []) {
-  const element = await packedSpans('rapier-part-' + part.id, 'application/rapier-runtime', [
-    {name: 'rapier-part-' + part.id + '-shared.js', source: partShared.get(part.id)},
-    {name: 'rapier-part-' + part.id + '-styles.json', source: JSON.stringify(partStyles.get(part.id))},
-    {name: 'rapier-part-' + part.id + '.js', source: editorSlices.parts.get(part.id)},
-  ]);
+for (const [at, element] of (await partPacks).entries()) {
+  const part = PARTS[at];
   const open = '<script type="application/rapier-runtime" id="rapier-part-' + part.id + '">', body = element.slice(open.length, element.length - '</script>\n'.length);
-  if (!element.startsWith(open) || open + body + '</script>\n' !== element || body.includes('<')) throw new Error('A part element is not one inert body: ' + part.id);
+  const carried = partElement(part.id, body);
+  if (carried !== element) throw new Error('A part element is not one inert body: ' + part.id);
   const bytes = Buffer.from(body);
-  partFiles.push({id: part.id, element, body, file: 'rapier-' + part.id + '-' + checksum(bytes).slice(0, 16) + '.txt', bytes: bytes.length,
+  partFiles.push({id: part.id, element: carried, body, file: 'rapier-' + part.id + '-' + checksum(bytes).slice(0, 16) + '.txt', bytes: bytes.length,
     sri: createHash('sha384').update(bytes).digest('base64')});
 }
 const platformSpans = [];
@@ -898,8 +908,7 @@ const platformSpans = [];
     '\nreturn Object.freeze({PREFERENCE_ACCENTS, PREFERENCE_DEFINITIONS});\n})();', 'rapier-preferences.js')});
   for (const [name, path] of [['rapier-platform.js', 'shell/platform.js'], ['rapier-bundle-io.js', 'shell/bundle-io.js'], ['rapier-bundled-plugins.js', 'shell/bundled-plugins.js'], ['rapier-plugin-loader.js', 'shell/plugin-loader.js'], ['rapier-font-subset-plugin.js', 'shell/font-subset-plugin.js'], ['rapier-parts.js', 'shell/parts.js']]) {
     const input = await read(path);
-    const source = await lean(path === 'shell/plugin-loader.js' ? fillBuiltinSlot(fillBuiltinSlot(fillMermaidResources(input),
-      '/* RAPIER_BUILTIN_PLUGIN_EXECUTE */', builtinExecution), '/* RAPIER_BUILTIN_FILES_REUSE */', builtinFilesReuse)
+    const source = await lean(path === 'shell/plugin-loader.js' ? fillBuiltinSlot(fillMermaidResources(input), '/* RAPIER_BUILTIN_FILES_REUSE */', builtinFilesReuse)
       : path === 'shell/font-subset-plugin.js' ? fillFontSubsetResources(input)
       : path === 'shell/parts.js' ? fillBuiltinSlot(input, '/* RAPIER_PARTS */ null', JSON.stringify(partFiles.map(({id, file, bytes, sri}) =>
         ({id, label: PARTS.find(part => part.id === id).label, file, bytes, sri})))) : input, name);
@@ -964,27 +973,28 @@ const missingPaint = PAINT_STYLE_ORDER.filter(id => !paintStyles.some(row => row
 if (!paintStyles.length) throw new Error('First-paint styles are empty');
 if (missingPaint.length && restStyles.length) throw new Error('A deferred sheet shipped without its first-paint sheet: ' + missingPaint.join(', '));
 const styleRecord = rows => JSON.stringify(rows.map(({id, css}) => ({id, css})));
-const stylesRuntime = await packedSpans('rapier-styles-runtime', 'application/rapier-runtime', [
-  {name: 'rapier-factory-fonts.js', source: factoryFontText},
-  {name: 'rapier-styles.json', source: styleRecord(paintStyles)},
-  {name: 'rapier-first-screen.html', source: firstScreenMarkup},
+const [stylesRuntime, restStylesRuntime, codecRuntime, uiRuntime, editorRuntime] = await Promise.all([
+  packedSpans('rapier-styles-runtime', 'application/rapier-runtime', [
+    {name: 'rapier-factory-fonts.js', source: factoryFontText},
+    {name: 'rapier-styles.json', source: styleRecord(paintStyles)},
+    {name: 'rapier-first-screen.html', source: firstScreenMarkup},
+  ]),
+  packedScript('rapier-style-rest-runtime', 'application/rapier-runtime', 'rapier-styles-rest.json', styleRecord(restStyles)),
+  packedScript('rapier-codec-runtime', 'application/rapier-runtime', 'rapier-codecs.js', codecText),
+  packedScript('rapier-ui-runtime', 'application/rapier-runtime', 'rapier-ui.html', ui),
+  packedSpans('rapier-editor-runtime', 'application/rapier-runtime', [
+    {name: 'rapier-shared.js', source: bundleText}, {name: 'rapier-editor.js', source},
+  ]),
 ]);
-const restStylesRuntime = await packedScript('rapier-style-rest-runtime', 'application/rapier-runtime', 'rapier-styles-rest.json', styleRecord(restStyles));
 const paintScript = '<!-- RAPIER_PAINT_BEGIN -->\n'
   + '<div id="rapier-first-screen"></div>\n'
   + '<script data-rapier-owned>\n' + safeScript(runtimeLoader) + '\n</script>\n'
-  + await packedScript('rapier-codec-runtime', 'application/rapier-runtime', 'rapier-codecs.js', codecText)
+  + codecRuntime
   + stylesRuntime
   + '<!-- RAPIER_PAINT_END -->\n';
 if (!html.includes('<template id="rapier-ui-slot"></template>')) throw new Error('Editor interface slot is missing');
 html = html.replace('<template id="rapier-ui-slot"></template>', () => paintScript + '<template id="rapier-ui-slot"></template>');
-const runtimeScript = '<!-- RAPIER_RUNTIME_BEGIN -->\n' +
-  restStylesRuntime +
-  await packedScript('rapier-ui-runtime', 'application/rapier-runtime', 'rapier-ui.html', ui) +
-  await packedSpans('rapier-editor-runtime', 'application/rapier-runtime', [
-    {name: 'rapier-shared.js', source: bundleText}, {name: 'rapier-editor.js', source},
-  ]) +
-  '<!-- RAPIER_RUNTIME_END -->\n';
+const runtimeScript = '<!-- RAPIER_RUNTIME_BEGIN -->\n' + restStylesRuntime + uiRuntime + editorRuntime + '<!-- RAPIER_RUNTIME_END -->\n';
 const tail = [];
 const tailSlots = [
   /<script type="application\/speedracer-app\+json">[\s\S]*?<\/script>\n?/,
@@ -1003,9 +1013,10 @@ if (PROFILE === 'full') {
   const guide = [...html.matchAll(seoRegion)].find(row => row.index > html.indexOf('<body'));
   if (!guide) throw new Error('The full page has no body search guide');
   html = html.slice(0, guide.index) + html.slice(guide.index + guide[0].length);
-  const runtimeStart = html.indexOf('<!-- RAPIER_RUNTIME_BEGIN -->');
-  if (runtimeStart < 0) throw new Error('The page has no runtime boundary');
-  html = html.slice(0, runtimeStart) + guide[0] + html.slice(runtimeStart);
+  const opened = /<body>\n/.exec(html);
+  if (!opened) throw new Error('The page has no plain <body> opening');
+  const at = opened.index + opened[0].length;
+  html = html.slice(0, at) + guide[0] + html.slice(at);
 }
 html = stripMarkupComments(html);
 html = html.replace(/(<style\b[^>]*>)([\s\S]*?)(<\/style>)/g, (_, open, css, close) => open + stripStyleComments(css) + close);
@@ -1039,6 +1050,10 @@ const BUDGET = SIZE_BUDGETS[PROFILE];
 }
 await writeFile(resolve(root, OUTPUT_FILE), html);
 if (PROFILE === 'full') {
+  const doorFiles = await writeDoorAssets(root, Buffer.from(html));
+  if (doorFiles.length !== Object.keys(DOORS).length) throw new Error('The site page did not produce a dedicated file for every door');
+}
+if (PROFILE === 'full') {
   const named = new RegExp('^rapier-(?:' + PART_IDS.join('|') + ')-[0-9a-f]{16}\\.txt$');
   buildPhase('outputs');
   const listed = await readdir(root);
@@ -1070,6 +1085,7 @@ if (PROFILE === 'full') {
   const worker = serviceWorkerSource
     .replace('__RAPIER_BOOT_ID__', bootId)
     .replace('__RAPIER_DOOR_SHA256__', JSON.stringify(doorHashes))
+    .replace('__RAPIER_PARTS__', JSON.stringify(partFiles.map(({id, file, bytes, sri}) => ({id, file, bytes, sri}))))
     .replace(/const SHELL_RELEASE_SHA256 = '[0-9a-f]{64}';/, `const SHELL_RELEASE_SHA256 = '${shellDigest}';`)
     .replace(/const SHELL_PAGE_SHA256 = '[0-9a-f]{64}';/, `const SHELL_PAGE_SHA256 = '${shellPageDigest}';`);
   new vm.Script(worker, {filename: 'sw.js'});
@@ -1089,7 +1105,12 @@ if (PROFILE === 'full') {
   const platformElement = /<script type="application\/rapier-runtime" id="rapier-platform-runtime">[^<]*<\/script>\n/;
   if (!platformElement.test(html)) throw new Error('The built-in editor needs its platform runtime');
   const inventory = '<script type="application/json" id="rapier-builtin-plugins">' + safeScript(JSON.stringify(appPlugins)) + '</script>\n';
-  portableHtml = html.replace(editorElement, element => element + partFiles.map(part => part.element).join('') + plugins.html).replace(platformElement, element => inventory + element);
+  const carried = inlineParts(html, partFiles);
+  const lastPart = partFiles.at(-1).element;
+  const partAt = carried.lastIndexOf(lastPart);
+  if (partAt < 0) throw new Error('The portable page lost a part');
+  const partEnd = partAt + lastPart.length;
+  portableHtml = (carried.slice(0, partEnd) + plugins.html + carried.slice(partEnd)).replace(platformElement, element => inventory + element);
   appHtml = portableHtml.replace(/<meta http-equiv="Content-Security-Policy"[^>]*>\n?/, '').replace('<meta charset="UTF-8">', '<meta charset="UTF-8">\n<script>globalThis.RAPIER_APPS_HOST = true;</script>')
     .replace(seoRegion, '').replace(interfaceElement, () => appsInterface).replace(editorElement, element => element + appsScript);
   const destination = resolve(root, 'dist/chatgpt');
@@ -1112,7 +1133,7 @@ let priorReceipt = null;
 try { priorReceipt = JSON.parse(await readFile(resolve(root, 'dist/BUILD.json'), 'utf8')); } catch (_) { priorReceipt = null; }
 const PROVENANCE = ['builtAt', 'node', 'mode', 'packing'];
 const priorProfiles = Object.fromEntries(Object.entries(priorReceipt?.profiles && typeof priorReceipt.profiles === 'object' ? priorReceipt.profiles : {})
-  .filter(([, record]) => record && typeof record === 'object' && PROVENANCE.every(field => typeof record[field] === 'string')));
+  .filter(([name, record]) => (name === 'full' || name === 'reader') && record && typeof record === 'object' && PROVENANCE.every(field => typeof record[field] === 'string')));
 const BUILT_AT = buildReceiptTimestamp(), PACK_MODE = FAST_PACK ? 'development' : 'release', PACKING = FAST_PACK ? 'fast (zlib; not a release)' : 'zopfli';
 const pageSpans = packedRecord.filter(row => row.element !== 'rapier-apps-runtime' && !row.element.startsWith('rapier-part-'));
 const profileRecord = {path: OUTPUT_FILE, bytes: Buffer.byteLength(html), sha256: checksum(html), budget: BUDGET, spans: pageSpans,
@@ -1120,7 +1141,7 @@ const profileRecord = {path: OUTPUT_FILE, bytes: Buffer.byteLength(html), sha256
     modules: [...partOf].filter(([, owner]) => owner === id).map(([path]) => path),
     globals: Object.entries(partGlobals).filter(([, path]) => partOf.get(path) === id).map(([name]) => name)})),
   coreHeldPartGlobals: Object.keys(partGlobals).filter(name => !partOf.has(partGlobals[name])), shakenExports, jxl,
-  builtAt: BUILT_AT, node: process.version, mode: PACK_MODE, packing: PACKING, codecs: ['gzip', 'brotli'], brotli: {quality: FAST_PACK ? 5 : 11, mode: 'text', lgwin: 22}, canonical: toolchainCanonical};
+  builtAt: BUILT_AT, node: process.version, mode: PACK_MODE, packing: PACKING, codecs: ['gzip', 'brotli'], brotli: {...BROTLI_SETTINGS}, canonical: toolchainCanonical};
 // (`RAPIER_PACK=fast`), 'release' for Zopfli; tools/release-gate.mjs checks it.
 const receipt = {phoneBench: phoneBenchReceipt, release: VERSION, builtAt: BUILT_AT, node: process.version, mode: PACK_MODE, packing: PACKING, codecs: profileRecord.codecs, brotli: profileRecord.brotli, validation: 'JavaScript syntax and source assembly only; no runtime or host verification', profile: PROFILE, jxl, profiles: {...priorProfiles, [PROFILE]: profileRecord}, editor: {path: OUTPUT_FILE, bytes: Buffer.byteLength(html), sha256: checksum(html)}, apps: PROFILE === 'full' ? {path: 'dist/chatgpt/rapier-app.html', bytes: appHtmlBytes, sha256: appHtmlSha256, spans: appsSpans, plugins: appPlugins} : priorReceipt?.apps ?? null, offline: PROFILE === 'full' ? {path: 'dist/chatgpt/rapier.html', bytes: Buffer.byteLength(portableHtml), sha256: checksum(portableHtml), plugins: appPlugins} : priorReceipt?.offline ?? null, shell: PROFILE === 'full' ? {sha256: shellDigest} : priorReceipt?.shell ?? null, htmlSinks: {named: htmlSinks.total, files: htmlSinks.files, inventory: 'security/html-sinks.json'}, tools: TOOLS.map(row => row.name), toolchain: {canonical: toolchainCanonical, node: {expected: toolchain.node.version, actual: process.version}}, unchecked};
 await mkdir(resolve(root, 'dist'), {recursive: true});

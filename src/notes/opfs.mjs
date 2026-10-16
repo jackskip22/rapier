@@ -3,6 +3,7 @@ import {exactBytes, blobByteChunks, checkByteAbort} from './integrity.mjs';
 import {parts, FOLDERS} from './opfs-paths.mjs';
 import {stampFor} from './search-store.mjs';
 import {isRecordingPartial, recordingStorageError} from './recording-files.mjs';
+import {notesHostWords, nativeWorkerName} from './host-words.mjs';
 
 export function createNativeByteStore(options) { return nativeByteStore(options); }
 export function createNativeNotesLocks(options) { return nativeNotesLocks(options); }
@@ -11,9 +12,9 @@ const fail = (code, message) => Object.assign(new Error(message), {code});
 const missing = error => error?.name === 'NotFoundError';
 function fileWorker() {
  const source = globalThis.RapierNotesOPFSWorker?.workerSource;
- if (typeof source !== 'function' || typeof Worker !== 'function') throw fail('atomic', 'This browser cannot safely replace a note. These notes are read-only here; opening, search and backup still work.');
+ if (typeof source !== 'function' || typeof Worker !== 'function') throw fail('atomic', notesHostWords().Device + ' cannot safely replace a note. These notes are read-only here; opening, search and backup still work.');
  const url = URL.createObjectURL(new Blob([source()], {type: 'text/javascript'}));
- try { return new Worker(url, {name: 'rapier-notes-files'}); }
+ try { return new Worker(url, {name: nativeWorkerName('rapier-notes-files')}); }
  finally { URL.revokeObjectURL(url); }
 }
 const errorRecord = error => ({name: String(error?.name || 'Error'), message: String(error?.message || error), ...(error?.code !== undefined ? {code: error.code} : {})});

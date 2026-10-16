@@ -4,6 +4,7 @@ import {verifyBackupFile} from './backup-lifecycle.mjs';
 import {ZIP_READ_MAX_BYTES} from './zip.mjs';
 import {backupLimitError} from './backup-folder.mjs';
 import {attachmentSizeWords} from './size-words.mjs';
+import {notesHostWords} from './host-words.mjs';
 
 export function createBackupSink(target) {
 	for (const method of ['write', 'close', 'abort', 'file', 'remove']) if (typeof target?.[method] !== 'function') throw new TypeError('backup staging needs ' + method);
@@ -19,7 +20,7 @@ export function createBackupSink(target) {
 		get state() { return state; }, get bytes() { return bytes; }, get digest() { return digest; },
 		write(chunk) { return exclusive('writing', async () => { if (!(chunk instanceof Uint8Array)) throw new TypeError('backup staging needs bytes'); hash.update(chunk); await target.write(chunk); bytes += chunk.length; }); },
 		endMember(size) { return exclusive('writing', async () => target.endMember?.(size)); },
-		close({onProgress} = {}) { return exclusive('writing', async () => { await target.close(); closed = true; digest = hash.finish(); const file = await verifyBackupFile(await target.file(), {bytes, digest}, {onProgress}); state = 'sealed'; return file; }); },
+		close({onProgress, signal} = {}) { return exclusive('writing', async () => { await target.close(); closed = true; digest = hash.finish(); const file = await verifyBackupFile(await target.file(), {bytes, digest}, {onProgress, signal}); state = 'sealed'; return file; }); },
 		abort(reason) {
 			if (aborting) return aborting;
 			if (state === 'aborted') return Promise.resolve();
@@ -34,7 +35,7 @@ export function createBackupSink(target) {
 			})();
 			return aborting;
 		},
-		file({onProgress} = {}) { return exclusive('sealed', async () => verifyBackupFile(await target.file(), {bytes, digest}, {onProgress})); },
+		file({onProgress, signal} = {}) { return exclusive('sealed', async () => verifyBackupFile(await target.file(), {bytes, digest}, {onProgress, signal})); },
 		async discard() {
 			return exclusive('sealed', async () => { await target.remove(); state = 'discarded'; });
 		}
@@ -45,7 +46,7 @@ export function memoryBackupTarget({maxBytes = ZIP_READ_MAX_BYTES, makeFile, nam
 	if (!Number.isSafeInteger(maxBytes) || maxBytes < 0 || maxBytes > ZIP_READ_MAX_BYTES || typeof makeFile !== 'function') throw new TypeError('backup needs a bounded file factory');
 	let parts = [], bytes = 0, file = null;
 	const refused = (size, cause) => Object.assign(limitError('need ' + attachmentSizeWords(size)
-		+ ' of browser storage, more than this browser could hold'), {cause});
+		+ ' of ' + notesHostWords().kind + ' storage, more than ' + notesHostWords().device + ' could hold'), {cause});
 	return {
 		async write(chunk) {
 			const size = bytes + chunk.length;

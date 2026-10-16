@@ -2,10 +2,7 @@ const _rapierPersonal = globalThis.__rapierServerRenderHost === true ? null : ((
 	let applying = false, pendingBrushes = 0;
 	const pendingPreferences = new Map(), pendingDrawing = new Map();
 	const transient = globalThis.RapierBenchSession?.active === true;
-	const drawing = () => typeof _rapierDrawState !== 'undefined';
-	const drawKeys = () => ({...drawing() ? {...Object.fromEntries(Object.entries(RAPIER_DRAW_MEMORY).map(([key, value]) => [key, value[0]])),
-		recentInks: RAPIER_DRAW_RECENT_KEY, paintBrush: RAPIER_PAINT_BRUSH_KEY, paintStrength: RAPIER_PAINT_STRENGTH_KEY, paintHead: RAPIER_PAINT_HEAD_KEY,
-		paintSizes: RAPIER_PAINT_SIZES_KEY, paintDips: RAPIER_PAINT_DIP_KEY} : {}, exportDialect: 'rapier:export.pandocDialect'});
+	const drawKeys = () => ({..._rapierDrawPart?.keys(), exportDialect: 'rapier:export.pandocDialect'});
 	async function apply(profile) {
 		if (transient) return;
 		applying = true;
@@ -24,38 +21,26 @@ const _rapierPersonal = globalThis.__rapierServerRenderHost === true ? null : ((
 						} catch (error) { showToast(String(error.message || error), 'error'); continue; }
 					}
 					if (RapierPreferences.read(name) !== value) RapierPreferences.write(name, value);
-				} else if (key.startsWith('drawing/') && drawing()) {
+				} else if (key.startsWith('drawing/') && _rapierDrawPart) {
 					const name = key.slice(8), storageKey = keys[name];
 					if (pendingDrawing.has(name)) continue;
 					if (storageKey && (typeof value === 'string' || value === null)) {
 						if (value === null) localStorage.removeItem(storageKey); else localStorage.setItem(storageKey, value);
-						if (name === 'textDefaults') _rapierDrawState.textDefaults = null;
+						if (name === 'textDefaults') _rapierDrawPart.state.textDefaults = null;
 					}
-					else if (name === 'paintFits' && typeof value === 'string') {
-						let fits; try { fits = JSON.parse(value); } catch (_) { continue; }
-						if (!fits || typeof fits !== 'object' || Array.isArray(fits)) continue;
-						for (const [id, on] of Object.entries(fits)) if (/^[A-Za-z0-9_./-]+$/.test(id) && typeof on === 'boolean') { if (on) localStorage.removeItem(RAPIER_PAINT_FIT_KEY + id); else localStorage.setItem(RAPIER_PAINT_FIT_KEY + id, 'off'); }
-					}
-				} else if (key.startsWith('brush/') && value && drawing()) { const brush = profile.blobs[value.content]; _rapierPersonalStore.validateAsset(key, brush); brushes.push(brush); }
+					else if (name === 'paintFits' && typeof value === 'string') _rapierDrawPart.fits(value);
+				} else if (key.startsWith('brush/') && value && _rapierDrawPart) { const brush = profile.blobs[value.content]; _rapierPersonalStore.validateAsset(key, brush); brushes.push(brush); }
 			}
-			if (!pendingBrushes && drawing() && Object.keys(profile.records).some(key => key.startsWith('brush/'))) {
-				let local; try { local = _rapierPaintStoredBrushes(); } catch (_) {}
-				if (local) {
-					const kept = local.filter(row => typeof row?.id !== 'string' || !Object.hasOwn(profile.records, 'brush/' + row.id));
-					localStorage.setItem(RAPIER_PAINT_OWN_KEY, JSON.stringify(kept.concat(brushes))); _rapierDrawState.paintOwn = null;
-				}
-			}
-			if (drawing() && _rapierDrawState.open) {
-				if (!_rapierDrawState.gesture) { _rapierDrawState.paintBrush = _rapierPaintRememberedBrush(); _rapierDrawState.paintSize = _rapierPaintRememberedSize(); _rapierDrawState.paintStrength = _rapierPaintRememberedStrength(); _rapierDrawState.paintHead = null; }
-				_rapierDrawSyncTextPanels(); _rapierDrawUpdateMenu(); _rapierPaintUpdateStrip();
-			}
-			if (typeof _rapierNotes !== 'undefined' && _rapierNotes.open) { _rapierNotesLayout(); _rapierNotesRender(); _rapierNotesHeadPaint(); }
+			if (!pendingBrushes && _rapierDrawPart && Object.keys(profile.records).some(key => key.startsWith('brush/')))
+				_rapierDrawPart.brushes(row => typeof row?.id !== 'string' || !Object.hasOwn(profile.records, 'brush/' + row.id), brushes);
+			_rapierDrawPart?.applied();
+			_rapierNotesPart?.applied();
 		} finally { applying = false; }
 	}
 	const owner = _rapierPersonalStore;
 	owner.subscribe(async profile => { await apply(profile); plugins.scan(); plugins.fulfil(); });
 	const travels = globalThis.RapierPersonal.personalTravels;
-	const changed = () => { if (!transient && typeof _rapierNotesSyncUi !== 'undefined') _rapierNotesSyncUi.changed('settings'); };
+	const changed = () => { if (!transient) _rapierNotesPart?.sync.changed('settings'); };
 	const report = error => showToast(String(error?.message || 'Personal settings could not be saved.'), 'error');
 	const plugins = (() => {
 		const KEYS = ['math', 'mermaid', 'ocr', 'letters-field', 'letters-relief', 'letters-leaf', 'letters-arabesque', 'pdf'], DECLINED = 'rapier:plugin:declined';
@@ -83,7 +68,7 @@ const _rapierPersonal = globalThis.__rapierServerRenderHost === true ? null : ((
 	});
 	async function recordDrawing(records) {
 		for (const [field, key] of Object.entries(drawKeys())) { const value = localStorage.getItem(key); if (value !== null && !records['drawing/' + field]) await owner.set('drawing/' + field, value); }
-		if (drawing()) for (const row of _rapierPaintOwnBrushes()) if (!records['brush/' + row.id]) await owner.putAsset('brush/' + row.id, {id: row.id, name: row.name, notes: row.notes, myb: row.myb});
+		if (_rapierDrawPart) for (const row of _rapierDrawPart.ownBrushes()) if (!records['brush/' + row.id]) await owner.putAsset('brush/' + row.id, {id: row.id, name: row.name, notes: row.notes, myb: row.myb});
 	}
 	addEventListener('rapier:part', event => {
 		if (transient || event.detail?.id !== 'drawing' || event.detail.status !== 'ready') return;

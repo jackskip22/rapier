@@ -27,16 +27,23 @@ surd=√ diagup=╱ diagdown=╲ Bbbk=𝕜
 // Lowercase Greek retains the ordinary mathematical italic convention.
 for (const name of 'alpha beta gamma delta epsilon varepsilon zeta eta theta vartheta iota kappa varkappa lambda mu nu xi omicron pi varpi rho varrho sigma varsigma tau upsilon phi varphi chi psi omega digamma'.split(' '))
   MATH_SYMBOLS[name] = Object.freeze({...MATH_SYMBOLS[name], variant: 'normal'});
+// upgreek: \upalpha to \upomega and \Upgamma to \Upomega are upright.
+for (const name of Object.keys(MATH_SYMBOLS).filter(name => /^[a-z]+$/.test(name) && MATH_SYMBOLS[name].variant === 'normal')) {
+  MATH_SYMBOLS['up' + name] = Object.freeze({...MATH_SYMBOLS[name], variant: 'roman'});
+  const capital = name[0].toUpperCase() + name.slice(1);
+  if (MATH_SYMBOLS[capital]) MATH_SYMBOLS['Up' + name] = MATH_SYMBOLS[capital];
+}
 for (const name of Object.keys(MATH_SYMBOLS).filter(name => /^var[A-Z]/.test(name)))
   MATH_SYMBOLS[name] = Object.freeze({...MATH_SYMBOLS[name], variant: 'italic'});
 mathSymbolGroup('bin', `
-pm=± mp=∓ times=× div=÷ cdot=⋅ cdotp=⋅ ast=∗ star=⋆ circ=∘ bullet=∙ diamond=⋄
+dotminus=∸ cupdot=⊍ barvee=⊽
+pm=± mp=∓ times=× div=÷ cdot=⋅ ast=∗ star=⋆ circ=∘ bullet=∙ diamond=⋄
 cap=∩ cup=∪ uplus=⊎ sqcap=⊓ sqcup=⊔ vee/lor=∨ wedge/land=∧ setminus=∖ smallsetminus=∖
 oplus=⊕ ominus=⊖ otimes=⊗ oslash=⊘ odot=⊙ bigcirc=◯ dag/dagger=† ddag/ddagger=‡ amalg=⨿
 triangleleft=◁ triangleright=▷ lhd=⊲ rhd=⊳ unlhd=⊴ unrhd=⊵ wr=≀
 barwedge=⊼ veebar=⊻ doublebarwedge=⩞ curlywedge=⋏ curlyvee=⋎ boxplus=⊞ boxminus=⊟ boxtimes=⊠ boxdot=⊡
 ltimes=⋉ rtimes=⋊ leftthreetimes=⋋ rightthreetimes=⋌ dotplus=∔ divideontimes=⋇
-circledast=⊛ circledcirc=⊚ circleddash=⊝ intercal=⊺ centerdot=· land=∧ lor=∨ bigtriangleup=△ bigtriangledown=▽
+circledast=⊛ circledcirc=⊚ circleddash=⊝ intercal=⊺ centerdot=· bigtriangleup=△ bigtriangledown=▽ Cup=⋓ Cap=⋒
 `, {variant: 'roman'});
 mathSymbolGroup('rel', `
 le/leq=≤ ge/geq=≥ neq/ne=≠ equiv=≡ sim=∼ simeq=≃ approx=≈ cong=≅ asymp=≍ propto=∝
@@ -58,9 +65,10 @@ nprec=⊀ nsucc=⊁ npreceq=⋠ nsucceq=⋡ precneqq=⪵ succneqq=⪶ precnsim=�
 nsubset=⊄ nsupset=⊅ nsubseteq=⊈ nsupseteq=⊉ nsubseteqq=⊈ nsupseteqq=⊉ subsetneq=⊊ supsetneq=⊋
 varsubsetneq=⊊ varsupsetneq=⊋ subsetneqq=⫋ supsetneqq=⫌ varsubsetneqq=⫋ varsupsetneqq=⫌
 nmid=∤ nparallel=∦ nshortmid=∤ nshortparallel=∦ nvdash=⊬ nVdash=⊮ nvDash=⊭ nVDash=⊯
-ntriangleleft=⋪ ntriangleright=⋫ ntrianglelefteq=⋬ ntrianglerighteq=⋭ coloneqq/coloneq=≔ eqqcolon=≕
+ntriangleleft=⋪ ntriangleright=⋫ ntrianglelefteq=⋬ ntrianglerighteq=⋭ coloneqq=≔ eqqcolon=≕ vcentcolon=∶ dblcolon/Colon=∷ And=&
 `, {variant: 'roman'});
 mathSymbolGroup('rel', `
+questeq=≟ veeeq=≚ stareq=≛ eqdef=≝ estimates/corresponds=≙ Equiv=≣
 leftarrow/gets=← rightarrow/to=→ leftrightarrow=↔ Leftarrow=⇐ Rightarrow=⇒ Leftrightarrow=⇔
 longleftarrow=⟵ longrightarrow=⟶ longleftrightarrow=⟷ Longleftarrow=⟸ Longrightarrow=⟹ Longleftrightarrow=⟺
 mapsto=↦ longmapsto=⟼ hookleftarrow=↩ hookrightarrow=↪ nearrow=↗ searrow=↘ nwarrow=↖ swarrow=↙
@@ -72,29 +80,31 @@ Lleftarrow=⇚ Rrightarrow=⇛ twoheadleftarrow=↞ twoheadrightarrow=↠ leftar
 looparrowleft=↫ looparrowright=↬ leftrightsquigarrow=↭ rightsquigarrow/leadsto=⇝ curvearrowleft=↶ curvearrowright=↷
 circlearrowleft=↺ circlearrowright=↻ dashleftarrow=⇠ dashrightarrow=⇢ multimap=⊸
 nleftarrow=↚ nrightarrow=↛ nleftrightarrow=↮ nLeftarrow=⇍ nRightarrow=⇏ nLeftrightarrow=⇎
+Lsh=↰ Rsh=↱ Ldsh=↲ Rdsh=↳ twoheaduparrow=↟ twoheaddownarrow=↡ updownarrows=⇅ downuparrows=⇵ leftsquigarrow=⇜ longrightsquigarrow=⟿
 `, {variant: 'roman'});
 mathSymbolGroup('op', `
 sum=∑ prod=∏ coprod=∐ bigcup=⋃ bigcap=⋂ bigvee=⋁ bigwedge=⋀ biguplus=⨄ bigsqcup=⨆
-bigotimes=⨂ bigoplus=⨁ bigodot=⨀ bigamalg=⨿ bigsqcap=⨅
+bigotimes=⨂ bigoplus=⨁ bigodot=⨀ bigamalg=∐ bigsqcap=⨅ bigcupdot=⨃ bigtimes=⨉
 `, {large: true, limits: 'display', variant: 'roman'});
 mathSymbolGroup('op', `
 int=∫ iint=∬ iiint=∭ iiiint=⨌ oint=∮ oiint=∯ oiiint=∰ intop=∫ smallint=∫
-intclockwise=∱ varointclockwise=∲ ointctrclockwise=∳ sumint=⨋
+intclockwise=∱ varointclockwise=∲ ointctrclockwise=∳ sumint=⨋ awint=⨑
 `, {large: true, limits: 'never', variant: 'roman'});
 MATH_SYMBOLS.intop = Object.freeze({...MATH_SYMBOLS.intop, limits: 'display'});
 MATH_SYMBOLS.smallint = Object.freeze({...MATH_SYMBOLS.smallint, large: false});
-mathSymbolGroup('open', 'langle=⟨ lbrace={ lgroup=⟮ lbrack=[ lfloor=⌊ lceil=⌈ lvert=| lVert=‖ lmoustache=⎰ llbracket=⟦ ulcorner=⌜ llcorner=⌞', {variant: 'roman'});
-mathSymbolGroup('close', 'rangle=⟩ rbrace=} rgroup=⟯ rbrack=] rfloor=⌋ rceil=⌉ rvert=| rVert=‖ rmoustache=⎱ rrbracket=⟧ urcorner=⌝ lrcorner=⌟', {variant: 'roman'});
-mathSymbolGroup('ord', 'vert=| Vert=‖ backslash=∖ slash=/', {variant: 'roman'});
+mathSymbolGroup('open', 'langle/lang=⟨ lAngle=⟪ lbrace={ lgroup=⟮ lbrack=[ lfloor=⌊ lceil=⌈ lvert=| lVert=‖ lmoustache=⎰ llbracket=⟦ ulcorner=⌜ llcorner=⌞', {variant: 'roman'});
+mathSymbolGroup('close', 'rangle/rang=⟩ rAngle=⟫ rbrace=} rgroup=⟯ rbrack=] rfloor=⌋ rceil=⌉ rvert=| rVert=‖ rmoustache=⎱ rrbracket=⟧ urcorner=⌝ lrcorner=⌟', {variant: 'roman'});
+mathSymbolGroup('ord', 'vert=| Vert=‖ backslash=\\ slash=/', {variant: 'roman'});
 mathSymbolGroup('inner', 'dotsc=… cdots=⋯ dotsb=⋯ dotsm=⋯ dotsi=⋯ dotso=… ddots=⋱ mathellipsis=…', {variant: 'roman'});
 mathSymbolGroup('ord', 'vdots=⋮', {variant: 'roman'});
+mathSymbolGroup('inner', 'iddots/adots=⋰', {variant: 'roman'});
 mathSymbolGroup('punct', 'colon=: cdotp=⋅', {variant: 'roman'});
 MATH_SYMBOLS.ldots = MATH_SYMBOLS.dots = Object.freeze({type: 'glyph', value: '…', class: 'inner', variant: 'roman'});
 for (const [name, symbol] of Object.entries(MATH_SYMBOLS)) {
   const {variant, ...fields} = symbol;
   MATH_SYMBOLS[name] = Object.freeze({...fields, defaultVariant: variant});
 }
-const MATH_NAMED_OPERATORS = new Set(('arccos arcsin arctan arccot arcsec arccsc cos cosh cot coth csc csch sec sech sin sinh tan tanh exp log ln lg lb det dim gcd hom ker arg deg Pr erf erfc mod').split(' '));
+const MATH_NAMED_OPERATORS = new Set(('arccos arcsin arctan arccot arcsec arccsc cos cosh cot coth csc csch sec sech sin sinh tan tanh exp log ln lg lb det dim gcd hom ker arg deg Pr erf erfc').split(' '));
 const MATH_LIMIT_OPERATORS = new Set(('lim limsup liminf sup inf max min injlim projlim varlimsup varliminf varinjlim varprojlim').split(' '));
 
 

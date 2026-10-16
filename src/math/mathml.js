@@ -59,7 +59,9 @@ function mathML(tree, source, safeSource, options = {}) {
     else if (role === 'units') warn('semantic-units-presentation', 'Unit notation retains the parser-expanded mathematical structure; quantities and unit identities are not inferred.');
     else if (role === 'tag') warn('semantic-tag-presentation', 'An authored tag remains following content; no equation identity, numbering or cross-reference semantics are assigned.');
   };
-  const scriptContext = context => ({...context, display: false, level: Math.min(2, context.level + 1)});
+  // An operator's form and movable limits belong to it alone, not to the expressions inside it.
+  const inner = context => ({...context, form: undefined, movableLimits: undefined});
+  const scriptContext = context => ({...inner(context), display: false, level: Math.min(2, context.level + 1)});
   const styledContext = (context, node) => {
     const next = {...context};
     if (node.variant) next.variant = node.variant;
@@ -102,7 +104,7 @@ function mathML(tree, source, safeSource, options = {}) {
     if (kind === 'mi' && face !== 'normal' && face !== 'italic') attributes.mathvariant = 'normal';
     token(kind, styled, attributes, context);
   };
-  const kind = node => node.tokenKind || (/^\p{Decimal_Number}+$/u.test(node.value) ? 'mn' : /^[∞∅ℵℶℷℸ]$/.test(node.value) ? 'mi' :
+  const kind = node => node.tokenKind || (/^\p{Decimal_Number}+$/u.test(node.value) ? 'mn' : /^[∞∅ℵℶℷℸ℘℧⅁]$/.test(node.value) ? 'mi' :
     ['op', 'bin', 'rel', 'open', 'close', 'punct', 'inner'].includes(node.class) ||
     /^[\p{Sm}\p{P}\p{Sc}\p{So}\p{Sk}\u2061-\u2064]$/u.test(node.value) ? 'mo' : 'mi');
   const classOf = node => {
@@ -156,6 +158,8 @@ function mathML(tree, source, safeSource, options = {}) {
   }
 
   function row(children, context, depth) {
+    // movablelimits belongs to an operator that is itself the base, not to operators inside a compound base.
+    if (children.length > 1) context = {...context, movableLimits: undefined};
     open('mrow');
     let previous;
     for (let index = 0; index < children.length; index++) {
@@ -182,8 +186,11 @@ function mathML(tree, source, safeSource, options = {}) {
         previous = 'ord'; index = end - 1; continue;
       }
       let form;
-      if (node.type === 'glyph' && node.class === 'bin')
-        form = !previous || ['bin', 'op', 'rel', 'open', 'punct'].includes(previous) ? 'prefix' : 'infix';
+      if ((node.type === 'glyph' || node.type === 'style' && node.body.type === 'glyph') && classOf(node) === 'bin') {
+        // TeX's rule 5: a binary operator before a relation, a closing symbol or nothing is not infix.
+        const next = children.slice(index + 1).find(child => child.type !== 'space');
+        form = !previous || ['bin', 'op', 'rel', 'open', 'punct'].includes(previous) ? 'prefix' : !next || ['rel', 'close', 'punct'].includes(classOf(next)) ? 'postfix' : 'infix';
+      }
       emit(node, {...context, form}, depth + 1);
       if (node.type !== 'space') previous = classOf(node);
     }
@@ -211,7 +218,7 @@ function mathML(tree, source, safeSource, options = {}) {
       before[insertion.before].push(insertion.body);
     }
     const small = /smallmatrix$/.test(node.env) || node.env === 'subarray' || node.env === 'substack';
-    const display = /^(align(?:ed)?(?:at)?|flalign|split|gather(?:ed)?|eqnarray|multline|equation|drcases|dcases)$/.test(node.env);
+    const display = /^(align(?:ed)?(?:at)?|flalign|split|[lr]?gather(?:ed)?|eqnarray|multline(?:d)?|equation|drcases|dcases|darray)$/.test(node.env);
     const cellContext = {...context, display: small ? false : display, level: small ? Math.max(1, context.level) : context.level};
     const delimiters = {pmatrix: ['(', ')'], bmatrix: ['[', ']'], Bmatrix: ['{', '}'], vmatrix: ['|', '|'], Vmatrix: ['‖', '‖'],
       psmallmatrix: ['(', ')'], bsmallmatrix: ['[', ']'], Bsmallmatrix: ['{', '}'], vsmallmatrix: ['|', '|'], Vsmallmatrix: ['‖', '‖'],
@@ -223,7 +230,7 @@ function mathML(tree, source, safeSource, options = {}) {
       for (let column = 0; column < columns; column++) {
         if (++metrics.nodes > 100000) fail('resource-limit', 'MathML table cells exceed its work budget.');
         let align = node.env === 'eqnarray' ? ['r', 'c', 'l'][column % 3] : node.align?.[column] || 'c';
-        if (node.env === 'multline' && columns === 1) align = at === 0 ? 'l' : at === rows.length - 1 ? 'r' : 'c';
+        if (/^multlined?$/.test(node.env) && columns === 1) align = at === 0 ? 'l' : at === rows.length - 1 ? 'r' : 'c';
         open('mtd', {style: 'text-align:' + ({l: 'left', r: 'right', c: 'center'}[align] || 'center')});
         open('mrow');
         for (const body of before[column]) emit(body, cellContext, depth + 1);
@@ -270,20 +277,20 @@ function mathML(tree, source, safeSource, options = {}) {
           if (node.left || node.right) { open('mrow'); fence(node.left, 'prefix', local); }
           open('mfrac', {linethickness: node.bar === false ? '0' : node.barThickness === undefined ? undefined : em(node.barThickness)});
           const child = local.display && local.level === 0 ? {...local, display: false} : scriptContext(local);
-          emit(node.num, child, depth + 1); emit(node.den, child, depth + 1); close('mfrac');
+          emit(node.num, inner(child), depth + 1); emit(node.den, inner(child), depth + 1); close('mfrac');
           if (node.left || node.right) { fence(node.right, 'postfix', local); close('mrow'); }
           if (node.style) close('mstyle');
           if (node.align) warn('semantic-fraction-alignment', 'The fraction relationship is preserved; continued-fraction numerator alignment is left to the MathML host.');
           break;
         }
         case 'root':
-          open(node.index ? 'mroot' : 'msqrt'); emit(node.body, context, depth + 1);
-          if (node.index) emit(node.index, {...context, display: false, level: 2}, depth + 1);
+          open(node.index ? 'mroot' : 'msqrt'); emit(node.body, inner(context), depth + 1);
+          if (node.index) emit(node.index, {...inner(context), display: false, level: 2}, depth + 1);
           close(node.index ? 'mroot' : 'msqrt'); break;
         case 'fence':
-          open('mrow'); fence(node.left, 'prefix', context, node.size); emit(node.body, context, depth + 1); fence(node.right, 'postfix', context, node.size); close('mrow'); break;
+          open('mrow'); fence(node.left, 'prefix', context, node.size); emit(node.body, inner(context), depth + 1); fence(node.right, 'postfix', context, node.size); close('mrow'); break;
         case 'accent': {
-          if (node.overlay) {
+          if (node.overlay || node.position === 'through') {
             warn('semantic-overlay', 'An overlay uses the MathML 3 menclose extension; hosts implementing only Core may omit the cancellation or negation mark.');
             const notation = node.value === '╲' ? 'downdiagonalstrike' : node.value === '╳' ? 'updiagonalstrike downdiagonalstrike' : node.value === '↗' ? 'updiagonalarrow' : node.value === '─' ? 'horizontalstrike' : 'updiagonalstrike';
             open('menclose', {notation}); emit(node.base, context, depth + 1); close('menclose'); break;
@@ -342,7 +349,7 @@ function mathML(tree, source, safeSource, options = {}) {
           open('mpadded', {height: node.mode === 'b' ? undefined : '0', depth: node.mode === 't' ? undefined : '0'});
           emit(node.body, context, depth + 1); close('mpadded'); break;
         case 'raise':
-          open('mpadded', {voffset: em(node.amount), height: node.height === undefined ? undefined : em(node.height), depth: node.depth === undefined ? undefined : em(node.depth)});
+          open('mpadded', {voffset: node.center ? undefined : em(node.amount), height: node.height === undefined ? undefined : em(node.height), depth: node.depth === undefined ? undefined : em(node.depth)});
           emit(node.body, context, depth + 1); close('mpadded'); break;
         case 'rule':
           warn('semantic-rule-presentation', 'A rule is represented as a decorative mathematical space; no additional mathematical relationship is inferred.');
