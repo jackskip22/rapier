@@ -151,7 +151,7 @@ export function createOPFSWorker({postMessage}) {
     const id = request?.id, operation = request?.operation;
     if (!Number.isSafeInteger(id) || id < 1) return;
     const current = jobs.get(id);
-    if (operation === 'cancel') { current?.controller.abort(); current?.progress?.reject(Object.assign(new Error('File copy cancelled. No unfinished file was kept.'), {name: 'AbortError', code: 'cancelled'})); return; }
+    if (operation === 'cancel') { current?.controller.abort(); current?.progress?.reject(Object.assign(new Error('File copy canceled. No unfinished file was kept.'), {name: 'AbortError', code: 'cancelled'})); return; }
     if (operation === 'progress') {
       if (current?.progress) { const pending = current.progress; current.progress = null; request.error ? pending.reject(Object.assign(new Error(request.error.message), request.error)) : pending.resolve(); }
       return;

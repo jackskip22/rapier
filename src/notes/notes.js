@@ -905,7 +905,7 @@ async function _rapierNotesLoad() {
 		if (state.loadRequest !== request) return;
 		return _rapierNotesReadRest();
 	};
-	if (damaged) showToast('Rapier couldn’t read its list of your notes, so it made a new one from the notes; pins, colours, sections and order start over. The unreadable copy is kept in the notes folder as ' + damaged + '.', 'error');
+	if (damaged) showToast('Rapier couldn’t read its list of your notes, so it made a new one from the notes; pins, colors, sections and order start over. The unreadable copy is kept in the notes folder as ' + damaged + '.', 'error');
 	if (dropped.length) showToast(dropped.length === 1 ? 'One note on Rapier’s list is not in the notes folder, so it was taken off the list.' : dropped.length + ' notes on Rapier’s list are not in the notes folder, so they were taken off the list.', 'info');
 }
 
@@ -1209,7 +1209,7 @@ function _rapierNotesBuildSurface() {
 	const popup = _rapierNotesEl('div', 'rapier-notes-popup'); popup.hidden = true; popup.setAttribute('aria-hidden', 'true');
 	const sheet = _rapierNotesEl('div', 'rapier-notes-sheet'); sheet.id = 'rapier-notes-sheet'; sheet.tabIndex = -1; sheet.inert = true; sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true'); sheet.setAttribute('aria-label', 'Note actions');
 	const status = _rapierNotesEl('p', 'sr-only'); status.id = 'rapier-notes-status'; status.setAttribute('data-rapier-announcer', ''); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite'); status.setAttribute('aria-atomic', 'true');
-	const help = _rapierNotesEl('p', 'sr-only', 'Enter opens this note. Space or X selects it. Shift+F10 opens note actions. Arrow keys browse notes. Shift+J and Shift+K move it. F pins, E archives, # deletes, C creates a note, / searches, R sets a reminder in the app, and L chooses a colour. R and L use the selection when this card is selected.'); help.id = 'rapier-notes-card-help';
+	const help = _rapierNotesEl('p', 'sr-only', 'Enter opens this note. Space or X selects it. Shift+F10 opens note actions. Arrow keys browse notes. Shift+J and Shift+K move it. F pins, E archives, # deletes, C creates a note, / searches, R sets a reminder in the app, and L chooses a color. R and L use the selection when this card is selected.'); help.id = 'rapier-notes-card-help';
 	const selected = _rapierNotesEl('p', 'sr-only', 'Selected.'); selected.id = 'rapier-notes-selected';
 	const settings = _rapierNotesSettingsEl();
 	const jump = _rapierNotesJumpEl();
@@ -1264,7 +1264,7 @@ function _rapierNotesColourMode() { return RapierPreferences.read('notesColour')
 // .rapier-notes-colour-mode__fill); the palette is RAPIER_NOTES_ICONS.palette, the colour act's one
 function _rapierNotesColourModeBtn() {
 	const b = _rapierNotesEl('button', 'rapier-notes-colour-mode'); b.type = 'button'; b.dataset.notesAct = 'colour-mode';
-	b.setAttribute('aria-label', 'colour the whole page');
+	b.setAttribute('aria-label', 'color the whole page');
 	const frame = _rapierNotesEl('span', 'rapier-notes-colour-mode__page'); frame.setAttribute('aria-hidden', 'true');
 	const NS = 'http://www.w3.org/2000/svg', edge = document.createElementNS(NS, 'svg'), rect = document.createElementNS(NS, 'rect');
 	edge.setAttribute('class', 'rapier-notes-colour-mode__edge'); edge.setAttribute('viewBox', '0 0 24 32');
@@ -3710,10 +3710,10 @@ function _rapierNotesOpenSheet(file, mode) {
 	const asDocument = [['open-document', 'Open as document'], ['share', 'Share']];
 	if (state.sheetMode === 'colour') {
 		const worn = entries.every(e => e.colour === entries[0].colour) ? entries[0].colour : null;
-		const row = _rapierNotesEl('div', 'rapier-notes-swatches'); row.setAttribute('role', 'radiogroup'); row.setAttribute('aria-label', 'colour');
+		const row = _rapierNotesEl('div', 'rapier-notes-swatches'); row.setAttribute('role', 'radiogroup'); row.setAttribute('aria-label', 'color');
 		for (const colour of M.NOTE_COLOURS) {
 			const b = _rapierNotesEl('button', 'rapier-notes-swatch' + (colour ? ' rapier-notes-tint-' + colour : ' rapier-notes-swatch--none')); b.type = 'button'; b.dataset.notesAct = 'colour-pick'; b.dataset.notesColour = colour;
-			b.setAttribute('role', 'radio'); b.setAttribute('aria-label', colour || 'no colour'); b.setAttribute('aria-checked', String(colour === worn));
+			b.setAttribute('role', 'radio'); b.setAttribute('aria-label', colour || 'no color'); b.setAttribute('aria-checked', String(colour === worn));
 			row.appendChild(b);
 		}
 		sheet.appendChild(row);
@@ -3827,18 +3827,18 @@ function _rapierNotesOpenSheet(file, mode) {
 		if (typeof _rapierNotesLibraryConnectionsFace === 'function') _rapierNotesLibraryConnectionsFace(sheet, files[0]);
 	} else if (state.compose) {
 		const homePin = typeof globalThis.RapierPlatform?.host?.pinNote === 'function' ? [['home-pin', 'Home screen']] : [];
-		for (const [act, word, icon] of [['copy', 'Duplicate'], ...asDocument, ...homePin, ['section-face', 'Section'], ['colour', 'Colour'], ['find-note', 'Find in note'], ['archive', every('archived') ? 'Unarchive' : 'Archive'], ['connections', 'Connections'], ['tags-face', 'Tags'], ['history-face', 'History']]) sheet.appendChild(button(act, word, undefined, icon));
+		for (const [act, word, icon] of [['copy', 'Duplicate'], ...asDocument, ...homePin, ['section-face', 'Section'], ['colour', 'Color'], ['find-note', 'Find in note'], ['archive', every('archived') ? 'Unarchive' : 'Archive'], ['connections', 'Connections'], ['tags-face', 'Tags'], ['history-face', 'History']]) sheet.appendChild(button(act, word, undefined, icon));
 		if (typeof _rapierTodoHasChecks === 'function' && _rapierTodoHasChecks()) {
 			sheet.append(button('uncheck-all', 'Uncheck all'), button('delete-checked', 'Delete checked items'));
 		}
 		{ const del = button('trash', 'Delete', undefined, RAPIER_NOTES_ROW_ICONS.trash); del.dataset.pop = 'destructive'; del.dataset.popBottom = ''; sheet.appendChild(del); }
 	} else {
 		const acts = every('trashed') ? [['restore', 'Restore'], ['delete-forever', 'Delete forever']]
-			: [['pin', every('pinned') ? 'Unpin' : 'Pin'], ...(_rapierNotesIsApp() ? [['remind-face', 'Remind']] : []), ['colour', 'Colour'], ['section-face', 'Section'], ['archive', every('archived') ? 'Unarchive' : 'Archive'], ['trash', 'Delete']];
+			: [['pin', every('pinned') ? 'Unpin' : 'Pin'], ...(_rapierNotesIsApp() ? [['remind-face', 'Remind']] : []), ['colour', 'Color'], ['section-face', 'Section'], ['archive', every('archived') ? 'Unarchive' : 'Archive'], ['trash', 'Delete']];
 		for (const [act, word] of acts) sheet.appendChild(button(act, word));
 		if (files.length === 1 && !every('trashed')) for (const [act, word, icon] of [['copy', 'Duplicate'], ...asDocument]) sheet.appendChild(button(act, word, undefined, icon));
 	}
-	const names = {colour: 'Note colour', section: 'Note section', 'section-add': 'New section', 'section-edit': 'Edit section', remind: 'Reminder', add: 'Add to note', history: 'Note history', version: 'Earlier note version', tags: 'Note tags', connections: 'Note connections'};
+	const names = {colour: 'Note color', section: 'Note section', 'section-add': 'New section', 'section-edit': 'Edit section', remind: 'Reminder', add: 'Add to note', history: 'Note history', version: 'Earlier note version', tags: 'Note tags', connections: 'Note connections'};
 	for (const group of sheet.querySelectorAll('[role="radiogroup"]')) {
 		const rows = [...group.querySelectorAll('[role="radio"]')], chosen = rows.find(row => row.getAttribute('aria-checked') === 'true') || rows[0];
 		for (const row of rows) row.tabIndex = row === chosen ? 0 : -1;
@@ -4214,7 +4214,7 @@ async function _rapierNotesSectionEdit(act, arg) {
 async function _rapierNotesAct(act, arg) {
 	if (_rapierNotes.captureToken && !_rapierNotes.capturePreparing && !await _rapierNotesUnlock()) return;
 	if (act === 'backup-discard-unfinished') { await _rapierNotesDiscardUnfinishedBackup(); return; }
-	if (act === 'backup-cancel') { _rapierNotes.backupController?.abort(new Error('cancelled by the person')); return; }
+	if (act === 'backup-cancel') { _rapierNotes.backupController?.abort(new Error('canceled by the person')); return; }
 	if (act === 'backup-export') { await _rapierNotesExportPreparedBackup(); return; }
 	if (act === 'backup-export-android') { await _rapierNotesExportAndroidBackup(arg); return; }
 	if (act === 'backup-discard') { await _rapierNotesDiscardPreparedBackup(); return; }
@@ -5664,7 +5664,7 @@ async function _rapierNotesDiscardPreparedBackup() {
 	finally { await release?.(); state.backupBusy = false; }
 }
 function _rapierNotesBackupProgress(controller) {
-	const popup = _rapierProgressOpen({label: 'Backing up', cancel: () => controller.abort(new Error('Backup preparation cancelled'))});
+	const popup = _rapierProgressOpen({label: 'Backing up', cancel: () => controller.abort(new Error('Backup preparation canceled'))});
 	return {
 		update({phase, files, totalFiles, bytes, totalBytes}) {
 			popup.set(bytes != null && totalBytes > 0 ? bytes / totalBytes : files != null && totalFiles > 0 ? files / totalFiles : null,
@@ -5752,7 +5752,7 @@ async function _rapierNotesBackup() {
 				state.preparedBackup = {...stage, name, files: inventory.length, bytes: outcome.record.bytes, stamp: stamp.toISOString()};
 				await _rapierNotesSealBackupStage(state.preparedBackup);
 				await _rapierNotesRetireBackup(earlier);
-				if (outcome.status === 'cancelled' || signal.aborted) { showToast('Backup cancelled; nothing was sent. The backup copy is kept: export it from Notes settings.', 'info'); return; }
+				if (outcome.status === 'cancelled' || signal.aborted) { showToast('Backup canceled; nothing was sent. The backup copy is kept: export it from Notes settings.', 'info'); return; }
 				state.backupController = null;
 				progress.close();
 				await snapshot.release();
@@ -5767,7 +5767,7 @@ async function _rapierNotesBackup() {
 		state.preparedBackup = {...stage, name, files: inventory.length, bytes: result.bytes, stamp: stamp.toISOString()};
 		await _rapierNotesSealBackupStage(state.preparedBackup);
 		await _rapierNotesRetireBackup(earlier);
-		if (signal.aborted) { showToast('Backup cancelled; nothing was sent. The backup copy is kept: export it from Notes settings.', 'info'); return; }
+		if (signal.aborted) { showToast('Backup canceled; nothing was sent. The backup copy is kept: export it from Notes settings.', 'info'); return; }
 		state.backupController = null;
 		progress.close();
 		await snapshot.release();

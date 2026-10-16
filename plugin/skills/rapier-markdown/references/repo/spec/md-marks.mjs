@@ -10,10 +10,10 @@ const inkReader = () => {
 	const COLOR_NAME_ALT = Object.keys(TEXT_COLOR_NAMES).join('|');
 	const COLOR_VALUE = '(?:#[0-9a-f]{6}|' + COLOR_NAME_ALT + ')';
 
-	// Ink (docs/markdown-standard.md, "Ink"): a pen stroke that stays with the words it marks, a paired comment with the colour span's shape. The
+	// Ink (docs/markdown-standard.md, "Ink"): a pen stroke that stays with the words it marks, a paired comment with the color span's shape. The
 	// opener holds the stroke:
 	//   <!--ink KIND [NUMBER] [COLOUR] [w=N] [box=W,H] [at=X,Y] [PATH]-->words<!--/ink-->
-	// KIND is the stroke's kind, decided once when it was lifted; COLOUR is exactly the colour span's value, red when absent; box is the frame's
+	// KIND is the stroke's kind, decided once when it was lifted; COLOUR is exactly the color span's value, red when absent; box is the frame's
 	// size when the stroke was drawn and at the frame's offset from the words' box, both in hundredths of an em; w is the pen's width as Draw
 	// counts a nib (2 to 24; 9 is the default and is never written): the stroke is drawn 0.11 em wide at 9 and in proportion to w otherwise; PATH
 	// is the stroke, its first point absolute in the frame and the rest as moves, hundredths of an em. One spelling: the fields in this order,
@@ -338,7 +338,7 @@ export function formatInkOpen(mark) {
 	let colour = '';
 	if (mark.hex != null) {
 		const value = TEXT_COLOR_HEX_TO_NAME[mark.hex] || mark.hex;
-		if (!new RegExp('^' + COLOR_VALUE + '$').test(value)) throw new TypeError('ink: the colour is the colour span\'s value');
+		if (!new RegExp('^' + COLOR_VALUE + '$').test(value)) throw new TypeError('ink: the color is the color span\'s value');
 		colour = ' ' + value;
 	}
 	if (mark.width != null && (!Number.isInteger(mark.width) || mark.width < 2 || mark.width > 24)) throw new TypeError('ink: the width is an integer from 2 to 24, and 9 is spelled by leaving it out');
@@ -442,7 +442,7 @@ export function pairInkSpans(source, markers = null) {
 	return pairSpanMarkers(source, 'ink', markers);
 }
 
-// Colour keeps its first opener; ink pairs each closer with the innermost opener. The shared range
+// Color keeps its first opener; ink pairs each closer with the innermost opener. The shared range
 // shape lets custody owners keep every independent stroke, including strokes on identical words.
 export function pairMarkers(source, kind, markers = null) {
 	const paired = pairSpanMarkers(source, kind, markers);

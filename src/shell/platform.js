@@ -55,7 +55,7 @@ const RapierTextCodec = Object.freeze({
 		let text = String(value == null ? '' : value), bytes = 0, buffer = new Uint8Array(0);
 		const encoder = new TextEncoder();
 		for (let start = 0; start < text.length;) {
-			if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+			if (options.signal?.aborted) throw new DOMException('Canceled', 'AbortError');
 			let end = Math.min(text.length, start + 1048576);
 			if (end < text.length && text.charCodeAt(end - 1) >= 0xd800 &&
 					text.charCodeAt(end - 1) <= 0xdbff && text.charCodeAt(end) >= 0xdc00 &&
@@ -69,7 +69,7 @@ const RapierTextCodec = Object.freeze({
 			options.onProgress?.(start / text.length);
 			if (start < text.length) await (options.yield ? options.yield() : new Promise(resolve => setTimeout(resolve, 0)));
 		}
-		if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+		if (options.signal?.aborted) throw new DOMException('Canceled', 'AbortError');
 		if (admittedBytes != null && (!Number.isSafeInteger(Number(admittedBytes)) || Number(admittedBytes) !== bytes)) {
 			throw new Error('document byte length is invalid');
 		}
@@ -104,9 +104,9 @@ const RapierTextCodec = Object.freeze({
 		const decoder = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}), parts = [];
 		let bom = false, bytes = 0;
 		for (let start = 0; start < size; start += 1048576) {
-			if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+			if (options.signal?.aborted) throw new DOMException('Canceled', 'AbortError');
 			const chunk = new Uint8Array(await blob.slice(start, start + 1048576).arrayBuffer());
-			if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+			if (options.signal?.aborted) throw new DOMException('Canceled', 'AbortError');
 			if (chunk.length !== Math.min(1048576, size - start)) throw new Error('document byte length is invalid');
 			if (!start) bom = chunk.length >= 3 && chunk[0] === 0xef && chunk[1] === 0xbb && chunk[2] === 0xbf;
 			bytes += chunk.length;
@@ -118,7 +118,7 @@ const RapierTextCodec = Object.freeze({
 			options.onProgress?.(bytes / size);
 			if (options.yield) await options.yield();
 		}
-		if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+		if (options.signal?.aborted) throw new DOMException('Canceled', 'AbortError');
 		try { parts.push(decoder.decode()); }
 		catch (_) { throw new Error('document is not plain UTF-8 text'); }
 		const joined = parts.join(''), text = bom ? joined.slice(1) : joined;
@@ -1089,7 +1089,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 	}
 
 	function _requiresDestinationError() {
-		var error = new Error('no authorised destination remains for this document');
+		var error = new Error('no authorized destination remains for this document');
 		error.code = 'requires_destination';
 		return error;
 	}
@@ -2797,7 +2797,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 			get shareWaterVideo() { return _nativeHostRuntime.state.platformId === 'android' && _nativeCapability('waterPro') ? async function (blob, name, options) {
 				if (!(blob instanceof Blob) || blob.type !== 'video/mp4' || blob.size === 0 || blob.size > 64 * 1024 * 1024) throw new Error('The video is too large to share.');
 				var authorization = await _nativeHostCall('water.pro.authorize', {feature:'video'});
-				if (authorization?.authorized !== true) throw new Error('Pro watercolour is unavailable.');
+				if (authorization?.authorized !== true) throw new Error('Pro watercolor is unavailable.');
 				var fingerprint = await _blobFingerprint(blob);
 				var result = await _sendNativeTransfer('waterVideo', blob, name || 'painting.mp4', 'video/mp4', options || {},
 					'water-video-' + Date.now().toString(36) + '-' + (++_nativeSaveRuntime.sequence).toString(36), fingerprint);

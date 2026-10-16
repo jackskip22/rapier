@@ -166,7 +166,7 @@ export async function verifyBackup(entries, options = {}) {
 export async function verifyBackupStream(archive, {subtle, signal, notes = false, partial = false} = {}) {
 	const input = archive?.parts || [archive];
 	if (!Array.isArray(input) || !input.length || input.length > 65533) throw new TypeError('a streamed backup needs its ZIP parts');
-	const check = () => { if (signal?.aborted) throw signal.reason || new Error('backup verification was cancelled'); };
+	const check = () => { if (signal?.aborted) throw signal.reason || new Error('backup verification was canceled'); };
 	const read = async file => {
 		check(); const bytes = exactBytes(await file.read()); check();
 		if (bytes.length !== file.size) throw new Error('backup length mismatch: ' + file.name);
@@ -407,7 +407,7 @@ export async function addBackup(entries, options = {}) {
 				if (!isMarkdownNote(note.sourcePath)) continue;
 				const source = rewrite(note.source);
 				if (source !== note.source) { note.source = source; note.bytes = exactBytes(source); materialized.get(note.sourcePath).bytes = note.bytes.slice(); }
-				note.warnings.push({code: 'backup-paths-renamed', message: 'Some backup paths were renamed to keep existing files. Notes and retained history use the new names for recognised, exact Markdown paths inside this backup. Other references are unchanged; review this backup’s file map.'});
+				note.warnings.push({code: 'backup-paths-renamed', message: 'Some backup paths were renamed to keep existing files. Notes and retained history use the new names for recognized, exact Markdown paths inside this backup. Other references are unchanged; review this backup’s file map.'});
 			}
 			for (const file of root.files) {
 				const match = HISTORY_MANIFEST.exec(file.name);

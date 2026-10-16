@@ -16,7 +16,7 @@ export const PAPER_KINDS = immutable([
 export const PRO_PAPER_KINDS = immutable([
  {id:'plate-hot-press',name:'Plate Hot Press',pro:true,params:{kind:10,tint:'#faf7f0',fleck:'#9b907c',bump:.36,mottle:.025,spread:1.12,absorbency:.78,tooth:.45}},
  {id:'rough-rag',name:'Rough Cotton Rag',pro:true,params:{kind:11,tint:'#f1eadb',fleck:'#8b7960',bump:1.18,mottle:.08,spread:.84,absorbency:1.15,tooth:1.35}},
- {id:'toned-grey',name:'Toned Grey',pro:true,params:{kind:12,tint:'#c6c5bd',fleck:'#77776b',bump:.65,mottle:.045,spread:.95,absorbency:1.08,tooth:.86}},
+ {id:'toned-grey',name:'Toned Gray',pro:true,params:{kind:12,tint:'#c6c5bd',fleck:'#77776b',bump:.65,mottle:.045,spread:.95,absorbency:1.08,tooth:.86}},
  {id:'handmade-rag',name:'Handmade Rag',pro:true,params:{kind:13,tint:'#eae0ca',fleck:'#8e7959',bump:1.05,mottle:.14,spread:.88,absorbency:1.22,tooth:1.2}}
 ]);
 export const paperKindById = id => PAPER_KINDS.find(row => row.id === id) || PRO_PAPER_KINDS.find(row => row.id === id) || null;

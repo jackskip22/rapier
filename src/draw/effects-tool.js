@@ -23,14 +23,14 @@ const RAPIER_LIQUID_CONTROLS = [
 	['flow', 'swirl', 'Swirl', -1, 1, .01], ['flow', 'turbulence', 'Turbulence', 0, 1, .01], ['flow', 'scale', 'Eddy size', 0, 1, .01],
 	['flow', 'curl', 'Curl', 0, 1, .01], ['flow', 'speed', 'Speed', 0, 2, .01], ['flow', 'detail', 'Detail', 0, 1, .01],
 	['feedback', 'refresh', 'Return', 0, 1, .01], ['feedback', 'focus', 'Focus', 0, 1, .01], ['feedback', 'zoom', 'Bloom', -1, 1, .01],
-	['feedback', 'spin', 'Spin', -1, 1, .01], ['feedback', 'x', 'Centre across', 0, 1, .01], ['feedback', 'y', 'Centre down', 0, 1, .01],
+	['feedback', 'spin', 'Spin', -1, 1, .01], ['feedback', 'x', 'Center across', 0, 1, .01], ['feedback', 'y', 'Center down', 0, 1, .01],
 	['light', 'dispersion', 'Dispersion', 0, 1, .01], ['light', 'refract', 'Refraction', 0, 1, .01], ['light', 'iridescence', 'Iridescence', 0, 1, .01],
 	['light', 'film', 'Film', 0, 1, .01], ['light', 'sheen', 'Sheen', 0, 1, .01],
-	['colour', 'tint', 'Tint', 0, 1, .01], ['colour', 'bands', 'Bands', 0, 1, .01], ['colour', 'cycle', 'Colour rings', 0, 1, .01],
+	['colour', 'tint', 'Tint', 0, 1, .01], ['colour', 'bands', 'Bands', 0, 1, .01], ['colour', 'cycle', 'Color rings', 0, 1, .01],
 	['colour', 'fill', 'Fill', 0, 1, .01], ['colour', 'strength', 'Strength', 0, 1, .01], ['colour', 'time', 'Saved moment', 0, 12, .1],
 ];
 const RAPIER_EFFECT_SECTIONS = { copier: [['copy', 'Copies'], ['toner', 'Toner'], ['paper', 'Paper']], refraction: [['lens', 'Lens'], ['spectrum', 'Spectrum'], ['direction', 'Direction']],
-	liquid: [['flow', 'Flow'], ['feedback', 'Feedback'], ['light', 'Light'], ['colour', 'Colour']] };
+	liquid: [['flow', 'Flow'], ['feedback', 'Feedback'], ['light', 'Light'], ['colour', 'Color']] };
 const RAPIER_EFFECT_CONTROLS = { copier: RAPIER_COPY_CONTROLS, refraction: RAPIER_REFRACTION_CONTROLS, liquid: RAPIER_LIQUID_CONTROLS };
 const RAPIER_EFFECT_TITLES = { copier: 'Copy machine', refraction: 'Refracted light', liquid: 'Liquid light' };
 const RAPIER_EFFECT_ACTIONS = { copier: 'copyMachine', refraction: 'refractedLight', liquid: 'liquidLight' };

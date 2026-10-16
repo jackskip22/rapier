@@ -524,7 +524,7 @@ export async function readPdf(blob, {mode = 'text', embedImage, checkCurrent = (
   let abortReject;
   const aborted = new Promise((_, reject) => { abortReject = reject; });
   aborted.catch(() => {});
-  const abortError = () => new DOMException('PDF import cancelled.', 'AbortError');
+  const abortError = () => new DOMException('PDF import canceled.', 'AbortError');
   const check = () => { if (signal?.aborted) throw abortError(); checkCurrent(); };
   const destroy = () => {
     if (!destroying && loading) {

@@ -16,7 +16,7 @@ function _rapierDrawReleaseAuthorPaint(shape, change) {
 	if (change.border !== undefined) delete own.stroke;
 	if (!Object.keys(own).length) delete shape.authorStyle;
 }
-function fail(code = 'drawing_operation_invalid', field) { throw Object.assign(new RangeError((field ? field + ': ' : '') + (code === 'drawing_locked' ? 'Unlock the selected drawing first' : code === 'drawing_geometry_limit' ? 'Drawing exceeds its coordinate range' : code === 'drawing_work_limit' ? 'Drawing operation exceeds its work limit' : code === 'drawing_border_inactive' ? 'A border needs a solid shape in the Ink look, not an as-drawn stroke' : code === 'drawing_border_invalid' ? 'Choose a border colour from the palette or use #RRGGBB' : 'Invalid drawing operation')), { code, ...(field ? { field } : {}) }); }
+function fail(code = 'drawing_operation_invalid', field) { throw Object.assign(new RangeError((field ? field + ': ' : '') + (code === 'drawing_locked' ? 'Unlock the selected drawing first' : code === 'drawing_geometry_limit' ? 'Drawing exceeds its coordinate range' : code === 'drawing_work_limit' ? 'Drawing operation exceeds its work limit' : code === 'drawing_border_inactive' ? 'A border needs a solid shape in the Ink look, not an as-drawn stroke' : code === 'drawing_border_invalid' ? 'Choose a border color from the palette or use #RRGGBB' : 'Invalid drawing operation')), { code, ...(field ? { field } : {}) }); }
 function pointOK(p) { if (!spatial(p[0]) || !spatial(p[1])) fail('drawing_geometry_limit'); return p; }
 function geomOK(g) {
 	if (!g) return g;

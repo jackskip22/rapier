@@ -4,7 +4,7 @@ const RAPIER_PINCH_ORDER = ['sm', 'md', 'lg', 'xl'];
 const RAPIER_PINCH_BEGIN = { share: 0.08, pixels: 24 };
 const RAPIER_PINCH_CARRY = 0.1, RAPIER_PINCH_BAND = 0.35, RAPIER_PINCH_LOOK_MS = 100, RAPIER_PINCH_EASE_MS = 300;
 const RAPIER_PINCH_PILL_MS = 600, RAPIER_PINCH_WHEEL_REST_MS = 150;
-const RAPIER_PINCH_OWNERS = '.rapier-image-grip, .rapier-image-move, .rapier-image-tools, img[data-rapier-image-selected], [data-rapier-diagram-edit], .section-fold-btn, .scroll-fab, input, textarea, select';
+const RAPIER_PINCH_OWNERS = '.rapier-image-grip, .rapier-image-move, .rapier-image-tools, img[data-rapier-image-selected], [data-rapier-diagram-edit], .section-fold-btn, .section-move-btn, .scroll-fab, input, textarea, select';
 
 const _rapierPinch = { phase: 'idle', host: null, wheel: 0, swallowUntil: 0, indicator: null };
 

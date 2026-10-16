@@ -296,7 +296,7 @@
 	<button type="button" tabindex="-1" role="menuitemradio" aria-checked="false" class="fmt-btn" data-cmd="color-indigo" data-action="pick-color" data-value="#4338ca" data-tip="indigo" aria-label="indigo text color"><span class="color-swatch color-swatch--indigo" aria-hidden="true"></span></button>
 	<button type="button" tabindex="-1" role="menuitemradio" aria-checked="false" class="fmt-btn" data-cmd="color-purple" data-action="pick-color" data-value="#7924d7" data-tip="purple" aria-label="purple text color"><span class="color-swatch color-swatch--purple" aria-hidden="true"></span></button>
 	<button type="button" tabindex="-1" role="menuitemradio" aria-checked="false" class="fmt-btn" data-cmd="color-pink" data-action="pick-color" data-value="#be185d" data-tip="pink" aria-label="pink text color"><span class="color-swatch color-swatch--pink" aria-hidden="true"></span></button>
-	<button type="button" tabindex="-1" role="menuitemradio" aria-checked="false" class="fmt-btn" data-cmd="color-grey" data-action="pick-color" data-value="#57606a" data-tip="grey" aria-label="grey text color"><span class="color-swatch color-swatch--grey" aria-hidden="true"></span></button>
+	<button type="button" tabindex="-1" role="menuitemradio" aria-checked="false" class="fmt-btn" data-cmd="color-grey" data-action="pick-color" data-value="#57606a" data-tip="gray" aria-label="gray text color"><span class="color-swatch color-swatch--grey" aria-hidden="true"></span></button>
 	<label class="fmt-btn color-picker__custom-host" data-tip="custom color"><input type="color" tabindex="-1" class="color-picker__custom" id="color-picker-custom-input" value="#7924d7" aria-label="custom text color"></label>
 	<button type="button" tabindex="-1" role="menuitem" class="fmt-btn" data-cmd="color-none" data-action="pick-color" data-value="none" data-tip="remove text color" aria-label="remove text color"><span class="color-swatch color-swatch--remove" aria-hidden="true"></span></button>
 </div>
@@ -320,7 +320,7 @@
 		<button type="button" class="fmt-btn" data-action="ink-draw" aria-label="draw annotations" aria-pressed="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19c3-9 5-14 7-14 5 0-5 14 0 14 2 0 4-6 6-6 2 0 0 6 3 6"/></svg><span>draw</span></button>
 		<button type="button" class="fmt-btn" data-action="ink-eraser" aria-label="erase annotations" aria-pressed="false"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 20h-10.5l-4.21 -4.3a1 1 0 0 1 0 -1.41l10 -10a1 1 0 0 1 1.41 0l5 5a1 1 0 0 1 0 1.41l-9.2 9.3M18 13.3l-6.3 -6.3"/></svg><span>erase</span></button>
 		<span class="ink-strip__rule" aria-hidden="true"></span>
-		<button type="button" class="fmt-btn" data-action="ink-palette" aria-label="annotation colours" aria-expanded="false" aria-controls="ink-colours"><span class="ink-strip__swatch" aria-hidden="true"></span><span>colour</span></button>
+		<button type="button" class="fmt-btn" data-action="ink-palette" aria-label="annotation colors" aria-expanded="false" aria-controls="ink-colours"><span class="ink-strip__swatch" aria-hidden="true"></span><span>color</span></button>
 		<button type="button" class="fmt-btn" data-action="ink-width" aria-label="annotation width" aria-expanded="false" aria-controls="ink-width"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="5.5" x2="20" y2="5.5" stroke-width="1.2"></line><line x1="4" y1="11.5" x2="20" y2="11.5" stroke-width="2.6"></line><line x1="4" y1="18.5" x2="20" y2="18.5" stroke-width="4.4"></line></svg><span>width</span></button>
 		<button type="button" class="fmt-btn" data-action="ink-done" aria-label="finish annotating"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg><span>done</span></button>
 	</div>
@@ -336,7 +336,7 @@
 			<button type="button" class="fmt-btn" data-action="ink-colour" data-value="#175dc4" aria-label="blue ink" aria-pressed="false"><span class="color-swatch color-swatch--blue" aria-hidden="true"></span></button>
 			<button type="button" class="fmt-btn" data-action="ink-colour" data-value="#1c7547" aria-label="green ink" aria-pressed="false"><span class="color-swatch color-swatch--green" aria-hidden="true"></span></button>
 			<button type="button" class="fmt-btn" data-action="ink-colour" data-value="#7924d7" aria-label="purple ink" aria-pressed="false"><span class="color-swatch color-swatch--purple" aria-hidden="true"></span></button>
-			<label class="fmt-btn ink-strip__custom"><input type="color" data-ink-colour-input value="#b32034" aria-label="custom annotation colour"></label>
+			<label class="fmt-btn ink-strip__custom"><input type="color" data-ink-colour-input value="#b32034" aria-label="custom annotation color"></label>
 		</div>
 		<button type="button" class="ink-strip__stylus" data-action="ink-stylus" aria-pressed="true">stylus always draws</button>
 	</div>
@@ -634,7 +634,7 @@
 
 			<!-- Accent colour — one button per preset, stamped at mount. -->
 			<div class="settings-section__title">accent</div>
-			<div class="swatches" id="accent-swatches" data-switch="accent" role="group" aria-label="accent colour" style="margin-bottom:var(--space-4)"></div>
+			<div class="swatches" id="accent-swatches" data-switch="accent" role="group" aria-label="accent color" style="margin-bottom:var(--space-4)"></div>
 
 			<!-- Font size — joined strip, no gaps between buttons -->
 			<div class="settings-section__title">text size</div>
@@ -777,7 +777,7 @@
 								<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="true" role="switch" aria-checked="false" style="flex:1;width:auto">TYPEWRITER SCROLLING OFF</button>
 							</div>
 							<div class="settings-action-row" id="pro-icon-row" hidden>
-								<button type="button" class="settings-action-btn" id="pro-icon-colour" data-action="icon-colour" aria-haspopup="dialog">app icon colour</button>
+								<button type="button" class="settings-action-btn" id="pro-icon-colour" data-action="icon-colour" aria-haspopup="dialog">app icon color</button>
 							</div>
 							<div class="settings-action-row">
 								<button type="button" class="settings-action-btn" id="settings-default-document-font" data-action="default-document-font" aria-haspopup="dialog">default document font</button>
@@ -963,7 +963,7 @@
 	<div class="settings-panel licenses-panel commercial-panel">
 		<div class="settings-panel__body">
 			<div class="navigator-title-row">
-				<h2 id="commercial-title" class="sr-only">commercial licences</h2>
+				<h2 id="commercial-title" class="sr-only">commercial licenses</h2>
 				<button type="button" class="navigator-close" data-action="commercial-close" aria-label="close commercial">
 					<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"
 							 fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -971,7 +971,7 @@
 				</button>
 			</div>
 			<div class="licenses-app commercial-words">
-				<p>Rapier is free under AGPL-3.0. These lifetime licences offer alternative terms for organisations that need them.</p>
+				<p>Rapier is free under AGPL-3.0. These lifetime licenses offer alternative terms for organizations that need them.</p>
 				<h3 class="licenses-given">Commercial</h3>
 				<p class="licenses-subtitle">US$1,000 once</p>
 				<p>Ship Rapier in your product without sharing your source. Show “Editor by Rapier”, linked to rapier.website, on the screen where people use it.</p>
@@ -980,7 +980,7 @@
 				<p class="licenses-subtitle">US$5,000 once</p>
 				<p>The same, with no credit.</p>
 				<!-- WHITELABEL_CHECKOUT -->
-				<p>Each licence covers one organisation and all its products. No royalties, seats or renewals. Future releases are included; support is not.</p>
+				<p>Each license covers one organization and all its products. No royalties, seats or renewals. Future releases are included; support is not.</p>
 				<!-- AGREEMENT_LINK -->
 				<div class="licenses-links">
 					<a class="licenses-link" href="mailto:hello@rapier.website">hello@rapier.website</a>
@@ -1006,7 +1006,7 @@
 			<div class="licenses-app">
 				<strong id="licenses-app-title">Rapier · copyright 2026 · AGPL-3.0-only</strong>
 				<h3 class="licenses-given">Given to everyone</h3>
-				<p>Free for anyone to use, under the MIT licence:</p>
+				<p>Free for anyone to use, under the MIT license:</p>
 				<ul class="licenses-given-list">
 					<li>the Markdown standard</li>
 					<li>the Will standard</li>
@@ -1015,15 +1015,15 @@
 					<li>the readers that open a shared page without Rapier</li>
 					<li>the Markdown kit that carries them all</li>
 				</ul>
-				<p>The Rapier editor is free under AGPL-3.0-only, including for commercial use. Lifetime commercial licences offer alternative terms. It comes with no warranty. The full licence below explains the source-sharing requirements.</p>
+				<p>The Rapier editor is free under AGPL-3.0-only, including for commercial use. Lifetime commercial licenses offer alternative terms. It comes with no warranty. The full license below explains the source-sharing requirements.</p>
 				<p>Under section 7, keep Rapier's name and version in its legal notices, mark a changed version as changed, and never present it as official.</p>
 				<div class="licenses-links">
 					<button type="button" class="licenses-link" data-action="licenses-source">source</button>
 					<a id="licenses-commercial" class="licenses-link" href="https://rapier.website/commercial" target="_blank" rel="noopener noreferrer">commercial licensing</a>
-					<a class="licenses-link" href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener noreferrer">GNU licence online</a>
+					<a class="licenses-link" href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener noreferrer">GNU license online</a>
 				</div>
 				<details class="licenses-full">
-					<summary>full GNU AGPL v3 licence</summary>
+					<summary>full GNU AGPL v3 license</summary>
 					<pre>                    GNU AFFERO GENERAL PUBLIC LICENSE
 											 Version 3, 19 November 2007
 
@@ -2066,7 +2066,7 @@ SOFTWARE.</pre>
 				<div class="license-row" id="licenses-android-ui" hidden><span class="license-name">AndroidX Activity · Core · WebKit</span><span class="license-id">Apache-2.0</span></div>
 				<div class="license-row" id="licenses-android-billing" hidden><span class="license-name">Google Play Billing · In-App Review · Asset Delivery Libraries</span><span class="license-id">Google Play SDK terms</span></div>
 			</div>
-			<p class="licenses-note">Open a row for its full licence. The optional ones are not in this file: they load, pinned, only when a document or a person asks for them.</p>
+			<p class="licenses-note">Open a row for its full license. The optional ones are not in this file: they load, pinned, only when a document or a person asks for them.</p>
 		</div>
 	</div>
 </div>
@@ -2596,10 +2596,10 @@ SOFTWARE.</pre>
 
 <!-- The app icon's colours (Pro, the Android host alone): the information sheet's shape, the swatches as its body.
      The worn colour is pressed; pressing it again goes back to the plain icon. -->
-<section class="settings-overlay info-action-overlay" id="icon-colour-overlay" inert aria-hidden="true" aria-label="App icon colour">
+<section class="settings-overlay info-action-overlay" id="icon-colour-overlay" inert aria-hidden="true" aria-label="App icon color">
   <div class="info-action-sheet" role="dialog" aria-modal="true" aria-labelledby="icon-colour-title" tabindex="-1">
-    <header class="track-action-head"><div class="track-action-copy"><div class="track-action-title" id="icon-colour-title">app icon colour</div></div><button type="button" class="icon-button close-button" data-icon-colour-close aria-label="Close app icon colour"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></header>
-    <div class="info-action-body"><div class="swatches" id="icon-swatches" role="group" aria-label="app icon colour"></div></div>
+    <header class="track-action-head"><div class="track-action-copy"><div class="track-action-title" id="icon-colour-title">app icon color</div></div><button type="button" class="icon-button close-button" data-icon-colour-close aria-label="Close app icon color"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></header>
+    <div class="info-action-body"><div class="swatches" id="icon-swatches" role="group" aria-label="app icon color"></div></div>
   </div>
 </section>
 <section class="settings-overlay info-action-overlay" id="info-overlay" inert aria-hidden="true" aria-label="Information">

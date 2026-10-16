@@ -21,8 +21,8 @@ export function commercialPage(markup, configuration) {
     ? `<a class="licenses-link" href="${urls[key]}" target="_blank" rel="noopener noreferrer">${label}</a>`
     : '';
   const slots = [
-    ['<!-- COMMERCIAL_CHECKOUT -->', purchase('commercial', 'Buy commercial licence')],
-    ['<!-- WHITELABEL_CHECKOUT -->', purchase('whiteLabel', 'Buy white-label licence')],
+    ['<!-- COMMERCIAL_CHECKOUT -->', purchase('commercial', 'Buy commercial license')],
+    ['<!-- WHITELABEL_CHECKOUT -->', purchase('whiteLabel', 'Buy white-label license')],
     ['<!-- AGREEMENT_LINK -->', urls.agreement
       ? `<div class="licenses-links"><a class="licenses-link" href="${urls.agreement}" target="_blank" rel="noopener noreferrer">Read the full agreement</a></div>` : ''],
   ];

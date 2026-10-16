@@ -300,11 +300,11 @@
     panel.setAttribute('aria-labelledby', 'rapier-app-image-notice-title');
     const title = document.createElement('strong');
     title.id = 'rapier-app-image-notice-title';
-    title.textContent = 'JPEG XL support is arriving';
+    title.textContent = 'Update to see every picture';
     const explanation = document.createElement('p');
-    explanation.textContent = 'This app’s browser cannot display JPEG XL (JXL) yet. JXL pictures and saved paintings may look blank or show a placeholder. Their image data stays in your document.';
+    explanation.textContent = 'This browser is too old to show JPEG XL pictures, so some pictures and paintings may look blank. They are safe in your document.';
     const schedule = document.createElement('p');
-    schedule.textContent = 'Google schedules JXL support in Chrome 155 stable for October 6, 2026. In-app browsers may receive it later. Update your app and browser, or open your saved document in a browser with JXL support.';
+    schedule.textContent = 'Update your browser or app to see them.';
     panel.append(title, explanation, schedule, button('Got it', () => panel.remove()));
     (document.getElementById('toast-root') || document.body).append(panel);
     notifySize();
@@ -2338,8 +2338,8 @@
         setStatus('unavailable');
       } else if (!closed && !closing) {
         void flush().then(saved => host.notify(saved
-          ? 'The request behind this view was cancelled. Your work here is saved.'
-          : 'The request behind this view was cancelled. This document could not be saved just now — it is still open here.',
+          ? 'The request behind this view was canceled. Your work here is saved.'
+          : 'The request behind this view was canceled. This document could not be saved just now — it is still open here.',
           saved ? 'info' : 'error')).catch(() => {});
       }
     }

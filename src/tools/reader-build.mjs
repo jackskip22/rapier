@@ -329,7 +329,7 @@ function dropFunction(text, name) {
 async function checkNotice(notice) {
 	let shell = null;
 	try { shell = await readBuildNotice(here); } catch (_) { return; }
-	const body = text => text.split('\n').slice(3).filter(line => !/^\t(?:Vendored third-party|Full licence)/.test(line)).join('\n');
+	const body = text => text.split('\n').slice(3).filter(line => !/^\t(?:Vendored third-party|Full license)/.test(line)).join('\n');
 	const house = /^<!DOCTYPE html>\n<!--\n[\s\S]*?-->\n/.exec(shell)?.[0];
 	if (house && body(house) !== body(notice)) throw new Error('reader/shell.html: the licence notice differs from the one rapier.html carries');
 }

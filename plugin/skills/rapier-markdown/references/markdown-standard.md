@@ -19,7 +19,7 @@ The format has layers, each complete without the next:
 - **Will** is separate: [Will/1](will.md) is an optional, independently versioned standard for a person's instruction
   to an agent about what may change.
 - **The style pack** is an optional companion: one MIT stylesheet, shipped with the kit and the exported page, that
-  renders lists, tables, pictures and layouts, colour, highlights, diagrams and math as Rapier does.
+  renders lists, tables, pictures and layouts, color, highlights, diagrams and math as Rapier does.
 
 ## Measured against the specification
 
@@ -79,9 +79,9 @@ Following prose can flow above, beside and below the picture.
 | `width` | Decimal percentage above `0%`, at most `100%` | Image width relative to the content box, keeping the aspect ratio. |
 | `lines` | Whole number from `1` to `12` | A picture or a paragraph's initial letter spans N lines, from the first line's cap height to the Nth line's baseline (see "The line"). A picture keeps its aspect ratio, capped at the content box. Never with `width`; headings don't take it. |
 | `wrap` | `around`, `box`, `behind`, `front` | Text flows around the image's silhouette (`around`) or its tight, tilted bounding box (`box`). Or the image leaves the flow: placed like a wrapped image but painted under (`behind`) or over (`front`) the words, which lay out as if it were absent. |
-| `x` | Decimal percentage from `0%` to `100%` | The image's requested horizontal centre within the content box; needs `width` or `wrap`. |
+| `x` | Decimal percentage from `0%` to `100%` | The image's requested horizontal center within the content box; needs `width` or `wrap`. |
 | `y` | Finite decimal then `em`, optionally negative (never below `-50em`; zero is unsigned and omitted) | A wrapped image's requested top inset in its anchor paragraph, in that paragraph's font size. Negative lifts it above the first line. |
-| `rotate` | Integer or one-decimal-place decimal then `deg`, above `-180` and at most `180` | Clockwise turn about the image's centre; omitted at `0`. Valid with any placement (inline, any `wrap`, or `align`) and alone. |
+| `rotate` | Integer or one-decimal-place decimal then `deg`, above `-180` and at most `180` | Clockwise turn about the image's center; omitted at `0`. Valid with any placement (inline, any `wrap`, or `align`) and alone. |
 | `opacity` | Whole percentage from `5%` to `100%` | The whole picture is drawn at this opacity over what lies beneath; omitted at `100%`. The picture's bytes and its own transparency never change. Valid with any placement and alone. |
 | `lock` | `on` only | Locked in place: in Rapier a tap goes to the surrounding words and never selects it, and a hold takes it so it can be unlocked. Omitted when unlocked. Other renderers ignore it. |
 | `first` | Nonzero signed decimal from `-64` to `64`, at most six decimal places | A paragraph's first-line indent, in levels of `2em` of the body type; negative hangs the first line toward the start edge. Omitted at zero. Headings ignore it; pictures don't take it. |
@@ -106,7 +106,7 @@ Following prose can flow above, beside and below the picture.
 
 A raster or foreign SVG the writer didn't compose carries its turn as `rotate`, so its bytes stay lossless. Its
 reserved space becomes its turned bounding box, `w·|cos|+h·|sin|` wide and `w·|sin|+h·|cos|` tall for a `w`×`h` picture
-turned `rotate` degrees, centred where the unturned picture's centre was. An editable drawing (an SVG the editor wrote
+turned `rotate` degrees, centered where the unturned picture's center was. An editable drawing (an SVG the editor wrote
 and can still edit) turns its geometry and writes no `rotate`.
 
 Absent alignment means natural alignment, including the Unicode first-strong writing direction of the block (HTML
@@ -122,7 +122,7 @@ empty paragraphs are skipped. Paragraphs, headings, lists, quotes and callouts, 
 can anchor a picture, including text with links and checkboxes. Tables, code, figures, mathematics and rules are
 barriers. `y` is an inset from the text block's content top; absent means zero. A renderer clamps the requested top to
 the block's unwrapped content height before converting to pixels. Crossing into another text block changes the anchor
-and rebases the inset. An image with no eligible neighbour either way stays in normal flow. There are no page
+and rebases the inset. An image with no eligible neighbor either way stays in normal flow. There are no page
 coordinates or saved line fragments.
 
 Wrapping lets text sit above, on either free side of and below the image, in source reading order. A renderer may
@@ -182,7 +182,7 @@ Only an intentional edit changes source; opening, rendering and resizing the vie
 
 ### Conformance rungs
 
-A reader that claims one of the first three rungs must show its stated behaviour. Rung 3 is the kit's implementation
+A reader that claims one of the first three rungs must show its stated behavior. Rung 3 is the kit's implementation
 profile.
 
 **Rung 0: any CommonMark reader.** CommonMark hides layout comments as ordinary HTML comments. A picture shows inline,
@@ -281,7 +281,7 @@ sized in lines beside its words changes it a whole line at a time; resized anywh
 
 ### Paragraph typography
 
-Every refinement needs a layout field. An existing `align=justify` paragraph keeps its original behaviour until the
+Every refinement needs a layout field. An existing `align=justify` paragraph keeps its original behavior until the
 person turns on `hyphens=auto`. The document's `lang` is Pandoc's language key; without it, the renderer uses the
 device language. Automatic hyphenation and `text-wrap: pretty` apply to prose only; code, tables and headings keep
 their own line breaking. These refinements never add soft hyphens or forced line breaks to the text. While a paragraph
@@ -368,7 +368,7 @@ Everything grows or shrinks together and the words re-wrap in the same column. A
 lines, spacing and the standoff in the unit, and MUST NOT size any of them in device pixels.
 
 **The measure.** The column fills a narrow screen. On a wide one it stops at a reading measure of 39.6 rem (36 ems of
-the body at M, about 70 characters, 633.6 px) and is centred. The measure doesn't grow with the text size, so a larger
+the body at M, about 70 characters, 633.6 px) and is centered. The measure doesn't grow with the text size, so a larger
 size re-wraps, as on a phone. On paper, the column is the text width.
 
 **A narrow column.** No line beside a picture is narrower than 3.5 ems of its type (`wrapColumnFloor`); where there is
@@ -565,7 +565,7 @@ Markdown still travels in an unchanged Word package's exact source carrier.
 
 ## Inline typography
 
-Use one ordinary inline HTML `span` for size, colour and family, together or separately. Markdown still owns headings,
+Use one ordinary inline HTML `span` for size, color and family, together or separately. Markdown still owns headings,
 emphasis, links and block boundaries:
 
 ```md
@@ -613,7 +613,7 @@ ignored, so other valid properties still count. Unknown properties are ignored. 
 than 4096 characters or more than 32 declarations admits no typography. The parser reads at most 64 nested wrappers.
 It never evaluates CSS expressions or loads resources. The span's other attributes give no editor or resource
 authority. Scripts, events, remote URLs, `@import` and arbitrary custom properties never enter the typography facts;
-the normal document sanitizer and CSP still apply to every neighbouring element.
+the normal document sanitizer and CSP still apply to every neighboring element.
 
 Absent properties inherit from the enclosing run, then the block and document. Inner spans override
 only their own properties. Clearing a selected property removes that override and returns those words to their
@@ -645,7 +645,7 @@ declarations, and no page stylesheet or source carrier is added. Required font b
 custom face named Geist; typography text can't authorize a download. Fragments share the host's font namespace, so
 hosts must isolate or coordinate colliding custom family names.
 
-**Word** uses native run colour and family and `w:sz`/`w:szCs` in integer half-points; headings keep their real
+**Word** uses native run color and family and `w:sz`/`w:szCs` in integer half-points; headings keep their real
 heading styles and outline levels.
 
 - Positive sizes round to the nearest half-point, ties upward. A result outside 1–3276 half-points is refused; for
@@ -670,7 +670,7 @@ The opener carries, in this order, one space apart:
 
 1. The kind: `under`, `strike`, `ring`, `bracket` or `free`. It is decided once when the stroke is lifted and never
    re-read from a later layout.
-2. Optionally the colour: `green`, `red`, `blue`, `gold`, `purple` or a lowercase six-digit hex. Red when absent.
+2. Optionally the color: `green`, `red`, `blue`, `gold`, `purple` or a lowercase six-digit hex. Red when absent.
 3. Optionally `w=N`: the pen's width, counted as Draw counts a nib, an integer from 2 to 24. It is drawn 0.11 em wide at
    the default of 9 (never written: an absent `w` is 9) and in proportion to N otherwise.
 4. Optionally `box=W,H`: the size of the frame the stroke was drawn against (the marked words' box, or the stroke's
@@ -695,7 +695,7 @@ An arrow has two separately closed anchor spans, paired by a positive integer fr
 <!--ink arrow 3-->tail words<!--/ink--> … <!--ink end 3-->head words<!--/ink-->
 ```
 
-The `arrow` opener may carry the same colour, frame, offset and path fields after its number, in the same order;
+The `arrow` opener may carry the same color, frame, offset and path fields after its number, in the same order;
 without a path it is straight. The `end` opener carries only its number. Exactly one `arrow` and one `end` with that
 number form a mark; a missing or ambiguous mate draws nothing. The two anchors may be in different paragraphs and in
 either source order. Each anchor follows its own words; layout derives the connection again from their current line
@@ -741,8 +741,8 @@ wrap. Stripping comments loses the ink, not the words. The grammar's owner is `s
 - Plain text keeps the words and drops the comments.
 - A shared page keeps the exact authored Markdown, including ink, through `wrap` and `unwrap`.
 - Word export maps `under` and `strike` to native underline and strikethrough on the marked runs. `ring`, `bracket`,
-  `free` and both arrow anchors keep the words and their existing formatting. A stroke's colour never becomes the
-  words' colour. Importing a native Word underline gives the ordinary underline mark, never invented ink.
+  `free` and both arrow anchors keep the words and their existing formatting. A stroke's color never becomes the
+  words' color. Importing a native Word underline gives the ordinary underline mark, never invented ink.
 
 ## Table captions
 
@@ -891,7 +891,7 @@ Markdown treats any run of blank lines as one separator.
 
 [`spec/markdown-style.css`](repo/spec/markdown-style.css) is the MIT reference style for rendered Self-contained
 Markdown. Rapier, its exported reading pages and the kit's `style.css` use this one file. The renderer supplies HTML;
-the sheet supplies type, colours and spacing. It doesn't parse Markdown or download a renderer, font or picture.
+the sheet supplies type, colors and spacing. It doesn't parse Markdown or download a renderer, font or picture.
 
 ```html
 <link rel="stylesheet" href="style.css">
@@ -927,9 +927,9 @@ scales type, rhythm and pictures measured in lines together.
 | Tasks | `li.task-list-item` containing `input[type="checkbox"]`, with `checked` for a completed item. The renderer chooses whether the input is enabled and owns changes to its state. |
 | Table | `table` with `thead`, `tbody`, `tr`, `th` and `td`; cell alignment uses ordinary `text-align`. An overflowing table may use a `.table-scroll-wrap` wrapper. |
 | Table caption | The following `p.rapier-table-caption`, retaining its `Table: ` or `: ` text. Give it an id and name that id in the table's `aria-describedby`; the caption stays outside the table and in source order. |
-| Quote and callout | `blockquote`; a callout also has `.callout` and one of `.callout-note`, `.callout-tip`, `.callout-important`, `.callout-warning`, `.callout-caution`, `.callout-danger` or `.callout-info`. A blockquote whose first paragraph begins `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`, `[!DANGER]` or `[!INFO]` (any case) is a callout; `danger` takes the caution colour and `info` the note colour. Its first `.callout__label` holds the label and optional inline SVG icon. |
-| Highlights | `mark` uses the accent; `mark[data-rapier-highlight="green"]`, `"red"`, `"blue"`, `"yellow"` or `"purple"` selects one of the named swatches. Canonical Markdown writes a coloured highlight as `<mark style="background-color:#35c57a">`, with green `#35c57a`, red `#f05a62`, blue `#4f91f7`, yellow `#e6b91e` or purple `#9b6dea`; the renderer reads exactly that spelling as the named swatch. A reader also takes Bear's `==🟢…==`: an opening 🟢, 🔴, 🔵, 🟡 or 🟣 before other text in the highlight selects green, red, blue, yellow or purple and is not shown; alone, it stays text. |
-| Text colour | `span[data-md-color="#rrggbb"]` and `style="--md-color:#rrggbb"`. The five named colours have dark mates in the sheet. For another colour, the renderer can also set `--md-color-dark` to its chosen dark-page tone. |
+| Quote and callout | `blockquote`; a callout also has `.callout` and one of `.callout-note`, `.callout-tip`, `.callout-important`, `.callout-warning`, `.callout-caution`, `.callout-danger` or `.callout-info`. A blockquote whose first paragraph begins `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`, `[!DANGER]` or `[!INFO]` (any case) is a callout; `danger` takes the caution color and `info` the note color. Its first `.callout__label` holds the label and optional inline SVG icon. |
+| Highlights | `mark` uses the accent; `mark[data-rapier-highlight="green"]`, `"red"`, `"blue"`, `"yellow"` or `"purple"` selects one of the named swatches. Canonical Markdown writes a colored highlight as `<mark style="background-color:#35c57a">`, with green `#35c57a`, red `#f05a62`, blue `#4f91f7`, yellow `#e6b91e` or purple `#9b6dea`; the renderer reads exactly that spelling as the named swatch. A reader also takes Bear's `==🟢…==`: an opening 🟢, 🔴, 🔵, 🟡 or 🟣 before other text in the highlight selects green, red, blue, yellow or purple and is not shown; alone, it stays text. |
+| Text color | `span[data-md-color="#rrggbb"]` and `style="--md-color:#rrggbb"`. The five named colors have dark mates in the sheet. For another color, the renderer can also set `--md-color-dark` to its chosen dark-page tone. |
 | Inline size and family | `span[data-md-size="13.5pt"]` with `font-size:calc(13.5 / 12 * var(--md-unit))`, and a validated `font-family`. These attributes are renderer data; canonical Markdown carries ordinary `style` only. A sized span supplies a normal line box; block rhythm remains the reference style. |
 | Page break | `div.rapier-page-break[data-md-break="page"]`, with `role="separator"` and `aria-label="Page break"`. Its screen rule is a reading aid; print breaks before the following content. |
 | Footnote | `sup.footnote-ref > a[href]` points to the note's id. The notes are `section.footnotes > ol.footnotes-list > li.footnote-item`; each return link is `a.footnote-backref`. An optional `hr.footnotes-sep` is hidden because the section owns its separator. |
@@ -938,8 +938,8 @@ scales type, rhythm and pictures measured in lines together.
 | Definition list | `dl` with `dt` and `dd`. |
 | Rule | `hr`; `data-hr-style="dash"`, `"stars"` or `"underscore"` preserves the corresponding authored rule treatment. |
 | Picture | `img` with its real `src`, meaningful `alt` and optional `title`, inside its own `p` when it carries layout. Embedded pictures use their data URL directly. |
-| Diagram | A sanitized `svg.rapier-diagram`. A generated diagram may sit in `.diagram-block > .diagram-cache`; `data-diagram-state="ready"` on the block hides its retained `.diagram-source`. The sheet applies its diagram ink and nine-colour palette to the generated SVG's own shapes. |
-| Mathematics | Inline rendered math stays inline; display math sits inside `.math-display-wrap`, which owns its scrollable width and centring. The renderer supplies MathML or the math provider's output. |
+| Diagram | A sanitized `svg.rapier-diagram`. A generated diagram may sit in `.diagram-block > .diagram-cache`; `data-diagram-state="ready"` on the block hides its retained `.diagram-source`. The sheet applies its diagram ink and nine-color palette to the generated SVG's own shapes. |
+| Mathematics | Inline rendered math stays inline; display math sits inside `.math-display-wrap`, which owns its scrollable width and centering. The renderer supplies MathML or the math provider's output. |
 | Jump list | A top-level `ul` of at least two items, each holding exactly one `a[href^="#"]` as its whole text and no nested list, is `ul.rapier-jump-list`; a preceding paragraph reading `Jump to` or `Jump to:` is `p.rapier-jump-label`. |
 | Figure caption | A paragraph beginning `Figure: ` right after a paragraph holding only one picture is `p.rapier-figure-caption`. |
 | Numbered list across headings | When an `ol[start]` continues the numbering of an earlier top-level list with only headings between them, the earlier list carries `data-rapier-list-continues` and each heading between them `data-rapier-list-through`. |
@@ -1049,7 +1049,7 @@ newline is added after the opening tag and one before the closing tag.
 - Picture bytes are never duplicated between the page and the carried Markdown; a picture shown twice on the page is,
   as in any HTML, present twice.
 - The page runs only its own scripts, under one nonce: the inlined line planner, so a wrapped picture sits where it
-  does in the editor, and the code lexer when a code block needs colouring. `text/markdown` is not a script type any
+  does in the editor, and the code lexer when a code block needs coloring. `text/markdown` is not a script type any
   browser runs. With scripting off, a reader still sees the picture on its nearest side.
 - The page declares `referrer` `no-referrer`, so following a link never tells the destination where the page lives.
 - The digest covers the carried Markdown, not the rendered HTML; altered visible words don't change the recovered
@@ -1071,7 +1071,7 @@ matter are kept by the existing parser boundaries. Rapier doesn't read those att
 
 [Quarto also uses bracketed spans](https://quarto.org/docs/authoring/markdown-basics.html#divs-and-spans). The braces
 are extension syntax that CommonMark-only readers show. Pandoc 3.1.11.1 keeps the CSS attributes in HTML, but its
-ordinary LaTeX and DOCX writers don't map size and colour CSS to native styling. Rapier's own Word exporter does the
+ordinary LaTeX and DOCX writers don't map size and color CSS to native styling. Rapier's own Word exporter does the
 native mapping above. A Pandoc filter or target-specific custom styles are a separate host choice; this convention
 supplies no filter suite. Use Copy without typography when the destination needs plain semantic Markdown.
 
@@ -1099,4 +1099,4 @@ markdown-profile.md names fails.
 
 The [layout reference](repo/spec/md-layout.mjs), the [typography and marks reference](repo/spec/md-marks.mjs)
 and the [reference style](repo/spec/markdown-style.css) are MIT-licensed (`LICENSE-MIT` is the enumerated
-statement). Application behaviour and interoperability limits are in [standard-adoption](standard-adoption.md).
+statement). Application behavior and interoperability limits are in [standard-adoption](standard-adoption.md).

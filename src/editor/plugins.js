@@ -1,7 +1,7 @@
 
 const _rapierPluginDelete = {asking: null, busy: false, bound: false};
 const RAPIER_PLUGIN_DELETE = Object.freeze({
-	math: {name: 'math', what: 'the maths renderer', after: 'Math shows as its TeX source until you install it again.',
+	math: {name: 'math', what: 'the math renderer', after: 'Math shows as its TeX source until you install it again.',
 		held: () => _rapierProviders.math?.status === 'ready' && _rapierProviders.math.deletable,
 		async forget() { await _rapierProviders.math.forget(); _rapierUiMath.dismissed = true; if (typeof rerenderMathBlocks === 'function') rerenderMathBlocks(); }},
 	mermaid: {name: 'diagram', what: 'the diagram renderer', after: 'Diagrams that need this plug-in show their source until you install it again.',

@@ -12,7 +12,7 @@ const properties = new Set(['paper','scale','toothOX','toothOY','wetPending']);
 const idOf = id => { if(!Number.isSafeInteger(id)||id<1) throw new Error('Paint identity must be a positive integer'); return id; };
 const need = (map,id) => { const value=map.get(idOf(id)); if(!value) throw new Error('Paint identity is not live'); return value; };
 const PAINT_SLICE_MS = 12, PAINT_PREVIEW_MS = 120;
-const paintAbort = () => Object.assign(new Error('The agent painting was cancelled'), {name:'AbortError'});
+const paintAbort = () => Object.assign(new Error('The agent painting was canceled'), {name:'AbortError'});
 const yieldPaint = () => new Promise(resolve => {
  const channel=new MessageChannel();
  channel.port1.onmessage=()=> { channel.port1.close(); channel.port2.close(); resolve(); };

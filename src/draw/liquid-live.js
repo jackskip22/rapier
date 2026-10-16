@@ -206,7 +206,7 @@ async function _rapierDrawLiquidStill(job, work, defs) {
 	const core = globalThis.RapierDrawCore, { width, height } = core.liquidStillSize(job.box);
 	const frame = { x: job.box.minX, y: job.box.minY, w: job.box.maxX - job.box.minX, h: job.box.maxY - job.box.minY };
 	const rgba = new Uint8ClampedArray(await _rapierDrawLiquidRaster(_rapierDrawDisplayMarkup(job.body), frame, width, height, defs));
-	if (work?.signal?.aborted) throw Object.assign(new Error('Saving cancelled'), { code: 'DRAW_KEEP_GIVEN_UP' });
+	if (work?.signal?.aborted) throw Object.assign(new Error('Saving canceled'), { code: 'DRAW_KEEP_GIVEN_UP' });
 	const pixels = await _rapierDrawLiquidSteps(job.effect, rgba, width, height, work);
 	const out = await globalThis.RapierEmbeddedImages.codec('encode', { width, height, data: new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), options: { lossless: false, quality: 90 } });
 	core.liquidStillPut(job.key, 'data:image/jxl;base64,' + RapierBundleIO.toBase64(out.bytes || out));

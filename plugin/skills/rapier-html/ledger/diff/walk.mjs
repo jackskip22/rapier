@@ -109,7 +109,7 @@ export function walker(c) {
   }
 
   // Unequal lines pair in order by shared words. A line sharing under a quarter of its words with every candidate is
-  // replaced whole: an inserted line never borrows a neighbour's words, and a rewrite never reads as stray fragments.
+  // replaced whole: an inserted line never borrows a neighbor's words, and a rewrite never reads as stray fragments.
   function lines(x, y, context) {
     const n = x.length - 1, m = y.length - 1;
     if (n * m > 4096 || !spend(n * m + x[n] - x[0] + y[m] - y[0])) return row(x[0], x[n], y[0], y[m], context);

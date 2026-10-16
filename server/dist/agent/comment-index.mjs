@@ -145,7 +145,7 @@ export function createCommentText(source, {yield: yieldWork, signal} = {}) {
   return (async () => {
     const rows = [];
     for (let at = 0; at < source.length; at += CHUNK) {
-      if (signal?.aborted) throw Object.assign(new Error('Cancelled'), {name: 'AbortError'});
+      if (signal?.aborted) throw Object.assign(new Error('Canceled'), {name: 'AbortError'});
       rows.push(textLeaf(source.slice(at, at + CHUNK)));
       if ((rows.length & 15) === 0) await yieldWork();
     }

@@ -92,9 +92,9 @@ async function _rapierConfirmDirtyTransition(options = {}) {
 
 function _rapierProFeatures() {
 	return Object.freeze([
-		['widget', 'Home-screen widget'], ['icon', 'App icon colour'],
+		['widget', 'Home-screen widget'], ['icon', 'App icon color'],
 		['defaultDocumentFont', 'Default document font'],
-		['video', 'Time-lapse video'], ['pigments', 'Specialty pigments'], ['papers', 'More papers'], ['palettes', 'Saved palettes'], ['trace', 'Watercolour tracing'],
+		['video', 'Time-lapse video'], ['pigments', 'Specialty pigments'], ['papers', 'More papers'], ['palettes', 'Saved palettes'], ['trace', 'Watercolor tracing'],
 		['sync', 'Rapier Sync (coming soon)'], ['compare.full', 'Full Compare'],
 		['focus', 'Sentence focus'], ['readingTime', 'Reading time'],
 		['typewriter', 'Typewriter scrolling'],
@@ -516,12 +516,12 @@ const _RAPIER_WORKER_VENDOR_ID = 'lib-acorn';
 function _rapierEnsureLexer() {
 	try { return RapierLexer.ensure(window, _rapierExecuteVendorSource); }
 	catch (error) {
-		try { console.warn('[rapier] the GPU lexer could not run; code keeps its CPU colouring', error); } catch (_) {}
+		try { console.warn('[rapier] the GPU lexer could not run; code keeps its CPU coloring', error); } catch (_) {}
 		return false;
 	}
 }
 function _rapierLexerRefused(error) {
-	if (RapierLexer.refusal().count === 1) { try { console.warn('[rapier] the GPU lexer refused; code keeps its CPU colouring until it answers again', error); } catch (_) {} }
+	if (RapierLexer.refusal().count === 1) { try { console.warn('[rapier] the GPU lexer refused; code keeps its CPU coloring until it answers again', error); } catch (_) {} }
 	_rapierScheduleRelex();
 }
 function _rapierScheduleRelex() {
@@ -1586,7 +1586,7 @@ function _getParseWorker() {
 
 function _splitMarkdownBlocksViaWorker(markdown, timeoutMs, options = null) {
 	const signal = options?.signal;
-	if (signal?.aborted) return Promise.reject(new DOMException('Cancelled', 'AbortError'));
+	if (signal?.aborted) return Promise.reject(new DOMException('Canceled', 'AbortError'));
 	const worker = _getParseWorker();
 	if (!worker) return Promise.reject(Object.assign(new Error('parse worker unavailable'), {
 		code: 'wysiwyg_worker_unavailable', projection: 'wysiwyg',
@@ -1607,7 +1607,7 @@ function _splitMarkdownBlocksViaWorker(markdown, timeoutMs, options = null) {
 			if (!pending && !late) { cleanup(); return; }
 			clearTimeout(timer); cleanup();
 			if (late) late(null);
-			const error = new DOMException('Cancelled', 'AbortError');
+			const error = new DOMException('Canceled', 'AbortError');
 			if (pending) reject(error);
 			if (!_rapierParseRuntime.pending.size && !_rapierParseRuntime.late.size &&
 					_rapierParseRuntime.worker === worker) _retireParseWorker(error);
@@ -1754,7 +1754,7 @@ function _rapierBomBeforeFirstBlock(blocks) {
 }
 
 async function splitMarkdownBlocksAsync(markdown, options = null) {
-	if (options?.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+	if (options?.signal?.aborted) throw new DOMException('Canceled', 'AbortError');
 	const plainText = !!(options && options.plainText);
 	const admitted = String(markdown || '');
 	let imageIndex = globalThis.RapierSourceAssets.imageIndex(admitted);
@@ -3532,7 +3532,7 @@ async function rapierLoad(content, filename, options) {
 		let sliceStarted = _rapierNow();
 		const prepareYield = async () => {
 			if (loadToken !== rapier.identity.loadToken || !_rapierMutationStampIsCurrent(loadCommitGuard))
-				throw new DOMException('Cancelled', 'AbortError');
+				throw new DOMException('Canceled', 'AbortError');
 			if (_rapierNow() - sliceStarted < 8) return;
 			await work.yield(); sliceStarted = _rapierNow();
 		};
@@ -6565,6 +6565,7 @@ function _rapierInitBlockInteractionRouter() {
 		});
 	});
 
+	host.addEventListener('keydown', _rapierSectionMoveKey);
 	host.addEventListener('keydown', event => {
 		const open = _activeBlockEditContext();
 		if (open && (globalThis.RapierTables?.key(open.editDiv, event) || _rapierTableVerticalStep(open, event))) return;
@@ -6640,13 +6641,15 @@ document.addEventListener('pointerup', event => {
 }, { capture: true, passive: true });
 document.addEventListener('pointercancel', () => { _rapierImagePress = null; }, { capture: true, passive: true });
 
+function _rapierMetadataBlock(block) {
+	return block.type === 'link_reference' || block.type === 'abbreviation_reference' || !!globalThis.RapierImageAssets?.isAssetBlock(block.raw)
+		|| /^<!--[ \t]*continuation[ \t]+brief\b[\s\S]*-->\s*$/i.test(String(block.raw || ''));
+}
+
 function makeBlockEl(block, options = null) {
 	const wrapper = document.createElement('div');
 	wrapper.className = 'block-wrapper';
-	if (block.type === 'link_reference' || block.type === 'abbreviation_reference' || globalThis.RapierImageAssets?.isAssetBlock(block.raw)
-		|| /^<!--[ \t]*continuation[ \t]+brief\b[\s\S]*-->\s*$/i.test(String(block.raw || ''))) {
-		wrapper.classList.add('block-wrapper--metadata');
-	}
+	if (_rapierMetadataBlock(block)) wrapper.classList.add('block-wrapper--metadata');
 	wrapper.dataset.blockId = block.id;
 	wrapper._rapierBlock = block;
 	wrapper._rapierBindBlock = _rapierBindWrapperBlock;
@@ -7646,6 +7649,7 @@ function enterBlockEdit(block, wrapper, activation = null) {
 
 	_setBlockEditability(editDiv, true, rawEditor);
 	wrapper.classList.add('block-wrapper--editing');
+	_rapierSyncSectionMoveHandle(wrapper);
 	if (!rawEditor && _rapierNotesPart?.currentFile()) _rapierNotesPart.decorate(wrapper);
 	editDiv._rapierHistoryBaselineRaw = block.raw;
 	editDiv._rapierCheckpointFresh = true;
@@ -7958,7 +7962,7 @@ async function _rapierCaptureSettledExternalDocument(options = null) {
 	let abort;
 	try {
 		const captured = await (work?.signal ? Promise.race([pending, new Promise((_, reject) => {
-			abort = () => reject(new DOMException('Cancelled', 'AbortError'));
+			abort = () => reject(new DOMException('Canceled', 'AbortError'));
 			work.signal.addEventListener('abort', abort, {once: true});
 			if (work.signal.aborted) abort();
 		})]) : pending);
@@ -9456,7 +9460,7 @@ function _rapierShowFormatToolbar(toolbar, excerptCandidate, excerptOnly) {
 }
 
 function refreshFormatToolbar() {
-	if (rapier.find.open || rapier.document.docKind !== 'markdown') {
+	if (rapier.find.open || rapier.compare.active || rapier.document.docKind !== 'markdown') {
 		hideFormatToolbar();
 		return;
 	}
@@ -13465,7 +13469,7 @@ function rapierApplyColor(requestedHex) {
 		}
 		const planned = _rapierPlanExactSourceColor(before, segment.selected, hex, segment.start, segment.end);
 		if (planned == null) {
-			showToast('this selection cannot be coloured without changing its Markdown', 'error');
+			showToast('this selection cannot be colored without changing its Markdown', 'error');
 			return false;
 		}
 		nextRaw.push(planned);
@@ -14617,6 +14621,181 @@ function _rapierToggleSectionFold(blockId) {
 		: 'section expanded');
 	_rapierScheduleRestoreCursor(220);
 	return true;
+}
+
+function _rapierSectionLevel(block, state) {
+	return Number(_rapierBlockNavigation(block, rapier.semantic.references, state).heading?.level) || 0;
+}
+
+function _rapierSectionMovePlan(blockId) {
+	const blocks = rapier.document.blocks || [], state = _rapierNavigationRenderState();
+	const start = blocks.findIndex(block => block.id === blockId);
+	const level = start >= 0 ? _rapierSectionLevel(blocks[start], state) : 0;
+	if (!level) return null;
+	const levels = blocks.map((block, index) => index === start ? level : _rapierSectionLevel(block, state));
+	let last = blocks.length;
+	while (last > start + 1 && _rapierMetadataBlock(blocks[last - 1])) last--;
+	let end = start + 1;
+	while (end < last && !(levels[end] && levels[end] <= level)) end++;
+	const targets = [];
+	for (let index = 0; index <= last; index++) {
+		if (index > start && index < end) continue;
+		if (index === last || (levels[index] && levels[index] <= level)) targets.push(index);
+	}
+	return { start, end, level, targets };
+}
+
+function _rapierMoveSection(blockId, target) {
+	if (_rapierUserMutationBlocked()) return false;
+	const open = _activeBlockEditContext();
+	const caret = open && open.block.id === blockId ? (() => {
+		const selection = window.getSelection();
+		return selection?.rangeCount && open.editDiv.contains(selection.focusNode)
+			? _charOffsetForRangePoint(open.editDiv, selection.focusNode, selection.focusOffset) : Infinity;
+	})() : null;
+	if (open) _commitLiveBlockBeforeStructure(open.block, open.wrapper, open.editDiv);
+	const plan = _rapierSectionMovePlan(blockId);
+	if (!plan || !plan.targets.includes(target) || target === plan.start || target === plan.end) return false;
+	const blocks = rapier.document.blocks, up = target < plan.start;
+	const lo = up ? target : plan.start, mid = up ? plan.start : plan.end, hi = up ? plan.end : target;
+	const first = blocks.slice(lo, mid), second = blocks.slice(mid, hi);
+	const before = first.concat(second).map(_rapierHistoryBlock);
+	const leadFirst = first[0].leading, leadSecond = second[0].leading;
+	const rows = second.concat(first);
+	rows.forEach(row => { row.order = undefined; });
+	rows[0].leading = leadFirst;
+	rows[second.length].leading = leadSecond;
+	if (!_rapierCommitBlockRange(lo, before, rows.map(_rapierHistoryBlock))) {
+		first.concat(second).forEach((row, index) => { row.leading = before[index].leading; row.order = before[index].order ?? undefined; });
+		return false;
+	}
+	_rapierInstallBlockRange(lo, rows.length, rows);
+	_rapierApplySectionFolds();
+	if (caret != null) _enterBlockEditAtOffset(blockId, caret);
+	document.querySelector('#editor-blocks > .block-wrapper[data-block-id="' + blockId + '"]')?.scrollIntoView({ block: 'nearest' });
+	srAnnounce('section moved');
+	return true;
+}
+
+function _rapierMoveSectionStep(blockId, down) {
+	const plan = _rapierSectionMovePlan(blockId);
+	if (!plan) return false;
+	const target = down ? plan.targets.find(index => index > plan.end) : plan.targets.filter(index => index < plan.start).pop();
+	return target != null && _rapierMoveSection(blockId, target);
+}
+
+function _rapierSyncSectionMoveHandle(wrapper) {
+	const heading = wrapper.dataset.headingLevel && rapier.document.docKind === 'markdown' && !_rapierNotesPart?.currentFile();
+	let handle = wrapper.querySelector(':scope > .section-move-btn');
+	if (!heading) { handle?.remove(); return; }
+	if (handle) return;
+	handle = document.createElement('button');
+	handle.type = 'button';
+	handle.className = 'section-move-btn';
+	handle.setAttribute('contenteditable', 'false');
+	handle.setAttribute('aria-label', 'move section');
+	handle.setAttribute('aria-keyshortcuts', 'Alt+Shift+ArrowUp Alt+Shift+ArrowDown');
+	const svgNS = 'http://www.w3.org/2000/svg', svg = document.createElementNS(svgNS, 'svg');
+	for (const [key, value] of [['viewBox', '0 0 24 24'], ['fill', 'none'], ['stroke', 'currentColor'], ['stroke-width', '2'],
+		['stroke-linecap', 'round'], ['stroke-linejoin', 'round'], ['aria-hidden', 'true']]) svg.setAttribute(key, value);
+	for (const cx of [9, 15]) for (const cy of [5, 12, 19]) {
+		const dot = document.createElementNS(svgNS, 'circle');
+		dot.setAttribute('cx', String(cx)); dot.setAttribute('cy', String(cy)); dot.setAttribute('r', '1');
+		svg.appendChild(dot);
+	}
+	handle.appendChild(svg);
+	handle.addEventListener('pointerdown', _rapierSectionDragStart);
+	handle.addEventListener('keydown', event => {
+		if (!/^Arrow(?:Up|Down)$/.test(event.key)) return;
+		event.preventDefault();
+		event.stopPropagation();
+		const id = Number(handle.closest('.block-wrapper')?.dataset.blockId);
+		if (Number.isSafeInteger(id)) _rapierMoveSectionStep(id, event.key === 'ArrowDown');
+	});
+	wrapper.appendChild(handle);
+}
+
+function _rapierSectionDragStart(event) {
+	if (event.button > 0) return;
+	event.preventDefault();
+	event.stopPropagation();
+	const handle = event.currentTarget, host = document.getElementById('editor-blocks');
+	const blockId = Number(handle.closest('.block-wrapper')?.dataset.blockId);
+	if (!host || !Number.isSafeInteger(blockId)) return;
+	try { handle.setPointerCapture(event.pointerId); } catch (_) {}
+	const drag = { id: blockId, y: event.clientY, startY: event.clientY, plan: null, target: null, mark: null, frame: 0, moving: [] };
+	const wrapperAt = index => {
+		const block = rapier.document.blocks[index];
+		return block ? host.querySelector(':scope > .block-wrapper[data-block-id="' + block.id + '"]') : null;
+	};
+	const landingY = index => {
+		const shown = wrapperAt(index);
+		if (index < drag.plan.targets[drag.plan.targets.length - 1]) return shown && !shown.hidden ? shown.getBoundingClientRect().top : null;
+		const last = _rapierShownWrappers(host).pop();
+		return last ? last.getBoundingClientRect().bottom : null;
+	};
+	const place = () => {
+		let best = null;
+		for (const index of drag.plan.targets) {
+			const y = landingY(index);
+			if (y != null && (!best || Math.abs(y - drag.y) < Math.abs(best.y - drag.y))) best = { index, y };
+		}
+		if (!best) return;
+		drag.target = best.index;
+		const area = host.getBoundingClientRect(), column = wrapperAt(drag.plan.start)?.getBoundingClientRect() || area;
+		Object.assign(drag.mark.style, { top: (best.y - 2) + 'px', left: column.left + 'px', width: column.width + 'px' });
+	};
+	const tick = () => {
+		drag.frame = 0;
+		const area = host.getBoundingClientRect(), edge = 56;
+		const push = drag.y < area.top + edge ? drag.y - area.top - edge : drag.y > area.bottom - edge ? drag.y - area.bottom + edge : 0;
+		if (push) host.scrollTop += Math.max(-24, Math.min(24, push / 2));
+		place();
+		if (push) drag.frame = requestAnimationFrame(tick);
+	};
+	const begin = () => {
+		drag.plan = _rapierSectionMovePlan(blockId);
+		if (!drag.plan) return false;
+		drag.moving = rapier.document.blocks.slice(drag.plan.start, drag.plan.end).map(block => host.querySelector(':scope > .block-wrapper[data-block-id="' + block.id + '"]')).filter(Boolean);
+		drag.moving.forEach(wrapper => wrapper.setAttribute('data-section-moving', ''));
+		drag.mark = document.createElement('div');
+		drag.mark.className = 'section-move-mark';
+		document.body.appendChild(drag.mark);
+		document.documentElement.setAttribute('data-section-dragging', '');
+		return true;
+	};
+	const finish = commit => {
+		handle.removeEventListener('pointermove', move);
+		handle.removeEventListener('pointerup', up);
+		handle.removeEventListener('pointercancel', cancel);
+		document.removeEventListener('keydown', escape, true);
+		if (drag.frame) cancelAnimationFrame(drag.frame);
+		drag.moving.forEach(wrapper => wrapper.removeAttribute('data-section-moving'));
+		drag.mark?.remove();
+		document.documentElement.removeAttribute('data-section-dragging');
+		if (commit && drag.plan && drag.target != null) _rapierMoveSection(blockId, drag.target);
+	};
+	const move = e => {
+		drag.y = e.clientY;
+		if (!drag.plan && (Math.abs(drag.y - drag.startY) < 4 || !begin())) return;
+		if (!drag.frame) drag.frame = requestAnimationFrame(tick);
+	};
+	const up = () => finish(true);
+	const cancel = () => finish(false);
+	const escape = e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); } };
+	handle.addEventListener('pointermove', move);
+	handle.addEventListener('pointerup', up);
+	handle.addEventListener('pointercancel', cancel);
+	document.addEventListener('keydown', escape, true);
+}
+
+function _rapierSectionMoveKey(event) {
+	if (event.defaultPrevented || event.isComposing || !event.altKey || !event.shiftKey || event.ctrlKey || event.metaKey ||
+			!/^Arrow(?:Up|Down)$/.test(event.key)) return;
+	const open = _activeBlockEditContext();
+	if (!open || !open.wrapper.dataset.headingLevel || !open.wrapper.querySelector(':scope > .section-move-btn')) return;
+	event.preventDefault();
+	_rapierMoveSectionStep(open.block.id, event.key === 'ArrowDown');
 }
 
 function _rapierNormalizeHeadingsMode(value) {
@@ -18536,7 +18715,14 @@ function _rapierCompareWorkerMain() {
 			diff: {edits: compared.edits, changes: compared.changes},
 			bounded: compared.bounded === true, stats: compared.stats, hunks, items };
 	}
-	if (arguments[0]) return compareJob({ ...arguments[0], coarse: true });
+	if (arguments[0]) {
+		if (!arguments[1]) return compareJob({ ...arguments[0], coarse: true });
+		try { return compareJob(arguments[0]); }
+		catch (error) {
+			try { console.error('[rapier] comparison detail unavailable', error); } catch (_) {}
+			return compareJob({ ...arguments[0], from: undefined, coarse: true });
+		}
+	}
 	self.onmessage = function (event) {
 		const d = event.data || {};
 		if (d.type !== 'compare') return;
@@ -18738,6 +18924,11 @@ async function _rapierCompareMakeWorker() {
 	const url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
 	try { return new Worker(url); }
 	finally { URL.revokeObjectURL(url); }
+}
+
+function _rapierCompareOnPage(current, request, finish) {
+	const chars = String(request.currentText || '').length + String(request.incomingText || '').length;
+	setTimeout(() => { if (current()) finish(_rapierCompareWorkerMain(request, chars <= 262144)); }, 0);
 }
 
 function _rapierCompareCancelWorker() {
@@ -19248,6 +19439,7 @@ async function _rapierCompareStart(currentText, currentName, incomingText, incom
 	};
 	const coarse = () => { if (c.active && jobId === _rapierCompareRuntime.jobId) finish(_rapierCompareWorkerMain(request)); };
 	const admission = _rapierCompareAdmission(currentText, incomingText);
+	const onPage = () => _rapierCompareOnPage(() => c.active && jobId === _rapierCompareRuntime.jobId, request, finish);
 	if (admission.same) {
 		finish({ status: 'same', oldCount: admission.oldCount, newCount: admission.newCount, additions: 0, deletions: 0,
 			diff: {edits: [], changes: []}, hunks: [], items: [] });
@@ -19257,14 +19449,21 @@ async function _rapierCompareStart(currentText, currentName, incomingText, incom
 	_rapierCompareRuntime.timer = setTimeout(coarse, _RAPIER_COMPARE_TIMEOUT_MS);
 	let worker;
 	try { worker = await _rapierCompareMakeWorker(); }
-	catch (_) { coarse(); return; }
+	catch (_) { onPage(); return; }
 	if (!c.active || jobId !== _rapierCompareRuntime.jobId || !c.running) { worker.terminate(); return; }
 	_rapierCompareRuntime.worker = worker;
+	let answered = false;
 	worker.onmessage = event => {
+		answered = true;
 		const result = event.data || {};
 		if (result.jobId === jobId) finish(result);
 	};
-	worker.onerror = coarse;
+	worker.onerror = () => {
+		if (answered) { coarse(); return; }
+		worker.terminate();
+		if (_rapierCompareRuntime.worker === worker) _rapierCompareRuntime.worker = null;
+		onPage();
+	};
 	worker.postMessage(request);
 }
 
@@ -21669,7 +21868,7 @@ async function _rapierBuildEditorExport(action, expected = {}, options = {}) {
 		throw Object.assign(new Error('This editor export format is unavailable.'), {code: 'export_unavailable'});
 	}
 	const cancelled = () => options.signal?.aborted;
-	const cancellation = () => Object.assign(new Error('The export was cancelled.'), {code: 'cancelled'});
+	const cancellation = () => Object.assign(new Error('The export was canceled.'), {code: 'cancelled'});
 	if (cancelled()) throw cancellation();
 	let captured = options.captured || await _rapierCaptureSettledExternalDocument({quiet: true, passive: true});
 	if (cancelled()) throw cancellation();
@@ -29364,7 +29563,7 @@ function _rapierCommandIconMarkup(name) {
 const RAPIER_COMMAND_FAMILIES = Object.freeze({
 	align: Object.freeze({ label: 'Alignment', icon: 'align-left' }),
 	size: Object.freeze({ label: 'Size', icon: 'type' }),
-	color: Object.freeze({ label: 'Text colour', icon: 'droplet' }),
+	color: Object.freeze({ label: 'Text color', icon: 'droplet' }),
 	highlight: Object.freeze({ label: 'Highlight', icon: 'highlight' }),
 	list: Object.freeze({ label: 'List', icon: 'list' }),
 	nest: Object.freeze({ label: 'Nest', icon: 'nest' }),
@@ -31274,7 +31473,7 @@ async function _rapierEmbedAwaitSave(record, signal) {
 		};
 		const completed = finish(resolve);
 		const failed = finish(reject);
-		const aborted = () => failed(signal.reason || new DOMException('The save was cancelled.', 'AbortError'));
+		const aborted = () => failed(signal.reason || new DOMException('The save was canceled.', 'AbortError'));
 		signal.addEventListener('abort', aborted, { once: true });
 		record.completion.promise.then(completed, failed);
 		if (signal.aborted) aborted();
@@ -35762,7 +35961,7 @@ function _rapierPasteJobKey(event) {
 			srAnnounce('Paste is applied. Finishing its display.');
 		} else {
 			_rapierEditingRuntime.pasteJob.cancelled = true;
-			srAnnounce('Cancelling paste.');
+			srAnnounce('Canceling paste.');
 		}
 	}
 }
@@ -35926,7 +36125,7 @@ async function _rapierRunLargePaste(record, payload, nativeInput = null) {
 			if (!job.typing) _rapierClearPasteBusy(job);
 			finish();
 		}
-		if (job.cancelled && !job.committed) showToast('Paste cancelled', 'info');
+		if (job.cancelled && !job.committed) showToast('Paste canceled', 'info');
 	}
 }
 
@@ -36013,7 +36212,7 @@ async function _rapierRunLargeSourcePaste(event, payload, sourceTextarea) {
 	} finally {
 		try { _rapierClearPasteBusy(job); }
 		finally { finish(); }
-		if (job.cancelled && !job.committed) showToast('Paste cancelled', 'info');
+		if (job.cancelled && !job.committed) showToast('Paste canceled', 'info');
 	}
 }
 
@@ -41014,7 +41213,7 @@ async function _rapierWaitForUser(input, ctx) {
 		state.settleReplaced = () => finish({ outcome: 'document_replaced', reason: 'document_replaced' });
 		state.abort = () => {
 			_rapierWaitDispose(state);
-			reject(new DOMException('The wait was cancelled: the person is leaving.', 'AbortError'));
+			reject(new DOMException('The wait was canceled: the person is leaving.', 'AbortError'));
 		};
 		const listen = (node, type, handler, options) => {
 			node.addEventListener(type, handler, options);
@@ -42272,6 +42471,7 @@ async function _rapierSinceOpenProject() {
 		finish(_rapierCompareWorkerMain(request));
 	};
 	const admission = _rapierCompareAdmission(baselineText, current);
+	const onPage = () => _rapierCompareOnPage(() => jobId === _rapierSinceOpen.jobId, request, finish);
 	if (admission.same) {
 		finish({ status: 'same', oldCount: admission.oldCount, newCount: admission.newCount, additions: 0, deletions: 0,
 			diff: {edits: [], changes: []}, hunks: [], items: [] });
@@ -42281,15 +42481,22 @@ async function _rapierSinceOpenProject() {
 	if (!_rapierSinceOpen.worker) {
 		let worker;
 		try { worker = await _rapierCompareMakeWorker(); }
-		catch (_) { coarse(); return; }
+		catch (_) { onPage(); return; }
 		if (jobId !== _rapierSinceOpen.jobId || !_rapierSinceOpen.timer) { worker.terminate(); return; }
 		_rapierSinceOpen.worker = worker;
 	}
+	let answered = false;
 	_rapierSinceOpen.worker.onmessage = event => {
+		answered = true;
 		const result = event.data || {};
 		if (result.jobId === jobId) finish(result);
 	};
-	_rapierSinceOpen.worker.onerror = coarse;
+	_rapierSinceOpen.worker.onerror = () => {
+		if (answered) { coarse(); return; }
+		_rapierSinceOpen.worker?.terminate();
+		_rapierSinceOpen.worker = null;
+		onPage();
+	};
 	_rapierSinceOpen.worker.postMessage(request);
 }
 
@@ -43287,8 +43494,8 @@ function _rapierRenderDocumentHead() {
 		title: 'Rapier privacy and terms',
 		description: 'Rapier privacy and terms: local editing, optional services, data storage and deletion.',
 	} : door === 'commercial' ? {
-		title: 'Rapier commercial licence',
-		description: 'Commercial licences for embedding Rapier in proprietary products. The editor is free under AGPL-3.0-only.',
+		title: 'Rapier commercial license',
+		description: 'Commercial licenses for embedding Rapier in proprietary products. The editor is free under AGPL-3.0-only.',
 	} : null;
 	let viewDoor = null;
 	try { viewDoor = !sheet && head.served && /^https?:$/.test(location.protocol) && new URL(head.served.canonical, location.href).pathname === location.pathname.replace(/\/+$/, '') ? head.served : null; } catch (_) {}
@@ -45246,11 +45453,11 @@ function _rapierUiResolveConfirm(accepted) {
 
 const RAPIER_MIT_NOTICE = `MIT License
 
-These components are distributed under the MIT licence,
+These components are distributed under the MIT license,
 each under its own copyright notice:
 
 gpu-lexer 0.0.1 — no LICENSE file ships in the published
-package; this notice is the standard MIT text for its declared licence.
+package; this notice is the standard MIT text for its declared license.
 	Copyright (c) 2026 Vercel, Inc.
 acorn 8.19.0
 	Copyright (C) 2012-2022 by various contributors (see AUTHORS)

@@ -42,7 +42,9 @@ import {journalOperations} from '../kit/ledger/journal-records.mjs';
 export { transformSplices };
 export { materialMatches, admitMaterialResult };
 
-export const showTarget = input => input.target || (input.view ? 'view' : input.question ? 'ask' : input.act || input.turn_id ? 'comparison' : 'passage');
+export const showTarget = input => input.target || (input.view ? 'view' : input.question ? 'ask' : input.preference !== undefined ? 'preferences'
+  : input.close || input.compare_id ? 'comparison' : input.code !== undefined ? 'pair' : input.note ? 'note' : input.words !== undefined ? 'pointer'
+  : input.act || input.turn_id || input.name !== undefined && input.text !== undefined ? 'comparison' : 'passage');
 export function exportFilename(filename, format) {
   if (format === 'markdown') return filename;
   const suffix = format === 'html' ? '.rapier.html' : '.' + (format === 'page' ? 'html' : format);
@@ -65,7 +67,8 @@ export function admitExportArtifact(request, fact) {
     return {reason: 'document_changed'};
   if (fact.outcome !== 'ok') {
     const reason = typeof fact.reason === 'string' ? fact.reason.slice(0, 128) : 'export_unavailable';
-    return {reason, ...(reason === 'export_too_large' ? {limitBytes: MAX_EXPORT_BYTES} : {})};
+    return {reason, ...(reason === 'export_too_large' ? {limitBytes: MAX_EXPORT_BYTES} : {}),
+      ...(typeof fact.picture === 'string' && fact.picture ? {picture: fact.picture.slice(0, 256), alt: typeof fact.alt === 'string' ? fact.alt.slice(0, 256) : ''} : {})};
   }
   const artifact = fact.artifact, mimeType = request.format === 'docx'
     ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : request.format === 'page' ? 'text/html' : 'application/pdf';
@@ -115,7 +118,8 @@ export const HINTS = {
   compare_line_limit: 'Keep the two comparison sources within ' + LIMITS.compareLines + ' combined lines.',
   compare_too_complex: 'Compare fewer unrelated line changes, or show a smaller retained act.',
   compare_change_limit: 'A comparison holds at most ' + LIMITS.compareChanges + ' change regions; compare fewer differences or a smaller retained act.',
-  return_unavailable: 'This host has no return channel; use export to deliver an independent file.',
+  return_unavailable: 'Return links belong to hosted workspaces; here use export to deliver an independent file.',
+  pairing_hosted_only: 'Pairing a browser belongs to hosted workspaces; this editor needs no pairing.',
   save_unavailable: 'This host has no bound save destination; use export for an independent file.',
   object_layout_dropped: 'Keep the object\'s md-layout:v1 line after its fence, or edit that line alone to change or remove placement.',
   context_missing: 'This handle is unknown here or was consumed; read again for a fresh handle.',
@@ -140,6 +144,13 @@ export const HINTS = {
   draw_alt_required: 'Give alt, a short caption of the drawing.',
   draw_requires_markdown: 'Drawings live in Markdown documents only.',
   draw_create_patch_conflict: 'Create with figures and alt first; shapes patches need target kind edit and recipe_handle from a complete drawing read.',
+  comment_anchor_missing: 'The on words are not in the document; quote exact words from a fresh read, or omit on to comment on the whole document.',
+  comment_anchor_ambiguous: 'The on words occur more than once; quote more of the passage so they occur once.',
+  act_and_turn_conflict: 'Pass act or turn_id, not both.',
+  act_or_turn_required: 'Pass act (from edit) or turn_id.',
+  note_fields_and_changes: 'With note, send fields or changes, not both.',
+  draw_session_open: 'The person has a drawing open in Draw; ask them to finish it with Done, then try again.',
+  revision_unknown: 'This document has not reached that revision; pass revision exactly as your latest read or open returned it.',
   paint_strokes_invalid: 'Read the paint guide. A paint figure uses kind, id and seed with strokes, or mode water with paper and actions; geometry belongs in path points, not figure x/y/w/h.',
   paint_kept_recipe_changed: 'Read the current block and keep its native material markers. To continue a layer, use shapes.replace with its id and new strokes or Water actions; shapes.add starts a new layer.',
   material_request_expired: 'The material request expired without commitment. Once a visible editor is available, reread the target and use a new operation_id; Water also needs WebGPU.',
@@ -3621,6 +3632,13 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         return {outcome: 'pending', reason: 'surface_fact_required', pending: {kind: 'surface-fact', requestId, requirements: request}};
       }
       checked = admitExportArtifact(request, context.world.export);
+      if (!checked.bytes && checked.picture) {
+        const row = publicSurface().projection.segments.find(row => row.id && row.asset && normalizeLabel(row.asset.label) === normalizeLabel(checked.picture));
+        const name = row ? 'Block ' + row.id + (checked.alt ? ' ("' + checked.alt + '")' : '') : checked.alt ? 'The picture "' + checked.alt + '"' : 'A picture';
+        return failure(checked.reason || 'export_unavailable', 'refused', {...(row ? {block: row.id} : {}), ...(checked.alt ? {alt: checked.alt} : {}),
+          ...(checked.reason === 'IMAGE_JXL_UNREADABLE' ? {hint: name + ' is JPEG XL, which the open editor\'s browser cannot read, so it cannot go into ' + (format === 'docx' ? 'Word' : 'a PDF') +
+            '. Ask the person to update their browser and keep editor_url open, or export markdown or html, which keep it.'} : {})});
+      }
       if (!checked.bytes) return failure(checked.reason || 'export_unavailable', 'refused', {
         ...(checked.reason === 'editor_unavailable' ? {availableFormats: ['markdown', 'html', 'txt']} : {}),
         ...(safeInt(checked.limitBytes) ? {limitBytes: checked.limitBytes} : {}), ...(safeInt(checked.byteLength) ? {bytes: checked.byteLength} : {})});
@@ -3740,6 +3758,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       const target = replace ? recipe?.shapes.find(shape => shape.id === id && shape.recognized === 'paint') || null : null;
       if (replace && !target) return {refusal: failure('paint_target_invalid', 'invalid', {field: at + '.id'})};
       if (target?.locked) return {refusal: failure('paint_target_locked', 'refused', {field: at + '.id'})};
+      const strokeFault = !water && typeof host.paintStrokesFault === 'function' ? host.paintStrokesFault(strokes, at + '.strokes') : null;
+      if (strokeFault) return {refusal: failure('paint_strokes_invalid', 'invalid', strokeFault)};
       if (water) {
         const fault = waterActionsFault(actions, at + '.actions');
         if (fault) return {refusal: failure('paint_strokes_invalid', 'invalid', {field: fault.field, ...(fault.hint ? {hint: fault.hint} : {})})};
@@ -4499,6 +4519,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const drawingCore = drawing ? Object.fromEntries(['open', 'session', 'occurrence', 'assetGeneration', 'surfaceGeneration', 'recipeDigest', 'recipeUnavailable', 'mode', 'busy']
       .filter(key => drawing[key] !== undefined).map(key => [key, drawing[key]])) : null;
     const paintCore = {available: !!paint, ...(paint?.modes ? {modes: paint.modes} : {}),
+      needs: {paint: 'open editor', water: 'open editor with WebGPU'},
       renderer: {status: typeof host.material === 'function' ? (drawingPresentationBinding() ? 'attached' : 'unavailable')
         : typeof host.paint === 'function' ? 'local' : 'unavailable', water: 'unprobed'},
       guide: {resource: 'rapier://guide/water'}};
@@ -4796,7 +4817,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         if (!thread) {
           const requested = block.attrs.on || '', linked = requested.startsWith('#') ? fencedBlocks(computed.text).find(row => row.id === requested.slice(1)) : null;
           const on = linked ? linked.text : requested, positions = on ? exactMatches(computed.text, on, undefined, 2) : [];
-          if (on && positions.length !== 1) return failure('comment_anchor_ambiguous', 'conflict', {block: block.id});
+          if (on && positions.length !== 1) return failure(positions.length ? 'comment_anchor_ambiguous' : 'comment_anchor_missing', 'conflict', {block: block.id});
           thread = {id: block.id, anchor: commentAnchor(on ? 'text' : 'document', positions[0], positions[0] + on.length, computed.text, current), resolved: false, messages: []}; wanted.push(thread);
         }
         if (!Array.isArray(messages)) messages = [{text: block.body}];
@@ -4828,6 +4849,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const change = input.changes?.[detail.index || 0] || input, scope = textScope(source, change, targets), needle = change.old ?? change.after;
     const found = needle && !scope.reason ? exactMatches(source, needle, scope, 2) : [], at = found.length === 1 ? found[0] : scope.start || 0;
     const facts = {revision: surfaceRevision(), ...detail}, lines = targets.lines;
+    if (reason === 'revision_changed' && typeof facts.revision === 'string' && input.revision !== facts.revision)
+      facts.hint = 'A drawing is live in the editor, so the revision is the string "' + facts.revision + '". Check the context below, then pass that string exactly as revision.';
     if (reason === 'text_ambiguous') {
       let count = 0; const matches = [];
       for (let pos = source.indexOf(needle, scope.start); pos >= 0 && pos + needle.length <= scope.end; pos = source.indexOf(needle, pos + 1)) {
@@ -4923,18 +4946,28 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
 
   async function doorRead(input, who, context) {
     if (input.guide || input.cursor && state.cursors[input.cursor]?.kind === 'guide') return doorGuide(input, who, context);
-    if (input.search !== undefined) return notesList({query: input.search, cursor: input.cursor, limit: input.limit}, who, context);
-    if (input.note) {
-      if (input.versions) return notesHistory({note_ref: input.note, cursor: input.cursor, limit: input.limit}, who, context);
-      const got = await notesRead({note_ref: input.note, version: input.version, cursor: input.cursor, limit: input.limit}, who, context);
-      return got;
+    const notesCursor = input.cursor && /^notes-(list|read|history)$/.test(state.cursors[input.cursor]?.kind) ? state.cursors[input.cursor] : null;
+    if (input.search !== undefined || notesCursor?.kind === 'notes-list') return notesList({query: input.search, cursor: input.cursor, limit: input.limit}, who, context);
+    if (input.note || notesCursor) {
+      const note_ref = input.note ?? notesCursor.note_ref;
+      if (input.versions || notesCursor?.kind === 'notes-history') return notesHistory({note_ref, cursor: input.cursor, limit: input.limit}, who, context);
+      return notesRead({note_ref, version: input.version, cursor: input.cursor, limit: input.limit}, who, context);
     }
     if (input.cursor && ['block','heading','lines','as','state','history','since','comparison','return_id'].some(key=>own(input,key)))
       return failure('cursor_options_conflict','invalid');
     if (input.as && !['text', 'image', 'outline'].includes(input.as)) return failure('representation_unknown', 'invalid');
     if (input.as === 'image') {
       let sourceRange;
-      if (input.block || input.heading) {const {projection, targets} = publicSurface(), scope = textScope(projection.text, input, targets); if (scope.reason) return surfaceFailure(scope.reason, projection.text, input, {}, targets); sourceRange = {start: sourcePosition(projection, scope.start), end: sourcePosition(projection, scope.end, true)};}
+      if (input.block || input.heading || input.lines) {
+        const {projection, targets} = publicSurface();
+        let scope = textScope(projection.text, input, targets);
+        if (scope.reason) return surfaceFailure(scope.reason, projection.text, input, {}, targets);
+        if (input.lines) {
+          if (input.heading || input.block || input.lines[1] < input.lines[0]) return failure('lines_invalid', 'invalid');
+          scope = {start: targets.lines.offset(input.lines[0] - 1), end: targets.lines.offset(input.lines[1])};
+        }
+        sourceRange = {start: sourcePosition(projection, scope.start), end: sourcePosition(projection, scope.end, true)};
+      }
       return inspectVisual({expectedRevision: state.revision, scope: sourceRange ? 'focus' : 'page', sourceRange}, context);
     }
     if (input.return_id || input.cursor && state.cursors[input.cursor]?.kind === 'return-read') return readDocument(input.cursor ? {cursor: input.cursor, limit: input.limit} : {target: {kind: 'return', return_id: input.return_id}, limit: input.limit}, who, context);
@@ -5037,7 +5070,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
 
   async function doorEdit(input, who, context) {
     if (input.note) {
-      if (input.fields && input.changes) return failure('note_fields_or_text_required', 'invalid');
+      if (input.fields && input.changes) return failure('note_fields_and_changes', 'invalid');
       if (typeof host.notesRead !== 'function') return noNotes(input.note);
       const got = await host.notesRead({note_ref: input.note, ...who, signal: context.signal});
       const blocked = unavailableNotes(got, input.note) || notesRefused(got); if (blocked) return blocked;
@@ -5062,6 +5095,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     }
     const {projection, targets} = publicSurface(), source = projection.text;
     if (input.fields) return failure('note_required', 'invalid');
+    const asked = typeof input.revision === 'string' ? Number(input.revision.split(':')[0]) : input.revision;
+    if (safeInt(asked) && asked > state.revision) return failure('revision_unknown', 'invalid', {revision: surfaceRevision(projection)});
     if (own(input, 'filename')) {
       if (!validName(input.filename)) return failure('filename_invalid', 'invalid');
       const extension = name => { const at = name.lastIndexOf('.'); return at > 0 ? name.slice(at + 1) : ''; };
@@ -5108,6 +5143,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const target = showTarget(input);
     if (target === 'view' && (input.preference !== undefined || input.value !== undefined)) return failure('show_arguments_invalid', 'invalid', {field: input.preference !== undefined ? 'preference' : 'value'});
     if (target === 'preferences' && input.view !== undefined) return failure('show_arguments_invalid', 'invalid', {field: 'view'});
+    if (target === 'comparison' && input.text !== undefined && (input.heading !== undefined || input.block !== undefined))
+      return failure('comparison_whole_text', 'invalid', {field: input.heading !== undefined ? 'heading' : 'block',
+        hint: 'A comparison compares whole documents: pass the whole alternative document as text, without heading or block.'});
     if (target === 'comparison') return dispatchOperation('comparison.present', input.close ? {action: 'close', compare_id: input.compare_id}
       : input.act || input.turn_id ? {action: 'show', target: input.act ? {kind: 'act', act_id: input.act} : {kind: 'turn', turn_id: input.turn_id}}
       : {action: 'open', text: input.text, name: input.name}, who, context);
@@ -5126,6 +5164,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       return askEditor('document.device_action', {action: 'playback', value: input.value,
         sourceRange: {start: sourcePosition(projection, matches[0]), end: sourcePosition(projection, end, true)}}, who, context);
     }
+    if (target === 'pair') return failure('pairing_hosted_only');
     if (target === 'return') return dispatchOperation('document.create_return', {}, who, context);
     if (target === 'note') return notesOpen({note_ref: input.note, expected_foreground: typeof host.notesForeground === 'function' ? host.notesForeground() : undefined}, who, context);
     if (target === 'ask') {
@@ -5157,7 +5196,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       case 'open': result = await doorOpen(input, who, context); break;
       case 'read': result = await doorRead(input, who, context); break;
       case 'edit': result = await doorEdit(input, who, context); break;
-      case 'undo': result = Boolean(input.act) === Boolean(input.turn_id) ? failure('act_or_turn_required', 'invalid') : input.act?.startsWith('notes-controls:') ? await notesUndo(input, who, context) : await undo({change_id: input.act, turn_id: input.turn_id}, who, context); break;
+      case 'undo': result = Boolean(input.act) === Boolean(input.turn_id) ? failure(input.act ? 'act_and_turn_conflict' : 'act_or_turn_required', 'invalid') : input.act?.startsWith('notes-controls:') ? await notesUndo(input, who, context) : await undo({change_id: input.act, turn_id: input.turn_id}, who, context); break;
       case 'show': result = await doorShow(input, who, context); break;
       case 'export': result = await doorExport(input, who, context); break;
       case 'document.observe': result = await observe(input, who, context); break;

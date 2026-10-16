@@ -46,7 +46,7 @@ class Pipe {
     if(this.closed)return Promise.reject(this.closed);if(signal?.aborted)return Promise.reject(signal.reason);
     const id=++this.next;
     return new Promise((resolve,reject)=>{
-      const abort=()=>{const pending=this.pending.get(id);if(!pending)return;this.pending.delete(id);pending.clear();reject(signal.reason || refusal('RENDER_CANCELLED','The export was cancelled.',499));};
+      const abort=()=>{const pending=this.pending.get(id);if(!pending)return;this.pending.delete(id);pending.clear();reject(signal.reason || refusal('RENDER_CANCELLED','The export was canceled.',499));};
       const timer=setTimeout(()=>{
         const pending=this.pending.get(id);if(!pending)return;this.pending.delete(id);pending.clear();reject(refusal('RENDER_TIMEOUT','The export exceeded its time limit.',504));
       },this.timeout);timer.unref();

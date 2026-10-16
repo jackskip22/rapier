@@ -90,6 +90,15 @@ const RapierBundleIO = (function () {
 		} catch (_) { return null; }
 	}
 
+	function hostedUrl(file) {
+		if (globalThis.RAPIER_ASSET_BASE === undefined) return null;
+		var base = new URL(globalThis.RAPIER_ASSET_BASE), target = new URL(file, base);
+		if (!/^https?:$/.test(base.protocol) || base.username || base.password || base.search || base.hash ||
+			!base.pathname.endsWith('/') || target.origin !== base.origin || !target.pathname.startsWith(base.pathname) || target.search || target.hash)
+			throw new Error('The editor asset directory is invalid');
+		return target.href;
+	}
+
 	var pluginDirectory = (function () {
 		var value = null;
 		try { value = new URLSearchParams(location.search).get('plugins'); } catch (_) {}
@@ -188,6 +197,7 @@ const RapierBundleIO = (function () {
 		fetchBytes: fetchBytes,
 		fromBase64: fromBase64,
 		pluginUrl: pluginUrl,
+		hostedUrl: hostedUrl,
 		resourceBytes: resourceBytes,
 		sameOriginUrl: sameOriginUrl,
 		shortUrl: shortUrl,

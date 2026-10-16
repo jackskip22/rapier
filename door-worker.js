@@ -28,8 +28,8 @@ const WINDOW = 1024 * 1024;
 export const DOORS = Object.freeze({
 	'/privacy': Object.freeze({name: 'Privacy and terms', title: 'Rapier privacy and terms',
 		description: 'Rapier privacy and terms: local editing, optional services, data storage and deletion.'}),
-	'/commercial': Object.freeze({name: 'Commercial licence', title: 'Rapier commercial licence',
-		description: 'Commercial licences for embedding Rapier in proprietary products. The editor is free under AGPL-3.0-only.'}),
+	'/commercial': Object.freeze({name: 'Commercial license', title: 'Rapier commercial license',
+		description: 'Commercial licenses for embedding Rapier in proprietary products. The editor is free under AGPL-3.0-only.'}),
 	// The editor views a search engine may show as sitelinks under the home result: each opens that view
 	// (the engine reads the address), and each is a page of its own for a reader that runs nothing.
 	// `image` is the card shown when the address is shared: a PNG at the site root, `imageSize` pixels wide and high.

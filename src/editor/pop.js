@@ -146,7 +146,7 @@ function _rapierProgressTask({label = '', current = null, after = 500, size = 0,
 	let ended = false, reported = null, needsPaint = ahead;
 	const check = () => {
 		if (!signal.aborted && current && !current()) cancel();
-		if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+		if (signal.aborted) throw new DOMException('Canceled', 'AbortError');
 	};
 	const set = (fraction, words) => {
 		if (ended) return;

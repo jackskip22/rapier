@@ -12,8 +12,8 @@ const WINDOW = 1024 * 1024;
 export const DOORS = Object.freeze({
 	'/privacy': Object.freeze({name: 'Privacy and terms', title: 'Rapier privacy and terms',
 		description: 'Rapier privacy and terms: local editing, optional services, data storage and deletion.'}),
-	'/commercial': Object.freeze({name: 'Commercial licence', title: 'Rapier commercial licence',
-		description: 'Commercial licences for embedding Rapier in proprietary products. The editor is free under AGPL-3.0-only.'}),
+	'/commercial': Object.freeze({name: 'Commercial license', title: 'Rapier commercial license',
+		description: 'Commercial licenses for embedding Rapier in proprietary products. The editor is free under AGPL-3.0-only.'}),
 	'/notes': Object.freeze({name: 'Notes', title: 'Rapier Notes: offline Markdown notes',
 		description: 'Plain Markdown notes with embedded pictures, colors, pins, checklists, voice recordings and history. Import from 15+ note apps. No account.',
 		image: 'og-notes.png', imageSize: [1200, 630], imageAlt: 'Rapier Notes: Markdown notes on your phone'}),

@@ -2,7 +2,7 @@
  "comment": "MyPaint brush file",
  "version": 3,
  "description": "Flat",
- "notes": "A flat for painting with a finger: an opaque blade held at an angle, laid as a row of bristle lanes. Move it across the blade and the mark is a broad ribbon with straight sides; move it along the blade and it is a line; Follow keeps the blade square to the way the finger goes, so a curve or a turn stays one ribbon. A light or fast pass, and the lift at the end, run into fine streaks that fade into the paper, and where it crosses wet paint of another colour it picks that colour up and drags it.\nRapier finger preset: the finger's speed is its pressure, and it decides how many lanes lay.\n\nAuthor: Rapier\nLicense: AGPL-3.0-only",
+ "notes": "A flat for painting with a finger: an opaque blade held at an angle, laid as a row of bristle lanes. Move it across the blade and the mark is a broad ribbon with straight sides; move it along the blade and it is a line; Follow keeps the blade square to the way the finger goes, so a curve or a turn stays one ribbon. A light or fast pass, and the lift at the end, run into fine streaks that fade into the paper, and where it crosses wet paint of another color it picks that color up and drags it.\nRapier finger preset: the finger's speed is its pressure, and it decides how many lanes lay.\n\nAuthor: Rapier\nLicense: AGPL-3.0-only",
  "parent_brush_name": "Rapier/Flat",
  "group": "Rapier",
  "settings": {

@@ -55,7 +55,7 @@ function snapshotSettings(value) {
   return Object.freeze(Object.fromEntries(Object.keys(value).map(key => [key, accepted[key]])));
 }
 
-// Each picker owns its input. Cancelling it cannot give a later request its file.
+// Each picker owns its input. Canceling it cannot give a later request its file.
 function pickDeviceFile(document, signal) {
   if (signal?.aborted) return Promise.resolve(null);
   const input = document.createElement('input');
@@ -301,7 +301,7 @@ function mount(target, options = {}) {
   if (source.username || source.password || !(source.protocol === 'https:' || source.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(source.hostname)))
     throw new TypeError('The editor needs HTTPS, or HTTP on localhost');
   source.searchParams.set('embed', '1');
-  // The page's plug-ins (maths, diagrams, the PDF reader and the rest) come from this directory alone: the page reads `plugins` from its own
+  // The page's plug-ins (math, diagrams, the PDF reader and the rest) come from this directory alone: the page reads `plugins` from its own
   // address. Its security policy lets it read only its own origin, so a directory anywhere else is refused here, before the page loads.
   if (options.plugins !== undefined) {
     let directory;
@@ -442,7 +442,7 @@ function mount(target, options = {}) {
   function cancelOpen(code = 'open_cancelled') {
     const row = openPending;
     if (!row || row.abort.signal.aborted) return;
-    row.answer = {type: 'open-nack', payload: {code, reason: 'File opening was cancelled.'}};
+    row.answer = {type: 'open-nack', payload: {code, reason: 'File opening was canceled.'}};
     row.abort.abort();
   }
   function answerOpen(message, channel) {

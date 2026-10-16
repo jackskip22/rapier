@@ -121,7 +121,7 @@ export function parseJPEG(bytes, retainScans = false) {
       if (bytes[segment] !== 8) throw jpegError('only 8-bit samples');
       const height = u16(segment + 1), width = u16(segment + 3), count = bytes[segment + 5];
       if (!width || !height) throw jpegError('a height left to a DNL marker');
-      if (count !== 1 && count !== 3) throw jpegError('only grey or three components');
+      if (count !== 1 && count !== 3) throw jpegError('only gray or three components');
       if (end - segment < 6 + count * 3) throw jpegError('bad frame header');
       if (width > JPEG_LIMITS.edge || height > JPEG_LIMITS.edge) throw jpegError('a picture past ' + JPEG_LIMITS.edge + ' pixels on a side', 'JXL_DIMENSIONS');
       if (width * height > JPEG_LIMITS.pixels) throw jpegError('a picture past ' + JPEG_LIMITS.pixels + ' pixels', 'JXL_DIMENSIONS');
@@ -172,7 +172,7 @@ export function parseJPEG(bytes, retainScans = false) {
     } else if (marker === 0xE2) {
       if (length >= 16 && signatureAt(segment, 'ICC_PROFILE\0')) {
         const seq = bytes[segment + 12], count = bytes[segment + 13];
-        if (!seq || !count || seq > count || (icc.count && icc.count !== count) || icc.parts[seq]) throw jpegError('a colour profile cut short');
+        if (!seq || !count || seq > count || (icc.count && icc.count !== count) || icc.parts[seq]) throw jpegError('a color profile cut short');
         icc.count = count; icc.parts[seq] = bytes.subarray(segment + 14, end);
       }
     } else if (marker === 0xEE) {
@@ -186,11 +186,11 @@ export function parseJPEG(bytes, retainScans = false) {
   let colorSpace = 'srgb';
   if (icc.count) {
     const parts = [];
-    for (let i = 1; i <= icc.count; i++) { if (!icc.parts[i]) throw jpegError('a colour profile cut short'); parts.push(icc.parts[i]); }
+    for (let i = 1; i <= icc.count; i++) { if (!icc.parts[i]) throw jpegError('a color profile cut short'); parts.push(icc.parts[i]); }
     const profile = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
     for (let i = 0, at = 0; i < parts.length; at += parts[i].length, i++) profile.set(parts[i], at);
     colorSpace = profileSpace(profile);
-    if (!colorSpace) throw jpegError('a colour profile other than sRGB or Display P3 (decode the picture and encode its pixels)');
+    if (!colorSpace) throw jpegError('a color profile other than sRGB or Display P3 (decode the picture and encode its pixels)');
   }
   let rgb = false;
   if (frame.components.length === 3 && !jfif) {

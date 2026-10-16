@@ -107,9 +107,9 @@ async function png(bytes) {
     } else if (name === 'acTL' || name === 'fcTL' || name === 'fdAT') {
       refuse('Animated PNG is not a single source picture.');
     } else if (['cICP', 'sRGB', 'iCCP', 'gAMA', 'cHRM', 'tRNS', 'sBIT', 'PLTE', 'mDCV', 'cLLI'].includes(name)) {
-      if (seenData || chunks.has(name)) refuse('PNG colour and transparency chunks must occur once before image data.');
+      if (seenData || chunks.has(name)) refuse('PNG color and transparency chunks must occur once before image data.');
       const sizes = {cICP: 4, sRGB: 1, gAMA: 4, cHRM: 32, mDCV: 24, cLLI: 8};
-      if (sizes[name] !== undefined && length !== sizes[name]) refuse('A PNG colour chunk has an invalid size.');
+      if (sizes[name] !== undefined && length !== sizes[name]) refuse('A PNG color chunk has an invalid size.');
       if (name === 'sRGB' && part[0] > 3) refuse('PNG sRGB rendering intent is invalid.');
       if (name === 'sBIT' && (length !== channels || part.some(value => value < 1 || value > 16))) refuse('PNG significant sample depths are invalid.');
       if (name === 'tRNS' && !((colourType === 0 && length === 2) || (colourType === 2 && length === 6)))
@@ -239,7 +239,7 @@ async function exr(bytes) {
     refuse('OpenEXR pixels must be square; resample the source explicitly.');
   attribute('screenWindowCenter', 'v2f', 8); attribute('screenWindowWidth', 'float', 4);
   for (const name of ['colorInteropID', 'acesImageContainerFlag', 'adoptedNeutral', 'renderingTransform', 'lookModTransform'])
-    if (attributes.has(name)) refuse('The OpenEXR ' + name + ' colour declaration requires a colour-managed source reader.');
+    if (attributes.has(name)) refuse('The OpenEXR ' + name + ' color declaration requires a colour-managed source reader.');
   let colorSpace = 'srgb';
   const chroma = attribute('chromaticities', 'chromaticities', 32, false);
   if (chroma) colorSpace = colourFromChromaticities(Array.from({length: 8}, (_, i) => data.getFloat32(chroma.start + i * 4, true)), .0000001);

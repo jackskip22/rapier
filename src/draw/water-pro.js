@@ -18,9 +18,9 @@ function _rapierWaterProCancelDialog() {
 }
 async function _rapierWaterProAuthorize(feature) {
 	const water = globalThis.RapierPlatform?.water;
-	if (!water?.available || !water.authorize) throw new Error('Pro watercolour is unavailable.');
+	if (!water?.available || !water.authorize) throw new Error('Pro watercolor is unavailable.');
 	const result = await water.authorize(feature);
-	if (!result?.authorized || !water.available) throw new Error('Pro watercolour is unavailable.');
+	if (!result?.authorized || !water.available) throw new Error('Pro watercolor is unavailable.');
 }
 async function _rapierWaterProAuthorizeActions(actions, options = {}) {
 	const engine = _rapierWaterEngine(), features = new Set();
@@ -303,10 +303,10 @@ async function _rapierWaterProVideo() {
 	if (!state.open || state.session !== session) return;
 	_rapierWaterProOpenDialog({title:'Time-lapse',fields:[{type:'choice',label:'Frame',value:'square',options:[{value:'square',label:'Square',detail:'1:1'},{value:'portrait',label:'Portrait',detail:'9:16'}]},
 		{type:'select',label:'Length',value:'15',options:[5,15,30,45].map(n => ({value:String(n),label:n + ' seconds'}))}],okLabel:'Make video',progress:'Making time-lapse',initialFocus:'submit',
-		secondaryActions:[{label:'Play',onSelect:() => { void _rapierWaterProSettle(() => { if (!state.open || state.session !== session) throw new DOMException('Play cancelled','AbortError'); return true; }).then(() => _rapierWaterProPlay(session), _rapierWaterProError); }}],
+		secondaryActions:[{label:'Play',onSelect:() => { void _rapierWaterProSettle(() => { if (!state.open || state.session !== session) throw new DOMException('Play canceled','AbortError'); return true; }).then(() => _rapierWaterProPlay(session), _rapierWaterProError); }}],
 		prepare:async ([framing,duration],work) => {
 			await _rapierWaterProAuthorize('video');
-			const current = () => { if (work.signal.aborted || !state.open || state.session !== session) throw new DOMException('Video cancelled','AbortError'); return true; };
+			const current = () => { if (work.signal.aborted || !state.open || state.session !== session) throw new DOMException('Video canceled','AbortError'); return true; };
 			current();
 			const frame = await globalThis.RapierDrawWaterVideo.waterVideoFrame(framing); current();
 			const scene = _rapierWaterProScene(await _rapierWaterProSettle(current), frame);

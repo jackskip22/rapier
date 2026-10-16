@@ -82,7 +82,7 @@ export class TaskLifetime {
       running.deadline = true;
       running.controller.abort(taskFailure('Task execution deadline expired.', -32000));
     };
-    if (record.cancelRequested) running.controller.abort(taskFailure('Task cancelled.', REQUEST_CANCELLED));
+    if (record.cancelRequested) running.controller.abort(taskFailure('Task canceled.', REQUEST_CANCELLED));
     else if (this.clock() >= record.deadline) expire();
     else running.timer = setTimeout(expire, Math.min(record.deadline - this.clock(), TASK_TTL_MS));
     running.promise = this.run(record, running).finally(() => {
@@ -123,7 +123,7 @@ export class TaskLifetime {
       let payload;
       if (current.cancelRequested) {
         current.status = 'cancelled';
-        current.statusMessage = 'Task cancelled.';
+        current.statusMessage = 'Task canceled.';
       } else if (!authorized) {
         current.status = 'failed';
         payload = {error: {code: -32602, message: 'Task unavailable.'}};
@@ -238,7 +238,7 @@ export class TaskLifetime {
       record.lastUpdatedAt = this.clock();
       this.ctx.storage.transactionSync(() => this.ctx.storage.kv.put('task', record));
       const settled = this.start(record);
-      this.running?.controller.abort(taskFailure('Task cancelled.', REQUEST_CANCELLED));
+      this.running?.controller.abort(taskFailure('Task canceled.', REQUEST_CANCELLED));
       await this.ctx.storage.sync();
       return {settled};
     });

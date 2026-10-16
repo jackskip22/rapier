@@ -298,7 +298,7 @@ function initMarkdownIt() {
 			const provider = env.rapierProviders === false ? null : _rapierProviders.mermaid;
 			const native = globalThis.RapierFlowchart?.parseFlowchart(src).ok === true;
 			const ready = native || !!(provider && provider.status === 'ready' && typeof provider.renderToString === 'function');
-			if (!ready && env.rapierProviders !== false && !_diagramPromptedOnce) {
+			if (!ready && !provider?.request?.() && env.rapierProviders !== false && !_diagramPromptedOnce) {
 				_diagramPromptedOnce = true;
 				try { _rapierUiDiagram.request(); } catch (_) {}
 			}
@@ -339,7 +339,7 @@ function initMarkdownIt() {
 			if (env.rapierPage) return '<span data-rapier-math-source="">' + literal + '</span>';
 			const mathProvider = env.rapierProviders === false ? null : _rapierProviders.math;
 			if (!mathProvider || mathProvider.status !== 'ready' || typeof mathProvider.renderToString !== 'function') {
-				if (env.rapierProviders !== false && !_mathPromptedOnce) {
+				if (!mathProvider?.request?.() && env.rapierProviders !== false && !_mathPromptedOnce) {
 					_mathPromptedOnce = true;
 					try { _rapierUiMath.request(); } catch (_) {}
 				}

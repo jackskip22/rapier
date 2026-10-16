@@ -6,16 +6,15 @@ import {sha256} from '../kit/ledger/hash.mjs';
 import {agentActorId} from '../kit/ledger/format.mjs';
 import {_rapierValidAuthored, _rapierValidMetadata, _rapierValidMetadataEffect, _rapierMetadataDelta, _rapierTransformMetadata,
   _rapierReplayMetadata, _rapierHasHistoryEffect} from '../kit/ledger/journal-records.mjs';
-import { createKernel, createState, canonicalJson, serializeJson, admissibleText, minimalSplice, transformSplices, waitTimeout, exportFilename, exportFidelity, admitExportArtifact, showTarget, LIMITS } from '../agent/kernel.mjs';
+import { createKernel, createState, canonicalJson, serializeJson, admissibleText, minimalSplice, transformSplices, waitTimeout, exportFilename, exportFidelity, admitExportArtifact, showTarget, LIMITS, HINTS } from '../agent/kernel.mjs';
 import {fencedBlocks} from '../agent/text-surface.mjs';
 import {prepareDoorLetters} from './letters.mjs';
 import {inputErrorResult, modelReply, parseReply} from '../agent/page-result.mjs';
-import {OPENAI_DOOR, projectCall, projectedTools} from './openai-projection.mjs';
 import {normalizeLabel, encodeBase64} from '../images/assets.mjs';
 import { sourceEdits, mergeSource, replay } from '../kernel/live-merge.mjs';
-import { paintAgentStrokes, agentPaintSheetHolds, agentPaintBrushRegistry, replayAgentPainting, sampleAgentPainting, validatePaintRaster } from '../draw/agent-paint.mjs';
+import { paintAgentStrokes, agentPaintSheetHolds, agentPaintBrushRegistry, agentStrokesFault, replayAgentPainting, sampleAgentPainting, validatePaintRaster } from '../draw/agent-paint.mjs';
 import { VERSION } from '../version.mjs';
-import { INSTRUCTIONS, GUIDE_RESOURCES, guideResource, PROMPTS, promptResult } from '../agent/guide.mjs';
+import { INSTRUCTIONS, GUIDE_RESOURCES, guideResource, guideResult, PROMPTS, promptResult } from '../agent/guide.mjs';
 import { RETURN_ORIGIN } from '../skills/rapier-html/return-address.mjs';
 import { wrap } from '../skills/rapier-html/wrap.mjs';
 import { HOST_TOOLS, TOOLS, HUMAN_OPERATIONS, ICONS, MAX_TEXT_BYTES, MAX_EXPORT_BYTES, MAX_FILENAME_CHARS, UI_RESOURCE, getTool, getHumanOperation, inputGuide, mcpDescriptors, publishedSchema, validateInput } from '../agent/catalog.mjs';
@@ -40,7 +39,7 @@ export const PROTOCOL_VERSION = '2025-11-25';
 export const MODERN_PROTOCOL_VERSION = '2026-07-28';
 export const PROTOCOL_VERSIONS = Object.freeze([MODERN_PROTOCOL_VERSION, PROTOCOL_VERSION]);
 const LEGACY_VERSIONS = Object.freeze([PROTOCOL_VERSION, '2025-06-18', '2025-03-26']);
-const DOORS = new Set(['/mcp', '/muse', '/editor', OPENAI_DOOR]);
+const DOORS = new Set(['/mcp', '/muse', '/editor']);
 const META_VERSION = 'io.modelcontextprotocol/protocolVersion', META_CLIENT = 'io.modelcontextprotocol/clientCapabilities', META_SERVER = 'io.modelcontextprotocol/serverInfo';
 const UNSUPPORTED_VERSION = -32022, HEADER_MISMATCH = -32020;
 export { UI_RESOURCE, INSTRUCTIONS };
@@ -52,17 +51,7 @@ const TOOL_BY_NAME = new Map([...DESCRIPTORS, ...mcpDescriptors({editor: true}),
 const EDITOR_ONLY_TOOLS = new Set(HOST_TOOLS.filter(tool => tool.visibility?.includes('app')).map(tool => tool.name));
 const EDITOR_REQUEST_TOOLS = new Set(['editor.set_view', 'editor.set_preferences', ...Object.keys(EDITOR_TOOL_ACTIONS)]);
 const MUSE_WAIT_MS = 15000;
-const museDescriptor = tool => {
-  const {ui, ...meta} = tool._meta || {};
-  tool = {...tool, _meta: meta};
-  if (tool.name === 'open') {
-    const {file, ...properties} = tool.inputSchema.properties;
-    return {...tool, description: tool.description.replace(', or import an authorized host file', ''),
-      inputSchema: {...tool.inputSchema, properties, oneOf: tool.inputSchema.oneOf?.filter(branch => !branch.required?.includes('file'))}};
-  }
-  return tool.name !== 'show' ? tool : {...tool, inputSchema: {...tool.inputSchema, properties: {...tool.inputSchema.properties,
-    timeout_ms: {...tool.inputSchema.properties.timeout_ms, maximum: MUSE_WAIT_MS, default: MUSE_WAIT_MS, description: 'One bounded wait on Muse.'}}}};
-};
+const museDescriptor = tool => { const {ui, ...meta} = tool._meta || {}; return {...tool, _meta: meta}; };
 const published = tool => ({...tool, inputSchema: publishedSchema(tool.inputSchema)});
 const MUSE_DESCRIPTORS = Object.freeze(mcpDescriptors({auth: 'oauth'}).filter(tool => !EDITOR_ONLY_TOOLS.has(tool.name)).map(museDescriptor).map(published));
 const PAIR_BROWSER = 'editor.pair', PAIR_STATUS = 'document.pair_status';
@@ -181,6 +170,7 @@ function deliverHumanMessage(row, state, extra = {}) {
 const EXPORT_LEASE_MS = 90000;
 const DAY = 86400000;
 const REQUEST_LEASE_MS = 300000;
+const MATERIAL_RETRY_WAIT_MS = 20000;
 const CLOCK_SKEW_MS = 60000;
 const REQUEST_SESSION = /^rps_[A-Za-z0-9_-]{43}$/;
 const TASK_HANDLE = /^rptask_[A-Za-z0-9_-]{43}$/;
@@ -389,6 +379,7 @@ function agentReport(head) {
   return call ? { agent: { id: call.id, ago: Math.max(0, Date.now() - call.at), operation: call.operation, ...(call.kind ? { kind: call.kind } : {}) } } : {};
 }
 
+
 function pairingReport(head) {
   const now = Date.now(), live = (head.pairings || []).filter(row => row.confirmedAt ? row.confirmedAt + 2 * PAIR_CODE_MS > now : row.expiresAt > now);
   const confirmed = live.find(row => row.confirmedAt);
@@ -410,10 +401,14 @@ function drawingTurn(value) {
 
 function materialWait(value, editorUrl, named = true) {
   const seconds = MATERIAL_LIMITS.lifetimeMs / 1000;
-  const retry = named ? 'retry this exact call, with the same operation_id,'
+  const retry = named ? 'retry this exact call with the same operation_id'
     : 'read the document (this call had no operation_id, so retrying it would paint again; when the painting is in the text it is done)';
+  const pairing = value.pairing?.status, then = '; then ' + retry + ' within ' + seconds + ' seconds. After that it expires and nothing is drawn.';
   return {...(editorUrl ? {editor_url: editorUrl} : {}), wait_ms: MATERIAL_LIMITS.lifetimeMs, next: value.collaboration?.presence?.active
     ? 'An open editor is painting this. To collect the result, ' + retry + ' within ' + seconds + ' seconds.'
+    : pairing === 'code_shown' ? 'An editor is open but not paired; ask for its code and send show {target:"pair", code}' + then
+    : pairing === 'awaiting_allow' || pairing === 'owner_approval_required' ? 'An editor is pairing. ' + value.pairing.next.replace(/\.$/, '') + then
+    : pairing === 'paired' ? 'The paired editor is not reporting; ask the person to bring it to the front' + then
     : 'No editor is open. ' + (editorUrl ? 'The person opens editor_url (or an MCP Apps host shows the editor)' : 'An MCP Apps host shows the editor') + ' within ' + seconds +
       ' seconds to finish this paint; then ' + retry + '. After that it expires and nothing is drawn.'};
 }
@@ -570,6 +565,11 @@ async function skillsBundle(request, env) {
   return skillBundles.get(assets);
 }
 
+function editorAssetBase(html, request) {
+  return html.replace(/globalThis\.RAPIER_APPS_HOST\s*=\s*true;/,
+    match => match + ' globalThis.RAPIER_ASSET_BASE = ' + JSON.stringify(new URL('/editor-assets/', request.url).href) + ';');
+}
+
 async function resource(request, env, uri) {
   if (typeof uri === 'string' && uri.startsWith('skill://')) {
     const bundle = await skillsBundle(request, env);
@@ -593,7 +593,7 @@ async function resource(request, env, uri) {
   if (!editorSecret(env)) throw failure('INVALID_UI_CONFIGURATION', 'EDITOR_KEY_SECRET must encode 32 generated bytes as base64 or base64url before the editor can be served.');
   const flagged = html.replace(/globalThis\.RAPIER_APPS_HOST\s*=\s*true;/, match => match + ' globalThis.RAPIER_FILE_DOWNLOAD_ORIGINS = ' + JSON.stringify(fileOrigins) + ';');
   if (flagged === html) throw failure('UI_NOT_BUILT', 'The asset carries no RAPIER_APPS_HOST flag.');
-  html = flagged;
+  html = editorAssetBase(flagged, request);
   const csp = { connectDomains, resourceDomains: [endpoint] };
   return { contents: [{ uri: UI_RESOURCE, mimeType: UI_MIME, text: html, _meta: { ui: { prefersBorder: false, csp, permissions: { clipboardWrite: {} } },
     'openai/widgetDomain': domain,
@@ -615,11 +615,10 @@ function declaresAppsUi(params) {
   const ui = plain(capabilities.extensions) ? capabilities.extensions['io.modelcontextprotocol/ui'] : null;
   return !!(plain(ui) && Array.isArray(ui.mimeTypes) && ui.mimeTypes.includes(UI_MIME));
 }
-const CURRENT_DOOR = 'X-Rapier-Current-Door';
-function listedTools(env, appsClient, authority, request) {
+function listedTools(env, appsClient, authority) {
   const descriptors = authority?.source === 'server' ? SERVER_DESCRIPTORS : DESCRIPTORS;
   const listed = env.HOST_TOOLS_LISTING === 'all' || appsClient ? descriptors : descriptors.filter(tool => !EDITOR_ONLY_TOOLS.has(tool.name));
-  return authority?.source === 'server' || request.headers.get(CURRENT_DOOR) === '1' ? listed.map(published) : listed;
+  return listed.map(published);
 }
 
 async function takeCreateBudget(env, { takeId, principalKey }) {
@@ -704,29 +703,26 @@ async function initialObservation(kernel, input) {
       world: {presence: WORKER_PRESENCE}});
 }
 
-async function waitedRead(args, ...rest) {
+async function waitedRead(args, env, request, authority, hostAgent, door, editorProof, editorActivity, task) {
   const {wait_ms: wait, after_revision: after, operation_id: name, ...plainArgs} = args, started = Date.now();
   if (after === undefined) return toolError(failure('INVALID_DOCUMENT_INPUT', 'wait_ms needs after_revision, the revision you last read.'));
   for (let polled = false;;) {
-    const last = name !== undefined && polled;
-    const result = await callTool('read', last ? {...plainArgs, operation_id: name} : plainArgs, ...rest);
+    const result = await callTool('read', polled && name !== undefined ? {...plainArgs, operation_id: name} : plainArgs,
+      env, request, authority, hostAgent, door, editorProof, editorActivity, task, !polled);
     const value = result.structuredContent, waited = Date.now() - started;
     const changed = !!(value && (value.revision ?? value.documentRevision) > after);
     const editing = value?.human?.editing === true;
-    if (last || result.isError || !value) {
+    if (polled || result.isError || !value) {
       if (value && !result.isError) result.structuredContent = {...value, waited_ms: waited, changed};
       return result;
     }
-    if (waited + 500 > wait || (changed && !editing)) {
-      if (name !== undefined) { polled = true; continue; }
-      result.structuredContent = {...value, waited_ms: waited, changed};
-      return result;
-    }
+    if (waited + 500 > wait || value.messagesQueued > 0 || (changed && !editing)) { polled = true; continue; }
     await new Promise(resolve => setTimeout(resolve, 500));
   }
 }
 
-async function callTool(name, args, env, request, authority, hostAgent = null, door = '/mcp', editorProof = null, editorActivity = false, task = null) {
+async function callTool(name, args, env, request, authority, hostAgent = null, door = '/mcp', editorProof = null, editorActivity = false, task = null, peek = false) {
+  if (name === 'show' && plain(args) && args.target === undefined) args = {...args, target: showTarget(args)};
   if (name === 'read' && plain(args) && (args.wait_ms !== undefined || args.after_revision !== undefined) && authority?.source !== 'page') {
     const descriptor = TOOL_BY_NAME.get(name);
     try { validateInput(descriptor.inputSchema, args, 'arguments', true); } catch (error) { if (error.code === 'invalid_arguments') return inputErrorResult(error); throw error; }
@@ -773,6 +769,10 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   if (create && args.note) return toolError(failure('INVALID_DOCUMENT', 'Notes require the current document returned by open.'));
   if (name === 'open' && args.file && ['document', 'text', 'filename', 'docKind'].some(key => Object.hasOwn(args, key))) return toolError(failure('OPEN_ARGUMENTS_CONFLICT', 'Open a host file with file alone; its contents are read by the editor through the host.'));
   if (name === 'open' && args.file && (/[\\/\u0000-\u001f\u007f]/.test(args.file.name) || !args.file.resourceUri.trim())) return toolError(failure('INVALID_DOCUMENT_INPUT', 'A host file needs a filename without a path and a nonempty resource URI.'));
+  if (!page && name === 'read' && args.guide && args.document === undefined) {
+    const guide = guideResult({topic: args.guide}, args.guide === 'water' ? agentPaintBrushRegistry() : null);
+    return envelope(guide.outcome === 'ok' ? {guide: args.guide, instructions: guide.instructions, complete: true, next_cursor: null} : guide);
+  }
   if (page ? args.document !== page.id : !create && !WORKSPACE_HANDLE.test(args.document || '')) return toolError(failure('INVALID_DOCUMENT', 'Use the document value returned by open.'));
   const connectedOwner = page || anonymous ? null : await digest(authority.ownerId);
   const createToken = typeof args.createToken === 'string' ? args.createToken : null;
@@ -829,7 +829,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
       adapter_enrolled: status?.adapterEnrolled === true, hint, message: hint});
   }
   const requestKey = mintId('request_'), requestExpiresAt = Date.now() + REQUEST_LEASE_MS;
-  const payload = { operation: name === 'show' && args.target === 'pair' ? PAIR_BROWSER : name, args: name === 'show' && args.target === 'pair' ? {code: input.code} : input, create, ...(name === 'show' && args.target === 'ask' ? {waitBound: door === '/muse' ? MUSE_WAIT_MS : 120000} : {}), ...(file ? {hostFileBinding: await digest(JSON.stringify(file))} : {}), ...(page ? {page: {...page.authority, ...(pageRotation ? {rotationEpoch: pageRotation.epoch, rotationRetry: pageRotation.retry} : {})}} : {ownerKey, capabilityHash, ...(connectionKey ? {connectionKey, oauthGrant: authority.grant} : {})}), ...(create ? {prefix: document.slice(0, ADDRESS_CHARS), ...(anonymous ? {bearer: true} : {})} : {}), ...(hostAgent ? {hostAgent} : {}), ...(humanTool ? {humanTool: true} : {}), ...(EDITOR_ONLY_TOOLS.has(name) || humanTool ? {editorAuthorized: true} : {}), ...(editorSource === 'page' && editorActivity === true && ['document.commit', 'document.human_context'].includes(name) ? {editorActivity: true} : {}), ...(name === 'show' && args.target === 'return' ? { returnAddress: documentAddress } : {}), ...(name === 'export' ? { exportAddress: documentAddress, exportOrigin: new URL(request.url).origin } : {}), ...(createBudget ? { createBudget } : {}), ...(successor ? { rotateToHash: await digest(successor) } : {}), ...(operationName !== undefined ? { operationId: operationName } : {}), requestKey, requestExpiresAt, ...(task ? {task} : {}) };
+  const payload = { operation: name === 'show' && args.target === 'pair' ? PAIR_BROWSER : name, args: name === 'show' && args.target === 'pair' ? {code: input.code} : input, create, ...(name === 'show' && args.target === 'ask' ? {waitBound: door === '/muse' ? MUSE_WAIT_MS : 120000} : {}), ...(file ? {hostFileBinding: await digest(JSON.stringify(file))} : {}), ...(page ? {page: {...page.authority, ...(pageRotation ? {rotationEpoch: pageRotation.epoch, rotationRetry: pageRotation.retry} : {})}} : {ownerKey, capabilityHash, ...(connectionKey ? {connectionKey, oauthGrant: authority.grant} : {})}), ...(create ? {prefix: document.slice(0, ADDRESS_CHARS), ...(anonymous ? {bearer: true} : {})} : {}), ...(hostAgent ? {hostAgent} : {}), ...(humanTool ? {humanTool: true} : {}), ...(EDITOR_ONLY_TOOLS.has(name) || humanTool ? {editorAuthorized: true} : {}), ...(editorSource === 'page' && editorActivity === true && ['document.commit', 'document.human_context'].includes(name) ? {editorActivity: true} : {}), ...(name === 'show' && args.target === 'return' ? { returnAddress: documentAddress } : {}), ...(name === 'export' ? { exportAddress: documentAddress, exportOrigin: new URL(request.url).origin } : {}), ...(createBudget ? { createBudget } : {}), ...(successor ? { rotateToHash: await digest(successor) } : {}), ...(operationName !== undefined ? { operationId: operationName } : {}), requestKey, requestExpiresAt, ...(task ? {task} : {}), ...(peek ? {peek: true} : {}) };
   const workspace = env.DOCUMENTS.get(env.DOCUMENTS.idFromName(documentAddress));
   let cancellation;
   const cancel = () => cancellation ||= workspace.fetch(new Request('https://rapier.internal/operation/cancel', {
@@ -846,7 +846,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     response = await running;
     if (request.signal.aborted || response.status === 499) {
       await cancel();
-      throw new DOMException('Request cancelled', 'AbortError');
+      throw new DOMException('Request canceled', 'AbortError');
     }
   } finally { request.signal.removeEventListener('abort', aborted); }
   if (!response.ok) {
@@ -939,6 +939,7 @@ async function taskRoute(method, taskId, input, authority, env) {
 
 async function createTask(name, args, request, authority, env, hostAgent, door) {
   request.signal.throwIfAborted();
+  if (name === 'show' && plain(args) && args.target === undefined) args = {...args, target: showTarget(args)};
   const descriptor = TOOL_BY_NAME.get(name);
   try { validateInput(descriptor.inputSchema, args, 'arguments', true); }
   catch { return callTool(name, args, env, request, authority, hostAgent, door); }
@@ -988,7 +989,7 @@ async function requestTool(name, args, env, request, authority, hostAgent, door,
     if (!response.ok) throw failure('WORKSPACE_UNAVAILABLE', 'The request owner did not answer.');
     const value = await parseJsonStream(response, {inlineBytes: 65536});
     if (request.signal.aborted) await cancel();
-    if (value.cancelled || request.signal.aborted) throw new DOMException('Request cancelled', 'AbortError');
+    if (value.cancelled || request.signal.aborted) throw new DOMException('Request canceled', 'AbortError');
     if (value.error) throw failure(value.error.code, value.error.message, value.error.details);
     return value.result;
   } finally { request.signal.removeEventListener('abort', abort); }
@@ -1301,8 +1302,7 @@ async function handleRequest(request, env, authority, route) {
   const editorPage = /^\/editor\/(ws_[A-Za-z0-9_-]{43})$/.exec(url.pathname);
   const paired = PAIRED_PATH.exec(url.pathname) || editorPage;
   if (!DOORS.has(url.pathname) && !paired) return new Response('Not found', { status: 404 });
-  const projected = url.pathname === OPENAI_DOOR;
-  const door = paired ? 'page' : projected ? '/mcp' : url.pathname, cookies = [];
+  const door = paired ? 'page' : url.pathname, cookies = [];
   if (door === '/muse' && !authority) return oauthChallenge(request, env, ['rapier:read', 'rapier:write', 'offline_access']);
   if (door === '/mcp') authority ??= ANONYMOUS;
   if (paired) {
@@ -1449,17 +1449,10 @@ async function handleRequest(request, env, authority, route) {
         result = {}; break;
       case 'tools/list':
         if (Object.hasOwn(params, 'cursor')) return rpcError(id, -32602, 'Rapier returns its full fixed tool catalog in one page.');
-        result = projected ? cacheable({ tools: projectedTools(listedTools(env, appsClient, authority, request)) }, 0, 'private')
-          : door === '/muse' ? cacheable({ tools: MUSE_DESCRIPTORS }, 3600000, 'public')
-          : cacheable({ tools: listedTools(env, appsClient, authority, request) }, env.HOST_TOOLS_LISTING === 'all' ? 3600000 : 0, env.HOST_TOOLS_LISTING === 'all' ? 'public' : 'private'); break;
+        result = door === '/muse' ? cacheable({ tools: MUSE_DESCRIPTORS }, 3600000, 'public')
+          : cacheable({ tools: listedTools(env, appsClient, authority) }, env.HOST_TOOLS_LISTING === 'all' ? 3600000 : 0, env.HOST_TOOLS_LISTING === 'all' ? 'public' : 'private'); break;
       case 'tools/call':
         if (typeof params.name !== 'string' || (params.arguments !== undefined && !plain(params.arguments))) return rpcError(id, -32602, 'tools/call requires name and an arguments object.');
-        if (projected) {
-          const call = projectCall(params.name, params.arguments, listedTools(env, appsClient, authority, request));
-          if (call.unknown) throw failure('UNKNOWN_TOOL', 'Unknown tool.');
-          if (call.error) { result = inputErrorResult(call.error); break; }
-          params.name = call.name; params.arguments = call.arguments;
-        }
         if (params.name === 'show' && plain(params.arguments) && params.arguments.target === undefined)
           params.arguments = {...params.arguments, target: showTarget(params.arguments)};
         if (!TOOL_BY_NAME.has(params.name) || !['page', '/editor'].includes(door) && !TOOLS.some(tool => tool.name === params.name)) throw failure('UNKNOWN_TOOL', 'Unknown tool.');
@@ -1531,7 +1524,7 @@ async function handleRequest(request, env, authority, route) {
       default: return rpcError(id, -32601, 'Method not found.', modern ? 404 : 200);
     }
   } catch (error) {
-    if (request.signal.aborted || error?.name === 'AbortError') return rpcError(id, REQUEST_CANCELLED, 'Request cancelled.');
+    if (request.signal.aborted || error?.name === 'AbortError') return rpcError(id, REQUEST_CANCELLED, 'Request canceled.');
     if ((TASK_METHODS.has(message.method) || message.method === 'tools/call') && Number.isSafeInteger(error?.code)) return rpcError(id, error.code, error.message, 200, error.data);
     if (error?.[PUBLIC_FAILURE] && error.code === 'REQUEST_ID_IN_USE') return rpcError(id, -32600, error.message);
     if (error?.[PUBLIC_FAILURE] && error.code === 'UNKNOWN_TOOL') return rpcError(id, -32602, error.message);
@@ -1550,7 +1543,7 @@ async function handleRequest(request, env, authority, route) {
     if (text !== null) result.content[0].text += '\n' + (text.length <= MUSE_EXPORT_TEXT_CHARS ? text
       : `The Markdown is ${text.length} characters, more than one result carries; read it in pages with read.`);
   }
-  if (request.signal.aborted) return rpcError(id, REQUEST_CANCELLED, 'Request cancelled.');
+  if (request.signal.aborted) return rpcError(id, REQUEST_CANCELLED, 'Request canceled.');
   result = complete(result);
   const reply = json({ jsonrpc: '2.0', id, result }, 200, headers);
   for (const cookie of cookies) reply.headers.append('Set-Cookie', cookie);
@@ -1599,7 +1592,7 @@ async function approvePairing(request, env, id, authority) {
     if (!response.ok) return display(503, '<p>Browser approval is temporarily unavailable.</p>');
     const value = await parseJsonStream(response, {inlineBytes: 65536});
     if (value.status === 'owner-approved') return display(200, '<p>Approved. Choose Allow in the browser showing the code to finish connecting it.</p>');
-    if (value.status === 'cancelled') return display(200, '<p>This browser request was cancelled.</p>');
+    if (value.status === 'cancelled') return display(200, '<p>This browser request was canceled.</p>');
     if (value.status !== 'owner-required') return unavailable();
     const escape = text => String(text).replace(/[&<>"']/g, character => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[character]));
     return display(200, `<p>Connect the browser showing <strong>${escape(value.code)}</strong> to <strong>${escape(value.filename)}</strong>?</p><p>It can read and edit this document and control its agent permissions for one day.</p><form method="post" action="${escape(url.pathname + url.search)}"><button type="submit" name="decision" value="allow" class="affirmative">Allow browser</button><button type="submit" name="decision" value="cancel" class="negative">Cancel</button></form>`);
@@ -1646,7 +1639,7 @@ async function pairedPage(request, env, page) {
     html = html.replace(/(<link\b[^>]*\bhref=)(["'])(icon-(?:192|512)\.png)\2/gi, (_, prefix, quote, name) => prefix + quote + '/' + name + quote);
     const admitted = (await pageAdmission(env, page)).admitted === true;
     const fileOrigins = (env.FILE_DOWNLOAD_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean).map(value => configuredOrigin(value, 'FILE_DOWNLOAD_ORIGINS'));
-    html = pageFlags(html, {id: page.id, editorKey: admitted ? await mintEditorKey(editorSecret(env), Date.now(), {workspace: page.address, connection: page.authority.ownerKey || ''}) : '', fileOrigins});
+    html = pageFlags(editorAssetBase(html, request), {id: page.id, editorKey: admitted ? await mintEditorKey(editorSecret(env), Date.now(), {workspace: page.address, connection: page.authority.ownerKey || ''}) : '', fileOrigins});
     if (!html) return unavailable();
     html = html.replace(/globalThis\.RAPIER_APPS_HOST\s*=\s*true;/,
       "globalThis.RAPIER_APPS_HOST = !(window.parent === window && new URLSearchParams(location.hash.slice(1)).has('live') && new URLSearchParams(location.hash.slice(1)).has('key')); ");
@@ -1793,6 +1786,7 @@ export class RapierDocument {
     this.taskCalls = new Map();
     this.requestCalls = new Map();
     this.stoppingRequests = new Set();
+    this.materialRetries = new Set();
     this.retention = bounded(env.RETENTION_DAYS, 30, 1, 365) * DAY;
     this.maxStateBytes = bounded(env.MAX_STATE_MIB, 48, 8, 64) * 1024 * 1024;
   }
@@ -1828,7 +1822,7 @@ export class RapierDocument {
         } catch (error) {
           if (error?.code === 'CANCELLATION_UNACKNOWLEDGED') throw error;
           return {error: {code: signal.aborted ? REQUEST_CANCELLED : -32603,
-            message: signal.aborted ? 'Request cancelled.' : 'Task execution failed.'}};
+            message: signal.aborted ? 'Request canceled.' : 'Task execution failed.'}};
         }
       },
     });
@@ -2095,6 +2089,7 @@ export class RapierDocument {
     if (state) this.cachedState = state;
     if (journalText !== undefined) this.cachedJournal = journal;
     if (live) this.live.publish(live, head);
+    this.wakeMaterialRetries();
   }
 
   describe(state, head, version, collaboration) {
@@ -2168,6 +2163,7 @@ export class RapierDocument {
       if (!plain(input) || !/^[a-f0-9]{64}$/.test(input.ownerKey || '') || !/^[a-f0-9]{64}$/.test(input.capabilityHash || '') || (input.connectionKey !== undefined && (!/^[a-f0-9]{64}$/.test(input.connectionKey) || !validGrantReference(input.oauthGrant))) || typeof input.operation !== 'string' || !plain(input.args) || (input.prefix !== undefined && !/^rpr_[A-Za-z0-9_-]{22}$/.test(input.prefix)) || (input.rotateToHash !== undefined && !/^[a-f0-9]{64}$/.test(input.rotateToHash)) || (input.operationId !== undefined && (typeof input.operationId !== 'string' || !input.operationId.length || input.operationId.length > 256 || [...input.operationId].length > 128)) || (input.returnAddress !== undefined && !/^[a-f0-9]{64}$/.test(input.returnAddress)) || (input.exportAddress !== undefined && !/^[a-f0-9]{64}$/.test(input.exportAddress))) return new Response(null, { status: 400 });
       if (input.create === true && (!plain(input.createBudget) || !/^take_[a-f0-9]{32}$/.test(input.createBudget.takeId || '') || !/^[a-f0-9]{64}$/.test(input.createBudget.principalKey || '') || typeof input.createBudget.retryable !== 'boolean')) return new Response(null, { status: 400 });
       if (input.waitBound !== undefined && (!(input.operation === 'show' && input.args.target === 'ask') || ![MUSE_WAIT_MS, 120000].includes(input.waitBound))) return new Response(null, {status: 400});
+      if (input.peek !== undefined && (input.peek !== true || input.operation !== 'read')) return new Response(null, {status: 400});
       input.operationId ??= crypto.randomUUID();
       if (input.task !== undefined && (!plain(input.task) || !/^[a-f0-9]{64}$/.test(input.task.key || '') ||
           !Number.isSafeInteger(input.task.expiresAt) || input.task.expiresAt <= Date.now() || input.task.expiresAt > Date.now() + TASK_TTL_MS + CLOCK_SKEW_MS ||
@@ -2490,8 +2486,37 @@ export class RapierDocument {
 
   async requestMaterials(input, signal) {
     if (signal?.aborted) return new Response(null, {status: 499});
-    if (['edit', 'undo'].includes(input.operation)) await this.resumeMaterial();
-    return this.exclusive(async () => json(await this.advanceMaterial(input)));
+    const writing = ['edit', 'undo'].includes(input.operation);
+    const until = Math.min(Date.now() + MATERIAL_RETRY_WAIT_MS, Number.isSafeInteger(input.requestExpiresAt) ? input.requestExpiresAt : Infinity);
+    for (;;) {
+      if (writing) await this.resumeMaterial();
+      const step = await this.exclusive(async () => {
+        if (signal?.aborted) return {abandoned: true};
+        const timeoutMs = writing ? await this.materialRetryWait(input, until) : 0;
+        if (!timeoutMs) return {result: await this.advanceMaterial(input)};
+        const wait = createRequestWait({signal, timeoutMs, onFinish: settled => this.materialRetries.delete(settled)});
+        this.materialRetries.add(wait);
+        return {wait};
+      });
+      if (step.abandoned) return new Response(null, {status: 499});
+      if (step.result) return json(step.result);
+      if ((await step.wait.promise).kind === 'aborted') return new Response(null, {status: 499});
+    }
+  }
+
+  async materialRetryWait(input, until) {
+    const stored = this.readMaterial(), head = this.ctx.storage.kv.get('head'), now = Date.now();
+    if (input.operationId === undefined || !stored || !head || stored.key !== this.materialCaller(input).invocationKey ||
+        this.requestStopped(stored.input) || head.materialIntent?.status !== 'pending' ||
+        stored.results.some(([job]) => job === stored.request.job)) return 0;
+    const presence = head.collaboration?.presence;
+    if (!presence?.active || !(presence.expiresAt > now)) return 0;
+    if (stored.argumentsHash !== await digest(canonicalJson({operation: input.operation, args: input.args}))) return 0;
+    return Math.max(0, Math.min(until, head.materialIntent.expiresAt, presence.expiresAt) - now);
+  }
+
+  wakeMaterialRetries() {
+    for (const wait of [...this.materialRetries]) wait.finish(null);
   }
 
   async advanceMaterial(input, stored = this.readMaterial()) {
@@ -2976,7 +3001,7 @@ export class RapierDocument {
         if (material) material.request = request;
         return null;
       },
-      paintSheet: agentPaintSheetHolds, paintBrushes: agentPaintBrushRegistry, paintReplay: replayAgentPainting, paintRaster: validatePaintRaster, paintSample: sampleAgentPainting,
+      paintSheet: agentPaintSheetHolds, paintBrushes: agentPaintBrushRegistry, paintStrokesFault: agentStrokesFault, paintReplay: replayAgentPainting, paintRaster: validatePaintRaster, paintSample: sampleAgentPainting,
       setView: request => queueView('mode', request), view: () => ({current: kernel.collaboration().presence?.view || null}),
       editorContext: () => ({preferences: head.editorPreferences || null, receipts: (head.editorReceipts || []).map(row => row.receipt)}),
       returns: () => receivedReturns(head).map(row => { const { name, ...listed } = returnMetadata(row); return listed; }),
@@ -3412,6 +3437,7 @@ export class RapierDocument {
           if (merged.splices.length > 64) throw new Error('canonical_act_rebase_conflict');
           text = merged.text; draftEdits = merged.remote;
           const changed = text !== state.text || filename !== state.filename || docKind !== state.docKind;
+          if (!changed) draftClient = client(who);
           const effect = _rapierMetadataDelta({filename: state.filename, docKind: state.docKind}, committedMetadata, {assign: assigned});
           if (changed) entries.push({id: rawActId, ...who, author: {kind: 'human', id: 'local'},
             baseRevision: state.revision, revision: state.revision + 1, operation: 'document.human_edit', createdAt: Date.now(),
@@ -3462,7 +3488,8 @@ export class RapierDocument {
     if (operation === 'read' && value.outcome === 'ok') {
       const material = materialReport(head);
       if (material) value = {...value, material};
-      if (actor === 'agent' && !value.replayed && head.humanMessages?.length) {
+      if (actor === 'agent' && !value.replayed && head.humanMessages?.length && input.peek) value = {...value, messagesQueued: head.humanMessages.length};
+      else if (actor === 'agent' && !value.replayed && head.humanMessages?.length) {
         const dropped = head.humanMessagesDropped || 0;
         value = {
           ...value,
@@ -3523,7 +3550,7 @@ export class RapierDocument {
         } else if (material.record) {
           retainedMaterial = null;
           head.materialReceipts = material.acks;
-          if (value.outcome === 'ok') delete head.materialEnded;
+          if (['ok', 'applied', 'rebased', 'unchanged'].includes(value.outcome) || value.receipt?.state === 'committed') delete head.materialEnded;
           else head.materialEnded = {reason: value.reason || 'document_changed', operation, at: Date.now(),
             ...(value.field ? {field: value.field} : {})};
           head.materialIntent = null; head.materialOwner = null; head.version++;

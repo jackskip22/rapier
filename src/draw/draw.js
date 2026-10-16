@@ -872,7 +872,7 @@ function _rapierDrawFollowAgentJournal(redo, agent) {
 }
 function _rapierDrawClearAll() {
 	_rapierDrawCancelGesture();
-	const refused = error => showToast('The painting could not be kept for Undo, so Clear was cancelled. It is still open: ' + String(error?.message || error), 'error');
+	const refused = error => showToast('The painting could not be kept for Undo, so Clear was canceled. It is still open: ' + String(error?.message || error), 'error');
 	const clear = () => {
 		const ids = _rapierDrawGroupSelection(_rapierDrawState.recipe, _rapierDrawState.recipe.shapes.map(shape => shape.id));
 		if (ids.length) return _rapierDrawEditSelection({ type: 'delete' }, ids);
@@ -1827,7 +1827,7 @@ function _rapierDrawEditLabelInPlace(shape, options = {}) {
 		const isText = live.recognized === 'text';
 		const size = live.textSize || (isText ? 24 : 14);
 		const align = live.labelAlign || (isText ? 'start' : 'middle');
-		styleRow.innerHTML = [['start', 'align-left', 'Left'], ['middle', 'align-center', 'Centre'], ['end', 'align-right', 'Right']].map(([id, icon, word]) => '<button type="button" class="rapier-draw-chip rapier-draw-chip--icon" data-text-align="' + id + '" aria-label="' + word + '" aria-pressed="' + (align === id) + '">' + RAPIER_DRAW_ICONS[icon] + '</button>').join('');
+		styleRow.innerHTML = [['start', 'align-left', 'Left'], ['middle', 'align-center', 'Center'], ['end', 'align-right', 'Right']].map(([id, icon, word]) => '<button type="button" class="rapier-draw-chip rapier-draw-chip--icon" data-text-align="' + id + '" aria-label="' + word + '" aria-pressed="' + (align === id) + '">' + RAPIER_DRAW_ICONS[icon] + '</button>').join('');
 		styleRow.append(actions);
 		sizeRow.innerHTML = '<input class="rapier-draw-text-size" type="range" data-text-size min="' + RAPIER_DRAW_TEXT_SIZE_MIN + '" max="' + Math.max(RAPIER_DRAW_TEXT_SIZE_MAX, Math.ceil(size)) + '" step="1" value="' + size + '" aria-label="Text size"><output class="rapier-draw-nib-word" data-text-size-word>' + Math.round(size) + '</output>';
 		_rapierDrawSeekWrap(sizeRow.querySelector('[data-text-size]'));
@@ -3194,7 +3194,7 @@ function _rapierDrawLetterGlyph(set) {
 	const sample = set && globalThis.RapierDrawLetters.LETTER_PREVIEWS[set.id];
 	return sample ? '<svg class="rapier-draw-glyph" viewBox="0 0 ' + sample.glyph[0] + ' ' + sample.em + '" aria-hidden="true"><path fill="currentColor" transform="translate(' + sample.bearing + ',0)" d="' + sample.glyph[1] + '"/></svg>' : '';
 }
-const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.5/letters/';
+const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.6/letters/';
 const _rapierDrawLettersDoor = { allowed: false, asking: null, providers: new Map(), bringing: new Map() };
 function _rapierDrawLettersProvider(set) {
 	const door = _rapierDrawLettersDoor;
@@ -3310,7 +3310,7 @@ function _rapierDrawFontControls(style, selection = false, effects = true) {
 		(sets.length ? '<div class="rapier-draw-letters" role="group" aria-label="Letter sets"><span class="rapier-draw-chip-head">Letter sets</span>' + sets.map(set => '<button type="button" class="rapier-draw-chip rapier-draw-chip--glyph rapier-draw-letter" ' + attr('letters:' + set.id) + ' aria-label="' + _rapierDrawEscapeAttr(set.name) + '" aria-pressed="' + ('letters:' + set.id === chosen) + '">' + _rapierDrawLetterGlyph(set) + '<span class="rapier-draw-chip-name">' + _rapierDrawEscapeAttr(set.name) + '</span></button>').join('') + '</div>' : '') +
 		(effects ? '<div class="rapier-draw-effects" role="group" aria-label="Effects"><span class="rapier-draw-chip-head">Effects</span><button type="button" class="rapier-draw-chip rapier-draw-chip--glyph rapier-draw-effect" ' + (selection ? 'data-draw-menu-act="property" data-draw-property="textEffect" data-draw-value="' + (style.textEffect === 'pressed' ? '' : 'pressed') + '"' : 'data-draw-text-effect="pressed"') + ' aria-label="Pressed" aria-pressed="' + (style.textEffect === 'pressed') + '">' + _rapierDrawEffectGlyph() + '<span class="rapier-draw-chip-name">Pressed</span></button>' +
 		'<button type="button" class="rapier-draw-chip rapier-draw-chip--glyph rapier-draw-effect" ' + (selection ? 'data-draw-menu-act="property" data-draw-property="textEffect" data-draw-value="' + (style.textEffect === 'garden' ? '' : 'garden') + '"' : 'data-draw-text-effect="garden"') + ' aria-label="Garden" aria-pressed="' + (style.textEffect === 'garden') + '">' + _rapierDrawEffectGlyph('garden', style) + '<span class="rapier-draw-chip-name">Garden</span></button>' +
-		[['flower', 'Flower', style.effectFlower], ['stem', 'Stem', style.effectStem]].map(([kind, word, chosen]) => '<label class="rapier-draw-chip rapier-draw-effect rapier-draw-garden-colour" data-draw-garden-colour="' + kind + '"' + (style.textEffect === 'garden' ? '' : ' hidden') + '><span class="rapier-draw-garden-dot" style="background:' + _rapierDrawEscapeAttr(_rapierDrawGardenColour(kind, chosen)) + '"></span><input type="color" aria-label="' + word + ' colour" value="' + _rapierDrawEscapeAttr(chosen || GARDEN_COLOURS[kind][0]) + '" data-draw-colour="' + kind + '"><span class="rapier-draw-chip-name">' + word + '</span></label>').join('') + '</div>' : '') + '</div>';
+		[['flower', 'Flower', style.effectFlower], ['stem', 'Stem', style.effectStem]].map(([kind, word, chosen]) => '<label class="rapier-draw-chip rapier-draw-effect rapier-draw-garden-colour" data-draw-garden-colour="' + kind + '"' + (style.textEffect === 'garden' ? '' : ' hidden') + '><span class="rapier-draw-garden-dot" style="background:' + _rapierDrawEscapeAttr(_rapierDrawGardenColour(kind, chosen)) + '"></span><input type="color" aria-label="' + word + ' color" value="' + _rapierDrawEscapeAttr(chosen || GARDEN_COLOURS[kind][0]) + '" data-draw-colour="' + kind + '"><span class="rapier-draw-chip-name">' + word + '</span></label>').join('') + '</div>' : '') + '</div>';
 }
 function _rapierDrawRenderTextFontPanel() {
 	const state = _rapierDrawState, panel = state.surface?.querySelector('[data-draw-panel="textFont"]');
@@ -3574,14 +3574,14 @@ function _rapierDrawPalette(ink, scope) {
 	const words = clearRow ? RAPIER_PAINT_COLOURS : [['#000000', 'Black'], ['#ffffff', 'White'], [scope === 'border' ? '#121212' : '', 'Default'], ...RAPIER_DRAW_INK_ORDER.map(id => [id, RAPIER_DRAW_INK_LABEL[id]])];
 	const hex = _rapierDrawShapeInk({ ink });
 	const editor = '<span class="rapier-draw-colour-editor" data-draw-colour-scope="' + scope + '">' +
-		'<label class="rapier-draw-colour-custom" title="Choose any colour"><input type="color" aria-label="Choose any colour" value="' + hex + '" data-draw-colour="' + scope + '"></label>' +
-		'<input class="rapier-draw-colour-hex" type="text" inputmode="text" enterkeyhint="done" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="7" aria-label="Hex colour" value="' + hex.toUpperCase() + '" data-draw-hex="' + scope + '">' +
-		'<button type="button" class="rapier-draw-swatch rapier-draw-colour-copy" data-draw-colour-copy="' + scope + '" aria-label="Copy hex colour"><span class="rapier-draw-dropper-glyph">' + RAPIER_DRAW_ICONS.copy + '</span><span class="rapier-draw-dropper-glyph rapier-draw-dropper-glyph--done">' + RAPIER_DRAW_ICONS.check + '</span></button>' +
-		'<button type="button" class="rapier-draw-swatch rapier-draw-swatch--dropper" data-draw-act="dropper" data-draw-colour-scope="' + scope + '" aria-label="Pick a colour off the drawing" data-tip="pick">' + RAPIER_DRAW_ICONS.dropper + '</button></span>';
+		'<label class="rapier-draw-colour-custom" title="Choose any color"><input type="color" aria-label="Choose any color" value="' + hex + '" data-draw-colour="' + scope + '"></label>' +
+		'<input class="rapier-draw-colour-hex" type="text" inputmode="text" enterkeyhint="done" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="7" aria-label="Hex color" value="' + hex.toUpperCase() + '" data-draw-hex="' + scope + '">' +
+		'<button type="button" class="rapier-draw-swatch rapier-draw-colour-copy" data-draw-colour-copy="' + scope + '" aria-label="Copy hex color"><span class="rapier-draw-dropper-glyph">' + RAPIER_DRAW_ICONS.copy + '</span><span class="rapier-draw-dropper-glyph rapier-draw-dropper-glyph--done">' + RAPIER_DRAW_ICONS.check + '</span></button>' +
+		'<button type="button" class="rapier-draw-swatch rapier-draw-swatch--dropper" data-draw-act="dropper" data-draw-colour-scope="' + scope + '" aria-label="Pick a color off the drawing" data-tip="pick">' + RAPIER_DRAW_ICONS.dropper + '</button></span>';
 	const palette = '<span class="rapier-draw-palette" data-draw-palette="' + scope + '">' +
 		(scope === 'border' ? '<button type="button" class="rapier-draw-swatch" data-draw-colour-value="" data-draw-colour-scope="border" aria-label="None" data-tip="none" aria-pressed="' + !ink + '">' + RAPIER_DRAW_ICONS.none + '</button>' : '') +
 		words.map(([id, label]) => '<button type="button" class="rapier-draw-swatch" data-draw-colour-value="' + id + '" data-draw-colour-scope="' + scope + '" aria-label="' + label + '" data-tip="' + label.toLowerCase() + '" aria-pressed="' + (!clearOn && (clearRow ? hex.toLowerCase() === id.toLowerCase() : (ink || '').toLowerCase() === id.toLowerCase())) + '"><span style="background:' + _rapierDrawDisplayInk(_rapierDrawShapeInk({ ink: id })) + '"></span></button>').join('');
-	const extras = _rapierDrawRecentInks().map(value => '<button type="button" class="rapier-draw-swatch rapier-draw-swatch--recent" data-draw-colour-value="' + _rapierDrawEscapeAttr(value) + '" data-draw-colour-scope="' + scope + '" aria-label="Recent colour ' + _rapierDrawEscapeAttr(value) + '" data-tip="recent" aria-pressed="' + (!clearOn && (ink || '').toLowerCase() === value.toLowerCase()) + '"><span style="background:' + _rapierDrawDisplayInk(value) + '"></span></button>').join('') +
+	const extras = _rapierDrawRecentInks().map(value => '<button type="button" class="rapier-draw-swatch rapier-draw-swatch--recent" data-draw-colour-value="' + _rapierDrawEscapeAttr(value) + '" data-draw-colour-scope="' + scope + '" aria-label="Recent color ' + _rapierDrawEscapeAttr(value) + '" data-tip="recent" aria-pressed="' + (!clearOn && (ink || '').toLowerCase() === value.toLowerCase()) + '"><span style="background:' + _rapierDrawDisplayInk(value) + '"></span></button>').join('') +
 		(clearRow ? '<button type="button" class="rapier-draw-swatch rapier-draw-swatch--clear" data-draw-clear aria-label="Clear: the brush erases" data-tip="erase" aria-pressed="' + clearOn + '"><span><svg viewBox="0 0 24 24" aria-hidden="true"><line x1="1" y1="23" x2="23" y2="1"></line></svg></span></button>' : '');
 	return clearRow ? '<div class="rapier-paint-colours">' + palette + '</span>' + _rapierPaintMixMarkup(hex, editor + '<span class="rapier-draw-palette">' + extras + '</span>') + '</div>' : editor + palette + extras + '</span>';
 }
@@ -3653,9 +3653,9 @@ async function _rapierDrawOpenDropper(scope, found = null) {
 		'<div class="rapier-draw-dropper-bar">' +
 		'<button type="button" class="rapier-draw-btn rapier-draw-dropper-hex" data-draw-dropper="copy" hidden><span class="rapier-draw-dropper-chip" aria-hidden="true"></span><span class="rapier-draw-dropper-code"></span>' +
 		'<span class="rapier-draw-dropper-glyph">' + RAPIER_DRAW_ICONS.copy + '</span><span class="rapier-draw-dropper-glyph rapier-draw-dropper-glyph--done">' + RAPIER_DRAW_ICONS.check + '</span></button>' +
-		'<span class="rapier-draw-dropper-say" role="status">Touch a colour</span>' +
+		'<span class="rapier-draw-dropper-say" role="status">Touch a color</span>' +
 		'<button type="button" class="rapier-draw-btn" data-draw-dropper="cancel">Cancel</button>' +
-		'<button type="button" class="rapier-draw-btn rapier-draw-btn--done" data-draw-dropper="done" disabled>Use colour</button></div>';
+		'<button type="button" class="rapier-draw-btn rapier-draw-btn--done" data-draw-dropper="done" disabled>Use color</button></div>';
 	stage.appendChild(pad);
 	const swatch = pad.querySelector('.rapier-draw-dropper-swatch'), say = pad.querySelector('.rapier-draw-dropper-say');
 	const copy = pad.querySelector('.rapier-draw-dropper-hex'), chip = pad.querySelector('.rapier-draw-dropper-chip'), code = pad.querySelector('.rapier-draw-dropper-code');
@@ -3663,7 +3663,7 @@ async function _rapierDrawOpenDropper(scope, found = null) {
 	const sample = (clientX, clientY) => {
 		const { rect, dpr, paper, data } = sheet, now = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
 		if (['left', 'top', 'width', 'height'].some(key => now[key] !== rect[key]) || [v.x, v.y, v.width, v.height].some((n, i) => n !== sheet.view[i])) {
-			close(false); showToast('The canvas moved. Open the colour sampler again.', 'info'); return;
+			close(false); showToast('The canvas moved. Open the color sampler again.', 'info'); return;
 		}
 		const x = Math.round((clientX - rect.left) * dpr), y = Math.round((clientY - rect.top) * dpr);
 		if (x < 0 || y < 0 || x >= data.width || y >= data.height) return;
@@ -3785,7 +3785,7 @@ function _rapierDrawUpdateMenu() {
 		if (pane === 'look') {
 			const border = shapes.every(_rapierDrawBorderActive), borderInk = shape.authorStyle?.stroke || shape.border;
 			if (!border && state.menuColour === 'border') state.menuColour = false;
-			html += '<button type="button" class="rapier-draw-chip rapier-draw-chip--icon' + (state.menuColour === true ? ' rapier-draw-chip--active' : '') + '" data-draw-menu-act="colour" aria-label="Colour" data-tip="colour" aria-expanded="' + (state.menuColour === true) + '"><span class="rapier-draw-ink-dot" style="background:' + _rapierDrawDisplayInk(_rapierDrawShapeInk(shape)) + '"></span></button>';
+			html += '<button type="button" class="rapier-draw-chip rapier-draw-chip--icon' + (state.menuColour === true ? ' rapier-draw-chip--active' : '') + '" data-draw-menu-act="colour" aria-label="Color" data-tip="color" aria-expanded="' + (state.menuColour === true) + '"><span class="rapier-draw-ink-dot" style="background:' + _rapierDrawDisplayInk(_rapierDrawShapeInk(shape)) + '"></span></button>';
 			if (border) html += '<button type="button" class="rapier-draw-chip rapier-draw-chip--icon' + (state.menuColour === 'border' ? ' rapier-draw-chip--active' : '') + '" data-draw-menu-act="border" aria-label="Border" data-tip="border" aria-expanded="' + (state.menuColour === 'border') + '">' + (borderInk ? '<span class="rapier-draw-ink-dot" style="background:' + _rapierDrawDisplayInk(_rapierDrawShapeInk({ ink: borderInk })) + '"></span>' : RAPIER_DRAW_ICONS.none) + '</button>';
 			if (!text && !paint) html += _rapierDrawIconChip('width', 'width', 'Width') + (paintsInk && brush === 'ink' ? _rapierDrawIconChip('smooth', 'smooth', 'Smooth') : '');
 			if (state.menuColour) html += state.menuColour === 'border' ? _rapierDrawPalette(borderInk, 'border') : _rapierDrawPalette(shape.authorStyle ? _rapierDrawShapeInk(shape) : shape.ink, 'selection');
@@ -3803,7 +3803,7 @@ function _rapierDrawUpdateMenu() {
 		} else if (pane === 'size') {
 			html += _rapierDrawIconChip('bigger', 'bigger', 'Bigger') + _rapierDrawIconChip('smaller', 'smaller', 'Smaller') + _rapierDrawIconChip('turn', 'turn', 'Turn') +
 				(!group && !['circle', 'arc'].includes(shape.recognized) ? _rapierDrawIconChip('proportions', 'proportions', 'Keep proportions', '', !!state.proportions, pressed(state.proportions)) : '') +
-				_rapierDrawIconChip('center', 'center', 'Resize from centre', '', !!state.resizeFromCenter, pressed(state.resizeFromCenter));
+				_rapierDrawIconChip('center', 'center', 'Resize from center', '', !!state.resizeFromCenter, pressed(state.resizeFromCenter));
 			if (shape.geom && ['line', 'arrow', 'triangle'].includes(shape.recognized)) html += _rapierDrawIconChip('angle', 'angle', 'Show angle', '', !!shape.angle, pressed(shape.angle));
 			if (arrow) html += _rapierDrawIconChip('len', 'ruler', 'Show length', '', !!shape.len, pressed(shape.len));
 			if (!group && shape.recognized === 'star') html += _rapierDrawSeekControl('inner', 'Star inset', .2, .7, .05, shape.geom.inner || .45);
@@ -3813,7 +3813,7 @@ function _rapierDrawUpdateMenu() {
 			html += _rapierDrawSeekControl('textSize', 'Size', RAPIER_DRAW_TEXT_SIZE_MIN, Math.max(RAPIER_DRAW_TEXT_SIZE_MAX, size), 1, size) +
 				_rapierDrawFontControls(shape, true, shapes.every(item => item.recognized === 'text'));
 			html += '<span class="rapier-draw-menu-row">' + [['textBold', 'bold', 'Bold'], ['textItalic', 'italic', 'Italic'], ['textUnderline', 'underline', 'Underline']].map(([id, icon, word]) => _rapierDrawIconChip('text-toggle', icon, word, id, !!shape[id], pressed(shape[id]))).join('') +
-				'<span class="rapier-draw-menu-gap"></span>' + [['start', 'align-left', 'Align left'], ['middle', 'align-center', 'Centre'], ['end', 'align-right', 'Align right']].map(([id, icon, word]) => _rapierDrawIconChip('text-align', icon, word, id, (shape.labelAlign || (text ? 'start' : 'middle')) === id, pressed((shape.labelAlign || (text ? 'start' : 'middle')) === id))).join('') + '</span>';
+				'<span class="rapier-draw-menu-gap"></span>' + [['start', 'align-left', 'Align left'], ['middle', 'align-center', 'Center'], ['end', 'align-right', 'Align right']].map(([id, icon, word]) => _rapierDrawIconChip('text-align', icon, word, id, (shape.labelAlign || (text ? 'start' : 'middle')) === id, pressed((shape.labelAlign || (text ? 'start' : 'middle')) === id))).join('') + '</span>';
 			if (!group && !text && !arrow && !['arc', 'parabola'].includes(shape.recognized)) {
 				html += '<span class="rapier-draw-menu-row">' + _rapierDrawIconChip('toggle-label-in', shape.labelIn ? 'label-in' : 'label-out', shape.labelIn ? 'Text inside (tap for outside)' : 'Text outside (tap for inside)', '', !!shape.labelIn, pressed(shape.labelIn));
 				if (shape.labelIn) html += '<span class="rapier-draw-menu-gap"></span>' + [['top', 'valign-top', 'Top'], ['middle', 'valign-middle', 'Middle'], ['bottom', 'valign-bottom', 'Bottom']].map(([id, icon, word]) => _rapierDrawIconChip('text-valign', icon, word, id, (shape.labelVAlign || 'middle') === id, pressed((shape.labelVAlign || 'middle') === id))).join('');
@@ -3840,7 +3840,7 @@ function _rapierDrawUpdateMenu() {
 			html += '<span class="rapier-draw-menu-row">' + _rapierDrawIconChip('flip', 'flip-x', 'Flip across', 'x') + _rapierDrawIconChip('flip', 'flip-y', 'Flip down', 'y');
 			if (group) html += '<span class="rapier-draw-menu-gap"></span>' + _rapierDrawIconChip('distribute', 'space-x', 'Space across', 'x') + _rapierDrawIconChip('distribute', 'space-y', 'Space down', 'y');
 			html += '</span>';
-			if (group) html += _rapierDrawChoiceControl('align', 'Align', [['', 'Choose'], ['left', 'Left'], ['center', 'Centre'], ['right', 'Right'], ['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']], '');
+			if (group) html += _rapierDrawChoiceControl('align', 'Align', [['', 'Choose'], ['left', 'Left'], ['center', 'Center'], ['right', 'Right'], ['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']], '');
 		}
 		html += '</span>';
 	}
@@ -4674,7 +4674,7 @@ function _rapierDrawUpdateInkBtn(palette = true) {
 	const colours = palette && state.colourOpen ? _rapierDrawPalette(colourInk, colourScope) : '';
 	if (btn) {
 		const was = btn.querySelector('.rapier-draw-ink-dot')?.style.background || '';
-		btn.innerHTML = '<span class="rapier-draw-ink-dot" style="background:' + _rapierDrawDisplayInk(_rapierDrawShapeInk({ ink: picking ? (selected[0]?.ink || null) : state.ink })) + '"></span><span class="rapier-draw-btn-name">colour</span>';
+		btn.innerHTML = '<span class="rapier-draw-ink-dot" style="background:' + _rapierDrawDisplayInk(_rapierDrawShapeInk({ ink: picking ? (selected[0]?.ink || null) : state.ink })) + '"></span><span class="rapier-draw-btn-name">color</span>';
 		btn.disabled = picking && !selected.length;
 		btn.setAttribute('aria-expanded', String(!!state.colourOpen));
 		const dot = btn.firstElementChild;
@@ -4711,7 +4711,7 @@ function _rapierDrawChooseColour(scope, ink, continuous = false) {
 }
 function _rapierDrawCommitHex(input) {
 	const ink = _rapierDrawReadHex(input.value);
-	input.setCustomValidity(ink ? '' : 'Enter a hex colour, like #1A2B3C.');
+	input.setCustomValidity(ink ? '' : 'Enter a hex color, like #1A2B3C.');
 	input.setAttribute('aria-invalid', String(!ink));
 	if (!ink) return false;
 	_rapierDrawChooseColour(input.dataset.drawHex, ink);
@@ -5073,7 +5073,7 @@ function _rapierDrawBuildSurface() {
 		'<button type="button" class="rapier-draw-btn rapier-draw-btn--quiet" data-draw-setting="copyMachine" data-draw-act="copyMachine" aria-expanded="false">Copy machine</button>' +
 		'<button type="button" class="rapier-draw-btn rapier-draw-btn--quiet" data-draw-setting="refractedLight" data-draw-act="refractedLight" aria-expanded="false">Refracted light</button>' +
 		'<button type="button" class="rapier-draw-btn rapier-draw-btn--quiet" data-draw-setting="liquidLight" data-draw-act="liquidLight" aria-expanded="false">Liquid light</button>' +
-		'<button type="button" class="rapier-draw-btn rapier-draw-btn--icon" data-draw-setting="ink" data-draw-act="ink" aria-label="colour" data-tip="colour" aria-expanded="false"><span class="rapier-draw-ink-dot"></span><span class="rapier-draw-btn-name">colour</span></button>' +
+		'<button type="button" class="rapier-draw-btn rapier-draw-btn--icon" data-draw-setting="ink" data-draw-act="ink" aria-label="color" data-tip="color" aria-expanded="false"><span class="rapier-draw-ink-dot"></span><span class="rapier-draw-btn-name">color</span></button>' +
 		'<button type="button" class="rapier-draw-btn rapier-draw-btn--icon" data-draw-setting="nib" data-draw-act="nib" aria-label="width" data-tip="width" aria-expanded="false">' + RAPIER_DRAW_ICONS.width + '<span class="rapier-draw-btn-name">width</span></button>' +
 		'<button type="button" class="rapier-draw-btn rapier-draw-btn--icon" data-draw-setting="smooth" data-draw-act="smooth" aria-label="smooth" data-tip="smooth" aria-expanded="false">' + RAPIER_DRAW_ICONS.smooth + '<span class="rapier-draw-btn-name">smooth</span></button>' +
 		'<button type="button" class="rapier-draw-btn rapier-draw-btn--icon rapier-draw-btn--dip" data-draw-setting="dip" data-draw-act="dip" aria-label="paint" data-tip="paint" aria-expanded="false">' + RAPIER_DRAW_ICONS.paint + '<span class="rapier-draw-btn-name">paint</span></button>' +
@@ -5094,7 +5094,7 @@ function _rapierDrawBuildSurface() {
 		'<div class="rapier-draw-resize-strip" data-draw-resize-strip role="group" aria-label="Resize the canvas" hidden>' +
 		RAPIER_DRAW_RESIZE_PRESETS.map(([id, word]) => '<button type="button" class="rapier-draw-chip" data-draw-act="resizePreset" data-draw-preset="' + id + '" aria-pressed="false">' + word + '</button>').join('') +
 		'<button type="button" class="rapier-draw-btn rapier-draw-btn--done rapier-draw-resize-done" data-draw-act="resizeDone">Done</button></div>' +
-		'<div class="rapier-draw-options" data-draw-panel="options" hidden role="group" aria-label="Options">' + [['snap', 'magnet', 'Snap to shapes', true], ['repeat', 'repeat', 'Repeat shape', false], ['proportions', 'proportions', 'Keep proportions', false], ['center', 'center', 'Resize from centre', false]].map(([act, icon, word, on]) =>
+		'<div class="rapier-draw-options" data-draw-panel="options" hidden role="group" aria-label="Options">' + [['snap', 'magnet', 'Snap to shapes', true], ['repeat', 'repeat', 'Repeat shape', false], ['proportions', 'proportions', 'Keep proportions', false], ['center', 'center', 'Resize from center', false]].map(([act, icon, word, on]) =>
 			'<button type="button" class="rapier-draw-option" role="switch" data-draw-act="' + act + '" aria-checked="' + on + '">' + RAPIER_DRAW_ICONS[icon] + '<span>' + word + '</span><span class="rapier-draw-switch" aria-hidden="true"></span></button>').join('') +
 			'<button type="button" class="rapier-draw-option" data-draw-act="unlockAll">' + RAPIER_DRAW_ICONS.unlock + '<span>Unlock all</span></button></div>' +
 		'<div class="rapier-draw-colours" data-draw-panel="ink" hidden></div>' +
@@ -5142,7 +5142,7 @@ function _rapierDrawBuildSurface() {
 		[['textBold', 'bold', 'Bold'], ['textItalic', 'italic', 'Italic'], ['textUnderline', 'underline', 'Underline'], ['textKern', 'kerning', 'Kerning']].map(([id, icon, word]) => '<button type="button" class="rapier-draw-chip rapier-draw-chip--icon" data-draw-text-style="' + id + '" aria-label="' + word + '" aria-pressed="' + (id === 'textKern') + '">' + RAPIER_DRAW_ICONS[icon] + '<span class="rapier-draw-chip-name">' + word + '</span></button>').join('') +
 		'<span class="rapier-draw-text-cases" role="group" aria-label="Case">' + RAPIER_DRAW_TEXT_CASES.map(([id, face, word]) => '<button type="button" class="rapier-draw-chip rapier-draw-text-case' + (id === 'small' ? ' rapier-draw-text-case--small' : '') + '" data-draw-text-case="' + id + '" aria-label="' + word + '" aria-pressed="' + !id + '">' + face + '</button>').join('') + '</span></div>' +
 		'<div class="rapier-draw-text-panel" data-draw-panel="textAlign" hidden role="group" aria-label="Text alignment">' +
-		[['start', 'align-left', 'Left'], ['middle', 'align-center', 'Centre'], ['end', 'align-right', 'Right']].map(([id, icon, word]) => '<button type="button" class="rapier-draw-chip rapier-draw-chip--icon" data-draw-text-align="' + id + '" aria-label="' + word + '" aria-pressed="' + (id === 'start') + '">' + RAPIER_DRAW_ICONS[icon] + '<span class="rapier-draw-chip-name">' + word + '</span></button>').join('') + '</div>' +
+		[['start', 'align-left', 'Left'], ['middle', 'align-center', 'Center'], ['end', 'align-right', 'Right']].map(([id, icon, word]) => '<button type="button" class="rapier-draw-chip rapier-draw-chip--icon" data-draw-text-align="' + id + '" aria-label="' + word + '" aria-pressed="' + (id === 'start') + '">' + RAPIER_DRAW_ICONS[icon] + '<span class="rapier-draw-chip-name">' + word + '</span></button>').join('') + '</div>' +
 		'<div class="rapier-draw-smooth rapier-draw-erase-edge" data-draw-panel="eraseEdge" hidden><label class="rapier-draw-smooth-label" for="rapier-draw-erase-edge-input">Edge</label>' +
 		'<input id="rapier-draw-erase-edge-input" class="rapier-draw-nib-range" type="range" min="0" max="100" step="1" value="0" aria-describedby="rapier-draw-erase-edge-word">' +
 		'<span class="rapier-draw-edge-sample" aria-hidden="true"></span><output id="rapier-draw-erase-edge-word" class="rapier-draw-nib-word" for="rapier-draw-erase-edge-input">Hard</output></div></div>' +
@@ -5586,7 +5586,7 @@ function _rapierDrawWatercolourFallback() {
 	const state = _rapierDrawState;
 	state.paintBrush = 'rapier/watercolour'; state.paintSize = _rapierPaintSizeFor(state.paintBrush);
 	state.waterFallbackRemembered = _rapierPaintRememberedBrush();
-	showToast('Water needs WebGPU. Using the watercolour paint brush.', 'info');
+	showToast('Water needs WebGPU. Using the watercolor paint brush.', 'info');
 }
 function _rapierDrawOpenSurface(options) {
 	if (!_rapierEmbedFeatureAllowed('draw') && !_rapierEmbedFeatureAllowed('paint')) { options?.onReady?.(false); return false; }
@@ -6364,7 +6364,7 @@ async function _rapierDrawEffectStills(recipe, keeping = _rapierDrawWhileKeeping
 async function _rapierDrawWhileKeeping(work, controller = new AbortController(), row = null) {
 	const popup = row || (typeof _rapierProgressOpen === 'function' ? _rapierProgressOpen({ label: 'Saving at full quality', after: 500, cancel: () => controller.abort() }) : null);
 	try {
-		const kept = await Promise.race([work({ progress: fraction => popup?.set(row ? Math.min(.99, fraction) : fraction), signal: controller.signal }), new Promise((_, no) => controller.signal.addEventListener('abort', () => no(Object.assign(new Error('Saving cancelled'), { code: 'DRAW_KEEP_GIVEN_UP' })), { once: true }))]);
+		const kept = await Promise.race([work({ progress: fraction => popup?.set(row ? Math.min(.99, fraction) : fraction), signal: controller.signal }), new Promise((_, no) => controller.signal.addEventListener('abort', () => no(Object.assign(new Error('Saving canceled'), { code: 'DRAW_KEEP_GIVEN_UP' })), { once: true }))]);
 		return kept;
 	} finally { if (!row) popup?.end(); }
 }
@@ -6436,7 +6436,7 @@ async function _rapierDrawFinishWith(row) {
 	let completed = false;
 	const controller = new AbortController();
 	const keeping = (work, cancel = true) => { if (row) { row.cancel = cancel ? () => controller.abort() : null; row.set(null); } return _rapierDrawWhileKeeping(work, controller, row); };
-	const given = () => { if (controller.signal.aborted) throw Object.assign(new Error('Saving cancelled'), { code: 'DRAW_KEEP_GIVEN_UP' }); };
+	const given = () => { if (controller.signal.aborted) throw Object.assign(new Error('Saving canceled'), { code: 'DRAW_KEEP_GIVEN_UP' }); };
 	const refreshHandoff = handoff => {
 		const editing = state.editing, source = _rapierSourceText();
 		if (!handoff.bound || !_rapierMutationStampSharesDocument(handoff.documentStamp) || !editing ||
@@ -6587,7 +6587,7 @@ async function _rapierDrawFinishWith(row) {
 		}
 		await keep(handoff);
 	} catch (error) {
-		if (error?.code === 'DRAW_KEEP_GIVEN_UP') { if (sameSession()) showToast('Saving cancelled. The drawing is still open.', 'info'); }
+		if (error?.code === 'DRAW_KEEP_GIVEN_UP') { if (sameSession()) showToast('Saving canceled. The drawing is still open.', 'info'); }
 		else if (sameSession()) { _rapierDrawShowCloseOnFailure(); showToast((state.finishHandoff ? 'Drawing could not be kept: ' : 'Drawing could not be placed: ') + String(error.message || error), 'error'); }
 	} finally {
 		state.finishing = false; state.surface.removeAttribute('aria-busy');

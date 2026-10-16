@@ -863,7 +863,7 @@ const _rapierUiDiagram = readerPlugin('mermaid', 'MERMAID', 'diagram');
 
 let readerDeleting = '';
 const READER_PLUGIN_WORDS = {
-	math: ['the maths renderer', 'Math shows as its TeX source until you install it again.'],
+	math: ['the math renderer', 'Math shows as its TeX source until you install it again.'],
 	mermaid: ['the Mermaid renderer', 'Diagrams that need this plug-in show their source until you install it again.'],
 	pdf: ['the PDF reader', 'PDF files cannot be opened until you install it again.'],
 	ocr: ['the text reader and its cached words', 'Search stops reading pictures until you install it again.'],

@@ -256,11 +256,11 @@ function blockParser(md) {
 }
 
 export async function requestSourceWork(source, request, {createWorker, signal, onProgress, yield: pause} = {}) {
-  if (signal?.aborted) throw Object.assign(new Error('Cancelled'), {name: 'AbortError'});
+  if (signal?.aborted) throw Object.assign(new Error('Canceled'), {name: 'AbortError'});
   const worker = createWorker();
   let settle, fail, finished = false;
   const completion = new Promise((resolve, reject) => { settle = resolve; fail = reject; });
-  const abort = () => { finished = true; fail(Object.assign(new Error('Cancelled'), {name: 'AbortError'})); };
+  const abort = () => { finished = true; fail(Object.assign(new Error('Canceled'), {name: 'AbortError'})); };
   signal?.addEventListener('abort', abort, {once: true});
   worker.onmessage = event => {
     const data = event.data || {};
@@ -291,7 +291,7 @@ export async function requestSourceWork(source, request, {createWorker, signal, 
 function sourceFindSession(source, surface, parser, createWorker) {
   const worker = createWorker();
   let active = null, queued = null, ready = false, serial = 0;
-  const cancelled = () => Object.assign(new Error('Cancelled'), {name: 'AbortError'});
+  const cancelled = () => Object.assign(new Error('Canceled'), {name: 'AbortError'});
   const session = {source, surface, parser, disposed: false, metadata: null, visible: null,
     dispose(error = cancelled()) {
       if (session.disposed) return;

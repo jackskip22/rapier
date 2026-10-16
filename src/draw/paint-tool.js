@@ -55,7 +55,7 @@ const RAPIER_PAINT_PINNED = ['rapier/oil', 'rapier/acrylic', 'rapier/flat', 'rap
 const RAPIER_PAINT_COLOURS = [['#e53935', 'Red'], ['#f57c00', 'Orange'], ['#ffdd33', 'Yellow'], ['#a4d65e', 'Lime'],
 	['#218c4a', 'Green'], ['#62c5ed', 'Sky'], ['#2463d3', 'Blue'], ['#7040b5', 'Purple'],
 	['#f399b5', 'Pink'], ['#d32a91', 'Magenta'], ['#20b8aa', 'Turquoise'], ['#80502f', 'Brown'],
-	['#d6ad7b', 'Tan'], ['#808080', 'Grey'], ['#000000', 'Black'], ['#ffffff', 'White']];
+	['#d6ad7b', 'Tan'], ['#808080', 'Gray'], ['#000000', 'Black'], ['#ffffff', 'White']];
 const RAPIER_PAINT_DEFAULT_ID = 'rapier/oil';
 const RAPIER_PAINT_SIZES_KEY = 'rapier:draw.paintsizes';
 function _rapierPaintSizeDefault(id) { return paintSizeDefault(id); }
@@ -89,14 +89,14 @@ const RAPIER_PAINT_BRUSH_WORDS = Object.freeze({ 'dieterle/fountain-sf-1': 'Foun
 	'dieterle/wateryflatbrush': 'Watery flat', 'dieterle/dissolver': 'Dissolver', 'dieterle/flat2-1': 'Flat 2' });
 function _rapierPaintBrushWord(id, name) { return RAPIER_PAINT_BRUSH_WORDS[id] || name; }
 // the credits and licences are in Settings, Licenses. A person's own brush carries the words they wrote.
-const RAPIER_PAINT_BRUSH_HINTS = Object.freeze({ 'dieterle/8b-pencil-1': 'soft, dark graphite', 'dieterle/flat2-1': 'broad flat edge', 'dieterle/halftonecmy-1': 'coloured print dots',
+const RAPIER_PAINT_BRUSH_HINTS = Object.freeze({ 'dieterle/8b-pencil-1': 'soft, dark graphite', 'dieterle/flat2-1': 'broad flat edge', 'dieterle/halftonecmy-1': 'colored print dots',
 	'dieterle/round-1': 'round, smearing brush', 'dieterle/arrow-1': 'arrow-tipped marks', 'dieterle/fan-1': 'a spread of bristles', 'dieterle/fountain-sf-1': 'ink that swells with pressure',
 	'dieterle/fount-offset-1': 'ink with a slight wobble', 'dieterle/halftone-1': 'print dots', 'dieterle/pencil-left-handed': 'graphite angled for the left hand',
-	'dieterle/blender': 'blends colours', 'dieterle/dissolver': 'dissolves paint away', 'dieterle/eraser': 'wears paint away', 'dieterle/splash': 'scattered splashes',
+	'dieterle/blender': 'blends colors', 'dieterle/dissolver': 'dissolves paint away', 'dieterle/eraser': 'wears paint away', 'dieterle/splash': 'scattered splashes',
 	'dieterle/flight-feathers': 'feathered streaks', 'dieterle/tail-feathers2': 'soft feathered streaks', 'dieterle/tail-feathers': 'feathered streaks',
-	'dieterle/wateryflatbrush': 'wet, flowing colour', 'rapier/oil': 'thick, smooth paint', 'rapier/bristle': 'streaks and gaps', 'rapier/scumble': 'broken, scattered paint',
+	'dieterle/wateryflatbrush': 'wet, flowing color', 'rapier/oil': 'thick, smooth paint', 'rapier/bristle': 'streaks and gaps', 'rapier/scumble': 'broken, scattered paint',
 	'rapier/pencil': 'soft graphite', 'rapier/pen': 'a bold line that swells',
-	'rapier/smudge': 'drags paint with a finger', 'rapier/smear': 'drags paint in streaks', 'rapier/posterize': 'reduces colour to bands',
+	'rapier/smudge': 'drags paint with a finger', 'rapier/smear': 'drags paint in streaks', 'rapier/posterize': 'reduces color to bands',
 	'rapier/blend': 'mixes paint in place', 'rapier/eraser': 'takes paint off', 'rapier/dissolve': 'breaks paint up', 'rapier/erode': 'wears paint from its edges' });
 function _rapierPaintBrushLabel(entry) { const hint = entry.own ? entry.notes : RAPIER_PAINT_BRUSH_HINTS[entry.id]; return entry.name + (hint ? '. ' + hint : ''); }
 const RAPIER_PAINT_TOOL_ICONS = Object.freeze({ 'rapier/smudge': RAPIER_PAINT_ICON_SMUDGE, 'rapier/eraser': RAPIER_PAINT_ICON_RUBBER,
@@ -657,8 +657,8 @@ function _rapierPaintFeelOptions(id, overrides = false) {
 function _rapierPaintMixMarkup(ink, controls = '') {
 	const state = _rapierDrawState, mix = state.paintMix || (state.paintMix = {a: ink, b: '#ffffff', amount: 50});
 	return '<details class="rapier-paint-mixer"><summary>Mix</summary>' + controls + '<div class="rapier-paint-mix-colours">' +
-		'<label class="rapier-draw-colour-custom"><input type="color" data-paint-mix="a" value="' + mix.a + '" aria-label="First paint colour"></label>' +
-		'<label class="rapier-draw-colour-custom"><input type="color" data-paint-mix="b" value="' + mix.b + '" aria-label="Second paint colour"></label>' +
+		'<label class="rapier-draw-colour-custom"><input type="color" data-paint-mix="a" value="' + mix.a + '" aria-label="First paint color"></label>' +
+		'<label class="rapier-draw-colour-custom"><input type="color" data-paint-mix="b" value="' + mix.b + '" aria-label="Second paint color"></label>' +
 		'<button type="button" class="rapier-draw-chip" data-paint-mix-use><span class="rapier-paint-mix-result"></span>Use mix</button></div>' +
 		'<label class="rapier-paint-range">Mix<input type="range" min="0" max="100" step="1" value="' + mix.amount + '" data-paint-mix="amount" aria-label="Second paint proportion"><output>' + mix.amount + '%</output></label>' +
 		'<div class="rapier-draw-dip-firmness"><span>Sample</span><div class="rapier-draw-dip-firmness-choices">' +
@@ -1029,7 +1029,7 @@ async function _rapierPaintRecompress(raster, source, {signal} = {}) {
 	const url = URL.createObjectURL(new Blob(['(' + make.toString() + ')(' + globalThis.RapierDrawPaint.createPaintPNGCodec.toString() + ');'], {type: 'text/javascript'}));
 	let worker, pending = null, serial = 0, megapixels = 12;
 	const refuse = error => { if (pending) { clearTimeout(pending.timer); pending.reject(error); pending = null; } };
-	const abort = () => { worker?.terminate(); refuse(signal.reason || new DOMException('Painting cancelled', 'AbortError')); };
+	const abort = () => { worker?.terminate(); refuse(signal.reason || new DOMException('Painting canceled', 'AbortError')); };
 	try {
 		worker = new Worker(url);
 		signal?.addEventListener('abort', abort, {once: true});

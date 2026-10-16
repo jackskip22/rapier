@@ -16,7 +16,7 @@ const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, character =>
 })[character]);
 const random = () => base64url(crypto.getRandomValues(new Uint8Array(32)));
 
-const mcpResource = path => path === '/mcp' || path === '/openai/mcp';
+const mcpResource = path => path === '/mcp';
 export const oauthResource = (env, path) => oauthOrigin(env) + (mcpResource(path) ? '/mcp' : '/muse');
 const metadataPath = path => '/.well-known/oauth-protected-resource' + (mcpResource(path) ? '/mcp' : '/muse');
 

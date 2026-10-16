@@ -42,7 +42,7 @@ const dataOnly = (value, depth = 0) => {
 };
 
 export function admitPaintReplay(raw, validRaster = value => typeof value === 'string' && /^data:image\/(png|jxl);base64,/.test(value)) {
-  if (!object(raw) || !(raw.mode === 'water' && raw.baseRaster === null || validRaster(raw.baseRaster)) || !dimensions(raw.px) || !scale(raw.scale) || !Array.isArray(raw.entries)) return null;
+  if (!object(raw) || !(raw.baseRaster === null || validRaster(raw.baseRaster)) || !dimensions(raw.px) || !scale(raw.scale) || !Array.isArray(raw.entries)) return null;
   if (raw.mode != null && raw.mode !== 'water' || raw.mode === 'water' && (!waterPaperById(raw.paper) || !identity(raw.session))) return null;
   if (!paintReplayFits(raw)) return null;
   const views = [];

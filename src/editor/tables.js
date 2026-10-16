@@ -1,6 +1,6 @@
 
 const RAPIER_TABLE_ALIGN_NEXT = { '': 'left', left: 'center', center: 'right', right: '' };
-const RAPIER_TABLE_ALIGN_WORD = { '': 'as written', left: 'left', center: 'centre', right: 'right' };
+const RAPIER_TABLE_ALIGN_WORD = { '': 'as written', left: 'left', center: 'center', right: 'right' };
 
 function _rapierTableCellsOf(row) {
 	return row ? Array.from(row.children).filter(node => /^(?:TH|TD)$/.test(node.tagName)) : [];

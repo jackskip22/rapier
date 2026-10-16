@@ -52,7 +52,7 @@ export function snapshotSettings(value) {
   return Object.freeze(Object.fromEntries(Object.keys(value).map(key => [key, accepted[key]])));
 }
 
-// Each picker owns its input. Cancelling it cannot give a later request its file.
+// Each picker owns its input. Canceling it cannot give a later request its file.
 export function pickDeviceFile(document, signal) {
   if (signal?.aborted) return Promise.resolve(null);
   const input = document.createElement('input');

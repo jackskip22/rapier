@@ -275,12 +275,12 @@ export function createWaterWorker({postMessage}={}){
  const run=async request=>{
    queued.delete(request);const id=request.id,control=displayControl(request),started=performance.now();
    try{
-    if(jobs.get(id)?.signal.aborted)throw Object.assign(new Error('Water painting cancelled'),{name:'AbortError',code:'WATER_CANCELLED'});
+    if(jobs.get(id)?.signal.aborted)throw Object.assign(new Error('Water painting canceled'),{name:'AbortError',code:'WATER_CANCELLED'});
     const displayBefore=displayWork,value=await execute(request);
     const elapsed=performance.now()-started-(control?0:displayWork-displayBefore);
     if(waterTiming.on)waterTiming.busy=(waterTiming.busy||0)+elapsed;
     if(slowTest>1){const held=elapsed*(slowTest-1);if(control)await new Promise(resolve=>setTimeout(resolve,held));else await delayMaterial(held);}
-    if(jobs.get(id)?.signal.aborted)throw Object.assign(new Error('Water painting cancelled'),{name:'AbortError',code:'WATER_CANCELLED'});
+    if(jobs.get(id)?.signal.aborted)throw Object.assign(new Error('Water painting canceled'),{name:'AbortError',code:'WATER_CANCELLED'});
     sendValue(id,value);
    }catch(error){
     if(!control&&request.operation!=='display')for(const [sid,cp]of checkpoints){

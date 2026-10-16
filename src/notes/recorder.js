@@ -653,14 +653,14 @@ async function _rapierRecorderTranscribe(p) {
 			const endAudio = () => { recognition.stop(); };
 			const cleanup = () => { clearTimeout(timer); audio.removeEventListener('ended', endAudio); };
 			recognition.onresult = e => { for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) final.set(i, e.results[i][0].transcript); };
-			recognition.onerror = e => { cleanup(); const partial = [...final.values()].join(' ').trim(); if (partial) { showToast('Transcription stopped. Keeping the words recognised so far.', 'info'); resolve(partial); } else reject(new Error('On-device transcription stopped: ' + e.error)); };
+			recognition.onerror = e => { cleanup(); const partial = [...final.values()].join(' ').trim(); if (partial) { showToast('Transcription stopped. Keeping the words recognized so far.', 'info'); resolve(partial); } else reject(new Error('On-device transcription stopped: ' + e.error)); };
 			recognition.onend = () => { cleanup(); resolve([...final.values()].join(' ').trim()); };
 			audio.addEventListener('ended', endAudio, {once: true});
 			timer = setTimeout(() => { recognition.abort(); }, Math.max(30000, ((p.row.duration || 600) + 30) * 1000));
 			try { recognition.start(track); audio.play().catch(error => { recognition.abort(); cleanup(); reject(error); }); } catch (error) { cleanup(); reject(error); }
 		});
 		if (job.cancelled) return;
-		if (!words) { showToast('No words were recognised', 'info'); return; }
+		if (!words) { showToast('No words were recognized', 'info'); return; }
 		R.transcript = {owner, name: p.row.name, raw: p.row.raw, line: p.row.line, words};
 		await _rapierRecorderKeepTranscript();
 	} catch (error) { if (!job.cancelled) showToast(String(error?.message || error), 'error'); }
@@ -673,25 +673,25 @@ async function _rapierRecorderKeepTranscript() {
 		await _rapierRecorderEdit(draft.owner, text => {
 			const matches = _rapierRecorderModel().recordingsOf(text).filter(r => r.name === draft.name && r.raw === draft.raw);
 			const row = matches.length === 1 ? matches[0] : matches.find(r => r.line === draft.line);
-			if (!row) throw new Error('The recording link changed. The recognised words are still here; restore the link and retry.');
+			if (!row) throw new Error('The recording link changed. The recognized words are still here; restore the link and retry.');
 			const words = globalThis.RapierNotesImport.literalBlock(draft.words);
 			const end = text.indexOf('\n', row.end), at = end < 0 ? text.length : end;
 			const addition = '\n\n' + words + '\n';
 			if (text.slice(at, at + addition.length) === addition) return text;
 			return text.slice(0, at) + addition + text.slice(at);
 		});
-		R.transcript = null; R.recovery?.close(); R.recovery?.remove(); R.recovery = null; showToast('Recognised words added beneath the recording', 'success');
-	} catch (error) { showToast('The recognised words are still here. ' + String(error?.message || error), 'error'); _rapierRecorderRecoverTranscript(); }
+		R.transcript = null; R.recovery?.close(); R.recovery?.remove(); R.recovery = null; showToast('Recognized words added beneath the recording', 'success');
+	} catch (error) { showToast('The recognized words are still here. ' + String(error?.message || error), 'error'); _rapierRecorderRecoverTranscript(); }
 }
 function _rapierRecorderRecoverTranscript() {
 	const R = _rapierRecorder, draft = R.transcript;
 	if (!draft || R.recovery?.open) return;
-	const sheet = R.recovery = _rapierNotesEl('dialog', 'rapier-recording-sheet'); sheet.setAttribute('aria-label', 'Recognised words');
-	const text = _rapierNotesEl('textarea', 'rapier-recording-words'); text.value = draft.words; text.readOnly = true; text.setAttribute('aria-label', 'Recognised words');
-	sheet.append(_rapierNotesEl('div', 'rapier-notes-sheet-name', 'Recognised words'), text);
+	const sheet = R.recovery = _rapierNotesEl('dialog', 'rapier-recording-sheet'); sheet.setAttribute('aria-label', 'Recognized words');
+	const text = _rapierNotesEl('textarea', 'rapier-recording-words'); text.value = draft.words; text.readOnly = true; text.setAttribute('aria-label', 'Recognized words');
+	sheet.append(_rapierNotesEl('div', 'rapier-notes-sheet-name', 'Recognized words'), text);
 	const retry = _rapierRecorderButton('Retry save to note', 'retry'), save = _rapierRecorderButton('Save text file', 'save'), discard = _rapierRecorderButton('Discard words', 'discard');
 	retry.addEventListener('click', () => void _rapierRecorderKeepTranscript());
-	save.addEventListener('click', () => { try { _rapierRecorderDownload(new Blob([draft.words + '\n'], {type: 'text/plain'}), 'Recognised words.txt'); } catch (error) { showToast(String(error?.message || error), 'error'); } });
+	save.addEventListener('click', () => { try { _rapierRecorderDownload(new Blob([draft.words + '\n'], {type: 'text/plain'}), 'Recognized words.txt'); } catch (error) { showToast(String(error?.message || error), 'error'); } });
 	discard.addEventListener('click', () => { R.transcript = null; sheet.close(); sheet.remove(); R.recovery = null; });
 	sheet.addEventListener('cancel', () => { sheet.remove(); R.recovery = null; });
 	sheet.append(retry, save, discard); document.body.appendChild(sheet); sheet.showModal();

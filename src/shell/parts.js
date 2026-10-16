@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 const RapierParts = (() => {
 	const PINS = /* RAPIER_PARTS */ null;
-	const CDN = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.5/';
+	const CDN = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.6/';
 	const pins = new Map((PINS || []).map((pin, order) => [pin.id, {...pin, order}]));
 	const runs = new Map(), states = new Map(), kept = new Set();
 	const local = () => ['android', 'windows', 'native'].includes(window.RapierPlatform?.environment.id);
@@ -28,7 +28,7 @@ const RapierParts = (() => {
 		}
 	}
 	async function fetched(pin) {
-		const hosted = RapierBundleIO.pluginUrl(pin.file);
+		const hosted = RapierBundleIO.hostedUrl(pin.file) || RapierBundleIO.pluginUrl(pin.file);
 		const urls = hosted ? [hosted] : [RapierBundleIO.sameOriginUrl(pin.file), CDN + pin.file].filter(Boolean);
 		let failure = null;
 		for (const url of urls) {
@@ -66,6 +66,7 @@ const RapierParts = (() => {
 		const spans = await _rapierInflateVendor('rapier-part-' + pin.id, new TextDecoder('utf-8', {fatal: true}).decode(bytes));
 		const names = ['-shared.js', '-styles.json', '.js'].map(end => 'rapier-part-' + pin.id + end);
 		if (spans.length !== 3 || spans.some((span, index) => span.name !== names[index])) throw new Error('The ' + pin.id + ' part is incomplete');
+		if (pin.id === 'drawing') await RapierBundledPlugins.need('letters');
 		pin.started = true;
 		await _rapierExecuteBootSource(spans[0]);
 		const later = [...document.querySelectorAll('style[data-rapier-part]')].find(sheet => Number(sheet.dataset.rapierPart) > pin.order);

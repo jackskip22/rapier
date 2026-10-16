@@ -2,7 +2,7 @@
  "comment": "MyPaint brush file",
  "version": 3,
  "description": "Eraser",
- "notes": "TOOL, operator `erase` (rapier_op 3). Takes the paint off and leaves the paper, and nothing else: coverage, colour and the paint's own body all fall by one factor, so every survivor keeps its exact colour and an erased impasto stroke leaves no lit ridge behind. Its radius is a fingertip; the ERASE tool drives the same preset at its own ring's width.\n\nAuthor: Rapier\nLicense: AGPL-3.0-only",
+ "notes": "TOOL, operator `erase` (rapier_op 3). Takes the paint off and leaves the paper, and nothing else: coverage, color and the paint's own body all fall by one factor, so every survivor keeps its exact color and an erased impasto stroke leaves no lit ridge behind. Its radius is a fingertip; the ERASE tool drives the same preset at its own ring's width.\n\nAuthor: Rapier\nLicense: AGPL-3.0-only",
  "parent_brush_name": "Rapier/Eraser",
  "group": "",
  "settings": {

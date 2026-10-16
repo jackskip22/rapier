@@ -12,7 +12,7 @@ Rapier accesses only the document or configured store you share. It cannot searc
 
 - “Revise this introduction and show me exactly what changed.”
 - “Draw our signup flow as a diagram whose boxes I can move.”
-- “Paint a small watercolour sunset over the sea in Rapier. Leave room for me to add a boat.”
+- “Paint a small watercolor sunset over the sea in Rapier. Leave room for me to add a boat.”
 - “Find my garden Note and add this list.” (Requires a configured Notes store.)
 - “Give me this document as one editable offline HTML file.”
 

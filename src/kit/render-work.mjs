@@ -7,7 +7,7 @@ export function finish(iterator) {
 
 export function check(work) {
 	work?.check?.();
-  if (work?.signal?.aborted) throw Object.assign(new Error('The operation was cancelled.'), {name: 'AbortError', code: 'cancelled'});
+  if (work?.signal?.aborted) throw Object.assign(new Error('The operation was canceled.'), {name: 'AbortError', code: 'cancelled'});
 }
 
 export async function pause(work, fraction, label) {

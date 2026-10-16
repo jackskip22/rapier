@@ -66,7 +66,7 @@ const _rapierEmbeddedImages = (() => {
       }
       return new Promise((resolve, reject) => {
       let instance = null, timer = 0, settled = false;
-      const abort = () => finish(signal.reason || new DOMException('Image processing cancelled', 'AbortError'));
+      const abort = () => finish(signal.reason || new DOMException('Image processing canceled', 'AbortError'));
       const finish = (error, value) => {
         if (settled) return;
         settled = true;
@@ -722,7 +722,7 @@ const _rapierEmbeddedImages = (() => {
     return result;
   }
   async function materialize(root, source, substitutions = null, options = null) {
-    const compat = !options || options.compat !== false, signal = options?.signal;
+    const compat = !options || options.compat !== false, signal = options?.signal, convert = compat || options?.drawn === true && !jxlDisplayable();
     const check = () => { if (signal?.aborted) throw cancelled(); };
     check();
     const images = [...root.querySelectorAll('img[data-rapier-asset],img[data-rapier-image-url],img[src^="data:image/jxl;" i]')];
@@ -734,11 +734,12 @@ const _rapierEmbeddedImages = (() => {
       const id = imageKey(image) || image.getAttribute('src');
       if (!resolved.has(id)) {
         const row = await rasterRecord(source, id, index, {signal});
-        const jxl = compat && !row.animated && (assets.dataImage(row.signature)?.codec === 'image/jxl' || !!nestedJxl(row));
+        const jxl = convert && !row.animated && (assets.dataImage(row.signature)?.codec === 'image/jxl' || !!nestedJxl(row));
         let shown;
-        if (jxl && !row.damaged) shown = await smallestPortable(assets.dataImage(row.signature)?.codec === 'image/jxl' ? {...row, type: 'image/jxl', url: row.signature} : row);
+        const named = error => { if (error && typeof error === 'object' && /^IMAGE_/.test(error.code || '')) Object.assign(error, {picture: imageKey(image) || '', alt: image.getAttribute('alt') || ''}); return error; };
+        if (jxl && !row.damaged) shown = await smallestPortable(assets.dataImage(row.signature)?.codec === 'image/jxl' ? {...row, type: 'image/jxl', url: row.signature} : row).catch(error => { throw named(error); });
         else if (row.undisplayable || row.damaged) {
-          if (jxl) throw Object.assign(new Error(row.damaged ? 'This JPEG XL picture is damaged and cannot be converted. Its bytes are kept unchanged.' : here() + ' cannot read JPEG XL, so this picture cannot be converted. ' + jxlRemedy() + ' The picture is unchanged.'), {code: row.damaged ? 'IMAGE_DAMAGED' : 'IMAGE_JXL_UNREADABLE'});
+          if (jxl) throw named(Object.assign(new Error(row.damaged ? 'This JPEG XL picture is damaged and cannot be converted. Its bytes are kept unchanged.' : here() + ' cannot read JPEG XL, so this picture cannot be converted. ' + jxlRemedy() + ' The picture is unchanged.'), {code: row.damaged ? 'IMAGE_DAMAGED' : 'IMAGE_JXL_UNREADABLE'}));
           shown = row.animated ? row : {...row, url: row.signature};
         } else shown = row;
         resolved.set(id, shown);

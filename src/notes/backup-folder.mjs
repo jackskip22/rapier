@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {isNoteFile} from './model.mjs';
 export const BACKUP_CHUNK_BYTES = 64 * 1024;
-export const check = signal => { if (signal?.aborted) throw signal.reason || new Error('backup was cancelled'); };
+export const check = signal => { if (signal?.aborted) throw signal.reason || new Error('backup was canceled'); };
 const temporary = name => /^\..*\.tmp$/.test(name);
 
 export function backupLimitError(names, reason) {

@@ -1167,7 +1167,8 @@
           expected.expectedGeneration !== hand.generation))) return refuse('document_changed');
     const root = document.getElementById('editor-blocks');
     if (!root || !globalThis.RapierVisualCapture?.captureVisual) return refuse('visual_render_unavailable');
-    const target = request.scope === 'focus' || request.scope === 'selection' ? hand.context[request.scope] : null;
+    const target = request.named === true && request.scope === 'focus' ? request.sourceRange
+      : request.scope === 'focus' || request.scope === 'selection' ? hand.context[request.scope] : null;
     if (target && (target.start !== request.sourceRange?.start || target.end !== request.sourceRange?.end))
       return refuse('visual_target_changed');
     if (['focus', 'selection'].includes(request.scope) && (!target || target.end <= target.start))
@@ -1179,7 +1180,7 @@
     if (request.scope === 'page') clip = {x: 0, y: 0, width: root.clientWidth, height: root.scrollHeight};
     else if (request.scope === 'viewport') clip = {x: root.scrollLeft, y: root.scrollTop, width: root.clientWidth, height: root.clientHeight};
     else {
-      const held = request.scope === 'focus' && root.querySelector('img[data-rapier-image-selected]');
+      const held = request.scope === 'focus' && request.named !== true ? root.querySelector('img[data-rapier-image-selected]') : null;
       let bounds = held?.getBoundingClientRect();
       if (!bounds && request.scope === 'selection') {
         const selection = window.getSelection();
@@ -1326,8 +1327,9 @@
       return {...identity, outcome: 'ok', artifact: {mimeType: blob.type, data: url.slice(url.indexOf(',') + 1), filename,
         ...(pages ? {pages} : {}), ...(issues?.length ? {issues} : {})}};
     } catch (error) {
-      return refuse(request.signal?.aborted ? 'cancelled' : /^WILL LOST/.test(String(error?.message)) ? 'will_lost' :
+      const refused = refuse(request.signal?.aborted ? 'cancelled' : /^WILL LOST/.test(String(error?.message)) ? 'will_lost' :
         error?.code === 'stale_context' ? 'document_changed' : typeof error?.code === 'string' && error.code ? error.code.slice(0, 128) : 'export_unavailable');
+      return typeof error?.picture === 'string' && error.picture ? {...refused, picture: error.picture.slice(0, 256), alt: String(error.alt || '').slice(0, 256)} : refused;
     } finally { if (exportFlight === flight) exportFlight = null; }
   }
 
@@ -1437,6 +1439,7 @@
       paintReplay: async (shape, omitIds, options) => { await part('drawing'); return _rapierDrawPaintReplay(shape, omitIds, options); },
       paintSheet: paint => !!globalThis.RapierDrawAgentPaint?.agentPaintSheetHolds(paint),
       paintBrushes: () => globalThis.RapierDrawAgentPaint?.agentPaintBrushRegistry() ?? null,
+      paintStrokesFault: (strokes, field) => globalThis.RapierDrawAgentPaint?.agentStrokesFault(strokes, field) ?? null,
       paintSample: async (shape, point, options) => { await part('drawing'); return _rapierDrawPaintSample(shape, point, options); },
     } : {}),
     notesForeground: () => ({binding: String(rapier.identity.authority) + ':' + Number(rapier.identity.epoch || 0), generation: humanSequence}),
@@ -1643,7 +1646,7 @@
     const result = await (who.actor === 'agent'
       ? _rapierAgentInvocationTracked(name, args, run, who.requestId) : run());
     if (name === 'edit' && ['applied', 'rebased'].includes(result.outcome)) {
-      _rapierAgentNoteSet(typeof args.note === 'string' ? args.note : '');
+      _rapierAgentNoteSet(typeof args.label === 'string' ? args.label : '');
       _rapierAgentNoteShow();
       try { agentCaret(result.act?.id, (typeof args.agent === 'string' && args.agent.trim()) || who.hostAgent || doorName); } catch (_) {}
     }

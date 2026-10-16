@@ -3,7 +3,7 @@ import {prepareLedgerAsync, readLedger, textRoot} from '../kit/ledger/format.mjs
 import {jsonParts, plainPrototype} from '../kit/ledger/data.mjs';
 import {_rapierRecoveryBomManifest, _rapierRecoveryStamp} from './recovery-policy.mjs';
 
-const abort = () => Object.assign(new Error('Cancelled'), {name: 'AbortError'});
+const abort = () => Object.assign(new Error('Canceled'), {name: 'AbortError'});
 const freeze = value => {
   if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
   for (const child of Object.values(value)) freeze(child);

@@ -35,7 +35,7 @@ async function _rapierPrepareInterchangeContext(options, captured, progress = nu
   const context = _rapierBuildInterchangeContext(options, snapshot, preparedRoot);
   context.imageSubstitutions = new Map();
   await globalThis.RapierEmbeddedImages.materialize(context.semanticRoot, context.canonical, context.imageSubstitutions,
-    {compat: context.imageCompat !== false, progress: progress || (work ? fraction => work.onProgress?.(.6 + .1 * fraction) : null), signal: work?.signal || options?.signal, work});
+    {compat: context.imageCompat !== false, drawn: options?.print === true, progress: progress || (work ? fraction => work.onProgress?.(.6 + .1 * fraction) : null), signal: work?.signal || options?.signal, work});
   if (context.metadata.docKind === 'markdown') {
     const objects = await _rapierDocumentObjects.materialize(context.canonical, {root: context.semanticRoot, signal: work?.signal || options?.signal,
       strict: options?.preserveObjects !== true});

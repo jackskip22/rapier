@@ -60,7 +60,7 @@ export async function pluginManifest({root, version, loader, built}) {
 	const plugins = [
 		own('flowchart', ['reader']),
 		own('docx', ['reader']),
-		{name: 'math', adds: 'Typesets TeX maths ($...$ and $$...$$) as SVG.', builds: BUILDS, files: shared('math')},
+		{name: 'math', adds: 'Typesets TeX math ($...$ and $$...$$) as SVG.', builds: BUILDS, files: shared('math')},
 		{name: 'diagrams', adds: 'Draws every other Mermaid diagram: sequence, class, state, ER, Gantt, pie and more.', builds: BUILDS, files: shared('diagrams')},
 		{name: 'pdf', adds: PLUGINS.pdf.adds, builds: BUILDS, files: [entry(built.find(plugin => plugin.key === 'pdf'), ['reader']),
 			...shared('pdf')]},

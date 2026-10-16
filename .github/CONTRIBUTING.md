@@ -1,7 +1,7 @@
 # Contributing to Rapier
 
 Rapier is a gift to the world: one offline HTML page that is a whole editor, free under AGPL-3.0-only, with a commercial
-licence for the few who need one (the Android app, white-labelling, embedding in a closed product; see [`LICENSING.md`](../docs/LICENSING.md)).
+license for the few who need one (the Android app, white-labelling, embedding in a closed product; see [`LICENSING.md`](../docs/LICENSING.md)).
 Everyone is welcome here, people and agents alike. This page says how to take part so that your work lands.
 
 ## Ways to take part

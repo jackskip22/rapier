@@ -39,7 +39,7 @@ export function separate(c, endA = c.before.length, endB = c.after.length) {
       for (const span of p.slice(0, 2)) { span[0] += shift; span[1] += shift; }
   }
   // Adjacent blocks deleted or inserted together: when the first carries the line break before it, each carries
-  // its own, so any one restores apart from its neighbours.
+  // its own, so any one restores apart from its neighbors.
   if (!raw) for (let i = 1; i < c.result.length; i++) {
     const p = c.result[i - 1], q = c.result[i], kind = p[3][0], side = kind ? 1 : 0, text = side ? after : before;
     if (kind % 2 || q[3][0] !== kind || p[2] || q[2] || p[side][1] !== q[side][0] || p[1 - side][0] !== q[1 - side][0]) continue;

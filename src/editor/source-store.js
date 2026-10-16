@@ -239,7 +239,7 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 		return cachedIntegrityValue;
 	};
 	const integrityAsync = async ({yield: yieldWork, signal, onProgress} = {}) => {
-		if (signal?.aborted) throw Object.assign(new Error('Cancelled'), {name: 'AbortError'});
+		if (signal?.aborted) throw Object.assign(new Error('Canceled'), {name: 'AbortError'});
 		if (cachedIntegrityKey === cacheKey) return cachedIntegrityValue;
 		const pending = pieces, chars = length, state = scanState();
 		let processed = 0;
@@ -251,7 +251,7 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 				processed += stop - start; start = stop;
 				onProgress?.(processed / chars);
 				if (yieldWork && processed < chars) await yieldWork();
-				if (signal?.aborted) throw Object.assign(new Error('Cancelled'), {name: 'AbortError'});
+				if (signal?.aborted) throw Object.assign(new Error('Canceled'), {name: 'AbortError'});
 				if (pieces !== pending) return null;
 			}
 		}
@@ -472,12 +472,12 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 	};
 	const warm = () => { bytesNow(); rootNow(); };
 	const warmAsync = async ({yield: yieldWork, signal, onProgress} = {}) => {
-		if (signal?.aborted) throw Object.assign(new Error('Cancelled'), {name: 'AbortError'});
+		if (signal?.aborted) throw Object.assign(new Error('Canceled'), {name: 'AbortError'});
 		if (cachedIntegrityKey === cacheKey && utf8Bytes != null && rootId != null) return true;
 		const pending = cacheKey;
 		const text = read(), countBytes = utf8Bytes == null, state = scanState();
 		for (let start = 0; start < text.length;) {
-			if (signal?.aborted) throw Object.assign(new Error('Cancelled'), {name: 'AbortError'});
+			if (signal?.aborted) throw Object.assign(new Error('Canceled'), {name: 'AbortError'});
 			const end = Math.min(text.length, start + PIECE_CHARS);
 			scanSpan(text, start, end, state, countBytes);
 			start = end;
@@ -485,7 +485,7 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 			if (yieldWork) await yieldWork();
 			if (cacheKey !== pending) return false;
 		}
-		if (signal?.aborted) throw Object.assign(new Error('Cancelled'), {name: 'AbortError'});
+		if (signal?.aborted) throw Object.assign(new Error('Canceled'), {name: 'AbortError'});
 		if (cacheKey !== pending) return false;
 		cachedIntegrityKey = pending;
 		cachedIntegrityValue = finishIntegrity(text.length, state);
@@ -507,7 +507,7 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 	if (!preparation) return store;
 	return (async () => {
 		const check = () => {
-			if (preparation.signal?.aborted) throw Object.assign(new Error('Cancelled'), {name: 'AbortError'});
+			if (preparation.signal?.aborted) throw Object.assign(new Error('Canceled'), {name: 'AbortError'});
 		};
 		check();
 		const state = scanState();

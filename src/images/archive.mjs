@@ -27,7 +27,7 @@ export function createImportWork({signal, checkCurrent = () => {}, onProgress} =
 
 function fail(reason) { throw new Error(reason); }
 function archiveAbort(signal) {
-  return signal.reason instanceof Error ? signal.reason : Object.assign(new Error('The operation was cancelled.'), {name: 'AbortError', code: 'cancelled'});
+  return signal.reason instanceof Error ? signal.reason : Object.assign(new Error('The operation was canceled.'), {name: 'AbortError', code: 'cancelled'});
 }
 function bytesOf(value) {
   if (value instanceof Uint8Array) return value;

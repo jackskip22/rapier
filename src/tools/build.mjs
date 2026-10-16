@@ -10,7 +10,7 @@ import vm from 'node:vm';
 import {scriptMinifier, reflectedNames} from './minify.mjs';
 import {buildJPEGXLArtifact} from '../images/codec-build.mjs';
 import acorn from '../agent/vendor/acorn.mjs';
-import {TOOLS, UI_RESOURCE, mcpDescriptors} from '../agent/catalog.mjs';
+import {TOOLS, UI_RESOURCE, mcpDescriptors, publishedSchema} from '../agent/catalog.mjs';
 import {encodeBase124} from './base124.mjs';
 import {encodeTextPack} from './text-pack-build.mjs';
 import {decodeTextPack} from './text-pack.mjs';
@@ -520,7 +520,7 @@ new vm.Script(bundleText, {filename: 'rapier-agent-bundle.js'});
 let html = await readBuildShell(root);
 // The shell's licence comment is the notice only, byte for byte, ending at its Licenses line.
 {
-  const notice = /^<!DOCTYPE html>\n<!--\n[\s\S]*?\tFull licence, no-warranty terms, and exact source download: Settings → Licenses\.\n/.exec(html);
+  const notice = /^<!DOCTYPE html>\n<!--\n[\s\S]*?\tFull license, no-warranty terms, and exact source download: Settings → Licenses\.\n/.exec(html);
   const close = notice ? html.indexOf('-->', notice[0].length) : -1;
   if (close < 0) throw new Error('The shell must open with its licence notice');
   html = notice[0] + html.slice(close);
@@ -1070,7 +1070,7 @@ if (PROFILE === 'full') {
 }
 
 
-let shellDigest = null, appHtml = null, appHtmlBytes = null, appHtmlSha256 = null, appsSpans = null, appPlugins = null, portableHtml = null;
+let shellDigest = null, appHtml = null, appHtmlBytes = null, appHtmlSha256 = null, appsSpans = null, appPlugins = null, hostedPlugins = null, appAssets = null, portableHtml = null;
 if (PROFILE === 'full') {
   const shellRows = [];
   let shellPageDigest = null;
@@ -1099,9 +1099,14 @@ if (PROFILE === 'full') {
   const appsInterface = await packedScript('rapier-ui-runtime', 'application/rapier-runtime', 'rapier-ui.html', appsUi);
   const plugins = await builtinPlugins(root, packedSpans);
   appPlugins = plugins.groups;
+  hostedPlugins = appPlugins.map(group => {
+    const {file, bytes, sri} = plugins.assets.find(asset => asset.id === group.id);
+    return {...group, asset: {file, bytes, sri}};
+  });
   const appRows = packedRecord.splice(recorded);
   const replacementElements = new Set(['rapier-ui-runtime']);
-  appsSpans = packedRecord.filter(row => !replacementElements.has(row.element)).concat(appRows);
+  appsSpans = packedRecord.filter(row => !replacementElements.has(row.element) && !row.element.startsWith('rapier-part-'))
+    .concat(appRows.filter(row => !row.element.startsWith('rapier-plugin-')));
   const platformElement = /<script type="application\/rapier-runtime" id="rapier-platform-runtime">[^<]*<\/script>\n/;
   if (!platformElement.test(html)) throw new Error('The built-in editor needs its platform runtime');
   const inventory = '<script type="application/json" id="rapier-builtin-plugins">' + safeScript(JSON.stringify(appPlugins)) + '</script>\n';
@@ -1111,10 +1116,21 @@ if (PROFILE === 'full') {
   if (partAt < 0) throw new Error('The portable page lost a part');
   const partEnd = partAt + lastPart.length;
   portableHtml = (carried.slice(0, partEnd) + plugins.html + carried.slice(partEnd)).replace(platformElement, element => inventory + element);
-  appHtml = portableHtml.replace(/<meta http-equiv="Content-Security-Policy"[^>]*>\n?/, '').replace('<meta charset="UTF-8">', '<meta charset="UTF-8">\n<script>globalThis.RAPIER_APPS_HOST = true;</script>')
+  const hostedInventory = '<script type="application/json" id="rapier-builtin-plugins">' + safeScript(JSON.stringify(hostedPlugins)) + '</script>\n';
+  appHtml = html.replace(platformElement, element => hostedInventory + element)
+    .replace(/<meta http-equiv="Content-Security-Policy"[^>]*>\n?/, '').replace('<meta charset="UTF-8">', '<meta charset="UTF-8">\n<script>globalThis.RAPIER_APPS_HOST = true;</script>')
     .replace(seoRegion, '').replace(interfaceElement, () => appsInterface).replace(editorElement, element => element + appsScript);
   const destination = resolve(root, 'dist/chatgpt');
   await mkdir(destination, {recursive: true});
+  const assetDirectory = resolve(destination, 'editor-assets');
+  await rm(assetDirectory, {recursive: true, force: true});
+  await mkdir(assetDirectory, {recursive: true});
+  appAssets = [];
+  for (const asset of [...partFiles, ...plugins.assets]) {
+    await writeFile(resolve(assetDirectory, asset.file), asset.body);
+    appAssets.push({id: asset.id, path: 'editor-assets/' + asset.file, bytes: Buffer.byteLength(asset.body), sha256: checksum(asset.body), sri: asset.sri});
+  }
+  await writeFile(resolve(destination, '_headers'), '/editor-assets/*\n  Content-Type: text/plain; charset=utf-8\n  Access-Control-Allow-Origin: *\n  Cross-Origin-Resource-Policy: cross-origin\n  X-Content-Type-Options: nosniff\n  Cache-Control: public, max-age=31536000, immutable\n');
   await writeFile(resolve(destination, 'rapier-app.html'), appHtml);
   await writeFile(resolve(destination, 'rapier.html'), portableHtml);
   const privacy = /<div class="licenses-app privacy-words">([\s\S]*?)<\/div>/.exec(await read('editor/ui.html'))?.[1];
@@ -1143,10 +1159,11 @@ const profileRecord = {path: OUTPUT_FILE, bytes: Buffer.byteLength(html), sha256
   coreHeldPartGlobals: Object.keys(partGlobals).filter(name => !partOf.has(partGlobals[name])), shakenExports, jxl,
   builtAt: BUILT_AT, node: process.version, mode: PACK_MODE, packing: PACKING, codecs: ['gzip', 'brotli'], brotli: {...BROTLI_SETTINGS}, canonical: toolchainCanonical};
 // (`RAPIER_PACK=fast`), 'release' for Zopfli; tools/release-gate.mjs checks it.
-const receipt = {phoneBench: phoneBenchReceipt, release: VERSION, builtAt: BUILT_AT, node: process.version, mode: PACK_MODE, packing: PACKING, codecs: profileRecord.codecs, brotli: profileRecord.brotli, validation: 'JavaScript syntax and source assembly only; no runtime or host verification', profile: PROFILE, jxl, profiles: {...priorProfiles, [PROFILE]: profileRecord}, editor: {path: OUTPUT_FILE, bytes: Buffer.byteLength(html), sha256: checksum(html)}, apps: PROFILE === 'full' ? {path: 'dist/chatgpt/rapier-app.html', bytes: appHtmlBytes, sha256: appHtmlSha256, spans: appsSpans, plugins: appPlugins} : priorReceipt?.apps ?? null, offline: PROFILE === 'full' ? {path: 'dist/chatgpt/rapier.html', bytes: Buffer.byteLength(portableHtml), sha256: checksum(portableHtml), plugins: appPlugins} : priorReceipt?.offline ?? null, shell: PROFILE === 'full' ? {sha256: shellDigest} : priorReceipt?.shell ?? null, htmlSinks: {named: htmlSinks.total, files: htmlSinks.files, inventory: 'security/html-sinks.json'}, tools: TOOLS.map(row => row.name), toolchain: {canonical: toolchainCanonical, node: {expected: toolchain.node.version, actual: process.version}}, unchecked};
+const receipt = {phoneBench: phoneBenchReceipt, release: VERSION, builtAt: BUILT_AT, node: process.version, mode: PACK_MODE, packing: PACKING, codecs: profileRecord.codecs, brotli: profileRecord.brotli, validation: 'JavaScript syntax and source assembly only; no runtime or host verification', profile: PROFILE, jxl, profiles: {...priorProfiles, [PROFILE]: profileRecord}, editor: {path: OUTPUT_FILE, bytes: Buffer.byteLength(html), sha256: checksum(html)}, apps: PROFILE === 'full' ? {path: 'dist/chatgpt/rapier-app.html', bytes: appHtmlBytes, sha256: appHtmlSha256, spans: appsSpans, plugins: hostedPlugins, assets: appAssets} : priorReceipt?.apps ?? null, offline: PROFILE === 'full' ? {path: 'dist/chatgpt/rapier.html', bytes: Buffer.byteLength(portableHtml), sha256: checksum(portableHtml), plugins: appPlugins} : priorReceipt?.offline ?? null, shell: PROFILE === 'full' ? {sha256: shellDigest} : priorReceipt?.shell ?? null, htmlSinks: {named: htmlSinks.total, files: htmlSinks.files, inventory: 'security/html-sinks.json'}, tools: TOOLS.map(row => row.name), toolchain: {canonical: toolchainCanonical, node: {expected: toolchain.node.version, actual: process.version}}, unchecked};
 await mkdir(resolve(root, 'dist'), {recursive: true});
 await writeFile(resolve(root, 'dist/runtime-symbols-' + PROFILE + '.json'), JSON.stringify(lean.symbols) + '\n');
 await writeFile(resolve(root, 'dist/BUILD.json'), JSON.stringify(receipt, null, 2) + '\n');
-await writeFile(resolve(root, 'AGENT-TOOLS.json'), JSON.stringify({release: VERSION, core: TOOLS, mcp: manifestMcp}, null, 2) + '\n');
+await writeFile(resolve(root, 'AGENT-TOOLS.json'), JSON.stringify({release: VERSION, core: TOOLS,
+  mcp: manifestMcp.map(tool => ({...tool, inputSchema: publishedSchema(tool.inputSchema)}))}, null, 2) + '\n');
 await finishBuildReuse({root, profile: PROFILE});
 console.log(JSON.stringify(receipt, null, 2));

@@ -279,13 +279,13 @@ Copy and Cut make a portable SVG with finished renditions of the copied source.
   selection is refused before copying.
 - A copied whole-drawing refraction belongs in the document as its own drawing; pasting it into another Draw canvas
   is refused. Per-object effects paste with their included references.
-- The colour sampler reads the renderer's pixels from the current source.
+- The color sampler reads the renderer's pixels from the current source.
 
 ## Water and Paint
 
 A `rapier-water` fence has `id`, `alt`, `paper` (for example `cold-press`), `seed` and JSON `{actions:[...]}`. A
 `rapier-paint` fence has `id`, `alt`, `seed` and JSON `{strokes:[...]}`: each stroke has a registry brush id, a hex
-colour, an optional size 0–100 and points `[x,y]` or `[x,y,pressure]`, for example
+color, an optional size 0–100 and points `[x,y]` or `[x,y,pressure]`, for example
 `{"strokes":[{"brush":"dieterle/round-1","colour":"#2b5b84","size":20,"points":[[120,180,0.7],[260,190,0.8]]}]}`. Both also fit as `paint` figures in a
 `rapier-draw` block.
 
@@ -353,7 +353,7 @@ with a `taskId`. Without it, calls stay direct. Legacy, paired-page and local-se
 
 - `tasks/get` returns status and the kept final `result` or `error`; `tasks/cancel` stops a working task. Both need
   `taskId`, the task capability and a matching `Mcp-Name` header.
-- Cancelling the creating request doesn't stop a published task.
+- Canceling the creating request doesn't stop a published task.
 - `tasks/update` accepts `inputResponses`, but these operations never request input, so they have no effect.
 - Results expire 24 hours after creation; operation deadlines don't change. After a lost creation reply, reuse the
   same operation id and arguments.

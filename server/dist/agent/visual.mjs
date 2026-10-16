@@ -45,12 +45,15 @@ export function visualRequest(state, args = {}) {
   if (state.drawing != null) {
     const drawing = visualDrawingIdentity(state.drawing);
     if (!drawing) return refused('visual_target_unavailable');
+    const named = scope === 'focus' && range(args.sourceRange) ? args.sourceRange : null, at = drawing.occurrence;
+    if (named && !(at && at.start < named.end && at.end > named.start)) return refused('draw_session_open');
     request.drawing = drawing;
   }
   if (!request.drawing && (scope === 'focus' || scope === 'selection')) {
-    const target = state[scope];
+    const named = scope === 'focus' && args.sourceRange !== undefined, target = named ? args.sourceRange : state[scope];
     if (!range(target) || typeof state.text !== 'string' || target.end > state.text.length) return refused('visual_target_missing');
     request.sourceRange = {start: target.start, end: target.end};
+    if (named) request.named = true;
   }
   return {outcome: 'ok', request};
 }

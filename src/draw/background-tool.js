@@ -96,8 +96,8 @@ function _rapierBgEnsurePanel() {
 	panel.innerHTML = '<div class="rapier-draw-bgpanel-kinds" role="radiogroup" aria-label="Background kind">' +
 		RAPIER_BG_KINDS.map(([kind, word]) => '<button type="button" class="rapier-draw-chip" role="radio" data-draw-bg-kind="' + kind + '" aria-checked="false">' + word + '</button>').join('') + '</div>' +
 		'<div class="rapier-draw-bgpanel-presets" role="group" aria-label="Starting points"></div>' +
-		'<div class="rapier-draw-bgpanel-bar" data-draw-bg-bar aria-label="Colours. Drag a handle along to move a colour, tap it to choose, drag it away to remove; tap the strip to add a colour"><svg class="rapier-draw-bgpanel-strip" preserveAspectRatio="none" aria-hidden="true"></svg></div>' +
-		'<div class="rapier-draw-bgpanel-solid"><button type="button" class="rapier-draw-chip" data-draw-bg-pick>Colour</button></div>' +
+		'<div class="rapier-draw-bgpanel-bar" data-draw-bg-bar aria-label="Colors. Drag a handle along to move a color, tap it to choose, drag it away to remove; tap the strip to add a color"><svg class="rapier-draw-bgpanel-strip" preserveAspectRatio="none" aria-hidden="true"></svg></div>' +
+		'<div class="rapier-draw-bgpanel-solid"><button type="button" class="rapier-draw-chip" data-draw-bg-pick>Color</button></div>' +
 		'<div class="rapier-draw-bgpanel-wave">' + _rapierBgSeek('Flow', 'min="0" max="1" step="0.01" data-draw-bg-flow') +
 		_rapierBgSeek('Size', 'min="0" max="1" step="0.01" data-draw-bg-size') +
 		'<button type="button" class="rapier-draw-chip" data-draw-bg-shuffle>Shuffle</button></div>' +
@@ -180,7 +180,7 @@ function _rapierBgSyncPanel() {
 			const handle = document.createElement('button');
 			handle.type = 'button'; handle.className = 'rapier-draw-bgpanel-handle'; handle.dataset.drawBgStop = String(i);
 			handle.style.left = (stop.at * 100) + '%'; handle.style.setProperty('--bg-stop', stop.color);
-			handle.setAttribute('aria-label', 'Colour ' + (i + 1) + ' at ' + Math.round(stop.at * 100) + ' percent');
+			handle.setAttribute('aria-label', 'Color ' + (i + 1) + ' at ' + Math.round(stop.at * 100) + ' percent');
 			bar.appendChild(handle);
 		});
 	}

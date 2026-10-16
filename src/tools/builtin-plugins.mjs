@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {basename, join} from 'node:path';
+import {createHash} from 'node:crypto';
 import {pluginPackFiles, readPluginFile} from './stage-plugin-pack.mjs';
 
 export const builtinFilesReuse = `if (m.files.length === 1 && RapierBundledPlugins.has('rapier-' + m.key) && _rapierProviders[m.key])
@@ -15,7 +16,7 @@ export const BUILTIN_PLUGIN_IDS = Object.freeze(['math', 'mermaid', 'letters', '
 export async function builtinPlugins(root, pack) {
 	const selected = (await pluginPackFiles()).filter(file =>
         file.id === 'rapier-math' || file.id === 'rapier-font-subset' || file.id.startsWith('rapier-mermaid-') || file.id.startsWith('rapier-letters-'));
-	const groups = [], elements = [];
+	const groups = [], elements = [], assets = [];
 	for (const id of BUILTIN_PLUGIN_IDS) {
 		const files = selected.filter(file => id === 'math' || id === 'font-subset' ? file.id === 'rapier-' + id : file.id.startsWith('rapier-' + id + '-'));
 		if (!files.length) throw new Error('The editor resource has no ' + id + ' plug-in payload');
@@ -30,9 +31,13 @@ export async function builtinPlugins(root, pack) {
 		}
 		const element = 'rapier-plugin-' + id;
 		const html = await pack(element, 'application/rapier-runtime', spans);
+		const body = html.slice(html.indexOf('>') + 1, html.lastIndexOf('</script>'));
+		const bytes = Buffer.from(body), sha256 = createHash('sha256').update(bytes).digest('hex');
+		assets.push({id, file: 'rapier-plugin-' + id + '-' + sha256.slice(0, 16) + '.txt', body,
+			bytes: bytes.length, sha256, sri: createHash('sha384').update(bytes).digest('base64')});
 		groups.push({id, delivery: 'built-in', kind: id === 'math' ? 'script' : 'files', element,
 			bytes: records.reduce((sum, file) => sum + file.bytes, 0), packedBytes: Buffer.byteLength(html), files: records});
 		elements.push(html);
 	}
-	return {groups, html: elements.join('')};
+	return {groups, html: elements.join(''), assets};
 }

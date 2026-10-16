@@ -1,10 +1,10 @@
 {
-  "release": "1.2.5",
+  "release": "1.2.6",
   "core": [
     {
       "name": "open",
       "title": "Open Rapier",
-      "description": "Create Markdown with text and filename, resume with document, open a Note (title only with note:\"new\"), or import an authorized host file. Returns revision and whole text when it fits a page; otherwise a document map. A browser code from the person goes to show {target:\"pair\", code}. Share editor_url when available; keep document private. Workspaces expire after 30 idle days.",
+      "description": "Create {text, filename}, resume {document}, open a Note {document, note}, create one {document, note:\"new\", text, title} (title only there), or import a host file {file}. Returns revision and whole text when it fits a page; otherwise a document map. A browser code goes to show {target:\"pair\", code}. Share editor_url when available; keep document private.",
       "effect": "create",
       "class": "write",
       "inputSchema": {
@@ -72,7 +72,7 @@
     {
       "name": "read",
       "title": "Read Rapier",
-      "description": "Read exact text or a document map; query returns matching lines. Continue next_cursor with cursor alone. Check human context and omissions before editing. Use image for PNG, state for pending work and the person’s presence, after_revision with wait_ms to wait for their next change, or search for Notes. Use guide for instructions; guide resource URIs are not document IDs.",
+      "description": "Read exact text, a heading/fence map (as:\"outline\") or a PNG (as:\"image\") of the page or of the named block, heading or lines. query finds lines here; search lists Notes. Continue next_cursor with cursor alone. Check human context and omissions before editing. state:true reports pending work and the person’s presence; after_revision with wait_ms waits for their next change. guide returns instructions; guide resource URIs are not document IDs.",
       "effect": "read",
       "class": "read",
       "inputSchema": {
@@ -110,15 +110,18 @@
               "minimum": 1
             },
             "minItems": 2,
-            "maxItems": 2
+            "maxItems": 2,
+            "description": "[first, last], 1-based, inclusive."
           },
           "query": {
             "type": "string",
-            "maxLength": 2048
+            "maxLength": 2048,
+            "description": "Literal text to find in this document."
           },
           "search": {
             "type": "string",
-            "maxLength": 2048
+            "maxLength": 2048,
+            "description": "Search the Notes store; \"\" lists all."
           },
           "as": {
             "type": "string",
@@ -176,7 +179,7 @@
           "guide": {
             "type": "string",
             "maxLength": 32,
-            "description": "Instructions only; use no other read selectors. MCP still requires the current document from open.",
+            "description": "Instructions only; use no other read selectors and no document.",
             "enum": [
               "overview",
               "draw",
@@ -304,7 +307,7 @@
     {
       "name": "edit",
       "title": "Edit Rapier",
-      "description": "Apply unique exact-text changes atomically as one undoable act; act is its id string. At a moved numeric revision, edits can apply if literals remain untouched and history reaches that revision. Whole-document replacement needs the current revision. Conflicts return current revision and exact context or candidate lines; decide afresh. Drawings, painting, Water, comments and HTML objects use fenced text. Painting needs an open editor; check pending work with read.",
+      "description": "Apply unique exact-text changes atomically as one undoable act (act is its id string), rename with filename, or set Note fields with note. At a moved numeric revision, literal edits apply if untouched since; whole-document replacement needs the current revision. A conflict returns current context; decide afresh. Drawings, painting, Water, comments and HTML objects use fenced text; painting needs an open editor and an operation_id.",
       "effect": "write",
       "class": "write",
       "inputSchema": {
@@ -314,7 +317,8 @@
             "type": [
               "integer",
               "string"
-            ]
+            ],
+            "description": "From your latest read or open; a Note's is its sha256."
           },
           "changes": {
             "type": "array",
@@ -421,15 +425,61 @@
           },
           "turn_id": {
             "type": "string",
-            "maxLength": 160
+            "maxLength": 160,
+            "description": "Groups acts for undo {turn_id}."
           },
           "label": {
             "type": "string"
           },
           "fields": {
             "type": "object",
-            "description": "Note controls: tags, pinned, archived, trashed, colour, reminder. See rapier://guide.",
-            "additionalProperties": true
+            "properties": {
+              "pinned": {
+                "type": "boolean"
+              },
+              "colour": {
+                "type": "string",
+                "enum": [
+                  "",
+                  "red",
+                  "orange",
+                  "yellow",
+                  "green",
+                  "teal",
+                  "blue",
+                  "purple",
+                  "pink",
+                  "brown"
+                ]
+              },
+              "section": {
+                "type": "string",
+                "maxLength": 48
+              },
+              "tags": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "maxItems": 64
+              },
+              "archived": {
+                "type": "boolean"
+              },
+              "trashed": {
+                "type": "boolean"
+              },
+              "reminder": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "App only; {at} in ms."
+              }
+            },
+            "additionalProperties": false,
+            "description": "Note fields, with note and without changes."
           },
           "filename": {
             "type": "string",
@@ -453,7 +503,7 @@
     {
       "name": "undo",
       "title": "Undo Rapier work",
-      "description": "Undo one act id string or turn_id (act or turn_id, not both), preserving later work. Inspect conflicts before retrying.",
+      "description": "Undo one act or one turn (act or turn_id, not both), preserving later work.",
       "effect": "write",
       "class": "write",
       "inputSchema": {
@@ -461,11 +511,13 @@
         "properties": {
           "act": {
             "type": "string",
-            "maxLength": 256
+            "maxLength": 256,
+            "description": "From edit; pass act or turn_id."
           },
           "turn_id": {
             "type": "string",
-            "maxLength": 160
+            "maxLength": 160,
+            "description": "Undo a whole turn; pass act or turn_id."
           },
           "agent": {
             "type": "string"
@@ -482,7 +534,7 @@
     {
       "name": "show",
       "title": "Show or ask in Rapier",
-      "description": "Present work or ask for a reply, selection or device action. A 4-letter code from the person's browser pairs that editor: show {target:\"pair\", code}; for a connected workspace its owner first approves at owner_approval_url, then the person chooses ALLOW. Inspect actual presentation; a request is not proof the person saw it. Playback: value false pauses, true plays, here only. A comparison leaves source unchanged. Later human navigation wins.",
+      "description": "Present work or ask the person. An omitted target is inferred from its fields. A 4-letter browser code pairs that editor (target:\"pair\"); a connected workspace's owner first approves at owner_approval_url, then the person chooses ALLOW. Inspect actual presentation; a request is not proof the person saw it. A comparison leaves source unchanged. Later human navigation wins.",
       "effect": "view",
       "class": "sensitive-write",
       "inputSchema": {
@@ -510,7 +562,8 @@
           },
           "text": {
             "type": "string",
-            "maxLength": 67108864
+            "maxLength": 67108864,
+            "description": "Exact passage, or for comparison the whole alternative document."
           },
           "block": {
             "type": "string",
@@ -553,7 +606,8 @@
           },
           "words": {
             "type": "string",
-            "maxLength": 160
+            "maxLength": 160,
+            "description": "Pointer label."
           },
           "view": {
             "type": "string",
@@ -571,6 +625,7 @@
           "wait": {
             "type": "string",
             "maxLength": 32,
+            "description": "ask: message (default) or selection.",
             "enum": [
               "selection",
               "message"
@@ -614,7 +669,8 @@
             "type": [
               "string",
               "boolean"
-            ]
+            ],
+            "description": "preferences: the setting; playback: false pauses, true plays."
           },
           "note": {
             "type": "string",
@@ -624,7 +680,7 @@
           "code": {
             "type": "string",
             "maxLength": 4,
-            "description": "Browser pairing code; only with target:\"pair\"."
+            "description": "Browser pairing code (target:\"pair\")."
           },
           "close": {
             "type": "boolean"
@@ -683,7 +739,7 @@
     {
       "name": "export",
       "title": "Save or export Rapier",
-      "description": "Deliver an independent file, save to the bound destination or copy a passage. Use to:sync alone to synchronize the configured Notes store; sync can replace files. Page/Word/PDF need an editor or server renderer. Inspect delivery and verification; export does not publish a website.",
+      "description": "to:\"file\" (default) delivers markdown, html (the offline editor), page, txt, docx or pdf; to:\"save\" saves to the bound destination; to:\"clipboard\" copies a passage as plain, markdown, formatted or complete. to:\"sync\" alone syncs the Notes store and can replace files. page, docx and pdf need an editor or renderer. Inspect delivery; export never publishes a website.",
       "effect": "durable",
       "class": "sensitive-write",
       "inputSchema": {
@@ -816,7 +872,7 @@
     {
       "name": "open",
       "title": "Open Rapier",
-      "description": "Create Markdown with text and filename, resume with document, open a Note (title only with note:\"new\"), or import an authorized host file. Returns revision and whole text when it fits a page; otherwise a document map. A browser code from the person goes to show {target:\"pair\", code}. Share editor_url when available; keep document private. Workspaces expire after 30 idle days.",
+      "description": "Create {text, filename}, resume {document}, open a Note {document, note}, create one {document, note:\"new\", text, title} (title only there), or import a host file {file}. Returns revision and whole text when it fits a page; otherwise a document map. A browser code goes to show {target:\"pair\", code}. Share editor_url when available; keep document private.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -911,13 +967,14 @@
     {
       "name": "read",
       "title": "Read Rapier",
-      "description": "Read exact text or a document map; query returns matching lines. Continue next_cursor with cursor alone. Check human context and omissions before editing. Use image for PNG, state for pending work and the person’s presence, after_revision with wait_ms to wait for their next change, or search for Notes. Use guide for instructions; guide resource URIs are not document IDs.",
+      "description": "Read exact text, a heading/fence map (as:\"outline\") or a PNG (as:\"image\") of the page or of the named block, heading or lines. query finds lines here; search lists Notes. Continue next_cursor with cursor alone. Check human context and omissions before editing. state:true reports pending work and the person’s presence; after_revision with wait_ms waits for their next change. guide returns instructions; guide resource URIs are not document IDs.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "document": {
             "type": "string",
-            "maxLength": 256
+            "maxLength": 256,
+            "description": "From open; not needed with guide."
           },
           "note": {
             "type": "string",
@@ -951,15 +1008,18 @@
               "minimum": 1
             },
             "minItems": 2,
-            "maxItems": 2
+            "maxItems": 2,
+            "description": "[first, last], 1-based, inclusive."
           },
           "query": {
             "type": "string",
-            "maxLength": 2048
+            "maxLength": 2048,
+            "description": "Literal text to find in this document."
           },
           "search": {
             "type": "string",
-            "maxLength": 2048
+            "maxLength": 2048,
+            "description": "Search the Notes store; \"\" lists all."
           },
           "as": {
             "type": "string",
@@ -1017,7 +1077,7 @@
           "guide": {
             "type": "string",
             "maxLength": 32,
-            "description": "Instructions only; use no other read selectors. MCP still requires the current document from open.",
+            "description": "Instructions only; use no other read selectors and no document.",
             "enum": [
               "overview",
               "draw",
@@ -1035,114 +1095,7 @@
           }
         },
         "additionalProperties": false,
-        "allOf": [
-          {
-            "if": {
-              "required": [
-                "guide"
-              ]
-            },
-            "then": {
-              "not": {
-                "anyOf": [
-                  {
-                    "required": [
-                      "note"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "block"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "heading"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "lines"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "query"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "search"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "as"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "versions"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "version"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "cursor"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "limit"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "state"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "history"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "since"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "comparison"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "return_id"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "after_revision"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "wait_ms"
-                    ]
-                  }
-                ]
-              }
-            }
-          }
-        ],
-        "required": [
-          "document"
-        ]
+        "required": []
       },
       "annotations": {
         "title": "Read Rapier",
@@ -1174,7 +1127,7 @@
     {
       "name": "edit",
       "title": "Edit Rapier",
-      "description": "Apply unique exact-text changes atomically as one undoable act; act is its id string. At a moved numeric revision, edits can apply if literals remain untouched and history reaches that revision. Whole-document replacement needs the current revision. Conflicts return current revision and exact context or candidate lines; decide afresh. Drawings, painting, Water, comments and HTML objects use fenced text. Painting needs an open editor; check pending work with read.",
+      "description": "Apply unique exact-text changes atomically as one undoable act (act is its id string), rename with filename, or set Note fields with note. At a moved numeric revision, literal edits apply if untouched since; whole-document replacement needs the current revision. A conflict returns current context; decide afresh. Drawings, painting, Water, comments and HTML objects use fenced text; painting needs an open editor and an operation_id.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1186,7 +1139,8 @@
             "type": [
               "integer",
               "string"
-            ]
+            ],
+            "description": "From your latest read or open; a Note's is its sha256."
           },
           "changes": {
             "type": "array",
@@ -1293,15 +1247,61 @@
           },
           "turn_id": {
             "type": "string",
-            "maxLength": 160
+            "maxLength": 160,
+            "description": "Groups acts for undo {turn_id}."
           },
           "label": {
             "type": "string"
           },
           "fields": {
             "type": "object",
-            "description": "Note controls: tags, pinned, archived, trashed, colour, reminder. See rapier://guide.",
-            "additionalProperties": true
+            "properties": {
+              "pinned": {
+                "type": "boolean"
+              },
+              "colour": {
+                "type": "string",
+                "enum": [
+                  "",
+                  "red",
+                  "orange",
+                  "yellow",
+                  "green",
+                  "teal",
+                  "blue",
+                  "purple",
+                  "pink",
+                  "brown"
+                ]
+              },
+              "section": {
+                "type": "string",
+                "maxLength": 48
+              },
+              "tags": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "maxItems": 64
+              },
+              "archived": {
+                "type": "boolean"
+              },
+              "trashed": {
+                "type": "boolean"
+              },
+              "reminder": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "App only; {at} in ms."
+              }
+            },
+            "additionalProperties": false,
+            "description": "Note fields, with note and without changes."
           },
           "filename": {
             "type": "string",
@@ -1352,7 +1352,7 @@
     {
       "name": "undo",
       "title": "Undo Rapier work",
-      "description": "Undo one act id string or turn_id (act or turn_id, not both), preserving later work. Inspect conflicts before retrying.",
+      "description": "Undo one act or one turn (act or turn_id, not both), preserving later work.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1362,11 +1362,13 @@
           },
           "act": {
             "type": "string",
-            "maxLength": 256
+            "maxLength": 256,
+            "description": "From edit; pass act or turn_id."
           },
           "turn_id": {
             "type": "string",
-            "maxLength": 160
+            "maxLength": 160,
+            "description": "Undo a whole turn; pass act or turn_id."
           },
           "agent": {
             "type": "string"
@@ -1412,7 +1414,7 @@
     {
       "name": "show",
       "title": "Show or ask in Rapier",
-      "description": "Present work or ask for a reply, selection or device action. A 4-letter code from the person's browser pairs that editor: show {target:\"pair\", code}; for a connected workspace its owner first approves at owner_approval_url, then the person chooses ALLOW. Inspect actual presentation; a request is not proof the person saw it. Playback: value false pauses, true plays, here only. A comparison leaves source unchanged. Later human navigation wins.",
+      "description": "Present work or ask the person. An omitted target is inferred from its fields. A 4-letter browser code pairs that editor (target:\"pair\"); a connected workspace's owner first approves at owner_approval_url, then the person chooses ALLOW. Inspect actual presentation; a request is not proof the person saw it. A comparison leaves source unchanged. Later human navigation wins.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1442,7 +1444,8 @@
           },
           "text": {
             "type": "string",
-            "maxLength": 67108864
+            "maxLength": 67108864,
+            "description": "Exact passage, or for comparison the whole alternative document."
           },
           "block": {
             "type": "string",
@@ -1485,7 +1488,8 @@
           },
           "words": {
             "type": "string",
-            "maxLength": 160
+            "maxLength": 160,
+            "description": "Pointer label."
           },
           "view": {
             "type": "string",
@@ -1503,6 +1507,7 @@
           "wait": {
             "type": "string",
             "maxLength": 32,
+            "description": "ask: message (default) or selection.",
             "enum": [
               "selection",
               "message"
@@ -1546,7 +1551,8 @@
             "type": [
               "string",
               "boolean"
-            ]
+            ],
+            "description": "preferences: the setting; playback: false pauses, true plays."
           },
           "note": {
             "type": "string",
@@ -1556,7 +1562,7 @@
           "code": {
             "type": "string",
             "maxLength": 4,
-            "description": "Browser pairing code; only with target:\"pair\"."
+            "description": "Browser pairing code (target:\"pair\")."
           },
           "close": {
             "type": "boolean"
@@ -1584,32 +1590,6 @@
           }
         },
         "additionalProperties": false,
-        "allOf": [
-          {
-            "if": {
-              "required": [
-                "target"
-              ],
-              "properties": {
-                "target": {
-                  "type": "string",
-                  "const": "playback"
-                }
-              }
-            },
-            "then": {
-              "required": [
-                "revision",
-                "value"
-              ],
-              "properties": {
-                "value": {
-                  "type": "boolean"
-                }
-              }
-            }
-          }
-        ],
         "required": [
           "document"
         ]
@@ -1644,7 +1624,7 @@
     {
       "name": "export",
       "title": "Save or export Rapier",
-      "description": "Deliver an independent file, save to the bound destination or copy a passage. Use to:sync alone to synchronize the configured Notes store; sync can replace files. Page/Word/PDF need an editor or server renderer. Inspect delivery and verification; export does not publish a website.",
+      "description": "to:\"file\" (default) delivers markdown, html (the offline editor), page, txt, docx or pdf; to:\"save\" saves to the bound destination; to:\"clipboard\" copies a passage as plain, markdown, formatted or complete. to:\"sync\" alone syncs the Notes store and can replace files. page, docx and pdf need an editor or renderer. Inspect delivery; export never publishes a website.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1721,57 +1701,6 @@
           }
         },
         "additionalProperties": false,
-        "allOf": [
-          {
-            "if": {
-              "required": [
-                "to"
-              ],
-              "properties": {
-                "to": {
-                  "type": "string",
-                  "const": "sync"
-                }
-              }
-            },
-            "then": {
-              "not": {
-                "anyOf": [
-                  {
-                    "required": [
-                      "format"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "text"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "block"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "heading"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "revision"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "compare_id"
-                    ]
-                  }
-                ]
-              }
-            }
-          }
-        ],
         "required": [
           "document"
         ]

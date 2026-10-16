@@ -1,20 +1,20 @@
 {
   "phoneBench": {
     "path": "rapier-bench.html",
-    "bytes": 6447592,
-    "sha256": "e1e503820b82c1cc7701fc8b7d574cef0ebe69f0287cc81b9cff6d6164a33122",
-    "editorPageSha256": "3950580c405d2de45e42d7d9bec58cac43602625bc426d93dae824fff54208f7",
+    "bytes": 6451280,
+    "sha256": "ba029b52afe4f21c07d19de12e82641fd91b56a318b91f4af1453bfa3855cf8c",
+    "editorPageSha256": "17576fa5f2c348aecd6d2af767e119d0ef3a5dd825426dd38fb40b8a0b1d30dd",
     "spans": [
       {
         "element": "rapier-phone-bench-runtime",
         "name": "rapier-phone-bench.js",
         "bytes": 5686779,
-        "sha256": "51acc31fcc629c62af617fca232e622cfc4134a16ba483568138ac923a0f57d3"
+        "sha256": "af68d47e6220438e55cd84fced8e4ac0aef15d86a0c3eb9b27a08fb276dc031f"
       }
     ]
   },
-  "release": "1.2.5",
-  "builtAt": "2026-10-16T06:38:46.417Z",
+  "release": "1.2.6",
+  "builtAt": "2026-10-16T12:09:12.607Z",
   "node": "v22.23.3",
   "mode": "release",
   "packing": "zopfli",
@@ -30,7 +30,7 @@
   "validation": "JavaScript syntax and source assembly only; no runtime or host verification",
   "profile": "full",
   "jxl": {
-    "version": "4.0.0",
+    "version": "4.0.1",
     "modules": [
       "images/jxl/kernel-hooks.mjs",
       "images/jxl/weighted-policy.mjs",
@@ -82,42 +82,42 @@
       "images/jxl/rapier.mjs"
     ],
     "worker": {
-      "bytes": 180503,
-      "sha256": "f1300124f92526639a821e8ffa450ef555f7c66c0c80b6ec816e1ee31cee8c4e"
+      "bytes": 180498,
+      "sha256": "60dbfaf0a0a15d1d7f07274aace92407a11cf36ac3a6371302e27cce922920a1"
     }
   },
   "profiles": {
     "reader": {
       "path": "rapier-reader.html",
-      "bytes": 366856,
-      "sha256": "d46f2e1acead52b811793641d961459dc9fb1455bcefefdafdd6d8b458ceb037",
-      "gzip": 352729,
+      "bytes": 367031,
+      "sha256": "fabc6eec79c12ae69d82dc91df7fb733346cfc324d9479482b12fc094cfab6cb",
+      "gzip": 352932,
       "budget": {
         "warn": 1200000,
         "refuse": 1250000
       },
-      "builtAt": "2026-10-16T06:38:05.229Z",
+      "builtAt": "2026-10-16T12:07:32.233Z",
       "node": "v22.23.3",
       "mode": "release",
       "packing": "zopfli",
       "canonical": true,
       "parts": {
         "core": {
-          "raw": 920729,
-          "gzip": 295645,
-          "base124": 289416
+          "raw": 921362,
+          "gzip": 295866,
+          "base124": 289790
         },
         "licenses": {
           "raw": 87481,
-          "gzip": 24702,
-          "base124": 24251
+          "gzip": 24649,
+          "base124": 24126
         }
       }
     },
     "full": {
       "path": "rapier.html",
-      "bytes": 1684812,
-      "sha256": "3950580c405d2de45e42d7d9bec58cac43602625bc426d93dae824fff54208f7",
+      "bytes": 1688507,
+      "sha256": "17576fa5f2c348aecd6d2af767e119d0ef3a5dd825426dd38fb40b8a0b1d30dd",
       "budget": {
         "warn": 2980000,
         "refuse": 3000000
@@ -204,8 +204,8 @@
         {
           "element": "rapier-jxl-worker",
           "name": "rapier-jxl-worker.js",
-          "bytes": 180503,
-          "sha256": "f1300124f92526639a821e8ffa450ef555f7c66c0c80b6ec816e1ee31cee8c4e"
+          "bytes": 180498,
+          "sha256": "60dbfaf0a0a15d1d7f07274aace92407a11cf36ac3a6371302e27cce922920a1"
         },
         {
           "element": "rapier-platform-runtime",
@@ -216,38 +216,38 @@
         {
           "element": "rapier-platform-runtime",
           "name": "rapier-platform.js",
-          "bytes": 91216,
-          "sha256": "035eed259fe3f5ae946a19d47167f7a0fde43fc569f136ba6d65a31b0447ad1e"
+          "bytes": 91210,
+          "sha256": "4029809388878beb0ad3b0e387e1698554618da63d8f92fb3dca67e5189b688a"
         },
         {
           "element": "rapier-platform-runtime",
           "name": "rapier-bundle-io.js",
-          "bytes": 5181,
-          "sha256": "c9895e43123498b1bbaac7c59bb5d5e2c11037dde25b9411d232115932b7b8f0"
+          "bytes": 5567,
+          "sha256": "288255344508370e2660145709fc808c9198cb4ee7e08492fb50b5a19f6922cc"
         },
         {
           "element": "rapier-platform-runtime",
           "name": "rapier-bundled-plugins.js",
-          "bytes": 2440,
-          "sha256": "4684238d5524f8806ab01f7e520230519f398eec995b3331f3b7e8e0409d8f4c"
+          "bytes": 3793,
+          "sha256": "0a1decf47879a84d124a97cb95fc3a6cd9586c97660549f2ba8d8b538a45b2a3"
         },
         {
           "element": "rapier-platform-runtime",
           "name": "rapier-plugin-loader.js",
-          "bytes": 25482,
-          "sha256": "02eea76d4f7b2f98254d4e28b938c84dbc0450fb4c7770686c699388b303bae2"
+          "bytes": 25622,
+          "sha256": "0bb84c07089e9a0b12ee234ea38131bff5bf6262232a47fc04fe59d0ef0f1a6b"
         },
         {
           "element": "rapier-platform-runtime",
           "name": "rapier-font-subset-plugin.js",
           "bytes": 844,
-          "sha256": "eb30c6fd9459c50294a8b51e1659605e7fe5b3b681dc01d6a088e427092d1a57"
+          "sha256": "b69b5d307b9e92c7d92174b886b4f8f4259d765d7a60d59afb45115513e2211c"
         },
         {
           "element": "rapier-platform-runtime",
           "name": "rapier-parts.js",
-          "bytes": 4759,
-          "sha256": "56face7ad3974bed8dbed7e859fd103b8efc688b9b00c0cb3b7156fda68c5ead"
+          "bytes": 4854,
+          "sha256": "20a9466b6408f79503a6fc3cfd2e4201310884555a3c3d554d8993ac22490db5"
         },
         {
           "element": "rapier-styles-runtime",
@@ -258,14 +258,14 @@
         {
           "element": "rapier-styles-runtime",
           "name": "rapier-styles.json",
-          "bytes": 111537,
-          "sha256": "8f3ca7cad8492efeb8d14f94ce94680653829f248142a89fb08c8b70671fcd8d"
+          "bytes": 112903,
+          "sha256": "501f54c729fc776ed8bd350c585b39514dbb8a1bc8a07445de601bcb05f867ee"
         },
         {
           "element": "rapier-styles-runtime",
           "name": "rapier-first-screen.html",
-          "bytes": 40712,
-          "sha256": "8ceb5a928e5bfbd7ec31a800a03ba3231ce8f9e3e47b9a0af9e0b0f56058f64a"
+          "bytes": 40709,
+          "sha256": "f96f9640b166da590c416d9331e7500cc61358da9e6b4923e787358db5dfddc7"
         },
         {
           "element": "rapier-style-rest-runtime",
@@ -282,28 +282,28 @@
         {
           "element": "rapier-ui-runtime",
           "name": "rapier-ui.html",
-          "bytes": 154000,
-          "sha256": "807114b1865fe6e01b49a5691a809a2be45264f9586fad4fc8202af13a74057a"
+          "bytes": 153994,
+          "sha256": "a034e5f40ffecbf5489be1bbe8810a616c14b9f067b8525d31d12a0c1eb07be6"
         },
         {
           "element": "rapier-editor-runtime",
           "name": "rapier-shared.js",
-          "bytes": 2198696,
-          "sha256": "68019f5696a8ced3190ff9b8a2f4f2cfbcd5466e0d28a3b6b4b206d828d06302"
+          "bytes": 2204631,
+          "sha256": "65125aa1ba814a0a9f7129978f3c853db8466f468b632f821ff2cefcb6ac8c81"
         },
         {
           "element": "rapier-editor-runtime",
           "name": "rapier-editor.js",
-          "bytes": 2018417,
-          "sha256": "d275190c0f9ba58449a7106d52a8635350e9f59cd875af38ef6a53aeeeebf74f"
+          "bytes": 2025132,
+          "sha256": "b587bbde0da5150335b253db615342aec6f6ce29670206e9d4abefe1b9bb469a"
         }
       ],
       "parts": [
         {
           "id": "drawing",
-          "file": "rapier-drawing-db1f76694afaf27b.txt",
-          "bytes": 301351,
-          "sri": "JYVBkL6uFxDhH3HH6g7vFt8diPRkj4BvN+Noxn+fIUDNlgDcKVNY1io+VguWTpBs",
+          "file": "rapier-drawing-9e69c3b26503f91b.txt",
+          "bytes": 301512,
+          "sri": "QRaIzzee31b1jbZhmHU0UBoX7SfzLNVJw8oOR4MX1PrRAFT3e5zOAp9uzdRQV9Em",
           "scripts": [
             "draw/draw.js",
             "draw/effects-tool.js",
@@ -370,9 +370,9 @@
         },
         {
           "id": "notes",
-          "file": "rapier-notes-8c573b1eba6e50ea.txt",
-          "bytes": 356113,
-          "sri": "MuFGNqNhZGRClnMdaCgENVmRf+/Wu2peym13nry+pcASguegZoGIrhcMFEfasJbY",
+          "file": "rapier-notes-09b5ba07bb02db3e.txt",
+          "bytes": 355826,
+          "sri": "G8TCN86eG2BF+nYvls38zbus/C00AyRkzsLQ1KtQ1iwarz9RgXnsd6H3xsxM0sGZ",
           "scripts": [
             "notes/notes.js",
             "notes/todo.js",
@@ -752,7 +752,7 @@
         ]
       },
       "jxl": {
-        "version": "4.0.0",
+        "version": "4.0.1",
         "modules": [
           "images/jxl/kernel-hooks.mjs",
           "images/jxl/weighted-policy.mjs",
@@ -804,11 +804,11 @@
           "images/jxl/rapier.mjs"
         ],
         "worker": {
-          "bytes": 180503,
-          "sha256": "f1300124f92526639a821e8ffa450ef555f7c66c0c80b6ec816e1ee31cee8c4e"
+          "bytes": 180498,
+          "sha256": "60dbfaf0a0a15d1d7f07274aace92407a11cf36ac3a6371302e27cce922920a1"
         }
       },
-      "builtAt": "2026-10-16T06:38:46.417Z",
+      "builtAt": "2026-10-16T12:09:12.607Z",
       "node": "v22.23.3",
       "mode": "release",
       "packing": "zopfli",
@@ -826,13 +826,13 @@
   },
   "editor": {
     "path": "rapier.html",
-    "bytes": 1684812,
-    "sha256": "3950580c405d2de45e42d7d9bec58cac43602625bc426d93dae824fff54208f7"
+    "bytes": 1688507,
+    "sha256": "17576fa5f2c348aecd6d2af767e119d0ef3a5dd825426dd38fb40b8a0b1d30dd"
   },
   "apps": {
     "path": "dist/chatgpt/rapier-app.html",
-    "bytes": 4933349,
-    "sha256": "57c0f6ce93318c40717b593e842854d129192c32d966486ddb5429e0ce23f1ac",
+    "bytes": 1675290,
+    "sha256": "76ac68f1d6614eaed873cba591a929be19f96bf084702b0fe7b36ced8a8fd5c9",
     "spans": [
       {
         "element": "lib-dompurify",
@@ -915,44 +915,8 @@
       {
         "element": "rapier-jxl-worker",
         "name": "rapier-jxl-worker.js",
-        "bytes": 180503,
-        "sha256": "f1300124f92526639a821e8ffa450ef555f7c66c0c80b6ec816e1ee31cee8c4e"
-      },
-      {
-        "element": "rapier-part-drawing",
-        "name": "rapier-part-drawing-shared.js",
-        "bytes": 524459,
-        "sha256": "bc26ac46b6a72bdcf8edb6d89d40e7bbf5dc99016209356093d0cb8012d7302a"
-      },
-      {
-        "element": "rapier-part-drawing",
-        "name": "rapier-part-drawing-styles.json",
-        "bytes": 54735,
-        "sha256": "6419d2be23388e23339f07dcec972fd63a5f7eaadc00968c28e40bc4a46130f3"
-      },
-      {
-        "element": "rapier-part-drawing",
-        "name": "rapier-part-drawing.js",
-        "bytes": 523200,
-        "sha256": "e7bf1db4c20df60a5a3daa23c1c6c16ba83a5100ecc6a197d91069e95aa05e97"
-      },
-      {
-        "element": "rapier-part-notes",
-        "name": "rapier-part-notes-shared.js",
-        "bytes": 809250,
-        "sha256": "0b99aa801139d6d92a191a0b9b776881f5fb104f761d9d02eb406206c3d93ef1"
-      },
-      {
-        "element": "rapier-part-notes",
-        "name": "rapier-part-notes-styles.json",
-        "bytes": 62470,
-        "sha256": "158898e9f0fdb53ce45796ccf1ae0a4871d39ee58d1369e249345b1b61d0584c"
-      },
-      {
-        "element": "rapier-part-notes",
-        "name": "rapier-part-notes.js",
-        "bytes": 475150,
-        "sha256": "dbac52dcb950cdf25680db3ccd108b527d88bb2b1e6282e4227ad1b1d42d09a6"
+        "bytes": 180498,
+        "sha256": "60dbfaf0a0a15d1d7f07274aace92407a11cf36ac3a6371302e27cce922920a1"
       },
       {
         "element": "rapier-platform-runtime",
@@ -963,44 +927,44 @@
       {
         "element": "rapier-platform-runtime",
         "name": "rapier-platform.js",
-        "bytes": 91216,
-        "sha256": "035eed259fe3f5ae946a19d47167f7a0fde43fc569f136ba6d65a31b0447ad1e"
+        "bytes": 91210,
+        "sha256": "4029809388878beb0ad3b0e387e1698554618da63d8f92fb3dca67e5189b688a"
       },
       {
         "element": "rapier-platform-runtime",
         "name": "rapier-bundle-io.js",
-        "bytes": 5181,
-        "sha256": "c9895e43123498b1bbaac7c59bb5d5e2c11037dde25b9411d232115932b7b8f0"
+        "bytes": 5567,
+        "sha256": "288255344508370e2660145709fc808c9198cb4ee7e08492fb50b5a19f6922cc"
       },
       {
         "element": "rapier-platform-runtime",
         "name": "rapier-bundled-plugins.js",
-        "bytes": 2440,
-        "sha256": "4684238d5524f8806ab01f7e520230519f398eec995b3331f3b7e8e0409d8f4c"
+        "bytes": 3793,
+        "sha256": "0a1decf47879a84d124a97cb95fc3a6cd9586c97660549f2ba8d8b538a45b2a3"
       },
       {
         "element": "rapier-platform-runtime",
         "name": "rapier-plugin-loader.js",
-        "bytes": 25482,
-        "sha256": "02eea76d4f7b2f98254d4e28b938c84dbc0450fb4c7770686c699388b303bae2"
+        "bytes": 25622,
+        "sha256": "0bb84c07089e9a0b12ee234ea38131bff5bf6262232a47fc04fe59d0ef0f1a6b"
       },
       {
         "element": "rapier-platform-runtime",
         "name": "rapier-font-subset-plugin.js",
         "bytes": 844,
-        "sha256": "eb30c6fd9459c50294a8b51e1659605e7fe5b3b681dc01d6a088e427092d1a57"
+        "sha256": "b69b5d307b9e92c7d92174b886b4f8f4259d765d7a60d59afb45115513e2211c"
       },
       {
         "element": "rapier-platform-runtime",
         "name": "rapier-parts.js",
-        "bytes": 4759,
-        "sha256": "56face7ad3974bed8dbed7e859fd103b8efc688b9b00c0cb3b7156fda68c5ead"
+        "bytes": 4854,
+        "sha256": "20a9466b6408f79503a6fc3cfd2e4201310884555a3c3d554d8993ac22490db5"
       },
       {
         "element": "rapier-apps-runtime",
         "name": "rapier-apps.js",
-        "bytes": 84087,
-        "sha256": "be9213a13d83643a93e80bba74a3d9606f78dcee4e15c023cf03b7a4baafcfe4"
+        "bytes": 83890,
+        "sha256": "f705ffad3f57a0b191c3cd815e719e212820503bb117606b38291ece29cbe9ec"
       },
       {
         "element": "rapier-styles-runtime",
@@ -1011,14 +975,14 @@
       {
         "element": "rapier-styles-runtime",
         "name": "rapier-styles.json",
-        "bytes": 111537,
-        "sha256": "8f3ca7cad8492efeb8d14f94ce94680653829f248142a89fb08c8b70671fcd8d"
+        "bytes": 112903,
+        "sha256": "501f54c729fc776ed8bd350c585b39514dbb8a1bc8a07445de601bcb05f867ee"
       },
       {
         "element": "rapier-styles-runtime",
         "name": "rapier-first-screen.html",
-        "bytes": 40712,
-        "sha256": "8ceb5a928e5bfbd7ec31a800a03ba3231ce8f9e3e47b9a0af9e0b0f56058f64a"
+        "bytes": 40709,
+        "sha256": "f96f9640b166da590c416d9331e7500cc61358da9e6b4923e787358db5dfddc7"
       },
       {
         "element": "rapier-style-rest-runtime",
@@ -1035,68 +999,20 @@
       {
         "element": "rapier-editor-runtime",
         "name": "rapier-shared.js",
-        "bytes": 2198696,
-        "sha256": "68019f5696a8ced3190ff9b8a2f4f2cfbcd5466e0d28a3b6b4b206d828d06302"
+        "bytes": 2204631,
+        "sha256": "65125aa1ba814a0a9f7129978f3c853db8466f468b632f821ff2cefcb6ac8c81"
       },
       {
         "element": "rapier-editor-runtime",
         "name": "rapier-editor.js",
-        "bytes": 2018417,
-        "sha256": "d275190c0f9ba58449a7106d52a8635350e9f59cd875af38ef6a53aeeeebf74f"
+        "bytes": 2025132,
+        "sha256": "b587bbde0da5150335b253db615342aec6f6ce29670206e9d4abefe1b9bb469a"
       },
       {
         "element": "rapier-ui-runtime",
         "name": "rapier-ui.html",
-        "bytes": 152449,
-        "sha256": "86b111778c00ca7c218bb186f83c4d1b1430cd7a432fac4d94239139891c5ae4"
-      },
-      {
-        "element": "rapier-plugin-math",
-        "name": "rapier-math-2.4.0.js",
-        "bytes": 691650,
-        "sha256": "7ba0adec291f761ffc1a6169830ee12630e4bfedaca1019d0b19de9ca6232aec"
-      },
-      {
-        "element": "rapier-plugin-mermaid",
-        "name": "mermaid.min.js",
-        "bytes": 5493176,
-        "sha256": "6484afc32872a3aa16cac9a76ba1816a1ed4cc870a6593cc2e17757750f518b2"
-      },
-      {
-        "element": "rapier-plugin-mermaid",
-        "name": "rapier-zenuml-4.5.0-2.js",
-        "bytes": 1896464,
-        "sha256": "683384f2d2eddb34a5e42b887b5330d9b2ec92e949111f43e409e0939290369b"
-      },
-      {
-        "element": "rapier-plugin-letters",
-        "name": "field.json",
-        "bytes": 96902,
-        "sha256": "8a9f81b863183dee9cf394a519ff195c811a20aa78986487123725ee96827dcf"
-      },
-      {
-        "element": "rapier-plugin-letters",
-        "name": "relief.json",
-        "bytes": 95172,
-        "sha256": "75059a482ea82755598c0733370e1e80f33d958f6d25998f207aba4684ca0e48"
-      },
-      {
-        "element": "rapier-plugin-letters",
-        "name": "leaf.json",
-        "bytes": 134918,
-        "sha256": "5cedc2c91a68ad50f7821809665d4eb678e173f1730335083cd87f3172bf3509"
-      },
-      {
-        "element": "rapier-plugin-letters",
-        "name": "arabesque.json",
-        "bytes": 136035,
-        "sha256": "62ac0465f9b07883624e8ea9811f3a9eadbfd9804b0162bbed5e6cfbc49a3bc2"
-      },
-      {
-        "element": "rapier-plugin-font-subset",
-        "name": "rapier-font-subset-2.js",
-        "bytes": 1214356,
-        "sha256": "0111ccc516aa5c2aad74bc561f3e0d853111a7932ab29c125a3d2b9c220b0f3d"
+        "bytes": 152443,
+        "sha256": "36982fc57bedf4099059a660754ad955d9b0fc43fe028a504ba00bdd0303ff36"
       }
     ],
     "plugins": [
@@ -1115,7 +1031,12 @@
             "bytes": 691650,
             "sri": "C92x26+pBI4q9FoWypMhBb8CqSGaaPLw8dpYigWiYNsYQRTcPVrFyPVjrhc/Tnwh"
           }
-        ]
+        ],
+        "asset": {
+          "file": "rapier-plugin-math-776d9e18b49ee027.txt",
+          "bytes": 438012,
+          "sri": "+HHwtcqCcLnm5t5iYET5C80OcCAIuZEevDvw6NgMEnPKG/yJtaDS/cwMyLbGQyQc"
+        }
       },
       {
         "id": "mermaid",
@@ -1139,7 +1060,12 @@
             "bytes": 1896464,
             "sri": "8Ptjhh1zNTOvy1dxFHhXgYKfs290DSlpzow5rF9FvP38cohtbsBW381Whym1WI6E"
           }
-        ]
+        ],
+        "asset": {
+          "file": "rapier-plugin-mermaid-249958cab0da8b01.txt",
+          "bytes": 1526406,
+          "sri": "BHunf4nxPotpNSRVewuF6+N6cBqznjRpb7qV6ARtEZXmTF3K9Mn63trLM4W18byf"
+        }
       },
       {
         "id": "letters",
@@ -1177,7 +1103,12 @@
             "bytes": 136035,
             "sri": "Zx2z2bEpD4VNkIccLejcUY68eqAFraPEN7hqsqkcVqHOKGvsSMqbLLiXXklvZINl"
           }
-        ]
+        ],
+        "asset": {
+          "file": "rapier-plugin-letters-7f07127d71e88049.txt",
+          "bytes": 198883,
+          "sri": "owKnl+GfgkF6o708kiJLq6g87VlGpL8N185M73UjmNu3TDNu42c54aS7kwMjfYT9"
+        }
       },
       {
         "id": "font-subset",
@@ -1194,14 +1125,63 @@
             "bytes": 1214356,
             "sri": "q4mHA3+u3N3Yt8z1wisCEXQqWNo5UhHZ0nUESid8BGNZz6BtV8dSUlVOvyndc0Tj"
           }
-        ]
+        ],
+        "asset": {
+          "file": "rapier-plugin-font-subset-5f2583f17e90d715.txt",
+          "bytes": 441109,
+          "sri": "BIde8HymVnh+yFHT/7HxTZY9sSFUo4/4rMwnUsU7o2+XZKZNpfTK1/FHDR+q2z4g"
+        }
+      }
+    ],
+    "assets": [
+      {
+        "id": "drawing",
+        "path": "editor-assets/rapier-drawing-9e69c3b26503f91b.txt",
+        "bytes": 301512,
+        "sha256": "9e69c3b26503f91bc81aa58fe648c0a65fee0e5b43887063384b0907b6372cb6",
+        "sri": "QRaIzzee31b1jbZhmHU0UBoX7SfzLNVJw8oOR4MX1PrRAFT3e5zOAp9uzdRQV9Em"
+      },
+      {
+        "id": "notes",
+        "path": "editor-assets/rapier-notes-09b5ba07bb02db3e.txt",
+        "bytes": 355826,
+        "sha256": "09b5ba07bb02db3e33b55f075418eaad9b64331c58d9d44e152e8e6e0146f922",
+        "sri": "G8TCN86eG2BF+nYvls38zbus/C00AyRkzsLQ1KtQ1iwarz9RgXnsd6H3xsxM0sGZ"
+      },
+      {
+        "id": "math",
+        "path": "editor-assets/rapier-plugin-math-776d9e18b49ee027.txt",
+        "bytes": 438012,
+        "sha256": "776d9e18b49ee0274963820345f69197042d237c35ba248c4f2585c2db4e2779",
+        "sri": "+HHwtcqCcLnm5t5iYET5C80OcCAIuZEevDvw6NgMEnPKG/yJtaDS/cwMyLbGQyQc"
+      },
+      {
+        "id": "mermaid",
+        "path": "editor-assets/rapier-plugin-mermaid-249958cab0da8b01.txt",
+        "bytes": 1526406,
+        "sha256": "249958cab0da8b015e8d08678bddb2e1b4fa6d73ea5d8ea9a01db5f345ece3aa",
+        "sri": "BHunf4nxPotpNSRVewuF6+N6cBqznjRpb7qV6ARtEZXmTF3K9Mn63trLM4W18byf"
+      },
+      {
+        "id": "letters",
+        "path": "editor-assets/rapier-plugin-letters-7f07127d71e88049.txt",
+        "bytes": 198883,
+        "sha256": "7f07127d71e88049590f62de72e45a072a1726bd29161a346288febb838f4942",
+        "sri": "owKnl+GfgkF6o708kiJLq6g87VlGpL8N185M73UjmNu3TDNu42c54aS7kwMjfYT9"
+      },
+      {
+        "id": "font-subset",
+        "path": "editor-assets/rapier-plugin-font-subset-5f2583f17e90d715.txt",
+        "bytes": 441109,
+        "sha256": "5f2583f17e90d715ab8b2e50dce214cac3ddf6c8a14f2d0a7b4203863a89c20e",
+        "sri": "BIde8HymVnh+yFHT/7HxTZY9sSFUo4/4rMwnUsU7o2+XZKZNpfTK1/FHDR+q2z4g"
       }
     ]
   },
   "offline": {
     "path": "dist/chatgpt/rapier.html",
-    "bytes": 4949290,
-    "sha256": "5e2cbc912f760dd5ffad630f92dcec40151df5d55d0e6c7a2796ef907671d8bc",
+    "bytes": 4952859,
+    "sha256": "48b694df7db506a77f5a98e01098f37d54e7f9a88d6e5647ca09ea43578c3927",
     "plugins": [
       {
         "id": "math",
@@ -1302,7 +1282,7 @@
     ]
   },
   "shell": {
-    "sha256": "e3e832b2afef4d4ec2b302f245301bbfbf9cf15dbbeb36002547c1bca9bbd6e0"
+    "sha256": "a05137047b899f0f639718b4e0859480b27c9e93dfe1ad8342d75df043f508d9"
   },
   "htmlSinks": {
     "named": 138,

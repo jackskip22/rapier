@@ -1,4 +1,4 @@
-{"what":"The PDF reader's pins: every pdfjs-dist file and the structure reader the plug-in downloads, with its byte length and SHA-384 (base64). Provenance only, never shipped; interchange/pdf-resources.mjs is its projection (node tools/check-pdfjs-pins.mjs --write) and carries one root over this list. The structure reader is interchange/pdf-reader.mjs under its content-addressed name; all other files are the exact npm distribution files of pdfjs-dist at this version, fetched from https://cdn.jsdelivr.net/npm/pdfjs-dist@<version>/<path>; each file is pinned by itself.","version":"6.3.289","downloadBytes":6436523,"root":"cgTh4g48mRmRODIkka/7VpakSsg49pShqD3HlNKeBYP9U9Nv+/vmQysNA7UpYryA","reader":"rapier-pdf-reader-48f8f3878a017431.mjs","files":[
+{"what":"The PDF reader's pins: every pdfjs-dist file and the structure reader the plug-in downloads, with its byte length and SHA-384 (base64). Provenance only, never shipped; interchange/pdf-resources.mjs is its projection (node tools/check-pdfjs-pins.mjs --write) and carries one root over this list. The structure reader is interchange/pdf-reader.mjs under its content-addressed name; all other files are the exact npm distribution files of pdfjs-dist at this version, fetched from https://cdn.jsdelivr.net/npm/pdfjs-dist@<version>/<path>; each file is pinned by itself.","version":"6.3.289","downloadBytes":6436522,"root":"RARH086nFA1i/i+B5CAv0OUQzEAvYHiBT++nDi+6V5hFRkrQ3ckfA81PdHJKRUYV","reader":"rapier-pdf-reader-cde0a32c6204aced.mjs","files":[
 ["LICENSE",10174,"dIfJx5IERVwWkDwmUITjq6FFmOOiUluv24tT2o6vrjEpXyjYGE/BIj5rw25rSNr0"],
 ["cmaps/78-EUC-H.bcmap",2404,"8B6vD8ASBkrE04TBihkzPoSYkGcFVNMpC4RoZ1qavGI0IFXU+XcWakJ0N1XWQLWv"],
 ["cmaps/78-EUC-V.bcmap",173,"rxU7UYCGw7/R7lqb2p5xiKR0UmQlhNlRqOc+VnxGZEsXXF7Zt5+xB4DqbhGck5Id"],
@@ -195,5 +195,5 @@
 ["wasm/jbig2_nowasm_fallback.js",145703,"d9gZIyKWjLmWrU8ta5pBTNRM4tt+4VcSyTV1vrVV7BFCCtiWuo5IexS9wSSaHjL3"],
 ["wasm/openjpeg.wasm",252032,"W0sz7j4uZ//LBLZ4exfTLRUAgo01H8wlXYFnM1/RlxLDylgXiOS9ZA+7Pv2CI4Md"],
 ["wasm/openjpeg_nowasm_fallback.js",451590,"0VtzfcmGK61Azf0fRt+1gB59/3f3Cu+9SUXqWkBOE7IFRj78qorSBpQOFCfXwpVz"],
-["rapier-pdf-reader-48f8f3878a017431.mjs",46571,"nXt41DsLVPTqktV66vPGhzmXTTH9pkyylb59SaGa7uJMogtCZY8hqA+FAhj/16qw"]
+["rapier-pdf-reader-cde0a32c6204aced.mjs",46570,"Y6+3Qj+5tWrumgAU402vuBIXeTa0OidYCVrxRP8OOTkCisRH3B7zk47//NMcL3IO"]
 ]}

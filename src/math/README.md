@@ -1,6 +1,6 @@
 # Rapier Math
 
-Self-contained TeX-to-SVG maths with embedded Latin Modern outlines. Rendering is synchronous and offline,
+Self-contained TeX-to-SVG math with embedded Latin Modern outlines. Rendering is synchronous and offline,
 with no core runtime dependencies, DOM, global installation or remote font request. Optional integrations
 keep the host's Markdown parser in charge.
 
@@ -284,7 +284,7 @@ heap or device-memory claims. A later good render has a fresh budget.
 
 SVG labels contain raw TeX, not semantic MathML or mathematical speech. Ordinary equations are images in
 the accessibility tree. Equations containing authored HTTP(S) links use a group so the links remain exposed;
-each link is keyboard-focusable and labelled with its destination. Keep the editable source or a separate
+each link is keyboard-focusable and labeled with its destination. Keep the editable source or a separate
 copy-source affordance in your host. Full semantic navigation, speech and screen-reader parity are not
 provided. A future semantic serializer needs an explicit AST-to-MathML mapping and assistive-technology
 evaluation; adding a raw TeX label does not satisfy that requirement.

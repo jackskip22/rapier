@@ -4,7 +4,7 @@ const fail = (code, message) => { throw Object.assign(new Error(message), {code}
 const equal = (a, b) => a.length === b.length && a.every((value, index) => value === b[index]);
 
 export async function readAttachedSource(blob, {checkCurrent = () => {}, signal} = {}) {
-  const check = () => { if (signal?.aborted) throw new DOMException('PDF import cancelled.', 'AbortError'); checkCurrent(); };
+  const check = () => { if (signal?.aborted) throw new DOMException('PDF import canceled.', 'AbortError'); checkCurrent(); };
   check();
   if (!(blob instanceof Blob) || !blob.size || blob.size > LIMIT) return null;
   const bytes = new Uint8Array(await blob.arrayBuffer()); check();

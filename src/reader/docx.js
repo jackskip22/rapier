@@ -4,7 +4,7 @@
 	globalThis.RapierDocxReader = Object.freeze({
 		async read(file, {signal, onProgress} = {}) {
 			const pictures = new Map();
-			const checkCurrent = () => { if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError'); };
+			const checkCurrent = () => { if (signal?.aborted) throw new DOMException('Canceled', 'AbortError'); };
 			const result = await globalThis.RapierDocxImport.readDocx(file, {
 				signal, onProgress, checkCurrent,
 				embedImage: async image => {

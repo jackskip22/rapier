@@ -8,7 +8,7 @@ export function createWorkerClient({postMessage,terminate=()=>{}}){
   request(operation,payload={},transfer=[],onProgress=null,{signal}={}){
    if(failure)return Promise.reject(failure);
    if(closed)return Promise.reject(new Error('The painter is closed'));
-   if(signal?.aborted)return Promise.reject(Object.assign(new Error('Painting cancelled'),{name:'AbortError'}));
+   if(signal?.aborted)return Promise.reject(Object.assign(new Error('Painting canceled'),{name:'AbortError'}));
    const id=++serial;return new Promise((resolve,reject)=>{
     const abort=()=>postMessage({operation:'cancel',requestId:id}),cleanup=()=>signal?.removeEventListener('abort',abort);
     pending.set(id,{resolve,reject,onProgress,cleanup,abort});signal?.addEventListener('abort',abort,{once:true});

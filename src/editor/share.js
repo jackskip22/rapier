@@ -61,8 +61,9 @@ async function _rapierPortableTemplate(source, options = {}) {
   const groups = manifest ? JSON.parse(manifest.textContent) : [];
   const available = new Set(groups.flatMap(group => group.id === 'letters' ? group.files.map(file => file.id.slice(7)) : [group.id]));
   let carried = '';
-  if (!manifest || [...required].some(key => !available.has(key))) {
-    carried = await _rapierPackPortablePlugins(await globalThis.RapierPluginLoader.portable(required));
+  if (groups.some(group => group.asset) || !manifest || [...required].some(key => !available.has(key))) {
+    carried = groups.some(group => group.asset) ? await RapierBundledPlugins.portable()
+      : await _rapierPackPortablePlugins(await globalThis.RapierPluginLoader.portable(required));
     const replaced = new Set(['rapier-builtin-plugins', ...groups.map(group => group.element)]);
     payloads = payloads.filter(row => !replaced.has(row.id));
   }

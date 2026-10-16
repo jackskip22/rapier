@@ -24,7 +24,7 @@ export const WATER_TOOLS = freeze([
  {id:'lift',name:'Lift',description:'Blot water and suspended pigment from a wash.'},
  {id:'pen',name:'Pen',description:'A thin loaded line with a little water beside it.'},
  {id:'dry',name:'Dry',description:'Settle the wash and fix its pigment.'},
- {id:'fill',name:'Fill',description:'Wet a connected region with a travelling wash.'},
+ {id:'fill',name:'Fill',description:'Wet a connected region with a traveling wash.'},
  {id:'trace',name:'Trace',description:'Paint the captured paths of a drawing shape.'},
  {id:'text',name:'Text',description:'Write captured single-stroke letter paths with the brush.'}
 ]);
@@ -158,16 +158,26 @@ export function waterActionsFault(raw, prefix = 'actions'){
    let last=-1;
    for(let pathIndex=0;pathIndex<action.paths.length;pathIndex++){
     const path=action.paths[pathIndex];
-    if(!Array.isArray(path)||!path.length)return {field: at + '.paths[' + pathIndex + ']'};
+    if(!Array.isArray(path)||!path.length)return {field: at + '.paths[' + pathIndex + ']', hint: 'Each path needs at least one [x,y,pressure,tick] point.'};
     for(let pointIndex=0;pointIndex<path.length;pointIndex++){
      const p=path[pointIndex], field=at + '.paths[' + pathIndex + '][' + pointIndex + ']';
-     if(!Array.isArray(p)||p.length<4||p.length>7)return {field};
-     if(!p.slice(0,2).every(n=>finite(n)&&Math.abs(n)<=1e6)||!unit(p[2])||!integer(p[3]))return {field};
+     const point={field, hint: 'A point is [x,y,pressure,tick]: pressure from 0 to 1, tick a whole number.'};
+     if(!Array.isArray(p)||p.length<4||p.length>7)return point;
+     if(!p.slice(0,2).every(n=>finite(n)&&Math.abs(n)<=1e6)||!unit(p[2])||!integer(p[3]))return point;
      if(p[3]<last)return {field: field + '[3]', hint: 'ticks must not decrease across all paths of one action'};
      last=p[3];
      if(p.slice(4,6).some(n=>!finite(n)||Math.abs(n)>1)||p[6]!=null&&(!finite(p[6])||p[6]<0))return {field};
     }
    }
+  }
+  if(['stroke','fill'].includes(action.kind)){
+   const brush=action.brush??'water/round',controls=object(action.controls)?action.controls:{};
+   if(!waterBrushById(brush)&&!(typeof brush==='string'&&/^water\/own-[a-z0-9_-]+$/.test(brush)))return {field: at + '.brush', hint: 'Use a Water brush id from read {guide:"water"}, for example water/round.'};
+   if(!admitWaterPigment(action.pigment??'ultramarine'))return {field: at + '.pigment', hint: 'Use a pigment id from read {guide:"water"}, for example ultramarine.'};
+   if(controls.size!=null&&!(finite(controls.size)&&controls.size>=0&&controls.size<=100))return {field: at + '.controls.size', hint: 'Use a size from 0 to 100, or omit it for the brush default.'};
+   if(action.controls!=null&&!admitWaterControls({...action.controls,...(action.erase!=null?{erase:action.erase}:{})},brush))return {field: at + '.controls', hint: 'Use the controls the Water registry lists, each within its range.'};
+   if(action.paper!=null&&!waterPaperById(action.paper))return {field: at + '.paper', hint: 'Use a paper id from read {guide:"water"}, for example cold-press.'};
+   if(action.kind==='stroke'&&(!Array.isArray(action.paths)||!action.paths.length))return {field: at + '.paths', hint: 'Give paths: a list of paths, each a list of [x,y,pressure,tick] points.'};
   }
   return {field: at};
  }

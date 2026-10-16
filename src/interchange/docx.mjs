@@ -394,7 +394,7 @@ function themeColor(node, colors) {
   if (!rgb) return val(node);
   const tint = attr(node, 'w', 'themeTint'), shade = attr(node, 'w', 'themeShade'), amount = tint ?? shade;
   if (amount == null) return rgb;
-  if (!/^[0-9a-f]{2}$/i.test(amount)) return fail('DOCX contains an invalid theme colour adjustment.', 'docx_theme_color');
+  if (!/^[0-9a-f]{2}$/i.test(amount)) return fail('DOCX contains an invalid theme color adjustment.', 'docx_theme_color');
   const channels = [0,2,4].map(at => parseInt(rgb.slice(at,at + 2),16) / 255);
   const low = Math.min(...channels), high = Math.max(...channels), delta = high - low, light = (high + low) / 2;
   const ratio = parseInt(amount,16) / 255, nextLight = tint != null ? light * ratio + 1 - ratio : light * ratio;
@@ -428,7 +428,7 @@ function runProperties(node, theme = new Map(), inlineSize = true) {
   else if (color === 'auto') out.color = null;
   const highlight = val(child(node, 'w', 'highlight'));
   if (highlight != null && highlight !== 'none') {
-    if (!DOCX_HIGHLIGHT_HEX[highlight]) return fail('DOCX contains an invalid highlight colour.', 'docx_highlight_color');
+    if (!DOCX_HIGHLIGHT_HEX[highlight]) return fail('DOCX contains an invalid highlight color.', 'docx_highlight_color');
     out.highlight = highlight === 'yellow' ? 'default' : DOCX_HIGHLIGHT_TO_RAPIER[highlight] || highlight;
   }
   else if (highlight === 'none') out.highlight = null;

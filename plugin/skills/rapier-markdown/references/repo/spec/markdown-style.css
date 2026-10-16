@@ -267,9 +267,9 @@
 .md-render h2{font-size:calc(var(--md-text-body) * 1.9);line-height:calc(var(--md-line) * 1.5);font-weight:var(--md-fw-semibold)}
 .md-render h3{font-size:calc(var(--md-text-body) * 1.5);line-height:calc(var(--md-line) * 1.5);font-weight:var(--md-fw-semibold)}
 .md-render h4{font-size:calc(var(--md-text-body) * 1.25);font-weight:var(--md-fw-semibold)}
-/* h5/h6 complete the six-level hierarchy: modest but owned (explicit size/weight/colour), never
+/* h5/h6 complete the six-level hierarchy: modest but owned (explicit size/weight/color), never
    the browser default. Size stays strictly monotonic below h4; h6 sits at the body's own size and
-   firms up weight and dims colour, since its size alone would read as body text. */
+   firms up weight and dims color, since its size alone would read as body text. */
 .md-render h5{font-size:calc(var(--md-text-body) * 1.1);font-weight:var(--md-fw-semibold)}
 .md-render h6{font-size:var(--md-text-body);font-weight:var(--md-fw-semibold);color:var(--md-heading-muted-color)}
 .md-render p{margin:0 0 var(--md-gap-paragraph)}
@@ -300,9 +300,9 @@
 
 .md-render .task-list-item input[type="checkbox"] {
 	--md-task-box: clamp(14px, .92em, 24px);
-	/* A form control does not inherit colour on its own; the shell's own app sheet gives it one
+	/* A form control does not inherit color on its own; the shell's own app sheet gives it one
 	   (`input,textarea,select{...color:inherit}`) and an exported page does not carry that sheet, so
-	   it says so here. The drawn box names its own colours, so this changes no pixel today -- it
+	   it says so here. The drawn box names its own colors, so this changes no pixel today -- it
 	   stops the two surfaces disagreeing about a property, which is how the next rule that does
 	   depend on it would go wrong quietly. */
 	color: inherit;
@@ -321,10 +321,10 @@
 	touch-action: manipulation;
 }
 /* The box and its tick are Feather's square and check-square, with squared corners: drawn on Feather's
-   24-unit grid with its 2-unit stroke, the box's corners mitred square, and a ticked box opens at its
+   24-unit grid with its 2-unit stroke, the box's corners mitered square, and a ticked box opens at its
    top right where the tick breaks out through it. The grid is a third wider than the box itself (the
    box is units 3 to 21), so the painted square keeps exactly the place and size --rapier-task-box gave
-   it; the ink is --color-line through a mask, so the theme recolours it and an export needs nothing
+   it; the ink is --color-line through a mask, so the theme recolors it and an export needs nothing
    more than the data: images its policy already admits. The three glyphs are written here once, and a
    Notes card's check rows read these same three (rapier-notes.css: one SVG per icon across Rapier). */
 :root,.md-render {
@@ -367,7 +367,7 @@
 .md-render ol>li::before{
 	content:counter(rapier-ol);
 	position:absolute;
-	/* The circle is centred on the item's first line: the li's own padding, plus half of what the 2rem circle is taller than one line. */
+	/* The circle is centered on the item's first line: the li's own padding, plus half of what the 2rem circle is taller than one line. */
 	inset-inline-start:calc(-2.75 * var(--md-unit) + var(--md-marker, 0px)); top:calc(calc(0.15 * var(--md-unit)) + (var(--md-line) - calc(2 * var(--md-unit))) / 2);
 	width:calc(2 * var(--md-unit)); height:calc(2 * var(--md-unit));
 	display:flex; align-items:center; justify-content:center;
@@ -581,7 +581,7 @@
 }
 
 /* Page break: unobtrusive by design, the same weight as .section-fold-btn (rapier-editor.css) --
-	 muted colour and .37 opacity, never the stronger --color-line the horizontal-rule variants use.
+	 muted color and .37 opacity, never the stronger --color-line the horizontal-rule variants use.
 	 Invisible on paper: this sheet's print rule zeros this out and applies the actual break instead. */
 .md-render [data-md-break]{
 	position:relative;
@@ -642,7 +642,7 @@
 	font-size: var(--md-text-sm);
 	color: var(--md-color-text-secondary);
 }
-/* A view preference can keep embedded SVGs on their original light-paper colours. */
+/* A view preference can keep embedded SVGs on their original light-paper colors. */
 html[data-invert-image-alpha="off"] :is(img,.md-render svg.rapier-native-flowchart){color-scheme:light}
 .md-render img{
 	max-width:100%;height:auto;
@@ -675,9 +675,9 @@ html:not([data-layout="plain"]) .md-render img[data-rapier-image-geometry="auto"
 .md-render mark[data-rapier-highlight="blue"]{--md-highlight-color:#4f91f7}
 .md-render mark[data-rapier-highlight="yellow"]{--md-highlight-color:#e6b91e}
 .md-render mark[data-rapier-highlight="purple"]{--md-highlight-color:#9b6dea}
-/* Text colour: the canonical (light) hex and its OKLCH-derived dark pair both ship as inline
+/* Text color: the canonical (light) hex and its OKLCH-derived dark pair both ship as inline
 	 custom properties on the run itself (editor/engine.js, §b) — this just picks between them the
-	 same way as the document palette: the document colour scheme chooses the matching value. The five named swatches also carry a literal,
+	 same way as the document palette: the document color scheme chooses the matching value. The five named swatches also carry a literal,
 	 pre-computed --md-color-dark here, so the common case survives even a round-trip that kept
 	 data-md-color but dropped style, exactly like highlight's own swatch constants. */
 .md-render [data-md-color]{--md-color-dark:var(--md-color);color:light-dark(var(--md-color),var(--md-color-dark))}

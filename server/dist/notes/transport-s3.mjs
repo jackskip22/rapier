@@ -229,7 +229,7 @@ function forbiddenResponse(response, destination) {
 	try { code = scalar(readXML(td.decode(response.bytes), 'Error'), 'Code', true)?.trim(); } catch {}
 	const provider = destination.origin.endsWith('.r2.cloudflarestorage.com') ? 'cloudflare' : 'your storage provider';
 	const messages = {
-		InvalidAccessKeyId: 'this bucket key was deleted or is not recognised; replace it with a new key from ' + provider + '.',
+		InvalidAccessKeyId: 'this bucket key was deleted or is not recognized; replace it with a new key from ' + provider + '.',
 		SignatureDoesNotMatch: 'the bucket key does not match its secret; copy both again from ' + provider + '.',
 		RequestTimeTooSkewed: 'this device’s clock is too far off for the bucket; set the time automatically and try again.',
 		AccessDenied: 'this key cannot access the selected bucket; give it object read and write access in ' + provider + '.',

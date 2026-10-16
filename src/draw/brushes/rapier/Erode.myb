@@ -2,7 +2,7 @@
  "comment": "MyPaint brush file",
  "version": 3,
  "description": "Erode",
- "notes": "TOOL, operator `erode` (rapier_op 6). Wear, from the edges in: coverage is pulled toward the smallest coverage in its own neighbourhood, so a mark frays where it already borders emptiness and its interior does not move however long the hand scrubs. Drag it across the middle of a solid patch and nothing happens -- that is the difference between eroding and erasing. Surviving colour is exact.\n\nAuthor: Rapier\nLicense: AGPL-3.0-only",
+ "notes": "TOOL, operator `erode` (rapier_op 6). Wear, from the edges in: coverage is pulled toward the smallest coverage in its own neighborhood, so a mark frays where it already borders emptiness and its interior does not move however long the hand scrubs. Drag it across the middle of a solid patch and nothing happens -- that is the difference between eroding and erasing. Surviving color is exact.\n\nAuthor: Rapier\nLicense: AGPL-3.0-only",
  "parent_brush_name": "Rapier/Erode",
  "group": "",
  "settings": {

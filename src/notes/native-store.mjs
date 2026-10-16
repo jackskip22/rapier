@@ -154,18 +154,18 @@ export function createNativeNotesLocks({call, token = () => crypto.randomUUID()}
 	return {async request(name, {signal, mode, ifAvailable = false} = {}, run) {
 		const prefix = 'rapier-notes-recording:notes:', stem = name.startsWith(prefix) ? name.slice(prefix.length) : '';
 		if ((name !== 'rapier-notes:notes' && recordingStem(stem + '.partial') !== stem) || mode !== 'exclusive' || typeof ifAvailable !== 'boolean') throw fail('scope', 'Unknown native Notes lock.');
-		if (signal?.aborted) throw new DOMException('Notes lease cancelled', 'AbortError');
+		if (signal?.aborted) throw new DOMException('Notes lease canceled', 'AbortError');
 		const id = token();
 		const cancel = () => { void call('notes.store.lock.cancel', {id}).catch(() => {}); };
 		signal?.addEventListener('abort', cancel, {once: true});
 		try {
 			const result = await call('notes.store.lock.acquire', {id, name, ifAvailable});
-			if (signal?.aborted) throw new DOMException('Notes lease cancelled', 'AbortError');
+			if (signal?.aborted) throw new DOMException('Notes lease canceled', 'AbortError');
 			if (result?.acquired === false && ifAvailable) return await run(null);
 			if (result?.acquired !== true) throw fail('protocol', 'The native folder did not grant its lease.');
 			return await run({name, mode: 'exclusive'});
 		} catch (error) {
-			if (signal?.aborted) throw new DOMException('Notes lease cancelled', 'AbortError');
+			if (signal?.aborted) throw new DOMException('Notes lease canceled', 'AbortError');
 			throw error;
 		} finally {
 			signal?.removeEventListener('abort', cancel);

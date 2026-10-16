@@ -30,12 +30,12 @@ globalThis.RapierSourceAssets = (() => {
   }
   async function prepare(source, {signal, onProgress, yield: pause, floor = 0, includeAssets = true} = {}) {
     const value = String(source ?? '');
-    if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+    if (signal?.aborted) throw new DOMException('Canceled', 'AbortError');
     if (prepared?.source === value && prepared.floor === floor && prepared.includeAssets === includeAssets &&
         _rapierSourceRuntime.documentLineStartCache.source === value) return prepared;
     const result = await globalThis.RapierSourceWorker.requestSourceWork(value, {kind: 'prepare', floor, includeAssets},
       {createWorker: _rapierFindRuntime.createWorker, signal, onProgress: fraction => onProgress?.(.8 * fraction), yield: pause});
-    if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+    if (signal?.aborted) throw new DOMException('Canceled', 'AbortError');
     const starts = new Uint32Array(result.starts);
     const sourceStarts = result.sourceStarts ? new Uint32Array(result.sourceStarts) : null;
     const views = new WeakMap();

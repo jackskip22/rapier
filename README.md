@@ -20,8 +20,8 @@ Free and offline, with no ads, tracking or Rapier account.
 - **Pictures.** Stored inside the `.md` file. New pictures use JPEG XL from
   [Rapier's own encoder](https://github.com/jackskip22/rapier-jxl). Text can wrap around a picture's shape.
 - **Draw.** Editable SVG: pen, pressure brush, shapes, arrows that stay attached, and text.
-- **Paint.** MyPaint brushes, smudge and blend. Water is watercolour that mixes, flows and dries on textured paper.
-- **Notes.** One Markdown file per note, with colours, pins, checklists, voice recordings, links, history, and
+- **Paint.** MyPaint brushes, smudge and blend. Water is watercolor that mixes, flows and dries on textured paper.
+- **Notes.** One Markdown file per note, with colors, pins, checklists, voice recordings, links, history, and
   search that reads text in pictures. Import from Evernote, Notion, Joplin, Simplenote and other note apps. Back up
   as a ZIP file, or sync encrypted copies to your own Cloudflare R2 bucket. Android adds reminders and a home-screen
   widget.
@@ -98,9 +98,9 @@ Rapier writes CommonMark plus conventions other editors already read, with pictu
 hostile SVG filtering. It needs no browser, account, install or network. GitHub Actions runs it on every push and
 pull request.
 
-## Licence and contributing
+## License and contributing
 
-AGPL-3.0-only with the [stated terms](LICENSE). The reusable modules are [MIT](docs/LICENSE-MIT). A commercial licence
+AGPL-3.0-only with the [stated terms](LICENSE). The reusable modules are [MIT](docs/LICENSE-MIT). A commercial license
 is available ([`LICENSING.md`](docs/LICENSING.md)). Issues and pull requests are welcome: see [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) and [`SECURITY.md`](.github/SECURITY.md).
 
 Related: [rapier-plugins](https://github.com/jackskip22/rapier-plugins) (plugins and npm packages),

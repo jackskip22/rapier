@@ -9,14 +9,14 @@ Write, draw and paint on your phone. Free, in your browser, in your own files.
 - **Draw** with a pen, brush, shapes and text. Set size, font, weight, slant, case, spacing and kerning. Press words
   into the paper like letterpress, drop a large first letter into a paragraph, or use four sets of ornamental capitals
   traced from old books (downloaded on first use, then offline).
-- **Paint** with watercolour, bristles, smudging and blending.
+- **Paint** with watercolor, bristles, smudging and blending.
 - **Notes** keeps your documents, with search, checklists, links, recordings and imports from other note apps.
 
 A connected agent can help. It uses Rapier's tools and follows your Will: Intent, Add only or Lock.
 
 ## Your work stays yours
 
-No account or server is needed to write, draw or save. The editor works offline; installing it and optional maths,
+No account or server is needed to write, draw or save. The editor works offline; installing it and optional math,
 diagram or PDF resources may need a download.
 
 - **Save** writes Markdown any text editor can read, with pictures inside. Other Markdown apps may show layout and

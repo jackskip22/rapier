@@ -48,7 +48,7 @@
 	function build() {
 		strip = document.createElement('div');
 		strip.className = 'math-strip'; strip.id = 'math-strip';
-		strip.setAttribute('role', 'toolbar'); strip.setAttribute('aria-label', 'maths keys');
+		strip.setAttribute('role', 'toolbar'); strip.setAttribute('aria-label', 'math keys');
 		preview = strip.appendChild(document.createElement('div'));
 		preview.className = 'math-strip__preview';
 		keys = strip.appendChild(document.createElement('div'));

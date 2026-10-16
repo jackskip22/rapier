@@ -1,34 +1,58 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 const RapierBundledPlugins = (() => {
 	const manifest = document.getElementById('rapier-builtin-plugins');
-	if (!manifest) return Object.freeze({has: () => false, ready: async () => {}});
+	if (!manifest) return Object.freeze({has: () => false, ready: async () => {}, need: async () => {}});
 	const groups = JSON.parse(manifest.textContent);
-	const known = new Set(groups.flatMap(group => group.files.map(file => file.id)));
-	const loading = Promise.all(groups.map(async group => {
-		if (document.readyState !== 'loading' && !document.getElementById(group.element))
-			throw new Error('The editor plug-in group is missing: ' + group.id);
-		await _rapierWhenRuntime(group.element);
-		const spans = await _rapierInflateVendor(group.element);
-		if (spans.length !== group.files.length) throw new Error('The editor plug-in group is incomplete: ' + group.id);
-		return group.files.map((file, index) => {
-			if (spans[index].name !== file.name || spans[index].bytes.byteLength !== file.bytes)
-				throw new Error('The editor plug-in file is incomplete: ' + file.id);
-			return [file.id, spans[index].bytes];
-		});
-	})).then(groups => new Map(groups.flat()));
-	loading.catch(() => {});
+	const known = new Map(groups.flatMap(group => group.files.map(file => [file.id, group])));
+	const loads = new Map(), needs = new Map(), held = new Map();
+	function load(group) {
+		if (loads.has(group.id)) return loads.get(group.id);
+		const loading = (async () => {
+			let text;
+			if (group.asset) {
+				const {file, bytes, sri} = group.asset, url = RapierBundleIO.hostedUrl(file);
+				if (!url) throw new Error('The editor plug-in directory is missing');
+				const packed = await RapierBundleIO.verifySha384(await RapierBundleIO.fetchBytes(url, 60000, {length: bytes, cache: 'no-store'}), sri,
+					{byteLength: bytes, source: RapierBundleIO.shortUrl(url)});
+				text = new TextDecoder('utf-8', {fatal: true}).decode(packed);
+			} else {
+				if (document.readyState !== 'loading' && !document.getElementById(group.element))
+					throw new Error('The editor plug-in group is missing: ' + group.id);
+				await _rapierWhenRuntime(group.element);
+				text = document.getElementById(group.element).textContent;
+			}
+			const spans = await _rapierInflateVendor(group.element, text);
+			if (spans.length !== group.files.length) throw new Error('The editor plug-in group is incomplete: ' + group.id);
+			const files = group.files.map((file, index) => {
+				if (spans[index].name !== file.name || spans[index].bytes.byteLength !== file.bytes)
+					throw new Error('The editor plug-in file is incomplete: ' + file.id);
+				return [file.id, spans[index].bytes];
+			});
+			for (const [id, bytes] of files) held.set(id, bytes);
+			return text;
+		})();
+		loads.set(group.id, loading);
+		loading.catch(() => { if (loads.get(group.id) === loading) loads.delete(group.id); });
+		return loading;
+	}
+	const carried = Promise.all(groups.filter(group => !group.asset).map(load));
+	carried.catch(() => {});
 	const read = async id => {
 		if (!known.has(id)) return null;
-		const bytes = (await loading).get(id);
-		return bytes.slice();
+		if (!known.get(id).asset) await load(known.get(id));
+		return held.get(id)?.slice() || null;
 	};
 	const resources = Object.freeze({
-		status: async id => known.has(id) ? ((await loading), {status: 'ready'}) : {status: 'unavailable'},
+		status: async id => {
+			if (!known.has(id)) return {status: 'unavailable'};
+			if (!known.get(id).asset) await load(known.get(id));
+			return {status: held.has(id) ? 'ready' : 'absent'};
+		},
 		read,
 		ensure: async id => {
-			const bytes = await read(id);
-			if (!bytes) throw new Error('The editor does not carry this plug-in: ' + id);
-			return bytes;
+			if (!known.has(id)) throw new Error('The editor does not carry this plug-in: ' + id);
+			await load(known.get(id));
+			return read(id);
 		},
 	});
 	_rapierPlatformPortRuntime.port = {...window.RapierPlatform, resources};
@@ -37,6 +61,8 @@ const RapierBundledPlugins = (() => {
 		if (!provider) return Promise.reject(new Error('The editor plug-in has no loader: ' + key));
 		return new Promise((resolve, reject) => {
 			function check() {
+				if (!['ready', 'error', 'absent'].includes(provider.status)) return;
+				removeEventListener('rapier:' + key + 'plugin', check);
 				if (provider.status === 'ready') resolve();
 				else if (provider.status === 'error' || provider.status === 'absent')
 					reject(new Error('The editor plug-in could not start: ' + key));
@@ -44,13 +70,14 @@ const RapierBundledPlugins = (() => {
 			addEventListener('rapier:' + key + 'plugin', check); check();
 		});
 	}
-	return Object.freeze({
-		has: id => known.has(id),
-		async ready() {
-			await loading;
-			await Promise.all(groups.filter(group => !['letters', 'font-subset'].includes(group.id)).map(group => installed(group.id)));
-			const letters = groups.find(group => group.id === 'letters');
-			if (!letters) return;
+	function need(id) {
+		if (needs.has(id)) return needs.get(id);
+		const group = groups.find(group => group.id === id);
+		if (!group) return Promise.resolve();
+		const needed = (async () => {
+			await load(group);
+			if (id !== 'letters') return;
+			const letters = group;
 			const admitted = await Promise.all(letters.files.map(async file => {
 				const entry = globalThis.RapierDrawLetters.LETTER_SETS.find(set => 'rapier-letters-' + set.id === file.id);
 				if (!entry) throw new Error('The editor letter set is unknown: ' + file.id);
@@ -65,6 +92,23 @@ const RapierBundledPlugins = (() => {
 			}));
 			for (const set of admitted) if (!globalThis.RapierDrawLetters.holdLetterSet(set))
 				throw new Error('The editor letter set could not be held: ' + set.id);
+		})();
+		needs.set(id, needed);
+		needed.catch(() => { if (needs.get(id) === needed) needs.delete(id); });
+		return needed;
+	}
+	return Object.freeze({
+		has: id => known.has(id), need,
+		async portable() {
+			const bodies = await Promise.all(groups.map(load));
+			const inventory = groups.map(({asset, ...group}) => group);
+			return '<script type="application/json" id="rapier-builtin-plugins">' + JSON.stringify(inventory).replace(/</g, '\\u003c') + '</script>\n' +
+				groups.map((group, index) => '<script type="application/rapier-runtime" id="' + group.element + '">' + bodies[index] + '</script>\n').join('');
+		},
+		async ready() {
+			await carried;
+			await Promise.all(groups.filter(group => !group.asset && !['letters', 'font-subset'].includes(group.id)).map(group => installed(group.id)));
+			if (groups.some(group => group.id === 'letters' && !group.asset)) await need('letters');
 		},
 	});
 })();

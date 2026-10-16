@@ -1,8 +1,8 @@
 {
   "comment": "MyPaint brush file",
   "version": 3,
-  "description": "Watercolour",
-  "notes": "Author: Rapier. Watercolour: water and pigment that answer the hand and keep moving after the finger lifts -- a light touch leaves a thin damp line, a firm one floods the paper, and where two wet strokes meet the colours run into one another. The mark shows at once, then the wash blooms, its rim darkens and the paper's tooth takes the pigment, and the stroke commits itself when the paper is dry. Derived from Brien Dieterle's WateryFlatbrush (CC0) and retuned for Rapier's own wet media at three brush units per drawing unit.",
+  "description": "Watercolor",
+  "notes": "Author: Rapier. Watercolor: water and pigment that answer the hand and keep moving after the finger lifts -- a light touch leaves a thin damp line, a firm one floods the paper, and where two wet strokes meet the colors run into one another. The mark shows at once, then the wash blooms, its rim darkens and the paper's tooth takes the pigment, and the stroke commits itself when the paper is dry. Derived from Brien Dieterle's WateryFlatbrush (CC0) and retuned for Rapier's own wet media at three brush units per drawing unit.",
   "parent_brush_name": "Dieterle/WateryFlatbrush",
   "group": "",
   "settings": {

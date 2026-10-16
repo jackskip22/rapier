@@ -25,7 +25,7 @@ const FLOWCHART_REASONS = Object.freeze({
   flowchart_class_unknown: 'Define every class before using the flowchart.',
   flowchart_node_unknown: 'Apply styles only to nodes in the flowchart.',
   flowchart_style: 'Use only fill, stroke and color.',
-  flowchart_color: 'Use a supported colour name or #rgb or #rrggbb.',
+  flowchart_color: 'Use a supported color name or #rgb or #rrggbb.',
   flowchart_figure_limit: 'Use at most 128 nodes, edges and subgraph figures together.',
   flowchart_obstacle_limit: 'Use at most 96 nodes and subgraph titles together.',
   flowchart_text_limit: 'Use at most 262,144 label characters after expanding edges.'

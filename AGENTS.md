@@ -46,7 +46,7 @@ node --test tools/test-public.mjs
 
 Keep one owner for source, transaction history, viewport, Markdown grammar, layout and agent admission. Respect the
 ordered source manifests. Preserve exact source, verified saves, Undo, recovery, portable formats and offline use.
-Change the behaviour at its owner. Do not add compatibility aliases, duplicate state or speculative frameworks.
+Change the behavior at its owner. Do not add compatibility aliases, duplicate state or speculative frameworks.
 The welcome text and interface wording are authored content; change them only when explicitly requested.
 
 Keep verification focused on document bytes, authority and shipped packages. Do not add tests of appearance,

@@ -2,7 +2,7 @@
     "comment": "MyPaint brush file",
     "version": 3,
     "description": "Acrylic",
-    "notes": "A loaded acrylic flat: opaque colour, shallow ridges and restrained pickup. Thin it in the Dip for a glaze.",
+    "notes": "A loaded acrylic flat: opaque color, shallow ridges and restrained pickup. Thin it in the Dip for a glaze.",
     "parent_brush_name": "Rapier/Acrylic",
     "group": "Rapier",
     "settings": {

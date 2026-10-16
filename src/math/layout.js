@@ -612,7 +612,7 @@ function mathLayout(n,c) {
     case 'raise': {const b=mathLayout(n.body,c),s=mathScale(c);return mathCompose([[b,0,n.center?(b.h-b.d)/2-mathConstant('AxisHeight',c,0.25):-n.amount*s]],b.w,{class:b.class,...(n.height===undefined?{}:{h:n.height*s}),...(n.depth===undefined?{}:{d:n.depth*s})});}
     case 'rule': {const s=mathScale(c);return mathRule(n.width*s,(n.height+n.depth)*s,-n.height*s);}
     case 'link': {const b=mathLayout(n.body,c);const url=new URL(n.href);if(!['http:','https:'].includes(url.protocol))throw Object.assign(new Error('Unsupported equation link'),{code:'unsafe-url'});b.svg='<a href="'+mathEscape(n.href)+'" aria-label="'+mathEscape(n.href)+'" tabindex="0" target="_blank" rel="noopener noreferrer">'+b.svg+'</a>';return b;}
-    default: throw Object.assign(new Error('Unsupported maths construct: '+n.type),{code:'unsupported-construct'});
+    default: throw Object.assign(new Error('Unsupported math construct: '+n.type),{code:'unsupported-construct'});
   }
 }
 

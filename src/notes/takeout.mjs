@@ -140,7 +140,7 @@ export function importTakeout(files, options) {
 			if (data.isArchived === true && data.isTrashed === true) importMetadata({isArchived: true}, [], warnings, 'Keep archived state before deletion');
 			if (reminder > 0) entry.remind = {at: reminder};
 			importTrash(entry, {now}, warnings);
-			if (typeof data.color === 'string' && (['DARKBLUE', 'CERULEAN', 'GRAY'].includes(data.color.toUpperCase()) || !Object.hasOwn(COLOURS, data.color.toUpperCase()))) warnings.push({code: 'colour_mapping', sourceColour: data.color, targetColour: entry.colour, message: 'Keep colour ' + data.color + ' became ' + (entry.colour || 'no colour') + '; there is no separate matching colour in Rapier.'});
+			if (typeof data.color === 'string' && (['DARKBLUE', 'CERULEAN', 'GRAY'].includes(data.color.toUpperCase()) || !Object.hasOwn(COLOURS, data.color.toUpperCase()))) warnings.push({code: 'colour_mapping', sourceColour: data.color, targetColour: entry.colour, message: 'Keep color ' + data.color + ' became ' + (entry.colour || 'no color') + '; there is no separate matching color in Rapier.'});
 			const category = labels.find(label => !isBuiltinSectionName(label));
 			if (category) {
 				entry.category = category;

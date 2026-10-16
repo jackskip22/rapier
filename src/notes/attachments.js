@@ -189,11 +189,11 @@ async function _rapierAttachmentsAdd(files, {fresh = false, owner = _rapierAttac
 	const sheet = _rapierAttachmentsDialog('Keeping files'), status = _rapierNotesEl('p', '', 'Preparing the file copy');
 	const progress = _rapierNotesEl('progress', ''); sheet.append(status, progress);
 	let settled = false;
-	const cancel = () => { if (!settled) { controller.abort(); status.textContent = 'Cancelling the unfinished copy'; } };
+	const cancel = () => { if (!settled) { controller.abort(); status.textContent = 'Canceling the unfinished copy'; } };
 	sheet.addEventListener('cancel', event => { event.preventDefault(); cancel(); });
 	sheet.addEventListener('close', cancel);
 	sheet.appendChild(_rapierAttachmentsButton('Cancel', cancel));
-	const check = () => { if (controller.signal.aborted) throw new Error('File copy cancelled. No link was added.'); };
+	const check = () => { if (controller.signal.aborted) throw new Error('File copy canceled. No link was added.'); };
 	try {
 		for (const file of decision.files) {
 			if (!fresh && _rapierAttachmentsOwner() !== owner) throw new Error('The original note closed.');

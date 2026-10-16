@@ -14,7 +14,7 @@ globalThis.RapierPdfPlugin = (() => {
   const sessions = new Set();
   let files = null, api = null, reader = null, persistent = false, bundled = false, lastError = '';
   let checking = null, installing = null, loading = null, removing = null;
-  const abortError = () => new DOMException('PDF reader download cancelled.', 'AbortError');
+  const abortError = () => new DOMException('PDF reader download canceled.', 'AbortError');
   const state = () => ({version, downloadBytes, installed: !!files, loaded: !!api,
     persistent, deletable: !bundled, downloading: !!installing, error: lastError});
 
@@ -75,7 +75,7 @@ globalThis.RapierPdfPlugin = (() => {
     let reader;
     try {
       const hostedPath = 'pdfjs-dist-' + version + '/' + path;
-      const address = path === readerFile ? 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.5/' + hostedPath : base + path;
+      const address = path === readerFile ? 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.6/' + hostedPath : base + path;
       const response = await fetch(RapierBundleIO.pluginUrl(hostedPath) || address, {mode: 'cors', credentials: 'omit',
         referrerPolicy: 'no-referrer', cache: 'default', signal: controller.signal});
       if (!response.ok) throw new Error('PDF reader download returned HTTP ' + response.status + '.');
@@ -214,7 +214,7 @@ globalThis.RapierPdfPlugin = (() => {
       worker = new loaded.PDFWorker({port: nativeWorker, verbosity: 0});
       class CachedBinaryDataFactory {
         async fetch({kind, filename}) {
-          if (closed) throw new DOMException('PDF import cancelled.', 'AbortError');
+          if (closed) throw new DOMException('PDF import canceled.', 'AbortError');
           const prefix = {cMapUrl: 'cmaps/', standardFontDataUrl: 'standard_fonts/', wasmUrl: 'wasm/'}[kind];
           if (!prefix || !/^[A-Za-z0-9_.+-]+$/.test(filename)) throw new Error('Unknown PDF reader resource.');
           const bytes = files.get(prefix + filename);

@@ -114,24 +114,31 @@
   function summary() {
     return {ok: true, documentId, revision, places: structuredClone(currentRows()), activeKey: active?.key || null};
   }
-  let worker = null, jobs = 0;
+  let worker = null, jobs = 0, answered = false;
+  const onPage = (before, after, options) => RapierDiff.compare(before, after, {...options,
+    ...(globalThis.RapierDiffStructure ? {structure: source => globalThis.RapierDiffStructure.diffStructure(source, options)} : {})});
   function compare(before, after, options) {
     worker ||= _rapierCompareMakeWorker().catch(() => null);
     return worker.then(live => live ? new Promise((resolve, reject) => {
       const jobId = ++jobs;
       const end = () => { live.removeEventListener('message', done); live.removeEventListener('error', fail); };
       const done = event => {
+        answered = true;
         if (event.data?.jobId !== jobId) return;
         end();
         if (event.data.status === 'error') reject(new Error('comparison unavailable'));
         else resolve({...event.data.diff, regions: event.data.regions});
       };
-      const fail = () => { end(); worker = null; live.terminate(); reject(new Error('comparison unavailable')); };
+      const fail = () => {
+        end(); live.terminate();
+        if (answered) { worker = null; reject(new Error('comparison unavailable')); return; }
+        worker = Promise.resolve(null);
+        try { resolve(onPage(before, after, options)); } catch (error) { reject(error); }
+      };
       live.addEventListener('message', done); live.addEventListener('error', fail);
       live.postMessage({type: 'compare', jobId, currentText: before, incomingText: after, docKind: options.docKind,
         language: options.language, from: options.from, regions: true});
-    }) : RapierDiff.compare(before, after, {...options,
-      ...(globalThis.RapierDiffStructure ? {structure: source => globalThis.RapierDiffStructure.diffStructure(source, options)} : {})}));
+    }) : onPage(before, after, options));
   }
   async function snapshotPlaces(input, blockRows, id, rev, gen) {
     const before = rapier.review?.seen ? _rapierReviewText(rapier.review.seen) : null, after = input.source;

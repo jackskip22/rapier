@@ -8,7 +8,7 @@ export function admitOptions(options = {}, quality = 100) {
   if (options.quality !== undefined) quality = options.quality;
   if (typeof quality !== 'number' || !Number.isFinite(quality) || quality < 1 || quality > 100) throw fault('JXL_INPUT', 'Quality is a number from 1 to 100.');
   const colorSpace = options.colorSpace === undefined ? 'srgb' : options.colorSpace;
-  if (colorSpace !== 'srgb' && colorSpace !== 'display-p3' && colorSpace !== 'rec2020') throw fault('JXL_INPUT', 'The colour space is srgb, display-p3 or rec2020.');
+  if (colorSpace !== 'srgb' && colorSpace !== 'display-p3' && colorSpace !== 'rec2020') throw fault('JXL_INPUT', 'The color space is srgb, display-p3 or rec2020.');
   return {quality, colorSpace};
 }
 
@@ -34,7 +34,7 @@ export function admitSampleFormat(data, options = {}) {
   if (exponentBits ? bitDepth !== (float32 ? 32 : 16) : wide ? ![10, 12, 16].includes(bitDepth) : bitDepth !== 8)
     throw fault('JXL_INPUT', 'Byte samples use 8 bits; Uint16Array integers use 10, 12 or 16; floating samples use their native 16 or 32 bits.');
   const colorSpace = options.colorSpace ?? 'srgb';
-  if (!['srgb', 'display-p3', 'rec2020'].includes(colorSpace)) throw fault('JXL_INPUT', 'The colour space is srgb, display-p3 or rec2020.');
+  if (!['srgb', 'display-p3', 'rec2020'].includes(colorSpace)) throw fault('JXL_INPUT', 'The color space is srgb, display-p3 or rec2020.');
   const transferFunction = options.transferFunction ?? (exponentBits ? 'linear' : 'srgb');
   if (!['srgb', 'linear', 'pq', 'hlg'].includes(transferFunction)) throw fault('JXL_INPUT', 'The transfer function is srgb, linear, pq or hlg.');
   const intensityTarget = options.intensityTarget ?? (transferFunction === 'pq' ? 10000 : transferFunction === 'hlg' ? 1000 : 255);

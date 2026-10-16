@@ -18,7 +18,7 @@ Free and open source (AGPL-3.0-only), with no account or telemetry.
 
 ## Write
 
-Write on the formatted page, as in a word processor, or switch to the Markdown source. There is no split preview. Tables, callouts, footnotes, checklists, LaTeX equations, Mermaid diagrams, syntax-coloured code, text-to-speech, find and replace, and undo. Your file stays plain Markdown.
+Write on the formatted page, as in a word processor, or switch to the Markdown source. There is no split preview. Tables, callouts, footnotes, checklists, LaTeX equations, Mermaid diagrams, syntax-colored code, text-to-speech, find and replace, and undo. Your file stays plain Markdown.
 
 ## Pictures
 
@@ -52,7 +52,7 @@ An AI agent edits notes, text, diagrams and paintings live, beside you or while 
 
 On Android ([Google Play](${PLAY_URL})), in a browser, on Windows, or as one HTML file that you keep in a folder. Let the web editor and the optional features you need load before going offline. The Android app has no Internet permission; optional Google Play asset packs download on first use and then work offline.
 
-[Rapier](https://rapier.website/) · [Rapier Notes](https://rapier.website/notes) · [Rapier Draw](https://rapier.website/draw) · [Rapier Watercolor](https://rapier.website/watercolor) · [Google Play](${PLAY_URL}) · [Source](https://github.com/jackskip22/rapier) · [Agent guide](https://github.com/jackskip22/rapier/blob/main/docs/agents.md) · [llms.txt](https://rapier.website/llms.txt) · [Privacy and terms](https://rapier.website/privacy) · [Commercial licence](https://rapier.website/commercial)
+[Rapier](https://rapier.website/) · [Rapier Notes](https://rapier.website/notes) · [Rapier Draw](https://rapier.website/draw) · [Rapier Watercolor](https://rapier.website/watercolor) · [Google Play](${PLAY_URL}) · [Source](https://github.com/jackskip22/rapier) · [Agent guide](https://github.com/jackskip22/rapier/blob/main/docs/agents.md) · [llms.txt](https://rapier.website/llms.txt) · [Privacy and terms](https://rapier.website/privacy) · [Commercial license](https://rapier.website/commercial)
 `;
 
 function declarations(node, name, found = []) {

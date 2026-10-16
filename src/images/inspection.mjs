@@ -117,7 +117,7 @@ export function installImageInspectionWorker(scope) {
 
 let client = null, serial = 0, idle = 0;
 const requests = new Map();
-const cancelled = () => Object.assign(new Error('Image inspection cancelled'), {name: 'AbortError'});
+const cancelled = () => Object.assign(new Error('Image inspection canceled'), {name: 'AbortError'});
 function finish(id, error, result) {
   const request = requests.get(id);
   if (!request) return;

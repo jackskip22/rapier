@@ -489,7 +489,7 @@ class MathTexParser {
     }
     if (name === 'definecolor') {
       const colorName = this.plainArgument(), model = this.plainArgument(), value = this.plainArgument();
-      if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(colorName)) this.error('invalid-color', 'Invalid colour name.', token);
+      if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(colorName)) this.error('invalid-color', 'Invalid color name.', token);
       this.colors[colorName] = this.color(value, model, token); return null;
     }
     // MathJax's bbox: a background colour, a padding length and a CSS border whose last word is its colour.
@@ -516,7 +516,7 @@ class MathTexParser {
     }
     if (name === 'require') {
       const value = this.plainArgument();
-      if (!MATH_TEX_PACKAGES.has(value)) this.error('unsupported-package', 'Unsupported maths package: ' + value + '.', token, name);
+      if (!MATH_TEX_PACKAGES.has(value)) this.error('unsupported-package', 'Unsupported math package: ' + value + '.', token, name);
       return null;
     }
     if (name === 'href') {
@@ -622,7 +622,7 @@ class MathTexParser {
     if (name === 'textasciitilde') return this.literal('~', {variant: 'roman'});
     if (name === 'textasciicircum') return this.literal('^', {variant: 'roman'});
     if (['end', 'right', '\\', 'cr', 'of'].includes(name)) this.error('unexpected-command', '\\' + name + ' has no matching opening command.', token);
-    this.error('unsupported-command', 'Unsupported maths command: \\' + name + '.', token);
+    this.error('unsupported-command', 'Unsupported math command: \\' + name + '.', token);
   }
 
   delimiterArgument() {
@@ -639,7 +639,7 @@ class MathTexParser {
       this.error('unsafe-link', 'A link address cannot contain TeX commands.', item);
     }).join('').trim();
     if (!/^https?:\/\/[^\s<>"'\\]+$/i.test(href) || /[\u0000-\u0020\u007f]/.test(href))
-      this.error('unsafe-link', 'A maths link must use an HTTP or HTTPS address.', token);
+      this.error('unsafe-link', 'A math link must use an HTTP or HTTPS address.', token);
     return href;
   }
   dimension(value, token = this.rawPeek()) {
@@ -677,12 +677,12 @@ class MathTexParser {
         return '#' + rgb.map(number => Math.round(number * (model === 'RGB' ? 1 : 255)).toString(16).padStart(2, '0')).join('');
       }
     }
-    this.error('invalid-color', 'Unsupported or invalid colour value.', token, 'color');
+    this.error('invalid-color', 'Unsupported or invalid color value.', token, 'color');
   }
 
   environment(fullName, token) {
     const env = fullName.replace(/\*$/, '');
-    if (!MATH_TEX_ENVIRONMENTS.has(env)) throw Object.assign(new MathTexError('unsupported-environment', 'Unsupported maths environment: ' + fullName + '.', token.offset, 'begin'), {environment: env});
+    if (!MATH_TEX_ENVIRONMENTS.has(env)) throw Object.assign(new MathTexError('unsupported-environment', 'Unsupported math environment: ' + fullName + '.', token.offset, 'begin'), {environment: env});
     return this.nested(() => {
       let options = {};
       const position = this.optionalRaw();
@@ -1316,7 +1316,7 @@ class MathTexParser {
     let raw;
     if (name === 'unicode') {
       const metrics = this.optionalRaw(), font = this.optionalRaw();
-      if (metrics || font) this.error('unsupported-character-option', 'Unicode characters use the embedded maths font.', token);
+      if (metrics || font) this.error('unsupported-character-option', 'Unicode characters use the embedded math font.', token);
       raw = this.plainArgument();
     } else if (this.is('{')) raw = this.plainArgument();
     else {

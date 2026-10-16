@@ -132,7 +132,7 @@ function _rapierBindRenderOwner(kind) {
 
 async function _rapierExportParse(source, options = {}) {
   const work = options.work || options;
-  if (work.signal?.aborted) throw Object.assign(new Error('The operation was cancelled.'), {name: 'AbortError', code: 'cancelled'});
+  if (work.signal?.aborted) throw Object.assign(new Error('The operation was canceled.'), {name: 'AbortError', code: 'cancelled'});
   const tokens = [], text = [], prototype = new md.core.State('', md, {}).Token.prototype;
   const body = _rapierParseRuntime.markdownSource + '\n' + globalThis.RapierExportWorker.workerSource();
   let url = URL.createObjectURL(new Blob([body], {type: 'text/javascript'}));
@@ -149,7 +149,7 @@ async function _rapierExportParse(source, options = {}) {
       worker.terminate(); release(); work.signal?.removeEventListener('abort', abort);
       if (error) reject(error); else resolve(value);
     };
-    const abort = () => finish(null, Object.assign(new Error('The operation was cancelled.'), {name: 'AbortError', code: 'cancelled'}));
+    const abort = () => finish(null, Object.assign(new Error('The operation was canceled.'), {name: 'AbortError', code: 'cancelled'}));
     const restore = token => { Object.setPrototypeOf(token, prototype); for (const child of token.children || []) restore(child); };
     work.signal?.addEventListener('abort', abort, {once: true});
     worker.onerror = event => finish(null, new Error(event.message || 'The document parser could not start.'));

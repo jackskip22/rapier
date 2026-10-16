@@ -2,7 +2,7 @@
 import {admitRefraction} from './refraction.mjs';
 
 const clock = () => globalThis.performance?.now() ?? Date.now();
-const abort = options => { if (options.signal?.aborted) throw options.signal.reason || new DOMException('Rendering cancelled', 'AbortError'); };
+const abort = options => { if (options.signal?.aborted) throw options.signal.reason || new DOMException('Rendering canceled', 'AbortError'); };
 const pause = () => globalThis.scheduler?.yield?.() || new Promise(resolve => setTimeout(resolve, 0));
 const prepared = new WeakMap();
 

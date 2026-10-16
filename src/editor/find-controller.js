@@ -646,7 +646,7 @@ async function rapierReplaceAll(currentOnly = false) {
 			return;
 		}
 		if (!replacement.result) {
-			showToast('Document changed; replace all was cancelled', 'error');
+			showToast('Document changed; replace all was canceled', 'error');
 			return;
 		}
 	} else {

@@ -313,7 +313,7 @@ export function formatInkOpen(mark) {
 	let colour = '';
 	if (mark.hex != null) {
 		const value = TEXT_COLOR_HEX_TO_NAME[mark.hex] || mark.hex;
-		if (!new RegExp('^' + COLOR_VALUE + '$').test(value)) throw new TypeError('ink: the colour is the colour span\'s value');
+		if (!new RegExp('^' + COLOR_VALUE + '$').test(value)) throw new TypeError('ink: the color is the color span\'s value');
 		colour = ' ' + value;
 	}
 	if (mark.width != null && (!Number.isInteger(mark.width) || mark.width < 2 || mark.width > 24)) throw new TypeError('ink: the width is an integer from 2 to 24, and 9 is spelled by leaving it out');

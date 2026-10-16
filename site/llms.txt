@@ -37,7 +37,7 @@ const reader = Rapier.mount(element, {build: 'reader', src: '/rapier/rapier-read
 - "Add our signup process to my Rapier plan as a diagram whose boxes I can move."
 - "Revise the introduction in my open draft, show me what changed, and let me undo it."
 - "Read the document I have open in Rapier and fix only the typos in section 2."
-- "Paint a watercolour sunset over the sea at the top of my Rapier page, and leave the boats for me."
+- "Paint a watercolor sunset over the sea at the top of my Rapier page, and leave the boats for me."
 - "Give me my Rapier plan as one offline HTML file I can keep editing."
 
 For a painting, the person needs a visible full editor with WebGPU: open `editor_url` and pair the browser when it asks for a code.
@@ -56,6 +56,6 @@ For a painting, the person needs a visible full editor with WebGPU: open `editor
 
 ## Optional
 
-- [Notes](https://rapier.website/notes): `read {search:"words"}` finds notes in the configured store. Pass the returned `note_ref` as `note` to `read` and `edit`; an edit needs the revision from a current read. `open {note}` opens a note, `open {note:"new",title,text}` creates one, and `export {to:"sync"}` runs the existing sync. A locked store is not an empty library.
+- [Notes](https://rapier.website/notes): `read {search:"words"}` finds notes in the configured store. Pass the returned `note_ref` as `note` to `read` and `edit`; an edit needs the revision from a current read. `open {note}` opens a note, `open {note:"new",title,text}` creates one, and `export {to:"sync"}` runs the existing sync. On MCP each of these calls also passes `document` from `open`. A locked store is not an empty library.
 - [Draw](https://rapier.website/draw) and [Watercolor](https://rapier.website/watercolor): the canvas on its own.
 - Hosted workspaces expire after 30 idle days. Export links last up to 24 hours, within the workspace's lifetime; OAuth links need the connected owner. Downloaded files are yours to keep.

@@ -73,7 +73,7 @@ export async function sha256Yielding(bytes, {signal, subtle = globalThis.crypto?
 
 export const BYTE_CHUNK_BYTES = 1024 * 1024;
 export function checkByteAbort(signal) {
-	if (signal?.aborted) throw Object.assign(new Error('File copy cancelled. No unfinished file was kept.'), {name: 'AbortError', code: 'cancelled'});
+	if (signal?.aborted) throw Object.assign(new Error('File copy canceled. No unfinished file was kept.'), {name: 'AbortError', code: 'cancelled'});
 }
 export async function* blobByteChunks(blob, {signal, chunkBytes = BYTE_CHUNK_BYTES} = {}) {
 	if (!(blob instanceof Blob) || !Number.isSafeInteger(blob.size) || blob.size < 0) throw new TypeError('A file copy needs an original Blob with an exact size.');

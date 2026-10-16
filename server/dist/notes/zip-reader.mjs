@@ -135,7 +135,7 @@ export async function readZip(bytes, {maxBytes = ZIP_READ_MAX_BYTES, maxEntries 
 
 export const ZIP_ENTRY_MEMORY_BYTES = 16 * 1024 * 1024;
 export const ZIP_IO_BYTES = 64 * 1024;
-const zipAbort = signal => { if (signal?.aborted) throw signal.reason || new Error('readZip: cancelled'); };
+const zipAbort = signal => { if (signal?.aborted) throw signal.reason || new Error('readZip: canceled'); };
 
 function rangedSource(value) {
 	if (value instanceof ArrayBuffer) value = new Uint8Array(value);

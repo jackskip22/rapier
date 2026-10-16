@@ -544,7 +544,7 @@ function _rapierNotesLibraryBarEl() {
 	close.appendChild(_rapierNotesGlyph('close'));
 	const count = _rapierNotesEl('div', 'rapier-notes-selcount', ''); count.setAttribute('role', 'status');
 	bar.append(close, count);
-	for (const [act, label, glyph] of [['pin', 'pin', 'pin'], ['remind-face', 'remind', 'bell'], ['colour', 'colour', 'palette'], ['section-face', 'section', 'folder'], ['sheet-actions', 'more', 'kebab']]) {
+	for (const [act, label, glyph] of [['pin', 'pin', 'pin'], ['remind-face', 'remind', 'bell'], ['colour', 'color', 'palette'], ['section-face', 'section', 'folder'], ['sheet-actions', 'more', 'kebab']]) {
 		const b = _rapierNotesEl('button', 'rapier-notes-btn'); b.type = 'button'; b.dataset.notesAct = act;
 		b.setAttribute('aria-label', label); b.appendChild(_rapierNotesGlyph(glyph));
 		if (act !== 'pin') { b.setAttribute('aria-haspopup', 'dialog'); b.setAttribute('aria-controls', 'rapier-notes-sheet'); b.setAttribute('aria-expanded', 'false'); }

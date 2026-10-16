@@ -6,7 +6,7 @@ export function createRequestLifetime(signal) {
   const cancel = reason => {
     if (controller.signal.aborted) return false;
     release();
-    controller.abort(reason ?? new DOMException('Request cancelled.', 'AbortError'));
+    controller.abort(reason ?? new DOMException('Request canceled.', 'AbortError'));
     return true;
   };
   const abort = () => cancel(signal.reason);
@@ -27,7 +27,7 @@ export async function responsiveJson(pendingResponsePromise, {signal, onDisconne
   const disconnect = (cause, end = 'error') => {
     if (closed) return disconnecting;
     closed = true;
-    reason = cause ?? new DOMException('Request cancelled.', 'AbortError');
+    reason = cause ?? new DOMException('Request canceled.', 'AbortError');
     cleanup();
     if (end === 'close') controller?.close();
     else if (end === 'error') controller?.error(reason);

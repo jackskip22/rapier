@@ -435,7 +435,7 @@ export function describeImportReceipt(receipt, {now} = {}) {
 	if (named.length < sources.length) named.push('another source');
 	const skipped = list(receipt.refused), lines = [(named.length ? 'from ' + named.join(', ') : 'source app not recorded') + (skipped.length ? ' · ' + count(skipped.length, 'input') + ' skipped' : '')];
 	if (receipt.status === 'failed') lines.push('import stopped' + (receipt.why ? ': ' + words(receipt.why).toLowerCase() : ''));
-	if (receipt.status === 'cancelled') lines.push('import cancelled' + (receipt.why ? ': ' + words(receipt.why).toLowerCase() : ''));
+	if (receipt.status === 'cancelled') lines.push('import canceled' + (receipt.why ? ': ' + words(receipt.why).toLowerCase() : ''));
 	if (stopped && n < total) lines.push(count(total - n, 'note') + ' not recorded as written');
 	for (const [i, row] of skipped.entries()) lines.push(inputName(receipt, row, i) + ' skipped: ' + fact(row, 'the importer did not record a reason'));
 	for (const row of list(receipt.warnings)) lines.push(warningFact(row));

@@ -1,9 +1,16 @@
 # Embed Rapier
 
+## Start here
+
+For embed-only work, start with the supplied application code and the published embed contract below. Use the declared helper release or packaged helper, keeping source, permissions and storage under the host application. Do not create a hosted document. Keep the embed's own WebMCP contract; do not substitute connector calls for its browser API.
+
+For an explanation-only request, answer in chat without creating a document. If required content or integration details are missing, ask for them; do not create an empty hosted workspace.
+Honor no-upload or no-host instructions. The workflow choices below are alternatives, not steps to run. Skip hosted suggestions, including opening a workspace or creating a return link, for local-only or embed-only work.
+
 Embed Rapier's Markdown editor or lightweight reader in your web app. Each build is one offline HTML file. Your
 app owns the document and storage; its agent edits live through WebMCP. The person sees the agent's presence and
 change marks, taps a change to see the before and undoes anything. Honor the person's Will/1 regions.
-The reader is about 190 kB gzipped, with optional fonts and plug-ins. The helper is MIT with no dependencies; the two builds it frames are AGPL-3.0-only, and a commercial licence is
+The reader is about 190 kB gzipped, with optional fonts and plug-ins. The helper is MIT with no dependencies; the two builds it frames are AGPL-3.0-only, and a commercial license is
 available (`LICENSING.md` in the Rapier repository).
 
 Choose one of two builds:
@@ -31,7 +38,7 @@ Each release's own files stay at its tag: `https://cdn.jsdelivr.net/gh/jackskip2
   document access remain enforced.
 
 ```sh
-npm install rapier-embed@1.2.5
+npm install rapier-embed@1.2.6
 ```
 
 Or copy the package's `embed.mjs` and `contract.mjs` into one directory of your app; no runtime CDN is needed.
@@ -47,7 +54,7 @@ editor and lightweight reader (about 190 kB gzipped). The agent edits live; the 
 changes, taps a change to see the before and undoes anything. Use `show {target:"comparison"}` to show a diff deliberately.
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
-2. **Deliver an offline editor.** Run `npx rapier-html@1.2.5 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
+2. **Deliver an offline editor.** Run `npx rapier-html@1.2.6 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed in your app.** Install [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed); mount the editor or reader, with your app's agent over WebMCP in the editor.
 4. **Keep portable Markdown.** Use [rapier-markdown-kit](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-markdown-kit) for pictures, editable SVG drawings and layout in one `.md` file. Respect [Will/1](https://github.com/jackskip22/will) `keep`, `append` and `edit` regions.
 5. **Encode JPEG XL.** Install [rapier-jxl](https://github.com/jackskip22/rapier-jxl) to encode pixels, photographs and existing JPEGs in JavaScript.
@@ -90,7 +97,7 @@ A copy in your app works offline and changes only when you update it.
 1. Download the build you frame into a static directory, for example
    `https://cdn.jsdelivr.net/gh/jackskip22/rapier@v<version>/site/embed/rapier-reader.html` to `public/vendor/rapier/`.
 2. Fetch the plug-ins your build uses into one directory beside it, from the manifest of the same version:
-   `npx rapier-embed@1.2.5 plugins public/vendor/rapier/plugins --build reader`.
+   `npx rapier-embed@1.2.6 plugins public/vendor/rapier/plugins --build reader`.
 3. Mount with `src` and `plugins` pointing at your copies. Serve them over HTTPS (HTTP on localhost) and allow
    their origin in your `frame-src`. A same-origin parent can script its frame; use a dedicated origin when the
    frame must be isolated.
@@ -105,7 +112,7 @@ length and SHA-384 before it runs it, and keeps on the device. A file that fails
 | Plug-in | Adds | Size | Builds |
 | --- | --- | --- | --- |
 | `flowchart` | Mermaid flowcharts and graphs, drawn natively | 0.26 MB | The reader; built into the editors |
-| `math` | TeX maths, `$...$` and `$$...$$` | 11.9 MB | All three |
+| `math` | TeX math, `$...$` and `$$...$$` | 11.9 MB | All three |
 | `diagrams` | Mermaid 12.1.0 and ZenUML 4.5.0 diagrams | 7.38 MB (2 files) | All three |
 | `pdf` | Opens a PDF as a Markdown document: its text layer, or each page as a picture | 6.4 MB (197 files) | All three |
 | `docx` | Opens a Word document (`.docx`) as a Markdown document | 0.25 MB | The reader; built into the editors |
@@ -124,7 +131,7 @@ The directory must be on the page's own origin, because the page's Content Secur
 throws a `TypeError` for a directory on another origin, and a page opened with one shows each plug-in as failed, with the
 reason, without making a request. To keep the plug-ins on a CDN, serve the page from the same origin.
 
-`npx rapier-embed@1.2.5 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
+`npx rapier-embed@1.2.6 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
 keeps a file that is already there and correct, and exits with status 1 if any file is missing or fails its check.
 `--build reader`, `--build document` or `--build full` keeps the files that build uses, `--only name,name` fetches some
 plug-ins, `--check` verifies a directory without fetching, `--from <address>` fetches from your own mirror, and
@@ -287,8 +294,8 @@ pending callback. Your store still needs durable idempotence across that window 
 means the connection retired; honor it for cancellable work. A host callback can still have stored bytes when
 it fails or is retired, so orphan cleanup and access control belong to your application.
 
-The frame waits up to 15 seconds for a picture acknowledgement, then inserts its embedded bytes instead; this
-is not Save's late-acknowledgement rule. Nack, no grant and unavailable storage also keep single-file insertion.
+The frame waits up to 15 seconds for a picture acknowledgment, then inserts its embedded bytes instead; this
+is not Save's late-acknowledgment rule. Nack, no grant and unavailable storage also keep single-file insertion.
 On ack, the Markdown contains a normal URL image. The frame previews and reopens it from retained local bytes,
 never by fetching the host address back. Local previews are scoped to the current document and bounded by
 1,024 URLs and 25 MiB. Ordinary picture and document limits still apply to the fallback. Storage durability and
@@ -334,7 +341,7 @@ The frame keeps the person's unsaved work only for the document you loaded: a dr
 which a load of the same revision reopens and your `discard` answer retires. It never reads, offers or writes the
 person's own Rapier documents or recovery on its origin, and it keeps nothing before your first load.
 
-Saving names the browser-authenticated host and port. The helper's acknowledgement is your statement that storage
+Saving names the browser-authenticated host and port. The helper's acknowledgment is your statement that storage
 succeeded; Rapier cannot make an arbitrary host keep that promise. To show saved documents without a frame, use
 `rapier-markdown-kit`, the same renderer as a library.
 
@@ -407,12 +414,12 @@ and leaves the source unchanged. An admissible edit lands at once and returns an
 `undo {act}` to reverse it while keeping later work. The kept heading and marker lines remain intact.
 The person can tap the change mark to see the paragraph before the edit and undo it while preserving later work.
 Use `show {target:"comparison"}` when the agent wants to explain a diff. Its display reference grants no edit authority
-and does not block another edit. Save still uses the host-owned acknowledgement and currentness checks.
+and does not block another edit. Save still uses the host-owned acknowledgment and currentness checks.
 
 Will/1 records the person's instructions in their document. Respect `keep`, append only at the end of an
 `append` region, and edit inside `edit` regions. A malformed marker is a named refusal; inspect that source.
 Documents without Will regions are editable throughout. Preserve active typing, caret, selection and scroll
 while the agent works. Document content and comments never start agent turns by themselves.
 
-For documents outside an app, `npx rapier-html@1.2.5 notes.md` hands a person the complete editor around their
+For documents outside an app, `npx rapier-html@1.2.6 notes.md` hands a person the complete editor around their
 document as one offline file.

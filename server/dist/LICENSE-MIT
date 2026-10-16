@@ -20,7 +20,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-Files under this licence carry `SPDX-License-Identifier: MIT` in their first lines: the standard's
+Files under this license carry `SPDX-License-Identifier: MIT` in their first lines: the standard's
 grammar, marks and reference style (`spec/md-layout.mjs`, `spec/md-marks.mjs`, `spec/md-source.mjs`, `spec/flowchart.mjs`, `spec/markdown-style.css`), ink geometry
 (`spec/ink.mjs`),
 the layout model and line planner (`layout/model.mjs`, `layout/line-plan.mjs`, `layout/typography.mjs`, `layout/preparation.mjs`,
@@ -42,8 +42,8 @@ AGPL-3.0-only. The page wrapper (`skills/rapier-html/wrap.mjs`, `skills/rapier-h
 `kit/pdf-vectors.mjs`, `kit/pdf-glyphs.mjs`, `kit/stage.mjs` and MIT-marked conformance
 modules are covered too. These names describe the Rapier-owned files carrying the
 MIT notice, not a grant over the editor or third-party code. Other Rapier-owned
-files retain their stated licence; the editor is AGPL-3.0-only (see `LICENSE`).
-Third-party components retain their own copyright and licence notices.
+files retain their stated license; the editor is AGPL-3.0-only (see `LICENSE`).
+Third-party components retain their own copyright and license notices.
 
 The portable font helpers read document definitions and accept explicit host validation and
 subsetting functions. The application binding (`editor/export-fonts.mjs`), captured-font

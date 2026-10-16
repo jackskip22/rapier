@@ -6,7 +6,7 @@ import {readJXL, jxlRefused, codestreamComplete} from './jxl-native.mjs';
 
 const png = createPaintPNGCodec(), JXL = 'data:image/jxl;base64,';
 let hostedDecoder = null;
-const check = signal => { if (signal?.aborted) { const error = new Error('Painting cancelled'); error.name = 'AbortError'; throw error; } };
+const check = signal => { if (signal?.aborted) { const error = new Error('Painting canceled'); error.name = 'AbortError'; throw error; } };
 export function configurePaintRasterDecoder(decoder) {
 	if (decoder !== null && typeof decoder !== 'function') throw new TypeError('A paint raster decoder must be a function');
 	hostedDecoder = decoder;

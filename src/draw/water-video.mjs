@@ -4,7 +4,7 @@ import {replayWaterFrames} from './agent-paint.mjs';
 import {WaterMP4,WATER_VIDEO_MAX_BYTES} from './water-mp4.mjs';
 export {WATER_VIDEO_MAX_BYTES};
 const failure=(code,message)=>Object.assign(new Error(message),{code});
-const stopped=signal=>{if(signal?.aborted)throw Object.assign(new Error('Video export cancelled.'),{name:'AbortError'});};
+const stopped=signal=>{if(signal?.aborted)throw Object.assign(new Error('Video export canceled.'),{name:'AbortError'});};
 const pause=()=>new Promise(resolve=>setTimeout(resolve,0));
 const sameScale=(a,b)=>Math.abs(a-b)<=1e-12*Math.max(1,Math.abs(a),Math.abs(b));
 

@@ -265,7 +265,7 @@ export class WaterSurface {
 export class WaterBrush {
  constructor(definition){const water=admitWaterBrush(definition);if(!water)throw waterError('WATER_INPUT','The Water brush is not valid.');this.water=water;this.radius=water.radius??waterRadius(water.size);this.seedValue=1;this.random=randomStream(1);this.wet={water:water.water};this.loadFuel=1;this.held=water.follow?null:water.angle;this.lastDirection=[1,0];this.reset();}
  seed(value){if(!integer(value)||value>0xffffffff)throw waterError('WATER_INPUT','The Water brush seed is not valid.');this.seedValue=value;this.random=randomStream(value);}
- setColor(r,g,b){if(![r,g,b].every(Number.isFinite))throw waterError('WATER_INPUT','The brush colour is not valid.');}
+ setColor(r,g,b){if(![r,g,b].every(Number.isFinite))throw waterError('WATER_INPUT','The brush color is not valid.');}
  setPigment(raw){const pigment=admitWaterPigment(raw);if(!pigment)throw waterError('WATER_INPUT','The selected pigment is not valid.');this.water.pigment=pigment;if(this.contact)this.contact.coefficients=Float32Array.from(coefficients(pigment),v=>v*this.water.light);}
  setBaseValue(name,value){if(!Number.isFinite(value))throw waterError('WATER_INPUT','The brush control is not valid.');if(name==='radius_logarithmic')this.radius=Math.exp(value)/3;}
  getBaseValue(name){return name==='radius_logarithmic'?Math.log(this.radius*3):0;}

@@ -307,7 +307,7 @@ function _rapierDocxRenderStyles(root) {
 		const surface = into.createElement('div'); surface.className = 'md-render'; into.body.appendChild(surface);
 		const canvas = into.createElement('canvas'); canvas.width = canvas.height = 1;
 		const paint = canvas.getContext('2d'), colours = new Map();
-		if (!paint) throw new Error('Word text colours could not be read.');
+		if (!paint) throw new Error('Word text colors could not be read.');
 		const hex = colour => {
 			if (!colours.has(colour)) {
 				paint.fillStyle = '#ffffff'; paint.fillRect(0, 0, 1, 1);

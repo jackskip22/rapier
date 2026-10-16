@@ -35,7 +35,7 @@ against any contract keeps working in every later release, which speaks every ve
 | Capability | What the parent explicitly authorizes | What it does not implicitly grant |
 |---|---|---|
 | `open` | `load` host-supplied source, name, revision and read-only flag through existing load guards; the person's file picker and its host fallback | Readback, notifications, agent tools, comparison, close |
-| `read` | Request Save/readback and receive `save-request` containing the embedded document; send matching save acknowledgement/refusal | Load, change subscription, agent tools, close |
+| `read` | Request Save/readback and receive `save-request` containing the embedded document; send matching save acknowledgment/refusal | Load, change subscription, agent tools, close |
 | `changes` | Receive deduplicated `document-state` metadata: loaded/dirty/saving/closing/readOnly, filename, docKind (plus envelope IDs/revision) | Document source or edit authority; this is not a per-keystroke delta feed |
 | `compare` | Show another complete text beside the current document | Source changes, text export or another capability |
 | `close` | Request close, receive close requests/readiness, and send save/discard/cancel decisions under existing pending-close and mutation guards | Readback; `decision: save` also needs `read`. **Discard is consequential host authority.** |
@@ -131,7 +131,7 @@ brackets, and at most 4,096 code units both before and after URL canonicalizatio
 live document is refused. The host promises the address serves the exact uploaded bytes and keeps them;
 Rapier cannot certify a host's storage durability, access control or eventual serving behavior.
 
-On acknowledgement the transaction writes an ordinary CommonMark URL image, preserving the alt text, title
+On acknowledgment the transaction writes an ordinary CommonMark URL image, preserving the alt text, title
 and layout, without appending the same bytes. Entity-sensitive URL/title characters are escaped so parsing
 cannot change their meaning. The frame **never fetches that URL back**: it retains the normalized local picture
 for preview, copying, portable export and reopening an editable drawing. These retained aliases are scoped to
@@ -140,7 +140,7 @@ After a new document or page lifetime, a URL in loaded Markdown is an ordinary r
 existing remote-content policy; the old session's preview bytes are not silently fetched or resurrected.
 
 One upload can be pending per frame; its deadline is **15 seconds**. This differs from Save: after timeout the
-picture takes the embedded fallback, and a late acknowledgement cannot rewrite that insertion. Nack, unavailable
+picture takes the embedded fallback, and a late acknowledgment cannot rewrite that insertion. Nack, unavailable
 storage, disconnection, a full preview budget or a concurrent upload also take the embedded fallback. Retained
 previews are bounded by **1,024 distinct addresses and 25 MiB of encoded picture bytes**. Reaching either bound
 refuses only a new upload; it never evicts bytes needed by existing pictures. The normal picture/document limits
@@ -156,7 +156,7 @@ existing source; an already-completed upload may then be an orphan for the host 
 | `asset_rejected` | Host nack; embed instead. |
 | `asset_bytes_invalid`, `picture_too_large`, `asset_media_type_invalid` | Invalid/empty bytes, picture bound, or unsupported media type. |
 | `asset_url_invalid`, `asset_url_conflict` | Unsafe URL or an address reused for different bytes/type; embed instead. |
-| `asset_reply_invalid` | Malformed acknowledgement/refusal for the pending request; embed instead. |
+| `asset_reply_invalid` | Malformed acknowledgment/refusal for the pending request; embed instead. |
 | `asset_unmatched` | No matching pending request ID/base revision; do not settle any other request. |
 | `asset_reference_invalid` | The normalized reference cannot be replaced safely; refuse insertion. |
 
@@ -184,7 +184,7 @@ An absent, disconnected or unready editor returns `editor_unavailable` with a hi
 `show {target:"view",view}` separately requests formatted, source or Notes cards. It changes presentation, not
 a device preference or a particular note. A queued view waits for idle; later human navigation wins.
 
-`show {target:"preferences",preference,value}` sets one named device preference through `RapierPreferences`. The catalogue defines the exact
+`show {target:"preferences",preference,value}` sets one named device preference through `RapierPreferences`. The catalog defines the exact
 names and value domains. A successful receipt records the applied value and its previous value, without a
 confirmation card, and the editor's notice offers the person Undo until any later change of that
 preference. Physical reader-only resources and host-controlled settings retain their actual restrictions. An active host theme or accent refuses an agent change
@@ -255,7 +255,7 @@ Rapier.mount(container, {
 ```
 
 Here `app.chooseFile` is the host's chooser. The callback receives no document source and adds no grant.
-Honor `signal` to close a cancelled chooser. Only one callback may remain pending, even if it ignores
+Honor `signal` to close a canceled chooser. Only one callback may remain pending, even if it ignores
 cancellation. The helper keeps the latest 48 request IDs and metadata outcomes, without retaining file
 bytes. A repeated retained ID never invokes the chooser again: a pending request repeats `open-ack`,
 and a completed selection returns `open-nack` with `open_completed`. A changed base revision returns
@@ -335,17 +335,17 @@ That `sessionStorage` draft is the frame's only document storage, and only for a
 
 Editor-originated messages use the same identity/revision envelope, but unsolicited replies may have `requestId: null`; do not apply host-to-editor request-ID rules to unsolicited state. `connected`, load/compare replies and protocol errors are control replies; the protected source and metadata channels are checked separately. No `fetch`, `evaluate`, `readStorage`, `exportAll` or arbitrary agent-call command exists, and unknown commands do not dispatch.
 
-### A save is a two-party acknowledgement
+### A save is a two-party acknowledgment
 
-`save` asks Rapier to capture. The resulting `save-request` has its **own** ID and a base revision. The host must durably store that captured payload against that revision, then echo both fields in `save-ack` with an advanced durable revision. A successful send, an in-memory assignment, a new request ID or a promise to save later is not an acknowledgement. On storage conflict, send `save-nack` with `code: conflict` and the current revision. On failure, keep the work recoverable and report it; do not label it saved. A save acknowledgement displays the browser-authenticated host and port ("saved to docs.example.com"); the host cannot name itself, and `load` takes no such field.
+`save` asks Rapier to capture. The resulting `save-request` has its **own** ID and a base revision. The host must durably store that captured payload against that revision, then echo both fields in `save-ack` with an advanced durable revision. A successful send, an in-memory assignment, a new request ID or a promise to save later is not an acknowledgment. On storage conflict, send `save-nack` with `code: conflict` and the current revision. On failure, keep the work recoverable and report it; do not label it saved. A save acknowledgment displays the browser-authenticated host and port ("saved to docs.example.com"); the host cannot name itself, and `load` takes no such field.
 
 Rapier waits for the save answer as long as the connection lives. After fifteen seconds without one it tells the person the host has not confirmed the save yet (Copy and Download stay open to them) and keeps the save pending: a `save-ack` that arrives later is accepted, later saves wait behind it, and the person's Retry resends the same save-request with the same `requestId` and base revision. Only a `save-nack`, a `disconnect` or a lost port ends it. After a `save-nack`, Retry sends a new save-request with a new id; after a lost connection, the same save-request is sent again on the next connection. An agent's `document.save` receipt says `unacknowledged` at the fifteen seconds. A failed close is retried as a close.
 
-**Store each `requestId` once.** On Retry or reconnect, recognise a repeated id, skip the write and repeat the first answer: the same `save-ack` revision or `save-nack`.
+**Store each `requestId` once.** On Retry or reconnect, recognize a repeated id, skip the write and repeat the first answer: the same `save-ack` revision or `save-nack`.
 
 The helper binds each saved ID to a SHA-256 of its exact source plus its filename, document kind, code language
 and base revision. A different capture under the same ID is refused as `save_request_conflict`; it cannot reuse
-the original acknowledgement. The session's UTF-8 document byte limit, well-formed Unicode and save metadata
+the original acknowledgment. The session's UTF-8 document byte limit, well-formed Unicode and save metadata
 schema are checked before the storage callback, with `document_too_large` and `save_payload_invalid` refusals.
 
 ### The host's theme

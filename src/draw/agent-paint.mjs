@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { PaintSurface, PaintBrush, parseBrush, serializeBrush, createPaintPNGCodec, PAINT_BRUSH_CONTROLS, PAINT_DIP_FULL, paintSizeDefault, paintBrushRadiusOffset, paintBrushDip, paintBrushFeel, paintBrushHead } from './paint.mjs';
+import { PaintSurface, PaintBrush, parseBrush, serializeBrush, PAINT_BRUSH_CONTROLS, PAINT_DIP_FULL, paintSizeDefault, paintBrushRadiusOffset, paintBrushDip, paintBrushFeel, paintBrushHead } from './paint.mjs';
 import { RAPIER_PAINT_BRUSHES, paintBrushById } from './brushes.mjs';
 import {admitPaintReplay, paintReplayFits, PAINT_REPLAY_MAX_BYTES} from './paint-history.mjs';
 import {AGENT_PAINT_LIMITS, storedPaintPointCount} from './paint-limits.mjs';
@@ -26,7 +26,7 @@ const finite = n => typeof n === 'number' && Number.isFinite(n);
 const unit = n => finite(n) && n >= 0 && n <= 1;
 const HEX = /^#[0-9a-f]{6}$/i;
 const sameScale = (a, b) => finite(a) && finite(b) && Math.abs(a - b) <= 1e-12 * Math.max(1, Math.abs(a), Math.abs(b));
-const cancelled = signal => { if (signal?.aborted) { const error = new Error('Painting cancelled'); error.name = 'AbortError'; throw error; } };
+const cancelled = signal => { if (signal?.aborted) { const error = new Error('Painting canceled'); error.name = 'AbortError'; throw error; } };
 const copy = value => JSON.parse(JSON.stringify(value));
 
 let waterSessionId;
@@ -106,34 +106,53 @@ const WATER_AGENT_ACTIONS = Object.freeze({
  tip:{kind:'tip',brush:{brush:'water/own-stamp',tip:{width:2,height:2,mask:[255,128,128,255]}}}
 });
 
-export function admitAgentStroke(raw, stored = false) {
-	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-	const entry = typeof raw.brush === 'string' ? paintBrushById(raw.brush) : null;
-	if (!entry || typeof raw.colour !== 'string' || !HEX.test(raw.colour)) return null;
-	if (raw.size != null && !(finite(raw.size) && raw.size >= 0 && raw.size <= 100)) return null;
-	if (raw.pigment != null && typeof raw.pigment !== 'boolean' || raw.stabilisation != null && !unit(raw.stabilisation) || raw.response != null && !(finite(raw.response) && raw.response >= .5 && raw.response <= 2)) return null;
-	if (raw.load != null && !unit(raw.load) || raw.water != null && !unit(raw.water)) return null;
-	if (raw.angle != null && !(finite(raw.angle) && raw.angle >= 0 && raw.angle <= 179)) return null;
-	if (raw.follow != null && typeof raw.follow !== 'boolean' || raw.erase != null && typeof raw.erase !== 'boolean') return null;
+function agentStrokeFault(raw, stored) {
+	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return '';
+	if (typeof raw.brush !== 'string' || !paintBrushById(raw.brush)) return 'brush';
+	if (typeof raw.colour !== 'string' || !HEX.test(raw.colour)) return 'colour';
+	if (raw.size != null && !(finite(raw.size) && raw.size >= 0 && raw.size <= 100)) return 'size';
+	if (raw.pigment != null && typeof raw.pigment !== 'boolean') return 'pigment';
+	if (raw.stabilisation != null && !unit(raw.stabilisation)) return 'stabilisation';
+	if (raw.response != null && !(finite(raw.response) && raw.response >= .5 && raw.response <= 2)) return 'response';
+	if (raw.load != null && !unit(raw.load)) return 'load';
+	if (raw.water != null && !unit(raw.water)) return 'water';
+	if (raw.angle != null && !(finite(raw.angle) && raw.angle >= 0 && raw.angle <= 179)) return 'angle';
+	if (raw.follow != null && typeof raw.follow !== 'boolean') return 'follow';
+	if (raw.erase != null && typeof raw.erase !== 'boolean') return 'erase';
 	if (!Array.isArray(raw.points) || raw.points.length < 1 ||
-		(stored ? storedPaintPointCount(raw.points) : raw.points.length) > AGENT_PAINT_LIMITS.points) return null;
-	const points = [];
-	for (const p of raw.points) {
-		if (!Array.isArray(p) || p.length < 2 || p.length > 3 || !finite(p[0]) || !finite(p[1]) || Math.abs(p[0]) > 1e6 || Math.abs(p[1]) > 1e6) return null;
-		if (p.length === 3 && !unit(p[2])) return null;
-		points.push(p.length === 3 ? [p[0], p[1], p[2]] : [p[0], p[1]]);
-	}
+		(stored ? storedPaintPointCount(raw.points) : raw.points.length) > AGENT_PAINT_LIMITS.points) return 'points';
+	for (const p of raw.points)
+		if (!Array.isArray(p) || p.length < 2 || p.length > 3 || !finite(p[0]) || !finite(p[1]) || Math.abs(p[0]) > 1e6 || Math.abs(p[1]) > 1e6 || p.length === 3 && !unit(p[2])) return 'points';
+	return null;
+}
+export function admitAgentStroke(raw, stored = false) {
+	if (agentStrokeFault(raw, stored) !== null) return null;
+	const entry = paintBrushById(raw.brush), points = raw.points.map(p => p.length === 3 ? [p[0], p[1], p[2]] : [p[0], p[1]]);
 	const stroke = {brush: entry.id, colour: raw.colour.toLowerCase(), size: raw.size ?? paintSizeDefault(entry.id), angle: raw.angle ?? 45, follow: raw.follow ?? false, erase: raw.erase ?? false, points};
 	for (const key of ['pigment', 'stabilisation', 'response']) if (raw[key] != null) stroke[key] = raw[key];
 	if (raw.load != null && raw.load < PAINT_DIP_FULL) stroke.load = raw.load;
 	if (raw.water != null && raw.water > 0.005) stroke.water = raw.water;
 	return stroke;
 }
+const STROKE_FAULT_HINTS = {
+	'': 'Each stroke is an object with brush, colour, an optional size and points.',
+	brush: 'Use a brush id from read {guide:"water"}, for example dieterle/round-1.',
+	colour: 'Use a hex color such as #2b5b84.',
+	size: 'Use a size from 0 to 100, or omit it for the brush default.',
+	points: 'Give 1 to ' + AGENT_PAINT_LIMITS.points + ' points, each [x,y] or [x,y,pressure] with pressure from 0 to 1.',
+};
+export function agentStrokesFault(raw, prefix = 'strokes', stored = false) {
+	if (!Array.isArray(raw) || !raw.length || raw.length > AGENT_PAINT_LIMITS.strokes) return {field: prefix, hint: 'Send 1 to ' + AGENT_PAINT_LIMITS.strokes + ' strokes.'};
+	for (const [index, stroke] of raw.entries()) {
+		const fault = agentStrokeFault(stroke, stored);
+		if (fault !== null) return {field: prefix + '[' + index + ']' + (fault ? '.' + fault : ''), hint: STROKE_FAULT_HINTS[fault] || 'Read the paint guide for this stroke field.'};
+	}
+	if (raw.reduce((n, s) => n + (stored ? storedPaintPointCount(s.points) : s.points.length), 0) > AGENT_PAINT_LIMITS.total) return {field: prefix, hint: 'Send at most ' + AGENT_PAINT_LIMITS.total + ' points across all strokes.'};
+	return null;
+}
 export function admitAgentStrokes(raw, stored = false) {
-	if (!Array.isArray(raw) || !raw.length || raw.length > AGENT_PAINT_LIMITS.strokes) return null;
-	const strokes = raw.map(stroke => admitAgentStroke(stroke, stored));
-	if (strokes.some(s => !s) || strokes.reduce((n, s) => n + (stored ? storedPaintPointCount(s.points) : s.points.length), 0) > AGENT_PAINT_LIMITS.total) return null;
-	return strokes;
+	if (agentStrokesFault(raw, 'strokes', stored)) return null;
+	return raw.map(stroke => admitAgentStroke(stroke, stored));
 }
 
 function prepareAgentStrokes(raw) {
@@ -209,7 +228,6 @@ export class AgentPaintRun {
 	}
 }
 
-const codec = createPaintPNGCodec();
 export function prepareAgentPainting(raw, seed = 1, options = {}) {
 	cancelled(options.signal);
 	const admitted = prepareAgentStrokes(raw), frame = admitted && agentPaintFrame(admitted);
@@ -271,9 +289,9 @@ export async function encodeAgentPainting(prepared) {
 	options.onProgress?.({phase: 'encoding', completed: total, total});
 	const px = run.surface.toRGBA8();
 	if (!target && !px.data.some((v, i) => i % 4 === 3 && v)) return null;
-	const raster = await codec.compressed(px), w = frame.w / AGENT_PAINT_GRAIN, h = frame.h / AGENT_PAINT_GRAIN;
+	const raster = await encodePaintRaster(px, options), w = frame.w / AGENT_PAINT_GRAIN, h = frame.h / AGENT_PAINT_GRAIN;
 	cancelled(options.signal);
-	const replay = prepared.replay || {baseRaster: await codec.compressed({width: frame.w, height: frame.h, data: new Uint8ClampedArray(frame.w * frame.h * 4)}), px: [frame.w, frame.h], scale: run.scale, entries: []};
+	const replay = prepared.replay || {baseRaster: null, px: [frame.w, frame.h], scale: run.scale, entries: []};
 	const contribution = typeof options.contribution === 'string' ? options.contribution : 'paint-' + seed + '-' + (replay.entries.length + 1);
 	const entry = {id: contribution, actor: 'agent', strokes, seed, px: [frame.w, frame.h], scale: run.scale, grow: prepared.grow || [0, 0, 0, 0]};
 	if (replay.entries.some(row => row.id === contribution)) throw new Error('Paint contribution is already present');
@@ -414,7 +432,7 @@ async function replayPaintEntries(replay, options = {}) {
 		const at=replay.entries.findLastIndex(entry=>entry.resume);
 		if(at>=0){const {resume,...first}=replay.entries[at];replay={...replay,baseRaster:resume.raster,px:resume.px.slice(),scale:resume.scale,paper:resume.paper,entries:[first,...replay.entries.slice(at+1)],views:(replay.views||[]).filter(view=>view.at>at).map(view=>({...view,at:view.at-at}))};}
 	}
-	let pixels = replay.baseRaster === null && replay.mode === 'water' ? {width:replay.px[0],height:replay.px[1],data:new Uint8ClampedArray(replay.px[0]*replay.px[1]*4)} : await decodePaintRaster(replay.baseRaster, options), live = null, brushes = new Map();
+	let pixels = replay.baseRaster === null ? {width:replay.px[0],height:replay.px[1],data:new Uint8ClampedArray(replay.px[0]*replay.px[1]*4)} : await decodePaintRaster(replay.baseRaster, options), live = null, brushes = new Map();
 	if (!pixels || pixels.width !== replay.px[0] || pixels.height !== replay.px[1]) throw new Error('The paint replay base does not match its raster');
 	if (options.requireEmptyBase === true && pixels.data.some(value => value !== 0)) throw new Error('The new paint layer has unrecorded base material');
 	let turn = performance.now(), viewIndex = 0, waterPaper = replay.paper, retainedSurface = null;
@@ -551,7 +569,7 @@ export async function replayAgentPainting(shape, omitIds, options = {}) {
 	const revised = {...replay, entries: replay.entries.map(entry => ids.has(entry.id) ? {...entry, removed: true} : entry)};
 	const pixels = await replayPaintEntries(revised, options);
 	if (pixels.width !== actual.width || pixels.height !== actual.height) throw new Error('Paint replay changed the current pixel frame');
-	const raster = water ? await encodeWaterRaster(pixels,options) : await codec.compressed(pixels);
+	const raster = await encodePaintRaster(pixels,options);
 	cancelled(options.signal);
 	const paint = {...shape.paint, replay: revised}; delete paint.strokes; delete paint.actions; delete paint.seed;
 	if (water) paint.paper=waterReplayPaper(revised);
@@ -578,7 +596,7 @@ async function applyWaterActions(surface,actions,options={}) {
 		await yieldPainting();
 	}
 }
-async function encodeWaterRaster(pixels,options={}) {
+export async function encodePaintRaster(pixels,options={}) {
 	const job=encodePaintingSteps(pixels.data,pixels.width,pixels.height,{quality:100});
 	for(let result=job.next();!result.done;result=job.next()) {cancelled(options.signal);await yieldPainting();}
 	cancelled(options.signal);
@@ -723,7 +741,7 @@ async function paintAgentWater(raw,seed,target,options) {
 		await applyWaterActions(surface,waterActionsInFrame(actions,surface),options);
 		const painted=await surface.toRGBA8();
 		if(!target&&!painted.data.some((value,index)=>index%4===3&&value))return null;
-		const raster=await encodeWaterRaster(painted,options);
+		const raster=await encodePaintRaster(painted,options);
 		if(raster.length>8*1024*1024)throw Object.assign(new Error('The painted layer is full. Continue on a new layer.'),{code:'paint_layer_full'});
 		const paint={...(target?.paint||{}),mode:'water',paper:surface.paperId,brush:actions.find(action=>typeof action.brush==='string')?.brush || 'water/round',px:[frame.w,frame.h],scale,seed,replay:grown};
 		delete paint.strokes;delete paint.actions;

@@ -8,7 +8,7 @@ Agents edit live, beside the person or while they are away. Rapier shows their p
 taps a change to see what was there before and undoes anything while keeping later edits. Agents can deliberately
 show a diff with `show {target:"comparison"}`.
 
-This package is **AGPL-3.0-only**, with a commercial licence available. The rendering functions in `rapier-markdown-kit/render` are **MIT**; that licence does not cover this service, the editor or the agent kernel.
+This package is **AGPL-3.0-only**, with a commercial license available. The rendering functions in `rapier-markdown-kit/render` are **MIT**; that license does not cover this service, the editor or the agent kernel.
 
 ## Choose a Rapier workflow
 
@@ -154,7 +154,7 @@ node tools/build.mjs
 node tools/stage-server.mjs
 ```
 
-The output is `dist/rapier-server`, including runtime dependencies, licence notices and MCP skills. Staging verifies the bundled page hashes and versions; `BUILD.json` lists each runtime file and its hash. The public repository includes this package under `server/` and its rebuildable source.
+The output is `dist/rapier-server`, including runtime dependencies, license notices and MCP skills. Staging verifies the bundled page hashes and versions; `BUILD.json` lists each runtime file and its hash. The public repository includes this package under `server/` and its rebuildable source.
 
 Release staging refuses noncanonical or development-packed profiles. For a deliberately nonrelease local build only:
 
@@ -163,7 +163,7 @@ RAPIER_PACK=fast node tools/build.mjs
 node tools/stage-server.mjs --development
 ```
 
-The output is labelled development. Staging does not publish or deploy it.
+The output is labeled development. Staging does not publish or deploy it.
 
 ## Tests
 

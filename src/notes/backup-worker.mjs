@@ -8,7 +8,7 @@ const STAGING_WRITE_BYTES = 64 * 1024;
 
 const failure = error => ({name: String(error?.name || 'Error'), message: String(error?.message || error).slice(0, 1024),
 	...(error instanceof AggregateError ? {causes: error.errors.map(failure)} : {})});
-const cancelled = () => new Error('backup was cancelled');
+const cancelled = () => new Error('backup was canceled');
 const FULL = 'the browser\'s storage for this site is full';
 const storageFull = cause => Object.assign(new Error(FULL), {name: 'QuotaExceededError', ...(cause ? {cause} : {})});
 const synchronous = (value, method) => { if (value !== undefined) throw new Error('backup needs synchronous ' + method); };

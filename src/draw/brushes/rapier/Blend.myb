@@ -2,7 +2,7 @@
  "comment": "MyPaint brush file",
  "version": 3,
  "description": "Blend",
- "notes": "TOOL, operator `blend` (rapier_op 4). Mixes what is already there without moving it: every pixel is pulled toward the footprint's own coverage-weighted mean, in the ten-band spectral basis, so blue into yellow gives green rather than grey. Total coverage inside the footprint is conserved exactly, so a blend loses no paint.\n\nAuthor: Rapier\nLicense: AGPL-3.0-only",
+ "notes": "TOOL, operator `blend` (rapier_op 4). Mixes what is already there without moving it: every pixel is pulled toward the footprint's own coverage-weighted mean, in the ten-band spectral basis, so blue into yellow gives green rather than gray. Total coverage inside the footprint is conserved exactly, so a blend loses no paint.\n\nAuthor: Rapier\nLicense: AGPL-3.0-only",
  "parent_brush_name": "Rapier/Blend",
  "group": "",
  "settings": {

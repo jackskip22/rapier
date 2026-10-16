@@ -51,7 +51,7 @@ async function _rapierEnsurePdfImportPlugin(run) {
     await plugin.install({signal: run.controller.signal, onProgress: fraction => _rapierImportProgress(run, 'Downloading PDF reader', fraction)});
     }
   }
-  if (run.controller.signal.aborted) throw new DOMException('Import cancelled', 'AbortError');
+  if (run.controller.signal.aborted) throw new DOMException('Import canceled', 'AbortError');
   await plugin.ensureLoaded();
   _rapierPdfSettingsRefresh();
   return true;
@@ -85,7 +85,7 @@ async function _rapierReadImportedDocument(file, name = file?.name || '') {
   const run = {stamp: settled.value, controller: new AbortController(), banner: null};
   _rapierDocumentImport.active = run;
   const checkCurrent = () => {
-    if (run.controller.signal.aborted) throw new DOMException('Import cancelled', 'AbortError');
+    if (run.controller.signal.aborted) throw new DOMException('Import canceled', 'AbortError');
     if (!_rapierMutationStampIsCurrent(run.stamp)) {
       run.controller.abort();
       throw new Error('The document changed; import the file again.');

@@ -531,7 +531,7 @@ const _rapierNotesSyncUi = (() => {
 	}
 	async function syncNow({signal, guard} = {}) {
 		let submitted = false;
-		const stopped = () => { if (signal?.aborted) throw new DOMException('The sync request was cancelled.', 'AbortError'); guard?.(); };
+		const stopped = () => { if (signal?.aborted) throw new DOMException('The sync request was canceled.', 'AbortError'); guard?.(); };
 		const refused = reason => ({action: 'now', synced: false, reason});
 		try {
 			stopped();
