@@ -12,6 +12,7 @@ const WINDOW = 1024 * 1024;
 const free = 'Yes. Rapier is free and open source, with no account, ads or tracking.';
 const offline = 'Yes, once the page has loaded. Add it to your home screen to open it like an app, or keep the whole editor as one HTML file.';
 const local = 'No. Rapier works in your browser. Local editing uploads nothing.';
+const saved = 'Yes. Press Done to download it as JPEG XL, PNG or layers (OpenRaster), or add it to your document';
 export const DOORS = Object.freeze({
 	'/privacy': Object.freeze({name: 'Privacy and terms', title: 'Rapier privacy and terms',
 		description: 'Rapier privacy and terms: local editing, optional services, data storage and deletion.'}),
@@ -48,21 +49,22 @@ export const DOORS = Object.freeze({
 		faq: Object.freeze([
 			Object.freeze(['Is it free?', free]),
 			Object.freeze(['Does it work on a phone?', 'Yes. Paint with your finger or a stylus. The flowing Water brush needs a browser with WebGPU; other browsers paint with the watercolor paint brush.']),
-			Object.freeze(['Can I save my painting?', 'Yes. Press Done to download it as a PNG picture, or add it to your document as an editable drawing.']),
+			Object.freeze(['Can I save my painting?', saved + ' as an editable drawing.']),
 		])}),
 	'/paint': Object.freeze({name: 'Paint', title: 'Free painting app online, no download | Rapier Paint',
 		description: 'Paint in your browser with oil, bristle, pencil, pen and watercolor brushes. Use a finger, mouse or pen. Free, no download, no account.',
-		image: 'og-watercolor.png', imageSize: [1200, 630], imageAlt: 'Blue, yellow and rose watercolor washes painted with Rapier Water',
+		image: 'og-paint.png', imageSize: [1200, 630], imageAlt: 'Rapier Paint: paint on your phone',
 		h1: 'Free painting app online', view: 'paint', related: ['/watercolor', '/draw', '/notes'],
 		lead: 'This page opens a canvas with real brushes: oil, bristle, scumble, pencil and pen from MyPaint, and watercolor that flows. Paint with your finger, then smudge, erase and undo. Nothing to download or sign up for.',
 		faq: Object.freeze([
 			Object.freeze(['Is it free?', free]),
 			Object.freeze(['Do I need to download an app?', 'No. It runs in your browser. On Android you can also install Rapier from Google Play.']),
 			Object.freeze(['Can kids use it?', 'Yes. There are no ads, accounts or tracking.']),
-			Object.freeze(['Can I save my painting?', 'Yes. Press Done to download it as a PNG picture, or add it to your document.']),
+			Object.freeze(['Can I save my painting?', saved + '.']),
 		])}),
 	'/markdown-editor': Object.freeze({name: 'Markdown editor', title: 'Free online Markdown editor, no sign-up | Rapier',
 		description: 'Write Markdown on the formatted page or in the source: tables, Mermaid, math, pictures. Export PDF and Word. Free, no account, works offline.',
+		image: 'og-markdown-editor.png', imageSize: [1200, 630], imageAlt: 'Rapier: free online Markdown editor',
 		h1: 'Free online Markdown editor', view: 'editor', related: ['/markdown-to-pdf', '/markdown-to-word', '/markdown-table-editor', '/notes'],
 		lead: 'Rapier is a Markdown editor in your browser. Write on the formatted page, as in a word processor, or switch to the Markdown source. Tables, checklists, footnotes, code, LaTeX math and Mermaid diagrams. Your file stays plain Markdown. No sign-up, and it keeps working offline.',
 		faq: Object.freeze([
@@ -74,6 +76,7 @@ export const DOORS = Object.freeze({
 		])}),
 	'/markdown-viewer': Object.freeze({name: 'Markdown viewer', title: 'Markdown viewer: open and read .md files online | Rapier',
 		description: 'Open a Markdown file and read it formatted: headings, tables, code, math and diagrams. Edit in place or turn on read only. Free, nothing uploaded.',
+		image: 'og-markdown-viewer.png', imageSize: [1200, 630], imageAlt: 'Rapier: open and read Markdown files',
 		h1: 'Markdown viewer and preview', view: 'editor', related: ['/markdown-editor', '/markdown-to-pdf'],
 		lead: 'Open a .md file in Rapier and read it formatted: headings, tables, checklists, code, math and Mermaid diagrams. There is no split preview. The page is the preview, and you can edit it in place. Turn on read only in settings to keep the file as it is.',
 		faq: Object.freeze([
@@ -84,6 +87,7 @@ export const DOORS = Object.freeze({
 		])}),
 	'/markdown-to-pdf': Object.freeze({name: 'Markdown to PDF', title: 'Markdown to PDF: free online converter | Rapier',
 		description: 'Write or open Markdown and save it as a PDF with searchable text: tables, code, math and pictures. Free, in your browser, nothing uploaded.',
+		image: 'og-markdown-to-pdf.png', imageSize: [1200, 630], imageAlt: 'Rapier: Markdown to PDF',
 		h1: 'Markdown to PDF', view: 'editor', related: ['/markdown-to-word', '/markdown-editor'],
 		lead: 'Paste or open your Markdown, then tap ••• at the top right and .pdf under export. Rapier writes the PDF in your browser: nothing is uploaded. The text stays searchable, and the Markdown travels inside the PDF, so Rapier can open it again as the same Markdown.',
 		faq: Object.freeze([
@@ -94,6 +98,7 @@ export const DOORS = Object.freeze({
 		])}),
 	'/markdown-to-word': Object.freeze({name: 'Markdown to Word', title: 'Markdown to Word (.docx): free online converter | Rapier',
 		description: 'Turn Markdown into an editable Word document: headings, lists, tables, code and pictures. Free, in your browser, no upload or account.',
+		image: 'og-markdown-to-word.png', imageSize: [1200, 630], imageAlt: 'Rapier: Markdown to Word',
 		h1: 'Markdown to Word', view: 'editor', related: ['/word-to-markdown', '/markdown-to-pdf'],
 		lead: 'Paste or open your Markdown, then tap ••• at the top right and .docx under export. Rapier writes an editable Word document in your browser, with headings, lists, tables, code and pictures. Nothing is uploaded.',
 		faq: Object.freeze([
@@ -103,6 +108,7 @@ export const DOORS = Object.freeze({
 		])}),
 	'/word-to-markdown': Object.freeze({name: 'Word to Markdown', title: 'Word to Markdown: convert .docx to .md online | Rapier',
 		description: 'Open a Word document and get clean, editable Markdown, pictures included. Save it as a .md file. Free, in your browser, nothing uploaded.',
+		image: 'og-word-to-markdown.png', imageSize: [1200, 630], imageAlt: 'Rapier: Word to Markdown',
 		h1: 'Word to Markdown', view: 'editor', related: ['/markdown-to-word', '/markdown-editor'],
 		lead: 'Tap ••• at the top right, then open, and pick a .docx file. Rapier turns it into an editable Markdown page: headings, lists, tables, links and pictures. Save, or Share then Markdown, gives you the .md file, with the pictures inside it.',
 		faq: Object.freeze([
@@ -112,6 +118,7 @@ export const DOORS = Object.freeze({
 		])}),
 	'/markdown-table-editor': Object.freeze({name: 'Markdown table editor', title: 'Markdown table editor: make tables online, free | Rapier',
 		description: 'Edit Markdown tables cell by cell, add rows and columns with + and −, or paste cells from a spreadsheet. The file stays a plain Markdown table.',
+		image: 'og-markdown-table-editor.png', imageSize: [1200, 630], imageAlt: 'Rapier: make Markdown tables',
 		h1: 'Markdown table editor', view: 'editor', related: ['/markdown-editor', '/markdown-to-pdf'],
 		lead: 'Tap a cell to edit it, or drag the handles to move cells. Add cells with the + and − buttons on the bar under the table. Paste cells from a spreadsheet and the table grows to fit. The source stays a plain Markdown table that any app can read.',
 		faq: Object.freeze([
@@ -121,6 +128,7 @@ export const DOORS = Object.freeze({
 		])}),
 	'/mermaid-editor': Object.freeze({name: 'Mermaid editor', title: 'Mermaid diagram editor online, free | Rapier',
 		description: 'Write Mermaid flowcharts and other diagrams in Markdown and see them drawn on the page, or draw diagrams you can move by hand. Free, works offline.',
+		image: 'og-mermaid-editor.png', imageSize: [1200, 630], imageAlt: 'Rapier: Mermaid diagram editor',
 		h1: 'Mermaid diagram editor', view: 'editor', related: ['/draw', '/markdown-editor'],
 		lead: 'Write a mermaid code block and Rapier draws it on the page. Flowcharts draw at once; other Mermaid diagrams, such as sequence diagrams and Gantt charts, use the free diagram plug-in, which downloads once and then works offline. Prefer to move boxes by hand? Draw makes diagrams with arrows that stay attached, saved as editable SVG.',
 		faq: Object.freeze([
@@ -129,6 +137,18 @@ export const DOORS = Object.freeze({
 			Object.freeze(['Can I export the diagram?', 'Yes. Export the document as PDF, Word or an offline web page, with the diagram drawn.']),
 		])}),
 });
+
+export const GUIDES = Object.freeze({
+	'/agents': Object.freeze({name: 'Rapier for agents', file: 'agents.md', title: 'Rapier for AI agents: MCP server, tools and skills',
+		description: 'Connect Claude, Cursor, ChatGPT or any MCP client to Rapier with no account. Read and edit one live document with a person, draw, paint and export.'}),
+	'/gemini': Object.freeze({name: 'Add Rapier to Gemini', file: 'gemini.md', title: 'Add Rapier to Gemini | Rapier',
+		description: 'Use Rapier with Gemini through MCP: a shared Markdown editor in your browser, no account. Keep the result as Markdown or an offline HTML file.'}),
+	'/markdown-standard': Object.freeze({name: 'Self-contained Markdown', file: 'markdown-standard.md', title: 'Self-contained Markdown: one .md file with its images | Rapier',
+		description: 'An open MIT convention: one UTF-8 Markdown file holds the document and every image, with optional layout, drawings and an HTML reader.'}),
+	'/will': Object.freeze({name: 'Will/1', file: 'will.md', title: 'Will/1: a person\'s instructions for a document region | Rapier',
+		description: 'Will/1 marks a region of a Markdown, Word or PDF document with a person\'s instruction that agents and editors honor.'}),
+});
+export const PAGES = Object.freeze({...DOORS, ...GUIDES});
 
 const encoder = new TextEncoder(), decoder = new TextDecoder('utf-8', {fatal: true});
 const beginBytes = encoder.encode(BEGIN), endBytes = encoder.encode(END);
@@ -196,7 +216,7 @@ function overlapTail(carry, chunk, width) {
 }
 
 export function doorHead(head, path) {
-	const door = DOORS[path];
+	const door = PAGES[path];
 	if (!door) return null;
 	const title = /<title>([^<]*)<\/title>/.exec(head);
 	const description = /<meta name="description" content="([^"]*)">/.exec(head);
@@ -228,6 +248,8 @@ export function doorHead(head, path) {
 		{'@type': 'WebPage', '@id': url + '#webpage', url, name: door.title, description: door.description, inLanguage: 'en',
 			isPartOf: {'@id': ORIGIN + '/#website'}, breadcrumb: {'@id': url + '#breadcrumb'},
 			...(door.image ? {primaryImageOfPage: {'@id': url + '#image'}} : {})},
+		...(GUIDES[path] ? [{'@type': 'TechArticle', '@id': url + '#article', headline: door.name, url, description: door.description, inLanguage: 'en',
+			mainEntityOfPage: {'@id': url + '#webpage'}, publisher: {'@id': ORIGIN + '/#organization'}}] : []),
 		{'@type': 'BreadcrumbList', '@id': url + '#breadcrumb', itemListElement: [
 			{'@type': 'ListItem', position: 1, name: 'Rapier', item: ORIGIN + '/'},
 			{'@type': 'ListItem', position: 2, name: door.name, item: url}]},
@@ -251,8 +273,8 @@ function doorGuide(body, path) {
 	return /^<template>\s*(<section id="rapier-seo">[\s\S]*<\/section>)\s*<\/template>$/.exec(template)?.[1] ?? null;
 }
 
-export function doorPage(bytes, path) {
-	if (!DOORS[path]) return bytes;
+export function doorPage(bytes, path, section = null) {
+	if (!(section === null ? DOORS[path] : GUIDES[path])) return bytes;
 	const end = indexOf(bytes, endBytes), cut = end + endBytes.length;
 	if (end < 0 || cut > HEAD_WINDOW) return bytes;
 	const bodyAt = indexOf(bytes, beginBytes, cut), bodyEnd = indexOf(bytes, endBytes, bodyAt + beginBytes.length);
@@ -260,7 +282,7 @@ export function doorPage(bytes, path) {
 	if (bodyAt < 0 || bodyEnd < 0 || tailAt > WINDOW) return bytes;
 	try {
 		const head = doorHead(decoder.decode(bytes.subarray(0, cut)), path);
-		const guide = doorGuide(decoder.decode(bytes.subarray(bodyAt + beginBytes.length, bodyEnd)), path);
+		const guide = section ?? doorGuide(decoder.decode(bytes.subarray(bodyAt + beginBytes.length, bodyEnd)), path);
 		if (head === null || guide === null) return bytes;
 		const next = encoder.encode(head), body = encoder.encode(BEGIN + '\n' + guide + '\n' + END);
 		const middle = bytes.subarray(cut, bodyAt);
@@ -350,7 +372,7 @@ export default {
 			if (!DOORS[path]) return plain();
 			if (url.pathname !== path) return Response.redirect(url.origin + path + url.search, 308);
 			const published = await env.ASSETS.fetch(new Request(new URL(doorAssetPath(path), url), request));
-			if (published.status === 304 || published.status === 206 || (published.ok && !contentEncoded(published) && htmlResponse(published))) return published;
+			if (published.status === 304 || published.status === 206 || (published.ok && htmlResponse(published))) return published;
 			await release(published);
 			const asset = await env.ASSETS.fetch(new Request(new URL(PAGE, url), {method: method === 'HEAD' ? 'HEAD' : 'GET', headers: {accept: 'text/html'}}));
 			if (!asset.ok || (method !== 'HEAD' && !asset.body) || contentEncoded(asset) || !htmlResponse(asset)) {

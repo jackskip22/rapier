@@ -141,15 +141,34 @@ function journalOperations(before, after, journal) {
 
 function journalWalk(before, after, journal) {
 	try {
-		let text = after;
+		const pieces = [after];
 		const lookup = _rapierRecordIndex(journal), groups = [];
+		let length = after.length;
+		const locate = at => { let index = 0; for (; index < pieces.length - 1 && at >= pieces[index].length; index++) at -= pieces[index].length; return [index, at]; };
+		const codeAt = at => { const [index, offset] = locate(at); return pieces[index].charCodeAt(offset); };
+		const read = (from, to) => { let out = ''; for (let [index, offset] = locate(from); from < to && index < pieces.length; index++, offset = 0) { const part = pieces[index].slice(offset, offset + to - from); out += part; from += part.length; } return out; };
+		const cut = at => { const [index, offset] = locate(at); if (offset > 0 && offset < pieces[index].length) pieces.splice(index, 1, pieces[index].slice(0, offset), pieces[index].slice(offset)); };
+		const whole = text => typeof text === 'string' && !/[\uD800-\uDFFF]/u.test(text);
+		const splitsPair = at => at > 0 && at < length && (codeAt(at - 1) & 0xFC00) === 0xD800 && (codeAt(at) & 0xFC00) === 0xDC00;
 		for (let index = journal.length - 1; index >= 0; index--) {
 			const rows = lookup.splices(journal[index]);
-			const prior = _rapierTransformSplices(text, rows, true);
-			if (prior === null) return;
+			if (!Array.isArray(rows)) return;
+			for (const row of rows.slice().reverse()) {
+				if (!row || !Number.isSafeInteger(row.pos) || row.pos < 0 || Object.is(row.pos, -0)) return;
+				const pos = row.pos, removed = row.inserted, inserted = row.removed;
+				if (!whole(removed) || !whole(inserted) || pos > length || pos + removed.length > length ||
+						splitsPair(pos) || splitsPair(pos + removed.length) || read(pos, pos + removed.length) !== removed) return;
+				cut(pos); cut(pos + removed.length);
+				let [first] = locate(pos), count = 0;
+				if (pos === length) first = pieces.length;
+				else if (locate(pos)[1] !== 0) first++;
+				for (let left = removed.length; left > 0; count++) left -= pieces[first + count].length;
+				pieces.splice(first, count, ...(inserted ? [inserted] : []));
+				length += inserted.length - removed.length;
+				for (let at = pieces.length - 1; at >= 0; at--) if (!pieces[at] && pieces.length > 1) pieces.splice(at, 1);
+			}
 			groups.push(rows);
-			if (prior === before) return groups.reverse().flat().map(({pos, removed, inserted}) => ({pos, removed, inserted}));
-			text = prior;
+			if (length === before.length && pieces.join('') === before) return groups.reverse().flat().map(({pos, removed, inserted}) => ({pos, removed, inserted}));
 		}
 	} catch (_) { return; }
 }

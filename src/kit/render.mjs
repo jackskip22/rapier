@@ -176,6 +176,7 @@ async function _rapierBuildArtifact(options, providedContext) {
 		+ '<meta http-equiv="Content-Security-Policy" content="' + _rapierExportedPageCsp(layoutScript || inkScript || htmlScript ? nonce : '', includeFonts || !!fontCss || !!factoryFontCss) + '">\n'
 		+ '<meta name="referrer" content="no-referrer">\n'
 		+ '<link rel="icon" href="data:,">\n'
+		+ _rapierPagePreviewMeta(styledRoot, pageTitle)
 		+ '<meta name="generator" content="Rapier ' + escapeRapierHtmlText(version) + '">\n'
 		+ '<title>' + escapeRapierHtmlText(pageTitle) + '</title>\n'
 		+ '<style>' + css + '</style>\n</head>\n'
@@ -195,6 +196,16 @@ async function _rapierBuildArtifact(options, providedContext) {
 		metadata,
 		documentTitle: settings && settings.title ? pageTitle : '',
 	};
+}
+
+function _rapierPagePreviewMeta(root, fallbackTitle) {
+	const words = node => String(node?.textContent || '').replace(/\s+/g, ' ').trim();
+	const title = words(root.querySelector('h1,h2,h3,h4,h5,h6')) || String(fallbackTitle || '');
+	const text = [...root.querySelectorAll('p')].map(words).find(line => line.length >= 20) || '';
+	const sentence = /^.{20,300}?[.!?](?=\s|$)/.exec(text)?.[0] || (text.length <= 200 ? text : text.slice(0, 200).replace(/\s+\S*$/, '') + '…');
+	const meta = (key, name, value) => '<meta ' + key + '="' + name + '" content="' + escapeRapierHtmlText(value) + '">\n';
+	return (sentence ? meta('name', 'description', sentence) : '') + (title ? meta('property', 'og:title', title) : '') +
+		(sentence ? meta('property', 'og:description', sentence) : '');
 }
 
 async function _rapierBuildPublishedPage(context) {
@@ -218,6 +229,11 @@ async function _rapierProjectStyledRootAsync(semanticRoot, options = {}) { retur
 function* _rapierProjectStyledRootSteps(semanticRoot, options) {
 	const opts = options || {};
 	const root = yield* cloneTree(semanticRoot);
+	for (const token of root.querySelectorAll('.rapier-source-token--softbreak')) { yield;
+		if (token.getAttribute('data-rapier-source') !== '%0A') token.replaceWith(...token.childNodes);
+		else if (token.previousSibling?.classList?.contains('callout__label')) token.remove();
+		else token.replaceWith(root.ownerDocument.createTextNode(' '));
+	}
 	const metadata = opts.metadata || {};
 
 	if (metadata.docKind !== 'markdown') {
@@ -352,7 +368,7 @@ function _rapierPortableAnchorId(baseName, id) {
 	const slug = String(baseName || 'document').toLowerCase()
 		.replace(/[^a-z0-9]+/g, '-')
 		.replace(/^-+|-+$/g, '') || 'document';
-	return 'rapier-' + slug + '-' + (String(id).replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '') || 'anchor');
+	return 'rapier-anchor-' + slug + '-' + (String(id).replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '') || 'anchor');
 }
 
 function* _rapierPrefixPortableAnchorsSteps(root, baseName) {
@@ -1463,6 +1479,7 @@ function _rapierProjectArtifactLayout(root, metadata, geometry, preparation) {
       const shape = shapes[side];
       if (!shape) continue;
       const float = doc.createElement('span');
+      float.className = 'rapier-flow-float';
       float.setAttribute('aria-hidden', 'true');
       float.style.cssText = `float:${side};width:${pixels(shape.boxWidth)};height:${pixels(shape.boxHeight)};margin-top:${pixels(shape.startY)};shape-outside:${shape.shape};pointer-events:none`;
       element.prepend(float); floats.push(float); placed.push([float, shape]);

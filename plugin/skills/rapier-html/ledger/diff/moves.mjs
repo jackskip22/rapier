@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 import {separate, phrases} from './concerns.mjs';
 
-// Moves bind equal transported fragments at both ends; renames group a binding's sites.
 export function moves(c) {
   const {before, after, spend, safe, budget, raw, code, tokens, matches, walk, structures, pa, pb, la, aliases} = c;
   const overlaps = (a, b) => a[0] < b[1] && a[1] > b[0];
@@ -9,7 +8,6 @@ export function moves(c) {
     c[side][0] >= range[0] && c[side][1] <= range[1]);
   try { if (!raw && budget.left >= 0) {
     const check = n => { if (!spend(n)) throw null; };
-    // Split transported text at wording boundaries; positions and words own distinct edits.
     const deleted = new Map();
     const moveKey = (item, side, text, parts = []) => {
       const [from, to] = item[side];
@@ -28,7 +26,6 @@ export function moves(c) {
     for (const item of c.result) if (item[3][0] === 2 && !item[2]) {
       const value = after.slice(...item[1]), key = moveKey(item, 1, after, pb);
       let old = deleted.get(key), score = 0;
-      // Edited wording still travels: plain text, or a prose part of the same kind.
       const text = value.trim(), prose = !structures || /^(paragraph|item|task|row|quote|section)$/.test(item[3][1]);
       if (!old && prose && text.length >= 24) for (const candidate of deleted.values()) {
         check(1);
@@ -41,7 +38,6 @@ export function moves(c) {
         if (n * 5 > Math.max(prior.length, text.length) * 3 && n >= score) { old = n === score ? null : candidate; score = n; }
       }
       if (!old || old[4]) continue;
-      // Separators that only one end carries stay outside the transported text.
       const x = [...old[0]], y = [...item[1]];
       for (const end of [0, 1]) {
         const pattern = end ? /\s*$/ : /^\s*/, left = before.slice(...x).match(pattern)[0], right = after.slice(...y).match(pattern)[0];
@@ -52,7 +48,6 @@ export function moves(c) {
       }
       const outer = c.result; c.result = [];
       walk(...x, ...y, 1);
-      // A changed heading can occupy a whole line while its marker still anchors the move.
       if (c.result.length && (c.result[0][0][0] === x[0] || c.result[0][1][0] === y[0] ||
         c.result.at(-1)[0][1] === x[1] || c.result.at(-1)[1][1] === y[1])) {
         c.result = []; walk(...x, ...y, 2);
@@ -60,7 +55,6 @@ export function moves(c) {
       separate(c, x[1], y[1]);
       phrases(c);
       const inner = c.result; c.result = outer;
-      // Equal boundary fragments make the exact extent recoverable without display context.
       if (inner.length && (inner[0][0][0] === x[0] || inner[0][1][0] === y[0] ||
         inner.at(-1)[0][1] === x[1] || inner.at(-1)[1][1] === y[1] || inner.some(c => c[2]))) continue;
       const move = [3, item[3][2] ? item[3][1] : code ? 'line' : 'block', item[3][2], [x, y]];
@@ -69,7 +63,6 @@ export function moves(c) {
         if (a0 < a1) old[4].push([[a0, a1], [old[1][0], old[1][0]], false, group]);
         if (b0 < b1) item[4].push([[item[0][0], item[0][0]], [b0, b1], false, group]);
       };
-      // Unmatched outer separators travel with the move, so restoring it alone keeps blocks apart.
       fragment(old[0][0], x[0], 0, 0, move); fragment(0, 0, item[1][0], y[0], move);
       let a = x[0], b = y[0], wording;
       for (const edit of inner) {

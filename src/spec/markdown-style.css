@@ -4,6 +4,7 @@
  * to Notes. Visual rules stay inside .md-render; this sheet loads no fonts or network resources.
  */
 @property --md-unit{syntax:'<length>';inherits:true;initial-value:16px}
+@property --md-item-line{syntax:'<length>';inherits:true;initial-value:0px}
 :root,.md-render{
 	--md-unit:1rem;
 	--md-hair:calc(var(--md-unit) / 16);
@@ -315,20 +316,23 @@
 	position:relative;
 	--md-marker:0px;
 	counter-increment:rapier-ol;
-	min-height:0;
-	padding-top:0;
+	--md-item-line:1lh;
+	--md-ol-circle:min(2 * var(--md-unit), max(var(--md-item-line), 2 * var(--md-item-line) - 1.48 * var(--md-unit)));
+	--md-ol-top:calc(min(0.15 * var(--md-unit), 0.6 * max(0px, var(--md-ol-circle) - var(--md-item-line))) - min(0.125 * var(--md-unit), max(0px, var(--md-ol-circle) - var(--md-item-line)) / 2) + max(0px, var(--md-item-line) - var(--md-ol-circle)) / 2);
+	min-height:var(--md-ol-circle);
+	padding-top:min(0.15 * var(--md-unit), 0.6 * max(0px, var(--md-ol-circle) - var(--md-item-line)));
 }
 .md-render ol>li::before{
 	content:counter(rapier-ol);
 	position:absolute;
-	inset-inline-start:calc(-2.75 * var(--md-unit) + var(--md-marker, 0px)); top:0;
-	width:min(2 * var(--md-unit), 1lh); height:min(2 * var(--md-unit), 1lh);
+	inset-inline-start:calc(-1.75 * var(--md-unit) - var(--md-ol-circle) / 2 + var(--md-marker, 0px)); top:var(--md-ol-top);
+	width:var(--md-ol-circle); height:var(--md-ol-circle);
 	display:flex; align-items:center; justify-content:center;
 	border:2px solid var(--md-color-line);
 	border-radius:999px;
 	background:var(--md-color-bg);
 	color:var(--md-color-line);
-	font:var(--md-fw-semibold) calc(0.95 * var(--md-unit))/1 var(--md-font-sans);
+	font:var(--md-fw-semibold) min(0.95 * var(--md-unit), 0.55 * var(--md-ol-circle))/1 var(--md-font-sans);
 	font-variant-numeric:tabular-nums;
 	box-sizing:border-box;
 	z-index:1;
@@ -339,8 +343,8 @@
 	position:absolute;
 
 	inset-inline-start:calc(calc(-1.75 * var(--md-unit)) - 1.5px + var(--md-marker, 0px));
-	top:calc(2.2 * var(--md-unit));
-	bottom:calc(var(--md-line) / -4);
+	top:calc(var(--md-ol-top) + 1.0875 * var(--md-ol-circle));
+	bottom:calc(-1 * max(var(--md-item-gap, 0px), var(--md-line) / 4));
 	border-inline-start:3px dotted var(--md-color-line);
 	z-index:0;
 }
@@ -373,24 +377,27 @@
 .md-render .rapier-jump-label strong{font:inherit}
 .md-render ul.rapier-jump-list{
 	--md-jump-gap:calc(.9 * var(--md-unit));
+	--md-jump-pad:calc(.18 * var(--md-unit));
+	--md-jump-circle:10px;
 	--md-jump-marker-inline-start:calc(-1.18 * var(--md-unit));
-	--md-jump-marker-center:1em;
 	list-style:none;
 	padding-inline-start:calc(1.85 * var(--md-unit));
 	margin:0 0 var(--md-gap-block);
 }
 .md-render ul.rapier-jump-list>li{
 	position:relative;
+	--md-item-line:1lh;
+	--md-jump-circle-top:calc(var(--md-jump-pad) + (var(--md-item-line) - var(--md-jump-circle)) / 2);
 	margin:0 0 var(--md-jump-gap);
-	padding:calc(.18 * var(--md-unit)) 0 calc(.18 * var(--md-unit)) calc(.15 * var(--md-unit));
+	padding:var(--md-jump-pad) 0 var(--md-jump-pad) calc(.15 * var(--md-unit));
 }
 .md-render ul.rapier-jump-list>li:last-child{margin-bottom:0}
 .md-render ul.rapier-jump-list>li::before{
 	content:'';
 	position:absolute;
 	inset-inline-start:var(--md-jump-marker-inline-start);
-	top:calc(var(--md-jump-marker-center) - 5px);
-	width:10px;height:10px;
+	top:var(--md-jump-circle-top);
+	width:var(--md-jump-circle);height:var(--md-jump-circle);
 	box-sizing:border-box;
 	border:2px solid var(--md-color-accent-text);
 	background:var(--md-color-bg);
@@ -400,10 +407,10 @@
 .md-render ul.rapier-jump-list>li:not(:last-child)::after{
 	content:'';
 	position:absolute;
-	inset-inline-start:calc(var(--md-jump-marker-inline-start) + 4px);
-	top:var(--md-jump-marker-center);
-	bottom:calc(0px - var(--md-jump-gap) - var(--md-jump-marker-center));
-	border-inline-start:2px dotted color-mix(in srgb,var(--md-color-accent-text) 42%,transparent);
+	inset-inline-start:calc(var(--md-jump-marker-inline-start) + var(--md-jump-circle) / 2 - 1.5px);
+	top:calc(var(--md-jump-circle-top) + var(--md-jump-circle));
+	bottom:calc(-1 * (var(--md-item-gap, var(--md-jump-gap)) + var(--md-jump-circle-top) + var(--md-jump-circle) / 2));
+	border-inline-start:3px dotted var(--md-color-line);
 	z-index:0;
 }
 .md-render ul.rapier-jump-list>li>a{

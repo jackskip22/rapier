@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MIT
 import {splitOpeningFrontmatter} from './frontmatter.mjs';
 
-// The standard parser owns literal regions and comment boundaries. Offsets are original UTF-16,
-// including BOM/CRLF and list/quote prefixes. A private parser view observes rules; it changes no
-// live rule or token. Call once per source, then ask isText(position) or isComment(start, end).
 export function markdownSourcePositions(source, parser) {
   if (typeof source !== 'string' || !parser) throw new TypeError('Source positions require text and its Markdown parser');
   const {body, bodyOffset} = splitOpeningFrontmatter(source), lines = [bodyOffset];
@@ -17,8 +14,6 @@ export function markdownSourcePositions(source, parser) {
   ruler.getRules = chain => parser.inline.ruler.getRules(chain).map(rule => (state, silent) => {
     const start = state.pos, first = state.tokens.length;
     const matched = rule(state, silent), token = state.tokens.at(-1);
-    // A pending text token may flush before this token. Never overwrite a nested rule's span
-    // with its enclosing link's range.
     if (matched && !silent && state.tokens.length > first && !observed.has(token) &&
         ['code_inline', 'html_inline', 'image', 'footnote_ref'].includes(token?.type)) {
       observed.set(token, {start, end: state.pos, source: state.src,
@@ -28,8 +23,6 @@ export function markdownSourcePositions(source, parser) {
     }
     return matched;
   });
-  // A core rule may rewrite an inline token's content after its children were parsed (a task item drops
-  // its `[ ] `). Map rows from the text the inline rules read.
   const read = new WeakMap();
   inline.parse = function (text, md, env, children) { read.set(children, text); return parser.inline.parse.call(this, text, md, env, children); };
   const {tokens, cells} = markdownTableSources(body, owner, {}, lines);
@@ -37,8 +30,6 @@ export function markdownSourcePositions(source, parser) {
     for (const child of children || []) {
       const span = observed.get(child);
       if (!span || span.source !== content) continue;
-      // Inline footnotes are moved to a generated footer without line maps. Their parser-owned
-      // child tokens still stand inside the original ^[...] carrier, not in that footer.
       if (span.footnote?.tokens) {
         readInline(span.footnote.tokens, span.footnote.content, pos => rawOffset(span.start + 2 + pos));
       } else if (child.type !== 'footnote_ref') {
@@ -58,9 +49,6 @@ export function markdownSourcePositions(source, parser) {
     if (token.map && ['fence', 'code_block', 'html_block', 'reference_definition'].includes(token.type)) {
       const start = lineAt(token.map[0]), end = lineAt(token.map[1]);
       add(start, end);
-      // A comment-carrier block can contain several adjacent comments. Keep each carrier,
-      // including a closer surviving damage to its opener. Never promote nested comments or
-      // comment-shaped text in a raw tagged HTML block (pre, script, div, ...).
       if (token.type === 'html_block' && /^\s*<!--/.test(token.content)) {
         let at = source.indexOf('<!--', start);
         while (at >= start && at < end) {
@@ -81,8 +69,6 @@ export function markdownSourcePositions(source, parser) {
       for (let i = 0; i < rows.length; i++) {
         const start = lineAt(token.map[0] + i), end = lineAt(token.map[0] + i + 1), line = source.slice(start, end).replace(/\0/g, '\ufffd');
         let at = line.indexOf(rows[i]), lead = 0;
-        // A container that consumes part of a tab leaves the rest as spaces the source does not hold.
-        // They all stand for that tab.
         if (at < 0) { const rest = rows[i].replace(/^ +/, ''); lead = rows[i].length - rest.length; at = line.indexOf(rest); if (!lead || line[at - 1] !== '\t') at = -1; }
         if (at < 0) throw new Error('Markdown inline source mapping failed');
         starts.push(local); spaces.push(lead); offsets.push(start + at - lead); local += rows[i].length + 1;
@@ -113,8 +99,6 @@ export function markdownSourcePositions(source, parser) {
   return {isText, isComment: (start, end) => comments.get(start) === end, typography: typography.sort((a, b) => a.start - b.start)};
 }
 
-// Capture only table-cell provenance while the parser still owns container-adjusted row
-// bounds. Looking for cell text in a whole row aliases literal pipes and quote/list markers.
 export function markdownTableSources(source, parser, environment, lineStarts = null, parse = null) {
   const cells = new WeakMap();
   const read = owner => {

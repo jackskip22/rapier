@@ -90,7 +90,8 @@ async function _rapierAttachmentsDelete(name, row) {
 function _rapierAttachmentsRow(entry, {owner = '', unlink = false, link = false, deletion = false, references = null} = {}) {
 	const A = _rapierAttachmentsModel(), row = _rapierNotesEl('span', 'rapier-attachment-row'); row.contentEditable = 'false';
 	row.dataset.attachmentName = entry.name;
-	const details = _rapierNotesEl('span', 'rapier-attachment-details'), name = _rapierNotesEl('strong', 'rapier-attachment-name', entry.name);
+	const details = _rapierNotesEl('span', 'rapier-attachment-details'), name = _rapierNotesEl('strong', 'rapier-attachment-name', entry.label || entry.name);
+	if (entry.label && entry.label !== entry.name) name.title = entry.name;
 	const meta = _rapierNotesEl('span', 'rapier-attachment-meta', A.attachmentKind(entry.name) + ' · Reading size');
 	details.append(name, meta); row.appendChild(details);
 	const open = _rapierAttachmentsButton('Open', () => _rapierAttachmentsOpen(entry.name)); row.appendChild(open);
@@ -227,7 +228,6 @@ async function _rapierAttachmentsPick() {
 		if (!await _rapierNotesUnlock()) return;
 		const owner = _rapierAttachmentsOwner();
 		if (!owner) throw new Error('Open a note before adding a file.');
-		if (typeof _rapierPrepareFileChooser === 'function') await _rapierPrepareFileChooser('notes-attachment');
 		const input = document.createElement('input'); input.type = 'file'; input.multiple = true; input.hidden = true;
 		document.body.appendChild(input);
 		input.addEventListener('cancel', () => input.remove(), {once: true});
@@ -280,7 +280,7 @@ function _rapierAttachmentsInit() {
 }
 function _rapierAttachmentsCard(host, file, text) {
 	const rows = _rapierAttachmentsModel()?.attachmentsOf(text) || [], names = [...new Set(rows.map(row => row.name))];
-	for (const name of names.slice(0, 2)) host.appendChild(_rapierAttachmentsRow({name}));
+	for (const name of names.slice(0, 2)) host.appendChild(_rapierAttachmentsRow({name, label: rows.find(row => row.name === name).label}));
 	if (names.length > 2) host.appendChild(_rapierAttachmentsButton((names.length - 2) + ' more files', () => _rapierNotesOpenNote(file)));
 }
 function _rapierAttachmentsBind() {

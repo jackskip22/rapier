@@ -37,7 +37,7 @@ const _rapierEmbeddedImages = (() => {
     if (authority === next) return;
     epoch++; stopWorker();
     for (const request of pending.values()) request.controller.abort(cancelled());
-    visibility?.disconnect(); watched.clear();
+    visibility?.disconnect(); seen?.disconnect(); watched.clear();
     clearPresentations(); pending.clear(); dimensions.clear(); portableCache.clear();
     globalThis.RapierImageInspection.close();
     primed = null; index = null; currentSource = ''; rootId = ''; authority = next; warned = false; damagedWarned = false;
@@ -276,7 +276,7 @@ const _rapierEmbeddedImages = (() => {
           undisplayable = true;
         } else throw new Error('This image could not be displayed');
       }
-      if (damaged) notifyDamaged(); else if (undisplayable) notifyStale();
+      if (damaged) notifyDamaged();
       assertCurrent(stamp, capturedAuthority);
       const row = {url, displayUrl: undisplayable ? url : displayUrl, width: dimensions.width, height: dimensions.height, type, signature, used: ++clock,
         animated: prepared.animated, recipe: prepared.recipe, recipeError: prepared.recipeError, resources: prepared.resources, undisplayable, damaged,
@@ -317,9 +317,27 @@ const _rapierEmbeddedImages = (() => {
       '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
       '<rect width="' + w + '" height="' + h + '" fill="#d4d4d4"/>' + text + mark + '</svg>'));
   }
-  function notifyStale() {
+  const seen = typeof IntersectionObserver === 'function' ? new IntersectionObserver(rows => {
+    for (const row of rows) if (row.isIntersecting) {
+      seen.unobserve(row.target);
+      if (host.contains(row.target) && row.target.isConnected) notifyStale(row.target._rapierJxlNotice);
+    }
+  }) : null;
+  function noticeWhenSeen(image, signature) {
+    if (warned) return;
+    image._rapierJxlNotice = signature;
+    if (seen) seen.observe(image); else notifyStale(signature);
+  }
+  function notifyStale(signature) {
     if (warned) return;
     warned = true;
+    seen?.disconnect();
+    let mark = 2166136261;
+    for (let at = 0, text = String(signature || ''); at < text.length; at++) mark = Math.imul(mark ^ text.charCodeAt(at), 16777619);
+    mark = (mark >>> 0).toString(36);
+    const told = String(RapierPreferences.read('jxlNoticeShown') || '').split(' ').filter(Boolean);
+    if (told.includes(mark)) return;
+    try { RapierPreferences.write('jxlNoticeShown', [...told.slice(-31), mark].join(' ')); } catch (_) {}
     showToast(here() + ' cannot show JPEG XL pictures. ' + jxlRemedy() + ' Your pictures are unchanged.', 'info');
   }
   function notifyDamaged() {
@@ -531,6 +549,7 @@ const _rapierEmbeddedImages = (() => {
         if (recordFor(id, documentIndex().index)?.url !== row.signature) { image.removeAttribute('data-rapier-asset-state'); schedule(); return; }
         if (row.animated) image.setAttribute('data-rapier-animation', row.signature); else image.removeAttribute('data-rapier-animation');
         image.dataset.rapierAssetState = 'ready';
+        if (row.undisplayable && !row.damaged || jxlProbeSettled && !jxlDisplayable() && nestedJxl(row)) noticeWhenSeen(image, row.signature);
         if (row.undisplayable) image.setAttribute('aria-description', row.damaged ? 'This JPEG XL picture appears damaged and cannot be shown. Its saved bytes are kept unchanged.' : 'This JPEG XL picture cannot be shown by ' + here().toLowerCase() + '. Its saved bytes are intact.');
         else image.removeAttribute('aria-description');
         globalThis.RapierImageFlow?.schedule();
@@ -568,7 +587,6 @@ const _rapierEmbeddedImages = (() => {
       const scope = authority;
       setTimeout(() => { if (scope === authority && typeof _rapierDrawResumeFinishes === 'function') void _rapierDrawResumeFinishes(); }, 0);
     }
-    if (!warned && jxlProbeSettled && !jxlDisplayable() && currentSource.includes('image/jxl')) notifyStale();
     for (const image of watched) if (!host.contains(image)) { visibility.unobserve(image); watched.delete(image); }
     for (const [image, request] of revealing) if (!host.contains(image)) request.controller.abort();
     const placeholders = host.querySelectorAll('img[src^="data:image/jxl;" i]:not([data-rapier-asset]):not([data-rapier-image-url])');

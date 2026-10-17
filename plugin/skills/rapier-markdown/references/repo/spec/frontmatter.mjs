@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT
-// Framing owns only offsets. No field interpretation or source normalization belongs here.
 export function frontMatterLine(text, start) {
 	let end = start;
 	while (end < text.length && text[end] !== '\r' && text[end] !== '\n') end++;

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import {isNoteFile} from './model.mjs';
+import {isNoteFile, parseIndex} from './model.mjs';
+import {exactBytes} from './integrity.mjs';
+import {isDeletePrivateName, deleteIdleScratch} from './delete-intent.mjs';
 export const BACKUP_CHUNK_BYTES = 64 * 1024;
 export const check = signal => { if (signal?.aborted) throw signal.reason || new Error('backup was canceled'); };
 const temporary = name => /^\..*\.tmp$/.test(name);
@@ -11,8 +13,32 @@ export function backupLimitError(names, reason) {
 		+ '. No backup was made, and your notes are unchanged.'), {name: 'BackupLimitError'});
 }
 
+async function recoveryBytes(store, name) {
+	if (typeof store.readBytes === 'function') {
+		const bytes = await store.readBytes(name);
+		if (bytes != null && (!(bytes instanceof Uint8Array) || bytes.length > 64 * 1024 * 1024)) throw new Error('deletion scratch cannot be verified within its bounded capacity');
+		return bytes;
+	}
+	const file = await store.backupFile(name, {stream: true}); if (!file) return null;
+	if (!Number.isSafeInteger(file.size) || file.size < 0 || file.size > 64 * 1024 * 1024) throw new Error('deletion scratch cannot be verified within its bounded capacity');
+	if (typeof file.arrayBuffer === 'function') {
+		const bytes = exactBytes(await file.arrayBuffer());
+		if (bytes.length !== file.size) throw new Error('deletion scratch changed while being read');
+		return bytes;
+	}
+	const bytes = new Uint8Array(file.size); let offset = 0;
+	for await (const chunk of file.chunks({chunkBytes: BACKUP_CHUNK_BYTES})) { const part = exactBytes(chunk); if (part.length > bytes.length - offset) throw new Error('deletion scratch changed while being read'); bytes.set(part, offset); offset += part.length; }
+	if (offset !== bytes.length) throw new Error('deletion scratch ended before its reported size');
+	return bytes;
+}
 async function* paths(store) {
-	for (const name of await store.list()) if (!temporary(name)) yield name;
+	const top = await store.list(); let scratch = new Set();
+	if (top.some(isDeletePrivateName)) {
+		const bytes = await recoveryBytes(store, 'notes.json');
+		if (bytes == null) throw new Error('deletion scratch has no owning notes index');
+		scratch = await deleteIdleScratch(parseIndex(new TextDecoder('utf-8', {fatal: true}).decode(bytes)), top, name => recoveryBytes(store, name));
+	}
+	for (const name of top) if (!temporary(name) && !scratch.has(name)) yield name;
 	for (const name of await store.attachmentNames()) if (!temporary(name)) yield 'attachments/' + name;
 	for (const name of await store.audioNames()) if (!temporary(name)) yield 'audio/' + name;
 	for (const sub of ['manifests', 'texts', 'blobs']) {

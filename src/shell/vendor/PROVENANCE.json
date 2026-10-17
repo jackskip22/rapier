@@ -112,13 +112,13 @@
       "bytes": 246643,
       "sha256": "b95392d79457d0357555c5ed3e56302d074b92dff119bcf3b44179500b10e9df"
     },
-    "rapier-math-2.5.0.js": {
+    "rapier-math-2.6.1.js": {
       "package": "rapier-math",
-      "version": "2.5.0",
+      "version": "2.6.1",
       "path": "tools/build-math.mjs; math/; shell/math-resources.json",
       "license": "MIT AND LicenseRef-GUST-Font-License (math/LICENSE-MIT; math/FONT-LICENSE.txt)",
-      "bytes": 695410,
-      "sha256": "16b84df8ba9ad1df581ddd73ab357c0da93720ee719e8399ecfff75b92cbb016"
+      "bytes": 733943,
+      "sha256": "c73ca97be7803c0bd369d4ac3e97a87ead5b1498204c7b88da0ab8938d3581c2"
     }
   }
 }

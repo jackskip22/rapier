@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// Exact source projection shared by canonical history and causal transport.
-// Callers admit and order the records first; this projection retains no state.
 import {_rapierTransformSplices, _rapierHistoryEffects} from './journal-records.mjs';
 import {authoredPlacements} from './authored-origin.mjs';
 import {canonicalJSON} from './data.mjs';
@@ -11,8 +9,6 @@ const historyBoundary = (source, at) => Number.isSafeInteger(at) && at >= 0 && !
 	!(at > 0 && at < source.length && (source.charCodeAt(at - 1) & 0xFC00) === 0xD800 &&
 	(source.charCodeAt(at) & 0xFC00) === 0xDC00);
 
-// Persistent AVL pieces retain original strings and coordinates. A revision costs
-// only the edited paths; reading a range visits its leaves, never earlier bodies.
 const sourceLeaf = (text, from = 0, to = text.length) => to > from
 	? {text, from, length: to - from, height: 1} : null;
 const sourceHeight = node => node?.height || 0;
@@ -101,8 +97,6 @@ export class HistorySource {
 		for (const text of parts) for (let at = 0; at < text.length;) {
 			if (!leaf) return false;
 			const length = Math.min(leaf.length - offset, text.length - at), from = leaf.from + offset;
-			// Untouched runs share their string and coordinates. Only changed fragments
-			// require a text comparison; no full-body join is needed to prove the plan.
 			if ((leaf.text !== text || from !== at) && leaf.text.slice(from, from + length) !== text.slice(at, at + length)) return false;
 			offset += length; at += length;
 			if (offset === leaf.length) { leaf = leaves.next().value; offset = 0; }
@@ -113,8 +107,6 @@ export class HistorySource {
 		const [left, rest] = sourceSplit(this.#root, pos), [, right] = sourceSplit(rest, length);
 		return new HistorySource('', sourceJoin(sourceJoin(left, sourceLeaf(text)), right));
 	}
-	// Undoing an admitted repair is observation: its after-state can join a scalar
-	// across the deleted run. Prove the forward boundaries on the reconstructed view.
 	before(splices) {
 		let source = this;
 		for (let index = splices.length - 1; index >= 0; index--) {
@@ -151,8 +143,6 @@ function minimalHistorySplice(before, after, pos = 0) {
 	return {pos: pos + first, removed: before.slice(first, a), inserted: after.slice(first, b)};
 }
 
-// Split recorded replacements only at exact unchanged word or line tokens.
-// Shared letters inside changed words do not establish surviving ownership.
 function historyHunks(row) {
 	if (row.removed === row.inserted) return [];
 	if (!row.removed || !row.inserted) return [{...row}];
@@ -166,8 +156,6 @@ function historyHunks(row) {
 }
 
 
-// Rows are already proved source placements, optionally carrying sourceIndices from
-// causal projection. Multiple inverse blockers can change history with no source edit.
 export function projectInverseSource(prepared, selected, projectedEffects, options = {}) {
 	const records = prepared.records || prepared.rows.map(({record, splices}) => record.splices === splices ? record : {...record, splices});
 	if (!records.some(record => !prepared.effects.references.get(record.transaction.id)?.length &&
@@ -179,8 +167,6 @@ export function projectInverseSource(prepared, selected, projectedEffects, optio
 		const recordsForCover = prepared.records || prepared.rows.map(({record, splices}) => record.splices === splices ? record : {...record, splices});
 		const coverGroups = new Map();
 		let coverOrigins = null;
-		// An empty document is a real causal source. Fresh notes start there, and a
-		// shared replacement authored against that source still has to stay covered.
 		if (typeof prepared.initialSource === 'string' && recordsForCover.some(record => record.authored?.splices?.some(row => row.removed.length))) {
 			try { coverOrigins = authoredPlacements(prepared.initialSource, recordsForCover); } catch { coverOrigins = null; }
 		}
@@ -254,9 +240,6 @@ export function projectInverseSource(prepared, selected, projectedEffects, optio
 			return next && effects.active.has(next.actId) && !prepared.effects.references.get(next.actId)?.length;
 		});
 		const reactivate = (actIds, effects) => {
-			// Any author of one shared removal or replacement restores that one physical
-			// hunk, including an author who stored no splice. A later independent act
-			// keeps the bytes it wrote until that act itself is withdrawn.
 			const wanted = new Set(actIds);
 			for (const id of actIds) for (const hunk of all) {
 				if (hunk.reversedHunk || hunk.derived || !hunk.coverIds?.includes(id) || wanted.has(hunk.actId)) continue;
@@ -269,8 +252,6 @@ export function projectInverseSource(prepared, selected, projectedEffects, optio
 					(!hunk.inserted && hunk.active)) continue;
 				const marker = pieces.indexOf(hunk.marker);
 				if (marker < 0) {
-					// A zero-row withdrawal can release source still carried by another
-					// inverse's marker. Its exact ancestry also preserves later inserted runs.
 					const inverse = all.findLast(prior => prior.reversedHunk === hunk.id && pieces.includes(prior.marker));
 					if (!inverse) throw Error('reactivation');
 					const runs = all.filter(prior => prior.actId === inverse.actId && prior.reversedHunk === hunk.id && pieces.includes(prior.marker));
@@ -302,8 +283,6 @@ export function projectInverseSource(prepared, selected, projectedEffects, optio
 			processed.push(record);
 			const picture = prepared.effects.pictures.get(tx.id);
 			if (picture) {
-				// The new codec bytes keep the exact inserted run's ownership. Do not
-				// cross a later edit, combine authors, or create another reversible act.
 				for (const row of splices) {
 					boundary(row.pos + row.removed.length);
 					const start = boundary(row.pos), end = boundary(row.pos + row.removed.length);
@@ -318,15 +297,11 @@ export function projectInverseSource(prepared, selected, projectedEffects, optio
 				continue;
 			}
 			if (references.size) {
-				// Exact inverse rows restore the previous run identities. Retain the inverse's
-				// own transient marker too, so reversing it restores that same ancestry again.
 				const invert = targets => {
 					const restored = pieces.slice(), inverses = [], priorSplices = options.keepHunk ? [] : null;
 					for (let index = targets.length - 1; index >= 0; index--) {
 						const target = targets[index], first = restored.indexOf(target.marker);
 						if (first < 0) return null;
-						// Each run of the target's own pieces inverts alone: a later author's pieces between
-						// its runs stay in place, outside every inverse, so reversing it cannot move them.
 						const runs = [];
 						for (let at = first; at < restored.length; at++) if (owns(restored[at], target))
 							if (runs.at(-1)?.[1] === at) runs.at(-1)[1]++; else runs.push([at, at + 1]);
@@ -346,8 +321,6 @@ export function projectInverseSource(prepared, selected, projectedEffects, optio
 								hunk.chosen = !keep;
 							}
 							hunk.kept = selected.has(tx.id) && !hunk.chosen;
-							// A semantic owner retaining this inverse also retains the exact ancestors
-							// it restored; effect reactivation must not change them behind that owner.
 							if (hunk.kept) for (let prior = target; prior; prior = byId.get(prior.reversedHunk)) keptInverseAncestors.add(prior.id);
 							hunk.marker = {mark: hunk};
 							const insertion = replacement.map(piece => piece.text ? {...piece,
@@ -359,10 +332,6 @@ export function projectInverseSource(prepared, selected, projectedEffects, optio
 					}
 					return replays(pieces, restored, splices) ? {restored, inverses} : null;
 				};
-				// An inverse taken while a later edit had replaced some of the act's hunks restored only
-				// the rest. Those replaced hunks survive it: no later projection treats them as undone.
-				// Recorded splices decide. An author who stored no splice still inverts the one
-				// shared hunk; an empty inverse does not match that text change and leaves it.
 				const direct = all.filter(hunk => hunk.active && references.has(hunk.actId));
 				const targets = direct.length ? direct : all.filter(hunk => hunk.active && !hunk.reversedHunk && !hunk.derived &&
 					hunk.coverIds?.some(id => references.has(id)));
@@ -399,16 +368,12 @@ export function projectInverseSource(prepared, selected, projectedEffects, optio
 			}
 			if (!references.size) coverIdsFor(tx.id);
 			const priorSplices = options.keepHunk ? [] : null;
-			// An admitted codec finish replaces the complete embedded definition/reference.
-			// Keep its inserted run whole, including byte-identical prefixes of a re-edit;
-			// the previous picture stays in `before` for Undo, not as mixed live ownership.
 			const hunks = row => pictureInsertions.get(tx.id)?.some(text => row.inserted.includes(text)) ? [{...row}] : historyHunks(row);
 			for (let rowIndex = 0; rowIndex < splices.length; rowIndex++) {
 				const original = splices[rowIndex];
 				let rows;
 				if (options.splitSplice) {
 					const beforeSource = textOf(pieces), parts = options.splitSplice({actId: tx.id, beforeSource, splice: original});
-					// Semantic boundaries only refine this act's exact bytes, never its history.
 					if (!Array.isArray(parts) || _rapierTransformSplices(beforeSource, parts) !== _rapierTransformSplices(beforeSource, [original]))
 						throw Error('hunk_projection');
 					rows = parts.flatMap(hunks);
@@ -421,14 +386,11 @@ export function projectInverseSource(prepared, selected, projectedEffects, optio
 					const start = boundary(row.pos), end = boundary(row.pos + row.removed.length);
 					let at = start.last, count = Math.max(0, end.first - at);
 					if (!row.removed.length) {
-						// A new insertion at a replacement's left boundary stays before that replacement.
 						const marker = pieces.slice(start.first, start.last).findIndex(item => item.mark?.inserted.length);
 						at = marker < 0 ? start.last : start.first + marker; count = 0;
 					}
 					const removed = pieces.slice(at, at + count);
 					if (textOf(removed) !== row.removed) throw Error('replay');
-					// A semantic owner may retain a drawing hunk while prose in that same act undoes.
-					// The predicate only selects transient hunks; every original row still replays.
 					if (chosen && options.keepHunk) {
 						const keep = options.keepHunk({actId: tx.id, spliceIndex: rowIndex, hunkIndex: index,
 							splice: {pos: row.pos, removed: row.removed, inserted: row.inserted}, beforeSource: textOf(pieces), actSource, priorSplices});
@@ -459,10 +421,6 @@ export function projectInverseSource(prepared, selected, projectedEffects, optio
 		let offset = 0;
 		for (const piece of pieces) if (piece.text) { origins.set(piece, offset); offset += piece.text.length; }
 		const superseded = [];
-		// Survival means an inverse left this hunk in place because a later independent
-		// edit still covered it. Once that edit is gone, deactivating its last owner through
-		// any inverse path withdraws every exposed hunk. Undoing only the later
-		// edit reveals the survived insertion and does not discard it.
 		for (const hunk of all) if (hunk.survived) {
 			const covered = [...hunk.supersededBy].some(id => {
 				const next = byId.get(id);
@@ -486,12 +444,8 @@ export function projectInverseSource(prepared, selected, projectedEffects, optio
 					reason: hunk.active ? 'later_edit' : 'already_undone'});
 				continue;
 			}
-			// Restoring an inverse can restore a deletion marker without any owned text.
 			restoreHunk(hunk);
 		}
-		// A hidden withdrawal can have no splice of its own. Reversing that withdrawal
-		// reactivates the shared hunk through the inverse that still carries it.
-		// Withdrawing a later act reveals that same hunk while any original author remains.
 		const reactivated = new Set(records.filter(record => !prepared.effects.active.has(record.transaction.id) &&
 			projectedEffects.active.has(record.transaction.id)).map(record => record.transaction.id));
 		for (const hunk of all) if (!hunk.reversedHunk && !hunk.derived && hunk.coverIds?.length > 1 &&

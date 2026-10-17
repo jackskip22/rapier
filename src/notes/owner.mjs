@@ -1,3 +1,5 @@
+import {createDeleteIntent, deleteIdleScratch, isDeletePrivateName, deleteFrameName, DELETE_RESERVE_FILE} from './delete-intent.mjs';
+import {recoverPressureTrash, admitPressureTrash, deletionFailure} from './trash.mjs';
 import {isImportReceiptFile, readImportReceiptFile, assertImportReferences} from './import-storage.mjs';
 import {NOTES_INDEX_FILE, emptyIndex, isNoteFile, isCodeFile, codeFileName, validNoteId, noteFileName, attachmentFileName, parseIndex, reconcile, serializeIndex, stampNoteControls, NOTE_CONTROL_GROUPS, admitIdentities} from './model.mjs';
 import {exactBytes, sha256, sha256State, sha256Yielding, storedFileDigest} from './integrity.mjs';
@@ -106,6 +108,18 @@ function applyIndexDelta(base, journal) {
 	after.folderGeneration = journal.generation;
 	return after;
 }
+function canonicalRecoveryKept(journal, index) {
+	if (journal?.kind !== 'canonical-recovery' || !Array.isArray(journal.delta?.notes) || !Array.isArray(journal.canonical)) return [];
+	const kept = new Map();
+	for (const row of journal.delta.notes) {
+		const entry = row?.entry, source = entry?.keptFrom?.file, current = index.notes?.[row?.file];
+		if (row?.beforeId !== null || !isNoteFile(row.file) || !isNoteFile(source) || source === row.file || !validNoteId(entry?.id) ||
+			current?.id !== entry.id || current?.canonicalHistory !== entry.canonicalHistory ||
+			!journal.canonical.some(proof => proof?.file === row.file && proof.id === entry.id && proof.ledger === entry.canonicalHistory)) continue;
+		kept.set(JSON.stringify([source, row.file]), {file: source, name: row.file});
+	}
+	return [...kept.values()];
+}
 function requestedBodies({bodies = []} = {}) {
 	if (!Array.isArray(bodies)) throw fail('plan', 'A notes read needs a list of body filenames.');
 	const files = [...new Set(bodies)];
@@ -125,7 +139,16 @@ export function folderGeneration(index) {
 	return value;
 }
 
-export function createOwner({store, locks, channel, shared = true, timeoutMs = 1500, clock = Date.now, onInvalidate = () => {}, recover: repair, timers = {setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: id => clearTimeout(id)}} = {}) {
+export function createOwner({store, locks, channel, shared = true, timeoutMs = 1500, clock = Date.now, onInvalidate = () => {}, recover: repair, deleteKeep = null, timers = {setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: id => clearTimeout(id)}} = {}) {
+	const deletion = createDeleteIntent(store); let armedGeneration = null;
+	const tryArmDeletion = async (index, force = false) => {
+		if (!deletion || !index.deleteOwner) return false;
+		const size = exactBytes(serializeIndex(index)).length, key = incarnation + ':' + index.deleteOwner + ':' + folderGeneration(index) + ':' + size;
+		if (!force && armedGeneration === key) return true;
+		try { if (await deletion.arm(index, size)) { armedGeneration = key; return true; } } catch (_) {  }
+		return false;
+	};
+
 	if (!store || !['read', 'write', 'remove', 'list'].every(name => typeof store[name] === 'function')) throw fail('store', 'The notes owner needs a complete file store.');
 	if (!Number.isFinite(timeoutMs) || timeoutMs < 0) throw fail('timeout', 'The owner wait must be bounded.');
 	const isShared = () => typeof shared === 'function' ? !!shared() : !!shared;
@@ -155,6 +178,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 		const bytes = await readBytes(NOTES_INDEX_FILE);
 		if (bytes != null) {
 			const raw = JSON.parse(decode(bytes)), clean = copy(raw);
+			if (clean.deleteOwner === clean.folderDeviceId) delete clean.deleteOwner;
 			delete clean.folderDeviceId; delete clean.folderGeneration;
 			if (clean.ownerNotice?.kind === 'identity' && clean.ownerNotice.generation === folderGeneration(raw) && Array.isArray(clean.ownerNotice.changed) && clean.ownerNotice.changed.length === 0) delete clean.ownerNotice;
 			if (clean.noteCounters && Object.keys(clean.noteCounters).length === 0) delete clean.noteCounters;
@@ -202,10 +226,10 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 		try { channel?.postMessage(message); return {sent: !!channel}; }
 		catch (error) { return {sent: false, error: String(error?.message || error)}; }
 	};
-	async function acquire(scope) {
+	async function acquire(scope, {deletePressure = false} = {}) {
 		if (closed) throw fail('closed', 'The notes owner is closed.');
 		if (typeof scope !== 'string' || !scope) throw fail('scope', 'A notes folder needs a stable lock scope.');
-		if (store.writable === false && !store.reclaimable) throw fail('read-only', store.reason || 'These notes are read-only here.');
+		if (store.writable === false && !store.reclaimable && !deletion) throw fail('read-only', store.reason || 'These notes are read-only here.');
 		if (isShared() && !channel?.postMessage) throw fail('read-only', 'Shared notes need their commit notification channel before this writer can open them.');
 		if (isShared() && !locks?.request) throw fail('read-only', notesHostWords().native ? 'This device cannot coordinate writes to shared notes. Reading and backup remain available.' : 'This browser cannot coordinate writes to shared notes. Open them in a browser with Web Locks; reading and backup remain available.');
 		let unlock, settled, granted = false, releaseStarted = false, released = false;
@@ -231,9 +255,13 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			localTail = previous.catch(() => {}).then(() => held);
 			await previous.catch(() => {}); granted = true; settled = localTail;
 		}
+		let pressureOnly = !!(deletePressure && deletion);
 		try {
-			await store.recoverIntakes?.();
-			if (store.prepare && !await store.prepare()) throw fail('read-only', store.reason || 'These notes are read-only here.');
+			if (deletion) { const state = await deletion.read(await readIndex()); if (state.record && state.record.phase !== 'idle') pressureOnly = true; }
+			if (!pressureOnly) {
+				try { await store.recoverIntakes?.(); if (store.prepare && !await store.prepare()) throw fail('read-only', store.reason || 'These notes are read-only here.'); }
+				catch (error) { if (deletion && (error?.name === 'QuotaExceededError' || error?.code === 'storage-full')) pressureOnly = true; else throw error; }
+			}
 		}
 		catch (error) { unlock(); await settled; throw error; }
 		const active = () => { if (!granted || released) throw fail('released', 'This notes transaction no longer owns the folder.'); };
@@ -299,6 +327,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			return {index, notice: sent};
 		};
 		const publish = async (index, changed, kind, ours = false, journal = null, preparation = null) => {
+			if (deletion && index.folderDeviceId && !index.deleteOwner) index.deleteOwner = index.folderDeviceId;
 			const publishBytes = async () => {
 				const bytes = exactBytes(serializeIndex(index));
 				if (journal) {
@@ -326,6 +355,12 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 		};
 		const commitIndex = async (next, {changed = [], kind = 'metadata', reconcileFiles = false} = {}) => {
 			active();
+			if (pressureOnly) {
+				const state = await deletion.read(await readIndex());
+				if (state.record && state.record.phase !== 'idle') throw fail('delete-pending', 'Only the pending deletion can write until its checkpoint is complete.');
+				if (store.prepare && !await store.prepare()) throw fail('read-only', store.reason || 'These notes are read-only here.');
+				pressureOnly = false;
+			}
 			const before = await readIndex();
 			if (before.transaction || await readJournal()) throw fail('pending', 'Repair the pending notes transaction before writing metadata.');
 			if (folderGeneration(next) !== folderGeneration(before)) throw fail('stale', 'The notes folder changed; reload it before saving.');
@@ -340,6 +375,45 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			if (!Number.isSafeInteger(index.folderGeneration)) throw fail('generation', 'The notes folder generation is exhausted.');
 			return publish(index, changed, kind);
 		};
+		const commitPressure = async (next, {file, baseDigest, kind}) => {
+			active();
+			if (await readJournal()) throw fail('pending', 'A pending save keeps custody of this folder. Finish it before deleting.');
+			const before = await readIndex();
+			if (await digestOf(indexReceipt) !== baseDigest) throw fail('delete-pending', 'The index changed before the deletion checkpoint. Its bytes were kept.');
+			let index = repairListing(copy(next), (await store.list()).filter(isNoteFile), clock).index;
+			admitIdentities(index, index.folderDeviceId);
+			index.folderGeneration = folderGeneration(before) + 1;
+			if (!Number.isSafeInteger(index.folderGeneration)) throw fail('generation', 'The folder generation is exhausted.');
+			index.ownerNotice = {generation: index.folderGeneration, changed: [file], kind};
+			const bytes = exactBytes(serializeIndex(index));
+			if (!await deletion.api.checkpoint(bytes, baseDigest)) throw fail('delete-pending', 'The deletion checkpoint changed before publication.');
+			if (!equal(bytes, await readBytes(NOTES_INDEX_FILE))) throw fail('delete-pending', 'The deletion checkpoint could not be verified.');
+			indexReceipt = bytes; dirty = notice(scope, index, [file], kind);
+			return {index, notice: dirty};
+		};
+		const pressureDelete = deletion ? async args => {
+			active();
+			if (await readJournal()) throw fail('pending', 'Finish the pending save before deleting.');
+			if (!args.index.deleteOwner) {
+				const armed = await commitIndex({...args.index, deleteOwner: args.index.folderDeviceId}, {kind: 'delete-arm'});
+				args = {...args, index: armed.index}; await tryArmDeletion(armed.index);
+			}
+			const baseReceipt = indexReceipt?.slice();
+			const admit = () => admitPressureTrash({...args, store, intent: deletion, commit: commitPressure, keep: deleteKeep, baseReceipt});
+			let result;
+			try { result = await admit(); }
+			catch (error) {
+				if (!['delete-unarmed', 'delete-capacity'].includes(error.code)) throw error;
+				const current = await readIndex(), state = await deletion.read(current);
+				if (state.record && state.record.phase !== 'idle') throw error;
+				let armed = false;
+				try { if (!store.prepare || await store.prepare()) armed = await tryArmDeletion(current, true); } catch (_) {}
+				if (!armed) throw error;
+				result = await admit();
+			}
+			try { if (!store.prepare || await store.prepare()) { pressureOnly = false; await tryArmDeletion(result.index); } } catch (_) {}
+			return result;
+		} : null;
 		const rescueCanonical = async (index, journal, current, preparation) => {
 			const published = !!journal.publicationDigest && journal.publicationDigest === current;
 			if (journal.exactIndex || journal.staging === 'preparing' || !published && (!['save', 'canonical-save', 'create', 'canonical-create', 'keep-both', 'canonical-recovery'].includes(journal.kind) || journal.removes.length)) return null;
@@ -437,6 +511,18 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			active();
 			const preparation = resolveHistoryPreparation(ours?.historyPreparation) || createHistoryPreparation();
 			let index = ours ? ours.index : await readIndex(), journal = ours ? ours.journal : await readJournal();
+			if (!ours && deletion) {
+				const state = await deletion.read(index);
+				if (state.record && state.record.phase !== 'idle') {
+					if (journal) throw fail('delete-pending', 'Deletion and save custody both need attention. Every remaining byte was kept.');
+					try { index = (await recoverPressureTrash({store, index, intent: deletion, commit: commitPressure, keep: deleteKeep})).index; }
+					catch (error) { return {index: await readIndex(), pressurePending: {record: (await deletion.read(await readIndex())).record, error: String(error?.message || error), failure: deletionFailure(error)}}; }
+				}
+			}
+			if (!ours && pressureOnly) {
+				if (journal || index.transaction || Object.keys(index.deletions || {}).length) throw fail('pending', 'Finish the previous save or Trash operation before low-space deletion.');
+				return {index, pressureReadOnly: true};
+			}
 			if (journal?.kind === 'restore') incarnation = crypto.randomUUID();
 			if (index.transaction) throw fail('corrupt', 'The notes index contains an unsupported pending journal; its files have been kept.');
 			if (journal) {
@@ -457,7 +543,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 						dirty = notice(scope, index, journal.writes.map(row => row.file), 'restore');
 						if (isShared() && !dirty.sent) throw fail('notify', 'The restored folder must notify its other owners before another edit.');
 					}
-					await clearJournal(); journal = null;
+					await clearJournal(); lastKept.push(...canonicalRecoveryKept(journal, index)); journal = null;
 				} else if (journal.baseGeneration !== folderGeneration(index) || current !== journal.baseDigest) throw fail('changed', 'The folder metadata changed during its pending transaction. Both copies were kept.');
 			}
 			if (index.ownerNotice && !journal) { const flushed = await flushNotice(index); index = flushed.index; dirty = flushed.notice; }
@@ -708,7 +794,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				const fixed = repairListing(journal.after, (await store.list()).filter(isNoteFile), clock);
 				index = fixed.index;
 				const published = await publish(index, [...[...journal.writes, ...journal.removes].map(row => row.file), ...kept.map(row => row.name), ...fixed.added, ...fixed.dropped], journal.kind || 'recovery', !!ours, journal, preparation);
-				index = published.index; dirty = published.notice; lastDropped = dropped; lastKept = kept;
+				index = published.index; dirty = published.notice; lastDropped = dropped; lastKept = [...kept, ...canonicalRecoveryKept(journal, index)];
 				for (const row of writes.filter(row => isImportReceiptFile(row.file))) try { const bytes = await readBytes(row.stage); if (bytes != null && await digestOf(bytes) === row.digest) await store.remove(row.stage); } catch (_) {}
 				for (const row of caseMoves) try { const bytes = await readBytes(row.stage); if (bytes && await digestOf(bytes) === row.digest) await store.remove(row.stage); } catch (_) {}
 				for (const row of writes.filter(row => syncStateFile(row.file))) for (const stage of new Set([row.stage, row.priorStage].filter(Boolean))) {
@@ -726,7 +812,15 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			const requested = requestedBodies(options);
 			const recovered = await recover(), listing = recovered.listing || await store.list();
 			let index = recovered.index;
-			const files = listing.filter(isNoteFile).sort();
+			let files = listing.filter(isNoteFile).sort();
+			if (recovered.pressurePending || recovered.pressureReadOnly) {
+				const row = recovered.pressurePending?.record;
+				if (row && row.phase === 'detached') {
+					for (const [file, entry] of Object.entries(index.notes)) if (entry.id === row.id && await sha256(exactBytes(file)) === row.fileDigest) files = files.filter(name => name !== file);
+				}
+				const bodies = await readBodies(files, requested);
+				return {index: reconcile(index, files).index, files, listing, bodies, generation: folderGeneration(index), readOnly: true, notice: dirty, pressurePending: recovered.pressurePending || null};
+			}
 			const fixed = repairListing(index, files, clock);
 			if (fixed.added.length || fixed.dropped.length) {
 				const committed = await commitIndex(fixed.index, {changed: [...fixed.added, ...fixed.dropped], kind: 'reconcile'});
@@ -734,6 +828,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			}
 			const bodies = await readBodies(files, requested);
 			const reported = lastDropped, keptReported = lastKept; lastDropped = []; lastKept = [];
+			await tryArmDeletion(index);
 			return {index, files, listing, bodies, generation: folderGeneration(index), readOnly: false, notice: dirty, dropped: reported, kept: keptReported};
 		};
 		const rebuildIndex = async backup => {
@@ -754,6 +849,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			return {...await read(), damaged};
 		};
 		const transact = async (planner, options) => {
+			if (pressureOnly) throw fail('delete-pending', 'Finish deletion recovery before saving or syncing.');
 			const restoring = options?.exactRestore === true, replacing = restoring && options?.replace === true;
 			if (restoring) incarnation = crypto.randomUUID();
 			if (restoring && !replacing) await emptyDestination();
@@ -988,6 +1084,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			}
 			const {index: recovered} = await recover({index: before.index, journal, payloads, historyPreparation: plan.historyPreparation});
 			const dropped = lastDropped, kept = lastKept; lastDropped = []; lastKept = [];
+			await tryArmDeletion(recovered);
 			return {index: recovered, files: Object.keys(recovered.notes).sort(), bodies: new Map(), generation: folderGeneration(recovered), readOnly: false, notice: dirty, dropped, kept};
 		};
 		let jobs = Promise.resolve(), releasePromise;
@@ -996,7 +1093,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			const result = jobs.catch(() => {}).then(() => fn(...args));
 			jobs = result; return result;
 		};
-		return {read: serial(read), readImportReceipt: serial(async id => receiptFrom((await read()).index, id)), rebuildIndex: serial(rebuildIndex), recover: serial(async () => (await recover()).index), commitIndex: serial(commitIndex), transact: serial(transact), release: () => {
+		return {pressureDelete: pressureDelete && serial(pressureDelete), read: serial(read), readImportReceipt: serial(async id => receiptFrom((await read()).index, id)), rebuildIndex: serial(rebuildIndex), recover: serial(async () => (await recover()).index), commitIndex: serial(commitIndex), transact: serial(transact), release: () => {
 			if (releasePromise) return releasePromise;
 			releaseStarted = true;
 			releasePromise = (async () => { await jobs.catch(() => {}); released = true; unlock(); await settled; })();
@@ -1005,12 +1102,19 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 	}
 	async function read(scope, options) {
 		const requested = requestedBodies(options);
-		if (store.writable === false || isShared() && (!locks?.request || !channel?.postMessage)) {
+		let pressureRecovery = false;
+		if (store.writable === false && deletion && (!isShared() || locks?.request && channel?.postMessage)) { const state = await deletion.read(await readIndex()); pressureRecovery = !!state.record && state.record.phase !== 'idle'; }
+		if (store.writable === false && !pressureRecovery || isShared() && (!locks?.request || !channel?.postMessage)) {
 			const pending = await readBytes(OWNER_JOURNAL_FILE), first = await readBytes(NOTES_INDEX_FILE), index = parseIndex(first == null ? null : decode(first));
 			if (pending != null || index.transaction || index.deletions && Object.keys(index.deletions).length) throw fail('read-only', 'This notes folder needs ' + (notesHostWords().native ? 'Web Locks' : 'a browser with Web Locks') + ' to finish a pending operation.');
-			const listing = await store.list(), files = listing.filter(isNoteFile).sort(), bodies = await readBodies(files, requested);
-			if (!equal(first, await readBytes(NOTES_INDEX_FILE)) || !equal(pending, await readBytes(OWNER_JOURNAL_FILE))) throw fail('busy', 'The notes folder is changing. Try opening it again.');
-			return {index: reconcile(index, files).index, files, listing, bodies, generation: folderGeneration(index), readOnly: true, notice: null};
+			const pressure = deletion ? await deletion.read(index) : null, row = pressure?.record;
+			const listing = await store.list(); let files = listing.filter(isNoteFile).sort();
+			if (row && row.phase !== 'idle' && (row.phase === 'detached' || await deletion.api.read(deletion.heldName(row)) != null)) {
+				for (const [file, entry] of Object.entries(index.notes)) if (entry.id === row.id && await sha256(exactBytes(file)) === row.fileDigest) files = files.filter(name => name !== file);
+			}
+			const bodies = await readBodies(files, requested), after = deletion ? await deletion.read(index) : null;
+			if (!equal(first, await readBytes(NOTES_INDEX_FILE)) || !equal(pending, await readBytes(OWNER_JOURNAL_FILE)) || pressure && pressure.slots.some((bytes, slot) => !equal(bytes, after.slots[slot]))) throw fail('busy', 'The notes folder is changing. Try opening it again.');
+			return {index: reconcile(index, files).index, files, listing, bodies, generation: folderGeneration(index), readOnly: true, notice: null, ...(row && row.phase !== 'idle' ? {pressurePending: {record: row, error: 'A writable folder lease is needed to finish this deletion.'}} : {})};
 		}
 		let lease;
 		try { lease = await acquire(scope); } catch (error) { if (error?.code === 'read-only' && store.writable === false) return read(scope, {bodies: requested}); throw error; }
@@ -1028,6 +1132,34 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 		try { lease = await acquire(scope); } catch (error) { if (error?.code === 'read-only' && store.writable === false) return readImportReceipt(scope, id); throw error; }
 		try { return await lease.readImportReceipt(id); } finally { await lease.release(); }
 	}
-	return {get incarnation() { return incarnation; }, acquire, read, readImportReceipt, transact: async (scope, plan, options) => { const lease = await acquire(scope); try { return await lease.transact(plan, options); } finally { await lease.release(); } }, close: () => { closed = true; channel?.removeEventListener?.('message', receive); }};
+	const validateDeletionScratch = async () => {
+		if (!deletion) return;
+		const index = await readIndex(), state = await deletion.read(index), names = deletion.api.list && store.deletePressure ? await deletion.api.list() : (await store.list()).filter(isDeletePrivateName);
+		for (const slot of [0, 1]) if (state.slots[slot] != null && !names.includes(deleteFrameName(slot))) names.push(deleteFrameName(slot));
+		if (store.deletePressure && await deletion.api.read(DELETE_RESERVE_FILE) != null && !names.includes(DELETE_RESERVE_FILE)) names.push(DELETE_RESERVE_FILE);
+		await deleteIdleScratch(index, names, name => deletion.api.read(name));
+	};
+	const pendingDeletion = async () => { if (!deletion) return null; const state = await deletion.read(await readIndex()); return state.record?.phase !== 'idle' ? state.record : null; };
+	const captureDeletion = async scope => {
+		if (!deletion) return null;
+		let lease;
+		try {
+			if (!isShared() || locks?.request && channel?.postMessage) lease = await acquire(scope, {deletePressure: true});
+			const first = await readBytes(NOTES_INDEX_FILE), index = parseIndex(first == null ? null : decode(first)), state = await deletion.read(index);
+			if (!state.record || state.record.phase === 'idle') return null;
+			const entries = await deletion.capture(); if (first != null) entries.set(NOTES_INDEX_FILE, first);
+			const held = deletion.heldName(state.record), heldBytes = await deletion.api.read(held); if (heldBytes != null) entries.set(held, heldBytes);
+			const sources = new Map();
+			if (await digestOf(first) === state.record.baseDigest) for (const [file, entry] of Object.entries(index.notes)) {
+				if (entry.id !== state.record.id || await sha256(exactBytes(file)) !== state.record.fileDigest) continue;
+				const bytes = await readBytes(file); sources.set(file, bytes); if (bytes != null) entries.set(file, bytes);
+			}
+			const after = await deletion.read(index);
+			if (!equal(first, await readBytes(NOTES_INDEX_FILE)) || state.slots.some((bytes, slot) => !equal(bytes, after.slots[slot])) || !equal(heldBytes, await deletion.api.read(held))) throw fail('busy', 'Deletion recovery changed during capture. Try again.');
+			for (const [file, bytes] of sources) if (!equal(bytes, await readBytes(file))) throw fail('busy', 'The selected note changed during recovery capture. Try again.');
+			return {certified: false, kind: 'deletion-recovery', entries: [...entries].map(([name, bytes]) => ({name, bytes}))};
+		} finally { await lease?.release(); }
+	};
+	return {validateDeletionScratch, pendingDeletion, captureDeletion, get incarnation() { return incarnation; }, acquire, read, readImportReceipt, transact: async (scope, plan, options) => { const lease = await acquire(scope); try { return await lease.transact(plan, options); } finally { await lease.release(); } }, close: () => { closed = true; channel?.removeEventListener?.('message', receive); }};
 }
 

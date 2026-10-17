@@ -4,7 +4,7 @@ const _rapierLive = (() => {
   let latestInput = 0, pendingProjection = null, projectionTimer = 0, clearComposition = 0, lastPresence = null, heldPresence = null;
   let joining = null, resolveJoin, rejectJoin, undoSequence = 0, shareFlight = null;
   let list = null, layer = null, sheet = null;
-  const undoRequests = new Map(), stopRequests = new Map(), subscribers = new Set();
+  const undoRequests = new Map(), stopRequests = new Map(), doorContextRequests = new Map(), subscribers = new Set();
   const own = () => binding && binding.authority === String(rapier.identity.authority || '');
   const addressOwned = () => globalThis.RAPIER_APPS_HOST !== true && globalThis.__rapierServerRenderHost !== true &&
     !(typeof _rapierEmbed !== 'undefined' && (_rapierEmbed.active || _rapierEmbed.local)) && window.top === window;
@@ -114,7 +114,7 @@ const _rapierLive = (() => {
     for (const char of String(author?.id || '')) hash = (Math.imul(hash, 31) + char.codePointAt(0)) >>> 0;
     return colors[hash % colors.length];
   };
-  const snapshot = () => ({...state, pending: state.pending + Math.max(0, serial - (state.atLocal || 0)),
+  const snapshot = () => ({...state, custody: custodyBridge?.mode() === 'custody', pending: state.pending + Math.max(0, serial - (state.atLocal || 0)),
     documentId: binding?.authority || null, peers: peers.map(peer => ({...peer})),
     active: !!own() && state.state !== 'stopped' && state.state !== 'closed', joining: loading});
   const publish = () => {
@@ -304,7 +304,17 @@ const _rapierLive = (() => {
     if (value.type === 'stop') {
       stopRequests.get(value.id)?.(value); stopRequests.delete(value.id); return;
     }
+
     if (value.type === 'project') { await project(value); return; }
+    if (value.type === 'changed') {
+      document.dispatchEvent(new CustomEvent('rapier:live-changed', {detail: {documentId: binding?.authority || null, ...value.notice}}));
+      return;
+    }
+    if (value.type === 'door-context') {
+      const finish = doorContextRequests.get(value.sequence); doorContextRequests.delete(value.sequence);
+      finish?.(value.unsent ? null : {isError: value.isError, structuredContent: value.structuredContent});
+      return;
+    }
     if (value.type !== 'ready') return;
     loading = true;
     try {
@@ -394,7 +404,8 @@ const _rapierLive = (() => {
     binding = {url: url.href, key: options.key, name: personName(options.name),
       filename: options.filename || 'Shared.md', requestedId: options.documentId || null, authority: null,
       joinUrl: options.joinUrl || publicPage(), baseline: options.baseline || null, resumeAuthority,
-      ...(options.private ? {private: {...options.private}} : {}), ...(options.stopKey ? {stopKey: options.stopKey} : {})};
+      ...(options.private ? {private: {...options.private}} : {}), ...(options.stopKey ? {stopKey: options.stopKey} : {}),
+      ...(!options.private && typeof options.custodyKey === 'string' && options.custodyKey ? {custodyKey: options.custodyKey} : {})};
     loading = true; serial = 0; peers = []; state = {state: 'connecting', ready: false, pending: 0, gen: 0};
     navigationProvider(true);
     let slot;
@@ -405,7 +416,12 @@ const _rapierLive = (() => {
     } catch (_) { slot = crypto.randomUUID(); }
     worker = globalThis.RapierWorkerExecution.createWorkerExecution({name: 'rapier-live',
       source: globalThis.RapierLiveSession.workerSource});
-    worker.onmessage = event => { void receive(event.data, currentEpoch); };
+    const rules = binding.custodyKey ? custodyRules() : null;
+    const bridge = custodyBridge = rules ? globalThis.RapierCustodyBridge.createCustodyBridge({
+      post: value => { try { joinedWorker.postMessage(value); } catch (_) {} }, RealSocket: WebSocket, key: binding.custodyKey, rules, events: window,
+      store: globalThis.RapierCustodyBridge.custodyStore(indexedDB, (globalThis.RapierStorage?.scope || location.pathname) + ':custody', slot)}) : null;
+    const joinedWorker = worker;
+    worker.onmessage = event => { if (event.data?.type === 'socket') { bridge?.handle(event.data); return; } void receive(event.data, currentEpoch); };
     worker.onerror = event => {
       if (epoch !== currentEpoch) return;
       state = {...state, state: 'stopped', error: event.message || 'Live worker unavailable'};
@@ -413,7 +429,8 @@ const _rapierLive = (() => {
     };
     joining = new Promise((resolve, reject) => { resolveJoin = resolve; rejectJoin = reject; });
     const local = _rapierLedgerCapture();
-    send({type: 'start', ...binding, slot, scope: globalThis.RapierStorage?.scope || location.pathname,
+    const {custodyKey, ...started} = binding;
+    send({type: 'start', ...started, ...(bridge ? {custodyKey} : {}), slot, scope: globalThis.RapierStorage?.scope || location.pathname,
       local: {source: _rapierSourceText(), ledger: local}});
     publish();
     return joining;
@@ -421,7 +438,9 @@ const _rapierLive = (() => {
   async function leave() {
     clearResume(boundResume()); cancelResume(); navigationProvider(false);
     ++epoch;
-    if (worker) { const old = worker; worker = null; old.postMessage({type: 'close'}); setTimeout(() => old.terminate(), 1000); }
+    const oldBridge = custodyBridge; custodyBridge = null;
+    if (worker) { const old = worker; worker = null; old.postMessage({type: 'close'}); setTimeout(() => { old.terminate(); oldBridge?.close(); }, 1000); }
+    else oldBridge?.close();
     binding = null; loading = preparing = applying = false; serial = 0; peers = []; pendingProjection = null;
     clearTimeout(projectionTimer); clearTimeout(clearComposition); clearTimeout(presenceTimer);
     projectionTimer = clearComposition = presenceTimer = latestInput = 0; lastPresence = heldPresence = null;
@@ -430,6 +449,8 @@ const _rapierLive = (() => {
     undoRequests.clear();
     for (const finish of stopRequests.values()) finish({stopped: false, reason: 'session_closed'});
     stopRequests.clear();
+    for (const finish of doorContextRequests.values()) finish(null);
+    doorContextRequests.clear();
     resolveJoin?.(false); resolveJoin = rejectJoin = null; joining = null;
     sheet?.close(); sheet = null; publish();
     return true;
@@ -529,6 +550,19 @@ const _rapierLive = (() => {
   function presenceSoon() {
     if (!own() || presenceTimer) return;
     presenceTimer = setTimeout(presence, 40);
+  }
+  let custodyBridge = null;
+  function context(args) {
+    return Promise.resolve(own() && custodyBridge ? custodyBridge.context(args) : null);
+  }
+  function custodySync(args) {
+    return Promise.resolve(own() && custodyBridge ? custodyBridge.sync(args) : null);
+  }
+  function custodyRules() {
+    try {
+      if (typeof window.markdownit !== 'function' || typeof _rapierStructureJob !== 'function') return null;
+      return globalThis.RapierPageRules.createPageRules({markdownit: window.markdownit, plugins: window, structureJob: _rapierStructureJob});
+    } catch (_) { return null; }
   }
   async function undo(target, redo = false) {
     if (!own() || blocked()) return false;
@@ -788,7 +822,19 @@ const _rapierLive = (() => {
         ...(privateKey ? {private: {id: /\/live\/([a-f0-9]{32})\/socket$/.exec(new URL(url).pathname)?.[1], key: privateKey}} : {})});
     })().catch(error => showToast(error.message, 'error'));
   });
-  return Object.freeze({join, leave, restored, observe, canonicalRows, prepareRecord, undo, flush, status: snapshot, copyLink, link, share, stop, rename, color, people, openJoin,
+  function check() { if (own() && state.ready) send({type: 'check'}); }
+  function doorContext(args) {
+    if (!own() || !state.ready || !Number.isSafeInteger(args?.sequence) || doorContextRequests.has(args.sequence)) return Promise.resolve(null);
+    return new Promise(resolve => {
+      const timer = setTimeout(() => finish(null), 5000);
+      const finish = value => { clearTimeout(timer); if (doorContextRequests.get(args.sequence) === finish) doorContextRequests.delete(args.sequence); resolve(value); };
+      doorContextRequests.set(args.sequence, finish);
+      if (!send({type: 'door-context', args})) finish(null);
+    });
+  }
+  globalThis.RapierLiveCustody = Object.freeze({context, sync: custodySync, rules: custodyRules});
+  return Object.freeze({join, leave, restored, observe, canonicalRows, prepareRecord, undo, flush, context, custodyRules, status: snapshot, copyLink, link, share, stop, rename, color, people, openJoin,
+    check, doorContext,
     redo: () => undo(undefined, true),
     active: () => !!own(), actor: () => own() ? state.author?.id || null : null,
     author: () => own() ? state.author || null : null,

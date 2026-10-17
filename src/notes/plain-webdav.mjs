@@ -70,6 +70,16 @@ export function createWebDAVPlainStore(options = {}) {
 			}
 			const del = await request('DELETE', probe, {headers: {'If-Match': wrong}});
 			if (del.status !== 412) refuse('conditional', 'this WebDAV server does not enforce conditional deletion; nothing was written');
+			let current = (await read(CHECK))?.rev, stale = null;
+			for (const text of ['rapier check one', 'rapier check two']) {
+				const res = await request('PUT', probe, {headers: {'If-Match': current, 'Content-Type': 'application/octet-stream'}, body: te.encode(text)});
+				if (![200, 201, 204].includes(res.status)) unconfirmed(res.status);
+				const next = isStrongWebDAVETag(res.headers.get('etag')?.trim()) ? res.headers.get('etag').trim() : (await read(CHECK))?.rev;
+				if (!next || next === current) refuse('conditional', 'this WebDAV server gives one ETag to different contents, so plain files could overwrite another app\'s change; nothing was written');
+				stale = current; current = next;
+			}
+			const late = await request('PUT', probe, {headers: {'If-Match': stale, 'Content-Type': 'application/octet-stream'}, body: te.encode('rapier check old')});
+			if (late.status !== 412) refuse('conditional', 'this WebDAV server accepted a write over an older ETag; nothing was written');
 			return true;
 		})();
 		ready.catch(() => { ready = null; });
@@ -94,8 +104,9 @@ export function createWebDAVPlainStore(options = {}) {
 				if (row.parts.length !== folder.length + 1 || row.collection !== false) continue;
 				const name = row.parts.at(-1);
 				if (name === CHECK) continue;
-				if (!isStrongWebDAVETag(row.etag)) refuse('etag', 'the WebDAV listing gave no strong ETag for ' + name + '; it cannot be synced safely');
-				out.push({name: plainName(name), rev: row.etag, ...(Number.isSafeInteger(row.size) ? {size: row.size} : {})});
+				const etag = /^[\x21\x23-\x7e\x80-\xff]+$/.test(row.etag || '') ? '"' + row.etag + '"' : row.etag;
+				if (!isStrongWebDAVETag(etag)) refuse('etag', 'the WebDAV listing gave no strong ETag for ' + name + '; it cannot be synced safely');
+				out.push({name: plainName(name), rev: etag, ...(Number.isSafeInteger(row.size) ? {size: row.size} : {})});
 			}
 			return out;
 		},

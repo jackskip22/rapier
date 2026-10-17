@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT
-// Capture only the reader contract before another observation can reuse its objects.
 export function observe(text, reader, spend, safe, references = true, lenient = false) {
   let value;
   try { value = reader(text); } catch (error) { return {invalid: true, threw: true, error}; }
@@ -30,7 +29,6 @@ export function observe(text, reader, spend, safe, references = true, lenient = 
         if (!usable && !lenient) throw null;
         const part = {start, end: stop, kind: scalar(kind), name: scalar(name), key: scalar(key, true)};
         if (nameAt != null) part.nameAt = span(nameAt, start, stop);
-        // Discard unsafe evidence only after validating its complete subtree.
         if (retained && usable) { parts.push(part); flat.push(part); }
         part.children = children == null ? [] : copy(children, start, stop, depth + 1, retained && usable);
       }

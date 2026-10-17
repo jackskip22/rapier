@@ -46,6 +46,7 @@ const corpus = [
   {id: 'nested-link', source: String.raw`\href{https://example.com/outer}{\href{https://example.com/inner}{x}}`, status: 'refused', code: 'semantic-nested-link'},
   {id: 'hidden-link', source: String.raw`\phantom{\href{https://example.com/}{x}}`, status: 'refused', code: 'semantic-hidden-link'},
   {id: 'chemistry', source: String.raw`\ce{2 H2 + O2 -> 2 H2O}`, status: 'presentation-fallback'},
+  {id: 'chemistry-labels', source: String.raw`\ce{-> + ->[][x] + <=>[y][z]}`, status: 'presentation-fallback'},
   {id: 'physics-units', source: String.raw`\dv[2]{x}{t}+\pu{1.2e-3 m s-1}`, status: 'presentation-fallback'},
   {id: 'tags-labels', source: String.raw`x=1\label{eq:sample}\tag{A}`, status: 'presentation-fallback'},
   {id: 'presentation', source: String.raw`\cancel{x}+\phantom{a}+\smash{b}+\raisebox{1em}{c}`, status: 'presentation-fallback'},
@@ -247,13 +248,17 @@ const explicitLimits = trees.get('explicit-limits');
 assert.deepEqual(one(explicitLimits, 'munderover').children.map(textOf), ['∫', '0', '1'], 'explicit integral limits survive');
 assert(find(explicitLimits, 'msubsup').some(node => textOf(node.children[0]) === '∑'), 'nolimits keeps side scripts');
 const operatorTokens = tokens(trees.get('operators'));
-for (const name of ['sin', 'arg max']) assert(operatorTokens.some(([tag, text]) => tag === 'mo' && text === name), 'one named-operator token: ' + name);
+for (const name of ['sin', 'argmax']) assert(operatorTokens.some(([tag, text]) => tag === 'mo' && text === name), 'one named-operator token: ' + name);
 const overridden = trees.get('atom-class-limits');
 assert(tokens(overridden).some(([tag, text]) => tag === 'mo' && text === 'x'), 'explicit simple relation class is retained');
 assert(tokens(overridden).some(([tag, text]) => tag === 'mi' && text === 'y'), 'compound operator class preserves inner mathematical structure');
 const fixedLimits = one(overridden, 'munderover');
 assert.deepEqual(fixedLimits.children.map(textOf), ['∑', '0', '1']);
 assert.equal(one(fixedLimits.children[0], 'mo').attrs.movablelimits, 'false', 'Core cannot undo explicit limits applied after scripts');
+const chemistryLabels = trees.get('chemistry-labels');
+for (const arrow of find(chemistryLabels, 'mo').filter(node => /[→⇌]/u.test(node.text)))
+  assert.equal(arrow.attrs.minsize, '2em', 'a chemical arrow keeps its admitted minimum with or without labels');
+assert.deepEqual(one(chemistryLabels, 'munder').children.map(textOf), ['→', 'x'], 'an empty upper label does not invent an upper relationship');
 const decorations = trees.get('fences-accents');
 assert.equal(textOf(one(decorations, 'mover').children[0]), 'x', 'accent owns its base');
 assert.equal(textOf(one(decorations, 'munder').children[0]), 'y', 'under-accent owns its base');

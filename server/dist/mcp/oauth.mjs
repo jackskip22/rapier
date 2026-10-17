@@ -2,6 +2,8 @@
 import {base64url, fromBase64url} from '../agent/door-identity.mjs';
 import {editorSecretUsable, editorSecretKeyMaterial} from './editor-keys.mjs';
 import {DOOR_LIMITS} from './limits.mjs';
+import {objectStore} from './oauth-store.mjs';
+import {isSignedAccessToken, mintAccessToken, verifyAccessToken, SIGNED_ACCESS_SECONDS} from './oauth-access.mjs';
 
 export const OAUTH_SCOPES = Object.freeze(['rapier:read', 'rapier:write', 'offline_access']);
 export const OAUTH_ACCESS_SECONDS = 15 * 60;
@@ -49,38 +51,15 @@ async function authorizationServer(env) {
   return servers.get(issuer);
 }
 
-const GRANT_RECORD = /^(?:grant|token):([^:]+):([^:]+)(?::[^:]+)?$/;
 export function consistentGrants(env) {
-  const kv = env.OAUTH_KV;
-  if (!kv || !env.BUDGET?.get || !env.BUDGET?.idFromName) return env;
-  const tokens = new Map();
-  const ask = async (key, body) => {
-    const [, userId, grantId] = GRANT_RECORD.exec(key);
-    const response = await env.BUDGET.get(env.BUDGET.idFromName('oauth-grant:' + userId + ':' + grantId)).fetch(new Request('https://rapier.internal/grant',
-      {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({...body, key})}));
-    if (!response.ok) throw new Error('The grant record is unavailable.');
-    return response.json();
-  };
-  return {...env, OAUTH_KV: {
-    async get(key, options) {
-      if (!GRANT_RECORD.test(key)) return kv.get(key, options);
-      if (key.startsWith('token:') && !tokens.has(key)) tokens.set(key, ask(key, {op: 'get'}));
-      const answer = await (tokens.get(key) || ask(key, {op: 'get'}));
-      const value = answer.state === 'unknown' ? await kv.get(key) : answer.state === 'value' ? answer.value : null;
-      return value !== null && (options === 'json' || options?.type === 'json') ? JSON.parse(value) : value;
-    },
-    async put(key, value, options = {}) {
-      if (key.startsWith('grant:') && (await ask(key, {op: 'put', value, expires: options.expiration ? options.expiration * 1000 :
-          options.expirationTtl ? Date.now() + options.expirationTtl * 1000 : undefined})).state !== 'stored') return;
-      return kv.put(key, value, options);
-    },
-    async delete(key) {
-      tokens.clear();
-      if (GRANT_RECORD.test(key)) await ask(key, {op: 'delete'});
-      return kv.delete(key);
-    },
-    list: options => kv.list(options),
-  }};
+  if (!env || !('BUDGET' in env)) return env;
+  let store;
+  const out = {...env};
+  Object.defineProperty(out, 'OAUTH_KV', {enumerable: true, configurable: true, get() {
+    store ??= env.BUDGET?.get && env.BUDGET?.idFromName ? objectStore(env) : env.OAUTH_KV;
+    return store;
+  }});
+  return out;
 }
 
 export function validGrantReference(value) {
@@ -96,6 +75,13 @@ export async function oauthGrantCurrent(reference, env) {
   if (![origin + '/mcp', origin + '/muse'].includes(reference.audience)) return false;
   if (!env.OAUTH_KV) return false;
   const grant = await consistentGrants(env).OAUTH_KV.get('grant:' + reference.ownerId + ':' + reference.grantId, 'json');
+  return grantRecordCurrent(reference, grant, env);
+}
+
+export function grantRecordCurrent(reference, grant, env) {
+  if (!validGrantReference(reference)) return false;
+  const origin = oauthOrigin(env);
+  if (![origin + '/mcp', origin + '/muse'].includes(reference.audience)) return false;
   return !!grant && grant.id === reference.grantId && grant.userId === reference.ownerId && grant.clientId === reference.clientId &&
     grant.metadata?.connectionId === reference.connectionId &&
     (grant.expiresAt === undefined || Number.isSafeInteger(grant.expiresAt) && grant.expiresAt > Math.floor(Date.now() / 1000)) &&
@@ -351,6 +337,25 @@ async function disconnect(request, env, api) {
     (grants.cursor ? `<p><a href="/oauth/disconnect?cursor=${encodeURIComponent(grants.cursor)}">More connections</a></p>` : ''));
 }
 
+async function signedTokenResponse(response, server, env) {
+  let body;
+  try { body = await response.clone().json(); } catch { return new Response(response.body, {status: response.status, headers: headers(response.headers)}); }
+  const origin = oauthOrigin(env);
+  let verified = null;
+  if (typeof body?.refresh_token !== 'string') return json(response.status, body, response.headers);
+  if (typeof body?.access_token === 'string')
+    for (const resource of [origin + '/mcp', origin + '/muse']) if (!verified) verified = await server.validateToken(resource, body.access_token, env);
+  const token = verified && await server.getOAuthApi(env).unwrapToken(body.access_token);
+  const grant = verified && {ownerId: verified.userId, connectionId: verified.props?.connectionId, grantId: token?.grantId,
+    clientId: verified.clientId, audience: verified.audience, scopes: [...(verified.scope || [])]};
+  if (!grant || !validGrantReference(grant) || token?.userId !== verified.userId) return json(response.status, body, response.headers);
+  const record = await consistentGrants(env).OAUTH_KV.get('grant:' + grant.ownerId + ':' + grant.grantId, 'json');
+  const now = Math.floor(Date.now() / 1000), until = Number.isSafeInteger(record?.expiresAt) ? record.expiresAt - now : SIGNED_ACCESS_SECONDS;
+  const seconds = Math.min(SIGNED_ACCESS_SECONDS, until);
+  if (seconds <= Number(body.expires_in || 0)) return json(response.status, body, response.headers);
+  return json(response.status, {...body, access_token: await mintAccessToken(env.EDITOR_KEY_SECRET, grant, {seconds}), expires_in: seconds}, response.headers);
+}
+
 export async function handleOAuth(request, env, ctx, next) {
   env = consistentGrants(env);
   const url = new URL(request.url);
@@ -400,7 +405,17 @@ export async function handleOAuth(request, env, ctx, next) {
         if (form.get('grant_type') === 'authorization_code' && !/^[A-Za-z0-9._~-]{43,128}$/.test(form.get('code_verifier') || ''))
           return json(400, {error: 'invalid_request', error_description: 'A valid PKCE verifier is required.'});
       }
+      if (url.pathname === '/oauth/token' && request.method === 'POST') {
+        const form = new URLSearchParams(await limited.clone().text()), token = form.get('token');
+        if (!form.get('grant_type') && isSignedAccessToken(token)) {
+          const claims = await verifyAccessToken(env.EDITOR_KEY_SECRET, token);
+          if (claims && claims.clientId === form.get('client_id')) await server.getOAuthApi(env).revokeGrant(claims.grantId, claims.ownerId);
+          return new Response(null, {status: 200, headers: headers()});
+        }
+      }
       const response = await server.fetch(limited, env, ctx);
+      if (url.pathname === '/oauth/token' && request.method === 'POST' && response.ok && editorSecretUsable(env.EDITOR_KEY_SECRET))
+        return signedTokenResponse(response, server, env);
       if (url.pathname === '/.well-known/oauth-authorization-server' && request.method !== 'HEAD' && response.ok) {
         const metadata = await response.json();
         metadata.token_endpoint_auth_methods_supported = ['none'];
@@ -413,6 +428,17 @@ export async function handleOAuth(request, env, ctx, next) {
       const match = /^Bearer +([^\s,]{1,4096})$/i.exec(bearer);
       if (!match) return oauthChallenge(request, env);
       const server = await authorizationServer(env), resources = humanRoute ? [origin + '/mcp', origin + '/muse'] : [oauthResource(env, url.pathname)];
+      if (isSignedAccessToken(match[1])) {
+        const claims = await verifyAccessToken(env.EDITOR_KEY_SECRET, match[1]);
+        const grant = claims && {ownerId: claims.ownerId, connectionId: claims.connectionId, grantId: claims.grantId,
+          clientId: claims.clientId, audience: claims.audience, scopes: claims.scopes};
+        if (!claims || !resources.includes(claims.audience) || !validGrantReference(grant)) return oauthChallenge(request, env);
+        const deferred = !humanRoute && request.method === 'POST';
+        if (!deferred && !await oauthGrantCurrent(grant, env)) return oauthChallenge(request, env);
+        authority = Object.freeze({ownerId: grant.ownerId, connectionId: grant.connectionId, scopes: Object.freeze([...grant.scopes]),
+          source: 'oauth', grant: Object.freeze(grant), ...(deferred ? {grantUnchecked: true} : {})});
+        return next(request, authority);
+      }
       let verified = null;
       for (const resource of resources) if (!verified) verified = await server.validateToken(resource, match[1], env);
       if (!verified || !resources.includes(verified.audience) || !Number.isSafeInteger(verified.expiresAt) ||

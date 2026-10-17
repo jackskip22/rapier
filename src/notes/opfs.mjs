@@ -5,6 +5,7 @@ import {parts, FOLDERS} from './opfs-paths.mjs';
 import {stampFor} from './search-store.mjs';
 import {isRecordingPartial, recordingStorageError} from './recording-files.mjs';
 import {notesHostWords, nativeWorkerName} from './host-words.mjs';
+import {DELETE_FRAME_BYTES, deleteFrameName, isDeletePrivateName} from './delete-intent.mjs';
 
 export function createNativeByteStore(options) { return nativeByteStore(options); }
 export function createNativeNotesLocks(options) { return nativeNotesLocks(options); }
@@ -169,6 +170,32 @@ export function createByteStore({directory, memory = null, token = () => crypto.
 			await afterStep('write', name, bytes); return size;
 		},
 	};
-	return {read, readBlob, readChunks, write, writeBlob, remove, list, stat, statAll, prepare, recording, get streamingAttachments() { return !memory && writable === true; }, get writable() { return writable; }, get ascii() { return ascii; }, get reason() { return reason; },
+	const pressureBytes = (value, size) => {
+		if (!(value instanceof Uint8Array) || size !== undefined && value.length !== size) throw new TypeError('Deletion custody needs exact bytes.');
+		return value.slice();
+	};
+	const deletePressure = memory ? null : {
+		async list() { return (await list()).filter(isDeletePrivateName); },
+		async read(name) {
+			if (!isDeletePrivateName(name)) throw fail('name', 'This is not a deletion custody file.');
+			return read(name);
+		},
+		async writeFrame(slot, expected, bytes, {releaseReserve = null} = {}) {
+			deleteFrameName(slot);
+			return request('deleteFrame', {slot, expected: expected === null ? null : pressureBytes(expected, DELETE_FRAME_BYTES),
+				bytes: pressureBytes(bytes, DELETE_FRAME_BYTES), releaseReserve: releaseReserve === null ? null : pressureBytes(releaseReserve), token: token()});
+		},
+		async reserve(expected, bytes) {
+			bytes = pressureBytes(bytes); expected = expected === null ? null : pressureBytes(expected);
+			if (!await prepare()) throw fail('read-only', reason || 'These notes are read-only here.');
+			return request('deleteReserve', {expected, bytes, token: token()});
+		},
+		releaseReserve: async expected => request('deleteRelease', {expected: pressureBytes(expected)}),
+		observe: file => request('deleteObserve', {name: file}),
+		detach: (file, {held, digest, identity}) => request('deleteDetach', {name: file, held, digest, identity}),
+		removeOwned: (name, digest) => request('deleteRemove', {name, digest}),
+		checkpoint: async (bytes, baseDigest) => request('deleteCheckpoint', {bytes: pressureBytes(bytes), baseDigest, token: token()}),
+	};
+	return {read, readBlob, readChunks, write, writeBlob, remove, list, stat, statAll, prepare, recording, deletePressure, get streamingAttachments() { return !memory && writable === true; }, get writable() { return writable; }, get ascii() { return ascii; }, get reason() { return reason; },
 		async removeThumbnails() {}};
 }

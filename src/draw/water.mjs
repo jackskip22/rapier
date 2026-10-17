@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import {WaterGPU,waterReady,waterUnfilteredTest,waterTiming,waterTimingOn,waterCapture,waterCaptureOn,waterNote,waterHandSheetFits,waterGpuBudget,waterSheetShows} from './water-gpu.mjs';
+import {WaterGPU,waterReady,waterSoftwareAdmitted,waterSoftwareAdapter,waterWarm,waterUnfilteredTest,waterTiming,waterTimingOn,waterCapture,waterCaptureOn,waterNote,waterHandSheetFits,waterGpuBudget,waterSheetShows} from './water-gpu.mjs';
 import {WaterContact,waterContactReach} from './water-contact.mjs';
 import {getBrush,makeTip,CUSTOM_PARAMS} from './water-materials.mjs';
 import {WATER_PAPER_UNITS,WATER_PAPER_SEED,WATER_PAPER_PERIOD} from './paper-field.mjs';
@@ -9,7 +9,7 @@ import {buildWaterFill} from './water-fill.mjs';
 import {waterTimeFits} from './water-data.mjs';
 import {WATER_TICK_HZ,WATER_BANDS,WATER_ACTION_MAX_POINTS,WATER_TIP_MAX_PIXELS,WATER_SOURCE_MAX_BYTES,WATER_PAPERS,WATER_PIGMENTS,WATER_BRUSHES,WATER_TOOLS,WATER_CONTROLS,waterBrushById,waterPigmentById,waterPaperById,waterError,waterRadius,waterHandSize,waterHandUi,waterHandFromUi,admitWaterPigment,admitWaterTip,admitWaterControls,admitWaterBrush,waterBrushDefinition,admitWaterAction,admitWaterActions,waterActionsFault,waterProFeature,admitWaterState} from './water-data.mjs';
 export {WATER_TICK_HZ,WATER_BANDS,WATER_ACTION_MAX_POINTS,WATER_TIP_MAX_PIXELS,WATER_SOURCE_MAX_BYTES,WATER_PAPERS,WATER_PIGMENTS,WATER_BRUSHES,WATER_TOOLS,WATER_CONTROLS,waterBrushById,waterPigmentById,waterPaperById,waterError,waterRadius,waterHandSize,waterHandUi,waterHandFromUi,admitWaterPigment,admitWaterTip,admitWaterControls,admitWaterBrush,waterBrushDefinition,admitWaterAction,admitWaterActions,waterActionsFault,waterProFeature,admitWaterState};
-export {waterReady,waterUnfilteredTest,waterTiming,waterTimingOn,waterCapture,waterCaptureOn,waterNote,waterHandSheetFits,waterGpuBudget,WATER_PAPER_UNITS,WATER_PAPER_SEED,waterSheetShows};
+export {waterReady,waterSoftwareAdmitted,waterSoftwareAdapter,waterWarm,waterUnfilteredTest,waterTiming,waterTimingOn,waterCapture,waterCaptureOn,waterNote,waterHandSheetFits,waterGpuBudget,WATER_PAPER_UNITS,WATER_PAPER_SEED,waterSheetShows};
 import {WATER_SPECIALTY_PIGMENTS,WATER_PRO_PAPERS,waterSpecialtyById,waterPigmentFinish,isWaterSpecialtyPigment,mixWaterPigments} from './water-data.mjs';
 export {WATER_SPECIALTY_PIGMENTS,WATER_PRO_PAPERS,waterSpecialtyById,waterPigmentFinish,isWaterSpecialtyPigment,mixWaterPigments};
 const clone=value=>structuredClone(value);

@@ -8,13 +8,13 @@
 /watercolor/ /watercolor 308
 /watercolor /door-watercolor.html 200
 /agents/ /agents 308
-/agents https://github.com/jackskip22/rapier/blob/main/docs/agents.md 302
+/agents /door-agents.html 200
 /gemini/ /gemini 308
-/gemini https://github.com/jackskip22/rapier/blob/main/docs/gemini.md 302
+/gemini /door-gemini.html 200
 /markdown-standard/ /markdown-standard 308
-/markdown-standard https://github.com/jackskip22/rapier/blob/main/docs/markdown-standard.md 302
+/markdown-standard /door-markdown-standard.html 200
 /will/ /will 308
-/will https://github.com/jackskip22/rapier/blob/main/docs/will.md 302
+/will /door-will.html 200
 /paint/ /paint 308
 /paint /door-paint.html 200
 /markdown-editor/ /markdown-editor 308
@@ -36,3 +36,6 @@
 /commercial/ /commercial 308
 /commercial /door-commercial.html 200
 /favicon.ico /icon-192.png 200
+/sync/dropbox /sync-return.html 200
+/sync/onedrive /sync-return.html 200
+/sync/cloudflare /sync-return.html 200

@@ -2,6 +2,7 @@
 import {syncPlainFiles} from './sync-plain.mjs';
 import {readSyncState, updateSyncState} from './sync-state.mjs';
 import {syncPlainPictures} from './sync-plain-pictures.mjs';
+import {withWikiPictures} from './plain-wiki-pictures.mjs';
 
 export const PLAIN_PROVIDERS = Object.freeze(['dropbox', 'drive', 'onedrive', 'webdav', 's3', 'r2', 'companion']);
 const fail = (code, message) => Object.assign(new Error(message), {code});
@@ -15,9 +16,10 @@ export function plainRecord({provider, place, device}) {
 	return Object.freeze({layout: 'plain', provider, place, device});
 }
 
-export function createPlainSession({folder, store, provider, place, device, pictures = true}) {
+export function createPlainSession({folder, store: given, provider, place, device, pictures = true, now = Date.now}) {
 	const record = plainRecord({provider, place, device});
-	if (!folder || !store) throw fail('config', 'a plain-files sync needs the folder and its store.');
+	if (!folder || !given) throw fail('config', 'a plain-files sync needs the folder and its store.');
+	const store = withWikiPictures(given);
 	let running = null;
 	const base = {
 		async read() { return structuredClone((await readSyncState(folder)).plain?.base || {}); },
@@ -52,6 +54,7 @@ export function createPlainSession({folder, store, provider, place, device, pict
 				if (!saved || saved.provider !== record.provider || saved.place !== record.place) throw fail('connection', 'connect this folder to its plain files first.');
 				const result = await syncPlainFiles({folder, store, base, device: record.device, other: 'files'});
 				if (pictures) result.pictures = await syncPlainPictures({folder, store, base: pictureBase});
+				await updateSyncState(folder, state => state.plain?.provider === record.provider && state.plain.place === record.place ? {...state, plain: {...state.plain, syncedAt: now()}} : null);
 				return result;
 			})();
 			try { return await running; } finally { running = null; }

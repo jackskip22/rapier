@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Only plain JSON data enters the public format. Accessors and toJSON are never executed.
 export function fault(message) { return Object.assign(new Error('Ledger: ' + message), {code: 'ledger_invalid'}); }
-// A plain object's prototype is null or Object's own. Both lookups read descriptors, so no getter runs.
 export const plainPrototype = proto => proto === null || Object.getPrototypeOf(proto) === null &&
   Object.getOwnPropertyDescriptor(Object.getOwnPropertyDescriptor(proto, 'constructor')?.value || {}, 'name')?.value === 'Object';
 export function fields(value, depth, active, sorted = true) {
@@ -22,8 +20,6 @@ export function scalar(value) {
   if (typeof value === 'string') { if (/[\uD800-\uDFFF]/u.test(value)) throw fault('unpaired surrogate'); return true; }
   return typeof value === 'number' && Number.isFinite(value) && !Object.is(value, -0);
 }
-// A canonical copy does not need a serialized document and a second parsed document.
-// Sorted insertion preserves the previous plainData result, including numeric-key ordering.
 export function plainData(value) {
   if (typeof value === 'string') value = JSON.parse(value);
   const active = new Set();
@@ -37,8 +33,6 @@ export function plainData(value) {
   };
   return copy(value, 0);
 }
-// Each yielded string is bounded, even when one value contains the whole document.
-// JSON.stringify still owns escaping; scalar boundaries keep its spelling exact.
 function* quoted(text, whole = true) {
   yield '"';
   for (let at = 0; at < text.length;) {
@@ -73,8 +67,6 @@ export function canonicalJSON(value, depth = 0, active = new Set()) { return Arr
 export function exactKeys(value, keys) {
   return value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 }
-// TextEncoder's exact byte count, without allocating an encoded copy. Whole-character
-// admission is performed in this same pass when the document owner requests it.
 export function utf8Length(text, whole = false) {
   let bytes = 0;
   for (let at = 0; at < text.length; at++) {

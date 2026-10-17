@@ -1363,7 +1363,8 @@
 
   async function exportDocument(request, expected) {
     await ready;
-    const identity = {documentId: request?.documentId, revision: request?.revision, format: request?.format};
+    const identity = {documentId: request?.documentId, revision: request?.revision, format: request?.format,
+      ...(request?.part ? {part: request.part.sha256} : {})};
     const refuse = reason => ({...identity, outcome: 'refused', reason});
     if (request?.signal?.aborted) return refuse('cancelled');
     if (exportFlight) return refuse('export_busy');
@@ -1382,8 +1383,9 @@
       String(rapier.document.filename) === local.filename;
     const flight = {}; exportFlight = flight;
     try {
+      if (request.part && typeof request.part.text !== 'string') return refuse('export_scope_invalid');
       const artifact = await _rapierBuildEditorExport(request.format === 'docx' ? 'export_word' : request.format === 'page' ? 'export_page' : 'export_pdf', {expectedText: local.text},
-        {signal: request.signal, current, maxBytes: MAX_EXPORT_BYTES});
+        {signal: request.signal, current, maxBytes: MAX_EXPORT_BYTES, ...(request.part ? {part: request.part.text} : {})});
       const blob = new Blob([artifact.bytes], {type: artifact.mimeType}), filename = exportFilename(request.filename, request.format);
       const {pages, issues} = artifact;
       if (!current()) return refuse(request.signal?.aborted ? 'cancelled' : 'document_changed');
@@ -1419,7 +1421,7 @@
   }
 
   async function exportFile(request) {
-    const local = await snapshot(), source = request.text;
+    const local = await snapshot(), source = request.source ?? request.text;
     if (local.documentId !== request.documentId || local.revision !== request.revision || local.text !== source ||
         local.filename !== request.filename || request.signal?.aborted || request.guard?.() === false) return {reason: 'document_changed'};
     const comparisonCurrent = () => !request.compareId || rapier.compare?.active === true &&
@@ -1455,7 +1457,8 @@
       const captured = await _rapierCaptureSettledExternalDocument();
       if (!captured || captured.canonical !== source) return {reason: 'document_changed'};
       if (request.format === 'txt') {
-        bytes = new TextEncoder().encode(_rapierRenderModule('render-markdown')._rapierPlainTextFile(_rapierBuildInterchangeContext({format: 'txt'}, captured)));
+        bytes = new TextEncoder().encode(_rapierRenderModule('render-markdown')._rapierPlainTextFile(_rapierBuildInterchangeContext({format: 'txt'},
+          request.text === source ? captured : {...captured, canonical: request.text, comparisonBase: null, wordComparison: null})));
         mimeType = 'text/plain; charset=utf-8';
       } else return {reason: 'export_format_invalid'};
     }
@@ -1479,7 +1482,7 @@
   const notesDoor = async () => { if (!globalThis.rapierNotesHost) await part('notes'); return globalThis.rapierNotesHost; };
   const host = {
     ready: part,
-    snapshot, commit, reveal, setView, view: viewContext, exportFile, editorContext, presentDrawing,
+    snapshot, commit, reveal, setView, view: viewContext, exportFile, exportScope: true, editorContext, presentDrawing,
     drawingPresentationBinding: () => !apps && visible() && !admission()
       ? {contextId: doorSession, navigationSequence: drawingNavigationSequence} : undefined,
     paintRaster: (raster, options) => globalThis.RapierEmbeddedImages.validatePaintRaster(raster, options),
@@ -1706,7 +1709,7 @@
     const result = await (who.actor === 'agent' ? _rapierAgentInvocationTracked(name, args, run, who.requestId,
       (typeof args.agent === 'string' && args.agent.trim()) || who.hostAgent || doorName) : run());
     if (name === 'edit' && ['applied', 'rebased'].includes(result.outcome)) {
-      try { if (who.actor === 'agent') agentCaret(result.act?.id, (typeof args.agent === 'string' && args.agent.trim()) || who.hostAgent || doorName); } catch (_) {}
+      try { if (who.actor === 'agent') agentCaret(result.act?.id, (typeof args.agent === 'string' && args.agent.trim()) || who.hostAgent || doorName, undefined, undefined, result.act?.label); } catch (_) {}
     }
     if (who.actor === 'agent' && result?.reason === 'document_law' && Number.isSafeInteger(result.region)) {
       try { _rapierAgentWillKept(result.region); } catch (_) {}
@@ -1984,8 +1987,8 @@
     }
     return null;
   }
-  function agentCaret(change, label, request, element) {
-    if (!request && change) { _rapierAgentNamed(label); _rapierAgentBarActed(change); }
+  function agentCaret(change, label, request, element, actLabel) {
+    if (!request && change) { _rapierAgentNamed(label); _rapierAgentBarActed(change, actLabel); }
     if (!change || document.visibilityState === 'hidden') return false;
     if (change === caret.last) return !!caret.el;
     if (request?.pointer && request.pointer.expiresAt <= Date.now()) return false;
@@ -2017,6 +2020,7 @@
     const circle = document.getElementById('scroll-fab'), disc = circle?.classList.contains('visible') ? circle.getBoundingClientRect() : null;
     const from = caret.from || (disc?.width ? {x: disc.left + disc.width / 2, y: disc.top + (disc.height - target.height) / 2, height: target.height} : null);
     const motion = globalThis.RapierCursorMotion.createCursorMotion(from || target, target, 'arc', {reducedMotion: reduced || !from});
+    delete caret.el.dataset.tag;
     const tag = caret.el.firstChild, tagX = target.left - 28 - tag.offsetWidth;
     caret.el.dataset.tag = tagX >= 8 ? 'on' : 'off';
     const place = point => {
@@ -2261,7 +2265,7 @@
     credited.revision = Math.max(from, value.revision);
     return value.journal.filter(row => row?.revision > from && row.actor === 'agent').flatMap(row => {
       const entry = rapier.undo.ledger.findLast(item => item.transaction?.remoteTransactionId === row.id || item.transaction?.id === row.id);
-      return entry ? [{id: entry.transaction.id, name: row.agent || row.hostAgent || entry.transaction.actor?.name || doorName}] : [];
+      return entry ? [{id: entry.transaction.id, name: row.agent || row.hostAgent || entry.transaction.actor?.name || doorName, label: row.label}] : [];
     });
   }
 
@@ -2353,8 +2357,8 @@
       if (exact) {
         const fresh = remoteAgentActs(value);
         if (landed && !fresh.some(row => row.id === landed.id)) fresh.push({id: landed.id, name: landed.actor.name || doorName});
-        for (const row of fresh.slice(0, -1)) { _rapierAgentNamed(row.name); _rapierAgentBarActed(row.id); }
-        if (fresh.length) try { agentCaret(fresh.at(-1).id, fresh.at(-1).name); } catch (_) {}
+        for (const row of fresh.slice(0, -1)) { _rapierAgentNamed(row.name); _rapierAgentBarActed(row.id, row.label); }
+        if (fresh.length) try { agentCaret(fresh.at(-1).id, fresh.at(-1).name, undefined, undefined, fresh.at(-1).label); } catch (_) {}
       }
       return {ok: true, outcome: 'applied', comparison, snapshot: await snapshot(), ...(drawingReceipts.length ? {drawingReceipts} : {})};
     } catch (error) {

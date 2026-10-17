@@ -9,10 +9,10 @@
 	<span id="embed-status-detail"></span>
 </div>
 
-<div class="embed-refused" id="embed-refused" hidden role="alert">
+<div class="embed-refused" id="embed-refused" hidden role="alert"><template data-rapier-later>
 	<strong>Rapier could not open in this frame.</strong>
 	<span id="embed-refused-message">A site that hosts Rapier frames rapier.html?embed=1 and connects to it.</span>
-</div>
+</template></div>
 
 <!-- ════════ -->
 <header class="top-bar">
@@ -936,7 +936,7 @@
 							 stroke-linejoin="round" aria-hidden="true"><use href="#i-close"></use></svg>
 				</button>
 			</div>
-			<div class="licenses-app privacy-words">
+			<template data-rapier-later><div class="licenses-app privacy-words">
 				<p>Rapier needs no account signup and uses no analytics or advertising. It collects no personal information from anyone,
 					children included. Your files stay on your device until you save, share,
 					back up or sync them. Sync uses your bucket, encrypted with a key that never leaves your devices. You keep
@@ -964,7 +964,7 @@
 				<p>Rapier is free software: AGPL-3.0-only for the editor; MIT for the Markdown standard and embed helper.
 					Provided as is, without warranty where law allows. Keep your own copies. The door may change or close.</p>
 				<p><strong>Jack Skipworth · hello@rapier.website · effective 15 October 2026</strong></p>
-			</div>
+			</div></template>
 		</div>
 	</div>
 </div>
@@ -988,7 +988,7 @@
 							 stroke-linejoin="round" aria-hidden="true"><use href="#i-close"></use></svg>
 				</button>
 			</div>
-			<div class="licenses-app commercial-words">
+			<template data-rapier-later><div class="licenses-app commercial-words">
 				<p>Rapier is free under AGPL-3.0. These lifetime licenses offer alternative terms for organizations that need them.</p>
 				<h3 class="licenses-given">Commercial</h3>
 				<p class="licenses-offer">2026 early adopter special</p>
@@ -1004,7 +1004,7 @@
 				<div class="licenses-links">
 					<a class="licenses-link" href="mailto:hello@rapier.website">hello@rapier.website</a>
 				</div>
-			</div>
+			</div></template>
 		</div>
 	</div>
 </div>
@@ -1033,15 +1033,18 @@
 					<li>the picture appendix that keeps pictures inside a document</li>
 					<li>the readers that open a shared page without Rapier</li>
 					<li>the Markdown kit that carries them all</li>
+					<li>Rapier Math, the math renderer</li>
+					<li>rapier-diff, the comparison</li>
+					<li>rapier-jxl, the JPEG XL encoder</li>
 				</ul>
-				<p>The Rapier editor is free under AGPL-3.0-only, including for commercial use. Lifetime commercial licenses offer alternative terms. It comes with no warranty. The full license below explains the source-sharing requirements.</p>
+				<p>The Rapier editor is free under AGPL-3.0-only. Lifetime commercial licenses offer alternative terms. It comes with no warranty. The full license below explains the source-sharing requirements.</p>
 				<p>Under section 7, keep Rapier's name and version in its legal notices, mark a changed version as changed, and never present it as official.</p>
 				<div class="licenses-links">
 					<button type="button" class="licenses-link" data-action="licenses-source">source</button>
 					<a id="licenses-commercial" class="licenses-link" href="https://rapier.website/commercial" target="_blank" rel="noopener noreferrer">commercial licensing</a>
 					<a class="licenses-link" href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener noreferrer">GNU license online</a>
 				</div>
-				<details class="licenses-full">
+				<template data-rapier-later><details class="licenses-full">
 					<summary>full GNU AGPL v3 license</summary>
 					<pre>                    GNU AFFERO GENERAL PUBLIC LICENSE
 											 Version 3, 19 November 2007
@@ -1705,10 +1708,10 @@ if any, to sign a &quot;copyright disclaimer&quot; for the program, if necessary
 For more information on this, and how to apply and follow the GNU AGPL, see
 &lt;https://www.gnu.org/licenses/&gt;.
 </pre>
-				</details>
+				</details></template>
 			</div>
 			<h3 class="licenses-subtitle">third-party software</h3>
-			<div class="licenses-list">
+			<div class="licenses-list"><template data-rapier-later>
 <!-- Codec, Pretext and perfect-freehand notices are assembled from their vendor sources. -->
 <details class="license-entry"><summary><span class="license-name">DOMPurify 3.4.16</span><span class="license-id">Apache-2.0 OR MPL-2.0</span></summary>
 					<pre class="license-text">DOMPurify 3.4.16
@@ -2074,7 +2077,7 @@ SOFTWARE.</pre>
 				</details>
 				<details class="license-entry"><summary><span class="license-name">Latin Modern Math 1.959 (optional font)</span><span class="license-id">GUST</span></summary>
 					<pre class="license-text" data-license="math-font"></pre>
-				</details>
+				</details></template>
 				<div class="license-row"><span class="license-name">Mermaid 12.1.0 (optional)</span><span class="license-id">MIT</span></div>
 				<!-- RAPIER_NOTES_BEGIN -->
 				<!-- RAPIER_EDITOR_ONLY_BEGIN -->
@@ -2345,7 +2348,7 @@ SOFTWARE.</pre>
 				<!-- The navigator's own close glyph, taken as the sheet opens (notes/notes.js _rapierNotesMarkupGlyphs). -->
 				<button type="button" class="navigator-close" data-action="notes-import-close" aria-label="close import"></button>
 			</div>
-			<p class="export-choice__description" id="notes-import-lead" style="margin:0 0 var(--space-3)">pick the app you’re coming from, then the files it exported. nothing already in your notes is touched.</p>
+			<template data-rapier-later><p class="export-choice__description" id="notes-import-lead" style="margin:0 0 var(--space-3)">pick the app you’re coming from, then the files it exported. nothing already in your notes is touched.</p>
 			<div class="export-choice-list export-choice-list--compact" id="notes-import-choices">
 				<button type="button" class="export-choice export-choice--compact" data-action="notes-import-pick" data-value="keep"><span class="export-choice__label">google keep</span><span class="export-choice__description">choose your Google Takeout zip, or all the files in its Keep folder</span></button>
 				<button type="button" class="export-choice export-choice--compact" data-action="notes-import-pick" data-value="rapier"><span class="export-choice__label">add a rapier backup</span><span class="export-choice__description">bring its notes into this folder, keeping the notes already here</span></button>
@@ -2372,7 +2375,7 @@ SOFTWARE.</pre>
 				<button type="button" class="export-choice export-choice--compact" data-action="notes-import-pick" data-value="samsung"><span class="export-choice__label">samsung notes</span><span class="export-choice__description">notes saved as text or word files</span></button>
 				<button type="button" class="export-choice export-choice--compact" data-action="notes-import-pick" data-value="any"><span class="export-choice__label">markdown, text, html or word files</span><span class="export-choice__description">from any other app, or a zip of them</span></button>
 			</div>
-			<p class="export-choice__description" id="notes-import-foot" style="margin:var(--space-3) 0 0">• needs an export to markdown, text, html, word or zip.<br>• nothing leaves your device.</p>
+			<p class="export-choice__description" id="notes-import-foot" style="margin:var(--space-3) 0 0">• needs an export to markdown, text, html, word or zip.<br>• nothing leaves your device.</p></template>
 		</div>
 	</div>
 </div>

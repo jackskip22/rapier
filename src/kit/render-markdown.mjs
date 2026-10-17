@@ -280,6 +280,8 @@ function initMarkdownIt() {
 			token.attrSet('data-rapier-fence', token.markup || '```');
 			token.attrSet('data-rapier-fence-info', token.info == null ? '' : String(token.info));
 			const lang = String(token.info || '').trim().split(/\s+/)[0].toLowerCase();
+			if (lang === 'math' && token.meta?.rapierFenceClosed !== false && token.meta?.mathSource !== undefined)
+				return md.renderer.rules.math_block(tokens, idx, opts, env, self);
 			if (lang === 'html') {const block = htmlPlaceholder(token, md.utils.escapeHtml); if (block) return block;}
 			if (lang !== 'mermaid') return _fenceDefault(tokens, idx, opts, env, self);
 			const src = String(token.content || '').replace(/\n$/, '');
@@ -336,14 +338,18 @@ function initMarkdownIt() {
 		const _renderMath = (src, displayMode, env, authored) => {
 			const marker = displayMode ? '$$' : '$';
 			const source = authored || marker + src + marker, literal = md.utils.escapeHtml(source);
-			if (env.rapierPage) return '<span data-rapier-math-source="">' + literal + '</span>';
+			let encoded;
+			try { encoded = encodeURIComponent(source); }
+			catch (error) { if (!(error instanceof URIError)) throw error; }
+			const sourceHtml = '<span data-rapier-math-source="' + (encoded || '') + '">' + literal + '</span>';
+			if (env.rapierPage) return sourceHtml;
 			const mathProvider = env.rapierProviders === false ? null : _rapierProviders.math;
 			if (!mathProvider || mathProvider.status !== 'ready' || typeof mathProvider.renderToString !== 'function') {
 				if (!mathProvider?.request?.() && env.rapierProviders !== false && !_mathPromptedOnce) {
 					_mathPromptedOnce = true;
 					try { _rapierUiMath.request(); } catch (_) {}
 				}
-				return '<span class="math-placeholder" data-rapier-math-source="" title="Install the math plug-in in Settings to show this equation.">'
+				return '<span class="math-placeholder" data-rapier-math-source="' + (encoded || '') + '" title="Install the math plug-in in Settings to show this equation.">'
 						 + literal + '</span>';
 			}
 			try {
@@ -357,18 +363,13 @@ function initMarkdownIt() {
 					env.rapierMathEquations.push({source, tex: src, displayMode,
 						semantics: combined.semantics, errors: combined.errors});
 				} else rendered = mathProvider.renderToString(src, {displayMode});
-				let encoded;
-				try { encoded = encodeURIComponent(source); }
-				catch (error) {
-					if (!(error instanceof URIError)) throw error;
-					return '<span data-rapier-math-source="">' + literal + '</span>';
-				}
+				if (encoded === undefined) return sourceHtml;
 				return '<span class="math-rendered" data-math-src="'
 						 + encoded + '">' + rendered + '</span>';
 			}
 			catch (error) {
 				if (env.rapierMathEquations) throw error;
-				return '<span data-rapier-math-source="">' + literal + '</span>';
+				return sourceHtml;
 			}
 		};
 		md.renderer.rules.math_inline = (tokens, idx, _opts, env) => _renderMath(tokens[idx].content, false, env, tokens[idx].meta?.mathSource);

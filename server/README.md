@@ -22,6 +22,22 @@ as one HTML file on Android, Web and Windows.
 5. **Encode JPEG XL.** Install [rapier-jxl](https://github.com/jackskip22/rapier-jxl) to encode pixels, photographs and existing JPEGs in JavaScript.
 6. **Host the door.** Run [rapier-server](https://github.com/jackskip22/rapier/tree/main/server) over your own folder or S3-compatible bucket.
 
+## Local Door for agents
+
+Cursor, Claude Code and other local hosts can run Rapier's agent door on your computer over stdio. Documents
+stay in a folder you own (`~/Rapier` unless you name one), and no request leaves your computer. It needs Node 22.
+
+```json
+{"mcpServers": {"rapier-local": {"command": "npx", "args": ["-y", "rapier-server", "mcp"]}}}
+```
+
+Claude Code: `claude mcp add rapier-local -- npx -y rapier-server mcp`. A host configured in TOML
+(`~/.codex/config.toml`): `[mcp_servers.rapier-local]` with `command = "npx"` and `args = ["-y", "rapier-server", "mcp"]`.
+
+The tools and receipts are the hosted door's. Markdown and HTML exports work without a browser; add
+`--chromium <path> --chromium-version <version>` for page, text, Word and PDF. Two hosts on the same folder share one
+door: the second joins the first, and takes it over when the first quits.
+
 ## Run
 
 Supply Node 22 or later, a local Chromium executable, its exact four-part version, and a service-owned folder or private bucket. Use the deployed release's tested toolchain. The server refuses a different browser version.

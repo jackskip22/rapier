@@ -7,13 +7,27 @@
 
 	function around(text, caret) {
 		const match = globalThis.RapierMarkdownSpec.createMathMatcher(text, {singleDollar: true, brackets: false});
+		const lastTick = new Map(Array.from(text.matchAll(/`+/g), run => [run[0].length, run.index]));
+		const runEnd = from => { let end = from + 1; while (text[end] === text[from]) end++; return end; };
 		const found = (from, end, display) => caret >= from && caret <= end ? {from, caret: caret - from, tex: text.slice(from, end), display} : null;
 		const unescaped = (from, to, marker) => {
 			for (let i = from; i < to; i++) { if (text[i] === '\\') i++; else if (text.startsWith(marker, i)) return true; }
 			return false;
 		};
 		for (let i = 0; i < text.length; i++) {
-			if (text[i] === '\\') { i++; continue; }
+			if (text[i] === '\\') { i++; if (text[i] === '$') i = runEnd(i) - 1; continue; }
+			if (text[i] === '`') {
+				const run = runEnd(i), size = run - i;
+				if (lastTick.get(size) > i) {
+					let end = run;
+					while ((end = text.indexOf('`', end)) >= 0) {
+						const next = runEnd(end);
+						if (next - end === size) { i = next - 1; break; }
+						end = next;
+					}
+				} else i = run - 1;
+				continue;
+			}
 			if (text[i] !== '$') continue;
 			let run = i + 1;
 			while (text[run] === '$') run++;
@@ -25,7 +39,9 @@
 			}
 			const line = text.indexOf('\n', run), end = run - i === 2 ? text.length : line < 0 ? text.length : line;
 			if (run - i === 2 && !unescaped(run, text.length, '$$')) return found(run, end, true);
-			if (run - i === 1 && !/[ \t]/.test(text[run] || '') && !unescaped(run, end, '$')) return found(run, end, false);
+			const body = text.slice(run, end);
+			const price = /^(?:\d[\d.,]*|\.\d+)(?=[ \t]|$)/.test(body) && !/^[\d.,]+[ \t]*[\\^_=+*/<>-]/.test(body);
+			if (run - i === 1 && !price && !/[ \t]/.test(text[run] || '') && !unescaped(run, end, '$')) return found(run, end, false);
 			i = run - 1;
 		}
 		return null;

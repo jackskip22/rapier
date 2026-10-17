@@ -1614,12 +1614,12 @@
           },
           {
             "property": "inset-inline-start",
-            "value": "calc(-2.75 * var(--md-unit) + var(--md-marker, 0px))",
+            "value": "calc(-1.75 * var(--md-unit) - var(--md-ol-circle) / 2 + var(--md-marker, 0px))",
             "important": false
           },
           {
             "property": "top",
-            "value": "0",
+            "value": "var(--md-ol-top)",
             "important": false
           }
         ]
@@ -1648,12 +1648,12 @@
           },
           {
             "property": "top",
-            "value": "calc(2.2 * var(--md-unit))",
+            "value": "calc(var(--md-ol-top) + 1.0875 * var(--md-ol-circle))",
             "important": false
           },
           {
             "property": "bottom",
-            "value": "calc(var(--md-line) / -4)",
+            "value": "calc(-1 * max(var(--md-item-gap, 0px), var(--md-line) / 4))",
             "important": false
           }
         ]
@@ -1682,12 +1682,12 @@
           },
           {
             "property": "top",
-            "value": "calc(2.2 * var(--md-unit))",
+            "value": "calc(var(--md-ol-top) + 1.0875 * var(--md-ol-circle))",
             "important": false
           },
           {
             "property": "bottom",
-            "value": "calc(var(--md-line) / -4)",
+            "value": "calc(-1 * max(var(--md-item-gap, 0px), var(--md-line) / 4))",
             "important": false
           }
         ]
@@ -1769,7 +1769,7 @@
           },
           {
             "property": "top",
-            "value": "calc(var(--md-jump-marker-center) - 5px)",
+            "value": "var(--md-jump-circle-top)",
             "important": false
           }
         ]
@@ -1793,17 +1793,17 @@
           },
           {
             "property": "inset-inline-start",
-            "value": "calc(var(--md-jump-marker-inline-start) + 4px)",
+            "value": "calc(var(--md-jump-marker-inline-start) + var(--md-jump-circle) / 2 - 1.5px)",
             "important": false
           },
           {
             "property": "top",
-            "value": "var(--md-jump-marker-center)",
+            "value": "calc(var(--md-jump-circle-top) + var(--md-jump-circle))",
             "important": false
           },
           {
             "property": "bottom",
-            "value": "calc(0px - var(--md-jump-gap) - var(--md-jump-marker-center))",
+            "value": "calc(-1 * (var(--md-item-gap, var(--md-jump-gap)) + var(--md-jump-circle-top) + var(--md-jump-circle) / 2))",
             "important": false
           }
         ]
@@ -2937,6 +2937,11 @@
         "occurrence": 1,
         "declarations": [
           {
+            "property": "top",
+            "value": "0",
+            "important": false
+          },
+          {
             "property": "inset-inline-start",
             "value": "calc(-2 * var(--md-text-body) + var(--md-marker,0px))",
             "important": false
@@ -2974,6 +2979,30 @@
       },
       "owner": ".navigator-outline__item",
       "reason": "The section grip belongs to its own outline row and follows the row's logical end in RTL."
+    },
+    {
+      "id": "settings-info-hang-touch",
+      "file": "editor/styles/rapier-info.css",
+      "selector": ".settings-info-btn--hang::after",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "-4px -8px -4px 0",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".settings-info-btn--hang",
+      "reason": "The hanging information circle keeps its 40px place by its word; this empty box only widens its touch area to 48 by 48 inside its own button and positions no viewport surface."
     }
   ]
 }

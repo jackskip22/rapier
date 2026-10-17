@@ -22,14 +22,18 @@ export function createParagraphFitter() {
     return handle;
   }
 
-  function* solveSteps(handle, width, {indent = 0, left = 0, right = 0} = {}, known) {
+  function* solveSteps(handle, width, {indent = 0, left = 0, right = 0, widths = null} = {}, known) {
     const prepared = indexes.get(handle);
     if (!prepared || ![width, indent, left, right].every(Number.isFinite) || width <= 0) return null;
+    const measures = Array.isArray(widths) && widths.every(value => Number.isFinite(value) && value > 0) ? widths : [];
+    const measure = line => line < measures.length ? measures[line] : width;
+    const widest = Math.max(width, ...measures);
     const lines = []; let work = 0, visited = 0, totalCost = 0;
     for (let segmentIndex = 0; segmentIndex < prepared.segments.length; segmentIndex++) {
       const {words, points, prefix, gaps, minimum} = prepared.segments[segmentIndex];
       if (!words.length) continue;
-      const ceiling = width + Math.max(0, left) + Math.max(0, right) + Math.max(0, -indent);
+      const base = lines.length, classes = Math.max(1, measures.length - base + 1);
+      const ceiling = widest + Math.max(0, left) + Math.max(0, right) + Math.max(0, -indent);
       const lastIndex = points.length - 1;
       let smallest = Infinity;
       for (let index = 0; index < words.length - 1; index++) smallest = Math.min(smallest, words[index].gap?.width || 0);
@@ -38,7 +42,7 @@ export function createParagraphFitter() {
       natural += words[0].startExtra;
       const opening = Math.min(Math.max(0, left), words[0].opening);
       const closing = Math.min(Math.max(0, right), words.at(-1).closing);
-      const target = width - (segmentIndex === 0 ? indent : 0) + opening + closing;
+      const target = measure(base) - (segmentIndex === 0 ? indent : 0) + opening + closing;
       const count = words.length - 1;
       const delta = !count ? 0 : Math.max(-smallest * .4, Math.min(0, (target - natural) / count));
       const overflow = natural + delta * count - target;
@@ -50,9 +54,10 @@ export function createParagraphFitter() {
         totalCost += cost; work++; continue;
       }
 
-      const costs = new Float64Array(points.length * 12);
+      const stride = classes * 12;
+      const costs = new Float64Array(points.length * stride);
       const previous = new Float64Array(costs.length), spacing = new Float64Array(costs.length);
-      const prefixes = [], suffixes = [], reachable = new Uint16Array(points.length);
+      const prefixes = [], suffixes = [], reachable = new Uint16Array(points.length * classes);
       reachable[0] = 1 << 3;
       let lastPlain = lastIndex - 1;
       while (lastPlain > 0 && (points[lastPlain].kind === 'soft' || points[lastPlain].kind === 'auto')) lastPlain--;
@@ -69,8 +74,9 @@ export function createParagraphFitter() {
           while (minWord > start.word) smallest = Math.min(smallest, words[--minWord].gap?.width || 0);
           if (final && (start.kind === 'soft' || start.kind === 'auto')) continue;
           if (start.cut && end.cut && start.word === end.word && (start.kind === 'auto' || end.kind === 'auto')) continue;
-          const available = reachable[startIndex] & (discretionary ? 0x6db : 0xfff);
-          if (!available) continue;
+          let any = 0;
+          for (let lineClass = 0; lineClass < classes; lineClass++) any |= reachable[startIndex * classes + lineClass];
+          if (!(any & (discretionary ? 0x6db : 0xfff))) continue;
           let natural;
           if (start.cut && end.cut && start.word === end.word) {
             natural = yield {segment: segmentIndex, word: start.word, from: start.cutIndex, to: end.cutIndex};
@@ -97,45 +103,53 @@ export function createParagraphFitter() {
           const count = lastWord - start.word, gapWidth = gaps[lastWord] - gaps[start.word];
           const opening = start.cut ? 0 : Math.min(Math.max(0, left), words[start.word].opening);
           const closing = end.cut ? 0 : Math.min(Math.max(0, right), words[lastWord].closing);
-          const target = width - (segmentIndex === 0 && startIndex === 0 ? indent : 0) + opening + closing;
-          if (target <= 0) continue;
-          const remaining = target - natural;
-          const delta = !count ? 0 : Math.max(-smallest * .4, Math.min(final ? 0 : smallest * .8, remaining / count));
-          const overflow = natural + delta * count - target;
-          if (overflow > .02 && (count || start.cut || end.cut || words[lastWord].breaks.length)) continue;
-          const residual = Math.max(0, remaining - delta * count);
-          const ratio = gapWidth > 0 ? delta * count / gapWidth : 0;
-          const fitness = final ? 1 : ratio < -.075 ? 0 : ratio <= .2 ? 1 : ratio <= .5 ? 2 : 3;
-          let local = 1 + 100 * Math.max(0, overflow / target) ** 2;
-          if (final && startIndex) local += 100 * Math.max(0, .45 - natural / target) ** 2 + (count === 0 ? 25 : 0);
-          else if (!final) local += (ratio < 0 ? 100 : 12.5) * ratio ** 2 + 2400 * (residual / target) ** 2;
           const priorDiscretionary = start.kind === 'soft' || start.kind === 'auto';
-          if (discretionary) local += 12 + (priorDiscretionary ? 12 : 0);
           if (final && priorDiscretionary) continue;
-          for (let active = available; active; active &= active - 1) {
-            const slot = 31 - Math.clz32(active & -active), priorIndex = startIndex * 12 + slot;
-            const hyphens = discretionary ? slot % 3 + 1 : 0;
-            if (hyphens > 2) continue;
-            work++;
-            const cost = costs[priorIndex] + local + (!final && startIndex ? .6 * (fitness - Math.floor(slot / 3)) ** 2 : 0);
-            const stateIndex = fitness * 3 + hyphens;
-            const index = endIndex * 12 + stateIndex;
-            if (reachable[endIndex] & 1 << stateIndex && costs[index] <= cost) continue;
-            costs[index] = cost; previous[index] = priorIndex; spacing[index] = delta;
-            reachable[endIndex] |= 1 << stateIndex;
+          for (let lineClass = 0; lineClass < classes; lineClass++) {
+            const available = reachable[startIndex * classes + lineClass] & (discretionary ? 0x6db : 0xfff);
+            if (!available) continue;
+            const target = measure(base + lineClass) - (segmentIndex === 0 && startIndex === 0 ? indent : 0) + opening + closing;
+            if (target <= 0) continue;
+            const remaining = target - natural;
+            const delta = !count ? 0 : Math.max(-smallest * .4, Math.min(final ? 0 : smallest * .8, remaining / count));
+            const overflow = natural + delta * count - target;
+            if (overflow > .02 && (count || start.cut || end.cut || words[lastWord].breaks.length)) continue;
+            const residual = Math.max(0, remaining - delta * count);
+            const ratio = gapWidth > 0 ? delta * count / gapWidth : 0;
+            const fitness = final ? 1 : ratio < -.075 ? 0 : ratio <= .2 ? 1 : ratio <= .5 ? 2 : 3;
+            let local = 1 + 100 * Math.max(0, overflow / target) ** 2;
+            if (final && startIndex) local += 100 * Math.max(0, .45 - natural / target) ** 2 + (count === 0 ? 25 : 0);
+            else if (!final) local += (ratio < 0 ? 100 : 12.5) * ratio ** 2 + 2400 * (residual / target) ** 2;
+            if (discretionary) local += 12 + (priorDiscretionary ? 12 : 0);
+            const set = !final && count && residual > 0 ? remaining / count : delta;
+            const nextClass = Math.min(lineClass + 1, classes - 1);
+            for (let active = available; active; active &= active - 1) {
+              const slot = 31 - Math.clz32(active & -active), priorIndex = startIndex * stride + lineClass * 12 + slot;
+              const hyphens = discretionary ? slot % 3 + 1 : 0;
+              if (hyphens > 2) continue;
+              work++;
+              const cost = costs[priorIndex] + local + (!final && startIndex ? .6 * (fitness - Math.floor(slot / 3)) ** 2 : 0);
+              const stateIndex = fitness * 3 + hyphens;
+              const index = endIndex * stride + nextClass * 12 + stateIndex;
+              const bit = endIndex * classes + nextClass;
+              if (reachable[bit] & 1 << stateIndex && costs[index] <= cost) continue;
+              costs[index] = cost; previous[index] = priorIndex; spacing[index] = set;
+              reachable[bit] |= 1 << stateIndex;
+            }
           }
         }
       }
       let best = -1;
-      for (let slot = 0; slot < 12; slot++) if (reachable[lastIndex] & 1 << slot) {
-        const index = lastIndex * 12 + slot;
-        if (best < 0 || costs[index] < costs[best]) best = index;
-      }
+      for (let lineClass = 0; lineClass < classes; lineClass++) for (let slot = 0; slot < 12; slot++)
+        if (reachable[lastIndex * classes + lineClass] & 1 << slot) {
+          const index = lastIndex * stride + lineClass * 12 + slot;
+          if (best < 0 || costs[index] < costs[best]) best = index;
+        }
       if (best < 0) return null;
       totalCost += costs[best];
       const chosen = [];
       for (let endIndex = lastIndex; endIndex;) {
-        const priorIndex = previous[best], startIndex = Math.floor(priorIndex / 12);
+        const priorIndex = previous[best], startIndex = Math.floor(priorIndex / stride);
         const start = points[startIndex], end = points[endIndex], lastWord = end.cut ? end.word : end.word - 1;
         chosen.push({start: start.next, end: end.end, next: end.next, kind: end.kind, glyph: end.cut?.glyph || '',
           wordSpacing: spacing[best], opening: start.cut ? 0 : Math.min(Math.max(0, left), words[start.word].opening),

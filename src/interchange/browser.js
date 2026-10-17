@@ -269,7 +269,7 @@ function _rapierImportedImageSources(root, assets, sourceTokens) {
   const visit = node => {
     if (sourceTokens && node.nodeType === 1 && node.hasAttribute('data-rapier-source')) {
       const source = _rapierRenderModule('render-markdown')._rapierSourceTokenValue(node);
-      if (source !== null && /^<table[ >]/i.test(source)) {
+      if (source !== null && /^(?:<table[ >]|<section class="footnotes">)/i.test(source)) {
         const fragment = document.createElement('template');
         fragment.innerHTML = source;
         for (const child of fragment.content.childNodes) visit(child);

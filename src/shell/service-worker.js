@@ -16,6 +16,8 @@ const SHELL_GENERATION = SHELL_CACHE_PREFIX + SHELL_RELEASE_SHA256.slice(0, 32);
 const SHELL_PAGE_URL = new URL('./rapier.html', self.location).href;
 const SHELL_ROOT_URL = new URL('./', self.location).href;
 const STARTUP_STATE_URL = new URL('./.rapier-startup', self.location).href;
+const RETRY_FIRST_MS = 10 * 60 * 1000;
+const RETRY_MOST_MS = 24 * 60 * 60 * 1000;
 
 const SHARE_CACHE = `rapier-share:${CACHE_SCOPE}:v1`;
 const MAX_SHARED_BYTES = 64 * 1024 * 1024;
@@ -247,12 +249,21 @@ function failStartup(state, client, attempt) {
   if (state.failures.length < 2 && !state.failures.some(failure => failure.client === client)) {
     state.failures.push({client, attempt});
   }
-  if (state.previous) state.rollback = true;
+  if (!state.previous) return;
+  state.rollback = true;
+  state.failed = Math.min((Number(state.failed) || 0) + 1, 16);
+  state.retryAt = Date.now() + Math.min(RETRY_MOST_MS, RETRY_FIRST_MS * 2 ** (state.failed - 1));
 }
 
 async function inspectStartup(event) {
   const result = await updateStartup(async state => {
     let changed = false;
+    if (state.rollback && !state.ready && !(Date.now() < state.retryAt)) {
+      state.rollback = false;
+      state.failures = [];
+      state.clients = {};
+      changed = true;
+    }
     const entries = Object.entries(state.clients);
     if (!state.ready && entries.length) {
       const ready = new Set((await self.clients.matchAll({type: 'window', includeUncontrolled: true})).map(client => client.id));

@@ -1,18 +1,18 @@
 {
-  "bundle": "rapier-math-2.5.0.js",
+  "bundle": "rapier-math-2.6.1.js",
   "packageBundle": "dist/rapier-math.js",
-  "version": "2.5.0",
+  "version": "2.6.1",
   "license": "MIT AND LicenseRef-GUST-Font-License",
-  "bytes": 695410,
-  "gzipBytes": 406684,
-  "sha256": "16b84df8ba9ad1df581ddd73ab357c0da93720ee719e8399ecfff75b92cbb016",
-  "sha384": "VDN0hcZbJ7LFS7fJjiUV/8THDfLxUWNfbGZQkggQptiaw4JaNAjZOmyK0kDRLNN3",
+  "bytes": 733943,
+  "gzipBytes": 418021,
+  "sha256": "c73ca97be7803c0bd369d4ac3e97a87ead5b1498204c7b88da0ab8938d3581c2",
+  "sha384": "c6Y4kudfuc16Hkmvfgr0MpdQcJs1jU4qbsKu2tUSduVuQdwLQ/38rR0GmQMatLsS",
   "sources": [
     {
       "file": "math/font.js",
       "packageFile": "src/math/font.js",
-      "bytes": 445355,
-      "sha256": "458b5a89aa6e6077580e5e44529846ce57ed9a33ad9e9d694b616cfdcd6cdd38"
+      "bytes": 443454,
+      "sha256": "ce29ec9585a425f1c1f2f957ec2c2e3234f536945df73f2693b289561129050e"
     },
     {
       "file": "math/symbols.js",
@@ -23,8 +23,8 @@
     {
       "file": "math/parser.js",
       "packageFile": "src/math/parser.js",
-      "bytes": 101346,
-      "sha256": "a50967534640eff2e86a1fdc94cd04b2720ccf4bf37cf5b69013d9e884d33fff"
+      "bytes": 122330,
+      "sha256": "5068af3b5da410e53b00c4970bf297fe18eecd61c99bf57c2b60d5fb25e82104"
     },
     {
       "file": "math/source.js",
@@ -41,8 +41,8 @@
     {
       "file": "math/layout.js",
       "packageFile": "src/math/layout.js",
-      "bytes": 43310,
-      "sha256": "469697025ea76692c01c589dce41b4064aeb39202f4702248764802bab73bc5a"
+      "bytes": 60441,
+      "sha256": "f5e250c6ecc5c06064193008c3c5d7a213cde3bb3636c4e21d7f9131addfcdc6"
     },
     {
       "file": "math/fallbacks.js",
@@ -71,8 +71,8 @@
     {
       "file": "math/mathml.js",
       "packageFile": "src/math/mathml.js",
-      "bytes": 30084,
-      "sha256": "b6bf374893465b9988f8bfe31f0b3a998220f04336fb7088b616347c4c7543c5"
+      "bytes": 31958,
+      "sha256": "5bb3858de500b53ee6c4b6f8335d4b6bea0cd6f5d8e9e4dee4cd68cd0c76c4f4"
     },
     {
       "file": "math/semantic-api.js",
@@ -90,39 +90,39 @@
       "file": "math/classic.js",
       "packageFile": "src/math/classic.js",
       "bytes": 269,
-      "sha256": "eaef2806dcc2e7fc9951ea01ec43bd8692dfa07c19beae4097ab4a5ceab667a9"
+      "sha256": "2012615124199ccbe001c6299bc789c4e085e621173cca0d5da5c15417b3d7e3"
     }
   ],
   "recipe": [
     {
       "file": "math/build-font.py",
       "packageFile": "src/math/build-font.py",
-      "bytes": 32914,
-      "sha256": "990b406088037c22fafeb846e6fd755c6fc84661c3d059b9ebe234aa70eecf89"
+      "bytes": 31699,
+      "sha256": "50f898a0f5f21d84b9593eaa3c1915afda18e98325ff2f8a95999531cd68ac0b"
     },
     {
       "file": "math/FONT-SOURCE.md",
       "packageFile": "docs/font-source.md",
-      "bytes": 10739,
-      "sha256": "621db58ca1b5fcacb450e8f74dfabc533d6856544cf2abb6333a637636d1e0c9"
+      "bytes": 11554,
+      "sha256": "c0aa2a8a14a97fa45d40334ea7c91281df7453d5fdb931b51b825d13d3d47793"
     },
     {
       "file": "math/FONT-LICENSE.txt",
       "packageFile": "src/math/FONT-LICENSE.txt",
-      "bytes": 21246,
-      "sha256": "91ded9a2a371cbeff028bfaf3bd3e97fddfb68af6f186aa261bfaff35baf800c"
+      "bytes": 21691,
+      "sha256": "6fb288a3363cb44eb0e247ead8afefed55fbe9b00ff2d0d1c75a1176d38f4091"
     },
     {
       "file": "math/package-verify.mjs",
       "packageFile": "tests/verify.mjs",
-      "bytes": 3179,
-      "sha256": "5702cb77eb562b0230b145c09b8888b2b20bcf8dac92de19615aac99a0f09a47"
+      "bytes": 4012,
+      "sha256": "aa63a05672e66ff643a29ac02654d718b468dada08bf40a545e333d47546e6c3"
     },
     {
       "file": "tools/build-math.mjs",
       "packageFile": "src/tools/build-math.mjs",
-      "bytes": 9781,
-      "sha256": "896de0b9ef28c65122650d70bf0c1cadd52fb76a27b4f868268cc950f732fedf"
+      "bytes": 10968,
+      "sha256": "0eafb524ba760dc8585c269729baec233477377d4e177fcc208b118c9d6566e7"
     },
     {
       "file": "math/LICENSE-MIT",
@@ -145,8 +145,8 @@
     {
       "file": "math/package-layout.mjs",
       "packageFile": "src/math/package-layout.mjs",
-      "bytes": 884,
-      "sha256": "e4a66d78878dcb1d5e83e30160a974edcc470a5599f2bbd4a0ff4d3c357f14a9"
+      "bytes": 925,
+      "sha256": "72e90f365ff6ccf9741ab12a3bd9d7466389f1794c24b73dc86c831743923d36"
     },
     {
       "file": "math/package-check.mjs",
@@ -157,14 +157,20 @@
     {
       "file": "math/package-readme.mjs",
       "packageFile": "src/math/package-readme.mjs",
-      "bytes": 2682,
-      "sha256": "8cb6381d64e39150249e8e38fe6b51d2e0de1f800421cb35f6ed1a005d40a1be"
+      "bytes": 2458,
+      "sha256": "ed03aa38d7ed3d01fbab6836d2827ee0b2565bca4e998af7172e2da940611495"
     },
     {
       "file": "math/README.md",
       "packageFile": "docs/api.md",
-      "bytes": 23837,
-      "sha256": "cebb4f880237bf73ba7a729c2f97c4df930910a51e24927b2056b1d0ea0c4326"
+      "bytes": 24062,
+      "sha256": "59963d4156549530b73d15d2dc66d4f7cec108e4767856785605e71fe1f6162a"
+    },
+    {
+      "file": "math/CHANGELOG.md",
+      "packageFile": "CHANGELOG.md",
+      "bytes": 389,
+      "sha256": "621ffa760f4ebeb72c7882e46caf8c8cb815abde50cd98d123da5a34ea105397"
     },
     {
       "file": "math/SEMANTICS.md",
@@ -175,14 +181,14 @@
     {
       "file": "math/semantic-verify.mjs",
       "packageFile": "tests/semantics.mjs",
-      "bytes": 27391,
-      "sha256": "9fc8a03da77d3532a0aaa69e02d773aaa9e9aa5e3386b666acb27a4b0079ffdb"
+      "bytes": 27911,
+      "sha256": "73b3a3525f419d03464f12fd82a430437da28dec623f0c0f655232f69b3bd72d"
     },
     {
       "file": "math/typeset-verify.mjs",
       "packageFile": "tests/typeset.mjs",
-      "bytes": 15658,
-      "sha256": "482e5e11695c3d02d860c4383c9faeaf9773a9d4fa0bc23df8dd5ab5a9ed4f0c"
+      "bytes": 47488,
+      "sha256": "b365988a00291dd45036915c3b37ff2d931ac6174a69235b0e0b585ad381d5ea"
     }
   ],
   "components": [
@@ -191,7 +197,26 @@
       "version": "1.959",
       "license": "LicenseRef-GUST-Font-License",
       "source": "https://mirror.apps.cam.ac.uk/pub/tex-archive/fonts/lm-math/opentype/latinmodern-math.otf",
-      "sha256": "6075562b771f8b82f0c179e363389684f2dd09de30038269e2628e504bd7be0f"
+      "sha256": "6075562b771f8b82f0c179e363389684f2dd09de30038269e2628e504bd7be0f",
+      "copyright": "Copyright 2012--2014 for Latin Modern Math OTF by B. Jackowski, P. Strzelczyk and P. Pianowski (on behalf of TeX users groups). This work is released under the GUST Font License -- see http://tug.org/fonts/licenses/GUST-FONT-LICENSE.txt for details."
+    },
+    {
+      "name": "Latin Modern Mono",
+      "version": "2.004",
+      "license": "LicenseRef-GUST-Font-License",
+      "source": "https://ftp.riken.jp/CTAN/fonts/lm/fonts/opentype/public/lm/lmmono10-regular.otf",
+      "sha256": "22deb6d3be3ffcb40b33f0e010afb256c677d97c2a2bdee1f5740cdc97751558",
+      "copyright": "Copyright 2003, 2009 B. Jackowski and J. M. Nowacki (on behalf of TeX users groups). This work is released under the GUST Font License --  see http://tug.org/fonts/licenses/GUST-FONT-LICENSE.txt for details.",
+      "note": "Monospace sharp s outline and advance; complete license in math-font-LICENSE.txt"
+    },
+    {
+      "name": "Latin Modern Math Italic10 Regular",
+      "version": "2.003",
+      "license": "LicenseRef-GUST-Font-License",
+      "source": "https://ftp.riken.jp/CTAN/fonts/lm/fonts/type1/public/lm/lmmi10.pfb",
+      "sha256": "c24662506b402f3e0033cc75eb746eb490a1b7477e6b3ef52053f5025ec0fc57",
+      "copyright": "Copyright 2003--2009 by B. Jackowski and J.M. Nowacki (on behalf of TeX USERS GROUPS).",
+      "note": "Small arrow hook outline; the composer supplies its advance; complete license in math-font-LICENSE.txt"
     }
   ],
   "font": {
@@ -204,8 +229,8 @@
     "copyright": "Copyright 2012--2014 for Latin Modern Math OTF by B. Jackowski, P. Strzelczyk and P. Pianowski (on behalf of TeX users groups). This work is released under the GUST Font License -- see http://tug.org/fonts/licenses/GUST-FONT-LICENSE.txt for details.",
     "licenseSource": "https://mirror.apps.cam.ac.uk/pub/tex-archive/fonts/lm-math/doc/GUST-FONT-LICENSE.txt",
     "licenseFile": "math/FONT-LICENSE.txt",
-    "licenseSha256": "91ded9a2a371cbeff028bfaf3bd3e97fddfb68af6f186aa261bfaff35baf800c",
-    "licenseBytes": 21246
+    "licenseSha256": "6fb288a3363cb44eb0e247ead8afefed55fbe9b00ff2d0d1c75a1176d38f4091",
+    "licenseBytes": 21691
   },
   "adoption": [
     {
@@ -217,8 +242,8 @@
     {
       "file": "math/markdown-rules.mjs",
       "packageFile": "dist/markdown-rules.mjs",
-      "bytes": 3255,
-      "sha256": "3c2c1660f669eac88fbee4259e83f9227ed651e2e4bb228a861c5a1d8518f6a7"
+      "bytes": 6000,
+      "sha256": "f0e8fd1e899c99e90293088dd17d4ed14d3ef9a3a1e6558d13f7ce66999ba67d"
     },
     {
       "file": "math/reuse.mjs",

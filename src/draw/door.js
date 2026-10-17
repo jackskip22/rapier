@@ -10,6 +10,9 @@ const RAPIER_DRAW_DOOR_AT_BIRTH = (() => { try {
 	if (path) return path;
 	return _rapierBareLaunch() && RapierPreferences.read('startIn') === 'paint' ? 'paint' : null;
 } catch (_) { return null; } })();
+const RAPIER_DRAW_START_IN_PAINT = (() => { try {
+	return RAPIER_DRAW_DOOR_AT_BIRTH === 'paint' && _rapierBareLaunch();
+} catch (_) { return false; } })();
 function _rapierBareLaunch() {
 	try {
 		return window.self === window.top && !RAPIER_HASH_AT_BIRTH && !location.search &&

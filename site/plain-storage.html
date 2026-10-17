@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<title>Rapier storage</title>
+<!-- Plain files on a WebDAV server or an S3-compatible bucket the person names (notes/plain-relay.mjs). The editor's own
+     policy reaches no such host, and must not; this page, framed by the Rapier page that made it, reaches exactly one:
+     the origin in its address, to which it narrows its own policy before any request. It holds no key and keeps nothing;
+     each request comes whole from its parent, signed or authorized there, and goes back as the host answered. -->
+</head>
+<body>
+<script>
+(() => {
+  const parent = window.parent, origin = location.origin, asked = decodeURIComponent(location.hash.slice(1));
+  if (parent === window) { document.body.textContent = 'Open sync in Rapier Notes.'; return; }
+  let target;
+  try { target = new URL(asked); } catch (_) { return; }
+  if (target.protocol !== 'https:' || target.origin !== asked) return;
+  // Narrowed before any request: this page's connect-src is now the one storage host (and the site's own policy).
+  const policy = document.createElement('meta');
+  policy.httpEquiv = 'Content-Security-Policy';
+  policy.content = "connect-src " + target.origin;
+  document.head.append(policy);
+  addEventListener('message', async event => {
+    const data = event.data;
+    if (event.source !== parent || event.origin !== origin || !data || data.type !== 'rapier-plain-storage-fetch' || typeof data.id !== 'number') return;
+    const reply = (message, transfer = []) => parent.postMessage({type: 'rapier-plain-storage-answer', id: data.id, ...message}, origin, transfer);
+    try {
+      const url = new URL(data.url);
+      if (url.origin !== target.origin) throw new Error('another host');
+      const response = await fetch(url.href, {method: String(data.method || 'GET'), headers: data.headers || {}, body: data.body || undefined,
+        redirect: data.redirect === 'manual' ? 'manual' : 'error', credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer'});
+      const body = response.type === 'opaqueredirect' ? null : await response.arrayBuffer();
+      reply({status: response.status, kind: response.type, headers: [...response.headers], body}, body ? [body] : []);
+    } catch (_) { reply({failed: true}); }
+  });
+  parent.postMessage({type: 'rapier-plain-storage-ready', target: target.origin}, origin);
+})();
+</script>
+</body>
+</html>

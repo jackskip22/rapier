@@ -111,4 +111,14 @@ export function sha256Parts(parts) {
   for (const part of parts) hash.update(part);
   return hash.digest();
 }
-export function sha256(text) { return createSHA256().update(text).digest(); }
+const LONG_TEXT = 65536, DIGESTS = new Map();
+export function sha256(text) {
+  if (typeof text !== 'string' || text.length < LONG_TEXT) return createSHA256().update(text).digest();
+  let digest = DIGESTS.get(text);
+  if (digest === undefined) {
+    digest = createSHA256().update(text).digest();
+    if (DIGESTS.size >= 4) DIGESTS.delete(DIGESTS.keys().next().value);
+  } else DIGESTS.delete(text);
+  DIGESTS.set(text, digest);
+  return digest;
+}

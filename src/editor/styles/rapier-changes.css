@@ -17,7 +17,8 @@
   background: var(--color-bg);
   font: 400 12px/1.4 var(--font-sans);
 }
-.rapier-changes-away__words { display: flex; align-items: center; flex: 1; gap: 7px; }
+.rapier-changes-away__words { display: flex; align-items: center; flex: 1; gap: 7px; min-width: 0; }
+.rapier-changes-away__words > :last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rapier-changes-away__count {
   display: inline-flex;
   align-items: center;
@@ -129,8 +130,7 @@
 .rapier-changes-deleted-drawing { width: 100%; margin-block: 12px; pointer-events: none; }
 .rapier-changes-away button:focus-visible, .rapier-changes-controls button:focus-visible,
 .rapier-changes-presence:focus-visible, .rapier-changes-mark:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
+  outline:none;
 }
 .rapier-changes-source {
   position: absolute;

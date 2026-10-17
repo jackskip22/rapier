@@ -178,8 +178,8 @@ async function _rapierLoadPaintStyles(mountScreen = true) {
   await _rapierLoadCodecs();
   await _rapierWhenRuntime('rapier-styles-runtime');
   const styles = await _rapierInflateVendor('rapier-styles-runtime');
-  if (styles.length !== 3 || styles[0].name !== 'rapier-factory-fonts.js' || styles[1].name !== 'rapier-styles.json' ||
-      styles[2].name !== 'rapier-first-screen.html')
+  if (styles.length !== 4 || styles[0].name !== 'rapier-factory-fonts.js' || styles[1].name !== 'rapier-styles.json' ||
+      styles[2].name !== 'rapier-first-screen.html' || styles[3].name !== 'rapier-first-paint.json')
     throw new Error('Editor interface records are invalid');
   _rapierExecuteVendorSource(styles[0].name, styles[0].source);
   const sheets = _rapierStyleElements(styles[1].source);
@@ -194,7 +194,69 @@ async function _rapierLoadPaintStyles(mountScreen = true) {
     document.fonts.add(face);
     return face.load();
   }));
-  return {sheets, fonts};
+  return {sheets, fonts, firstPaint: styles[3].source};
+}
+
+const _rapierFirstPaintEligible = (() => {
+  try {
+    if (globalThis.RapierBenchRoute === true || globalThis.RAPIER_APPS_HOST === true || window.RapierHost || window.self !== window.top) return false;
+    if (!/^https?:$/.test(location.protocol) || !/^(?:(?:www\.)?rapier\.website|127\.0\.0\.1|localhost)$/.test(location.hostname)) return false;
+    if (location.search || location.hash || navigator.serviceWorker?.controller) return false;
+    return localStorage.length === 0 && sessionStorage.length === 0;
+  } catch (_) { return false; }
+})();
+
+async function _rapierShowFirstPaint(record, fonts) {
+  if (!_rapierFirstPaintEligible) return;
+  const pictures = JSON.parse(record);
+  const path = location.pathname === '/rapier.html' ? '/' : location.pathname.replace(/(.)\/+$/, '$1');
+  const coarse = matchMedia('(pointer: coarse)').matches, width = innerWidth;
+  const view = pictures.paths?.[path]?.find(row => row.coarse === coarse && row.widths.includes(width));
+  if (!view) return;
+  await Promise.race([fonts, new Promise(resolve => setTimeout(resolve, 1500))]);
+  const finished = () => document.body.matches('.rapier-first-ready, .rapier-boot-failed');
+  if (finished() || innerWidth !== width) return;
+  const light = document.documentElement.classList.contains('rapier-boot-light');
+  const theme = view[light ? 'light' : 'dark'];
+  const swap = selector => selector.replace(/(^|[\s>+~,(])(html|body|:root)(?=$|[\s>+~,.#:[)])/g,
+    (_, before, name) => before + (name === ':root' ? '.rapier-paint-root' : 'div:where(.rapier-paint-' + (name === 'body' ? 'body' : 'root') + ')'));
+  const sheet = new CSSStyleSheet();
+  sheet.replaceSync([...[...document.querySelectorAll('style')].map(style => style.textContent), ...pictures.css || []].join('\n'));
+  const walk = rules => {
+    for (const rule of rules) {
+      if (rule.selectorText !== undefined) rule.selectorText = swap(rule.selectorText);
+      if (rule.cssRules) walk(rule.cssRules);
+    }
+  };
+  walk(sheet.cssRules);
+  const agent = new CSSStyleSheet();
+  agent.replaceSync(':where(.rapier-paint-root){display:block;position:absolute;inset:0;overflow:hidden}:where(.rapier-paint-body){display:block;margin:8px}');
+  const host = document.createElement('div');
+  host.setAttribute('aria-hidden', 'true');
+  host.inert = true;
+  host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:150;opacity:1;pointer-events:none;overflow:hidden;contain:strict';
+  const shadow = host.attachShadow({mode: 'closed'});
+  shadow.adoptedStyleSheets = [agent, sheet];
+  const root = document.createElement('div'), body = document.createElement('div');
+  for (const [name, value] of theme.root) root.setAttribute(name, value);
+  root.className = 'rapier-paint-root ' + root.className;
+  body.className = 'rapier-paint-body ' + theme.body;
+  const version = document.querySelector('meta[name="rapier-version"]')?.content || '';
+  body.innerHTML = pictures.version ? view.html.split(pictures.version).join(version) : view.html;
+  root.append(body);
+  shadow.append(root);
+  if (finished() || innerWidth !== width) return;
+  const leave = () => { watch.disconnect(); removeEventListener('resize', leave); host.remove(); };
+  const watch = new MutationObserver(() => { if (finished()) leave(); });
+  watch.observe(document.body, {attributes: true, attributeFilter: ['class']});
+  addEventListener('resize', leave);
+  document.body.append(host);
+  try { performance.mark('rapier-first-paint'); } catch (_) {}
+}
+
+function _rapierBootFailureShow() {
+  const later = document.getElementById('rapier-boot-failure-later');
+  if (later) later.replaceWith(later.content);
 }
 
 function _rapierKeepPortableTemplate() {
@@ -202,7 +264,7 @@ function _rapierKeepPortableTemplate() {
   const loader = document.currentScript, screen = document.getElementById('rapier-first-screen');
   if (!loader || !screen) return;
   const head = document.head.innerHTML;
-  const failure = document.querySelector('body > .rapier-boot-failure');
+  const failure = document.querySelector('body > .rapier-boot-failure') || document.querySelector('body > #rapier-boot-failure-later');
   const first = (failure ? failure.outerHTML + '\n' : '') + screen.outerHTML + '\n' + loader.outerHTML;
   globalThis.RapierPortableShell = Object.freeze({head, first});
 }
@@ -224,13 +286,14 @@ function _rapierKeepPortableTemplate() {
     }
     if (globalThis.RapierBenchSession?.active === true) await globalThis.RapierBenchSession.startEditor?.();
     for (const {name, source} of await _rapierInflateVendor('rapier-platform-runtime')) _rapierExecuteVendorSource(name, source);
-    const {sheets, fonts} = await _rapierLoadPaintStyles();
+    const {sheets, fonts, firstPaint} = await _rapierLoadPaintStyles();
     const restPending = _rapierWhenRuntime('rapier-style-rest-runtime').then(() => _rapierInflateVendor('rapier-style-rest-runtime'));
     const uiPending = _rapierWhenRuntime('rapier-ui-runtime').then(() => _rapierInflateVendor('rapier-ui-runtime'));
     const editorPending = _rapierWhenRuntime('rapier-editor-runtime').then(() => _rapierInflateVendor('rapier-editor-runtime'));
     const rest = await restPending;
     if (rest.length !== 1) throw new Error('Editor interface records are invalid');
     sheets.push(..._rapierStyleElements(rest[0].source, sheets.at(-1)));
+    _rapierShowFirstPaint(firstPaint, fonts).catch(error => console.warn('[rapier] first picture skipped', error));
     const editor = await editorPending;
     if (editor.length !== 2 || editor[0].name !== 'rapier-shared.js' || editor[1].name !== 'rapier-editor.js')
       throw new Error('Editor runtime records are invalid');
@@ -264,6 +327,7 @@ function _rapierKeepPortableTemplate() {
     publishRuntime(false);
     try { if (typeof _rapierBootstrapRuntime !== 'undefined') _rapierBootstrapRuntime.failed = true; } catch (_) {}
     try { window.RapierPlatform?.files?.clearIntake?.(); } catch (_) {}
+    _rapierBootFailureShow();
     document.body.classList.add('rapier-boot-failed');
     const detail = document.getElementById('rapier-boot-failure-detail');
     const reasons = [];

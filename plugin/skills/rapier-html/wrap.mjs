@@ -5,23 +5,47 @@ import {PAGE_SEED, returnAddress, returnExpiresAt} from './return-address.mjs';
 
 const START = '<script type="text/markdown" id="rapier-document"';
 const DRAWING_START = '<script type="text/plain" id="rapier-drawing"';
-// The original text is a display reference: the page opens on its diff from the current document.
 const END = '</script>';
 // The page's search words (rapier.html's RAPIER_SEO regions: description, canonical address, previews, structured data and the plain guide
-// a crawler reads) are rapier.website's own. A page that carries someone's document never claims that address or that description.
 const SEARCH_WORDS = /<!-- RAPIER_SEO_BEGIN -->[\s\S]*?<!-- RAPIER_SEO_END -->\n?/g;
 const OFFLINE_POLICY = "default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval' blob:; style-src 'unsafe-inline'; " +
 	"img-src data: blob:; media-src data: blob:; font-src data: blob:; connect-src 'none'; worker-src blob:; manifest-src 'none'; base-uri 'none'; form-action 'none'";
 
-// One encoding, exactly reversible: no `<` before `/` or `!`, no CR, no NUL. engine.js _rapierDecodeCarried is its
-// inverse.
 export {encodeCarried, decodeCarried};
+
+const PREVIEW = /<meta (?:name="(?:description|generator)"|property="og:(?:title|description)") content="[^"]*" data-rapier-preview>\n?/g;
+const plainWords = text => text.replace(/!\[[^\]]*\]\[[^\]]*\]|!\[[^\]]*\]\([^)]*\)/g, '').replace(/\[([^\]]*)\](?:\([^)]*\)|\[[^\]]*\])/g, '$1')
+	.replace(/<[^>]*>/g, '').replace(/[*_`~=]+|\[\^[^\]]*\]/g, '').replace(/\s+/g, ' ').trim();
+export function pagePreview(markdown) {
+	const lines = String(markdown).replace(/^\uFEFF/, '').split(/\r?\n/);
+	let title = '', paragraph = [], fence = null, at = 0;
+	if (/^---\s*$/.test(lines[0] || '')) { at = lines.indexOf('---', 1) + 1 || lines.length; }
+	for (; at < lines.length; at++) {
+		const line = lines[at], marker = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
+		if (fence) { if (marker && marker[0] === fence[0] && marker.length >= fence.length) fence = null; continue; }
+		if (marker) { fence = marker; if (paragraph.length) break; continue; }
+		const heading = /^ {0,3}#{1,6}\s+(.*?)\s*#*\s*$/.exec(line);
+		if (heading) { if (paragraph.length) break; if (!title) title = plainWords(heading[1]); continue; }
+		if (!/\S/.test(line)) { if (paragraph.length) break; continue; }
+		if (!paragraph.length && /^\s*(?:[>|<]|[-*+]\s|\d+[.)]\s|\[[^\]]+\]:|!\[|\$\$|[-*_]{3,}\s*$)/.test(line)) continue;
+		paragraph.push(line);
+		if (title && paragraph.length > 8) break;
+	}
+	const words = plainWords(paragraph.join(' '));
+	const sentence = /^.{20,300}?[.!?](?=\s|$)/.exec(words)?.[0] || (words.length <= 200 ? words : words.slice(0, 200).replace(/\s+\S*$/, '') + '…');
+	return {title, description: sentence};
+}
+function previewHead(markdown, fallbackTitle) {
+	const {title, description} = pagePreview(markdown);
+	const meta = (key, name, value) => '<meta ' + key + '="' + name + '" content="' + value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;') + '" data-rapier-preview>\n';
+	return (description ? meta('name', 'description', description) : '') + meta('property', 'og:title', title || fallbackTitle) +
+		(description ? meta('property', 'og:description', description) : '') + meta('name', 'generator', 'Rapier (https://rapier.website)');
+}
 
 function safeName(name, fallback) {
 	return [...String(name || fallback).replace(/[\\/\0"<>&]/g, '-')].slice(0, 256).join('').replace(/[\uD800-\uDBFF]$/, '') || fallback;
 }
 
-// Only the trusted shell head changes. Carried source and inert application bytes stay exact.
 export function offlineTemplate(pageHtml, address = null) {
 	const end = pageHtml.indexOf('</head>');
 	if (end < 0) throw new Error('not a Rapier page: no </head>');
@@ -35,14 +59,11 @@ export function offlineTemplate(pageHtml, address = null) {
 	const anchor = /<meta charset[^>]*>\n?/i.exec(head) || /<head[^>]*>\n?/.exec(head);
 	if (!anchor) throw new Error('not a Rapier page: no <head>');
 	const at = anchor.index + anchor[0].length;
-	// A minted return is an explicit Send back destination; boot and rendering stay local.
 	const policy = address == null ? OFFLINE_POLICY : OFFLINE_POLICY.replace("connect-src 'none'", 'connect-src ' + new URL(returnAddress(address)).origin);
 	return head.slice(0, at) + '<meta http-equiv="Content-Security-Policy" content="' + policy + '">\n' +
 		head.slice(at) + pageHtml.slice(end);
 }
 
-// What a carried page may hold beyond the base editor: Draw (its part and its letter sets) and the plug-ins a document
-// displays with. Notes and the font subsetter never travel; without the subsetter a page keeps its fonts whole.
 export const CHOICES = Object.freeze(['drawing', 'math', 'mermaid']);
 const INVENTORY = '<script type="application/json" id="rapier-builtin-plugins">';
 const element = (html, id) => {
@@ -52,15 +73,12 @@ const element = (html, id) => {
 	return {start, end: html[end] === '\n' ? end + 1 : end};
 };
 
-// The full carried editor cut to the base editor and `include` (ids from CHOICES). Only whole inert elements and the
-// inventory rows naming them are removed; every kept byte is unchanged.
 export function carry(pageHtml, include = []) {
 	const kept = new Set(include);
 	for (const id of kept) if (!CHOICES.includes(id)) throw new Error('a carried page includes ' + CHOICES.join(', ') + '; not ' + id);
 	if (kept.has('drawing')) kept.add('letters');
 	let html = pageHtml;
 	const cut = id => { const at = element(html, id); if (at) html = html.slice(0, at.start) + html.slice(at.end); };
-	// Parts beyond the base editor (Notes, page layout) never travel, as in the person's HTML editor file; Draw when chosen.
 	for (const id of [...new Set([...html.matchAll(/<script type="application\/rapier-runtime" id="(rapier-part-[a-z-]+)">/g)].map(match => match[1]))])
 		if (id !== 'rapier-part-drawing' || !kept.has('drawing')) cut(id);
 	const start = html.indexOf(INVENTORY);
@@ -72,8 +90,6 @@ export function carry(pageHtml, include = []) {
 	return html;
 }
 
-// The plug-ins a Markdown text displays with, read without a Markdown parser, so it leans toward carrying: math for a `$`
-// or `$$` span outside code, Mermaid for a mermaid fence (`flowchart(fence)` true marks one Rapier draws natively).
 export function portableNeeds(text, {base, flowchart} = {}) {
 	const needs = new Set();
 	for (const source of [text, base]) {
@@ -101,7 +117,6 @@ export function wrap(pageHtml, text, name, options) {
 	const opts = {...saved, ...(options || {})};
 	const docName = safeName(name, 'document.md');
 	if (opts.kind != null && !['markdown', 'text', 'code'].includes(opts.kind)) throw new Error('invalid document kind');
-	// `view`: the view the page opens on with the document behind it, `draw` or `notes`.
 	if (opts.view != null && !['draw', 'notes'].includes(opts.view)) throw new Error('the view is draw or notes');
 	const address = opts.return == null ? null : returnAddress(opts.return);
 	const expiry = opts.return_expires_at == null ? null : returnExpiresAt(opts.return_expires_at);
@@ -120,8 +135,6 @@ export function wrap(pageHtml, text, name, options) {
 		if (typeof opts.base === 'object') baseline = readBase(opts.base);
 		else {
 			if (typeof opts.base !== 'string') throw new Error('the base must be text');
-			// A returned Share page uses its own source dialect; its original base is the same carrier.
-			// Read that base before optional current-document history, which belongs to the current text.
 			const carriedBase = /^\s*<!doctype html/i.test(opts.base) ? takeBase(opts.base).base : null;
 			const pageBase = !carriedBase && /^\s*<!doctype html/i.test(opts.base) ? unwrap(opts.base) : null;
 			const source = carriedBase ? {text: carriedBase.text} : pageBase?.text != null ? readDocument(pageBase.text) : readDocument(opts.base);
@@ -130,21 +143,18 @@ export function wrap(pageHtml, text, name, options) {
 				by: opts.by == null ? 'Agent' : String(opts.by).trim(), at: opts.at == null ? new Date().toISOString() : String(opts.at)});
 		}
 	}
-	// Rewrapping retains the original text, hash and revision; attribution names this comparison.
 	if (baseline) baseline = readBase({...baseline, ...(opts.by != null ? {by: String(opts.by).trim()} : {}), ...(opts.at != null ? {at: String(opts.at)} : {})});
 	carriedBlocks += '\n' + writeBase(text, baseline);
-	// The agent seed goes after the charset (or <head>), once: a page that already carries it, wrapped again, loses its old one.
-	const unseeded = offlineTemplate(previous.html.replace(SEARCH_WORDS, '').split(PAGE_SEED + '\n').join(''), address);
+	const unseeded = offlineTemplate(previous.html.replace(SEARCH_WORDS, '').replace(PREVIEW, '').split(PAGE_SEED + '\n').join(''), address);
 	const headTag = /<meta charset[^>]*>\n?/i.exec(unseeded) || /<head[^>]*>\n?/.exec(unseeded);
 	if (!headTag) throw new Error('not a Rapier page: no <head>');
 	const seededAt = headTag.index + headTag[0].length;
 	const stripped = unseeded.slice(0, seededAt) + PAGE_SEED + '\n' + unseeded.slice(seededAt);
-	// Before Rapier's scripts: parsed before the engine boots.
 	const bodyTag = /<body[^>]*>/.exec(stripped);
 	if (!bodyTag) throw new Error('not a Rapier page: no <body>');
 	const at = bodyTag.index + bodyTag[0].length;
-	// A function, not a string: `$'`, `$&` and `` $` `` are replacement patterns.
-	const titled = stripped.replace(/<title>[^<]*<\/title>/, () => '<title>' + docName.replace(/&/g, '&amp;').replace(/</g, '&lt;') + ' — Rapier</title>');
+	const titled = stripped.replace(/<title>[^<]*<\/title>\n?/, all => '<title>' + docName.replace(/&/g, '&amp;').replace(/</g, '&lt;') + ' — Rapier</title>' +
+		(all.endsWith('\n') ? '\n' : '') + previewHead(text, docName.replace(/\.[^.]*$/, '')));
 	const shift = titled.length - stripped.length;
 	return titled.slice(0, at + shift) + '\n' + block + carriedBlocks + titled.slice(at + shift);
 }

@@ -90,6 +90,11 @@ export function modelReply(name, result) {
     return output.length ? Object.fromEntries(output) : undefined;
   };
   const reply = clean(result) || {};
+  if (name === 'edit') {
+    delete reply.hash;
+    if (typeof reply.passage === 'string' && typeof reply.text !== 'string') reply.text = reply.passage;
+    delete reply.passage;
+  }
   if (typeof reply.text !== 'string' && typeof reply.context?.text === 'string') {
     const {context, ...value} = reply; Object.assign(reply, context, value); delete reply.context;
   }

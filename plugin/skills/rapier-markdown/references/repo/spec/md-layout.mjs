@@ -1,16 +1,7 @@
 // SPDX-License-Identifier: MIT
 
-// `rotate`: degrees in (-180, 180], one decimal, omitted when 0; never written for a Rapier drawing (its turn lives in its SVG).
-// `opacity`: a picture's fade, a whole percent from 5 to 100, omitted at 100; the picture's bytes never change.
-// `lines`: a picture or paragraph's initial letter spans 1 to 12 lines, from the first line's cap height to the Nth
-// baseline. A picture keeps its aspect ratio; never with `width`.
-// `first`/`indent`: signed levels of 2em, at most six decimals, in [-64,64], omitted at zero. `marker` moves a list
-// item's marker independently of its words, on the same scale; only the item's leading paragraph carries it.
-// `lock=on`: a picture locked in place: a tap goes to the words, never the picture; a hold takes it to unlock it. Omitted when off.
-// `hyphens=auto`, `caps=small`, `hanging=on`: paragraph typography; absence preserves ordinary text.
 export const fields = new Set(['align', 'width', 'lines', 'wrap', 'x', 'y', 'rotate', 'opacity', 'first', 'indent', 'marker', 'lock', 'hyphens', 'caps', 'hanging']);
 export const alignments = new Set(['left', 'center', 'right', 'justify']);
-// `behind`/`front`: out of flow; the paragraph lays out as though the picture were absent.
 export const wraps = new Set(['around', 'box', 'behind', 'front']);
 const has = (value, key) => Object.hasOwn(value, key);
 const percent = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100;
@@ -18,7 +9,6 @@ const lineCount = value => Number.isInteger(value) && value >= 1 && value <= 12;
 export const INDENT_LIMIT = 64;
 export const indentLevel = value => typeof value === 'number' && Number.isFinite(value) && value !== 0 &&
   Math.abs(value) <= INDENT_LIMIT && Number(value.toFixed(6)) === value;
-// A key press advances an imported measure by one level without truncating its fraction or jumping across zero.
 export function stepIndent(value, step) {
   const next = Number(((value || 0) + step).toFixed(6));
   if (Math.abs(next) > INDENT_LIMIT) return value || 0;
@@ -27,7 +17,6 @@ export function stepIndent(value, step) {
 const oneDecimalDegrees = value => typeof value === 'number' && Number.isFinite(value) &&
   value > -180 && value <= 180 && Math.abs(value * 10 - Math.round(value * 10)) < 1e-9;
 
-/** Validate values independently of their Markdown attachment context. */
 export function validLayout(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
       Object.keys(value).some(key => !fields.has(key))) return false;
@@ -48,7 +37,6 @@ export function validLayout(value) {
     !(has(value, 'align') && (has(value, 'wrap') || has(value, 'x')));
 }
 
-/** Parse the closed v1 grammar. Geometry values are returned as numbers. */
 export function parseLayout(comment) {
   if (typeof comment !== 'string' || /[^\t\x20-\x7e]/.test(comment)) return null;
   const match = /^<!--md-layout:v1[ \t]+([^\r\n]*?)[ \t]*-->$/.exec(comment);
@@ -65,12 +53,10 @@ export function parseLayout(comment) {
           number[1] === '100' && /[1-9]/.test(number[2] || '')) return null;
       value[key] = Number(raw.slice(0, -1));
     } else if (key === 'y') {
-      // Negative allowed; signed like rotate, never "-0em".
       const number = /^(-)?(0|[1-9]\d*)(?:\.\d+)?em$/.exec(raw);
       if (!number || (number[1] && Number(raw.slice(1, -2)) === 0)) return null;
       value.y = Number(raw.slice(0, -2));
     } else if (key === 'rotate') {
-      // No '+', exponent, '°' or "-0deg"; 0 is unsigned.
       const number = /^(-)?(0|[1-9]\d*)(?:\.(\d))?deg$/.exec(raw);
       if (!number) return null;
       const magnitude = Number(number[2] + (number[3] ? '.' + number[3] : ''));
@@ -90,16 +76,12 @@ export function parseLayout(comment) {
   return validLayout(value) ? value : null;
 }
 
-// Comment delimiters are unsafe in sanitized attributes. Markdown stays literal;
-// rendered attributes carry encodeURIComponent(marker), including its '%' signs.
 export function decodeLayoutAttribute(value) {
   try { return decodeURIComponent(value || ''); } catch (_) { return ''; }
 }
 
 export const parseLayoutAttribute = value => parseLayout(decodeLayoutAttribute(value));
 
-// Indentation uses the document's body type, including on headings. Native table measurements
-// become ordinary CSS points; an item's margin is compensated by its paragraph and nested list.
 export function textStyle(value, {portable = false, pointSize, indentOffset = 0} = {}) {
   if (!validLayout(value)) return '';
   const property = {first: 'text-indent', indent: 'margin-inline-start'};
@@ -115,9 +97,6 @@ export function textStyle(value, {portable = false, pointSize, indentOffset = 0}
   return css.join(';');
 }
 
-// Raw HTML tables carry ordinary paragraph CSS. Read the browser's parsed declarations on the same
-// admitted scale; the native caller supplies the body's point size. A list marker belongs to its own li,
-// never to a paragraph or a picture.
 export function textLayout(style, {listMarker = false, pointSize, offset = 0} = {}) {
   const value = {};
   for (const [key, property] of (listMarker ? [['marker', 'margin-inline-start']] : [['first', 'text-indent'], ['indent', 'margin-inline-start']])) {
@@ -125,16 +104,12 @@ export function textLayout(style, {listMarker = false, pointSize, offset = 0} = 
     const match = /^(-?(?:0|[1-9]\d*)(?:\.\d{1,6})?)(em|pt)$/.exec(raw);
     const level = Number(((match ? Number(match[1]) / (match[2] === 'pt' ? pointSize : 1) / 2 : 0) +
       (key === 'first' ? 0 : offset)).toFixed(6));
-    // Public CSS may compensate an enclosing item's margin; the resolved native coordinate,
-    // rather than each intermediate declaration, is the measurement the writer must keep.
     if (Number.isFinite(level) && level) value[key] = level;
   }
   if (!listMarker && style?.getPropertyValue('hyphens').trim() === 'auto') value.hyphens = 'auto';
   return value;
 }
 
-// The picture's own CSS: its normal-flow width and x, its height in lines, and its fade. `1cap` is the cap height of the
-// picture's own text; a renderer that sets the picture beside its anchor measures that paragraph's line and cap instead.
 export function imageStyle(value) {
   if (!validLayout(value)) return '';
   const parts = [];
@@ -144,7 +119,6 @@ export function imageStyle(value) {
       decimal(Number(Math.max(0, Math.min(100 - width, value.x - width / 2)).toFixed(6))) + '%;margin-right:0';
     parts.push('width:' + decimal(width) + '%;height:auto' + left);
   }
-  // Wider than the column at its own aspect, it is contained in the N-line box, never stretched.
   if (value.lines != null) parts.push('width:auto;max-width:100%;height:' + linesHeightCss(value.lines) + ';object-fit:contain');
   if (value.opacity != null && value.opacity < 100) parts.push('opacity:' + decimal(value.opacity / 100));
   return parts.join(';');
@@ -152,23 +126,17 @@ export function imageStyle(value) {
 
 export const linesHeightCss = lines => lines === 1 ? '1cap' : 'calc(' + (lines - 1) + ' * var(--md-line, 1.6em) + 1cap)';
 
-// An HTML object has an outer clip box and an independent browser viewport.
-// SCALE keeps that authored viewport; REFLOW keeps measured content height.
 export function objectHeight(width, naturalHeight, attrs, line) {
   if (attrs.height && attrs.height !== 'auto') return Math.min(4096, Number(attrs.height) * line);
   const [w, h] = (attrs.viewport || '640x360').split('x').map(Number);
   return attrs.resize === 'scale' ? Math.min(4096, width * h / w) : naturalHeight;
 }
 
-// Controls remain real DOM nodes while their surrounding text flows. A checkbox, link or
-// disclosure is not a reason to exclude its entire block from picture placement.
 export function wrapTextBlock(element) {
   return element && /^(P|H[1-6]|UL|OL|BLOCKQUOTE|DETAILS|DL)$/.test(element.tagName) &&
     element.textContent.trim() && !element.querySelector('img,table,pre,figure,math,.math-rendered') ? element : null;
 }
 
-// The one wrap-owner rule (layout/browser.js, kit/render.mjs, editor/share.js): text after, else before, skipping pictures,
-// metadata and empty paragraphs; any other block is a barrier in that direction.
 export function wrapNeighbour(node, classify, step = (n, direction) => n && n[direction > 0 ? 'nextElementSibling' : 'previousElementSibling']) {
   for (const direction of [1, -1]) {
     for (let sibling = step(node, direction); sibling; sibling = step(sibling, direction)) {
@@ -182,7 +150,6 @@ export function wrapNeighbour(node, classify, step = (n, direction) => n && n[di
   return null;
 }
 
-// Narrower than this, a line breaker splits words letter by letter.
 export function wrapColumnFloor(fontSize) {
   return Math.max(40, 3.5 * (fontSize || 16));
 }
@@ -199,7 +166,6 @@ function decimal(value) {
   return digits.slice(0, point) + '.' + digits.slice(point);
 }
 
-/** Write only the supplied facts; no alignment is implied by absence. */
 export function formatLayout(value) {
   if (!validLayout(value)) throw new TypeError('invalid_markdown_layout');
   const pairs = [];

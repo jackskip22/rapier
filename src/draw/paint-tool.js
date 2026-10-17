@@ -859,7 +859,7 @@ function _rapierPaintStrip() { return _rapierDrawState.surface?.querySelector('.
 function _rapierPaintFacts() {
 	const state = _rapierDrawState, layer = state.paintLayer;
 	return { layerId: layer ? layer.id : null, live: !!layer, valid: _rapierPaintLayerValid(), loading: state.paintRehydrate || null, failed: state.paintRehydrateFailed || null, setting: !!state.paintSetting, erasing: !!state.paintEraseFan, encoding: !!state.paintEncodes?.size, pendingOverflow: !!layer?.pendingOverflow,
-		committing: _rapierPaintRevisionLayers(layer).some(sheet => !!(sheet.pendingLift || sheet.pendingCommit)), flips: state.paintFlips || 0, timing: state.paintTiming ? { ...state.paintTiming } : null, surface: layer?.surface ? layer.surface.width + 'x' + layer.surface.height : null, brush: layer?.brushId || null, brushChosen: state.paintBrush || null, size: _rapierPaintSize(), strength: state.paintStrength || null, dirty: !!layer?.surface && !layer.surface.settled, scale: layer?.scale || null, showing: !!layer && layer.canvas.style.visibility !== 'hidden',
+		committing: !!state.paintDeparture || _rapierPaintRevisionLayers(layer).some(sheet => !!(sheet.pendingLift || sheet.pendingCommit)), flips: state.paintFlips || 0, timing: state.paintTiming ? { ...state.paintTiming } : null, surface: layer?.surface ? layer.surface.width + 'x' + layer.surface.height : null, brush: layer?.brushId || null, brushChosen: state.paintBrush || null, size: _rapierPaintSize(), strength: state.paintStrength || null, dirty: !!layer?.surface && !layer.surface.settled, scale: layer?.scale || null, showing: !!layer && layer.canvas.style.visibility !== 'hidden',
 		ops: layer?.surface?.opStats ? { ...layer.surface.opStats } : null,
 		origin: layer?.origin ? layer.origin.join(',') : null,
 		overlays: document.querySelectorAll('canvas.rapier-draw-paint-live').length,
@@ -1041,7 +1041,7 @@ async function _rapierPaintRecompress(raster, source, {signal} = {}) {
 		megapixels = Math.ceil(pixels.width * pixels.height / 1e6);
 		signal?.throwIfAborted();
 		const out = await globalThis.RapierEmbeddedImages.codec('encode', {width: pixels.width, height: pixels.height, data: pixels.data,
-			options: {lossless: true, effort: 7, parallel: false}}, {signal, optional: true});
+			options: {lossless: true, losslessProfile: 'painting-search', effort: 7, parallel: false}}, {signal, optional: true});
 		signal?.throwIfAborted();
 		const bytes = out.bytes || out;
 		return (await request('check', {bytes}, [bytes.buffer])).raster;
@@ -1529,6 +1529,7 @@ function _rapierPaintDrainRevisions(layer, now = false) {
 		if (layer.publicationTask !== job) return;
 		layer.publicationTask = null;
 		if (layer.revisions?.[0] !== job || layer.previousFlip?.pendingCommit) return;
+		if (layer.departing && (_rapierDrawState.gesture || _rapierDrawState.markerPress)) { setTimeout(() => _rapierPaintDrainRevisions(layer), 32); return; }
 		try { _rapierPaintFinishRevision(layer, job.raster); }
 		catch (error) { _rapierPaintNotKept(layer, error); job.reject(error); }
 	};
@@ -1759,11 +1760,15 @@ function _rapierPaintLayerValid(forMaterialTool = false, geom = null, mode = _ra
 	return target.raster === layer.raster && JSON.stringify(target.geom) === layer.geom;
 }
 function _rapierPaintCloseLayer(current = null) {
+	const departing = _rapierPaintDeparting();
+	if (departing) return departing.then(() => _rapierPaintCloseLayer(current));
 	const state = _rapierDrawState, layer = _rapierPaintLayer(), session = state.session;
 	const owns = () => state.session === session && _rapierPaintLayer() === layer && (!current || current());
 	return _rapierPaintAfter(_rapierPaintFlushRevision(layer, true), () => _rapierPaintCloseNow(false, owns));
 }
 function _rapierPaintLeaveForHistory(current) {
+	const departing = _rapierPaintDeparting();
+	if (departing) return departing.then(() => current() ? _rapierPaintLeaveForHistory(current) : false);
 	const state = _rapierDrawState, layer = state.paintLayer;
 	if (!layer) return null;
 	const live = () => current() && state.paintLayer === layer && !state.gesture && !state.markerPress;
@@ -2230,6 +2235,8 @@ function _rapierPaintWetWake(layer) {
 	for (const ok of layer.wetWaiters.splice(0)) ok();
 }
 function _rapierPaintFlushWet(owedOnly = false, current = null) {
+	const departing = _rapierPaintDeparting();
+	if (departing) return departing.then(() => !current || current() ? _rapierPaintFlushWet(owedOnly, current) : false);
 	const state = _rapierDrawState, layer = _rapierPaintLayer(), surface = layer?.surface, session = state.session;
 	const live = () => state.open && state.session === session && _rapierPaintLayer() === layer && layer.surface === surface && (!current || current());
 	if (!surface || !live()) return null;
@@ -2247,6 +2254,8 @@ function _rapierPaintFlushWet(owedOnly = false, current = null) {
 	});
 }
 function _rapierPaintLeaveWash(current, finish = false) {
+	const departing = _rapierPaintDeparting();
+	if (departing) return departing.then(() => current() ? _rapierPaintLeaveWash(current, finish) : false);
 	const state = _rapierDrawState, layer = state.paintLayer, surface = layer?.surface, session = state.session;
 	if (!surface || layer.mode === 'water' || state.gesture || state.paintSetting || layer.pendingOverflow || layer.nextFlip || layer.retire?.length) return null;
 	if (!(surface.wetState || layer.dryFinishing) || !layer.flipStroke?.entry) return null;
@@ -2271,6 +2280,49 @@ function _rapierPaintLeaveWash(current, finish = false) {
 			return _rapierPaintEncodeRevision(layer, false, {peek: true}).promise.then(close);
 		});
 	});
+}
+function _rapierPaintDepart() {
+	const state = _rapierDrawState, layer = state.paintLayer, surface = layer?.surface, session = state.session;
+	if (state.paintDeparture || !surface || layer.mode === 'water' || state.gesture || state.paintSetting || layer.pendingOverflow || layer.nextFlip || layer.previousFlip || layer.retire?.length) return null;
+	if (!(surface.wetState || layer.dryFinishing) || !layer.flipStroke?.entry) return null;
+	const departure = {layer, session, promise: null};
+	const live = () => state.open && state.session === session && state.paintLayer === layer && layer.surface === surface && state.paintDeparture === departure;
+	if (layer.dryRaf) { cancelAnimationFrame(layer.dryRaf); layer.dryRaf = 0; }
+	layer.dryFinishing = false; layer.dryBox = null;
+	state.paintDeparture = layer.departing = departure;
+	const close = () => live() ? _rapierPaintAfter(_rapierPaintFlushRevision(layer, true), () => live() ? _rapierPaintCloseNow(false, live) : false) : false;
+	const run = _rapierPaintAfter(_rapierPaintFlushRevision(layer, true), () => {
+		if (!live()) return false;
+		surface.finishWetWork();
+		surface.settleWet(false);
+		return _rapierPaintAfter(surface.sync(), () => {
+			if (!live()) return false;
+			if (layer.published?.revision === surface.revision) return close();
+			return _rapierPaintEncodeRevision(layer, false, {peek: true}).promise.then(close);
+		});
+	});
+	const end = () => {
+		if (layer.departing === departure) layer.departing = null;
+		if (state.paintDeparture === departure) state.paintDeparture = null;
+		if (typeof _rapierDrawReleaseHeldPress === 'function') _rapierDrawReleaseHeldPress(departure);
+	};
+	departure.promise = Promise.resolve(run).then(end, error => {
+		end();
+		if (state.session === session && state.paintLayer === layer && !_rapierPaintLossSaid(error)) showToast('The painting could not be kept. It is still open: ' + String(error?.message || error), 'error');
+	});
+	return departure.promise;
+}
+function _rapierPaintDeparting() { return _rapierDrawState.paintDeparture?.promise || null; }
+function _rapierPaintAmendDeparted(layer, stroke, geom, raster, paint) {
+	const state = _rapierDrawState, entry = stroke?.entry, canvas = state.recipe.canvas, shape = layer.id != null ? _rapierDrawShapeById(layer.id) : null;
+	if (!layer.departing || !shape || !entry || entry === state.undoStack.at(-1) || layer.retire?.length) return null;
+	if (geom.cx - geom.w / 2 < 0 || geom.cy - geom.h / 2 < 0 || geom.cx + geom.w / 2 > canvas.w || geom.cy + geom.h / 2 > canvas.h) return null;
+	if (!_rapierDrawStepAmendable(entry, [shape.id])) return null;
+	shape.geom = geom; shape.raster = raster; shape.paint = paint;
+	_rapierDrawAmendStep(entry, [shape]);
+	_rapierDrawRenderShapes([shape.id]); _rapierDrawUpdateMenu();
+	if (typeof _rapierDrawBackupPublished === 'function') _rapierDrawBackupPublished();
+	return shape;
 }
 function _rapierPaintScheduleBlit() {
 	(_rapierPaintLayer()?.surface?.remote || _rapierPaintRemoteNow())?.requestFrame();
@@ -2715,7 +2767,7 @@ function _rapierPaintRehydrateFor(target, pendingGesture = null) {
 	}).finally(() => finished(task));
 }
 function _rapierPaintPendingStroke(finishWet = false, asked = false) {
-	return _rapierDrawState.waterAction || _rapierDrawState.paintEraseFan?.promise || _rapierPaintPendingStrokeOwed(finishWet, asked);
+	return _rapierDrawState.waterAction || _rapierDrawState.paintEraseFan?.promise || _rapierPaintDeparting() || _rapierPaintPendingStrokeOwed(finishWet, asked);
 }
 function _rapierPaintPendingStrokeOwed(finishWet = false, asked = false) {
 	const state = _rapierDrawState;
@@ -2881,6 +2933,7 @@ async function _rapierPaintStart(evt, gesture, queued, timing) {
 	const live = () => gesture.paint === queued && !queued.discarded && state.open && state.session === queued.session;
 	if (settings.mode === 'water' && !settings.erasing) { await _rapierWaterProAuthorizeActions([settings.water]); if (!live()) return; }
 	if (!_rapierPaintRemoteNow(settings.mode || 'paint')) { await _rapierPaintStartPainter(settings.mode || 'paint'); if (!live()) return; }
+	for (let departing; (departing = _rapierPaintDeparting());) { await departing; if (!live()) return; }
 	const preceding = _rapierPaintLayer();
 	if (preceding?.previousFlip || preceding?.pendingLift) { const wait = _rapierPaintFlushRevision(preceding, settings.mode === 'water'); if (wait) { await wait; if (!live()) return; } }
 	const drying = _rapierPaintLayer();
@@ -3333,6 +3386,7 @@ function _rapierPaintPublishEmpty(layer) {
 }
 function _rapierPaintPublish(layer, keep, kept, custody, synced = false, record = null, waterRead = null) {
 	const state = _rapierDrawState, surface = layer.surface;
+	if (layer.session != null && layer.session !== state.session) return null;
 	if (!synced && !surface.settled && !surface.failure) return surface.sync().then(() => _rapierPaintPublish(layer, keep, kept, custody, true, record, waterRead));
 	layer.paintVersion = (layer.paintVersion || 0) + 1;
 	const box = surface.bounds();
@@ -3369,6 +3423,14 @@ function _rapierPaintPublish(layer, keep, kept, custody, synced = false, record 
 	const joins = !!stroke?.entry && stroke.entry === state.undoStack.at(-1);
 	const priorShift = custody || joins ? state.undoStack.at(-1)?.shift : null;
 	const replay = layer.mode === 'water' ? _rapierPaintWaterReplay(layer, waterRead?.waterCapture || layer.waterCapture, box, waterRead?.waterSheet || layer.waterSheet) : _rapierPaintReplayAt(layer, record || surface.takeReplay?.() || null, box);
+	const amended = !joins && !custody && !pieces && _rapierPaintAmendDeparted(layer, stroke, geom, raster, _rapierPaintMetadata(layer, layer.brushId, pw, ph, s, replay));
+	if (amended) {
+		if (replay) layer.paintReplay = replay;
+		layer.raster = raster; layer.geom = JSON.stringify(geom);
+		layer.checkpoint = {revision: surface.revision, raster}; layer.published = {revision: surface.revision, raster};
+		_rapierPaintSyncPaper(); _rapierPaintHandBack(layer, [amended.id]); _rapierPaintShowLive(false);
+		return null;
+	}
 	_rapierDrawSnapshot(undefined, custody || joins);
 	if (layer.mode === 'water' && typeof _rapierWaterAdoptPaper === 'function') _rapierWaterAdoptPaper();
 	const grown = !layer.frame && _rapierDrawGrowCanvas(geom.cx - geom.w / 2, geom.cy - geom.h / 2, geom.cx + geom.w / 2, geom.cy + geom.h / 2);
@@ -3456,8 +3518,8 @@ function _rapierPaintWarmTarget() {
 	const state = _rapierDrawState;
 	if (!state.open || !['paint', 'water'].includes(_rapierDrawTool()) || state.gesture || _rapierPaintLayerValid()) return;
 	const target = _rapierPaintTarget();
-	if (_rapierDrawTool() === 'water' && !target) return;
 	if (!_rapierPaintRemoteNow()) { _rapierPaintStartPainter().then(() => _rapierPaintWarmTarget(), () => {}); return; }
+	if (_rapierDrawTool() === 'water' && !target) return;
 	if (target) { _rapierPaintRehydrateFor(target); return; }
 	if (!state.paintLayer && !state.recipe.shapes.length && !state.recipe.strokes.length) {
 		const view = _rapierPaintWarmView();

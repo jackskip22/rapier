@@ -1,12 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Subsequence search over token keys, bounded by a shared work budget.
 export function matcher(spend, budget) {
-  // Unique anchors and fallback equal pairs share one bounded subsequence search. Repetitive text, where equal pairs
-  // are too many to visit, anchors on runs of tokens found once on each side, then on positions, then on a shortest
-  // script; only a range none of them can afford within the work limit stays coarse.
   function matches(a, b) {
     const found = new Array(a.length), pending = [[0, a.length, 0, b.length]];
-    // Patience chain over candidate pairs in a order; unique anchors split the range into searched gaps.
     const chain = (pairs, a0, a1, b0, b1, split, near) => {
       const tails = [];
       for (const [i, j] of pairs) {
@@ -29,7 +24,6 @@ export function matcher(spend, budget) {
       while (a0 < a1 && b0 < b1 && a[a0] === b[b0]) found[a0++] = b0++;
       while (a0 < a1 && b0 < b1 && a[a1 - 1] === b[b1 - 1]) found[--a1] = --b1;
       if (a0 === a1 || b0 === b1 || !spend(a1 - a0 + b1 - b0)) continue;
-      // Between anchored runs the change is usually small; a token found once by chance must not misalign it.
       if (near && shortest(a, b, a0, a1, b0, b1, found, 4 * (a1 - a0 + b1 - b0))) continue;
       const positions = new Map();
       for (let j = b0; j < b1; j++) {
@@ -45,12 +39,10 @@ export function matcher(spend, budget) {
         if (list[0] === 1 && list.length === 2) unique++;
       }
       if (!count) continue;
-      // With no unique anchors, equal-length repeated runs prefer their witnessed positions to an arbitrary LIS.
       if (!unique && a1 - a0 === b1 - b0) {
         const anchors = diagonal(a, b, a0, a1, b0, b1);
         if (anchors) { chain(anchors, a0, a1, b0, b1, true, true); continue; }
       }
-      // Charge the chain before building it: one that cannot be afforded falls through to cheaper anchors.
       const chained = unique || count, cost = chained * Math.ceil(Math.log2(chained + 2));
       if (cost <= budget.left) {
         const pairs = [];
@@ -63,7 +55,6 @@ export function matcher(spend, budget) {
         chain(pairs, a0, a1, b0, b1, unique > 0);
         continue;
       }
-      // Few changes make a shortest script cheap (about n + d²); try that first at a bounded cost.
       if (shortest(a, b, a0, a1, b0, b1, found, a1 - a0 + b1 - b0)) continue;
       const anchors = runs(a, b, a0, a1, b0, b1) || diagonal(a, b, a0, a1, b0, b1);
       if (anchors) chain(anchors, a0, a1, b0, b1, true, true);
@@ -72,14 +63,11 @@ export function matcher(spend, budget) {
     return found;
   }
 
-  // Runs of k tokens found once on each side anchor text whose single tokens all repeat. Window hashes are checked
-  // token by token, so a collision costs work, never correctness.
   function runs(a, b, a0, a1, b0, b1) {
     const ids = new Map(), id = key => ids.get(key) ?? (ids.set(key, ids.size), ids.size - 1);
     const left = Int32Array.from({length: a1 - a0}, (_, k) => id(a[a0 + k])), right = Int32Array.from({length: b1 - b0}, (_, k) => id(b[b0 + k]));
     for (const k of [16, 4, 64]) {
       if (k > Math.min(left.length, right.length) || !spend(2 * (left.length + right.length))) return;
-      // A prime modulus below 2^31 and a base below 2^21 keep every product exact in a double.
       const P = 2147483647, B = 1000003;
       let power = 1;
       for (let n = 1; n < k; n++) power = power * B % P;
@@ -101,7 +89,6 @@ export function matcher(spend, budget) {
         while (n < k && left[i + n] === right[j + n]) n++;
         if (n === k) pairs.push([a0 + i, b0 + j]);
       }
-      // Overlapping windows add nothing a gap's equal-run trim does not find; keep one per k tokens.
       pairs.sort((p, q) => p[0] - q[0]);
       const spaced = [];
       for (const pair of pairs) if (!spaced.length || pair[0] >= spaced.at(-1)[0] + k) spaced.push(pair);
@@ -109,16 +96,12 @@ export function matcher(spend, budget) {
     }
   }
 
-  // Repeated lines align by position: tokens equal on the start diagonal before a split and on the end diagonal after
-  // it, at the split that keeps the most. Used only when they cover at least half of the shorter side.
   function diagonal(a, b, a0, a1, b0, b1) {
     const n = a1 - a0, m = b1 - b0, shift = m - n, size = Math.min(n, m);
     if (!spend(2 * (n + m))) return;
-    // head[s]: equal pairs on the start diagonal among the first s tokens; tail[s]: on the end diagonal from s on.
     const head = new Int32Array(n + 1), tail = new Int32Array(n + 2);
     for (let i = 0; i < n; i++) head[i + 1] = head[i] + (i < m && a[a0 + i] === b[b0 + i]);
     for (let i = n - 1; i >= 0; i--) tail[i] = tail[i + 1] + (i + shift >= 0 && a[a0 + i] === b[b0 + i + shift]);
-    // A deletion (shift < 0) skips -shift tokens of a between the diagonals.
     let best = -1, split = 0;
     for (let s = 0; s <= n; s++) {
       const rest = Math.min(n, s + Math.max(0, -shift)), kept = head[s] + tail[rest];
@@ -131,8 +114,6 @@ export function matcher(spend, budget) {
     return pairs;
   }
 
-  // Myers' greedy search: O((N + M) D) steps; each frontier is kept for the backward pass. An attempt can stop at
-  // its own share of the work and report no script.
   function shortest(a, b, a0, a1, b0, b1, found, share = Infinity) {
     const n = a1 - a0, m = b1 - b0, v = new Int32Array(2 * (n + m) + 3), o = n + m + 1, trace = [];
     const step = (k = 1) => (share -= k) >= 0 && spend(k);

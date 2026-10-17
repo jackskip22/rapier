@@ -231,8 +231,10 @@ async function _rapierPrepareEditablePage(captured, options = {}) {
 		{docKind: captured.metadata.docKind, base: captured.comparisonBase?.text, also: options.also});
 	const text = (captured.metadata.bom ? '\uFEFF' : '') + captured.canonical;
 	const {filename, codeLang} = captured.metadata, ext = codeLang && Object.keys(EXT_TO_LANG).find(e => EXT_TO_LANG[e] === codeLang);
-	const parts = _rapierLedgerParts(text, captured.ledger, captured.carried);
-	const write = ids => {
+	const carriedParts = new Map();
+	const write = (ids, carried = captured.carried) => {
+		if (!carriedParts.has(carried)) carriedParts.set(carried, _rapierLedgerParts(text, captured.ledger, carried));
+		const parts = carriedParts.get(carried);
 		const html = globalThis.RapierPortablePage.wrap(portable.assemble(ids), text, ext ? filename.replace(/\.rapier\.html$/i, '.' + ext) : filename, {
 			kind: captured.metadata.docKind, base: captured.comparisonBase || undefined, ...parts,
 		});
@@ -259,28 +261,41 @@ async function _rapierEditablePageChosen(captured, action, task) {
 	const page = await _rapierPrepareEditablePage(captured, {also: _rapierEditablePageKeeps()});
 	task.check(); task.end();
 	const overlay = document.getElementById('editor-file-overlay');
-	if (!page.choices.length || !overlay) return page.write(page.needs);
+	if (!overlay) return page.write(page.needs);
 	const list = overlay.querySelector('.editor-file-choices'), go = overlay.querySelector('[data-editor-file="go"]');
 	const chosen = new Set(page.needs);
-	list.replaceChildren(...page.choices.map(choice => {
+	let carried = ['authorship', 'history'].includes(captured.carried) && captured.ledger ? captured.carried : 'none';
+	const toggle = (id, words, size) => {
 		const row = document.createElement('button'), text = document.createElement('span'), label = document.createElement('span');
-		const hint = document.createElement('span'), state = document.createElement('span');
-		row.type = 'button'; row.className = 'export-choice-toggle'; row.dataset.editorFile = choice.id;
-		text.className = 'export-choice-toggle__text'; label.className = 'export-choice-toggle__label'; hint.className = 'export-choice-toggle__hint';
+		const state = document.createElement('span');
+		row.type = 'button'; row.className = 'export-choice-toggle'; row.dataset.editorFile = id;
+		text.className = 'export-choice-toggle__text'; label.className = 'export-choice-toggle__label';
 		state.className = 'export-choice-toggle__state';
-		label.textContent = choice.label; hint.textContent = _rapierShareSize(choice.bytes);
-		text.append(label, hint); row.append(text, state);
+		label.textContent = words; text.append(label);
+		if (size != null) {
+			const hint = document.createElement('span');
+			hint.className = 'export-choice-toggle__hint'; hint.textContent = _rapierShareSize(size);
+			text.append(hint);
+		}
+		row.append(text, state);
 		return row;
-	}));
+	};
+	const rows = page.choices.map(choice => toggle(choice.id, choice.label, choice.bytes));
+	if (captured.ledger) {
+		const note = document.createElement('p');
+		note.className = 'export-choice__description'; note.textContent = 'History includes deleted text.';
+		rows.push(toggle('ledger:authorship', 'Who wrote what'), toggle('ledger:history', 'The whole history'), note);
+	}
+	list.replaceChildren(...rows);
 	go.querySelector('.export-choice__label').textContent = action;
 	let written = null;
 	const paint = () => {
-		for (const row of list.children) {
-			const on = chosen.has(row.dataset.editorFile);
+		for (const row of list.querySelectorAll('[data-editor-file]')) {
+			const id = row.dataset.editorFile, on = id.startsWith('ledger:') ? carried === id.slice(7) : chosen.has(id);
 			row.setAttribute('aria-pressed', on ? 'true' : 'false');
 			row.querySelector('.export-choice-toggle__state').textContent = on ? 'ON' : 'OFF';
 		}
-		written = page.write(chosen);
+		written = page.write(chosen, carried);
 		go.querySelector('.export-choice__description').textContent = _rapierShareSize(written.blob.size);
 	};
 	paint();
@@ -296,6 +311,7 @@ async function _rapierEditablePageChosen(captured, action, task) {
 			const id = control.dataset.editorFile;
 			if (id === 'go') done(written);
 			else if (id === 'close') done(null);
+			else if (id.startsWith('ledger:')) { carried = carried === id.slice(7) ? 'none' : id.slice(7); paint(); }
 			else { if (chosen.has(id)) chosen.delete(id); else chosen.add(id); paint(); }
 		};
 		overlay.addEventListener('click', click);
@@ -351,11 +367,25 @@ async function _rapierShareFile(options) {
 
 	const saved = await _download(blob, filename);
 	if (saved === true) {
-		showToast('share unavailable — saved ' + _rapierShareProduced(filename, blob) + ' instead', 'info');
+		showToast('Saved ' + _rapierShareProduced(filename, blob) + '. Send this file to anyone.', 'success');
 		return true;
 	}
-	if (saved === null) showToast('share unavailable — ' + filename + ' could not be saved', 'error');
+	if (saved === null) showToast('Could not save ' + filename + '.', 'error');
 	return false;
+}
+
+const _rapierCarriedKeep = {authority: '', hinted: false};
+function _rapierCarriedKeepHint() {
+	const authority = String(rapier.identity.authority || '');
+	if (_rapierCarriedKeep.hinted || !authority || _rapierCarriedKeep.authority !== authority) return;
+	const files = window.RapierPlatform?.files;
+	if (files?.hasWritable?.(authority) || !/\.rapier\.html$/i.test(rapier.document.filename || '')) return;
+	_rapierCarriedKeep.hinted = true;
+	const name = String(rapier.document.filename);
+	showToast(files?.savesChosenType === true
+		? 'To keep your changes, press Save and choose ' + name + ', the file you opened.'
+		: 'To keep your changes, press Save. It downloads ' + name.replace(/\.rapier\.html$/i, '-2.rapier.html') + '.',
+		'info', {label: 'Save', fn: () => rapierSave()});
 }
 
 function _rapierShareProduced(filename, blob) {
@@ -363,7 +393,7 @@ function _rapierShareProduced(filename, blob) {
 	return bytes ? filename + ' (' + _rapierShareSize(bytes) + ')' : filename;
 }
 function _rapierShareSize(bytes) {
-	return bytes < 1024 ? bytes + ' B' : bytes < 1048576 ? (bytes / 1024).toFixed(1) + ' KiB' : (bytes / 1048576).toFixed(1) + ' MiB';
+	return bytes < 1024 ? bytes + ' B' : bytes < 1048576 ? (bytes / 1024).toFixed(1) + ' KB' : (bytes / 1048576).toFixed(1) + ' MB';
 }
 
 function _rapierAnnounceShared(filename, blob) {
@@ -501,13 +531,15 @@ async function _rapierSendBackDirect() {
 async function rapierShare(kind) {
 	if (!_rapierEmbedFeatureAllowed('share')) return false;
 	let captured;
-	const task = _rapierProgressTask({label: kind === 'web' ? 'Sharing web page' : 'Sharing file', size: rapier.document.source.length, current: () => !captured?.stamp || _rapierMutationStampIsCurrent(captured.stamp)});
+	if (typeof _rapierMoveOn === 'function') _rapierMoveOn();
+	const task = _rapierProgressTask({leaves: true, label: kind === 'web' ? 'Sharing web page' : 'Sharing file', size: rapier.document.source.length, current: () => !captured?.stamp || _rapierMutationStampIsCurrent(captured.stamp)});
 	const work = task;
 	try {
 		await task.yield(0);
-		captured = await _rapierCaptureSettledExternalDocument({carried: _rapierShareLedgerChoice()});
+		const ledgerChoice = _rapierShareLedgerChoice();
+		captured = await _rapierCaptureSettledExternalDocument({carried: kind === 'editor' ? 'history' : ledgerChoice});
 		if (!captured) return false;
-		captured = {...captured, work};
+		captured = {...captured, work, ...(kind === 'editor' ? {carried: ledgerChoice} : {})};
 		task.check();
 		if (kind !== 'web' && kind !== 'editor' && captured.ledger && captured.metadata.docKind !== 'markdown') throw new Error('Choose web page to carry authorship or history with a code or plain-text document.');
 		if (kind !== 'web' && kind !== 'editor') {
@@ -579,7 +611,7 @@ function _rapierQuoteHold() {
 	const selection = window.getSelection(), range = selection?.rangeCount ? selection.getRangeAt(0) : null;
 	_rapierQuote.held = {authority: exact.authority, revision: exact.revision, generation: exact.generation,
 		markdown: (frontmatter && exact.start >= bodyOffset ? frontmatter : '') + excerpt, picture: _rapierQuotePicture(range),
-		name: metadata.filename.replace(/\.[a-z0-9]+$/i, '') || 'document'};
+		name: _rapierExportStem(metadata.filename)};
 }
 function _rapierQuoteWiden() {
 	const selection = window.getSelection();

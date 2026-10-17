@@ -23,7 +23,7 @@ Free and offline, with no ads, tracking or Rapier account.
 - **Draw.** Editable SVG: pen, pressure brush, shapes, arrows that stay attached, and text.
 - **Paint.** MyPaint brushes, smudge and blend. Water is watercolor that mixes, flows and dries on textured paper.
 - **Notes.** One Markdown file per note, with colors, pins, checklists, voice recordings, links, history, and
-  search that reads text in pictures. Import from Evernote, Notion, Joplin, Simplenote and other note apps. Back up
+  search that reads text in pictures. Import from Google Keep, Apple Notes, Evernote, Notion, Obsidian, Joplin and other note apps. Back up
   as a ZIP file, or sync encrypted copies to your own Cloudflare R2 bucket. Android adds reminders and a home-screen
   widget.
 - **Files.** Open Markdown, text, code, Word and PDF. Save Markdown; Rapier never overwrites a file that changed
@@ -94,10 +94,6 @@ Rapier writes CommonMark plus conventions other editors already read, with pictu
 - `(cd src && node tools/build.mjs)` rebuilds it byte for byte ([build.json](docs/build.json)).
 - `(cd src && RAPIER_PROFILE=reader node tools/build.mjs)` builds the reader.
 - `npx wrangler deploy` serves it with the included configuration.
-
-`node --test src/tools/test-public.mjs` (Node 22) checks concurrent edits and Undo, HTML control boundaries, and
-hostile SVG filtering. It needs no browser, account, install or network. GitHub Actions runs it on every push and
-pull request.
 
 ## License and contributing
 

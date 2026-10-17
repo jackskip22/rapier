@@ -13,6 +13,35 @@ const OFFLINE_POLICY = "default-src 'none'; script-src 'unsafe-inline' 'wasm-uns
 
 export {encodeCarried, decodeCarried};
 
+const PREVIEW = /<meta (?:name="(?:description|generator)"|property="og:(?:title|description)") content="[^"]*" data-rapier-preview>\n?/g;
+const plainWords = text => text.replace(/!\[[^\]]*\]\[[^\]]*\]|!\[[^\]]*\]\([^)]*\)/g, '').replace(/\[([^\]]*)\](?:\([^)]*\)|\[[^\]]*\])/g, '$1')
+	.replace(/<[^>]*>/g, '').replace(/[*_`~=]+|\[\^[^\]]*\]/g, '').replace(/\s+/g, ' ').trim();
+export function pagePreview(markdown) {
+	const lines = String(markdown).replace(/^\uFEFF/, '').split(/\r?\n/);
+	let title = '', paragraph = [], fence = null, at = 0;
+	if (/^---\s*$/.test(lines[0] || '')) { at = lines.indexOf('---', 1) + 1 || lines.length; }
+	for (; at < lines.length; at++) {
+		const line = lines[at], marker = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
+		if (fence) { if (marker && marker[0] === fence[0] && marker.length >= fence.length) fence = null; continue; }
+		if (marker) { fence = marker; if (paragraph.length) break; continue; }
+		const heading = /^ {0,3}#{1,6}\s+(.*?)\s*#*\s*$/.exec(line);
+		if (heading) { if (paragraph.length) break; if (!title) title = plainWords(heading[1]); continue; }
+		if (!/\S/.test(line)) { if (paragraph.length) break; continue; }
+		if (!paragraph.length && /^\s*(?:[>|<]|[-*+]\s|\d+[.)]\s|\[[^\]]+\]:|!\[|\$\$|[-*_]{3,}\s*$)/.test(line)) continue;
+		paragraph.push(line);
+		if (title && paragraph.length > 8) break;
+	}
+	const words = plainWords(paragraph.join(' '));
+	const sentence = /^.{20,300}?[.!?](?=\s|$)/.exec(words)?.[0] || (words.length <= 200 ? words : words.slice(0, 200).replace(/\s+\S*$/, '') + '…');
+	return {title, description: sentence};
+}
+function previewHead(markdown, fallbackTitle) {
+	const {title, description} = pagePreview(markdown);
+	const meta = (key, name, value) => '<meta ' + key + '="' + name + '" content="' + value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;') + '" data-rapier-preview>\n';
+	return (description ? meta('name', 'description', description) : '') + meta('property', 'og:title', title || fallbackTitle) +
+		(description ? meta('property', 'og:description', description) : '') + meta('name', 'generator', 'Rapier (https://rapier.website)');
+}
+
 function safeName(name, fallback) {
 	return [...String(name || fallback).replace(/[\\/\0"<>&]/g, '-')].slice(0, 256).join('').replace(/[\uD800-\uDBFF]$/, '') || fallback;
 }
@@ -116,7 +145,7 @@ export function wrap(pageHtml, text, name, options) {
 	}
 	if (baseline) baseline = readBase({...baseline, ...(opts.by != null ? {by: String(opts.by).trim()} : {}), ...(opts.at != null ? {at: String(opts.at)} : {})});
 	carriedBlocks += '\n' + writeBase(text, baseline);
-	const unseeded = offlineTemplate(previous.html.replace(SEARCH_WORDS, '').split(PAGE_SEED + '\n').join(''), address);
+	const unseeded = offlineTemplate(previous.html.replace(SEARCH_WORDS, '').replace(PREVIEW, '').split(PAGE_SEED + '\n').join(''), address);
 	const headTag = /<meta charset[^>]*>\n?/i.exec(unseeded) || /<head[^>]*>\n?/.exec(unseeded);
 	if (!headTag) throw new Error('not a Rapier page: no <head>');
 	const seededAt = headTag.index + headTag[0].length;
@@ -124,7 +153,8 @@ export function wrap(pageHtml, text, name, options) {
 	const bodyTag = /<body[^>]*>/.exec(stripped);
 	if (!bodyTag) throw new Error('not a Rapier page: no <body>');
 	const at = bodyTag.index + bodyTag[0].length;
-	const titled = stripped.replace(/<title>[^<]*<\/title>/, () => '<title>' + docName.replace(/&/g, '&amp;').replace(/</g, '&lt;') + ' — Rapier</title>');
+	const titled = stripped.replace(/<title>[^<]*<\/title>\n?/, all => '<title>' + docName.replace(/&/g, '&amp;').replace(/</g, '&lt;') + ' — Rapier</title>' +
+		(all.endsWith('\n') ? '\n' : '') + previewHead(text, docName.replace(/\.[^.]*$/, '')));
 	const shift = titled.length - stripped.length;
 	return titled.slice(0, at + shift) + '\n' + block + carriedBlocks + titled.slice(at + shift);
 }

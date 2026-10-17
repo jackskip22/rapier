@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 const _RAPIER_AGENT_MARKS = Object.freeze(['', 'feather', 'star', 'moon', 'sun', 'zap', 'anchor', 'compass', 'coffee']);
-const _rapierAgentSpell = Object.seal({ name: '', greeted: '', acts: [], undo: [], timer: 0, noteTimer: 0, wrote: null, near: new Set(), kind: '', pending: false });
+const _rapierAgentSpell = Object.seal({ name: '', greeted: '', acts: [], undo: [], labels: new Map(), timer: 0, noteTimer: 0, wrote: null, near: new Set(), kind: '', pending: false });
 
 function _rapierAgentSelf() {
 	try {
@@ -99,8 +99,9 @@ function _rapierAgentSpellBegin(authority) {
 function _rapierAgentAsked() {
 	if (_rapierAgentSpell.kind === 'ask') { _rapierAgentNoteRetire(); _rapierAgentNoteQuiet(); }
 }
-function _rapierAgentBarActed(actId) {
+function _rapierAgentBarActed(actId, label) {
 	if (actId && !_rapierAgentSpell.acts.includes(String(actId))) _rapierAgentSpell.acts.push(String(actId));
+	if (actId && typeof label === 'string' && label.trim()) _rapierAgentSpell.labels.set(String(actId), label.trim());
 	if (!_rapierAgentBar.running) _rapierAgentSpellQuiet();
 }
 function _rapierAgentSpellQuiet() {
@@ -111,6 +112,7 @@ function _rapierAgentSpellQuiet() {
 		if (_rapierAgentBar.running || !spell.acts.length) return;
 		if (_rapierAgentInvitation.current) { _rapierAgentSpellQuiet(); return; }
 		spell.undo = spell.acts.splice(0);
+		for (const id of spell.labels.keys()) if (!spell.undo.includes(id)) spell.labels.delete(id);
 		_rapierAgentSpellFinished();
 		const near = new Set(spell.near);
 		spell.near.clear();
@@ -119,7 +121,9 @@ function _rapierAgentSpellQuiet() {
 }
 function _rapierAgentSpellFinished() {
 	const count = _rapierAgentSpell.undo.length;
-	_rapierAgentNoteSet('Finished · ' + count + (count === 1 ? ' change' : ' changes'), 'finished');
+	const labels = new Set(_rapierAgentSpell.undo.map(id => _rapierAgentSpell.labels.get(id)));
+	const [label] = labels, named = labels.size === 1 && label && label !== 'Agent edit' ? (label.length > 60 ? label.slice(0, 59) + '…' : label) : '';
+	_rapierAgentNoteSet((named || 'Finished') + ' · ' + count + (count === 1 ? ' change' : ' changes'), 'finished');
 	_rapierAgentNoteShow(10000);
 }
 async function _rapierAgentUndoSpell() {

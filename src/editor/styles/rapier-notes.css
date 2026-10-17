@@ -65,7 +65,7 @@ div.rapier-notes-section-head{cursor:default;min-height:0;padding:var(--space-1)
 .rapier-notes-empty{padding:var(--space-2) 0;color:var(--color-text-muted);font:var(--text-sm) var(--font-mono);text-align:center}
 .rapier-notes-card-unread{color:var(--color-text-secondary);font:var(--text-sm) var(--font-mono)}
 .rapier-notes-card{--notes-card-bg:var(--notes-tint,var(--color-surface-2));--color-text-secondary:var(--color-text);position:absolute;top:0;left:0;box-sizing:border-box;width:var(--notes-card-w,calc((100% - var(--notes-gap)) / 2));padding:var(--space-3);background:var(--notes-card-bg);color:var(--color-text);cursor:pointer;user-select:none;-webkit-user-select:none;transform:translate3d(var(--x,0px),var(--y,0px),0);transition:transform var(--notes-spring-ms,200ms) var(--notes-spring,var(--ease-out)),box-shadow 120ms linear;touch-action:pan-y;outline:0}
-.rapier-notes-card:focus-visible,.rapier-notes-card--selected{box-shadow:inset 0 0 0 2px var(--color-text)}
+.rapier-notes-card--selected{box-shadow:inset 0 0 0 2px var(--color-text)}
 .rapier-notes-card--held,.rapier-notes-card--dragging{z-index:20;transform:translate3d(var(--x,0px),var(--y,0px),0) scale(1.05)}
 .rapier-notes-card--held{transition:transform 160ms var(--ease-out),box-shadow 160ms linear}
 .rapier-notes-card--dragging{transition:none}
@@ -116,7 +116,7 @@ body.rapier-notes-mode .rapier-notes-pic>.block-read>p{margin:0;line-height:0}
 body.rapier-notes-mode .rapier-notes-pic img{display:block;width:100%;min-width:0;max-width:none;height:auto;margin:0;border-radius:0}
 body.rapier-notes-mode #editor-blocks::after{clear:both}
 body.rapier-notes-mode #editor-blocks>.rapier-notes-slot{appearance:none;display:block;clear:both;box-sizing:border-box;width:100%;min-height:1.75em;margin:0 0 var(--space-2);padding:calc(var(--space-1) + 1px) 1px;border:0;border-radius:0;background:none;color:var(--color-text-subtle);font:var(--fw-regular) 1.1rem/1.75 var(--font-sans);text-align:start;cursor:text;-webkit-user-select:none;user-select:none}
-body.rapier-notes-mode #editor-blocks>.rapier-notes-slot:focus-visible{outline:2px solid var(--color-focus);outline-offset:-2px}
+body.rapier-notes-mode #editor-blocks>.rapier-notes-slot:focus-visible{outline:none}
 body.rapier-notes-mode #editor-blocks>:is(.rapier-notes-title,.rapier-notes-slot--title){margin-bottom:var(--space-3)}
 body.rapier-notes-mode #editor-blocks>.rapier-notes-title>:is(.block-read,.block-edit),
 body.rapier-notes-mode #editor-blocks>.rapier-notes-slot--title{font:var(--fw-semibold,600) 1.75rem/1.12 var(--font-sans);letter-spacing:-.02em}
@@ -134,7 +134,7 @@ body.rapier-notes-mode #editor-blocks>:is(.rapier-notes-title,.rapier-notes-note
 .rapier-notes-check--done:has(ul,ol){text-decoration:none}
 .rapier-notes-check-box{position:relative;flex:none;width:44px;height:calc(1lh + 9px);margin:-4.5px -15px;padding:0;box-sizing:border-box;border:0;border-radius:0;background:none;color:inherit;cursor:pointer;font:inherit}
 .rapier-notes-check-box::before,.rapier-notes-check-box[aria-pressed="true"]::after{content:'';position:absolute;left:calc(15px - 14px / 6);top:50%;width:calc(14px * 4 / 3);height:calc(14px * 4 / 3);margin-top:calc(-14px * 2 / 3);background:currentColor;-webkit-mask:var(--md-glyph-task-box) center/100% 100% no-repeat;mask:var(--md-glyph-task-box) center/100% 100% no-repeat}
-.rapier-notes-check-box:focus-visible{outline:2px solid var(--color-focus);outline-offset:2px}
+.rapier-notes-check-box:focus-visible{outline:none}
 .rapier-notes-check-box[aria-pressed="true"]::before{-webkit-mask-image:var(--md-glyph-task-open);mask-image:var(--md-glyph-task-open)}
 .rapier-notes-check-box[aria-pressed="true"]::after{-webkit-mask-image:var(--md-glyph-task-tick);mask-image:var(--md-glyph-task-tick)}
 .rapier-notes-card--pending::after{content:'';position:absolute;left:var(--px,50%);top:var(--py,50%);width:0;height:0;box-sizing:border-box;border:2px solid var(--color-accent);border-radius:50%;transform:translate(-50%,-50%);opacity:.9;pointer-events:none;animation:rapier-notes-press 500ms linear forwards}
@@ -155,7 +155,7 @@ body.rapier-notes-mode #editor-blocks>:is(.rapier-notes-title,.rapier-notes-note
 .rapier-notes-recording+.rapier-notes-recording{margin-top:0}
 .rapier-notes-recording-play{flex:none;display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;margin-inline-start:-14px;padding:0;border:0;border-radius:0;background:none;color:inherit;cursor:pointer}
 .rapier-notes-recording-play svg{width:16px;height:16px;stroke:none;fill:currentColor}
-.rapier-notes-recording-play:focus-visible{outline:2px solid var(--color-focus);outline-offset:-2px}
+.rapier-notes-recording-play:focus-visible{outline:none}
 .rapier-notes-recording-time{font:var(--text-sm) var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
 .rapier-notes-snack{touch-action:none;position:absolute;left:var(--notes-safe-left);right:var(--notes-safe-right);bottom:var(--notes-safe-bottom);z-index:6;display:flex;align-items:center;gap:var(--space-2);padding-left:var(--space-4);min-height:48px;transform:translateY(calc(100% + var(--space-3)));transition:transform 180ms var(--ease-out)}
 .rapier-notes-snack--open{transform:translateY(calc(0px - var(--rapier-notes-snack-lift, 0px)))}
@@ -465,7 +465,7 @@ body{--rapier-app-surface:var(--color-surface);--rapier-app-surface-2:var(--colo
 .rapier-attachment-row .rapier-attachment-apart{margin-inline-start:auto}
 .rapier-attachment-sheet::backdrop{background:var(--color-scrim,rgba(12,12,12,.8))}
 .rapier-attachment-sheet .rapier-notes-sheet-name{white-space:normal;overflow-wrap:anywhere}
-.rapier-attachment-sheet button:focus-visible,.rapier-attachment-row button:focus-visible{outline:2px solid var(--color-text);outline-offset:2px}
+.rapier-attachment-sheet button:focus-visible,.rapier-attachment-row button:focus-visible{outline:none}
 
 .rapier-notes-check--inking .rapier-notes-check-box::before{animation:rapier-notes-give 200ms cubic-bezier(.3,0,.2,1) both}
 .rapier-notes-check--inking .rapier-notes-check-box::after{animation:rapier-notes-tick 240ms cubic-bezier(.35,0,.15,1) 60ms both}

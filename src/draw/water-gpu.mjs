@@ -81,6 +81,14 @@ function captureSample(bitmap){
   let hash=2166136261,clear=0,alpha=0;for(let i=0;i<d.length;i++){hash=Math.imul(hash^d[i],16777619)>>>0;if((i&3)===3){alpha+=d[i];if(!d[i])clear++;}}
   return {hash:hash.toString(16).padStart(8,'0'),clear,alpha:Math.round(alpha/256)};}catch(error){return {error:String(error?.message??error)};}
 }
+const inNode=typeof globalThis.process?.versions?.node==='string';
+let softwareAdmitted=inNode;
+export function waterSoftwareAdmitted(value){softwareAdmitted=inNode||value===true;}
+export function waterSoftwareAdapter(adapter){
+ const i=adapter?.info??{};
+ if(i.isFallbackAdapter===true||adapter?.isFallbackAdapter===true)return true;
+ return /swiftshader|llvmpipe|lavapipe|softpipe|microsoft basic render|\bwarp\b/i.test([i.vendor,i.architecture,i.device,i.description].filter(Boolean).join(' '));
+}
 export async function waterReady(){
  const owner=globalThis.navigator?.gpu;
  if(!owner)throw failure('water_webgpu_unavailable','Water needs WebGPU. Open this document in a browser with WebGPU enabled.');
@@ -88,6 +96,7 @@ export async function waterReady(){
  if(!deviceTask)deviceTask=(async()=>{
   const adapter=await owner.requestAdapter({powerPreference:'high-performance'});
   if(!adapter)throw failure('water_webgpu_unavailable','Water could not obtain a WebGPU adapter on this device.');
+  if(!softwareAdmitted&&waterSoftwareAdapter(adapter))throw failure('water_webgpu_unavailable','Water needs a graphics processor; this device offers only a software one.');
   if(waterCapture.on){const i=adapter.info??{};waterNote({ev:'adapter',vendor:i.vendor,architecture:i.architecture,device:i.device,description:i.description,fallback:i.isFallbackAdapter??adapter.isFallbackAdapter,features:[...adapter.features].sort(),maxTexture:adapter.limits.maxTextureDimension2D,agent:globalThis.navigator?.userAgent,preferred:globalThis.navigator?.gpu?.getPreferredCanvasFormat?.()});}
   const features=['float32-filterable','float32-blendable',...(waterTiming.on?['timestamp-query']:[])].filter(name=>adapter.features.has(name)&&!(unfilteredTest&&name==='float32-filterable'));
   const device=await adapter.requestDevice(features.length?{requiredFeatures:features}:{});
@@ -97,6 +106,7 @@ export async function waterReady(){
  return deviceTask;
 }
 
+const LATER_PIPELINES=new Set(['fillInk','fillWet','fillFinish','stampFinish','liftInk','liftWet','liftFinish','eraseFixed','eraseBase','displayQuick']);
 async function programLibrary(device,firstPaper){
  if(libraries.has(device))return libraries.get(device);
  const task=(async()=>{
@@ -126,7 +136,7 @@ async function programLibrary(device,firstPaper){
    mask:['rgba8unorm'],paperField:['rgba16float'],paperLight:['rgba8unorm'],present:['rgba8unorm']};
   const blend={add:{srcFactor:'one',dstFactor:'one',operation:'add'},max:{srcFactor:'one',dstFactor:'one',operation:'max'},
    lift:{srcFactor:'zero',dstFactor:'one-minus-src',operation:'add'}};
-  const modules=new Map(),pipelines={},loadOps={};let paperDescription;
+  const modules=new Map(),pipelines={},loadOps={},later=new Map();let paperDescription;
   const sources=waterShaderSources();
   for(const [name,source] of Object.entries(sources))modules.set(name,device.createShaderModule({label:'Water '+name,code:source}));
   const compile=await Promise.allSettled(Object.entries(descriptions).map(async([name,settings])=>{
@@ -139,17 +149,25 @@ async function programLibrary(device,firstPaper){
    const description={label:'Water '+name,layout:name.startsWith('fill')?fillPipelineLayout:pipelineLayout,vertex:{module,entryPoint:'vertex'},
     fragment:{module,entryPoint:'fragment',...(kind===null?{}:{constants:{paperKind:kind}}),targets:formats.map(format=>({format,...(mode?{blend:{color:blend[mode],alpha:blend[mode]}}:{}),...(alphaOnly?{writeMask:8}:{})}))},primitive:{topology:'triangle-list'}};
    if(name==='paperField')paperDescription=description;
+   if(LATER_PIPELINES.has(name)){later.set(name,{description});return;}
    const pipeline=await device.createRenderPipelineAsync(description);
    if(kind===null)pipelines[name]=pipeline;else (pipelines[name]??=[])[kind]=pipeline;
   }));
   const bad=compile.find(r=>r.status==='rejected');if(bad)throw bad.reason;
   await Promise.all([['pigmentTiles',tileLayout],['pigmentCompute',pigmentLayout],['displayCompute',displayLayout],['displayQuick',displayLayout,'displayCompute',{quickEdge:1}]].map(async([name,bindLayout,module=name,constants])=>{
-   pipelines[name]=await device.createComputePipelineAsync({label:'Water '+name,layout:device.createPipelineLayout({bindGroupLayouts:[bindLayout]}),compute:{module:modules.get(module),entryPoint:'compute',...(constants?{constants}:{})}});
+   const description={label:'Water '+name,layout:device.createPipelineLayout({bindGroupLayouts:[bindLayout]}),compute:{module:modules.get(module),entryPoint:'compute',...(constants?{constants}:{})}};
+   if(LATER_PIPELINES.has(name)){later.set(name,{description,compute:true});return;}
+   pipelines[name]=await device.createComputePipelineAsync(description);
   }));
-  return {layout,fillLayout,tileLayout,pigmentLayout,displayLayout,linear,nearest,pipelines,loadOps,paperDescription};
+  let warming=false;
+  const warmLater=()=>{if(warming)return;warming=true;
+   for(const [name,{description,compute}]of later)(compute?device.createComputePipelineAsync(description):device.createRenderPipelineAsync(description)).then(pipeline=>{pipelines[name]??=pipeline;},()=>{});};
+  return {layout,fillLayout,tileLayout,pigmentLayout,displayLayout,linear,nearest,pipelines,later,warmLater,loadOps,paperDescription};
  })();
  libraries.set(device,task);try{return await task;}catch(error){libraries.delete(device);throw error;}
 }
+
+export async function waterWarm(paper='cold-press'){await programLibrary(await waterReady(),getPaper(paper)?.params?.kind??0);}
 
 export class WaterGPU {
  constructor(width,height,options={}){
@@ -174,6 +192,11 @@ export class WaterGPU {
    this.dummy=this._texture(1,1,'rgba8unorm');
    this._allocate(this.width,this.height);this._paper();await this._settleErrors();return this;
   }catch(error){this.encoder=null;this.slots=0;this.pendingRetire=[];this._release(false);this.disposed=true;throw error;}
+ }
+ _pipeline(name){
+  const library=this.library,ready=library.pipelines[name];if(ready)return ready;
+  const {description,compute}=library.later.get(name);
+  return library.pipelines[name]=this._guard(()=>compute?this.device.createComputePipeline(description):this.device.createRenderPipeline(description));
  }
  _check(){if(this.disposed)throw failure('WATER_CLOSED','The Water surface is closed.');if(this.lost)throw failure('WATER_DEVICE_LOST','The GPU stopped. The last published painting is safe; reopen Water to continue.');if(this.gpuError)throw this.gpuError;}
  _poison(error,kind){
@@ -368,7 +391,7 @@ export class WaterGPU {
   const full=!rect||(Math.floor(rect[0])<=0&&Math.floor(rect[1])<=0&&Math.ceil(rect[2])>=target.w&&Math.ceil(rect[3])>=target.h);
   const loadOp=full?this.library.loadOps[name]:'load';
   const pass=encoder.beginRenderPass({colorAttachments:targets.map(t=>({view:t.view,loadOp,storeOp:'store'}))});capturePass(name,loadOp);
-  pass.setPipeline(name==='paperField'?this.library.pipelines[name][data[50]]:this.library.pipelines[name]);pass.setBindGroup(0,group,[slot*256]);
+  pass.setPipeline(name==='paperField'?this.library.pipelines[name][data[50]]:this._pipeline(name));pass.setBindGroup(0,group,[slot*256]);
   if(rect){const x0=clamp(Math.floor(rect[0]),0,target.w),y0=clamp(Math.floor(rect[1]),0,target.h),x1=clamp(Math.ceil(rect[2]),x0,target.w),y1=clamp(Math.ceil(rect[3]),y0,target.h);if(x1===x0||y1===y0){pass.end();return;}pass.setScissorRect(x0,y0,x1-x0,y1-y0);}
   pass.draw(3);pass.end();
   for(const t of targets){if(loadOp==='clear')t.written=null;this._markWritten(t,rect);}
@@ -422,7 +445,7 @@ export class WaterGPU {
    if(r[2]<=r[0]||r[3]<=r[1])continue;
    const data=e.data;data[0]=target.w;data[1]=target.h;data[60]=origin[0];data[61]=origin[1];
    const slot=this.slots++;this.uniformData.set(data,slot*64);
-   pass.setPipeline(this.library.pipelines[e.name]);pass.setBindGroup(0,this._group(e.name,e.inputs),[slot*256]);
+   pass.setPipeline(this._pipeline(e.name));pass.setBindGroup(0,this._group(e.name,e.inputs),[slot*256]);
    pass.setScissorRect(r[0]-origin[0],r[1]-origin[1],r[2]-r[0],r[3]-r[1]);pass.draw(3);
   }
   pass.end();
@@ -479,7 +502,7 @@ export class WaterGPU {
   }
   data[0]=this.width;data[1]=this.height;data.set(rect,8);data[60]=0;data[61]=0;
   const slot=this.slots++;this.uniformData.set(data,slot*64);
-  capturePass('display','compute','-');const pass=this._command().beginComputePass();pass.setPipeline(data[51]?this.library.pipelines.displayQuick:this.library.pipelines.displayCompute);pass.setBindGroup(0,group,[slot*256]);
+  capturePass('display','compute','-');const pass=this._command().beginComputePass();pass.setPipeline(this._pipeline(data[51]?'displayQuick':'displayCompute'));pass.setBindGroup(0,group,[slot*256]);
   pass.dispatchWorkgroups(Math.ceil((rect[2]-rect[0])/8),Math.ceil((rect[3]-rect[1])/8));pass.end();this._markWritten(this.output,rect);
  }
  _queue(name,destinations,inputs,data,rect){
@@ -892,10 +915,13 @@ export class WaterGPU {
    c.frame={passes:{},submits:0};this.device.queue.onSubmittedWorkDone().then(()=>{row.done=captureTime();},()=>{});
   }
   try{
-   if(capture){const sent=performance.now();await this.device.queue.onSubmittedWorkDone();this._liveTime(performance.now()-sent);await this._settleErrors();}
-   else await this._pace();
+   if(capture){
+    const sent=performance.now();
+    this.device.queue.onSubmittedWorkDone().then(()=>{const now=performance.now();this._liveTime(now-Math.max(sent,this.liveDone??0));this.liveDone=now;},()=>{});
+    await this._pace();await this._settleErrors();
+   }else await this._pace();
    if(row&&frame)row.sample=captureSample(frame);
-   return frame;
+   this.library.warmLater();return frame;
   }catch(error){frame?.close();throw error;}
  }
  async _pace(){

@@ -1,17 +1,13 @@
 // SPDX-License-Identifier: MIT
 import {words, letter, within, prev, next} from './tokens.mjs';
 
-// Exact source records for a range: lines, then words, then characters, or structural parts when supplied.
 export function walker(c) {
   const {before, after, spend, safe, budget, raw, chars, code, segmenter, tokens, matches} = c;
   function record(a0, a1, b0, b1, unit, part, coarse = false) {
     if (a1 - a0 === b1 - b0 && before.slice(a0, a1) === after.slice(b0, b1)) return;
-    // Internal records: before, after, coarse, concern, transported fragments.
     c.result.push([[a0, a1], [b0, b1], coarse, [a0 === a1 ? 2 : b0 === b1 ? 0 : 1, part?.kind || unit, part?.name]]);
   }
 
-  // A line deletion or insertion holding whole named parts and only blank text besides is one record per part,
-  // cut at line starts, so each keeps its own name (and its callers' breaks).
   function name(from, ownersA, ownersB) {
     for (let r = from; r < c.result.length; r++) {
       const [[a0, a1], [b0, b1]] = c.result[r], side = a0 === a1 ? 1 : b0 === b1 ? 0 : -1;
@@ -34,7 +30,6 @@ export function walker(c) {
     }
   }
 
-  // A search step scans at most one fixed-size source chunk.
   function common(a, b, end, step) {
     let n = 0;
     while (n < end && spend()) {
@@ -95,7 +90,6 @@ export function walker(c) {
           }
         } else if (level < 2 && raw !== 'line') lines(x.slice(ai, i + 1), y.slice(bi, j + 1), context);
         else if (level === 2 && chars && !raw && i - ai <= 1 && j - bi <= 1 && x1 - x0 + y1 - y0 < 100) {
-          // A changed token is replaced whole unless the caller asks for the characters inside it.
           walk(x0, x1, y0, y1, 3, null, null, context);
         } else record(x0, x1, y0, y1, unit, context);
       }
@@ -108,12 +102,9 @@ export function walker(c) {
     }
   }
 
-  // Unequal lines pair in order by shared words. A line sharing under a quarter of its words with every candidate is
-  // replaced whole: an inserted line never borrows a neighbor's words, and a rewrite never reads as stray fragments.
   function lines(x, y, context) {
     const n = x.length - 1, m = y.length - 1;
     if (n * m > 4096 || !spend(n * m + x[n] - x[0] + y[m] - y[0])) return row(x[0], x[n], y[0], y[m], context);
-    // A renamed name's sites count as shared words.
     if (!c.renames) {
       c.renames = [[], []];
       for (const [p, old] of c.aliases || []) if (before.slice(...old.nameAt) !== after.slice(...p.nameAt)) {
@@ -141,7 +132,6 @@ export function walker(c) {
     }
     let k = 0, l = 0;
     for (const [p, q] of [...pairs, [n, m]]) {
-      // A merge compares one line against one line by character, whatever they share.
       if (raw === 'char' && p - k === 1 && q - l === 1) row(x[k], x[p], y[l], y[q], context);
       else if (k < p || l < q) record(x[k], x[p], y[l], y[q], 'line', context);
       if (p < n) row(x[p], x[p + 1], y[q], y[q + 1], context);
@@ -149,7 +139,6 @@ export function walker(c) {
     }
   }
 
-  // A table row with the same number of cells on both sides changes cell by cell; a character diff stays in its line.
   function row(a0, a1, b0, b1, context) {
     if (raw === 'char') return walk(a0, a1, b0, b1, 3, null, null, context);
     const cells = (text, a, b) => /^[ \t]*\|/.test(text.slice(a, b)) && [...text.slice(a, b).matchAll(/(?<!\\)\|/g)].map(m => a + m.index);
@@ -158,7 +147,6 @@ export function walker(c) {
     for (let k = 0; k <= p.length; k++) walk(k ? p[k - 1] + 1 : a0, p[k] ?? a1, k ? q[k - 1] + 1 : b0, q[k] ?? b1, 2, null, null, context);
   }
 
-  // Surviving source pieces keep the occurrence witnessed by the host.
   function operations(rows) {
     if (!Array.isArray(rows)) return null;
     const pieces = [[0, before.length]];

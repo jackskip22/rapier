@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT
-// The host's optional policy, file picker and picture exchange. No storage, network or editor authority.
 export const FEATURES = Object.freeze(['draw', 'paint', 'notes', 'readAloud', 'share', 'find']);
 export const LIMITS = Object.freeze({documentBytes: 64 * 1024 * 1024, pictureBytes: 16 * 1024 * 1024});
 export const ASSET_TYPES = Object.freeze(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/jxl', 'image/svg+xml']);
@@ -45,14 +44,12 @@ export function normalizeSettings(value = {}, {features = FEATURES, accents = AC
     ...(palette ? {palette} : {})});
 }
 
-// Take only the fields the host offered: absent features still mean whatever that build carries.
 export function snapshotSettings(value) {
   if (value === undefined) return undefined;
   const accepted = normalizeSettings(value);
   return Object.freeze(Object.fromEntries(Object.keys(value).map(key => [key, accepted[key]])));
 }
 
-// Each picker owns its input. Canceling it cannot give a later request its file.
 export function pickDeviceFile(document, signal) {
   if (signal?.aborted) return Promise.resolve(null);
   const input = document.createElement('input');
@@ -82,7 +79,6 @@ export function pickDeviceFile(document, signal) {
   return result;
 }
 
-// One picker ticket binds selected bytes to the frame and document that requested them.
 export function createFilePicker({document, refusal: reason, snapshot, current: unchanged, settle, post, open, notify, error}) {
   return {
     pending: null,
@@ -181,8 +177,6 @@ export function externalImage(raw, asset, url) {
   return raw.slice(0, at) + '(<' + assetURL(url).replace(/&/g, '&amp;') + '>' + title + ')' + raw.slice(at + token.length);
 }
 
-// At most one upload is in flight. A failure returns the embedded form, never a deletion.
-// Retained local pictures are bounded separately from the host's (possibly tiny) document limit.
 export function createAssetBroker({current, send}) {
   const retained = new Map();
   let pending = null, identity = '', retainedBytes = 0;
@@ -200,7 +194,6 @@ export function createAssetBroker({current, send}) {
     if (pending) return {code: 'asset_busy'};
     if (!ASSET_TYPES.includes(asset.codec)) throw refusal('asset_media_type_invalid');
     if (retained.size >= 1024 || retainedBytes + bytes.byteLength > 25 * 1024 * 1024) return {code: 'asset_cache_full'};
-    // Keep our own bytes: postMessage clones them, never transfers/detaches the kept picture.
     const kept = {...asset, bytes: bytes.slice()};
     let resolve;
     const job = new Promise(yes => { resolve = yes; });

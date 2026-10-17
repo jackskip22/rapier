@@ -5,12 +5,14 @@ import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {execFile} from 'node:child_process';
 import {searchCacheVersion} from './search-cache-version.mjs';
+import {stripperFor} from './strip-comments.mjs';
 import {zopfliGzip, brotliPack, BROTLI_SETTINGS, FAST_PACK} from './zopfli.mjs';
 import vm from 'node:vm';
 import {scriptMinifier, reflectedNames} from './minify.mjs';
 import {buildJPEGXLArtifact} from '../images/codec-build.mjs';
 import acorn from '../agent/vendor/acorn.mjs';
 import {TOOLS, UI_RESOURCE, mcpDescriptors, publishedSchema} from '../agent/catalog.mjs';
+import {pairedShell, PAIRED_SHELL_FILE, PAIRED_SHELL_HEADERS, PAIRED_SHELL_REDIRECTS} from '../mcp/paired.mjs';
 import {encodeBase124} from './base124.mjs';
 import {encodeTextPack} from './text-pack-build.mjs';
 import {decodeTextPack} from './text-pack.mjs';
@@ -29,8 +31,8 @@ import {inlineFonts, keepsComment, stripStyleComments, styleText} from './style-
 import {shakeModule} from './tree-shake.mjs';
 import {commercialPage} from './commercial-page.mjs';
 import {seoSection, seoDoorSections} from './seo-page.mjs';
-import {DOORS, doorPage} from '../door-worker.js';
-import {writeDoorAssets} from './door-assets.mjs';
+import {DOORS, PAGES, doorPage} from '../door-worker.js';
+import {readGuides, writeDoorAssets} from './door-assets.mjs';
 import {fillMermaidResources} from './mermaid-resources.mjs';
 import {fillFontSubsetResources} from './font-subset-resources.mjs';
 import {builtinPlugins, builtinFilesReuse, fillBuiltinSlot} from './builtin-plugins.mjs';
@@ -197,6 +199,8 @@ else {
 if (PROFILE !== 'reader') {
   const {checkEngineOwnership} = await import('./check-engine-ownership.mjs');
   checkEngineOwnership();
+  const {checkFocusRings} = await import('./check-focus-rings.mjs');
+  checkFocusRings();
 }
 await collisionLaw();
 await captureBuildGateOutputs({root, paths: [...VERSIONED_FILES, 'packages/rapier-embed/README.md', 'mcp/render-assets.mjs',
@@ -411,6 +415,8 @@ globals.RapierPictureMarks = 'images/picture-marks.mjs';
 globals.RapierDrawRefraction = 'draw/refraction-browser.mjs';
 globals.RapierLiveMerge = 'kernel/live-merge.mjs';
 globals.RapierLiveSession = 'editor/live-session.mjs';
+globals.RapierCustodyBridge = 'editor/custody-bridge.mjs';
+globals.RapierPageRules = 'editor/page-rules.mjs';
 globals.RapierAgentEditor = 'agent/editor.mjs';
 globals.RapierSourceFacts = 'editor/source-facts.mjs';
 const partGlobals = Object.assign({}, ...PARTS.map(part => part.globals));
@@ -527,6 +533,11 @@ let html = await readBuildShell(root);
   if (close < 0) throw new Error('The shell must open with its licence notice');
   html = notice[0] + html.slice(close);
 }
+{
+  const panel = /(?:<template id="rapier-boot-failure-later">)?(<main class="rapier-boot-failure"[\s\S]*?<\/main>)(?:<\/template>)?/g;
+  if ([...html.matchAll(panel)].length !== 1) throw new Error('The page must have exactly one startup-failure panel');
+  html = html.replace(panel, (_, main) => '<template id="rapier-boot-failure-later">' + main + '</template>');
+}
 const policySlot = /<meta http-equiv="Content-Security-Policy" content="[^"]*">/g;
 if ([...html.matchAll(policySlot)].length !== 1) throw new Error('The page must have exactly one policy slot');
 html = html.replace(policySlot, () => '<meta http-equiv="Content-Security-Policy" content="' + csp('web') + '">');
@@ -552,7 +563,8 @@ const dieterleNotice = (await read('draw/vendor-notices/dieterle-brushes-CC0.txt
 if (!dieterleNotice.includes('Brien Dieterle') || !dieterleNotice.includes('CC0')) throw new Error('Missing Dieterle brush pack notice');
 const spectralNotice = (await read('draw/vendor-notices/spectral-js-MIT.txt')).trim();
 if (!spectralNotice.includes('Ronald van Wijnen') || !spectralNotice.includes('Permission is hereby granted')) throw new Error('Missing spectral.js MIT notice');
-ui = ui.replace('<div class="licenses-list">', () => '<div class="licenses-list">\n' +
+if (!ui.includes('<div class="licenses-list"><template data-rapier-later>')) throw new Error('The licenses list has no held-back notices');
+ui = ui.replace('<div class="licenses-list"><template data-rapier-later>', () => '<div class="licenses-list"><template data-rapier-later>\n' +
     '<details class="license-entry"><summary><span class="license-name">Pretext bac1774c · Unreleased</span><span class="license-id">MIT · BSD · Unicode · ICU</span></summary><pre class="license-text" data-license="pretext"></pre></details>\n' +
   '<details class="license-entry"><summary><span class="license-name">perfect-freehand</span><span class="license-id">MIT</span></summary><pre class="license-text">' + escapeHtml(freehandNotice) + '</pre></details>\n' +
   '<details class="license-entry"><summary><span class="license-name">rough.js generator</span><span class="license-id">MIT</span></summary><pre class="license-text">' + escapeHtml(roughNotice) + '</pre></details>\n' +
@@ -648,9 +660,7 @@ html = html.replace(/<title>[^<]*<\/title>/, () => '<title>' + escapeHtml(SITE_T
     const origin = 'https://rapier.website', site = origin + '/#website', publisher = origin + '/#organization';
     const identity = {'@context': 'https://schema.org', '@graph': [
       {'@type': 'WebSite', '@id': site, url: origin + '/', name: data.name, alternateName: ['Rapier Markdown Editor', data.alternateName], description: data.description, inLanguage: 'en', publisher: {'@id': publisher},
-        hasPart: [...Object.entries(DOORS).map(([path, door]) => ({'@type': 'WebPage', '@id': origin + path + '#webpage', url: origin + path, name: door.name})),
-          ...[['/agents', 'Rapier for agents'], ['/markdown-standard', 'Self-contained Markdown'], ['/will', 'Will/1']]
-            .map(([path, name]) => ({'@type': 'TechArticle', '@id': origin + path + '#webpage', url: origin + path, name}))]},
+        hasPart: Object.entries(PAGES).map(([path, door]) => ({'@type': 'WebPage', '@id': origin + path + '#webpage', url: origin + path, name: door.name}))},
       {'@type': 'Organization', '@id': publisher, name: data.name, url: origin + '/', logo: {'@type': 'ImageObject', url: origin + '/icon-512.png', width: 512, height: 512}, sameAs}]};
     return open + JSON.stringify({...data, '@id': origin + '/#application', softwareVersion: VERSION, sameAs: [...sameAs, PLAY_URL], publisher: {'@id': publisher}}) + close + '\n' + open + JSON.stringify(identity) + close;
   });
@@ -947,7 +957,7 @@ if (PROFILE === 'full') {
   const added = [...MODULES].filter(([path]) => !before.has(path));
   if (added.some(([path]) => !path.startsWith('bench/'))) throw new Error('Phone benchmark introduced an external runtime dependency');
   const benchAdapters = editorSlices.parts.get('benchmark');
-  const identity = {version: VERSION, build: checksum(JSON.stringify({editor: source, shared: bundleText, factoryFonts: factoryFontText, platform: platformSpans, codec: jxlWorker, ui, styles, benchmark: added, benchAdapters}))};
+  const identity = {version: VERSION, build: checksum(JSON.stringify({editor: source, shared: bundleText, factoryFonts: factoryFontText, platform: platformSpans, codec: jxlWorker, ui, styles, benchmark: added.map(([path, text]) => [path, stripperFor(path)?.(text) ?? text]), benchAdapters}))};
   const benchSource = '(() => {const modules = {};\n' + added.map(([,text]) => text).join('\n') +
     '\nglobalThis.RapierPhoneBenchCore = Object.freeze({...modules["bench/fixtures.mjs"],...modules["bench/manifest.mjs"],...modules["bench/results.mjs"],...modules["bench/measure.mjs"]});' +
     '\nglobalThis.RapierPhoneBenchGraphicsFixtures = modules["bench/graphics-fixtures.mjs"];' +
@@ -974,12 +984,28 @@ const restStyles = styles.filter(row => !PAINT_STYLE_ORDER.includes(row.id));
 const missingPaint = PAINT_STYLE_ORDER.filter(id => !paintStyles.some(row => row.id === id));
 if (!paintStyles.length) throw new Error('First-paint styles are empty');
 if (missingPaint.length && restStyles.length) throw new Error('A deferred sheet shipped without its first-paint sheet: ' + missingPaint.join(', '));
-const styleRecord = rows => JSON.stringify(rows.map(({id, css}) => ({id, css})));
+const styleRecord = rows => JSON.stringify(rows.map(({id, css}) => ({id, css: stripperFor('style.css')(css)})));
+const engineText = await read('editor/engine.js');
+const startText = ['rapierWelcomeMarkdown', '_rapierSearchStarter'].map(name => {
+  const found = new RegExp('^function ' + name + '\\(\\) \\{[\\s\\S]*?^\\}', 'm').exec(engineText);
+  if (!found) throw new Error('First-paint start is missing: ' + name);
+  return stripperFor('editor/engine.js')(found[0]);
+});
+const firstPaintKey = checksum(JSON.stringify({paint: styleRecord(paintStyles), rest: styleRecord(restStyles), firstScreenMarkup, ui,
+  boot: bootTheme, critical: stripperFor('style.css')(styleSlots.exec(html)?.[0] || ''), starts: startText}));
+let firstPaintRecord = {version: '', paths: {}}, firstPaintCurrent = false;
+try {
+  const kept = JSON.parse(await read('editor/first-paint.json'));
+  firstPaintCurrent = kept.key === firstPaintKey;
+  if (firstPaintCurrent) firstPaintRecord = {version: kept.version, css: kept.css || [], paths: kept.paths};
+  else console.warn('first paint: editor/first-paint.json is stale; after this build run node tools/first-paint.mjs, then build again');
+} catch (error) { if (error.code !== 'ENOENT') throw error; }
 const [stylesRuntime, restStylesRuntime, codecRuntime, uiRuntime, editorRuntime] = await Promise.all([
   packedSpans('rapier-styles-runtime', 'application/rapier-runtime', [
     {name: 'rapier-factory-fonts.js', source: factoryFontText},
     {name: 'rapier-styles.json', source: styleRecord(paintStyles)},
     {name: 'rapier-first-screen.html', source: firstScreenMarkup},
+    {name: 'rapier-first-paint.json', source: JSON.stringify(firstPaintRecord)},
   ]),
   packedScript('rapier-style-rest-runtime', 'application/rapier-runtime', 'rapier-styles-rest.json', styleRecord(restStyles)),
   packedScript('rapier-codec-runtime', 'application/rapier-runtime', 'rapier-codecs.js', codecText),
@@ -993,10 +1019,11 @@ const paintScript = '<!-- RAPIER_PAINT_BEGIN -->\n'
   + '<script data-rapier-owned>\n' + safeScript(runtimeLoader) + '\n</script>\n'
   + codecRuntime
   + stylesRuntime
+  + restStylesRuntime
   + '<!-- RAPIER_PAINT_END -->\n';
 if (!html.includes('<template id="rapier-ui-slot"></template>')) throw new Error('Editor interface slot is missing');
 html = html.replace('<template id="rapier-ui-slot"></template>', () => paintScript + '<template id="rapier-ui-slot"></template>');
-const runtimeScript = '<!-- RAPIER_RUNTIME_BEGIN -->\n' + restStylesRuntime + uiRuntime + editorRuntime + '<!-- RAPIER_RUNTIME_END -->\n';
+const runtimeScript = '<!-- RAPIER_RUNTIME_BEGIN -->\n' + uiRuntime + editorRuntime + '<!-- RAPIER_RUNTIME_END -->\n';
 const tail = [];
 const tailSlots = [
   /<script type="application\/speedracer-app\+json">[\s\S]*?<\/script>\n?/,
@@ -1040,7 +1067,8 @@ let inlineRuntimeLoader = null;
 }
 const bootSlot = '__RAPIER_BOOT_ID__';
 if (html.split(bootSlot).length !== 2) throw new Error('The page must carry one startup identity');
-const serviceWorkerSource = PROFILE === 'full' ? await read('shell/service-worker.js') : '';
+// The worker ships as written, less its comments but licence ones (tools/strip-comments.mjs), as the public source carries it.
+const serviceWorkerSource = PROFILE === 'full' ? stripperFor('shell/service-worker.js')(await read('shell/service-worker.js')) : '';
 const bootId = checksum(html + serviceWorkerSource);
 html = html.replace(bootSlot, bootId);
 if (inlineRuntimeLoader) inlineRuntimeLoader = inlineRuntimeLoader.replace(bootSlot, bootId);
@@ -1052,8 +1080,8 @@ const BUDGET = SIZE_BUDGETS[PROFILE];
 }
 await writeFile(resolve(root, OUTPUT_FILE), html);
 if (PROFILE === 'full') {
-  const doorFiles = await writeDoorAssets(root, Buffer.from(html));
-  if (doorFiles.length !== Object.keys(DOORS).length) throw new Error('The site page did not produce a dedicated file for every door');
+  const doorFiles = await writeDoorAssets(root, Buffer.from(html), await readGuides(resolve(root, '../docs')));
+  if (doorFiles.length !== Object.keys(PAGES).length) throw new Error('The site page did not produce a dedicated file for every door and document');
 }
 if (PROFILE === 'full') {
   const named = new RegExp('^rapier-(?:' + PART_IDS.join('|') + ')-[0-9a-f]{16}\\.txt$');
@@ -1132,8 +1160,10 @@ if (PROFILE === 'full') {
     await writeFile(resolve(assetDirectory, asset.file), asset.body);
     appAssets.push({id: asset.id, path: 'editor-assets/' + asset.file, bytes: Buffer.byteLength(asset.body), sha256: checksum(asset.body), sri: asset.sri});
   }
-  await writeFile(resolve(destination, '_headers'), '/editor-assets/*\n  Content-Type: text/plain; charset=utf-8\n  Access-Control-Allow-Origin: *\n  Cross-Origin-Resource-Policy: cross-origin\n  X-Content-Type-Options: nosniff\n  Cache-Control: public, max-age=31536000, immutable\n');
+  await writeFile(resolve(destination, '_headers'), '/editor-assets/*\n  Content-Type: text/plain; charset=utf-8\n  Access-Control-Allow-Origin: *\n  Cross-Origin-Resource-Policy: cross-origin\n  X-Content-Type-Options: nosniff\n  Cache-Control: public, max-age=31536000, immutable\n' + PAIRED_SHELL_HEADERS);
   await writeFile(resolve(destination, 'rapier-app.html'), appHtml);
+  await writeFile(resolve(destination, PAIRED_SHELL_FILE), pairedShell(appHtml));
+  await writeFile(resolve(destination, '_redirects'), PAIRED_SHELL_REDIRECTS);
   await writeFile(resolve(destination, 'rapier.html'), portableHtml);
   const privacy = /<div class="licenses-app privacy-words">([\s\S]*?)<\/div>/.exec(await read('editor/ui.html'))?.[1];
   if (!privacy) throw new Error('The Apps package needs the editor privacy sheet');
@@ -1161,7 +1191,7 @@ const profileRecord = {path: OUTPUT_FILE, bytes: Buffer.byteLength(html), sha256
   coreHeldPartGlobals: Object.keys(partGlobals).filter(name => !partOf.has(partGlobals[name])), shakenExports, jxl,
   builtAt: BUILT_AT, node: process.version, mode: PACK_MODE, packing: PACKING, codecs: ['gzip', 'brotli'], brotli: {...BROTLI_SETTINGS}, canonical: toolchainCanonical};
 // (`RAPIER_PACK=fast`), 'release' for Zopfli; tools/release-gate.mjs checks it.
-const receipt = {phoneBench: phoneBenchReceipt, release: VERSION, builtAt: BUILT_AT, node: process.version, mode: PACK_MODE, packing: PACKING, codecs: profileRecord.codecs, brotli: profileRecord.brotli, validation: 'JavaScript syntax and source assembly only; no runtime or host verification', profile: PROFILE, jxl, profiles: {...priorProfiles, [PROFILE]: profileRecord}, editor: {path: OUTPUT_FILE, bytes: Buffer.byteLength(html), sha256: checksum(html)}, apps: PROFILE === 'full' ? {path: 'dist/chatgpt/rapier-app.html', bytes: appHtmlBytes, sha256: appHtmlSha256, spans: appsSpans, plugins: hostedPlugins, assets: appAssets} : priorReceipt?.apps ?? null, offline: PROFILE === 'full' ? {path: 'dist/chatgpt/rapier.html', bytes: Buffer.byteLength(portableHtml), sha256: checksum(portableHtml), plugins: appPlugins} : priorReceipt?.offline ?? null, shell: PROFILE === 'full' ? {sha256: shellDigest} : priorReceipt?.shell ?? null, htmlSinks: {named: htmlSinks.total, files: htmlSinks.files, inventory: 'security/html-sinks.json'}, tools: TOOLS.map(row => row.name), toolchain: {canonical: toolchainCanonical, node: {expected: toolchain.node.version, actual: process.version}}, unchecked};
+const receipt = {firstPaint: {key: firstPaintKey, current: firstPaintCurrent}, phoneBench: phoneBenchReceipt, release: VERSION, builtAt: BUILT_AT, node: process.version, mode: PACK_MODE, packing: PACKING, codecs: profileRecord.codecs, brotli: profileRecord.brotli, validation: 'JavaScript syntax and source assembly only; no runtime or host verification', profile: PROFILE, jxl, profiles: {...priorProfiles, [PROFILE]: profileRecord}, editor: {path: OUTPUT_FILE, bytes: Buffer.byteLength(html), sha256: checksum(html)}, apps: PROFILE === 'full' ? {path: 'dist/chatgpt/rapier-app.html', bytes: appHtmlBytes, sha256: appHtmlSha256, spans: appsSpans, plugins: hostedPlugins, assets: appAssets} : priorReceipt?.apps ?? null, offline: PROFILE === 'full' ? {path: 'dist/chatgpt/rapier.html', bytes: Buffer.byteLength(portableHtml), sha256: checksum(portableHtml), plugins: appPlugins} : priorReceipt?.offline ?? null, shell: PROFILE === 'full' ? {sha256: shellDigest} : priorReceipt?.shell ?? null, htmlSinks: {named: htmlSinks.total, files: htmlSinks.files, inventory: 'security/html-sinks.json'}, tools: TOOLS.map(row => row.name), toolchain: {canonical: toolchainCanonical, node: {expected: toolchain.node.version, actual: process.version}}, unchecked};
 await mkdir(resolve(root, 'dist'), {recursive: true});
 await writeFile(resolve(root, 'dist/runtime-symbols-' + PROFILE + '.json'), JSON.stringify(lean.symbols) + '\n');
 await writeFile(resolve(root, 'dist/BUILD.json'), JSON.stringify(receipt, null, 2) + '\n');

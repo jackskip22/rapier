@@ -14,8 +14,9 @@ function _rapierSelectionAlignment(selection = window.getSelection()) {
     const source = _rapierSourceText(), opening = _rapierSplitOpeningFrontmatter(source);
     const start = _rapierAbsPos(textarea.selectionStart) - opening.bodyOffset,
       end = _rapierAbsPos(textarea.selectionEnd) - opening.bodyOffset;
-    const target = globalThis.RapierMarkdownLayout.layoutTargets(opening.body, md, globalThis.RapierImageAssets.imageEnvironment(source))
-      .find(row => start === end ? row.start <= start && start <= row.end : row.start < end && row.end > start);
+    const part = _rapierSourceLayoutWindow(opening.body, start, end), from = start - part.start, to = end - part.start;
+    const target = globalThis.RapierMarkdownLayout.layoutTargets(part.text, md, globalThis.RapierImageAssets.imageEnvironment(source))
+      .find(row => from === to ? row.start <= from && from <= row.end : row.start < to && row.end > from);
     return target?.layout?.align || 'left';
   }
   const image = _rapierImageRuntime.image;

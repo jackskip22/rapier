@@ -3,7 +3,7 @@ import {OTHER_PROVIDERS, isOtherProvider, providerUsesSignIn, providerSettings, 
 	readProviderRedirect, readProviderTokenReturn, providerReturnsToken, revokeProviderGrant, providerAvailability, providerSoon, SETTINGS_DOMAIN, PROVIDERS} from './sync-providers.mjs';
 import {availability as listedProviders} from './cloud-providers.mjs';
 import {createVerifier, challengeFor, authorizeUrl, readRedirect, createOAuthClient} from './cloudflare-oauth.mjs';
-import {createVault, validateCreationPassphrase, unlockVault, unlockVaultWithRecovery, vaultId, headerObject, headerDigest, decodeHeader, HEADER_MAX_BYTES, seal, open, decodeRecovery} from './vault.mjs';
+import {createVault, validateCreationPassphrase, unlockVault, unlockVaultWithRecovery, rewrapVault, vaultId, headerObject, headerDigest, decodeHeader, HEADER_MAX_BYTES, seal, open, decodeRecovery} from './vault.mjs';
 import {createR2Transport} from './transport-r2.mjs';
 import {createCloudflareSetup, storageDashboard} from './cloudflare-setup.mjs';
 export {storageDashboard};
@@ -21,6 +21,14 @@ import {readSyncState, updateSyncState} from './sync-state.mjs';
 export {readSyncState};
 import {PLAIN_CHOICES} from './sync-plain.mjs';
 export {PLAIN_CHOICES};
+import {createPlainKeySession, KEY_PLAIN_PROVIDERS, KEY_PLAIN_LABELS, plainCorsRule} from './sync-plain-keys.mjs';
+export {createPlainKeySession, KEY_PLAIN_PROVIDERS, KEY_PLAIN_LABELS, plainCorsRule};
+import {createPlainCompanionSession} from './sync-plain-companion.mjs';
+import {createPlainRelay} from './plain-relay.mjs';
+export {createPlainCompanionSession, createPlainRelay};
+import {openDrivePicker, pickerRegistered} from './drive-picker.mjs';
+export {openDrivePicker, pickerRegistered};
+export const DRIVE_PICKER = OTHER_SYNC.drive;
 import {createDeviceStorage, createRememberedDevice} from './sync-device.mjs';
 export {createDeviceStorage, createRememberedDevice};
 import {resolveTextConflict, inspectTextConflicts} from './merge.mjs';
@@ -589,6 +597,13 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 			if (!kept || kept.provider !== provider) throw fail('connection', 'connect this folder to its plain files first.');
 			return plainRun(ticket, kept.place.replace(/^\//, ''), plain => plain.syncNow());
 		}); },
+		plainDrivePicker() { return run(async ticket => {
+			const kept = (await readSyncState(folder)).plain;
+			if (provider !== 'drive' || kept?.provider !== 'drive') throw fail('connection', 'connect this folder to its plain files on google drive first.');
+			const token = await bearerFor(ticket), store = plainStore('drive', {place: kept.place, token, fetch: fetchFn});
+			try { const folderId = await store.folderId(); active(ticket); return Object.freeze({folderId, accessToken: token.accessToken}); }
+			finally { store.pause?.(); }
+		}); },
 		plainForget() { return run(async ticket => {
 			const kept = (await readSyncState(folder)).plain;
 			if (!kept) return null;
@@ -802,6 +817,18 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 				announce('ready', 'new bucket key checked and saved; give the new device code to your other devices.');
 				return status();
 			} finally { opened?.fill(0); }
+		}); },
+		rekeyVault({passphrase} = {}) { return run(async ticket => {
+			if (!key) throw fail('locked', 'unlock your vault before changing its passphrase.');
+			const local = await readLocal({vault: true}), before = local.vault || null; active(ticket);
+			if (rejoinRequired || !connection) throw fail('connection', 'join a vault before changing its passphrase.');
+			const next = await rewrapVault(connection.bytes, key, passphrase); active(ticket);
+			const target = {...connection.target, headerHash: await headerDigest(next.headerBytes)};
+			await withTransport(target, ticket, tr => putVerified(tr, 'keys/' + target.headerHash, next.headerBytes)); active(ticket);
+			await keepConnection(target, next.headerBytes, ticket, connection.credential, before, local.folderDeviceId); active(ticket);
+			await keepDevice(ticket);
+			announce('ready', 'passphrase changed. give your other devices the new device code; the old passphrase still opens older codes.');
+			return status();
 		}); },
 		unlock(secret, {recovery = false} = {}) { return run(async ticket => {
 			const local = await readLocal({vault: true}); active(ticket);

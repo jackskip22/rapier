@@ -309,7 +309,7 @@ export async function buildReader({root = here, unchecked = [], toolchainCanonic
 // The licences the file carries, as a markup part: the editor's own sheet, cut to the parts this file carries, with the notices of
 function licensesSheet(sheet, pretextLicense, notice, includePretext) {
 	const drop = /Turndown|gpu-lexer|acorn 8|Geist|AndroidX|Google Play/;
-	let text = dropElements(sheet, (row, markup) => /\blicense-(?:entry|row)\b/.test(row.cls) && drop.test(markup.slice(0, 400)));
+	let text = dropElements(sheet.replace(/<template data-rapier-later>([\s\S]*?)<\/template>/g, '$1'), (row, markup) => /\blicense-(?:entry|row)\b/.test(row.cls) && drop.test(markup.slice(0, 400)));
 	text = text.replaceAll('<pre class="license-text" data-license="rapier-mit"></pre>', () => '<pre class="license-text">' + escapeHtml(notice) + '</pre>');
 	if (includePretext) {
 		const pretext = '<details class="license-entry"><summary><span class="license-name">Pretext bac1774c · Unreleased</span><span class="license-id">MIT · BSD · Unicode · ICU</span></summary><pre class="license-text">' + escapeHtml(pretextLicense.trim()) + '</pre></details>\n';

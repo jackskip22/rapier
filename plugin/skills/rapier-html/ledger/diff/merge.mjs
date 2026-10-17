@@ -13,7 +13,6 @@ export function merge(base, mine, theirs, options = {}) {
   const check = n => { if (!spend(n)) throw null; };
   const safe = options.structure && boundaries();
   const trees = options.structure && !options._edits
-    // A reader that throws gives no structure: the texts merge by source coordinates.
     ? [base, mine, base, theirs].map(text => observe(text, options.structure, spend, safe, false, true)).map(tree => tree?.threw ? null : tree) : [];
   const repeatedBase = trees.splice(2, 1)[0];
   const equal = (a, b) => a.length === b.length && a.every((item, i) => item === b[i]);
@@ -71,13 +70,11 @@ export function merge(base, mine, theirs, options = {}) {
               check(list.length); map.set(name, null);
               return list.map(part => content(part, side));
             });
-            // Each occurrence keeps its base text on one side, or the whole list does.
             if (!equal(values[0], values[1]) && !equal(values[0], values[2]) && !(values.every(list => list.length === values[0].length) &&
               values[0].every((text, k) => text === values[1][k] || text === values[2][k]))) throw null;
           }
           return maps;
         };
-        // A part renamed on one side keeps its reader key and aligns with its base part.
         const keyed = new Map(rows[0].filter(part => part.nameAt && part.key != null).map(part => [part.key, part]));
         const own = new Set(rows[0].map(part => part.id)), renamed = new Map();
         for (const side of [1, 2]) {
@@ -89,7 +86,6 @@ export function merge(base, mine, theirs, options = {}) {
         }
         const id = part => renamed.get(part) ?? part.id;
         const maps = index(id), orders = rows.map(list => list.map(id));
-        // A vanished or added copy of a repeated name keeps the order; only a different order of shared names is a reorder.
         const within = (a, b) => { let k = 0; for (const name of b) if (name === a[k]) k++; return k === a.length; };
         const reordered = [1, 2].map(side => {
           const a = orders[0].filter(name => maps[side].has(name)), b = orders[side].filter(name => maps[0].has(name));
@@ -128,7 +124,6 @@ export function merge(base, mine, theirs, options = {}) {
           if (child) children.set(name, child);
         }
         if (frame < 0 && !children.size) return;
-        // A plan is a tree of range triples; a string is an already-admitted gap.
         const plan = [];
         if (frame >= 0) {
           let at = nodes[frame].start;
@@ -160,7 +155,6 @@ export function merge(base, mine, theirs, options = {}) {
       if ([...removed[0].keys()].some(name => removed[1].has(name)) &&
         (added[0].size !== added[1].size || [...added[0].keys()].some(name => !added[1].has(name)))) throw null;
       if (plan) {
-        // Project original ranges once. Nested moves never rebuild aligned documents.
         const chunks = [], conflicts = [];
         let length = 0;
         function project(item) {
@@ -183,8 +177,6 @@ export function merge(base, mine, theirs, options = {}) {
   const changes = options._edits || [mine, theirs].map((text, side) => diff(base, text,
     {...budget, structure: trees[0] && options.structure, _observed: trees[0] ? [trees[0], trees[side + 1]] : undefined}).edits);
   if (trees.some(Boolean) && budget._budget.left < 0) return complete();
-  // An edit reaches over the words it touches; edits whose reaches overlap form one group, so letters
-  // joined from both branches never form a word neither wrote.
   const spans = words(wordSegmenter(), base);
   const word = at => {
     let low = 0, high = spans.length;
@@ -210,7 +202,6 @@ export function merge(base, mine, theirs, options = {}) {
       row[1] = edit[1];
       if (index === edits.length) break;
       const [a, b, t, side2, from] = edits[index], peer = sides[1 - side2][2];
-      // One branch's insertion and replacement at the same base position are one contiguous edit.
       if (!(a < end || a === start || from < reach || edits[index - 1][0] === a && edits[index - 1][3] === side2 || peer &&
         (a === end && peer[0] === end || a === b && peer[0] < end &&
           a - end < t.length && (peer[2] + base.slice(end, a)).endsWith(t)))) break;

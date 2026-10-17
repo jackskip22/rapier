@@ -5,6 +5,17 @@ export const INSTRUCTIONS = `Rapier is a shared Markdown editor. Keep document p
 const guides = {
   overview: `# Work in Rapier
 
+## What the person can do
+
+Build for their hands, and tell them in one line ("Drag any box to rearrange it").
+- rapier-draw diagrams stay live: they drag a box (arrows follow) and retype a label in
+  place. Use one, not a picture or Mermaid, for anything they will rearrange.
+- Pictures and HTML previews move, resize, rotate and wrap words (md-layout:v1).
+- Draw opens any drawing: the Pen (Ink or Line), shapes, text, Paint and Water.
+- Your changes land at once, marked; undo {act} takes back yours and keeps theirs.
+  Will marks protect what they want kept.
+- html export is the whole editor with the document inside, editable offline.
+
 Read a guide with read {guide:"draw"}. Topics are overview, draw, water and blocks.
 Don't combine guide with other read selectors; it needs no document. Finish
 next_cursor pages with cursor alone before acting on the guide.
@@ -186,6 +197,8 @@ Use a rapier-draw fence with id and alt on its opening line and JSON {figures:[.
 
 Figures use kind, not type: rect, ellipse, circle, triangle, diamond, hexagon,
 cylinder, subroutine, asymmetric, text, line, arrow, group or paint.
+In the document the person drags its boxes and retypes labels; read the block again
+before changing it.
 Vector figures can omit coordinates for automatic layout. direction is down,
 across, up or back. Leave direction at down for a process; use across only for up
 to three short steps, so the diagram reads on a phone. Arrows use from/to shape ids. Read the current block before

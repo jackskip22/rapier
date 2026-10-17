@@ -137,6 +137,15 @@ function _rapierTableEnter(editDiv, wrapper, block, cell, opts = {}) {
 		const raw = opts.sourceCheckpointed ? _tableRawFromEdit(block.id) : block.raw;
 		return _replaceOneBlockWithRawSet(block, [_rapierEmptyParagraphRaw(rapier.document.blocks.length + 1), raw], 1, 0);
 	}
+	if (_isTableBlock(block.raw) && !cell.querySelector('p')) {
+		if (_rapierTableTypedRow(block, cell, position, range, offset)) return true;
+		_insertSoftBreak(editDiv, range);
+		const before = document.createRange();
+		before.setStart(cell, 0);
+		before.setEnd(selection.getRangeAt(0).startContainer, selection.getRangeAt(0).startOffset);
+		const lineIndex = before.cloneContents().querySelectorAll('br').length;
+		return _tableApply(block.id, _tableRawFromDom(block.id, table), { ...position, lineIndex, charOffset: 0 });
+	}
 	let paragraph = _nodeAsElement(range.startContainer)?.closest('p');
 	if (!paragraph || paragraph.parentElement !== cell) {
 		paragraph = document.createElement('p');
@@ -148,6 +157,19 @@ function _rapierTableEnter(editDiv, wrapper, block, cell, opts = {}) {
 	const paragraphIndex = Array.from(cell.children).filter(node => node.tagName === 'P').indexOf(paragraph) + 1;
 	_insertQuoteParagraph(editDiv, range, paragraph);
 	return _tableApply(block.id, _tableRawFromDom(block.id, table), { ...position, paragraphIndex, charOffset: 0 });
+}
+
+function _rapierTableTypedRow(block, cell, position, range, offset) {
+	const typed = position.rowIndex > 0 ? String(cell.textContent || '').replace(/[\u200b\u00a0]/g, ' ').trim() : '';
+	if (!/^\|.*[^\\]\|$/.test(typed) || offset < String(cell.textContent || '').replace(/\u200b/g, '').trimEnd().length) return false;
+	if (!_rapierTableCellsOf(cell.closest('tr')).every(each => each === cell || !String(each.textContent || '').replace(/\u200b/g, '').trim())) return false;
+	const info = _tableInfo(block.raw), cells = _tableSplitRow(typed), at = info.dataIdxs[position.rowIndex - 1];
+	if (!cells || at === undefined || info.sepIdx < 0) return false;
+	const separator = _tableIsSeparator(typed), lines = info.lines.slice();
+	lines[at] = _tableBuildRow(separator ? Array(info.cols).fill('') : Array.from({length: info.cols}, (_, index) => cells[index] || ''));
+	const next = separator ? position.rowIndex : position.rowIndex + 1;
+	if (!separator && next > info.dataIdxs.length) lines.push(_tableBuildRow(Array(info.cols).fill('')));
+	return _tableApply(block.id, lines.join('\n'), { rowIndex: next, cellIndex: 0, charOffset: 0 });
 }
 
 function _rapierTableGrips(wrapper, position) {
@@ -865,8 +887,9 @@ function _tableRawFromEdit(blockId) {
 
 function _tableRawFromDom(blockId, table) {
 	if (!table) return null;
-	if (_rapierHtmlTableNeedsHtml(table)) {
-		const copy = table.cloneNode(true), original = rapier.document.blocks.find(block => block.id === blockId);
+	const original = rapier.document.blocks.find(block => block.id === blockId);
+	if (_rapierHtmlTableNeedsHtml(table, {paragraphsAsLines: !!original && _isTableBlock(original.raw)})) {
+		const copy = table.cloneNode(true);
 		if (original && !/\bcaret-color\s*:/i.test(String(original.raw || ''))) {
 			for (const span of copy.querySelectorAll('span[style]')) {
 				if (!/^\s*caret-color\s*:\s*[^;]+;?\s*$/i.test(span.getAttribute('style') || '')) continue;
@@ -884,8 +907,7 @@ function _tableRawFromDom(blockId, table) {
 	const readRows = root => Array.from(root.querySelectorAll('tr')).map(tr =>
 		Array.from(tr.children)
 			.filter(cell => /^(TD|TH)$/.test(cell.tagName))
-			.map(cell => globalThis.RapierMarkdownSpec.cellBreaks(_markdownFromEditHTML(cell.innerHTML))
-				.replace(/\n{2,}/g, '<br>').replace(/\n/g, ' ').trim())
+			.map(_rapierTableCellMarkdown)
 	).filter(row => row.length);
 	const rows = readRows(table);
 	if (!rows.length) return null;
@@ -923,6 +945,32 @@ function _tableRawFromDom(blockId, table) {
 		info && info.sepIdx >= 0 && info.cols === cols ? info.lines[info.sepIdx].replace(/\r$/, '') : _tableSeparator(cols, alignments),
 		...normalised.slice(1).map((row, index) => rowLine(row, index + 1)),
 	].join('\n');
+}
+
+function _rapierTableCellLines(cell) {
+	const split = nodes => {
+		const lines = [[]];
+		for (const node of nodes) {
+			if (node.nodeName === 'BR') lines.push([]);
+			else lines[lines.length - 1].push(node);
+		}
+		if (lines.length > 1 && !lines[lines.length - 1].some(node => node.nodeType !== 3 || String(node.nodeValue || '').replace(/\u200b/g, ''))) lines.pop();
+		return lines;
+	};
+	const children = Array.from(cell.childNodes);
+	const paragraphs = children.filter(node => node.nodeName === 'P');
+	if (!paragraphs.length || children.some(node => node.nodeName !== 'P' && (node.nodeType !== 3 || /\S/.test(node.nodeValue || '')))) return split(children);
+	return paragraphs.flatMap(paragraph => split(Array.from(paragraph.childNodes)));
+}
+
+function _rapierTableCellMarkdown(cell) {
+	const lines = _rapierTableCellLines(cell).map(nodes => {
+		const holder = document.createElement('div');
+		for (const node of nodes) holder.appendChild(node.cloneNode(true));
+		return globalThis.RapierMarkdownSpec.cellBreaks(_markdownFromEditHTML(holder.innerHTML))
+			.replace(/\n{2,}/g, '<br>').replace(/\n/g, ' ').trim();
+	});
+	return lines.join('<br>') + (lines.length > 1 && lines[lines.length - 1] === '' ? '<br>' : '');
 }
 
 function _syncTableBlockFromEdit(blockId) {
@@ -996,6 +1044,14 @@ function _rapierSetTableCaret(root, activation) {
 	const cells = Array.from(row.children).filter(node => /^(TH|TD)$/.test(node.tagName));
 	const cell = cells[Number(activation.cellIndex)];
 	if (!cell) return false;
+	const lineBreak = Number(activation.lineIndex) > 0 ? cell.querySelectorAll('br')[activation.lineIndex - 1] : null;
+	if (lineBreak) {
+		const range = document.createRange(), selection = window.getSelection && window.getSelection();
+		range.setStartAfter(lineBreak);
+		range.collapse(true);
+		if (selection) { selection.removeAllRanges(); selection.addRange(range); }
+		return true;
+	}
 	const paragraph = Number.isInteger(activation.paragraphIndex)
 		? Array.from(cell.children).filter(node => node.tagName === 'P')[activation.paragraphIndex] : null;
 	_setCursorCharOffset(paragraph || cell, activation.charOffset == null ? Infinity : activation.charOffset);
@@ -1303,7 +1359,7 @@ function _rapierTableFromSelection() {
 function _rapierTableSource(text) {
 	const rows = String(text || '').split('\n').map(line => line.trim()).filter(Boolean)
 		.map(line => _tableSplitRow(line, '\t') || _tableSplitRow(line, '|') || _tableSplitRow(line, '  ') || [line]);
-	if (!rows.length) return BLOCK_TEMPLATES.table;
+	if (!rows.length) return _rapierBlockTemplate('table');
 	const width = Math.max(1, ...rows.map(row => row.length));
 	const line = row => _tableBuildRow([...row, ...Array(width - row.length).fill('')]);
 	const lines = [line(rows[0]), _tableSeparator(width).replace(/ /g, '')];
@@ -1620,7 +1676,7 @@ function _rapierTrimTableCellEdges(sel, range) {
 	return sel.rangeCount ? sel.getRangeAt(0) : range;
 }
 
-function _rapierHtmlTableNeedsHtml(table) {
+function _rapierHtmlTableNeedsHtml(table, {paragraphsAsLines = false} = {}) {
 	if (!table) return false;
 	if (table.querySelector('caption,table')) return true;
 	return Array.from(table.querySelectorAll('td,th')).some(cell => {
@@ -1628,6 +1684,8 @@ function _rapierHtmlTableNeedsHtml(table) {
 		if (cell.querySelector('address,article,aside,blockquote,details,dialog,div,dl,fieldset,figure,footer,form,h1,h2,h3,h4,h5,h6,header,hgroup,hr,main,nav,ol,pre,section,ul')) return true;
 		const paragraphs = cell.querySelectorAll('p');
 		if (Array.from(paragraphs).some(paragraph => Object.keys(globalThis.RapierMarkdownLayout.textLayout(paragraph.style, {pointSize: 1})).length)) return true;
+		if (paragraphsAsLines) return Array.from(paragraphs).some(paragraph => paragraph.parentElement !== cell || paragraph.attributes.length &&
+			Array.from(paragraph.attributes).some(attribute => attribute.name !== 'dir'));
 		return paragraphs.length > 1 || paragraphs.length === 1 && Array.from(cell.childNodes).some(node =>
 			node !== paragraphs[0] && (node.nodeType === 1 || node.nodeType === 3 && /\S/.test(node.nodeValue || '')));
 	});

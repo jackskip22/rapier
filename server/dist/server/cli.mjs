@@ -1,9 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {mkdir} from 'node:fs/promises';
+import {homedir} from 'node:os';
 import {createServer} from './index.mjs';
+import {bridgeStdio, runningDoor, recordDoor} from './stdio.mjs';
 
 const HELP=`rapier-server serve <folder> --chromium <absolute executable> --chromium-version <four-part version>
+
+rapier-server mcp [folder] [browser options]
+  The local Door: an MCP server over stdio for Cursor, Claude Code and other local hosts.
+  Documents live in the folder (default ~/Rapier); nothing is sent to a hosted service. Without
+  --chromium, page, txt, docx and pdf exports answer unavailable; markdown and html work.
 
 rapier-server serve --bucket <name> --endpoint <https origin> [browser options]
 
@@ -28,7 +36,8 @@ Keys and endpoint credentials are never printed at startup.
 `;
 export async function main(argv=process.argv.slice(2),{log=console.log}={}) {
   if(!argv.length || argv.includes('--help')) {log(HELP);return null;}
-  if(argv[0]!=='serve')throw new TypeError('Use rapier-server serve with a folder or bucket; see --help.');
+  if(argv[0]==='mcp')return localDoor(argv.slice(1));
+  if(argv[0]!=='serve')throw new TypeError('Use rapier-server serve with a folder or bucket, or rapier-server mcp; see --help.');
   const options={chromium:process.env.RAPIER_SERVER_CHROMIUM,chromiumVersion:process.env.RAPIER_SERVER_CHROMIUM_VERSION};
   let at=1;
   if(argv[at] && !argv[at].startsWith('--'))options.root=resolve(argv[at++]);
@@ -51,6 +60,40 @@ export async function main(argv=process.argv.slice(2),{log=console.log}={}) {
   const stop=async()=>{if(stopping)return;stopping=true;try{await server.close();}catch{process.exitCode=1;}finally{process.off('SIGINT',stop);process.off('SIGTERM',stop);}};
   process.once('SIGINT',stop);process.once('SIGTERM',stop);
   return server;
+}
+export async function localDoor(argv,{input=process.stdin,output=process.stdout,log=message=>process.stderr.write(message+'\n')}={}) {
+  const options={chromium:process.env.RAPIER_SERVER_CHROMIUM,chromiumVersion:process.env.RAPIER_SERVER_CHROMIUM_VERSION};
+  let at=0;
+  const root=resolve(argv[at] && !argv[at].startsWith('--') ? argv[at++] : process.env.RAPIER_HOME || resolve(homedir(),'Rapier'));
+  const names={'--chromium':'chromium','--chromium-version':'chromiumVersion','--timeout':'timeoutMs'};
+  for(;at<argv.length;at++) {
+    const flag=argv[at];
+    if(flag==='--no-sandbox'){options.noSandbox=true;continue;}
+    const name=names[flag],value=argv[++at];
+    if(!name || value===undefined || value.startsWith('--'))throw new TypeError('Unknown option or missing value; see --help.');
+    options[name]=name==='timeoutMs' ? Number(value) : value;
+  }
+  await mkdir(root,{recursive:true,mode:0o700});
+  let server=null,forget=async()=>{};
+  const start=async()=>{
+    server=await createServer({root,port:0,...options,...(options.chromium ? {} : {renderer:false})});
+    await server.listen();forget=await recordDoor(root,server.origin);
+    log('Rapier local Door: documents in '+root+(options.chromium ? '' : '; no Chromium, so page, txt, docx and pdf exports are unavailable')+'.');
+    return {origin:server.origin,token:server.token};
+  };
+  const target=async()=>{
+    for(let attempt=0;attempt<20;attempt++) {
+      const running=await runningDoor(root);
+      if(running){log('Rapier local Door: sharing the one already serving '+root+'.');return running;}
+      if(server)return null;
+      try {return await start();}
+      catch(error){server=null;if(error?.code!=='ROOT_LOCKED')throw error;await new Promise(done=>setTimeout(done,250));}
+    }
+    throw new TypeError('Another Rapier server holds '+root+' and is not answering.');
+  };
+  try {await bridgeStdio({...await target(),reconnect:target,input,output});}
+  finally {await forget();await server?.close();}
+  return null;
 }
 if(process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
   try{await main();}catch(error){console.error(error.public || error instanceof TypeError ? error.message : 'The service could not start. Check the retained build, filesystem permissions and Chromium configuration.');process.exitCode=1;}

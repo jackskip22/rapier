@@ -54,9 +54,12 @@ export function writeDocument(text, options) {
   return text + OPEN + json + CLOSE;
 }
 export function readDocument(source) {
+  if (!source.endsWith(CLOSE)) {
+    if (source.includes(OPEN)) throw fault('unfinished document metadata');
+    return {text: source, ledger: null, authorship: null};
+  }
   const at = source.lastIndexOf(OPEN);
   if (at < 0) return {text: source, ledger: null, authorship: null};
-  if (!source.endsWith(CLOSE)) throw fault('unfinished document metadata');
   let parts;
   try { parts = JSON.parse(source.slice(at + OPEN.length, -CLOSE.length)); }
   catch (_) { throw fault('invalid document metadata'); }

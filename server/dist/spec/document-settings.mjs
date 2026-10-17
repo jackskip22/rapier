@@ -79,7 +79,10 @@ export function documentSpacingCss(settings, scope = '.md-render', defaults = fa
 		scope + ' pre code{line-height:inherit}' + scope + ' .footnotes{padding-top:0}' +
 		scope + ' .footnotes-list{margin-block:0}' + scope + ' blockquote:not(.callout){padding-block:0}';
 	const item = documentSpacing(settings, 'item');
-	css += scope + ' ul.rapier-jump-list>li{padding-block:0;margin-block:' + length(item.before) + ' ' + length(item.after) + '}' +
+	css += scope + ' li{--md-item-gap:' + length(Math.max(item.before, item.after)) + '}';
+	const list = documentSpacing(settings, 'list'), heading = documentSpacing(settings, 'h2');
+	css += scope + '{--md-list-heading-before:' + length(Math.max(list.after, heading.before)) + ';--md-list-heading-after:' + length(Math.max(heading.after, list.before)) + '}';
+	css += scope + ' ul.rapier-jump-list>li{--md-jump-pad:0px;margin-block:' + length(item.before) + ' ' + length(item.after) + '}' +
 		scope + ' ul.rapier-jump-list>li:last-child{margin-bottom:0}';
 	for (const [type, selector] of [['item','li>p'], ['table',':is(td,th)>p'], ['quote','blockquote>p'], ['footnote','.footnotes p'], ['toc','.rapier-jump-list li']])
 		css += scope + ' ' + selector + '{line-height:' + documentSpacing(settings, type).line + '}';

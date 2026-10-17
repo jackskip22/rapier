@@ -178,6 +178,11 @@ function rapierIndent(step) {
   }, () => {});
 }
 
+function _rapierSourceLayoutWindow(body, start, end) {
+  const found = globalThis.RapierMarkdownLayout.layoutWindow?.(body, start, end);
+  return found ? {start: found.start, text: body.slice(found.start, found.end)} : {start: 0, text: body};
+}
+
 async function _rapierEditLayout(patch, operation, onEmptyLine, after) {
   if (_rapierUserMutationBlocked() || rapier.document.docKind !== 'markdown') return false;
   const layout = globalThis.RapierMarkdownLayout;
@@ -190,10 +195,12 @@ async function _rapierEditLayout(patch, operation, onEmptyLine, after) {
     const range = {start: _rapierAbsPos(textarea.selectionStart), end: _rapierAbsPos(textarea.selectionEnd)};
     const opening = _rapierSplitOpeningFrontmatter(source), offset = opening.bodyOffset;
     if (range.start < offset) { showToast('Choose document text below its metadata', 'info'); return false; }
-    const plan = layout.editLayout(opening.body, md, {start: range.start - offset, end: range.end - offset},
+    const part = _rapierSourceLayoutWindow(opening.body, range.start - offset, range.end - offset);
+    const at = offset + part.start;
+    const plan = layout.editLayout(part.text, md, {start: range.start - at, end: range.end - at},
       patch, globalThis.RapierImageAssets.imageEnvironment(source));
     if (plan.reason) { showToast('This layout cannot be changed without altering its source', 'info'); return false; }
-    for (const edit of plan.edits) { edit.start += offset; edit.end += offset; }
+    for (const edit of plan.edits) { edit.start += at; edit.end += at; }
     const map = point => plan.edits.reduce((at, edit) => at + (edit.end <= point ? edit.text.length - (edit.end - edit.start) : 0), point);
     return _rapierCommitSourceProjection(plan.edits.slice().sort((a,b) => b.start-a.start)
       .map(edit => ({pos: edit.start, removed: source.slice(edit.start, edit.end), inserted: edit.text})),

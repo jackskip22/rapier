@@ -10,7 +10,6 @@ export function decodeCarried(text) {
   return String(text).replace(/\\([\\/!r0])/g, (_, c) => c === '\\' ? '\\' : c === 'r' ? '\r' : c === '0' ? '\0' : c === '/' ? '</' : '<!');
 }
 export function validateParts(text, {ledger = null, authorship = null, metadata} = {}) {
-  // A file's leading BOM is metadata, as in the editor's source intake.
   const canonical = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
   const history = ledger === null ? null : readLedger(ledger, canonical, metadata).ledger;
   const runs = authorship === null ? null : readAuthorship(authorship, canonical);
@@ -22,7 +21,6 @@ export function writeParts(text, options) {
   return Object.entries(parts).filter(([, value]) => value !== null).map(([name, value]) =>
     '<script type="application/json" id="rapier-' + name + '">' + encodeCarried(JSON.stringify(value)) + '</script>\n').join('');
 }
-// Pure adapter: the browser supplies inert script elements, Node supplies parsed script records.
 export function readParts(text, elements) {
   const parts = {ledger: null, authorship: null};
   for (const element of elements) {
@@ -35,7 +33,6 @@ export function readParts(text, elements) {
   }
   return validateParts(text, parts);
 }
-// The wrapper only removes whole script elements. Strings inside other scripts are not carriers.
 export function takeParts(html, text) {
   const elements = [];
   const stripped = html.replace(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi, (whole, attrs, content) => {
@@ -50,7 +47,6 @@ export function takeParts(html, text) {
   return {html: stripped, ...readParts(text ?? '', elements)};
 }
 const OPEN = '\n\n<!-- rapier-carried/1\n', CLOSE = '\n-->\n';
-// One optional HTML comment at EOF; every other Markdown reader ignores it. Source is never rewritten.
 export function writeDocument(text, options) {
   const parts = validateParts(text, options);
   if (!parts.ledger && !parts.authorship) return text;
@@ -58,9 +54,12 @@ export function writeDocument(text, options) {
   return text + OPEN + json + CLOSE;
 }
 export function readDocument(source) {
+  if (!source.endsWith(CLOSE)) {
+    if (source.includes(OPEN)) throw fault('unfinished document metadata');
+    return {text: source, ledger: null, authorship: null};
+  }
   const at = source.lastIndexOf(OPEN);
   if (at < 0) return {text: source, ledger: null, authorship: null};
-  if (!source.endsWith(CLOSE)) throw fault('unfinished document metadata');
   let parts;
   try { parts = JSON.parse(source.slice(at + OPEN.length, -CLOSE.length)); }
   catch (_) { throw fault('invalid document metadata'); }
@@ -69,10 +68,8 @@ export function readDocument(source) {
   return {text, ...validateParts(text, parts)};
 }
 
-// One portable baseline. A digest is integrity evidence, not authentication of the named author.
 export function readBase(value) {
   if (!value || typeof value !== 'object') throw fault('comparison base SHA-256 differs from its text');
-  // Capture each caller-owned field once; admission and serialization use these same scalars.
   const {text, sha256: digest, revision, name, by, at, fonts} = value;
   if (typeof text !== 'string' || typeof digest !== 'string' || !/^[a-f0-9]{64}$/.test(digest) || sha256(text) !== digest)
     throw fault('comparison base SHA-256 differs from its text');

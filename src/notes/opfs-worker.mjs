@@ -3,6 +3,8 @@ import {parts} from './opfs-paths.mjs';
 import {sha256State, blobByteChunks, checkByteAbort, byteCopyError} from './integrity.mjs';
 import {isRecordingPartial} from './recording-files.mjs';
 import {notesHostWords} from './host-words.mjs';
+import {isNoteFile} from './model.mjs';
+import {DELETE_FRAME_BYTES, DELETE_HEADER_BYTES, deleteFrameName, isDeletePrivateName, isDeleteOwnedName} from './delete-intent.mjs';
 
 const fail = (code, message) => Object.assign(new Error(message), {code});
 const missing = error => error?.name === 'NotFoundError';
@@ -43,17 +45,18 @@ function put(access, bytes, offset = 0) {
 function seal(access, size) {
   synchronous(access.truncate(size)); synchronous(access.flush()); synchronous(access.close());
 }
-async function write(directory, name, bytes, token, refusal = 'The notes folder did not keep the bytes written to ' + name + '.', fresh = false) {
+async function write(directory, name, bytes, token, refusal = 'The notes folder did not keep the bytes written to ' + name + '.', fresh = false, condition = null) {
   const at = await locate(directory, name, true), tmp = '.rapier-write-' + token + '.tmp'; let access, handle, owned = false;
   try {
     handle = await scratch(at.dir, tmp); owned = true; access = await accessFor(handle);
     put(access, bytes); seal(access, bytes.length); access = null;
     if (!same(new Uint8Array(await (await handle.getFile()).arrayBuffer()), bytes)) throw fail('verify', refusal);
     if (fresh && await fileAt(at.dir, at.name) !== null) throw fail('collision', 'This unfinished recording already exists.');
-    await handle.move(at.dir, at.name); owned = false;
+    if (condition && !await condition()) return false;
+    await handle.move(at.dir, at.name); owned = false; return true;
   } finally {
     try { if (access) synchronous(access.close()); }
-    finally { if (owned) try { await discard(at.dir, tmp, handle); } catch (_) {} }
+    finally { if (owned) try { await discard(at.dir, tmp, handle); } catch (error) { if (condition) throw error; } }
   }
 }
 async function prepare(directory, token) {
@@ -145,6 +148,112 @@ async function recording(request) {
   }
 }
 
+const deletionBytes = (value, size) => {
+  if (!(value instanceof Uint8Array) || size !== undefined && value.length !== size) throw new TypeError('Deletion custody needs exact bytes.');
+  return value;
+};
+const deletionDigest = value => { if (typeof value !== 'string' || !/^[0-9a-f]{64}$/.test(value)) throw new TypeError('Deletion custody needs an exact digest.'); return value; };
+const deletionNote = name => {
+  parts(name);
+  if (!isNoteFile(name) || /[\u0000-\u001f\u007f]/.test(name)) throw fail('name', 'This is not a note filename.');
+};
+const deletionHeld = name => {
+  if (!isDeletePrivateName(name) || !name.endsWith('.held')) throw fail('name', 'This is not a held deletion body.');
+};
+async function deletionRead(directory, name) {
+  try { const at = await locate(directory, name); return await fileAt(at.dir, at.name); }
+  catch (error) { if (missing(error)) return null; throw error; }
+}
+async function deletionMatch(directory, name, expected) {
+  const file = await deletionRead(directory, name);
+  return expected === null ? file === null : file !== null && same(new Uint8Array(await file.arrayBuffer()), expected);
+}
+async function deletionHash(file) {
+  if (file === null) return null;
+  const hash = sha256State(); for await (const bytes of blobByteChunks(file)) hash.update(bytes); return hash.finish();
+}
+async function deletionRelease(directory, expected) {
+  deletionBytes(expected);
+  const name = '.rapier-delete-reserve.bin';
+  if (!await deletionMatch(directory, name, expected)) return await deletionRead(directory, name) === null;
+  await directory.removeEntry(name);
+  if (await deletionRead(directory, name) !== null) throw fail('verify', 'The deletion reserve was not released.');
+  return true;
+}
+async function deletionReplace(request, name, expected, bytes) {
+  const {directory, token} = request;
+  if (!await deletionMatch(directory, name, expected)) return false;
+  if (!await write(directory, name, bytes, token, undefined, false, () => deletionMatch(directory, name, expected))) return false;
+  if (!await deletionMatch(directory, name, bytes)) throw fail('verify', 'The deletion custody write could not be verified.');
+  return true;
+}
+async function deletion(request) {
+  const {directory, operation, name} = request;
+  if (operation === 'deleteFrame') {
+    const file = deleteFrameName(request.slot), bytes = deletionBytes(request.bytes, DELETE_FRAME_BYTES);
+    const expected = request.expected === null ? null : deletionBytes(request.expected, DELETE_FRAME_BYTES);
+    const reserve = request.releaseReserve === null ? null : deletionBytes(request.releaseReserve);
+    if (expected && !same(expected.subarray(0, DELETE_HEADER_BYTES), bytes.subarray(0, DELETE_HEADER_BYTES)))
+      throw fail('ownership', 'A deletion frame cannot replace its ownership header.');
+    if (!await deletionMatch(directory, file, expected)) return false;
+    if (reserve !== null && !await deletionMatch(directory, '.rapier-delete-reserve.bin', reserve)) return false;
+    if (expected === null) {
+      if (!await deletionReplace(request, file, null, bytes)) return false;
+    } else {
+      const handle = await directory.getFileHandle(file); let access;
+      try {
+        access = await accessFor(handle);
+        const back = new Uint8Array(DELETE_FRAME_BYTES);
+        if (access.getSize() !== DELETE_FRAME_BYTES || access.read(back, {at: 0}) !== DELETE_FRAME_BYTES || !same(back, expected)) return false;
+        put(access, bytes.subarray(DELETE_HEADER_BYTES), DELETE_HEADER_BYTES);
+        synchronous(access.flush()); synchronous(access.close()); access = null;
+      } finally { if (access) synchronous(access.close()); }
+      if (!await deletionMatch(directory, file, bytes)) throw fail('verify', 'The deletion frame could not be verified.');
+    }
+    return reserve === null || await deletionRelease(directory, reserve);
+  }
+  if (operation === 'deleteReserve') {
+    const bytes = deletionBytes(request.bytes), expected = request.expected === null ? null : deletionBytes(request.expected);
+    return deletionReplace(request, '.rapier-delete-reserve.bin', expected, bytes);
+  }
+  if (operation === 'deleteRelease') return deletionRelease(directory, request.expected);
+  if (operation === 'deleteObserve') {
+    deletionNote(name); const digest = await deletionHash(await deletionRead(directory, name));
+    return digest === null ? null : {digest, identity: null};
+  }
+  if (operation === 'deleteDetach') {
+    deletionNote(name); deletionHeld(request.held); deletionDigest(request.digest);
+    if (request.identity !== null) throw new TypeError('This notes store has no native file identity.');
+    if (await deletionRead(directory, request.held) !== null) throw fail('collision', 'The held deletion body already exists.');
+    let handle;
+    try { handle = await directory.getFileHandle(name); } catch (error) { if (missing(error)) return 'missing'; throw error; }
+    if (await deletionHash(await handle.getFile()) !== request.digest) return 'changed';
+    if (typeof handle.move !== 'function') throw atomic();
+    if (await deletionRead(directory, request.held) !== null) throw fail('collision', 'The held deletion body already exists.');
+    await handle.move(directory, request.held);
+    if (await deletionRead(directory, name) !== null || await deletionHash(await deletionRead(directory, request.held)) !== request.digest)
+      throw fail('verify', 'The held deletion body could not be verified.');
+    return 'detached';
+  }
+  if (operation === 'deleteRemove') {
+    if (!isDeleteOwnedName(name)) throw fail('name', 'This is not an owned deletion path.');
+    deletionDigest(request.digest);
+    const file = await deletionRead(directory, name);
+    if (file === null) return true;
+    if (await deletionHash(file) !== request.digest) return false;
+    const at = await locate(directory, name); await at.dir.removeEntry(at.name);
+    if (await deletionRead(directory, name) !== null) throw fail('verify', 'The owned deletion file was not removed.');
+    return true;
+  }
+  if (operation === 'deleteCheckpoint') {
+    const bytes = deletionBytes(request.bytes); deletionDigest(request.baseDigest);
+    const file = await deletionRead(directory, 'notes.json');
+    if (file === null || await deletionHash(file) !== request.baseDigest) return false;
+    return deletionReplace(request, 'notes.json', new Uint8Array(await file.arrayBuffer()), bytes);
+  }
+  throw new Error('Unknown deletion custody operation');
+}
+
 export function createOPFSWorker({postMessage}) {
   const jobs = new Map(); let lastId = 0;
   return async request => {
@@ -169,6 +278,7 @@ export function createOPFSWorker({postMessage}) {
       else if (operation === 'write') value = await write(request.directory, request.name, request.bytes, request.token);
       else if (operation === 'writeBlob') value = await writeBlob(request, job.controller.signal, progress);
       else if (operation === 'begin' || operation === 'append') value = await recording(request);
+      else if (operation.startsWith('delete')) value = await deletion(request);
       else throw new Error('Unknown notes file operation');
       postMessage({id, value});
     } catch (error) { postMessage({id, error: failure(error)}); }

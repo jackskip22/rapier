@@ -1,3 +1,4 @@
+import {deleteIdleScratch} from './delete-intent.mjs';
 import {encodeImportReceipt, isImportReceiptFile, importReceiptMembers} from './import-storage.mjs';
 import {createOwner, OWNER_JOURNAL_FILE} from './owner.mjs';
 import {SYNC_STATE_FILE, readSyncStateBytes, syncStateWrite, decodeSyncState, encodeSyncState} from './sync-state.mjs';
@@ -5,7 +6,7 @@ import {createRecordings} from './recording.mjs';
 import {planAttachment, rewriteAttachmentNames, attachmentIntake, attachmentsOf, attachmentLine} from './attachments.mjs';
 import {exactBytes, sha256, storedFileDigest, checkByteAbort, blobByteChunks, digestByteChunks} from './integrity.mjs';
 import {NOTES_INDEX_FILE, isNoteFile, isMarkdownNote, isCodeFile, codeFileName, isAttachmentName, attachmentFileName, reconcile, noteFileName, admitIdentities, parseIndex, addSection, setCollapsed, orderAfter, noteControlValues, setNoteControls, noteControlGroups, noteControlsSnapshot, stampNoteControls, NOTE_CONTROL_GROUPS} from './model.mjs';
-import {recoverTrash, runTrash, markTrashed, reviveTrashed} from './trash.mjs';
+import {recoverTrash, runTrash, markTrashed, reviveTrashed, deletionRefusal} from './trash.mjs';
 import {buildLinkIndex, resolveLinkIndex, renameLinks} from './links.mjs';
 import {inspectTextConflicts, mapTextConflictVariants, canonicalJSON} from './merge.mjs';
 import {appendImportReceipt, finishImportReceipt, importUndoReadiness, planImportUndo, recordImportUndo, importUndoSections, prepareImportWrites, prepareImportHistory, recordImportSections} from './import-receipt.mjs';
@@ -32,7 +33,7 @@ const sameBytes = (before, after) => {
 	for (let at = 0; at < before.length; at++) if (before[at] !== after[at]) return false;
 	return true;
 };
-const reserved = new Set(['folderGeneration', 'folderDeviceId', 'ownerNotice', 'transaction', 'noteCounters', 'deletions', 'tombstones', 'assetTombstones', 'assetRevivals', 'missingFiles', 'imports']);
+const reserved = new Set(['deleteOwner', 'deleteCheckpoint', 'folderGeneration', 'folderDeviceId', 'ownerNotice', 'transaction', 'noteCounters', 'deletions', 'tombstones', 'assetTombstones', 'assetRevivals', 'missingFiles', 'imports']);
 
 export function applyMetadata(base, wanted, fresh) {
 	const out = copy(fresh);
@@ -141,7 +142,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		const assigned = admitIdentities(index, deviceId);
 		return previous !== deviceId || assigned.length > 0;
 	};
-	const owner = createOwner({store, locks, channel, shared, timeoutMs, clock, onInvalidate, recover: async args => {
+	const owner = createOwner({store, locks, channel, shared, timeoutMs, clock, onInvalidate, deleteKeep: keep, recover: async args => {
 		const repaired = await recoverTrash({...args, clock, keep});
 		const listing = await store.list();
 		const names = [...new Set([...Object.keys(repaired.index.notes), ...listing.filter(isNoteFile)])];
@@ -173,11 +174,11 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		}
 		if (failed) throw failed;
 	};
-	const underLease = job => tracked(async () => {
-		const lease = await owner.acquire(scope);
+	const underLease = (job, options) => tracked(async () => {
+		const lease = await owner.acquire(scope, options);
 		try { return await job(lease); } finally { await lease.release(); }
 	});
-	const owned = job => underLease(async lease => job(lease, await lease.read()));
+	const owned = (job, options) => underLease(async lease => job(lease, await lease.read()), options);
 	const createEntry = (index, name, extra = {}) => {
 		const next = reconcile(index, [...Object.keys(index.notes), name]).index;
 		next.notes[name] = {...next.notes[name], ...extra};
@@ -219,8 +220,8 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			catch (error) { if (error?.code !== 'read-only') throw error; }
 		}
 		snapshot ||= await owner.read(scope, options);
-		if (snapshot?.index) identify(snapshot.index);
-		return {...snapshot, recordings: await recordingCustody.recover({snapshot})};
+		if (snapshot?.index && !snapshot.pressurePending) identify(snapshot.index);
+		return {...snapshot, recordings: snapshot.pressurePending ? [] : await recordingCustody.recover({snapshot})};
 	};
 	const rebuildIndex = (backup, options) => tracked(async () => {
 		const lease = await owner.acquire(scope);
@@ -702,18 +703,25 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		return {...snapshot, file: destination, written: patched - late, dropped: dropped + late};
 	});
 	const trash = ({files, mode = 'expiry', expected = null} = {}) => owned(async (lease, before) => {
+		const ready = snapshot => {
+			if (snapshot.pressurePending) throw deletionRefusal(snapshot.pressurePending.failure || {message: snapshot.pressurePending.error}, {pending: true});
+		};
+		ready(before);
 		if (expected) {
 			if (!Array.isArray(files)) throw fail('trash', 'Confirmed deletion must name the chosen files.');
-			before = await lease.read({bodies: files});
+			before = await lease.read({bodies: files}); ready(before);
 			for (const file of files) {
 				const proof = expected.get(file), entry = before.index.notes[file];
 				if (!proof || !entry || entry.id !== proof.id || entry.trashed !== proof.trashed || await digest(before.bodies.get(file)) !== proof.digest) throw fail('changed', 'A selected note changed. It was kept; review it before deleting.');
 			}
 		}
 		const admitted = expected && new Map([...expected].map(([file, proof]) => [file, {id: proof.id, content: proof.digest}]));
-		const result = await runTrash({store, index: before.index, files, mode, expected: admitted, deviceId, commitIndex: lease.commitIndex, now: clock(), clock, keep, checkpoint: (await readSyncStateBytes(store)).state.head?._key || null});
+		let result;
+		try {
+			result = await runTrash({store, index: before.index, files, mode, expected: admitted, deviceId: before.index.folderDeviceId, commitIndex: lease.commitIndex, pressureDelete: store.deletePressure ? lease.pressureDelete : null, now: clock(), clock, keep, checkpoint: (await readSyncStateBytes(store)).state.head?._key || null});
+		} catch (error) { throw deletionRefusal(error); }
 		return {...await lease.read(), result};
-	});
+	}, {deletePressure: !!store.deletePressure});
 	const discardEmpty = ({file, id, expectedDigest}) => owned(async lease => {
 		const snapshot = await lease.transact(async ({index, bodies}) => {
 			const bytes = bodies.get(file);
@@ -1052,6 +1060,9 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		const admit = async () => { checkByteAbort(signal); await guard?.(); checkByteAbort(signal); };
 		await admit();
 		const plan = entries?.parts ? await planSnapshotStream(entries) : await planSnapshot(entries), sidecar = plan.files.find(row => row.name === NOTES_INDEX_FILE);
+		const sourceRows = new Map(plan.files.map(row => [row.name, row]));
+		const scratch = await deleteIdleScratch(plan.index, [...sourceRows.keys()], async name => { const row = sourceRows.get(name); return row ? row.bytes ?? await row.read() : null; });
+		plan.files = plan.files.filter(row => !scratch.has(row.name));
 		let indexBytes = sidecar.bytes ?? await sidecar.read(), checkpoint = null;
 		const restoredIndex = JSON.parse(decode(indexBytes).replace(/^﻿/, ''));
 		restoredIndex.folderDeviceId = crypto.randomUUID().replace(/-/g, '');
@@ -1175,9 +1186,11 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		}
 		return true;
 	};
+	const assertNoPendingDeletion = async () => { if (await owner.pendingDeletion()) throw fail('delete-pending', 'Deletion recovery is still pending. The remaining bytes are kept; a normal backup cannot be certified yet.'); await owner.validateDeletionScratch(); };
 	const captureFiles = async () => {
+		await assertNoPendingDeletion();
 		const rows = [];
-		const names = await backupNames({list: () => store.list(), attachmentNames: () => store.list('attachments'),
+		const names = await backupNames({readBytes: name => store.read(name), list: () => store.list(), attachmentNames: () => store.list('attachments'),
 			audioNames: () => store.list('audio'), historyNames: sub => store.list('history/' + sub),
 			importReceiptNames: () => store.list('imports'), thumbNames: () => store.list('thumbs')});
 		if (names.includes(OWNER_JOURNAL_FILE)) throw fail('pending', 'The notes folder has a pending save. Let it finish before making a backup.');
@@ -1189,23 +1202,27 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		return rows;
 	};
 	const backupSnapshot = async () => {
+		await assertNoPendingDeletion();
 		let lease;
 		try {
 			if (store.writable !== false && (!isShared() || locks?.request && channel?.postMessage)) lease = await owner.acquire(scope);
 			const snapshot = lease ? await lease.read() : await owner.read(scope);
+			await assertNoPendingDeletion();
 			const first = await store.read(NOTES_INDEX_FILE), pending = await store.read(OWNER_JOURNAL_FILE);
 			if (pending != null) throw fail('pending', 'A note is still being saved. Try Backup again when it has finished.');
 			const receipts = await receiptMembers(snapshot.index, lease);
 			let released = false;
 			return {index: snapshot.index, generation: snapshot.generation,
-				current: async () => !released && await digest(first) === await digest(await store.read(NOTES_INDEX_FILE)) && await store.read(OWNER_JOURNAL_FILE) == null && await receiptMembersCurrent(receipts),
+				current: async () => { if (released) return false; await assertNoPendingDeletion(); return await digest(first) === await digest(await store.read(NOTES_INDEX_FILE)) && await store.read(OWNER_JOURNAL_FILE) == null && await receiptMembersCurrent(receipts); },
 				release: async () => { if (released) return; released = true; await lease?.release(); }};
 		} catch (error) { await lease?.release(); throw error; }
 	};
 	const capture = async () => {
+		await assertNoPendingDeletion();
 		if (store.writable === false || isShared() && (!locks?.request || !channel?.postMessage)) {
 			const first = await store.read(NOTES_INDEX_FILE), pending = await store.read(OWNER_JOURNAL_FILE), snapshot = await read();
 			const receipts = await receiptMembers(snapshot.index), entries = await captureFiles();
+			await assertNoPendingDeletion();
 			if (!await receiptMembersCurrent(receipts)) throw fail('changed', 'An import receipt changed during backup. Nothing was certified.');
 			if (await digest(first) !== await digest(await store.read(NOTES_INDEX_FILE)) || await digest(pending) !== await digest(await store.read(OWNER_JOURNAL_FILE))) throw fail('busy', 'The folder changed while the backup was collected. Try Backup again.');
 			return entries;
@@ -1229,5 +1246,5 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 	const recordingCustody = createRecordings({store, owned, underLease, locks, scope, shared: isShared, clock, audioName, discardAudio,
 		canOwn: () => store.writable !== false && (!isShared() || !!(locks?.request && channel?.postMessage)), readSnapshot: () => owner.read(scope)});
 	return {beginRecording: recordingCustody.begin, recoverRecordings: recordingCustody.recover, openRecording: recordingCustody.open, readRecording: recordingCustody.preview, acknowledgeRecording: recordingCustody.acknowledge,
-		owner, store, scope, read, readCanonical: readCanonicalNote, planCanonicalChange, checkEditorInverse, rebuildIndex, metadata, controls, controlsUndo, reminderActions, reminderChange, leaveVault, create, createShared, save, recordHistory, historyInventory, tidyHistory, rename, trash, discardEmpty, mark, createAudio, createAttachment, attachmentReferences, fileReferences, reviewAttachmentDeletion, deleteAttachment, reviewRecordingDeletion, deleteRecording, asset, discardAudio, importBatch, checkpointImportReceipt, readImportReceipt, restoreSnapshot, previewImportUndo, undoImport, backupSnapshot, capture, readFile, settle, get deviceId() { return deviceId; }, get pending() { return pending.size; }, close: () => { recordingCustody.close(); owner.close(); channel?.close?.(); }};
+		captureDeletionRecovery: () => owner.captureDeletion(scope), owner, store, scope, read, readCanonical: readCanonicalNote, planCanonicalChange, checkEditorInverse, rebuildIndex, metadata, controls, controlsUndo, reminderActions, reminderChange, leaveVault, create, createShared, save, recordHistory, historyInventory, tidyHistory, rename, trash, discardEmpty, mark, createAudio, createAttachment, attachmentReferences, fileReferences, reviewAttachmentDeletion, deleteAttachment, reviewRecordingDeletion, deleteRecording, asset, discardAudio, importBatch, checkpointImportReceipt, readImportReceipt, restoreSnapshot, previewImportUndo, undoImport, backupSnapshot, capture, readFile, settle, get deviceId() { return deviceId; }, get pending() { return pending.size; }, close: () => { recordingCustody.close(); owner.close(); channel?.close?.(); }};
 }

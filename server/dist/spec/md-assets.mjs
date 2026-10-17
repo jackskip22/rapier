@@ -101,10 +101,12 @@ export function* blockWindows(source, bodyOffset, parser, env, keepNul = false) 
   for (let at = 0; at < body.length; at++) if (body.charCodeAt(at) === 10) lines++;
   if (lines <= BLOCK_WINDOW) {
     state = new parser.block.State(body, parser, env, tokens);
+    state.rapierSourceSlice = (from, to) => source.slice(sourceOffset(from), sourceOffset(to));
     parser.block.tokenize(state, state.line, state.lineMax);
     yield report(); return;
   }
   state = new parser.block.State(body.slice(body.lastIndexOf('\n') + 1), parser, env, tokens);
+  state.rapierSourceSlice = (from, to) => source.slice(sourceOffset(from), sourceOffset(to));
   lines += state.lineMax;
   state.src = body;
   const tables = new WeakMap();

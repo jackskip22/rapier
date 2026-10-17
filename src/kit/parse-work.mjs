@@ -8,7 +8,7 @@ export async function parseMarkdownWork(parser, source, env, work, blocksOnly = 
     work.signal?.throwIfAborted();
     if (blocksOnly && rule.name === 'inline') break;
     if (rule.name === 'block' && !state.inlineMode) {
-      for (const window of blockWindows(state.src, 0, parser, env, true)) {
+      for (const window of blockWindows(source, 0, parser, env)) {
         for (const token of window.tokens) {
           if (token.map && window.firstLine) token.map = token.map.map(line => line + window.firstLine);
           state.tokens.push(token);

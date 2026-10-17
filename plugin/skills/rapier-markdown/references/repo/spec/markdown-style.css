@@ -3,13 +3,11 @@
  * Root defaults also expose the palette to an optional page frame and the shared task glyphs
  * to Notes. Visual rules stay inside .md-render; this sheet loads no fonts or network resources.
  */
-/* The reference scale's unit (docs/markdown-standard.md, "The reference scale"): 16 px at M, a length every reader can read
-   back as pixels (a planner scales its own lengths by it). */
 @property --md-unit{syntax:'<length>';inherits:true;initial-value:16px}
+@property --md-item-line{syntax:'<length>';inherits:true;initial-value:0px}
 :root,.md-render{
 	--md-unit:1rem;
 	--md-hair:calc(var(--md-unit) / 16);
-	/* The reading measure (docs/markdown-standard.md, "The reference scale"): 36 ems of the body at M; it does not follow the step. */
 	--md-measure:39.6rem;
 	--md-font-mono:'Geist Mono',monospace;
 	--md-font-sans:'Geist',system-ui,sans-serif;
@@ -24,7 +22,6 @@
 	--md-fw-regular:400;
 	--md-text-body:calc(1.1 * var(--md-unit));
 	--md-line:calc(1.75 * var(--md-unit));
-	/* Compact gaps scale with the document body, independently of authored leading. */
 	--md-gap-paragraph:calc(var(--md-text-body) * 8 / 17.6);
 	--md-gap-heading-before:calc(var(--md-text-body) * 20 / 17.6);
 	--md-gap-heading-after:calc(var(--md-text-body) * 4 / 17.6);
@@ -122,13 +119,9 @@
 	--md-mermaid-tint-12:light-dark(#e2ecec,#263a3b);
 }
 .md-render{color-scheme:light}
-/* Geist and Geist Mono both have a 530/1000 x-height. Preserve their size and match a
-   system fallback's x-height; the host's installed face still determines glyph widths. */
 @media(prefers-color-scheme:dark){.md-render:where(:not([data-md-theme="light"])){color-scheme:dark}}
 .md-render[data-md-theme="dark"]{color-scheme:dark}
 .md-render[data-md-theme="light"]{color-scheme:light;--md-heading-color:#000000;--md-heading-muted-color:#000000}
-/* The app and saved page already use border-box. Keep the portable document independent
-   of its host's reset without changing margins or padding owned by that host. */
 :where(.md-render,.md-render *,.md-render ::before,.md-render ::after){box-sizing:border-box}
 
 :where(.md-render) [data-md-align="left"]{text-align:left!important}
@@ -173,9 +166,6 @@
 }
 :where(.md-render) .math-display-wrap > .math-placeholder { display: inline-block; padding: .3em .6em; }
 
-/* The figure is the scroll surface, not the box inside it: the overflow affordance the engine
-   wraps every wide block in (`rapier-hscroll--diagram`) measures this element, so a diagram that
-   runs past the column reads as a wide table does -- it scrolls, under the same fading edge. */
 :where(.md-render) .diagram-block {
 	position: relative;
 	margin: 0 0 var(--md-gap-block);
@@ -195,8 +185,6 @@
 	margin: 0;
 	white-space: pre-wrap;
 }
-/* A drawing in progress keeps its source for the reader and for export, but does not flash
-   the fence across the page. The measured height, once known, holds the place. */
 :where(.md-render) .diagram-block:is([data-diagram-state="idle"],[data-diagram-state="pending"]) {
 	min-height: 5.25rem;
 }
@@ -214,30 +202,23 @@
 :where(.md-render) .diagram-block .diagram-cache {
 	max-width: 100%;
 }
-/* Mermaid owns its geometry and typography. Its reference palette is projected onto SVG paint
-   at admission; only renderer paint omissions are corrected here. */
 :where(.md-render) svg.rapier-native-flowchart{display:block;margin-inline:auto;height:auto}
 :where(.md-render) svg.rapier-diagram{display:block;margin-inline:auto;height:auto;text-rendering:optimizeLegibility}
 
-/* Radar gives these SVG labels a color declaration; SVG text needs a fill. */
 :where(.md-render) svg.rapier-diagram[aria-roledescription="radar"] :is(.radarTitle,.radarAxisLabel){fill:currentColor}
-/* Multiplying a ribbon by black paper makes its entire flow disappear. */
 :where(.md-render) svg.rapier-diagram[aria-roledescription="sankey"] .link{mix-blend-mode:normal!important}
-/* Captions keep their baseline while masking chart marks behind their letters. */
 :where(.md-render) svg.rapier-diagram[aria-roledescription="c4"] text:not(.c4-shape *),
 :where(.md-render) svg.rapier-diagram[aria-roledescription="architecture"] .architecture-service text,
 :where(.md-render) svg.rapier-diagram[aria-roledescription="wardley"] .wardley-node-label,
 :where(.md-render) svg.rapier-diagram[aria-roledescription="xychart"] [class^="line-plot-"]>.labels>text,
 :where(.md-render) svg.rapier-diagram[aria-roledescription="cynefin"] :is(text.cynefinSubtitle,text.cynefinArrowLabel,text.cynefinDomainLabel){paint-order:stroke fill;stroke:var(--md-color-bg)!important;stroke-width:2.5px;stroke-linejoin:round}
 
-/* Generator styles are removed at admission; these owned keyframes animate only dash offset. */
 @keyframes rapier-mermaid-dash{from{stroke-dashoffset:900}to{stroke-dashoffset:0}}
 :where(.md-render) svg.rapier-diagram[aria-roledescription^="flowchart"] :is(path,line,polyline).edge-animation-fast{animation:rapier-mermaid-dash 20s linear infinite!important}
 :where(.md-render) svg.rapier-diagram[aria-roledescription^="flowchart"] :is(path,line,polyline).edge-animation-slow{animation:rapier-mermaid-dash 50s linear infinite!important}
 @media (prefers-reduced-motion:reduce){
 	:where(.md-render) svg.rapier-diagram[aria-roledescription^="flowchart"] :is(path,line,polyline):is(.edge-animation-fast,.edge-animation-slow){animation:none!important;stroke-dashoffset:0!important}
 }
-/* Printed diagrams fit the page. */
 @media print{
 	:where(.md-render) .diagram-block{overflow:visible!important}
 	:where(.md-render) svg.rapier-diagram,:where(.md-render) svg.rapier-native-flowchart{width:auto!important;max-width:100%!important}
@@ -251,15 +232,9 @@
 	max-height: 9rem;
 }
 
-/* Type keeps the reference line model: body 17.6/28 px at M; h1 (2.2 times the body) occupies one
-   and three quarter body lines, h2 (1.75) and h3 (1.5) one and a half, h4 to h6 one, so a wrapped
-   heading sets about 1.3 of its size. Compact margins use the body's size: 8 px after prose, 12 after other
-   blocks, 20 before headings and 4 after them at M. Sibling margins collapse to their maximum;
-   the editor's derived neighbor gap carries the same boundary inside its measured wrapper. */
 .md-render{
 	font:var(--md-fw-regular) var(--md-text-body)/var(--md-line) var(--md-font-sans);color:var(--md-color-text);text-align:start}
 .md-render>:first-child,.md-render :is(blockquote,li,td,th,dd,.callout,details)>:first-child{margin-top:0}
-/* The last child does not add another gap inside a compound block. */
 .md-render :is(blockquote,td,th,dd)>:last-child{margin-bottom:0}
 .md-render h1,.md-render h2,.md-render h3,.md-render h4,.md-render h5,.md-render h6{
 	font-family:var(--md-font-sans);letter-spacing:-0.01em;
@@ -268,9 +243,6 @@
 .md-render h2{font-size:calc(var(--md-text-body) * 1.75);line-height:calc(var(--md-line) * 1.5);font-weight:var(--md-fw-semibold)}
 .md-render h3{font-size:calc(var(--md-text-body) * 1.5);line-height:calc(var(--md-line) * 1.5);font-weight:var(--md-fw-semibold)}
 .md-render h4{font-size:calc(var(--md-text-body) * 1.25);font-weight:var(--md-fw-semibold)}
-/* h5/h6 complete the six-level hierarchy: modest but owned (explicit size/weight/color), never
-   the browser default. Size stays strictly monotonic below h4; h6 sits at the body's own size and
-   firms up weight and dims color, since its size alone would read as body text. */
 .md-render h5{font-size:calc(var(--md-text-body) * 1.1);font-weight:var(--md-fw-semibold)}
 .md-render h6{font-size:var(--md-text-body);font-weight:var(--md-fw-semibold);color:var(--md-heading-muted-color)}
 .md-render p{margin:0 0 var(--md-gap-paragraph)}
@@ -287,12 +259,6 @@
 .md-render ul ul ul>li::before{
 	width:5px;height:5px;top:.72em;border:0;background:currentColor}
 .md-render li.task-list-item::before{content:none}
-/* A ticked box is content, not editor chrome. These rules used to live in the source stylesheet,
-   which the shell loads and an exported page does not -- so an exported document showed the
-   browser's own native checkbox where Rapier draws its square and its mark, which is exactly what
-   an export is supposed not to do. Every selector is .md-render-scoped and every value comes from
-   this sheet's own defaults, so their home is here, in the sheet a written page
-   carries. */
 .md-render .task-list-item {
 	list-style: none;
 	padding-left: 0;
@@ -301,11 +267,6 @@
 
 .md-render .task-list-item input[type="checkbox"] {
 	--md-task-box: clamp(14px, .92em, 24px);
-	/* A form control does not inherit color on its own; the shell's own app sheet gives it one
-	   (`input,textarea,select{...color:inherit}`) and an exported page does not carry that sheet, so
-	   it says so here. The drawn box names its own colors, so this changes no pixel today -- it
-	   stops the two surfaces disagreeing about a property, which is how the next rule that does
-	   depend on it would go wrong quietly. */
 	color: inherit;
 	position: relative;
 	left: calc(-1 * var(--md-space-5) - 16px);
@@ -321,13 +282,6 @@
 	vertical-align: -3px;
 	touch-action: manipulation;
 }
-/* The box and its tick are Feather's square and check-square, with squared corners: drawn on Feather's
-   24-unit grid with its 2-unit stroke, the box's corners mitered square, and a ticked box opens at its
-   top right where the tick breaks out through it. The grid is a third wider than the box itself (the
-   box is units 3 to 21), so the painted square keeps exactly the place and size --rapier-task-box gave
-   it; the ink is --color-line through a mask, so the theme recolors it and an export needs nothing
-   more than the data: images its policy already admits. The three glyphs are written here once, and a
-   Notes card's check rows read these same three (rapier-notes.css: one SVG per icon across Rapier). */
 :root,.md-render {
 	--md-glyph-task-box: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2'%3E%3Cpath d='M3 3h18v18H3z'/%3E%3C/svg%3E");
 	--md-glyph-task-open: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M21 12v9H3V3h13'/%3E%3C/svg%3E");
@@ -362,21 +316,23 @@
 	position:relative;
 	--md-marker:0px;
 	counter-increment:rapier-ol;
-	min-height:0;
-	padding-top:0;
+	--md-item-line:1lh;
+	--md-ol-circle:min(2 * var(--md-unit), max(var(--md-item-line), 2 * var(--md-item-line) - 1.48 * var(--md-unit)));
+	--md-ol-top:calc(min(0.15 * var(--md-unit), 0.6 * max(0px, var(--md-ol-circle) - var(--md-item-line))) - min(0.125 * var(--md-unit), max(0px, var(--md-ol-circle) - var(--md-item-line)) / 2) + max(0px, var(--md-item-line) - var(--md-ol-circle)) / 2);
+	min-height:var(--md-ol-circle);
+	padding-top:min(0.15 * var(--md-unit), 0.6 * max(0px, var(--md-ol-circle) - var(--md-item-line)));
 }
 .md-render ol>li::before{
 	content:counter(rapier-ol);
 	position:absolute;
-	/* The circle is centered on the item's first line: the li's own padding, plus half of what the 2rem circle is taller than one line. */
-	inset-inline-start:calc(-2.75 * var(--md-unit) + var(--md-marker, 0px)); top:0;
-	width:min(2 * var(--md-unit), 1lh); height:min(2 * var(--md-unit), 1lh);
+	inset-inline-start:calc(-1.75 * var(--md-unit) - var(--md-ol-circle) / 2 + var(--md-marker, 0px)); top:var(--md-ol-top);
+	width:var(--md-ol-circle); height:var(--md-ol-circle);
 	display:flex; align-items:center; justify-content:center;
 	border:2px solid var(--md-color-line);
 	border-radius:999px;
 	background:var(--md-color-bg);
 	color:var(--md-color-line);
-	font:var(--md-fw-semibold) calc(0.95 * var(--md-unit))/1 var(--md-font-sans);
+	font:var(--md-fw-semibold) min(0.95 * var(--md-unit), 0.55 * var(--md-ol-circle))/1 var(--md-font-sans);
 	font-variant-numeric:tabular-nums;
 	box-sizing:border-box;
 	z-index:1;
@@ -387,16 +343,12 @@
 	position:absolute;
 
 	inset-inline-start:calc(calc(-1.75 * var(--md-unit)) - 1.5px + var(--md-marker, 0px));
-	top:calc(2.2 * var(--md-unit));
-	bottom:calc(var(--md-line) / -4);
+	top:calc(var(--md-ol-top) + 1.0875 * var(--md-ol-circle));
+	bottom:calc(-1 * max(var(--md-item-gap, 0px), var(--md-line) / 4));
 	border-inline-start:3px dotted var(--md-color-line);
 	z-index:0;
 }
-/* A heading between two parts of one numbered list (the second part's start follows the first's last number;
-   _rapierMarkListContinuations marks them): the heading stands on the margin the item text stands on, and the dotted
-   line runs on, out of the first part's last item, down the heading's own height, to the next circle. */
 .md-render ol[data-rapier-list-continues]>li:last-child::after{bottom:calc(-1 * var(--md-list-heading-before,var(--md-gap-heading-before)))}
-/* A wrapped picture set the next circle aside: the dotted line ends with this item, as at a list's last. */
 .md-render ol>li[data-rapier-wrap-step]::after{content:none!important}
 .md-render :is(h1,h2,h3,h4,h5,h6)[data-rapier-list-through]{position:relative;padding-inline-start:calc(2.75 * var(--md-unit))}
 .md-render :is(h1,h2,h3,h4,h5,h6)[data-rapier-list-through]::before{
@@ -413,7 +365,6 @@
 .md-render li:last-child{margin-bottom:0}
 .md-render li>ul,.md-render li>ol{margin:calc(var(--md-line) / 4) 0 0}
 .md-render a{color:var(--md-color-accent-text);text-decoration:underline;text-underline-offset:2px;unicode-bidi:isolate}
-/* The house focus (rapier-app.css) in the document and on the exported page: the underline thickens, no ring. */
 .md-render a:focus-visible,.md-render ul.rapier-jump-list>li>a:focus-visible,.md-render .footnote-ref a:focus-visible,.md-render summary:focus-visible{outline:none;text-decoration:underline;text-decoration-thickness:3px;text-underline-offset:.2em}
 
 .md-render .rapier-jump-label{
@@ -426,24 +377,27 @@
 .md-render .rapier-jump-label strong{font:inherit}
 .md-render ul.rapier-jump-list{
 	--md-jump-gap:calc(.9 * var(--md-unit));
+	--md-jump-pad:calc(.18 * var(--md-unit));
+	--md-jump-circle:10px;
 	--md-jump-marker-inline-start:calc(-1.18 * var(--md-unit));
-	--md-jump-marker-center:1em;
 	list-style:none;
 	padding-inline-start:calc(1.85 * var(--md-unit));
 	margin:0 0 var(--md-gap-block);
 }
 .md-render ul.rapier-jump-list>li{
 	position:relative;
+	--md-item-line:1lh;
+	--md-jump-circle-top:calc(var(--md-jump-pad) + (var(--md-item-line) - var(--md-jump-circle)) / 2);
 	margin:0 0 var(--md-jump-gap);
-	padding:calc(.18 * var(--md-unit)) 0 calc(.18 * var(--md-unit)) calc(.15 * var(--md-unit));
+	padding:var(--md-jump-pad) 0 var(--md-jump-pad) calc(.15 * var(--md-unit));
 }
 .md-render ul.rapier-jump-list>li:last-child{margin-bottom:0}
 .md-render ul.rapier-jump-list>li::before{
 	content:'';
 	position:absolute;
 	inset-inline-start:var(--md-jump-marker-inline-start);
-	top:calc(var(--md-jump-marker-center) - 5px);
-	width:10px;height:10px;
+	top:var(--md-jump-circle-top);
+	width:var(--md-jump-circle);height:var(--md-jump-circle);
 	box-sizing:border-box;
 	border:2px solid var(--md-color-accent-text);
 	background:var(--md-color-bg);
@@ -453,10 +407,10 @@
 .md-render ul.rapier-jump-list>li:not(:last-child)::after{
 	content:'';
 	position:absolute;
-	inset-inline-start:calc(var(--md-jump-marker-inline-start) + 4px);
-	top:var(--md-jump-marker-center);
-	bottom:calc(0px - var(--md-jump-gap) - var(--md-jump-marker-center));
-	border-inline-start:2px dotted color-mix(in srgb,var(--md-color-accent-text) 42%,transparent);
+	inset-inline-start:calc(var(--md-jump-marker-inline-start) + var(--md-jump-circle) / 2 - 1.5px);
+	top:calc(var(--md-jump-circle-top) + var(--md-jump-circle));
+	bottom:calc(-1 * (var(--md-item-gap, var(--md-jump-gap)) + var(--md-jump-circle-top) + var(--md-jump-circle) / 2));
+	border-inline-start:3px dotted var(--md-color-line);
 	z-index:0;
 }
 .md-render ul.rapier-jump-list>li>a{
@@ -502,7 +456,6 @@
 .md-render p>.math-display-wrap{margin:calc(var(--md-line) / 4) 0 var(--md-gap-block)}
 .md-render p:has(>:is(.math-display-wrap,.rapier-hscroll--math):only-child){margin-bottom:var(--md-gap-block)}
 .md-render p>:is(.math-display-wrap,.rapier-hscroll--math):only-child{margin:0}
-/* Diagram MathML keeps the metrics used by its renderer. */
 .md-render math[display="block"]:not(svg *){font-size:1.12em}
 .md-render math:not([display="block"]):not(svg *){font-size:1em}
 .md-render blockquote{margin:0 0 var(--md-gap-block);
@@ -536,10 +489,6 @@
 
 .md-render details { border: var(--md-hair) solid var(--md-color-border); border-radius: 0; padding: var(--md-space-2) var(--md-space-4); margin: 0 0 var(--md-gap-block); }
 .md-render details[open] { padding-bottom: var(--md-space-3); }
-/* A section with nothing typed into it yet has no paragraph to tap: without this, the only body
-   space below the summary is the plain padding-bottom above (12px), too thin a margin for a real
-   touch to land in rather than snap back onto the summary control next to it -- the one-tap law
-   promises a way in, so an empty body keeps a genuine touch-target's worth of its own room. */
 .md-render details[open]:not(:has(> :not(summary))) { padding-bottom: var(--md-space-8); }
 .md-render summary { cursor: pointer; font-weight: var(--md-fw-semibold); color: var(--md-color-text); user-select: none; padding: var(--md-space-1) 0; }
 @media (hover:hover) and (pointer:fine){.md-render summary:hover{color:var(--md-color-accent-text)}}
@@ -581,9 +530,6 @@
 	border-bottom:2px solid var(--md-color-line);
 }
 
-/* Page break: unobtrusive by design, the same weight as .section-fold-btn (rapier-editor.css) --
-	 muted color and .37 opacity, never the stronger --color-line the horizontal-rule variants use.
-	 Invisible on paper: this sheet's print rule zeros this out and applies the actual break instead. */
 .md-render [data-md-break]{
 	position:relative;
 	height:0;
@@ -624,13 +570,6 @@
 	font-weight:var(--md-fw-semibold);
 	color:var(--md-color-line);
 }
-/* A table caption (proposal 3): `.rapier-table-caption` is the definitive class
-	 _rapierMarkTableCaptions (editor/engine.js) settles once against the whole-document export DOM,
-	 so it styles unconditionally wherever this stylesheet is embedded (the standalone/publishing web
-	 page export, the PDF/print artifact). The live editor renders each block independently and can
-	 only mark a *candidate* on the block's own raw text (_rapierMarkTableCaptionCandidate); the
-	 adjacent-sibling rule below settles the real "is it truly right after a table" question against
-	 the live .block-wrapper DOM, reactively, with no bookkeeping kept in sync on insert/delete/reorder. */
 .md-render p.rapier-table-caption {
 	margin-top: calc(var(--md-space-1) - var(--md-gap-block));
 	font-style: italic;
@@ -643,7 +582,6 @@
 	font-size: var(--md-text-sm);
 	color: var(--md-color-text-secondary);
 }
-/* A view preference can keep embedded SVGs on their original light-paper colors. */
 html[data-invert-image-alpha="off"] :is(img,.md-render svg.rapier-native-flowchart){color-scheme:light}
 .md-render img{
 	max-width:100%;height:auto;
@@ -673,13 +611,7 @@ html[data-invert-image-alpha="off"] :is(img,.md-render svg.rapier-native-flowcha
 .md-render mark[data-rapier-highlight="blue"]{--md-highlight-color:#4f91f7}
 .md-render mark[data-rapier-highlight="yellow"]{--md-highlight-color:#e6b91e}
 .md-render mark[data-rapier-highlight="purple"]{--md-highlight-color:#9b6dea}
-/* Text color: the canonical (light) hex and its OKLCH-derived dark pair both ship as inline
-	 custom properties on the run itself (editor/engine.js, §b) — this just picks between them the
-	 same way as the document palette: the document color scheme chooses the matching value. The five named swatches also carry a literal,
-	 pre-computed --md-color-dark here, so the common case survives even a round-trip that kept
-	 data-md-color but dropped style, exactly like highlight's own swatch constants. */
 .md-render [data-md-color]{--md-color-dark:var(--md-color);color:light-dark(var(--md-color),var(--md-color-dark))}
-/* Ink (docs/markdown-standard.md, "Ink"): the span shows nothing; the ink layer draws the stroke over the words it marks. */
 .md-render span.rapier-ink-mark{all:unset;display:inline}
 .rapier-ink-layer{--md-ink:#b32034;--md-ink-dark:#b32034;position:relative;display:block;width:0;height:0;margin:0;padding:0;border:0;overflow:visible;pointer-events:none;z-index:3}
 .rapier-ink-layer svg{position:absolute;display:block;margin:0;padding:0;overflow:visible}
@@ -699,7 +631,6 @@ html[data-invert-image-alpha="off"] :is(img,.md-render svg.rapier-native-flowcha
 .md-render [data-md-color="#57606a"]{--md-color-dark:#aab1bb}
 .md-render abbr[title]{text-decoration:underline dotted;text-decoration-color:var(--md-color-text-muted);text-underline-offset:2px;cursor:help}
 .md-render :is(ins,u){text-decoration:underline;color:var(--md-color-success)}
-/* The document owns its selection accent, including on an exported page. */
 .md-render ::selection{background:color-mix(in srgb,var(--md-color-accent) 48%,transparent)}
 .md-render del,.md-render s{color:var(--md-color-text-muted);text-decoration:line-through}
 
@@ -715,16 +646,10 @@ html[data-invert-image-alpha="off"] :is(img,.md-render svg.rapier-native-flowcha
 .md-render .footnote-backref{
 	margin-inline-start:var(--md-space-1);color:var(--md-color-accent-text);
 	text-decoration:underline;text-underline-offset:2px;position:relative}
-/* The arrow is a glyph 9 px wide at the end of a line; a finger that lands beside it means it. An
-   invisible reach around the glyph, nothing drawn. */
 .md-render .footnote-backref::after{content:'';position:absolute;inset:-12px}
 
 
 
-/* A shared page marks a long code block at export time; its note and its print rule travel with it.
-   These live here rather than in share.js's own fallback, where they were first written, because
-   this is the sheet every written page carries -- G3 reached the same conclusion independently, and
-   the content sheet is where a look belongs. */
 .md-render pre[data-rapier-code-lines]{position:relative;max-height:33em;overflow:auto;padding-top:28px}
 .md-render .rapier-code-lines-note{position:absolute;top:6px;right:10px;font:calc(.7 * var(--md-unit))/1 var(--md-font-sans);color:var(--md-color-text-muted);background:var(--md-color-inset);padding:.15em .5em;pointer-events:none}
 @media print{
@@ -732,12 +657,8 @@ html[data-invert-image-alpha="off"] :is(img,.md-render svg.rapier-native-flowcha
 	.md-render .rapier-code-lines-note{display:none!important}
 }
 
-/* Overflow belongs to the document; the surrounding page owns its measure and padding. */
-/* A wide table scrolls inside its wrap; the wrap carries the block's line, so a scrollbar sits under the table, not a line below it. */
 .md-render .table-scroll-wrap{width:100%;margin:0 0 var(--md-gap-block);overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px}
 .md-render .table-scroll-wrap table{min-width:100%;margin-bottom:0}
-/* Single-axis overflow leaves vertical sticky positioning with the document's scroller.
-   Older engines keep the ordinary sideways wrapper; screen-only rules leave print unchanged. */
 @media screen{
 	.md-render{--md-table-header-top:0px}
 	.md-render .table-scroll-wrap{overflow:auto clip}
@@ -748,5 +669,4 @@ html[data-invert-image-alpha="off"] :is(img,.md-render svg.rapier-native-flowcha
   .md-render [data-md-break]::after{content:none!important}
 }
 
-/* Authored run sizes supply their own line box; surrounding block rhythm is unchanged. */
 .md-render [data-md-size]{line-height:normal}

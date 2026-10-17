@@ -235,7 +235,7 @@ function _rapierWaterBind(surface) {
 			}
 			if (act === 'paper') _rapierWaterOpen('waterPaper');
 			else if (act === 'sample') { _rapierWaterState().sampling = true; _rapierDrawCloseSettingPanels(); }
-			else if (act === 'add') { await _rapierPrepareFileChooser('image'); const input = surface.querySelector('[data-water-tip-input]'); input.value = ''; input.click(); }
+			else if (act === 'add') { const input = surface.querySelector('[data-water-tip-input]'); input.value = ''; input.click(); }
 			else if (act === 'save') _rapierWaterSaveBrush();
 			else if (act === 'remove') {
 				const rows = _rapierWaterOwn().filter(row=>row.id!==_rapierWaterState().brush); _rapierDrawState.waterBrushes=rows;

@@ -45,7 +45,11 @@ export function editorRequest(state, operation, args = {}) {
   if (!object(state) || typeof state.documentId !== 'string' || !state.documentId || !integer(state.revision)) return editorFailure('document_changed');
   const request = {kind: 'editor', documentId: state.documentId, revision: state.revision, operation};
   if (operation === 'editor.set_preferences') {
-    if (!validPreference(args.preference, args.value)) return editorFailure('preference_invalid');
+    if (!validPreference(args.preference, args.value)) {
+      const definition = own(PREFERENCE_SCHEMAS, args.preference) ? PREFERENCE_DEFINITIONS[args.preference] : null;
+      return {...editorFailure('preference_invalid'), ...(definition ? {preference: args.preference, ...(definition.values ? {values: definition.values} : {type: typeof definition.fallback})}
+        : {preferences: Object.keys(PREFERENCE_SCHEMAS).filter(name => PREFERENCE_DEFINITIONS[name]?.agent !== false)})};
+    }
     if (PREFERENCE_DEFINITIONS[args.preference].agent === false) return editorFailure('human_authority_required');
     Object.assign(request, {preference: args.preference, value: args.value});
   } else if (operation === 'document.device_action') {

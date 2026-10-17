@@ -9,6 +9,36 @@
   Origin-Agent-Cluster: ?1
   Origin-Trial: AtFuTRsj1SOJpqIO0IrTpfvZjWjm61v47tsWw+RpPlMP3J1ZpZr895WYl81B5uRkO6X9sjAtQN/yp0SrhKNZ9QkAAABheyJvcmlnaW4iOiJodHRwczovL3JhcGllci53ZWJzaXRlOjQ0MyIsImZlYXR1cmUiOiJXZWJNQ1AiLCJleHBpcnkiOjE3OTQ4NzM2MDAsImlzU3ViZG9tYWluIjp0cnVlfQ==
 
+# Google's Picker for plain files on Drive (notes/drive-picker.mjs): its own page and policy, never the editor's.
+/drive-picker.html
+  ! Content-Security-Policy
+  Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline' https://apis.google.com https://www.gstatic.com; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src https: data:; frame-src https://docs.google.com https://drive.google.com https://content.googleapis.com; connect-src https://apis.google.com https://www.googleapis.com https://content.googleapis.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  X-Robots-Tag: noindex
+
+# Plain files on a WebDAV server or an S3 bucket (notes/plain-relay.mjs): framed by Rapier's own page only. It may reach
+# an HTTPS host, and narrows itself to the one in its address before any request.
+/plain-storage.html
+  ! Content-Security-Policy
+  Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; connect-src https:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'
+  X-Robots-Tag: noindex
+
+# Rapier Sync's sign-in returns (tools/app-links.mjs): one inline script, no request of its own. Headers match the
+# address asked for, so the /sync/* paths _redirects answers with this page carry the same policy.
+/sync-return.html
+  ! Content-Security-Policy
+  Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  X-Robots-Tag: noindex
+
+/sync/*
+  ! Content-Security-Policy
+  Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  X-Robots-Tag: noindex
+
+/.well-known/assetlinks.json
+  Content-Type: application/json
+  ! Cache-Control
+  Cache-Control: public, max-age=300
+
 # The embeddable copies are for other sites' frames: the site's own page is the one a search engine lists.
 /embed/*
   X-Robots-Tag: noindex

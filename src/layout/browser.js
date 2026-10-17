@@ -644,8 +644,17 @@ const _rapierImageFlow = (() => {
 
   function pictureProfile(image, rotateRad = 0) {
     if ((moving?.kind === 'rotate' || moving?.kind === 'shape') && moving.image === image) return moving.previewProfile || null;
-    if (image?.matches('img:is([data-rapier-asset],[data-rapier-image-url])') && image.dataset.rapierAssetState !== 'ready') return null;
     if (image?.dataset.rapierContour?.endsWith('-box')) return null;
+    if (image?.matches('img:is([data-rapier-asset],[data-rapier-image-url])') && image.dataset.rapierAssetState !== 'ready') {
+      const recipe = !rotateRad && typeof _rapierDrawRecipeFromImage === 'function' ? _rapierDrawRecipeFromImage(image) : null;
+      if (!recipe || typeof _rapierDrawShapeProfileFor !== 'function' ||
+          recipe.shapes.some(shape => shape.recognized === 'text' || shape.recognized === 'paint' || shape.label)) return null;
+      const early = shapeProfiles.get(image);
+      if (early?.recipe === recipe) return early.profile;
+      const profile = _rapierDrawShapeProfileFor(recipe, null);
+      shapeProfiles.set(image, {recipe, profile});
+      return profile;
+    }
     if (!image?.complete || !(image.naturalWidth > 0) || !(image.naturalHeight > 0)) return null;
     const src = image.currentSrc || image.getAttribute('src') || '';
     const cached = shapeProfiles.get(image);
@@ -1177,12 +1186,10 @@ const _rapierImageFlow = (() => {
     return null;
   }
 
-  function mountedWrappers() {
-    if (!host.classList.contains('editor-area--virtualized')) return [...host.children].filter(wrapper => wrapper.classList.contains('block-wrapper'));
-    const ledger = _rapierWysiwygLedger, window = ledger.window;
-    if (!window) return [];
+  function demandedWrappers(first, last) {
+    const ledger = _rapierWysiwygLedger;
     const wrappers = new Set(heldWrappers());
-    for (let index = window[0]; index <= window[1]; index++) {
+    for (let index = first; index <= last; index++) {
       const wrapper = ledger.entries.get(ledger.order[index])?.wrapper;
       if (wrapper) wrappers.add(wrapper);
     }
@@ -1204,8 +1211,21 @@ const _rapierImageFlow = (() => {
     for (const wrapper of [...wrappers]) {
       if (hasLayoutImage(wrapper)) wrappers.add(wrapOwner(wrapper));
     }
-    for (const wrapper of wrappers) if (wrapper) _rapierWysiwygWake(wrapper);
-    return [...wrappers].filter(Boolean).sort((a, b) =>
+    wrappers.delete(null); wrappers.delete(undefined);
+    return wrappers;
+  }
+
+  function windowWrappers(first, last) {
+    return host?.isConnected ? [...demandedWrappers(first, last)].filter(wrapper => wrapper.isConnected) : [];
+  }
+
+  function mountedWrappers() {
+    if (!host.classList.contains('editor-area--virtualized')) return [...host.children].filter(wrapper => wrapper.classList.contains('block-wrapper'));
+    const ledger = _rapierWysiwygLedger, window = ledger.window;
+    if (!window) return [];
+    const wrappers = demandedWrappers(window[0], window[1]);
+    for (const wrapper of wrappers) _rapierWysiwygWake(wrapper);
+    return [...wrappers].sort((a, b) =>
       ledger.indexById.get(String(a.dataset.blockId)) - ledger.indexById.get(String(b.dataset.blockId)));
   }
 
@@ -1572,10 +1592,15 @@ const _rapierImageFlow = (() => {
   }
 
   let pressed = false, pressedLayout = false;
+  const covered = () => document.body.classList.contains('rapier-notes-open');
   function schedule() {
     syncPreparationDocument();
     if (pressed && !moving) { pressedLayout = true; return; }
-    if (!frame && host) frame = requestAnimationFrame(() => { const wrapper = replanWrapper; replanWrapper = null; if (!(wrapper && replan(wrapper))) layout(); });
+    if (covered() && !moving) { replanWrapper = null; return; }
+    if (!frame && host) frame = requestAnimationFrame(() => {
+      if (covered() && !moving) { frame = 0; replanWrapper = null; return; }
+      const wrapper = replanWrapper; replanWrapper = null; if (!(wrapper && replan(wrapper))) layout();
+    });
   }
 
   let replanWrapper = null;
@@ -1638,7 +1663,27 @@ const _rapierImageFlow = (() => {
     for (const grip of [...resizeGrips, moveHandle, rotateGrip]) grip?.toggleAttribute('data-rapier-covered', covered);
   }
 
+  let yieldFrame = 0, circleWatch = null;
+  function yieldCircle() {
+    if (yieldFrame) return;
+    yieldFrame = requestAnimationFrame(() => {
+      yieldFrame = 0;
+      const fab = document.getElementById('scroll-fab');
+      if (!fab) return;
+      let covers = false;
+      if (fab.classList.contains('visible') && !fab.classList.contains('scroll-fab--edge') && !fab.classList.contains('tracking')) {
+        const circle = fab.getBoundingClientRect(), cx = circle.left + circle.width / 2, cy = circle.top + circle.height / 2, r = circle.width / 2;
+        covers = [...resizeGrips, moveHandle, rotateGrip].some(grip => {
+          if (!grip?.isConnected || grip.hidden || grip.hasAttribute('data-rapier-covered')) return false;
+          const box = grip.getBoundingClientRect();
+          return Math.hypot(cx - clamp(cx, box.left, box.right), cy - clamp(cy, box.top, box.bottom)) < r;
+        });
+      }
+      fab.toggleAttribute('data-rapier-yield', covers);
+    });
+  }
   function positionGrip() {
+    yieldCircle();
     if (!resizeGrips.length) return;
     const shown = gripsOk && selected?.isConnected && selected.naturalWidth > 0 && moving?.kind !== 'shape' && !fieldOpen && layoutOf(selected)?.lock !== 'on' &&
       !rapier.access.readOnly && !rapier.compare.active && rapier.view.mode !== 'source' && !_rapierPlainLayout();
@@ -1939,6 +1984,10 @@ const _rapierImageFlow = (() => {
       dialogWatch = new MutationObserver(coverGrips);
       dialogWatch.observe(document.body, {childList: true});
       dialogWatch.observe(document.documentElement, {subtree: true, attributes: true, attributeFilter: ['open']});
+    }
+    if (!circleWatch && document.getElementById('scroll-fab')) {
+      circleWatch = new MutationObserver(() => { if (selected) yieldCircle(); });
+      circleWatch.observe(document.getElementById('scroll-fab'), {attributes: true, attributeFilter: ['class', 'style']});
     }
     coverGrips(); controls(); positionGrip();
   }
@@ -2273,6 +2322,7 @@ const _rapierImageFlow = (() => {
     for (const button of resizeGrips) button.hidden = true;
     if (moveHandle) moveHandle.hidden = true;
     if (rotateGrip) rotateGrip.hidden = true;
+    yieldCircle();
   }
 
   function imageLayoutEdit(record, occurrence, value) {
@@ -2876,7 +2926,7 @@ const _rapierImageFlow = (() => {
         return !refused;
       }
       const releaseTop = rect(gesture.image).top - rect(host).top, viewport = admitGesture(gesture);
-      try { return await commitDrawing(sourceRecord, gesture, recipe, releaseTop, viewport, gesture.baseRecipe); }
+      try { return await commitDrawing(sourceRecord, gesture, recipe, releaseTop, viewport, gesture.baseRecipe, true); }
       finally { if (moving === gesture) cancel(); }
     }
     if (gesture.kind === 'rotate') {
@@ -3002,7 +3052,7 @@ const _rapierImageFlow = (() => {
 
   if (!host || !geometry || !metadata) return Object.freeze({rotateGlyph, schedule() {}, close() {}, select() {}, restore() {}, retire() {},
     restoreSelection() {}, invalidate() {}, sourcePoint() {}, mappedPoint: (node, offset) => ({node, offset}),
-    textOffset: () => undefined, activation: (_wrapper, value) => value, heldWrappers: () => [], setWrapShape() { return false; },
+    textOffset: () => undefined, activation: (_wrapper, value) => value, heldWrappers: () => [], windowWrappers: () => [], setWrapShape() { return false; },
     status: () => ({moving: false, projections: 0, images: 0})});
   const sheet = document.createElement('style');
   sheet.textContent = `
@@ -3490,6 +3540,17 @@ const _rapierImageFlow = (() => {
         return;
       }
     }
+    if (!handle && event.pointerType !== 'touch' && event.target !== selected && !armed && !moving &&
+        event.target?.matches?.('.block-read img[data-rapier-markdown-image]') && isDrawing(event.target)) {
+      const image = event.target, block = _rapierBoundBlock(image.closest('.block-wrapper')), hit = block && boxAt(image, event.clientX, event.clientY);
+      if (hit && _rapierSelectImage(block, image) && selected === image) {
+        event.preventDefault(); event.stopImmediatePropagation();
+        if (document.activeElement !== host && document.activeElement !== selected) host.focus({preventScroll: true});
+        startShape(event, hit);
+        if (moving) moving.selecting = true;
+        return;
+      }
+    }
     if (!handle && event.target === selected && !armed && !moving) {
       const hit = boxAt(selected, event.clientX, event.clientY);
       if (hit) {
@@ -3575,6 +3636,7 @@ const _rapierImageFlow = (() => {
       if (moving.kind === 'shape' && rotateFrame) { cancelAnimationFrame(rotateFrame); rotateFrame = 0; shapePreview(); }
     }
     const commit = moving?.drag?.moved;
+    if (moving.kind === 'shape' && !commit && moving.selecting) { pointerClick = event.pointerId; cancel(); return; }
     if (moving.kind === 'shape' && !commit) {
       const hit = moving.hit, prepared = moving.prepared; pointerClick = event.pointerId; cancel();
       if (fieldOpen && !fieldOpen.step && hit && !hit.step && hit.shape.id === fieldOpen.shapeId) { fieldOpen.pressing = false; placeCaretAt(fieldOpen, event.clientX, event.clientY); return; }
@@ -3759,7 +3821,7 @@ const _rapierImageFlow = (() => {
   window.addEventListener('pagehide', cancel);
   document.addEventListener('visibilitychange', () => { if (document.hidden) cancel(); });
   schedule();
-  return Object.freeze({rotateGlyph, schedule, layoutNow, select, close, activation, restoreSelection, restore, retire, heldWrappers, mappedPoint, sourcePoint, textOffset, invalidate, pinSettled,
+  return Object.freeze({rotateGlyph, schedule, layoutNow, select, close, activation, restoreSelection, restore, retire, heldWrappers, windowWrappers, mappedPoint, sourcePoint, textOffset, invalidate, pinSettled,
     remove, armSettle, settleNow, unproject, editSource, livePoint, setWrapShape, splitPlan, behindPictureAt, paragraphStyle, caretBand,
     status: () => ({moving: !!moving && !moving.committing, committing: !!moving?.committing, settling: !!settle || !!moving?.committing || performance.now() - settledAt < 400, projections: projections.size, images: lastObstacles.length, rotatePerf: {...rotatePerf}})});
 })();

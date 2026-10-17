@@ -614,11 +614,11 @@ const _rapierNotesStore = {
 		if (typeof path !== 'string' || !path || /[\\\0]/.test(path) || path.split('/').some(p => !p || p === '.' || p === '..')) throw new Error('backup path is not relative');
 		const ported = await this.port();
 		if (ported && stream && typeof this.bytes.readChunks === 'function') {
-			const opened = await this.bytes.stat(path), port = this.bytes;
+			const opened = await this.bytes.stat(path, {digest: true}), port = this.bytes;
 			if (!opened) return null;
 			return {size: opened.size, lastModified: opened.modified || 0,
-				chunks: ({chunkBytes, signal}) => port.readChunks(path, {chunkBytes, signal, onOpen: actual => {
-					if (!actual || actual.size !== opened.size || actual.modified !== opened.modified) throw new Error('a backup file changed: ' + path);
+				chunks: ({chunkBytes, signal}) => port.readChunks(path, {chunkBytes, signal, digest: true, onOpen: actual => {
+					if (!actual || actual.size !== opened.size || actual.modified !== opened.modified || opened.sha256 !== undefined && actual.sha256 !== opened.sha256) throw new Error('a backup file changed: ' + path);
 				}})};
 		}
 		return this.blob(path);
@@ -893,7 +893,12 @@ async function _rapierNotesLoad() {
 		snapshot = await store.folder.rebuildIndex(backup, {syncState: true});
 		damaged = snapshot.damaged;
 	}
-	if (await _rapierNotesPending.recover()) snapshot = await read();
+	if (await _rapierNotesPending.recover()) {
+		const kept = new Map((snapshot.kept || []).map(row => [JSON.stringify([row.file, row.name]), row]));
+		snapshot = await read();
+		for (const row of snapshot.kept || []) kept.set(JSON.stringify([row.file, row.name]), row);
+		snapshot.kept = [...kept.values()];
+	}
 	const syncState = snapshot.syncState ?? null;
 	const index = snapshot.index, files = snapshot.files;
 	state.recordingOffers = Array.isArray(snapshot.recordings) ? snapshot.recordings : [];
@@ -1314,6 +1319,9 @@ function _rapierNotesSyncFacts() {
 	const connected = live?.stage ? (kept ? live.credentialStored === true : live.authorized === true)
 		: app ? vault?.mode === 'companion' : kept && Array.isArray(vault.credential) && vault.credential.length > 0;
 	const at = live?.stage ? live.backedUpAt : _rapierNotes.syncState?.backedUpAt;
+	const plain = _rapierNotes.syncState?.plain;
+	if (plain && !vault) return {app, connected: true, plain: true, service: plain.provider === 'companion' ? 'rapier sync' : (S?.PROVIDERS?.[plain.provider]?.label || S?.KEY_PLAIN_LABELS?.[plain.provider])?.toLowerCase() || null,
+		at: Number.isSafeInteger(plain.syncedAt) && plain.syncedAt > 0 ? plain.syncedAt : null};
 	return {app, connected, service: other && S?.PROVIDERS?.[other]?.label.toLowerCase() || null, at: connected && Number.isSafeInteger(at) && at > 0 ? at : null};
 }
 function _rapierNotesBackupWhen(at) {
@@ -1330,8 +1338,9 @@ function _rapierNotesSyncBoxWear(b) {
 	if (!b) { for (const button of document.querySelectorAll('.rapier-notes-sync')) _rapierNotesSyncBoxWear(button); return; }
 	const facts = _rapierNotesSyncFacts();
 	b.classList.add('rapier-cloudflare');
-	b.replaceChildren(_rapierNotesEl('span', 'rapier-notes-sync__word', facts.app ? 'rapier sync (coming soon)' : !facts.connected ? 'sync' : facts.at ? 'backed up to ' + (facts.service || 'cloudflare') : 'connected to ' + (facts.service || 'cloudflare')));
-	if (facts.connected) b.appendChild(_rapierNotesEl('span', 'rapier-notes-sync__when', facts.at ? _rapierNotesBackupWhen(facts.at) : 'not backed up yet'));
+	b.replaceChildren(_rapierNotesEl('span', 'rapier-notes-sync__word', facts.app ? 'rapier sync (coming soon)' : !facts.connected ? 'sync'
+		: facts.plain ? 'plain files on ' + (facts.service || 'your storage') : facts.at ? 'backed up to ' + (facts.service || 'cloudflare') : 'connected to ' + (facts.service || 'cloudflare')));
+	if (facts.connected) b.appendChild(_rapierNotesEl('span', 'rapier-notes-sync__when', facts.at ? _rapierNotesBackupWhen(facts.at) : facts.plain ? 'not synced yet' : 'not backed up yet'));
 	if (facts.connected) b.dataset.active = 'true'; else delete b.dataset.active;
 }
 function _rapierNotesSyncPress() {
@@ -3025,6 +3034,59 @@ function _rapierNotesPublishUrl(file) {
 	if (typeof _rapierEmbed !== 'undefined' && (_rapierEmbed.active || _rapierEmbed.local)) return;
 	try { history.replaceState(history.state, '', _rapierBootPathAndQuery() + '#n/' + encodeURIComponent(id)); } catch (_) {}
 }
+const _rapierNotesRetiredAddress = {
+	proof: null,
+	capture() {
+		const state = _rapierNotes, store = _rapierNotesStore;
+		return {folder: store.folder, bytes: store.bytes, loadRequest: state.loadRequest, loadGen: state.loadGen,
+			surface: state.surface, opening: state.noteOpeningTask, current: state.current, stamp: _rapierMutationStamp()};
+	},
+	same(scope, foreground = true) {
+		const state = _rapierNotes, store = _rapierNotesStore;
+		return !!scope && !!scope.folder && scope.folder === store.folder && scope.bytes === store.bytes &&
+			scope.loadRequest === state.loadRequest && scope.loadGen === state.loadGen &&
+			scope.surface === state.surface && scope.opening === state.noteOpeningTask &&
+			!state.opening && !state.noteOpening && !state.returning &&
+			(!foreground || scope.current === state.current && _rapierMutationStampIsCurrent(scope.stamp));
+	},
+	index() {
+		const notes = _rapierNotes.indexBase?.notes, counts = new Map();
+		for (const entry of Object.values(notes || {})) counts.set(entry.id, (counts.get(entry.id) || 0) + 1);
+		return {notes, counts};
+	},
+	kept(row, index) {
+		const {notes, counts} = index;
+		if (!notes) return false;
+		if (row.removed) return !notes[row.file] && !counts.has(row.id);
+		const entry = notes[row.file];
+		return counts.get(row.id) === 1 && entry?.id === row.id && entry.trashed === true &&
+			['trashedAt', 'trashDigest', 'trashRevision'].every(key => entry[key] === row[key]);
+	},
+	retire(scope, rows) {
+		if (!this.same(scope)) return;
+		const index = this.index(), kept = rows.filter(row => row.id && this.kept(row, index));
+		if (!kept.length) return;
+		const old = this.proof;
+		const identities = new Map(this.same(old?.scope) ? [...old.identities].filter(([, row]) => this.kept(row, index)) : []);
+		for (const row of kept) identities.set(row.id, row);
+		this.proof = {scope, identities};
+		this.publish();
+	},
+	publish() {
+		const proof = this.proof, state = _rapierNotes;
+		if (!proof) return false;
+		if (!this.same(proof.scope)) { this.proof = null; return false; }
+		const index = this.index();
+		for (const [id, row] of proof.identities) if (!this.kept(row, index)) proof.identities.delete(id);
+		if (!proof.identities.size) { this.proof = null; return false; }
+		if (!state.open || !state.surface || state.surface.hidden) return false;
+		let id;
+		try { id = decodeURIComponent(/^#n\/([^/]+)/.exec(location.hash)?.[1] || ''); } catch (_) { return false; }
+		if (!proof.identities.has(id)) return false;
+		_rapierNotesPublishCardsUrl();
+		return true;
+	}
+};
 async function _rapierNotesOpenById(id) {
 	const state = _rapierNotes;
 	let opened = false;
@@ -4386,6 +4448,7 @@ async function _rapierNotesAct(act, arg) {
 	const flight = act === 'pin' ? _rapierNotesPinFlightFrom(files, !every('pinned')) : null;
 	const before = files.map(f => ({ file: f, fields: Object.fromEntries(['archived', 'trashed', 'trashedAt', 'trashDigest', 'trashRevision'].map(key => [key, state.index.notes[f][key]])) }));
 	const whole = files.map(f => [f, JSON.parse(JSON.stringify(state.index.notes[f]))]);
+	const retirement = act === 'trash' ? _rapierNotesRetiredAddress.capture() : null;
 	const count = files.length === 1 ? '' : ' ' + files.length;
 	let snack = null;
 	if (act === 'pin') { const on = !every('pinned'); for (const e of entries) e.pinned = on; }
@@ -4446,7 +4509,14 @@ async function _rapierNotesAct(act, arg) {
 	if (!wash && !flight) _rapierNotesRender();
 	const touchedGroup = ({pin: 'pinned', 'colour-pick': 'colour', 'section-pick': 'section', 'section-new': 'section', archive: 'archiveTrash', trash: 'archiveTrash', restore: 'archiveTrash'})[act];
 	const touches = touchedGroup ? files.map(file => ({id: state.index.notes[file].id, groups: [touchedGroup]})) : [];
-	try { await _rapierNotesWriteIndex(state.index, state.indexBase, touches); }
+	try {
+		const written = await _rapierNotesWriteIndex(state.index, state.indexBase, touches);
+		if (retirement) _rapierNotesRetiredAddress.retire(retirement, whole.flatMap(([file, before]) => {
+			const entry = written.index.notes[file];
+			return entry?.id === before.id && entry.trashed === true ? [{file, id: before.id,
+				trashedAt: entry.trashedAt, trashDigest: entry.trashDigest, trashRevision: entry.trashRevision}] : [];
+		}));
+	}
 	catch (error) {
 		for (const [f, e] of whole) if (state.index.notes[f]) state.index.notes[f] = e;
 		showToast('The change was not written to the notes folder: ' + String(error?.message || error), 'error');
@@ -4590,11 +4660,17 @@ function _rapierNotesWash(was, frames = 12) {
 }
 
 async function _rapierNotesBlankDocument() {
-	_rapierNotesLeaveNote(); _rapierNotesMarkClean();
+	const state = _rapierNotes, guard = _rapierMutationStamp(), file = state.current,
+		proof = state.currentProof, opening = state.noteOpeningTask;
 	try {
 		if (typeof rapierLoad !== 'function') return;
-		if (await rapierLoad('', 'untitled.md', {documentKind: 'markdown', deferFlush: true,
-				documentAuthority: 'notes:' + _rapierCreateDocumentAuthority()})) _rapierNotesMarkClean();
+		const loaded = await rapierLoad('', 'untitled.md', {documentKind: 'markdown', deferFlush: true,
+			expectedMutationStamp: guard, returnReceipt: true, documentAuthority: 'notes:' + _rapierCreateDocumentAuthority()});
+		if (!loaded || !_rapierLoadReceiptIsCurrent(loaded) || Number(rapier.identity.loadToken || 0) !== guard.loadToken + 1 ||
+				state.noteOpeningTask !== opening || !(state.current === file && state.currentProof === proof ||
+				state.current === null && state.currentProof === null)) return;
+		_rapierNotesLeaveNote(); _rapierNotesMarkClean();
+		return {loaded, stamp: _rapierMutationStamp()};
 	} catch (error) { console.warn('[rapier] notes', error); }
 }
 async function _rapierNotesDeletionProof(files) {
@@ -4612,6 +4688,8 @@ async function _rapierNotesDeletionProof(files) {
 async function _rapierNotesDeleteForeverFiles(files, mode = 'confirmed', expected = null) {
 	const state = _rapierNotes, store = _rapierNotesStore, A = globalThis.RapierNotesAudio;
 	if (mode === 'confirmed' && !expected) throw new Error('The selected notes have no deletion proof. Review them before deleting.');
+	let retirement = mode === 'confirmed' ? _rapierNotesRetiredAddress.capture() : null;
+	const identities = retirement ? files.map(file => ({file, id: expected.get(file)?.id, removed: true})) : [];
 	await _rapierNotesFlush();
 	const targets = new Set(files), owned = new Set(), shared = new Set();
 	let unreadable = 0;
@@ -4626,10 +4704,23 @@ async function _rapierNotesDeleteForeverFiles(files, mode = 'confirmed', expecte
 	const listed = (await store.list()).filter(name => /\.md$/i.test(name));
 	await census(listed.filter(name => targets.has(name)));
 	if (owned.size) await census(listed.filter(name => !targets.has(name)));
-	if (mode === 'confirmed' && files.includes(state.current)) await _rapierNotesBlankDocument();
+	if (mode === 'confirmed' && files.includes(state.current)) {
+		if (!_rapierNotesRetiredAddress.same(retirement) ||
+				!identities.some(row => row.file === state.current && row.id === state.index.notes[state.current]?.id))
+			throw new Error('the document changed or is busy. Try again.');
+		const blank = await _rapierNotesBlankDocument();
+		if (!blank || !_rapierNotesRetiredAddress.same(retirement, false) || state.current !== null ||
+				!_rapierLoadReceiptIsCurrent(blank.loaded) || !_rapierMutationStampIsCurrent(blank.stamp))
+			throw new Error('the document changed or is busy. Try again.');
+		retirement = {...retirement, current: null, stamp: blank.stamp};
+	}
 	await store.kind();
+	if (retirement && (retirement.folder !== store.folder || retirement.bytes !== store.bytes ||
+			files.includes(state.current) || state.opening || state.noteOpening || state.returning))
+		throw new Error('the document changed or is busy. Try again.');
 	const outcome = _rapierNotesTake(await store.folder.trash({files, mode, expected}));
 	const result = outcome.result, removed = result.deleted.filter(file => targets.has(file));
+	if (retirement) _rapierNotesRetiredAddress.retire(retirement, identities.filter(row => removed.includes(row.file) && !outcome.index.notes[row.file]));
 	if (mode === 'confirmed' && result.revived.length) showToast(result.revived.length === 1 ? 'A selected note changed and was kept. Review it before deleting.' : result.revived.length + ' selected notes changed and were kept. Review them before deleting.', 'info');
 	for (const file of removed) { state.texts.delete(file); state.titles.delete(file); if (typeof _rapierNotesLibraryTouch === 'function') _rapierNotesLibraryTouch(file, true); }
 	if (typeof _rapierNotesLibraryTouch === 'function') for (const file of result.revived) _rapierNotesLibraryTouch(file);
@@ -5087,20 +5178,31 @@ function _rapierNotesImportClose() { const overlay = document.getElementById('no
 async function _rapierNotesImportPick(source) {
 	const state = _rapierNotes;
 	_rapierNotesImportClose();
-	if (typeof _rapierPrepareFileChooser === 'function') await _rapierPrepareFileChooser('notes-import');
 	const input = document.createElement('input');
 	input.type = 'file'; input.multiple = true; input.accept = source === 'restore' ? RAPIER_NOTES_RESTORE_ACCEPT : '';  input.hidden = true;
 	document.body.appendChild(input);
 	input.addEventListener('cancel', () => input.remove(), { once: true });
 	input.addEventListener('change', () => {
 		const files = [...(input.files || [])]; input.remove();
-		if (!files.length) return;
-		state.capturing = (state.capturing || Promise.resolve()).then(async () => {
-			const popup = _rapierProgressOpen({label: source === 'restore' ? 'Restoring notes' : 'Importing notes', after: 500});
-			try { await _rapierNotesImportFiles(files, source); } finally { popup.end(); }
-		}).catch(error => { state.importFaults++; console.warn('[rapier] notes import', error); showToast('The import did not finish. Keep the source export and check Notes before trying again.', 'error'); });
+		if (files.length) _rapierNotesImportQueued(files, source);
 	});
 	input.click();
+}
+function _rapierNotesImportQueued(files, source) {
+	const state = _rapierNotes;
+	state.capturing = (state.capturing || Promise.resolve()).then(async () => {
+		const popup = _rapierProgressOpen({label: source === 'restore' ? 'Restoring notes' : 'Importing notes', after: 500});
+		try { await _rapierNotesImportFiles(files, source); } finally { popup.end(); }
+	}).catch(error => { state.importFaults++; console.warn('[rapier] notes import', error); showToast('The import did not finish. Keep the source export and check Notes before trying again.', 'error'); });
+}
+function _rapierNotesEmptyLibraryDrop(event) {
+	const state = _rapierNotes;
+	if (event.type !== 'drop' || !state.open || !state.index || state.query || Object.keys(state.index.notes).length) return false;
+	const files = [...(event.dataTransfer?.files || [])];
+	if (!files.length) return false;
+	event.preventDefault(); event.stopImmediatePropagation();
+	_rapierNotesImportQueued(files, 'any');
+	return true;
 }
 function _rapierNotesImporters() {
 	const g = globalThis, pick = (mod, fn) => (mod && typeof mod[fn] === 'function' ? mod[fn] : null);
@@ -6820,6 +6922,7 @@ function _rapierNotesHistory(where) {
 }
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') window.addEventListener('popstate', () => {
 	const state = _rapierNotes;
+	_rapierNotesRetiredAddress.publish();
 	const depth = state.historyDepth || 0, to = Number(history.state?.rapierNotes) || 0;
 	if (!depth || to >= depth) { if (typeof _rapierPublishDocumentUrl === 'function') _rapierPublishDocumentUrl(); return; }
 	const answered = (typeof _rapierDialogsHandleBack === 'function' && _rapierDialogsHandleBack()) ||
@@ -7415,6 +7518,12 @@ function _rapierNotesInstall() {
 	if (globalThis.RapierBenchSession?.active === true) return;
 	_rapierNotesShowDoors();
 	_rapierNotesSyncBoxWear();
+	document.addEventListener('dragover', evt => {
+		const state = _rapierNotes;
+		if (state.open && state.index && !state.query && !Object.keys(state.index.notes).length && evt.target?.closest?.('#rapier-notes-surface') &&
+			Array.from(evt.dataTransfer?.types || []).includes('Files')) evt.preventDefault();
+	}, true);
+	document.addEventListener('drop', evt => { if (evt.target?.closest?.('#rapier-notes-surface')) _rapierNotesEmptyLibraryDrop(evt); }, true);
 	document.getElementById('notes-import-overlay')?.addEventListener('keydown', evt => { if (evt.key !== 'Escape' || evt.isComposing) return; evt.preventDefault(); evt.stopPropagation(); _rapierNotesImportClose(); });
 	document.addEventListener('click', evt => {
 		if (evt.target.closest?.('[data-action="notes-pin"]')) { void _rapierNotesHeadAct('pin'); return; }

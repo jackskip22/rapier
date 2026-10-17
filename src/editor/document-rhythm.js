@@ -1,8 +1,19 @@
-function _rapierSyncDocumentRhythm(host = document.getElementById('editor-blocks'), changed = null) {
+const _rapierRhythmRuntime = { key: null };
+const _rapierSpliceRuntime = { slugState: null };
+function _rapierSyncDocumentRhythm(host = document.getElementById('editor-blocks'), changed = null, spliced = null) {
 	if (!host) return;
 	const spec = globalThis.RapierMarkdownSpec;
-	const authored = spec.readDocumentSettings(String(rapier.document.frontmatter || ''));
-	const settings = RapierPreferences.read('layout') === 'docx' ? spec.wordDocumentSettings(authored) : authored;
+	const frontmatter = String(rapier.document.frontmatter || ''), layout = RapierPreferences.read('layout');
+	const key = layout + '\n' + frontmatter;
+	if (spliced) {
+		if (key === _rapierRhythmRuntime.key && spliced.length <= 64) {
+			for (const wrapper of spliced) if (wrapper?.isConnected && wrapper.parentElement) _rapierSyncDocumentRhythm(host, wrapper);
+			return;
+		}
+		changed = null;
+	}
+	const authored = spec.readDocumentSettings(frontmatter);
+	const settings = layout === 'docx' ? spec.wordDocumentSettings(authored) : authored;
 	const visible = wrapper => wrapper?.classList.contains('block-wrapper') && !wrapper.hidden &&
 		!wrapper.classList.contains('block-wrapper--metadata') && wrapper.style.getPropertyValue('--md-rhythm-anchor') !== '1' &&
 		!!_rapierBoundBlock(wrapper) && !_rapierWysiwygRenderHidden(_rapierBoundBlock(wrapper));
@@ -25,6 +36,7 @@ function _rapierSyncDocumentRhythm(host = document.getElementById('editor-blocks
 		else changed.style.removeProperty('--md-block-gap');
 		return;
 	}
+	_rapierRhythmRuntime.key = key;
 	let previous = null;
 	for (const wrapper of _blockWrapperChildren(host)) {
 		if (!visible(wrapper)) continue;

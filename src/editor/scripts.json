@@ -31,6 +31,7 @@
   "agent/comments-ui.js",
   "editor/html-blocks.js",
   "draw/flowchart-editor.js",
+  "draw/flowchart-touch.js",
   "editor/personal.js",
   "draw/door.js",
   "draw/reader.js",

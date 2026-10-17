@@ -33,12 +33,12 @@ const reader = Rapier.mount(element, {build: 'reader', src: '/rapier/rapier-read
 
 ## Example requests
 
-- "Write a project plan in Rapier that I can edit in my browser and keep as one Markdown file."
-- "Add our signup process to my Rapier plan as a diagram whose boxes I can move."
-- "Revise the introduction in my open draft, show me what changed, and let me undo it."
-- "Read the document I have open in Rapier and fix only the typos in section 2."
-- "Paint a watercolor sunset over the sea at the top of my Rapier page, and leave the boats for me."
-- "Give me my Rapier plan as one offline HTML file I can keep editing."
+- "Write my blog post in Rapier with the images embedded so I can keep editing it, then export it as HTML."
+- "Make a Mermaid diagram of how our company's data flows, put our report underneath for me to check, then give me a PDF to print for the meeting."
+- "Make my document more concise and better structured, and show me each change so I can compare it and undo any one of them."
+- "Draw a flowchart of our new plan with boxes I can move around."
+- "Paint the first layer of a watercolor garden, then we'll take turns."
+- "Turn this Markdown report into a Rapier HTML file my friend can read and edit offline, with no Markdown app installed."
 
 For a painting, the person needs a visible full editor with WebGPU: open `editor_url` and pair the browser when it asks for a code.
 

@@ -84,8 +84,19 @@ export class Renderer {
     const groups=JSON.parse(script('rapier-builtin-plugins')[1]).filter(group=>['math','mermaid','font-subset'].includes(group.id));
     if(groups.length!==3)throw refusal('RENDER_RUNTIME_MISSING','The retained render resources are incomplete.',503);
     const inventory='<script type="application/json" id="rapier-server-plugins">'+JSON.stringify(groups)+'</script>';
-    const payload=groups.map(group=>{
-      const retained=script(group.element)[0],carried=scripts(this.runtime,group.element);
+    const retainedOf=async group=>{
+      if(scripts(bundled,group.element).length || !group.asset)return script(group.element)[0];
+      const {file,bytes,sri}=group.asset;
+      if(!/^rapier-plugin-[a-z-]+-[0-9a-f]{16}\.txt$/.test(file || ''))throw refusal('RENDER_RUNTIME_MISSING','The retained render resource has an unreadable pin: '+group.element,503);
+      let body;try{body=await readFile(new URL('../dist/chatgpt/editor-assets/'+file,import.meta.url));}
+      catch(error){throw Object.assign(refusal('RENDER_RUNTIME_MISSING','The retained render resource is missing: '+group.element,503),{cause:error});}
+      if(body.length!==bytes || createHash('sha384').update(body).digest('base64')!==sri)
+        throw refusal('RENDER_RUNTIME_MISSING','The retained render resource is not the one its page pins: '+group.element,503);
+      return '<script type="application/rapier-runtime" id="'+group.element+'">'+body.toString('utf8')+'</script>';
+    };
+    const retainedAll=await Promise.all(groups.map(retainedOf));
+    const payload=groups.map((group,index)=>{
+      const retained=retainedAll[index],carried=scripts(this.runtime,group.element);
       if(!carried.length)return retained;
       if(carried.length!==1 || carried[0][0]!==retained)
         throw refusal('RENDER_RUNTIME_MISSING','The carried render resource differs from the retained resource: '+group.element,503);

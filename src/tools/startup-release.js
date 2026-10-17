@@ -20,8 +20,42 @@ globalThis.RapierStartupRelease = (() => {
       if (terminal) controller.postMessage({type: 'rapier:startup', release, attempt, state: terminal});
     } catch (_) {}
   };
+  let newer = false, asking = false, touched = false;
+  for (const type of ['keydown', 'beforeinput', 'input', 'paste', 'cut', 'drop', 'pointerdown']) {
+    addEventListener(type, () => { touched = true; }, {capture: true, passive: true});
+  }
+  const quiet = () => {
+    try { if (typeof _rapierLive !== 'undefined' && _rapierLive.active()) return false; } catch (_) { return false; }
+    try {
+      const sound = globalThis.rapierRecordingFacts;
+      if (sound && (sound.phase !== 'closed' || sound.players.some(player => player.playing) || sound.review?.playing || sound.card?.playing)) return false;
+    } catch (_) { return false; }
+    return true;
+  };
+  const reopen = async () => {
+    if (!newer || asking || reloading || terminal !== 'ready' || document.visibilityState !== 'hidden' || !quiet()) return;
+    asking = true;
+    try {
+      const pending = [];
+      let accepting = true;
+      const detail = Object.freeze({checkpoint: 0, waitUntil(completion) {
+        if (accepting) pending.push(Promise.resolve(completion).then(kept => kept === true, () => false));
+      }});
+      dispatchEvent(new CustomEvent('rapier:checkpoint-requested', {detail}));
+      accepting = false;
+      const kept = (pending.length > 0 && (await Promise.all(pending)).every(Boolean)) || !touched;
+      if (!kept || document.visibilityState !== 'hidden' || !quiet() || reloading) return;
+      reloading = true;
+      location.reload();
+    } catch (_) {} finally { asking = false; }
+  };
   if (worker) {
-    worker.addEventListener('controllerchange', post);
+    const controlled = !!worker.controller;
+    worker.addEventListener('controllerchange', () => {
+      post();
+      if (controlled) { newer = true; void reopen(); }
+    });
+    document.addEventListener('visibilitychange', () => { void reopen(); });
     worker.addEventListener('message', event => {
       const message = event.data;
       if (event.source !== worker.controller || message?.type !== 'rapier:startup-fallback' ||
@@ -48,6 +82,7 @@ globalThis.RapierStartupRelease = (() => {
     if (terminal) return;
     terminal = state;
     post();
+    void reopen();
   };
   return Object.freeze({ready() { settle('ready'); }, failed() { settle('failed'); }});
 })();

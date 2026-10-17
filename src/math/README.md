@@ -97,6 +97,10 @@ The Rapier app explicitly keeps its established dollar-only dialect, including m
 The shared owner corrects escaped display closers and retains outer formula whitespace. No public
 adapter or renderer imports the app's AGPL Markdown implementation.
 
+In the Rapier app, a closed code fence labeled `math` renders as display math. Saving retains its
+fence markers, info string and formula source. The standalone markdown-it adapter keeps code fences
+under the host's control.
+
 ## unified / remark / rehype
 
 Use `remark-math`, `remark-rehype`, then `rehype-sanitize`, then `rapier-math/rehype`, then `rehype-stringify`.

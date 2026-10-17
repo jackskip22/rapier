@@ -10,11 +10,12 @@ Rapier accesses only the document or configured store you share. It cannot searc
 
 ## Try it together
 
-- “Revise this introduction and show me exactly what changed.”
-- “Draw our signup flow as a diagram whose boxes I can move.”
-- “Paint a small watercolor sunset over the sea in Rapier. Leave room for me to add a boat.”
-- “Find my garden Note and add this list.” (Requires a configured Notes store.)
-- “Give me this document as one editable offline HTML file.”
+- “Write my blog post in Rapier with the images embedded so I can keep editing it, then export it as HTML.”
+- “Make a Mermaid diagram of how our company’s data flows, put our report underneath for me to check, then give me a PDF to print for the meeting.”
+- “Make my document more concise and better structured, and show me each change so I can compare it and undo any one of them.”
+- “Draw a flowchart of our new plan with boxes I can move around.”
+- “Paint the first layer of a watercolor garden, then we’ll take turns.”
+- “Turn this Markdown report into a Rapier HTML file my friend can read and edit offline, with no Markdown app installed.”
 
 Open the returned editor link and keep it visible while painting. A queued painting is not finished: Claude checks
 that it committed before handing you the brush. If Water is unavailable, use regular brushes or an editable diagram.

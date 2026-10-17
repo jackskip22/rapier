@@ -50,7 +50,7 @@ export async function createServer(options={}) {
   if(options.bucket!==undefined && options.root!==undefined)throw new TypeError('Choose a document folder or a bucket, not both.');
   if(options.endpoint!==undefined && options.bucket===undefined)throw new TypeError('A bucket endpoint requires a bucket.');
   const store=options.bucket===undefined ? new FileStore(options) : new BucketStore(options);
-  const renderer=new Renderer(options);await renderer.check();
+  const renderer=options.renderer===false ? null : new Renderer(options);await renderer?.check();
   let closing=null,timer,origin=null;const controllers=new Set(),tasks=new Set();
   try {
     await store.open();
@@ -83,7 +83,7 @@ export async function createServer(options={}) {
     };
     const environment=scope=>{
       const env={EDITOR_KEY_SECRET:store.credentials.editorKeySecret,UI_ORIGIN:origin,ALLOWED_ORIGINS:origin,
-        FILE_DOWNLOAD_ORIGINS:'',RETURN_ORIGIN:origin,ASSETS:assetBinding,EXPORT_RENDERER:exportRenderer};
+        FILE_DOWNLOAD_ORIGINS:'',RETURN_ORIGIN:origin,ASSETS:assetBinding,...(renderer ? {EXPORT_RENDERER:exportRenderer} : {})};
       env.DOCUMENTS=store.binding('document',env,scope);env.BUDGET=store.binding('budget',env);return env;
     };
     const search=new FolderSearch(store,await searchFingerprint());
@@ -135,7 +135,7 @@ export async function createServer(options={}) {
         const site=request.headers['sec-fetch-site'];
         if(site && site!=='same-origin' && site!=='none' && !(request.headers['sec-fetch-mode']==='navigate' && request.headers['sec-fetch-dest']==='document'))
           throw refusal('CROSS_SITE_REFUSED','Another site cannot read this server.',403);
-        if(url.pathname==='/health')return json(response,{service:'rapier-server',version:VERSION,...deployment(environment(),{authentication:'server-bearer'}),...(api.maintenanceError ? {maintenanceError:api.maintenanceError} : {}),renderer:{version:renderer.version,runtime:renderer.runtimeHash},...(store.poisoned ? {ready:false,recoveryRequired:true} : {})},store.poisoned ? 503 : 200);
+        if(url.pathname==='/health')return json(response,{service:'rapier-server',version:VERSION,...deployment(environment(),{authentication:'server-bearer'}),...(api.maintenanceError ? {maintenanceError:api.maintenanceError} : {}),renderer:renderer ? {version:renderer.version,runtime:renderer.runtimeHash} : null,...(store.poisoned ? {ready:false,recoveryRequired:true} : {})},store.poisoned ? 503 : 200);
         if(url.pathname==='/search') {
           const q=url.searchParams.get('q') || '',limit=Number(url.searchParams.get('limit') || 50);
           if(q.length>2048 || !Number.isSafeInteger(limit) || limit<1 || limit>200)throw refusal('QUERY_REFUSED','Use a query of at most 2048 characters and a limit from 1 to 200.',400);
@@ -149,6 +149,7 @@ export async function createServer(options={}) {
           if(url.searchParams.has('format'))format=url.searchParams.get('format');
           if(!['markdown','html','page','txt','docx','pdf'].includes(format) || [...url.searchParams.keys()].some(key=>key!=='format'))
             throw refusal('EXPORT_FORMAT_REFUSED','Choose markdown, html, page, txt, docx or pdf with the format query.',400);
+          if(!renderer && !['markdown','html'].includes(format))throw refusal('RENDERER_UNCONFIGURED','This server runs without Chromium; start it with --chromium for page, txt, docx and pdf.',503);
           name=documentName(name);const document=await store.read(name);
           const filename=basename(name);
           const artifact=format==='markdown' ? {bytes:Buffer.from(document.text),filename,type:'text/markdown; charset=utf-8'}
@@ -183,11 +184,11 @@ export async function createServer(options={}) {
         closing=(async()=>{
           clearInterval(timer);for(const control of controllers)control.abort();
           const stopped=server.listening ? new Promise(resolve=>server.close(resolve)) : Promise.resolve();
-          server.closeAllConnections();await renderer.close();await Promise.allSettled([...tasks]);await stopped;
+          server.closeAllConnections();await renderer?.close();await Promise.allSettled([...tasks]);await stopped;
           await search.pending;await store.close();
         })();return closing;
       },
     };
     return api;
-  } catch(error){await renderer.close();await store.close();throw error;}
+  } catch(error){await renderer?.close();await store.close();throw error;}
 }

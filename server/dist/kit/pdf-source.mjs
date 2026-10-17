@@ -92,14 +92,15 @@ export async function attachPdfSource(input, {source, filename, maxBytes = Infin
   const payload = encode.encode(source); check();
   const compressed = new Uint8Array(await new Response(new Blob([payload]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer()); check();
   const fileId = size, streamId = size + 1, infoId = size + 2, totalSize = size + 3;
-  let infoBody = '<< /Producer (Rapier) >>';
+  let infoBody = '<< /Producer (Rapier) /Creator (Rapier) >>';
   const existingInfo = trailer.fields.get('Info');
   if (existingInfo) {
     const ref = /^(\d+)\s+(\d+)\s+R$/.exec(existingInfo.value);
     const held = ref ? readDictionary(Number(ref[1]), Number(ref[2])) : dictionary(existingInfo.from);
-    const producer = held.fields.get('Producer');
-    const kept = producer ? text.slice(held.start, producer.start) + text.slice(producer.end, held.end - 2) : text.slice(held.start, held.end - 2);
-    infoBody = kept + ' /Producer (Rapier) >>';
+    const named = ['Producer', 'Creator'].map(key => held.fields.get(key)).filter(Boolean).sort((a, b) => a.start - b.start);
+    let kept = '', at = held.start;
+    for (const field of named) { kept += text.slice(at, field.start); at = field.end; }
+    infoBody = kept + text.slice(at, held.end - 2) + ' /Producer (Rapier) /Creator (Rapier) >>';
   }
   const escaped = '(' + filename.replace(/[^\x20-\x7e]/g, '_').replace(/[\\()]/g, '\\$&') + ')';
   const parts = [bytes, ascii('\n')], merged = new Map(offsets);

@@ -5,6 +5,7 @@ export const MATH_CLASSIC = 'dist/rapier-math.js';
 export function mathPackagePath(file) {
   const owners = {
     'math/README.md': 'docs/api.md',
+    'math/CHANGELOG.md': 'CHANGELOG.md',
     'math/SEMANTICS.md': 'docs/semantics.md',
     'math/semantic-verify.mjs': 'tests/semantics.mjs',
     'math/accessible.css': 'dist/accessible.css',

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT
-// Transient projections and selective inverses of the existing canonical journal.
 import {_rapierTransformSplices, _rapierValidMetadata, _rapierTransformMetadata, _rapierMetadataDelta, _rapierHistoryEffects, _rapierMetadataState, _rapierPrepareHistoryRecords} from './journal-records.mjs';
 import {projectInverseSource, HistorySource} from './inverse-source.mjs';
 import {textRootParts, rootAfter} from './hash.mjs';
@@ -41,16 +40,12 @@ export function groupHistoryActs(acts) {
 	return groups;
 }
 
-// A picture's codec replacement travels with its original navigation step.
-// Match every complete replacement exactly before moving any source bytes.
 export function pictureHistorySplices(input, target, redo) {
 	const {records} = input;
 	const id = target?.transaction?.id, at = records.indexOf(target);
 	if (!id || at < 0 || target.transaction.operation === 'document.finish-picture' || !Array.isArray(target.splices)) return null;
 	const later = records.slice(at + 1).filter(row => row?.transaction?.operation === 'document.finish-picture' && Array.isArray(row.splices) && row.splices.length);
 	if (!later.length) return null;
-	// A caller may hold a persistent source tree: request its text only when
-	// a later picture replacement can actually affect this navigation step.
 	const source = input.source;
 	const own = new Set(later.filter(row => row.transaction.sourceTransactionId === id));
 	const step = redo ? target.splices : target.splices.slice().reverse().map(row => ({pos: row.pos, removed: row.inserted, inserted: row.removed}));
@@ -78,9 +73,6 @@ export function pictureHistorySplices(input, target, redo) {
 	try { return plan(true); } catch (_) { return null; }
 }
 
-// Keep only the latest source observation. Inactive live documents must not retain
-// every revision's source tree. The weak key also lets the latest input be collected.
-// Mutable caller data is compared/captured before this cache can be consulted.
 let preparedHistories = new WeakMap();
 function prepareHistory(input) {
 	try {
@@ -123,7 +115,6 @@ function prepareHistory(input) {
 			row.beforeSource = initial; row.beforeMetadata = initialMetadata;
 		}
 		const earliestRevision = records[0]?.transaction.baseRevision ?? revision;
-		// The window's owner may name its root (the source store mints it once per text); otherwise hash the initial text.
 		let root = earliestRevision === 0 ? (typeof input.earliestRoot === 'string' && input.earliestRoot || textRootParts(initial.parts())) : null,
 			rootRevision = earliestRevision;
 		for (const {record, splices} of rows) {
@@ -131,8 +122,6 @@ function prepareHistory(input) {
 			if (hashed && (![record.beforeHash, record.afterHash].every(value =>
 				typeof value === 'string' && /^\d+:[a-z0-9]+:[a-z0-9]+$/.test(value)) ||
 				(splices.length ? record.beforeHash === record.afterHash : record.beforeHash !== record.afterHash))) return historyFailure('history_invalid');
-			// Revision gaps begin a new path root; a continuous revision-zero prefix
-			// still binds every untouched source byte through the initial text root.
 			if (record.transaction.baseRevision !== rootRevision) root = null;
 			if (hashed) {
 				if (root !== null && record.beforeHash !== root) return historyFailure('history_invalid');
@@ -155,12 +144,18 @@ function prepareHistory(input) {
 	} catch (_) { return historyFailure('history_invalid'); }
 }
 
+function settle(result, value) {
+	Object.defineProperty(result, 'initialSource', {value, writable: true, enumerable: true, configurable: true});
+	return value;
+}
+
 export function replayHistory(input) {
 	const prepared = prepareHistory(input);
 	if (!prepared.ok) return prepared;
-	const {source, initialSource, metadata, initialMetadata, revision, earliestRevision, complete, rows, effects} = prepared;
+	const {source, metadata, initialMetadata, revision, earliestRevision, complete, rows, effects} = prepared;
 	const acts = rows.filter(({record}) => !effects.pictures.has(record.transaction.id)).map(({record}) => historyAct(record, effects));
-	return {ok: true, source, initialSource, metadata: {...metadata}, initialMetadata: {...initialMetadata}, revision, earliestRevision, complete, acts,
+	return {ok: true, source, get initialSource() { return settle(this, prepared.initialSource); }, set initialSource(value) { settle(this, value); },
+		metadata: {...metadata}, initialMetadata: {...initialMetadata}, revision, earliestRevision, complete, acts,
 		effectiveActIds: effects.effectiveActIds.slice(), groups: groupHistoryActs(acts)};
 }
 
@@ -218,7 +213,6 @@ export function historyProjection(input, {from = 0, to = input?.source?.length, 
 	return projectHistoryRange(prepared, from, to, actId);
 }
 
-// Several ranges share one proved source snapshot for this call.
 export function historyProjections(input, ranges) {
 	const prepared = prepareHistory(input);
 	if (!prepared.ok) return prepared;
@@ -227,8 +221,6 @@ export function historyProjections(input, ranges) {
 		projectHistoryRange(prepared, from, to, actId))};
 }
 
-// Block intervals stay ordered under reverse splices. A fixed balanced tree can
-// shift an untouched suffix lazily and visit only intervals crossing the edit.
 function historyBlockIndex(projected) {
 	const items = projected.map(block => ({block, range: {from: block.from, to: block.to}, shift: 0}))
 		.sort((a, b) => a.range.from - b.range.from);
@@ -278,8 +270,6 @@ export function historyPlaces(input, blocks) {
 		const {record, splices, beforeSource, afterSource} = prepared.rows[index], touched = new Map();
 		for (let at = splices.length - 1; at >= 0; at--) ranges.move(splices[at], node => {
 			if (touched.has(node) || prepared.effects.pictures.has(record.transaction.id)) return;
-			// Earlier splices in this reverse walk only shifted this interval. Recover
-			// its coordinates at the record's after-state before recording the first touch.
 			let after = {...node.range};
 			for (let prior = at + 1; prior < splices.length; prior++) {
 				const row = splices[prior];
@@ -290,37 +280,31 @@ export function historyPlaces(input, blocks) {
 			}
 			touched.set(node, after);
 		});
-		// Blocks one splice covers share its range (a whole-document delete maps every block to all it removed): slice each range once.
 		const slices = new Map(), cut = (source, side, from, to) => {
 			const key = side + from + ':' + to;
 			if (!slices.has(key)) slices.set(key, source.slice(from, to));
 			return slices.get(key);
 		};
-		// One record's act is read once; the blocks it touched share its fields (a whole-document delete touches every block).
 		let act = null;
 		for (const [node, afterRange] of touched) {
 			const beforeRange = ranges.range(node), previous = {...beforeRange, source: cut(beforeSource, 'b', beforeRange.from, beforeRange.to)},
 				after = {...afterRange, source: cut(afterSource, 'a', afterRange.from, afterRange.to)};
-			// A point (where words were deleted) has no words to compare: the act that touched it wrote there.
 			if (previous.source !== after.source || afterRange.from === afterRange.to) node.block.acts.push({...(act ||= historyAct(record)), before: previous, after});
 		}
 	}
 
 	const acts = prepared.rows.filter(({record}) => !prepared.effects.pictures.has(record.transaction.id)).map(({record}) => historyAct(record));
-	// Native Redo consumes its Undo as navigation while keeping that receipt in
-	// the reading history. All material withdrawals use the canonical blockers,
-	// including independent inverses holding the same original act suppressed.
 	const reversed = new Set();
 	for (const {record} of prepared.rows) if (prepared.effects.active.has(record.transaction.id) && !record.transaction.reapplies)
 		for (const id of prepared.effects.references.get(record.transaction.id) || []) reversed.add(id);
 
 	for (const block of projected) block.acts.reverse();
-	return {ok: true, source: prepared.source, initialSource: prepared.initialSource, revision: prepared.revision,
+	return {ok: true, source: prepared.source, get initialSource() { return settle(this, prepared.initialSource); },
+		set initialSource(value) { settle(this, value); }, revision: prepared.revision,
 		earliestRevision: prepared.earliestRevision, complete: prepared.complete, acts, blocks: projected,
 		reversed: acts.filter(act => reversed.has(act.id)).map(act => act.id)};
 }
 
-// Runs retain only exact replacement ancestry. A later replacement owns an ambiguous hunk whole.
 export function selectiveUndo(input, actIds, options = {}) {
 	const prepared = prepareHistory(input);
 	if (!prepared.ok) return prepared;
@@ -340,9 +324,6 @@ export function selectiveUndo(input, actIds, options = {}) {
 	const metadata = _rapierMetadataDelta(prepared.metadata, afterMetadata), effectChanged = selected.size > 0;
 	const sourceEffectChanged = records.some(record => record.splices.length && !prepared.effects.references.get(record.transaction.id)?.length &&
 		prepared.effects.active.has(record.transaction.id) !== projectedEffects.active.has(record.transaction.id));
-	// One shared replacement is visible while any of its authors is active. That
-	// includes an author stored with no second physical splice, and an inverse
-	// whose only effect is to make such an author active again.
 	let coverVisibilityChanged = false;
 	if (!sourceEffectChanged && selected.size) {
 		let origins = null;

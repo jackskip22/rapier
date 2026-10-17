@@ -1,5 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+const LONG_STRING = 65536, ESCAPED = new Map();
 export function* jsonStringParts(value) {
+  if (value.length >= LONG_STRING) {
+    let escaped = ESCAPED.get(value);
+    if (escaped === undefined) {
+      escaped = JSON.stringify(value).slice(1, -1);
+      if (ESCAPED.size >= 4) ESCAPED.delete(ESCAPED.keys().next().value);
+    } else ESCAPED.delete(value);
+    ESCAPED.set(value, escaped);
+    yield '"'; yield escaped; yield '"';
+    return;
+  }
   yield '"';
   for (let start = 0; start < value.length;) {
     let end = Math.min(value.length, start + 4096);

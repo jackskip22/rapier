@@ -277,9 +277,11 @@ export function fitCandidates(raw) {
   for(const k of [5,6]) offer(_rapierDrawFitRegularTo(points,k,true));
  } else {
   const first=points[0],last=points.at(-1),angle=Math.atan2(last[1]-first[1],last[0]-first[0]);
-  if(monotone(points,Math.cos(angle),Math.sin(angle),straight)) offer({kind:'line',geom:{x1:first[0],y1:first[1],x2:last[0],y2:last[1]},style:'plain',parameters:4});
+  const chord=Math.hypot(last[0]-first[0],last[1]-first[1])||1,side=points.map(p=>((p[0]-first[0])*(last[1]-first[1])-(p[1]-first[1])*(last[0]-first[0]))/chord);
+  const hi=Math.max(0,...side),lo=Math.max(0,...side.map(d=>-d));
+  if(monotone(points,Math.cos(angle),Math.sin(angle),straight)&&hi+lo<=straight*1.2) offer({kind:'line',geom:{x1:first[0],y1:first[1],x2:last[0],y2:last[1]},style:'plain',parameters:4});
   offer(arrow(points,length/scale,straight));
-  if(points.some(p=>segDistance(p,first,last)>straight)) for(const theta of [f.theta,f.theta+Math.PI/2]) offer({kind:'parabola',geom:parabola(points,theta,straight),parameters:6});
+  if(points.some(p=>segDistance(p,first,last)>straight)&&Math.min(hi,lo)<=straight/2) for(const theta of [f.theta,f.theta+Math.PI/2]) offer({kind:'parabola',geom:parabola(points,theta,straight),parameters:6});
  }
  return bank.sort((a,b)=>a.score-b.score || a.parameters-b.parameters || a.kind.localeCompare(b.kind));
 }

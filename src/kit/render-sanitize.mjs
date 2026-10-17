@@ -75,6 +75,10 @@ function prepareMathSource(input, DOMParser) {
 			try { node.textContent = decodeURIComponent(node.getAttribute('data-math-src')); } catch (_) {}
 			continue;
 		}
+		try {
+			const held = node.getAttribute('data-rapier-math-source'), source = decodeURIComponent(held);
+			if (held && (source === node.textContent || source.replace(/\r\n?/g, '\n').replace(/\0/g, '') === node.textContent)) continue;
+		} catch (_) {}
 		try { node.setAttribute('data-rapier-math-source', encodeURIComponent(node.textContent || '')); }
 		catch (_) { node.removeAttribute('data-rapier-math-source'); }
 	}
@@ -144,6 +148,7 @@ function createInertHtmlSanitizer({parseFragment, serialize, sanitizeHtml, safeR
 					const key = name.toLowerCase();
 					const value = name === 'value' ? inputValue : inputValue.trim();
 					if (forbiddenAttributes.has(key) || key.startsWith('on')) continue;
+					if (key === 'id' && chromeOwnsId(value)) continue;
 					if (/((--!?|])>)|<\/(style|script|title|xmp|textarea|noscript|iframe|noembed|noframes)/i.test(value)
 						|| key === 'attributename' && value.includes('href')) continue;
 					const data = /^data-[\-\w.\u00b7-\uffff]+$/.test(key), aria = /^aria-[\-\w]+$/.test(key);
@@ -301,7 +306,7 @@ function _rapierInstallSanitizeHooks() {
 			data.keepAttr = !!data.attrValue;
 			return;
 		}
-		if (String(data.attrName || '').toLowerCase() === 'id' && _rapierSanitizeRuntime.context === 'raw' && _rapierChromeOwnsId(value)) { data.keepAttr = false; return; }
+		if (String(data.attrName || '').toLowerCase() === 'id' && _rapierChromeOwnsId(value)) { data.keepAttr = false; return; }
 		if (_rapierRemoteContent.allowed || _rapierSanitizeRuntime.context === 'source') return;
 		if (String(data.attrName || '').toLowerCase() === 'style') {
 			const cleaned = _rapierStyleWithoutRemoteUrls(value);

@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: MIT
 import {letter, within, prev, next} from './tokens.mjs';
 
-// Separator-only pieces join the edit beside them; adjacent blocks each carry their own line break.
 export function separate(c, endA = c.before.length, endB = c.after.length) {
   const {before, after, safe, raw, spend} = c;
-  // A separator-only piece beside another edit joins it; equal separators at its ends stay unchanged.
   if (!raw) for (let i = c.result.length - 1; i > 0; i--) {
     const p = c.result[i - 1], q = c.result[i], side = p[0][0] === p[0][1] ? 1 : p[1][0] === p[1][1] ? 0 : -1, text = side ? after : before;
     if (side >= 0 && !/\S/.test(text.slice(...p[side]))) {
@@ -16,15 +14,12 @@ export function separate(c, endA = c.before.length, endB = c.after.length) {
     if (p[2] || q[2] || p[0][1] !== q[0][0] || p[1][1] !== q[1][0] ||
       ![p, q].some(r => !/\S/.test(before.slice(...r[0]) + after.slice(...r[1])))) continue;
     const x = [p[0][0], q[0][1]], y = [p[1][0], q[1][1]], keep = /\S/.test(before.slice(...q[0]) + after.slice(...q[1])) ? q : p;
-    // CRLF steps as one separator.
     for (let k; x[0] < x[1] && y[0] < y[1] && /\s/.test(before[x[1] - 1]) && before[x[1] - 1] === after[y[1] - 1] &&
       (k = before.endsWith('\r\n', x[1]) && after.endsWith('\r\n', y[1]) ? 2 : 1) <= Math.min(x[1] - x[0], y[1] - y[0]) &&
       safe(before, x[1] - k) && safe(after, y[1] - k);) { x[1] -= k; y[1] -= k; }
     keep[3][0] = x[0] === x[1] ? 2 : y[0] === y[1] ? 0 : 1;
     c.result.splice(i - 1, 2, [x, y, false, keep[3]]);
   }
-  // Repeated closing lines can attach to the wrong block. Rotate an exact insertion/deletion to the
-  // next blank-line boundary, without crossing another edit or splitting a character.
   if (!raw) for (let i = 0; i < c.result.length; i++) {
     const p = c.result[i], q = c.result[i + 1], side = p[0][0] === p[0][1] ? 1 : p[1][0] === p[1][1] ? 0 : -1;
     if (side < 0 || p[2]) continue;
@@ -38,8 +33,6 @@ export function separate(c, endA = c.before.length, endB = c.after.length) {
     if (shift && p.slice(0, 2).every((span, k) => safe(k ? after : before, span[0] + shift) && safe(k ? after : before, span[1] + shift)))
       for (const span of p.slice(0, 2)) { span[0] += shift; span[1] += shift; }
   }
-  // Adjacent blocks deleted or inserted together: when the first carries the line break before it, each carries
-  // its own, so any one restores apart from its neighbors.
   if (!raw) for (let i = 1; i < c.result.length; i++) {
     const p = c.result[i - 1], q = c.result[i], kind = p[3][0], side = kind ? 1 : 0, text = side ? after : before;
     if (kind % 2 || q[3][0] !== kind || p[2] || q[2] || p[side][1] !== q[side][0] || p[1 - side][0] !== q[1 - side][0]) continue;
@@ -48,20 +41,16 @@ export function separate(c, endA = c.before.length, endB = c.after.length) {
   }
 }
 
-// Refine the outer walk and each move's inner walk before assigning transport ownership.
 export function phrases(c) {
   const {before, after, raw, code} = c;
-  // Whole-word replacements separated only by spaces read and restore as one phrase, and one number stays one number.
   if (!raw) for (let i = c.result.length - 1; i > 0; i--) {
     const p = c.result[i - 1], q = c.result[i], gap = before.slice(p[0][1], q[0][0]);
     if (p[3][0] !== 1 || q[3][0] !== 1 || p[3][3] || q[3][3] || p[2] || q[2] || gap !== after.slice(p[1][1], q[1][0])) continue;
-    // A time, a date, a version or a decimal is one number.
     const number = /^(?:[.,:/-]\d*)+$/.test(gap) && /\d/.test(before[p[0][1] - 1] + after[p[1][1] - 1]) && /\d/.test(before[q[0][0]] + after[q[1][0]]);
     if (!number && (code || !/^[^\S\r\n]+$/.test(gap) || within(before, p[0][0]) || within(after, p[1][0]) ||
       within(before, q[0][1]) || within(after, q[1][1]))) continue;
     p[0][1] = q[0][1]; p[1][1] = q[1][1]; c.result.splice(i, 1);
   }
-  // Paired inline markers added or removed around unchanged text on one line are one concern.
   if (!raw && !code) for (let i = 1; i < c.result.length; i++) {
     const p = c.result[i - 1], q = c.result[i], kind = p[3][0], side = kind ? 1 : 0, text = side ? after : before;
     if (kind % 2 || kind !== q[3][0] || p[2] || q[2] || p[3][3] || q[3][3]) continue;
@@ -72,12 +61,10 @@ export function phrases(c) {
   }
 }
 
-// Readable concerns: phrases, numbers and paired markers, then the public edits and changes with context.
 export function concerns(c) {
   phrases(c);
   const {before, after, spend, safe, budget, raw, code, evidence, structures, initial, options, pa, pb} = c, lb = c.lb;
   const overlaps = (a, b) => a[0] < b[1] && a[1] > b[0];
-  // Siblings are ordered and disjoint: the parts holding a range are found by descent, outermost first.
   const containing = (parts, from, to, out = []) => {
     let lo = 0, hi = parts.length;
     while (lo < hi) { const mid = lo + hi >>> 1; if (parts[mid].end < to) lo = mid + 1; else hi = mid; }
@@ -85,7 +72,6 @@ export function concerns(c) {
       if (parts[k].end >= to) { out.push(parts[k]); containing(parts[k].children, from, to, out); }
     return out;
   };
-  // Edits are ordered and disjoint on the after side.
   const touched = (edits, range) => {
     let lo = 0, hi = edits.length;
     while (lo < hi) { const mid = lo + hi >>> 1; if (edits[mid].after[1] <= range[0]) lo = mid + 1; else hi = mid; }
@@ -116,7 +102,6 @@ export function concerns(c) {
     if (!raw && !group[3]) group[3] = [[...item[0]], [...item[1]]];
     if (!group[4]) {
       const context = group[3];
-      // Context completes a word only where an edge falls inside it.
       if (!raw) for (const [text, span] of [[before, context[0]], [after, context[1]]]) {
         const start = within(text, span[0]), end = within(text, span[1]);
         for (let c; start && letter(c = prev(text, span[0])) && spend() && safe(text, span[0] - c.length);) span[0] -= c.length;
@@ -152,7 +137,6 @@ export function concerns(c) {
     }
   }
   if (options._stats) Object.assign(options._stats, {work: Math.max(0, initial - Math.max(0, budget.left)), coarse: edits.some(c => c.coarse)});
-  // Concern tuples: kind, unit, name, context, edits, affects, breaks. Wording inside a move shares its context.
   const moves = new Map(changes.map((change, i) => change[0] === 3 && [change[3], i + 1]).filter(Boolean));
   return {edits, changes: changes.map(([kind, unit, name, context, owned, affects, breaks], i) => ({
     id: i + 1, kind: ['delete', 'replace', 'insert', 'move', 'rename', 'format'][kind], unit, edits: owned,

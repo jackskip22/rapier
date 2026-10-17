@@ -113,6 +113,7 @@ export function createDrivePlainStore(options = {}) {
 	}
 	return Object.freeze({
 		pause: http.pause,
+		folderId: () => folder(),
 		pictures: () => createDrivePlainStore({...options, folder: [...path, 'attachments'].join('/')}),
 		async list() {
 			const parent = await folder(), rows = (await search(`${quote(parent)} in parents and trashed = false`)).filter(row => row.mimeType !== FOLDER).map(row => fileRow(row, parent)).filter(Boolean);

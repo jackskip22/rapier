@@ -165,6 +165,9 @@
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [
           ".docx"
         ],
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.template": [
+          ".dotx"
+        ],
         "application/zip": [
           ".textpack"
         ],

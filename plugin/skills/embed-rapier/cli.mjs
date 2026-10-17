@@ -1,18 +1,10 @@
-#!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// npx rapier-embed plugins <directory> [--build reader|document|full] [--only name,name] [--from <address>] [--manifest <file or address>] [--check]
-//
-// Fetches Rapier's plug-in files into one directory and verifies each against the manifest's length and SHA-384, so the reader and the
-// editors can load them from your own origin (`plugins: '/that/directory/'`). `--build` keeps the files that build uses. A file already
-// there with the right SHA-384 is kept. Exit status 1 when any file is missing or fails verification; nothing unverified is left in
-// the directory.
 import {createHash, randomBytes} from 'node:crypto';
 import {constants} from 'node:fs';
 import {mkdir, lstat, open, realpath, rename, rm} from 'node:fs/promises';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
-// The two pages; a manifest or --build that says `document` (the full editor's earlier name) means the full editor.
 const BUILDS = ['reader', 'full'], buildName = build => build === 'document' ? 'full' : build;
 const MANIFEST_BYTES = 1024 * 1024, FILE_BYTES = 64 * 1024 * 1024, TOTAL_BYTES = 512 * 1024 * 1024;
 const NOFOLLOW = constants.O_NOFOLLOW || 0;
@@ -34,7 +26,6 @@ function arguments_(argv) {
 
 async function readManifest(source) {
   const own = fileURLToPath(new URL('./rapier-plugins.json', import.meta.url));
-  // The packaged manifest is the version's authority; a missing copy never falls forward to a different release.
   const bytes = /^https?:\/\//.test(source || '') ? await fetchChecked(source, MANIFEST_BYTES) : await readBoundedFile(source || own, MANIFEST_BYTES);
   const manifest = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(bytes));
   if (manifest.schema !== 1 || !Array.isArray(manifest.plugins)) throw new Error('not a Rapier plug-in manifest');
@@ -140,7 +131,6 @@ export async function plugins(argv) {
       failed++;
     } finally { if (temp) await rm(temp, {force: true}); }
   };
-  // A few files at a time: the PDF reader's set is two hundred small ones.
   let next = 0;
   await Promise.all(Array.from({length: 6}, async () => { while (next < jobs.length) await work(jobs[next++]); }));
   return failed;

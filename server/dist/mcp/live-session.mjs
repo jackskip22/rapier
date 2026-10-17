@@ -6,11 +6,12 @@ import {_rapierHistoryEffects, _rapierTransformMetadata, _rapierMetadataState, _
 import {sha256} from '../kit/ledger/hash.mjs';
 import {resolveCaller, base64url} from '../agent/door-identity.mjs';
 import {mintEditorKey, verifyEditorKey, EDITOR_KEY_LIFETIME_MS} from './editor-keys.mjs';
-import {oauthGrantCurrent} from './oauth.mjs';
+import {getTool} from '../agent/catalog.mjs';
+import {validateInput} from '../agent/validate-input.mjs';
 
 export const LIVE_PROTOCOL = 'rapier-live-v1';
 export const LIVE_LIMITS = Object.freeze({frameBytes: 32 * 1024 * 1024, replayBytes: 1024 * 1024,
-  composingMs: 15000, helloMs: 15000});
+  composingMs: 15000, helloMs: 15000, contextBytes: 4 * 1024 * 1024, heldContextMs: 10 * 60 * 1000});
 const utf8 = new TextEncoder();
 const plain = value => value && typeof value === 'object' && !Array.isArray(value);
 const integer = value => Number.isSafeInteger(value) && value >= 0;
@@ -91,6 +92,8 @@ function record(entry, row) {
     act: liveJournal(row)};
 }
 
+const LIVE_GRANT_RENEW_MS = 60 * 60 * 1000;
+
 export class LiveSessions {
   constructor(owner) { this.owner = owner; this.cached = null; }
 
@@ -104,15 +107,20 @@ export class LiveSessions {
     if (head.liveStopped || head.agentAccess === false) return {stopped: true};
     const now = Date.now(), grant = authority.oauthGrant;
     if (grant && !grant.scopes?.includes('rapier:write')) return null;
-    let connection = '';
+    let connection = '', issuedAt = now;
     if (grant) {
       connection = ':' + authority.connectionKey;
-      head.liveGrants = Object.fromEntries(Object.entries(head.liveGrants || {}).filter(([, row]) => row.at + EDITOR_KEY_LIFETIME_MS > now));
-      head.liveGrants[authority.connectionKey] = {grant, at: now};
-      this.owner.ctx.storage.transactionSync(() => this.owner.ctx.storage.kv.put('head', head));
+      const held = head.liveGrants?.[authority.connectionKey];
+      if (held && held.at <= now && now - held.at < LIVE_GRANT_RENEW_MS && canonicalJson(held.grant) === canonicalJson(grant)) issuedAt = held.at;
+      else {
+        head.liveGrants = Object.fromEntries(Object.entries(head.liveGrants || {}).filter(([, row]) => row.at + EDITOR_KEY_LIFETIME_MS > now));
+        head.liveGrants[authority.connectionKey] = {grant, at: now};
+        this.owner.ctx.storage.transactionSync(() => this.owner.ctx.storage.kv.put('head', head));
+      }
     }
-    return {key: await mintEditorKey(this.owner.env.EDITOR_KEY_SECRET, now, this.binding(head, connection)),
-      stopKey: await mintEditorKey(this.owner.env.EDITOR_KEY_SECRET, now, this.stopBinding(head, connection))};
+    return {key: await mintEditorKey(this.owner.env.EDITOR_KEY_SECRET, issuedAt, this.binding(head, connection)),
+      stopKey: await mintEditorKey(this.owner.env.EDITOR_KEY_SECRET, issuedAt, this.stopBinding(head, connection)),
+      ...(this.owner.relay?.enabled() ? {custodyKey: await mintEditorKey(this.owner.env.EDITOR_KEY_SECRET, issuedAt, this.owner.relay.binding(head, connection))} : {})};
   }
   async admit(head, key, bind) {
     const now = Date.now(), secret = this.owner.env.EDITOR_KEY_SECRET;
@@ -120,7 +128,7 @@ export class LiveSessions {
     if (verdict.ok) return verdict;
     for (const [connection, row] of Object.entries(head.liveGrants || {})) {
       const bound = await verifyEditorKey(secret, key, now, bind(head, ':' + connection));
-      if (bound.ok) return await oauthGrantCurrent(row.grant, this.owner.env) ? {...bound, grant: row.grant} : {ok: false};
+      if (bound.ok) return await this.owner.grantCurrent(row.grant) ? {...bound, grant: row.grant} : {ok: false};
     }
     return verdict;
   }
@@ -129,7 +137,8 @@ export class LiveSessions {
     if (!head || head.expiresAt <= Date.now()) return new Response(null, {status: 410});
     const verdict = await this.admit(head, request.headers.get('X-Rapier-Live-Owner'), this.stopBinding.bind(this));
     if (!verdict.ok) return new Response(null, {status: 403});
-    const next = {...head, liveStopped: true, agentAccess: false};
+    const {custody: _custody, ...current} = head;
+    const next = {...current, liveStopped: true, agentAccess: false};
     await this.owner.persist(next, this.owner.readState(head), this.owner.readJournal());
     for (const socket of this.sockets()) {
       this.send(socket, {type: 'error', reason: 'sharing_stopped'});
@@ -269,6 +278,74 @@ export class LiveSessions {
     if (!head || head.expiresAt <= Date.now()) return;
     const peers = this.presences(this.owner.readState(head), head);
     for (const socket of this.sockets()) if (this.valid(socket, head)?.client) this.send(socket, {type: 'presence', peers});
+  }
+
+  notice(head, waiting) {
+    return {type: 'changed', version: head.version, revision: head.revision, agent: head.agentCall?.id || null,
+      waiting, expiry: Number.isFinite(head.nextExpiryAt) ? head.nextExpiryAt : null};
+  }
+  notify(waiting, asked = null) {
+    const sockets = this.sockets();
+    if (!sockets.length) return;
+    const head = this.owner.ctx.storage.kv.get('head');
+    if (!head || head.expiresAt <= Date.now()) return;
+    const value = this.notice(head, waiting), mark = sha256(JSON.stringify(value)).slice(0, 16);
+    for (const socket of sockets) {
+      const attached = this.valid(socket, head);
+      if (!attached?.client || attached.custody || attached.notice === mark && socket !== asked) continue;
+      if (!this.send(socket, socket === asked ? {...value, check: true} : value)) continue;
+      if (attached.notice !== mark) { attached.notice = mark; socket.serializeAttachment(attached); }
+    }
+  }
+
+  holds(contextId) {
+    if (typeof contextId !== 'string') return false;
+    const head = this.owner.ctx.storage.kv.get('head');
+    return this.sockets().some(socket => this.valid(socket, head)?.client && !this.attachment(socket).custody && this.attachment(socket).contextId === contextId);
+  }
+  async context(socket, message, head, attached) {
+    if (typeof this.owner.operate !== 'function' || !known(message, ['type', 'args']) || !plain(message.args) ||
+        jsonBytes(message.args) > LIVE_LIMITS.contextBytes) throw refused('invalid_context');
+    let args;
+    try {
+      const {document, editorKey, ...rest} = validateInput(getTool('document.human_context').inputSchema,
+        {...message.args, document: 'socket', editorKey: 'socket'}, 'arguments', false);
+      args = rest;
+    } catch { throw refused('invalid_context'); }
+    if (attached.contextId !== args.contextId) {
+      attached.contextId = args.contextId;
+      socket.serializeAttachment(attached);
+    }
+    const result = await this.owner.operate({operation: 'document.human_context', args, capabilityHash: head.capabilityHash,
+      ownerKey: head.ownerKey, editorAuthorized: true, operationId: crypto.randomUUID()});
+    this.send(socket, {type: 'context', sequence: args.sequence, isError: result.isError === true,
+      structuredContent: result.structuredContent});
+  }
+  heldState(state) {
+    const sockets = this.sockets();
+    if (!sockets.length || !state?.humanContexts) return state;
+    const head = this.owner.ctx.storage.kv.get('head'), held = new Set(sockets.map(socket => this.valid(socket, head)?.client &&
+      !this.attachment(socket).custody ? this.attachment(socket).contextId : null).filter(Boolean));
+    const now = Date.now(), until = now + LIVE_LIMITS.heldContextMs;
+    if (!Object.values(state.humanContexts).some(row => row.visible && held.has(row.contextId) && row.expiresAt < now + 15000)) return state;
+    const humanContexts = Object.fromEntries(Object.entries(state.humanContexts).map(([key, row]) =>
+      [key, row.visible && held.has(row.contextId) && row.expiresAt < now + 15000 ? {...row, expiresAt: until} : row]));
+    return {...state, humanContexts};
+  }
+  async release(socket) {
+    const contextId = this.attachment(socket)?.contextId;
+    if (typeof contextId !== 'string' || this.holds(contextId)) return;
+    const head = this.owner.ctx.storage.kv.get('head');
+    if (!head || head.expiresAt <= Date.now()) return;
+    const state = this.owner.readState(head), until = Date.now() + 15000;
+    let changed = false;
+    for (const row of Object.values(state.humanContexts || {})) if (row.contextId === contextId && row.expiresAt > until) {
+      row.expiresAt = until; changed = true;
+    }
+    if (!changed) return;
+    const next = structuredClone(head);
+    if (!(next.nextExpiryAt <= until)) next.nextExpiryAt = until;
+    await this.owner.persist(next, state, this.owner.readJournal(), true);
   }
 
   collision(state, splices) {
@@ -429,7 +506,7 @@ export class LiveSessions {
     let message;
     try {
       const head = this.owner.ctx.storage.kv.get('head'), attached = this.valid(socket, head);
-      if (!attached || attached.grant && !await oauthGrantCurrent(attached.grant, this.owner.env)) {this.close(socket); return;}
+      if (!attached || attached.grant && !await this.owner.grantCurrent(attached.grant)) {this.close(socket); return;}
       if (typeof raw !== 'string' || raw.length > LIVE_LIMITS.frameBytes || utf8.encode(raw).byteLength > LIVE_LIMITS.frameBytes) throw refused('message_too_large');
       try { message = JSON.parse(raw); } catch { throw refused('invalid_message'); }
       if (!plain(message)) throw refused('invalid_message');
@@ -438,6 +515,8 @@ export class LiveSessions {
       if (!attached.client) throw refused('hello_required');
       this.catchUp(socket, this.document(state));
       if (message.type === 'edit' || message.type === 'undo') return await this.edit(socket, message, state, head, attached);
+      if (message.type === 'check' && known(message, ['type'])) { this.notify(this.owner.waiting?.() ?? 0, socket); return; }
+      if (message.type === 'context') return await this.context(socket, message, head, attached);
       if (message.type !== 'presence' || !known(message, ['type', 'gen', 'anchor', 'head', 'composing']) ||
           !integer(message.gen) || !integer(message.anchor) || !integer(message.head) ||
           message.composing !== undefined && message.composing !== false &&
@@ -468,5 +547,8 @@ export class LiveSessions {
   }
 
   expire(head) { for (const socket of this.sockets()) if (!this.valid(socket, head)) this.close(socket); }
-  disconnected(socket) { this.close(socket, 1000, 'closed'); this.broadcastPresence(); }
+  async disconnected(socket) {
+    this.close(socket, 1000, 'closed'); this.broadcastPresence();
+    try { await this.release(socket); } catch { this.owner.cachedState = null; this.owner.cachedJournal = null; this.reset(); }
+  }
 }

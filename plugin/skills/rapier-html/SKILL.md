@@ -7,7 +7,7 @@ description: "Make a .rapier.html file: the whole Rapier editor with your Markdo
 
 ## Start here
 
-Start with the supplied Markdown. For a file editable without internet, use the pinned local helper shown below when Node 22, npm and a supported file surface are available. If execution or file delivery is unavailable, explain what is missing and offer source or local instructions; do not claim to have created the file. For a no-upload or no-host request, do not call MCP `open` or `export` as a fallback. Connected export and return links are only for a separately authorized hosted-document workflow.
+Start with the supplied Markdown. When the Rapier MCP server is connected and the person has not asked to keep the text off it, make the file with one call: `export {document, format:"html"}` (first `open {text, filename}` if the text is not in Rapier yet); it is named after the document. Otherwise use the pinned local helper shown below when Node 22, npm and a supported file surface are available, and run it on a Markdown file named after the document (`report.md`, never a temporary name): the page takes its name from that file. If execution or file delivery is unavailable, explain what is missing and offer source or local instructions; do not claim to have created the file. For a no-upload or no-host request, do not call MCP `open` or `export` as a fallback.
 
 For an explanation-only request, answer in chat without creating a document. If required content or integration details are missing, ask for them; do not create an empty hosted workspace.
 Honor no-upload or no-host instructions. The workflow choices below are alternatives, not steps to run. Skip hosted suggestions, including opening a workspace or creating a return link, for local-only or embed-only work.
@@ -24,7 +24,7 @@ byte. Paint keeps transparency, and drawings stay readable on light or dark pape
 ## Choose a Rapier workflow
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
-2. **Hand over an offline editor.** `npx rapier-html@1.2.8 notes.md` puts the editor and document in one HTML file.
+2. **Hand over an offline editor.** `npx rapier-html@1.2.9 notes.md` puts the editor and document in one HTML file.
 3. **Embed the editor.** [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed)
    mounts the editor or reader in an app.
 4. **Keep portable Markdown.** Use `rapier-markdown` for pictures, drawings and layout in one `.md` file.
@@ -66,13 +66,13 @@ installed page helper with the matching editor HTML. Never quietly run a differe
 you didn't.
 
 ```sh
-npx -- rapier-html@1.2.8 notes.md                          # writes notes.rapier.html: the editor on the document
-npx -- rapier-html@1.2.8 notes.md --include draw,mermaid   # carries Draw and Mermaid (default: what the document needs)
-npx -- rapier-html@1.2.8 notes.md --view draw              # opens on Draw, the document behind it (carries Draw)
-npx -- rapier-html@1.2.8 notes.md --drawing sketch.svg     # opens on Draw with the drawing
-npx -- rapier-html@1.2.8 revised.md --compare original.md --by "Editor" # opens showing what changed
-npx -- rapier-html@1.2.8 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT"   # Send back returns the person's edit to your workspace
-npx -- rapier-html@1.2.8 notes.md out.html                 # a named output
+npx -- rapier-html@1.2.9 notes.md                          # writes notes.rapier.html: the editor on the document
+npx -- rapier-html@1.2.9 notes.md --include draw,mermaid   # carries Draw and Mermaid (default: what the document needs)
+npx -- rapier-html@1.2.9 notes.md --view draw              # opens on Draw, the document behind it (carries Draw)
+npx -- rapier-html@1.2.9 notes.md --drawing sketch.svg     # opens on Draw with the drawing
+npx -- rapier-html@1.2.9 revised.md --compare original.md --by "Editor" # opens showing what changed
+npx -- rapier-html@1.2.9 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT"   # Send back returns the person's edit to your workspace
+npx -- rapier-html@1.2.9 notes.md out.html                 # a named output
 ```
 
 It never overwrites: an existing output is refused, so pick a new name. The first `--` stops npm from taking
@@ -124,7 +124,7 @@ Use the surface the host actually provides:
 - **An Artifact tool or HTML preview:** offer the page beside the chat. Also hand over the file when the viewer
   blocks downloads, and use the host's real sharing controls.
 - **A project Browser pane:** write the page into the project and name its path.
-- **A code sandbox with Node and npm:** run `npx -- rapier-html@1.2.8` and hand over the file.
+- **A code sandbox with Node and npm:** run `npx -- rapier-html@1.2.9` and hand over the file.
 - **A host that shows MCP apps, such as ChatGPT:** `open` shows the editor in the chat (`rapier-agent-door`).
 - **A link:** `https://rapier.website` opens the person's own Rapier, with their documents.
 

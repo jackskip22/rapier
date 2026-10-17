@@ -27,7 +27,7 @@ const [[S0, W0, M0], [S1, W1, M1], [S2, W2, M2]] = PAPER_OCTAVES;
 export function toothAt(seed, x, y, tooth = .5, grain = 1) {
 	return tooth * (W0 * noise(seed ^ M0, x, y, S0 * grain) + W1 * noise(seed ^ M1, x, y, S1 * grain) + W2 * noise(seed ^ M2, x, y, S2 * grain));
 }
-export function paper(seed, width, height, { tooth = .5, absorbency = .5, tint = [1, 1, 1], originX = 0, originY = 0, grain = 1 } = {}) {
+export function paper(seed, width, height, { tooth = .5, absorbency = .5, tint = [1, 1, 1], originX = 0, originY = 0, grain = 1, within = null } = {}) {
 	const n = count(width, height);
 	bounded(seed, 0, 4294967295, 'Paper seed'); if (!Number.isInteger(seed)) throw new RangeError('Paper seed');
 	bounded(tooth, 0, 1, 'Paper tooth'); bounded(absorbency, 0, 1, 'Paper absorbency');
@@ -35,19 +35,28 @@ export function paper(seed, width, height, { tooth = .5, absorbency = .5, tint =
 	tint = Array.from(tint, v => bounded(v, 0, 1, 'Paper tint'));
 	if (!Number.isSafeInteger(originX) || !Number.isSafeInteger(originY)) throw new RangeError('Paper origin');
 	const heightField = new Float32Array(n);
-	for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) { const px = x + originX, py = y + originY; heightField[y * width + x] = toothAt(seed, px, py, tooth, grain); }
+	const inner = within && within.seed === seed && within.tooth === tooth && within.grain === grain && within.originX >= originX && within.originY >= originY &&
+		within.originX + within.width <= originX + width && within.originY + within.height <= originY + height ? within : null;
+	const ix0 = inner ? inner.originX - originX : 0, iy0 = inner ? inner.originY - originY : 0, ix1 = inner ? ix0 + inner.width : 0, iy1 = inner ? iy0 + inner.height : 0;
+	for (let y = 0; y < height; y++) {
+		const row = y * width, kept = y >= iy0 && y < iy1;
+		if (kept) heightField.set(inner.heightField.subarray((y - iy0) * inner.width, (y - iy0 + 1) * inner.width), row + ix0);
+		for (let x = 0; x < width; x++) {
+			if (kept && x === ix0) { x = ix1 - 1; continue; }
+			heightField[row + x] = toothAt(seed, x + originX, y + originY, tooth, grain);
+		}
+	}
 	return { seed, width, height, tooth, absorbency, tint, heightField, originX, originY, grain };
 }
 export function rewindowWetState(prev, next, dx, dy) {
 	if (!Number.isSafeInteger(dx) || !Number.isSafeInteger(dy) || dx < 0 || dy < 0 || dx + prev.width > next.width || dy + prev.height > next.height) throw new RangeError('Wet window');
 	if (prev.bands !== next.bands || prev.mixing !== next.mixing) throw new RangeError('Wet mixing basis');
 	const BANDS = prev.bands, W0 = prev.width, W1 = next.width;
-	for (let y = 0; y < prev.height; y++) for (let x = 0; x < W0; x++) {
-		const i = y * W0 + x, j = (y + dy) * W1 + x + dx;
-		next.w[j] = prev.w[i]; next.amount[j] = prev.amount[i]; next.settledAmount[j] = prev.settledAmount[i]; next.clock[j] = prev.clock[i];
-		next.vx[j] = prev.vx[i]; next.vy[j] = prev.vy[i];
-		for (let k = 0; k < BANDS; k++) { next.suspended[j * BANDS + k] = prev.suspended[i * BANDS + k]; next.settled[j * BANDS + k] = prev.settled[i * BANDS + k]; }
-		for (let c = 0; c < 4; c++) { next.base[j * 4 + c] = prev.base[i * 4 + c]; next.pixels[j * 4 + c] = prev.pixels[i * 4 + c]; }
+	for (let y = 0; y < prev.height; y++) {
+		const i = y * W0, j = (y + dy) * W1 + dx;
+		for (const key of ['w', 'amount', 'settledAmount', 'clock', 'vx', 'vy']) next[key].set(prev[key].subarray(i, i + W0), j);
+		for (const key of ['suspended', 'settled']) next[key].set(prev[key].subarray(i * BANDS, (i + W0) * BANDS), j * BANDS);
+		for (const key of ['base', 'pixels']) next[key].set(prev[key].subarray(i * 4, (i + W0) * 4), j * 4);
 	}
 	next.elapsed = prev.elapsed; next.steps = prev.steps; next.wet = prev.wet;
 	if (prev.active) next.active = { x0: prev.active.x0 + dx, y0: prev.active.y0 + dy, x1: prev.active.x1 + dx, y1: prev.active.y1 + dy };

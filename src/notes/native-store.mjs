@@ -1,6 +1,8 @@
 import {exactBytes, sha256, blobByteChunks, digestByteChunks, checkByteAbort, byteCopyError} from './integrity.mjs';
 import {isRecordingPartial, recordingStorageError, recordingStem} from './recording-files.mjs';
 import {FOLDERS, parts} from './opfs-paths.mjs';
+import {isNoteFile} from './model.mjs';
+import {DELETE_FRAME_BYTES, DELETE_HEADER_BYTES, DELETE_RESERVE_FILE, deleteFrameName, isDeletePrivateName, isDeleteOwnedName} from './delete-intent.mjs';
 
 const CHUNK = 48 * 1024;
 const fail = (code, message) => Object.assign(new Error(message), {code});
@@ -12,6 +14,7 @@ export function createNativeByteStore({call, token = () => crypto.randomUUID(), 
 	const prepare = () => {
 		if (writable !== undefined) return Promise.resolve(writable);
 		if (!preparing) preparing = Promise.resolve().then(() => request('prepare')).then(result => {
+			if (result?.storageFull === true) throw Object.assign(fail('quota', result.reason || 'Not enough storage to prepare Notes.'), {name: 'QuotaExceededError'});
 			if (typeof result?.writable !== 'boolean') throw fail('protocol', 'The native folder did not report its write capability.');
 			writable = result.writable; reason = result.reason || ''; return writable;
 		}).finally(() => { preparing = null; });
@@ -147,7 +150,70 @@ export function createNativeByteStore({call, token = () => crypto.randomUUID(), 
 			await afterStep('write', name, bytes); return offset;
 		}
 	};
-	return {read, readChunks, write, writeBlob, remove, list, stat, statAll, prepare, recording, get streamingAttachments() { return writable === true; }, get writable() { return writable; }, get ascii() { return false; }, get reason() { return reason; }, async removeThumbnails() {}};
+	const pressureBytes = (value, size) => {
+		if (!(value instanceof Uint8Array) || size !== undefined && value.length !== size) throw new TypeError('Deletion custody needs exact bytes.');
+		return value.slice();
+	};
+	const pressureDigest = value => { if (typeof value !== 'string' || !/^[0-9a-f]{64}$/.test(value)) throw new TypeError('Deletion custody needs an exact digest.'); return value; };
+	const pressureNote = name => { parts(name); if (!isNoteFile(name) || /[\u0000-\u001f\u007f]/.test(name)) throw fail('name', 'This is not a note filename.'); };
+	const pressureBoolean = (result, key) => { if (typeof result?.[key] !== 'boolean') throw fail('protocol', 'The native folder did not report the deletion result.'); return result[key]; };
+	const pressureWrite = async (name, expectedDigest, bytes) => {
+		const id = token(); let settled = false;
+		try {
+			await request('delete.write.begin', {name, id, size: bytes.length, digest: await sha256(bytes), expectedDigest});
+			for (let offset = 0; offset < bytes.length; offset += CHUNK) {
+				const end = Math.min(bytes.length, offset + CHUNK), result = await request('write.chunk', {id, offset, bytes: bytes.subarray(offset, end)});
+				if (result?.offset !== end) throw fail('protocol', 'The native folder did not accept the complete byte range.');
+			}
+			const result = await request('write.commit', {id}), written = pressureBoolean(result, 'written');
+			settled = true; return written;
+		} finally { if (!settled) await request('write.abort', {id}); }
+	};
+	const deletePressure = {
+		async list() { return (await list()).filter(isDeletePrivateName); },
+		async read(name) {
+			if (!isDeletePrivateName(name)) throw fail('name', 'This is not a deletion custody file.');
+			return read(name);
+		},
+		async writeFrame(slot, expected, value, {releaseReserve = null} = {}) {
+			deleteFrameName(slot); const bytes = pressureBytes(value, DELETE_FRAME_BYTES);
+			expected = expected === null ? null : pressureBytes(expected, DELETE_FRAME_BYTES);
+			const reserve = releaseReserve === null ? null : pressureBytes(releaseReserve);
+			if (expected && !expected.subarray(0, DELETE_HEADER_BYTES).every((byte, i) => byte === bytes[i])) throw fail('ownership', 'A deletion frame cannot replace its ownership header.');
+			return pressureBoolean(await request('delete.frame', {slot, frame: btoa(String.fromCharCode(...bytes)),
+				expectedDigest: expected === null ? null : await sha256(expected), reserveDigest: reserve === null ? null : await sha256(reserve)}), 'written');
+		},
+		async reserve(expected, value) {
+			const bytes = pressureBytes(value); expected = expected === null ? null : pressureBytes(expected);
+			if (!await prepare()) throw fail('read-only', reason || 'These notes are read-only here.');
+			return pressureWrite(DELETE_RESERVE_FILE, expected === null ? null : await sha256(expected), bytes);
+		},
+		async releaseReserve(value) {
+			const bytes = pressureBytes(value);
+			return pressureBoolean(await request('delete.remove', {name: DELETE_RESERVE_FILE, digest: await sha256(bytes)}), 'removed');
+		},
+		async observe(file) {
+			pressureNote(file); const result = await request('delete.observe', {name: file});
+			if (result?.missing === true) return null;
+			pressureDigest(result?.digest);
+			if (typeof result?.epoch !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(result.epoch) || !Number.isSafeInteger(result.generation) || result.generation < 0) throw fail('protocol', 'The native folder did not report its file identity.');
+			return {digest: result.digest, identity: {epoch: result.epoch, generation: result.generation}};
+		},
+		async detach(file, {held, digest, identity}) {
+			pressureNote(file); pressureDigest(digest);
+			if (!isDeletePrivateName(held) || !held.endsWith('.held')) throw fail('name', 'This is not a held deletion body.');
+			if (typeof identity?.epoch !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(identity.epoch) || !Number.isSafeInteger(identity.generation) || identity.generation < 0) throw fail('identity', 'The deletion target needs its current native file identity.');
+			const result = await request('delete.detach', {name: file, held, digest, epoch: identity.epoch, generation: identity.generation});
+			if (!['detached', 'changed', 'missing'].includes(result?.state)) throw fail('protocol', 'The native folder did not report the detach result.');
+			return result.state;
+		},
+		async removeOwned(name, digest) {
+			if (!isDeleteOwnedName(name)) throw fail('name', 'This is not an owned deletion path.');
+			pressureDigest(digest); return pressureBoolean(await request('delete.remove', {name, digest}), 'removed');
+		},
+		async checkpoint(value, baseDigest) { const bytes = pressureBytes(value); pressureDigest(baseDigest); return pressureWrite('notes.json', baseDigest, bytes); },
+	};
+	return {read, readChunks, write, writeBlob, remove, list, stat, statAll, prepare, recording, deletePressure, get streamingAttachments() { return writable === true; }, get writable() { return writable; }, get ascii() { return false; }, get reason() { return reason; }, async removeThumbnails() {}};
 }
 
 export function createNativeNotesLocks({call, token = () => crypto.randomUUID()}) {

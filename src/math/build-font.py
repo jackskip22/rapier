@@ -15,11 +15,12 @@ import json
 import math
 from pathlib import Path
 import re
-import unicodedata
+import tempfile
 import urllib.request
 import zlib
 
 from fontTools.pens.svgPathPen import SVGPathPen
+from fontTools.t1Lib import T1Font
 from fontTools.ttLib import TTFont
 
 
@@ -32,7 +33,10 @@ LPPL_URL = "https://www.latex-project.org/lppl/lppl-1-3c.txt"
 LPPL_SHA256 = "3d262cdf34dafa6955f703c634a8c238ec44109bc8dd6ef34fb7aa54809f7e66"
 TEXT_URL = "https://raw.githubusercontent.com/jackskip22/rapier/326a7387a190b011543fae5f5f2c6144f6163b3d/src/shell/fonts/Geist.wght400-700.woff2"
 TEXT_SHA256 = "6e3a140e3812161e292fbe42a1fc90533b2407b699c65abc7a098b0979df4e82"
-EDGE_STEP = 32
+MONO_URL = "https://ftp.riken.jp/CTAN/fonts/lm/fonts/opentype/public/lm/lmmono10-regular.otf"
+MONO_SHA256 = "22deb6d3be3ffcb40b33f0e010afb256c677d97c2a2bdee1f5740cdc97751558"
+HOOK_URL = "https://ftp.riken.jp/CTAN/fonts/lm/fonts/type1/public/lm/lmmi10.pfb"
+HOOK_SHA256 = "c24662506b402f3e0033cc75eb746eb490a1b7477e6b3ef52053f5025ec0fc57"
 
 
 def source_bytes(local: Path | None, remote: str, expected: str) -> bytes:
@@ -125,7 +129,6 @@ def extract(font: TTFont):
         "flatAccents": {ids[name]: ids[alternates[0]] for name, alternates in flattened.items() if name in ids},
         "dotless": {ids[name]: ids[alternates[0]] for name, alternates in dotless.items() if name in ids},
         "extendedShapes": {ids[name]: 1 for name in (info.ExtendedShapeCoverage.glyphs if info.ExtendedShapeCoverage else []) if name in ids},
-        "edgeStep": EDGE_STEP,
     }
     for axis, key in (("Vert", "vertical"), ("Horiz", "horizontal")):
         coverage = getattr(variants, axis + "GlyphCoverage")
@@ -150,17 +153,6 @@ def extract(font: TTFont):
                     corner = getattr(record, key)
                     corners.append([list(map(scalar, corner.CorrectionHeight)), list(map(scalar, corner.KernValue))] if corner else None)
                 data["kern"][ids[name]] = corners
-    # Script kerning reads a contour profile for Latin letters and digits, the italic and script alphabets
-    # (with U+210E, the italic h), and their optical and dotless forms. The decoder derives each profile.
-    profiled = {
-        name for cp, name in cmap.items()
-        if (cp < 128 and chr(cp).isalnum()) or cp == 0x210E
-        or any(style in unicodedata.name(chr(cp), "") for style in ("ITALIC", "SCRIPT"))
-    }
-    for name in list(profiled):
-        profiled.update(scripts.get(name, ()))
-        profiled.update(dotless.get(name, ()))
-    data["profiled"] = sorted(ids[name] for name in profiled)
     return data
 
 
@@ -215,7 +207,7 @@ def pack_font(data):
         for token in tokens:
             if "." in token:
                 unit = math.lcm(unit, Fraction(token).denominator)
-    # Derived bounds and profiles divide by the unit; a power of two keeps every coordinate exact.
+    # Derived bounds divide by the unit; a power of two keeps every coordinate exact.
     if unit & (unit - 1):
         raise ValueError("Font coordinates need a power-of-two unit")
     metric_unit = math.lcm(2, *(Fraction(value).denominator for glyph in glyphs for value in glyph[:3]))
@@ -336,11 +328,6 @@ def pack_font(data):
         for index, value in enumerate(values):
             signed(value - previous_values[index], indices)
             previous_values[index] = value
-    unsigned(len(data["profiled"]), indices)
-    previous_key = -1
-    for key in data["profiled"]:
-        unsigned(key - previous_key - 1, indices)
-        previous_key = key
     for name in ("vertical", "horizontal"):
         unsigned(len(data[name]), indices)
         previous_key = 0
@@ -380,7 +367,7 @@ def pack_font(data):
 
     packed = [(len(page), text(page)) for page in pages]
     return packed, text(indices), len(indices), {
-        "contours": len(contours), "contourReferences": sum(map(len, references)), "profiledGlyphs": len(data["profiled"]),
+        "contours": len(contours), "contourReferences": sum(map(len, references)),
         "pages": len(pages), "pageBytes": PAGE_BYTES, "indexBytes": len(indices),
         "recordBytes": sum(map(len, pages)), "maxParentDepth": PARENT_DEPTH,
     }
@@ -423,21 +410,20 @@ if(written!==bytes.length||position-Math.floor(available/8)!==source.length)inva
 const unsigned=r=>{let value=0,shift=0,byte;do{if(r[1]>=r[2]||shift>49)invalid();byte=r[0][r[1]++];value+=(byte&127)*2**shift;shift+=7;}while(byte&128);if(!Number.isSafeInteger(value))invalid();return value;};
 const signed=r=>{if(r[1]>=r[2])invalid();let value=r[0][r[1]++];if(value>=240){if(value===255){value=4080+unsigned(r);if(!Number.isSafeInteger(value))invalid();}else{if(r[1]>=r[2])invalid();value=240+(value-240)*256+r[0][r[1]++];}}return value%2?-(value+1)/2:value/2;};
 const complete=r=>{if(r[1]!==r[2])invalid();};
-const [unit,metricUnit,metricBases,profiled,glyphs,contours]=(()=>{
+const [unit,metricUnit,metricBases,glyphs,contours]=(()=>{
 const bytes=inflate(__INDEX__,__SIZE__),r=[bytes,0,bytes.length],unit=unsigned(r),metricUnit=unsigned(r);if(!unit||!metricUnit)invalid();const metricBases=Array.from({length:3},()=>signed(r));
 for(const name of __MAP_FIELDS__){const count=unsigned(r),map=MATH_FONT[name]={};if(count>bytes.length)invalid();let key=0,value=0;
 for(let i=0;i<count;i++){key+=unsigned(r);value+=signed(r);map[key]=value;}}
 const scripts=MATH_FONT.scriptAlternates={},scriptCount=unsigned(r),previous=[0,0];let key=0;if(scriptCount>bytes.length)invalid();
 for(let i=0;i<scriptCount;i++){key+=unsigned(r);const count=unsigned(r);if(count<1||count>2)invalid();const values=[];for(let j=0;j<count;j++){previous[j]+=signed(r);values.push(previous[j]);}scripts[key]=values;}
-const profiled=new Set,profileCount=unsigned(r);key=-1;if(profileCount>bytes.length)invalid();for(let i=0;i<profileCount;i++)profiled.add(key+=unsigned(r)+1);
 for(const name of ['vertical','horizontal']){const map=MATH_FONT[name]={},count=unsigned(r);key=0;if(count>bytes.length)invalid();
 for(let i=0;i<count;i++){key+=unsigned(r);const variants=Array.from({length:unsigned(r)},()=>[key+signed(r),unsigned(r)]),parts=unsigned(r);if(variants.length>bytes.length||parts>bytes.length)invalid();
 const record=map[key]={variants};if(parts)record.assembly={italic:signed(r),parts:Array.from({length:parts-1},()=>{const part=[key+signed(r),unsigned(r),unsigned(r)],full=unsigned(r);return [...part,Math.floor(full/2),full%2];})};}}
 const tables=Array.from({length:2},()=>{const count=unsigned(r);if(count<1||count>bytes.length)invalid();const offsets=new Uint32Array(count);let previous=0;
-for(let i=0;i<count;i++){previous+=unsigned(r);if(previous>=pages.length*32768)invalid();offsets[i]=previous;}return offsets;});complete(r);return [unit,metricUnit,metricBases,profiled,...tables];
+for(let i=0;i<count;i++){previous+=unsigned(r);if(previous>=pages.length*32768)invalid();offsets[i]=previous;}return offsets;});complete(r);return [unit,metricUnit,metricBases,...tables];
 })();
-// Each page, glyph and profile decodes once and stays: the font itself bounds every cache.
-const pageCache=[],glyphCache=new Map(),profileCache=new Map();
+// Each page and glyph decodes once and stays: the font itself bounds every cache.
+const pageCache=[],glyphCache=new Map();
 const record=(offsets,id)=>{
 if(!Number.isInteger(id)||id<0||id+1>=offsets.length)return;
 const offset=offsets[id],page=offset>>>15,next=offsets[id+1];let bytes=pageCache[page];
@@ -454,8 +440,8 @@ for(const command of commands){if(command<1||command>5)invalid();values+=command
 for(let i=0;i<values;i++)coordinates[i]=signed(r);}
 complete(r);const value=[commands,coordinates,closes];local.set(id,value);return value;
 };
-// Bounds and contour profiles derive from the outline with fontTools' BoundsPen and the generator's strip
-// profile, operation for operation, so each value is the one the generator would have stored.
+// Bounds derive from the outline with fontTools' BoundsPen, operation for operation, so each value is the one
+// the generator would have stored.
 const quadratic=(a,b,c)=>{if(Math.abs(a)<1e-10)return Math.abs(b)<1e-10?[]:[-c/b];const d=b*b-4*a*c;if(d<0)return [];const root=Math.sqrt(d);return [(-b+root)/2/a,(-b-root)/2/a];};
 const cubic=s=>{const cx=(s[2]-s[0])*3,cy=(s[3]-s[1])*3,bx=(s[4]-s[2])*3-cx,by=(s[5]-s[3])*3-cy;return [s[6]-s[0]-cx-bx,s[7]-s[1]-cy-by,bx,by,cx,cy,s[0],s[1]];};
 const add=(box,x,y)=>box?[Math.min(box[0],x),Math.min(box[1],y),Math.max(box[2],x),Math.max(box[3],y)]:[x,y,x,y];
@@ -463,27 +449,10 @@ const inside=(box,x,y)=>box[0]<=x&&x<=box[2]&&box[1]<=y&&y<=box[3];
 const curveBox=(box,s)=>{const [ax,ay,bx,by,cx,cy,dx,dy]=cubic(s),roots=[...quadratic(ax*3,bx*2,cx).filter(t=>0<=t&&t<1),...quadratic(ay*3,by*2,cy).filter(t=>0<=t&&t<1)];
 let curve=add(add(null,s[0],s[1]),s[6],s[7]);for(const t of roots)curve=add(curve,ax*t*t*t+bx*t*t+cx*t+dx,ay*t*t*t+by*t*t+cy*t+dy);
 return [Math.min(box[0],curve[0]),Math.min(box[1],curve[1]),Math.max(box[2],curve[2]),Math.max(box[3],curve[3])];};
-const profileOf=(segments,bottom,top)=>{
-const step=__EDGE_STEP__,first=Math.floor(bottom/step)*step,strips=Array.from({length:Math.max(1,Math.ceil((top-first)/step))},()=>[]);
-for(const s of segments){
-if(s.length===4){const [x,y,endX,endY]=s;strips.forEach((strip,i)=>{const lower=first+i*step,upper=lower+step,values=[0,1];
-if(endY!==y)values.push((lower-y)/(endY-y),(upper-y)/(endY-y));
-for(const t of values){const at=y+t*(endY-y);if(0<=t&&t<=1&&lower-1e-7<=at&&at<=upper+1e-7)strip.push(x+t*(endX-x));}});continue;}
-const [a0,a1,b0,b1,c0,c1,d0,d1]=cubic(s),vertical=t=>((a1*t+b1)*t+c1)*t+d1,extrema=[0,1,...quadratic(3*a0,2*b0,c0)],
-critical=[0,1,...quadratic(3*a1,2*b1,c1).filter(t=>0<t&&t<1)].sort((p,q)=>p-q),crossings=new Map,
-crossing=height=>{if(crossings.has(height))return crossings.get(height);const roots=[];
-for(let i=1;i<critical.length;i++){let low=critical[i-1],high=critical[i];const yLow=vertical(low),yHigh=vertical(high);
-if(!(Math.min(yLow,yHigh)<=height&&height<=Math.max(yLow,yHigh)))continue;
-for(let k=0;k<45;k++){const middle=(low+high)/2;if((vertical(middle)<height)===(yLow<yHigh))low=middle;else high=middle;}roots.push((low+high)/2);}
-crossings.set(height,roots);return roots;},ys=[s[1],s[3],s[5],s[7]],yMin=Math.min(...ys),yMax=Math.max(...ys);
-strips.forEach((strip,i)=>{const lower=first+i*step,upper=lower+step;if(lower>yMax||upper<yMin)return;
-for(const t of [...extrema,...crossing(lower),...crossing(upper)])if(0<=t&&t<=1){const y=((a1*t+b1)*t+c1)*t+d1;if(lower-1e-7<=y&&y<=upper+1e-7)strip.push(((a0*t+b0)*t+c0)*t+d0);}});}
-return [first,...strips.map(strip=>strip.length?[Math.floor(Math.min(...strip)-1e-7),Math.ceil(Math.max(...strip)+1e-7)]:null)];
-};
 const glyphRecord=id=>{
 let cached=glyphCache.get(id);if(cached)return cached;const r=record(glyphs,id);if(!r)return;
 const metrics=[];for(let i=0;i<3;i++)metrics.push(signed(r)+metricBases[i]);metrics[2]+=metrics[0]/2;
-const count=unsigned(r),local=new Map(),keep=profiled.has(id),segments=[];let path='',box=null;
+const count=unsigned(r),local=new Map();let path='',box=null;
 if(count>r[2]-r[1])invalid();
 for(let part=0;part<count;part++){const contourId=unsigned(r),firstX=signed(r),firstY=signed(r),[commands,coordinates,closes]=contour(contourId,local);let x=firstX,y=firstY,cursor=0;
 path+='M'+x/unit+' '+y/unit;box=add(box,x/unit,y/unit);
@@ -491,19 +460,13 @@ for(let c=0;c<commands.length;c++){const command=commands[c],from=[x/unit,y/unit
 for(let index=0;index<commandLengths[command];index++){if(index)path+=' ';
 const last=closes&&c===commands.length-2&&index>3;
 if(command===3||(command!==2&&command!==3&&index%2)){y=last?firstY:y+coordinates[cursor++];path+=y/unit;from.push(x/unit,y/unit);}else{x=last?firstX:x+coordinates[cursor++];path+=x/unit;if(command===2)from.push(x/unit,y/unit);}}
-if(command===5){if(from[0]!==firstX/unit||from[1]!==firstY/unit)segments.push([...from,firstX/unit,firstY/unit]);x=firstX;y=firstY;continue;}
-if(command===4){const end=add(box,from[6],from[7]);box=inside(end,from[2],from[3])&&inside(end,from[4],from[5])?end:curveBox(end,from);}else box=add(box,from[2],from[3]);
-if(keep)segments.push(from);}
+if(command===5){x=firstX;y=firstY;continue;}
+if(command===4){const end=add(box,from[6],from[7]);box=inside(end,from[2],from[3])&&inside(end,from[4],from[5])?end:curveBox(end,from);}else box=add(box,from[2],from[3]);}
 }complete(r);box??=[0,0,0,0];
 const glyph=[metrics[0]/metricUnit,Math.floor(box[0]),Math.floor(box[1]),Math.ceil(box[2]),Math.ceil(box[3]),metrics[1]/metricUnit,metrics[2]/metricUnit,path];
-// Keep the unrounded bounds for the derived profile; only profiled glyphs keep their segments.
-cached={glyph,segments:keep?segments:null,bottom:box[1],top:box[3]};glyphCache.set(id,cached);return cached;
+cached={glyph};glyphCache.set(id,cached);return cached;
 };
 MATH_FONT.glyph=id=>glyphRecord(id)?.glyph;
-MATH_FONT.profile=id=>{
-if(profileCache.has(id))return profileCache.get(id);const glyph=glyphRecord(id),profile=glyph?.segments?.length?profileOf(glyph.segments,glyph.bottom,glyph.top):undefined;
-profileCache.set(id,profile);return profile;
-};
 }
 """
 
@@ -514,6 +477,8 @@ def main():
     parser.add_argument("--license", type=Path, help="Optional pinned GUST Font License; otherwise fetch it")
     parser.add_argument("--lppl", type=Path, help="Optional pinned LPPL 1.3c; otherwise fetch it")
     parser.add_argument("--text-font", type=Path, help="Optional pinned Geist calibration font; otherwise use the editor copy or fetch it")
+    parser.add_argument("--mono-font", type=Path, help="Optional pinned Latin Modern Mono font for its sharp s; otherwise fetch it")
+    parser.add_argument("--hook-font", type=Path, help="Optional pinned Latin Modern Math Italic font for its arrow hook; otherwise fetch it")
     parser.add_argument("--out", type=Path, default=Path(__file__).with_name("font.js"))
     args = parser.parse_args()
     font_bytes = source_bytes(args.font, SOURCE_URL, SOURCE_SHA256)
@@ -523,15 +488,42 @@ def main():
     text_bytes = source_bytes(args.text_font or (local_text if local_text.exists() else None), TEXT_URL, TEXT_SHA256)
     font = TTFont(io.BytesIO(font_bytes))
     text_font = TTFont(io.BytesIO(text_bytes))
+    mono = TTFont(io.BytesIO(source_bytes(args.mono_font, MONO_URL, MONO_SHA256)))
     data = extract(font)
+    # Unicode has no mathematical monospace sharp s; retain that one original Mono outline beside the math font.
+    if mono["head"].unitsPerEm != data["units"]:
+        raise ValueError("The monospace outline must share the math font's units")
+    mono_glyphs = mono.getGlyphSet()
+    name = mono.getBestCmap()[0xDF]
+    path = SVGPathPen(mono_glyphs, ntos=number)
+    mono_glyphs[name].draw(path)
+    advance = mono["hmtx"].metrics[name][0]
+    data["styledGlyphs"] = {"monospace": {0xDF: len(data["glyphs"])}}
+    data["glyphs"].append([advance, 0, advance / 2, path.getCommands()])
+    # amsmath's hooked arrow uses the small math-italic hook, not Unicode's taller hooked-arrow glyph.
+    with tempfile.NamedTemporaryFile() as source:
+        source.write(source_bytes(args.hook_font, HOOK_URL, HOOK_SHA256))
+        source.flush()
+        hook = T1Font(source.name, kind="PFB")
+    hook_glyphs = hook.getGlyphSet()
+    path = SVGPathPen(hook_glyphs, ntos=number)
+    hook_glyphs["arrowhookleft"].draw(path)
+    data["arrowHook"] = len(data["glyphs"])
+    # This is an outline-only endpoint; the arrow composer supplies TeX's five-mu advance.
+    data["glyphs"].append([0, 0, 0, path.getCommands()])
     data.update(textXHeight=text_font["OS/2"].sxHeight, textUnits=text_font["head"].unitsPerEm)
     heading = (font["name"].getDebugName(0) + "\n\n"
-               "Rapier math font data, derived from Latin Modern Math 1.959.\n"
+               + mono["name"].getDebugName(0) + "\n\n"
+               + hook["FontInfo"]["Notice"] + "\n\n"
+               "Rapier math font data, derived from Latin Modern Math 1.959,\n"
+               "the sharp s of Latin Modern Mono 2.004, and one arrow hook\n"
+               "from Latin Modern Math Italic 10 Regular 2.003.\n"
                "Changes: SVG outline conversion, character and MATH data extraction,\n"
-               "optical-form closure, derived contour profiles and lossless path packing.\n"
+               "optical-form closure and lossless path packing.\n"
                "Original outlines are unchanged. Hinting and text shaping tables are omitted.\n"
                "The font authors do not maintain this conversion.\n"
                "Complete original work: https://mirrors.ctan.org/fonts/lm-math.zip\n"
+               "Mono and hook original work: https://mirrors.ctan.org/fonts/lm.zip\n"
                "Conversion details: FONT-SOURCE.md.\n\n").encode("utf-8")
     notice = heading + gust + b"\n" + lppl
     # The data file carries its copyright and notice; the complete license (GUST Font License and LPPL 1.3c) is the
@@ -540,9 +532,9 @@ def main():
     pages, index, size, packing = pack_font(data)
     glyph_count = len(data["glyphs"])
     character_count = len(data["chars"])
-    for name in ("glyphs", "profiled", "vertical", "horizontal", *SCALAR_MAPS, "scriptAlternates"):
+    for name in ("glyphs", "vertical", "horizontal", *SCALAR_MAPS, "scriptAlternates"):
         del data[name]
-    output = (b"/*!\n" + heading + pointer + b"*/\nconst MATH_FONT=" + json.dumps(data, ensure_ascii=True, separators=(",", ":")).encode("utf-8") + b";\n" + PATH_DECODER.replace("__PAGES__", json.dumps(pages, separators=(",", ":"))).replace("__INDEX__", json.dumps(index)).replace("__SIZE__", str(size)).replace("__MAP_FIELDS__", json.dumps(SCALAR_MAPS, separators=(",", ":"))).replace("__EDGE_STEP__", str(EDGE_STEP)).encode("utf-8") + b"\n\nexport {MATH_FONT};\n")
+    output = (b"/*!\n" + heading + pointer + b"*/\nconst MATH_FONT=" + json.dumps(data, ensure_ascii=True, separators=(",", ":")).encode("utf-8") + b";\n" + PATH_DECODER.replace("__PAGES__", json.dumps(pages, separators=(",", ":"))).replace("__INDEX__", json.dumps(index)).replace("__SIZE__", str(size)).replace("__MAP_FIELDS__", json.dumps(SCALAR_MAPS, separators=(",", ":"))).encode("utf-8") + b"\n\nexport {MATH_FONT};\n")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_bytes(output)
     args.out.with_name("FONT-LICENSE.txt").write_bytes(notice)

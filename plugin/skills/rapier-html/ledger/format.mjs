@@ -8,8 +8,6 @@ import {canonicalJSON, canonicalParts, plainData, documentText, utf8Length, exac
 export {textRoot, rootAfter};
 const digest = value => sha256Parts(canonicalParts(value));
 const rootShape = value => typeof value === 'string' && /^\d+:[a-z0-9]+:[a-z0-9]+$/.test(value);
-// Structural/history admission is shared by the reader and the producer. The producer
-// proves source replay by reversing exact admitted splices; it need not replay its output.
 function* checkedRecords(ledger, prepared) {
   if (!prepared.ok || ledger.records.length !== prepared.records.length) throw fault('record chain differs');
   let root = ledger.start.root, revision = ledger.start.revision;
@@ -27,16 +25,9 @@ function* checkedRecords(ledger, prepared) {
   }
   if (ledger.head.revision !== revision || ledger.head.root !== root) throw fault('history does not describe this document');
 }
-// A ledger object read again is proved once: a boot reads one stored history through several records. The proof holds only
-// while that object still carries the exact proved data (its start text compared whole, the rest as canonical JSON), so a
-// changed byte is proved again, and refused. The proof lives as long as the object does.
 const proofs = new WeakMap();
 function readLedgerState(input, expectedText, expectedMetadata) {
   const ledger = plainData(input);
-  // The identifier rapier-ledger/2 is unchanged and is not backward compatible. This reader
-  // admits an empty physical splice whose authored rows name the same replacement. A reader
-  // from before that rule rejects the chain. Mixed-version sync throws notes_history_unavailable
-  // and leaves the older store unchanged; that refusal is not a held or caughtUp result.
   if (!exactKeys(ledger, ['format','documentAuthority','start','records','head','complete','sha256']) || ledger.format !== 'rapier-ledger/2' ||
       typeof ledger.documentAuthority !== 'string' || !ledger.documentAuthority || ledger.documentAuthority.length > 256 ||
       typeof ledger.complete !== 'boolean' || !Array.isArray(ledger.records) ||
@@ -81,7 +72,6 @@ function proveLedger(ledger) {
   if (ledger.head.revision !== revision || ledger.head.root !== root || ledger.head.sha256 !== sha256(text)) throw fault('history does not describe this document');
   return {text, metadata, root, revision, prepared, source};
 }
-// A stored copy may hold the head text alone. Its start is that text with every record reversed; readLedger proves it.
 export function ledgerWithStart(input, text) {
   let source = new HistorySource(documentText(text));
   for (let i = input.records.length - 1; i >= 0; i--) {
@@ -129,11 +119,8 @@ function* sourceFacts(text) {
 }
 function* produceLedger({text, metadata, records, documentAuthority, revision, root, complete = false, earlier = records} = {}) {
   if (!_rapierValidMetadata(metadata)) throw fault('document metadata required');
-  // Metadata has two admitted scalar fields. Keep its insertion order in the
-  // emitted envelope while capturing it before the first cooperative boundary.
   metadata = {...metadata};
   if (!Array.isArray(records) || !Array.isArray(earlier)) throw fault('records required');
-  // Inspect before touching properties: exporting must not call accessors on an alleged record.
   const prepared = _rapierPrepareHistoryRecords(records, earlier);
   if (!prepared.ok) throw fault('navigation target was not retained');
   const headFacts = yield* sourceFacts(text);
@@ -153,8 +140,6 @@ function* produceLedger({text, metadata, records, documentAuthority, revision, r
     startSource = startSource.apply(expanded[i].splices, true);
     startMetadata = _rapierTransformMetadata(startMetadata, expanded[i].metadata, true);
     if (startSource === null || !startMetadata) throw fault('history does not reverse from this document');
-    // Whole scalars and exact splice boundaries were just checked. Count the changed
-    // bytes, rather than re-encoding every reconstructed whole-document revision.
     for (const row of expanded[i].splices) bytes += utf8Length(row.removed) - utf8Length(row.inserted);
     if (bytes > 64 * 1024 * 1024) throw fault('document exceeds the editor text limit');
     yield;
@@ -174,8 +159,6 @@ function* produceLedger({text, metadata, records, documentAuthority, revision, r
   const payload = {format: 'rapier-ledger/2', documentAuthority,
     start: {text: startText, revision: startRevision, root: startRoot, sha256: startSHA, metadata: startMetadata},
     records: expanded, head: {revision, root, sha256: headSHA, metadata: {...metadata}}, complete: complete === true && startRevision === 0 && expanded.every((row, i) => !i || row.transaction.baseRevision === expanded[i - 1].transaction.revision)};
-  // Expanded rows are the exact canonical projection of this owned preparation.
-  // Keep its navigation/effect proof instead of admitting another copied graph.
   for (const _record of checkedRecords(payload, prepared)) yield;
   if (expanded.some(row => Object.hasOwn(row, 'authored'))) {
     try { authoredHistory(startText, expanded); } catch (_) { throw fault('authored origin differs'); }
@@ -191,7 +174,6 @@ function finish(producer) {
   return step.value;
 }
 export function exportLedger(input) { return finish(produceLedger(input)).ledger; }
-// Its returned facts were computed while admitting/hashing the exact head, never supplied.
 export async function prepareLedgerAsync(input, {yield: yieldWork, signal} = {}) {
   const producer = produceLedger(input);
   let step;
@@ -199,7 +181,6 @@ export async function prepareLedgerAsync(input, {yield: yieldWork, signal} = {})
     signal?.throwIfAborted();
     step = producer.next();
     if (!step.done && yieldWork) {
-      // The caller owns scheduling and its clock; ledger admission reads neither.
       const pending = yieldWork();
       if (pending) await pending;
     }
@@ -207,7 +188,6 @@ export async function prepareLedgerAsync(input, {yield: yieldWork, signal} = {})
   signal?.throwIfAborted();
   return step.value;
 }
-// Derived navigation, never a second history. A target older than start is intentionally unavailable.
 export function historyEnvelope(input, segmentIdentity = [], expectedText, expectedMetadata) {
   const {value: {ledger, text, metadata}, prepared, source} = readLedgerState(input, expectedText, expectedMetadata);
   const {byId, effects: {pictures}} = prepared;
@@ -235,8 +215,6 @@ export function historyEnvelope(input, segmentIdentity = [], expectedText, expec
   }
   if (ledger.complete) {
     if (ledger.records.length && !branch.length) throw fault('complete history lost its branch');
-    // Literal admitted splices are reversible. Proving the actual head back to
-    // the exact start also proves its forward active branch, without replaying it.
     if (traversed.length !== ledger.start.text.length || !traversed.matches(0, ledger.start.text) ||
         canonicalJSON(traversedMetadata) !== canonicalJSON(ledger.start.metadata)) throw fault('complete branch differs');
   }
@@ -246,8 +224,6 @@ export function historyEnvelope(input, segmentIdentity = [], expectedText, expec
     traversedMetadata = _rapierTransformMetadata(traversedMetadata, byId.get(branch[i]).metadata);
     if (traversed === null || !traversedMetadata) throw fault('redo branch does not replay');
   }
-  // Picture folding may relocate finished definitions while navigating. Keep its
-  // distinct forward proof; the literal-only case above needs no second traversal.
   if (ledger.complete && pictures.size) {
     let active = new HistorySource(ledger.start.text), activeMetadata = {...ledger.start.metadata};
     for (let i = 0; i < branch.length; i++) {
@@ -270,7 +246,6 @@ export function agentActorId(door, agent) {
   return door + '/' + agent.name;
 }
 
-// A writer changing representation records that change, rather than attaching an unrelated head.
 export function replaceLedgerText(input, text, {actor = {kind: 'system', id: 'rapier'}, operation = 'document.replace', at} = {}) {
   const current = readLedger(input); documentText(text);
   if (current.text === text) return current.ledger;

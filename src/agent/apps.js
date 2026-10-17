@@ -10,11 +10,16 @@
   let host, capabilities = {}, context = {}, token = '', base = null, incoming = null;
   let version = 0, incomingVersion = 0, presentationBlocked = false;
   let dirty = false, flight = null, switching = false;
-  let lastFailure = null, composeTimer = 0;
+  let lastFailure = null, composeTimer = 0, coalesceUntil = 0;
   const COMPOSING_IDLE_MS = 4000;
   let editEpoch = 0, lastEdit = 0, composing = false, contextEditing = false, contextEditingAt = 0;
   let staleContexts = 0, staleRevision = null, staleStuck = false;
   let running = null, timer = 0, failures = 0, connecting = null, notice, modeButton;
+  const LIVE_CHECK_MS = 60000, LIVE_HTTP_MS = 600000, LIVE_CATCH_UP_MS = 60000, QUIET_DELAYS = [1500, 5000, 15000, 30000];
+  const TYPING_CONTEXT_MS = 15000, SETTLED_CONTEXT_MS = 4000;
+  let liveNotice = null, syncedNotice = null, syncWanted = Infinity, catchUpAt = Infinity, lastSyncAt = 0, quietSyncs = 0;
+  let timerAt = Infinity, checkTimer = 0, checkSentAt = 0, liveReady = '';
+  let contextSentAt = 0, contextSentBusy = false, contextLeaseMs = 0, httpContextAt = Date.now();
   let unsubscribe, observer, locked = [], status = 'opening';
   let importRunning = false, uploadRunning = false, homeDialog, fileDialog, homeRequested = false;
   let boundFile = null, fileOpenEpoch = 0, pendingFileResult = null;
@@ -188,6 +193,9 @@
     return current?.active && current.documentId === base?.documentId ? current : null;
   }
 
+  const LIVE_OFFLINE_MS = 8000, LIVE_RETRY_MS = 60000;
+  let liveDownSince = 0, liveRetryAt = 0;
+
   let heldLedger = null;
   function holdBaseLedger() {
     if (!base || heldLedger?.base === base || _rapierSourceText() !== base.text) return;
@@ -197,7 +205,7 @@
 
   async function joinLive() {
     const link = liveBindings.get(token);
-    if (!link || !base || flight || globalThis.RapierWorkerExecution.workerStartupRefused('rapier-live')) return false;
+    if (!link || !base || flight || Date.now() < liveRetryAt || globalThis.RapierWorkerExecution.workerStartupRefused('rapier-live')) return false;
     if (liveJoin) return liveJoin;
     const documentId = base.documentId;
     holdBaseLedger();
@@ -279,6 +287,7 @@
       unpaired: 'This browser is not paired with the document',
       unavailable: 'Document unavailable', expired: 'This editor session has expired. Open the document again from your assistant’s link',
       unsupported: 'This host cannot connect to Rapier', detached: 'This document is open elsewhere',
+      coalescing: 'Saving once a minute while this document changes fast',
       blocked: 'This update needs attention',
       comparison_changed: 'The comparison changed. Review it again.', comparison_refused: 'This comparison needs another look.'
     }[value] || strandedText || fileText;
@@ -483,7 +492,12 @@
     }
     if (!release && editorContextBusy()) { contextQueued = true; return false; }
     if (closed || !initialized || !token || !base || (!release && switching)) return false;
-    const documentToken = token, source = base, epoch = contextEpoch;
+    if (!release && joinedLive() && visible()) {
+      const wait = contextWait(Date.now(), editing(), contextSentBusy, contextSentAt, lastEdit);
+      if (wait > 0) { contextQueued = true; contextTimer = setTimeout(() => void publishHumanContext(), wait); return false; }
+    }
+    const documentToken = token, epoch = contextEpoch;
+    let source = base;
     contextQueued = false;
     contextFlight = (async () => {
       let captured;
@@ -494,7 +508,11 @@
       if (token !== documentToken || closed) return false;
       if (epoch === contextEpoch && typeof captured?.context?.editing === 'boolean') { contextEditing = captured.context.editing; contextEditingAt = Date.now(); }
       const active = !release && !closing && visible();
-      const exact = captured?.ok === true && same(captured, source) && !dirty && !flight && !composing;
+      const live = joinedLive();
+      const atLive = !!live && live.pending === 0 && !flight && !composing && captured?.ok === true &&
+        captured.documentId === source.documentId && typeof captured.text === 'string';
+      if (atLive) source = {...source, revision: live.gen, text: captured.text};
+      const exact = captured?.ok === true && same(captured, source) && (atLive || !dirty) && !flight && !composing;
       const busy = active && (!exact || editing() || captured?.context?.editing === true);
       const args = {document: documentToken, expectedRevision: source.revision, contextId: nonce,
         sequence: ++contextSequence, visible: active, editing: busy};
@@ -533,7 +551,11 @@
         const editor = host.editorContext();
         if (object(editor?.preferences)) args.editor = {preferences: editor.preferences};
       }
-      const result = await call('document.human_context', args, 5000);
+      const {document: ignored, ...socketArgs} = args;
+      let result = live?.custody ? await globalThis.RapierLiveCustody?.context(args) : null;
+      if (!result && live && !live.custody && Date.now() - httpContextAt < LIVE_HTTP_MS) result = await _rapierLive.doorContext?.(socketArgs);
+      if (!result) { result = await call('document.human_context', args, 5000); httpContextAt = Date.now(); }
+      contextSentAt = Date.now(); contextSentBusy = busy;
       if (token !== documentToken || closed) return false;
       if (result.structuredContent?.reason === 'human_context_recipe_required' || result.structuredContent?.code === 'HUMAN_CONTEXT_RECIPE_REQUIRED') {
         contextAck = null; contextQueued = true; contextIssue = ''; contextFailures = 0;
@@ -542,7 +564,9 @@
       if (result.isError) {
         contextIssue = result.structuredContent?.code === 'HUMAN_CONTEXT_STALE' ? 'stale' : 'unavailable';
         captureIncoming(result);
-        if (contextIssue === 'stale') {
+        if (contextIssue === 'stale' && live?.custody) { schedule(250); return false; }
+        if (contextIssue === 'stale' && live) syncWanted = Date.now();
+        else if (contextIssue === 'stale') {
           staleContexts = staleRevision === source.revision ? staleContexts + 1 : 1;
           staleRevision = source.revision;
           if (staleContexts >= 3 && base === source) {
@@ -559,6 +583,7 @@
       if (staleStuck) { staleStuck = false; if (status === 'offline' && !failures) setStatus('ready'); }
       const receipt = result.structuredContent;
       if (receipt?.acknowledged !== true || receipt.contextId !== nonce || receipt.sequence !== args.sequence) return false;
+      contextLeaseMs = Number.isFinite(receipt.contextExpiresAt) ? receipt.contextExpiresAt - Date.now() : 0;
       for (const row of args.drawingReceipts || []) if (pendingDrawingReceipts.get(row.transactionId) === row) pendingDrawingReceipts.delete(row.transactionId);
       contextIssue = '';
       const drawingAck = args.drawing && {...args.drawing, recipeReference: !!(args.drawing.recipe || args.drawing.recipeReference)};
@@ -571,13 +596,14 @@
       if (Number.isFinite(receipt.contextExpiresAt)) contextExpiryTimer = setTimeout(() => {
         contextAck = null;
         void publishModelContext();
-      }, Math.max(0, Math.min(15000, receipt.contextExpiresAt - Date.now())));
+      }, Math.max(0, Math.min(contextLeaseMs > 120000 ? 600000 : 15000, receipt.contextExpiresAt - Date.now())));
       void publishModelContext();
       return true;
     })().catch(() => { contextIssue = 'unavailable'; contextFailures++; void publishModelContext(); return false; }).finally(() => {
       contextFlight = null;
       if (!closed && !closing && !switching && initialized && base && contextFailures < 3 && visible()) {
-        contextTimer = setTimeout(() => void publishHumanContext(), contextQueued ? 80 : 5000);
+        contextTimer = setTimeout(() => void publishHumanContext(), contextQueued ? 80 :
+          contextLeaseMs > 120000 ? Math.min(300000, contextLeaseMs / 2) : 5000);
       }
     });
     return contextFlight;
@@ -673,7 +699,7 @@
       if (dirty || composing || !same(current, local) || current.generation !== local.generation ||
           current.revision !== local.revision || base.revision !== target.revision) fact = {outcome: 'refused', reason: 'document_changed'};
       exportFlight = {document: target.document, exportId: intent.id, expectedRevision: target.revision,
-        fact: {...fact, documentId: target.documentId, revision: target.revision, format: intent.format}};
+        fact: {...fact, documentId: target.documentId, revision: target.revision, format: intent.format, ...(intent.part ? {part: intent.part.sha256} : {})}};
     }
     const sent = exportFlight;
     const result = await call('document.export_ack', sent, 60000);
@@ -1014,17 +1040,67 @@
     await acknowledgeView();
   }
 
+  function noticeSyncAt(heard, synced, live, now) {
+    if (!heard) return [Infinity, false];
+    if (!synced || heard.agent !== synced.agent || heard.waiting !== synced.waiting) return [now, false];
+    let at = Infinity, lazy = false;
+    if (heard.version !== synced.version || heard.revision !== synced.revision) {
+      lazy = heard.revision > synced.revision && heard.version - synced.version === heard.revision - synced.revision &&
+        !!live && live.pending === 0 && live.gen >= heard.revision;
+      at = lazy ? now + LIVE_CATCH_UP_MS : now;
+    }
+    if (Number.isFinite(heard.expiry) && heard.expiry >= synced.at && heard.expiry + 50 < at) { at = Math.max(now, heard.expiry + 50); lazy = false; }
+    return [at, lazy];
+  }
+
+  function contextWait(now, typing, sentBusy, sentAt, editedAt) {
+    if (!sentBusy) return 0;
+    return Math.max(0, typing ? sentAt + TYPING_CONTEXT_MS - now : Math.min(sentAt + TYPING_CONTEXT_MS, editedAt + SETTLED_CONTEXT_MS) - now);
+  }
+
+  function quietDelay(live, now) {
+    return live ? Math.max(0, Math.min(syncWanted, catchUpAt, lastSyncAt + LIVE_HTTP_MS) - now) : QUIET_DELAYS[Math.min(quietSyncs, QUIET_DELAYS.length - 1)];
+  }
+
   function schedule(delay = 1500) {
-    clearTimeout(timer);
+    clearTimeout(timer); timer = 0; timerAt = Infinity;
     if (closed || closing || switching || failures >= 5 || !initialized || !visible()) {
       return;
     }
-    timer = setTimeout(() => { timer = 0; void cycle(); }, delay);
+    timerAt = Date.now() + delay;
+    timer = setTimeout(() => { timer = 0; timerAt = Infinity; void cycle(); }, delay);
+  }
+
+  function scheduleBy(delay) {
+    if (running) return;
+    if (!timer || Date.now() + delay < timerAt) schedule(delay);
+  }
+
+  function heardNotice(heard) {
+    if (!base || !heard || heard.documentId !== base.documentId) return;
+    liveNotice = heard; checkSentAt = 0;
+    const [at, lazy] = noticeSyncAt(heard, syncedNotice, joinedLive(), Date.now());
+    if (lazy) catchUpAt = Math.min(catchUpAt, at); else syncWanted = Math.min(syncWanted, at);
+    const next = Math.min(syncWanted, catchUpAt);
+    if (Number.isFinite(next)) scheduleBy(Math.max(0, next - Date.now()));
+  }
+
+  function ensureLiveCheck() {
+    if (checkTimer || closed) return;
+    checkTimer = setTimeout(() => {
+      checkTimer = 0;
+      if (closed || !visible() || !joinedLive()) return;
+      if (checkSentAt && Date.now() - checkSentAt > 10000) { syncWanted = Date.now(); scheduleBy(0); }
+      checkSentAt = Date.now();
+      _rapierLive.check?.();
+      ensureLiveCheck();
+    }, LIVE_CHECK_MS);
   }
 
   function humanEdit() {
     editEpoch++;
     lastEdit = Date.now();
+    quietSyncs = 0;
     if (base) dirty = true;
     cancelEditorRequests('document_changed', {waitingOnly: true});
     cancelMaterial('document_changed');
@@ -1073,6 +1149,12 @@
     if (code === 'DOCUMENT_UNAVAILABLE') {
       failures = 5;
       setStatus('unavailable');
+      return false;
+    }
+    if (code === 'SAVES_COALESCED') {
+      coalesceUntil = Date.now() + Math.min(60000, Math.max(1000, Number(result.structuredContent?.retryAfter) * 1000 || 60000));
+      setStatus('coalescing');
+      schedule(coalesceUntil - Date.now());
       return false;
     }
     if (code === 'PAIRING_REQUIRED') {
@@ -1368,10 +1450,14 @@
   }
 
   async function sync(force = false) {
-    const args = {document: token};
+    const args = {document: token}, heard = liveNotice, started = Date.now();
     if (base && !force) { args.afterRevision = base.revision; args.afterVersion = version; }
-    const result = await call('document.sync', args);
+    const result = joinedLive()?.custody && await globalThis.RapierLiveCustody?.sync(args) || await call('document.sync', args);
     if (!ensureResult(result)) return false;
+    lastSyncAt = started;
+    if (heard) syncedNotice = {...heard, at: started};
+    if (liveNotice === heard) syncWanted = catchUpAt = Infinity;
+    quietSyncs = result.structuredContent?.unchanged === true ? quietSyncs + 1 : 0;
     if (base) host.noteRemoteCall?.(result.structuredContent?.agent); else firstAgentReport = result.structuredContent?.agent;
     const value = metadata(result).snapshot;
     const nextVersion = viewVersion(result.structuredContent?.version);
@@ -1483,12 +1569,28 @@
         if (base && firstAgentReport) { host.noteRemoteCall?.(firstAgentReport); firstAgentReport = null; }
       } else if (liveBindings.has(token)) {
         const joined = await joinLive().catch(() => false);
-        const live = joined ? joinedLive() : null;
+        let live = joined ? joinedLive() : null;
+        if (live && live.state !== 'live' && live.state !== 'syncing') {
+          liveDownSince ||= Date.now();
+          if (Date.now() - liveDownSince >= LIVE_OFFLINE_MS) {
+            await window.Rapier.live.leave?.();
+            liveDownSince = 0; liveRetryAt = Date.now() + LIVE_RETRY_MS; live = null;
+          }
+        } else liveDownSince = 0;
         if (live) {
           dirty = live.pending > 0;
           if (force && dirty) { if (!await window.Rapier.live.flush()) return false; dirty = false; }
-          if (!await sync(force)) return false;
-          await loadIncoming(false, null, force);
+          const now = Date.now();
+          if (live.custody || force || now >= syncWanted || now >= catchUpAt && !editing() || now - lastSyncAt >= LIVE_HTTP_MS) {
+            if (!await sync(force)) return false;
+            await loadIncoming(false, null, force);
+            for (let waited = 0; force && incoming && incoming !== heldIncoming && (joinedLive()?.gen ?? Infinity) < incoming.revision &&
+              waited < 3000; waited += 100) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+              await loadIncoming(false, null, force);
+            }
+          } else if (incoming) await loadIncoming(false, null, force);
+          ensureLiveCheck();
         } else {
           const stalled = window.Rapier?.live?.status?.();
           if ((stalled?.state === 'stopped' || stalled?.error) && !stalled?.joining && stalled?.state !== 'connecting')
@@ -1498,6 +1600,7 @@
           dirty = !acknowledged(local);
           if (flight || dirty) {
             if (composing) return false;
+            if (Date.now() < coalesceUntil) { schedule(coalesceUntil - Date.now()); return false; }
             await commit();
             if (!dirty && incoming) await loadIncoming(false, null, force);
           } else if (!editing() || force) {
@@ -1512,6 +1615,7 @@
         dirty = !acknowledged(local);
         if (flight || dirty) {
           if (composing) return false;
+          if (Date.now() < coalesceUntil) { schedule(coalesceUntil - Date.now()); return false; }
           await commit();
           if (!dirty && incoming) await loadIncoming(false, null, force);
         } else if (!editing() || force) {
@@ -1526,7 +1630,9 @@
     })().catch(error => { failed(error); return false; }).finally(() => {
       running = null;
       publishModelContext();
-      schedule(failures ? Math.min(30000, 1500 * 2 ** (failures - 1)) : editorContextBusy() ? 0 : dirty ? 500 : 1500);
+      const live = !!joinedLive(), now = Date.now();
+      schedule(failures ? Math.min(30000, 1500 * 2 ** (failures - 1)) : editorContextBusy() ? 0 : dirty ? 500 :
+        live && now >= catchUpAt ? 5000 : quietDelay(live, now));
     });
     return running;
   }
@@ -2372,6 +2478,13 @@
         light.addEventListener('change', event => updateContext({theme: event.matches ? 'light' : 'dark'}), {signal: listeners.signal});
         initialized = true;
         failures = 0;
+        if (typeof globalThis.RAPIER_EDITOR_KEY !== 'string' && globalThis.RAPIER_EDITOR_ADMISSION) {
+          const admitted = await globalThis.RAPIER_EDITOR_ADMISSION;
+          if (admitted?.admitted === true && typeof admitted.editorKey === 'string' && admitted.editorKey.length <= 512) {
+            globalThis.RAPIER_EDITOR_KEY = admitted.editorKey;
+            globalThis.RAPIER_FILE_DOWNLOAD_ORIGINS = Array.isArray(admitted.fileOrigins) ? admitted.fileOrigins.filter(value => typeof value === 'string') : [];
+          }
+        }
         if (typeof globalThis.RAPIER_EDITOR_KEY !== 'string') { void pair(); return; }
         contextChanged();
         schedule(0);
@@ -2396,6 +2509,12 @@
     return connecting;
   }
 
+  const PAIR_ACTIVE_MS = 180000;
+  function pairDelay(outcome, idleMs) {
+    if (idleMs >= PAIR_ACTIVE_MS) return null;
+    return outcome === 'confirmation_required' ? 10000 : 2000;
+  }
+
   async function pair() {
     const pop = housePop('rapier-app-pair-title', 'Pair this browser', 'rapier-app-pairing');
     const lead = document.createElement('p');
@@ -2410,8 +2529,12 @@
     ownerLink.textContent = 'Open browser approval';
     ownerLink.target = '_blank'; ownerLink.rel = 'noopener noreferrer';
     ownerApproval.append(ownerLink); ownerApproval.hidden = true;
-    let open = true, deciding = false, poll = null;
-    const close = () => { open = false; pop.overlay.remove(); pairDialog = null; setStatus('unpaired'); };
+    let open = true, deciding = false, poll = null, activeAt = Date.now(), wake = null;
+    const close = () => { open = false; wake?.(); pop.overlay.remove(); pairDialog = null; setStatus('unpaired'); };
+    const touched = () => { activeAt = Date.now(); };
+    const rest = ms => new Promise(resolve => { const timer = ms === null ? 0 : setTimeout(resolve, ms); wake = () => { clearTimeout(timer); wake = null; resolve(); }; });
+    document.addEventListener('visibilitychange', () => { if (visible()) { touched(); wake?.(); } }, {signal: listeners.signal});
+    pop.overlay.addEventListener('pointerdown', touched, {signal: listeners.signal});
     const decide = async decision => {
       if (!open || deciding) return;
       deciding = true;
@@ -2428,17 +2551,31 @@
     };
     const allow = popButton('allow', 'affirm', () => { void decide('allow'); });
     const cancel = popButton('cancel', 'cancel', () => { void decide('cancel'); });
-    allow.hidden = true;
-    pop.row.append(allow, cancel);
+    const again = popButton('new code', 'affirm', () => { again.hidden = true; touched(); wake?.(); });
+    allow.hidden = again.hidden = true;
+    pop.row.append(allow, again, cancel);
     pop.overlay.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); void decide('cancel'); } }, {signal: listeners.signal});
     pairDialog = pop.overlay;
     pop.show(lead, code, words, ownerApproval);
     document.body.prepend(pop.overlay);
     lock();
+    let last = null;
     while (open && !closed) {
       if (deciding) { await new Promise(resolve => setTimeout(resolve, 2000)); continue; }
+      if (!visible()) { await rest(null); continue; }
+      const delay = pairDelay(last?.outcome, Date.now() - activeAt);
+      if (delay === null) {
+        allow.hidden = true;
+        code.textContent = '';
+        lead.textContent = 'This code has expired.';
+        words.textContent = 'Get a new code when you are ready to tell it to your assistant.';
+        if (again.hidden) { again.hidden = false; globalThis._rapierPopArrange?.(pop.row); }
+        await rest(null);
+        continue;
+      }
+      again.hidden = true;
       poll = call('document.pair_status', {document: pairedId}).then(result => result?.structuredContent).catch(() => null);
-      const value = await poll;
+      const value = last = await poll;
       if (!open) return;
       if (deciding) continue;
       ownerApproval.hidden = true;
@@ -2448,7 +2585,7 @@
         words.textContent = 'Open the approval link in the browser where you connected Rapier. Return here once approved.';
         try {
           const url = new URL(value.owner_approval_url);
-          if (url.origin === location.origin && url.pathname === '/d/' + pairedId && /^\?pair=[a-f0-9]{64}$/.test(url.search) && !url.hash) {
+          if (url.origin === location.origin && ['/d/' + pairedId, '/editor/' + pairedId].includes(url.pathname) && /^\?pair=[a-f0-9]{64}$/.test(url.search) && !url.hash) {
             ownerLink.href = url.href; ownerApproval.hidden = false;
           }
         } catch (_) {}
@@ -2477,7 +2614,7 @@
         words.textContent = 'It was deleted or expired. Ask your assistant for a new one.';
         return;
       }
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await rest(pairDelay(value?.outcome, Date.now() - activeAt) ?? 0);
     }
   }
 
@@ -2518,8 +2655,15 @@
     document.addEventListener('compositionend', event => { if (event.isTrusted) { clearTimeout(composeTimer); composing = false; humanEdit(); } }, options);
     document.addEventListener('visibilitychange', () => {
       contextChanged();
+      if (visible()) quietSyncs = 0;
       if (visible()) schedule(0);
       else { cancelEditorRequests('editor_unavailable', {waitingOnly: true}); pauseMaterial(); clearTimeout(timer); void publishHumanContext(true); void flush(); }
+    }, {signal: listeners.signal});
+    document.addEventListener('rapier:live-changed', event => heardNotice(event.detail), {signal: listeners.signal});
+    document.addEventListener('rapier:live-state', event => {
+      const value = event.detail, key = value?.active && value.ready ? value.client + ':' + value.documentId : '';
+      if (key && key !== liveReady && base && value.documentId === base.documentId) { liveReady = key; contextChanged(); }
+      else if (!key) liveReady = '';
     }, {signal: listeners.signal});
     window.addEventListener('pagehide', () => {
       cancelEditorRequests('editor_unavailable', {forget: true});

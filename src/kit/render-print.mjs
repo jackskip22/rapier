@@ -637,7 +637,7 @@ async function writeRasterPdf({pages, textPages, linkPages = [], vectorPages = [
 	const parents = add('<< /Nums [' + parentTree.map((marked, index) => index + ' [' + marked.map(element => ids.get(element) + ' 0 R').join(' ') + ']').join(' ') + '] >>');
 	put(tree, '<< /Type /StructTreeRoot /K [' + ids.get(documentElement) + ' 0 R] /ParentTree ' + parents + ' 0 R /ParentTreeNextKey ' + parentTree.length + ' >>');
 	put(1, '<< /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true >> /StructTreeRoot ' + tree + ' 0 R /Names << /EmbeddedFiles << /Names [<feff' + hex(filename) + '> ' + file + ' 0 R] >> >> /AF [' + file + ' 0 R] >>');
-	const info = add('<< /Producer (Rapier) /Title <feff' + hex(title || filename.replace(/\.[^.]*$/, '')) + '> >>');
+	const info = add('<< /Producer (Rapier) /Creator (Rapier) /Title <feff' + hex(title || filename.replace(/\.[^.]*$/, '')) + '> >>');
 	const header = encode('%PDF-1.7\n%\u00e2\u00e3\u00cf\u00d3\n'), offsets = new Array(objects.length);
 	let cursor = header.length;
 	for (let id = 1; id < objects.length; id++) {

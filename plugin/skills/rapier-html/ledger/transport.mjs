@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT
-// Paired source placement, shared by live editing and canonical-history proof.
 import {_rapierTransformSplices, _rapierValidAuthored, _rapierHistoryEffects} from './journal-records.mjs';
 import {projectInverseSource} from './inverse-source.mjs';
 import {authoredBasis, authoredPlacement, authoredPlacements} from './authored-origin.mjs';
@@ -25,8 +24,6 @@ function emit(rows, at, remove, insert = '') {
   } else rows.push({at, remove, insert});
 }
 
-// Sweep original-source boundaries. Each counter names a coordinate in one input's
-// resulting document; concurrent insertions never enter the other input's removals.
 export function transformPair(left, right, leftFirst) {
   admitted(left); admitted(right);
   const points = [...new Set([0, ...left.flatMap(row => [row.at, row.at + row.remove]),
@@ -62,9 +59,6 @@ function applyBatch(text, rows) {
   return {text: after, splices: exact};
 }
 
-// Transport one sequential canonical act and every crossed record together. The
-// reciprocal path is checked against exact source, rather than only equal end text.
-// Canonical transport refuses deleting any authored unit already removed elsewhere.
 export function transposeRecord(base, splices, id, records) {
   if (typeof base !== 'string' || !Array.isArray(splices) || typeof id !== 'string' || !Array.isArray(records))
     throw new RangeError('canonical_transport_invalid');
@@ -75,10 +69,6 @@ export function transposeRecord(base, splices, id, records) {
     if (next === null) throw new RangeError('canonical_transport_invalid');
     current = next;
   }
-  // A concurrent act that already removed these same authored units and wrote the
-  // same replacement is one physical edit. This act stays in history with no second
-  // deletion. Pure insertions are never collapsed: each one is its own unit. An
-  // inverse of that act means the replacement is not still in force.
   const sameRows = (left, right) => left.length === right.length && left.every((row, index) =>
     row.pos === right[index].pos && row.removed === right[index].removed && row.inserted === right[index].inserted);
   const matched = crossed.filter(record => sameRows(record.splices, splices));
@@ -122,8 +112,6 @@ export function transposeRecord(base, splices, id, records) {
   return {splices: moved, sourceIndices, against: crossed, text: current};
 }
 
-// Hosted and editor callers already own a reciprocal transport log. Convert only
-// its admitted exact source to records, then prove canonical-unit preservation.
 export function transposeSource(base, splices, client, log) {
   let source = base;
   const records = log.map(entry => {
@@ -135,8 +123,6 @@ export function transposeSource(base, splices, client, log) {
 
 export {authoredBasis, authoredPlacement, authoredPlacements};
 
-// Reconstruct an authored view from the same records, then prove its exact physical
-// placement. Equality of resulting text alone cannot prove a repeated-text anchor.
 function authoredReplay(base, records, append = null) {
   const origins = new Map(), byId = new Map(), originalOrder = [], cache = new Map(), frontier = new Set();
   const effects = _rapierHistoryEffects(append ? [...records, append] : records);
@@ -156,8 +142,6 @@ function authoredReplay(base, records, append = null) {
     if (!result.ok) throw new RangeError('canonical_origin_invalid');
     return result;
   };
-  // Only immutable text digests are reused, within this one replay. Every
-  // authored-source comparison and physical placement proof still runs.
   const textHashes = new Map();
   const hashText = text => {
     if (typeof text !== 'string') return sha256(text);
@@ -166,7 +150,6 @@ function authoredReplay(base, records, append = null) {
     return digest;
   };
   const same = (a, b) => canonicalJSON(a) === canonicalJSON(b);
-  // Only owner-created ordered views of already admitted string IDs use this.
   const sameIds = (a, b) => {
     if (a.length !== b.length) return false;
     for (let index = 0; index < a.length; index++) if (a[index] !== b[index]) return false;
@@ -192,8 +175,6 @@ function authoredReplay(base, records, append = null) {
     })()))) throw new RangeError('canonical_origin_invalid');
     const refs = effects.references.get(id) || [];
     if (refs.some(id => !seen.has(id))) throw new RangeError('canonical_origin_invalid');
-    // An explicit origin can prove the same linear placement as an implicit one.
-    // Preserve the origin, but do not reconstruct every growing prefix to prove it again.
     if (linearPrefix === originalOrder.length && same(origin.basis, [...frontier].sort()) &&
         same(origin.splices, record.splices) && (!Object.hasOwn(record, 'authored') || origin.source === sha256(source)))
       linearPrefix++;
@@ -212,7 +193,6 @@ function authoredReplay(base, records, append = null) {
     const key = coverKey(origin);
     if (key) coverCounts.set(key, (coverCounts.get(key) || 0) + 1);
   }
-  // Two inverses can name different acts and still withdraw one physical replacement.
   const sharesCover = id => (effects.references.get(id) || []).some(ref => {
     const key = coverKey(origins.get(ref));
     return !!key && coverCounts.get(key) > 1;
@@ -250,14 +230,9 @@ function authoredReplay(base, records, append = null) {
     return closure;
   };
   const canonicalOrder = ordered(originalOrder);
-  // Only the three immediate fresh-spread call sites use this entry. Nothing
-  // retains allocation trust after an array has crossed an observable method.
   const literalKey = order => {
-    // An input iterator can supply arbitrary values. Preserve the whole-array
-    // depth/refusal path before any per-string encoding in that case.
     for (let index = 0; index < order.length; index++)
       if (typeof order[index] !== 'string') return canonicalJSON(order);
-    // Keep each canonical primitive encoder call and its serializer behavior.
     return '[' + Array.from({length: order.length}, (_, index) => canonicalJSON(order[index])).join(',') + ']';
   };
   const materialize = (order, rawSubmitted = false) => materializeKey(order, canonicalJSON(order), rawSubmitted);
@@ -266,14 +241,10 @@ function authoredReplay(base, records, append = null) {
     if (cache.has(key)) return cache.get(key);
     let prefixEnds = null;
     const prefixKey = length => {
-      // The original submitted array keeps its existing slice/species/data gate.
-      // Only this module's own order allocations use the validated key string.
       if (rawSubmitted) return canonicalJSON(order.slice(0, length));
       if (!prefixEnds) {
         prefixEnds = [1];
         let quoted = false, depth = 0;
-        // Scan canonical JSON only: an escaped code unit cannot end a string,
-        // and commas inside strings or nested values cannot split this array.
         for (let at = 1; at < key.length - 1; at++) {
           const code = key.charCodeAt(at);
           if (quoted) {
@@ -290,11 +261,7 @@ function authoredReplay(base, records, append = null) {
     };
     let placed = [], ids = new Set(), sourceIndices = new Map(), text = base;
     if (!order.length) { const empty = {text, records: [], sourceIndices}; cache.set(key, empty); return empty; }
-    // A proved linear prefix already is its authored view. Replay it once;
-    // reconstructing every growing prefix adds no evidence.
     let prefix = 0;
-    // Resume only an exact ordered prefix already proved in this replay. Copy its
-    // mutable containers before extending it; transported rows retain their placement.
     for (let length = order.length - 1; length > 0; length--) {
       const prior = cache.get(prefixKey(length));
       if (!prior) continue;
@@ -314,8 +281,6 @@ function authoredReplay(base, records, append = null) {
         throw new RangeError('canonical_origin_invalid');
       const closure = closureOf(origin.basis);
       if (closure.size === ids.size && [...closure].every(prior => ids.has(prior))) {
-        // The current view already is the complete authored context. There are no
-        // independent rows to cross, even when earlier acts were concurrent.
         if (hashText(text) !== origin.source) throw new RangeError('canonical_origin_invalid');
         const next = _rapierTransformSplices(text, origin.splices);
         if (next === null) throw new RangeError('canonical_origin_invalid');
@@ -326,8 +291,6 @@ function authoredReplay(base, records, append = null) {
       }
       const basisOrder = canonicalOrder.filter(prior => closure.has(prior)), basis = materialize(basisOrder);
       if (hashText(basis.text) !== origin.source) throw new RangeError('canonical_origin_invalid');
-      // Reconstruct causal context before crossing it. Physical gaps may already
-      // have collapsed under a deletion; they cannot choose concurrent ordering.
       const contextOrder = canonicalOrder.filter(prior => ids.has(prior)), context = sameIds(contextOrder, [...ids]) ? {text, records: placed} : materialize(contextOrder);
       if (context.text !== text) throw new RangeError('canonical_origin_invalid');
       const alignedOrder = [...basisOrder, ...contextOrder.filter(prior => !closure.has(prior))];
@@ -336,10 +299,6 @@ function authoredReplay(base, records, append = null) {
       const crossed = aligned.records.slice(basisOrder.length);
       let moved;
       if (effects.references.get(id)?.length && (sharedInverses || sharesCover(id))) {
-        // Each inverse retains its own targets. First prove the exact intention
-        // in its causal source, then place that choice in the accepted effect
-        // graph. Another inverse may already suppress the same original bytes,
-        // including when the two inverses name different authors of one replacement.
         const authored = projectInverse(basis.text, basis.records, id);
         if (!same(origin.splices, authored.splices) ||
             _rapierTransformSplices(basis.text, origin.splices) !== authored.after)
@@ -357,7 +316,6 @@ function authoredReplay(base, records, append = null) {
   const physicalOrder = append ? originalOrder.slice(0, -1) : originalOrder, physical = materialize(physicalOrder);
   if (physical.text !== source || physical.records.some((row, index) => !same(row.splices, records[index].splices)))
     throw new RangeError('canonical_origin_invalid');
-  // Raw submission is selected here by a private call site, never an input flag.
   return {source, origins, originalOrder, materialize, materializeLiteral,
     materializeSubmitted: order => materialize(order, true), ordered};
 }
@@ -365,14 +323,11 @@ function authoredReplay(base, records, append = null) {
 export function authoredHistory(base, records, selected = null) {
   const replay = authoredReplay(base, records);
   if (!selected) return {text: replay.source, records, origins: replay.origins};
-  // Targets follow independent work only in this transient Undo projection.
   const projected = replay.materialize(replay.ordered(replay.originalOrder, selected));
   if (projected.text !== replay.source) throw new RangeError('canonical_origin_invalid');
   return {...projected, origins: replay.origins};
 }
 
-// Semantic annotations use the original splice coordinates, even when an accepted
-// physical placement split those rows. The same replay proves the causal basis first.
 export function authoredSourceReader(base, records) {
   const replay = authoredReplay(base, records);
   return actId => {
@@ -390,8 +345,6 @@ export function authoredSourceReader(base, records) {
   };
 }
 
-// The original view and the accepted view are both reconstructed from the same
-// immutable acts. The reciprocal rows are an exact ACK, not another history.
 export function transposeAuthored(base, records, incoming, submitted) {
   if (!incoming.authored || !Array.isArray(submitted)) throw new RangeError('canonical_origin_invalid');
   const replay = authoredReplay(base, records, incoming), id = incoming.transaction.id;

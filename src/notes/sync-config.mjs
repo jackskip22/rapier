@@ -5,7 +5,7 @@ export const CLOUDFLARE_SYNC = Object.freeze({
 	browserRoundTripVerified: false,
 });
 export const OTHER_SYNC = Object.freeze({
-	drive: Object.freeze({clientId: '', redirectUri: 'https://rapier.website/notes'}),
+	drive: Object.freeze({clientId: '', redirectUri: 'https://rapier.website/notes', pickerKey: '', appId: ''}),
 	onedrive: Object.freeze({clientId: '', redirectUri: 'https://rapier.website/notes'}),
 	dropbox: Object.freeze({clientId: '', redirectUri: 'https://rapier.website/notes'}),
 });

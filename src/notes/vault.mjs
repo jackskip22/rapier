@@ -44,8 +44,8 @@ export function validateCreationPassphrase(value) {
 	return value;
 }
 function passphraseForms(value) {
-	const forms = [value];
-	for (const form of [value.normalize('NFC'), value.normalize('NFD')]) if (!forms.includes(form)) forms.push(form);
+	const forms = [value.normalize('NFC')];
+	for (const form of [value, value.normalize('NFD')]) if (!forms.includes(form)) forms.push(form);
 	return forms;
 }
 function refuse(code, message) { throw Object.assign(new Error(message), {code}); }
@@ -228,7 +228,7 @@ export async function createVault(passphrase, options = {}) {
 	validateCreationPassphrase(passphrase);
 	const vdk = options.vdk ? requireBytes(options.vdk, VDK_BYTES, 'the vault key') : generateVdk();
 	const salt = options.salt ? requireBytes(options.salt, SALT_BYTES, 'salt') : generateSalt();
-	const kek = await deriveWrappingKey(passphrase, salt);
+	const kek = await deriveWrappingKey(passphrase.normalize('NFC'), salt);
 	let wrapped;
 	try { wrapped = await wrapVdk(kek, vdk); }
 	finally { kek.fill(0); }
@@ -278,7 +278,7 @@ export async function rewrapVault(headerBytes, vdk, passphrase, options = {}) {
 	validateCreationPassphrase(passphrase);
 	await checkVerifier(vdk, header.verifier);
 	const salt = options.salt ? requireBytes(options.salt, SALT_BYTES, 'salt') : generateSalt();
-	const kek = await deriveWrappingKey(passphrase, salt);
+	const kek = await deriveWrappingKey(passphrase.normalize('NFC'), salt);
 	let wrapped;
 	try { wrapped = await wrapVdk(kek, vdk); }
 	finally { kek.fill(0); }

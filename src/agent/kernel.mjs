@@ -34,6 +34,7 @@ export {paintUndoChanges};
 import {historyProjection, sourceBefore, selectiveUndo} from '../kit/ledger/history.mjs';
 import {EDITOR_TOOL_ACTIONS, editorRequest, editorResult, editorContext as projectEditorContext} from './editor.mjs';
 import {TOOL_RESULT_BYTES, PAGE_RESULT_BYTES, resultBytes, boundedResult, modelReply} from './page-result.mjs';
+import {editPassage} from './edit-passage.mjs';
 export {PAGE_RESULT_BYTES, resultBytes, boundedResult, modelReply};
 import {materialRequest, materialDescription, materialMatches, admitMaterialResult} from './material.mjs';
 import {waterActionsFault, waterPaperById, waterProFeature} from '../draw/water-data.mjs';
@@ -45,10 +46,18 @@ export { materialMatches, admitMaterialResult };
 export const showTarget = input => input.target || (input.view ? 'view' : input.question ? 'ask' : input.preference !== undefined ? 'preferences'
   : input.close || input.compare_id ? 'comparison' : input.code !== undefined ? 'pair' : input.note ? 'note' : input.words !== undefined ? 'pointer'
   : input.act || input.turn_id || input.name !== undefined && input.text !== undefined ? 'comparison' : 'passage');
+export const REVISION_FORMS = 'Pass revision as the integer read or open returned (a decimal string of it also works), or, while a drawing is live, the exact "n:hash" string read returned.';
+export function revisionNumber(value) {
+  if (Number.isSafeInteger(value) && value >= 0) return value;
+  const match = typeof value === 'string' && /^(0|[1-9]\d{0,15})(?::[0-9a-f]{64})?$/.exec(value);
+  return match && Number.isSafeInteger(Number(match[1])) ? Number(match[1]) : null;
+}
 export function exportFilename(filename, format) {
-  if (format === 'markdown') return filename;
+  const carried = /\.rapier\.html$/i.exec(filename);
+  if (format === 'markdown') return carried ? (filename.slice(0, carried.index) || 'document') + '.md' : filename;
+  if (format === 'html' && carried) return filename;
   const suffix = format === 'html' ? '.rapier.html' : '.' + (format === 'page' ? 'html' : format);
-  const stem = format === 'html' ? filename.replace(/\.(md|markdown|txt)$/i, '') : filename.replace(/\.[a-z0-9]+$/i, '') || 'document';
+  const stem = carried ? filename.slice(0, carried.index) || 'document' : format === 'html' ? filename.replace(/\.(md|markdown|txt)$/i, '') : filename.replace(/\.[a-z0-9]+$/i, '') || 'document';
   return [...stem].slice(0, MAX_FILENAME_CHARS - suffix.length).join('') + suffix;
 }
 
@@ -63,7 +72,8 @@ export function exportFidelity(format, docKind = 'markdown') {
 }
 
 export function admitExportArtifact(request, fact) {
-  if (!fact || fact.documentId !== request.documentId || fact.revision !== request.revision || fact.format !== request.format)
+  if (!fact || fact.documentId !== request.documentId || fact.revision !== request.revision || fact.format !== request.format ||
+      (request.part?.sha256 ?? null) !== ((typeof fact.part === 'string' ? fact.part : fact.part?.sha256) ?? null))
     return {reason: 'document_changed'};
   if (fact.outcome !== 'ok') {
     const reason = typeof fact.reason === 'string' ? fact.reason.slice(0, 128) : 'export_unavailable';
@@ -126,6 +136,8 @@ export const HINTS = {
   context_expired: 'This reference has expired. For read, omit since. Otherwise, repeat the original discovery call for a fresh ref or handle.',
   context_has_no_block: 'Read a nonempty source block and use its handle to place the drawing after that block, or omit context_handle to append.',
   cursor_missing: 'This page cursor is unknown here or was consumed; repeat the original read, search or listing without a cursor.',
+  block_missing: 'No block has this id. read {as:"outline"} lists the headings and fences; a fence\'s id is on its opening line.',
+  heading_missing: 'No heading has this title; candidates lists close ones. read {as:"outline"} lists every heading.',
   reference_missing: 'This ref is unknown here; read {as:"outline"} or read {query} again for a fresh ref.',
   document_replaced: 'The document was replaced; read again before editing.',
   document_changed: 'The document changed since this handle was read; read again and resend.',
@@ -173,6 +185,7 @@ export const HINTS = {
   target_over_edit_budget: 'Read the block, then edit it with shapes or operations instead of a whole recipe.',
   document_law: 'The Will protects the source range named by start and end; keep it and edit another passage.',
   human_edit_in_progress: 'The person is editing; wait for their input to settle, then read and retry.',
+  visual_render_unavailable: 'The page could not draw this as a picture; it may be showing the source. Read the text, or ask the person for the formatted view with show {target:"view", view:"formatted"}.',
   editor_not_present: 'No editor is paired with this document. Share editor_url; if the person reads you a code, send show {target:"pair", code}. Or deliver a file with export.',
   editor_unavailable: 'Open the paired Rapier editor and keep it visible for painting, sampling, visual inspection, Word or PDF. Without an editor, export markdown, html or txt.',
   export_render_limit: 'This document is too large for the worker to write as txt or page; export markdown or html, or open it in Rapier for Word or PDF.',
@@ -251,6 +264,7 @@ function agentLabel(value) {
 }
 
 export function documentKind(filename) {
+  if (/\.rapier\.html$/i.test(String(filename || ''))) return 'markdown';
   const ext = String(filename || '').split('.').pop().toLowerCase();
   if (['md', 'markdown', 'mdown', 'mkd'].includes(ext)) return 'markdown';
   return /^(?:js|mjs|cjs|ts|tsx|jsx|html|htm|css|scss|json|jsonc|py|rs|go|java|kt|kts|c|h|cc|cpp|hpp|cs|swift|rb|php|sh|bash|zsh|sql|yaml|yml|toml|xml|vue|svelte|lua|r|dart|ex|exs|pl|zig)$/.test(ext) ? 'code' : 'text';
@@ -446,7 +460,7 @@ function drawingPatchSource(envelope, beforeText, afterText, restoreDefinition =
 }
 
 export function receiptStructureEligible(filename) {
-  return /\.(?:[cm]?js|html?)$/i.test(String(filename || ''));
+  return /\.(?:[cm]?js|html?)$/i.test(String(filename || '')) && !/\.rapier\.html$/i.test(String(filename || ''));
 }
 
 export function receiptStructureFact(beforeText, afterText, value) {
@@ -1296,6 +1310,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const range = value => value && safeBoundary(state.text, value.start) && safeBoundary(state.text, value.end) && value.start <= value.end
       ? { start: value.start, end: value.end, ...(typeof value.objectId === 'string' ? {objectId: value.objectId} : {}) } : null;
     const time = now(), selection = range(input.selection), focus = range(input.focus);
+    const presenceMs = Number.isSafeInteger(host.presenceMs) && host.presenceMs > LIMITS.presenceMs ? host.presenceMs : LIMITS.presenceMs;
     if ((input.selection != null && !selection) || (input.focus != null && !focus)) return stamp(failure('human_context_range_invalid', 'invalid'));
     let drawingInput = input.drawing, referencedRecipe = null;
     if (drawingInput?.recipeReference === true) {
@@ -1316,7 +1331,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (!prior && Object.keys(state.humanContexts).length >= LIMITS.humanContexts) return stamp(failure('human_context_limit'));
     state.humanContexts[key] = { owner: ownerOf(who), contextId: input.contextId, navigationSequence: input.navigationSequence || 0, sequence: input.sequence, revision: input.expectedRevision,
       ...(input.view ? {view: input.view} : {}),
-      visible: true, editing: input.editing, selection, focus, drawing, updatedAt: time, expiresAt: time + LIMITS.presenceMs,
+      visible: true, editing: input.editing, selection, focus, drawing, updatedAt: time, expiresAt: time + presenceMs,
       ...(input.objects?.length ? {objects: input.objects.filter(row => safeBoundary(state.text, row.start)).map(({start, playing}) => ({start, playing}))} : {}) };
     for (const receipt of normalizeDrawingReceipts([...(input.drawingReceipts || []), ...(drawing?.receipts || [])])) {
       const entry = state.journal.find(row => row.id === receipt.transactionId), intent = entry?.drawingIntent;
@@ -1328,7 +1343,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       entry.drawingReceipt = receipt;
     }
     recordSequence();
-    return stamp(accepted({ acknowledged: true, sequence: input.sequence, expiresAt: time + LIMITS.presenceMs }));
+    return stamp(accepted({ acknowledged: true, sequence: input.sequence, expiresAt: time + presenceMs }));
   }
 
   function imageSpans(text = state.text) {
@@ -1371,6 +1386,21 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   }
 
   const display = (text, limit) => clip(disclose(String(text || '')).text, limit);
+
+  function removedWords(text, start, end, inserted) {
+    const space = at => at <= 0 || at >= text.length || /\s/.test(text[at]) || /\s/.test(text[at - 1]);
+    if (!inserted) {
+      const length = end - start;
+      let left = start, right = start;
+      while (left > 0 && start - left < 64 && text[left - 1] === text[left + length - 1]) left--;
+      while (right + length < text.length && right - start < 64 && text[right] === text[right + length]) right++;
+      for (let at = left; at <= right; at++) if (space(at) && space(at + length)) return [at, at + length];
+      return [start, end];
+    }
+    while (start > 0 && /[^\s]/.test(text[start - 1]) && /[^\s]/.test(text[start] ?? ' ')) start--;
+    while (end < text.length && /[^\s]/.test(text[end]) && /[^\s]/.test(text[end - 1] ?? ' ')) end++;
+    return [start, end];
+  }
 
   function changePreview(text, start, end, limit) {
     const lineStart = text.lastIndexOf('\n', start - 1) + 1, lineEnd = text.indexOf('\n', end) < 0 ? text.length : text.indexOf('\n', end);
@@ -2113,10 +2143,13 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   const noNotes = note_ref => accepted({ availability: 'unavailable', reason: 'notes_not_configured',
     message: 'Notes is not set up on this host.', complete: true, remaining: 0, next_cursor: null,
     ...(note_ref === undefined ? {notes: []} : {note_ref, found: false, text: null}) });
+  const noNotesWrite = note_ref => failure('notes_not_configured', 'refused', {availability: 'unavailable', ...(note_ref !== undefined ? {note_ref} : {}),
+    message: 'Notes is not set up on this host, so nothing was written.', hint: 'Keep the words in this document with edit, or deliver them with export.'});
   const unavailableNotes = (got, note_ref) => ['locked', 'unavailable'].includes(got?.availability)
     ? accepted({availability: got.availability, ...(note_ref ? {note_ref} : {}),
       ...(typeof got.reason === 'string' ? {reason: clip(got.reason, 128)} : {}),
       ...(typeof got.hint === 'string' ? {hint: clip(got.hint, 512), message: clip(got.hint, 512)} : {})}) : null;
+  const refusedWrite = value => value && {...value, outcome: 'refused'};
   const notesRefused = got => got?.refused ? failure(got.refused, got.refused === 'notes_changed' ? 'conflict' : 'refused') : null;
   async function notesList(input, who, context) {
     if (typeof host.notesFind !== 'function') return noNotes();
@@ -2199,7 +2232,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const text = typeof input.text === 'string' ? input.text : '';
     const invalid = text.trim() ? admissibleText(text) : 'notes_text_required';
     if (invalid) return failure(invalid, 'invalid');
-    if (typeof host.notesWrite !== 'function') return noNotes(input.target?.note_ref);
+    if (typeof host.notesWrite !== 'function') return noNotesWrite(input.target?.note_ref);
     cancelled(context);
     const ref = input.target?.kind === 'note' ? input.target.note_ref : '';
     let got;
@@ -2217,9 +2250,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
           {turnId: input.turn_id, label: input.label ?? 'Edit note'}));
       }}); }
     catch { return failure('notes_write_unconfirmed', 'uncertain'); }
-    if (got === undefined) return noNotes(ref || undefined);
+    if (got === undefined) return noNotesWrite(ref || undefined);
     if (got?.outcome === 'uncertain') return failure(got.reason || 'notes_write_unconfirmed', 'uncertain');
-    const blocked = unavailableNotes(got, ref) || notesRefused(got); if (blocked) return blocked;
+    const blocked = refusedWrite(unavailableNotes(got, ref)) || notesRefused(got); if (blocked) return blocked;
     if (typeof got?.file !== 'string' || typeof got?.note_ref !== 'string' ||
         !['applied', 'original_changed', 'created'].every(key => typeof got[key] === 'boolean'))
       return failure('notes_write_unconfirmed', 'uncertain');
@@ -2298,15 +2331,15 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   }
 
   async function notesSet(input, who, context) {
-    if (typeof host.notesSet !== 'function') return noNotes(input.note_ref);
+    if (typeof host.notesSet !== 'function') return noNotesWrite(input.note_ref);
     cancelled(context);
     let got;
     const read = noteReads.get(ownerOf(who) + '\u0000' + input.note_ref);
     try { got = await host.notesSet({...input, ...who, expected: read?.controls ? {...read.controls, source: read.source} : undefined, signal: context.signal, guard: context.notesGuard}); }
     catch { return failure('notes_set_unconfirmed', 'uncertain'); }
-    if (got === undefined) return noNotes(input.note_ref);
+    if (got === undefined) return noNotesWrite(input.note_ref);
     if (got?.outcome === 'uncertain') return failure(got.reason || 'notes_set_unconfirmed', 'uncertain');
-    const unavailable = unavailableNotes(got, input.note_ref) || notesRefused(got); if (unavailable) return unavailable;
+    const unavailable = refusedWrite(unavailableNotes(got, input.note_ref)) || notesRefused(got); if (unavailable) return unavailable;
     if (got?.note_ref !== input.note_ref || !got.changed || !got.previous || typeof got.revision !== 'string' || !/^[a-f0-9]{64}$/.test(got.revision)) return failure('notes_set_unconfirmed', 'uncertain');
     let act;
     try { if (Object.hasOwn(got, 'act')) act = noteAct(got.act); }
@@ -2376,14 +2409,14 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       ...(Number.isSafeInteger(got.tidied) ? {tidied: got.tidied, tidiedAt: got.tidiedAt ?? null} : {})});
   }
   async function notesSync(input, who, context) {
-    if (typeof host.notesSync !== 'function') return noNotes();
+    if (typeof host.notesSync !== 'function') return noNotesWrite();
     cancelled(context);
     let got;
     try { got = await host.notesSync({action: input.action, ...who, signal: context.signal, guard: context.notesGuard}); }
     catch { return failure('notes_sync_unconfirmed', 'uncertain'); }
-    if (got === undefined) return noNotes();
+    if (got === undefined) return noNotesWrite();
     if (got?.outcome === 'uncertain') return failure(got.reason || 'notes_sync_unconfirmed', 'uncertain');
-    const unavailable = unavailableNotes(got) || notesRefused(got); if (unavailable) return unavailable;
+    const unavailable = refusedWrite(unavailableNotes(got)) || notesRefused(got); if (unavailable) return unavailable;
     if (typeof got?.synced !== 'boolean') return failure('notes_sync_failed');
     return accepted({availability: 'available', action: 'now', synced: got.synced,
       ...(typeof got.reason === 'string' ? {reason: clip(got.reason, 128)} : {}),
@@ -2913,7 +2946,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const splices = withSplices.map(row => row.splice);
     const handlePairs = withSplices.map(row => ({ handleId: row.held.id, offset: row.offset }));
     const result = await commit(splices, who, context, 'document.edit', {
-      label: input.label ?? 'Agent edit', rebased, editCount: ready.length,
+      label: input.label ?? editLabel(who), rebased, editCount: ready.length,
       handleIds: ready.map(row => row.held.id), handlePairs, note: input.note || null, turnId: input.turn_id,
     });
     if (['applied', 'rebased', 'unchanged'].includes(result.outcome)) {
@@ -2928,6 +2961,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     }
     return result;
   }
+
+  function editLabel(who) { return who?.actor === 'agent' ? 'Agent edit' : 'Edit'; }
 
   function publicAct(entry) {
     if (!entry) return null;
@@ -3186,6 +3221,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (canonicalJson(sansView(recipe)) === canonicalJson(sansView(current.recipe)) && alt === current.alt) continue;
       const rasterRefusal = await paintRastersHold(recipe, liveRecipe, context);
       if (rasterRefusal) return rasterRefusal;
+      const refracted = await prepareRefraction(recipe, context);
+      if (refracted.refusal) return refracted.refusal;
+      recipe = refracted.recipe;
       const svg = _rapierDrawBuildSVG(recipe);
       if (!svg) return failure('drawing_history_unavailable', 'conflict');
       const title = _rapierDrawNextAssetName([...documentAssets(source).assets.values(), ...assets]);
@@ -3375,7 +3413,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const commentOptions = commentIds.size ? {keepHunk: keepComments, ...(commentEntries.length
       ? {splitSplice: ({beforeSource, splice}) => commentSpliceParts(beforeSource, splice)} : {})} : undefined;
     const plan = inversePlan(group || [entry], commentOptions);
-    if (plan.ok && plan.unchanged) return {outcome: 'unchanged', act: null, sourceChanged: false, editCount: 0};
+    if (plan.ok && plan.unchanged) return {outcome: 'unchanged', reason: 'nothing_to_undo', act: null, sourceChanged: false, editCount: 0,
+      hint: 'This act\'s changes are no longer in the text: it was already undone, or later work replaced them.'};
     let splices = plan.ok ? plan.splices : plan, painting = null, drawingTracks = [];
     if (plan.ok && (state.text.includes('data:image/svg+xml;base64,') || (group || [entry]).some(row => row.drawingPatch))) {
       try { drawingTracks = drawingHistory(group || [entry]); painting = await drawingInverse(group || [entry], drawingTracks, who, context, commentOptions); }
@@ -3480,8 +3519,11 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       items: [], remaining: state.compare.changes.length,
       enumerate: {tool: 'read', arguments: {comparison: true}},
     };
+    const surface = state.compare.baseline === state.text ? publicSurface() : null;
+    const lineOf = at => surface ? surface.targets.lines.number(sourcePosition(surface.projection, at, false, true)) : textTargets(state.compare.baseline).lines.number(at);
     for (const row of state.compare.changes) {
-      const item = {change_id: row.id, removed_chars: row.removed.length, inserted_chars: row.inserted.length,
+      const item = {change_id: row.id, line: lineOf(row.start), removed_chars: row.removed.length, inserted_chars: row.inserted.length,
+        ...(row.removed ? {removed: clip(disclose(state.compare.baseline, ...removedWords(state.compare.baseline, row.start, row.end, row.inserted)).text, 96)} : {}),
         preview: row.inserted ? changePreview(state.compare.incoming, row.incomingStart, row.incomingEnd, 96)
           : changePreview(state.compare.baseline, row.start, row.end, 96)};
       if (bytes(JSON.stringify(stamp({...fields, items: [...fields.items, item]}))) > LIMITS.resultBytes - 1024) break;
@@ -3635,9 +3677,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     return {...result, mode: 'applied_changes', acts: (group || [entry]).map(publicAct)};
   }
 
-  async function exportDocument({format, compare_id}, who, context) {
+  async function exportDocument({format, compare_id, scope}, who, context) {
     if (typeof host.exportFile !== 'function') return failure('export_unavailable');
-    const snapshot = readSnapshot(), text = snapshot.text, compared = compare_id ? state.compare : null;
+    const snapshot = readSnapshot(), text = scope ? scope.text : snapshot.text, compared = compare_id ? state.compare : null;
     let base;
     if (compare_id) {
       if (format !== 'html') return failure('compare_export_format_invalid', 'invalid');
@@ -3655,7 +3697,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     }
     const exportCurrent = () => sameReadSnapshot(snapshot) && !documentGuardFailure(context) &&
       (!compared || state.compare?.id === compare_id && state.compare.documentId === snapshot.documentId && state.compare.revision === snapshot.revision);
-    const request = {kind: 'export', documentId: state.documentId, revision: state.revision, format, filename: state.filename}, docKind = state.docKind;
+    const part = scope && (!scope.whole || scope.revision !== state.revision) ? {text, sha256: sha256(text)} : null;
+    const request = {kind: 'export', documentId: state.documentId, revision: state.revision, format, filename: state.filename,
+      ...(part && ['docx', 'pdf', 'page'].includes(format) ? {part} : {})}, docKind = state.docKind;
     let checked;
     if (format === 'docx' || format === 'pdf' || format === 'page') {
       const mode = 'export:' + format;
@@ -3684,7 +3728,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     }
     if (documentGuardFailure(context)) return documentGuardFailure(context);
     let file;
-    try {file = await host.exportFile({...request, docKind, text, guard: exportCurrent,
+    try {file = await host.exportFile({...request, docKind, text, ...(part ? {source: snapshot.text} : {}), guard: exportCurrent,
       ...(base ? {base, compareId: compare_id} : {}), signal: context.signal, ...(checked ? {file: checked, artifact: context.world.export.artifact} : {})});}
     catch {return failure('export_unconfirmed', 'uncertain', {sourceChanged: false, sourceRevision: request.revision, sourceDocumentId: request.documentId, artifact: {status: 'unconfirmed'}});}
     if (file?.outcome === 'uncertain') return failure(file.reason || 'export_unconfirmed', 'uncertain',
@@ -3695,6 +3739,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     return accepted({artifactCreated: true, sourceChanged: false, sourceRevision: request.revision, sourceDocumentId: request.documentId,
       artifact: {status: 'created', sourceRevision: request.revision, sourceDocumentId: request.documentId, destination: file.destination || (file.url?.startsWith('blob:') ? 'local_session' : 'hosted_export'),
         ...(file.expiresAt ? {expiresAt: new Date(file.expiresAt).toISOString()} : {})}, format, filename: file.name, mimeType: file.mimeType, bytes: file.bytes.byteLength, limitBytes: MAX_EXPORT_BYTES,
+      scope: scope ? (({text: _, ...rest}) => rest)(scope) : {revision: request.revision, whole: true},
       fidelity: file.fidelity || exportFidelity(format, docKind),
       ...(file.id ? {exportId: file.id} : {}), ...(file.url ? {downloadUrl: file.url} : {}),
       ...(file.expiresAt ? {exportExpiresAt: new Date(file.expiresAt).toISOString()} : {}),
@@ -4657,7 +4702,10 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const assets = documentAssets(source), replacements = [];
     const usedIds = new Set([...source.matchAll(/<!-- rapier-block:([A-Za-z0-9_-]+) /g)].map(row => row[1]));
     let imageIndex = 0;
-    for (const row of assets.blocks) replacements.push({...row, kind: 'asset', text: '<!-- rapier-asset:' + row.id + ' -->'});
+    for (const row of assets.blocks) {
+      const label = /^\[([^\]\r\n]+)\]:/.exec(row.source)?.[1] || row.id;
+      replacements.push({...row, definitionStart: row.start, label, kind: 'asset', hidden: true, text: '', marker: '<!-- rapier-asset:' + row.id + ' -->'});
+    }
     const images = [...assets.assets.values()].some(asset => /^data:image\/svg\+xml;base64,/i.test(asset.url))
       ? structureMarkdown({source, kinds: ['image'], matchLimit: 2048}, markdownParser()) : {matches: []};
     for (const item of images.matches || []) {
@@ -4688,7 +4736,17 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (parsed.record && !parsed.reason) replacements.push({...parsed.record, kind: 'comments', text: commentThreads(source, parsed).map(thread =>
       blockText('rapier-comment', {id: thread.id, on: (() => {const range = commentSourceRange(thread.anchor, parsed), id = range && htmlFence(source.slice(range.start, range.end))?.attrs.id; return id ? '#' + id : thread.anchor.quote || '';})(), resolved: String(thread.resolved)},
         JSON.stringify({messages: thread.messages}, null, 2))).join('\n\n')});
-    return projectSegments(source, replacements);
+    const ordered = replacements.toSorted((a, b) => a.start - b.start), eol = /\r\n|\r|\n/g;
+    ordered.forEach((row, index) => {
+      if (!row.hidden) return;
+      const floor = index ? ordered[index - 1].end : 0, ceiling = ordered[index + 1]?.start ?? source.length;
+      let start = row.start;
+      while (start > floor && (source[start - 1] === '\n' || source[start - 1] === '\r')) start--;
+      if (start > floor || floor && !ordered[index - 1].hidden) { eol.lastIndex = start; const first = eol.exec(source); if (first && first.index === start && first.index + first[0].length <= row.start) start += first[0].length; }
+      row.start = start;
+      row.end = Math.min(ceiling, row.end + /^(?:\r\n|\r|\n)?/.exec(source.slice(row.end))[0].length);
+    });
+    return projectSegments(source, ordered);
   }
 
   function publicSurface() {
@@ -4765,8 +4823,12 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
             const painted = await paintFigures(input.figures, context); if (painted.refusal) return painted.refusal;
             const recipe = _rapierDrawApplyShapesPatch({shapes: []}, {add: painted.list}, input.direction);
             editInput = {recipe};
-          } else editInput = {recipe: _rapierDrawNormalizeAgentRecipe({figures: input.figures, direction: input.direction})};
-        } else editInput = {recipe: input.recipe, shapes: input.shapes, operations: input.operations};
+          } else {
+            const recipe = _rapierDrawNormalizeAgentRecipe({figures: input.figures, direction: input.direction});
+            if (!recipe) return failure('figures_invalid', 'invalid', {...(_rapierDrawFigureFault(input.figures, [], input.direction) || {}), kinds: FIGURE_KINDS, block: block.id});
+            editInput = {recipe};
+          }
+        } else editInput = {recipe: input.recipe, shapes: input.shapes, operations: input.operations, ...(input.direction ? {direction: input.direction} : {})};
         if (block.attrs.alt !== undefined && block.attrs.alt !== fencedBlocks(prior.text)[0].attrs.alt) editInput.alt = input.alt;
         result = await drawPicture({...editInput, kind: 'edit', recipe_handle: held.id, presentation: input.presentation}, who, {...context, prepareOnly: true, textPlan: true});
       } else if (block.kind === 'rapier-svg') return failure('svg_create_requires_image', 'invalid', {block: block.id});
@@ -4783,13 +4845,23 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       }
       if (result.options.drawingPresentation) options.drawingPresentation = result.options.drawingPresentation;
     }
-    const splices = [];
-    for (const range of expandedChanges(projection, plan)) {
+    const splices = [], whole = plan.splices?.length === 1 && plan.splices[0].pos === 0 && plan.splices[0].removed === projection.text;
+    let definitionsTouched = false;
+    for (let range of expandedChanges(projection, plan)) {
+      if (range.end === projection.text.length) range = {...range, until: state.text.length};
       let inserted = range.inserted, framing = range.framing;
       const replace = (from, until, text) => {
         framing = keptRangesAfterSplice(framing, {pos: from, removed: inserted.slice(from, until), inserted: text});
         inserted = inserted.slice(0, from) + text + inserted.slice(until);
       };
+      const original = projection.text.slice(range.start, range.end), kept = minimalSplice(original, inserted), placed = [];
+      for (const row of projection.segments.filter(row => row.hidden && row.start >= range.pos && row.end <= range.until).toReversed()) {
+        const offset = row.from - range.start;
+        const at = offset <= kept.pos ? offset : offset >= kept.pos + kept.removed.length ? inserted.length - (original.length - offset) : -1;
+        if (at < 0) continue;
+        const sentinel = '\n\u0000rapier-definition-' + placed.length + '\u0000';
+        replace(at, at, sentinel); placed.push({...row, sentinel});
+      }
       for (const block of fencedBlocks(inserted).filter(row => row.kind !== 'rapier-comment').reverse()) {
         const kept = prepared.get(block.id), raw = block.kind === 'html' || !kept ? kept : kept.replace(/[ \t]*<!--md-layout:v1[^>]*-->$/, '') + (block.layout ? ' ' + block.layout : '');
         const prior = previous.get(block.id), leading = prior?.leading || '';
@@ -4797,11 +4869,23 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         const eol = prior?.trailing ? '' : /\r?\n$/.exec(block.text)?.[0] || '';
         replace(from, block.end, raw + eol);
       }
-      for (const row of projection.segments.filter(row => row.kind === 'asset')) {
+      for (const row of projection.segments.filter(row => row.kind === 'asset' && !row.hidden)) {
         const raw = state.text.slice(row.start, row.end);
         for (let at = inserted.indexOf(row.text); at >= 0; at = inserted.indexOf(row.text, at + raw.length)) replace(at, at + row.text.length, raw);
       }
+      for (const row of projection.segments.filter(row => row.hidden)) {
+        for (let at = inserted.indexOf(row.marker); at >= 0; at = inserted.indexOf(row.marker)) {
+          const lead = /(?:\r\n|\r|\n)*$/.exec(inserted.slice(0, at))[0].length;
+          replace(at - lead, at + row.marker.length, '');
+        }
+      }
       if (inserted.includes('<!-- rapier-asset:')) return failure('asset_marker_unknown', 'invalid');
+      for (const row of placed) {
+        const at = inserted.indexOf(row.sentinel); if (at < 0) continue;
+        replace(at, at + row.sentinel.length, !whole || pictureReferences(state.text.slice(0, range.pos) + inserted + state.text.slice(range.until)).has(row.id)
+          ? state.text.slice(row.start, row.end) : '');
+      }
+      if (projection.segments.some(row => row.hidden && row.start >= range.pos && row.end <= range.until)) definitionsTouched = true;
       const removed = state.text.slice(range.pos, range.until);
       const commentGroups = [];
       for (const block of fencedBlocks(inserted).filter(row => row.kind === 'rapier-comment')) {
@@ -4878,9 +4962,35 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       options.authoredCount = splices.length;
       splices.splice(0, splices.length, ...computed.splices, row);
     }
+    if (definitionsTouched || splices.some(row => /!\[[^\r\n]*\]\[/.test(row.inserted))) {
+      const restored = keptDefinitions(splices, assets);
+      if (restored.outcome) return restored;
+    }
     const markerOnly = splices.length === 2 && splices.some(row => !row.removed && /^<!-- rapier-block:[A-Za-z0-9_-]+ rapier-(?:draw|water|paint) -->\n\n$/.test(row.inserted));
     if (options.drawingPatch && (splices.length !== 1 && !markerOnly || commentsChanged)) {delete options.drawingPatch; delete options.fence;}
     return {splices, options: {...options, drawAssets: assets}, commentsChanged};
+  }
+
+  const pictureReferences = source => new Set([...source.matchAll(/!\[(?:\\.|[^\]\\])*\]\[([^\]\r\n]+)\]/g)].map(row => normalizeLabel(row[1])));
+  function keptDefinitions(splices, assets) {
+    const before = documentAssets(state.text), text = transformSplices(state.text, splices);
+    if (text == null) return {};
+    const after = documentAssets(text), used = pictureReferences(text);
+    const orphans = (index, source) => new Set([...pictureReferences(source)].filter(id => !index.references[id] && !assets.some(asset => asset.id === id)));
+    for (const row of before.blocks) {
+      if (!row.active || after.references[row.id] || assets.some(asset => asset.id === row.id) || !used.has(row.id)) continue;
+      assets.push({id: row.id, label: /^\[([^\]\r\n]+)\]:/.exec(row.source)?.[1] || row.id, url: row.url, title: row.title});
+    }
+    const was = orphans(before, state.text), lost = [...orphans(after, text)].filter(id => !was.has(id) && (before.references[id] || /^IMAGE-[0-9A-F]{64}-[0-9A-F]{12}$/.test(id)));
+    return lost.length ? failure('asset_definition_missing', 'refused', {labels: lost.slice(0, 8).map(id => id.toLowerCase()),
+      hint: 'This write leaves a picture with no definition. Keep each drawing as its fence from read, or remove the whole picture; undo {act} restores an earlier loss.'}) : {};
+  }
+
+  function givenRevision(value, current = surfaceRevision()) {
+    if (value === current) return {revision: value};
+    const asked = revisionNumber(value);
+    if (asked === null) return failure('revision_format', 'invalid', {field: 'revision', revision: current, hint: REVISION_FORMS});
+    return {revision: typeof value === 'string' && /^\d+$/.test(value) ? asked : value};
   }
 
   function surfaceRevision(projection = publicSurface().projection) {
@@ -4916,7 +5026,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       let low = 0, high = needle.length;
       while (low < high) {const mid = Math.ceil((low + high) / 2); if (exactMatches(source, needle.slice(0, mid), scope, 1).length) low = mid; else high = mid - 1;}
       facts.matched = low;
-      if (low) {start = exactMatches(source, needle.slice(0, low), scope, 1)[0]; end = start + low;}
+      if (low) {start = exactMatches(source, needle.slice(0, low), scope, 1)[0]; end = start + low;
+        facts.hint = 'The first ' + low + ' of ' + needle.length + ' characters of old are found (the context shows where); the text differs after them.';}
       if (change.heading !== undefined || change.block) {
         const outside = exactMatches(source, needle, undefined, 2);
         if (outside.length === 1) facts.outside = {line: lines.number(outside[0])};
@@ -4943,10 +5054,13 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const wanted = expandedChanges(past, {splices: then.ranges});
     const found = expandedChanges(projection, {splices: plan.ranges});
     if (found.length !== wanted.length) return null;
+    const points = new Set(expandedChanges(projection, {splices: plan.ranges.filter((row, index) => Object.hasOwn(input.changes[index], 'after'))}).map(row => row.until));
     for (const [index, current] of found.entries()) {
       let range = {start: current.pos, end: current.until};
+      const point = points.has(current.until);
       for (let act = entries.length - 1; act >= 0; act--) for (let splice = entries[act].splices.length - 1; splice >= 0; splice--) {
         const row = entries[act].splices[splice];
+        if (point && row.pos === range.end && (row.inserted || row.removed)) return null;
         range = transportInterval(range.start, range.end, [{pos: row.pos, removed: row.inserted, inserted: row.removed}]);
         if (!range) return null;
       }
@@ -4960,7 +5074,10 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (input.note === 'new') return notesWrite({target: {kind: 'create'}, text: input.text, title: input.title}, who, context);
     if (input.note) return notesOpen({note_ref: input.note, expected_foreground: typeof host.notesForeground === 'function' ? host.notesForeground() : undefined}, who, context);
     const {projection, targets} = publicSurface(), size = textBytes(projection.text);
-    if (size <= (context.transport === 'webmcp' ? 4096 : 32768)) return doorRead({}, who, context);
+    if (size <= (context.transport === 'webmcp' ? 4096 : 32768)) {
+      const whole = await doorRead({}, who, context);
+      return whole.outcome === 'ok' ? {...whole, lines: targets.lines.number(projection.text.length), bytes: size} : whole;
+    }
     return {...await doorRead({as: 'outline'}, who, context), lines: targets.lines.number(projection.text.length), bytes: size};
   }
 
@@ -4995,6 +5112,10 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (input.versions || notesCursor?.kind === 'notes-history') return notesHistory({note_ref, cursor: input.cursor, limit: input.limit}, who, context);
       return notesRead({note_ref, version: input.version, cursor: input.cursor, limit: input.limit}, who, context);
     }
+    if (input.versions === true || input.version !== undefined) return failure('notes_selector', 'invalid', {field: input.version !== undefined ? 'version' : 'versions',
+      hint: 'versions and version choose a Note\'s saved versions and need note. For this document\'s acts use history:true.'});
+    if (input.since !== undefined && state.cursors[input.since]?.kind !== 'observation') return failure('since_unknown', 'invalid', {field: 'since',
+      hint: 'since takes the value a read gave in continuation.next, not an act id or a revision. For this document\'s acts use history:true.'});
     if (input.cursor && ['block','heading','lines','as','state','history','since','comparison','return_id'].some(key=>own(input,key)))
       return failure('cursor_options_conflict','invalid');
     if (input.as && !['text', 'image', 'outline'].includes(input.as)) return failure('representation_unknown', 'invalid');
@@ -5003,7 +5124,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (input.block || input.heading || input.lines) {
         const {projection, targets} = publicSurface();
         let scope = textScope(projection.text, input, targets);
-        if (scope.reason) return surfaceFailure(scope.reason, projection.text, input, {}, targets);
+        if (scope.reason) return {...surfaceFailure(scope.reason, projection.text, input, {}, targets), outcome: 'target_gone'};
         if (input.lines) {
           if (input.heading || input.block || input.lines[1] < input.lines[0]) return failure('lines_invalid', 'invalid');
           scope = {start: targets.lines.offset(input.lines[0] - 1), end: targets.lines.offset(input.lines[1])};
@@ -5041,7 +5162,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     }
     if (input.history && !input.state && !['cursor', 'block', 'heading', 'lines', 'query', 'as'].some(key => own(input, key))) return accepted(info);
     if (input.state) return accepted({...info, state: observed.state, editor: {...observed.editor,preferences: observed.editorPreferences}, returnWaiting:observed.returnWaiting, drawing: observed.drawing, notes: observed.notes, returns: observed.returns, capabilities: observed.capabilities, paint: observed.paint ? {...observed.paint, guide: {resource: 'rapier://guide/water'}} : undefined});
-    const scope = textScope(source, input, targets); if (scope.reason) return surfaceFailure(scope.reason, source, input, {}, targets);
+    const scope = textScope(source, input, targets); if (scope.reason) return {...surfaceFailure(scope.reason, source, input, {}, targets), outcome: 'target_gone'};
     let start = scope.start, end = scope.end;
     if (input.lines) {
       if (input.heading || input.block || input.lines[1] < input.lines[0]) return failure('lines_invalid', 'invalid');
@@ -5104,10 +5225,17 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const line = lineAt(offset);
     while (text.length && bytes(JSON.stringify(stamp({...info, text, line}))) > resultLimit - 512)
       text = textHead(text, Math.floor(textBytes(text) * .75));
+    if (offset + text.length < end) {
+      const cut = text.lastIndexOf('\n'), space = text.search(/\s\S*$/);
+      if (cut > text.length / 4) text = text.slice(0, cut + 1);
+      else if (space > 0) text = text.slice(0, space + 1);
+    }
     const until = offset + text.length;
     const next = until < end ? mint('cursors', 'read_', {kind: 'text-surface', revision: state.revision, textRevision:info.revision, digest: sourceDigest(), start, end, offset: until}, who).id : null;
+    const position = at => {const row = lineAt(at); return [row, at - targets.lines.offset(row - 1) + 1];};
+    const paged = next || offset > start ? (([, column], [endLine, endColumn]) => ({column, end_line: endLine, end_column: endColumn}))(position(offset), position(until)) : {};
     const removed = input.block ? htmlRemoved(htmlFence(source.slice(start, end))?.body || '') : [];
-    return accepted({...info, text, complete: !next, next_cursor: next, line, ...(removed.length ? {removed} : {})});
+    return accepted({...info, text, complete: !next, next_cursor: next, line, ...paged, ...(removed.length ? {removed} : {})});
   }
 
   const previousBlockUnchanged = (row, projection) => projection.segments.some(prior => prior.id === row.id && prior.fence === row.text.trimEnd());
@@ -5120,12 +5248,32 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     });
   }
 
+  function sameLineEndings(input, text, targets) {
+    if (!Array.isArray(input.changes)) return input;
+    const located = planTextChanges(text, input.changes, targets), ranges = located.reason ? [] : located.ranges;
+    const near = at => {
+      let found = null; const breaks = /\r\n|\n|\r/g;
+      for (let match; (match = breaks.exec(text)) && match.index < at;) found = match[0];
+      if (found) return found;
+      breaks.lastIndex = at; return breaks.exec(text)?.[0] || '\n';
+    };
+    let next = 0;
+    return {...input, changes: input.changes.map(row => {
+      if (!row || typeof row !== 'object' || Object.hasOwn(row, 'text')) return row;
+      const eol = near(ranges[next++]?.pos ?? 0);
+      const follow = value => typeof value === 'string' ? value.replace(/\r\n|\r|\n/g, eol) : value;
+      return {...row, ...(Object.hasOwn(row, 'new') ? {new: follow(row.new)} : {}), ...(Object.hasOwn(row, 'insert') ? {insert: follow(row.insert)} : {}),
+        ...(Object.hasOwn(row, 'text') ? {text: follow(row.text)} : {})};
+    })};
+  }
+
   async function doorEdit(input, who, context) {
     if (input.note) {
       if (input.fields && input.changes) return failure('note_fields_and_changes', 'invalid');
-      if (typeof host.notesRead !== 'function') return noNotes(input.note);
+      if (typeof host.notesRead !== 'function') return noNotesWrite(input.note);
       const got = await host.notesRead({note_ref: input.note, ...who, signal: context.signal});
-      const blocked = unavailableNotes(got, input.note) || notesRefused(got); if (blocked) return blocked;
+      if (got === undefined) return noNotesWrite(input.note);
+      const blocked = refusedWrite(unavailableNotes(got, input.note)) || notesRefused(got); if (blocked) return blocked;
       if (typeof got?.text !== 'string') return failure('notes_not_found');
       const read = noteReads.get(ownerOf(who) + '\u0000' + input.note);
       if (!read) return failure('notes_read_required', 'refused');
@@ -5140,6 +5288,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         catch (error) {return failure('note_fields_invalid','invalid',{hint:error.message});}
         return notesSet(values,who,context);
       }
+      input = sameLineEndings(input, got.text);
       const plan = planTextChanges(got.text, input.changes);
       if (plan.reason) return {...quoted(plan.reason, plan), revision};
       const result = await notesWrite({target: {kind: 'note', note_ref: input.note}, text: plan.text, turn_id: input.turn_id, label: input.label}, who, context);
@@ -5147,6 +5296,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     }
     const {projection, targets} = publicSurface(), source = projection.text;
     if (input.fields) return failure('note_required', 'invalid');
+    const given = givenRevision(input.revision, surfaceRevision(projection)); if (given.outcome) return given;
+    input = sameLineEndings({...input, revision: given.revision}, source, targets);
     const asked = typeof input.revision === 'string' ? Number(input.revision.split(':')[0]) : input.revision;
     if (safeInt(asked) && asked > state.revision) return failure('revision_unknown', 'invalid', {revision: surfaceRevision(projection)});
     if (own(input, 'filename')) {
@@ -5159,8 +5310,11 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       const result = await commit([], who, context, 'document.edit', {
         turnId: input.turn_id, label: input.label || 'Rename document', metadata: {filename: input.filename, docKind: state.docKind},
       });
-      return {...result, revision: surfaceRevision()};
+      return {...result, revision: surfaceRevision(), ...(['applied', 'rebased'].includes(result.outcome) ? {renamed: state.filename} : {})};
     }
+    const empty = (input.changes || []).findIndex(row => row && row.old === '');
+    if (empty >= 0) return failure('old_empty', 'invalid', {index: empty,
+      hint: 'old must be existing text. To insert, use {after, insert} (after:"" in an empty document); to replace everything, use {text}.'});
     const moved = input.revision !== surfaceRevision(projection), plan = moved ? untouchedTextPlan(input, projection, targets, who) : planTextChanges(source, input.changes, targets);
     if (!plan) return surfaceFailure('revision_changed', source, input, {}, targets);
     if (plan.reason) return surfaceFailure(plan.reason, source, input, plan, targets);
@@ -5168,13 +5322,17 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (compiled.outcome) return compiled;
     const result = await commit(compiled.splices, who, context, compiled.commentsChanged ? (compiled.options.authoredCount ? 'document.edit' : 'comments.write') : input.changes.some(row => Object.hasOwn(row, 'text')) ? 'document.replace' : compiled.options.drawingPatch && !input.filename ? 'document.draw' : 'document.edit', {
       ...compiled.options, rebased: moved,
-      turnId: input.turn_id, label: input.label || 'Agent edit', editCount: input.changes.length,
+      turnId: input.turn_id, label: input.label || editLabel(who), editCount: input.changes.length,
       ...(input.filename ? {metadata: {filename: input.filename, docKind: state.docKind}, metadataAssignments: ['filename']} : {}),
     });
     const blocksOf = text => {try {return fencedBlocks(text);} catch {return [];}};
     const written = ['applied', 'rebased'].includes(result.outcome) ? publicSurface().projection.text : '', before = new Set(written ? blocksOf(source).map(row => row.text) : []);
     const removed = [...new Set(blocksOf(written).filter(row => row.kind === 'html' && !before.has(row.text)).flatMap(row => htmlRemoved(row.body)))];
-    return {...result, revision: surfaceRevision(), ...(removed.length ? {removed} : {}), ...(['applied', 'rebased', 'unchanged'].includes(result.outcome) ? {lines: plan.lines, ...(moved ? {others: plan.others} : {}), ...(compiled.options.drawAssets?.length ? {blocks: writtenBlocks(projection)} : {})} : {})};
+    const spread = plan.written?.some(([first, last], index) => first !== plan.lines[index] || last !== first);
+    const passage = written && written === plan.text ? editPassage(written, plan.written) : null;
+    return {...result, revision: surfaceRevision(), ...(removed.length ? {removed} : {}), ...(input.filename && ['applied', 'rebased'].includes(result.outcome) ? {renamed: state.filename} : {}),
+      ...(['applied', 'rebased', 'unchanged'].includes(result.outcome) ? {lines: plan.lines, ...(spread ? {lines_written: plan.written} : {}), ...(moved ? {others: plan.others} : {}), ...(compiled.options.drawAssets?.length ? {blocks: writtenBlocks(projection)} : {})} : {}),
+      ...(written ? {hash: publicSurface().digest ??= sha256(written), ...(passage ? {passage} : {})} : {})};
   }
 
   function passageHandle(input, who) {
@@ -5206,8 +5364,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (target === 'plugin') return askEditor('document.device_action', {action: 'install_plugin', plugin: input.name}, who, context);
     if (target === 'file') return askEditor('document.device_action', {action: 'open_file'}, who, context);
     if (target === 'playback') {
-      const {projection, targets} = publicSurface();
-      if (input.revision !== surfaceRevision(projection)) return failure('document_changed', 'conflict');
+      const {projection, targets} = publicSurface(), given = givenRevision(input.revision, surfaceRevision(projection));
+      if (given.outcome) return given;
+      if (given.revision !== surfaceRevision(projection)) return failure('document_changed', 'conflict');
       if (typeof input.value !== 'boolean') return failure('show_arguments_invalid', 'invalid');
       const selected = textScope(projection.text, input, targets); if (selected.reason) return passageFailure(selected.reason, input);
       const matches = input.text !== undefined ? exactMatches(projection.text, input.text, selected, 2) : [selected.start];
@@ -5233,13 +5392,52 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
 
   async function doorExport(input, who, context) {
     if (input.to === 'sync') return notesSync({action: 'now'}, who, context);
-    if (input.to === 'save') return dispatchOperation('document.save', {expected_revision: input.revision === surfaceRevision() ? state.revision : input.revision}, who, context);
+    if (input.to === 'save') {
+      const given = input.revision === undefined ? {revision: undefined} : givenRevision(input.revision); if (given.outcome) return given;
+      return dispatchOperation('document.save', {expected_revision: given.revision === surfaceRevision() ? state.revision : given.revision}, who, context);
+    }
     if (input.to === 'clipboard') {
       const passage = passageHandle(input, who); if (passage.reason) return passageFailure(passage.reason, input);
       return askEditor('document.device_action', {action: 'copy', ...passage, format: input.format || 'plain'}, who, context);
     }
     if (input.to && input.to !== 'file') return failure('export_target_unknown', 'invalid');
-    return exportDocument({format: input.format || 'markdown', compare_id: input.compare_id}, who, context);
+    const scope = exportScope(input, input.format || 'markdown'); if (scope.outcome) return scope;
+    return exportDocument({format: input.format || 'markdown', compare_id: input.compare_id, scope: scope.part}, who, context);
+  }
+
+  function exportScope(input, format) {
+    const fields = ['heading', 'block', 'revision'].filter(key => input[key] !== undefined);
+    if (!fields.length) return {};
+    if (input.compare_id !== undefined) return failure('export_scope_invalid', 'invalid', {field: fields[0], hint: 'A comparison file holds both whole documents: omit ' + fields.join(', ') + '.'});
+    if (host.exportScope !== true) return failure('export_scope_unavailable', 'refused', {field: fields[0], availableFormats: [],
+      hint: 'This door writes the whole current document. Omit ' + fields.join(', ') + '.'});
+    let revision = state.revision, source = state.text;
+    if (input.revision !== undefined) {
+      const asked = revisionNumber(input.revision);
+      if (asked === null) return failure('revision_format', 'invalid', {field: 'revision', revision: surfaceRevision(), hint: REVISION_FORMS});
+      if (asked > state.revision) return failure('revision_unknown', 'invalid', {revision: surfaceRevision()});
+      if (asked < state.revision) {
+        const entries = since(asked);
+        for (let act = (entries?.length ?? 0) - 1; act >= 0 && source != null; act--) source = transformSplices(source, entries[act].splices, true);
+        if (!entries || source == null) return failure('revision_unavailable', 'refused', {revision: asked, hint: 'The history no longer reaches revision ' + asked + '. Export the current revision.'});
+        revision = asked;
+      }
+    }
+    const scope = {revision, whole: input.heading === undefined && input.block === undefined};
+    if (!scope.whole) {
+      const projection = publicText(source), targets = textTargets(projection.text), found = textScope(projection.text, input, targets);
+      if (found.reason) return failure(found.reason, 'refused', {revision});
+      const start = sourcePosition(projection, found.start), end = sourcePosition(projection, found.end, true);
+      let part = source.slice(start, end);
+      const references = pictureReferences(part);
+      for (const row of documentAssets(source).blocks) if (row.active && references.has(row.id)) {
+        try {part = appendAssetText(part, {id: row.id, label: /^\[([^\]\r\n]+)\]:/.exec(row.source)?.[1] || row.id, url: row.url, title: row.title}).source;} catch {}
+      }
+      Object.assign(scope, input.heading !== undefined ? {heading: input.heading} : {}, input.block !== undefined ? {block: input.block} : {},
+        {lines: [targets.lines.number(found.start), targets.lines.number(Math.max(found.start, found.end - 1))]});
+      source = part;
+    }
+    return {part: {...scope, text: source}};
   }
 
   async function dispatchOperation(name, input, who, context) {

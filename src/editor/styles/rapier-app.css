@@ -88,9 +88,8 @@ ul,ol{list-style:none}
 button{font-family:inherit;font-size:inherit;color:inherit;cursor:pointer;border:none;background:none;touch-action:manipulation}
 input,textarea,select{font-family:inherit;font-size:inherit;color:inherit}
 :focus{outline:none}
-body :where(button,a[href],summary,input,select,textarea,[tabindex],[contenteditable="true"]):focus-visible{
-	outline:2px solid var(--color-focus)!important;outline-offset:2px}
-body :is(input:not([type=checkbox],[type=radio],[type=range],[type=color],[type=file],[type=button],[type=submit]),textarea,[contenteditable="true"]):focus-visible{outline:none!important}
+body :focus-visible{outline:none!important;box-shadow:none!important}
+body :where(button,[role="button"],a[href]):focus-visible svg{stroke-width:3}
 button:focus-visible,a:focus-visible,summary:focus-visible{
 	text-decoration:underline;text-decoration-thickness:3px;text-underline-offset:.2em}
 .icon-btn:focus-visible svg,.theme-switcher__btn:focus-visible svg,
@@ -380,6 +379,7 @@ body.light .restore-notice__resume{background:rgb(0 0 0 / .07)}
 	min-height:48px;
 }
 .link-dialog__input:focus{ background:var(--color-surface-hover) }
+.link-dialog__input--multiline{display:block;height:calc(8lh + 20px);max-height:40vh;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto;resize:none}
 .link-dialog__notes{display:flex;flex-direction:column;gap:6px;max-height:min(34vh,240px);overflow-y:auto;overscroll-behavior:contain;margin-top:calc(var(--space-2) * -1)}
 .link-dialog .settings-disclosure-shell{margin:0;border-bottom:0}
 .link-dialog .link-dialog__advanced-toggle{display:grid;grid-template-columns:minmax(0,1fr) 20px;align-items:center;padding:0;color:var(--color-text-muted);font:var(--fw-regular) var(--text-xs)/1 var(--font-mono);text-transform:uppercase;letter-spacing:var(--track-caps)}

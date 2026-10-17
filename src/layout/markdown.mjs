@@ -222,6 +222,70 @@ export function layoutTargets(source, parser, env = {}) {
   return targets.sort((left, right) => left.start - right.start || left.end - right.end);
 }
 
+const LAYOUT_WINDOW_MIN = 65536, LAYOUT_WINDOW_REACH = 1 << 22;
+const LAYOUT_OPENER = /^ {0,3}(?:(`{3,}|~{3,})|(\$\$)|(<!--)|(<\?)|(<!\[CDATA\[)|(<![A-Za-z])|<(script|pre|style|textarea)(?=[\s>]|$))/gim;
+function layoutHazards(source, limit) {
+  const spans = [];
+  LAYOUT_OPENER.lastIndex = 0;
+  for (let match; (match = LAYOUT_OPENER.exec(source)) && match.index < limit;) {
+    const after = match.index + match[0].length, lineEnd = at => { const end = source.indexOf('\n', at); return end < 0 ? source.length : end + 1; };
+    let close = -1;
+    if (match[1]) {
+      const fence = new RegExp('^ {0,3}' + (match[1][0] === '`' ? '`' : '~') + '{' + match[1].length + ',}[ \\t]*$', 'gm');
+      fence.lastIndex = lineEnd(after);
+      const found = fence.exec(source);
+      close = found ? lineEnd(found.index) : source.length;
+    } else if (match[2]) {
+      const end = source.indexOf('$$', after); close = end < 0 ? source.length : lineEnd(end + 2);
+    } else {
+      const closer = match[3] ? '-->' : match[4] ? '?>' : match[5] ? ']]>' : match[6] ? '>' : null;
+      if (closer) { const end = source.indexOf(closer, after); close = end < 0 ? source.length : lineEnd(end + closer.length); }
+      else {
+        const tag = new RegExp('</' + match[7] + '>', 'gi'); tag.lastIndex = after;
+        const found = tag.exec(source); close = found ? lineEnd(found.index) : source.length;
+      }
+    }
+    spans.push([match.index, close]);
+    LAYOUT_OPENER.lastIndex = Math.max(close, after);
+  }
+  return spans;
+}
+export function layoutWindow(source, start, end) {
+  if (typeof source !== 'string' || source.length < LAYOUT_WINDOW_MIN || !Number.isSafeInteger(start) || !Number.isSafeInteger(end) ||
+      start < 0 || end < start || end > source.length) return null;
+  const blank = (from, to) => !/[^ \t\r\n]/.test(source.slice(from, to));
+  const boundary = at => {
+    if (at <= 0 || at >= source.length || source[at - 1] !== '\n') return false;
+    const previous = source.lastIndexOf('\n', at - 2) + 1;
+    if (!blank(previous, at - 1)) return false;
+    const line = source.slice(at, at + 16);
+    return !/^(?:[ \t\r\n>:|]|[-*+](?:[ \t\r\n]|$)|\d{1,9}[.)](?:[ \t\r\n]|$))/.test(line);
+  };
+  let from = source.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
+  while (from > 0 && !boundary(from)) {
+    from = source.lastIndexOf('\n', from - 2) + 1;
+    if (start - from > LAYOUT_WINDOW_REACH) return null;
+  }
+  let to = source.indexOf('\n', end);
+  to = to < 0 ? source.length : to + 1;
+  while (to < source.length && !boundary(to)) {
+    const next = source.indexOf('\n', to);
+    to = next < 0 ? source.length : next + 1;
+    if (to - end > LAYOUT_WINDOW_REACH) return null;
+  }
+  const spans = layoutHazards(source, source.length);
+  for (let moved = true; moved;) {
+    moved = false;
+    for (const [open, close] of spans) {
+      if (open < from && from < close) { from = open; moved = true; }
+      if (open < to && to < close) { to = close; moved = true; }
+    }
+    while (from > 0 && !boundary(from)) from = source.lastIndexOf('\n', from - 2) + 1;
+    while (to < source.length && !boundary(to)) { const next = source.indexOf('\n', to); to = next < 0 ? source.length : next + 1; }
+  }
+  return from === 0 && to === source.length ? null : {start: from, end: to};
+}
+
 export function editLayout(source, parser, range, patch, env = {}) {
   if (typeof source !== 'string' || !range || !Number.isSafeInteger(range.start) || !Number.isSafeInteger(range.end) ||
       range.start < 0 || range.end < range.start || range.end > source.length) return {edits: [], targets: [], reason: 'invalid_layout_range'};

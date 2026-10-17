@@ -1,4 +1,4 @@
-import {expiredTrash, trashEvidence, isNoteFile, serializeIndex} from './model.mjs';
+import {expiredTrash, trashEvidence, isNoteFile, serializeIndex, parseIndex} from './model.mjs';
 import {exactBytes, sha256} from './integrity.mjs';
 import {manifestName} from './history.mjs';
 
@@ -7,6 +7,21 @@ const fail = (code, message) => Object.assign(new Error(message), {code});
 const hex = value => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
 const validTime = value => Number.isSafeInteger(value) && value >= 0;
 const blankResult = index => ({index, deleted: [], revived: [], missing: [], deferred: [], erased: []});
+export function deletionFailure(error) {
+	return {name: typeof error?.name === 'string' && error.name ? error.name : 'Error', message: String(error?.message || error),
+		...(typeof error?.code === 'string' || typeof error?.code === 'number' && Number.isFinite(error.code) ? {code: error.code} : {})};
+}
+export function deletionRefusal(error, {pending = false} = {}) {
+	const cause = deletionFailure(error), full = cause.name === 'QuotaExceededError' || cause.code === 'storage-full';
+	if (!full && !pending) return error;
+	const refused = fail(full ? 'storage-full' : 'delete-pending', full
+		? 'Storage is full. Free some space, then try again.'
+		: 'A previous deletion still needs recovery. No new deletion was started.');
+	if (full) refused.name = 'QuotaExceededError';
+	refused.cause = cause;
+	for (const key of ['index', 'partial']) if (error?.[key] !== undefined) refused[key] = error[key];
+	return refused;
+}
 function active(entry, digest) {
 	const out = {...entry, trashed: false, archived: false};
 	delete out.trashedAt; delete out.trashDigest; delete out.trashRevision;
@@ -129,10 +144,24 @@ export async function recoverTrash({store, index, commitIndex, clock = Date.now,
 	} catch (error) { error.index = result.index; error.partial = result; throw error; }
 }
 
-export async function runTrash({store, index, files, now, deviceId, mode = 'expiry', commitIndex, clock = Date.now, keep = null, expected = null, checkpoint = null, sync = false} = {}) {
+export async function runTrash({store, index, files, now, deviceId, mode = 'expiry', commitIndex, clock = Date.now, keep = null, expected = null, checkpoint = null, sync = false, pressureDelete = null} = {}) {
 	if (now === undefined) now = clock();
 	if (!validTime(now) || !['expiry', 'confirmed'].includes(mode)) throw fail('trash', 'Trash needs a valid time and removal choice.');
 	if (mode === 'confirmed' && !Array.isArray(files)) throw fail('trash', 'Confirmed deletion must name the chosen files.');
+	if (pressureDelete) {
+		if (Object.keys(index.deletions || {}).length) throw fail('pending', 'Finish the previous Trash operation before low-space deletion.');
+		const result = blankResult(index);
+		try { for (const file of [...new Set(files || Object.keys(index.notes).filter(name => index.notes[name].trashed))]) {
+			let completed = null;
+			const part = await runTrash({store, index: result.index, files: [file], now, deviceId, mode, clock, keep, expected, checkpoint, sync, commitIndex: async (next, options) => {
+				const pending = Object.entries(next.deletions || {});
+				if (options.kind === 'trash-prepare' && pending.length === 1) { completed = await pressureDelete({index: result.index, prepared: next, opId: pending[0][0], row: pending[0][1]}); return {index: completed.index}; }
+				return commitIndex(next, options);
+			}});
+			appendOutcome(result, part); if (completed) appendOutcome(result, completed);
+		}
+		return result; } catch (error) { error.index = result.index; error.partial = result; throw error; }
+	}
 	const commit = committer(commitIndex), result = blankResult(index);
 	try {
 		appendOutcome(result, await recoverTrash({store, index, commitIndex, clock, keep}));
@@ -174,4 +203,82 @@ export async function runTrash({store, index, files, now, deviceId, mode = 'expi
 		if (error.partial && error.partial !== result) appendOutcome(result, error.partial);
 		error.index = result.index; error.partial = result; throw error;
 	}
+}
+
+
+export async function recoverPressureTrash({store, index, intent, commit, keep = null, live = null} = {}) {
+ const result = blankResult(index); let state = await intent.read(index);
+ if (!state.record || state.record.phase === 'idle') return result;
+ let row = state.record;
+ if (index.deleteCheckpoint?.opId === row.opId && index.deleteCheckpoint?.baseDigest === row.baseDigest && index.deleteCheckpoint?.token === row.token) {
+  await intent.retire(index, state); return result;
+ }
+ const base = await store.read('notes.json');
+ if (base == null || await sha256(exactBytes(base)) !== row.baseDigest) throw fail('delete-pending', 'The deletion’s base metadata changed. Its record and remaining bytes were kept.');
+ const matches = [];
+ for (const [file, entry] of Object.entries(index.notes)) if (entry.id === row.id && await sha256(exactBytes(file)) === row.fileDigest) matches.push(file);
+ if (matches.length !== 1) throw fail('delete-pending', 'The deletion identity cannot be resolved from its exact metadata.');
+ const file = matches[0], held = intent.heldName(row);
+ let heldBytes = await intent.api.read(held);
+ if (heldBytes != null && await sha256(heldBytes) !== row.digest) throw fail('delete-custody', 'The quarantined note changed. Every remaining byte was kept.');
+ if (row.phase === 'admitted') {
+  await intent.releaseReserve(row);
+  if (heldBytes == null && live?.token === row.token && !(keep && keep(file))) {
+   const outcome = await intent.api.detach(file, {held, digest: row.digest, identity: live.identity});
+   if (outcome === 'detached') heldBytes = await intent.api.read(held);
+   if (heldBytes != null && await sha256(heldBytes) !== row.digest) throw fail('delete-custody', 'The detached note did not keep its admitted bytes.');
+  }
+  state = await intent.transition(index, state, {...row, phase: heldBytes == null ? 'cancelled' : 'detached'}); row = state.record;
+ }
+ let next = clone(index);
+ next.noteCounters = {...next.noteCounters, [row.device]: Math.max(next.noteCounters?.[row.device] || 1, row.counter)};
+ if (row.phase === 'detached') {
+  if (heldBytes != null && !await intent.api.removeOwned(held, row.digest)) throw fail('delete-pending', 'The quarantined note could not be removed.');
+  if (await intent.api.read(held) != null) throw fail('delete-pending', 'The quarantined note remains pending.');
+  delete next.notes[file];
+  const guardedHistory = {...store, remove: async path => {
+   const bytes = await store.read(path); if (bytes == null) return;
+   if (!await intent.api.removeOwned(path, await sha256(exactBytes(bytes)))) throw fail('delete-pending', 'A history object changed. It was kept.');
+  }};
+  const erased = await eraseNoteHistory({store: guardedHistory, index: next, noteId: row.id});
+  if (erased.erased) result.erased.push(file);
+  if (!row.sync) next.tombstones = {...next.tombstones, [row.id]: [...(next.tombstones?.[row.id] || []), {opId: row.opId, file, revision: 'sha256:' + row.digest, digest: row.digest, device: row.device, at: row.at, deletedAt: row.at, ...(row.checkpoint ? {checkpoint: row.checkpoint} : {})}]};
+  result.deleted.push(file);
+ } else {
+  next.notes[file] = active(next.notes[file]);
+  result.revived.push(file);
+  result.deferred.push({file, reason: 'The interrupted selection was kept. Review it before deleting again.'});
+ }
+ next.deleteCheckpoint = {opId: row.opId, baseDigest: row.baseDigest, token: row.token};
+ const committed = await commit(next, {file, baseDigest: row.baseDigest, kind: row.phase === 'detached' ? 'trash-delete' : 'trash-defer'});
+ result.index = committed.index;
+ await intent.retire(result.index, state);
+ return result;
+}
+
+export async function admitPressureTrash({store, index, prepared, opId, row, intent, commit, keep = null, baseReceipt = null} = {}) {
+ if (keep && keep(row.file)) return blankResult(index);
+ const bytes = await store.read('notes.json');
+ if (bytes == null || baseReceipt == null) throw fail('delete-unarmed', 'Low-space deletion needs the existing durable index receipt.');
+ if (await sha256(exactBytes(bytes)) !== await sha256(exactBytes(baseReceipt)) || serializeIndex(parseIndex(new TextDecoder('utf-8', {fatal: true}).decode(baseReceipt))) !== serializeIndex(index)) throw fail('changed', 'The folder metadata changed after the deletion was selected. Nothing was removed.');
+ const observation = await intent.api.observe(row.file);
+ if (!observation || observation.digest !== row.digest) throw fail('changed', 'The selected note changed. Its bytes were kept.');
+ const baseDigest = await sha256(exactBytes(bytes));
+ const token = (await sha256(exactBytes(baseDigest + '\n' + opId))).slice(0, 32);
+ if (await intent.api.read('.rapier-delete-' + token + '.held') != null) throw fail('delete-custody', 'The deletion quarantine name is already occupied. Its bytes were kept.');
+ const proof = prepared.tombstones[row.id].find(value => value.opId === opId);
+ const record = {baseDigest, digest: row.digest, fileDigest: await sha256(exactBytes(row.file)), id: row.id, opId, token, device: proof.device, counter: prepared.noteCounters[proof.device], at: proof.at, ...(proof.checkpoint ? {checkpoint: proof.checkpoint} : {}), ...(row.sync ? {sync: true} : {})};
+ const preview = clone(index);
+ preview.noteCounters = {...preview.noteCounters, [record.device]: record.counter};
+ preview.folderGeneration = (index.folderGeneration || 0) + 1;
+ preview.deleteCheckpoint = {opId, baseDigest, token};
+ preview.ownerNotice = {generation: preview.folderGeneration, changed: [row.file], kind: 'trash-defer'};
+ preview.notes[row.file] = active(preview.notes[row.file]);
+ const cancelledBytes = exactBytes(serializeIndex(preview)).length;
+ delete preview.notes[row.file]; preview.ownerNotice.kind = 'trash-delete';
+ if (!row.sync) { const completed = {...proof, deletedAt: record.at}; delete completed.pending; preview.tombstones = {...preview.tombstones, [row.id]: [...(preview.tombstones?.[row.id] || []), completed]}; }
+ const required = Math.max(cancelledBytes, exactBytes(serializeIndex(preview)).length);
+ if (await sha256(exactBytes(await store.read('notes.json'))) !== baseDigest) throw fail('changed', 'The folder metadata changed before deletion admission. Nothing was removed.');
+ await intent.admit(index, record, required);
+ return recoverPressureTrash({store, index, intent, commit, keep, live: {token, identity: observation.identity}});
 }

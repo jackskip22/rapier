@@ -5,14 +5,10 @@ const _RAPIER_TRANSACTION_ACTOR_LIMIT = 160;
 const _RAPIER_TRANSACTION_OPERATION_LIMIT = 96;
 const _RAPIER_TRANSACTION_REQUEST_LIMIT = 160;
 
-/* Validate every row, not only the final string: a half-pair replacement can produce a whole
-	 character while leaving unencodable fragments in the ledger; two invalid rows can also repair
-	 each other. Refusal is atomic. Pre-existing damage elsewhere stays untouched and editable. */
 function _rapierTransformSplices(text, splices, inverse = false) {
 	try {
 		if (!Array.isArray(splices)) return null;
 		let value = String(text == null ? '' : text);
-		// In Unicode mode a complete pair is one scalar, outside the surrogate range.
 		const whole = text => typeof text === 'string' && !/[\uD800-\uDFFF]/u.test(text);
 		const splitsPair = at => at > 0 && at < value.length &&
 			(value.charCodeAt(at - 1) & 0xFC00) === 0xD800 &&
@@ -81,7 +77,6 @@ function _rapierTransformMetadata(value, effect, inverse = false) {
 	return next;
 }
 
-// An origin binds transported placement to exact authored rows and their causal basis.
 function _rapierValidAuthored(origin) {
 	if (!_rapierPlainLedgerData(origin) || !origin || Array.isArray(origin) ||
 		Object.keys(origin).length !== 3 || !Array.isArray(origin.basis) ||
@@ -95,9 +90,6 @@ function _rapierValidAuthored(origin) {
 		!/[\uD800-\uDFFF]/u.test(row.removed) && !/[\uD800-\uDFFF]/u.test(row.inserted));
 }
 
-// The lookup is an observation of one call's supplied records. Material rows keep
-// their existing borrowed-row API; an inverse owns fresh rows. Navigation only
-// follows strictly earlier revisions, including when an unadmitted list is unordered.
 function _rapierRecordIndex(records) {
 	const byId = new Map(), splices = new Map(), metadata = new Map();
 	for (const record of records) {
@@ -139,8 +131,6 @@ function _rapierRecordSplices(entry, ledger) {
 	} catch (_) { return null; }
 }
 
-// Source identifies a retained checkpoint even when host revision numbers differ.
-// The History Slider compares now → earlier: that answer is the earlier → now walk, inverted.
 function journalOperations(before, after, journal) {
 	if (typeof before !== 'string' || typeof after !== 'string' || !Array.isArray(journal)) return;
 	if (before === after) return [];
@@ -151,15 +141,34 @@ function journalOperations(before, after, journal) {
 
 function journalWalk(before, after, journal) {
 	try {
-		let text = after;
+		const pieces = [after];
 		const lookup = _rapierRecordIndex(journal), groups = [];
+		let length = after.length;
+		const locate = at => { let index = 0; for (; index < pieces.length - 1 && at >= pieces[index].length; index++) at -= pieces[index].length; return [index, at]; };
+		const codeAt = at => { const [index, offset] = locate(at); return pieces[index].charCodeAt(offset); };
+		const read = (from, to) => { let out = ''; for (let [index, offset] = locate(from); from < to && index < pieces.length; index++, offset = 0) { const part = pieces[index].slice(offset, offset + to - from); out += part; from += part.length; } return out; };
+		const cut = at => { const [index, offset] = locate(at); if (offset > 0 && offset < pieces[index].length) pieces.splice(index, 1, pieces[index].slice(0, offset), pieces[index].slice(offset)); };
+		const whole = text => typeof text === 'string' && !/[\uD800-\uDFFF]/u.test(text);
+		const splitsPair = at => at > 0 && at < length && (codeAt(at - 1) & 0xFC00) === 0xD800 && (codeAt(at) & 0xFC00) === 0xDC00;
 		for (let index = journal.length - 1; index >= 0; index--) {
 			const rows = lookup.splices(journal[index]);
-			const prior = _rapierTransformSplices(text, rows, true);
-			if (prior === null) return;
+			if (!Array.isArray(rows)) return;
+			for (const row of rows.slice().reverse()) {
+				if (!row || !Number.isSafeInteger(row.pos) || row.pos < 0 || Object.is(row.pos, -0)) return;
+				const pos = row.pos, removed = row.inserted, inserted = row.removed;
+				if (!whole(removed) || !whole(inserted) || pos > length || pos + removed.length > length ||
+						splitsPair(pos) || splitsPair(pos + removed.length) || read(pos, pos + removed.length) !== removed) return;
+				cut(pos); cut(pos + removed.length);
+				let [first] = locate(pos), count = 0;
+				if (pos === length) first = pieces.length;
+				else if (locate(pos)[1] !== 0) first++;
+				for (let left = removed.length; left > 0; count++) left -= pieces[first + count].length;
+				pieces.splice(first, count, ...(inserted ? [inserted] : []));
+				length += inserted.length - removed.length;
+				for (let at = pieces.length - 1; at >= 0; at--) if (!pieces[at] && pieces.length > 1) pieces.splice(at, 1);
+			}
 			groups.push(rows);
-			if (prior === before) return groups.reverse().flat().map(({pos, removed, inserted}) => ({pos, removed, inserted}));
-			text = prior;
+			if (length === before.length && pieces.join('') === before) return groups.reverse().flat().map(({pos, removed, inserted}) => ({pos, removed, inserted}));
 		}
 	} catch (_) { return; }
 }
@@ -167,14 +176,11 @@ function journalWalk(before, after, journal) {
 function _rapierRecordMetadata(entry, ledger) {
 	try {
 		if (Object.hasOwn(entry, 'metadata')) return _rapierValidMetadataEffect(entry.metadata) ? entry.metadata : undefined;
-		// An expanded record owns its complete effect; only compact navigation inherits one.
 		if (Array.isArray(entry.splices)) return null;
 		return _rapierRecordIndex(ledger || []).metadata(entry);
 	} catch (_) { return undefined; }
 }
 
-// A codec replacement owns only one inserted definition and its reference. Its
-// source act remains the picture's author; an arbitrary edit cannot claim upkeep.
 function _rapierPictureFinish(record, original, earlier, lookup) {
 	const tx = record?.transaction, rows = record?.splices;
 	if (tx?.operation !== 'document.finish-picture' || !tx.sourceTransactionId || tx.sourceTransactionIds ||
@@ -221,9 +227,6 @@ function _rapierPictureFinish(record, original, earlier, lookup) {
 	});
 }
 
-// Every active inverse keeps its original targets suppressed. Independent inverses
-// can share a target; withdrawing one restores it only after the last blocker leaves.
-// This includes assignments hidden by later choices. No second history is retained.
 function _rapierWalkHistoryEffects(records, lookup, visit = null, observe = null) {
 	try {
 		if (!Array.isArray(records)) return {ok: false};
@@ -238,9 +241,6 @@ function _rapierWalkHistoryEffects(records, lookup, visit = null, observe = null
 				if (was !== node.active) for (const ref of node.references) pending.push([ref, node.active ? 1 : -1]);
 			}
 		};
-		// Most admission needs only the final effect graph. A backwards pass proves it
-		// in linear work; prefix activity is asked only by native Redo, picture custody,
-		// or a metadata assignment. The explicit stack also bounds long inverse chains.
 		const activity = new Map();
 		const active = id => {
 			if (visit) return nodes.get(id).active;
@@ -258,8 +258,6 @@ function _rapierWalkHistoryEffects(records, lookup, visit = null, observe = null
 			return activity.get(id);
 		};
 		const lastUndo = new Map(), contexts = new Map(), order = [];
-		// Native Redo names an original act. Its inverse target is the last Undo
-		// in the author's proved causal view, not an unrelated later arrival.
 		const contextOf = origin => {
 			if (!origin) return null;
 			if (!_rapierValidAuthored(origin)) throw Error('origin');
@@ -338,8 +336,6 @@ function _rapierHistoryEffects(records, visit = null) {
 	return _rapierWalkHistoryEffects(records, null, visit);
 }
 
-// Every transition constrains the two initial metadata scalars. This proves each
-// inverse's result once, before the caller supplies the exact initial metadata.
 function _rapierMetadataProof(lookup) {
 	const values = {}, required = {}, assignments = {filename: [], docKind: []};
 	const requireInitial = (key, value) => {
@@ -355,7 +351,6 @@ function _rapierMetadataProof(lookup) {
 			values[key] = pair.after;
 			if (!refs.length) assignments[key].push({id: record.transaction.id, value: pair.after});
 		}
-		// Source-only rows cannot change a previously proved metadata assignment.
 		if (!effect && !refs.length) return;
 		for (const key of ['filename', 'docKind']) {
 			const expected = assignments[key].findLast(row => active(row.id));
@@ -385,7 +380,6 @@ function _rapierMetadataState(initial, records, effects = _rapierHistoryEffects(
 	} catch (_) { return null; }
 }
 
-// Prove each recorded transition and each inverse's semantic result, not only the final values.
 function _rapierReplayMetadata(initial, records) {
 	if (!_rapierValidMetadata(initial)) return null;
 	try {
@@ -405,16 +399,9 @@ function _rapierHasHistoryEffect(record, earlier = []) {
 	return _rapierHistoryEffects([...earlier, {...record, transaction: {...tx, id}}]).ok;
 }
 
-// A cached observation owns every byte-bearing record. Mutable graphs are compared
-// through descriptors on every call; only a proved, recursively frozen graph can
-// bypass that walk. Per-object weak entries keep one latest copy, not a revision log.
 const _rapierPrepareHistoryRecords = (() => {
 	const copies = new WeakMap();
-	// Repeated queries share the latest proved snapshot. A live but inactive input
-	// does not need to retain its record/effect indexes; immutable copies remain weak.
 	let prepared = new WeakMap();
-	// Object.freeze does not freeze Map/Set entries. Keep those collections inside
-	// the preparation and expose only immutable values through reading closures.
 	const view = collection => Object.freeze({size: collection.size, has: key => collection.has(key),
 		...(collection instanceof Map ? {get: key => collection.get(key)} : {}),
 		keys: () => collection.keys(), values: () => collection.values(), entries: () => collection.entries(),
@@ -456,8 +443,6 @@ const _rapierPrepareHistoryRecords = (() => {
 			frame.previous = previous?.copy;
 			frame.height = 0;
 			if (previous?.frozen) {
-				// A frozen shell fixes its descriptors, but every mutable child is still
-				// observed afresh. Fixed scalar fields need no second Unicode/data proof.
 				frame.frozen = frame.immutable = true;
 				frame.descriptors = previous.descriptors; frame.fields = previous.fields;
 				frame.out = null; frame.leaving = true; active.add(value); pending.push(frame);
@@ -467,8 +452,6 @@ const _rapierPrepareHistoryRecords = (() => {
 				}
 				continue;
 			}
-			// Check frozen-ness before capturing descriptors. A caller freezing a mutable
-			// input later cannot retroactively certify an earlier view of its properties.
 			frame.frozen = frame.immutable = Object.isFrozen(value);
 			const array = Array.isArray(value), proto = Object.getPrototypeOf(value);
 			if (!array && !plainPrototype(proto)) throw Error('history_data');
@@ -535,12 +518,6 @@ const _rapierPrepareHistoryRecords = (() => {
 	};
 })();
 
-// A ledger record as the journal and the Notes return validate it below: plain data, nothing
-// undefined anywhere in it. A live record could carry a row whose type or order is not yet known (a
-// block just inserted, before its first render: `type: undefined`), and the validator would refuse
-// the whole ledger for that one field -- silently at boot, where a refused ledger is cleared, and
-// as "Rapier could not be reopened: the document history could not be restored" on a return from
-// Notes. The copy is made once per record; records are frozen, so it never goes stale.
 const _rapierJournalRecord = (() => {
 	const copies = new WeakMap();
 	return record => {
@@ -551,10 +528,6 @@ const _rapierJournalRecord = (() => {
 })();
 
 function _rapierValidLedgerRecord(record, prior, earlier, documentAuthority, maxDocumentBytes, utf8Length, allowGap = false) {
-	// Recovery records are data, not executable objects. Inspect descriptors without invoking
-	// accessors, and use an ancestor set (not a global seen set) so shared acyclic data stays valid.
-	// Iterative traversal refuses cycles without exhausting the call stack. Proxies/counters that
-	// throw are refused by the same gate rather than escaping into document recovery.
 	try {
 		if (!_rapierPlainLedgerData(record) || !Array.isArray(earlier)) return false;
 		const own = Array.isArray(record?.splices), lookup = own ? null : _rapierRecordIndex(earlier);
@@ -566,8 +539,6 @@ function _rapierValidLedgerRecord(record, prior, earlier, documentAuthority, max
 	} catch (_) { return false; }
 }
 
-// Both callers proved plain data themselves: the public single-row validator above,
-// or the private owned-snapshot preparation. No caller-supplied trusted flag exists.
 function _rapierCheckLedgerRecord(record, prior, documentAuthority, maxDocumentBytes, utf8Length, allowGap,
 	{splices, metadata, semantic, duplicate}) {
 	try {
@@ -579,8 +550,6 @@ function _rapierCheckLedgerRecord(record, prior, documentAuthority, maxDocumentB
 		if ((!own && !navigation) || (own && record.splices.length > 64) ||
 			(record.transaction?.reverts && record.transaction?.reapplies)) return false;
 		const metadataChanged = Object.values(metadata || {}).some(pair => pair.before !== pair.after);
-		// An identical concurrent replacement keeps its authored rows and an empty
-		// physical splice. The origin proof, not this gate, shows the effect is already present.
 		const coincidentWitness = !splices?.length && record.beforeHash === record.afterHash &&
 			record.authored && _rapierValidAuthored(record.authored) && record.authored.splices.some(row => row.removed.length);
 		if (metadata === undefined || (!splices?.length && !metadataChanged && !semantic && !coincidentWitness) ||
@@ -597,7 +566,6 @@ function _rapierCheckLedgerRecord(record, prior, documentAuthority, maxDocumentB
 		const transaction = record.transaction;
 		const nullableText = (value, limit, empty = true) => value === null ||
 			(typeof value === 'string' && value.length <= limit && (empty || value.length > 0));
-		// Identity fields are bounded individually; durable history has no record-count limit.
 		const optional = (value, valid) => value === undefined || valid(value);
 		const identity = (value, limit) => typeof value === 'string' && value.length > 0 && value.length <= limit;
 		if (!transaction || typeof transaction.id !== 'string' || !transaction.id.length ||

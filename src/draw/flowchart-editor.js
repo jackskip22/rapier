@@ -2,6 +2,11 @@
   let active = null;
   let opening = 0;
 
+  function fence(raw) {
+    const found = /^(?:\uFEFF)?[ \t]*(?:`{3,}|~{3,})[ \t]*mermaid[^\r\n]*(?:\r\n|\n|\r)([\s\S]*?)(?:\r\n|\n|\r)[ \t]*(?:`{3,}|~{3,})[ \t\r\n]*$/id.exec(raw);
+    return found && found.indices[1][0] >= 0 ? {body: found[1], bodyStart: found.indices[1][0]} : null;
+  }
+
   function flush(announce = true) {
     const held = active;
     if (!held) return true;
@@ -11,7 +16,7 @@
     if (rapier.identity.authority !== held.authority || !block || block.raw !== held.raw ||
         _rapierUserMutationBlocked(false)) return false;
     if (held.input.value === held.value) return true;
-    const changed = globalThis.RapierFlowchart.editFlowchartLabel(held.body, held.target, held.input.value);
+    const changed = globalThis.RapierFlowchart.editFlowchartLabel(held.base ?? held.body, held.target, held.input.value);
     if (!changed.ok) {
       held.refused = changed.reason;
       held.input.setCustomValidity(changed.reason);
@@ -20,12 +25,14 @@
     }
     held.input.setCustomValidity('');
     const next = held.raw.slice(0, held.bodyStart) + changed.source + held.raw.slice(held.bodyStart + held.body.length);
-    if (!_rapierCommitBlockEdit(block.id, held.raw, next, {operation: 'document.edit-diagram-label'})) return false;
+    if (!_rapierCommitBlockEdit(block.id, held.raw, next, {operation: held.operation})) return false;
     block.raw = next;
     block.rendered = renderBlock(next);
     held.raw = next;
     held.body = changed.source;
     held.value = held.input.value;
+    const created = held.pending;
+    held.pending = false; held.base = null; held.restore = null; held.operation = 'document.edit-diagram-label';
     if (held.target.kind === 'edge') {
       const labels = {}, parsed = globalThis.RapierFlowchart.parseFlowchart(changed.source, labels);
       if (parsed.ok) held.target = {kind: 'edge', id: [...labels.edges].find(([, span]) => span?.start === changed.splice.pos)?.[0] ?? held.target.id};
@@ -33,6 +40,7 @@
     rapierDirty(block.id);
     _notifyHistoryState();
     _scheduleStatsUpdate();
+    if (created) held.created?.(changed.source);
     return true;
   }
 
@@ -60,7 +68,7 @@
       if (next) next._rapierDiagramScroll = scroll;
       _rapierFillDiagram(next);
       _rapierRestoreEditorViewport(viewport);
-    }
+    } else if (held.restore && held.diagram.isConnected) held.restore();
     return true;
   }
 
@@ -81,7 +89,7 @@
     }
   }
 
-  async function open(diagram, pressed) {
+  async function open(diagram, pressed, pending = null) {
     let group = pressed.closest('[data-shape-id]'), data = diagram._rapierFlowchart;
     let target = group && data?.labels[group.dataset.shapeId];
     if (!target || _rapierUserMutationBlocked()) return false;
@@ -107,14 +115,13 @@
     }
     const block = _rapierBoundBlock(wrapper);
     if (!block || !diagram.isConnected) return false;
-    const fence = /^(?:\uFEFF)?[ \t]*(?:`{3,}|~{3,})[ \t]*mermaid[^\r\n]*(?:\r\n|\n|\r)([\s\S]*?)(?:\r\n|\n|\r)[ \t]*(?:`{3,}|~{3,})[ \t\r\n]*$/id.exec(block.raw);
-    if (!fence) return false;
-    const body = fence[1], shape = data.recipe.shapes.find(row => row.id === group.dataset.shapeId);
-    if (body.replace(/\r\n?/g, '\n') !== data.source) return false;
+    const found = fence(block.raw);
+    if (!found) return false;
+    const body = found.body, shape = data.recipe.shapes.find(row => row.id === group.dataset.shapeId);
+    if ((pending ? pending.base.replace(/\r\n?/g, '\n') : body.replace(/\r\n?/g, '\n')) !== data.source) return false;
     const texts = [...group.querySelectorAll('text')];
     if (!shape || !texts.length) return false;
-    const bodyStart = fence.indices[1][0];
-    if (bodyStart < 0) return false;
+    const bodyStart = found.bodyStart;
     const layout = globalThis.RapierDrawCore._rapierDrawTextLayout(shape, data.recipe);
     const svg = diagram.querySelector('svg'), matrix = svg?.getScreenCTM();
     if (!matrix) return false;
@@ -123,7 +130,7 @@
     const bounds = diagram.getBoundingClientRect(), style = getComputedStyle(texts[0]);
     const input = document.createElement('textarea');
     input.className = 'rapier-diagram-label';
-    input.value = shape.label;
+    input.value = pending ? '' : shape.label;
     input.rows = Math.max(1, layout.lines.length);
     input.setAttribute('aria-label', 'Diagram label');
     input.setAttribute('enterkeyhint', 'done');
@@ -136,7 +143,9 @@
     });
     const listeners = new AbortController();
     active = {diagram, wrapper, shapeId: group.dataset.shapeId, blockId: block.id, authority: rapier.identity.authority, raw: block.raw, openRaw: block.raw,
-      body, bodyStart, target, value: shape.label, input, texts, listeners, timer: 0, composing: false};
+      body, bodyStart, target, value: pending ? '' : shape.label, input, texts, listeners, timer: 0, composing: false,
+      pending: !!pending, base: pending ? pending.base : null, restore: pending?.restore, created: pending?.created,
+      operation: pending?.operation || 'document.edit-diagram-label'};
     const held = active;
     for (const text of texts) text.style.visibility = 'hidden';
     diagram.append(input);
@@ -144,6 +153,7 @@
     input.addEventListener('compositionend', () => { held.composing = false; schedule(); }, {signal: listeners.signal});
     function schedule() {
       clearTimeout(held.timer);
+      if (held.pending) return;
       held.timer = setTimeout(() => { if (active === held) flush(false); }, 600);
     }
     const {width, height} = input.style;
@@ -157,6 +167,13 @@
     input.addEventListener('keydown', event => {
       if (event.isComposing) return;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') close();
+      if (event.key === 'Tab' && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey && held.target.kind === 'node' && globalThis.RapierFlowchartTouch) {
+        event.preventDefault();
+        const from = held.target.id, view = held.wrapper;
+        if (close()) globalThis.RapierFlowchartTouch.add(view, from);
+        return;
+      }
+      if (event.key === 'Escape' && held.pending) input.value = held.value;
       if (event.key === 'Enter' && !event.shiftKey || event.key === 'Escape') { event.preventDefault(); close(event.key === 'Escape'); }
     }, {signal: listeners.signal});
     input.addEventListener('blur', () => { if (active === held) close(true); }, {signal: listeners.signal});
@@ -166,5 +183,5 @@
     return true;
   }
 
-  globalThis.RapierFlowchartEditor = Object.freeze({bind, open, flush, close, editing: () => !!active});
+  globalThis.RapierFlowchartEditor = Object.freeze({bind, open, flush, close, fence, editing: () => !!active});
 })();

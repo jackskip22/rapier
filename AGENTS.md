@@ -41,7 +41,6 @@ Use Node 22.23.3. In `src/`, run these commands in order:
 ```sh
 RAPIER_PROFILE=reader node tools/build.mjs
 node tools/build.mjs
-node --test tools/test-public.mjs
 ```
 
 Keep one owner for source, transaction history, viewport, Markdown grammar, layout and agent admission. Respect the

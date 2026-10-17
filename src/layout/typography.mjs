@@ -10,7 +10,7 @@ export function createTypography() {
   const exclude = 'code,kbd,samp,math,script,style,.math-rendered,[hidden]';
   const candidates = 'p[data-md-hyphens="auto"],p[data-md-lines],p[data-md-hanging="on"],p[' + mark + ']';
   const properties = ['--md-drop-cap-font', '--md-hang-start'];
-  const states = new WeakMap(), documents = new WeakMap(), live = new Set();
+  const states = new WeakMap(), documents = new WeakMap(), live = new Set(), refused = new WeakMap();
   function scope(document) {
     let value = documents.get(document);
     if (!value) { value = createPreparationScope(document); documents.set(document, value); }
@@ -34,6 +34,9 @@ export function createTypography() {
     }
     return end > start ? {start, end, text: text.slice(start, end)} : null;
   }
+
+  const flowFloat = '.rapier-flow-float';
+  const own = paragraph => [paragraph, ...[...paragraph.querySelectorAll('*')].filter(element => !element.closest(flowFloat))];
 
   function paragraphs(root, selector = candidates) {
     return [...(root?.matches?.(selector) ? [root] : []), ...(root?.querySelectorAll?.(selector) || [])];
@@ -170,11 +173,11 @@ export function createTypography() {
     for (const {move, pieces} of restore) { move.node.data = move.before; for (const piece of pieces.slice(1)) piece.remove(); }
   }
 
-  function clear(root, {forget = true} = {}) {
+  function clear(root, {forget = true, keepSelection = true} = {}) {
     const list = paragraphs(root, 'p[' + mark + '],p[' + protectedInitial + ']');
     for (const paragraph of list) {
       if (!paragraph.hasAttribute(mark)) { paragraph.removeAttribute(protectedInitial); continue; }
-      const selected = selectionBefore(paragraph);
+      const selected = keepSelection ? selectionBefore(paragraph) : null;
       const state = states.get(paragraph);
       state?.work?.return();
       state?.fitWork?.return();
@@ -317,7 +320,8 @@ export function createTypography() {
           ['white-space','text-wrap','hyphens','hanging-punctuation','word-spacing'].some(name => element.style.getPropertyPriority(name))) return null;
       const s = inspection.styles.get(element), atom = element !== paragraph && (/^(CODE|KBD|SAMP)$/.test(element.tagName) || s.whiteSpace === 'nowrap');
       if (s.hyphenateCharacter && s.hyphenateCharacter !== 'auto') return null;
-      if (!supportsRichStyle({...s, hyphens:'manual', hangingPunctuation:'none', whiteSpace: atom ? 'nowrap' : s.whiteSpace}, language) ||
+      if (!supportsRichStyle({...s, hyphens:'manual', hangingPunctuation:'none', whiteSpace: atom ? 'nowrap' : s.whiteSpace,
+          lineBreak: s.lineBreak === 'after-white-space' ? 'auto' : s.lineBreak}, language) ||
           !atom && s.whiteSpace !== 'normal') return null;
       const extras = ['paddingLeft','paddingRight','borderLeftWidth','borderRightWidth','marginLeft','marginRight']
         .reduce((sum,name) => sum + Math.abs(parseFloat(s[name]) || 0),0);
@@ -367,6 +371,56 @@ export function createTypography() {
     const width = Math.floor((right-left)*64)/64;
     const indent = style.textIndent.endsWith('%') ? parseFloat(style.textIndent)*width/100 : parseFloat(style.textIndent)||0;
     return {width,indent,left:hanging?Math.max(0,left-clipLeft):0,right:hanging?Math.max(0,clipRight-right):0};
+  }
+
+  function excluded(shape, a, b) {
+    const {points, box} = shape;
+    if (!points.length) return b > 0 && a < box.height ? [0, box.width] : null;
+    let low = Infinity, high = -Infinity;
+    for (let index = 0; index < points.length; index++) {
+      const [x1, y1] = points[index], [x2, y2] = points[(index + 1) % points.length];
+      const top = Math.min(y1, y2), bottom = Math.max(y1, y2);
+      if (bottom <= a || top >= b) continue;
+      for (const y of [Math.max(a, top), Math.min(b, bottom)]) {
+        const x = y1 === y2 ? null : x1 + (x2 - x1) * (y - y1) / (y2 - y1);
+        if (x == null) { low = Math.min(low, x1, x2); high = Math.max(high, x1, x2); }
+        else { low = Math.min(low, x); high = Math.max(high, x); }
+      }
+    }
+    return high > low ? [low, high] : null;
+  }
+
+  function floatMeasures(paragraph, style, box, width) {
+    const view = paragraph.ownerDocument.defaultView;
+    const floats = [...paragraph.children].filter(element => element.matches(flowFloat) && view.getComputedStyle(element).cssFloat !== 'none');
+    if (!floats.length) return null;
+    const lineHeight = parseFloat(style.lineHeight);
+    if (!(lineHeight > 0)) return {refuse: true};
+    const top = box.top + (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.paddingTop) || 0);
+    const left = box.left + (parseFloat(style.borderLeftWidth) || 0) + (parseFloat(style.paddingLeft) || 0);
+    const right = box.right - (parseFloat(style.borderRightWidth) || 0) - (parseFloat(style.paddingRight) || 0);
+    const shapes = floats.map(element => {
+      const computed = view.getComputedStyle(element), bounds = element.getBoundingClientRect();
+      const points = [...computed.shapeOutside.matchAll(/(-?[\d.]+)px\s+(-?[\d.]+)px/g)].map(match => [+match[1], +match[2]]);
+      return {side: computed.cssFloat, box: bounds, points, top: bounds.top - (parseFloat(computed.marginTop) || 0),
+        bottom: bounds.bottom + (parseFloat(computed.marginBottom) || 0)};
+    });
+    const bottom = Math.max(...shapes.map(shape => shape.bottom)), widths = [];
+    for (let line = 0; top + line * lineHeight < bottom && line < 512; line++) {
+      const a = top + line * lineHeight, b = a + lineHeight;
+      let start = 0, end = 0;
+      for (const shape of shapes) {
+        if (b <= shape.top || a >= shape.bottom) continue;
+        const span = excluded(shape, a - shape.box.top, b - shape.box.top);
+        if (!span) continue;
+        if (shape.side === 'left') start = Math.max(start, shape.box.left + span[1] - left);
+        else end = Math.max(end, right - (shape.box.left + span[0]));
+      }
+      widths.push(start || end ? Math.floor((width - start - end - 1) * 64) / 64 : width);
+    }
+    while (widths.length && widths.at(-1) === width) widths.pop();
+    return {widths, lineHeight, key: shapes.map(shape => [shape.side, shape.box.left - left, shape.box.top - top, shape.box.width,
+      shape.box.height, shape.points.join(' ')].join(':')).join('|')};
   }
 
   const topology = plan => plan && plan.lines.map(line => [line.start,line.end,line.next,line.kind,line.glyph].join(':')).join('|');
@@ -454,7 +508,21 @@ export function createTypography() {
     paragraph.setAttribute(fitMark,'');return projection;
   }
 
-  function apply(root, {all=false}={}) {
+  function laidAsPlanned(paragraph, job) {
+    const style = job.view.getComputedStyle(paragraph), box = paragraph.getBoundingClientRect();
+    const inner = box.height - (parseFloat(style.paddingTop) || 0) - (parseFloat(style.paddingBottom) || 0) -
+      (parseFloat(style.borderTopWidth) || 0) - (parseFloat(style.borderBottomWidth) || 0);
+    return Math.abs(inner - job.plan.lines.length * job.beside.lineHeight) < 1;
+  }
+
+  function editKey(paragraph, generation) {
+    const page = paragraph.ownerDocument.documentElement;
+    return [generation, paragraph.innerHTML, ...[...paragraph.attributes].map(item => item.name + '=' + item.value),
+      ...[...page.attributes].map(item => item.name + '=' + item.value), paragraph.ownerDocument.body?.className,
+      paragraph.ownerDocument.defaultView.innerWidth].join('\u0000');
+  }
+
+  function apply(root, {all=false, editing=false}={}) {
     const started = performance.now();
     const generation = captureFontAuthority(root?.ownerDocument || globalThis.document);
     for (const paragraph of live) {
@@ -463,30 +531,44 @@ export function createTypography() {
     }
     const jobs=[];let pending=false,changed=0,released=0,preparedCount=0;
     for (const paragraph of paragraphs(root)) {
-      if (paragraph.closest('table,pre,code,h1,h2,h3,h4,h5,h6,.block-edit') ||
-          paragraph.isContentEditable && !paragraph.closest('.block-read')) {clear(paragraph);continue;}
+      if (paragraph.closest('table,pre,code,h1,h2,h3,h4,h5,h6')) {clear(paragraph);continue;}
+      if (paragraph.closest('.block-edit')) {
+        if (!editing) continue;
+        if (paragraph.getAttribute('data-md-align')!=='justify' || paragraph.getAttribute('data-md-hyphens')!=='auto') {
+          if (paragraph.hasAttribute(mark)) clear(paragraph);
+          protectInitial(paragraph);continue;
+        }
+      }
+      else if (paragraph.isContentEditable && !paragraph.closest('.block-read')) {clear(paragraph);continue;}
       if (!paragraph.isConnected || !all && paragraph.checkVisibility && !paragraph.checkVisibility({contentVisibilityAuto:true})) continue;
       const view=paragraph.ownerDocument.defaultView;
       if (!view || !paragraph.getClientRects().length) continue;
+      if (editing && states.get(paragraph)?.editKey===editKey(paragraph,generation)) continue;
       const style=view.getComputedStyle(paragraph),box=paragraph.getBoundingClientRect(),prior=states.get(paragraph);
       if (!all && (box.bottom < -100 || box.top > view.innerHeight+100)) continue;
       const hanging=paragraph.getAttribute('data-md-hanging')==='on',size=dimensions(paragraph,style,box,hanging);
       if (!(size.width>0)) continue;
-      const parents=prior?.parents || [paragraph,...paragraph.querySelectorAll('*')];
+      const beside=floatMeasures(paragraph,style,box,size.width);
+      if (beside?.refuse) {clear(paragraph);continue;}
+      if (beside?.widths.some(width=>!(width>0))) {clear(paragraph);continue;}
+      if (beside) size.widths=beside.widths;
+      const parents=prior?.parents || own(paragraph);
       const inspection=inspect(paragraph,parents,prior,style);
       const reusable=prior?.html===paragraph.innerHTML && prior.key===inspection.key && (!prior.geometry || scope(paragraph.ownerDocument).current(prior.geometry));
-      const sizeKey=[size.width,size.indent,size.left,size.right].join('|');
+      const sizeKey=[size.width,size.indent,size.left,size.right,beside?.key||''].join('|');
+      if (refused.get(paragraph)===sizeKey+'\u0000'+paragraph.textContent) {if (paragraph.hasAttribute(mark)) clear(paragraph);continue;}
       if (reusable && !prior.pending && prior.sizeKey===sizeKey) continue;
       const fitWork=reusable && prior.sizeKey===sizeKey?prior.fitWork:null;
       if (prior?.fitWork && prior.fitWork!==fitWork) {prior.fitWork.return();prior.fitWork=null;}
       if (!all && jobs.length===4) {if (!reusable) clear(paragraph);pending=true;continue;}
-      jobs.push({paragraph,view,style,inspection,size,sizeKey,hanging,selected:selectionBefore(paragraph),
+      jobs.push({paragraph,view,style,inspection,size,sizeKey,hanging,beside,selected:selectionBefore(paragraph),
         cap:paragraph.hasAttribute('data-md-lines'),justified:paragraph.getAttribute('data-md-align')==='justify' && paragraph.getAttribute('data-md-hyphens')==='auto',
         saved:reusable?prior.saved:null,geometry:reusable?prior.geometry:null,prepared:reusable?prior.prepared:null,
         work:reusable?prior.work:null,fitWork,
         prior,reusable,needsClear:paragraph.hasAttribute(mark)});
     }
-    for (const job of jobs) if (job.needsClear && !job.saved) clear(job.paragraph);
+    if (editing && jobs.some(job=>job.selected && !job.reusable)) root.ownerDocument.getSelection()?.removeAllRanges();
+    for (const job of jobs) if (job.needsClear && !job.saved) clear(job.paragraph,{keepSelection:!editing});
     function stateFor(job) {
       return {properties:new Map(),moves:[],saved:job.saved,geometry:job.geometry,prepared:job.prepared,plan:job.plan,
         work:job.work,fitWork:job.fitWork,parents:job.inspection.parents,key:job.inspection.key,generation:job.inspection.generation,sizeKey:job.sizeKey};
@@ -501,7 +583,11 @@ export function createTypography() {
       if (!all && jobIndex && performance.now() - started >= 8) {pending=true;break;}
       const job = jobs[jobIndex];
       if (!job.saved && job.justified) {
-        if (job.needsClear) job.inspection=inspect(job.paragraph,[job.paragraph,...job.paragraph.querySelectorAll('*')],null,job.view.getComputedStyle(job.paragraph));
+        if (job.needsClear) {
+          const elements=own(job.paragraph),parents=job.inspection.parents;
+          if (!editing || !job.prior?.saved || elements.length!==parents.length || elements.some((element,index)=>element!==parents[index]))
+            job.inspection=inspect(job.paragraph,elements,null,job.view.getComputedStyle(job.paragraph));
+        }
         job.saved=snapshot(job.paragraph,job.inspection);
         if (job.saved) {
           job.work=scope(job.paragraph.ownerDocument).prepareSteps(job.paragraph,job.saved.inline,{policy:'paragraph',language:job.saved.language,
@@ -529,7 +615,7 @@ export function createTypography() {
         if (job.fitWork) {suspend(job);continue;}
       }
       job.projection=job.reusable && job.plan && job.prior?.projection?.topology===topology(job.plan) ? job.prior.projection : null;
-      if (job.needsClear && job.saved && !job.projection) clear(job.paragraph,{forget:false});
+      if (job.needsClear && job.saved && !job.projection) clear(job.paragraph,{forget:false,keepSelection:!editing});
       const {paragraph,view,hanging,cap,justified}=job;
       if (!cap && !hanging && !justified) {restoreSelection(paragraph,job.selected);continue;}
       const state=stateFor(job);
@@ -543,10 +629,14 @@ export function createTypography() {
       }
       if (job.projection) {updateProjection(job.projection,job.plan);state.projection=job.projection;}
       else if (job.plan) state.projection=project(paragraph,job.saved,job.geometry,job.plan);
+      if (state.projection && job.beside && !laidAsPlanned(paragraph,job)) {
+        refused.set(paragraph,job.sizeKey+'\u0000'+paragraph.textContent);clear(paragraph);restoreSelection(paragraph,job.selected);continue;
+      }
       if (state.projection) released+=job.plan.lines.filter(line=>line.kind!=='end').length;
       else if (hanging) hangPunctuation(paragraph,state,job.style,hangingEdge(paragraph,job.style,paragraph.getBoundingClientRect()));
       state.html=paragraph.innerHTML;
       restoreSelection(paragraph,job.selected);changed++;
+      if (editing) state.editKey=editKey(paragraph,generation);
     }
     return {changed,released,pending,prepared:preparedCount};
   }

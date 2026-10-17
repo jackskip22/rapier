@@ -17,7 +17,6 @@ export function authorship(input) {
   const {ledger, text} = readLedger(input), references = _rapierHistoryEffects(ledger.records).references, removed = new Map();
   let runs = ledger.start.text ? [[0, ledger.start.text.length, 'system', 'unattributed', 0]] : [];
   for (const record of ledger.records) {
-    // An Undo or Redo puts back text the act it references removed: that text keeps the runs it had.
     const tx = record.transaction, gone = [], kept = (references?.get(tx.id) || []).flatMap(id => removed.get(id) || []);
     for (const row of record.splices) {
       const cut = row.pos + row.removed.length, delta = row.inserted.length - row.removed.length, before = [], after = [], inside = [];
@@ -49,7 +48,6 @@ export function readAuthorship(input, text) {
   if (cursor !== text.length) throw fault('authorship does not cover the text');
   return value;
 }
-// Authorship-only imports become an incomplete insertion ledger. There is no mutable blame database.
 export function ledgerFromAuthorship(input, text, documentAuthority, metadata) {
   const value = readAuthorship(input, text), records = [];
   let current = '', root = textRoot('');

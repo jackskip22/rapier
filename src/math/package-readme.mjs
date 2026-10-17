@@ -31,21 +31,20 @@ for host composition. All return synchronously. Type declarations accompany the 
 - [MathML, accessibility and source contracts](docs/semantics.md)
 - [Runnable examples](examples/README.md)
 - [Font source and regeneration](docs/font-source.md)
+- [Changes](CHANGELOG.md)
 
 ## Develop
 
 The classic script and native entry points live in \`dist/\`. Native entries import the editable
 modules in \`src/math/\` directly, sharing one parser without a duplicate generated renderer. Build
-tools live in \`src/tools/\`. Optional adapters have one source copy in \`dist/\`. Examples, documentation and tests each
+tools live in \`src/tools/\`. Optional adapters have one source copy in \`dist/\`. Examples and documentation each
 have their own directory. Only the current release is kept in this checkout.
 
-From a repository checkout, run \`node tests/check.mjs\` and \`node tests/verify.mjs\` to check the package and rebuild its exact bytes.
 Run \`node src/tools/build-math.mjs --package .\` to regenerate the classic and ESM files from source.
-Optional host checks run with \`node tests/adoption.mjs\` after installing the example dependencies.
 
 ## License
 
-The renderer and adapters are MIT-licensed. Embedded Latin Modern Math outlines and metrics are
+The renderer and adapters are MIT-licensed. Embedded Latin Modern outlines and metrics are
 licensed under the GUST Font License. [LICENSE](LICENSE) contains both complete grants.
 [Component provenance](docs/math-components.json) and [source hashes](docs/math-resources.json)
 travel with the package.

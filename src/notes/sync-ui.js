@@ -2,10 +2,11 @@ const _rapierNotesSyncUi = (() => {
 	let session = null, initializing = null, overlay = null, body = null, visible = false, view = 0;
 	let accounts = null, selectedAccount = null, cloudStorage = null, activation = false, newVault = false;
 	let automatic = false, timer = null, syncing = false;
-	let message = '', recovery = null, conflicts = null, joined = false, setup = null, route = null, acting = false, joinCode = '', replacing = false;
+	let message = '', recovery = null, conflicts = null, joined = false, setup = null, route = null, acting = false, joinCode = '', replacing = false, rekeying = false;
 	let intakeJoin = false, drawnCode = null;
 	let others = false, providerId = null, providerDraft = {};
 	let layout = null, plainKept = null, plainPlace = 'Rapier Notes';
+	let keyId = null, keySession = null, keyState = null, keyDraft = {};
 	const joinReturnKey = () => 'rapier:sync:join-return' + RapierStorage.scope;
 	const api = () => globalThis.RapierNotesSyncSession;
 	const platformId = () => globalThis.RapierPlatform?.environment.id;
@@ -28,6 +29,8 @@ const _rapierNotesSyncUi = (() => {
 	const PRO_REQUIRED = 'Rapier Pro is required to sync your notes.';
 	const proRefusal = error => error?.code === 'pro_required' || /\(PRO_REQUIRED\)$/.test(String(error?.message || ''));
 	let companion = null;
+	let plainCompanion = null, companionPlaces = null;
+	const plainThroughCompanion = () => plainCompanion ||= api().createPlainCompanionSession({folder: _rapierNotesStore.folder, call: (operation, args) => companionSeam().syncTransport(operation, args)});
 	const companionSeam = () => { try { const host = globalThis.RapierPlatform?.host; return typeof host?.syncTransport === 'function' ? host : null; } catch (_) { return null; } };
 	const companionGate = () => companion?.state === 'ready' && companionSeam() ? {ready: true, reason: ''}
 		: {ready: false, reason: (companion?.listing ? COMPANION_ABSENT_LISTED : COMPANION_ABSENT)[companion?.state] || (companion?.listing ? COMPANION_ABSENT_LISTED : COMPANION_ABSENT).absent};
@@ -39,6 +42,7 @@ const _rapierNotesSyncUi = (() => {
 		const read = !!answer && typeof answer === 'object' && (answer.state === 'ready' || Object.hasOwn(COMPANION_ABSENT, answer.state)) &&
 			typeof answer.listing === 'boolean' && typeof answer.ready === 'boolean' ? answer : null;
 		if (!vault) companion = read ? {state: read.state, listing: read.listing, approved: null} : {state: 'absent', listing: false, approved: null};
+		if (!vault && companion.state === 'ready') { try { await _rapierNotesReady(); companionPlaces = await plainThroughCompanion().places(); } catch (_) { companionPlaces = null; } }
 		else if (companion) companion = {...companion, approved: read?.state === 'ready' ? read.ready : null};
 	}
 	async function askCompanionVault() {
@@ -119,7 +123,7 @@ const _rapierNotesSyncUi = (() => {
 	}
 	const WAITS = {'sync now': 'Syncing notes', 'connect existing vault': 'Unlocking notes', 'use recovery code': 'Unlocking notes',
 		'use a recovery code instead': 'Unlocking notes', 'protect my notes': 'Protecting notes', 'check and connect': 'Connecting', 'sign out and revoke': 'Signing out',
-		'connect plain files': 'Connecting'};
+		'connect plain files': 'Connecting', 'save new passphrase': 'Protecting notes'};
 	let progress = null;
 	function choice(label, description, action, {enabled = !status().busy && !acting, cloudflare = false, key = null} = {}) {
 		const button = node('button', 'export-choice' + (cloudflare ? ' rapier-cloudflare' : '')); button.type = 'button'; button.disabled = !enabled;
@@ -146,7 +150,7 @@ const _rapierNotesSyncUi = (() => {
 			if (saved?.mode) route = saved.mode;
 			if (saved?.mode === 'provider') providerId = saved.provider;
 			plainKept = kept.plain ? {provider: kept.plain.provider, place: kept.plain.place} : null;
-			if (plainKept && !saved) { route = 'provider'; providerId = plainKept.provider; }
+			if (plainKept && !saved && plainKept.provider !== 'companion' && !(api().KEY_PLAIN_PROVIDERS || []).includes(plainKept.provider)) { route = 'provider'; providerId = plainKept.provider; }
 			const gate = availability(); if (!gate.ready) throw new Error(gate.reason);
 			const opened = api().createSyncSession({folder: _rapierNotesStore.folder, personal: _rapierPersonal, mode: mode(),
 				fetch: window.fetch.bind(window), pendingStorage: sessionStorage,
@@ -179,9 +183,10 @@ const _rapierNotesSyncUi = (() => {
 			void session?.cancelSetup?.().then(state => { if (state.revocationPending) showToast(state.notice, 'error'); })
 				.catch(error => showToast(String(error?.message || error), 'error'));
 		}
-		visible = false; recovery = null; conflicts = null; setup = null; joinCode = ''; replacing = false; message = ''; intakeJoin = false; drawnCode = null;
+		visible = false; recovery = null; conflicts = null; setup = null; joinCode = ''; replacing = false; rekeying = false; message = ''; intakeJoin = false; drawnCode = null;
 		if (mode() === 'provider' && !status().hasConnection && !status().authorized) { route = null; providerId = null; session = null; }
-		others = false; providerDraft = {}; layout = null;
+		others = false; providerDraft = {}; layout = null; keyDraft = {};
+		if (!keyState?.connection) keyId = null;
 		progress?.release(); clearBody(); if (overlay) closeDialog(overlay); wearBox();
 	}
 	function paint() {
@@ -200,6 +205,7 @@ const _rapierNotesSyncUi = (() => {
 			const loading = node('p', 'export-choice__description', 'Opening sync settings.');
 			loading.setAttribute('role', 'status'); body.append(loading); return;
 		}
+		if (keyId && mode() !== 'companion') { paintKeyPlain(); return; }
 		if (others && !providerId && mode() !== 'companion') { paintOtherList(); return; }
 		if (mode() === 'provider' && !recovery && providerSetupView(state)) return;
 		if (!gate.ready) {
@@ -249,6 +255,7 @@ const _rapierNotesSyncUi = (() => {
 			paintVaultChoices(state);
 			return;
 		}
+		if (rekeying && state.unlocked && state.hasConnection) { paintRekey(); paintVaultChoices(state); return; }
 		if (mode() === 'provider' && replacing) { paintProviderForm(providerId, {replace: true}); paintVaultChoices(state); return; }
 		if (mode() === 'r2-key' && replacing) {
 			paintKeyReplacement(state); paintVaultChoices(state);
@@ -258,6 +265,7 @@ const _rapierNotesSyncUi = (() => {
 			paintKeySetup(state); paintVaultChoices(state);
 			return;
 		}
+		if (mode() === 'companion' && !state.hasConnection && !state.rejoinRequired && !joined && paintCompanionPlain()) return;
 		if (mode() === 'companion' && (!state.hasConnection || state.rejoinRequired)) {
 			paintCompanionSetup(state); paintVaultChoices(state);
 			choice('rapier sync', 'opens rapier sync; it holds your storage and its status', openCompanion, {enabled: true});
@@ -301,6 +309,7 @@ const _rapierNotesSyncUi = (() => {
 				await connectAndSync(); conflicts = await session.conflicts();
 			}, {key: 'sync'});
 			choice('review conflicts', 'read both versions and choose one', async () => { conflicts = await session.conflicts(); });
+			choice('change passphrase', 'the same vault and notes; your other devices need the new device code', () => { rekeying = true; joined = false; replacing = false; }, {key: 'rekey'});
 			if (conflicts) {
 				paragraph(conflicts.length ? 'read both before you choose; the vault still holds the originals.' : 'nothing to choose here. conflicts edited by hand, or in a note’s details, stay in the note: open it in the editor.');
 				for (const row of conflicts) {
@@ -335,6 +344,30 @@ const _rapierNotesSyncUi = (() => {
 			paragraph('leaving this vault here does not remove its storage from rapier sync; do that in the app.');
 		}
 		else choice('sign out and revoke', 'stops sync and revokes this page’s access; your notes stay', async () => { recovery = null; conflicts = null; await session.signOut(); }, {enabled: true});
+	}
+	const serviceLabel = id => (api().PROVIDERS?.[id]?.label || api().KEY_PLAIN_LABELS?.[id] || id).toLowerCase();
+	function paintCompanionPlain() {
+		if (plainKept?.provider === 'companion') {
+			paragraph('plain files in the folder rapier sync chose. not private: any app or person with access to that folder can read them.');
+			choice('sync now', '', async () => { const run = await plainThroughCompanion().syncNow(); await _rapierNotesFolderChanged(); if (visible) message = plainWords(run); }, {key: 'sync'});
+			choice('rapier sync', 'opens rapier sync; it holds the folder and its sign-in or key', openCompanion, {enabled: true});
+			choice('stop syncing plain files', 'your notes and the files stay', async () => { await plainThroughCompanion().forget(); plainKept = null; await _rapierNotesFolderChanged(); }, {key: 'plain-forget'});
+			return true;
+		}
+		if (!companionPlaces?.offered) return false;
+		if (!layout) { paintLayoutChoice(); return true; }
+		if (layout !== 'plain') return false;
+		paragraph(api().PLAIN_CHOICES.find(row => row.id === 'plain').detail);
+		if (!companionPlaces.places.length) paragraph('choose a folder for plain files in rapier sync first.');
+		for (const place of companionPlaces.places) choice(serviceLabel(place.service), 'plain files in the folder rapier sync chose', async () => {
+			const run = await plainThroughCompanion().connect(place.id);
+			plainKept = {provider: 'companion', place: place.id}; layout = null;
+			await _rapierNotesFolderChanged();
+			if (visible) message = plainWords(run);
+		}, {key: 'plain-place:' + place.id});
+		choice('rapier sync', 'opens rapier sync: choose a folder for plain files there', openCompanion, {enabled: true});
+		choice('back', '', () => { layout = null; }, {enabled: !acting, key: 'back'});
+		return true;
 	}
 	function paintCompanionSetup(state) {
 		if (joined || state.rejoinRequired) {
@@ -372,7 +405,88 @@ const _rapierNotesSyncUi = (() => {
 	}
 	function paintOtherList() {
 		for (const id of api().OTHER_PROVIDERS) choice(labelOf(id), '', () => pickProvider(id), {enabled: !acting && !status().busy, key: 'provider:' + id});
+		for (const id of (api().KEY_PLAIN_PROVIDERS || []).filter(keyReachable)) choice(api().KEY_PLAIN_LABELS[id].toLowerCase(), 'plain files, not private', async () => { await readKeyPlain(); keyId = id; keyDraft = {}; }, {enabled: !acting && !status().busy, key: 'plain-key:' + id});
 		choice('back', '', () => { others = false; }, {enabled: !acting, key: 'back'});
+	}
+	const relayPossible = () => location.protocol === 'https:' && !environment().native && typeof api().createPlainRelay === 'function';
+	function keyReachable(id) {
+		if (id === 'r2' || relayPossible()) return true;
+		const policy = document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content || '';
+		const connect = /(?:^|;)\s*connect-src([^;]*)/.exec(policy)?.[1].trim().split(/\s+/) || [];
+		return !policy || connect.includes('https:');
+	}
+	let relay = null;
+	const plainFetch = (url, init) => {
+		if (/\.r2\.cloudflarestorage\.com$/.test(new URL(String(url)).hostname) || !relayPossible()) return window.fetch(url, init);
+		relay ||= api().createPlainRelay({document, window, origin: location.origin});
+		return relay(url, init);
+	};
+	async function readKeyPlain() {
+		await _rapierNotesReady(); await _rapierNotesStore.kind();
+		keySession ||= api().createPlainKeySession({folder: _rapierNotesStore.folder, fetch: plainFetch, origin: location.origin,
+			device: api().createRememberedDevice({storage: api().createDeviceStorage({scope: RapierStorage.scope + '/plain-keys'})})});
+		keyState = await keySession.status();
+		if (keyState.connection) keyId = keyState.connection.provider;
+		return keyState;
+	}
+	const KEY_FIELDS = {
+		webdav: [['endpoint', 'webdav address'], ['username', 'user name'], ['password', 'app password', true]],
+		s3: [['endpoint', 'endpoint'], ['bucket', 'bucket'], ['region', 'region'], ['accessKeyId', 'access key id'], ['secretAccessKey', 'secret access key', true]],
+		r2: [['accountId', 'cloudflare account id'], ['bucket', 'r2 bucket'], ['accessKeyId', 'access key id'], ['secretAccessKey', 'secret access key', true]],
+	};
+	function keyFields(id) {
+		const read = {};
+		for (const [name, label, secret] of KEY_FIELDS[id]) {
+			const el = input(label, {secret: !!secret, value: secret ? '' : keyDraft[name] || ''});
+			if (!secret) el.addEventListener('input', () => { keyDraft[name] = el.value; });
+			read[name] = el;
+		}
+		if (id === 'r2') { const el = jurisdiction(keyDraft.jurisdiction || 'default'); el.addEventListener('change', () => { keyDraft.jurisdiction = el.value; }); read.jurisdiction = el; }
+		return {values: () => Object.fromEntries(Object.entries(read).map(([name, el]) => [name, el.value])),
+			clear: () => { for (const el of Object.values(read)) if (el.type === 'password') el.value = ''; }};
+	}
+	function keyRemember() {
+		if (!keyState?.rememberAvailable) return;
+		const row = node('label', 'export-choice'), field = node('input');
+		field.type = 'checkbox'; field.checked = keyState.rememberDevice; field.disabled = acting;
+		field.addEventListener('change', () => { const checked = field.checked; void perform(async () => { await keySession.setRememberDevice(checked); keyState = await keySession.status(); }); });
+		row.append(field, node('span', 'export-choice__label', 'remember this device')); body.append(row);
+	}
+	function keyAccess(id) {
+		if (id === 'webdav') { paragraph('your webdav server must allow requests from ' + location.origin + ' and expose the etag header.'); return; }
+		paragraph('add this cors rule in the bucket’s settings, so rapier can reach the files.');
+		value('bucket cors rule', JSON.stringify(api().plainCorsRule(location.origin), null, 2));
+	}
+	function paintKeyPlain() {
+		const id = keyId, label = api().KEY_PLAIN_LABELS[id].toLowerCase(), kept = keyState?.connection;
+		if (kept && kept.provider === id) {
+			paragraph('plain files in ' + kept.place + ' on ' + label + '. not private: any app or person with access to that folder can read them.');
+			const fields = keyState.keyHeld ? null : keyFields(id);
+			if (fields) paragraph('type the key again: this page does not keep it.');
+			keyRemember();
+			choice('sync now', '', async () => {
+				const settings = fields?.values(); fields?.clear();
+				const run = await keySession.syncNow(settings ? {settings} : {});
+				keyState = await keySession.status(); await _rapierNotesFolderChanged();
+				if (visible) message = plainWords(run);
+			}, {key: 'sync'});
+			choice('stop syncing plain files', 'your notes and the files stay; this device forgets the key', async () => {
+				await keySession.forget(); keyState = await keySession.status(); keyId = null; plainKept = null; await _rapierNotesFolderChanged();
+			}, {key: 'plain-forget'});
+			return;
+		}
+		paragraph(api().PLAIN_CHOICES.find(row => row.id === 'plain').detail);
+		const fields = keyFields(id), place = input('folder name', {value: plainPlace});
+		place.addEventListener('input', () => { plainPlace = place.value; });
+		keyAccess(id);
+		keyRemember();
+		choice('connect plain files', 'checks the storage first; then your notes become files there', async () => {
+			const settings = fields.values(); fields.clear();
+			const run = await keySession.connect({provider: id, place: place.value, settings});
+			keyState = await keySession.status(); keyDraft = {}; await _rapierNotesFolderChanged();
+			if (visible) message = plainWords(run);
+		}, {key: 'plain-connect'});
+		choice('back', '', () => { keyId = null; others = true; }, {enabled: !acting, key: 'back'});
 	}
 	async function chooseProvider(id) {
 		if (providerId !== id || mode() !== 'provider') { session = null; accounts = null; selectedAccount = null; cloudStorage = null; }
@@ -428,14 +542,22 @@ const _rapierNotesSyncUi = (() => {
 		choice('connect plain files', '', async () => {
 			const run = await (await owner()).plainConnect({place: place.value});
 			plainKept = await session.plainConnection(); layout = null;
+			await _rapierNotesFolderChanged();
 			if (visible) message = plainWords(run);
 		}, {key: 'plain-connect'});
 		choice('back', '', () => { layout = null; }, {enabled: !acting, key: 'back'});
 	}
 	function paintPlainKept(id) {
 		paragraph('plain files in ' + plainKept.place.replace(/^\//, '') + ' on ' + labelOf(id) + '. not private: any app or person with access to that folder can read them.');
-		choice('sync now', '', async () => { const run = await session.plainSyncNow(); if (visible) message = plainWords(run); }, {key: 'sync'});
-		choice('stop syncing plain files', 'your notes and the files stay', async () => { await session.plainForget(); plainKept = null; }, {key: 'plain-forget'});
+		choice('sync now', '', async () => { const run = await session.plainSyncNow(); await _rapierNotesFolderChanged(); if (visible) message = plainWords(run); }, {key: 'sync'});
+		if (id === 'drive' && api().pickerRegistered(api().DRIVE_PICKER)) choice('choose files other apps made', 'in google drive; they sync from then on', async () => {
+			const picked = await api().openDrivePicker({facts: session.plainDrivePicker(), registration: api().DRIVE_PICKER, origin: location.origin,
+				open: (url, name, features) => window.open(url, name, features), listen: fn => { addEventListener('message', fn); return () => removeEventListener('message', fn); }});
+			if (!picked) return;
+			const run = await session.plainSyncNow(); await _rapierNotesFolderChanged();
+			if (visible) message = plainWords(run);
+		}, {key: 'plain-picker'});
+		choice('stop syncing plain files', 'your notes and the files stay', async () => { await session.plainForget(); plainKept = null; await _rapierNotesFolderChanged(); }, {key: 'plain-forget'});
 	}
 	function paintProviderForm(id, {replace}) {
 		const draft = providerDraft, read = {};
@@ -622,7 +744,7 @@ const _rapierNotesSyncUi = (() => {
 	async function leaveVaultChoice() {
 		await flush();
 		await (await owner()).leave();
-		recovery = null; conflicts = null; setup = null; joined = false; joinCode = ''; replacing = false;
+		recovery = null; conflicts = null; setup = null; joined = false; joinCode = ''; replacing = false; rekeying = false;
 		await _rapierNotesFolderChanged();
 	}
 	function paintVaultChoices(state) {
@@ -633,7 +755,20 @@ const _rapierNotesSyncUi = (() => {
 			if (!joined && !replacing) choice('join with a new device code', 'updates the key from another device without losing this folder’s notes', () => { joined = true; });
 		}
 		choice('leave this vault', 'forgets this folder’s connection, not its notes; the online vault and other devices stay', leaveVaultChoice);
-		choice('start a new vault', 'the way to change your passphrase: leaves this vault, keeps every note and seals them again under a new key', leaveVaultChoice);
+		choice('start a new vault', 'leaves this vault, keeps every note and seals them again under a new key', leaveVaultChoice);
+	}
+	function paintRekey() {
+		paragraph('choose a new passphrase of at least 16 characters. the old one still opens device codes you made before.');
+		const secret = input('new vault passphrase', {secret: true}), repeat = input('repeat passphrase', {secret: true});
+		choice('save new passphrase', 'then give your other devices the new device code', async () => {
+			let words = secret.value; const matches = words === repeat.value; secret.value = ''; repeat.value = '';
+			try {
+				if (!matches) throw new Error('the passphrases do not match.');
+				if ([...words].length < 16) throw new Error('use at least 16 characters.');
+				await session.rekeyVault({passphrase: words}); rekeying = false;
+			} finally { words = ''; }
+		}, {key: 'rekey-confirm'});
+		choice('back to vault', 'keeps the passphrase you have', () => { rekeying = false; });
 	}
 	function paintKeyReplacement(state) {
 		if (state.address) value('device code — for your other device', state.address);
@@ -724,6 +859,7 @@ const _rapierNotesSyncUi = (() => {
 		if (mode() === 'companion') companion = null;
 		if (initialize) void perform(async () => {
 			if (mode() === 'companion') { await askCompanion(); if (!visible || screen !== view || !companionGate().ready) return; }
+			if (mode() !== 'companion' && !environment().native) { await readKeyPlain(); if (keyState?.connection) return; }
 			const prior = session; await owner();
 			if (prior === session && !status().busy) await session.inspect();
 			await keptChoices();

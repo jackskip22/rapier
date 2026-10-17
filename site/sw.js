@@ -1,25 +1,4 @@
-/* Rapier service worker.
 
-   `rapier.html` works alone. The installable PWA additionally requires
-   this file, manifest.json, icon-192.png, and icon-512.png beside it.
-
-   All URLs are scope-relative so root and subdirectory deployments behave
-   identically. Do not casually change manifest `id`, `start_url`, scope, or
-   the deployed path: browsers may treat that as a different installed app.
-
-   Each build's shell lives in its own cache generation, named for the bytes it
-   holds. The release digest below deliberately changes this worker whenever any
-   shell member changes; qualification derives and verifies it from those bytes.
-   A natural open serves the installed verified generation. A start the page
-   reports failed moves this release to its verified predecessor; a start a
-   person reloads or closes is not a failure. Only a completed start retires
-   that predecessor. Open pages keep running. Install alone writes shell bytes;
-   startup receipts live beside them.
-*/
-
-/* CacheStorage is shared by every service-worker scope on an origin. Include
-   this deployment's scope so two Rapier installations in different
-   subdirectories cannot rotate or evict one another's offline shell. */
 const CACHE_SCOPE = self.registration.scope || new URL('./', self.location).href;
 const SHELL_CACHE_PREFIX = `rapier-shell:${CACHE_SCOPE}:`;
 const SHELL_URLS = [
@@ -28,20 +7,18 @@ const SHELL_URLS = [
   './icon-192.png',
   './icon-512.png',
 ];
-const SHELL_RELEASE_SHA256 = 'd4d538b800acc234c9012f37820c0f51275a68ec4c30714b0c9bc6c95cfc317e';
-const SHELL_PAGE_SHA256 = '94019ba8d906c821c911c8819a57feb20bf3ea88fc33169205d0f66a7f187042';
-const SHELL_BOOT_ID = 'ffe43dadcf0e570e6a64228fcdae54f5dd2cf3973bd336e35f171115c4f8d36f';
-const SHELL_DOOR_SHA256 = {"/privacy":"dfe26204c8be2fcafc56ce7818ed31ba6dbd1cb2dd4a36ff3f45c18dd81107a0","/commercial":"48a53be6f57af6b0f3f00b2b911655223005d81e855afeb2493eb1476a91de03","/notes":"1280882f593e0a1af79ef996ce09199c0cde72cd8a6a52eea0d89e5ddd9f349d","/draw":"bd89abee35356906a006f6ff283da613f24bc47179301abac09da90d51ab603f","/watercolor":"6a1c4379bfa75b5cdb59ca6e982e919c4f380b0f76ae9ea19691c48d16a6a338","/paint":"d9588d9facc60bf7089a463874d50842be3095c8a2698bc48c4ff4d3d644f55e","/markdown-editor":"766d1fdf133819b41cfabfdbeac56e2084a3e710b4c2947ddf25d249a807c8e0","/markdown-viewer":"65737ab2a1c7dff2bd941d580b7438997f56f6c4e21673458ada777e8454b2ad","/markdown-to-pdf":"473aa84ef8746fba6c0a8fe0a887824782edcb03c7f93328cd90aae6d7d19ea8","/markdown-to-word":"56f891d3c74f920f4022a8296cc20ca9f8c136bda77a808d0bd5afffa8f26245","/word-to-markdown":"4ea65cfeb9df21190c34652dd1363c58eae644594c99acbab5bc21d1faf2e638","/markdown-table-editor":"04e2dcd8d469bdc1ab5efaa0d1cd4e43c891ee38c2f0c5614203e77c172d4cfe","/mermaid-editor":"f79b843866f89d21c802677d005b6ced0e1faa103821926b76eed1a17f32953a"};
-/* The parts' pins (shell/parts.js). Install brings this release's copy of each part the person has used. */
-const SHELL_PARTS = [{"id":"document","file":"rapier-document-76aaa60487a70669.txt","bytes":899173,"sri":"kZFVqNSjGYvaLFs/atdmxBBLKBoOVhkeeKq9iyscZVtoHKDPAIe552TAI6GnfAB9"},{"id":"drawing","file":"rapier-drawing-aa51a284b8935205.txt","bytes":299965,"sri":"b9uNdPr55NhfvwwzqZg+TSxM5jFfTymf0DgGO69XQzP4Z5Tpqq/uhW0+U8kHrnaO"},{"id":"notes","file":"rapier-notes-9611bc771927a3d4.txt","bytes":367705,"sri":"FBTTsBl+8NitFHKRPvkunaMMDDeogC2QDbvpkgLEzPoUrilU/wmURZwRTHO3Sz59"}];
-/* Only this generation receives writes. Retirement names are captured during
-   install, so a delayed success cannot erase a newer worker's cache. */
+const SHELL_RELEASE_SHA256 = '4d3824606886c7a2a01c95535207e2d599b0e47151446bfce405319c8fe002ef';
+const SHELL_PAGE_SHA256 = 'aae00c06035e0a8e00e672f1709d2579fc97566f85dff33e8553a0b501f7f04c';
+const SHELL_BOOT_ID = '72a3304b32a5effb9d49d964e13b2f45bcf5269637937eebb09db8b9bd82b8f3';
+const SHELL_DOOR_SHA256 = {"/privacy":"e596d682aac45804ef70134b59ecf6077deee233eaa56248138a7734e0e4dcca","/commercial":"408bf27ab4bba4a946d75c3f5cac4591d4d63cb3ce0c9745ce1d2ecab4bc06ea","/notes":"1fee7bbc9659276e1fb87933f6cf2b987d0d838a89b3f10a4541019b9aec6b7b","/draw":"97cff80277b0bed1929340ad5950b749a16750130693cf7d0600234a0719267e","/watercolor":"5863699718c17b1dbfd73b6b25d25fdb1d5e7f478eb445d3778190a931b759c9","/paint":"733ba60fb83461bcaee67308c01b27f78a07151ad6fc82ea2d8ab8b668ad75c8","/markdown-editor":"e033ac25c5300874c85385cab45f292cd9103ad51310d7ca1986e1ff694e1c1a","/markdown-viewer":"e629cccdc79e92df3a69abb3d5303b8d2bfdd53d43da90c18cf5dbea6329af78","/markdown-to-pdf":"28244cdb8dec4e5f34575c470ff7afebf2241ec6b5d5f2f0c6151e9f72887124","/markdown-to-word":"14d11585fdf997a4752e93271ff6bd546541d46440c9b0dcb15fba30a4c2d3dc","/word-to-markdown":"0fb66046769dbe09f87c68fc3ec3155fdcf0137b4af4c35f33d8b6e34a4a4c97","/markdown-table-editor":"f8cca10734f936377fe9976a4f7bca5eea4b2db62a35ed174c2419d3d6216a63","/mermaid-editor":"5582ec589d5f70b302ddcb934d531d643f80225d18c289219d9642a56ab8b840"};
+const SHELL_PARTS = [{"id":"document","file":"rapier-document-31248ef73071812d.txt","bytes":899453,"sri":"oYqKq7Am6EVG2XciqaUnccyk9YsvsS/60KBx1mczeEd5UwXBF3WGNOs3js37Ynms"},{"id":"drawing","file":"rapier-drawing-1ae37c96550f986f.txt","bytes":303094,"sri":"vgneHgoQk57smRSuGK9dc8yvhrfVcTsM9AnmkigNkwySRLnhWd0q3IRsq7y5OE8Z"},{"id":"notes","file":"rapier-notes-cdea380d56699d28.txt","bytes":382741,"sri":"S7u07Gr+4GzJ4XTyUhY4Y2vnRBdtBte6ioZ+na3rErJQDVm9gtsnViJrA9/lb7eJ"}];
 const SHELL_GENERATION = SHELL_CACHE_PREFIX + SHELL_RELEASE_SHA256.slice(0, 32);
 const SHELL_PAGE_URL = new URL('./rapier.html', self.location).href;
 const SHELL_ROOT_URL = new URL('./', self.location).href;
 const STARTUP_STATE_URL = new URL('./.rapier-startup', self.location).href;
+const RETRY_FIRST_MS = 10 * 60 * 1000;
+const RETRY_MOST_MS = 24 * 60 * 60 * 1000;
 
-/* Share payloads are one-shot, scope-qualified, bounded, and short-lived. */
 const SHARE_CACHE = `rapier-share:${CACHE_SCOPE}:v1`;
 const MAX_SHARED_BYTES = 64 * 1024 * 1024;
 const MAX_SHARED_REQUEST_BYTES = MAX_SHARED_BYTES + 1024 * 1024;
@@ -50,7 +27,6 @@ const MAX_PENDING_SHARES = 4;
 const MAX_SHARE_AGE_MS = 24 * 60 * 60 * 1000;
 const MAX_SHARE_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
-// Scope-relative share-target endpoint.
 const SHARE_TARGET_PATH = new URL('./share-target', self.location).pathname;
 const SHARE_PAYLOAD_URL = new URL('./share-payload', self.location).href;
 
@@ -68,10 +44,6 @@ self.addEventListener('install', event => {
     if (releaseDigest !== SHELL_RELEASE_SHA256) {
       throw new Error('shell bytes do not match this service worker release');
     }
-    /* Own generation, own verified bytes. Opening a cache creates its name before
-       its puts finish, so existence alone never proves that a failed install left
-       every member behind. Each install fills the generation with the same verified
-       bytes before it can activate; retrying cannot bless an incomplete shell. */
     const predecessors = (await caches.keys()).filter(name =>
       name.startsWith(SHELL_CACHE_PREFIX) && name !== SHELL_GENERATION);
     await keepParts();
@@ -89,7 +61,6 @@ self.addEventListener('install', event => {
 
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
-    // The installed page needs no network request before it opens.
     if (self.registration.navigationPreload) {
       try { await self.registration.navigationPreload.disable(); } catch (_) {}
     }
@@ -108,7 +79,6 @@ self.addEventListener('fetch', event => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // Cache share-target POST data, then redirect to the editor.
   if (req.method === 'POST' &&
       url.origin === self.location.origin &&
       url.pathname === SHARE_TARGET_PATH) {
@@ -123,8 +93,6 @@ self.addEventListener('fetch', event => {
   if (isNavigation) {
     event.respondWith((async () => {
       const state = await inspectStartup(event).catch(() => null);
-      // Probation changes retirement, not delivery. A natural open takes this
-      // generation until a failed start persists the predecessor selection.
       const selected = state?.rollback ? state.previous : null;
       const copy = await cachedNavigationResponse(req, selected).catch(() => null);
       if (copy) return rememberNavigation(event, copy);
@@ -132,8 +100,6 @@ self.addEventListener('fetch', event => {
         const response = await fetch(req, {cache: 'no-cache'});
         if (!response.ok || !response.body ||
             !/^text\/html(?:;|$)/i.test((response.headers.get('Content-Type') || '').trim())) return response;
-        // An absent or damaged selected cache cannot make a truncated page usable.
-        // Finish its network replacement before opening it; install alone writes the cache.
         const body = await response.arrayBuffer();
         const headers = new Headers(response.headers);
         headers.delete('Content-Encoding');
@@ -151,7 +117,6 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Receipt records are internal. Only the four shell members are served here.
   if (!SHELL_URLS.some(relative => new URL(relative, self.location).href === req.url)) return;
   event.respondWith(
     shellCache()
@@ -165,16 +130,9 @@ self.addEventListener('fetch', event => {
 });
 
 function isShellDoor(value) {
-  /* Offline shell fallback belongs only to Rapier's two doors. Returning the editor for an
-     unknown navigation would turn a missing `/agents`, misspelled document, or private path
-     into a convincing 200 HTML response after the service worker takes control — an SPA
-     fallback the origin deliberately refuses. Query parameters do not change either door. */
   const requested = new URL(value);
   const root = new URL(SHELL_ROOT_URL);
   const page = new URL(SHELL_PAGE_URL);
-  /* And the addresses the page is entered by (repo/_redirects): /notes, /draw, /watercolor, /privacy and
-     /commercial. Offline, each loads Rapier, which opens the surface the address names; the slash the host
-     redirects online is served as it stands (shell/platform.js _rapierDoorPathMark). */
   const door = requested.pathname.startsWith(root.pathname) &&
     /^(?:notes|draw|watercolor|privacy|commercial|paint|markdown-editor|markdown-viewer|markdown-to-pdf|markdown-to-word|word-to-markdown|markdown-table-editor|mermaid-editor)\/?$/.test(requested.pathname.slice(root.pathname.length));
   return requested.origin === root.origin &&
@@ -192,23 +150,16 @@ async function cachedNavigationResponse(request, release = null) {
   const cache = release ? await caches.open(release.cache) : await shellCache();
   const copy = (await cache.match(request)) || await cache.match(SHELL_PAGE_URL);
   if (!copy?.ok || !/^text\/html(?:;|$)/i.test((copy.headers.get('Content-Type') || '').trim())) return null;
-  // Stored bytes can be damaged after install. Refuse them before opening the page.
   const digest = toHex(await crypto.subtle.digest('SHA-256', await copy.clone().arrayBuffer()));
   if (digest !== (release?.page || SHELL_PAGE_SHA256)) return null;
   const canonical = new URL(request.url);
   if (canonical.pathname !== new URL(SHELL_ROOT_URL).pathname && canonical.pathname.endsWith('/')) {
-    // The page derives its storage and worker scope from its address. Match
-    // the host redirect before opening a slash door, including when offline.
     canonical.pathname = canonical.pathname.slice(0, -1);
     return Response.redirect(canonical.href, 308);
   }
   return copy;
 }
 
-/* shell/parts.js keeps a verified copy of each part the person has used in the one cache database (shell/bundle-io.js).
-   The new page holds new pins, so its copy is fetched and verified here, before this release can open; the earlier copy
-   stays for pages still running it (a page keeps the newest other copy beside its own). A copy that fails its pin fails
-   the install, and the person keeps the release whose parts they have. */
 async function keepParts() {
   const db = await new Promise((resolve, reject) => {
     const request = indexedDB.open('rapier:cache', 1);
@@ -234,8 +185,6 @@ async function keepParts() {
   } finally { db.close(); }
 }
 
-/* The same four-member digest proves every cached predecessor, including a
-   cache with no completed-start receipt. A known failure is never promoted. */
 async function previousShell(names) {
   let unconfirmed = null;
   for (const name of [...names].reverse()) {
@@ -270,8 +219,6 @@ async function startupState(cache) {
 }
 
 async function retireShells(names) {
-  // A successor may still need the predecessor we both inherited. Its own
-  // completed start will retire this inventory, including incomplete installs.
   if (self.registration.installing || self.registration.waiting) return;
   const known = new Set([SHELL_GENERATION, ...names]);
   if ((await caches.keys()).some(name => name.startsWith(SHELL_CACHE_PREFIX) && !known.has(name))) return;
@@ -302,20 +249,25 @@ function failStartup(state, client, attempt) {
   if (state.failures.length < 2 && !state.failures.some(failure => failure.client === client)) {
     state.failures.push({client, attempt});
   }
-  if (state.previous) state.rollback = true;
+  if (!state.previous) return;
+  state.rollback = true;
+  state.failed = Math.min((Number(state.failed) || 0) + 1, 16);
+  state.retryAt = Date.now() + Math.min(RETRY_MOST_MS, RETRY_FIRST_MS * 2 ** (state.failed - 1));
 }
 
 async function inspectStartup(event) {
   const result = await updateStartup(async state => {
     let changed = false;
+    if (state.rollback && !state.ready && !(Date.now() < state.retryAt)) {
+      state.rollback = false;
+      state.failures = [];
+      state.clients = {};
+      changed = true;
+    }
     const entries = Object.entries(state.clients);
     if (!state.ready && entries.length) {
-      // get() can wait for a reserved navigation to execute. matchAll() lists
-      // execution-ready clients without blocking delivery of their pages.
       const ready = new Set((await self.clients.matchAll({type: 'window', includeUncontrolled: true})).map(client => client.id));
       for (const [id, client] of entries) {
-        // A reloaded or closed start is forgotten: a person waiting out a slow start is not a failed
-        // release. A recorded navigation that has not yet executed is kept.
         if (id === event.replacesClientId || client.attempt && !ready.has(id)) {
           delete state.clients[id];
           changed = true;
@@ -353,8 +305,6 @@ async function receiveStartup(event) {
     let client = state.clients[source.id];
     if (client && (!matchesPage(client.url, client.page) || client.attempt && client.attempt !== message.attempt)) return null;
     if (message.state === 'begin') {
-      // An uncontrolled first page has no FetchEvent. Its compiled release ID
-      // admits that one client; a recorded navigation mismatch always refuses.
       if (!client) client = state.clients[source.id] = {url: source.url, page: SHELL_PAGE_SHA256, result: ''};
       client.attempt = message.attempt;
       return {changed: true};
@@ -386,18 +336,10 @@ async function receiveStartup(event) {
 
 let shellCachePromise = null;
 
-/* Memoizes one caches.open call per worker instance. Not a correctness guard —
-   SHELL_GENERATION is a compiled-in constant, so every call resolves the same
-   cache; this only spares the lookup for a fetch handler that runs on every
-   request. */
 function shellCache() {
   return shellCachePromise || (shellCachePromise = caches.open(SHELL_GENERATION));
 }
 
-/* Two builds of one app version are indistinguishable by version string. Derive the
-   release from ordered relative URLs, lengths and content hashes: the same rows are
-   independently recomputed by qualification, and the pinned literal makes a changed
-   shell change sw.js so an installed browser actually checks and installs the update. */
 async function shellGeneration(members) {
   const rows = await Promise.all(members.map(async (member, index) =>
     `${SHELL_URLS[index]}\t${member.body.byteLength}\t${toHex(
@@ -467,9 +409,6 @@ function encodeSharedFilename(value, fallback) {
   return encodeURIComponent(result || fallback);
 }
 
-/* The shared text is the person's document; the title and link are labels on it. A title is one heading line, and a
-   link lands as an autolink only when CommonMark reads all of it as one, so neither can open raw HTML, a Will marker or
-   another block. Any other link lands as literal text. */
 const SHARED_AUTOLINK = /^[A-Za-z][A-Za-z0-9+.\-]{1,31}:[^\u0000-\u0020<>\u007f]*$/;
 function sharedHeadingText(value) {
   return String(value).replace(/\s+/g, ' ').trim().replace(/[\\`*_[\]<>&!|~$#]/g, '\\$&');
@@ -529,8 +468,6 @@ function shareErrorResponse(code) {
 }
 
 async function readBoundedRequestBody(request, maximumBytes) {
-  /* A missing stream fails as an explicit unreadable share. Falling back to
-     request.formData() here would reintroduce an unbounded allocation path. */
   if (!request.body || typeof request.body.getReader !== 'function') {
     throw new Error('share request body is unavailable');
   }
@@ -569,14 +506,6 @@ async function handleShareTarget(request) {
 
   try {
     cache = await caches.open(SHARE_CACHE);
-    /* No provenance is knowable here: the browser adds its Fetch Metadata headers
-       (Sec-Fetch-Site and its siblings) at the network layer, after a worker's fetch
-       event, so a worker never sees them on any request — a guard on them refuses
-       every share, the OS share sheet's included (proved in Chrome 152 four ways).
-       What bounds this door instead is what the worker
-       can see: the payload is capped, one-shot, scope-qualified and short-lived, and
-       the landing opens the incoming document through the same recovery question as
-       every other door — never over unsaved work, never silently. */
     const declaredLength = Number(request.headers.get('Content-Length'));
     const contentType = String(request.headers.get('Content-Type') || '');
     let response;
@@ -586,7 +515,6 @@ async function handleShareTarget(request) {
     } else if (!/^multipart\/form-data(?:;|$)/i.test(contentType.trim())) {
       response = shareErrorResponse('unreadable');
     } else {
-      // Content-Length is advisory; bound the stream before multipart parsing.
       const body = await readBoundedRequestBody(request, MAX_SHARED_REQUEST_BYTES);
       if (!body) {
         response = shareErrorResponse('too-large');
@@ -634,11 +562,6 @@ async function handleShareTarget(request) {
     await storeShare(cache, cacheKey, response);
   } catch (error) {
     console.warn('[rapier] share-target intake failed', error);
-    /* The recovery store can fail for the same reason the first one did — an evicted or
-       full cache, or a cache that never opened at all. Letting it throw here would abandon
-       the redirect entirely and hand the user a browser error page instead of Rapier, which
-       then has no token to report. The page already treats a missing payload as an
-       unreadable share. */
     try {
       if (cache) await storeShare(cache, cacheKey, shareErrorResponse('unreadable'));
     } catch (storeError) {

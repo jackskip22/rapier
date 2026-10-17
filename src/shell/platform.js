@@ -221,6 +221,7 @@ const RapierStorage = Object.freeze({
 	preferences: Object.freeze({
 		...globalThis.RapierPreferenceDefinitions.PREFERENCE_DEFINITIONS,
 		notesPersistAsked: Object.freeze({ key: 'rapier:preference:notes-persist-asked', fallback: false }),
+		jxlNoticeShown: Object.freeze({ key: 'rapier:preference:jxl-notice-shown', fallback: '' }),
 	}),
 	webFileHandlesDb: 'rapier:file-handles' + RAPIER_STORAGE_SCOPE,
 	webGenerationPrefix: 'web:',
@@ -392,8 +393,8 @@ return Object.freeze({
 });
 })();
 
-function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
-	return isTopLevel === true && hasCarriedDocument !== true;
+function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = false) {
+	return isTopLevel === true && hasCarriedDocument !== true && appsHost !== true;
 }
 
 (function () {
@@ -401,10 +402,11 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 
 	if (globalThis.RapierBenchRoute !== true && globalThis.RapierBenchSession?.active !== true &&
 			!window.RapierHost &&
-			_rapierPwaFrameAdmission(window.self === window.top, !!document.getElementById('rapier-document')) &&
+			_rapierPwaFrameAdmission(window.self === window.top, !!document.getElementById('rapier-document'), globalThis.RAPIER_APPS_HOST === true) &&
 			(location.protocol === 'http:' || location.protocol === 'https:')) {
+		var place = /^\/(notes|draw|paint|watercolor)\/?$/.exec(location.pathname);
 		[
-			{ rel: 'manifest', href: 'manifest.json' },
+			{ rel: 'manifest', href: place ? 'manifest-' + place[1] + '.json' : 'manifest.json' },
 		].forEach(function (attrs) {
 			var link = document.createElement('link');
 			Object.keys(attrs).forEach(function (key) { link.setAttribute(key, attrs[key]); });
@@ -1198,9 +1200,15 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 		});
 	}
 
-	function _pickerAcceptFor(filename) {
+	function _pickerAcceptFor(filename, offerRapierFile) {
 		var name = String(filename || 'document');
-		var ext = name.lastIndexOf('.') >= 0 ? name.slice(name.lastIndexOf('.')) : '.md';
+		var page = /.\.rapier\.html$/i.test(name);
+		if (offerRapierFile) {
+			var types = [{ description: 'Markdown', accept: { 'text/markdown': ['.md'] } },
+				{ description: 'Rapier file (.rapier.html)', accept: { 'text/html': ['.rapier.html'] } }];
+			return page ? types.reverse() : types;
+		}
+		var ext = page ? '.rapier.html' : name.lastIndexOf('.') >= 0 ? name.slice(name.lastIndexOf('.')) : '.md';
 		 
 		if (!/^\.[A-Za-z0-9+.]+$/.test(ext) || ext.length > 16 || ext.endsWith('.')) return null;
 		var accept = {};
@@ -1213,7 +1221,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 			'.csv':  'text/csv', '.yaml': 'application/yaml', '.yml': 'application/yaml',
 		})[ext.toLowerCase()] || 'application/octet-stream';
 		accept[mime] = [ext];
-		return [{ description: 'Rapier document', accept: accept }];
+		return [{ description: page ? 'Rapier file (.rapier.html)' : 'Rapier document', accept: accept }];
 	}
 
 	async function _webDownload(blob, filename, options) {
@@ -1334,11 +1342,11 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 		return true;
 	}
 
-	function _webPickSaveDestination(filename) {
+	function _webPickSaveDestination(filename, offerRapierFile) {
 		var pickerPromise;
 		try {
 			var pickerOptions = { suggestedName: filename || 'document' };
-			var pickerTypes = _pickerAcceptFor(filename);
+			var pickerTypes = _pickerAcceptFor(filename, offerRapierFile);
 			if (pickerTypes) pickerOptions.types = pickerTypes;
 			pickerPromise = window.showSaveFilePicker(pickerOptions);
 		} catch (error) {
@@ -1366,11 +1374,14 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 		if (options && options.requireExistingDestination === true) {
 			return Promise.reject(_requiresDestinationError());
 		}
-		return (selected ? Promise.resolve(selected) : _webPickSaveDestination(filename)).then(async function (destination) {
+		var chooses = typeof blob === 'function';
+		return (selected ? Promise.resolve(selected) : _webPickSaveDestination(filename, chooses)).then(async function (destination) {
 			if (!destination) return _saveResult('cancelled');
 			var handle = destination.handle;
 			var writeOptions = Object.assign({}, options || {}, { fileGeneration: destination.generation });
-			var result = await _writeToHandle(handle, blob, writeOptions);
+			var data = chooses ? await blob(String(handle && handle.name || filename || '')) : blob;
+			if (!data) return _saveResult('cancelled');
+			var result = await _writeToHandle(handle, data, writeOptions);
 			var providedName = String(handle && handle.name || '');
 			result.destinationName = _rapierDocumentNameIsAdmissible(providedName) ? providedName : '';
 			result.destinationSelected = true;
@@ -1413,7 +1424,18 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 		if (_hasFsaSave) {
 			return _webPickerSave(blob, filename, options, _documentHandleKey(options));
 		}
-		return _webDownload(blob, filename, options);
+		return _webDownload(blob, _webNextDownloadName(filename, options), options).then(function (result) {
+			return Object.assign(result, { downloadName: _webDownloadNames.last });
+		});
+	}
+
+	var _webDownloadNames = { counts: Object.create(null), last: '' };
+	function _webNextDownloadName(filename, options) {
+		var name = String(filename || 'document');
+		var key = name.toLowerCase(), count = (_webDownloadNames.counts[key] || (options && options.nameTaken ? 1 : 0)) + 1;
+		_webDownloadNames.counts[key] = count;
+		var type = /.\.rapier\.html$/i.test(name) ? name.slice(-12) : /.\.[A-Za-z0-9+]{1,16}$/.test(name) ? name.slice(name.lastIndexOf('.')) : '';
+		return _webDownloadNames.last = count > 1 ? name.slice(0, name.length - type.length) + '-' + count + type : name;
 	}
 
 	var NATIVE_TRANSFER_CHUNK_BYTES = 128 * 1024;
@@ -1750,6 +1772,11 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 		purchasePending: false,
 		message: '',
 	});
+	function _nativeAdultGate() {
+		var gate = globalThis.RapierAdultGate;
+		if (_nativeHostRuntime.state.platformId !== 'android' || !gate || typeof gate.check !== 'function') return Promise.resolve(true);
+		return Promise.resolve(gate.check()).then(function (passed) { return passed === true; }, function () { return false; });
+	}
 	function _nativeProAuthority() {
 		var id = String(_nativeHostRuntime.state.platformId || _nativePlatformId).toLowerCase();
 		return !!(hasNative && (id === 'android' || id === 'native'));
@@ -2347,7 +2374,6 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 			purchasePro: function () { return Promise.resolve(_defaultProState); },
 			restorePro: function () { return Promise.resolve(_defaultProState); },
 			refreshPro: function () { return Promise.resolve(_defaultProState); },
-			prepareFileChooser: function () {},
 			takeBootDocument: async function () {
 				var value = await _srBoot();
 				_srBootDecision = Promise.resolve(null);
@@ -2457,7 +2483,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 		try { _rapierBootstrapRuntime.pendingIntake = null; } catch (_) {}
 		_nativeIntakeRuntime.expecting = true;
 		try {
-			var result = await _nativeHostCall(operation, Object.assign({ purpose: purpose }, args || {}), 120000);
+			var result = await _nativeHostCall(operation, Object.assign({ purpose: purpose }, args || {}), operation === 'file.open' ? 3600000 : 120000);
 			if (!result || result.cancelled === true || result.started === false) return null;
 			return await _waitForNativeIntake();
 		} finally {
@@ -2545,6 +2571,8 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 				if (choice !== true) return { status: 'cancelled', confirmed: false, verified: false };
 				if (options && options.beforeWrite) await options.beforeWrite;
 				if (options && options.check) options.check();
+				if (typeof blob === 'function') blob = await blob(String(filename || 'document.md'));
+				if (!blob) return { status: 'cancelled', confirmed: false, verified: false };
 				return _rapierKeptBind(authority, await keep.keep(await _rapierKeptText(blob), String(filename || 'document.md')));
 			},
 			saveInPlace: async function (blob, filename, options) {
@@ -2633,9 +2661,9 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 		});
 		var files = Object.freeze({
 			get canSaveInPlace() { return raw.canSaveInPlace === true; },
+			get savesChosenType() { return raw.savesChosenType === true; },
 			get showsRecentFilesUi() { return raw.showsRecentFilesUi === true; },
 			get showsUploadUi() { return raw.showsUploadUi === true; },
-			get prepareChooser() { return method('prepareFileChooser'); },
 			get open() { return kept('open', 'openDocument'); },
 			get upload() { return method('uploadDocument'); },
 			get chooseCompare() { return method('chooseCompareDocument'); },
@@ -2744,6 +2772,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 			allowsBrowserPrintFallback: true,
 			get defersBrowserPrintCleanup() { return /Android/i.test(navigator.userAgent || ''); },
 			get canSaveInPlace() { return _hasFsaSave; },
+			get savesChosenType() { return _hasFsaSave; },
 			showsRecentFilesUi: false,
 			showsUploadUi: false,
 			canShare: false,
@@ -2868,6 +2897,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 			} : null; },
 			get shareWaterVideo() { return _nativeHostRuntime.state.platformId === 'android' && _nativeCapability('waterPro') ? async function (blob, name, options) {
 				if (!(blob instanceof Blob) || blob.type !== 'video/mp4' || blob.size === 0 || blob.size > 64 * 1024 * 1024) throw new Error('The video is too large to share.');
+				if (!await _nativeAdultGate()) throw Object.assign(new Error('Sharing was canceled.'), {name: 'AbortError'});
 				var authorization = await _nativeHostCall('water.pro.authorize', {feature:'video'});
 				if (authorization?.authorized !== true) throw new Error('Pro watercolor is unavailable.');
 				var fingerprint = await _blobFingerprint(blob);
@@ -2877,7 +2907,8 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 				return true;
 			} : null; },
 			purchasePro: function () {
-				return _nativeProAuthority() ? _callPro('pro.purchase') : Promise.resolve(_defaultProState);
+				if (!_nativeProAuthority()) return Promise.resolve(_defaultProState);
+				return _nativeAdultGate().then(function (passed) { return passed ? _callPro('pro.purchase') : _currentProState(); });
 			},
 			restorePro: function () {
 				return _nativeProAuthority() ? _callPro('pro.restore') : Promise.resolve(_defaultProState);
@@ -2889,11 +2920,6 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 				return _nativeProAuthority()
 					? _callPro('pro.review', { code: String(code == null ? '' : code) })
 					: Promise.resolve(_defaultProState);
-			},
-			get prepareFileChooser() {
-				return _nativeCapability('chooserPurpose') ? function (purpose) {
-					return _nativeHostCall('file.prepareChooser', { purpose: String(purpose || 'open') });
-				} : null;
 			},
 			get openDocument() {
 				return _nativeCapability('documentPicker') ? function () { return _nativeRequestIntake('file.open', {}, 'open'); } : null;
@@ -2986,7 +3012,9 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 			get clipboardWrite() { return _nativeCapability('clipboardWrite') ? _nativeClipboardWrite : null; },
 			get externalOpen() {
 				return _nativeCapability('externalOpen') ? function (url) {
-					return _nativeHostCall('external.open', { url: String(url || '') }).then(function (result) {
+					return _nativeAdultGate().then(function (passed) {
+						return passed ? _nativeHostCall('external.open', { url: String(url || '') }) : { opened: false, canceled: true };
+					}).then(function (result) {
 						return !result || result.opened !== false;
 					});
 				} : null;

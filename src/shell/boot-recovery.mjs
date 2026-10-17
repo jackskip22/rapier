@@ -318,6 +318,11 @@ export async function collect({stamp = Date.now(), appVersion = globalThis.docum
 	let native = false;
 	try {
 		native = typeof window !== 'undefined' && !!window.RapierHost;
+		const platform = globalThis.RapierPlatform;
+		if (native && typeof platform?.files?.exportArtifact !== 'function' && typeof platform?.environment?.ready === 'function') {
+			publish();
+			await Promise.race([Promise.resolve().then(() => platform.environment.ready()).catch(() => {}), new Promise(done => setTimeout(done, 16000))]);
+		}
 		if (globalThis.RapierPlatform?.recovery?.ownsStore === true || native && typeof globalThis.RapierPlatform?.files?.exportArtifact !== 'function') {
 			result.kept = 'Your saved work stays in this app. Restart Rapier to try again.'; result.pending = false; publish(); return result;
 		}

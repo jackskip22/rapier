@@ -513,7 +513,7 @@ function _rapierFontSheetOpen(options = null) {
 		if (records.length) list.append(el('h3', 'rapier-font-section', 'Your fonts'));
 		for (const font of records) row(font.id, font.family || font.name, font, list);
 	}
-	add.addEventListener('click', () => { if (!busy) { input.value = ''; void _rapierPrepareFileChooser('font').then(() => input.click()); } });
+	add.addEventListener('click', () => { if (!busy) { input.value = ''; input.click(); } });
 	input.addEventListener('change', async () => {
 		const files = [...(input.files || [])]; input.value = '';
 		if (!files.length || busy) return;

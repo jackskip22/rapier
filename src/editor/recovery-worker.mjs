@@ -35,6 +35,18 @@ function packet(value) {
   };
   return {value: copy(value, null), strings};
 }
+export function recoveryRow(...values) {
+  if (values.some(value => typeof value !== 'number' && typeof value !== 'string')) throw new TypeError('Recovery needs plain data');
+  const row = Object.freeze(values);
+  settled.add(row);
+  return row;
+}
+export function recoveryRows(rows) {
+  const list = Object.freeze(Array.from(rows));
+  if (!list.every(row => settled.has(row))) throw new TypeError('Recovery needs plain data');
+  settled.add(list);
+  return list;
+}
 function place(value, path, text) {
   if (!path.length) return text;
   let parent = value;

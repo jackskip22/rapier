@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import {exactBytes, BYTE_CHUNK_BYTES, sha256State, blobByteChunks, digestByteChunks, checkByteAbort, byteCopyError} from './integrity.mjs';
+import {exactBytes, BYTE_CHUNK_BYTES, sha256State, sha256Yielding, blobByteChunks, digestByteChunks, checkByteAbort, byteCopyError} from './integrity.mjs';
 import {isRecordingPartial, recordingStem, recordingStorageError} from './recording-files.mjs';
 import {FOLDERS, parts} from './opfs-paths.mjs';
 import {notesHostWords} from './host-words.mjs';
+import {isNoteFile} from './model.mjs';
+import {DELETE_FRAME_BYTES, DELETE_HEADER_BYTES, deleteFrameName, isDeletePrivateName, isDeleteOwnedName} from './delete-intent.mjs';
 
 const fail = (code, message) => Object.assign(new Error(message), {code});
 
@@ -16,7 +18,7 @@ const LIBRARIES = new Map();
 
 function libraryFor(key) {
 	let entry = LIBRARIES.get(key);
-	if (!entry) { entry = {memory: new Map(), ready: null, db: null, durable: null, said: false, fault: null, intakes: new Set(), probeQuota: false}; LIBRARIES.set(key, entry); }
+	if (!entry) { entry = {memory: new Map(), opening: null, ready: null, db: null, durable: null, said: false, fault: null, intakes: new Set(), probeQuota: false, pressureOpened: false, unavailable: null}; LIBRARIES.set(key, entry); }
 	return entry;
 }
 
@@ -61,6 +63,29 @@ function readAll(db, table, prefix) {
 const readKeys = (db, table) => run(db, table, 'readonly', os => os.getAllKeys()).then(keys => keys || []);
 
 const recordBytes = value => value instanceof Uint8Array ? value : null;
+const deleteKey = name => isDeletePrivateName(name) ? '\u0000rapier-delete:' + name : name;
+const deleteBytes = (value, size) => {
+	if (!(value instanceof Uint8Array) || size !== undefined && value.length !== size) throw new TypeError('Deletion custody needs exact bytes.');
+	return value.slice();
+};
+const deleteDigest = value => { if (typeof value !== 'string' || !/^[0-9a-f]{64}$/.test(value)) throw new TypeError('Deletion custody needs an exact digest.'); return value; };
+const deleteNote = name => {
+	parts(name); if (!isNoteFile(name) || /[\u0000-\u001f\u007f]/.test(name)) throw fail('name', 'This is not a note filename.');
+};
+function deleteRecordDigest(value) {
+	if (value === undefined) return null;
+	const record = chunkRecord(value); if (record) return record.digest;
+	const bytes = recordBytes(value); if (!bytes) throw fail('corrupt', 'The deletion target is not a saved file. Its value was kept.');
+	const hash = sha256State(); hash.update(bytes); return hash.finish();
+}
+function sameDeleteRecord(a, b) {
+	if (Object.is(a, b)) return true;
+	if (a instanceof Uint8Array || b instanceof Uint8Array) return a instanceof Uint8Array && b instanceof Uint8Array && same(a, b);
+	if (!a || !b || typeof a !== 'object' || typeof b !== 'object' || Object.getPrototypeOf(a) !== Object.getPrototypeOf(b)) return false;
+	if (Object.getPrototypeOf(a) !== Object.prototype && !Array.isArray(a)) return false;
+	const keys = Object.keys(a);
+	return keys.length === Object.keys(b).length && keys.every(key => Object.hasOwn(b, key) && sameDeleteRecord(a[key], b[key]));
+}
 
 const recordingKey = (name, n) => '\u0000rapier-recording:' + name + ':' + n;
 const recordingHeader = value => {
@@ -172,11 +197,11 @@ export function createIndexedDbByteStore({database = 'rapier-notes-preview', tab
 	};
 	const incapable = error => error?.name === 'SecurityError' || error?.code === 'no-idb';
 
-	const ready = () => entry.ready ||= (async () => {
+	const open = () => entry.opening ||= (async () => {
 		const idb = factory === undefined ? (typeof indexedDB === 'undefined' ? null : indexedDB) : factory;
 		if (!idb) {
-			entry.db = null; entry.durable = false;
-			say('this page has no ' + notesHostWords().kind + ' storage for notes, so they live in this page until it closes', fail('no-idb', 'no indexedDB on this page'));
+			entry.db = null; entry.durable = false; entry.unavailable = fail('no-idb', 'no indexedDB on this page');
+			say('this page has no ' + notesHostWords().kind + ' storage for notes, so they live in this page until it closes', entry.unavailable);
 			return entry;
 		}
 		let db = null;
@@ -187,16 +212,22 @@ export function createIndexedDbByteStore({database = 'rapier-notes-preview', tab
 			try { db?.close?.(); } catch (_) {}
 			entry.db = null;
 			if (!incapable(error)) return unadmit(notesHostWords().device + '\'s own storage for notes could not be opened this time, so nothing new can be written until it can', error);
-			entry.durable = false;
+			entry.durable = false; entry.unavailable = error;
 			say('the notes could not be kept in ' + notesHostWords().device + '\'s own storage, so they live in this page until it closes', error);
 			return entry;
 		}
+		entry.db = db; return entry;
+	})();
+	const ready = () => entry.ready ||= (async () => {
+		await open();
+		if (!entry.db || entry.fault) return entry;
+		const db = entry.db;
 		try {
 			await probeDatabase(db, table);
 		} catch (error) {
 			let held = null;
 			try { held = await hasKeptWork(db, table); } catch (why) { entry.db = db; return unadmit(notesHostWords().device + '\'s own storage for notes refused a write and could not be read either, so nothing new can be written until it can', why); }
-			if (held) { entry.db = db; entry.probeQuota = error?.name === 'QuotaExceededError'; return unadmit(notesHostWords().device + '\'s own storage for notes refused a write while it still holds your notes, so nothing new can be written until it can', error); }
+			if (held || entry.pressureOpened) { entry.db = db; entry.probeQuota = error?.name === 'QuotaExceededError'; return unadmit(notesHostWords().device + '\'s own storage for notes refused a write while it still holds your notes, so nothing new can be written until it can', error); }
 			try { db.close(); } catch (_) {}
 			entry.db = null; entry.durable = false;
 			say('the notes could not be kept in ' + notesHostWords().device + '\'s own storage, so they live in this page until it closes', error);
@@ -206,14 +237,14 @@ export function createIndexedDbByteStore({database = 'rapier-notes-preview', tab
 		return entry;
 	})();
 	const readable = async () => {
-		await ready();
+		await open();
 		if (!entry.db && entry.fault) throw Object.assign(new Error(entry.fault.message), {code: 'storage', cause: entry.fault.cause});
 	};
 
 	const getRecord = async name => {
 		parts(name); await beforeStep('read', name); await readable();
 		if (!entry.db) return entry.memory.get(name);
-		return isRecordingPartial(name) ? readRecording(entry.db, table, name) : run(entry.db, table, 'readonly', os => os.get(name));
+		return isRecordingPartial(name) ? readRecording(entry.db, table, name) : run(entry.db, table, 'readonly', os => os.get(deleteKey(name)));
 	};
 	async function* storedChunks(record, {signal, chunkBytes = BYTE_CHUNK_BYTES} = {}) {
 		if (!Number.isSafeInteger(chunkBytes) || chunkBytes < 1 || chunkBytes > BYTE_CHUNK_BYTES) throw fail('size', 'A file read needs a chunk size between 1 byte and 1 MiB.');
@@ -225,7 +256,7 @@ export function createIndexedDbByteStore({database = 'rapier-notes-preview', tab
 			for (let at = 0; at < bytes.length; at += chunkBytes) { checkByteAbort(signal); yield bytes.subarray(at, Math.min(bytes.length, at + chunkBytes)); }
 		}
 	}
-	async function* readChunks(name, {signal, chunkBytes = BYTE_CHUNK_BYTES, onOpen} = {}) {
+	async function* readChunks(name, {signal, chunkBytes = BYTE_CHUNK_BYTES, onOpen, digest = false} = {}) {
 		const value = await getRecord(name); checkByteAbort(signal);
 		const record = chunkRecord(value);
 		if (record) {
@@ -234,7 +265,7 @@ export function createIndexedDbByteStore({database = 'rapier-notes-preview', tab
 			if (hash.finish() !== record.digest) throw fail('verify', 'The saved file no longer matches its verified bytes. Restore it from a backup.');
 		} else {
 			const bytes = entry.db ? recordBytes(value) : value == null ? null : exactBytes(value);
-			onOpen?.(bytes == null ? null : {size: bytes.length, modified: null});
+			onOpen?.(bytes == null ? null : {size: bytes.length, modified: null, ...(digest ? {sha256: await sha256Yielding(bytes, {signal})} : {})});
 			checkByteAbort(signal);
 			if (bytes != null) {
 				if (!Number.isSafeInteger(chunkBytes) || chunkBytes < 1 || chunkBytes > BYTE_CHUNK_BYTES) throw new RangeError('File chunks must be between 1 byte and 1 MiB.');
@@ -258,12 +289,12 @@ export function createIndexedDbByteStore({database = 'rapier-notes-preview', tab
 		const names = entry.db ? await readKeys(entry.db, table) : [...entry.memory.keys()];
 		return names.filter(n => typeof n === 'string' && within(n, prefix)).map(n => prefix ? n.slice(prefix.length + 1) : n);
 	};
-	const stat = async name => {
+	const stat = async (name, {digest = false} = {}) => {
 		parts(name); await readable();
-		if (!entry.db) { const value = entry.memory.get(name); return value == null ? null : {size: value.length, modified: null}; }
-		const value = await run(entry.db, table, 'readonly', os => os.get(name)), header = isRecordingPartial(name) ? recordingHeader(value) : null;
+		if (!entry.db) { const value = entry.memory.get(name); return value == null ? null : {size: value.length, modified: null, ...(digest ? {sha256: await sha256Yielding(value)} : {})}; }
+		const value = digest ? await getRecord(name) : await run(entry.db, table, 'readonly', os => os.get(name)), header = !digest && isRecordingPartial(name) ? recordingHeader(value) : null;
 		const record = header ? null : chunkRecord(value), bytes = recordBytes(value);
-		return header ? {size: header.size, modified: null} : record ? {size: record.size, modified: null, sha256: record.digest} : bytes == null ? null : {size: bytes.length, modified: null};
+		return header ? {size: header.size, modified: null} : record ? {size: record.size, modified: null, sha256: record.digest} : bytes == null ? null : {size: bytes.length, modified: null, ...(digest ? {sha256: await sha256Yielding(bytes)} : {})};
 	};
 	const statMany = async names => {
 		if (!Array.isArray(names)) throw new TypeError('A size read needs explicit file names.');
@@ -462,6 +493,124 @@ export function createIndexedDbByteStore({database = 'rapier-notes-preview', tab
 	};
 	const prepare = async () => { await ready(); admitted(); return true; };
 
+	const pressureDb = async () => {
+		await open();
+		if (entry.fault && !entry.probeQuota) throw entry.fault.cause || entry.fault;
+		if (!entry.db) throw entry.unavailable || fail('storage', 'Persistent deletion custody is unavailable.');
+		entry.pressureOpened = true; return entry.db;
+	};
+	const pressureRead = async name => {
+		if (!isDeletePrivateName(name)) throw fail('name', 'This is not a deletion custody file.');
+		await pressureDb();
+		const value = await run(entry.db, table, 'readonly', os => os.get(deleteKey(name)));
+		const record = chunkRecord(value);
+		if (!record) {
+			if (value === undefined) return null;
+			if (!recordBytes(value)) throw fail('corrupt', 'The deletion custody file is not bytes. Its value was kept.');
+			return value;
+		}
+		const bytes = new Uint8Array(record.size); let at = 0;
+		for await (const part of storedChunks(record)) { bytes.set(part, at); at += part.length; }
+		if (deleteRecordDigest(bytes) !== record.digest) throw fail('verify', 'The held deletion body does not match its saved digest.');
+		return bytes;
+	};
+	const pressureMatches = (value, expected) => expected === null ? value === undefined : value instanceof Uint8Array && same(value, expected);
+	const reserveName = '.rapier-delete-reserve.bin', reserveKey = deleteKey(reserveName);
+	const pressureReplace = async (name, expected, bytes, release = null) => {
+		await pressureDb(); const key = deleteKey(name);
+		const committed = await recordingTransaction(entry.db, table, 'readwrite', (os, take, done) => take(os.get(key), value => {
+			if (!pressureMatches(value, expected)) { done(false); return; }
+			const commit = () => { if (release !== null) os.delete(reserveKey); os.put(bytes, key); done(true); };
+			if (release === null) commit();
+			else take(os.get(reserveKey), reserve => { if (pressureMatches(reserve, release)) commit(); else done(false); });
+		}));
+		if (committed) await recordingTransaction(entry.db, table, 'readonly', (os, take) => {
+			take(os.get(key), value => { if (!pressureMatches(value, bytes)) throw fail('verify', 'The deletion custody write could not be verified.'); });
+			if (release !== null) take(os.get(reserveKey), value => { if (value !== undefined) throw fail('verify', 'The deletion reserve was not released.'); });
+		});
+		return committed;
+	};
+	const pressure = {
+		async list() {
+			await pressureDb(); const prefix = '\u0000rapier-delete:';
+			return (await readKeys(entry.db, table)).filter(key => typeof key === 'string' && key.startsWith(prefix)).map(key => {
+				const name = key.slice(prefix.length);
+				if (!isDeletePrivateName(name)) throw fail('corrupt', 'An unknown deletion custody key was kept. Backup needs attention.');
+				return name;
+			});
+		},
+		read: pressureRead,
+		async writeFrame(slot, expected, value, {releaseReserve = null} = {}) {
+			const name = deleteFrameName(slot), bytes = deleteBytes(value, DELETE_FRAME_BYTES);
+			expected = expected === null ? null : deleteBytes(expected, DELETE_FRAME_BYTES);
+			const release = releaseReserve === null ? null : deleteBytes(releaseReserve);
+			if (expected && !same(expected.subarray(0, DELETE_HEADER_BYTES), bytes.subarray(0, DELETE_HEADER_BYTES)))
+				throw fail('ownership', 'A deletion frame cannot replace its ownership header.');
+			return pressureReplace(name, expected, bytes, release);
+		},
+		async reserve(expected, value) {
+			const bytes = deleteBytes(value); expected = expected === null ? null : deleteBytes(expected);
+			await ready(); admitted();
+			return pressureReplace(reserveName, expected, bytes);
+		},
+		async releaseReserve(value) {
+			const expected = deleteBytes(value); await pressureDb();
+			const committed = await recordingTransaction(entry.db, table, 'readwrite', (os, take, done) => take(os.get(reserveKey), value => {
+				if (value === undefined) { done(true); return; }
+				if (!pressureMatches(value, expected)) { done(false); return; }
+				os.delete(reserveKey); done(true);
+			}));
+			if (committed && await run(entry.db, table, 'readonly', os => os.get(reserveKey)) !== undefined) throw fail('verify', 'The deletion reserve was not released.');
+			return committed;
+		},
+		async observe(file) {
+			deleteNote(file); await pressureDb();
+			const digest = deleteRecordDigest(await run(entry.db, table, 'readonly', os => os.get(file)));
+			return digest === null ? null : {digest, identity: null};
+		},
+		async detach(file, {held, digest, identity}) {
+			deleteNote(file); deleteDigest(digest);
+			if (!isDeletePrivateName(held) || !held.endsWith('.held')) throw fail('name', 'This is not a held deletion body.');
+			if (identity !== null) throw new TypeError('This notes store has no native file identity.');
+			await pressureDb(); const key = deleteKey(held); let moved;
+			const result = await recordingTransaction(entry.db, table, 'readwrite', (os, take, done) => take(os.get(key), existing => {
+				if (existing !== undefined) throw fail('collision', 'The held deletion body already exists.');
+				take(os.get(file), value => {
+					if (value === undefined) { done('missing'); return; }
+					if (deleteRecordDigest(value) !== digest) { done('changed'); return; }
+					moved = value; os.add(value, key); os.delete(file); done('detached');
+				});
+			}));
+			if (result === 'detached') await recordingTransaction(entry.db, table, 'readonly', (os, take) => {
+				take(os.get(key), value => { if (!sameDeleteRecord(value, moved)) throw fail('verify', 'The held deletion body could not be verified.'); });
+				take(os.get(file), value => { if (value !== undefined) throw fail('verify', 'The note body was not detached.'); });
+			});
+			return result;
+		},
+		async removeOwned(name, digest) {
+			if (!isDeleteOwnedName(name)) throw fail('name', 'This is not an owned deletion path.');
+			deleteDigest(digest); await pressureDb(); const key = deleteKey(name);
+			const result = await recordingTransaction(entry.db, table, 'readwrite', (os, take, done) => take(os.get(key), value => {
+				if (value === undefined) { done(true); return; }
+				if (deleteRecordDigest(value) !== digest) { done(false); return; }
+				const record = chunkRecord(value);
+				if (record) for (let n = 0; n < record.count; n++) os.delete(chunkKey(record.id, n));
+				os.delete(key); done(true);
+			}));
+			if (result && await run(entry.db, table, 'readonly', os => os.get(key)) !== undefined) throw fail('verify', 'The owned deletion file was not removed.');
+			return result;
+		},
+		async checkpoint(value, baseDigest) {
+			const bytes = deleteBytes(value); deleteDigest(baseDigest); await pressureDb();
+			const committed = await recordingTransaction(entry.db, table, 'readwrite', (os, take, done) => take(os.get('notes.json'), value => {
+				if (!(value instanceof Uint8Array) || deleteRecordDigest(value) !== baseDigest) { done(false); return; }
+				os.put(bytes, 'notes.json'); done(true);
+			}));
+			if (committed && !same(await run(entry.db, table, 'readonly', os => os.get('notes.json')), bytes)) throw fail('verify', 'The deletion index could not be verified.');
+			return committed;
+		},
+	};
+
 	const recording = {
 		async begin(name) {
 			if (!isRecordingPartial(name)) throw fail('name', 'This is not an unfinished recording.');
@@ -500,6 +649,7 @@ export function createIndexedDbByteStore({database = 'rapier-notes-preview', tab
 	};
 
 	return {read, readChunks, write, compareWrite, writeBlob, remove, list, stat, statMany, statAll, prepare, recoverIntakes, recording,
+		get deletePressure() { return entry.durable === false ? null : pressure; },
 		get streamingAttachments() { return !!entry.db && !entry.fault; },
 		get writable() { return !entry.fault; },
 		get reclaimable() { return !!entry.fault && entry.probeQuota; },
@@ -507,6 +657,6 @@ export function createIndexedDbByteStore({database = 'rapier-notes-preview', tab
 		get reason() { return entry.fault ? entry.fault.message : ''; },
 		async removeThumbnails() {},
 		get durable() { return entry.durable; },
-		get kind() { return entry.fault ? 'fault' : entry.durable == null ? 'unasked' : entry.durable ? 'indexeddb' : 'memory'; },
+		get kind() { return entry.fault ? 'fault' : entry.db ? 'indexeddb' : entry.durable === false ? 'memory' : 'unasked'; },
 	};
 }

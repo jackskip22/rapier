@@ -1315,9 +1315,10 @@ export class PaintSurface {
 		for (let y = 0; y < win.h; y++) { const sy = win.y0 + y; if (sy >= this.height) break; for (let x = 0; x < win.w; x++) { const sx = win.x0 + x; if (sx >= this.width) break; out[sy * this.width + sx] = field[Math.floor(y / C) * win.cw + Math.floor(x / C)]; } }
 		return out;
 	}
-	_wetDownsample(win, base) {
+	_wetDownsample(win, base, skip = null) {
 		const C = this.wetCell, W = win.w, H = win.h, out = new Float32Array(win.cw * win.ch * 4);
 		for (let cy = 0; cy < win.ch; cy++) for (let cx = 0; cx < win.cw; cx++) {
+			if (skip && cy >= skip.y0 && cy <= skip.y1 && cx >= skip.x0 && cx <= skip.x1) { cx = skip.x1; continue; }
 			let r = 0, g = 0, b = 0, a = 0, n = 0;
 			for (let y = 0; y < C; y++) { const py = cy * C + y; if (py >= H) break; for (let x = 0; x < C; x++) { const px = cx * C + x; if (px >= W) break; const i = (py * W + px) * 4; r += base[i]; g += base[i + 1]; b += base[i + 2]; a += base[i + 3]; n++; } }
 			const o = (cy * win.cw + cx) * 4; if (n) { out[o] = r / n; out[o + 1] = g / n; out[o + 2] = b / n; out[o + 3] = a / n; }
@@ -1342,8 +1343,9 @@ export class PaintSurface {
 		const W = this.width, rasterBase = new Float32Array(next.w * next.h * 4);
 		for (let y = 0; y < next.h; y++) { const py = next.y0 + y; if (py >= this.height) break; const n = Math.min(next.w, W - next.x0); rasterBase.set(this.data.subarray((py * W + next.x0) * 4, (py * W + next.x0 + n) * 4), y * next.w * 4); }
 		if (carryBase) for (let y = 0; y < carryWin.h; y++) rasterBase.set(carryBase.subarray(y * carryWin.w * 4, (y + 1) * carryWin.w * 4), ((y + carryWin.y0 - next.y0) * next.w + carryWin.x0 - next.x0) * 4);
-		const pixels = this._wetDownsample(next, rasterBase);
-		const created = createWetState(makePaper(seed, next.cw, next.ch, { ...options, originX: next.x0 / this.wetCell, originY: next.y0 / this.wetCell }), {
+		const C = this.wetCell, kept = carry ? { x0: (carryWin.x0 - next.x0) / C, y0: (carryWin.y0 - next.y0) / C, x1: (carryWin.x0 - next.x0) / C + carryWin.cw - 1, y1: (carryWin.y0 - next.y0) / C + carryWin.ch - 1 } : null;
+		const pixels = this._wetDownsample(next, rasterBase, kept);
+		const created = createWetState(makePaper(seed, next.cw, next.ch, { ...options, originX: next.x0 / C, originY: next.y0 / C, within: carry && carry.paper.seed === seed ? carry.paper : null }), {
 			...options, pixels, maxBytes, reservedBytes: 0, mixing, bands: this.pigment ? PAINT_PIGMENT_CHANNELS : 3, film: false,
 			toSpectral: this.pigment ? writePaintPigment : writePaintRGB, fromSpectral: this.pigment ? paintPigmentRGB : readPaintRGB
 		});
@@ -1370,8 +1372,8 @@ export class PaintSurface {
 		const cxA = Math.floor((px0 + .5) / C - .5), cxB = Math.floor((px1 + .5) / C - .5) + 1;
 		const cyA = Math.floor((py0 + .5) / C - .5), cyB = Math.floor((py1 + .5) / C - .5) + 1;
 		const gw = Math.max(0, cxB - cxA + 1), gh = Math.max(0, cyB - cyA + 1), corners = gw * gh;
-		if (scratch.cornerCover.length < corners) { scratch.cornerCover = new Float32Array(corners); scratch.cornerFloor = new Float64Array(corners); scratch.cornerDelta = new Float64Array(corners * 4); }
-		const coverG = scratch.cornerCover, floorG = scratch.cornerFloor, deltaG = scratch.cornerDelta, dep = this.wetDeposited;
+		if (scratch.cornerCover.length < corners) { scratch.cornerCover = new Float32Array(corners); scratch.cornerFloor = new Float64Array(corners); scratch.cornerDelta = new Float64Array(corners * 4); scratch.cornerZero = new Uint8Array(corners); }
+		const coverG = scratch.cornerCover, floorG = scratch.cornerFloor, deltaG = scratch.cornerDelta, zeroG = scratch.cornerZero, dep = this.wetDeposited;
 		for (let cy = cyA; cy <= cyB; cy++) {
 			const ccy = cy < 0 ? 0 : cy > ch - 1 ? ch - 1 : cy;
 			for (let cx = cxA; cx <= cxB; cx++) {
@@ -1382,8 +1384,10 @@ export class PaintSurface {
 				const mass = state.amount[o] + state.settledAmount[o], own = dep[o] < mass ? dep[o] : mass;
 				floorG[i] = Math.min(1, (mass - own) / .03);
 				deltaG[i * 4] = P[p4] - B[p4]; deltaG[i * 4 + 1] = P[p4 + 1] - B[p4 + 1]; deltaG[i * 4 + 2] = P[p4 + 2] - B[p4 + 2]; deltaG[i * 4 + 3] = P[p4 + 3] - B[p4 + 3];
+				zeroG[i] = deltaG[i * 4] === 0 && deltaG[i * 4 + 1] === 0 && deltaG[i * 4 + 2] === 0 && deltaG[i * 4 + 3] === 0 ? 1 : 0;
 			}
 		}
+		const still = (cx, cy) => { const i = (cy - cyA) * gw + (cx - cxA); return zeroG[i] & zeroG[i + 1] & zeroG[i + gw] & zeroG[i + gw + 1]; };
 		const coverAt = (cx, cy) => coverG[(cy - cyA) * gw + (cx - cxA)];
 		const delta = (cx, cy, c) => deltaG[((cy - cyA) * gw + (cx - cxA)) * 4 + c];
 		const opts = this.wetOptions, tooth = opts.tooth ?? .5, grain = opts.grain ?? 1, half = tooth / 2;
@@ -1417,6 +1421,11 @@ export class PaintSurface {
 				if (!(++cells & 127)) yield;
 				const sx = x + win.x0; if (sx >= W) break;
 				const fx = (x + .5) / C - .5, cx0 = Math.floor(fx), tx = fx - cx0, i = (sy * W + sx) * 4, j = (y * win.w + x) * 4;
+				if (still(cx0, cy0)) {
+					for (let c = 0; c < 4; c++) D[i + c] = Math.min(1, Math.max(0, RB[j + c] + 0));
+					if (D[i + 3] > 0) for (let c = 0; c < 3; c++) D[i + c] = Math.min(D[i + c], D[i + 3]);
+					continue;
+				}
 				const cc = (coverAt(cx0, cy0) * (1 - tx) + coverAt(cx0 + 1, cy0) * tx) * (1 - ty) + (coverAt(cx0, cy0 + 1) * (1 - tx) + coverAt(cx0 + 1, cy0 + 1) * tx) * ty;
 				let g = 1;
 				if (cc > .02) { const fl = (floorAt(cx0, cy0) * (1 - tx) + floorAt(cx0 + 1, cy0) * tx) * (1 - ty) + (floorAt(cx0, cy0 + 1) * (1 - tx) + floorAt(cx0 + 1, cy0 + 1) * tx) * ty;
@@ -1454,14 +1463,22 @@ export class PaintSurface {
 		const src = new Float32Array(w * h * 4);
 		for (let y = 0; y < h; y++) { yield; const sy = win.y0 + py0 + y; if (sy >= H) break; const from = (sy * W + win.x0 + px0) * 4, n = Math.min(w, W - win.x0 - px0); src.set(D.subarray(from, from + n * 4), y * w * 4); }
 		const at = (x, y, c) => src[((y < 0 ? 0 : y > h - 1 ? h - 1 : y) * w + (x < 0 ? 0 : x > w - 1 ? w - 1 : x)) * 4 + c];
+		const st = this.wetState, dep = this.wetDeposited, cw2 = win.cw, ch2 = win.ch;
+		const cellWet = o => (st.amount[o] + st.settledAmount[o]) > 1e-6 || (dep && dep[o] > 1e-6);
+		const gx0 = (px0 / C) | 0, gy0 = (py0 / C) | 0, gx1 = ((px0 + w - 1) / C) | 0, gy1 = ((py0 + h - 1) / C) | 0, gw = gx1 - gx0 + 1;
+		const nearWet = new Uint8Array(gw * (gy1 - gy0 + 1));
+		for (let cy = gy0; cy <= gy1; cy++) for (let cx = gx0; cx <= gx1; cx++) {
+			if (cx < 0 || cy < 0 || cx >= cw2 || cy >= ch2 || !cellWet(cy * cw2 + cx)) continue;
+			for (let ny = Math.max(gy0, cy - 1); ny <= Math.min(gy1, cy + 1); ny++) for (let nx = Math.max(gx0, cx - 1); nx <= Math.min(gx1, cx + 1); nx++) nearWet[(ny - gy0) * gw + nx - gx0] = 1;
+		}
 		const edge = new Uint8Array(w * h);
 		for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
 			if (!(++cells & 127)) yield;
+			if (!nearWet[((((py0 + y) / C) | 0) - gy0) * gw + (((px0 + x) / C) | 0) - gx0]) continue;
 			let lo = 1, hi = 0;
 			for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const v = at(x + dx, y + dy, 3); if (v < lo) lo = v; if (v > hi) hi = v; }
 			if (hi - lo >= .06) edge[y * w + x] = 1;
 		}
-		const st = this.wetState, dep = this.wetDeposited, cw2 = win.cw, ch2 = win.ch;
 		const wetCell = (x, y) => {
 			const cx = ((px0 + x) / C) | 0, cy = ((py0 + y) / C) | 0;
 			if (cx < 0 || cy < 0 || cx >= cw2 || cy >= ch2) return false;

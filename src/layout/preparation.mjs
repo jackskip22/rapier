@@ -12,8 +12,10 @@ const finite = value => typeof value === 'number' && Number.isFinite(value);
 
 function clearMetrics() { clearCache(); return ++generation; }
 
+let turn = null;
 export function captureFontAuthority(document = globalThis.document) {
   if (!document || typeof document !== 'object') return generation;
+  if (turn?.document === document && turn.generation === generation) return generation;
   const previous = documents.get(document), declared = previous?.declared || new Set();
   const entries = [];
   try {
@@ -29,10 +31,13 @@ export function captureFontAuthority(document = globalThis.document) {
     documents.set(document, {signature, declared});
     clearMetrics();
   }
+  if (!turn) queueMicrotask(() => { turn = null; });
+  turn = {document, generation};
   return generation;
 }
 
 export function invalidateRichMetrics(document = globalThis.document) {
+  turn = null;
   return document ? captureFontAuthority(document) : clearMetrics();
 }
 
@@ -48,16 +53,23 @@ export function fontReady(document, font, text = ' ') {
   if (!document) return true;
   if (!document.fonts || document.fonts.status === 'loading') return false;
   try {
-    if (document.fonts.check(font, text || ' ') !== true) return false;
-    const family = /(?:\d*\.)?\d+px(?:\s*\/\s*[^\s]+)?\s+(.+)$/.exec(font)?.[1];
-    if (!family) return false;
-    const names = new Set((family.match(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^,]+/g) || []).map(familyName));
-    const present = new Set();
-    for (const face of document.fonts) {
-      const family = familyName(face.family); present.add(family);
-      if (names.has(family) && face.status !== 'loaded') return false;
+    const parts = /^(?:(normal|italic|oblique(?:\s+-?[\d.]+deg)?)\s+)?(?:(\d+)\s+)?(?:\d*\.)?\d+px(?:\s*\/\s*[^\s]+)?\s+(.+)$/.exec(font);
+    if (!parts) return false;
+    const style = parts[1] || 'normal', weight = Number(parts[2] || 400);
+    const names = (parts[3].match(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^,]+/g) || []).map(familyName);
+    const declared = documents.get(document)?.declared || new Set(), faces = [...document.fonts];
+    for (const name of names) {
+      const own = faces.filter(face => familyName(face.family) === name);
+      if (!own.length) return !declared.has(name);
+      const fitting = own.filter(face => {
+        const [low, high = low] = String(face.weight).split(/\s+/).map(Number);
+        return (face.style === 'normal') === (style === 'normal') && !(weight < low) && !(weight > high);
+      });
+      const pool = fitting.length ? fitting : own;
+      if (pool.some(face => face.status === 'loading')) return false;
+      if (pool.some(face => face.status === 'loaded')) return true;
+      if (pool.some(face => face.status === 'unloaded')) { document.fonts.load(font, text || ' ').catch(() => {}); return false; }
     }
-    for (const family of documents.get(document)?.declared || []) if (names.has(family) && !present.has(family)) return false;
     return true;
   } catch (_) { return false; }
 }

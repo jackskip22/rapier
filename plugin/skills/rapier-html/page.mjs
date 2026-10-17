@@ -5,16 +5,12 @@ import {wrap, carry, portableNeeds} from './wrap.mjs';
 import {returnAddress, returnExpiresAt} from './return-address.mjs';
 export {wrap, unwrap, carry, portableNeeds, encodeCarried, decodeCarried} from './wrap.mjs';
 
-// The page this package carries, read once on first use.
 let carried = null;
 const carriedPage = () => carried ??= readFile(new URL('./rapier.html', import.meta.url), 'utf8');
-// One call from Markdown to a page: the carried editor, cut to what the document displays with (and Draw for
-// view 'draw' or a drawing), with the document inside. `include` names the parts instead: drawing, math, mermaid.
 export async function writePage(text, name = 'document.md', {include, ...options} = {}) {
 	const carries = include ?? [...(options.view === 'draw' || options.drawing != null ? ['drawing'] : []), ...portableNeeds(String(text), {base: options.base})];
 	return wrap(carry(await carriedPage(), carries), text, name, options);
 }
-// Unknown options, a bare --drawing or --compare and a third name are refused.
 const USAGE = 'usage: rapier-html <document.md> [out.html] [--include draw,math,mermaid] [--view draw] [--drawing sketch.svg] [--compare original.md [--by <your name>]] [--return <url> --return-expires-at <timestamp>]\n' +
 	'  writes <document>.rapier.html beside the file: Rapier with the document inside it, one file, offline.\n' +
 	'  It never overwrites: an output that already exists, the document itself included, is refused.\n' +
@@ -28,7 +24,6 @@ const USAGE = 'usage: rapier-html <document.md> [out.html] [--include draw,math,
 	'  --return-expires-at  carries the same mint\'s expiry; Share offers Save once the return expires\n' +
 	'  --          everything after it is a filename, even one that starts with a dash\n' +
 	'  --help      this text';
-// Damaged UTF-8 is refused, never carried as U+FFFD; a BOM is carried.
 const text = async path => { try { return new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(await readFile(path)); } catch (error) { throw error.code === 'ERR_ENCODING_INVALID_ENCODED_DATA' ? new Error(path + ' is not valid UTF-8') : error; } };
 
 export async function main(argv, pagesDir, {log = console.log} = {}) {
@@ -83,7 +78,6 @@ export async function main(argv, pagesDir, {log = console.log} = {}) {
 	if (view) wrapOptions.view = view;
 	if (address) wrapOptions.return = address;
 	if (expiry) wrapOptions.return_expires_at = expiry;
-	// Always a new file; 'wx' refuses any existing path, links included.
 	const carries = include || [...(view === 'draw' || drawingPath ? ['drawing'] : []), ...portableNeeds(source, {base: wrapOptions.base})];
 	const html = wrap(carry(page, carries), source, name, wrapOptions);
 	try { await writeFile(out, html, {flag: 'wx'}); }

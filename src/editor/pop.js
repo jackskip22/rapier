@@ -8,6 +8,8 @@ function _rapierPopArrange(row) {
 	const ordered = boxes.map((box, at) => [box, at]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(pair => pair[0]);
 	for (const box of boxes) { box.removeAttribute('data-pop-bottom'); box.removeAttribute('data-pop-top'); }
 	if (ordered.some((box, at) => box !== boxes[at])) row.append(...ordered);
+	row.classList.add('rapier-pop__actions');
+	if (row.hasAttribute('data-pop-plain')) return null;
 	const last = shown.length ? ordered.filter(box => !box.hidden).at(-1) : null;
 	if (last && rank(last) >= 2) last.setAttribute('data-pop-bottom', '');
 	const top = last?.hasAttribute('data-pop-bottom') ? ordered.find(box => !box.hidden && box.dataset.pop === 'affirm') : null;
@@ -23,7 +25,7 @@ function _rapierPopArrangeAll(root) {
 _rapierPopArrangeAll(document);
 
 const _rapierProgressOpen = (() => {
-	const rows = new Set();
+	const rows = new Set(), following = new Set();
 	let element = null, returnFocus = null;
 	const restoreFocus = () => _rapierModalReturnFocus(returnFocus);
 	function paint() {
@@ -71,11 +73,12 @@ const _rapierProgressOpen = (() => {
 		if (known) { bar.setAttribute('aria-valuenow', String(Math.round(row.fraction * 100))); bar.style.setProperty('--rapier-progress', String(row.fraction)); }
 		else { bar.removeAttribute('aria-valuenow'); bar.style.removeProperty('--rapier-progress'); }
 	}
-	return function open({label = '', after = 0, cancel = null} = {}) {
+	function open({label = '', after = 0, cancel = null, leaves = false} = {}) {
 		const row = {label: String(label), cancel: typeof cancel === 'function' ? cancel : null, fraction: null, timer: 0};
 		const show = () => { row.timer = 0; rows.add(row); paint(); };
 		if (after > 0) row.timer = setTimeout(show, after); else show();
-		row.end = () => { clearTimeout(row.timer); row.timer = 0; if (rows.delete(row)) paint(); };
+		if (leaves && row.cancel) following.add(row);
+		row.end = () => { clearTimeout(row.timer); row.timer = 0; following.delete(row); if (rows.delete(row)) paint(); };
 		row.now = () => { if (!row.timer) return false; clearTimeout(row.timer); show(); return true; };
 		row.set = (fraction = null, words) => {
 			row.fraction = typeof fraction === 'number' && Number.isFinite(fraction) ? Math.min(1, Math.max(0, fraction)) : null;
@@ -83,8 +86,31 @@ const _rapierProgressOpen = (() => {
 			if (rows.has(row)) paint();
 		};
 		return row;
-	};
+	}
+	open.moveOn = () => { for (const row of [...following]) { try { row.cancel(); } finally { row.end(); } } };
+	return open;
 })();
+
+function _rapierMoveOn(view = null) {
+	_rapierProgressOpen.moveOn();
+	for (const toast of document.querySelectorAll('#toast-root .toast--error')) {
+		if (toast.dataset.noticeKind === 'save-failed' || view !== null && toast.dataset.noticeAt === view) continue;
+		if (typeof toast._rapierDismiss === 'function') toast._rapierDismiss({immediate: true}); else toast.remove();
+	}
+}
+function _rapierNoticeView() {
+	const body = document.body;
+	return [document.documentElement.dataset.compare || '', body?.classList.contains('rapier-draw-open') ? 'draw' : '',
+		body?.classList.contains('rapier-notes-open') ? 'notes' : ''].join('|');
+}
+function _rapierWatchViews() {
+	let view = _rapierNoticeView();
+	const changed = () => { const next = _rapierNoticeView(); if (next === view) return; view = next; _rapierMoveOn(next); };
+	const watch = new MutationObserver(changed);
+	watch.observe(document.documentElement, {attributes: true, attributeFilter: ['data-compare']});
+	if (document.body) watch.observe(document.body, {attributes: true, attributeFilter: ['class']});
+}
+_rapierWatchViews();
 
 function _rapierProgressOver(overlay, untilClose = false) {
 	let home = null, count = 0;
@@ -135,12 +161,12 @@ function _rapierPluginProgress(key, noun) {
 	return end;
 }
 
-function _rapierProgressTask({label = '', current = null, after = 500, size = 0, signal: callerSignal = null} = {}) {
+function _rapierProgressTask({label = '', current = null, after = 500, size = 0, signal: callerSignal = null, leaves = false} = {}) {
 	const controller = new AbortController();
 	const signal = controller.signal;
 	const cancel = () => controller.abort();
 	const ahead = size > RAPIER_PROGRESS_AHEAD, opened = performance.now();
-	const progress = _rapierProgressOpen({label, after: ahead ? 0 : after, cancel});
+	const progress = _rapierProgressOpen({label, after: ahead ? 0 : after, cancel, leaves});
 	if (callerSignal?.aborted) cancel();
 	else callerSignal?.addEventListener('abort', cancel, {once: true});
 	let ended = false, reported = null, needsPaint = ahead;
@@ -165,3 +191,30 @@ function _rapierProgressTask({label = '', current = null, after = 500, size = 0,
 	};
 	return Object.freeze({signal, cancel, check, set, onProgress: set, yield: yieldWork, end});
 }
+
+const _rapierAdultGateRuntime = {passedAt: 0, asking: null};
+const RAPIER_NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
+async function _rapierAdultGateAsk() {
+	for (let round = 0; round < 2; round++) {
+		const pick = (low, high) => low + Math.floor(Math.random() * (high - low + 1));
+		const a = pick(6, 12), b = pick(6, 12), right = a * b;
+		const wrong = right + (Math.random() < .5 ? -1 : 1) * pick(1, 2) * (Math.random() < .5 ? a : 10);
+		const rightFirst = Math.random() < .5;
+		const answer = await rapierConfirm({
+			plain: true,
+			title: 'for grown-ups',
+			message: 'What is ' + RAPIER_NUMBER_WORDS[a] + ' times ' + RAPIER_NUMBER_WORDS[b] + '?',
+			confirmLabel: String(rightFirst ? right : wrong),
+			secondaryLabel: String(rightFirst ? wrong : right),
+		});
+		if (answer === false || (answer === true) !== rightFirst) return false;
+	}
+	_rapierAdultGateRuntime.passedAt = _rapierNow();
+	return true;
+}
+function _rapierAdultGate() {
+	const runtime = _rapierAdultGateRuntime;
+	if (runtime.passedAt && _rapierNow() - runtime.passedAt < 5 * 60 * 1000) return Promise.resolve(true);
+	return runtime.asking ||= _rapierAdultGateAsk().finally(() => { runtime.asking = null; });
+}
+globalThis.RapierAdultGate = Object.freeze({check: _rapierAdultGate});

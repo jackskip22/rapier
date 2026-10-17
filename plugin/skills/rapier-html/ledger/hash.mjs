@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MIT
-// The editor's path-dependent root, plus synchronous SHA-256 for file readers (including offline wrappers).
 export function textRoot(text) {
   return textRootParts([text]);
 }
-// The same UTF-16 root over shared source pieces, without joining a historical body.
 export function textRootParts(parts) {
   let fnv = 0x811c9dc5, a = 1, b = 0, length = 0;
   for (const text of parts) {
@@ -30,7 +28,6 @@ const K = new Uint32Array([
   0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2,
 ]);
 const rotate = (x, n) => (x >>> n) | (x << (32 - n));
-// One bounded SHA-256 compression state for file bytes and encoded source text.
 export function sha256State() {
   const h = new Uint32Array([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]);
   const w = new Uint32Array(64), block = new Uint8Array(64);
@@ -82,14 +79,11 @@ export function sha256State() {
     get bytes() { return bytes; },
   };
 }
-// UTF-16 chunks share that byte state. Retain a trailing high surrogate so a
-// caller can split a character between updates without changing its UTF-8 digest.
 export function createSHA256() {
   const hash = sha256State(), encoded = new Uint8Array(65536), encoder = new TextEncoder();
   let high = '', finished = false;
   const write = text => {
     for (let at = 0; at < text.length;) {
-      // Bound both the substring and byte allocation; encodeInto never cuts a scalar.
       let end = Math.min(text.length, at + 32768);
       if (end < text.length && (text.charCodeAt(end - 1) & 0xfc00) === 0xd800 && (text.charCodeAt(end) & 0xfc00) === 0xdc00) end--;
       const part = encoder.encodeInto(text.slice(at, end), encoded);
@@ -117,4 +111,14 @@ export function sha256Parts(parts) {
   for (const part of parts) hash.update(part);
   return hash.digest();
 }
-export function sha256(text) { return createSHA256().update(text).digest(); }
+const LONG_TEXT = 65536, DIGESTS = new Map();
+export function sha256(text) {
+  if (typeof text !== 'string' || text.length < LONG_TEXT) return createSHA256().update(text).digest();
+  let digest = DIGESTS.get(text);
+  if (digest === undefined) {
+    digest = createSHA256().update(text).digest();
+    if (DIGESTS.size >= 4) DIGESTS.delete(DIGESTS.keys().next().value);
+  } else DIGESTS.delete(text);
+  DIGESTS.set(text, digest);
+  return digest;
+}

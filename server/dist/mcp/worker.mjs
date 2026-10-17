@@ -14,6 +14,7 @@ import {normalizeLabel, encodeBase64} from '../images/assets.mjs';
 import { sourceEdits, mergeSource, replay } from '../kernel/live-merge.mjs';
 import { paintAgentStrokes, agentPaintSheetHolds, agentPaintBrushRegistry, agentStrokesFault, replayAgentPainting, sampleAgentPainting, validatePaintRaster } from '../draw/agent-paint.mjs';
 import { VERSION } from '../version.mjs';
+import { mcpServer, CURRENT_DOOR } from '../tools/discovery.mjs';
 import { INSTRUCTIONS, GUIDE_RESOURCES, guideResource, guideResult, PROMPTS, promptResult } from '../agent/guide.mjs';
 import { RETURN_ORIGIN } from '../skills/rapier-html/return-address.mjs';
 import { wrap, carry, portableNeeds } from '../skills/rapier-html/wrap.mjs';
@@ -29,9 +30,16 @@ import { createRequestWait, createRequestLifetime, responsiveJson, REQUEST_CANCE
 import {TaskLifetime, TASK_EXTENSION, TASK_TTL_MS} from './task-lifetime.mjs';
 import { exportRenderer } from './export-port.mjs';
 import {handleOAuth, oauthChallenge, oauthForbidden, oauthOrigin, HOUSE_STYLE, validGrantReference, oauthGrantCurrent} from './oauth.mjs';
-import { PAIRED_PATH, PAIR_CODE, PAIR_CODE_MS, MAX_PAIRINGS, PAIR_SESSION_MS, PAGE_CSP, sessionCookie, pendingCookie, readCookie, setCookies, newCode, newSecret, mintSession, verifySession, pageFlags } from './paired.mjs';
+import {changeSignal, validWait, waitInObject} from './waited-read.mjs';
+import {oauthStoreRequest} from './oauth-store.mjs';
+import {GrantVerdicts, watchGrant, tellRevoked} from './grant-watch.mjs';
+import { PAIRED_PATH, PAIRED_PREVIEW, PAIR_CODE, PAIR_CODE_MS, MAX_PAIRINGS, PAIR_SESSION_MS, PAGE_CSP, sessionCookie, pendingCookie, readCookie, setCookies, newCode, newSecret, mintSession, verifySession, pageFlags, pageFlagText } from './paired.mjs';
 import {DOOR_LIMITS} from './limits.mjs';
-import {LiveSessions, LIVE_PROTOCOL} from './live-session.mjs';
+import {WritePace, PACED_OPERATIONS, PACE_WORDS} from './write-pace.mjs';
+import {LiveSessions, LIVE_PROTOCOL, LIVE_LIMITS} from './live-session.mjs';
+import {createCommitFence} from '../agent/commit-fence.mjs';
+import {viewChanged} from './custody-wire.mjs';
+import {PageRelay} from './page-relay.mjs';
 import {PRIVATE_LIVE_PROTOCOL, PRIVATE_LIVE_LIMITS, privateSecret} from '../kernel/live-private-wire.mjs';
 import {MATERIAL_LIMITS, materialDescription, materialMatches, admitMaterialResult} from '../agent/material.mjs';
 import {handlePublishedPages} from './publish.mjs';
@@ -224,7 +232,7 @@ async function exportFile(env, { format, filename, docKind, text, base, file: su
   signal?.throwIfAborted();
   let file;
   if (supplied) file = supplied;
-  else if (format === 'markdown') file = { name: filename, mimeType: docKind === 'markdown' ? 'text/markdown' : 'text/plain', bytes: encoder.encode(text) };
+  else if (format === 'markdown') file = { name: exportFilename(filename, format), mimeType: docKind === 'markdown' ? 'text/markdown' : 'text/plain', bytes: encoder.encode(text) };
   else if (format === 'html') {
     try {
       const response = await env.ASSETS?.fetch?.(new Request('https://rapier.internal/rapier.html', {signal}));
@@ -403,7 +411,7 @@ function pairingReport(head) {
   if (head.pairedAt) return head.collaboration?.presence?.active && head.collaboration.presence.expiresAt > now
     ? {status: 'paired', page: 'reporting', pairedAt: new Date(head.pairedAt).toISOString()}
     : {status: 'paired', page: 'silent', pairedAt: new Date(head.pairedAt).toISOString(),
-      next: 'The paired page is not reporting: it is closed, in the background or stalled, and unsent typing stays in that browser. Ask the person to bring it to the front or tap Retry.'};
+      next: 'The paired page is not reporting: it is closed, in the background or stalled, and unsent typing stays in that browser. Ask the person to bring the page to the front.'};
   if (live.length) return {status: 'code_shown', next: 'A browser shows a code; ask for it and send show {target:"pair", code}.'};
   return {status: 'none'};
 }
@@ -453,12 +461,6 @@ function collaborationContext(value) {
   return context;
 }
 
-function viewChanged(before, after) {
-  if (JSON.stringify(before.pointers) !== JSON.stringify(after.pointers)) return true;
-  if (before.revision !== after.revision || before.text !== after.text || before.filename !== after.filename || before.docKind !== after.docKind || before.compare?.id !== after.compare?.id || before.compare?.revision !== after.compare?.revision) return true;
-  const left = before.compare?.changes || [], right = after.compare?.changes || [];
-  return left.length !== right.length || left.some((row, index) => row.id !== right[index].id || row.status !== right[index].status);
-}
 
 function envelope(value, head, meta = {}, { modelFacing = false, fallbackCollaboration = true } = {}) {
   if (head) meta = {...meta, editorIssuedAt: head.editorIssuedAt ?? head.createdAt,
@@ -564,13 +566,13 @@ async function skillsBundle(request, env) {
         for (const entry of skill.resources) {
           const content = Object.hasOwn(bundle.contents, entry.uri) ? bundle.contents[entry.uri] : null;
           if (!entry.uri.startsWith(prefix) || admitted.has(entry.uri) || content?.uri !== entry.uri || typeof content.text !== 'string' ||
-              typeof content.mimeType !== 'string' || !content.mimeType || !Number.isSafeInteger(entry.size) || entry.size !== contentBytes(content.text) ||
-              entry.digest !== 'sha256:' + await digest(content.text)) throw failure('SKILLS_NOT_BUILT', 'The skill resource failed its package size or digest.');
+              typeof content.mimeType !== 'string' || !content.mimeType || !Number.isSafeInteger(entry.size) || entry.size !== encoder.encode(content.text).byteLength ||
+              !/^sha256:[a-f0-9]{64}$/.test(entry.digest)) throw failure('SKILLS_NOT_BUILT', 'The skill resource failed its package size or digest.');
           admitted.add(entry.uri);
         }
       }
       if (admitted.size !== Object.keys(bundle.contents).length) throw failure('SKILLS_NOT_BUILT', 'The skill snapshot contains undeclared resources.');
-      bundle.cursorKey = await digest(JSON.stringify(bundle.skills));
+      if (!/^[a-f0-9]{64}$/.test(bundle.cursorKey || '')) throw failure('SKILLS_NOT_BUILT', 'The skill snapshot has no catalogue key.');
       return bundle;
     })();
     skillBundles.set(assets, loading);
@@ -584,6 +586,7 @@ function editorAssetBase(html, request) {
     match => match + ' globalThis.RAPIER_ASSET_BASE = ' + JSON.stringify(new URL('/editor-assets/', request.url).href) + ';');
 }
 
+const uiPages = new WeakMap();
 async function resource(request, env, uri) {
   if (typeof uri === 'string' && uri.startsWith('skill://')) {
     const bundle = await skillsBundle(request, env);
@@ -594,13 +597,18 @@ async function resource(request, env, uri) {
   if (guide) return {contents: [guide]};
   if (uri !== UI_RESOURCE) throw failure('RESOURCE_NOT_FOUND', 'Unknown resource.');
   if (!env.ASSETS?.fetch) throw failure('UI_NOT_BUILT', 'Build the Rapier MCP App and bind its static assets before opening the editor.');
-  const response = await env.ASSETS.fetch(new Request(new URL('/rapier-app.html', request.url)));
-  if (!response.ok || !/^text\/html(?:;|$)/i.test(response.headers.get('Content-Type') || '')) throw failure('UI_NOT_BUILT', 'The built /rapier-app.html asset is unavailable.');
   const endpoint = new URL(request.url).origin;
   const domain = configuredOrigin(env.UI_ORIGIN || endpoint, 'UI_ORIGIN', true);
   const fileOrigins = [...new Set((env.FILE_DOWNLOAD_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean).map(value => configuredOrigin(value, 'FILE_DOWNLOAD_ORIGINS')))];
   const connectDomains = [...new Set([endpoint, endpoint.replace(/^http/, 'ws'), 'https://cdn.jsdelivr.net', ...fileOrigins])];
-  let html = await readTextBody(response, MAX_UI_BYTES, 'editor resource', 'UI_RESOURCE_TOO_LARGE');
+  const prepared = uiPages.get(env.ASSETS) || new Map(), preparedKey = JSON.stringify([endpoint, fileOrigins]);
+  uiPages.set(env.ASSETS, prepared);
+  let html = prepared.get(preparedKey);
+  if (html !== undefined && !editorSecret(env)) throw failure('INVALID_UI_CONFIGURATION', 'EDITOR_KEY_SECRET must encode 32 generated bytes as base64 or base64url before the editor can be served.');
+  if (html === undefined) {
+  const response = await env.ASSETS.fetch(new Request(new URL('/rapier-app.html', request.url)));
+  if (!response.ok || !/^text\/html(?:;|$)/i.test(response.headers.get('Content-Type') || '')) throw failure('UI_NOT_BUILT', 'The built /rapier-app.html asset is unavailable.');
+  html = await readTextBody(response, MAX_UI_BYTES, 'editor resource', 'UI_RESOURCE_TOO_LARGE');
   const versions = [...html.matchAll(/<meta\s+name="rapier-version"\s+content="([^"]+)"\s*\/?\s*>/gi)];
   if (!/globalThis\.RAPIER_APPS_HOST\s*=\s*true/.test(html) || versions.length !== 1 || versions[0][1] !== VERSION) throw failure('UI_NOT_BUILT', `The asset must be the Rapier ${VERSION} MCP App. Run node tools/build.mjs and publish the MCP App.`);
   html = html.replace(/(<link\b[^>]*\bhref=)(["'])(icon-(?:192|512)\.png)\2/gi, (_, prefix, quote, name) => prefix + quote + new URL('/' + name, endpoint).href + quote);
@@ -608,6 +616,9 @@ async function resource(request, env, uri) {
   const flagged = html.replace(/globalThis\.RAPIER_APPS_HOST\s*=\s*true;/, match => match + ' globalThis.RAPIER_FILE_DOWNLOAD_ORIGINS = ' + JSON.stringify(fileOrigins) + ';');
   if (flagged === html) throw failure('UI_NOT_BUILT', 'The asset carries no RAPIER_APPS_HOST flag.');
   html = editorAssetBase(flagged, request);
+  if (prepared.size >= 4) prepared.clear();
+  prepared.set(preparedKey, html);
+  }
   const csp = { connectDomains, resourceDomains: [endpoint] };
   return { contents: [{ uri: UI_RESOURCE, mimeType: UI_MIME, text: html, _meta: { ui: { prefersBorder: false, csp, permissions: { clipboardWrite: {} } },
     'openai/widgetDomain': domain,
@@ -635,20 +646,21 @@ function listedTools(env, appsClient, authority) {
   return listed.map(published);
 }
 
-async function takeCreateBudget(env, { takeId, principalKey }) {
+async function takeCreateBudget(env, { takeId, principalKey, anonymous }) {
   if (!env.BUDGET?.get || !env.BUDGET?.idFromName) return env.ALLOW_UNMETERED_CREATE === 'true' ? 'ok' : 'no-binding';
-  const keys = [['create-principal:' + principalKey, DOOR_LIMITS.principalCreatesPerHour],
-    ['deployment', DOOR_LIMITS.deploymentCreatesPerHour]];
-  for (const [key, limit] of keys) {
+  const keys = anonymous === true
+    ? [['create-anonymous-hour', DOOR_LIMITS.anonymousCreatesPerHour, DOOR_LIMITS.hourMs]]
+    : [['create-principal:' + principalKey, DOOR_LIMITS.principalCreatesPerHour, DOOR_LIMITS.hourMs], ['deployment', DOOR_LIMITS.deploymentCreatesPerHour, DOOR_LIMITS.hourMs]];
+  for (const [key, limit, windowMs] of keys) {
     let response;
     try {
-      response = await env.BUDGET.get(env.BUDGET.idFromName(key)).fetch(new Request('https://rapier.internal/take', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit, windowMs: DOOR_LIMITS.hourMs, takeId }) }));
+      response = await env.BUDGET.get(env.BUDGET.idFromName(key)).fetch(new Request('https://rapier.internal/take', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit, windowMs, takeId }) }));
     } catch { return 'uncertain'; }
     if (!response.ok) return 'uncertain';
     let body;
     try { body = await parseJsonStream(response, {inlineBytes: 65536}); } catch { return 'uncertain'; }
     if (body.code === 'WORKSPACE_UNAVAILABLE') return 'uncertain';
-    if (!body.allowed) return 'exceeded';
+    if (!body.allowed) return windowMs === DOOR_LIMITS.dayMs ? 'exceeded-day' : 'exceeded';
   }
   return 'ok';
 }
@@ -666,8 +678,8 @@ async function editorProofVerdict(env, args, authority, editorProof, documentAdd
 }
 
 async function takeToolBudget(request, env, authority, name, args, door, editorProof) {
-  const bound = !!(env.BUDGET?.get && env.BUDGET?.idFromName);
-  if (!bound && env.ALLOW_UNMETERED_CREATE === 'true') return null;
+  const bound = !!(env.BUDGET?.get && env.BUDGET?.idFromName), limited = typeof env.MODEL_CALLS?.limit === 'function' && typeof env.EDITOR_CALLS?.limit === 'function';
+  if (!bound && !limited && env.ALLOW_UNMETERED_CREATE === 'true') return null;
   const unavailable = () => ({status: 503, code: 'TOOL_BUDGET_UNAVAILABLE',
     message: 'Tool invocation admission is unavailable. Retry when the service is available.'});
   try {
@@ -693,8 +705,14 @@ async function takeToolBudget(request, env, authority, name, args, door, editorP
       if (!(await editorProofVerdict(env, proofArgs, authority, editorProof, documentAddress)).ok) return null;
       editor = true;
     }
-    if (!bound) return unavailable();
     const key = (editor ? 'tool-editor:' : 'tool-model:') + await digest(principal);
+    if (limited) {
+      const {success} = await (editor ? env.EDITOR_CALLS : env.MODEL_CALLS).limit({key});
+      return success === true ? null : {status: 429, code: 'TOOL_BUDGET_EXCEEDED',
+        message: 'This caller has reached its tool invocation limit. Retry after the current minute window resets.',
+        retryAfter: DOOR_LIMITS.minuteMs / 1000};
+    }
+    if (!bound) return unavailable();
     const response = await env.BUDGET.get(env.BUDGET.idFromName(key)).fetch(new Request('https://rapier.internal/take', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({limit: editor ? DOOR_LIMITS.editorCallsPerMinute : DOOR_LIMITS.modelCallsPerMinute,
@@ -712,7 +730,7 @@ async function takeToolBudget(request, env, authority, name, args, door, editorP
 }
 
 async function initialObservation(kernel, input) {
-  return kernel.invoke('open', input.args.note ? input.args : {},
+  return kernel.invoke('open', input.args.note ? input.args : typeof input.args.agent === 'string' ? {agent: input.args.agent} : {},
     {...resolveCaller({actor: 'agent', principal: remotePrincipal(input), requestId: mintId('observation_')}, {transport: 'mcp'}),
       world: {presence: WORKER_PRESENCE}});
 }
@@ -736,12 +754,21 @@ async function waitedRead(args, env, request, authority, hostAgent, door, editor
   }
 }
 
-async function callTool(name, args, env, request, authority, hostAgent = null, door = '/mcp', editorProof = null, editorActivity = false, task = null, peek = false) {
+async function callTool(name, args, env, request, authority, hostAgent = null, door = '/mcp', editorProof = null, editorActivity = false, task = null, peek = false, wait = null) {
   if (name === 'show' && plain(args) && args.target === undefined) args = {...args, target: showTarget(args)};
   if (name === 'read' && plain(args) && (args.wait_ms !== undefined || args.after_revision !== undefined) && authority?.source !== 'page') {
     const descriptor = TOOL_BY_NAME.get(name);
     try { validateInput(descriptor.inputSchema, args, 'arguments', true); } catch (error) { if (error.code === 'invalid_arguments') return inputErrorResult(error); throw error; }
-    return waitedRead({wait_ms: 0, ...args}, env, request, authority, hostAgent, door, editorProof, editorActivity, task);
+    if (args.as === 'image') return waitedRead({wait_ms: 0, ...args}, env, request, authority, hostAgent, door, editorProof, editorActivity, task);
+    const {wait_ms: asked = 0, after_revision: after, ...plainArgs} = args;
+    if (after === undefined) return toolError(failure('INVALID_DOCUMENT_INPUT', 'wait_ms needs after_revision, the revision you last read.'));
+    const result = await callTool(name, plainArgs, env, request, authority, hostAgent, door, editorProof, editorActivity, task, false,
+      {after, waitMs: door === '/muse' ? Math.min(asked, MUSE_WAIT_MS) : asked});
+    if (!result.isError && plain(result.structuredContent) && Object.hasOwn(result.structuredContent, 'waited_ms')) {
+      const {waited_ms, changed, ...value} = result.structuredContent;
+      result.structuredContent = {...value, waited_ms, changed};
+    }
+    return result;
   }
   const descriptor = TOOL_BY_NAME.get(name);
   if (!descriptor) throw failure('UNKNOWN_TOOL', 'Unknown tool.');
@@ -755,7 +782,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     if (!resolved?.document) return toolError(failure('DOCUMENT_UNAVAILABLE', 'This document is unavailable to this connection.'));
     args = {document: resolved.document, ...(args.agent ? {agent: args.agent} : {}), ...(args.operation_id ? {operation_id: args.operation_id} : {})};
   }
-  const rawArgs = args;
+  let rawArgs = args;
   const humanNamed = humanEditorCall(name, args, editorProof);
   if (humanNamed && (door === '/muse' || authority.source !== 'page' && typeof editorProof !== 'string')) return toolError(failure('HUMAN_AUTHORITY_REQUIRED', "This operation needs the editor's own authority."));
   const keyArgument = humanNamed ? args.editorKey ?? editorProof : undefined;
@@ -788,6 +815,13 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     const guide = guideResult({topic: args.guide}, args.guide === 'water' ? agentPaintBrushRegistry() : null);
     return envelope(guide.outcome === 'ok' ? {guide: args.guide, instructions: guide.instructions, complete: true, next_cursor: null} : guide);
   }
+  if (!page && name === 'read' && typeof args.cursor === 'string' && args.cursor.startsWith(CURSOR_PREFIX)) {
+    const opened = await openCursor(env, args.cursor);
+    if (!opened) return toolError(failure('INVALID_DOCUMENT_INPUT', 'This page cursor is unknown here. Repeat the original read without a cursor.'));
+    if (args.document !== undefined && args.document !== opened.document) return toolError(failure('INVALID_DOCUMENT', 'This page cursor belongs to another document.'));
+    args = {...args, document: opened.document, cursor: opened.cursor};
+    rawArgs = {...rawArgs, document: opened.document, cursor: opened.cursor};
+  }
   if (page ? args.document !== page.id : !create && !WORKSPACE_HANDLE.test(args.document || '')) return toolError(failure('INVALID_DOCUMENT', 'Use the document value returned by open.'));
   const connectedOwner = page || anonymous ? null : await digest(authority.ownerId);
   const createToken = typeof args.createToken === 'string' ? args.createToken : null;
@@ -799,8 +833,8 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   const createNamespace = authority.source === 'oauth' ? connectedOwner + ':connection:' + authority.connectionId : connectedOwner;
   const minted = create ? (createToken !== null ? await tokenCapability(createToken, env, createNamespace) : newCapability()) : null;
   const createBudget = create ? { takeId: await takeIdOf(minted), retryable: createToken !== null,
-    principalKey: await digest(anonymous ? 'address:' + (request.headers.get('CF-Connecting-IP') || 'unknown')
-      : authority.source + ':' + authority.ownerId + ':' + (authority.connectionId || '')) } : null;
+    principalKey: await digest(anonymous ? 'anonymous' : authority.source + ':' + authority.ownerId + ':' + (authority.connectionId || '')),
+    ...(anonymous ? {anonymous: true} : {}) } : null;
   if (!create && name === 'open' && args.note !== 'new' && ['text', 'filename', 'docKind'].some(key => Object.hasOwn(args, key))) return toolError(failure('OPEN_ARGUMENTS_CONFLICT', 'Reopen with document alone; create with text and no document; replace content with edit.'));
   const humanTool = humanNamed;
   const document = create ? minted : page ? null : args.document;
@@ -808,7 +842,9 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   let capabilityHash = document ? await digest(document) : null;
   const connectionKey = authority.source === 'oauth' ? await digest(authority.connectionId) : null;
   const documentAddress = page ? page.address : await workspaceAddress(document, ownerKey);
-  if (!create && !page && !anonymous) {
+  const notesStatus = (args.note || args.search !== undefined || name === 'export' && args.to === 'sync') && env.OWNED_NOTES !== undefined;
+  const ownerLink = !create && !page && !anonymous;
+  if (ownerLink && notesStatus) {
     const resolved = await resolveOwnerLink(env, documentAddress, authority, capabilityHash);
     if (resolved?.capabilityHash) capabilityHash = resolved.capabilityHash;
   }
@@ -827,7 +863,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   const pageRotation = name === ROTATE && page ? await pageSuccessor(env, page, args.editorKey) : null;
   const successor = name === ROTATE ? (document ? await rotatedCapability(document, env) : pageRotation?.capability) : null;
   if (name === ROTATE && !successor) return toolError(failure('PAIRING_REQUIRED', 'This browser is not paired with this workspace. Open its editor link and give the assistant the code the page shows.'));
-  if ((args.note || args.search !== undefined || name === 'export' && args.to === 'sync') && env.OWNED_NOTES !== undefined) {
+  if (notesStatus) {
     let status;
     try {
       const response = await env.OWNED_NOTES.get(env.OWNED_NOTES.idFromName(documentAddress)).fetch(new Request('https://rapier.internal/status', {
@@ -835,6 +871,9 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
       }));
       if (response.ok) status = await parseJsonStream(response, {inlineBytes: 65536});
     } catch {}
+    const writes = name === 'open' && args.note === 'new' || name === 'edit' || name === 'export';
+    if (status?.reason === 'notes_not_configured' && writes) return envelope({outcome: 'refused', availability: 'unavailable', reason: 'notes_not_configured',
+      message: 'Notes is not set up on this host, so nothing was written.', hint: 'Keep the words in this document with edit, or deliver them with export.'});
     if (status?.reason === 'notes_not_configured') return envelope({outcome: 'ok', availability: 'unavailable', reason: 'notes_not_configured', message: 'Notes is not set up on this host.',
       complete: true, remaining: 0, next_cursor: null, ...(args.search !== undefined ? {notes: []} : {}),
       ...(name === 'read' && args.note ? {note_ref: args.note, found: false, text: null} : {})});
@@ -844,7 +883,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
       adapter_enrolled: status?.adapterEnrolled === true, hint, message: hint});
   }
   const requestKey = mintId('request_'), requestExpiresAt = Date.now() + REQUEST_LEASE_MS;
-  const payload = { operation: name === 'show' && args.target === 'pair' ? PAIR_BROWSER : name, args: name === 'show' && args.target === 'pair' ? {code: input.code} : input, create, ...(name === 'show' && args.target === 'ask' ? {waitBound: door === '/muse' ? MUSE_WAIT_MS : 120000} : {}), ...(door === '/muse' && ['edit', 'undo'].includes(name) ? {holdBound: MUSE_WAIT_MS} : {}), ...(file ? {hostFileBinding: await digest(JSON.stringify(file))} : {}), ...(page ? {page: {...page.authority, ...(pageRotation ? {rotationEpoch: pageRotation.epoch, rotationRetry: pageRotation.retry} : {})}} : {ownerKey, capabilityHash, ...(connectionKey ? {connectionKey, oauthGrant: authority.grant} : {})}), ...(create ? {prefix: document.slice(0, ADDRESS_CHARS), ...(anonymous ? {bearer: true} : {})} : {}), ...(hostAgent ? {hostAgent} : {}), ...(humanTool ? {humanTool: true} : {}), ...(EDITOR_ONLY_TOOLS.has(name) || humanTool ? {editorAuthorized: true} : {}), ...(editorSource === 'page' && editorActivity === true && ['document.commit', 'document.human_context'].includes(name) ? {editorActivity: true} : {}), ...(name === 'show' && args.target === 'return' ? { returnAddress: documentAddress } : {}), ...(name === 'export' ? { exportAddress: documentAddress, exportOrigin: new URL(request.url).origin } : {}), ...(createBudget ? { createBudget } : {}), ...(successor ? { rotateToHash: await digest(successor) } : {}), ...(operationName !== undefined ? { operationId: operationName } : {}), requestKey, requestExpiresAt, ...(task ? {task} : {}), ...(peek ? {peek: true} : {}) };
+  const payload = { operation: name === 'show' && args.target === 'pair' ? PAIR_BROWSER : name, args: name === 'show' && args.target === 'pair' ? {code: input.code} : input, create, ...(name === 'show' && args.target === 'ask' ? {waitBound: door === '/muse' ? MUSE_WAIT_MS : 120000} : {}), ...(door === '/muse' && ['edit', 'undo'].includes(name) ? {holdBound: MUSE_WAIT_MS} : {}), ...(file ? {hostFileBinding: await digest(JSON.stringify(file))} : {}), ...(page ? {page: {...page.authority, ...(pageRotation ? {rotationEpoch: pageRotation.epoch, rotationRetry: pageRotation.retry} : {})}} : {ownerKey, capabilityHash, ...(connectionKey ? {connectionKey, oauthGrant: authority.grant} : {})}), ...(create ? {prefix: document.slice(0, ADDRESS_CHARS), ...(anonymous ? {bearer: true} : {})} : {}), ...(hostAgent ? {hostAgent} : {}), ...(humanTool ? {humanTool: true} : {}), ...(EDITOR_ONLY_TOOLS.has(name) || humanTool ? {editorAuthorized: true} : {}), ...(editorSource === 'page' && editorActivity === true && ['document.commit', 'document.human_context'].includes(name) ? {editorActivity: true} : {}), ...(name === 'show' && args.target === 'return' ? { returnAddress: documentAddress } : {}), ...(name === 'export' ? { exportAddress: documentAddress, exportOrigin: new URL(request.url).origin } : {}), ...(createBudget ? { createBudget } : {}), ...(successor ? { rotateToHash: await digest(successor) } : {}), ...(operationName !== undefined ? { operationId: operationName } : {}), requestKey, requestExpiresAt, ...(task ? {task} : {}), ...(peek ? {peek: true} : {}), ...(wait ? {waitFor: wait} : {}), ...(ownerLink && !notesStatus ? {ownerLink: true} : {}), ...(connectionKey ? {workspaceAddress: documentAddress} : {}) };
   const workspace = env.DOCUMENTS.get(env.DOCUMENTS.idFromName(documentAddress));
   let cancellation;
   const cancel = () => cancellation ||= workspace.fetch(new Request('https://rapier.internal/operation/cancel', {
@@ -874,6 +913,13 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
       {retryable, ...(identity ? {retryIdentity: identity} : {})}));
   }
   const result = await parseJsonStream(response, {inlineBytes: 65536});
+  if (!page && authority.source !== 'server' && ['show', 'export', 'read'].includes(name) && ['editor_unavailable', 'editor_not_present'].includes(result.structuredContent?.reason)) {
+    const editor_url = new URL('/d/' + pageId(documentAddress), request.url).href, pairing = result.structuredContent.pairing;
+    result.structuredContent = {...result.structuredContent, reason: 'editor_unavailable', editor_url,
+      hint: 'No editor is open for this document. ' + (pairing?.status && pairing.status !== 'none' && pairing.next ? pairing.next + ' '
+        : 'Share editor_url with the person; if they read you a code, send show {target:"pair", code}. ') +
+        (name === 'read' ? 'Without an editor, read the text.' : 'Without an editor, export markdown, html or txt.')};
+  }
   if (result.isError && !(create && result.structuredContent?.created === true)) return result;
   const writer = authority.scopes?.includes('rapier:write') === true;
   if ((authority.source === 'server' || !writer) && result._meta?.rapier) delete result._meta.rapier.live;
@@ -898,27 +944,67 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   if (page) { if (result.structuredContent) delete result.structuredContent.pairing; return result; }
   const editorUrl = authority.source === 'server' ? null : new URL('/d/' + pageId(documentAddress), request.url).href;
   result.structuredContent = { ...result.structuredContent, document, revision: result.structuredContent.revision ?? result.structuredContent.documentRevision, ...(editorUrl ? {editor_url: editorUrl} : {}) };
+  if (name === 'read' && typeof result.structuredContent.next_cursor === 'string' && result.structuredContent.next_cursor) {
+    const sealed = await sealCursor(env, document, result.structuredContent.next_cursor);
+    if (sealed) result.structuredContent.next_cursor = sealed;
+  }
   if (result.structuredContent.outcome === 'pending' && result.structuredContent.pending?.requirements?.kind === 'material')
     result.structuredContent = {...result.structuredContent, ...materialWait(result.structuredContent, editorUrl, typeof args.operation_id === 'string' && args.operation_id !== '')};
   if (name === 'show' && args.target === 'pair' && /^[a-f0-9]{64}$/.test(result.structuredContent.ownerApprovalId || '')) {
     const {ownerApprovalId, ...value} = result.structuredContent;
-    result.structuredContent = {...value, owner_approval_url: new URL('/d/' + pageId(documentAddress) + '?pair=' + ownerApprovalId, request.url).href};
+    result.structuredContent = {...value, owner_approval_url: new URL('/editor/' + pageId(documentAddress) + '?pair=' + ownerApprovalId, request.url).href};
   }
   if (file || create && Object.keys(args).length === 0) result._meta = {...result._meta, rapier: {...result._meta?.rapier, ...(file ? {hostFile: file} : {home: true})}};
   return result;
 }
 
+const CURSOR_PREFIX = 'rpcur_';
+async function cursorKey(env, usage) {
+  const secret = editorSecret(env); if (!secret) return null;
+  const digested = await crypto.subtle.digest('SHA-256', editorSecretKeyMaterial(secret, 'rapier-read-cursor-v1:'));
+  return crypto.subtle.importKey('raw', digested, {name: 'AES-GCM'}, false, [usage]);
+}
+async function sealCursor(env, document, cursor) {
+  const key = await cursorKey(env, 'encrypt'); if (!key) return null;
+  const plain = encoder.encode(document + '\n' + cursor), material = editorSecretKeyMaterial(editorSecret(env), 'rapier-read-cursor-nonce-v1:');
+  const iv = new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array([...material, ...plain]))).slice(0, 12);
+  const cipher = new Uint8Array(await crypto.subtle.encrypt({name: 'AES-GCM', iv}, key, plain));
+  const sealed = CURSOR_PREFIX + base64url(new Uint8Array([...iv, ...cipher]));
+  return sealed.length <= 256 ? sealed : null;
+}
+async function openCursor(env, sealed) {
+  try {
+    const key = await cursorKey(env, 'decrypt'), bytes = fromBase64url(sealed.slice(CURSOR_PREFIX.length));
+    if (!key || bytes.length <= 12) return null;
+    const plain = new TextDecoder().decode(await crypto.subtle.decrypt({name: 'AES-GCM', iv: bytes.slice(0, 12)}, key, bytes.slice(12)));
+    const at = plain.indexOf('\n'), document = plain.slice(0, at), cursor = plain.slice(at + 1);
+    return at > 0 && WORKSPACE_HANDLE.test(document) && cursor ? {document, cursor} : null;
+  } catch { return null; }
+}
+
 function publicToolResult(name, result, door) {
   if (door === '/muse' && result._meta) { const {_meta, ...value} = result; result = value; }
   if (['open', 'read', 'edit', 'undo', 'show', 'export'].includes(name) && plain(result.structuredContent)) {
-    const reply = modelReply(name, result.structuredContent), {text, ...receipt} = reply;
+    const reply = modelReply(name, result.structuredContent), {text, ...shaped} = reply;
+    const {isError: _error, code, message, ...rest} = shaped;
+    const receipt = typeof code === 'string' && rest.reason === undefined
+      ? {outcome: rest.outcome, reason: code.toLowerCase(), ...(typeof message === 'string' && rest.hint === undefined ? {hint: message} : {}), ...rest}
+      : shaped;
     const {structuredContent, ...value} = result;
     if (name === 'open' && door !== '/muse') value._meta = {...value._meta, rapier: {...value._meta?.rapier,
       open: Object.fromEntries(['document', 'documentId', 'outcome', 'created', 'resumed', 'version', 'currentVersion']
         .filter(key => structuredContent[key] !== undefined).map(key => [key, structuredContent[key]]))}};
+    if (name === 'edit' && door !== '/muse' && typeof structuredContent.hash === 'string')
+      value._meta = {...value._meta, rapier: {...value._meta?.rapier, edit: {revision: structuredContent.revision, hash: structuredContent.hash}}};
     result = {...value,
       content: [{type: 'text', text: JSON.stringify(receipt) + (typeof text === 'string' ? '\n' + text : '')},
         ...(result.content || []).filter(item => ['image', 'resource', 'resource_link'].includes(item.type))]};
+  } else if (['open', 'read', 'edit', 'undo', 'show', 'export'].includes(name) && result.isError && result.content?.[0]?.type === 'text') {
+    let value; try {value = JSON.parse(result.content[0].text);} catch {}
+    if (plain(value) && typeof value.code === 'string' && value.reason === undefined) {
+      const {isError: _error, code, message, ...rest} = value;
+      result = {...result, content: [{type: 'text', text: JSON.stringify({outcome: rest.outcome, reason: code.toLowerCase(), ...(typeof message === 'string' ? {hint: message} : {}), ...rest})}, ...result.content.slice(1)]};
+    }
   }
   return result;
 }
@@ -984,30 +1070,41 @@ function requestScope(request, authority, door, modern) {
   return sha256(JSON.stringify([door, authority.source, authority.ownerId || '', authority.connectionId || '', session]));
 }
 
+export const REQUEST_OWNER_AFTER_MS = 1000;
 async function requestTool(name, args, env, request, authority, hostAgent, door, editorProof, editorActivity, scope, id) {
   if (!scope) return callTool(name, args, env, request, authority, hostAgent, door, editorProof, editorActivity);
-  const owner = env.DOCUMENTS.get(env.DOCUMENTS.idFromName('request:' + scope));
-  const key = sha256(JSON.stringify(id)), occurrence = 'request_' + crypto.randomUUID().replaceAll('-', '');
-  let cancellation;
-  const cancel = () => cancellation ||= owner.fetch(new Request('https://rapier.internal/request/cancel', {
-    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({key, occurrence}),
-  })).then(response => { if (!response.ok) throw failure('CANCELLATION_UNACKNOWLEDGED', 'Cancellation was not acknowledged.'); });
-  const abort = () => { cancel().catch(() => {}); };
-  request.signal.addEventListener('abort', abort, {once: true});
+  const key = sha256(JSON.stringify(id)), occurrence = 'request_' + crypto.randomUUID().replaceAll('-', ''), startedAt = Date.now();
+  const lifetime = createRequestLifetime(request.signal), held = new AbortController();
+  let refused = null, cancelledByOwner = false, owner = null;
+  const register = () => {
+    owner = env.DOCUMENTS.get(env.DOCUMENTS.idFromName('request:' + scope));
+    owner.fetch(new Request('https://rapier.internal/request/hold', {method: 'POST', signal: held.signal,
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify({key, occurrence, startedAt})}))
+      .then(response => response.ok ? response.json() : {})
+      .then(answer => {
+        if (answer.inUse) refused = failure('REQUEST_ID_IN_USE', 'This request ID is already in use.');
+        if (answer.cancelled) cancelledByOwner = true;
+        if (answer.inUse || answer.cancelled) lifetime.cancel();
+      }, () => {});
+  };
+  const timer = setTimeout(register, Number(env.REQUEST_OWNER_AFTER_MS ?? REQUEST_OWNER_AFTER_MS));
   try {
-    const pending = owner.fetch(new Request('https://rapier.internal/request/call', {method: 'POST',
-      headers: {'Content-Type': 'application/json', 'X-Rapier-Request': key, 'X-Rapier-Occurrence': occurrence}, ...jsonBodyInit({key, call: {name, args, authority, hostAgent,
-        door, editorProof, editorActivity, url: request.url,
-        headers: {'CF-Connecting-IP': request.headers.get('CF-Connecting-IP') || 'unknown'}}})}));
-    if (request.signal.aborted) abort();
-    const response = await pending;
-    if (!response.ok) throw failure('WORKSPACE_UNAVAILABLE', 'The request owner did not answer.');
-    const value = await parseJsonStream(response, {inlineBytes: 65536});
-    if (request.signal.aborted) await cancel();
-    if (value.cancelled || request.signal.aborted) throw new DOMException('Request canceled', 'AbortError');
-    if (value.error) throw failure(value.error.code, value.error.message, value.error.details);
-    return value.result;
-  } finally { request.signal.removeEventListener('abort', abort); }
+    const result = await callTool(name, args, env, new Request(request.url, {method: 'POST',
+      headers: {'CF-Connecting-IP': request.headers.get('CF-Connecting-IP') || 'unknown'}, signal: lifetime.signal}),
+      authority, hostAgent, door, editorProof, editorActivity);
+    if (refused) throw refused;
+    if (lifetime.signal.aborted) throw new DOMException('Request canceled', 'AbortError');
+    return result;
+  } catch (error) {
+    if (refused) throw refused;
+    if (lifetime.signal.aborted && error?.code !== 'CANCELLATION_UNACKNOWLEDGED') throw new DOMException('Request canceled', 'AbortError');
+    throw error;
+  } finally {
+    clearTimeout(timer); lifetime.release();
+    if (cancelledByOwner) await owner.fetch(new Request('https://rapier.internal/request/hold/done', {method: 'POST',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify({key, occurrence})})).catch(() => {});
+    else held.abort();
+  }
 }
 
 const headerField = value => value === null ? null : value.replace(/^[ \t]+|[ \t]+$/g, '');
@@ -1309,11 +1406,18 @@ async function handleRequest(request, env, authority, route) {
     } catch { return refused('The return receipt could not be confirmed. Ask the agent whether it arrived.', 503); }
   }
   if (url.pathname === '/health') return json({ service: 'rapier', serverInfo: serverInfo(env), protocolVersions: PROTOCOL_VERSIONS, protocolVersion: PROTOCOL_VERSION, ...deployment(env) });
+  if (url.pathname === '/.well-known/mcp/server-card.json') {
+    if (!['GET', 'HEAD'].includes(request.method)) return new Response(null, { status: 405, headers: { Allow: 'GET, HEAD' } });
+    const card = JSON.stringify({ ...mcpServer({ endpoint: CURRENT_DOOR }), $schema: 'https://static.modelcontextprotocol.io/schemas/v1/server-card.schema.json' }, null, 2) + '\n';
+    return new Response(request.method === 'HEAD' ? null : card, { headers: { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=300', 'X-Content-Type-Options': 'nosniff' } });
+  }
   if (url.pathname === '/.well-known/openai-apps-challenge') {
     if (request.method !== 'GET') return new Response('Not found', { status: 404, headers: { 'Cache-Control': 'no-store' } });
     const token = typeof env.OPENAI_APPS_CHALLENGE === 'string' ? env.OPENAI_APPS_CHALLENGE : '';
     return token ? new Response(token, { status: 200, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } }) : new Response('Not found', { status: 404, headers: { 'Cache-Control': 'no-store' } });
   }
+  const admit = /^\/editor\/(ws_[A-Za-z0-9_-]{43})\/admit$/.exec(url.pathname);
+  if (admit) return editorAdmission(request, env, admit[1], authority);
   const editorPage = /^\/editor\/(ws_[A-Za-z0-9_-]{43})$/.exec(url.pathname);
   const paired = PAIRED_PATH.exec(url.pathname) || editorPage;
   if (!DOORS.has(url.pathname) && !paired) return new Response('Not found', { status: 404 });
@@ -1434,6 +1538,8 @@ async function handleRequest(request, env, authority, route) {
     return json({jsonrpc: '2.0', id, result: complete({isError: true, content: [{type: 'text', text: 'Connect Rapier with the permission this tool needs.'}],
       _meta: {'mcp/www_authenticate': [challenge]}})}, refusal.status, {'WWW-Authenticate': challenge});
   };
+  if (authority?.grantUnchecked && message.method !== 'tools/call' && !await oauthGrantCurrent(authority.grant, env))
+    return challenged(oauthChallenge(authorityRequest, env));
   try {
     switch (message.method) {
       case 'initialize':
@@ -1640,26 +1746,63 @@ async function pageSuccessor(env, page, editorKey) {
   return {capability: admission.prefix + base64url(suffix).slice(0, 21), epoch: admission.epoch, retry};
 }
 
+// RAPIER_APPS_HOST flag run once per isolate, asset binding and origin; a request splices in only its own flags.
+const PAIRED_PAGE_PARTS = new WeakMap();
+const APPS_HOST_FLAG = /globalThis\.RAPIER_APPS_HOST\s*=\s*true;/;
+async function pairedPageParts(env, request) {
+  let held = PAIRED_PAGE_PARTS.get(env.ASSETS);
+  if (!held) PAIRED_PAGE_PARTS.set(env.ASSETS, held = new Map());
+  const origin = new URL(request.url).origin;
+  if (!held.has(origin)) held.set(origin, (async () => {
+    const response = await env.ASSETS.fetch(new Request(new URL('/rapier-app.html', request.url)));
+    if (!response.ok) return null;
+    let html = await readTextBody(response, MAX_UI_BYTES, 'editor page', 'UI_RESOURCE_TOO_LARGE');
+    const versions = [...html.matchAll(/<meta\s+name="rapier-version"\s+content="([^"]+)"\s*\/?\s*>/gi)];
+    if (versions.length !== 1 || versions[0][1] !== VERSION) return null;
+    html = html.replace(/(<link\b[^>]*\bhref=)(["'])(icon-(?:192|512)\.png)\2/gi, (_, prefix, quote, name) => prefix + quote + '/' + name + quote);
+    html = html.replace(/<\/title>\n?/, all => all + PAIRED_PREVIEW);
+    const flag = APPS_HOST_FLAG.exec(html);
+    return flag ? {before: encoder.encode(html.slice(0, flag.index)), after: encoder.encode(html.slice(flag.index + flag[0].length))} : null;
+  })().catch(() => null));
+  const parts = await held.get(origin);
+  if (!parts) held.delete(origin);
+  return parts;
+}
+
 async function pairedPage(request, env, page) {
   const socketOrigin = new URL(request.url).origin.replace(/^http/, 'ws');
   const headers = {'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY', 'X-Robots-Tag': 'noindex', 'Content-Security-Policy': PAGE_CSP.replace("connect-src 'self'", "connect-src 'self' " + socketOrigin)};
   const unavailable = () => new Response('The editor is unavailable.', {status: 503, headers: {'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store'}});
   if (!env.ASSETS?.fetch || !env.DOCUMENTS?.get || !editorSecret(env)) return unavailable();
   try {
-    const response = await env.ASSETS.fetch(new Request(new URL('/rapier-app.html', request.url)));
-    if (!response.ok) return unavailable();
-    let html = await readTextBody(response, MAX_UI_BYTES, 'editor page', 'UI_RESOURCE_TOO_LARGE');
-    const versions = [...html.matchAll(/<meta\s+name="rapier-version"\s+content="([^"]+)"\s*\/?\s*>/gi)];
-    if (versions.length !== 1 || versions[0][1] !== VERSION) return unavailable();
-    html = html.replace(/(<link\b[^>]*\bhref=)(["'])(icon-(?:192|512)\.png)\2/gi, (_, prefix, quote, name) => prefix + quote + '/' + name + quote);
+    const parts = await pairedPageParts(env, request);
+    if (!parts) return unavailable();
     const admitted = (await pageAdmission(env, page)).admitted === true;
     const fileOrigins = (env.FILE_DOWNLOAD_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean).map(value => configuredOrigin(value, 'FILE_DOWNLOAD_ORIGINS'));
-    html = pageFlags(editorAssetBase(html, request), {id: page.id, editorKey: admitted ? await mintEditorKey(editorSecret(env), Date.now(), {workspace: page.address, connection: page.authority.ownerKey || ''}) : '', fileOrigins});
-    if (!html) return unavailable();
-    html = html.replace(/globalThis\.RAPIER_APPS_HOST\s*=\s*true;/,
-      "globalThis.RAPIER_APPS_HOST = !(window.parent === window && new URLSearchParams(location.hash.slice(1)).has('live') && new URLSearchParams(location.hash.slice(1)).has('key')); ");
-    return new Response(request.method === 'HEAD' ? null : html, {headers});
+    const flags = pageFlagText({id: page.id, editorKey: admitted ? await mintEditorKey(editorSecret(env), Date.now(), {workspace: page.address, connection: page.authority.ownerKey || ''}) : '', fileOrigins});
+    const middle = encoder.encode("globalThis.RAPIER_APPS_HOST = !(window.parent === window && new URLSearchParams(location.hash.slice(1)).has('live') && new URLSearchParams(location.hash.slice(1)).has('key')); "
+      + flags + ' globalThis.RAPIER_ASSET_BASE = ' + JSON.stringify(new URL('/editor-assets/', request.url).href) + ';');
+    if (request.method === 'HEAD') return new Response(null, {headers});
+    const body = new Uint8Array(parts.before.length + middle.length + parts.after.length);
+    body.set(parts.before); body.set(middle, parts.before.length); body.set(parts.after, parts.before.length + middle.length);
+    return new Response(body, {headers});
   } catch { return unavailable(); }
+}
+
+async function editorAdmission(request, env, id, browser) {
+  const headers = {'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'};
+  if (request.method !== 'POST') return new Response(null, {status: 405, headers: {...headers, Allow: 'POST'}});
+  const url = new URL(request.url);
+  if (url.search || request.headers.get('Origin') !== url.origin || !['same-origin', null].includes(request.headers.get('Sec-Fetch-Site')))
+    return json({admitted: false}, 403, headers);
+  if (!env.DOCUMENTS?.get || !editorSecret(env)) return json({admitted: false}, 503, headers);
+  const page = await pageCaller(request, env, id, browser);
+  if (!page) return json({admitted: false}, 404, headers);
+  try {
+    if ((await pageAdmission(env, page)).admitted !== true) return json({admitted: false}, 200, headers);
+    const fileOrigins = (env.FILE_DOWNLOAD_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean).map(value => configuredOrigin(value, 'FILE_DOWNLOAD_ORIGINS'));
+    return json({admitted: true, editorKey: await mintEditorKey(editorSecret(env), Date.now(), {workspace: page.address, connection: page.authority.ownerKey || ''}), fileOrigins}, 200, headers);
+  } catch { return json({admitted: false}, 503, headers); }
 }
 
 async function takePairingStart(request, env) {
@@ -1686,7 +1829,7 @@ async function pairStatus(request, env, page, args, cookies) {
     if (status.status === 'absent') return toolError(failure('DOCUMENT_UNAVAILABLE', 'This workspace is unknown, deleted or expired.'));
     if (status.status === 'waiting') return envelope({outcome: 'waiting', paired: false, pairingCode: status.code, codeExpiresAt: new Date(status.expiresAt).toISOString()});
     if (status.status === 'owner-required') return envelope({outcome: 'owner_confirmation_required', paired: false,
-      owner_approval_url: new URL('/d/' + page.id + '?pair=' + await digest(held), request.url).href});
+      owner_approval_url: new URL('/editor/' + page.id + '?pair=' + await digest(held), request.url).href});
     if (status.status === 'confirmation_required') return envelope({outcome: 'confirmation_required', paired: false});
     if (status.status === 'cancelled') {
       cookies.push(...setCookies(page.id, pendingCookie(page.id), '', 0));
@@ -1708,11 +1851,34 @@ async function pairStatus(request, env, page, args, cookies) {
 
 export default { fetch: handleMcp };
 
+const BUDGET_LEASE_MS = 24 * 60 * 60 * 1000;
 export class RapierBudget {
-  constructor(ctx, env) { this.ctx = ctx; this.env = env; }
+  constructor(ctx, env) { this.ctx = ctx; this.env = env; this.window = null; this.lease = undefined; }
+  storedLease() {
+    if (this.lease === undefined) {
+      const kv = this.ctx.storage.kv, lease = kv.get('lease'), start = kv.get('windowStart'), count = kv.get('count'), resetAt = kv.get('resetAt');
+      const written = typeof start === 'number' && typeof count === 'number' && typeof resetAt === 'number' ? {start, until: resetAt, reserved: count} : null;
+      this.lease = lease && written ? (lease.until >= written.until ? lease : written) : lease || written;
+    }
+    return this.lease;
+  }
+  receipts(now) {
+    const retained = this.ctx.storage.kv.get('receipts');
+    return Array.isArray(retained) ? retained.filter(entry => entry?.allowed && entry.resetAt > now) : [];
+  }
   async fetch(request) {
     let takeId = null;
-    if (request.method === 'POST' && new URL(request.url).pathname === '/grant') return this.grant(await parseJsonStream(request, {inlineBytes: 65536}));
+    if (request.method === 'POST' && new URL(request.url).pathname === '/oauth-store') {
+      const body = await parseJsonStream(request, {inlineBytes: 1048576});
+      if (body?.op === 'watch') {
+        const answer = await oauthStoreRequest(this.ctx, {op: 'get', key: body.key});
+        if (answer.state === 'value') watchGrant(this.ctx, body);
+        return json(answer);
+      }
+      const answer = await oauthStoreRequest(this.ctx, body);
+      if (body?.op === 'delete' && typeof body.key === 'string' && body.key.startsWith('grant:')) await tellRevoked(this.ctx, this.env, body.key);
+      return json(answer);
+    }
     try {
       if (this.ctx.storage) this.ctx.storage.operation = 'budget.take';
       if (request.method !== 'POST' || new URL(request.url).pathname !== '/take') return new Response('Not found', { status: 404 });
@@ -1720,79 +1886,109 @@ export class RapierBudget {
       try { body = await parseJsonStream(request, {inlineBytes: 65536}); } catch { return new Response('Bad request', { status: 400 }); }
       const limit = Number.isSafeInteger(body?.limit) && body.limit > 0 ? body.limit : 1, windowMs = Number.isSafeInteger(body?.windowMs) && body.windowMs > 0 ? body.windowMs : 3600000;
       takeId = typeof body.takeId === 'string' && /^take_[A-Za-z0-9_-]{1,96}$/.test(body.takeId) ? body.takeId : null;
-      const now = Date.now();
-      let start = this.ctx.storage.kv.get('windowStart'), count = this.ctx.storage.kv.get('count');
-      const active = typeof start === 'number' && typeof count === 'number' && now - start < windowMs;
-      if (!active) { start = now; count = 0; }
-      const retained = active ? this.ctx.storage.kv.get('receipts') : null;
-      const receipts = Array.isArray(retained) ? retained.filter(entry => entry.allowed && entry.resetAt === start + windowMs) : [];
+      const now = Date.now(), lease = this.storedLease();
+      let window = this.window;
+      if (!window || now - window.start >= window.windowMs) {
+        const raised = !window && lease?.held?.until > now ? lease.held : null;
+        const held = !window && !raised && lease && lease.until > now, resume = held && Number.isSafeInteger(lease.start) && now - lease.start < windowMs;
+        window = this.window = raised ? {start: raised.start, windowMs, count: Math.min(limit, raised.reserved), held: true}
+          : {start: resume ? lease.start : now, windowMs, count: held ? Math.min(limit, lease.reserved) : 0, held: !!held};
+      }
+      const resetAt = window.start + window.windowMs;
+      const receipts = takeId ? this.receipts(now) : [];
       if (takeId) {
         const prior = receipts.find(entry => entry.id === takeId);
         if (prior) return json({ allowed: prior.allowed, remaining: prior.remaining, resetAt: prior.resetAt, replayed: true, takeId });
       }
-      const allowed = count < limit;
-      if (allowed) count++;
-      const remaining = Math.max(0, limit - count), resetAt = start + windowMs;
-      if (!allowed) return json({ allowed, remaining, resetAt, ...(takeId ? { takeId } : {}) });
-      this.ctx.storage.transactionSync(() => {
-        this.ctx.storage.kv.put('windowStart', start);
-        this.ctx.storage.kv.put('count', count);
-        this.ctx.storage.kv.put('resetAt', resetAt);
-        this.ctx.storage.kv.put('receipts', allowed && takeId ? [...receipts, { id: takeId, allowed, remaining, resetAt }] : receipts);
-      });
-      await this.ctx.storage.sync();
-      await this.ctx.storage.setAlarm(start + windowMs);
+      const allowed = window.count < limit;
+      if (!allowed) return json({ allowed, remaining: 0, resetAt, ...(takeId ? { takeId } : {}) });
+      const count = window.count + 1, remaining = Math.max(0, limit - count), step = Math.max(0, Math.ceil(limit / 10) - 1);
+      const base = lease && lease.until > now ? lease : null;
+      const covered = window.held ? lease?.held?.until >= resetAt && lease.held.reserved >= count && lease.held.start === window.start
+        : base && base.until >= resetAt && base.reserved >= count;
+      const next = covered ? lease : window.held
+        ? {...(base || {start: window.start, until: now + BUDGET_LEASE_MS, reserved: step}), held: {start: window.start, until: resetAt, reserved: Math.min(limit, count + step)}}
+        : {start: window.start, until: Math.max(now + BUDGET_LEASE_MS, resetAt), reserved: Math.min(limit, Math.max(base ? base.reserved : 0, count + step))};
+      if (!covered || takeId) {
+        this.ctx.storage.transactionSync(() => {
+          if (!covered) this.ctx.storage.kv.put('lease', next);
+          if (takeId) this.ctx.storage.kv.put('receipts', [...receipts, { id: takeId, allowed, remaining, resetAt }]);
+        });
+        this.lease = next; window.count = count;
+        if (!covered && await this.ctx.storage.getAlarm() === null) await this.ctx.storage.setAlarm(Math.max(next.until, next.held?.until || 0));
+        await this.ctx.storage.sync();
+      } else window.count = count;
       return json({ allowed, remaining, resetAt, ...(takeId ? { takeId } : {}) });
     } catch (error) {
+      this.window = null; this.lease = undefined;
       if (takeId) {
-        const retained = this.ctx.storage.kv.get('receipts');
-        const receipts = Array.isArray(retained) ? retained : [];
-        const prior = receipts.find(entry => entry.id === takeId && entry.allowed && entry.resetAt > Date.now());
+        const prior = this.receipts(Date.now()).find(entry => entry.id === takeId);
         if (prior) return json({ allowed: prior.allowed, remaining: prior.remaining, resetAt: prior.resetAt, replayed: true, takeId, code: 'WORKSPACE_UNAVAILABLE' });
       }
       return json({ allowed: false, code: 'WORKSPACE_UNAVAILABLE', message: 'The budget operation was not acknowledged.' });
     }
   }
-  async grant({op, key, value, expires}) {
-    const kv = this.ctx.storage.kv, now = Date.now(), grant = key.startsWith('grant:');
-    let answer, keep;
-    if (kv.get('revoked')) answer = {state: 'gone'};
-    else if (op === 'get') {
-      const record = grant ? kv.get('grant') : null;
-      answer = !grant ? {state: kv.get(key) ? 'gone' : 'unknown'} : !record ? {state: 'unknown'}
-        : record.expires <= now ? {state: 'gone'} : {state: 'value', value: record.value};
-    } else if (op === 'put') {
-      kv.put('grant', {value, expires: expires ?? Infinity});
-      answer = {state: 'stored'}, keep = expires;
-    } else {
-      kv.put(grant ? 'revoked' : key, true);
-      answer = {state: 'gone'}, keep = now + 86400000;
-    }
-    if (keep > (kv.get('resetAt') ?? 0)) {
-      kv.put('resetAt', keep);
-      await this.ctx.storage.setAlarm(keep);
-    }
-    return json(answer);
-  }
   async alarm() {
     try { if (this.ctx.storage) this.ctx.storage.operation = 'budget.alarm'; } catch {}
-    const resetAt = this.ctx.storage.kv.get('resetAt');
-    if (typeof resetAt === 'number' && resetAt > Date.now()) {
+    const lease = this.ctx.storage.kv.get('lease');
+    const resetAt = Math.max(this.ctx.storage.kv.get('resetAt') ?? 0, lease?.until ?? 0, lease?.held?.until ?? 0);
+    if (resetAt > Date.now()) {
       await this.ctx.storage.setAlarm(resetAt);
       return;
     }
     await this.ctx.storage.deleteAll();
+    this.lease = undefined;
   }
+}
+
+function leaseMarks(contexts = {}) {
+  const rows = [];
+  for (const [key, row] of Object.entries(contexts)) {
+    if (row.drawing) return null;
+    const {sequence, updatedAt, expiresAt, ...kept} = row;
+    rows.push([key, kept]);
+  }
+  return JSON.stringify(rows);
 }
 
 export class RapierDocument {
   constructor(ctx, env) {
     this.ctx = ctx;
     this.env = env;
+    this.grantVerdicts = new GrantVerdicts(env);
     this.pending = Promise.resolve();
+    this.leased = null;
+    this.persisted = null;
+    this.changes = changeSignal();
     this.cachedState = null;
     this.cachedJournal = null;
     this.live = new LiveSessions(this);
+    this.relay = new PageRelay(this, {
+      caller: input => ({...resolveCaller({actor: 'agent', principal: remotePrincipal(input), requestId: input.operationId}, {transport: 'mcp'}),
+        ...(input.hostAgent ? {hostAgent: input.hostAgent} : {})}),
+      inFlight: (input, head, caller) => [this.returnWaiter, this.visualWaiter, this.exportWaiter, this.editorWaiter, head.materialOwner].filter(row => row &&
+        row.capabilityHash === input.capabilityHash && row.caller.invocationKey !== caller.invocationKey).map(row => row.caller),
+      facts: (head, operation) => ({returns: receivedReturns(head).map(row => { const { name, ...listed } = returnMetadata(row); return listed; }),
+        editorContext: {preferences: head.editorPreferences || null, receipts: (head.editorReceipts || []).map(row => row.receipt)},
+        ...(operation === 'read' ? {paintBrushes: agentPaintBrushRegistry(), material: true} : {})}),
+      decorate: (operation, value, head) => {
+        const material = operation === 'read' && value.outcome === 'ok' && materialReport(head);
+        return material ? {...value, material} : value;
+      },
+      envelope: (operation, value, head) => json(operationEnvelope(operation, value, head)),
+      opened: async (input, value, head, state, collaboration) => {
+        const result = envelope({...value, outcome: value.outcome === 'ok' ? 'resumed' : value.outcome, created: false, resumed: true}, head,
+          {snapshot: {...snapshot(state, collaboration, head.viewIntent, head.visualIntent, head.exportIntent, head.editorIntent),
+            ...(head.bearer ? {} : {agentAccess: head.agentAccess !== false}),
+            ...(head.askIntent && (this.returnWaiter?.askId === head.askIntent.id || head.askIntent.keptUntil > Date.now()) ? {askIntent: {id: head.askIntent.id, question: head.askIntent.question}} : {}),
+            ...(head.humanMessages?.length ? {messagesQueued: head.humanMessages.length} : {})}});
+        const current = this.ctx.storage.kv.get('head');
+        if (!result.isError && current && current.expiresAt > Date.now()) result._meta = {...result._meta,
+          rapier: {...result._meta?.rapier, live: await this.live.grant(current, input)}};
+        return json(result);
+      },
+    });
+    this.pace = new WritePace();
     this.returnWaiter = null;
     this.visualWaiter = null;
     this.exportWaiter = null;
@@ -1806,11 +2002,22 @@ export class RapierDocument {
     this.maxStateBytes = bounded(env.MAX_STATE_MIB, 48, 8, 64) * 1024 * 1024;
   }
 
-  exclusive(operation) {
+  exclusive(operation, silent = false) {
     const task = this.pending.then(operation);
-    this.pending = task.catch(() => {});
+    this.pending = task.catch(() => {}).finally(() => { if (!silent && this.changes.size) this.changes.notify(); });
+    task.then(() => this.noticeSoon(), () => this.noticeSoon());
     return task;
   }
+
+  peek(input) { return this.exclusive(() => this.operate(input, undefined, undefined, undefined, input.signal), true); }
+  answer(input) { return this.exclusive(() => this.operate(input, undefined, undefined, undefined, input.signal), true); }
+  grantCurrent(grant) { return oauthGrantCurrent(grant, this.env); }
+
+  waiting() {
+    const head = this.ctx.storage.kv.get('head');
+    return [this.returnWaiter, this.visualWaiter, this.exportWaiter, this.editorWaiter, head?.materialOwner].filter(Boolean).length;
+  }
+  noticeSoon() { try { this.live.notify(this.waiting()); } catch {} }
 
   tasks() {
     const complete = (input, result) => {
@@ -1890,8 +2097,46 @@ export class RapierDocument {
       return this.stopRequest(input.occurrence, Date.now() + REQUEST_LEASE_MS,
         active?.occurrence === input.occurrence ? active : null);
     }
-    if (!active) return new Response(null, {status: 204});
+    if (!active) {
+      const found = await new Promise(resolve => {
+        const timer = setTimeout(() => { if (this.earlyCancels.get(input.key) === entry) this.earlyCancels.delete(input.key); resolve(null); },
+          Number(this.env.REQUEST_OWNER_AFTER_MS ?? REQUEST_OWNER_AFTER_MS) + 1000);
+        const entry = {at: Date.now(), found: row => { clearTimeout(timer); resolve(row); }};
+        (this.earlyCancels ??= new Map()).set(input.key, entry);
+      });
+      if (!found) return new Response(null, {status: 204});
+      return this.stopRequest(found.occurrence, Date.now() + REQUEST_LEASE_MS, found);
+    }
     return this.stopRequest(active.occurrence, Date.now() + REQUEST_LEASE_MS, active);
+  }
+
+  async holdRequestCall(request) {
+    const input = await parseJsonStream(request, {inlineBytes: 4096});
+    if (!/^[a-f0-9]{64}$/.test(input.key || '') || !/^request_[a-f0-9]{32}$/.test(input.occurrence || '') || !Number.isSafeInteger(input.startedAt))
+      return new Response(null, {status: 400});
+    if (this.requestCalls.has(input.key)) return json({inUse: true});
+    const lifetime = createRequestLifetime(), ended = Promise.withResolvers();
+    const row = {lifetime, occurrence: input.occurrence, done: ended.promise, ended, held: true};
+    this.requestCalls.set(input.key, row);
+    const finish = () => {
+      lifetime.release(); this.stoppingRequests.delete(input.occurrence);
+      if (this.requestCalls.get(input.key) === row) this.requestCalls.delete(input.key);
+      ended.resolve();
+    };
+    request.signal?.addEventListener('abort', () => { if (!lifetime.signal.aborted) finish(); }, {once: true});
+    const answer = new Promise(resolve => lifetime.signal.addEventListener('abort', () => resolve(json({cancelled: true})), {once: true}));
+    const early = this.earlyCancels?.get(input.key);
+    if (early && early.at >= input.startedAt) { this.earlyCancels.delete(input.key); early.found(row); }
+    else if (this.stoppingRequests.has(input.occurrence) || (this.ctx.storage.kv.get('requestStops') || []).some(stop => stop.key === input.occurrence && stop.expiresAt > Date.now()))
+      lifetime.cancel();
+    row.finish = finish;
+    return answer;
+  }
+
+  holdDone(input) {
+    const row = this.requestCalls.get(input?.key);
+    if (row?.held && row.occurrence === input.occurrence) row.finish();
+    return new Response(null, {status: 204});
   }
 
   async runRequestCall(request) {
@@ -1927,6 +2172,7 @@ export class RapierDocument {
     this.cachedState = null; this.cachedJournal = null;
     let head = this.ctx.storage.kv.get('head');
     if (!head || head.ownerKey !== input.ownerKey || head.capabilityHash !== input.capabilityHash || head.expiresAt <= Date.now()) return;
+    if (head.custody) return;
     for (const kind of ['visual', 'export']) {
       const held = head[kind + 'TaskInput'], intent = head[kind + 'Intent'];
       if (input.task && held?.task?.key === input.task.key && held.operationId === input.operationId &&
@@ -1946,7 +2192,7 @@ export class RapierDocument {
 
   *storedParts(prefix, count) {
     if (count === undefined) throw failure('WORKSPACE_UNAVAILABLE', 'This workspace representation is unavailable. Open a fresh workspace from an exported copy.');
-    if (!Number.isSafeInteger(count) || count < 1 || count > Math.ceil(this.maxStateBytes / CHUNK_CHARS)) throw failure('CORRUPT_WORKSPACE', 'The stored workspace is incomplete.');
+    if (!Number.isSafeInteger(count) || count < 1 || count > Math.ceil(this.maxStateBytes / (CHUNK_CHARS >> 1))) throw failure('CORRUPT_WORKSPACE', 'The stored workspace is incomplete.');
     for (let index = 0; index < count; index++) {
       const chunk = this.ctx.storage.kv.get(prefix + index);
       if (typeof chunk !== 'string') throw failure('CORRUPT_WORKSPACE', 'The stored workspace is incomplete.');
@@ -1995,10 +2241,18 @@ export class RapierDocument {
     return Object.fromEntries(['ownerKey', 'connectionKey', 'oauthGrant'].filter(field => input[field] !== undefined).map(field => [field, input[field]]));
   }
 
-  async assertAuthority(input) {
+  async ownerLinkHash(input) {
+    const head = this.ctx.storage.kv.get('head');
+    if (!head || head.bearer || head.ownerKey !== input.ownerKey || head.agentAccess === false || head.expiresAt <= Date.now()) return null;
+    if (input.capabilityHash === undefined && head.rotations > 0) return null;
+    if (input.capabilityHash !== undefined && input.capabilityHash !== head.capabilityHash && input.capabilityHash !== await digest(await linkCapability(head, this.env))) return null;
+    return head.capabilityHash;
+  }
+
+  async assertAuthority(input, {remembered = false} = {}) {
     assertRequestActive(input);
     if (Array.isArray(input)) {
-      for (const authority of input) if (authority) await this.assertAuthority(authority);
+      for (const authority of input) if (authority) await this.assertAuthority(authority, {remembered});
       assertRequestActive(input);
       return;
     }
@@ -2006,9 +2260,27 @@ export class RapierDocument {
     const reference = input.oauthGrant;
     if (!validGrantReference(reference) || input.ownerKey !== await digest(reference.ownerId) ||
         input.connectionKey && input.connectionKey !== await digest(reference.connectionId) ||
-        !await oauthGrantCurrent(reference, this.env))
+        !await this.grantVerdicts.current(reference, {remembered}))
       throw failure('OAUTH_AUTHORITY_REVOKED', 'This connection no longer authorizes the pending operation.');
     input.signal?.throwIfAborted();
+  }
+
+  leaseOnly(head, state, journal) {
+    const mark = this.persisted, stored = this.ctx.storage.kv.get('head');
+    if (!mark || !stored || stored.version !== head.version || stored.version !== mark.version || stored.revision !== mark.revision ||
+        stored.contextParts !== mark.contextParts || stored.expiresAt - Date.now() < this.retention - 86400000) return false;
+    if (JSON.stringify(head.viewIntent ?? null) !== mark.view || journal.length !== mark.journalLength || journal.at(-1)?.key !== mark.journalLast) return false;
+    const contexts = leaseMarks(state.humanContexts);
+    return contexts !== null && contexts === mark.contexts;
+  }
+  leasedHead(head) {
+    const held = this.leased;
+    if (!held || !head || this.cachedState !== held.state || JSON.stringify(head) !== held.stored) { this.leased = null; return head; }
+    return {...head, nextExpiryAt: held.nextExpiryAt, collaboration: held.collaboration, collaborationContext: held.collaborationContext};
+  }
+
+  async scheduleAlarm(at) {
+    if (await this.ctx.storage.getAlarm() !== at) await this.ctx.storage.setAlarm(at);
   }
 
   async persist(head, state, journal, contextOnly = false, exported = null, material = undefined, authority = null, taskResult = null) {
@@ -2049,11 +2321,11 @@ export class RapierDocument {
       human = jsonRecord({ humanContexts, contextSequences, clock }, CHUNK_CHARS);
       head.contextBytes = human.bytes;
       if (!contextOnly) {
-        text = jsonRecord({format: WORKSPACE_STATE_FORMAT, metadata: workspaceMetadata(canonical), state: canonical}, CHUNK_CHARS);
+        text = jsonRecord({format: WORKSPACE_STATE_FORMAT, metadata: workspaceMetadata(canonical), state: canonical}, CHUNK_CHARS, {contentDefined: true});
         head.stateBytes = text.bytes;
       }
       if (Array.isArray(journal)) {
-        journalText = jsonRecord(journal, CHUNK_CHARS);
+        journalText = jsonRecord(journal, CHUNK_CHARS, {contentDefined: true});
         head.journalBytes = journalText.bytes;
       }
 
@@ -2068,13 +2340,13 @@ export class RapierDocument {
       {prefix: 'journal:', field: 'journalParts', text: journalText},
       {prefix: 'material:', field: 'materialParts', text: materialText},
     ].filter(row => row.text !== undefined).map(row => ({...row, previous: head[row.field] || 0}));
-    for (const row of records) head[row.field] = row.text.parts;
+    for (const row of records) head[row.field] = row.text.parts ?? Math.ceil(row.text.chars / (CHUNK_CHARS >> 1));
     const retainedBytes = (head.stateBytes || 0) + (head.contextBytes || 0) + (head.journalBytes || 0) +
       head.exportBytes + (head.returnBytes || 0) + (head.materialBytes || 0) + (head.taskBytes || 0) + contentBytes(JSON.stringify(head));
     if (retainedBytes > this.maxStateBytes) throw failure('WORKSPACE_STATE_LIMIT', 'This would exceed the workspace size. Let pending work or temporary exports finish before adding more.', {limitBytes: this.maxStateBytes});
     if (contentBytes(JSON.stringify(head)) > 2_000_000 - 1024) throw failure('WORKSPACE_STATE_LIMIT', 'The workspace metadata is full. Let temporary exports expire before creating another.', {limitBytes: this.maxStateBytes});
     await this.ctx.storage.transaction(async () => {
-      if (authority) await this.assertAuthority(authority);
+      if (authority) await this.assertAuthority(authority, {remembered: authority.operation === 'read'});
       assertRequestActive(authority);
       assertUnexpired();
       for (const row of expired) for (let index = 0; index < row.parts; index++) this.ctx.storage.kv.delete('export:' + row.id + ':' + index);
@@ -2092,15 +2364,21 @@ export class RapierDocument {
           const key = row.prefix + index++;
           if (this.ctx.storage.kv.get(key) !== chunk) this.ctx.storage.kv.put(key, chunk);
         }
-        for (let index = head[row.field]; index < row.previous; index++) this.ctx.storage.kv.delete(row.prefix + index);
+        head[row.field] = index;
+        for (; index < row.previous; index++) this.ctx.storage.kv.delete(row.prefix + index);
       }
       this.ctx.storage.kv.put('head', head);
       const stops = this.ctx.storage.kv.get('requestStops') || [];
-      await this.ctx.storage.setAlarm(Math.min(head.expiresAt, head.materialIntent?.expiresAt || Infinity, this.live.nextAlarm(),
+      await this.scheduleAlarm(Math.min(head.expiresAt, head.materialIntent?.expiresAt || Infinity, this.live.nextAlarm(),
         ...(head.taskResults || []).map(row => row.expiresAt), ...stops.map(row => row.expiresAt)));
       assertRequestActive(authority);
     });
     await this.ctx.storage.sync();
+    this.leased = null;
+    const prior = this.persisted;
+    this.persisted = {version: head.version, revision: head.revision, contextParts: head.contextParts, view: JSON.stringify(head.viewIntent ?? null),
+      journalLength: Array.isArray(journal) ? journal.length : prior?.journalLength, journalLast: Array.isArray(journal) ? journal.at(-1)?.key : prior?.journalLast,
+      contexts: state ? leaseMarks(state.humanContexts) : prior?.contexts ?? null};
     if (state) this.cachedState = state;
     if (journalText !== undefined) this.cachedJournal = journal;
     if (live) this.live.publish(live, head);
@@ -2115,7 +2393,16 @@ export class RapierDocument {
   async fetch(request) {
     const path = new URL(request.url).pathname;
     if (path === '/live' && request.method === 'GET') return this.exclusive(() => this.live.upgrade(request));
-    if (path === '/live/stop' && request.method === 'POST') return this.exclusive(() => this.live.stop(request));
+    if (path === '/live/stop' && request.method === 'POST') return (async () => {
+      const head = this.ctx.storage.kv.get('head');
+      if (head?.custody && (await this.live.admit(head, request.headers.get('X-Rapier-Live-Owner'), this.live.stopBinding.bind(this.live))).ok)
+        await this.relay.recall();
+      return this.exclusive(() => this.live.stop(request));
+    })();
+    if (path === '/grant-revoked' && request.method === 'POST') {
+      const body = await parseJsonStream(request, {inlineBytes: 4096}).catch(() => null);
+      return new Response(null, {status: this.grantVerdicts.revoked(body?.key) ? 204 : 400});
+    }
     if (path === '/owner-link' && request.method === 'POST') return this.exclusive(async () => {
       const input = await parseJsonStream(request, {inlineBytes: 65536}), head = this.ctx.storage.kv.get('head');
       try {await this.assertAuthority(input);} catch {return json({admitted: false});}
@@ -2152,6 +2439,8 @@ export class RapierDocument {
         message: Number.isSafeInteger(error?.code) ? error.message : 'Task unavailable.'}}); }
     }
     if (path === '/request/call' && request.method === 'POST') return this.runRequestCall(request).catch(() => new Response(null, {status: 503}));
+    if (path === '/request/hold' && request.method === 'POST') return this.holdRequestCall(request).catch(() => new Response(null, {status: 503}));
+    if (path === '/request/hold/done' && request.method === 'POST') return parseJsonStream(request, {inlineBytes: 4096}).then(input => this.holdDone(input), () => new Response(null, {status: 400}));
     if (path === '/request/cancel' && request.method === 'POST') return this.cancelRequestCall(request).catch(() => new Response(null, {status: 503}));
     if (path === '/operation/cancel' && request.method === 'POST') return this.cancelRequestOperation(request).catch(() => new Response(null, {status: 503}));
     if (path === '/return' && ['GET', 'POST'].includes(request.method)) return this.exclusive(() => this.acceptReturn(request));
@@ -2166,6 +2455,13 @@ export class RapierDocument {
     try {
       if (request.method !== 'POST' || path !== '/operation') return new Response(null, { status: 404 });
       const input = await parseJsonStream(request, {inlineBytes: 65536});
+      if (plain(input) && input.workspaceAddress !== undefined) { this.grantVerdicts.learn(input.workspaceAddress); delete input.workspaceAddress; }
+      if (plain(input) && input.ownerLink !== undefined) {
+        if (input.ownerLink !== true || input.page) return new Response(null, {status: 400});
+        delete input.ownerLink;
+        const linked = await this.ownerLinkHash(input);
+        if (linked) input.capabilityHash = linked;
+      }
       if (plain(input) && plain(input.page)) {
         const head = this.ctx.storage.kv.get('head');
         const replaying = input.operation === ROTATE && this.replaysPageRotation(head, input.page, input.page.rotationRetry);
@@ -2176,10 +2472,11 @@ export class RapierDocument {
           ...(input.operation === ROTATE ? {pageRetry: input.page.rotationRetry, ...(input.page.pairSessionHash ? {pageSessionHash: input.page.pairSessionHash} : {})} : {}) });
       }
       if (!plain(input) || !/^[a-f0-9]{64}$/.test(input.ownerKey || '') || !/^[a-f0-9]{64}$/.test(input.capabilityHash || '') || (input.connectionKey !== undefined && (!/^[a-f0-9]{64}$/.test(input.connectionKey) || !validGrantReference(input.oauthGrant))) || typeof input.operation !== 'string' || !plain(input.args) || (input.prefix !== undefined && !/^rpr_[A-Za-z0-9_-]{22}$/.test(input.prefix)) || (input.rotateToHash !== undefined && !/^[a-f0-9]{64}$/.test(input.rotateToHash)) || (input.operationId !== undefined && (typeof input.operationId !== 'string' || !input.operationId.length || input.operationId.length > 256 || [...input.operationId].length > 128)) || (input.returnAddress !== undefined && !/^[a-f0-9]{64}$/.test(input.returnAddress)) || (input.exportAddress !== undefined && !/^[a-f0-9]{64}$/.test(input.exportAddress))) return new Response(null, { status: 400 });
-      if (input.create === true && (!plain(input.createBudget) || !/^take_[a-f0-9]{32}$/.test(input.createBudget.takeId || '') || !/^[a-f0-9]{64}$/.test(input.createBudget.principalKey || '') || typeof input.createBudget.retryable !== 'boolean')) return new Response(null, { status: 400 });
+      if (input.create === true && (!plain(input.createBudget) || !/^take_[a-f0-9]{32}$/.test(input.createBudget.takeId || '') || !/^[a-f0-9]{64}$/.test(input.createBudget.principalKey || '') || typeof input.createBudget.retryable !== 'boolean' || ![undefined, true].includes(input.createBudget.anonymous))) return new Response(null, { status: 400 });
       if (input.waitBound !== undefined && (!(input.operation === 'show' && input.args.target === 'ask') || ![MUSE_WAIT_MS, 120000].includes(input.waitBound))) return new Response(null, {status: 400});
       if (input.holdBound !== undefined && (!['edit', 'undo'].includes(input.operation) || input.holdBound !== MUSE_WAIT_MS)) return new Response(null, {status: 400});
       if (input.peek !== undefined && (input.peek !== true || input.operation !== 'read')) return new Response(null, {status: 400});
+      if (input.waitFor !== undefined && (!validWait(input.waitFor, input.operation) || input.peek !== undefined || input.args.as === 'image')) return new Response(null, {status: 400});
       input.operationId ??= crypto.randomUUID();
       if (input.task !== undefined && (!plain(input.task) || !/^[a-f0-9]{64}$/.test(input.task.key || '') ||
           !Number.isSafeInteger(input.task.expiresAt) || input.task.expiresAt <= Date.now() || input.task.expiresAt > Date.now() + TASK_TTL_MS + CLOCK_SKEW_MS ||
@@ -2216,12 +2513,17 @@ export class RapierDocument {
       if (stopped || Number.isSafeInteger(expiresAt) && expiresAt <= Date.now()) lifetime.cancel();
       const timer = Number.isSafeInteger(expiresAt) ? setTimeout(() => lifetime.cancel(), Math.max(0, expiresAt - Date.now())) : null;
       const run = async () => {
+      const paced = await this.paceWrite(input);
+      if (paced) return json(paced);
+      const relayed = await this.relay.route(input, lifetime.signal);
+      if (relayed) return relayed;
       if (input.operation === 'document.material_ack') {
         const result = await this.exclusive(() => this.operate(input));
         await this.resumeMaterial();
         return json(result);
       }
       if (input.operation === 'document.sync') await this.resumeMaterial();
+      if (input.waitFor) return json(await waitInObject(this, input, lifetime.signal));
       if (input.operation === 'show' && input.args.target === 'ask') return await this.waitForReturn(input, lifetime.signal);
       if (input.operation === 'read' && input.args.as === 'image') return await this.inspectVisual(input, lifetime.signal);
       if (input.operation === 'export' && ['docx', 'pdf', 'page'].includes(input.args.format)) return await this.exportDocument(input, lifetime.signal);
@@ -2236,16 +2538,18 @@ export class RapierDocument {
             rapier: {...result._meta?.rapier, live: await this.live.grant(head, input)}};
         }
         if (input.editorAuthorized === true && input.editorActivity === true && !result.isError && ['document.commit', 'document.human_context'].includes(input.operation)) {
-          const head = this.ctx.storage.kv.get('head');
-          if (head && head.expiresAt > Date.now()) {
-            head.editorIssuedAt = Date.now();
-            this.ctx.storage.transactionSync(() => this.ctx.storage.kv.put('head', head));
-            await this.ctx.storage.sync();
-            result._meta = {...result._meta, rapier: {...result._meta?.rapier, editorIssuedAt: head.editorIssuedAt}};
+          const head = this.ctx.storage.kv.get('head'), now = Date.now();
+          if (head && head.expiresAt > now) {
+            if (!(head.editorIssuedAt > now - 60000 && head.editorIssuedAt <= now)) {
+              head.editorIssuedAt = now;
+              this.ctx.storage.transactionSync(() => this.ctx.storage.kv.put('head', head));
+              await this.ctx.storage.sync();
+            }
+            result._meta = {...result._meta, rapier: {...result._meta?.rapier, editorIssuedAt: now}};
           }
         }
         return json(result);
-      });
+      }, input.operation === 'read');
       };
       record.done = (async () => {
         let response;
@@ -2275,9 +2579,9 @@ export class RapierDocument {
     }
   }
 
-  webSocketMessage(socket, message) { return this.exclusive(() => this.live.message(socket, message)); }
-  webSocketClose(socket) { return this.exclusive(() => this.live.disconnected(socket)); }
-  webSocketError(socket) { return this.exclusive(() => this.live.disconnected(socket)); }
+  webSocketMessage(socket, message) { return this.relay.intercept(socket, message) ?? this.exclusive(() => this.live.message(socket, message)); }
+  webSocketClose(socket) { this.relay.disconnected(socket); return this.exclusive(() => this.live.disconnected(socket)); }
+  webSocketError(socket) { this.relay.disconnected(socket); return this.exclusive(() => this.live.disconnected(socket)); }
 
   admits(head, authority) {
     return !head.bearer && typeof authority.ownerKey === 'string' && authority.ownerKey === head.ownerKey
@@ -2468,6 +2772,9 @@ export class RapierDocument {
           ...(dropped ? {dropped} : {}),
         } };
       }
+      const now = Date.now(), present = head.collaboration?.presence?.active && head.collaboration.presence.expiresAt > now;
+      const returnOpen = (head.returns || []).some(row => !row.receivedAt && !(row.expiresAt <= now));
+      if (!present && (mode === 'selection' || !returnOpen)) return refused('editor_unavailable');
       const waiter = createRequestWait({signal, timeoutMs: input.task ? Math.max(0, input.task.deadline - Date.now()) : waitTimeout(input.args.timeout_ms, input.waitBound),
         onFinish: settled => { if (this.returnWaiter === settled) this.returnWaiter = null; }});
       waiter.mode = mode;
@@ -2646,7 +2953,7 @@ export class RapierDocument {
       this[slot] = capture;
       if (hosted) {
         const state = this.readState(this.ctx.storage.kv.get('head'));
-        return {capture, hosted: {source: state.text, filename: request.filename, format: request.format, docKind: state.docKind,
+        return {capture, hosted: {source: typeof request.part?.text === 'string' ? request.part.text : state.text, filename: request.filename, format: request.format, docKind: state.docKind,
           signal: renderControl.signal}};
       }
       try {
@@ -2765,12 +3072,20 @@ export class RapierDocument {
     return next;
   }
 
+  async paceWrite(input) {
+    if (!PACED_OPERATIONS.has(input.operation)) return null;
+    const now = Date.now(), held = this.pace.check(now), editor = input.editorAuthorized === true;
+    if (held) return toolError(failure(held.code, editor ? PACE_WORDS.editor : PACE_WORDS.agent, {retryAfter: held.retryAfter}));
+    this.pace.admit(now);
+    return null;
+  }
+
   async operate(input, waitResult, observation, editor, signal = input.signal, material) {
-    await this.assertAuthority(input);
+    await this.assertAuthority(input, {remembered: true});
     await prepareDoorLetters();
     const { operation, args, capabilityHash, ownerKey } = input;
     try { if (this.ctx.storage) this.ctx.storage.operation = operation; } catch {}
-    let head = structuredClone(this.ctx.storage.kv.get('head'));
+    let head = this.leasedHead(structuredClone(this.ctx.storage.kv.get('head')));
     if (input.page) {
       const replaying = operation === ROTATE && this.replaysPageRotation(head, input.page, input.page.rotationRetry);
       if (!head || head.expiresAt <= Date.now() || !this.admits(head, input.page) && !replaying ||
@@ -2805,10 +3120,10 @@ export class RapierDocument {
       let fenced;
       try { fenced = fencedBlocks(args.text || '').length > 0; }
       catch (error) { return toolError(failure('INVALID_DOCUMENT_INPUT', String(error?.message || 'A Rapier block is malformed.').slice(0, 200))); }
-      const budget = await takeCreateBudget(this.env, input.createBudget);
+      const budget = await takeCreateBudget(this.env, {...input.createBudget, anonymous: input.bearer === true});
       if (budget === 'no-binding') return toolError(failure('WORKSPACE_CREATION_UNAVAILABLE', 'The workspace creation budget binding is unavailable.'));
       if (budget === 'uncertain') return toolError(failure('WORKSPACE_UNAVAILABLE', input.createBudget.retryable ? 'The creation budget did not answer. Retry with the same createToken.' : 'The creation budget did not answer, so no workspace was made. Retry; a createToken makes the next create retryable.'));
-      if (budget !== 'ok') return toolError(failure('CREATE_BUDGET_EXCEEDED', 'The creation budget is full for this hour. Reopen an existing document capability, or create later.'));
+      if (budget !== 'ok') return toolError(failure('CREATE_BUDGET_EXCEEDED', budget === 'exceeded-day' ? 'The creation budget is full for today. Reopen an existing document capability, or create tomorrow.' : 'The creation budget is full for this hour. Reopen an existing document capability, or create later.'));
       const kernel = createKernel({ state: createState({ id: crypto.randomUUID(), filename: args.filename ?? 'Untitled.md', text: fenced ? '' : args.text ?? '', docKind: args.docKind }), host: {retainHistory: true, liveSession: true}, clock: Date.now, mintId });
       const observation = await initialObservation(kernel, input);
       const collaboration = kernel.collaboration(), state = kernel.snapshot();
@@ -2939,7 +3254,7 @@ export class RapierDocument {
         args.afterVersion === head.version && (args.afterRevision === undefined || args.afterRevision === head.revision)) {
       return envelope({ outcome: 'current', unchanged: true, ...agentReport(head) }, head);
     }
-    let state = this.readState(head), collaboration;
+    let state = this.live.heldState(this.readState(head)), collaboration;
     let viewKey = JSON.stringify(head.viewIntent);
     const human = handle => ({ ...resolveCaller({ actor: 'human', principal, session: 'editor', requestId: handle }, { transport: 'mcp' }), serverNow: Date.now() });
     const queueView = (kind, request) => {
@@ -2957,7 +3272,7 @@ export class RapierDocument {
         ...(kind === 'mode' ? {view: request.view, fromView: presence.view} : kind === 'document' ? { start: request.start, end: request.end } : { compareId: request.compareId, changeId: request.changeId }) };
       return { pending: true, viewId: head.viewIntent.id, ...(!presence?.active ? {reason: 'editor_not_present'} : presence.editing ? {reason: 'human_edit_in_progress'} : {}) };
     };
-    let exported = null, watchedDrawing;
+    let exported = null;
     const presentationBinding = () => {
       if (material?.presentationBinding !== undefined) return material.presentationBinding;
       const row = Object.values(state.humanContexts).filter(row => row.visible && row.expiresAt > Date.now() && row.revision === state.revision)
@@ -2966,61 +3281,15 @@ export class RapierDocument {
       if (material) material.presentationBinding = binding;
       return binding;
     };
-    const commitFence = fact => {
-      const drawing = kernel.drawingContext();
-      if (!drawing?.open) return '';
-      if (!fact) return 'draw_session_open';
-      const occurrence = drawing.occurrence, target = fact.occurrence;
-      if (!occurrence && Array.isArray(drawing.held) && Array.isArray(fact.splices) && !fact.drawingAsset) {
-        const ranges = drawing.held.map(range => ({...range}));
-        let intact = true;
-        for (const splice of fact.splices) {
-          const from = splice.pos, to = from + splice.removed.length, delta = splice.inserted.length - splice.removed.length;
-          for (const range of ranges) {
-            if (from <= range.end && to >= range.start) { intact = false; break; }
-            if (to < range.start) { range.start += delta; range.end += delta; }
-          }
-          if (!intact) break;
-        }
-        if (intact) return '';
-      }
-      if (occurrence && normalizeLabel(fact.drawingAsset || '') !== normalizeLabel(occurrence.reference) && Array.isArray(fact.splices)) {
-        const blocks = analyzeMarkdown({text: state.text}).blocks;
-        const held = blocks?.entries.find(row => row.start <= occurrence.start && row.end >= occurrence.end);
-        if (held && blocks.complete) {
-          let {start, end} = held, intact = true;
-          for (const splice of fact.splices) {
-            const from = splice.pos, to = from + splice.removed.length;
-            if (from <= end && to >= start) { intact = false; break; }
-            if (to < start) { const delta = splice.inserted.length - splice.removed.length; start += delta; end += delta; }
-          }
-          if (intact) return '';
-        }
-      }
-      if (!fact.shapesOnly || !drawing.recipeDigest || fact.surfaceRecipeDigest !== drawing.recipeDigest || !occurrence || !target ||
-          normalizeLabel(fact.drawingAsset || '') !== normalizeLabel(occurrence.reference) ||
-          normalizeLabel(target.reference || '') !== normalizeLabel(occurrence.reference) ||
-          target.start !== occurrence.start || target.end !== occurrence.end || drawing.busy?.human)
-        return 'draw_session_open';
-      const binding = canonicalJson({session: drawing.session, surfaceGeneration: drawing.surfaceGeneration,
-        assetGeneration: drawing.assetGeneration, occurrence, recipeDigest: drawing.recipeDigest});
-      if (watchedDrawing !== undefined && watchedDrawing !== binding) return 'draw_surface_changed';
-      watchedDrawing = binding;
-      const patch = fact.drawingPatch;
-      if (patch && (patch.session !== drawing.session || patch.surfaceGeneration !== drawing.surfaceGeneration ||
-          patch.assetGeneration !== drawing.assetGeneration || sha256(canonicalJson(patch.recipeBefore)) !== drawing.recipeDigest))
-        return 'draw_surface_changed';
-      if (drawing.recipe && fact.paintTargets?.some(target => !drawing.recipe.shapes.some(shape => shape.id === target.id && canonicalJson(shape) === canonicalJson(target))))
-        return 'paint_target_changed';
-      return '';
-    };
+    const commitFence = createCommitFence(() => kernel, () => state.text, analyzeMarkdown);
     const liveSessions = this.live;
     const kernel = createKernel({ state, inFlight, host: {retainHistory: true,
+      ...(operation === 'document.human_context' && this.live.holds(args.contextId) ? {presenceMs: LIVE_LIMITS.heldContextMs} : {}),
       get liveSession() {
         const currentHead = liveSessions.owner.ctx.storage.kv.get('head');
         return liveSessions.sockets().some(socket => !!liveSessions.valid(socket, currentHead)?.client);
       },
-      liveComposition: splices => this.live.collision(kernel.snapshot(), splices), exportFile: async request => {
+      liveComposition: splices => this.live.collision(kernel.snapshot(), splices), exportScope: true, exportFile: async request => {
       if (!editorSecret(this.env) || !input.exportAddress) return {reason: 'export_unavailable'};
       if (request.guard?.() === false) return {reason: 'document_changed'};
       const file = request.file || await exportFile(this.env, {...request, signal});
@@ -3291,7 +3560,12 @@ export class RapierDocument {
         }
       }
       refresh();
-      await this.persist(head, state, kernel.invocationJournal(), head.version === priorVersion, null, undefined, input);
+      const journal = kernel.invocationJournal();
+      if (head.version === priorVersion && value.acknowledged === true && this.leaseOnly(head, state, journal)) {
+        this.cachedState = state;
+        this.leased = {state, stored: JSON.stringify(this.ctx.storage.kv.get('head')), nextExpiryAt: head.nextExpiryAt,
+          collaboration: head.collaboration, collaborationContext: head.collaborationContext};
+      } else await this.persist(head, state, journal, head.version === priorVersion, null, undefined, input);
       if (value.outcome === 'ok' && value.acknowledged === true && args.visible && args.selection && this.returnWaiter?.mode === 'selection') this.returnWaiter.finish({ outcome: 'ok', selection: args.selection });
       return envelope({ ...value, contextId: args.contextId, contextExpiresAt: value.expiresAt ?? null, ...(value.outcome === 'conflict' ? { code: 'HUMAN_CONTEXT_STALE' } : {}) }, head);
     }
@@ -3613,11 +3887,13 @@ export class RapierDocument {
       const taskResult = input.task && value.outcome !== 'pending' ? operationEnvelope(operation, value, head) : null;
       if (taskResult && operation === 'read' && value.outcome === 'ok' && observation?.fact?.image)
         taskResult.content.push({type: 'image', mimeType: 'image/png', data: observation.fact.image.data});
-      await this.persist(head, state, journal, false, publication, retainedMaterial, input,
+      const unchanged = ['edit', 'undo'].includes(operation) && ['conflict', 'refused'].includes(value.outcome) &&
+        !publication && !taskResult && retainedMaterial === undefined && head.version === initialVersion;
+      if (!unchanged) await this.persist(head, state, journal, false, publication, retainedMaterial, input,
         taskResult ? {task: input.task, result: taskResult} : null);
       retainedResult = taskResult;
     }
-    await this.assertAuthority(input);
+    await this.assertAuthority(input, {remembered: true});
     if (retainedResult) return retainedResult;
     const result = operationEnvelope(operation, value, head);
     if (operation === 'read' && value.outcome === 'ok' && observation?.fact?.image) result.content.push({type: 'image', mimeType: 'image/png', data: observation.fact.image.data});

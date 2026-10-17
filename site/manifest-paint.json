@@ -1,0 +1,35 @@
+{
+  "id": "./paint",
+  "name": "Rapier Paint",
+  "short_name": "Paint",
+  "description": "Free Markdown editor and notes app for Android and the web. Write on the formatted page, draw and paint, and work offline. No account, ads or tracking.",
+  "start_url": "./paint",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": [
+    "productivity",
+    "utilities"
+  ],
+  "launch_handler": {
+    "client_mode": "navigate-new"
+  },
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

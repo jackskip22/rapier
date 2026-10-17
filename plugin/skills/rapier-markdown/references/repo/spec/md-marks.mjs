@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
-// The one owner of inline typography, ink and page breaks.
 import {markdownSourcePositions} from './md-source.mjs';
 
-// The exported page retains this reader alone. The editor uses the same closure, then adds its writers and scans.
 const inkReader = () => {
 	// SPDX-License-Identifier: MIT
 	const TEXT_COLOR_NAMES = Object.freeze({ green: '#1c7547', red: '#b32034', blue: '#175dc4', gold: '#865818', purple: '#7924d7' });
@@ -10,16 +8,6 @@ const inkReader = () => {
 	const COLOR_NAME_ALT = Object.keys(TEXT_COLOR_NAMES).join('|');
 	const COLOR_VALUE = '(?:#[0-9a-f]{6}|' + COLOR_NAME_ALT + ')';
 
-	// Ink (docs/markdown-standard.md, "Ink"): a pen stroke that stays with the words it marks, a paired comment with the color span's shape. The
-	// opener holds the stroke:
-	//   <!--ink KIND [NUMBER] [COLOUR] [w=N] [box=W,H] [at=X,Y] [PATH]-->words<!--/ink-->
-	// KIND is the stroke's kind, decided once when it was lifted; COLOUR is exactly the color span's value, red when absent; box is the frame's
-	// size when the stroke was drawn and at the frame's offset from the words' box, both in hundredths of an em; w is the pen's width as Draw
-	// counts a nib (2 to 24; 9 is the default and is never written): the stroke is drawn 0.11 em wide at 9 and in proportion to w otherwise; PATH
-	// is the stroke, its first point absolute in the frame and the rest as moves, hundredths of an em. One spelling: the fields in this order,
-	// one space between, integers only. A comment that does not read this way is ordinary comment text and marks nothing. Ink pairs nest:
-	// each closer takes the innermost open ink opener. Arrow/end alone take a pairing number, an end takes no other data; under, strike and arrow may omit a path for a line
-	// derived from their words.
 	const INK_KINDS = Object.freeze(['under', 'strike', 'ring', 'bracket', 'free', 'arrow', 'end']);
 
 	const INK_PATH_MAX = 160;
@@ -88,7 +76,6 @@ export const FONT_STACKS = Object.freeze({
 	hand: Object.freeze({stack: 'hand', css: 'cursive', word: 'Segoe Print'}),
 });
 
-// A family is one font-table name, never a CSS list or an HTML fragment.
 export function normalizeFontFamily(value) {
 	if (typeof value !== 'string') return null;
 	const family = value.trim();
@@ -106,8 +93,6 @@ export function formatFontRun(family, content) {
 	return typography.wrap({family}, content);
 }
 
-// One typed interpretation for source, DOM and native-file adapters. The worker carries this
-// exact factory and its explicit grammar inputs; no DOM, CSS evaluator or resource loader.
 export function createTypography({normalizeFontFamily, fontFamilyCss, FONT_STACKS}) {
 	const LIMIT = 4096, DEPTH = 64;
 	const generics = {serif: 'serif', 'sans-serif': 'sans', monospace: 'mono', cursive: 'hand',
@@ -127,7 +112,6 @@ export function createTypography({normalizeFontFamily, fontFamilyCss, FONT_STACK
 	function color(value) {
 		if (typeof value !== 'string') return null;
 		if (/^#[0-9a-f]{6}$/i.test(value.trim())) return value.trim().toLowerCase();
-		// CSSOM serializes admitted hex to opaque rgb(). Native HTML import uses this same boundary.
 		const rgb = /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*(?:,\s*1\s*)?\)$/i.exec(value.trim());
 		return rgb && rgb.slice(1).every(channel => Number(channel) <= 255)
 			? '#' + rgb.slice(1).map(channel => Number(channel).toString(16).padStart(2, '0')).join('') : null;
@@ -154,7 +138,6 @@ export function createTypography({normalizeFontFamily, fontFamilyCss, FONT_STACK
 			}
 		} else if (!/^[\p{L}_-][\p{L}\p{N}_ -]*$/u.test(css) || /^(?:inherit|initial|unset|revert|revert-layer)$/i.test(css)) return null;
 		name = normalizeFontFamily(name);
-		// These five names are the existing family-choice aliases, not custom font identities.
 		if (name && Object.hasOwn(FONT_STACKS, name.toLowerCase())) return null;
 		return name ? Object.freeze({name, css: '"' + name.replace(/[\\"]/g, '\\$&') + '"', custom: true}) : null;
 	}
@@ -178,8 +161,6 @@ export function createTypography({normalizeFontFamily, fontFamilyCss, FONT_STACK
 		}
 		return Object.freeze(result);
 	}
-	// Rendering drops unsupported declarations; rich editing admits only wholly owned
-	// spans so unrelated HTML and rejected attributes keep their exact-source editor.
 	function parseStyle(value, editable = false) {
 		if (typeof value !== 'string' || value.length > LIMIT) return editable ? null : Object.freeze({});
 		const parts = []; let quote = '', start = 0;
@@ -212,15 +193,11 @@ export function createTypography({normalizeFontFamily, fontFamilyCss, FONT_STACK
 	const wrap = (value, content) => {
 		const start = open(value);
 		if (!start || !content) return content;
-		// Importers can supply a styled break by itself, or before/after words. Keep
-		// those exact line-edge bytes outside the new span so its opener has words.
 		const prefix = /^(?:[ \t]*(?:\r\n|\r(?!\n)|\n))+/.exec(content)?.[0] || '';
 		let body = content.slice(prefix.length);
 		const suffix = /(?:[ \t]*(?:\r\n|\r(?!\n)|\n))+[ \t]*$/.exec(body)?.[0] || '';
 		body = body.slice(0, body.length - suffix.length);
 		if (!body) return content;
-		// Soft/hard line breaks can belong to one Markdown paragraph. A blank line or
-		// an opener on a line of its own would instead change the block grammar.
 		if (/^\s*\n|\n[ \t]*\n/.test(body.replace(/\r\n?/g, '\n')))
 			throw new TypeError('Typography wraps one inline paragraph at a time.');
 		return prefix + start + body + '</span>' + suffix;
@@ -323,8 +300,6 @@ const inkPair = (value, name, nonNegative = false) => {
 	return pair;
 };
 
-// {kind, id?, hex?, width?, box?, at?, path?} to the opener; the path's points are absolute in the frame and become moves after the
-// first. Refuses with a TypeError rather than writing a spelling the reader would not read.
 export function formatInkOpen(mark) {
 	if (!mark || typeof mark !== 'object') throw new TypeError('ink: a mark is an object');
 	if (!INK_KINDS.includes(mark.kind)) throw new TypeError('ink: the kind is one of ' + INK_KINDS.join(', '));
@@ -358,7 +333,6 @@ export function formatInkRun(mark, content) {
 	return formatInkOpen(mark) + content + INK_CLOSE;
 }
 
-// Returns {mark, length in UTF-16 units} or null; not end-anchored.
 export function matchInkOpen(text) {
 	if (typeof text !== 'string') return null;
 	const match = new RegExp('^' + INK_OPEN_PATTERN).exec(text);
@@ -367,10 +341,6 @@ export function matchInkOpen(text) {
 	return mark && { mark, length: match[0].length };
 }
 
-// The opener's body is what a rendered span carries (a renderer's sanitizer drops an attribute whose value holds the
-// comment's own close): the opener after `<!--ink ` and before `-->`, so the attribute reads `under red box=… 0,95 …`,
-// and only a body that reads as a mark goes back. Read and write through the same grammar, so an invalid body cannot
-// invent a mark.
 export function inkOpenBody(opener) {
 	if (typeof opener !== 'string') return null;
 	const match = new RegExp('^' + INK_OPEN_PATTERN + '$').exec(opener);
@@ -384,10 +354,6 @@ export function isInkClose(comment) {
 	return comment === INK_CLOSE;
 }
 
-// Every ink marker in order: {start, end, mark} for an opener (mark null for a closer, and an opener whose path
-// overflows is not a marker at all).
-// Without a prior arrow or adjacent marker bytes, only an edit boundary can empty a span.
-// Read those boundaries through the planned rows before asking the full grammar to retire ink.
 export function mayRetireInk(source, rows) {
   if (source.contains('<!--ink arrow ') || source.contains('<!--ink end ') || source.contains('--><!--')) return true;
   let pieces = [{from: 0, length: source.length}], length = source.length;
@@ -430,20 +396,14 @@ export function scanInkMarkers(source) {
 	return markers;
 }
 
-// Ink nests so independent strokes can share the same words. A marker that pairs with nothing is text
-// (it shows nothing and marks nothing) and is listed under strays.
 export function pairInkMarkers(source, markers = null) {
 	return pairMarkers(source, 'ink', markers);
 }
 
-// A document parser may supply its semantic markers, leaving literal code comments untouched.
-// Local inline parsing and source planners need an endpoint's span even when its mate is in another block.
 export function pairInkSpans(source, markers = null) {
 	return pairSpanMarkers(source, 'ink', markers);
 }
 
-// Color keeps its first opener; ink pairs each closer with the innermost opener. The shared range
-// shape lets custody owners keep every independent stroke, including strokes on identical words.
 export function pairMarkers(source, kind, markers = null) {
 	const paired = pairSpanMarkers(source, kind, markers);
 	if (kind !== 'ink') return paired;
@@ -470,9 +430,6 @@ export function pairMarkers(source, kind, markers = null) {
 	return { runs, strays, arrows };
 }
 
-// Where a Will marker may stand (docs/will.md, Conversion). A pair inside a fence, a raw HTML block
-// (until its blank line) or the opening front matter is text: the line is quoted,
-// and a Word or PDF writer that met it as a marker would govern the wrong region. The same frame
 // as spec/frontmatter.mjs, copied here so this grammar stays inside the MIT kit's closure.
 const WILL_BLOCK_TAGS = new Set('address article aside base basefont blockquote body caption center col colgroup dd details dialog dir div dl dt fieldset figcaption figure footer form frame frameset h1 h2 h3 h4 h5 h6 head header hr html iframe legend li link main menu menuitem nav noframes ol optgroup option p param search section summary table tbody td tfoot th thead title tr track ul'.split(' '));
 const WILL_VOID_TAGS = new Set('area base br col embed hr img input link meta param source track wbr'.split(' '));
@@ -620,9 +577,6 @@ function willLeaf(stack) {
 	return kind === 'fence' || kind === 'pre' || kind === 'html' || kind === 'raw';
 }
 
-// `spans` are [start, end) of marker lines in `source` (the Will reader's own offsets).
-// Returns the first quoted span, {start, end, where}, or null when every span may stand.
-// `where` is `fence`, `raw-pre`, `raw-div`, `raw-table`, `raw-html` (any other raw HTML block) or `frontmatter`.
 export function quotedWillSpan(source, spans) {
 	const text = String(source ?? '');
 	const marks = Array.isArray(spans) ? spans : [];
@@ -703,8 +657,6 @@ function pairSpanMarkers(source, kind, markers = null) {
 	return { runs, strays };
 }
 
-// Copy carries an arrow only when both complete anchor words are selected. A partial selection removes just
-// its endpoint comments from the copied slice, including a comment clipped at the selection's boundary.
 export function sliceInkArrows(source, start = 0, end = String(source ?? '').length, markers = null) {
 	const text = String(source ?? '');
 	if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || end > text.length) throw new RangeError('ink: invalid source slice');
@@ -728,8 +680,6 @@ export function sliceInkArrows(source, start = 0, end = String(source ?? '').len
 	return result + text.slice(at, end);
 }
 
-// The paste owns only its incoming markers: an orphan cannot adopt an existing document's endpoint, and a
-// complete pair with an occupied number gets a new number in both openers without rewriting its stroke bytes.
 export function prepareInkPaste(source, existing = '', markers = null) {
 	const text = String(source ?? ''), paired = pairInkMarkers(text, markers), edits = [];
 	for (const marker of paired.strays) if (marker.mark?.id != null || marker.arrowId != null) edits.push({ start: marker.start, end: marker.end, text: '' });
@@ -767,7 +717,6 @@ export function hasInkMarker(text) {
 	return scanInkMarkers(text).length > 0;
 }
 
-// The only spelling.
 export function formatPageBreak() {
 	return PAGE_BREAK_MARKER;
 }

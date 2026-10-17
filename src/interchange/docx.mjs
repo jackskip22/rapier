@@ -163,7 +163,7 @@ async function readDocxSource(files, path, work) {
   const equations = new Map();
   if (Array.isArray(record.equations) && record.equations.length <= DOCX_LIMITS.elements)
     for (const pair of record.equations)
-      if (Array.isArray(pair) && typeof pair[0] === 'string' && typeof pair[1] === 'string' && SINGLE_EQUATION.test(pair[1]) && record.source.includes(pair[1])) equations.set(pair[0], pair[1]);
+      if (Array.isArray(pair) && typeof pair[0] === 'string' && typeof pair[1] === 'string' && mathSourceParts(pair[1]) && record.source.includes(pair[1])) equations.set(pair[0], pair[1]);
   return {source: record.source, exact, equations};
 }
 const is = (node, family, name) => node?.nodeType === 1 && NS[family].includes(node.namespaceURI) && (!name || node.localName === name);
@@ -186,6 +186,7 @@ const foldRotationDegrees = degrees => {
   return folded === 0 ? 0 : folded;
 };
 const escape = value => String(value ?? '').replace(/[&<>"']/g, character => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[character]));
+const attributeText = value => escape(value).replace(/\r/g, '&#13;').replace(/\n/g, '&#10;').replace(/\t/g, '&#9;');
 const fail = (message, code = 'docx_invalid') => { const error = new Error(message); error.code = code; throw error; };
 const alphaOpacity = value => {
   if (value == null) return 100;
@@ -529,11 +530,42 @@ function importedText(text) {
       ? sourceToken('&#' + part.codePointAt(0) + ';') : escape(part)).join('');
 }
 
-const ommlSource = node => (is(node, 'm', 'oMathPara') ? '$$' : '$') + mathTex(node).trim() + (is(node, 'm', 'oMathPara') ? '$$' : '$');
-const SINGLE_EQUATION = /^(?:\$\$(?:(?!\$\$)[\s\S])+\$\$|\$[^$]+\$)$/;
+let mathTexHalfPoints = 26;
+const MATH_BORDER_EDGES = [['top', 'hideTop'], ['bottom', 'hideBot'], ['left', 'hideLeft'], ['right', 'hideRight']];
+const MATH_BORDER_STRIKES = [['horizontalstrike', 'strikeH'], ['verticalstrike', 'strikeV'], ['updiagonalstrike', 'strikeBLTR'], ['downdiagonalstrike', 'strikeTLBR']];
+const ommlSource = (node, halfPoints = 26) => {
+  const saved = mathTexHalfPoints;
+  mathTexHalfPoints = halfPoints;
+  try { return (is(node, 'm', 'oMathPara') ? '$$' : '$') + mathTex(node).trim() + (is(node, 'm', 'oMathPara') ? '$$' : '$'); }
+  finally { mathTexHalfPoints = saved; }
+};
+const MATH_TEX_SIZES = [['tiny', .5], ['scriptsize', .7], ['footnotesize', .8], ['small', .9], ['normalsize', 1], ['large', 1.2], ['Large', 1.44], ['LARGE', 1.728], ['huge', 2.074], ['Huge', 2.488]];
+function mathSourceParts(source) {
+  const dollars = /^(?:\$\$((?:(?!\$\$)[\s\S])+)\$\$|\$([^$]+)\$)$/.exec(source);
+  if (dollars) return {tex: dollars[1] ?? dollars[2], display: dollars[1] !== undefined};
+  if (!/[\r\n]/.test(source)) return null;
+  try {
+    const tokens = markdownParser().parse(source, {}), token = tokens[0];
+    if (tokens.length === 1 && token.type === 'fence' && String(token.info || '').trim().split(/\s+/)[0].toLowerCase() === 'math' &&
+        token.meta?.rapierFenceClosed === true && token.meta.mathSource === source) return {tex: token.content, display: true};
+  } catch (_) {}
+  return null;
+}
+function groupCommand(node) {
+  const property = key => attr(child(child(node, 'm', 'groupChrPr'), 'm', key), 'm', 'val');
+  const symbol = property('chr') ?? '⏟', below = (property('pos') ?? 'bot') === 'bot';
+  if (symbol === '⏟' || symbol === '⏞') return below ? '\\underbrace' : '\\overbrace';
+  const command = {__proto__: null, '⏜': 'overparen', '⏝': 'underparen', '⎴': 'overbracket', '⎵': 'underbracket'}[symbol];
+  if (command) return '\\' + command;
+  const arrow = {__proto__: null, '→': 'rightarrow', '←': 'leftarrow', '↔': 'leftrightarrow'}[symbol];
+  if (arrow) return '\\' + (below ? 'under' : 'over') + arrow;
+  const harpoon = {__proto__: null, '⇀': 'overrightharpoon', '↼': 'overleftharpoon'}[symbol];
+  return harpoon && !below ? '\\' + harpoon : null;
+}
 function mathTex(node) {
-  const text = value => String(value).replace(/[\\{}$%#&_^~]/g, c => ({'\\':'\\backslash{}',
-    '^':'\\text{\\textasciicircum}', '~':'\\text{\\textasciitilde}'}[c] || '\\' + c));
+  const text = value => String(value).replace(/[\\{}$%#&_^~\u2002\u2003\u2005\u205f\u2009]/g, c => ({'\\':'\\backslash{}',
+    '^':'\\text{\\textasciicircum}', '~':'\\text{\\textasciitilde}', '\u2003':'\\quad ', '\u2002':'\\enspace ', '\u2005':'\\;',
+    '\u205f':'\\:', '\u2009':'\\,'}[c] || '\\' + c));
   const property = (name, key, fallback = null) => attr(child(child(node, 'm', name + 'Pr'), 'm', key), 'm', 'val') ?? fallback;
   const hidden = (name, key) => {
     const bit = child(child(node, 'm', name + 'Pr'), 'm', key);
@@ -551,7 +583,15 @@ function mathTex(node) {
     if (['vanish', 'strike', 'dstrike'].some(key => on(child(word, 'w', key))) || child(word, 'w', 'rStyle'))
       return fail('DOCX contains unsupported equation run formatting.', 'docx_math_unsupported');
     let value = contents(node);
-    if (hidden(name, 'nor')) return '\\text{' + value + '}';
+    const paint = attr(child(word, 'w', 'color'), 'w', 'val'), colored = tex => /^[0-9A-Fa-f]{6}$/.test(paint || '') ? '\\textcolor[HTML]{' + paint.toUpperCase() + '}{' + tex + '}' : tex;
+    const half = Number(val(child(word, 'w', 'sz'))), ratio = half > 0 ? half / mathTexHalfPoints : 1,
+      size = Math.abs(ratio - 1) < 0.04 ? null : MATH_TEX_SIZES.reduce((best, row) => Math.abs(Math.log(row[1] / ratio)) < Math.abs(Math.log(best[1] / ratio)) ? row : best)[0],
+      painted = tex => size && size !== 'normalsize' ? '{\\' + size + ' ' + colored(tex) + '}' : colored(tex);
+    if (hidden(name, 'nor')) {
+      const shape = property(name, 'sty', ''), bold = /b/.test(shape) || on(child(word, 'w', 'b')), italic = /i/.test(shape) || on(child(word, 'w', 'i'));
+      const inner = bold && italic ? '\\textbf{\\textit{' + value + '}}' : bold ? '\\textbf{' + value + '}' : italic ? '\\textit{' + value + '}' : '\\text{' + value + '}';
+      return painted(inner);
+    }
     const script = property(name, 'scr', 'roman'), scripts = {roman:'', 'double-struck':'mathbb', script:'mathcal',
       fraktur:'mathfrak', 'sans-serif':'mathsf', monospace:'mathtt'};
     if (!Object.hasOwn(scripts, script)) return fail('DOCX contains an unsupported equation alphabet.', 'docx_math_unsupported');
@@ -559,7 +599,7 @@ function mathTex(node) {
     if (!['p', 'b', 'i', 'bi'].includes(style)) return fail('DOCX contains unsupported equation run formatting.', 'docx_math_unsupported');
     if (scripts[script]) value = '\\' + scripts[script] + '{' + value + '}';
     const command = style === 'bi' ? 'boldsymbol' : style === 'b' ? 'mathbf' : style === 'p' && !scripts[script] ? 'mathrm' : '';
-    return command ? '\\' + command + '{' + value + '}' : value;
+    return painted(command ? '\\' + command + '{' + value + '}' : value);
   }
   if (name === 'f') return property('f', 'type') === 'noBar'
     ? '\\genfrac{}{}{0pt}{}{' + part('num') + '}{' + part('den') + '}'
@@ -590,6 +630,10 @@ function mathTex(node) {
         '⌊':'\\lfloor ', '⌋':'\\rfloor ', '⌈':'\\lceil ', '⌉':'\\rceil ', '\\':'\\backslash '}[value];
       return command || fail('DOCX contains an unsupported equation delimiter.', 'docx_math_unsupported');
     };
+    const items = children(node, 'm', 'e'), only = items.length === 1 ? Array.from(items[0].children).filter(n => !(is(n, 'm') && n.localName.endsWith('Pr'))) : [];
+    if (property(name, 'begChr', '(') === '(' && property(name, 'endChr', ')') === ')' && only.length === 1 && is(only[0], 'm', 'f') &&
+        attr(child(child(only[0], 'm', 'fPr'), 'm', 'type'), 'm', 'val') === 'noBar')
+      return '\\binom{' + contents(child(only[0], 'm', 'num')) + '}{' + contents(child(only[0], 'm', 'den')) + '}';
     return '\\left' + delimiter(property(name, 'begChr', '(')) +
       children(node, 'm', 'e').map(mathTex).join('\\middle' + delimiter(property(name, 'sepChr', '|'))) +
       '\\right' + delimiter(property(name, 'endChr', ')'));
@@ -598,8 +642,13 @@ function mathTex(node) {
     .map(row => children(row, 'm', 'e').map(mathTex).join(' & ')).join(' \\\\ ') + '\\end{matrix}';
   if (name === 'eqArr') return '\\begin{aligned}' + children(node, 'm', 'e').map(mathTex).join(' \\\\ ') + '\\end{aligned}';
   if (name === 'func') return '\\operatorname{' + part('fName') + '}{' + part('e') + '}';
-  if (name === 'limLow' || name === 'limUpp') return (name === 'limLow' ? '\\underset' : '\\overset') +
-    '{' + part('lim') + '}{' + part('e') + '}';
+  if (name === 'limLow' || name === 'limUpp') {
+    const base = Array.from(child(node, 'm', 'e')?.children || []).filter(n => !(is(n, 'm') && n.localName.endsWith('Pr')));
+    if (base.length === 1 && is(base[0], 'm', 'groupChr') && /^\\(?:over|under)(?:brace|paren|bracket)$/.test(groupCommand(base[0]) || '') &&
+        (groupCommand(base[0]).startsWith('\\over') === (name === 'limUpp')))
+      return mathTex(base[0]) + (name === 'limLow' ? '_' : '^') + '{' + part('lim') + '}';
+    return (name === 'limLow' ? '\\underset' : '\\overset') + '{' + part('lim') + '}{' + part('e') + '}';
+  }
   if (name === 'bar') return (property(name, 'pos', 'bot') === 'bot' ? '\\underline' : '\\overline') + '{' + part('e') + '}';
   if (name === 'acc') {
     const symbol = property(name, 'chr', '\u0302');
@@ -610,13 +659,19 @@ function mathTex(node) {
   }
   if (name === 'groupChr') {
     const symbol = property(name, 'chr', '⏟'), below = property(name, 'pos', 'bot') === 'bot';
-    return (symbol === '⏟' || symbol === '⏞' ? (below ? '\\underbrace' : '\\overbrace') :
-      (below ? '\\underset' : '\\overset') + '{' + text(symbol) + '}') + '{' + part('e') + '}';
+    return (groupCommand(node) || (below ? '\\underset' : '\\overset') + '{' + text(symbol) + '}') + '{' + part('e') + '}';
   }
   if (name === 'borderBox') {
-    if (['strikeH', 'strikeV', 'strikeBLTR', 'strikeTLBR', 'hideTop', 'hideBot', 'hideLeft', 'hideRight'].some(key => hidden(name, key)))
-      return fail('DOCX contains an unsupported equation border or strike.', 'docx_math_unsupported');
-    return '\\boxed{' + part('e') + '}';
+    const edges = MATH_BORDER_EDGES.filter(([, key]) => !hidden(name, key)).map(([notation]) => notation),
+      strikes = MATH_BORDER_STRIKES.filter(([, key]) => hidden(name, key)).map(([notation]) => notation),
+      word = child(child(child(node, 'm', 'borderBoxPr'), 'm', 'ctrlPr'), 'w', 'rPr'), options = [];
+    for (const [tag, attribute, option] of [['color', 'val', 'mathcolor'], ['shd', 'fill', 'mathbackground']]) {
+      const value = attr(child(word, 'w', tag), 'w', attribute);
+      if (/^[\da-f]{6}$/i.test(value || '')) options.push(option + '=#' + value.toUpperCase());
+    }
+    if (edges.length === 4 && !strikes.length && !options.length) return '\\boxed{' + part('e') + '}';
+    const notation = [...(edges.length === 4 ? ['box'] : edges), ...strikes];
+    return notation.length ? '\\enclose{' + notation.join(' ') + '}' + (options.length ? '[' + options.join(',') + ']' : '') + '{' + part('e') + '}' : part('e');
   }
   return fail('DOCX contains an unsupported equation structure: ' + name, 'docx_math_unsupported');
 }
@@ -632,7 +687,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
   try {
   work.check();
   const entries = new Map(files.entries.filter(entry => !entry.directory).map(entry => [entry.name, entry]));
-  const warnings = new Set(), xmlCache = new Map(), relationCache = new Map(), converted = new Map(), naturalWidths = new Map(), imageRequests = [], rawTables = [];
+  const warnings = new Set(), xmlCache = new Map(), relationCache = new Map(), converted = new Map(), naturalWidths = new Map(), imageRequests = [], rawBlocks = [];
   const stats = {paragraphs: 0, images: 0, uniqueImages: 0, tables: 0, footnotes: 0, endnotes: 0, comments: 0};
   let xmlBytes = 0, elements = 0, outputBytes = 0;
   const warn = text => warnings.add(text);
@@ -840,6 +895,21 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
   const docDefaults = child(stylesRoot, 'w', 'docDefaults');
   const defaultParagraph = paragraphProperties(child(child(docDefaults, 'w', 'pPrDefault'), 'w', 'pPr'));
   const defaultRun = propertiesOf(child(child(docDefaults, 'w', 'rPrDefault'), 'w', 'rPr'), false);
+  const defaultHalfPoints = integer(val(child(child(styles.get('Normal'), 'w', 'rPr'), 'w', 'sz')) ??
+    val(child(child(child(docDefaults, 'w', 'rPrDefault'), 'w', 'rPr'), 'w', 'sz')), 26, 1, 3276);
+  const defaultLineSpacing = child(child(child(docDefaults, 'w', 'pPrDefault'), 'w', 'pPr'), 'w', 'spacing');
+  const defaultLineTwips = integer(attr(defaultLineSpacing, 'w', 'line'), null, 1, 31680);
+  const pictureMeasure = {em: defaultHalfPoints / 2 * 12700, body: defaultHalfPoints / 2,
+    line: !defaultLineTwips ? defaultHalfPoints / 2 * 1.2 : ['auto', null].includes(attr(defaultLineSpacing, 'w', 'lineRule')) ?
+      defaultHalfPoints / 2 * 1.2 * defaultLineTwips / 240 : defaultLineTwips / 20};
+  const runSetting = (properties, name) => {
+    let found = child(properties, 'w', name);
+    for (let id = val(child(properties, 'w', 'rStyle')), depth = 0; !found && id && depth < 32; depth++) {
+      const node = styles.get(id); found = child(child(node, 'w', 'rPr'), 'w', name); id = val(child(node, 'w', 'basedOn'));
+    }
+    return found;
+  };
+  const indentPoints = referenceType(readDocumentSettings(base ?? '')).body;
   const style = (id, chain = []) => {
     if (!id) return {p: {}, r: {}};
     if (styleCache.has(id)) return styleCache.get(id);
@@ -941,10 +1011,15 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     if (value && !indentLevel(value)) return fail('DOCX paragraph indentation exceeds the Markdown limit. Open the original in Word to keep its measurements.', 'docx_indent_limit');
     return value;
   };
+  const quoteDepthOf = id => {
+    const node = styles.get(id), name = val(child(node, 'w', 'name')), deeper = /^Quote([2-9]|[1-9]\d)$/.exec(id || '');
+    if (id === 'Quote' || ['Intense Quote', 'Block Text'].includes(name)) return 1;
+    return deeper && name === 'Quote ' + deeper[1] && val(child(node, 'w', 'basedOn')) === 'Quote' ? Number(deeper[1]) : 0;
+  };
   const paragraphLayout = (properties, heading, list, base) => {
     const layout = {}, align = alignment(properties);
     if (align) layout.align = align;
-    const step = referenceType(null).body * 40;
+    const step = indentPoints * 40;
     const left = properties.leftIndent ?? base;
     const indent = measuredLevel((left - base) / step);
     if (indent) layout.indent = indent;
@@ -970,6 +1045,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     }
     return child(node, 'mc', 'Fallback') || fail('DOCX contains unsupported alternate content.');
   };
+  const quoteControl = node => is(node, 'w', 'sdt') && val(child(child(node, 'w', 'sdtPr'), 'w', 'tag')) === 'rapier:quote';
   const sequence = async container => {
     const blocks = [], stack = [{nodes: container?.children || [], at: 0}];
     let visited = 0;
@@ -977,7 +1053,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       const frame = stack.at(-1), node = frame.nodes[frame.at++];
       if (!node) { stack.pop(); continue; }
       if ((visited++ & 127) === 0) await work.checkpoint();
-      if (is(node, 'w', 'p') || is(node, 'w', 'tbl')) blocks.push(node);
+      if (is(node, 'w', 'p') || is(node, 'w', 'tbl') || quoteControl(node)) blocks.push(node);
       else if (is(node, 'w', 'sdt')) stack.push({nodes: child(node, 'w', 'sdtContent')?.children || [], at: 0});
       else if (is(node, 'mc', 'AlternateContent')) stack.push({nodes: chooseAlternate(node).children, at: 0});
       else if (is(node, 'w', 'customXml')) {
@@ -1003,7 +1079,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     return {width: contentWidth, sectionWidth: contentWidth, assumed: !size || !margins};
   };
   const picture = async (node, context) => {
-    let id, alt = '', extent = null, extentHeight = null, align = null, opacity = 100, wrap = null, x = null;
+    let id, alt = null, title = null, extent = null, extentHeight = null, align = null, opacity = 100, wrap = null, x = null, y = null, lines = null;
     const transform = {crop: {left:0, top:0, right:0, bottom:0}, rotation:0, flipH:false, flipV:false};
     if (is(node, 'w', 'drawing')) {
       const drawing = child(node, 'wp', 'inline') || child(node, 'wp', 'anchor');
@@ -1036,9 +1112,10 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       if (!id && attr(blip, 'r', 'link')) { warn('Linked pictures were not imported; their files are not inside the document.'); return {html: ''}; }
       if (!id || attr(blip, 'r', 'link')) return fail('DOCX contains a linked picture without self-contained image bytes.');
       const properties = child(drawing, 'wp', 'docPr'), nonVisual = child(child(image, 'pic', 'nvPicPr'), 'pic', 'cNvPr');
-      alt = properties?.getAttribute('descr') || properties?.getAttribute('title') || nonVisual?.getAttribute('descr') || nonVisual?.getAttribute('title') || '';
-      const display = /^\$\$[\s\S]+\$\$$/.test(alt);
-      if (plain && vectors.length === 1 && (display || /^\$[^$]+\$$/.test(alt))) {
+      alt = properties?.getAttribute('descr') ?? nonVisual?.getAttribute('descr') ?? properties?.getAttribute('title') ?? nonVisual?.getAttribute('title') ?? null;
+      title = properties?.getAttribute('title') ?? nonVisual?.getAttribute('title') ?? null;
+      const equation = mathSourceParts(alt || ''), display = equation?.display;
+      if (plain && vectors.length === 1 && equation) {
         const relation = (await relationships(context.path)).get(attr(vectors[0], 'r', 'embed'));
         if (relation?.kind === 'image' && !relation.external && entries.has(relation.path) && contentType(relation.path) === 'image/svg+xml' &&
             new RegExp('^<svg\\b[^>]*\\sdata-rapier-math="' + (display ? 'display' : 'inline') + '"').test(new TextDecoder().decode((await files.read(relation.path)).subarray(0, 4096))))
@@ -1049,12 +1126,22 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       if (is(drawing, 'wp', 'anchor')) {
         const position = child(drawing, 'wp', 'positionH'), value = child(position, 'wp', 'align')?.textContent;
         if (['left','center','right'].includes(value)) align = value;
-        if (['wrapSquare', 'wrapTight', 'wrapThrough'].some(name => child(drawing, 'wp', name))) wrap = 'around';
+        const vertical = child(drawing, 'wp', 'positionV'), square = child(drawing, 'wp', 'wrapSquare');
+        if (square) wrap = 'box';
+        else if (['wrapTight', 'wrapThrough'].some(name => child(drawing, 'wp', name))) wrap = 'around';
         else if (child(drawing, 'wp', 'wrapNone')) wrap = ['1', 'true', 'on'].includes(drawing.getAttribute('behindDoc')) ? 'behind' : 'front';
         else warn('Floating pictures became normal-flow images in source order.');
         const left = integer(child(position, 'wp', 'posOffset')?.textContent?.trim(), null, -27273042316900, 27273042316900);
         if (wrap && left > 0 && position?.getAttribute('relativeFrom') === 'column' && extent && left + extent <= context.width)
           x = Math.round((left + extent / 2) / context.width * 10000) / 100;
+        const top = integer(child(vertical, 'wp', 'posOffset')?.textContent?.trim(), null, -27273042316900, 27273042316900);
+        if (wrap && top && vertical?.getAttribute('relativeFrom') === 'paragraph' && !child(vertical, 'wp', 'align'))
+          y = Math.max(-50, Math.round(top / pictureMeasure.em * 100) / 100) || null;
+        if (square && square.getAttribute('wrapText') === 'right' && position?.getAttribute('relativeFrom') === 'character' &&
+            vertical?.getAttribute('relativeFrom') === 'line' && extentHeight && !context.tableCell) {
+          const count = Math.round((extentHeight / 12700 - pictureMeasure.body * .7) / pictureMeasure.line) + 1;
+          if (count >= 1 && count <= 12) { lines = count; wrap = 'around'; x = null; y = null; }
+        }
       }
     } else {
       const shape = child(node, 'v', 'shape') || child(node, 'v', 'rect'), image = child(shape, 'v', 'imagedata');
@@ -1073,7 +1160,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       if (width) extent = Number(width[1]) * ({pt:12700, in:914400, cm:360000, mm:36000, px:9525}[width[2].toLowerCase()]);
       const height = /(?:^|;)\s*height\s*:\s*(\d+(?:\.\d+)?)(pt|in|cm|mm|px)\s*(?:;|$)/i.exec(styleText);
       if (height) extentHeight = Number(height[1]) * ({pt:12700, in:914400, cm:360000, mm:36000, px:9525}[height[2].toLowerCase()]);
-      id = attr(image, 'r', 'id'); alt = attr(image, 'o', 'title') || '';
+      id = attr(image, 'r', 'id'); alt = attr(image, 'o', 'title');
       warn('Legacy picture positioning became normal document flow.');
     }
     if (Object.values(transform.crop).some(value => value < 0)) {
@@ -1097,7 +1184,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       return {html: ''};
     }
     if (!entries.get(path).size) return fail('DOCX contains an empty picture.');
-    alt = alt.trim() || name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
+    alt ??= name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
     let width = extent ? Math.max(0.01, Math.min(100, Math.round(extent / context.width * 10000) / 100)) : null;
     if (width !== null && !Object.values(transform.crop).some(Boolean)) {
       if (!naturalWidths.has(path)) {
@@ -1118,7 +1205,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         displayWidth: extent, displayHeight: extentHeight}});
       converted.set(key, reference); stats.uniqueImages++;
     }
-    return {image: project ? account('<img data-rapier-asset="' + converted.get(key) + '" alt="' + escape(alt) + '">') : '<img>', width, align, rotate, opacity, wrap, x};
+    return {image: project ? account('<img data-rapier-asset="' + converted.get(key) + '" alt="' + attributeText(alt) + '"' + (title === null ? '' : ' title="' + attributeText(title) + '"') + '>') : '<img>', width: lines ? null : width, align, rotate, opacity, wrap, x, y, lines};
   };
   const noteParts = new Map(), notes = new Map();
   const notePart = async (kind, required = true) => {
@@ -1231,9 +1318,10 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     for (const id of chain) { commentRoots.set(id, root); if ((linked++ & 127) === 0) await work.checkpoint(); }
     commentRoots.set(info.id, root);
     if (!root) { warn('A comment thread with circular replies became Markdown notes.'); continue; }
-    if (root.starts.length !== 1 || root.ends.length !== 1 || root.starts[0] >= root.ends[0]) continue;
+    const document = !root.starts.length && !root.ends.length;
+    if (!document && (root.starts.length !== 1 || root.ends.length !== 1 || root.starts[0] >= root.ends[0])) continue;
     let group = groupsById.get(root.id);
-    if (!group) { group = {id: root.id, resolved: root.resolved, records: [root]}; commentGroups.push(group); groupsById.set(root.id, group); }
+    if (!group) { group = {id: root.id, document, resolved: root.resolved, records: [root]}; commentGroups.push(group); groupsById.set(root.id, group); }
     if (info !== root) group.records.push(info);
     activeComments.add(info.id); activeComments.add(root.id);
   }
@@ -1259,6 +1347,10 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
   const baseFamily = mergeRunStyle(defaultRun, style(defaultStyle).r).family;
   const mainfont = baseFamily && !fontAssets.some(font => font.family === baseFamily) && !builtinFontFamilies.has(baseFamily) ? fontKinds.get(baseFamily) : null;
   const inline = async (container, context, inherited = {}, pieces = []) => {
+    const fieldText = html => {
+      const field = context.fields?.findLast(field => field.href);
+      return {html, href: field?.href, title: field?.title};
+    };
     for (const node of container.children) {
       if ((inlineSteps++ & 127) === 0) await work.checkpoint();
       if (revisionMarkers.has(node)) { if (project) pieces.push({html: sourceToken(revisionMarkers.get(node)), semantic: true}); continue; }
@@ -1271,13 +1363,13 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         if (project && (styleName === 'Verbatim Char' || formatting.family === 'Geist Mono' && builtinFontFamilies.has('Geist Mono')) &&
             Array.from(node.children).every(part => is(part, 'w') && ['rPr','t','tab'].includes(part.localName))) {
           let code = Array.from(node.children, part => is(part, 'w', 't') ? part.textContent : is(part, 'w', 'tab') ? '\t' : '').join('');
-          const last = pieces.at(-1), href = context.fields?.findLast(field => field.href)?.href || '';
+          const last = pieces.at(-1), field = context.fields?.findLast(field => field.href), href = field?.href || '', title = field?.title;
           const marks = [['bold','strong'], ['italic','em'], ['strike','s']].filter(([key]) => formatting[key]).map(([, tag]) => tag), key = marks.join();
-          if (last?.code != null && last.href === href && last.marks === key) { pieces.pop(); code = last.code + code; }
+          if (last?.code != null && last.href === href && last.title === title && last.marks === key) { pieces.pop(); code = last.code + code; }
           const fence = '`'.repeat(Math.max(0, ...(code.match(/`+/g) || []).map(ticks => ticks.length)) + 1), pad = /^`|`$|^ (?=.*[^ ]).* $/s.test(code) ? ' ' : '';
           const span = sourceToken(fence + pad + code + pad + fence, (fence + pad + code + pad + fence).replace(/[ \t]/g, '\u00a0'));
           const marked = marks.reduceRight((html, tag) => '<' + tag + '>' + html + '</' + tag + '>', span);
-          if (code) pieces.push({html: href ? '<a href="' + escape(href) + '">' + marked + '</a>' : marked, code, href, marks: key});
+          if (code) pieces.push({html: href ? linkOpen(href, false, title) + marked + '</a>' : marked, code, href, title, marks: key});
           continue;
         }
         if (direct.halfPoints == null && named.r.halfPoints == null || context.initial || context.rapierTable && formatting.halfPoints === 21) projected.halfPoints = null;
@@ -1289,29 +1381,50 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         }
         if ((context.structuralBold || context.tableHeader && named.structuralBold) &&
             (!Object.hasOwn(named.r, 'bold') || named.structuralBold) && !Object.hasOwn(direct, 'bold')) projected.bold = false;
-        const href = context.fields?.findLast(field => field.href)?.href;
-        const runKey = JSON.stringify([projected, href || '']), last = pieces.at(-1);
-        const wrap = words => (href ? '<a href="' + escape(href) + '">' : '') + textStyle(words, projected) + (href ? '</a>' : '');
+        let field = context.fields?.findLast(field => field.href), href = field?.href, title = field?.title;
+        const linkFormatting = href => {
+          const result = {...projected};
+          if (project && (context.link || href) && canonical === null && base === null) {
+            const underline = runSetting(properties, 'u'), color = runSetting(properties, 'color');
+            if (result.underline && [null, 'single'].includes(val(underline))) result.underline = false;
+            if (result.color && (['hyperlink', 'followedHyperlink'].includes(attr(color, 'w', 'themeColor')) || DOCX_LINK_COLORS.has(result.color) ||
+                !child(properties, 'w', 'color') && /^(?:hyperlink|followedhyperlink|internet ?link|visited internet ?link)$/i.test(styleName || ''))) result.color = null;
+          }
+          return result;
+        };
+        let currentFormatting = linkFormatting(href), runKey = JSON.stringify([currentFormatting, href || '', title ?? null]), last = pieces.at(-1);
+        const wrap = words => (href ? linkOpen(href, false, title) : '') + textStyle(words, currentFormatting) + (href ? '</a>' : '');
         const flush = () => { if (!text) return;
           if (project && last?.runKey === runKey && last === pieces.at(-1)) { last.words += text; last.html = wrap(last.words); }
-          else pieces.push(project ? {html: wrap(text), words: text, runKey, formatting: projected, href} : {html:
+          else pieces.push(project ? {html: wrap(text), words: text, runKey, formatting: currentFormatting, href, title} : {html:
             projected.smallCaps || projected.highlight && projected.highlight !== 'default' && !Object.values(DOCX_HIGHLIGHT_TO_RAPIER).includes(projected.highlight) ? 'x' : text});
           text = ''; };
         for (const piece of await inline(node, context, formatting)) {
           if (piece.image || piece.semantic) { flush(); pieces.push(piece); }
-          else text += piece.html;
+          else {
+            if (piece.href !== href || piece.title !== title) {
+              flush(); href = piece.href; title = piece.title;
+              currentFormatting = linkFormatting(href);
+              runKey = JSON.stringify([currentFormatting, href || '', title ?? null]); last = pieces.at(-1);
+            }
+            text += piece.html;
+          }
         }
         flush();
-      } else if (is(node, 'w', 't') || is(node, 'w', 'delText')) pieces.push({html: await imported(node.textContent)});
-      else if (is(node, 'w', 'tab') || is(node, 'w', 'ptab')) { pieces.push({html: project ? sourceToken('&#9;') : 'x'}); warn('Tab characters were retained; custom tab stops became ordinary text flow.'); }
+      } else if (is(node, 'w', 't') || is(node, 'w', 'delText')) {
+        pieces.push(fieldText(await imported(node.textContent)));
+      }
+      else if (is(node, 'w', 'tab') || is(node, 'w', 'ptab')) {
+        pieces.push(fieldText(project ? sourceToken('&#9;') : 'x')); warn('Tab characters were retained; custom tab stops became ordinary text flow.');
+      }
       else if (is(node, 'w', 'sym')) {
         const encoded = attr(node, 'w', 'char'), code = /^[0-9a-f]{1,4}$/i.test(encoded || '') ? parseInt(encoded, 16) : -1;
         if (code < 0x100 || code >= 0xd800 && code <= 0xf8ff || code >= 0xfffe)
           return fail('DOCX contains a symbol that requires its original font mapping.', 'docx_symbol_font');
-        pieces.push({html: await imported(String.fromCodePoint(code))});
+        pieces.push(fieldText(await imported(String.fromCodePoint(code))));
       }
       else if (is(node, 'm', 'oMath') || is(node, 'm', 'oMathPara')) {
-        const displayMath = is(node, 'm', 'oMathPara'), projected = ommlSource(node);
+        const displayMath = is(node, 'm', 'oMathPara'), projected = ommlSource(node, defaultHalfPoints);
         const source = equations.get(projected) ?? projected;
         pieces.push({html: project ? account('<span class="math-rendered" data-math-src="' + escape(encodeURIComponent(source)) + '">' +
           escape(source) + '</span>') : 'x', semantic: true, displayMath});
@@ -1320,29 +1433,38 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         const type = attr(node, 'w', 'type') || node.getAttribute?.('type');
         if (type === 'page') pieces.push({pageBreak: true, semantic: true});
         else {
-          pieces.push({html: '<br>'});
+          pieces.push(fieldText('<br>'));
           if (type === 'column') warn('Column breaks became line breaks.');
         }
-      } else if (is(node, 'w', 'noBreakHyphen')) pieces.push({html: '\u2011'});
-      else if (is(node, 'w', 'softHyphen')) pieces.push({html: '\u00ad'});
+      } else if (is(node, 'w', 'noBreakHyphen')) pieces.push(fieldText('\u2011'));
+      else if (is(node, 'w', 'softHyphen')) pieces.push(fieldText('\u00ad'));
       else if (is(node, 'w', 'drawing') || is(node, 'w', 'pict') || is(node, 'w', 'object')) pieces.push(await picture(node, context));
       else if (is(node, 'w', 'hyperlink')) {
         const relation = (await relationships(context.path)).get(attr(node, 'r', 'id'));
         const href = relation?.kind === 'hyperlink' && relation.external && LINK_SCHEMES.test(relation.target) && !/[\u0000-\u0020\u007f]/.test(relation.target) ? relation.target : null;
         if (!href) warn('Internal document links became plain text.');
-        for (const piece of await inline(node, context, inherited)) {
+        const title = attr(node, 'w', 'tooltip');
+        const linked = await inline(node, href ? {...context, link: true} : context, inherited), only = linked.length === 1 && linked[0];
+        const auto = !!(project && href && title === null && canonical === null && base === null && only?.formatting && textStyle(only.words, only.formatting) === only.words &&
+          (only.words === href && /^[A-Za-z][A-Za-z0-9+.-]{1,31}:[^<>]*$/.test(href) || href === 'mailto:' + only.words && DOCX_AUTOLINK_EMAIL.test(only.words)));
+        for (const piece of linked) {
           if (project && href && !piece.semantic) {
-            if (piece.image) piece.image = '<a href="' + escape(href) + '">' + piece.image + '</a>';
-            else { piece.html = '<a href="' + escape(href) + '">' + piece.html + '</a>'; piece.href = href; }
+            if (piece.image) piece.image = linkOpen(href, false, title) + piece.image + '</a>';
+            else { piece.html = linkOpen(href, auto, title) + piece.html + '</a>'; piece.href = href; piece.title = title; piece.autolink = auto; }
           }
           pieces.push(piece);
         }
       } else if (is(node, 'w', 'sdt')) {
-        const checkbox = child(child(node, 'w', 'sdtPr'), 'w14', 'checkbox');
+        const properties = child(node, 'w', 'sdtPr'), checkbox = child(properties, 'w14', 'checkbox');
         if (checkbox) {
           const checked = attr(child(checkbox, 'w14', 'checked'), 'w14', 'val');
           if (checked != null && !['0','1','true','false','on','off'].includes(checked)) return fail('DOCX has an invalid checkbox value.');
           pieces.push({html: '<input type="checkbox" disabled' + (['1','true','on'].includes(checked) ? ' checked' : '') + '>', semantic: true});
+        } else if (val(child(properties, 'w', 'tag')) === 'rapier-abbreviation') {
+          const title = val(child(properties, 'w', 'alias')) ?? '';
+          if (project) pieces.push({html: sourceToken('<abbr title="' + attributeText(title) + '">'), semantic: true});
+          await inline(child(node, 'w', 'sdtContent') || node, context, inherited, pieces);
+          if (project) pieces.push({html: sourceToken('</abbr>'), semantic: true});
         } else await inline(child(node, 'w', 'sdtContent') || node, context, inherited, pieces);
       }
       else if (is(node, 'mc', 'AlternateContent')) await inline(chooseAlternate(node), context, inherited, pieces);
@@ -1352,8 +1474,12 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         if (included) await inline(node, context, inherited, pieces);
         if (project) pieces.push({html: sourceToken(reviewMarker + row.id + 'E' + reviewMarker), semantic: true});
       }
-      else if (is(node, 'w') && ['smartTag','customXml','fldSimple'].includes(node.localName)) {
-        if (node.localName === 'fldSimple') warn('Fields became their stored displayed text.');
+      else if (is(node, 'w', 'fldSimple')) {
+        const field = wordHyperlink(attr(node, 'w', 'instr'));
+        if (!field) warn('Fields became their stored displayed text.');
+        await inline(node, field ? {...context, fields: [...(context.fields || []), field]} : context, inherited, pieces);
+      }
+      else if (is(node, 'w') && ['smartTag','customXml'].includes(node.localName)) {
         await inline(node, context, inherited, pieces);
       }
       else if (is(node, 'w') && ['dir','bdo'].includes(node.localName)) {
@@ -1373,11 +1499,10 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         if (type === 'begin') fields.push({instruction: ''});
         else if (type === 'end') fields.pop();
         else if (field && type === 'separate') {
-          const target = /^\s*HYPERLINK\s+"([^"]+)"/.exec(field.instruction), anchor = /\\l\s+"([^"]+)"/.exec(field.instruction);
-          const href = target && target[1] + (anchor ? '#' + anchor[1] : '');
-          if (href && LINK_SCHEMES.test(href) && !/[\u0000-\u0020\u007f]/.test(href)) field.href = href;
+          const link = wordHyperlink(field.instruction);
+          if (link) Object.assign(field, link);
+          else warn('Fields became their stored displayed text.');
         } else if (field && !type) field.instruction += node.textContent;
-        if (!type && !/^\s*HYPERLINK\s+"/.test(field?.instruction || '')) warn('Fields became their stored displayed text.');
       }
       else if (is(node, 'w') && ['commentRangeStart','commentRangeEnd'].includes(node.localName)) pieces.push({html: commentBoundary(node), semantic: true});
       else if (is(node, 'w') && ['pPr','rPr','lastRenderedPageBreak','footnoteRef','endnoteRef','annotationRef',...MARKERS].includes(node.localName)) continue;
@@ -1427,7 +1552,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       for (let at = 0; at < runs.length;) {
         let length = 1, shared = null;
         for (const [key, tag] of marks) {
-          let end = at; while (end < runs.length && runs[end].formatting[key] && runs[end].href === runs[at].href) end++;
+          let end = at; while (end < runs.length && runs[end].formatting[key] && runs[end].href === runs[at].href && runs[end].title === runs[at].title) end++;
           if (end - at > length) { length = end - at; shared = [key, tag]; }
         }
         if (shared) {
@@ -1435,7 +1560,9 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
           html += '<' + tag + '>' + formatted(runs.slice(at, at + length).map(run => ({...run, formatting: {...run.formatting, [key]: false}}))) + '</' + tag + '>';
         } else {
           const run = runs[at], value = textStyle(run.words, run.formatting);
-          html += run.href ? '<a href="' + escape(run.href) + '">' + value + '</a>' : value;
+          const auto = run.autolink || run.title == null && canonical === null && base === null && value === run.words &&
+            (run.words === run.href && /^[A-Za-z][A-Za-z0-9+.-]{1,31}:[^<>]*$/.test(run.href) || run.href === 'mailto:' + run.words && DOCX_AUTOLINK_EMAIL.test(run.words));
+          html += run.href ? linkOpen(run.href, auto, run.title) + value + '</a>' : value;
         }
         at += length;
       }
@@ -1522,6 +1649,8 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         layout.wrap = piece.wrap;
         const x = piece.x ?? {center: 50, right: 100}[piece.align];
         if (x != null) layout.x = x;
+        if (piece.y) layout.y = piece.y;
+        if (piece.lines) layout.lines = piece.lines;
         delete layout.align;
       }
       if (context.figure) Object.assign(layout, context.figure);
@@ -1529,16 +1658,17 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     }
     flush();
     if (!output.length) output.push('<p><br></p>');
-    if (pieces.some(piece => piece.image) && pieces.some(piece => piece.html?.trim() && !padding(piece.html))) warn('Pictures within text became separate source-order paragraphs.');
+    if (pieces.some(piece => piece.image && !piece.lines) && pieces.some(piece => piece.html?.trim() && !padding(piece.html))) warn('Pictures within text became separate source-order paragraphs.');
     const prose = tag === 'p' && !context.tableCell && output.length === 1 && pieces.every(piece => !piece.image && !piece.pageBreak && !piece.displayMath && !piece.rule);
     const initial = prose && effective.dropLines ? pieces.map(piece => piece.html || '').join('') : null;
     const spacing = side => on(child(properties, 'w', 'contextualSpacing')) ? 0 : Number(/^\d+$/.exec(attr(child(properties, 'w', 'spacing'), 'w', side) || '')?.[0] || 0);
     return {html: base => output.map(piece => typeof piece === 'function' ? piece(base) : piece).join(''),
       layout: base => paragraphLayout(effective, inferredHeading, list, base), list, tableCell: context.tableCell,
       before: spacing('before'), after: spacing('after'),
-      prose, initial, dropLines: effective.dropLines, definition, quote: !inferredHeading && (id === 'Quote' || ['Intense Quote','Block Text'].includes(val(child(styles.get(id), 'w', 'name'))))};
+      prose, initial, dropLines: effective.dropLines, definition, quote: inferredHeading ? 0 : Math.max(0, quoteDepthOf(id) - (context.quoteDepth || 0))};
   };
-  const groupLists = async blocks => {
+  const groupLists = async (blocks, enclosingQuoteDepth = 0) => {
+    const inset = Math.max(0, enclosingQuoteDepth - 1) * QUOTE_STEP;
     const parts = [], stack = []; let hasText = false, hasImage = false, visited = 0;
     const emit = value => {
       if (project) parts.push(value);
@@ -1553,7 +1683,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
           .replace(/^(<p data-md-layout="[^"]*")(>(?:(?!<\/?p\b)[\s\S])*<\/p>)$/, '$1 data-md-layout-tight$2');
       emit('</li></' + level.tag + '>');
     };
-    let code = null, language = '', definitions = false, quoteAt = -1;
+    let code = null, language = '', definitions = false, quoteAt = -1, quoteDepth = 0;
     const closeDefinitions = () => { if (definitions) { definitions = false; if (project) emit('</dl>'); } };
     const flushCode = () => { if (code != null) { while (stack.length) close();
       emit(project ? account('<pre><code' + (language ? ' class="language-' + escape(language) + '"' : '') + '>' + escape(code) + '</code></pre>') : 'x'); code = null; } };
@@ -1574,9 +1704,13 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       const content = base => block.quote ? '<blockquote>' + block.html(base) + '</blockquote>' : block.html(base);
       if (!block.list) {
         while (stack.length) close();
-        if (project && block.quote && quoteAt >= 0 && quoteAt === parts.length - 1) parts[quoteAt] = parts[quoteAt].slice(0, -'</blockquote>'.length) + block.html(0) + '</blockquote>';
-        else emit(content(0));
-        quoteAt = block.quote ? parts.length - 1 : -1;
+        const depth = block.quote, html = depth ? block.html((enclosingQuoteDepth + depth - 1) * QUOTE_STEP) : block.html(inset);
+        const open = '<blockquote>', shut = '</blockquote>';
+        if (project && depth && quoteAt >= 0 && quoteAt === parts.length - 1)
+          parts[quoteAt] = parts[quoteAt].slice(0, -shut.length * quoteDepth) + shut.repeat(Math.max(0, quoteDepth - depth)) +
+            open.repeat(Math.max(0, depth - quoteDepth)) + html + shut.repeat(depth);
+        else emit(depth ? open.repeat(depth) + html + shut.repeat(depth) : html);
+        quoteAt = depth ? parts.length - 1 : -1; quoteDepth = depth;
         continue;
       }
       quoteAt = -1;
@@ -1585,11 +1719,12 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       while (stack.length && (stack.at(-1).level > list.level || stack.at(-1).level === list.level && !same(stack.at(-1)))) close();
       if (stack.length && stack.at(-1).level === list.level) { if (project) emit('</li>'); stack.at(-1).loose ||= stack.at(-1).after + block.before >= 240; }
       else {
+        if (stack.length) stack.at(-1).loose ||= stack.at(-1).after + block.before >= 240;
         const parentMarker = block.tableCell && stack.at(-1)?.marker;
         const start = '<' + list.tag + (list.tag === 'ol' ? ' start="' + list.ordinal + '" data-rapier-list-numbering="authored" data-rapier-list-delimiter="' + list.delimiter + '"' : '') +
           (parentMarker ? ' style="' + indentStyle({indent: -parentMarker}, {portable: true, pointSize: referenceType(null).body}) + '"' : '') + '>';
         if (project) emit(start);
-        stack.push({...list, base: (stack.at(-1)?.base || 0) + (list.tag === 'ol' ? 660 : 300), open: parts.length - 1, items: [], loose: false, tableCell: block.tableCell});
+        stack.push({...list, base: (stack.at(-1)?.base ?? inset) + (list.tag === 'ol' ? 660 : 300), open: parts.length - 1, items: [], loose: false, tableCell: block.tableCell});
       }
       const base = stack.at(-1).base, marker = block.layout(base).marker;
       stack.at(-1).id = list.id; stack.at(-1).task = list.task;
@@ -1650,6 +1785,14 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     for (let index = 0; index < nodes.length; index++) {
       await work.checkpoint();
       const node = nodes[index], active = sectionContexts ? {...context, ...sectionContexts[index]} : context;
+      if (quoteControl(node)) {
+        const content = child(node, 'w', 'sdtContent');
+        if (!content) return fail('DOCX contains an unsupported document block: ' + node.localName);
+        const html = await renderBlocks(await sequence(content), {...active, quoteDepth: (active.quoteDepth || 0) + 1});
+        if (previous) yield previous;
+        previous = {html: () => project ? '<blockquote>' + html + '</blockquote>' : html, list: null};
+        continue;
+      }
       const kind = !context.tableCell && is(node, 'w', 'p') && calloutKind(node);
       if (kind) {
         let end = index + 1;
@@ -1688,7 +1831,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     }
     if (previous) yield previous;
     };
-    return groupLists(blocks());
+    return groupLists(blocks(), context.quoteDepth || 0);
   };
   const tableParts = async (container, name, ignored) => {
     const result = [], stack = [{nodes: container.children, at: 0}]; let visited = 0;
@@ -1740,7 +1883,9 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     const float = child(properties, 'w', 'tblpPr'), cellWidth = float && integer(attr(child(properties, 'w', 'tblW'), 'w', 'w'), 0);
     if (float && cellWidth && inner.length === 2 && inner.every(part => is(part, 'w', 'p')) && !descendants(inner[0], 'w', 'drawing').next().done && captionOf(inner[1], inner[0])) {
       const percent = value => Math.max(0, Math.min(100, Math.round(value / context.width * 10000) / 100));
-      return renderBlocks(inner, {...context, figure: {wrap: 'around', x: percent((integer(attr(float, 'w', 'tblpX'), 0) + cellWidth / 2) * 635), width: percent(cellWidth * 635)}});
+      const wrap = val(child(properties, 'w', 'tblOverlap')) === 'never' ? 'box' : 'around';
+      const top = integer(attr(float, 'w', 'tblpY'), 0, -31680, 31680), y = top ? Math.max(-50, Math.round(top * 635 / pictureMeasure.em * 100) / 100) : null;
+      return renderBlocks(inner, {...context, figure: {wrap, x: percent((integer(attr(float, 'w', 'tblpX'), 0) + cellWidth / 2) * 635), ...(y ? {y} : {}), width: percent(cellWidth * 635)}});
     }
     if (children(styles.get(styleId), 'w', 'tblStylePr').length) warn('Conditional table styling was not imported.');
     const rows = await tableParts(node, 'tr', ['tblPr','tblGrid',...MARKERS]), output = [], spanning = new Map();
@@ -1759,7 +1904,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         const cellWidth = child(p, 'w', 'tcW'), widthType = attr(cellWidth, 'w', 'type'), widthValue = integer(attr(cellWidth, 'w', 'w'), null, 0, 3168000);
         const width = widthValue && widthType === 'dxa' ? widthValue * 635 : widthValue && widthType === 'pct' ? context.width * widthValue / 5000 : context.width / Math.max(1, cells.length);
         const cellBlocks = await sequence(cell);
-        const html = await renderBlocks(cellBlocks, {...context, tableCell: true, tableHeader: on(child(child(row, 'w', 'trPr'), 'w', 'tblHeader')) === true, rapierTable,
+        const html = await renderBlocks(cellBlocks, {...context, quoteDepth: 0, tableCell: true, tableHeader: on(child(child(row, 'w', 'trPr'), 'w', 'tblHeader')) === true, rapierTable,
           width: Math.min(context.width, width), p: mergeParagraphProperties(context.p, named.p)});
         const previous = spanning.get(column);
         if (continuation) {
@@ -1806,7 +1951,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     const html = parts.join('');
     if (!complex || context.tableCell) return html;
     const placeholder = '<p>' + sourceToken(html) + '</p>';
-    rawTables.push({placeholder, html});
+    rawBlocks.push({placeholder, html});
     return placeholder;
   };
   const nodes = await sequence(body), contexts = new Array(nodes.length);
@@ -1830,13 +1975,24 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     unplaced.push(await registerNote('comment', id, {path: mainPath, p: {}, ...currentSection}));
   if (unplaced.length) html += '<p>' + unplaced.join(' ') + '</p>';
   if (notes.size) {
+    const rawLabels = new Set(rawBlocks.flatMap(block => [...block.html.matchAll(/data-footnote-label="([^"]+)"/g)].map(match => match[1])));
     const items = [];
     for (const note of notes.values()) {
       await work.checkpoint();
       items.push('<li id="fn-' + note.label + '" data-footnote-label="' + note.label + '">' +
         note.metadata + await renderBlocks(await sequence(note.content), note.context) + '</li>');
     }
-    html += '<section class="footnotes"><ol>' + items.join('') + '</ol></section>';
+    const content = '<section class="footnotes"><ol>' + items.join('') + '</ol></section>';
+    if (rawLabels.size) {
+      const preserve = value => value.replace(/<sup class="footnote-ref"><a href="#fn-([^"]+)" data-footnote-label="\1">\d+<\/a><\/sup>/g,
+        reference => sourceToken(reference));
+      html = preserve(html);
+      if (rejectedHtml !== null) rejectedHtml = preserve(rejectedHtml);
+      const placeholder = '<p>' + sourceToken(content) + '</p>';
+      rawBlocks.push({placeholder, html: content});
+      html += placeholder;
+      if (rejectedHtml !== null) rejectedHtml += placeholder;
+    } else html += content;
   }
   const comments = {marker: commentMarker, threads: []};
   for (const group of commentGroups) {
@@ -1853,7 +2009,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         html: await renderBlocks(await sequence(info.node),
           {path: commentPart.path, p: {}, note: true, ...currentSection})});
     }
-    comments.threads.push({id: 'word-thread-' + group.id, wordId: group.id, resolved: group.resolved, messages});
+    comments.threads.push({id: 'word-thread-' + group.id, wordId: group.id, document: group.document, resolved: group.resolved, messages});
   }
   work.check();
   if (html.length > ARCHIVE_LIMITS.bytes || new Blob([html]).size > ARCHIVE_LIMITS.bytes) return fail('Converted DOCX exceeds the 25 MB document limit.');
@@ -1913,89 +2069,272 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     imageResults.push({reference, url});
     progress(.8 + .15 * imageResults.length / imageRequests.length, 'images');
   }
-  if (rawTables.length) {
-    const urls = new Map(imageResults.map((image, index) => ['docx-pending-' + index, image.url])), replacements = new Map();
-    for (const table of rawTables) {
+  if (rawBlocks.length) {
+    const urls = new Map(imageResults.map((image, index) => ['docx-pending-' + index, image.url])), portableBlocks = new Map();
+    const replaceRawBlocks = (value, asToken = true) => value.replace(/<p><span class="rapier-source-token" data-rapier-source="[^"]*" data-rapier-visible="[^"]*">[^<]*<\/span><\/p>/g,
+      token => {
+        const portable = portableBlocks.get(token);
+        return portable === undefined ? token : asToken ? '<p>' + sourceToken(portable) + '</p>' : portable;
+      });
+    for (const block of rawBlocks) {
       await work.checkpoint();
-      replacements.set(table.placeholder, '<p>' + sourceToken(docxPortableHtml(table.html, urls)) + '</p>');
+      portableBlocks.set(block.placeholder, docxPortableHtml(replaceRawBlocks(block.html, false), urls));
     }
-    const replaceTables = value => value.replace(/<p><span class="rapier-source-token" data-rapier-source="[^"]*" data-rapier-visible="[^"]*">[^<]*<\/span><\/p>/g,
-      token => replacements.get(token) || token);
-    html = replaceTables(html);
-    if (rejectedHtml !== null) rejectedHtml = replaceTables(rejectedHtml);
+    html = replaceRawBlocks(html);
+    if (rejectedHtml !== null) rejectedHtml = replaceRawBlocks(rejectedHtml);
     for (const thread of comments.threads) for (const message of thread.messages) {
-      await work.checkpoint(); message.html = replaceTables(message.html);
+      await work.checkpoint(); message.html = replaceRawBlocks(message.html);
     }
-    rawTables.length = 0;
+    rawBlocks.length = 0;
   }
-  html = html.replace(/data-rapier-asset="(docx-pending-\d+)"/g, (_, key) => 'data-rapier-asset="' + references.get(key) + '"');
-  if (rejectedHtml !== null) rejectedHtml = rejectedHtml.replace(/data-rapier-asset="(docx-pending-\d+)"/g, (_, key) => 'data-rapier-asset="' + references.get(key) + '"');
+  const urls = new Map(imageResults.map((image, index) => ['docx-pending-' + index, image.url]));
+  const replaceImages = value => value.replace(/<img\b[^>]*\bdata-rapier-asset="(docx-pending-\d+)"[^>]*>/g, (tag, key) =>
+    tag.replace('data-rapier-asset="' + key + '"', /\btitle="/.test(tag) ? 'src="' + attributeText(urls.get(key)) + '"' :
+      'data-rapier-asset="' + references.get(key) + '"'));
+  html = replaceImages(html);
+  if (rejectedHtml !== null) rejectedHtml = replaceImages(rejectedHtml);
   if (html.length > ARCHIVE_LIMITS.bytes || new Blob([html]).size > ARCHIVE_LIMITS.bytes) return fail('Converted DOCX exceeds the 25 MB document limit.');
   for (const thread of comments.threads) for (const message of thread.messages)
-    message.html = message.html.replace(/data-rapier-asset="(docx-pending-\d+)"/g, (_, key) => 'data-rapier-asset="' + references.get(key) + '"');
+    message.html = replaceImages(message.html);
+  const mathFences = {marker: '\uFFFERapierWordMathFence\uFFFF', tails: []};
+  while ([html, rejectedHtml, base].some(value => typeof value === 'string' && value.includes(mathFences.marker))) mathFences.marker += 'x';
+  const guardMathFences = value => value.replace(/<span class="math-rendered" data-math-src="([^"]*)">[\s\S]*?<\/span>/g, (whole, encoded) => {
+    const source = decodeURIComponent(encoded);
+    const tail = /[ \t]+$/.exec(source)?.[0];
+    if (!tail || !mathSourceParts(source)) return whole;
+    if (mathFences.tails.length >= DOCX_LIMITS.elements) return fail('DOCX contains too many fenced equations.');
+    const marker = mathFences.marker + mathFences.tails.length + mathFences.marker;
+    mathFences.tails.push(tail);
+    return whole + sourceToken('\n' + marker, marker);
+  });
+  html = guardMathFences(html);
+  if (rejectedHtml !== null) rejectedHtml = guardMathFences(rejectedHtml);
+  if (mathFences.tails.length && (html.length > ARCHIVE_LIMITS.bytes || new Blob([html]).size > ARCHIVE_LIMITS.bytes)) return fail('Converted DOCX exceeds the 25 MB document limit.');
   const acceptedHtml = html;
   for (const row of revisions) for (const edge of ['S', 'E']) html = html.split(sourceToken(reviewMarker + row.id + edge + reviewMarker)).join('');
   progress(1, 'complete');
   return {html, warnings: [...warnings], stats, ...(comments.threads.length ? {comments} : {}),
     ...(wordStyle ? {wordStyle} : {}), ...(revisions.length ? {review: {marker: reviewMarker, changes: revisions, html: rejectedHtml, acceptedHtml}} : {}),
+    ...(mathFences.tails.length ? {mathFences} : {}),
     ...(fontAssets.length ? {fontAssets} : {}),
     ...(nativeLanguage ? {language: nativeLanguage} : {}), ...(mainfont ? {mainfont} : {}), ...(base !== null ? {base} : {})};
   } finally { files.close(); }
 }
 
-function docxSourceBlocks(text) {
+function docxSourceBlocks(text, env = {}) {
   let parser;
   try { parser = markdownParser(); } catch (_) { return null; }
-  const offset = frontMatterFrame(text).closing?.next ?? 0, body = text.slice(offset), starts = [0];
-  for (const line of body.split('\n')) starts.push(starts.at(-1) + line.length + 1);
-  const tokens = parser.parse(body, {}), result = [];
+  const offset = frontMatterFrame(text).closing?.next ?? 0, body = text.slice(offset), starts = [0], ends = [];
+  for (const end of body.matchAll(/\r\n|\r|\n/g)) { starts.push(end.index + end[0].length); ends.push(end.index); }
+  starts.push(body.length + 1);
+  const tokens = parser.parse(body, env), result = [], recordAbbreviations = !!env.abbreviations || /<abbr\b/i.test(body);
   for (let at = 0; at < tokens.length; at++) {
     const open = tokens[at];
     if (open.level !== 0 || !open.map) continue;
     let end = at;
     for (let depth = 0; end < tokens.length; end++) if ((depth += tokens[end].nesting) <= 0) break;
-    const parts = [], words = []; let linkDepth = 0;
+    const parts = [], words = [], references = [], abbreviations = [], abbreviationText = [], abbreviationStack = []; let linkDepth = 0;
     const flush = () => { if (words.length) parts.push(words.join('').replace(/\s+/g, ' ').trim()); words.length = 0; };
     const visit = token => {
       if (token.type === 'link_open') linkDepth++;
       else if (token.type === 'link_close') linkDepth--;
       if (linkDepth && token.type === 'html_inline' && /^<\/?u>$/.test(token.content)) return;
+      const abbreviation = token.type === 'html_inline' && /^<abbr\s+title=(?:"([^"]*)"|'([^']*)')\s*>$/i.exec(token.content);
+      if (token.type === 'abbr_open' || abbreviation) {
+        flush();
+        const title = abbreviation ? (abbreviation[1] ?? abbreviation[2]).replace(/&(?:#(?:x[0-9a-f]+|[0-9]+)|[a-z][a-z0-9]+);/gi,
+          entity => parser.utils.unescapeAll(entity)) : token.attrGet('title');
+        parts.push('abbr_open\u0000' + title);
+        abbreviationStack.push({title, text: '', definition: !abbreviation});
+        return;
+      }
+      if (token.type === 'abbr_close' || token.type === 'html_inline' && /^<\/abbr\s*>$/i.test(token.content)) {
+        flush(); parts.push('abbr_close');
+        const opened = abbreviationStack.pop();
+        if (opened?.definition) abbreviations.push({label: opened.text, title: opened.title});
+        return;
+      }
       // An escaped character is the character (markdown-it's text_special, Rapier's own rapier_escape).
-      if (['text', 'text_special', 'rapier_escape', 'softbreak'].includes(token.type)) { words.push(token.type === 'softbreak' ? ' ' : token.content); return; }
+      if (['text', 'text_special', 'rapier_escape', 'softbreak'].includes(token.type)) {
+        const text = token.type === 'softbreak' ? ' ' : token.content;
+        words.push(text);
+        if (recordAbbreviations) abbreviationText.push({text, title: abbreviationStack.at(-1)?.title ?? null});
+        for (const opened of abbreviationStack) opened.text += text;
+        return;
+      }
       flush();
-      if (token.children) { parts.push(token.type); token.children.forEach(visit); flush(); return; }
-      parts.push([token.type, token.tag, token.hidden, token.info, token.attrGet?.('href'), token.attrGet?.('src'), token.type === 'inline' ? '' : token.content].join('\u0000'));
+      const definition = token.type === 'reference_definition' ? token.meta?.mdImageDefinition : null;
+      if (['image', 'link_open'].includes(token.type) && token.meta?.label) references.push(token.meta.label);
+      parts.push([token.type, token.tag, token.hidden, token.info, token.attrGet?.('href'), token.attrGet?.('src'), token.attrGet?.('title'),
+        definition ? token.meta.label : '', definition?.href, definition?.title, token.children ? '' : token.content].join('\u0000'));
+      if (token.children) { token.children.forEach(visit); flush(); }
     };
     tokens.slice(at, end + 1).forEach(visit); flush();
-    const start = offset + starts[open.map[0]], stop = offset + Math.min(body.length, starts[open.map[1]] - 1), raw = text.slice(start, stop);
-    const links = tokens.slice(at, end + 1).flatMap(token => token.children || [token]).filter(token => token.type === 'link_open' || token.type === 'image').length;
-    result.push({start, stop, key: parts.join('\u0001'), inline: links <= raw.split('](').length - 1, type: open.type});
+    const start = offset + starts[open.map[0]], stop = offset + (ends[open.map[1] - 1] ?? body.length), raw = text.slice(start, stop);
+    const inlineTokens = tokens.slice(at, end + 1).flatMap(token => token.children || [token]);
+    const links = inlineTokens.filter(token => token.type === 'image' || token.type === 'link_open' && !['autolink', 'linkify'].includes(token.markup)).length;
+    let inline = links <= raw.split('](').length - 1;
+    if (!inline) {
+      const pictures = tokens => tokens.filter(token => token.type === 'image').length;
+      inline = pictures(parser.parseInline(raw, {}).flatMap(token => token.children || [token])) === pictures(inlineTokens);
+    }
+    result.push({start, stop, key: parts.join('\u0001'), inline, type: open.type, references, abbreviations, abbreviationText});
     at = end;
   }
   return result;
 }
-function mergeDocxBase(edited, base) {
-  const editedBlocks = docxSourceBlocks(edited), baseBlocks = docxSourceBlocks(base);
-  if (!editedBlocks || !baseBlocks) return edited;
-  const kept = baseBlocks.filter(block => block.inline), byKey = new Map();
-  kept.forEach((block, index) => { if (!byKey.has(block.key)) byKey.set(block.key, []); byKey.get(block.key).push(index); });
+function docxSourceDefinitions(text, blocks) {
+  return blocks.filter(block => block.type === 'reference_definition').map(block => {
+    const raw = text.slice(block.start, block.stop), label = /^ {0,3}\[((?:\\.|[^[\]\\])+)\]:/.exec(raw);
+    return label && {label: label[1], text: raw.trimEnd()};
+  }).filter(Boolean);
+}
+function docxAbbreviationDefinitions(text, blocks, env) {
+  const rows = new Map(), offset = frontMatterFrame(text).closing?.next ?? 0;
+  if (!env.abbreviations) return rows;
+  let at = 0;
+  for (const match of text.matchAll(/(^|\r\n|\r|\n)( {0,3}\*\[((?:\\.|[^\[\]\\\r\n])+)\]:([^\r\n]*))/g)) {
+    const start = match.index + match[1].length;
+    if (start < offset) continue;
+    while (at < blocks.length && blocks[at].stop <= start) at++;
+    if (at < blocks.length && blocks[at].start <= start) continue;
+    const label = match[3].replace(/\\(.)/g, '$1'), title = match[4].trim();
+    if (title && env.abbreviations?.[':' + label] === title && !rows.has(label)) rows.set(label, {label, title, text: match[2]});
+  }
+  return rows;
+}
+function respellDocxLinks(edited, base, baseBlocks, baseEnv, parser) {
+  const editedEnv = {};
+  const editedTokens = parser.parse(edited.slice(frontMatterFrame(edited).closing?.next ?? 0), editedEnv);
+  const references = baseEnv.references || {}, defined = editedEnv.references || {}, key = label => parser.utils.normalizeReference(label);
+  const labels = docxSourceDefinitions(base, baseBlocks).map(row => row.label).filter(label => references[key(label)] && !defined[key(label)]);
+  const brackets = new Set(), inline = new Set(), full = new Set(), collapsed = new Set(), uses = new Set();
+  for (const hit of base.matchAll(/\[((?:\\.|[^[\]\\\n])*)\](\(((?:\\.|[^\s()<>\\])+)|\[((?:\\.|[^[\]\\\n])*)\])?/g)) {
+    const [, text, after, destination, label] = hit, next = base[hit.index + hit[0].length];
+    brackets.add(text);
+    if (destination !== undefined) inline.add(text + '\u0000' + destination);
+    else if (label === '') { collapsed.add(text); uses.add(key(text)); }
+    else if (label !== undefined) { full.add(text + '\u0000' + label); uses.add(key(label)); }
+    else if (next !== ':' && !after) uses.add(key(text));
+  }
+  const unescape = value => value.replace(/\\([!-/:-@[-`{-~])/g, '$1');
+  const offset = frontMatterFrame(edited).closing?.next ?? 0, skip = new Set(), lineOf = offset ? edited.slice(0, offset).split('\n').length - 1 : 0;
+  for (const token of editedTokens) if (['fence', 'code_block', 'html_block'].includes(token.type) && token.map)
+    for (let line = token.map[0]; line < token.map[1]; line++) skip.add(line + lineOf);
+  const link = /(!?)\[((?:\\.|[^[\]\\\n])*)\]\(((?:\\.|[^\s()<>\\])+)(?: "((?:\\.|[^"\\\n])*)")?\)/g;
+  return edited.split('\n').map((line, index) => skip.has(index) ? line : line.replace(link, (whole, bang, text, destination, title = '', at, all) => {
+    if (bang || (all.slice(0, at).match(/`/g) || []).length % 2) return whole;
+    const href = unescape(destination), label = title === '' ? '' : unescape(title);
+    const underline = /^<u>((?:(?!<\/?u>)[\s\S])*)<\/u>$/.exec(text);
+    if (underline && !brackets.has(text)) text = underline[1];
+    if (inline.has(text + '\u0000' + destination)) return '[' + text + '](' + destination + (title === '' ? '' : ' "' + title + '"') + ')';
+    const plain = unescape(text);
+    if (!title && plain === href && /^[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>\u0000-\u001f]*$/.test(href)) return '<' + href + '>';
+    if (!title && href === 'mailto:' + plain && /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/.test(plain)) return '<' + plain + '>';
+    const target = parser.normalizeLink(href), matches = labels.filter(name => references[key(name)].href === target && (references[key(name)].title || '') === label && uses.has(key(name)));
+    const name = matches.find(name => full.has(text + '\u0000' + name)) || matches[0];
+    if (!name) return '[' + text + '](' + destination + (title === '' ? '' : ' "' + title + '"') + ')';
+    const next = all[at + whole.length];
+    if (key(text) === key(name) && collapsed.has(text)) return '[' + text + '][]';
+    if (key(text) === key(name) && next !== '(' && next !== '[' && !full.has(text + '\u0000' + name)) return '[' + text + ']';
+    return '[' + text + '][' + name + ']';
+  })).join('\n');
+}
+function carryDocxDefinitions(merged, base, baseBlocks, env, parser, usage = merged) {
+  const lower = usage.toLowerCase(), carried = new Set();
+  const rows = docxSourceDefinitions(base, baseBlocks).filter(row => {
+    const name = parser.utils.normalizeReference(row.label);
+    if (env.references?.[name] || carried.has(name)) return false;
+    const label = row.label.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+    if (!new RegExp('\\[' + label + '\\](?!:)').test(lower)) return false;
+    carried.add(name); return true;
+  });
+  if (!rows.length) return merged;
+  const tail = /\s*$/.exec(merged)[0];
+  return merged.slice(0, merged.length - tail.length) + '\n\n' + rows.map(row => row.text).join('\n') + (tail.includes('\n') ? '\n' : '');
+}
+function docxBlockPairs(base, edited) {
+  const head = [], tail = [];
+  let first = 0, lastBase = base.length, lastEdited = edited.length;
+  while (first < lastBase && first < lastEdited && base[first].key === edited[first].key) {
+    head.push({index: first, at: first}); first++;
+  }
+  while (lastBase > first && lastEdited > first && base[lastBase - 1].key === edited[lastEdited - 1].key)
+    tail.push({index: --lastBase, at: --lastEdited});
+  const byKey = new Map(), counts = new Map();
+  for (let index = first; index < lastBase; index++) {
+    const key = base[index].key;
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push(index);
+  }
+  let matches = 0;
+  for (let at = first; at < lastEdited; at++) {
+    const key = edited[at].key;
+    counts.set(key, (counts.get(key) || 0) + 1);
+    matches += byKey.get(key)?.length || 0;
+  }
+  if (matches > 262144) {
+    const n = lastBase - first, m = lastEdited - first;
+    const pairs = editPairs(base.slice(first, lastBase).map(block => block.key), edited.slice(first, lastEdited).map(block => block.key),
+      Math.min(512, Math.floor(1048576 / (n + m))));
+    if (pairs.length) return head.concat(pairs.reverse().map(([index, at]) => ({index: index + first, at: at + first})), tail.reverse());
+    for (const [key, indices] of byKey) if (indices.length !== 1 || counts.get(key) !== 1) byKey.delete(key);
+  }
   const tails = [];
-  editedBlocks.forEach((block, at) => {
-    for (const index of [...(byKey.get(block.key) || [])].reverse()) {
+  for (let at = first; at < lastEdited; at++) {
+    const indices = byKey.get(edited[at].key) || [];
+    for (let i = indices.length - 1; i >= 0; i--) {
+      const index = indices[i];
       let low = 0, high = tails.length;
       while (low < high) { const mid = (low + high) >> 1; if (tails[mid].index < index) low = mid + 1; else high = mid; }
       tails[low] = {index, at, previous: low ? tails[low - 1] : null};
     }
-  });
-  const pairs = [];
-  for (let link = tails.at(-1); link; link = link.previous) pairs.unshift(link);
+  }
+  const middle = [];
+  for (let link = tails.at(-1); link; link = link.previous) middle.push(link);
+  return head.concat(middle.reverse(), tail.reverse());
+}
+function mergeDocxBase(edited, base) {
+  let parser;
+  try { parser = markdownParser(); } catch (_) { return edited; }
+  const baseEnv = {}, editedEnv = {}, baseBlocks = docxSourceBlocks(base, baseEnv);
+  if (!baseBlocks) return edited;
+  if (edited.includes('](')) edited = respellDocxLinks(edited, base, baseBlocks, baseEnv, parser);
+  const editedBlocks = docxSourceBlocks(edited, editedEnv);
+  if (!editedBlocks) return edited;
+  const abbreviationDefinitions = docxAbbreviationDefinitions(base, baseBlocks, baseEnv);
+  for (const [label, row] of abbreviationDefinitions) if (editedEnv.abbreviations?.[':' + label] != null && editedEnv.abbreviations[':' + label] !== row.title ||
+      editedBlocks.some(block => block.abbreviationText.some(run => run.text.includes(label) && run.title !== row.title))) abbreviationDefinitions.delete(label);
+  const kept = baseBlocks.filter(block => block.inline && block.references.every(name => !editedEnv.references?.[name] ||
+    editedEnv.references[name].href === baseEnv.references?.[name]?.href && (editedEnv.references[name].title || '') === (baseEnv.references?.[name]?.title || '')) &&
+    block.abbreviations.every(row => editedEnv.abbreviations?.[':' + row.label] === row.title || abbreviationDefinitions.get(row.label)?.title === row.title));
+  const pairs = docxBlockPairs(kept, editedBlocks);
   let merged = '', cursor = 0;
+  const carriedAbbreviations = new Map();
   for (const {index, at} of pairs) {
-    const block = editedBlocks[at];
+    const block = editedBlocks[at], eol = /^(?:\r\n|\r|\n)/.exec(base.slice(kept[index].stop))?.[0];
+    for (const row of kept[index].abbreviations) if (editedEnv.abbreviations?.[':' + row.label] == null)
+      carriedAbbreviations.set(row.label, abbreviationDefinitions.get(row.label));
     merged += edited.slice(cursor, block.start) + base.slice(kept[index].start, kept[index].stop);
     cursor = block.stop;
+    if (eol && edited[cursor] === '\n') { merged += eol; cursor++; }
   }
-  return pruneDocxImageDefinitions(merged + edited.slice(cursor), base);
+  merged = carryDocxFrontMatter(pruneDocxImageDefinitions(carryDocxDefinitions(merged + edited.slice(cursor), base, baseBlocks, editedEnv, parser), base), base);
+  if (carriedAbbreviations.size) {
+    const tail = /\s*$/.exec(merged)[0];
+    merged = merged.slice(0, merged.length - tail.length) + '\n\n' + [...carriedAbbreviations.values()].map(row => row.text).join('\n') + (tail.includes('\n') ? '\n' : '');
+  }
+  merged = carryDocxSourceComments(merged, base, baseBlocks);
+  return /\r\n/.test(base) && !/\r(?!\n)|(?<!\r)\n/.test(base) ? merged.replace(/\r\n|\r|\n/g, '\r\n') : merged;
+}
+function carryDocxFrontMatter(merged, base) {
+  const saved = frontMatterFrame(base);
+  if (!saved.closing) return merged;
+  const own = frontMatterFrame(merged), name = line => /^([^\s:#][^:]*):/.exec(line)?.[1];
+  const fields = base.slice(saved.opening.next, saved.closing.start), names = new Set(fields.split(/\r?\n|\r/).map(name).filter(Boolean));
+  const added = own.closing ? merged.slice(own.opening.next, own.closing.start).split(/\r?\n|\r/).filter(line => name(line) && !names.has(name(line))) : [];
+  return base.slice(0, saved.opening.next) + fields + added.map(line => line + saved.opening.eol).join('') + base.slice(saved.closing.start, saved.closing.next) +
+    (own.closing ? merged.slice(own.closing.next) : saved.closing.eol + merged);
 }
 function pruneDocxImageDefinitions(text, base) {
   let index;
@@ -2014,57 +2353,74 @@ function pruneDocxImageDefinitions(text, base) {
   }
   return text;
 }
-function scopeReviewCustody(merged, plain, changes, base) {
-  const plainBlocks = docxSourceBlocks(plain), mergedBlocks = docxSourceBlocks(merged);
-  if (!plainBlocks || !mergedBlocks || plainBlocks.length !== mergedBlocks.length) return null;
+function docxSourceComment(text, block) {
+  if (block.type !== 'html_block') return null;
+  const raw = text.slice(block.start, block.stop);
+  return /<!--[\s\S]*?-->/.test(raw) && !raw.replace(/<!--[\s\S]*?-->/g, '').trim() ? raw : null;
+}
+function carryDocxSourceComments(merged, base, baseBlocks) {
+  if (!baseBlocks.some(block => docxSourceComment(base, block))) return merged;
+  const current = docxSourceBlocks(merged);
+  if (!current) return merged;
+  const matches = new Map(docxBlockPairs(baseBlocks, current).map(({index, at}) => [baseBlocks[index], at]));
+  const reading = block => block.type !== 'reference_definition' && !docxSourceComment(base, block);
+  const placed = new Map();
+  for (let i = 0; i < baseBlocks.length; i++) {
+    const block = baseBlocks[i], raw = docxSourceComment(base, block);
+    if (!raw || matches.has(block)) continue;
+    let prior = i - 1, next = i + 1;
+    while (prior >= 0 && !reading(baseBlocks[prior])) prior--;
+    while (next < baseBlocks.length && !reading(baseBlocks[next])) next++;
+    const before = matches.get(baseBlocks[prior]), after = matches.get(baseBlocks[next]);
+    const at = before != null ? current[before + 1]?.start ?? merged.length : after != null ? current[after].start : null;
+    if (at == null) continue;
+    const start = before != null ? current[before].stop : current[after - 1]?.stop ?? (frontMatterFrame(merged).closing?.next ?? 0);
+    if (merged.slice(start, at).trim()) continue;
+    let gap = base.slice(block.stop, baseBlocks[i + 1]?.start ?? base.length);
+    if (gap.trim()) continue;
+    if (at < merged.length && !/[\r\n]/.test(gap)) gap += '\n\n';
+    if (placed.has(at)) placed.get(at).text += raw + gap;
+    else {
+      const prefix = before != null ? base.slice(baseBlocks[prior].stop, block.start) : null;
+      const savedGap = prefix != null && !prefix.trim();
+      placed.set(at, {start: savedGap ? start : at, text: (savedGap ? prefix : '') + raw + gap});
+    }
+  }
+  for (const at of [...placed.keys()].sort((a, b) => b - a)) {
+    const row = placed.get(at);
+    merged = merged.slice(0, row.start) + row.text + merged.slice(at);
+  }
+  return merged;
+}
+function scopeReviewCustody(merged, plain, changes) {
+  const mergedEnv = {}, plainEnv = {}, nativeBlocks = docxSourceBlocks(plain, plainEnv), savedBlocks = docxSourceBlocks(merged, mergedEnv);
+  if (!nativeBlocks || !savedBlocks) return null;
+  const plainBlocks = nativeBlocks.filter(block => block.type !== 'reference_definition' && !docxSourceComment(plain, block));
+  const mergedBlocks = savedBlocks.filter(block => block.type !== 'reference_definition' && !docxSourceComment(merged, block));
+  if (plainBlocks.length !== mergedBlocks.length) return null;
   const touches = block => changes.some(change => change.from === change.to
     ? change.from >= block.start && change.from <= block.stop
     : change.from < block.stop && change.to > block.start);
   let out = '', cursor = 0;
-  const carried = [];
+  const nativeUsage = changes.map(change => change.before);
   for (let i = 0; i < plainBlocks.length; i++) {
     const current = plainBlocks[i], prior = mergedBlocks[i];
     if (current.key !== prior.key) return null;
     const changed = touches(current);
     const body = changed ? plain.slice(current.start, current.stop) : merged.slice(prior.start, prior.stop);
-    out += plain.slice(cursor, current.start);
-    const start = out.length;
+    if (changed) nativeUsage.push(body);
+    out += merged.slice(cursor, prior.start);
     out += body;
-    carried.push({start, stop: out.length, changed});
-    cursor = current.stop;
+    cursor = prior.stop;
   }
-  out += plain.slice(cursor);
-  const baseBlocks = docxSourceBlocks(base);
-  if (!baseBlocks) return out;
-  const commentText = block => {
-    if (block.type !== 'html_block') return null;
-    const raw = base.slice(block.start, block.stop);
-    return /<!--[\s\S]*?-->/.test(raw) && !raw.replace(/<!--[\s\S]*?-->/g, '').trim() ? raw : null;
-  };
-  if (!baseBlocks.some(block => { const raw = commentText(block); return raw && !out.includes(raw.trim()); })) return out;
-  const missing = [];
-  let at = 0;
-  for (let i = 0; i < baseBlocks.length; i++) {
-    const block = baseBlocks[i], raw = commentText(block);
-    if (raw && !out.includes(raw.trim())) {
-      const gap = base.slice(block.stop, baseBlocks[i + 1] ? baseBlocks[i + 1].start : base.length);
-      if (gap.trim()) return null;
-      missing.push({at, text: raw + gap});
-      continue;
-    }
-    if (at >= carried.length) return null;
-    const piece = carried[at], same = base.slice(block.start, block.stop) === out.slice(piece.start, piece.stop);
-    if (!same && !piece.changed) return null;
-    at++;
+  out += merged.slice(cursor);
+  const usage = nativeUsage.join('\n'), normalizedUsage = normalizeLabel(usage), parser = markdownParser();
+  for (const row of docxSourceDefinitions(plain, nativeBlocks)) {
+    const name = parser.utils.normalizeReference(row.label), current = mergedEnv.references?.[name], native = plainEnv.references?.[name];
+    if (current && native && (current.href !== native.href || (current.title || '') !== (native.title || '')) &&
+        normalizedUsage.includes('[' + normalizeLabel(row.label) + ']')) return null;
   }
-  if (carried.slice(at).some(piece => piece.changed)) return null;
-  const placed = new Map();
-  for (const item of missing) {
-    const pos = item.at < carried.length ? carried[item.at].start : out.length;
-    placed.set(pos, (placed.get(pos) || '') + item.text);
-  }
-  for (const pos of [...placed.keys()].sort((a, b) => b - a)) out = out.slice(0, pos) + placed.get(pos) + out.slice(pos);
-  return out;
+  return carryDocxDefinitions(out, plain, nativeBlocks, mergedEnv, parser, usage);
 }
 
 function finishDocxText(source, result, {convertHtml} = {}) {
@@ -2087,6 +2443,7 @@ function finishDocxText(source, result, {convertHtml} = {}) {
   const events = [], ranges = new Map();
   for (const thread of review.threads) {
     const range = {};
+    if (thread.document) { ranges.set(thread, range); continue; }
     for (const [edge, suffix] of [['start','S'], ['end','E']]) {
       const token = review.marker + thread.wordId + suffix + review.marker;
       let at = source.indexOf(token), count = 0;
@@ -2106,8 +2463,8 @@ function finishDocxText(source, result, {convertHtml} = {}) {
   for (const thread of review.threads) {
     const range = ranges.get(thread);
     const messages = thread.messages.map(({html, ...message}) => ({...message, text: convertHtml(html).trim()}));
-    if (!range.invalid && range.end > range.start) attached.push({id: thread.id, resolved: thread.resolved, messages,
-      anchor: commentAnchor('text', range.start, range.end, body, parseComments(body))});
+    if (thread.document || !range.invalid && range.end > range.start) attached.push({id: thread.id, resolved: thread.resolved, messages,
+      anchor: commentAnchor(thread.document ? 'document' : 'text', range.start, range.end, body, parseComments(body))});
     else fallback.push({thread, messages});
   }
   for (const {thread, messages} of fallback) {
@@ -2269,6 +2626,14 @@ function stripDecorativeLinkUnderline(record) {
 }
 export function finishDocxMarkdown(source, result, options = {}) {
   if (typeof result?.canonical === 'string') return result.canonical;
+  const fences = result?.mathFences, unguard = text => fences && /^\uFFFERapierWordMathFence\uFFFFx*$/.test(fences.marker) &&
+    Array.isArray(fences.tails) && fences.tails.length > 0 && fences.tails.length <= DOCX_LIMITS.elements && fences.tails.every(tail => typeof tail === 'string' && /^[ \t]+$/.test(tail))
+    ? text.replace(new RegExp('[ \\t]*\\n[ \\t>]*' + fences.marker + '(\\d+)' + fences.marker, 'g'), (whole, index) => fences.tails[Number(index)] ?? whole) : text;
+  source = unguard(source);
+  if (typeof options.convertHtml === 'function') {
+    const convert = options.convertHtml;
+    options = {...options, convertHtml: html => unguard(convert(html))};
+  }
   const strip = text => {
     const edges = new Map(), marker = result.review?.marker;
     if (!marker) return {text, edges};
@@ -2334,7 +2699,7 @@ export function finishDocxMarkdown(source, result, options = {}) {
       let plain = null, retry = null;
       try { plain = project(source); retry = place(plain); }
       finally { result.base = saved; }
-      const hybrid = retry && scopeReviewCustody(body, plain, retry, saved);
+      const hybrid = retry && scopeReviewCustody(body, plain, retry);
       const scoped = hybrid && place(hybrid);
       if (scoped) { body = hybrid; changes = scoped; if (record.style) record.style.source = body; }
     }
@@ -2474,7 +2839,7 @@ function wordInlineSlice(paragraph, from, to, deleted = false) {
   let at = 0;
   const walk = node => {
     if (is(node, 'w', 'pPr')) return '';
-    if (is(node, 'w', 'rPr')) return wordXml(node);
+    if (is(node, 'w', 'rPr') || is(node, 'w', 'sdtPr')) return wordXml(node);
     const atom = is(node, 'w') && ['t','delText','tab','br','cr','drawing','pict','object','footnoteReference','endnoteReference'].includes(node.localName) || is(node, 'm', 'oMath');
     if (atom) {
       const text = wordText(node), start = at; at += text.length;
@@ -2527,27 +2892,32 @@ function reviewAtom(node, relKey) {
 function wordReviewSigs(paragraph, relKey) {
   const sigs = [];
   const add = (text, sig) => { for (let i = 0; i < text.length; i++) sigs.push(sig); };
-  const walk = (node, link, props) => {
+  const walk = (node, link, props, meaning = '') => {
     if (is(node, 'w') && ['pPr','rPr','del','moveFrom'].includes(node.localName)) return;
     if (is(node, 'w', 'hyperlink')) {
       const next = [relKey(attr(node, 'r', 'id')), attr(node, 'w', 'anchor') || '', attr(node, 'w', 'tooltip') || ''].join('\n');
-      for (const childNode of node.children) walk(childNode, next, props);
+      for (const childNode of node.children) walk(childNode, next, props, meaning);
+      return;
+    }
+    if (is(node, 'w', 'sdt') && val(child(child(node, 'w', 'sdtPr'), 'w', 'tag')) === 'rapier-abbreviation') {
+      const title = val(child(child(node, 'w', 'sdtPr'), 'w', 'alias')) ?? '';
+      for (const childNode of child(node, 'w', 'sdtContent')?.children || []) walk(childNode, link, props, JSON.stringify([meaning, title]));
       return;
     }
     if (is(node, 'w', 'r')) {
       const pr = wordXml(child(node, 'w', 'rPr'));
-      for (const childNode of node.children) walk(childNode, link, pr);
+      for (const childNode of node.children) walk(childNode, link, pr, meaning);
       return;
     }
     if (is(node, 'w', 't') || is(node, 'w', 'delText') || is(node, 'w', 'tab') || is(node, 'w', 'br') || is(node, 'w', 'cr')) {
-      add(wordText(node), (props || '') + '\n' + (link || ''));
+      add(wordText(node), (props || '') + '\n' + (link || '') + '\n' + meaning);
       return;
     }
     if (is(node, 'w') && ['drawing','pict','object','footnoteReference','endnoteReference'].includes(node.localName) || is(node, 'm', 'oMath') || is(node, 'm', 'oMathPara')) {
-      add(wordText(node), (props || '') + '\n' + (link || '') + '\n' + reviewAtom(node, relKey));
+      add(wordText(node), (props || '') + '\n' + (link || '') + '\n' + meaning + '\n' + reviewAtom(node, relKey));
       return;
     }
-    for (const childNode of node.children || []) walk(childNode, link, props);
+    for (const childNode of node.children || []) walk(childNode, link, props, meaning);
   };
   for (const childNode of paragraph.children) walk(childNode, '', '');
   return sigs;
@@ -2702,6 +3072,7 @@ export function docxPortableHtml(html, imageUrls = new Map()) {
           return fail('DOCX code source proof does not match.', 'docx_source_token');
         return '<code>' + escape(tokens[0].content) + '</code>';
       }
+      if (source === '\n' + shown && /^(\uFFFERapierWordMathFence\uFFFFx*)\d+\1$/.test(shown)) return '';
       if (source !== shown) return fail('DOCX source token proof does not match.', 'docx_source_token');
       return source;
     });
@@ -2774,17 +3145,18 @@ function mathSvgXml(node) {
 }
 function mathRunFromDom(node, style, pointSize) {
   let source = node.textContent || '';
-  if (node.hasAttribute('data-math-src')) {
-    const encoded = node.getAttribute('data-math-src');
+  const encoded = node.getAttribute('data-math-src') ?? node.getAttribute('data-rapier-math-source');
+  if (encoded !== null) {
     try { source = decodeURIComponent(encoded); } catch (_) { source = encoded; }
   }
-  const display = source.startsWith('$$') && source.endsWith('$$');
+  const equation = mathSourceParts(source), display = equation?.display || false;
   const run = {...style, type: 'math', source, display};
-  const tex = /^\$\$([\s\S]+)\$\$$|^\$([^$]+)\$$/.exec(source), toMathML = globalThis.RapierMath?.toMathML;
-  if (tex && typeof toMathML === 'function') {
+  const toMathML = globalThis.RapierMath?.toMathML;
+  if (equation && typeof toMathML === 'function') {
     try {
-      const {mathml, status} = toMathML(tex[1] ?? tex[2], {displayMode: display});
-      if (status === 'complete') return {...run, omml: nativeEquationXml(mathmlRecord(new DOMParser().parseFromString(mathml, 'application/xml').documentElement, style))};
+      const {mathml, status, errors} = toMathML(equation.tex, {displayMode: display});
+      if (status === 'complete' || status === 'presentation-fallback' && errors?.every(error => ['semantic-overlay', 'semantic-table-spacing'].includes(error.code)))
+        return {...run, omml: nativeEquationXml(mathmlRecord(new DOMParser().parseFromString(mathml, 'application/xml').documentElement, style))};
     } catch (_) {}
   }
   const rendered = node.querySelector('svg');
@@ -2953,7 +3325,47 @@ function editPairs(a, b, limit) {
 }
 
 const docxRoots = new WeakMap(), docxEquations = new WeakMap();
+const DOCX_LINK_COLORS = new Set(['#0563c1', '#0000ff', '#1155cc', '#000080', '#954f72', '#800080']);
+const DOCX_AUTOLINK_EMAIL = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/;
+const linkOpen = (href, auto, title) => '<a href="' + attributeText(href) + '"' + (title == null ? '' : ' title="' + attributeText(title) + '"') + (auto ? ' data-rapier-auto-link="autolink"' : '') + '>';
 const LINK_SCHEMES = /^(?:https?:\/\/|ftps?:\/\/|mailto:|tel:|callto:|sms:|xmpp:|matrix:)/i;
+function wordHyperlink(instruction) {
+  const text = String(instruction || ''), tokens = [];
+  for (let at = 0; at < text.length;) {
+    if (/\s/.test(text[at])) { at++; continue; }
+    let value = '';
+    if (text[at] === '"') {
+      at++;
+      while (at < text.length && text[at] !== '"') {
+        if (text[at] === '\\' && /["\\]/.test(text[at + 1] || '')) at++;
+        value += text[at++];
+      }
+      if (text[at++] !== '"' || at < text.length && !/\s/.test(text[at])) return null;
+    } else {
+      while (at < text.length && !/\s/.test(text[at])) value += text[at++];
+      if (value.includes('"')) return null;
+    }
+    tokens.push(value);
+  }
+  if (tokens.shift()?.toUpperCase() !== 'HYPERLINK') return null;
+  let href = null, anchor = null, title;
+  for (let at = 0; at < tokens.length; at++) {
+    const token = tokens[at];
+    if (/^\\[lot*]$/i.test(token)) {
+      const value = tokens[++at];
+      if (value == null || value.startsWith('\\')) return null;
+      if (token.toLowerCase() === '\\l') anchor = value;
+      if (token.toLowerCase() === '\\o') title = value;
+    } else if (!/^\\[mn]$/i.test(token)) {
+      if (href !== null || token.startsWith('\\')) return null;
+      href = token;
+    }
+  }
+  if (!href || !LINK_SCHEMES.test(href)) return null;
+  if (anchor) href += '#' + anchor;
+  return /[\u0000-\u0020\u007f]/.test(href) ? null : {href, title};
+}
+const QUOTE_STEP = 528;
 const DEFINITION_STYLES = {term: 'RapierTerm', detail: 'RapierDefinition'}, DEFINITION_INDENT = 720,
   DEFINITION_NAMES = {RapierTerm: 'Rapier Definition Term', RapierDefinition: 'Rapier Definition'};
 
@@ -2964,37 +3376,111 @@ function mathmlRecord(root, style = {}) {
     fraktur: ['p', 'fraktur'], 'bold-fraktur': ['b', 'fraktur'], 'sans-serif': ['p', 'sans-serif'],
     'bold-sans-serif': ['b', 'sans-serif'], 'sans-serif-italic': ['i', 'sans-serif'],
     'sans-serif-bold-italic': ['bi', 'sans-serif'], monospace: ['p', 'monospace']};
-  let count = 0;
+  let count = 0, scale = 1;
+  const sizeRun = () => Math.abs(scale - 1) > 1e-6 ? '<w:sz w:val="@' + +scale.toFixed(4) + '"/><w:szCs w:val="@' + +scale.toFixed(4) + '"/>' : '';
+  const SCRIPT_SIZES = [1, 0.7, 0.5];
+  const structuralLevel = node => {
+    let level = 0;
+    for (let child = node, parent = node.parentNode; parent && parent.nodeType === 1; child = parent, parent = parent.parentNode) {
+      if (parent.hasAttribute('scriptlevel')) return level + Number(parent.getAttribute('scriptlevel'));
+      const index = Array.prototype.indexOf.call(parent.children, child);
+      if (['msub', 'msup', 'msubsup', 'munder', 'mover', 'munderover'].includes(parent.localName) && index > 0) level++;
+      if (parent.localName === 'mroot' && index === 1) level += 2;
+    }
+    return level;
+  };
+  const levelScale = node => {
+    const own = node.getAttribute('scriptlevel');
+    if (own === null) return 1;
+    if (!/^\d+$/.test(own)) return refuse('<' + node.localName + '> scriptlevel ' + own);
+    return SCRIPT_SIZES[Math.min(2, Number(own))] / SCRIPT_SIZES[Math.min(2, structuralLevel(node))];
+  };
   const refuse = reason => fail('DOCX cannot represent this MathML faithfully: ' + reason + '. The original equation remains in the document source.', 'docx_mathml_unsupported');
-  const textRun = (text, props = '<m:sty m:val="p"/>') => '<m:r>' + (props ? '<m:rPr>' + props + '</m:rPr>' : '') + '<m:t xml:space="preserve">' + escape(text) + '</m:t></m:r>';
+  const textRun = (text, props = '<m:sty m:val="p"/>', word = '') => '<m:r>' + (props ? '<m:rPr>' + props + '</m:rPr>' : '') + (word ? '<w:rPr>' + word + '</w:rPr>' : '') +
+    '<m:t xml:space="preserve">' + escape(text) + '</m:t></m:r>';
+  const named = {black: '000000', blue: '0000FF', brown: 'A52A2A', cyan: '00FFFF', darkgray: 'A9A9A9', gray: '808080', green: '008000', lightgray: 'D3D3D3',
+    lime: '00FF00', magenta: 'FF00FF', olive: '808000', orange: 'FFA500', pink: 'FFC0CB', purple: '800080', red: 'FF0000', teal: '008080',
+    violet: 'EE82EE', white: 'FFFFFF', yellow: 'FFFF00'};
+  const color = value => {
+    const v = value.trim().toLowerCase(), short = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/.exec(v);
+    const hex = short ? short.slice(1).map(c => c + c).join('') : /^#[0-9a-f]{6}$/.test(v) ? v.slice(1) : Object.hasOwn(named, v) ? named[v] : null;
+    return hex ? hex.toUpperCase() : refuse('color ' + value);
+  };
+  const declarations = (node, allowed) => {
+    const out = {};
+    for (const declaration of (node.getAttribute('style') || '').split(';').map(d => d.trim()).filter(Boolean)) {
+      const [key, ...rest] = declaration.split(':'), property = key.trim().toLowerCase(), value = rest.join(':').trim();
+      if (!allowed.includes(property)) return refuse('<' + node.localName + '> style ' + property);
+      if (property === 'font-weight' && !/^(?:700|bold)$/.test(value) || property === 'font-style' && value !== 'italic' ||
+        property === 'font-size' && !(/^\d*\.?\d+em$/.test(value) && parseFloat(value) > 0 && parseFloat(value) <= 10)) return refuse('<' + node.localName + '> style ' + declaration);
+      out[property] = property === 'color' ? color(value) : value;
+    }
+    return out;
+  };
+  const spaces = width => {
+    const em = /^(-?\d*\.?\d+)em$/.exec(width || '0em');
+    if (!em) return refuse('space width ' + width);
+    let w = Number(em[1]), out = '';
+    if (!(w > 0)) return '';
+    while (w >= 0.99) { out += '\u2003'; w -= 1; }
+    return out + (w >= 0.45 ? '\u2002' : w >= 0.25 ? '\u2005' : w >= 0.2 ? '\u205f' : w >= 0.1 ? '\u2009' : '');
+  };
+  const NARY = /^[∑∏∐∫∬∭∮∯∰∱∲∳⋃⋂⋁⋀⨀⨁⨂⨄⨆⨌]$/u, STOP = /^[=<>≤≥≠≈≡≢∼≃≅≆∝∈∉∋⊂⊃⊆⊇⊊⊋≺≻⪯⪰∣∥⊥→←↔⇒⇐⇔⟶⟵⟹⟸⟺↦⟼,;:]$/u;
+  const largeOp = node => node?.localName === 'mo' && node.getAttribute('largeop') === 'true' && NARY.test(node.textContent.trim()) ? node.textContent.trim() : null;
+  const naryOf = node => ['msub', 'msup', 'msubsup', 'munder', 'mover', 'munderover'].includes(node.localName) ? largeOp(node.children[0]) : largeOp(node);
+  const sequence = (elements, variant, depth, paint) => {
+    let out = '';
+    for (let i = 0; i < elements.length; i++) {
+      const node = elements[i], chr = naryOf(node);
+      if (!chr) { out += convert(node, variant, depth + 1, paint); continue; }
+      let j = i + 1;
+      while (j < elements.length && !(elements[j].localName === 'mo' && STOP.test(elements[j].textContent.trim()))) j++;
+      const kind = node.localName, parts = Array.from(node.children), sub = {msub: 1, msubsup: 1, munder: 1, munderover: 1}[kind] ? parts[1] : null,
+        sup = kind === 'msup' || kind === 'mover' ? parts[1] : kind === 'msubsup' || kind === 'munderover' ? parts[2] : null;
+      if (kind !== 'mo' && parts.length !== (kind === 'msubsup' || kind === 'munderover' ? 3 : 2)) return refuse('<' + kind + '> arguments');
+      out += '<m:nary><m:naryPr><m:chr m:val="' + escape(chr) + '"/><m:limLoc m:val="' + (/^mu/.test(kind) ? 'undOvr' : 'subSup') + '"/>' +
+        (sub ? '' : '<m:subHide m:val="1"/>') + (sup ? '' : '<m:supHide m:val="1"/>') + '</m:naryPr>' +
+        '<m:sub>' + (sub ? convert(sub, variant, depth + 1, paint) : '') + '</m:sub><m:sup>' + (sup ? convert(sup, variant, depth + 1, paint) : '') + '</m:sup>' +
+        '<m:e>' + sequence(elements.slice(i + 1, j), variant, depth + 1, paint) + '</m:e></m:nary>';
+      i = j - 1;
+    }
+    return out;
+  };
+  const BARS = {mover: /^[¯‾̅]$/u, munder: /^[_̲‾]$/u}, GROUPS = /^[⏞⏟⏜⏝⎴⎵→←↔⇀↼]$/u;
   const fence = (element, form) => element?.localName === 'mo' && element.getAttribute('fence') === 'true' && element.getAttribute('stretchy') === 'true' &&
     element.getAttribute('form') === form && Array.from(element.textContent.trim()).length === 1 ? element.textContent.trim() : null;
-  const convert = (node, inherited = null, depth = 0) => {
+  const convert = (node, inherited = null, depth = 0, paint = null) => {
     if (++count > DOCX_LIMITS.elements || depth > DOCX_LIMITS.depth) return refuse('equation limit');
     if (node.namespaceURI !== namespace) return refuse('MathML namespace is required');
     const name = node.localName.toLowerCase(), elements = Array.from(node.children), own = node.getAttribute('mathvariant');
     const variant = own || inherited;
     if (variant && !Object.hasOwn(variants, variant)) return refuse('mathvariant=' + variant);
     const specific = {math: ['display'], mfrac: ['linethickness', 'bevelled'], mfenced: ['open', 'close', 'separators'],
-      mo: ['form', 'stretchy', 'fence', 'separator', 'symmetric', 'largeop', 'movablelimits', 'lspace', 'rspace', 'minsize', 'maxsize', 'accent'],
-      mover: ['accent'], munder: ['accentunder'], munderover: ['accent', 'accentunder'], mspace: ['width', 'height', 'depth'],
-      mstyle: ['displaystyle'], mtable: ['columnalign', 'rowalign', 'columnspacing', 'rowspacing', 'displaystyle', 'width', 'equalrows', 'equalcolumns'],
-      mtr: ['columnalign', 'rowalign'], mtd: ['columnalign', 'rowalign', 'style']}[name] || [];
+      mo: ['form', 'stretchy', 'fence', 'separator', 'symmetric', 'largeop', 'movablelimits', 'lspace', 'rspace', 'minsize', 'maxsize', 'accent', 'style'],
+      mi: ['style'], mn: ['style'], mtext: ['style'],
+      mover: ['accent'], munder: ['accentunder'], munderover: ['accent', 'accentunder'], mspace: ['width', 'height', 'depth', 'style'],
+      menclose: ['notation', 'style'],
+      mstyle: ['displaystyle', 'scriptlevel', 'style'], mtable: ['columnalign', 'rowalign', 'columnspacing', 'rowspacing', 'displaystyle', 'scriptlevel', 'width', 'equalrows', 'equalcolumns'],
+      mtr: ['columnalign', 'rowalign'], mtd: ['columnalign', 'rowalign', 'columnspan', 'style']}[name] || [];
     for (const attribute of Array.from(node.attributes)) {
       if (attribute.name === 'xmlns' || attribute.name.startsWith('xmlns:') || attribute.name.startsWith('data-') || ['id', 'title', 'mathvariant'].includes(attribute.name) || specific.includes(attribute.name) ||
         attribute.name === 'scriptlevel' && attribute.value === '0') continue;
       return refuse('<' + name + '> attribute ' + attribute.name);
     }
     const arity = n => { if (elements.length !== n) refuse('<' + name + '> needs ' + n + ' arguments'); };
-    const childrenXml = () => elements.map(element => convert(element, variant, depth + 1)).join('');
-    const argument = (tag, element) => '<m:' + tag + '>' + convert(element, variant, depth + 1) + '</m:' + tag + '>';
+    const childrenXml = () => sequence(elements, variant, depth, paint);
+    const argument = (tag, element) => '<m:' + tag + '>' + convert(element, variant, depth + 1, paint) + '</m:' + tag + '>';
+    const colorRun = (paint ? '<w:color w:val="' + paint + '"/>' : '') + sizeRun();
     if (['mi', 'mn', 'mo', 'mtext'].includes(name)) {
       if (elements.length) return refuse('<' + name + '> contains elements');
       const text = node.textContent.replace(/[\t\r\n ]+/g, ' ').trim(); words.push(text);
-      if (!variant && !style.bold && (name === 'mn' || name === 'mo') && !/\p{L}/u.test(text)) return textRun(text, '');
+      const own = declarations(node, ['font-weight', 'font-style']), bold = !!own['font-weight'], italic = !!own['font-style'];
+      if (!variant && !style.bold && !bold && !italic && (name === 'mn' || name === 'mo') && !/\p{L}/u.test(text)) return textRun(text, '', colorRun);
       let [shape, script] = variant ? variants[variant] : [name === 'mi' && Array.from(text).length === 1 ? 'i' : 'p', 'roman'];
-      if (!variant && style.bold) shape = shape === 'i' ? 'bi' : 'b';
-      return textRun(text, (name === 'mtext' ? '<m:nor/>' : '') + '<m:scr m:val="' + script + '"/><m:sty m:val="' + shape + '"/>');
+      if (!variant && (style.bold || bold)) shape = shape === 'i' ? 'bi' : 'b';
+      if (italic) shape = shape === 'b' || shape === 'bi' ? 'bi' : 'i';
+      const word = (name === 'mtext' ? (bold ? '<w:b/>' : '') + (italic ? '<w:i/>' : '') : '') + colorRun;
+      return textRun(text, (name === 'mtext' ? '<m:nor/>' : '') + '<m:scr m:val="' + script + '"/><m:sty m:val="' + shape + '"/>', word);
     }
     if (Array.from(node.childNodes).some(child => child.nodeType === 3 && child.nodeValue.trim())) return refuse('text outside a MathML token');
     if (name === 'math') {
@@ -3004,22 +3490,53 @@ function mathmlRecord(root, style = {}) {
     if (name === 'mrow') {
       const open = fence(elements[0], 'prefix'), close = fence(elements.at(-1), 'postfix');
       if (open !== null || close !== null) {
-        const body = elements.slice(open === null ? 0 : 1, close === null ? elements.length : -1).map(element => convert(element, variant, depth + 1)).join('');
+        const body = sequence(elements.slice(open === null ? 0 : 1, close === null ? elements.length : -1), variant, depth, paint);
         return '<m:d><m:dPr><m:begChr m:val="' + escape(open ?? '') + '"/><m:endChr m:val="' + escape(close ?? '') + '"/></m:dPr><m:e>' + body + '</m:e></m:d>';
       }
     }
-    if (name === 'mrow' || name === 'mstyle') return childrenXml();
-    if (name === 'mspace') return '';
+    if (name === 'mstyle') {
+      const own = declarations(node, ['color', 'font-size']), saved = scale;
+      scale *= levelScale(node) * (own['font-size'] ? parseFloat(own['font-size']) : 1);
+      try { return sequence(elements, variant, depth, own.color || paint); }
+      finally { scale = saved; }
+    }
+    if (name === 'mrow') return childrenXml();
+    if (name === 'menclose') {
+      const notation = new Set((node.getAttribute('notation') || 'longdiv').trim().split(/\s+/)),
+        known = new Set(['box', 'actuarial', 'madruwb', ...MATH_BORDER_EDGES.map(([name]) => name), ...MATH_BORDER_STRIKES.map(([name]) => name)]);
+      for (const name of notation) if (!known.has(name)) return refuse('enclosure ' + name);
+      if (notation.has('box')) for (const [name] of MATH_BORDER_EDGES) notation.add(name);
+      if (notation.has('actuarial')) { notation.add('top'); notation.add('right'); }
+      if (notation.has('madruwb')) { notation.add('bottom'); notation.add('right'); }
+      const own = declarations(node, ['color', 'background']), ink = own.color || paint,
+        word = (ink ? '<w:color w:val="' + ink + '"/>' : '') + (own.background ? '<w:shd w:val="clear" w:fill="' + color(own.background) + '"/>' : '') + sizeRun(),
+        properties = MATH_BORDER_EDGES.filter(([name]) => !notation.has(name)).map(([, key]) => '<m:' + key + ' m:val="1"/>').join('') +
+          MATH_BORDER_STRIKES.filter(([name]) => notation.has(name)).map(([, key]) => '<m:' + key + ' m:val="1"/>').join('');
+      return '<m:borderBox><m:borderBoxPr>' + properties + (word ? '<m:ctrlPr><w:rPr>' + word + '</w:rPr></m:ctrlPr>' : '') +
+        '</m:borderBoxPr><m:e>' + sequence(elements, variant, depth, ink) + '</m:e></m:borderBox>';
+    }
+    if (name === 'mspace') {
+      const style = node.getAttribute('style');
+      if (style && !/^margin-left:\s*-[\d.]+em;?$/.test(style.trim())) return refuse('<mspace> style');
+      const text = style ? '' : spaces(node.getAttribute('width'));
+      return text ? textRun(text, '', colorRun) : '';
+    }
     if (name === 'munder' || name === 'mover' || name === 'munderover') {
       arity(name === 'munderover' ? 3 : 2);
+      const mark = elements[1]?.localName === 'mo' ? elements[1].textContent.trim() : '';
+      if (name !== 'munderover' && BARS[name].test(mark))
+        return '<m:bar><m:barPr><m:pos m:val="' + (name === 'mover' ? 'top' : 'bot') + '"/></m:barPr>' + argument('e', elements[0]) + '</m:bar>';
+      if (name !== 'munderover' && GROUPS.test(mark) && (elements[1].getAttribute('stretchy') === 'true' || /^[⏞⏟⏜⏝⎴⎵]$/u.test(mark)))
+        return '<m:groupChr><m:groupChrPr><m:chr m:val="' + escape(mark) + '"/><m:pos m:val="' + (name === 'mover' ? 'top' : 'bot') + '"/><m:vertJc m:val="' +
+          (name === 'mover' ? 'bot' : 'top') + '"/></m:groupChrPr>' + argument('e', elements[0]) + '</m:groupChr>';
       const accent = name === 'mover' && node.getAttribute('accent') === 'true' && elements[1].localName === 'mo' && Array.from(elements[1].textContent.trim()).length === 1;
       if (accent) return '<m:acc><m:accPr><m:chr m:val="' + escape(elements[1].textContent.trim()) + '"/></m:accPr>' + argument('e', elements[0]) + '</m:acc>';
-      const lower = name === 'mover' ? convert(elements[0], variant, depth + 1) : '<m:limLow>' + argument('e', elements[0]) + argument('lim', elements[1]) + '</m:limLow>';
+      const lower = name === 'mover' ? convert(elements[0], variant, depth + 1, paint) : '<m:limLow>' + argument('e', elements[0]) + argument('lim', elements[1]) + '</m:limLow>';
       return name === 'munder' ? lower : '<m:limUpp><m:e>' + lower + '</m:e>' + argument('lim', elements[name === 'mover' ? 1 : 2]) + '</m:limUpp>';
     }
     if (name === 'semantics') {
       if (!elements.length || elements.slice(1).some(element => !['annotation', 'annotation-xml'].includes(element.localName))) return refuse('semantics alternatives');
-      return convert(elements[0], variant, depth + 1);
+      return convert(elements[0], variant, depth + 1, paint);
     }
     if (name === 'mfrac') {
       arity(2);
@@ -3038,8 +3555,8 @@ function mathmlRecord(root, style = {}) {
     }
     if (name === 'msqrt' || name === 'mroot') {
       if (name === 'mroot') arity(2);
-      const base = name === 'msqrt' ? childrenXml() : convert(elements[0], variant, depth + 1);
-      const degree = name === 'msqrt' ? '' : convert(elements[1], variant, depth + 1);
+      const base = name === 'msqrt' ? childrenXml() : convert(elements[0], variant, depth + 1, paint);
+      const degree = name === 'msqrt' ? '' : convert(elements[1], variant, depth + 1, paint);
       return '<m:rad><m:radPr><m:degHide m:val="' + (name === 'msqrt' ? '1' : '0') + '"/></m:radPr>' +
         '<m:deg>' + degree + '</m:deg><m:e>' + base + '</m:e></m:rad>';
     }
@@ -3048,24 +3565,54 @@ function mathmlRecord(root, style = {}) {
       if (Array.from(open).length > 1 || Array.from(close).length > 1) return refuse('multi-character fence');
       const separators = Array.from((node.getAttribute('separators') ?? ',').replace(/\s/g, ''));
       const body = elements.map((element, index) => (index && separators.length ? textRun(separators[Math.min(index - 1, separators.length - 1)]) : '') +
-        convert(element, variant, depth + 1)).join('');
+        convert(element, variant, depth + 1, paint)).join('');
       return '<m:d><m:dPr><m:begChr m:val="' + escape(open) + '"/><m:endChr m:val="' + escape(close) + '"/></m:dPr><m:e>' + body + '</m:e></m:d>';
     }
     if (name === 'mtable') {
-      const columns = elements[0]?.children.length;
-      if (!columns || columns > DOCX_LIMITS.tableColumns || elements.some(row => row.localName !== 'mtr' || row.children.length !== columns ||
-          Array.from(row.children).some(cell => cell.localName !== 'mtd'))) return refuse('nonrectangular matrix');
-      return '<m:m><m:mPr><m:mcs><m:mc><m:mcPr><m:count m:val="' + columns + '"/><m:mcJc m:val="center"/></m:mcPr></m:mc></m:mcs></m:mPr>' + childrenXml() + '</m:m>';
+      const rows = elements.map(row => {
+        if (row.localName !== 'mtr' || !row.children.length) return refuse('matrix row');
+        const spans = Array.from(row.children, cell => {
+          const value = cell.getAttribute('columnspan') ?? '1';
+          if (cell.localName !== 'mtd' || !/^[1-9]\d*$/.test(value) || Number(value) > DOCX_LIMITS.tableColumns) return refuse('matrix cell span');
+          return Number(value);
+        });
+        return {node: row, columns: spans.reduce((sum, value) => sum + value, 0), wide: spans.length === 1 && spans[0] > 1,
+          partial: spans.length > 1 && spans.some(value => value > 1)};
+      });
+      const columns = rows[0]?.columns;
+      if (!columns || columns > DOCX_LIMITS.tableColumns || rows.some(row => row.columns !== columns)) return refuse('nonrectangular matrix');
+      if (rows.some(row => row.partial)) return refuse('partial matrix cell span');
+      const matrix = rows => '<m:m><m:mPr><m:mcs><m:mc><m:mcPr><m:count m:val="' + columns + '"/><m:mcJc m:val="center"/></m:mcPr></m:mc></m:mcs></m:mPr>' +
+        sequence(rows.map(row => row.node), variant, depth, paint) + '</m:m>';
+      const saved = scale;
+      scale *= levelScale(node);
+      try {
+        if (!rows.some(row => row.wide)) return matrix(rows);
+        let band = [], body = '';
+        const flush = () => { if (band.length) { body += '<m:e>' + matrix(band) + '</m:e>'; band = []; } };
+        for (const row of rows) {
+          if (row.wide) { flush(); body += convert(row.node, variant, depth + 1, paint); }
+          else band.push(row);
+        }
+        flush();
+        return '<m:eqArr>' + body + '</m:eqArr>';
+      }
+      finally { scale = saved; }
     }
-    if (name === 'mtr' && node.parentNode?.localName === 'mtable') return '<m:mr>' + childrenXml() + '</m:mr>';
+    if (name === 'mtr' && node.parentNode?.localName === 'mtable')
+      return elements.length === 1 && Number(elements[0].getAttribute('columnspan')) > 1 ? childrenXml() : '<m:mr>' + childrenXml() + '</m:mr>';
     if (name === 'mtd' && node.parentNode?.localName === 'mtr') return '<m:e>' + childrenXml() + '</m:e>';
     return refuse('<' + name + '>');
   };
   if (root.localName?.toLowerCase() !== 'math') return refuse('math root is required');
-  const xml = '<m:oMath xmlns:m="' + NS.m[0] + '">' + convert(root) + '</m:oMath>';
+  const body = convert(root), xml = '<m:oMath xmlns:m="' + NS.m[0] + '"' + (body.includes('<w:') ? ' xmlns:w="' + NS.w[0] + '"' : '') + '>' + body + '</m:oMath>';
   const record = {...style, type: 'mathml', text: words.join(''), display: root.getAttribute('display') === 'block'};
   docxEquations.set(record, record.display ? '<m:oMathPara xmlns:m="' + NS.m[0] + '"><m:oMathParaPr><m:jc m:val="center"/></m:oMathParaPr>' + xml + '</m:oMathPara>' : xml);
   return record;
+}
+
+function sizedEquationXml(xml, halfPoints) {
+  return xml.replace(/ w:val="@([\d.]+)"/g, (_, factor) => ' w:val="' + Math.max(1, Math.min(3276, Math.round(halfPoints * Number(factor)))) + '"');
 }
 
 function nativeEquationXml(record) {
@@ -3227,7 +3774,7 @@ function* docxBlocksFromDomSteps(root, {canonical, willTokens = [], pointSize = 
       if (tag === 'BR') { out.push({...style, type: 'text', text: '\n'}); continue; }
       if (tag === 'IMG') {
         const src = child.getAttribute('src') || '';
-        if (/^data:image\//i.test(src)) out.push({...style, type: 'image', alt: child.getAttribute('alt') || '', src, ref: null,
+        if (/^data:image\//i.test(src)) out.push({...style, type: 'image', alt: child.getAttribute('alt') || '', title: child.getAttribute('title'), src, ref: null,
           layout: layoutOf(child), original: animationOf(child)});
         continue;
       }
@@ -3251,6 +3798,7 @@ function* docxBlocksFromDomSteps(root, {canonical, willTokens = [], pointSize = 
       else if (tag === 'U' || tag === 'INS') next.underline = true;
       else if (tag === 'DEL' || tag === 'S' || tag === 'STRIKE') next.strike = true;
       else if (tag === 'CODE' || tag === 'KBD' || tag === 'SAMP') { next.code = true; next.family = null; }
+      else if (tag === 'ABBR') next.abbreviation = {title: child.getAttribute('title') || ''};
       else if (tag === 'SUB') next.sub = true;
       else if (tag === 'SUP') next.sup = true;
       else if (tag === 'MARK') next.highlight = HIGHLIGHT_TO_DOCX[child.getAttribute('data-rapier-highlight')] ? child.getAttribute('data-rapier-highlight') :
@@ -3259,7 +3807,7 @@ function* docxBlocksFromDomSteps(root, {canonical, willTokens = [], pointSize = 
       else if (tag === 'SPAN' && cssColorHex(child.style?.color)) next.color = cssColorHex(child.style.color);
       else if (tag === 'A') {
         const href = child.getAttribute('href') || '';
-        if (href.startsWith('#') || LINK_SCHEMES.test(href)) next.href = href;
+        if (href.startsWith('#') || LINK_SCHEMES.test(href)) { next.href = href; next.linkTitle = child.getAttribute('title'); }
       }
       if (INLINE_TAGS.has(tag)) yield* runsOf(child, next, out, mathPointSize);
       else yield* runsOf(child, style, out, mathPointSize);
@@ -3437,19 +3985,19 @@ function* docxBlocksFromDomSteps(root, {canonical, willTokens = [], pointSize = 
       blocks.push({type: 'code', text: element.textContent.replace(/\n$/, ''), ...(runs ? {runs} : {}), ...(language ? {language} : {})}); continue;
     }
     if (tag === 'BLOCKQUOTE') {
-      const label = element.querySelector('p > strong:first-child');
+      const label = element.querySelector(':scope > p:first-child > strong:first-child');
       const kind = label && /^(Note|Tip|Important|Warning|Caution|Danger|Info): $/.test(label.textContent) ? label.textContent.slice(0, -2).toUpperCase() : null;
       const color = cssColorHex(element.style?.borderInlineStartColor);
       const decoration = {...(kind ? {kind} : {}), ...(color ? {color} : {})};
       const clone = (yield* cloneTree(element));
-      if (kind) clone.querySelector('p > strong:first-child').remove();
+      if (kind) clone.querySelector(':scope > p:first-child > strong:first-child').remove();
       const content = yield* nestedBlocks(clone);
       const nativeQuote = !kind;
       if (content.length === 1 && content[0].type === 'paragraph') {
         blocks.push({...content[0], type: kind ? 'callout' : 'quote', ...decoration,
           ...(nativeQuote ? {nativeQuote: true} : {}), direction: directionOf(element)});
       } else blocks.push({type: kind ? 'callout' : 'quote', ...decoration,
-        blocks: nativeQuote ? content.map(block => block.type === 'paragraph' ? {...block, type: 'quote', nativeQuote: true} : block) : content,
+        blocks: nativeQuote ? content.map(block => block.type === 'paragraph' ? {...block, type: 'quote', nativeQuote: true, quoteMember: true} : block) : content,
         direction: directionOf(element)});
       continue;
     }
@@ -3493,7 +4041,7 @@ function* docxBlocksFromDomSteps(root, {canonical, willTokens = [], pointSize = 
       const images = element.querySelectorAll('img');
       if (images.length === 1 && !element.textContent.trim() && !images[0].closest('a')) {
         const image = images[0];
-        blocks.push({type: 'image', alt: image.getAttribute('alt') || '', src: image.getAttribute('src') || '', ref: null, layout: layoutOf(image) || layoutOf(element), original: animationOf(image),
+        blocks.push({type: 'image', alt: image.getAttribute('alt') || '', title: image.getAttribute('title'), src: image.getAttribute('src') || '', ref: null, layout: layoutOf(image) || layoutOf(element), original: animationOf(image),
           capHeight: integer(image.getAttribute('data-md-picture-cap-height'), null, 1),
           capTop: integer(image.getAttribute('data-md-picture-cap-top'), null)});
         continue;
@@ -3697,9 +4245,11 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
   }
   fonts.push(...baseFamilies.values());
   const carrySource = typeof canonical === 'string';
+  const quoteDepths = new Set();
   let hyphenation = false, quotations = false, definitions = false, tableHeaderStyle = false, sourceCode = false, tableStyle = false;
   const codeLanguages = new Map();
   const bodyPointSize = referenceType(settings).body;
+  const emPoints = Math.max(1, Math.round(bodyPointSize * 2)) / 2;
   const bodyFace = settings?.mainfont?.word || settings?.sansfont?.word || 'Geist';
   const lineTwips = integer(Math.max(1, Math.round(referenceType(settings).line * 20)));
   const blockSpace = referenceSpacing(settings);
@@ -3832,10 +4382,10 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
     const distance = gap => gap > spacing && gap - spacing < minimum ? Math.round(gap) : spacing;
     return {left: distance(left), right: distance(width - left - cx)};
   };
-  const pictureXml = (asset, alt, layout, availableWidth = contentWidthEmu, baseline = 0, cap = null) => {
+  const pictureXml = (asset, alt, layout, availableWidth = contentWidthEmu, baseline = 0, cap = null, title = null) => {
     const {cx, cy} = pictureSize(asset, layout, availableWidth, cap);
     const pr = docPr++;
-    const description = escape(alt || '').replace(/\r/g, '&#13;').replace(/\n/g, '&#10;').replace(/\t/g, '&#9;');
+    const description = attributeText(alt || ''), tip = title == null ? '' : ' title="' + attributeText(title) + '"';
     const rot = layout?.rotate ? Math.round(((layout.rotate * 60000) % 21600000 + 21600000) % 21600000) : 0;
     const effects = (layout?.opacity < 100 ? '<a:alphaModFix amt="' + layout.opacity * 1000 + '"/>' : '') +
       (asset.svgId ? '<a:extLst><a:ext uri="{96DAC541-7B7A-43D3-8B79-37D633B846F1}"><asvg:svgBlip xmlns:asvg="' + NS.svg[0] +
@@ -3843,14 +4393,14 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
       (asset.originalId ? '<a:extLst><a:ext uri="' + NS.rapier[0] + '/original"><rapier:original xmlns:rapier="' + NS.rapier[0] +
         '" r:embed="' + asset.originalId + '"/></a:ext></a:extLst>' : '');
     const graphic = '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
-      '<pic:pic><pic:nvPicPr><pic:cNvPr id="' + pr + '" name="Picture ' + pr + '" descr="' + description + '"/><pic:cNvPicPr/></pic:nvPicPr>' +
+      '<pic:pic><pic:nvPicPr><pic:cNvPr id="' + pr + '" name="Picture ' + pr + '" descr="' + description + '"' + tip + '/><pic:cNvPicPr/></pic:nvPicPr>' +
       '<pic:blipFill><a:blip r:embed="' + asset.id + (effects ? '">' + effects + '</a:blip>' : '"/>') +
       '<a:stretch><a:fillRect/></a:stretch></pic:blipFill>' +
       '<pic:spPr><a:xfrm' + (rot ? ' rot="' + rot + '"' : '') + '><a:off x="0" y="0"/><a:ext cx="' + cx + '" cy="' + cy + '"/></a:xfrm>' +
       '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic>';
     const floating = layout?.wrap;
     const left = Math.round(Math.max(0, Math.min(availableWidth - cx, availableWidth * (layout?.x ?? 0) / 100 - cx / 2)));
-    const top = Math.round((layout?.y || 0) * bodyPointSize * 12700);
+    const top = Math.round((layout?.y || 0) * emPoints * 12700);
     const distance = ['around', 'box'].includes(floating) ? wrapDistances(availableWidth, left, cx) : {left: 91440, right: 91440};
     const placement = cap ? '<wp:anchor distT="0" distB="0" distL="0" distR="50800" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="0">' +
       '<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="character"><wp:posOffset>0</wp:posOffset></wp:positionH>' +
@@ -3859,11 +4409,13 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
       '<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>' + left + '</wp:posOffset></wp:positionH>' +
       '<wp:positionV relativeFrom="paragraph"><wp:posOffset>' + top + '</wp:posOffset></wp:positionV>' :
       '<wp:inline distT="0" distB="0" distL="0" distR="0">';
-    const wrapping = cap ? '<wp:wrapSquare wrapText="right"/>' : !floating ? '' : ['behind', 'front'].includes(floating) ? '<wp:wrapNone/>' : '<wp:wrapSquare wrapText="bothSides"/>';
+    const wrapping = cap ? '<wp:wrapSquare wrapText="right"/>' : !floating ? '' : ['behind', 'front'].includes(floating) ? '<wp:wrapNone/>' :
+      floating === 'box' ? '<wp:wrapSquare wrapText="bothSides"/>' : '<wp:wrapTight wrapText="bothSides"><wp:wrapPolygon edited="0"><wp:start x="0" y="0"/>' +
+        '<wp:lineTo x="0" y="21600"/><wp:lineTo x="21600" y="21600"/><wp:lineTo x="21600" y="0"/><wp:lineTo x="0" y="0"/></wp:wrapPolygon></wp:wrapTight>';
     return '<w:r>' + (baseline ? '<w:rPr><w:position w:val="' + Math.round(baseline * 2) + '"/></w:rPr>' : '') + '<w:drawing>' + placement +
       '<wp:extent cx="' + cx + '" cy="' + cy + '"/><wp:effectExtent l="0" t="0" r="0" b="0"/>' +
       wrapping +
-      '<wp:docPr id="' + pr + '" name="Picture ' + pr + '" descr="' + description + '"/><wp:cNvGraphicFramePr/>' +
+      '<wp:docPr id="' + pr + '" name="Picture ' + pr + '" descr="' + description + '"' + tip + '/><wp:cNvGraphicFramePr/>' +
       graphic + (cap || floating ? '</wp:anchor>' : '</wp:inline>') + '</w:drawing></w:r>';
   };
 
@@ -3886,10 +4438,15 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
     inner + (value.commentEvents || []).filter(event => !event.start).map(commentEventXml).join('');
 
   const emitRuns = async (runList, targets = navigation, availableWidth = contentWidthEmu, runDefaults = null) => {
-    let xml = '';
+    let xml = '', abbreviation = null;
     for (const authored of runList) {
       await tick();
       const run = runDefaults ? {...runDefaults, ...authored} : authored;
+      if ((run.abbreviation || null) !== abbreviation) {
+        if (abbreviation) xml += '</w:sdtContent></w:sdt>';
+        abbreviation = run.abbreviation || null;
+        if (abbreviation) xml += '<w:sdt><w:sdtPr><w:alias w:val="' + attributeText(abbreviation.title) + '"/><w:tag w:val="rapier-abbreviation"/></w:sdtPr><w:sdtContent>';
+      }
       if (run.type === 'bookmarkStart' || run.type === 'bookmarkEnd') {
         const mark = targets.bookmarks.get(run.bookmark);
         xml += run.type === 'bookmarkStart'
@@ -3899,18 +4456,19 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
       }
       const internal = run.href?.startsWith('#');
       const target = internal && targets.resolve(run.href);
+      const tooltip = run.linkTitle == null ? '' : ' w:tooltip="' + attributeText(run.linkTitle) + '"';
       const link = inner => {
-        if (target) return '<w:hyperlink w:anchor="' + target.name + '">' + inner + '</w:hyperlink>';
+        if (target) return '<w:hyperlink w:anchor="' + target.name + '"' + tooltip + '>' + inner + '</w:hyperlink>';
         if (run.type === 'image' && run.href && !internal) {
           const id = nextRid(); rels.push({id, type: 'hyperlink', target: run.href, external: true});
-          return '<w:hyperlink r:id="' + id + '">' + inner + '</w:hyperlink>';
+          return '<w:hyperlink r:id="' + id + '"' + tooltip + '>' + inner + '</w:hyperlink>';
         }
         return inner;
       };
       if (run.type === 'image') {
         const src = resolveSrc(run);
         if (!src) continue;
-        xml += commentObjectXml(link(pictureXml(await assetFor(src, run.alt, false, run.original), run.alt, run.layout || null, availableWidth)), run);
+        xml += commentObjectXml(link(pictureXml(await assetFor(src, run.alt, false, run.original), run.alt, run.layout || null, availableWidth, 0, null, run.title)), run);
         continue;
       }
       if (run.type === 'footnote') {
@@ -3922,8 +4480,8 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
       if (run.type === 'math') {
         const source = mathSourceOf(run), events = run.commentEvents || [];
         if (run.omml) {
-          xml += link(events.filter(event => event.start).map(commentEventXml).join('') + run.omml + events.filter(event => !event.start).map(commentEventXml).join(''));
-          equations.push([ommlSource(new DOMParser().parseFromString(run.omml, 'application/xml').documentElement), source]);
+          xml += link(events.filter(event => event.start).map(commentEventXml).join('') + sizedEquationXml(run.omml, Number(run.halfPoints ?? run.size) || emPoints * 2) + events.filter(event => !event.start).map(commentEventXml).join(''));
+          equations.push([ommlSource(new DOMParser().parseFromString(sizedEquationXml(run.omml, Number(run.halfPoints ?? run.size) || emPoints * 2), 'application/xml').documentElement, emPoints * 2), source]);
         }
         else if (run.svg) {
           const picture = pictureXml(await mathAssetFor(run), run.alternative || source, null, availableWidth, run.display ? 0 : -(run.depth || 0));
@@ -3932,7 +4490,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
         continue;
       }
       if (run.type === 'mathml') {
-        xml += commentObjectXml(link(nativeEquationXml(authored)), authored);
+        xml += commentObjectXml(link(sizedEquationXml(nativeEquationXml(authored), Number(run.halfPoints ?? run.size) || emPoints * 2)), authored);
         continue;
       }
       const text = run.text ?? '';
@@ -3941,10 +4499,10 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
       else if (run.href) {
         const id = nextRid();
         rels.push({id, type: 'hyperlink', target: run.href, external: true});
-        xml += '<w:hyperlink r:id="' + id + '">' + commentedTextXml(text, {...run, underline: true}) + '</w:hyperlink>';
+        xml += '<w:hyperlink r:id="' + id + '"' + tooltip + '>' + commentedTextXml(text, {...run, underline: true}) + '</w:hyperlink>';
       } else xml += commentedTextXml(text, run);
     }
-    return xml;
+    return xml + (abbreviation ? '</w:sdtContent></w:sdt>' : '');
   };
 
   const prosePart = async (block, props, targets, typography = true, prefix = '', availableWidth = contentWidthEmu, runDefaults = null) => {
@@ -3979,13 +4537,19 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
     return pXml('', {styleId: 'RapierBlockSpacing', before: 0, after: 0, line, lineRule: 'exact'});
   };
   const boundary = (previous, next) => Math.max(previous.after || 0, next.before || 0);
+  const quoteParts = parts => {
+    parts[0].open = '<w:sdt><w:sdtPr><w:tag w:val="rapier:quote"/></w:sdtPr><w:sdtContent>' + (parts[0].open || '');
+    parts.at(-1).close = (parts.at(-1).close || '') + '</w:sdtContent></w:sdt>';
+    return parts;
+  };
   const writeBlocks = (parts, inCell = false, firstGap = false) => {
-    if (!settings) return parts.map(part => part.xml ?? paragraphXml(part)).join('');
+    const wrapped = (part, inner) => (part.open || '') + inner + (part.close || '');
+    if (!settings) return parts.map(part => wrapped(part, part.xml ?? paragraphXml(part))).join('');
     const visible = parts.filter(part => !part.transparent);
     let index = 0, xml = '';
     for (const part of parts) {
       if (part.transparent) {
-        xml += paragraphXml(part, {...part.props, before: 0, after: 0, line: 0, lineRule: 'exact'});
+        xml += wrapped(part, paragraphXml(part, {...part.props, before: 0, after: 0, line: 0, lineRule: 'exact'}));
         continue;
       }
       const previous = visible[index - 1], next = visible[++index];
@@ -3993,12 +4557,12 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
       const after = next?.xml ? boundary(part, next) : next || inCell ? 0 : part.after || 0;
       if (part.xml) {
         if (previous?.xml) xml += tableSpacing(before);
-        xml += part.xml;
+        xml += wrapped(part, part.xml);
         if (!next && !inCell && after) xml += tableSpacing(after);
         continue;
       }
       const level = /^Heading([1-6])$/.exec(part.props.styleId || '');
-      xml += paragraphXml(part, {...part.props, before, after, keepNext: !!level || !!part.props.keepNext});
+      xml += wrapped(part, paragraphXml(part, {...part.props, before, after, keepNext: !!level || !!part.props.keepNext}));
     }
     return xml;
   };
@@ -4040,7 +4604,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
       continue;
     }
     if (block.type === 'mathml') {
-      bodyParts.push(paragraphPart(commentObjectXml(nativeEquationXml(block), block), {ind: paragraphInd(null)}));
+      bodyParts.push(paragraphPart(commentObjectXml(sizedEquationXml(nativeEquationXml(block), emPoints * 2), block), {ind: paragraphInd(null)}));
       continue;
     }
     if (block.type === 'image') {
@@ -4053,7 +4617,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
           !next.rule && !next.layout?.lines && next.runs?.some(run => run.type === 'text' && run.text.trim())) {
         const type = referenceType(settings), cap = {height: integer(block.capHeight, null, 1) || linesEmu(block.layout.lines),
           top: integer(block.capTop, null) ?? Math.round(Math.max(0, (type.line - type.body) / 2 + type.body * .1) * 12700)};
-        const prefix = commentObjectXml(pictureXml(asset, block.alt, block.layout, width, 0, cap), block);
+        const prefix = commentObjectXml(pictureXml(asset, block.alt, block.layout, width, 0, cap, block.title), block);
         bodyParts.push(await prose(next, {align: jcOf(next.layout), ind: paragraphInd(next.layout), direction: next.direction, ...typography(next.layout)}, true, prefix));
         groups.at(-1).block = next;
         index++; emitted++; continue;
@@ -4061,14 +4625,14 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
       if (block.caption && ['around', 'box'].includes(block.layout?.wrap)) {
         const {cx} = pictureSize(asset, block.layout, width), cellWidth = Math.max(1, Math.round(cx / 635));
         const left = Math.round(Math.max(0, Math.min(width - cx, width * (block.layout.x ?? 0) / 100 - cx / 2)) / 635);
-        const top = Math.round((block.layout.y || 0) * bodyPointSize * 20);
+        const top = Math.round((block.layout.y || 0) * emPoints * 20);
         const distance = wrapDistances(width, left * 635, cellWidth * 635);
         const inlineLayout = {...block.layout, width: 100};
         for (const key of ['wrap', 'x', 'y', 'lines', 'align']) delete inlineLayout[key];
-        const image = commentObjectXml(pictureXml(asset, block.alt, inlineLayout, cellWidth * 635), block);
+        const image = commentObjectXml(pictureXml(asset, block.alt, inlineLayout, cellWidth * 635, 0, null, block.title), block);
         bodyParts.push({xml: '<w:tbl><w:tblPr><w:tblpPr w:horzAnchor="text" w:vertAnchor="text" w:tblpX="' + left + '" w:tblpY="' + top +
           '" w:leftFromText="' + Math.round(distance.left / 635) + '" w:rightFromText="' + Math.round(distance.right / 635) + '" w:topFromText="0" w:bottomFromText="120"/>' +
-          '<w:tblW w:w="' + cellWidth + '" w:type="dxa"/><w:tblLayout w:type="fixed"/>' +
+          (block.layout.wrap === 'box' ? '<w:tblOverlap w:val="never"/>' : '') + '<w:tblW w:w="' + cellWidth + '" w:type="dxa"/><w:tblLayout w:type="fixed"/>' +
           '<w:tblCellMar>' + ['top', 'left', 'bottom', 'right'].map(edge => '<w:' + edge + ' w:w="0" w:type="dxa"/>').join('') + '</w:tblCellMar>' +
           '</w:tblPr><w:tblGrid><w:gridCol w:w="' + cellWidth + '"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc>' +
           '<w:tcPr><w:tcW w:w="' + cellWidth + '" w:type="dxa"/></w:tcPr>' +
@@ -4076,7 +4640,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
           '</w:tc></w:tr></w:tbl>'});
         continue;
       }
-      bodyParts.push(paragraphPart(commentObjectXml(pictureXml(asset, block.alt, block.layout, width), block),
+      bodyParts.push(paragraphPart(commentObjectXml(pictureXml(asset, block.alt, block.layout, width, 0, null, block.title), block),
         {align: jcOf(block.layout), ind: paragraphInd(null), ...(block.caption ? {after: 60, keepNext: true} : {})}));
       if (block.caption) bodyParts.push(paragraphPart(tXml('Figure: ' + block.caption, {italic: true, size: 21}), {align: 'center', ind: paragraphInd(null)}));
       continue;
@@ -4085,7 +4649,10 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
       const color = cssColorHex(block.color) || '#0969da';
       const borders = block.type === 'callout' ? '<w:pBdr><w:left w:val="single" w:sz="24" w:space="8" w:color="' + color.slice(1) + '"/></w:pBdr>' : quoteBorders(block.color);
       if (block.type === 'callout') bodyParts.push(paragraphPart(tXml(block.kind.charAt(0) + block.kind.slice(1).toLowerCase(), {bold: true, ...(block.color ? {color} : {})}), {borders, direction: block.direction}));
-      bodyParts.push(...await emitBlocks(block.blocks, inset, targets, availableWidth, {...decoration, borders, direction: block.direction}, tableCell));
+      const quoteDepth = block.type === 'quote' ? (decoration?.quoteDepth || 0) + 1 : decoration?.quoteDepth;
+      const step = block.type === 'quote' && quoteDepth > 1 ? QUOTE_STEP : 0;
+      const parts = await emitBlocks(block.blocks, inset + step, targets, availableWidth, {...decoration, borders, direction: block.direction, quoteDepth}, tableCell);
+      bodyParts.push(...(block.type === 'quote' ? quoteParts(parts) : parts));
       continue;
     }
     if (block.type === 'callout') {
@@ -4103,11 +4670,14 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
     }
     if (block.type === 'quote') {
       if (block.nativeQuote) quotations = true;
-      bodyParts.push(await prose(block, {
-        styleId: block.nativeQuote ? 'Quote' : null,
+      const depth = (decoration?.quoteDepth || 0) + (block.quoteMember ? 0 : 1);
+      if (block.nativeQuote && depth > 1) quoteDepths.add(depth);
+      const part = await prose(block, {
+        styleId: block.nativeQuote ? depth > 1 ? 'Quote' + depth : 'Quote' : null,
         borders: block.color ? quoteBorders(block.color) : decoration?.borders || quoteBorders(),
-        ind: paragraphInd(block.layout), align: jcOf(block.layout), direction: block.direction, ...typography(block.layout)
-      }, !tableCell));
+        ind: block.nativeQuote && depth > 1 ? indOf(block.layout, {base: inset + (depth - Math.max(1, decoration?.quoteDepth || 0)) * QUOTE_STEP, pointSize: bodyPointSize}) : paragraphInd(block.layout), align: jcOf(block.layout), direction: block.direction, ...typography(block.layout)
+      }, !tableCell);
+      bodyParts.push(...(block.quoteMember ? [part] : quoteParts([part])));
       continue;
     }
     if (block.type === 'list') {
@@ -4200,7 +4770,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
         if (value.header && baseFamilies.has(bodyFace)) { runs.characterStyle = 'RapierTableHeader'; tableHeaderStyle = true; }
         const cellWidth = width * span * 635;
         const parts = value.continuation ? [paragraphPart('')] : value.blocks ?
-          await emitBlocks(value.blocks, 0, targets, cellWidth, {...decoration, runs, after: 0}, true) :
+          await emitBlocks(value.blocks, 0, targets, cellWidth, {...decoration, quoteDepth: 0, runs, after: 0}, true) :
           [paragraphPart(await emitRuns(value.runs || [], targets, cellWidth, runs), {after: 0})];
         for (const part of parts) if (part.props && !part.props.styleId?.startsWith('Heading'))
           part.props = {...part.props, line: nativeDocumentSpacing(settings, 'table', 10.5).line, lineRule: nativeDocumentSpacing(settings, 'table', 10.5).lineRule};
@@ -4345,6 +4915,8 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
     (nativeSpacing ? '<w:style w:type="paragraph" w:customStyle="1" w:styleId="RapierBlockSpacing"><w:name w:val="Rapier Block Spacing"/><w:basedOn w:val="Normal"/></w:style>' : '') +
     '<w:style w:type="paragraph" w:styleId="ListParagraph"><w:name w:val="List Paragraph"/><w:basedOn w:val="Normal"/></w:style>' +
     (quotations ? '<w:style w:type="paragraph" w:styleId="Quote"><w:name w:val="Quote"/><w:basedOn w:val="Normal"/></w:style>' : '') +
+    [...quoteDepths].sort((a, b) => a - b).map(depth => '<w:style w:type="paragraph" w:customStyle="1" w:styleId="Quote' + depth + '"><w:name w:val="Quote ' + depth +
+      '"/><w:basedOn w:val="Quote"/><w:pPr><w:ind w:left="' + (depth - 1) * QUOTE_STEP + '"/></w:pPr></w:style>').join('') +
     (definitions ? '<w:style w:type="paragraph" w:customStyle="1" w:styleId="RapierTerm"><w:name w:val="' + DEFINITION_NAMES.RapierTerm + '"/><w:basedOn w:val="Normal"/><w:next w:val="RapierDefinition"/><w:pPr><w:keepNext/></w:pPr></w:style>' +
       '<w:style w:type="paragraph" w:customStyle="1" w:styleId="RapierDefinition"><w:name w:val="' + DEFINITION_NAMES.RapierDefinition + '"/><w:basedOn w:val="Normal"/><w:pPr><w:ind w:left="' + DEFINITION_INDENT + '"/></w:pPr></w:style>' : '') +
     (sourceCode ? '<w:style w:type="paragraph" w:styleId="SourceCode"><w:name w:val="Source Code"/><w:basedOn w:val="Normal"/></w:style>' : '') +
@@ -4411,12 +4983,14 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
     '<Override PartName="/word/commentsExtended.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml"/>');
   const coreXml = corePropertiesXml(settings);
   if (coreXml) overrides.push('<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>');
+  overrides.push('<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>');
   if (carrySource) overrides.push('<Override PartName="/' + DOCX_SOURCE.path + '" ContentType="' + DOCX_SOURCE.type + '"/>');
   const contentTypesXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="' + NS.ct[0] + '">' +
     defaults + overrides.join('') + '</Types>';
 
   const packageRels = relXml([{id: 'rIdDoc', type: 'officeDocument', target: 'word/document.xml'}])
     .replace('</Relationships>', (coreXml ? '<Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>' : '') +
+      '<Relationship Id="rIdApp" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>' +
       (carrySource ? '<Relationship Id="rIdRapierSource" Type="' + DOCX_SOURCE.relationship + '" Target="' + DOCX_SOURCE.path + '"/>' +
         '<Relationship Id="rIdRapierMarkdown" Type="' + NS.r[0] + '/custom-properties" Target="docProps/custom.xml"/>' : '') + '</Relationships>');
   const entries = [
@@ -4461,6 +5035,8 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
     if (commentRels.length) entries.push({name: 'word/_rels/comments.xml.rels', bytes: await encodeXml(relXml(commentRels))});
   }
   if (coreXml) entries.push({name: 'docProps/core.xml', bytes: await encodeXml(coreXml)});
+  entries.push({name: 'docProps/app.xml', bytes: await encodeXml('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+    '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Rapier</Application></Properties>')});
   if (carrySource && !native) {
     const source = (bom ? '\uFEFF' : '') + canonical;
     entries.push({name: 'docProps/custom.xml', bytes: await encodeXml('<?xml version="1.0" encoding="UTF-8"?>' +
@@ -4587,3 +5163,4 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
   if (complete.length > ARCHIVE_LIMITS.bytes) return fail('DOCX exceeds the 25 MB document limit.');
   return complete;
 }
+

@@ -10,6 +10,7 @@ import {canonicalLiveAct, placedLiveAct} from '../kernel/live-act.mjs';
 import {initialLiveLedger, carriedLiveLedger, appendLiveJournal, liveLedgerPatch, liveRows} from './live-ledger.mjs';
 import {createPrivateInvitation, sealPrivate, openPrivateInitial, openPrivatePresence, openPrivateRecord, privateAuthor} from './live-private.mjs';
 import {PRIVATE_LIVE_PROTOCOL, privateId, privatePeer, privateInteger, privateSecret} from '../kernel/live-private-wire.mjs';
+import {portSocket} from './port-socket.mjs';
 
 function movePresence(source, presence, changes, client) {
   let text = source;
@@ -324,6 +325,17 @@ export function createLiveClient({post, socket: Socket, store, clock, timer, can
       if (moved.remote.length) movedCorrections.push({...correction, splices: moved.remote[0].splices});
       else if (correction.act) pendingActs.push(correction.act);
     }
+    if ((pending.undoTarget || pending.undoTargets) && view === state.text) {
+      const inverse = undoQueue(state.base, state.log, state.pending, state.client, pending.seq,
+        pending.undoTargets || pending.undoTarget, pending.actId);
+      const same = inverse && canonicalJSON(inverse.undoTargets || [inverse.undoTarget]) ===
+        canonicalJSON(pending.undoTargets || [pending.undoTarget]);
+      if (same && canonicalJSON(inverse.splices) !== canonicalJSON(authored) &&
+          applySplices(state.text, inverse.splices) === applySplices(state.text, authored)) {
+        authored = inverse.splices;
+        pending.act = act.authored ? {...act, authored: authoredPlacement(state.text, liveRows(state.text, authored), act.authored.basis)} : act;
+      }
+    }
     pending.splices = authored; corrections = movedCorrections; view = nextView;
     if (raw.length || act.metadata || effects.references.get(act.id).length) {
       state.nextSeq++; state.pending.push(pending); state.text = applySplices(state.text, pending.splices);
@@ -535,6 +547,9 @@ export function createLiveClient({post, socket: Socket, store, clock, timer, can
       return;
     }
     if (message.type === 'presence') { remotePeers = message.peers || []; projectedPeers(); return; }
+    if (message.type === 'changed') { emit({type: 'changed', notice: message}); return; }
+    if (message.type === 'context') { emit({type: 'door-context', sequence: message.sequence, isError: message.isError === true,
+      structuredContent: message.structuredContent}); return; }
     if (message.type === 'error' && message.reason === 'workspace_unacknowledged') { ready = false; status(); return; }
     if (message.type === 'resync' || message.type === 'error') throw new Error(message.reason || message.code || 'live_history_unavailable');
   };
@@ -677,6 +692,11 @@ export function createLiveClient({post, socket: Socket, store, clock, timer, can
       await save(); project(); await sendPresence();
     }); },
     presence(value) { return run(async () => { presence = value; await sendPresence(); }); },
+    check() { return run(() => { if (ready && !descriptor.private) packet({type: 'check'}); }); },
+    'door-context'(value) { return run(() => {
+      if (!(ready && !descriptor.private && packet({type: 'context', args: value.args})))
+        emit({type: 'door-context', sequence: value.args?.sequence, unsent: true});
+    }); },
     rename(value) { return run(async () => {
       if (!state?.client || state.author?.kind !== 'human') throw new Error('live_not_joined');
       state.author = privateAuthor(state.client, value.name); descriptor.name = value.name;
@@ -786,7 +806,7 @@ export function createLiveClient({post, socket: Socket, store, clock, timer, can
 }
 
 export function installLiveWorker(scope) {
-  let client;
+  let client, port = null;
   scope.onmessage = event => {
     const value = event.data;
     if (value?.type === 'invitation' && !client) {
@@ -795,12 +815,15 @@ export function installLiveWorker(scope) {
         scope.postMessage({type: 'invitation', requestId: value.requestId, invitation}), error =>
         scope.postMessage({type: 'invitation', requestId: value.requestId, error: error.message || 'live_private_create_failed'}));
     } else if (value?.type === 'start' && !client) {
-      client = createLiveClient({post: message => scope.postMessage(message), socket: scope.WebSocket,
+      if (typeof value.custodyKey === 'string' && value.custodyKey && !value.private) port = portSocket(message => scope.postMessage(message));
+      client = createLiveClient({post: message => scope.postMessage(message), socket: port || scope.WebSocket,
         store: durableStore(scope.indexedDB, value.scope + ':live', value.slot), clock: () => Date.now(),
         timer: (fn, ms) => scope.setTimeout(fn, ms), cancelTimer: id => scope.clearTimeout(id),
         fetch: (...args) => scope.fetch(...args)});
       void client.start(value);
-    } else if (client && ['local', 'loaded', 'projected', 'presence', 'rename', 'undo', 'reconnect', 'credential', 'stop', 'close'].includes(value?.type)) {
+    } else if (value?.type === 'socket' && port) {
+      port.receive(value);
+    } else if (client && ['local', 'loaded', 'projected', 'presence', 'check', 'door-context', 'rename', 'undo', 'reconnect', 'credential', 'stop', 'close'].includes(value?.type)) {
       void client[value.type](value);
     }
   };

@@ -52,15 +52,15 @@
 		});
 	}
 
-	var MATH_VERSION = '2.5.0';
+	var MATH_VERSION = '2.6.1';
 	var MATH_FILE = 'rapier-math-' + MATH_VERSION + '.js';
 	_rapierVerifiedFiles({
 		key: 'math', noun: 'math', dash: ' — ',
 		version: MATH_VERSION,
 		files: [{name: MATH_FILE, file: MATH_FILE, version: MATH_VERSION,
-			bytes: 695410,
-			sri: 'VDN0hcZbJ7LFS7fJjiUV/8THDfLxUWNfbGZQkggQptiaw4JaNAjZOmyK0kDRLNN3',
-			url: 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.8/math/rapier-math-2.5.0.js'}],
+			bytes: 733943,
+			sri: 'c6Y4kudfuc16Hkmvfgr0MpdQcJs1jU4qbsKu2tUSduVuQdwLQ/38rR0GmQMatLsS',
+			url: 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.9/math/rapier-math-2.6.1.js'}],
 		missing: 'Rapier math loaded but its SVG renderer is missing — cache purged',
 		usable: function () { return !!(window.RapierMath && window.RapierMath.version === MATH_VERSION &&
 			typeof window.RapierMath.renderToString === 'function' && typeof window.RapierMath.renderWithMathML === 'function'); },
@@ -440,7 +440,7 @@
 			var hit = _boundHit(src); if (hit) return Promise.reject(new Error(hit));
 			var resourceHit = _diagramResourceHit(src); if (resourceHit) return Promise.reject(new Error(resourceHit));
 			if (!ready || !_mermaidStarting) return Promise.reject(new Error('diagram plug-in is unavailable'));
-			var id = 'rapier-d' + (++_renderSeq), generation = _mermaidGeneration;
+			var id = 'rapier-anchor-diagram-' + (++_renderSeq), generation = _mermaidGeneration;
 			_mermaidRendering++;
 			return _mermaidStarting.then(function (runtime) {
 				return document.fonts.load(MERMAID_FONT_SIZE + 'px ' + MERMAID_FONT_FAMILY).then(function () { return document.fonts.ready; }).then(function () {
@@ -553,7 +553,10 @@
 				if (available) return prepared();
 				if (m.discard) m.discard();
 				set('absent');
-			}).then(function () { return Plugin.status; }, function (err) { set('error', _friendly(m, err)); return Plugin.status; });
+			}).then(function () { return Plugin.status; }, function (err) {
+				if (Plugin.status !== 'absent') set('error', _friendly(m, err));
+				return Plugin.status;
+			});
 			checking.then(function () { checking = null; });
 			return checking;
 		}

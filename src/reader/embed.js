@@ -236,7 +236,12 @@ function readerHostStyle(data) {
 
 function _rapierEmbedStart() {
 	readerEmbedListen();
-	if (_rapierEmbed.refused) { $('embed-refused').hidden = false; return; }
+	if (_rapierEmbed.refused) {
+		const refused = $('embed-refused');
+		for (const later of refused.querySelectorAll('template[data-rapier-later]')) later.replaceWith(later.content);
+		refused.hidden = false;
+		return;
+	}
 	if (!_rapierEmbed.active) return;
 	_rapierEmbed.ready = true;
 	const held = _rapierEmbed.heldConnect;

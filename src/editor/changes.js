@@ -118,13 +118,31 @@
   let onPageOnly = false, jobs = 0, answered = false;
   const onPage = (before, after, options) => RapierDiff.compare(before, after, {...options,
     ...(globalThis.RapierDiffStructure ? {structure: source => globalThis.RapierDiffStructure.diffStructure(source, options)} : {})});
-  function compare(before, after, options) {
+  let marksTokens = 0;
+  const changedSpan = (from, to) => {
+    const limit = Math.min(from.length, to.length);
+    let start = 0, end = 0;
+    for (const step of [65536, 1024, 1])
+      while (start + step <= limit && from.slice(start, start + step) === to.slice(start, start + step)) start += step;
+    for (const step of [65536, 1024, 1])
+      while (end + step <= limit - start && from.slice(from.length - end - step, from.length - end) === to.slice(to.length - end - step, to.length - end)) end += step;
+    return {start, removed: from.length - end - start, inserted: to.slice(start, to.length - end)};
+  };
+  function compare(before, after, options, resend = false) {
     const lent = onPageOnly ? Promise.resolve(null) : _rapierCompareTakeWorker().catch(() => null);
     return lent.then(live => live ? new Promise((resolve, reject) => {
-      const jobId = 'marks:' + ++jobs;
+      const jobId = 'marks:' + ++jobs, sent = resend ? null : live._rapierMarksHeld, token = ++marksTokens;
+      live._rapierMarksHeld = null;
       live.onmessage = event => {
         answered = true;
         if (event.data?.jobId !== jobId) return;
+        if (event.data.status === 'stale') {
+          _rapierCompareGiveWorker(live);
+          if (resend) reject(new Error('comparison unavailable'));
+          else compare(before, after, options, true).then(resolve, reject);
+          return;
+        }
+        live._rapierMarksHeld = {token, before, after};
         _rapierCompareGiveWorker(live);
         if (event.data.status === 'error') reject(new Error('comparison unavailable'));
         else resolve({...event.data.diff, regions: event.data.regions});
@@ -135,8 +153,12 @@
         onPageOnly = true;
         try { resolve(onPage(before, after, options)); } catch (error) { reject(error); }
       };
-      live.postMessage({type: 'compare', jobId, currentText: before, incomingText: after, docKind: options.docKind,
-        language: options.language, from: options.from, regions: true});
+      const message = {type: 'compare', jobId, docKind: options.docKind, language: options.language, from: options.from,
+        regions: true, marks: {token, base: sent ? sent.token : null}};
+      if (!sent || sent.before !== before) message.currentText = before;
+      if (!sent) message.incomingText = after;
+      else if (sent.after !== after) message.marks.change = changedSpan(sent.after, after);
+      live.postMessage(message);
     }) : onPage(before, after, options));
   }
   async function snapshotPlaces(input, blockRows, id, rev, gen) {
@@ -185,7 +207,7 @@
             movedFrom: {blockId: origin?.id ?? null, up: left.moved.down}} : {}),
           blockId: block.id, from: block.from, to: block.to, displayAfter: [start, end],
           before: region.before?.text || '', after: region.after?.text || '', current: region.after?.text || '',
-          actor: {name: change.name || 'Changes'}});
+          actor: {name: 'Changes'}});
       }
     }
     return {review: {documentId: id, revision: rev, generation: gen, identityEpoch: rapier.identity.epoch, metadata: {...input.metadata}, before, after,
@@ -330,7 +352,13 @@
       const readBox = firstRead.getBoundingClientRect(); left = Math.max(16, readBox.left); right = readBox.right;
     }
     away.hidden = obscured || !rows.length || !!inDraw();
-    away.style.left = left + 'px'; away.style.top = bounds.top + 'px';
+    let top = bounds.top;
+    const liveBar = document.querySelector('.rapier-live-bar:not([hidden])')?.getBoundingClientRect();
+    if (!away.hidden && liveBar?.width && liveBar.left < right && liveBar.bottom > top && liveBar.top < top + away.offsetHeight) {
+      if (liveBar.left - 12 - left >= 200) right = liveBar.left - 12;
+      else top = liveBar.bottom + 4;
+    }
+    away.style.left = left + 'px'; away.style.top = top + 'px';
     away.style.width = Math.max(0, right - left) + 'px';
     const occupied = [];
     rows.forEach(place => {
@@ -504,7 +532,7 @@
     const name = document.createElement('strong'); name.textContent = place.actor?.name || place.act?.actor?.name || (place.actor?.kind === 'human' ? 'Person' : 'Agent');
     const rows = currentRows(), index = rows.findIndex(row => row.key === key);
     who.append(name, document.createTextNode(' · ' + String(index + 1).padStart(2, '0') + ' / ' + String(rows.length).padStart(2, '0')));
-    who.title = place.act?.turnLabel || place.act?.label || '';
+    who.title = place.act?.turnLabel || place.act?.label || place.change?.name || '';
     const undoButton = button('Undo', place.act?.turnId ? 'Undo this turn, keeping later edits' : 'Undo this change, keeping later edits');
     const doneButton = button('Done', place.wordId != null ? 'Accept this Word change' : 'Mark this change seen');
     if (place.wordId != null) undoButton.setAttribute('aria-label', 'Reject this Word change');

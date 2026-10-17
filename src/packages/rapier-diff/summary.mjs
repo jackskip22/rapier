@@ -20,7 +20,8 @@ export function summary(before, after, result, options = {}) {
     const ranges = side => owned.map(e => e[side]).filter(([a, b]) => a < b);
     const span = side => { const rows = ranges(side); return rows.length ? [rows[0][0], rows.at(-1)[1]] : owned[0][side]; };
     const {before: x, after: y} = !change.move && change.context || {before: span('before'), after: span('after')};
-    const row = {id: change.id, kind: change.kind, line: lineOf(after, y[0])};
+    const kind = (change.kind === 'delete' || change.kind === 'insert') && x[0] < x[1] && y[0] < y[1] ? 'replace' : change.kind;
+    const row = {id: change.id, kind, line: lineOf(after, y[0])};
     if (change.kind === 'move') Object.assign(row, {from: lineOf(before, x[0]), text: clip(after.slice(...y))});
     else {
       if (x[0] < x[1]) row.removed = clip(before.slice(...x));

@@ -18,6 +18,7 @@ function rapierConfirm(options) {
 			confirmLabel: String(opts.confirmLabel || 'continue'),
 			secondaryLabel: opts.secondaryLabel ? String(opts.secondaryLabel) : '',
 			destructive: !!opts.destructive,
+			plain: !!opts.plain,
 		});
 	});
 }
@@ -380,6 +381,7 @@ function renderToast(msg, type = 'success', action = null) {
 		notesRaising = notes?.open === true || notes?.opening === true;
 	}
 	toast.dataset.noticeView = notesRaising ? 'notes' : 'editor';
+	if (typeof _rapierNoticeView === 'function') toast.dataset.noticeAt = _rapierNoticeView();
 	if (action && action.outlive === 'save-failed') toast.dataset.noticeKind = 'save-failed';
 
 	const span = document.createElement('span');
@@ -406,6 +408,11 @@ function renderToast(msg, type = 'success', action = null) {
 	close.addEventListener('click', () => controller && controller.dismiss());
 	toast.appendChild(close);
 
+	for (const standing of root.querySelectorAll('.toast')) {
+		const same = standing.querySelector('.toast__msg')?.textContent === String(msg) && standing._rapierLife?.state?.phase !== 'running';
+		if (!same && (standing.querySelector('.toast__action') || standing.classList.contains('toast--error') || standing.dataset.noticeKind === 'save-failed')) continue;
+		if (typeof standing._rapierDismiss === 'function') standing._rapierDismiss({immediate: true});
+	}
 	root.appendChild(toast);
 	controller = _rapierMountToast(toast, type === 'error' || action?.stay === true ? 0 : hasAction ? 8000 : 4500);
 }
@@ -2102,25 +2109,8 @@ function _readCreateState() {
 	};
 }
 
-const rapier = {
-
-	document: {
-		source: _rapierCreateSourceStore(''),
-		blocks: [],
-		filename: 'untitled.md',
-		docKind: 'markdown',
-		codeLang: '',
-		frontmatter: null,
-		markdownPrefix: '',
-		markdownTail: '',
-		sourceNewline: '\n',
-		bom: false,
-		projection: Object.seal({
-			wysiwyg: 'available', reason: '', observed: 0, limit: 0,
-		}),
-	},
-
-	view: {
+function _rapierInitialView() {
+	return {
 		mode: 'read',
 		activeBlockId: null,
 		lastActiveBlockId: null,
@@ -2143,7 +2133,28 @@ const rapier = {
 		pendingHistoryReopen: null,
 		tabReleases: false,
 		focusFrame: 0,
+	};
+}
+
+const rapier = {
+
+	document: {
+		source: _rapierCreateSourceStore(''),
+		blocks: [],
+		filename: 'untitled.md',
+		docKind: 'markdown',
+		codeLang: '',
+		frontmatter: null,
+		markdownPrefix: '',
+		markdownTail: '',
+		sourceNewline: '\n',
+		bom: false,
+		projection: Object.seal({
+			wysiwyg: 'available', reason: '', observed: 0, limit: 0,
+		}),
 	},
+
+	view: _rapierInitialView(),
 
 	selection: { start: 0, end: 0, scope: 'window', epoch: -1 },
 
@@ -2323,7 +2334,7 @@ const rapier = {
 
 };
 
-Object.values(rapier).forEach(domain => Object.seal(domain));
+Object.values(rapier).forEach(Object.seal);
 Object.seal(rapier);
 
 function _rapierMutationStamp() {
@@ -2618,7 +2629,7 @@ function createTurndown() {
 		br: globalThis.RapierMarkdownSpec.hardBreak,
 
 		blankReplacement: (content, node) =>
-			(node.nodeName === 'TABLE' && _rapierHtmlTableNeedsHtml(node) ? '\n\n' + _rapierHtmlTableSource(node) + '\n\n' :
+			(node.nodeName === 'TABLE' && (node.removeAttribute('data-rapier-paste-sheet'), _rapierHtmlTableNeedsHtml(node)) ? '\n\n' + _rapierHtmlTableSource(node) + '\n\n' :
 				isFencedCodeNode(node) ? serializeFencedCode(node) : (node.isBlock ? '\n\n' : '')),
 	});
 
@@ -2708,8 +2719,11 @@ function createTurndown() {
 			try {
 				const source = decodeURIComponent(node.getAttribute('data-rapier-math-source') || '');
 				const tokens = md.parseInline(source, {})[0]?.children || [], token = tokens[0];
-				return tokens.length === 1 && (token.type === 'math_inline' || token.type === 'math_block') &&
-					token.markup + token.content + token.markup === source ? source : content;
+				if (tokens.length === 1 && (token.type === 'math_inline' || token.type === 'math_block') &&
+					token.markup + token.content + token.markup === source) return source;
+				const blocks = md.parse(source, {}), fence = blocks[0];
+				return blocks.length === 1 && fence.type === 'fence' && fence.meta?.rapierFenceClosed === true &&
+					fence.meta?.mathSource === source ? source : content;
 			} catch (_) { return content; }
 		},
 	});
@@ -3009,6 +3023,8 @@ function createTurndown() {
 	turndown.addRule('gfmTable', {
 		filter: node => node && node.nodeName === 'TABLE',
 		replacement: (_c, node) => {
+			const sheet = node.hasAttribute('data-rapier-paste-sheet');
+			node.removeAttribute('data-rapier-paste-sheet');
 			if (_rapierHtmlTableNeedsHtml(node)) return '\n\n' + _rapierHtmlTableSource(node) + '\n\n';
 			const cellMd = cell => globalThis.RapierMarkdownSpec.cellBreaks(turndown.turndown(cell.innerHTML))
 				.replace(/\n{2,}/g, '<br>').replace(/\n/g, ' ').trim();
@@ -3024,10 +3040,11 @@ function createTurndown() {
 					for (let offset = 0; offset < width; offset++) alignments.push(alignment);
 				});
 			}
-			const out = [];
+			const headed = sheet || !!node.tHead || !!headerRow && Array.prototype.some.call(headerRow.children, c => c.nodeName === 'TH');
+			const out = headed ? [] : [_tableBuildRow(Array(ncols).fill('')), _tableSeparator(ncols, alignments)];
 			rows.forEach((r, i) => {
 				out.push(_tableBuildRow(Array.from({ length: ncols }, (_unused, c) => r[c] == null ? '' : r[c])));
-				if (i === 0) out.push(_tableSeparator(ncols, alignments));
+				if (i === 0 && headed) out.push(_tableSeparator(ncols, alignments));
 			});
 			return '\n\n' + out.join('\n') + '\n\n';
 		},
@@ -3357,8 +3374,6 @@ function rapierWelcomeMarkdown() {
 		"",
 		"Muse, Claude, ChatGPT or any agent that speaks MCP can work or make art with you right here on the page. Ask it to explain, diagram, rewrite, plan, draw or paint. It reads only the parts it needs through Rapier's agent tools. Your agent can't overwrite what you're typing. Every change shows where it lands, and you can keep it or drop it. Undoing its change never undoes yours.",
 		"",
-		"Three modes. Free by default. **FREE**: it edits as it goes. **CHECK**: it waits until you've seen its last change. **ASK**: every edit is a proposal.",
-		"",
 		"The agent has every control you have, without touching the screen. It draws SVG diagrams you can move by hand, makes SVGs and paintings on the canvas, writes Mermaid flowcharts as text, and reads the shape of a document or a code file before its words. Rapier supports two kinds of diagram: the default is an SVG drawing you can move around; a Mermaid flowchart is a `mermaid` fence in the Markdown, drawn by the Mermaid plugin if you prefer it.",
 		"",
 		"While an agent is here, the scroll circle on the right pulses. Tap it for status, messages and changes. Select a passage and tap **Ask** to talk about that part.",
@@ -3485,6 +3500,7 @@ function _langForExt(name) {
 }
 function _rapierCommitDocumentReplacementSurfaces() {
 	rapier.view.caret = null;
+	const pressHost = _editorHostEl(); if (pressHost) pressHost._rapierLastPress = null;
 	if (rapier.compare) {
 		if (rapier.compare.active || rapier.compare.running) {
 			rapierCompareClose({ skipRestore: true });
@@ -3591,7 +3607,9 @@ async function rapierLoad(content, filename, options) {
 	if (!loaded || !_rapierLoadReceiptIsCurrent(loaded)) return false;
 	if (carried && options.sameDocument !== true && options.restore !== true && incomingName !== loadName) {
 		const metadata = RapierLedger._rapierMetadataDelta(_rapierDocumentMetadata(), {filename: incomingName, docKind: kind});
+		const required = rapier.identity.saveAsRequired;
 		if (!_rapierCommitSplices([], {metadata, operation: 'document.adopt-filename', changeSet: {label: 'Adopt file name'}})) return false;
+		rapier.identity.saveAsRequired = required;
 		updateFilenameDisplay(); renderDocumentKind();
 	}
 	return options.returnReceipt === true ? _rapierCaptureLoadCommitReceipt() : true;
@@ -3721,7 +3739,10 @@ function _rapierLoadResult(options, receipt) {
 
 function _rapierSegmentIdentity(value, ceiling = null) {
 	if (!Array.isArray(value)) return null;
-	const rows = value.map(row => Array.isArray(row) && row.length === 5
+	const kept = Object.isFrozen(value) && value.every(row => Array.isArray(row) && Object.isFrozen(row) && row.length === 5 &&
+		typeof row[0] === 'number' && typeof row[1] === 'string' && typeof row[2] === 'number' && typeof row[3] === 'number' &&
+		typeof row[4] === 'string');
+	const rows = kept ? value : value.map(row => Array.isArray(row) && row.length === 5
 		? [Number(row[0]), String(row[1] || ''), Number(row[2]), Number(row[3]), String(row[4] || '')] : null);
 	if (rows.some(row => !row)) return null;
 	const ids = rows.map(row => row[0]);
@@ -3749,10 +3770,13 @@ function _rapierBlockRawHash(block) {
 function _rapierCurrentSegmentIdentity() {
 	if (rapier.document.docKind !== 'markdown') return [];
 	const spans = _rapierCurrentBodyBlockSpans();
-	return rapier.document.blocks.map((block, index) => [
-		block.id, String(block.type || ''), Number(spans[index]?.start || 0), Number(spans[index]?.end || 0),
-		_rapierBlockRawHash(block),
-	]);
+	const owner = globalThis.RapierRecoveryWorker;
+	const rows = rapier.document.blocks.map((block, index) => {
+		const fields = [block.id, String(block.type || ''), Number(spans[index]?.start || 0), Number(spans[index]?.end || 0),
+			_rapierBlockRawHash(block)];
+		return owner?.recoveryRow ? owner.recoveryRow(...fields) : fields;
+	});
+	return owner?.recoveryRows ? owner.recoveryRows(rows) : rows;
 }
 
 function _rapierRestoredRevisionState(options = null) {
@@ -4728,7 +4752,7 @@ async function _rapierDrawDiagram(host, {detached, renderState, isCurrent, state
 			const rendered = globalThis.RapierFlowchart.renderFlowchart(src);
 			if (!rendered.ok) throw new Error(rendered.reason);
 			svg = rendered.svg;
-			cached = {recipe: rendered.recipe, labels: rendered.labels, labelBounds: rendered.labelBounds};
+			cached = {recipe: rendered.recipe, labels: rendered.labels, parts: rendered.parts, labelBounds: rendered.labelBounds};
 		}
 		if (!native && !svg) svg = await provider.renderToString(src);
 		await Promise.resolve(document.fonts?.ready).catch(() => {});
@@ -4746,7 +4770,10 @@ async function _rapierDrawDiagram(host, {detached, renderState, isCurrent, state
 		_rapierRememberDiagram(key, {...cached, svg: measured, height}, renderState, stateCurrent);
 		host._rapierDiagramKey = key;
 		host._rapierDiagramRenderState = renderState;
-		if (native && !detached) globalThis.RapierFlowchartEditor?.bind(host, src, cached?.recipe, cached?.labels, cached?.labelBounds);
+		if (native && !detached) {
+			globalThis.RapierFlowchartEditor?.bind(host, src, cached?.recipe, cached?.labels, cached?.labelBounds);
+			globalThis.RapierFlowchartTouch?.bind(host, src, cached?.recipe, cached?.labels, cached?.parts);
+		}
 		host.setAttribute('data-diagram-state', 'ready');
 		host.classList.remove('diagram-block--absent', 'diagram-block--error');
 		host.querySelectorAll(':scope > .diagram-reason').forEach(reason => reason.remove());
@@ -5116,25 +5143,60 @@ function _beginBlockDOMSplice(startIndex, oldCount) {
 	const container = document.getElementById('editor-blocks');
 	if (!container) return null;
 	const before = _blockWrapperChildren(container);
-	before.slice(startIndex, startIndex + oldCount).forEach(_rapierRemoveBlockWrapper);
+	const removed = before.slice(startIndex, startIndex + oldCount);
+	const removedIds = removed.map(wrapper => wrapper.dataset.blockId);
+	removed.forEach(_rapierRemoveBlockWrapper);
 	const ref = _blockWrapperChildren(container)[startIndex] || null;
 	if (ref && ref.parentElement !== container) _rapierUnpackSleepGroup(ref.parentElement);
-	return { container, ref };
+	return { container, ref, removedIds };
 }
 
-function _finishBlockDOMSplice(container, insertedWrappers = null) {
+function _rapierBlockSpliceScope(splices) {
+	const scope = { blocks: [], inserted: [], removedIds: [], edges: [] };
+	for (const { splice, wrappers, blocks } of splices) {
+		scope.blocks.push(...blocks);
+		scope.inserted.push(...wrappers);
+		scope.removedIds.push(...splice.removedIds);
+		const first = wrappers[0] || splice.ref;
+		const edge = first ? _rapierAdjacentBlockWrapper(first, -1) : _blockWrapperChildren(splice.container).at(-1);
+		if (edge) scope.edges.push(edge);
+		if (!wrappers.length && splice.ref) scope.edges.push(splice.ref);
+	}
+	return scope;
+}
+
+function _finishBlockDOMSplice(container, insertedWrappers = null, scope = null) {
 	if (!container) return;
 	_syncEmptyDocPrompt();
-	_rapierWysiwygLedgerSync(rapier.document.blocks, {keepGroups: true});
-	assignHeadingSlugs();
+	if (scope) _rapierWysiwygLedgerSyncSplice(rapier.document.blocks, scope);
+	else _rapierWysiwygLedgerSync(rapier.document.blocks, {keepGroups: true});
+	assignHeadingSlugs(scope);
 	if (Array.isArray(insertedWrappers)) insertedWrappers.filter(wrapper => !wrapper._rapierUnrendered).forEach(scheduleIdleHighlight);
 	_rapierScheduleRenderWindow();
 }
 
 function _spliceBlockDOM(startIndex, oldCount, newBlocks, preparedFragment = null) {
+	return _spliceBlockDOMRanges([{ startIndex, oldCount, newBlocks, preparedFragment }]);
+}
+
+function _spliceBlockDOMRanges(ranges) {
 	const viewport = _rapierCaptureEditorViewport();
+	const done = [];
+	for (const { startIndex, oldCount, newBlocks, preparedFragment = null } of ranges) {
+		const placed = _rapierPlaceBlockDOMSplice(startIndex, oldCount, newBlocks, preparedFragment);
+		if (!placed) break;
+		done.push(placed);
+	}
+	if (!done.length) return;
+	const inserted = done.flatMap(placed => placed.wrappers);
+	_finishBlockDOMSplice(done[0].splice.container, inserted, _rapierBlockSpliceScope(done));
+	_rapierRestoreEditorViewport(viewport);
+	return done.length === ranges.length;
+}
+
+function _rapierPlaceBlockDOMSplice(startIndex, oldCount, newBlocks, preparedFragment = null) {
 	const splice = _beginBlockDOMSplice(startIndex, oldCount);
-	if (!splice) return;
+	if (!splice) return null;
 
 	const fragment = preparedFragment || document.createDocumentFragment();
 	if (fragment._rapierRenderState && !_rapierReadRenderStateIsCurrent(fragment._rapierRenderState))
@@ -5152,8 +5214,7 @@ function _spliceBlockDOM(startIndex, oldCount, newBlocks, preparedFragment = nul
 	wrappers.forEach((wrapper, index) => {
 		if (newBlocks[index]) _rapierWysiwygLedgerPrepare(wrapper, newBlocks[index]);
 	});
-	_finishBlockDOMSplice(splice.container, wrappers);
-	_rapierRestoreEditorViewport(viewport);
+	return { splice, wrappers, blocks: newBlocks };
 }
 
 function _updateBlockInteractiveState(wrapper, readDiv) {
@@ -5208,6 +5269,24 @@ function _rapierRawEditorReason(raw, referenceIndex = null) {
 			const cuts = admitted.flatMap(pair => [{start: pair.start, end: pair.innerStart}, {start: pair.innerEnd, end: pair.end}]);
 			for (const cut of cuts.sort((a, b) => b.start - a.start)) value = value.slice(0, cut.start) + value.slice(cut.end);
 		} catch (_) { return 'raw-html'; }
+	}
+
+	if (/<(?:mark style="background-color:#|u>|sub>|sup>)/.test(value) && md) {
+		try {
+			const tags = [];
+			const collect = rows => (rows || []).forEach(token => { if (token.type === 'html_inline') tags.push(token.content); else collect(token.children); });
+			collect(md.parse(value, _rapierMarkdownEnvironment(referenceIndex || rapier.semantic.references)));
+			const pairs = [...Object.keys(RAPIER_HIGHLIGHT_HEX).map(colour => [highlightOpen(colour), '</mark>']),
+				['<u>', '</u>'], ['<sub>', '</sub>'], ['<sup>', '</sup>']];
+			const escape = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+			let admitted = value, found = 0;
+			for (const [open, close] of pairs) {
+				const pattern = new RegExp(escape(open) + '([^<]*)' + escape(close), 'g');
+				admitted = admitted.replace(pattern, (whole, inner) => { found++; return inner; });
+			}
+			const wanted = new Set(pairs.flat());
+			if (found && tags.filter(tag => wanted.has(tag)).length === found * 2 && !pairs.flat().some(tag => admitted.includes(tag))) value = admitted;
+		} catch (_) {}
 	}
 
 	const colorMarkerAnywhere = /<!--(?:c (?:#[0-9a-f]{6}|green|red|blue|gold|purple)|\/c)-->/;
@@ -5340,12 +5419,21 @@ function _rapierRawEditorReason(raw, referenceIndex = null) {
 	if (!supportedDetails && htmlTag.test(value)) {
 		const tokens = parsedTokens();
 		if (!tokens) return 'raw-html';
+		const cellInlines = new Set();
+		for (let index = 0, inCell = false; index < tokens.length; index++) {
+			const type = tokens[index].type;
+			if (type === 'td_open' || type === 'th_open') inCell = true;
+			else if (type === 'td_close' || type === 'th_close') inCell = false;
+			else if (inCell && type === 'inline') cellInlines.add(tokens[index]);
+		}
+		const cellBreak = /^<br\s*\/?>$/i;
 		const needsRawHtml = rows => rows.some(token => {
 			if (token.type === 'inline') {
 				const children = token.children || [];
 				let rest = token.content || '';
 				if (!htmlTag.test(rest)) return false;
 				for (const child of children) {
+					if (cellInlines.has(token) && child.type === 'html_inline' && cellBreak.test(child.content || '')) { rest = rest.replace(child.content, ''); continue; }
 					if (child.type === 'html_inline' && htmlTag.test(child.content || '') && rest.includes(child.content)) return true;
 					if (child.type !== 'code_inline' || !htmlTag.test(child.content)) continue;
 					const runs = child.content.match(/`+/g) || [];
@@ -5464,9 +5552,25 @@ function _clearActiveBlock(blockId) {
 	rapier.view.activeBlockId = null;
 	rapier.view.activeWrapper = null;
 	rapier.view.activeEditDiv = null;
-	if (sharedEdit && sharedEdit.parentElement?.classList.contains('block-wrapper')) {
+	const owner = sharedEdit?.parentElement;
+	if (owner?.classList.contains('block-wrapper')) {
+		if (owner.isConnected && owner.classList.contains('block-wrapper--editing')) _rapierShowStrandedBlock(owner, sharedEdit);
 		sharedEdit.remove();
 	}
+}
+
+function _rapierShowStrandedBlock(wrapper, editDiv) {
+	const block = _rapierBoundBlock(wrapper), readDiv = wrapper.querySelector(':scope > .block-read');
+	wrapper.classList.remove('block-wrapper--editing', 'block-wrapper--math-source', 'block-wrapper--source-edit');
+	_rapierDetachDiagramPreview(wrapper);
+	_rapierReleaseRawEditGeometry(editDiv);
+	_setBlockEditability(editDiv, false);
+	_rapierDiscardEditProjection(editDiv);
+	editDiv.removeAttribute('tabindex');
+	if (!block || !readDiv) return;
+	_rapierSetReadProjection(readDiv, !block.dirty && block.rendered || renderBlock(block.raw), false);
+	wrapper._rapierBlockRaw = block.raw;
+	_updateBlockInteractiveState(wrapper, readDiv);
 }
 
 const _rapierInteractionRuntime = Object.seal({ recentPointerModality: '', pointerModalityTimer: 0 });
@@ -6386,6 +6490,8 @@ function _rapierInitBlockInteractionRouter() {
 		return target?.classList?.contains('block-wrapper') && host.contains(target) ? nearestSurface(event.clientX, event.clientY) : null;
 	};
 	host.addEventListener('pointerdown', event => {
+		const pressed = event.target?.closest?.('.block-wrapper[data-block-id]');
+		host._rapierLastPress = pressed && host.contains(pressed) ? { blockId: Number(pressed.dataset.blockId), at: _rapierNow(), authority: rapier.identity.authority } : null;
 		host._rapierBlankPress = event.target?.closest?.('.block-wrapper, button, .rapier-image-tools, .rapier-image-grip, .rapier-image-move')
 			? null : { x: event.clientX, y: event.clientY, scrollTop: host.scrollTop, toolsOpen: _rapierImageRuntime.blockId != null, touch: event.pointerType === 'touch' };
 		if (event.target?.closest?.('.will-plate[data-will-plate="open"]')) {
@@ -6598,7 +6704,7 @@ function _rapierInitBlockInteractionRouter() {
 		if (diagram) {
 			event.preventDefault();
 			event.stopPropagation();
-			globalThis.RapierFlowchartEditor?.open(diagram, pressed);
+			if (!globalThis.RapierFlowchartTouch?.tap(diagram, pressed)) globalThis.RapierFlowchartEditor?.open(diagram, pressed);
 			return;
 		}
 		const behindPicture = !_rapierInteractiveControlTarget(pressed, readDiv) && _rapierBehindPictureAt(event.clientX, event.clientY);
@@ -6916,6 +7022,7 @@ function _removeBlockById(blockId, commit = _rapierCommitDeletedBlock) {
 	};
 	if (commit && !commit(snapshot)) return null;
 	if (rapier.view.caret && rapier.view.caret.blockId === blockId) rapier.view.caret = null;
+	const pressHost = _editorHostEl(); if (pressHost?._rapierLastPress?.blockId === blockId) pressHost._rapierLastPress = null;
 
 	rapier.document.blocks.splice(index, 1);
 	const wrapper = document.querySelector('[data-block-id="' + blockId + '"]');
@@ -7890,7 +7997,7 @@ function _rapierRememberCaret(block, editDiv) {
 		offset = range && (backward ? range.startOffset : range.endOffset);
 	}
 	if (node && editDiv.contains(node)) rapier.view.caret = {
-		blockId: block.id, offset: _charOffsetForRangePoint(editDiv, node, offset),
+		blockId: block.id, offset: _charOffsetForRangePoint(editDiv, node, offset), at: _rapierNow(), authority: rapier.identity.authority,
 	};
 }
 
@@ -8288,10 +8395,10 @@ function _rapierProjectBlockRangeInPlace(record, redo) {
 	const keptIds = new Set(newBlocks.map(block => block.id));
 	newBlocks.forEach(block => rapier.autosave.dirty.add(block.id));
 	removedIds.forEach(id => { if (!keptIds.has(id)) rapier.autosave.dirty.delete(id); });
-	_spliceBlockDOM(startIndex, fromRows.length, newBlocks);
+	const spliced = _spliceBlockDOM(startIndex, fromRows.length, newBlocks);
 	if (referenceIndexChanged) _rapierRefreshReferenceConsumers(keptIds);
 	updateStats();
-	assignHeadingSlugs();
+	if (!spliced || referenceIndexChanged) assignHeadingSlugs();
 	return true;
 }
 
@@ -8339,21 +8446,22 @@ function _rapierProjectBlockRangesInPlace(record, redo) {
 		}
 		plans.push({ startIndex, fromRows, toRows });
 	}
-	const touchedIds = new Set(), removedIds = new Set();
+	const touchedIds = new Set(), removedIds = new Set(), domRanges = [];
 	for (const { startIndex, fromRows, toRows } of plans) {
 		fromRows.forEach(row => { touchedIds.add(row.id); removedIds.add(row.id); });
 		const newBlocks = _rapierRenderHistoryRows(toRows, touchedIds);
 		current.splice(startIndex, fromRows.length, ...newBlocks);
 		_reassignOrderForRange(startIndex, newBlocks.length);
 		newBlocks.forEach(block => rapier.autosave.dirty.add(block.id));
-		_spliceBlockDOM(startIndex, fromRows.length, newBlocks);
+		domRanges.push({ startIndex, oldCount: fromRows.length, newBlocks });
 	}
+	const spliced = _spliceBlockDOMRanges(domRanges) === true;
 	const keptIds = new Set(plans.flatMap(plan => plan.toRows.map(row => row.id)));
 	removedIds.forEach(id => { if (!keptIds.has(id)) rapier.autosave.dirty.delete(id); });
 	const referenceIndexChanged = rebuildReferenceIndex(current);
 	if (referenceIndexChanged) _rapierRefreshReferenceConsumers(touchedIds);
 	updateStats();
-	assignHeadingSlugs();
+	if (!spliced || referenceIndexChanged) assignHeadingSlugs();
 	return true;
 }
 
@@ -8902,8 +9010,20 @@ function _rapierRouteStrayEditingKey(event) {
 	}
 	const control = target !== host && target.closest('button, a[href], summary, img, [role="button"], [role="menuitem"], [role="tab"], [role="switch"], [role="checkbox"], [role="radio"], [role="option"], [role="link"]');
 	const begins = key === 'Enter' && !rapier.document.blocks.length && (target === host || !!target.closest('#empty-doc-prompt'));
-	if (key === 'Enter' ? !begins && (target === host || control) : key === ' ' && (control || rapier.view.mode === 'read')) return;
+	const reenter = key === 'Enter' && !begins && !open && target === host && !event.shiftKey && rapier.document.blocks.length > 0 &&
+		!(held && held.rangeCount && !held.isCollapsed && _rangeIntersectsEditor(held.getRangeAt(0)));
+	if (key === 'Enter' ? !begins && !reenter && (target === host || control) : key === ' ' && (control || rapier.view.mode === 'read')) return;
 	if (step && !open && (_rapierImageRuntime.blockId != null || _rapierSelectedBreakMarker())) return;
+	if (reenter) {
+		if (rapier.view.pendingHistoryReopen) _rapierRunPendingReopen();
+		const opened = _activeBlockEditContext() || _rapierStrayKeyOpensBlock(host, host, true, true);
+		if (!opened) return;
+		event.preventDefault();
+		event.stopImmediatePropagation();
+		host.focus({ preventScroll: true });
+		_rapierCaretHome(opened);
+		return;
+	}
 	if (!open && rapier.view.pendingHistoryReopen) {
 		_rapierRunPendingReopen();
 		open = _activeBlockEditContext();
@@ -8924,8 +9044,15 @@ function _rapierStrayKeyOpensBlock(target, host, begins, keepCaret = false) {
 	if (!host || !(target instanceof Element) || rapier.view.mode === 'source' || rapier.document.docKind !== 'markdown' || _rapierReadOnlyBlocked(false)) return null;
 	if (!rapier.document.blocks.length) { rapierInsertBlock('paragraph', { immediateFocus: true }); return _activeBlockEditContext(); }
 	const shown = _rapierShownWrappers(host);
-	const inPage = host.contains(target), kept = inPage && !keepCaret ? null : rapier.view.caret;
-	let wrapper = kept && shown.find(node => Number(node.dataset.blockId) === kept.blockId) || null;
+	const mine = place => place && place.authority === rapier.identity.authority ? place : null;
+	const caret = mine(rapier.view.caret), press = mine(host._rapierLastPress);
+	const remembered = press && !(caret && caret.at >= press.at) ? { blockId: press.blockId, offset: 0, end: true } : caret;
+	const view = host.getBoundingClientRect();
+	const onScreen = node => { const box = node.getBoundingClientRect(); return box.bottom > view.top + 1 && box.top < view.bottom - 1; };
+	const caretWrapper = remembered && shown.find(node => Number(node.dataset.blockId) === remembered.blockId) || null;
+	const inPage = host.contains(target);
+	const kept = !inPage || keepCaret || (target === host && caretWrapper && onScreen(caretWrapper)) ? remembered : null;
+	let wrapper = kept && caretWrapper || null;
 	if (!wrapper && begins) {
 		const top = host.getBoundingClientRect().top;
 		wrapper = inPage && target !== host ? target.closest('.block-wrapper') :
@@ -8935,7 +9062,9 @@ function _rapierStrayKeyOpensBlock(target, host, begins, keepCaret = false) {
 	const block = _rapierBoundBlock(wrapper);
 	if (!block || _rapierLoneControlBlock(block)) return null;
 	enterBlockEdit(block, wrapper, {charOffset: kept && kept.blockId === block.id ? kept.offset : 0, preserveScroll: true});
-	return _activeBlockEditContext();
+	const open = _activeBlockEditContext();
+	if (open && kept?.end && kept.blockId === block.id) _setCursorCharOffset(open.editDiv, String(open.editDiv.textContent || '').replace(/\n+$/, '').length);
+	return open;
 }
 
 function _rapierHistoryPictureOffset(splices, side) {
@@ -9044,6 +9173,12 @@ function _rapierHistoryActionLabel(entry, fallback) {
 	const names = {
 		'document.edit-block': 'typing',
 		'document.edit-diagram-label': 'diagram label',
+		'document.add-diagram-box': 'new box',
+		'document.connect-diagram-boxes': 'connection',
+		'document.delete-diagram-box': 'delete box',
+		'document.delete-diagram-line': 'delete line',
+		'document.shape-diagram-box': 'box shape',
+		'document.flip-diagram': 'diagram direction',
 		'document.replace-range': 'typing',
 		'document.replace-source-range': 'typing',
 		'document.replace-block-range': 'block change',
@@ -11245,7 +11380,7 @@ function _rapierCommitRangesInPlace(ranges, splices, operation, affectedBlockIds
 	}));
 	const transaction = _rapierCommitSplices(splices, { operation, affectedBlockIds, blockRanges });
 	if (!transaction) return false;
-	const touchedIds = new Set(), removedIds = new Set();
+	const touchedIds = new Set(), removedIds = new Set(), domRanges = [];
 	const ordered = ranges.slice().sort((a, b) => b.startIndex - a.startIndex);
 	for (const range of ordered) {
 		range.blocksBefore.forEach(row => { touchedIds.add(row.id); removedIds.add(row.id); });
@@ -11253,15 +11388,16 @@ function _rapierCommitRangesInPlace(ranges, splices, operation, affectedBlockIds
 		current.splice(range.startIndex, range.blocksBefore.length, ...newBlocks);
 		_reassignOrderForRange(range.startIndex, newBlocks.length);
 		newBlocks.forEach(block => rapier.autosave.dirty.add(block.id));
-		_spliceBlockDOM(range.startIndex, range.blocksBefore.length, newBlocks);
+		domRanges.push({ startIndex: range.startIndex, oldCount: range.blocksBefore.length, newBlocks });
 	}
+	const spliced = _spliceBlockDOMRanges(domRanges) === true;
 
 	const keptIds = new Set(ranges.flatMap(range => range.blocksAfter.map(row => row.id)));
 	removedIds.forEach(id => { if (!keptIds.has(id)) rapier.autosave.dirty.delete(id); });
 	const referenceIndexChanged = rebuildReferenceIndex(current);
 	if (referenceIndexChanged) _rapierRefreshReferenceConsumers(touchedIds);
 	updateStats();
-	assignHeadingSlugs();
+	if (!spliced || referenceIndexChanged) assignHeadingSlugs();
 	_bumpDocGeneration();
 	_rapierArmAutosave();
 	_notifyHistoryState();
@@ -11304,11 +11440,11 @@ function _rapierInstallBlockRange(startIndex, removeCount, rows) {
 	if (referencesChanged) rows.forEach(row => { if (row.raw) row.rendered = renderBlock(row.raw); });
 	_bumpDocGeneration();
 	_rapierArmAutosave();
-	_spliceBlockDOM(startIndex, removeCount, rows);
+	const spliced = _spliceBlockDOM(startIndex, removeCount, rows);
 	if (referencesChanged) _rapierRefreshReferenceConsumers(installed);
 	_notifyHistoryState();
 	updateStats();
-	assignHeadingSlugs();
+	if (!spliced || referencesChanged) assignHeadingSlugs();
 }
 
 function _rapierCommitDeletedBlock(snapshot, options = null) {
@@ -14919,9 +15055,18 @@ function _rapierSectionFoldPlan(items, foldedIds) {
 	});
 }
 
-function _rapierApplySectionFolds() {
+function _rapierApplySectionFolds(unfolded = null) {
 	const host = document.getElementById('editor-blocks');
 	if (!host || !(rapier.view.foldedHeadingIds instanceof Set)) return;
+	if (unfolded && !rapier.view.foldedHeadingIds.size) {
+		for (const wrapper of unfolded) {
+			if (wrapper.hidden) wrapper.hidden = false;
+			if (wrapper.dataset.foldedBy !== undefined) delete wrapper.dataset.foldedBy;
+		}
+		_rapierWysiwygLedgerApplyFoldVisibility(unfolded);
+		_rapierScheduleRenderWindow();
+		return;
+	}
 	const wrappers = _blockWrapperChildren(host);
 	const items = wrappers.map(wrapper => ({
 		id: Number(wrapper.dataset.blockId),
@@ -15059,18 +15204,23 @@ function _rapierBlockMovePlan(blockId) {
 }
 
 function _rapierSyncSectionMoveHandle(wrapper) {
-	const heading = wrapper.dataset.headingLevel && rapier.document.docKind === 'markdown' && !_rapierNotesPart?.currentFile();
-	let handle = wrapper.querySelector(':scope > .section-move-btn');
-	if (!heading) { handle?.remove(); return; }
-	if (handle) return;
-	handle = _rapierMoveGrip('move section');
+	const markdown = rapier.document.docKind === 'markdown' && !_rapierNotesPart?.currentFile(), heading = !!wrapper.dataset.headingLevel;
+	const block = markdown && !heading && _rapierBoundBlock(wrapper);
+	const movable = markdown && (heading || !!block && !wrapper.classList.contains('block-wrapper--image') && !_rapierMetadataBlock(block) &&
+		!_rapierListItemTree(block.raw).list);
+	let handle = wrapper.querySelector(':scope > .section-move-btn:not(.section-move-btn--item)');
+	if (handle && (!movable || handle.classList.contains('section-move-btn--block') === heading)) { handle.remove(); handle = null; }
+	if (!movable || handle) return;
+	const planOf = heading ? _rapierSectionMovePlan : _rapierBlockMovePlan;
+	handle = _rapierMoveGrip(heading ? 'move section' : 'move block');
+	if (!heading) { handle.classList.add('section-move-btn--block'); handle._rapierPlanOf = planOf; }
 	handle.addEventListener('pointerdown', _rapierSectionDragStart);
 	handle.addEventListener('keydown', event => {
 		if (!/^Arrow(?:Up|Down)$/.test(event.key)) return;
 		event.preventDefault();
 		event.stopPropagation();
 		const id = Number(handle.closest('.block-wrapper')?.dataset.blockId);
-		if (Number.isSafeInteger(id)) _rapierMoveSectionStep(id, event.key === 'ArrowDown');
+		if (Number.isSafeInteger(id)) _rapierMoveSectionStep(id, event.key === 'ArrowDown', planOf);
 	});
 	wrapper.appendChild(handle);
 }
@@ -15106,11 +15256,9 @@ function _rapierSectionDragStart(event) {
 		const area = host.getBoundingClientRect(), column = wrapperAt(drag.plan.start)?.getBoundingClientRect() || area;
 		Object.assign(drag.mark.style, { top: (best.y - 2) + 'px', left: column.left + 'px', width: column.width + 'px' });
 	};
-	const tick = () => {
+	const tick = now => {
 		drag.frame = 0;
-		const area = host.getBoundingClientRect(), edge = 56;
-		const push = drag.y < area.top + edge ? drag.y - area.top - edge : drag.y > area.bottom - edge ? drag.y - area.bottom + edge : 0;
-		if (push) host.scrollTop += Math.max(-24, Math.min(24, push / 2));
+		const push = _rapierDragEdgeScroll(host, drag, now);
 		place();
 		if (push) drag.frame = requestAnimationFrame(tick);
 	};
@@ -15134,7 +15282,7 @@ function _rapierSectionDragStart(event) {
 		drag.moving.forEach(wrapper => wrapper.removeAttribute('data-section-moving'));
 		drag.mark?.remove();
 		document.documentElement.removeAttribute('data-section-dragging');
-		if (commit && drag.plan && drag.target != null && _rapierMoveSection(blockId, drag.target, planOf)) handle._rapierAfterMove?.();
+		if (commit && drag.plan && drag.target != null) _rapierMoveSection(blockId, drag.target, planOf);
 	};
 	const move = e => {
 		drag.y = e.clientY;
@@ -15322,8 +15470,28 @@ function _rapierGripIcon() {
 	return svg;
 }
 
+function _rapierDragEdgeScroll(scroller, drag, now) {
+	const area = scroller.getBoundingClientRect(), view = window.visualViewport;
+	const top = Math.max(area.top, view ? view.offsetTop : 0), bottom = Math.min(area.bottom, view ? view.offsetTop + view.height : innerHeight);
+	const band = Math.max(48, Math.min(120, (bottom - top) * .15));
+	const depth = drag.y < top + band ? drag.y - top - band : drag.y > bottom - band ? drag.y - bottom + band : 0;
+	const last = drag.scrolledAt || now;
+	if (!depth) drag.edgeSince = 0;
+	else if (!drag.edgeSince) drag.edgeSince = now;
+	drag.scrolledAt = depth ? now : 0;
+	if (!depth) return false;
+	const reach = Math.min(1.6, Math.abs(depth) / band), held = 1 + Math.min(1, (now - drag.edgeSince) / 3000);
+	const step = (2 + 34 * reach * reach) * held * Math.min(3, Math.max(1, (now - last) / 16.7));
+	const before = scroller.scrollTop;
+	scroller.scrollTop = before + Math.sign(depth) * step;
+	if (scroller.scrollTop === before) return false;
+	if (scroller.id === 'editor-blocks') _rapierCancelViewRestore();
+	return true;
+}
+
 function _rapierSyncItemGrip() {
 	const open = _activeBlockEditContext(), caret = open && _rapierCaretListItem(open);
+	if (open) _rapierSyncSectionMoveHandle(open.wrapper);
 	let grip = document.querySelector('#editor-blocks .section-move-btn--item');
 	if (grip?._rapierDragging) return;
 	if (!caret) { if (grip) grip.hidden = true; return; }
@@ -15394,11 +15562,9 @@ function _rapierItemDragStart(event) {
 		const column = open.editDiv.getBoundingClientRect();
 		Object.assign(drag.mark.style, { top: (best.y - 2) + 'px', left: left + 'px', width: Math.max(24, Math.min(right, column.right) - left) + 'px' });
 	};
-	const tick = () => {
+	const tick = now => {
 		drag.frame = 0;
-		const area = host.getBoundingClientRect(), edge = 56;
-		const push = drag.y < area.top + edge ? drag.y - area.top - edge : drag.y > area.bottom - edge ? drag.y - area.bottom + edge : 0;
-		if (push) host.scrollTop += Math.max(-24, Math.min(24, push / 2));
+		const push = _rapierDragEdgeScroll(host, drag, now);
 		place();
 		if (push) drag.frame = requestAnimationFrame(tick);
 	};
@@ -15509,12 +15675,6 @@ function _rapierPickBlock(blockId) {
 	const wrappers = _rapierPickedWrappers();
 	if (!wrappers.length) { pick.ids = []; return false; }
 	wrappers.forEach(wrapper => wrapper.setAttribute('data-block-picked', ''));
-	const grip = _rapierMoveGrip(wrappers[0].dataset.headingLevel ? 'move section' : 'move block');
-	grip.classList.add('section-move-btn--picked');
-	grip._rapierPlanOf = _rapierPickPlanOf(blockId);
-	grip._rapierAfterMove = () => _rapierPickBlock(blockId);
-	grip.addEventListener('pointerdown', _rapierSectionDragStart);
-	wrappers[0].appendChild(grip);
 	window.getSelection()?.removeAllRanges();
 	const bar = _rapierEnsurePickBar();
 	const shown = _rapierPickShownCount(wrappers);
@@ -15535,7 +15695,6 @@ function _rapierLetGoBlock(refocus) {
 	const pick = _rapierPickState();
 	const had = pick.ids.length;
 	document.querySelectorAll('#editor-blocks .block-wrapper[data-block-picked]').forEach(wrapper => wrapper.removeAttribute('data-block-picked'));
-	document.querySelectorAll('#editor-blocks .section-move-btn--picked').forEach(grip => grip.remove());
 	pick.ids = [];
 	if (pick.bar && !pick.bar.hidden) {
 		const focused = pick.bar.contains(document.activeElement);
@@ -15699,7 +15858,7 @@ function _rapierPickPressElsewhere(event) {
 	const pick = _rapierPickState();
 	if (!pick.ids.length) return;
 	const target = event.target instanceof Element ? event.target : null;
-	if (target && (target.closest('.rapier-block-tools,.section-move-btn--picked') || target.closest('#editor-blocks .block-wrapper[data-block-picked]'))) return;
+	if (target && (target.closest('.rapier-block-tools') || target.closest('#editor-blocks .block-wrapper[data-block-picked]'))) return;
 	_rapierLetGoBlock(false);
 }
 
@@ -15771,18 +15930,30 @@ function rapierSetAllSectionsFolded(fold) {
 	return true;
 }
 
-function assignHeadingSlugs() {
+function assignHeadingSlugs(scope = null) {
 	const editor = document.getElementById('editor-blocks');
 	if (!editor) return;
 	const plan = _rapierPlanProjectionNavigation();
 	const protectionContext = _rapierProtectionSyncContext();
-	for (const wrapper of _blockWrapperChildren(editor)) {
+	const scoped = !!scope && plan.state === _rapierSpliceRuntime.slugState;
+	const unfolded = scoped && !rapier.view.foldedHeadingIds.size;
+	const wrappers = scoped ? _rapierSpliceNavigationWrappers(editor, scope) : _blockWrapperChildren(editor);
+	for (const wrapper of wrappers) {
 		const read = wrapper.querySelector(':scope > .block-read');
 		if (read) _rapierApplyBlockNavigation(wrapper, read, plan);
 		_rapierSyncSectionFoldControl(wrapper, read, wrapper, plan.state);
 	}
+	_rapierSpliceRuntime.slugState = plan.state;
 	_rapierSyncWillPlates(editor, protectionContext);
-	_rapierApplySectionFolds();
+	_rapierApplySectionFolds(unfolded ? wrappers : null);
+}
+
+function _rapierSpliceNavigationWrappers(editor, scope) {
+	const wrappers = new Set();
+	for (const wrapper of [...scope.edges, ...scope.inserted]) if (wrapper?.isConnected) wrappers.add(wrapper);
+	for (const read of editor.querySelectorAll(':scope > .block-wrapper > .block-read, :scope > .block-sleep-group > .block-wrapper > .block-read'))
+		wrappers.add(read.parentElement);
+	return Array.from(wrappers);
 }
 
 const _RAPIER_PROTECTION_CHOICES = [
@@ -16339,6 +16510,8 @@ function _rapierJumpToHash(hash) {
 	if (!target) return false;
 	const travel = _rapierTravelBegin('document link');
 	const destination = _rapierTravelDestinationForElement(target);
+	rapier.view.caret = null;
+	const pressHost = _editorHostEl(); if (pressHost) pressHost._rapierLastPress = null;
 	_rapierRevealSectionForWrapper(target.closest?.('.block-wrapper'));
 	try {
 		const sel = window.getSelection && window.getSelection();
@@ -17014,6 +17187,24 @@ function _rapierIsolationHolds(node) {
 	return !!record && record.inert === false;
 }
 
+function _rapierProgressFollowModal() {
+	const root = document.getElementById('toast-root');
+	if (!root || root._rapierProgressFollowing) return;
+	root._rapierProgressFollowing = true;
+	try {
+		const top = _rapierDialogRuntime.isolation.at(-1);
+		const overlay = top?.isConnected ? top : null, lifted = !!overlay && root._rapierProgressLift?.overlay === overlay;
+		const notice = !!overlay && (lifted || !overlay.contains(root)) && [...root.children].some(child => child.classList.contains('toast') && !child.hidden);
+		const running = !!document.querySelector('.rapier-progress') || notice;
+		if (root._rapierProgressLift && (root._rapierProgressLift.overlay !== overlay || !running)) { const {handle} = root._rapierProgressLift; root._rapierProgressLift = null; handle.release(); }
+		if (overlay && !root._rapierProgressLift && running) {
+			root._rapierProgressLift = {overlay, handle: _rapierProgressOver(overlay)};
+			root._rapierProgressLift.handle.notice();
+		}
+		else if (running && root._rapierProgressLift && root.parentElement !== overlay && !overlay.contains(root)) root._rapierProgressLift.handle.notice();
+	} finally { root._rapierProgressFollowing = false; }
+}
+
 function _rapierApplyModalIsolation() {
 	const stack = _rapierDialogRuntime.isolation;
 	if (_rapierBootstrapRuntime.failed) { stack.length = 0; _rapierDialogRuntime.active = null; }
@@ -17041,6 +17232,7 @@ function _rapierApplyModalIsolation() {
 	}
 	document.documentElement.classList.toggle('rapier-engine-modal-locked', !!top);
 	if (!stack.length) _rapierDialogRuntime.baseline = null;
+	_rapierProgressFollowModal();
 	if (!top && !_rapierBootstrapRuntime.failed) _rapierSeenSweep();
 }
 
@@ -17155,6 +17347,12 @@ function _openFieldDialog(opts) {
 			return '<label class="link-dialog__label" for="' + fieldId + '">' + _escHtml(field.label) + '</label>' +
 						 '<select id="' + fieldId + '" class="link-dialog__input" data-field="' + index + '">' + options + '</select>';
 		}
+		if (field.type === 'multiline') {
+			return (field.label ? '<label class="link-dialog__label" for="' + fieldId + '">' + _escHtml(field.label) + '</label>' : '') +
+				'<textarea id="' + fieldId + '" class="link-dialog__input link-dialog__input--multiline" data-field="' + index + '" spellcheck="false" ' +
+				(field.label ? '' : 'aria-label="' + _escAttr(opts.title || '') + '" ') +
+				'autocapitalize="off" autocorrect="off" rows="8" placeholder="' + _escAttr(field.placeholder || '') + '">' + _escHtml(field.value || '') + '</textarea>';
+		}
 		return '<label class="link-dialog__label" for="' + fieldId + '">' + _escHtml(field.label) + '</label>' +
 					 '<input id="' + fieldId + '" type="text" class="link-dialog__input" data-field="' + index + '" spellcheck="false" ' +
 					 'autocapitalize="off" autocorrect="off" placeholder="' + _escAttr(field.placeholder || '') + '" value="' + _escAttr(field.value || '') + '" />';
@@ -17263,6 +17461,7 @@ function _openFieldDialog(opts) {
 	}
 	overlay.addEventListener('keydown', function (event) {
 		if (event.isComposing || event.keyCode === 229) return;
+		if (event.key === 'Enter' && event.target.tagName === 'TEXTAREA' && !(event.ctrlKey || event.metaKey)) return;
 		if (event.key === 'Enter' && !['SELECT', 'BUTTON'].includes(event.target.tagName) && !['checkbox', 'radio'].includes(event.target.type)) { event.preventDefault(); submit(); }
 	});
 	overlay.addEventListener('click', function (event) {
@@ -19350,6 +19549,7 @@ function _notifyDirtyState() {
 	const dirty = _rapierIsDirty();
 	_rapierBackHold();
 	renderFilename();
+	if (dirty && typeof _rapierCarriedKeepHint === 'function') _rapierCarriedKeepHint();
 	_rapierWebMcpSync();
 	_rapierEmbedPublishState();
 	if (window.RapierPlatform && window.RapierPlatform.host.publishDirty) {
@@ -19655,9 +19855,23 @@ function _rapierCompareWorkerMain() {
 			return compareJob({ ...arguments[0], from: undefined, coarse: true });
 		}
 	}
+	let marksHeld = null;
 	self.onmessage = function (event) {
-		const d = event.data || {};
+		let d = event.data || {};
 		if (d.type !== 'compare') return;
+		if (d.marks) {
+			const full = 'currentText' in d && 'incomingText' in d;
+			if (!full && (!marksHeld || d.marks.base !== marksHeld.token)) {
+				self.postMessage({ type: 'compare-result', jobId: d.jobId, status: 'stale' });
+				return;
+			}
+			const change = d.marks.change, held = marksHeld;
+			const before = 'currentText' in d ? String(d.currentText || '') : held.before;
+			const after = 'incomingText' in d ? String(d.incomingText || '') : change
+				? held.after.slice(0, change.start) + change.inserted + held.after.slice(change.start + change.removed) : held.after;
+			marksHeld = { token: d.marks.token, before, after };
+			d = { ...d, currentText: before, incomingText: after };
+		}
 		let result;
 		try { result = compareJob(d); }
 		catch (error) {
@@ -20468,7 +20682,8 @@ async function _rapierCompareReadPayload(payload) {
 		const page = await _rapierReadSharedDocument(payload.text, name);
 		parts = page || RapierLedgerCarried.readDocument(String(payload.text));
 		if (page) name = page.filename;
-		payload = {...payload, text: page ? page.source : parts.text};
+		const inner = page ? page.source : parts.text;
+		payload = {...payload, text: inner, admittedBytes: inner === String(payload.text) ? payload.admittedBytes : undefined};
 	} catch (error) { showToast(String(error.message), 'error'); return false; }
 
 	try { text = RapierTextCodec.normalizeDocument(payload.text, payload.admittedBytes); }
@@ -20532,11 +20747,6 @@ async function rapierCompareChooseFile() {
 		}
 		return;
 	}
-	if (platform && typeof platform.files.prepareChooser === 'function') {
-		try { await platform.files.prepareChooser('compare'); }
-		catch (_) { showToast('could not open the file picker', 'error'); return; }
-	}
-
 	renderCompareChooser();
 }
 
@@ -21561,6 +21771,9 @@ function _rapierFilenameExtension(filename) {
 	const match = /\.([A-Za-z0-9+]{1,16})$/.exec(String(filename || ''));
 	return match ? match[1].toLowerCase() : '';
 }
+function _rapierExportStem(filename) {
+	return String(filename || '').replace(/\.rapier\.html$/i, '').replace(/\.[a-z0-9]+$/i, '') || 'document';
+}
 function _rapierMediaTypeForFilename(filename) {
 	const extension = _rapierFilenameExtension(filename);
 
@@ -21821,6 +22034,8 @@ async function _rapierPerformSave(options) {
 async function _rapierPerformSaveWork(options) {
 	options = options || {};
 	const requested = _rapierMutationStamp(), requestedMetadata = _rapierGetDocumentMetadata();
+	const mayChooseType = (files = globalThis.RapierPlatform?.files) => rapier.document.docKind === 'markdown' && files?.savesChosenType === true &&
+		options.forceInPlace !== true && (options.forceSaveAs === true || rapier.identity.saveAsRequired === true || !files.hasWritable?.(String(rapier.identity.authority || '')));
 	const ownsRequested = () => _rapierMutationStampSharesDocument(requested) &&
 		requested.loadToken === Number(rapier.identity.loadToken || 0);
 	let fontsReady = false;
@@ -21841,12 +22056,13 @@ async function _rapierPerformSaveWork(options) {
 		const recovery = _rapierRecoveryBeforeUntouchedEdge(persistence);
 		recovery.carriedLedger = _rapierEmbedCaptureLedger(recovery);
 		const generation = Number(rapier.revision.generation || 0);
+		const page = /\.rapier\.html$/i.test(rapier.document.filename) || mayChooseType();
 		return {
 			persistence: _rapierSnapshotWithoutUntouchedEdge(persistence),
 			recovery,
-			ledger: /\.rapier\.html$/i.test(rapier.document.filename) || ['history', 'authorship'].includes(options.carried) ? _rapierLedgerCapture() : null,
+			ledger: page || ['history', 'authorship'].includes(options.carried) ? _rapierLedgerCapture() : null,
 			comparisonBase: globalThis.RapierAgentBrowser?.comparisonExport?.()?.base || null,
-			fontState: /\.rapier\.html$/i.test(rapier.document.filename) ? _rapierDocumentFonts.stateKey() : null,
+			fontState: page ? _rapierDocumentFonts.stateKey() : null,
 			metadata: _rapierGetDocumentMetadata(),
 			metadataHead: rapier.undo.ledger.findLast(row => RapierLedger._rapierRecordMetadata(row, rapier.undo.ledger)?.filename)?.transaction.id || null,
 			generation,
@@ -21901,7 +22117,7 @@ async function _rapierPerformSaveWork(options) {
 		return options.returnReceipt === true ? receipt : receipt.saved;
 	};
 	if (captured.value.ledger && metadata.docKind !== 'markdown' && !/\.rapier\.html$/i.test(metadata.saveName)) throw new Error('Use a shared web page to carry authorship or history with this document.');
-	const editablePage = /\.rapier\.html$/i.test(metadata.saveName);
+	let editablePage = /\.rapier\.html$/i.test(metadata.saveName);
 	const recoveryGuard = captured.value.recoveryGuard;
 
 	const boundInPlaceFile = !!(platform && platform.files.hasWritable &&
@@ -21915,19 +22131,36 @@ async function _rapierPerformSaveWork(options) {
 				code: 'requires_destination',
 			});
 		}
-		const serialized = editablePage ? await _rapierBuildEditablePage({canonical: String(persistenceSnapshot.canonicalText ?? ''),
-			metadata, ledger: captured.value.ledger, carried: 'history', comparisonBase: captured.value.comparisonBase}, {also: _rapierEditablePageKeeps()}) : null;
+		const writePage = async () => {
+			const serialized = await _rapierBuildEditablePage({canonical: String(persistenceSnapshot.canonicalText ?? ''),
+				metadata, ledger: captured.value.ledger, carried: 'history', comparisonBase: captured.value.comparisonBase}, {also: _rapierEditablePageKeeps()});
+			if (captured.value.fontState !== _rapierDocumentFonts.stateKey() || serialized.canonical !== String(persistenceSnapshot.canonicalText ?? ''))
+				throw Object.assign(new Error('the document changed while saving'), {code: 'document_changed'});
+			return serialized.blob;
+		};
+		const writePlain = () => new Blob([RapierLedgerCarried.writeDocument(payload, _rapierLedgerParts(payload, captured.value.ledger, options.carried))],
+			{type: /\.rapier\.html$/i.test(metadata.saveName) ? (metadata.docKind === 'markdown' ? 'text/markdown' : 'text/plain') : metadata.mime});
+		let blob;
+		try { blob = editablePage ? await writePage() : null; }
+		catch (error) { if (error.code === 'document_changed') return settle('document-changed', false); throw error; }
 		if (!ownsRequested()) return settle('superseded', false);
-		if (editablePage && (captured.value.fontState !== _rapierDocumentFonts.stateKey() ||
-				serialized.canonical !== String(persistenceSnapshot.canonicalText ?? ''))) return settle('document-changed', false);
-		const blob = serialized ? serialized.blob
-			: new Blob([RapierLedgerCarried.writeDocument(payload, _rapierLedgerParts(payload, captured.value.ledger, options.carried))], {type: metadata.mime});
+		const plain = blob ? null : writePlain();
+		if (mode === 'saveas' && options.forceInPlace !== true && captured.value.ledger && captured.value.fontState != null &&
+				metadata.docKind === 'markdown' && platform?.files.savesChosenType === true) {
+			const chosen = blob || plain;
+			blob = async name => {
+				editablePage = /\.rapier\.html$/i.test(name);
+				if (editablePage) return chosen === plain ? await writePage() : chosen;
+				return chosen === plain ? plain : writePlain();
+			};
+		} else blob = blob || plain;
 		let rawResult;
 		const platformOptions = {
 			beforeWrite: recoveryGuard,
 			check: () => options.signal?.throwIfAborted(),
 
 			requireExistingDestination: options.forceInPlace === true,
+			nameTaken: !!saveAuthority && typeof _rapierCarriedKeep !== 'undefined' && _rapierCarriedKeep.authority === saveAuthority,
 			documentAuthority: saveAuthority,
 			documentGeneration: saveGeneration,
 			documentRevision: saveRevision,
@@ -21969,7 +22202,8 @@ async function _rapierPerformSaveWork(options) {
 				return settle('dispatched', false, result);
 			}
 			if (options.quiet !== true) {
-				showToast('downloaded; kept here until you confirm the file', 'info');
+				showToast(rawResult?.downloadName ? 'Downloaded ' + rawResult.downloadName + '. Your changes are in it.'
+					: 'downloaded; kept here until you confirm the file', 'info');
 			}
 			return settle('downloaded', false, result, metadata.saveName);
 		}
@@ -22163,6 +22397,7 @@ function rapierSave(options = {}) {
 			if (!forced && !_rapierMutationBarrierActive() &&
 					!rapier.composition.block && !rapier.composition.source && !_rapierIsDirty() &&
 					_rapierDocumentFonts.isPrepared(_rapierSourceText())) {
+				if (requestOptions.quiet !== true) showToast('Already saved.', 'info');
 				if (requestOptions.returnReceipt !== true) return true;
 				const metadata = _rapierGetDocumentMetadata();
 				return Object.freeze({
@@ -22285,7 +22520,7 @@ function _rapierStripPlainLayoutFacts(root) {
 function _rapierBuildInterchangeContext(options, capturedDocument = null, preparedRoot = null) {
 	const canonical = capturedDocument ? String(capturedDocument.canonical || '') : _rapierGetCanonicalText();
 	const metadata = capturedDocument?.metadata || _rapierGetDocumentMetadata();
-	const baseName = metadata.filename.replace(/\.[a-z0-9]+$/i, '') || 'document';
+	const baseName = _rapierExportStem(metadata.filename);
 	const plain = options?.kind === 'page' ? false : capturedDocument ? capturedDocument.plain === true : _rapierPlainLayout();
 	const semanticRoot = preparedRoot || _rapierRenderModule('render-markdown')._rapierRenderSemanticRoot(canonical, metadata);
 	if (plain) _rapierStripPlainLayoutFacts(semanticRoot);
@@ -22552,7 +22787,7 @@ async function rapierCopy(kind, suppliedCapture = null) {
 
 	const renderer = _rapierRenderModule('render-markdown');
 	const payload = await renderer._rapierClipboardPayloadAsync(canonical, metadata, {
-		baseName: metadata.filename.replace(/\.[a-z0-9]+$/i, '') || 'document', formatted: requested === 'formatted', work,
+		baseName: _rapierExportStem(metadata.filename), formatted: requested === 'formatted', work,
 		materialize: async root => {
 			try { await globalThis.RapierEmbeddedImages.materialize(root, canonical, null, {signal: task.signal, work, progress: fraction => work.onProgress(.6 + .1 * fraction)});
 				await _rapierDocumentObjects.materialize(canonical, {root, signal: task.signal, strict: true}); }
@@ -22900,11 +23135,13 @@ async function _rapierBuildEditorExport(action, expected = {}, options = {}) {
 	let captured = options.captured || await _rapierCaptureSettledExternalDocument({quiet: true, passive: true});
 	if (cancelled()) throw cancellation();
 	if (!captured) throw _rapierDocumentNotSettledError('export this document');
-	const current = () => !cancelled() && options.current?.() !== false && _rapierMutationStampIsCurrent(captured.stamp) &&
-		(typeof expected.expectedText !== 'string' || captured.canonical === expected.expectedText);
+	const settled = captured;
+	const current = () => !cancelled() && options.current?.() !== false && _rapierMutationStampIsCurrent(settled.stamp) &&
+		(typeof expected.expectedText !== 'string' || settled.canonical === expected.expectedText);
 	const stale = () => Object.assign(new Error('The document changed before its export finished. Request the export again.'), {code: 'stale_context'});
 	const check = () => { if (cancelled()) throw cancellation(); if (!current()) throw stale(); };
 	check();
+	if (typeof options.part === 'string') captured = {...captured, canonical: options.part, comparisonBase: null, wordComparison: null};
 	captured = {...captured, work: captured.work || {signal: options.signal, onProgress: options.onProgress, yield: async () => {
 		check(); await _rapierYieldUserVisibleWork(); check();
 	}}};
@@ -22970,7 +23207,7 @@ async function _rapierCreateDocxArtifact(suppliedCapture = null) {
 
 async function _rapierPerformDocxAction() {
 	let captured;
-	const task = _rapierProgressTask({label: 'Exporting Word', size: rapier.document.source.length, current: () => !captured?.stamp || _rapierMutationStampIsCurrent(captured.stamp)});
+	const task = _rapierProgressTask({leaves: true, label: 'Exporting Word', size: rapier.document.source.length, current: () => !captured?.stamp || _rapierMutationStampIsCurrent(captured.stamp)});
 	const work = task;
 	try {
 		await task.yield(0);
@@ -23127,9 +23364,10 @@ function _rapierCreatePrintHost(artifact) {
 }
 
 async function rapierExport(fmt) {
+	if (typeof _rapierMoveOn === 'function') _rapierMoveOn();
 	if (fmt === 'docx') return _rapierExportDocx();
 	let captured, requested, requestedFilename, destination, exportTo;
-	const task = _rapierProgressTask({label: fmt === 'pdf' ? 'Exporting PDF' : fmt === 'txt' ? 'Exporting text' : /publishing|fragment/.test(fmt) ? 'Exporting HTML' : 'Exporting web page',
+	const task = _rapierProgressTask({leaves: true, label: fmt === 'pdf' ? 'Exporting PDF' : fmt === 'txt' ? 'Exporting text' : /publishing|fragment/.test(fmt) ? 'Exporting HTML' : 'Exporting web page',
 		size: rapier.document.source.length, current: () => (!requested ||
 			_rapierMutationStampSharesDocument(requested) && requested.loadToken === Number(rapier.identity.loadToken || 0)) &&
 			(!captured?.stamp || _rapierMutationStampIsCurrent(captured.stamp))});
@@ -23139,13 +23377,13 @@ async function rapierExport(fmt) {
 		if ((fmt === 'html' || fmt === 'html-standalone') && typeof prepare === 'function') {
 			requested = _rapierMutationStamp();
 			requestedFilename = _rapierGetDocumentMetadata().filename;
-			const filename = (requestedFilename.replace(/\.[a-z0-9]+$/i, '') || 'document') + '.html';
+			const filename = _rapierExportStem(requestedFilename) + '.html';
 			destination = Promise.resolve(prepare(filename)).then(value => ({value}), error => ({error}));
 		}
 		await task.yield(0);
-		captured = await _rapierCaptureSettledExternalDocument();
+		captured = await _rapierCaptureSettledExternalDocument(fmt === 'html-editor' ? {carried: 'history'} : null);
 		if (!captured) return false;
-		captured = {...captured, work};
+		captured = {...captured, work, ...(fmt === 'html-editor' ? {carried: 'none'} : {})};
 		task.check();
 		if (destination) {
 			const selected = await destination;
@@ -25146,6 +25384,21 @@ function _rapierOfferUnreadRecovery() {
 			_rapierOfferUnreadRecovery();
 		},
 	});
+	const shown = document.getElementById('toast-root')?.lastElementChild;
+	if (shown) shown.dataset.rapierUnreadOffer = '1';
+}
+
+async function _rapierRetryUnreadRecoveryQuietly() {
+	try {
+		const recovery = await _rapierReadBootRecovery({}, {manual: true});
+		if (!_rapierPersistenceRuntime.recoveryHeld || recovery.selection.candidate || !recovery.readable || _rapierPersistenceRuntime.historyUnavailable) return false;
+		if (_rapierHeldRecoveries(await _rapierReadDbState(await openRapierDB(), 'held')).length || !_rapierPersistenceRuntime.recoveryHeld) return false;
+		_rapierPersistenceRuntime.recoveryHeld = false;
+		window.RapierBootAttempts?.release();
+		for (const element of document.querySelectorAll('#toast-root [data-rapier-unread-offer]')) element.remove();
+		_rapierScheduleToastLift();
+		return true;
+	} catch (error) { console.warn('[rapier] saved draft remains unread', error); return false; }
 }
 
 function _rapierRecoveryIsUntouchedWelcome(record) {
@@ -25650,30 +25903,30 @@ window.addEventListener('pagehide', function _rapierKeepDepartingDocument(event)
 	Promise.resolve(departure.completion).then(() => release?.(), () => release?.());
 });
 
-const BLOCK_TEMPLATES = {
-	heading:        '## heading',
-	paragraph:      '',
-	code:           '```\ncode here\n```',
-	diagram:        '```mermaid\nflowchart TD\n    A[Start] --> B[End]\n```',
-	'diagram-flowchart': '```mermaid\nflowchart TD\n    A[Start] --> B[End]\n```',
-	'diagram-sequence': '```mermaid\nsequenceDiagram\n    Alice->>Bob: hello\n```',
-	'diagram-mindmap': '```mermaid\nmindmap\n  root((idea))\n    branch\n```',
-	'diagram-timeline': '```mermaid\ntimeline\n    title History\n    2020 : start\n```',
-	'diagram-er':    '```mermaid\nerDiagram\n    A ||--o{ B : has\n```',
-	'diagram-gantt': '```mermaid\ngantt\n    title Plan\n    dateFormat YYYY-MM-DD\n    section Work\n    task : 2020-01-01, 7d\n```',
-	'diagram-blank': '```mermaid\n\n```',
-
-	table:          '|  |  |\n| --- | --- |\n|  |  |',
-	divider:        '---',
-	'divider-dash': '---',
-	'divider-stars':'***',
-	'divider-under':'___',
-	'page-break':   RAPIER_PAGE_BREAK_MARKER,
-	image:          '![alt text](url)',
-
-	checklist:      '- [ ] task',
-	details:        '<details>\n<summary>summary</summary>\n\ncontent here\n\n</details>',
-};
+function _rapierBlockTemplate(type) {
+	return ({
+		heading:        '## heading',
+		paragraph:      '',
+		code:           '```\ncode here\n```',
+		diagram:        '```mermaid\nflowchart TD\n    A[Start] --> B[End]\n```',
+		'diagram-flowchart': '```mermaid\nflowchart TD\n    A[Start] --> B[End]\n```',
+		'diagram-sequence': '```mermaid\nsequenceDiagram\n    Alice->>Bob: hello\n```',
+		'diagram-mindmap': '```mermaid\nmindmap\n  root((idea))\n    branch\n```',
+		'diagram-timeline': '```mermaid\ntimeline\n    title History\n    2020 : start\n```',
+		'diagram-er':    '```mermaid\nerDiagram\n    A ||--o{ B : has\n```',
+		'diagram-gantt': '```mermaid\ngantt\n    title Plan\n    dateFormat YYYY-MM-DD\n    section Work\n    task : 2020-01-01, 7d\n```',
+		'diagram-blank': '```mermaid\n\n```',
+		table:          '|  |  |\n| --- | --- |\n|  |  |',
+		divider:        '---',
+		'divider-dash': '---',
+		'divider-stars':'***',
+		'divider-under':'___',
+		'page-break':   RAPIER_PAGE_BREAK_MARKER,
+		image:          '![alt text](url)',
+		checklist:      '- [ ] task',
+		details:        '<details>\n<summary>summary</summary>\n\ncontent here\n\n</details>',
+	})[type] || '';
+}
 
 function _rapierInsertionAnchorBlockId() {
 	const wrapper = document.querySelector('.block-wrapper--editing') ||
@@ -25703,8 +25956,52 @@ function rapierInsertBlock(type, options) {
 
 	const extra = type === 'page-break' ? { noEdit: true } : selectWord ? { selectWord } : null;
 	const merged = extra ? { ...(options || {}), ...extra } : options;
-	if (_rapierInsertAtCaret(BLOCK_TEMPLATES[type] || '', merged)) return;
-	_insertBlockAfter(_rapierInsertionAnchorBlockId(), BLOCK_TEMPLATES[type] || '', merged);
+	const raw = _rapierBlockTemplate(type);
+	if (_rapierInsertAtCaret(raw, merged)) return;
+	_insertBlockAfter(_rapierInsertionAnchorBlockId(), raw, merged);
+}
+
+const RAPIER_HTML_BLOCK_MAX = 4 * 1024 * 1024;
+function _rapierHtmlBlockRaw(html) {
+	const text = String(html || '').replace(/\r\n?/g, '\n').replace(/^\n+|\s+$/g, '');
+	const fence = '`'.repeat(Math.max(3, ...[...text.matchAll(/`+/g)].map(run => run[0].length + 1)));
+	return fence + 'html {height=auto}\n' + text + '\n' + fence;
+}
+function _rapierPlaceHtmlBlock(anchor, stamp, html) {
+	const text = String(html || '');
+	if (!text.trim()) return false;
+	if (new TextEncoder().encode(text).length > RAPIER_HTML_BLOCK_MAX) { showToast('That HTML is over 4 MB', 'error'); return false; }
+	if (!_rapierMutationStampSharesDocument(stamp)) { showToast('The document changed; add the HTML again', 'info'); return false; }
+	_insertBlockAfter(anchor, _rapierHtmlBlockRaw(text), { noEdit: true });
+	return true;
+}
+function rapierInsertHtmlBlock() {
+	if (_rapierUserMutationBlocked()) return;
+	_rapierRestoreToolbarSelection();
+	const anchor = _rapierInsertionAnchorBlockId(), stamp = _rapierMutationStamp();
+	_openFieldDialog({title: 'HTML block', okLabel: 'Add',
+		fields: [{type: 'multiline', placeholder: '<div>…</div>'}],
+		onOk: values => { _rapierPlaceHtmlBlock(anchor, stamp, values[0]); }});
+}
+function rapierInsertHtmlFile() {
+	if (_rapierUserMutationBlocked()) return;
+	_rapierRestoreToolbarSelection();
+	const anchor = _rapierInsertionAnchorBlockId(), stamp = _rapierMutationStamp();
+	const input = document.createElement('input');
+	input.type = 'file'; input.accept = 'text/html,.html,.htm'; input.hidden = true;
+	document.body.appendChild(input);
+	input.addEventListener('change', async () => {
+		const file = input.files && input.files[0];
+		try {
+			if (!file) return;
+			if (file.size > RAPIER_HTML_BLOCK_MAX) { showToast('That HTML file is over 4 MB', 'error'); return; }
+			const record = await RapierTextCodec.readDocumentRecord(file);
+			_rapierPlaceHtmlBlock(anchor, stamp, record.text);
+		} catch (error) { showToast(_rapierDocumentReadError(error, 'could not read that HTML file'), 'error'); }
+		finally { input.remove(); }
+	}, { once: true });
+	input.addEventListener('cancel', () => input.remove(), { once: true });
+	input.click();
 }
 
 function _rapierInsertAtCaret(raw, options) {
@@ -26313,11 +26610,6 @@ function _rapierOpenImagePreview() {
 
 	openDialog(preview);
 }
-async function _rapierPrepareFileChooser(purpose) {
-	const prepare = window.RapierPlatform?.files?.prepareChooser;
-	if (typeof prepare !== 'function') return;
-	try { await prepare(purpose); } catch (_) {}
-}
 async function _rapierChooseRasterFile(target, defaultAlt, options) {
 	if (_rapierUserMutationBlocked()) return false;
 	const stamp = _rapierMutationStamp();
@@ -26338,7 +26630,6 @@ async function _rapierChooseRasterFile(target, defaultAlt, options) {
 	}, { once: true });
 	input.addEventListener('cancel', () => input.remove(), { once: true });
 
-	await _rapierPrepareFileChooser('image');
 	input.click();
 	return true;
 }
@@ -27609,6 +27900,7 @@ function _maybeAutoConvert(editDiv, block, options = null) {
 			decision = _rapierTypedBlock(head.slice(0, end + 1), 'space', where);
 			if (decision) at = end + 1;
 		}
+		if (decision?.kind === 'ul' && /^\[[ xX]?\]$/.test(head.slice(at))) decision = null;
 	}
 	if (decision && enter && tail.replace(/\u00a0/g, ' ').trim()) return false;
 	let runEnd = markOnly ? offset : offset - 1, mark = null;
@@ -28726,6 +29018,18 @@ function _rapierBuildPastePlan(context, pastedBlocks, model = null) {
 	}
 
 	if (!entries.length || caretIndex < 0) return null;
+	const following = documentModel.blocks[context.startIndex + context.replaceCount];
+	const listMarker = raw => /^( {0,3})([-*+]|\d{1,9}([.)]))[ \t]/.exec(String(raw || ''));
+	const tailMarker = pasted.length > 1 && caretIndex === entries.length - 1 && !pasteTail ? listMarker(entries[caretIndex].raw) : null;
+	const nextMarker = tailMarker && following && !/\n[ \t]*\n/.test(entries[caretIndex].raw) ? listMarker(following.raw) : null;
+	if (nextMarker && nextMarker[1] === tailMarker[1] && (tailMarker[3] ? nextMarker[3] === tailMarker[3] : nextMarker[2] === tailMarker[2]) &&
+			!/\n[ \t]*\n/.test(String(following.raw || '').split('\n').slice(0, 2).join('\n'))) {
+		entries[caretIndex].raw += '\n' + following.raw;
+		const history = _rapierHistoryBlock(following);
+		context = {...context, replaceCount: context.replaceCount + 1, endBlock: following,
+			blocksBefore: [...(context.blocksBefore || []), history],
+			...(context.provisionalBefore ? {provisionalBefore: [...context.provisionalBefore, history]} : {})};
+	}
 	if (model) entries.forEach((entry, index) => {
 		if (context.startIndex + index > 0 && typeof entry.leading !== 'string') entry.leading = _rapierBlockSeparator(model);
 	});
@@ -29606,6 +29910,60 @@ function _rapierWysiwygLedgerApplyFoldVisibility(wrappers) {
 	return true;
 }
 let _rapierLoadLap = null;
+function _rapierWysiwygLedgerEntrySync(block) {
+	const id = String(block.id);
+	const renderHidden = _rapierWysiwygRenderHidden(block);
+	const entry = _rapierWysiwygLedger.entries.get(id);
+	if (entry?.wrapper?._rapierUnrendered) block.rendered = null;
+	if (!entry) _rapierWysiwygLedger.entries.set(id, {
+		estimate: renderHidden ? 0 : _rapierWysiwygEstimate(block.raw), measured: renderHidden ? 0 : _rapierWysiwygRememberedHeight(block.raw),
+		foldedHidden: false, renderHidden, wrapper: null, raw: block.raw,
+	});
+	else {
+		const same = entry.raw === block.raw && entry.renderHidden === renderHidden;
+		entry.renderHidden = renderHidden;
+		if (!same) {
+			if (entry.raw !== block.raw) { entry.raw = block.raw; entry.measured = renderHidden ? 0 : _rapierWysiwygRememberedHeight(block.raw); }
+			if (!entry.measured) entry.estimate = renderHidden ? 0 : _rapierWysiwygEstimate(block.raw);
+		}
+		if (entry.wrapper?.isConnected) {
+			const intrinsic = Math.max(1, _rapierWysiwygLedgerEntryHeight(entry));
+			if (entry.intrinsic !== intrinsic) {
+				_rapierWysiwygWriteIntrinsic(entry.wrapper, intrinsic);
+				entry.intrinsic = intrinsic;
+			}
+		}
+	}
+}
+function _rapierWysiwygLedgerReleaseDetached(host, keepGroups) {
+	for (const wrapper of _rapierWysiwygLedger.materialized) {
+		const parent = wrapper.parentElement;
+		if (!wrapper.isConnected || parent !== host && !(keepGroups && parent?.parentElement === host && parent.classList.contains('block-sleep-group')))
+			_rapierReleaseBlockProjection(wrapper);
+	}
+}
+function _rapierWysiwygLedgerMaterialize(wrapper) {
+	if (!wrapper?.isConnected || wrapper._rapierUnrendered) return;
+	_rapierWysiwygLedger.materialized.add(wrapper);
+	_rapierObserveReadProjection(wrapper.querySelector(':scope > .block-read'));
+}
+function _rapierWysiwygLedgerSyncSplice(blocks, scope) {
+	const host = document.getElementById('editor-blocks');
+	if (!host || !blocks.length) return _rapierWysiwygLedgerSync(blocks, {keepGroups: true});
+	const placed = new Set(scope.blocks.map(block => String(block.id)));
+	for (const id of scope.removedIds) if (!placed.has(String(id))) _rapierWysiwygLedger.entries.delete(String(id));
+	scope.blocks.forEach(_rapierWysiwygLedgerEntrySync);
+	const order = blocks.map(block => String(block.id));
+	if (_rapierWysiwygLedger.entries.size !== order.length) return _rapierWysiwygLedgerSync(blocks, {keepGroups: true});
+	_rapierWysiwygLedgerReleaseDetached(host, true);
+	for (const block of scope.blocks) _rapierWysiwygLedgerMaterialize(_rapierWysiwygLedger.entries.get(String(block.id))?.wrapper);
+	_rapierWysiwygLedger.order = order;
+	_rapierWysiwygLedger.window = null;
+	_rapierSyncDocumentRhythm(host, null, scope.inserted.concat(scope.edges));
+	_rapierWysiwygLedgerRebuild();
+	_rapierWysiwygConfigureVirtualization(host, blocks);
+	_rapierPlaceScrollFabs();
+}
 function _rapierWysiwygLedgerSync(blocks, {keepGroups = false} = {}) {
 	const host = document.getElementById('editor-blocks');
 	if (!keepGroups) _rapierUnpackSleepGroups(host);
@@ -29614,42 +29972,9 @@ function _rapierWysiwygLedgerSync(blocks, {keepGroups = false} = {}) {
 	const order = blocks.map(block => String(block.id));
 	const keep = new Set(order);
 	_rapierWysiwygLedger.entries.forEach((_entry, id) => { if (!keep.has(id)) _rapierWysiwygLedger.entries.delete(id); });
-	blocks.forEach(block => {
-		const id = String(block.id);
-		const renderHidden = _rapierWysiwygRenderHidden(block);
-		const entry = _rapierWysiwygLedger.entries.get(id);
-		if (entry?.wrapper?._rapierUnrendered) block.rendered = null;
-		if (!entry) _rapierWysiwygLedger.entries.set(id, {
-			estimate: renderHidden ? 0 : _rapierWysiwygEstimate(block.raw), measured: renderHidden ? 0 : _rapierWysiwygRememberedHeight(block.raw),
-			foldedHidden: false, renderHidden, wrapper: null, raw: block.raw,
-		});
-		else {
-			const same = entry.raw === block.raw && entry.renderHidden === renderHidden;
-			entry.renderHidden = renderHidden;
-			if (!same) {
-				if (entry.raw !== block.raw) { entry.raw = block.raw; entry.measured = renderHidden ? 0 : _rapierWysiwygRememberedHeight(block.raw); }
-				if (!entry.measured) entry.estimate = renderHidden ? 0 : _rapierWysiwygEstimate(block.raw);
-			}
-			if (entry.wrapper?.isConnected) {
-				const intrinsic = Math.max(1, _rapierWysiwygLedgerEntryHeight(entry));
-				if (entry.intrinsic !== intrinsic) {
-					_rapierWysiwygWriteIntrinsic(entry.wrapper, intrinsic);
-					entry.intrinsic = intrinsic;
-				}
-			}
-		}
-	});
-	for (const wrapper of _rapierWysiwygLedger.materialized) {
-		const parent = wrapper.parentElement;
-		if (!wrapper.isConnected || parent !== host && !(keepGroups && parent?.parentElement === host && parent.classList.contains('block-sleep-group')))
-			_rapierReleaseBlockProjection(wrapper);
-	}
-	for (const entry of _rapierWysiwygLedger.entries.values()) {
-		const wrapper = entry.wrapper;
-		if (!wrapper?.isConnected || wrapper._rapierUnrendered) continue;
-		_rapierWysiwygLedger.materialized.add(wrapper);
-		_rapierObserveReadProjection(wrapper.querySelector(':scope > .block-read'));
-	}
+	blocks.forEach(_rapierWysiwygLedgerEntrySync);
+	_rapierWysiwygLedgerReleaseDetached(host, keepGroups);
+	for (const entry of _rapierWysiwygLedger.entries.values()) _rapierWysiwygLedgerMaterialize(entry.wrapper);
 	if (lap) lap('ledger.entries');
 	_rapierWysiwygLedger.order = order;
 	_rapierWysiwygLedger.window = null;
@@ -29812,6 +30137,7 @@ function _rapierWysiwygRenderWindow(centerIndex, approachViewports = _RAPIER_APP
 		if (_rapierWysiwygWrapsAround(entry)) first = index;
 		reachBack += _rapierWysiwygLedgerEntryHeight(entry);
 	}
+	for (const wrapper of globalThis.RapierImageFlow?.windowWrappers?.(first, last) || []) held.add(wrapper);
 	for (const wrapper of Array.from(_rapierWysiwygLedger.materialized)) {
 		const index = _rapierWysiwygLedger.indexById.get(String(wrapper.dataset.blockId));
 		if (index == null || index < first || index > last || wrapper.hidden)
@@ -30278,6 +30604,8 @@ function _rapierJumpToRenderedHeading(targetId, blockId, travelTicket = null) {
 			if (!initialTarget) return;
 			const destination = _rapierTravelDestinationForElement(initialTarget);
 			const wrapper = initialTarget.closest('.block-wrapper');
+			rapier.view.caret = null;
+			host._rapierLastPress = null;
 			_rapierRevealSectionForWrapper(wrapper);
 			const tabIndexOwnership = _rapierOwnTemporaryTabIndex(initialTarget, '-1');
 			_rapierFocusAfterNavigatorClose(resolveTarget, {
@@ -30689,11 +31017,9 @@ function _rapierOutlineDragStart(event) {
 		const box = list.getBoundingClientRect(), origin = drag.origin;
 		Object.assign(drag.mark.style, { top: (best.y - 2 - origin.top) + 'px', left: (box.left - origin.left) + 'px', width: box.width + 'px' });
 	};
-	const tick = () => {
+	const tick = now => {
 		drag.frame = 0;
-		const area = list.getBoundingClientRect(), edge = 40;
-		const push = drag.y < area.top + edge ? drag.y - area.top - edge : drag.y > area.bottom - edge ? drag.y - area.bottom + edge : 0;
-		if (push) list.scrollTop += Math.max(-16, Math.min(16, push / 2));
+		const push = _rapierDragEdgeScroll(list, drag, now);
 		place();
 		if (push) drag.frame = requestAnimationFrame(tick);
 	};
@@ -30992,6 +31318,7 @@ const _RAPIER_COMMAND_ICONS = Object.freeze({
 	'chevron-right': '<polyline points="9 18 15 12 9 6"/>',
 	'chevron-down': '<polyline points="6 9 12 15 18 9"/>',
 	'line-solid': '<line x1="3" y1="12" x2="21" y2="12"/>',
+	upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>',
 	'line-dots': '<circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none"/>',
 	'line-double': '<line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/>',
 	'line-dashed': '<line x1="3" y1="12" x2="21" y2="12" stroke-dasharray="3.2 2.6"/>',
@@ -31028,6 +31355,7 @@ const RAPIER_COMMAND_FAMILIES = Object.freeze({
 	alert: Object.freeze({ label: 'Alert', icon: 'alert-circle' }),
 	code: Object.freeze({ label: 'Code', icon: 'code' }),
 	diagram: Object.freeze({ label: 'Diagram', icon: 'diagram' }),
+	html: Object.freeze({ label: 'HTML', icon: 'layout' }),
 });
 function _rapierWillG() {
 	return '<path d="M3 5l3.6 14L12 8l5.4 11L21 5"/>';
@@ -31139,6 +31467,10 @@ const RAPIER_COMMANDS = Object.freeze([
 		keywords: ['code span', 'monospace', 'inline code', 'code'], mutates: true, run: () => rapierFmt('code') },
 	{ id: 'insert.code-block', label: 'Block', family: 'code', group: 'insert', icon: 'terminal', glyph: '</>',
 		keywords: ['fence', 'snippet', 'code block', 'code'], mutates: true, run: () => rapierInsertBlock('code') },
+	{ id: 'insert.html', label: 'Type or paste', family: 'html', group: 'insert', icon: 'code', glyph: '<>',
+		keywords: ['html', 'html block', 'embed', 'paste html', 'web', 'card', 'widget'], mutates: true, run: () => rapierInsertHtmlBlock() },
+	{ id: 'insert.html-file', label: 'Upload file', family: 'html', group: 'insert', icon: 'upload', glyph: '↑',
+		keywords: ['html', 'html file', 'upload', 'import html', 'embed', 'web page'], mutates: true, run: () => rapierInsertHtmlFile() },
 	{ id: 'insert.diagram', label: 'Flowchart', family: 'diagram', group: 'insert', icon: 'diagram', glyph: '◇',
 		keywords: ['diagram', 'flowchart', 'graph', 'map'], mutates: true, run: () => rapierInsertBlock('diagram-flowchart') },
 	{ id: 'insert.diagram-sequence', label: 'Sequence', family: 'diagram', group: 'insert', icon: 'diagram', glyph: '◇',
@@ -34074,12 +34406,24 @@ async function _rapierBootSetAside(context, incomingText) {
 	if (incomingText != null && candidateText === String(incomingText)) return false;
 	if (_rapierRecoveryIsUntouchedWelcome(candidate) || candidateText === rapierWelcomeMarkdown()) return false;
 	const parked = await _rapierParkHeldRecovery(candidate, { setAside: true });
+	if (parked) context.setAside = parked;
 	if (context.documentConsumed || context.handledShortcut) return true;
 	if (!parked) {
 		showToast('Rapier could not set aside the unsaved work in "' + (candidate.filename || 'untitled.md') + '", so it opened that instead.', 'error');
 		return true;
 	}
 	return false;
+}
+
+async function _rapierBootKeepSetAsideOnce(context, opened) {
+	const parked = context?.setAside;
+	if (!parked || opened !== false || context.documentConsumed) return;
+	context.setAside = null;
+	try {
+		const recovery = await _rapierReadBootRecovery({}, {manual: true});
+		const candidate = recovery.selection?.candidate;
+		if (candidate && String(candidate.text || '') === parked.canonicalText) await _rapierClearHeldRecovery(parked);
+	} catch (error) { console.warn('[rapier] could not take back the set-aside copy', error); }
 }
 
 async function _rapierConsumeFileLaunch(context) {
@@ -34099,6 +34443,7 @@ async function _rapierConsumeFileLaunch(context) {
 	const opened = context ? await _rapierBootOpenPayload(context, result.payload, {outgoingSettled: true})
 		: await rapierOpenPlatformPayload(result.payload, {outgoingSettled: false});
 	if (context && opened !== false) context.documentConsumed = true;
+	await _rapierBootKeepSetAsideOnce(context, opened);
 	return opened !== false;
 }
 
@@ -34199,7 +34544,9 @@ async function _rapierConsumePlatformInitial(context) {
 		const payload = initial && initial.kind === 'document' ? initial.file : null;
 		if (!payload || payload.text == null && !(payload.blob instanceof Blob)) return;
 		if (await _rapierBootSetAside(context, payload.text == null ? null : payload.text)) return;
-		context.documentConsumed = await _rapierBootOpenPayload(context, payload, { outgoingSettled: true });
+		const opened = await _rapierBootOpenPayload(context, payload, { outgoingSettled: true });
+		context.documentConsumed = opened !== false;
+		await _rapierBootKeepSetAsideOnce(context, opened);
 	} catch (error) {
 		console.warn('[rapier] platform intake failed', error);
 		showToast(_rapierDocumentReadError(error, 'could not open the incoming file', 'incoming file'), 'error');
@@ -34209,6 +34556,7 @@ async function _rapierConsumePlatformInitial(context) {
 async function _rapierConsumeEmbedInitial(context) {
 	if (!context.documentConsumed && _rapierEmbed.refused) {
 		const refused = document.getElementById('embed-refused');
+		_rapierUiUnfold(refused);
 		const message = document.getElementById('embed-refused-message');
 		if (message) {
 			message.textContent = 'Another site put Rapier in its page without asking. '
@@ -34319,6 +34667,7 @@ async function _rapierConsumeShareTarget(context) {
 							context.documentConsumed = true;
 							showToast('Opened "' + name + '" shared to Rapier.', 'info');
 						}
+						await _rapierBootKeepSetAsideOnce(context, opened);
 					}
 				}
 			} finally {
@@ -34432,6 +34781,24 @@ function _rapierSearchStarter() {
 	const starter = starters[path];
 	return starter ? {name: starter[0], text: starter[1]} : null;
 }
+async function _rapierGuideStarter() {
+	let path = '';
+	try { path = /^https?:$/.test(location.protocol) && window.self === window.top ? location.pathname.replace(/\/+$/, '') : ''; } catch (_) {}
+	const file = {'/agents': 'agents.md', '/gemini': 'gemini.md', '/markdown-standard': 'markdown-standard.md', '/will': 'will.md'}[path];
+	if (!file) return null;
+	try {
+		const response = await fetch('/docs/' + file, {cache: 'no-cache'});
+		if (!response.ok || !/^text\/(?:markdown|plain)\b/i.test(response.headers.get('content-type') || '')) return null;
+		const text = await response.text();
+		document.querySelector('#rapier-seo > h1')?.remove();
+		return {name: file, text};
+	} catch (_) { return null; }
+}
+async function _rapierOpenSiteStarter() {
+	const starter = _rapierSearchStarter() || await _rapierGuideStarter();
+	return starter ? rapierLoad(starter.text, starter.name, {virtualDocumentKind: 'welcome', opensClean: true}) : null;
+}
+
 function _rapierLoadBuiltInWelcome(options = null) {
 	return rapierLoad(rapierWelcomeMarkdown(), 'welcome.md', {
 		...(options || {}),
@@ -34500,11 +34867,12 @@ async function _rapierRestoreBootDocument(context) {
 			await _markSavedGeneration(loaded.generation, true, carried.text, loaded.documentRevision, filename, {
 				expectedEpoch: loaded.epoch, expectedAuthority: loaded.authority,
 			});
+			if (/\.rapier\.html$/i.test(filename) && typeof _rapierCarriedKeep !== 'undefined') _rapierCarriedKeep.authority = String(loaded.authority || '');
 			_rapierBindPageReturn(carried.return, {documentEpoch: loaded.epoch, documentAuthority: loaded.authority}, carried.return_expires_at);
 		}
-		else if (await (_rapierNotesDoor?.born ? rapierLoad('', 'untitled.md', {opensClean: true})
-			: _rapierSearchStarter() ? rapierLoad(_rapierSearchStarter().text, _rapierSearchStarter().name, {virtualDocumentKind: 'welcome', opensClean: true})
-			: _rapierLoadBuiltInWelcome()) === false) return false;
+		else if (await (_rapierNotesDoor?.born || typeof RAPIER_DRAW_START_IN_PAINT !== 'undefined' && RAPIER_DRAW_START_IN_PAINT &&
+				globalThis._rapierDrawDoorYielded !== true ? rapierLoad('', 'untitled.md', {opensClean: true})
+			: (await _rapierOpenSiteStarter()) ?? _rapierLoadBuiltInWelcome()) === false) return false;
 		if (_rapierBootSuperseded(context)) return false;
 		await _rapierOpenCarriedDrawing();
 		if (_rapierBootSuperseded(context)) return false;
@@ -34746,6 +35114,24 @@ document.addEventListener('visibilitychange', _rapierScheduleWriterLeaseRetry);
 
 const _rapierBootWatch = Object.seal({ timer: 0 });
 
+function _rapierBootWatchArm() {
+	let visibleSince = performance.now();
+	const look = () => {
+		if (!_rapierBootWatch.timer) return;
+		const left = 60000 - (performance.now() - visibleSince);
+		if (document.visibilityState === 'visible' && left <= 0) _rapierBootWatch.timer = setTimeout(() => {
+			if (!_rapierBootWatch.timer) return;
+			if (document.visibilityState === 'visible' && performance.now() - visibleSince >= 60000) _rapierUiFailBoot('The editor could not load its libraries.');
+			else look();
+		}, 1000);
+		else _rapierBootWatch.timer = setTimeout(look, Math.max(left, 1000));
+	};
+	const back = () => { if (document.visibilityState === 'visible') visibleSince = performance.now(); };
+	for (const type of ['visibilitychange', 'resume']) document.addEventListener(type, back);
+	window.addEventListener('pageshow', back);
+	_rapierBootWatch.timer = setTimeout(look, 60000);
+}
+
 function _rapierBootSteps() {
 	const incoming = 'A document sent to Rapier did not open. Open it again.';
 	return {
@@ -34804,6 +35190,8 @@ function _rapierBootNotice(context) {
 		else if (words && !said.has(words)) showToast(words, 'error');
 		said.add(words);
 	}
+	if (context.missed.has('recovery') && !context.missed.has('lease') && !context.missed.has('restore') && !rapier.access.leaseReadOnly)
+		context.recoveryRetry = _rapierRetryUnreadRecoveryQuietly();
 }
 
 async function _rapierVendorsReady() {
@@ -34833,7 +35221,7 @@ async function _rapierBoot() {
 	});
 	started.observe(document.body, {attributes: true, attributeFilter: ['class']});
 	if (!await _rapierRuntimeReady) return;
-	_rapierBootWatch.timer = setTimeout(() => _rapierUiFailBoot('The editor could not load its libraries.'), 60000);
+	_rapierBootWatchArm();
 	const vendors = await _rapierVendorsReady();
 	if (!_rapierBootWatchdogDone() || !vendors) return;
 	if (!_rapierFrameAuthoritySideEffectsAllowed(_rapierEmbed.refused)) {
@@ -36207,6 +36595,14 @@ function _rapierHandleEnter(opts) {
 		}
 		const paragraph = range.collapsed && startEl.closest('blockquote > p');
 		if (paragraph && editDiv.contains(paragraph)) {
+			if (paragraph === quoteEl.firstElementChild && quoteEl.parentElement === editDiv && !quoteEl.matches('.callout') &&
+					paragraph.textContent.trim() && _charOffsetForRangePoint(paragraph, range.startContainer, range.startOffset) === 0) {
+				const above = document.createRange();
+				above.setStartBefore(quoteEl);
+				above.collapse(true);
+				_splitBlockAtCaret(editDiv, wrapper, block, above, { sourceCheckpointed: opts.sourceCheckpointed });
+				return true;
+			}
 			if (!paragraph.nextElementSibling && !paragraph.textContent.replace(/[ \u200b]/g, '').trim() && !paragraph.querySelector('img, input, math, .math-rendered')) {
 				paragraph.remove();
 				_splitBlockAtCaret(editDiv, wrapper, block, range, { sourceCheckpointed: opts.sourceCheckpointed });
@@ -37719,6 +38115,11 @@ function _rapierPasteCellsText(content, value) {
 		? {...content, text: _rapierPasteContent('plain', value)} : content;
 }
 
+function _rapierPasteSheetTables(prepared, original) {
+	return /<google-sheets-html-origin\b|\sdata-sheets-(?:root|value|formula)\b|urn:schemas-microsoft-com:office:excel|content=["']?(?:Excel\.Sheet|LibreOffice)/i.test(String(original || ''))
+		? String(prepared || '').replace(/<table\b/gi, '<table data-rapier-paste-sheet=""') : prepared;
+}
+
 function _rapierResolvePastePayload(payload) {
 	const value = payload || {};
 	const finish = content => _rapierPasteCellsText(_rapierPrepareInkPasteContent(content, value), value);
@@ -37734,7 +38135,7 @@ function _rapierResolvePastePayload(payload) {
 	if (decision !== 'html') return finish(decision === 'plain' ? grid() || _rapierPasteContent('plain', value) : decision ? _rapierPasteContent(decision, value) : null);
 	let markdown = '';
 	try {
-		const html = _rapierPreparePasteHtml(value.html);
+		const html = _rapierPasteSheetTables(_rapierPreparePasteHtml(value.html), value.html);
 		markdown = html.trim() ? String(turndown.turndown(html) || '').trim() : '';
 	} catch (_) {   }
 	if (markdown) return finish(_rapierPasteContent('html', value, markdown));
@@ -37846,7 +38247,7 @@ async function _rapierResolveLargePastePayload(payload, job) {
 	let conversionError = null;
 	for (const chunk of _rapierChunkPasteHtml(value.html)) {
 		try {
-			const prepared = _rapierPreparePasteHtml(chunk);
+			const prepared = _rapierPasteSheetTables(_rapierPreparePasteHtml(chunk), value.html);
 			const converted = prepared && turndown.turndown(prepared);
 			if (converted && converted.trim()) markdown.push(converted.trim());
 		} catch (error) {
@@ -38624,7 +39025,7 @@ function rapierRenameDocument(name) {
 }
 
 function _rapierFlushFlatIfDirty() {
-	if (rapier.document.docKind === 'markdown') return;
+	if (rapier.document.docKind === 'markdown' && rapier.view.mode !== 'source') return;
 	if (!_rapierSourceRuntime.flatDirty) return;
 	_rapierSourceRuntime.flatDirty = false;
 	rapierFlushDirty({ snapshot: true });
@@ -39095,27 +39496,36 @@ function _rapierSourceTextThrough(text, at) {
 }
 
 function _rapierSourceVisualOffset(ta, source, at, key) {
-	const win = _rapierHeavyRuntime.window, base = win?.startChar || 0;
+	const win = _rapierHeavyRuntime.window, base = win?.startChar || 0, value = ta.value;
 	const local = source.projectionOffsetFromSource(at, base);
-	const result = _rapierSourceLayout(ta, ta.value, layout => {
+	let from = 0, to = value.length;
+	if (local >= 0 && local <= value.length) {
+		const lineFrom = value.lastIndexOf('\n', local - 1) + 1, lineEnd = value.indexOf('\n', local);
+		from = key === 'ArrowUp' && lineFrom > 0 ? value.lastIndexOf('\n', lineFrom - 2) + 1 : lineFrom;
+		to = lineEnd < 0 ? value.length : lineEnd + 1;
+		if (key === 'ArrowDown' && lineEnd >= 0) { const after = value.indexOf('\n', to); to = after < 0 ? value.length : after + 1; }
+		if (from > 0 && parseFloat(getComputedStyle(ta).textIndent)) from = 0;
+	}
+	const text = from || to < value.length ? value.slice(from, to) : value, place = local - from;
+	const result = _rapierSourceLayout(ta, text, layout => {
 		if (!layout.wrapped && (key === 'Home' || key === 'End')) return null;
-		const row = layout.row(local);
-		if (key === 'Home') return row.start;
-		if (key === 'End') return row.end;
-		const goal = layout.point(local), down = key === 'ArrowDown';
-		const next = down ? row.end + (ta.value[row.end] === '\n' ? 1 : 0) : row.start - 1;
-		if (next < 0 || next > ta.value.length) return null;
-		const other = layout.row(next);
+		const row = layout.row(place);
+		if (key === 'Home') return from + row.start;
+		if (key === 'End') return from + row.end;
+		const goal = layout.point(place), down = key === 'ArrowDown';
+		const next = down ? row.end + (text[row.end] === '\n' ? 1 : 0) : row.start - 1;
+		if (from + next < 0 || from + next > value.length) return null;
+		const other = layout.row(next), lineStart = text.lastIndexOf('\n', other.start - 1) + 1;
 		let best = other.start, distance = Infinity;
-		const segments = new Intl.Segmenter(undefined, {granularity: 'grapheme'}).segment(ta.value);
+		const segments = new Intl.Segmenter(undefined, {granularity: 'grapheme'}).segment(text.slice(lineStart, other.end + 1));
 		for (const segment of segments) {
-			const pos = segment.index;
+			const pos = lineStart + segment.index;
 			if (pos < other.start) continue;
 			if (pos > other.end) break;
 			const dx = Math.abs(layout.point(pos).x - goal.x);
 			if (dx < distance) {best = pos; distance = dx;}
 		}
-		return best;
+		return from + best;
 	});
 	return result == null ? _rapierStepSourceOffset(source, at, key)
 		: source.sourceOffsetFromProjection(result, base, win?.endChar ?? source.length);
@@ -40058,7 +40468,7 @@ function _rapierSyncSingleLineHighlight() {
 	let _beforeInputTrusted = false;
 	let _beforeInputTicket = null;
 	let _flatHistoryTimer = null;
-	let _imeComposing = false;
+	let _imeComposing = false, _compositionField = null;
 	let _fastSingleLine = false;
 
 	function _resetFlatBurstState() {
@@ -40224,11 +40634,13 @@ function _rapierSyncSingleLineHighlight() {
 			? {start: 0, end: rapier.document.source.length, direction: ta.selectionDirection}
 			: _rapierHeavyRuntime.selection(ta);
 		_rapierHeavyRuntime.draft = _rapierHeavyRuntime.ticket({...selected, mode: rapier.view.mode});
+		_compositionField = {draft: _rapierHeavyRuntime.draft, start: ta.selectionStart, end: ta.selectionEnd, length: ta.value.length};
 		_imeComposing = _rapierHeavyRuntime.composing = rapier.composition.source = true;
 		if (_rapierSourceOverlayActive()) _armPlainCode();
 	}
 
 	function _handleCompositionEnd(event) {
+		_compositionField = null;
 		const draft = _rapierHeavyRuntime.draft;
 		_rapierHeavyRuntime.draft = null;
 		_imeComposing = _rapierHeavyRuntime.composing = rapier.composition.source = false;
@@ -40249,7 +40661,21 @@ function _rapierSyncSingleLineHighlight() {
 		return !_rapierHeavyRuntime.draft;
 	}
 
+	function _commitSourceCompositionOnBlur() {
+		const draft = _rapierHeavyRuntime.draft, field = _compositionField;
+		_compositionField = null;
+		if (draft && field && field.draft === draft && !rapier.access.readOnly) {
+			const length = ta.value.length - field.length + (field.end - field.start);
+			if (length >= 0 && field.start + length <= ta.value.length) {
+				_handleCompositionEnd({data: ta.value.slice(field.start, field.start + length)});
+				return;
+			}
+		}
+		_cancelSourceComposition();
+	}
+
 	function _cancelSourceComposition() {
+		_compositionField = null;
 		const draft = _rapierHeavyRuntime.draft;
 		_rapierHeavyRuntime.draft = null;
 		_imeComposing = _rapierHeavyRuntime.composing = rapier.composition.source = false;
@@ -40444,7 +40870,10 @@ function _rapierSyncSingleLineHighlight() {
 			_rapierHeavyEnsureState();
 		}
 
-		_rapierFlushFlatIfDirty();
+		if (rapier.document.docKind === 'markdown') setTimeout(() => {
+			if (generation === _rapierStatsRuntime.idleGeneration) _rapierFlushFlatIfDirty();
+		}, 0);
+		else _rapierFlushFlatIfDirty();
 		_releaseTypingPaint();
 		if (document.documentElement.dataset.linenumbers === 'on') {
 			_rapierScheduleGutterLabel();
@@ -40691,6 +41120,7 @@ function _rapierSyncSingleLineHighlight() {
 		if (rapier.document.docKind === 'markdown') {
 
 			rapierDirty();
+			_rapierSourceRuntime.flatDirty = true;
 			_rapierSourceRuntime.inputHotUntil = _rapierNow() + 100;
 		} else {
 			_rapierSourceRuntime.flatDirty = true;
@@ -40717,7 +41147,7 @@ function _rapierSyncSingleLineHighlight() {
 	}, { capture: true });
 	ta.addEventListener('compositionstart', _handleCompositionStart);
 	ta.addEventListener('compositionend', _handleCompositionEnd);
-	ta.addEventListener('blur', _cancelSourceComposition);
+	ta.addEventListener('blur', _commitSourceCompositionOnBlur);
 
 	let _tabReleasesFocus = false;
 
@@ -42092,7 +42522,11 @@ function rapierHandleBack() {
 		return true;
 	}
 
-	if (android) return notes?.captureToken ? false : _rapierLeaveAsk(_rapierNotesOwnTheDocument());
+	if (android) {
+		if (notes?.captureToken) return false;
+		if (_rapierTravelGo(-1)) return true;
+		return _rapierLeaveAsk(_rapierNotesOwnTheDocument());
+	}
 	if (_rapierTravelGo(-1)) return true;
 	return _rapierLeaveAsk();
 }
@@ -42252,9 +42686,12 @@ function _rapierBackHold() {
 			queued = true;
 			queueMicrotask(() => { queued = false; _rapierBackHold(); });
 		};
-		state.nativeBackObserver = new MutationObserver(refresh);
+		state.nativeBackObserver = new MutationObserver(records => {
+			const editor = document.getElementById('editor-blocks');
+			if (!editor || records.some(record => !editor.contains(record.target))) refresh();
+		});
 		state.nativeBackObserver.observe(document.body, {subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'hidden', 'open']});
-		for (const type of ['input', 'compositionstart', 'compositionend']) document.addEventListener(type, refresh, true);
+		for (const type of ['compositionstart', 'compositionend']) document.addEventListener(type, refresh, true);
 	}
 	const wrapper = rapier.view.activeWrapper;
 	const notes = _rapierNotesPart?.state;
@@ -45766,7 +46203,7 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(renderFile
 
 function _rapierUiFilenameParts() {
 	const name = String(rapier.document.filename || '');
-	const dot = name.lastIndexOf('.');
+	const dot = /.\.rapier\.html$/i.test(name) ? name.length - 12 : name.lastIndexOf('.');
 	return { name, base: dot > 0 ? name.slice(0, dot) : name, extension: dot > 0 ? name.slice(dot + 1) : '' };
 }
 
@@ -46010,8 +46447,14 @@ function _rapierUiLower(overlay) {
 	overlay.setAttribute('aria-hidden', 'true');
 }
 
+// A sheet's long text (licenses, privacy, commercial terms, the import list) waits in templates (editor/ui.html
+function _rapierUiUnfold(overlay) {
+	for (const later of overlay?.querySelectorAll('template[data-rapier-later]') || []) later.replaceWith(later.content);
+}
+
 function openDialog(overlay, options = {}) {
 	if (!overlay) return false;
+	_rapierUiUnfold(overlay);
 	_rapierUiRaise(overlay);
 	if (_rapierDialogRuntime.open.has(overlay)) return false;
 	const panel = options.panel ? overlay.querySelector(options.panel) : overlay;
@@ -46422,7 +46865,6 @@ async function _rapierStorageClearTemporary() {
 	_rapierUiSetSettingsOpen(true);
 	const generation = _rapierStorageBump();
 	const popup = _rapierStoragePopup('Clearing temporary files', () => {
-		if (_rapierStorageSameReply(generation, Number(section.dataset.generation))) _rapierStorageBump();
 		if (typeof host.storageCancel === 'function') host.storageCancel().catch(() => {});
 	});
 	let note = '';
@@ -46435,6 +46877,7 @@ async function _rapierStorageClearTemporary() {
 		else if (result && result.skipped && removedSome) note = 'Cleared ' + _rapierStorageFormatBytes(removed, false) + '. Some temporary files stayed.';
 		else if (result && result.skipped) note = _rapierStorageSkipped(result.skipped);
 		else if (result && result.cancelled && removedSome) note = 'Cleared ' + _rapierStorageFormatBytes(removed, false) + '. Clearing stopped.';
+		else if (result && result.cancelled) note = 'Clearing stopped';
 		else if (result && (result.partial || result.failures > 0) && Number.isSafeInteger(removed)) note = 'Cleared ' + _rapierStorageFormatBytes(removed, false) + '. Some temporary files stayed.';
 		else if (removedSome) note = 'Cleared ' + _rapierStorageFormatBytes(removed, false);
 		else note = 'Nothing to clear';
@@ -46501,7 +46944,9 @@ function renderSettings() {
 		button.disabled = button.dataset.value === 'off' && forced;
 	}
 
-	refs.primaryActions.hidden = embedded || typeof globalThis.RAPIER_PAIRED_DOCUMENT === 'string';
+	refs.primaryActions.hidden = typeof globalThis.RAPIER_PAIRED_DOCUMENT === 'string';
+	const newDocument = refs.primaryActions.querySelector('[data-action="new-document"]');
+	if (newDocument) newDocument.hidden = embedded;
 	refs.openChevron.hidden = !facts.recents || embedded;
 	refs.recentDrawer.hidden = !facts.recents || embedded;
 	refs.recentDrawer.dataset.open = _rapierUi.recentOpen ? 'true' : 'false';
@@ -46833,6 +47278,7 @@ function _rapierScheduleToastLift() {
 	_rapierToastLiftFrame = requestAnimationFrame(() => { _rapierToastLiftFrame = 0; root._rapierLiftAt = _rapierNow(); _rapierUpdateToastLift(); });
 }
 function _rapierUpdateToastLift() {
+	_rapierProgressFollowModal();
 	const model = _rapierTransientModel();
 	const root = document.getElementById('toast-root');
 	if (!root) return;
@@ -46917,6 +47363,7 @@ function _rapierUpdateToastLift() {
 		return {box, style};
 	};
 	const inDraw = !!root.closest('.rapier-draw-surface');
+	const modalHome = _rapierDialogRuntime.isolation.includes(root.parentElement) ? root.parentElement : null;
 	const collect = skip => {
 		const surfaces = [];
 		const inventory = model.surfaces.inventory;
@@ -46932,6 +47379,7 @@ function _rapierUpdateToastLift() {
 			const many = matches.length > 1;
 			for (let i = 0; i < matches.length; i++) {
 				if (matches[i].contains(root)) continue;
+				if (modalHome && modalHome.contains(matches[i])) continue;
 				const seen = painted(matches[i]);
 				if (!seen) continue;
 				const {box, style} = seen;
@@ -47868,6 +48316,7 @@ function renderConfirm(request) {
 
 	refs.confirmAccept.dataset.pop = request.destructive && !secondary ? 'destructive' : 'affirm';
 	refs.confirmSecondary.dataset.pop = request.destructive ? 'destructive' : 'affirm';
+	refs.confirmAccept.parentElement.toggleAttribute('data-pop-plain', !!request.plain && !request.destructive);
 	_rapierPopArrange(refs.confirmAccept.parentElement);
 }
 
@@ -47972,6 +48421,7 @@ function _rapierUiClosePrivacy(door) {
 
 function _rapierUiOpenLicenses() {
 	closeDialog(_rapierUi.refs.settingsOverlay);
+	_rapierUiUnfold(_rapierUi.refs.licensesOverlay);
 	renderLicenses();
 	openDialog(_rapierUi.refs.licensesOverlay, { panel: '.licenses-panel' });
 }
@@ -48201,7 +48651,6 @@ async function _rapierUiBeginOpenDocument(event) {
 		});
 		return;
 	}
-	await _rapierPrepareFileChooser('open');
 	refs.fileInput.click();
 }
 
@@ -48457,8 +48906,7 @@ const _RAPIER_UI_ACTIONS = Object.freeze({
 	'restore-open-file': async () => {
 		_rapierUiRestore.dismiss();
 		closeDialog(_rapierUi.refs.restoreModalOverlay);
-		await _rapierPrepareFileChooser('open');
-		_rapierUi.refs.fileInput.click();
+		await _rapierUiBeginOpenDocument();
 	},
 	'restore-continue': () => _rapierUiRestore.dismiss(),
 	'restore-dismiss': () => _rapierUiRestore.dismiss(),
@@ -48862,6 +49310,7 @@ function _rapierUiFailBoot(reason, error) {
 	_rapierBootstrapRuntime.failed = true;
 	_rapierBootReleaseAuthority();
 	_rapierApplyModalIsolation();
+	if (typeof _rapierBootFailureShow === 'function') _rapierBootFailureShow();
 	document.body.classList.add('rapier-boot-failed');
 	const detail = document.getElementById('rapier-boot-failure-detail');
 	if (detail) detail.textContent = reason + ' Reload to try again.';

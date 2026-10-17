@@ -144,12 +144,18 @@ function prepareHistory(input) {
 	} catch (_) { return historyFailure('history_invalid'); }
 }
 
+function settle(result, value) {
+	Object.defineProperty(result, 'initialSource', {value, writable: true, enumerable: true, configurable: true});
+	return value;
+}
+
 export function replayHistory(input) {
 	const prepared = prepareHistory(input);
 	if (!prepared.ok) return prepared;
-	const {source, initialSource, metadata, initialMetadata, revision, earliestRevision, complete, rows, effects} = prepared;
+	const {source, metadata, initialMetadata, revision, earliestRevision, complete, rows, effects} = prepared;
 	const acts = rows.filter(({record}) => !effects.pictures.has(record.transaction.id)).map(({record}) => historyAct(record, effects));
-	return {ok: true, source, initialSource, metadata: {...metadata}, initialMetadata: {...initialMetadata}, revision, earliestRevision, complete, acts,
+	return {ok: true, source, get initialSource() { return settle(this, prepared.initialSource); }, set initialSource(value) { settle(this, value); },
+		metadata: {...metadata}, initialMetadata: {...initialMetadata}, revision, earliestRevision, complete, acts,
 		effectiveActIds: effects.effectiveActIds.slice(), groups: groupHistoryActs(acts)};
 }
 
@@ -293,7 +299,8 @@ export function historyPlaces(input, blocks) {
 		for (const id of prepared.effects.references.get(record.transaction.id) || []) reversed.add(id);
 
 	for (const block of projected) block.acts.reverse();
-	return {ok: true, source: prepared.source, initialSource: prepared.initialSource, revision: prepared.revision,
+	return {ok: true, source: prepared.source, get initialSource() { return settle(this, prepared.initialSource); },
+		set initialSource(value) { settle(this, value); }, revision: prepared.revision,
 		earliestRevision: prepared.earliestRevision, complete: prepared.complete, acts, blocks: projected,
 		reversed: acts.filter(act => reversed.has(act.id)).map(act => act.id)};
 }

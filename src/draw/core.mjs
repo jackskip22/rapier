@@ -1804,7 +1804,8 @@ function _rapierDrawFindOrthogonalRoute(shape, recipe, occupied, rail, scene, op
 	};
 	const terminals = (point, name) => {
 		const box = obstacles.find(b => b.target.id === shape.bind?.[name]?.to);
-		const normal = box && _rapierDrawPortNormal(box.target, point, recipe);
+		const raw = box && _rapierDrawPortNormal(box.target, point, recipe);
+		const normal = raw && (Math.abs(raw[0]) >= Math.abs(raw[1]) ? [Math.sign(raw[0]) || 1, 0] : [0, Math.sign(raw[1])]);
 		const distance = normal && Math.min(...normal.map((n, axis) => Math.abs(n) < 1e-8 ? Infinity : ((axis ? n > 0 ? box.maxY : box.minY : n > 0 ? box.maxX : box.minX) - point[axis]) / n));
 		const ports = box ? [{point: point.map((v, axis) => v + normal[axis] * distance), axis: normal[0] === 0 ? 1 : normal[1] === 0 ? 0 : -1}] : [{ point, axis: -1 }];
 		if (box) for (const port of ports) for (const axis of [0, 1]) for (const edge of axis ? [box.minY, box.maxY] : [box.minX, box.maxX]) if (Math.abs(port.point[axis] - edge) < 1e-7) port.point[axis] = edge;
@@ -2712,6 +2713,11 @@ function _rapierDrawPlaceConnectorLabels(edges, scene, frames, paths, result, ap
 			blocked.push(...route.heads);
 		}
 		let best = null;
+		if (shape.labelPos != null) {
+			const label = layout(shape, entry, shape.labelPos, !!shape.labelBeside);
+			const hits = box => label.bounds.minX < box.maxX + 8 - 1e-7 && label.bounds.maxX > box.minX - 8 + 1e-7 && label.bounds.minY < box.maxY + 8 - 1e-7 && label.bounds.maxY > box.minY - 8 + 1e-7;
+			if (!blocked.some(hits)) { labels.push(label.bounds); continue; }
+		}
 		for (const beside of [false, true]) {
 			if (best) break;
 			for (const [index, segment] of geometry.segments.entries()) if (segment.length === 2) {
@@ -2881,7 +2887,7 @@ function _rapierDrawLayoutFigures(shapes, automatic, groups, existing, direction
 			if (!across && b && other !== target && owner.get(target.id) && owner.get(other.id) && owner.get(target.id) !== owner.get(other.id)) {
 				const row = id => groups.find(g => g.id === owner.get(id)).members.map(m => _rapierDrawShapeBBoxIn(nodeMap.get(m).shape, scene));
 				const mine = row(target.id), theirs = row(other.id), right = box => box.maxX, left = box => box.minX;
-				const atEnd = (boxes, box, pick, most) => pick(box) === most(...boxes.map(pick));
+				const atEnd = (boxes, box, pick, most) => most === Math.max ? !boxes.some(c => c !== box && c.minX >= box.maxX - 1) : !boxes.some(c => c !== box && c.maxX <= box.minX + 1);
 				const side = atEnd(mine, a, right, Math.max) && atEnd(theirs, b, right, Math.max) ? 1 : atEnd(mine, a, left, Math.min) && atEnd(theirs, b, left, Math.min) ? 0 : null;
 				if (side != null && mine.length > 1 && theirs.length > 1) { bind.ax = side; bind.ay = .5; Object.assign(bind, _rapierDrawFigurePort(target.shape, scene, bind.ax, bind.ay)); continue; }
 			}
@@ -2891,7 +2897,12 @@ function _rapierDrawLayoutFigures(shapes, automatic, groups, existing, direction
 				if (!peer) return 0;
 				const box = _rapierDrawShapeBBoxIn(peer.shape, scene); return across ? box.minY + box.maxY : box.minX + box.maxX;
 			};
-			const siblings = edges.filter(edge => edge.bind?.[end]?.to === bind.to).sort((a, b) => otherAxis(a) - otherAxis(b)), index = siblings.indexOf(shape), fraction = (index + 1) / (siblings.length + 1);
+			const goes = edge => {
+				const peer = nodeMap.get(edge.bind?.[end === 'start' ? 'end' : 'start']?.to); if (!peer) return false;
+				const p = _rapierDrawShapeBBoxIn(peer.shape, scene);
+				return end === 'start' ? across ? a.minX < p.minX : a.minY < p.minY : across ? p.minX < a.minX : p.minY < a.minY;
+			};
+			const siblings = edges.filter(edge => edge.bind?.[end]?.to === bind.to && (edge === shape || goes(edge) === !!forward)).sort((a, b) => otherAxis(a) - otherAxis(b)), index = siblings.indexOf(shape), fraction = (index + 1) / (siblings.length + 1);
 			bind.ax = across ? forward ? end === 'start' ? 1 : 0 : fraction : forward ? fraction : 1;
 			bind.ay = across ? forward ? fraction : 1 : forward ? end === 'start' ? 1 : 0 : fraction;
 			if (forward && target.shape.recognized === 'diamond') {
@@ -2978,7 +2989,8 @@ function _rapierDrawDiagramDress(shapes, automatic, groups, captionSize) {
 	const into = new Set(arrows.map(arrow => arrow.bind.end.to));
 	for (const node of [...nodes.filter(node => !into.has(node.id)), ...nodes]) if (!state.has(node.id)) visit(node.id);
 	const forward = arrows.filter(arrow => !back.has(arrow)), starts = nodes.filter(node => !forward.some(arrow => arrow.bind.end.to === node.id));
-	const outcome = nodes.find(node => node.recognized !== 'diamond' && arrows.some(arrow => arrow.bind.end.to === node.id) && !arrows.some(arrow => arrow.bind.start.to === node.id));
+	const ends = nodes.filter(node => arrows.some(arrow => arrow.bind.end.to === node.id) && !arrows.some(arrow => arrow.bind.start.to === node.id));
+	const outcome = ends.length === 1 && ends[0].recognized !== 'diamond' ? ends[0] : null;
 	for (const node of nodes) if (node.ink == null) {
 		node.style = 'solid';
 		node.ink = (node === outcome ? RAPIER_DRAW_DIAGRAM.accent : RAPIER_DRAW_DIAGRAM.box)[0];
@@ -2986,7 +2998,7 @@ function _rapierDrawDiagramDress(shapes, automatic, groups, captionSize) {
 	for (const node of nodes) if (node.label && node.textBold == null) node.textBold = true;
 	const caption = {textFont: 'mono', textCase: 'upper', letterSpacing: .12, textSize: captionSize};
 	for (const connector of connectors) if (connector.label) Object.assign(connector, caption);
-	const steps = forward.length > 0 && starts.length === 1 && !groups.length ? nodes.filter(node => node.recognized !== 'diamond' && node.label) : [];
+	const steps = forward.length > 0 && starts.length === 1 && ends.length <= 1 && !groups.length ? nodes.filter(node => node.recognized !== 'diamond' && node.label) : [];
 	for (const node of steps) { node.step = 1; if (node.recognized === 'rect') node.labelAlign = 'start'; }
 	return steps;
 }
@@ -3249,16 +3261,26 @@ function _rapierDrawApplyShapesPatch(recipe, patch, direction = 'down') {
 }
 
 const RAPIER_DRAW_PATCH_DIALS = Object.freeze(['background', 'paper', 'effect', 'canvas', 'frame', 'light', 'smooth', 'nib']);
-const RAPIER_DRAW_PATCH_CARRIED = Object.freeze(['strokes', 'fonts', 'angle', 'tool', 'view', 'renditions']);
+const RAPIER_DRAW_PATCH_CARRIED = Object.freeze(['strokes', 'fonts', 'angle', 'tool', 'view', 'renditions', 'backgrounds']);
 function _rapierDrawSetDials(recipe, set) {
 	if (!set || typeof set !== 'object' || Array.isArray(set) || set.canvas === null) return null;
 	const next = { ...recipe };
 	for (const key of RAPIER_DRAW_PATCH_DIALS) {
 		if (!Object.hasOwn(set, key)) continue;
-		if (set[key] === null) delete next[key];
-		else next[key] = key === 'background' ? fillBackground(set[key]) : key === 'effect' ? fillEffect(set[key]) : set[key];
+		if (key === 'background') _rapierDrawChangeBackground(next, set[key]);
+		else if (set[key] === null) delete next[key];
+		else next[key] = key === 'effect' ? fillEffect(set[key]) : set[key];
 	}
 	return next;
+}
+function _rapierDrawChangeBackground(recipe, sent) {
+	const left = recipe.background, kept = { ...recipe.backgrounds };
+	const wore = sent && typeof sent === 'object' && !Array.isArray(sent) && sent.kind !== left?.kind && Object.hasOwn(kept, sent.kind) ? kept[sent.kind] : null;
+	const background = sent === null ? null : wore ? { ...wore, ...sent } : fillBackground(sent);
+	if (left && left.kind !== background?.kind) kept[left.kind] = left;
+	if (background) { recipe.background = background; delete kept[background.kind]; } else delete recipe.background;
+	if (Object.keys(kept).length) recipe.backgrounds = kept; else delete recipe.backgrounds;
+	return recipe;
 }
 
 export function _rapierDrawRecipeDelta(before, after) {
@@ -3275,7 +3297,7 @@ export function _rapierDrawRecipeDelta(before, after) {
 	const set = {};
 	for (const key of RAPIER_DRAW_PATCH_DIALS) if (!same(before[key], after[key])) set[key] = Object.hasOwn(after, key) ? copy(after[key]) : null;
 	if (Object.keys(set).length) patch.set = set;
-	for (const key of RAPIER_DRAW_PATCH_CARRIED) if (!same(before[key], after[key])) patch[key] = Object.hasOwn(after, key) ? copy(after[key]) : null;
+	for (const key of RAPIER_DRAW_PATCH_CARRIED) if (!same(before[key], after[key]) || key === 'backgrounds' && set.background !== undefined) patch[key] = Object.hasOwn(after, key) ? copy(after[key]) : null;
 	for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
 		if (key === 'shapes' || key === 'version' || RAPIER_DRAW_PATCH_DIALS.includes(key) || RAPIER_DRAW_PATCH_CARRIED.includes(key)) continue;
 		if (!same(before[key], after[key])) return null;
@@ -3776,4 +3798,4 @@ function _rapierDrawShapeContours(shape, recipe) {
 	return path?.length ? [path, ...marks.map(points => points.map(p => p.concat(0)))] : [];
 }
 
-export {RAPIER_DRAW_PAPERS,_rapierDrawPaperListen,_rapierDrawPaperRequest,_rapierDrawShapeFilledOnly,normalizeBackground as _rapierDrawNormalizeBackground,paperShifted as _rapierDrawPaperShifted,backgroundSVG as _rapierDrawBackgroundSVG,BACKGROUND_PRESETS as RAPIER_DRAW_BACKGROUND_PRESETS,_rapierDrawSampleStops,letterInputFont,GARDEN_COLOURS,COPIER_PRESETS,copierPreset,admitCopier,copierPreviewEffect,copierBounds,copierMarkup,REFRACTION_PRESETS,refractionPreset,admitRefraction,LIQUID_PRESETS,LIQUID_PALETTES,liquidPreset,admitLiquid,liquidStillPut,liquidStillHas,liquidStillsWanted,liquidStillsFromSVG,liquidStillKey,liquidStillSize,liquidStillSteps,fillEffect,admitEffect,effectPreset,effectBounds,effectMarkup,RAPIER_DRAW_DIAGRAM,RAPIER_DRAW_PAINT_INK_FILTER,_rapierDrawUnionView,_rapierDrawDarkRules,_rapierDrawUsedColours,_rapierDrawRouteChanges,_rapierDrawBorderActive,_rapierDrawGrowPolygon,_rapierDrawSpatial,RAPIER_DRAW_POLYGONS,RAPIER_DRAW_HEADS,_rapierDrawRestoreSVGRecipe,_rapierDrawStripRasters,_rapierDrawValidRaster,RAPIER_DRAW_RASTER_MAX,RAPIER_DRAW_RASTER_TOTAL,_rapierDrawNormalizeAgentRecipe,_rapierDrawRecipeFault,backgroundStart as _rapierDrawBackgroundStart,_rapierDrawReadRecipeFromSVGText,_rapierDrawLowerFigures,_rapierDrawFigureFault,_rapierDrawApplyShapesPatch,_rapierDrawTextFrame,_rapierDrawTextLayout,_rapierDrawLabelFraction,_rapierDrawShapeContours,_rapierDrawArrowHitPolyline,RAPIER_DRAW_LABEL_MAX,_rapierDrawSetLineGeometry,_rapierDrawSceneMarkup,RAPIER_DRAW_NIB_DEFAULT,RAPIER_DRAW_NIB_MAX,RAPIER_DRAW_NIB_MIN,RAPIER_DRAW_SMOOTH_DEFAULT,RAPIER_DRAW_VERSION,_rapierDrawAdmitRecipe,_rapierDrawAnchorFrame,_rapierDrawArcEndpoints,_rapierDrawArrowParts,_rapierDrawArrowRoutePoints,_rapierDrawBBox,_rapierDrawBrushMarkup,_rapierDrawBrushesFor,_rapierDrawBuildSVG,_rapierDrawTextAlternative,_rapierDrawClamp,_rapierDrawClosestOnSeg,_rapierDrawDefaultStyle,_rapierDrawDist,_rapierDrawEdgeSnapPoint,_rapierDrawEllipseEdgePoint,_rapierDrawFmt,_rapierDrawInterpolatePoint,_rapierDrawIsClosedStroke,_rapierDrawLabelPlacement,_rapierDrawNextAssetName,_rapierDrawNibLevel,_rapierDrawPaintPad,_rapierDrawPenPathD,_rapierDrawPerimeter,_rapierDrawPointInPolygon,_rapierDrawRDP,_rapierDrawRDPClosed,_rapierDrawRectPolygon,_rapierDrawRelaxStroke,_rapierDrawRerouteBoundArrows,_rapierDrawResamplePolyline,_rapierDrawResolveBindAnchor,_rapierDrawRouteBBoxFromPoints,_rapierDrawShapeBBoxIn,_rapierDrawShapePaintedBBoxIn,_rapierDrawShapeInk,_rapierDrawShapeMarkup,_rapierDrawShapeNib,_rapierDrawShapePaintsInk,_rapierDrawShapePolygon,_rapierDrawShapePolyline,_rapierDrawShapeStroke,_rapierDrawSmoothLevel,_rapierDrawSmoothPathD,_rapierDrawSmoothPlan,_rapierDrawStreamlineStroke,_rapierDrawStrokeHalf,_rapierDrawStrokeHasPressure,_rapierDrawStrokeSamples,_rapierDrawEscapeAttr,_rapierDrawInkView,_rapierDrawStylesFor,_rapierDrawValidInk,_rapierDrawDashActive,_rapierDrawRDPWeighted,_rapierDrawEffectiveWidth,RAPIER_DRAW_INK_WIDTH,RAPIER_DRAW_SHAPE_WIDTH,_rapierDrawObjectFrame,_rapierDrawStippleDots};
+export {RAPIER_DRAW_PAPERS,_rapierDrawPaperListen,_rapierDrawPaperRequest,_rapierDrawShapeFilledOnly,normalizeBackground as _rapierDrawNormalizeBackground,paperShifted as _rapierDrawPaperShifted,backgroundSVG as _rapierDrawBackgroundSVG,BACKGROUND_PRESETS as RAPIER_DRAW_BACKGROUND_PRESETS,_rapierDrawSampleStops,letterInputFont,GARDEN_COLOURS,COPIER_PRESETS,copierPreset,admitCopier,copierPreviewEffect,copierBounds,copierMarkup,REFRACTION_PRESETS,refractionPreset,admitRefraction,LIQUID_PRESETS,LIQUID_PALETTES,liquidPreset,admitLiquid,liquidStillPut,liquidStillHas,liquidStillsWanted,liquidStillsFromSVG,liquidStillKey,liquidStillSize,liquidStillSteps,fillEffect,admitEffect,effectPreset,effectBounds,effectMarkup,RAPIER_DRAW_DIAGRAM,RAPIER_DRAW_PAINT_INK_FILTER,_rapierDrawUnionView,_rapierDrawDarkRules,_rapierDrawUsedColours,_rapierDrawRouteChanges,_rapierDrawBorderActive,_rapierDrawGrowPolygon,_rapierDrawSpatial,RAPIER_DRAW_POLYGONS,RAPIER_DRAW_HEADS,_rapierDrawRestoreSVGRecipe,_rapierDrawStripRasters,_rapierDrawValidRaster,RAPIER_DRAW_RASTER_MAX,RAPIER_DRAW_RASTER_TOTAL,_rapierDrawNormalizeAgentRecipe,_rapierDrawRecipeFault,backgroundStart as _rapierDrawBackgroundStart,_rapierDrawReadRecipeFromSVGText,_rapierDrawLowerFigures,_rapierDrawFigureFault,_rapierDrawApplyShapesPatch,_rapierDrawTextFrame,_rapierDrawTextLayout,_rapierDrawLabelFraction,_rapierDrawShapeContours,_rapierDrawArrowHitPolyline,RAPIER_DRAW_LABEL_MAX,_rapierDrawSetLineGeometry,_rapierDrawSceneMarkup,_rapierDrawChangeBackground,RAPIER_DRAW_NIB_DEFAULT,RAPIER_DRAW_NIB_MAX,RAPIER_DRAW_NIB_MIN,RAPIER_DRAW_SMOOTH_DEFAULT,RAPIER_DRAW_VERSION,_rapierDrawAdmitRecipe,_rapierDrawAnchorFrame,_rapierDrawArcEndpoints,_rapierDrawArrowParts,_rapierDrawArrowRoutePoints,_rapierDrawBBox,_rapierDrawBrushMarkup,_rapierDrawBrushesFor,_rapierDrawBuildSVG,_rapierDrawTextAlternative,_rapierDrawClamp,_rapierDrawClosestOnSeg,_rapierDrawDefaultStyle,_rapierDrawDist,_rapierDrawEdgeSnapPoint,_rapierDrawEllipseEdgePoint,_rapierDrawFmt,_rapierDrawInterpolatePoint,_rapierDrawIsClosedStroke,_rapierDrawLabelPlacement,_rapierDrawNextAssetName,_rapierDrawNibLevel,_rapierDrawPaintPad,_rapierDrawPenPathD,_rapierDrawPerimeter,_rapierDrawPointInPolygon,_rapierDrawRDP,_rapierDrawRDPClosed,_rapierDrawRectPolygon,_rapierDrawRelaxStroke,_rapierDrawRerouteBoundArrows,_rapierDrawResamplePolyline,_rapierDrawResolveBindAnchor,_rapierDrawRouteBBoxFromPoints,_rapierDrawShapeBBoxIn,_rapierDrawShapePaintedBBoxIn,_rapierDrawShapeInk,_rapierDrawShapeMarkup,_rapierDrawShapeNib,_rapierDrawShapePaintsInk,_rapierDrawShapePolygon,_rapierDrawShapePolyline,_rapierDrawShapeStroke,_rapierDrawSmoothLevel,_rapierDrawSmoothPathD,_rapierDrawSmoothPlan,_rapierDrawStreamlineStroke,_rapierDrawStrokeHalf,_rapierDrawStrokeHasPressure,_rapierDrawStrokeSamples,_rapierDrawEscapeAttr,_rapierDrawInkView,_rapierDrawStylesFor,_rapierDrawValidInk,_rapierDrawDashActive,_rapierDrawRDPWeighted,_rapierDrawEffectiveWidth,RAPIER_DRAW_INK_WIDTH,RAPIER_DRAW_SHAPE_WIDTH,_rapierDrawObjectFrame,_rapierDrawStippleDots};

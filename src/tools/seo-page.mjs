@@ -9,8 +9,8 @@ import {markdownPlugins} from '../agent/vendor/markdown-plugins.mjs';
 import {RAPIER_MARKDOWN_SPEC, applyMarkdownSpec} from '../agent/markdown-spec.mjs';
 import {installMarkdownLayout} from '../layout/markdown.mjs';
 import {installMarkdownImages} from '../spec/md-assets.mjs';
-import {DOORS} from '../door-worker.js';
-import {APP_DESCRIPTION, PLAY_URL, CURRENT_DOOR, MUSE_DOOR} from './discovery.mjs';
+import {DOORS, GUIDES, PAGES} from '../door-worker.js';
+import {APP_DESCRIPTION, PLAY_URL, CURRENT_DOOR, MUSE_DOOR, SITE_TITLE} from './discovery.mjs';
 
 const SUMMARY = `${APP_DESCRIPTION}
 
@@ -54,7 +54,7 @@ On Android ([Google Play](${PLAY_URL})), in a browser, on Windows, or as one HTM
 
 ${Object.entries(DOORS).filter(([, door]) => door.h1).map(([path, door]) => '[' + door.h1 + '](https://rapier.website' + path + ')').join(' · ')}
 
-[Rapier](https://rapier.website/) · [Rapier Notes](https://rapier.website/notes) · [Rapier Draw](https://rapier.website/draw) · [Rapier Watercolor](https://rapier.website/watercolor) · [Google Play](${PLAY_URL}) · [Source](https://github.com/jackskip22/rapier) · [Agent guide](https://github.com/jackskip22/rapier/blob/main/docs/agents.md) · [llms.txt](https://rapier.website/llms.txt) · [Privacy and terms](https://rapier.website/privacy) · [Commercial license](https://rapier.website/commercial)
+[Rapier](https://rapier.website/) · [Rapier Notes](https://rapier.website/notes) · [Rapier Draw](https://rapier.website/draw) · [Rapier Watercolor](https://rapier.website/watercolor) · [Google Play](${PLAY_URL}) · [Source](https://github.com/jackskip22/rapier) · [Agent guide](https://rapier.website/agents) · [llms.txt](https://rapier.website/llms.txt) · [Privacy and terms](https://rapier.website/privacy) · [Commercial license](https://rapier.website/commercial)
 `;
 
 function declarations(node, name, found = []) {
@@ -103,12 +103,12 @@ export function seoSection(engineSource) {
 	const parser = applyMarkdownSpec(markdownit(RAPIER_MARKDOWN_SPEC.options), markdownPlugins);
 	const summary = plain(parser.render(SUMMARY, {docId: 'summary'}));
 	const guide = shiftHeadings(plain(parser.render(withoutPictures(welcomeMarkdown(engineSource)), {docId: 'guide'})), 1);
-	const section = '<section id="rapier-seo">\n<h1>Rapier</h1>\n' + summary + '<article>\n' + guide + '</article>\n</section>';
+	const section = '<section id="rapier-seo">\n<h1>' + parser.utils.escapeHtml(SITE_TITLE) + '</h1>\n' + summary + '<article>\n' + guide + '</article>\n</section>';
 	if (/<(?:img|svg|script|style|iframe|form|input|!--)|data:|RAPIER_/i.test(section)) throw new Error('The search words must be plain text and links');
 	return section;
 }
 
-function welcomeGuidePart(source, heading, {omitTitle = false, omitSpecimens = false} = {}) {
+function welcomeGuidePart(source, heading, {omitTitle = false, omitSpecimens = false, omitLead = false, stopAt = null} = {}) {
 	const {tokens, lines} = source, found = [];
 	for (let index = 0; index < tokens.length; index++) {
 		if (tokens[index].type === 'heading_open' && tokens[index].level === 0 && tokens[index + 1]?.content === heading) found.push(index);
@@ -116,19 +116,34 @@ function welcomeGuidePart(source, heading, {omitTitle = false, omitSpecimens = f
 	if (found.length !== 1) throw new Error('The welcome must carry one ' + heading + ' section');
 	const start = found[0], opening = tokens[start], rank = Number(opening.tag.slice(1));
 	let end = start + 3;
-	while (end < tokens.length && !(tokens[end].type === 'heading_open' && tokens[end].level === 0 && Number(tokens[end].tag.slice(1)) <= rank)) end++;
+	while (end < tokens.length && !(tokens[end].type === 'heading_open' && tokens[end].level === 0 &&
+		(Number(tokens[end].tag.slice(1)) <= rank || stopAt !== null && tokens[end + 1]?.content === stopAt))) end++;
+	if (stopAt !== null && tokens[end + 1]?.content !== stopAt) throw new Error('The ' + heading + ' section has no ' + stopAt + ' subsection');
 	const from = opening.map[omitTitle ? 1 : 0], to = tokens[end]?.map?.[0] ?? lines.length;
 	const omitted = new Set();
+	const omit = token => { for (let line = token.map[0]; line < token.map[1]; line++) omitted.add(line); };
+	if (omitLead) for (let index = start + 3; index < end; index++) {
+		const token = tokens[index];
+		if (token.level !== 0 || !token.map || token.type.endsWith('_close')) continue;
+		omit(token);
+		if (token.type === 'paragraph_open' && !tokens[index + 1]?.meta?.mdLayout?.imageOnly) break;
+	}
 	if (omitSpecimens) for (let index = start + 3; index < end; index++) {
 		const token = tokens[index], layout = token.meta?.mdLayout;
 		if (token.type !== 'inline' || !layout?.imageOnly || layout.layout.wrap !== 'around') continue;
 		const picture = token.children.find(child => child.type === 'image');
 		if (!picture || [...picture.content].length <= 1) continue;
-		const paragraph = tokens[index - 1], next = tokens[index + 2], words = tokens[index + 3];
-		if (next?.type !== 'paragraph_open' || next.level !== paragraph.level || words?.type !== 'inline' || words.meta?.mdLayout?.imageOnly) continue;
-		for (let line = paragraph.map[0]; line < next.map[1]; line++) omitted.add(line);
+		omit(tokens[index - 1]);
+		const subject = new Set(picture.content.toLowerCase().match(/[a-z]{4,}/g) || []);
+		for (let other = start + 3; other < end; other++) {
+			const named = tokens[other].type === 'inline' && tokens[other].level === 1 && /^This ([a-z]+)\b/i.exec(tokens[other].content)?.[1];
+			if (named && subject.has(named.toLowerCase()) && tokens[other - 1].level === 0) omit(tokens[other - 1]);
+		}
 	}
-	return withoutPictures(lines.slice(from, to).filter((_, index) => !omitted.has(from + index)).join('\n'));
+	const kept = lines.slice(from, to).filter((_, index) => !omitted.has(from + index)).join('\n');
+	const cited = new Set([...kept.matchAll(/\[\^([^\]\s]+)\](?!:)/g)].map(match => match[1]));
+	const notes = lines.filter(line => cited.has(/^\[\^([^\]\s]+)\]:/.exec(line)?.[1]));
+	return withoutPictures(kept + (notes.length ? '\n\n' + notes.join('\n') : ''));
 }
 
 function sheetGuide(markup, name) {
@@ -150,6 +165,37 @@ function sheetGuide(markup, name) {
 		.replace(/[ \t]*\n[ \t]*/g, '\n').trim();
 }
 
+function pageLinks(path, escape) {
+	return [['/', 'Rapier'], ...Object.entries(PAGES).filter(([other]) => other !== path).map(([other, value]) => [other, value.name])]
+		.map(([address, label]) => '<a href="https://rapier.website' + address + '">' + escape(label) + '</a>').join(' · ');
+}
+
+const PUBLIC = 'https://github.com/jackskip22/rapier/blob/main/';
+function guideLink(target) {
+	const [file, fragment = ''] = target.split(/(?=#)/);
+	const guide = Object.entries(GUIDES).find(([, value]) => value.file === file)?.[0];
+	if (guide) return 'https://rapier.website' + guide + fragment;
+	if (/^[a-z0-9-]+\.md$/.test(file)) return PUBLIC + 'docs/' + file + fragment;
+	const source = /^\.\.\/repo\/(.+)$/.exec(file)?.[1];
+	if (source === 'AGENT-TOOLS.json' || source === 'llms.txt') return 'https://rapier.website/' + source + fragment;
+	if (source === 'LICENSE') return PUBLIC + 'LICENSE' + fragment;
+	if (source) return PUBLIC + 'src/' + source + fragment;
+	return target;
+}
+
+export function guideSection(markdown, path) {
+	const guide = GUIDES[path];
+	if (!guide) throw new Error('No site document at ' + path);
+	const parser = applyMarkdownSpec(markdownit(RAPIER_MARKDOWN_SPEC.options), markdownPlugins);
+	const escape = value => parser.utils.escapeHtml(String(value));
+	const body = markdown.replace(/^\uFEFF?# [^\n]*\n/, '').replace(/\]\(([^)\s]+)\)/g, (all, target) => /^[a-z]+:/i.test(target) ? all : '](' + guideLink(target) + ')');
+	if (body === markdown) throw new Error('The document must open with its title: ' + guide.file);
+	const article = plain(parser.render(body, {docId: 'guide-' + path.slice(1)})).replace(/<(\/?)h1>/g, '<$1h2>');
+	const section = '<section id="rapier-seo">\n<h1>' + escape(guide.name) + '</h1>\n<article>\n' + article + '</article>\n<nav aria-label="Rapier pages"><p>' + pageLinks(path, escape) + '</p></nav>\n</section>';
+	if (/<(?:img|svg|script|style|iframe|form|input|button)\b|<!--|\b(?:src|href)="(?:data|javascript):/i.test(section)) throw new Error('The ' + guide.file + ' page must be text and links');
+	return section;
+}
+
 export function seoDoorSections(engineSource, uiMarkup) {
 	const parser = applyMarkdownSpec(markdownit(RAPIER_MARKDOWN_SPEC.options), markdownPlugins);
 	installMarkdownImages(parser);
@@ -158,9 +204,16 @@ export function seoDoorSections(engineSource, uiMarkup) {
 	const source = {tokens: parser.parse(markdown, {docId: 'door-source'}), lines: markdown.split('\n')};
 	const render = (text, name) => plain(parser.render(text, {docId: 'door-' + name}));
 	const bodies = {
-		'/notes': render(welcomeGuidePart(source, 'Notes', {omitTitle: true}), 'notes'),
-		'/draw': render(welcomeGuidePart(source, 'Drawing', {omitSpecimens: true}) + '\n' + welcomeGuidePart(source, 'Paint'), 'draw'),
+		'/notes': render(welcomeGuidePart(source, 'Notes', {omitTitle: true, omitLead: true}), 'notes'),
+		'/draw': render(welcomeGuidePart(source, 'Drawing', {omitSpecimens: true}), 'draw'),
+		'/paint': render(welcomeGuidePart(source, 'Paint', {stopAt: 'Watercolor'}), 'paint'),
 		'/watercolor': shiftHeadings(render(welcomeGuidePart(source, 'Watercolor', {omitTitle: true}), 'watercolor'), -2),
+		'/markdown-editor': render(welcomeGuidePart(source, 'Writing', {omitLead: true}) + '\n' + welcomeGuidePart(source, 'Lists'), 'markdown-editor'),
+		'/markdown-viewer': render(welcomeGuidePart(source, 'Open, save and export'), 'markdown-viewer'),
+		'/markdown-to-pdf': render(welcomeGuidePart(source, 'Open, save and export'), 'markdown-to-pdf'),
+		'/markdown-to-word': render(welcomeGuidePart(source, 'Open, save and export'), 'markdown-to-word'),
+		'/word-to-markdown': render(welcomeGuidePart(source, 'Open, save and export'), 'word-to-markdown'),
+		'/markdown-table-editor': render(welcomeGuidePart(source, 'Tables'), 'markdown-table-editor'),
 		'/privacy': sheetGuide(uiMarkup, 'privacy-words') + '\n<p><a href="https://github.com/jackskip22/rapier-plugins/blob/main/PRIVACY.md">Connector privacy and terms</a> use the same policy.</p>\n',
 		'/commercial': sheetGuide(uiMarkup, 'commercial-words') + '\n',
 	};
@@ -171,8 +224,7 @@ export function seoDoorSections(engineSource, uiMarkup) {
 	return Object.fromEntries(Object.entries(DOORS).map(([path, door]) => {
 		if (!bodies[path] && !door.h1) throw new Error('The site door has no guide: ' + path);
 		if (door.h1 && (!door.lead || !door.faq?.length || !door.view || door.related?.some(other => !DOORS[other]))) throw new Error('A searched door needs its paragraph, questions, view and known pages: ' + path);
-		const links = [['/', 'Rapier'], ...Object.entries(DOORS).filter(([other]) => other !== path).map(([other, value]) => [other, value.name])]
-			.map(([address, label]) => '<a href="https://rapier.website' + address + '">' + escape(label) + '</a>').join(' · ');
+		const links = pageLinks(path, escape);
 		const picture = door.picture ? '<figure><img src="https://rapier.website/' + escape(door.picture) + '" alt="' + escape(door.imageAlt) +
 			'" width="1200" height="630" style="display:block;max-width:100%;height:auto;background:#fff"><figcaption>Overlapping pigment washes painted with Rapier Water.</figcaption></figure>\n' : '';
 		const section = '<section id="rapier-seo">\n<h1>' + escape(door.h1 || door.name) + '</h1>\n' + picture + searched(door) + (bodies[path] || '') + '<nav aria-label="Rapier pages"><p>' + links + '</p></nav>\n</section>';

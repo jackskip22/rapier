@@ -232,7 +232,7 @@ const sourceRange = {...object({start: integer(0, MAX_TEXT_BYTES), end: integer(
 const visualFact = object({documentId: string(256), revision, scope: {type: 'string', enum: ['viewport', 'page', 'focus', 'selection']}, drawing: record, outcome: {type: 'string', enum: ['ok', 'refused']}, reason: string(128), sourceRange,
   image: object({mimeType: {const: 'image/png', type: 'string'}, data: string(Math.ceil(VISUAL_LIMITS.imageBytes / 3) * 4), width: integer(1, VISUAL_LIMITS.edge), height: integer(1, VISUAL_LIMITS.edge)}, ['mimeType', 'data', 'width', 'height'])}, ['documentId', 'revision', 'scope', 'outcome']);
 const exportFact = object({documentId: string(256), revision, format: {type: 'string', enum: ['docx', 'pdf', 'page']},
-  outcome: {type: 'string', enum: ['ok', 'refused']}, reason: string(128), picture: string(256), alt: string(256),
+  outcome: {type: 'string', enum: ['ok', 'refused']}, reason: string(128), picture: string(256), alt: string(256), part: string(64),
   artifact: object({mimeType: string(128), data: string(Math.ceil(MAX_EXPORT_BYTES / 3) * 4), filename: string(MAX_FILENAME_CHARS),
     pages: integer(1, Number.MAX_SAFE_INTEGER), issues: {...rows(object({code: string(128), severity: string(32), count, message: string(512)}, ['code'])), maxItems: 32}},
   ['mimeType', 'data', 'filename'])}, ['documentId', 'revision', 'format', 'outcome']);

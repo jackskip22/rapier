@@ -110,6 +110,7 @@ function mathML(tree, source, safeSource, options = {}) {
   const classOf = node => {
     if (!node) return undefined;
     if (node.class) return node.class;
+    if (node.type === 'row' && node.group) return 'ord';
     if (node.type === 'scripts' || node.type === 'accent') return classOf(node.base);
     if (node.type === 'style' || node.type === 'link') return classOf(node.body);
     if (node.type === 'row' && node.children.length === 1) return classOf(node.children[0]);
@@ -118,6 +119,7 @@ function mathML(tree, source, safeSource, options = {}) {
   const limitsOf = node => {
     if (!node) return undefined;
     if (node.limits) return node.limits;
+    if (node.type === 'row' && node.group) return undefined;
     if (node.type === 'style' || node.type === 'link') return limitsOf(node.body);
     if (node.type === 'row' && node.children.length === 1) return limitsOf(node.children[0]);
     if (node.type === 'accent') return limitsOf(node.base);
@@ -227,15 +229,21 @@ function mathML(tree, source, safeSource, options = {}) {
     open('mtable', {displaystyle: String(cellContext.display), scriptlevel: String(cellContext.level), 'data-math-environment': node.env});
     for (let at = 0; at < rows.length; at++) {
       open('mtr');
-      for (let column = 0; column < columns; column++) {
+      // \intertext spans the whole row at its left; \multicolumn and \hdotsfor span their columns.
+      const intertext = rows[at][0]?.intertext;
+      for (let column = 0; column < (intertext ? 1 : columns); column++) {
         if (++metrics.nodes > 100000) fail('resource-limit', 'MathML table cells exceed its work budget.');
-        let align = node.env === 'eqnarray' ? ['r', 'c', 'l'][column % 3] : node.align?.[column] || 'c';
+        const cell = rows[at][column];
+        if (cell?.covered) continue;
+        let align = intertext ? 'l' : cell?.spanAlign || (node.env === 'eqnarray' ? ['r', 'c', 'l'][column % 3] : node.align?.[column] || 'c');
         if (/^multlined?$/.test(node.env) && columns === 1) align = at === 0 ? 'l' : at === rows.length - 1 ? 'r' : 'c';
-        open('mtd', {style: 'text-align:' + ({l: 'left', r: 'right', c: 'center'}[align] || 'center')});
+        const span = intertext ? columns : cell?.span > 1 ? Math.min(cell.span, columns - column) : 0;
+        open('mtd', {...(span > 1 ? {columnspan: String(span)} : {}), style: 'text-align:' + ({l: 'left', r: 'right', c: 'center'}[align] || 'center')});
         open('mrow');
         for (const body of before[column]) emit(body, cellContext, depth + 1);
-        if (rows[at][column]) emit(rows[at][column], cellContext, depth + 1);
-        if (column === columns - 1) for (const body of before[columns]) emit(body, cellContext, depth + 1);
+        if (cell?.dots) token('mo', '…', {stretchy: 'false'}, cellContext);
+        else if (cell) emit(cell, cellContext, depth + 1);
+        if (column + Math.max(1, span) >= columns) for (const body of before[columns]) emit(body, cellContext, depth + 1);
         close('mrow'); close('mtd');
       }
       close('mtr');
@@ -252,7 +260,8 @@ function mathML(tree, source, safeSource, options = {}) {
     active.add(node);
     try {
       switch (node.type) {
-        case 'row': row(node.children, context, depth); break;
+        // A braced group is an ordinary atom in TeX; an operator alone in it takes no spacing of its own.
+        case 'row': row(node.children, node.group && node.children.length === 1 ? {...context, ordinary: true} : {...context, ordinary: undefined}, depth); break;
         case 'glyph': {
           const name = kind(node), attributes = {};
           if (name === 'mo') {
@@ -264,6 +273,9 @@ function mathML(tree, source, safeSource, options = {}) {
             if (node.delimiter || node.delimiterSize || node.stretch) attributes.stretchy = 'true';
             else attributes.stretchy = 'false';
             if (node.delimiterSize) attributes.minsize = attributes.maxsize = em(node.delimiterSize);
+            else if (node.minWidth) attributes.minsize = em(node.minWidth);
+            if (node.class === 'ord' && node.tokenKind === 'mo') attributes.lspace = attributes.rspace = '0em';
+            if (context.ordinary) { attributes.lspace = attributes.rspace = '0em'; if (node.limits) attributes.movablelimits = 'false'; }
           }
           atom(node, node.value, name, context, attributes); break;
         }
@@ -289,6 +301,11 @@ function mathML(tree, source, safeSource, options = {}) {
           close(node.index ? 'mroot' : 'msqrt'); break;
         case 'fence':
           open('mrow'); fence(node.left, 'prefix', context, node.size); emit(node.body, inner(context), depth + 1); fence(node.right, 'postfix', context, node.size); close('mrow'); break;
+        case 'enclose': {
+          warn('semantic-overlay', 'An enclosure uses the MathML 3 menclose extension; hosts implementing only Core may omit its lines.');
+          const css = (node.color ? 'color:' + node.color + ';' : '') + (node.background ? 'background:' + node.background + ';' : '');
+          open('menclose', {notation: node.notation.join(' '), style: css || undefined}); emit(node.body, context, depth + 1); close('menclose'); break;
+        }
         case 'accent': {
           if (node.overlay || node.position === 'through') {
             warn('semantic-overlay', 'An overlay uses the MathML 3 menclose extension; hosts implementing only Core may omit the cancellation or negation mark.');
@@ -300,8 +317,10 @@ function mathML(tree, source, safeSource, options = {}) {
           token('mo', node.value, {stretchy: String(!!node.stretch)}, context); close(name); break;
         }
         case 'overunder': {
+          const base = node.minWidth ? {...node.base, minWidth: node.minWidth} : node.base;
+          if (!node.over && !node.under) { emit(base, {...context, ordinary: node.unspaced || undefined}, depth + 1); break; }
           const name = node.over && node.under ? 'munderover' : node.under ? 'munder' : 'mover';
-          open(name, {accent: node.over ? 'false' : undefined, accentunder: node.under ? 'false' : undefined}); emit(node.base, {...context, movableLimits: false}, depth + 1);
+          open(name, {accent: node.over ? 'false' : undefined, accentunder: node.under ? 'false' : undefined}); emit(base, {...context, movableLimits: false, ordinary: node.unspaced || undefined}, depth + 1);
           if (node.under) emit(node.under, scriptContext(context), depth + 1);
           if (node.over) emit(node.over, scriptContext(context), depth + 1);
           close(name); break;

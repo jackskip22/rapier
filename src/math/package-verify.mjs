@@ -38,6 +38,17 @@ const sbom = JSON.parse(await read('docs/math-components.json'));
 const font = sbom.packages.find(item => item.name === resources.font.name);
 assert.equal(font?.copyrightText, resources.font.copyright, 'font copyright');
 assert.equal(font.licenseDeclared, resources.font.license, 'font license identity');
+for (const component of resources.components) {
+  const entries = sbom.packages.filter(item => item.name === component.name);
+  assert.equal(entries.length, 1, component.name + ': one component identity');
+  const [entry] = entries;
+  assert.equal(entry.versionInfo, component.version, component.name + ': version');
+  assert.equal(entry.downloadLocation, component.source, component.name + ': source');
+  assert.deepEqual(entry.checksums, [{algorithm: 'SHA256', checksumValue: component.sha256}], component.name + ': source hash');
+  assert.equal(entry.licenseDeclared, component.license, component.name + ': license');
+  assert.equal(entry.copyrightText, component.copyright, component.name + ': original copyright');
+  assert(fontLicense.includes(component.copyright), component.name + ': copyright travels with its outlines');
+}
 assert.equal(sbom.hasExtractedLicensingInfos.find(item => item.licenseId === resources.font.license)?.extractedText,
   fontLicense.toString('utf8'), 'complete extracted font license');
 assert.equal((await read('README.md')).toString('utf8'), mathReadme(resources), 'generated README');

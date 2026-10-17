@@ -42,12 +42,66 @@ function glyphs(svg) {
   }
   return found;
 }
-// Horizontal ink strips of a placed glyph (its contour profile; its bounds when unprofiled).
+// A glyph's contour profile: the ink's left and right edge in each 32-unit horizontal strip, from its outline's
+// line and cubic segments (absolute M, L, H, V, C and Z commands, as the font data writes them).
+const EDGE_STEP = 32, profiles = new Map();
+const quadratic = (a, b, c) => { if (Math.abs(a) < 1e-10) return Math.abs(b) < 1e-10 ? [] : [-c / b]; const d = b * b - 4 * a * c; if (d < 0) return []; const root = Math.sqrt(d); return [(-b + root) / 2 / a, (-b - root) / 2 / a]; };
+const cubic = s => { const cx = (s[2] - s[0]) * 3, cy = (s[3] - s[1]) * 3, bx = (s[4] - s[2]) * 3 - cx, by = (s[5] - s[3]) * 3 - cy; return [s[6] - s[0] - cx - bx, s[7] - s[1] - cy - by, bx, by, cx, cy, s[0], s[1]]; };
+function profile(id) {
+  if (profiles.has(id)) return profiles.get(id);
+  const g = MATH_FONT.glyph(id), segments = [];
+  let x = 0, y = 0, startX = 0, startY = 0;
+  for (const [, command, args] of (g?.[7] || '').matchAll(/([MLHVCZ])([^MLHVCZ]*)/g)) {
+    const n = args.trim() ? args.trim().split(/[\s,]+/).map(Number) : [];
+    if (command === 'M') { [x, y] = n; startX = x; startY = y; }
+    else if (command === 'L') { segments.push([x, y, n[0], n[1]]); [x, y] = n; }
+    else if (command === 'H') { segments.push([x, y, n[0], y]); x = n[0]; }
+    else if (command === 'V') { segments.push([x, y, x, n[0]]); y = n[0]; }
+    else if (command === 'C') { segments.push([x, y, ...n]); x = n[4]; y = n[5]; }
+    else { if (x !== startX || y !== startY) segments.push([x, y, startX, startY]); x = startX; y = startY; }
+  }
+  if (!segments.length) { profiles.set(id, null); return null; }
+  const first = Math.floor(g[2] / EDGE_STEP) * EDGE_STEP, rows = Array.from({length: Math.max(1, Math.ceil((g[4] - first) / EDGE_STEP))}, () => []);
+  for (const s of segments) {
+    if (s.length === 4) {
+      const [x0, y0, x1, y1] = s;
+      rows.forEach((row, i) => {
+        const lower = first + i * EDGE_STEP, upper = lower + EDGE_STEP, ts = [0, 1];
+        if (y1 !== y0) ts.push((lower - y0) / (y1 - y0), (upper - y0) / (y1 - y0));
+        for (const t of ts) { const at = y0 + t * (y1 - y0); if (0 <= t && t <= 1 && lower - 1e-7 <= at && at <= upper + 1e-7) row.push(x0 + t * (x1 - x0)); }
+      });
+      continue;
+    }
+    const [a0, a1, b0, b1, c0, c1, d0, d1] = cubic(s), vertical = t => ((a1 * t + b1) * t + c1) * t + d1, extrema = [0, 1, ...quadratic(3 * a0, 2 * b0, c0)],
+      critical = [0, 1, ...quadratic(3 * a1, 2 * b1, c1).filter(t => 0 < t && t < 1)].sort((p, q) => p - q);
+    const crossing = height => {
+      const roots = [];
+      for (let i = 1; i < critical.length; i++) {
+        let low = critical[i - 1], high = critical[i];
+        const yLow = vertical(low), yHigh = vertical(high);
+        if (!(Math.min(yLow, yHigh) <= height && height <= Math.max(yLow, yHigh))) continue;
+        for (let k = 0; k < 45; k++) { const middle = (low + high) / 2; if ((vertical(middle) < height) === (yLow < yHigh)) low = middle; else high = middle; }
+        roots.push((low + high) / 2);
+      }
+      return roots;
+    };
+    const ys = [s[1], s[3], s[5], s[7]], yMin = Math.min(...ys), yMax = Math.max(...ys);
+    rows.forEach((row, i) => {
+      const lower = first + i * EDGE_STEP, upper = lower + EDGE_STEP;
+      if (lower > yMax || upper < yMin) return;
+      for (const t of [...extrema, ...crossing(lower), ...crossing(upper)]) if (0 <= t && t <= 1) { const at = vertical(t); if (lower - 1e-7 <= at && at <= upper + 1e-7) row.push(((a0 * t + b0) * t + c0) * t + d0); }
+    });
+  }
+  const result = [first, ...rows.map(row => row.length ? [Math.floor(Math.min(...row) - 1e-7), Math.ceil(Math.max(...row) + 1e-7)] : null)];
+  profiles.set(id, result);
+  return result;
+}
+// Horizontal ink strips of a placed glyph, from its contour profile.
 function strips({id, x, y, sx, sy}) {
-  const g = MATH_FONT.glyph(id), p = MATH_FONT.profile(id), out = [];
+  const g = MATH_FONT.glyph(id), p = profile(id), out = [];
   if (!p) return [{top: y - g[4] * sy, bottom: y - g[2] * sy, left: x + g[1] * sx, right: x + g[3] * sx}];
   for (let i = 1; i < p.length; i++) if (p[i])
-    out.push({top: y - (p[0] + i * MATH_FONT.edgeStep) * sy, bottom: y - (p[0] + (i - 1) * MATH_FONT.edgeStep) * sy, left: x + p[i][0] * sx, right: x + p[i][1] * sx});
+    out.push({top: y - (p[0] + i * EDGE_STEP) * sy, bottom: y - (p[0] + (i - 1) * EDGE_STEP) * sy, left: x + p[i][0] * sx, right: x + p[i][1] * sx});
   return out;
 }
 // Smallest horizontal gap between two glyphs' ink where they share a height; negative when the ink overlaps.
@@ -179,6 +233,316 @@ cell('F16', 'scripts on a composed base sit by its box, as TeX\'s rule 18a does'
     near(b.d, d, tex + ' depth', 0.002);
   }
 });
+cell('F17', 'a script sits at its base\'s advance, as TeX places it without the font\'s cut-in kerns', () => {
+  for (const [tex, w] of [['x_2^3', 1.026], ['x^2', 1.026], ['1^2', 0.954], ['A^2', 1.204], ['f^2', 1.034], ['T_2', 1.038], ['P_i', 0.981], ['V_i', 0.922],
+    [String.raw`x^{\frac{a}{b}}`, 1.255], [String.raw`\hat{A}^2`, 1.204], [String.raw`{\mathrm{d}}^2`, 1.010]])
+    near(layout(tex).w, w, tex + ' width', 0.002);
+});
+cell('F18', 'braces, parentheses, brackets and arrows over a formula are TeX\'s font accents', () => {
+  for (const [tex, w, h, d] of [[String.raw`\overbrace{x}^{n}`, 0.572, 1.299, 0.011], [String.raw`x+\overbrace{y}^n+z`, 3.698, 1.299, 0.205], [String.raw`\overbrace{x+y+z}`, 4.000, 0.978, 0.205],
+    [String.raw`\underbrace{x}_{n}`, 0.572, 0.442, 0.971], [String.raw`\overparen{x}^{n}`, 0.572, 1.243, 0.011], [String.raw`x+\underparen{y}+z`, 3.694, 0.583, 0.502],
+    [String.raw`\overrightarrow{i}`, 0.345, 0.922, 0.011], [String.raw`\overleftrightarrow{AB}`, 1.509, 0.977, 0], [String.raw`\underleftarrow{AB}`, 1.509, 0.716, 0.281],
+    [String.raw`\overrightarrow{x+y+z+w+v+u}`, 9.484, 0.844, 0.205]]) {
+    const b = layout(tex);
+    near(b.w, w, tex + ' width', 0.002);
+    near(b.h, h, tex + ' height', 0.002);
+    near(b.d, d, tex + ' depth', 0.002);
+  }
+});
+cell('F19', 'a bar, or an accent over more than one character, carries its scripts as a box', () => {
+  for (const [tex, w, h, d] of [[String.raw`\overline{AB}^2`, 1.963, 1.131, 0], [String.raw`\overline{A}^2`, 1.204, 1.131, 0], [String.raw`\underline{x}_2`, 1.026, 0.442, 0.411],
+    [String.raw`\hat{AB}^2`, 1.963, 1.215, 0], [String.raw`\widehat{AB}^2`, 1.963, 1.229, 0], [String.raw`\hat{A}^2`, 1.204, 1.000, 0], [String.raw`\tilde{x}_2^2`, 1.026, 0.828, 0.262]]) {
+    const b = layout(tex);
+    near(b.w, w, tex + ' width', 0.002);
+    near(b.h, h, tex + ' height', 0.002);
+    near(b.d, d, tex + ' depth', 0.002);
+  }
+});
+cell('F20', 'a display generalized fraction fences at LuaTeX\'s 24 pt delimiter size', () => {
+  for (const [tex, w, h, d] of [[String.raw`\binom{n}{k}`, 2.350, 1.745, 1.245], [String.raw`\dbinom{n}{k}`, 2.350, 1.745, 1.245], [String.raw`{a \atopwithdelims() b}`, 2.279, 1.745, 1.245], [String.raw`\genfrac[]{1pt}{}{a}{b}`, 1.585, 1.450, 0.950]]) {
+    const b = layout(tex, true);
+    near(b.w, w, tex + ' width', 0.002);
+    near(b.h, h, tex + ' height', 0.002);
+    near(b.d, d, tex + ' depth', 0.002);
+  }
+});
+cell('F21', 'a \\middle is spaced as TeX\'s closing atom; a binary atom after it is ordinary', () => {
+  for (const [tex, w] of [[String.raw`\left(a\middle|b\right)`, 2.014], [String.raw`\left(a+\middle|+b\right)`, 3.570], [String.raw`\left(a=\middle|b\right)`, 3.070], [String.raw`\left(a\middle|=b\right)`, 3.348],
+    [String.raw`\left(\sum\middle|b\right)`, 2.541], [String.raw`\left(a\middle|\sum\right)`, 2.808], [String.raw`\left(a,\middle|,b\right)`, 2.903], [String.raw`\left(a\middle\|b\right)`, 2.134]])
+    near(layout(tex).w, w, tex + ' width', 0.002);
+});
+cell('F22', 'an array keeps \\arraycolsep outside its edge columns; rules and \\hline take TeX\'s room', () => {
+  for (const [tex, w, h, d] of [[String.raw`\begin{array}{c}a\\c\end{array}`, 1.529, 1.450, 0.950], [String.raw`\begin{array}{@{}cc}a&b\end{array}`, 2.458, 0.850, 0.350],
+    [String.raw`\begin{array}{c@{,}c}a&b\end{array}`, 2.236, 0.850, 0.350], [String.raw`\begin{array}{||c||}a\end{array}`, 1.929, 0.850, 0.350], [String.raw`\begin{array}{c||c}a&b\end{array}`, 3.158, 0.850, 0.350],
+    [String.raw`\begin{array}{|c|c|}\hline a&b\\\hline\end{array}`, 2.958, 0.890, 0.390], [String.raw`\begin{array}{c}\hline\hline a\\\hline b\end{array}`, 1.529, 1.590, 1.090],
+    [String.raw`\begin{matrix}a&b\end{matrix}`, 1.958, 0.850, 0.350]]) {
+    const b = layout(tex);
+    near(b.w, w, tex + ' width', 0.002);
+    near(b.h, h, tex + ' height', 0.002);
+    near(b.d, d, tex + ' depth', 0.002);
+  }
+  const rules = [...layout(String.raw`\begin{array}{|c|}a\end{array}`).svg.matchAll(/translate\(([-\d.]+) [-\d.]+\)"><path data-math-line="vertical"/g)].map(m => +m[1]);
+  assert.deepEqual(rules, [0, 1.529], String.raw`\begin{array}{|c|} rules sit at its edges`);
+});
+cell('F23', 'right-to-left words in text read from the right, in the order Chromium\'s bidi draws them', () => {
+  const svg = tex => layout(tex).svg, word = w => (svg(String.raw`\text{` + w + '}').match(/<text[^>]*>[^<]*<\/text>|d="[^"]*"/) || [''])[0];
+  for (const [text, order] of [['שלום עולם', 'עולם|שלום'], ['مرحبا بالعالم 2024', '2024|بالعالم|مرحبا'], ['if שלום עולם, then', 'if|עולם|שלום|,|then'],
+    ['abc שלום 12 עולם def', 'abc|עולם|12|שלום|def'], ['שלום: 3.14 עולם!', 'עולם|3.14|:|שלום|!']]) {
+    const full = svg(String.raw`\text{` + text + '}'), drawn = order.split('|').map(w => full.indexOf(word(w)));
+    assert(drawn.every((at, i) => at >= 0 && (i === 0 || at > drawn[i - 1])), text + ' is drawn as ' + order);
+  }
+});
+cell('F24', 'a bold or italic accented letter is the styled letter with its mark', () => {
+  for (const [tex, letter, mark] of [[String.raw`\textbf{Théorème}`, 0x1d41e, 0x301], [String.raw`\mathbf{é}`, 0x1d41e, 0x301], [String.raw`\textit{né}`, 0x1d452, 0x301], [String.raw`\textbf{ü}`, 0x1d42e, 0x308], [String.raw`\mathit{ö}`, 0x1d45c, 0x308]]) {
+    const ids = glyphs(layout(tex).svg).map(item => item.id);
+    assert(ids.includes(MATH_FONT.chars[letter]) && ids.includes(MATH_FONT.chars[mark]), tex + ' draws the styled letter and its mark');
+    assert(!ids.includes(MATH_FONT.chars[tex.at(-2).codePointAt(0)]), tex + ' draws no regular accented letter');
+  }
+  const ids = glyphs(layout(String.raw`\textbf{ï}`).svg).map(item => item.id);
+  assert(ids.includes(MATH_FONT.dotless[MATH_FONT.chars[0x1d422]]), String.raw`\textbf{ï} is a bold dotless i`);
+});
+cell('F25', 'braket.sty: \\| divides a \\Braket; \\Set has medium space inside its braces', () => {
+  for (const [tex, w] of [[String.raw`\Braket{a\|b}`, 2.467], [String.raw`\Braket{a\|\frac{a}{b}\|b}`, 3.863], [String.raw`\Braket{a||b}`, 2.467], [String.raw`\Set{x|x>0}`, 5.256], [String.raw`\Set{x\|y}`, 3.460], [String.raw`\Set{x}`, 2.016]])
+    near(layout(tex).w, w, tex + ' width', 0.002);
+});
+cell('F26', 'xcolor mixes as xcolor computes them; \\mathcolor', () => {
+  for (const [tex, color] of [[String.raw`\textcolor{red!50}{x}`, '#ff8080'], [String.raw`\color{blue!20}x`, '#ccccff'], [String.raw`\textcolor{red!50!green!50}{x}`, '#bfbf80'],
+    [String.raw`\textcolor{Maroon!50}{x}`, '#d66780'], [String.raw`\textcolor{Maroon!40!red}{x}`, '#de0000'], [String.raw`\mathcolor{red}{x}`, 'red']])
+    assert(mathml(tex).includes('color:' + color + ';'), tex + ' is ' + color + ': ' + mathml(tex).match(/color:[^;]*/)?.[0]);
+});
+cell('F27', 'siunitx: abbreviated units, \\degreeCelsius, a written solidus and ranges, as wide as siunitx sets them', () => {
+  for (const [tex, w] of [[String.raw`\SIrange{1}{5}{\metre}`, 4.554], [String.raw`\numrange{1}{5}`, 2.555], [String.raw`\si{\km}`, 1.361], [String.raw`\si{\degreeCelsius}`, 1.097],
+    [String.raw`\si{\metre/\second}`, 1.727], [String.raw`\SI{5}{\kHz}`, 2.389], [String.raw`\SI{3}{\uA}`, 1.973], [String.raw`\qtyrange{1}{5}{\km}`, 5.610]])
+    near(layout(tex).w, w, tex + ' width', 0.002);
+});
+cell('F28', 'physics.sty matrices: \\mqty(…) brackets, \\dmat, \\admat, \\imat, \\zmat, \\xmat, \\pmat, \\Pmqty, \\Bmqty', () => {
+  for (const [tex, w, h, d] of [[String.raw`\mqty(a&b\\c&d)`, 3.521, 1.450, 0.950], [String.raw`\mqty[a&b]`, 2.638, 0.850, 0.350], [String.raw`\mqty(\dmat{1,2,3})`, 5.250, 2.065, 1.565],
+    [String.raw`\mqty(\admat{1,2})`, 3.472, 1.460, 0.960], [String.raw`\mqty(\imat{3})`, 5.250, 2.050, 1.550], [String.raw`\mqty(\zmat{2}{3})`, 4.972, 1.450, 0.950],
+    [String.raw`\mqty(\xmat*{x}{2}{2})`, 5.321, 1.450, 0.950], [String.raw`\mqty(\xmat*{a}{3}{1})`, 2.733, 2.050, 1.550], [String.raw`\mqty(\pmat{y})`, 4.095, 1.450, 0.950], [String.raw`\Pmqty{a&b}`, 2.568, 0.850, 0.350]]) {
+    const b = layout(tex);
+    near(b.w, w, tex + ' width', 0.002);
+    near(b.h, h, tex + ' height', 0.002);
+    near(b.d, d, tex + ' depth', 0.002);
+  }
+  assert(!mathPrepare(String.raw`\Bmqty{a&b\\c&d}`).error, String.raw`\Bmqty is a braced matrix`);
+});
+cell('F29', 'mhchem: (^) and (v), the addition dot, coefficients and 1/2 as mhchem sets them; <-->', () => {
+  for (const [tex, w, h, d] of [[String.raw`\ce{CO2 (^)}`, 2.788, 0.705, 0.247], [String.raw`\ce{BaSO4 (v)}`, 3.830, 0.705, 0.247], [String.raw`\ce{CuSO4.5H2O}`, 6.327, 0.705, 0.247],
+    [String.raw`\ce{CuSO4*5H2O}`, 6.327, 0.705, 0.247], [String.raw`\ce{1/2 H2O}`, 2.787, 0.859, 0.345], [String.raw`\ce{5H2O}`, 2.649, 0.705, 0.247], [String.raw`\ce{0.5 H2O}`, 3.427, 0.705, 0.247]]) {
+    const b = layout(tex);
+    near(b.w, w, tex + ' width', 0.002);
+    near(b.h, h, tex + ' height', 0.002);
+    near(b.d, d, tex + ' depth', 0.002);
+  }
+  assert(mathml(String.raw`\ce{A <--> B}`).includes('⇄'), String.raw`\ce{A <--> B} is mhchem's two-way arrow`);
+});
+cell('F30', 'array : columns are dashed rules (arydshln); \\buildrel top \\over relation', () => {
+  for (const [tex, w] of [[String.raw`\begin{array}{c:c}a&b\end{array}`, 2.958], [String.raw`\begin{array}{*{2}{c:}c}a&b&c\end{array}`, 4.391], [String.raw`a\buildrel \alpha \over \longrightarrow b`, 2.977]])
+    near(layout(tex).w, w, tex + ' width', 0.002);
+  assert(/data-math-line="vertical"[^>]*stroke-dasharray/.test(layout(String.raw`\begin{array}{c:c}a&b\end{array}`).svg), 'the : rule is dashed');
+  assert(!/stroke-dasharray/.test(layout(String.raw`\begin{array}{c|c}a&b\end{array}`).svg), 'the | rule is solid');
+  assert.equal(layout(String.raw`a\buildrel \alpha \over \longrightarrow b`).svg, layout(String.raw`a\stackrel{\alpha}{\longrightarrow} b`).svg, String.raw`\buildrel is \stackrel`);
+});
+cell('F31', 'a braced group is one ordinary atom, as TeX makes every {…}', () => {
+  for (const [tex, w, display] of [['a{=}b', 1.736], [String.raw`a{\sum}b`, 2.014], ['a{,}b', 1.236], ['{=}a', 1.307], [String.raw`a{\left(b\right)}c`, 2.169], ['x{+}y', 1.840], [String.raw`{\sum}_a^b`, 1.934, true]])
+    near(layout(tex, display).w, w, tex + ' width', 0.002);
+  near(layout(String.raw`{\sum}_a^b`, true).h, 1.186, String.raw`{\sum}_a^b scripts sit beside it`, 0.002);
+  assert(/<mrow><mo[^>]*rspace="0em" lspace="0em">=<\/mo><\/mrow>/.test(mathml('a{=}b')), 'MathML: a{=}b has no relation spaces');
+  assert(/<msubsup><mrow><mo[^>]*movablelimits="false"/.test(mathml(String.raw`{\sum}_a^b`)), String.raw`MathML: {\sum}_a^b keeps its scripts beside it`);
+});
+cell('F32', 'a letter\'s italic correction is kept only before another character, as LuaTeX keeps it', () => {
+  for (const [tex, w] of [['fx', 1.152], ['f{x}', 1.152], [String.raw`f\mathbb{R}`, 1.219], ['f+x', 2.374], [String.raw`f\hat{x}`, 1.062], [String.raw`f\;x`, 1.340], [String.raw`f\frac12`, 1.128],
+    [String.raw`f\sqrt{x}`, 1.895], [String.raw`V\left(x\right)`, 2.100], [String.raw`f\sin`, 1.885], ['f{xy}', 1.552], [String.raw`f\mathbf{x}`, 1.097], [String.raw`f\color{red}x`, 1.062],
+    [String.raw`\color{red}a+b+c=1+2+3`, 9.153], [String.raw`\SI{9.81}{m.s^{-2}}`, 4.337], [String.raw`\set{x|y}`, 3.229], [String.raw`\Braket{a\|b|c}`, 3.512]])
+    near(layout(tex).w, w, tex + ' width', 0.002);
+});
+cell('F33', 'amsmath\'s \\colon is 2 mu and 6 mu around the colon', () => {
+  for (const [tex, w] of [[String.raw`\colon`, 0.722], [String.raw`a\colon b`, 1.680], [String.raw`f\colon A\to B`, 4.277]])
+    near(layout(tex).w, w, tex + ' width', 0.002);
+  assert(/<mspace width="0.111111em"><\/mspace><mo[^>]*rspace="0em" lspace="0em">:<\/mo><mspace width="0.333333em">/.test(mathml(String.raw`f\colon A\to B`)), String.raw`MathML: \colon carries its own spaces`);
+});
+cell('F34', 'a word space in text is Latin Modern Roman\'s 1/3 em, and a run of spaces is one; \\limsup has a thin space; \\operatorname ignores spaces', () => {
+  for (const [tex, w] of [[String.raw`\text{a b}`, 1.389], [String.raw`\text{a  b}`, 1.389], [String.raw`\text{if }`, 0.917], [String.raw`\limsup`, 3.062], [String.raw`\liminf`, 2.696],
+    [String.raw`\limsup_{n\to\infty}x_n`, 6.398], [String.raw`\sin x+\operatorname{arg max}_{x}f(x)`, 9.048], [String.raw`\operatorname{arg\ max}`, 3.586]])
+    near(layout(tex).w, w, tex + ' width', 0.002);
+});
+cell('F35', 'mhchem arrows are 2 em with their spaces inside, a count and then a charge follow the formula; an extensible arrow is its label plus 14 mu', () => {
+  for (const [tex, w, h, d] of [[String.raw`\ce{A <=> B}`, 4.014, 0.716, 0.100], [String.raw`\ce{->}`, 2.556, 0.510, 0.010], [String.raw`\ce{->[xxxxx]}`, 3.200, 1.012, 0.010], [String.raw`\ce{<->[xxxxx]}`, 3.356, 1.012, 0.010],
+    [String.raw`\ce{A ->[{long label here}] B}`, 7.602, 1.339, 0.010], [String.raw`\ce{SO4^2-}`, 2.787, 0.898, 0.247], [String.raw`\ce{NH4+}`, 2.555, 0.841, 0.247], [String.raw`\ce{[Cu(NH3)4]^2+}`, 6.019, 0.898, 0.261],
+    [String.raw`\ce{Fe2(SO4)3}`, 4.572, 0.748, 0.261], [String.raw`\ce{SO4^2- + Ba^2+ -> BaSO4 v}`, 12.602, 0.898, 0.247],
+    [String.raw`\xrightarrow{xxxxx}`, 2.812, 1.026, 0.010], [String.raw`\xrightarrow{\frac{a}{b}}`, 1.171, 1.454, 0.010], [String.raw`\xrightarrow{}`, 1.000, 0.510, 0.010]]) {
+    const b = layout(tex);
+    near(b.w, w, tex + ' width', 0.002);
+    near(b.h, h, tex + ' height', 0.003);
+    near(b.d, d, tex + ' depth', 0.003);
+  }
+});
+cell('F36', '\\big to \\Bigg take TeX\'s delimiter factor around amsmath\'s strut; \\left and \\right are sized from the body, not the grown \\middle', () => {
+  for (const [tex, w, h, d] of [[String.raw`\big(`, 0.422, 0.848, 0.348], [String.raw`\Big(`, 0.597, 1.146, 0.646], [String.raw`\big\{`, 0.540, 0.848, 0.348], [String.raw`\Big/`, 0.768, 1.146, 0.646],
+    [String.raw`\left(\frac{a}{b}\middle/c\right)`, 2.568, 0.905, 0.405], [String.raw`\left(\frac{a}{b}\middle|c\right)`, 2.229, 0.851, 0.352]]) {
+    const b = layout(tex);
+    near(b.w, w, tex + ' width', 0.002);
+    near(b.h, h, tex + ' height', 0.002);
+    near(b.d, d, tex + ' depth', 0.002);
+  }
+});
+cell('F37', '\\stackrel, \\buildrel, \\overset and \\underset take TeX\'s limit gaps', () => {
+  for (const [tex, h, d] of [[String.raw`\stackrel{a}{=}`, 0.883, 0], [String.raw`\buildrel a \over =`, 0.883, 0], [String.raw`\stackrel{x}{\to}`, 1.026, 0.010], [String.raw`\underset{a}{=}`, 0.367, 0.607],
+    [String.raw`\overset{\frac{a}{b}}{x}`, 1.386, 0.011], [String.raw`\overunderset{a}{b}{=}`, 0.883, 0.660]]) {
+    const b = layout(tex);
+    near(b.h, h, tex + ' height', 0.002);
+    near(b.d, d, tex + ' depth', 0.002);
+  }
+});
+cell('F38', 'amsmath\'s \\varinjlim, \\varprojlim and \\varliminf; \\injlim and \\projlim are words', () => {
+  for (const [tex, w, h, d] of [[String.raw`\varinjlim`, 1.389, 0.694, 0.570], [String.raw`\varinjlim_n`, 1.939, 0.694, 0.777], [String.raw`\varprojlim_n`, 1.939, 0.694, 0.777], [String.raw`\varliminf_n`, 1.939, 0.694, 0.427],
+    [String.raw`\injlim_n`, 3.246, 0.694, 0.412], [String.raw`\projlim`, 3.310, 0.694, 0.205]]) {
+    const b = layout(tex);
+    near(b.w, w, tex + ' width', 0.002);
+    near(b.h, h, tex + ' height', 0.002);
+    near(b.d, d, tex + ' depth', 0.002);
+  }
+});
+cell('F39', 'subarray and smallmatrix rows sit as amsmath spaces them; an array is an ordinary atom', () => {
+  for (const [tex, w, h, d] of [[String.raw`\begin{subarray}{c}a\\b\end{subarray}`, 0.434, 0.696, 0.196], [String.raw`\begin{subarray}{c}x\end{subarray}`, 0.454, 0.408, 0], [String.raw`\begin{subarray}{c}x\\x\\x\end{subarray}`, 0.454, 0.960, 0.460],
+    [String.raw`\begin{smallmatrix}a&b\\c&d\end{smallmatrix}`, 1.462, 0.818, 0.318], [String.raw`\begin{psmallmatrix}a&b\\c&d\end{psmallmatrix}`, 2.306, 0.818, 0.318],
+    [String.raw`a\begin{matrix}x\end{matrix}b`, 1.530, 0.850, 0.350], [String.raw`a\begin{aligned}x\end{aligned}b`, 1.530, 0.850, 0.350]]) {
+    const b = layout(tex);
+    near(b.w, w, tex + ' width', 0.002);
+    near(b.h, h, tex + ' height', 0.002);
+    near(b.d, d, tex + ' depth', 0.002);
+  }
+});
+cell('F40', '\\multicolumn and \\hdotsfor span columns as TeX spans them; \\intertext is a line between alignment rows; \\enclose draws its notations', () => {
+  for (const [tex, w, h, d] of [[String.raw`\begin{array}{ccc}a&b&c\\\multicolumn{3}{c}{xyz}\end{array}`, 4.391, 1.450, 0.950], [String.raw`\begin{array}{ccc}a&b&c\\\multicolumn{2}{l}{xxxxxxxxxx}&d\end{array}`, 8.240, 1.450, 0.950],
+    [String.raw`\begin{pmatrix}a&b&c\\\hdotsfor{3}\\d&e&f\end{pmatrix}`, 5.235, 2.050, 1.550], [String.raw`\begin{pmatrix}a&b&c&d\\x&\hdotsfor{2}&y\end{pmatrix}`, 6.426, 1.450, 0.950]]) {
+    const b = layout(tex);
+    near(b.w, w, tex + ' width', 0.002);
+    near(b.h, h, tex + ' height', 0.002);
+    near(b.d, d, tex + ' depth', 0.002);
+  }
+  // The rule between a and b stops at the merged row; the span draws its own | rules.
+  const merged = layout(String.raw`\begin{array}{|c|c|}a&b\\\multicolumn{2}{|c|}{xyz}\end{array}`), rules = [...merged.svg.matchAll(/translate\(([-\d.]+) [-\d.]+\)"><path data-math-line="vertical" d="M0 0v([\d.]+)/g)].map(m => [+m[1], +m[2]]);
+  assert(rules.some(([x, length]) => x > 0.5 && x < merged.w - 0.5 && length < (merged.h + merged.d) * 0.6), String.raw`\multicolumn breaks the rule it spans: ` + JSON.stringify(rules));
+  const dots = glyphs(layout(String.raw`\begin{pmatrix}a&b&c\\\hdotsfor{3}\end{pmatrix}`).svg).filter(item => item.id === MATH_FONT.chars[0x2e]).length;
+  assert(dots >= 6, String.raw`\hdotsfor{3} fills its columns with dots: ` + dots);
+  const inter = layout(String.raw`\begin{align}a&=b\\\intertext{and so}c&=dddd\end{align}`);
+  assert(inter.h + inter.d > layout(String.raw`\begin{align}a&=b\\c&=dddd\end{align}`).h + 1.5, String.raw`\intertext adds a line with display skips`);
+  assert(/<mtd columnspan="2" style="text-align:left"><mrow><mrow><mrow><mtext>and.so/.test(mathml(String.raw`\begin{align}a&=b\\\intertext{and so}c&=d\end{align}`)), String.raw`MathML: \intertext spans the row`);
+  for (const notation of ['box', 'roundedbox', 'circle', 'left', 'right', 'top', 'bottom', 'horizontalstrike', 'verticalstrike', 'updiagonalstrike', 'downdiagonalstrike', 'updiagonalarrow', 'longdiv', 'actuarial', 'madruwb', 'radical', 'phasorangle']) {
+    const b = layout(String.raw`\enclose{` + notation + '}{x}');
+    assert(/stroke="currentColor"/.test(b.svg) || notation === 'radical', notation + ' draws a line');
+    assert(mathml(String.raw`\enclose{` + notation + '}{x}').includes('<menclose notation="' + notation + '"'), notation + ' is a MathML enclosure');
+  }
+  near(layout(String.raw`\enclose{box}{x}`).w, 0.972, String.raw`\enclose{box}{x} is padded 0.2 em`, 0.002);
+  assert.equal(mathPrepare(String.raw`\enclose{star}{x}`).error?.code, 'unsupported-notation', 'an unknown notation is refused');
+  assert.equal(mathPrepare(String.raw`a\intertext{x}`).error?.code, 'misplaced-alignment', String.raw`\intertext outside an alignment is refused`);
+});
+cell('F41', 'bold and italic letters without a styled code point are drawn bold or slanted; text styles combine as LaTeX\'s', () => {
+  for (const ch of ['ç', 'ø', 'ß', 'æ', 'Ø', 'þ']) {
+    const plain = layout(String.raw`\text{` + ch + '}'), bold = layout(String.raw`\textbf{` + ch + '}'), italic = layout(String.raw`\textit{` + ch + '}');
+    assert(bold.w > plain.w && bold.svg !== plain.svg, ch + ' is bold in \\textbf');
+    assert(/skewX/.test(italic.svg) || italic.svg !== plain.svg, ch + ' is slanted in \\textit');
+  }
+  assert(glyphs(layout(String.raw`\textbf{ç}`).svg).some(item => item.id === MATH_FONT.chars[0x1d41c]), String.raw`\textbf{ç} is a bold c with its cedilla`);
+  assert(/font-weight:700;font-style:italic;">x</.test(mathml(String.raw`\textbf{\textit{x}}`)), String.raw`MathML: \textbf{\textit{x}} is bold italic`);
+  assert(glyphs(layout(String.raw`\textbf{\textit{x}}`).svg).some(item => item.id === MATH_FONT.chars[0x1d499]), String.raw`\textbf{\textit{x}} draws a bold italic x`);
+  assert(/>b<\/mtext>/.test(mathml(String.raw`\emph{a \emph{b}}`)) && !/font-style:italic;">b/.test(mathml(String.raw`\emph{a \emph{b}}`)), String.raw`\emph inside \emph is upright`);
+});
+
+// Round-four references: LuaTeX 1.17.0, Latin Modern Math 1.959, mathtools, unicode-math,
+// then amscd (loading amscd first lets unicode-math disable its math-active @). Values are ems.
+cell('F42', '\\ldots and \\cdots use the font ellipses, with their own advances', () => {
+  for (const [tex, cp, w, h] of [[String.raw`\ldots`, 0x2026, 0.837, 0.106], [String.raw`\cdots`, 0x22ef, 0.776, 0.303]]) {
+    const b = layout(tex, true);
+    near(b.w, w, tex + ' width', 0.001);
+    near(b.h, h, tex + ' height', 0.001);
+    assert.deepEqual(glyphs(b.svg).map(g => g.id), [MATH_FONT.chars[cp]], tex + ' draws one font ellipsis');
+  }
+});
+cell('F43', 'mathtools double arrows retain control-space labels and their ten-mu width pad', () => {
+  for (const [tex, w, h, d] of [[String.raw`\xRightarrow{}`, 1.000241, 0.720, 0.620], [String.raw`\xRightarrow{x}`, 1.175485, 1.035701, 0.620],
+    [String.raw`\xRightarrow{xxxxx}`, 2.989883, 1.035701, 0.620], [String.raw`\xRightarrow[xxxxx]{yyyyy}`, 2.989883, 1.1715, 0.627]]) {
+    const b = layout(tex, true);
+    near(b.w, w, tex + ' width', 0.002); near(b.h, h, tex + ' height', 0.002); near(b.d, d, tex + ' depth', 0.002);
+  }
+  const x = glyphs(layout(String.raw`\xRightarrow{x}`, true).svg).at(-1);
+  near(x.x, 0.194442, String.raw`\xRightarrow{x} label origin`, 0.002);
+});
+cell('F44', '\\xmapsto uses arrow-fill label padding and lower-limit depth', () => {
+  // mathtools documents that its legacy mapstochar slot is broken with unicode-math (it draws a 7).
+  // This TeX control restores only that stem: DeclareSymbolFont{referencestem}{OMS}{cmsy}{m}{n},
+  // let\mapstochar\relax, DeclareMathSymbol{\mapstochar}{\mathrel}{referencestem}{"37}.
+  for (const [tex, w, h, d] of [[String.raw`\xmapsto{x}`, 1.000241, 1.025702, 0.010], [String.raw`\xmapsto{xxxxx}`, 2.812437, 1.025702, 0.010],
+    [String.raw`\xmapsto[xxxxx]{yyyyy}`, 2.812437, 1.1615, 0.617001]]) {
+    const b = layout(tex, true);
+    near(b.w, w, tex + ' width', 0.002); near(b.h, h, tex + ' height', 0.002); near(b.d, d, tex + ' depth', 0.002);
+  }
+  near(glyphs(layout(String.raw`\xmapsto{x}`, true).svg).at(-1).x, 0.214987, String.raw`\xmapsto{x} label origin`, 0.002);
+});
+cell('F45', '\\xhookrightarrow joins the small math-italic hook to the shaft with three mu', () => {
+  for (const [tex, w, h, d] of [[String.raw`\xhookrightarrow{}`, 1.111357, 0.510, 0.010], [String.raw`\xhookrightarrow{x}`, 1.111357, 1.025702, 0.010],
+    [String.raw`\xhookrightarrow{xxxxx}`, 2.812437, 1.025702, 0.010], [String.raw`\xhookrightarrow[xxxxx]{yyyyy}`, 2.812437, 1.1615, 0.617001]]) {
+    const b = layout(tex, true);
+    near(b.w, w, tex + ' width', 0.002); near(b.h, h, tex + ' height', 0.002); near(b.d, d, tex + ' depth', 0.002);
+    assert(glyphs(b.svg).some(g => g.id === MATH_FONT.arrowHook), tex + ' retains the original small hook outline');
+  }
+  near(glyphs(layout(String.raw`\xhookrightarrow{x}`, true).svg).at(-1).x, 0.387211, String.raw`\xhookrightarrow{x} label origin`, 0.002);
+});
+cell('F46', 'paired extensible harpoons retain both shifted arrows and opposite phantom labels', () => {
+  for (const [tex, w, h, d] of [[String.raw`\xrightleftharpoons{}`, 1.000241, 0.59782, 0.50518], [String.raw`\xrightleftharpoons{x}`, 1.000241, 1.113521, 0.50518],
+    [String.raw`\xrightleftharpoons{xxxxx}`, 2.812437, 1.113521, 0.50518], [String.raw`\xrightleftharpoons[xxxxx]{yyyyy}`, 2.812437, 1.24932, 0.70482]]) {
+    const b = layout(tex, true);
+    near(b.w, w, tex + ' width', 0.002); near(b.h, h, tex + ' height', 0.002); near(b.d, d, tex + ' depth', 0.002);
+  }
+});
+cell('F47', 'amscd keeps object rows two em apart and spaces horizontal arrow cells by half an em', () => {
+  for (const [tex, w, h, d] of [[String.raw`\begin{CD}A\end{CD}`, 0.750, 0.608, 0.108], [String.raw`\begin{CD}A @>>> B\end{CD}`, 5.509, 0.613, 0.113],
+    [String.raw`\begin{CD}A @>f>> B\end{CD}`, 5.509, 0.9278, 0.4278], [String.raw`\begin{CD}A @>fffff>ggggg> B\end{CD}`, 5.509, 1.2992, 0.7992],
+    [String.raw`\begin{CD}A\\@VfVgV\\B\end{CD}`, 0.759, 2.608, 2.108], [String.raw`\begin{CD}A @>f>> B\\@VgVV @VVhV\\C @>>k> D\end{CD}`, 5.578, 3.257701, 2.7577],
+    [String.raw`\begin{CD}AAAA @>fffffff>> B\\@VggggggggVV @VVhhhhhV\\C @>>kkkkk> DDDD\end{CD}`, 10.951624, 3.257701, 2.7577],
+    [String.raw`\begin{CD}A @= B\\@| @|\\C @= D\end{CD}`, 5.578, 2.619, 2.119]]) {
+    const b = layout(tex, true);
+    near(b.w, w, tex + ' width', 0.002); near(b.h, h, tex + ' height', 0.002); near(b.d, d, tex + ' depth', 0.002);
+  }
+});
+cell('F48', 'an under-accent uses the slanted base\'s font attachment', () => {
+  const tex = String.raw`\underleftarrow{f}`, b = layout(tex, true), mark = glyphs(b.svg).find(g => g.id === MATH_FONT.chars[0x20ee]);
+  assert(mark, tex + ' draws the font bottom accent');
+  near(mark.x, 0.728, tex + ' raw mark origin', 0.002);
+  near(b.d, 0.486, tex + ' depth', 0.002);
+});
+cell('F49', 'mhchem lower arrow labels are raised to their common top before limit spacing', () => {
+  for (const [tex, w, h, d] of [[String.raw`\ce{->[x]}`, 2.555542, 1.0117, 0.010], [String.raw`\ce{->[][x]}`, 2.555542, 0.510, 0.610],
+    [String.raw`\ce{->[x][x]}`, 2.555542, 1.0117, 0.610], [String.raw`\ce{->[][Hg]}`, 2.555542, 0.510, 0.692851],
+    [String.raw`\ce{->[][{long label here}]}`, 6.143947, 0.510, 0.700551]]) {
+    const b = layout(tex, true);
+    near(b.w, w, tex + ' width', 0.002); near(b.h, h, tex + ' height', 0.002); near(b.d, d, tex + ' depth', 0.002);
+  }
+  near(glyphs(layout(String.raw`\ce{->[][x]}`, true).svg).at(-1).y, 0.37295, 'mhchem lower x baseline', 0.002);
+});
+cell('F50', 'mhchem gives a lowercase state its two-tenths-ex gap without changing formula groups', () => {
+  for (const [tex, w] of [[String.raw`\ce{H2O(l)}`, 3.124498], [String.raw`\ce{H2O (l)}`, 3.29116], [String.raw`\ce{H2O(aq)}`, 3.874498]]) {
+    const b = layout(tex, true);
+    near(b.w, w, tex + ' width', 0.002); near(b.h, 0.748, tex + ' height', 0.002); near(b.d, 0.248, tex + ' depth', 0.002);
+  }
+  near(layout(String.raw`\ce{Fe2(SO4)3}`, true).w, 4.572, 'uppercase chemical group control', 0.002);
+});
+cell('F51', 'mhchem scripts distinguish an explicit variable from words and oxidation numerals', () => {
+  for (const [tex, w, h] of [[String.raw`\ce{A^{x}}`, 1.2596, 0.7417], [String.raw`\ce{A^x}`, 1.2596, 0.7417], [String.raw`\ce{A^{$x$}}`, 1.2596, 0.7417],
+    [String.raw`\ce{A^{foo}}`, 1.8504, 0.9258], [String.raw`\ce{A^{IV}}`, 1.6852, 0.911101]]) {
+    const b = layout(tex, true);
+    near(b.w, w, tex + ' width', 0.002); near(b.h, h, tex + ' height', 0.002); near(b.d, 0, tex + ' depth', 0.002);
+  }
+});
+cell('F52', 'monospace sharp s uses the original Latin Modern Mono outline and advance', () => {
+  for (const tex of [String.raw`\mathtt{ß}`, String.raw`\texttt{ß}`]) {
+    const b = layout(tex, true), ids = glyphs(b.svg).map(g => g.id);
+    near(b.w, 0.525, tex + ' width', 0.001); near(b.h, 0.617, tex + ' height', 0.001); near(b.d, 0.006, tex + ' depth', 0.001);
+    assert.deepEqual(ids, [MATH_FONT.styledGlyphs.monospace[0xdf]], tex + ' draws the Mono glyph');
+    assert(!ids.includes(MATH_FONT.chars[0xdf]) && !b.svg.includes('<text'), tex + ' stays self-contained');
+  }
+});
 cell('P1', 'a formula being typed previews without an error', () => {
   for (const tex of [String.raw`\frac{-b\pm\sqrt{b^2-4ac}}{2a}`, String.raw`\begin{pmatrix}1 & 2\\3 & 4\end{pmatrix}`, String.raw`\left(x+1\right)^{\sqrt[3]{y}}`])
     for (let i = 1; i <= tex.length; i++) {
@@ -202,6 +566,16 @@ cell('P2', 'a misspelled command keeps its fix at the caret; a name being typed 
   const faulted = accepted.flatMap(name => Array.from({length: name.length - 2}, (_, i) => '\\' + name.slice(0, i + 2)))
     .filter(prefix => renderMath(prefix, {preview: true, caret: prefix.length}).errors.length);
   assert.deepEqual([...new Set(faulted)], [], 'a command being typed previews without a fault');
+});
+cell('P3', 'an empty argument in the phone strip\'s preview is a placeholder to tap, at the place inside its braces', () => {
+  const square = MATH_FONT.chars[0x25a1];
+  for (const [tex, offsets] of [[String.raw`\frac{}{}`, [6, 8]], ['x^{}', [0, 3]], [String.raw`\sqrt{}`, [6]], [String.raw`\frac{a}{}`, [6, 9]]]) {
+    const {svg, errors} = renderMath(tex, {preview: true, spans: true});
+    assert.deepEqual(errors, [], tex);
+    assert.deepEqual([...svg.matchAll(/data-math-at="(\d+)"/g)].map(m => +m[1]), offsets, tex + ' tap targets');
+    assert(glyphs(svg).some(item => item.id === square), tex + ' draws a placeholder box');
+    assert(!glyphs(renderMath(tex).svg).some(item => item.id === square), tex + ' renders without a placeholder outside the preview');
+  }
 });
 
 const results = [];

@@ -144,6 +144,7 @@ body.rapier-draw-open .scroll-fab.scroll-fab--edge-stood-down { visibility: hidd
 body.rapier-draw-open #navigator-overlay { z-index: 960; }
 body.rapier-draw-open #navigator-overlay :is(#navigator-title, #navigator-outline-tools, #navigator-outline, #goto-line-form, #goto-line-range) { display: none; }
 body.rapier-draw-open #navigator-overlay .navigator-title-row { justify-content: flex-end; margin-bottom: 0; }
+.scroll-fab.visible[data-rapier-yield] { visibility: hidden; pointer-events: none; }
 .scroll-fab.tracking,
 .scroll-fab:focus-visible { opacity: 0.82; }
 .scroll-fab[data-checks="issues"] { background: var(--color-error); }
@@ -959,7 +960,7 @@ html[data-compare="on"] #source-mode ,html:not([data-compare="on"]) .compare-mod
 .agent-self__marks .agent-mark:empty { width: 2px; height: 18px; }
 .agent-self__marks [aria-checked="true"] { background: var(--color-text); }
 .agent-self__marks [aria-checked="true"] .agent-mark { stroke: var(--color-bg); }
-.agent-row__who:focus-visible, .agent-self__marks button:focus-visible, .agent-note button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.agent-row__who:focus-visible, .agent-self__marks button:focus-visible, .agent-note button:focus-visible { outline: none; }
 .agent-row__under {
 	flex: 1 1 auto;
 	min-width: 0;
@@ -1547,7 +1548,7 @@ html[data-compare="on"] #source-mode ,html:not([data-compare="on"]) .compare-mod
 	border-radius: 0;
 }
 .settings-draw-btn[hidden] { display: none; }
-.settings-draw-btn:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.settings-draw-btn:focus-visible { outline: none; }
 .settings-action-pair {
 	display: flex;
 	gap: var(--space-2);
@@ -1630,6 +1631,7 @@ html[data-compare="on"] #source-mode ,html:not([data-compare="on"]) .compare-mod
 .rapier-pop__actions > [data-pop-top] { background: var(--color-pop-affirm); color: var(--color-pop-affirm-ink); }
 .rapier-pop__actions > [data-pop-top]:focus-visible { background: color-mix(in srgb, var(--color-pop-affirm) 84%, var(--color-pop-affirm-ink)); }
 .rapier-pop__actions > [data-pop-bottom] { margin-top: var(--space-6); background: var(--color-pop-negative); color: #fff; }
+.rapier-pop__actions[data-pop-plain] > [data-pop="cancel"]:last-child { margin-top: var(--space-6); }
 .rapier-pop__actions > [data-pop-bottom]:focus-visible { background: color-mix(in srgb, var(--color-pop-negative) 88%, #000); }
 @media (hover: hover) and (pointer: fine) {
 	.rapier-pop__actions > [data-pop-top]:hover { background: color-mix(in srgb, var(--color-pop-affirm) 84%, var(--color-pop-affirm-ink)); }

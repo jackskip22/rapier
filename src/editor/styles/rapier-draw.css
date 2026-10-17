@@ -44,7 +44,7 @@ html.rapier-draw-open{overscroll-behavior:none}
 .rapier-draw-current-tool{appearance:none;box-sizing:border-box;display:flex;flex:none;flex-direction:column;align-items:center;justify-content:center;gap:1px;width:var(--draw-tool-w);height:100%;padding:var(--space-1) 0;border:0;border-radius:0;background:var(--color-icon);color:var(--color-bg);cursor:pointer;touch-action:manipulation}
 .rapier-draw-current-tool svg{display:block;width:20px;height:20px;flex:none}
 .rapier-draw-current-tool span{display:block;max-width:100%;font:var(--fw-semibold) 9px/1 var(--font-mono);letter-spacing:var(--track-caps-ui);text-transform:uppercase;text-align:center}
-.rapier-draw-current-tool:focus-visible{outline:2px solid var(--color-accent);outline-offset:-2px}
+.rapier-draw-current-tool:focus-visible{outline:none}
 .rapier-draw-canvas-toggle{width:var(--draw-history);height:var(--draw-history)}
 .rapier-draw-canvas-toggle rect{rx:0;ry:0;fill:none}
 .rapier-draw-canvas-toggle rect+rect{stroke-width:1.5;fill:var(--draw-paper,var(--color-bg))}
@@ -65,7 +65,7 @@ html.rapier-draw-open{overscroll-behavior:none}
 .rapier-draw-menu-swatch{flex:none;width:22px;height:22px}
 .rapier-draw-surface--choosing.rapier-draw-surface--choosing-canvas .rapier-draw-current-tool{z-index:auto}
 .rapier-draw-surface--choosing-canvas .rapier-draw-canvas-toggle{position:relative;z-index:9}
-.rapier-draw-tool-menu-item:focus-visible{outline:2px solid var(--color-accent);outline-offset:-2px}
+.rapier-draw-tool-menu-item:focus-visible{outline:none}
 @media(hover:hover) and (pointer:fine){.rapier-draw-tool-menu-item:hover{opacity:.8}}
 .rapier-draw-settings{position:relative;z-index:1;flex:none;box-sizing:border-box;height:calc(var(--draw-cell) + 2 * var(--space-1));min-height:calc(var(--draw-cell) + 2 * var(--space-1));padding:0;background:var(--color-icon);color:var(--color-bg)}
 .rapier-draw-settings-controls{--draw-caption:min(9px,2.25vw);display:grid;grid-template-columns:repeat(var(--draw-settings-count,1),minmax(0,1fr));align-items:stretch;gap:0;width:calc(100% - var(--draw-cell) - var(--space-1));height:100%;overflow:hidden;transition:opacity 120ms var(--ease-micro),transform 180ms var(--ease-micro)}
@@ -125,7 +125,8 @@ html.rapier-draw-open{overscroll-behavior:none}
 @media(prefers-reduced-motion:reduce){.rapier-draw-nib-tag{transition:none}}
 .rapier-draw-hint{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--space-1);padding:0 var(--space-6);text-align:center;pointer-events:none;font:var(--fw-semibold) var(--text-sm) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;color:var(--color-text-muted)}
 .rapier-draw-hint-sub{font-size:var(--text-xs);color:var(--color-text-muted)}
-#rapier-draw-surface:has(.rapier-draw-shapes>*,.rapier-draw-preview>*,.rapier-draw-live[d]:not([d=""])) .rapier-draw-hint{display:none}
+#rapier-draw-surface:has(.rapier-draw-shapes>*,.rapier-draw-preview>*,.rapier-draw-live[d]:not([d=""]),.rapier-draw-replay-bar:not([hidden])) .rapier-draw-hint{display:none}
+.rapier-draw-canvas{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
 .rapier-draw-menu{position:fixed;box-sizing:border-box;display:flex;flex-wrap:wrap;gap:var(--space-1);padding:var(--space-2);border:0;background:color-mix(in srgb,var(--color-bg) 65%,transparent);box-shadow:none;z-index:901;max-width:min(96vw,26rem);overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y}
 .rapier-draw-menu--sheet{left:var(--draw-safe-left);right:var(--draw-safe-right);bottom:0;top:auto;width:auto;max-width:none;transform:none;max-height:min(58vh,440px);padding-bottom:calc(var(--draw-safe-bottom) + var(--space-2));box-shadow:none}
 .rapier-draw-menu-row{display:flex;align-items:center;gap:var(--space-1);flex-wrap:wrap;width:100%}
@@ -212,7 +213,7 @@ html.rapier-draw-open{overscroll-behavior:none}
 .rapier-draw-colour-editor{display:flex;align-items:center;gap:var(--space-1);width:100%;min-width:0}
 .rapier-draw-colour-editor>.rapier-draw-swatch,.rapier-draw-colour-editor>.rapier-draw-colour-custom{flex:none}
 .rapier-draw-colour-hex{appearance:none;box-sizing:border-box;flex:1;min-width:0;height:44px;padding:0 var(--space-2);border:0;border-radius:0;background:var(--color-bg);color:var(--color-text);font:var(--fw-semibold) 16px var(--font-mono);text-transform:uppercase;touch-action:manipulation}
-.rapier-draw-colour-hex:focus-visible{outline:2px solid var(--color-accent);outline-offset:-2px}
+.rapier-draw-colour-hex:focus-visible{outline:none}
 .rapier-draw-colour-hex[aria-invalid="true"]{outline:2px solid var(--color-error);outline-offset:-2px}
 .rapier-draw-colour-copy{color:var(--color-icon)}
 .rapier-draw-swatch.rapier-draw-colour-copy>span{box-shadow:none}
@@ -232,7 +233,7 @@ html.rapier-draw-open{overscroll-behavior:none}
 	.rapier-draw-swatch,.rapier-draw-colour-custom,.rapier-draw-colour-custom input,.rapier-draw-handle{min-width:48px;min-height:48px}
 }
 .rapier-draw-colour-custom:focus-within{background:var(--color-surface-hover)}
-:is(.rapier-draw-colour-custom,.rapier-draw-garden-colour):has(> input[type="color"]:focus-visible){outline:2px solid var(--color-focus);outline-offset:2px}
+:is(.rapier-draw-colour-custom,.rapier-draw-garden-colour):has(> input[type="color"]:focus-visible){outline:none}
 .rapier-draw-kinds{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:0;padding:0 var(--space-2);background:var(--color-surface-2)}
 .rapier-draw-kinds .rapier-draw-chip--glyph{flex:none}
 .rapier-draw-handles{position:fixed;inset:0;pointer-events:none}

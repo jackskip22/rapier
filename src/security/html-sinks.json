@@ -92,6 +92,11 @@
 				"kind": "static-template",
 				"reason": "surface.innerHTML is a fixed template interpolating only RAPIER_DRAW_ICONS entries: constant markup, or a glyph the editor or Notes also draws, read from its one source (the editor's static markup in editor/ui.html, _RAPIER_COMMAND_ICONS, _RAPIER_WILL_LAW_GLYPH, RAPIER_NOTES_ICONS) by _rapierDrawSourceGlyph; no document text."
 			},
+			"_rapierDrawUpdatePenModes": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "chip.innerHTML is a fixed RAPIER_DRAW_ICONS entry (penInk or penLine) and the mode's word from RAPIER_DRAW_PEN_MODES, for the tool in hand already checked to be 'brush' or 'pen'; no document or person-supplied text reaches it."
+			},
 			"_rapierDrawUpdateKindsChip": {
 				"count": 1,
 				"kind": "static-template",
@@ -448,6 +453,11 @@
 				"count": 1,
 				"kind": "static-template",
 				"reason": "template.innerHTML receives the build's own packed UI source (the editor/ui.html the build embedded and verified by digest), inflated at boot; no document or network text ever reaches it."
+			},
+			"_rapierShowFirstPaint": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "The first visit's picture (editor/first-paint.json, taken by tools/first-paint.mjs from the build's own editor) is the build's own packed record, inflated at boot and written into a closed, inert shadow root; no document or network text ever reaches it."
 			},
 			"_rapierLoadPaintStyles": {
 				"count": 1,

@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Immutable authored origins shared by causal transport and inverse projection.
 import {_rapierTransformSplices, _rapierValidAuthored} from './journal-records.mjs';
 import {sha256} from './hash.mjs';
 
-// The frontier names only causal maxima. Linear history needs one predecessor,
-// and concurrent predecessors remain separate until an act observes both.
 function authoredFrontier(records, visit = null) {
   const dependencies = new Map(), frontier = new Set();
   for (const record of records) {
@@ -38,8 +35,6 @@ export function authoredPlacements(base, records) {
   return origins;
 }
 
-// Immutable authored placement stays on its own act. Basis IDs refer only to this
-// canonical history; no source snapshot or duplicate history is stored.
 export function authoredPlacement(source, splices, basis) {
   const origin = {basis: basis.slice().sort(), source: sha256(source), splices: splices.map(row => ({...row}))};
   if (!_rapierValidAuthored(origin) || _rapierTransformSplices(source, splices) === null)

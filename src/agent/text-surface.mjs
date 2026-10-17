@@ -221,11 +221,16 @@ export function planTextChanges(text, changes, targets = textTargets(text)) {
   }
   const dropped = droppedObjectLayout(text, planned); if (dropped != null) return {reason: 'object_layout_dropped', index: dropped};
   let after = text, delta = 0;
-  const receipts = planned.map(row => {const start = row.pos + delta; delta += row.inserted.length - row.removed.length; return {index: row.index, start};});
+  const receipts = planned.map(row => {const start = row.pos + delta; delta += row.inserted.length - row.removed.length; return {index: row.index, start, inserted: row.inserted};});
   const splices = planned.toReversed().map(({pos, removed, inserted}) => ({pos, removed, inserted}));
   for (const row of splices) after = after.slice(0, row.pos) + row.inserted + after.slice(row.pos + row.removed.length);
-  const lines = textTargets(after).lines;
-  return {text: after, splices, ranges, lines: receipts.toSorted((a,b) => a.index - b.index).map(row => lines.number(row.start))};
+  const lines = textTargets(after).lines, ordered = receipts.toSorted((a,b) => a.index - b.index);
+  const written = ordered.map(({start, inserted}) => {
+    const lead = /^(?:\r\n|\r|\n)/.exec(inserted)?.[0].length || 0, tail = /(?:\r\n|\r|\n)$/.exec(inserted.slice(lead))?.[0].length || 0;
+    const last = lines.number(Math.max(start, start + inserted.length - tail - (inserted.length - tail > lead ? 1 : 0)));
+    return [Math.min(last, lines.number(start + lead)), last];
+  });
+  return {text: after, splices, ranges, lines: ordered.map(row => lines.number(row.start)), written};
 }
 
 function droppedObjectLayout(text, planned) {
@@ -254,7 +259,7 @@ export function sourcePosition(projection, at, end = false, toSurface = false) {
   const [from, to, start, stop] = toSurface ? ['start', 'end', 'from', 'to'] : ['from', 'to', 'start', 'end'];
   let delta = 0;
   for (const row of projection.segments) {
-    if (at < row[from] || at === row[from] && !end) break;
+    if (at < row[from] || at === row[from] && (!end || row.hidden && !toSurface)) break;
     if (at < row[to]) return end ? row[stop] : row[start];
     delta += row[stop] - row[start] - (row[to] - row[from]);
   }

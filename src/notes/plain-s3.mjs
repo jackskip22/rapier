@@ -65,7 +65,7 @@ export function createS3PlainStore(options = {}) {
 				if (res.status === 404) refuse('bucket', 'the bucket was not found');
 				if (res.status !== 200) unconfirmed(res.status);
 				let xml; try { xml = readS3XML(td.decode(res.bytes)); } catch (error) { if (error?.code) throw error; refuse('response', 'the bucket listing is not valid XML'); }
-				const encoded = s3XMLScalar(xml, 'EncodingType') === 'url', decode = value => { try { return encoded ? decodeURIComponent(value) : value; } catch { refuse('response', 'the bucket listing has invalid keys'); } };
+				const encoded = s3XMLScalar(xml, 'EncodingType') === 'url', decode = value => { try { return encoded ? decodeURIComponent(value.replace(/\+/g, '%20')) : value; } catch { refuse('response', 'the bucket listing has invalid keys'); } };
 				if (s3XMLScalar(xml, 'Name', true) !== place.bucket || decode(s3XMLScalar(xml, 'Prefix', true)) !== prefix) refuse('authority', 'the listing is not this bucket\'s folder');
 				for (const row of xml.children.filter(child => child.name === 'Contents')) {
 					const key = decode(s3XMLScalar(row, 'Key', true));

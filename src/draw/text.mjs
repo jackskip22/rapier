@@ -486,7 +486,7 @@ function layoutText(shape, context = {}) {
 	if (!number(width) || width < 0 || width > 65536) textLimit();
 	const wrapped = wrapText(text, width, measure, shape.textWrap === 'balance' ? size : 0, lineHeight), lines = wrapped.lines;
 	const measuredWidth = Math.max(0, ...lines.map(line => line.width)), height = Math.max(size, lines.length * lineHeight);
-	const contentWidth = standalone ? Math.max(16, width ? wrapped.wrapWidth : 0, measuredWidth) : Math.max(size / 2, measuredWidth);
+	const contentWidth = standalone ? Math.max(16, g.w > 0 ? wrapped.wrapWidth : 0, measuredWidth) : Math.max(size / 2, measuredWidth);
 	if (contentWidth > 65536 || height > 65536) textLimit();
 	let x, y, rotation = 0, origin, labelRange = [0, 1], fraction = shape.labelPos ?? .5;
 	if (standalone) {

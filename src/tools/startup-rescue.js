@@ -22,7 +22,7 @@ async function _rapierRescueStartup() {
       : result?.pending ? 'Finding saved documents…' : 'No saved documents found in this browser.');
     section.dataset.state = errors.length ? 'partial' : result?.pending ? 'loading' : 'ready'; retry.hidden = !errors.length;
   };
-  const exporter = globalThis.RapierHost ? globalThis.RapierPlatform?.files?.exportArtifact : null;
+  const exporter = () => globalThis.RapierHost ? globalThis.RapierPlatform?.files?.exportArtifact : null;
   const linkFor = (row, names, born) => {
     const link = document.createElement('a'); let busy = false, name = row.name, number = 2;
     const dot = name.lastIndexOf('.'), stem = dot > 0 ? name.slice(0, dot) : name, extension = dot > 0 ? name.slice(dot) : '';
@@ -35,7 +35,8 @@ async function _rapierRescueStartup() {
       try {
         const blob = row.blob || await row.read();
         if (born !== generation) return;
-        if (typeof exporter === 'function') { await exporter(blob, name); renderStatus(); return; }
+        const save = exporter();
+        if (typeof save === 'function') { await save(blob, name); renderStatus(); return; }
         const url = URL.createObjectURL(blob); urls.add(url); link.href = url; link.click(); renderStatus();
         setTimeout(() => { URL.revokeObjectURL(url); urls.delete(url); if (link.href === url) link.href = '#'; }, 60000);
       } catch (error) {
