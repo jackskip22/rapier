@@ -11,7 +11,7 @@ import {mathModules, mathClassicSource} from '../math/package-build.mjs';
 import {mathReadme} from '../math/package-readme.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-export const MATH_VERSION = '2.4.1';
+export const MATH_VERSION = '2.5.0';
 export const MATH_BUNDLE = 'rapier-math-' + MATH_VERSION + '.js';
 export const MATH_SOURCES = ['font.js', 'symbols.js', 'parser.js', 'source.js', 'variants.js', 'layout.js', 'fallbacks.js', 'responsive.js', 'api.js', 'browser.js', 'mathml.js', 'semantic-api.js', 'combined.js', 'classic.js'].map(name => 'math/' + name);
 export const MATH_RECIPE = ['math/build-font.py', 'math/FONT-SOURCE.md', 'math/FONT-LICENSE.txt', 'math/package-verify.mjs', 'tools/build-math.mjs', 'math/LICENSE-MIT', 'math/adoption-verify.mjs', 'math/package-build.mjs', 'math/package-layout.mjs', 'math/package-check.mjs', 'math/package-readme.mjs', 'math/README.md', 'math/SEMANTICS.md', 'math/semantic-verify.mjs', 'math/typeset-verify.mjs'];
@@ -55,9 +55,10 @@ export async function assembleMath({root = ROOT, packageLayout = false} = {}) {
     inputs.push({file, bytes, text: bytes.toString('utf8')});
   }
   const license = await fontLicense(root, packageLayout);
-  if (!inputs[0].text.includes(license.toString('utf8').trim())) throw new Error('The embedded math font is missing its complete license');
+  if (!inputs[0].text.includes(FONT.copyright) || !inputs[0].text.includes('Complete license: FONT-LICENSE.txt')) throw new Error('The embedded math font is missing its notice');
+  // The single-file bundle travels alone, so it carries both complete licenses itself.
   const ownLicense = (await read('math/LICENSE-MIT')).toString('utf8');
-  const bytes = Buffer.from('/*!\n' + ownLicense.trim() + '\n*/\n(function(){\n\'use strict\';\n' + inputs.map(input => mathClassicSource(input.text)).join('\n\n') + '\n})();\n');
+  const bytes = Buffer.from('/*!\n' + ownLicense.trim() + '\n*/\n/*!\n' + license.toString('utf8').trim() + '\n*/\n(function(){\n\'use strict\';\n' + inputs.map(input => mathClassicSource(input.text)).join('\n\n') + '\n})();\n');
   new Script(bytes.toString('utf8'), {filename: MATH_BUNDLE});
   const gzipBytes = gzipSync(bytes, {level: 9}).length;
   if (gzipBytes >= 500_000) throw new Error('The math plugin exceeds its 500 KB gzip budget: ' + gzipBytes);

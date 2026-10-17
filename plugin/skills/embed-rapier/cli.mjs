@@ -12,10 +12,11 @@ import {mkdir, lstat, open, realpath, rename, rm} from 'node:fs/promises';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
-const BUILDS = ['reader', 'document', 'full'];
+// The two pages; a manifest or --build that says `document` (the full editor's earlier name) means the full editor.
+const BUILDS = ['reader', 'full'], buildName = build => build === 'document' ? 'full' : build;
 const MANIFEST_BYTES = 1024 * 1024, FILE_BYTES = 64 * 1024 * 1024, TOTAL_BYTES = 512 * 1024 * 1024;
 const NOFOLLOW = constants.O_NOFOLLOW || 0;
-const usage = 'usage: rapier-embed plugins <directory> [--build reader|document|full] [--only name,name] [--from <address>] [--manifest <file or address>] [--check]';
+const usage = 'usage: rapier-embed plugins <directory> [--build reader|full] [--only name,name] [--from <address>] [--manifest <file or address>] [--check]';
 
 function arguments_(argv) {
   const [command, directory, ...rest] = argv, options = {};
@@ -26,6 +27,7 @@ function arguments_(argv) {
     else if (['--build', '--only', '--from', '--manifest'].includes(name) && rest[at + 1] !== undefined) options[name.slice(2)] = rest[++at];
     else throw new Error(usage);
   }
+  if (options.build !== undefined) options.build = buildName(options.build);
   if (options.build !== undefined && !BUILDS.includes(options.build)) throw new Error('--build is ' + BUILDS.join(', ') + ' (the page that will read the directory)');
   return {directory: resolve(directory), ...options};
 }
@@ -41,7 +43,7 @@ async function readManifest(source) {
     if (!plugin || typeof plugin !== 'object' || !Array.isArray(plugin.files)) throw new Error('not a Rapier plug-in file list');
     for (const file of plugin.files) {
       if (!file || typeof file !== 'object') throw new Error('not a Rapier plug-in file');
-      if ([plugin.builds, file.builds].some(builds => builds !== undefined && !(Array.isArray(builds) && builds.every(build => BUILDS.includes(build)))))
+      if ([plugin.builds, file.builds].some(builds => builds !== undefined && !(Array.isArray(builds) && builds.every(build => BUILDS.includes(buildName(build))))))
         throw new Error('the manifest names a build this command does not know: ' + JSON.stringify(file.file));
       if (typeof file.file !== 'string' || file.file.length > 1024 || !/^[A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)*$/.test(file.file) || file.file.split('/').some(part => part.endsWith('.')) ||
           paths.has(file.file) || !Number.isSafeInteger(file.bytes) || file.bytes < 0 || file.bytes > FILE_BYTES || !/^[0-9a-f]{96}$/.test(file.sha384) || typeof file.url !== 'string')
@@ -108,11 +110,11 @@ export async function plugins(argv) {
   let failed = 0;
   await mkdir(options.directory, {recursive: true});
   const directory = await realpath(options.directory);
-  const uses = (plugin, file) => !options.build || (file.builds || plugin.builds || BUILDS).includes(options.build);
+  const uses = (plugin, file) => !options.build || (file.builds || plugin.builds || BUILDS).map(buildName).includes(options.build);
   const jobs = manifest.plugins.filter(plugin => !only || only.has(plugin.name)).flatMap(plugin => plugin.files.filter(file => uses(plugin, file)).map(file => ({plugin, file})));
   if (!jobs.length) throw new Error('nothing in the manifest matches that --build and --only');
   const total = jobs.reduce((sum, {file}) => sum + file.bytes, 0);
-  console.log(jobs.length + ' files, ' + (total / 1048576).toFixed(1) + ' MiB' + (options.build ? ' for the ' + options.build + ' build' : ' for every build; --build reader, document or full keeps only what that page uses'));
+  console.log(jobs.length + ' files, ' + (total / 1048576).toFixed(1) + ' MiB' + (options.build ? ' for the ' + options.build + ' build' : ' for every build; --build reader or full keeps only what that page uses'));
   const work = async ({plugin, file}) => {
     const name = plugin.name + '  ' + file.file;
     let temp = null;

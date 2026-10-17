@@ -52,15 +52,15 @@
 		});
 	}
 
-	var MATH_VERSION = '2.4.0';
+	var MATH_VERSION = '2.5.0';
 	var MATH_FILE = 'rapier-math-' + MATH_VERSION + '.js';
 	_rapierVerifiedFiles({
 		key: 'math', noun: 'math', dash: ' — ',
 		version: MATH_VERSION,
 		files: [{name: MATH_FILE, file: MATH_FILE, version: MATH_VERSION,
-			bytes: 691650,
-			sri: 'C92x26+pBI4q9FoWypMhBb8CqSGaaPLw8dpYigWiYNsYQRTcPVrFyPVjrhc/Tnwh',
-			url: 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.7/math/rapier-math-2.4.0.js'}],
+			bytes: 695410,
+			sri: 'VDN0hcZbJ7LFS7fJjiUV/8THDfLxUWNfbGZQkggQptiaw4JaNAjZOmyK0kDRLNN3',
+			url: 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.8/math/rapier-math-2.5.0.js'}],
 		missing: 'Rapier math loaded but its SVG renderer is missing — cache purged',
 		usable: function () { return !!(window.RapierMath && window.RapierMath.version === MATH_VERSION &&
 			typeof window.RapierMath.renderToString === 'function' && typeof window.RapierMath.renderWithMathML === 'function'); },

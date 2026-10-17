@@ -3,12 +3,13 @@
 // value is LuaTeX's own output for the same formula (unicode-math, Latin Modern Math 1.959), in ems.
 // Replay: node tests/typeset.mjs [package-root]. Ink is measured from the font's own contour strips.
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {dirname, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 
 const root = resolve(process.argv[2] || resolve(dirname(fileURLToPath(import.meta.url)), '..'));
 const load = file => import(pathToFileURL(resolve(root, 'src/math', file)).href);
-const {MATH_FONT} = await load('font.js'), L = await load('layout.js');
+const {MATH_FONT} = await load('font.js'), L = await load('layout.js'), parser = await load('parser.js');
 const {mathPrepare} = await load('source.js'), {mathToMathML} = await load('semantic-api.js'), {renderMath} = await load('api.js');
 const context = (display = false) => ({size: 1, level: 0, variant: 'normal', cramped: false, display, cache: new WeakMap(), budget: {nodes: 0, outlineBytes: 0}});
 function layout(tex, display = false) {
@@ -145,10 +146,39 @@ cell('F13', 'what people write most', () => {
     String.raw`\mel{n}{H}{m}`, String.raw`\ev{x}`, String.raw`\ip{a}{b}`, String.raw`\op{a}{b}`, String.raw`\pb{f}{g}`, String.raw`\qq{if}`, String.raw`\qc`, String.raw`\Res`,
     String.raw`\idotsint`, String.raw`\smashoperator{\sum_{i=1}^n}`, String.raw`\begin{multlined}a\\b\end{multlined}`, String.raw`\begin{lgathered}a\\b\end{lgathered}`, String.raw`\begin{rgathered}a\\b\end{rgathered}`,
     String.raw`\mathmakebox[2em][l]{x}`, String.raw`\not\in`, String.raw`\not\subset`];
+  // mathtools' optional rule and height are consumed, not taken as the bracket's base.
+  for (const tex of [String.raw`\overbracket[0.5pt][2pt]{a+b}^n`, String.raw`\underbracket[1pt]{a+b}`])
+    assert.equal(JSON.stringify(mathPrepare(tex).tree).match(/"type":"accent","base":\{"type":"row","children":\[\{"type":"glyph","value":"a"/)?.length, 1, tex + ' brackets a+b');
   const rejected = inputs.filter(tex => mathPrepare(tex).error);
   assert.deepEqual(rejected, [], 'rejected');
 });
 
+cell('F14', 'a fence is as tall as TeX makes it; matrix rows carry the array strut', () => {
+  for (const [tex, h, d, display] of [[String.raw`\left(x\right)`, 0.748, 0.248], [String.raw`\left(-\right)`, 0.748, 0.248], [String.raw`\begin{bmatrix}x\end{bmatrix}`, 0.850, 0.350],
+    [String.raw`\begin{pmatrix}a&b\\c&d\end{pmatrix}`, 1.450, 0.950], [String.raw`\begin{cases}a&x\\b&y\end{cases}`, 1.750, 1.250, true], [String.raw`\begin{aligned}a&=b\\c&=d\end{aligned}`, 1.600, 1.100, true]]) {
+    const b = layout(tex, display);
+    near(b.h, h, tex + ' height', 0.002);
+    near(b.d, d, tex + ' depth', 0.002);
+  }
+  // An empty side is TeX's null delimiter, 1.2 pt wide.
+  for (const [tex, w, display] of [[String.raw`\left.\right)`, 0.509], [String.raw`\left.\frac{a}{b}\right|_0^1`, 1.526], [String.raw`\begin{cases}a&x\\b&y\end{cases}`, 3.123, true]])
+    near(layout(tex, display).w, w, tex + ' width', 0.002);
+});
+cell('F15', 'a fraction carries TeX\'s null delimiter space outside its rule; \\cfrac drops the right one', () => {
+  for (const [tex, w] of [[String.raw`\frac{a}{b}`, 0.674], [String.raw`\cfrac{1}{b}`, 0.620], [String.raw`\cfrac{1}{a+\cfrac{1}{b}}`, 2.491], [String.raw`\cfrac[l]{1}{bbbb}`, 1.878], [String.raw`\binom{n}{k}`, 1.338]])
+    near(layout(tex).w, w, tex + ' width', 0.002);
+  const rule = /translate\(([\d.]+) 0\)"><path data-math-rule="" d="M0 [-\d.]+H([\d.]+)/.exec(layout(String.raw`\frac{a}{b}`).svg);
+  assert(rule, String.raw`\frac{a}{b} has a rule`);
+  near(+rule[1], 0.120, String.raw`\frac{a}{b} rule starts after the null delimiter`, 0.002);
+  near(+rule[2], 0.434, String.raw`\frac{a}{b} rule spans only its numerator and denominator`, 0.002);
+});
+cell('F16', 'scripts on a composed base sit by its box, as TeX\'s rule 18a does', () => {
+  for (const [tex, h, d] of [[String.raw`{\smash{\frac{a}{b}}}_i^2`, 0.828, 0.268], [String.raw`{\sqrt{x}}^2`, 1.064, 0.191], [String.raw`{\vphantom{\frac{a}{b}}x}^2`, 1.334, 0.697], [String.raw`\begin{pmatrix}a\\b\end{pmatrix}^T`, 1.673, 0.950]]) {
+    const b = layout(tex, true);
+    near(b.h, h, tex + ' height', 0.002);
+    near(b.d, d, tex + ' depth', 0.002);
+  }
+});
 cell('P1', 'a formula being typed previews without an error', () => {
   for (const tex of [String.raw`\frac{-b\pm\sqrt{b^2-4ac}}{2a}`, String.raw`\begin{pmatrix}1 & 2\\3 & 4\end{pmatrix}`, String.raw`\left(x+1\right)^{\sqrt[3]{y}}`])
     for (let i = 1; i <= tex.length; i++) {
@@ -160,6 +190,18 @@ cell('P1', 'a formula being typed previews without an error', () => {
     assert.deepEqual(renderMath(tex, {preview: true, caret}).errors, [], 'preview at the caret of ' + tex);
   assert.equal(renderMath(String.raw`\frac{1}{`).errors.length, 1, 'strict rendering is unchanged');
   assert.equal(renderMath(String.raw`\frac{a}{b} \farc + 1`, {preview: true}).errors[0]?.suggestion, String.raw`\frac`, 'a fault before the end stays, with a suggestion');
+});
+
+cell('P2', 'a misspelled command keeps its fix at the caret; a name being typed does not', () => {
+  for (const [tex, fix] of [[String.raw`\farc`, String.raw`\frac`], [String.raw`a+\alhpa`, String.raw`\alpha`]])
+    assert.equal(renderMath(tex, {preview: true, caret: tex.length}).errors[0]?.suggestion, fix, 'the fix for ' + tex);
+  const {parseMathTex} = parser, text = ['parser.js', 'symbols.js', 'variants.js'].map(file => readFileSync(resolve(root, 'src/math', file), 'utf8')).join('\n');
+  const accepted = [...new Set(text.match(/[A-Za-z]{2,}/g))].filter(name => {
+    try { parseMathTex('\\' + name + '{a}{b}{c}'); return true; } catch (error) { return !(error.code === 'unsupported-command' && error.offset === 0); }
+  });
+  const faulted = accepted.flatMap(name => Array.from({length: name.length - 2}, (_, i) => '\\' + name.slice(0, i + 2)))
+    .filter(prefix => renderMath(prefix, {preview: true, caret: prefix.length}).errors.length);
+  assert.deepEqual([...new Set(faulted)], [], 'a command being typed previews without a fault');
 });
 
 const results = [];

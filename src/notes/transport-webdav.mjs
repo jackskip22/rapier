@@ -6,7 +6,6 @@ const OBJECT = new RegExp(`^(?:objects|keys)/${HASH}$|^heads/${DEVICE}/(?!0{12})
 const FAMILY = new RegExp(`^(?:objects/|keys/|heads/(?:${DEVICE}/)?)$`);
 const te = new TextEncoder(), td = new TextDecoder('utf-8', {fatal: true});
 export const WEBDAV_MAX_OBJECT_BYTES = 300000000;
-export const WEBDAV_SETUP_NOTICE = 'WebDAV storage and companion setup are included; note transfers are not connected in this build yet. Nothing is sent until the companion is configured.';
 const XML_LIMIT = 8 * 1024 * 1024, ROW_LIMIT = 20000;
 const PROP = '<?xml version="1.0" encoding="utf-8"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/><d:getetag/><d:getcontentlength/></d:prop></d:propfind>';
 function xmlError() { refuse('xml', 'The server returned incomplete or ambiguous WebDAV XML; no listing was accepted.'); }
@@ -141,6 +140,7 @@ function lanHost(host) {
 	const v = h.split('.').map(Number);
 	return v.length === 4 && v.every(n => Number.isInteger(n) && n >= 0 && n <= 255) && (v[0] === 0 || v[0] === 10 || v[0] === 127 || v[0] === 169 && v[1] === 254 || v[0] === 172 && v[1] >= 16 && v[1] <= 31 || v[0] === 192 && v[1] === 168 || v[0] === 100 && v[1] >= 64 && v[1] <= 127 || v[0] >= 224);
 }
+export {checkedURL as checkedWebDAVURL, lanHost as webDAVLanHost};
 function equalPath(a, b) { return a.length === b.length && a.every((p, i) => p === b[i]); }
 function startsPath(a, b) { return a.length >= b.length && b.every((p, i) => p === a[i]); }
 export function createWebDAVTransport(options = {}) {

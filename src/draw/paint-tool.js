@@ -50,13 +50,9 @@ function _rapierPaintPatch(evt) {
 }
 const RAPIER_PAINT_BRUSH_KEY = 'rapier:draw.paintbrush', RAPIER_PAINT_OWN_KEY = 'rapier:draw.paintbrushes' + RapierStorage.scope;
 const RAPIER_PAINT_STRENGTH_KEY = 'rapier:draw.paintstrength';
-const RAPIER_PAINT_PINNED = ['rapier/oil', 'rapier/acrylic', 'rapier/flat', 'rapier/bristle', 'rapier/scumble', 'rapier/pencil', 'rapier/pen', 'rapier/watercolour',
+const RAPIER_PAINT_PINNED = ['rapier/oil', 'rapier/acrylic', 'rapier/bristle', 'rapier/flat', 'rapier/scumble', 'rapier/pencil', 'rapier/pen', 'rapier/watercolour',
 	'rapier/smudge', 'rapier/smear', 'rapier/blend', 'rapier/eraser', 'rapier/dissolve', 'rapier/erode'];
-const RAPIER_PAINT_COLOURS = [['#e53935', 'Red'], ['#f57c00', 'Orange'], ['#ffdd33', 'Yellow'], ['#a4d65e', 'Lime'],
-	['#218c4a', 'Green'], ['#62c5ed', 'Sky'], ['#2463d3', 'Blue'], ['#7040b5', 'Purple'],
-	['#f399b5', 'Pink'], ['#d32a91', 'Magenta'], ['#20b8aa', 'Turquoise'], ['#80502f', 'Brown'],
-	['#d6ad7b', 'Tan'], ['#808080', 'Gray'], ['#000000', 'Black'], ['#ffffff', 'White']];
-const RAPIER_PAINT_DEFAULT_ID = 'rapier/oil';
+const RAPIER_PAINT_DEFAULT_ID = 'rapier/scumble';
 const RAPIER_PAINT_SIZES_KEY = 'rapier:draw.paintsizes';
 function _rapierPaintSizeDefault(id) { return paintSizeDefault(id); }
 function _rapierPaintSizesRead() { try { const raw = JSON.parse(localStorage.getItem(RAPIER_PAINT_SIZES_KEY) || '{}'); return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}; } catch (_) { return {}; } }
@@ -232,7 +228,6 @@ function _rapierPaintBrushId() { const id = _rapierDrawState.paintBrush; return 
 function _rapierPaintSetBrush(id) {
 	if (!_rapierPaintEntry(id)) return;
 	_rapierDrawState.paintBrush = id;
-	if (!RAPIER_PAINT_PINNED.includes(id)) _rapierDrawState.paintMore = true;
 	_rapierDrawState.paintSize = _rapierPaintSizeFor(id);
 	try { localStorage.setItem(RAPIER_PAINT_BRUSH_KEY, id); } catch (_) {}
 	_rapierPersonal.rememberDrawing('paintBrush', id);
@@ -278,7 +273,7 @@ function _rapierPaintHeadOval(head, rx, ry) {
 }
 function _rapierPaintHeadChipHTML() {
 	const head = _rapierPaintHead(), open = !_rapierPaintAnglePanel()?.hidden;
-	return '<button type="button" class="rapier-draw-chip rapier-draw-chip--icon rapier-draw-chip--angle" data-draw-paint-head data-draw-act="paintAngle" aria-haspopup="true" aria-expanded="' + open + '"' +
+	return '<button type="button" class="rapier-draw-chip rapier-draw-chip--icon rapier-draw-chip--angle" data-draw-paint-head aria-haspopup="true" aria-expanded="' + open + '"' +
 		' aria-label="Brush angle, ' + head.angle + ' degrees, ' + (head.follow ? 'follows the finger' : 'held') + '. Opens the angle dial" data-tip="angle">' +
 		'<svg class="rapier-draw-angle" viewBox="-14 -14 28 28" aria-hidden="true">' + _rapierPaintHeadOval(head, 11.5, 3.2) + '</svg>' +
 		'<span class="rapier-draw-chip-name">' + (head.follow ? 'follow' : head.angle + '\u00b0') + '</span></button>';
@@ -552,6 +547,7 @@ function _rapierPaintPainterLost(holder, error) {
 }
 function _rapierPaintStrokeFailed(gesture, error) {
 	if (gesture?.waterStroke) _rapierPaintWaterFinish(gesture);
+	if (_rapierDrawWaterUnavailable(error)) { _rapierPaintReleaseStroke(gesture, true); if (_rapierDrawState.gesture === gesture) _rapierDrawEndGesture(); return; }
 	if (error?.recoverable || /^(WATER_|paint_history_full)/.test(error?.code || '')) {
 		_rapierPaintReleaseStroke(gesture, true); if (_rapierDrawState.gesture === gesture) _rapierDrawEndGesture();
 		if (!_rapierPaintLossSaid(error)) showToast(String(error.message || error), 'error'); return;
@@ -654,9 +650,9 @@ function _rapierPaintFeelOptions(id, overrides = false) {
 		stabilisation: _rapierDrawClamp((settings.slow_tracking?.base_value || 0) / globalThis.RapierDrawPaint.PAINT_BRUSH_CONTROLS.stabilisation.trackingMax, 0, 1),
 		response: settings.rapier_pressure?.base_value || 1};
 }
-function _rapierPaintMixMarkup(ink, controls = '') {
+function _rapierPaintMixMarkup(ink) {
 	const state = _rapierDrawState, mix = state.paintMix || (state.paintMix = {a: ink, b: '#ffffff', amount: 50});
-	return '<details class="rapier-paint-mixer"><summary>Mix</summary>' + controls + '<div class="rapier-paint-mix-colours">' +
+	return '<details class="rapier-paint-mixer"><summary>Mix colors</summary><div class="rapier-paint-mix-colours">' +
 		'<label class="rapier-draw-colour-custom"><input type="color" data-paint-mix="a" value="' + mix.a + '" aria-label="First paint color"></label>' +
 		'<label class="rapier-draw-colour-custom"><input type="color" data-paint-mix="b" value="' + mix.b + '" aria-label="Second paint color"></label>' +
 		'<button type="button" class="rapier-draw-chip" data-paint-mix-use><span class="rapier-paint-mix-result"></span>Use mix</button></div>' +
@@ -784,12 +780,6 @@ function _rapierPaintDipSyncPanel(repaintSample = true) {
 	const id = _rapierPaintBrushId(), color = _rapierPaintColor(), [load, water] = _rapierPaintDip(id);
 	const paper = _rapierPaintDipPaper();
 	_rapierPaintSyncSet();
-	const head = _rapierPaintHead(), chip = panel.querySelector('[data-draw-paint-head]'), oval = chip.querySelector('ellipse');
-	oval.setAttribute('transform', 'rotate(' + head.angle + ')');
-	if (head.follow) oval.setAttribute('stroke-dasharray', '3 2'); else oval.removeAttribute('stroke-dasharray');
-	chip.querySelector('.rapier-draw-chip-name').textContent = head.follow ? 'follow' : head.angle + '\u00b0';
-	chip.setAttribute('aria-label', 'Brush angle, ' + head.angle + ' degrees, ' + (head.follow ? 'follows the finger' : 'held') + '. Opens the angle dial');
-	chip.setAttribute('aria-expanded', 'false');
 	const pad = panel.querySelector('.rapier-draw-dip-pad'), knob = panel.querySelector('.rapier-draw-dip-knob'), track = panel.querySelector('.rapier-draw-dip-track');
 	const ink = color.join(',');
 	if (panel.dataset.dipInk !== ink) { panel.dataset.dipInk = ink; _rapierPaintDipField(panel.querySelector('.rapier-draw-dip-field'), color); }
@@ -1286,10 +1276,7 @@ function _rapierPaintUpdateStrip() {
 	row.setAttribute('aria-label', mode === 'tools' ? 'Paint tools' : 'Brushes');
 	row.hidden = false;
 	const chosen = _rapierPaintBrushId(), color = _rapierPaintColor(), strengthLight = _rapierDrawState.paintStrength === 'light';
-	const all = _rapierPaintEntries().filter(entry => _rapierPaintIsTool(entry.id) === (mode === 'tools'));
-	const core = all.filter(entry => RAPIER_PAINT_PINNED.includes(entry.id)), more = all.filter(entry => !RAPIER_PAINT_PINNED.includes(entry.id));
-	if (_rapierDrawState.paintMore == null) _rapierDrawState.paintMore = more.some(entry => entry.id === chosen);
-	const expanded = _rapierDrawState.paintMore, entries = mode === 'tools' || expanded ? all : core;
+	const entries = _rapierPaintEntries().filter(entry => _rapierPaintIsTool(entry.id) === (mode === 'tools'));
 	const tabStop = entries.some(entry => entry.id === chosen) ? chosen : entries[0]?.id;
 	const own = mode === 'brushes' && _rapierPaintEntry(chosen)?.own;
 	const chip = entry => {
@@ -1302,8 +1289,7 @@ function _rapierPaintUpdateStrip() {
 	};
 	const focused = row.contains(document.activeElement) ? document.activeElement : null;
 	const wasKey = focused ? (focused.dataset.drawPaintBrush ? 'brush:' + focused.dataset.drawPaintBrush : focused.dataset.drawPaintAct ? 'act:' + focused.dataset.drawPaintAct : '') : '';
-	row.innerHTML = (mode === 'tools' ? entries.map(chip).join('') : core.map(chip).join('') +
-		'<button type="button" class="rapier-draw-chip" data-draw-paint-act="more" aria-expanded="' + expanded + '">' + (expanded ? '\u2212 Fewer brushes' : '+ More brushes') + '</button>' + (expanded ? more.map(chip).join('') : '')) +
+	row.innerHTML = (mode === 'brushes' ? _rapierPaintHeadChipHTML() : '') + entries.map(chip).join('') +
 		(own ? '<button type="button" class="rapier-draw-chip rapier-draw-chip--icon" data-draw-paint-act="fit" role="switch" aria-checked="' + _rapierPaintFitsFinger(chosen) + '" aria-label="' +
 			(_rapierPaintFitsFinger(chosen) ? 'This brush is fitted for a finger. Turn that off to use its authored response' : 'Use finger fitting for this brush') + '">' + (_rapierPaintFitsFinger(chosen) ? RAPIER_PAINT_ICON_GAUGE_FIRM : RAPIER_PAINT_ICON_GAUGE_LIGHT) + '<span class="rapier-draw-chip-name">fit</span></button>' : '') +
 		(own ? '<button type="button" class="rapier-draw-chip rapier-draw-chip--icon rapier-draw-chip--delete" data-draw-paint-act="remove" aria-label="Remove this brush from your set">' + RAPIER_DRAW_ICONS.trash + '<span class="rapier-draw-chip-name">remove</span></button>' : '') +
@@ -1322,10 +1308,10 @@ function _rapierPaintUpdateStrip() {
 			row.querySelector('[data-draw-paint-brush="' + _rapierDrawEscapeAttr(ids[to]) + '"]')?.focus({preventScroll: true});
 		});
 		_rapierDrawBindTap(row, evt => {
+			if (evt.target.closest('[data-draw-paint-head]')) { if (!_rapierDrawState.finishing) _rapierPaintAngleOpen(true); return; }
 			const act = evt.target.closest('[data-draw-paint-act]')?.dataset.drawPaintAct;
 			if (!act || _rapierDrawState.finishing) return;
-			if (act === 'more') { _rapierDrawState.paintMore = !_rapierDrawState.paintMore; _rapierPaintUpdateStrip(); }
-			else if (act === 'remove') _rapierPaintRemoveOwn(_rapierPaintBrushId());
+			if (act === 'remove') _rapierPaintRemoveOwn(_rapierPaintBrushId());
 			else if (act === 'fit') _rapierPaintSetFitsFinger(_rapierPaintBrushId(), !_rapierPaintFitsFinger(_rapierPaintBrushId()));
 			else if (act === 'upload') void _rapierDrawPaintUpload();
 			else if (act === 'export') _rapierPaintExportBrush(_rapierPaintBrushId());
@@ -1425,11 +1411,11 @@ function _rapierPaintWorker(layer) {
 	}
 	return owner;
 }
-function _rapierPaintEncodeRevision(layer, keep = false, {retire = false, release = false, custody = false, compressor = true} = {}) {
+function _rapierPaintEncodeRevision(layer, keep = false, {retire = false, release = false, custody = false, compressor = true, peek = false} = {}) {
 	const state = _rapierDrawState, owner = compressor ? _rapierPaintWorker(layer) : null;
 	let resolve, reject;
 	layer.pngSerial = (layer.pngSerial || 0) + 1;
-	const job = {id: layer.pngSerial, keep, custody, retire, release, place: _rapierPaintPlace(layer), px: null, box: null, raster: null, shown: null, empty: false, revision: 0, read: null, replay: layer.surface.takeReplay?.() ?? null,
+	const job = {id: layer.pngSerial, keep, custody, retire, release, place: _rapierPaintPlace(layer), px: null, box: null, raster: null, shown: null, empty: false, revision: 0, read: null, replay: peek ? _rapierPaintPeekReplay(layer.surface) : layer.surface.takeReplay?.() ?? null,
 		stored: !!layer.nextFlip, stroke: layer.flipStroke, brushId: layer.brushId, worker: owner?.worker, url: owner?.url, session: state.session,
 		promise: new Promise((ok, no) => { resolve = ok; reject = no; }), resolve: () => resolve(), reject: error => reject(error)};
 	job.promise.catch(() => {});
@@ -1443,6 +1429,10 @@ function _rapierPaintEncodeRevision(layer, keep = false, {retire = false, releas
 	job.timer = setTimeout(() => { if ((layer.revisions || []).includes(job)) { const wait = _rapierPaintFlushRevision(layer); wait?.catch(error => _rapierPaintNotKept(layer, error)); } }, 15000);
 	job.read = layer.surface.readBounds(layer.mode === 'water' ? {waterCheckpoint:true,waterPrior:layer.paintReplay || null} : {}).then(result => _rapierPaintRevisionRead(layer, job, result), () => _rapierPaintDropRevision(layer, job));
 	return job;
+}
+function _rapierPaintPeekReplay(surface) {
+	const records = surface.peekReplay?.() || [];
+	return records.length ? records : null;
 }
 function _rapierPaintRevisionRead(layer, job, result) {
 	job.read = null;
@@ -2253,6 +2243,32 @@ function _rapierPaintFlushWet(owedOnly = false, current = null) {
 			layer.dryBox = null; layer.dryFinishing = false;
 			const committed = _rapierPaintCommit(false, null, false, live);
 			return Promise.resolve(committed).then(() => live() ? _rapierPaintFlushRevision(layer, true) : null).then(() => live());
+		});
+	});
+}
+function _rapierPaintLeaveWash(current, finish = false) {
+	const state = _rapierDrawState, layer = state.paintLayer, surface = layer?.surface, session = state.session;
+	if (!surface || layer.mode === 'water' || state.gesture || state.paintSetting || layer.pendingOverflow || layer.nextFlip || layer.retire?.length) return null;
+	if (!(surface.wetState || layer.dryFinishing) || !layer.flipStroke?.entry) return null;
+	const live = () => state.open && state.session === session && state.paintLayer === layer && layer.surface === surface && !state.gesture && current();
+	const resume = () => { if (state.paintLayer === layer && layer.surface === surface && !surface.gone && surface.wetState) _rapierPaintScheduleDry(layer); return false; };
+	if (layer.dryRaf) { cancelAnimationFrame(layer.dryRaf); layer.dryRaf = 0; }
+	layer.dryFinishing = false; layer.dryBox = null;
+	const close = () => {
+		if (!live()) return resume();
+		if (layer.pendingLift || layer.pendingCommit || layer.pendingOverflow || layer.flipStroke?.entry !== state.undoStack.at(-1)) return _rapierPaintCloseLayer(live);
+		_rapierPaintDropSnapshots(layer); _rapierPaintDropNextSheet(layer); _rapierPaintFinishClose(layer);
+		return null;
+	};
+	return _rapierPaintAfter(_rapierPaintFlushRevision(layer, true), () => {
+		if (!live()) return resume();
+		if (!finish) return close();
+		surface.finishWetWork();
+		surface.settleWet(false);
+		return _rapierPaintAfter(surface.sync(), () => {
+			if (!live()) { if (state.paintLayer === layer && layer.surface === surface && !surface.gone) _rapierPaintCommitSoon(layer); return false; }
+			if (layer.published?.revision === surface.revision) return close();
+			return _rapierPaintEncodeRevision(layer, false, {peek: true}).promise.then(close);
 		});
 	});
 }
@@ -3140,9 +3156,10 @@ function _rapierPaintEnd(evt, gesture) {
 }
 function _rapierPaintEndDecide(layer, held) {
 	if (layer.pendingLift !== held) { held.decide(); return; }
-	if (layer.mode === 'water') {
+	const wash = layer.mode !== 'water' && layer.surface.wetState && !_rapierDrawState.paintSetting && !layer.pendingOverflow;
+	if (layer.mode === 'water' || wash) {
 		layer.flipStroke ||= {entry:null};
-		const job = _rapierPaintEncodeRevision(layer);
+		const job = _rapierPaintEncodeRevision(layer, false, {peek: wash});
 		layer.pendingLift = null; held.deciding = false; held.decide();
 		job.promise.then(() => {
 			if (_rapierDrawState.paintLayer === layer && !layer.surface?.gone && layer.surface?.wetState) {

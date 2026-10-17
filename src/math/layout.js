@@ -316,8 +316,8 @@ function mathScripts(n,c) {
     }
     return mathCompose(items,w,{class:b.class});
   }
-  const base=b.scriptBase || b,baseAscent=-base.inkTop,baseDescent=base.inkBottom,
-    upDescent=up?.inkBottom || 0,downAscent=-(down?.inkTop || 0),boxed=base.glyph===undefined || base.extended;
+  const base=b.scriptBase || b,boxed=base.glyph===undefined || base.extended,baseAscent=boxed?base.h:-base.inkTop,baseDescent=boxed?base.d:base.inkBottom,
+    upDescent=up?.inkBottom || 0,downAscent=-(down?.inkTop || 0);
   let rise=up?Math.max(mathConstant(c.cramped?'SuperscriptShiftUpCramped':'SuperscriptShiftUp',c,0.36),
     upDescent+mathConstant('SuperscriptBottomMin',c,0.1),boxed?baseAscent-mathConstant('SuperscriptBaselineDropMax',c,0.25):0):0;
   let drop=down?Math.max(mathConstant('SubscriptShiftDown',c,0.2),
@@ -370,11 +370,12 @@ function mathFraction(n,c,width) {
     const min=mathConstant(display?'StackDisplayStyleGapMin':'StackGapMin',c,display?0.4:0.15),gap=rise+drop-top.d-bottom.h;
     if (gap<min) {rise+=(min-gap)/2;drop+=(min-gap)/2;}
   }
-  // Null delimiter space pads only an unfenced fraction; a fence's own glyphs bound \binom.
-  const pad=n.left || n.right?0:mathScale(c)*0.1,w=Math.max(top.w,bottom.w)+2*pad;
-  const numeratorX=n.align==='l'?pad:n.align==='r'?w-pad-top.w:(w-top.w)/2;
-  const items=[[top,numeratorX,-rise],[bottom,(w-bottom.w)/2,drop]];
-  if (line) items.push([mathRule(w,line,-axis-line/2),0,0]);
+  // TeX's \nulldelimiterspace (1.2 pt, unscaled in scripts) flanks only an unfenced fraction, outside its rule;
+  // a fence's own glyphs bound \binom, and amsmath's \cfrac kerns its right one away.
+  const pad=n.left || n.right?0:c.size*0.12,inner=Math.max(top.w,bottom.w),w=inner+pad+(n.strut?0:pad);
+  const numeratorX=pad+(n.align==='l'?0:n.align==='r'?inner-top.w:(inner-top.w)/2);
+  const items=[[top,numeratorX,-rise],[bottom,pad+(inner-bottom.w)/2,drop]];
+  if (line) items.push([mathRule(inner,line,-axis-line/2),pad,0]);
   // LaTeX's \frac, \binom and \genfrac brace their fraction: an ordinary atom, not TeX's bare inner.
   const b=mathCompose(items,w,{class:'ord',innerLines:top.lines || 1,fitted:!!top.fitted});
   if(width!==undefined && c.screen)b.refit=ratio=>mathFraction(n,{...c,screen:{...c.screen,fontSize:c.screen.fontSize*ratio},cache:new WeakMap()},width);
@@ -399,9 +400,10 @@ function mathRoot(n,c) {
   const b=mathCompose(items,w);b.h+=extra;return b;
 }
 
-function mathFenceBoxes(left,right,body,c,size,least=1) {
+function mathFenceBoxes(left,right,body,c,size,least=0) {
   const axis=mathConstant('AxisHeight',c,0.25),reach=Math.max(body.h-axis,body.d+axis),target=size?size*mathScale(c):Math.max(least*mathScale(c),2*reach*0.901,2*reach-0.5*mathScale(c));
-  const a=mathDelimiter(left,target,c),b=mathDelimiter(right,target,c);
+  // An empty side is TeX's null delimiter: \nulldelimiterspace wide.
+  const side=value=>!value || value==='.'?mathBox(c.size*0.12):mathDelimiter(value,target,c),a=side(left),b=side(right);
   return mathCompose([[a,0,0],[body,a.w,0],[b,a.w+body.w,0]],a.w+body.w+b.w,{class:'inner'});
 }
 
@@ -482,12 +484,16 @@ function mathTable(n,c) {
     w+=gaps[i];if(i<cols) {starts.push(w);w+=widths[i];ends.push(w);}
   }
   const insertionHeight=Math.max(0,...insertionItems.map(([b])=>b.h)),insertionDepth=Math.max(0,...insertionItems.map(([b])=>b.d)),
-    heights=rows.map(row=>Math.max(0.7*cs,insertionHeight,...row.map(b=>b.h))),
-    depths=rows.map(row=>Math.max(0.2*cs,insertionDepth,...row.map(b=>b.d))),baselines=[];
+    // LaTeX's array strut is 0.7 and 0.3 of a 1.2 em baseline skip (cases stretches it by 1.2); rows abut,
+    // and only the display alignments add \jot between them.
+    strut=small || n.env==='CD'?[0.7,0.2]:/cases$/.test(n.env)?[1.008,0.432]:[0.84,0.36],
+    rowGap=small?0.2:n.env==='CD'?0.3:/^(align|flalign|split|[lr]?gather|eqnarray|multline)/.test(n.env)?0.3:0,
+    heights=rows.map(row=>Math.max(strut[0]*cs,insertionHeight,...row.map(b=>b.h))),
+    depths=rows.map(row=>Math.max(strut[1]*cs,insertionDepth,...row.map(b=>b.d))),baselines=[];
   let total=0;
   for(let r=0;r<rows.length;r++) {
     total+=heights[r];baselines.push(total);total+=depths[r];
-    if(r+1<rows.length)total+=(small?0.2:0.3)*cs+(n.rowGaps?.[r] || 0)*s;
+    if(r+1<rows.length)total+=rowGap*cs+(n.rowGaps?.[r] || 0)*s;
   }
   const offset=n.position==='t'?-(baselines[0] || 0):n.position==='b'?-(baselines.at(-1) || 0):-total/2-mathConstant('AxisHeight',c,0.25),items=[];
   for(let r=0;r<rows.length;r++) {
@@ -562,7 +568,7 @@ function mathLayout(n,c) {
       const local={...c,delimiterTarget:undefined};let b=mathLayout(n.body,local);
       // Only a \middle needs the second pass, sized to the first pass's body.
       if(n.body && mathHasMiddle(n.body)) {
-        const axis=mathConstant('AxisHeight',c,0.25),reach=Math.max(b.h-axis,b.d+axis),target=Math.max(mathScale(c),2*reach*0.901,2*reach-0.5*mathScale(c));
+        const axis=mathConstant('AxisHeight',c,0.25),reach=Math.max(b.h-axis,b.d+axis),target=Math.max(2*reach*0.901,2*reach-0.5*mathScale(c));
         b=mathLayout(n.body,{...local,delimiterTarget:target});
       }
       b=mathFenceBoxes(n.left,n.right,b,local,n.size);

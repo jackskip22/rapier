@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "release": "1.2.7",
-  "directory": "Put every file in one directory, keeping each file's folder, and give the page its address with `plugins`. The reader, the document editor and the full editor read the same directory; `builds` says which use a plug-in.",
+  "release": "1.2.8",
+  "directory": "Put every file in one directory, keeping each file's folder, and give the page its address with `plugins`. The reader and the full editor read the same directory; `builds` says which use a plug-in.",
   "plugins": [
     {
       "name": "flowchart",
@@ -11,11 +11,11 @@
       ],
       "files": [
         {
-          "file": "rapier-flowchart-1.2.7.js",
-          "bytes": 295920,
-          "sha384": "eab21f99b1dc26d7daa65127aeffde04aec0b28f4b235a7dd39d07d4ada5560857f01d6dc81e6b6d7d6948c829792190",
-          "sri": "6rIfmbHcJtfaplEnrv/eBK7Aso9LI1p9050H1K2lVghX8B1tyB5rbX1pSMgpeSGQ",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.7/flowchart/rapier-flowchart-1.2.7.js"
+          "file": "rapier-flowchart-1.2.8.js",
+          "bytes": 296678,
+          "sha384": "b0b2697c3eca3322686b9336f93e5710b12d9d0795e25955a64781a1f55e1185fb59876baa741c4cae83bc28a09b0bc8",
+          "sri": "sLJpfD7KMyJoa5M2+T5XELEtnQeV4llVpkeBofVeEYX7WYdrqnQcTK6DvCigmwvI",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.8/flowchart/rapier-flowchart-1.2.8.js"
         }
       ]
     },
@@ -27,11 +27,11 @@
       ],
       "files": [
         {
-          "file": "rapier-docx-1.2.7.js",
-          "bytes": 614506,
-          "sha384": "a7bd2568a68d7f333adda3e52f0c3f1a7fdee64e27518b0fe55eabc07e076525cb189e78de0307c488d50fff1fb59a2f",
-          "sri": "p70laKaNfzM63aPlLww/Gn/e5k4nUYsP5V6rwH4HZSXLGJ543gMHxIjVD/8ftZov",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.7/docx/rapier-docx-1.2.7.js"
+          "file": "rapier-docx-1.2.8.js",
+          "bytes": 616867,
+          "sha384": "44607633e6a38de8174454059adf77aea44eaa31594b0290f8c34a994a38d5b12098a915c20ebde69b20719c2d5e9e67",
+          "sri": "RGB2M+ajjegXRFQFmt93rqROqjFZSwKQ+MNKmUo41bEgmKkVwg695psgcZwtXp5n",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.8/docx/rapier-docx-1.2.8.js"
         }
       ]
     },
@@ -40,16 +40,15 @@
       "adds": "Typesets TeX math ($...$ and $$...$$) as SVG.",
       "builds": [
         "reader",
-        "document",
         "full"
       ],
       "files": [
         {
-          "file": "rapier-math-2.4.0.js",
-          "bytes": 691650,
-          "sha384": "0bddb1dbafa9048e2af45a16ca932105bf02a9219a68f2f0f1da588a05a260db184114dc3d5ac5c8f563ae173f4e7c21",
-          "sri": "C92x26+pBI4q9FoWypMhBb8CqSGaaPLw8dpYigWiYNsYQRTcPVrFyPVjrhc/Tnwh",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.7/math/rapier-math-2.4.0.js"
+          "file": "rapier-math-2.5.0.js",
+          "bytes": 695410,
+          "sha384": "54337485c65b27b2c54bb7c98e2515ffc4c70df2f151635f6c6650920810a6d89ac3825a3408d93a6c8ad240d12cd377",
+          "sri": "VDN0hcZbJ7LFS7fJjiUV/8THDfLxUWNfbGZQkggQptiaw4JaNAjZOmyK0kDRLNN3",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.8/math/rapier-math-2.5.0.js"
         }
       ]
     },
@@ -58,7 +57,6 @@
       "adds": "Draws every other Mermaid diagram: sequence, class, state, ER, Gantt, pie and more.",
       "builds": [
         "reader",
-        "document",
         "full"
       ],
       "files": [
@@ -74,7 +72,7 @@
           "bytes": 1896464,
           "sha384": "f0fb63861d733533afcb577114785781829fb36f740d2969ce8c39ac5f45bcfdfc72886d6ec056dfcd568729b5588e84",
           "sri": "8Ptjhh1zNTOvy1dxFHhXgYKfs290DSlpzow5rF9FvP38cohtbsBW381Whym1WI6E",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.7/site/plugins/rapier-zenuml-4.5.0-2.js"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.8/site/plugins/rapier-zenuml-4.5.0-2.js"
         }
       ]
     },
@@ -83,16 +81,15 @@
       "adds": "Opens a PDF as a Markdown document: its text layer, or each page as a picture. Fetches the pdf.js files itself.",
       "builds": [
         "reader",
-        "document",
         "full"
       ],
       "files": [
         {
-          "file": "rapier-pdf-1.2.7.js",
-          "bytes": 38463,
-          "sha384": "5b2e756367b3abebce93a5eb6c6f515981dcbe6dfefd529702139e3a9b0856686517c0b5ae2ce98aae3d382761fe6d84",
-          "sri": "Wy51Y2ezq+vOk6XrbG9RWYHcvm3+/VKXAhOeOpsIVmhlF8C1rizpiq49OCdh/m2E",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.7/pdf/rapier-pdf-1.2.7.js",
+          "file": "rapier-pdf-1.2.8.js",
+          "bytes": 39069,
+          "sha384": "65083c1930f0068a35d5b941761957c242e93a28804f1c27ef342ba4e8b7304ba26dcf7d169d8cf199cb16292246417c",
+          "sri": "ZQg8GTDwBoo11blBdhlXwkLpOiiATxwn7zQrpOi3MEuibc99Fp2M8ZnLFikiRkF8",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.8/pdf/rapier-pdf-1.2.8.js",
           "builds": [
             "reader"
           ]
@@ -1470,11 +1467,11 @@
           "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/wasm/openjpeg_nowasm_fallback.js"
         },
         {
-          "file": "pdfjs-dist-6.3.289/rapier-pdf-reader-4661471513961856.mjs",
-          "bytes": 47588,
-          "sha384": "3872a5302e3edf91c5deb81db65a8cae985d197b5722bd46e0003589ce8732ef8492199c91de3c93d93499616138ddaf",
-          "sri": "OHKlMC4+35HF3rgdtlqMrphdGXtXIr1G4AA1ic6HMu+Ekhmckd48k9k0mWFhON2v",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.7/pdfjs-dist-6.3.289/rapier-pdf-reader-4661471513961856.mjs"
+          "file": "pdfjs-dist-6.3.289/rapier-pdf-reader-1a1a2eb124f69792.mjs",
+          "bytes": 48225,
+          "sha384": "2af42ff9bc5271369931cc62d3346b9e477c54e9e1e7b9506d8d809a7e787addbada0801a69d033d8332b3896c218432",
+          "sri": "KvQv+bxScTaZMcxi0zRrnkd8VOnh57lQbY2Amn54et262ggBpp0DPYMys4lsIYQy",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.8/pdfjs-dist-6.3.289/rapier-pdf-reader-1a1a2eb124f69792.mjs"
         }
       ]
     },
@@ -1483,7 +1480,6 @@
       "adds": "Reads the words in pictures on the device (PP-OCRv6 tiny on ONNX Runtime Web), so search finds them. About 21 MB.",
       "builds": [
         "reader",
-        "document",
         "full"
       ],
       "files": [
@@ -1563,7 +1559,6 @@
       "name": "font-subset",
       "adds": "Keeps the used characters in fonts embedded in exported pages.",
       "builds": [
-        "document",
         "full"
       ],
       "files": [
@@ -1572,7 +1567,7 @@
           "bytes": 1214356,
           "sha384": "ab8987037faedcddd8b7ccf5c22b0211742a58da395211d9d275044a277c046359cfa06d57c75252554ebf29dd7344e3",
           "sri": "q4mHA3+u3N3Yt8z1wisCEXQqWNo5UhHZ0nUESid8BGNZz6BtV8dSUlVOvyndc0Tj",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.7/site/plugins/rapier-font-subset-2.js"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.8/site/plugins/rapier-font-subset-2.js"
         }
       ]
     },
@@ -1588,28 +1583,28 @@
           "bytes": 96902,
           "sha384": "545b0213fef34ba2a4abf116d7fecd7d81d51a85573549b4a561ddb499b35f085680958148a84d1ee534383b8609aaf4",
           "sri": "VFsCE/7zS6Kkq/EW1/7NfYHVGoVXNUm0pWHdtJmzXwhWgJWBSKhNHuU0ODuGCar0",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.7/letters/field.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.8/letters/field.json"
         },
         {
           "file": "letters-relief.json",
           "bytes": 95172,
           "sha384": "b5072d05a91eda0bbb07fbf9ff58c2e9716de6c995e6e560ed6ec67495ec259059eb665cedcad23f7cd19193e042a82a",
           "sri": "tQctBake2gu7B/v5/1jC6XFt5smV5uVg7W7GdJXsJZBZ62Zc7crSP3zRkZPgQqgq",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.7/letters/relief.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.8/letters/relief.json"
         },
         {
           "file": "letters-leaf.json",
           "bytes": 134918,
           "sha384": "0ed48a5ad5a18a2b6534e7e3c7da3925fd0561ca562f0e27996023a3578003714ebecd8e8c1da175d1e54429ebb59ee0",
           "sri": "DtSKWtWhiitlNOfjx9o5Jf0FYcpWLw4nmWAjo1eAA3FOvs2OjB2hddHlRCnrtZ7g",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.7/letters/leaf.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.8/letters/leaf.json"
         },
         {
           "file": "letters-arabesque.json",
           "bytes": 136035,
           "sha384": "671db3d9b1290f854d90871c2de8dc518ebc7aa005ada3c437b86ab2a91c56a1ce286bec48ca9b2cb8975e496f648365",
           "sri": "Zx2z2bEpD4VNkIccLejcUY68eqAFraPEN7hqsqkcVqHOKGvsSMqbLLiXXklvZINl",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.7/letters/arabesque.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.8/letters/arabesque.json"
         }
       ]
     }

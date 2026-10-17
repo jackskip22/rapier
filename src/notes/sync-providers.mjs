@@ -1,7 +1,7 @@
 import {createDriveTransport, allocateDriveVault, createDriveVault} from './transport-drive.mjs';
 import {createOneDriveTransport, createOneDriveVault} from './transport-onedrive.mjs';
 import {createDropboxTransport, createDropboxVault} from './transport-dropbox.mjs';
-import {createOAuthClient as createDriveOAuthClient, authorizeUrl as driveAuthorizeUrl} from './drive-oauth.mjs';
+import {createOAuthClient as createDriveOAuthClient, authorizeUrl as driveAuthorizeUrl, readReturn as readDriveReturn} from './drive-oauth.mjs';
 import {createOAuthClient as createOneDriveOAuthClient, authorizeUrl as oneDriveAuthorizeUrl, REVOCATION as ONEDRIVE_REVOCATION} from './onedrive-oauth.mjs';
 import {createOAuthClient as createDropboxOAuthClient, authorizeUrl as dropboxAuthorizeUrl} from './dropbox-oauth.mjs';
 import {createVerifier, challengeFor, readRedirect} from './provider-oauth.mjs';
@@ -69,8 +69,14 @@ export function providerOAuth(provider, {fetch, clientId, redirectUri, signal}) 
 	if (!providerUsesSignIn(provider)) throw fail('config', 'this service has no sign-in.');
 	return CLIENTS[provider]({fetch, clientId, redirectUri, ...(signal ? {signal} : {})});
 }
+export const providerReturnsToken = id => id === 'drive';
+export function readProviderTokenReturn(provider, fragment, state) {
+	if (!providerReturnsToken(provider)) throw fail('config', 'this service returns a code, not a token.');
+	return readDriveReturn(fragment, state);
+}
 export async function beginProviderSignIn(provider, {clientId, redirectUri, random = n => crypto.getRandomValues(new Uint8Array(n))}) {
 	if (!providerUsesSignIn(provider)) throw fail('config', 'this service has no sign-in.');
+	if (providerReturnsToken(provider)) { const state = createVerifier(random); return {verifier: null, state, url: driveAuthorizeUrl({clientId, redirectUri, state})}; }
 	const verifier = createVerifier(random), state = createVerifier(random);
 	const challenge = await challengeFor(verifier);
 	return {verifier, state, url: AUTHORIZE[provider]({clientId, redirectUri, state, challenge})};

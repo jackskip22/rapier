@@ -170,9 +170,9 @@ function _rapierNotesLibraryScheduleSlice() {
 		const timed = !!deadline && typeof deadline.timeRemaining === 'function';
 		const young = () => (globalThis.performance?.now() ?? Date.now()) - began < 4 && !(typeof _rapierNotesBackgroundBlocked === 'function' && _rapierNotesBackgroundBlocked());
 		let more = runner.step(), kind;
-		for (let steps = 1; more && (kind = runner.cheap) && steps < (timed ? 256 : large ? 1 : 16); steps++) {
+		for (let steps = 1; more && (kind = runner.cheap) && steps < (timed || large ? 256 : 16); steps++) {
 			const bounded = large || kind === 'short';
-			if (timed ? (bounded || steps % 16 === 0) && !(deadline.timeRemaining() > (large ? 1 : 8) && (!bounded || young())) : kind === 'short' && !young()) break;
+			if (timed ? (bounded || steps % 16 === 0) && !(deadline.timeRemaining() > (large ? 1 : 8) && (!bounded || young())) : bounded && !young()) break;
 			more = runner.step();
 		}
 		if (more) _rapierNotesLibraryScheduleSlice();

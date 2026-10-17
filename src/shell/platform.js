@@ -179,7 +179,7 @@ const _rapierProviders = Object.seal({
 	'letters-leaf': null,
 	'letters-arabesque': null,
 });
-const _rapierBootstrapRuntime = Object.seal({ pendingIntake: null, complete: false, failed: false });
+const _rapierBootstrapRuntime = Object.seal({ pendingIntake: null, complete: false, failed: false, opened: false });
 let _rapierPublishBootFacts;
 const _rapierBootFactsPublished = new Promise(resolve => { _rapierPublishBootFacts = resolve; });
 const RAPIER_PLATFORM_FACETS = Object.freeze([
@@ -435,6 +435,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 			installation: { state: 'standalone', installed: false },
 			notesStoreGeneration: null,
 			resources: null,
+			partPacks: null,
 		}),
 	});
 	const _nativeIntakeRuntime = Object.seal({ transfer: null, waiters: [], last: null, failure: null, generation: 0, transport: null, expecting: false });
@@ -586,6 +587,10 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 		}
 		if (name === 'resources.changed') {
 			_applyNativeResources(detail);
+			return;
+		}
+		if (name === 'parts.changed') {
+			try { window.dispatchEvent(new CustomEvent('rapier:platform-part', { detail: { id: String(detail && detail.id || ''), progress: Number(detail && detail.progress) || 0 } })); } catch (_) {}
 			return;
 		}
 		if (name === 'windowInsets.changed') {
@@ -1829,6 +1834,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 		_nativeHostRuntime.state.pendingIntake = !!value.pendingIntake;
 		_nativeHostRuntime.state.recoveryAutoResume = value.recoveryAutoResume === true;
 		_nativeHostRuntime.state.notesStoreGeneration = typeof value.notesStoreGeneration === 'string' ? value.notesStoreGeneration : null;
+		if (_nativeHostRuntime.transport && _nativeHostRuntime.transport.connected().lane !== (_nativeCapability('binaryTransport') ? 'binary' : 'base64')) _nativeHostRuntime.transport = null;
 		if (value.currentFileBound === true && value.currentFileAuthority) {
 			_setNativeCurrentFileBinding(value.currentFileAuthority, value.currentFileGeneration);
 		} else if (value.currentFileBound === false) {
@@ -1837,6 +1843,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 		if (value.installation && typeof value.installation === 'object') _nativeHostRuntime.state.installation = value.installation;
 		if (value.windowInsets) _applyNativeWindowInsets(value.windowInsets);
 		if (value.resources) _applyNativeResources(value.resources);
+		if (Array.isArray(value.partPacks)) _nativeHostRuntime.state.partPacks = value.partPacks.map(String);
 		try { window.dispatchEvent(new CustomEvent('rapier:platform-state', { detail: value })); } catch (_) {}
 	}
 
@@ -2271,6 +2278,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 		var created = await _srCall('files', 'create', { name: name, type: blob.type || 'text/plain', content: blob });
 		if (created.cancelled === true) return false;
 		if (!settles) return true;
+		var fingerprint = await _srVerifyWritten(String(created.id), String(created.version), blob);
 		var destinationName = _rapierDocumentNameIsAdmissible(String(created.name || '')) ? String(created.name) : '';
 		var authority = String(options && options.documentAuthority || '').trim();
 		if (_engineOwnsDocumentAuthority(authority) && (!_srCurrentAuthority() || _srCurrentAuthority() === authority)) {
@@ -2279,9 +2287,44 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 				else await _srDetachCurrent(authority);
 			} catch (error) { try { console.warn('[rapier-platform] File saved but its resume pointer was not retained', error); } catch (_) {} }
 		}
-		return _saveResult('confirmed', { verified: true, fileGeneration: String(created.version), destinationName: destinationName });
+		return _saveResult('confirmed', { verified: true, bytes: fingerprint.bytes, fingerprint: fingerprint.digest,
+			fileGeneration: String(created.version), destinationName: destinationName });
 	}
 	function _srSaveAs(blob, filename, options) { return _srCreate(blob, filename || 'document.md', true, options); }
+	async function _srVerifyWritten(id, version, blob) {
+		var expected = await _blobFingerprint(blob);
+		var read = await _srCall('files', 'read', { id: id });
+		var content = read && read.content;
+		var bytes = content instanceof Blob ? content : (content instanceof ArrayBuffer || ArrayBuffer.isView(content)) ? new Blob([content]) : null;
+		var actual = bytes && String(read.version) === version ? await _blobFingerprint(bytes) : null;
+		if (!actual || actual.bytes !== expected.bytes || actual.digest !== expected.digest) {
+			throw new Error('The speedracer host accepted the write but Rapier could not verify it.');
+		}
+		return expected;
+	}
+	async function _srSaveInPlace(blob, filename, options) {
+		await _srReady;
+		if (options && options.beforeWrite) await options.beforeWrite;
+		if (options && options.check) options.check();
+		var authority = String(options && options.documentAuthority || '').trim();
+		var bound = _srState.current;
+		if (!bound || !authority || authority !== _srCurrentAuthority()) {
+			if (options && options.requireExistingDestination === true) throw _requiresDestinationError();
+			return _srSaveAs(blob, filename, options);
+		}
+		var written = await _srCall('files', 'write', { id: bound.id, content: blob, ifVersion: bound.generation });
+		var name = _rapierDocumentNameIsAdmissible(String(written.name || bound.name)) ? String(written.name || bound.name) : '';
+		var generation = String(written.version);
+		var fingerprint = await _srVerifyWritten(bound.id, generation, blob);
+		if (_engineOwnsDocumentAuthority(authority) && _srState.current === bound) {
+			try {
+				if (name) await _srPersistCurrent({ id: bound.id, name: name, generation: generation, documentAuthority: authority });
+				else await _srDetachCurrent(authority);
+			} catch (error) { try { console.warn('[rapier-platform] File saved but its resume pointer was not retained', error); } catch (_) {} }
+		}
+		return _saveResult('confirmed', { verified: true, bytes: fingerprint.bytes, fingerprint: fingerprint.digest,
+			fileGeneration: generation, destinationName: name });
+	}
 
 	function _createSpeedracerPlatform() {
 		return {
@@ -2346,27 +2389,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 				return { text: read.text, bom: read.bom, name: _srAdmitName(String(file.name || '')), transient: true };
 			},
 			saveAs: _srSaveAs,
-			saveInPlace: async function (blob, filename, options) {
-				await _srReady;
-				if (options && options.beforeWrite) await options.beforeWrite;
-				if (options && options.check) options.check();
-				var authority = String(options && options.documentAuthority || '').trim();
-				var bound = _srState.current;
-				if (!bound || !authority || authority !== _srCurrentAuthority()) {
-					if (options && options.requireExistingDestination === true) throw _requiresDestinationError();
-					return _srSaveAs(blob, filename, options);
-				}
-				var written = await _srCall('files', 'write', { id: bound.id, content: blob, ifVersion: bound.generation });
-				var name = _rapierDocumentNameIsAdmissible(String(written.name || bound.name)) ? String(written.name || bound.name) : '';
-				var generation = String(written.version);
-				if (_engineOwnsDocumentAuthority(authority) && _srState.current === bound) {
-					try {
-						if (name) await _srPersistCurrent({ id: bound.id, name: name, generation: generation, documentAuthority: authority });
-						else await _srDetachCurrent(authority);
-					} catch (error) { try { console.warn('[rapier-platform] File saved but its resume pointer was not retained', error); } catch (_) {} }
-				}
-				return _saveResult('confirmed', { verified: true, fileGeneration: generation, destinationName: name });
-			},
+			saveInPlace: _srSaveInPlace,
 			exportArtifact: function (blob, filename, options) {
 				return _srCreate(blob, filename || 'download', false, options);
 			},
@@ -2648,6 +2671,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 			get read() { return method('resourceRead'); },
 			get ensure() { return method('resourceEnsure'); },
 			get remove() { return method('resourceRemove'); },
+			get part() { return method('partEnsure'); },
 		});
 		var host = Object.freeze({
 			get canShare() { return raw.canShare === true; },
@@ -3073,6 +3097,15 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 			get resourceRemove() {
 				return _nativeCapability('resourceRemove') ? function (id) { return _nativeHostCall('resources.remove', { id: String(id || '') }, 120000); } : null;
 			},
+			get partEnsure() {
+				var packed = _nativeHostRuntime.state.partPacks;
+				return _nativeCapability('partPacks') && Array.isArray(packed) ? function (id, onProgress) {
+					if (packed.indexOf(String(id)) < 0) return null;
+					var follow = function (event) { if (event.detail.id === String(id) && onProgress) onProgress(event.detail.progress); };
+					window.addEventListener('rapier:platform-part', follow);
+					return _nativeHostCall('parts.ensure', { id: String(id) }, 3600000).finally(function () { window.removeEventListener('rapier:platform-part', follow); });
+				} : null;
+			},
 			get installationSupported() { return _nativeCapability('installation'); },
 			installationState: function () {
 				return Object.assign({}, _nativeHostRuntime.state.installation || { state: 'standalone', installed: false });
@@ -3239,9 +3272,9 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument) {
 
 function _rapierDoorPathMark(door, on) {
 	try {
-		if (door === 'draw' && /^\/watercolor\/?$/.test(location.pathname)) door = 'watercolor';
+		if (door === 'draw' && /^\/(?:watercolor|paint)\/?$/.test(location.pathname)) door = location.pathname.replace(/\//g, '');
 		if (!/^https?:$/.test(location.protocol) || !new RegExp('^\\/(' + door + '\\/?)?$').test(location.pathname)) return;
-		const canvas = door === 'draw' || door === 'watercolor';
+		const canvas = door === 'draw' || door === 'watercolor' || door === 'paint';
 		const path = on && (!canvas || location.pathname !== '/') ? '/' + door : '/';
 		const hash = path !== '/' && /^#d\//.test(location.hash) ? '' : location.hash;
 		if (location.pathname !== path || hash !== location.hash) history.replaceState(history.state, '', path + location.search + hash);

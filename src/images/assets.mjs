@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The appendix surface is spec/md-assets.mjs (MIT), re-exported; this file keeps what needs AGPL picture bytes.
 import {inspectJPEGXL, JPEG_XL_PICTURE_LIMITS} from './header.mjs';
-import {inspectRaster} from './raster.mjs';
+import {inspectRaster, inspectHEIF} from './raster.mjs';
 import {fontCssURL} from '../draw/font.mjs';
 import {
   IMAGE_LIMITS, configureParser, normalizeLabel, assetTitle, installMarkdownImages, markdownParser,
@@ -10,7 +10,7 @@ import {
   escapeImageAlt, serializeAsset, appendAssetText, appendAsset, referenceOccurs,
 } from '../spec/md-assets.mjs';
 
-export {inspectJPEGXL, inspectRaster};
+export {inspectJPEGXL, inspectRaster, inspectHEIF};
 
 export function imageAnimation(url) {
   const info = dataImage(url); if (!info || !['image/gif','image/svg+xml','image/jxl'].includes(info.codec)) return null;

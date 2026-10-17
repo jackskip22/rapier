@@ -5,6 +5,7 @@ const _rapierNotesSyncUi = (() => {
 	let message = '', recovery = null, conflicts = null, joined = false, setup = null, route = null, acting = false, joinCode = '', replacing = false;
 	let intakeJoin = false, drawnCode = null;
 	let others = false, providerId = null, providerDraft = {};
+	let layout = null, plainKept = null, plainPlace = 'Rapier Notes';
 	const joinReturnKey = () => 'rapier:sync:join-return' + RapierStorage.scope;
 	const api = () => globalThis.RapierNotesSyncSession;
 	const platformId = () => globalThis.RapierPlatform?.environment.id;
@@ -117,7 +118,8 @@ const _rapierNotesSyncUi = (() => {
 		field.value = initial; row.append(field); body.append(row); return field;
 	}
 	const WAITS = {'sync now': 'Syncing notes', 'connect existing vault': 'Unlocking notes', 'use recovery code': 'Unlocking notes',
-		'use a recovery code instead': 'Unlocking notes', 'protect my notes': 'Protecting notes', 'check and connect': 'Connecting', 'sign out and revoke': 'Signing out'};
+		'use a recovery code instead': 'Unlocking notes', 'protect my notes': 'Protecting notes', 'check and connect': 'Connecting', 'sign out and revoke': 'Signing out',
+		'connect plain files': 'Connecting'};
 	let progress = null;
 	function choice(label, description, action, {enabled = !status().busy && !acting, cloudflare = false, key = null} = {}) {
 		const button = node('button', 'export-choice' + (cloudflare ? ' rapier-cloudflare' : '')); button.type = 'button'; button.disabled = !enabled;
@@ -140,9 +142,11 @@ const _rapierNotesSyncUi = (() => {
 		if (initializing) return initializing;
 		initializing = (async () => {
 			await _rapierNotesReady(); await _rapierNotesStore.kind();
-			const saved = (await api().readSyncState(_rapierNotesStore.folder)).vault;
+			const kept = await api().readSyncState(_rapierNotesStore.folder), saved = kept.vault;
 			if (saved?.mode) route = saved.mode;
 			if (saved?.mode === 'provider') providerId = saved.provider;
+			plainKept = kept.plain ? {provider: kept.plain.provider, place: kept.plain.place} : null;
+			if (plainKept && !saved) { route = 'provider'; providerId = plainKept.provider; }
 			const gate = availability(); if (!gate.ready) throw new Error(gate.reason);
 			const opened = api().createSyncSession({folder: _rapierNotesStore.folder, personal: _rapierPersonal, mode: mode(),
 				fetch: window.fetch.bind(window), pendingStorage: sessionStorage,
@@ -177,7 +181,7 @@ const _rapierNotesSyncUi = (() => {
 		}
 		visible = false; recovery = null; conflicts = null; setup = null; joinCode = ''; replacing = false; message = ''; intakeJoin = false; drawnCode = null;
 		if (mode() === 'provider' && !status().hasConnection && !status().authorized) { route = null; providerId = null; session = null; }
-		others = false; providerDraft = {};
+		others = false; providerDraft = {}; layout = null;
 		progress?.release(); clearBody(); if (overlay) closeDialog(overlay); wearBox();
 	}
 	function paint() {
@@ -395,6 +399,11 @@ const _rapierNotesSyncUi = (() => {
 			return true;
 		}
 		if (connected) return false;
+		if (plainKept?.provider === id && !state.hasConnection) { paintPlainKept(id); return true; }
+		if (!state.hasConnection && !joined && !state.rejoinRequired && signsIn(id)) {
+			if (!layout) { paintLayoutChoice(); paintBack(); return true; }
+			if (layout === 'plain') { paintPlainSetup(); return true; }
+		}
 		if (state.hasConnection && signsIn(id)) return false;
 		if (joined || state.rejoinRequired || state.hasConnection) { paintProviderJoin(); if (!state.hasConnection && !state.rejoinRequired) paintBack(); return true; }
 		paragraph('choose a sync passphrase.');
@@ -402,6 +411,31 @@ const _rapierNotesSyncUi = (() => {
 		paintProviderForm(id, {replace: false});
 		if (!state.hasConnection) paintBack();
 		return true;
+	}
+	function paintLayoutChoice() {
+		paragraph('how should your notes be kept there?');
+		for (const row of api().PLAIN_CHOICES) choice(row.label, row.detail, () => { layout = row.id; }, {key: 'layout:' + row.id});
+	}
+	const plainWords = run => {
+		const waiting = (run?.held?.length || 0) + (run?.pictures?.held?.length || 0);
+		return (run?.conflicts ? run.conflicts + (run.conflicts === 1 ? ' note has' : ' notes have') + ' both versions to review. ' : '')
+			+ (waiting ? waiting + (waiting === 1 ? ' file waits' : ' files wait') + ' for the next sync: it changed in two places at once.' : 'notes and files match.');
+	};
+	function paintPlainSetup() {
+		paragraph('not private: one markdown file per note in this folder. any app or person with access to the folder can read and change them.');
+		const place = input('folder name', {value: plainPlace});
+		place.addEventListener('input', () => { plainPlace = place.value; });
+		choice('connect plain files', '', async () => {
+			const run = await (await owner()).plainConnect({place: place.value});
+			plainKept = await session.plainConnection(); layout = null;
+			if (visible) message = plainWords(run);
+		}, {key: 'plain-connect'});
+		choice('back', '', () => { layout = null; }, {enabled: !acting, key: 'back'});
+	}
+	function paintPlainKept(id) {
+		paragraph('plain files in ' + plainKept.place.replace(/^\//, '') + ' on ' + labelOf(id) + '. not private: any app or person with access to that folder can read them.');
+		choice('sync now', '', async () => { const run = await session.plainSyncNow(); if (visible) message = plainWords(run); }, {key: 'sync'});
+		choice('stop syncing plain files', 'your notes and the files stay', async () => { await session.plainForget(); plainKept = null; }, {key: 'plain-forget'});
 	}
 	function paintProviderForm(id, {replace}) {
 		const draft = providerDraft, read = {};
@@ -710,11 +744,13 @@ const _rapierNotesSyncUi = (() => {
 			} catch (error) { message = said(error); if (!session) route = platformId() === 'android' ? 'companion' : 'r2-key'; }
 			open({initialize: false}); return;
 		}
-		if (!context.params.has('code') && !context.params.has('error')) return;
+		const fragment = /(?:^#|&)(?:access_token|error)=/.test(hash) && /(?:^#|&)state=/.test(hash) ? hash : '';
+		if (!fragment && !context.params.has('code') && !context.params.has('error')) return;
+		const returnedState = fragment ? new URLSearchParams(fragment.slice(1)).get('state') : context.params.get('state');
 		let sent = null;
 		try { sent = JSON.parse(sessionStorage.getItem(providerPendingKey())); } catch (_) {}
-		if (sent && api().isOtherProvider(sent.provider) && sent.state === context.params.get('state')) {
-			const search = context.params.toString(), callback = location.href;
+		if (sent && api().isOtherProvider(sent.provider) && sent.state === returnedState) {
+			const at = new URL(location.href), search = fragment || context.params.toString(), callback = at.origin + at.pathname;
 			history.replaceState(null, '', _rapierBootPathAndQuery());
 			session = null; route = 'provider'; providerId = sent.provider; others = true;
 			open({initialize: false});
@@ -725,13 +761,14 @@ const _rapierNotesSyncUi = (() => {
 				let saved;
 				try { saved = JSON.parse(sessionStorage.getItem(joinReturnKey())); } catch (_) {}
 				sessionStorage.removeItem(joinReturnKey());
-				if (saved && saved.state === context.params.get('state') && saved.at <= Date.now() && Date.now() - saved.at <= 600000) {
+				if (saved && saved.state === returnedState && saved.at <= Date.now() && Date.now() - saved.at <= 600000) {
 					const landing = api().readJoinFragment('#join=' + saved.address);
 					if (landing?.mode === 'provider') { joinCode = landing.address; intakeJoin = true; joined = true; }
 				}
 			});
 			return;
 		}
+		if (fragment) return;
 		const search = context.params.toString(), callback = location.href;
 		let verification = false;
 		try { verification = api().verificationReturn(callback, sessionStorage.getItem('rapier:cloudflare:pending' + RapierStorage.scope), search); } catch (_) {}

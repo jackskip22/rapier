@@ -2,7 +2,7 @@
 
 The Rapier editor is free under AGPL-3.0-only (LICENSE), including for commercial use. The standard's own modules are MIT (LICENSE-MIT).
 
-Alternative commercial licenses are paid once: USD 1,000 with a visible “Editor by Rapier” credit, or USD 5,000 for white-label. Both cover one legal entity and its products, the full and document-only editor, and future public releases of the covered Rapier code. There are no per-product, seat, installation or royalty charges, renewals, activation keys or version cutoffs.
+Alternative commercial licenses are paid once: USD 200 during 2026 (early adopter price; normally USD 1,000) with a visible “Editor by Rapier” credit, or USD 5,000 for white-label. Both cover one legal entity and its products, the full and document-only editor, and future public releases of the covered Rapier code. There are no per-product, seat, installation or royalty charges, renewals, activation keys or version cutoffs.
 
 The ordinary license requires the credit “Editor by Rapier”, linked to https://rapier.website, shown on the screen where people use the editor (the licensee chooses where on that screen; not only in a menu, an About page or legal notices). White-label requires no credit; third-party license notices remain. Support, custom work and hosted services are separate. Future releases are included if produced; ongoing development is not a service promised by the purchase.
 

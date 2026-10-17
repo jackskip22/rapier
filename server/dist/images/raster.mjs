@@ -118,6 +118,57 @@ function webp(bytes, view) {
   return result('image/webp', canvasWidth ?? width, canvasHeight ?? height, orientation);
 }
 
+const HEIF_TYPES = {avif: 'image/avif', heic: 'image/heic', heix: 'image/heic', heim: 'image/heic', heis: 'image/heic'};
+export function inspectHEIF(input) {
+  const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+  if (!bytes.length || bytes.length > JPEG_XL_LIMITS.bytes) fail('RASTER_SIZE', 'This image is empty or exceeds 16 MiB.');
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const children = (start, end) => {
+    const out = [];
+    for (let at = start; at + 8 <= end;) {
+      let size = view.getUint32(at), header = 8;
+      if (size === 1) { if (at + 16 > end || view.getUint32(at + 8)) fail(); size = view.getUint32(at + 12); header = 16; }
+      else if (size === 0) size = end - at;
+      if (size < header || at + size > end) fail();
+      out.push({type: fourCC(bytes, at + 4), start: at + header, end: at + size});
+      at += size;
+    }
+    return out;
+  };
+  const top = children(0, bytes.length), ftyp = top[0];
+  if (ftyp?.type !== 'ftyp' || ftyp.end - ftyp.start < 8) fail('RASTER_SIGNATURE', 'Choose a PNG, JPEG, WebP, GIF, AVIF or HEIC image.');
+  const brands = [fourCC(bytes, ftyp.start)];
+  for (let at = ftyp.start + 8; at + 4 <= ftyp.end; at += 4) brands.push(fourCC(bytes, at));
+  if (brands[0] === 'avis' || brands[0] === 'msf1') animation();
+  const type = brands.map(brand => HEIF_TYPES[brand]).find(Boolean);
+  if (!type) fail('RASTER_SIGNATURE', 'Choose a PNG, JPEG, WebP, GIF, AVIF or HEIC image.');
+  const meta = top.find(box => box.type === 'meta');
+  if (!meta) fail();
+  const inMeta = children(meta.start + 4, meta.end), find = name => inMeta.find(box => box.type === name);
+  const pitm = find('pitm'), iprp = find('iprp');
+  if (!pitm || !iprp) fail();
+  const primary = bytes[pitm.start] ? view.getUint32(pitm.start + 4) : view.getUint16(pitm.start + 4);
+  const inProperties = children(iprp.start, iprp.end), ipco = inProperties.find(box => box.type === 'ipco');
+  if (!ipco) fail();
+  const properties = children(ipco.start, ipco.end);
+  let width, height, angle = 0;
+  for (const ipma of inProperties.filter(box => box.type === 'ipma')) {
+    const version = bytes[ipma.start], wide = bytes[ipma.start + 3] & 1;
+    let at = ipma.start + 8;
+    for (let entries = view.getUint32(ipma.start + 4); entries-- > 0 && at < ipma.end;) {
+      const item = version < 1 ? view.getUint16(at) : view.getUint32(at); at += version < 1 ? 2 : 4;
+      const count = bytes[at++];
+      for (let i = 0; i < count; i++, at += wide ? 2 : 1) {
+        if (item !== primary) continue;
+        const property = properties[(wide ? view.getUint16(at) & 0x7fff : bytes[at] & 0x7f) - 1];
+        if (property?.type === 'ispe' && property.end - property.start >= 12) { width = view.getUint32(property.start + 4); height = view.getUint32(property.start + 8); }
+        else if (property?.type === 'irot' && property.end > property.start) angle = bytes[property.start] & 3;
+      }
+    }
+  }
+  return result(type, width, height, [1, 8, 3, 6][angle]);
+}
+
 export function inspectRaster(input, {maximumBytes = JPEG_XL_LIMITS.bytes} = {}) {
   const bytes = input instanceof ArrayBuffer ? new Uint8Array(input) :
     input instanceof Uint8Array || input instanceof Uint8ClampedArray ? new Uint8Array(input.buffer, input.byteOffset, input.byteLength) : null;

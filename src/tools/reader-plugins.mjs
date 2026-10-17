@@ -42,7 +42,7 @@ export function readerPluginLoader(loader, built) {
 }
 
 const entry = ({hostFile, file, bytes, sri, url, manifestUrl}, builds) => ({file: hostFile || file.split('/').pop(), bytes, sha384: Buffer.from(sri, 'base64').toString('hex'), sri, url: manifestUrl || url, ...(builds ? {builds} : {})});
-const BUILDS = ['reader', 'document', 'full'];
+const BUILDS = ['reader', 'full'];
 
 export function builtFromManifest(manifest) {
 	return ['flowchart', 'docx', 'pdf'].map(key => {
@@ -65,7 +65,7 @@ export async function pluginManifest({root, version, loader, built}) {
 		{name: 'pdf', adds: PLUGINS.pdf.adds, builds: BUILDS, files: [entry(built.find(plugin => plugin.key === 'pdf'), ['reader']),
 			...shared('pdf')]},
 		{name: 'ocr', adds: 'Reads the words in pictures on the device (' + OCR_MODEL + ' on ONNX Runtime Web), so search finds them. About 21 MB.', builds: BUILDS, files: shared('ocr')},
-		{name: 'font-subset', adds: 'Keeps the used characters in fonts embedded in exported pages.', builds: ['document', 'full'],
+		{name: 'font-subset', adds: 'Keeps the used characters in fonts embedded in exported pages.', builds: ['full'],
 			files: shared('font-subset')},
 		{name: 'letters', adds: 'Draw\'s ornamental letter sets: ' + LETTER_SETS.map(set => set.name).join(', ') + '.', builds: ['full'],
 			files: shared('letters')},
@@ -74,5 +74,5 @@ export async function pluginManifest({root, version, loader, built}) {
 	const names = plugins.flatMap(plugin => plugin.files.map(file => file.file));
 	const twice = names.find((name, at) => names.indexOf(name) !== at);
 	if (twice) throw new Error('Reader plug-ins: two plug-in files are both named ' + twice + ' in the directory');
-	return {schema: 1, release: version, directory: 'Put every file in one directory, keeping each file\'s folder, and give the page its address with `plugins`. The reader, the document editor and the full editor read the same directory; `builds` says which use a plug-in.', plugins};
+	return {schema: 1, release: version, directory: 'Put every file in one directory, keeping each file\'s folder, and give the page its address with `plugins`. The reader and the full editor read the same directory; `builds` says which use a plug-in.', plugins};
 }

@@ -273,6 +273,14 @@ function anchorResizeLocal(recipe, ids, theta, pivot, next, anchor) {
 	for (const shape of recipe.shapes) if (wanted.has(shape.id)) _rapierDrawTranslateShape(shape, recipe, dx, dy);
 }
 function identity(m) { return m.every((n, i) => Math.abs(n - (i === 0 || i === 3 ? 1 : 0)) <= (i < 4 ? 1e-10 : 1e-8)); }
+function _rapierDrawScaleLabels(shapes, box, next) {
+	const w = box.maxX - box.minX, h = box.maxY - box.minY, scale = w ? Math.abs(next.maxX - next.minX) / w : h ? Math.abs(next.maxY - next.minY) / h : 1;
+	if (shapes.length < 2 || !(scale > 0) || Math.abs(scale - 1) < 1e-12) return;
+	for (const shape of shapes) if (shape.label) {
+		if (shape.recognized !== 'text') shape.textSize = _rapierDrawClamp((shape.textSize ?? 14) * scale, 6, 512);
+		if (shape.labelWidth) shape.labelWidth = _rapierDrawClamp(shape.labelWidth * scale, 6, 65536);
+	}
+}
 function _rapierDrawFitText(shape, recipe) {
 	if (!shape.labelGrow && (!shape.label || !shape.labelIn)) return shape;
 	if (!_rapierDrawTextFrame(shape, recipe)) return shape;
@@ -634,6 +642,7 @@ function applyOperations(input, operations) {
 			}
 			const x = box.minX + w * anchor.x, y = box.minY + h * anchor.y;
 			const next = {minX: x - width * anchor.x, maxX: x + width * (1 - anchor.x), minY: y - height * anchor.y, maxY: y + height * (1 - anchor.y)};
+			_rapierDrawScaleLabels(shapes, box, next);
 			for (const shape of shapes) { _rapierDrawResizeShapeLocal(shape, recipe, theta, pivot, box, next); _rapierDrawFitText(shape, recipe); _rapierDrawReleaseBindings(shape, ids); }
 			anchorResizeLocal(recipe, ids, theta, pivot, next, anchor);
 		} else if (type === 'rotate') {
@@ -757,4 +766,4 @@ function snapResize(recipe, ids, from, next, tolerance) {
 	return { next: out, guides };
 }
 
-export { _rapierDrawRefaceArrows, applyOperations, editDrawing, setProperties, _rapierDrawSetBinding, selectionIds, snapMove, snapResize, anchorResize, anchorResizeLocal, selectionFrame, rotateDrawing, contentTiltBox, _rapierDrawReleaseAuthorPaint, _rapierDrawTranslateGeom, _rapierDrawTranslateShape, _rapierDrawRotatePt, _rapierDrawBindAnchorFor, _rapierDrawResizeShape, _rapierDrawResizeShapeLocal, _rapierDrawRotateShape, _rapierDrawFitText, _rapierDrawReleaseBindings, _rapierDrawPruneUnusedStrokes };
+export { _rapierDrawRefaceArrows, applyOperations, editDrawing, setProperties, _rapierDrawSetBinding, selectionIds, snapMove, snapResize, anchorResize, anchorResizeLocal, selectionFrame, rotateDrawing, contentTiltBox, _rapierDrawReleaseAuthorPaint, _rapierDrawTranslateGeom, _rapierDrawTranslateShape, _rapierDrawRotatePt, _rapierDrawBindAnchorFor, _rapierDrawResizeShape, _rapierDrawResizeShapeLocal, _rapierDrawRotateShape, _rapierDrawFitText, _rapierDrawScaleLabels, _rapierDrawReleaseBindings, _rapierDrawPruneUnusedStrokes };

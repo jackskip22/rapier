@@ -418,7 +418,7 @@ function _rapierDrawHistoryDelta(before, after) {
 		if (!_rapierDrawHistoryEqual(before.strokes[i], after.strokes[i])) strokes[i] = { before: before.strokes[i] || null, after: after.strokes[i] ? _rapierDrawHistoryCopy(after.strokes[i]) : null };
 	const strokesChanged = before.strokes.length !== after.strokes.length || Object.keys(strokes).length > 0;
 	const fontsChanged = (before.fonts || []).map(font => font.id).join('\0') !== (after.fonts || []).map(font => font.id).join('\0');
-	const metaKeys = ['canvas', 'view', 'tool', 'smooth', 'nib', 'angle', 'light', 'paper', 'effect', 'frame', 'background'];
+	const metaKeys = ['canvas', 'view', 'tool', 'smooth', 'nib', 'angle', 'light', 'paper', 'effect', 'frame', 'background', 'backgrounds'];
 	const beforeMeta = {}, afterMeta = {};
 	let metaChanged = false;
 	for (const key of metaKeys) {
@@ -796,7 +796,9 @@ function _rapierDrawUndo(redo = false, target = null) {
 		if (!owns()) return false;
 		return _rapierPaintAfter(_rapierPaintFlushRevision(), () => {
 			if (!owns()) return false;
-			return _rapierPaintAfter(typeof _rapierPaintFlushWet === 'function' ? _rapierPaintFlushWet(true, () => owns() && !state.gesture && !state.markerPress) : null, () => owns() ? _rapierDrawUndoWalk(redo, target) : false);
+			const idle = () => owns() && !state.gesture && !state.markerPress;
+			return _rapierPaintAfter(typeof _rapierPaintLeaveWash === 'function' ? _rapierPaintLeaveWash(idle) : null, () => !owns() ? false :
+				_rapierPaintAfter(typeof _rapierPaintFlushWet === 'function' ? _rapierPaintFlushWet(true, idle) : null, () => owns() ? _rapierDrawUndoWalk(redo, target) : false));
 		});
 	});
 }
@@ -2160,7 +2162,7 @@ const RAPIER_DRAW_TOOL_SETTINGS = Object.freeze({
 	select: ['ink', 'nib', 'options'],
 	brush: ['ink', 'nib'],
 	pen: ['ink', 'nib', 'smooth'],
-	paint: ['paintBrushes', 'paintTools', 'nib', 'dip', 'ink'],
+	paint: ['paintBrushes', 'nib', 'dip', 'ink', 'paintTools', 'paintSet'],
 	water: ['waterBrushes', 'nib', 'waterLoad', 'waterPigments', 'waterDry', 'waterTools', 'paintSet'],
 	shape: ['ink', 'nib', 'kinds', 'options'],
 	text: ['ink', 'textSize', 'textFont', 'textSpacing', 'textStyle', 'textAlign'],
@@ -2378,7 +2380,7 @@ function _rapierDrawCloseSettingPanels(except = '') {
 	if (except !== 'background' && typeof _rapierDrawCloseBackground === 'function') _rapierDrawCloseBackground();
 	if (focusPanel) {
 		const tool = _rapierDrawTool();
-		let action = focusPanel === 'background' ? 'canvas' : focusPanel === 'waterPaper' ? 'waterBrushes' : focusPanel === 'angle' ? (tool === 'water' ? 'waterBrushes' : 'dip') : focusPanel;
+		let action = focusPanel === 'background' ? 'canvas' : focusPanel === 'waterPaper' ? 'waterBrushes' : focusPanel === 'angle' ? (tool === 'water' ? 'waterBrushes' : 'paintBrushes') : focusPanel;
 		if (action !== 'canvas' && !(RAPIER_DRAW_TOOL_SETTINGS[tool] || []).includes(action)) action = 'toolMenu';
 		if (state.settingsCollapsed && action !== 'canvas' && action !== 'toolMenu') action = 'settingsCollapse';
 		const trigger = surface.querySelector('[data-draw-act="' + action + '"]');
@@ -2408,11 +2410,20 @@ function _rapierDrawUpdateContextOptions() {
 		: tool === 'select' ? new Set(['snap', 'proportions', 'center', 'unlockAll']) : new Set();
 	for (const button of surface.querySelectorAll('.rapier-draw-options [data-draw-act]')) button.hidden = !allowed.has(button.dataset.drawAct);
 }
+function _rapierDrawShowTool(tool) {
+	const trigger = _rapierDrawState.surface?.querySelector('[data-draw-act="toolMenu"]');
+	if (!trigger || trigger.dataset.drawShown === tool) return;
+	const changed = !!trigger.dataset.drawShown;
+	trigger.dataset.drawShown = tool;
+	trigger.innerHTML = RAPIER_DRAW_ICONS[tool] + '<span>' + RAPIER_DRAW_TOOL_SHORT[tool] + '</span>';
+	trigger.setAttribute('aria-label', 'Current tool: ' + RAPIER_DRAW_TOOL_WORDS[tool] + '. Choose tool.');
+	if (changed) { _rapierDrawPlay(trigger.firstElementChild, 'rise'); _rapierDrawPlay(trigger.lastElementChild, 'riseWord'); }
+}
 function _rapierDrawUpdatePenBtn() {
 	const surface = _rapierDrawState.surface;
 	const tool = _rapierDrawTool();
 	if (surface) {
-		const sizeButton = surface.querySelector('[data-draw-act="nib"]'), sizeWord = tool === 'water' || tool === 'paint' ? 'size' : 'width';
+		const sizeButton = surface.querySelector('[data-draw-act="nib"]'), sizeWord = tool === 'water' ? 'size' : 'width';
 		if (sizeButton) { sizeButton.querySelector('.rapier-draw-btn-name').textContent = sizeWord; sizeButton.setAttribute('aria-label', sizeWord); sizeButton.dataset.tip = sizeWord; }
 		for (const name of RAPIER_DRAW_TOOLS) {
 			const btn = surface.querySelector('[data-draw-tool="' + name + '"]');
@@ -2422,14 +2433,7 @@ function _rapierDrawUpdatePenBtn() {
 			btn.innerHTML = RAPIER_DRAW_ICONS[name] + '<span>' + RAPIER_DRAW_TOOL_WORDS[name] + '</span>';
 			btn.setAttribute('aria-label', RAPIER_DRAW_TOOL_SAYS[name]);
 		}
-		const trigger = surface.querySelector('[data-draw-act="toolMenu"]');
-		if (trigger && trigger.dataset.drawShown !== tool) {
-			const changed = !!trigger.dataset.drawShown;
-			trigger.dataset.drawShown = tool;
-			trigger.innerHTML = RAPIER_DRAW_ICONS[tool] + '<span>' + RAPIER_DRAW_TOOL_SHORT[tool] + '</span>';
-			trigger.setAttribute('aria-label', 'Current tool: ' + RAPIER_DRAW_TOOL_WORDS[tool] + '. Choose tool.');
-			if (changed) { _rapierDrawPlay(trigger.firstElementChild, 'rise'); _rapierDrawPlay(trigger.lastElementChild, 'riseWord'); }
-		}
+		_rapierDrawShowTool(tool);
 	}
 	_rapierDrawSyncCanvasAccess();
 
@@ -2438,10 +2442,8 @@ function _rapierDrawUpdatePenBtn() {
 	}
 	if (surface) {
 		const visible = new Set(RAPIER_DRAW_TOOL_SETTINGS[tool] || []);
-		const row = surface.querySelector('.rapier-draw-settings'), controls = row?.querySelector('.rapier-draw-settings-controls');
-		const set = surface.querySelector('[data-draw-setting="paintSet"]'), setHome = tool === 'paint' ? surface.querySelector('.rapier-draw-dip-actions') : controls;
-		if (set && setHome) { if (set.parentElement !== setHome) setHome.appendChild(set); set.hidden = false; }
 		for (const btn of surface.querySelectorAll('.rapier-draw-settings [data-draw-setting]')) btn.hidden = !visible.has(btn.dataset.drawSetting);
+		const row = surface.querySelector('.rapier-draw-settings'), controls = row?.querySelector('.rapier-draw-settings-controls');
 		for (const name of RAPIER_DRAW_TOOL_SETTINGS[tool] || []) { const btn = controls?.querySelector('[data-draw-setting="' + name + '"]'); if (btn) controls.appendChild(btn); }
 		row?.style.setProperty('--draw-settings-count', String(Math.max(1, visible.size)));
 		row?.classList.toggle('rapier-draw-settings--even', tool === 'paint' || tool === 'water');
@@ -2487,13 +2489,17 @@ async function _rapierDrawSetTool(name, remember = true) {
 	if (!_rapierDrawToolAllowed(name)) return;
 	if (!RAPIER_DRAW_TOOLS.includes(name)) return;
 	if (!_rapierDrawFinishText()) return;
+	if (name === 'water' && !globalThis.navigator?.gpu && _rapierDrawToolAllowed('paint')) { _rapierDrawWatercolourFallback(); name = 'paint'; remember = false; }
 	const state = _rapierDrawState, change = state.toolChange = {session: state.session};
 	const current = () => state.open && state.session === change.session && state.toolChange === change;
+	_rapierDrawSetToolMenu(false); _rapierDrawShowTool(name);
 	try {
 		const pending = _rapierPaintPendingStroke();
 		if (pending) { await pending; if (!current()) return; }
 		_rapierDrawCancelGesture();
 		try {
+			const left = typeof _rapierPaintLeaveWash === 'function' ? _rapierPaintLeaveWash(current, true) : null; if (left) await left;
+			if (!current()) return;
 			const closed = _rapierPaintCloseLayer(current); if (closed) await closed;
 		} catch (error) { showToast('The painting could not be kept. The tool was not changed: ' + String(error?.message || error), 'error'); return; }
 		if (!current()) return;
@@ -2520,7 +2526,21 @@ async function _rapierDrawSetTool(name, remember = true) {
 		_rapierDrawUpdateInkBtn();
 		if (name === 'effects') _rapierDrawEffectsSync();
 		_rapierDrawEffectsPreviewSchedule();
-	} finally { if (state.toolChange === change) state.toolChange = null; }
+	} finally {
+		if (state.toolChange === change) state.toolChange = null;
+		if (!state.toolChange && state.open) _rapierDrawShowTool(_rapierDrawTool());
+		_rapierDrawReleaseHeldPress(change);
+	}
+}
+function _rapierDrawReleaseHeldPress(change) {
+	const state = _rapierDrawState, held = state.heldPress;
+	if (!held || held.change !== change) return;
+	if (state.toolChange && state.toolChange !== change) { held.change = state.toolChange; return; }
+	state.heldPress = null;
+	if (!state.open || state.session !== change.session || held.up?.type === 'pointercancel') return;
+	_rapierDrawGuard(_rapierDrawOnPointerDown)(held.down);
+	for (const move of held.moves) _rapierDrawGuard(_rapierDrawOnPointerMove)(move);
+	if (held.up) _rapierDrawGuard(_rapierDrawOnPointerUp)(held.up);
 }
 
 const RAPIER_DRAW_ERASE_MIN_LEN = 4;
@@ -2890,8 +2910,8 @@ function _rapierDrawCommitShapeDrag(pts, dragged = true, options) {
 		brush: 'ink', style: _rapierDrawDefaultStyle(kind), geom, seed: _rapierDrawMintSeed(),
 		smooth: _rapierDrawSmoothLevel(state.smooth), nib: _rapierDrawNibLevel(state.nib) };
 	if (state.ink) shape.ink = state.ink;
-	if (kind === 'arrow') { const bind = _rapierDrawBindArrowEnds(geom); if (bind) shape.bind = bind; }
-	else if (kind === 'line') _rapierDrawSnapLineGeom(geom);
+	if (kind === 'line') _rapierDrawSnapLineGeom(geom);
+	if (kind === 'arrow' || kind === 'line') { const bind = _rapierDrawBindArrowEnds(geom); if (bind) shape.bind = bind; }
 	const candidate = _rapierDrawAdmitCreation({ ...state.recipe, shapes: state.recipe.shapes.concat([shape]) });
 	if (!candidate) return false;
 	_rapierDrawSnapshot();
@@ -2914,9 +2934,13 @@ function _rapierDrawChain(side) {
 	const recipe = state.recipe, before = _rapierDrawHistoryRecipe(), box = _rapierDrawShapeBBoxIn(from, recipe), gap = 48;
 	const along = step[0] ? box.maxX - box.minX + gap : box.maxY - box.minY + gap;
 	const taken = recipe.shapes.filter(shape => shape !== from && shape.geom && !['line', 'arrow'].includes(shape.recognized)).map(shape => _rapierDrawShapeBBoxIn(shape, recipe)).filter(Boolean);
+	const tangent = step[0] ? 'ay' : 'ax', normal = step[0] ? 'ax' : 'ay', perp = [step[1] ? 1 : 0, step[0] ? 1 : 0];
+	const branch = recipe.shapes.filter(shape => shape.recognized === 'arrow' && shape.bind?.start?.to === from.id && shape.bind.end?.to !== from.id && shape.bind.start[normal] === (step[0] + step[1] + 1) / 2);
+	const across = perp[0] ? box.maxX - box.minX + gap : box.maxY - box.minY + gap;
 	let dx = 0, dy = 0, free = false;
 	for (let i = 1; i <= 24; i++) {
-		dx = step[0] * along * i; dy = step[1] * along * i;
+		const beside = i % 2 ? (1 - i) / 2 : i / 2;
+		dx = branch.length ? step[0] * along + perp[0] * across * beside : step[0] * along * i; dy = branch.length ? step[1] * along + perp[1] * across * beside : step[1] * along * i;
 		if (!taken.some(b => b.minX < box.maxX + dx + gap / 2 && b.maxX > box.minX + dx - gap / 2 && b.minY < box.maxY + dy + gap / 2 && b.maxY > box.minY + dy - gap / 2)) { free = true; break; }
 	}
 	if (!free) return;
@@ -2933,7 +2957,12 @@ function _rapierDrawChain(side) {
 		seed: _rapierDrawMintSeed(), smooth: _rapierDrawSmoothLevel(state.smooth), nib: _rapierDrawNibLevel(state.nib) };
 	if (state.ink) arrow.ink = state.ink;
 	arrow.geom.x2 = arrow.geom.x1 + step[0] * gap; arrow.geom.y2 = arrow.geom.y1 + step[1] * gap;
-	const candidate = _rapierDrawAdmitCreation({ ...recipe, shapes: recipe.shapes.concat([next, arrow]) });
+	const centre = shape => { const b = _rapierDrawShapeBBoxIn(shape, recipe); return perp[0] ? b.minX + b.maxX : b.minY + b.maxY; };
+	const order = branch.map(shape => [shape, centre(recipe.shapes.find(child => child.id === shape.bind.end.to) || shape)]).concat([[arrow, perp[0] ? box.minX + box.maxX + 2 * dx : box.minY + box.maxY + 2 * dy]]).sort((a, b) => a[1] - b[1]).map(([shape]) => shape);
+	const spread = new Map(order.map((shape, i) => [shape, (i + 1) / (order.length + 1)]));
+	arrow.bind.start[tangent] = spread.get(arrow);
+	const shapes = recipe.shapes.map(shape => spread.has(shape) ? { ...shape, bind: { ...shape.bind, start: { ...shape.bind.start, [tangent]: spread.get(shape) } } } : shape);
+	const candidate = _rapierDrawAdmitCreation({ ...recipe, shapes: shapes.concat([next, arrow]) });
 	if (!candidate) return;
 	state.recipe = candidate;
 	_rapierDrawSetSelection([next.id]);
@@ -2966,7 +2995,7 @@ function _rapierDrawCommitStroke(points, options = {}) {
 
 	else if (recognized.geom) recognized.geom = _rapierDrawRestGeom(recognized.kind, recognized.geom, null);
 
-	const bind = recognized.kind === 'arrow' && recognized.geom ? _rapierDrawBindArrowEnds(recognized.geom) : null;
+	const bind = (recognized.kind === 'arrow' || recognized.kind === 'line') && recognized.geom ? _rapierDrawBindArrowEnds(recognized.geom) : null;
 	const strokeIndex = state.recipe.strokes.length;
 
 	const varied = _rapierDrawStrokeHasPressure(points);
@@ -3216,7 +3245,7 @@ function _rapierDrawLetterGlyph(set) {
 	const sample = set && globalThis.RapierDrawLetters.LETTER_PREVIEWS[set.id];
 	return sample ? '<svg class="rapier-draw-glyph" viewBox="0 0 ' + sample.glyph[0] + ' ' + sample.em + '" aria-hidden="true"><path fill="currentColor" transform="translate(' + sample.bearing + ',0)" d="' + sample.glyph[1] + '"/></svg>' : '';
 }
-const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.7/letters/';
+const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.8/letters/';
 const _rapierDrawLettersDoor = { allowed: false, asking: null, providers: new Map(), bringing: new Map() };
 function _rapierDrawLettersProvider(set) {
 	const door = _rapierDrawLettersDoor;
@@ -3592,20 +3621,20 @@ function _rapierDrawRememberInk(value) {
 	_rapierPersonal.rememberDrawing('recentInks', JSON.stringify(rows));
 }
 function _rapierDrawPalette(ink, scope) {
-	const clearRow = scope === 'next' && _rapierDrawTool() === 'paint', clearOn = clearRow && _rapierPaintHead().clear;
-	const words = clearRow ? RAPIER_PAINT_COLOURS : [['#000000', 'Black'], ['#ffffff', 'White'], [scope === 'border' ? '#121212' : '', 'Default'], ...RAPIER_DRAW_INK_ORDER.map(id => [id, RAPIER_DRAW_INK_LABEL[id]])];
+	const accent = scope === 'next' && _rapierDrawTool() === 'paint' ? _rapierDrawAccentInk() : null;
+	const words = [['#000000', 'Black'], ['#ffffff', 'White'], accent ? [accent, 'Accent'] : [scope === 'border' ? '#121212' : '', 'Default'], ...RAPIER_DRAW_INK_ORDER.map(id => [id, RAPIER_DRAW_INK_LABEL[id]])];
 	const hex = _rapierDrawShapeInk({ ink });
-	const editor = '<span class="rapier-draw-colour-editor" data-draw-colour-scope="' + scope + '">' +
+	const clearRow = scope === 'next' && _rapierDrawTool() === 'paint', clearOn = clearRow && _rapierPaintHead().clear;
+	return '<span class="rapier-draw-colour-editor" data-draw-colour-scope="' + scope + '">' +
 		'<label class="rapier-draw-colour-custom" title="Choose any color"><input type="color" aria-label="Choose any color" value="' + hex + '" data-draw-colour="' + scope + '"></label>' +
 		'<input class="rapier-draw-colour-hex" type="text" inputmode="text" enterkeyhint="done" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="7" aria-label="Hex color" value="' + hex.toUpperCase() + '" data-draw-hex="' + scope + '">' +
 		'<button type="button" class="rapier-draw-swatch rapier-draw-colour-copy" data-draw-colour-copy="' + scope + '" aria-label="Copy hex color"><span class="rapier-draw-dropper-glyph">' + RAPIER_DRAW_ICONS.copy + '</span><span class="rapier-draw-dropper-glyph rapier-draw-dropper-glyph--done">' + RAPIER_DRAW_ICONS.check + '</span></button>' +
-		'<button type="button" class="rapier-draw-swatch rapier-draw-swatch--dropper" data-draw-act="dropper" data-draw-colour-scope="' + scope + '" aria-label="Pick a color off the drawing" data-tip="pick">' + RAPIER_DRAW_ICONS.dropper + '</button></span>';
-	const palette = '<span class="rapier-draw-palette" data-draw-palette="' + scope + '">' +
+		'<button type="button" class="rapier-draw-swatch rapier-draw-swatch--dropper" data-draw-act="dropper" data-draw-colour-scope="' + scope + '" aria-label="Pick a color off the drawing" data-tip="pick">' + RAPIER_DRAW_ICONS.dropper + '</button></span>' +
+		'<span class="rapier-draw-palette" data-draw-palette="' + scope + '">' +
 		(scope === 'border' ? '<button type="button" class="rapier-draw-swatch" data-draw-colour-value="" data-draw-colour-scope="border" aria-label="None" data-tip="none" aria-pressed="' + !ink + '">' + RAPIER_DRAW_ICONS.none + '</button>' : '') +
-		words.map(([id, label]) => '<button type="button" class="rapier-draw-swatch" data-draw-colour-value="' + id + '" data-draw-colour-scope="' + scope + '" aria-label="' + label + '" data-tip="' + label.toLowerCase() + '" aria-pressed="' + (!clearOn && (clearRow ? hex.toLowerCase() === id.toLowerCase() : (ink || '').toLowerCase() === id.toLowerCase())) + '"><span style="background:' + _rapierDrawDisplayInk(_rapierDrawShapeInk({ ink: id })) + '"></span></button>').join('');
-	const extras = _rapierDrawRecentInks().map(value => '<button type="button" class="rapier-draw-swatch rapier-draw-swatch--recent" data-draw-colour-value="' + _rapierDrawEscapeAttr(value) + '" data-draw-colour-scope="' + scope + '" aria-label="Recent color ' + _rapierDrawEscapeAttr(value) + '" data-tip="recent" aria-pressed="' + (!clearOn && (ink || '').toLowerCase() === value.toLowerCase()) + '"><span style="background:' + _rapierDrawDisplayInk(value) + '"></span></button>').join('') +
-		(clearRow ? '<button type="button" class="rapier-draw-swatch rapier-draw-swatch--clear" data-draw-clear aria-label="Clear: the brush erases" data-tip="erase" aria-pressed="' + clearOn + '"><span><svg viewBox="0 0 24 24" aria-hidden="true"><line x1="1" y1="23" x2="23" y2="1"></line></svg></span></button>' : '');
-	return clearRow ? '<div class="rapier-paint-colours">' + palette + '</span>' + _rapierPaintMixMarkup(hex, editor + '<span class="rapier-draw-palette">' + extras + '</span>') + '</div>' : editor + palette + extras + '</span>';
+		words.map(([id, label]) => '<button type="button" class="rapier-draw-swatch" data-draw-colour-value="' + id + '" data-draw-colour-scope="' + scope + '" aria-label="' + label + '" data-tip="' + label.toLowerCase() + '" aria-pressed="' + (!clearOn && (ink || '').toLowerCase() === id.toLowerCase()) + '"><span style="background:' + _rapierDrawDisplayInk(_rapierDrawShapeInk({ ink: id })) + '"></span></button>').join('') +
+		_rapierDrawRecentInks().map(value => '<button type="button" class="rapier-draw-swatch rapier-draw-swatch--recent" data-draw-colour-value="' + _rapierDrawEscapeAttr(value) + '" data-draw-colour-scope="' + scope + '" aria-label="Recent color ' + _rapierDrawEscapeAttr(value) + '" data-tip="recent" aria-pressed="' + (!clearOn && (ink || '').toLowerCase() === value.toLowerCase()) + '"><span style="background:' + _rapierDrawDisplayInk(value) + '"></span></button>').join('') +
+		(clearRow ? '<button type="button" class="rapier-draw-swatch rapier-draw-swatch--clear" data-draw-clear aria-label="Clear: the brush erases" data-tip="erase" aria-pressed="' + clearOn + '"><span><svg viewBox="0 0 24 24" aria-hidden="true"><line x1="1" y1="23" x2="23" y2="1"></line></svg></span></button>' : '') + '</span>' + (clearRow ? _rapierPaintMixMarkup(hex) : '');
 }
 const RAPIER_DRAW_DROPPER_LIFT = 56;
 async function _rapierDrawOpenDropper(scope, found = null) {
@@ -4296,6 +4325,7 @@ function _rapierDrawApplyHandle(point, evt = {}, commit = false) {
 			const snap = _rapierDrawSnapResize(gesture.source, gesture.ids, localBox, next, snapTolerance);
 			next = snap.next; state.guides = snap.guides;
 		} else state.guides = [];
+		globalThis.RapierDrawEdit._rapierDrawScaleLabels(shapes, localBox, next);
 		for (const shape of shapes) { _rapierDrawResizeShapeLocal(shape, state.recipe, theta, frame.pivot, localBox, next); globalThis.RapierDrawEdit._rapierDrawFitText(shape, state.recipe); _rapierDrawReleaseBindings(shape, gesture.ids); }
 		const centered = evt.altKey || state.resizeFromCenter;
 		_rapierDrawAnchorResizeLocal(state.recipe, gesture.ids, theta, frame.pivot, next, { x: centered ? .5 : 1 - handle.x, y: centered ? .5 : 1 - handle.y });
@@ -5130,7 +5160,6 @@ function _rapierDrawBuildSurface() {
 		'<div class="rapier-draw-dip-firmness"><span>Brush firmness</span><div class="rapier-draw-dip-firmness-choices">' +
 		'<button type="button" class="rapier-draw-chip rapier-draw-chip--icon" data-draw-paint-strength="firm" aria-label="Firm brush response" aria-pressed="true">' + RAPIER_PAINT_ICON_GAUGE_FIRM + '<span class="rapier-draw-chip-name">firm</span></button>' +
 		'<button type="button" class="rapier-draw-chip rapier-draw-chip--icon" data-draw-paint-strength="light" aria-label="Light brush response" aria-pressed="false">' + RAPIER_PAINT_ICON_GAUGE_LIGHT + '<span class="rapier-draw-chip-name">light</span></button></div></div>' +
-		'<div class="rapier-draw-dip-firmness"><span>Brush angle</span>' + _rapierPaintHeadChipHTML() + '</div>' +
 		'<img class="rapier-draw-dip-sample" alt="" draggable="false">' +
 		'<div class="rapier-draw-dip-pad" tabindex="0" role="application" aria-label="Paint load and water. Left and right for water, up and down for paint.">' +
 		'<canvas class="rapier-draw-dip-field" aria-hidden="true"></canvas><span class="rapier-draw-dip-track" aria-hidden="true"><span class="rapier-draw-dip-knob"></span></span>' +
@@ -5245,7 +5274,13 @@ function _rapierDrawBuildSurface() {
 	surface.addEventListener('pointerdown', _rapierDrawGuard(evt => {
 		if (!_rapierDrawIsCanvasTouch(evt.target, surface) || evt.pointerType === 'mouse' && evt.button !== 0) return;
 		if (evt.pointerType === 'touch' && evt.width >= 40 && evt.height >= 40) { evt.preventDefault(); evt.stopImmediatePropagation(); return; }
-		state.toolChange = null;
+		if (state.toolChange && !state.heldPress) {
+			evt.preventDefault(); evt.stopImmediatePropagation();
+			try { state.svgRoot.setPointerCapture(evt.pointerId); } catch (_) {}
+			state.heldPress = {down: evt, moves: [], up: null, change: state.toolChange};
+			return;
+		}
+		if (state.heldPress) { evt.preventDefault(); evt.stopImmediatePropagation(); return; }
 		const otherMarkerPointer = state.markerPress && evt.pointerId !== state.markerPress.down.pointerId;
 		if (evt.pointerType !== 'touch') {
 			if (otherMarkerPointer) {
@@ -5277,9 +5312,15 @@ function _rapierDrawBuildSurface() {
 		evt.stopImmediatePropagation();
 	}), true);
 	surface.addEventListener('pointermove', evt => {
+		const held = state.heldPress;
+		if (held?.down.pointerId === evt.pointerId) { if (!held.up) held.moves.push(evt); evt.stopImmediatePropagation(); return; }
 		if (canvasTouches.has(evt.pointerId)) canvasTouches.get(evt.pointerId).screen = [evt.clientX, evt.clientY];
 	}, true);
-	for (const type of ['pointerup', 'pointercancel']) surface.addEventListener(type, evt => { canvasTouches.delete(evt.pointerId); }, true);
+	for (const type of ['pointerup', 'pointercancel']) surface.addEventListener(type, evt => {
+		const held = state.heldPress;
+		if (held?.down.pointerId === evt.pointerId) { held.up ||= evt; evt.stopImmediatePropagation(); return; }
+		canvasTouches.delete(evt.pointerId);
+	}, true);
 	surface.addEventListener('lostpointercapture', evt => { if (!state.open) canvasTouches.clear(); }, true);
 
 	surface.addEventListener('pointerdown', evt => {
@@ -5406,7 +5447,6 @@ function _rapierDrawBuildSurface() {
 		}
 		else if (act === 'paintExport') _rapierPaintExportBrush(_rapierPaintBrushId());
 		else if (act === 'paintSet') void _rapierPaintRequestSetLayer();
-		else if (act === 'paintAngle') { _rapierPaintAngleOpen(true); reposition(); }
 		else if (act === 'settingsCollapse') { _rapierDrawSetSettingsCollapsed(!state.settingsCollapsed); reposition(); }
 		else if (act === 'clear') void (_rapierDrawClearExits() ? _rapierDrawFinish() : _rapierDrawRequestClear());
 		else if (act === 'ink') {
@@ -5418,7 +5458,7 @@ function _rapierDrawBuildSurface() {
 		else if (act === 'done') void _rapierDrawSavePainting();
 		else if (act === 'close') void _rapierDrawClose({ recover: true });
 	};
-	for (const selector of ['.rapier-draw-head', '.rapier-draw-tool-menu', '.rapier-draw-canvas-menu', '.rapier-draw-resize-strip', '.rapier-draw-settings', '.rapier-draw-options', '.rapier-draw-dip']) _rapierDrawBindTap(surface.querySelector(selector), evt => { void toolbar(evt); });
+	for (const selector of ['.rapier-draw-head', '.rapier-draw-tool-menu', '.rapier-draw-canvas-menu', '.rapier-draw-resize-strip', '.rapier-draw-settings', '.rapier-draw-options']) _rapierDrawBindTap(surface.querySelector(selector), evt => { void toolbar(evt); });
 	_rapierDrawBindTap(surface.querySelector('.rapier-draw-kinds'), evt => { const kind = evt.target.closest('[data-draw-kind]')?.dataset.drawKind; if (kind && !state.finishing) { state.kindsOpen = false; _rapierDrawSetShapeKind(kind); } });
 	_rapierDrawBindTap(surface.querySelector('.rapier-draw-brushes'), evt => { const id = evt.target.closest('[data-draw-paint-brush]')?.dataset.drawPaintBrush; if (id && !state.finishing) _rapierPaintSetBrush(id); });
 	for (const [selector, key, read] of [
@@ -5587,7 +5627,7 @@ function _rapierDrawBuildSurface() {
 }
 function _rapierDrawFreshSession() {
 	return {
-		pasteStreak: null, ink: null, inkChosen: false, colourOpen: false, snap: true, repeat: false,
+		pasteStreak: null, heldPress: null, ink: null, inkChosen: false, colourOpen: false, snap: true, repeat: false,
 		lastTap: null, proportions: false, resizeFromCenter: false, settingEdit: null, colourEdit: false, fadeEdit: false,
 		toolMenuOpen: false, canvasMenuOpen: false, resize: null, settingsCollapsed: false, kindsOpen: false, paintPicker: null, imageImporting: false,
 		effectsScope: 'drawing', effectsSelection: [], effectsLayer: null, effectsSweep: null, effectsCompare: false,
@@ -5607,6 +5647,13 @@ function _rapierDrawWatercolourFallback() {
 	state.paintBrush = 'rapier/watercolour'; state.paintSize = _rapierPaintSizeFor(state.paintBrush);
 	state.waterFallbackRemembered = _rapierPaintRememberedBrush();
 	showToast('Water needs WebGPU. Using the watercolor paint brush.', 'info');
+}
+function _rapierDrawWaterUnavailable(error) {
+	const state = _rapierDrawState;
+	if (error?.code !== 'water_webgpu_unavailable' || !state.open || !_rapierDrawToolAllowed('paint')) return false;
+	_rapierDrawWatercolourFallback();
+	if (state.tool === 'water') void _rapierDrawSetTool('paint', false);
+	return true;
 }
 function _rapierDrawOpenSurface(options) {
 	if (!_rapierEmbedFeatureAllowed('draw') && !_rapierEmbedFeatureAllowed('paint')) { options?.onReady?.(false); return false; }
@@ -5639,15 +5686,15 @@ function _rapierDrawOpenSurface(options) {
 	state.heldRoot = rapier.document.source?.rootId;
 	// (RAPIER_DRAW_START_TOOLS, above). Re-opening an EXISTING drawing opens on the tool it was last
 	const fresh = !state.editing && !opts.recovered, fallback = _rapierEmbedFeatureAllowed('draw') ? 'brush' : 'paint';
-	state.tool = opts.tool && _rapierDrawToolAllowed(opts.tool) ? opts.tool : fresh ? _rapierDrawRemembered(state.notes ? 'notesTool' : 'tool') : RAPIER_DRAW_TOOLS.includes(recipe.tool) ? recipe.tool : state.editing ? 'select' : 'brush';
-	const noWater = fresh && state.tool === 'water' && !globalThis.navigator?.gpu;
+	state.tool = opts.tool && _rapierDrawToolAllowed(opts.tool) ? opts.tool : fresh ? _rapierDrawRemembered(state.notes ? 'notesTool' : 'tool') : RAPIER_DRAW_TOOLS.includes(recipe.tool) ? recipe.tool : state.editing ? (recipe.shapes?.some(shape => shape.recognized === 'paint') ? 'paint' : 'select') : 'brush';
+	const noWater = state.tool === 'water' && !globalThis.navigator?.gpu;
 	if (!_rapierDrawToolAllowed(state.tool)) state.tool = fallback;
 	else if (noWater) state.tool = _rapierDrawToolAllowed('paint') ? 'paint' : fallback;
 	else if (fresh && state.tool === 'water') {
 		const session = state.session;
 		_rapierPaintStartPainter('water').catch(() => {
 			if (!state.open || state.session !== session || state.tool !== 'water' || state.gesture) return;
-			if (_rapierDrawToolAllowed('paint')) { _rapierDrawWatercolourFallback(); void _rapierDrawSetTool('paint', false); }
+			if (_rapierDrawToolAllowed('paint')) _rapierDrawWaterUnavailable({code: 'water_webgpu_unavailable'});
 			else void _rapierDrawSetTool(fallback, false);
 		});
 	}
@@ -5662,7 +5709,7 @@ function _rapierDrawOpenSurface(options) {
 	_rapierDrawTextDefaults();
 	state.menuPane = null; state.menuColour = false;
 	_rapierWaterReset();
-	state.paintMore = null; state.paintBrush = _rapierPaintRememberedBrush(); state.paintSize = _rapierPaintRememberedSize(); state.paintStrength = _rapierPaintRememberedStrength(); state.paper = false; state.paperBlack = false; if (typeof _rapierPaintShownAs !== 'undefined') { _rapierPaintShownAs.clear(); if (typeof _rapierPaintForgetBlobs === 'function') _rapierPaintForgetBlobs(); } _rapierPaintCloseLayer(); state.surface.classList.remove('rapier-draw-surface--paper', 'rapier-draw-surface--black');
+	state.paintBrush = _rapierPaintRememberedBrush(); state.paintSize = _rapierPaintRememberedSize(); state.paintStrength = _rapierPaintRememberedStrength(); state.paper = false; state.paperBlack = false; if (typeof _rapierPaintShownAs !== 'undefined') { _rapierPaintShownAs.clear(); if (typeof _rapierPaintForgetBlobs === 'function') _rapierPaintForgetBlobs(); } _rapierPaintCloseLayer(); state.surface.classList.remove('rapier-draw-surface--paper', 'rapier-draw-surface--black');
 	state.paintChosenId = null;
 	_rapierDrawSetToolMenu(false); _rapierDrawSetCanvasMenu(false); _rapierDrawResizeReset(); _rapierDrawSetSettingsCollapsed(false); _rapierDrawCloseSettingPanels();
 	for (const action of ['snap', 'repeat', 'proportions', 'center']) {
@@ -6678,7 +6725,7 @@ function _rapierPainterOver(dst, src, opacity, multiply) {
 		dst[q + 3] = oa * 255;
 	}
 }
-async function _rapierPainterLayers(recipe, svg, canvas, signal) {
+async function _rapierPainterLayers(recipe, svg, signal) {
 	const view = /viewBox="([^"]+)"/.exec(svg)[1].split(' ').map(Number), paints = recipe.shapes.filter(shape => shape.recognized === 'paint' && shape.raster);
 	const big = paints.reduce((a, shape) => !a || shape.paint.px[0] * shape.paint.px[1] > a.paint.px[0] * a.paint.px[1] ? shape : a, null), frame = big && _rapierDrawShapePolygon(big, recipe);
 	const scale = big ? big.paint.px[0] / Math.hypot(frame[1][0] - frame[0][0], frame[1][1] - frame[0][1]) : 2;
@@ -6694,9 +6741,7 @@ async function _rapierPainterLayers(recipe, svg, canvas, signal) {
 	const bare = ({background, ...rest}) => rest;
 	const {effect, ...authored} = recipe;
 	const layers = [];
-	const shown = typeof _rapierDrawState === 'object' ? _rapierDrawState : null, paper = recipe.paper || (shown?.paper ? 'white' : shown?.paperBlack ? 'black' : null);
-	if (canvas && recipe.background) layers.push({name: 'Canvas', data: await render({...authored, shapes: []}), opacity: 1});
-	else if (canvas && paper) layers.push({name: 'Canvas', data: new Uint8ClampedArray(W * H * 4).fill(paper === 'black' ? 0 : 255).map((v, i) => i % 4 === 3 ? 255 : v), opacity: 1});
+	if (recipe.background) layers.push({name: 'Canvas', data: await render({...authored, shapes: []}), opacity: 1});
 	let vectors = [];
 	const flush = async () => { if (vectors.length) layers.push({name: 'Drawing', data: await render({...bare(authored), shapes: vectors}), opacity: 1}); vectors = []; };
 	for (const shape of recipe.shapes) {
@@ -6716,12 +6761,12 @@ async function _rapierPainterLayers(recipe, svg, canvas, signal) {
 			}
 		} else data = await render({...bare(authored), shapes: [{...shape, opacity: undefined, raster: _rapierPaintPNG.encode(px)}]});
 		layers.push({name: (shape.paint.mode === 'water' ? 'Water ' : 'Paint ') + (layers.length + 1), data, opacity: shape.opacity ?? 1,
-			multiply: canvas && shape.paint.mode === 'water' && recipe.background?.kind === 'paper'});
+			multiply: shape.paint.mode === 'water' && recipe.background?.kind === 'paper'});
 	}
 	await flush();
 	let composite = layers;
 	if (effect) { const exact = []; for (const shape of recipe.shapes) exact.push(shape.recognized === 'paint' && shape.raster ? {...shape, raster: _rapierPaintPNG.encode(await decode(shape.raster))} : shape);
-		composite = [...(canvas && !recipe.background && layers[0]?.name === 'Canvas' ? [layers[0]] : []), {data: await render({...(canvas ? recipe : bare(recipe)), shapes: exact}), opacity: 1}]; }
+		composite = [{data: await render({...recipe, shapes: exact}), opacity: 1}]; }
 	const merged = new Uint8ClampedArray(W * H * 4), [first] = composite, whole = first?.opacity === 1 && !first.multiply;
 	if (whole) merged.set(first.data);
 	for (const layer of composite.slice(whole ? 1 : 0)) _rapierPainterOver(merged, layer.data, layer.opacity, layer.multiply);
@@ -6763,34 +6808,29 @@ async function _rapierDrawSavePainting(leaving = false) {
 	finally { preparing.end(); if (state.painterOpening === opening) state.painterOpening = null; }
 	if (!live()) return;
 	const untouched = () => !state.finishHandoff && (state.editing ? !_rapierDrawChangedSinceOpen() : !_rapierDrawHasContent(state.recipe));
-	if (leaving && untouched() && (state.editing || !state.undoStack.length && !state.redoStack.length)) { void _rapierDrawFinish(); return; }
-	const jxl = typeof _rapierJxlEncoderPresent !== 'function' || _rapierJxlEncoderPresent(), shows = globalThis.RapierEmbeddedImages?.jxlDisplayable?.() !== false;
-	const choice = state.painterChoice ||= {format: jxl && shows ? 'jxl' : 'png', canvas: true}, native = window.RapierPlatform?.environment.native === true;
-	if (!jxl && choice.format === 'jxl') choice.format = 'png';
-	const overlay = document.createElement('div'), button = (act, value, word, pressed) => '<button type="button" class="link-dialog__btn" data-' + act + '="' + value + '" aria-pressed="' + pressed + '">' + word + '</button>';
+	if (untouched() && (state.editing || leaving && !state.undoStack.length && !state.redoStack.length)) { void _rapierDrawFinish(); return; }
+	const jxl = typeof _rapierJxlEncoderPresent !== 'function' || _rapierJxlEncoderPresent();
+	const native = window.RapierPlatform?.environment.native === true;
+	const download = (format, word) => '<button type="button" class="settings-action-btn" data-download="' + format + '">' + word + '</button>';
+	const overlay = document.createElement('div');
 	overlay.className = 'link-dialog__overlay';
-	overlay.innerHTML = '<div class="link-dialog rapier-draw-save" role="dialog" aria-modal="true" aria-labelledby="rapier-save-title"><div class="link-dialog__actions"><div class="link-dialog__title" id="rapier-save-title">save painting</div><span class="link-dialog__spacer"></span>' +
+	overlay.innerHTML = '<div class="link-dialog rapier-draw-save" role="dialog" aria-modal="true" aria-label="Done painting"><div class="link-dialog__actions"><span class="link-dialog__spacer"></span>' +
 		'<button type="button" class="link-dialog__btn" data-info aria-label="Info" aria-expanded="false" aria-controls="rapier-save-info">' + RAPIER_DRAW_ICON_WRAP('<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>') + '</button></div>' +
-		'<p class="link-dialog__description" id="rapier-save-info" hidden>JPEG XL is lossless and small. PNG opens everywhere. Layers is an OpenRaster file (.ora) for Krita, GIMP and MyPaint: each layer, the merged picture and the editable SVG. Canvas keeps your background; Transparent saves the paint alone. One painting layer saves exactly; effects, moved layers and drawings are flattened. Close returns to your painting.</p>' +
-		'<div class="link-dialog__actions" role="group" aria-label="Format">' + (jxl ? button('format', 'jxl', 'JPEG XL', choice.format === 'jxl') : '') + button('format', 'png', 'PNG', choice.format === 'png') + button('format', 'ora', 'Layers', choice.format === 'ora') + '</div>' +
-		'<div class="link-dialog__actions" role="group" aria-label="Background">' + button('canvas', '1', 'Canvas', choice.canvas) + button('canvas', '', 'Transparent', !choice.canvas) + '</div>' +
-		'<div class="link-dialog__actions"><button type="button" class="link-dialog__btn" data-act="exit">exit without saving</button><span class="link-dialog__spacer"></span><button type="button" class="link-dialog__btn" data-act="close">close</button>' +
-		'<button type="button" class="link-dialog__btn" data-act="add">add to document</button><button type="button" class="link-dialog__btn link-dialog__btn--primary" data-act="download">' + (native ? 'save' : 'download') + '</button></div></div>';
+		'<p class="link-dialog__description" id="rapier-save-info" hidden>Add to document puts the painting in your document; Undo takes it out. JPEG XL is lossless and small. PNG opens everywhere. Layers is an OpenRaster file (.ora) for Krita, GIMP and MyPaint: each layer, the merged picture and the editable SVG. One painting layer saves exactly; effects, moved layers and drawings are flattened. The picture is what the canvas shows: with no background it is transparent. Tap outside to return to your painting.</p>' +
+		'<div class="rapier-pop__actions"><button type="button" class="settings-action-btn" data-act="add">Add to document</button>' +
+		'<div class="link-dialog__title" id="rapier-save-download">' + (native ? 'Save:' : 'Download:') + '</div>' +
+		'<div class="settings-action-pair" role="group" aria-labelledby="rapier-save-download">' + (jxl ? download('jxl', 'JPEG XL') : '') + download('png', 'PNG') + download('ora', 'Layers') + '</div>' +
+		'<button type="button" class="settings-action-btn" data-act="exit" data-pop-bottom>Exit without saving</button></div></div>';
 	const progress = _rapierProgressOver(overlay, true);
 	let work = null;
 	const dialog = _rapierBeginEngineDialog(overlay, () => { work?.abort(); progress.release(); });
 	const say = (words, error) => { if (words) { progress.notice(); showToast(words, error ? 'error' : 'info'); } };
-	requestAnimationFrame(() => overlay.querySelector('[data-act="download"]')?.focus());
+	requestAnimationFrame(() => overlay.querySelector('[data-act="add"]')?.focus());
 	overlay.addEventListener('click', async event => {
+		if (event.target === overlay) { dialog.cancel(true); return; }
 		const target = event.target.closest?.('button');
 		if (!target || work) return;
 		if (target.hasAttribute('data-info')) { const info = overlay.querySelector('#rapier-save-info'), open = info.hidden; info.hidden = !open; target.setAttribute('aria-expanded', String(open)); return; }
-		if (target.dataset.format || target.dataset.canvas != null) {
-			if (target.dataset.format) choice.format = target.dataset.format; else choice.canvas = !!target.dataset.canvas;
-			for (const other of target.parentElement.children) other.setAttribute('aria-pressed', String(other === target));
-			return;
-		}
-		if (target.dataset.act === 'close') { dialog.cancel(true); return; }
 		if (target.dataset.act === 'add' && !_rapierDrawHasPlace(state.notes)) { say('This document is plain text, so it cannot hold a drawing. ' + (native ? 'Save' : 'Download') + ' keeps your drawing.'); return; }
 		if (target.dataset.act === 'add') { dialog.cancel(false); if (live()) await _rapierDrawFinish(); return; }
 		if (target.dataset.act === 'exit') {
@@ -6799,8 +6839,9 @@ async function _rapierDrawSavePainting(leaving = false) {
 			else if (live()) await _rapierDrawClose({ recover: true });
 			return;
 		}
-		if (target.dataset.act !== 'download') return;
-		const controller = work = new AbortController(), {format, canvas} = choice, name = 'painting' + (canvas ? '' : '-transparent') + '.' + format;
+		const format = target.dataset.download;
+		if (!format) return;
+		const controller = work = new AbortController(), name = 'painting.' + format;
 		const row = progress.open({label: 'Saving picture', after: _rapierPainterBig() ? 0 : 500, cancel: () => controller.abort()});
 		for (const control of overlay.querySelectorAll('.rapier-draw-save button')) control.disabled = true;
 		say('');
@@ -6811,7 +6852,7 @@ async function _rapierDrawSavePainting(leaving = false) {
 			controller.signal.throwIfAborted(); if (!live()) return;
 			const svg = _rapierDrawBuildSVG(recipe, _rapierDrawMeasuredView, true);
 			if (!svg) throw new Error('The painting could not be prepared.');
-			const out = await _rapierPainterLayers(recipe, svg, canvas, controller.signal);
+			const out = await _rapierPainterLayers(recipe, svg, controller.signal);
 			controller.signal.throwIfAborted();
 			let bytes, type = 'image/' + format;
 			if (format === 'jxl') bytes = (await globalThis.RapierEmbeddedImages.codec('encode', {width: out.W, height: out.H, data: new Uint8Array(out.merged.buffer), options: {lossless: true, losslessProfile: 'painting'}}, {signal: controller.signal, progress: f => row.set(f * .95)})).bytes;
@@ -6839,6 +6880,11 @@ function _rapierDrawHandleBack() {
 	if (state.dropper) { state.dropper.close(false); return true; }
 	if (state.resize) { void _rapierDrawResizeDone(true); return true; }
 	if (state.canvasMenuOpen) { _rapierDrawSetCanvasMenu(false); return true; }
+	if (state.toolMenuOpen) { _rapierDrawSetToolMenu(false); return true; }
+	if (state.surface?.querySelector('[data-draw-panel]:not([hidden])')) {
+		_rapierDrawCloseSettingPanels(); _rapierDrawUpdateMenu(); _rapierDrawUpdateHandles();
+		return true;
+	}
 	if (_rapierDrawLettersDoor.asking) { _rapierDrawLettersDismiss(); return true; }
 	if (state.finishing) return true;
 	if (state.textEdit?.composing) {

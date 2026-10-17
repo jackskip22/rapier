@@ -253,17 +253,23 @@ export function writeScreenModel(writer, models) {
     counts.push({literals, lengths});
   }
   const cheapest = (count, config) => {
-    let best;
+    let best, lengthRaw = 0;
+    const lengthFreqs = new Map();
+    if (config) for (const [value, n] of count.lengths) {
+      hybridToken(config, value, token);
+      const symbol = LZ77.minSymbol + token[0];
+      lengthFreqs.set(symbol, (lengthFreqs.get(symbol) || 0) + n); lengthRaw += token[1] * n;
+    }
+    const key = lengthRaw + ':' + [...lengthFreqs].sort((a, b) => a[0] - b[0]).join(';');
+    count.priced ||= new Map();
+    if (count.priced.has(key)) return count.priced.get(key);
     for (const literal of count.literals) {
       const freqs = literal.freqs.slice();
-      let raw = literal.raw;
-      for (const [value, n] of count.lengths) {
-        hybridToken(config, value, token);
-        freqs[LZ77.minSymbol + token[0]] += n; raw += token[1] * n;
-      }
-      const price = screenIntegerPrice(freqs, literal.config, raw);
+      for (const [symbol, n] of lengthFreqs) freqs[symbol] += n;
+      const price = screenIntegerPrice(freqs, literal.config, literal.raw + lengthRaw);
       if (!best || price.bits < best.bits) best = {...price, config: literal.config};
     }
+    count.priced.set(key, best);
     return best;
   };
   for (const count of counts) count.fixed = count.lengths.size ? null : cheapest(count);

@@ -52,6 +52,8 @@ An AI agent edits notes, text, diagrams and paintings live, beside you or while 
 
 On Android ([Google Play](${PLAY_URL})), in a browser, on Windows, or as one HTML file that you keep in a folder. Let the web editor and the optional features you need load before going offline. The Android app has no Internet permission; optional Google Play asset packs download on first use and then work offline.
 
+${Object.entries(DOORS).filter(([, door]) => door.h1).map(([path, door]) => '[' + door.h1 + '](https://rapier.website' + path + ')').join(' · ')}
+
 [Rapier](https://rapier.website/) · [Rapier Notes](https://rapier.website/notes) · [Rapier Draw](https://rapier.website/draw) · [Rapier Watercolor](https://rapier.website/watercolor) · [Google Play](${PLAY_URL}) · [Source](https://github.com/jackskip22/rapier) · [Agent guide](https://github.com/jackskip22/rapier/blob/main/docs/agents.md) · [llms.txt](https://rapier.website/llms.txt) · [Privacy and terms](https://rapier.website/privacy) · [Commercial license](https://rapier.website/commercial)
 `;
 
@@ -163,13 +165,17 @@ export function seoDoorSections(engineSource, uiMarkup) {
 		'/commercial': sheetGuide(uiMarkup, 'commercial-words') + '\n',
 	};
 	const escape = value => parser.utils.escapeHtml(String(value));
+	const searched = door => !door.h1 ? '' : '<p>' + escape(door.lead) + '</p>\n' +
+		(door.related?.length ? '<p>Also: ' + door.related.map(other => '<a href="https://rapier.website' + other + '">' + escape(DOORS[other].h1 || DOORS[other].name) + '</a>').join(' · ') + '</p>\n' : '') +
+		'<h2>Questions</h2>\n' + door.faq.map(([question, answer]) => '<h3>' + escape(question) + '</h3>\n<p>' + escape(answer) + '</p>\n').join('');
 	return Object.fromEntries(Object.entries(DOORS).map(([path, door]) => {
-		if (!bodies[path]) throw new Error('The site door has no guide: ' + path);
+		if (!bodies[path] && !door.h1) throw new Error('The site door has no guide: ' + path);
+		if (door.h1 && (!door.lead || !door.faq?.length || !door.view || door.related?.some(other => !DOORS[other]))) throw new Error('A searched door needs its paragraph, questions, view and known pages: ' + path);
 		const links = [['/', 'Rapier'], ...Object.entries(DOORS).filter(([other]) => other !== path).map(([other, value]) => [other, value.name])]
 			.map(([address, label]) => '<a href="https://rapier.website' + address + '">' + escape(label) + '</a>').join(' · ');
 		const picture = door.picture ? '<figure><img src="https://rapier.website/' + escape(door.picture) + '" alt="' + escape(door.imageAlt) +
 			'" width="1200" height="630" style="display:block;max-width:100%;height:auto;background:#fff"><figcaption>Overlapping pigment washes painted with Rapier Water.</figcaption></figure>\n' : '';
-		const section = '<section id="rapier-seo">\n<h1>' + escape(door.name) + '</h1>\n' + picture + bodies[path] + '<nav aria-label="Rapier pages"><p>' + links + '</p></nav>\n</section>';
+		const section = '<section id="rapier-seo">\n<h1>' + escape(door.h1 || door.name) + '</h1>\n' + picture + searched(door) + (bodies[path] || '') + '<nav aria-label="Rapier pages"><p>' + links + '</p></nav>\n</section>';
 		if (/<(?:svg|script|style|iframe|form|input|button|!--)|data:|RAPIER_/i.test(section) ||
 			[...section.matchAll(/<img\b[^>]*>/g)].some(image => !picture.includes(image[0]))) throw new Error('The door guide must contain only its authored picture, text and links');
 		return [path, section];

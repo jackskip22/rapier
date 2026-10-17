@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {diff} from '../packages/rapier-diff/index.mjs';
 import {restore, restoreEdits} from '../packages/rapier-diff/restore.mjs';
-export {diff, restore, restoreEdits};
+import {toHTML} from '../packages/rapier-diff/html.mjs';
+export {diff, restore, restoreEdits, toHTML};
 
 export function compare(before, after, options = {}) {
   const stats = {}, code = options.docKind === 'code';

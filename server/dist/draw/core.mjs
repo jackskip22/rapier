@@ -1783,14 +1783,15 @@ function _rapierDrawFindOrthogonalRoute(shape, recipe, occupied, rail, scene, op
 		obstacles.push({ target, real: b, minX: Math.max(-65536, b.minX - pad), minY: Math.max(-65536, b.minY - pad), maxX: Math.min(65536, b.maxX + pad), maxY: Math.min(65536, b.maxY + pad) });
 	}
 	const bound = ['start', 'end'].map(end => obstacles.find(o => o.real && o.target.id === shape.bind?.[end]?.to));
-	if (bound[0] && bound[1] && bound[0] !== bound[1]) for (const [lo, hi] of [['minX', 'maxX'], ['minY', 'maxY']]) {
-		const [p, q] = bound, pair = p.real[hi] <= q.real[lo] ? [p, q] : q.real[hi] <= p.real[lo] ? [q, p] : null;
-		if (!pair) continue;
+	for (const p of new Set(bound)) if (p) for (const q of obstacles) if (q.real && q !== p) for (const [lo, hi, across] of [['minX', 'maxX', ['minY', 'maxY']], ['minY', 'maxY', ['minX', 'maxX']]]) {
+		const pair = p.real[hi] <= q.real[lo] ? [p, q] : q.real[hi] <= p.real[lo] ? [q, p] : null;
+		if (!pair || p[across[1]] <= q[across[0]] || q[across[1]] <= p[across[0]]) continue;
 		const [near, far] = pair, apart = far.real[lo] - near.real[hi];
 		if (apart <= 0 || near[hi] <= far[lo]) continue;
 		const mid = near.real[hi] + apart / 2;
 		near[hi] = mid; far[lo] = mid;
 	}
+	const blocked = () => { if (rail || recipe?.routeLabelRails !== undefined) _rapierDrawRouteBlocked(); return [start, end]; };
 	_rapierDrawWorkCount(obstacles.length, 96);
 	const turn = 1000000;
 	const crossed = (a, b, box) => {
@@ -1814,7 +1815,7 @@ function _rapierDrawFindOrthogonalRoute(shape, recipe, occupied, rail, scene, op
 			.map(port => ({ ...port, length: _rapierDrawDist(point, port.point) }));
 	};
 	const starts = terminals(start, 'start'), ends = terminals(end, 'end');
-	if (!starts.length || !ends.length) _rapierDrawRouteBlocked();
+	if (!starts.length || !ends.length) return blocked();
 	const fallback = () => {
 		const a = starts[0].point, b = ends[0].point, box = _rapierDrawBBox([a, b, ...obstacles.flatMap(o => [[o.minX, o.minY], [o.maxX, o.maxY]])]);
 		const mids = [[[b[0], a[1]]], [[a[0], b[1]]]];
@@ -1849,7 +1850,7 @@ function _rapierDrawFindOrthogonalRoute(shape, recipe, occupied, rail, scene, op
 	};
 	const xs = coordinates(0), ys = coordinates(1);
 	const nx = xs.length, ny = ys.length, stride = nx + 1, count = nx * ny, xIndex = new Map(xs.map((v, i) => [v, i])), yIndex = new Map(ys.map((v, i) => [v, i]));
-	if (count > 65536) { const points = optional ? null : fallback(); if (points || optional) return points; _rapierDrawRouteBlocked(); }
+	if (count > 65536) { const points = optional ? null : fallback(); if (points || optional) return points; return blocked(); }
 	const laid = count >> 1;
 	if (optional && laid >= scene.left) { scene.left -= laid; scene.spent += laid; return null; }
 	const horizontal = new Int16Array((nx + 1) * (ny + 1)), vertical = new Int16Array(horizontal.length);
@@ -1976,7 +1977,7 @@ function _rapierDrawFindOrthogonalRoute(shape, recipe, occupied, rail, scene, op
 		}
 	}
 	if (scene) { scene.left -= laid + work; scene.spent += laid + work; }
-	if (bestId < 0) { const points = fallback(); if (points) return points; _rapierDrawRouteBlocked(); }
+	if (bestId < 0) { const points = fallback(); if (points) return points; return blocked(); }
 	const route = [];
 	for (let id = bestId; id >= 0; id = previous[id]) { const at = (id % (count * 2)) >> 1; route.push([xs[at % nx], ys[Math.floor(at / nx)]]); }
 	route.reverse(); route.unshift(start); route.push(end);
@@ -2479,7 +2480,14 @@ function _rapierDrawSerializeSVG(recipe, measure, keepRasters = false, renderOpt
 		: '<style>.' + bgId + '-d{display:none}@media (prefers-color-scheme:dark){.' + bgId + '-l{display:none}.' + bgId + '-d{display:inline}}</style>'
 			+ '<g class="' + bgId + '-l">' + backgroundSVG(recipe.background, paper, bgId + '-l', false) + '</g>'
 			+ '<g class="' + bgId + '-d">' + backgroundSVG(recipe.background, paper, bgId + '-d', true) + '</g>';
-	return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="' + [view.x, view.y, view.w, view.h].map(_rapierDrawFmt).join(' ') + '" width="' + _rapierDrawFmt(view.w) + '" height="' + _rapierDrawFmt(view.h) + '" color="' + RAPIER_DRAW_INK + '" role="img"><title>' + _rapierDrawEscapeXML(_rapierDrawTextAlternative(recipe)) + '</title><metadata id="rapier-draw">' + _rapierDrawEscapeXML(JSON.stringify(_rapierDrawStripRasters(recipe.fonts?.length ? { ...recipe, fonts: fontMetadata(recipe.fonts) } : recipe))) + '</metadata>' + _rapierDrawDiagramDark(body, recipe) + background + body + '</svg>';
+	return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="' + [view.x, view.y, view.w, view.h].map(_rapierDrawFmt).join(' ') + '" width="' + _rapierDrawFmt(view.w) + '" height="' + _rapierDrawFmt(view.h) + '" color="' + RAPIER_DRAW_INK + '" role="img"><title>' + _rapierDrawEscapeXML(_rapierDrawTextAlternative(recipe)) + '</title><metadata id="rapier-draw">' + _rapierDrawEscapeXML(JSON.stringify(_rapierDrawStoredRecipe(_rapierDrawStripRasters(recipe.fonts?.length ? { ...recipe, fonts: fontMetadata(recipe.fonts) } : recipe)))) + '</metadata>' + _rapierDrawDiagramDark(body, recipe) + background + body + '</svg>';
+}
+
+function _rapierDrawStoredRecipe(recipe) {
+	return { ...recipe, shapes: recipe.shapes.map(shape => {
+		const { stroke, asDrawn, brush, style, ...rest } = shape;
+		return { ...(stroke !== null ? { stroke } : {}), ...(asDrawn !== false ? { asDrawn } : {}), ...(brush !== 'ink' ? { brush } : {}), ...(style !== _rapierDrawDefaultStyle(shape.recognized) ? { style } : {}), ...rest };
+	}) };
 }
 
 function _rapierDrawInterpolatePoint(a, b, t) {
@@ -2521,9 +2529,9 @@ function _rapierDrawShapePolyline(shape, recipe) {
 	}
 	const g = shape.geom;
 	if (!g) return null;
-	if (shape.recognized === 'line') return [[g.x1, g.y1, 0], [g.x2, g.y2, 0]];
+	if (shape.recognized === 'line' && shape.route !== 'auto') return [[g.x1, g.y1, 0], [g.x2, g.y2, 0]];
 	if (shape.recognized === 'parabola') return _rapierDrawSegmentsPolyline([g.p]).map(p => p.concat(0));
-	if (shape.recognized === 'arrow') return _rapierDrawArrowHitPolyline(shape, recipe).map(p => p.concat(0));
+	if (shape.recognized === 'arrow' || shape.recognized === 'line') return _rapierDrawArrowHitPolyline(shape, recipe).map(p => p.concat(0));
 	if (shape.recognized === 'arc') return _rapierDrawArcPolyline(g, Math.min(2048, Math.max(32, Math.ceil(Math.abs(g.a1 - g.a0) * g.r / 4)))).map(p => p.concat(0));
 	const poly = _rapierDrawShapePolygon(shape, recipe);
 	return poly ? poly.concat([poly[0]]).map(p => p.concat(0)) : null;
@@ -3485,6 +3493,11 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 	if (finite(input.angle)) { const angle = ((input.angle % 360) + 360) % 360; if (angle) out.angle = angle; }
 	if (input.paper === 'white' || input.paper === 'black') out.paper = input.paper;
 	if (input.background !== undefined) { const background = normalizeBackground(input.background); if (!background) return null; out.background = background; }
+	if (input.backgrounds && typeof input.backgrounds === 'object' && !Array.isArray(input.backgrounds)) {
+		const kept = {};
+		for (const kind of BACKGROUND_KINDS) if (Object.hasOwn(input.backgrounds, kind)) { const background = normalizeBackground(input.backgrounds[kind]); if (background?.kind === kind) kept[kind] = background; }
+		if (Object.keys(kept).length) out.backgrounds = kept;
+	}
 	if (input.view && ['x', 'y', 'w', 'h'].every(k => spatial(input.view[k])) && input.view.w > 0 && input.view.h > 0) out.view = { x: input.view.x, y: input.view.y, w: input.view.w, h: input.view.h };
 	if (input.frame && ['x', 'y', 'w', 'h'].every(k => spatial(input.frame[k])) && input.frame.w >= 1 && input.frame.h >= 1 && input.frame.w <= 65536 && input.frame.h <= 65536) out.frame = { x: Math.round(input.frame.x), y: Math.round(input.frame.y), w: Math.round(input.frame.w), h: Math.round(input.frame.h) };
 	const reserved = new Set(input.shapes.map(s => typeof s?.id === 'string' && _RAPIER_DRAW_ID.test(s.id) ? s.id : '').filter(Boolean));

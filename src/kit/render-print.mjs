@@ -5,6 +5,8 @@ import {fontRequests, waitForFonts} from './export-fonts.mjs';
 import {apply as applyTypography} from '../layout/typography.mjs';
 import {documentLanguage} from '../spec/document-settings.mjs';
 import {applyPrintCapitals} from './print-capitals.mjs';
+import {stripOneTerminator as _rapierWillStripOneTerminator} from '../agent/will.mjs';
+import {quotedWillSpan} from '../spec/md-marks.mjs';
 const RAPIER_WILL_SENTINEL_MARK = '⁣';
 // SPDX-License-Identifier: MIT
 function createPrintRenderer(runtime) {
@@ -26,12 +28,11 @@ function _rapierWillSentinelPlan(canonical, kind) {
 	return { canonical: out + source.slice(cursor), markers, sentinel };
 }
 
-const _rapierWillStripOneTerminator = globalThis.RapierAgentWill.stripOneTerminator;
 
 
 
 function _rapierPrintWillAdmit(canonical, plan) {
-	const quoted = globalThis.RapierMarkdownSpec.quotedWillSpan(canonical, _rapierWillParse(canonical).blocks.map(block => [block.start, block.end]));
+	const quoted = quotedWillSpan(canonical, _rapierWillParse(canonical).blocks.map(block => [block.start, block.end]));
 	if (quoted && quoted.where === 'frontmatter') throw _rapierPrintWillLost('a marker stands in the front matter, which is not on the printed page', 'Take it out of the front matter');
 	if (quoted) throw _rapierPrintWillLost('a marker stands inside other content, where a reader of the PDF\'s text could not tell it from a carried marker', 'Take the quoted marker out');
 	for (const marker of plan.markers) {

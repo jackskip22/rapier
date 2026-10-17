@@ -1,5 +1,5 @@
 import {isImportReceiptFile, readImportReceiptFile, assertImportReferences} from './import-storage.mjs';
-import {NOTES_INDEX_FILE, emptyIndex, isNoteFile, validNoteId, noteFileName, attachmentFileName, parseIndex, reconcile, serializeIndex, stampNoteControls, NOTE_CONTROL_GROUPS, admitIdentities} from './model.mjs';
+import {NOTES_INDEX_FILE, emptyIndex, isNoteFile, isCodeFile, codeFileName, validNoteId, noteFileName, attachmentFileName, parseIndex, reconcile, serializeIndex, stampNoteControls, NOTE_CONTROL_GROUPS, admitIdentities} from './model.mjs';
 import {exactBytes, sha256, sha256State, sha256Yielding, storedFileDigest} from './integrity.mjs';
 import {manifestName, createHistoryPreparation, resolveHistoryPreparation} from './history.mjs';
 import {notesHostWords} from './host-words.mjs';
@@ -266,7 +266,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				if (!jsonObject(row)) throw fail('corrupt', 'The pending save file record is unreadable.');
 				if (row.stage === undefined) continue;
 				fileName(row.file);
-				if (!(isNoteFile(row.file) || row.file.startsWith('history/')) || !/^[a-f0-9]{64}$/.test(row.digest) || row.stage !== saveStageName(row.digest) ||
+				if (!(isNoteFile(row.file) || row.file.startsWith('history/')) || !/^[a-f0-9]{64}$/.test(row.digest) || (row.stage !== saveStageName(row.digest) && !(journal.kind === 'canonical-recovery' && row.stage === '.rapier-rename-stage-' + row.digest + '.tmp')) ||
 					row.data !== undefined || !Number.isSafeInteger(row.size) || row.size < 0 || stages.has(row.stage) && stages.get(row.stage).size !== row.size)
 					throw fail('corrupt', 'The pending save stage has no exact byte identity.');
 				stages.set(row.stage, row);
@@ -341,13 +341,20 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			return publish(index, changed, kind);
 		};
 		const rescueCanonical = async (index, journal, current, preparation) => {
-			if (!['save', 'canonical-save', 'create', 'canonical-create', 'keep-both'].includes(journal.kind) || journal.staging === 'preparing' || journal.removes.length) return null;
-			const published = journal.publicationDigest === current, conflicts = [];
+			const published = !!journal.publicationDigest && journal.publicationDigest === current;
+			if (journal.exactIndex || journal.staging === 'preparing' || !published && (!['save', 'canonical-save', 'create', 'canonical-create', 'keep-both', 'canonical-recovery'].includes(journal.kind) || journal.removes.length)) return null;
+			const conflicts = [];
 			for (const proof of canonicalRows(journal)) {
-				const row = journal.writes.find(row => row.file === proof.file);
-				if (!row) continue;
+				let row = journal.writes.find(row => row.file === proof.file);
+				if (!row) {
+					if (!published) continue;
+					const proved = preparation.parseCanonical(await readBytes(proof.history), {noteId: proof.id, now: clock()});
+					if (proved.ledger.sha256 !== proof.ledger) throw fail('changed', 'The published canonical history changed. Its files were kept.');
+					const intended = exactBytes(proved.text);
+					row = {file: proof.file, before: null, digest: await digestOf(intended), data: pack(intended)};
+				}
 				const bytes = await readBytes(row.file), digest = await digestOf(bytes);
-				if (bytes !== null && digest !== row.digest && (published || digest !== row.before)) conflicts.push({proof, row, bytes, digest});
+				if (digest !== row.digest && (published || digest !== row.before)) conflicts.push({proof, row, bytes, digest});
 			}
 			if (!conflicts.length) return null;
 			if (!published && (journal.baseGeneration !== folderGeneration(index) || current !== journal.baseDigest)) throw fail('changed', 'The folder metadata changed during recovery. Its pending words were kept.');
@@ -358,12 +365,14 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				if (payloads.has(row.file)) return payloads.get(row.file);
 				let bytes = row.stage ? await readBytes(row.stage) : unpack(row.data);
 				if (row.stage && bytes === null) bytes = await readBytes(row.file);
-				if (bytes === null || await digestOf(bytes) !== row.digest) throw fail('corrupt', 'The pending recovery bytes failed verification: ' + row.file + '.');
+				if (bytes === null || row.stage && bytes.length !== row.size || await digestOf(bytes) !== row.digest) throw fail('corrupt', 'The pending recovery bytes failed verification: ' + row.file + '.');
 				payloads.set(row.file, bytes); return bytes;
 			};
 			for (const conflict of conflicts) {
 				const {proof, row} = conflict, history = journal.writes.find(write => write.file === proof.history);
-				const proved = preparation.parseCanonical(await payload(history), {noteId: proof.id, now: clock()});
+				const bytes = history ? await payload(history) : await readBytes(proof.history);
+				if (published && history && await digestOf(await readBytes(proof.history)) !== history.digest) throw fail('changed', 'The published canonical history changed. Its files were kept.');
+				const proved = preparation.parseCanonical(bytes, {noteId: proof.id, now: clock()});
 				const intended = exactBytes(proved.text);
 				if (proved.ledger.sha256 !== proof.ledger || await digestOf(intended) !== row.digest) throw fail('corrupt', 'The saved words do not match their canonical history.');
 				if (row.stage && await readBytes(row.stage) === null) payloads.set(row.file, intended);
@@ -374,21 +383,33 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			for (const conflict of conflicts) {
 				const {proof, row, digest} = conflict, entry = after.notes[proof.file];
 				if (entry?.id !== proof.id || entry.canonicalHistory !== proof.ledger) throw fail('corrupt', 'The saved note identity does not match its pending history.');
-				conflict.name = noteFileName(proof.file.replace(/\.md$/i, '') + ' kept', [...names], {ascii: store.ascii}); names.add(conflict.name);
+				conflict.name = isCodeFile(proof.file) ? codeFileName(proof.file.replace(/(\.[^.]+)$/, ' kept$1'), [...names], {ascii: store.ascii})
+					: noteFileName(proof.file.replace(/\.md$/i, '') + ' kept', [...names], {ascii: store.ascii}); names.add(conflict.name);
 				after.notes[conflict.name] = {...entry, keptFrom: {file: proof.file, ...(row.before === null ? {} : {digest: row.before})}};
-				after.notes[proof.file] = {created: now, modified: now, revision: 'sha256:' + digest};
+				try { conflict.text = conflict.bytes === null ? null : new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(conflict.bytes); }
+				catch (_) { conflict.text = null; }
+				if (conflict.text === null) delete after.notes[proof.file];
+				else after.notes[proof.file] = {created: now, modified: now, revision: 'sha256:' + digest};
 			}
 			admitIdentities(after, after.folderDeviceId);
 			const next = {...journal, kind: 'canonical-recovery', baseGeneration: folderGeneration(index), generation: folderGeneration(index) + 1, baseDigest: current,
-				writes: journal.writes.map(row => ({...row})), canonical: canonicalRows(journal).map(row => ({...row}))};
+				writes: journal.writes.map(row => {
+					const next = {...row};
+					if (published) { next.before = next.digest; delete next.requires; }
+					delete next.caseSource;
+					return next;
+				}), removes: published ? [] : journal.removes, canonical: canonicalRows(journal).map(row => ({...row}))};
 			delete next.publicationDigest; delete next.after;
-			for (const {proof, row, bytes, digest, name} of conflicts) {
-				const saved = next.writes.find(write => write.file === proof.file);
+			if (journal.writes.some(row => row.caseSource !== undefined)) next.staging = 'ready';
+			for (const {proof, row, bytes, digest, name, text} of conflicts) {
+				let saved = next.writes.find(write => write.file === proof.file);
+				if (!saved) { saved = {...row}; next.writes.push(saved); }
 				Object.assign(saved, {file: name, before: null});
 				if (saved.stage && await readBytes(saved.stage) === null) { delete saved.stage; delete saved.size; saved.data = pack(payloads.get(row.file)); }
 				next.canonical.find(item => item.id === proof.id).file = name;
-				const entry = after.notes[proof.file], id = entry.id, text = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(bytes);
-				const manifest = preparation.freshCanonical(preparation.parseManifest(null, {noteId: id, now}), {filename: proof.file, docKind: 'markdown'});
+				if (text === null) continue;
+				const entry = after.notes[proof.file], id = entry.id;
+				const manifest = preparation.freshCanonical(preparation.parseManifest(null, {noteId: id, now}), {filename: proof.file, docKind: isCodeFile(proof.file) ? 'code' : 'markdown'});
 				const appended = await preparation.appendCanonical(manifest, {text, author: {kind: 'system', id: 'notes-recovery'}, operation: 'notes.admit', now});
 				entry.canonicalHistory = appended.ledger.sha256;
 				const recorded = await preparation.recordVersion(appended.manifest, {file: proof.file, text, entry, reason: 'save', now});
@@ -545,6 +566,8 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				const plannedFiles = new Set(Object.keys(index.notes));
 				for (const row of writes) if (isNoteFile(row.file)) plannedFiles.add(row.file);
 				for (const row of journal.removes) if (isNoteFile(row.file)) plannedFiles.delete(row.file);
+				if (journal.kind === 'canonical-recovery') for (const row of journal.delta.notes) if (row.entry === null &&
+					journal.canonical?.some(proof => proof.id === row.beforeId && journal.after.notes[proof.file]?.keptFrom?.file === row.file)) plannedFiles.delete(row.file);
 				if (!journal.after.notes || Object.keys(journal.after.notes).length !== plannedFiles.size || [...plannedFiles].some(file => !own(journal.after.notes, file))) throw fail('corrupt', 'The pending sidecar does not account for its file operations.');
 				if (journal.staging === 'preparing') {
 					for (const row of writes) if (await digestOf(await readBytes(row.file)) !== row.before) throw fail('changed', 'A note changed during save preparation. Its bytes and the unfinished save were kept.');

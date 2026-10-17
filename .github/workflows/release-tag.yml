@@ -2,6 +2,8 @@
 # publication commit) creates the lightweight tag v<version> at that commit. An existing tag is never moved: the run
 # passes when it already names this commit and fails when it names another. Every page's jsDelivr routes name this
 # tag, so the publisher pushes release-tag first and moves main (the website, npm) only once the tag exists.
+# When the tagged tree holds Rapier.exe (the public repository), the tag also gets a GitHub Release carrying it: the
+# portable Windows build that winget installs. An existing release is left as it is.
 name: release-tag
 on:
   push:
@@ -11,6 +13,8 @@ permissions:
 jobs:
   tag:
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: |
@@ -20,8 +24,15 @@ jobs:
           if [ -z "$version" ]; then echo "not a release commit: $subject"; exit 0; fi
           tag="v$version"
           existing=$(git ls-remote origin "refs/tags/$tag" | cut -f1)
-          if [ "$existing" = "$GITHUB_SHA" ]; then echo "$tag already names $GITHUB_SHA"; exit 0; fi
-          if [ -n "$existing" ]; then echo "::error::$tag already names $existing, not $GITHUB_SHA"; exit 1; fi
-          git tag "$tag" "$GITHUB_SHA"
-          git push origin "refs/tags/$tag"
-          echo "tagged $tag at $GITHUB_SHA"
+          if [ -n "$existing" ] && [ "$existing" != "$GITHUB_SHA" ]; then echo "::error::$tag already names $existing, not $GITHUB_SHA"; exit 1; fi
+          if [ "$existing" = "$GITHUB_SHA" ]; then echo "$tag already names $GITHUB_SHA"
+          else
+            git tag "$tag" "$GITHUB_SHA"
+            git push origin "refs/tags/$tag"
+            echo "tagged $tag at $GITHUB_SHA"
+          fi
+          if [ -f Rapier.exe ] && [ -n "${GITHUB_REPOSITORY:-}" ] && [ -n "${GH_TOKEN:-}" ]; then
+            if gh release view "$tag" > /dev/null 2>&1; then echo "release $tag exists"
+            else gh release create "$tag" Rapier.exe --verify-tag --title "Rapier $version" --notes "Rapier $version for Windows: Rapier.exe, the portable app. It needs the Microsoft Edge WebView2 Runtime."
+            fi
+          fi

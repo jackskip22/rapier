@@ -134,7 +134,8 @@ const MARK_CONVENTION_LITERALS = ['<!--md-break:v1', '<!--ink ', '<!--/ink-->'];
 const MARK_CONVENTION_OWNER = 'spec/md-marks.mjs';
 const MARK_CONVENTION_ALLOWED = new Set([MARK_CONVENTION_OWNER, 'tools/build.mjs']);
 const MARK_CONVENTION_SKIP_DIRS = new Set(['dist', '.git', '.wrangler', 'node_modules', 'tools/witnesses', 'skills']);
-const MARK_CONVENTION_GRADLE_OUTPUT = (relPath, name) => /^android/.test(relPath) && (name === 'build' || name === '.gradle');
+const MARK_CONVENTION_GRADLE_OUTPUT = (relPath, name) => /^android/.test(relPath) && (name === 'build' || name === '.gradle' ||
+  /^android\/[a-z]+\/src\/main\/assets$/.test(relPath));
 const MARK_CONVENTION_SKIP_FILES = new Set([...Object.values(PROFILE_PAGES), 'sw.js', 'AGENT-TOOLS.json']);
 const MARK_CONVENTION_EXTENSIONS = new Set(['.js', '.mjs', '.html', '.md']);
 
@@ -646,7 +647,7 @@ html = html.replace(/<title>[^<]*<\/title>/, () => '<title>' + escapeHtml(SITE_T
       'Optional encrypted sync to your own Cloudflare account'];
     const origin = 'https://rapier.website', site = origin + '/#website', publisher = origin + '/#organization';
     const identity = {'@context': 'https://schema.org', '@graph': [
-      {'@type': 'WebSite', '@id': site, url: origin + '/', name: data.name, alternateName: data.alternateName, description: data.description, inLanguage: 'en', publisher: {'@id': publisher},
+      {'@type': 'WebSite', '@id': site, url: origin + '/', name: data.name, alternateName: ['Rapier Markdown Editor', data.alternateName], description: data.description, inLanguage: 'en', publisher: {'@id': publisher},
         hasPart: [...Object.entries(DOORS).map(([path, door]) => ({'@type': 'WebPage', '@id': origin + path + '#webpage', url: origin + path, name: door.name})),
           ...[['/agents', 'Rapier for agents'], ['/markdown-standard', 'Self-contained Markdown'], ['/will', 'Will/1']]
             .map(([path, name]) => ({'@type': 'TechArticle', '@id': origin + path + '#webpage', url: origin + path, name}))]},

@@ -1,6 +1,6 @@
 import {CLOUDFLARE_SYNC, OTHER_SYNC, SYNC_UNAVAILABLE, SYNC_CONSENT, syncAvailability, r2KeyAvailability} from './sync-config.mjs';
 import {OTHER_PROVIDERS, isOtherProvider, providerUsesSignIn, providerSettings, providerTransport, createProviderLocation, providerOAuth, beginProviderSignIn,
-	readProviderRedirect, revokeProviderGrant, providerAvailability, providerSoon, SETTINGS_DOMAIN, PROVIDERS} from './sync-providers.mjs';
+	readProviderRedirect, readProviderTokenReturn, providerReturnsToken, revokeProviderGrant, providerAvailability, providerSoon, SETTINGS_DOMAIN, PROVIDERS} from './sync-providers.mjs';
 import {availability as listedProviders} from './cloud-providers.mjs';
 import {createVerifier, challengeFor, authorizeUrl, readRedirect, createOAuthClient} from './cloudflare-oauth.mjs';
 import {createVault, validateCreationPassphrase, unlockVault, unlockVaultWithRecovery, vaultId, headerObject, headerDigest, decodeHeader, HEADER_MAX_BYTES, seal, open, decodeRecovery} from './vault.mjs';
@@ -15,8 +15,12 @@ import {isCodeFile} from './model.mjs';
 import {attachmentKind} from './attachments.mjs';
 import {attachmentSizeWords} from './size-words.mjs';
 export {attachmentSizeWords};
+import {createPlainSession} from './sync-plain-session.mjs';
+import {plainStore, plainPlace} from './plain-stores.mjs';
 import {readSyncState, updateSyncState} from './sync-state.mjs';
 export {readSyncState};
+import {PLAIN_CHOICES} from './sync-plain.mjs';
+export {PLAIN_CHOICES};
 import {createDeviceStorage, createRememberedDevice} from './sync-device.mjs';
 export {createDeviceStorage, createRememberedDevice};
 import {resolveTextConflict, inspectTextConflicts} from './merge.mjs';
@@ -193,11 +197,12 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 	const pendingSizes = new Map();
 	const transports = new Set(), credentials = new Map(), answeredBuckets = new Set(), r2Refusals = new Map();
 	const bucketAddress = target => JSON.stringify([target.accountId, target.jurisdiction, target.bucket]);
-	const status = () => Object.freeze({stage, mode, authorized: mode === 'companion' ? !!connection : mode === 'r2-key' || other && !signsIn ? !!key && !!connection?.credential : !!grant && !needsRevoke, provider, unlocked: !!key,
+	const status = () => Object.freeze({stage, mode, authorized: mode === 'companion' ? !!connection : mode === 'r2-key' || other && !signsIn ? !!key && !!connection?.credential : !!grant && !needsRevoke && !lapsed(), provider, unlocked: !!key,
 		rememberDevice, rememberAvailable: !!device && device.available !== false, hasConnection: !!connection, credentialStored: !!connection?.credential, rejoinRequired,
 		busy: !!work || !!revoking || !!locking || !!stopping || !!leaving || !!cancelling, revocationPending: needsRevoke,
 		address: connection && (!sealedMode || connection.credential) ? connectionCode(connection.target, {mode, header: connection.bytes, credential: connection.credential}) : '', notice, gate, backedUpAt, devices, pending});
 	const announce = (next, text = '') => { stage = next; notice = text; onChange(status()); };
+	function lapsed() { return !!grant && !grant.refreshToken && grant.expiresAt != null && grant.expiresAt <= now() + 30000; }
 	const ready = () => { if (!gate.ready) throw fail('unavailable', gate.reason); };
 	const pruneCredentials = () => {
 		for (const [token, record] of credentials) if (record.hint === 'access_token' && record.expiresAt != null && record.expiresAt <= now()) credentials.delete(token);
@@ -277,7 +282,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 		active(ticket);
 		if (!grant) throw fail('auth', 'sign in with ' + who + ' first.');
 		if (grant.expiresAt != null && grant.expiresAt <= now() + 30000) {
-			if (!grant.refreshToken) throw fail('auth', 'your ' + who + ' sign-in expired: sign out, then sign in again.');
+			if (!grant.refreshToken) throw fail('auth', 'your ' + who + ' sign-in lapsed: sign in again.');
 			const previous = grant;
 			const refreshed = await (signsIn ? providerOAuth(provider, {fetch: fetchFn, clientId: registration.clientId, redirectUri: registration.redirectUri}) : oauth()).refresh({refreshToken: previous.refreshToken});
 			if (refreshed.refreshToken && refreshed.refreshToken !== previous.refreshToken) credentials.delete(previous.refreshToken);
@@ -288,6 +293,17 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 		return grant.accessToken;
 	}
 	async function bearerFor(ticket) { await authority(ticket); return Object.freeze({provider, tokenType: 'Bearer', accessToken: grant.accessToken}); }
+	async function plainRun(ticket, place, fn) {
+		if (!other || !signsIn) throw fail('config', 'plain files sync through a service you sign in to.');
+		const where = plainPlace(provider, place), token = await bearerFor(ticket);
+		const store = plainStore(provider, {place: where, token, fetch: fetchFn});
+		transports.add(store);
+		try {
+			const id = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(folder.deviceId || '') && folder.deviceId !== 'files' ? folder.deviceId : 'rapier';
+			const result = await fn(createPlainSession({folder, store, provider, place: where, device: id}));
+			active(ticket); return result;
+		} finally { store.pause?.(); transports.delete(store); }
+	}
 	async function transport(target, ticket, pair = null) {
 		if (mode === 'companion') {
 			active(ticket);
@@ -359,9 +375,10 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 		try { const result = await fn(setup); active(ticket); return result; }
 		finally { setup.pause(); transports.delete(setup); }
 	}
-	async function readLocal() {
+	async function readLocal({vault = false} = {}) {
 		const snapshot = await folder.read();
 		const state = await readSyncState(folder);
+		if (vault && state.plain) throw fail('connection', 'this folder syncs as plain files: forget that connection before choosing an encrypted vault.');
 		const kept = await checkedRecord(state.vault);
 		if (kept && (kept.mode !== mode || other && kept.provider !== provider)) throw fail('connection', 'this folder syncs another way: open its saved connection.');
 		if (state.head && !kept) throw fail('connection', 'this folder has synced before, but its vault address is missing: restore it before syncing. nothing was reset.');
@@ -565,6 +582,19 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 			storage = await withSetup(ticket, setup => setup.storage(accountId), accountId);
 			return {...storage, vaults: storage.vaults.map(target => ({address: connectionCode(target)}))};
 		}); },
+		async plainConnection() { const kept = (await readSyncState(folder)).plain; return kept ? Object.freeze({provider: kept.provider, place: kept.place}) : null; },
+		plainConnect({place} = {}) { return run(ticket => plainRun(ticket, place, async plain => { await plain.connect(); return plain.syncNow(); })); },
+		plainSyncNow() { return run(async ticket => {
+			const kept = (await readSyncState(folder)).plain;
+			if (!kept || kept.provider !== provider) throw fail('connection', 'connect this folder to its plain files first.');
+			return plainRun(ticket, kept.place.replace(/^\//, ''), plain => plain.syncNow());
+		}); },
+		plainForget() { return run(async ticket => {
+			const kept = (await readSyncState(folder)).plain;
+			if (!kept) return null;
+			const plain = createPlainSession({folder, store: {}, provider: kept.provider, place: kept.place, device: kept.device});
+			await plain.forget(); active(ticket); return null;
+		}); },
 		inspect() { return run(async ticket => {
 			const local = await readLocal(); active(ticket);
 			try { await refreshPending(local, ticket); }
@@ -575,7 +605,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 		}); },
 		prepare({passphrase} = {}) { return run(async ticket => {
 			if (mode !== 'r2-key') throw fail('config', 'the recovery check belongs to bucket key setup.');
-			await readLocal(); active(ticket);
+			await readLocal({vault: true}); active(ticket);
 			if (rejoinRequired) throw fail('connection', 'this restored folder must join its vault again, or leave it before starting a new vault.');
 			if (connection) throw fail('connection', 'this folder already has a vault: unlock it instead.');
 			validateCreationPassphrase(passphrase);
@@ -605,9 +635,9 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 		},
 		beginSignIn() { return run(async ticket => {
 			if (mode !== 'oauth' && !signsIn) throw fail('unavailable', 'a bucket key does not use the cloudflare sign-in.');
-			if (grant) throw fail('auth', 'this page is already signed in.');
+			if (grant && !lapsed()) throw fail('auth', 'this page is already signed in.');
 			await readLocal(); await restoreDevice(ticket); active(ticket);
-			if (grant) throw fail('auth', 'this device is already signed in.');
+			if (grant && !lapsed()) throw fail('auth', 'this device is already signed in.');
 			if (signsIn) {
 				const begun = await beginProviderSignIn(provider, {clientId: registration.clientId, redirectUri: registration.redirectUri});
 				active(ticket);
@@ -631,10 +661,12 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 			if (mode !== 'oauth' && !signsIn) throw fail('unavailable', 'a bucket key does not use the cloudflare sign-in.');
 			const returned = new URL(callbackUrl);
 			if (returned.origin + returned.pathname !== redirectNow()) throw fail('redirect', 'this is not where the ' + who + ' sign-in returns.');
-			const pending = readPending(), code = signsIn ? readProviderRedirect(search, pending.state) : readRedirect(search, pending.state);
+			const pending = readPending();
+			const token = signsIn && providerReturnsToken(provider) ? readProviderTokenReturn(provider, search, pending.state) : null;
+			const code = token ? null : signsIn ? readProviderRedirect(search, pending.state) : readRedirect(search, pending.state);
 			pendingStorage.removeItem(pendingKey);
 			announce('signing-in');
-			remember(await (signsIn ? providerOAuth(provider, {fetch: fetchFn, clientId: registration.clientId, redirectUri: registration.redirectUri}) : oauth()).exchange({code, verifier: pending.verifier}));
+			remember(token || await (signsIn ? providerOAuth(provider, {fetch: fetchFn, clientId: registration.clientId, redirectUri: registration.redirectUri}) : oauth()).exchange({code, verifier: pending.verifier}));
 			active(ticket); checkScopes();
 			await readLocal(); active(ticket); await keepDevice(ticket);
 			announce('locked');
@@ -643,7 +675,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 		create({accountId, bucket, jurisdiction = 'default', accessKeyId, secretAccessKey, passphrase, recoveryCode, settings} = {}) { return run(async ticket => {
 			if (mode === 'oauth' || signsIn) await authority(ticket);
 			if (mode === 'oauth' && !accountId && !bucket && storage) ({accountId, bucket, jurisdiction} = storage);
-			const local = await readLocal(); active(ticket);
+			const local = await readLocal({vault: true}); active(ticket);
 			if (rejoinRequired) throw fail('connection', 'this restored folder must join its vault again, or leave it before starting a new vault.');
 			if (connection) throw fail('connection', 'this folder already has a vault: unlock it instead.');
 			await refreshPending(local, ticket);
@@ -702,7 +734,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 			} finally { if (made !== staged) made?.vdk?.fill(0); }
 		}); },
 		join({address, secret, recovery = false} = {}) { return run(async ticket => {
-			const local = await readLocal(), before = local.vault || null; active(ticket);
+			const local = await readLocal({vault: true}), before = local.vault || null; active(ticket);
 			if (connection && mode !== 'r2-key' && !(other && !signsIn) && !rejoinRequired) throw fail('connection', 'this folder already has a vault: unlock it instead.');
 			const code = readConnectionCode(address);
 			if (code.mode !== mode && mode !== 'companion' || other && code.provider !== provider) throw fail('connection', 'this device code syncs another way.');
@@ -772,7 +804,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 			} finally { opened?.fill(0); }
 		}); },
 		unlock(secret, {recovery = false} = {}) { return run(async ticket => {
-			const local = await readLocal(); active(ticket);
+			const local = await readLocal({vault: true}); active(ticket);
 			if (rejoinRequired) throw fail('connection', 'this restored folder must join its vault again; paste a device code from another device.');
 			if (!connection) throw fail('connection', 'create a vault, or connect the one from your other device, first.');
 			if ((mode === 'r2-key' || other) && !connection.credential) throw fail('credential', other ? 'this device forgot its storage settings: add them again with a code from another device.' : 'this device forgot its bucket key: add it again with a code from another device.');
@@ -792,7 +824,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 		}); },
 		syncNow() { return run(async ticket => {
 			if (!key) throw fail('locked', 'unlock your vault before syncing.');
-			const local = await readLocal(); active(ticket);
+			const local = await readLocal({vault: true}); active(ticket);
 			if (rejoinRequired) throw fail('connection', 'this restored folder must join its vault again; paste a device code from another device.');
 			if (!connection) throw fail('connection', 'this folder has no vault address.');
 			const held = key, since = now();
@@ -856,10 +888,10 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 					if (!kept) throw fail('merge_stale', 'this conflict is no longer in the folder.');
 					const next = resolveTextConflict(text, inspected, variant ?? device);
 					active(ticket);
-					index.notes[file] = {...index.notes[file], revision: 'sha256:' + await contentHash(next), modified: now()};
+					const {writes, canonical} = await folder.planCanonicalChange(index, {file, current: text, next, operation: 'notes.sync.resolve', now: now()});
 					index.conflicts = index.conflicts.filter(row => row !== kept);
 					active(ticket);
-					return {kind: 'sync-choice', index, writes: [{file, bytes: te.encode(next), expectedDigest: digest}]};
+					return {kind: 'sync-choice', index, writes: [{file, bytes: te.encode(next), expectedDigest: digest}, ...writes], canonical};
 				}, {bodies: [file]});
 				if (result.dropped?.includes(file)) throw fail('merge_stale', 'this note changed while your choice was saved: read both versions again.');
 				announce(stage, 'your choice is saved. if the note is open, reopen it to read the choice.');

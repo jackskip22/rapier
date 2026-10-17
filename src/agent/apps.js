@@ -13,6 +13,7 @@
   let lastFailure = null, composeTimer = 0;
   const COMPOSING_IDLE_MS = 4000;
   let editEpoch = 0, lastEdit = 0, composing = false, contextEditing = false, contextEditingAt = 0;
+  let staleContexts = 0, staleRevision = null, staleStuck = false;
   let running = null, timer = 0, failures = 0, connecting = null, notice, modeButton;
   let unsubscribe, observer, locked = [], status = 'opening';
   let importRunning = false, uploadRunning = false, homeDialog, fileDialog, homeRequested = false;
@@ -541,10 +542,21 @@
       if (result.isError) {
         contextIssue = result.structuredContent?.code === 'HUMAN_CONTEXT_STALE' ? 'stale' : 'unavailable';
         captureIncoming(result);
+        if (contextIssue === 'stale') {
+          staleContexts = staleRevision === source.revision ? staleContexts + 1 : 1;
+          staleRevision = source.revision;
+          if (staleContexts >= 3 && base === source) {
+            staleStuck = true; contextFailures = 3;
+            setStatus('offline');
+            return false;
+          }
+        }
         schedule(0);
         return false;
       }
       contextFailures = 0;
+      staleContexts = 0; staleRevision = null;
+      if (staleStuck) { staleStuck = false; if (status === 'offline' && !failures) setStatus('ready'); }
       const receipt = result.structuredContent;
       if (receipt?.acknowledged !== true || receipt.contextId !== nonce || receipt.sequence !== args.sequence) return false;
       for (const row of args.drawingReceipts || []) if (pendingDrawingReceipts.get(row.transactionId) === row) pendingDrawingReceipts.delete(row.transactionId);
@@ -1475,7 +1487,7 @@
         if (live) {
           dirty = live.pending > 0;
           if (force && dirty) { if (!await window.Rapier.live.flush()) return false; dirty = false; }
-          if (!await sync(true)) return false;
+          if (!await sync(force)) return false;
           await loadIncoming(false, null, force);
         } else {
           const stalled = window.Rapier?.live?.status?.();
@@ -1527,6 +1539,8 @@
 
   async function retry() {
     if (pairedId && status === 'unpaired') { location.reload(); return; }
+    if (pairedId && staleStuck && !dirty && !flight && !composing && !(joinedLive()?.pending > 0)) { location.reload(); return; }
+    staleStuck = false; staleContexts = 0;
     failures = 0;
     contextFailures = 0;
     if (!initialized) await connect();

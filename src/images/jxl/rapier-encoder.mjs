@@ -31,7 +31,7 @@ export function createJPEGXLEncoder({spawn} = {}) {
       return complete(job, options.progress);
     },
     async transcode(jpeg, options = {}) {
-      const job = transcodeSteps(jpeg, {effort: 7});
+      const job = transcodeSteps(jpeg, {effort: options.effort ?? 7});
       const bytes = await complete(job, options.progress);
       return {bytes, width: job.width, height: job.height, orientation: job.orientation};
     },

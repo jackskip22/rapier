@@ -12,7 +12,7 @@ const SPACING_SELECTORS = Object.freeze({paragraph: 'p', h1: 'h1', h2: 'h2', h3:
 	list: ':is(ul,ol)', item: 'li', table: ':is(table,.table-scroll-wrap)', picture: 'p[data-md-picture]',
 	drawing: ':is(.diagram-block,p[data-md-picture]:has(img[data-md-svg],img[src^="data:image/svg+xml"]))', quote: 'blockquote',
 	code: 'pre', rule: 'hr:not(.footnotes-sep):not([data-md-break])', footnote: '.footnotes', toc: '.rapier-jump-list'});
-const HEADING_LINE = [2 / 2.6, 1.5 / 1.9, 1.2 / 1.5, 1 / 1.25, .9 / 1.1, .82];
+const HEADING_LINE = [1.75 / 2.2, 1.5 / 1.75, 1.2 / 1.5, 1 / 1.25, .9 / 1.1, .82];
 
 export function normalizeDocumentSpacing(value) {
 	if (typeof value === 'string') {
@@ -60,7 +60,7 @@ export function wordDocumentSettings(settings) {
 }
 export function documentHeadingSize(settings, level) {
 	const body = (settings?.fontsize?.unit || 1.1) * 12;
-	return body * (settings?.word ? [16/11,13/11,12/11,1,1,1] : [2.6,1.9,1.5,1.25,1.1,1])[level - 1];
+	return body * (settings?.word ? [16/11,13/11,12/11,1,1,1] : [2.2,1.75,1.5,1.25,1.1,1])[level - 1];
 }
 
 export function documentSpacingCss(settings, scope = '.md-render', defaults = false) {

@@ -10,7 +10,7 @@ import {buildLinkIndex, resolveLinkIndex, renameLinks} from './links.mjs';
 import {inspectTextConflicts, mapTextConflictVariants, canonicalJSON} from './merge.mjs';
 import {appendImportReceipt, finishImportReceipt, importUndoReadiness, planImportUndo, recordImportUndo, importUndoSections, prepareImportWrites, prepareImportHistory, recordImportSections} from './import-receipt.mjs';
 import {validRecordingName, recordingName, audioMime, rewriteRecordingNames, recordingsOf} from './audio.mjs';
-import {manifestName, parseManifest, parseCanonical, materialize, recordVersion, serializeManifest, readCanonical, freshCanonical, appendCanonical, carryCanonical, adoptCanonical, canonicalSources, createHistoryPreparation, controlsAct, thin, bindMedia, checkVersionMedia, checkInverseMedia} from './history.mjs';
+import {INPUT_OPERATION, manifestName, parseManifest, parseCanonical, materialize, recordVersion, serializeManifest, readCanonical, freshCanonical, appendCanonical, carryCanonical, adoptCanonical, canonicalSources, createHistoryPreparation, controlsAct, thin, bindMedia, checkVersionMedia, checkInverseMedia} from './history.mjs';
 import {applyReminderActions, changeReminders} from './model.mjs';
 import {restoreSnapshot as planSnapshot, restoreSnapshotStream as planSnapshotStream} from './restore.mjs';
 import {backupNames} from './backup-folder.mjs';
@@ -155,6 +155,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		if (fixed.added.length || ranks || identities) return args.commitIndex(index, {kind: 'identity', reconcileFiles: true});
 		return {index, listing};
 	}});
+	const inputReceipts = new Map();
 	const pending = new Set();
 	const pendingChanged = () => { try { onPending?.(pending.size); } catch (_) {} };
 	const tracked = job => {
@@ -392,6 +393,17 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		return historyWrites(recorded, {entry, prior, history});
 	};
 	const canonicalProof = (file, id, ledger) => ({file, id, history: 'history/' + manifestName(id), ledger: ledger.sha256});
+	const planCanonicalChange = async (index, {file, current, next, operation, now = clock()}) => {
+		const entry = index.notes[file], path = 'history/' + manifestName(entry.id), prior = await store.read(path);
+		if (prior == null) throw fail('notes_history_unavailable', 'This note has no canonical history. Its bytes were kept.');
+		const proved = parseCanonical(prior, {noteId: entry.id, now, text: current});
+		if (proved.ledger.sha256 !== entry.canonicalHistory) throw fail('notes_history_unavailable', 'The note identity does not prove this history.');
+		const appended = appendCanonical(proved.manifest, {text: next, metadata: proved.metadata, author: canonicalAuthor(), operation, now});
+		const source = exactBytes(appended.text ?? next);
+		index.notes[file] = {...entry, revision: 'sha256:' + await sha256(source), modified: now, canonicalHistory: appended.ledger.sha256};
+		const writes = await canonicalWrites(appended.manifest, {file, text: next, entry: index.notes[file], prior, now, reason: 'merge'});
+		return {writes, canonical: [canonicalProof(file, entry.id, appended.ledger)]};
+	};
 	const readCanonicalOwned = async (lease, {file, id, checkpoint = false}, history = createHistoryPreparation()) => {
 		const snapshot = await lease.read({bodies: [file]});
 		if (!snapshot.index.notes[file] || id && snapshot.index.notes[file].id !== id || !snapshot.bodies.has(file)) throw fail('notes_changed', 'This note moved or changed.');
@@ -520,7 +532,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			options = {...options, ...(options.canonical ? {canonical: copy(options.canonical)} : {})};
 		});
 		return underLease(async lease => {
-			let destination, result, targetIndex, copied = false;
+			let destination, result, targetIndex, inputReceipt, copied = false;
 			const active = async () => { checkByteAbort(options.signal); await options.guard?.(); if (targetIndex) await options.guardTarget?.(targetIndex, destination, id); checkByteAbort(options.signal); };
 			await prepareMutation(active);
 			const admitted = Array.isArray(expectedDigest) ? expectedDigest : [expectedDigest];
@@ -549,10 +561,14 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 				}
 				const appended = ledger || !proved ? null : await history.appendCanonical(manifest, {text, metadata, undo, ...context, requestDigest, input: options.input === true});
 				if (appended?.replayed) { result = appended; return {index, historyPreparation: history}; }
-				const landed = !!carried?.unchanged;
+				const landed = !!carried?.unchanged || !undo && !options.canonical && !expectedLedgers.length && !!appended?.unchanged;
+				const inputBefore = inputReceipts.get(id)?.get(proved?.ledger.sha256);
+				const ownInput = inputBefore?.incarnation === owner.incarnation ? inputBefore.bases : null;
+				const settlesInput = !undo && !options.canonical && (carried?.supersededInput || options.input === true && appended) &&
+					ownInput?.some(base => admitted.includes(base.digest) && (!expectedLedgers.length || expectedLedgers.includes(base.ledger)));
 				const inverseMedia = !landed && (ledger || appended) && !isCodeFile(destination) ? await checkInverseMedia(manifest || parseManifest(prior, {noteId: id, now: clock()}), ledger || appended.ledger, {names: mediaNames, digest: path => storedFileDigest(store, path)}) : manifest?.media;
 				await active();
-				const stale = !proved || !landed && (!!carryFault || !admitted.includes(actual) || expectedLedgers.length > 0 && !expectedLedgers.includes(proved.ledger.sha256));
+				const stale = !proved || !landed && !settlesInput && (!!carryFault || !admitted.includes(actual) || expectedLedgers.length > 0 && !expectedLedgers.includes(proved.ledger.sha256));
 				if (stale) {
 					if (undo || options.canonical || !ledger && expectedLedgers.length) throw fail('notes_changed', 'The note changed since its exact source and history were read.');
 					if (proved && text === proved.text) throw fail('notes_changed', 'The note changed since its exact source and history were read.');
@@ -573,6 +589,11 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 					return {kind: 'canonical-create', index: made, writes: [{file: keptName, bytes: source.bytes, createOnly: true}, ...writes], canonical: [canonicalProof(keptName, keptId, first.ledger)], historyPreparation: history};
 				}
 				result = carried ?? appended;
+				if (options.input === true && result.ledger.records.at(-1)?.transaction.operation === INPUT_OPERATION) {
+					const bases = [...(ownInput || [])];
+					if (!bases.some(base => base.ledger === proved.ledger.sha256)) bases.push({digest: actual, ledger: proved.ledger.sha256});
+					inputReceipt = {id, ledger: result.ledger.sha256, incarnation: owner.incarnation, bases};
+				}
 				if (inverseMedia !== result.manifest.media) result = {...result, manifest: {...result.manifest, media: inverseMedia}};
 				if (result.unchanged && !index.notes[destination].trashed) return {index, historyPreparation: history};
 				text = result.text ?? text;
@@ -583,13 +604,23 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 				const writes = await canonicalWrites(result.manifest, {file: destination, text, entry: index.notes[destination], prior, now, reason: options.reason || 'save', restoredFrom: options.restoredFrom, history});
 				await active();
 				return {kind: 'canonical-save', index, writes: [{file: destination, bytes: source.bytes, expectedDigest: actual}, ...writes], canonical: [canonicalProof(destination, id, result.ledger)], historyPreparation: history};
-			}), {bodies: [], ordinarySave: {file, id, expectedDigest: admitted}, admit: () => { checkByteAbort(options.signal); options.guard?.(); }, admissionGuard: () => prepareMutation(active)});
+			}), {bodies: [], ordinarySave: {file, id, expectedDigest: admitted}, admit: () => {
+				checkByteAbort(options.signal); options.guard?.();
+				if (inputReceipt) {
+					let receipts = inputReceipts.get(inputReceipt.id);
+					if (!receipts) inputReceipts.set(inputReceipt.id, receipts = new Map());
+					receipts.set(inputReceipt.ledger, inputReceipt);
+				}
+			}, admissionGuard: () => prepareMutation(active)});
 			const proved = await readCanonicalOwned(lease, {file: destination, id, checkpoint: true}, history);
 			if (result.replayed) {
 				const original = result.ledger.records.find(row => row.transaction.id === result.act?.id);
 				const kept = proved.ledger.records.find(row => row.transaction.id === result.act?.id);
 				if (proved.ledger.documentAuthority !== result.ledger.documentAuthority || !original || !kept || canonicalJSON(kept) !== canonicalJSON(original)) throw fail('notes_changed', 'The saved act could not be verified.');
 			} else if (proved.ledger.sha256 !== result.ledger.sha256) throw fail('notes_changed', 'The saved history could not be verified.');
+			const ownedInput = inputReceipts.get(id)?.get(proved.ledger.sha256);
+			if (proved.ledger.records.at(-1)?.transaction.operation !== INPUT_OPERATION || ownedInput?.incarnation !== owner.incarnation) inputReceipts.delete(id);
+			else inputReceipts.set(id, new Map([[proved.ledger.sha256, ownedInput]]));
 			return {...snapshot, index: proved.index, files: proved.files, generation: proved.generation, readOnly: proved.readOnly,
 				file: destination, copied, id, digest: proved.digest, text: proved.text, ledger: proved.ledger, act: result.act, unchanged: !!result.unchanged, replayed: !!result.replayed};
 		});
@@ -1069,7 +1100,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			});
 		}
 		const refs = record.createdFiles?.length ? await scanReferences(before) : null, removes = [], kept = [], shared = new Set();
-		for (const leaf of await store.list('history/manifests')) {
+		for (const leaf of (await store.list('history/manifests')).filter(name => name.endsWith('.json') && !name.startsWith('.'))) {
 			const bytes = await store.read('history/manifests/' + leaf);
 			if (bytes == null) throw fail('changed', 'Retained history changed during import undo. Its files were kept.');
 			let manifest;
@@ -1198,5 +1229,5 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 	const recordingCustody = createRecordings({store, owned, underLease, locks, scope, shared: isShared, clock, audioName, discardAudio,
 		canOwn: () => store.writable !== false && (!isShared() || !!(locks?.request && channel?.postMessage)), readSnapshot: () => owner.read(scope)});
 	return {beginRecording: recordingCustody.begin, recoverRecordings: recordingCustody.recover, openRecording: recordingCustody.open, readRecording: recordingCustody.preview, acknowledgeRecording: recordingCustody.acknowledge,
-		owner, store, scope, read, readCanonical: readCanonicalNote, checkEditorInverse, rebuildIndex, metadata, controls, controlsUndo, reminderActions, reminderChange, leaveVault, create, createShared, save, recordHistory, historyInventory, tidyHistory, rename, trash, discardEmpty, mark, createAudio, createAttachment, attachmentReferences, fileReferences, reviewAttachmentDeletion, deleteAttachment, reviewRecordingDeletion, deleteRecording, asset, discardAudio, importBatch, checkpointImportReceipt, readImportReceipt, restoreSnapshot, previewImportUndo, undoImport, backupSnapshot, capture, readFile, settle, get deviceId() { return deviceId; }, get pending() { return pending.size; }, close: () => { recordingCustody.close(); owner.close(); channel?.close?.(); }};
+		owner, store, scope, read, readCanonical: readCanonicalNote, planCanonicalChange, checkEditorInverse, rebuildIndex, metadata, controls, controlsUndo, reminderActions, reminderChange, leaveVault, create, createShared, save, recordHistory, historyInventory, tidyHistory, rename, trash, discardEmpty, mark, createAudio, createAttachment, attachmentReferences, fileReferences, reviewAttachmentDeletion, deleteAttachment, reviewRecordingDeletion, deleteRecording, asset, discardAudio, importBatch, checkpointImportReceipt, readImportReceipt, restoreSnapshot, previewImportUndo, undoImport, backupSnapshot, capture, readFile, settle, get deviceId() { return deviceId; }, get pending() { return pending.size; }, close: () => { recordingCustody.close(); owner.close(); channel?.close?.(); }};
 }

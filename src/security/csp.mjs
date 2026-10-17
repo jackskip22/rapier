@@ -23,7 +23,7 @@ const BASE = [
 
 const SURFACES = {
 	web: { 'frame-src': ["'self'"], 'connect-src': ["'self'", 'https://cdn.jsdelivr.net', 'https://*.r2.cloudflarestorage.com', RETURN_ORIGIN, LIVE_ORIGIN] },
-	native: { 'frame-ancestors': ["'self'"] },
+	native: { 'frame-ancestors': ["'self'"], 'media-src': ["'self'", 'blob:'] },
 	reader: { 'connect-src': ["'self'", 'https://cdn.jsdelivr.net'] },
 	hosted: { 'frame-src': ["'self'"], 'connect-src': ["'self'", 'https://cdn.jsdelivr.net', 'https://*.r2.cloudflarestorage.com', RETURN_ORIGIN, LIVE_ORIGIN], 'frame-ancestors': ['https:', 'http://localhost:*', 'http://127.0.0.1:*'] },
 };

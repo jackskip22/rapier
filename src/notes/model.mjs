@@ -804,13 +804,14 @@ function noteWords(text) {
 		.replace(/\\([!-\/:-@\[-`{-~])/g, '$1');
 }
 export function noteTitle(text) { return cutText(cardInkWords(noteWords(text)).replace(/[*_`~]/g, '').trim(), 80, 80); }
-export function noteFileName(text, existing = [], {ascii = false} = {}) {
+export function noteFileName(text, existing = [], {ascii = false, taken: live = null, suffixes = null} = {}) {
 	let base = noteWords(text).replace(/[^\p{L}\p{M}\p{N} _-]+/gu, '');
 	if (ascii) base = base.normalize('NFD').replace(/\p{M}+/gu, '').replace(/[^A-Za-z0-9 _-]+/g, '');
 	base = cutText(base.trim().replace(/\s+/g, ' '), 48, 48).replace(/\s+$/, '') || 'note';
 	if (/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(base)) base += ' note';
-	const taken = new Set(existing.map(f => f.toLowerCase()));
-	let name = base + '.md', n = 2;
+	const taken = live || new Set(existing.map(f => f.toLowerCase())), key = base.toLowerCase();
+	let n = suffixes?.get(key) || 2, name = n > 2 ? base + ' ' + (n++) + '.md' : base + '.md';
 	while (taken.has(name.toLowerCase())) name = base + ' ' + (n++) + '.md';
+	suffixes?.set(key, n);
 	return name;
 }

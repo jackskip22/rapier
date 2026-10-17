@@ -290,7 +290,7 @@ async function _rapierWaterActionAt(event, gesture) {
 			const pigment = {coefficients:sample.coefficients,granulation:sample.granulation,staining:sample.staining,...(sample.source ? {source:sample.source} : {}),...(sample.finish ? {finish:sample.finish} : {})};
 			if (!await _rapierWaterProChoose('pigment',pigment)) return;
 			_rapierWaterState().sampling = false; _rapierWaterUpdate();
-		} catch (error) { if (state.open && state.session === session && error.name !== 'AbortError') showToast(String(error.message || error),'error'); }
+		} catch (error) { if (state.open && state.session === session && error.name !== 'AbortError' && !_rapierDrawWaterUnavailable(error)) showToast(String(error.message || error),'error'); }
 		return;
 	}
 	try {
@@ -304,7 +304,7 @@ async function _rapierWaterActionAt(event, gesture) {
 			Object.assign(action,{kind:'stroke',tool:'brush',brush:settings.brush,source:settings.tool,paths:captured.paths});
 		}
 		await _rapierWaterRunAction(action,true,settings.tip ? {brush:settings.brush,tip:settings.tip} : null);
-	} catch (error) { showToast(String(error.message || error),'error'); }
+	} catch (error) { if (!_rapierDrawWaterUnavailable(error)) showToast(String(error.message || error),'error'); }
 }
 function _rapierWaterRunAction(action, world = false, tip = null) {
 	const state = _rapierDrawState; if (state.waterAction || state.finishing || !state.open) return Promise.resolve(false);
@@ -327,7 +327,7 @@ function _rapierWaterRunAction(action, world = false, tip = null) {
 		_rapierPaintShowLive(true); if (admittedTip) await layer.surface.applyWater({kind:'tip',brush:admittedTip}); await layer.surface.applyWater(admitted); await _rapierWaterPreflight(layer); _rapierPaintReleaseStroke(gesture);
 		layer.brushId = brushId; layer.paintVersion = (layer.paintVersion || 0) + 1;
 		const held = _rapierPaintLiftHold(layer); await layer.surface.sync(); _rapierPaintEndDecide(layer,held); await held.promise; _rapierDrawBackupTouch(); return true;
-	})().catch(error => { if (state.open && state.session === session) { _rapierPaintReleaseStroke(gesture,true); if (error.name !== 'AbortError') showToast(String(error.message || error),'error'); } return false; }).finally(() => { if (state.waterAction === task) state.waterAction = null; });
+	})().catch(error => { if (state.open && state.session === session) { _rapierPaintReleaseStroke(gesture,true); if (error.name !== 'AbortError' && !_rapierDrawWaterUnavailable(error)) showToast(String(error.message || error),'error'); } return false; }).finally(() => { if (state.waterAction === task) state.waterAction = null; });
 	state.waterAction = task; return task;
 }
 async function _rapierWaterPreflight(layer) {

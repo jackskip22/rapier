@@ -379,7 +379,7 @@ function initMarkdownIt() {
 }
 
 function _rapierRenderSemanticRoot(canonical, metadata, options = {}) {
-	const root = document.createElement('div');
+	const root = document.createElement('template').content.ownerDocument.createElement('div');
 	root.setAttribute('data-rapier-semantic-root', 'true');
 
 	if (metadata.docKind !== 'markdown') {
@@ -434,7 +434,8 @@ async function _rapierRenderSemanticRootAsync(canonical, metadata, options = {})
 	let {tokens, env} = parsed, labels = env.footnotes?.list?.map((item, index) => String(item?.label || ('inline-' + (index + 1))));
 	env = {...env, rapierImagePresentation: options.imagePresentation === true};
 	await pause(work, .3);
-	const root = document.createElement('div'), part = document.createElement('div'), boundary = htmlBoundary();
+	const inert = document.createElement('template').content.ownerDocument;
+	const root = inert.createElement('div'), part = inert.createElement('div'), boundary = htmlBoundary();
 	root.setAttribute('data-rapier-semantic-root', 'true');
 	let html = '', began = performance.now(), complete = false;
 	const append = () => {

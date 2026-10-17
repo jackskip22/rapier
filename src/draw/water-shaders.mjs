@@ -175,7 +175,8 @@ const body = {
  let q=uv(p);return Pair(sample(t0,q)*u.v[2].z,sample(t1,q)*u.v[2].z);
  }`,
  dried: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> Pair {
- let pix=vec2<i32>(px(p));let dry=smoothstep(0.02,0.45,loadTexel(t2,pix).r)<0.002;let k=select(f32(!dry),f32(dry),u.v[2].z>0.0);
+ let pix=vec2<i32>(px(p));let dry=smoothstep(0.02,0.45,loadTexel(t2,pix).r)<0.002;let settle=select(u.v[2].w,1.0,dry);
+ let k=select(1.0-settle,settle,u.v[2].z>0.0);
  return Pair(loadTexel(t0,pix)*k,loadTexel(t1,pix)*k);
  }`,
  pigment: `
@@ -191,8 +192,8 @@ const body = {
   var resultA=mix(a,advectedA,m);var resultB=mix(b,advectedB,m);
   // Advection and bleeding may not create an extreme: what they write stays within the pigment they drew from (this texel, the
   // one it was carried from, the faces it exchanged with). Together they can overshoot, and where the flow is fast the overshoot
-  // alternates in sign and grows each frame. The drying-edge flow is added after that bound: it is upwind and paired, so pigment
-  // it carries to a drying rim piles up there, the tideline, and arrives exactly as it left.
+  // alternates in sign and grows each frame. The drying-edge flow stays inside that bound: on a sheet finer than the reference it
+  // carries up to the reach's multiple per face, and unbounded it piled pigment into beads one dab apart.
   var lowA=min(a,advectedA);var highA=max(a,advectedA);var lowB=min(b,advectedB);var highB=max(b,advectedB);
   var driftA=vec4<f32>(0);var driftB=vec4<f32>(0);
   // The reference applies bleeding and the drying-edge flow once per 60 Hz display frame. A shorter step applies its
@@ -220,7 +221,7 @@ const body = {
     lowA=min(lowA,na);highA=max(highA,na);lowB=min(lowB,nb);highB=max(highB,nb);
    }
   }
-  resultA=bounded(clamp(resultA,lowA,highA)+driftA);resultB=bounded(clamp(resultB,lowB,highB)+driftB);resultB.a=max(resultB.a,0.0);
+  resultA=bounded(clamp(resultA+driftA,lowA,highA));resultB=bounded(clamp(resultB+driftB,lowB,highB));resultB.a=max(resultB.a,0.0);
   return Pair(resultA*keep,resultB*keep);
  }`,
  mask: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> {

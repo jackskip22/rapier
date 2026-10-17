@@ -50,7 +50,7 @@ export class RemotePaintSurface {
 		if (name === 'toothOX') this.toothOX = value; else if (name === 'toothOY') this.toothOY = value; else if (name === 'scale') this.scale = value; else if (name === 'paper') this.paper = value;
 		this._push({target: 'surface', id: this.id, method: 'set', args: [name, value]}, {structural: name === 'toothOX' || name === 'toothOY'});
 	}
-	settleWet() { this._push({target: 'surface', id: this.id, method: 'settleWet', args: []}); }
+	settleWet(owed = true) { this._push({target: 'surface', id: this.id, method: 'settleWet', args: owed ? [] : [false]}); }
 	finishWetWork() { this._push({target: 'surface', id: this.id, method: '_finishWetWork', args: []}); }
 	dryWet(feed = 8, slice = 8) { return this._push({target: 'surface', id: this.id, method: 'dryWet', args: [feed, slice]}, {ticket: true}).promise; }
 	advanceWet(milliseconds) { return this._push({target: 'surface', id: this.id, method: 'advanceWet', args: [milliseconds]}, {ticket: true}).promise; }

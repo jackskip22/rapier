@@ -72,13 +72,17 @@ async function inspectImageSource(url, {dark = false, paperInk = null} = {}) {
       if (size.width * size.height > 24000000) throw new Error('Animated JPEG XL exceeds the pixel budget');
       const decoder = new ImageDecoder({data: canonical, type: codec, preferAnimation: true});
       try {
-        const {image, complete} = await decoder.decode({frameIndex: 0, completeFramesOnly: true});
-        try {
-          if (!complete || image.displayWidth !== size.width || image.displayHeight !== size.height) throw new Error('JPEG XL dimensions changed');
-          const canvas = new OffscreenCanvas(size.width, size.height);
-          try {canvas.getContext('2d').drawImage(image, 0, 0); blob = await canvas.convertToBlob({type: 'image/png'});}
-          finally {canvas.width = canvas.height = 0;}
-        } finally {image.close();}
+        const first = await decoder.decode({frameIndex: 0, completeFramesOnly: true}).catch(error => { if (error?.name === 'EncodingError') return null; throw error; });
+        if (!first) { blob = new Blob([], {type: 'image/png'}); playbackUnavailable = true; }
+        else {
+          const {image, complete} = first;
+          try {
+            if (!complete || image.displayWidth !== size.width || image.displayHeight !== size.height) throw new Error('JPEG XL dimensions changed');
+            const canvas = new OffscreenCanvas(size.width, size.height);
+            try {canvas.getContext('2d').drawImage(image, 0, 0); blob = await canvas.convertToBlob({type: 'image/png'});}
+            finally {canvas.width = canvas.height = 0;}
+          } finally {image.close();}
+        }
       } finally {decoder.close();}
     } else {blob = new Blob([], {type: 'image/png'}); playbackUnavailable = true;}
   }

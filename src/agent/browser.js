@@ -41,8 +41,6 @@
     ...(request.sourceTransactionIds ? {sourceTransactionIds: request.sourceTransactionIds.slice()} : {}),
     };
   };
-  const scope = request => ({kind: request.actor || 'agent', id: request.principal || 'webmcp',
-    transport: request.transport === 'webmcp' ? 'webmcp' : 'platform'});
   const caller = request => _rapierDoorStamp({actor: {kind: request.actor || 'agent', id: request.principal || 'webmcp'},
     signal: request.signal || idleSignal, invocation: {id: request.requestId || crypto.randomUUID()}},
     request.transport === 'webmcp' ? 'webmcp' : 'platform');
@@ -815,7 +813,6 @@
     comparisonKernelId = request.compareId || null;
     comparisonGeneration = _rapierCompareRuntime.jobId;
     _rapierCompareRuntime.agentOpened = true;
-    _rapierCompareRuntime.agentScope = scope(request);
     return {ok: true, presented: visible() && rapier.compare.active === true, ...invitationTaken(answer)};
   }
 
@@ -963,11 +960,18 @@
     if (request.pointer?.expiresAt <= Date.now()) request = {...request, pointer: null};
     const resolved = revealResolved(request);
     if (!resolved) return fail('target_not_visible');
-    const travel = _rapierTravelBegin('agent reveal'), token = rapier.view.restoreToken;
+    const travel = _rapierTravelBegin('agent reveal');
     _rapierSeenViewMovedByAgent();
     const scroll = _rapierScrollResolvedIntoView(resolved);
     if (scroll.reason) return fail(scroll.reason);
-    if (!await _rapierSettleRevealScroll(scroll, request.signal || idleSignal, token) || !matches(request)) return fail('view_changed');
+    const yielded = new AbortController(), personMoved = () => yielded.abort(), outer = request.signal || idleSignal;
+    const inputs = ['pointerdown', 'touchstart', 'wheel', 'keydown'];
+    for (const type of inputs) document.addEventListener(type, personMoved, {capture: true, passive: true});
+    if (outer?.aborted) yielded.abort(); else outer?.addEventListener?.('abort', personMoved, {once: true});
+    let settled;
+    try { settled = await _rapierSettleRevealScroll(scroll, yielded.signal, null); }
+    finally { for (const type of inputs) document.removeEventListener(type, personMoved, {capture: true}); outer?.removeEventListener?.('abort', personMoved); }
+    if (!settled || !matches(request)) return fail('view_changed');
     abort(request);
     if (request.pointer) {
       if (!agentCaret(request.pointer.id, '', request, scroll.element)) return fail('target_not_visible');
@@ -1583,8 +1587,8 @@
       const {context_handle, selection, target, text, truncated, ...value} = result;
       if (value.outcome === 'selection') {
         const state = await snapshot();
-        return {...value, selection: state.selection, documentId: state.documentId, documentRevision: state.revision,
-          representation: 'source', next: 'document.observe'};
+        return {...value, selection: {...state.selection, ...(typeof text === 'string' ? {text, truncated: !!truncated} : {})},
+          documentId: state.documentId, documentRevision: state.revision, representation: 'source', next: 'document.observe'};
       }
       return {...value, ...(typeof text === 'string' ? {text, truncated: !!truncated} : {})};
     },
@@ -2291,7 +2295,7 @@
           typeof value.historyComplete === 'boolean' && value.historyComplete !== before.historyComplete ||
           value.journal && (value.revision !== before.revision || value.journal.length !== before.journal?.length ||
             value.journal.some((row, index) => (before.journal?.[index]?.remoteTransactionId || before.journal?.[index]?.id) !== row.id ||
-              JSON.stringify(row.authored ?? null) !== JSON.stringify(before.journal?.[index]?.authored ?? null)))) {
+              globalThis.RapierKernel.canonicalJson(row.authored ?? null) !== globalThis.RapierKernel.canonicalJson(before.journal?.[index]?.authored ?? null)))) {
         const row = _rapierPrefixSuffixDiff(before.text, value.text);
         let carriedLedger, journal, plan;
         const mapped = new Map();

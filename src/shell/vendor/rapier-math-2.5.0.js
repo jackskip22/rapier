@@ -21,8 +21,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-(function(){
-'use strict';
 /*!
 Copyright 2012--2014 for Latin Modern Math OTF by B. Jackowski, P. Strzelczyk and P. Pianowski (on behalf of TeX users groups). This work is released under the GUST Font License -- see http://tug.org/fonts/licenses/GUST-FONT-LICENSE.txt for details.
 
@@ -480,8 +478,21 @@ Important Recommendations
    to comprise the Work and, in such a case, the licensee would be
    entitled to make reasonable conjectures as to which files comprise
    the Work.
+*/
+(function(){
+'use strict';
+/*!
+Copyright 2012--2014 for Latin Modern Math OTF by B. Jackowski, P. Strzelczyk and P. Pianowski (on behalf of TeX users groups). This work is released under the GUST Font License -- see http://tug.org/fonts/licenses/GUST-FONT-LICENSE.txt for details.
 
+Rapier math font data, derived from Latin Modern Math 1.959.
+Changes: SVG outline conversion, character and MATH data extraction,
+optical-form closure, derived contour profiles and lossless path packing.
+Original outlines are unchanged. Hinting and text shaping tables are omitted.
+The font authors do not maintain this conversion.
+Complete original work: https://mirrors.ctan.org/fonts/lm-math.zip
+Conversion details: FONT-SOURCE.md.
 
+Complete license: FONT-LICENSE.txt (GUST Font License and LPPL 1.3c).
 */
 const MATH_FONT={"units":1000,"xHeight":431,"constants":{"ScriptPercentScaleDown":70,"ScriptScriptPercentScaleDown":50,"DelimitedSubFormulaMinHeight":1300,"DisplayOperatorMinHeight":1300,"MathLeading":154,"AxisHeight":250,"AccentBaseHeight":450,"FlattenedAccentBaseHeight":664,"SubscriptShiftDown":247,"SubscriptTopMax":344,"SubscriptBaselineDropMin":200,"SuperscriptShiftUp":363,"SuperscriptShiftUpCramped":289,"SuperscriptBottomMin":108,"SuperscriptBaselineDropMax":250,"SubSuperscriptGapMin":160,"SuperscriptBottomMaxWithSubscript":344,"SpaceAfterScript":56,"UpperLimitGapMin":200,"UpperLimitBaselineRiseMin":111,"LowerLimitGapMin":167,"LowerLimitBaselineDropMin":600,"StackTopShiftUp":444,"StackTopDisplayStyleShiftUp":677,"StackBottomShiftDown":345,"StackBottomDisplayStyleShiftDown":686,"StackGapMin":120,"StackDisplayStyleGapMin":280,"StretchStackTopShiftUp":111,"StretchStackBottomShiftDown":600,"StretchStackGapAboveMin":200,"StretchStackGapBelowMin":167,"FractionNumeratorShiftUp":394,"FractionNumeratorDisplayStyleShiftUp":677,"FractionDenominatorShiftDown":345,"FractionDenominatorDisplayStyleShiftDown":686,"FractionNumeratorGapMin":40,"FractionNumDisplayStyleGapMin":120,"FractionRuleThickness":40,"FractionDenominatorGapMin":40,"FractionDenomDisplayStyleGapMin":120,"SkewedFractionHorizontalGap":350,"SkewedFractionVerticalGap":96,"OverbarVerticalGap":120,"OverbarRuleThickness":40,"OverbarExtraAscender":40,"UnderbarVerticalGap":120,"UnderbarRuleThickness":40,"UnderbarExtraDescender":40,"RadicalVerticalGap":50,"RadicalDisplayStyleVerticalGap":148,"RadicalRuleThickness":40,"RadicalExtraAscender":40,"RadicalKernBeforeDegree":278,"RadicalKernAfterDegree":-556,"RadicalDegreeBottomRaisePercent":60},"minConnectorOverlap":20,"kern":{},"edgeStep":32,"textXHeight":530,"textUnits":1000};
 {
@@ -1106,6 +1117,8 @@ class MathTexParser {
     }
     if (Object.hasOwn(MATH_TEX_ACCENTS, name)) {
       const [value, position, stretch] = MATH_TEX_ACCENTS[name];
+      // mathtools' \overbracket[rule][height]{...}: the font's bracket keeps its own rule and height.
+      if (/bracket$/.test(name) && this.optionalRaw()) this.optionalRaw();
       return this.node('accent', {base: this.argument(), value, position, stretch, ...(/brace$/.test(name) ? {limits: 'always'} : {})});
     }
     if (/^[{}%$&#_]$/.test(name)) return this.literal(name, {variant: 'roman'});
@@ -1204,7 +1217,7 @@ class MathTexParser {
     }
     if (name === 'definecolor') {
       const colorName = this.plainArgument(), model = this.plainArgument(), value = this.plainArgument();
-      if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(colorName)) this.error('invalid-color', 'Invalid colour name.', token);
+      if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(colorName)) this.error('invalid-color', 'Invalid color name.', token);
       this.colors[colorName] = this.color(value, model, token); return null;
     }
     // MathJax's bbox: a background colour, a padding length and a CSS border whose last word is its colour.
@@ -1231,7 +1244,7 @@ class MathTexParser {
     }
     if (name === 'require') {
       const value = this.plainArgument();
-      if (!MATH_TEX_PACKAGES.has(value)) this.error('unsupported-package', 'Unsupported maths package: ' + value + '.', token, name);
+      if (!MATH_TEX_PACKAGES.has(value)) this.error('unsupported-package', 'Unsupported math package: ' + value + '.', token, name);
       return null;
     }
     if (name === 'href') {
@@ -1337,7 +1350,7 @@ class MathTexParser {
     if (name === 'textasciitilde') return this.literal('~', {variant: 'roman'});
     if (name === 'textasciicircum') return this.literal('^', {variant: 'roman'});
     if (['end', 'right', '\\', 'cr', 'of'].includes(name)) this.error('unexpected-command', '\\' + name + ' has no matching opening command.', token);
-    this.error('unsupported-command', 'Unsupported maths command: \\' + name + '.', token);
+    this.error('unsupported-command', 'Unsupported math command: \\' + name + '.', token);
   }
 
   delimiterArgument() {
@@ -1354,7 +1367,7 @@ class MathTexParser {
       this.error('unsafe-link', 'A link address cannot contain TeX commands.', item);
     }).join('').trim();
     if (!/^https?:\/\/[^\s<>"'\\]+$/i.test(href) || /[\u0000-\u0020\u007f]/.test(href))
-      this.error('unsafe-link', 'A maths link must use an HTTP or HTTPS address.', token);
+      this.error('unsafe-link', 'A math link must use an HTTP or HTTPS address.', token);
     return href;
   }
   dimension(value, token = this.rawPeek()) {
@@ -1392,12 +1405,12 @@ class MathTexParser {
         return '#' + rgb.map(number => Math.round(number * (model === 'RGB' ? 1 : 255)).toString(16).padStart(2, '0')).join('');
       }
     }
-    this.error('invalid-color', 'Unsupported or invalid colour value.', token, 'color');
+    this.error('invalid-color', 'Unsupported or invalid color value.', token, 'color');
   }
 
   environment(fullName, token) {
     const env = fullName.replace(/\*$/, '');
-    if (!MATH_TEX_ENVIRONMENTS.has(env)) throw Object.assign(new MathTexError('unsupported-environment', 'Unsupported maths environment: ' + fullName + '.', token.offset, 'begin'), {environment: env});
+    if (!MATH_TEX_ENVIRONMENTS.has(env)) throw Object.assign(new MathTexError('unsupported-environment', 'Unsupported math environment: ' + fullName + '.', token.offset, 'begin'), {environment: env});
     return this.nested(() => {
       let options = {};
       const position = this.optionalRaw();
@@ -2031,7 +2044,7 @@ class MathTexParser {
     let raw;
     if (name === 'unicode') {
       const metrics = this.optionalRaw(), font = this.optionalRaw();
-      if (metrics || font) this.error('unsupported-character-option', 'Unicode characters use the embedded maths font.', token);
+      if (metrics || font) this.error('unsupported-character-option', 'Unicode characters use the embedded math font.', token);
       raw = this.plainArgument();
     } else if (this.is('{')) raw = this.plainArgument();
     else {
@@ -2061,6 +2074,11 @@ function parseMathTexPreview(source, error, caret = source.length) {
   caret = Math.max(0, Math.min(source.length, Math.floor(caret) || 0));
   let text = source;
   const tail = /(?<!\\)\\(?:[A-Za-z]*|(?:begin|end)\{[A-Za-z*]*)$/.exec(text.slice(0, caret));
+  // A name being typed previews blank; a finished misspelling (no known name continues it) keeps its fix.
+  if (tail && error?.code === 'unsupported-command' && error.offset === tail.index && /^\\[A-Za-z]+$/.test(tail[0])) {
+    const name = tail[0].slice(1), suggestion = mathSuggest(name);
+    if (suggestion && !mathTexNames.command.some(candidate => candidate.length > name.length && candidate.startsWith(name))) return null;
+  }
   if (tail) text = text.slice(0, tail.index) + ' '.repeat(tail[0].length) + text.slice(caret);
   const atEnd = (cause, length) => /^unclosed-(group|option|environment)$/.test(cause.code) || cause.offset >= length;
   for (let attempt = 0; attempt < 24; attempt++) {
@@ -2086,10 +2104,12 @@ function parseMathTexPreview(source, error, caret = source.length) {
 // The command or environment a mistyped name most likely meant: one edit away (two for longer names), where swapping
 // two neighbouring letters is one edit.
 const MATH_TEX_STRUCTURE = 'frac dfrac tfrac cfrac binom dbinom tbinom genfrac sqrt root left right middle big Big bigg Bigg bigl bigr Bigl Bigr begin end text textbf textit mathrm mathbf operatorname overset underset stackrel xrightarrow xleftarrow not phantom smash hspace quad qquad color textcolor colorbox boxed cancel newcommand renewcommand def ce pu SI si num unit ang dv pdv qty abs norm bra ket braket substack tag label href';
+// Every other command the parser accepts: a name being typed toward one of them is not a misspelling.
+const MATH_TEX_OTHER = 'TeX let char rm rmfamily normalfont it itshape sl bf bfseries sf sffamily tt ttfamily cal displaystyle textstyle scriptstyle scriptscriptstyle tiny scriptsize footnotesize small normalsize large Large LARGE huge Huge over coloneq Coloneq Coloneqq Eqqcolon eqcolon Eqcolon colonapprox Colonapprox colonsim Colonsim LaTeX Set unicode bbox matrix pmatrix bmatrix Bmatrix vmatrix Vmatrix smallmatrix cases op atop choose brace brack above overwithdelims atopwithdelims abovewithdelims limits nolimits displaylimits long strut operatornamewithlimits mathop stackbin overunderset xlongequal hphantom vphantom mathstrut rlap llap clap mathrlap mathllap mathclap mspace kern mkern hskip mskip rule raise raisebox lower fcolorbox definecolor fbox bcancel xcancel sout cancelto providecommand gdef edef xdef DeclareMathOperator DeclarePairedDelimiter global outer require url notag nonumber relax allowbreak nobreak protect displaystylelimits mathopen mathclose Bra Ket Braket set nicefrac sfrac vcenter prescript sideset accentset underaccent slashed mod bmod pmod pod smashoperator mathmakebox idotsint mmlToken textbackslash textasciitilde textasciicircum dd derivative pderivative fdv functionalderivative differential quantity pqty bqty Bqty vqty absolutevalue innerproduct ip ketbra dyad outerproduct expval expectationvalue ev mel matrixel matrixelement comm commutator acomm anticommutator pb poissonbracket vb va vu vectorbold vectorarrow vectorunit grad gradient divergence curl laplacian eval evaluated order Tr tr trace rank diag Res mqty pmqty bmqty vmqty smqty qq qc qcc qif';
 let mathTexNames;
 function mathSuggest(name, environment = false) {
   if (typeof name !== 'string' || name.length < 2 || name.length > 32) return undefined;
-  mathTexNames ||= {command: [...new Set([...MATH_TEX_STRUCTURE.split(' '), ...Object.keys(MATH_SYMBOLS), ...Object.keys(MATH_TEX_VARIANTS), ...Object.keys(MATH_TEX_TEXT_VARIANTS),
+  mathTexNames ||= {command: [...new Set([...MATH_TEX_STRUCTURE.split(' '), ...MATH_TEX_OTHER.split(' '), ...Object.keys(MATH_SYMBOLS), ...Object.keys(MATH_TEX_VARIANTS), ...Object.keys(MATH_TEX_TEXT_VARIANTS),
     ...Object.keys(MATH_TEX_ACCENTS), ...MATH_NAMED_OPERATORS, ...MATH_LIMIT_OPERATORS, ...Object.keys(MATH_TEX_SPACES), ...Object.keys(MATH_TEX_LONG_ARROWS)])], environment: [...MATH_TEX_ENVIRONMENTS]};
   const limit = name.length > 5 ? 2 : 1;
   let best, bestDistance = limit + 1;
@@ -2533,8 +2553,8 @@ function mathScripts(n,c) {
     }
     return mathCompose(items,w,{class:b.class});
   }
-  const base=b.scriptBase || b,baseAscent=-base.inkTop,baseDescent=base.inkBottom,
-    upDescent=up?.inkBottom || 0,downAscent=-(down?.inkTop || 0),boxed=base.glyph===undefined || base.extended;
+  const base=b.scriptBase || b,boxed=base.glyph===undefined || base.extended,baseAscent=boxed?base.h:-base.inkTop,baseDescent=boxed?base.d:base.inkBottom,
+    upDescent=up?.inkBottom || 0,downAscent=-(down?.inkTop || 0);
   let rise=up?Math.max(mathConstant(c.cramped?'SuperscriptShiftUpCramped':'SuperscriptShiftUp',c,0.36),
     upDescent+mathConstant('SuperscriptBottomMin',c,0.1),boxed?baseAscent-mathConstant('SuperscriptBaselineDropMax',c,0.25):0):0;
   let drop=down?Math.max(mathConstant('SubscriptShiftDown',c,0.2),
@@ -2587,11 +2607,12 @@ function mathFraction(n,c,width) {
     const min=mathConstant(display?'StackDisplayStyleGapMin':'StackGapMin',c,display?0.4:0.15),gap=rise+drop-top.d-bottom.h;
     if (gap<min) {rise+=(min-gap)/2;drop+=(min-gap)/2;}
   }
-  // Null delimiter space pads only an unfenced fraction; a fence's own glyphs bound \binom.
-  const pad=n.left || n.right?0:mathScale(c)*0.1,w=Math.max(top.w,bottom.w)+2*pad;
-  const numeratorX=n.align==='l'?pad:n.align==='r'?w-pad-top.w:(w-top.w)/2;
-  const items=[[top,numeratorX,-rise],[bottom,(w-bottom.w)/2,drop]];
-  if (line) items.push([mathRule(w,line,-axis-line/2),0,0]);
+  // TeX's \nulldelimiterspace (1.2 pt, unscaled in scripts) flanks only an unfenced fraction, outside its rule;
+  // a fence's own glyphs bound \binom, and amsmath's \cfrac kerns its right one away.
+  const pad=n.left || n.right?0:c.size*0.12,inner=Math.max(top.w,bottom.w),w=inner+pad+(n.strut?0:pad);
+  const numeratorX=pad+(n.align==='l'?0:n.align==='r'?inner-top.w:(inner-top.w)/2);
+  const items=[[top,numeratorX,-rise],[bottom,pad+(inner-bottom.w)/2,drop]];
+  if (line) items.push([mathRule(inner,line,-axis-line/2),pad,0]);
   // LaTeX's \frac, \binom and \genfrac brace their fraction: an ordinary atom, not TeX's bare inner.
   const b=mathCompose(items,w,{class:'ord',innerLines:top.lines || 1,fitted:!!top.fitted});
   if(width!==undefined && c.screen)b.refit=ratio=>mathFraction(n,{...c,screen:{...c.screen,fontSize:c.screen.fontSize*ratio},cache:new WeakMap()},width);
@@ -2616,9 +2637,10 @@ function mathRoot(n,c) {
   const b=mathCompose(items,w);b.h+=extra;return b;
 }
 
-function mathFenceBoxes(left,right,body,c,size,least=1) {
+function mathFenceBoxes(left,right,body,c,size,least=0) {
   const axis=mathConstant('AxisHeight',c,0.25),reach=Math.max(body.h-axis,body.d+axis),target=size?size*mathScale(c):Math.max(least*mathScale(c),2*reach*0.901,2*reach-0.5*mathScale(c));
-  const a=mathDelimiter(left,target,c),b=mathDelimiter(right,target,c);
+  // An empty side is TeX's null delimiter: \nulldelimiterspace wide.
+  const side=value=>!value || value==='.'?mathBox(c.size*0.12):mathDelimiter(value,target,c),a=side(left),b=side(right);
   return mathCompose([[a,0,0],[body,a.w,0],[b,a.w+body.w,0]],a.w+body.w+b.w,{class:'inner'});
 }
 
@@ -2699,12 +2721,16 @@ function mathTable(n,c) {
     w+=gaps[i];if(i<cols) {starts.push(w);w+=widths[i];ends.push(w);}
   }
   const insertionHeight=Math.max(0,...insertionItems.map(([b])=>b.h)),insertionDepth=Math.max(0,...insertionItems.map(([b])=>b.d)),
-    heights=rows.map(row=>Math.max(0.7*cs,insertionHeight,...row.map(b=>b.h))),
-    depths=rows.map(row=>Math.max(0.2*cs,insertionDepth,...row.map(b=>b.d))),baselines=[];
+    // LaTeX's array strut is 0.7 and 0.3 of a 1.2 em baseline skip (cases stretches it by 1.2); rows abut,
+    // and only the display alignments add \jot between them.
+    strut=small || n.env==='CD'?[0.7,0.2]:/cases$/.test(n.env)?[1.008,0.432]:[0.84,0.36],
+    rowGap=small?0.2:n.env==='CD'?0.3:/^(align|flalign|split|[lr]?gather|eqnarray|multline)/.test(n.env)?0.3:0,
+    heights=rows.map(row=>Math.max(strut[0]*cs,insertionHeight,...row.map(b=>b.h))),
+    depths=rows.map(row=>Math.max(strut[1]*cs,insertionDepth,...row.map(b=>b.d))),baselines=[];
   let total=0;
   for(let r=0;r<rows.length;r++) {
     total+=heights[r];baselines.push(total);total+=depths[r];
-    if(r+1<rows.length)total+=(small?0.2:0.3)*cs+(n.rowGaps?.[r] || 0)*s;
+    if(r+1<rows.length)total+=rowGap*cs+(n.rowGaps?.[r] || 0)*s;
   }
   const offset=n.position==='t'?-(baselines[0] || 0):n.position==='b'?-(baselines.at(-1) || 0):-total/2-mathConstant('AxisHeight',c,0.25),items=[];
   for(let r=0;r<rows.length;r++) {
@@ -2779,7 +2805,7 @@ function mathLayout(n,c) {
       const local={...c,delimiterTarget:undefined};let b=mathLayout(n.body,local);
       // Only a \middle needs the second pass, sized to the first pass's body.
       if(n.body && mathHasMiddle(n.body)) {
-        const axis=mathConstant('AxisHeight',c,0.25),reach=Math.max(b.h-axis,b.d+axis),target=Math.max(mathScale(c),2*reach*0.901,2*reach-0.5*mathScale(c));
+        const axis=mathConstant('AxisHeight',c,0.25),reach=Math.max(b.h-axis,b.d+axis),target=Math.max(2*reach*0.901,2*reach-0.5*mathScale(c));
         b=mathLayout(n.body,{...local,delimiterTarget:target});
       }
       b=mathFenceBoxes(n.left,n.right,b,local,n.size);
@@ -2829,7 +2855,7 @@ function mathLayout(n,c) {
     case 'raise': {const b=mathLayout(n.body,c),s=mathScale(c);return mathCompose([[b,0,n.center?(b.h-b.d)/2-mathConstant('AxisHeight',c,0.25):-n.amount*s]],b.w,{class:b.class,...(n.height===undefined?{}:{h:n.height*s}),...(n.depth===undefined?{}:{d:n.depth*s})});}
     case 'rule': {const s=mathScale(c);return mathRule(n.width*s,(n.height+n.depth)*s,-n.height*s);}
     case 'link': {const b=mathLayout(n.body,c);const url=new URL(n.href);if(!['http:','https:'].includes(url.protocol))throw Object.assign(new Error('Unsupported equation link'),{code:'unsafe-url'});b.svg='<a href="'+mathEscape(n.href)+'" aria-label="'+mathEscape(n.href)+'" tabindex="0" target="_blank" rel="noopener noreferrer">'+b.svg+'</a>';return b;}
-    default: throw Object.assign(new Error('Unsupported maths construct: '+n.type),{code:'unsupported-construct'});
+    default: throw Object.assign(new Error('Unsupported math construct: '+n.type),{code:'unsupported-construct'});
   }
 }
 
@@ -3897,7 +3923,7 @@ function mathRenderWithMathML(source, options = {}) {
 
 // SPDX-License-Identifier: MIT
 globalThis.RapierMath=Object.freeze({
-  version:'2.4.0', parse:parseMathTex,
+  version:'2.5.0', parse:parseMathTex,
   render:renderMath, renderToString:mathRenderToString,
   fit:mathFit, observe:mathObserve,
   toMathML:mathToMathML, renderWithMathML:mathRenderWithMathML,

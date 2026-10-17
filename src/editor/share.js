@@ -172,10 +172,16 @@ function _rapierSetPandocDialectEnabled(value) {
 
 
 function _rapierEditablePageFilename(name) {
-	const filename = String(name || 'document');
-	if (/\.rapier\.html$/i.test(filename)) return filename;
-	const stem = filename.replace(/(.)\.[a-z0-9]+$/i, '$1') || 'document';
-	return [...stem].slice(0, 244).join('') + '.rapier.html';
+	const filename = String(name || 'document'), carried = /\.rapier\.html$/i.exec(filename);
+	const stem = (carried ? filename.slice(0, carried.index) : filename.replace(/(.)\.[a-z0-9]+$/i, '$1')) || 'document';
+	let kept = '', bytes = 0;
+	for (const character of stem) {
+		const code = character.codePointAt(0);
+		bytes += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4;
+		if (bytes > 243) break;
+		kept += character;
+	}
+	return (kept || 'document') + (carried ? carried[0] : '.rapier.html');
 }
 
 async function _rapierReadSharedDocument(text, filename) {

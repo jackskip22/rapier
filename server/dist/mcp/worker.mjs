@@ -212,6 +212,14 @@ async function digest(value) {
   return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(value))), byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
+function holdsDrawing(text) {
+  if (/<metadata id="rapier-draw"/.test(text)) return true;
+  for (const match of text.matchAll(/data:image\/svg\+xml;base64,([A-Za-z0-9+/=]{16,})/g)) {
+    try { if (atob(match[1].slice(0, 16384)).includes('<metadata id="rapier-draw"')) return true; } catch {}
+  }
+  return false;
+}
+
 async function exportFile(env, { format, filename, docKind, text, base, file: supplied, signal }) {
   signal?.throwIfAborted();
   let file;
@@ -222,7 +230,8 @@ async function exportFile(env, { format, filename, docKind, text, base, file: su
       const response = await env.ASSETS?.fetch?.(new Request('https://rapier.internal/rapier.html', {signal}));
       if (!response?.ok || !/^text\/html(?:;|$)/i.test(response.headers.get('Content-Type') || '')) return { reason: 'export_page_unavailable' };
       const page = await readTextBody(response, MAX_EXPORT_BYTES, 'export page', 'EXPORT_PAGE_TOO_LARGE', false, signal);
-      const carries = docKind === 'markdown' ? portableNeeds(text, {base: typeof base === 'string' ? base : base?.text, flowchart: fence => parseFlowchart(fence).ok === true}) : [];
+      const carries = docKind === 'markdown' ? [...(holdsDrawing(text) ? ['drawing'] : []),
+        ...portableNeeds(text, {base: typeof base === 'string' ? base : base?.text, flowchart: fence => parseFlowchart(fence).ok === true})] : [];
       file = { name: exportFilename(filename, format), mimeType: 'text/html', bytes: encoder.encode(wrap(carry(page, carries), text, filename, base ? {base} : undefined)),
         fidelity: {...exportFidelity(format, docKind), carries} };
     } catch (error) {
@@ -249,11 +258,12 @@ async function exportToken(address, grant, env) {
   const mac = new Uint8Array(await crypto.subtle.sign('HMAC', key, encoder.encode(grant.id + ':' + grant.owner)));
   return 'rpexp_' + address + '.' + base64url(mac);
 }
-async function createExportGrant(file, owner, address, env, bearer = false) {
+async function createExportGrant(file, owner, address, env, bearer = false, authority = null) {
   const grant = {id: file.id || mintId('export_'), owner, name: file.name, mimeType: file.mimeType,
     bytes: file.bytes.byteLength, parts: Math.ceil(file.bytes.byteLength / CHUNK_CHARS), expiresAt: Date.now() + DAY,
     sha256: Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', file.bytes)), byte => byte.toString(16).padStart(2, '0')).join('')};
-  if (bearer) grant.hash = await digest(await exportToken(address, grant, env));
+  if (bearer || address && editorSecret(env)) grant.hash = await digest(await exportToken(address, grant, env));
+  if (!bearer && authority && Object.keys(authority).length) grant.authority = authority;
   return grant;
 }
 function newCapability() {
@@ -740,7 +750,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     if (Object.keys(args).some(key => !['url', 'agent', 'operation_id'].includes(key))) return toolError(failure('OPEN_ARGUMENTS_CONFLICT', 'Open a document link with url alone.'));
     let url; try {url = new URL(args.url);} catch {}
     const id = url && url.origin === new URL(request.url).origin && PAIRED_PATH.exec(url.pathname)?.[1];
-    if (!id || url.search || url.hash || !['oauth', 'server'].includes(authority.source)) return toolError(failure('DOCUMENT_UNAVAILABLE', 'A document link requires its authorized connection. Otherwise use the private document value.'));
+    if (!id || url.username || url.password || !['oauth', 'server'].includes(authority.source)) return toolError(failure('DOCUMENT_UNAVAILABLE', 'A document link requires its authorized connection. Otherwise use the private document value.'));
     const resolved = await resolveOwnerLink(env, pageAddress(id), authority);
     if (!resolved?.document) return toolError(failure('DOCUMENT_UNAVAILABLE', 'This document is unavailable to this connection.'));
     args = {document: resolved.document, ...(args.agent ? {agent: args.agent} : {}), ...(args.operation_id ? {operation_id: args.operation_id} : {})};
@@ -2215,7 +2225,7 @@ export class RapierDocument {
       if (input.operation === 'show' && input.args.target === 'ask') return await this.waitForReturn(input, lifetime.signal);
       if (input.operation === 'read' && input.args.as === 'image') return await this.inspectVisual(input, lifetime.signal);
       if (input.operation === 'export' && ['docx', 'pdf', 'page'].includes(input.args.format)) return await this.exportDocument(input, lifetime.signal);
-      if (input.operation === 'show' && ['view', 'preferences', 'file', 'read_aloud', 'plugin'].includes(input.args.target) || input.operation === 'export' && input.args.to === 'clipboard') return await this.requestEditor(input, lifetime.signal);
+      if (input.operation === 'show' && ['view', 'preferences', 'file', 'read_aloud', 'plugin', 'playback'].includes(input.args.target) || input.operation === 'export' && input.args.to === 'clipboard') return await this.requestEditor(input, lifetime.signal);
       if (['edit', 'undo'].includes(input.operation) ||
           input.operation === 'document.read' && input.args.paintSample) return await this.requestMaterials(input, lifetime.signal);
       return await this.exclusive(async () => {
@@ -2338,10 +2348,13 @@ export class RapierDocument {
       const head = this.ctx.storage.kv.get('head'), byHash = request.headers.get('X-Rapier-Export-Hash');
       const authority = this.requestAuthority(request);
       await this.assertAuthority(authority);
-      if (head && (byHash ? !head.bearer : head.bearer || head.ownerKey !== request.headers.get('X-Rapier-Owner'))) return new Response(null, {status: 404, headers});
+      if (head && (byHash ? !head.bearer && head.agentAccess === false : head.bearer || head.ownerKey !== request.headers.get('X-Rapier-Owner'))) return new Response(null, {status: 404, headers});
       if (!head || head.expiresAt <= Date.now()) return new Response(null, {status: 410, headers});
       const row = head.exports?.find(row => byHash ? row.hash === byHash : row.id === request.headers.get('X-Rapier-Export-ID'));
       if (!row) return new Response(null, {status: 404, headers});
+      if (byHash && row.authority) {
+        try { await this.assertAuthority({...row.authority}); } catch { return new Response(null, {status: 404, headers}); }
+      }
       if (row.expiresAt <= Date.now() || row.owner !== head.capabilityHash) return new Response(null, {status: 410, headers});
       if (!Number.isSafeInteger(row.bytes) || row.bytes < 0 || row.bytes > MAX_EXPORT_BYTES ||
           row.parts !== Math.ceil(row.bytes / CHUNK_CHARS)) throw new Error('export byte limit');
@@ -2429,6 +2442,7 @@ export class RapierDocument {
     if (signal?.aborted) return abandoned();
     const prepared = await this.exclusive(async () => {
       if (signal?.aborted) return {aborted: true};
+      await this.assertAuthority(input);
       const head = this.ctx.storage.kv.get('head'), mode = input.args.wait || 'message';
       const refused = reason => ({ value: { outcome: 'refused', reason } });
       if (!head || head.ownerKey !== input.ownerKey || head.capabilityHash !== input.capabilityHash || head.agentAccess === false || head.expiresAt <= Date.now()) return refused('return_unavailable');
@@ -3347,6 +3361,18 @@ export class RapierDocument {
         return toolError(failure('HOST_FILE_HYDRATION_CHANGED', 'This workspace was hydrated or edited already. Its current source was retained.'), head, {snapshot: current()});
       if (state.journal.some(row => row.principal === who.principal && row.requestId === args.commitId))
         return toolError(failure('COMMIT_RECEIPT_EXPIRED', 'This draft was already committed, but its exact receipt is no longer retained.'), head, { snapshot: current() });
+      if (Array.isArray(args.acts) && plain(args.acts[0])) {
+        let skip = 0, at = args.expectedRevision;
+        while (skip < args.acts.length - 1) {
+          const act = args.acts[skip], row = state.journal.find(entry => entry.baseRevision === at);
+          if (!plain(act) || !row || row.id !== act.id || !Array.isArray(act.splices) || canonicalJson(row.splices) !== canonicalJson(act.splices)) break;
+          skip++; at = row.revision;
+        }
+        if (skip) {
+          const spliced = args.acts.slice(0, skip).reduce((sum, act) => sum + act.splices.length, 0);
+          Object.assign(args, {acts: args.acts.slice(skip), expectedRevision: at, ...(Array.isArray(args.splices) ? {splices: args.splices.slice(spliced)} : {})});
+        }
+      }
       let original = state.text, originalMetadata = {filename: state.filename, docKind: state.docKind};
       let revision = state.revision, text, draftEdits, committedMetadata, draftClient = client(who);
       const log = [], remoteFields = new Set(), entries = [];
@@ -3528,15 +3554,15 @@ export class RapierDocument {
     if (operation === 'export' && value.exportId) {
       let grant = head.exports?.find(row => row.id === value.exportId);
       if (exported?.id) {
-        grant = await createExportGrant(exported, capabilityHash, input.exportAddress, this.env, head.bearer);
+        grant = await createExportGrant(exported, capabilityHash, input.exportAddress, this.env, head.bearer, head.bearer ? null : this.retainedAuthority(input));
         head.exports = [...head.exports || [], grant];
         publication = {grant, bytes: exported.bytes};
       }
       if (!grant || grant.owner !== capabilityHash || grant.expiresAt <= Date.now()) value = {...value, outcome: 'refused', reason: 'export_expired'};
       else {
-        const token = !input.exportAddress ? null : !head.bearer ? exportHandle(input.exportAddress, grant)
-          : editorSecret(this.env) ? await exportToken(input.exportAddress, grant, this.env) : null;
-        if (!token || head.bearer && await digest(token) !== grant.hash) value = {...value, outcome: 'refused', reason: 'export_unavailable'};
+        const token = !input.exportAddress ? null : grant.hash && editorSecret(this.env) ? await exportToken(input.exportAddress, grant, this.env)
+          : !head.bearer ? exportHandle(input.exportAddress, grant) : null;
+        if (!token || grant.hash && await digest(token) !== grant.hash) value = {...value, outcome: 'refused', reason: 'export_unavailable'};
         else {
           download = {type: 'resource_link', uri: input.exportOrigin + '/export/' + token, name: grant.name, mimeType: grant.mimeType, size: grant.bytes};
           value = {...value, filename: grant.name, mimeType: grant.mimeType, bytes: grant.bytes, downloadUrl: download.uri,

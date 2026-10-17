@@ -9,7 +9,7 @@ globalThis.RapierBundleIO = RapierBundleIO;
 const READER_VERSION = document.querySelector('meta[name="rapier-version"]')?.content || '';
 
 const reader = {
-	source: '', filename: 'untitled.md', docKind: 'markdown', codeLang: '', title: '',
+	source: '', filename: 'untitled.md', docKind: 'markdown', codeLang: '', title: '', bom: false,
 	loaded: false, generation: 0, render: 0, flowchartTried: -1, layout: null, hostTheme: '', hostAccent: '',
 	folded: new Set(), allowedRemote: false,
 	find: {ranges: [], current: 0, overflow: false},
@@ -69,12 +69,13 @@ function readerAccentOwner() {
 }
 
 
-async function readerLoad(source, filename, title) {
+async function readerLoad(source, filename, title, kind) {
 	const generation = ++reader.generation;
-	reader.source = source;
+	reader.bom = source.charCodeAt(0) === 0xFEFF;
+	reader.source = reader.bom ? source.slice(1) : source;
 	reader.filename = filename || 'untitled.md';
 	reader.title = title || '';
-	reader.docKind = _classifyDocKind(reader.filename);
+	reader.docKind = kind || _classifyDocKind(reader.filename);
 	reader.codeLang = reader.docKind === 'code' ? _langForExt(reader.filename) : '';
 	reader.folded.clear();
 	reader.allowedRemote = false;
@@ -106,7 +107,7 @@ async function readerRenderDocument() {
 	const generation = ++reader.render;
 	const host = $('editor-blocks');
 	if (readerSpeech.active) readerStopReading();
-	const metadata = {filename: reader.filename, docKind: reader.docKind, codeLang: reader.codeLang, bom: false};
+	const metadata = readerMetadata();
 	if (reader.docKind === 'markdown' && READER_FLOWCHART.test(reader.source)) await readerFlowchart();
 	if (generation !== reader.render) return false;
 	readerParser();
@@ -1174,7 +1175,7 @@ function readerSeekReading(event) {
 }
 
 
-const readerMetadata = () => ({filename: reader.filename, docKind: reader.docKind, codeLang: reader.codeLang, bom: false});
+const readerMetadata = () => ({filename: reader.filename, docKind: reader.docKind, codeLang: reader.codeLang, bom: reader.bom});
 const readerBaseName = () => reader.filename.replace(/\.[a-z0-9]+$/i, '') || 'document';
 const readerPandoc = () => { try { return localStorage.getItem('rapier:export.pandocDialect') === '1'; } catch (_) { return false; } };
 
@@ -1220,7 +1221,7 @@ function readerDownload(blob, filename) {
 
 async function readerShare() {
 	if (!_rapierEmbedFeatureAllowed('share')) return false;
-	const mime = reader.docKind === 'markdown' ? 'text/markdown' : 'text/plain', blob = new Blob([reader.source], {type: mime}), file = new File([blob], reader.filename, {type: mime});
+	const mime = reader.docKind === 'markdown' ? 'text/markdown' : 'text/plain', blob = new Blob([reader.bom ? '\ufeff' : '', reader.source], {type: mime}), file = new File([blob], reader.filename, {type: mime});
 	try {
 		if (navigator.canShare?.({files: [file]})) {
 			await navigator.share({files: [file], title: reader.filename});
@@ -1311,27 +1312,35 @@ function readerToast(message, type = 'info', action = null) {
 	expire();
 }
 
-async function readerCommitOpen(text, filename, opening) {
+async function readerCommitOpen(text, filename, opening, kind) {
 	const {ticket, generation} = opening;
 	if (generation !== reader.generation || _rapierEmbed.active && !_rapierEmbed.fileOpen.current(ticket)) return false;
 	if (!_rapierDocumentNameIsAdmissible(filename)) throw new Error('That file has an invalid or overlong name');
 	const limit = _rapierEmbed.settings?.limits.documentBytes || RapierTextCodec.maxDocumentBytes;
 	if (new Blob([text]).size > limit) throw new Error('That file exceeds this reader’s document limit');
 	if (ticket) ticket.committing = true;
-	try { return await readerLoad(text, filename); }
+	try { return await readerLoad(text, filename, '', kind); }
 	finally { if (ticket) ticket.committing = false; }
 }
 
 async function readerCarriedDocument(text, filename) {
 	const start = text.indexOf('<script type="text/markdown" id="rapier-document"');
-	if (start < 0) return _rapierRenderModule('render')._rapierReadSharedDocument(text, filename);
+	if (start < 0 && !/\.rapier\.html$/i.test(filename)) return _rapierRenderModule('render')._rapierReadSharedDocument(text, filename);
 	const open = text.indexOf('>', start), end = text.indexOf('</script>', open);
 	const template = document.createElement('template');
 	template.innerHTML = text;
 	const carriers = template.content.querySelectorAll('#rapier-document');
-	if (open < 0 || end < 0 || carriers.length !== 1 || carriers[0].textContent !== text.slice(open + 1, end))
+	if (start < 0 || open < 0 || end < 0 || carriers.length !== 1 || carriers[0].tagName !== 'SCRIPT' ||
+			carriers[0].type !== 'text/markdown' || carriers[0].textContent !== text.slice(open + 1, end))
 		throw new Error('This HTML editor file has no complete editable document.');
-	return {source: _rapierDecodeCarried(carriers[0].textContent), filename: carriers[0].getAttribute('data-name') || 'document.md'};
+	const carrier = carriers[0], name = carrier.getAttribute('data-name') || 'document.md';
+	const kind = carrier.getAttribute('data-kind') || _classifyDocKind(name);
+	if (!_rapierDocumentNameIsAdmissible(filename) || !_rapierDocumentNameIsAdmissible(name) || !['markdown', 'text', 'code'].includes(kind))
+		throw new Error('This HTML editor file has invalid document metadata.');
+	const source = _rapierDecodeCarried(carrier.textContent), bom = source.charCodeAt(0) === 0xFEFF;
+	if (RapierTextCodec.normalizeDocument(source) !== (bom ? source.slice(1) : source))
+		throw new Error('This HTML editor file has invalid source text.');
+	return {source, filename: name, kind, bom};
 }
 
 async function readerOpenFile(file, opening = {generation: reader.generation}) {
@@ -1351,9 +1360,9 @@ async function readerOpenFile(file, opening = {generation: reader.generation}) {
 			const text = assets.appendAssetText('![' + alt + '][' + asset.label + ']', asset).source;
 			return readerCommitOpen(text, 'untitled.md', opening);
 		}
-		const text = await RapierTextCodec.readDocumentBlob(file);
+		const record = await RapierTextCodec.readDocumentRecord(file), text = (record.bom ? '\ufeff' : '') + record.text;
 		const carried = /\.html?$/i.test(file.name) ? await readerCarriedDocument(text, file.name) : null;
-		return await readerCommitOpen(carried ? readerDocumentText(carried.source) : text, carried ? carried.filename : file.name, opening);
+		return await readerCommitOpen(carried ? carried.source : text, carried ? carried.filename : file.name, opening, carried?.kind);
 	} catch (error) { readerToast(String(error?.message || error), 'error'); return false; }
 }
 
@@ -1444,7 +1453,11 @@ function readerBind() {
 			if (element) readerScrollTo(element);
 		} else {
 			event.preventDefault();
-			if (/^(?:https?|mailto):/i.test(href)) window.open(href, '_blank', 'noopener,noreferrer');
+			if (!/^(?:https?|mailto):/i.test(href)) return;
+			const open = () => window.open(href, '_blank', 'noopener,noreferrer');
+			const odd = _rapierRenderModule('render-sanitize')._rapierLinkDestinationToConfirm(href, link.textContent);
+			if (odd) readerToast('Link goes to ' + odd, 'info', {label: 'Open', fn: open});
+			else open();
 		}
 	});
 	$('editor-blocks').addEventListener('click', readerSeekReading);

@@ -37,6 +37,24 @@ export function authorizeParams(options, scope) {
 	return new URLSearchParams({response_type: 'code', client_id: options.clientId, redirect_uri: options.redirectUri,
 		scope, state: options.state, code_challenge: options.challenge, code_challenge_method: 'S256'});
 }
+export function tokenAuthorizeParams(options, scope) {
+	clientCheck(options);
+	if (options.scopes !== undefined || options.scope !== undefined) refuse('scopes', 'this provider requests only its fixed least-privilege scopes');
+	if (typeof options.state !== 'string' || !/^[A-Za-z0-9_-]{32,128}$/.test(options.state)) refuse('state', 'use a fresh random state for this sign-in');
+	return new URLSearchParams({response_type: 'token', client_id: options.clientId, redirect_uri: options.redirectUri, scope, state: options.state});
+}
+export function readTokenRedirect(fragment, expectedState, provider, scope) {
+	if (typeof fragment !== 'string') refuse('redirect', 'a redirect fragment is required');
+	const params = new URLSearchParams(fragment.replace(/^#/, ''));
+	if (!/^[A-Za-z0-9_-]{32,128}$/.test(expectedState || '') || params.getAll('state').length !== 1 || params.get('state') !== expectedState) refuse('state', "the redirect did not carry this sign-in's own state");
+	for (const key of ['access_token', 'token_type', 'expires_in', 'scope', 'error', 'error_description']) if (params.getAll(key).length > 1) refuse('redirect', 'the redirect repeated an authorization field');
+	if (params.has('error') && params.has('access_token')) refuse('redirect', 'the redirect contains both a token and an error');
+	if (params.has('error')) refuse('denied', params.get('error_description') || params.get('error'));
+	if (params.has('code') || params.has('refresh_token') || params.has('id_token')) refuse('redirect', 'the redirect carried a grant this sign-in did not ask for');
+	const expires = params.get('expires_in');
+	return readToken({access_token: params.get('access_token') ?? undefined, token_type: params.get('token_type') ?? undefined,
+		expires_in: /^[1-9][0-9]{0,8}$/.test(expires || '') ? Number(expires) : NaN, ...(params.has('scope') ? {scope: params.get('scope')} : {})}, provider, scope);
+}
 export function readRedirect(search, expectedState) {
 	if (typeof search !== 'string') refuse('redirect', 'a redirect query string is required');
 	const params = new URLSearchParams(search.replace(/^\?/, ''));

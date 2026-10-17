@@ -1,23 +1,20 @@
-import {authorizeParams, oauthIO, grantCode, refreshValue, readToken, pendingSignIn} from './provider-oauth.mjs';
+import {tokenAuthorizeParams, readTokenRedirect, oauthIO, refreshValue} from './provider-oauth.mjs';
+import {refuse} from './provider-http.mjs';
 export const AUTHORIZE_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
 export const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 export const REVOKE_ENDPOINT = 'https://oauth2.googleapis.com/revoke';
 export const SCOPES = 'https://www.googleapis.com/auth/drive.file';
+export const RETURNS_TOKEN = true;
 export function authorizeUrl(options = {}) {
-	const params = authorizeParams(options, SCOPES);
-	params.set('access_type', 'offline'); params.set('prompt', 'consent');
-	return AUTHORIZE_ENDPOINT + '?' + params;
+	return AUTHORIZE_ENDPOINT + '?' + tokenAuthorizeParams(options, SCOPES);
 }
+export const readReturn = (fragment, state) => readTokenRedirect(fragment, state, 'drive', SCOPES);
 export function createOAuthClient(options = {}) {
 	const io = oauthIO(options, 'Google Drive');
 	options = Object.freeze({...options});
-	const exchange = async ({code, verifier}) => readToken(await io.post(TOKEN_ENDPOINT, {...grantCode(code, verifier), client_id: options.clientId, redirect_uri: options.redirectUri}), 'drive', SCOPES);
-	return Object.freeze({pause: io.pause, exchange,
-		begin: () => pendingSignIn(options, authorizeUrl, exchange),
-		async refresh({refreshToken}) {
-			refreshValue(refreshToken);
-			return readToken(await io.post(TOKEN_ENDPOINT, {grant_type: 'refresh_token', refresh_token: refreshToken, client_id: options.clientId}), 'drive', SCOPES, refreshToken);
-		},
+	return Object.freeze({pause: io.pause,
+		async exchange() { refuse('unsupported', 'google drive returns its token to the page: there is no code to exchange'); },
+		async refresh() { refuse('auth', 'your google drive sign-in expired: sign in again.'); },
 		async revoke({token}) {
 			refreshValue(token);
 			return io.post(REVOKE_ENDPOINT, {token}, {empty: true});

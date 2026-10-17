@@ -81,8 +81,8 @@ function prepareMathSource(input, DOMParser) {
 	return sourceRoot ? root.outerHTML : root;
 }
 
-function createInertHtmlSanitizer({parseFragment, serialize, sanitizeHtml, safeRasterDataUrl}) {
-	if (![parseFragment, serialize, sanitizeHtml, safeRasterDataUrl].every(port => typeof port === 'function'))
+function createInertHtmlSanitizer({parseFragment, serialize, sanitizeHtml, safeRasterDataUrl, chromeOwnsId = id => /^rapier-(?!anchor-)/.test(id)}) {
+	if (![parseFragment, serialize, sanitizeHtml, safeRasterDataUrl, chromeOwnsId].every(port => typeof port === 'function'))
 		throw new TypeError('The inert HTML sanitizer requires every parser and filtering port');
 	const uri = /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i;
 	const uriSafe = new Set(['alt', 'class', 'for', 'id', 'label', 'name', 'pattern', 'placeholder', 'role', 'summary', 'title', 'value', 'style', 'xmlns']);
@@ -287,7 +287,9 @@ function _rapierInstallSanitizeHooks() {
 		node.removeAttribute('data-rapier-word-marker');
 		const style = node.getAttribute('style');
 		if (!style || !/mso-list/i.test(style)) return;
-		const {wordListLevel, wordListIsMarker} = globalThis.RapierMarkdownSpec;
+		const spec = globalThis.RapierMarkdownSpec;
+		if (!spec) return;
+		const {wordListLevel, wordListIsMarker} = spec;
 		const level = /^(?:P|LI|H[1-6])$/.test(node.nodeName) ? wordListLevel(style) : 0;
 		if (level) node.setAttribute('data-rapier-word-level', String(level));
 		else if (node.nodeName === 'SPAN' && wordListIsMarker(style)) node.setAttribute('data-rapier-word-marker', '1');
@@ -397,6 +399,15 @@ function _rapierChromeOwnsId(id) {
 	return _rapierSanitizeRuntime.chromeIds.has(String(id)) || /^rapier-(?!anchor-)/.test(id);
 }
 
+const RAPIER_BIDI_CONTROL = /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/;
+function _rapierLinkDestinationToConfirm(href, text = '') {
+	let url, address = String(href || '');
+	try { url = new URL(address); } catch (_) { return ''; }
+	try { address = decodeURIComponent(address); } catch (_) {}
+	return RAPIER_BIDI_CONTROL.test(String(text)) || RAPIER_BIDI_CONTROL.test(address) ||
+		url.hostname.split('.').some(label => /^xn--/i.test(label)) ? url.href : '';
+}
+
 function _rapierSafeRasterDataUrl(value) {
 	const match = RAPIER_RASTER_DATA_URL_RE.exec(value);
 	if (!match) return false;
@@ -476,7 +487,7 @@ function _rapierDropRemoteRules(rules, owner) {
 }
 
 function _rapierVerifyRasterBytes(bytes, mime) {
-	if (mime === 'image/jxl') return globalThis.RapierImageAssets.isJxl(bytes);
+	if (mime === 'image/jxl') return globalThis.RapierImageAssets?.isJxl(bytes) === true;
 
 	// declaration, doctype or generator/license comment before <svg itself, of whatever length its
 
@@ -490,6 +501,6 @@ function _rapierVerifyRasterBytes(bytes, mime) {
 
   return {_rapierVerifyRasterBytes, _rapierInstallSanitizeHooks, sanitizeRapierHtml,
     sanitizeRapierFragment: typeof DOMPurify?.sanitize === 'function' ? sanitizeRapierFragment : undefined,
-    diagramLabelStyle, escapeRapierHtmlText, _rapierChromeOwnsId, _rapierSafeRasterDataUrl, _rapierCssPresentationIsRemote, _rapierRemoteSubresourceOrigin, _rapierStyleWithoutRemoteUrls, _rapierStylesheetWithoutRemoteUrls, _rapierDropRemoteRules};
+    diagramLabelStyle, escapeRapierHtmlText, _rapierChromeOwnsId, _rapierLinkDestinationToConfirm, _rapierSafeRasterDataUrl, _rapierCssPresentationIsRemote, _rapierRemoteSubresourceOrigin, _rapierStyleWithoutRemoteUrls, _rapierStylesheetWithoutRemoteUrls, _rapierDropRemoteRules};
 }
 export {RAPIER_SANITIZE_FORBID_TAGS as forbidTags, RAPIER_SANITIZE_FORBID_ATTR as forbidAttributes, createRenderSanitizer, createInertHtmlSanitizer, RAPIER_SANITIZE_OPTIONS as options, prepareMathSource};

@@ -128,9 +128,9 @@ export async function collectPdfGlyphs(main, {width, check, faces = []}) {
     let visited = 0;
     for (const element of main.querySelectorAll('*')) {
       if (++visited % 128 === 0) {await new Promise(resolve => setTimeout(resolve, 0)); check();}
-      if (element.namespaceURI !== 'http://www.w3.org/1999/xhtml' || element.children.length || element.closest('svg,pre,.rapier-will-carrier')) continue;
-      const textNodes = Array.from(element.childNodes).filter(node => node.nodeType === 3);
-      if (textNodes.length !== 1 || !textNodes[0].data.trim() || !safe(element)) continue;
+      if (element.namespaceURI !== 'http://www.w3.org/1999/xhtml' || element.closest('svg,pre,.rapier-will-carrier')) continue;
+      const textNodes = Array.from(element.childNodes).filter(node => node.nodeType === 3 && node.data.trim());
+      if (!textNodes.length || !safe(element)) continue;
       const language = (element.closest('[lang]')?.getAttribute('lang') || document.documentElement.lang || '').toLowerCase();
       if (language && !/^en(?:-|$)/.test(language)) continue;
       const style = styleOf(element), family = familyName(style.fontFamily.split(',')[0]), weight = Number(style.fontWeight), size = Number.parseFloat(style.fontSize);
@@ -144,45 +144,47 @@ export async function collectPdfGlyphs(main, {width, check, faces = []}) {
       if (generated || altered || !Array.from(document.fonts).some(face => familyName(face.family) === family && face.status === 'loaded')) continue;
       const asset = faces.find(face => face.family === family && face.weight === weight);
       if (!asset) continue;
-      const font = readFont(asset, fontCache), preserve = /pre|break-spaces/.test(style.whiteSpace), node = textNodes[0];
-      const shaped = shape(node.data, font, preserve, style.fontVariantLigatures === 'normal' && !(Number.parseFloat(style.letterSpacing) || 0));
-      if (!shaped) continue;
+      const font = readFont(asset, fontCache), preserve = /pre|break-spaces/.test(style.whiteSpace);
       context.font = [style.fontStyle, style.fontWeight, style.fontSize, style.fontFamily].join(' ');
       const metrics = context.measureText('Hg'), ascent = metrics.fontBoundingBoxAscent;
       if (!Number.isFinite(ascent)) continue;
       const rgba = color(style.webkitTextFillColor || style.color), range = document.createRange();
-      let valid = true;
-      const placed = [];
-      for (const item of shaped) {
-        range.setStart(node, item.start); range.setEnd(node, item.end);
-        const ink = Array.from(range.getClientRects()).filter(rect => rect.height > 0);
-        const lines = [];
-        for (const rect of ink) {
-          const line = lines.find(row => Math.abs(row[0].top - rect.top) <= .25);
-          if (line) line.push(rect); else lines.push([rect]);
+      for (const node of textNodes) {
+        const shaped = shape(node.data, font, preserve, style.fontVariantLigatures === 'normal' && !(Number.parseFloat(style.letterSpacing) || 0));
+        if (!shaped) continue;
+        let valid = true;
+        const placed = [];
+        for (const item of shaped) {
+          range.setStart(node, item.start); range.setEnd(node, item.end);
+          const ink = Array.from(range.getClientRects()).filter(rect => rect.height > 0);
+          const lines = [];
+          for (const rect of ink) {
+            const line = lines.find(row => Math.abs(row[0].top - rect.top) <= .25);
+            if (line) line.push(rect); else lines.push([rect]);
+          }
+          lines.sort((a, b) => b.reduce((sum, rect) => sum + rect.width, 0) - a.reduce((sum, rect) => sum + rect.width, 0));
+          const previous = shaped[shaped.indexOf(item) - 1];
+          if (lines.length > 1 && !item.soft && !previous?.soft) {valid = false; break;}
+          const rects = lines[0] || [];
+          const first = (item.soft ? rects.find(rect => rect.width > 0) : null) || rects[0];
+          if (item.soft && !(first?.width > 0)) continue;
+          if (!first) {valid = false; break;}
+          const page = Math.max(0, Math.floor((first.left - origin.left + .01) / width));
+          Object.assign(item, {font, size, rgba, x: first.left - origin.left - page * width, baseline: first.top - origin.top + ascent});
+          placed.push(item);
         }
-        lines.sort((a, b) => b.reduce((sum, rect) => sum + rect.width, 0) - a.reduce((sum, rect) => sum + rect.width, 0));
-        const previous = shaped[shaped.indexOf(item) - 1];
-        if (lines.length > 1 && !item.soft && !previous?.soft) {valid = false; break;}
-        const rects = lines[0] || [];
-        const first = (item.soft ? rects.find(rect => rect.width > 0) : null) || rects[0];
-        if (item.soft && !(first?.width > 0)) continue;
-        if (!first) {valid = false; break;}
-        const page = Math.max(0, Math.floor((first.left - origin.left + .01) / width));
-        Object.assign(item, {font, size, rgba, x: first.left - origin.left - page * width, baseline: first.top - origin.top + ascent});
-        placed.push(item);
+        if (!valid || !placed.length) continue;
+        nodes.set(node, placed);
+        if (element.localName === 'li' || element.children.length || textNodes.length > 1) {
+          const wrap = document.createElement('span');
+          node.replaceWith(wrap); wrap.append(node);
+          wrap.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
+          hidden.push({wrap});
+          continue;
+        }
+        hidden.push({node: element, value: element.style.getPropertyValue('-webkit-text-fill-color'), priority: element.style.getPropertyPriority('-webkit-text-fill-color')});
+        element.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
       }
-      if (!valid || !placed.length) continue;
-      nodes.set(node, placed);
-      if (element.localName === 'li') {
-        const wrap = document.createElement('span');
-        node.replaceWith(wrap); wrap.append(node);
-        wrap.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
-        hidden.push({wrap});
-        continue;
-      }
-      hidden.push({node: element, value: element.style.getPropertyValue('-webkit-text-fill-color'), priority: element.style.getPropertyPriority('-webkit-text-fill-color')});
-      element.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
     }
     check(); return {nodes, restore};
   } catch (error) {restore(); throw error;}

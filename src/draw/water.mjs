@@ -25,7 +25,8 @@ function dimensions(w,h){if(!Number.isSafeInteger(w)||!Number.isSafeInteger(h)||
 function randomStream(seed){let state=seed>>>0;const random=()=>{state=(state+0x6d2b79f5)>>>0;let n=Math.imul(state^state>>>15,1|state);n^=n+Math.imul(n^n>>>7,61|n);return ((n^n>>>14)>>>0)/4294967296;};random.get=()=>state;random.set=value=>{state=value>>>0;};return random;}
 function coefficients(pigment){return (typeof pigment==='string'?waterPigmentById(pigment):pigment).coefficients;}
 function granulation(pigment){return (typeof pigment==='string'?waterPigmentById(pigment):pigment)?.granulation??0;}
-export function waterPigmentColour(value){const pigment=admitWaterPigment(value);if(!pigment)return null;if(typeof pigment==='string')return waterPigmentById(pigment).colour;return '#'+waterPigmentRGB(coefficients(pigment)).map(v=>Math.round(v*255).toString(16).padStart(2,'0')).join('');}
+const WATER_SWATCH_PATH=.55;
+export function waterPigmentColour(value){const pigment=admitWaterPigment(value);if(!pigment)return null;if(typeof pigment==='string')return waterPigmentById(pigment).colour;const c=coefficients(pigment),path=pigment.source==='pigment'?WATER_SWATCH_PATH:1;return '#'+waterPigmentRGB(c.map((v,i)=>i<7?v*path:v)).map(v=>Math.round(v*255).toString(16).padStart(2,'0')).join('');}
 function halfValue(bits){const sign=bits&0x8000?-1:1,exponent=(bits>>>10)&31,mantissa=bits&1023;return sign*(exponent===0?mantissa*2**-24:exponent===31?mantissa?NaN:Infinity:(1+mantissa/1024)*2**(exponent-15));}
 function reframeContact(contact,oldWidth,oldHeight,width,height,x,y){if(!contact)return;const s=contact.state;if(s){s.x=(s.x*oldWidth+x)/width;s.cx=(s.cx*oldWidth+x)/width;s.y=1-((1-s.y)*oldHeight+y)/height;s.cy=1-((1-s.cy)*oldHeight+y)/height;s.carry*=oldHeight/height;s.distance*=oldHeight/height;}contact.radiusScale*=oldHeight/height;}
 async function installWaterState(surface,state){
@@ -203,7 +204,8 @@ export class WaterSurface {
        if(previousTick!==null&&tick!==previousTick){
         await this._advance(1/60);for(const point of pending)yield {...point,tick:this.tick};pending=[];
         const from=pointIndex?path[pointIndex-1]:null,to=path[pointIndex];
-        for(let idle=previousTick+1;idle<tick;idle++){if(from){const u=(idle-previousTick)/(tick-previousTick);sample(from.map((v,i)=>i===3?idle:v+((to[i]??v)-v)*u));}previousContact.frame(1/60);await this._advance(1/60);yield {kind:'advance',tick:this.tick};}
+        for(let idle=previousTick+1;idle<tick;idle++){if(from){const u=(idle-previousTick)/(tick-previousTick);sample(from.map((v,i)=>i===3?idle:v+((to[i]??v)-v)*u));}previousContact.frame(1/60);
+         this.gpu.painting=!!previousContact.state;await this._advance(1/60);this.gpu.painting=true;yield {kind:'advance',tick:this.tick};}
        }
        do{sample(path[pointIndex]);pending.push({path:pathIndex,point:pointIndex++});}while(pointIndex<path.length&&path[pointIndex][3]===tick);
        if(pointIndex===path.length)contact.finish();

@@ -315,8 +315,10 @@ async function notes(options, errors, publish) {
 export async function collect({stamp = Date.now(), appVersion = globalThis.document?.querySelector('meta[name="rapier-version"]')?.content || 'unknown', onUpdate} = {}) {
 	const errors = [], result = {drafts: [], notes: [], archives: [], errors, pending: true};
 	const publish = () => { if (typeof onUpdate === 'function') onUpdate({...result}); };
+	let native = false;
 	try {
-		if (typeof window !== 'undefined' && window.RapierHost || globalThis.RapierPlatform?.recovery?.ownsStore === true) {
+		native = typeof window !== 'undefined' && !!window.RapierHost;
+		if (globalThis.RapierPlatform?.recovery?.ownsStore === true || native && typeof globalThis.RapierPlatform?.files?.exportArtifact !== 'function') {
 			result.kept = 'Your saved work stays in this app. Restart Rapier to try again.'; result.pending = false; publish(); return result;
 		}
 		if (globalThis.RAPIER_APPS_HOST === true || globalThis.__rapierServerRenderHost === true || typeof window !== 'undefined' && window.top !== window) {
@@ -325,7 +327,7 @@ export async function collect({stamp = Date.now(), appVersion = globalThis.docum
 	} catch (_) { errors.push('Saved work cannot be read in this host.'); result.pending = false; publish(); return result; }
 	const outcomes = await Promise.allSettled([
 		drafts(errors, rows => { result.drafts = rows; publish(); }),
-		notes({stamp, appVersion}, errors, rows => { Object.assign(result, rows); publish(); }),
+		native ? Promise.resolve({notes: [], archives: []}) : notes({stamp, appVersion}, errors, rows => { Object.assign(result, rows); publish(); }),
 	]);
 	for (let index = 0; index < outcomes.length; index++) {
 		const outcome = outcomes[index];
@@ -334,5 +336,7 @@ export async function collect({stamp = Date.now(), appVersion = globalThis.docum
 		}
 		else errors.push((index ? 'Notes: ' : 'Drafts: ') + message(outcome.reason));
 	}
+	if (native) result.kept = result.drafts.length ? 'Your notes stay in this app. Save your unsaved drafts, then restart Rapier.'
+		: 'Your saved work stays in this app. Restart Rapier to try again.';
 	result.pending = false; publish(); return result;
 }

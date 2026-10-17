@@ -445,6 +445,7 @@ export function mountHtmlBlocks(doc, options = {}) {
             if (info) {pixels += info.width * info.height; if (pixels > 24000000) throw new Error('HTML image pixel budget'); admitted[url] = {width: info.width, height: info.height, animated: !!info.animated};}
             if (match[1].toLowerCase() === 'image/svg+xml') {
               const svgText = new win.TextDecoder('utf-8', {fatal: true}).decode(bytes);
+              if (/<!\s*(?:DOCTYPE|ENTITY)\b/i.test(svgText)) throw new Error('SVG declarations are unsupported');
               const parsed = new win.DOMParser().parseFromString(svgText, 'image/svg+xml');
               if (parsed.querySelector('parsererror') || parsed.documentElement.localName !== 'svg') throw new Error('Invalid SVG image');
               const svg = doc.importNode(parsed.documentElement, true);
@@ -585,8 +586,8 @@ export function mountHtmlBlocks(doc, options = {}) {
   win.addEventListener('pagehide', hidden); win.addEventListener('pageshow', shown); if (!options.root) doc.rapierObjects = api; scan(); return api;
 }
 
-export async function materializeObjects(root, {signal, width = 640, imageInfo, poster, bestEffort = false, issues = []} = {}) {
-  const doc = root.ownerDocument, win = doc.defaultView;
+export async function materializeObjects(root, {signal, width = 640, imageInfo, poster, bestEffort = false, issues = [], document: live} = {}) {
+  const doc = root.ownerDocument.defaultView ? root.ownerDocument : live, win = doc.defaultView;
   const images = [...root.querySelectorAll('img[data-rapier-html],img[data-rapier-animation]')];
   if (images.length > 64) throw new Error('Object export count budget');
   for (const image of images) {

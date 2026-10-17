@@ -98,6 +98,16 @@ function localHost(host) {
 }
 export function s3Destination({endpoint, bucket, addressingStyle, vaultId, prefix = 'rapier/',
 	network = 'public', allowInsecureLan = false} = {}) {
+	const place = s3Bucket({endpoint, bucket, addressingStyle, network, allowInsecureLan});
+	if (typeof vaultId !== 'string' || !/^[a-f0-9]{32}$/.test(vaultId)) refuse('config', 'a bucket, explicit addressing style and opaque vault id are required');
+	if (typeof prefix !== 'string' || prefix.startsWith('/') || /[\x00-\x1f\x7f\\]/.test(prefix) || prefix.split('/').some(p => p === '.' || p === '..'))
+		refuse('authority', 'the configured prefix must stay inside the selected bucket');
+	encodeObjectKey(prefix);
+	const root = (prefix && !prefix.endsWith('/') ? prefix + '/' : prefix) + vaultId + '/';
+	if (te.encode(root).length > 800) refuse('config', 'the vault prefix leaves too little room for immutable object names');
+	return Object.freeze({...place, root});
+}
+export function s3Bucket({endpoint, bucket, addressingStyle, network = 'public', allowInsecureLan = false} = {}) {
 	if (typeof endpoint !== 'string' || !endpoint.trim() || /[\x00-\x20\x7f\\]/.test(endpoint.trim())) refuse('config', 'enter the S3 API origin in Sync');
 	const address = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(endpoint.trim()) ? endpoint.trim() : 'https://' + endpoint.trim();
 	if (!/^[A-Za-z][A-Za-z0-9+.-]*:\/\/[^/?#@]+\/?$/.test(address)) refuse('authority', 'the endpoint must be an API origin without a path, credentials, query or fragment');
@@ -110,18 +120,13 @@ export function s3Destination({endpoint, bucket, addressingStyle, vaultId, prefi
 	if (network === 'public' && localHost(url.hostname)) refuse('authority', 'this is a LAN endpoint; select LAN in Sync before connecting');
 	if (url.protocol !== 'https:' && !(network === 'lan' && allowInsecureLan)) refuse('authority', 'HTTPS is required unless insecure LAN access was explicitly approved in Sync');
 	if (typeof bucket !== 'string' || !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket) || /\.\.|\.-|-\./.test(bucket) ||
-		!['path', 'virtual-host'].includes(addressingStyle) || typeof vaultId !== 'string' || !/^[a-f0-9]{32}$/.test(vaultId)) refuse('config', 'a bucket, explicit addressing style and opaque vault id are required');
-	if (typeof prefix !== 'string' || prefix.startsWith('/') || /[\x00-\x1f\x7f\\]/.test(prefix) || prefix.split('/').some(p => p === '.' || p === '..'))
-		refuse('authority', 'the configured prefix must stay inside the selected bucket');
-	encodeObjectKey(prefix);
-	const root = (prefix && !prefix.endsWith('/') ? prefix + '/' : prefix) + vaultId + '/';
-	if (te.encode(root).length > 800) refuse('config', 'the vault prefix leaves too little room for immutable object names');
+		!['path', 'virtual-host'].includes(addressingStyle)) refuse('config', 'a bucket, explicit addressing style and opaque vault id are required');
 	const endpointOrigin = url.origin;
 	if (addressingStyle === 'virtual-host') {
 		if (url.hostname.startsWith('[') || /^\d+\.\d+\.\d+\.\d+$/.test(url.hostname)) refuse('config', 'an IP endpoint requires explicit path-style addressing');
 		url.hostname = bucket + '.' + url.hostname;
 	}
-	return Object.freeze({endpoint: endpointOrigin, origin: url.origin, bucket, addressingStyle, root, network,
+	return Object.freeze({endpoint: endpointOrigin, origin: url.origin, bucket, addressingStyle, network,
 		path: addressingStyle === 'path' ? '/' + bucket + '/' : '/'});
 }
 function stopBody(res) { try { const p = res.body?.cancel(); if (p?.catch) void p.catch(() => {}); } catch {} }

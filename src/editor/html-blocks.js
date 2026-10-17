@@ -37,7 +37,7 @@ const _rapierDocumentObjects = (() => {
       if (size.width !== +match[2] || size.height !== +match[3] || size.width * size.height > 1048576) return null;
       held.add(label); return {url: row.url, contour: match[1], width: size.width, height: size.height};
     };
-    await renderer().materializeObjects(root, {signal, poster, bestEffort: !strict, issues});
+    await renderer().materializeObjects(root, {signal, poster, bestEffort: !strict, issues, document});
     let next = source, missing = 0;
     const appended = [];
     for (const [image, label] of labels) {

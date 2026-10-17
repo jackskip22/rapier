@@ -2,7 +2,7 @@
 
 Turn Markdown into one offline HTML file that contains the full Rapier editor. It opens in any browser, on a phone or
 computer, with no account. People read, edit, draw and paint; agents hand over documents, show what changed and get
-the edited copy back. Start with `npx rapier-html@1.2.7 notes.md`.
+the edited copy back. Start with `npx rapier-html@1.2.8 notes.md`.
 
 Use it for a plan to rearrange, a guide to annotate, a draft to keep writing, or a revision to review. The file works
 without any hosted workspace.
@@ -12,19 +12,19 @@ without any hosted workspace.
   (Math, Mermaid); `--include draw` adds drawing and painting. Notes never travel.
 - `--return` adds a one-use Send back address from the agent door.
 - `--view draw` opens on Draw. `--compare original.md` opens the edit with its diff; `--by <name>` attributes it.
-- `wrap` and `unwrap` move a document into a page and back out, exactly.
+- `writePage(text, name)` makes the page in one call; `unwrap` gives the document back, exactly.
 
 Needs Node 22 or newer.
 
 ```sh
-npx -- rapier-html@1.2.7 notes.md                          # the editor, notes.md inside it, written beside the file
-npx -- rapier-html@1.2.7 notes.md --view draw              # opens on Draw: sketch and paint, the document behind it
-npx -- rapier-html@1.2.7 notes.md --include draw,math     # carries Draw and Math (default: what the document needs)
-npx -- rapier-html@1.2.7 notes.md --drawing sketch.svg     # carries a drawing, opened on Draw over the document
-npx -- rapier-html@1.2.7 revised.md --compare original.md # opens showing what changed
-npx -- rapier-html@1.2.7 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT" # Send back
-npx -- rapier-html@1.2.7 notes.md out.html                 # a named output
-npm install rapier-html@1.2.7                              # as a library: wrap, unwrap
+npx -- rapier-html@1.2.8 notes.md                          # the editor, notes.md inside it, written beside the file
+npx -- rapier-html@1.2.8 notes.md --view draw              # opens on Draw: sketch and paint, the document behind it
+npx -- rapier-html@1.2.8 notes.md --include draw,math     # carries Draw and Math (default: what the document needs)
+npx -- rapier-html@1.2.8 notes.md --drawing sketch.svg     # carries a drawing, opened on Draw over the document
+npx -- rapier-html@1.2.8 revised.md --compare original.md # opens showing what changed
+npx -- rapier-html@1.2.8 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT" # Send back
+npx -- rapier-html@1.2.8 notes.md out.html                 # a named output
+npm install rapier-html@1.2.8                              # as a library: writePage, unwrap
 ```
 
 The first `--` is for npm, so `--help` reaches the command. It never overwrites a file.
@@ -60,20 +60,21 @@ current document. After expiry or a refusal, Share offers Save instead; bring th
 Save this as `example.mjs` in the folder you installed into, then run `node example.mjs`:
 
 ```js
-import {readFile, writeFile} from 'node:fs/promises';
-import {wrap, unwrap} from 'rapier-html';
+import {writeFile} from 'node:fs/promises';
+import {writePage, unwrap} from 'rapier-html';
 
-const rapier = await readFile(new URL('./rapier.html', import.meta.resolve('rapier-html')), 'utf8');
 const words = '# Hello\r\n\r\nA note about </script> and C:\\Users\\me.\n';
-const page = wrap(rapier, words, 'hello.md', {view: 'draw'});   // opens on Draw, the note behind it
+const page = await writePage(words, 'hello.md', {view: 'draw'});  // opens on Draw, the note behind it
 console.log('words back exactly:', unwrap(page).text === words);
 await writeFile('hello.rapier.html', page, {flag: 'wx'});        // 'wx': never over an existing file
 ```
 
-- `wrap(rapierHtml, text, name, {view, drawing, drawingName, base, baseName, by, at, return: returnURL, return_expires_at})`
+- `writePage(text, name, {include, view, drawing, drawingName, base, baseName, by, at, return: returnURL, return_expires_at})`
+  carries the editor with what the document displays with (`include` names the parts: `drawing`, `math`, `mermaid`).
+- `wrap(rapierHtml, text, name, options)` does the same into a page you supply; `carry(rapierHtml, parts)` cuts one.
 - `unwrap(pageHtml)` returns the same fields, plus the validated `comparisonBase` record, with `null` for anything the
   page doesn't carry.
-- Also exported: `encodeCarried`, `decodeCarried` and `main`.
+- Also exported: `portableNeeds`, `encodeCarried`, `decodeCarried` and `main`. TypeScript declarations ship in `dist/page.d.mts`.
 
 ## How the page carries the document
 

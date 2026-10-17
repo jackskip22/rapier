@@ -10,7 +10,7 @@ const _RAPIER_WILL_UNSPACED_OPENER = '<!--will/';
 const _RAPIER_WILL_UNSPACED_CLOSER = '<!--/will';
 
 function hasWillMarkers(text) {
-	return /^<!-- ?(?:will\/|\/will)/m.test(String(text == null ? '' : text));
+	return /(?:^|[\r\n])<!-- ?(?:will\/|\/will)/.test(String(text == null ? '' : text));
 }
 
 function _rapierWillMarkerOf(content) {

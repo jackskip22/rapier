@@ -220,9 +220,11 @@ select{
 	left:0;
 	right:0;
 	z-index:160;display:flex;flex-direction:column;align-items:stretch;gap:var(--space-2);
+	overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;
 	pointer-events:none}
 .toast-container[data-rapier-transient-state="waiting"]{visibility:hidden}
-.toast-container > *{pointer-events:auto}
+.toast-container > *{flex:none;clip-path:inset(0);pointer-events:auto}
+.toast-container[data-rapier-notice-scroll] > *{touch-action:pan-y}
 .toast,
 .restore-notice{
 	transform:translate3d(0,0,0);
@@ -233,8 +235,8 @@ select{
 	animation:rapier-popup-enter 180ms var(--ease-micro) both;
 }
 @keyframes rapier-popup-enter{
-	from{transform:translate3d(0,12px,0);opacity:0}
-	to{transform:translate3d(0,0,0);opacity:1}
+	from{transform:translate3d(0,12px,0);clip-path:inset(0 0 12px);opacity:0}
+	to{transform:translate3d(0,0,0);clip-path:inset(0);opacity:1}
 }
 .toast{
 	display:flex;align-items:center;gap:var(--space-2);

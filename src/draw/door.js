@@ -6,14 +6,14 @@ const RAPIER_DRAW_DOOR_AT_BIRTH = (() => { try {
 	const fragment = /^#v\/(draw|watercolor)\/?$/.exec(String(location.hash || ''));
 	if (fragment) { history.replaceState(history.state, '', location.pathname + location.search); return fragment[1]; }
 	if (/^#v\/notes\/?$/.test(RAPIER_HASH_AT_BIRTH)) return null;
-	const path = /^\/(draw|watercolor)\/?$/.exec(String(location.pathname || ''))?.[1];
+	const path = /^\/(draw|watercolor|paint)\/?$/.exec(String(location.pathname || ''))?.[1];
 	if (path) return path;
 	return _rapierBareLaunch() && RapierPreferences.read('startIn') === 'paint' ? 'paint' : null;
 } catch (_) { return null; } })();
 function _rapierBareLaunch() {
 	try {
 		return window.self === window.top && !RAPIER_HASH_AT_BIRTH && !location.search &&
-			!/^\/(?:notes|draw|watercolor|privacy|commercial|agents)\/?$/.test(String(location.pathname || '')) &&
+			!/^\/(?:notes|draw|watercolor|privacy|commercial|agents|paint|markdown-editor|markdown-viewer|markdown-to-pdf|markdown-to-word|word-to-markdown|markdown-table-editor|mermaid-editor)\/?$/.test(String(location.pathname || '')) &&
 			!document.getElementById('rapier-document') && globalThis.RAPIER_APPS_HOST !== true &&
 			typeof globalThis.RAPIER_PAIRED_DOCUMENT !== 'string' && !window.RapierPlatform?.files?.hasPendingBoot?.();
 	} catch (_) { return false; }

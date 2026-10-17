@@ -37,8 +37,13 @@
 				"kind": "static-template",
 				"reason": "Alignment/action markup uses the fixed icon table; the separate size row interpolates admitted numeric size/range values. User text remains textarea.value."
 			},
+			"_rapierDrawShowTool": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "The tool box's markup is the fixed RAPIER_DRAW_ICONS entry and RAPIER_DRAW_TOOL_SHORT word for a tool name already checked against RAPIER_DRAW_TOOLS -- never document text."
+			},
 			"_rapierDrawUpdatePenBtn": {
-				"count": 2,
+				"count": 1,
 				"kind": "static-template",
 				"reason": "btn.innerHTML is looked up from the RAPIER_DRAW_ICONS table: constant markup, or a glyph the editor or Notes also draws, read from its one source (the editor's static markup, _RAPIER_COMMAND_ICONS, RAPIER_NOTES_ICONS) by _rapierDrawSourceGlyph -- never document text; the second site clears a colour row to '' when hiding it."
 			},

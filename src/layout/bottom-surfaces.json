@@ -2072,7 +2072,7 @@
         "declarations": [
           {
             "property": "inset-block-start",
-            "value": "0",
+            "value": "min(0px, calc((var(--md-line) * 1.75 - 44px) / 2))",
             "important": false
           }
         ]

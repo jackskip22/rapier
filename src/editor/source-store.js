@@ -297,6 +297,15 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 		}
 		return sourceStarts[low] + pieces[low].lineEnds[line - breakStarts[low] - 1];
 	};
+	const lineStarts = () => {
+		const starts = new Uint32Array(totalBreaks + 1);
+		let at = 1;
+		for (let index = 0; index < pieces.length; index++) {
+			const ends = pieces[index].lineEnds, offset = sourceStarts[index];
+			for (let row = 0; row < ends.length; row++) starts[at++] = offset + ends[row];
+		}
+		return starts;
+	};
 	const lineEnd = value => {
 		const line = Math.max(0, Math.floor(Number(value) || 0));
 		if (line >= totalBreaks) return length;
@@ -494,7 +503,7 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 		return true;
 	};
 	const store = Object.freeze({
-		read, integrity, integrityAsync, readSlice, contains, splice, capture, fork, lineAt, lineStart, lineEnd, sourceOffsetFromProjection,
+		read, integrity, integrityAsync, readSlice, contains, splice, capture, fork, lineAt, lineStart, lineStarts, lineEnd, sourceOffsetFromProjection,
 		projectionOffsetFromSource, warm, warmAsync,
 		get length() { return length; },
 		get lineCount() { return totalBreaks + 1; },

@@ -19,11 +19,14 @@ assert.equal(Object.keys(pkg.scripts || {}).length, 0);
 const rebuilt = await assembleMath({root: fileURLToPath(new URL('..', import.meta.url)), packageLayout: true});
 for (const [file, content] of rebuilt.modules) assert.equal(await read(file), content, 'exact native module: ' + file);
 const rendererLicense = await read('./src/math/LICENSE-MIT'), fontLicense = await read('./src/math/FONT-LICENSE.txt');
-for (const name of ['./LICENSE', './src/math/font.js', './' + resources.packageBundle]) {
+for (const name of ['./LICENSE', './' + resources.packageBundle]) {
   const text = await read(name);
-  if (!name.endsWith('font.js')) assert(text.includes(rendererLicense.trim()), name + ': renderer license');
+  assert(text.includes(rendererLicense.trim()), name + ': renderer license');
   assert(text.includes(fontLicense.trim()), name + ': complete font license');
 }
+// The font data keeps its copyright and notice and names the complete license beside it.
+const fontData = await read('./src/math/font.js');
+assert(fontData.includes(resources.font.copyright) && fontData.includes('Complete license: FONT-LICENSE.txt'), 'font.js: copyright and license notice');
 
 // Initialize Node's lazy Web API globals before observing module purity. This
 // allocates a local Response only; no network request or renderer evaluation.

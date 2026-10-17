@@ -25,11 +25,14 @@ export function createJPEGXLCodec({encoderFactory}) {
       stage = 'checking image';
       const jpeg = byteView(input?.bytes);
       if (!jpeg.byteLength || jpeg.byteLength > JPEG_XL_LIMITS.bytes) throw codecError('JXL_INPUT', 'The JPEG is empty or exceeds 16 MiB.');
+      if (!options || typeof options !== 'object' || Array.isArray(options)) throw codecError('JXL_OPTIONS', 'JPEG XL options are invalid.');
+      const effort = options.effort ?? 7;
+      if (!Number.isInteger(effort) || effort < 1 || effort > 9) throw codecError('JXL_OPTIONS', 'JPEG XL effort must be 1–9.');
       if (typeof encoderFactory !== 'function') throw codecError('JXL_UNAVAILABLE', 'The bundled JPEG XL codec is unavailable.');
       stage = 'starting encoder';
       encoder ||= encoderFactory();
       stage = 'carrying the JPEG';
-      return encoder.transcode(jpeg, options);
+      return encoder.transcode(jpeg, {...options, effort});
     },
     async reconstruct(input) {
       stage = 'restoring the JPEG';
@@ -87,7 +90,7 @@ export function installJPEGXLWorker(configuration) {
         progress?.(1);
         globalThis.postMessage({id, ok: true, bytes}, [bytes.buffer]);
       } else if (request.operation === 'transcode') {
-        const carried = await codec.transcode({bytes: request.bytes}, {progress: advance});
+        const carried = await codec.transcode({bytes: request.bytes}, {...request.options, progress: advance});
         progress?.(1);
         globalThis.postMessage({id, ok: true, ...carried}, [carried.bytes.buffer]);
       } else if (request.operation === 'reconstruct') {

@@ -6,17 +6,27 @@
 	let strip, preview, keys, fix, at = null, queued = false;
 
 	function around(text, caret) {
+		const match = globalThis.RapierMarkdownSpec.createMathMatcher(text, {singleDollar: true, brackets: false});
+		const found = (from, end, display) => caret >= from && caret <= end ? {from, caret: caret - from, tex: text.slice(from, end), display} : null;
+		const unescaped = (from, to, marker) => {
+			for (let i = from; i < to; i++) { if (text[i] === '\\') i++; else if (text.startsWith(marker, i)) return true; }
+			return false;
+		};
 		for (let i = 0; i < text.length; i++) {
-			if (text[i] === '\\' && text[i + 1] !== '(' && text[i + 1] !== '[') { i++; continue; }
-			const open = text.startsWith('$$', i) ? '$$' : text[i] === '$' ? '$' : text.startsWith('\\[', i) ? '\\[' : text.startsWith('\\(', i) ? '\\(' : '';
-			if (!open) continue;
-			const close = {'$$': '$$', '$': '$', '\\[': '\\]', '\\(': '\\)'}[open], from = i + open.length, inline = open === '$' || open === '\\(';
-			let to = text.indexOf(close, from);
-			const line = inline ? text.indexOf('\n', from) : -1;
-			if (line >= 0 && (to < 0 || line < to)) to = -1;
-			const end = to >= 0 ? to : inline && line >= 0 ? line : text.length;
-			if (caret >= from && caret <= end) return {from, caret: caret - from, tex: text.slice(from, end), display: !inline};
-			i = to >= 0 ? to + close.length - 1 : end;
+			if (text[i] === '\\') { i++; continue; }
+			if (text[i] !== '$') continue;
+			let run = i + 1;
+			while (text[run] === '$') run++;
+			const span = run - i <= 2 && match(i);
+			if (span) {
+				const math = found(span.bodyStart, span.bodyEnd, span.displayMode);
+				if (math) return math;
+				i = span.end - 1; continue;
+			}
+			const line = text.indexOf('\n', run), end = run - i === 2 ? text.length : line < 0 ? text.length : line;
+			if (run - i === 2 && !unescaped(run, text.length, '$$')) return found(run, end, true);
+			if (run - i === 1 && !/[ \t]/.test(text[run] || '') && !unescaped(run, end, '$')) return found(run, end, false);
+			i = run - 1;
 		}
 		return null;
 	}

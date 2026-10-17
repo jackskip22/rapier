@@ -122,44 +122,32 @@ function _rapierTableSwallowClick(pressed) {
 	setTimeout(() => document.removeEventListener('click', swallow, true), 800);
 }
 
-function _rapierTableEnter(editDiv, wrapper, block, cell) {
+function _rapierTableEnter(editDiv, wrapper, block, cell, opts = {}) {
 	const position = _rapierTableActionPosition(editDiv);
-	const raw = position && _tableRawFromBlock(block.id);
-	const info = raw ? _tableInfo(raw) : null;
-	if (!info || info.sepIdx < 0) return false;
-	const rowCount = 1 + info.dataIdxs.length;
-	_rapierCheckpointEdit(editDiv);
-	const selection = window.getSelection && window.getSelection(), range = selection && selection.rangeCount ? selection.getRangeAt(0) : null;
-	if (position.rowIndex === 0 && position.cellIndex === 0 && range && range.collapsed && cell.contains(range.startContainer) &&
-			_charOffsetForRangePoint(cell, range.startContainer, range.startOffset) === 0 && _rapierShownWrappers(_editorHostEl())[0] === wrapper &&
-			!_rapierNotesOwnTheDocument()) {
-		return _replaceOneBlockWithRawSet(block, [_rapierEmptyParagraphRaw(rapier.document.blocks.length + 1), block.raw], 1, 0);
+	const selection = window.getSelection && window.getSelection();
+	let range = selection && selection.rangeCount ? selection.getRangeAt(0) : null;
+	const table = cell.closest('table');
+	if (!position || !table || !range || !range.collapsed || !cell.contains(range.startContainer)) return false;
+	if (!opts.sourceCheckpointed) _commitLiveBlockBeforeStructure(block, wrapper, editDiv);
+	const offset = _charOffsetForRangePoint(cell, range.startContainer, range.startOffset);
+	const firstParagraph = cell.querySelector(':scope > p');
+	const firstLine = !firstParagraph || firstParagraph.contains(range.startContainer) || range.startContainer === cell && range.startOffset === 0;
+	if (position.rowIndex === 0 && position.cellIndex === 0 && offset === 0 && firstLine &&
+			_rapierShownWrappers(_editorHostEl())[0] === wrapper && !_rapierNotesOwnTheDocument()) {
+		const raw = opts.sourceCheckpointed ? _tableRawFromEdit(block.id) : block.raw;
+		return _replaceOneBlockWithRawSet(block, [_rapierEmptyParagraphRaw(rapier.document.blocks.length + 1), raw], 1, 0);
 	}
-	const typed = position.rowIndex > 0 ? String(cell.textContent || '').replace(/[\u200b\u00a0]/g, ' ').trim() : '';
-	if (/^\|.*[^\\]\|$/.test(typed) && range && range.collapsed && cell.contains(range.startContainer) &&
-			_charOffsetForRangePoint(cell, range.startContainer, range.startOffset) >= String(cell.textContent || '').replace(/\u200b/g, '').trimEnd().length &&
-			_rapierTableCellsOf(cell.closest('tr')).every(each => each === cell || !String(each.textContent || '').replace(/\u200b/g, '').trim())) {
-		const cells = _tableSplitRow(typed), at = info.dataIdxs[position.rowIndex - 1];
-		if (cells && at !== undefined) {
-			const separator = _tableIsSeparator(typed), lines = info.lines.slice();
-			lines[at] = _tableBuildRow(separator ? Array(info.cols).fill('') : Array.from({length: info.cols}, (_, index) => cells[index] || ''));
-			const next = separator ? position.rowIndex : position.rowIndex + 1;
-			if (!separator && next >= rowCount) lines.push(_tableBuildRow(Array(info.cols).fill('')));
-			if (!_replaceOneBlockWithRawSet(block, [lines.join('\n')], 0, 0)) return false;
-			const open = _rapierActiveEditDiv();
-			if (open) _rapierMoveTableCaret(open, next, 0);
-			return true;
-		}
+	let paragraph = _nodeAsElement(range.startContainer)?.closest('p');
+	if (!paragraph || paragraph.parentElement !== cell) {
+		paragraph = document.createElement('p');
+		while (cell.firstChild) paragraph.appendChild(cell.firstChild);
+		cell.appendChild(paragraph);
+		_setCursorCharOffset(paragraph, offset);
+		range = selection.getRangeAt(0);
 	}
-	if (position.rowIndex + 1 < rowCount) return _rapierMoveTableCaret(editDiv, position.rowIndex + 1, Math.min(position.cellIndex, Math.max(0, info.cols - 1)), true);
-	const last = position.rowIndex > 0 && _tableSplitRow(info.lines[info.dataIdxs[info.dataIdxs.length - 1]]);
-	if (!last || last.some(value => String(value || '').replace(/\u200b/g, '').trim())) {
-		_tableChangeRows(block.id, 1, { rowIndex: position.rowIndex, cellIndex: 0, charOffset: 0 });
-		return true;
-	}
-	const lines = info.lines.slice();
-	if (info.dataIdxs.length > 1) lines.splice(info.dataIdxs[info.dataIdxs.length - 1], 1);
-	return _replaceOneBlockWithRawSet(block, [lines.join('\n'), _rapierEmptyParagraphRaw(rapier.document.blocks.length + 1)], 1, 0, { keepEmpty: true });
+	const paragraphIndex = Array.from(cell.children).filter(node => node.tagName === 'P').indexOf(paragraph) + 1;
+	_insertQuoteParagraph(editDiv, range, paragraph);
+	return _tableApply(block.id, _tableRawFromDom(block.id, table), { ...position, paragraphIndex, charOffset: 0 });
 }
 
 function _rapierTableGrips(wrapper, position) {
@@ -523,10 +511,12 @@ function _rapierTableSelected() {
 	const range = selection.getRangeAt(0);
 	const cellOf = node => (node && (node.nodeType === 1 ? node : node.parentElement))?.closest?.('th,td') || null;
 	const wrapper = _blockWrapperOf(range.startContainer);
-	const editDiv = wrapper && wrapper.classList.contains('block-wrapper--editing') && wrapper.classList.contains('block-wrapper--table')
+	const editDiv = wrapper && wrapper.classList.contains('block-wrapper--editing')
 		? wrapper.querySelector(':scope > .block-edit') : null;
-	const table = editDiv && editDiv.querySelector('table');
-	if (!table || !editDiv.contains(range.startContainer) || !editDiv.contains(range.endContainer) ||
+	const table = editDiv && editDiv.querySelector('table'), block = wrapper && _rapierBoundBlock(wrapper);
+	const admitted = wrapper && (wrapper.classList.contains('block-wrapper--table') ||
+		block?.type === 'html_block' && /^<table(?:\s|>)/i.test(block.raw.trim()) && !_rapierRawEditorReason(block.raw));
+	if (!table || !admitted || !editDiv.contains(range.startContainer) || !editDiv.contains(range.endContainer) ||
 			cellOf(range.startContainer) === cellOf(range.endContainer)) return null;
 	return { editDiv, table, blockId: Number(wrapper.dataset.blockId), parts: _rapierTableCellRanges(table, range) };
 }
@@ -535,14 +525,21 @@ function _rapierTableTake(span, inputType) {
 	if (_rapierUserMutationBlocked()) return false;
 	const { editDiv, table, blockId, parts } = span;
 	if (!parts.length) return true;
+	const selection = window.getSelection(), selectedRange = selection?.rangeCount ? selection.getRangeAt(0) : null;
+	const first = selectedRange && table.contains(selectedRange.startContainer) ? selectedRange : parts[0].range;
+	const start = _nodeAsElement(first.startContainer), cell = start?.closest('td,th'), paragraph = start?.closest('td > p, th > p');
+	const surface = paragraph || cell, offset = surface ? _charOffsetForRangePoint(surface, first.startContainer, first.startOffset) : 0;
+	const keepsParagraph = selectedRange && Array.from(table.querySelectorAll('td > p, th > p')).some(node => !selectedRange.intersectsNode(node));
 	_rapierCheckpointEdit(editDiv);
 	parts.forEach(({ range }) => range.deleteContents());
-	if (Array.from(table.querySelectorAll('td, th')).every(cell => !String(cell.textContent || '').replace(/[\s\u200b\ufeff]+/g, '') && !cell.querySelector('img'))) {
+	if (!keepsParagraph && Array.from(table.querySelectorAll('td, th')).every(cell => !String(cell.textContent || '').replace(/[\s\u200b\ufeff]+/g, '') && !cell.querySelector('img'))) {
 		return _rapierTableRemove(blockId);
 	}
-	const selection = window.getSelection();
-	selection.removeAllRanges();
-	selection.addRange(parts[0].range);
+	if (surface && editDiv.contains(surface)) {
+		if (paragraph && !paragraph.textContent.replace(/\u200b/g, '') && !paragraph.querySelector('img, br, input, math, .math-rendered')) paragraph.appendChild(document.createElement('br'));
+		_setCursorCharOffset(surface, offset);
+	}
+	else { selection.removeAllRanges(); selection.addRange(parts[0].range); }
 	if (/^delete/.test(inputType)) editDiv.dispatchEvent(new InputEvent('input', { bubbles: true, inputType }));
 	return true;
 }
@@ -868,6 +865,22 @@ function _tableRawFromEdit(blockId) {
 
 function _tableRawFromDom(blockId, table) {
 	if (!table) return null;
+	if (_rapierHtmlTableNeedsHtml(table)) {
+		const copy = table.cloneNode(true), original = rapier.document.blocks.find(block => block.id === blockId);
+		if (original && !/\bcaret-color\s*:/i.test(String(original.raw || ''))) {
+			for (const span of copy.querySelectorAll('span[style]')) {
+				if (!/^\s*caret-color\s*:\s*[^;]+;?\s*$/i.test(span.getAttribute('style') || '')) continue;
+				span.removeAttribute('style');
+				if (!span.attributes.length) span.replaceWith(...span.childNodes);
+			}
+		}
+		for (const parent of [copy, ...copy.querySelectorAll('thead,tbody,tfoot,tr')]) {
+			for (const node of Array.from(parent.childNodes)) if (node.nodeType === Node.TEXT_NODE && !/\S/.test(node.nodeValue || '')) node.remove();
+			for (const child of Array.from(parent.children)) parent.insertBefore(document.createTextNode('\n'), child);
+			parent.appendChild(document.createTextNode('\n'));
+		}
+		return _rapierHtmlTableSource(copy);
+	}
 	const readRows = root => Array.from(root.querySelectorAll('tr')).map(tr =>
 		Array.from(tr.children)
 			.filter(cell => /^(TD|TH)$/.test(cell.tagName))
@@ -983,7 +996,9 @@ function _rapierSetTableCaret(root, activation) {
 	const cells = Array.from(row.children).filter(node => /^(TH|TD)$/.test(node.tagName));
 	const cell = cells[Number(activation.cellIndex)];
 	if (!cell) return false;
-	_setCursorCharOffset(cell, activation.charOffset == null ? Infinity : activation.charOffset);
+	const paragraph = Number.isInteger(activation.paragraphIndex)
+		? Array.from(cell.children).filter(node => node.tagName === 'P')[activation.paragraphIndex] : null;
+	_setCursorCharOffset(paragraph || cell, activation.charOffset == null ? Infinity : activation.charOffset);
 	return true;
 }
 
@@ -1378,6 +1393,7 @@ function _tableApply(blockId, newRaw, caretTarget) {
 			if (editDiv) {
 				editDiv._rapierHistoryBaselineRaw = newRaw;
 				editDiv._rapierCheckpointFresh = true;
+				_rapierRecordEditOpening(editDiv, wrapper);
 				_syncEmptyClass(wrapper, editDiv);
 				_rapierFocusEditingHost(editDiv);
 				if (!_rapierSetTableCaret(editDiv, caretTarget)) {
@@ -1477,9 +1493,9 @@ function _tableSetAlignment(blockId, alignment, position) {
 	});
 }
 
-function _tableChangeRows(blockId, delta, position) {
+function _tableChangeRows(blockId, delta, position, sourceRaw = null) {
 	if (_rapierUserMutationBlocked()) return;
-	const raw = _tableRawFromBlock(blockId);
+	const raw = sourceRaw == null ? _tableRawFromBlock(blockId) : sourceRaw;
 	if (!raw) return;
 	const info = _tableInfo(raw);
 	const lines = info.lines.slice();

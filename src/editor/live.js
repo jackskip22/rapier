@@ -444,6 +444,20 @@ const _rapierLive = (() => {
       beforeRoot: record.beforeHash});
     presenceSoon(); publish();
   }
+  function prepareRecord(rows, config, beforeSource) {
+    if ((!own() && !(loading && binding?.baseline?.documentId === String(rapier.identity.authority))) || applying ||
+        _rapierNormalizeTransactionContext(config.context || _rapierTransactionRuntime.context).actor.kind !== 'human') return null;
+    const before = typeof beforeSource === 'function' ? beforeSource() : beforeSource;
+    if (typeof before !== 'string') throw new Error('live_original_history_missing');
+    const prepared = {authored: RapierLedger.authoredPlacement(before, rows, RapierLedger.authoredBasis(rapier.undo.ledger))};
+    if (config.changeSet && Object.hasOwn(config.changeSet, 'label') && config.changeSet.label !== undefined) {
+      const label = config.changeSet.label;
+      if (label !== null && (typeof label !== 'string' || label.length > 120 || !label.isWellFormed()))
+        throw new Error('live_act_invalid');
+      prepared.label = label;
+    }
+    return prepared;
+  }
   function canonicalRows(rows, beforeSource) {
     if ((!own() && !(loading && binding?.baseline?.documentId === String(rapier.identity.authority))) || applying) return rows;
     if (!rows.length) { if (typeof beforeSource === 'function') beforeSource(); return rows; }
@@ -774,7 +788,7 @@ const _rapierLive = (() => {
         ...(privateKey ? {private: {id: /\/live\/([a-f0-9]{32})\/socket$/.exec(new URL(url).pathname)?.[1], key: privateKey}} : {})});
     })().catch(error => showToast(error.message, 'error'));
   });
-  return Object.freeze({join, leave, restored, observe, canonicalRows, undo, flush, status: snapshot, copyLink, link, share, stop, rename, color, people, openJoin,
+  return Object.freeze({join, leave, restored, observe, canonicalRows, prepareRecord, undo, flush, status: snapshot, copyLink, link, share, stop, rename, color, people, openJoin,
     redo: () => undo(undefined, true),
     active: () => !!own(), actor: () => own() ? state.author?.id || null : null,
     author: () => own() ? state.author || null : null,

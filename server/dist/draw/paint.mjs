@@ -1643,12 +1643,13 @@ export class PaintSurface {
 		if (this._wetBytes(next) > (this.wetOptions.maxBytes ?? 96000000)) return;
 		this.beginWet(this.wetSeed, box);
 	}
-	settleWet() { this._finishWetWork(); return finishWetIterator(this._settleWetWork()); }
-	*_settleWetWork() {
+	settleWet(owed = true) { this._finishWetWork(); return finishWetIterator(this._settleWetWork(owed)); }
+	*_settleWetWork(owed = true) {
 		this.opCompose();
 		this.wetOwedBox = false;
 		const state = this.wetState; if (!state) { this.wetPending = 0; return false; }
 		setGravity(state, this.wetGravity[0], this.wetGravity[1]);
+		if (!owed) this.wetPending = 0;
 		if (this.wetPending) { yield* this._drainWetWork(state, this.wetPending); this.wetPending = 0; yield* this._wetLineageWork(); }
 		const box = yield* settleWork(state, {finish: true});
 		if (box) this._touchWet(box);

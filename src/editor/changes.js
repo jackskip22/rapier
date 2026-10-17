@@ -115,28 +115,26 @@
   function summary() {
     return {ok: true, documentId, revision, places: structuredClone(currentRows()), activeKey: active?.key || null};
   }
-  let worker = null, jobs = 0, answered = false;
+  let onPageOnly = false, jobs = 0, answered = false;
   const onPage = (before, after, options) => RapierDiff.compare(before, after, {...options,
     ...(globalThis.RapierDiffStructure ? {structure: source => globalThis.RapierDiffStructure.diffStructure(source, options)} : {})});
   function compare(before, after, options) {
-    worker ||= _rapierCompareMakeWorker().catch(() => null);
-    return worker.then(live => live ? new Promise((resolve, reject) => {
-      const jobId = ++jobs;
-      const end = () => { live.removeEventListener('message', done); live.removeEventListener('error', fail); };
-      const done = event => {
+    const lent = onPageOnly ? Promise.resolve(null) : _rapierCompareTakeWorker().catch(() => null);
+    return lent.then(live => live ? new Promise((resolve, reject) => {
+      const jobId = 'marks:' + ++jobs;
+      live.onmessage = event => {
         answered = true;
         if (event.data?.jobId !== jobId) return;
-        end();
+        _rapierCompareGiveWorker(live);
         if (event.data.status === 'error') reject(new Error('comparison unavailable'));
         else resolve({...event.data.diff, regions: event.data.regions});
       };
-      const fail = () => {
-        end(); live.terminate();
-        if (answered) { worker = null; reject(new Error('comparison unavailable')); return; }
-        worker = Promise.resolve(null);
+      live.onerror = () => {
+        live.terminate();
+        if (answered) { reject(new Error('comparison unavailable')); return; }
+        onPageOnly = true;
         try { resolve(onPage(before, after, options)); } catch (error) { reject(error); }
       };
-      live.addEventListener('message', done); live.addEventListener('error', fail);
       live.postMessage({type: 'compare', jobId, currentText: before, incomingText: after, docKind: options.docKind,
         language: options.language, from: options.from, regions: true});
     }) : onPage(before, after, options));
@@ -170,6 +168,9 @@
         const edit = result.edits[index];
         return [edit.before, _rapierSeenDigest(before.slice(...edit.before)), _rapierSeenDigest(after.slice(...edit.after))];
       })];
+      const left = change.kind === 'move' && (regionsOf.get(change.id) || []).find(region => region.moved && region.before);
+      const origin = left && (blocks.find(block => block.from <= left.afterAnchor && left.afterAnchor < block.to)
+        || blocks.find(block => block.from >= left.afterAnchor) || blocks.at(-1));
       const visited = new Set();
       for (const region of regionsOf.get(change.id) || []) {
         if (region.moved && region.before) continue;
@@ -180,6 +181,8 @@
         visited.add(block.id);
         rows.push({kind: 'text', key: JSON.stringify(['snapshot', changeKey, region.before?.from ?? region.beforeAnchor]),
           diffIds: family.map(row => row.id), change: {kind: change.kind, unit: change.unit, ...(change.name ? {name: change.name} : {})},
+          ...(left ? {wordingIds: family.filter(row => row !== change).map(row => row.id),
+            movedFrom: {blockId: origin?.id ?? null, up: left.moved.down}} : {}),
           blockId: block.id, from: block.from, to: block.to, displayAfter: [start, end],
           before: region.before?.text || '', after: region.after?.text || '', current: region.after?.text || '',
           actor: {name: change.name || 'Changes'}});
@@ -271,7 +274,7 @@
   function wrapper(place) {
     if (place.kind === 'drawing') return globalThis.RapierChangesDraw?.container(place);
     return place.blockId == null ? document.getElementById('source-mode')
-      : host.querySelector(':scope > [data-block-id="' + CSS.escape(String(place.blockId)) + '"]');
+      : _rapierBlockWrapperById(place.blockId, host);
   }
   function rect(place) {
     if (place.kind === 'drawing') return globalThis.RapierChangesDraw?.getRect(place);
@@ -352,8 +355,7 @@
       }
     }
     const target = presenceValue?.target;
-    const element = target?.startBlock ? host.querySelector(':scope > [data-block-id="' + CSS.escape(String(target.startBlock.id)) + '"]')
-      : presenceValue?.blockId != null ? host.querySelector(':scope > [data-block-id="' + CSS.escape(String(presenceValue.blockId)) + '"]') : null;
+    const element = _rapierBlockWrapperById(target?.startBlock ? target.startBlock.id : presenceValue?.blockId, host);
     const agentBox = element?.getBoundingClientRect();
     const direction = agentBox && (agentBox.top >= bounds.bottom - 24 ? 'down' : agentBox.bottom <= bounds.top + 40 ? 'up' : '');
     edge.hidden = obscured || !presenceValue?.active || !direction || !!inDraw();
@@ -384,7 +386,7 @@
     if (place.wordId != null) return place.before;
     if (place.actId || !snapshot) return place.before;
     let [from, to] = place.displayAfter, value = snapshot.after.slice(from, to);
-    for (const row of RapierDiff.restoreEdits(snapshot.before, snapshot.after, snapshot.result, place.diffIds)) {
+    for (const row of RapierDiff.restoreEdits(snapshot.before, snapshot.after, snapshot.result, place.wordingIds || place.diffIds)) {
       const end = row.pos + row.removed.length, shift = row.inserted.length - row.removed.length;
       if (end < from || end === from && row.pos < from) { from += shift; to += shift; }
       else if (row.pos > to || row.pos === to && row.removed.length) continue;
@@ -433,7 +435,7 @@
       const targets = root => [...root.querySelectorAll('a[href], img[src]')], target = element => element.getAttribute(element.localName === 'a' ? 'href' : 'src');
       const was = targets(node), now = targets(after);
       const changed = was.length === now.length ? was.flatMap((element, i) => target(element) === target(now[i]) ? [] : [[element, now[i]]]) : [];
-      if (!changed.length) node.classList.add('rapier-changes-added');
+      if (!changed.length && !place.movedFrom) node.classList.add('rapier-changes-added');
       for (const [element, next] of changed) {
         const removed = document.createElement('del'), added = document.createElement('ins');
         removed.className = 'rapier-changes-removed'; added.className = 'rapier-changes-added';
@@ -507,7 +509,17 @@
     const doneButton = button('Done', place.wordId != null ? 'Accept this Word change' : 'Mark this change seen');
     if (place.wordId != null) undoButton.setAttribute('aria-label', 'Reject this Word change');
     undoButton.addEventListener('click', () => void undo(key)); doneButton.addEventListener('click', () => done(key));
-    controls.append(who, undoButton, doneButton);
+    controls.append(who);
+    if (place.movedFrom) {
+      const origin = place.movedFrom.blockId == null ? null : host.querySelector(':scope > [data-block-id="' + CSS.escape(String(place.movedFrom.blockId)) + '"]');
+      const moved = button('Moved', 'Go to where this was');
+      moved.append(arrow(place.movedFrom.up ? 'up' : 'down'));
+      moved.disabled = !origin;
+      moved.addEventListener('click', () => origin?.isConnected && origin.scrollIntoView({block: 'center',
+        behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'}));
+      controls.append(moved);
+    }
+    controls.append(undoButton, doneButton);
     (place.kind === 'drawing' ? layer : home).append(controls);
     active = {key, place, home, preview, controls, revision, documentId, opener};
     if (options.focus && document.activeElement === opener) (preview || controls.querySelector('button'))?.focus({preventScroll: true});

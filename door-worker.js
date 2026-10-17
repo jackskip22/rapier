@@ -25,6 +25,13 @@ const WINDOW = 1024 * 1024;
 
 // The words the engine shows while the sheet is open (`_rapierRenderDocumentHead` in editor/engine.js). The row
 // runtime-pack-roundtrip reads the served head and the opened sheet's head and refuses a difference.
+// A door that is a tool people search for (`h1`) says, in the words a crawler reads without running the page, what
+// the searcher came to do: one heading, a short paragraph (`lead`), questions and answers (`faq`)
+// and the pages next to it (`related`). It is the free web application at its own address (WebApplication data).
+// `view` names what the address opens (the engine's _rapierSearchStarter, draw/door.js, notes/door.js).
+const free = 'Yes. Rapier is free and open source, with no account, ads or tracking.';
+const offline = 'Yes, once the page has loaded. Add it to your home screen to open it like an app, or keep the whole editor as one HTML file.';
+const local = 'No. Rapier works in your browser. Local editing uploads nothing.';
 export const DOORS = Object.freeze({
 	'/privacy': Object.freeze({name: 'Privacy and terms', title: 'Rapier privacy and terms',
 		description: 'Rapier privacy and terms: local editing, optional services, data storage and deletion.'}),
@@ -33,18 +40,119 @@ export const DOORS = Object.freeze({
 	// The editor views a search engine may show as sitelinks under the home result: each opens that view
 	// (the engine reads the address), and each is a page of its own for a reader that runs nothing.
 	// `image` is the card shown when the address is shared: a PNG at the site root, `imageSize` pixels wide and high.
-	'/notes': Object.freeze({name: 'Notes', title: 'Rapier Notes: offline Markdown notes',
-		description: 'Plain Markdown notes with embedded pictures, colors, pins, checklists, voice recordings and history. Import from 15+ note apps. No account.',
-		image: 'og-notes.png', imageSize: [1200, 630], imageAlt: 'Rapier Notes: Markdown notes on your phone'}),
-	'/draw': Object.freeze({name: 'Draw', title: 'Rapier Draw: SVG drawing and painting',
-		description: 'Draw freehand, edit SVG diagrams and create typographic art. Paint with MyPaint brushes and watercolor, with artwork embedded in your Markdown file.',
-		image: 'og-draw.png', imageSize: [1200, 630], imageAlt: 'Rapier Draw: draw and paint in Markdown'}),
+	'/notes': Object.freeze({name: 'Notes', title: 'Private notes app, free and offline | Rapier Notes',
+		description: 'Private Markdown notes with colors, pins, checklists, pictures, voice recordings and history. Import from Google Keep and 15+ apps. No account.',
+		image: 'og-notes.png', imageSize: [1200, 630], imageAlt: 'Rapier Notes: Markdown notes on your phone',
+		h1: 'Private notes app', view: 'notes', related: ['/markdown-editor', '/draw'],
+		lead: 'Rapier Notes keeps your notes on your device, as plain Markdown files shown as cards. Pin and color them, add checklists, pictures and voice notes, and go back to any earlier version. Import brings in Google Keep, Apple Notes, Evernote, Notion, Obsidian and more. There is no account. The Android app adds reminders and a home-screen widget.',
+		faq: Object.freeze([
+			Object.freeze(['Is it a Google Keep alternative?', 'Yes. Import your Google Keep notes from a Google Takeout export: text, checklists, pins and pictures become Markdown notes.']),
+			Object.freeze(['Where are my notes kept?', 'On your device, in your browser or the Android app. Nothing is uploaded unless you turn on sync to storage you own.']),
+			Object.freeze(['Is there an Android app?', 'Yes, Rapier on Google Play. It has no internet permission.']),
+			Object.freeze(['Is it free?', free]),
+		])}),
+	'/draw': Object.freeze({name: 'Draw', title: 'Free drawing app online: draw on your phone | Rapier Draw',
+		description: 'Draw freehand with a finger, mouse or pen, build diagrams with arrows that stay attached, and paint. Free in your browser, no download or account.',
+		image: 'og-draw.png', imageSize: [1200, 630], imageAlt: 'Rapier Draw: draw and paint in Markdown',
+		h1: 'Free drawing app online', view: 'draw', related: ['/paint', '/watercolor', '/mermaid-editor'],
+		lead: 'Rapier Draw opens a canvas in your browser. Draw with your finger on a phone, or with a mouse or a pressure-sensitive pen. Brush follows your pressure and speed. Select a shape to move, resize, label or restyle it, or attach an arrow that moves with it. Drawings are SVG: sharp at any size and editable later.',
+		faq: Object.freeze([
+			Object.freeze(['Can I draw on my phone?', 'Yes. Rapier is made for phones first: draw with your finger, and pinch to zoom.']),
+			Object.freeze(['Do I need to download anything?', 'No. Draw runs in your browser. There is also an Android app on Google Play.']),
+			Object.freeze(['Where does my drawing go?', 'Press Done and it goes into your document as an editable SVG. Save the document as one Markdown file, pictures inside.']),
+			Object.freeze(['Is it free?', free]),
+		])}),
 	// The Watercolor card is drawn from `picture` (tools/og-card.mjs). To show a new painting instead, save it as a PNG, change `image` and `imageSize`
 	// here, and list the file in tools/stage-site.mjs and .assetsignore. A new file name makes social sites fetch the card again.
-	'/watercolor': Object.freeze({name: 'Watercolor', title: 'Rapier Watercolor: free watercolor painting online',
+	'/watercolor': Object.freeze({name: 'Watercolor', title: 'Free online watercolor painting | Rapier Watercolor',
 		description: 'Paint watercolor in your browser with flowing pigments, wet washes and textured paper. Keep transparent paintings in editable drawings. Free, no account.',
 		image: 'og-watercolor.png', imageSize: [1200, 630], imageAlt: 'Blue, yellow and rose watercolor washes painted with Rapier Water',
-		picture: 'watercolor-painting.png'}),
+		picture: 'watercolor-painting.png',
+		h1: 'Online watercolor painting', view: 'watercolor', related: ['/paint', '/draw'],
+		lead: 'This page opens a watercolor canvas. Wet color spreads across textured paper, pigments blend, and washes dry with darker edges. Paint with a finger, a mouse or a pen.',
+		faq: Object.freeze([
+			Object.freeze(['Is it free?', free]),
+			Object.freeze(['Does it work on a phone?', 'Yes. Paint with your finger or a stylus. The flowing Water brush needs a browser with WebGPU; other browsers paint with the watercolor paint brush.']),
+			Object.freeze(['Can I save my painting?', 'Yes. Press Done to download it as a PNG picture, or add it to your document as an editable drawing.']),
+		])}),
+	'/paint': Object.freeze({name: 'Paint', title: 'Free painting app online, no download | Rapier Paint',
+		description: 'Paint in your browser with oil, bristle, pencil, pen and watercolor brushes. Use a finger, mouse or pen. Free, no download, no account.',
+		image: 'og-watercolor.png', imageSize: [1200, 630], imageAlt: 'Blue, yellow and rose watercolor washes painted with Rapier Water',
+		h1: 'Free painting app online', view: 'paint', related: ['/watercolor', '/draw', '/notes'],
+		lead: 'This page opens a canvas with real brushes: oil, bristle, scumble, pencil and pen from MyPaint, and watercolor that flows. Paint with your finger, then smudge, erase and undo. Nothing to download or sign up for.',
+		faq: Object.freeze([
+			Object.freeze(['Is it free?', free]),
+			Object.freeze(['Do I need to download an app?', 'No. It runs in your browser. On Android you can also install Rapier from Google Play.']),
+			Object.freeze(['Can kids use it?', 'Yes. There are no ads, accounts or tracking.']),
+			Object.freeze(['Can I save my painting?', 'Yes. Press Done to download it as a PNG picture, or add it to your document.']),
+		])}),
+	'/markdown-editor': Object.freeze({name: 'Markdown editor', title: 'Free online Markdown editor, no sign-up | Rapier',
+		description: 'Write Markdown on the formatted page or in the source: tables, Mermaid, math, pictures. Export PDF and Word. Free, no account, works offline.',
+		h1: 'Free online Markdown editor', view: 'editor', related: ['/markdown-to-pdf', '/markdown-to-word', '/markdown-table-editor', '/notes'],
+		lead: 'Rapier is a Markdown editor in your browser. Write on the formatted page, as in a word processor, or switch to the Markdown source. Tables, checklists, footnotes, code, LaTeX math and Mermaid diagrams. Your file stays plain Markdown. No sign-up, and it keeps working offline.',
+		faq: Object.freeze([
+			Object.freeze(['Is it free?', free]),
+			Object.freeze(['Do I need to sign up?', 'No. Start typing. Rapier keeps a draft as you work, and Save writes a .md file.']),
+			Object.freeze(['Does it work offline?', offline]),
+			Object.freeze(['Are my files uploaded?', local]),
+			Object.freeze(['Can I export?', 'Yes, for free: PDF, Word (.docx), text and an offline web page.']),
+		])}),
+	'/markdown-viewer': Object.freeze({name: 'Markdown viewer', title: 'Markdown viewer: open and read .md files online | Rapier',
+		description: 'Open a Markdown file and read it formatted: headings, tables, code, math and diagrams. Edit in place or turn on read only. Free, nothing uploaded.',
+		h1: 'Markdown viewer and preview', view: 'editor', related: ['/markdown-editor', '/markdown-to-pdf'],
+		lead: 'Open a .md file in Rapier and read it formatted: headings, tables, checklists, code, math and Mermaid diagrams. There is no split preview. The page is the preview, and you can edit it in place. Turn on read only in settings to keep the file as it is.',
+		faq: Object.freeze([
+			Object.freeze(['How do I open a file?', 'Tap ••• at the top right, then open, and pick a .md file. On Android, open it from your file manager.']),
+			Object.freeze(['Is my file uploaded?', local]),
+			Object.freeze(['Can I see the Markdown source?', 'Yes. Switch to the source at any time; the file is kept exactly as written.']),
+			Object.freeze(['Is it free?', free]),
+		])}),
+	'/markdown-to-pdf': Object.freeze({name: 'Markdown to PDF', title: 'Markdown to PDF: free online converter | Rapier',
+		description: 'Write or open Markdown and save it as a PDF with searchable text: tables, code, math and pictures. Free, in your browser, nothing uploaded.',
+		h1: 'Markdown to PDF', view: 'editor', related: ['/markdown-to-word', '/markdown-editor'],
+		lead: 'Paste or open your Markdown, then tap ••• at the top right and .pdf under export. Rapier writes the PDF in your browser: nothing is uploaded. The text stays searchable, and the Markdown travels inside the PDF, so Rapier can open it again as the same Markdown.',
+		faq: Object.freeze([
+			Object.freeze(['Is it free?', free]),
+			Object.freeze(['Is my file uploaded?', local]),
+			Object.freeze(['Can I add a page break?', 'Yes. Tap + on the bar under the text, then Line.']),
+			Object.freeze(['Do tables, code and math come through?', 'Yes, with pictures, drawings and diagrams, as they look on the page.']),
+		])}),
+	'/markdown-to-word': Object.freeze({name: 'Markdown to Word', title: 'Markdown to Word (.docx): free online converter | Rapier',
+		description: 'Turn Markdown into an editable Word document: headings, lists, tables, code and pictures. Free, in your browser, no upload or account.',
+		h1: 'Markdown to Word', view: 'editor', related: ['/word-to-markdown', '/markdown-to-pdf'],
+		lead: 'Paste or open your Markdown, then tap ••• at the top right and .docx under export. Rapier writes an editable Word document in your browser, with headings, lists, tables, code and pictures. Nothing is uploaded.',
+		faq: Object.freeze([
+			Object.freeze(['Is it free?', free]),
+			Object.freeze(['Is my file uploaded?', local]),
+			Object.freeze(['Can I go back from Word to Markdown?', 'Yes. Open a .docx in Rapier and it becomes an editable Markdown page.']),
+		])}),
+	'/word-to-markdown': Object.freeze({name: 'Word to Markdown', title: 'Word to Markdown: convert .docx to .md online | Rapier',
+		description: 'Open a Word document and get clean, editable Markdown, pictures included. Save it as a .md file. Free, in your browser, nothing uploaded.',
+		h1: 'Word to Markdown', view: 'editor', related: ['/markdown-to-word', '/markdown-editor'],
+		lead: 'Tap ••• at the top right, then open, and pick a .docx file. Rapier turns it into an editable Markdown page: headings, lists, tables, links and pictures. Save, or Share then Markdown, gives you the .md file, with the pictures inside it.',
+		faq: Object.freeze([
+			Object.freeze(['Is it free?', free]),
+			Object.freeze(['Is my document uploaded?', local]),
+			Object.freeze(['Can I also open a PDF?', 'Yes. A PDF comes in as text where it can. PDF import is a free plug-in.']),
+		])}),
+	'/markdown-table-editor': Object.freeze({name: 'Markdown table editor', title: 'Markdown table editor: make tables online, free | Rapier',
+		description: 'Edit Markdown tables cell by cell, add rows and columns with + and −, or paste cells from a spreadsheet. The file stays a plain Markdown table.',
+		h1: 'Markdown table editor', view: 'editor', related: ['/markdown-editor', '/markdown-to-pdf'],
+		lead: 'Tap a cell to edit it, or drag the handles to move cells. Add cells with the + and − buttons on the bar under the table. Paste cells from a spreadsheet and the table grows to fit. The source stays a plain Markdown table that any app can read.',
+		faq: Object.freeze([
+			Object.freeze(['How do I make a new table?', 'Tap + on the bar under the text, then the table button.']),
+			Object.freeze(['Can I paste from Excel or Google Sheets?', 'Yes. Paste the cells and they become a Markdown table.']),
+			Object.freeze(['Is it free?', free]),
+		])}),
+	'/mermaid-editor': Object.freeze({name: 'Mermaid editor', title: 'Mermaid diagram editor online, free | Rapier',
+		description: 'Write Mermaid flowcharts and other diagrams in Markdown and see them drawn on the page, or draw diagrams you can move by hand. Free, works offline.',
+		h1: 'Mermaid diagram editor', view: 'editor', related: ['/draw', '/markdown-editor'],
+		lead: 'Write a mermaid code block and Rapier draws it on the page. Flowcharts draw at once; other Mermaid diagrams, such as sequence diagrams and Gantt charts, use the free diagram plug-in, which downloads once and then works offline. Prefer to move boxes by hand? Draw makes diagrams with arrows that stay attached, saved as editable SVG.',
+		faq: Object.freeze([
+			Object.freeze(['Is it free?', free]),
+			Object.freeze(['Does it work offline?', offline]),
+			Object.freeze(['Can I export the diagram?', 'Yes. Export the document as PDF, Word or an offline web page, with the diagram drawn.']),
+		])}),
 });
 
 const encoder = new TextEncoder(), decoder = new TextDecoder('utf-8', {fatal: true});
@@ -154,7 +262,13 @@ export function doorHead(head, path) {
 			{'@type': 'ListItem', position: 1, name: 'Rapier', item: ORIGIN + '/'},
 			{'@type': 'ListItem', position: 2, name: door.name, item: url}]},
 		...(door.image ? [{'@type': 'ImageObject', '@id': url + '#image', url: ORIGIN + '/' + (door.picture || door.image),
-			caption: door.imageAlt}] : [])]};
+			caption: door.imageAlt}] : []),
+		// A tool people search for is the free web application at this address. Its questions stay in the guide, with no
+		// FAQPage data: Google stopped showing FAQ results on 7 May 2026, and the running page does not show the questions.
+		...(door.h1 ? [{'@type': 'WebApplication', '@id': url + '#application', name: door.h1, url, description: door.description,
+			applicationCategory: /^\/(?:draw|paint|watercolor)$/.test(path) ? 'DesignApplication' : 'UtilitiesApplication',
+			operatingSystem: 'Web', browserRequirements: 'Requires JavaScript', isAccessibleForFree: true,
+			offers: {'@type': 'Offer', price: '0', priceCurrency: 'USD'}, isPartOf: {'@id': ORIGIN + '/#website'}}] : [])]};
 	out = out.replace(graph[0], () => '<script type="application/ld+json">' + jsonInScript(data) + '</script>');
 	// The page's own head, kept: the sheet's close puts these back (the engine reads this block when it is there).
 	const home = {title: text(title[1]), description: text(description[1]), canonical: text(canonical[1])};

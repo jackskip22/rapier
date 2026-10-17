@@ -391,6 +391,8 @@ class MathTexParser {
     }
     if (Object.hasOwn(MATH_TEX_ACCENTS, name)) {
       const [value, position, stretch] = MATH_TEX_ACCENTS[name];
+      // mathtools' \overbracket[rule][height]{...}: the font's bracket keeps its own rule and height.
+      if (/bracket$/.test(name) && this.optionalRaw()) this.optionalRaw();
       return this.node('accent', {base: this.argument(), value, position, stretch, ...(/brace$/.test(name) ? {limits: 'always'} : {})});
     }
     if (/^[{}%$&#_]$/.test(name)) return this.literal(name, {variant: 'roman'});
@@ -1346,6 +1348,11 @@ function parseMathTexPreview(source, error, caret = source.length) {
   caret = Math.max(0, Math.min(source.length, Math.floor(caret) || 0));
   let text = source;
   const tail = /(?<!\\)\\(?:[A-Za-z]*|(?:begin|end)\{[A-Za-z*]*)$/.exec(text.slice(0, caret));
+  // A name being typed previews blank; a finished misspelling (no known name continues it) keeps its fix.
+  if (tail && error?.code === 'unsupported-command' && error.offset === tail.index && /^\\[A-Za-z]+$/.test(tail[0])) {
+    const name = tail[0].slice(1), suggestion = mathSuggest(name);
+    if (suggestion && !mathTexNames.command.some(candidate => candidate.length > name.length && candidate.startsWith(name))) return null;
+  }
   if (tail) text = text.slice(0, tail.index) + ' '.repeat(tail[0].length) + text.slice(caret);
   const atEnd = (cause, length) => /^unclosed-(group|option|environment)$/.test(cause.code) || cause.offset >= length;
   for (let attempt = 0; attempt < 24; attempt++) {
@@ -1371,10 +1378,12 @@ function parseMathTexPreview(source, error, caret = source.length) {
 // The command or environment a mistyped name most likely meant: one edit away (two for longer names), where swapping
 // two neighbouring letters is one edit.
 const MATH_TEX_STRUCTURE = 'frac dfrac tfrac cfrac binom dbinom tbinom genfrac sqrt root left right middle big Big bigg Bigg bigl bigr Bigl Bigr begin end text textbf textit mathrm mathbf operatorname overset underset stackrel xrightarrow xleftarrow not phantom smash hspace quad qquad color textcolor colorbox boxed cancel newcommand renewcommand def ce pu SI si num unit ang dv pdv qty abs norm bra ket braket substack tag label href';
+// Every other command the parser accepts: a name being typed toward one of them is not a misspelling.
+const MATH_TEX_OTHER = 'TeX let char rm rmfamily normalfont it itshape sl bf bfseries sf sffamily tt ttfamily cal displaystyle textstyle scriptstyle scriptscriptstyle tiny scriptsize footnotesize small normalsize large Large LARGE huge Huge over coloneq Coloneq Coloneqq Eqqcolon eqcolon Eqcolon colonapprox Colonapprox colonsim Colonsim LaTeX Set unicode bbox matrix pmatrix bmatrix Bmatrix vmatrix Vmatrix smallmatrix cases op atop choose brace brack above overwithdelims atopwithdelims abovewithdelims limits nolimits displaylimits long strut operatornamewithlimits mathop stackbin overunderset xlongequal hphantom vphantom mathstrut rlap llap clap mathrlap mathllap mathclap mspace kern mkern hskip mskip rule raise raisebox lower fcolorbox definecolor fbox bcancel xcancel sout cancelto providecommand gdef edef xdef DeclareMathOperator DeclarePairedDelimiter global outer require url notag nonumber relax allowbreak nobreak protect displaystylelimits mathopen mathclose Bra Ket Braket set nicefrac sfrac vcenter prescript sideset accentset underaccent slashed mod bmod pmod pod smashoperator mathmakebox idotsint mmlToken textbackslash textasciitilde textasciicircum dd derivative pderivative fdv functionalderivative differential quantity pqty bqty Bqty vqty absolutevalue innerproduct ip ketbra dyad outerproduct expval expectationvalue ev mel matrixel matrixelement comm commutator acomm anticommutator pb poissonbracket vb va vu vectorbold vectorarrow vectorunit grad gradient divergence curl laplacian eval evaluated order Tr tr trace rank diag Res mqty pmqty bmqty vmqty smqty qq qc qcc qif';
 let mathTexNames;
 function mathSuggest(name, environment = false) {
   if (typeof name !== 'string' || name.length < 2 || name.length > 32) return undefined;
-  mathTexNames ||= {command: [...new Set([...MATH_TEX_STRUCTURE.split(' '), ...Object.keys(MATH_SYMBOLS), ...Object.keys(MATH_TEX_VARIANTS), ...Object.keys(MATH_TEX_TEXT_VARIANTS),
+  mathTexNames ||= {command: [...new Set([...MATH_TEX_STRUCTURE.split(' '), ...MATH_TEX_OTHER.split(' '), ...Object.keys(MATH_SYMBOLS), ...Object.keys(MATH_TEX_VARIANTS), ...Object.keys(MATH_TEX_TEXT_VARIANTS),
     ...Object.keys(MATH_TEX_ACCENTS), ...MATH_NAMED_OPERATORS, ...MATH_LIMIT_OPERATORS, ...Object.keys(MATH_TEX_SPACES), ...Object.keys(MATH_TEX_LONG_ARROWS)])], environment: [...MATH_TEX_ENVIRONMENTS]};
   const limit = name.length > 5 ? 2 : 1;
   let best, bestDistance = limit + 1;

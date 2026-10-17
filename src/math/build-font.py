@@ -525,20 +525,24 @@ def main():
     text_font = TTFont(io.BytesIO(text_bytes))
     data = extract(font)
     data.update(textXHeight=text_font["OS/2"].sxHeight, textUnits=text_font["head"].unitsPerEm)
-    notice = (font["name"].getDebugName(0) + "\n\n"
-              "Rapier math font data, derived from Latin Modern Math 1.959.\n"
-              "Changes: SVG outline conversion, character and MATH data extraction,\n"
-              "optical-form closure, derived contour profiles and lossless path packing.\n"
-              "Original outlines are unchanged. Hinting and text shaping tables are omitted.\n"
-              "The font authors do not maintain this conversion.\n"
-              "Complete original work: https://mirrors.ctan.org/fonts/lm-math.zip\n"
-              "Conversion details: FONT-SOURCE.md.\n\n").encode("utf-8") + gust + b"\n" + lppl
+    heading = (font["name"].getDebugName(0) + "\n\n"
+               "Rapier math font data, derived from Latin Modern Math 1.959.\n"
+               "Changes: SVG outline conversion, character and MATH data extraction,\n"
+               "optical-form closure, derived contour profiles and lossless path packing.\n"
+               "Original outlines are unchanged. Hinting and text shaping tables are omitted.\n"
+               "The font authors do not maintain this conversion.\n"
+               "Complete original work: https://mirrors.ctan.org/fonts/lm-math.zip\n"
+               "Conversion details: FONT-SOURCE.md.\n\n").encode("utf-8")
+    notice = heading + gust + b"\n" + lppl
+    # The data file carries its copyright and notice; the complete license (GUST Font License and LPPL 1.3c) is the
+    # FONT-LICENSE.txt beside it, and the single-file renderer bundle carries that file whole.
+    pointer = b"Complete license: FONT-LICENSE.txt (GUST Font License and LPPL 1.3c).\n"
     pages, index, size, packing = pack_font(data)
     glyph_count = len(data["glyphs"])
     character_count = len(data["chars"])
     for name in ("glyphs", "profiled", "vertical", "horizontal", *SCALAR_MAPS, "scriptAlternates"):
         del data[name]
-    output = (b"/*!\n" + notice + b"\n*/\nconst MATH_FONT=" + json.dumps(data, ensure_ascii=True, separators=(",", ":")).encode("utf-8") + b";\n" + PATH_DECODER.replace("__PAGES__", json.dumps(pages, separators=(",", ":"))).replace("__INDEX__", json.dumps(index)).replace("__SIZE__", str(size)).replace("__MAP_FIELDS__", json.dumps(SCALAR_MAPS, separators=(",", ":"))).replace("__EDGE_STEP__", str(EDGE_STEP)).encode("utf-8") + b"\n\nexport {MATH_FONT};\n")
+    output = (b"/*!\n" + heading + pointer + b"*/\nconst MATH_FONT=" + json.dumps(data, ensure_ascii=True, separators=(",", ":")).encode("utf-8") + b";\n" + PATH_DECODER.replace("__PAGES__", json.dumps(pages, separators=(",", ":"))).replace("__INDEX__", json.dumps(index)).replace("__SIZE__", str(size)).replace("__MAP_FIELDS__", json.dumps(SCALAR_MAPS, separators=(",", ":"))).replace("__EDGE_STEP__", str(EDGE_STEP)).encode("utf-8") + b"\n\nexport {MATH_FONT};\n")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_bytes(output)
     args.out.with_name("FONT-LICENSE.txt").write_bytes(notice)

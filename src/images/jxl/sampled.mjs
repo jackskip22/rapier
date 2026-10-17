@@ -367,7 +367,8 @@ function samplePlan(plane, width, height, options, shared, previous, referenceOu
     return sampleFinishPlan(sampleTokenize(plane, width, height, null, null, {tree, leaves: [tree]}, previous, referenceOutput, byteDomain), predictor);
   }
   const positions = samplePositions(length, options.samples), table = sampleEntropyTable(positions.length);
-  const weighted = options.weighted ? new Uint32Array(length) : null, errors = options.weighted ? new Int32Array(length) : null;
+  const weightedState = options.weighted || candidates.includes(6);
+  const weighted = weightedState ? new Uint32Array(length) : null, errors = weightedState ? new Int32Array(length) : null;
   if (weighted) codeWeighted(null, null, plane, width, height, 0, undefined, weighted, errors);
   const symbols = candidates.map(() => new Uint8Array(positions.length)), histograms = candidates.map(() => new Uint32Array(options.trainConfig ? ALPHABET : SAMPLE_SYMBOLS)), extras = candidates.map(() => 0);
   const properties = [...options.properties.filter(property => property !== 15 || options.weighted), ...(options.references ? previous.flatMap((_, i) => (options.referenceKinds || [2]).map(kind => 16 + kind + 4 * i)) : [])];

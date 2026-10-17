@@ -4,6 +4,16 @@ import {basename, dirname, join} from 'node:path';
 import {wrap, carry, portableNeeds} from './wrap.mjs';
 import {returnAddress, returnExpiresAt} from './return-address.mjs';
 export {wrap, unwrap, carry, portableNeeds, encodeCarried, decodeCarried} from './wrap.mjs';
+
+// The page this package carries, read once on first use.
+let carried = null;
+const carriedPage = () => carried ??= readFile(new URL('./rapier.html', import.meta.url), 'utf8');
+// One call from Markdown to a page: the carried editor, cut to what the document displays with (and Draw for
+// view 'draw' or a drawing), with the document inside. `include` names the parts instead: drawing, math, mermaid.
+export async function writePage(text, name = 'document.md', {include, ...options} = {}) {
+	const carries = include ?? [...(options.view === 'draw' || options.drawing != null ? ['drawing'] : []), ...portableNeeds(String(text), {base: options.base})];
+	return wrap(carry(await carriedPage(), carries), text, name, options);
+}
 // Unknown options, a bare --drawing or --compare and a third name are refused.
 const USAGE = 'usage: rapier-html <document.md> [out.html] [--include draw,math,mermaid] [--view draw] [--drawing sketch.svg] [--compare original.md [--by <your name>]] [--return <url> --return-expires-at <timestamp>]\n' +
 	'  writes <document>.rapier.html beside the file: Rapier with the document inside it, one file, offline.\n' +

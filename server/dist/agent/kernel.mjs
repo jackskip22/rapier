@@ -815,8 +815,11 @@ export function measurementsRequired(op, args = {}) {
   return null;
 }
 
+const seated = points => Array.isArray(points) && Array.isArray(points[0]) && Array.isArray(points[1]) && points.length > 1 &&
+  points[0].length === points[1].length && points[0].every((value, index) => value === points[1][index]);
 function inspectPaintRecord(paint) {
   return paint ? {...paint,
+    ...(Array.isArray(paint.strokes) ? {strokes: paint.strokes.map(stroke => seated(stroke?.points) ? {...stroke, points: stroke.points.slice(1)} : stroke)} : {}),
     ...(paint.actions ? {actions: {kept: true, count: paint.actions.length}} : {}),
     ...(paint.replay ? {replay: {kept: true, entries: paint.replay.entries.length}} : {})} : paint;
 }
@@ -1368,6 +1371,18 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   }
 
   const display = (text, limit) => clip(disclose(String(text || '')).text, limit);
+
+  function changePreview(text, start, end, limit) {
+    const lineStart = text.lastIndexOf('\n', start - 1) + 1, lineEnd = text.indexOf('\n', end) < 0 ? text.length : text.indexOf('\n', end);
+    const side = Math.max(0, Math.min(48, Math.floor((limit - (end - start)) / 2)));
+    let from = Math.max(lineStart, start - side), to = Math.min(lineEnd, Math.max(end, end + side));
+    if (from < start) while (from > lineStart && /\S/.test(text[from - 1]) && start - from < side + 24) from--;
+    if (from > lineStart && /\S/.test(text[from - 1])) while (from < start && /\S/.test(text[from])) from++;
+    if (to > end) while (to < lineEnd && /\S/.test(text[to]) && to - end < side + 24) to++;
+    if (to < lineEnd && /\S/.test(text[to])) while (to > end && /\S/.test(text[to - 1])) to--;
+    const shown = disclose(text, from, to).text;
+    return clip((from > lineStart ? '…' + shown.trimStart() : shown) + (to < lineEnd ? '…' : ''), limit);
+  }
 
   function currentRange(range, who = null) {
     let end = Math.min(range.end, range.start + LIMITS.readChars);
@@ -3467,8 +3482,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     };
     for (const row of state.compare.changes) {
       const item = {change_id: row.id, removed_chars: row.removed.length, inserted_chars: row.inserted.length,
-        preview: clip(row.inserted ? disclose(state.compare.incoming, row.incomingStart, row.incomingEnd).text
-          : disclose(state.compare.baseline, row.start, row.end).text, 96)};
+        preview: row.inserted ? changePreview(state.compare.incoming, row.incomingStart, row.incomingEnd, 96)
+          : changePreview(state.compare.baseline, row.start, row.end, 96)};
       if (bytes(JSON.stringify(stamp({...fields, items: [...fields.items, item]}))) > LIMITS.resultBytes - 1024) break;
       fields.items.push(item); fields.remaining--;
     }
@@ -3587,8 +3602,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       query: input.query, offset: end }, who) : null;
     return accepted({scope: 'comparison',
       matches: page.map(row => {
-        const preview = clip(row.inserted ? disclose(state.compare.incoming, row.incomingStart, row.incomingEnd).text
-          : disclose(state.compare.baseline, row.start, row.end).text, 160);
+        const preview = row.inserted ? changePreview(state.compare.incoming, row.incomingStart, row.incomingEnd, 160)
+          : changePreview(state.compare.baseline, row.start, row.end, 160);
         const change = changeOf(row.id);
         return {
           matched: preview, handle: row.id, snippet: preview,
@@ -4956,7 +4971,6 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (Object.keys(input).some(key => !['cursor', 'agent', 'operation_id'].includes(key))) return failure('cursor_options_conflict', 'invalid');
       held = lookup('cursors', input.cursor, who);
       if (held.outcome) return held;
-      if (held.revision !== state.revision) return failure('revision_changed', 'conflict');
     }
     const topic = held?.topic || input.guide;
     const guide = guideResult({topic}, topic === 'water' && typeof host.paintBrushes === 'function' ? host.paintBrushes() : null);
@@ -4968,7 +4982,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     while (instructions.length && bytes(JSON.stringify(stamp({guide: topic, instructions}))) > limit - 512)
       instructions = textHead(instructions, Math.floor(textBytes(instructions) * .75));
     const until = offset + instructions.length;
-    const next = until < guide.instructions.length ? mint('cursors', 'guide_', {kind: 'guide', topic, revision: state.revision, offset: until, digest}, who).id : null;
+    const next = until < guide.instructions.length ? mint('cursors', 'guide_', {kind: 'guide', topic, offset: until, digest}, who).id : null;
     return accepted({guide: topic, instructions, complete: !next, next_cursor: next});
   }
 
@@ -5137,7 +5151,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (safeInt(asked) && asked > state.revision) return failure('revision_unknown', 'invalid', {revision: surfaceRevision(projection)});
     if (own(input, 'filename')) {
       if (!validName(input.filename)) return failure('filename_invalid', 'invalid');
-      const extension = name => { const at = name.lastIndexOf('.'); return at > 0 ? name.slice(at + 1) : ''; };
+      const extension = name => { const at = name.lastIndexOf('.'); return at >= 0 ? name.slice(at + 1).toLowerCase() : ''; };
       if (extension(input.filename) !== extension(state.filename)) return failure('filename_extension_change_requires_conversion', 'refused');
     }
     if (input.changes === undefined && own(input, 'filename')) {

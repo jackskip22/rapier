@@ -6,7 +6,7 @@ import {seal, open} from './vault.mjs';
 import {recordingsOf} from './audio.mjs';
 import {attachmentsOf} from './attachments.mjs';
 import {runTrash} from './trash.mjs';
-import {manifestName, parseManifest, parseCanonical, recordVersion, serializeManifest, appendCanonical, canonicalSources, bindMedia, joinMedia} from './history.mjs';
+import {manifestName, parseManifest, parseCanonical, recordVersion, serializeManifest, appendCanonical, canonicalSources, bindMedia, joinMedia, unboundMedia} from './history.mjs';
 import {readLedger} from '../kit/ledger/format.mjs';
 import {joinCanonical, preservesActs} from './canonical-merge.mjs';
 import {buildLinkIndex, resolveLinkIndex, renameLinks} from './links.mjs';
@@ -367,13 +367,16 @@ export async function plan(local, heads, capabilities) {
 	const rebound = new Set(), held = new Set(), unbound = new Set(), reasons = new Map();
 	const present = new Set([...Object.keys(assets.output), ...assets.skipped]), deletedPaths = new Set(Object.values(assets.tombstones).flatMap(t => [t.file, t.source]));
 	for (const row of [
-		...Object.entries(local.files || {}).map(([file, value]) => ({file, id: local.index.notes[file]?.id, ledger: value.ledger, mapping: assets.mappings.local})),
-		...allHeads.flatMap(head => Object.entries(head.notes || {}).map(([id, row]) => ({file: row.file, id, ledger: row.ledger, mapping: assets.mappings.heads[head.device]}))),
+		...Object.entries(local.files || {}).map(([file, value]) => ({file, id: local.index.notes[file]?.id, ledger: value.ledger, media: value.media, mapping: assets.mappings.local})),
+		...allHeads.flatMap(head => Object.entries(head.notes || {}).map(([id, row]) => ({file: row.file, id, ledger: row.ledger, media: row.media, mapping: assets.mappings.heads[head.device]}))),
 	]) {
 		if (isCodeFile(row.file)) continue;
 		const media = [...canonicalMedia(row.ledger, row.id)];
 		if (media.some(file => row.mapping?.[file] && row.mapping[file] !== file)) { rebound.add(row.id); reasons.set(row.id, 'media'); }
-		else if (media.some(file => !present.has(file) && deletedPaths.has(file))) unbound.add(row.id);
+		else if (media.some(file => !present.has(file) && deletedPaths.has(file))) {
+			const loose = unboundMedia(row.ledger, row.media || [], mediaNames);
+			if (media.some(file => !present.has(file) && deletedPaths.has(file) && loose.has(file))) unbound.add(row.id);
+		}
 	}
 
 	const localForHash = {...local, head: local.head?.device === deviceId ? local.head : published || local.head || emptyHead(deviceId)};
@@ -479,6 +482,7 @@ export async function plan(local, heads, capabilities) {
 		try { for (const row of candidates.slice(1)) ledger = joinCanonical(ledger, row.ledger); }
 		catch (error) { if (error?.code !== 'notes_history_conflict') throw error; held.add(id); reasons.set(id, 'history'); continue; }
 		const proved = readLedger(ledger), content = ledger.head.sha256;
+		if (!isCodeFile(candidates[0].file) && mediaNames(proved.text).some(file => !present.has(file) && deletedPaths.has(file))) { held.add(id); reasons.set(id, 'deleted-media'); continue; }
 		const seed = localRow || candidates.find(row => row.ledger.sha256 === ledger.sha256) || candidates[0];
 		let media;
 		try { media = joinMedia([localMedia.get(id), ...slot.versions.filter(row => row.source === 'head').map(row => row.media)]); }
@@ -492,7 +496,7 @@ export async function plan(local, heads, capabilities) {
 		const parentObjects = tipsOf(candidates.flatMap(row => row.object ? [row.object] : row.parents || []), parents);
 		const body = {id, file: seed.file, text: proved.text, ledger, content, entry, media,
 			object: exact?.object || null, parents: exact?.parents || parentObjects};
-		publish(body, {adopted: !!exact});
+		publish(body, {adopted: exact?.source === 'head'});
 		if (exact?.source === 'head' && (!localRow || content !== localRow.content)) {
 			downloads.push({id, device: exact.device, key: objectKey(exact.object), hash: exact.object, file: seed.file,
 				sidecar: entry, ledger, content, parents: body.parents, conflicts: exact.conflicts || []});
@@ -892,10 +896,14 @@ export async function execute(inputPlan, transport, store, options = {}) {
 	for (const value of checked) for (const attachment of attachmentsOf(value.text)) {
 		if (!Object.hasOwn(assets, 'attachments/' + attachment.name)) refuse('incomplete_asset', 'a note links to a file whose complete bytes are not available; nothing was replaced');
 	}
+	const forgotten = new Set(Object.values(plan.head.assetTombstones || {}).flatMap(t => [t.file, t.source]));
 	for (const [file, value] of Object.entries(files)) if (!isCodeFile(file) && plan.head.notes[index.notes[file].id] && !plan.held.includes(index.notes[file].id)) {
-		for (const mediaFile of canonicalMedia(value.ledger, index.notes[file].id)) if (!Object.hasOwn(assets, mediaFile))
+		const id = index.notes[file].id, missing = [...canonicalMedia(value.ledger, id)].filter(mediaFile => !Object.hasOwn(assets, mediaFile));
+		const loose = missing.length ? unboundMedia(value.ledger, plan.media?.[id] || value.media || [], mediaNames) : null;
+		if (missing.some(mediaFile => !forgotten.has(mediaFile) || loose.has(mediaFile)))
 			refuse('incomplete_asset', 'retained canonical history names missing media; no note or history was replaced');
 	}
+	for (const [file, value] of Object.entries(files)) if (plan.media?.[index.notes[file]?.id]?.length) files[file] = {...value, media: plan.media[index.notes[file].id]};
 	if (!plan.returned && snapshot.head && same(headPayload(snapshot.head), headPayload(plan.head)) && same(files, snapshot.files) && same(index, snapshot.index)) {
 		if (typeof store.validate === 'function') await store.validate(plan.expected);
 		if (typeof store.observe === 'function') {
@@ -927,7 +935,6 @@ export async function execute(inputPlan, transport, store, options = {}) {
 	verified.paths = [...new Set([...(verified.paths || []), ...plan.head.seen, ...(plan.head.previous ? [plan.head.previous] : [])])].sort();
 	verified.digests = Object.fromEntries(verified.keys.map(key => [key, parseHeadKey(key).hash]));
 	verified.head = await sha256Hex(encodeHead(plan.head));
-	for (const [file, value] of Object.entries(files)) if (plan.media?.[index.notes[file]?.id]?.length) files[file] = {...value, media: plan.media[index.notes[file].id]};
 	const next = {files, assets, index, personal, personalBase: snapshot.personal, renames: plan.renames, deletions: plan.localTrash, assetRemoves: plan.assetRemoves, media: plan.media, trashedAt, head: plan.head, pending, observed: plan.observed, assetAliases: plan.assetAliases, verified: await authenticateHeads(verified, snapshot.deviceId, key, vdk)};
 	await store.commit(next, {expected: plan.expected});
 	await resumePending(transport, store, {vdk});
@@ -943,14 +950,12 @@ export async function putVerified(transport, key, bytes) {
 	const hash = await sha256Hex(bytes);
 	if (typeof key !== 'string' || key.slice(-64) !== hash) refuse('ciphertext', 'ciphertext does not match its immutable upload address');
 	const existing = await transport.get(key);
-	if (existing) {
-		if (await sha256Hex(existing.bytes) !== hash) refuse('ciphertext', 'an immutable address contains different bytes');
-		return;
-	}
+	if (existing && await sha256Hex(existing.bytes) === hash) return;
+	const repair = existing?.etag && transport.capabilities?.supportsConditionalWrite ? {ifMatch: existing.etag} : undefined;
 	let ambiguous = false;
-	try { await transport.put(key, bytes); }
+	try { await (repair ? transport.put(key, bytes, repair) : transport.put(key, bytes)); }
 	catch (error) {
-		if (!['timeout', 'network', 'server'].includes(error?.code)) throw error;
+		if (!['timeout', 'network', 'server', ...(existing ? ['precondition'] : [])].includes(error?.code)) throw error;
 		ambiguous = true;
 	}
 	let got;
@@ -1131,7 +1136,11 @@ export async function loadHeads(transport, vdk, {anchors = [], verified = null, 
 			if (from) bounds.set(device, from);
 		}
 	} else for (const item of (await listEvery(transport, HEAD_PREFIX)).keys) { parseHeadKey(item.key); found.add(item.key); }
-	if (checkpoint && !found.has(checkpoint)) refuse('rollback', 'this install’s published checkpoint is missing; no local work was replaced');
+	if (checkpoint && !found.has(checkpoint)) {
+		const held = await transport.get(checkpoint);
+		if (!held || await sha256Hex(held.bytes) !== parseHeadKey(checkpoint).hash) refuse('rollback', 'this install’s published checkpoint is missing; no local work was replaced');
+		found.add(checkpoint);
+	}
 	const generations = new Map(), newest = new Map(), certified = new Set(verified?.paths || []);
 	function name(key) {
 		const at = parseHeadKey(key), slot = at.device + '/' + at.generation;

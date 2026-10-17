@@ -11,6 +11,7 @@ Free and offline, with no ads, tracking or Rapier account.
   [rapier-reader.html](https://github.com/jackskip22/rapier/raw/main/rapier-reader.html).
 - **On Android:** get Rapier on [Google Play](https://play.google.com/store/apps/details?id=app.rapier). The app
   has no Internet permission. Optional Google Play asset packs download on first use, then work offline.
+- **On Windows:** download [Rapier.exe](https://github.com/jackskip22/rapier/raw/main/Rapier.exe). It is not code-signed yet, so Windows SmartScreen may warn the first time: choose **More info**, then **Run anyway**.
 - **With an agent:** the Claude plugin or another MCP client at `https://mcp.rapier.website/door/mcp`; the OpenAI plugin at `https://mcp.rapier.website/mcp`; Muse at `https://mcp.rapier.website/muse`.
 
 ## What it does

@@ -2944,7 +2944,7 @@ function _rapierNotesTitleCleared(wrapper) {
 	if (_rapierUserMutationBlocked()) return false;
 	const selection = window.getSelection?.(), context = _rapierSelectionContext(selection);
 	if (!selection?.rangeCount || !context || !_rapierSelectionActionableForFormat(context) || context.wrappers.length !== 1 || context.wrappers[0] !== wrapper) return false;
-	return _rapierApplyRawRange(_rapierFormatSnapshot(selection, [wrapper]), [_rapierEmptyParagraphRaw(rapier.document.blocks.length)], {keepEditing: true});
+	return _rapierApplyRawRange(_rapierFormatSnapshot(selection, [wrapper]), [''], {keepEditing: true});
 }
 function _rapierNotesBodyStart(host) {
 	const blocks = rapier.document.blocks, head = _rapierNotesModel()?.noteHead(blocks.map(b => String(b.raw || '')));
@@ -7480,6 +7480,11 @@ globalThis.rapierNotesStart = function rapierNotesStart(kind, captureToken = nul
 	_rapierNotes.captureChain = run;
 	return run;
 };
+globalThis.rapierNotesUnlocked = function rapierNotesUnlocked(token) {
+	if (!_rapierNotes.captureToken || token !== _rapierNotes.captureToken) return false;
+	_rapierNotes.captureToken = null; _rapierNotes.capturePreparing = false;
+	return true;
+};
 globalThis.rapierNotesWidgetOpen = function rapierNotesWidgetOpen(file, id = null) {
 	const run = _rapierNotes.captureChain.catch(() => {}).then(async () => {
 		try {
@@ -7742,7 +7747,7 @@ _rapierNotesPart = Object.freeze({
 	state: _rapierNotes, pending: _rapierNotesPending, admitInverse: _rapierNotesAdmitInverse, store: _rapierNotesStore, fields: _rapierNotesFields,
 	search: globalThis.RapierNotesSearch, syncSession: globalThis.RapierNotesSyncSession, get sync() { return _rapierNotesSyncUi; },
 	open: _rapierNotesOpen, openNote: _rapierNotesOpenNote, leaveNote: _rapierNotesLeaveNote, editor: _rapierNotesEditor, documentBound: _rapierNotesDocumentBound,
-	currentFile: _rapierNotesCurrentFile, flush: _rapierNotesFlush, back: _rapierNotesHandleBack, backOver: _rapierNotesBackOver,
+	currentFile: _rapierNotesCurrentFile, flush: _rapierNotesFlush, back: _rapierNotesHandleBack, backOver: _rapierNotesBackOver, unlock: _rapierNotesUnlock,
 	settingsOpen: _rapierNotesSettingsOpen, settingsBorrowing: _rapierNotesSettingsBorrowing, settingsGiveBack: _rapierNotesSettingsGiveBack,
 	binOpen: _rapierNotesBinOpen, snackPlace: _rapierNotesSnackPlace, headTurn: _rapierNotesHeadTurn, sheetTap: _rapierNotesSheetTap,
 	storageAnswer: _rapierNotesStorageAnswer, storageSentence: _rapierNotesStorageSentence, syncPress: _rapierNotesSyncPress,

@@ -28,12 +28,12 @@ const SHELL_URLS = [
   './icon-192.png',
   './icon-512.png',
 ];
-const SHELL_RELEASE_SHA256 = 'd9008b4918679e23e2db59a65ca2fcb4c35cb536d593407d595cc4834526c593';
-const SHELL_PAGE_SHA256 = '71b1da307479ba90833826e178f0191440bcb4d6f9167419c4b6f4fb6ea71f20';
-const SHELL_BOOT_ID = 'b3b4e47179bf85b3e8434244c52862d30adca5e38a7c35021e214721bcfdcd9a';
-const SHELL_DOOR_SHA256 = {"/privacy":"bb3ea9313de6a22685d4d0d22ba8ccd1364c9b3c154ed074b3a743e216e42721","/commercial":"2c23d156b3a85831b1f9ddb98dae1b24ebbdb9a06b7941fe66a6c59e7afdb32f","/notes":"a1aeb73251853094d5f7887215c8398293d0f605b767800c5e8b7e24ffbc6189","/draw":"b798aff39bf7cf0bff01a492a128e6a1c155101b2d40226bb3d0a9f09a71a40b","/watercolor":"62424dcc1740e52f121ce751cf7b9a511b4841e5436f8304b9c55b8f26af0472"};
+const SHELL_RELEASE_SHA256 = 'd4d538b800acc234c9012f37820c0f51275a68ec4c30714b0c9bc6c95cfc317e';
+const SHELL_PAGE_SHA256 = '94019ba8d906c821c911c8819a57feb20bf3ea88fc33169205d0f66a7f187042';
+const SHELL_BOOT_ID = 'ffe43dadcf0e570e6a64228fcdae54f5dd2cf3973bd336e35f171115c4f8d36f';
+const SHELL_DOOR_SHA256 = {"/privacy":"dfe26204c8be2fcafc56ce7818ed31ba6dbd1cb2dd4a36ff3f45c18dd81107a0","/commercial":"48a53be6f57af6b0f3f00b2b911655223005d81e855afeb2493eb1476a91de03","/notes":"1280882f593e0a1af79ef996ce09199c0cde72cd8a6a52eea0d89e5ddd9f349d","/draw":"bd89abee35356906a006f6ff283da613f24bc47179301abac09da90d51ab603f","/watercolor":"6a1c4379bfa75b5cdb59ca6e982e919c4f380b0f76ae9ea19691c48d16a6a338","/paint":"d9588d9facc60bf7089a463874d50842be3095c8a2698bc48c4ff4d3d644f55e","/markdown-editor":"766d1fdf133819b41cfabfdbeac56e2084a3e710b4c2947ddf25d249a807c8e0","/markdown-viewer":"65737ab2a1c7dff2bd941d580b7438997f56f6c4e21673458ada777e8454b2ad","/markdown-to-pdf":"473aa84ef8746fba6c0a8fe0a887824782edcb03c7f93328cd90aae6d7d19ea8","/markdown-to-word":"56f891d3c74f920f4022a8296cc20ca9f8c136bda77a808d0bd5afffa8f26245","/word-to-markdown":"4ea65cfeb9df21190c34652dd1363c58eae644594c99acbab5bc21d1faf2e638","/markdown-table-editor":"04e2dcd8d469bdc1ab5efaa0d1cd4e43c891ee38c2f0c5614203e77c172d4cfe","/mermaid-editor":"f79b843866f89d21c802677d005b6ced0e1faa103821926b76eed1a17f32953a"};
 /* The parts' pins (shell/parts.js). Install brings this release's copy of each part the person has used. */
-const SHELL_PARTS = [{"id":"document","file":"rapier-document-af865846595d638d.txt","bytes":900038,"sri":"pxhKM75Btdaknh8Jow/j1bBJTWdS3oNMzy6HupBuqn6jR6ojNCHO8lOv7X8tO929"},{"id":"drawing","file":"rapier-drawing-a1aa4217d281f1d2.txt","bytes":299930,"sri":"TXhMxU+oGJtpVdEXAxy6lG8lqnwQe65+4h5RqKAXn9jB1pkt5j8Z933xllmLLO2I"},{"id":"notes","file":"rapier-notes-579ce3efd962eef2.txt","bytes":357086,"sri":"gT8waukqYCM6J7lPtbFX9CPQwAeyKmTyU+bHuCb9wGyXn78a7yKc9S8Rs6BrUXkh"}];
+const SHELL_PARTS = [{"id":"document","file":"rapier-document-76aaa60487a70669.txt","bytes":899173,"sri":"kZFVqNSjGYvaLFs/atdmxBBLKBoOVhkeeKq9iyscZVtoHKDPAIe552TAI6GnfAB9"},{"id":"drawing","file":"rapier-drawing-aa51a284b8935205.txt","bytes":299965,"sri":"b9uNdPr55NhfvwwzqZg+TSxM5jFfTymf0DgGO69XQzP4Z5Tpqq/uhW0+U8kHrnaO"},{"id":"notes","file":"rapier-notes-9611bc771927a3d4.txt","bytes":367705,"sri":"FBTTsBl+8NitFHKRPvkunaMMDDeogC2QDbvpkgLEzPoUrilU/wmURZwRTHO3Sz59"}];
 /* Only this generation receives writes. Retirement names are captured during
    install, so a delayed success cannot erase a newer worker's cache. */
 const SHELL_GENERATION = SHELL_CACHE_PREFIX + SHELL_RELEASE_SHA256.slice(0, 32);
@@ -176,7 +176,7 @@ function isShellDoor(value) {
      /commercial. Offline, each loads Rapier, which opens the surface the address names; the slash the host
      redirects online is served as it stands (shell/platform.js _rapierDoorPathMark). */
   const door = requested.pathname.startsWith(root.pathname) &&
-    /^(?:notes|draw|watercolor|privacy|commercial)\/?$/.test(requested.pathname.slice(root.pathname.length));
+    /^(?:notes|draw|watercolor|privacy|commercial|paint|markdown-editor|markdown-viewer|markdown-to-pdf|markdown-to-word|word-to-markdown|markdown-table-editor|mermaid-editor)\/?$/.test(requested.pathname.slice(root.pathname.length));
   return requested.origin === root.origin &&
     (requested.pathname === root.pathname || requested.pathname === page.pathname || door);
 }
@@ -467,6 +467,23 @@ function encodeSharedFilename(value, fallback) {
   return encodeURIComponent(result || fallback);
 }
 
+/* The shared text is the person's document; the title and link are labels on it. A title is one heading line, and a
+   link lands as an autolink only when CommonMark reads all of it as one, so neither can open raw HTML, a Will marker or
+   another block. Any other link lands as literal text. */
+const SHARED_AUTOLINK = /^[A-Za-z][A-Za-z0-9+.\-]{1,31}:[^\u0000-\u0020<>\u007f]*$/;
+function sharedHeadingText(value) {
+  return String(value).replace(/\s+/g, ' ').trim().replace(/[\\`*_[\]<>&!|~$#]/g, '\\$&');
+}
+function sharedLinkMarkdown(value) {
+  let href = '';
+  try {
+    const url = new URL(String(value).trim());
+    if (/^(?:https?|mailto):$/.test(url.protocol)) href = url.href;
+  } catch (_) {}
+  return SHARED_AUTOLINK.test(href) ? '<' + href + '>'
+    : String(value).replace(/\s+/g, ' ').trim().replace(/[!-/:-@[-`{-~]/g, '\\$&');
+}
+
 let shareCacheMutation = Promise.resolve();
 
 async function pruneShareCache(cache, now = Date.now()) {
@@ -593,9 +610,9 @@ async function handleShareTarget(request) {
               } });
         } else if (text || title || sharedUrl) {
           const parts = [];
-          if (title) parts.push('# ' + title, '');
+          if (title) parts.push('# ' + sharedHeadingText(title), '');
           if (text) parts.push(text, '');
-          if (sharedUrl) parts.push('<' + sharedUrl + '>');
+          if (sharedUrl) parts.push(sharedLinkMarkdown(sharedUrl));
           const content = parts.join('\n');
           const filename = (title
             ? title.replace(/[^\w\-. ]+/g, '_').slice(0, 60)

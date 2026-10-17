@@ -212,7 +212,9 @@ function walk(bytes, total) {
 			if (!flag()) {
 				if (flag() && flag()) bits(96);
 				if (bits(2)) {
-					if (!encoding && flag() || flag() || flag()) throw FORM;
+					if (!encoding && flag()) bits(128);
+					if (flag()) bits(80);
+					if (flag()) bits(encoding ? 48 : 64);
 					if (encoding) bits(16);
 				}
 				none(u64());

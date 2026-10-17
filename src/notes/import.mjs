@@ -674,14 +674,14 @@ export async function importAny(entries, options = {}, importers = {}) {
 export function finalizeImport(notes, {existing = [], ascii = false} = {}) {
 	const pool = [...existing], occupied = new Set(pool);
 	const noteNames = new Set(pool.map(file => file.toLowerCase()));
-	const codeNames = new Set(pool.map(file => String(file).normalize('NFC').toLowerCase()));
+	const codeNames = new Set(pool.map(file => String(file).normalize('NFC').toLowerCase())), suffixes = new Map();
 	const planned = (notes || []).map(note => {
 		const sourceName = note.sourceName || note.sourcePath || note.file;
 		const title = typeof note.title === 'string' && note.title ? '# ' + note.title : note.text;
 		const code = isCodeFile(note.file);
 		let file = note.exactBackup ? note.file : code ? codeFileName(note.file, [], {ascii}) : noteFileName(title, [], {ascii});
 		if (!note.exactBackup && file && (code ? codeNames.has(file.normalize('NFC').toLowerCase()) : noteNames.has(file.toLowerCase())))
-			file = code ? codeFileName(note.file, pool, {ascii}) : noteFileName(title, pool, {ascii});
+			file = code ? codeFileName(note.file, pool, {ascii}) : noteFileName(title, pool, {ascii, taken: noteNames, suffixes});
 		if (!file) throw new Error('import filename cannot keep its code type: ' + note.file);
 		if (occupied.has(file)) throw new Error('import would replace occupied file: ' + file);
 		pool.push(file); occupied.add(file); noteNames.add(file.toLowerCase()); codeNames.add(file.normalize('NFC').toLowerCase());

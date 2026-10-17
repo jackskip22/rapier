@@ -50,8 +50,8 @@ export function carry(pageHtml, include = []) {
 	if (kept.has('drawing')) kept.add('letters');
 	let html = pageHtml;
 	const cut = id => { const at = element(html, id); if (at) html = html.slice(0, at.start) + html.slice(at.end); };
-	cut('rapier-part-notes');
-	if (!kept.has('drawing')) cut('rapier-part-drawing');
+	for (const id of [...new Set([...html.matchAll(/<script type="application\/rapier-runtime" id="(rapier-part-[a-z-]+)">/g)].map(match => match[1]))])
+		if (id !== 'rapier-part-drawing' || !kept.has('drawing')) cut(id);
 	const start = html.indexOf(INVENTORY);
 	if (start < 0) return html;
 	const close = html.indexOf(END, start), end = html[close + END.length] === '\n' ? close + END.length + 1 : close + END.length;
@@ -74,7 +74,7 @@ export function portableNeeds(text, {base, flowchart} = {}) {
 			for (at++; at < lines.length && !new RegExp('^ {0,3}' + open[1][0] + '{' + open[1].length + ',}\\s*$').test(lines[at]); at++) body.push(lines[at]);
 			if (open[2].toLowerCase() === 'mermaid' && flowchart?.(body.join('\n')) !== true) needs.add('mermaid');
 		}
-		if (/\$\$[\s\S]+?\$\$|(?:^|[^\\$])\$(?![\s$])[^$\n]*[^\s\\$]\$(?!\d)/.test(prose.replace(/(`+)[\s\S]*?\1/g, ''))) needs.add('math');
+		if (/\$\$[\s\S]+?\$\$|(?:^|[^\\$])\$(?![\s$])[^$\n]*[^\s\\$]\$(?!\d)/.test(prose.split(/\n[ \t]*\n/).map(paragraph => paragraph.replace(/(`+)[\s\S]*?\1/g, '')).join('\n\n'))) needs.add('math');
 	}
 	return CHOICES.filter(id => needs.has(id));
 }

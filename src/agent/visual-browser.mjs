@@ -221,6 +221,7 @@ async function mountVisual(root, {clip, signal, current, frame, deferPixels = fa
       if (value.includes('url(')) value = await inlineCss(value);
       destination.setProperty(property, value, style.getPropertyPriority(property));
     }
+    for (const property of ['counter-reset', 'counter-increment', 'counter-set']) destination.setProperty(property, style.getPropertyValue(property));
     destination.setProperty('animation', 'none', 'important');
     destination.setProperty('transition', 'none', 'important');
     return style;

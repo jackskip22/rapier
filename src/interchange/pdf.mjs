@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {PDF_JS_VERSION, PDF_READER_FILE, PDF_JS_DOWNLOAD_BYTES, PDF_JS_RESOURCE_MANIFEST, PDF_JS_RESOURCE_ROOT, pdfResourceRootText} from './pdf-resources.mjs';
-import {readAttachedSource} from './pdf-source.mjs';
+import {readAttachedSource, sourceSetAside, SOURCE_SET_ASIDE} from './pdf-source.mjs';
 export {PDF_JS_VERSION, PDF_READER_FILE, PDF_JS_DOWNLOAD_BYTES, PDF_JS_RESOURCE_MANIFEST, PDF_JS_RESOURCE_ROOT, pdfResourceRootText};
 export {readAttachedSource};
 
@@ -16,5 +16,7 @@ export async function readPdf(blob, options = {}) {
     if (source) return source;
   }
   if (!globalThis.RapierPdfPlugin) throw new Error('The PDF import plugin is unavailable.');
-  return globalThis.RapierPdfPlugin.readPdf(blob, options);
+  const result = await globalThis.RapierPdfPlugin.readPdf(blob, options);
+  if (mode === 'text' && result && await sourceSetAside(blob)) result.warnings = [...(result.warnings || []), SOURCE_SET_ASIDE];
+  return result;
 }

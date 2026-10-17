@@ -205,6 +205,10 @@ async function readerEmbedLoadRun(data, respond) {
 }
 
 function readerHostStyle(data) {
+	if (!_rapierEmbed.capabilities.includes('open')) {
+		_rapierEmbedPost('protocol-error', {code: 'capability_denied', capability: 'open'}, data.requestId);
+		return;
+	}
 	const payload = data.payload || {}, fonts = payload.fonts === undefined ? [] : payload.fonts;
 	const text = (value, max) => typeof value === 'string' && value.length > 0 && value.length <= max;
 	const face = row => row && typeof row === 'object' && !Array.isArray(row) && Object.keys(row).every(key => ['family', 'source', 'descriptors'].includes(key)) && text(row.family, 256) &&
@@ -216,7 +220,7 @@ function readerHostStyle(data) {
 	if (payload.css !== undefined) {
 		let sheet = $('rapier-host-style');
 		if (!sheet) { sheet = document.createElement('style'); sheet.id = 'rapier-host-style'; document.head.append(sheet); }
-		sheet.textContent = payload.css;
+		sheet.textContent = _rapierRenderModule('render-sanitize')._rapierStylesheetWithoutRemoteUrls(payload.css);
 		readerApplyView();
 		readerRenderSettings();
 	}

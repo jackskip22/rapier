@@ -207,7 +207,7 @@ const cropFraction = (value, legacy = false) => {
   if (!pattern.test(value)) return fail('DOCX contains an invalid picture crop.');
   const number = value.endsWith('%') ? Number(value.slice(0, -1)) / 100 :
     value.endsWith('f') ? Number(value.slice(0, -1)) / 65536 : Number(value) / (legacy ? 1 : 100000);
-  if (!Number.isFinite(number) || number < 0 || number >= 1) return fail('DOCX pictures with an outset or empty crop are not supported.');
+  if (!Number.isFinite(number) || number >= 1) return fail('DOCX pictures with an empty crop are not supported.');
   return number;
 };
 
@@ -1003,7 +1003,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     return {width: contentWidth, sectionWidth: contentWidth, assumed: !size || !margins};
   };
   const picture = async (node, context) => {
-    let id, alt = '', extent = null, extentHeight = null, align = null, opacity = 100;
+    let id, alt = '', extent = null, extentHeight = null, align = null, opacity = 100, wrap = null, x = null;
     const transform = {crop: {left:0, top:0, right:0, bottom:0}, rotation:0, flipH:false, flipV:false};
     if (is(node, 'w', 'drawing')) {
       const drawing = child(node, 'wp', 'inline') || child(node, 'wp', 'anchor');
@@ -1047,9 +1047,14 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       extent = integer(child(drawing, 'wp', 'extent')?.getAttribute('cx'), null, 1, 27273042316900);
       extentHeight = integer(child(drawing, 'wp', 'extent')?.getAttribute('cy'), null, 1, 27273042316900);
       if (is(drawing, 'wp', 'anchor')) {
-        warn('Floating pictures became normal-flow images in source order.');
         const position = child(drawing, 'wp', 'positionH'), value = child(position, 'wp', 'align')?.textContent;
         if (['left','center','right'].includes(value)) align = value;
+        if (['wrapSquare', 'wrapTight', 'wrapThrough'].some(name => child(drawing, 'wp', name))) wrap = 'around';
+        else if (child(drawing, 'wp', 'wrapNone')) wrap = ['1', 'true', 'on'].includes(drawing.getAttribute('behindDoc')) ? 'behind' : 'front';
+        else warn('Floating pictures became normal-flow images in source order.');
+        const left = integer(child(position, 'wp', 'posOffset')?.textContent?.trim(), null, -27273042316900, 27273042316900);
+        if (wrap && left > 0 && position?.getAttribute('relativeFrom') === 'column' && extent && left + extent <= context.width)
+          x = Math.round((left + extent / 2) / context.width * 10000) / 100;
       }
     } else {
       const shape = child(node, 'v', 'shape') || child(node, 'v', 'rect'), image = child(shape, 'v', 'imagedata');
@@ -1070,6 +1075,10 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       if (height) extentHeight = Number(height[1]) * ({pt:12700, in:914400, cm:360000, mm:36000, px:9525}[height[2].toLowerCase()]);
       id = attr(image, 'r', 'id'); alt = attr(image, 'o', 'title') || '';
       warn('Legacy picture positioning became normal document flow.');
+    }
+    if (Object.values(transform.crop).some(value => value < 0)) {
+      warn('Padding around pictures was not kept.');
+      for (const side in transform.crop) transform.crop[side] = Math.max(0, transform.crop[side]);
     }
     if (transform.crop.left + transform.crop.right >= 1 || transform.crop.top + transform.crop.bottom >= 1 || !Number.isFinite(transform.rotation))
       return fail('DOCX picture crop leaves no usable image.');
@@ -1109,7 +1118,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         displayWidth: extent, displayHeight: extentHeight}});
       converted.set(key, reference); stats.uniqueImages++;
     }
-    return {image: project ? account('<img data-rapier-asset="' + converted.get(key) + '" alt="' + escape(alt) + '">') : '<img>', width, align, rotate, opacity};
+    return {image: project ? account('<img data-rapier-asset="' + converted.get(key) + '" alt="' + escape(alt) + '">') : '<img>', width, align, rotate, opacity, wrap, x};
   };
   const noteParts = new Map(), notes = new Map();
   const notePart = async (kind, required = true) => {
@@ -1347,6 +1356,16 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         if (node.localName === 'fldSimple') warn('Fields became their stored displayed text.');
         await inline(node, context, inherited, pieces);
       }
+      else if (is(node, 'w') && ['dir','bdo'].includes(node.localName)) {
+        if (node.localName === 'bdo') warn('Forced text direction was not kept.');
+        await inline(node, context, inherited, pieces);
+      }
+      else if (is(node, 'w', 'ruby')) {
+        await inline(child(node, 'w', 'rubyBase') || node, context, inherited, pieces);
+        const reading = child(node, 'w', 'rt');
+        if (reading) { pieces.push({html: '('}); await inline(reading, context, inherited, pieces); pieces.push({html: ')'}); }
+        warn('Phonetic guides became readings in parentheses.');
+      }
       else if (is(node, 'w', 'commentReference') && activeComments.has(integer(attr(node, 'w', 'id')))) continue;
       else if (is(node, 'w') && ['footnoteReference','endnoteReference','commentReference'].includes(node.localName)) pieces.push({html: await noteReference(node, context), semantic: true});
       else if (is(node, 'w') && ['instrText','fldChar'].includes(node.localName)) {
@@ -1499,6 +1518,12 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       if (piece.width !== null) layout.width = piece.width;
       if (piece.rotate) layout.rotate = piece.rotate;
       if (piece.opacity < 100) layout.opacity = piece.opacity;
+      if (piece.wrap) {
+        layout.wrap = piece.wrap;
+        const x = piece.x ?? {center: 50, right: 100}[piece.align];
+        if (x != null) layout.x = x;
+        delete layout.align;
+      }
       if (context.figure) Object.assign(layout, context.figure);
       output.push('<p' + annotation(layout) + '>' + lead + piece.image + tail + '</p>');
     }
@@ -1528,7 +1553,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
           .replace(/^(<p data-md-layout="[^"]*")(>(?:(?!<\/?p\b)[\s\S])*<\/p>)$/, '$1 data-md-layout-tight$2');
       emit('</li></' + level.tag + '>');
     };
-    let code = null, language = '', definitions = false;
+    let code = null, language = '', definitions = false, quoteAt = -1;
     const closeDefinitions = () => { if (definitions) { definitions = false; if (project) emit('</dl>'); } };
     const flushCode = () => { if (code != null) { while (stack.length) close();
       emit(project ? account('<pre><code' + (language ? ' class="language-' + escape(language) + '"' : '') + '>' + escape(code) + '</code></pre>') : 'x'); code = null; } };
@@ -1547,7 +1572,14 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       }
       closeDefinitions();
       const content = base => block.quote ? '<blockquote>' + block.html(base) + '</blockquote>' : block.html(base);
-      if (!block.list) { while (stack.length) close(); emit(content(0)); continue; }
+      if (!block.list) {
+        while (stack.length) close();
+        if (project && block.quote && quoteAt >= 0 && quoteAt === parts.length - 1) parts[quoteAt] = parts[quoteAt].slice(0, -'</blockquote>'.length) + block.html(0) + '</blockquote>';
+        else emit(content(0));
+        quoteAt = block.quote ? parts.length - 1 : -1;
+        continue;
+      }
+      quoteAt = -1;
       const list = block.list;
       const same = prior => prior.tag === list.tag && (prior.id === list.id || list.tag === 'ul' && (prior.task || list.task) || list.tag === 'ol' && prior.delimiter === list.delimiter);
       while (stack.length && (stack.at(-1).level > list.level || stack.at(-1).level === list.level && !same(stack.at(-1)))) close();
@@ -1947,14 +1979,40 @@ function mergeDocxBase(edited, base) {
   if (!editedBlocks || !baseBlocks) return edited;
   const kept = baseBlocks.filter(block => block.inline), byKey = new Map();
   kept.forEach((block, index) => { if (!byKey.has(block.key)) byKey.set(block.key, []); byKey.get(block.key).push(index); });
-  let merged = '', cursor = 0, floor = 0;
-  for (const block of editedBlocks) {
-    const index = byKey.get(block.key)?.find(candidate => candidate >= floor);
-    if (index === undefined) continue;
+  const tails = [];
+  editedBlocks.forEach((block, at) => {
+    for (const index of [...(byKey.get(block.key) || [])].reverse()) {
+      let low = 0, high = tails.length;
+      while (low < high) { const mid = (low + high) >> 1; if (tails[mid].index < index) low = mid + 1; else high = mid; }
+      tails[low] = {index, at, previous: low ? tails[low - 1] : null};
+    }
+  });
+  const pairs = [];
+  for (let link = tails.at(-1); link; link = link.previous) pairs.unshift(link);
+  let merged = '', cursor = 0;
+  for (const {index, at} of pairs) {
+    const block = editedBlocks[at];
     merged += edited.slice(cursor, block.start) + base.slice(kept[index].start, kept[index].stop);
-    cursor = block.stop; floor = index + 1;
+    cursor = block.stop;
   }
-  return merged + edited.slice(cursor);
+  return pruneDocxImageDefinitions(merged + edited.slice(cursor), base);
+}
+function pruneDocxImageDefinitions(text, base) {
+  let index;
+  try { index = documentAssets(text); } catch (_) { return text; }
+  if (!index.blocks.length) return text;
+  let remaining = '', at = 0;
+  for (const row of index.blocks) { remaining += text.slice(at, row.start); at = row.end; }
+  remaining = normalizeLabel(remaining + text.slice(at)).replace(/\[\s+/g, '[');
+  const unused = index.blocks.filter(row => row.topLevel && !index.duplicateLabels.has(row.id) && !base.includes(row.source) &&
+    !remaining.includes('[' + row.id + ']'));
+  for (const row of unused.sort((a, b) => b.start - a.start)) {
+    let start = row.start, end = row.end;
+    while (start > 0 && /[\r\n]/.test(text[start - 1])) start--;
+    if (!start) while (end < text.length && /[\r\n]/.test(text[end])) end++;
+    text = text.slice(0, start) + text.slice(end);
+  }
+  return text;
 }
 function scopeReviewCustody(merged, plain, changes, base) {
   const plainBlocks = docxSourceBlocks(plain), mergedBlocks = docxSourceBlocks(merged);
@@ -2657,7 +2715,7 @@ export function docxPortableHtml(html, imageUrls = new Map()) {
   return html.replace(/ data-(?:rapier|md)-[a-z-]+="[^"]*"/g, '');
 }
 
-const DOCX_HEADING_SCALE = Object.freeze([2.6, 1.9, 1.5, 1.25, 1.1, 1]);
+const DOCX_HEADING_SCALE = Object.freeze([2.2, 1.75, 1.5, 1.25, 1.1, 1]);
 const PNG_SIG = Object.freeze([137, 80, 78, 71, 13, 10, 26, 10]);
 const HIGHLIGHT_TO_DOCX = Object.freeze({...Object.fromEntries(Object.keys(DOCX_HIGHLIGHT_HEX).map(name => [name,name])), purple:'magenta', default:'yellow'});
 
@@ -2908,7 +2966,9 @@ function mathmlRecord(root, style = {}) {
     'sans-serif-bold-italic': ['bi', 'sans-serif'], monospace: ['p', 'monospace']};
   let count = 0;
   const refuse = reason => fail('DOCX cannot represent this MathML faithfully: ' + reason + '. The original equation remains in the document source.', 'docx_mathml_unsupported');
-  const textRun = (text, props = '<m:sty m:val="p"/>') => '<m:r><m:rPr>' + props + '</m:rPr><m:t xml:space="preserve">' + escape(text) + '</m:t></m:r>';
+  const textRun = (text, props = '<m:sty m:val="p"/>') => '<m:r>' + (props ? '<m:rPr>' + props + '</m:rPr>' : '') + '<m:t xml:space="preserve">' + escape(text) + '</m:t></m:r>';
+  const fence = (element, form) => element?.localName === 'mo' && element.getAttribute('fence') === 'true' && element.getAttribute('stretchy') === 'true' &&
+    element.getAttribute('form') === form && Array.from(element.textContent.trim()).length === 1 ? element.textContent.trim() : null;
   const convert = (node, inherited = null, depth = 0) => {
     if (++count > DOCX_LIMITS.elements || depth > DOCX_LIMITS.depth) return refuse('equation limit');
     if (node.namespaceURI !== namespace) return refuse('MathML namespace is required');
@@ -2931,6 +2991,7 @@ function mathmlRecord(root, style = {}) {
     if (['mi', 'mn', 'mo', 'mtext'].includes(name)) {
       if (elements.length) return refuse('<' + name + '> contains elements');
       const text = node.textContent.replace(/[\t\r\n ]+/g, ' ').trim(); words.push(text);
+      if (!variant && !style.bold && (name === 'mn' || name === 'mo') && !/\p{L}/u.test(text)) return textRun(text, '');
       let [shape, script] = variant ? variants[variant] : [name === 'mi' && Array.from(text).length === 1 ? 'i' : 'p', 'roman'];
       if (!variant && style.bold) shape = shape === 'i' ? 'bi' : 'b';
       return textRun(text, (name === 'mtext' ? '<m:nor/>' : '') + '<m:scr m:val="' + script + '"/><m:sty m:val="' + shape + '"/>');
@@ -2939,6 +3000,13 @@ function mathmlRecord(root, style = {}) {
     if (name === 'math') {
       if (node.hasAttribute('display') && !['inline', 'block'].includes(node.getAttribute('display'))) return refuse('display value');
       return childrenXml();
+    }
+    if (name === 'mrow') {
+      const open = fence(elements[0], 'prefix'), close = fence(elements.at(-1), 'postfix');
+      if (open !== null || close !== null) {
+        const body = elements.slice(open === null ? 0 : 1, close === null ? elements.length : -1).map(element => convert(element, variant, depth + 1)).join('');
+        return '<m:d><m:dPr><m:begChr m:val="' + escape(open ?? '') + '"/><m:endChr m:val="' + escape(close ?? '') + '"/></m:dPr><m:e>' + body + '</m:e></m:d>';
+      }
     }
     if (name === 'mrow' || name === 'mstyle') return childrenXml();
     if (name === 'mspace') return '';

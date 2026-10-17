@@ -1,18 +1,18 @@
 {
-  "bundle": "rapier-math-2.4.0.js",
+  "bundle": "rapier-math-2.5.0.js",
   "packageBundle": "dist/rapier-math.js",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "license": "MIT AND LicenseRef-GUST-Font-License",
-  "bytes": 691650,
-  "gzipBytes": 405505,
-  "sha256": "7ba0adec291f761ffc1a6169830ee12630e4bfedaca1019d0b19de9ca6232aec",
-  "sha384": "C92x26+pBI4q9FoWypMhBb8CqSGaaPLw8dpYigWiYNsYQRTcPVrFyPVjrhc/Tnwh",
+  "bytes": 695410,
+  "gzipBytes": 406684,
+  "sha256": "16b84df8ba9ad1df581ddd73ab357c0da93720ee719e8399ecfff75b92cbb016",
+  "sha384": "VDN0hcZbJ7LFS7fJjiUV/8THDfLxUWNfbGZQkggQptiaw4JaNAjZOmyK0kDRLNN3",
   "sources": [
     {
       "file": "math/font.js",
       "packageFile": "src/math/font.js",
-      "bytes": 465845,
-      "sha256": "d10ac2bcef6e624c4b052602efbbd70c8c69bd40b7e2c5096526291fcae4f60b"
+      "bytes": 445355,
+      "sha256": "458b5a89aa6e6077580e5e44529846ce57ed9a33ad9e9d694b616cfdcd6cdd38"
     },
     {
       "file": "math/symbols.js",
@@ -23,8 +23,8 @@
     {
       "file": "math/parser.js",
       "packageFile": "src/math/parser.js",
-      "bytes": 99002,
-      "sha256": "112bd3308c9ac2d571345c927bfd92b1152cf11a4379be65d93fde63636ae56c"
+      "bytes": 101346,
+      "sha256": "a50967534640eff2e86a1fdc94cd04b2720ccf4bf37cf5b69013d9e884d33fff"
     },
     {
       "file": "math/source.js",
@@ -41,8 +41,8 @@
     {
       "file": "math/layout.js",
       "packageFile": "src/math/layout.js",
-      "bytes": 42656,
-      "sha256": "a827198f106727a258f43d57f1f05995df943cb0c8706f92948ab1fe53c0ffc2"
+      "bytes": 43310,
+      "sha256": "469697025ea76692c01c589dce41b4064aeb39202f4702248764802bab73bc5a"
     },
     {
       "file": "math/fallbacks.js",
@@ -90,15 +90,15 @@
       "file": "math/classic.js",
       "packageFile": "src/math/classic.js",
       "bytes": 269,
-      "sha256": "28c175b6dd148acf3ee7dc33ba5332589a7491dac09d95f29b84e3cc2c737679"
+      "sha256": "eaef2806dcc2e7fc9951ea01ec43bd8692dfa07c19beae4097ab4a5ceab667a9"
     }
   ],
   "recipe": [
     {
       "file": "math/build-font.py",
       "packageFile": "src/math/build-font.py",
-      "bytes": 32576,
-      "sha256": "98599660cf23e0ee5e38d35732ff353f634c2d4ce641072b0834089533d94836"
+      "bytes": 32914,
+      "sha256": "990b406088037c22fafeb846e6fd755c6fc84661c3d059b9ebe234aa70eecf89"
     },
     {
       "file": "math/FONT-SOURCE.md",
@@ -121,8 +121,8 @@
     {
       "file": "tools/build-math.mjs",
       "packageFile": "src/tools/build-math.mjs",
-      "bytes": 9604,
-      "sha256": "dbdcf36f22ae5052397f0cdf9b977a2d83950c43a32cf9c5533a5aebc468b966"
+      "bytes": 9781,
+      "sha256": "896de0b9ef28c65122650d70bf0c1cadd52fb76a27b4f868268cc950f732fedf"
     },
     {
       "file": "math/LICENSE-MIT",
@@ -151,8 +151,8 @@
     {
       "file": "math/package-check.mjs",
       "packageFile": "tests/check.mjs",
-      "bytes": 8662,
-      "sha256": "b9bb518590aa85a3e3e6f14bbc149b112ec73ca05259234358a8460a2ada28f3"
+      "bytes": 8983,
+      "sha256": "6d3e59543bcfeba05f15bd0db166da8572ca760c40c9049c02bb50f51bd64bd5"
     },
     {
       "file": "math/package-readme.mjs",
@@ -163,8 +163,8 @@
     {
       "file": "math/README.md",
       "packageFile": "docs/api.md",
-      "bytes": 23839,
-      "sha256": "418310eeccbb9f9cd4c3909d9b2aa373a77a9362330ae04bd530a7509dc0888e"
+      "bytes": 23837,
+      "sha256": "cebb4f880237bf73ba7a729c2f97c4df930910a51e24927b2056b1d0ea0c4326"
     },
     {
       "file": "math/SEMANTICS.md",
@@ -181,8 +181,8 @@
     {
       "file": "math/typeset-verify.mjs",
       "packageFile": "tests/typeset.mjs",
-      "bytes": 12006,
-      "sha256": "45e8c0fd426cb497dfc65683d3b412ef57dc2d9cc92deef58311afa164fd931a"
+      "bytes": 15658,
+      "sha256": "482e5e11695c3d02d860c4383c9faeaf9773a9d4fa0bc23df8dd5ab5a9ed4f0c"
     }
   ],
   "components": [

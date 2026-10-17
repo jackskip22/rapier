@@ -171,7 +171,24 @@ function footnotes(pages) {
 function tagBlocks(tree, runs, pictures) {
   const groups=new Map(), used=new Set(), usedPictures=new Set();
   for(const run of runs)if(run.id){if(!groups.has(run.id))groups.set(run.id,[]);groups.get(run.id).push(run);}
-  const content=node=>node.type==='content'?[node.id]:(node.children||[]).flatMap(content);
+  const contents=new WeakMap();
+  let contentReferences=0;
+  const content=(node,depth=0)=>{
+    const cached=contents.get(node);
+    if(depth>64 || cached===null || ++contentReferences>100000)
+      throw failure('The PDF structure is too complex to import.','PDF_TEXT_LIMIT');
+    if(cached)return cached;
+    contents.set(node,null);
+    const ids=node.type==='content'?[node.id]:[];
+    if(node.type!=='content')for(const child of node.children||[]){
+      const part=content(child,depth+1);
+      if((contentReferences+=part.length)>100000)
+        throw failure('The PDF structure is too complex to import.','PDF_TEXT_LIMIT');
+      for(const id of part)ids.push(id);
+    }
+    contents.set(node,ids);
+    return ids;
+  };
   const items=node=>content(node).flatMap(id=>groups.get(id)||[]);
   const block=(type,node,extra={})=>{
     const values=items(node);for(const r of values)used.add(r);

@@ -67,7 +67,7 @@ export function createMediaPlayback(win, inspectGIF) {
           if (canvas.height !== h) canvas.height = h;
           const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, w, h); ctx.drawImage(frame, 0, 0);
           if (!state.first && next === 0) state.first = canvas.toDataURL('image/png');
-          const delay = frame.duration > 10000 ? Math.max(20, frame.duration / 1000) : 100;
+          const delay = type !== 'image/gif' ? Math.max(8, frame.duration / 1000) : frame.duration > 10000 ? Math.max(20, frame.duration / 1000) : 100;
           duration += delay; if (duration > 120000) throw new Error('Animation exceeds the duration budget');
           state.status = 'ready'; state.frame = next; changed(state);
           if (single) {paused = true; closeDecoder(); return;}

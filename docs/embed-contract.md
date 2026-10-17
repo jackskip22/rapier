@@ -267,7 +267,7 @@ and a completed selection returns `open-nack` with `open_completed`. A changed b
 capabilities; a connect that offers any other is refused with `capabilities_invalid`. Every load is read-only:
 `load-ack` and `document-state` carry `readOnly: true` whatever the payload says. Its settings features are `find`, `readAloud` and `share`;
 `draw`, `paint` and `notes` are omitted from the echo. It also accepts `style`, a command
-that needs no grant and restyles the frame, never the document. The reader enforces the contract in `reader/embed.js`,
+that requires the `open` grant and restyles the frame, never the document. The reader enforces the contract in `reader/embed.js`,
 with the editor's own envelope, request-ledger and validation functions.
 
 Every build reads one setting from its own address, before any connect: `?plugins=<directory>`. With it, every plug-in file is
@@ -277,7 +277,8 @@ which is all its Content Security Policy lets it read: `Rapier.mount` throws a `
 refuses it, in words, before it makes a request.
 
 `style` carries `{css?, fonts?}`. `css` is a string of at most 4 MiB, placed after the reader's own sheets and
-replaced by the next `style`. `fonts` is a list of at most 16 `{family, source, descriptors?}` records handed to
+replaced by the next `style`. Remote URLs are removed before the stylesheet is applied. Without `open`, the reader
+returns `protocol-error` `capability_denied`. `fonts` is a list of at most 16 `{family, source, descriptors?}` records handed to
 `FontFace`: `source` is the face's bytes (an `ArrayBuffer` or typed array) or a CSS source string, and descriptor
 values are strings. A malformed payload gets `protocol-error` `invalid_payload`; a face the browser cannot load gets
 `protocol-error` `font_invalid`. The page policy admits `data:` fonts only, so a remote `url()` source does not load.

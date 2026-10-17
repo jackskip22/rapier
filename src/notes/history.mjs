@@ -614,7 +614,7 @@ function carryCanonicalIn(state, manifest, ledger, text) {
   after.ledger.start.revision === before.start.revision && equal(after.ledger.start, before.start) &&
   after.ledger.records.length >= before.records.length && before.records.every((row, i) => equal(row, after.ledger.records[i])),
   'The live ledger does not extend this note history', 'notes_history_unavailable');
- return canonicalResult(state, m, after, {act: after.revision === before.revision ? null : canonicalAct(after.ledger.records.at(-1)), unchanged: after.ledger.sha256 === held.ledger.sha256});
+ return canonicalResult(state, m, after, {act: after.revision === before.revision ? null : canonicalAct(after.ledger.records.at(-1)), unchanged: after.ledger.sha256 === held.ledger.sha256, supersededInput: !before.proof});
 }
 export function carryCanonical(manifest, ledger, text) { return carryCanonicalIn(null, manifest, ledger, text); }
 function appendCanonicalIn(state, manifest, {text, metadata, author, transport = 'platform', requestId = null, requestScope = null,
@@ -767,6 +767,9 @@ export function bindMedia(ledger, rows = [], file, content, names, {close = fals
  const row = close && latest && next.get(mediaKey(latest));
  if (row) { next.set(mediaKey(latest), {...row, end: latest.acts.at(-1)}); changed = true; }
  return changed ? sortedMedia([...next.values()]) : rows;
+}
+export function unboundMedia(ledger, rows = [], names) {
+ return new Set(mediaStretches(ledger, rows, names).all.filter(stretch => !stretch.row).map(stretch => stretch.file));
 }
 export function joinMedia(lists) {
  const out = new Map();

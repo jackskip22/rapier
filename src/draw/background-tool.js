@@ -143,7 +143,12 @@ function _rapierBgCommit(next) {
 	const admitted = next ? _rapierBg._rapierDrawNormalizeBackground(next) : null;
 	if (next && !admitted) { _rapierDrawBackgroundSync(); _rapierBgSyncPanel(); return false; }
 	if (JSON.stringify(state.recipe.background || null) === JSON.stringify(admitted)) { _rapierDrawBackgroundSync(); _rapierBgSyncPanel(); return false; }
-	const done = _rapierDrawCommand(() => { if (admitted) state.recipe.background = admitted; else delete state.recipe.background; });
+	const done = _rapierDrawCommand(() => {
+		const recipe = state.recipe, left = recipe.background, kept = {...recipe.backgrounds};
+		if (left && left.kind !== admitted?.kind) kept[left.kind] = left;
+		if (admitted) { recipe.background = admitted; delete kept[admitted.kind]; } else delete recipe.background;
+		if (Object.keys(kept).length) recipe.backgrounds = kept; else delete recipe.backgrounds;
+	});
 	if (admitted?.kind === 'paper' && typeof _rapierWaterFollowPaper === 'function') _rapierWaterFollowPaper(admitted.paper);
 	const after = () => { if (typeof _rapierDrawRenderAll === 'function') _rapierDrawRenderAll(); _rapierDrawBackgroundSync(); _rapierBgSyncPanel(); };
 	if (done && typeof done.then === 'function') done.then(after); else after();
@@ -151,7 +156,11 @@ function _rapierBgCommit(next) {
 }
 
 const _rapierBgCopy = bg => bg ? JSON.parse(JSON.stringify(bg)) : null;
-function _rapierBgAsKind(kind, from) { return kind === 'none' ? null : _rapierBg._rapierDrawBackgroundStart(kind, from); }
+function _rapierBgAsKind(kind, from) {
+	if (kind === 'none') return null;
+	const kept = _rapierDrawState.recipe?.backgrounds?.[kind];
+	return kept ? _rapierBgCopy(kept) : _rapierBg._rapierDrawBackgroundStart(kind, from);
+}
 
 function _rapierBgSyncPanel() {
 	const panel = _rapierBgPanel();

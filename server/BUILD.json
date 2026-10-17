@@ -1,39 +1,39 @@
 {
-  "version": "1.2.7",
+  "version": "1.2.8",
   "development": false,
   "chromium": "supplied and exactly pinned by the administrator",
   "profiles": {
     "reader": {
       "path": "rapier-reader.html",
-      "bytes": 365434,
-      "sha256": "1cf077d960c4551aa13adf90b6f7cf87fd0659b4521c5bb838bb03b7a0263b6d",
-      "gzip": 351308,
+      "bytes": 367065,
+      "sha256": "ec23357d82313afa9d3729da3a6238f883cbb7c33dd521f99b3b3b3e49db805a",
+      "gzip": 353162,
       "budget": {
         "warn": 1200000,
         "refuse": 1250000
       },
-      "builtAt": "2026-10-16T19:38:00.712Z",
+      "builtAt": "2026-10-17T01:07:41.199Z",
       "node": "v22.23.3",
       "mode": "release",
       "packing": "zopfli",
       "canonical": true,
       "parts": {
         "core": {
-          "raw": 910975,
-          "gzip": 294380,
-          "base124": 288048
+          "raw": 915414,
+          "gzip": 295824,
+          "base124": 289138
         },
         "licenses": {
           "raw": 87481,
           "gzip": 24709,
-          "base124": 24219
+          "base124": 24164
         }
       }
     },
     "full": {
       "path": "rapier.html",
-      "bytes": 1722383,
-      "sha256": "71b1da307479ba90833826e178f0191440bcb4d6f9167419c4b6f4fb6ea71f20",
+      "bytes": 1761280,
+      "sha256": "94019ba8d906c821c911c8819a57feb20bf3ea88fc33169205d0f66a7f187042",
       "budget": {
         "warn": 2980000,
         "refuse": 3000000
@@ -120,8 +120,8 @@
         {
           "element": "rapier-jxl-worker",
           "name": "rapier-jxl-worker.js",
-          "bytes": 180498,
-          "sha256": "60dbfaf0a0a15d1d7f07274aace92407a11cf36ac3a6371302e27cce922920a1"
+          "bytes": 180937,
+          "sha256": "6b31c831480cdc0dd999608a68a9461ea66f50df8edf2b6dc1d1a38c3a591a4a"
         },
         {
           "element": "rapier-platform-runtime",
@@ -132,8 +132,8 @@
         {
           "element": "rapier-platform-runtime",
           "name": "rapier-platform.js",
-          "bytes": 93484,
-          "sha256": "80e7fd5f1d7d0726bdff138272a7a0c0675a776d812e59731bdc9d69d4beb06e"
+          "bytes": 94841,
+          "sha256": "30f88e8364741cfcf0ed421127e02692b1464416057bd6ccf34d85a719d5e99f"
         },
         {
           "element": "rapier-platform-runtime",
@@ -151,19 +151,19 @@
           "element": "rapier-platform-runtime",
           "name": "rapier-plugin-loader.js",
           "bytes": 26024,
-          "sha256": "a8ea6058fc22b07199b990437ea186115362478e4f45e3330ef6df62d6d41ed7"
+          "sha256": "0ee030d677010f1fd75940695e2c6bbb715f3225000feba755eb710bf028718d"
         },
         {
           "element": "rapier-platform-runtime",
           "name": "rapier-font-subset-plugin.js",
           "bytes": 844,
-          "sha256": "f2a48fc99f9c4244eb3ebb0a3b09a42205fa037452ad50a49ceb29e0392e56b9"
+          "sha256": "4efb3250c9136de3712cbc74a824754df565c9797755287d0bb3a069e8790126"
         },
         {
           "element": "rapier-platform-runtime",
           "name": "rapier-parts.js",
-          "bytes": 5452,
-          "sha256": "c231786327cdda7d44375dbb66833a2251b917b6060909dd3a1ca17988c96d8c"
+          "bytes": 5648,
+          "sha256": "99a3b20ff031d15a72fd6216aa783c975659ee450a491b8d98fa767c429970e7"
         },
         {
           "element": "rapier-styles-runtime",
@@ -174,8 +174,8 @@
         {
           "element": "rapier-styles-runtime",
           "name": "rapier-styles.json",
-          "bytes": 116980,
-          "sha256": "cef395f59d9df9d41c2123021ac62753f130ce9da9dd550bdc8538d283c4a30d"
+          "bytes": 118039,
+          "sha256": "91db3d9283a3e7eeb5813217af2f9e93de78bc5a7bc14139b1b719e73e58efd3"
         },
         {
           "element": "rapier-styles-runtime",
@@ -186,8 +186,8 @@
         {
           "element": "rapier-style-rest-runtime",
           "name": "rapier-styles-rest.json",
-          "bytes": 68193,
-          "sha256": "9ef575e10fe22c9b42fa63e06f44ad6b7c8c5b4a23e5dd3e907c14c88b6cd696"
+          "bytes": 68949,
+          "sha256": "5e05addbf795e866d85e1cf154a74d3238c82e63a6c313f14cf1489c88d761f6"
         },
         {
           "element": "rapier-codec-runtime",
@@ -198,28 +198,28 @@
         {
           "element": "rapier-ui-runtime",
           "name": "rapier-ui.html",
-          "bytes": 159380,
-          "sha256": "0fbaf4ea821ce6b3448beddcc735c6873d00e5da8bad11de4d608d67e7169a78"
+          "bytes": 159472,
+          "sha256": "c04de56f1eb409687559f37995bd41483cc2c5dcb80ea475a63d23929cd4dfda"
         },
         {
           "element": "rapier-editor-runtime",
           "name": "rapier-shared.js",
-          "bytes": 2261484,
-          "sha256": "15b9e31829a9a83ad089d680def9ff68b8fcd29099138af553b8303f9aa67360"
+          "bytes": 2270467,
+          "sha256": "2f8ce19bacef62ed35c9fda354de5a104cff0d7ed019f27f369d3b5a3ab0846b"
         },
         {
           "element": "rapier-editor-runtime",
           "name": "rapier-editor.js",
-          "bytes": 2090131,
-          "sha256": "607cde213532db4d1f66055f8e55dee3fc9051d454308e54048c84856cd946e2"
+          "bytes": 2137547,
+          "sha256": "470d944d81334dfb851badf1854d31ccba53850c48cb1a7170b6184b76469400"
         }
       ],
       "parts": [
         {
           "id": "document",
-          "file": "rapier-document-af865846595d638d.txt",
-          "bytes": 900038,
-          "sri": "pxhKM75Btdaknh8Jow/j1bBJTWdS3oNMzy6HupBuqn6jR6ojNCHO8lOv7X8tO929",
+          "file": "rapier-document-76aaa60487a70669.txt",
+          "bytes": 899173,
+          "sri": "kZFVqNSjGYvaLFs/atdmxBBLKBoOVhkeeKq9iyscZVtoHKDPAIe552TAI6GnfAB9",
           "scripts": [
             "editor/document-layout.js"
           ],
@@ -232,9 +232,9 @@
         },
         {
           "id": "drawing",
-          "file": "rapier-drawing-a1aa4217d281f1d2.txt",
-          "bytes": 299930,
-          "sri": "TXhMxU+oGJtpVdEXAxy6lG8lqnwQe65+4h5RqKAXn9jB1pkt5j8Z933xllmLLO2I",
+          "file": "rapier-drawing-aa51a284b8935205.txt",
+          "bytes": 299965,
+          "sri": "b9uNdPr55NhfvwwzqZg+TSxM5jFfTymf0DgGO69XQzP4Z5Tpqq/uhW0+U8kHrnaO",
           "scripts": [
             "draw/draw.js",
             "draw/effects-tool.js",
@@ -299,9 +299,9 @@
         },
         {
           "id": "notes",
-          "file": "rapier-notes-579ce3efd962eef2.txt",
-          "bytes": 357086,
-          "sri": "gT8waukqYCM6J7lPtbFX9CPQwAeyKmTyU+bHuCb9wGyXn78a7yKc9S8Rs6BrUXkh",
+          "file": "rapier-notes-9611bc771927a3d4.txt",
+          "bytes": 367705,
+          "sri": "FBTTsBl+8NitFHKRPvkunaMMDDeogC2QDbvpkgLEzPoUrilU/wmURZwRTHO3Sz59",
           "scripts": [
             "notes/notes.js",
             "notes/todo.js",
@@ -391,6 +391,16 @@
             "notes/provider-setup.mjs",
             "notes/cloudflare-setup.mjs",
             "notes/transport-companion.mjs",
+            "notes/sync-plain-session.mjs",
+            "notes/sync-plain.mjs",
+            "notes/sync-plain-pictures.mjs",
+            "notes/plain-stores.mjs",
+            "notes/plain-dropbox.mjs",
+            "notes/plain-drive.mjs",
+            "notes/plain-store.mjs",
+            "notes/plain-onedrive.mjs",
+            "notes/plain-webdav.mjs",
+            "notes/plain-s3.mjs",
             "notes/sync-device.mjs",
             "notes/qr-code.mjs",
             "notes/owned-adapter.mjs",
@@ -604,24 +614,20 @@
           "androidBackupSource"
         ],
         "notes/transport-drive.mjs": [
-          "DRIVE_API_ORIGIN",
-          "PUT_MAX_BYTES",
-          "UPLOAD_CHUNK_BYTES"
+          "PUT_MAX_BYTES"
         ],
         "notes/transport-onedrive.mjs": [
-          "ONEDRIVE_API_ORIGIN",
           "PUT_MAX_BYTES"
         ],
         "notes/transport-dropbox.mjs": [
-          "DROPBOX_API_ORIGIN",
-          "DROPBOX_CONTENT_ORIGIN",
           "PUT_MAX_BYTES"
         ],
         "notes/drive-oauth.mjs": [
           "AUTHORIZE_ENDPOINT",
           "TOKEN_ENDPOINT",
           "REVOKE_ENDPOINT",
-          "SCOPES"
+          "SCOPES",
+          "RETURNS_TOKEN"
         ],
         "notes/onedrive-oauth.mjs": [
           "AUTHORIZE_ENDPOINT",
@@ -658,13 +664,7 @@
         "notes/transport-s3.mjs": [
           "PUT_MAX_BYTES",
           "LIST_MAX_BYTES",
-          "RETRY_CAP",
-          "EMPTY_SHA256",
-          "encodeObjectKey",
-          "canonicalQuery",
-          "signV4",
-          "readS3XML",
-          "s3XMLScalar"
+          "RETRY_CAP"
         ],
         "notes/cloudflare-setup.mjs": [
           "NOTES_BUCKET"
@@ -672,6 +672,17 @@
         "notes/transport-companion.mjs": [
           "COMPANION_CHUNK",
           "COMPANION_MAX_BYTES"
+        ],
+        "notes/sync-plain.mjs": [
+          "isSyncLayout",
+          "memoryPlainStore"
+        ],
+        "notes/sync-plain-session.mjs": [
+          "PLAIN_PROVIDERS",
+          "plainRecord"
+        ],
+        "notes/plain-store.mjs": [
+          "sameBytes"
         ],
         "notes/live-envelope.mjs": [
           "KINDS"
@@ -686,7 +697,7 @@
         ]
       },
       "jxl": {
-        "version": "4.0.1",
+        "version": "4.1.0",
         "modules": [
           "images/jxl/kernel-hooks.mjs",
           "images/jxl/weighted-policy.mjs",
@@ -738,11 +749,11 @@
           "images/jxl/rapier.mjs"
         ],
         "worker": {
-          "bytes": 180498,
-          "sha256": "60dbfaf0a0a15d1d7f07274aace92407a11cf36ac3a6371302e27cce922920a1"
+          "bytes": 180937,
+          "sha256": "6b31c831480cdc0dd999608a68a9461ea66f50df8edf2b6dc1d1a38c3a591a4a"
         }
       },
-      "builtAt": "2026-10-16T19:38:46.299Z",
+      "builtAt": "2026-10-17T01:08:23.274Z",
       "node": "v22.23.3",
       "mode": "release",
       "packing": "zopfli",
@@ -772,8 +783,8 @@
       "sha256": "68b7dcf4fb10792393166ed2902a46c0a05a07596a4e01cec613510cb4d563e2"
     },
     "dist/mcp/worker.mjs": {
-      "bytes": 303126,
-      "sha256": "24452de126969b323e3fc2bc3f32561c67da785dbe96e23aadcc1d73334644da"
+      "bytes": 305733,
+      "sha256": "ff729d7266fcb361c0b7e6a3788e5028b20e06507270e1b2734565f09b65d580"
     },
     "dist/mcp/incremental-json.mjs": {
       "bytes": 22257,
@@ -860,24 +871,24 @@
       "sha256": "3aea0ffce7c16671170895ac75a83cf6bad6c21ec9e2da73cfa3025a08db6989"
     },
     "dist/agent/kernel.mjs": {
-      "bytes": 417655,
-      "sha256": "1ebbade960a96d20a298e0a23c40b26d36c5623df5df69e58f2cd90cb2d39155"
+      "bytes": 419312,
+      "sha256": "20758892f94c0b3c193b64decac0b8c36607027115488ff27f4bad939981ce12"
     },
     "dist/agent/clone-source.mjs": {
       "bytes": 1574,
       "sha256": "80873b9909559bd0a25f31d533216ee7e79e2e752400a7831aeb7e9b92353dad"
     },
     "dist/spec/html-blocks.mjs": {
-      "bytes": 57187,
-      "sha256": "a2112749ab220c98258f4c9bd6f11834d6351467041449d7243a1662fcf5da7c"
+      "bytes": 57498,
+      "sha256": "98089ee06096795ce3ae837213292dd3718006fa22f6796ad8207f79ae2731a5"
     },
     "dist/images/gif.mjs": {
       "bytes": 3056,
       "sha256": "7f7cc809c701a2e336dc7235cda4714d20ebbdee2869c27eb9fe4f5217cb2eac"
     },
     "dist/images/playback.mjs": {
-      "bytes": 7674,
-      "sha256": "d2a4edded0643881a09fe191e92293042bcb85d3c18e0c13533fac790e424e53"
+      "bytes": 7857,
+      "sha256": "68c424a24c13233efaab6e438e314afd6f9c92974ac1dc4e0c42fca5e62a1f1b"
     },
     "dist/spec/md-layout.mjs": {
       "bytes": 12551,
@@ -900,8 +911,8 @@
       "sha256": "160e00100c0d563aa942ec52ba1a89b93679d28bf40003e6d5d1b5aa324ebff9"
     },
     "dist/agent/will.mjs": {
-      "bytes": 7213,
-      "sha256": "610df5131076e63096053ca4132b4018730fe69d1f0e66b0cb709e010abe8783"
+      "bytes": 7335,
+      "sha256": "8827cadb3fc33b225917cdf3f676dc29636e7440b41ca5ab3313a8356a5ab63e"
     },
     "dist/packages/rapier-diff/summary.mjs": {
       "bytes": 2230,
@@ -916,8 +927,8 @@
       "sha256": "31c1c85b39abbdf09791eaad35af1904b3094b98c76f00ce32916854298c8b19"
     },
     "dist/images/assets.mjs": {
-      "bytes": 49341,
-      "sha256": "db5ef6b26eac44d2f4473b88d44c2844d9a9be9d8c82c1e933a9e8b2b10ca62b"
+      "bytes": 49367,
+      "sha256": "27d68417f091665f086f4c05033e8b76f36fd5d31559fffd40a1852b8d589d74"
     },
     "dist/images/header.mjs": {
       "bytes": 5883,
@@ -932,8 +943,8 @@
       "sha256": "21b392ca2d905b5528965780f2609f7c46aaace59687d96b125687a49de743bf"
     },
     "dist/images/raster.mjs": {
-      "bytes": 8712,
-      "sha256": "02b28920f0b7f840607e99d45341f723e72485d4ffcc5c76bc0e48e843507e33"
+      "bytes": 12130,
+      "sha256": "860737b40912797ddc07fb736f60db4c95bab2fc83ce28c759bc452f323c5c1d"
     },
     "dist/draw/font.mjs": {
       "bytes": 26677,
@@ -984,8 +995,8 @@
       "sha256": "2c78e9afedc1b14a8f06e1d4a02f70b4f615f0b14c1618003a1c501ce85666b1"
     },
     "dist/draw/core.mjs": {
-      "bytes": 299251,
-      "sha256": "cfca648eae6a0fa49391b8941e55aec5153091c39b5fed6a2c96bd2c8483e283"
+      "bytes": 301120,
+      "sha256": "10f484527a5dd67f231d9e872c73ac2cb5e7e5355e678047dbbaf233419287a1"
     },
     "dist/draw/freehand.mjs": {
       "bytes": 14543,
@@ -996,8 +1007,8 @@
       "sha256": "6c2a83b2d7b9fe03bbf6771999535d9295683581bb7f82ff6a52cf587c59defb"
     },
     "dist/draw/text.mjs": {
-      "bytes": 53865,
-      "sha256": "565d616240605287d374c67beabb09cbd9534942d9f2b6927a46ec2a2a864131"
+      "bytes": 54131,
+      "sha256": "b93424aa007a6304ac08e83d1b7edbb8fcf0caa372344e3683f1c872d66399c2"
     },
     "dist/draw/grain.mjs": {
       "bytes": 476,
@@ -1080,8 +1091,8 @@
       "sha256": "a7666dd79bc6b1a6926bfbe34c47ed433c7d7daaf427dd84e2b7e0b1c9e311cf"
     },
     "dist/draw/edit.mjs": {
-      "bytes": 66893,
-      "sha256": "a9fb6adb5a901f02e47b7e671b91f50a4997004ee50b822ff8613a2b39b92634"
+      "bytes": 67830,
+      "sha256": "37235f5fd11c520dc6898431bd8b002da57f92a3a1544899d4c144254a8fe7ce"
     },
     "dist/agent/catalog.mjs": {
       "bytes": 12887,
@@ -1109,7 +1120,7 @@
     },
     "dist/version.mjs": {
       "bytes": 433,
-      "sha256": "55ff09f6cceeee6430fba51bbc4ca877e65dfe0a1cdc6a4fe8ea79a07f79d2c8"
+      "sha256": "d148cff732ad0520d7cde0e6d24baf0c1dc9b989c02d7d4c7261bfcd8f7fa914"
     },
     "dist/agent/visual.mjs": {
       "bytes": 8197,
@@ -1184,8 +1195,8 @@
       "sha256": "c26683f18cd5b792ed0c136ada959e4d0e27c040bb5f23147729d95713ae3529"
     },
     "dist/draw/paint.mjs": {
-      "bytes": 269164,
-      "sha256": "5fe4676eeaa4c600391f7b84fdd12d311068bf614c2c5efb99f1563de6b26dbe"
+      "bytes": 269349,
+      "sha256": "a4ed25d3c922b24c6f93544b9b104f8ef5e5c718fd8332d5e95527e04d308de8"
     },
     "dist/draw/paint-pigment.mjs": {
       "bytes": 5403,
@@ -1208,16 +1219,16 @@
       "sha256": "a6175f3741bfa4f56c6238ceece5917b22ad5965c6dc9490e0fe74206edb45f2"
     },
     "dist/draw/water.mjs": {
-      "bytes": 39129,
-      "sha256": "4da77e1205e75ac1dffc4934d63e4f85583fec6de10f984f2f5f0c73a50262ed"
+      "bytes": 39709,
+      "sha256": "2c1de923927ed7b729782cf23957ca4be33bd924a26757e4f6ece3de9caa209d"
     },
     "dist/draw/water-gpu.mjs": {
-      "bytes": 99957,
-      "sha256": "012243fa4fdb95c67a990a4ca6686487c99b2e2b63815ae93606e1ef942df1f8"
+      "bytes": 100748,
+      "sha256": "f22b25faca5fd264c16e7e165c35dc87288f9e7e1d680a7effe28c2f9d60e5f4"
     },
     "dist/draw/water-shaders.mjs": {
-      "bytes": 24490,
-      "sha256": "d35bff6fe43f9d98de8137f05d08c8650d08e156dc47162ed8e78922684bae11"
+      "bytes": 24750,
+      "sha256": "1d76d96b7da9910d8def836ed4ed6c3d5d5e71b31e541b68e1633cf480659117"
     },
     "dist/draw/water-contact.mjs": {
       "bytes": 9109,
@@ -1280,16 +1291,16 @@
       "sha256": "51da1382aed2e37f2d7b52a367c83eb47c2bace7695a9de0120f12ec967b5232"
     },
     "dist/images/jxl-native.mjs": {
-      "bytes": 15934,
-      "sha256": "5fe3d974d80b9a5da9122d06878dd84c0502d8e5d1b044d5dc3f2c64885cfdfd"
+      "bytes": 15993,
+      "sha256": "4cddc815fa21ae916cb547804f93bac60b737e8c27733529c359bf05875a9b95"
     },
     "dist/skills/rapier-html/return-address.mjs": {
       "bytes": 1646,
       "sha256": "0e12a984453ce71a6a5aaa3a5ec2cfac1753d8ad3e67ca86e181a57a253eaa1f"
     },
     "dist/skills/rapier-html/wrap.mjs": {
-      "bytes": 12635,
-      "sha256": "2b9403bd1da7212cadba656113dd5daf3f93b80ab66c5851b69b3247d00edc36"
+      "bytes": 12956,
+      "sha256": "6c58ce73420d25d516847db24e593e1017057c7b45cc765eea23632ec5309471"
     },
     "dist/spec/flowchart.mjs": {
       "bytes": 18036,
@@ -1324,8 +1335,8 @@
       "sha256": "2847d23ba78534b32348d5e642ded601e4f6fd9c41e10d80c46955d440d24eba"
     },
     "dist/spec/document-settings.mjs": {
-      "bytes": 23259,
-      "sha256": "39eb6cdbf33e14af2c811b74a26ff6c3cc254488d49b29e377529a4990433c8d"
+      "bytes": 23264,
+      "sha256": "1e67973e711406bae27bab2056db50571c9645f4760be588088516d7319631bf"
     },
     "dist/math/markdown-rules.mjs": {
       "bytes": 3255,
@@ -1420,8 +1431,8 @@
       "sha256": "d888389ca14cb85c853ea0d2624700165e5d8ac18bb94ece64d02ebdcf879b82"
     },
     "dist/notes/transport-s3.mjs": {
-      "bytes": 30337,
-      "sha256": "3e305891d049eb5c435bd9fa068a8cc0681bf1d20cf424e34c3e2e18fe758201"
+      "bytes": 30789,
+      "sha256": "48b6d256d087a9c8704b89bf242e4fe5a92a0930a6e16e0e88f981d818a200f3"
     },
     "dist/notes/provider-http.mjs": {
       "bytes": 12100,
@@ -1456,8 +1467,8 @@
       "sha256": "91cf53eaf2ec265e93aa38e74b60c19d7790a6f05711b01ff7ee53385bc8326d"
     },
     "dist/notes/model.mjs": {
-      "bytes": 58865,
-      "sha256": "844e0e17e5064a73e41bc9fab333724d2d026dceb31eb5dd934589078b4de56f"
+      "bytes": 59246,
+      "sha256": "86e3c47487f0f5c3767c423bd0a449f9763726f96f84092898cdd987f17c0664"
     },
     "dist/notes/audio.mjs": {
       "bytes": 7529,
@@ -1540,12 +1551,12 @@
       "sha256": "c08addf494279c452116ebd2aca16619f0bca5f9e1d6174a619b501e2597cc50"
     },
     "dist/dist/chatgpt/rapier-app.html": {
-      "bytes": 1709081,
-      "sha256": "be4e2c2dd9a1984a0fa0fb17333ad423a49bc4edb8995119f149e874d5ea7136"
+      "bytes": 1724851,
+      "sha256": "01d5bc9cdf852cf1e4cd9df6a769038d74be2d4f664f5e7f41e62ca35fb8050b"
     },
     "dist/dist/chatgpt/rapier.html": {
-      "bytes": 5886529,
-      "sha256": "1fda3f30b4140f90c74cef0ea3fce795e9a9672ed7c37a4d393d42dfcf1de8c1"
+      "bytes": 5936307,
+      "sha256": "93e8ba922a0df18a75196a1a87971ac80d61b5a4a06630512abb25c94a23ff3f"
     },
     "dist/dist/chatgpt/icon-192.png": {
       "bytes": 1541,
@@ -1584,8 +1595,8 @@
       "sha256": "85e219d2017276a2a1221afdfe3afb05ef33c4156700e983081f2d00ba9ecc2c"
     },
     "dist/dist/chatgpt/rapier-skills.json": {
-      "bytes": 890470,
-      "sha256": "b8713873a80613e97afc95f65ffb6953ded59541abb125fd28c7472136e7b66b"
+      "bytes": 893242,
+      "sha256": "d0cf2535652b5cc3637f59533f8659a210ce85fbb622f5c51e60e851f185710a"
     }
   }
 }

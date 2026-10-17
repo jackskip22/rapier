@@ -28,11 +28,19 @@ globalThis.RapierSourceAssets = (() => {
     } catch (_) {  }
     return cached;
   }
-  async function prepare(source, {signal, onProgress, yield: pause, floor = 0, includeAssets = true} = {}) {
+  async function prepare(source, {signal, onProgress, yield: pause, floor = 0, includeAssets = true, store = null} = {}) {
     const value = String(source ?? '');
     if (signal?.aborted) throw new DOMException('Canceled', 'AbortError');
     if (prepared?.source === value && prepared.floor === floor && prepared.includeAssets === includeAssets &&
         _rapierSourceRuntime.documentLineStartCache.source === value) return prepared;
+    if (store?.lineStarts && store.read() === value && !value.includes('\r') && !value.includes(']:')) {
+      const starts = store.lineStarts();
+      _rapierSourceRuntime.documentLineStartCache = {source: value, text: value, starts, projection: null, views: new WeakMap()};
+      prepared = {source: value, body: value.slice(_rapierSplitOpeningFrontmatter(value).bodyOffset), floor, includeAssets,
+        summary: null, starts, imageIndex: null, bodyImageIndex: null, blockHashes: new Map()};
+      onProgress?.(1);
+      return prepared;
+    }
     const result = await globalThis.RapierSourceWorker.requestSourceWork(value, {kind: 'prepare', floor, includeAssets},
       {createWorker: _rapierFindRuntime.createWorker, signal, onProgress: fraction => onProgress?.(.8 * fraction), yield: pause});
     if (signal?.aborted) throw new DOMException('Canceled', 'AbortError');
@@ -174,8 +182,12 @@ globalThis.RapierSourceAssets = (() => {
     const summary = typeof source === 'string' ? info(source)
       : source === store ? preparedSummaryForStore(store) : null;
     if (!ta || !summary) return false;
-    const start = Math.max(0, Number(options.start) || 0);
-    const end = Math.max(start, Number(options.end ?? start) || 0);
+    let start = Math.max(0, Number(options.start) || 0);
+    let end = Math.max(start, Number(options.end ?? start) || 0);
+    if (options.refold) {
+      expanded = wanted();
+      if (!expanded) { start = Math.min(start, summary.start); end = Math.min(end, summary.start); }
+    }
     if (end > summary.start) expanded = true;
     if (expanded) {
       if (options.windowed) { refresh(); return false; }

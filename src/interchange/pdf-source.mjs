@@ -3,6 +3,14 @@ const LIMIT = 25 * 1024 * 1024;
 const fail = (code, message) => { throw Object.assign(new Error(message), {code}); };
 const equal = (a, b) => a.length === b.length && a.every((value, index) => value === b[index]);
 
+export const SOURCE_SET_ASIDE = 'Another program changed this PDF after Rapier saved it, so its text was read from the pages, not its attached Markdown.';
+export async function sourceSetAside(blob) {
+  if (!(blob instanceof Blob) || !blob.size || blob.size > LIMIT) return false;
+  const text = new TextDecoder('latin1').decode(new Uint8Array(await blob.arrayBuffer()));
+  const updated = /\/Prev\s+\d+/.test(text.slice(text.lastIndexOf('trailer'))) || (text.match(/startxref\s+\d+\s+%%EOF/g) || []).length > 1;
+  return updated && text.includes('/Producer (Rapier)') && text.includes('/AFRelationship /Source');
+}
+
 export async function readAttachedSource(blob, {checkCurrent = () => {}, signal} = {}) {
   const check = () => { if (signal?.aborted) throw new DOMException('PDF import canceled.', 'AbortError'); checkCurrent(); };
   check();

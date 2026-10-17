@@ -132,7 +132,7 @@ function isShellDoor(value) {
   const root = new URL(SHELL_ROOT_URL);
   const page = new URL(SHELL_PAGE_URL);
   const door = requested.pathname.startsWith(root.pathname) &&
-    /^(?:notes|draw|watercolor|privacy|commercial)\/?$/.test(requested.pathname.slice(root.pathname.length));
+    /^(?:notes|draw|watercolor|privacy|commercial|paint|markdown-editor|markdown-viewer|markdown-to-pdf|markdown-to-word|word-to-markdown|markdown-table-editor|mermaid-editor)\/?$/.test(requested.pathname.slice(root.pathname.length));
   return requested.origin === root.origin &&
     (requested.pathname === root.pathname || requested.pathname === page.pathname || door);
 }
@@ -398,6 +398,20 @@ function encodeSharedFilename(value, fallback) {
   return encodeURIComponent(result || fallback);
 }
 
+const SHARED_AUTOLINK = /^[A-Za-z][A-Za-z0-9+.\-]{1,31}:[^\u0000-\u0020<>\u007f]*$/;
+function sharedHeadingText(value) {
+  return String(value).replace(/\s+/g, ' ').trim().replace(/[\\`*_[\]<>&!|~$#]/g, '\\$&');
+}
+function sharedLinkMarkdown(value) {
+  let href = '';
+  try {
+    const url = new URL(String(value).trim());
+    if (/^(?:https?|mailto):$/.test(url.protocol)) href = url.href;
+  } catch (_) {}
+  return SHARED_AUTOLINK.test(href) ? '<' + href + '>'
+    : String(value).replace(/\s+/g, ' ').trim().replace(/[!-/:-@[-`{-~]/g, '\\$&');
+}
+
 let shareCacheMutation = Promise.resolve();
 
 async function pruneShareCache(cache, now = Date.now()) {
@@ -513,9 +527,9 @@ async function handleShareTarget(request) {
               } });
         } else if (text || title || sharedUrl) {
           const parts = [];
-          if (title) parts.push('# ' + title, '');
+          if (title) parts.push('# ' + sharedHeadingText(title), '');
           if (text) parts.push(text, '');
-          if (sharedUrl) parts.push('<' + sharedUrl + '>');
+          if (sharedUrl) parts.push(sharedLinkMarkdown(sharedUrl));
           const content = parts.join('\n');
           const filename = (title
             ? title.replace(/[^\w\-. ]+/g, '_').slice(0, 60)

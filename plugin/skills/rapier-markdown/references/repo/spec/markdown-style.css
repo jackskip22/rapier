@@ -251,8 +251,9 @@
 	max-height: 9rem;
 }
 
-/* Type keeps the reference line model: body 17.6/28 px at M; headings occupy two, one and a
-   half, or one body line. Compact margins use the body's size: 8 px after prose, 12 after other
+/* Type keeps the reference line model: body 17.6/28 px at M; h1 (2.2 times the body) occupies one
+   and three quarter body lines, h2 (1.75) and h3 (1.5) one and a half, h4 to h6 one, so a wrapped
+   heading sets about 1.3 of its size. Compact margins use the body's size: 8 px after prose, 12 after other
    blocks, 20 before headings and 4 after them at M. Sibling margins collapse to their maximum;
    the editor's derived neighbor gap carries the same boundary inside its measured wrapper. */
 .md-render{
@@ -263,8 +264,8 @@
 .md-render h1,.md-render h2,.md-render h3,.md-render h4,.md-render h5,.md-render h6{
 	font-family:var(--md-font-sans);letter-spacing:-0.01em;
 	line-height:var(--md-line);margin:var(--md-gap-heading-before) 0 var(--md-gap-heading-after);color:var(--md-heading-color);text-wrap:balance}
-.md-render h1{font-size:calc(var(--md-text-body) * 2.6);line-height:calc(var(--md-line) * 2);font-weight:var(--md-fw-semibold)}
-.md-render h2{font-size:calc(var(--md-text-body) * 1.9);line-height:calc(var(--md-line) * 1.5);font-weight:var(--md-fw-semibold)}
+.md-render h1{font-size:calc(var(--md-text-body) * 2.2);line-height:calc(var(--md-line) * 1.75);font-weight:var(--md-fw-semibold)}
+.md-render h2{font-size:calc(var(--md-text-body) * 1.75);line-height:calc(var(--md-line) * 1.5);font-weight:var(--md-fw-semibold)}
 .md-render h3{font-size:calc(var(--md-text-body) * 1.5);line-height:calc(var(--md-line) * 1.5);font-weight:var(--md-fw-semibold)}
 .md-render h4{font-size:calc(var(--md-text-body) * 1.25);font-weight:var(--md-fw-semibold)}
 /* h5/h6 complete the six-level hierarchy: modest but owned (explicit size/weight/color), never
@@ -411,7 +412,7 @@
 .md-render li{margin:0 0 calc(var(--md-line) / 4)}
 .md-render li:last-child{margin-bottom:0}
 .md-render li>ul,.md-render li>ol{margin:calc(var(--md-line) / 4) 0 0}
-.md-render a{color:var(--md-color-accent-text);text-decoration:underline;text-underline-offset:2px}
+.md-render a{color:var(--md-color-accent-text);text-decoration:underline;text-underline-offset:2px;unicode-bidi:isolate}
 /* The house focus (rapier-app.css) in the document and on the exported page: the underline thickens, no ring. */
 .md-render a:focus-visible,.md-render ul.rapier-jump-list>li>a:focus-visible,.md-render .footnote-ref a:focus-visible,.md-render summary:focus-visible{outline:none;text-decoration:underline;text-decoration-thickness:3px;text-underline-offset:.2em}
 

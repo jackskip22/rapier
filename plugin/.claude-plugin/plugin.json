@@ -1,7 +1,7 @@
 {
   "name": "rapier",
   "displayName": "Rapier - Markdown Editor & Art",
-  "version": "1.2.7+skills.ee3ebb7046fd6d431e3d29745b2888080291e4e7f92b5674ab1f602fc475d95e",
+  "version": "1.2.8+skills.38da014ffb79e5a5bef1a099da6679fc6b82de200ea8f9a25178f73eee982892",
   "description": "Markdown editor with art built in. Write and revise documents and notes with your AI assistant on one editable page, build diagrams you can move, and paint with watercolors that spread, mix and dry. See each change and undo it. Painting needs an open Rapier editor. No Rapier account.",
   "author": {
     "name": "Jack Skipworth",
