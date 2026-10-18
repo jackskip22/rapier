@@ -60,6 +60,9 @@ const _rapierPersonalStore = globalThis.__rapierServerRenderHost === true ? null
 		if (key.startsWith('font/')) {
 			const font = globalThis.RapierDrawFonts.admitFonts([value])[0];
 			if ('font/' + font.id !== key) throw new Error('The font identity changed.');
+		} else if (key.startsWith('preset/')) {
+			const preset = globalThis.RapierPersonal.admitPreset(value);
+			if ('preset/' + preset.id !== key) throw new Error('The starter identity changed.');
 		} else {
 			if (!value || typeof value.id !== 'string' || 'brush/' + value.id !== key || typeof value.name !== 'string' || value.name.length > 64 || typeof value.notes !== 'string' || value.notes.length > 160 || !dataOnly(value) || JSON.stringify(value).length > 1048576) throw new Error('The brush is not a readable preset.');
 		}

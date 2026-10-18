@@ -6,6 +6,8 @@ const {minify} = createRequire(import.meta.url)('./vendor/terser/bundle.min.js')
 export const PARTS = Object.freeze([
   {id: 'document', label: 'Document layout', scripts: ['editor/document-layout.js'], styles: ['rapier-document-style'],
     globals: {RapierClipboardPictures: 'interchange/clipboard-pictures.mjs'}},
+  {id: 'presets', label: 'Starters and elements', scripts: ['presets/browser.js', 'editor/composer.js'], styles: ['rapier-composer-style'],
+    globals: {RapierPresets: 'presets/presets.mjs', RapierStarters: 'presets/starters.mjs', RapierOrnaments: 'presets/ornaments.mjs', RapierPins: 'presets/pins.mjs', RapierDrawOrnaments: 'draw/ornaments.mjs'}},
   {id: 'drawing', label: 'Drawing',
     scripts: ['draw/draw.js', 'draw/effects-tool.js', 'draw/liquid-live.js', 'draw/copier-live.js', 'draw/background-tool.js',
       'draw/paint-tool.js', 'draw/water-tool.js', 'draw/water-pro.js'],
@@ -24,11 +26,10 @@ export const PARTS = Object.freeze([
       ImportPictures: 'import-pictures', ImportReceipt: 'import-receipt', ImportPlan: 'import-plan',
       FrontMatter: 'frontmatter', Links: 'links', Search: 'search', SearchCache: 'search-cache', ImportMarkdown: 'import-markdown', ImportEnex: 'import-enex',
       ImportHtml: 'import-html', Restore: 'restore', Trash: 'trash', History: 'history', Integrity: 'integrity', Zip: 'zip', Backup: 'backup',
-      BackupWorker: 'backup-worker', OPFSWorker: 'opfs-worker', Owner: 'owner', OPFS: 'opfs', IdbStore: 'idb-store', Folder: 'folder', Todo: 'todo',
+      BackupWorker: 'backup-worker', OPFSWorker: 'opfs-worker', Owner: 'owner', OPFS: 'opfs', IdbStore: 'idb-store', WorkspaceStore: 'workspace-store', Folder: 'folder', Todo: 'todo',
       Audio: 'audio', Attachments: 'attachments', HostWords: 'host-words', Sync: 'sync', Vault: 'vault', Merge: 'merge', SyncSession: 'sync-session'})
       .map(([name, file]) => ['RapierNotes' + name, 'notes/' + file + '.mjs']).concat([['RapierCloudProviders', 'notes/cloud-providers.mjs'],
-        ['RapierWebDAVTransport', 'notes/transport-webdav.mjs'], ['RapierOwnedNotesAdapter', 'notes/owned-adapter.mjs'],
-        ['RapierOwnedNotesCheckpoint', 'notes/owned-checkpoint.mjs']]))},
+        ['RapierWebDAVTransport', 'notes/transport-webdav.mjs']]))},
 ]);
 export const PART_IDS = Object.freeze(PARTS.map(part => part.id));
 

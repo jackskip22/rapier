@@ -1360,6 +1360,77 @@ function _rapierPaintRevisionLayers(layer = _rapierPaintLayer()) {
 	for (; layer; layer = layer.previousFlip) layers.unshift(layer);
 	return layers;
 }
+async function _rapierPaintObserveDrawing({recipe = _rapierDrawSettledRecipe(), signal, current} = {}) {
+	const state = _rapierDrawState, session = state.session, agentSession = state.agentSession;
+	const changed = () => Object.assign(new Error('The drawing changed while its painting was being observed.'), {code:'drawing_changed'});
+	const check = () => {
+		if (signal?.aborted) throw new DOMException('The drawing observation was cancelled.', 'AbortError');
+		if (!state.open || state.session !== session || state.agentSession !== agentSession || current && !current()) throw changed();
+	};
+	check();
+	if (!recipe || !state.recipe) throw changed();
+	const seenRecipe = _rapierDrawHistoryCopy(state.recipe), result = _rapierDrawHistoryCopy(recipe);
+	const gesture = state.gesture, paint = gesture?.paint, points = paint?.points, waiting = paint?.moveEvents?.length;
+	const layers = _rapierPaintRevisionLayers(), active = state.paintLayer;
+	if (layers.length > 1 || state.paintDeparture || state.paintRehydrate || state.paintRehydrateTask || state.paintEraseFan || paint?.pending) throw changed();
+	const held = layers.map(layer => ({layer,surface:layer.surface,id:layer.id,raster:layer.raster,geom:layer.geom,
+		mode:layer.mode,brushId:layer.brushId,waterPaper:layer.waterPaper,version:layer.paintVersion,
+		place:_rapierPaintPlace(layer),retire:_rapierDrawHistoryCopy(layer.retire),toothOX:layer.surface?.toothOX,toothOY:layer.surface?.toothOY}));
+	for (const row of held) if (row.id != null) {
+		const target = seenRecipe.shapes.find(shape => shape.id === row.id), requested = result.shapes.find(shape => shape.id === row.id);
+		if (!target || target.raster !== row.raster || JSON.stringify(target.geom) !== row.geom || !_rapierDrawHistoryEqual(target, requested)) throw changed();
+	}
+	const live = () => {
+		check();
+		if (state.paintLayer !== active || state.gesture !== gesture || gesture?.paint !== paint || paint?.points !== points ||
+			paint?.moveEvents?.length !== waiting || !_rapierDrawHistoryEqual(seenRecipe, state.recipe)) throw changed();
+		for (const row of held) {
+			const {layer,surface} = row;
+			if (!surface || surface.gone || surface.failure || surface.materialReady || layer.session !== session || layer.surface !== surface ||
+				(row.id != null && surface.pending && !surface.meta?.bounds) ||
+				layer.id !== row.id || layer.raster !== row.raster || layer.geom !== row.geom || layer.paintVersion !== row.version ||
+				layer.mode !== row.mode || layer.brushId !== row.brushId || layer.waterPaper !== row.waterPaper || surface.toothOX !== row.toothOX || surface.toothOY !== row.toothOY ||
+				!_rapierDrawHistoryEqual(row.retire, layer.retire) || !_rapierDrawHistoryEqual(row.place, _rapierPaintPlace(layer))) throw changed();
+		}
+	};
+	live();
+	const captures = await Promise.all(held.map(row => row.surface.observe({signal})));
+	live();
+	const observations = [], capturedIds = new Set();
+	for (let index = 0; index < held.length; index++) {
+		const row = held[index], {box,pixels,meta} = captures[index];
+		const wet = !!(meta.wet || meta.wetState || meta._wetWork || meta.wetPending);
+		observations.push({id:row.id ?? null,mode:row.mode,state:wet ? 'wet' : 'settled',revision:meta.revision,...(Number.isSafeInteger(meta.tick) ? {tick:meta.tick} : {})});
+		const existing = row.id == null ? null : result.shapes.find(shape => shape.id === row.id);
+		const gone = new Set(row.retire || []); if (existing) gone.add(existing.id);
+		if (!box || !pixels) {
+			result.shapes = result.shapes.filter(shape => !gone.has(shape.id));
+			if (gone.size) remapRefractionRecipeSources(result, new Map([...gone].map(id => [id,null])));
+			continue;
+		}
+		const place = _rapierDrawHistoryCopy(row.place), dx = meta.toothOX - row.toothOX, dy = meta.toothOY - row.toothOY;
+		if (place.frame) { const f = place.frame; f.c0[0] += dx * f.eux + dy * f.evx; f.c0[1] += dx * f.euy + dy * f.evy; }
+		else { place.origin ||= [0,0]; place.origin[0] += dx / place.scale; place.origin[1] += dy / place.scale; }
+		const {geom,pw,ph,s} = _rapierPaintGeomOf(place, box);
+		const raster = await _rapierPaintPNG.compressed(pixels);
+		live();
+		let shape = existing;
+		if (!shape) {
+			let serial = index, id;
+			do { id = 'observed-paint-' + serial++; } while (result.shapes.some(item => item.id === id || item.group === id || item.paint?.group === id));
+			shape = {id,stroke:null,recognized:'paint',asDrawn:false,brush:'ink',style:null};
+			result.shapes.push(shape);
+		}
+		shape.geom = geom; shape.raster = raster;
+		shape.paint = _rapierPaintMetadata(row, row.brushId, pw, ph, s, null);
+		capturedIds.add(shape.id);
+		result.shapes = result.shapes.filter(item => item === shape || !gone.has(item.id));
+		if (gone.size) remapRefractionRecipeSources(result, new Map([...gone].map(id => [id,shape.id])));
+	}
+	live();
+	const storedWater = result.shapes.some(shape => shape.paint?.mode === 'water' && !capturedIds.has(shape.id));
+	return {recipe:result,state:observations.some(row => row.state === 'wet') ? 'wet' : storedWater ? 'stored' : 'settled',layers:observations};
+}
 function _rapierPaintRetireRevisionLayer(layer) {
 	const next = layer.nextFlip;
 	if (!next) return;

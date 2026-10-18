@@ -178,6 +178,8 @@ const _rapierProviders = Object.seal({
 	'letters-relief': null,
 	'letters-leaf': null,
 	'letters-arabesque': null,
+	templates: null,
+	elements: null,
 });
 const _rapierBootstrapRuntime = Object.seal({ pendingIntake: null, complete: false, failed: false, opened: false });
 let _rapierPublishBootFacts;

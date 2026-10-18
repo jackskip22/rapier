@@ -8,6 +8,7 @@ import {documentLanguage, documentSettingsFonts} from '../spec/document-settings
 import {createLineMeasurer, linesHeight} from '../layout/model.mjs';
 import {markPrintCapitals, createPrintCapitals, followingPrintProse} from './print-capitals.mjs';
 import {freezePublishedInk} from './render-ink.mjs';
+import {isTemplatePage, isPageBorderLayout} from '../spec/template-page.mjs';
 export function positionNativeDiagram(drawing) {
   const surface=drawing?.closest?.('.diagram-block,.diagram-live-preview');
   if(!surface?.clientWidth)return;
@@ -109,6 +110,7 @@ async function _rapierBuildArtifact(options, providedContext) {
 	const styledRoot = work ? await _rapierProjectStyledRootAsync(context.semanticRoot, styledOptions)
 		: _rapierProjectStyledRoot(context.semanticRoot, styledOptions);
 	styledRoot.setAttribute('lang', language);
+	const templatePage = _rapierTemplatePage(context.canonical, settings, styledRoot);
 	if (completePage && typeof _rapierFinalizeExportCode === 'function') await _rapierFinalizeExportCode(styledRoot);
 	if (!opts.print) _rapierAnnotateExportBoxPolygons(styledRoot);
 	if (completePage || opts.print) {
@@ -121,7 +123,7 @@ async function _rapierBuildArtifact(options, providedContext) {
 	}
 	if (typeof opts.afterRoot === 'function') await opts.afterRoot(styledRoot);
 	markPrintCapitals(styledRoot);
-	const theme = opts.print
+	const theme = opts.print || templatePage
 		? 'light'
 		: _rapierArtifactPreference('theme', ['system', 'light', 'dark']);
 	const highlights = _rapierArtifactPreference('highlights', ['accent', 'standard']);
@@ -147,7 +149,8 @@ async function _rapierBuildArtifact(options, providedContext) {
 		+ (opts.extraCss ? '\n\n' + opts.extraCss : '')
 		+ (willFont ? '\n\n@font-face{font-family:' + willFont.family + ';src:url(' + await _rapierBlobDataUrl(new Blob([willFont.bytes], { type: 'font/ttf' })) + ') format("truetype")}' : '')
 		+ (settingsCss ? '\n' + settingsCss : '')
-		+ (typographyPrintCss ? '\n' + typographyPrintCss : '');
+		+ (typographyPrintCss ? '\n' + typographyPrintCss : '')
+		+ (templatePage ? '\n' + templatePage.css : '');
 	let factoryFontCss = '';
 	if (!opts.print) {
 		if (fontIndex) await requireDocumentFonts(context.canonical, {parser: md, index: fontIndex, root: styledRoot, settings, css, fontCss, validateFont: runtime.validateFont});
@@ -180,7 +183,7 @@ async function _rapierBuildArtifact(options, providedContext) {
 		+ '<meta name="generator" content="Rapier ' + escapeRapierHtmlText(version) + '">\n'
 		+ '<title>' + escapeRapierHtmlText(pageTitle) + '</title>\n'
 		+ '<style>' + css + '</style>\n</head>\n'
-		+ '<body class="' + bodyClass + '"><main class="' + docClass + '" data-md-theme="' + theme + '">'
+		+ '<body class="' + bodyClass + '">' + (templatePage ? '<div class="rapier-template-border" aria-hidden="true"></div>' : '') + '<main class="' + docClass + '" data-md-theme="' + theme + '">'
 		+ bodyHtml + '</main>' + carrier + layoutScript + inkScript + htmlScript + '</body>\n</html>';
 
 	return {
@@ -191,11 +194,33 @@ async function _rapierBuildArtifact(options, providedContext) {
 		fontCss,
 		fontRequests: fontCss ? fontRequests(styledRoot, {settings, css, fontCss}) : [],
 		settings,
+		templatePage: templatePage && {url: templatePage.url, width: templatePage.width, height: templatePage.height, margin: templatePage.margin},
 		docClass,
 		language,
 		metadata,
 		documentTitle: settings && settings.title ? pageTitle : '',
 	};
+}
+
+function _rapierTemplatePage(canonical, settings, root) {
+	if (!isTemplatePage(canonical) || !settings?.papersize) return null;
+	let url = '';
+	for (const paragraph of root.querySelectorAll(':scope > p[data-md-layout]')) {
+		const image = paragraph.querySelector('img');
+		const layout = globalThis.RapierMarkdownLayout.parseLayoutAttribute(paragraph.getAttribute('data-md-layout'));
+		const source = image?.getAttribute('src') || '';
+		if (isPageBorderLayout(layout) && /^data:image\/svg\+xml;base64,[A-Za-z0-9+/=]+$/.test(source)) { url = source; paragraph.remove(); break; }
+	}
+	if (!url) return null;
+	const width = settings.papersize.width / 15, height = settings.papersize.height / 15, margin = (settings.geometry?.twips ?? 1440) / 15;
+	const ground = 'background:var(--rapier-template-border) 0 0/100% 100% no-repeat';
+	const css = ':root{--rapier-template-border:url("' + url + '")}\n'
+		+ '@media screen{.rapier-template-border{display:none}body{background:#e8e8e8}.rapier-page{box-sizing:border-box;width:min(100%,' + width + 'px);min-height:' + height + 'px;margin:0 auto;padding:' + margin
+		+ 'px;background:var(--rapier-template-border) 0 0/100% ' + height + 'px repeat-y,#fff;color:#111}}\n'
+		+ '@media print{@page{size:' + width + 'px ' + height + 'px;margin:0}html,body{margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+		+ '.rapier-page{box-sizing:border-box;width:auto;max-width:none;margin:0;padding:' + margin + 'px!important;position:relative!important;z-index:1;box-decoration-break:clone;-webkit-box-decoration-break:clone}'
+		+ '.rapier-template-border{display:block;position:fixed;left:0;top:0;width:' + width + 'px;height:' + height + 'px;z-index:0;' + ground + '}}';
+	return {url, width, height, margin, css};
 }
 
 function _rapierPagePreviewMeta(root, fallbackTitle) {

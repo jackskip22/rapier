@@ -97,7 +97,7 @@ async function renderFactorySlice(file, factory, names) {
 	const ast = acorn.parse(source, {ecmaVersion: 'latest', sourceType: 'module'}), unpooled = [];
 	const exportImports = new Set(['../spec/md-marks.mjs', '../spec/document-fonts.mjs',
 		'./export-fonts.mjs', '../spec/document-settings.mjs', '../layout/typography.mjs', '../layout/model.mjs', '../layout/preparation.mjs',
-		'./print-capitals.mjs', './render-ink.mjs']);
+		'./print-capitals.mjs', './render-ink.mjs', '../spec/template-page.mjs']);
 	for (const node of ast.body.filter(node => node.type === 'ImportDeclaration').reverse()) {
 		if (node.source.value === '../spec/md-marks.mjs' && node.specifiers.length &&
 			node.specifiers.every(row => row.type === 'ImportSpecifier' && row.imported.name === 'typography' && row.local.name === 'typography')) {

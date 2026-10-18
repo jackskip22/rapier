@@ -5,11 +5,11 @@ import {createCommitFence} from '../agent/commit-fence.mjs';
 import {sha256} from '../kit/ledger/hash.mjs';
 import {LiveSessions} from './live-session.mjs';
 import {viewChanged, sourceHash, boundedDiff, custodyBytes, CUSTODY_LIMITS} from './custody-wire.mjs';
+import {recoveryFrame} from './custody-recovery.mjs';
 
 const plain = value => value && typeof value === 'object' && !Array.isArray(value);
 const FOREVER = Number.MAX_SAFE_INTEGER;
 const mintId = prefix => prefix + crypto.randomUUID().replaceAll('-', '');
-const secret = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), byte => byte.toString(16).padStart(2, '0')).join('');
 
 class LocalSocket {
   constructor() { this.readyState = 1; this.saved = null; this.listeners = new Set(); }
@@ -35,22 +35,35 @@ export function validHandover(value) {
 }
 
 export class PageDoor {
-  constructor({handover, rules, host = {}, clock = Date.now, save = null, oversize = null, handbackBytes = CUSTODY_LIMITS.handbackBytes}) {
+  constructor({handover, rules, host = {}, clock = Date.now, save = null, oversize = null,
+    fetch: fetcher = globalThis.fetch?.bind(globalThis), handbackBytes = CUSTODY_LIMITS.handbackBytes}) {
     this.oversize = oversize; this.handbackBytes = handbackBytes; this.bearer = handover.head.bearer === true;
     if (!validHandover(handover)) throw new TypeError('custody_handover_invalid');
     if (!rules || ['analyzeMarkdown', 'checkMarkdownReferences', 'analyzeDocument'].some(name => typeof rules[name] !== 'function'))
       throw new TypeError('custody_rules_unavailable');
     this.rules = rules;
-    const localSecret = secret();
-    this.env = {EDITOR_KEY_SECRET: localSecret};
+    this.env = {LOCAL_PAGE: true};
+    this.durable = handover.head.durable === true;
+    this.durabilityPath = handover.head.durabilityPath;
+    if (this.durable && (!/^\/workspace\/custody\/[a-f0-9]{64}$/.test(this.durabilityPath || '') || typeof fetcher !== 'function'))
+      throw new TypeError('custody_recovery_unavailable');
     this.clock = clock;
     this.extraHost = host;
-    this.save = save;
+    this.save = async held => {
+      await save?.(held);
+      if (!this.durable) return;
+      const {frame, next} = recoveryFrame(held, this.kept || null);
+      if (this.kept?.hash === next.hash) return;
+      const response = await fetcher(this.durabilityPath, {method: 'POST', credentials: 'same-origin', cache: 'no-store',
+        headers: {'Content-Type': 'application/json'}, body: JSON.stringify(frame), signal: AbortSignal.timeout(25000)});
+      const result = response.ok ? await response.json() : null;
+      if (result?.kept !== true || result.hash !== frame.hash) throw new Error('custody_recovery_unacknowledged');
+      this.kept = next;
+    };
     this.state = structuredClone(handover.state);
     this.journal = structuredClone(handover.journal);
     this.head = {documentId: handover.head.documentId, capabilityHash: handover.head.capabilityHash,
       version: handover.head.version, revision: this.state.revision, expiresAt: FOREVER, agentAccess: true};
-    this.root = sha256(localSecret);
     const sockets = this.localSockets = [];
     const head = () => this.head;
     this.ctx = {
@@ -83,12 +96,16 @@ export class PageDoor {
   async persist(head, state, journal) {
     const previous = this.state;
     const live = state ? this.live.prepare(state, previous) : null;
-    this.head = {...this.head, ...head, expiresAt: FOREVER, revision: state ? state.revision : this.head.revision};
-    if (state) this.state = state;
-    if (Array.isArray(journal)) this.journal = journal;
+    const nextHead = {...this.head, ...head, expiresAt: FOREVER, revision: state ? state.revision : this.head.revision};
+    const nextState = state || this.state, nextJournal = Array.isArray(journal) ? journal : this.journal;
+    const held = this.custody(nextState, nextHead, nextJournal);
+    try {await this.save?.(held);}
+    catch (error) {
+      if (this.durable && this.oversize) queueMicrotask(() => this.oversize());
+      throw error;
+    }
+    this.head = nextHead; this.state = nextState; this.journal = nextJournal;
     if (live) this.live.publish(live, this.head);
-    const held = this.custody();
-    await this.save?.(held);
     if (this.oversize && this.state.text.length * 16 > this.handbackBytes && custodyBytes(held) > this.handbackBytes) this.oversize();
   }
 
@@ -98,7 +115,7 @@ export class PageDoor {
     server.listeners.add(raw => { void this.exclusive(() => this.live.message(server, raw)); });
     server.closers = [() => { void this.exclusive(() => this.live.disconnected(server)); }];
     this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({capabilityHash: this.head.capabilityHash, root: this.root, expiresAt: FOREVER,
+    server.serializeAttachment({capabilityHash: this.head.capabilityHash, expiresAt: FOREVER,
       helloBy: FOREVER, client: null, sentGen: -1});
     return client;
   }
@@ -164,6 +181,9 @@ export class PageDoor {
       live.observe(next, nextJournal, {...caller, ...(args.agent ? {agent: args.agent} : {})}, value);
       await this.persist(head, next, nextJournal);
       return this.answer(value, before, next.journal.filter(row => row.revision > before.revision), collaboration);
+    }).catch(error => {
+      if (!this.durable) throw error;
+      return {...this.answer({outcome: 'pending'}, this.state, []), pending: true};
     });
   }
 
@@ -222,9 +242,10 @@ export class PageDoor {
     });
   }
 
-  custody() {
-    return {state: structuredClone(this.state), journal: structuredClone(this.journal),
-      head: {documentId: this.head.documentId, capabilityHash: this.head.capabilityHash, version: this.head.version, ...(this.bearer ? {bearer: true} : {})},
-      rev: this.state.revision, hash: sourceHash(this.state.text)};
+  custody(state = this.state, head = this.head, journal = this.journal) {
+    return {state: structuredClone(state), journal: structuredClone(journal),
+      head: {documentId: head.documentId, capabilityHash: head.capabilityHash, version: head.version,
+        ...(this.durable ? {durable: true, durabilityPath: this.durabilityPath} : {}), ...(this.bearer ? {bearer: true} : {})},
+      rev: state.revision, hash: sourceHash(state.text)};
   }
 }

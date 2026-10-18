@@ -1,9 +1,11 @@
 import {DEFAULT_POLICY} from './history.mjs';
+import {admitPreset} from '../presets/record.mjs';
+export {admitPreset};
 const hash = /^[a-f0-9]{64}$/, writer = /^[a-f0-9]{32}$/;
-const keyShape = /^(?:preference\/[A-Za-z][A-Za-z0-9]*|drawing\/[A-Za-z][A-Za-z0-9]*|font\/f[a-f0-9]{24}|brush\/own\/[A-Za-z0-9._-]+|plugin\/[a-z][a-z0-9-]{0,31})$/;
+const keyShape = /^(?:preference\/[A-Za-z][A-Za-z0-9]*|drawing\/[A-Za-z][A-Za-z0-9]*|font\/f[a-f0-9]{24}|preset\/p[a-f0-9]{24}|brush\/own\/[A-Za-z0-9._-]+|plugin\/[a-z][a-z0-9-]{0,31})$/;
 const DEVICE_KEYS = new Set(['preference/readOnly', 'preference/fontSize']);
 export const personalTravels = key => !DEVICE_KEYS.has(key);
-const assetKey = key => key.startsWith('font/') || key.startsWith('brush/');
+const assetKey = key => key.startsWith('font/') || key.startsWith('brush/') || key.startsWith('preset/');
 const encode = value => new TextEncoder().encode(JSON.stringify(value));
 const fail = message => { throw Object.assign(new Error(message), {code: 'personal_invalid'}); };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -73,13 +75,13 @@ export function createPersonalOwner({storage, apply = () => {}, validateAsset = 
 	return Object.freeze({
 		ready,
 		values(prefix) { return Object.fromEntries(Object.entries(state?.records || {}).filter(([key, row]) => key.startsWith(prefix) && row.value !== null).map(([key, row]) => [key.slice(prefix.length), assetKey(key) ? state.blobs[row.value.content] : row.value])); },
-		set(key, value) { return schedule(async () => {
+		set(key, value, assertActive = () => {}) { return schedule(async () => {
 			if (!personalTravels(key)) return;
-			state = check(await storage.update(raw => { const next = check(raw); if (same(next.records[key]?.value, value)) return next; next.records[key] = {by: next.writer, n: tick(clock(next)), value}; next.records = admitPersonal(next.records, {local: true}); return next; }));
+			state = check(await storage.update(raw => { const next = check(raw); assertActive(next); if (same(next.records[key]?.value, value)) return next; next.records[key] = {by: next.writer, n: tick(clock(next)), value}; next.records = admitPersonal(next.records, {local: true}); return next; }));
 		}); },
-		putAsset(key, value) { return schedule(async () => {
+		putAsset(key, value, assertActive = () => {}) { value = structuredClone(value); return schedule(async () => {
 			validateAsset(key, value); const content = await personalDigest(encode(value));
-			state = check(await storage.update(raw => { const next = check(raw); next.blobs[content] = value; if (next.records[key]?.value?.content !== content) next.records[key] = {by: next.writer, n: tick(clock(next)), value: {content, object: null}}; next.records = admitPersonal(next.records, {local: true}); return next; }));
+			state = check(await storage.update(raw => { const next = check(raw); assertActive(next); next.blobs[content] = value; if (next.records[key]?.value?.content !== content) next.records[key] = {by: next.writer, n: tick(clock(next)), value: {content, object: null}}; next.records = admitPersonal(next.records, {local: true}); return next; }));
 		}); },
 		snapshot() { return schedule(async () => { await read(); return {records: structuredClone(state.records), blobs: {...state.blobs}}; }); },
 		writer() { return schedule(async () => (await read()).writer); },

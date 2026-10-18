@@ -235,6 +235,7 @@ export function createWaterWorker({postMessage}={}){
   if(op==='read'){
    const s=need(surfaces,request.surfaceId);
    if(checkpoints.get(request.surfaceId)?.error)throw checkpoints.get(request.surfaceId).error;
+   if(request.observation===true){const result=await s.observe();return {...result,digest:result.pixels?await hash(result.pixels.data):null};}
    if(request.metadataOnly===true){await s._finishWetWork();const meta=metadata(s);return {box:meta.bounds,meta,stats:meta.stats,waterReplay:s.waterReplay()};}
    const box=request.bounds?s.bounds():request.box||null;
    if(request.sample)return {sample:await s.samplePigment(...request.sample),meta:metadata(s)};
@@ -283,7 +284,7 @@ export function createWaterWorker({postMessage}={}){
     if(jobs.get(id)?.signal.aborted)throw Object.assign(new Error('Water painting canceled'),{name:'AbortError',code:'WATER_CANCELLED'});
     sendValue(id,value);
    }catch(error){
-    if(!control&&request.operation!=='display')for(const [sid,cp]of checkpoints){
+    if(!control&&request.operation!=='display'&&!(request.operation==='read'&&request.observation===true))for(const [sid,cp]of checkpoints){
      if(cp.error)continue;
      const s=surfaces.get(sid);try{if(s)await s.endStroke(cp.value,true);}catch(restoreError){if(['WATER_GPU_MEMORY','WATER_GPU_FAILED','WATER_DEVICE_LOST'].includes(restoreError.code)){restoreError.cause??=error;error=restoreError;}}restoreBrushes(cp,brushes);
      if(s)s._dirty={x0:0,y0:0,x1:s.width-1,y1:s.height-1};

@@ -18,6 +18,13 @@ export const WATER_PRO_PAPERS = PRO_PAPER_KINDS;
 export const WATER_PIGMENTS = freeze(WATER_PIGMENT_DATA.map(row=>({...row,coefficients:row.coefficients.slice()})));
 export const WATER_BRUSHES = freeze(BRUSHES.map(b=>({id:b.id,name:b.name,size:50,water:.6,load:.5,
  aspect:b.params.aspect,spacing:b.params.spacing,capacity:b.params.capacity,angle:b.params.angle,follow:b.params.rotation==='follow',params:b.params,description:b.name+' contact with spectral pigment and paper response.'})));
+export const WATER_STRENGTHS = freeze([
+ {id:'tea',name:'Tea',load:.15,water:.6},
+ {id:'milk',name:'Milk',load:.3,water:.6},
+ {id:'cream',name:'Cream',load:.5,water:.6},
+ {id:'butter',name:'Butter',load:.75,water:.45}
+]);
+export function waterStrengthOf(load,water){return WATER_STRENGTHS.find(s=>Math.abs(s.load-load)<.005&&Math.abs(s.water-water)<.005)||null;}
 export const WATER_TOOLS = freeze([
  {id:'brush',name:'Brush',description:'Lay the selected pigment with the current head.'},
  {id:'water',name:'Water',description:'Wet, soften and push pigment already on the paper.'},

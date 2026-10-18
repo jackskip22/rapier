@@ -3,7 +3,7 @@ const _rapierSpliceRuntime = { slugState: null };
 function _rapierSyncDocumentRhythm(host = document.getElementById('editor-blocks'), changed = null, spliced = null) {
 	if (!host) return;
 	const spec = globalThis.RapierMarkdownSpec;
-	const frontmatter = String(rapier.document.frontmatter || ''), layout = RapierPreferences.read('layout');
+	const frontmatter = String(rapier.document.frontmatter || ''), layout = _rapierWordPage() ? 'docx' : RapierPreferences.read('layout');
 	const key = layout + '\n' + frontmatter;
 	if (spliced) {
 		if (key === _rapierRhythmRuntime.key && spliced.length <= 64) {

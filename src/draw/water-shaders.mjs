@@ -76,8 +76,16 @@ fn footprint(p:vec2<f32>) -> f32 {
  if(any(abs(q)>vec2<f32>(1))) { return 0; }
  let tip=textureSampleLevel(t0,linearSampler,q*0.5+0.5,0).r;
  let wet=1-smoothstep(0.15,1.0,dot(q,q));
- let tooth=smoothstep(u.v[6].x-0.08,u.v[6].x+0.08,sample(t1,p).g);
- return mix(tip,wet,u.v[5].z)*mix(1.0,tooth,u.v[5].w);
+ let height=sample(t1,p).g;let tooth=smoothstep(u.v[6].x-0.08,u.v[6].x+0.08,height);
+ let contact=mix(tip,wet,u.v[5].z)*mix(1.0,tooth,u.v[5].w);
+ // A nearly dry brush (grain above 0.6: Dry Brush, and Fan, Sponge or Stipple running out) also catches on the tooth's own
+ // peaks (the paper's fine relief, nudged by the bristle streaks): a light sparkle where the bristles are full, a broken edge
+ // where they thin out (J95b). Wet brushes never reach 0.6 and keep this contact exactly.
+ if(u.v[5].w<=0.6){return contact;}
+ let o=3.0/u.v[0].xy;let local=0.25*(sample(t1,p+vec2<f32>(o.x,0)).g+sample(t1,p-vec2<f32>(o.x,0)).g+sample(t1,p+vec2<f32>(0,o.y)).g+sample(t1,p-vec2<f32>(0,o.y)).g);
+ let fine=smoothstep(-0.03,0.03,(height-local)+0.12*(tip-0.5)+(0.5-u.v[6].x)*0.15);
+ let rim=1.0-smoothstep(0.2,0.65,tip);
+ return mix(contact,contact*mix(1.0,fine,0.3+0.6*rim),smoothstep(0.6,0.9,u.v[5].w));
 }
 fn gaussian(p:vec2<f32>) -> f32 { let d=brushDistance(p); return exp(-pow(dot(d,d)/(u.v[4].z*u.v[4].z),u.v[6].z)); }
 // Full erasure clears the contact's centre, with one native pixel of antialiasing at its edge.

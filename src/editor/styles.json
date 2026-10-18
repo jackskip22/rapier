@@ -1,5 +1,6 @@
 [
   {"id": "rapier-document-style", "path": "editor/styles/rapier-document.css"},
+  {"id": "rapier-composer-style", "path": "editor/styles/rapier-composer.css"},
   {
     "id": "rapier-font-style",
     "path": "shell/fonts/fonts.css"

@@ -1,0 +1,389 @@
+Draw's ornament packs (letter sets, templates and elements) are traced from the plates of Philipp Luidl and Helmut Huber,
+"Ornamente / Ornaments" (Bruckmann, Munich, 1983; https://archive.org/details/luidl-p.-huber-h.-ornamente-ornaments).
+The plates reproduce printed ornament by the artists, foundries and printers each caption names, in the years it gives
+(the book's own pages and captions follow, German and English as printed). The selection, the traces and their arrangement
+are Rapier's own and are dedicated to the public domain under CC0 1.0 (https://creativecommons.org/publicdomain/zero/1.0/).
+
+Letter sets
+
+  Silhouette (silhouette): scan pages 353, 354; J drawn from I (the printed alphabet shares the form)
+  Gothic (gothic): scan pages 348; J drawn from I, V drawn from U (the printed alphabet shares the form)
+  Sugar (sugar): scan pages 356
+  Illuminated 1490 (illuminated-1490, incomplete): scan pages 333
+  English 15th (english-15th, incomplete): scan pages 334
+  Missale 1515 (missale-1515, incomplete): scan pages 335
+  Schoeffer 1518 (schoeffer-1518, incomplete): scan pages 336
+  Pen 1554 (pen-1554, incomplete): scan pages 337
+  German Baroque (german-baroque, incomplete): scan pages 338
+  Frank 1600 (frank-1600, incomplete): scan pages 339
+  Baroque 1655 (baroque-1655, incomplete): scan pages 340
+  Fine 1532 (fine-1532, incomplete): scan pages 341
+  Arabesque 16th (arabesque-16th, incomplete): scan pages 342
+  Voskens 1654 (voskens-1654, incomplete): scan pages 343, 344
+  Versteegh (versteegh, incomplete): scan pages 345
+  Tuscan 1845 (tuscan-1845, incomplete): scan pages 346
+  Renaissance 19th (renaissance-19th, incomplete): scan pages 347
+  English decorative (english-decorative, incomplete): scan pages 349
+  Renaissance alphabet (renaissance-alphabet, incomplete): scan pages 350
+  Late Gothic (late-gothic, incomplete): scan pages 351
+  Gothic 1880 (gothic-1880, incomplete): scan pages 352
+  Baroque 1884 (baroque-1884, incomplete): scan pages 355
+  Neogothic (neogothic, incomplete): scan pages 357
+  Andrade (andrade, incomplete): scan pages 358
+  Tendril 1900 (tendril-1900, incomplete): scan pages 359
+  Walthari (walthari, incomplete): scan pages 360
+  Nouveau initials (nouveau-initials, incomplete): scan pages 362
+  Behrens 1908 (behrens-1908, incomplete): scan pages 363
+  Reibetanz 1925 (reibetanz-1925, incomplete): scan pages 364
+
+Templates and elements, by scan page (zero-based scan number; the book's own page number follows)
+
+  scan 33  book page 32  Arabesken, 16. Jh. | Arabesques, 16th cn.
+  scan 34  book page 33  Arabesken, 16. Jh. | Arabesques, 16th cn.
+  scan 35  book page 34  Vignetten im Stil der Renaissance, um 1910 | Vignettes in Renaissance style, ca. 1910
+  scan 36  book page 35  Zierleisten und Vignetten im Renaissance-Stil | Row ornaments and vignettes in Renaissance style
+  scan 37  book page 36  Zierleisten mit Arabeskenornament, 16. Jh. | Row ornaments with arabesque ornament, 16th cn.
+  scan 38  book page 37  Zierleisten im Stil der Renaissance | Row ornaments in Renaissance style
+  scan 39  book page 38  Barocke Schlußvignetten, 17./18. Jh. | Baroque end-piece vignettes, 17th/18th cn.
+  scan 40  book page 39  Barocke Schlußstücke, 17./18. Jh. | Baroque end-pieces, 17th/18th cn.
+  scan 41  book page 40  Schlußstücke mit Rankenwerk, 17. Jh. | End-pieces with tendril decorations, 17th cn.
+  scan 42  book page 41  Schlußstücke mit Rankenwerk, 17. Jh. | End-pieces with tendril decorations, 17th cn.
+  scan 43  book page 42  Zierleisten aus der Barockzeit | Row ornaments from the baroque period
+  scan 44  book page 43  Zierleisten aus der Barockzeit | Row ornaments from the baroque period
+  scan 45  book page 44  Barocke Federziige | Baroque flourishes
+  scan 46  book page 45  Barocke Federzüge | Baroque flourishes
+  scan 47  book page 46  Barocke Federziige | Baroque flourishes
+  scan 48  book page 47  Schlußstücke in Renaissance-Manier | Chapter-ending pieces in Renaissance manner
+  scan 49  book page 48  Schlußstücke in Renaissance-Manier | Chapter-ending pieces in Renaissance manner
+  scan 50  book page 49  Zierleisten und Schlußstücke in der Art der Renaissance, 19. Jh. | Row ornaments and end-pieces in Renaissance style, 19th cn.
+  scan 51  book page 50  Zierleisten und Schlußstücke in barocker Manier, 19. Jh. | Row ornaments and end-pieces in the baroque manner, 19th cn.
+  scan 52  book page 51  Zierleisten und Schlußstücke in barocker Manier, 19. Jh. | Row ornaments and end-pieces in the baroque manner, 19th cn.
+  scan 53  book page 52  Eckstiicke, Ende 19. Jh. | Corner-pieces, end of 19th cn.
+  scan 54  book page 53  Eckstiicke, Darmstadt 1839 | Corner-pieces, Darmstadt 1839
+  scan 55  book page 54  Vignetten aus der Zeit des Historismus | Vignettes, Academicism period
+  scan 56  book page 55  Vignetten aus der Zeit des Historismus | Vignettes, Academicism period
+  scan 57  book page 56  Phantasie-Rosetten, München 1839 | Fantasy-rosettes, Munich 1839
+  scan 58  book page 57  Einfassungen aus der Zeit des Historismus, Berlin 1884 | Edgings from the Academicism period, Berlin 1884
+  scan 59  book page 58  Einfassungen in der Art der Renaissance, Berlin 1884 | Edgings in Renaissance style, Berlin 1884
+  scan 60  book page 59  Zierleisten aus dem Jugendstil, in Anlehnung an Renaissancemotive, um 1900 | Row ornaments, Art Nouveau, styled on Renaissance motifs, about 1900
+  scan 61  book page 60  Zierleisten, Jahrhundertwende | Row ornaments at the turn of the century
+  scan 62  book page 61  Zierleisten, Jahrhundertwende | Row ornaments at the turn of the century
+  scan 63  book page 62  Vignetten fiir Gliickwunschkarten, Anfang 20. Jh. | Vignettes for greeting cards, early 20th cn.
+  scan 64  book page 63  Schlußvignetten, Anfang 20. Jh. | Chapter-ending vignettes, early 20th cn.
+  scan 65  book page 64  Vignetten fiir Glückwunschkarten, Anfang 20. Jh. | Vignettes for greeting cards, early 20th cn.
+  scan 66  book page 65  Vignetten für Glückwunschkarten, Anfang 20. Jh. | Vignettes for greeting cards, early 20th cn.
+  scan 67  book page 66  Schlußvignetten, Anfang 20. Jh. | Chapter-ending vignettes, early 20th cn.
+  scan 68  book page 67  Schlußvignetten, Anfang 20. Jh. | Chapter-ending vignettes, early 20th cn.
+  scan 69  book page 68  Schlußvignetten, Anfang 20. Jh. | Chapter-ending vignettes, early 20th cn.
+  scan 70  book page 69  Schlußvignetten aus der Zeit des Historismus | Chapter-ending vignettes from the Academicism period
+  scan 71  book page 70  Schlußvignetten aus der Zeit des Historismus | Chapter-ending vignettes from the Academicism period
+  scan 72  book page 71  Vignetten, Jugendstil. England, Anfang 20. Jh. | Vignettes, Art Nouveau. England, early 20th cn.
+  scan 73  book page 72  Einfassungen, Jugendstil. England, Anfang 20. Jh. | Edgings, Art Nouveau. England, early 20th cn.
+  scan 74  book page 73  Einfassungen, Jugendstil. England, Anfang 20. Jh. | Edgings, Art Nouveau. England, early 20th cn.
+  scan 75  book page 74  Einfassungen, Jugendstil. England, Anfang 20. Jh. | Edgings, Art Nouveau. England, early 20th cn.
+  scan 76  book page 75  Einfassungen und Kartuschen, Jugendstil, Anfang 20. Jh. | Edgings and cartouches, Art Nouveau, early 20th cn.
+  scan 77  book page 76  Eckstücke und Einfassungen, Jugendstil, Anfang 20. Jh. | Corner-pieces and edgings, Art Nouveau, early 20th cn.
+  scan 78  book page 77  Eckstücke und Einfassungen, Jugendstil, Anfang 20. Jh. | Corner-pieces and edgings, Art Nouveau, early 20th cn.
+  scan 79  book page 78  Einfassungen und Kartuschen, Jugendstil, Anfang 20. Jh. | Edgings and cartouches, Art Nouveau, early 20th cn.
+  scan 80  book page 79  Einfassungen und Vignetten. Richard Grimm, um 1899 | Edgings and vignettes. Richard Grimm, about 1899
+  scan 81  book page 80  Einfassungen und Vignetten. Richard Grimm, um 1899 | Edgings and vignettes. Richard Grimm, about 1899
+  scan 82  book page 81  Querleisten. Heinrich Vogeler, 1905 | Transverse borders. Heinrich Vogeler, 1905
+  scan 83  book page 82  Vignetten. Emanuel Margold, 1910 | Vignettes. Emanuel Margold, 1910
+  scan 84  book page 83  Kopfleisten und Schlußstücke für »Die Neue Rundschau«. Emil Rudolf Weiß, Berlin 1905–1907 | Headpieces and end-pieces for “Die Neue Rundschau”. Emil Rudolf Weiß, Berlin 1905–1907
+  scan 85  book page 84  Kopfleisten und Schlußstücke für »Die Neue Rundschau«. Emil Rudolf Weiß, Berlin 1905–1907 | Headpieces and end-pieces for “Die Neue Rundschau”. Emil Rudolf Weiß, Berlin 1905–1907
+  scan 86  book page 85  Kopfleisten für »Schaffsteins Volksbücher«. Emil Rudolf Weiß, Berlin, um 1905 | Headpieces for “Schaffsteins Volksbücher”. Emil Rudolf Weiß, Berlin, about 1905
+  scan 87  book page 86  Kopfleisten für »Schaffsteins Volksbücher«. Emil Rudolf Weiß, Berlin, um 1905 | Headpieces for “Schaffsteins Volksbücher”. Emil Rudolf Weiß, Berlin, about 1905
+  scan 88  book page 87  Sog. Granjon-Arabeske, 16. Jh. | So-called Granjon arabesques, 16th cn.
+  scan 89  book page 88  Sog. Granjon-Arabeske, 16. Jh. | So-called Granjon arabesques, 16th cn.
+  scan 90  book page 89  Verschiedene Schmuckelemente in Rokoko-Manier. Emil Rudolf Weiß u.a., um 1913 | Various decorative elements in rococo style. Emil Rudolf Weiß, et alii, about 1913
+  scan 91  book page 90  Typographischer Schmuck, aus Einzelelementen zusammengesetzt. Emil Rudolf Weiß, um 1913 | Typographical decorations composed from single figures. Emil Rudolf Weiß, about 1913
+  scan 93  book page 92  Titelverzierung in Holzschnitt. Erhart Ratdolt, Venedig 1478 | Title page decoration, woodcut. Erhart Ratdolt, Venice 1478
+  scan 94  book page 93  Randeinfassung in Metallschnitt. Giovanni und Gregorio da Gregoriis, Venedig 1498 | Border edging, metal engraving. Giovanni and Gregorio da Gregoriis, Venice 1498
+    border-001  template
+  scan 95  book page 94  Satzprobe mit Umrandung. Conrad Fyner, Urach 1481 | Specimen with border. Conrad Fyner, Urach 1481
+  scan 96  book page 95  Titelornament und Einfassung. L. Soardi, Venedig 1499 | Title page ornamentation and border. L. Soardi, Venice 1499
+  scan 97  book page 96  Titeleinfassung in Holzschnitt. Sigismund Grimm und Max Wirsung, Augsburg 1519 | Title page border, woodcut. Sigismund Grimm and Max Wirsung, Augsburg 1519
+    border-002  template
+  scan 98  book page 97  Titeleinfassung in der Art des Hans Holbein. Johann Frobens, Basel 1518 | Title page border after Hans Holbein. Johann Frobens, Basel 1518
+    border-003  template
+  scan 99  book page 98  Probe französischer Buchausstattung, 16. Jh. | French book make-up, specimen, 16th cn.
+  scan 100  book page 99  Titelumrahmung. Daniel Hopfer, Anfang 16. Jh. | Title page border. Daniel Hopfer, early 16th cn.
+    border-004  template
+  scan 101  book page 100  Titeleinfassung in Holzschnitt von Albrecht Dürer. Friedrich Peypus, 1523 | Title page border, woodcut by Albrecht Dürer. Friedrich Peypus, 1523
+    border-005  template
+  scan 102  book page 101  Titeleinfassung des Druckereikatalogs Vincent Figgins, London 1815 | Title page border specimen, printing catalogue, Vincent Figgins, London 1815
+    border-006  template
+  scan 103  book page 102  Randeinfassung im Renaissance-Stl, Berlin 1884 | Border edging in Renaissance style, Berlin 1884
+    border-007  template
+  scan 104  book page 103  Randeinfassungen im Renaissance-Stil, Berlin 1884 | Border edgings in Renaissance style, Berlin 1884
+    border-008  template
+  scan 105  book page 104  Rahmen im sog. Westminster-Stil | Border in the so-called Westminster style
+  scan 106  book page 105  Titelumrahmung. Albert Knab, 1903 | Title page border. Albert Knab, 1903
+  scan 107  book page 106  Titelumrahmung. Paul Biirck, 1900 | Title page border. Paul Biirck, 1900
+  scan 108  book page 107  Titeleinfassung. Carl Weidemeyer, 1909 | Title page border. Carl Weidemeyer, 1909
+  scan 109  book page 108  Randeinfassung, Jugendstil, Anfang 20. Jh. | Border in Art Nouveau style, early 20th cn.
+  scan 110  book page 109  Rahmen mit Flechtmuster, 19. Jh. | Border, plaited and woven, 19th cn.
+  scan 111  book page 110  Titeleinfassung mit Arabesken, 1639 | Title page border with arabesques, 1639
+  scan 112  book page 111  Titeleinfassung mit Arabesken, Basel 1654 | Title page border with arabesques, Basel 1654
+  scan 113  book page 112  Gesetzte Titelumrandung mit Granjon-Arabesken. Guillaume Silvius, Antwerpen 1573 | Cast title page border with Granjon arabesques. Guillaume Silvius, Antwerp 1573
+  scan 114  book page 113  Titeleinfassung mit Arabesken, 16. Jh. | Title page border with arabesques, 16th cn.
+  scan 115  book page 114  Titelumrahmung mit Granjon-Arabesken, 16. Jh. | Title page border with Granjon arabesques, 16th cn.
+  scan 116  book page 115  Titelumrandung mit Arabesken | Title page border with arabesques
+  scan 117  book page 116  Titeleinfassung mit Arabesken | Title page border with arabesques
+    border-009  template
+  scan 118  book page 117  Titeleinfassung mit Arabesken | Title page border with arabesques
+  scan 119  book page 118  Titeleinfassung mit Arabesken | Title page border with arabesques
+  scan 120  book page 119  Titeleinfassung mit Arabesken | Title page border with arabesques
+  scan 121  book page 120  Titeleinfassungen. Pierre-Simon Fournier d.J. und andere, 1742 | Title page borders. Pierre-Simon Fournier the younger and others, 1742
+  scan 122  book page 121  Titelblatt. Pierre-Simon Fournier d. J., Paris 1742 | Title page by Pierre-Simon Fournier the younger, Paris 1742
+  scan 123  book page 122  Rahmen mit Röschen. Holland, 1748 | Border with rosettes. Holland, 1748
+    border-010  template
+  scan 124  book page 123  Rahmen mit Röschen. Holland, 1748 | Border with rosettes. Holland, 1748
+  scan 125  book page 124  Titelseite von Loyson et Briquet, Paris 1751 | Title page from Loyson et Briquet, Paris 1751
+    border-011  template
+  scan 126  book page 125  Verschiedene Titelseiten, Frankreich, 1751–1784 | Various title pages, France, 1751–1784
+  scan 127  book page 126  Musterblatt mit Umrahmung, 1757 | Specimen sheet with border, 1757
+  scan 128  book page 127  Musterblatt mit Umrahmung, 1768 | Specimen sheet with border, 1768
+  scan 129  book page 128  Vorwort des Nekrologs auf Pierre-Simon Fournier d.J., 1770 | Foreword, eulogy of Pierre-Simon Fournier the younger, 1770
+    border-012  template
+  scan 130  book page 129  Titelblatt des Nekrologs auf Pierre-Simon Fournier d. J., 1770 | Title page, eulogy of Pierre-Simon Fournier the younger, 1770
+    border-013  template
+  scan 131  book page 130  Titeleinfassung im Rokoko-Stil. Frankreich, 18. Jh. | Title page border in rococo style, France, 18th cn.
+  scan 132  book page 131  Titeleinfassung im Rokoko-Stil. Frankreich, 18. Jh. | Title page border in rococo style, France, 18th cn.
+    border-014  template
+  scan 133  book page 132  Titeleinrahmung, Holland, 1772 | Title page border, Holland, 1772
+  scan 134  book page 133  Musterblatt mit Umrahmung. Christoffel Plantyn, Antwerpen 1768 | Specimen sheet with border, Christoffel Plantyn, Antwerp 1768
+  scan 135  book page 134  Titelblatt eines Musterkatalogs. Wilhelm Haas, Basel 1772 | Title page of a specimen catalogue. Wilhelm Haas, Basel 1772
+    border-015  template
+  scan 136  book page 135  Musterblatt im Stil des Rokoko. Emil Rudolf Weiß, um 1910 | Specimen sheet in rococo style. Emil Rudolf Weiß, about 1910
+  scan 137  book page 136  Musterblatt im Stil des Rokoko. Emil Rudolf Weif, Berlin 1913 | Specimen sheet in rococo style. Emil Rudolf Weiß, Berlin 1913
+    border-016  template
+  scan 138  book page 137  Musterblatt im Stil des Rokoko. Emil Rudolf Weiß, 1918 | Specimen sheet in rococo style. Emil Rudolf Weiß, 1918
+    border-017  template
+  scan 139  book page 138  Musterblatt im Stil des Rokoko. Emil Rudolf Weiß, 1912 | Specimen sheet in rococo style. Emil Rudolf Weiß, 1912
+  scan 140  book page 139  Titeleinfassung im Stil des Rokoko, Anfang 20. Jh. | Title page border in rococo style, early 20th cn.
+  scan 141  book page 140  Einfassung in Tempelform. Historismus, Miinchen 1839 | Border in temple form. Academicism, Munich 1839
+  scan 142  book page 141  Einfassung in Tempelform. Historismus, Miinchen 1839 | Border in temple form. Academicism, Munich 1839
+  scan 143  book page 142  Titeleinfassung im Stil des Rokoko, Anfang 20. Jh. | Title page border in rococo style, early 20th cn.
+    border-018  template
+  scan 144  book page 143  Historistische Einfassungen. J.G. Schelter & Giesecke, um 1900 | Academicistic borders. J.G. Schelter & Giesecke, about 1900
+  scan 145  book page 144  Rahmen. Peter Behrens, 1908 | Border. Peter Behrens, 1908
+  scan 146  book page 145  Rahmen und Leisten. Peter Behrens, 1908 | Border and row ornaments. Peter Behrens, 1908
+    border-019  template
+  scan 147  book page 146  Rahmen und Leisten. Peter Behrens, 1908 | Border and row ornaments. Peter Behrens, 1908
+    border-020  template
+  scan 148  book page 147  Rahmen und Schmuck-Ecken. Friedrich Wilhelm Kleukens, um 1910 | Borders and decorative corner-pieces. Friedrich Wilhelm Kleukens, about 1910
+    border-021  template
+  scan 149  book page 148  Titeleinfassung. Friedrich Wilhelm Kleukens, 1913 | Title page border. Friedrich Wilhelm Kleukens, 1913
+  scan 150  book page 149  Titelblatt der Schriftgießerei Stempel, Frankfurt am Main 1913 | Title page of type foundry catalogue of D. Stempel, Frankfurt 1913
+  scan 151  book page 150  Rahmen im Rokoko-Stil der Monotype Corp., London 1926 | Border in rococo style of the Monotype Corp., London 1926
+  scan 152  book page 151  Rahmen im Rokoko-Stil der Monotype Corp., London 1926 | Border in rococo style of the Monotype Corp., London 1926
+  scan 153  book page 152  Rahmen im Rokoko-Stil der Monotype Corp., London 1926 | Border in rococo style of the Monotype Corp., London 1926
+    border-022  template
+  scan 154  book page 153  Rahmen im Rokoko-Stil der Monotype Corp., London 1926 | Border in rococo style of the Monotype Corp., London 1926
+    border-023  template
+  scan 155  book page 154  Rahmen im Rokoko-Stil der Monotype Corp., London 1926 | Border in rococo style of the Monotype Corp., London 1926
+    border-024  template
+  scan 156  book page 155  Rahmen im Rokoko-Stil der Monotype Corp., London 1926 | Border in rococo style of the Monotype Corp., London 1926
+    border-025  template
+  scan 157  book page 156  Rahmen im Rokoko-Stil der Monotype Corp., London 1926 | Border in rococo style of the Monotype Corp., London 1926
+  scan 158  book page 157  Rahmen im Rokoko-Stil der Monotype Corp., London 1926 | Border in rococo style of the Monotype Corp., London 1926
+    border-026  template
+  scan 159  book page 158  Einfassung der Monotype Corp., London 1926 | Border of the Monotype Corp., London 1926
+    border-027  template
+  scan 160  book page 159  Einfassung der Monotype Corp., London 1926 | Border of the Monotype Corp., London 1926
+    border-028  template
+  scan 161  book page 160  Einfassung der Monotype Corp., London 1926 | Border of the Monotype-Corp., London 1926
+  scan 162  book page 161  Rahmen im Rokoko-Stil der Monotype Corp. | Borders in rococo style of the Monotype Corp.
+  scan 163  book page 162  Kartuschen. Historismus, um 1870 | Cartouches. Academicism, about 1870
+  scan 164  book page 163  Kartuschen. Historismus, um 1870 | Cartouches. Academicism, about 1870
+  scan 165  book page 164  Rahmen und Kartuschen aus verschiedenen Stilelementen, 19. Jh. | Borders and cartouches from various stylistic elements, 19th cn.
+  scan 166  book page 165  Rahmen und Kartuschen aus verschiedenen Stilelementen, 19. Jh. | Borders and cartouches from various stylistic elements, 19th cn.
+  scan 167  book page 166  Rahmen und Kartuschen aus verschiedenen Stilelementen, 19. Jh. | Borders and cartouches from various stylistic elements, 19th cn.
+  scan 168  book page 167  Rahmen und Kartuschen aus verschiedenen Stilelementen, 19. Jh. | Borders and cartouches from various stylistic elements, 19th cn.
+  scan 169  book page 168  Rahmen und Kartuschen aus verschiedenen Stilelementen, 19. Jh. | Borders and cartouches from various stylistic elements, 19th cn.
+  scan 170  book page 169  Rahmen und Kartuschen aus verschiedenen Stilelementen, 19. Jh. | Borders and cartouches from various stylistic elements, 19th cn.
+  scan 171  book page 170  Rahmen und Kartuschen aus verschiedenen Stilelementen, 19. Jh. | Borders and cartouches from various stylistic elements, 19th cn.
+  scan 172  book page 171  Guillochierte Kartuschen, 19. Jh. | Guilloched cartouches, 19th cn.
+  scan 173  book page 172  Kartuschen in der Art der Renaissance mit Schweif- und Rollwerk, Berlin 1884 | Cartouches in the Renaissance style with scallop- and scrollwork. Berlin 1884
+  scan 174  book page 173  Kartuschen in der Art der Renaissance mit Schweif- und Rollwerk, Berlin 1884 | Cartouches in the Renaissance style with scallop- and scrollwork. Berlin 1884
+  scan 175  book page 174  Kopfleisten für »Die Neue Rundschau«. Emil Rudolf Weiß, Berlin 1905-1907 | Headpieces for “Die Neue Rundschau”. Emil Rudolf Weiß, Berlin 1905-1907
+  scan 176  book page 175  Kartuschen. Paul Biirck und andere, 1899-1903 | Cartouches. Paul Biirck and others, 1899-1903
+  scan 177  book page 176  Kartuschen. Henry van de Velde, um 1899 und 1897 | Cartouches. Henry van de Velde, about 1899 and 1897
+  scan 178  book page 177  Kartuschen, v.l.n.r.: anonym, 1905; Y. Storck, 1903; O. Eckmann, 1900; J. V. Cissarz, 1900 | Cartouches, from l. to r.: anon., 1905; Y. Storck, 1903; O. Eckmann, 1900; J. V. Cissarz, 1900
+  scan 179  book page 178  Kartuschen, v.l.n.r.: M. Thomas, 1903; W. Wegener, 1903; P. Behrens, 1901; O. Eckmann, ca. 1900; anon., ca. 1900; P. Behrens, 1900 | Cartouches, from l. to r.: M. Thomas, 1903; W. Wegener, 1903; P. Behrens, 1901; O. Eckmann, ca. 1900; anon., ca. 1900; P. Behrens, 1900
+  scan 181  book page 180  Illustrationen zu Sebastian Brants »Narrenschiff«. Albrecht Dürer, Basel 1494 | Illustration for Sebastian Brant’s “Ship of Fools”, Albrecht Dürer, Basel 1494
+  scan 182  book page 181  Leisten zu Sebastian Brants »Narrenschiff«. Albrecht Dürer, Basel 1494 | Row ornamentation for Sebastian Brant’s “Ship of Fools”, Albrecht Dürer, Basel 1494
+  scan 183  book page 182  Leisten mit Arabesken-Motiven im Stil des 16. Jhs. | Row ornaments with arabesque motifs in 16th cn. style
+    border-029  template
+    border-030  template
+  scan 184  book page 183  Leisten mit Blumen-Motiven | Row ornaments with flower motifs
+  scan 185  book page 184  Leisten im Stil des Rokoko, 18. Jh. | Row ornaments in rococo style, 18th cn.
+  scan 186  book page 185  Leisten im Stil des Rokoko, 18. Jh. | Row ornaments in rococo style, 18th cn.
+  scan 187  book page 186  Leisten im Stil des Rokoko, 18. Jh. | Row ornaments in rococo style, 18th cn.
+  scan 188  book page 187  Leisten im Stil des Rokoko, 18. Jh. | Row ornaments in rococo style, 18th cn.
+  scan 189  book page 188  Leisten im Stil des Rokoko, 18. Jh. | Row ornaments in rococo style, 18th en.
+  scan 190  book page 189  Leisten mit verschiedenen Motiven, 20. Jh. | Row ornaments with various motifs, 20th cn.
+  scan 191  book page 190  Leisten mit verschiedenen Motiven, 20. Jh. | Row ornaments with various motifs, 20th cn.
+  scan 192  book page 191  Leisten mit verschiedenen Motiven, 20. Jh. | Row ornaments with various motifs, 20th cn.
+  scan 193  book page 192  Leisten mit verschiedenen Motiven, 20. Jh. | Row ornaments with various motifs, 20th cn.
+  scan 194  book page 193  Leisten mit verschiedenen Motiven, 20. Jh. | Row ornaments with various motifs, 20th cn.
+  scan 195  book page 194  Leisten in der Art des Rokoko. Historismus, 19. Jh. | Row ornaments in rococo style. Academicism, 19th cn.
+  scan 196  book page 195  Leisten in der Art des Rokoko. Historismus, 19. Jh. | Row ornaments in rococo style. Academicism, 19th cn.
+  scan 197  book page 196  Leisten in der Art des Rokoko. Historismus, 19. Jh. | Row ornaments in rococo style. Academicism, 19th cn.
+  scan 198  book page 197  Leisten mit Arabesken-Motiven. Historismus, 19. Jh. | Row ornaments with arabesque motifs. Academicism, 19th cn.
+  scan 199  book page 198  Leisten mit Arabesken-Motiven. Historismus, 19. Jh. | Row ornaments with arabesque motifs. Academicism, 19th cn.
+  scan 200  book page 199  Leisten mit verschiedenen Motiven. Historismus, 19. Jh. | Row ornaments with various motifs. Academicism, 19th cn.
+  scan 201  book page 200  Leisten mit verschiedenen Stilelementen. Historismus, 19. Jh. | Row ornaments with various stylistic elements. Academicism, 19th cn.
+  scan 202  book page 201  Leisten mit verschiedenen Stilelementen. Historismus, 19. Jh. | Row ornaments with various stylistic elements. Academicism, 19th cn.
+  scan 203  book page 202  Leisten mit verschiedenen Stilelementen. Historismus, 19. Jh. | Row ornaments with various stylistic elements. Academicism, 19th en.
+  scan 204  book page 203  Leisten mit verschiedenen Stilelementen. Historismus, 19. Jh. | Row ornaments with various stylistic elements. Academicism, 19th cn.
+    border-031  template
+  scan 205  book page 204  Leisten mit verschiedenen Stilelementen. Historismus, 19. Jh. | Row ornaments with various stylistic elements. Academicism, 19th cn.
+  scan 206  book page 205  Leisten mit verschiedenen Stilelementen. Historismus, 19. Jh. | Row ornaments with various stylistic elements. Academicism, 19th cn.
+  scan 207  book page 206  Leisten mit verschiedenen Stilelementen. Historismus, 19. Jh. | Row ornaments with various stylistic elements. Academicism, 19th cn.
+  scan 208  book page 207  Leisten mit verschiedenen Stilelementen. Historismus, 19. Jh. | Row ornaments with various stylistic elements. Academicism, 19th cn.
+  scan 209  book page 208  Leisten mit klassizistischen Stilelementen, 1839 | Row ornaments with classic style elements, 1839
+  scan 210  book page 209  Leisten mit klassizistischen Stilelementen, 1839 | Row ornaments with classic style elements, 1839
+  scan 211  book page 210  Leisten mit klassizistischen Stilelementen, 1839 | Row ornaments with classic style elements, 1839
+  scan 212  book page 211  Leisten mit klassizistischen Stilelementen, 1839 | Row ornaments with classic style elements, 1839
+  scan 213  book page 212  Leisten mit klassizistischen Stilelementen, 1839 | Row ornaments with classic style elements, 1839
+  scan 214  book page 213  Leisten mit klassizistischen Stilelementen, 1839 | Row ornaments with classic style elements, 1839
+  scan 215  book page 214  Leisten mit verschiedenen Motiven, 19. Jh. | Row ornaments with various motifs, 19th cn.
+  scan 216  book page 215  Leisten mit verschiedenen Motiven, 19. Jh. | Row ornaments with various motifs, 19th cn.
+    border-032  template
+  scan 217  book page 216  Leisten mit verschiedenen Motiven, 19. Jh. | Row ornaments with various motifs, 19th cn.
+    border-033  template
+  scan 218  book page 217  Leisten mit verschiedenen Motiven, 19. Jh. | Row ornaments with various motifs, 19th cn.
+  scan 219  book page 218  Leisten mit verschiedenen Motiven, 19. Jh. | Row ornaments with various motifs, 19th cn.
+  scan 220  book page 219  Einfassungen und Leistenteile in Intarsienform, Anfang 20. Jh. | Borders and row ornament pieces in intarsia form, early 20th cn.
+    border-034  template
+  scan 221  book page 220  Leisten mit verschiedenen Stilelementen, 19. Jh. | Row ornaments with various stylistic elements, 19th cn.
+  scan 222  book page 221  Leisten mit Jugendstil-Motiven, Anfang 20. Jh. | Row ornaments with Art Nouveau motifs, early 20th cn.
+    border-035  template
+  scan 223  book page 222  Leisten mit Jugendstil-Motiven, Anfang 20. Jh. | Row ornaments with Art Nouveau motifs, early 20th cn.
+  scan 224  book page 223  Leisten mit Jugendstil-Motiven, Anfang 20. Jh. | Row ornaments with Art Nouveau motifs, early 20th cn.
+    border-036  template
+  scan 225  book page 224  Leisten mit Jugendstil-Motiven, Anfang 20. Jh. | Row ornaments with Art Nouveau motifs, early 20th cn.
+  scan 226  book page 225  Leisten mit Jugendstil-Motiven, Anfang 20. Jh. | Row ornaments with Art Nouveau motifs, early 20th cn.
+  scan 227  book page 226  Leisten mit Jugendstil-Motiven, Anfang 20. Jh. | Row ornaments with Art Nouveau motifs, early 20th cn.
+    border-037  template
+  scan 228  book page 227  Leisten mit Jugendstil-Motiven, Anfang 20. Jh. | Row ornaments with Art Nouveau motifs, early 20th cn.
+    border-038  template
+  scan 229  book page 228  Leisten mit Jugendstil-Motiven, Anfang 20. Jh. | Row ornaments with Art Nouveau motifs, early 20th cn.
+    border-039  template
+  scan 230  book page 229  Leisten mit Jugendstil-Motiven, Anfang 20. Jh. | Row ornaments with Art Nouveau motifs, early 20th cn.
+  scan 231  book page 230  Leisten mit Jugendstil-Motiven, Anfang 20. Jh. | Row ornaments with Art Nouveau motifs, early 20th cn.
+  scan 232  book page 231  Leisten mit Jugendstil-Motiven, Anfang 20. Jh. | Row ornaments with Art Nouveau motifs, early 20th cn.
+    border-040  template
+  scan 233  book page 232  Leisten mit Jugendstil-Motiven, Anfang 20. Jh. | Row ornaments with Art Nouveau motifs, early 20th cn.
+  scan 234  book page 233  Zierleisten. Peter Behrens, 1908 | Decorative row ornaments. Peter Behrens, 1908
+  scan 235  book page 234  Zierleisten. Peter Behrens, 1908 | Decorative row ornaments. Peter Behrens, 1908
+  scan 236  book page 235  Zierleisten und Eckstücke. Peter Behrens, 1908 | Decorative row ornaments and corner-pieces. Peter Behrens, 1908
+  scan 237  book page 236  Zierleisten und Eckstiicke. Peter Behrens, 1908 | Decorative row ornaments and corner-pieces. Peter Behrens, 1908
+  scan 238  book page 237  Zierleisten. Emil Rudolf Weiß, um 1910 | Decorative row ornaments. Art Nouveau, about 1910
+  scan 239  book page 238  Zierleisten. Emil Rudolf Weiß, um 1910 | Decorative row ornaments. Art Nouveau, about 1910
+  scan 240  book page 239  Zierleisten. Emil Rudolf Weiß, um 1910 | Decorative row ornaments. Art Nouveau, about 1910
+    border-041  template
+  scan 241  book page 240  Zierleisten. Emil Rudolf Weiß, um 1910 | Decorative row ornaments. Art Nouveau, about 1910
+  scan 242  book page 241  Zierleisten, Jugendstil, um 1910 | Decorative row ornaments. Art Nouveau, about 1910
+  scan 243  book page 242  Zierleisten, Jugendstil, um 1910 | Decorative row ornaments. Art Nouveau, about 1910
+  scan 244  book page 243  Zierleisten, Jugendstil, um 1910 | Decorative row ornaments. Art Nouveau, about 1910
+  scan 245  book page 244  Einfassungen. Friedrich Wilhelm Kleukens, um 1910 | Borders. Friedrich Wilhelm Kleukens, about 1910
+  scan 246  book page 245  Einfassungen. Heinz Keune, um 1910 | Borders. Heinz Keune, about 1910
+  scan 247  book page 246  Zierleisten mit Lotosblatt-Motiven, um 1911 | Row ornaments with lotus leaf motifs, about 1911
+  scan 248  book page 247  Zierleisten, Jugendstil, um 1911 | Row ornaments, Art Nouveau, about 1911
+  scan 249  book page 248  Weihnachtsschmuck, 20. Jh. | Christmas decorations, 20th en.
+  scan 250  book page 249  Zierleisten. Wieynk, Anfang 20. Jh. | Row ornaments. Wieynk, early 20th cn.
+  scan 251  book page 250  Zierleisten. Wieynk, Anfang 20. Jh. | Row ornaments. Wieynk, early 20th cn.
+  scan 252  book page 251  Zierleisten, Jugendstil | Row ornaments, Art Nouveau
+  scan 253  book page 252  Zierleisten, Jugendstil | Row ornaments, Art Nouveau
+  scan 254  book page 253  Zierleisten mit verschiedenen Motiven, Anfang 20. Jh. | Row ornaments with various motifs, early 20th cn.
+  scan 255  book page 254  Zierleisten mit verschiedenen Motiven, Anfang 20. Jh. | Row ornaments with various motifs, early 20th cn.
+  scan 256  book page 255  Zierleisten mit verschiedenen Motiven, Anfang 20. Jh. | Row ornaments with various motifs, early 20th cn.
+  scan 257  book page 256  Zierleisten mit verschiedenen Motiven, Anfang 20. Jh. | Row ornaments with various motifs, early 20th cn.
+  scan 258  book page 257  Zierleisten mit verschiedenen Stilelementen, 20. Jh. | Row ornaments with various stylistic elements, 20th cn.
+  scan 259  book page 258  Zierleisten mit verschiedenen Stilelementen, 20. Jh. | Row ornaments with various stylistic elements, 20th cn.
+  scan 260  book page 259  Zierleisten mit verschiedenen Motiven, 20. Jh. | Row ornaments with various motifs, 20th cn.
+  scan 261  book page 260  Zierleisten mit verschiedenen Motiven, 20. Jh. | Row ornaments with various motifs, 20th cn.
+  scan 262  book page 261  Zierleisten mit verschiedenen Motiven, 20. Jh. | Row ornaments with various motifs, 20th cn.
+  scan 263  book page 262  Zierleisten mit verschiedenen Motiven, 20. Jh. | Row ornaments with various motifs, 20th cn.
+  scan 264  book page 263  Zierleisten mit verschiedenen Motiven, 20. Jh. | Row ornaments with various motifs, 20th cn.
+  scan 265  book page 264  Zierleisten mit verschiedenen Motiven, 20. Jh. | Row ornaments with various motifs, 20th cn.
+  scan 266  book page 265  Zierleisten mit verschiedenen Motiven, 20. Jh. | Row ornaments with various motifs, 20th cn.
+  scan 267  book page 266  Zierleisten mit verschiedenen Motiven, 20. Jh. | Row ornaments with various motifs, 20th cn.
+  scan 268  book page 267  Zierleisten mit verschiedenen Motiven, 20. Jh. | Row ornaments with various motifs, 20th cn.
+  scan 269  book page 268  Zierleisten mit verschiedenen Motiven, 20. Jh. | Row ornaments with various motifs, 20th cn.
+  scan 270  book page 269  Zierleisten mit verschiedenen Motiven, 20. Jh. | Row ornaments with various motifs, 20th cn.
+  scan 271  book page 270  Zierleisten mit verschiedenen Motiven, 20. Jh. | Row ornaments with various motifs, 20th cn.
+  scan 272  book page 271  Zierleisten mit verschiedenen Motiven, 20. Jh. | Row ornaments with various motifs, 20th cn.
+  scan 273  book page 272  Zierleisten mit verschiedenen Motiven, 20. Jh. | Row ornaments with various motifs, 20th cn.
+  scan 274  book page 273  Zierleisten mit verschiedenen Motiven, 20. Jh. | Row ornaments with various motifs, 20th cn.
+  scan 275  book page 274  Zierleisten mit verschiedenen Motiven, 20. Jh. | Row ornaments with various motifs, 20th cn.
+  scan 276  book page 275  Zierleisten mit verschiedenen Motiven, 20. Jh. | Row ornaments with various motifs, 20th cn.
+  scan 277  book page 276  Zierleisten mit verschiedenen Motiven, 20. Jh. | Row ornaments with various motifs, 20th cn.
+  scan 278  book page 277  Zierleisten mit verschiedenen Motiven, 20. Jh. | Row ornaments with various motifs, 20th cn.
+  scan 279  book page 278  Zierleisten mit verschiedenen Motiven, 20. Jh. | Row ornaments with various motifs, 20th cn.
+  scan 280  book page 279  Zierleisten, Art Déco | Row ornaments, Art Deco
+  scan 281  book page 280  Zierleisten, Art Déco | Row ornaments, Art Deco
+  scan 282  book page 281  Zierleisten, Art Deco | Row ornaments, Art Deco
+  scan 283  book page 282  Zierleisten, Art Déco | Row ornaments, Art Deco
+  scan 284  book page 283  Zierleisten, Art Déco | Row ornaments, Art Deco
+  scan 285  book page 284  Zierleisten, Art Déco | Row ornaments, Art Deco
+  scan 286  book page 285  Zierleisten, Art Déco | Row ornaments, Art Deco
+  scan 287  book page 286  Zierleisten, Art Déco | Row ornaments, Art Deco
+  scan 288  book page 287  Englische Linien | The English line, rules and panels
+  scan 289  book page 288  Englische Linien, Schmuck und Eckstücke | The English line, rules and panels
+  scan 291  book page 290  Knotenwerk. Albrecht Dürer, um 1500 | Basketwork. Albrecht Dürer, about 1500
+  scan 292  book page 291  Maureske als Flächenornament. Francesco Pellegrino, Paris 1530 | Mauresque as ornamental area. Francesco Pellegrino, Paris 1530
+  scan 293  book page 292  Maureske im Rollwerkstil. Pieter Coecke (?). Hieronymus Cock, Antwerpen, Mitte 16. Jh. | Mauresque and strapwork. Pieter Coecke (?). Hieronymus Cock, Antwerp, middle of the 16th cn.
+  scan 294  book page 293  Spitzenmuster. Hans Sibmacher, 1597 | Lace pattern. Hans Sibmacher, 1597
+  scan 295  book page 294  Granjon-Arabeske für ein Vorsatzpapier. Adam Islip, London 1596 | Granjon arabesque for an end paper. Adam Islip, London 1596
+  scan 298  book page 297  Bucheinband. Samuel Mearne, 1669 | Book binding. Samuel Mearne, 1669
+  scan 303  book page 302  Titelblatt eines Musterbuchs. Johann Thomas Trattner, Wien 1760 | Title page of a specimen book. Johann Thomas Trattner, Vienna 1760
+  scan 304  book page 303  Musterbuch mit Schmuckleisten, Flächen und Initialen von A bis Z. Johann Thomas Trattner, Wien 1760 (S. 302–321) | Specimen book with decorative row ornaments, ornamental areas and initials from A to Z. Johann Thomas Trattner, Vienna 1760 (p. 302–321)
+    border-042  template
+  scan 305  book page 304  Musterbuch mit Schmuckleisten, Flächen und Initialen von A bis Z. Johann Thomas Trattner, Wien 1760 (S. 302–321) | Specimen book with decorative row ornaments, ornamental areas and initials from A to Z. Johann Thomas Trattner, Vienna 1760 (p. 302–321)
+    border-043  template
+  scan 306  book page 305  Musterbuch mit Schmuckleisten, Flächen und Initialen von A bis Z. Johann Thomas Trattner, Wien 1760 (S. 302–321) | Specimen book with decorative row ornaments, ornamental areas and initials from A to Z. Johann Thomas Trattner, Vienna 1760 (p. 302–321)
+    border-044  template
+  scan 307  book page 306  Musterbuch mit Schmuckleisten, Flächen und Initialen von A bis Z. Johann Thomas Trattner, Wien 1760 (S. 302–321) | Specimen book with decorative row ornaments, ornamental areas and initials from A to Z. Johann Thomas Trattner, Vienna 1760 (p. 302–321)
+    border-045  template
+  scan 308  book page 307  Musterbuch mit Schmuckleisten, Flächen und Initialen von A bis Z. Johann Thomas Trattner, Wien 1760 (S. 302–321) | Specimen book with decorative row ornaments, ornamental areas and initials from A to Z. Johann Thomas Trattner, Vienna 1760 (p. 302–321)
+    border-046  template
+  scan 309  book page 308  Musterbuch mit Schmuckleisten, Flächen und Initialen von A bis Z. Johann Thomas Trattner, Wien 1760 (S. 302–321) | Specimen book with decorative row ornaments, ornamental areas and initials from A to Z. Johann Thomas Trattner, Vienna 1760 (p. 302–321)
+    border-047  template
+  scan 310  book page 309  Musterbuch mit Schmuckleisten, Flächen und Initialen von A bis Z. Johann Thomas Trattner, Wien 1760 (S. 302–321) | Specimen book with decorative row ornaments, ornamental areas and initials from A to Z. Johann Thomas Trattner, Vienna 1760 (p. 302–321)
+    border-048  template
+  scan 311  book page 310  Musterbuch mit Schmuckleisten, Flächen und Initialen von A bis Z. Johann Thomas Trattner, Wien 1760 (S. 302–321) | Specimen book with decorative row ornaments, ornamental areas and initials from A to Z. Johann Thomas Trattner, Vienna 1760 (p. 302–321)
+    border-049  template
+  scan 312  book page 311  Musterbuch mit Schmuckleisten, Flächen und Initialen von A bis Z. Johann Thomas Trattner, Wien 1760 (S. 302–321) | Specimen book with decorative row ornaments, ornamental areas and initials from A to Z. Johann Thomas Trattner, Vienna 1760 (p. 302–321)
+    border-050  template
+  scan 313  book page 312  Musterbuch mit Schmuckleisten, Flächen und Initialen von A bis Z. Johann Thomas Trattner, Wien 1760 (S. 302–321) | Specimen book with decorative row ornaments, ornamental areas and initials from A to Z. Johann Thomas Trattner, Vienna 1760 (p. 302–321)
+    border-051  template
+  scan 314  book page 313  Musterbuch mit Schmuckleisten, Flächen und Initialen von A bis Z. Johann Thomas Trattner, Wien 1760 (S. 302–321) | Specimen book with decorative row ornaments, ornamental areas and initials from A to Z. Johann Thomas Trattner, Vienna 1760 (p. 302–321)
+    border-052  template
+  scan 315  book page 314  Musterbuch mit Schmuckleisten, Flächen und Initialen von A bis Z. Johann Thomas Trattner, Wien 1760 (S. 302–321) | Specimen book with decorative row ornaments, ornamental areas and initials from A to Z. Johann Thomas Trattner, Vienna 1760 (p. 302–321)
+    border-053  template
+  scan 316  book page 315  Musterbuch mit Schmuckleisten, Flächen und Initialen von A bis Z. Johann Thomas Trattner, Wien 1760 (S. 302–321) | Specimen book with decorative row ornaments, ornamental areas and initials from A to Z. Johann Thomas Trattner, Vienna 1760 (p. 302–321)
+    border-054  template
+  scan 317  book page 316  Musterbuch mit Schmuckleisten, Flächen und Initialen von A bis Z. Johann Thomas Trattner, Wien 1760 (S. 302–321) | Specimen book with decorative row ornaments, ornamental areas and initials from A to Z. Johann Thomas Trattner, Vienna 1760 (p. 302–321)
+  scan 318  book page 317  Musterbuch mit Schmuckleisten, Flächen und Initialen von A bis Z. Johann Thomas Trattner, Wien 1760 (S. 302–321) | Specimen book with decorative row ornaments, ornamental areas and initials from A to Z. Johann Thomas Trattner, Vienna 1760 (p. 302–321)
+    border-055  template
+  scan 319  book page 318  Musterbuch mit Schmuckleisten, Flächen und Initialen von A bis Z. Johann Thomas Trattner, Wien 1760 (S. 302–321) | Specimen book with decorative row ornaments, ornamental areas and initials from A to Z. Johann Thomas Trattner, Vienna 1760 (p. 302–321)
+    border-056  template
+  scan 320  book page 319  Musterbuch mit Schmuckleisten, Flächen und Initialen von A bis Z. Johann Thomas Trattner, Wien 1760 (S. 302–321) | Specimen book with decorative row ornaments, ornamental areas and initials from A to Z. Johann Thomas Trattner, Vienna 1760 (p. 302–321)
+    border-057  template
+  scan 321  book page 320  Musterbuch mit Schmuckleisten, Flächen und Initialen von A bis Z. Johann Thomas Trattner, Wien 1760 (S. 302–321) | Specimen book with decorative row ornaments, ornamental areas and initials from A to Z. Johann Thomas Trattner, Vienna 1760 (p. 302–321)
+    border-058  template
+  scan 322  book page 321  Musterbuch mit Schmuckleisten, Flächen und Initialen von A bis Z. Johann Thomas Trattner, Wien 1760 (S. 302–321) | Specimen book with decorative row ornaments, ornamental areas and initials from A to Z. Johann Thomas Trattner, Vienna 1760 (p. 302–321)
+    border-059  template
+  scan 323  book page 322  Flächenornament für Unterdruck. München 1839 | Ornamental area for background printing. Munich 1839
+  scan 324  book page 323  Flächenornament für Unterdruck. München 1839 | Ornamental area for background printing. Munich 1839
+    border-060  template
+  scan 325  book page 324  Flächenornament für Unterdruck. München 1839 | Ornamental area for background printing. Munich 1839
+    border-061  template
+  scan 326  book page 325  Flachenornament fiir Unterdruck. Miinchen 1839 | Ornamental area for background printing. Munich 1839
+  scan 329  book page 328  Flächenmuster mit Neurenaissance-Ornamentik. Berlin 1884 | Ornamental area specimens with Neo-Renaissance motifs. Berlin 1884
+  scan 330  book page 329  Flachenmuster mit Neurenaissance-Ornamentik. Berlin 1884 | Ornamental area specimens with Neo-Renaissance motifs. Berlin 1884
+  scan 361  book page 360  Initialumrahmungen. Emil Rudolf Weiß, 1913 | Initial borders. Emil Rudolf Weiß, 1913

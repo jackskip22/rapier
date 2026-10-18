@@ -3,7 +3,7 @@ async function _rapierDocumentSpacingOpen() {
 	const spec = globalThis.RapierMarkdownSpec, held = await _rapierCaptureSettledExternalDocument();
 	if (!held) return false;
 	const before = held.canonical, authored = spec.readDocumentSettings(before);
-	const settings = RapierPreferences.read('layout') === 'docx' ? spec.wordDocumentSettings(authored) : authored;
+	const settings = _rapierWordPage() ? spec.wordDocumentSettings(authored) : authored;
 	let draft = JSON.parse(JSON.stringify(settings.spacing || {preset: 'standard'})), type = 'paragraph';
 	const current = () => _rapierMutationStampIsCurrent(held.stamp) && _rapierSourceText() === before &&
 		!rapier.composition.block && !rapier.composition.source;
@@ -51,11 +51,12 @@ const _rapierWordView = (() => {
 	function paint() {
 		frame = 0;
 		const root = host(); if (!root) return;
-		const enabled = RapierPreferences.read('layout') === 'docx';
+		const enabled = _rapierWordPage();
 		observer?.disconnect();
 		for (const block of root.children) { block.style.removeProperty('--docx-page-gap'); block.removeAttribute('data-docx-page'); }
 		if (!enabled) {
-			for (const key of ['--docx-sheet', '--docx-margin', '--docx-scale']) root.style.removeProperty(key);
+			for (const key of ['--docx-sheet', '--docx-margin', '--docx-scale', '--docx-page']) root.style.removeProperty(key);
+			root.removeAttribute('data-template-page');
 			active = false; return;
 		}
 		active = true;
@@ -67,6 +68,8 @@ const _rapierWordView = (() => {
 		root.style.setProperty('--docx-sheet', width + 'px');
 		root.style.setProperty('--docx-margin', margin + 'px');
 		root.style.setProperty('--docx-scale', String(scale));
+		root.style.setProperty('--docx-page', height + 'px');
+		root.toggleAttribute('data-template-page', _rapierTemplatePage());
 		const pageHeight = Math.max(1, (height - 2 * margin) * scale);
 		let used = 0, page = 1;
 		for (const block of root.children) {
@@ -83,7 +86,7 @@ const _rapierWordView = (() => {
 		observer.observe(root, {childList: true, subtree: true, characterData: true});
 	}
 	function sync() {
-		if (!active && RapierPreferences.read('layout') !== 'docx') return;
+		if (!active && !_rapierWordPage()) return;
 		if (!frame) frame = requestAnimationFrame(paint);
 	}
 	addEventListener('resize', sync);

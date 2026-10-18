@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import {isTemplatePage, isPageBorderLayout} from '../spec/template-page.mjs';
 import {openArchive, createImportWork, ARCHIVE_LIMITS, crc32} from '../images/archive.mjs';
 import {zipStored, zipStoredAsync} from '../notes/zip-records.mjs';
 import {finish, finishAsync, cloneTree, encodeUtf8Steps, pause, check} from '../kit/render-work.mjs';
@@ -4177,14 +4178,14 @@ function documentDefaultsXml(settings, hyphens) {
     '</w:docDefaults>';
 }
 
-function sectionPropertiesXml(settings, footerId) {
-  const base = !settings || (!settings.papersize && !settings.geometry && !footerId);
+function sectionPropertiesXml(settings, footerId, headerId = '') {
+  const base = !settings || (!settings.papersize && !settings.geometry && !footerId && !headerId);
   if (base) return '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>' +
     '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>';
   const width = settings.papersize ? settings.papersize.width : 12240;
   const height = settings.papersize ? settings.papersize.height : 15840;
   const margin = settings.geometry ? settings.geometry.twips : 1440;
-  const footer = footerId ? '<w:footerReference w:type="default" r:id="' + footerId + '"/>' : '';
+  const footer = (headerId ? '<w:headerReference w:type="default" r:id="' + headerId + '"/>' : '') + (footerId ? '<w:footerReference w:type="default" r:id="' + footerId + '"/>' : '');
   return '<w:sectPr>' + footer + '<w:pgSz w:w="' + width + '" w:h="' + height + '"/>' +
     '<w:pgMar w:top="' + margin + '" w:right="' + margin + '" w:bottom="' + margin + '" w:left="' + margin + '" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>';
 }
@@ -4245,6 +4246,8 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
   }
   fonts.push(...baseFamilies.values());
   const carrySource = typeof canonical === 'string';
+  const templatePage = carrySource && !!settings?.papersize && isTemplatePage(canonical);
+  let pageBorder = null;
   const quoteDepths = new Set();
   let hyphenation = false, quotations = false, definitions = false, tableHeaderStyle = false, sourceCode = false, tableStyle = false;
   const codeLanguages = new Map();
@@ -4610,6 +4613,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
     if (block.type === 'image') {
       const src = block.src || (block.ref ? refs.get(String(block.ref).toLowerCase()) : null);
       if (!src) continue;
+      if (templatePage && !pageBorder && !tableCell && isPageBorderLayout(block.layout) && /^data:image\/svg\+xml/i.test(src)) { pageBorder = {src, alt: block.alt || ''}; continue; }
       const drawing = /^data:image\/svg\+xml/i.test(src);
       const asset = await assetFor(src, block.alt, drawing, block.original), width = Math.max(1, availableWidth - inset * 635);
       const next = blocks[index + 1];
@@ -4881,7 +4885,21 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
   }
 
   const footerId = settings && settings.pagestyle === 'plain' ? nextRid() : '';
-  const sectPr = sectionPropertiesXml(settings, footerId);
+  let headerId = '', headerXml = '';
+  if (pageBorder) {
+    const asset = await assetFor(pageBorder.src, pageBorder.alt, true, null);
+    headerId = nextRid();
+    const cx = settings.papersize.width * 635, cy = settings.papersize.height * 635, pr = docPr++, description = attributeText(pageBorder.alt);
+    const blip = '<a:blip r:embed="' + asset.id + (asset.svgId ? '"><a:extLst><a:ext uri="{96DAC541-7B7A-43D3-8B79-37D633B846F1}"><asvg:svgBlip xmlns:asvg="' + NS.svg[0] + '" r:embed="' + asset.svgId + '"/></a:ext></a:extLst></a:blip>' : '"/>');
+    headerXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:hdr xmlns:w="' + NS.w[0] + '" xmlns:r="' + NS.r[0] + '" xmlns:a="' + NS.a[0] + '" xmlns:wp="' + NS.wp[0] + '" xmlns:pic="' + NS.pic[0] + '"><w:p><w:r><w:drawing>' +
+      '<wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="1" locked="1" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/>' +
+      '<wp:positionH relativeFrom="page"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>0</wp:posOffset></wp:positionV>' +
+      '<wp:extent cx="' + cx + '" cy="' + cy + '"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="' + pr + '" name="Page border" descr="' + description + '"/><wp:cNvGraphicFramePr/>' +
+      '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="' + pr + '" name="Page border" descr="' + description + '"/><pic:cNvPicPr/></pic:nvPicPr>' +
+      '<pic:blipFill>' + blip + '<a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' + cx + '" cy="' + cy + '"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic>' +
+      '</wp:anchor></w:drawing></w:r></w:p></w:hdr>';
+  }
+  const sectPr = sectionPropertiesXml(settings, footerId, headerId);
   const documentXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
     '<w:document xmlns:w="' + NS.w[0] + '" xmlns:r="' + NS.r[0] + '" xmlns:a="' + NS.a[0] +
     '" xmlns:wp="' + NS.wp[0] + '" xmlns:pic="' + NS.pic[0] + '">\n<w:body>' +
@@ -4956,6 +4974,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
     ...(fonts.length || hyphenation ? [{id: settingsRid || nextRid(), type: 'settings', target: 'settings.xml'}] : []),
     ...(footnoteXml ? [{id: footnotesRid, type: 'footnotes', target: 'footnotes.xml'}] : []),
     ...(endnoteXml ? [{id: nextRid(), type: 'endnotes', target: 'endnotes.xml'}] : []),
+    ...(headerId ? [{id: headerId, type: 'header', target: 'header1.xml'}] : []),
     ...(footerId ? [{id: footerId, type: 'footer', target: 'footer1.xml'}] : []),
     ...(commentsXml ? [{id: nextRid(), type: 'comments', target: 'comments.xml'},
       {id: nextRid(), type: 'http://schemas.microsoft.com/office/2011/relationships/commentsExtended', target: 'commentsExtended.xml'}] : []),
@@ -4978,6 +4997,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
     if (xml) overrides.push('<Override PartName="/word/' + kind + '.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.' + kind + '+xml"/>');
   if (fonts.length) overrides.push('<Override PartName="/word/fontTable.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml"/>');
   if (fonts.length || hyphenation) overrides.push('<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>');
+  if (headerId) overrides.push('<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>');
   if (footerId) overrides.push('<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>');
   if (commentsXml) overrides.push('<Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/>',
     '<Override PartName="/word/commentsExtended.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml"/>');
@@ -5026,6 +5046,11 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
     const used = new Set([...xml.matchAll(/\br:(?:id|embed)="([^"]+)"/g)].map(match => match[1]));
     const noteRels = rels.filter(row => used.has(row.id));
     if (noteRels.length) entries.push({name: 'word/_rels/' + kind + '.xml.rels', bytes: await encodeXml(relXml(noteRels))});
+  }
+  if (headerId) {
+    entries.push({name: 'word/header1.xml', bytes: await encodeXml(headerXml)});
+    const used = new Set([...headerXml.matchAll(/\br:(?:id|embed)="([^"]+)"/g)].map(match => match[1]));
+    entries.push({name: 'word/_rels/header1.xml.rels', bytes: await encodeXml(relXml(rels.filter(row => used.has(row.id))))});
   }
   if (footerId) entries.push({name: 'word/footer1.xml', bytes: await encodeXml(pageNumberFooterXml())});
   if (commentsXml) {

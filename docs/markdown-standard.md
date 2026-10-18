@@ -794,6 +794,7 @@ pagestyle: plain
   line values as exact point heights; its default lines remain minimum heights so inline pictures fit.
 - `papersize`: `letter`, `a4`, `a5` or `legal`.
 - `geometry`: `margin=` a nonnegative decimal length in `in`, `cm`, `mm` or `pt`, at most `6in` once converted.
+- `template`: `page` makes the document a page: the sheet of `papersize` and `geometry`, fitted to the screen width and zoomable, as Layout: DOCX shows it, whatever the Layout choice (Plain stays plain). A picture with `wrap=behind lock=on` is its border; Rapier draws the first such picture over the whole sheet, margins included, and never selects it. Other readers show an ordinary document with the picture behind its words.
 - `pagestyle`: `plain` (page numbers) or `empty`.
 - `title` and `subtitle`: the window title, the exported page's `<title>`, Word's document title and subject, and the
   PDF's title. The visible title is still the document's first `# ` heading.

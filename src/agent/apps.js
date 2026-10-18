@@ -226,8 +226,11 @@
       (human && (['comments.write', 'comments.read', 'document.read'].includes(name) || name === 'comparison.present' && args?.action === 'close'));
     const editorKey = own ? editorKeyFor(args?.document) : '';
     const run = async () => {
-      const params = {name, arguments: editorKey ? {...args, editorKey} : args};
+      const visual = name === 'document.visual_ack' ? globalThis.RapierAgentVisual.visualAcknowledgement(args) : null;
+      const wire = visual?.arguments || args;
+      const params = {name, arguments: editorKey ? {...wire, editorKey} : wire};
       if (editorKey && !pairedId) params._meta = {'rapier/editorKey': editorKey};
+      if (visual) params._meta = {...params._meta, 'rapier/visual': visual.metadata};
       if (editorKey && editorActivity === args?.document && ['document.commit', 'document.human_context'].includes(name)) {
         params._meta = {...params._meta, 'rapier/editorActivity': true};
         editorActivity = '';

@@ -28,6 +28,9 @@ export class PageRelay {
     return this.owner.live.sockets().find(socket => this.attachment(socket)?.custody === true && this.owner.live.valid(socket, head)) || null;
   }
   send(socket, value) {
+    if (this.owner.env.ACCESS_PROFILE === true && !this.owner.live.valid(socket, this.head())) {
+      this.owner.live.closeUnavailable(socket, this.head()); return false;
+    }
     try { socket.send(JSON.stringify(value)); return true; } catch { return false; }
   }
 
@@ -46,14 +49,22 @@ export class PageRelay {
   async claim(socket, raw) {
     let message;
     try { message = JSON.parse(raw); } catch { message = null; }
-    const head = this.head(), attached = this.owner.live.valid(socket, head);
+    let head = this.head();
+    const attached = this.owner.live.valid(socket, head);
     const refuse = reason => { this.send(socket, {type: 'custody', refused: reason}); };
     if (!this.enabled()) return refuse('custody_unavailable');
     if (!attached || attached.client || !plain(message) || attached.grant && !await oauthGrantCurrent(attached.grant, this.owner.env))
       return refuse('custody_refused');
-    const verdict = typeof message.key === 'string' ? await this.owner.live.admit(head, message.key, this.binding.bind(this)) : {ok: false};
+    const verdict = typeof message.key === 'string' ? await this.owner.live.admit(head, message.key, this.binding.bind(this), attached.access) : {ok: false};
     if (!verdict.ok) return refuse('custody_refused');
     if (this.owner.live.sockets().some(other => other !== socket && this.attachment(other)?.client)) return refuse('custody_shared');
+    if (head.custody) {
+      if (!this.holder(head) && typeof this.owner.recoverCustody === 'function') {
+        const kept = await this.owner.recoverCustody(head);
+        if (!await this.adopt(kept, null)) return refuse('custody_held');
+        head = this.head();
+      }
+    }
     if (head.custody) {
       if (!Number.isSafeInteger(message.rev) || message.rev < head.custody.since || !/^[a-f0-9]{64}$/.test(message.hash || '') ||
           message.hash === ZERO_HASH || message.held !== true) return refuse('custody_held');
@@ -66,6 +77,8 @@ export class PageRelay {
     }
     const state = this.owner.readState(head), journal = this.owner.readJournal();
     const handover = {state, journal, head: {documentId: state.documentId, capabilityHash: head.capabilityHash, version: head.version, ...(head.bearer ? {bearer: true} : {}),
+      ...(typeof this.owner.keepCustody === 'function' ? {durable: true,
+        durabilityPath: this.owner.durabilityPath(head)} : {}),
       inFlight: head.collaboration?.agentPresence?.inFlight || 0}};
     const frame = {type: 'custody', handover};
     if (raw.length > LIVE_LIMITS.frameBytes || custodyBytes(frame) > CUSTODY_LIMITS.handbackBytes) return refuse('custody_too_large');
@@ -85,13 +98,18 @@ export class PageRelay {
       if (head.ownerKey !== input.ownerKey || head.capabilityHash !== input.capabilityHash || head.expiresAt <= Date.now()) return null;
     }
     if (this.recalling) return await this.recalling ? null : this.bind.envelope(input.operation, unavailable, head);
-    if (!relayable(input, head)) {
+    const workspaceNotes = this.owner.env.ACCESS_PROFILE === true && (input.args?.note !== undefined ||
+      input.args?.search !== undefined || input.args?.cursor?.startsWith('notes') || /^notes-(?:controls|source):/.test(input.args?.act || ''));
+    if (workspaceNotes || !relayable(input, head)) {
       if (await this.recall()) return null;
       if (STATE_FREE.has(input.operation)) return null;
       return this.bind.envelope(input.operation, unavailable, head);
     }
     if (head.agentAccess === false) return null;
     const socket = this.holder(head);
+    if (!socket && typeof this.owner.recoverCustody === 'function') {
+      return await this.recall() ? null : this.bind.envelope(input.operation, unavailable, head);
+    }
     if (!socket) return this.closed(input, head);
     const grant = this.attachment(socket)?.grant;
     if (this.renewDue(head) && grant && !await oauthGrantCurrent(grant, this.owner.env)) {
@@ -205,7 +223,12 @@ export class PageRelay {
     if (this.recalling) return this.recalling;
     const head = this.head(), socket = this.holder(head);
     if (!head?.custody) return Promise.resolve(true);
-    if (!socket) return Promise.resolve(false);
+    if (!socket) {
+      if (typeof this.owner.recoverCustody !== 'function') return Promise.resolve(false);
+      this.recalling = this.owner.exclusive(async () => this.adopt(await this.owner.recoverCustody(this.head()), null))
+        .catch(() => false).finally(() => {this.recalling = null;});
+      return this.recalling;
+    }
     this.recalling = new Promise(resolve => {
       const timer = setTimeout(() => finish(false), CUSTODY_LIMITS.recallMs);
       const finish = value => { clearTimeout(timer); if (this.recalled === finish) this.recalled = null; resolve(value); };
@@ -238,16 +261,19 @@ export class PageRelay {
 
   async adopt(custody, socket) {
     const head = this.head();
+    if (head?.custody && typeof this.owner.recoverCustody === 'function') custody = await this.owner.recoverCustody(head);
     if (!head?.custody || custody.head.capabilityHash !== head.capabilityHash || custody.state.documentId !== head.documentId ||
         custody.state.revision < head.custody.since) return false;
     const {custody: _held, ...rest} = head;
     const collaboration = createKernel({state: custody.state, host: {retainHistory: true, liveSession: true}, clock: Date.now,
       mintId: prefix => prefix + crypto.randomUUID().replaceAll('-', ''), invocationJournal: custody.journal}).collaboration();
     const next = this.owner.describe(custody.state, rest, Math.max(custody.head.version, head.version), collaboration);
-    await this.owner.persist(next, custody.state, custody.journal);
+    const attached = socket && this.attachment(socket);
+    await this.owner.persist(next, custody.state, custody.journal, false, null, undefined,
+      attached?.access ? {access: attached.access, ownerKey: head.ownerKey} : null);
     this.owner.ctx.storage.transactionSync(() => { deleteCheckpoint(this.owner.ctx.storage.kv); clearIntents(this.owner.ctx.storage.kv); });
     this.memory = null;
-    this.owner.live.close(socket, 4001, 'custody_released');
+    if (socket) this.owner.live.close(socket, 4001, 'custody_released');
     return true;
   }
 

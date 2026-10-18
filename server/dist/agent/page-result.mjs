@@ -24,7 +24,7 @@ export function boundedResult(value, {limit = PAGE_RESULT_BYTES, readOnly = fals
   };
   const fields = ['revision', 'document', 'editor_url', 'documentId', 'documentRevision', 'representation', 'reason', 'act',
     'threadId', 'messageId', 'file', 'applied', 'saved', 'verified', 'replayed', 'editCount', 'decided', 'closed',
-    'filename', 'docKind', 'turn_id', 'removed', 'replaced', 'availability', 'status', 'pointerId'];
+    'filename', 'docKind', 'turn_id', 'removed', 'replaced', 'availability', 'status', 'pointerId', 'previews'];
   for (const key of fields) if (!(key === 'reason' && output.reason)) put(key, value[key]);
   for (const [key, names] of Object.entries({
     receipt: ['id', 'status', 'state', 'kind', 'action', 'preference', 'presentation', 'landed', 'reason', 'value', 'previous'],
@@ -62,7 +62,8 @@ const idleFacts = {
   surface: value => value.kind === 'headless',
   'continuation.person': value => !value.intents?.length && value.intentsComplete === true && !value.omittedIntents,
 };
-export function modelReply(name, result) {
+export function modelReply(name, result, {notesVersions = false} = {}) {
+  const noteRead = notesVersions === true && name === 'read' && result?.availability === 'available' && typeof result.note_ref === 'string';
   const clean = (value, path = '') => {
     if (value == null) return undefined;
     if (typeof value !== 'object') return value;
@@ -73,7 +74,8 @@ export function modelReply(name, result) {
     }
     const output = [];
     for (const [key, item] of Object.entries(value)) {
-      if (omittedKeys.has(key) || !path && editorKeys.has(key) || key === 'representation' && item === 'source' && path !== 'fidelity' ||
+      const noteVersion = noteRead && key === 'version' && (!path || path === 'versions[]') && Number.isSafeInteger(item) && item > 0;
+      if (omittedKeys.has(key) && !noteVersion || !path && editorKeys.has(key) || key === 'representation' && item === 'source' && path !== 'fidelity' ||
           ['history.acts[]', 'sourceChanges.changes[].act'].includes(path) && key === 'operation' ||
           !path && (name !== 'open' && openKeys.has(key) && !keptKeys[name]?.(result).includes(key) || key === 'editor_url' && name !== 'open' &&
             ['ok', 'applied', 'rebased', 'created', 'resumed', 'current', 'unchanged', 'saved', 'exported', 'shown', 'done', 'message'].includes(result.outcome) && result.availability !== 'unavailable')) continue;

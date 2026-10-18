@@ -72,7 +72,7 @@ export function documentSpacingCss(settings, scope = '.md-render', defaults = fa
 		css += selector + '{margin-block:' + length(row.before) + ' ' + length(row.after) + ';line-height:' + row.line + '}';
 		if (settings?.word && /^h[1-6]$/.test(type)) css += selector + '{font-size:' + length(documentHeadingSize(settings, Number(type[1]))) + '}';
 	}
-	css += scope + ' :is(li,td,th,blockquote)>:last-child{margin-bottom:0}' +
+	css += scope + ' :is(li,td,th,blockquote)>:last-child:not(input){margin-bottom:0}' +
 		scope + ' li:last-child{margin-bottom:0}' + scope + ' li>:is(ul,ol){margin-bottom:0}' +
 		scope + ' .table-scroll-wrap>table{margin-block:0}' +
 		scope + ' pre{font-size:calc(var(--md-text-body) * .7386)}' +

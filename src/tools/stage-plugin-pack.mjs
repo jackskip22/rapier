@@ -29,6 +29,9 @@ export async function pluginPackFiles({root = ROOT, loader = null} = {}) {
 	loader ??= await readFile(join(root, 'shell/plugin-loader.js'), 'utf8');
 	const {OCR_FILES} = await import(pathToFileURL(join(root, 'images/ocr.mjs')).href);
 	const {LETTER_SETS} = await import(pathToFileURL(join(root, 'draw/letters.mjs')).href);
+	const {BORDER_PINS, ELEMENT_PINS} = await import(pathToFileURL(join(root, 'presets/pins.mjs')).href);
+	const ornamentsAt = /const RAPIER_ORNAMENTS_URL = '([^']+)'/.exec(await readFile(join(root, 'editor/composer.js'), 'utf8'))?.[1];
+	if (ornamentsAt !== PLUGIN_ORIGIN) throw new Error('Starters ornament address disagrees with the resource owner');
 	const {PDF_JS_VERSION} = await import(pathToFileURL(join(root, 'interchange/pdf-resources.mjs')).href);
 	const lettersAt = /const RAPIER_DRAW_LETTERS_URL = '([^']+)'/.exec(await readFile(join(root, 'draw/draw.js'), 'utf8'))?.[1];
 	if (lettersAt !== PLUGIN_ORIGIN + 'letters/') throw new Error('Draw letter-set address disagrees with the resource owner');
@@ -41,6 +44,10 @@ export async function pluginPackFiles({root = ROOT, loader = null} = {}) {
 		...OCR_FILES.map(file => ({id: 'rapier-ocr-' + file.name, plugin: 'ocr', hostFile: file.flat, url: file.url, sri: file.sri, bytes: file.bytes})),
 		...LETTER_SETS.map(set => ({id: 'rapier-letters-' + set.id, plugin: 'letters', hostFile: 'letters-' + set.id + '.json',
 			url: lettersAt + set.id + '.json', path: join(root, 'draw/letters', set.id + '.json'), sri: set.sha384, bytes: set.bytes})),
+		...BORDER_PINS.map(pin => ({id: 'rapier-templates-' + pin.id, plugin: 'templates', hostFile: 'templates-' + pin.id + '.json',
+			url: ornamentsAt + 'templates/' + pin.id + '.json', path: join(root, 'draw/templates', pin.id + '.json'), sri: pin.sha384, bytes: pin.bytes})),
+		...ELEMENT_PINS.map(pin => ({id: 'rapier-elements-' + pin.id, plugin: 'elements', hostFile: 'elements-' + pin.id + '.json',
+			url: ornamentsAt + 'elements/' + pin.id + '.json', path: join(root, 'draw/elements', pin.id + '.json'), sri: pin.sha384, bytes: pin.bytes})),
 		...pdfFiles(JSON.parse(await readFile(join(root, 'interchange/pdf-pins.json'), 'utf8')), PDF_JS_VERSION, root)];
 }
 

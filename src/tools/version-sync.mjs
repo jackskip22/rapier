@@ -10,7 +10,7 @@ export const VERSIONED_FILES = ['.claude-plugin/plugin.json', 'packages/rapier-e
 	'skills/README.md', 'skills/embed-rapier/SKILL.md', 'skills/rapier-agent-door/SKILL.md',
 	'skills/rapier-html/SKILL.md', 'skills/rapier-html/README.md', 'skills/rapier-markdown/SKILL.md',
 	'images/jxl/public/skills/rapier-jxl-photography/SKILL.md', 'images/jxl/public/skills/rapier-jxl-single-file-app/SKILL.md'];
-export const ROUTE_FILES = ['draw/draw.js', 'shell/parts.js', 'shell/plugin-loader.js', 'interchange/pdf-plugin.js',
+export const ROUTE_FILES = ['draw/draw.js', 'editor/composer.js', 'shell/parts.js', 'shell/plugin-loader.js', 'interchange/pdf-plugin.js',
 	'shell/font-subset-resources.json', 'shell/mermaid-resources.json'];
 const ROUTE = /(https:\/\/cdn\.jsdelivr\.net\/gh\/jackskip22\/rapier(?:-plugins)?@)[^/'"\s]+/g;
 

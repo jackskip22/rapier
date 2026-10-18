@@ -10,7 +10,7 @@ import {inspectGIF} from './gif.mjs';
 export {jxlWhole, portablePaintPNG, validatePaintRaster};
 
 export function inkForPaper(text, {dark = true, paperInk = null} = {}) {
-  if (!text.includes('<metadata id="rapier-draw">') || text.includes('<g data-rapier-background="paper"')) return text;
+  if (!/<metadata id="rapier-(?:draw|element)">/.test(text) || text.includes('<g data-rapier-background="paper"')) return text;
   const own = /<style>@media \(prefers-color-scheme:dark\)\{([^<]*)\}<\/style>/.exec(text);
   if (!dark) return (own ? text.replace(own[0], '') : text).replace(
     /<style>\.(rapier-bg-[a-z0-9]+)-d\{display:none\}@media \(prefers-color-scheme:dark\)\{\.\1-l\{display:none\}\.\1-d\{display:inline\}\}<\/style>/g,

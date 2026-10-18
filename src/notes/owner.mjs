@@ -911,6 +911,10 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				if (!inputs.has(input)) inputs.set(input, exactBytes(input));
 				return {...row, bytes: inputs.get(input)};
 			});
+			if (store.assertRemovable) {
+				for (const row of plan.removes || []) { const file = typeof row === 'string' ? row : row?.file; fileName(file); await store.assertRemovable(file); }
+				if (replacing) for (const row of original) if (!plannedWrites.some(write => write.file === row.file)) await store.assertRemovable(row.file);
+			}
 			const stageSave = !restoring && ['save', 'canonical-save'].includes(plan.kind) && !plan.removes?.length && plannedWrites.every(row => isNoteFile(row.file) || historyRow(row));
 			for (const row of plannedWrites) {
 				fileName(row.file, restoring); if (seen.has(row.file)) throw fail('plan', 'A transaction names one file twice.'); seen.add(row.file);

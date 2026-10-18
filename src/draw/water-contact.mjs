@@ -15,7 +15,7 @@ export function waterContactReach(profile,params,tool,radiusScale){
  const r=contactRadius(profile,params,tool,radiusScale,1,0)*(tool==='water'?1.3:1);
  if(tool==='lift'||tool==='erase')return 3.2*r;
  if(tool==='pen')return 3.2*2.6*r;
- const material=profile.scatter+1.5*Math.min(2,1+profile.sizeJitter)*(tool==='water'?1:1+.12*profile.wetRound);
+ const material=profile.scatter+.5*profile.splay+1.5*Math.min(2,1+profile.sizeJitter)*(1+profile.splay)*(tool==='water'?1:1+.12*profile.wetRound);
  return r*Math.max(material,3*(tool==='water'?1.15:1.2));
 }
 export class WaterContact {
@@ -47,6 +47,11 @@ export class WaterContact {
    let dx=x,dy=y,dr=r;
    if(p.scatter){const angle=this.rng()*TAU,length=Math.sqrt(this.rng())*p.scatter*r;dx+=Math.cos(angle)*length/aspect;dy+=Math.sin(angle)*length;}
    if(p.sizeJitter)dr*=clip(1+(2*this.rng()-1)*p.sizeJitter,.15,2);
+   if(p.splay){
+    const t=s.distance/Math.max(r,1e-6)+(s.splayPhase??=this.rng()*100);
+    const wide=.6*Math.sin(t*1.7)+.4*Math.sin(t*4.3+1.3),side=.6*Math.sin(t*2.3+2.1)+.4*Math.sin(t*5.1+.4),off=.5*p.splay*side*r;
+    dr*=1+p.splay*wide;dx+=-s.dy*off/aspect;dy+=s.dx*off;
+   }
    deposit(dx,dy,dr,this._angle(s));
   }
  }

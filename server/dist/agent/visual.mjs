@@ -1,5 +1,8 @@
 // Visual observations carry no source handles or edit authority. SPDX-License-Identifier: AGPL-3.0-only.
 export const VISUAL_LIMITS = Object.freeze({pixels: 4 * 1024 * 1024, edge: 4096, imageBytes: 2 * 1024 * 1024});
+export const DRAWING_PREVIEW_EDGE = 512;
+export const DRAWING_PREVIEW_CHARS = 24 * 1024;
+export const DRAWING_PREVIEW_TOTAL_CHARS = 96 * 1024;
 
 const scopes = new Set(['viewport', 'page', 'focus', 'selection']);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -42,25 +45,42 @@ export function visualRequest(state, args = {}) {
   const scope = args.scope || 'viewport';
   if (!scopes.has(scope)) return refused('visual_target_unavailable');
   const request = {kind: 'visual', documentId: state.documentId, revision: state.revision, scope};
+  const detail = args.detail === true && scope === 'focus' && range(args.sourceRange) &&
+    typeof args.block === 'string' && args.block.length > 0 && args.block.length <= 256;
   if (state.drawing != null) {
     const drawing = visualDrawingIdentity(state.drawing);
     if (!drawing) return refused('visual_target_unavailable');
     const named = scope === 'focus' && range(args.sourceRange) ? args.sourceRange : null, at = drawing.occurrence;
-    if (named && !(at && at.start < named.end && at.end > named.start)) return refused('draw_session_open');
-    request.drawing = drawing;
+    const elsewhere = named && !(at && at.start < named.end && at.end > named.start);
+    if (elsewhere && !detail) return refused('draw_session_open');
+    if (!elsewhere) request.drawing = drawing;
   }
-  if (!request.drawing && (scope === 'focus' || scope === 'selection')) {
+  if ((!request.drawing || range(args.sourceRange)) && (scope === 'focus' || scope === 'selection')) {
     const named = scope === 'focus' && args.sourceRange !== undefined, target = named ? args.sourceRange : state[scope];
     if (!range(target) || typeof state.text !== 'string' || target.end > state.text.length) return refused('visual_target_missing');
     request.sourceRange = {start: target.start, end: target.end};
     if (named) request.named = true;
   }
+  if (detail && args.preview === true && Number.isSafeInteger(args.previewChars) && args.previewChars <= 0)
+    return refused('visual_too_large');
+  if (detail) Object.assign(request, {block: args.block, detail: true, ...(args.preview === true ? {preview: true,
+    previewChars: Number.isSafeInteger(args.previewChars) && args.previewChars > 0
+      ? Math.min(args.previewChars, DRAWING_PREVIEW_CHARS) : DRAWING_PREVIEW_CHARS} : {})});
   return {outcome: 'ok', request};
 }
 
 export function visualDimensions(width, height) {
   return Number.isSafeInteger(width) && width > 0 && width <= VISUAL_LIMITS.edge &&
     Number.isSafeInteger(height) && height > 0 && height <= VISUAL_LIMITS.edge && width * height <= VISUAL_LIMITS.pixels;
+}
+
+export function visualAcknowledgement(args) {
+  const input = args.fact || {}, image = input.image;
+  const pick = (value, keys) => Object.fromEntries(keys.filter(key => value?.[key] !== undefined).map(key => [key, value[key]]));
+  return {arguments: {...args, fact: {...pick(input, ['documentId', 'revision', 'scope', 'drawing', 'outcome', 'reason', 'sourceRange']),
+    ...(image ? {image: pick(image, ['mimeType', 'data', 'width', 'height'])} : {})}},
+    metadata: {visualId: args.visualId, documentId: input.documentId, revision: input.revision,
+      ...pick(input, ['state', 'projection']), ...pick(image, ['nativeWidth', 'nativeHeight', 'reduced'])}};
 }
 
 function pngBytes(image) {
@@ -106,8 +126,20 @@ export function visualResult(request, fact) {
   if (request.sourceRange && !sameRange(request.sourceRange, fact.sourceRange)) return refused('visual_target_changed');
   const size = pngBytes(fact.image);
   if (size === null) return refused('visual_image_invalid');
+  if (request.preview && Math.max(fact.image.width, fact.image.height) > DRAWING_PREVIEW_EDGE) return refused('visual_image_invalid');
+  if (request.preview && fact.image.data.length > (request.previewChars || DRAWING_PREVIEW_CHARS)) return refused('visual_image_invalid');
+  if (request.detail && !['wet', 'settled', 'stored'].includes(fact.state)) return refused('visual_image_invalid');
+  const native = fact.image.nativeWidth !== undefined || fact.image.nativeHeight !== undefined;
+  if (native && (!integer(fact.image.nativeWidth) || !integer(fact.image.nativeHeight) ||
+      fact.image.nativeWidth < fact.image.width || fact.image.nativeHeight < fact.image.height ||
+      fact.image.reduced !== (fact.image.width < fact.image.nativeWidth || fact.image.height < fact.image.nativeHeight)))
+    return refused('visual_image_invalid');
+  if (fact.projection !== undefined && !['stored', 'settled'].includes(fact.projection)) return refused('visual_image_invalid');
   return {outcome: 'ok', representation: 'visual', observation: {documentId: request.documentId, revision: request.revision,
     scope: request.scope, mimeType: 'image/png', width: fact.image.width, height: fact.image.height, bytes: size,
     ...(request.drawing ? {drawing: visualDrawingIdentity(request.drawing)} : {}),
-    ...(request.sourceRange ? {sourceRange: {...request.sourceRange}} : {})}};
+    ...(request.sourceRange ? {sourceRange: {...request.sourceRange}, ...(request.named ? {named: true} : {})} : {}),
+    ...(request.detail ? {block: request.block, detail: true, state: fact.state, ...(request.preview ? {preview: true} : {})} : {}),
+    ...(fact.projection ? {projection: fact.projection} : {}),
+    ...(native ? {nativeWidth: fact.image.nativeWidth, nativeHeight: fact.image.nativeHeight, reduced: fact.image.reduced} : {})}};
 }

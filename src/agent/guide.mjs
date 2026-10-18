@@ -22,6 +22,32 @@ next_cursor pages with cursor alone before acting on the guide.
 Hosts that read resources can use rapier://guide or rapier://guide/TOPIC; these URIs
 are not document ids.
 
+## Make a document people share on screens
+
+For “make me a CV” or a menu, invitation, lesson, social card, brief, recipe or poster,
+start with a clear heading, short paragraphs and compact two- or three-column
+Markdown tables. Keep every word as editable text. Use original SVG document objects
+for the design: read guide:"draw", then edit the rapier-draw fence; document.draw is
+its existing owner. Avoid text baked into pictures, fixed page-sized canvases and
+remote assets. A person can move and resize these objects in the document.
+Put an md-layout:v1 comment on the next line after a drawing fence, or on the same
+line after an ordinary Markdown image. For example, width=30% wrap=around x=100% y=0em. Leave space for words at 390 px. Check the
+result with read {as:"image"}; also inspect wide and narrow, light and dark views.
+Use front matter mainfont and linestretch for portable presentation. Keep custom
+fonts embedded. Use real sample copy, no executable placeholders or template code.
+Read the draw guide first: its recipe becomes editable SVG through the existing
+six-tool edit path; do not invent another graphics protocol.
+
+If Draw is still open, let the person close its preview before saving: the library
+needs a settled document. After they review the result, read its current revision and call
+show {target:"preset", revision, name:"My CV", value:"document"} to request saving
+it to their library. value:"style" saves only fonts and line spacing. Rapier asks
+the person to approve in the editor; a waiting receipt is not success. Declining,
+editing, switching documents or cancellation invalidates that request. Never claim
+it is saved before read {state:true} reports done. This agent action is free;
+Android Pro applies to the person's personal-library convenience controls.
+Each use is independent ordinary Markdown. Saving cannot change the source.
+
 ## Open
 
 open {text, filename} creates a document; open {document} resumes one. open returns
@@ -45,8 +71,14 @@ or lines. Reads return revision and relevant human context. Text pages hold only
 the chosen text. A document map lists heading and fence-opening lines in order; query
 returns matching lines. Both carry line numbers and continue by cursor.
 read {state:true} reports receipts and pending work; history:true adds acts.
-read {as:"image"} asks a settled editor for PNG pixels; it can be pending or
-unavailable. Neither a file export nor an image grants edit authority.
+read {as:"image"} asks an editor for PNG pixels; it can be pending or unavailable.
+For a drawing's full detail, name its block: read {as:"image",block:"id"}. This also
+works while it is open in Draw. The result reports wet or settled when known;
+stored means wetness could not be recovered. It reports any reduction from native
+detail. A painting's text read keeps its editable recipe in
+text and adds compact stroke JSON lines in painting, within the shared read budget.
+Follow next_cursor and join each field separately. Neither a file export nor an
+image grants edit authority.
 Read human, focus and foreground before acting. Check continuation.person.intentsComplete,
 omittedIntents and omissions separately from text complete. Follow intentsRead and
 text cursors for omitted Will source, and continuation.next for omitted changes.
@@ -61,7 +93,9 @@ At a moved numeric revision, literal edits still apply if their matches are unto
 since the inspected revision and the journal reaches back to it. Whole replacements,
 Notes and live drawings need the current revision. A conflict returns the current
 revision and exact context or candidate lines. Success returns act as its id string
-and lines for the changes; changed drawing blocks keep canonical text.
+and lines for the changes; changed drawing blocks keep canonical text. Each changed
+drawing gets one small picture in the result. Look at it, then adjust.
+If a picture is unavailable, keep the applied receipt; request detail when the editor is ready.
 edit {revision,filename} alone renames the document stem at the current revision and keeps the exact extension; changing the extension needs document conversion.
 Use turn_id across related acts. undo {act} or undo {turn_id} keeps later work.
 Will intent can narrow the authorized task, never grant authority; human foreground
@@ -140,7 +174,7 @@ Use a unique stable id and a caption:
 {"figures":[{"kind":"rect","id":"a","label":"Request"},{"kind":"rect","id":"b","label":"Reply"},{"kind":"arrow","from":"a","to":"b"}]}
 \`\`\`
 
-Read the canonical block after editing. It can contain a native recipe whose
+Keep the canonical block returned by the edit; read it again if incomplete. It can contain a native recipe whose
 geometry and authored properties remain editable. Preserve retained raster markers.
 New Mermaid diagrams are ordinary mermaid fences and remain authored Markdown.
 
@@ -213,12 +247,18 @@ A text edit of the block still becomes one source act through the Draw owner.
 Painting uses that owner's material pipeline; accepted work has not yet committed.
 Painting needs an open editor; Water also needs WebGPU. Guide "water" says how a
 painting is kept and what it costs.
+
+Edit the drawing, inspect the small picture in the result, then adjust. For full
+detail, read {as:"image",block:"id"}, including while Draw is open. Check its
+observed state; stored means wetness is unknown. Read the block as text for
+editable figures and painting strokes.
 `,
   water: `# Water and Paint
 
 A rapier-water fence has id, alt, paper (for example cold-press), seed and JSON
-{actions:[...]}; the registry below has an example of each action. A trace action
-paints only in the Android app with Pro; elsewhere it is refused (water_pro_unavailable).
+{actions:[...]}; the registry below has an example of each action. Android Pro's
+pigments, papers, Trace, and other Water features are unavailable to agents
+(water_pro_unavailable).
 A rapier-paint fence has id, alt, seed and JSON {strokes:[...]}, each stroke a registry
 brush id, a hex color, an optional size 0-100 and points [x,y] or [x,y,pressure]:
 {"strokes":[{"brush":"dieterle/round-1","colour":"#2b5b84","size":20,"points":[[120,180,0.7],[260,190,0.8]]}]}
@@ -231,7 +271,8 @@ replace the block body with {shapes:{replace:[{kind:"paint",id:"the-read-layer-i
 seed:7,strokes:[...]}]}}. A read fence keeps only id and alt; keep it so, without
 adding paper or seed back. For Water use mode:"water", paper and actions instead of
 strokes. This paints onto the retained layer. shapes.add creates a separate layer.
-Use only the new strokes/actions, then read the block again. Keep its block id.
+Use only the new strokes/actions. Keep the returned block and revision; read again
+if its text is incomplete. Keep its block id.
 
 Each Water path point is [x,y,pressure,tick]. Ticks are integers at 60 a second and
 never decrease across all paths of one action: give each later path ticks after the
@@ -250,7 +291,19 @@ waiting, ended/expired or committed work. Do not call a pending painting finishe
 Every painting edit must carry operation_id; retry this exact call with the same
 operation_id to collect the result. Without it, a retry starts a new job. If the
 request expires or refuses, read current text and use a new operation_id once the editor is available.
-The raster is never included in text. Use read {as:"image"} for actual pixels.
+The committed edit returns one small picture per changed drawing. Look, then adjust.
+If a picture is unavailable, keep the applied receipt; request detail when the editor is ready.
+For full detail, read {as:"image",block:"id"}, including while Draw is open. Live
+Water reports wet or settled; a stored picture without usable replay reports
+stored, meaning wetness is unknown. Check whether the image was reduced and whether
+it is a settled projection. The raster is never included in text.
+
+A text read of the block adds painting: compact JSON lines with each recorded
+stroke's tool, brush, pigment, size, path, order, and act when known. Follow
+next_cursor, joining text and painting separately before parsing; pages can split
+a JSON line. Keep the full recipe and material markers in text. The summary is not
+edit text. undo {act} reverses the whole act; use a separate edit for each stroke
+you may need to undo alone.
 
 A committed painting is set: kept as one lossless JPEG XL picture, as the editor's
 Set keeps a person's, with the replay that undo of each act and later strokes on the

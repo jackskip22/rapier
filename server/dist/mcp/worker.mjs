@@ -24,7 +24,7 @@ import { analyzeDocument } from '../agent/structure.mjs';
 import { analyzeMarkdown, checkMarkdownReferences } from '../agent/markdown-server.mjs';
 import { resolveCaller, validateOrigin, WORKER_PRESENCE, sealForEditor, fromBase64url } from '../agent/door-identity.mjs';
 import { mintEditorKey, verifyEditorKey, mintEditorTicket, verifyEditorTicket, editorSecretUsable, classifyEditorSecret, editorSecretKeyMaterial } from './editor-keys.mjs';
-import { visualResult, sameVisualDrawing } from '../agent/visual.mjs';
+import { visualResult, sameVisualDrawing, DRAWING_PREVIEW_CHARS, DRAWING_PREVIEW_TOTAL_CHARS } from '../agent/visual.mjs';
 import {editorResult, editorFailure, editorPreferences, EDITOR_LIMITS, EDITOR_TOOL_ACTIONS} from '../agent/editor.mjs';
 import { createRequestWait, createRequestLifetime, responsiveJson, REQUEST_CANCELLED } from './request-lifetime.mjs';
 import {TaskLifetime, TASK_EXTENSION, TASK_TTL_MS} from './task-lifetime.mjs';
@@ -52,7 +52,6 @@ const DOORS = new Set(['/mcp', '/muse', '/editor']);
 const META_VERSION = 'io.modelcontextprotocol/protocolVersion', META_CLIENT = 'io.modelcontextprotocol/clientCapabilities', META_SERVER = 'io.modelcontextprotocol/serverInfo';
 const UNSUPPORTED_VERSION = -32022, HEADER_MISMATCH = -32020;
 export { UI_RESOURCE, INSTRUCTIONS };
-export { RapierOwnedNotes } from './owned-notes.mjs';
 const UI_MIME = 'text/html;profile=mcp-app';
 export const DESCRIPTORS = Object.freeze(mcpDescriptors({ uiResource: UI_RESOURCE }));
 const SERVER_DESCRIPTORS = Object.freeze(mcpDescriptors({uiResource: UI_RESOURCE, auth: 'server-bearer'}));
@@ -66,10 +65,10 @@ const MUSE_DESCRIPTORS = Object.freeze(mcpDescriptors({auth: 'oauth'}).filter(to
 const PAIR_BROWSER = 'editor.pair', PAIR_STATUS = 'document.pair_status';
 const MUSE_EXPORT_TEXT_CHARS = 60000;
 const ANONYMOUS = Object.freeze({source: 'anonymous', scopes: Object.freeze(['rapier:read', 'rapier:write'])});
-const remotePrincipal = input => 'remote:' + input.capabilityHash + (input.connectionKey ? ':connection:' + input.connectionKey : '');
+const remotePrincipal = input => 'remote:' + input.capabilityHash + (input.connectionKey ? ':connection:' + input.connectionKey : input.access ? ':access:' + input.access.principalId : '');
 const editorSecret = env => (editorSecretUsable(env.EDITOR_KEY_SECRET) ? env.EDITOR_KEY_SECRET : '');
-export function deployment(env, {authentication = 'oauth'} = {}) {
-  if (!['oauth', 'server-bearer'].includes(authentication)) throw new TypeError('Unknown deployment authentication profile');
+export function deployment(env, {authentication = env.ACCESS_PROFILE === true ? 'access' : 'oauth'} = {}) {
+  if (!['oauth', 'server-bearer', 'access'].includes(authentication)) throw new TypeError('Unknown deployment authentication profile');
   const missing = [], invalid = [];
   if (!env.DOCUMENTS?.get || !env.DOCUMENTS?.idFromName) missing.push('DOCUMENTS');
   if (!env.ASSETS?.fetch) missing.push('ASSETS');
@@ -78,7 +77,8 @@ export function deployment(env, {authentication = 'oauth'} = {}) {
   const budget = !!(env.BUDGET?.get && env.BUDGET?.idFromName);
   if (!budget && !development) missing.push('BUDGET');
   const secret = classifyEditorSecret(env.EDITOR_KEY_SECRET);
-  if (!secret.usable) (secret.reason === 'malformed' ? invalid : missing).push('EDITOR_KEY_SECRET');
+  if (authentication !== 'access' && !secret.usable) (secret.reason === 'malformed' ? invalid : missing).push('EDITOR_KEY_SECRET');
+  if (authentication === 'access' && (env.ACCESS_PROFILE !== true || typeof env.accessCurrent !== 'function' || typeof env.accessLease !== 'function' || typeof env.accessRefreshNeeded !== 'function')) missing.push('CLOUDFLARE_ACCESS');
   if (authentication === 'oauth') {
     let authorityOrigin;
     try { authorityOrigin = oauthOrigin(env); } catch { invalid.push('OAUTH_ORIGIN'); }
@@ -281,6 +281,8 @@ const ADDRESS_CHARS = 'rpr_'.length + 22;
 const workspaceAddress = (handle, ownerKey) => digest(ownerKey + ':' + handle.slice(0, ADDRESS_CHARS));
 const anonymousOwner = handle => digest('bearer:' + handle.slice(0, ADDRESS_CHARS));
 async function linkCapability(head, env) {
+  if (env.ACCESS_PROFILE === true) return head.prefix +
+    base64url(Uint8Array.from((await digest('access-owner-link:' + head.ownerKey + ':' + head.capabilityHash)).match(/../g), byte => parseInt(byte, 16))).slice(0, 21);
   const key = await crypto.subtle.importKey('raw', editorSecretKeyMaterial(editorSecret(env), 'rapier-owner-link:'), {name: 'HMAC', hash: 'SHA-256'}, false, ['sign']);
   const tag = new Uint8Array(await crypto.subtle.sign('HMAC', key, encoder.encode(head.ownerKey + ':' + head.capabilityHash)));
   return head.prefix + base64url(tag).slice(0, 21);
@@ -288,13 +290,15 @@ async function linkCapability(head, env) {
 async function resolveOwnerLink(env, address, authority, capabilityHash) {
   const ownerKey = await digest(authority.ownerId), connectionKey = authority.source === 'oauth' ? await digest(authority.connectionId) : undefined;
   const response = await env.DOCUMENTS.get(env.DOCUMENTS.idFromName(address)).fetch(new Request('https://rapier.internal/owner-link', {method: 'POST',
-    body: JSON.stringify({ownerKey, connectionKey, oauthGrant: authority.grant, capabilityHash})}));
+    body: JSON.stringify({ownerKey, connectionKey, oauthGrant: authority.grant, capabilityHash, ...(authority.access ? {access: authority.access} : {})})}));
   return response.ok ? response.json() : null;
 }
 
 const pageId = address => 'ws_' + base64url(Uint8Array.from(address.match(/../g), pair => parseInt(pair, 16)));
 const pageAddress = id => Array.from(fromBase64url(id.slice('ws_'.length)), byte => byte.toString(16).padStart(2, '0')).join('');
 async function rotatedCapability(capability, env) {
+  if (env.ACCESS_PROFILE === true) return capability.slice(0, ADDRESS_CHARS) +
+    base64url(Uint8Array.from((await digest('access-rotation:' + capability)).match(/../g), byte => parseInt(byte, 16))).slice(0, 21);
   const key = await crypto.subtle.importKey('raw', editorSecretKeyMaterial(editorSecret(env), 'rapier-rotation-v1:'), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const mac = new Uint8Array(await crypto.subtle.sign('HMAC', key, encoder.encode(capability)));
   return capability.slice(0, ADDRESS_CHARS) + base64url(mac).slice(0, 43 - 22);
@@ -475,10 +479,14 @@ function envelope(value, head, meta = {}, { modelFacing = false, fallbackCollabo
   return { content: [{ type: 'text', text: message }], structuredContent: result, ...(isError ? { isError: true } : {}), ...(Object.keys(meta).length ? { _meta: { rapier: meta } } : {}) };
 }
 
-function operationEnvelope(operation, recorded, head) {
+function operationEnvelope(operation, recorded, head, {notesVersions = false} = {}) {
   const {hostedDownload, drawingPatch, ...value} = recorded;
   if (['document.save', 'export'].includes(operation) && value.saved) Object.assign(value, {verified: true, destination: 'workspace', durable: true});
   const result = envelope(value, hostedDownload ? {...head, filename: hostedDownload.name} : head, drawingPatch ? {drawingPatch} : {}, {modelFacing: true, fallbackCollaboration: operation !== 'document.observe'});
+  if (notesVersions && operation === 'read' && value.availability === 'available' && typeof value.note_ref === 'string') {
+    if (Number.isSafeInteger(value.version) && value.version > 0) result.structuredContent.version = value.version;
+    else delete result.structuredContent.version;
+  }
   if (hostedDownload) result.content.push(hostedDownload);
   return result;
 }
@@ -528,7 +536,7 @@ async function readTextBody(request, limit = MAX_RPC_BODY_BYTES, label = 'JSON r
 }
 
 const USED_RPC_META = new Set(['io.modelcontextprotocol/protocolVersion', 'io.modelcontextprotocol/clientCapabilities',
-  'io.modelcontextprotocol/clientInfo', 'rapier/editorKey', 'rapier/editorActivity']);
+  'io.modelcontextprotocol/clientInfo', 'rapier/editorKey', 'rapier/editorActivity', 'rapier/visual']);
 const rpcProjection = path => path.length === 2 && path[0] === 'params' && path[1] === '_meta' ? USED_RPC_META : null;
 const MAX_RPC_ID_BYTES = 1024;
 const rpcStringLimit = path => path.length === 1 && path[0] === 'id' ||
@@ -604,7 +612,7 @@ async function resource(request, env, uri) {
   const prepared = uiPages.get(env.ASSETS) || new Map(), preparedKey = JSON.stringify([endpoint, fileOrigins]);
   uiPages.set(env.ASSETS, prepared);
   let html = prepared.get(preparedKey);
-  if (html !== undefined && !editorSecret(env)) throw failure('INVALID_UI_CONFIGURATION', 'EDITOR_KEY_SECRET must encode 32 generated bytes as base64 or base64url before the editor can be served.');
+  if (html !== undefined && env.ACCESS_PROFILE !== true && !editorSecret(env)) throw failure('INVALID_UI_CONFIGURATION', 'EDITOR_KEY_SECRET must encode 32 generated bytes as base64 or base64url before the editor can be served.');
   if (html === undefined) {
   const response = await env.ASSETS.fetch(new Request(new URL('/rapier-app.html', request.url)));
   if (!response.ok || !/^text\/html(?:;|$)/i.test(response.headers.get('Content-Type') || '')) throw failure('UI_NOT_BUILT', 'The built /rapier-app.html asset is unavailable.');
@@ -612,7 +620,7 @@ async function resource(request, env, uri) {
   const versions = [...html.matchAll(/<meta\s+name="rapier-version"\s+content="([^"]+)"\s*\/?\s*>/gi)];
   if (!/globalThis\.RAPIER_APPS_HOST\s*=\s*true/.test(html) || versions.length !== 1 || versions[0][1] !== VERSION) throw failure('UI_NOT_BUILT', `The asset must be the Rapier ${VERSION} MCP App. Run node tools/build.mjs and publish the MCP App.`);
   html = html.replace(/(<link\b[^>]*\bhref=)(["'])(icon-(?:192|512)\.png)\2/gi, (_, prefix, quote, name) => prefix + quote + new URL('/' + name, endpoint).href + quote);
-  if (!editorSecret(env)) throw failure('INVALID_UI_CONFIGURATION', 'EDITOR_KEY_SECRET must encode 32 generated bytes as base64 or base64url before the editor can be served.');
+  if (env.ACCESS_PROFILE !== true && !editorSecret(env)) throw failure('INVALID_UI_CONFIGURATION', 'EDITOR_KEY_SECRET must encode 32 generated bytes as base64 or base64url before the editor can be served.');
   const flagged = html.replace(/globalThis\.RAPIER_APPS_HOST\s*=\s*true;/, match => match + ' globalThis.RAPIER_FILE_DOWNLOAD_ORIGINS = ' + JSON.stringify(fileOrigins) + ';');
   if (flagged === html) throw failure('UI_NOT_BUILT', 'The asset carries no RAPIER_APPS_HOST flag.');
   html = editorAssetBase(flagged, request);
@@ -671,6 +679,8 @@ const humanEditorCall = (name, args, editorProof) =>
 
 async function editorProofVerdict(env, args, authority, editorProof, documentAddress) {
   const page = authority.source === 'page', proof = page ? args.editorKey : editorProof;
+  if (env.ACCESS_PROFILE === true) return {ok: page && authority.access?.kind === 'browser' &&
+    proof === authority.access.principalId && await env.accessCurrent(authority.access)};
   const verdict = await verifyEditorKey(editorSecret(env), proof, Date.now(), {
     workspace: documentAddress, connection: page ? authority.authority.ownerKey || '' : authority.connectionId || authority.ownerId || '',
   });
@@ -686,7 +696,7 @@ async function takeToolBudget(request, env, authority, name, args, door, editorP
     const page = authority.source === 'page', human = humanEditorCall(name, args, editorProof);
     if (human && (door === '/muse' || !page && typeof editorProof !== 'string')) return null;
     if (name === PAIR_STATUS && !page) return null;
-    let editor = false, principal = ['oauth', 'server'].includes(authority.source)
+    let editor = false, principal = (['oauth', 'server'].includes(authority.source) || env.ACCESS_PROFILE === true && ['access', 'browser'].includes(authority.source))
       ? authority.source + ':' + authority.ownerId + ':' + (authority.connectionId || '')
       : 'address:' + (request.headers.get('CF-Connecting-IP') || 'unknown');
     if (page) {
@@ -698,7 +708,7 @@ async function takeToolBudget(request, env, authority, name, args, door, editorP
       if (!editor && name !== PAIR_STATUS) return null;
     }
     if (EDITOR_ONLY_TOOLS.has(name) && name !== PAIR_STATUS || human) {
-      if (!editorSecret(env) || (page ? args.document !== authority.id : !WORKSPACE_HANDLE.test(args.document || ''))) return null;
+      if (env.ACCESS_PROFILE !== true && !editorSecret(env) || (page ? args.document !== authority.id : !WORKSPACE_HANDLE.test(args.document || ''))) return null;
       const documentAddress = page ? authority.address : await workspaceAddress(args.document,
         authority.source === 'anonymous' ? await anonymousOwner(args.document) : await digest(authority.ownerId));
       const proofArgs = human ? {editorKey: args.editorKey ?? editorProof} : args;
@@ -754,7 +764,7 @@ async function waitedRead(args, env, request, authority, hostAgent, door, editor
   }
 }
 
-async function callTool(name, args, env, request, authority, hostAgent = null, door = '/mcp', editorProof = null, editorActivity = false, task = null, peek = false, wait = null) {
+async function callTool(name, args, env, request, authority, hostAgent = null, door = '/mcp', editorProof = null, editorActivity = false, task = null, peek = false, wait = null, visualObservation = null) {
   if (name === 'show' && plain(args) && args.target === undefined) args = {...args, target: showTarget(args)};
   if (name === 'read' && plain(args) && (args.wait_ms !== undefined || args.after_revision !== undefined) && authority?.source !== 'page') {
     const descriptor = TOOL_BY_NAME.get(name);
@@ -777,7 +787,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     if (Object.keys(args).some(key => !['url', 'agent', 'operation_id'].includes(key))) return toolError(failure('OPEN_ARGUMENTS_CONFLICT', 'Open a document link with url alone.'));
     let url; try {url = new URL(args.url);} catch {}
     const id = url && url.origin === new URL(request.url).origin && PAIRED_PATH.exec(url.pathname)?.[1];
-    if (!id || url.username || url.password || !['oauth', 'server'].includes(authority.source)) return toolError(failure('DOCUMENT_UNAVAILABLE', 'A document link requires its authorized connection. Otherwise use the private document value.'));
+    if (!id || url.username || url.password || !(['oauth', 'server'].includes(authority.source) || env.ACCESS_PROFILE === true && ['access', 'browser'].includes(authority.source))) return toolError(failure('DOCUMENT_UNAVAILABLE', 'A document link requires its authorized connection. Otherwise use the private document value.'));
     const resolved = await resolveOwnerLink(env, pageAddress(id), authority);
     if (!resolved?.document) return toolError(failure('DOCUMENT_UNAVAILABLE', 'This document is unavailable to this connection.'));
     args = {document: resolved.document, ...(args.agent ? {agent: args.agent} : {}), ...(args.operation_id ? {operation_id: args.operation_id} : {})};
@@ -804,7 +814,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     if (supplied('title') && args.note !== 'new' || args.note === 'new' && !supplied('text'))
       return toolError(failure('OPEN_ARGUMENTS_CONFLICT', 'title belongs only to a new Note (note:"new" with text). For a document use filename with text, or document to resume.'));
   }
-  const verdict = deployment(env, {authentication: authority.source === 'server' ? 'server-bearer' : 'oauth'});
+  const verdict = deployment(env, {authentication: env.ACCESS_PROFILE === true ? 'access' : authority.source === 'server' ? 'server-bearer' : 'oauth'});
   if (!verdict.documents) return toolError(failure('STORAGE_UNAVAILABLE', 'The document storage binding is unavailable.'));
   const page = authority.source === 'page' ? authority : null, anonymous = authority.source === 'anonymous';
   const create = !page && name === 'open' && args.document === undefined;
@@ -839,23 +849,21 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   const humanTool = humanNamed;
   const document = create ? minted : page ? null : args.document;
   const ownerKey = page ? null : anonymous ? await anonymousOwner(document) : connectedOwner;
-  let capabilityHash = document ? await digest(document) : null;
+  const capabilityHash = document ? await digest(document) : null;
   const connectionKey = authority.source === 'oauth' ? await digest(authority.connectionId) : null;
   const documentAddress = page ? page.address : await workspaceAddress(document, ownerKey);
-  const notesStatus = (args.note || args.search !== undefined || name === 'export' && args.to === 'sync') && env.OWNED_NOTES !== undefined;
   const ownerLink = !create && !page && !anonymous;
-  if (ownerLink && notesStatus) {
-    const resolved = await resolveOwnerLink(env, documentAddress, authority, capabilityHash);
-    if (resolved?.capabilityHash) capabilityHash = resolved.capabilityHash;
-  }
   const editorBinding = {workspace: documentAddress, connection: page ? page.authority.ownerKey || '' : authority.connectionId || authority.ownerId || ''};
   let editorSource = authority.source;
   if (EDITOR_ONLY_TOOLS.has(name) || humanTool) {
-    if (!editorSecret(env)) return toolError(failure('EDITOR_KEY_UNCONFIGURED', 'This deployment has no EDITOR_KEY_SECRET, so editor operations cannot be verified.'));
+    if (env.ACCESS_PROFILE !== true && !editorSecret(env)) return toolError(failure('EDITOR_KEY_UNCONFIGURED', 'This deployment has no EDITOR_KEY_SECRET, so editor operations cannot be verified.'));
     const verdict = await editorProofVerdict(env, args, authority, editorProof, documentAddress);
     if (verdict.ok) editorSource = 'page';
     if (editorSource !== 'page' || !verdict.ok) return toolError(failure('HUMAN_AUTHORITY_REQUIRED', "This is the editor's own operation. Open the editor to make this decision.", {reason: verdict.reason || 'editor_path_required'}));
   }
+  if (name === 'document.visual_ack' && visualObservation !== null &&
+      (!plain(visualObservation) || new TextEncoder().encode(JSON.stringify(visualObservation)).length > 1024))
+    return toolError(failure('VISUAL_METADATA_INVALID', 'The visual observation metadata is invalid.'));
   const { document: ignored, editorKey: ignoredKey, createToken: ignoredToken, operation_id: operationName, ...input } =
     name === 'open' || EDITOR_ONLY_TOOLS.has(name) ? args : rawArgs;
   const file = name === 'open' ? input.file : undefined;
@@ -863,27 +871,11 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   const pageRotation = name === ROTATE && page ? await pageSuccessor(env, page, args.editorKey) : null;
   const successor = name === ROTATE ? (document ? await rotatedCapability(document, env) : pageRotation?.capability) : null;
   if (name === ROTATE && !successor) return toolError(failure('PAIRING_REQUIRED', 'This browser is not paired with this workspace. Open its editor link and give the assistant the code the page shows.'));
-  if (notesStatus) {
-    let status;
-    try {
-      const response = await env.OWNED_NOTES.get(env.OWNED_NOTES.idFromName(documentAddress)).fetch(new Request('https://rapier.internal/status', {
-        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({capabilityHash}),
-      }));
-      if (response.ok) status = await parseJsonStream(response, {inlineBytes: 65536});
-    } catch {}
-    const writes = name === 'open' && args.note === 'new' || name === 'edit' || name === 'export';
-    if (status?.reason === 'notes_not_configured' && writes) return envelope({outcome: 'refused', availability: 'unavailable', reason: 'notes_not_configured',
-      message: 'Notes is not set up on this host, so nothing was written.', hint: 'Keep the words in this document with edit, or deliver them with export.'});
-    if (status?.reason === 'notes_not_configured') return envelope({outcome: 'ok', availability: 'unavailable', reason: 'notes_not_configured', message: 'Notes is not set up on this host.',
-      complete: true, remaining: 0, next_cursor: null, ...(args.search !== undefined ? {notes: []} : {}),
-      ...(name === 'read' && args.note ? {note_ref: args.note, found: false, text: null} : {})});
-    const hint = typeof status?.hint === 'string' && status.hint.length <= 512 ? status.hint
-      : 'Unlock Notes at the enrolled endpoint and use its private connection. The hosted relay cannot read encrypted Notes.';
-    return envelope({outcome: 'refused', availability: 'locked', reason: 'notes_locked',
-      adapter_enrolled: status?.adapterEnrolled === true, hint, message: hint});
-  }
   const requestKey = mintId('request_'), requestExpiresAt = Date.now() + REQUEST_LEASE_MS;
-  const payload = { operation: name === 'show' && args.target === 'pair' ? PAIR_BROWSER : name, args: name === 'show' && args.target === 'pair' ? {code: input.code} : input, create, ...(name === 'show' && args.target === 'ask' ? {waitBound: door === '/muse' ? MUSE_WAIT_MS : 120000} : {}), ...(door === '/muse' && ['edit', 'undo'].includes(name) ? {holdBound: MUSE_WAIT_MS} : {}), ...(file ? {hostFileBinding: await digest(JSON.stringify(file))} : {}), ...(page ? {page: {...page.authority, ...(pageRotation ? {rotationEpoch: pageRotation.epoch, rotationRetry: pageRotation.retry} : {})}} : {ownerKey, capabilityHash, ...(connectionKey ? {connectionKey, oauthGrant: authority.grant} : {})}), ...(create ? {prefix: document.slice(0, ADDRESS_CHARS), ...(anonymous ? {bearer: true} : {})} : {}), ...(hostAgent ? {hostAgent} : {}), ...(humanTool ? {humanTool: true} : {}), ...(EDITOR_ONLY_TOOLS.has(name) || humanTool ? {editorAuthorized: true} : {}), ...(editorSource === 'page' && editorActivity === true && ['document.commit', 'document.human_context'].includes(name) ? {editorActivity: true} : {}), ...(name === 'show' && args.target === 'return' ? { returnAddress: documentAddress } : {}), ...(name === 'export' ? { exportAddress: documentAddress, exportOrigin: new URL(request.url).origin } : {}), ...(createBudget ? { createBudget } : {}), ...(successor ? { rotateToHash: await digest(successor) } : {}), ...(operationName !== undefined ? { operationId: operationName } : {}), requestKey, requestExpiresAt, ...(task ? {task} : {}), ...(peek ? {peek: true} : {}), ...(wait ? {waitFor: wait} : {}), ...(ownerLink && !notesStatus ? {ownerLink: true} : {}), ...(connectionKey ? {workspaceAddress: documentAddress} : {}) };
+  const payload = { operation: name === 'show' && args.target === 'pair' ? PAIR_BROWSER : name, args: name === 'show' && args.target === 'pair' ? {code: input.code} : input, create, ...(name === 'show' && args.target === 'ask' ? {waitBound: door === '/muse' ? MUSE_WAIT_MS : 120000} : {}), ...(door === '/muse' && ['edit', 'undo'].includes(name) ? {holdBound: MUSE_WAIT_MS} : {}), ...(file ? {hostFileBinding: await digest(JSON.stringify(file))} : {}), ...(page ? {page: {...page.authority, ...(pageRotation ? {rotationEpoch: pageRotation.epoch, rotationRetry: pageRotation.retry} : {})}} : {ownerKey, capabilityHash, ...(connectionKey ? {connectionKey, oauthGrant: authority.grant} : {})}), ...(create ? {prefix: document.slice(0, ADDRESS_CHARS), ...(anonymous ? {bearer: true} : {})} : {}), ...(hostAgent ? {hostAgent} : {}), ...(humanTool ? {humanTool: true} : {}), ...(EDITOR_ONLY_TOOLS.has(name) || humanTool ? {editorAuthorized: true} : {}), ...(editorSource === 'page' && editorActivity === true && ['document.commit', 'document.human_context'].includes(name) ? {editorActivity: true} : {}), ...(name === 'show' && args.target === 'return' ? { returnAddress: documentAddress } : {}), ...(name === 'export' ? { exportAddress: documentAddress, exportOrigin: new URL(request.url).origin } : {}), ...(createBudget ? { createBudget } : {}), ...(successor ? { rotateToHash: await digest(successor) } : {}), ...(operationName !== undefined ? { operationId: operationName } : {}), requestKey, requestExpiresAt, ...(task ? {task} : {}), ...(peek ? {peek: true} : {}), ...(wait ? {waitFor: wait} : {}), ...(ownerLink ? {ownerLink: true} : {}), ...(connectionKey ? {workspaceAddress: documentAddress} : {}) };
+  if (name === 'document.visual_ack' && editorSource === 'page' && visualObservation !== null)
+    payload.visualObservation = visualObservation;
+  if (env.ACCESS_PROFILE === true) payload.access = authority.access;
   const workspace = env.DOCUMENTS.get(env.DOCUMENTS.idFromName(documentAddress));
   let cancellation;
   const cancel = () => cancellation ||= workspace.fetch(new Request('https://rapier.internal/operation/cancel', {
@@ -922,7 +914,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   }
   if (result.isError && !(create && result.structuredContent?.created === true)) return result;
   const writer = authority.scopes?.includes('rapier:write') === true;
-  if ((authority.source === 'server' || !writer) && result._meta?.rapier) delete result._meta.rapier.live;
+  if ((authority.source === 'server' || !writer || env.ACCESS_PROFILE === true && authority.access?.kind !== 'browser') && result._meta?.rapier) delete result._meta.rapier.live;
   if (result._meta?.rapier?.live?.key) {
     const url = new URL('/live/' + pageId(documentAddress), request.url); url.protocol = url.protocol === 'http:' ? 'ws:' : 'wss:';
     const join = new URL('/rapier.html', request.url);
@@ -930,12 +922,12 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     result._meta.rapier.live = {...result._meta.rapier.live, url: url.href, joinUrl: join.href};
   }
   const issuedAt = result._meta?.rapier?.editorIssuedAt;
-  if (door !== '/muse' && writer && (name === 'open' || editorSource === 'page' && editorActivity === true) && Number.isSafeInteger(issuedAt)) {
-    result._meta = {...result._meta, rapier: {...result._meta?.rapier, editorKey: await mintEditorKey(editorSecret(env), issuedAt, editorBinding), editorDocument: page ? page.id : document, ...(!page ? {editorTransport: {url: new URL('/editor', request.url).href, ticket: await mintEditorTicket(editorSecret(env), document, authority, issuedAt)}} : {})}};
+  if (door !== '/muse' && writer && (env.ACCESS_PROFILE !== true || authority.access?.kind === 'browser') && (name === 'open' || editorSource === 'page' && editorActivity === true) && Number.isSafeInteger(issuedAt)) {
+    result._meta = {...result._meta, rapier: {...result._meta?.rapier, editorKey: env.ACCESS_PROFILE === true ? authority.access.principalId : await mintEditorKey(editorSecret(env), issuedAt, editorBinding), editorDocument: page ? page.id : document, ...(!page && env.ACCESS_PROFILE !== true ? {editorTransport: {url: new URL('/editor', request.url).href, ticket: await mintEditorTicket(editorSecret(env), document, authority, issuedAt)}} : {})}};
   }
   if (successor && result.structuredContent?.rotated === true) {
-    result._meta = {...result._meta, rapier: {...result._meta?.rapier, editorKey: args.editorKey, editorDocument: page ? page.id : successor, ...(!page ? {editorTransport: {url: new URL('/editor', request.url).href, ticket: await mintEditorTicket(editorSecret(env), successor, authority, issuedAt)}} : {})}};
-    result.structuredContent = { ...result.structuredContent, sealed: await sealForEditor(args.editorKey, successor) };
+    result._meta = {...result._meta, rapier: {...result._meta?.rapier, editorKey: args.editorKey, editorDocument: page ? page.id : successor, ...(!page && env.ACCESS_PROFILE !== true ? {editorTransport: {url: new URL('/editor', request.url).href, ticket: await mintEditorTicket(editorSecret(env), successor, authority, issuedAt)}} : {})}};
+    if (env.ACCESS_PROFILE !== true) result.structuredContent = { ...result.structuredContent, sealed: await sealForEditor(args.editorKey, successor) };
     return result;
   }
   if (name === 'open' && result.structuredContent) result.structuredContent = {...result.structuredContent,
@@ -965,6 +957,10 @@ async function cursorKey(env, usage) {
   return crypto.subtle.importKey('raw', digested, {name: 'AES-GCM'}, false, [usage]);
 }
 async function sealCursor(env, document, cursor) {
+  if (env.ACCESS_PROFILE === true) {
+    const value = CURSOR_PREFIX + base64url(encoder.encode(document + '\n' + cursor));
+    return value.length <= 256 ? value : null;
+  }
   const key = await cursorKey(env, 'encrypt'); if (!key) return null;
   const plain = encoder.encode(document + '\n' + cursor), material = editorSecretKeyMaterial(editorSecret(env), 'rapier-read-cursor-nonce-v1:');
   const iv = new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array([...material, ...plain]))).slice(0, 12);
@@ -974,6 +970,11 @@ async function sealCursor(env, document, cursor) {
 }
 async function openCursor(env, sealed) {
   try {
+    if (env.ACCESS_PROFILE === true) {
+      const value = new TextDecoder('utf-8', {fatal: true}).decode(fromBase64url(sealed.slice(CURSOR_PREFIX.length)));
+      const at = value.indexOf('\n'), document = value.slice(0, at), cursor = value.slice(at + 1);
+      return sealed.length <= 256 && at > 0 && WORKSPACE_HANDLE.test(document) && cursor ? {document, cursor} : null;
+    }
     const key = await cursorKey(env, 'decrypt'), bytes = fromBase64url(sealed.slice(CURSOR_PREFIX.length));
     if (!key || bytes.length <= 12) return null;
     const plain = new TextDecoder().decode(await crypto.subtle.decrypt({name: 'AES-GCM', iv: bytes.slice(0, 12)}, key, bytes.slice(12)));
@@ -982,10 +983,12 @@ async function openCursor(env, sealed) {
   } catch { return null; }
 }
 
-function publicToolResult(name, result, door) {
+function publicToolResult(name, result, door, {workspaceNotes = false} = {}) {
   if (door === '/muse' && result._meta) { const {_meta, ...value} = result; result = value; }
   if (['open', 'read', 'edit', 'undo', 'show', 'export'].includes(name) && plain(result.structuredContent)) {
-    const reply = modelReply(name, result.structuredContent), {text, ...shaped} = reply;
+    const reply = modelReply(name, result.structuredContent, {notesVersions: workspaceNotes}), {text, ...shaped} = reply;
+    if (workspaceNotes && name === 'open' && !result.isError && reply.availability === 'available' && typeof reply.note_ref === 'string')
+      for (const key of ['filename', 'chars', 'editor_url', 'presentation']) delete shaped[key];
     const {isError: _error, code, message, ...rest} = shaped;
     const receipt = typeof code === 'string' && rest.reason === undefined
       ? {outcome: rest.outcome, reason: code.toLowerCase(), ...(typeof message === 'string' && rest.hint === undefined ? {hint: message} : {}), ...rest}
@@ -1071,8 +1074,8 @@ function requestScope(request, authority, door, modern) {
 }
 
 export const REQUEST_OWNER_AFTER_MS = 1000;
-async function requestTool(name, args, env, request, authority, hostAgent, door, editorProof, editorActivity, scope, id) {
-  if (!scope) return callTool(name, args, env, request, authority, hostAgent, door, editorProof, editorActivity);
+async function requestTool(name, args, env, request, authority, hostAgent, door, editorProof, editorActivity, scope, id, visualObservation = null) {
+  if (!scope) return callTool(name, args, env, request, authority, hostAgent, door, editorProof, editorActivity, null, false, null, visualObservation);
   const key = sha256(JSON.stringify(id)), occurrence = 'request_' + crypto.randomUUID().replaceAll('-', ''), startedAt = Date.now();
   const lifetime = createRequestLifetime(request.signal), held = new AbortController();
   let refused = null, cancelledByOwner = false, owner = null;
@@ -1091,7 +1094,7 @@ async function requestTool(name, args, env, request, authority, hostAgent, door,
   try {
     const result = await callTool(name, args, env, new Request(request.url, {method: 'POST',
       headers: {'CF-Connecting-IP': request.headers.get('CF-Connecting-IP') || 'unknown'}, signal: lifetime.signal}),
-      authority, hostAgent, door, editorProof, editorActivity);
+      authority, hostAgent, door, editorProof, editorActivity, null, false, null, visualObservation);
     if (refused) throw refused;
     if (lifetime.signal.aborted) throw new DOMException('Request canceled', 'AbortError');
     return result;
@@ -1150,6 +1153,26 @@ export function handleAuthenticatedMcp(request, env, authority) {
       !Array.isArray(authority.scopes) || !['rapier:read', 'rapier:write'].every(scope => authority.scopes.includes(scope)))
     throw new TypeError('Verified server authority is required');
   return withOrigin(request, env, () => handleRequest(request, env, authority));
+}
+
+export async function handleAccessMcp(request, env, authority) {
+  if (env.ACCESS_PROFILE !== true || !['browser', 'access'].includes(authority?.source) ||
+      authority.ownerId !== authority.access?.ownerId || !/^owner_[A-Za-z0-9_-]{43}$/.test(authority.ownerId || '') ||
+      !Array.isArray(authority.scopes) || !['rapier:read', 'rapier:write'].every(scope => authority.scopes.includes(scope)) ||
+      !await env.accessCurrent?.(authority.access)) return rpcError(null, -32000, 'Cloudflare sign-in is required.', 401);
+  const url = new URL(request.url), browser = authority.source === 'browser' && authority.access.kind === 'browser';
+  if ((authority.source === 'browser') !== (authority.access.kind === 'browser')) return rpcError(null, -32000, 'Cloudflare sign-in is required.', 401);
+  if (url.pathname === '/editor' || /^\/(?:oauth|publish|p)(?:\/|$)/.test(url.pathname) ||
+      /^\/live\/[a-f0-9]{32}\//.test(url.pathname)) return new Response(null, {status: 404});
+  if (!browser && /^\/(?:editor|d|live)(?:\/|$)/.test(url.pathname)) return rpcError(null, -32000, 'Open the editor in a signed-in browser.', 403);
+  if (browser && (request.method !== 'GET' && request.method !== 'HEAD' && request.method !== 'OPTIONS' || request.headers.get('Upgrade')?.toLowerCase() === 'websocket') &&
+      request.headers.get('Origin') !== url.origin) return rpcError(null, -32000, 'Origin is not allowed.', 403);
+  const response = await withOrigin(request, env, () => handleRequest(request, env, authority));
+  if (!await env.accessCurrent(authority.access)) {
+    if (response.body) await response.body.cancel().catch(() => {});
+    return rpcError(null, -32000, 'Cloudflare sign-in is required.', 401);
+  }
+  return response;
 }
 
 async function withOrigin(request, env, dispatch) {
@@ -1237,7 +1260,7 @@ async function exportResponse(request, env, authority) {
   if (!env.DOCUMENTS?.get || !env.DOCUMENTS?.idFromName) return new Response(null, {status: 503, headers});
   try {
     return await env.DOCUMENTS.get(env.DOCUMENTS.idFromName(match[1])).fetch(new Request('https://rapier.internal/export', {
-      method: request.method, headers: granted ? {'X-Rapier-Export-Hash': await digest(token)} : {'X-Rapier-Export-ID': match[2], 'X-Rapier-Owner': await digest(authority.ownerId), ...(authority.grant ? {'X-Rapier-Grant': JSON.stringify(authority.grant)} : {})},
+      method: request.method, headers: {...(granted ? {'X-Rapier-Export-Hash': await digest(token)} : {'X-Rapier-Export-ID': match[2], 'X-Rapier-Owner': await digest(authority.ownerId), ...(authority.grant ? {'X-Rapier-Grant': JSON.stringify(authority.grant)} : {})}), ...(env.ACCESS_PROFILE === true ? {'X-Rapier-Access': JSON.stringify(authority.access), 'X-Rapier-Owner': await digest(authority.ownerId)} : {})},
     }));
   } catch { return new Response(null, {status: 503, headers}); }
 }
@@ -1275,6 +1298,7 @@ async function handleRequest(request, env, authority, route) {
       const namespace = privateLive ? env.LIVE_RELAY : env.DOCUMENTS;
       if (!namespace?.get || !namespace?.idFromName) return refuse('live_unavailable', 503);
       const internalHeaders = new Headers(), init = {method: request.method, headers: internalHeaders};
+      if (env.ACCESS_PROFILE === true) internalHeaders.set('X-Rapier-Access', JSON.stringify(authority.access));
       if (action === 'socket') {
         if (request.method !== 'GET' || request.headers.get('Upgrade')?.toLowerCase() !== 'websocket')
           return refuse('websocket_required', 426);
@@ -1314,10 +1338,10 @@ async function handleRequest(request, env, authority, route) {
     if (request.method !== 'GET' || request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') return new Response(null, {status: 426, headers: {Upgrade: 'websocket'}});
     if (url.search || url.hash || pageId(pageAddress(live[1])) !== live[1]) return new Response(null, {status: 404});
     const protocols = (request.headers.get('Sec-WebSocket-Protocol') || '').split(',').map(value => value.trim());
-    if (protocols.length !== 2 || protocols[0] !== LIVE_PROTOCOL || !/^ek1\.[A-Za-z0-9_-]{22}\.[0-9]{1,16}\.[A-Za-z0-9_-]{43}$/.test(protocols[1])) return new Response(null, {status: 403});
+    if (protocols.length !== 2 || protocols[0] !== LIVE_PROTOCOL || (env.ACCESS_PROFILE === true ? protocols[1] !== authority.access?.principalId : !/^ek1\.[A-Za-z0-9_-]{22}\.[0-9]{1,16}\.[A-Za-z0-9_-]{43}$/.test(protocols[1]))) return new Response(null, {status: 403});
     if (!env.DOCUMENTS?.get) return new Response(null, {status: 503});
     return env.DOCUMENTS.get(env.DOCUMENTS.idFromName(pageAddress(live[1]))).fetch(new Request('https://rapier.internal/live', {
-      headers: {Upgrade: 'websocket', 'X-Rapier-Live-Key': protocols[1]},
+      headers: {Upgrade: 'websocket', 'X-Rapier-Live-Key': protocols[1], ...(env.ACCESS_PROFILE === true ? {'X-Rapier-Access': JSON.stringify(authority.access)} : {})},
     }));
   }
   if (url.pathname.startsWith('/export/')) return exportResponse(request, env, authority);
@@ -1340,6 +1364,8 @@ async function handleRequest(request, env, authority, route) {
     try {
       const headers = new Headers(request.headers);
       headers.delete('X-Rapier-Grant');
+      headers.delete('X-Rapier-Access');
+      if (env.ACCESS_PROFILE === true) headers.set('X-Rapier-Access', JSON.stringify(authority.access));
       if (authority?.grant) headers.set('X-Rapier-Grant', JSON.stringify(authority.grant));
       if (granted) headers.set('X-Rapier-Return-Hash', await digest(token));
       else {
@@ -1590,9 +1616,9 @@ async function handleRequest(request, env, authority, route) {
         if (door === 'page' && params.name === PAIR_STATUS) { result = await pairStatus(request, env, authority, params.arguments, cookies); break; }
         result = modern && door !== 'page' && taskTool(params.name, params.arguments) && plain(meta[META_CLIENT]?.extensions?.[TASK_EXTENSION]) && taskHosting(env, authority)
           ? await createTask(params.name, params.arguments || {}, request, authority, env, hostAgent, door)
-          : await requestTool(params.name, params.arguments || {}, env, request, authority, hostAgent, door, meta['rapier/editorKey'], meta['rapier/editorActivity'], scope, id);
+          : await requestTool(params.name, params.arguments || {}, env, request, authority, hostAgent, door, meta['rapier/editorKey'], meta['rapier/editorActivity'], scope, id, meta['rapier/visual'] ?? null);
         if (authority?.grant && !await oauthGrantCurrent(authority.grant, env)) return challenged(oauthChallenge(authorityRequest, env));
-        if (door === 'page' && params.name === ROTATE && result.structuredContent?.rotated === true)
+        if (env.ACCESS_PROFILE !== true && door === 'page' && params.name === ROTATE && result.structuredContent?.rotated === true)
           cookies.push(...setCookies(authority.id, sessionCookie(authority.id), await mintSession(editorSecret(env), authority.id, result.structuredContent.rotations), PAIR_SESSION_MS / 1000));
         break;
       case 'skills/list': {
@@ -1656,7 +1682,7 @@ async function handleRequest(request, env, authority, route) {
     if (message.method === 'tools/call') result = toolError(failure('WORKSPACE_UNAVAILABLE', 'The workspace operation was not acknowledged. Retry an editor commit only with the same commitId.'));
     else return rpcError(id, -32603, 'The server could not complete this request.');
   }
-  if (message.method === 'tools/call' && result.resultType !== 'task') result = publicToolResult(params.name, result, door);
+  if (message.method === 'tools/call' && result.resultType !== 'task') result = publicToolResult(params.name, result, door, {workspaceNotes: env.ACCESS_PROFILE === true});
   if (door === '/muse' && message.method === 'tools/call' && result.resultType !== 'task' && params.name === 'export' && params.arguments?.format === 'markdown' && parseReply(result.content[0].text).outcome === 'ok') {
     const link = result.content.find(item => item.type === 'resource_link');
     const file = link ? await handleRequest(new Request(link.uri), env, authority) : null;
@@ -1725,6 +1751,11 @@ async function pageCaller(request, env, id, browser) {
   if (pageId(address) !== id) return null;
   const authority = {};
   if (browser?.source === 'browser') authority.ownerKey = await digest(browser.ownerId);
+  if (env.ACCESS_PROFILE === true) {
+    if (browser?.access?.kind !== 'browser' || !await env.accessCurrent(browser.access)) return null;
+    authority.access = browser.access;
+    return Object.freeze({source: 'page', id, address, authority, access: browser.access, scopes: browser.scopes});
+  }
   const held = readCookie(request, sessionCookie(id));
   const session = editorSecret(env) ? await verifySession(editorSecret(env), id, held) : null;
   if (session) Object.assign(authority, {pairEpoch: session.epoch, pairSessionHash: await digest(held)});
@@ -1741,6 +1772,8 @@ async function pageSuccessor(env, page, editorKey) {
   const retry = await digest(editorKey + ':' + (page.authority.pairSessionHash || 'owner'));
   const admission = await pageAdmission(env, page, retry);
   if (!admission.admitted || !/^rpr_[A-Za-z0-9_-]{22}$/.test(admission.prefix || '')) return null;
+  if (env.ACCESS_PROFILE === true) return {capability: admission.prefix +
+    base64url(Uint8Array.from((await digest('access-page-rotation:' + admission.prefix + ':' + admission.epoch + ':' + retry)).match(/../g), byte => parseInt(byte, 16))).slice(0, 21), epoch: admission.epoch, retry};
   const key = await crypto.subtle.importKey('raw', editorSecretKeyMaterial(editorSecret(env), 'rapier-page-rotation-v1:'), {name: 'HMAC', hash: 'SHA-256'}, false, ['sign']);
   const suffix = new Uint8Array(await crypto.subtle.sign('HMAC', key, encoder.encode(admission.prefix + ':' + admission.epoch + ':' + retry)));
   return {capability: admission.prefix + base64url(suffix).slice(0, 21), epoch: admission.epoch, retry};
@@ -1773,13 +1806,13 @@ async function pairedPage(request, env, page) {
   const socketOrigin = new URL(request.url).origin.replace(/^http/, 'ws');
   const headers = {'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY', 'X-Robots-Tag': 'noindex', 'Content-Security-Policy': PAGE_CSP.replace("connect-src 'self'", "connect-src 'self' " + socketOrigin)};
   const unavailable = () => new Response('The editor is unavailable.', {status: 503, headers: {'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store'}});
-  if (!env.ASSETS?.fetch || !env.DOCUMENTS?.get || !editorSecret(env)) return unavailable();
+  if (!env.ASSETS?.fetch || !env.DOCUMENTS?.get || env.ACCESS_PROFILE !== true && !editorSecret(env)) return unavailable();
   try {
     const parts = await pairedPageParts(env, request);
     if (!parts) return unavailable();
     const admitted = (await pageAdmission(env, page)).admitted === true;
     const fileOrigins = (env.FILE_DOWNLOAD_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean).map(value => configuredOrigin(value, 'FILE_DOWNLOAD_ORIGINS'));
-    const flags = pageFlagText({id: page.id, editorKey: admitted ? await mintEditorKey(editorSecret(env), Date.now(), {workspace: page.address, connection: page.authority.ownerKey || ''}) : '', fileOrigins});
+    const flags = pageFlagText({id: page.id, editorKey: admitted ? env.ACCESS_PROFILE === true ? page.access.principalId : await mintEditorKey(editorSecret(env), Date.now(), {workspace: page.address, connection: page.authority.ownerKey || ''}) : '', fileOrigins});
     const middle = encoder.encode("globalThis.RAPIER_APPS_HOST = !(window.parent === window && new URLSearchParams(location.hash.slice(1)).has('live') && new URLSearchParams(location.hash.slice(1)).has('key')); "
       + flags + ' globalThis.RAPIER_ASSET_BASE = ' + JSON.stringify(new URL('/editor-assets/', request.url).href) + ';');
     if (request.method === 'HEAD') return new Response(null, {headers});
@@ -1795,13 +1828,13 @@ async function editorAdmission(request, env, id, browser) {
   const url = new URL(request.url);
   if (url.search || request.headers.get('Origin') !== url.origin || !['same-origin', null].includes(request.headers.get('Sec-Fetch-Site')))
     return json({admitted: false}, 403, headers);
-  if (!env.DOCUMENTS?.get || !editorSecret(env)) return json({admitted: false}, 503, headers);
+  if (!env.DOCUMENTS?.get || env.ACCESS_PROFILE !== true && !editorSecret(env)) return json({admitted: false}, 503, headers);
   const page = await pageCaller(request, env, id, browser);
   if (!page) return json({admitted: false}, 404, headers);
   try {
     if ((await pageAdmission(env, page)).admitted !== true) return json({admitted: false}, 200, headers);
     const fileOrigins = (env.FILE_DOWNLOAD_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean).map(value => configuredOrigin(value, 'FILE_DOWNLOAD_ORIGINS'));
-    return json({admitted: true, editorKey: await mintEditorKey(editorSecret(env), Date.now(), {workspace: page.address, connection: page.authority.ownerKey || ''}), fileOrigins}, 200, headers);
+    return json({admitted: true, editorKey: env.ACCESS_PROFILE === true ? page.access.principalId : await mintEditorKey(editorSecret(env), Date.now(), {workspace: page.address, connection: page.authority.ownerKey || ''}), fileOrigins}, 200, headers);
   } catch { return json({admitted: false}, 503, headers); }
 }
 
@@ -1821,6 +1854,8 @@ async function pairStatus(request, env, page, args, cookies) {
   if (!plain(args) || args.document !== page.id) return toolError(failure('INVALID_DOCUMENT', 'The page names its own workspace.'));
   if (Object.keys(args).some(key => !['document', 'decision'].includes(key)) ||
       args.decision !== undefined && !['allow', 'cancel'].includes(args.decision)) return toolError(failure('INVALID_DOCUMENT_INPUT', 'Choose allow or cancel for this pairing.'));
+  if (env.ACCESS_PROFILE === true) return (await pageAdmission(env, page)).admitted === true
+    ? envelope({outcome: 'paired', paired: true}) : toolError(failure('DOCUMENT_UNAVAILABLE', 'This workspace is unavailable to the connected identity.'));
   if (!editorSecret(env)) return toolError(failure('EDITOR_KEY_UNCONFIGURED', 'This deployment cannot pair a browser.'));
   const ask = async body => (await env.DOCUMENTS.get(env.DOCUMENTS.idFromName(page.address)).fetch(new Request('https://rapier.internal/pair', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)}))).json();
   const held = readCookie(request, pendingCookie(page.id));
@@ -1975,7 +2010,7 @@ export class RapierDocument {
         const material = operation === 'read' && value.outcome === 'ok' && materialReport(head);
         return material ? {...value, material} : value;
       },
-      envelope: (operation, value, head) => json(operationEnvelope(operation, value, head)),
+      envelope: (operation, value, head) => json(operationEnvelope(operation, value, head, {notesVersions: this.env.ACCESS_PROFILE === true})),
       opened: async (input, value, head, state, collaboration) => {
         const result = envelope({...value, outcome: value.outcome === 'ok' ? 'resumed' : value.outcome, created: false, resumed: true}, head,
           {snapshot: {...snapshot(state, collaboration, head.viewIntent, head.visualIntent, head.exportIntent, head.editorIntent),
@@ -2021,7 +2056,7 @@ export class RapierDocument {
 
   tasks() {
     const complete = (input, result) => {
-      const projected = publicToolResult(input.name, result, input.door);
+      const projected = publicToolResult(input.name, result, input.door, {workspaceNotes: this.env.ACCESS_PROFILE === true});
       return {result: {...projected, resultType: 'complete', _meta: {...projected._meta, [META_SERVER]: serverInfo(this.env)}}};
     };
     return this.taskLifetime ||= new TaskLifetime(this.ctx, {
@@ -2233,12 +2268,16 @@ export class RapierDocument {
   }
 
   requestAuthority(request) {
+    if (this.env.ACCESS_PROFILE === true) {
+      const reference = request.headers.get('X-Rapier-Access');
+      return {access: reference ? JSON.parse(reference) : null, ownerKey: request.headers.get('X-Rapier-Owner')};
+    }
     const reference = request.headers.get('X-Rapier-Grant');
     return reference ? {oauthGrant: JSON.parse(reference), ownerKey: request.headers.get('X-Rapier-Owner')} : {};
   }
 
   retainedAuthority(input) {
-    return Object.fromEntries(['ownerKey', 'connectionKey', 'oauthGrant'].filter(field => input[field] !== undefined).map(field => [field, input[field]]));
+    return Object.fromEntries(['ownerKey', 'connectionKey', 'oauthGrant', ...(this.env.ACCESS_PROFILE === true ? ['access'] : [])].filter(field => input[field] !== undefined).map(field => [field, input[field]]));
   }
 
   async ownerLinkHash(input) {
@@ -2254,6 +2293,13 @@ export class RapierDocument {
     if (Array.isArray(input)) {
       for (const authority of input) if (authority) await this.assertAuthority(authority, {remembered});
       assertRequestActive(input);
+      return;
+    }
+    if (this.env.ACCESS_PROFILE === true) {
+      const grant = input.access || input.page?.access, ownerKey = input.ownerKey || input.page?.ownerKey;
+      if (!grant || ownerKey !== await digest(grant.ownerId) || input.editorAuthorized === true && grant.kind !== 'browser' ||
+          !await this.env.accessCurrent(grant)) throw failure('OAUTH_AUTHORITY_REVOKED', 'Cloudflare sign-in no longer authorizes this operation.');
+      input.signal?.throwIfAborted();
       return;
     }
     if (!input.oauthGrant && !input.connectionKey) return;
@@ -2345,6 +2391,7 @@ export class RapierDocument {
       head.exportBytes + (head.returnBytes || 0) + (head.materialBytes || 0) + (head.taskBytes || 0) + contentBytes(JSON.stringify(head));
     if (retainedBytes > this.maxStateBytes) throw failure('WORKSPACE_STATE_LIMIT', 'This would exceed the workspace size. Let pending work or temporary exports finish before adding more.', {limitBytes: this.maxStateBytes});
     if (contentBytes(JSON.stringify(head)) > 2_000_000 - 1024) throw failure('WORKSPACE_STATE_LIMIT', 'The workspace metadata is full. Let temporary exports expire before creating another.', {limitBytes: this.maxStateBytes});
+    if (this.env.ACCESS_PROFILE === true && typeof this.beforePersist === 'function') await this.beforePersist(head, state, journal, authority);
     await this.ctx.storage.transaction(async () => {
       if (authority) await this.assertAuthority(authority, {remembered: authority.operation === 'read'});
       assertRequestActive(authority);
@@ -2395,7 +2442,8 @@ export class RapierDocument {
     if (path === '/live' && request.method === 'GET') return this.exclusive(() => this.live.upgrade(request));
     if (path === '/live/stop' && request.method === 'POST') return (async () => {
       const head = this.ctx.storage.kv.get('head');
-      if (head?.custody && (await this.live.admit(head, request.headers.get('X-Rapier-Live-Owner'), this.live.stopBinding.bind(this.live))).ok)
+      const access = this.env.ACCESS_PROFILE === true ? this.requestAuthority(request).access : undefined;
+      if (head?.custody && (await this.live.admit(head, request.headers.get('X-Rapier-Live-Owner'), this.live.stopBinding.bind(this.live), access)).ok)
         await this.relay.recall();
       return this.exclusive(() => this.live.stop(request));
     })();
@@ -2445,9 +2493,12 @@ export class RapierDocument {
     if (path === '/operation/cancel' && request.method === 'POST') return this.cancelRequestOperation(request).catch(() => new Response(null, {status: 503}));
     if (path === '/return' && ['GET', 'POST'].includes(request.method)) return this.exclusive(() => this.acceptReturn(request));
     if (path === '/export' && ['GET', 'HEAD'].includes(request.method)) return this.exclusive(() => this.readExport(request));
-    if (path === '/pair' && request.method === 'POST') return this.exclusive(() => this.pairing(request));
+    if (path === '/pair' && request.method === 'POST') return this.env.ACCESS_PROFILE === true ? new Response(null, {status: 404}) : this.exclusive(() => this.pairing(request));
     if (path === '/page' && request.method === 'POST') return this.exclusive(async () => {
       const head = this.ctx.storage.kv.get('head'), body = await parseJsonStream(request, {inlineBytes: 65536}).catch(() => null);
+      if (this.env.ACCESS_PROFILE === true) {
+        try {await this.assertAuthority(body?.authority || {});} catch {return json({admitted: false});}
+      }
       const replaying = body?.rotationRetry && this.replaysPageRotation(head, body.authority, body.rotationRetry);
       const admitted = !!head && head.expiresAt > Date.now() && plain(body?.authority) && (this.admits(head, body.authority) || replaying);
       return json(admitted ? { admitted, prefix: head.prefix, ownerKey: head.ownerKey, bearer: head.bearer === true, epoch: replaying ? head.rotation.pageEpoch : head.pairEpoch || 0 } : { admitted });
@@ -2455,6 +2506,10 @@ export class RapierDocument {
     try {
       if (request.method !== 'POST' || path !== '/operation') return new Response(null, { status: 404 });
       const input = await parseJsonStream(request, {inlineBytes: 65536});
+      if (this.env.ACCESS_PROFILE === true) {
+        if (!plain(input)) return new Response(null, {status: 400});
+        await this.assertAuthority(input);
+      }
       if (plain(input) && input.workspaceAddress !== undefined) { this.grantVerdicts.learn(input.workspaceAddress); delete input.workspaceAddress; }
       if (plain(input) && input.ownerLink !== undefined) {
         if (input.ownerLink !== true || input.page) return new Response(null, {status: 400});
@@ -2513,10 +2568,18 @@ export class RapierDocument {
       if (stopped || Number.isSafeInteger(expiresAt) && expiresAt <= Date.now()) lifetime.cancel();
       const timer = Number.isSafeInteger(expiresAt) ? setTimeout(() => lifetime.cancel(), Math.max(0, expiresAt - Date.now())) : null;
       const run = async () => {
+      if (this.env.ACCESS_PROFILE === true) await this.assertAuthority(input);
       const paced = await this.paceWrite(input);
       if (paced) return json(paced);
       const relayed = await this.relay.route(input, lifetime.signal);
-      if (relayed) return relayed;
+      if (relayed) {
+        if (input.operation === 'edit') {
+          const result = await relayed.clone().json();
+          if (['applied', 'rebased'].includes(result.structuredContent?.outcome) && result.structuredContent?.previews?.length)
+            return json(await this.drawingPreviews(input, lifetime.signal, result));
+        }
+        return relayed;
+      }
       if (input.operation === 'document.material_ack') {
         const result = await this.exclusive(() => this.operate(input));
         await this.resumeMaterial();
@@ -2553,7 +2616,10 @@ export class RapierDocument {
       };
       record.done = (async () => {
         let response;
-        try { response = await run(); }
+        try {
+          response = await run();
+          if (this.env.ACCESS_PROFILE === true) await this.assertAuthority(input);
+        }
         catch (error) { if (!lifetime.signal.aborted && error?.name !== 'AbortError') throw error; }
         if (lifetime.signal.aborted) {
           try { await this.exclusive(() => this.cancelOperation(input)); }
@@ -2579,11 +2645,21 @@ export class RapierDocument {
     }
   }
 
-  webSocketMessage(socket, message) { return this.relay.intercept(socket, message) ?? this.exclusive(() => this.live.message(socket, message)); }
+  webSocketMessage(socket, message) {
+    if (this.env.ACCESS_PROFILE === true) return (async () => {
+      const attached = this.live.attachment(socket);
+      if (!attached?.access || !await this.env.accessCurrent(attached.access)) {this.live.close(socket); return;}
+      return this.relay.intercept(socket, message) ?? this.exclusive(() => this.live.message(socket, message));
+    })();
+    return this.relay.intercept(socket, message) ?? this.exclusive(() => this.live.message(socket, message));
+  }
   webSocketClose(socket) { this.relay.disconnected(socket); return this.exclusive(() => this.live.disconnected(socket)); }
   webSocketError(socket) { this.relay.disconnected(socket); return this.exclusive(() => this.live.disconnected(socket)); }
 
   admits(head, authority) {
+    if (this.env.ACCESS_PROFILE === true) return !!head && !head.bearer && authority?.access?.kind === 'browser' &&
+      authority.ownerKey === head.ownerKey && authority.ownerKey === sha256(authority.access.ownerId) &&
+      this.env.accessLease(authority.access) > Date.now();
     return !head.bearer && typeof authority.ownerKey === 'string' && authority.ownerKey === head.ownerKey
       || Number.isSafeInteger(authority.pairEpoch) && authority.pairEpoch === (head.pairEpoch || 0);
   }
@@ -2830,9 +2906,39 @@ export class RapierDocument {
         return {wait};
       });
       if (step.abandoned) return new Response(null, {status: 499});
-      if (step.result) return json(step.result);
+      if (step.result) return json(await this.drawingPreviews(input, signal, step.result));
       if ((await step.wait.promise).kind === 'aborted') return new Response(null, {status: 499});
     }
+  }
+
+  async drawingPreviews(input, signal, result) {
+    const value = result.structuredContent;
+    if (input.operation !== 'edit' || !['applied', 'rebased'].includes(value?.outcome) || !value.previews?.length) return result;
+    let recalled = false;
+    try { if (!signal?.aborted) recalled = await this.relay.recall(); } catch {  }
+    if (!recalled) return {...result, structuredContent: {...value,
+      previews: value.previews.map(row => ({block: row.block, outcome: 'unavailable', reason: signal?.aborted ? 'cancelled' : 'editor_not_present'}))}};
+    const previews = [], content = [];
+    const chars = Math.min(DRAWING_PREVIEW_CHARS, Math.floor(DRAWING_PREVIEW_TOTAL_CHARS / value.previews.length));
+    for (const target of value.previews) {
+      try {
+        const read = {...input, operation: 'read', args: {as: 'image', block: target.block, ...(input.args.agent ? {agent: input.args.agent} : {})},
+          operationId: crypto.randomUUID(), peek: true, visualPreview: {...target, chars}};
+        delete read.task;
+        const response = await this.requestSurface(read, signal, 'visual');
+        const observed = response.status === 499 ? {structuredContent: {reason: 'cancelled'}} : await response.json();
+        const observation = observed.structuredContent;
+        const image = observed.content?.find(row => row.type === 'image');
+        if (observation?.outcome === 'ok' && image) {
+          previews.push({block: target.block, outcome: 'ok', observation: observation.observation});
+          content.push(image);
+        } else previews.push({block: target.block, outcome: 'unavailable', reason: observation?.reason || 'visual_render_unavailable'});
+      } catch (error) {
+        previews.push({block: target.block, outcome: 'unavailable', reason: signal?.aborted ? 'cancelled' : 'visual_render_unavailable'});
+      }
+    }
+    await this.assertAuthority(input);
+    return {...result, structuredContent: {...value, previews}, content: [...result.content, ...content]};
   }
 
   async materialRetryWait(input, until) {
@@ -2866,7 +2972,7 @@ export class RapierDocument {
     const own = stored?.key === key ? stored : null;
     const work = {key, argumentsHash, caller, input: own?.input || Object.fromEntries([
       'operation', 'args', 'ownerKey', 'capabilityHash', 'connectionKey', 'oauthGrant', 'operationId', 'hostAgent',
-      'humanTool', 'editorAuthorized', 'page', 'requestKey', 'requestExpiresAt'].filter(field => input[field] !== undefined).map(field => [field,
+      'humanTool', 'editorAuthorized', 'page', 'requestKey', 'requestExpiresAt', ...(this.env.ACCESS_PROFILE === true ? ['access'] : [])].filter(field => input[field] !== undefined).map(field => [field,
         input[field]])),
       record: own, results: new Map(own?.results || []), acks: own?.acks || [], request: null,
       binding: own?.binding || null, presentationBinding: own ? own.presentationBinding : undefined, resumeId: own?.id || null,
@@ -3165,7 +3271,7 @@ export class RapierDocument {
       const caller = agentCaller(), journal = this.readJournal();
       if (journal.some(row => row.key === caller.invocationKey || row.spent?.some(([key]) => key === caller.invocationKey))) {
         const replay = createKernel({state: this.readState(head), host: {retainHistory: true, liveSession: true}, invocationJournal: journal, inFlight, clock: Date.now, mintId}).replay(operation, args, caller);
-        if (replay) return operationEnvelope(operation, replay, head);
+        if (replay) return operationEnvelope(operation, replay, head, {notesVersions: this.env.ACCESS_PROFILE === true});
       }
     }
     for (const kind of ['visual', 'export']) {
@@ -3187,6 +3293,7 @@ export class RapierDocument {
     }
     if (operation === 'document.delete') {
       await this.assertAuthority(input);
+      if (this.env.ACCESS_PROFILE === true && typeof this.beforeDocumentDelete === 'function') await this.beforeDocumentDelete(head, input);
       this.cachedState = null;
       this.cachedJournal = null;
       await this.ctx.storage.deleteAll();
@@ -3214,6 +3321,7 @@ export class RapierDocument {
       head.rotations = (head.rotations || 0) + 1;
       delete head.agentCall;
       await this.assertAuthority(input);
+      if (this.env.ACCESS_PROFILE === true && typeof this.beforeHeadChange === 'function') await this.beforeHeadChange(head, input);
       this.ctx.storage.transactionSync(() => {
         for (let index = 0; index < materialParts; index++) this.ctx.storage.kv.delete('material:' + index);
         this.ctx.storage.kv.put('head', head);
@@ -3283,14 +3391,15 @@ export class RapierDocument {
     };
     const commitFence = createCommitFence(() => kernel, () => state.text, analyzeMarkdown);
     const liveSessions = this.live;
-    const kernel = createKernel({ state, inFlight, host: {retainHistory: true,
+    const notesHost = this.env.ACCESS_PROFILE === true && typeof this.notesHost === 'function' ? await this.notesHost(input) : null;
+    const kernel = createKernel({ state, inFlight, host: {...notesHost, retainHistory: true,
       ...(operation === 'document.human_context' && this.live.holds(args.contextId) ? {presenceMs: LIVE_LIMITS.heldContextMs} : {}),
       get liveSession() {
         const currentHead = liveSessions.owner.ctx.storage.kv.get('head');
         return liveSessions.sockets().some(socket => !!liveSessions.valid(socket, currentHead)?.client);
       },
       liveComposition: splices => this.live.collision(kernel.snapshot(), splices), exportScope: true, exportFile: async request => {
-      if (!editorSecret(this.env) || !input.exportAddress) return {reason: 'export_unavailable'};
+      if (this.env.ACCESS_PROFILE !== true && !editorSecret(this.env) || !input.exportAddress) return {reason: 'export_unavailable'};
       if (request.guard?.() === false) return {reason: 'document_changed'};
       const file = request.file || await exportFile(this.env, {...request, signal});
       if (request.guard?.() === false) return {reason: 'document_changed'};
@@ -3521,18 +3630,27 @@ export class RapierDocument {
         capture.wait.finish({...capture.request, outcome: 'refused', reason: 'document_changed'});
         return toolError(failure('REVISION_CONFLICT', 'The document changed before the observation arrived.'), head);
       }
-      if (!sameVisualDrawing(capture.request.drawing, kernel.drawingContext())) {
+      if ((capture.request.drawing || !capture.request.detail) && !sameVisualDrawing(capture.request.drawing, kernel.drawingContext())) {
         capture.wait.finish({...capture.request, outcome: 'refused', reason: 'visual_target_changed'});
         return envelope({outcome: 'refused', reason: 'visual_target_changed', representation: 'visual'}, head);
       }
-      const verdict = visualResult(capture.request, args.fact);
-      if (args.fact.outcome === 'ok' && verdict.outcome !== 'ok') return envelope(verdict, head);
+      let fact = args.fact;
+      if (input.visualObservation) {
+        const meta = input.visualObservation;
+        if (meta.visualId !== capture.id || meta.documentId !== capture.request.documentId || meta.revision !== capture.request.revision)
+          return envelope({outcome: 'refused', reason: 'visual_target_changed', representation: 'visual'}, head);
+        const pick = keys => Object.fromEntries(keys.filter(key => meta[key] !== undefined).map(key => [key, meta[key]]));
+        fact = {...fact, ...pick(['state', 'projection']), ...(fact.image ? {image: {...fact.image,
+          ...pick(['nativeWidth', 'nativeHeight', 'reduced'])}} : {})};
+      }
+      const verdict = visualResult(capture.request, fact);
+      if (fact.outcome === 'ok' && verdict.outcome !== 'ok') return envelope(verdict, head);
       if (capture.input.task) {
-        const result = await this.operate(capture.input, undefined, {requestId: capture.id, fact: args.fact});
-        if (result.isError) { capture.wait.finish(args.fact); return result; }
+        const result = await this.operate(capture.input, undefined, {requestId: capture.id, fact});
+        if (result.isError) { capture.wait.finish(fact); return result; }
         await this.retireSurfaceIntent('visual', capture.id);
       }
-      if (!capture.wait.finish(args.fact)) return toolError(failure('VISUAL_UNAVAILABLE', 'This visual observation is no longer pending.'), head);
+      if (!capture.wait.finish(fact)) return toolError(failure('VISUAL_UNAVAILABLE', 'This visual observation is no longer pending.'), head);
       return envelope({outcome: 'ok', visualId: args.visualId}, head);
     }
     if (operation === 'open' || operation === 'document.sync') {
@@ -3799,7 +3917,9 @@ export class RapierDocument {
     }
     if (!getTool(operation) && !(input.humanTool && getHumanOperation(operation))) return toolError(failure('UNKNOWN_TOOL', 'Unknown operation.'));
     const documentId = head.documentId;
-    let value = await kernel.invoke(operation, args, { ...agentCaller(), signal, ...(material?.binding ? {materialBinding: material.binding} : {}), world: { presence: WORKER_PRESENCE, ...(observation ? {[operation === 'export' ? 'export' : 'visual']: observation.fact} : {}), ...(editor ? {editor: editor.fact} : {}) } });
+    let value = await kernel.invoke(operation, args, { ...agentCaller(), signal, ...(material?.binding ? {materialBinding: material.binding} : {}),
+      ...(input.visualPreview ? {visualPreview: input.visualPreview} : {}),
+      world: { presence: WORKER_PRESENCE, ...(observation ? {[operation === 'export' ? 'export' : 'visual']: observation.fact} : {}), ...(editor ? {editor: editor.fact} : {}) } });
     for (let guard = 0; guard < 4 && value.outcome === 'pending' && value.pending?.kind === 'surface-fact'; guard++) {
       const fact = resolveStructureFact(value.pending.requirements);
       if (!fact) break;
@@ -3884,7 +4004,7 @@ export class RapierDocument {
           ...(value.field ? {field: value.field} : {})};
         head.materialIntent = null; head.materialOwner = null; head.version++;
       }
-      const taskResult = input.task && value.outcome !== 'pending' ? operationEnvelope(operation, value, head) : null;
+      const taskResult = input.task && value.outcome !== 'pending' ? operationEnvelope(operation, value, head, {notesVersions: this.env.ACCESS_PROFILE === true}) : null;
       if (taskResult && operation === 'read' && value.outcome === 'ok' && observation?.fact?.image)
         taskResult.content.push({type: 'image', mimeType: 'image/png', data: observation.fact.image.data});
       const unchanged = ['edit', 'undo'].includes(operation) && ['conflict', 'refused'].includes(value.outcome) &&
@@ -3895,7 +4015,7 @@ export class RapierDocument {
     }
     await this.assertAuthority(input, {remembered: true});
     if (retainedResult) return retainedResult;
-    const result = operationEnvelope(operation, value, head);
+    const result = operationEnvelope(operation, value, head, {notesVersions: this.env.ACCESS_PROFILE === true});
     if (operation === 'read' && value.outcome === 'ok' && observation?.fact?.image) result.content.push({type: 'image', mimeType: 'image/png', data: observation.fact.image.data});
     return result;
   }

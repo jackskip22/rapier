@@ -404,25 +404,34 @@ const _rapierNotesStore = {
 		})().finally(() => { this.androidRestore = null; });
 		return this.androidRestore;
 	},
-	bytes: null, folder: null,
+	bytes: null, folder: null, workspace: null,
 	attach(durable) {
 		if (this.folder) return;
 		const OPFS = globalThis.RapierNotesOPFS, F = globalThis.RapierNotesFolder;
-		this.bytes = (this.native ? OPFS.createNativeByteStore : durable ? OPFS.createByteStore : globalThis.RapierNotesIdbStore.createIndexedDbByteStore)({call: globalThis.RapierPlatform?.host?.notesStore, directory: _rapierNotesDir, onFault: error => { console.warn('[rapier] notes', error); }, beforeStep: async (kind, name, bytes) => {
+		const options = {call: globalThis.RapierPlatform?.host?.notesStore, directory: _rapierNotesDir, onFault: error => { console.warn('[rapier] notes', error); }, beforeStep: async (kind, name, bytes) => {
 			if (kind === 'read') { if (globalThis.__rapierNotesFailReads && String(globalThis.__rapierNotesFailReads) === name) throw Object.assign(new Error('the notes folder could not be read'), {name: 'UnknownError'}); return; }
 			if (kind !== 'write') return;
 			if (globalThis.__rapierNotesRefuseWrites) throw new Error('the notes folder refused the write');
 			if (typeof globalThis.__rapierNotesHoldWrite === 'function') await globalThis.__rapierNotesHoldWrite(name, /\.md$/i.test(name) ? new TextDecoder().decode(bytes) : bytes);
-		}});
-		const channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('rapier-notes') : null;
+		}};
+		if (globalThis.RAPIER_WORKSPACE === true) this.workspace = globalThis.RapierNotesWorkspaceStore.createWorkspaceNotes(options);
+		this.bytes = this.workspace?.store || (this.native ? OPFS.createNativeByteStore : durable ? OPFS.createByteStore : globalThis.RapierNotesIdbStore.createIndexedDbByteStore)(options);
+		const channel = this.workspace?.channel || (typeof BroadcastChannel === 'function' ? new BroadcastChannel('rapier-notes') : null);
 		const shared = () => this.native || durable ? true : ['indexeddb', 'fault', 'unasked'].includes(this.bytes?.kind);
-		this.folder = F.createFolder({store: this.bytes, scope: RAPIER_NOTES_DIR, locks: this.native ? OPFS.createNativeNotesLocks({call: globalThis.RapierPlatform.host.notesStore}) : navigator.locks, channel, shared, keep: file => file === _rapierNotes.current, onInvalidate: () => { void _rapierNotesFolderChanged(); }, onPending: () => { if (typeof _rapierBackHold === 'function') _rapierBackHold(); }});
+		this.folder = F.createFolder({store: this.bytes, scope: RAPIER_NOTES_DIR, locks: this.workspace?.locks || (this.native ? OPFS.createNativeNotesLocks({call: globalThis.RapierPlatform.host.notesStore}) : navigator.locks), channel, shared, keep: file => file === _rapierNotes.current, onInvalidate: () => { void _rapierNotesFolderChanged(); }, onPending: () => { if (typeof _rapierBackHold === 'function') _rapierBackHold(); }});
 	},
 	async kind() {
 		if (this.durable != null) { this.attach(this.durable); return this.durable; }
 		if (this.probe) return this.probe;
 		this.probe = (async () => {
 			await globalThis.RapierPlatform?.environment?.ready?.();
+			if (globalThis.RAPIER_WORKSPACE === true) {
+				try {
+					this.attach(true); await this.bytes.prepare();
+					this.durable = true; this.storageFault = null; _rapierNotes.asciiNames = false;
+					return true;
+				} catch (error) { this.storageFault = error; this.probe = null; throw error; }
+			}
 			if (globalThis.RapierPlatform?.environment.android) {
 				try {
 					if (typeof globalThis.RapierPlatform.host.notesStore !== 'function') throw new Error('The native Notes folder is unavailable.');
@@ -478,10 +487,10 @@ const _rapierNotesStore = {
 		_rapierNotes.asciiNames = !!this.bytes.ascii;
 		return !_rapierNotes.asciiNames;
 	},
-	async port() { const durable = await this.kind(); return this.native || !durable; },
+	async port() { const durable = await this.kind(); return !!this.workspace || this.native || !durable; },
 	async list() { await this.kind(); return this.bytes.list(); },
 	async stamps(names) {
-		if (this.native && names.length > 16 && await this.port()) {
+		if ((this.native || this.workspace) && names.length > 16 && await this.port()) {
 			const all = await this.bytes.statAll(''), out = new Map();
 			for (const name of names) {
 				const info = name.includes('/') ? await this.bytes.stat(name) : all.get(name);
@@ -618,7 +627,7 @@ const _rapierNotesStore = {
 			if (!opened) return null;
 			return {size: opened.size, lastModified: opened.modified || 0,
 				chunks: ({chunkBytes, signal}) => port.readChunks(path, {chunkBytes, signal, digest: true, onOpen: actual => {
-					if (!actual || actual.size !== opened.size || actual.modified !== opened.modified || opened.sha256 !== undefined && actual.sha256 !== opened.sha256) throw new Error('a backup file changed: ' + path);
+					if (!actual || actual.size !== opened.size || actual.modified !== opened.modified || opened.sha256 !== undefined && actual.sha256 !== opened.sha256 || opened.etag !== undefined && actual.etag !== opened.etag) throw new Error('a backup file changed: ' + path);
 				}})};
 		}
 		return this.blob(path);
@@ -2507,7 +2516,6 @@ const RAPIER_NOTES_HEAD_BTNS = ['btn-notes-plus', 'btn-notes-remind', 'btn-notes
 function _rapierNotesMode(on) {
 	const state = _rapierNotes;
 	state.mode = !!on;
-	if (!on) globalThis.RapierAgentBrowser?.notesDocumentClosed?.();
 	if (!on && typeof _rapierRecorderClosePlayers === 'function') _rapierRecorderClosePlayers(); if (typeof _rapierAttachmentsClose === 'function') _rapierAttachmentsClose();
 	document.body.classList.toggle('rapier-notes-mode', !!on);
 	const back = document.getElementById('btn-notes-back'); if (back) back.hidden = !state.current;
@@ -7853,6 +7861,7 @@ async function _rapierNotesRemindConfirm(at, files) {
     }
 }
 _rapierNotesPart = Object.freeze({
+	presetCaptureAllowed: () => !_rapierNotesHostLocked() && globalThis.RapierPlatform?.host?.lockedNotes !== true,
 	state: _rapierNotes, pending: _rapierNotesPending, admitInverse: _rapierNotesAdmitInverse, store: _rapierNotesStore, fields: _rapierNotesFields,
 	search: globalThis.RapierNotesSearch, syncSession: globalThis.RapierNotesSyncSession, get sync() { return _rapierNotesSyncUi; },
 	open: _rapierNotesOpen, openNote: _rapierNotesOpenNote, leaveNote: _rapierNotesLeaveNote, editor: _rapierNotesEditor, documentBound: _rapierNotesDocumentBound,

@@ -30,6 +30,7 @@ import { markdownSourcePositions } from '../spec/md-source.mjs';
 import {parseComments, commentThreads, commentAnchor, commentSourceRange, commentSplices, writeComments, commentSummary, commentChanges, commentSpliceParts, commentUndoSplice, commentRestoreSplice, imageCommentTarget} from './comments.mjs';
 import {visualRequest, visualResult} from './visual.mjs';
 import {paintUndoPlan, paintUndoChanges} from './paint-undo.mjs';
+import {readPainting} from './paint-summary.mjs';
 export {paintUndoChanges};
 import {historyProjection, sourceBefore, selectiveUndo} from '../kit/ledger/history.mjs';
 import {EDITOR_TOOL_ACTIONS, editorRequest, editorResult, editorContext as projectEditorContext} from './editor.mjs';
@@ -2201,7 +2202,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       ...(!sorted.length ? {message: 'Notes has nothing yet.'} : {}) });
   }
 
-  const noteReads = new Map();
+  const noteReads = host.notesReadReceipts instanceof Map ? host.notesReadReceipts : new Map();
+  while (noteReads.size > 64) noteReads.delete(noteReads.keys().next().value);
   const rememberNote = (who, file, text, controls = null) => {
     const key = ownerOf(who) + '\u0000' + file;
     noteReads.delete(key); noteReads.set(key, {source: sha256(text), controls: controls ? JSON.parse(JSON.stringify(controls)) : null});
@@ -2407,6 +2409,20 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     return accepted({availability: 'available', note_ref: input.note_ref, file: got.file, found: got.found === true, versions: page, complete: end >= versions.length,
       remaining: Math.max(0, versions.length - end), next_cursor: next?.id || null,
       ...(Number.isSafeInteger(got.tidied) ? {tidied: got.tidied, tidiedAt: got.tidiedAt ?? null} : {})});
+  }
+  async function notesSourceUndo(input, who, context) {
+    cancelled(context);
+    let got;
+    try { got = await host.notesSourceUndo({...input, ...who, signal: context.signal, guard: context.notesGuard}); }
+    catch { return failure('notes_undo_unconfirmed', 'uncertain'); }
+    const blocked = unavailableNotes(got) || notesRefused(got); if (blocked) return blocked;
+    if (got?.outcome === 'uncertain') return failure(got.reason || 'notes_undo_unconfirmed', 'uncertain');
+    try {
+      if (!got || typeof got.file !== 'string' || typeof got.note_ref !== 'string' || typeof got.applied !== 'boolean' ||
+        typeof got.revision !== 'string' || !/^[a-f0-9]{64}$/.test(got.revision)) throw Error('receipt');
+      return accepted({availability: 'available', file: got.file, note_ref: got.note_ref, revision: got.revision,
+        applied: got.applied, act: noteAct(got.act)});
+    } catch { return failure('notes_undo_unconfirmed', 'uncertain'); }
   }
   async function notesSync(input, who, context) {
     if (typeof host.notesSync !== 'function') return noNotesWrite();
@@ -4421,7 +4437,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   function inspectVisual(input, context) {
     const pointing = collaboration().presence;
     const drawing = drawingSummary();
-    const prepared = visualRequest({...state, drawing, selection: pointing?.selection || state.selection,
+    const prepared = visualRequest({...state, drawing: input.preview ? null : drawing, selection: pointing?.selection || state.selection,
       focus: input.sourceRange || pointing?.focus || state.focus}, input);
     if (prepared.outcome !== 'ok') return {...failure(prepared.reason, prepared.outcome, prepared), ...(drawing ? {drawing} : {})};
     const mode = 'visual:' + prepared.request.scope;
@@ -5120,7 +5136,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       return failure('cursor_options_conflict','invalid');
     if (input.as && !['text', 'image', 'outline'].includes(input.as)) return failure('representation_unknown', 'invalid');
     if (input.as === 'image') {
-      let sourceRange;
+      let sourceRange, drawingBlock;
       if (input.block || input.heading || input.lines) {
         const {projection, targets} = publicSurface();
         let scope = textScope(projection.text, input, targets);
@@ -5130,8 +5146,18 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
           scope = {start: targets.lines.offset(input.lines[0] - 1), end: targets.lines.offset(input.lines[1])};
         }
         sourceRange = {start: sourcePosition(projection, scope.start), end: sourcePosition(projection, scope.end, true)};
+        const drawing = input.block && projection.segments.find(row => row.id === input.block && row.recipe);
+        if (drawing) {
+          drawingBlock = drawing.id;
+          sourceRange = {start: drawing.imageStart, end: drawing.imageStart + drawing.raw.length};
+        }
       }
-      return inspectVisual({expectedRevision: state.revision, scope: sourceRange ? 'focus' : 'page', sourceRange}, context);
+      const preview = context.visualPreview;
+      if (preview && (preview.documentId !== state.documentId || preview.revision !== state.revision ||
+          preview.block !== drawingBlock || canonicalJson(preview.sourceRange) !== canonicalJson(sourceRange)))
+        return failure('document_changed');
+      return inspectVisual({expectedRevision: state.revision, scope: sourceRange ? 'focus' : 'page', sourceRange,
+        ...(drawingBlock ? {block: drawingBlock, detail: true, ...(preview ? {preview: true, previewChars: preview.chars} : {})} : {})}, context);
     }
     if (input.return_id || input.cursor && state.cursors[input.cursor]?.kind === 'return-read') return readDocument(input.cursor ? {cursor: input.cursor, limit: input.limit} : {target: {kind: 'return', return_id: input.return_id}, limit: input.limit}, who, context);
     if (input.comparison) {
@@ -5169,6 +5195,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       start = targets.lines.offset(input.lines[0] - 1); end = targets.lines.offset(input.lines[1]);
     }
     let offset = start, query = input.query, headingRow = input.as === 'outline' ? 0 : -1;
+    let paintingBlock = input.block, paintingPosition;
     if (input.cursor) {
       const held = lookup('cursors', input.cursor, who);
       if (held.outcome) return held;
@@ -5177,6 +5204,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         return failure('cursor_options_conflict','invalid');
       start = held.start; end = held.end; offset = held.offset;
       query = held.query; headingRow = held.headingRow ?? -1;
+      paintingBlock = held.paintingBlock; paintingPosition = held.paintingPosition;
     }
     const budget = Math.max(4, Math.min(input.limit || 32768, context.transport === 'webmcp' ? 4096 : 32768));
     if (headingRow >= 0) {
@@ -5220,22 +5248,57 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       const next = all.length > matches.length ? mint('cursors', 'read_', {kind: 'text-surface', revision: state.revision, textRevision:info.revision, query, digest: sourceDigest(), start, end, offset: all[matches.length]}, who).id : null;
       return accepted({...info, matches, complete: !next, next_cursor: next});
     }
-    let text = textHead(source.slice(offset, end), budget);
+    const drawing = paintingBlock && projection.segments.find(row => row.id === paintingBlock &&
+      row.recipe?.shapes.some(shape => shape.recognized === 'paint'));
+    let acts;
+    const paintAct = (layer, contribution) => {
+      if (!acts) {
+        acts = new Map();
+        try {
+          const track = state.journal.length && drawingHistory(state.journal).find(row =>
+            row.current.start === drawing.imageStart && row.current.end === drawing.imageStart + drawing.raw.length);
+          for (const event of track?.events || []) {
+            if (!event.after || event.entry.sourceTransactionId || event.entry.sourceTransactionIds?.length) continue;
+            for (const shape of event.after.shapes) {
+              const prior = event.before?.shapes.find(row => row.id === shape.id)?.paint?.replay?.entries || [];
+              const current = drawing.recipe.shapes.find(row => row.id === shape.id)?.paint?.replay?.entries || [];
+              for (const entry of shape.paint?.replay?.entries || []) {
+                const kept = current.find(row => row.id === entry.id);
+                if (kept && !entry.removed && !prior.some(row => row.id === entry.id) &&
+                    canonicalJson({...kept, removed: false}) === canonicalJson({...entry, removed: false}))
+                  acts.set(shape.id + '\u0000' + entry.id, event.entry.id);
+              }
+            }
+          }
+        } catch {  }
+      }
+      return acts.get(layer + '\u0000' + contribution) || null;
+    };
     const resultLimit = context.transport === 'webmcp' ? LIMITS.resultBytes : 96 * 1024;
     const line = lineAt(offset);
-    while (text.length && bytes(JSON.stringify(stamp({...info, text, line}))) > resultLimit - 512)
-      text = textHead(text, Math.floor(textBytes(text) * .75));
+    let text, painting, contentBudget = budget;
+    do {
+      const reserve = offset < end ? contentBudget < 8 ? contentBudget : Math.min(Math.ceil(contentBudget / 2),
+        textBytes(textHead(source.slice(offset, end), contentBudget))) : 0;
+      painting = drawing ? readPainting(drawing.recipe, paintingPosition, contentBudget - reserve, paintAct) : {text: '', next: null};
+      text = textHead(source.slice(offset, end), contentBudget - textBytes(painting.text));
+      if (bytes(JSON.stringify(stamp({...info, text, line, ...(painting.text ? {painting: painting.text} : {})}))) <= resultLimit - 512 || contentBudget === 4) break;
+      contentBudget = Math.max(4, Math.floor(contentBudget * .75));
+    } while (true);
     if (offset + text.length < end) {
       const cut = text.lastIndexOf('\n'), space = text.search(/\s\S*$/);
       if (cut > text.length / 4) text = text.slice(0, cut + 1);
       else if (space > 0) text = text.slice(0, space + 1);
     }
     const until = offset + text.length;
-    const next = until < end ? mint('cursors', 'read_', {kind: 'text-surface', revision: state.revision, textRevision:info.revision, digest: sourceDigest(), start, end, offset: until}, who).id : null;
+    const next = until < end || painting.next ? mint('cursors', 'read_', {kind: 'text-surface', revision: state.revision,
+      textRevision:info.revision, digest: sourceDigest(), start, end, offset: until,
+      ...(drawing ? {paintingBlock, paintingPosition: painting.next} : {})}, who).id : null;
     const position = at => {const row = lineAt(at); return [row, at - targets.lines.offset(row - 1) + 1];};
     const paged = next || offset > start ? (([, column], [endLine, endColumn]) => ({column, end_line: endLine, end_column: endColumn}))(position(offset), position(until)) : {};
     const removed = input.block ? htmlRemoved(htmlFence(source.slice(start, end))?.body || '') : [];
-    return accepted({...info, text, complete: !next, next_cursor: next, line, ...paged, ...(removed.length ? {removed} : {})});
+    return accepted({...info, text, complete: !next, next_cursor: next, line, ...paged,
+      ...(painting.text ? {painting: painting.text} : {}), ...(removed.length ? {removed} : {})});
   }
 
   const previousBlockUnchanged = (row, projection) => projection.segments.some(prior => prior.id === row.id && prior.fence === row.text.trimEnd());
@@ -5246,6 +5309,13 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       const kept = [...new Set(paint.map(shape => shape.raster.startsWith('data:image/png;') ? 'png' : 'jxl'))];
       return {id, text: textHead(text, 6000), complete: textBytes(text) <= 6000, ...(kept.length ? {picture: kept.join(',')} : {})};
     });
+  }
+
+  function changedDrawingPreviews(before) {
+    return publicSurface().projection.segments.filter(row => row.recipe && !before.segments.some(prior =>
+      prior.id === row.id && canonicalJson(prior.recipe) === canonicalJson(row.recipe))).map(row => ({
+      block: row.id, documentId: state.documentId, revision: state.revision,
+      sourceRange: {start: row.imageStart, end: row.imageStart + row.raw.length}}));
   }
 
   function sameLineEndings(input, text, targets) {
@@ -5330,9 +5400,11 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const removed = [...new Set(blocksOf(written).filter(row => row.kind === 'html' && !before.has(row.text)).flatMap(row => htmlRemoved(row.body)))];
     const spread = plan.written?.some(([first, last], index) => first !== plan.lines[index] || last !== first);
     const passage = written && written === plan.text ? editPassage(written, plan.written) : null;
+    const previews = written ? changedDrawingPreviews(projection) : [];
     return {...result, revision: surfaceRevision(), ...(removed.length ? {removed} : {}), ...(input.filename && ['applied', 'rebased'].includes(result.outcome) ? {renamed: state.filename} : {}),
       ...(['applied', 'rebased', 'unchanged'].includes(result.outcome) ? {lines: plan.lines, ...(spread ? {lines_written: plan.written} : {}), ...(moved ? {others: plan.others} : {}), ...(compiled.options.drawAssets?.length ? {blocks: writtenBlocks(projection)} : {})} : {}),
-      ...(written ? {hash: publicSurface().digest ??= sha256(written), ...(passage ? {passage} : {})} : {})};
+      ...(written ? {hash: publicSurface().digest ??= sha256(written), ...(passage ? {passage} : {})} : {}),
+      ...(previews.length ? {previews, hint: 'Inspect each picture, then adjust. For detail, read {as:"image",block:id}; undo an unwanted act before repainting.'} : {})};
   }
 
   function passageHandle(input, who) {
@@ -5363,6 +5435,10 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (target === 'preferences') return askEditor('editor.set_preferences', {preference: input.preference, value: input.value}, who, context);
     if (target === 'plugin') return askEditor('document.device_action', {action: 'install_plugin', plugin: input.name}, who, context);
     if (target === 'file') return askEditor('document.device_action', {action: 'open_file'}, who, context);
+    if (target === 'preset') {
+      if (input.revision !== surfaceRevision()) return failure('document_changed', 'conflict');
+      return askEditor('document.device_action', {action: 'save_preset', name: input.name, value: input.value || 'document'}, who, context);
+    }
     if (target === 'playback') {
       const {projection, targets} = publicSurface(), given = givenRevision(input.revision, surfaceRevision(projection));
       if (given.outcome) return given;
@@ -5446,7 +5522,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       case 'open': result = await doorOpen(input, who, context); break;
       case 'read': result = await doorRead(input, who, context); break;
       case 'edit': result = await doorEdit(input, who, context); break;
-      case 'undo': result = Boolean(input.act) === Boolean(input.turn_id) ? failure(input.act ? 'act_and_turn_conflict' : 'act_or_turn_required', 'invalid') : input.act?.startsWith('notes-controls:') ? await notesUndo(input, who, context) : await undo({change_id: input.act, turn_id: input.turn_id}, who, context); break;
+      case 'undo': result = Boolean(input.act) === Boolean(input.turn_id) ? failure(input.act ? 'act_and_turn_conflict' : 'act_or_turn_required', 'invalid') : input.act?.startsWith('notes-source:') && typeof host.notesSourceUndo === 'function' ? await notesSourceUndo(input, who, context) : input.act?.startsWith('notes-controls:') ? await notesUndo(input, who, context) : await undo({change_id: input.act, turn_id: input.turn_id}, who, context); break;
       case 'show': result = await doorShow(input, who, context); break;
       case 'export': result = await doorExport(input, who, context); break;
       case 'document.observe': result = await observe(input, who, context); break;
@@ -5616,9 +5692,12 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         complete: false, reason: 'semantic_patch_in_journal'}};
     }
     const output = stamp(publicWriteReceipt(result || failure('operation_failed')));
+    const previews = name === 'edit' && ['applied', 'rebased'].includes(output.outcome) && output.previews?.length ? output.previews : null;
+    const receipt = previews ? {...output} : output;
+    if (previews) delete receipt.previews;
     const resultLimit = ['open', 'read'].includes(name) && context.transport !== 'webmcp' ? 96 * 1024 : LIMITS.resultBytes;
-    let finalOutput = output;
-    if (bytes(JSON.stringify(output)) <= resultLimit) {
+    let finalOutput = receipt;
+    if (bytes(JSON.stringify(receipt)) <= resultLimit) {
       if (resumed) {
         const observation = state.cursors[output.observation_cursor];
         remember(state.resume, who, {revision: observation?.revision ?? state.revision,
@@ -5626,10 +5705,10 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       }
     } else {
       for (const id of Object.keys(state.handles)) if (!beforeHandles.has(id)) delete state.handles[id];
-      finalOutput = boundedResult(output, {limit: resultLimit + 1, readOnly: descriptor.effect === 'read'});
+      finalOutput = boundedResult(receipt, {limit: resultLimit + 1, readOnly: descriptor.effect === 'read'});
       if (output.pending?.kind === 'surface-fact' && finalOutput.outcome !== 'pending') pendingFacts.delete(output.pending.requestId);
     }
-    return finalize(finalOutput);
+    return finalize(previews ? {...finalOutput, previews} : finalOutput);
     } catch (error) {
       if (error?.name === 'AbortError' || context.signal?.aborted) return finalize(name === 'document.draw' ? drawingReceipt(failure('cancelled')) : failure('cancelled'));
       if (error instanceof TypeError || error?.code === 'invalid_arguments') return finalize(failure(clip(error.message, 160), 'invalid', error?.path ? {field: String(error.path).replace(/^arguments\.?/, '')} : undefined));

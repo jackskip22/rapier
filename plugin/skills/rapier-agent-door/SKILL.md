@@ -26,11 +26,12 @@ expire after 30 idle days.
   revision → `export {document, format}`. Resume later with `open {document}`.
 - Note (MCP adds `document` to each call): `read {search}` → `read {note}` with the returned `note_ref` → `edit`
   with its content-digest revision. New Note: `open {note:"new", title, text}`.
-- Diagram or drawing: `read {guide:"draw"}` once → add or edit the fenced drawing by its id → tell the person:
-  "Drag any box to rearrange it; tap a label to change its words." (On a phone they tap the diagram once first.)
+- Diagram or drawing: `read {guide:"draw"}` once → add or edit the fenced drawing by its id → inspect the returned
+  picture → adjust → tell the person: "Drag any box to rearrange it; tap a label to change its words." (On a phone they
+  tap the diagram once first.)
 - Painting: share `editor_url` and wait for the editor (`read {state:true}`) → `read {guide:"water"}` for the brush
   registry → `edit` with an `operation_id` → while it answers pending, repeat that exact `edit` with the same
-  `operation_id` until applied or refused → `show` it.
+  `operation_id` until applied or refused → inspect the returned picture → adjust.
 - Pairing: only when a browser shows a four-letter code: `show {document, target:"pair", code}`; the person then
   taps Allow.
 
@@ -57,8 +58,7 @@ expire after 30 idle days.
    context and decide again. The person's typing and Will regions win.
 4. **Keep** the returned `act` id for `show` or `undo`. Use `turn_id` to group related acts. An applied edit returns
    its revision and the lines it wrote (`3: new words`), so edit on from that revision without reading again; a
-   changed drawing block keeps its canonical text. A turn is one read and one edit with every change batched (up to
-   32): fewer calls keep the workspace quick for everyone.
+   changed drawing block keeps its canonical text. Batch independent changes (up to 32) to keep calls small.
 5. **Show** your work or ask the person. `show {act}` presents that change; comparisons leave source unchanged. Check
    what was actually shown. A person's message carries the selection or drawing they pointed at and its revision;
    treat a stale referent as gone, never retarget it.
@@ -77,6 +77,13 @@ Read `rapier://guide/blocks`, `/draw` or `/water` before editing diagrams, paint
 read resources, call `read {guide:"draw"}` (topics: overview, draw, water, blocks) with no other read
 selector. A guide URI is never a document id. Otherwise use the [agent guide](https://rapier.website/agents).
 
+Each changed drawing gets one small picture in the edit result. Look, then adjust. For full detail, use
+`read {as:"image",block:"id"}`, including while Draw is open. Check its observed state and any reduction from native
+detail; stored means wetness is unknown.
+If a picture is unavailable, keep the applied receipt; request detail when the editor is ready.
+Text reads keep editable figures and recipes in `text`. Paintings also return compact stroke JSON lines in
+`painting`. Follow `next_cursor`, joining each field separately. Keep material markers; the summary is not edit text.
+
 - Keep stable ids, opaque asset markers, human strokes and comment authors.
 - HTML previews are `html` fences with an id and height. Self-contained HTML, CSS and SVG render with no network or
   document access; scripts, event handlers, forms and navigation do nothing.
@@ -88,7 +95,8 @@ selector. A guide URI is never a document id. Otherwise use the [agent guide](ht
   `human.objects`. Keep original bytes and poster definitions.
 
 Painting and device actions need an open full editor, kept visible while the painting computes; Water also needs
-WebGPU. Every painting `edit` needs an `operation_id`: retry the same call with it to collect the result, because a
+WebGPU. Android Pro's pigments, papers, Trace, and other Water features are unavailable to agents.
+Every painting `edit` needs an `operation_id`: retry the same call with it to collect the result, because a
 retry without it starts a new job. A good first painting is a small watercolor sunset over the sea, with room for
 the person to add a boat. Once it commits, keep its act or turn id for a requested undo, keep the person's later
 marks and report conflicts. Without WebGPU, explain why and offer regular brushes or an editable diagram. After one
@@ -111,3 +119,11 @@ Most `show` targets need no pairing. A pairing code works once, within a minute.
 Complete page, Word and PDF exports need the person's open editor, or a self-hosted `rapier-server`'s isolated
 renderer. Hosted files are at most 16 MiB; source is at most 64 MiB. Check where the file went and whether it arrived.
 Page export doesn't publish a website.
+
+## Screen document starters
+
+For a CV, menu, invitation, lesson card, social post, brief, recipe card or event poster, read the overview and draw guides. Keep words as Markdown and use compact tables plus original, editable SVG document objects. Use the existing six tools; `edit` routes drawing fences through `document.draw`. A typical object uses `<!--md-layout:v1 width=30% wrap=around x=100% y=0em-->` directly after its fence. Check 390 px and wide views in light and dark; carry assets and fonts without network dependencies. Never turn a whole page of text into an image.
+
+Only after the person reviews the design, request library saving with `show {target:"preset",revision,name:"My CV",value:"document"}` (or `value:"style"`). This opens the existing editor approval card. Read state for the final receipt; waiting is not saved. A changed document or declined card must not save. Do not synthesize a click or bypass this approval. The agent workflow and supplied starters are free; Android human personal-library convenience controls use Pro.
+
+If Draw is still open, let the person close its preview before requesting the library save; capture requires a settled document.

@@ -13,3 +13,5 @@ html[data-layout="docx"] .md-render ol>li{min-height:0;padding-top:0}
 html[data-layout="docx"] .md-render ol>li::before{content:counter(rapier-ol) ".";display:block;top:0;inset-inline-start:calc(-2 * var(--md-text-body) + var(--md-marker,0px));width:1.5em;height:auto;border:0;border-radius:0;background:none;font:inherit;text-align:left}
 html[data-layout="docx"] .md-render ol>li::after{content:none}
 html[data-layout="docx"] .md-render pre{padding:0;border:0}
+html[data-layout="docx"] #editor-blocks[data-template-page]{min-height:var(--docx-page);align-self:flex-start}
+html[data-layout="docx"] #editor-blocks[data-template-page] img[data-rapier-image-layout*="wrap%3Dbehind"][data-rapier-image-layout*="lock%3Don"]{position:absolute!important;left:calc(-1 * var(--docx-margin))!important;top:calc(-1 * var(--docx-margin))!important;width:calc(100% + 2 * var(--docx-margin))!important;height:var(--docx-page)!important;max-width:none!important;margin:0!important;z-index:-1!important;pointer-events:none}

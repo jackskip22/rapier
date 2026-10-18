@@ -162,7 +162,7 @@ html.rapier-draw-open{overscroll-behavior:none}
 .rapier-paint-mix-result{display:inline-block;width:24px;height:24px}
 .rapier-draw-dip-firmness{display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);min-height:44px;color:var(--color-text-secondary);font:var(--fw-semibold) var(--text-sm) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase}
 .rapier-draw-dip-firmness-choices{display:flex;align-items:center;gap:var(--space-1)}
-.rapier-draw-dip-firmness .rapier-draw-chip[aria-pressed="true"]{background:var(--color-icon);color:var(--color-bg)}
+.rapier-draw-dip-firmness .rapier-draw-chip[aria-pressed="true"],.rapier-draw-dip-firmness .rapier-draw-chip[aria-checked="true"]{background:var(--color-icon);color:var(--color-bg)}
 .rapier-draw-dip-sample{display:block;width:100%;height:auto;background:var(--color-bg);-webkit-user-drag:none;-webkit-user-select:none;user-select:none}
 .rapier-draw-dip-pad{position:relative;width:100%;height:116px;touch-action:none;cursor:pointer;-webkit-user-select:none;user-select:none}
 .rapier-draw-dip-pad:focus-visible{outline:0}

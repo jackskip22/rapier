@@ -189,6 +189,7 @@ export async function runTrash({store, index, files, now, deviceId, mode = 'expi
 				next = reviveTrashed(next, file, digest); result.revived.push(file); continue;
 			}
 			if (mode === 'expiry' && !expiredTrash({notes: {[file]: entry}}, now).includes(file)) continue;
+			if (store.assertRemovable) await store.assertRemovable(file);
 			entry = {...entry, id: entry.id || nextID(next, deviceId), revision: 'sha256:' + digest};
 			next.notes[file] = entry;
 			const opId = nextID(next, deviceId);

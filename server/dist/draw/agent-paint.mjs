@@ -9,7 +9,7 @@ import {canonicalJSON} from '../kit/ledger/data.mjs';
 import {WaterSurface, waterReady} from './water.mjs';
 import {sha256} from '../kit/ledger/hash.mjs';
 import {sha256Yielding, sha256TextOffThread} from '../notes/integrity.mjs';
-import {admitWaterActions, admitWaterPigment, waterPaperById, waterRadius, WATER_BRUSHES, WATER_PIGMENTS, WATER_PAPERS, WATER_TOOLS, WATER_CONTROLS, WATER_ACTION_MAX_POINTS, WATER_SOURCE_MAX_BYTES, WATER_TIP_MAX_PIXELS} from './water-data.mjs';
+import {admitWaterActions, admitWaterPigment, waterPaperById, waterRadius, WATER_BRUSHES, WATER_STRENGTHS, WATER_PIGMENTS, WATER_PAPERS, WATER_TOOLS, WATER_CONTROLS, WATER_ACTION_MAX_POINTS, WATER_SOURCE_MAX_BYTES, WATER_TIP_MAX_PIXELS} from './water-data.mjs';
 import {encodePaintingSteps} from '../images/jxl/painting.mjs';
 import {waterTextPaths,waterTracePaths} from './water-paths.mjs';
 import {configurePaintRasterDecoder, decodePaintRaster, decodeNativePaintJXL, validatePaintRaster, paintRecompressionWorker, portablePaintPNG} from '../images/paint-raster.mjs';
@@ -92,7 +92,7 @@ export function waterPaintingIsLive(shape, session = waterSession()) {
 export function forgetWaterSession(session) { waterPublications.delete(session); waterHeld.delete(session); }
 
 export function agentPaintBrushRegistry() {
-	return {modes: ['paint', 'water'], limits: {paint: {...AGENT_PAINT_LIMITS}, water: {pointsPerAction: WATER_ACTION_MAX_POINTS, retainedSourceBytes: WATER_SOURCE_MAX_BYTES, tipPixels: WATER_TIP_MAX_PIXELS, sheetPixels: PAINT_SHEET_LIMITS.pixels, sheetSidePixels: PAINT_SHEET_LIMITS.side, newLayerPixelsPerUnit: AGENT_PAINT_GRAIN}}, controls: {...PAINT_BRUSH_CONTROLS, modes:{water:WATER_CONTROLS}}, brushes: [...RAPIER_PAINT_BRUSHES.map(entry => ({id: entry.id, name: entry.name, mode: 'paint', kind: entry.myb.settings.rapier_op?.base_value ? 'material' : 'brush', size: paintSizeDefault(entry.id), pigment: (entry.myb.settings.paint_mode?.base_value ?? 1) > 0})), ...WATER_BRUSHES.map(({id,name,size,water,load,description}) => ({id,name,size,water,load,description,mode:'water'}))], tools: WATER_TOOLS, papers: WATER_PAPERS.map(({id,name})=>({id,name})), pigments: WATER_PIGMENTS.map(({id,name,colour})=>({id,name,colour})), actions: WATER_AGENT_ACTIONS, figure: {kind: 'paint', mode: 'water', seed: 1, paper: 'cold-press', actions: [WATER_AGENT_ACTIONS.stroke]}};
+	return {modes: ['paint', 'water'], limits: {paint: {...AGENT_PAINT_LIMITS}, water: {pointsPerAction: WATER_ACTION_MAX_POINTS, retainedSourceBytes: WATER_SOURCE_MAX_BYTES, tipPixels: WATER_TIP_MAX_PIXELS, sheetPixels: PAINT_SHEET_LIMITS.pixels, sheetSidePixels: PAINT_SHEET_LIMITS.side, newLayerPixelsPerUnit: AGENT_PAINT_GRAIN}}, controls: {...PAINT_BRUSH_CONTROLS, modes:{water:WATER_CONTROLS}}, brushes: [...RAPIER_PAINT_BRUSHES.map(entry => ({id: entry.id, name: entry.name, mode: 'paint', kind: entry.myb.settings.rapier_op?.base_value ? 'material' : 'brush', size: paintSizeDefault(entry.id), pigment: (entry.myb.settings.paint_mode?.base_value ?? 1) > 0})), ...WATER_BRUSHES.map(({id,name,size,water,load,description}) => ({id,name,size,water,load,description,mode:'water'}))], tools: WATER_TOOLS, papers: WATER_PAPERS.map(({id,name})=>({id,name})), pigments: WATER_PIGMENTS.map(({id,name,colour})=>({id,name,colour})), strengths: WATER_STRENGTHS.map(({id,name,load,water})=>({id,name,load,water})), actions: WATER_AGENT_ACTIONS, figure: {kind: 'paint', mode: 'water', seed: 1, paper: 'cold-press', actions: [WATER_AGENT_ACTIONS.stroke]}};
 }
 
 const WATER_AGENT_ACTIONS = Object.freeze({
@@ -669,6 +669,32 @@ export async function replayWaterFrames(raw,{signal,onEntry,onStep,onFinish}={})
 	try {
 		result=await replayPaintEntries(replay,{signal,surface:true,observeWater:true,onWaterEntry:onEntry,onWaterStep:onStep});
 		cancelled(signal);await onFinish?.(result);
+	} finally {result?.surface.dispose();}
+}
+
+export async function observeAgentPainting(shape,{settle=false,signal}={}) {
+	cancelled(signal);
+	if (shape?.paint?.mode !== 'water') return null;
+	shape = {...shape,geom:shape.geom && copy(shape.geom),paint:{...shape.paint,px:Array.isArray(shape.paint.px) ? shape.paint.px.slice() : shape.paint.px}};
+	const replay = admitPaintReplay(shape.paint.replay), sheet = replay && replayPaintSheet(replay), map = layerMap(shape,16384);
+	if (!replay || replay.mode !== 'water' || !sheet || !map || sheet.px.some((n,i) => n !== shape.paint.px[i]) || !sameScale(sheet.scale,shape.paint.scale)) return settle ? {unavailable:'water_replay_unavailable'} : {raster:shape.raster,state:'stored',projection:'stored'};
+	let result;
+	try {
+		result = await replayPaintEntries(replay,{signal,surface:true});
+		const actual = await decodePaintRaster(shape.raster,{signal});
+		cancelled(signal);
+		if (!samePixels(actual,result.pixels)) return settle ? {unavailable:'water_replay_mismatch'} : {raster:shape.raster,state:'stored',projection:'stored'};
+		const surface = result.surface;
+		if (!settle) { cancelled(signal); return {raster:shape.raster,state:surface.wet ? 'wet' : 'settled',projection:'stored',tick:surface.tick}; }
+		for await (const _step of surface.settle()) { cancelled(signal); await yieldPainting(); }
+		cancelled(signal);
+		const capture = await surface.observe(), box = capture.box;
+		if (!box || !capture.pixels) return {unavailable:'water_observation_empty'};
+		const [x,y] = result.crop, corners = [[box.x0-x,box.y0-y],[box.x1-x+1,box.y0-y],[box.x1-x+1,box.y1-y+1],[box.x0-x,box.y1-y+1]];
+		const raster = await encodePaintRaster(capture.pixels,{signal,picture:'png'});
+		cancelled(signal);
+		return {raster,geom:{p:corners.map(point => map.at(...point))},paint:{brush:shape.paint.brush,mode:'water',paper:surface.paperId,
+			px:[capture.pixels.width,capture.pixels.height],scale:shape.paint.scale},state:'settled',projection:'settled',tick:capture.meta.tick};
 	} finally {result?.surface.dispose();}
 }
 

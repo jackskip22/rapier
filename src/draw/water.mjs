@@ -7,8 +7,8 @@ import {encodeRgb,toLinear,waterMixes} from './water-color.mjs';
 export {waterMixes};
 import {buildWaterFill} from './water-fill.mjs';
 import {waterTimeFits} from './water-data.mjs';
-import {WATER_TICK_HZ,WATER_BANDS,WATER_ACTION_MAX_POINTS,WATER_TIP_MAX_PIXELS,WATER_SOURCE_MAX_BYTES,WATER_PAPERS,WATER_PIGMENTS,WATER_BRUSHES,WATER_TOOLS,WATER_CONTROLS,waterBrushById,waterPigmentById,waterPaperById,waterError,waterRadius,waterHandSize,waterHandUi,waterHandFromUi,admitWaterPigment,admitWaterTip,admitWaterControls,admitWaterBrush,waterBrushDefinition,admitWaterAction,admitWaterActions,waterActionsFault,waterProFeature,admitWaterState} from './water-data.mjs';
-export {WATER_TICK_HZ,WATER_BANDS,WATER_ACTION_MAX_POINTS,WATER_TIP_MAX_PIXELS,WATER_SOURCE_MAX_BYTES,WATER_PAPERS,WATER_PIGMENTS,WATER_BRUSHES,WATER_TOOLS,WATER_CONTROLS,waterBrushById,waterPigmentById,waterPaperById,waterError,waterRadius,waterHandSize,waterHandUi,waterHandFromUi,admitWaterPigment,admitWaterTip,admitWaterControls,admitWaterBrush,waterBrushDefinition,admitWaterAction,admitWaterActions,waterActionsFault,waterProFeature,admitWaterState};
+import {WATER_TICK_HZ,WATER_BANDS,WATER_ACTION_MAX_POINTS,WATER_TIP_MAX_PIXELS,WATER_SOURCE_MAX_BYTES,WATER_PAPERS,WATER_PIGMENTS,WATER_BRUSHES,WATER_STRENGTHS,waterStrengthOf,WATER_TOOLS,WATER_CONTROLS,waterBrushById,waterPigmentById,waterPaperById,waterError,waterRadius,waterHandSize,waterHandUi,waterHandFromUi,admitWaterPigment,admitWaterTip,admitWaterControls,admitWaterBrush,waterBrushDefinition,admitWaterAction,admitWaterActions,waterActionsFault,waterProFeature,admitWaterState} from './water-data.mjs';
+export {WATER_TICK_HZ,WATER_BANDS,WATER_ACTION_MAX_POINTS,WATER_TIP_MAX_PIXELS,WATER_SOURCE_MAX_BYTES,WATER_PAPERS,WATER_PIGMENTS,WATER_BRUSHES,WATER_STRENGTHS,waterStrengthOf,WATER_TOOLS,WATER_CONTROLS,waterBrushById,waterPigmentById,waterPaperById,waterError,waterRadius,waterHandSize,waterHandUi,waterHandFromUi,admitWaterPigment,admitWaterTip,admitWaterControls,admitWaterBrush,waterBrushDefinition,admitWaterAction,admitWaterActions,waterActionsFault,waterProFeature,admitWaterState};
 export {waterReady,waterSoftwareAdmitted,waterSoftwareAdapter,waterWarm,waterUnfilteredTest,waterTiming,waterTimingOn,waterCapture,waterCaptureOn,waterNote,waterHandSheetFits,waterGpuBudget,WATER_PAPER_UNITS,WATER_PAPER_SEED,waterSheetShows};
 import {WATER_SPECIALTY_PIGMENTS,WATER_PRO_PAPERS,waterSpecialtyById,waterPigmentFinish,isWaterSpecialtyPigment,mixWaterPigments} from './water-data.mjs';
 export {WATER_SPECIALTY_PIGMENTS,WATER_PRO_PAPERS,waterSpecialtyById,waterPigmentFinish,isWaterSpecialtyPigment,mixWaterPigments};
@@ -231,6 +231,16 @@ export class WaterSurface {
   const reach=this.gpu.reach;
   try{let front=-.5;const end=fill.maxDistance+28*reach;while(front<end){const next=Math.min(end,front+600/60*reach);this.gpu.fillStep({from:front,to:next,coefficients:action.tool==='water'?null:pigment,finish:waterPigmentFinish(action.pigment),dose:amount,water,soft:12*reach});front=next;await this._advance(1/60);yield {kind:'fill',front,tick:this.tick};}}
   finally{this.gpu.endFill();}
+ }
+ async observe(){
+  await this.ready;
+  const bounds=union(union(this._bounds,boxOf(this.gpu.painted)),boxOf(this.gpu.active)),box=bounds?{...bounds}:null;
+  const meta={width:this.width,height:this.height,revision:this.revision,bounds:box?{...box}:null,
+   toothOX:this.toothOX,toothOY:this.toothOY,wetState:!!this.wetState,wet:this.wet,
+   _wetWork:!!this._wetWork,wetPending:this.wetPending,tick:this.tick,mode:'water'};
+  if(!box)return {box:null,pixels:null,meta};
+  const data=await this.gpu.read({box:rectOf(box)});
+  return {box,pixels:{width:box.x1-box.x0+1,height:box.y1-box.y0+1,data:new Uint8ClampedArray(data.buffer,data.byteOffset,data.byteLength)},meta};
  }
  async toRGBA8(box=null,_straight=true,_quality='final'){
   await this.ready;await this._flushContact();

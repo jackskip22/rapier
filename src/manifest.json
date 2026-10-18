@@ -169,7 +169,8 @@
           ".dotx"
         ],
         "application/zip": [
-          ".textpack"
+          ".textpack",
+          ".zip"
         ],
         "text/markdown": [
           ".md",
@@ -294,6 +295,28 @@
           ".vue",
           ".zig",
           ".zsh"
+        ],
+        "image/png": [
+          ".png"
+        ],
+        "image/jpeg": [
+          ".jpg",
+          ".jpeg"
+        ],
+        "image/webp": [
+          ".webp"
+        ],
+        "image/gif": [
+          ".gif"
+        ],
+        "image/avif": [
+          ".avif"
+        ],
+        "image/svg+xml": [
+          ".svg"
+        ],
+        "image/jxl": [
+          ".jxl"
         ]
       },
       "launch_type": "single-client",

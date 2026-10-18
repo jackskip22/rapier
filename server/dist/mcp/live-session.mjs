@@ -105,6 +105,12 @@ export class LiveSessions {
   stopBinding(head, connection = '') { return {workspace: head.documentId, connection: 'live-stop:' + head.capabilityHash + connection}; }
   async grant(head, authority = {}) {
     if (head.liveStopped || head.agentAccess === false) return {stopped: true};
+    if (this.owner.env.ACCESS_PROFILE === true) {
+      const access = authority.access;
+      if (access?.kind !== 'browser' || head.ownerKey !== sha256(access.ownerId) || !await this.owner.env.accessCurrent(access)) return null;
+      return {key: access.principalId, stopKey: access.principalId,
+        ...(this.owner.relay?.enabled() ? {custodyKey: access.principalId} : {})};
+    }
     const now = Date.now(), grant = authority.oauthGrant;
     if (grant && !grant.scopes?.includes('rapier:write')) return null;
     let connection = '', issuedAt = now;
@@ -122,7 +128,10 @@ export class LiveSessions {
       stopKey: await mintEditorKey(this.owner.env.EDITOR_KEY_SECRET, issuedAt, this.stopBinding(head, connection)),
       ...(this.owner.relay?.enabled() ? {custodyKey: await mintEditorKey(this.owner.env.EDITOR_KEY_SECRET, issuedAt, this.owner.relay.binding(head, connection))} : {})};
   }
-  async admit(head, key, bind) {
+  async admit(head, key, bind, access) {
+    if (this.owner.env.ACCESS_PROFILE === true) return access?.kind === 'browser' && key === access.principalId &&
+      head.ownerKey === sha256(access.ownerId) && await this.owner.env.accessCurrent(access)
+      ? {ok: true, issuedAt: access.issuedAt, expiresAt: access.expiresAt, access} : {ok: false};
     const now = Date.now(), secret = this.owner.env.EDITOR_KEY_SECRET;
     const verdict = await verifyEditorKey(secret, key, now, bind(head));
     if (verdict.ok) return verdict;
@@ -135,11 +144,16 @@ export class LiveSessions {
   async stop(request) {
     const head = this.owner.ctx.storage.kv.get('head');
     if (!head || head.expiresAt <= Date.now()) return new Response(null, {status: 410});
-    const verdict = await this.admit(head, request.headers.get('X-Rapier-Live-Owner'), this.stopBinding.bind(this));
+    let access;
+    if (this.owner.env.ACCESS_PROFILE === true) {
+      try {access = this.owner.requestAuthority(request).access;} catch {return new Response(null, {status: 403});}
+    }
+    const verdict = await this.admit(head, request.headers.get('X-Rapier-Live-Owner'), this.stopBinding.bind(this), access);
     if (!verdict.ok) return new Response(null, {status: 403});
     const {custody: _custody, ...current} = head;
     const next = {...current, liveStopped: true, agentAccess: false};
-    await this.owner.persist(next, this.owner.readState(head), this.owner.readJournal());
+    await this.owner.persist(next, this.owner.readState(head), this.owner.readJournal(), false, null, undefined,
+      access ? {ownerKey: head.ownerKey, access} : null);
     for (const socket of this.sockets()) {
       this.send(socket, {type: 'error', reason: 'sharing_stopped'});
       this.close(socket, 1008, 'sharing_stopped');
@@ -198,14 +212,38 @@ export class LiveSessions {
     return doc;
   }
 
-  valid(socket, head) {
+  accessAttachment(socket, head) {
     const attached = this.attachment(socket), now = Date.now();
+    return attached && head && !head.liveStopped && head.agentAccess !== false &&
+      head.expiresAt > now && attached.capabilityHash === head.capabilityHash && attached.access?.kind === 'browser' &&
+      head.ownerKey === sha256(attached.access.ownerId) && attached.expiresAt > now &&
+      (attached.client || attached.helloBy >= now) ? attached : null;
+  }
+
+  valid(socket, head) {
+    if (this.owner.env.ACCESS_PROFILE === true) {
+      const attached = this.accessAttachment(socket, head);
+      return attached && this.owner.env.accessLease(attached.access) > Date.now() ? attached : null;
+    }
+    const attached = this.attachment(socket), now = Date.now();
+    if (this.owner.env.LOCAL_PAGE === true) return attached && head && !head.liveStopped && head.agentAccess !== false &&
+      head.expiresAt > now && attached.capabilityHash === head.capabilityHash && attached.expiresAt >= now &&
+      (attached.client || attached.helloBy >= now) ? attached : null;
     return attached && head && !head.liveStopped && head.agentAccess !== false && head.expiresAt > now && attached.capabilityHash === head.capabilityHash &&
       attached.root === sha256(this.owner.env.EDITOR_KEY_SECRET) && attached.expiresAt >= now &&
       (attached.client || attached.helloBy >= now) ? attached : null;
   }
 
+  closeUnavailable(socket, head = this.owner.ctx.storage.kv.get('head'), reason = 'session_unavailable') {
+    const attached = this.owner.env.ACCESS_PROFILE === true && this.accessAttachment(socket, head);
+    const refresh = attached && this.owner.env.accessRefreshNeeded?.(attached.access);
+    this.close(socket, refresh ? 1011 : 1008, refresh ? 'access_refresh_required' : reason);
+  }
+
   send(socket, value) {
+    if (this.owner.env.ACCESS_PROFILE === true && !this.valid(socket, this.owner.ctx.storage.kv.get('head'))) {
+      this.closeUnavailable(socket); return false;
+    }
     try {
       if (jsonBytes(value) > LIVE_LIMITS.frameBytes) {
         socket.send(JSON.stringify({type: 'error', reason: 'message_too_large', limitBytes: LIVE_LIMITS.frameBytes}));
@@ -226,7 +264,7 @@ export class LiveSessions {
   publish(doc, head) {
     this.cached = doc;
     for (const socket of this.sockets()) {
-      if (!this.valid(socket, head)) { this.close(socket, 1008, head.liveStopped ? 'sharing_stopped' : 'session_unavailable'); continue; }
+      if (!this.valid(socket, head)) { this.closeUnavailable(socket, head, head.liveStopped ? 'sharing_stopped' : 'session_unavailable'); continue; }
       this.catchUp(socket, doc);
     }
     this.broadcastPresence(head);
@@ -317,7 +355,7 @@ export class LiveSessions {
       socket.serializeAttachment(attached);
     }
     const result = await this.owner.operate({operation: 'document.human_context', args, capabilityHash: head.capabilityHash,
-      ownerKey: head.ownerKey, editorAuthorized: true, operationId: crypto.randomUUID()});
+      ownerKey: head.ownerKey, editorAuthorized: true, operationId: crypto.randomUUID(), ...(attached.access ? {access: attached.access} : {})});
     this.send(socket, {type: 'context', sequence: args.sequence, isError: result.isError === true,
       structuredContent: result.structuredContent});
   }
@@ -367,13 +405,18 @@ export class LiveSessions {
     const key = request.headers.get('X-Rapier-Live-Key');
     if (!head || head.expiresAt <= Date.now()) return new Response(null, {status: 404});
     if (head.liveStopped || head.agentAccess === false) return new Response(null, {status: 410});
-    const verdict = await this.admit(head, key, this.binding.bind(this));
+    let access;
+    if (this.owner.env.ACCESS_PROFILE === true) {
+      try {access = this.owner.requestAuthority(request).access;} catch {return new Response(null, {status: 403});}
+    }
+    const verdict = await this.admit(head, key, this.binding.bind(this), access);
     if (!verdict.ok) return new Response(null, {status: 403});
     this.expire(head);
     const [client, server] = Object.values(new WebSocketPair());
     this.owner.ctx.acceptWebSocket(server);
-    server.serializeAttachment({capabilityHash: head.capabilityHash, root: sha256(this.owner.env.EDITOR_KEY_SECRET),
-      expiresAt: verdict.issuedAt + EDITOR_KEY_LIFETIME_MS, helloBy: Date.now() + LIVE_LIMITS.helloMs, client: null, sentGen: -1,
+    server.serializeAttachment({capabilityHash: head.capabilityHash,
+      ...(access ? {access} : {root: sha256(this.owner.env.EDITOR_KEY_SECRET)}),
+      expiresAt: access ? access.expiresAt : verdict.issuedAt + EDITOR_KEY_LIFETIME_MS, helloBy: Date.now() + LIVE_LIMITS.helloMs, client: null, sentGen: -1,
       ...(verdict.grant ? {grant: verdict.grant} : {})});
     const next = Math.min(head.expiresAt, this.nextAlarm());
     const alarm = await this.owner.ctx.storage.getAlarm();
@@ -397,14 +440,16 @@ export class LiveSessions {
         state = structuredClone(state);
         session = state.live.sessions.find(row => row.client === message.client);
         session.author = {...session.author, name: message.name};
-        await this.owner.persist(head, state, this.owner.readJournal());
+        await this.owner.persist(head, state, this.owner.readJournal(), false, null, undefined,
+          attached.access ? {ownerKey: head.ownerKey, access: attached.access} : null);
       }
     } else {
       token = secret();
       const client = 'peer_' + crypto.randomUUID().replaceAll('-', '');
       session = {client, tokenHash: sha256(token), author: {id: client, name: message.name || 'Person ' + (state.live.sessions.length + 1), kind: 'human'}};
       state = structuredClone(state); state.live.sessions.push(session);
-      await this.owner.persist(head, state, this.owner.readJournal());
+      await this.owner.persist(head, state, this.owner.readJournal(), false, null, undefined,
+        attached.access ? {ownerKey: head.ownerKey, access: attached.access} : null);
     }
     for (const other of this.sockets()) if (other !== socket && this.attachment(other)?.client === session.client) this.close(other, 4000, 'session_resumed');
     attached.client = session.client; attached.sentGen = doc.gen;
@@ -497,7 +542,8 @@ export class LiveSessions {
     const {client, seq, ...request} = edit;
     stored.live = {client, seq, author: {...act.author}, request: compactRequest(request, stored), wireHash: hash};
     const described = this.owner.describe(next, head, head.version + 1, kernel.collaboration());
-    await this.owner.persist(described, next, kernel.invocationJournal());
+    await this.owner.persist(described, next, kernel.invocationJournal(), false, null, undefined,
+      attached.access ? {ownerKey: head.ownerKey, access: attached.access} : null);
     const accepted = this.document(next).log.at(-1);
     this.send(socket, {type: 'ack', seq, gen: accepted.gen, status: 'applied', record: accepted.record});
   }
@@ -505,6 +551,7 @@ export class LiveSessions {
   async message(socket, raw) {
     let message;
     try {
+      if (this.owner.env.ACCESS_PROFILE === true && !await this.owner.env.accessCurrent(this.attachment(socket)?.access)) {this.close(socket); return;}
       const head = this.owner.ctx.storage.kv.get('head'), attached = this.valid(socket, head);
       if (!attached || attached.grant && !await this.owner.grantCurrent(attached.grant)) {this.close(socket); return;}
       if (typeof raw !== 'string' || raw.length > LIVE_LIMITS.frameBytes || utf8.encode(raw).byteLength > LIVE_LIMITS.frameBytes) throw refused('message_too_large');
@@ -542,11 +589,12 @@ export class LiveSessions {
 
   nextAlarm() {
     const deadlines = this.sockets().map(socket => this.attachment(socket)).filter(Boolean)
-      .map(row => row.client ? row.expiresAt : Math.min(row.expiresAt, row.helloBy));
+      .map(row => Math.min(row.client ? row.expiresAt : Math.min(row.expiresAt, row.helloBy),
+        this.owner.env.ACCESS_PROFILE === true ? this.owner.env.accessLease(row.access) || Date.now() : Infinity));
     return deadlines.length ? Math.min(...deadlines) : Infinity;
   }
 
-  expire(head) { for (const socket of this.sockets()) if (!this.valid(socket, head)) this.close(socket); }
+  expire(head) { for (const socket of this.sockets()) if (!this.valid(socket, head)) this.closeUnavailable(socket, head); }
   async disconnected(socket) {
     this.close(socket, 1000, 'closed'); this.broadcastPresence();
     try { await this.release(socket); } catch { this.owner.cachedState = null; this.owner.cachedJournal = null; this.reset(); }

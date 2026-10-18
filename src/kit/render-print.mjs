@@ -171,7 +171,7 @@ function _rapierPrintWillPageCss() {
 
 const CAPTURE_EDGE = 4096, CAPTURE_PIXELS = 4 * 1024 * 1024;
 
-async function _rapierWritePrintPdf({root, css, fontCss = '', canonical, bom = false, filename, title, settings}, {capture, signal, current, maxBytes = 8 * 1024 * 1024, film, ink} = {}) {
+async function _rapierWritePrintPdf({root, css, fontCss = '', canonical, bom = false, filename, title, settings, templatePage = null}, {capture, signal, current, maxBytes = 8 * 1024 * 1024, film, ink} = {}) {
 	const refuse = code => { throw Object.assign(new Error(code), {code}); };
 	const check = () => {
 		if (signal?.aborted) refuse('cancelled');
@@ -187,7 +187,7 @@ async function _rapierWritePrintPdf({root, css, fontCss = '', canonical, bom = f
 	const bodyHeight = Math.floor((height - margins.top - margins.bottom) * 4 / 3);
 	if (bodyWidth < 1 || bodyHeight < 1 || bodyWidth * bodyHeight > 4 * 1024 * 1024) refuse('pdf_page_geometry_invalid');
 	const frame = document.createElement('iframe');
-	let vectors, nativeGlyphs, filmSession;
+	let vectors, backdrop = null, nativeGlyphs, filmSession;
 	let rejectAbort;
 	const aborted = new Promise((_, reject) => { rejectAbort = reject; });
 	aborted.catch(() => {});
@@ -233,6 +233,7 @@ async function _rapierWritePrintPdf({root, css, fontCss = '', canonical, bom = f
 		strip.append(root); surface.append(strip); into.body.append(surface);
 		const main = root.querySelector('main');
 		if (!main) refuse('pdf_render_unavailable');
+		if (templatePage) for (const image of main.querySelectorAll('img')) if (image.getAttribute('src') === templatePage.url) (image.closest('p,figure') || image).remove();
 		main.setAttribute('data-md-theme', 'light');
 		for (const details of main.querySelectorAll('details')) details.open = true;
 		main.getBoundingClientRect();
@@ -255,7 +256,7 @@ async function _rapierWritePrintPdf({root, css, fontCss = '', canonical, bom = f
 		}
 		for (const [name, value] of Object.entries({width: bodyWidth + 'px', height: bodyHeight + 'px',
 			'max-width': 'none', 'min-height': '0', padding: '0', margin: '0', overflow: 'visible',
-			'column-width': bodyWidth + 'px', 'column-gap': '0', 'column-count': 'auto', 'column-fill': 'auto'}))
+			'column-width': bodyWidth + 'px', 'column-gap': '0', 'column-count': 'auto', 'column-fill': 'auto', background: 'none'}))
 			main.style.setProperty(name, value, 'important');
 		globalThis.RapierMath?.fit(main);
 		applyPrintCapitals(main);
@@ -334,11 +335,22 @@ async function _rapierWritePrintPdf({root, css, fontCss = '', canonical, bom = f
 			first += span;
 		}
 		check();
-		const bytes = await writeRasterPdf({pages, textPages, linkPages, vectorPages: vectors.pages, canonical, bom, filename, title, font, width, height, margins,
+		if (templatePage) {
+			const sheetWidth = Math.round(width * 4 / 3), sheetHeight = Math.round(height * 4 / 3);
+			const holder = into.createElement('div'), picture = into.createElement('img');
+			holder.style.cssText = `position:fixed;left:0;top:0;width:${sheetWidth}px;height:${sheetHeight}px;pointer-events:none`;
+			picture.style.cssText = 'display:block;width:100%;height:100%'; picture.src = templatePage.url;
+			holder.append(picture); into.body.append(holder);
+			await step(picture.decode());
+			backdrop = await collectPdfVectors(holder, {width: sheetWidth, height: sheetHeight, count: 1, capture, signal, current, check, maxBytes,
+				sanitizeSvg: globalThis.RapierImageAssets?.sanitizeSvgText});
+			if (!backdrop.pages[0].length) refuse('pdf_template_border_unavailable');
+		}
+		const bytes = await writeRasterPdf({pages, textPages, linkPages, vectorPages: vectors.pages, canonical, bom, filename, title, font, width, height, margins, backdrop: backdrop?.pages[0] || null,
 			pixelWidth: bodyWidth, pixelHeight: bodyHeight, pageNumbers: settings?.pagestyle === 'plain', maxBytes, check});
 		check();
 		return {bytes, pages: count};
-	} finally { filmSession?.close(); nativeGlyphs?.restore(); vectors?.restore(); signal?.removeEventListener('abort', abort); frame.remove(); }
+	} finally { filmSession?.close(); nativeGlyphs?.restore(); vectors?.restore(); backdrop?.restore(); signal?.removeEventListener('abort', abort); frame.remove(); }
 }
 
 async function _rapierPrintTextPages(main, pageWidth, count, check, origin = main.getBoundingClientRect(), nativeNodes = null) {
@@ -481,7 +493,7 @@ function _rapierPrintSlots(text, rtl) {
 	return {slots, count};
 }
 
-async function writeRasterPdf({pages, textPages, linkPages = [], vectorPages = [], canonical, bom = false, filename, title, font, width, height, margins, pixelWidth, pixelHeight, pageNumbers, maxBytes, check}) {
+async function writeRasterPdf({pages, textPages, linkPages = [], vectorPages = [], backdrop = null, canonical, bom = false, filename, title, font, width, height, margins, pixelWidth, pixelHeight, pageNumbers, maxBytes, check}) {
 	const encoder = new TextEncoder(), encode = value => encoder.encode(value);
 	const fail = code => { throw Object.assign(new Error(code), {code}); };
 	const concat = parts => {
@@ -565,11 +577,10 @@ async function writeRasterPdf({pages, textPages, linkPages = [], vectorPages = [
 		const held = pages[index], flate = !!held?.rgb;
 		const picture = stream('/Type /XObject /Subtype /Image /Width ' + pixelWidth + ' /Height ' + pixelHeight + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /' + (flate ? 'FlateDecode' : 'DCTDecode'), flate ? held.rgb : held);
 		pages[index] = null;
-		let commands = '/Artifact BMC\nq\n' + [decimal(pixelWidth * .75), 0, 0, decimal(pixelHeight * .75), decimal(margins.left), decimal(height - margins.top - pixelHeight * .75)].join(' ') + ' cm\n/Im0 Do\nQ\nEMC\n';
 		const pictures = ['/Im0 ' + picture + ' 0 R'], states = [];
-		for (const drawing of vectorPages[index] || []) {
-			commands += `q\n.75 0 0 -.75 ${decimal(margins.left)} ${decimal(height - margins.top)} cm\n0 0 ${pixelWidth} ${pixelHeight} re W n\n1 0 0 1 ${decimal(drawing.x)} 0 cm\n`;
-			commands += [drawing.clip.x, drawing.clip.y, drawing.clip.width, drawing.clip.height].map(decimal).join(' ') + ' re W n\n';
+		const emit = (drawing, left, top, clipWidth, clipHeight) => {
+			let out = `q\n.75 0 0 -.75 ${decimal(left)} ${decimal(top)} cm\n0 0 ${clipWidth} ${clipHeight} re W n\n1 0 0 1 ${decimal(drawing.x)} 0 cm\n`;
+			out += [drawing.clip.x, drawing.clip.y, drawing.clip.width, drawing.clip.height].map(decimal).join(' ') + ' re W n\n';
 			for (const piece of drawing.sequence) {
 				if (piece.image) {
 					let shared = sharedImages.get(piece.image);
@@ -583,15 +594,19 @@ async function writeRasterPdf({pages, textPages, linkPages = [], vectorPages = [
 						sharedImages.set(piece.image, shared);
 					}
 					if (!pictures.includes(shared.resource)) pictures.push(shared.resource);
-					commands += `q\n${[piece.width, 0, 0, -piece.height, piece.x, piece.y + piece.height].map(decimal).join(' ')} cm\n${shared.name} Do\nQ\n`;
+					out += `q\n${[piece.width, 0, 0, -piece.height, piece.x, piece.y + piece.height].map(decimal).join(' ')} cm\n${shared.name} Do\nQ\n`;
 				} else {
 					const state = '/Gs' + states.length;
 					states.push(state + ' ' + add('<< /Type /ExtGState /ca ' + decimal(piece.fillAlpha) + ' /CA ' + decimal(piece.strokeAlpha) + ' >>') + ' 0 R');
-					commands += 'q\n' + state + ' gs\n' + piece.commands + 'Q\n';
+					out += 'q\n' + state + ' gs\n' + piece.commands + 'Q\n';
 				}
 			}
-			commands += 'Q\n';
-		}
+			return out + 'Q\n';
+		};
+		let commands = '';
+		for (const drawing of backdrop || []) commands += emit(drawing, 0, height, Math.round(width * 4 / 3), Math.round(height * 4 / 3));
+		commands += '/Artifact BMC\nq\n' + [decimal(pixelWidth * .75), 0, 0, decimal(pixelHeight * .75), decimal(margins.left), decimal(height - margins.top - pixelHeight * .75)].join(' ') + ' cm\n/Im0 Do\nQ\nEMC\n';
+		for (const drawing of vectorPages[index] || []) commands += emit(drawing, margins.left, height - margins.top, pixelWidth, pixelHeight);
 		const textAlphas = new Map();
 		for (const run of textPages[index]) {
 			if (!run.text) continue;

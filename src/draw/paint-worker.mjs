@@ -129,6 +129,10 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
    return reply(request.final===true,request.final===true || request.materialOnly!==true || request.commands.length!==0);
   }
   if(operation==='read') {
+   if(request.observation===true) {
+    const result=need(surfaces,request.surfaceId).observe();
+    return {...result,digest:result.pixels ? await hash(result.pixels.data) : null};
+   }
    const surface=need(surfaces,request.surfaceId), box=request.bounds ? surface.bounds() : request.box || null;
    const quality=request.quality==='live' ? 'live' : 'final', read=quality==='final' ? b=>{const p=surface.readCommitted(b);return {width:p.width,height:p.height,data:p.data.slice()};} : b=>surface.toRGBA8(b,true,quality);
    const pixels=request.bounds && !box ? null : read(box || undefined);
@@ -208,14 +212,16 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
   if(['agent','replayAgent'].includes(request?.operation)&&Number.isSafeInteger(request.id)&&request.id>0&&!agentJobs.has(request.id))agentJobs.set(request.id,new AbortController());
   const run=async()=> {
    const id=request?.id;
+   let observing=false;
    try {
     if(failed) throw failed;
     if(!Number.isSafeInteger(id)||id<=lastId) throw new Error('Paint request is out of order');
     lastId=id;
+    observing=request.operation==='read'&&request.observation===true;
     const value=await execute(request); postMessage({id,value},transfer(value));
    } catch(error) {
     const cancelled=error.name==='AbortError'&&agentJobs.get(id)?.signal.aborted;
-    const recoverable=cancelled||error.code==='paint_history_full';
+    const recoverable=observing||cancelled||error.code==='paint_history_full';
     if(!recoverable)failed=error;
     postMessage({id,error:{name:error.name,message:String(error.message||error),...(typeof error.code==='string'?{code:error.code}:{})},...(recoverable?{recoverable:true}:{})});
    } finally {agentJobs.delete(id);}

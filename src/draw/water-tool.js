@@ -52,12 +52,17 @@ function _rapierWaterSet(key, value) {
 	settings[key] = value;
 	if (key === 'brush') {
 		const brush = _rapierWaterEngine().WATER_BRUSHES.find(row => row.id === value);
-		if (brush) { settings.water = brush.water; settings.load = brush.load; settings.size = _rapierWaterEngine().waterHandSize(brush.size); settings.angle = brush.angle; settings.follow = brush.follow; settings.tip = null; settings.tipKey = null; settings.tipName = ''; }
+		if (brush) { settings.size = _rapierWaterEngine().waterHandSize(brush.size); settings.angle = brush.angle; settings.follow = brush.follow; settings.tip = null; settings.tipKey = null; settings.tipName = ''; }
 		const own = _rapierWaterOwn().find(row => row.id === value); if (own) { Object.assign(settings, own.water); settings.size = _rapierWaterEngine().waterHandSize(settings.size); settings.tipName=own.name; settings.tipKey=own.id; settings.strength=own.water.firm ? 'firm' : 'light'; }
 		settings.tool = 'brush'; settings.sampling = false;
 	}
 	const background = _rapierDrawState.recipe?.background;
 	if (key === 'paper' && background?.kind === 'paper' && background.paper !== value && typeof _rapierBgCommit === 'function') _rapierBgCommit({...background, paper: value});
+	_rapierWaterSave(); _rapierWaterUpdate();
+}
+function _rapierWaterStrength(id) {
+	const stop = _rapierWaterEngine().WATER_STRENGTHS.find(row => row.id === id); if (!stop) return;
+	const settings = _rapierWaterState(); settings.load = stop.load; settings.water = stop.water;
 	_rapierWaterSave(); _rapierWaterUpdate();
 }
 function _rapierWaterPaperDefault(anyTool = false) {
@@ -107,7 +112,10 @@ function _rapierWaterPanelsHTML() {
 		'<div class="rapier-draw-brushes rapier-draw-water-tools" data-draw-panel="waterTools" role="group" aria-label="Water tools" hidden></div>' +
 		'<div class="rapier-draw-brushes rapier-draw-water-paper" data-draw-panel="waterPaper" role="group" aria-label="Paper" hidden></div>' +
 		'<div class="rapier-draw-colours rapier-draw-water-pigments" data-draw-panel="waterPigments" role="group" aria-label="Pigments" hidden></div>' +
-		'<div class="rapier-draw-dip rapier-draw-water-load" data-draw-panel="waterLoad" role="group" aria-label="Water and pigment load" hidden>' + metric('water','Water') + metric('load','Load') + metric('flow','Flow') + metric('bleed','Bleed') + metric('edge','Edge') + metric('granulation','Grain') + metric('dry','Dry') +
+		'<div class="rapier-draw-dip rapier-draw-water-load" data-draw-panel="waterLoad" role="group" aria-label="Water and pigment load" hidden>' +
+		'<div class="rapier-draw-dip-firmness"><span>Strength</span><div class="rapier-draw-dip-firmness-choices" role="radiogroup" aria-label="Strength">' + _rapierWaterEngine().WATER_STRENGTHS.map(stop =>
+			'<button type="button" class="rapier-draw-chip" role="radio" data-water-mix="' + stop.id + '" aria-checked="false" tabindex="-1">' + stop.name + '</button>').join('') + '</div></div>' +
+		metric('water','Water') + metric('load','Load') + metric('flow','Flow') + metric('bleed','Bleed') + metric('edge','Edge') + metric('granulation','Grain') + metric('dry','Dry') +
 		'<div class="rapier-draw-dip-firmness"><span>Brush firmness</span><div class="rapier-draw-dip-firmness-choices">' + ['firm','light'].map(value =>
 			'<button type="button" class="rapier-draw-chip rapier-draw-chip--icon" data-water-strength="' + value + '" aria-pressed="false">' + (value === 'firm' ? RAPIER_PAINT_ICON_GAUGE_FIRM : RAPIER_PAINT_ICON_GAUGE_LIGHT) + '<span class="rapier-draw-chip-name">' + value + '</span></button>').join('') + '</div></div></div>' +
 		'<input type="file" data-water-tip-input accept="image/png,image/jpeg,image/webp,application/json,.json" hidden>';
@@ -178,6 +186,8 @@ function _rapierWaterUpdate() {
 		const output = surface.querySelector('[data-water-output="' + key + '"]'); output.textContent = input.value + '%'; input.setAttribute('aria-valuetext', output.textContent);
 	}
 	for (const button of surface.querySelectorAll('[data-water-strength]')) button.setAttribute('aria-pressed', String(button.dataset.waterStrength === settings.strength));
+	const stop = engine.waterStrengthOf(settings.load, settings.water), stops = [...surface.querySelectorAll('[data-water-mix]')];
+	for (const button of stops) { const on = button.dataset.waterMix === stop?.id; button.setAttribute('aria-checked', String(on)); button.tabIndex = on || (!stop && button === stops[0]) ? 0 : -1; }
 	if (focusKey && (!focused.isConnected || !_rapierDrawChoiceAvailable(focused))) {
 		const row = surface.querySelector('[data-draw-panel="' + focusPanel.dataset.drawPanel + '"]');
 		const choice = row?.querySelector('[' + focusKey + '="' + CSS.escape(focusValue) + '"]');
@@ -223,6 +233,7 @@ function _rapierWaterBind(surface) {
 			if (_rapierDrawState.finishing) return;
 			const button = event.target.closest('button'); if (!button) return;
 			if (button.hasAttribute('data-draw-paint-head')) { _rapierPaintAngleOpen(true); return; }
+			if (button.dataset.waterMix) { _rapierWaterStrength(button.dataset.waterMix); return; }
 			for (const key of ['brush','paper','pigment','strength']) if (button.dataset['water' + key[0].toUpperCase() + key.slice(1)] != null) {
 				await _rapierWaterProChoose(key, button.dataset['water' + key[0].toUpperCase() + key.slice(1)]); return;
 			}

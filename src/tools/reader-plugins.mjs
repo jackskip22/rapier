@@ -55,6 +55,7 @@ export function builtFromManifest(manifest) {
 export async function pluginManifest({root, version, loader, built}) {
 	const files = await pluginPackFiles({root, loader});
 	const {OCR_MODEL} = await import(pathToFileURL(resolve(root, 'images/ocr.mjs')).href), {LETTER_SETS} = await import(pathToFileURL(resolve(root, 'draw/letters.mjs')).href);
+	const {BORDER_PINS, ELEMENT_PINS} = await import(pathToFileURL(resolve(root, 'presets/pins.mjs')).href);
 	const shared = name => files.filter(file => file.plugin === name).map(file => entry(file));
 	const own = (key, builds) => ({name: key, adds: PLUGINS[key].adds, builds, files: [entry(built.find(plugin => plugin.key === key))]});
 	const plugins = [
@@ -69,6 +70,8 @@ export async function pluginManifest({root, version, loader, built}) {
 			files: shared('font-subset')},
 		{name: 'letters', adds: 'Draw\'s ornamental letter sets: ' + LETTER_SETS.map(set => set.name).join(', ') + '.', builds: ['full'],
 			files: shared('letters')},
+		{name: 'templates', adds: 'Starters\' traced page borders: ' + BORDER_PINS.length + ' borders from the ornament book.', builds: ['full'], files: shared('templates')},
+		{name: 'elements', adds: 'The Elements sheet\'s traced ornaments: ' + ELEMENT_PINS.reduce((sum, pack) => sum + pack.items, 0).toLocaleString('en-US') + ' pieces from the ornament book.', builds: ['full'], files: shared('elements')},
 	];
 	for (const plugin of plugins) for (const file of plugin.files) if (!file.file || file.file.startsWith('/') || file.file.includes('..')) throw new Error('Reader plug-ins: ' + plugin.name + ' names a file that cannot sit in a directory: ' + file.file);
 	const names = plugins.flatMap(plugin => plugin.files.map(file => file.file));

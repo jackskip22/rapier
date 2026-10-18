@@ -135,6 +135,7 @@ export class RemotePaintSurface {
 	}
 	async readRGBA8(box = null) { return (await this.remote.read(this, {box})).pixels; }
 	readBounds(options = {}) { return this.remote.read(this, {bounds: true, ...options}); }
+	observe(options = {}) { return this.remote.observe(this, options); }
 	waterSheet() { return {id:this.sheetId,width:this.width,height:this.height,offset:this.importOffset.slice(),scale:this.scale,toothOX:this.toothOX,toothOY:this.toothOY,options:{...structuredClone(this.options),mode:'water',paper:this.options.paper || 'cold-press'}}; }
 	applyWater(action) {
 		const data=structuredClone(action),dx=this.toothOX/(this.scale*3),dy=this.toothOY/(this.scale*3),point=([x,y,...rest])=>[x+dx,y+dy,...rest];
@@ -327,6 +328,19 @@ export function createPaintRemote(client, {onFailure = null, frame = schedule} =
 			const extra = surface && !surface.gone ? {include: [surface.id]} : {};
 			if (surface?.options.mode !== 'water' && options.materialOnly === true) extra.materialOnly = true;
 			return Promise.all([remote._send([], extra),surface?.materialReady]).then(([reply])=>reply);
+		},
+		async observe(surface, {signal} = {}) {
+			const live = () => { if (failure) throw failure; checkByteAbort(signal); };
+			live();
+			if (surface.gone || surfaces.get(surface.id) !== surface) throw new Error('The paint surface is no longer live');
+			let reply;
+			try { reply = await client.request('read', {surfaceId:surface.id,observation:true}); }
+			catch (error) { throw error.recoverable ? error : remote._fail(error); }
+			live();
+			const verified = !!reply.pixels && await paintDigestMatches(reply.pixels.data, reply.digest, {signal});
+			live();
+			if (reply.pixels && !verified) throw remote._fail(new Error('The painter\'s observation does not match its digest'));
+			return {...reply,verified};
 		},
 		async read(surface, request = {}) {
 			const {signal, ...wire} = request;

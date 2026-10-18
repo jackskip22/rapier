@@ -9,7 +9,7 @@ export {PAPER_KINDS, PRO_PAPER_KINDS};
 
 const brushDefaults = {
  aspect:1,rotation:'fixed',angle:0,angleJitter:0,size:[.011,.05],pressureSize:1,speedThin:0,
- spacing:.3,scatter:0,dabs:1,sizeJitter:0,water:1,load:1,flow:1,capacity:1,grain:0,wetRound:.6
+ spacing:.3,scatter:0,dabs:1,sizeJitter:0,splay:0,water:1,load:1,flow:1,capacity:1,grain:0,wetRound:.6
 };
 const profiles = [
  ['round','Round',{}],
@@ -19,7 +19,7 @@ const profiles = [
  ['hake','Hake',{aspect:.2,rotation:'follow',angle:90,angleJitter:2,size:[.05,.08],pressureSize:1.6,spacing:.1,water:1.6,load:.75,flow:1.2,capacity:2.2,wetRound:.5}],
  ['filbert','Filbert',{aspect:.55,angle:25,angleJitter:2,size:[.012,.036],spacing:.18,wetRound:.5}],
  ['mop','Mop',{size:[.03,.075],pressureSize:.8,spacing:.25,water:1.8,load:.8,flow:1.3,capacity:2.6,wetRound:.7}],
- ['dry','Dry Brush',{aspect:.75,rotation:'follow',angleJitter:8,size:[.012,.036],spacing:.12,water:.2,load:1.1,capacity:.6,grain:.9,wetRound:0}],
+ ['dry','Dry Brush',{aspect:.75,rotation:'follow',angleJitter:8,size:[.012,.036],spacing:.12,splay:.25,water:.2,load:1.1,capacity:.6,grain:.9,wetRound:0}],
  ['fan','Fan',{aspect:.5,rotation:'follow',angle:90,angleJitter:3,size:[.02,.045],pressureSize:1.2,spacing:.1,water:.3,capacity:.8,grain:.5,wetRound:0}],
  ['sponge','Sponge',{rotation:'random',size:[.025,.05],pressureSize:.7,spacing:.55,scatter:.3,sizeJitter:.3,water:.5,load:.9,capacity:1.2,grain:.45,wetRound:.1}],
  ['spatter','Spatter',{rotation:'random',size:[.003,.008],pressureSize:.8,spacing:4.5,scatter:10,dabs:5,sizeJitter:.75,water:1.3,load:1.1,capacity:1.5,wetRound:0}],

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {VISUAL_LIMITS, visualDimensions} from './visual.mjs';
-import {_rapierDrawBuildSVG} from '../draw/core.mjs';
+import {_rapierDrawBuildSVG, _rapierDrawShapePolygon} from '../draw/core.mjs';
 import {sanitizeSvgText, decodeDataImage, inspectRaster, inspectJPEGXL} from '../images/assets.mjs';
+import {portablePaintPNG} from '../images/paint-raster.mjs';
 
 const DOM_BYTES = 16 * 1024 * 1024;
 const SVG = 'http://www.w3.org/2000/svg', XHTML = 'http://www.w3.org/1999/xhtml';
@@ -52,7 +53,7 @@ function encodeCanvas(canvas, check, imageBudget) {
   }
 }
 
-export async function captureDrawing({recipe, clip, signal, current, imageBudget}) {
+export async function captureDrawing({recipe, clip, signal, current, imageBudget, detail = false}) {
   const document = globalThis.document, window = document?.defaultView;
   if (!document || !window) throw error('visual_render_unavailable');
   if (!clip || !['x', 'y', 'width', 'height'].every(key => Number.isFinite(clip[key])) ||
@@ -60,12 +61,6 @@ export async function captureDrawing({recipe, clip, signal, current, imageBudget
   const outputWidth = clip.outputWidth ?? VISUAL_LIMITS.edge, outputHeight = clip.outputHeight ?? VISUAL_LIMITS.edge;
   if (!Number.isFinite(outputWidth) || !Number.isFinite(outputHeight) || outputWidth <= 0 || outputHeight <= 0)
     throw error('visual_target_unavailable');
-  let scale = Math.min(1, Math.min(outputWidth, VISUAL_LIMITS.edge) / clip.width,
-    Math.min(outputHeight, VISUAL_LIMITS.edge) / clip.height);
-  const area = clip.width * scale * (clip.height * scale);
-  if (area > VISUAL_LIMITS.pixels) scale *= Math.sqrt(VISUAL_LIMITS.pixels / area);
-  const width = Math.max(1, Math.floor(clip.width * scale)), height = Math.max(1, Math.floor(clip.height * scale));
-  if (!visualDimensions(width, height)) throw error('visual_too_large');
   const controller = new AbortController(), cancelled = () => controller.abort(signal?.reason);
   signal?.addEventListener('abort', cancelled, {once: true});
   if (signal?.aborted) cancelled();
@@ -85,30 +80,65 @@ export async function captureDrawing({recipe, clip, signal, current, imageBudget
     if (parsed.querySelector('parsererror') || svg?.namespaceURI !== SVG || svg.localName !== 'svg')
       throw error('visual_render_unavailable');
     for (const metadata of [...svg.querySelectorAll('metadata')]) metadata.remove();
-    const resources = new Set();
+    const resources = new Map();
     let sourcePixels = 0;
     for (const node of svg.querySelectorAll('image,feImage')) {
       const url = node.getAttribute('href') || node.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
-      if (!url || resources.has(url)) continue;
-      resources.add(url);
-      if (!/^data:image\/(?:png|jxl);base64,/.test(url)) throw error('visual_resources_unavailable');
-      let header;
-      try {
-        const bytes = decodeDataImage(url);
-        header = url.startsWith('data:image/jxl;') ? inspectJPEGXL(bytes) : inspectRaster(bytes);
-      } catch (failure) {
-        throw error(['JXL_SIZE', 'JXL_DIMENSIONS', 'RASTER_SIZE', 'RASTER_DIMENSIONS'].includes(failure?.code)
-          ? 'visual_too_large' : 'visual_resources_unavailable');
+      if (!url) continue;
+      let resource = resources.get(url);
+      if (!resource) {
+        if (!/^data:image\/(?:png|jxl);base64,/.test(url)) throw error('visual_resources_unavailable');
+        let header;
+        try {
+          const bytes = decodeDataImage(url);
+          header = url.startsWith('data:image/jxl;') ? inspectJPEGXL(bytes) : inspectRaster(bytes);
+        } catch (failure) {
+          throw error(['JXL_SIZE', 'JXL_DIMENSIONS', 'RASTER_SIZE', 'RASTER_DIMENSIONS'].includes(failure?.code)
+            ? 'visual_too_large' : 'visual_resources_unavailable');
+        }
+        sourcePixels += header.width * header.height;
+        if (sourcePixels > VISUAL_LIMITS.pixels * 4) throw error('visual_too_large');
+        let decoded, display = url;
+        try { decoded = await loadImage(window, display, controller.signal); }
+        catch {
+          check();
+          if (!url.startsWith('data:image/jxl;')) throw error('visual_resources_unavailable');
+          try {
+            display = await portablePaintPNG(url, {signal: controller.signal});
+            check();
+            if (!display) throw error('visual_resources_unavailable');
+            decoded = await loadImage(window, display, controller.signal);
+          } catch { check(); throw error('visual_resources_unavailable'); }
+        }
+        check();
+        if (decoded.naturalWidth !== header.width || decoded.naturalHeight !== header.height)
+          throw error('visual_resources_unavailable');
+        resource = {url: display, ...header}; resources.set(url, resource);
       }
-      sourcePixels += header.width * header.height;
-      if (sourcePixels > VISUAL_LIMITS.pixels * 4) throw error('visual_too_large');
-      let decoded;
-      try { decoded = await loadImage(window, url, controller.signal); }
-      catch { throw error('visual_resources_unavailable'); }
-      check();
-      if (decoded.naturalWidth * decoded.naturalHeight !== header.width * header.height)
-        throw error('visual_resources_unavailable');
+      if (resource.url !== url) {
+        node.setAttribute('href', resource.url);
+        node.removeAttributeNS('http://www.w3.org/1999/xlink', 'href');
+      }
     }
+    let density = 1;
+    for (const shape of recipe.shapes || []) {
+      if (shape.recognized !== 'paint' || !shape.raster) continue;
+      const frame = _rapierDrawShapePolygon(shape, recipe), header = resources.get(shape.raster);
+      const px = shape.paint?.px || (header && [header.width, header.height]);
+      if (!frame || !px) continue;
+      const w = shape.geom.w || Math.hypot(frame[1][0] - frame[0][0], frame[1][1] - frame[0][1]);
+      const h = shape.geom.h || Math.hypot(frame[3][0] - frame[0][0], frame[3][1] - frame[0][1]);
+      if (!(w > 0) || !(h > 0)) throw error('visual_target_unavailable');
+      density = Math.max(density, px[0] / w, px[1] / h);
+    }
+    const nativeWidth = Math.max(1, Math.ceil(clip.width * density)), nativeHeight = Math.max(1, Math.ceil(clip.height * density));
+    if (!Number.isSafeInteger(nativeWidth) || !Number.isSafeInteger(nativeHeight)) throw error('visual_too_large');
+    let scale = Math.min(detail ? density : 1, Math.min(outputWidth, VISUAL_LIMITS.edge) / clip.width,
+      Math.min(outputHeight, VISUAL_LIMITS.edge) / clip.height);
+    const area = clip.width * scale * (clip.height * scale);
+    if (area > VISUAL_LIMITS.pixels) scale *= Math.sqrt(VISUAL_LIMITS.pixels / area);
+    const width = Math.max(1, Math.floor(clip.width * scale)), height = Math.max(1, Math.floor(clip.height * scale));
+    if (!visualDimensions(width, height)) throw error('visual_too_large');
     svg.setAttribute('viewBox', `${clip.x} ${clip.y} ${clip.width} ${clip.height}`);
     svg.setAttribute('width', String(width)); svg.setAttribute('height', String(height));
     const serialized = new window.XMLSerializer().serializeToString(svg);
@@ -119,7 +149,8 @@ export async function captureDrawing({recipe, clip, signal, current, imageBudget
     const context = canvas.getContext('2d');
     if (!context) throw error('visual_render_unavailable');
     context.drawImage(image, 0, 0);
-    return encodeCanvas(canvas, check, imageBudget);
+    const described = image => ({...image, nativeWidth, nativeHeight, reduced: image.width < nativeWidth || image.height < nativeHeight});
+    return described(encodeCanvas(canvas, check, imageBudget ? image => imageBudget(described(image)) : undefined));
   } catch (failure) {
     if (signal?.aborted) throw error('cancelled');
     if (controller.signal.aborted) throw error('visual_capture_expired');

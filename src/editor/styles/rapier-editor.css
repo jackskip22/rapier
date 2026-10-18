@@ -307,6 +307,7 @@ body.rapier-notes-open .rapier-frontmatter { display: none; }
 	overflow-anchor: none;
 	outline: none;
 	caret-color: transparent;
+	isolation: isolate;
 }
 :is(#editor-blocks, #editor-blocks > .block-sleep-group) > .block-wrapper { max-width: var(--md-measure, 39.6rem); margin-inline: auto; }
 #editor-blocks .md-render {
@@ -1468,3 +1469,6 @@ span[data-rapier-markdown-image][data-rapier-remote-src]:not(.rapier-remote-imag
 .rapier-image-lightbox__close svg{width:24px;height:24px}
 
 #editor-blocks > .block-sleep-group { contain: layout style; }
+
+.rapier-empty-starters{display:flex;justify-content:center;padding-block:var(--space-6)}
+.rapier-empty-starters__btn{appearance:none;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;padding:0 var(--space-3);border:0;border-radius:0;background:transparent;color:var(--color-text);font:var(--fw-semibold) var(--text-sm) var(--font-mono);letter-spacing:var(--track-caps-ui);text-transform:uppercase;white-space:nowrap;cursor:pointer;touch-action:manipulation}

@@ -10,8 +10,6 @@
   const transactionPrincipals = new Map(), doorNames = new Map();
   const subscribers = new Set();
   const contextSubscribers = new Set();
-  const ownedNotesEndpoints = new Set(), ownedNotesAccessEndpoints = new Map();
-  let notesAccessGeneration = 0;
   const registrations = new Map();
   const failures = new Map();
   const apps = globalThis.RAPIER_APPS_HOST === true;
@@ -412,6 +410,10 @@
 
   async function editorAction(record) {
     const request = record.request;
+    if (request.action === 'save_preset') {
+      if (!await _rapierPartReady('presets') || !editorCurrent(record)) return false;
+      return !!await _rapierPresetPart.saveFromAgent(request.name, request.value, () => editorCurrent(record));
+    }
     if (request.action === 'playback') return document.rapierObjects?.playback(playbackImage(request), request.value)?.ok === true;
     if (request.action === 'read_aloud') return _readFlatDoc(0, request.text) === true;
     if (request.action === 'copy') {
@@ -471,9 +473,9 @@
 
   function editorShowCard(record) {
     const request = record.request;
-    const labels = {read_aloud: 'read aloud', copy: 'copy passage', open_file: 'open a file', install_plugin: 'install plug-in'};
+    const labels = {read_aloud: 'read aloud', copy: 'copy passage', open_file: 'open a file', install_plugin: 'install plug-in', save_preset: 'Save starter'};
     const shown = request.text ? editorProtocol.editorPreview(request.text) : null;
-    const message = shown ? (shown.omitted ? shown.head + ' … ' + shown.omitted + ' more characters … ' + shown.tail : shown.head) : (request.plugin ? 'Install ' + request.plugin + ' on this device?' : 'Choose a file from this device to open in Rapier.');
+    const message = request.action === 'save_preset' ? 'Save ' + (request.value === 'style' ? 'this document’s fonts and line spacing' : 'this document') + ' in your personal starters as “' + request.name + '”?' : shown ? (shown.omitted ? shown.head + ' … ' + shown.omitted + ' more characters … ' + shown.tail : shown.head) : (request.plugin ? 'Install ' + request.plugin + ' on this device?' : 'Choose a file from this device to open in Rapier.');
     const answer = rapierConfirm({title: labels[request.action], message, confirmLabel: labels[request.action]});
     record.confirmId = _rapierUi.confirmId;
     editorCard = record;
@@ -1165,14 +1167,14 @@
         ...(request.drawing ? {drawing: globalThis.RapierAgentVisual.visualDrawingIdentity(request.drawing)} : {}),
         ...(request.sourceRange ? {sourceRange: {...request.sourceRange}} : {})},
         content: [{type: 'image', mimeType: image.mimeType, data: ''}]};
-      return PAGE_RESULT_BYTES - 1 - resultBytes(output);
+      return (request.detail ? Math.ceil(globalThis.RapierAgentVisual.VISUAL_LIMITS.imageBytes / 3) * 4 + PAGE_RESULT_BYTES : PAGE_RESULT_BYTES) - 1024 - resultBytes(output);
     };
   }
 
   async function inspectDrawingVisual(request, expected, drawing) {
     const visual = globalThis.RapierAgentVisual;
     const identity = {documentId: request.documentId, revision: request.revision, scope: request.scope,
-      drawing: visual.visualDrawingIdentity(drawing)};
+      drawing: visual.visualDrawingIdentity(drawing), ...(request.sourceRange ? {sourceRange: {...request.sourceRange}} : {})};
     const refuse = reason => ({...identity, outcome: 'refused', reason});
     if (!visual.sameVisualDrawing(request.drawing, drawing)) return refuse('visual_target_changed');
     if (drawing.recipeUnavailable || !drawing.recipe) return refuse('visual_render_unavailable');
@@ -1180,7 +1182,7 @@
     if (before.documentId !== request.documentId || before.revision !== revision ||
         (expected && (expected.expectedDocumentId !== before.documentId || expected.expectedText !== before.text ||
           expected.expectedGeneration !== before.generation))) return refuse('document_changed');
-    const field = request.scope === 'page' ? 'canvas' : request.scope === 'selection' ? 'selection' : 'visible';
+    const field = request.scope === 'page' || request.named ? 'canvas' : request.scope === 'selection' ? 'selection' : 'visible';
     const clip = drawing.bounds?.[field];
     if (!clip || !(clip.width > 0 && clip.height > 0)) return refuse('visual_target_missing');
     if (typeof globalThis.RapierVisualCapture?.captureDrawing !== 'function') return refuse('visual_render_unavailable');
@@ -1190,8 +1192,9 @@
     visualFlight = controller;
     const geometry = JSON.stringify({clip, transform: request.scope === 'viewport' ? drawing.transform : null,
       selected: request.scope === 'selection' ? drawing.selectedObjects : null});
+    const sequence = humanSequence;
     const current = () => {
-      if (!visible() || admission() || _rapierMutationBarrierActive() || String(rapier.identity.authority) !== before.documentId ||
+      if (controller.signal.aborted || humanSequence !== sequence || !visible() || admission() || _rapierMutationBarrierActive() || String(rapier.identity.authority) !== before.documentId ||
           Number(rapier.revision.settled) !== revision || Number(rapier.revision.generation) !== before.generation ||
           _rapierSourceText() !== before.text) return false;
       const next = drawingContext();
@@ -1200,8 +1203,78 @@
         selected: request.scope === 'selection' ? next?.selectedObjects : null});
     };
     try {
-      const image = await globalThis.RapierVisualCapture.captureDrawing({recipe: drawing.recipe, clip, signal: controller.signal, current, imageBudget: request.imageBudget});
-      return current() ? {...identity, outcome: 'ok', image} : refuse('visual_target_changed');
+      const observed = request.detail ? await _rapierDrawPart?.observe({recipe: drawing.recipe, signal: controller.signal, current}) : {recipe: drawing.recipe};
+      if (!observed?.recipe) return refuse('visual_render_unavailable');
+      const image = await globalThis.RapierVisualCapture.captureDrawing({recipe: observed.recipe, clip,
+        detail: request.detail, signal: controller.signal, current, imageBudget: request.imageBudget});
+      return current() ? {...identity, outcome: 'ok', image, ...(observed.state ? {state: observed.state} : {})} : refuse('visual_target_changed');
+    } catch (error) {
+      return refuse(request.signal?.aborted ? 'cancelled' : error?.code || 'visual_render_unavailable');
+    } finally {
+      request.signal?.removeEventListener('abort', abortCapture);
+      if (visualFlight === controller) visualFlight = null;
+    }
+  }
+
+  async function inspectStoredDrawingVisual(request, expected) {
+    const visual = globalThis.RapierAgentVisual;
+    const identity = {documentId: request.documentId, revision: request.revision, scope: request.scope,
+      sourceRange: {...request.sourceRange}, ...(request.drawing ? {drawing: request.drawing} : {})};
+    const refuse = reason => ({...identity, outcome: 'refused', reason});
+    const before = documentState(), revision = expected?.expectedRevision ?? request.revision;
+    if (before.documentId !== request.documentId || before.revision !== revision ||
+        (expected && (expected.expectedDocumentId !== before.documentId || expected.expectedText !== before.text ||
+          expected.expectedGeneration !== before.generation))) return refuse('document_changed');
+    const controller = new AbortController(), abortCapture = () => controller.abort(request.signal?.reason);
+    request.signal?.addEventListener('abort', abortCapture, {once: true});
+    if (request.signal?.aborted) abortCapture();
+    visualFlight = controller;
+    const sequence = humanSequence;
+    const current = () => !controller.signal.aborted && visible() && !admission() && !_rapierMutationBarrierActive() &&
+      humanSequence === sequence && String(rapier.identity.authority) === before.documentId &&
+      Number(rapier.revision.settled) === revision && Number(rapier.revision.generation) === before.generation &&
+      _rapierSourceText() === before.text;
+    try {
+      if (!current()) return refuse('document_changed');
+      const raw = before.text.slice(request.sourceRange.start, request.sourceRange.end);
+      const match = /^!\[((?:\\.|[^\]\\])*)\]\[([^\]\r\n]+)\](?:[ \t]*<!--md-layout:v1[^>]*-->)?$/.exec(raw);
+      if (!match) return refuse('visual_target_missing');
+      const assets = globalThis.RapierImageAssets;
+      const asset = assets.documentAssets(before.text).assets.get(assets.normalizeLabel(match[2]));
+      if (!asset || !/^data:image\/svg\+xml;base64,/i.test(asset.url)) return refuse('visual_target_unavailable');
+      let recipe = globalThis.RapierDrawCore._rapierDrawReadRecipeFromSVGText(new TextDecoder().decode(assets.decodeDataImage(asset.url)));
+      if (!recipe?.view) return refuse('visual_target_unavailable');
+      let state = recipe.shapes.some(shape => shape.paint?.mode === 'water') ? 'stored' : 'settled', projection = 'stored';
+      if (state === 'stored' && typeof globalThis.RapierDrawAgentPaint?.observeAgentPainting !== 'function') {
+        await part('drawing');
+        if (!current()) return refuse('document_changed');
+      }
+      if (!request.preview && state === 'stored') {
+        const states = [];
+        for (const shape of recipe.shapes) if (shape.paint?.mode === 'water') {
+          let observed;
+          try { observed = await globalThis.RapierDrawAgentPaint.observeAgentPainting(shape, {signal: controller.signal}); }
+          catch (error) { if (controller.signal.aborted) throw error; }
+          if (!current()) return refuse('document_changed');
+          states.push(observed?.state || 'stored');
+        }
+        state = states.includes('wet') ? 'wet' : states.includes('stored') ? 'stored' : 'settled';
+      }
+      if (request.preview) {
+        recipe = structuredClone(recipe);
+        for (const shape of recipe.shapes) if (shape.paint?.mode === 'water') {
+          const observed = await globalThis.RapierDrawAgentPaint.observeAgentPainting(shape, {settle: true, signal: controller.signal});
+          if (!current()) return refuse('document_changed');
+          if (observed?.unavailable) return refuse('visual_resources_unavailable');
+          if (observed) Object.assign(shape, {raster: observed.raster, geom: observed.geom, paint: observed.paint});
+        }
+        state = 'settled'; projection = 'settled';
+      }
+      const view = recipe.view, clip = {x: view.x, y: view.y, width: view.w, height: view.h,
+        ...(request.preview ? {outputWidth: visual.DRAWING_PREVIEW_EDGE, outputHeight: visual.DRAWING_PREVIEW_EDGE} : {})};
+      const image = await globalThis.RapierVisualCapture.captureDrawing({recipe, clip, detail: true,
+        signal: controller.signal, current, imageBudget: request.preview ? () => request.previewChars || visual.DRAWING_PREVIEW_CHARS : request.imageBudget});
+      return current() ? {...identity, outcome: 'ok', image, state, projection} : refuse('document_changed');
     } catch (error) {
       return refuse(request.signal?.aborted ? 'cancelled' : error?.code || 'visual_render_unavailable');
     } finally {
@@ -1220,6 +1293,7 @@
       return refuse('visual_target_unavailable');
     if (admission() || !visible()) return refuse('host_not_connected');
     const drawing = drawingContext();
+    if (request.detail && (request.preview || !request.drawing)) return inspectStoredDrawingVisual(request, expected);
     if (drawing?.open) return inspectDrawingVisual(request, expected, drawing);
     if (request.drawing) return refuse('visual_target_changed');
     if (hostFence()) return refuse(hostFence());
@@ -1696,12 +1770,35 @@
         const requirements = {kind: 'visual', documentId: result.observation.documentId,
           revision: result.observation.revision, scope: result.observation.scope,
           ...(result.observation.drawing ? {drawing: result.observation.drawing} : {}),
-          ...(result.observation.sourceRange ? {sourceRange: result.observation.sourceRange} : {})};
+          ...(result.observation.sourceRange ? {sourceRange: result.observation.sourceRange, ...(result.observation.named ? {named: true} : {})} : {}),
+          ...(result.observation.detail ? {block: result.observation.block, detail: true} : {})};
         visualFact ||= await inspectVisual({...requirements, signal: who.signal,
           ...(who.transport === 'webmcp' ? {imageBudget: visualImageBudget(result, requirements)} : {})});
         const validated = globalThis.RapierAgentVisual.visualResult(requirements, visualFact);
         if (validated.outcome !== 'ok') return {...result, ...validated, observation: undefined};
         return {...result, ...validated, content: [{type: 'image', mimeType: 'image/png', data: visualFact.image.data}]};
+      }
+
+      if (name === 'edit' && ['applied', 'rebased'].includes(result.outcome) && result.previews?.length) {
+        const visual = globalThis.RapierAgentVisual, previews = [], content = [];
+        const chars = Math.min(visual.DRAWING_PREVIEW_CHARS, Math.floor(visual.DRAWING_PREVIEW_TOTAL_CHARS / result.previews.length));
+        for (const target of result.previews) {
+          try {
+            const prepared = visual.visualRequest({...documentState(), drawing: null}, {expectedRevision: target.revision,
+              scope: 'focus', sourceRange: target.sourceRange, block: target.block, detail: true, preview: true, previewChars: chars});
+            if (target.documentId !== String(rapier.identity.authority) || prepared.outcome !== 'ok') {
+              previews.push({block: target.block, outcome: 'unavailable', reason: prepared.reason || 'document_changed'}); continue;
+            }
+            const fact = await inspectVisual({...prepared.request, signal: who.signal});
+            const observed = visual.visualResult(prepared.request, fact);
+            previews.push({block: target.block, ...(observed.outcome === 'ok' ? {outcome: 'ok', observation: observed.observation}
+              : {outcome: 'unavailable', reason: observed.reason})});
+            if (observed.outcome === 'ok') content.push({type: 'image', mimeType: fact.image.mimeType, data: fact.image.data});
+          } catch (error) {
+            previews.push({block: target.block, outcome: 'unavailable', reason: who.signal?.aborted ? 'cancelled' : 'visual_render_unavailable'});
+          }
+        }
+        return {...result, previews, ...(content.length ? {content} : {})};
       }
 
       return result;
@@ -1769,7 +1866,12 @@
             try {
               const result = await invoke(tool.name, args, {actor: 'agent', principal: 'webmcp', transport: 'webmcp',
                 requestId: crypto.randomUUID(), signal: tool.name === 'show' ? AbortSignal.any(signals) : flight.signal});
-              return boundedResult(modelReply(tool.name, result), {readOnly: tool.effect === 'read'});
+              const reply = modelReply(tool.name, result, {notesVersions: globalThis.RAPIER_WORKSPACE === true});
+              if (reply.content?.some(item => item.type === 'image')) {
+                const {content, ...text} = reply;
+                return {...boundedResult(text, {readOnly: tool.effect === 'read'}), content};
+              }
+              return boundedResult(reply, {readOnly: tool.effect === 'read'});
             } finally {
               for (const signal of signals) signal.removeEventListener('abort', cancel);
             }
@@ -2292,7 +2394,8 @@
         try { carriedLedger = remoteLedger(value, null); }
         catch (_) { return fail('snapshot_history_invalid', 'invalid'); }
         const loaded = await rapierLoad(value.text, value.filename, {documentAuthority: value.documentId,
-          documentKind: value.docKind, expectedMutationStamp: stamp, returnReceipt: true, appsSnapshot: true, carriedLedger});
+          documentKind: value.docKind, expectedMutationStamp: stamp, returnReceipt: true, appsSnapshot: true, carriedLedger,
+          restore: globalThis.RAPIER_WORKSPACE === true});
         if (!loaded) return fail('document_changed', 'conflict');
         sourceApplied = true;
       } else if (value.text !== before.text || value.filename !== before.filename || value.docKind !== before.docKind ||
@@ -2419,68 +2522,6 @@
     _rapierAgentBarRender();
   }
 
-  async function ownedNotesAdapter(options = {}) {
-    await ready;
-    if (!globalThis.rapierNotesHost) await part('notes');
-    if (typeof globalThis.RapierOwnedNotesAdapter?.createOwnedNotesAdapter !== 'function' ||
-        typeof _rapierNotesReady !== 'function') throw Object.assign(new Error('notes_not_configured'), {code: 'notes_not_configured'});
-    await _rapierNotesReady();
-    await _rapierNotesStore.kind();
-    const door = globalThis.rapierNotesHost, folder = _rapierNotesStore.folder, bytes = _rapierNotesStore.bytes;
-    const native = globalThis.RapierPlatform?.host?.notesStore, current = options.isCurrent || (() => true);
-    const endpoint = globalThis.RapierOwnedNotesAdapter.createOwnedNotesAdapter({...options,
-      activeDocument: () => door.activeDocument(),
-      isDocumentCurrent: grant => typeof options.isDocumentCurrent !== 'function' || options.isDocumentCurrent(grant) === true,
-      isCurrent: (scope, actor) => !!folder && globalThis.rapierNotesHost === door && _rapierNotesStore.folder === folder &&
-        _rapierNotesStore.bytes === bytes && globalThis.RapierPlatform?.host?.notesStore === native && current(scope, actor) === true,
-      invoke: (name, args, request) => invoke(name, args, {actor: 'agent', principal: request.principal,
-        transport: request.transport, requestId: request.requestId, signal: request.signal, notesGuard: request.notesGuard, documentGuard: request.documentGuard}),
-    });
-    const endpointId = crypto.randomUUID();
-    const connected = Object.freeze({receive: endpoint.receive, captureCheckpoint: endpoint.captureCheckpoint,
-      grantDocument: endpoint.grantDocument, revokeDocument: endpoint.revokeDocument, lock: () => {
-      ownedNotesEndpoints.delete(connected); ownedNotesAccessEndpoints.delete(endpointId); return endpoint.lock();
-    }});
-    ownedNotesEndpoints.add(connected);
-    ownedNotesAccessEndpoints.set(endpointId, {endpoint, door, keyEpoch: options.scope?.keyEpoch});
-    return connected;
-  }
-
-  function ownedNotesAccess() {
-    return [...ownedNotesAccessEndpoints].flatMap(([endpoint_id, row]) =>
-      row.endpoint.documentAccess().map(actor => ({endpoint_id, ...actor})));
-  }
-
-  function notesDocumentClosed() {
-    notesAccessGeneration++;
-    for (const row of ownedNotesAccessEndpoints.values())
-      for (const actor of row.endpoint.documentAccess()) row.endpoint.revokeDocument(actor.actor_index);
-  }
-
-  async function ownedNotesCheckpoint(options = {}) {
-    await ready;
-    if (!globalThis.rapierNotesHost) await part('notes');
-    if (typeof globalThis.RapierOwnedNotesCheckpoint?.createOwnedNotesCheckpoint !== 'function' ||
-        typeof _rapierNotesReady !== 'function') throw Object.assign(new Error('notes_not_configured'), {code: 'notes_not_configured'});
-    await _rapierNotesReady();
-    await _rapierNotesStore.kind();
-    const door = globalThis.rapierNotesHost, folder = _rapierNotesStore.folder, bytes = _rapierNotesStore.bytes;
-    const native = globalThis.RapierPlatform?.host?.notesStore, current = options.isCurrent || (() => true);
-    const endpoint = globalThis.RapierOwnedNotesCheckpoint.createOwnedNotesCheckpoint({...options, store: _rapierNotesStore,
-      isCurrent: async () => {
-        const same = () => !!folder && globalThis.rapierNotesHost === door && _rapierNotesStore.folder === folder &&
-          _rapierNotesStore.bytes === bytes && globalThis.RapierPlatform?.host?.notesStore === native;
-        return same() && await current() === true && same();
-      },
-    });
-    const connected = Object.freeze({capture: endpoint.capture, publish: endpoint.publish,
-      restore: input => endpoint.restore({...input, folder}), lock: () => {
-        ownedNotesEndpoints.delete(connected); return endpoint.lock();
-      }});
-    ownedNotesEndpoints.add(connected);
-    return connected;
-  }
-
   let sheetSequence = 0;
   function houseSheet({title, words = '', body = [], onEscape = null, onClose = null}) {
     const overlay = document.createElement('div'), panel = document.createElement('div'), inner = document.createElement('div');
@@ -2516,8 +2557,7 @@
     return sheet;
   }
 
-  globalThis.RapierAgentBrowser = Object.freeze({ready, snapshot, invoke, refresh, status, undoDrawingChange, undoHistoryAct, ownedNotesAdapter, ownedNotesCheckpoint,
-    ownedNotesAccess, notesDocumentClosed,
+  globalThis.RapierAgentBrowser = Object.freeze({ready, snapshot, invoke, refresh, status, undoDrawingChange, undoHistoryAct,
     remoteLedger, livePlace: Object.freeze({capture: capturePlace, restore: restorePlace, viewport: restoreViewport, pointer: livePointer}),
     prepareSave: () => _rapierDocumentFonts.prepare(),
     isSavePrepared: text => _rapierDocumentFonts.isPrepared(text),
@@ -2546,7 +2586,7 @@
   window.addEventListener('blur', () => { contextChanged('blur'); });
   window.addEventListener('focus', () => { contextChanged('focus'); });
   window.addEventListener('popstate', drawingNavigationChanged);
-  window.addEventListener('pagehide', () => { retireView(); visualFlight?.abort(); materialFlight?.abort(); if (editorCard) cancelEditorRequest(editorCard.request.id); retire(); for (const endpoint of ownedNotesEndpoints) void endpoint.lock(); });
+  window.addEventListener('pagehide', () => { retireView(); visualFlight?.abort(); materialFlight?.abort(); if (editorCard) cancelEditorRequest(editorCard.request.id); retire(); });
   window.addEventListener('pageshow', () => { void refresh(); });
   queueMicrotask(() => { void refresh(); });
 })();

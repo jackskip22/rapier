@@ -20,6 +20,7 @@
   "interchange/pdf-plugin.js",
   "interchange/browser.js",
   "editor/parts.js",
+  "presets/browser.js",
   "editor/plugins.js",
   "editor/math-keys.js",
   "images/ocr.js",
@@ -51,6 +52,7 @@
   "notes/recorder.js",
   "notes/sync-ui.js",
   "notes/attachments.js",
+  "editor/composer.js",
   "editor/changes-draw.js",
   "editor/changes.js"
 ]

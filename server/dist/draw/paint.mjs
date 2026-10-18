@@ -2699,7 +2699,7 @@ export class PaintSurface {
 		this.wetBandBox = null;
 		return { dx: left, dy: top };
 	}
-	bounds(threshold = 1 / 512) {
+	bounds(threshold = 1 / 512, cached = true) {
 		const D = this.data, W = this.width, H = this.height;
 		const scan = (left, top, right, bottom) => {
 			let x0 = W, y0 = H, x1 = -1, y1 = -1;
@@ -2708,7 +2708,7 @@ export class PaintSurface {
 			}
 			return x1 < 0 ? null : { x0, y0, x1, y1 };
 		};
-		if (threshold !== 1 / 512) return scan(0, 0, W - 1, H - 1);
+		if (!cached || threshold !== 1 / 512) return scan(0, 0, W - 1, H - 1);
 		const d = this.boundsDirty, tiles = this.boundsTiles, ox = this.boundsOX, oy = this.boundsOY;
 		if (d) for (let ty = Math.floor((d.y0 - oy) / 64); ty <= Math.floor((d.y1 - oy) / 64); ty++) for (let tx = Math.floor((d.x0 - ox) / 64); tx <= Math.floor((d.x1 - ox) / 64); tx++) {
 			const x = ox + tx * 64, y = oy + ty * 64;
@@ -2719,6 +2719,13 @@ export class PaintSurface {
 		let box = null;
 		for (const b of tiles.values()) { if (!box) box = { ...b }; else { box.x0 = Math.min(box.x0, b.x0); box.y0 = Math.min(box.y0, b.y0); box.x1 = Math.max(box.x1, b.x1); box.y1 = Math.max(box.y1, b.y1); } }
 		return box;
+	}
+	observe() {
+		const box = this.bounds(undefined, false);
+		const meta = {width:this.width,height:this.height,revision:this.revision,bounds:box ? {...box} : null,
+			toothOX:this.toothOX,toothOY:this.toothOY,wetState:!!this.wetState,wet:!!this.wet,
+			_wetWork:!!this._wetWork,wetPending:this.wetPending};
+		return {box,pixels:box ? this.toRGBA8(box) : null,meta};
 	}
 	toRGBA8(box = { x0: 0, y0: 0, x1: this.width - 1, y1: this.height - 1 }, linear = true, quality = 'final') {
 		const w = box.x1 - box.x0 + 1, h = box.y1 - box.y0 + 1, out = new Uint8ClampedArray(w * h * 4), D = this.data, W = this.width;

@@ -772,7 +772,7 @@ for (const [path, {tree}] of satelliteModules) {
 for (const {slot, text} of satelliteProjections) insertSource('/* RAPIER_' + slot + '_MODULE */', text);
 const editorScriptsAll = JSON.parse(await read('editor/scripts.json'));
 if (!Array.isArray(editorScriptsAll) || new Set(editorScriptsAll).size !== editorScriptsAll.length || editorScriptsAll.some(path =>
-  typeof path !== 'string' || !/^(?:agent|draw|editor|images|interchange|layout|notes)\/[a-z-]+\.js$/.test(path)))
+  typeof path !== 'string' || !/^(?:agent|draw|editor|images|interchange|layout|notes|presets)\/[a-z-]+\.js$/.test(path)))
   throw new Error('Editor script sources are invalid');
 const partScripts = new Set(PARTS.flatMap(part => part.scripts));
 if (PARTS.some(part => part.scripts.some(path => !editorScriptsAll.includes(path)))) throw new Error('A part names an editor script editor/scripts.json does not');
