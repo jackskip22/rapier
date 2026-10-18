@@ -27,7 +27,7 @@ export const PARTS = Object.freeze([
       FrontMatter: 'frontmatter', Links: 'links', Search: 'search', SearchCache: 'search-cache', ImportMarkdown: 'import-markdown', ImportEnex: 'import-enex',
       ImportHtml: 'import-html', Restore: 'restore', Trash: 'trash', History: 'history', Integrity: 'integrity', Zip: 'zip', Backup: 'backup',
       BackupWorker: 'backup-worker', OPFSWorker: 'opfs-worker', Owner: 'owner', OPFS: 'opfs', IdbStore: 'idb-store', WorkspaceStore: 'workspace-store', Folder: 'folder', Todo: 'todo',
-      Audio: 'audio', Attachments: 'attachments', HostWords: 'host-words', Sync: 'sync', Vault: 'vault', Merge: 'merge', SyncSession: 'sync-session'})
+      Audio: 'audio', Attachments: 'attachments', HostWords: 'host-words', Sync: 'sync', Vault: 'vault', Merge: 'merge', SyncSession: 'sync-api'})
       .map(([name, file]) => ['RapierNotes' + name, 'notes/' + file + '.mjs']).concat([['RapierCloudProviders', 'notes/cloud-providers.mjs'],
         ['RapierWebDAVTransport', 'notes/transport-webdav.mjs']]))},
 ]);

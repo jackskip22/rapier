@@ -202,9 +202,11 @@ async function _rapierEditLayout(patch, operation, onEmptyLine, after) {
     if (plan.reason) { showToast('This layout cannot be changed without altering its source', 'info'); return false; }
     for (const edit of plan.edits) { edit.start += at; edit.end += at; }
     const map = point => plan.edits.reduce((at, edit) => at + (edit.end <= point ? edit.text.length - (edit.end - edit.start) : 0), point);
-    return _rapierCommitSourceProjection(plan.edits.slice().sort((a,b) => b.start-a.start)
+    const committed = await _rapierCommitSourceProjection(plan.edits.slice().sort((a,b) => b.start-a.start)
       .map(edit => ({pos: edit.start, removed: source.slice(edit.start, edit.end), inserted: edit.text})),
       operation, {start: map(range.start), end: map(range.end), direction: textarea.selectionDirection});
+    if (committed) after();
+    return committed;
   }
   const selection = window.getSelection();
   const context = _rapierSelectionContext(selection);

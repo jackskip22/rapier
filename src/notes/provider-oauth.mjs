@@ -43,17 +43,18 @@ export function tokenAuthorizeParams(options, scope) {
 	if (typeof options.state !== 'string' || !/^[A-Za-z0-9_-]{32,128}$/.test(options.state)) refuse('state', 'use a fresh random state for this sign-in');
 	return new URLSearchParams({response_type: 'token', client_id: options.clientId, redirect_uri: options.redirectUri, scope, state: options.state});
 }
-export function readTokenRedirect(fragment, expectedState, provider, scope) {
+export function readTokenRedirect(fragment, expectedState, provider, scope, onToken) {
 	if (typeof fragment !== 'string') refuse('redirect', 'a redirect fragment is required');
 	const params = new URLSearchParams(fragment.replace(/^#/, ''));
 	if (!/^[A-Za-z0-9_-]{32,128}$/.test(expectedState || '') || params.getAll('state').length !== 1 || params.get('state') !== expectedState) refuse('state', "the redirect did not carry this sign-in's own state");
 	for (const key of ['access_token', 'token_type', 'expires_in', 'scope', 'error', 'error_description']) if (params.getAll(key).length > 1) refuse('redirect', 'the redirect repeated an authorization field');
 	if (params.has('error') && params.has('access_token')) refuse('redirect', 'the redirect contains both a token and an error');
 	if (params.has('error')) refuse('denied', params.get('error_description') || params.get('error'));
-	if (params.has('code') || params.has('refresh_token') || params.has('id_token')) refuse('redirect', 'the redirect carried a grant this sign-in did not ask for');
 	const expires = params.get('expires_in');
-	return readToken({access_token: params.get('access_token') ?? undefined, token_type: params.get('token_type') ?? undefined,
-		expires_in: /^[1-9][0-9]{0,8}$/.test(expires || '') ? Number(expires) : NaN, ...(params.has('scope') ? {scope: params.get('scope')} : {})}, provider, scope);
+	const token = readToken({access_token: params.get('access_token') ?? undefined, token_type: params.get('token_type') ?? undefined,
+		expires_in: /^[1-9][0-9]{0,8}$/.test(expires || '') ? Number(expires) : NaN, ...(params.has('scope') ? {scope: params.get('scope')} : {})}, provider, scope, null, onToken);
+	if (params.has('code') || params.has('refresh_token') || params.has('id_token')) refuse('redirect', 'the redirect carried a grant this sign-in did not ask for');
+	return token;
 }
 export function readRedirect(search, expectedState) {
 	if (typeof search !== 'string') refuse('redirect', 'a redirect query string is required');
@@ -66,16 +67,23 @@ export function readRedirect(search, expectedState) {
 	if (!code || /[\x00-\x1f\x7f]/.test(code)) refuse('code', 'the redirect carried no valid authorization code');
 	return code;
 }
-export function readToken(body, provider, scope, previousRefresh = null) {
-	if (!body || typeof body.access_token !== 'string' || !body.access_token || /[\x00-\x20\x7f]/.test(body.access_token)) refuse('response', 'the token endpoint returned no usable access token');
-	if (typeof body.token_type !== 'string' || body.token_type.toLowerCase() !== 'bearer') refuse('response', 'the token endpoint did not return a bearer token');
-	if (!Number.isFinite(body.expires_in) || body.expires_in <= 0) refuse('response', 'the token endpoint returned no usable expiry');
-	if (body.refresh_token !== undefined && (typeof body.refresh_token !== 'string' || !body.refresh_token || /[\x00-\x20\x7f]/.test(body.refresh_token))) refuse('response', 'the token endpoint returned an unusable refresh token');
+export function readToken(body, provider, scope, previousRefresh = null, onToken) {
+	const usable = value => typeof value === 'string' && !!value && !/[\x00-\x20\x7f]/.test(value);
+	const access = usable(body?.access_token), bearer = typeof body?.token_type === 'string' && body.token_type.toLowerCase() === 'bearer';
+	const refresh = usable(body?.refresh_token);
+	const token = Object.freeze({provider, tokenType: 'Bearer', accessToken: access && bearer ? body.access_token : null,
+		refreshToken: refresh ? body.refresh_token : previousRefresh,
+		expiresIn: Number.isFinite(body?.expires_in) && body.expires_in > 0 ? Math.floor(body.expires_in) : null,
+		scope: typeof body?.scope === 'string' ? body.scope : body?.scope === undefined ? scope : ''});
+	if (token.accessToken || token.refreshToken) onToken?.(token);
+	if (!access) refuse('response', 'the token endpoint returned no usable access token');
+	if (!bearer) refuse('response', 'the token endpoint did not return a bearer token');
+	if (body.refresh_token !== undefined && !refresh) refuse('response', 'the token endpoint returned an unusable refresh token');
 	if (body.scope !== undefined && typeof body.scope !== 'string') refuse('response', 'the token endpoint returned invalid scopes');
+	if (!Number.isFinite(body.expires_in) || body.expires_in <= 0) refuse('response', 'the token endpoint returned no usable expiry');
 	const permitted = new Set(scope.split(' ').map(s => s.replace('https://graph.microsoft.com/', '')));
 	if (body.scope && body.scope.split(/\s+/).some(s => !permitted.has(s.replace('https://graph.microsoft.com/', '')))) refuse('scopes', 'the provider returned a broader grant than this sign-in requested');
-	return Object.freeze({provider, tokenType: 'Bearer', accessToken: body.access_token,
-		refreshToken: body.refresh_token ?? previousRefresh, expiresIn: Math.floor(body.expires_in), scope: body.scope ?? scope});
+	return token;
 }
 export async function postForm(http, endpoint, fields, {authorization, empty = false, exactTarget = false,
 	headers = {'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json'},

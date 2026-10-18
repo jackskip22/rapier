@@ -43,7 +43,7 @@ export function stripJs(text, {module = true} = {}) {
 		comments.length = 0;
 		acorn.parse(text, {...options, sourceType: 'script'});
 	}
-	const drop = comments.filter(c => !KEEP.test((c.block ? '/*' : '//') + c.body)).map(c => [c.start, c.end]);
+	const drop = comments.filter(c => !text.startsWith('#!', c.start) && !KEEP.test((c.block ? '/*' : '//') + c.body)).map(c => [c.start, c.end]);
 	return removeRanges(text, drop);
 }
 

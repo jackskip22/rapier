@@ -24,7 +24,7 @@ export async function readSyncState(folder) {
 	try { await lease.read(); return (await readSyncStateBytes(folder.store)).state; }
 	finally { await lease.release(); }
 }
-export async function updateSyncState(folder, change) {
+export async function updateSyncState(folder, change, {guard} = {}) {
 	const lease = await folder.owner.acquire(folder.scope);
 	try {
 		await lease.read();
@@ -32,6 +32,6 @@ export async function updateSyncState(folder, change) {
 			const {state, bytes} = await readSyncStateBytes(folder.store), next = await change(state, index);
 			if (!next) return {index};
 			return {kind: 'sync-state', index, writes: [await syncStateWrite(next, bytes)]};
-		}, {brief: true});
+		}, {brief: true, admissionGuard: guard});
 	} finally { await lease.release(); }
 }

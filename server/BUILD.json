@@ -1,18 +1,18 @@
 {
-  "version": "1.2.10",
+  "version": "1.2.11",
   "development": false,
   "chromium": "supplied and exactly pinned by the administrator",
   "profiles": {
     "reader": {
       "path": "rapier-reader.html",
-      "bytes": 370321,
-      "sha256": "fc8d962d2f6705c4ae88ac272451e1284b6df3e181a809a0257f39d3cc9fb712",
-      "gzip": 356235,
+      "bytes": 370384,
+      "sha256": "e141a5dbd555f32fc2b213b9b24af92529863bfc41b6859c309b172dc5091aae",
+      "gzip": 356427,
       "budget": {
         "warn": 1200000,
         "refuse": 1250000
       },
-      "builtAt": "2026-10-17T23:37:00.936Z",
+      "builtAt": "2026-10-18T01:38:55.883Z",
       "node": "v22.23.3",
       "mode": "release",
       "packing": "zopfli",
@@ -20,20 +20,20 @@
       "parts": {
         "core": {
           "raw": 924582,
-          "gzip": 298656,
-          "base124": 292339
+          "gzip": 298646,
+          "base124": 292010
         },
         "licenses": {
           "raw": 88030,
-          "gzip": 24794,
-          "base124": 24373
+          "gzip": 24847,
+          "base124": 24394
         }
       }
     },
     "full": {
       "path": "rapier.html",
-      "bytes": 1843578,
-      "sha256": "9f17ff43dc17decfb49c217c18147d69d8f2288c3a63fe092bbd59547ae40d18",
+      "bytes": 1843571,
+      "sha256": "f83cadcfebd37fac3c1097c0b2db36d28ecec72db3e144aabbdf3d140299a7f9",
       "budget": {
         "warn": 2980000,
         "refuse": 3000000
@@ -151,19 +151,19 @@
           "element": "rapier-platform-runtime",
           "name": "rapier-plugin-loader.js",
           "bytes": 26060,
-          "sha256": "2fb1811bb49010a305129fb9aa9e9a1eec5bdfe564f28def761b59346e451901"
+          "sha256": "b7945719bb1162c878d32dcdebe8bfd012a6b7bffd2aa13ab7bc9c48be3945d2"
         },
         {
           "element": "rapier-platform-runtime",
           "name": "rapier-font-subset-plugin.js",
           "bytes": 845,
-          "sha256": "b959df899422b26af4ed024369afb1b6c8c2cc8df665813ae270da17348d953d"
+          "sha256": "3349c19ce35cda5094de63921766a88701d39f1d672361beff53936dff8008b7"
         },
         {
           "element": "rapier-platform-runtime",
           "name": "rapier-parts.js",
           "bytes": 5820,
-          "sha256": "badf144b0719d7dbbce9058e4eb3f66a3bedcb5562622c8cb622d73998d462f3"
+          "sha256": "a5dd13f30be3c9005eef56ec79ffa12cbb69030a47fd8ce543f5b2e7a264b73b"
         },
         {
           "element": "rapier-styles-runtime",
@@ -175,7 +175,7 @@
           "element": "rapier-styles-runtime",
           "name": "rapier-styles.json",
           "bytes": 120588,
-          "sha256": "78995e640dd6d8631aad54ec3d8e672ec0a104040c2d127ad4c86bdc6b73ae44"
+          "sha256": "fdc50dfce61f8ce564674ad167a82371c94e32e4394eb3eb86e7013d1f1ad35c"
         },
         {
           "element": "rapier-styles-runtime",
@@ -187,7 +187,7 @@
           "element": "rapier-styles-runtime",
           "name": "rapier-first-paint.json",
           "bytes": 342635,
-          "sha256": "7cb8543ae333d59034899bfd1701de2da1154dc9d45774233b8550ef3653cb13"
+          "sha256": "e190f3f3839d5be5f90d5799b3bbbd4e49d61dfb964a0044f2ab55926c176cdf"
         },
         {
           "element": "rapier-style-rest-runtime",
@@ -211,13 +211,13 @@
           "element": "rapier-editor-runtime",
           "name": "rapier-shared.js",
           "bytes": 2434461,
-          "sha256": "ce1cc368d505eba8d4245482007c9f2b138ea933854760c7a0a1d428ac0eff49"
+          "sha256": "a2b424c30f5c75e1063522334e42a88adabe607b95991df1231c79764b599554"
         },
         {
           "element": "rapier-editor-runtime",
           "name": "rapier-editor.js",
-          "bytes": 2201995,
-          "sha256": "c515e4e9536c710804034d524eb413718f744aa7a651291dd34ef9b99bc4bddd"
+          "bytes": 2202275,
+          "sha256": "8cb8bac1fa034afe6f9a733b06196b3aae2eb99ebf62b7b3773984ff9554ce4d"
         }
       ],
       "parts": [
@@ -238,9 +238,9 @@
         },
         {
           "id": "presets",
-          "file": "rapier-presets-d0d6590dad01a6b3.txt",
-          "bytes": 24490,
-          "sri": "ZoLZ5Gn8lVSU5DxtI0H3Xj4UCUvSUJWj8HzgGHA7pBQSw4jlN81BzGM2DEAGofjG",
+          "file": "rapier-presets-916fdc78eb428e02.txt",
+          "bytes": 24497,
+          "sri": "prd36xX5F4D4O+yzngu9/OTMRcsNnAXzkCixvXPInyi/0E5SsMx5sD3X2cFMWZwQ",
           "scripts": [
             "presets/browser.js",
             "editor/composer.js"
@@ -262,9 +262,9 @@
         },
         {
           "id": "drawing",
-          "file": "rapier-drawing-ce9124ffdc0d3b9a.txt",
-          "bytes": 305404,
-          "sri": "UDkXraa10QTA2aIO4E+00Cl8L/1P+HHpRKDexBuTVyubsnPnivPSUf2htbVBMW8L",
+          "file": "rapier-drawing-cfe5ee2e8385ffb7.txt",
+          "bytes": 305481,
+          "sri": "pHw9H4Fg0D1uvDRr7g1qztWE+pHw0LFYcFs909bdhwMQlxT5dE0cYCVcFwiLhj7O",
           "scripts": [
             "draw/draw.js",
             "draw/effects-tool.js",
@@ -329,9 +329,9 @@
         },
         {
           "id": "notes",
-          "file": "rapier-notes-d30cdad124e9a43e.txt",
-          "bytes": 379318,
-          "sri": "Lo165fRI4z7yMkwsjSsLkpCEs6JbDFrlQFNq66kF8z3vOFFjbmjwmWtWAw4V/Lwd",
+          "file": "rapier-notes-e271d4e912470b42.txt",
+          "bytes": 366473,
+          "sri": "8nq9TD03VK7HwuAuljCrnvqKNIgJpkxdPD726F2sjsPVhwf0kLGexjFHSe5wPupE",
           "scripts": [
             "notes/notes.js",
             "notes/todo.js",
@@ -401,16 +401,36 @@
             "notes/recording.mjs",
             "notes/todo.mjs",
             "notes/sync.mjs",
+            "notes/sync-canonical-admission.mjs",
             "notes/sync-media.mjs",
             "notes/sync-assets.mjs",
-            "notes/sync-session.mjs",
-            "notes/sync-config.mjs",
-            "notes/sync-providers.mjs",
-            "notes/transport-drive.mjs",
+            "notes/sync-api.mjs",
+            "notes/sync-plain.mjs",
+            "notes/sync-plain-conflicts.mjs",
+            "notes/sync-plain-keys.mjs",
+            "notes/sync-plain-session.mjs",
+            "notes/sync-plain-pictures.mjs",
+            "notes/plain-wiki-pictures.mjs",
+            "notes/plain-stores.mjs",
+            "notes/plain-dropbox.mjs",
             "notes/provider-http.mjs",
             "notes/provider-objects.mjs",
-            "notes/transport-onedrive.mjs",
             "notes/transport-dropbox.mjs",
+            "notes/plain-drive.mjs",
+            "notes/transport-drive.mjs",
+            "notes/plain-store.mjs",
+            "notes/plain-onedrive.mjs",
+            "notes/transport-onedrive.mjs",
+            "notes/plain-webdav.mjs",
+            "notes/transport-webdav.mjs",
+            "notes/plain-s3.mjs",
+            "notes/transport-s3.mjs",
+            "notes/sync-plain-companion.mjs",
+            "notes/plain-companion.mjs",
+            "notes/plain-relay.mjs",
+            "notes/sync-provider-session.mjs",
+            "notes/sync-config.mjs",
+            "notes/sync-providers.mjs",
             "notes/drive-oauth.mjs",
             "notes/provider-oauth.mjs",
             "notes/onedrive-oauth.mjs",
@@ -418,29 +438,9 @@
             "notes/cloud-providers.mjs",
             "notes/transport-r2.mjs",
             "notes/cloudflare-oauth.mjs",
-            "notes/transport-s3.mjs",
-            "notes/transport-webdav.mjs",
             "notes/provider-setup.mjs",
-            "notes/cloudflare-setup.mjs",
-            "notes/transport-companion.mjs",
-            "notes/sync-plain-session.mjs",
-            "notes/sync-plain.mjs",
-            "notes/sync-plain-pictures.mjs",
-            "notes/plain-wiki-pictures.mjs",
-            "notes/plain-stores.mjs",
-            "notes/plain-dropbox.mjs",
-            "notes/plain-drive.mjs",
-            "notes/plain-store.mjs",
-            "notes/plain-onedrive.mjs",
-            "notes/plain-webdav.mjs",
-            "notes/plain-s3.mjs",
-            "notes/sync-plain-keys.mjs",
-            "notes/sync-plain-companion.mjs",
-            "notes/plain-companion.mjs",
-            "notes/plain-relay.mjs",
-            "notes/drive-picker.mjs",
             "notes/sync-device.mjs",
-            "notes/qr-code.mjs"
+            "notes/drive-picker.mjs"
           ],
           "globals": [
             "RapierNotesLibraryWindow",
@@ -651,39 +651,75 @@
         "notes/android-backup.mjs": [
           "androidBackupSource"
         ],
+        "notes/sync-plain.mjs": [
+          "isSyncLayout",
+          "memoryPlainStore"
+        ],
+        "notes/plain-wiki-pictures.mjs": [
+          "isTopPicture",
+          "wikiPictureText"
+        ],
+        "notes/sync-plain-session.mjs": [
+          "PLAIN_PROVIDERS",
+          "plainRecord"
+        ],
+        "notes/transport-dropbox.mjs": [
+          "PUT_MAX_BYTES"
+        ],
         "notes/transport-drive.mjs": [
           "PUT_MAX_BYTES"
+        ],
+        "notes/plain-store.mjs": [
+          "sameBytes"
         ],
         "notes/transport-onedrive.mjs": [
           "PUT_MAX_BYTES"
         ],
-        "notes/transport-dropbox.mjs": [
-          "PUT_MAX_BYTES"
+        "notes/transport-s3.mjs": [
+          "PUT_MAX_BYTES",
+          "LIST_MAX_BYTES",
+          "RETRY_CAP"
+        ],
+        "notes/sync-plain-keys.mjs": [
+          "plainKeySettings"
+        ],
+        "notes/plain-companion.mjs": [
+          "PLAIN_CAPABILITY"
+        ],
+        "notes/plain-relay.mjs": [
+          "RELAY_PAGE"
+        ],
+        "notes/sync-config.mjs": [
+          "SYNC_UNAVAILABLE",
+          "SYNC_CONSENT"
         ],
         "notes/drive-oauth.mjs": [
           "AUTHORIZE_ENDPOINT",
           "TOKEN_ENDPOINT",
           "REVOKE_ENDPOINT",
-          "SCOPES",
           "RETURNS_TOKEN"
         ],
         "notes/onedrive-oauth.mjs": [
           "AUTHORIZE_ENDPOINT",
           "TOKEN_ENDPOINT",
-          "REVOKE_ENDPOINT",
-          "SCOPES"
+          "REVOKE_ENDPOINT"
         ],
         "notes/dropbox-oauth.mjs": [
           "AUTHORIZE_ENDPOINT",
           "TOKEN_ENDPOINT",
-          "REVOKE_ENDPOINT",
-          "SCOPES"
+          "REVOKE_ENDPOINT"
         ],
         "notes/sync-providers.mjs": [
+          "SETTINGS_DOMAIN",
+          "providerSettings",
+          "providerTransport",
+          "createProviderLocation",
           "PROVIDER_ORIGINS",
           "providerConnectOrigins"
         ],
         "notes/transport-r2.mjs": [
+          "R2_API_ORIGIN",
+          "R2_API_PREFIX",
           "PUT_MAX_BYTES",
           "RETRY_CAP",
           "RETRY_BASE_MS",
@@ -699,44 +735,15 @@
           "CODE_CHALLENGE_METHOD",
           "isOAuthRefusal"
         ],
-        "notes/transport-s3.mjs": [
-          "PUT_MAX_BYTES",
-          "LIST_MAX_BYTES",
-          "RETRY_CAP"
-        ],
-        "notes/cloudflare-setup.mjs": [
-          "NOTES_BUCKET"
-        ],
-        "notes/transport-companion.mjs": [
-          "COMPANION_CHUNK",
-          "COMPANION_MAX_BYTES"
-        ],
-        "notes/sync-plain.mjs": [
-          "isSyncLayout",
-          "memoryPlainStore"
-        ],
-        "notes/plain-wiki-pictures.mjs": [
-          "isTopPicture",
-          "wikiPictureText"
-        ],
-        "notes/sync-plain-session.mjs": [
-          "PLAIN_PROVIDERS",
-          "plainRecord"
-        ],
-        "notes/plain-store.mjs": [
-          "sameBytes"
-        ],
-        "notes/sync-plain-keys.mjs": [
-          "plainKeySettings"
-        ],
-        "notes/plain-companion.mjs": [
-          "PLAIN_CAPABILITY"
-        ],
-        "notes/plain-relay.mjs": [
-          "RELAY_PAGE"
-        ],
         "notes/drive-picker.mjs": [
           "PICKER_PAGE"
+        ],
+        "notes/sync-provider-session.mjs": [
+          "readSyncState",
+          "providerAvailability",
+          "providerSoon",
+          "PLAIN_CHOICES",
+          "verificationReturn"
         ],
         "kernel/live-private-wire.mjs": [
           "PRIVATE_LIVE_LIMITS",
@@ -830,7 +837,7 @@
           "sha256": "d2ed90692e907e61a0d6e42c01ead86872b4250e09622e8e95f1fbe6cd4a88f5"
         }
       },
-      "builtAt": "2026-10-17T23:39:21.560Z",
+      "builtAt": "2026-10-18T01:39:57.785Z",
       "node": "v22.23.3",
       "mode": "release",
       "packing": "zopfli",
@@ -848,8 +855,8 @@
   },
   "files": {
     "dist/server/cli.mjs": {
-      "bytes": 6534,
-      "sha256": "d427df47f64a6639b97bd1742d2d105fcf4fb6bd00f4db5e9457f0d76ba143bb"
+      "bytes": 6554,
+      "sha256": "56f1a69d8bfc29c00c91f703694b30d338f7202ec2fb769ffde149b627b79b66"
     },
     "dist/server/index.mjs": {
       "bytes": 16021,
@@ -1073,7 +1080,7 @@
     },
     "dist/draw/core.mjs": {
       "bytes": 250815,
-      "sha256": "971dd45842af8103c895fc4eda39b80d02519d8a4f562992e8decedafe4c64c1"
+      "sha256": "e2ff534005af41bde9d94522fe78c2a491f0af434ac346994de7340a01ced594"
     },
     "dist/draw/freehand.mjs": {
       "bytes": 14360,
@@ -1197,7 +1204,7 @@
     },
     "dist/version.mjs": {
       "bytes": 196,
-      "sha256": "16804a274b969429f645abe4a50933225de7e2d687b1a9b56896f145e032a4ca"
+      "sha256": "3f52023b695a4581cc48b540ef527321c1c88da0966902d1bea5836048f84b2b"
     },
     "dist/agent/visual.mjs": {
       "bytes": 10397,
@@ -1664,16 +1671,16 @@
       "sha256": "d4f97ca757bf89521c7ff982088b0fa03525e98d5eacce39cfee1dbc1c251971"
     },
     "dist/tools/strip-comments.mjs": {
-      "bytes": 4399,
-      "sha256": "3c21db3aedb773066a112eb93ca6af2c0b9d6e32f98110e33b7da966cbbf2909"
+      "bytes": 4434,
+      "sha256": "7426db38da062b16f723e486357afdbbf0c3d1b4ca861fe620983575cb721143"
     },
     "dist/server/stdio.mjs": {
       "bytes": 4343,
       "sha256": "ceaf7bbd1d376f70ab73138921e261fbe65e4d56c80f966cdc1bf3d866e9726e"
     },
     "dist/server/test/run.mjs": {
-      "bytes": 372,
-      "sha256": "c06502be940e2e5519edca29234c202985985af1e027de07026eb4065315380c"
+      "bytes": 392,
+      "sha256": "672bb1785600c8e75455a6ab6d4c3125ae8b46fc2abe333e99795451df76686c"
     },
     "dist/server/test/preservation.mjs": {
       "bytes": 7536,
@@ -1688,8 +1695,8 @@
       "sha256": "9779e7c4819b330c94d834a738e3cfbc8c87d1c8142a6e4cb4fbe74b1edccb24"
     },
     "dist/tools/read-shared-page.mjs": {
-      "bytes": 3208,
-      "sha256": "b275b9bcdb360a21a8a0dac0fc685247849310182c4ae94b2f387c40a35746fe"
+      "bytes": 3228,
+      "sha256": "69dda8914bc333272d939f3feb9d5f5cc157d8f31c73fbed2a700ae533542bc0"
     },
     "dist/server/test/word.mjs": {
       "bytes": 1333,
@@ -1708,12 +1715,12 @@
       "sha256": "c08addf494279c452116ebd2aca16619f0bca5f9e1d6174a619b501e2597cc50"
     },
     "dist/dist/chatgpt/rapier-app.html": {
-      "bytes": 1803978,
-      "sha256": "3398631e116d378b5a32267eed84943ff8c1cd652c8c48aee088b9965e51a2c2"
+      "bytes": 1803971,
+      "sha256": "1fbfc28b8610cf6bdce3a9b4060558da9a462ed426a51b7b6ae355c75ce54978"
     },
     "dist/dist/chatgpt/rapier.html": {
-      "bytes": 6411018,
-      "sha256": "a4242b472151df3aa58cc9436a0edd6f5b07a8fae48b4b2ce71187214420f753"
+      "bytes": 6398250,
+      "sha256": "98bc260ff28d3836d295c5eb8983b6aaa1998a93692b4f353f5da5de48205b93"
     },
     "dist/dist/chatgpt/icon-192.png": {
       "bytes": 1541,
@@ -1768,8 +1775,8 @@
       "sha256": "85e219d2017276a2a1221afdfe3afb05ef33c4156700e983081f2d00ba9ecc2c"
     },
     "dist/dist/chatgpt/rapier-skills.json": {
-      "bytes": 905472,
-      "sha256": "5138e2afa65f2a13ca639fde00dbf4c05e9950987de3fdcfd946fdf8381fcaae"
+      "bytes": 905493,
+      "sha256": "c5c7a58defef5fa5cadacfd6a6ed06bed70b37f13c191f3edba7f6cae937463c"
     }
   }
 }

@@ -8,7 +8,7 @@ export const RETURNS_TOKEN = true;
 export function authorizeUrl(options = {}) {
 	return AUTHORIZE_ENDPOINT + '?' + tokenAuthorizeParams(options, SCOPES);
 }
-export const readReturn = (fragment, state) => readTokenRedirect(fragment, state, 'drive', SCOPES);
+export const readReturn = (fragment, state, onToken) => readTokenRedirect(fragment, state, 'drive', SCOPES, onToken);
 export function createOAuthClient(options = {}) {
 	const io = oauthIO(options, 'Google Drive');
 	options = Object.freeze({...options});

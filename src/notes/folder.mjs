@@ -239,7 +239,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		deviceId = renewed;
 		return snapshot;
 	});
-	const metadata = (base, wanted, {touches = []} = {}) => tracked(() => owner.transact(scope, ({index}) => {
+	const metadata = (base, wanted, {touches = [], guard} = {}) => tracked(() => owner.transact(scope, ({index}) => {
 		for (const row of touches) {
 			const file = Object.keys(base.notes).find(file => base.notes[file].id === row.id);
 			if (!file || index.notes[file]?.id !== row.id || wanted.notes[file]?.id !== row.id) throw fail('changed', 'This note moved before its choice was saved.');
@@ -247,7 +247,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			for (const group of row.groups) if (canonicalJSON(fresh[group]) !== canonicalJSON(before[group]) && canonicalJSON(fresh[group]) !== canonicalJSON(after[group])) throw fail('changed', 'This choice changed in another page. Open the cards again.');
 		}
 		return {kind: 'metadata', index: applyMetadata(base, wanted, index), controlTouches: touches};
-	}));
+	}, {admissionGuard: guard}));
 	const controls = ({file, id, fields, expected, undo}, {signal, app = false, guard = () => {}, canonical, sourceGuard, sourceInverseGuard, inverseGuard} = {}) => underLease(async lease => {
 		const active = () => { checkByteAbort(signal); guard(); };
 		const history = createHistoryPreparation({signal});
@@ -534,7 +534,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		});
 		return underLease(async lease => {
 			let destination, result, targetIndex, inputReceipt, copied = false;
-			const active = async () => { checkByteAbort(options.signal); await options.guard?.(); if (targetIndex) await options.guardTarget?.(targetIndex, destination, id); checkByteAbort(options.signal); };
+			const active = async () => { checkByteAbort(options.signal); await options.guard?.(); await options.admissionGuard?.(); if (targetIndex) await options.guardTarget?.(targetIndex, destination, id); checkByteAbort(options.signal); };
 			await prepareMutation(active);
 			const admitted = Array.isArray(expectedDigest) ? expectedDigest : [expectedDigest];
 			const expectedLedgers = expectedLedger == null ? [] : Array.isArray(expectedLedger) ? expectedLedger : [expectedLedger];
@@ -690,14 +690,14 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			return {...snapshot, stuck};
 		});
 	};
-	const rename = ({file, id, expectedDigest, wanted, linking}) => owned(async (lease, before) => {
+	const rename = ({file, id, expectedDigest, wanted, linking}, {guard} = {}) => owned(async (lease, before) => {
 		if (linking !== undefined && !Array.isArray(linking)) throw fail('plan', 'A rename needs a list of linking notes.');
 		let destination, dropped = 0, patched = 0;
 		const snapshot = await lease.transact(async ({index, files, bodies}) => {
 			const plan = await planFolderRename({index, files, bodies}, {file, id, expectedDigest, wanted, linking, ascii: store.ascii, now: clock(), readHistory: path => store.read(path), author: canonicalAuthor()});
 			destination = plan.file; dropped = plan.dropped; patched = plan.patched;
 			return plan;
-		}, {bodies: linking === undefined ? before.files : [file, ...linking]});
+		}, {bodies: linking === undefined ? before.files : [file, ...linking], admissionGuard: guard});
 		if ((snapshot.dropped || []).includes(destination) || (snapshot.dropped || []).includes(file)) throw fail('changed', 'The rename could not finish because a file changed. Open the cards again; no changed file was replaced.');
 		const late = (snapshot.dropped || []).filter(name => name !== destination && name !== file).length;
 		return {...snapshot, file: destination, written: patched - late, dropped: dropped + late};
@@ -763,7 +763,8 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		if (exact && rescued) throw fail('collision', 'Another recording arrived under ' + wanted + '. Your recording was kept as ' + landed.slice(6) + '; retry Import.');
 		return {...snapshot, name: landed.slice(6)};
 	});
-	const keepAttachment = async (lease, wanted, bytes, {exact = false, signal, onProgress} = {}) => {
+	const keepAttachment = async (lease, wanted, bytes, {exact = false, signal, onProgress, guard} = {}) => {
+		await guard?.();
 		if (bytes instanceof Blob) {
 			const decision = attachmentIntake([{name: wanted, size: bytes.size}], {streaming: store.streamingAttachments === true});
 			if (decision.refusal) throw fail('size', decision.refusal);
@@ -771,6 +772,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			checkByteAbort(signal);
 			const name = attachmentFileName(wanted, await store.list('attachments'), {ascii: store.ascii});
 			if (exact && name !== wanted) throw fail('collision', 'The attachment name is already in use: ' + wanted + '. Its file was kept.');
+			await guard?.();
 			const proof = await store.writeBlob('attachments/' + name, bytes, {signal, onProgress});
 			try {
 				const snapshot = await lease.transact(({index}) => ({kind: 'attachment', index: reviveMedia(index, 'attachments/' + name, proof.digest)}));
@@ -779,7 +781,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		}
 		const plan = planAttachment(wanted, exactBytes(bytes), await store.list('attachments'), {ascii: store.ascii});
 		if (exact && plan.name !== wanted) throw fail('collision', 'The attachment name is already in use: ' + wanted + '. Nothing replaced it; keep the source and retry Import.');
-		const snapshot = await lease.transact(async ({index}) => ({kind: 'attachment', index: reviveMedia(index, plan.path, await digest(plan.bytes)), writes: [{file: plan.path, bytes: plan.bytes, createOnly: true}]}));
+		const snapshot = await lease.transact(async ({index}) => ({kind: 'attachment', index: reviveMedia(index, plan.path, await digest(plan.bytes)), writes: [{file: plan.path, bytes: plan.bytes, createOnly: true}]}), {admissionGuard: guard});
 		const rescued = snapshot.kept?.find(row => row.file === plan.path);
 		const path = rescued?.name || plan.path;
 		if (snapshot.dropped?.includes(plan.path) && !rescued || await digest(await store.read(path)) !== await digest(plan.bytes))

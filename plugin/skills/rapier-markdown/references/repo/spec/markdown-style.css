@@ -62,7 +62,7 @@
 	--md-jump-marker-inline-start:calc(-1.18 * var(--md-unit));
 	--md-jump-marker-center:1em;
 	--md-diagram-ink:light-dark(#121212,#fafafa);
-	--md-diagram-box:light-dark(#f0f0f0,#1d1d1d);
+	--md-diagram-box:light-dark(#f0f0f0,#333333);
 	--md-diagram-accent:light-dark(#12a594,#12a594);
 	--md-diagram-on-accent:light-dark(#000000,#000000);
 	--md-diagram-step:light-dark(#666666,#999999);

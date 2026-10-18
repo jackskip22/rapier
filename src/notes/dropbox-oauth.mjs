@@ -11,10 +11,10 @@ export function authorizeUrl(options = {}) {
 export function createOAuthClient(options = {}) {
 	const io = oauthIO(options, 'Dropbox');
 	options = Object.freeze({...options});
-	const exchange = async ({code, verifier}) => readToken(await io.post(TOKEN_ENDPOINT, {...grantCode(code, verifier), client_id: options.clientId, redirect_uri: options.redirectUri}), 'dropbox', SCOPES);
+	const exchange = async ({code, verifier}) => readToken(await io.post(TOKEN_ENDPOINT, {...grantCode(code, verifier), client_id: options.clientId, redirect_uri: options.redirectUri}), 'dropbox', SCOPES, null, options.onToken);
 	const refresh = async ({refreshToken}) => {
 		refreshValue(refreshToken);
-		return readToken(await io.post(TOKEN_ENDPOINT, {grant_type: 'refresh_token', refresh_token: refreshToken, client_id: options.clientId}), 'dropbox', SCOPES, refreshToken);
+		return readToken(await io.post(TOKEN_ENDPOINT, {grant_type: 'refresh_token', refresh_token: refreshToken, client_id: options.clientId}), 'dropbox', SCOPES, refreshToken, options.onToken);
 	};
 	return Object.freeze({pause: io.pause, exchange, refresh,
 		begin: () => pendingSignIn(options, authorizeUrl, exchange),

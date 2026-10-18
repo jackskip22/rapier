@@ -41,12 +41,20 @@ export function createS3PlainStore(options = {}) {
 	let ready = null;
 	function connect() {
 		ready ??= (async () => {
-			const first = await request('PUT', CHECK, {body: new Uint8Array(), headers: {'if-none-match': '*'}});
-			if (![200, 201, 412].includes(first.status)) unconfirmed(first.status);
+			const probe = CHECK + '-' + crypto.randomUUID();
+			const first = await request('PUT', probe, {body: new Uint8Array(), headers: {'if-none-match': '*'}});
+			if (first.status === 412) throw plainConflict();
+			if (![200, 201].includes(first.status)) unconfirmed(first.status);
 			for (const headers of [{'if-none-match': '*'}, {'if-match': '"rapier-check-' + crypto.randomUUID() + '"'}]) {
-				const again = await request('PUT', CHECK, {body: new Uint8Array(), headers});
+				const again = await request('PUT', probe, {body: new Uint8Array(), headers});
 				if (again.status !== 412) refuse('conditional', 'this bucket does not enforce conditional writes; plain files would overwrite other apps\' changes, so nothing was written');
 			}
+			const denied = await request('DELETE', probe, {headers: {'if-match': '"rapier-check-' + crypto.randomUUID() + '"'}});
+			if (denied.status !== 412) refuse('conditional', 'this bucket does not enforce conditional writes; plain files would overwrite other apps\' changes, so nothing was written');
+			const proof = await request('HEAD', probe);
+			if (proof.status !== 200 || tagOf(proof) !== tagOf(first)) refuse('conditional', 'the bucket did not preserve its check file');
+			const removed = await request('DELETE', probe, {headers: {'if-match': tagOf(proof)}});
+			if (![200, 204].includes(removed.status)) unconfirmed(removed.status);
 			return true;
 		})();
 		ready.catch(() => { ready = null; });
@@ -71,7 +79,7 @@ export function createS3PlainStore(options = {}) {
 					const key = decode(s3XMLScalar(row, 'Key', true));
 					if (!key.startsWith(prefix)) refuse('authority', 'the listing names a file outside the folder');
 					const name = key.slice(prefix.length);
-					if (!name || name.includes('/') || name === CHECK) continue;
+					if (!name || name.includes('/') || (name === CHECK || /^\.rapier-plain-check-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(name))) continue;
 					if (seen.has(name)) refuse('listing', 'the listing names one file twice'); seen.add(name);
 					const size = Number(s3XMLScalar(row, 'Size', true)), rev = s3XMLScalar(row, 'ETag', true);
 					if (!Number.isSafeInteger(size) || size < 0 || !ETAG.test(rev)) refuse('response', 'the listing has no size or ETag for ' + name);
@@ -100,6 +108,7 @@ export function createS3PlainStore(options = {}) {
 			return {rev: tagOf(res)};
 		},
 		async remove(file, {ifRev} = {}) {
+			await connect();
 			if (!ETAG.test(ifRev || '')) refuse('conditional', 'a plain file is removed only at the ETag last read');
 			const head = await request('HEAD', plainName(file));
 			if (head.status === 404) return false;

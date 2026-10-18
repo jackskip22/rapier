@@ -65,14 +65,14 @@ export async function createProviderLocation(provider, {fetch, token, vaultId, s
 
 const CLIENTS = {drive: createDriveOAuthClient, onedrive: createOneDriveOAuthClient, dropbox: createDropboxOAuthClient};
 const AUTHORIZE = {drive: driveAuthorizeUrl, onedrive: oneDriveAuthorizeUrl, dropbox: dropboxAuthorizeUrl};
-export function providerOAuth(provider, {fetch, clientId, redirectUri, signal}) {
+export function providerOAuth(provider, {fetch, clientId, redirectUri, signal, onToken}) {
 	if (!providerUsesSignIn(provider)) throw fail('config', 'this service has no sign-in.');
-	return CLIENTS[provider]({fetch, clientId, redirectUri, ...(signal ? {signal} : {})});
+	return CLIENTS[provider]({fetch, clientId, redirectUri, ...(signal ? {signal} : {}), ...(onToken ? {onToken} : {})});
 }
 export const providerReturnsToken = id => id === 'drive';
-export function readProviderTokenReturn(provider, fragment, state) {
+export function readProviderTokenReturn(provider, fragment, state, onToken) {
 	if (!providerReturnsToken(provider)) throw fail('config', 'this service returns a code, not a token.');
-	return readDriveReturn(fragment, state);
+	return readDriveReturn(fragment, state, onToken);
 }
 export async function beginProviderSignIn(provider, {clientId, redirectUri, random = n => crypto.getRandomValues(new Uint8Array(n))}) {
 	if (!providerUsesSignIn(provider)) throw fail('config', 'this service has no sign-in.');

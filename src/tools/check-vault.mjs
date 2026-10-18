@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import {createDecipheriv} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import * as V from '../notes/vault.mjs';

@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // SPDX-License-Identifier: AGPL-3.0-only
 import {preservationCells} from './preservation.mjs';
 import {serverCells} from './integration.mjs';

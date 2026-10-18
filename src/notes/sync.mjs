@@ -6,9 +6,10 @@ import {seal, open} from './vault.mjs';
 import {recordingsOf} from './audio.mjs';
 import {attachmentsOf} from './attachments.mjs';
 import {runTrash} from './trash.mjs';
-import {manifestName, parseManifest, parseCanonical, recordVersion, serializeManifest, appendCanonical, canonicalSources, bindMedia, joinMedia, unboundMedia} from './history.mjs';
+import {manifestName, parseManifest, parseCanonical, appendCanonical, canonicalSources, bindMedia, joinMedia, unboundMedia} from './history.mjs';
 import {readLedger} from '../kit/ledger/format.mjs';
-import {joinCanonical, preservesActs} from './canonical-merge.mjs';
+import {joinCanonical} from './canonical-merge.mjs';
+import {prepareCanonicalAdmission, verifyCanonicalNote, verifyCanonicalBinding} from './sync-canonical-admission.mjs';
 import {buildLinkIndex, resolveLinkIndex, renameLinks} from './links.mjs';
 import {planSyncMedia, rewriteSyncMedia} from './sync-media.mjs';
 import {storedFileDigest} from './integrity.mjs';
@@ -232,19 +233,6 @@ async function textConflictDigest(conflict, id) {
 	return {kind: conflict.kind, path: ['notes', id, 'text'], blockHash: await contentHash(conflict.block),
 		variants: await Promise.all(conflict.variants.map(async v => ({device: v.device, content: await contentHash(v.text)})))};
 }
-function verifyCanonicalNote(ledger, text, entry, content) {
-	let proved;
-	try { proved = readLedger(ledger, text); }
-	catch (cause) { throw Object.assign(new Error('the note and its canonical history cannot be proved'), {code: 'notes_history_unavailable', cause}); }
-	return verifyCanonicalBinding(proved, entry, content);
-}
-function verifyCanonicalBinding(proved, entry, content) {
-	if (!proved.complete || !proved.ledger.documentAuthority.startsWith('notes:') ||
-		entry?.canonicalHistory !== proved.ledger.sha256 || content !== undefined && content !== proved.ledger.head.sha256)
-		refuse('notes_history_unavailable', 'the note identity, source and canonical history do not agree');
-	return proved;
-}
-
 const mediaNames = text => [...recordingsOf(text).map(row => 'audio/' + row.name), ...attachmentsOf(text).map(row => 'attachments/' + row.name)];
 function canonicalMedia(ledger, id) {
 	const names = new Set(), manifest = {...parseManifest(null, {noteId: id, now: 0}), canonical: ledger};
@@ -1371,30 +1359,9 @@ export function createOwnerSyncStore({folder, deviceId, personal = null, label =
 				index.assetTombstones = {...fresh.index.assetTombstones, ...next.head.assetTombstones};
 				index.assetRevivals = next.head.assetRevivals;
 				if (fresh.index.deletions) index.deletions = fresh.index.deletions; else delete index.deletions;
-				const histories = new Map(), canonical = [], freshById = new Map(Object.entries(fresh.index.notes).map(([file, entry]) => [entry.id, file]));
-				for (const [file, value] of Object.entries(next.files)) {
-					const entry = index.notes[file], priorFile = freshById.get(entry.id), prior = priorFile && fresh.files[priorFile];
-					const proved = verifyCanonicalNote(value.ledger, value.text, entry, await fileHash(value));
-					if (prior && !preservesActs(prior.ledger, proved.ledger)) refuse('notes_history_conflict', 'sync cannot replace a retained canonical act');
-					const path = 'history/' + manifestName(entry.id), before = await folder.store.read(path);
-					const retained = prior || before !== null ? parseCanonical(before, {noteId: entry.id, now: Date.now(), text: prior?.text}) : null;
-					let manifest = retained?.manifest || parseManifest(null, {noteId: entry.id, now: Date.now()});
-					if (prior && retained.ledger.sha256 !== prior.ledger.sha256) refuse('changed', 'canonical history changed before sync admission');
-					if (!prior && retained && !preservesActs(retained.ledger, proved.ledger)) refuse('notes_history_conflict', 'the incoming identity does not extend its retained local history');
-					canonical.push({file, id: entry.id, history: path, ledger: proved.ledger.sha256});
-					const media = next.media?.[entry.id] ?? manifest.media ?? [], kept = prior && priorFile === file && prior.ledger.sha256 === proved.ledger.sha256;
-					if (kept && same(media, manifest.media ?? [])) continue;
-					manifest = {...manifest, canonical: proved.ledger, ...(media.length ? {media} : {})};
-					const recorded = kept ? {manifest, writes: []} : await recordVersion(manifest, {file, text: value.text, entry, reason: 'merge', now: Date.now()});
-					const rows = new Map(recorded.writes.map(row => ['history/' + row.name, row]));
-					rows.set(path, {bytes: te.encode(serializeManifest(recorded.manifest))});
-					for (const [name, row] of rows) {
-						const old = name === path ? before : await folder.store.read(name);
-						if (old && await sha256Hex(old) === await sha256Hex(row.bytes)) continue;
-						if (row.immutable && old) refuse('history', 'a kept history object changed; no note was replaced');
-						histories.set(name, {file: name, bytes: row.bytes, expectedDigest: old === null ? null : await sha256Hex(old)});
-					}
-				}
+				const {writes: histories, canonical, byId: freshById} = await prepareCanonicalAdmission({
+					store: folder.store, previous: fresh, index, files: next.files, media: next.media,
+				});
 
 				for (const [file, value] of Object.entries(next.files)) {
 					if (!safeFile(file)) refuse('name', 'sync may write only a safe note filename');

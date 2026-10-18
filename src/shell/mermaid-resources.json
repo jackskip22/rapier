@@ -12,7 +12,7 @@
     {
       "name": "zenuml",
       "version": "4.5.0-2",
-      "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.10/site/plugins/rapier-zenuml-4.5.0-2.js",
+      "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.11/site/plugins/rapier-zenuml-4.5.0-2.js",
       "file": "plugins/rapier-zenuml-4.5.0-2.js",
       "path": "shell/vendor/zenuml/rapier-zenuml-4.5.0-2.js",
       "bytes": 1896464,

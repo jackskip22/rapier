@@ -11,6 +11,10 @@ export function createDropboxPlainStore(options = {}) {
 	const folder = options.folder;
 	if (typeof folder !== 'string' || !/^\/[^/\\\x00-\x1f\x7f]+(?:\/[^/\\\x00-\x1f\x7f]+)*$/.test(folder) || folder.split('/').some(part => part === '.' || part === '..')) refuse('config', 'choose the Dropbox folder that keeps the plain files');
 	const http = createHTTP(options), authorization = tokenFor(options.token, 'dropbox'), lower = folder.toLowerCase();
+	let rootId = options.rootId || null;
+	const relative = options.relative || '';
+	if (rootId !== null && !/^id:[A-Za-z0-9_-]{1,256}$/.test(rootId) || relative && !/^\/(?:[^/\\\x00-\x1f\x7f]+\/?)+$/.test(relative)) refuse('config', 'the Dropbox folder identity is not complete');
+	const rootPath = () => rootId ? rootId + relative : folder;
 	const classify = response => response.status === 429 || response.status >= 500
 		? {error: providerError('Dropbox', response, response.status === 429 ? 'rate' : 'server'), delay: retryAfter(response)} : null;
 	async function request(origin, path, args, {body, maxBytes = 4 * 1024 * 1024} = {}) {
@@ -26,7 +30,7 @@ export function createDropboxPlainStore(options = {}) {
 		if (typeof value !== 'string' || !value || value.length > 255 || /[/\\\x00-\x1f\x7f]/.test(value) || value === '.' || value === '..') refuse('authority', 'only a file at the top of the plain-files folder can be used');
 		return value;
 	};
-	const pathOf = value => folder + '/' + name(value);
+	const pathOf = value => rootPath() + '/' + name(value);
 	function fileRow(row) {
 		if (!row || row['.tag'] !== undefined && row['.tag'] !== 'file' || typeof row.path_lower !== 'string' || row.path_lower !== lower + '/' + String(row.name).toLowerCase() || !REV.test(row.rev || '') || !Number.isSafeInteger(row.size) || row.size < 0) {
 			refuse('authority', 'Dropbox returned a file outside the plain-files folder');
@@ -35,10 +39,23 @@ export function createDropboxPlainStore(options = {}) {
 	}
 	return Object.freeze({
 		pause: http.pause,
-		pictures: () => createDropboxPlainStore({...options, folder: folder + '/attachments'}),
+		async destinationIdentity({create = false} = {}) {
+			let response = await request(DROPBOX_API_ORIGIN, 'files/get_metadata', {path: folder, include_deleted: false});
+			if (create && response.status === 409 && errorTag(response).join('/') === 'path/not_found') {
+				const made = await request(DROPBOX_API_ORIGIN, 'files/create_folder_v2', {path: folder, autorename: false});
+				if (made.status !== 200 && !(made.status === 409 && errorTag(made).join('/') === 'path/conflict')) throw providerError('Dropbox', made);
+				response = await request(DROPBOX_API_ORIGIN, 'files/get_metadata', {path: folder, include_deleted: false});
+			}
+			if (response.status !== 200) throw providerError('Dropbox', response, 'connection');
+			const row = jsonBody(response);
+			if (row['.tag'] !== 'folder' || row.path_lower !== lower || !/^id:[A-Za-z0-9_-]{1,256}$/.test(row.id || '')) refuse('authority', 'Dropbox returned a different plain-files folder');
+			rootId = row.id;
+			return Object.freeze({id: rootId});
+		},
+		pictures: () => createDropboxPlainStore({...options, folder: folder + '/attachments', rootId, relative: relative + '/attachments'}),
 		async list() {
 			const out = [], seen = new Set();
-			let response = await request(DROPBOX_API_ORIGIN, 'files/list_folder', {path: folder, recursive: false, include_deleted: false, limit: 2000});
+			let response = await request(DROPBOX_API_ORIGIN, 'files/list_folder', {path: rootPath(), recursive: false, include_deleted: false, limit: 2000});
 			for (let pages = 0; ; pages++) {
 				if (response.status === 409 && errorTag(response).join('/') === 'path/not_found') return [];
 				if (response.status !== 200) throw providerError('Dropbox', response);

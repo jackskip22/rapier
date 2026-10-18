@@ -308,7 +308,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 		transports.add(store);
 		try {
 			const id = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(folder.deviceId || '') && folder.deviceId !== 'files' ? folder.deviceId : 'rapier';
-			const result = await fn(createPlainSession({folder, store, provider, place: where, device: id}));
+			const result = await fn(createPlainSession({folder, store, provider, place: where, device: id, guard: () => active(ticket)}));
 			active(ticket); return result;
 		} finally { store.pause?.(); transports.delete(store); }
 	}

@@ -1,5 +1,5 @@
 const te = new TextEncoder(), td = new TextDecoder('utf-8', {fatal:true});
-const fail = () => Object.assign(new Error('this device could not remember sync; sign in and unlock again.'), {code:'device'});
+const fail = () => Object.assign(new Error('this device could not safely keep sync credentials.'), {code:'device'});
 const revision = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), n => n.toString(16).padStart(2,'0')).join('');
 export function createDeviceStorage({scope = '', factory = globalThis.indexedDB} = {}) {
  let database;
@@ -39,18 +39,30 @@ export function createRememberedDevice({storage} = {}) {
    if ((current?.revision || null)!==before) throw fail();
    return {...next,revision:id};
   });observed=id;
+  return id;
+ }
+ async function seal(binding,data,extra={}) {
+  const before=observed;
+  const key=await crypto.subtle.generateKey({name:'AES-GCM',length:256},false,['encrypt','decrypt']);
+  const nonce=crypto.getRandomValues(new Uint8Array(12)), plain=te.encode(JSON.stringify(data));
+  let payload;
+  try {payload=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv:nonce,additionalData:te.encode(binding)},key,plain));}
+  finally {plain.fill(0);}
+  return commit({enabled:true,binding,key,nonce,payload,...extra},before);
  }
  return Object.freeze({
   available: storage.available !== false,
   async read(binding) {
    if (storage.available === false) return {enabled:false,data:null};
    const record=await readRecord();
-   if (!enabled || !record?.payload) return {enabled,data:null};
+   const pending={revocationPending:record?.revocationPending===true,revocationUnresolved:record?.revocationUnresolved===true,revision:observed};
+   if (!enabled || !record?.payload) return {enabled,data:null,...pending,revocationRecoverable:false};
    try {
     if (typeof record.binding!=='string' || record.key?.type!=='secret' || record.key.extractable!==false || record.key.algorithm?.name!=='AES-GCM' || record.nonce?.length!==12) throw fail();
     const bytes=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:record.nonce,additionalData:te.encode(record.binding)},record.key,record.payload));
     try {
      const data=JSON.parse(td.decode(bytes));
+     if (pending.revocationPending) return {enabled,data:null,retired:{grant:null,credentials:data.credentials},binding:record.binding,...pending,revocationRecoverable:true};
      if (record.binding===binding) return {enabled,data,binding:record.binding};
      if (Array.isArray(data.key)) data.key.fill(0);
      return {enabled,data:null,retired:{grant:data.grant,credentials:data.credentials},binding:record.binding};
@@ -59,20 +71,22 @@ export function createRememberedDevice({storage} = {}) {
   },
   async keep(binding,data) {
    if (!enabled) return;
-   const before=observed;
-   const key=await crypto.subtle.generateKey({name:'AES-GCM',length:256},false,['encrypt','decrypt']);
-   const nonce=crypto.getRandomValues(new Uint8Array(12)), plain=te.encode(JSON.stringify(data));
-   let payload;
-   try {payload=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv:nonce,additionalData:te.encode(binding)},key,plain));}
-   finally {plain.fill(0);}
-   await commit({enabled:true,binding,key,nonce,payload},before);
+   await seal(binding,data);
   },
-  async forget(value) {
+  async keepRevocation(binding,credentials,{persistCredentials=false,unresolved=false}={}) {
+   if (storage.available===false) return {persisted:false,revision:null};
+   const extra={revocationPending:true,...(unresolved ? {revocationUnresolved:true} : {})};
+   const persisted=enabled && persistCredentials;
+   const id=persisted ? await seal(binding,{grant:null,credentials},extra) : await commit({enabled,...extra});
+   return {persisted,revision:id};
+  },
+  async forget(value,{revocationPending=false,unresolved=false}={}) {
    if (storage.available === false) return;
    const before=observed,id=revision(),kept=await storage.update(current=>{
     if ((current?.revision || null)!==before) throw Object.assign(fail(),{code:'device_stale'});
-    return {enabled:value ?? current?.enabled !== false,revision:id};
+    return {enabled:value ?? current?.enabled !== false,revision:id,...(revocationPending ? {revocationPending:true} : {}),...(unresolved ? {revocationUnresolved:true} : {})};
    });observed=id;enabled=kept.enabled;
+   return {revision:id};
   },
  });
 }

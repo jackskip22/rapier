@@ -15,12 +15,12 @@ export function authorizeUrl(options = {}) {
 export function createOAuthClient(options = {}) {
 	const io = oauthIO(options, 'OneDrive');
 	options = Object.freeze({...options});
-	const exchange = async ({code, verifier}) => readToken(await io.post(TOKEN_ENDPOINT, {...grantCode(code, verifier), client_id: options.clientId, redirect_uri: options.redirectUri, scope: SCOPES}), 'onedrive', SCOPES);
+	const exchange = async ({code, verifier}) => readToken(await io.post(TOKEN_ENDPOINT, {...grantCode(code, verifier), client_id: options.clientId, redirect_uri: options.redirectUri, scope: SCOPES}), 'onedrive', SCOPES, null, options.onToken);
 	return Object.freeze({pause: io.pause, exchange,
 		begin: () => pendingSignIn(options, authorizeUrl, exchange),
 		async refresh({refreshToken}) {
 			refreshValue(refreshToken);
-			return readToken(await io.post(TOKEN_ENDPOINT, {grant_type: 'refresh_token', refresh_token: refreshToken, client_id: options.clientId, scope: SCOPES}), 'onedrive', SCOPES, refreshToken);
+			return readToken(await io.post(TOKEN_ENDPOINT, {grant_type: 'refresh_token', refresh_token: refreshToken, client_id: options.clientId, scope: SCOPES}), 'onedrive', SCOPES, refreshToken, options.onToken);
 		},
 		async revoke() {
 			io.pause();

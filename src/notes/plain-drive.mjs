@@ -12,6 +12,10 @@ const FIELDS = 'id,name,mimeType,parents,size,trashed,headRevisionId,appProperti
 const quote = value => "'" + value.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
 
 export function createDrivePlainStore(options = {}) {
+	return drivePlainStore(options);
+}
+
+function drivePlainStore(options, parentFolder = null) {
 	const path = plainFolder(options.folder, 'choose a folder name for the plain files');
 	const http = createHTTP(options), authorization = tokenFor(options.token, 'drive');
 	const classify = response => {
@@ -47,12 +51,14 @@ export function createDrivePlainStore(options = {}) {
 	}
 	let folderId = null;
 	const folderQuery = (name, parent) => `name = ${quote(name)} and ${quote(parent)} in parents and appProperties has { key='rapierPlain' and value='1' } and mimeType = '${FOLDER}' and trashed = false`;
-	async function folder() {
+	async function folder(create = true) {
+		http.check();
 		if (folderId) return folderId;
-		let parent = 'root';
+		let parent = parentFolder ? await parentFolder(create) : 'root';
 		for (const name of path) {
 			let found = await search(folderQuery(name, parent));
 			if (!found.length) {
+				if (!create) refuse('missing_root', 'the connected Drive folder is missing or not visible; nothing was created');
 				const id = await newId();
 				const response = await request(FILES + '?fields=' + encodeURIComponent(FIELDS), {method: 'POST', headers: {'Content-Type': 'application/json'},
 					body: JSON.stringify({id, name, mimeType: FOLDER, parents: [parent], appProperties: {rapierPlain: '1'}})}, false);
@@ -88,8 +94,8 @@ export function createDrivePlainStore(options = {}) {
 		if (!url.pathname.startsWith('/upload/drive/v3/files') || url.searchParams.get('uploadType') !== 'resumable' || !url.searchParams.get('upload_id')) refuse('authority', 'Drive returned an unexpected upload address');
 		return url.href;
 	}
-	async function upload(method, address, entry, bytes) {
-		let response = await request(address, {method, headers: {'Content-Type': 'application/json', 'X-Upload-Content-Type': 'text/markdown', 'X-Upload-Content-Length': String(bytes.length)}, body: JSON.stringify(entry)}, false);
+	async function upload(entry, bytes) {
+		let response = await request(UPLOAD + '?uploadType=resumable&fields=' + encodeURIComponent(FIELDS), {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Upload-Content-Type': 'text/markdown', 'X-Upload-Content-Length': String(bytes.length)}, body: JSON.stringify(entry)}, false);
 		if (response.status === 409) throw plainConflict();
 		if (response.status !== 200) throw providerError('Google Drive', response);
 		const session = sessionURL(response.headers.get('location'));
@@ -107,14 +113,10 @@ export function createDrivePlainStore(options = {}) {
 		if (![200, 201].includes(response.status)) refuse('upload_unconfirmed', 'Drive did not confirm the upload');
 		return jsonBody(response);
 	}
-	async function trash(id) {
-		const response = await request(FILES + '/' + encodeURIComponent(id) + '?fields=' + encodeURIComponent(FIELDS), {method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({trashed: true})}, false);
-		if (response.status !== 200) throw providerError('Google Drive', response);
-	}
 	return Object.freeze({
 		pause: http.pause,
-		folderId: () => folder(),
-		pictures: () => createDrivePlainStore({...options, folder: [...path, 'attachments'].join('/')}),
+		folderId: ({create = false} = {}) => folder(create === true),
+		pictures: () => drivePlainStore({...options, folder: 'attachments'}, folder),
 		async list() {
 			const parent = await folder(), rows = (await search(`${quote(parent)} in parents and trashed = false`)).filter(row => row.mimeType !== FOLDER).map(row => fileRow(row, parent)).filter(Boolean);
 			const count = new Map(); for (const row of rows) count.set(row.name, (count.get(row.name) || 0) + 1);
@@ -130,31 +132,25 @@ export function createDrivePlainStore(options = {}) {
 			refuse('busy', 'the file kept changing while it was read; the next sync reads it again');
 		},
 		async put(file, bytes, condition = {}) {
-			plainBytes(bytes, MAX_BYTES);
-			const parent = await folder(), row = await named(file);
-			if (condition.ifAbsent === true) {
-				if (row) throw plainConflict();
-				const id = await newId();
-				const made = await upload('POST', UPLOAD + '?uploadType=resumable&fields=' + encodeURIComponent(FIELDS), {id, name: file, mimeType: 'text/markdown', parents: [parent]}, bytes);
-				const twins = (await search(`${quote(parent)} in parents and trashed = false and name = ${quote(file)}`)).filter(other => other.name === file);
-				if (twins.length > 1) { await trash(id); throw plainConflict(); }
-				const mine = fileRow(made, parent);
-				if (!mine || mine.id !== id || mine.size !== bytes.length) refuse('response', 'Drive\'s receipt names another file or size');
-				return {rev: mine.rev};
+			plainName(file); plainBytes(bytes, MAX_BYTES); http.check();
+			if (condition.ifAbsent !== true) {
+				if (typeof condition.ifRev !== 'string' || !condition.ifRev) refuse('conditional', 'a plain file is written only as new or over the revision last read');
+				refuse('conditional_unverified', 'Drive conditional replacement is unverified; the note is kept');
 			}
-			if (typeof condition.ifRev !== 'string' || !condition.ifRev) refuse('conditional', 'a plain file is written only as new or over the revision last read');
-			if (!row || row.rev !== condition.ifRev) throw plainConflict();
-			const made = fileRow(await upload('PATCH', UPLOAD + '/' + encodeURIComponent(row.id) + '?uploadType=resumable&fields=' + encodeURIComponent(FIELDS), {}, bytes), parent);
-			if (!made || made.id !== row.id || made.size !== bytes.length) refuse('response', 'Drive\'s receipt names another file or size');
-			return {rev: made.rev};
+			const parent = await folder(), row = await named(file);
+			if (row) throw plainConflict();
+			const id = await newId();
+			const made = await upload({id, name: file, mimeType: 'text/markdown', parents: [parent]}, bytes);
+			const twins = (await search(`${quote(parent)} in parents and trashed = false and name = ${quote(file)}`)).filter(other => other.name === file);
+			if (twins.length > 1) throw plainConflict();
+			const mine = fileRow(made, parent);
+			if (!mine || mine.id !== id || mine.size !== bytes.length) refuse('response', 'Drive\'s receipt names another file or size');
+			return {rev: mine.rev};
 		},
 		async remove(file, {ifRev} = {}) {
+			plainName(file); http.check();
 			if (typeof ifRev !== 'string' || !ifRev) refuse('conditional', 'a plain file is removed only at the revision last read');
-			const row = await named(file);
-			if (!row) return false;
-			if (row.rev !== ifRev) throw plainConflict();
-			await trash(row.id);
-			return true;
+			refuse('conditional_unverified', 'Drive conditional trash is unverified; the file is kept');
 		},
 	});
 }

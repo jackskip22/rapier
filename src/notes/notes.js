@@ -1319,19 +1319,10 @@ function _rapierNotesColourModeBtn() {
 }
 function _rapierNotesColourModeWear(b) { b?.setAttribute('aria-pressed', String(_rapierNotesColourMode() === 'page')); }
 function _rapierNotesSyncFacts() {
-	const app = _rapierNotesIsApp();
-	let live = null;
-	try { live = typeof _rapierNotesSyncUi === 'object' ? _rapierNotesSyncUi.status() : null; } catch (_) {}
-	const vault = _rapierNotes.syncState?.vault;
-	const S = globalThis.RapierNotesSyncSession, other = live?.stage ? (live.mode === 'provider' ? live.provider : null) : vault?.mode === 'provider' ? vault.provider : null;
-	const kept = live?.stage ? (live.mode === 'r2-key' || other && !S?.providerUsesSignIn(other)) : (vault?.mode === 'r2-key' || other && !S?.providerUsesSignIn(other));
-	const connected = live?.stage ? (kept ? live.credentialStored === true : live.authorized === true)
-		: app ? vault?.mode === 'companion' : kept && Array.isArray(vault.credential) && vault.credential.length > 0;
-	const at = live?.stage ? live.backedUpAt : _rapierNotes.syncState?.backedUpAt;
-	const plain = _rapierNotes.syncState?.plain;
-	if (plain && !vault) return {app, connected: true, plain: true, service: plain.provider === 'companion' ? 'rapier sync' : (S?.PROVIDERS?.[plain.provider]?.label || S?.KEY_PLAIN_LABELS?.[plain.provider])?.toLowerCase() || null,
+	const app = _rapierNotesIsApp(), S = globalThis.RapierNotesSyncSession, plain = _rapierNotes.syncState?.plain;
+	if (!plain) return {app, connected: false, service: null, at: null};
+	return {app, connected: true, plain: true, service: plain.provider === 'companion' ? 'rapier sync' : (S?.PROVIDERS?.[plain.provider]?.label || S?.KEY_PLAIN_LABELS?.[plain.provider])?.toLowerCase() || null,
 		at: Number.isSafeInteger(plain.syncedAt) && plain.syncedAt > 0 ? plain.syncedAt : null};
-	return {app, connected, service: other && S?.PROVIDERS?.[other]?.label.toLowerCase() || null, at: connected && Number.isSafeInteger(at) && at > 0 ? at : null};
 }
 function _rapierNotesBackupWhen(at) {
 	const d = new Date(at);
@@ -3237,7 +3228,7 @@ globalThis.RapierNotesKeep = Object.freeze({
 	synced() {
 		try {
 			const s = typeof _rapierNotesSyncUi !== 'undefined' && _rapierNotesSyncUi.status();
-			return !!(s && s.unlocked && s.authorized);
+			return !!s?.ready;
 		} catch (_) { return false; }
 	},
 	ask(purpose) {

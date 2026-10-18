@@ -57,18 +57,23 @@ export function readRedirect(search, expectedState) {
 	return code;
 }
 
-function readToken(body) {
+function readToken(body, onToken) {
 	if (!body || typeof body !== 'object') refuse('response', 'the token endpoint returned no object');
 	const access = body.access_token, type = String(body.token_type || '').toLowerCase();
-	if (typeof access !== 'string' || !access) refuse('response', 'the token endpoint returned no access token');
-	if (type !== 'bearer') refuse('response', 'the token endpoint did not return a bearer token');
+	const usable = value => typeof value === 'string' && !!value && !/[\x00-\x20\x7f]/.test(value);
 	const seconds = Number(body.expires_in);
-	return Object.freeze({
-		accessToken: access,
-		refreshToken: typeof body.refresh_token === 'string' && body.refresh_token ? body.refresh_token : null,
+	const token = Object.freeze({
+		accessToken: usable(access) && type === 'bearer' ? access : null,
+		refreshToken: usable(body.refresh_token) ? body.refresh_token : null,
 		expiresIn: Number.isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : null,
 		scope: typeof body.scope === 'string' ? body.scope : '',
 	});
+	if (token.accessToken || token.refreshToken) onToken?.(token);
+	if (!usable(access)) refuse('response', 'the token endpoint returned no access token');
+	if (type !== 'bearer') refuse('response', 'the token endpoint did not return a bearer token');
+	if (body.refresh_token !== undefined && !usable(body.refresh_token)) refuse('response', 'the token endpoint returned an unusable refresh token');
+	if (body.scope !== undefined && typeof body.scope !== 'string') refuse('response', 'the token endpoint returned invalid scopes');
+	return token;
 }
 
 export function createOAuthClient(options = {}) {
@@ -98,11 +103,11 @@ export function createOAuthClient(options = {}) {
 			if (typeof redirectUri !== 'string' || !redirectUri) refuse('redirect', 'the same redirect URI is required for the exchange');
 			return readToken(await post(TOKEN_ENDPOINT, {
 				grant_type: 'authorization_code', code, redirect_uri: redirectUri, code_verifier: verifier,
-			}));
+			}), options.onToken);
 		},
 		async refresh({refreshToken}) {
 			if (!refreshToken || typeof refreshToken !== 'string') refuse('refresh', 'a refresh token is required');
-			return readToken(await post(TOKEN_ENDPOINT, {grant_type: 'refresh_token', refresh_token: refreshToken}));
+			return readToken(await post(TOKEN_ENDPOINT, {grant_type: 'refresh_token', refresh_token: refreshToken}), options.onToken);
 		},
 		async revoke({token, hint}) {
 			if (!token || typeof token !== 'string') refuse('token', 'a token is required to revoke');

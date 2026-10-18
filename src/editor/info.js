@@ -54,20 +54,20 @@ function _rapierOpenInfoSheet(kind) {
       'RAPIER SYNC (COMING SOON) — A separate app that will connect your storage. Rapier itself never goes online.',
       'CLOUDFLARE, GOOGLE DRIVE, ONEDRIVE, DROPBOX, S3, WEBDAV — Chosen there.',
       'Until then, use BACKUP to keep copies.',
-      'Your notes are encrypted on this device before they leave it.'] : [
-      'CLOUDFLARE — Your own private storage, encrypted and free. Recommended.',
+      'Your notes are plain Markdown files there. Anyone with access to that folder can read them.'] : [
+      'CLOUDFLARE — An R2 bucket of your own, free. Recommended.',
       'GOOGLE DRIVE, ONEDRIVE, DROPBOX — For files you already keep there.',
-      'Your notes are encrypted on this device before they leave it.',
-      'S3 and WebDAV: Rapier Sync on Android.'])],
+      'S3, WEBDAV — With a storage key, under other sync options.',
+      'Your notes are plain Markdown files there. Anyone with access to that folder can read them.'])],
     'notes-folder': ['folder',
       'Notes are Markdown files.',
       'IMPORT — Add notes or restore backups.',
-      'BACKUP — Keep every part elsewhere. Not encrypted.',
+      'BACKUP — Keep every part elsewhere.',
       'TIDY HISTORY — Permanently removes older versions; keeps your notes.'],
     notes: ['notes',
       ...(globalThis.RapierPlatform?.environment.android ? ['LOCK-SCREEN NOTES — Add Rapier to a lock screen shortcut in your phone\'s lock screen settings. Tapping it there starts a new note without unlocking; your other notes stay locked. If your phone has a default notes app setting, choose Rapier there too.'] : []),
       'SKILLS — Shows instruction notes, hidden by default. Connected agents can read notes.',
-      'SYNC — Encrypts notes before uploading to your storage.',
+      'SYNC — Keeps your notes as Markdown files in your own storage.',
       (() => {
         const S = _rapierNotesPart?.syncSession, platform = globalThis.RapierPlatform?.environment.id;
         const where = {url: location.href, native: ['android', 'windows'].includes(platform), framed: window.top !== window};
@@ -78,8 +78,7 @@ function _rapierOpenInfoSheet(kind) {
           : 'Open rapier.website to sync.';
       })(),
       'Cloudflare access covers your account’s storage.',
-      'Deleting notes leaves online history.',
-      'BACKUP — Unencrypted. Keep every part elsewhere.',
+      'BACKUP — Keep every part elsewhere.',
       _rapierNotesPart?.storageSentence() ?? 'Storage is unconfirmed. Keep a backup elsewhere.'],
     /* RAPIER_NOTES_END */
   }[kind];

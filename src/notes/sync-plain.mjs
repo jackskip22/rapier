@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {isNoteFile} from './model.mjs';
 import {mergeText} from '../kit/ledger/text-merge.mjs';
+import {writePlainNote} from './sync-plain-conflicts.mjs';
+import {markTrashed, reviveTrashed} from './trash.mjs';
 
 const te = new TextEncoder();
 const td = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true});
@@ -15,14 +17,16 @@ export const PLAIN_CHOICES = Object.freeze([
 ]);
 export const isSyncLayout = value => value === 'encrypted' || value === 'plain';
 
-export async function syncPlainFiles({folder, store, base, device, other}) {
+export async function syncPlainFiles({folder, store, base, device, other, guard = () => {}}) {
 	if (!folder || !store || !base || typeof base.read !== 'function' || typeof base.write !== 'function') throw fail('config', 'plain-file sync needs a folder, a store and its agreed base.');
 	if (!DEVICE.test(device || '') || !DEVICE.test(other || '') || device === other) throw fail('config', 'plain-file sync needs two distinct device names for its conflict blocks.');
+	await guard();
 	const agreed = new Map(Object.entries(await base.read() || {}));
 	const result = {pushed: 0, pulled: 0, created: 0, renamed: 0, trashed: 0, removed: 0, conflicts: 0, held: []};
 	const remote = new Map((await store.list()).filter(row => isNoteFile(row.name)).map(row => [row.name, row]));
 
 	async function local() {
+		await guard();
 		const {index} = await folder.read(), notes = new Map();
 		for (const [file, entry] of Object.entries(index.notes || {})) {
 			const bytes = await folder.store.read(file);
@@ -43,25 +47,45 @@ export async function syncPlainFiles({folder, store, base, device, other}) {
 	const keep = (id, name, rev, hash, value) => agreed.set(id, {name, rev, hash, text: value});
 	const hold = (name, why) => result.held.push({name, why});
 
-	async function saveLocal(note, value) {
-		try { await folder.save({file: note.file, id: note.entry.id, expectedDigest: note.hash, text: value}); return true; }
-		catch (error) { hold(note.file, error?.code || 'changed'); return false; }
+	async function saveLocal(note, value, conflicts = null) {
+		try {
+			if (conflicts) await writePlainNote({folder, file: note.file, id: note.entry.id, digest: note.hash, text: value, conflicts, guard});
+			else await folder.save({file: note.file, id: note.entry.id, expectedDigest: note.hash, text: value}, {admissionGuard: guard});
+			return true;
+		}
+		catch (error) { await guard(); hold(note.file, error?.code || 'changed'); return false; }
 	}
 	async function setTrashed(note, trashed) {
-		const before = (await folder.read()).index, next = structuredClone(before);
-		if (!next.notes[note.file]) return false;
-		next.notes[note.file].trashed = trashed;
-		await folder.metadata(before, next);
-		return true;
+		const lease = await folder.owner.acquire(folder.scope);
+		const unchanged = async () => {
+			await guard();
+			const bytes = await folder.store.read(note.file);
+			if (!bytes || await digest(bytes) !== note.hash) throw fail('changed', 'the note changed.');
+			await guard();
+		};
+		try {
+			await lease.transact(async ({index, bodies}) => {
+				await guard();
+				if (index.notes[note.file]?.id !== note.entry.id || !bodies.has(note.file) || await digest(bodies.get(note.file)) !== note.hash)
+					throw fail('changed', 'the note changed.');
+				return {kind: 'metadata', index: trashed ? markTrashed(index, note.file, {digest: note.hash, now: Date.now()})
+					: reviveTrashed(index, note.file)};
+			}, {bodies: [note.file], admissionGuard: unchanged});
+			return true;
+		} catch (error) { await guard(); hold(note.file, error?.code || 'changed'); return false; }
+		finally { await lease.release(); }
 	}
 	async function push(name, value, condition) {
+		await guard();
 		try { return await store.put(name, te.encode(value), condition); }
 		catch (error) { if (error?.code === 'conflict') { hold(name, 'conflict'); return null; } throw error; }
 	}
 
 	const claimed = new Set();
 	for (const [id, was] of [...agreed]) {
+		await guard();
 		const note = mine.notes.get(id);
+		if (note && text(note.bytes) === null) { hold(note.file, 'unreadable'); claimed.add(was.name); continue; }
 		let theirs = remote.get(was.name);
 		if (!theirs) for (const [name, row] of remote) {
 			if (claimed.has(name) || [...agreed.values()].some(other => other.name === name) || row.size !== undefined && row.size !== te.encode(was.text).length) continue;
@@ -71,6 +95,12 @@ export async function syncPlainFiles({folder, store, base, device, other}) {
 		if (theirs) claimed.add(theirs.name);
 		const localGone = !note || note.entry.trashed === true;
 		const localChanged = note && note.hash !== was.hash, remoteChanged = theirs && theirs.rev !== was.rev;
+		if (!theirs && note && !localGone && note.file !== was.name) {
+			const destination = await fetch(note.file);
+			if (destination?.hash === note.hash) {
+				keep(id, note.file, destination.rev, note.hash, text(note.bytes)); claimed.add(note.file); continue;
+			}
+		}
 		if (!theirs) {
 			if (localGone) { agreed.delete(id); continue; }
 			if (!localChanged) { if (await setTrashed(note, true)) { result.trashed++; agreed.delete(id); } continue; }
@@ -87,7 +117,7 @@ export async function syncPlainFiles({folder, store, base, device, other}) {
 			if (note) {
 				const got = await fetch(theirs.name), value = got && text(got.bytes);
 				if (value === null || !got) { hold(theirs.name, 'unreadable'); continue; }
-				await setTrashed(note, false); mine = await local();
+				if (!await setTrashed(note, false)) continue; mine = await local();
 				const back = mine.notes.get(id);
 				if (back && await saveLocal(back, value)) { keep(id, back.file, got.rev, got.hash, value); result.pulled++; }
 			}
@@ -96,7 +126,7 @@ export async function syncPlainFiles({folder, store, base, device, other}) {
 		let name = theirs.name;
 		if (theirs.name !== was.name && note.file === was.name) {
 			try {
-				const renamed = await folder.rename({file: note.file, id, expectedDigest: note.hash, wanted: theirs.name});
+				const renamed = await folder.rename({file: note.file, id, expectedDigest: note.hash, wanted: theirs.name}, {guard});
 				result.renamed++; mine = await local();
 				const now = mine.notes.get(id);
 				if (now && now.file !== theirs.name) {
@@ -106,12 +136,26 @@ export async function syncPlainFiles({folder, store, base, device, other}) {
 				void renamed;
 			} catch (error) { hold(note.file, error?.code || 'rename'); continue; }
 		} else if (note.file !== was.name && theirs.name === was.name) {
-			const put = await push(note.file, text(note.bytes) ?? '', {ifAbsent: true});
+			const got = await fetch(theirs.name), remoteText = got && text(got.bytes), ours = text(note.bytes);
+			if (!got || remoteText === null || ours === null) { hold(theirs.name, 'unreadable'); continue; }
+			const merged = got.hash === was.hash || got.hash === note.hash ? {text: ours, conflicts: []}
+				: note.hash === was.hash ? {text: remoteText, conflicts: []}
+				: mergeText(was.text, ours, remoteText, {oursId: device, theirsId: other});
+			if (merged.conflicts.length) result.conflicts++;
+			if (merged.text !== ours && !await saveLocal(note, merged.text, merged.conflicts)) continue;
+			const hash = await digest(te.encode(merged.text));
+			const destination = await store.get(note.file);
+			let put;
+			if (destination) {
+				const existing = await digest(destination.bytes);
+				if (existing !== hash && existing !== note.hash) { hold(note.file, 'taken'); continue; }
+				put = existing === hash ? {rev: destination.rev} : await push(note.file, merged.text, {ifRev: destination.rev});
+			} else put = await push(note.file, merged.text, {ifAbsent: true});
 			if (!put) continue;
-			try { await store.remove(theirs.name, {ifRev: theirs.rev}); }
-			catch (error) { if (error?.code !== 'conflict') throw error; hold(theirs.name, 'conflict'); }
-			result.renamed++; name = note.file; theirs = {name, rev: put.rev};
-			if (!localChanged) { keep(id, name, put.rev, note.hash, text(note.bytes)); continue; }
+			try { await guard(); await store.remove(theirs.name, {ifRev: got.rev}); }
+			catch (error) { await guard(); if (error?.code !== 'conflict') throw error; hold(theirs.name, 'conflict'); continue; }
+			keep(id, note.file, put.rev, hash, merged.text); result.renamed++; claimed.add(note.file);
+			continue;
 		}
 		const current = mine.notes.get(id);
 		if (!current) continue;
@@ -137,7 +181,7 @@ export async function syncPlainFiles({folder, store, base, device, other}) {
 		}
 		const merged = mergeText(was.text, ours, theirsText, {oursId: device, theirsId: other});
 		if (!merged.clean) result.conflicts++;
-		if (!await saveLocal(current, merged.text)) continue;
+		if (!await saveLocal(current, merged.text, merged.conflicts)) continue;
 		const put = await push(current.file, merged.text, {ifRev: got.rev});
 		if (put) { keep(id, current.file, put.rev, await digest(te.encode(merged.text)), merged.text); result.pushed++; result.pulled++; }
 	}
@@ -145,21 +189,23 @@ export async function syncPlainFiles({folder, store, base, device, other}) {
 	mine = await local();
 	const byName = new Map([...mine.notes.values()].map(note => [note.file, note]));
 	for (const [name] of remote) {
+		await guard();
 		if (claimed.has(name) || [...agreed.values()].some(was => was.name === name)) continue;
 		const got = await fetch(name), value = got && text(got.bytes);
 		if (!got || value === null) { hold(name, 'unreadable'); continue; }
 		const twin = byName.get(name);
+		if (twin && text(twin.bytes) === null) { hold(name, 'unreadable'); continue; }
 		if (twin && !agreed.has(twin.entry.id) && twin.entry.trashed !== true) {
 			if (twin.hash === got.hash) { keep(twin.entry.id, name, got.rev, got.hash, value); continue; }
 			const merged = mergeText(null, text(twin.bytes) ?? '', value, {oursId: device, theirsId: other});
 			if (!merged.clean) result.conflicts++;
-			if (!await saveLocal(twin, merged.text)) continue;
+			if (!await saveLocal(twin, merged.text, merged.conflicts)) continue;
 			const put = await push(name, merged.text, {ifRev: got.rev});
 			if (put) keep(twin.entry.id, name, put.rev, await digest(te.encode(merged.text)), merged.text);
 			continue;
 		}
 		if (twin) { hold(name, 'taken'); continue; }
-		const made = await folder.create(value, name);
+		const made = await folder.create(value, name, {}, undefined, {guard});
 		const madeName = typeof made === 'string' ? made : made?.file || name;
 		mine = await local();
 		const created = [...mine.notes.values()].find(note => note.file === madeName);
@@ -173,12 +219,14 @@ export async function syncPlainFiles({folder, store, base, device, other}) {
 
 	mine = await local();
 	for (const [id, note] of mine.notes) {
+		await guard();
 		if (agreed.has(id) || note.entry.trashed === true) continue;
 		const value = text(note.bytes);
 		if (value === null) { hold(note.file, 'unreadable'); continue; }
 		const put = await push(note.file, value, {ifAbsent: true});
 		if (put) { keep(id, note.file, put.rev, note.hash, value); result.pushed++; }
 	}
+	await guard();
 	await base.write(Object.fromEntries(agreed));
 	return result;
 }

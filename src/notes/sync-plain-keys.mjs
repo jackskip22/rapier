@@ -44,21 +44,33 @@ export function plainKeySettings(provider, input = {}) {
 	throw fail('config', 'choose webdav, s3-compatible storage or cloudflare r2.');
 }
 
+async function destinationOf(provider, settings) {
+	const endpoint = new URL(settings.endpoint);
+	if (endpoint.username || endpoint.password || endpoint.search || endpoint.hash) throw fail('connection', 'the plain-files connection changed.');
+	const value = JSON.stringify([provider, endpoint.href.replace(/\/+$/, ''), settings.bucket || '', settings.region || '', settings.username || '']);
+	return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)))].map(n => n.toString(16).padStart(2, '0')).join('');
+}
+
 export function createPlainKeySession({folder, fetch: fetchFn, device = null, origin = 'https://rapier.website', now = Date.now} = {}) {
 	if (!folder?.owner || typeof fetchFn !== 'function') throw fail('config', 'plain files need the notes folder and the network.');
-	let held = null, remember = !!device && device.available !== false, inspected = false, running = null;
-	const binding = (kept, identity) => JSON.stringify({kind: 'plain-keys', folder: identity, provider: kept.provider, place: kept.place, origin});
+	let held = null, remember = !!device && device.available !== false, inspected = false, running = null, activePlain = null, epoch = 0, locked = false, closing = null;
+	const binding = (kept, identity) => JSON.stringify({kind: 'plain-keys', folder: identity, provider: kept.provider, place: kept.place, connectionId: kept.connectionId, origin});
 	async function kept() {
 		const plain = (await readSyncState(folder)).plain;
 		return plain && KEY_PLAIN_PROVIDERS.includes(plain.provider) ? plain : null;
 	}
 	const identity = async () => (await folder.read()).index.folderDeviceId;
 	async function restore(plain) {
-		if (held || !device || !plain) return;
-		const restored = await device.read(binding(plain, await identity())); inspected = true;
-		remember = restored.enabled;
+		if (held || !device || !plain || locked) return;
+		const ticket = epoch, before = JSON.stringify([plain.provider, plain.place, plain.connectionId]);
+		const restored = await device.read(binding(plain, await identity()));
+		const current = await kept();
+		active(ticket);
+		if (locked || !current || JSON.stringify([current.provider, current.place, current.connectionId]) !== before) throw fail('connection', 'the plain-files connection changed.');
+		if (held) return;
+		inspected = true; remember = restored.enabled;
 		const saved = restored.data?.settings;
-		if (saved) held = {provider: plain.provider, place: plain.place, typed: typedOf(plain.provider, saved), settings: plainKeySettings(plain.provider, saved)};
+		if (saved) held = {provider: plain.provider, place: plain.place, connectionId: plain.connectionId, typed: typedOf(plain.provider, saved), settings: plainKeySettings(plain.provider, saved)};
 	}
 	async function keep(plain) {
 		if (!device || !remember || !held) return;
@@ -66,36 +78,45 @@ export function createPlainKeySession({folder, fetch: fetchFn, device = null, or
 		try { await device.keep(binding(plain, await identity()), {settings: held.typed}); }
 		catch { throw fail('device', 'this device could not remember the storage key. your notes are kept; try again or turn off remember this device.'); }
 	}
-	function session(provider, place, settings) {
+	function session(provider, place, settings, guard, connectionId, destination) {
 		const where = plainPlace(provider, place);
 		const store = plainStore(provider, {place: where, settings, fetch: fetchFn, authorizeEndpoint});
 		const id = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(folder.deviceId || '') && folder.deviceId !== 'files' ? folder.deviceId : 'rapier';
-		return {store, plain: createPlainSession({folder, store, provider, place: where, device: id, now})};
+		activePlain = createPlainSession({folder, store, provider, place: where, device: id, now, guard, connectionId, destination});
+		return {store, plain: activePlain};
 	}
-	const once = fn => { if (running) throw fail('busy', 'let the current sync finish.'); running = fn().finally(() => { running = null; }); return running; };
+	const active = ticket => { if (ticket !== epoch) throw fail('cancelled', 'sync stopped. your notes, and what waits to upload, are kept.'); };
+	const once = fn => { if (running || closing) throw fail('busy', 'let the current sync finish.'); const ticket = epoch; running = Promise.resolve().then(() => { active(ticket); return fn(ticket); }).finally(() => { running = null; activePlain = null; }); return running; };
+	const stop = async () => { epoch++; activePlain?.pause(); if (running) await running.catch(() => {}); };
 	return Object.freeze({
 		async status() {
-			const plain = await kept();
+			let plain = await kept();
 			try { await restore(plain); } catch {  }
-			return Object.freeze({connection: plain ? Object.freeze({provider: plain.provider, place: plain.place}) : null, keyHeld: !!held && !!plain,
+			plain = await kept();
+			return Object.freeze({connection: plain ? Object.freeze({provider: plain.provider, place: plain.place}) : null, keyHeld: !locked && !!held && !!plain && held.provider === plain.provider && held.place === plain.place && held.connectionId === plain.connectionId,
 				rememberAvailable: !!device && device.available !== false, rememberDevice: remember});
 		},
-		connect({provider, place, settings: typed} = {}) { return once(async () => {
+		connect({provider, place, settings: typed} = {}) { return once(async ticket => {
 			if (!KEY_PLAIN_PROVIDERS.includes(provider)) throw fail('config', 'choose webdav, s3-compatible storage or cloudflare r2.');
-			const settings = plainKeySettings(provider, typed), {store, plain} = session(provider, place, settings);
-			await store.connect();
-			await plain.connect();
-			held = {provider, place: plain.record.place, typed: typedOf(provider, typed), settings};
-			await keep(plain.record);
+			const settings = plainKeySettings(provider, typed), destination = await destinationOf(provider, settings); active(ticket);
+			const {store, plain} = session(provider, place, settings, () => active(ticket), undefined, destination);
+			await store.connect(); active(ticket);
+			const connected = await plain.connect(); active(ticket);
+			locked = false;
+			held = {provider, place: plain.record.place, connectionId: connected.connectionId, typed: typedOf(provider, typed), settings};
+			await keep(connected);
 			return plain.syncNow();
 		}); },
-		syncNow({settings: typed} = {}) { return once(async () => {
-			const plain = await kept();
+		syncNow({settings: typed} = {}) { return once(async ticket => {
+			const plain = await kept(); active(ticket);
 			if (!plain) throw fail('connection', 'connect this folder to its plain files first.');
-			if (typed) held = {provider: plain.provider, place: plain.place, typed: typedOf(plain.provider, typed), settings: plainKeySettings(plain.provider, typed)};
+			if (typed) { locked = false; held = {provider: plain.provider, place: plain.place, connectionId: plain.connectionId, typed: typedOf(plain.provider, typed), settings: plainKeySettings(plain.provider, typed)}; }
 			else await restore(plain);
-			if (!held || held.provider !== plain.provider || held.place !== plain.place) throw fail('credential', 'type the storage key again: this page does not keep it.');
-			const result = await session(plain.provider, plain.place.replace(/^\//, ''), held.settings).plain.syncNow();
+			active(ticket);
+			if (locked || !held || held.provider !== plain.provider || held.place !== plain.place || held.connectionId !== plain.connectionId) throw fail('credential', 'type the storage key again: this page does not keep it.');
+			if (await destinationOf(plain.provider, held.settings) !== plain.destination) throw fail('connection', 'the plain-files connection changed.');
+			active(ticket);
+			const result = await session(plain.provider, plain.place.replace(/^\//, ''), held.settings, () => active(ticket), plain.connectionId, plain.destination).plain.syncNow();
 			if (typed) await keep(plain);
 			return result;
 		}); },
@@ -106,14 +127,30 @@ export function createPlainKeySession({folder, fetch: fetchFn, device = null, or
 			await device.forget(enabled); remember = enabled;
 			if (enabled && plain) await keep(plain);
 		},
-		async forget() {
+		async conflicts() {
 			const plain = await kept();
-			if (plain) await createPlainSession({folder, store: {}, provider: plain.provider, place: plain.place, device: plain.device}).forget();
+			return plain ? createPlainSession({folder, store: {}, provider: plain.provider, place: plain.place, device: plain.device, now, connectionId: plain.connectionId, destination: plain.destination}).conflicts() : [];
+		},
+		resolve(choice) { return once(async ticket => {
+			const plain = await kept(); active(ticket);
+			if (!plain) throw fail('connection', 'connect this folder to its plain files first.');
+			activePlain = createPlainSession({folder, store: {}, provider: plain.provider, place: plain.place, device: plain.device, now, connectionId: plain.connectionId, destination: plain.destination});
+			return activePlain.resolve(choice);
+		}); },
+		async lock() { locked = true; await stop(); held = null; },
+		forget() {
+			if (closing) return closing;
+			closing = (async () => {
+			locked = true; await stop();
+			const plain = await kept();
+			if (plain) await createPlainSession({folder, store: {}, provider: plain.provider, place: plain.place, device: plain.device}).forget({connectionId: plain.connectionId, destination: plain.destination});
 			held = null;
 			if (device && device.available !== false) {
 				try { if (!inspected) { await device.read('{}'); inspected = true; } await device.forget(); }
 				catch { throw fail('device', 'the files stopped syncing, but this device could not forget its storage key. clear this site’s storage before leaving a shared device.'); }
 			}
+			})();
+			return closing.finally(() => { closing = null; });
 		},
 	});
 }

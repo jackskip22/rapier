@@ -6,7 +6,8 @@ const hex = bytes => [...new Uint8Array(bytes)].map(b => b.toString(16).padStart
 const digest = async bytes => hex(await crypto.subtle.digest('SHA-256', bytes));
 const MAX_BYTES = 150000000;
 
-export async function syncPlainPictures({folder, store, base}) {
+export async function syncPlainPictures({folder, store, base, guard = () => {}}) {
+	await guard();
 	const result = {pushed: 0, pulled: 0, removed: 0, held: []};
 	if (typeof store.pictures !== 'function') return {...result, skipped: 'this storage keeps notes only'};
 	const remote = store.pictures(), agreed = new Map(Object.entries(await base.read() || {}));
@@ -24,6 +25,7 @@ export async function syncPlainPictures({folder, store, base}) {
 		if (bytes) for (const row of attachmentsOf(new TextDecoder().decode(bytes))) linked.add(row.name);
 	}
 	async function push(name, condition = {ifAbsent: true}) {
+		await guard();
 		const bytes = await read(name);
 		if (!bytes) return hold(name, 'missing');
 		if (bytes.length > MAX_BYTES) return hold(name, 'too_large');
@@ -31,9 +33,11 @@ export async function syncPlainPictures({folder, store, base}) {
 		catch (error) { if (error?.code === 'conflict') hold(name, 'conflict'); else throw error; }
 	}
 	async function pull(name) {
+		await guard();
 		const got = await remote.get(name);
 		if (!got) return hold(name, 'missing');
-		await folder.createAttachment(name, got.bytes, {exact: true});
+		await guard();
+		await folder.createAttachment(name, got.bytes, {exact: true, guard});
 		agreed.set(name, {rev: got.rev, hash: await digest(got.bytes)}); result.pulled++;
 	}
 	for (const [name, was] of [...agreed]) {
@@ -70,6 +74,7 @@ export async function syncPlainPictures({folder, store, base}) {
 	}
 	mine = await local();
 	for (const name of mine) if (!agreed.has(name) && !theirs.has(name)) await push(name);
+	await guard();
 	await base.write(Object.fromEntries(agreed));
 	return result;
 }

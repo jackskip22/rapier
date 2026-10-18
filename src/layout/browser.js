@@ -1663,23 +1663,31 @@ const _rapierImageFlow = (() => {
     for (const grip of [...resizeGrips, moveHandle, rotateGrip]) grip?.toggleAttribute('data-rapier-covered', covered);
   }
 
-  let yieldFrame = 0, circleWatch = null;
+  let yieldFrame = 0, circleWatch = null, circleStep = 0;
   function yieldCircle() {
     if (yieldFrame) return;
     yieldFrame = requestAnimationFrame(() => {
       yieldFrame = 0;
       const fab = document.getElementById('scroll-fab');
       if (!fab) return;
-      let covers = false;
+      let step = 0, hide = false;
       if (fab.classList.contains('visible') && !fab.classList.contains('scroll-fab--edge') && !fab.classList.contains('tracking')) {
-        const circle = fab.getBoundingClientRect(), cx = circle.left + circle.width / 2, cy = circle.top + circle.height / 2, r = circle.width / 2;
-        covers = [...resizeGrips, moveHandle, rotateGrip].some(grip => {
-          if (!grip?.isConnected || grip.hidden || grip.hasAttribute('data-rapier-covered')) return false;
-          const box = grip.getBoundingClientRect();
-          return Math.hypot(cx - clamp(cx, box.left, box.right), cy - clamp(cy, box.top, box.bottom)) < r;
-        });
+        const circle = fab.getBoundingClientRect(), r = circle.width / 2, cx = circle.left + r, here = circle.top - circleStep + r;
+        const grips = [...resizeGrips, moveHandle, rotateGrip]
+          .filter(grip => grip?.isConnected && !grip.hidden && !grip.hasAttribute('data-rapier-covered')).map(grip => grip.getBoundingClientRect());
+        const near = (cy, gap) => grips.some(box => Math.hypot(cx - clamp(cx, box.left, box.right), cy - clamp(cy, box.top, box.bottom)) < r + gap);
+        if (near(here, 0)) {
+          const track = fab._rapierTrack?.();
+          const fits = cy => !!track && cy - r >= track.top - 0.5 && cy - r <= track.bottom + 0.5 && !near(cy, 6);
+          hide = true;
+          for (let d = 4; d <= window.innerHeight; d += 4) {
+            if (fits(here + d)) { step = d; hide = false; break; }
+            if (fits(here - d)) { step = -d; hide = false; break; }
+          }
+        }
       }
-      fab.toggleAttribute('data-rapier-yield', covers);
+      if (step !== circleStep) { circleStep = step; fab.style.translate = step ? '0 ' + step + 'px' : ''; }
+      fab.toggleAttribute('data-rapier-yield', hide);
     });
   }
   function positionGrip() {

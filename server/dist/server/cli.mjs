@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // SPDX-License-Identifier: AGPL-3.0-only
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';

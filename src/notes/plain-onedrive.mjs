@@ -19,16 +19,23 @@ export function createOneDrivePlainStore(options = {}) {
 		if (response.status >= 400 && ![404, 409, 412].includes(response.status)) throw providerError('OneDrive', response, response.status === 401 ? 'auth' : response.status === 403 ? 'permission' : 'provider');
 		return response;
 	}
-	let folderId = null;
-	async function folder() {
+	let folderId = null, driveId = null;
+	async function folder(create = true) {
 		if (folderId) return folderId;
-		let response = await request(DRIVE + '/special/approot?$select=' + FIELDS);
-		if (response.status !== 200) throw providerError('OneDrive', response);
-		let parent = providerId(jsonBody(response).id);
-		for (const name of path) {
+		let response, parent;
+		if (options.parent) {
+			const root = await options.parent(); parent = providerId(root.id); driveId = providerId(root.driveId);
+		} else {
+			response = await request(DRIVE + '/special/approot?$select=' + FIELDS);
+			if (response.status !== 200) throw providerError('OneDrive', response);
+			const app = jsonBody(response);
+			parent = providerId(app.id); driveId = app.parentReference?.driveId || null;
+		}
+		for (const name of options.parent ? ['attachments'] : path) {
 			const address = item(parent) + ':/' + encodeURIComponent(name) + '?$select=' + FIELDS;
 			response = await request(address);
 			if (response.status === 404) {
+				if (!create) refuse('missing_root', 'the connected OneDrive folder is missing; reconnect before creating another folder');
 				response = await request(item(parent) + '/children', {method: 'POST', headers: {'Content-Type': 'application/json'},
 					body: JSON.stringify({name, folder: {}, '@microsoft.graph.conflictBehavior': 'fail'})}, false);
 				if (response.status === 409) response = await request(address);
@@ -36,12 +43,14 @@ export function createOneDrivePlainStore(options = {}) {
 			if (![200, 201].includes(response.status)) throw providerError('OneDrive', response);
 			const row = jsonBody(response);
 			if (!row.folder || row.remoteItem || row.deleted || row.parentReference?.id !== parent || row.name !== name) refuse('authority', 'OneDrive returned a folder outside Apps/Rapier');
+			if (driveId && row.parentReference.driveId !== driveId) refuse('authority', 'OneDrive returned a folder in another drive');
+			driveId ||= row.parentReference.driveId || null;
 			parent = providerId(row.id);
 		}
 		return folderId = parent;
 	}
 	function fileRow(row, parent) {
-		if (!row || !row.file || row.folder || row.remoteItem || row.deleted || row.parentReference?.id !== parent || typeof row.eTag !== 'string' || !row.eTag) refuse('authority', 'OneDrive returned a file outside the plain-files folder');
+		if (!row || !row.file || row.folder || row.remoteItem || row.deleted || row.parentReference?.id !== parent || driveId && row.parentReference.driveId !== driveId || typeof row.eTag !== 'string' || !row.eTag) refuse('authority', 'OneDrive returned a file outside the plain-files folder');
 		return {name: plainName(row.name), rev: row.eTag, size: byteCount(row.size), id: providerId(row.id)};
 	}
 	const byName = (parent, file) => item(parent) + ':/' + encodeURIComponent(plainName(file));
@@ -59,7 +68,11 @@ export function createOneDrivePlainStore(options = {}) {
 	}
 	return Object.freeze({
 		pause: http.pause,
-		pictures: () => createOneDrivePlainStore({...options, folder: [...path, 'attachments'].join('/')}),
+		async destinationIdentity({create = false} = {}) {
+			const id = await folder(create);
+			return Object.freeze({driveId: providerId(driveId), id});
+		},
+		pictures: () => createOneDrivePlainStore({...options, folder: [...path, 'attachments'].join('/'), parent: async () => ({id: await folder(), driveId})}),
 		async list() {
 			const parent = await folder(), out = [], seen = new Set();
 			let address = children(parent);

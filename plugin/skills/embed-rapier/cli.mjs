@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 import {createHash, randomBytes} from 'node:crypto';
 import {constants} from 'node:fs';

@@ -60,7 +60,7 @@ const RAPIER_DRAW_INK = '#121212';
 const RAPIER_DRAW_INK_NAMES = Object.freeze({ green: '#338758', red: '#c83845', blue: '#2c70d9', gold: '#99692d', purple: '#8a3eec' });
 
 const RAPIER_DRAW_DIAGRAM = Object.freeze({
-	ink: Object.freeze(['#121212', '#fafafa']), box: Object.freeze(['#f0f0f0', '#1d1d1d']), accent: Object.freeze(['#12a594', '#12a594']),
+	ink: Object.freeze(['#121212', '#fafafa']), box: Object.freeze(['#f0f0f0', '#333333']), accent: Object.freeze(['#12a594', '#12a594']),
 	'on-accent': Object.freeze(['#000000', '#000000']), step: Object.freeze(['#666666', '#999999']),
 });
 function _rapierDrawOnInk(fill) {

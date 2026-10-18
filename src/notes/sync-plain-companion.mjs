@@ -9,10 +9,12 @@ const ID = /^[a-f0-9]{32}$/, SERVICES = ['dropbox', 'drive', 'onedrive', 'webdav
 export function createPlainCompanionSession({folder, call, now = Date.now} = {}) {
 	if (!folder || typeof call !== 'function') throw fail('config', 'plain files through rapier sync need this device\'s app.');
 	const device = () => /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(folder.deviceId || '') && folder.deviceId !== 'files' ? folder.deviceId : 'rapier';
-	const session = place => createPlainSession({folder, store: createCompanionPlainStore({call, destination: place}), provider: 'companion', place, device: device(), now});
-	let running = null;
-	const once = fn => running ||= fn().finally(() => { running = null; });
-	async function connection() { const kept = (await readSyncState(folder)).plain; return kept?.provider === 'companion' ? Object.freeze({place: kept.place}) : null; }
+	const session = (place, guard, connectionId) => activePlain = createPlainSession({folder, store: createCompanionPlainStore({call, destination: place}), provider: 'companion', place, device: device(), now, guard, connectionId});
+	let running = null, activePlain = null, epoch = 0, closing = null;
+	const active = ticket => { if (ticket !== epoch) throw fail('cancelled', 'sync stopped. your notes, and what waits to upload, are kept.'); };
+	const once = fn => { if (running || closing) throw fail('busy', 'let the current sync finish.'); const ticket = epoch; return running = Promise.resolve().then(() => { active(ticket); return fn(ticket); }).finally(() => { running = null; activePlain = null; }); };
+	const stop = async () => { epoch++; activePlain?.pause(); if (running) await running.catch(() => {}); };
+	async function connection() { const kept = (await readSyncState(folder)).plain; return kept?.provider === 'companion' ? Object.freeze({place: kept.place, connectionId: kept.connectionId}) : null; }
 	return Object.freeze({
 		async places() {
 			const answer = await call('plain.status', {});
@@ -23,18 +25,29 @@ export function createPlainCompanionSession({folder, call, now = Date.now} = {})
 			});
 			return Object.freeze({offered: answer.offered, places});
 		},
-		connection,
+		async connection() { const kept = await connection(); return kept ? Object.freeze({place: kept.place}) : null; },
 		connect(place) {
 			if (!ID.test(place || '')) throw fail('connection', 'choose a folder rapier sync set up for plain files.');
-			return once(async () => { const plain = session(place); await plain.connect(); return plain.syncNow(); });
+			return once(async ticket => { const plain = session(place, () => active(ticket)); await plain.connect(); active(ticket); return plain.syncNow(); });
 		},
 		syncNow() {
-			return once(async () => {
-				const kept = await connection();
+			return once(async ticket => {
+				const kept = await connection(); active(ticket);
 				if (!kept) throw fail('connection', 'connect this folder to its plain files first.');
-				return session(kept.place).syncNow();
+				return session(kept.place, () => active(ticket), kept.connectionId).syncNow();
 			});
 		},
-		async forget() { const kept = await connection(); if (kept) await session(kept.place).forget(); },
+		async conflicts() { const kept = await connection(); return kept ? createPlainSession({folder, store: {}, provider: 'companion', place: kept.place, device: device(), now}).conflicts() : []; },
+		resolve(choice) { return once(async ticket => {
+			const kept = await connection(); active(ticket);
+			if (!kept) throw fail('connection', 'connect this folder to its plain files first.');
+			return session(kept.place, () => active(ticket), kept.connectionId).resolve(choice);
+		}); },
+		lock: stop,
+		forget() {
+			if (closing) return closing;
+			closing = (async () => { await stop(); const kept = await connection(); if (kept) await session(kept.place).forget({connectionId: kept.connectionId}); })();
+			return closing.finally(() => { closing = null; });
+		},
 	});
 }
