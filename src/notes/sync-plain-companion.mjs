@@ -10,10 +10,19 @@ export function createPlainCompanionSession({folder, call, now = Date.now} = {})
 	if (!folder || typeof call !== 'function') throw fail('config', 'plain files through rapier sync need this device\'s app.');
 	const device = () => /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(folder.deviceId || '') && folder.deviceId !== 'files' ? folder.deviceId : 'rapier';
 	const session = (place, guard, connectionId) => activePlain = createPlainSession({folder, store: createCompanionPlainStore({call, destination: place}), provider: 'companion', place, device: device(), now, guard, connectionId});
-	let running = null, activePlain = null, epoch = 0, closing = null;
+	let running = null, activePlain = null, epoch = 0, closing = null, stopping = null;
 	const active = ticket => { if (ticket !== epoch) throw fail('cancelled', 'sync stopped. your notes, and what waits to upload, are kept.'); };
-	const once = fn => { if (running || closing) throw fail('busy', 'let the current sync finish.'); const ticket = epoch; return running = Promise.resolve().then(() => { active(ticket); return fn(ticket); }).finally(() => { running = null; activePlain = null; }); };
-	const stop = async () => { epoch++; activePlain?.pause(); if (running) await running.catch(() => {}); };
+	const once = fn => { if (running || closing || stopping) throw fail('busy', 'let the current sync finish.'); const ticket = epoch; return running = Promise.resolve().then(() => { active(ticket); return fn(ticket); }).finally(() => { running = null; activePlain = null; }); };
+	const stop = () => {
+		epoch++;
+		if (stopping) return stopping;
+		const paused = activePlain?.pause();
+		const drain = Promise.allSettled([Promise.resolve(paused), running?.catch(() => {})]).then(([result]) => { if (result.status === 'rejected') throw result.reason; });
+		stopping = drain;
+		const finished = () => { if (stopping === drain) stopping = null; };
+		drain.then(finished, finished);
+		return drain;
+	};
 	async function connection() { const kept = (await readSyncState(folder)).plain; return kept?.provider === 'companion' ? Object.freeze({place: kept.place, connectionId: kept.connectionId}) : null; }
 	return Object.freeze({
 		async places() {
@@ -46,7 +55,12 @@ export function createPlainCompanionSession({folder, call, now = Date.now} = {})
 		lock: stop,
 		forget() {
 			if (closing) return closing;
-			closing = (async () => { await stop(); const kept = await connection(); if (kept) await session(kept.place).forget({connectionId: kept.connectionId}); })();
+			const drain = stop(), ticket = epoch;
+			closing = (async () => {
+				await drain; active(ticket);
+				const kept = await connection(); active(ticket);
+				if (kept) { await session(kept.place, () => active(ticket), kept.connectionId).forget({connectionId: kept.connectionId}); active(ticket); }
+			})();
 			return closing.finally(() => { closing = null; });
 		},
 	});

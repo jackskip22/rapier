@@ -97,12 +97,12 @@ try {
     }}],
     banner: {js: '/*! Rapier font subsetter.\n' + noticeBytes.toString('utf8') + '\n*/'}});
   if (Object.values(built.metafile.outputs).some(output => output.imports.length)) throw new Error('The font subsetter is not self-contained.');
-  const bytes = Buffer.from(built.outputFiles[0].contents), name = 'rapier-font-subset-2.js';
+  const bytes = Buffer.from(built.outputFiles[0].contents), name = 'rapier-font-subset-3.js';
   const destination = join(repo, 'shell/vendor/font-subset');
-  const provenance = {version: '2', dependencies: packages, npmLockSha256: hash(lock), sourceSha256: hash(source),
+  const provenance = {version: '3', dependencies: packages, npmLockSha256: hash(lock), sourceSha256: hash(source),
     wasm: {bytes: wasm.length, sha256: hash(wasm)}, noticesSha256: hash(noticeBytes),
     bytes: bytes.length, gzipBytes: gzipSync(bytes).length, sha256: hash(bytes), sha384: hash(bytes, 'sha384', 'base64')};
-  const manifest = {version: 'font-subset-2', files: [{name: 'subset', version: '2',
+  const manifest = {version: 'font-subset-3', files: [{name: 'subset', version: '3',
     url: cdnOrigin('rapier') + 'site/plugins/' + name,
     file: 'plugins/' + name, path: 'shell/vendor/font-subset/' + name,
     bytes: bytes.length, sri: provenance.sha384}]};

@@ -1,6 +1,6 @@
 const _rapierPersonalStore = globalThis.__rapierServerRenderHost === true ? null : (() => {
 	let dbPromise, transientProfile = null;
-	const transient = globalThis.RapierBenchSession?.active === true;
+	const transient = globalThis.RapierBenchSession?.active === true || globalThis.RapierPlatform?.host?.lockedNotes === true;
 	function database() {
 		if (!dbPromise) dbPromise = new Promise((resolve, reject) => {
 			const request = indexedDB.open('rapier:personal' + RapierStorage.scope, 1);

@@ -15,6 +15,8 @@ import {INPUT_OPERATION, manifestName, parseManifest, parseCanonical, materializ
 import {applyReminderActions, changeReminders} from './model.mjs';
 import {restoreSnapshot as planSnapshot, restoreSnapshotStream as planSnapshotStream} from './restore.mjs';
 import {backupNames} from './backup-folder.mjs';
+import {prepareLockedNote, createPrivateDrafts as privateDraftStorage} from './locked.mjs';
+export function createPrivateDrafts(options) { return privateDraftStorage(options); }
 
 const copy = value => JSON.parse(JSON.stringify(value));
 const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -33,6 +35,29 @@ const sameBytes = (before, after) => {
 	for (let at = 0; at < before.length; at++) if (before[at] !== after[at]) return false;
 	return true;
 };
+function inverseMediaRelocations(expected, actual) {
+	if (expected.length !== actual.length) return null;
+	const result = new Map();
+	for (let i = 0; i < expected.length; i++) {
+		const before = expected[i], after = actual[i];
+		if (before.pos !== after.pos || before.removed !== after.removed) return null;
+		let text = before.inserted;
+		for (const [directory, scan, rewrite] of [['attachments', attachmentsOf, rewriteAttachmentNames], ['audio', recordingsOf, rewriteRecordingNames]]) {
+			const from = scan(before.inserted), to = scan(after.inserted), mapping = new Map();
+			if (from.length !== to.length) return null;
+			for (let j = 0; j < from.length; j++) if (from[j].name !== to[j].name) {
+				if (mapping.has(from[j].name) && mapping.get(from[j].name) !== to[j].name) return null;
+				mapping.set(from[j].name, to[j].name);
+				const destination = directory + '/' + to[j].name, source = directory + '/' + from[j].name;
+				if (result.has(destination) && result.get(destination) !== source) return null;
+				result.set(destination, source);
+			}
+			text = rewrite(text, mapping);
+		}
+		if (text !== after.inserted) return null;
+	}
+	return result;
+}
 const reserved = new Set(['deleteOwner', 'deleteCheckpoint', 'folderGeneration', 'folderDeviceId', 'ownerNotice', 'transaction', 'noteCounters', 'deletions', 'tombstones', 'assetTombstones', 'assetRevivals', 'missingFiles', 'imports']);
 
 export function applyMetadata(base, wanted, fresh) {
@@ -445,8 +470,31 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			const current = await readCanonicalOwned(lease, {file, id}, history);
 			const manifest = history.parseManifest(await store.read('history/' + manifestName(current.id)), {noteId: current.id, now: clock()});
 			history.carryCanonical(manifest, ledger, text);
-			if (!isCodeFile(file)) await checkInverseMedia(manifest, ledger, {inverse, names: mediaNames, digest: path => storedFileDigest(store, path)});
-			return true;
+			if (isCodeFile(file)) return true;
+			const original = copy(inverse.splices), mapping = new Map();
+			if (inverse.redo) {
+				const undone = ledger.records.findLast(row => row.transaction.operation === 'history.undo' && row.transaction.reverts === inverse.subject);
+				if (undone) inverse.splices = undone.splices.slice().reverse().map(row => ({pos: row.pos, removed: row.inserted, inserted: row.removed}));
+			}
+			const media = {inverse, names: mediaNames, digest: path => storedFileDigest(store, path), relocate: inverseMediaRelocations};
+			await checkInverseMedia(manifest, ledger, {...media, recover: async (path, content) => {
+				const [directory, name] = path.split('/');
+				for (const candidate of (await store.list(directory)).sort()) {
+					if (candidate === name || !(directory === 'audio' ? validRecordingName(candidate) : isAttachmentName(candidate))) continue;
+					if (await storedFileDigest(store, directory + '/' + candidate) === content) { mapping.set(path, candidate); return content; }
+				}
+				if (directory === 'audio') {
+					const recovered = await recordingCustody.restoreOriginal(lease, current, current.id, content, name);
+					if (recovered) { mapping.set(path, recovered.name); return content; }
+				}
+				return null;
+			}});
+			if (mapping.size) inverse.splices = inverse.splices.map(row => ({...row,
+				inserted: rewriteRecordingNames(rewriteAttachmentNames(row.inserted,
+					new Map([...mapping].filter(([path]) => path.startsWith('attachments/')).map(([path, name]) => [path.slice(12), name]))),
+					new Map([...mapping].filter(([path]) => path.startsWith('audio/')).map(([path, name]) => [path.slice(6), name])))}));
+			await checkInverseMedia(manifest, ledger, {...media, inverse});
+			return eq(original, inverse.splices) ? true : {splices: inverse.splices};
 		});
 	};
 	const readCanonicalNote = async target => {
@@ -567,7 +615,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 				const ownInput = inputBefore?.incarnation === owner.incarnation ? inputBefore.bases : null;
 				const settlesInput = !undo && !options.canonical && (carried?.supersededInput || options.input === true && appended) &&
 					ownInput?.some(base => admitted.includes(base.digest) && (!expectedLedgers.length || expectedLedgers.includes(base.ledger)));
-				const inverseMedia = !landed && (ledger || appended) && !isCodeFile(destination) ? await checkInverseMedia(manifest || parseManifest(prior, {noteId: id, now: clock()}), ledger || appended.ledger, {names: mediaNames, digest: path => storedFileDigest(store, path)}) : manifest?.media;
+				const inverseMedia = !landed && (ledger || appended) && !isCodeFile(destination) ? await checkInverseMedia(manifest || parseManifest(prior, {noteId: id, now: clock()}), ledger || appended.ledger, {names: mediaNames, digest: path => storedFileDigest(store, path), relocate: inverseMediaRelocations}) : manifest?.media;
 				await active();
 				const stale = !proved || !landed && !settlesInput && (!!carryFault || !admitted.includes(actual) || expectedLedgers.length > 0 && !expectedLedgers.includes(proved.ledger.sha256));
 				if (stale) {
@@ -622,6 +670,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			const ownedInput = inputReceipts.get(id)?.get(proved.ledger.sha256);
 			if (proved.ledger.records.at(-1)?.transaction.operation !== INPUT_OPERATION || ownedInput?.incarnation !== owner.incarnation) inputReceipts.delete(id);
 			else inputReceipts.set(id, new Map([[proved.ledger.sha256, ownedInput]]));
+			await recordingCustody.settleRestored(proved, snapshot);
 			return {...snapshot, index: proved.index, files: proved.files, generation: proved.generation, readOnly: proved.readOnly,
 				file: destination, copied, id, digest: proved.digest, text: proved.text, ledger: proved.ledger, act: result.act, unchanged: !!result.unchanged, replayed: !!result.replayed};
 		});
@@ -722,6 +771,51 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		} catch (error) { throw deletionRefusal(error); }
 		return {...await lease.read(), result};
 	}, {deletePressure: !!store.deletePressure});
+	const finishLockOwned = async (lease, before, {file, id, digest, historyDigest, media = []}) => {
+		const present = await store.read(file), entry = before.index.notes[file];
+		if (present != null) {
+			if (entry?.id !== id || await sha256(present) !== digest || await storedFileDigest(store, 'history/' + manifestName(id)) !== historyDigest)
+				throw fail('changed', 'This note changed after locking began. Its original and encrypted copy were kept.');
+			await runTrash({store, index: before.index, files: [file], mode: 'confirmed',
+				expected: new Map([[file, {id, content: digest}]]), deviceId, commitIndex: lease.commitIndex,
+				now: clock(), clock, keep: null, checkpoint: (await readSyncStateBytes(store)).state.head?._key || null});
+		} else {
+			await recoverTrash({store, index: before.index, commitIndex: lease.commitIndex, clock, keep: null});
+		}
+		if (await store.read(file) != null || await store.read('history/' + manifestName(id)) != null)
+			throw fail('changed', 'Locking did not finish. The encrypted copy was kept.');
+		const after = await lease.read(), references = await scanReferences(after, {}), privatePaths = [file];
+		for (const {name: path, digest: expected} of media) {
+			const slash = path.indexOf('/'), kind = path.slice(0, slash), name = path.slice(slash + 1);
+			if (!['audio', 'attachments'].includes(kind) || name.includes('/')) throw fail('name', 'Invalid locked file');
+			if ((kind === 'audio' ? references.recordings : references.attachments).has(name)) continue;
+			privatePaths.push(path);
+			const digest = await storedFileDigest(store, path);
+			if (digest == null) continue;
+			if (digest !== expected) throw fail('changed', 'A saved file changed while locking. It was kept.');
+			await store.remove(path);
+			if (await store.read(path) != null) throw fail('verify', 'A private file could not be removed from Notes.');
+		}
+		return lease.transact(async ({index}) => {
+			const next = copy(index);
+			for (const row of next.tombstones?.[id] || []) privatePaths.push(row.file);
+			if (next.tombstones) { delete next.tombstones[id]; if (!Object.keys(next.tombstones).length) delete next.tombstones; }
+			if (next.missingFiles?.[file]?.entry?.id === id) delete next.missingFiles[file];
+			const {state, bytes} = await readSyncStateBytes(store), sync = copy(state);
+			if (sync.plain?.base?.[id]) { privatePaths.push(sync.plain.base[id].name); delete sync.plain.base[id]; }
+			for (const path of privatePaths) if (path.startsWith('attachments/') && sync.plain?.pictures) delete sync.plain.pictures[path.slice(12)];
+			sync.lockedFiles = [...new Set([...(sync.lockedFiles || []), ...await Promise.all(privatePaths.map(path => sha256(path)))])].sort();
+			return {kind: 'lock-note', index: next, writes: [await syncStateWrite(sync, bytes)]};
+		});
+	};
+	const resumeLock = target => owned((lease, before) => finishLockOwned(lease, before, target));
+	const lockNote = ({file, id, digest}, seal) => owned(async (lease, before) => {
+		const packet = await prepareLockedNote({store, index: before.index, file, id, digest});
+		const target = {file, id, digest, historyDigest: await storedFileDigest(store, 'history/' + manifestName(id)),
+			media: await Promise.all([...packet.media].map(async name => ({name, digest: await sha256(packet.files.get(name))})))};
+		await seal(packet);
+		return finishLockOwned(lease, before, target);
+	});
 	const discardEmpty = ({file, id, expectedDigest}) => owned(async lease => {
 		const snapshot = await lease.transact(async ({index, bodies}) => {
 			const bytes = bodies.get(file);
@@ -1204,6 +1298,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		return rows;
 	};
 	const backupSnapshot = async () => {
+		if (store.deviceOnly) throw fail('notes_locked', 'Locked notes cannot be backed up.');
 		await assertNoPendingDeletion();
 		let lease;
 		try {
@@ -1220,6 +1315,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		} catch (error) { await lease?.release(); throw error; }
 	};
 	const capture = async () => {
+		if (store.deviceOnly) throw fail('notes_locked', 'Locked notes cannot be exported.');
 		await assertNoPendingDeletion();
 		if (store.writable === false || isShared() && (!locks?.request || !channel?.postMessage)) {
 			const first = await store.read(NOTES_INDEX_FILE), pending = await store.read(OWNER_JOURNAL_FILE), snapshot = await read();
@@ -1248,5 +1344,5 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 	const recordingCustody = createRecordings({store, owned, underLease, locks, scope, shared: isShared, clock, audioName, discardAudio,
 		canOwn: () => store.writable !== false && (!isShared() || !!(locks?.request && channel?.postMessage)), readSnapshot: () => owner.read(scope)});
 	return {beginRecording: recordingCustody.begin, recoverRecordings: recordingCustody.recover, openRecording: recordingCustody.open, readRecording: recordingCustody.preview, acknowledgeRecording: recordingCustody.acknowledge,
-		captureDeletionRecovery: () => owner.captureDeletion(scope), owner, store, scope, read, readCanonical: readCanonicalNote, planCanonicalChange, checkEditorInverse, rebuildIndex, metadata, controls, controlsUndo, reminderActions, reminderChange, leaveVault, create, createShared, save, recordHistory, historyInventory, tidyHistory, rename, trash, discardEmpty, mark, createAudio, createAttachment, attachmentReferences, fileReferences, reviewAttachmentDeletion, deleteAttachment, reviewRecordingDeletion, deleteRecording, asset, discardAudio, importBatch, checkpointImportReceipt, readImportReceipt, restoreSnapshot, previewImportUndo, undoImport, backupSnapshot, capture, readFile, settle, get deviceId() { return deviceId; }, get pending() { return pending.size; }, close: () => { recordingCustody.close(); owner.close(); channel?.close?.(); }};
+		captureDeletionRecovery: () => owner.captureDeletion(scope), owner, store, scope, read, readCanonical: readCanonicalNote, planCanonicalChange, checkEditorInverse, rebuildIndex, metadata, controls, controlsUndo, reminderActions, reminderChange, leaveVault, create, createShared, save, recordHistory, historyInventory, tidyHistory, rename, trash, lockNote, resumeLock, discardEmpty, mark, createAudio, createAttachment, attachmentReferences, fileReferences, reviewAttachmentDeletion, deleteAttachment, reviewRecordingDeletion, deleteRecording, asset, discardAudio, importBatch, checkpointImportReceipt, readImportReceipt, restoreSnapshot, previewImportUndo, undoImport, backupSnapshot, capture, readFile, settle, get deviceId() { return deviceId; }, get pending() { return pending.size; }, close: () => { recordingCustody.close(); owner.close(); channel?.close?.(); }};
 }

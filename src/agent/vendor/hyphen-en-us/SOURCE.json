@@ -21,13 +21,13 @@
     }
   ],
   "generator": "tools/compile-hyphens.mjs",
-  "generatorSha256": "b5758c3ceac76ac39a8ba0bf2f45bc88854e4779d4f443a9c0957694305571dd",
+  "generatorSha256": "26b3321fd19f114ca9abdf5380c8f7b34e6ce9ffe5c519946d006690e71e3a2b",
   "policy": "Complete pinned data in a static prefix trie, with original MIT Rapier traversal and matcher; en and en-US ASCII words. Other regional English, non-ASCII words and other languages use the native offline hyphenator.",
   "files": [
     {
       "output": "patterns.js",
-      "outputBytes": 46360,
-      "outputSha256": "e0360f1552704657d79a670f1e2e0b263f6eea42e209866b521cd8ec2aff387d"
+      "outputBytes": 32776,
+      "outputSha256": "c92bcc1b9ca62aaffd4b46190c25e15386e3218b33bb07aaefe325159aa97b7e"
     }
   ]
 }

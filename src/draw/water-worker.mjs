@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {WaterSurface,WaterBrush,paintWaterBrushPreview,waterError,waterReady,waterSoftwareAdmitted,waterWarm,waterUnfilteredTest,waterTiming,waterTimingOn,waterCapture,waterCaptureOn,waterNote} from './water.mjs';
+import {PaintStrokeHistory,copyPaintState,snapshotPaintState} from './paint-history.mjs';
 import {sha256Yielding} from '../notes/integrity.mjs';
 import {paintAgentStrokes,replayAgentPainting,sampleAgentPainting,agentPaintReplayRun,restoreWaterReplay,waterReplayAt} from './agent-paint.mjs';
 import {createWorkerClient} from './worker-client.mjs';
@@ -8,13 +9,34 @@ const hash=data=>sha256Yielding(new Uint8Array(data.buffer,data.byteOffset,data.
 const integer=n=>Number.isSafeInteger(n)&&n>0;
 const transferOf=value=>{const result=new Set();const walk=v=>{if(!v||typeof v!=='object')return;if(typeof ImageBitmap==='function'&&v instanceof ImageBitmap){result.add(v);return;}if(ArrayBuffer.isView(v)){if(v.buffer instanceof ArrayBuffer)result.add(v.buffer);return;}for(const item of Object.values(v))walk(item);};walk(value);return [...result];};
 const brushState=b=>b.snapshot();
+const brushFromState=state=>{const b=new WaterBrush(state.water);b.fromSnapshot(state);return b;};
 const restoreBrushes=(checkpoint,brushes)=>{for(const [id,state]of checkpoint.brushes||[])brushes.get(id)?.fromSnapshot(state);};
 const yieldWork=()=>new Promise(resolve=>setTimeout(resolve,0));
 const WATER_CHECKPOINT_BYTES=128*1024*1024;
 const publicationKey=replay=>JSON.stringify(replay,(_,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v);
 export function createWaterWorker({postMessage}={}){
  const surfaces=new Map(),brushes=new Map(),checkpoints=new Map(),runs=new Map(),jobs=new Map(),queued=new Set(),displayed=new Map(),displays=new Map(),controls=[];let serial=0,chain=Promise.resolve(),completed=0,closed=false,device=null,slowTest=1,wakeDisplay=null,displayWork=0;
- const publications=new Map();let publicationBytes=0;
+ const publications=new Map(),histories=new Map(),definitions=new Map(),historyBrushes=new Map(),resumedBrushes=new Map();let publicationBytes=0;
+ const historyFor=id=>{
+  if(!histories.has(id))histories.set(id,new PaintStrokeHistory({
+   capture:async previous=>{const held=resumedBrushes.get(id);return snapshotPaintState({water:await need(surfaces,id).snapshot(null,{checkpoint:true}),brushes:[...brushes].map(([id,b])=>[id,b.snapshot()]),definitions,brushId:historyBrushes.get(id),resumed:held?{definition:held.definition,brush:held.brush.snapshot()}:null},previous);},
+   restore:async checkpoint=>{const kept=copyPaintState(checkpoint),f=kept.water.frame,s=new WaterSurface(f.width,f.height,{pixelScale:f.scale,paper:f.paper,seed:f.seed,origin:f.origin,paperScale:f.paperScale,paperOrigin:f.paperOrigin,paperSeed:f.paperSeed});try{await s.fromSnapshot(kept.water);return {surface:s,brushes:new Map(kept.brushes.map(([id,state])=>[id,brushFromState(state)])),definitions:kept.definitions,brushId:kept.brushId,resumed:kept.resumed?{definition:kept.resumed.definition,brush:brushFromState(kept.resumed.brush)}:null};}catch(error){s.dispose();throw error;}},
+   apply:async(state,c)=>{
+    const s=state.surface,a=c.args||[];
+    if(c.target==='define'){state.brushes.set(c.id,c.restore?state.resumed.brush:new WaterBrush(c.definition));if(c.restore)state.resumed=null;state.definitions.set(c.id,c.definition);return;}
+    if(c.target==='brush'){await state.brushes.get(c.id)[c.method](...a);return;}
+    if(c.target==='stroke'){await state.brushes.get(c.brushId).strokeTo(s,...a);state.brushId=c.brushId;return;}
+    if(c.method==='set')s[a[0]]=a[1];
+    else if(c.method==='beginStroke')state.checkpoint={value:await s.beginStroke(),brushes:[...state.brushes].map(([id,b])=>[id,b.snapshot()])};
+    else if(c.method==='endStroke'){await s.endStroke(state.checkpoint.value,a[1]===true);if(a[1])restoreBrushes(state.checkpoint,state.brushes);state.checkpoint=null;}
+    else if(c.method==='dryWet')await s.dryWet(0,a[0]??8,a[1]??8);
+    else await s[c.method](...a);
+   },
+   read:async({surface:s})=>{const box=s.bounds();return {box,pixels:box?await s.toRGBA8(box,true,'final'):null,meta:metadata(s)};},
+   dispose:({surface:s})=>s.dispose()
+  }));
+  return histories.get(id);
+ };
  const forgetPublication=key=>{const row=publications.get(key);if(row){publicationBytes-=row.bytes;publications.delete(key);}};
  const capturePublication=async(s,request,capture,box)=>{
   if(!request.waterCheckpoint||!box)return;
@@ -129,13 +151,14 @@ export function createWaterWorker({postMessage}={}){
  const brushMethods=new Set(['seed','setColor','setPigment','setBaseValue','reset','newStroke','rebase','setHead']);
  async function command(c,changed,used,progress=null,lights=null){
   if(!c||typeof c!=='object'||!Array.isArray(c.args))throw waterError('WATER_INPUT','The Water command is not valid');
-  if(c.target==='brush'){if(!brushMethods.has(c.method))throw waterError('WATER_INPUT','The brush command is not valid');await need(brushes,c.id)[c.method](...c.args);return {surface:false};}
-  if(c.target==='stroke'){const s=need(surfaces,c.surfaceId),b=need(brushes,c.brushId),cp=checkpoints.get(c.surfaceId);if(cp?.error)throw cp.error;if(cp&&!cp.brushes.has(c.brushId))cp.brushes.set(c.brushId,brushState(b));await b.strokeTo(s,...c.args);changed.add(c.surfaceId);used.add(c.brushId);return {surface:false};}
+  if(c.target==='brush'){if(!brushMethods.has(c.method))throw waterError('WATER_INPUT','The brush command is not valid');await need(brushes,c.id)[c.method](...c.args);for(const [id,h]of histories)if(surfaces.has(id))h.record(c);return {surface:false};}
+  if(c.target==='stroke'){const s=need(surfaces,c.surfaceId),b=need(brushes,c.brushId),cp=checkpoints.get(c.surfaceId);if(cp?.error)throw cp.error;if(cp&&!cp.brushes.has(c.brushId))cp.brushes.set(c.brushId,brushState(b));await b.strokeTo(s,...c.args);changed.add(c.surfaceId);used.add(c.brushId);historyBrushes.set(c.surfaceId,c.brushId);histories.get(c.surfaceId)?.record(c);return {surface:false};}
   if(c.target!=='surface')throw waterError('WATER_INPUT','The Water command target is not valid');
   const s=need(surfaces,c.id),checkpoint=checkpoints.get(c.id);let value;
+  if(c.method==='historyStart'){await historyFor(c.id).begin(c.args[0],c.history);return {surface:true,value:null};}
   if(checkpoint?.error&&c.method!=='endStroke')throw checkpoint.error;
   if(c.method==='tilt'){
-   value=s.tilt(...c.args);if(value)lights?.add(c.id);
+   value=s.tilt(...c.args);if(value)lights?.add(c.id);histories.get(c.id)?.record(c);
    return {surface:true,value};
   }
   if(c.method==='set'){
@@ -152,7 +175,10 @@ export function createWaterWorker({postMessage}={}){
     const display=displays.get(c.id);if(display)display.gpu=material.gpu;
     s.dispose();
    }catch(error){material?.dispose();throw error;}
+  }else if(c.method==='fromHistory'){
+   const restored=await need(histories,c.args[0]).material(c.args[1]);restored.surface.takeWaterReplay();restored.surface.revision=Math.max(restored.surface.revision,s.revision+1);surfaces.set(c.id,restored.surface);const held=restored.resumed||(restored.brushId!=null?{brush:restored.brushes.get(restored.brushId),definition:restored.definitions.get(restored.brushId)}:null);if(held)resumedBrushes.set(c.id,held);value=metadata(restored.surface);const display=displays.get(c.id);if(display)display.gpu=restored.surface.gpu;s.dispose();
   }else if(c.method==='beginStroke'){
+   if(c.history)await historyFor(c.id).begin(c.args[0],c.history);
    if(checkpoints.has(c.id))throw waterError('WATER_BUSY','A Water gesture is already open');checkpoints.set(c.id,{id:c.args[0],value:await s.beginStroke(),brushes:new Map()});
   }else if(c.method==='endStroke'){
    const cp=checkpoint,cancel=c.args[1]===true;
@@ -167,7 +193,7 @@ export function createWaterWorker({postMessage}={}){
   }else if(c.method==='applyWater'){for await(const step of s.applyWaterSteps(c.args[0])){await progress?.(c.id);await yieldWork();}value=true;}
   else if(c.method==='dryWet'){value=await s.dryWet(0,c.args[0]??8,c.args[1]??8);}
   else {if(!methods.has(c.method))throw waterError('WATER_INPUT','The Water surface command is not valid');value=await s[c.method](...c.args);if(value===s)value=true;}
-  changed.add(c.id);return {surface:true,value};
+  if(c.method==='endStroke'&&c.args[1]===true){if(!c.keepHistory)await histories.get(c.id)?.cancel(c.args[0]);}else histories.get(c.id)?.record(c);changed.add(c.id);return {surface:true,value};
  }
  async function execute(request){
   const op=request.operation;
@@ -217,7 +243,19 @@ export function createWaterWorker({postMessage}={}){
    }catch(error){if(surfaces.get(request.surfaceId)===surface)surfaces.delete(request.surfaceId);surface?.dispose();throw error;}
   }
   if(op==='brush'){
-   if(!integer(request.brushId)||brushes.has(request.brushId))throw waterError('WATER_INPUT','The Water brush identity is not valid');brushes.set(request.brushId,new WaterBrush(request.definition));return {};
+   if(!integer(request.brushId)||brushes.has(request.brushId))throw waterError('WATER_INPUT','The Water brush identity is not valid');
+   const held=resumedBrushes.get(request.historySurfaceId);resumedBrushes.delete(request.historySurfaceId);
+   const restore=!!held&&JSON.stringify(held.definition)===JSON.stringify(request.definition);
+   brushes.set(request.brushId,restore?held.brush:new WaterBrush(request.definition));definitions.set(request.brushId,structuredClone(request.definition));
+   if(restore)historyBrushes.set(request.historySurfaceId,request.brushId);
+   for(const [id,h]of histories)if(surfaces.has(id))h.record({target:'define',id:request.brushId,definition:request.definition,...(restore&&id===request.historySurfaceId?{restore:true}:{})});return {};
+  }
+  if(op==='historyReplay'){const h=need(histories,request.surfaceId),point=request.point;const result=await h.replay(point.before&&point.at!=null?{...point,before:false}:point);return {...result,digest:result.pixels?await hash(result.pixels.data):null};}
+  if(op==='historyStats')return need(histories,request.surfaceId).stats();
+  if(op==='historyKeep'){
+   const kept=new Map(request.keep.map(row=>[row.surfaceId,row.points]));
+   for(const [id,h]of histories){const points=kept.get(id)||[];h.retained=!!points.length;if(!points.length&&!surfaces.has(id)){histories.delete(id);continue;}const at=points.map(p=>h.resolve(p)).filter(Number.isFinite);if(at.length)h.trim(Math.min(...at));}
+   return {};
   }
   if(op==='batch'){
    if(!Array.isArray(request.commands))throw waterError('WATER_INPUT','The Water batch is not valid');
@@ -241,7 +279,7 @@ export function createWaterWorker({postMessage}={}){
    if(request.sample)return {sample:await s.samplePigment(...request.sample),meta:metadata(s)};
    const pixels=request.bounds&&!box?null:await s.toRGBA8(box,true,request.quality==='live'?'live':'final'),meta=metadata(s),waterReplay=s.waterReplay();
    await capturePublication(s,request,waterReplay,box);
-   return {pixels,box,digest:pixels&&request.verify!==false?await hash(pixels.data):null,meta,stats:meta.stats,waterReplay,...(request.snapshot||request.material?{waterState:await s.snapshot(box)}:{})};
+   return {pixels,box,history:await histories.get(request.surfaceId)?.mark(box,{pixels,meta}),digest:pixels&&request.verify!==false?await hash(pixels.data):null,meta,stats:meta.stats,waterReplay,...(request.snapshot||request.material?{waterState:await s.snapshot(box)}:{})};
   }
   if(op==='capture')return {rows:waterCapture.rows.slice()};
   if(op==='stats'){const s=need(surfaces,request.surfaceId),meta=metadata(s);return {...meta.stats,meta,commands:completed};}
@@ -257,7 +295,7 @@ export function createWaterWorker({postMessage}={}){
    if(!run)throw waterError('WATER_INPUT','The Water replay cannot be restored');surfaces.set(request.surfaceId,run.surface);runs.set(request.surfaceId,run);return state(request.surfaceId);
   }
   if(op==='replay'){const run=need(runs,request.surfaceId),count=await run.run((stroke,point)=>stroke>request.stroke||stroke===request.stroke&&point>=request.point);return {count,done:run.done,surface:await state(request.surfaceId)};}
-  if(op==='drop'){for(const id of request.surfaceIds||[]){dropDisplay(id);surfaces.get(id)?.dispose();surfaces.delete(id);checkpoints.delete(id);runs.delete(id);displayed.delete(id);}for(const id of request.brushIds||[])brushes.delete(id);return {};}
+  if(op==='drop'){for(const id of request.surfaceIds||[]){dropDisplay(id);surfaces.get(id)?.dispose();surfaces.delete(id);checkpoints.delete(id);runs.delete(id);displayed.delete(id);historyBrushes.delete(id);resumedBrushes.delete(id);if(!histories.get(id)?.retained)histories.delete(id);}for(const id of request.brushIds||[]){brushes.delete(id);definitions.delete(id);}return {};}
   throw waterError('WATER_INPUT','The Water operation is not valid');
  }
  const displayControl=request=>request.operation==='bindDisplay'||request.operation==='adoptDisplay';
@@ -291,7 +329,7 @@ export function createWaterWorker({postMessage}={}){
      checkpoints.set(sid,{id:cp.id,error});
     }
     const reopen=['WATER_GPU_MEMORY','WATER_GPU_FAILED','WATER_DEVICE_LOST'].includes(error.code);
-    if(reopen){for(const id of displays.keys())dropDisplay(id);for(const surface of surfaces.values())surface.dispose();surfaces.clear();brushes.clear();checkpoints.clear();runs.clear();displayed.clear();}
+    if(reopen){for(const id of displays.keys())dropDisplay(id);for(const surface of surfaces.values())surface.dispose();surfaces.clear();brushes.clear();definitions.clear();historyBrushes.clear();resumedBrushes.clear();checkpoints.clear();runs.clear();displayed.clear();}
     postMessage({id,error:{name:error.name||'Error',code:error.code||'WATER_INPUT',message:String(error.message||error)},recoverable:!reopen&&error.recoverable!==false,...(reopen?lostCapture():{})});
    }finally{if(control)displayWork+=performance.now()-started;jobs.delete(id);}
  };
@@ -312,7 +350,7 @@ export function createWaterWorker({postMessage}={}){
   const next=async()=>{await drainDisplays();await run(request);await drainDisplays();};
   chain=chain.then(next,next);return chain;
  };
- receive.close=async()=>{closed=true;await Promise.resolve();for(const job of jobs.values())job.abort();await chain;for(const id of displays.keys())dropDisplay(id);for(const surface of surfaces.values())surface.dispose();surfaces.clear();brushes.clear();checkpoints.clear();runs.clear();displayed.clear();publications.clear();publicationBytes=0;};
+ receive.close=async()=>{closed=true;await Promise.resolve();for(const job of jobs.values())job.abort();await chain;for(const id of displays.keys())dropDisplay(id);for(const surface of surfaces.values())surface.dispose();surfaces.clear();brushes.clear();definitions.clear();historyBrushes.clear();resumedBrushes.clear();checkpoints.clear();runs.clear();histories.clear();displayed.clear();publications.clear();publicationBytes=0;};
  return receive;
 }
 export function createLocalWaterClient(){

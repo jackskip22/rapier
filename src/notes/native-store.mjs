@@ -8,7 +8,7 @@ const CHUNK = 48 * 1024;
 const fail = (code, message) => Object.assign(new Error(message), {code});
 const received = value => ArrayBuffer.isView(value) ? new Uint8Array(value.buffer, value.byteOffset, value.byteLength) : null;
 
-export function createNativeByteStore({call, token = () => crypto.randomUUID(), beforeStep = async () => {}, afterStep = async () => {}}) {
+export function createNativeByteStore({call, privateStore = false, token = () => crypto.randomUUID(), beforeStep = async () => {}, afterStep = async () => {}}) {
 	let writable, preparing, reason = '';
 	const request = (operation, args = {}) => call('notes.store.' + operation, args);
 	const prepare = () => {
@@ -213,7 +213,7 @@ export function createNativeByteStore({call, token = () => crypto.randomUUID(), 
 		},
 		async checkpoint(value, baseDigest) { const bytes = pressureBytes(value); pressureDigest(baseDigest); return pressureWrite('notes.json', baseDigest, bytes); },
 	};
-	return {read, readChunks, write, writeBlob, remove, list, stat, statAll, prepare, recording, deletePressure, get streamingAttachments() { return writable === true; }, get writable() { return writable; }, get ascii() { return false; }, get reason() { return reason; }, async removeThumbnails() {}};
+	return {deviceOnly: privateStore, read, readChunks, write, writeBlob, remove, list, stat, statAll, prepare, recording, deletePressure: privateStore ? null : deletePressure, get streamingAttachments() { return writable === true; }, get writable() { return writable; }, get ascii() { return false; }, get reason() { return reason; }, async removeThumbnails() {}};
 }
 
 export function createNativeNotesLocks({call, token = () => crypto.randomUUID()}) {

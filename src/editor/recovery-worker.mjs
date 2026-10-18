@@ -201,7 +201,18 @@ export function installRecoveryWorker(scope) {
         let core = revisions.get(request.revisionId);
         if (!core) {
           if (!request.core) throw new Error('Recovery revision expired');
-          core = {input: request.core, ledger: null, integrity: null};
+          let input = request.core;
+          if (request.textChange) {
+            const base = revisions.get(request.baseRevisionId)?.input;
+            if (!base) throw Object.assign(new Error('Recovery base expired'), {code: 'recovery_base_expired'});
+            const {start, removed, inserted} = request.textChange;
+            if (base.documentAuthority !== input.documentAuthority || typeof base.text !== 'string' ||
+                !Number.isSafeInteger(start) || start < 0 || !Number.isSafeInteger(removed) || removed < 0 ||
+                start + removed > base.text.length || typeof inserted !== 'string' || input.text !== null)
+              throw new Error('Recovery delta is invalid');
+            input = {...input, text: base.text.slice(0, start) + inserted + base.text.slice(start + removed)};
+          }
+          core = {input, ledger: null, integrity: null};
         }
         if (request.write) {
           if (!scope.indexedDB) throw new Error('IndexedDB unavailable');
@@ -210,7 +221,8 @@ export function installRecoveryWorker(scope) {
           if (current()) revisions.set(request.revisionId, core);
           return;
         }
-        const result = await preparation(core, request.state, controller.signal);
+        const state = request.state.seenCurrent ? {...request.state, seenText: core.input.text} : request.state;
+        const result = await preparation(core, state, controller.signal);
         const {parts, ...value} = result;
         if (value.ledger && request.reuseLedger) { value.ledger = null; value.reusedLedger = true; }
         const packed = packet(value);
@@ -227,17 +239,25 @@ export function installRecoveryWorker(scope) {
 
 const prepared = new WeakMap(), captures = new WeakMap(), revisions = new WeakMap();
 let revisionSequence = 0;
-export function captureRecoveryRevision(input) {
+export function captureRecoveryRevision(input, baseToken = null) {
+  const value = captured(input), base = baseToken == null ? null : revisions.get(baseToken);
+  if (baseToken != null && !base) throw new Error('Recovery capture is not owned');
   const token = Object.freeze({});
-  revisions.set(token, {input: captured(input), id: ++revisionSequence, lifetime: 0, users: 0,
+  const deltaBase = base?.remote && base.input.documentAuthority === value.documentAuthority
+    ? {entry: base, release: retainRecoveryRevision(baseToken)} : null;
+  revisions.set(token, {input: value, id: ++revisionSequence, lifetime: 0, users: 0, base: deltaBase,
     remote: null, ledger: null, local: null, chain: Promise.resolve()});
   return token;
+}
+function releaseBase(entry) {
+  const base = entry.base; entry.base = null; base?.release();
 }
 function releaseRemote(entry) {
   if (entry.remote) {
     try { entry.remote.worker.postMessage({operation: 'release', revisionId: entry.id}); } catch (_) {}
   }
   entry.remote = null; entry.ledger = null; entry.local = null;
+  releaseBase(entry);
 }
 export function retireRecoveryRevision(token) {
   const entry = revisions.get(token);
@@ -329,7 +349,7 @@ async function prepareEntry(entry, state, {workerSource, signal} = {}) {
       }
       value.encoded = encoded;
     }
-    signal?.throwIfAborted(); entry.local = core;
+    signal?.throwIfAborted(); entry.local = core; releaseBase(entry);
     return keep(value, entry, state);
   }
   const owner = await sharedWorker(workerSource);
@@ -343,9 +363,25 @@ async function prepareEntry(entry, state, {workerSource, signal} = {}) {
   } else if (value.ledger) entry.ledger = value.ledger;
   return keep(value, entry, state);
 }
-async function ask(owner, entry, reuse, request, signal) {
+function textChange(before, after) {
+  const limit = Math.min(before.length, after.length);
+  let start = 0, end = 0;
+  for (const step of [65536, 1024, 1])
+    while (start + step <= limit && before.slice(start, start + step) === after.slice(start, start + step)) start += step;
+  for (const step of [65536, 1024, 1])
+    while (end + step <= limit - start && before.slice(before.length - end - step, before.length - end) === after.slice(after.length - end - step, after.length - end)) end += step;
+  return {start, removed: before.length - start - end, inserted: after.slice(start, after.length - end)};
+}
+async function ask(owner, entry, reuse, request, signal, full = false) {
   const id = ++sequence;
-  const packed = packet({revisionId: entry.id, core: reuse ? null : entry.input, ...request});
+  const base = !reuse && !full && entry.base?.entry.remote === owner ? entry.base.entry : null;
+  const change = base && typeof base.input.text === 'string' && typeof entry.input.text === 'string'
+    ? textChange(base.input.text, entry.input.text) : null;
+  const delta = change && change.inserted.length < entry.input.text.length;
+  const state = request.state?.seenText === entry.input.text
+    ? {...request.state, seenText: null, seenCurrent: true} : request.state;
+  const packed = packet({revisionId: entry.id, core: reuse ? null : delta ? {...entry.input, text: null} : entry.input,
+    ...request, ...(state ? {state} : {}), ...(delta ? {baseRevisionId: base.id, textChange: change} : {})});
   const value = await new Promise((resolve, reject) => {
     let settled = false, timer = 0;
     const cancel = () => finish(abort());
@@ -367,8 +403,12 @@ async function ask(owner, entry, reuse, request, signal) {
     if (signal?.aborted) { cancel(); return; }
     const port = {postMessage: message => owner.worker.postMessage({id, ...message})};
     void sendPacket(port, packed, () => !settled).catch(error => finish(error));
+  }).catch(error => {
+    if (delta && error.code === 'recovery_base_expired') return ask(owner, entry, false, request, signal, true);
+    throw error;
   });
   entry.remote = owner;
+  releaseBase(entry);
   return value;
 }
 export async function writeRecoveryRecords(prepared, write, {workerSource, signal, db} = {}) {

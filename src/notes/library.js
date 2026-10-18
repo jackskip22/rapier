@@ -667,6 +667,11 @@ function _rapierNotesLibraryConnectionsFace(sheet, file) {
 	}
 }
 function _rapierNotesFollowLink(href) {
+	if (globalThis.RapierPlatform?.files.relativeCandidate(href)) {
+		void globalThis.RapierOriginalFolder.follow(href).catch(error => window.dispatchEvent(new CustomEvent('rapier:original-file-result',
+			{detail: {status: 'refused', reason: error.code || 'original_unavailable', recoveryChoices: ['keep-editing']}})));
+		return true;
+	}
 	if (typeof _rapierRecorderPlayAt === 'function' && _rapierRecorderPlayAt(href)) return true;
 	const state = _rapierNotes, L = _rapierNotesLinksModule(), current = _rapierNotesCurrentFile();
 	if (!L || !current) return false;
@@ -887,6 +892,10 @@ async function _rapierNotesPickerChoose(index) {
 		document.execCommand('insertText', false, '#' + tag + ' ');
 		return;
 	}
+	const caret = _rapierNotesPickerCaret() || picker.caret;
+	const edit = caret?.node.parentElement?.closest('.block-edit');
+	const complete = edit && _rapierHoldTypingCompletion(edit);
+	if (!complete) return;
 	let file = picker.rows[at];
 	if (name) {
 		if (picker.creating) return;
@@ -902,23 +911,27 @@ async function _rapierNotesPickerChoose(index) {
 		try { await _rapierNotesTexts([file]); } catch (_) {  }
 		if (lib.picker !== picker || picker.rows[at] !== file) return;
 	}
-	const caret = _rapierNotesPickerCaret() || picker.caret;
 	if (!file || !caret || !caret.node.isConnected) { _rapierNotesPickerClose(); return; }
+	const currentCaret = _rapierNotesPickerCaret();
+	if (currentCaret ? currentCaret.node !== caret.node || currentCaret.offset !== caret.offset || currentCaret.span !== caret.span
+			: !picker.el.contains(document.activeElement)) return;
 	const host = picker.host?.isContentEditable && picker.host.contains(caret.node) ? picker.host : null;
 	if (!host || host.closest('[inert]')) { _rapierNotesPickerClose(); return; }
-	if (document.activeElement !== host) host.focus({preventScroll: true});
-	const range = document.createRange();
-	const start = Math.max(0, caret.offset - caret.span);
-	range.setStart(caret.node, start);
-	range.setEnd(caret.node, Math.min(caret.offset, String(caret.node.nodeValue || '').length));
-	const sel = window.getSelection();
-	sel.removeAllRanges(); sel.addRange(range);
-	_rapierNotesPickerClose();
-	const title = alias || _rapierNotesLibraryTitle(file);
-	const dest = typeof L.linkDest === 'function' ? L.linkDest(file) : file;
-	const escape = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-	if (typeof _rangeInsertHTML === 'function' && !caret.node.parentElement?.closest('.block-wrapper--source-edit')) _rangeInsertHTML('<a href="' + escape(dest) + '">' + escape(title) + '</a>');
-	else document.execCommand('insertText', false, L.markdownLink(title, file));
+	complete(() => {
+		if (document.activeElement !== host) host.focus({preventScroll: true});
+		const range = document.createRange();
+		const start = Math.max(0, caret.offset - caret.span);
+		range.setStart(caret.node, start);
+		range.setEnd(caret.node, Math.min(caret.offset, String(caret.node.nodeValue || '').length));
+		const sel = window.getSelection();
+		sel.removeAllRanges(); sel.addRange(range);
+		_rapierNotesPickerClose();
+		const title = alias || _rapierNotesLibraryTitle(file);
+		const dest = typeof L.linkDest === 'function' ? L.linkDest(file) : file;
+		const escape = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+		if (typeof _rangeInsertHTML === 'function' && !caret.node.parentElement?.closest('.block-wrapper--source-edit')) _rangeInsertHTML('<a href="' + escape(dest) + '">' + escape(title) + '</a>');
+		else document.execCommand('insertText', false, L.markdownLink(title, file));
+	});
 }
 function _rapierNotesPickerKey(evt) {
 	if (evt.isComposing || evt.keyCode === 229) return;
@@ -962,3 +975,118 @@ function _rapierNotesLibraryFacts() {
 	};
 }
 _rapierBootFactsPublished.then(_rapierNotesPickerInstall);
+
+const _rapierOriginalFolderView = {folder: null, cancel: null, choosing: 0};
+globalThis.RapierOriginalFolder = Object.freeze({
+  async choose() {
+    const turn = ++_rapierOriginalFolderView.choosing;
+    const result = await globalThis.RapierOriginalFolderCore.choose();
+    if (turn !== _rapierOriginalFolderView.choosing) { await result.folder?.revoke(); return {status: 'cancelled'}; }
+    if (result.status === 'selected') {
+      globalThis.RapierOriginalFolder.leaveView();
+      await _rapierOriginalFolderView.folder?.revoke();
+      _rapierOriginalFolderView.folder = result.folder;
+    }
+    return result;
+  },
+  async list(directory, {limit = 64, signal} = {}) {
+    const folder = _rapierOriginalFolderView.folder;
+    if (!folder) throw Object.assign(new Error('folder_not_selected'), {code: 'folder_not_selected'});
+    const held = await folder.retain(directory || folder.root, {signal});
+    globalThis.RapierOriginalFolder.leaveView();
+    const cancel = _rapierOriginalFolderView.cancel = new AbortController();
+    const lifetime = signal ? AbortSignal.any([signal, cancel.signal]) : cancel.signal;
+    const iterator = folder.list(held, {limit, signal: lifetime});
+    let released = false;
+    const release = () => { if (!released) { released = true; void folder.release(held).catch(() => {}); } };
+    lifetime.addEventListener('abort', release, {once: true});
+    return Object.freeze({
+      [Symbol.asyncIterator]() { return this; },
+      async next() { try { const result = await iterator.next(); if (result.done) release(); return result; } catch (error) { release(); throw error; } },
+      async return() { cancel.abort(); try { return await iterator.return(); } finally { release(); } },
+    });
+  },
+  async open(entry, {signal} = {}) {
+    const folder = _rapierOriginalFolderView.folder;
+    if (!folder) return false;
+    const prepared = await globalThis.RapierOriginalFolderCore.prepare(folder, entry, globalThis.RapierPlatform.files, {signal});
+    let opened = false;
+    try {
+      if (!await _rapierNotesEditor()) return false;
+      opened = await rapierOpenPlatformPayload(prepared.payload, {signal});
+      return opened;
+    } finally { if (!opened) await prepared.release(); }
+  },
+  async follow(href, {signal} = {}) {
+    const authority = String(rapier.identity.authority || '');
+    const expectedMutationStamp = Object.freeze(_rapierMutationStamp());
+    const original = globalThis.RapierPlatform?.files.original(authority);
+    if (!original) return false;
+    const prepared = await original.follow(href, {signal});
+    let opened = false;
+    try {
+      opened = await rapierOpenPlatformPayload(prepared.payload, {signal, expectedMutationStamp});
+      if (opened && href.includes('#')) _rapierJumpToHash(href.slice(href.indexOf('#')));
+      return opened;
+    } finally { if (!opened) await prepared.release(); }
+  },
+  leaveView() { _rapierOriginalFolderView.cancel?.abort(); _rapierOriginalFolderView.cancel = null; },
+  async close() {
+    ++_rapierOriginalFolderView.choosing;
+    globalThis.RapierOriginalFolder.leaveView();
+    const folder = _rapierOriginalFolderView.folder; _rapierOriginalFolderView.folder = null;
+    await folder?.revoke();
+  },
+});
+window.addEventListener('pagehide', () => { void globalThis.RapierOriginalFolder.close(); });
+function _rapierOriginalFolderAvailable() {
+	return typeof globalThis.showDirectoryPicker === 'function' && globalThis.RapierPlatform?.environment?.id === 'web' || !!globalThis.RapierPlatform?.host?.originalFolder;
+}
+async function _rapierOriginalFolderOpen() {
+	let result;
+	try { result = await globalThis.RapierOriginalFolder.choose(); }
+	catch (_) { showToast('That folder did not open.', 'error'); return; }
+	if (result?.status === 'unavailable') { showToast('Open a folder in Chrome or Edge on a computer.', 'info'); return; }
+	if (result?.status === 'selected') await _rapierOriginalFolderShow(null, []);
+}
+function _rapierOriginalFolderRow(name, meta, act) {
+	const row = _rapierNotesEl('span', 'rapier-attachment-row'), details = _rapierNotesEl('span', 'rapier-attachment-details');
+	details.append(_rapierNotesEl('strong', 'rapier-attachment-name', name), _rapierNotesEl('span', 'rapier-attachment-meta', meta));
+	row.appendChild(details); row.setAttribute('role', 'button'); row.tabIndex = 0;
+	const go = event => { event.preventDefault(); event.stopPropagation(); void Promise.resolve(act()).catch(() => showToast('That did not open.', 'error')); };
+	row.addEventListener('click', go);
+	row.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') go(event); });
+	return row;
+}
+async function _rapierOriginalFolderShow(directory, trail) {
+	const d = _rapierAttachmentsDialog(directory ? directory.name : 'Folder');
+	if (trail.length) d.appendChild(_rapierAttachmentsButton('Back', () => { d.close(); return _rapierOriginalFolderShow(trail.at(-1), trail.slice(0, -1)); }));
+	const status = _rapierNotesEl('p', '', 'Reading the folder'); d.appendChild(status);
+	let pages;
+	try { pages = await globalThis.RapierOriginalFolder.list(directory || undefined); }
+	catch (_) { status.textContent = 'This folder could not be read.'; return; }
+	const more = _rapierAttachmentsButton('Show more', () => page()); more.hidden = true; d.appendChild(more);
+	d.addEventListener('close', () => { void pages.return?.(); }, {once: true});
+	let shown = 0;
+	const page = async () => {
+		const next = await pages.next();
+		if (!d.open) return;
+		const entries = next.done ? [] : next.value.entries.filter(e => e.kind === 'directory' || /\.(?:md|markdown)$/i.test(e.name));
+		entries.sort((a, b) => (a.kind === 'directory' ? 0 : 1) - (b.kind === 'directory' ? 0 : 1) || a.name.localeCompare(b.name));
+		for (const entry of entries) d.insertBefore(entry.kind === 'directory'
+			? _rapierOriginalFolderRow(entry.name, 'Folder', () => { d.close(); return _rapierOriginalFolderShow(entry, directory ? [...trail, directory] : [...trail, null]); })
+			: _rapierOriginalFolderRow(entry.name, 'Markdown', async () => { d.close(); if (!await globalThis.RapierOriginalFolder.open(entry)) showToast('That file did not open.', 'error'); }), more);
+		shown += entries.length;
+		more.hidden = next.done || next.value.complete;
+		status.textContent = shown ? '' : more.hidden ? 'No Markdown files here.' : 'Reading the folder';
+		status.hidden = !status.textContent;
+	};
+	await page();
+}
+window.addEventListener('rapier:original-file-result', event => {
+	const detail = event.detail || {};
+	if (detail.status === 'retained-draft' && detail.copyVerified && detail.destinationName)
+		showToast('Changed outside Rapier. Your edits are saved beside it as ' + detail.destinationName + '.', 'info');
+	else if (detail.status === 'retained-draft') showToast('Changed outside Rapier. Your edits are kept here; save again to choose where.', 'warning');
+	else if (detail.status === 'refused') showToast('That file did not open.', 'error');
+});

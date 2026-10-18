@@ -123,3 +123,110 @@ export function admitPaintReplay(raw, validRaster = value => typeof value === 's
   }
   return {baseRaster: raw.baseRaster, px: raw.px.slice(), scale: raw.scale, entries, ...(raw.mode === 'water' ? {mode: 'water', paper: raw.paper, session: raw.session} : {}), ...(views.length ? {views} : {})};
 }
+
+export const PAINT_HISTORY_INTERVAL = 1;
+export const PAINT_HISTORY_STROKES = 64;
+
+const paintZeroChunk=new Uint8Array(65536);
+class PaintArrayCheckpoint {
+ constructor(value,previous) {
+  this.type=value.constructor;this.length=value.length;this.parts=[];
+  const bytes=new Uint8Array(value.buffer,value.byteOffset,value.byteLength);
+  for(let at=0;at<bytes.length;at+=65536){
+   const part=bytes.subarray(at,Math.min(bytes.length,at+65536));
+   const zero=paintZeroChunk.subarray(0,part.length);
+   const old=previous?.type===this.type&&previous.parts[at/65536];
+   this.parts.push(old&&samePaintBytes(part,old)?old:samePaintBytes(part,zero)?zero:part.slice());
+  }
+ }
+ restore(){const out=new this.type(this.length),bytes=new Uint8Array(out.buffer);let at=0;for(const part of this.parts){bytes.set(part,at);at+=part.length;}return out;}
+}
+function samePaintBytes(a,b){
+ if(a.length!==b.length)return false;
+ if(a.byteOffset%4||b.byteOffset%4){for(let i=0;i<a.length;i++)if(a[i]!==b[i])return false;return true;}
+ const words=Math.floor(a.length/4),x=new Uint32Array(a.buffer,a.byteOffset,words),y=new Uint32Array(b.buffer,b.byteOffset,words);
+ for(let i=0;i<words;i++)if(x[i]!==y[i])return false;
+ for(let i=words*4;i<a.length;i++)if(a[i]!==b[i])return false;
+ return true;
+}
+export function snapshotPaintState(value,previous,seen=new Map()) {
+ if(!value||typeof value!=='object')return value;
+ if(seen.has(value))return seen.get(value);
+ if(ArrayBuffer.isView(value)){const out=new PaintArrayCheckpoint(value,previous);seen.set(value,out);return out;}
+ const out=value instanceof Map?new Map():Array.isArray(value)?[]:Object.create(Object.getPrototypeOf(value));seen.set(value,out);
+ if(value instanceof Map)for(const [key,item]of value)out.set(key,snapshotPaintState(item,previous?.get(key),seen));
+ else for(const key of Object.keys(value))if(!['_blendNormalPaint','recordWetWork','strokeCheckpoint'].includes(key))out[key]=snapshotPaintState(value[key],previous?.[key],seen);
+ return out;
+}
+
+export function copyPaintState(value, seen = new Map()) {
+ if (!value || typeof value !== 'object') return value;
+ if (seen.has(value)) return seen.get(value);
+ if(value instanceof PaintArrayCheckpoint){const out=value.restore();seen.set(value,out);return out;}
+ if (ArrayBuffer.isView(value)) { const out=value.slice(); seen.set(value,out); return out; }
+ const out=value instanceof Map?new Map():Array.isArray(value)?[]:Object.create(Object.getPrototypeOf(value));
+ seen.set(value,out);
+ if(value instanceof Map)for(const [key,item]of value)out.set(key,copyPaintState(item,seen));
+ else for(const key of Object.keys(value)) {
+  if(['_blendNormalPaint','recordWetWork','strokeCheckpoint'].includes(key))continue;
+  out[key]=copyPaintState(value[key],seen);
+ }
+ return out;
+}
+
+export class PaintStrokeHistory {
+ constructor({capture,restore,apply,read,canCapture=()=>true,dispose=()=>{}}) {
+  Object.assign(this,{capture,restore,apply,read,canCapture,dispose});
+  this.commands=[];this.offset=0;this.strokes=[];this.checkpoints=[];
+ }
+ get position(){return this.offset+this.commands.length;}
+ stats(){
+  const held=new Set(),seen=new Set();let materialBytes=0;
+  const visit=value=>{if(!value||typeof value!=='object'||seen.has(value))return;seen.add(value);if(value instanceof PaintArrayCheckpoint){for(const part of value.parts)if(!held.has(part)){held.add(part);materialBytes+=part.byteLength;}return;}if(value instanceof Map){for(const item of value.values())visit(item);}else for(const item of Object.values(value))visit(item);};
+  for(const checkpoint of this.checkpoints)visit(checkpoint);
+  return {strokes:this.strokes.length,checkpoints:this.checkpoints.length,commands:this.commands.length,logBytes:new TextEncoder().encode(JSON.stringify({commands:this.commands,strokes:this.strokes})).byteLength,materialBytes,inputs:this.strokes.map(s=>s.input)};
+ }
+ async begin(token,input) {
+  const at=this.position;
+  if(!this.checkpoints.length||this.strokes.length%PAINT_HISTORY_INTERVAL===0)
+   this.checkpoints.push({at,state:await this.capture(this.checkpoints.at(-1)?.state)});
+  this.strokes.push({token,at,input});
+  if(this.strokes.length>PAINT_HISTORY_STROKES)this.trim(this.strokes.at(-PAINT_HISTORY_STROKES).at);
+ }
+ async cancel(token){
+  const stroke=this.strokes.at(-1);if(stroke?.token!==token)return;
+  this.commands.splice(stroke.at-this.offset);this.strokes.pop();
+  const previous=this.checkpoints.at(-1)?.state,kept=this.checkpoints.findLast(c=>c.at===stroke.at&&c.view);
+  this.checkpoints=this.checkpoints.filter(c=>c.at<stroke.at);
+  this.checkpoints.push({at:stroke.at,state:await this.capture(previous),...(kept?{view:kept.view,viewToken:kept.viewToken}:{})});
+ }
+ record(command){this.commands.push(structuredClone(command));}
+ async mark(box,view){
+  const at=this.position,token=this.strokes.at(-1)?.token;
+  if(view&&this.canCapture()){
+   const previous=this.checkpoints.at(-1);
+   const state=await this.capture(previous?.state),kept=snapshotPaintState({...view,box},previous?.view);
+   this.checkpoints=this.checkpoints.filter(c=>c.viewToken!==token);
+   this.checkpoints.push({at,state,view:kept,viewToken:token});
+  }
+  return {at,box:box?{...box}:null};
+ }
+ resolve(point){return point.before?this.strokes.find(s=>s.token===point.stroke)?.at:point.at;}
+ trim(at) {
+  const checkpoint=this.checkpoints.findLast(c=>c.at<=at);
+  if(!checkpoint)return;
+  this.commands.splice(0,checkpoint.at-this.offset);this.offset=checkpoint.at;
+  this.checkpoints=this.checkpoints.filter(c=>c.at>=checkpoint.at);
+  this.strokes=this.strokes.filter(s=>s.at>=checkpoint.at);
+ }
+ async material(point) {
+  const at=this.resolve(point),checkpoint=this.checkpoints.findLast(c=>c.at<=at);
+  if(!checkpoint||at>this.position)throw new Error('The painting history checkpoint is no longer retained');
+  const state=await this.restore(checkpoint.state);
+  try {
+   for(let i=checkpoint.at;i<at;i++)await this.apply(state,this.commands[i-this.offset]);
+   return state;
+  } catch(error){this.dispose(state);throw error;}
+ }
+ async replay(point){const at=this.resolve(point),kept=this.checkpoints.findLast(c=>c.at===at&&c.view);if(kept)return copyPaintState(kept.view);const state=await this.material(point);try{return await this.read(state,point);}finally{this.dispose(state);}}
+}

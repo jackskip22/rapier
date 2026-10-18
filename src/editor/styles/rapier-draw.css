@@ -383,6 +383,7 @@ body.light .rapier-draw-menu{--color-text:#000;--color-text-secondary:#000;--col
 .rapier-draw-sheet{position:absolute;z-index:3;pointer-events:none;background:var(--color-bg);opacity:0}
 .rapier-draw-surface--paper .rapier-draw-sheet{background:#fff}
 .rapier-draw-shapes g[data-paint-live]{visibility:hidden}
+.rapier-draw-shapes g[data-paint-live="under"]{visibility:visible;opacity:.01}
 body.rapier-draw-open{overflow:hidden}
 body.rapier-draw-open .settings-overlay.restore-modal-overlay{z-index:950}
 

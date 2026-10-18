@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {isAttachmentName} from './model.mjs';
 import {attachmentsOf} from './attachments.mjs';
+import {lockedSyncBoundary} from './sync-state.mjs';
 
 const hex = bytes => [...new Uint8Array(bytes)].map(b => b.toString(16).padStart(2, '0')).join('');
 const digest = async bytes => hex(await crypto.subtle.digest('SHA-256', bytes));
@@ -8,13 +9,20 @@ const MAX_BYTES = 150000000;
 
 export async function syncPlainPictures({folder, store, base, guard = () => {}}) {
 	await guard();
+	const privacy = await lockedSyncBoundary(folder, guard); guard = privacy.guard;
 	const result = {pushed: 0, pulled: 0, removed: 0, held: []};
 	if (typeof store.pictures !== 'function') return {...result, skipped: 'this storage keeps notes only'};
 	const remote = store.pictures(), agreed = new Map(Object.entries(await base.read() || {}));
+	for (const [name] of agreed) if (!await privacy.allows('attachments/' + name)) agreed.delete(name);
 	if (typeof remote.connect === 'function') await remote.connect();
 	const hold = (name, why) => result.held.push({name, why});
 	const theirs = new Map((await remote.list()).filter(row => isAttachmentName(row.name)).map(row => [row.name, row]));
-	const local = async () => new Set((await folder.store.list('attachments')).filter(isAttachmentName));
+	for (const [name] of theirs) if (!await privacy.allows('attachments/' + name)) theirs.delete(name);
+	const local = async () => {
+		const names = new Set((await folder.store.list('attachments')).filter(isAttachmentName));
+		for (const name of names) if (!await privacy.allows('attachments/' + name)) names.delete(name);
+		return names;
+	};
 	let mine = await local();
 	const read = name => folder.store.read('attachments/' + name);
 	const linked = new Set();

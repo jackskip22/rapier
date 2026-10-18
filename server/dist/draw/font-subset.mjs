@@ -244,6 +244,32 @@ function subsetCff(tables, data, keep) {
 	setOffset(index.count, offset);
 	tables.set(tag, out);
 }
+export function fontCids(bytes) {
+	const {tables} = fontTables(bytes), data = tables.get('CFF ');
+	if (!data) return null;
+	const names = cffIndex(data, data[2], false), top = cffIndex(data, names.end, false), dict = cffDict(top.objects[0]);
+	const glyphs = cffIndex(data, dict.get(17)[0], false).count;
+	if (!dict.has(1230)) return Array.from({length: glyphs}, (_, index) => index);
+	const {reader} = access(data); reader.at = dict.get(15)[0];
+	const format = reader.u8(), cids = [0];
+	if (format > 2) fontError('The CFF character set is invalid.');
+	while (cids.length < glyphs) {
+		const first = reader.u16(), following = format === 0 ? 0 : format === 1 ? reader.u8() : reader.u16();
+		if (cids.length + following >= glyphs) fontError('The CFF character set exceeds the glyph count.');
+		for (let offset = 0; offset <= following; offset++) cids.push(first + offset);
+	}
+	return cids;
+}
+export function maskFontGlyphs(bytes, glyphs) {
+	const {flavor, tables} = fontTables(bytes), count = access(tables.get('maxp')).u16(4);
+	const removed = new Set(glyphs), keep = new Set(Array.from({length: count}, (_, id) => id).filter(id => !removed.has(id)));
+	if (tables.has('glyf')) subsetGlyf(tables, keep, count, glyphOffsets(tables, count));
+	else {
+		const data = cffData(tables, count, new Set());
+		subsetCff(tables, data, keep);
+	}
+	return writeSfnt(flavor, tables);
+}
 export function subsetSfnt(bytes, text) {
 	const {flavor, tables} = fontTables(bytes), maxp = tables.get('maxp'), os = tables.get('OS/2');
 	if (!maxp || maxp.length < 6 || !os || os.length < 10 || !tables.has('cmap')) fontError('The font is missing required subset tables.');

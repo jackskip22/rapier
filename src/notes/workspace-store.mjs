@@ -6,7 +6,7 @@ import {recordingStem} from './recording-files.mjs';
 const SCOPE = 'rapier-notes:notes', RECORDING_SCOPE = 'rapier-notes-recording:notes:', PRIVATE = '.rapier/notes/', PUBLIC = 'notes/';
 const FILE_BYTES = 16 * 1024 * 1024, SOURCE_BYTES = 2 * 1024 * 1024, PAGE_BYTES = 1024 * 1024, FILES = 1024;
 const fail = (code, message) => Object.assign(new Error(message), {code});
-const abortError = () => Object.assign(new DOMException('', 'AbortError'), {name: 'AbortError', code: 'cancelled'});
+const abortError = () => Object.assign(new Error(''), {name: 'AbortError', code: 'cancelled'});
 const strongEtag = value => {
 	if (typeof value !== 'string' || !/^"[\x21\x23-\x7e]+"$/.test(value)) throw fail('protocol', 'A saved file could not be read; nothing was lost.');
 	return value;
@@ -23,6 +23,29 @@ const metadata = response => {
 	return {size, modified: null, etag: strongEtag(response.headers.get('ETag'))};
 };
 
+const usageFields = (value, keys) => {
+	if (!value || typeof value !== 'object' || keys.some(key => !Number.isSafeInteger(value[key]) || value[key] < 0)) return null;
+	return Object.fromEntries(keys.map(key => [key, value[key]]));
+};
+const usageTime = value => typeof value === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(value) &&
+	Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
+const usageStorage = value => {
+	const metric = (row, id, source) => {
+		if (!row || row.id !== id || row.source !== source || !Number.isSafeInteger(row.value) || row.value < 0 ||
+			row.unit !== 'bytes' || row.scope !== 'selected_vault' || row.quality !== 'exact' || row.availability !== 'available' ||
+			row.freshness !== 'current' || !usageTime(row.observedAt) || row.fetchedAt !== row.observedAt || row.dataThrough !== null || row.window !== null) return null;
+		return {id, value: row.value, unit: 'bytes', scope: 'selected_vault', source, quality: 'exact', availability: 'available',
+			freshness: 'current', observedAt: row.observedAt, fetchedAt: row.fetchedAt, dataThrough: null, window: null};
+	};
+	const physical = metric(value?.physical, 'sqlite_bytes', 'sqlite_database_size'), objects = metric(value?.objects, 'stored_object_bytes', 'rapier_metadata');
+	const limit = value?.physical?.limit, observed = value?.instrumentation, counts = usageFields(observed, ['rowsRead', 'rowsWritten']);
+	if (!physical || !objects || physical.observedAt !== objects.observedAt || !limit || !Number.isSafeInteger(limit.value) || limit.value <= 0 ||
+		limit.unit !== 'bytes' || limit.scope !== 'selected_vault' || limit.kind !== 'application_policy' || limit.status !== 'provisional' ||
+		!counts || observed.source !== 'instrumented_sql' || observed.quality !== 'partial' || observed.scope !== 'selected_vault' || observed.since !== 'object_activation') return null;
+	physical.limit = {value: limit.value, unit: 'bytes', scope: 'selected_vault', kind: 'application_policy', status: 'provisional'};
+	return {physical, objects, instrumentation: {...counts, source: 'instrumented_sql', quality: 'partial', scope: 'selected_vault', since: 'object_activation'}};
+};
+
 export function createWorkspaceNotes({url = globalThis.location?.href, fetch: send = globalThis.fetch?.bind(globalThis),
 	channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('rapier-notes') : null,
 	token = () => crypto.randomUUID(), clock = () => Date.now(), timers = globalThis,
@@ -30,6 +53,36 @@ export function createWorkspaceNotes({url = globalThis.location?.href, fetch: se
 	const origin = new URL(url);
 	if (!/^https?:$/.test(origin.protocol) || typeof send !== 'function') throw fail('workspace', 'the notes folder could not be read');
 	const leases = new Map(); let prepared = false;
+	let usageOwner = null, usageGeneration = 0, usageSequence = 0, usageObservedAt = 0, usage = null;
+	const emptyUsage = reason => ({owner: usageOwner, state: 'unavailable', reason, receivedAt: null, allowance: null, used: null, storage: null});
+	const setUsageOwner = owner => {
+		usageGeneration++; usageSequence = 0; usageObservedAt = 0;
+		const keys = ['accountId', 'installationId', 'namespaceId'];
+		usageOwner = owner && keys.every(key => typeof owner[key] === 'string' && owner[key].length > 0 && owner[key].length <= 256 && !/[\u0000-\u0020\u007f]/.test(owner[key]))
+			? {origin: origin.origin, ...Object.fromEntries(keys.map(key => [key, owner[key]]))} : null;
+		usage = emptyUsage(usageOwner ? 'not-observed' : 'owner-unavailable');
+	};
+	setUsageOwner(null);
+	const staleUsage = reason => { if (usageOwner) usage = usage.receivedAt ? {...usage, state: 'stale', reason} : emptyUsage(reason); };
+	const getUsageSnapshot = () => {
+		if (globalThis.navigator?.onLine === false) staleUsage('offline');
+		else if (usage.receivedAt && (clock() - Date.parse(usage.receivedAt) >= 60000 ||
+			usage.storage && clock() - Date.parse(usage.storage.physical.observedAt) >= 60000)) staleUsage('aged');
+		const snapshot = structuredClone(usage);
+		if (snapshot.state === 'stale' && snapshot.storage) for (const key of ['physical', 'objects']) snapshot.storage[key].freshness = 'stale';
+		return snapshot;
+	};
+	const currentUsage = ticket => usageOwner && ticket.generation === usageGeneration && ticket.sequence === usageSequence;
+	const captureUsage = (page, ticket) => {
+		if (!currentUsage(ticket)) return;
+		const allowance = usageFields(page.allowance, ['fileBytes', 'sourceBytes', 'recoveryBytes', 'totalBytes', 'files', 'documents', 'requestsPerDay', 'writesPerDay', 'storageUnitsPerDay']);
+		const used = usageFields(page.used, ['bytes', 'files', 'documents']);
+		const storage = page.storage === undefined ? null : usageStorage(page.storage);
+		if (!allowance || Object.values(allowance).some(value => value === 0) || !used || page.storage !== undefined && !storage) { staleUsage('invalid-snapshot'); return; }
+		if (storage && Date.parse(storage.physical.observedAt) < usageObservedAt) { staleUsage('older-snapshot'); return; }
+		if (storage) usageObservedAt = Date.parse(storage.physical.observedAt);
+		usage = {owner: usageOwner, state: 'current', reason: storage ? null : 'storage-unavailable', receivedAt: new Date(clock()).toISOString(), allowance, used, storage};
+	};
 	const check = lease => {
 		if (lease && (!lease.active || lease.error || clock() >= lease.expiresAt)) throw lease.error || fail('released', 'This notes transaction no longer owns the folder.');
 	};
@@ -43,6 +96,9 @@ export function createWorkspaceNotes({url = globalThis.location?.href, fetch: se
 	};
 	const request = async (name, {query, method = 'GET', headers = {}, body, signal, lease, recording} = {}) => {
 		check(lease); check(recording); if (signal?.aborted) throw abortError();
+		const changesFiles = name === 'files' && ['PUT', 'DELETE'].includes(method);
+		if (changesFiles) { usageSequence++; staleUsage('changed'); }
+		const usageTicket = {generation: usageGeneration, sequence: usageSequence};
 		const abort = new AbortController(), signals = [signal, lease?.abort.signal, recording?.abort.signal].filter(Boolean);
 		const cancel = () => abort.abort(), timer = timers.setTimeout(cancel, 30000);
 		for (const source of signals) { if (source.aborted) cancel(); else source.addEventListener('abort', cancel, {once: true}); }
@@ -51,8 +107,19 @@ export function createWorkspaceNotes({url = globalThis.location?.href, fetch: se
 				...(recording ? {'X-Rapier-Recording-Lease': recording.id} : {})},
 				body, signal: abort.signal, credentials: 'same-origin', cache: 'no-store', redirect: 'error'});
 			check(lease); check(recording); if (signal?.aborted) throw abortError();
+			if (changesFiles && usageTicket.generation === usageGeneration) {
+				usageSequence++; staleUsage('changed');
+				if (response.status === 401 || response.status === 403) usage = emptyUsage('sign-in');
+			} else if (currentUsage(usageTicket)) {
+				if (response.status === 401 || response.status === 403) { usageSequence++; usage = emptyUsage('sign-in'); }
+				else if ([413, 429, 507].includes(response.status)) { usageSequence++; staleUsage('workspace-limit'); }
+			}
 			return response;
-		} finally { timers.clearTimeout(timer); for (const source of signals) source.removeEventListener('abort', cancel); }
+		} catch (error) {
+			if (currentUsage(usageTicket) || changesFiles && usageTicket.generation === usageGeneration) { usageSequence++; staleUsage('request-failed'); }
+			throw error;
+		}
+		finally { timers.clearTimeout(timer); for (const source of signals) source.removeEventListener('abort', cancel); }
 	};
 	async function* responseChunks(response, {limit, chunkBytes = 1024 * 1024, signal, lease, recording} = {}) {
 		const reader = response.body?.getReader(); let size = 0, complete = false;
@@ -90,7 +157,8 @@ export function createWorkspaceNotes({url = globalThis.location?.href, fetch: se
 		if (response.status === 404) throw fail('missing', 'no such note');
 		if (response.status === 412) throw fail('changed', 'The notes folder changed while being read.');
 		if (response.status === 401 || response.status === 403) throw fail('sign-in', 'the notes folder could not be read');
-		if (response.status === 409 || response.status === 423) throw fail('busy', 'This notes transaction no longer owns the folder.');
+		if (response.status === 409) throw fail('conflict', 'The notes folder has an unresolved conflict.');
+		if (response.status === 423) throw fail('busy', 'This notes transaction no longer owns the folder.');
 		if ([413, 429, 507].includes(response.status)) throw fail('workspace-limit', 'The note could not be changed. Try again.');
 		throw fail('workspace', 'the notes folder could not be read');
 	};
@@ -181,6 +249,9 @@ export function createWorkspaceNotes({url = globalThis.location?.href, fetch: se
 	};
 	const statAll = async (prefix = '') => {
 		if (!FOLDERS.has(prefix)) throw fail('name', 'This folder is not part of Notes.');
+		const ticket = {generation: usageGeneration, sequence: ++usageSequence};
+		staleUsage('refreshing');
+		try {
 		const lease = held(), out = new Map(), roots = prefix ? [physical(prefix + '/_').slice(0, -1)] : [PUBLIC, PRIVATE];
 		let count = 0;
 		for (const root of roots) {
@@ -203,9 +274,17 @@ export function createWorkspaceNotes({url = globalThis.location?.href, fetch: se
 				if (cursor !== undefined && (typeof cursor !== 'string' || !cursor || cursor.length > 4096 || cursors.has(cursor)) || page.complete === false && !cursor)
 					throw fail('protocol', 'A saved file could not be read; nothing was lost.');
 				if (cursor) cursors.add(cursor);
+				captureUsage(page, ticket);
 			} while (cursor);
 		}
 		return out;
+		} catch (error) {
+			if (currentUsage(ticket)) {
+				if (error?.code === 'sign-in') usage = emptyUsage('sign-in');
+				else staleUsage(error?.code === 'workspace-limit' ? 'workspace-limit' : 'request-failed');
+			}
+			throw error;
+		}
 	};
 	const leaseCall = async (action, lease, signal, ifAvailable = false) => {
 		const response = await request('lease', {method: 'POST', headers: {'Content-Type': 'application/json'}, signal,
@@ -250,5 +329,5 @@ export function createWorkspaceNotes({url = globalThis.location?.href, fetch: se
 	const store = {read, readChunks, stat, statAll, write, writeBlob, remove, assertRemovable, list: async prefix => [...(await statAll(prefix)).keys()],
 		async prepare() { if (!prepared) { await statAll(); prepared = true; } return true; },
 		get writable() { return true; }, durable: true, ascii: false, streamingAttachments: true};
-	return {store, locks, channel, scope: 'notes'};
+	return {store, locks, channel, scope: 'notes', getUsageSnapshot, setUsageOwner};
 }

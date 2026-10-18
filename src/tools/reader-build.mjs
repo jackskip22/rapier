@@ -22,7 +22,7 @@ import {entitiesVendor} from './entities-vendor.mjs';
 import {fillMermaidResources} from './mermaid-resources.mjs';
 import {readerPluginLoader, pluginManifest} from './reader-plugins.mjs';
 import {fillMathLicense} from './build-math.mjs';
-import {SIZE_BUDGETS} from './profile-budgets.mjs';
+import {SIZE_BUDGETS, checkProfileSize} from './profile-budgets.mjs';
 import {readBuildNotice, buildReceiptTimestamp, buildTimingNow} from './build-reuse.mjs';
 import {squeezed, mitNotice} from './reader-build-shared.mjs';
 import {buildReaderPlugins} from './reader-plugin-generator.mjs';
@@ -279,7 +279,7 @@ export async function buildReader({root = here, unchecked = [], toolchainCanonic
 	const bytes = Buffer.byteLength(html), gz = gzipSync(html, {level: 9}).length;
 	const budget = SIZE_BUDGETS.reader;
 	if (FAST_PACK) console.warn('RAPIER_PACK=fast: zlib packing for iteration only; ' + bytes + ' bytes is not a release measurement');
-	if (bytes >= budget.warn) console.warn('[build] rapier-reader.html is ' + bytes + ' bytes: over the reader\'s ' + budget.warn + '-byte release budget (reported, not refused)');
+	checkProfileSize('reader', bytes);
 	await mkdir(resolve(root, 'dist'), {recursive: true});
 	let receipt = null;
 	try { receipt = JSON.parse(await readFile(resolve(root, 'dist/BUILD.json'), 'utf8')); } catch (_) {}

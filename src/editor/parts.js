@@ -27,21 +27,24 @@ async function _rapierPartReady(id) {
 function _rapierOpenDrawPart() {
 	if (_rapierDrawOffered()) void _rapierPartReady('drawing').then(ready => { if (ready) _rapierDrawPart.open(); });
 }
-function _rapierDrawingRowPaint() {
-	const row = document.getElementById('drawing-plugin-row'), action = document.getElementById('drawing-plugin-action'), installed = document.getElementById('drawing-plugin-installed');
+function _rapierPartRowPaint(id, name, prefix) {
+	const row = document.getElementById(prefix + '-plugin-row'), action = document.getElementById(prefix + '-plugin-action'), installed = document.getElementById(prefix + '-plugin-installed');
 	if (!row || !action || !installed) return;
-	row.hidden = !_rapierPartAvailable('drawing');
+	row.hidden = !_rapierPartAvailable(id);
 	if (row.hidden) return;
-	const status = RapierParts.status('drawing')?.status, held = ['ready', 'carried', 'stored'].includes(status);
+	const status = RapierParts.status(id)?.status, held = ['ready', 'carried', 'stored'].includes(status);
 	action.hidden = held; installed.hidden = !held;
 	action.disabled = status === 'downloading' || status === 'installing';
-	action.textContent = status === 'downloading' ? 'DOWNLOADING DRAWING…' : status === 'installing' ? 'INSTALLING DRAWING…'
-		: status === 'error' ? 'INSTALL DRAWING (RETRY)' : 'INSTALL DRAWING';
+	action.textContent = status === 'downloading' ? 'DOWNLOADING ' + name + '…' : status === 'installing' ? 'INSTALLING ' + name + '…'
+		: status === 'error' ? 'INSTALL ' + name + ' (RETRY)' : 'INSTALL ' + name;
 }
-if (_rapierPartAvailable('drawing')) {
-	addEventListener('rapier:part', event => { if (event.detail?.id === 'drawing') _rapierDrawingRowPaint(); });
-	document.addEventListener('click', event => { if (event.target.closest?.('[data-action="drawing-install"]')) void _rapierPartReady('drawing'); });
-	_rapierBootFactsPublished.then(() => RapierParts.check('drawing')).then(_rapierDrawingRowPaint, () => {});
+function _rapierDrawingRowPaint() { _rapierPartRowPaint('drawing', 'DRAWING', 'drawing'); }
+function _rapierNotesPartRowPaint() { _rapierPartRowPaint('notes', 'NOTES', 'notes'); }
+for (const [id, paint, act] of [['drawing', _rapierDrawingRowPaint, 'drawing-install'], ['notes', _rapierNotesPartRowPaint, 'notes-part-install']]) {
+	if (!_rapierPartAvailable(id)) continue;
+	addEventListener('rapier:part', event => { if (event.detail?.id === id) paint(); });
+	document.addEventListener('click', event => { if (event.target.closest?.('[data-action="' + act + '"]')) void _rapierPartReady(id); });
+	_rapierBootFactsPublished.then(() => RapierParts.check(id)).then(paint, () => {});
 }
 addEventListener('pointerdown', event => {
 	const control = event.target instanceof Element ? event.target.closest('[data-command="insert.draw"], [data-action="open-draw"], .rapier-image-tools__draw, [data-action="notes-open"]') : null;

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import {_rapierTransformSplices, _rapierValidMetadata, _rapierTransformMetadata, _rapierMetadataDelta, _rapierHistoryEffects, _rapierMetadataState, _rapierPrepareHistoryRecords} from './journal-records.mjs';
-import {projectInverseSource, HistorySource} from './inverse-source.mjs';
+import {projectInverseSource} from './inverse-source.mjs';
+import {sourceView, HistorySource} from './source.mjs';
 import {textRootParts, rootAfter} from './hash.mjs';
 import {authoredHistory, authoredPlacements} from './transport.mjs';
 import {plainData, canonicalJSON} from './data.mjs';
@@ -74,6 +75,14 @@ export function pictureHistorySplices(input, target, redo) {
 }
 
 let preparedHistories = new WeakMap();
+let initialRootObservation = null;
+function initialRootOf(source) {
+	if (source.length <= 4096) return textRootParts(source.parts());
+	const previous = initialRootObservation?.source.deref();
+	const root = previous && source.sameSource(previous) ? initialRootObservation.root : textRootParts(source.parts());
+	initialRootObservation = {source: new WeakRef(source), root};
+	return root;
+}
 function prepareHistory(input) {
 	try {
 		if (!input || typeof input.source !== 'string' || !Array.isArray(input.records) || !_rapierValidMetadata(input.metadata)) return historyFailure('history_invalid');
@@ -105,7 +114,7 @@ function prepareHistory(input) {
 			rows.push(row); byId.set(tx.id, row); prior = tx.revision;
 		}
 		if (prior !== revision) return historyFailure('history_unavailable');
-		let initial = new HistorySource(source), initialMetadata = {...metadata};
+		let initial = source.length <= 4096 ? new HistorySource(source) : sourceView(source), initialMetadata = {...metadata};
 		for (let at = rows.length - 1; at >= 0; at--) {
 			const row = rows[at];
 			row.afterSource = initial; row.afterMetadata = initialMetadata;
@@ -115,7 +124,7 @@ function prepareHistory(input) {
 			row.beforeSource = initial; row.beforeMetadata = initialMetadata;
 		}
 		const earliestRevision = records[0]?.transaction.baseRevision ?? revision;
-		let root = earliestRevision === 0 ? (typeof input.earliestRoot === 'string' && input.earliestRoot || textRootParts(initial.parts())) : null,
+		let root = earliestRevision === 0 ? (typeof input.earliestRoot === 'string' && input.earliestRoot || initialRootOf(initial)) : null,
 			rootRevision = earliestRevision;
 		for (const {record, splices} of rows) {
 			const hashed = Object.hasOwn(record, 'beforeHash') || Object.hasOwn(record, 'afterHash');

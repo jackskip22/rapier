@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import {_rapierPrepareHistoryRecords, _rapierValidMetadata, _rapierTransformMetadata} from './journal-records.mjs';
 import {pictureHistorySplices} from './history.mjs';
-import {HistorySource} from './inverse-source.mjs';
+import {HistorySource} from './source.mjs';
 import {authoredHistory} from './transport.mjs';
 import {textRoot, rootAfter, sha256, sha256Parts, createSHA256} from './hash.mjs';
 import {canonicalJSON, canonicalParts, plainData, documentText, utf8Length, exactKeys, nonnegative, fault} from './data.mjs';

@@ -765,6 +765,13 @@ function readerRenderSettings() {
 	const code = $('settings-code-controls'), open = code.dataset.open === 'true';
 	code.inert = !open;
 	for (const button of $('settings-code-title').querySelectorAll('[data-action="code-toggle"]')) button.setAttribute('aria-expanded', String(open));
+	for (const name of ['layout', 'plugins']) {
+		const section = $('settings-' + name + '-controls');
+		if (!section) continue;
+		const shown = section.dataset.open === 'true';
+		section.inert = !shown;
+		for (const button of document.querySelectorAll('[aria-controls="' + section.id + '"]')) button.setAttribute('aria-expanded', String(shown));
+	}
 	readerRenderPdfRow();
 	_rapierOcrPaint();
 	for (const [key, provider] of [['math', _rapierUiMath], ['mermaid', _rapierUiDiagram]]) {
@@ -1397,6 +1404,7 @@ const READER_ACTIONS = {
 		if (group) readerSetPreference(group.dataset.switch, _rapierSwitchValue(control));
 	},
 	'code-toggle': () => { const code = $('settings-code-controls'); code.dataset.open = String(code.dataset.open !== 'true'); readerRenderSettings(); },
+	'fold': control => { const section = $(control.getAttribute('aria-controls')); if (section) { section.dataset.open = String(section.dataset.open !== 'true'); readerRenderSettings(); } },
 	'navigator-close': () => readerCloseDialog($('navigator-overlay')),
 	'navigator-fold': () => readerFoldAll(),
 	'math-install': () => { _rapierUiMath.install(); },

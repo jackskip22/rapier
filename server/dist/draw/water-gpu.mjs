@@ -15,8 +15,8 @@ export function waterHandSheetFits(w,h,growth,tip=null,maxBytes=waterGpuBudget()
  if(![w,h,growth].every(Number.isSafeInteger)||w<1||h<1||growth<0)return false;
  const W=w+growth,H=h+growth,old=sheetLayout(w,h),next=growth?sheetLayout(W,H):{bytes:0};
  const tipBytes=tip?tip.width*tip.height:WATER_TIP_SIZE*WATER_TIP_SIZE;
- const rollback=w*h*38+old.sw*old.sh*6;
- const scratch=Math.max(W*H*8,Math.ceil(W*8/256)*256*H);
+ const rollback=4*128*128*38+old.sw*old.sh*6;
+ const scratch=512*512*8+old.sw*old.sh*16;
  const pigmentWork=Math.ceil(W/16)*Math.ceil(H/16)*4+12;
  const presentation=w*h*4+W*H*8;
  return UNIFORM_BYTES+4+tipBytes+old.bytes+rollback+next.bytes+scratch+pigmentWork+presentation<=maxBytes;
@@ -34,7 +34,6 @@ const union=(a,b)=>a?[Math.min(a[0],b[0]),Math.min(a[1],b[1]),Math.max(a[2],b[2]
 const failure=(code,message)=>Object.assign(new Error(message),{code,recoverable:true});
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const WATER_IDLE_SECONDS=1;
-const WATER_SETTLE_RATE=5;
 const PAPER_BAND_PIXELS=196608;
 const PAPER_CACHE_BYTES=16*1024*1024;
 const WATER_LIVE_SLOW_MS=20,WATER_LIVE_WINDOW=8;
@@ -83,26 +82,56 @@ function captureSample(bitmap){
 }
 const inNode=typeof globalThis.process?.versions?.node==='string';
 let softwareAdmitted=inNode;
-export function waterSoftwareAdmitted(value){softwareAdmitted=inNode||value===true;}
+export function waterSoftwareAdmitted(value){const next=inNode||value===true;if(next!==softwareAdmitted){softwareAdmitted=next;deviceTask=null;}}
 export function waterSoftwareAdapter(adapter){
  const i=adapter?.info??{};
  if(i.isFallbackAdapter===true||adapter?.isFallbackAdapter===true)return true;
  return /swiftshader|llvmpipe|lavapipe|softpipe|microsoft basic render|\bwarp\b/i.test([i.vendor,i.architecture,i.device,i.description].filter(Boolean).join(' '));
 }
+const WATER_ADAPTER_FRAME_MS=100,WATER_ADAPTER_START_MS=3000;
+const waterUnavailable=()=>failure('water_webgpu_unavailable','Water could not obtain a WebGPU adapter on this device.');
+const waterTooSlow=()=>failure('water_webgpu_unavailable','This graphics processor is too slow for Water.');
+async function openWaterDevice(owner){
+ let device=null,probe=null,timer,stopped=false,refuse;
+ const check=()=>{if(stopped)throw waterUnavailable();};
+ const stoppedTask=new Promise((_,reject)=>{refuse=()=>{stopped=true;reject(waterUnavailable());};timer=setTimeout(refuse,WATER_ADAPTER_START_MS);});
+ const start=async()=>{
+  const adapter=await owner.requestAdapter({powerPreference:'high-performance'});
+  if(stopped||!adapter)throw waterUnavailable();
+  const software=waterSoftwareAdapter(adapter);
+  if(!softwareAdmitted&&software)throw failure('water_webgpu_unavailable','Water needs a graphics processor; this device offers only a software one.');
+  if(waterCapture.on){const i=adapter.info??{};waterNote({ev:'adapter',vendor:i.vendor,architecture:i.architecture,device:i.device,description:i.description,fallback:i.isFallbackAdapter??adapter.isFallbackAdapter,features:[...adapter.features].sort(),maxTexture:adapter.limits.maxTextureDimension2D,agent:globalThis.navigator?.userAgent,preferred:globalThis.navigator?.gpu?.getPreferredCanvasFormat?.()});}
+  const features=['float32-filterable','float32-blendable',...(waterTiming.on?['timestamp-query']:[])].filter(name=>adapter.features.has(name)&&!(unfilteredTest&&name==='float32-filterable'));
+  device=await adapter.requestDevice(features.length?{requiredFeatures:features}:{});
+  if(stopped){device.destroy();throw waterUnavailable();}
+  device.lost.then(()=>{if(!stopped)refuse();});
+  if(!software){
+   probe=new WaterGPU(256,256,{device,maxBytes:16*1024*1024,paperScale:1});await probe.ready;check();
+   probe.painting=true;
+   probe.stamp({x:.5,y:.5,r:.3,circular:true,water:1,coefficients:[.7,.2,.3,.2,.3,.4,.7,0],velocity:[8,8]});
+   const frame=async()=>{check();await probe.step(1/60);check();probe.render();await probe._finishMaterial();check();};
+   await frame();let fastest=Infinity;
+   for(let i=0;i<2;i++){const before=performance.now();await frame();fastest=Math.min(fastest,performance.now()-before);}
+   if(fastest>WATER_ADAPTER_FRAME_MS)throw waterTooSlow();
+  }
+  if(stopped)throw waterUnavailable();
+  return device;
+ };
+ try{return await Promise.race([start(),stoppedTask]);}
+ catch(error){stopped=true;device?.destroy();throw error?.code==='water_webgpu_unavailable'?error:waterUnavailable();}
+ finally{stopped=true;clearTimeout(timer);try{probe?.dispose();}catch{}}
+}
 export async function waterReady(){
  const owner=globalThis.navigator?.gpu;
  if(!owner)throw failure('water_webgpu_unavailable','Water needs WebGPU. Open this document in a browser with WebGPU enabled.');
  if(owner!==deviceOwner){deviceOwner=owner;deviceTask=null;}
- if(!deviceTask)deviceTask=(async()=>{
-  const adapter=await owner.requestAdapter({powerPreference:'high-performance'});
-  if(!adapter)throw failure('water_webgpu_unavailable','Water could not obtain a WebGPU adapter on this device.');
-  if(!softwareAdmitted&&waterSoftwareAdapter(adapter))throw failure('water_webgpu_unavailable','Water needs a graphics processor; this device offers only a software one.');
-  if(waterCapture.on){const i=adapter.info??{};waterNote({ev:'adapter',vendor:i.vendor,architecture:i.architecture,device:i.device,description:i.description,fallback:i.isFallbackAdapter??adapter.isFallbackAdapter,features:[...adapter.features].sort(),maxTexture:adapter.limits.maxTextureDimension2D,agent:globalThis.navigator?.userAgent,preferred:globalThis.navigator?.gpu?.getPreferredCanvasFormat?.()});}
-  const features=['float32-filterable','float32-blendable',...(waterTiming.on?['timestamp-query']:[])].filter(name=>adapter.features.has(name)&&!(unfilteredTest&&name==='float32-filterable'));
-  const device=await adapter.requestDevice(features.length?{requiredFeatures:features}:{});
-  device.lost.then(info=>{deviceTask=null;if(waterCapture.on)waterNote({ev:'lost',reason:info?.reason,message:info?.message});});
-  if(waterCapture.on)waterNote({ev:'device',features:[...device.features].sort()});return device;
- })().catch(error=>{deviceTask=null;throw error?.code?error:failure('water_webgpu_unavailable','Water could not start WebGPU: '+error.message);});
+ if(!deviceTask){
+  const task=openWaterDevice(owner).then(device=>{
+   device.lost.then(info=>{if(deviceTask===task)deviceTask=null;if(waterCapture.on)waterNote({ev:'lost',reason:info?.reason,message:info?.message});});
+   if(waterCapture.on)waterNote({ev:'device',features:[...device.features].sort()});return device;
+  });
+  deviceTask=task;
+ }
  return deviceTask;
 }
 
@@ -760,8 +789,7 @@ export class WaterGPU {
   this.growCarry+=.4*this.reach+Math.min(3*this.reach,.15*this.flowSpeed*dt*this.width/this.sw);const grow=Math.floor(this.growCarry);this.growCarry-=grow;
   this.active=[Math.max(0,this.active[0]-grow),Math.max(0,this.active[1]-grow),Math.min(this.width,this.active[2]+grow),Math.min(this.height,this.active[3]+grow)];
   this._flushStamps();
-  const settling=!this.painting;
-  const rect=this.active;this._ensurePaper(rect);this._protect(rect,fixing||settling?[0,1,2,3,4]:[0,1,4]);
+  const rect=this.active;this._ensurePaper(rect);this._protect(rect,fixing?[0,1,2,3,4]:[0,1,4]);
   const data=this._parameters();data[4]=dt;data.set([this.frame,...this.paperOrigin],16);const settle=1-Math.exp(-5*fixedAge);
   const decay=Math.exp(-fixedAge/.25-(aged-fixedAge)/this.dryingTime);
   const damping=Math.exp(-aged*(3-2.4*this.params.flow)-7*fixedAge);data.set([decay,damping,settle,1-settle],8);
@@ -779,7 +807,6 @@ export class WaterGPU {
   this._region('wet',this.wet.write,[this.velocity.read[0],this.wet.read[0]],data,rect);this._swap(this.wet);
   if(fixing)this._regionPass([{name:'fix',inputs:this.ink.read,data:Float32Array.from(data),rect:null}],this.fixed,rect);
   this._pigment(data,rect);this._swap(this.ink);
-  if(settling){const d=this._parameters();d[11]=1-Math.exp(-WATER_SETTLE_RATE*aged);d[10]=1;this._region('dried',this.fixed,[...this.ink.read,this.wet.read[0]],d,rect);d[10]=0;this._region('driedKeep',this.ink.write,[...this.ink.read,this.wet.read[0]],d,rect);this._swap(this.ink);}
   this.brushNow=[0,0,0];
   this.dirty=union(this.dirty,rect);this.painted=union(this.painted,rect);
   if(fixing&&!this.fixTimer){this.wetPeak=0;this.awakeUntil=0;this.painted=null;}

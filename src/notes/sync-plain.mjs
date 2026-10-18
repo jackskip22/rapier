@@ -3,6 +3,7 @@ import {isNoteFile} from './model.mjs';
 import {mergeText} from '../kit/ledger/text-merge.mjs';
 import {writePlainNote} from './sync-plain-conflicts.mjs';
 import {markTrashed, reviveTrashed} from './trash.mjs';
+import {lockedSyncBoundary} from './sync-state.mjs';
 
 const te = new TextEncoder();
 const td = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true});
@@ -21,14 +22,18 @@ export async function syncPlainFiles({folder, store, base, device, other, guard 
 	if (!folder || !store || !base || typeof base.read !== 'function' || typeof base.write !== 'function') throw fail('config', 'plain-file sync needs a folder, a store and its agreed base.');
 	if (!DEVICE.test(device || '') || !DEVICE.test(other || '') || device === other) throw fail('config', 'plain-file sync needs two distinct device names for its conflict blocks.');
 	await guard();
+	const privacy = await lockedSyncBoundary(folder, guard); guard = privacy.guard;
 	const agreed = new Map(Object.entries(await base.read() || {}));
+	for (const [id, row] of agreed) if (!await privacy.allows(row.name)) agreed.delete(id);
 	const result = {pushed: 0, pulled: 0, created: 0, renamed: 0, trashed: 0, removed: 0, conflicts: 0, held: []};
 	const remote = new Map((await store.list()).filter(row => isNoteFile(row.name)).map(row => [row.name, row]));
+	for (const [name] of remote) if (!await privacy.allows(name)) remote.delete(name);
 
 	async function local() {
 		await guard();
 		const {index} = await folder.read(), notes = new Map();
 		for (const [file, entry] of Object.entries(index.notes || {})) {
+			if (!await privacy.allows(file)) continue;
 			const bytes = await folder.store.read(file);
 			if (bytes) notes.set(entry.id, {file, entry, bytes, hash: await digest(bytes)});
 		}
@@ -37,6 +42,7 @@ export async function syncPlainFiles({folder, store, base, device, other, guard 
 	let mine = await local();
 	const fetched = new Map();
 	const fetch = async name => {
+		await guard();
 		if (!fetched.has(name)) {
 			const got = await store.get(name);
 			fetched.set(name, got && {...got, hash: await digest(got.bytes)});

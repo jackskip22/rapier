@@ -155,7 +155,7 @@ function writeWoff(bytes) {
   return output;
 }
 
-export async function subset(value, characters) {
+export async function subset(value, characters, {format = 'woff', coordinates = null} = {}) {
   const original = bytesOf(value);
   if (typeof characters !== 'string' || !characters.length) fail('The font subset needs document characters.');
   // Shaping may compose or decompose the text before looking up its glyphs.
@@ -166,7 +166,7 @@ export async function subset(value, characters) {
   const {tables} = tableDirectory(sfnt), permission = tables.find(row => row.name === 'OS/2');
   if (!mappedCharacters(tables, repertoire)) return null;
   // A font's no-subsetting permission requires its whole face even in a static page.
-  if (permission?.bytes.length >= 10 && (viewOf(permission.bytes).getUint16(8) & 0x0100)) return original.slice();
+  if (permission?.bytes.length >= 10 && (viewOf(permission.bytes).getUint16(8) & 0x0100)) return coordinates ? null : original.slice();
   const hb = await harfbuzz();
   let pointer = 0, blob = 0, face = 0, input = 0, result = 0, output = 0;
   let bytes;
@@ -177,6 +177,14 @@ export async function subset(value, characters) {
     blob = hb.hb_blob_create(pointer, sfnt.length, 2, 0, 0);
     face = hb.hb_face_create(blob, 0); input = hb.hb_subset_input_create_or_fail();
     if (!blob || !face || face === hb.hb_face_get_empty() || !input) fail('The page font could not be opened.');
+    if (coordinates) {
+      if (!hb.hb_subset_input_pin_all_axes_to_default(input, face)) fail('The font axes could not be pinned.');
+      for (const [name, value] of Object.entries(coordinates)) {
+        if (name.length !== 4 || !Number.isFinite(value)) fail('The font axis coordinate is invalid.');
+        const tag = [...name].reduce((number, letter) => (number * 256 + letter.charCodeAt(0)) >>> 0, 0);
+        if (!hb.hb_subset_input_pin_axis_location(input, face, tag, value)) fail('The font axis could not be pinned.');
+      }
+    }
     const unicodes = hb.hb_subset_input_unicode_set(input);
     for (const character of repertoire) hb.hb_set_add(unicodes, character.codePointAt(0));
     // Retain all shaping features, glyph closure, variation axes and hinting.
@@ -197,5 +205,5 @@ export async function subset(value, characters) {
     if (blob) hb.hb_blob_destroy(blob);
     if (pointer) hb.free(pointer);
   }
-  return writeWoff(bytes);
+  return format === 'sfnt' ? bytes : writeWoff(bytes);
 }

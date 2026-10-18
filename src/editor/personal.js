@@ -1,7 +1,7 @@
 const _rapierPersonal = globalThis.__rapierServerRenderHost === true ? null : (() => {
 	let applying = false, pendingBrushes = 0;
 	const pendingPreferences = new Map(), pendingDrawing = new Map();
-	const transient = globalThis.RapierBenchSession?.active === true;
+	const transient = globalThis.RapierBenchSession?.active === true || globalThis.RapierPlatform?.host?.lockedNotes === true;
 	const drawKeys = () => ({..._rapierDrawPart?.keys(), exportDialect: 'rapier:export.pandocDialect'});
 	async function apply(profile) {
 		if (transient) return;

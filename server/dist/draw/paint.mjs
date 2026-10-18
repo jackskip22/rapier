@@ -1569,6 +1569,7 @@ export class PaintSurface {
 		return work.promise || (work.promise = new Promise((resolve, reject) => { work.resolve = resolve; work.reject = reject; }));
 	}
 	dryWet(until, feed = 8, slice = 8, inputWaiting = null) {
+		this.dryIterations = 0;
 		if (!this.wetState && !this._wetWork) return true;
 		while (performance.now() < until && !inputWaiting?.()) {
 			if (!this._wetWork) {
@@ -1580,7 +1581,7 @@ export class PaintSurface {
 			const work = this._wetWork;
 			let part;
 			this._wetRunning = true;
-			try { part = work.iterator.next(); }
+			try { part = work.iterator.next(); this.dryIterations++; }
 			catch (error) { work.reject?.(error); throw error; }
 			finally { this._wetRunning = false; }
 			if (part.done) {
@@ -2222,8 +2223,8 @@ export class PaintSurface {
 		for (let j = 0; j < h; j++) {
 			let p = ((y0 + j) * W + x0) * 4, m = j * w;
 			for (let i = 0; i < w; i++, p += 4, m++) {
-				const o = mask[m]; if (!o) continue;
-				const k = 1 - clamp(o * strength * RAPIER_OP_ERASE_RATE, 0, 1);
+				const o = mask[m], a = D[p + 3]; if (!o || !(a > 0)) continue;
+				const k = Math.max(0, 1 - o * strength * RAPIER_OP_ERASE_RATE / a);
 				if (!(k < 1)) continue;
 				D[p] *= k; D[p + 1] *= k; D[p + 2] *= k; D[p + 3] *= k;
 				if (V) V[p >> 2] *= k;

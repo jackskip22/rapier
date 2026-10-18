@@ -1,4 +1,4 @@
-import {DEFAULT_POLICY} from './history.mjs';
+import {DEFAULT_POLICY} from './retention.mjs';
 import {admitPreset} from '../presets/record.mjs';
 export {admitPreset};
 const hash = /^[a-f0-9]{64}$/, writer = /^[a-f0-9]{32}$/;

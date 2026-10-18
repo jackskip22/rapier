@@ -3186,6 +3186,9 @@ const _rapierImageFlow = (() => {
   host.addEventListener('pointerdown', event => {
     if (event.isTrusted && event.isPrimary !== false) pressed = true;
   }, {capture: true, passive: true});
+  document.addEventListener('pointerdown', event => {
+    if (event.isTrusted && event.isPrimary !== false && event.target?.closest?.('#scroll-fab')) pressed = true;
+  }, {capture: true, passive: true});
   for (const name of ['pointerup', 'pointercancel']) document.addEventListener(name, () => {
     if (!pressed) return;
     pressed = false;

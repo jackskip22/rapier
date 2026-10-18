@@ -570,13 +570,6 @@
 				"reason": "A detached, unmounted textarea decodes source character references as text for the resource preflight. It creates no label subtree and is never attached; source passed to the renderer stays byte-for-byte unchanged."
 			}
 		},
-		"shell/mermaid/zenuml-adapter.mjs": {
-			"draw": {
-				"count": 1,
-				"kind": "probe",
-				"reason": "The pinned native ZenUML renderer supplies escaped SVG markup in its owned render realm after public-parser validation and the resource preflight. The completed SVG passes Rapier's diagram sanitizer before reaching the document or export."
-			}
-		},
 		"editor/tables.js": {
 			"_createTableToolbar": {
 				"count": 1,

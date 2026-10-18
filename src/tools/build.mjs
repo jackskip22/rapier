@@ -6,18 +6,13 @@ import {createHash} from 'node:crypto';
 import {execFile} from 'node:child_process';
 import {searchCacheVersion} from './search-cache-version.mjs';
 import {stripperFor} from './strip-comments.mjs';
-import {zopfliGzip, brotliPack, BROTLI_SETTINGS, FAST_PACK} from './zopfli.mjs';
+import {BROTLI_SETTINGS, FAST_PACK} from './zopfli.mjs';
 import vm from 'node:vm';
 import {scriptMinifier, reflectedNames} from './minify.mjs';
 import {buildJPEGXLArtifact} from '../images/codec-build.mjs';
 import acorn from '../agent/vendor/acorn.mjs';
 import {TOOLS, UI_RESOURCE, mcpDescriptors, publishedSchema} from '../agent/catalog.mjs';
 import {pairedShell, PAIRED_SHELL_FILE, PAIRED_SHELL_HEADERS, PAIRED_SHELL_REDIRECTS} from '../mcp/paired.mjs';
-import {encodeBase124} from './base124.mjs';
-import {encodeTextPack} from './text-pack-build.mjs';
-import {decodeTextPack} from './text-pack.mjs';
-import {decodeBrotli} from '../draw/font-brotli.mjs';
-import {crc32} from '../images/crc32.mjs';
 import {minifyVendor, BROWSER_MINIFY} from './minify-vendor.mjs';
 import {entitiesVendor} from './entities-vendor.mjs';
 import {VERSION} from '../version.mjs';
@@ -26,12 +21,13 @@ import {checkPurity} from './purity-gate.mjs';
 import {csp} from '../security/csp.mjs';
 import {checkHtmlSinks} from './html-sinks.mjs';
 import {checkToolchain} from './check-toolchain.mjs';
-import {SIZE_BUDGETS} from './profile-budgets.mjs';
+import {createGroupPacker} from './packed-group.mjs';
+import {SIZE_BUDGETS, checkProfileSize} from './profile-budgets.mjs';
 import {inlineFonts, keepsComment, stripStyleComments, styleText} from './style-text.mjs';
-import {shakeModule} from './tree-shake.mjs';
+import {shakeModule, pruneImports} from './tree-shake.mjs';
 import {commercialPage} from './commercial-page.mjs';
 import {seoSection, seoDoorSections} from './seo-page.mjs';
-import {DOORS, PAGES, doorPage} from '../door-worker.js';
+import {DOORS, PAGES, doorAssetPath} from '../door-worker.js';
 import {readGuides, writeDoorAssets} from './door-assets.mjs';
 import {fillMermaidResources} from './mermaid-resources.mjs';
 import {fillFontSubsetResources} from './font-subset-resources.mjs';
@@ -42,8 +38,8 @@ import {buildExportAssets} from './build-export-assets.mjs';
 import {satelliteSlots} from './engine-slots.mjs';
 import {editorOnlyMarkup} from './reader-profile.mjs';
 import {APP_DESCRIPTION, SITE_TITLE, SITE_DESCRIPTION, DISCOVERY_LINKS, PLAY_URL} from './discovery.mjs';
-import {lexicalBindings} from './engine-census.mjs';
-import {bundleModules} from './reader-modules.mjs';
+import {lexicalBindings, ENGINE_MODULE_SLOTS} from './engine-census.mjs';
+import {bundleModules, readNames} from './reader-modules.mjs';
 import {PARTS, PART_IDS, partition, partMark, partElement, inlineParts, splitProgram, realmNames, topLevelNames} from './parts.mjs';
 import {prefixSymbols} from './runtime-symbols.mjs';
 
@@ -97,7 +93,7 @@ async function collisionLaw() {
 const read = path => readFile(resolve(root, path), 'utf8');
 const MODULES = new Map();
 const EXPORTS = new Map(), bundling = new Set(), DEPS = new Map();
-const IMPORTED = new Map(), MODULE_SOURCES = new Map();
+const MODULE_SOURCES = new Map();
 const INK_FACTORIES = {'spec/md-marks.mjs': 'inkReader', 'spec/ink.mjs': 'inkGeometry'};
 const RETAINED_GROUPS = {
   layout: path => path.startsWith('agent/vendor/pretext/') || path.startsWith('agent/vendor/hyphen-en-us/') || ['layout/model.mjs', 'layout/preparation.mjs', 'layout/prepared-paragraph.mjs', 'layout/hyphenation.mjs', 'layout/paragraph-fit.mjs', 'layout/typography.mjs', 'layout/line-plan.mjs', 'spec/md-layout.mjs'].includes(path),
@@ -206,7 +202,8 @@ await collisionLaw();
 await captureBuildGateOutputs({root, paths: [...VERSIONED_FILES, 'packages/rapier-embed/README.md', 'mcp/render-assets.mjs',
   ...(PROFILE === 'reader' ? [] : ['tools/engine-ownership.json'])]});
 if (await reuseBuildAssembly({root, profile: PROFILE})) process.exit(0);
-const packings = new Map();
+const packedRecord = [];
+const {pack: packedSpans, prepack} = createGroupPacker(packedRecord);
 if (PROFILE === 'full') builtinPlugins(root, prepack).catch(() => {});
 if (PROFILE === 'reader') {
   await (await import('./reader-build.mjs')).buildReader({root, unchecked, toolchainCanonical});
@@ -316,11 +313,9 @@ async function bundle(path) {
     const dependency = relative(root, resolve(root, dirname(path), node.source.value)).replaceAll('\\', '/');
     (DEPS.get(path) || DEPS.set(path, []).get(path)).push(dependency);
     await bundle(dependency);
-    const imported = IMPORTED.get(dependency) || IMPORTED.set(dependency, new Set()).get(dependency);
     for (const row of node.specifiers) {
       if (row.type !== 'ImportSpecifier' || !EXPORTS.get(dependency)?.has(row.imported.name))
         throw new Error('Missing named export in ' + dependency + ' for ' + path + ': ' + (row.imported?.name || row.local.name));
-      imported.add(row.imported.name);
     }
   }
   MODULE_SOURCES.set(path, source);
@@ -393,13 +388,12 @@ await bundle('kit/render-print.mjs');
 await bundle('editor/export-fonts.mjs');
 await bundle('shell/fonts/docx-fonts.mjs');
 await bundle('images/crc32.mjs');
-const globals = {'RapierPortablePage': 'skills/rapier-html/wrap.mjs', 'RapierCursorMotion': 'agent/cursor-motion.mjs', 'RapierLedger': 'kit/rapier-ledger.mjs', 'RapierLedgerCarried': 'kit/ledger/carried.mjs', 'RapierRender': 'kit/render.mjs', 'RapierExportFonts': 'editor/export-fonts.mjs', 'RapierRenderStyles': 'kit/render-styles.mjs', 'RapierRenderMarkdown': 'kit/render-markdown.mjs', 'RapierRenderSanitizer': 'kit/render-sanitize.mjs', 'RapierRenderPrint': 'kit/render-print.mjs', 'RapierEmbedContract': 'packages/rapier-embed/contract.mjs', 'RapierAgentGuide': 'agent/guide.mjs', 'RapierComments': 'agent/comments.mjs', 'RapierVisualCapture': 'agent/visual-browser.mjs', 'RapierAgentVisual': 'agent/visual.mjs', 'RapierPageReturnAddress': 'skills/rapier-html/return-address.mjs', 'RapierMarkdownSpec': 'agent/markdown-spec.mjs', 'RapierInk': 'spec/ink.mjs', 'RapierInkDraw': 'layout/ink-draw.mjs', 'RapierMarkdownLayout': 'layout/markdown.mjs', 'RapierImageAssets': 'images/assets.mjs', 'RapierImageArchive': 'images/archive.mjs', 'RapierDocxImport': 'interchange/docx.mjs', 'RapierPdf': 'interchange/pdf.mjs', 'RapierAgentCatalog': 'agent/catalog.mjs', 'RapierKernel': 'agent/kernel.mjs', 'RapierJournalRecords': 'kit/ledger/journal-records.mjs', 'RapierVisibleSource': 'editor/visible-source.mjs', 'RapierColourMath': 'editor/colour-math.mjs', 'RapierAgentWill': 'agent/will.mjs', 'RapierAgentMarkdown': 'agent/markdown.mjs', 'RapierStructureRequest': 'agent/structure-request.mjs', 'RapierImageLayout': 'layout/model.mjs', 'RapierOcclusion': 'layout/occlusion.mjs', 'RapierOcclusionViewport': 'layout/occlusion-viewport.mjs', 'RapierTransientLifecycle': 'layout/transient-lifecycle.mjs', 'RapierBottomSurfaces': 'layout/bottom-surfaces.mjs', 'RapierPretext': 'agent/vendor/pretext/rich-inline.js', 'RapierDrawCore': 'draw/core.mjs', 'RapierFlowchart': 'draw/flowchart.mjs', 'RapierDrawEdit': 'draw/edit.mjs', 'RapierDrawFonts': 'draw/font.mjs', 'RapierDrawLetters': 'draw/letters.mjs', 'RapierNativeTransport': 'shell/native-transport.mjs', 'RapierDoorIdentity': 'agent/door-identity.mjs', 'RapierDiff': 'agent/diff.mjs'};
+const globals = {'RapierPortablePage': 'skills/rapier-html/wrap.mjs', 'RapierCursorMotion': 'agent/cursor-motion.mjs', 'RapierLedger': 'kit/rapier-ledger.mjs', 'RapierLedgerCarried': 'kit/ledger/carried.mjs', 'RapierRender': 'kit/render.mjs', 'RapierExportFonts': 'editor/export-fonts.mjs', 'RapierRenderStyles': 'kit/render-styles.mjs', 'RapierRenderMarkdown': 'kit/render-markdown.mjs', 'RapierRenderSanitizer': 'kit/render-sanitize.mjs', 'RapierRenderPrint': 'kit/render-print.mjs', 'RapierEmbedContract': 'packages/rapier-embed/contract.mjs', 'RapierComments': 'agent/comments.mjs', 'RapierVisualCapture': 'agent/visual-browser.mjs', 'RapierAgentVisual': 'agent/visual.mjs', 'RapierPageReturnAddress': 'skills/rapier-html/return-address.mjs', 'RapierMarkdownSpec': 'agent/markdown-spec.mjs', 'RapierInk': 'spec/ink.mjs', 'RapierInkDraw': 'layout/ink-draw.mjs', 'RapierMarkdownLayout': 'layout/markdown.mjs', 'RapierImageAssets': 'images/assets.mjs', 'RapierImageArchive': 'images/archive.mjs', 'RapierDocxImport': 'interchange/docx.mjs', 'RapierPdf': 'interchange/pdf.mjs', 'RapierAgentCatalog': 'agent/catalog.mjs', 'RapierKernel': 'agent/kernel.mjs', 'RapierJournalRecords': 'kit/ledger/journal-records.mjs', 'RapierVisibleSource': 'editor/visible-source.mjs', 'RapierColourMath': 'editor/colour-math.mjs', 'RapierAgentWill': 'agent/will.mjs', 'RapierAgentMarkdown': 'agent/markdown.mjs', 'RapierStructureRequest': 'agent/structure-request.mjs', 'RapierImageLayout': 'layout/model.mjs', 'RapierOcclusion': 'layout/occlusion.mjs', 'RapierOcclusionViewport': 'layout/occlusion-viewport.mjs', 'RapierTransientLifecycle': 'layout/transient-lifecycle.mjs', 'RapierBottomSurfaces': 'layout/bottom-surfaces.mjs', 'RapierDrawCore': 'draw/core.mjs', 'RapierFlowchart': 'draw/flowchart.mjs', 'RapierDrawEdit': 'draw/edit.mjs', 'RapierDrawFonts': 'draw/font.mjs', 'RapierDrawLetters': 'draw/letters.mjs', 'RapierNativeTransport': 'shell/native-transport.mjs', 'RapierDoorIdentity': 'agent/door-identity.mjs', 'RapierDiff': 'agent/diff.mjs'};
 globals.RapierRenderedEdits = 'editor/rendered-edits.mjs';
 globals.RapierDiffStructure = 'agent/diff-structure.mjs';
 globals.RapierCodeTokens = 'editor/code-tokens.mjs';
 globals.RapierDocxFonts = 'shell/fonts/docx-fonts.mjs';
 globals.RapierPersonal = 'notes/personal.mjs';
-globals.RapierDocumentFonts = 'spec/document-fonts.mjs';
 globals.RapierTextPreparation = 'layout/preparation.mjs';
 globals.RapierTypography = 'layout/typography.mjs';
 globals.RapierExportWorker = 'editor/export-worker.mjs';
@@ -413,6 +407,7 @@ globals.RapierRecoveryPolicy = 'editor/recovery-policy.mjs';
 globals.RapierOcr = 'images/ocr.mjs';
 globals.RapierPictureMarks = 'images/picture-marks.mjs';
 globals.RapierDrawRefraction = 'draw/refraction-browser.mjs';
+globals.RapierZipRecords = 'notes/zip-records.mjs';
 globals.RapierLiveMerge = 'kernel/live-merge.mjs';
 globals.RapierLiveSession = 'editor/live-session.mjs';
 globals.RapierCustodyBridge = 'editor/custody-bridge.mjs';
@@ -422,21 +417,59 @@ globals.RapierSourceFacts = 'editor/source-facts.mjs';
 const partGlobals = Object.assign({}, ...PARTS.map(part => part.globals));
 Object.assign(globals, partGlobals);
 for (const path of Object.values(globals)) await bundle(path);
+const workerEntries = [['images/inspection.mjs', 'installImageInspectionWorker'], ['editor/recovery-worker.mjs', 'installRecoveryWorker'], ['agent/diff.mjs', 'installDiffWorker'], ['agent/diff-structure.mjs', 'installDiffStructureWorker'], ['editor/export-worker.mjs', 'installExportWorker'], ['editor/source-worker.mjs', 'installSourceWorker'], ['editor/live-session.mjs', 'installLiveWorker'], ['notes/backup-worker.mjs', 'installBackupWorker'], ['notes/opfs-worker.mjs', 'installOPFSWorker'], ['notes/search.mjs', 'installSearchWorker'], ['draw/paint-worker.mjs', 'installPaintWorker'], ['draw/water-worker.mjs', 'installWaterWorker'], ['draw/paint-parallel.mjs', 'installPaintRowWorker'], ['draw/liquid-worker.mjs', 'installLiquidWorker']].filter(([entry]) => MODULES.has(entry));
 const shakenExports = {};
 {
-  const published = new Set(Object.values(globals));
-  const classic = await Promise.all(['editor/engine.js', 'editor/share.js', 'editor/source-store.js', ...JSON.parse(await read('editor/scripts.json'))].map(read));
+  const classicPaths = [...new Set(['editor/engine.js', 'editor/share.js',
+    ...Object.values(ENGINE_MODULE_SLOTS).filter(path => path.endsWith('.js')),
+    ...JSON.parse(await read('editor/scripts.json'))])];
+  const classic = await Promise.all(classicPaths.map(read));
+  const bare = (path, text) => stripperFor(path)?.(text) ?? text;
+  const runtimeSources = [...classic.map((text, index) => ({text: bare(classicPaths[index], text), module: false})),
+    ...[...MODULE_SOURCES].map(([path, text]) => ({text: bare(path, text), module: true})),
+    ...await Promise.all([...new Set(satelliteSlots.map(([, path]) => path))].map(async path => ({text: bare(path, await read(path)), module: true}))),
+    ...await Promise.all(['shell/platform.js', 'shell/bundle-io.js', 'shell/bundled-plugins.js', 'shell/plugin-loader.js',
+      'shell/font-subset-plugin.js', 'shell/parts.js', 'tools/runtime-loader.js', 'tools/startup-rescue.js',
+      'agent/apps.js', 'bench/document.js', 'bench/graphics.js', 'bench/runner.js'].map(async path => ({text: bare(path, await read(path)), module: false})))];
+  const published = new Map();
+  for (const [name, path] of Object.entries(globals)) {
+    let used = published.get(path) || new Set(), observed = false;
+    for (const row of runtimeSources) {
+      if (!row.text.includes(name)) continue;
+      observed = true;
+      row.tree ||= acorn.parse(row.text, {ecmaVersion: 'latest', sourceType: row.module ? 'module' : 'script', locations: true});
+      const names = readNames(row.tree, name);
+      if (names === null) { used.all = true; break; }
+      for (const field of names) used.add(field);
+    }
+    if (!observed || !used.size || satelliteSlots.some(([, owner]) => owner === path)) used.all = true;
+    published.set(path, used);
+  }
   const reflected = reflectedNames([...classic.map(text => parse(text)), ...[...MODULE_SOURCES.values()].map(text => parse(text, 'module'))]);
-  for (const [path, source] of MODULE_SOURCES) {
-    if (published.has(path) || retainedModule(path)) continue;
-    const used = IMPORTED.get(path) || new Set();
-    const drop = [...EXPORTS.get(path)].filter(name => !used.has(name) && !reflected.has(name) && !/^__rapier/.test(name) && name !== 'SEAMS');
-    if (!drop.length) continue;
-    const shaken = shakeModule(source, drop);
-    if (!shaken.unexported.length) continue;
-    MODULE_SOURCES.set(path, shaken.source);
-    assemble(path, shaken.source);
-    shakenExports[path] = shaken.unexported;
+  const requested = new Map(published);
+  for (const [entry, install] of workerEntries) {
+    const used = requested.get(entry) || requested.set(entry, new Set()).get(entry);
+    used.add(install);
+  }
+  for (const [path, original] of [...MODULE_SOURCES].reverse()) {
+    let source = original;
+    if (!requested.get(path)?.all && !retainedModule(path)) {
+      const used = requested.get(path) || new Set();
+      const drop = [...EXPORTS.get(path)].filter(name => !used.has(name) && !reflected.has(name) && !/^__rapier/.test(name) && name !== 'SEAMS');
+      if (drop.length) {
+        const shaken = shakeModule(source, drop);
+        source = shaken.source;
+        if (shaken.unexported.length) shakenExports[path] = shaken.unexported;
+      }
+    }
+    source = pruneImports(source);
+    MODULE_SOURCES.set(path, source);
+    assemble(path, source);
+    for (const node of parse(source, 'module').body) if (node.type === 'ImportDeclaration') {
+      const dependency = relative(root, resolve(root, dirname(path), node.source.value)).replaceAll('\\', '/');
+      const used = requested.get(dependency) || requested.set(dependency, new Set()).get(dependency);
+      for (const row of node.specifiers) used.add(row.imported.name);
+    }
   }
 }
 const VENDOR_GROUPS = {
@@ -462,7 +495,11 @@ async function deriveVendorGroup(id) {
   vendorSpans.set(id, spans);
   return spans;
 }
-for (const id of Object.keys(VENDOR_GROUPS)) deriveVendorGroup(id).then(spans => prepack(id, 'text/rapier-vendor', spans), () => {});
+const textVendorIds = ['lib-dompurify', 'lib-turndown', 'lib-markdownit'];
+const browserVendorSpans = id => id === 'lib-markdownit'
+  ? Promise.all(textVendorIds.map(deriveVendorGroup)).then(groups => groups.flat()) : deriveVendorGroup(id);
+for (const id of ['lib-markdownit', 'lib-gpu-lexer', 'lib-acorn'])
+  browserVendorSpans(id).then(spans => prepack(id, 'text/rapier-vendor', spans), () => {});
 if (PROFILE === 'full') {
   const parserSpans = (await deriveVendorGroup('lib-markdownit')).map(({name, source}) => [name, checksum(Buffer.from(source))]);
   if (!parserSpans.length) throw new Error('Search cache needs the parser identities of the spans this build packs');
@@ -477,7 +514,6 @@ if (PROFILE === 'full') {
   MODULES.set(path, MODULES.get(path).replace(marker, key));
 }
 const workerClosure = entry => { const seen = new Set(); const visit = path => { if (seen.has(path)) return; seen.add(path); for (const dep of DEPS.get(path) || []) visit(dep); }; visit(entry); return [...MODULES.keys()].filter(path => seen.has(path)); };
-const workerEntries = [['images/inspection.mjs', 'installImageInspectionWorker'], ['editor/recovery-worker.mjs', 'installRecoveryWorker'], ['agent/diff.mjs', 'installDiffWorker'], ['agent/diff-structure.mjs', 'installDiffStructureWorker'], ['editor/export-worker.mjs', 'installExportWorker'], ['editor/source-worker.mjs', 'installSourceWorker'], ['editor/live-session.mjs', 'installLiveWorker'], ['notes/backup-worker.mjs', 'installBackupWorker'], ['notes/opfs-worker.mjs', 'installOPFSWorker'], ['notes/search.mjs', 'installSearchWorker'], ['draw/paint-worker.mjs', 'installPaintWorker'], ['draw/water-worker.mjs', 'installWaterWorker'], ['draw/paint-parallel.mjs', 'installPaintRowWorker'], ['draw/liquid-worker.mjs', 'installLiquidWorker']].filter(([entry]) => MODULES.has(entry));
 const workerPaths = new Set(workerEntries.flatMap(([entry]) => workerClosure(entry)));
 for (const path of workerPaths) {
   const head = `modules[${JSON.stringify(path)}] = (`;
@@ -509,7 +545,8 @@ let partOf = new Map();
 if (PROFILE === 'full') {
   const imported = new Set([...DEPS.values()].flat()), partPaths = new Set(Object.values(partGlobals));
   const coreRoots = [...MODULES.keys()].filter(path => !imported.has(path) && !partPaths.has(path))
-    .concat(Object.entries(globals).filter(([name]) => !Object.hasOwn(partGlobals, name)).map(([, path]) => path));
+    .concat(Object.entries(globals).filter(([name]) => !Object.hasOwn(partGlobals, name)).map(([, path]) => path),
+      'notes/integrity.mjs');
   partOf = partition({roots: coreRoots, partRoots: PARTS.map(part => [part.id, Object.values(part.globals)]), deps: DEPS, order: [...MODULES.keys()]}).owner;
   const retained = [...partOf.keys()].filter(retainedModule);
   if (retained.length) throw new Error('A styled-export factory belongs in core: ' + retained.join(', '));
@@ -553,6 +590,8 @@ const commercialMarkup = /<!-- RAPIER_COMMERCIAL_BEGIN -->[\s\S]*?<!-- RAPIER_CO
 if ([...ui.matchAll(commercialMarkup)].length !== 1 || ui.split('<!-- RAPIER_COMMERCIAL_').length !== 3) throw new Error('Commercial sheet markers are unbalanced');
 ui = commercialPage(ui, JSON.parse(await read('commercial-checkout.json')));
 const escapeHtml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+const peleNotice = await read('shell/vendor/pele/LICENSE');
+ui = ui.replace('<pre class="license-text" data-license="pele"></pre>', () => '<pre class="license-text">' + escapeHtml(peleNotice) + '</pre>');
 const roughNotice = /^\/\*([\s\S]*?)\*\//.exec(await read('draw/rough.mjs'))?.[1].replace(/^ {3}/gm, '').trim();
 if (!roughNotice?.includes('MIT License') || !roughNotice.includes('Copyright (c) 2019 Preet Shihn')) throw new Error('Missing rough.js notice');
 // The Paint engine is a port of libmypaint (ISC) and the factory brushes are Brien Dieterle's
@@ -623,6 +662,9 @@ html = html.replace(/<!-- RAPIER_PLATFORM_BEGIN -->[\s\S]*?<!-- RAPIER_PLATFORM_
 html = html.replace(/<meta name="rapier-version" content="[^"]+">/, `<meta name="rapier-version" content="${VERSION}">`);
 // The page's search words. The template carries two RAPIER_SEO regions: the head's (the site's description, previews, canonical address
 const seoRegion = /<!-- RAPIER_SEO_BEGIN -->[\s\S]*?<!-- RAPIER_SEO_END -->\n?/g;
+html = html.replace(seoRegion, (region, at) => at < html.indexOf('<body') ? '' : region);
+const siteHead = await read('editor/site-head.html');
+html = html.replace(/(<meta name="rapier-version" content="[^"]+">\n)/, (_, version) => version + siteHead);
 const seoRegions = [...html.matchAll(seoRegion)], bodyAt = html.indexOf('<body');
 if (seoRegions.length !== 2 || bodyAt < 0 || seoRegions[0].index > bodyAt || seoRegions[1].index < bodyAt || !/<script type="application\/ld\+json">/.test(seoRegions[0][0]) ||
     html.split('<!-- RAPIER_SEO_').length !== 5) throw new Error('The shell must carry its two RAPIER_SEO regions: metadata in the head, the guide in the body');
@@ -827,7 +869,7 @@ const compiledEditor = await lean("'use strict';\ndocument.currentScript._rapier
 const editorSlices = splitProgram(compiledEditor, PROFILE === 'full' ? [...PART_IDS, 'benchmark'] : []);
 source = editorSlices.core;
 if (source !== compiledEditor) lean.symbols['rapier-editor.js'] = prefixSymbols(compiledEditor, lean.symbols['rapier-editor.js'], source);
-prepack('rapier-editor-runtime', 'application/rapier-runtime', [{name: 'rapier-shared.js', source: bundleText}, {name: 'rapier-editor.js', source}]);
+prepack('rapier-editor-runtime', 'application/rapier-runtime', [{name: 'rapier-ui.html', source: ui}, {name: 'rapier-shared.js', source: bundleText}, {name: 'rapier-editor.js', source}]);
 {
   const taken = topLevelNames([source, ...editorSlices.parts.values()]).filter(name => realm.declared.has(name));
   if (taken.length) throw new Error('The editor takes a global name another script in its realm declares: ' + taken.join(', '));
@@ -835,56 +877,13 @@ prepack('rapier-editor-runtime', 'application/rapier-runtime', [{name: 'rapier-s
 
 const safeScript = value => value.replace(/<\/script/gi, '<\\/script');
 function checksum(value) { return createHash('sha256').update(value).digest('hex'); }
-const packedRecord = [];
-function candidatePacking(id, combined) {
-  const key = id + '\0' + checksum(combined);
-  if (!packings.has(key)) {
-    const words = encodeTextPack(combined);
-    if (words && !Buffer.from(decodeTextPack(words, combined.length)).equals(combined)) throw new Error('Word packing changed ' + id);
-    const bootstrap = id === 'rapier-codec-runtime' || id === 'rapier-phone-bench-runtime';
-    const inputs = [[combined, ''], ...(words ? [[words, ' prefilter=words2']] : [])];
-    packings.set(key, Promise.all(inputs.map(([input, prefilter]) => Promise.all([zopfliGzip(input), bootstrap ? null : brotliPack(input)])
-      .then(([gzip, brotli]) => ({input, prefilter, gzip, brotli})))));
-  }
-  return packings.get(key);
-}
-function prepack(id, type, spans) {
-  try { candidatePacking(id, Buffer.concat(spans.map(({source}) => Buffer.from(source)))).catch(() => {}); } catch (_) {}
-  return '';
-}
-async function packedSpans(id, type, spans) {
-  let out = `<script type="${type}" id="${id}">\n`;
-  const buffers = spans.map(({source}) => Buffer.from(source));
-  for (const [i, bytes] of buffers.entries()) packedRecord.push({element: id, name: spans[i].name, bytes: bytes.length, sha256: checksum(bytes)});
-  const combined = Buffer.concat(buffers);
-  let selected = null;
-  for (const {input, prefilter, gzip, brotli} of await candidatePacking(id, combined)) {
-    const candidates = [['gzip', gzip]];
-    if (brotli) {
-      if (!Buffer.from(decodeBrotli(brotli, input.length)).equals(input)) throw new Error('Brotli packing changed ' + id);
-      candidates.push(['brotli', brotli]);
-    }
-    for (const [compression, packed] of candidates) {
-      const metadata = compression === 'brotli' ? ' inflated=' + input.length + ' crc32=' + crc32(combined).toString(16).padStart(8, '0') : '';
-      const stored = encodeBase124(packed);
-      const body = `/* RAPIER_VENDOR_GROUP bytes=${combined.length} stored=${compression}+base124${metadata}${prefilter} */\n` + stored + `\n/* RAPIER_VENDOR_GROUP_END */\n`;
-      if (selected === null || Buffer.byteLength(body) < Buffer.byteLength(selected)) selected = body;
-    }
-  }
-  out += selected;
-  let offset = 0;
-  for (let i = 0; i < spans.length; i++) {
-    out += `/* RAPIER_VENDOR_SPAN ${spans[i].name} offset=${offset} bytes=${buffers[i].length} */\n`;
-    offset += buffers[i].length;
-  }
-  return out + '/* RAPIER_VENDOR_SPANS_END */\n</script>\n';
-}
 function packedScript(id, type, name, source) {
   return packedSpans(id, type, [{name, source}]);
 }
-const vendorIds = Object.keys(VENDOR_GROUPS), vendorElement = id => new RegExp(String.raw`<script (?:id="${id}" type="text/rapier-vendor"|type="text/rapier-vendor" id="${id}")>\n[\s\S]*?</script>\n`);
+const vendorIds = ['lib-markdownit', 'lib-gpu-lexer', 'lib-acorn'], vendorElement = id => new RegExp(String.raw`<script (?:id="${id}" type="text/rapier-vendor"|type="text/rapier-vendor" id="${id}")>\n[\s\S]*?</script>\n`);
+for (const id of textVendorIds.slice(0, -1)) html = html.replace(vendorElement(id), '');
 for (const id of vendorIds) if (!vendorElement(id).test(html)) throw new Error('The shell has no vendor slot ' + id);
-const vendorGroupSpans = await Promise.all(vendorIds.map(deriveVendorGroup));
+const vendorGroupSpans = await Promise.all(vendorIds.map(browserVendorSpans));
 const vendorPacks = Promise.all(vendorIds.map((id, at) => packedSpans(id, 'text/rapier-vendor', vendorGroupSpans[at])));
 const jxlArtifact = await buildJPEGXLArtifact(root, {encoder: true});
 const jxlWorker = jxlArtifact.bytes.toString('utf8');
@@ -1000,18 +999,15 @@ try {
   if (firstPaintCurrent) firstPaintRecord = {version: kept.version, css: kept.css || [], paths: kept.paths};
   else console.warn('first paint: editor/first-paint.json is stale; after this build run node tools/first-paint.mjs, then build again');
 } catch (error) { if (error.code !== 'ENOENT') throw error; }
-const [stylesRuntime, restStylesRuntime, codecRuntime, uiRuntime, editorRuntime] = await Promise.all([
+const [stylesRuntime, codecRuntime, editorRuntime] = await Promise.all([
   packedSpans('rapier-styles-runtime', 'application/rapier-runtime', [
     {name: 'rapier-factory-fonts.js', source: factoryFontText},
-    {name: 'rapier-styles.json', source: styleRecord(paintStyles)},
+    {name: 'rapier-styles.json', source: styleRecord([...paintStyles, ...restStyles])},
     {name: 'rapier-first-screen.html', source: firstScreenMarkup},
-    {name: 'rapier-first-paint.json', source: JSON.stringify(firstPaintRecord)},
   ]),
-  packedScript('rapier-style-rest-runtime', 'application/rapier-runtime', 'rapier-styles-rest.json', styleRecord(restStyles)),
   packedScript('rapier-codec-runtime', 'application/rapier-runtime', 'rapier-codecs.js', codecText),
-  packedScript('rapier-ui-runtime', 'application/rapier-runtime', 'rapier-ui.html', ui),
   packedSpans('rapier-editor-runtime', 'application/rapier-runtime', [
-    {name: 'rapier-shared.js', source: bundleText}, {name: 'rapier-editor.js', source},
+    {name: 'rapier-ui.html', source: ui}, {name: 'rapier-shared.js', source: bundleText}, {name: 'rapier-editor.js', source},
   ]),
 ]);
 const paintScript = '<!-- RAPIER_PAINT_BEGIN -->\n'
@@ -1019,11 +1015,10 @@ const paintScript = '<!-- RAPIER_PAINT_BEGIN -->\n'
   + '<script data-rapier-owned>\n' + safeScript(runtimeLoader) + '\n</script>\n'
   + codecRuntime
   + stylesRuntime
-  + restStylesRuntime
   + '<!-- RAPIER_PAINT_END -->\n';
 if (!html.includes('<template id="rapier-ui-slot"></template>')) throw new Error('Editor interface slot is missing');
 html = html.replace('<template id="rapier-ui-slot"></template>', () => paintScript + '<template id="rapier-ui-slot"></template>');
-const runtimeScript = '<!-- RAPIER_RUNTIME_BEGIN -->\n' + uiRuntime + editorRuntime + '<!-- RAPIER_RUNTIME_END -->\n';
+const runtimeScript = '<!-- RAPIER_RUNTIME_BEGIN -->\n' + editorRuntime + '<!-- RAPIER_RUNTIME_END -->\n';
 const tail = [];
 const tailSlots = [
   /<script type="application\/speedracer-app\+json">[\s\S]*?<\/script>\n?/,
@@ -1065,22 +1060,25 @@ let inlineRuntimeLoader = null;
   let at = 0;
   html = html.replace(inline, () => leaned[at++]);
 }
+let siteHtml = html;
+html = html.replace(seoRegion, '<!-- RAPIER_SEO_BEGIN -->\n<!-- RAPIER_SEO_END -->\n');
 const bootSlot = '__RAPIER_BOOT_ID__';
 if (html.split(bootSlot).length !== 2) throw new Error('The page must carry one startup identity');
 // The worker ships as written, less its comments but licence ones (tools/strip-comments.mjs), as the public source carries it.
 const serviceWorkerSource = PROFILE === 'full' ? stripperFor('shell/service-worker.js')(await read('shell/service-worker.js')) : '';
 const bootId = checksum(html + serviceWorkerSource);
 html = html.replace(bootSlot, bootId);
+siteHtml = siteHtml.replace(bootSlot, bootId);
 if (inlineRuntimeLoader) inlineRuntimeLoader = inlineRuntimeLoader.replace(bootSlot, bootId);
 const BUDGET = SIZE_BUDGETS[PROFILE];
 {
   const bytes = Buffer.byteLength(html);
   if (FAST_PACK) console.warn('RAPIER_PACK=fast: zlib packing for iteration only; ' + bytes + ' bytes is not a release measurement');
-  if (bytes >= BUDGET.warn) console.warn(`[build] ${OUTPUT_FILE} is ` + bytes + ' bytes: ' + (bytes - BUDGET.warn) + ` over the ${PROFILE} profile's ` + BUDGET.warn + '-byte release budget (reported, not refused)');
+  checkProfileSize(PROFILE, bytes);
 }
 await writeFile(resolve(root, OUTPUT_FILE), html);
 if (PROFILE === 'full') {
-  const doorFiles = await writeDoorAssets(root, Buffer.from(html), await readGuides(resolve(root, '../docs')));
+  const doorFiles = await writeDoorAssets(root, Buffer.from(siteHtml), await readGuides(resolve(root, '../docs')), firstPaintRecord);
   if (doorFiles.length !== Object.keys(PAGES).length) throw new Error('The site page did not produce a dedicated file for every door and document');
 }
 if (PROFILE === 'full') {
@@ -1111,7 +1109,8 @@ if (PROFILE === 'full') {
     shellRows.push(`./${path}\t${body.length}\t${digest}`);
   }
   shellDigest = checksum(shellRows.join('\n'));
-  const doorHashes = Object.fromEntries(Object.keys(DOORS).map(path => [path, checksum(doorPage(Buffer.from(html), path))]));
+  const doorHashes = Object.fromEntries(await Promise.all(['/', ...Object.keys(DOORS)].map(async path =>
+    [path, checksum(await readFile(resolve(root, path === '/' ? 'index.html' : doorAssetPath(path).slice(1))))])));
   const worker = serviceWorkerSource
     .replace('__RAPIER_BOOT_ID__', bootId)
     .replace('__RAPIER_DOOR_SHA256__', JSON.stringify(doorHashes))
@@ -1123,10 +1122,10 @@ if (PROFILE === 'full') {
 
   const editorElement = /<script type="application\/rapier-runtime" id="rapier-editor-runtime">[^<]*<\/script>\n/;
   if (html.split('id="rapier-editor-runtime"').length !== 2 || !editorElement.test(html)) throw new Error('The Apps copy needs the one editor runtime element to place its bridge after');
-  const interfaceElement = /<script type="application\/rapier-runtime" id="rapier-ui-runtime">[^<]*<\/script>\n/;
-  if (html.split('id="rapier-ui-runtime"').length !== 2 || !interfaceElement.test(html)) throw new Error('The Apps copy needs the one interface element to pack without the commercial sheet');
   const recorded = packedRecord.length;
-  const appsInterface = await packedScript('rapier-ui-runtime', 'application/rapier-runtime', 'rapier-ui.html', appsUi);
+  const appsInterface = await packedSpans('rapier-editor-runtime', 'application/rapier-runtime', [
+    {name: 'rapier-ui.html', source: appsUi}, {name: 'rapier-shared.js', source: bundleText}, {name: 'rapier-editor.js', source},
+  ]);
   const plugins = await builtinPlugins(root, packedSpans);
   appPlugins = plugins.groups;
   hostedPlugins = appPlugins.map(group => {
@@ -1134,7 +1133,7 @@ if (PROFILE === 'full') {
     return {...group, asset: {file, bytes, sri}};
   });
   const appRows = packedRecord.splice(recorded);
-  const replacementElements = new Set(['rapier-ui-runtime']);
+  const replacementElements = new Set(['rapier-editor-runtime']);
   appsSpans = packedRecord.filter(row => !replacementElements.has(row.element) && !row.element.startsWith('rapier-part-'))
     .concat(appRows.filter(row => !row.element.startsWith('rapier-plugin-')));
   const platformElement = /<script type="application\/rapier-runtime" id="rapier-platform-runtime">[^<]*<\/script>\n/;
@@ -1149,7 +1148,7 @@ if (PROFILE === 'full') {
   const hostedInventory = '<script type="application/json" id="rapier-builtin-plugins">' + safeScript(JSON.stringify(hostedPlugins)) + '</script>\n';
   appHtml = html.replace(platformElement, element => hostedInventory + element)
     .replace(/<meta http-equiv="Content-Security-Policy"[^>]*>\n?/, '').replace('<meta charset="UTF-8">', '<meta charset="UTF-8">\n<script>globalThis.RAPIER_APPS_HOST = true;</script>')
-    .replace(seoRegion, '').replace(interfaceElement, () => appsInterface).replace(editorElement, element => element + appsScript);
+    .replace(seoRegion, '').replace(editorElement, () => appsInterface + appsScript);
   const destination = resolve(root, 'dist/chatgpt');
   await mkdir(destination, {recursive: true});
   const assetDirectory = resolve(destination, 'editor-assets');

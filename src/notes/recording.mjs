@@ -54,6 +54,8 @@ export function createRecordings({store, owned, underLease, locks, scope, shared
 			if (m?.version === 1 && recordingPaths(m.note, m.id).stem === id && isNoteFile(m.note)
 				&& (m.noteId === null || typeof m.noteId === 'string' && !!m.noteId) && streamingRecordingType(m.mime)
 				&& ['recording', 'publishing', 'finished'].includes(m.state)
+				&& (m.stopped === undefined || typeof m.stopped === 'boolean')
+				&& (m.restored === undefined || typeof m.restored === 'boolean')
 				&& (m.state === 'recording' || validRecordingName(m.name) && /^[a-f0-9]{64}$/.test(m.digest)
 					&& Number.isSafeInteger(m.size) && m.size > 0 && (m.duration === null || typeof m.duration === 'number' && Number.isFinite(m.duration) && m.duration >= 0))) marker = m;
 		} catch (_) {  }
@@ -80,6 +82,7 @@ export function createRecordings({store, owned, underLease, locks, scope, shared
 		const inspected = marker && bytes ? inspectRecording(bytes, marker.mime) : {duration: null, completeBytes: 0};
 		return {id, note: noteFor(marker, index), originalNote: marker?.note ?? null, noteId: marker?.noteId ?? null,
 			mime: marker?.mime ?? null, name: marker?.name ?? null, size: record.error ? null : bytes?.length ?? 0,
+			completion: marker?.stopped === true ? 'recorder-stopped' : 'interrupted',
 			duration: marker?.state === 'finished' ? marker.duration : inspected.duration, completeBytes: inspected.completeBytes, durationResolution: inspected.resolution ?? null,
 			state: !marker ? 'unidentified' : marker.state, notice: marker?.state === 'finished' ? 'a saved recording waiting for its note link' : 'a recording that was cut short', proof,
 			problem: record.error ? 'The unfinished recording could not be read. Its stored bytes were left untouched.' : !marker ? 'The recording record is unreadable. Its original bytes are still here.' : bytes == null ? 'The recording bytes are unavailable. Nothing was removed.' : null};
@@ -101,6 +104,25 @@ export function createRecordings({store, owned, underLease, locks, scope, shared
 			} finally { release(); }
 		}
 		return offers;
+	};
+	const publishOwned = async (lease, before, r, {appendable = false, stopped = false, duration = null, restored = false, wanted = ''} = {}) => {
+		const id = r.id;
+		let marker = r.marker;
+		const digest = await hash(r.bytes);
+		if (marker.state !== 'recording' && digest !== marker.digest) throw fail('recording-changed', 'The saved recording bytes changed. Nothing was removed.');
+		if (marker.state === 'recording' || restored) {
+			marker = {...marker, state: 'publishing', name: audioName(noteFor(marker, before.index) || marker.note, marker.mime, wanted, await store.list('audio')),
+				digest, size: r.bytes.length, stopped: marker.stopped === true || appendable && stopped === true, ...(restored ? {restored: true} : {}), duration: duration ?? marker.duration ?? inspectRecording(r.bytes, marker.mime).duration};
+			await writeMarker(id, marker);
+		}
+		const path = 'audio/' + marker.name, existing = await store.read(path);
+		if (existing != null && await hash(existing) !== digest) throw fail('recording-collision', 'Another file occupies this recording name. Both copies were kept.');
+		if (existing == null) await lease.transact(({index}) => ({kind: 'recording', index, writes: [{file: path, bytes: r.bytes, createOnly: true}]}));
+		if (!same(r.bytes, await store.read(path))) throw fail('recording-verify', 'The saved recording could not be verified. Its unfinished copy was kept.');
+		await writeMarker(id, {...marker, state: 'finished'});
+		await store.remove(id + '.partial');
+		r = await load(id);
+		return {...describe(r, before.index), name: marker.name, mime: marker.mime, duration: marker.duration};
 	};
 	const makeSession = (initial, release, {appendable = false} = {}) => {
 		const id = initial.id; let active = true, queue = Promise.resolve(), appendError = null, offset = initial.bytes?.length ?? 0, accepting = appendable;
@@ -127,7 +149,7 @@ export function createRecordings({store, owned, underLease, locks, scope, shared
 				});
 			},
 			read() { return enqueue(async () => { guard(); return underLease(async () => { const r = await load(id); if (r.error) throw r.error; return r.bytes; }); }); },
-			finish(duration = null) {
+			finish(duration = null, {stopped = false} = {}) {
 				try { guard(); duration = durationOf(duration); } catch (e) { return Promise.reject(e); }
 				accepting = false;
 				return enqueue(async () => {
@@ -139,21 +161,7 @@ export function createRecordings({store, owned, underLease, locks, scope, shared
 							if (!appendable) checkProof(r, initial);
 							else if (r.proof.marker !== initial.proof.marker) throw fail('recording-changed', 'The recording changed; nothing was lost.');
 							if (!r.bytes?.length) throw fail('recording-empty', 'There are no saved recording bytes to keep. Nothing was removed.');
-							const digest = await hash(r.bytes);
-							if (marker.state !== 'recording' && digest !== marker.digest) throw fail('recording-changed', 'The saved recording bytes changed. Nothing was removed.');
-							if (marker.state === 'recording') {
-								marker = {...marker, state: 'publishing', name: audioName(noteFor(marker, before.index) || marker.note, marker.mime, '', await store.list('audio')),
-									digest, size: r.bytes.length, duration: duration ?? inspectRecording(r.bytes, marker.mime).duration};
-								await writeMarker(id, marker);
-							}
-							const path = 'audio/' + marker.name, existing = await store.read(path);
-							if (existing != null && await hash(existing) !== digest) throw fail('recording-collision', 'Another file occupies this recording name. Both copies were kept.');
-							if (existing == null) await lease.transact(({index}) => ({kind: 'recording', index, writes: [{file: path, bytes: r.bytes, createOnly: true}]}));
-							if (!same(r.bytes, await store.read(path))) throw fail('recording-verify', 'The saved recording could not be verified. Its unfinished copy was kept.');
-							await writeMarker(id, {...marker, state: 'finished'});
-							await store.remove(id + '.partial');
-							r = await load(id);
-							return {...describe(r, before.index), name: marker.name, mime: marker.mime, duration: marker.duration};
+							return publishOwned(lease, before, r, {appendable, stopped, duration});
 						});
 					} finally { end(); }
 				});
@@ -226,5 +234,34 @@ export function createRecordings({store, owned, underLease, locks, scope, shared
 			return {name: r.marker.name, note};
 		}); } finally { release(); }
 	};
-	return {begin, recover, open, preview, acknowledge, close() { closed = true; for (const release of [...held.values()]) release(); }};
+	const restoreOriginal = async (lease, before, noteId, content, wanted) => {
+		ensure();
+		for (const id of [...new Set((await store.list()).map(recordingStem).filter(Boolean))].sort()) {
+			const release = await acquire(id); if (!release) continue;
+			try {
+				const record = await load(id);
+				if (record.error || record.marker?.noteId !== noteId || !record.bytes?.length || await hash(record.bytes) !== content) continue;
+				if (record.marker.state !== 'recording' && record.marker.digest !== content) continue;
+				return await publishOwned(lease, before, record, {restored: true, wanted});
+			} finally { release(); }
+		}
+		return null;
+	};
+	const settleRestored = async (proved, snapshot) => {
+		for (const id of [...new Set((snapshot.listing || await store.list()).map(recordingStem).filter(Boolean))]) {
+			const release = await acquire(id); if (!release) continue;
+			try {
+				const record = await load(id), marker = record.marker;
+				if (record.error || marker?.restored !== true || marker.state === 'recording' || marker.noteId !== proved.id ||
+					!recordingsOf(proved.text).some(row => row.name === marker.name) || await hash(record.final) !== marker.digest) continue;
+				if (record.partial != null) {
+					if (await hash(record.partial) !== marker.digest) continue;
+					await store.remove(id + '.partial');
+				}
+				await store.remove(id + '.json');
+			} catch (_) {  }
+			finally { release(); }
+		}
+	};
+	return {begin, recover, open, preview, acknowledge, restoreOriginal, settleRestored, close() { closed = true; for (const release of [...held.values()]) release(); }};
 }

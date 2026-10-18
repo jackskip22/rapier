@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import {collectPdfVectors} from './pdf-vectors.mjs';
 import {collectPdfGlyphs} from './pdf-glyphs.mjs';
-import {fontRequests, waitForFonts} from './export-fonts.mjs';
+import {pdfFontSources, waitForFonts} from './export-fonts.mjs';
 import {apply as applyTypography} from '../layout/typography.mjs';
 import {documentLanguage} from '../spec/document-settings.mjs';
 import {applyPrintCapitals} from './print-capitals.mjs';
@@ -264,17 +264,28 @@ async function _rapierWritePrintPdf({root, css, fontCss = '', canonical, bom = f
 		ink?.(main);
 		const count = Math.max(1, Math.ceil((main.scrollWidth - 1) / bodyWidth));
 		if (!Number.isSafeInteger(count)) refuse('pdf_page_geometry_invalid');
-		const customFamilies = new Set(fontCss ? fontRequests(main, {fontCss, css, settings}).map(face => face.family.toLowerCase()) : []);
-		nativeGlyphs = await collectPdfGlyphs(main, {width: bodyWidth, check,
-			faces: globalThis.RapierDocxFonts?.DOCX_FONTS?.filter(face => !customFamilies.has(face.family.toLowerCase()))});
-		const textPages = await _rapierPrintTextPages(main, bodyWidth, count, check, undefined, nativeGlyphs.nodes);
+		const customFonts = pdfFontSources(fontCss), customFamilies = new Set(customFonts.map(face => face.family.toLowerCase()));
+		const glyphOptions = {width: bodyWidth, check,
+			prepareFont: globalThis.RapierExportFonts?.preparePdfFont && ((bytes, text, style, face) =>
+				globalThis.RapierExportFonts.preparePdfFont(bytes, text, style, face, {subset: globalThis.RapierFontSubsetPlugin?.subset})),
+			systemFonts: globalThis.RapierExportFonts?.systemPdfFonts,
+			maskFont: globalThis.RapierExportFonts?.maskPdfFont,
+			faces: [...customFonts, ...(globalThis.RapierDocxFonts?.DOCX_FONTS || []).filter(face => !customFamilies.has(face.family.toLowerCase())),
+				...pdfFontSources(css).filter(face => !customFamilies.has(face.family.toLowerCase()))]};
+		nativeGlyphs = await collectPdfGlyphs(main, glyphOptions);
+		const textPages = await _rapierPrintTextPages(main, bodyWidth, count, check, undefined, nativeGlyphs.nodes, nativeGlyphs.markers);
 		const linkPages = _rapierPrintLinkPages(main, bodyWidth, bodyHeight, count);
 		vectors = await collectPdfVectors(main, {width: bodyWidth, height: bodyHeight, count, capture, signal, current, check, maxBytes,
-			sanitizeSvg: globalThis.RapierImageAssets?.sanitizeSvgText});
-		for (const root of vectors.textRoots) {
-			const held = await _rapierPrintTextPages(root, bodyWidth, count, check, main.getBoundingClientRect());
-			for (const [page, runs] of held.entries()) textPages[page].push(...runs);
-		}
+			sanitizeSvg: globalThis.RapierImageAssets?.sanitizeSvgText,
+            collectText: root => collectPdfGlyphs(root, {...glyphOptions, origin: main.getBoundingClientRect()})});
+        for (const {root, original, text} of vectors.textRoots) {
+            const held = await _rapierPrintTextPages(root, bodyWidth, count, check, main.getBoundingClientRect(), text?.nodes);
+            nativeGlyphs.painted.push(...(text?.painted || []));
+            for (const [page, runs] of held.entries()) {
+                const at = textPages[page].findIndex(run => run.imageRoot === original);
+                if (at >= 0) textPages[page].splice(at, 1, ...runs); else textPages[page].push(...runs);
+            }
+        }
 		const text = textPages.flatMap(page => page.map(run => run.text));
 		const glyphs = new Set();
 		for (const line of text) for (const character of line) {
@@ -349,11 +360,11 @@ async function _rapierWritePrintPdf({root, css, fontCss = '', canonical, bom = f
 		const bytes = await writeRasterPdf({pages, textPages, linkPages, vectorPages: vectors.pages, canonical, bom, filename, title, font, width, height, margins, backdrop: backdrop?.pages[0] || null,
 			pixelWidth: bodyWidth, pixelHeight: bodyHeight, pageNumbers: settings?.pagestyle === 'plain', maxBytes, check});
 		check();
-		return {bytes, pages: count};
-	} finally { filmSession?.close(); nativeGlyphs?.restore(); vectors?.restore(); backdrop?.restore(); signal?.removeEventListener('abort', abort); frame.remove(); }
+		return {bytes, pages: count, painted: nativeGlyphs.painted};
+	} finally { filmSession?.close(); backdrop?.restore(); vectors?.restore(); nativeGlyphs?.restore(); signal?.removeEventListener('abort', abort); frame.remove(); }
 }
 
-async function _rapierPrintTextPages(main, pageWidth, count, check, origin = main.getBoundingClientRect(), nativeNodes = null) {
+async function _rapierPrintTextPages(main, pageWidth, count, check, origin = main.getBoundingClientRect(), nativeNodes = null, markerNodes = null) {
 	const into = main.ownerDocument;
 	const pages = Array.from({length: count}, () => []), walker = into.createTreeWalker(main, 5);
 	const markerMetrics = _rapierPrintWillMetrics(Array.from(main.querySelectorAll('.rapier-will-carrier'), node => node.textContent));
@@ -363,6 +374,12 @@ async function _rapierPrintTextPages(main, pageWidth, count, check, origin = mai
 	for (let node; (node = walker.nextNode());) {
 		if (++nodes % 128 === 0) { await new Promise(resolve => setTimeout(resolve, 0)); check(); }
 		const element = node.nodeType === 1 ? node : node.parentElement;
+        if (node.nodeType === 1 && node.localName === 'img') {
+            const rect = node.getBoundingClientRect(), page = Math.max(0, Math.min(count - 1, Math.floor((rect.left - origin.left + .01) / pageWidth)));
+            pages[page].push({imageRoot: node, text: '', parts: []});
+        }
+		const marker = markerNodes?.get(node);
+		if (marker && marker.page < count) pages[marker.page].push({...marker, block: node, carrier: null, marker: true});
 		const formula = node.nodeType === 1 && node.matches('.math-rendered[data-math-src]') && node.querySelector('svg');
 		if (node.nodeType === 1 && !formula || node.nodeType === 3 && element.closest('.math-rendered[data-math-src]')) continue;
 		let value;
@@ -377,10 +394,12 @@ async function _rapierPrintTextPages(main, pageWidth, count, check, origin = mai
 		const native = nativeNodes?.get(node);
 		let characters = null;
 		const pageOf = x => Math.max(0, Math.min(count - 1, Math.floor((x - origin.left + .01) / pageWidth)));
-		const visit = (start, end) => {
+		const visit = (start, end, measured = null) => {
 			if (++operations % 128 === 0) check();
 			if (!formula) { range.setStart(node, start); range.setEnd(node, end); }
-			const rects = Array.from(formula ? [formula.getBoundingClientRect()] : range.getClientRects()).filter(rect => rect.height > 0 && (rect.width > 0 || carrier));
+			const rects = measured ? measured.map(part => ({left: origin.left + part.page * pageWidth + part.x, right: origin.left + part.page * pageWidth + part.x + part.width,
+				top: origin.top + part.y, bottom: origin.top + part.y + part.height, width: part.width, height: part.height})) :
+				Array.from(formula ? [formula.getBoundingClientRect()] : range.getClientRects()).filter(rect => rect.height > 0 && (rect.width > 0 || carrier));
 			if (!rects.length) { if (carrier) markerLost(); return; }
 			const first = rects[0], page = pageOf(first.left);
 			const oneLine = rects.every(rect => pageOf(rect.left) === page && pageOf(rect.width ? rect.right - .02 : rect.left) === page && Math.abs(rect.top - first.top) < .5);
@@ -390,30 +409,50 @@ async function _rapierPrintTextPages(main, pageWidth, count, check, origin = mai
 			if (cluster) middle = cluster.start > start ? cluster.start : cluster.end;
 			if (!oneLine && middle > start && middle < end) { visit(start, middle); visit(middle, end); return; }
 			let text = value.slice(start, end);
-			if (!formula) text = preserve ? text.replace(/\r\n?|\n/g, '') : text.replace(/[ \t\r\n\f]+/g, ' ');
-			if (!text) return;
+			if (!formula) text = (preserve ? text.replace(/\r\n?|\n/g, '') : text.replace(/[ \t\r\n\f]+/g, ' ')).replace(/\u00ad/g, '');
+			if (!text && !native?.some(item => item.start >= start && item.end <= end && item.soft)) return;
 			const x = Math.min(...rects.map(rect => rect.left)) - origin.left - page * pageWidth;
 			const y = Math.min(...rects.map(rect => rect.top)) - origin.top;
 			let right = Math.max(...rects.map(rect => rect.right)) - origin.left - page * pageWidth;
 			if (carrier && right === x) right += Array.from(text).length * markerMetrics.advance * markerMetrics.size / 1000;
 			const bottom = Math.max(...rects.map(rect => rect.bottom)) - origin.top;
-			const parts = native ? native.filter(item => item.start >= start && item.end <= end && item.text).map(item => ({...item}))
-				: [{text, x, y, width: right - x, height: bottom - y, rtl: style.direction === 'rtl'}];
+			let parts = native ? native.filter(item => item.start >= start && item.end <= end && item.text).map(item => ({...item, rtl: style.direction === 'rtl'}))
+                : [{text, x, y, width: right - x, height: bottom - y, rtl: style.direction === 'rtl'}];
+            if (native) {
+                const joined = [];
+                for (const part of parts) {
+                    const last = joined.at(-1);
+                    if (last && !last.font && !part.font) {
+                        const right = Math.max(last.x + last.width, part.x + part.width);
+                        last.x = Math.min(last.x, part.x); last.width = right - last.x;
+                        last.text += part.text; last.end = part.end;
+                    } else joined.push(part);
+                }
+                parts = joined;
+            }
 			const last = pages[page].at(-1);
-			if (last && !formula && !last.math && last.block === block && last.carrier === carrier && Math.abs(last.y - y) < Math.max(2, Math.min(last.height, bottom - y) * .2)) {
+			if (last && !formula && !last.math && last.block === block && last.carrier === carrier && (last.marker || Math.abs(last.y - y) < Math.max(2, Math.min(last.height, bottom - y) * .2))) {
 				if (!preserve && last.text.endsWith(' ') && text.startsWith(' ') && parts.length) {
 					const first = parts[0];
 					if (first.text === ' ') parts.shift();
 					else {const advance = first.width / Array.from(first.text).length; first.text = first.text.slice(1); first.x += advance; first.width -= advance;}
 				}
 				last.text = preserve ? last.text + text : (last.text + text).replace(/[ \t\r\n\f]+/g, ' ');
-				last.parts.push(...parts);
+				last.parts.push(...parts); last.marker = false;
 				last.width = Math.max(last.x + last.width, right) - Math.min(last.x, x);
 				last.height = Math.max(last.y + last.height, bottom) - Math.min(last.y, y);
 				last.x = Math.min(last.x, x); last.y = Math.min(last.y, y);
 			} else pages[page].push({text, x, y, width: right - x, height: bottom - y, block, carrier, math: !!formula, parts});
 		};
-		visit(0, value.length);
+		if (native) {
+			const lines = [];
+			for (const part of native) {
+				const last = lines.at(-1);
+				if (last && last[0].page === part.page && Math.abs(last[0].y - part.y) < .5) last.push(part);
+				else lines.push([part]);
+			}
+			for (const line of lines) visit(line[0].start, line.at(-1).end, line);
+		} else visit(0, value.length);
 	}
 	check();
 	const pageHeight = origin.height;
@@ -518,44 +557,129 @@ async function writeRasterPdf({pages, textPages, linkPages = [], vectorPages = [
 	const source = encoder.encode((bom ? '\uFEFF' : '') + canonical);
 	const embedded = stream('/Type /EmbeddedFile /Subtype /text#2Fplain /Params <</Size ' + source.length + '>> /Filter /FlateDecode', await compressed(source));
 	const file = add('<< /Type /Filespec /F ' + literal(String(filename).replace(/[^\x20-\x7e]/g, '_')) + ' /UF <feff' + hex(filename) + '> /AFRelationship /Source /EF << /F ' + embedded + ' 0 R /UF ' + embedded + ' 0 R >> >>');
+	for (const page of textPages) for (const run of page) {
+		let previous = null;
+		for (const part of run.parts || []) {
+			part.unicode = part.text.normalize('NFC'); part.actual = part.text.replace(/\u00ad/g, '');
+			if (part.font && /^ +$/.test(part.text) && previous) {
+                if (previous.font && /[\p{Script=Hebrew}]/u.test(previous.text) && previous.font.glyph(32)) {
+                    part.font = previous.font; part.glyph = previous.font.glyph(32); previous = part;
+                } else {
+                    if (previous.font) previous.unicode += part.text; else previous.text += part.text;
+                    previous.actual += part.actual;
+                    const right = Math.max(previous.x + previous.width, part.x + part.width);
+                    if (!previous.font) previous.x = Math.min(previous.x, part.x);
+                    previous.width = right - previous.x; part.unicode = '';
+                }
+            }
+			else if (part.text !== '\u00ad') previous = part;
+		}
+		if (previous && !run.carrier && !run.parts?.at(-1)?.soft && previous === run.parts?.findLast(part => part.text.trim() && part.text !== '\u00ad')) {
+			if (previous.font) {
+                let ending = previous;
+                const tail = [];
+                for (let at = run.parts.indexOf(previous); at >= 0; at--) {
+                    const part = run.parts[at];
+                    if (part.font && !part.unicode) continue;
+                    if (part.font !== previous.font) break;
+                    tail.push(part);
+                }
+                if (tail.some(part => /\p{Script=Hebrew}/u.test(part.text))) ending = tail.reduce((a, b) => a.x > b.x ? a : b);
+                ending.unicode += '\n';
+            } else previous.copyEnd = '\n';
+		}
+	}
 	const codes = new Map(font.codes.map((code, index) => [code, index + 1]));
 	const rows = font.codes.map((code, index) => '<' + (index + 1).toString(16).padStart(4, '0') + '> <' + hex(String.fromCodePoint(code)) + '>');
+	const fallbackCharacters = (part, carrier) => {
+		const characters = Array.from(part.text);
+		if (!carrier && !/[\p{Script=Arabic}\p{Script=Hebrew}\p{Script=Syriac}\p{Script=Thaana}\p{Script=Nko}]/u.test([...part.text.trimEnd()].at(-1) || '')) {
+			let suffix = part.copyEnd || '';
+			while (characters.length > 1 && characters.at(-1) === ' ') suffix = characters.pop() + suffix;
+			if (suffix && characters.length) characters[characters.length - 1] += suffix;
+		}
+		return characters;
+	};
+	const fallbackIds = font.codes.map((_, index) => index + 1);
+	for (const page of textPages) for (const run of page) for (const part of run.parts || [run]) if (!part.font)
+		for (const character of fallbackCharacters(part, run.carrier)) if ([...character].length > 1 && !codes.has(character)) {
+			const code = rows.length + 1; if (code > 65535) fail('pdf_text_glyph_limit');
+			codes.set(character, code); fallbackIds.push(codes.get(character.codePointAt(0)));
+			rows.push('<' + code.toString(16).padStart(4, '0') + '> <' + hex(character) + '>');
+		}
 	let cmap = '/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n/CMapName /RapierText def\n/CMapType 2 def\n1 begincodespacerange\n<0000> <ffff>\nendcodespacerange\n';
 	for (let at = 0; at < rows.length; at += 100) cmap += Math.min(100, rows.length - at) + ' beginbfchar\n' + rows.slice(at, at + 100).join('\n') + '\nendbfchar\n';
 	cmap += 'endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend';
 	const mapping = stream('/Filter /FlateDecode', await compressed(encode(cmap)));
 	const fontFile = stream('/Length1 ' + font.bytes.length + ' /Filter /FlateDecode', await compressed(font.bytes));
 	const descriptor = add('<< /Type /FontDescriptor /FontName /RapierText /Flags 4 /FontBBox [' + font.bounds.join(' ') + '] /ItalicAngle 0 /Ascent 500 /Descent -500 /CapHeight 500 /StemV 80 /FontFile2 ' + fontFile + ' 0 R >>');
-	const descendant = add('<< /Type /Font /Subtype /CIDFontType2 /BaseFont /RapierText /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor ' + descriptor + ' 0 R /DW 500 /CIDToGIDMap /Identity >>');
+	const fallbackMap = new Uint8Array((fallbackIds.length + 1) * 2);
+	fallbackIds.forEach((id, index) => {fallbackMap[(index + 1) * 2] = id >> 8; fallbackMap[(index + 1) * 2 + 1] = id & 255;});
+	const fallbackGlyphs = stream('/Filter /FlateDecode', await compressed(fallbackMap));
+	const descendant = add('<< /Type /Font /Subtype /CIDFontType2 /BaseFont /RapierText /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor ' + descriptor + ' 0 R /DW 500 /CIDToGIDMap ' + fallbackGlyphs + ' 0 R >>');
 	const type = add('<< /Type /Font /Subtype /Type0 /BaseFont /RapierText /Encoding /Identity-H /DescendantFonts [' + descendant + ' 0 R] /ToUnicode ' + mapping + ' 0 R >>');
 	const carrierDescriptor = add('<< /Type /FontDescriptor /FontName /RapierWillCarrier /Flags 4 /FontBBox [' + font.bounds.join(' ') + '] /ItalicAngle 0 /Ascent 500 /Descent -500 /CapHeight 500 /StemV 80 /FontFile2 ' + fontFile + ' 0 R >>');
 	const carrierDescendant = add('<< /Type /Font /Subtype /CIDFontType2 /BaseFont /RapierWillCarrier /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor ' + carrierDescriptor + ' 0 R /DW 500 /CIDToGIDMap /Identity >>');
 	const carrierType = add('<< /Type /Font /Subtype /Type0 /BaseFont /RapierWillCarrier /Encoding /Identity-H /DescendantFonts [' + carrierDescendant + ' 0 R] /ToUnicode ' + mapping + ' 0 R >>');
 	const numberFont = pageNumbers ? add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>') : null;
 	const kids = pages.map(() => { objects.push(null); return objects.length - 1; }), decimal = value => Number(value.toFixed(4));
-	const nativeFonts = new Map();
-	const glyphKey = part => part.glyph + ':' + part.text;
-	for (const page of textPages) for (const run of page) for (const part of run.parts || []) if (part.font) {
-		let entry = nativeFonts.get(part.font);
-		if (!entry) {entry = {font: part.font, name: '/Fn' + nativeFonts.size, codes: new Map(), rows: []}; nativeFonts.set(part.font, entry);}
-		const key = glyphKey(part);
-		if (!entry.codes.has(key)) {const code = entry.rows.length + 1; if (code > 65000) fail('pdf_text_glyph_limit'); entry.codes.set(key, code); entry.rows.push({...part, code});}
+	const nativeFonts = new Map(), nativeEntries = [], fontFiles = new Map();
+	const glyphKey = part => part.glyph + ':' + part.unicode + ':' + decimal(part.width / part.size / (part.scaleX || 1));
+	for (const page of textPages) for (const run of page) for (const part of run.parts || []) if (part.font && part.unicode) {
+		const key = glyphKey(part), cff = part.font.outline === 'cff';
+		const cid = cff ? part.font.cids?.[part.glyph] ?? part.glyph : null;
+		let variants = nativeFonts.get(part.font);
+		if (!variants) {variants = []; nativeFonts.set(part.font, variants);}
+		let entry = variants.find(entry => !cff || !entry.rows.some(row => row.code === cid && glyphKey(row) !== key));
+		if (!entry) {
+			entry = {font: part.font, name: '/Fn' + nativeEntries.length, codes: new Map(), rows: []};
+			variants.push(entry); nativeEntries.push(entry);
+		}
+		if (!entry.codes.has(key)) {
+			const code = cff ? cid : entry.rows.length + 1;
+			if (code > 65535) fail('pdf_text_glyph_limit');
+			entry.codes.set(key, code); entry.rows.push({...part, code});
+		}
+		part.pdfFont = entry;
 	}
-	const nativeResources = [];
-	for (const entry of nativeFonts.values()) {
+	const nativeResources = [], fontNames = new Map();
+	for (const entry of nativeEntries) {
 		check();
-		const face = entry.font, name = face.asset.family.replace(/\s/g, '') + '-' + face.asset.style, scale = 1000 / face.units;
-		const file = stream('/Length1 ' + face.bytes.length + ' /Filter /FlateDecode', await compressed(face.bytes));
-		const descriptor = add('<< /Type /FontDescriptor /FontName /' + name + ' /Flags 32 /FontBBox [' + face.bbox.map(value => decimal(value * scale)).join(' ') + '] /ItalicAngle 0 /Ascent ' + decimal(face.ascent * scale)
-			+ ' /Descent ' + decimal(face.descent * scale) + ' /CapHeight ' + decimal(face.capHeight * scale) + ' /StemV 80 /FontFile2 ' + file + ' 0 R >>');
-		const ids = new Uint8Array((entry.rows.length + 1) * 2);
-		for (const row of entry.rows) {ids[row.code * 2] = row.glyph >> 8; ids[row.code * 2 + 1] = row.glyph & 255;}
-		const glyphMap = stream('/Filter /FlateDecode', await compressed(ids));
-		let unicode = '/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n/CMapName /' + name + 'Unicode def\n/CMapType 2 def\n1 begincodespacerange\n<0000> <ffff>\nendcodespacerange\n';
-		for (let at = 0; at < entry.rows.length; at += 100) {const rows = entry.rows.slice(at, at + 100); unicode += rows.length + ' beginbfchar\n' + rows.map(row => '<' + row.code.toString(16).padStart(4, '0') + '> <' + hex(row.text) + '>').join('\n') + '\nendbfchar\n';}
+		const face = entry.font, scale = 1000 / face.units;
+		if (!fontNames.has(face)) {
+			const prefix = face.asset.subset ? fontNames.size.toString(26).padStart(6, '0').replace(/[0-9a-p]/g, c => String.fromCharCode(65 + parseInt(c, 26))) + '+' : '';
+			fontNames.set(face, prefix + (face.asset.postscriptName || 'Rapier' + entry.name.slice(1) + '-' + face.asset.family).replace(/[^a-z0-9-]/gi, ''));
+		}
+		const name = fontNames.get(face);
+		let unicode = '/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n/CMapName /' + name + 'Unicode def\n/CMapType 2 def\n1 begincodespacerange\n' + (face.type3 ? '<00> <ff>' : '<0000> <ffff>') + '\nendcodespacerange\n';
+		for (let at = 0; at < entry.rows.length; at += 100) {const rows = entry.rows.slice(at, at + 100); unicode += rows.length + ' beginbfchar\n' + rows.map(row => '<' + row.code.toString(16).padStart(face.type3 ? 2 : 4, '0') + '> <' + hex(row.unicode) + '>').join('\n') + '\nendbfchar\n';}
 		unicode += 'endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend';
 		const mapping = stream('/Filter /FlateDecode', await compressed(encode(unicode)));
-		const descendant = add('<< /Type /Font /Subtype /CIDFontType2 /BaseFont /' + name + ' /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor ' + descriptor + ' 0 R /CIDToGIDMap ' + glyphMap + ' 0 R /W [1 [' + entry.rows.map(row => decimal(face.advance(row.glyph) * scale)).join(' ') + ']] >>');
+		if (face.type3) {
+			if (entry.rows.length > 255) fail('pdf_text_glyph_limit');
+			const widths = entry.rows.map(row => decimal(row.width / row.size / (row.scaleX || 1) * 1000));
+			const paths = [];
+			for (let index = 0; index < entry.rows.length; index++) {
+				const row = entry.rows[index], drawing = widths[index] + ' 0 d0\n' + face.commands;
+				paths[index] = '/g' + row.code + ' ' + stream('/Filter /FlateDecode', await compressed(encode(drawing))) + ' 0 R';
+			}
+			const type = add('<< /Type /Font /Subtype /Type3 /Name /' + name + ' /FontBBox [' + face.bbox.join(' ') + '] /FontMatrix [.001 0 0 .001 0 0] /CharProcs << ' + paths.join(' ') + ' >> /Encoding << /Type /Encoding /Differences [1 ' + entry.rows.map(row => '/g' + row.code).join(' ') + '] >> /FirstChar 1 /LastChar ' + entry.rows.length + ' /Widths [' + widths.join(' ') + '] /Resources << >> /ToUnicode ' + mapping + ' 0 R >>');
+			nativeResources.push(entry.name + ' ' + type + ' 0 R'); continue;
+		}
+		let descriptor = fontFiles.get(face);
+		if (!descriptor) {
+			const file = stream((face.outline === 'cff' ? '/Subtype /OpenType ' : '/Length1 ' + face.bytes.length) + ' /Filter /FlateDecode', await compressed(face.bytes));
+			descriptor = add('<< /Type /FontDescriptor /FontName /' + name + ' /Flags ' + (face.italic ? 96 : 32) + ' /FontBBox [' + face.bbox.map(value => decimal(value * scale)).join(' ') + '] /ItalicAngle ' + decimal(face.italicAngle || 0) + ' /Ascent ' + decimal(face.ascent * scale)
+				+ ' /Descent ' + decimal(face.descent * scale) + ' /CapHeight ' + decimal(face.capHeight * scale) + ' /StemV 80 /' + (face.outline === 'cff' ? 'FontFile3' : 'FontFile2') + ' ' + file + ' 0 R >>');
+			fontFiles.set(face, descriptor);
+		}
+		let glyphMap = '';
+		if (face.outline !== 'cff') {
+			const ids = new Uint8Array((entry.rows.length + 1) * 2);
+			for (const row of entry.rows) {ids[row.code * 2] = row.glyph >> 8; ids[row.code * 2 + 1] = row.glyph & 255;}
+			glyphMap = ' /CIDToGIDMap ' + stream('/Filter /FlateDecode', await compressed(ids)) + ' 0 R';
+		}
+		const descendant = add('<< /Type /Font /Subtype /' + (face.outline === 'cff' ? 'CIDFontType0' : 'CIDFontType2') + ' /BaseFont /' + name + ' /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor ' + descriptor + ' 0 R' + glyphMap + ' /W [' + entry.rows.map(row => row.code + ' [' + decimal(row.width / row.size / (row.scaleX || 1) * 1000) + ']').join(' ') + '] >>');
 		const type = add('<< /Type /Font /Subtype /Type0 /BaseFont /' + name + ' /Encoding /Identity-H /DescendantFonts [' + descendant + ' 0 R] /ToUnicode ' + mapping + ' 0 R >>');
 		nativeResources.push(entry.name + ' ' + type + ' 0 R');
 	}
@@ -609,28 +733,46 @@ async function writeRasterPdf({pages, textPages, linkPages = [], vectorPages = [
 		for (const drawing of vectorPages[index] || []) commands += emit(drawing, margins.left, height - margins.top, pixelWidth, pixelHeight);
 		const textAlphas = new Map();
 		for (const run of textPages[index]) {
-			if (!run.text) continue;
+			if (!run.text && !run.parts?.some(part => part.font)) continue;
 			const element = structOf(run.tags || []);
 			if (element) {element.kids.push({page: index, mcid: marked.length}); commands += `/${element.role} << /MCID ${marked.length} >> BDC\n`; marked.push(element);}
-			commands += `q\n/Span << /ActualText <feff${hex(run.text)}> >> BDC\nBT\n100 Tz\n`;
+			commands += 'q\n';
+			const groups = [];
 			for (const part of run.parts || [run]) {
+				if (part.font && !part.unicode) continue;
+				const last = groups.at(-1), previous = last?.at(-1);
+				if (previous && previous.font === part.font && previous.skew === part.skew && previous.size === part.size && previous.scaleX === part.scaleX) last.push(part);
+				else groups.push([part]);
+			}
+			for (const group of groups) {
+				const actual = group.map(part => part.actual ?? part.text).join('');
+				let text = `/Span << /ActualText <feff${hex(actual)}> >> BDC\nBT\n100 Tz\n`;
+            const shown = group.some(part => part.font && /\p{Script=Hebrew}/u.test(part.text)) ? [...group].sort((a, b) => a.x - b.x) : group;
+			for (const part of shown) {
 				if (part.font) {
-					const entry = nativeFonts.get(part.font), value = entry.codes.get(glyphKey(part)).toString(16).padStart(4, '0'), alpha = decimal(part.rgba[3]);
+					const entry = part.pdfFont, value = entry.codes.get(glyphKey(part)).toString(16).padStart(part.font.type3 ? 2 : 4, '0'), alpha = decimal(part.rgba[3]);
 					let state = textAlphas.get(alpha);
 					if (!state) {state = '/Gs' + states.length; states.push(state + ' ' + add('<< /Type /ExtGState /ca ' + alpha + ' >>') + ' 0 R'); textAlphas.set(alpha, state);}
-					commands += `${state} gs\n${part.rgba.slice(0, 3).map(decimal).join(' ')} rg\n${entry.name} ${decimal(part.size * .75)} Tf\n0 Tr\n1 0 0 1 ${decimal(margins.left + part.x * .75)} ${decimal(height - margins.top - part.baseline * .75)} Tm\n<${value}> Tj\n`;
+					text += `${state} gs\n${part.rgba.slice(0, 3).map(decimal).join(' ')} rg\n${entry.name} ${decimal(part.size * .75)} Tf\n${decimal((part.scaleX || 1) * 100)} Tz\n0 Tr\n1 0 ${decimal((part.skew || 0) * (part.scaleX || 1))} 1 ${decimal(margins.left + part.x * .75)} ${decimal(height - margins.top - part.baseline * .75)} Tm\n<${value}> Tj\n`;
 				} else {
-					const characters = Array.from(part.text); if (!characters.length) continue;
+					const characters = fallbackCharacters(part, run.carrier); if (!characters.length) continue;
 					const {slots, count} = _rapierPrintSlots(part.text, part.rtl);
-					const advance = part.width * .75 / count, size = Math.max(.1, advance * 2), scaleY = Math.max(.1, part.height * .75) / size;
+					const advance = part.width * .75 / count;
 					const baseline = decimal(height - margins.top - (part.y + part.height * .8) * .75);
 					for (let letter = 0; letter < characters.length; letter++) {
-						const value = codes.get(characters[letter].codePointAt(0)).toString(16).padStart(4, '0');
-						commands += `${run.carrier ? '/Fc' : '/F1'} ${decimal(size)} Tf\n3 Tr\n1 0 0 ${decimal(scaleY)} ${decimal(margins.left + part.x * .75 + slots[letter] * advance)} ${baseline} Tm\n<${value}> Tj\n`;
+						const size = Math.max(.1, advance * 2 * [...characters[letter].replace(/\n/g, '')].length), scaleY = Math.max(.1, part.height * .75) / size;
+						const value = (codes.get(characters[letter]) || codes.get(characters[letter].codePointAt(0))).toString(16).padStart(4, '0');
+						text += `${run.carrier ? '/Fc' : '/F1'} ${decimal(size)} Tf\n3 Tr\n1 0 0 ${decimal(scaleY)} ${decimal(margins.left + part.x * .75 + slots[letter] * advance)} ${baseline} Tm\n<${value}> Tj\n`;
 					}
 				}
 			}
-			commands += 'ET\nEMC\nQ\n' + (element ? 'EMC\n' : '');
+				text += 'ET\nEMC\n';
+				const name = '/Tx' + pictures.length;
+				const object = stream('/Type /XObject /Subtype /Form /BBox [0 0 ' + decimal(width) + ' ' + decimal(height) + '] /Resources << /Font << /F1 ' + type + ' 0 R /Fc ' + carrierType + ' 0 R ' + nativeResources.join(' ') + ' >> /ExtGState << ' + states.join(' ') + ' >> >> /Filter /FlateDecode', await compressed(encode(text)));
+				pictures.push(name + ' ' + object + ' 0 R');
+				commands += name + ' Do\n';
+			}
+			commands += 'Q\n' + (element ? 'EMC\n' : '');
 		}
 		if (numberFont) commands += `BT\n/F2 9 Tf\n0 Tr\n1 0 0 1 ${decimal(width / 2 - String(index + 1).length * 2.5)} ${decimal(margins.bottom / 2)} Tm\n(${index + 1}) Tj\nET\n`;
 		const content = stream('/Filter /FlateDecode', await compressed(encode(commands)));

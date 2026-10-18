@@ -138,7 +138,7 @@ const insertBits = [0,0,0,0,0,0,1,1,2,2,3,3,4,4,5,5,6,7,8,9,10,12,14,24], insert
 const copyBits = [0,0,0,0,0,0,0,0,1,1,2,2,3,3,4,4,5,5,6,7,8,9,10,24], copyBases = bases(copyBits, 2);
 const insertRange = [0,0,0,0,8,8,0,16,8,16,16], copyRange = [0,8,0,8,0,8,16,0,16,8,16];
 
-export function decodeBrotli(bytes, limit) {
+export function decodeBrotli(bytes, limit, {dictionary = true} = {}) {
 	if (!(bytes instanceof Uint8Array) || !Number.isSafeInteger(limit) || limit < 0 || limit > 128 * 1024 * 1024) invalid('output limit');
 	const bits = new Bits(bytes); let windowBits = 16;
 	if (bits.read(1)) { const value = bits.read(3); if (value) windowBits = 17 + value; else { const value = bits.read(3); if (value === 1) invalid('window size'); windowBits = value ? 8 + value : 17; } }
@@ -181,7 +181,8 @@ export function decodeBrotli(bytes, limit) {
 			if (distance <= 0) invalid('nonpositive distance');
 			const maximum = Math.min(window, at);
 			if (distance > maximum) {
-				const word = brotliDictionary(copy, distance - maximum - 1);
+				if (!dictionary) invalid('dictionary reference in the dictionary bootstrap');
+				const word = brotliDictionary(copy, distance - maximum - 1, decodeBrotli);
 				if (at > end - word.length) invalid('dictionary word exceeds the meta-block');
 				out.set(word, at); at += word.length;
 			} else {

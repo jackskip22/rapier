@@ -8,11 +8,11 @@ import {exportLedger, prepareLedgerAsync, readLedger, textRoot, rootAfter} from 
 import {utf8Length} from '../kit/ledger/data.mjs';
 import {_rapierMetadataDelta, _rapierTransformMetadata, _rapierTransformSplices} from '../kit/ledger/journal-records.mjs';
 import {selectiveUndo} from '../kit/ledger/history.mjs';
+import {DEFAULT_POLICY} from './retention.mjs';
 
 export const HISTORY_VERSION = 2;
 export const INPUT_OPERATION = 'notes.input';
 export const REASONS = Object.freeze(['save', 'import', 'import-undo', 'rename', 'restore', 'trash', 'untrash', 'merge', 'capture', 'edit-card']);
-export const DEFAULT_POLICY = Object.freeze({allDays: 7, dailyDays: 90, maxBytes: 268435456});
 export const DIFF_LIMITS = Object.freeze({characters: 1000000, lines: 12000, steps: 250000});
 const ENC = new TextEncoder();
 const HEX = /^[0-9a-f]{64}$/;
@@ -781,7 +781,7 @@ export function joinMedia(lists) {
  }
  return sortedMedia([...out.values()]);
 }
-export async function checkInverseMedia(manifest, ledger, {names, digest, inverse = null}) {
+export async function checkInverseMedia(manifest, ledger, {names, digest, inverse = null, relocate, recover}) {
  const before = validateManifest(manifest), held = new Set(before.canonical?.records.map(row => row.transaction.id) || []);
  let records = ledger.records;
  if (inverse) {
@@ -798,28 +798,36 @@ export async function checkInverseMedia(manifest, ledger, {names, digest, invers
  const lost = new Set([...rows.values()].filter(row => !opened.has(mediaKey(row))).map(row => row.file));
  const states = new Map(), bound = file => rows.get(file + '\0' + act), unbound = file => lost.has(file) ? undefined : null;
  let text = ledger.start.text, act = '', current = new Map();
+ const counts = value => {const out = new Map(); for (const file of names(value)) out.set(file, (out.get(file) || 0) + 1); return out;};
+ let occurrences = counts(text);
  for (const file of names(text)) current.set(file, bound(file)?.content ?? unbound(file));
  const added = [], ends = new Set([...rows.values()].filter(row => row.end !== undefined).map(row => row.file + '\0' + row.end));
  for (const record of records) {
-  const tx = record.transaction, previous = current, previousAct = act;
+  const tx = record.transaction, previous = current, previousAct = act, priorOccurrences = occurrences;
   text = _rapierTransformSplices(text, record.splices);
   requireThat(text !== null, 'The retained canonical source cannot be proved', 'notes_history_unavailable');
   act = tx.id;
   const refs = inverseRefs(tx);
+  occurrences = counts(text);
+  const origin = refs.length === 1 ? states.get(refs[0]) : null;
+  const expected = origin && (tx.reapplies ? origin.splices : origin.splices.slice().reverse().map(row => ({pos: row.pos, removed: row.inserted, inserted: row.removed})));
+  const relocated = expected && relocate?.(expected, record.splices);
   current = new Map();
-  for (const file of names(text)) {
+  for (const file of occurrences.keys()) {
    const explicit = bound(file), prior = previous.get(file);
    const closed = ends.has(file + '\0' + previousAct);
-   if (previous.has(file) && !closed) { current.set(file, explicit?.content ?? prior); continue; }
+   if (previous.has(file) && !closed && (!(refs.length && !held.has(act)) || occurrences.get(file) <= priorOccurrences.get(file))) { current.set(file, explicit?.content ?? prior); continue; }
    let content = explicit?.content ?? unbound(file);
    if (refs.length && !held.has(act)) {
-    const origins = refs.map(id => states.get(id)?.[tx.reapplies ? 'after' : 'before']).filter(state => state?.has(file));
+    const originalFile = relocated?.get(file) || file;
+    const origins = refs.map(id => states.get(id)?.[tx.reapplies ? 'after' : 'before']).filter(state => state?.has(originalFile));
     requireThat(origins.length > 0, 'The original file for this Undo cannot be checked', 'notes_media_unverified');
-    const identities = origins.map(state => state.get(file));
+    const identities = origins.map(state => state.get(originalFile));
     requireThat(identities.every(value => value === identities[0]), 'The original files for this Undo disagree', 'notes_media_unverified');
     content = identities[0];
     requireThat(content !== undefined, 'The original file for this Undo cannot be checked', 'notes_media_unverified');
-    const actual = await digest(file);
+    let actual = await digest(file);
+    if (content && actual !== content && recover) actual = await recover(file, content);
     requireThat(actual !== null && (content === null || actual === content), file.slice(file.indexOf('/') + 1) + ' changed since this edit', 'notes_media_replaced');
     content ??= actual;
     requireThat(!explicit || explicit.content === content, 'The original file for this Undo changed', 'notes_media_replaced');
@@ -827,7 +835,7 @@ export async function checkInverseMedia(manifest, ledger, {names, digest, invers
    }
    current.set(file, content);
   }
-  states.set(act, {before: previous, after: current});
+  states.set(act, {before: previous, after: current, splices: record.splices});
  }
  return added.length ? sortedMedia([...rows.values()]) : before.media;
 }

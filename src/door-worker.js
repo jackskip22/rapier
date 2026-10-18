@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 const ORIGIN = 'https://rapier.website';
-const PAGE = '/rapier.html';
+const PAGE = '/index.html';
 export function doorAssetPath(path) {
 	return '/door-' + path.slice(1) + '.html';
 }

@@ -330,7 +330,8 @@ function _rapierDocxRenderStyles(root) {
 	}
 	const coloured = codes.filter(code => code.querySelector('span'));
 	const quotes = Array.from(root.querySelectorAll('blockquote'));
-	if (!coloured.length && !quotes.length) return;
+	const diagrams = Array.from(root.querySelectorAll('svg.pele'));
+	if (!coloured.length && !quotes.length && !diagrams.length) return;
 	const frame = document.createElement('iframe');
 	frame.setAttribute('aria-hidden', 'true');
 	frame.style.cssText = 'position:fixed;left:-100000px;top:0;width:1px;height:1px;border:0;pointer-events:none';
@@ -358,6 +359,20 @@ function _rapierDocxRenderStyles(root) {
 			}
 			return colours.get(colour);
 		};
+		for (const diagram of diagrams) {
+			const host = into.createElement('div'); host.className = 'diagram-block';
+			const probe = into.importNode(diagram, true); host.appendChild(probe); surface.appendChild(host);
+			const originals = [diagram, ...diagram.querySelectorAll('*')];
+			[probe, ...probe.querySelectorAll('*')].forEach((element, index) => {
+				const computed = into.defaultView.getComputedStyle(element), target = originals[index];
+				for (const property of ['fill', 'stroke', 'color', 'stop-color', 'stroke-width', 'stroke-dasharray',
+					'font-family', 'font-size', 'font-weight', 'font-style', 'rx', 'ry']) {
+					const value = computed.getPropertyValue(property);
+					if (value && !/url\(/i.test(value)) target.style.setProperty(property, value);
+				}
+			});
+			host.remove();
+		}
 		for (const code of coloured) {
 			const pre = into.createElement('pre'), probe = into.importNode(code, true);
 			pre.appendChild(probe); surface.appendChild(pre);

@@ -92,9 +92,9 @@ function geometry(node) {
   unsupported();
 }
 
-export async function collectPdfVectors(main, {width, height, count, capture, signal, current, check, maxBytes, sanitizeSvg}) {
+export async function collectPdfVectors(main, {width, height, count, capture, signal, current, check, maxBytes, sanitizeSvg, collectText}) {
   const document = main.ownerDocument, window = document.defaultView, origin = main.getBoundingClientRect();
-  const pages = Array.from({length: count}, () => []), hidden = [], temporary = [], textRoots = [];
+  const pages = Array.from({length: count}, () => []), hidden = [], temporary = [], textRoots = [], textRestores = [];
   const colorCanvas = document.createElement('canvas'); colorCanvas.width = colorCanvas.height = 1;
   const colorContext = colorCanvas.getContext('2d', {willReadFrequently: true});
   if (!colorContext) return {pages, textRoots, restore() {}};
@@ -112,7 +112,7 @@ export async function collectPdfVectors(main, {width, height, count, capture, si
     if (!colors.has(text)) { colorContext.clearRect(0, 0, 1, 1); colorContext.fillStyle = text; colorContext.fillRect(0, 0, 1, 1); colors.set(text, Array.from(colorContext.getImageData(0, 0, 1, 1).data, n => n / 255)); }
     return colors.get(text);
   };
-  const restore = () => { for (const {node, value, priority} of hidden) {if (value) node.style.setProperty('visibility', value, priority); else node.style.removeProperty('visibility');} for (const node of temporary) node.remove(); colorCanvas.width = colorCanvas.height = 0; };
+  const restore = () => { for (const undo of textRestores.reverse()) undo(); textRestores.length = 0; for (const {node, style} of hidden) {if (style == null) node.removeAttribute('style'); else node.setAttribute('style', style);} for (const node of temporary) node.remove(); colorCanvas.width = colorCanvas.height = 0; };
   const roots = Array.from(main.querySelectorAll('svg,img')).filter(node => node.localName === 'img' || !node.ownerSVGElement);
   try {
     for (const original of roots) {
@@ -132,7 +132,8 @@ export async function collectPdfVectors(main, {width, height, count, capture, si
         root.style.setProperty('width', originalBox.width + 'px', 'important'); root.style.setProperty('height', originalBox.height + 'px', 'important');
         mount = document.createElement('div'); mount.style.cssText = `position:fixed;left:${originalBox.left}px;top:${originalBox.top}px;width:${originalBox.width}px;height:${originalBox.height}px;pointer-events:none`;
         mount.attachShadow({mode: 'open'}).append(root); document.body.append(mount); temporary.push(mount); await document.fonts.ready;
-        textRoots.push(root);
+        const glyphs = await collectText?.(root); if (glyphs) textRestores.push(glyphs.restore);
+        textRoots.push({root, original, text: glyphs});
       }
       const box = root.getBoundingClientRect(), nodes = [root, ...root.querySelectorAll('*')], sequence = [];
       const raster = async node => {
@@ -193,12 +194,12 @@ export async function collectPdfVectors(main, {width, height, count, capture, si
         sequence.push({commands, fillAlpha, strokeAlpha}); geometries++;
       };
       await walk(root);
-      if (!geometries) continue;
+      if (!geometries && !textRoots.find(entry => entry.root === root)?.text?.nodes.size) continue;
       const painted = [];
       for (const piece of sequence) {const held = piece.raster ? await raster(piece.raster) : piece; if (held) painted.push(held);}
       const first = Math.max(0, Math.floor((box.left - origin.left + .01) / width)), last = Math.min(count - 1, Math.floor((box.right - origin.left - .01) / width));
       for (let page = first; page <= last; page++) pages[page].push({sequence: painted, x: -page * width, clip: {x: box.left - origin.left, y: box.top - origin.top, width: box.width, height: box.height}});
-      hidden.push({node: original, value: original.style.getPropertyValue('visibility'), priority: original.style.getPropertyPriority('visibility')}); original.style.setProperty('visibility', 'hidden', 'important');
+      hidden.push({node: original, style: original.getAttribute('style')}); original.style.setProperty('visibility', 'hidden', 'important');
     }
     return {pages, textRoots, restore};
   } catch (error) {restore(); throw error;}

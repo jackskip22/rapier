@@ -33,7 +33,18 @@ export function createPlainSession({folder, store: given, provider, place, devic
 			throw fail('connection', 'the plain-files connection changed.');
 		active(ticket);
 	};
-	const stop = () => { epoch++; for (const transport of transports) transport.pause?.(); };
+	const stop = () => {
+		epoch++;
+		const stopped = [];
+		for (const transport of transports) {
+			try { stopped.push(Promise.resolve(transport.pause?.())); } catch (error) { stopped.push(Promise.reject(error)); }
+		}
+		const drain = Promise.allSettled([...stopped, running?.catch(() => {})]).then(results => {
+			const failed = results.find(result => result.status === 'rejected'); if (failed) throw failed.reason;
+		});
+		drain.catch(() => {});
+		return drain;
+	};
 	function guarded(remote, guard) {
 		transports.add(remote);
 		return new Proxy({}, {get(_target, key) {
@@ -92,6 +103,8 @@ export function createPlainSession({folder, store: given, provider, place, devic
 				if (!saved || saved.provider !== record.provider || saved.place !== record.place || saved.destination !== record.destination || boundConnectionId !== undefined && saved.connectionId !== boundConnectionId) throw fail('connection', 'connect this folder to its plain files first.');
 				boundConnectionId = saved.connectionId;
 				const guard = connectionGuard(ticket, saved); await guard();
+				if (typeof store.resume === 'function') await store.resume();
+				await guard();
 				const result = await syncPlainFiles({folder, store: guarded(store, guard), base: {read: base.read, write: value => base.write(value, guard)}, device: record.device, other: 'files', guard});
 				if (pictures) result.pictures = await syncPlainPictures({folder, store: guarded(store, guard), base: {read: pictureBase.read, write: value => pictureBase.write(value, guard)}, guard});
 				await guard();
@@ -101,11 +114,13 @@ export function createPlainSession({folder, store: given, provider, place, devic
 			try { return await running; } finally { running = null; transports.clear(); transports.add(store); }
 		},
 		async forget({connectionId} = {}) {
-			stop();
+			const drain = stop();
 			const ticket = epoch, guard = () => active(ticket);
+			await drain; guard();
 			if (running) await running.catch(() => {});
 			guard();
 			const expected = (await readSyncStateBytes(folder.store)).state.plain;
+			guard();
 			if (!expected) return;
 			if (expected.provider !== record.provider || expected.place !== record.place || connectionId !== undefined && expected.connectionId !== connectionId)
 				throw fail('connection', 'the plain-files connection changed.');
@@ -116,7 +131,7 @@ export function createPlainSession({folder, store: given, provider, place, devic
 				void plain;
 				return rest;
 			}, {guard});
-			store.pause?.();
+			await store.pause?.();
 		},
 		conflicts() { const ticket = epoch; return plainConflicts(folder, () => active(ticket)); },
 		resolve(choice) {
@@ -129,7 +144,7 @@ export function createPlainSession({folder, store: given, provider, place, devic
 			})();
 			return running.finally(() => { running = null; });
 		},
-		lock() { stop(); return running?.catch(() => {}) || Promise.resolve(); },
-		pause() { stop(); },
+		lock: stop,
+		pause: stop,
 	});
 }

@@ -2,8 +2,9 @@
 import {readFile} from 'node:fs/promises';
 import {resolve, dirname, relative} from 'node:path';
 import acorn from '../agent/vendor/acorn.mjs';
-import {shakeModule} from './tree-shake.mjs';
 import {lexicalBindings} from './engine-census.mjs';
+const scopes = new WeakMap();
+import {shakeModule, pruneImports} from './tree-shake.mjs';
 
 const parse = source => acorn.parse(source, {ecmaVersion: 'latest', sourceType: 'module', locations: true});
 const patternNames = pattern => pattern.type === 'Identifier' ? [pattern.name]
@@ -12,28 +13,17 @@ const patternNames = pattern => pattern.type === 'Identifier' ? [pattern.name]
 	: pattern.type === 'AssignmentPattern' ? patternNames(pattern.left)
 	: pattern.type === 'RestElement' ? patternNames(pattern.argument) : [];
 
-function pruneImports(source) {
-	const ast = parse(source), lexical = lexicalBindings(ast), read = new Set();
-	for (const node of lexical.nodes) if (lexical.isReference(node)) {
-		const binding = lexical.bindingAt(node.name, node);
-		if (binding && binding.kind === 'import') read.add(binding);
-	}
-	const edits = [];
-	for (const statement of ast.body) if (statement.type === 'ImportDeclaration') {
-		const stay = statement.specifiers.filter(row => [...read].some(binding => binding.name === row.local.name));
-		if (stay.length === statement.specifiers.length) continue;
-		edits.push([statement.start, statement.end, stay.length
-			? 'import {' + stay.map(row => source.slice(row.start, row.end)).join(', ') + '} from ' + source.slice(statement.source.start, statement.source.end) + ';' : '']);
-	}
-	for (const [start, end, text] of edits.sort((a, b) => b[0] - a[0])) source = source.slice(0, start) + text + source.slice(end);
-	return source;
-}
-
 export function readNames(text, global) {
-	const ast = acorn.parse(text, {ecmaVersion: 'latest', sourceType: 'script'}), names = new Set(), aliases = new Set();
+	const ast = typeof text === 'string' ? acorn.parse(text, {ecmaVersion: 'latest', sourceType: 'script', locations: true}) : text;
+	const names = new Set(), aliases = new Set();
+	const lexical = () => { if (!scopes.has(ast)) scopes.set(ast, lexicalBindings(ast)); return scopes.get(ast); };
 	let all = false;
 	const isGlobal = node => node?.type === 'Identifier' && node.name === global ||
-		node?.type === 'MemberExpression' && !node.computed && node.property.name === global && ['globalThis', 'window', 'self'].includes(node.object.name);
+		node?.type === 'MemberExpression' && (node.computed ? node.property.value : node.property.name) === global;
+	const presence = (node, parent) => parent?.type === 'UnaryExpression' && ['!', 'typeof'].includes(parent.operator) ||
+		parent?.type === 'LogicalExpression' && parent.operator === '&&' && parent.left === node ||
+		(parent?.type === 'ConditionalExpression' || parent?.type === 'IfStatement') && parent.test === node ||
+		parent?.type === 'BinaryExpression' && ['===', '!==', '==', '!='].includes(parent.operator);
 	const walk = (node, parent, each) => {
 		if (!node || typeof node.type !== 'string') return;
 		each(node, parent);
@@ -45,22 +35,26 @@ export function readNames(text, global) {
 	};
 	walk(ast, null, (node, parent) => {
 		if (!isGlobal(node)) return;
+		if (presence(node, parent)) return;
 		if (parent?.type === 'MemberExpression' && parent.object === node && !parent.computed) names.add(parent.property.name);
 		else if (parent?.type === 'VariableDeclarator' && parent.init === node && parent.id.type === 'ObjectPattern' &&
 			parent.id.properties.every(row => row.type === 'Property' && !row.computed)) parent.id.properties.forEach(row => names.add(row.key.name ?? row.key.value));
-		else if (parent?.type === 'VariableDeclarator' && parent.init === node && parent.id.type === 'Identifier') aliases.add(parent.id.name);
+		else if (parent?.type === 'VariableDeclarator' && parent.init === node && parent.id.type === 'Identifier') {
+			const binding = lexical().bindingAt(parent.id.name, parent.id);
+			if (!binding || binding.kind !== 'const' || binding.writes.length) all = true;
+			else aliases.add(binding);
+		}
 		else if (parent?.type === 'MemberExpression' && parent.object === node) all = true;
 		else if (parent?.type === 'MemberExpression' && (parent.property === node || parent.object.name === 'globalThis')) {  }
 		else all = true;
 	});
 	if (aliases.size) walk(ast, null, (node, parent) => {
-		if (node.type !== 'Identifier' || !aliases.has(node.name)) return;
+		if (node.type !== 'Identifier' || !lexical().isReference(node) || !aliases.has(lexical().bindingAt(node.name, node))) return;
 		if (parent?.type === 'VariableDeclarator' && parent.id === node) return;
 		if (parent?.type === 'MemberExpression' && parent.object === node && !parent.computed) names.add(parent.property.name);
 		else if (parent?.type === 'MemberExpression' && parent.property === node && !parent.computed) return;
 		else if (parent?.type === 'Property' && parent.key === node && !parent.computed && !parent.shorthand) return;
-		else if (parent?.type === 'UnaryExpression' && ['!', 'typeof'].includes(parent.operator) || parent?.type === 'LogicalExpression' && parent.operator === '&&' && parent.left === node ||
-			(parent?.type === 'ConditionalExpression' || parent?.type === 'IfStatement') && parent.test === node) return;
+		else if (presence(node, parent)) return;
 		else all = true;
 	});
 	return all ? null : names;

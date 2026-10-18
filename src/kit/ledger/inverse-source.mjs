@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import {_rapierTransformSplices, _rapierHistoryEffects} from './journal-records.mjs';
+import {HistorySource} from './source.mjs';
 import {authoredPlacements} from './authored-origin.mjs';
 import {canonicalJSON} from './data.mjs';
 import {diff} from '../../packages/rapier-diff/index.mjs';
@@ -8,131 +9,6 @@ const historyFailure = reason => ({ok: false, reason});
 const historyBoundary = (source, at) => Number.isSafeInteger(at) && at >= 0 && !Object.is(at, -0) && at <= source.length &&
 	!(at > 0 && at < source.length && (source.charCodeAt(at - 1) & 0xFC00) === 0xD800 &&
 	(source.charCodeAt(at) & 0xFC00) === 0xDC00);
-
-const sourceLeaf = (text, from = 0, to = text.length) => to > from
-	? {text, from, length: to - from, height: 1} : null;
-const sourceHeight = node => node?.height || 0;
-const sourceNode = (left, right) => !left ? right : !right ? left
-	: {left, right, length: left.length + right.length, height: 1 + Math.max(left.height, right.height)};
-function sourceBalance(left, right) {
-	if (sourceHeight(left) > sourceHeight(right) + 1) {
-		if (sourceHeight(left.left) >= sourceHeight(left.right)) return sourceNode(left.left, sourceNode(left.right, right));
-		return sourceNode(sourceNode(left.left, left.right.left), sourceNode(left.right.right, right));
-	}
-	if (sourceHeight(right) > sourceHeight(left) + 1) {
-		if (sourceHeight(right.right) >= sourceHeight(right.left)) return sourceNode(sourceNode(left, right.left), right.right);
-		return sourceNode(sourceNode(left, right.left.left), sourceNode(right.left.right, right.right));
-	}
-	return sourceNode(left, right);
-}
-function sourceJoin(left, right) {
-	if (!left || !right) return left || right;
-	if (left.height > right.height + 1) return sourceBalance(left.left, sourceJoin(left.right, right));
-	if (right.height > left.height + 1) return sourceBalance(sourceJoin(left, right.left), right.right);
-	return sourceNode(left, right);
-}
-function sourceSplit(node, at) {
-	if (!node || at === 0) return [null, node];
-	if (at === node.length) return [node, null];
-	if (node.text !== undefined) return [sourceLeaf(node.text, node.from, node.from + at), sourceLeaf(node.text, node.from + at, node.from + node.length)];
-	if (at < node.left.length) {
-		const [left, right] = sourceSplit(node.left, at);
-		return [left, sourceJoin(right, node.right)];
-	}
-	const [left, right] = sourceSplit(node.right, at - node.left.length);
-	return [sourceJoin(node.left, left), right];
-}
-function* sourceParts(node, from, to) {
-	if (!node || from >= to) return;
-	if (node.text !== undefined) {
-		yield node.from + from === 0 && node.from + to === node.text.length ? node.text : node.text.slice(node.from + from, node.from + to); return;
-	}
-	if (from < node.left.length) yield* sourceParts(node.left, from, Math.min(to, node.left.length));
-	if (to > node.left.length) yield* sourceParts(node.right, Math.max(0, from - node.left.length), to - node.left.length);
-}
-function* sourceLeaves(node) {
-	if (!node) return;
-	if (node.text !== undefined) { yield node; return; }
-	yield* sourceLeaves(node.left); yield* sourceLeaves(node.right);
-}
-export class HistorySource {
-	#root;
-	constructor(text, root = sourceLeaf(text)) { this.#root = root; }
-	static fromParts(parts) {
-		const leaves = Array.from(parts, text => sourceLeaf(text)).filter(Boolean);
-		const build = (from, to) => from === to ? null : to - from === 1 ? leaves[from]
-			: sourceNode(build(from, Math.floor((from + to) / 2)), build(Math.floor((from + to) / 2), to));
-		return new HistorySource('', build(0, leaves.length));
-	}
-	get length() { return this.#root?.length || 0; }
-	charCodeAt(at) {
-		if (at < 0 || at >= this.length) return NaN;
-		let node = this.#root;
-		while (node.text === undefined) {
-			if (at < node.left.length) node = node.left;
-			else { at -= node.left.length; node = node.right; }
-		}
-		return node.text.charCodeAt(node.from + at);
-	}
-	parts(from = 0, to = this.length) { return sourceParts(this.#root, from, to); }
-	slice(from = 0, to = this.length) {
-		const root = this.#root;
-		if (!root || from >= to) return '';
-		if (root.text !== undefined) return root.from + from === 0 && root.from + to === root.text.length
-			? root.text : root.text.slice(root.from + from, root.from + to);
-		return Array.from(this.parts(from, to)).join('');
-	}
-	matches(from, text) {
-		if (from < 0 || from + text.length > this.length) return false;
-		let at = 0;
-		for (const part of this.parts(from, from + text.length)) {
-			if (!text.startsWith(part, at)) return false;
-			at += part.length;
-		}
-		return at === text.length;
-	}
-	sameParts(parts) {
-		const leaves = sourceLeaves(this.#root);
-		let leaf = leaves.next().value, offset = 0;
-		for (const text of parts) for (let at = 0; at < text.length;) {
-			if (!leaf) return false;
-			const length = Math.min(leaf.length - offset, text.length - at), from = leaf.from + offset;
-			if ((leaf.text !== text || from !== at) && leaf.text.slice(from, from + length) !== text.slice(at, at + length)) return false;
-			offset += length; at += length;
-			if (offset === leaf.length) { leaf = leaves.next().value; offset = 0; }
-		}
-		return !leaf;
-	}
-	replace(pos, length, text) {
-		const [left, rest] = sourceSplit(this.#root, pos), [, right] = sourceSplit(rest, length);
-		return new HistorySource('', sourceJoin(sourceJoin(left, sourceLeaf(text)), right));
-	}
-	before(splices) {
-		let source = this;
-		for (let index = splices.length - 1; index >= 0; index--) {
-			const row = splices[index];
-			if (!row || !Number.isSafeInteger(row.pos) || row.pos < 0 || Object.is(row.pos, -0) ||
-				typeof row.removed !== 'string' || typeof row.inserted !== 'string' ||
-				/[\uD800-\uDFFF]/u.test(row.removed) || /[\uD800-\uDFFF]/u.test(row.inserted) || !source.matches(row.pos, row.inserted)) return null;
-			source = source.replace(row.pos, row.inserted.length, row.removed);
-			if (!historyBoundary(source, row.pos) || !historyBoundary(source, row.pos + row.removed.length)) return null;
-		}
-		return source;
-	}
-	apply(splices, inverse = false) {
-		if (!Array.isArray(splices)) return null;
-		let source = this;
-		for (let index = 0; index < splices.length; index++) {
-			const row = splices[inverse ? splices.length - 1 - index : index];
-			const removed = inverse ? row?.inserted : row?.removed, inserted = inverse ? row?.removed : row?.inserted;
-			if (typeof removed !== 'string' || typeof inserted !== 'string' ||
-				/[\uD800-\uDFFF]/u.test(removed) || /[\uD800-\uDFFF]/u.test(inserted) ||
-				!historyBoundary(source, row.pos) || !historyBoundary(source, row.pos + removed.length) || !source.matches(row.pos, removed)) return null;
-			source = source.replace(row.pos, removed.length, inserted);
-		}
-		return source;
-	}
-}
 
 function minimalHistorySplice(before, after, pos = 0) {
 	let first = 0, a = before.length, b = after.length;
@@ -158,7 +34,7 @@ function historyHunks(row) {
 
 export function projectInverseSource(prepared, selected, projectedEffects, options = {}) {
 	const records = prepared.records || prepared.rows.map(({record, splices}) => record.splices === splices ? record : {...record, splices});
-	if (!records.some(record => !prepared.effects.references.get(record.transaction.id)?.length &&
+	if (!options.origins && !records.some(record => !prepared.effects.references.get(record.transaction.id)?.length &&
 		prepared.effects.active.has(record.transaction.id) !== projectedEffects.active.has(record.transaction.id)))
 		return {ok: true, splices: [], after: prepared.source, superseded: [], overlaps: []};
 	try {
@@ -417,6 +293,13 @@ export function projectInverseSource(prepared, selected, projectedEffects, optio
 			}
 		}
 		if (!new HistorySource(prepared.source).sameParts(texts(pieces))) throw Error('head');
+		if (options.origins) {
+			let at = 0;
+			return {ok: true, origins: pieces.filter(piece => piece.text).map(piece => {
+				const from = at; at += piece.text.length;
+				return [from, at, byId.get(piece.owner)?.actId ?? null];
+			})};
+		}
 		const origins = new Map();
 		let offset = 0;
 		for (const piece of pieces) if (piece.text) { origins.set(piece, offset); offset += piece.text.length; }

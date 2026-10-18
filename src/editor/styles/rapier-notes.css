@@ -66,6 +66,8 @@ div.rapier-notes-section-head{cursor:default;min-height:0;padding:var(--space-1)
 .rapier-notes-card-unread{color:var(--color-text-secondary);font:var(--text-sm) var(--font-mono)}
 .rapier-notes-card{--notes-card-bg:var(--notes-tint,var(--color-surface-2));--color-text-secondary:var(--color-text);position:absolute;top:0;left:0;box-sizing:border-box;width:var(--notes-card-w,calc((100% - var(--notes-gap)) / 2));padding:var(--space-3);background:var(--notes-card-bg);color:var(--color-text);cursor:pointer;user-select:none;-webkit-user-select:none;transform:translate3d(var(--x,0px),var(--y,0px),0);transition:transform var(--notes-spring-ms,200ms) var(--notes-spring,var(--ease-out)),box-shadow 120ms linear;touch-action:pan-y;outline:0}
 .rapier-notes-card--selected{box-shadow:inset 0 0 0 2px var(--color-text)}
+.rapier-notes-card--locked{display:flex;align-items:center;justify-content:center;min-height:72px}
+.rapier-notes-card--locked svg{width:24px;height:24px;display:block}
 .rapier-notes-card--held,.rapier-notes-card--dragging{z-index:20;transform:translate3d(var(--x,0px),var(--y,0px),0) scale(1.05)}
 .rapier-notes-card--held{transition:transform 160ms var(--ease-out),box-shadow 160ms linear}
 .rapier-notes-card--dragging{transition:none}

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 export function streamingRecordingType(mime) {
 	const parts = String(mime || '').toLowerCase().split(';').map(s => s.trim());
+	if (parts[0] === 'audio/mp4') return parts.slice(1).every(p => /^codecs\s*=\s*(?:mp4a\.40\.(?:2|5|29)|opus|"(?:mp4a\.40\.(?:2|5|29)|opus)")$/.test(p));
 	return ['audio/webm', 'audio/ogg'].includes(parts[0]) && parts.slice(1).every(p => /^codecs\s*=\s*(?:opus|"opus")$/.test(p));
 }
 const unknown = container => ({container, duration: null, completeBytes: 0, resolution: null});
@@ -180,5 +181,6 @@ export function inspectRecording(bytes, mime) {
 	const type = String(mime || '').split(';')[0].trim().toLowerCase();
 	if (type === 'audio/webm') return webm(b);
 	if (type === 'audio/ogg') return ogg(b);
+	if (type === 'audio/mp4') return unknown('mp4');
 	return unknown(null);
 }

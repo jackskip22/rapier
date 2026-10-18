@@ -144,7 +144,7 @@ const _rapierNotesSyncUi = (() => {
 	}
 	function paint() {
 		if (!visible || !body) return;
-		clearBody();
+		clearBody(); title();
 		if (message) { const p = node('p', 'export-choice__description', message); p.setAttribute('role', 'alert'); body.append(p); }
 		if (mode() === 'companion') { paintCompanion(); return; }
 		if (mode() === 'key') { paintKeyPlain(); return; }
@@ -152,24 +152,25 @@ const _rapierNotesSyncUi = (() => {
 		if (others) { paintOtherList(); return; }
 		paintStart();
 	}
+	function title() {
+		const heading = overlay?.querySelector('.settings-section__title');
+		if (heading) heading.textContent = mode() === 'start' && !others || mode() === 'key' && keyId === 'r2' ? 'cloudflare' : 'sync';
+	}
 	const comingSoon = gate => { showToast(gate.reason, 'info'); };
 	function paintStart() {
 		const gate = oauthGate();
 		choice('sign in with cloudflare', 'available soon', () => comingSoon(gate.ready ? {reason: 'cloudflare sign-in does not keep plain files yet. use a storage key.'} : gate),
 			{enabled: !acting, cloudflare: true, key: 'cloudflare'});
-		if (!environment().native) choice('other sync options', '', () => { others = true; }, {enabled: !acting, key: 'other'});
 		paragraph('your notes stay on this device.');
 		if (keyGate().ready && keyReachable('r2'))
 			choice('advanced: use a storage key', 'plain files in an r2 bucket you choose', async () => { await readKeyPlain(); keyId = 'r2'; keyDraft = {}; }, {enabled: !acting, key: 'plain-key:r2'});
-		else choice('backup', 'save all your notes to one file', async () => { close(); await _rapierNotesBackup(); }, {enabled: true});
 	}
 	function paintBack() {
 		choice('back', '', () => { providerId = null; session = null; keyId = null; others = true; }, {enabled: !acting, key: 'back'});
 	}
 	function paintOtherList() {
 		for (const id of api().OTHER_PROVIDERS) choice(labelOf(id), '', () => pickProvider(id), {enabled: !acting && !status().busy, key: 'provider:' + id});
-		for (const id of (api().KEY_PLAIN_PROVIDERS || []).filter(keyReachable)) choice(api().KEY_PLAIN_LABELS[id].toLowerCase(), 'plain files, not private', async () => { await readKeyPlain(); keyId = id; keyDraft = {}; }, {enabled: !acting && !status().busy, key: 'plain-key:' + id});
-		choice('back', '', () => { others = false; }, {enabled: !acting, key: 'back'});
+		for (const id of (api().KEY_PLAIN_PROVIDERS || []).filter(id => id !== 'r2' && keyReachable(id))) choice(api().KEY_PLAIN_LABELS[id].toLowerCase(), 'plain files, not private', async () => { await readKeyPlain(); keyId = id; keyDraft = {}; }, {enabled: !acting && !status().busy, key: 'plain-key:' + id});
 	}
 	const plainWords = run => {
 		const waiting = (run?.held?.length || 0) + (run?.pictures?.held?.length || 0);
@@ -332,7 +333,7 @@ const _rapierNotesSyncUi = (() => {
 			keyState = await keySession.status(); keyDraft = {}; await readSaved(); await _rapierNotesFolderChanged(); automatic = true; schedule(60000);
 			if (visible) message = plainWords(run);
 		}, {key: 'plain-connect'});
-		choice('back', '', () => { keyId = null; others = true; }, {enabled: !acting, key: 'back'});
+		choice('back', '', () => { others = keyId !== 'r2'; keyId = null; }, {enabled: !acting, key: 'back'});
 	}
 	function paintCompanion() {
 		if (!companion) { loading(); return; }
@@ -340,7 +341,6 @@ const _rapierNotesSyncUi = (() => {
 		if (!gate.ready) {
 			paragraph(gate.reason);
 			if (companion.listing) choice('rapier sync', 'get it from google play', openCompanion, {enabled: !acting});
-			choice('backup', 'save all your notes to one file', async () => { close(); await _rapierNotesBackup(); }, {enabled: true});
 			return;
 		}
 		if (plainKept?.provider === 'companion') {
@@ -363,12 +363,14 @@ const _rapierNotesSyncUi = (() => {
 		choice('rapier sync', 'opens rapier sync: choose a folder for plain files there', openCompanion, {enabled: true});
 	}
 	function syncBlocked() {
+		if (_rapierNotesIsLocked()) return 'notes_locked';
 		if (!plainKept) return 'notes_sync_not_configured';
 		if (plainKept.provider === 'companion') return companionSeam() ? '' : 'notes_sync_not_configured';
 		if (keyProvider(plainKept.provider)) return keyState?.connection && keyState.keyHeld ? '' : 'notes_sync_locked';
 		return session?.status().authorized && session.status().hasConnection ? '' : 'notes_sync_sign_in_required';
 	}
 	async function runSync(guard = () => {}) {
+		if (_rapierNotesIsLocked()) throw Object.assign(new Error('Locked notes cannot sync.'), {code: 'notes_locked', notesSyncStarted: false});
 		syncing = true;
 		try {
 			await flush();
@@ -383,6 +385,7 @@ const _rapierNotesSyncUi = (() => {
 		finally { syncing = false; wearBox(); }
 	}
 	async function syncNow({signal, guard} = {}) {
+		if (_rapierNotesIsLocked()) return {action: 'now', synced: false, reason: 'notes_locked', message: 'Locked notes cannot sync.'};
 		let submitted = false;
 		const stopped = () => { if (signal?.aborted) throw new DOMException('The sync request was canceled.', 'AbortError'); guard?.(); };
 		const refused = reason => ({action: 'now', synced: false, reason});
@@ -431,7 +434,8 @@ const _rapierNotesSyncUi = (() => {
 	document.addEventListener('visibilitychange', () => {
 		if (!document.hidden && visible && mode() === 'companion' && companion) void perform(askCompanion, false);
 	});
-	function open({initialize = true} = {}) {
+	function open({initialize = true, others: atOthers = false} = {}) {
+		if (_rapierNotesIsLocked()) return;
 		if (!overlay) {
 			overlay = document.getElementById('notes-sync-overlay');
 			if (!overlay) return;
@@ -440,6 +444,7 @@ const _rapierNotesSyncUi = (() => {
 			overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
 		}
 		visible = true; const screen = ++view;
+		if (atOthers && !environment().native) others = true;
 		if (mode() === 'companion') companion = null;
 		if (initialize) void perform(async () => {
 			await readSaved();

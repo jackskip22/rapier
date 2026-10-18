@@ -382,6 +382,27 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 		return Object.freeze({
 			rootId: savedRoot,
 			read: savedRead,
+			reuseText() {
+				if (length !== savedLength) return false;
+				let left = 0, right = 0, leftOffset = 0, rightOffset = 0;
+				while (left < pieces.length && right < savedPieces.length) {
+					const a = pieces[left], b = savedPieces[right];
+					const count = Math.min(a.length - leftOffset, b.length - rightOffset);
+					const aText = buffers[a.buffer], bText = savedBuffers[b.buffer];
+					const aStart = a.start + leftOffset, bStart = b.start + rightOffset;
+					if (!(aText === bText && aStart === bStart) &&
+							aText.slice(aStart, aStart + count) !== bText.slice(bStart, bStart + count)) return false;
+					leftOffset += count; rightOffset += count;
+					if (leftOffset === a.length) { left++; leftOffset = 0; }
+					if (rightOffset === b.length) { right++; rightOffset = 0; }
+				}
+				if (savedText != null) cached = savedText;
+				if (savedIntegrityValue != null) {
+					cachedIntegrityValue = savedIntegrityValue;
+					cachedIntegrityKey = cacheKey;
+				}
+				return true;
+			},
 
 			integrity() {
 				if (savedIntegrityValue == null) savedIntegrityValue = textIntegrity(savedRead());

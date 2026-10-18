@@ -130,7 +130,7 @@ export function scriptMinifier(sources, keepsComment) {
     }
     tree = null;
     before.clear();
-    const {code, ast} = ['rapier-shared.js', 'rapier-editor.js'].includes(filename) || /^rapier-part-[a-z]+-shared\.js$/.test(filename)
+    const {code, ast} = ['rapier-shared.js', 'rapier-editor.js', 'rapier-loader.js'].includes(filename) || /^rapier-part-[a-z]+-shared\.js$/.test(filename)
       ? await compileProgram(source, localNames, format, options)
       : await minify(source, {
       compress: {reduce_vars: false, reduce_funcs: false, collapse_vars: false, inline: false, hoist_funs: false, hoist_vars: false, unused: false, keep_fnames: true, keep_classnames: true},

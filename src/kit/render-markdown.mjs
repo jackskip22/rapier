@@ -121,9 +121,10 @@ function initMarkdownIt() {
 		const alt = suffix && semanticAlt.endsWith(suffix) ? semanticAlt.slice(0, -suffix.length) : semanticAlt;
 		const layout = token.meta?.mdLayout?.imageOnly ? token.meta.mdLayout.marker : '';
 		const asset = globalThis.RapierImageAssets.dataImage(src), reference = token.meta?.mdImage?.reference;
+		const originalRelative = globalThis.RapierPlatform?.files.relativeCandidate?.(src) || globalThis.RapierSiblingPictures?.has(src);
 		if (!env.rapierPage && typeof globalThis.RapierEmbeddedImages?.imageHtml === 'function' &&
-			(_rapierEmbedAssetSource?.(src) || asset && (reference || asset.codec === 'image/jxl' || asset.codec === 'image/gif' || asset.codec === 'image/svg+xml'))) return globalThis.RapierEmbeddedImages.imageHtml(
-			reference, alt, title, size, layout, rawAlt, token.meta?.mdImage?.source, src, env.rapierImagePresentation !== false);
+			(originalRelative || _rapierEmbedAssetSource?.(src) || asset && (reference || asset.codec === 'image/jxl' || asset.codec === 'image/gif' || asset.codec === 'image/svg+xml'))) return globalThis.RapierEmbeddedImages.imageHtml(
+			originalRelative ? null : reference, alt, title, size, layout, rawAlt, token.meta?.mdImage?.source, src, env.rapierImagePresentation !== false);
 		const drawingAlt = typeof rawAlt === 'string' && alt === '' && asset?.codec === 'image/svg+xml' ? globalThis.RapierImageAssets.drawingImageAlt(src) : null;
 		const shownAlt = drawingAlt ?? alt;
 		let loadable = false;
@@ -901,14 +902,14 @@ function* _rapierDecorateJumpListsSteps(root) {
 		if (isWayfinder) {
 			list.classList.add('rapier-jump-list');
 			const label = list.previousElementSibling;
-			if (label && /^jump\s+to:?$/i.test(String(label.textContent || '').trim())) {
+			if (label && /^(?:jump\s+to|contents|table\s+of\s+contents):?$/i.test(String(label.textContent || '').trim())) {
 				label.classList.add('rapier-jump-label');
 			}
 		}
 	}
 
 	const first = root.firstElementChild, only = first && !first.nextElementSibling ? first : null;
-	if (only && only.tagName === 'P' && /^jump\s+to:?$/i.test(String(only.textContent || '').trim())) {
+	if (only && only.tagName === 'P' && /^(?:jump\s+to|contents|table\s+of\s+contents):?$/i.test(String(only.textContent || '').trim())) {
 		only.classList.add('rapier-jump-label-candidate');
 	}
 }
@@ -1176,7 +1177,7 @@ function* _rapierProjectPortableNodesSteps(semanticRoot, options) {
 		math.replaceWith(code);
 	}
 
-	yield* _rapierFlattenPortableDetailsSteps(root);
+	if (!keepLayoutData) yield* _rapierFlattenPortableDetailsSteps(root);
 
 	for (const section of root.querySelectorAll('section.footnotes')) { yield;
 		for (const node of section.querySelectorAll('.footnotes-sep')) { yield;node.remove();}
@@ -1227,8 +1228,10 @@ function* _rapierProjectPortableNodesSteps(semanticRoot, options) {
 
 		const typed = globalThis.RapierMarkdownSpec.typography, typography = typed.nodeStyle(element);
 
+		if (keepLayoutData && element.tagName === 'MARK' && !element.style.backgroundColor && !element.hasAttribute('data-rapier-highlight'))
+			element.setAttribute('data-rapier-highlight', 'default');
 		const highlightHex = element.tagName === 'MARK'
-			? (RAPIER_PORTABLE_HIGHLIGHT_HEX[String(element.getAttribute('data-rapier-highlight') || '').toLowerCase()] || RAPIER_PORTABLE_HIGHLIGHT_HEX.yellow)
+			? (element.style.backgroundColor || RAPIER_PORTABLE_HIGHLIGHT_HEX[String(element.getAttribute('data-rapier-highlight') || '').toLowerCase()] || RAPIER_PORTABLE_HIGHLIGHT_HEX.yellow)
 			: null;
 
 		const isTableCaption = element.tagName === 'P' && element.classList.contains('rapier-table-caption');

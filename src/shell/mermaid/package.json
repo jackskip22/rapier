@@ -5,6 +5,7 @@
   "dependencies": {
     "@zenuml/core": "4.5.0",
     "antlr4": "4.11.0",
-    "esbuild": "0.28.2"
+    "esbuild": "0.28.2",
+    "pele": "1.6.0"
   }
 }

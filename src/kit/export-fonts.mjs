@@ -368,6 +368,13 @@ export function fontRequests(root, options = {}) {
     stretch: record.properties['font-stretch'] || '100%'}));
 }
 
+export function pdfFontSources(css) {
+  return fontFaces(css).map(face => ({family: unquote(face.properties['font-family']),
+    style: face.properties['font-style'] || 'normal',
+    weight: face.properties['font-weight'] || '400',
+    data: face.source.slice(face.source.indexOf(',') + 1)}));
+}
+
 export async function waitForFontRequests(doc, requests) {
   if (!requests?.length) return;
   const family = value => String(value).trim().replace(/^(['"])([\s\S]*)\1$/, '$2').replace(/\\(?:([\da-f]{1,6})\s?|([^\r\n\f]))/gi,

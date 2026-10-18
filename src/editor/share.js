@@ -13,7 +13,10 @@ function _rapierPortableRequiredPlugins(source, options = {}) {
     for (const token of tokens || []) {
       if (token.type === 'math_inline' || token.type === 'math_block') required.add('math');
       else if (token.type === 'fence' && token.info.trim().split(/\s+/)[0].toLowerCase() === 'mermaid' &&
-        globalThis.RapierFlowchart?.parseFlowchart(token.content).ok !== true) required.add('mermaid');
+        globalThis.RapierFlowchart?.parseFlowchart(token.content).ok !== true) {
+        required.add('mermaid');
+        if (globalThis.RapierPluginLoader?.zenumlSource(token.content) != null) required.add('mermaid-zenuml');
+      }
       else if (token.type === 'image') {
         const url = token.attrGet('src');
         if (assets.dataImage(url)?.codec === 'image/svg+xml') drawing(new TextDecoder('utf-8', {fatal: true}).decode(assets.decodeDataImageBytes(url).bytes));
@@ -92,18 +95,19 @@ const _RAPIER_PORTABLE_CHOICES = [{id: 'drawing', label: 'Draw'}, {id: 'math', l
 
 async function _rapierPortableChoices(source, options = {}) {
   const {head, first} = globalThis.RapierPortableShell;
-  for (const id of ['rapier-platform-runtime', 'rapier-codec-runtime', 'rapier-jxl-worker', 'rapier-styles-runtime', 'rapier-style-rest-runtime', 'rapier-ui-runtime', 'rapier-editor-runtime']) {
+  for (const id of ['rapier-platform-runtime', 'rapier-codec-runtime', 'rapier-jxl-worker', 'rapier-styles-runtime', 'rapier-editor-runtime']) {
     await _rapierWhenRuntime(id);
   }
   await _rapierWhenRuntime('lib-acorn');
   const manifest = document.getElementById('rapier-builtin-plugins'), groups = manifest ? JSON.parse(manifest.textContent) : [];
   const optional = new Set(['rapier-builtin-plugins', ...groups.map(group => group.element)]);
   const payloads = Array.from(document.querySelectorAll('script')).filter(row =>
-    _RAPIER_PORTABLE_PAYLOAD_TYPES.has(row.type) && row.id !== 'rapier-apps-runtime' && row.parentNode !== document.head &&
+    _RAPIER_PORTABLE_PAYLOAD_TYPES.has(row.type) && row.id !== 'rapier-apps-runtime' && row.id !== 'rapier-first-paint-runtime' && row.parentNode !== document.head &&
     !optional.has(row.id) && !/^rapier-(?:part|plugin)-/.test(row.id));
   const required = _rapierPortableRequiredPlugins(source, options);
   const used = new Set([...required].map(key => key.startsWith('letters-') ? 'drawing' : key));
   for (const id of options.also || []) used.add(id);
+  if (used.has('mermaid') && groups.some(group => group.id === 'mermaid-zenuml')) used.add('mermaid-zenuml');
   const keys = [...used].filter(id => id !== 'drawing').concat(used.has('drawing') ? ['letters'] : []);
   const plugins = groups.length ? await RapierBundledPlugins.portable(keys) : {groups: [], bodies: new Map()};
   const rest = keys.filter(id => !plugins.bodies.has(id));
@@ -112,6 +116,8 @@ async function _rapierPortableChoices(source, options = {}) {
     plugins.groups.push(...packed.groups);
     for (const [id, body] of packed.bodies) plugins.bodies.set(id, body);
   }
+  if (required.has('mermaid-zenuml') && !plugins.groups.some(group => group.id === 'mermaid-zenuml'))
+    throw Object.assign(new Error('Offline editor not written; install the diagram plug-in before exporting this document.'), {code: 'offline_plugin_unavailable', plugin: 'mermaid-zenuml'});
   const choices = [];
   for (const choice of _RAPIER_PORTABLE_CHOICES) {
     if (!used.has(choice.id)) continue;
@@ -121,7 +127,7 @@ async function _rapierPortableChoices(source, options = {}) {
       try { html = await RapierParts.element('drawing'); }
       catch (cause) { if (options.also?.includes('drawing')) throw Object.assign(new Error('Offline editor not written; open Draw once while connected, then save again.', {cause}), {code: 'offline_part_unavailable', part: 'drawing'}); continue; }
     }
-    const carried = plugins.groups.filter(group => group.id === choice.id || choice.id === 'drawing' && group.id === 'letters');
+    const carried = plugins.groups.filter(group => group.id === choice.id || choice.id === 'mermaid' && group.id === 'mermaid-zenuml' || choice.id === 'drawing' && group.id === 'letters');
     if (choice.id !== 'drawing' && !carried.length) continue;
     choices.push({...choice, html: html || '', needed: choice.id !== 'drawing' && required.has(choice.id), groups: carried});
   }

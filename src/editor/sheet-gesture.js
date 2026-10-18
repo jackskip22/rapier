@@ -4,7 +4,7 @@ const _rapierSheetGesture = Object.seal({
 	mode: '', input: '', touchId: null, pointerId: null,
 	startX: 0, startY: 0, startTime: 0, axis: null,
 	overlay: null, panel: null, plane: 'x', anchor: 'edge',
-	offset: 0, width: 360, active: false, settling: false,
+	offset: 0, width: 360, active: false, settling: false, prepared: false,
 	timer: 0, suppressClickUntil: 0,
 });
 
@@ -84,6 +84,17 @@ function _rapierSheetGestureReset() {
 	_rapierSheetGesture.panel = null;
 	_rapierSheetGesture.plane = 'x';
 	_rapierSheetGesture.anchor = 'edge';
+	_rapierSheetGesture.prepared = false;
+}
+
+function _rapierSheetGesturePrepare() {
+	if (_rapierSheetGesture.mode !== 'opening' || _rapierSheetGesture.prepared) return;
+	const host = _rapierSheetGesture.host;
+	_rapierSheetGesture.prepared = true;
+	renderSheetDrag(_rapierSheetGesture.width, 0);
+	host.prepareOpen();
+	_rapierUiRaise(host.settings().overlay);
+	renderEdgeSwipe();
 }
 
 function _rapierSheetGestureBegin(mode, x, y, id, input, target, sheet) {
@@ -114,13 +125,7 @@ function _rapierSheetGestureBegin(mode, x, y, id, input, target, sheet) {
 	_rapierSheetGesture.axis = null;
 	_rapierSheetGesture.width = _rapierSheetExtent();
 	_rapierSheetGesture.active = true;
-	if (mode === 'opening') {
-
-		renderSheetDrag(_rapierSheetGesture.width, 0);
-		host.prepareOpen();
-		_rapierUiRaise(settings.overlay);
-		renderEdgeSwipe();
-	}
+	_rapierSheetGesture.prepared = false;
 	return true;
 }
 
@@ -139,6 +144,7 @@ function _rapierSheetGestureMove(x, y, event) {
 		if (direction <= 0) { _rapierSheetGesture.axis = 'wrong-way'; _rapierSheetGestureAbandon(); return; }
 		_rapierSheetGesture.axis = 'along';
 		_rapierSheetGesture.suppressClickUntil = _rapierNow() + 420;
+		_rapierSheetGesturePrepare();
 	}
 	if (_rapierSheetGesture.axis !== 'along') return;
 	if (event && event.cancelable) event.preventDefault();
@@ -157,7 +163,7 @@ function _rapierSheetGestureEnd(x, y, event, cancelled) {
 	const travelling = _rapierSheetGesture.axis === 'along' && Math.abs(along) >= Math.abs(across) * 1.04;
 
 	if (!travelling) {
-		if (mode === 'opening') _rapierSheetGesture.host.setSettingsOpen(false, 'dismiss');
+		if (mode === 'opening' && _rapierSheetGesture.prepared) _rapierSheetGesture.host.setSettingsOpen(false, 'dismiss');
 		renderSheetDrag(null);
 		_rapierSheetGestureReset();
 		renderEdgeSwipe();
@@ -197,7 +203,7 @@ function _rapierSheetGestureSettle(targetOpen) {
 
 function _rapierSheetGestureAbandon() {
 	if (!_rapierSheetGesture.active) return;
-	if (_rapierSheetGesture.mode === 'opening') _rapierSheetGesture.host.setSettingsOpen(false, 'dismiss');
+	if (_rapierSheetGesture.mode === 'opening' && _rapierSheetGesture.prepared) _rapierSheetGesture.host.setSettingsOpen(false, 'dismiss');
 	_rapierSheetGesture.active = false;
 	renderSheetDrag(null);
 	_rapierSheetGestureReset();
@@ -207,7 +213,7 @@ function _rapierSheetGestureAbandon() {
 function _rapierSheetGestureFinishWithoutPoint(cancelled) {
 	if (!_rapierSheetGesture.active) return;
 	if (_rapierSheetGesture.axis !== 'along') {
-		if (_rapierSheetGesture.mode === 'opening') _rapierSheetGesture.host.setSettingsOpen(false, 'dismiss');
+		if (_rapierSheetGesture.mode === 'opening' && _rapierSheetGesture.prepared) _rapierSheetGesture.host.setSettingsOpen(false, 'dismiss');
 		renderSheetDrag(null);
 		_rapierSheetGestureReset();
 		renderEdgeSwipe();

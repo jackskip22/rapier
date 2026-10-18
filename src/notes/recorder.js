@@ -148,6 +148,7 @@ function _rapierRecorderRender() {
 	else if (had || !sheet.contains(document.activeElement)) (s.primary.disabled ? sheet.querySelector('button:not([disabled])') : s.primary)?.focus();
 }
 function _rapierRecorderReleaseMic(d) {
+	d.releaseLifetime?.();
 	clearInterval(d.timer); d.timer = 0; _rapierRecorderMeterStop(d);
 	for (const track of d.stream?.getTracks() || []) track.stop(); d.stream = null;
 }
@@ -186,14 +187,50 @@ function _rapierRecorderMeterStop(d) {
 	try { void meter.context.close().catch(() => {}); } catch (_) {}
 }
 function _rapierRecorderElapsed(d) { return (d.elapsed || 0) + (d.phase === 'recording' && d.started ? performance.now() - d.started : 0); }
-function _rapierRecorderPause(on) {
+function _rapierRecorderPause(on, automatic = false) {
 	const R = _rapierRecorder, d = R.draft;
 	if (!d?.recorder || d.phase !== (on ? 'recording' : 'paused')) return;
+	if (!automatic) d.mutedPause = false;
 	try {
-		if (on) { d.recorder.pause(); d.elapsed = _rapierRecorderElapsed(d); d.phase = 'paused'; }
+		if (on) { d.recorder.pause(); d.elapsed = _rapierRecorderElapsed(d); d.phase = 'paused'; d.flushRecording?.(); }
 		else { d.recorder.resume(); d.started = performance.now(); d.phase = 'recording'; }
 	} catch (_) {  }
+	d.refreshWakeLock?.();
 	_rapierRecorderRender();
+}
+function _rapierRecorderLifetime(d) {
+	const listeners = [], tracks = d.stream.getAudioTracks(); let ended = false, wake = null, pending = null, generation = 0;
+	const active = () => !ended && _rapierRecorder.draft === d && ['recording', 'paused'].includes(d.phase);
+	const listen = (target, name, fn) => { target?.addEventListener?.(name, fn); listeners.push(() => target?.removeEventListener?.(name, fn)); };
+	const releaseWake = () => { generation++; const held = wake; wake = null; if (held) void held.release().catch(() => {}); };
+	const refreshWake = d.refreshWakeLock = () => {
+		if (!active() || d.phase !== 'recording' || document.visibilityState === 'hidden') { releaseWake(); return; }
+		if (wake || pending || typeof navigator.wakeLock?.request !== 'function') return;
+		const token = generation;
+		pending = Promise.resolve().then(() => navigator.wakeLock.request('screen')).then(async lock => {
+			if (token !== generation || !active() || d.phase !== 'recording' || document.visibilityState === 'hidden') { await lock.release(); return; }
+			wake = lock; lock.addEventListener('release', () => { if (wake === lock) wake = null; }, {once: true});
+		}).catch(() => {}).finally(() => { pending = null; if (token !== generation) refreshWake(); });
+	};
+	const flush = d.flushRecording = () => { if (active() && d.recorder.state !== 'inactive') try { d.recorder.requestData?.(); } catch (_) {} };
+	listen(document, 'visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); refreshWake(); });
+	listen(globalThis, 'pagehide', () => { if (!active()) return; flush(); _rapierRecorderStop(); releaseWake(); });
+	for (const track of tracks) {
+		listen(track, 'mute', () => {
+			if (!active()) return; flush();
+			if (d.phase === 'recording') { _rapierRecorderPause(true, true); d.mutedPause = d.phase === 'paused'; }
+		});
+		listen(track, 'unmute', () => {
+			if (!active() || !d.mutedPause || tracks.some(value => value.muted)) return;
+			d.mutedPause = false; _rapierRecorderPause(false, true);
+		});
+	}
+	d.releaseLifetime = () => {
+		if (ended) return; ended = true; for (const remove of listeners) remove(); releaseWake();
+		d.releaseLifetime = d.refreshWakeLock = d.flushRecording = null;
+	};
+	if (tracks.some(track => track.muted)) { _rapierRecorderPause(true, true); d.mutedPause = d.phase === 'paused'; }
+	refreshWake();
 }
 async function _rapierRecorderStart() {
 	const R = _rapierRecorder, d = R.draft;
@@ -206,12 +243,12 @@ async function _rapierRecorderStart() {
 		if (R.draft !== d || d.phase !== 'requesting') { for (const t of stream.getTracks()) t.stop(); return; }
 		d.stream = stream;
 		const recorder = d.recorder = new MediaRecorder(stream, {mimeType: mime});
-		d.mime = recorder.mimeType || mime; d.completed = false; d.bitrate = recorder.audioBitsPerSecond;
+		d.mime = recorder.mimeType || mime; d.completed = false; d.captureFault = false; d.mutedPause = false; d.bitrate = recorder.audioBitsPerSecond;
 		try { d.session = await _rapierNotesStore.beginRecording(d.note, d.mime); }
 		catch (error) { d.session = null; d.custody = String(error?.message || error); }
 		if (R.draft !== d || d.phase !== 'requesting') { for (const t of stream.getTracks()) t.stop(); await _rapierRecorderDropSession(d, {abandon: true}); return; }
 		recorder.ondataavailable = e => { if (!e.data?.size || d.discarded) return; if (d.session && !d.streamFault) _rapierRecorderAppend(d, e.data); else d.chunks.push(e.data); };
-		recorder.onerror = e => { d.fault = 'The microphone stopped unexpectedly. Keep the audio captured so far or save its file.'; showToast(d.fault, 'error'); _rapierRecorderStop(); };
+		recorder.onerror = e => { d.captureFault = true; d.fault = 'The microphone stopped unexpectedly. Keep the audio captured so far or save its file.'; showToast(d.fault, 'error'); _rapierRecorderStop(); };
 		recorder.onstop = () => {
 			if (d.completed) return; d.completed = true;
 			if (d.discarded) return;
@@ -221,6 +258,7 @@ async function _rapierRecorderStart() {
 		};
 		for (const track of stream.getAudioTracks()) track.addEventListener('ended', () => { if (d.phase === 'recording' || d.phase === 'paused') { d.fault = 'The microphone disconnected. Keep the audio captured so far.'; _rapierRecorderStop(); } }, {once: true});
 		recorder.start(1000); d.started = performance.now(); d.elapsed = 0; d.duration = 0; d.phase = 'recording';
+		_rapierRecorderLifetime(d);
 		_rapierRecorderMeter(d);
 		d.timer = setInterval(() => { if (R.draft === d && d.phase === 'recording' && R.parts) { R.parts.name.textContent = _rapierRecorderModel().durationWords(_rapierRecorderElapsed(d) / 1000); _rapierRecorderStampWords(d); } }, 250);
 		_rapierRecorderRender();
@@ -259,7 +297,7 @@ async function _rapierRecorderConclude(d, type) {
 			d.phase = 'idle'; d.fault = 'No sound was recorded.'; render(); return;
 		}
 		try {
-			d.entry = await session.finish(d.duration); d.session = null;
+			d.entry = await session.finish(d.duration, {stopped: d.completed && !d.captureFault}); d.session = null;
 			d.name = d.entry.name; d.phase = 'review'; render(); return;
 		} catch (error) {
 			d.session = null; d.phase = 'idle';
@@ -287,7 +325,7 @@ function _rapierRecorderStop() {
 	if (!d || d.phase !== 'recording' && d.phase !== 'paused') return;
 	d.duration = Math.max(1, Math.round(_rapierRecorderElapsed(d) / 1000)); d.phase = 'stopping'; clearInterval(d.timer);
 	try { if (d.recorder.state !== 'inactive') d.recorder.stop(); }
-	catch (error) { d.fault = 'The recorder could not finish: ' + String(error?.message || error); d.recorder.onstop?.(); }
+	catch (error) { d.captureFault = true; d.fault = 'The recorder could not finish: ' + String(error?.message || error); d.recorder.onstop?.(); }
 	_rapierRecorderReleaseMic(d); _rapierRecorderRender();
 }
 async function _rapierRecorderDiscardLive() {

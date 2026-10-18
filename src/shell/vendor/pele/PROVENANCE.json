@@ -1,0 +1,14 @@
+{
+  "package": "pele",
+  "version": "1.6.0",
+  "source": "https://github.com/obsidianmd/pele",
+  "path": "dist/pele.global.js",
+  "tarball": "https://registry.npmjs.org/pele/-/pele-1.6.0.tgz",
+  "integrity": "sha512-VfAiVItsOGlGhvnBfphdT28VCG7mXMZxQNOwAGsCtxI2ztbUsT39MraEOYjsapLxVETkdUZscm0DdotYDQMLdw==",
+  "license": "MIT",
+  "npmLockSha256": "52056ea8d3d5974d6e70a86d6087d5043a7b703912453c14747bb692660efb3e",
+  "bytes": 682005,
+  "sha256": "b82d1bcd435302779a945e1e0f4a54ea56fb26e010ce3f2122f4216fcfc095d7",
+  "sha384": "4lHoXtKDt+x/E+htiTc83bpFWyREQzJCMudNQHirqKiCTW7Mx790I/5Q7criNZ1G",
+  "noticesSha256": "311bccc30de6f7b9cbfb64232bb0c911ccb2191abe316550813ae25b2c7925b9"
+}

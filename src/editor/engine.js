@@ -94,6 +94,7 @@ async function _rapierConfirmDirtyTransition(options = {}) {
 function _rapierProFeatures() {
 	return Object.freeze([
 		['widget', 'Home-screen widget'], ['icon', 'App icon color'],
+		['lockedNotes', 'Device-only locked notes'],
 		['defaultDocumentFont', 'Default document font'],
 		['presets', 'Personal starters, passages and styles'],
 		['video', 'Time-lapse video'], ['pigments', 'Specialty pigments'], ['papers', 'More papers'], ['palettes', 'Saved palettes'], ['trace', 'Watercolor tracing'],
@@ -744,7 +745,17 @@ function _rapierApplyReferenceIndex(index) {
 	if (rapier.semantic.referenceDelta.changed) rapier.semantic.referenceRevision++;
 	return rapier.semantic.referenceRevision;
 }
-function rebuildReferenceIndex(blocks) {
+function rebuildReferenceIndex(blocks, before = null, after = null) {
+	const ordinary = rows => Array.isArray(rows) && rows.every(row => {
+		const raw = String(row?.raw ?? '');
+		return !/[\r\n\[<\\>]/.test(raw) && !/^\s/.test(raw) &&
+			!/^([-+*]|\d+[.)])\s|^(`{3,}|~{3,})/.test(raw) &&
+			(row.leading == null || /^\n{2,}$/.test(String(row.leading).replace(/\r\n?/g, '\n')));
+	});
+	if (ordinary(before) && ordinary(after)) {
+		rapier.semantic.referenceDelta = _rapierReferenceIndexDelta(rapier.semantic.references, rapier.semantic.references);
+		return false;
+	}
 	const previous = rapier.semantic.referenceRevision;
 	return previous !== _rapierApplyReferenceIndex(_rapierBuildReferenceIndex(blocks));
 }
@@ -771,7 +782,7 @@ function renderDisplayMathBlock(raw) {
 const _rapierRemoteContent = Object.seal({ allowed: false });
 const _rapierReadProjectionRuntime = Object.seal({
 	policy: null, renderState: null,
-	navigationCache: new WeakMap(), navigationBindings: new WeakMap(),
+	navigationCache: new WeakMap(), navigationDOM: null,
 	navigationState: null, navigationPlan: null,
 	diagramCache: new Map(), diagramChars: 0, diagramState: null, diagramObserver: null,
 	evictedFacts: new WeakMap(), anchorOriginalIds: new WeakMap(), fontLoads: -1,
@@ -4622,7 +4633,7 @@ function _rapierApplyDiagramSvg(host, svg, native = false) {
 		return {hex, alpha: rgb.a, dark: rgb.a === 1 ? dark : 'rgba(' + channels.join(', ') + ', ' + rgb.a + ')',
 			ink: _rapierContrastRatio(ground, '#000000') >= _rapierContrastRatio(ground, '#ffffff') ? '#000000' : '#ffffff'};
 	};
-	const nodeSelector = '.node,.cluster,.c4-shape,.participant,g.treemapNode,g.treemapSection';
+	const nodeSelector = '.node,.cluster,.pele-node,.pele-cluster,.c4-shape,.participant,g.treemapNode,g.treemapSection';
 	const filledNodes = new Map();
 	for (const [element, properties] of winners) {
 		const svg = element.closest('svg');
@@ -5149,15 +5160,16 @@ function _beginBlockDOMSplice(startIndex, oldCount) {
 	removed.forEach(_rapierRemoveBlockWrapper);
 	const ref = _blockWrapperChildren(container)[startIndex] || null;
 	if (ref && ref.parentElement !== container) _rapierUnpackSleepGroup(ref.parentElement);
-	return { container, ref, removedIds };
+	return { container, ref, removedIds, startIndex, oldCount };
 }
 
 function _rapierBlockSpliceScope(splices) {
-	const scope = { blocks: [], inserted: [], removedIds: [], edges: [] };
+	const scope = { blocks: [], inserted: [], removedIds: [], edges: [], ranges: [] };
 	for (const { splice, wrappers, blocks } of splices) {
 		scope.blocks.push(...blocks);
 		scope.inserted.push(...wrappers);
 		scope.removedIds.push(...splice.removedIds);
+		scope.ranges.push({startIndex: splice.startIndex, oldCount: splice.oldCount, blocks, removedIds: splice.removedIds});
 		const first = wrappers[0] || splice.ref;
 		const edge = first ? _rapierAdjacentBlockWrapper(first, -1) : _blockWrapperChildren(splice.container).at(-1);
 		if (edge) scope.edges.push(edge);
@@ -5231,6 +5243,7 @@ function _updateBlockInteractiveState(wrapper, readDiv) {
 	const hasInteractive = !tableBlock && hasNativeControl;
 	wrapper.classList.toggle('block-wrapper--interactive', hasInteractive);
 	wrapper.classList.toggle('block-wrapper--image', hasImage);
+	_rapierSyncSectionFoldControl(wrapper, readDiv);
 	_rapierReadBlockRhythm(wrapper, readDiv);
 }
 
@@ -6524,7 +6537,7 @@ function _rapierInitBlockInteractionRouter() {
 		host._rapierGapPress = null;
 		if (!readDiv) {
 			const near = gapPress(event);
-			if (near) { host._rapierBlankPress = null; host._rapierGapPress = { near, x: event.clientX, y: event.clientY, scrollTop: host.scrollTop }; }
+			if (near) { host._rapierBlankPress = null; host._rapierGapPress = { near, x: event.clientX, y: event.clientY, scrollTop: host.scrollTop, touch: event.pointerType !== 'mouse' }; }
 			return;
 		}
 		if (!wrapper || !host.contains(wrapper)) return;
@@ -6532,6 +6545,7 @@ function _rapierInitBlockInteractionRouter() {
 		if (active && active.wrapper === wrapper) _rapierCheckpointEdit(active.editDiv);
 		wrapper._rapierPointerDownX = event.clientX;
 		wrapper._rapierPointerDownY = event.clientY;
+		wrapper._rapierPointerDownTouch = event.pointerType !== 'mouse';
 		let selectionActive = false;
 		try {
 			const nativeSelection = window.getSelection && window.getSelection();
@@ -6621,6 +6635,9 @@ function _rapierInitBlockInteractionRouter() {
 				_rapierSelectImage(editBlock, editImage);
 				return;
 			}
+			const editIsle = event.target.closest?.('.math-rendered[data-math-src]');
+			const editDiv = editIsle?.closest('.block-edit');
+			if (editIsle && editWrapper && editDiv) _rapierOpenMathIslandByTap(editWrapper, [...editDiv.querySelectorAll('.math-rendered[data-math-src]')].indexOf(editIsle));
 
 			return;
 		}
@@ -6641,7 +6658,7 @@ function _rapierInitBlockInteractionRouter() {
 		}
 		if (!readDiv && gap && gap.near.wrapper.isConnected) {
 			const gdx = upX - gap.x, gdy = upY - gap.y;
-			if (gdx * gdx + gdy * gdy > 25 || Math.abs(host.scrollTop - gap.scrollTop) > 1) return;
+			if (gdx * gdx + gdy * gdy > (gap.touch ? 100 : 25) || Math.abs(host.scrollTop - gap.scrollTop) > 1) return;
 			const live = window.getSelection && window.getSelection();
 			if (live && !live.isCollapsed && live.rangeCount && _rangeIntersectsEditor(live.getRangeAt(0))) return;
 			const { near } = gap;
@@ -6674,7 +6691,7 @@ function _rapierInitBlockInteractionRouter() {
 		const dy = upY - Number(wrapper._rapierPointerDownY || upY);
 		const tapStartScroll = Number(wrapper._rapierEditTap?.scrollTop);
 
-		const rejectedByMotion = dx * dx + dy * dy > 25 ||
+		const rejectedByMotion = dx * dx + dy * dy > (wrapper._rapierPointerDownTouch ? 100 : 25) ||
 			(Number.isFinite(tapStartScroll) && Math.abs(host.scrollTop - tapStartScroll) > 1 &&
 				wrapper._rapierEditTap?.writes === _rapierViewportWrites);
 		if (rejectedByMotion) {
@@ -6800,7 +6817,7 @@ function _rapierInitBlockInteractionRouter() {
 				} else {
 					event.preventDefault();
 					event.stopPropagation();
-					if (!_rapierOpenExternalLink(href, link.textContent) && !_rapierNotesPart?.followLink(href)) showToast('this link can’t open here', 'info');
+					if (!_rapierNotesPart?.followLink(href) && !_rapierOpenExternalLink(href, link.textContent)) showToast('this link can’t open here', 'info');
 				}
 				return;
 			}
@@ -6833,6 +6850,8 @@ function _rapierInitBlockInteractionRouter() {
 
 		const rawEditor = _blockUsesRawEditor(block.raw);
 		const liveRange = rawEditor ? null : _rapierCaretRangeFromPoint(upX, upY);
+		const mathIsle = pressed?.closest?.('.math-rendered[data-math-src]');
+		const mathOrdinal = mathIsle && readDiv.contains(mathIsle) ? [...readDiv.querySelectorAll('.math-rendered[data-math-src]')].indexOf(mathIsle) : -1;
 		enterBlockEdit(block, wrapper, {
 			liveRange,
 			tableCell: _rapierTableCellActivation(readDiv, event.target, event.clientX, event.clientY),
@@ -6844,6 +6863,7 @@ function _rapierInitBlockInteractionRouter() {
 			preserveScroll: true,
 			scrollTop: host.scrollTop,
 		});
+		if (mathOrdinal >= 0) _rapierOpenMathIslandByTap(wrapper, mathOrdinal);
 	});
 
 	host.addEventListener('keydown', _rapierSectionMoveKey);
@@ -6962,7 +6982,6 @@ function _rapierFillBlockEl(wrapper, block, projection = null) {
 	const readDiv = _createBlockReadSurface(block, projection);
 	wrapper.appendChild(readDiv);
 	if (toolbar) wrapper.appendChild(toolbar);
-	_rapierSyncSectionFoldControl(wrapper, readDiv);
 	_rapierSyncFenceCopyControl(wrapper, readDiv);
 	_syncEmptyClass(wrapper, null, readDiv);
 	_updateBlockInteractiveState(wrapper, readDiv);
@@ -7100,7 +7119,7 @@ function _rapierBlankTap(event) {
 	if (host) host._rapierBlankPress = null;
 	if (!host || !press) return false;
 	const dx = event.clientX - press.x, dy = event.clientY - press.y;
-	if (dx * dx + dy * dy > 25 || Math.abs(host.scrollTop - press.scrollTop) > 1) return false;
+	if (dx * dx + dy * dy > (press.touch ? 100 : 25) || Math.abs(host.scrollTop - press.scrollTop) > 1) return false;
 
 	if (!host.querySelector(':is(:scope, :scope > .block-sleep-group) > .block-wrapper--editing')) {
 		const opened = !press.toolsOpen && _rapierOpenGroundBelow(host, event);
@@ -7622,6 +7641,17 @@ function _rapierCheckpointEdit(editDiv, command = false) {
 	block.raw = after;
 	block.dirty = true;
 	rapierDirty(block.id);
+	if (_rapierNavigationCandidate(block) || _rapierHasRenderedHeading(editDiv) || _rapierHasRenderedAnchor(editDiv)) {
+		const readDiv = wrapper.querySelector(':scope > .block-read');
+		const referencesChanged = rebuildReferenceIndex(rapier.document.blocks, [{...block, raw: before}], [block]);
+		block.rendered = renderBlock(block.raw);
+		if (readDiv) {
+			_rapierSetReadProjection(readDiv, block.rendered, false);
+			_updateBlockInteractiveState(wrapper, readDiv);
+		}
+		if (referencesChanged) _rapierRefreshReferenceConsumers(new Set([block.id]));
+		else assignHeadingSlugs();
+	}
 	_notifyHistoryState();
 	_scheduleStatsUpdate();
 	return true;
@@ -8088,7 +8118,8 @@ function leaveBlockEdit(block, wrapper, readDiv, editDiv, options = null) {
 			_notifyHistoryState();
 			block.raw = after;
 		}
-		referenceIndexChanged = rebuildReferenceIndex(rapier.document.blocks);
+		referenceIndexChanged = rebuildReferenceIndex(rapier.document.blocks,
+			[{...block, raw: wrapper._rapierBlockRaw ?? before}], [block]);
 		block.rendered = renderBlock(block.raw);
 		block.dirty    = false;
 	}
@@ -8342,9 +8373,13 @@ function _rapierCommitPendingHistory(options = null) {
 function _rapierRefreshEditedBlock(block, wrapper) {
 	block.dirty = false;
 	rapierDirty(block.id);
-	const referenceIndexChanged = rebuildReferenceIndex(rapier.document.blocks);
-	_writeBlockDOM(wrapper, block, { exitEditing: true });
+	const before = typeof wrapper?._rapierBlockRaw === 'string' ? [{...block, raw: wrapper._rapierBlockRaw}] : null;
+	const referenceIndexChanged = rebuildReferenceIndex(rapier.document.blocks, before, [block]);
+	if (referenceIndexChanged) block.rendered = null;
+	_writeBlockDOM(wrapper, block, { exitEditing: true, deferNavigation: true, deferHeadingSlugs: true });
 	if (referenceIndexChanged) _rapierRefreshReferenceConsumers(new Set([block.id]));
+	else assignHeadingSlugs({blocks: [block], inserted: [wrapper], edges: [_rapierAdjacentBlockWrapper(wrapper, -1)].filter(Boolean), removedIds: [String(block.id)],
+		ranges: [{startIndex: rapier.document.blocks.indexOf(block), oldCount: 1, blocks: [block], removedIds: [String(block.id)]}]});
 }
 
 function _rapierProjectBlockEditInPlace(record, redo) {
@@ -8363,7 +8398,6 @@ function _rapierProjectBlockEditInPlace(record, redo) {
 	block.rendered = renderBlock(block.raw);
 	_rapierRefreshEditedBlock(block, wrapper);
 	updateStats();
-	assignHeadingSlugs();
 	return true;
 }
 
@@ -8393,7 +8427,7 @@ function _rapierProjectBlockRangeInPlace(record, redo) {
 	const removedIds = current.slice(startIndex, startIndex + fromRows.length).map(block => block.id);
 	current.splice(startIndex, fromRows.length, ...newBlocks);
 	_reassignOrderForRange(startIndex, newBlocks.length);
-	const referenceIndexChanged = rebuildReferenceIndex(current);
+	const referenceIndexChanged = rebuildReferenceIndex(current, fromRows, toRows);
 	const keptIds = new Set(newBlocks.map(block => block.id));
 	newBlocks.forEach(block => rapier.autosave.dirty.add(block.id));
 	removedIds.forEach(id => { if (!keptIds.has(id)) rapier.autosave.dirty.delete(id); });
@@ -8460,7 +8494,7 @@ function _rapierProjectBlockRangesInPlace(record, redo) {
 	const spliced = _spliceBlockDOMRanges(domRanges) === true;
 	const keptIds = new Set(plans.flatMap(plan => plan.toRows.map(row => row.id)));
 	removedIds.forEach(id => { if (!keptIds.has(id)) rapier.autosave.dirty.delete(id); });
-	const referenceIndexChanged = rebuildReferenceIndex(current);
+	const referenceIndexChanged = rebuildReferenceIndex(current, plans.flatMap(plan => plan.fromRows), plans.flatMap(plan => plan.toRows));
 	if (referenceIndexChanged) _rapierRefreshReferenceConsumers(touchedIds);
 	updateStats();
 	if (!spliced || referenceIndexChanged) assignHeadingSlugs();
@@ -8584,16 +8618,21 @@ async function _rapierTraverseHistory(redo, context = null, burst = null) {
 	const targetSplices = _rapierRecordSplices(target, rapier.undo.ledger);
 	const targetMetadata = RapierLedger._rapierRecordMetadata(target, rapier.undo.ledger);
 	const metadata = targetMetadata && (redo ? targetMetadata : Object.fromEntries(Object.entries(targetMetadata).map(([key, row]) => [key, {before: row.after, after: row.before}])));
-	const splices = finished || (redo ? targetSplices : targetSplices.slice().reverse().map(row => ({
+	let splices = finished || (redo ? targetSplices : targetSplices.slice().reverse().map(row => ({
 		pos: row.pos, removed: row.inserted, inserted: row.removed,
 	})));
 
 	const viewport = _rapierCaptureEditorViewport(), pictureTop = _rapierHistoryPictureTop(target.transaction, splices);
 	let historyLanded = false;
+	let preparedInverse = false;
 	try {
 		_rapierApplyReadOnlyDom();
 		const stamp = _rapierMutationStamp();
-		if (_rapierNotesPart?.currentFile() && !await _rapierNotesPart.admitInverse({splices, subject, redo})) return false;
+		if (_rapierNotesPart?.currentFile()) {
+			const admitted = await _rapierNotesPart.admitInverse({splices, subject, redo});
+			if (!admitted) return false;
+			if (admitted.splices) { splices = admitted.splices; preparedInverse = true; }
+		}
 		if (!_rapierMutationStampIsCurrent(stamp) || String(rapier.identity.authority || '') !== documentAuthority ||
 				rapier.undo.branch[redo ? rapier.undo.cursor : rapier.undo.cursor - 1] !== target) return false;
 		const committed = _rapierCommitSplices(splices, {
@@ -8603,7 +8642,7 @@ async function _rapierTraverseHistory(redo, context = null, burst = null) {
 			context: context || undefined,
 			affectedBlockIds: target.transaction.affectedBlockIds,
 			navigation: false,
-			...(finished ? { compact: false } : {}),
+			...(finished || preparedInverse ? { compact: false } : {}),
 			...(redo ? { reapplies: subject } : { reverts: subject }),
 		});
 		if (!committed || String(rapier.identity.authority || '') !== documentAuthority) {
@@ -8725,7 +8764,7 @@ function _rapierReopenAfterHistory(target, splices, caretBefore = null, redo = f
 	const ids = target.transaction.affectedBlockIds || [];
 	let block = location?.block && (!ids.length || ids.includes(location.block.id)) ? location.block
 		: ids.map(id => rapier.document.blocks.find(candidate => candidate.id === id)).find(Boolean) || location?.block || null;
-	const resolved = location && Number.isSafeInteger(caretAt) ? _rapierResolvePoint(caretAt) : null;
+	const resolved = location && Number.isSafeInteger(caretAt) ? _rapierResolvePoint(caretAt, false, new Set([location.block.id])) : null;
 	const point = resolved && resolved.block.id === location.block.id ? resolved : null;
 	let tableCell = null;
 	if (location && _isTableBlock(location.block.raw)) {
@@ -9137,6 +9176,32 @@ function rapierRedo(context) {
 	return context ? _rapierTraverseHistory(true, context) : _rapierTraverseBurst(true);
 }
 
+function _rapierHoldTypingCompletion(editDiv) {
+	const open = _activeBlockEditContext();
+	if (!open || open.editDiv !== editDiv || _rapierUserMutationBlocked(false)) return null;
+	_rapierCheckpointEdit(editDiv);
+	if (!_rapierHistoryIsComplete()) return null;
+	const stamp = _rapierMutationStamp(), visit = editDiv._rapierInputVisit;
+	const raw = _rapierLiveEditRaw(editDiv, open.wrapper), session = editDiv._rapierHistorySession;
+	const cursor = rapier.undo.cursor, earlier = rapier.undo.branch[cursor - 1];
+	return insert => {
+		const current = _activeBlockEditContext();
+		if (_rapierUserMutationBlocked(false) || !_rapierMutationStampIsCurrent(stamp) ||
+				current?.editDiv !== editDiv || current.block !== open.block || editDiv._rapierInputVisit !== visit ||
+				editDiv._rapierHistorySession !== session || rapier.undo.cursor !== cursor ||
+				rapier.undo.branch[cursor - 1] !== earlier || _rapierLiveEditRaw(editDiv, current.wrapper) !== raw) return false;
+		insert();
+		_rapierCheckpointEdit(editDiv);
+		const later = rapier.undo.branch[rapier.undo.cursor - 1], sessions = editDiv._rapierHistorySessions;
+		if (rapier.undo.cursor === cursor + 1 && earlier && later !== earlier && sessions?.get(earlier) === session &&
+				earlier.transaction.actor?.kind === 'human' && later.transaction.actor?.kind === 'human') {
+			sessions.set(later, session);
+			(editDiv._rapierHistoryCompletions ||= new WeakMap()).set(later, earlier);
+		}
+		return true;
+	};
+}
+
 function _rapierTypingBurstPair(earlier, later) {
 	const sessions = rapier.view.sharedEditDiv?._rapierHistorySessions;
 	if (sessions?.get(earlier) !== sessions?.get(later)) return false;
@@ -9145,7 +9210,8 @@ function _rapierTypingBurstPair(earlier, later) {
 	if (!typed(earlier) || !typed(later)) return false;
 	const a = earlier.transaction, b = later.transaction;
 	return a.affectedBlockIds[0] === b.affectedBlockIds[0] && a.actor?.id === b.actor?.id &&
-		Number(b.createdAt) - Number(a.createdAt) <= 2000;
+		(Number(b.createdAt) - Number(a.createdAt) <= 2000 ||
+			rapier.view.sharedEditDiv?._rapierHistoryCompletions?.get(later) === earlier);
 }
 
 async function _rapierTraverseBurst(redo) {
@@ -9253,6 +9319,8 @@ function _rapierSetReadProjection(readDiv, html, preserveState = false, renderSt
 	readDiv._rapierProjectionHtml = nextHtml;
 	readDiv._rapierProjectionRenderState = renderState;
 	_rapierEnhanceRenderedContent(readDiv);
+	const raw = _rapierBoundBlock(readDiv.closest('.block-wrapper'))?.raw;
+	if (raw != null) { _rapierMarkTableCaptionCandidate(readDiv, raw); _rapierMarkFigureCaptionCandidate(readDiv, raw); _rapierTableWidths(readDiv, raw); }
 	_rapierSyncFenceCopyControl(readDiv.closest('.block-wrapper'), readDiv);
 	if (state) _rapierRestoreReadProjectionState(readDiv, state);
 	_rapierRefreshFindBlockProjection(readDiv.closest('.block-wrapper'));
@@ -9383,8 +9451,7 @@ function _writeBlockDOM(wrapper, block, opts) {
 		_rapierDiscardEditProjection(editDiv);
 	}
 	if (readDiv) _updateBlockInteractiveState(wrapper, readDiv);
-	if (readDiv) _rapierSyncSectionFoldControl(wrapper, readDiv);
-	if (readDiv) _rapierApplyBlockNavigation(wrapper, readDiv);
+	if (readDiv && !opts?.deferNavigation) _rapierApplyBlockNavigation(wrapper, readDiv);
 	const renderedAnchorsChanged = projectionChanged &&
 		(renderedAnchorsMayChange || _rapierHasRenderedAnchor(readDiv));
 	if (renderedAnchorsChanged && !(opts && opts.deferHeadingSlugs)) assignHeadingSlugs();
@@ -10045,9 +10112,9 @@ function _setActive(cmd) {
 
 function hideFormatToolbar() {
 	_rapierSemanticRuntime.excerptCandidate = null;
-	renderFormatToolbarVisibility(FT.get(), false);
-	_rapierClearDesktopFormatToolbarPlacement();
 	const excerptButton = document.getElementById('fmt-complete-excerpt');
+	if (!renderFormatToolbarVisibility(FT.get(), false) && (!excerptButton || excerptButton.hidden)) return;
+	_rapierClearDesktopFormatToolbarPlacement();
 	if (excerptButton) excerptButton.hidden = true;
 	_rapierUiHideFormatPopovers();
 	_rapierScheduleKeyboardAccommodation();
@@ -11348,7 +11415,6 @@ function _rapierCommitBlockLayoutInPlace(blockId, before, after, operation) {
 	block.rendered = renderBlock(after);
 	_rapierRefreshEditedBlock(block, wrapper);
 	updateStats();
-	assignHeadingSlugs();
 	_bumpDocGeneration();
 	_rapierArmAutosave();
 	_notifyHistoryState();
@@ -11396,7 +11462,7 @@ function _rapierCommitRangesInPlace(ranges, splices, operation, affectedBlockIds
 
 	const keptIds = new Set(ranges.flatMap(range => range.blocksAfter.map(row => row.id)));
 	removedIds.forEach(id => { if (!keptIds.has(id)) rapier.autosave.dirty.delete(id); });
-	const referenceIndexChanged = rebuildReferenceIndex(current);
+	const referenceIndexChanged = rebuildReferenceIndex(current, ranges.flatMap(range => range.blocksBefore), ranges.flatMap(range => range.blocksAfter));
 	if (referenceIndexChanged) _rapierRefreshReferenceConsumers(touchedIds);
 	updateStats();
 	if (!spliced || referenceIndexChanged) assignHeadingSlugs();
@@ -11438,7 +11504,7 @@ function _rapierInstallBlockRange(startIndex, removeCount, rows) {
 	const installed = new Set(rows.map(row => row.id));
 	removed.forEach(row => { if (!installed.has(row.id)) rapier.autosave.dirty.delete(row.id); });
 	installed.forEach(id => rapier.autosave.dirty.add(id));
-	const referencesChanged = rebuildReferenceIndex(rapier.document.blocks);
+	const referencesChanged = rebuildReferenceIndex(rapier.document.blocks, removed, rows);
 	if (referencesChanged) rows.forEach(row => { if (row.raw) row.rendered = renderBlock(row.raw); });
 	_bumpDocGeneration();
 	_rapierArmAutosave();
@@ -11701,11 +11767,11 @@ function _rapierCommitSplices(splices, options = null) {
 		if (rows.reduce(_rapierSourceRootAfter, start.source.rootId) !== store.rootId) {
 			if (start.sourceStore !== store || start.source.rootId !== config.beforeHash ||
 					config.sourceRootAfter !== undefined && config.sourceRootAfter !== store.rootId) return null;
-			const current = store.capture(), length = store.length;
+			const current = store.capture();
 			try {
 				start.source.restore();
 				_rapierApplySourceSplices(rows);
-				if (rapier.document.source !== store || store.length !== length) throw new Error('Source publication changed.');
+				if (rapier.document.source !== store || !current.reuseText()) throw new Error('Source publication changed.');
 			} catch (error) { rapier.document.source = store; current.restore(); throw error; }
 		}
 		if (originalPublication) {
@@ -13754,7 +13820,7 @@ function _rapierApplyRawRange(state, nextRaw, {keepEditing = false, segments = n
 		block.dirty = wrapper === editing;
 		rapier.autosave.dirty.add(block.id);
 	});
-	const referenceIndexChanged = rebuildReferenceIndex(rapier.document.blocks);
+	const referenceIndexChanged = rebuildReferenceIndex(rapier.document.blocks, state.blocksBefore, blocksAfter);
 	state.wrappers.forEach(wrapper => {
 		const block = _rapierBoundBlock(wrapper);
 		if (block) block.rendered = renderBlock(block.raw);
@@ -13765,13 +13831,14 @@ function _rapierApplyRawRange(state, nextRaw, {keepEditing = false, segments = n
 	state.wrappers.forEach(wrapper => {
 		const block = _rapierBoundBlock(wrapper);
 		if (!block) return;
-		_writeBlockDOM(wrapper, block, {exitEditing: wrapper !== editing, writeEdit: wrapper === editing});
+		_writeBlockDOM(wrapper, block, {exitEditing: wrapper !== editing, writeEdit: wrapper === editing, deferNavigation: true, deferHeadingSlugs: true});
 		if (wrapper === editing) {
 			const editDiv = wrapper.querySelector(':scope > .block-edit');
 			_rapierEnhanceRenderedContent(editDiv);
 			_rapierPrepareSemanticEditProjection(editDiv, block.raw);
 			editDiv._rapierHistoryBaselineRaw = block.raw;
 			editDiv._rapierCheckpointFresh = true;
+			_rapierRecordEditOpening(editDiv, wrapper);
 		}
 	});
 	if (!editing) _clearActiveBlock();
@@ -13787,7 +13854,11 @@ function _rapierApplyRawRange(state, nextRaw, {keepEditing = false, segments = n
 	if (referenceIndexChanged) {
 		_rapierRefreshReferenceConsumers(new Set(state.blocksBefore.map(block => block.id)));
 	}
-	assignHeadingSlugs();
+	if (!referenceIndexChanged) assignHeadingSlugs({blocks: state.wrappers.map(_rapierBoundBlock), inserted: state.wrappers,
+		edges: [_rapierAdjacentBlockWrapper(state.wrappers[0], -1)].filter(Boolean),
+		removedIds: state.blocksBefore.map(block => String(block.id)),
+		ranges: [{startIndex, oldCount: state.blocksBefore.length, blocks: state.wrappers.map(_rapierBoundBlock),
+			removedIds: state.blocksBefore.map(block => String(block.id))}]});
 	_notifyHistoryState();
 	updateStats();
 	requestAnimationFrame(refreshFormatToolbar);
@@ -14639,7 +14710,7 @@ function _rapierDropProjectionNavigation() {
 	_rapierReadProjectionRuntime.navigationPlan = null;
 	_rapierReadProjectionRuntime.navigationState = null;
 	_rapierReadProjectionRuntime.navigationCache = new WeakMap();
-	_rapierReadProjectionRuntime.navigationBindings = new WeakMap();
+	_rapierNavigationDOM().bindings = new WeakMap();
 }
 
 function _rapierNavigationReferencesMatch(before, after) {
@@ -14725,7 +14796,7 @@ function _rapierBlockNavigation(block, referenceIndex = rapier.semantic.referenc
 			base: level ? _rapierHeadingSlugBase(text) : '',
 			title: level ? text.trim().replace(/\s+/g, ' ').slice(0, 100) : '',
 			textIntegrity: level ? _rapierTextIntegrity(text) : null,
-			originalId, id: originalId, name: node.getAttribute('name'),
+			originalId, id: originalId, originalName: node.getAttribute('name'), name: node.getAttribute('name'),
 			item: node.classList.contains('footnote-item'), ref: !!node.closest('.footnote-ref'),
 			label: node.getAttribute('data-footnote-label'), originalHref: href, href,
 			roles: (node.matches('.footnote-ref a[href^="#"]') ? 1 : 0) |
@@ -14750,6 +14821,77 @@ function _rapierRenderNavigation(blocks, referenceIndex, state) {
 	pending.forEach((block, at) => _rapierBlockNavigation(block, referenceIndex, state, projections[at]));
 }
 
+function _rapierNavigationDOM() {
+	return _rapierReadProjectionRuntime.navigationDOM ||= {bindings: new WeakMap(), ids: null, dirty: true, observer: null};
+}
+
+function _rapierNavigationOutsideChanges(records) {
+	const editor = document.getElementById('editor-blocks');
+	const outside = node => {
+		if (!editor?.contains(node)) return true;
+		const surface = node.closest('.block-read,.block-edit');
+		return (!surface || surface === node) && !node.classList.contains('table-toolbar');
+	};
+	for (const record of records) {
+		if (record.type === 'attributes') {
+			if (record.attributeName === 'class') {
+				const boundary = value => String(value || '').split(/\s+/).filter(name => ['block-read', 'block-edit', 'table-toolbar'].includes(name)).sort().join(' ');
+				if (boundary(record.oldValue) !== boundary(record.target.className)) return true;
+			} else if (outside(record.target)) return true;
+			continue;
+		}
+		if (editor?.contains(record.target) && record.target.closest('.block-read,.block-edit')) continue;
+		for (const node of record.removedNodes)
+			if (node.nodeType === 1 && (node.id || node.querySelector('[id]'))) return true;
+		for (const node of record.addedNodes) {
+			if (node.nodeType !== 1) continue;
+			if (node.id && outside(node)) return true;
+			if (Array.from(node.querySelectorAll('[id]')).some(outside)) return true;
+		}
+	}
+	return false;
+}
+
+function _rapierNavigationExternalIds() {
+	const runtime = _rapierNavigationDOM();
+	if (!runtime.observer && typeof MutationObserver === 'function') {
+		runtime.observer = new MutationObserver(records => {
+			if (_rapierNavigationOutsideChanges(records)) runtime.dirty = true;
+		});
+		runtime.observer.observe(document.documentElement, {subtree: true, childList: true, attributes: true, attributeOldValue: true, attributeFilter: ['id', 'class']});
+	}
+	if (runtime.observer && _rapierNavigationOutsideChanges(runtime.observer.takeRecords())) runtime.dirty = true;
+	if (runtime.ids && !runtime.dirty && runtime.observer) return runtime.ids;
+	const editor = document.getElementById('editor-blocks');
+	const ids = Array.from(document.querySelectorAll('[id]')).filter(node => {
+		if (!editor?.contains(node)) return true;
+		const surface = node.closest('.block-read,.block-edit');
+		return (!surface || surface === node) && !node.classList.contains('table-toolbar');
+	}).map(node => node.id).filter(Boolean).sort();
+	const before = runtime.ids;
+	if (!before || before.length !== ids.length || before.some((id, index) => id !== ids[index])) runtime.ids = ids;
+	runtime.dirty = false;
+	return runtime.ids;
+}
+
+function _rapierSplicePlainNavigation(previous, blocks, state, externalIds, scope) {
+	const ranges = scope?.ranges;
+	if (!previous || previous.blocks !== blocks || previous.state !== state || previous.externalIds !== externalIds || ranges?.length !== 1) return null;
+	const {startIndex, oldCount, blocks: inserted, removedIds} = ranges[0];
+	if (!Number.isSafeInteger(startIndex) || !Number.isSafeInteger(oldCount) || startIndex < 0 || oldCount < 0 ||
+			startIndex + oldCount > previous.rows.length || previous.rows.length - oldCount + inserted.length !== blocks.length) return null;
+	const before = previous.rows.slice(startIndex, startIndex + oldCount);
+	if (before.some((row, index) => String(row.block.id) !== String(removedIds[index])) ||
+			inserted.some((block, index) => blocks[startIndex + index] !== block)) return null;
+	const after = inserted.map(block => ({block, raw: String(block.raw || ''), navigation: _rapierBlockNavigation(block, state.references, state)}));
+	if ([...before, ...after].some(row => row.navigation.points.length || row.navigation.controls.length || row.navigation.label)) return null;
+	for (const row of before) previous.byBlock.delete(String(row.block.id));
+	for (const row of after) previous.byBlock.set(String(row.block.id), row);
+	previous.rows.splice(startIndex, oldCount, ...after);
+	previous.stamp = _rapierMutationStamp();
+	return previous;
+}
+
 async function _rapierPrepareProjectionNavigation(blocks, referenceIndex, options = null) {
 	const current = options?.current || (() => true), render = options?.render || (work => work());
 	let state = render(() => _rapierNavigationRenderState(referenceIndex)), started = _rapierNow();
@@ -14767,19 +14909,13 @@ async function _rapierPrepareProjectionNavigation(blocks, referenceIndex, option
 	return current();
 }
 
-function _rapierPlanProjectionNavigation(blocks = rapier.document.blocks, referenceIndex = rapier.semantic.references) {
+function _rapierPlanProjectionNavigation(blocks = rapier.document.blocks, referenceIndex = rapier.semantic.references, scope = null) {
 	const state = _rapierNavigationRenderState(referenceIndex);
+	const previous = _rapierReadProjectionRuntime.navigationPlan, externalIds = _rapierNavigationExternalIds();
+	const spliced = _rapierSplicePlainNavigation(previous, blocks, state, externalIds, scope);
+	if (spliced) return spliced;
 	_rapierRenderNavigation(blocks, referenceIndex, state);
 	const rows = blocks.map(block => ({ block, raw: String(block.raw || ''), navigation: _rapierBlockNavigation(block, referenceIndex, state) }));
-	const editor = document.getElementById('editor-blocks');
-	const externalIds = Array.from(document.querySelectorAll('[id]'))
-		.filter(node => {
-			if (!editor?.contains(node)) return true;
-			const surface = node.closest('.block-read,.block-edit');
-			return (!surface || surface === node) && !node.classList.contains('table-toolbar');
-		})
-		.map(node => node.id).filter(Boolean);
-	const previous = _rapierReadProjectionRuntime.navigationPlan;
 	if (previous && previous.blocks === blocks && previous.state === state && previous.rows.length === rows.length &&
 			previous.externalIds.length === externalIds.length && previous.externalIds.every((id, index) => id === externalIds[index]) &&
 			previous.rows.every((row, index) => row.block === rows[index].block && row.raw === rows[index].raw && row.navigation === rows[index].navigation)) {
@@ -14795,7 +14931,7 @@ function _rapierPlanProjectionNavigation(blocks = rapier.document.blocks, refere
 	for (const point of headings) {
 		const owned = _rapierRenderModule('render-sanitize')._rapierChromeOwnsId(point.base);
 		point.id = _rapierNextHeadingSlug(owned ? 'heading-' + point.base : point.base, usedSlugs);
-		if (owned) point.name = point.base;
+		point.name = owned ? point.base : point.originalName;
 	}
 	for (const point of points) { if (!point.level) point.id = point.originalId; point.href = point.originalHref; }
 
@@ -14863,6 +14999,7 @@ function _rapierApplyBlockNavigation(wrapper, read, plan = null) {
 	if (!plan) {
 		const held = _rapierReadProjectionRuntime.navigationPlan, state = _rapierNavigationRenderState();
 		plan = held && held.blocks === rapier.document.blocks && held.state === state &&
+			held.externalIds === _rapierNavigationExternalIds() &&
 			_rapierMutationStampIsCurrent(held.stamp) &&
 			held.byBlock.get(String(block.id))?.raw === String(block.raw || '')
 			? held : _rapierPlanProjectionNavigation();
@@ -14870,16 +15007,22 @@ function _rapierApplyBlockNavigation(wrapper, read, plan = null) {
 	const row = plan.byBlock.get(String(block.id));
 	if (!row || row.block !== block || row.raw !== String(block.raw || '')) return false;
 	const navigation = row.navigation;
-	let binding = _rapierReadProjectionRuntime.navigationBindings.get(read);
+	const edit = wrapper.classList.contains('block-wrapper--editing') && wrapper.querySelector(':scope > .block-edit');
+	const liveHeading = edit && _rapierDirectRenderedHeading(edit);
+	const heading = navigation.heading;
+	const editingHeading = liveHeading && heading && liveHeading.localName === heading.tag;
+	if (editingHeading && liveHeading.id !== heading.id) liveHeading.id = heading.id;
+	let binding = _rapierNavigationDOM().bindings.get(read);
 	if (!binding || binding.navigation !== navigation || binding.nodes.some(node => !read.contains(node))) {
 		const nodes = _rapierNavigationNodes(read);
-		if (nodes.length !== navigation.points.length || nodes.some((node, index) => node.localName !== navigation.points[index].tag)) return false;
-		binding = { navigation, nodes }; _rapierReadProjectionRuntime.navigationBindings.set(read, binding);
+		if (nodes.length !== navigation.points.length || nodes.some((node, index) => node.localName !== navigation.points[index].tag)) return !!editingHeading;
+		binding = { navigation, nodes }; _rapierNavigationDOM().bindings.set(read, binding);
 	}
 	navigation.points.forEach((point, index) => {
 		const node = binding.nodes[index];
 		if (point.level || point.originalId) {
-			if (node.id !== point.id) node.id = point.id;
+			if (editingHeading && point === heading) { if (node.id) node.removeAttribute('id'); }
+			else if (node.id !== point.id) node.id = point.id;
 			if (!point.level && point.originalId !== point.id) _rapierReadProjectionRuntime.anchorOriginalIds.set(node, point.originalId);
 		}
 		if (point.roles && node.getAttribute('href') !== point.href) node.setAttribute('href', point.href);
@@ -14903,7 +15046,10 @@ function _rapierWakeAnchorTarget(editor, id) {
 	const read = wrapper.querySelector(':scope > .block-read');
 	if (!_rapierApplyBlockNavigation(wrapper, read, plan)) return null;
 	if (target.control) return wrapper.querySelector(':scope > .' + target.control);
-	const node = _rapierReadProjectionRuntime.navigationBindings.get(read)?.nodes[target.ordinal];
+	const liveHeading = wrapper.classList.contains('block-wrapper--editing') &&
+		_rapierDirectRenderedHeading(wrapper.querySelector(':scope > .block-edit'));
+	if (liveHeading && (liveHeading.id === id || plan.byName.get(id) === target)) return liveHeading;
+	const node = _rapierNavigationDOM().bindings.get(read)?.nodes[target.ordinal];
 	return node && (node.id === id || node.getAttribute('name') === id || plan.byName.get(id) === target) ? node : null;
 }
 
@@ -15943,7 +16089,7 @@ function rapierSetAllSectionsFolded(fold) {
 function assignHeadingSlugs(scope = null) {
 	const editor = document.getElementById('editor-blocks');
 	if (!editor) return;
-	const plan = _rapierPlanProjectionNavigation();
+	const plan = _rapierPlanProjectionNavigation(rapier.document.blocks, rapier.semantic.references, scope);
 	const protectionContext = _rapierProtectionSyncContext();
 	const scoped = !!scope && plan.state === _rapierSpliceRuntime.slugState;
 	const unfolded = scoped && !rapier.view.foldedHeadingIds.size;
@@ -20979,6 +21125,7 @@ async function _rapierOpenFileInputChanged(event) {
 document.getElementById('file-input').addEventListener('change', _rapierOpenFileInputChanged);
 
 async function rapierOpenPlatformPayload(payload, opts = {}) {
+	const releaseOriginalProjection = payload?.originalFile ? globalThis.RapierPlatform?.files.holdOriginalProjection() : null;
 	const blob = payload?.blob instanceof Blob ? payload.blob : null, type = String(blob?.type || '').toLowerCase().split(';')[0].trim();
 	const openEpoch = opts.openEpoch ?? ++rapier.identity.userLoadEpoch;
 	opts = {...opts, openEpoch, ...(blob && !opts.expectedMutationStamp
@@ -20990,7 +21137,7 @@ async function rapierOpenPlatformPayload(payload, opts = {}) {
 		signal: opts.embedOpen?.controller.signal || opts.signal}) : null);
 	try { if (work) await work.yield(0); return await run(); }
 	catch (error) { if (error?.name === 'AbortError') return false; throw error; }
-	finally { if (!opts.work) work?.end(); }
+	finally { releaseOriginalProjection?.(); if (!opts.work) work?.end(); }
 	async function run() {
 		if (_rapierEmbed.active && !_rapierEmbed.fileOpen.current(opts.embedOpen)) return false;
 		const admittedByCaller = () => requestCurrent() &&
@@ -21204,7 +21351,8 @@ async function rapierOpenPlatformPayload(payload, opts = {}) {
 				}
 			} catch (_) {}
 			if (!stillOpened()) return false;
-			if (kept !== true) {
+			const guide = payload.transient === true && _rapierIsBuiltInWelcomeDocument();
+			if (kept !== true && !guide) {
 				rapier.revision.savedGeneration = -1;
 				rapier.identity.saveAsRequired = true;
 				if (previousAuthority && window.RapierPlatform?.files?.detach) {
@@ -21220,7 +21368,8 @@ async function rapierOpenPlatformPayload(payload, opts = {}) {
 			if (!stillOpened()) return false;
 			if (!viewContinuity) srAnnounce('Opened ' + openedFilename + '.');
 			if (payload.transient === true) {
-				rapier.revision.savedGeneration = -1;
+				rapier.revision.savedGeneration = guide ? Number(rapier.revision.generation || 0) : -1;
+				if (guide) rapier.identity.saveAsRequired = false;
 				if (window.RapierPlatform && window.RapierPlatform.files.detach) {
 					await window.RapierPlatform.files.detach(previousAuthority || openedState.authority);
 				}
@@ -22036,6 +22185,9 @@ function _rapierNormalizeSaveResult(value) {
 		destinationName: _rapierDocumentNameIsAdmissible(reportedDestinationName)
 			? reportedDestinationName : '',
 		destinationSelected: value.destinationSelected === true,
+		reason: String(value.reason || ''), originalPreserved: value.originalPreserved === true,
+		copyVerified: value.copyVerified === true,
+		recoveryChoices: Array.isArray(value.recoveryChoices) ? value.recoveryChoices.filter(x => ['keep-editing', 'save-copy', 'reopen-original'].includes(x)) : [],
 	};
 }
 
@@ -22047,7 +22199,7 @@ async function _rapierPerformSaveWork(options) {
 	options = options || {};
 	const requested = _rapierMutationStamp(), requestedMetadata = _rapierGetDocumentMetadata();
 	const mayChooseType = (files = globalThis.RapierPlatform?.files) => rapier.document.docKind === 'markdown' && files?.savesChosenType === true &&
-		options.forceInPlace !== true && (options.forceSaveAs === true || rapier.identity.saveAsRequired === true || !files.hasWritable?.(String(rapier.identity.authority || '')));
+		options.forceInPlace !== true && (options.forceSaveAs === true || rapier.identity.saveAsRequired === true || (!files.hasWritable?.(String(rapier.identity.authority || '')) && !files.hasOriginal?.(String(rapier.identity.authority || ''))));
 	const ownsRequested = () => _rapierMutationStampSharesDocument(requested) &&
 		requested.loadToken === Number(rapier.identity.loadToken || 0);
 	let fontsReady = false;
@@ -22121,6 +22273,9 @@ async function _rapierPerformSaveWork(options) {
 			saved: saved === true,
 			confirmed: providerResult?.confirmed === true,
 			verified: providerResult?.verified === true,
+			...(providerResult?.reason ? {reason: providerResult.reason, recoveryChoices: providerResult.recoveryChoices,
+				originalPreserved: providerResult.originalPreserved === true, draftRetained: providerResult.draftRetained === true,
+				copyVerified: providerResult.copyVerified === true} : {}),
 			filename: String(receiptName || metadata.saveName),
 			documentAuthority: saveAuthority,
 			generation: saveGeneration,
@@ -22132,8 +22287,8 @@ async function _rapierPerformSaveWork(options) {
 	let editablePage = /\.rapier\.html$/i.test(metadata.saveName);
 	const recoveryGuard = captured.value.recoveryGuard;
 
-	const boundInPlaceFile = !!(platform && platform.files.hasWritable &&
-		platform.files.hasWritable(saveAuthority));
+	const boundInPlaceFile = !!(platform && (platform.files.hasWritable?.(saveAuthority) ||
+		platform.files.hasOriginal?.(saveAuthority)));
 	const mode = options.forceSaveAs === true || saveAsRequired
 		? 'saveas'
 		: (options.forceInPlace === true || boundInPlaceFile ? 'overwrite' : 'saveas');
@@ -22169,6 +22324,7 @@ async function _rapierPerformSaveWork(options) {
 		let rawResult;
 		const platformOptions = {
 			beforeWrite: recoveryGuard,
+			signal: options.signal,
 			check: () => options.signal?.throwIfAborted(),
 
 			requireExistingDestination: options.forceInPlace === true,
@@ -22196,6 +22352,14 @@ async function _rapierPerformSaveWork(options) {
 		}
 		const result = _rapierNormalizeSaveResult(rawResult);
 		if (result.status === 'cancelled') return settle('cancelled', false, result);
+		if (result.status === 'retained-draft') {
+			const draftRetained = platform?.recovery?.ownsStore === true ? await recoveryGuard === true
+				: await _rapierPersistDownloadDraft(captured.value.recovery, saveGeneration, saveRevision);
+			const outcome = {...result, draftRetained};
+			window.dispatchEvent(new CustomEvent('rapier:original-file-result', {detail: Object.freeze({
+				...outcome, documentAuthority: saveAuthority, generation: saveGeneration, documentRevision: saveRevision})}));
+			return settle(draftRetained ? 'retained-draft' : 'draft-retention-failed', false, outcome);
+		}
 		/* A browser download (no File System Access on this host — every phone browser, the app's
 			 stated first target) has no receipt: a.click() reports the same success whether the
 			 person kept the file, cancelled the platform's own save-to-disk prompt, or a blocker
@@ -22947,6 +23111,7 @@ async function _rapierBuildDocxHtml(context) {
 	stats.docxDiagramSources = 0;
 	const bodySize = (globalThis.RapierMarkdownSpec?.readDocumentSettings?.(context.canonical)?.fontsize?.unit || 1.1) * 16;
 	const imageFromSvg = async (rendered, alt) => {
+		if (rendered.classList.contains('pele')) _rapierRenderModule('render')._rapierDocxRenderStyles(rendered.parentElement);
 		const svg = rendered.cloneNode(true);
 		const box = (svg.getAttribute('viewBox') || '').trim().split(/[ ,\s]+/).map(Number);
 		const length = name => {
@@ -22960,6 +23125,9 @@ async function _rapierBuildDocxHtml(context) {
 		svg.setAttribute('width', String(width)); svg.setAttribute('height', String(height));
 		svg.style.width = width + 'px'; svg.style.height = height + 'px';
 		svg.style.maxWidth = 'none'; svg.style.maxHeight = 'none';
+		if (rendered.classList.contains('pele')) {
+			await globalThis.RapierExportFonts.embedDiagramFonts(svg, globalThis.RapierDocxFonts.DOCX_FONTS);
+		}
 		const bytes = new TextEncoder().encode(new XMLSerializer().serializeToString(svg));
 		if (bytes.length > RAPIER_DOCX_IMAGE_MAX_BYTES) throw new Error('SVG picture is too large');
 		const image = document.createElement('img');
@@ -23873,7 +24041,7 @@ function _rapierLoadCommitAdmissionCurrent(options = null) {
 }
 
 function _rapierNotesOwnTheDocument() {
-	try { return String(rapier.identity.authority || '').startsWith('notes:') ||
+	try { return globalThis.RapierPlatform?.host?.lockedNotes === true || String(rapier.identity.authority || '').startsWith('notes:') ||
 		_rapierNotesPart?.state.returnRefused === true; }
 	catch (_) { return false; }
 }
@@ -24554,7 +24722,8 @@ function rapierFlushDirty(opts) {
 			token = owner.captureRecoveryRevision({text: persistence.canonicalText,
 				metadata: {filename: persistence.filename, docKind: persistence.docKind}, records: ledgerState.ledger,
 				documentAuthority: persistence.documentAuthority, revision: documentRevision,
-				root: persistence.sourceRootId, complete: historyComplete, carriedLedger: persistence.carriedLedger || null});
+				root: persistence.sourceRootId, complete: historyComplete, carriedLedger: persistence.carriedLedger || null},
+				sourceKey && prior?.epoch === persistence.documentEpoch && prior.authority === persistence.documentAuthority ? prior.token : null);
 			if (sourceKey) {
 				if (prior) owner.retireRecoveryRevision(prior.token);
 				_rapierPersistenceRuntime.recoveryRevision = {key: sourceKey, token, records: records.slice(),
@@ -24658,7 +24827,9 @@ function rapierFlushDirty(opts) {
 						updatedAt: Date.now(),
 					} });
 				}
-				if (seenRecord) rows.push({ store: 'checkpoints', value: seenRecord });
+				if (seenRecord) rows.push(seenRecord.canonicalText === persistence.canonicalText
+					? {store: 'checkpoints', text: true, value: {...seenRecord, canonicalText: null}}
+					: {store: 'checkpoints', value: seenRecord});
 				const agentState = typeof window.RapierAgentBrowser?.agentRecoveryState === 'function'
 					? window.RapierAgentBrowser.agentRecoveryState() : null;
 				rows.push({ store: 'meta', value: { docId: RAPIER_AGENT_SLOT, state: agentState, updatedAt: Date.now() } });
@@ -26231,7 +26402,6 @@ function rapierInsertCallout(requestedType) {
 	_rapierRefreshEditedBlock(block, wrapper);
 	_notifyHistoryState();
 	updateStats();
-	assignHeadingSlugs();
 	showToast(type.toLowerCase() + ' callout ready');
 	return true;
 }
@@ -30154,6 +30324,14 @@ function _rapierWysiwygRenderWindow(centerIndex, approachViewports = _RAPIER_APP
 			}
 		}
 	}
+	if (count <= 150) {
+		if (_rapierWysiwygLedger.wholeOrder === _rapierWysiwygLedger.order) { first = 0; last = count - 1; }
+		else if (!_rapierWysiwygLedger.wholeAsked) {
+			_rapierWysiwygLedger.wholeAsked = true;
+			const whole = () => { _rapierWysiwygLedger.wholeAsked = false; _rapierWysiwygLedger.wholeOrder = _rapierWysiwygLedger.order; _rapierScheduleRenderWindow(); };
+			if (typeof requestIdleCallback === 'function') requestIdleCallback(whole, {timeout: 4000}); else setTimeout(whole, 1500);
+		}
+	}
 	for (let index = first - 1, reachBack = 0; index >= 0 && reachBack < view; index--) {
 		const entry = entryAt(index);
 		if (_rapierWysiwygWrapsAround(entry)) first = index;
@@ -30281,6 +30459,7 @@ function _rapierWysiwygFabVirtual() {
 	let finalToken = 0;
 	let finalPending = false;
 	let interactionGuard = null;
+	let settleTimer = 0;
 	function interactionCurrent() {
 		return !!interactionGuard && _rapierMutationStampIsCurrent(interactionGuard) &&
 			rapier.document.docKind === 'markdown' && rapier.view.mode !== 'source';
@@ -30295,6 +30474,7 @@ function _rapierWysiwygFabVirtual() {
 	function cancelInteraction() {
 		++finalToken;
 		finalPending = false;
+		clearTimeout(settleTimer); settleTimer = 0;
 		_rapierWysiwygLedger.dragging = false;
 		interactionGuard = null;
 
@@ -30356,6 +30536,23 @@ function _rapierWysiwygFabVirtual() {
 				Math.min(_rapierWysiwygLedger.order.length - 1, lo)
 			);
 			if (index < 0) { cancelInteraction(); return; }
+			clearTimeout(settleTimer); settleTimer = 0;
+			if (!final) {
+				h.scrollTop = Math.max(0, g.paddingTop + target + drift(g));
+				settleTimer = setTimeout(() => {
+					settleTimer = 0;
+					if (interactionCurrent() && _rapierWysiwygLedger.dragging) land(h, index, target, false);
+				}, 90);
+				return;
+			}
+			land(h, index, target, true);
+		},
+	};
+	function drift(g) {
+		const w = _rapierWysiwygLedger.window, e = w && _rapierWysiwygLedger.entries.get(_rapierWysiwygLedger.order[w[0]]);
+		return e?.wrapper?.isConnected ? _rapierBlockOffsetTop(e.wrapper) - g.paddingTop - (_rapierWysiwygLedger.cumulative[w[0]] || 0) : 0;
+	}
+	function land(h, index, target, final) {
 			const id = _rapierWysiwygLedger.order[index];
 			let wrapper = h.querySelector('[data-block-id="' + id + '"]');
 			if (wrapper && !wrapper.getClientRects().length) {
@@ -30392,8 +30589,7 @@ function _rapierWysiwygFabVirtual() {
 					cancelInteraction();
 				}));
 			}
-		},
-	};
+		}
 }
 
 function _rapierSourceFabVirtual() {
@@ -35232,6 +35428,7 @@ async function _rapierVendorsReady() {
 		if (_rapierBootstrapRuntime.failed) return false;
 
 		_rapierParseRuntime.markdownSource = (sources.get('lib-markdownit') || [])
+			.filter(span => span.name.startsWith('markdown-it-'))
 			.map(span => span.source).join('\n');
 
 		_rapierRenderModule('render-sanitize')._rapierInstallSanitizeHooks();
@@ -37618,30 +37815,7 @@ function _rapierHandleMathIslandKeydown(e) {
 		}
 	}
 	if (!isle) return false;
-
-	let mathRaw;
-	try { mathRaw = decodeURIComponent(isle.getAttribute('data-math-src')); }
-	catch (_) { mathRaw = isle.textContent || ''; }
-	const fullRaw = _markdownFromEditHTML(editDiv.innerHTML) || block.raw || '';
-
-	const islands = Array.prototype.slice.call(
-		editDiv.querySelectorAll('.math-rendered[data-math-src]'));
-	const targetPos = islands.indexOf(isle);
-	let occurrence = 0;
-	for (let i = 0; i <= targetPos; i++) {
-		let r2;
-		try { r2 = decodeURIComponent(islands[i].getAttribute('data-math-src')); }
-		catch (_) { r2 = islands[i].textContent || ''; }
-		if (r2 === mathRaw) occurrence++;
-	}
-	let searchFrom = 0, idx = -1;
-	for (let i = 0; i < occurrence; i++) {
-		idx = fullRaw.indexOf(mathRaw, searchFrom);
-		if (idx === -1) break;
-		searchFrom = idx + mathRaw.length;
-	}
-	if (idx === -1) idx = 0;
-
+	return _rapierMathIslandToSource(wrapper, editDiv, block, isle, (fullRaw, idx, mathRaw) => {
 	let content = fullRaw, caretPos;
 	if (kind === 'replace') {
 		if (isChar) {
@@ -37669,6 +37843,34 @@ function _rapierHandleMathIslandKeydown(e) {
 			caretPos += e.key.length;
 		}
 	}
+	return {content, caretPos};
+	});
+}
+
+function _rapierMathIslandToSource(wrapper, editDiv, block, isle, edit) {
+	let mathRaw;
+	try { mathRaw = decodeURIComponent(isle.getAttribute('data-math-src')); }
+	catch (_) { mathRaw = isle.textContent || ''; }
+	const fullRaw = _markdownFromEditHTML(editDiv.innerHTML) || block.raw || '';
+
+	const islands = Array.prototype.slice.call(
+		editDiv.querySelectorAll('.math-rendered[data-math-src]'));
+	const targetPos = islands.indexOf(isle);
+	let occurrence = 0;
+	for (let i = 0; i <= targetPos; i++) {
+		let r2;
+		try { r2 = decodeURIComponent(islands[i].getAttribute('data-math-src')); }
+		catch (_) { r2 = islands[i].textContent || ''; }
+		if (r2 === mathRaw) occurrence++;
+	}
+	let searchFrom = 0, idx = -1;
+	for (let i = 0; i < occurrence; i++) {
+		idx = fullRaw.indexOf(mathRaw, searchFrom);
+		if (idx === -1) break;
+		searchFrom = idx + mathRaw.length;
+	}
+	if (idx === -1) idx = 0;
+	const {content, caretPos} = edit(fullRaw, idx, mathRaw);
 
 	_rapierLockRawEditGeometry(wrapper, editDiv, true);
 	editDiv.textContent = content;
@@ -37679,6 +37881,7 @@ function _rapierHandleMathIslandKeydown(e) {
 	const nr = document.createRange();
 	nr.setStart(textNode, Math.min(caretPos, textNode.textContent.length));
 	nr.collapse(true);
+	const sel = window.getSelection();
 	sel.removeAllRanges();
 	sel.addRange(nr);
 
@@ -37686,6 +37889,16 @@ function _rapierHandleMathIslandKeydown(e) {
 	rapierDirty(block.id);
 	_syncEmptyClass(wrapper, editDiv);
 	return true;
+}
+function _rapierMathTapCaret(fullRaw, idx, mathRaw) {
+	const close = /(\$\$|\$|\\\)|\\\])$/.exec(mathRaw)?.[0].length || 0;
+	return {content: fullRaw, caretPos: idx + Math.max(0, mathRaw.length - close)};
+}
+function _rapierOpenMathIslandByTap(wrapper, ordinal) {
+	const editDiv = wrapper?.querySelector(':scope > .block-edit'), block = _rapierBoundBlock(wrapper);
+	const isle = editDiv?.querySelectorAll('.math-rendered[data-math-src]')[ordinal];
+	if (!isle || !block || rapier.access.readOnly || wrapper.classList.contains('block-wrapper--math-source')) return false;
+	return _rapierMathIslandToSource(wrapper, editDiv, block, isle, _rapierMathTapCaret);
 }
 
 document.addEventListener('keydown', e => {
@@ -41599,7 +41812,7 @@ function _rapierReadingRange(range) {
 	if (!range || range.collapsed) return range;
 	let reading = range;
 	const shell = range.endContainer;
-	if (shell?._rapierUnrendered === true && shell.classList?.contains('block-wrapper')) {
+	if (shell?._rapierUnrendered === true && shell.classList?.contains('block-wrapper') && range.endOffset > 0) {
 		reading = range.cloneRange();
 		reading.setEndAfter(shell);
 	}
@@ -41616,7 +41829,8 @@ function _rapierReadingRange(range) {
 	if (reading === range) reading = range.cloneRange();
 	const whole = startsWhole && endsWhole && wrappers.slice(0, startIndex).every(hidden) && wrappers.slice(endIndex + 1).every(hidden);
 	if (startsWhole) reading.setStartBefore(whole ? wrappers[0] : startWrapper);
-	if (endsWhole) reading.setEndAfter(whole ? wrappers[wrappers.length - 1] : endWrapper);
+	const endsAtNext = reading.endOffset === 0 && reading.endContainer === _rapierAdjacentBlockWrapper(endWrapper, 1);
+	if (endsWhole && !endsAtNext) reading.setEndAfter(whole ? wrappers[wrappers.length - 1] : endWrapper);
 	return reading;
 }
 
@@ -41720,9 +41934,9 @@ function _rapierRenderedBoundaryToCanonical(wrapper, block, node, offset, span, 
 	return span.start + found + point;
 }
 
-function _rapierResolvePoint(offset, last) {
+function _rapierResolvePoint(offset, last, blockIds = null) {
 	offset = Number(offset);
-	const spans = _rapierExcerptCanonicalBlockSpans();
+	const spans = _rapierExcerptCanonicalBlockSpans(blockIds);
 	let found = null;
 	for (const block of rapier.document.blocks) {
 		const span = spans.get(block.id);
@@ -44923,7 +45137,8 @@ async function _rapierSaveDocument(_input, ctx) {
 			};
 		}
 		if (rapier.identity.saveAsRequired === true ||
-				(window.RapierPlatform.files.hasWritable && !window.RapierPlatform.files.hasWritable(rapier.identity.authority))) {
+				(window.RapierPlatform.files.hasWritable && !window.RapierPlatform.files.hasWritable(rapier.identity.authority) &&
+				 !window.RapierPlatform.files.hasOriginal(rapier.identity.authority))) {
 			throw Object.assign(new Error('Choose a writable file destination first.'), { code: 'requires_destination' });
 		}
 		let receipt;
@@ -44962,6 +45177,9 @@ async function _rapierSaveDocument(_input, ctx) {
 			saveStatus: outcome === 'cancelled' ? 'user_cancelled'
 				: (outcome === 'unacknowledged' ? 'save_committed_acknowledgement_failed'
 					: String(receipt.status || 'failed')),
+			...(receipt.reason ? {reason: receipt.reason, recoveryChoices: receipt.recoveryChoices,
+				draftRetained: receipt.draftRetained === true, originalPreserved: receipt.originalPreserved === true,
+				copyVerified: receipt.copyVerified === true} : {}),
 			confirmed: receipt.confirmed === true,
 			verified: receipt.verified === true,
 			filename: String(receipt.filename || rapier.document.filename),
@@ -46693,13 +46911,19 @@ function _rapierSwitchSlide(group) {
 	}
 	state.layout(true);
 }
+function _rapierUiFold(control) {
+	const controls = document.getElementById(control.getAttribute('aria-controls'));
+	if (controls?.id === 'settings-pro-controls') { _rapierUi.proOpen = !_rapierUi.proOpen; renderSettings(); return; }
+	if (controls) controls.dataset.open = controls.dataset.open === 'true' ? 'false' : 'true';
+	renderSettings();
+}
 function renderSwitch(group, value) {
 	if (!group) return;
 	_rapierSwitchTap(group);
 	const current = String(value);
 	if (group.dataset.switchLabel) {
 		const button = group.querySelector('button'), on = current === group.dataset.on;
-		button.textContent = group.dataset.switchLabel + ' ' + (on ? 'On' : 'Off');
+		button.textContent = group.dataset.switchLabel.replace(/:\s*$/, '') + ': ' + (on ? 'On' : 'Off');
 		button.dataset.value = on ? group.dataset.off : group.dataset.on;
 		button.toggleAttribute('data-active', on);
 		button.setAttribute('role', 'switch'); button.setAttribute('aria-checked', String(on));
@@ -47006,7 +47230,13 @@ function renderSettings() {
 	refs.proSection.hidden = false;
 	refs.proControls.dataset.open = _rapierUi.proOpen ? 'true' : 'false';
 	refs.proControls.inert = !_rapierUi.proOpen;
-	for (const button of refs.proTitle.querySelectorAll('[data-action="pro-toggle"]')) button.setAttribute('aria-expanded', _rapierUi.proOpen ? 'true' : 'false');
+	for (const button of refs.proTitle.querySelectorAll('[data-action="fold"]')) button.setAttribute('aria-expanded', _rapierUi.proOpen ? 'true' : 'false');
+	for (const name of ['layout', 'plugins', 'android']) {
+		const controls = document.getElementById('settings-' + name + '-controls'), open = controls?.dataset.open === 'true';
+		if (!controls) continue;
+		controls.inert = !open;
+		for (const button of document.querySelectorAll('[aria-controls="' + controls.id + '"]')) button.setAttribute('aria-expanded', open ? 'true' : 'false');
+	}
 	refs.proIconRow.hidden = !facts.icon;
 	refs.focusSwitch.hidden = !facts.androidPro;
 	_rapierFocusApply(facts.androidPro && _rapierFeatureAllowed('focus') && !!RapierPreferences.read('focus'));
@@ -47760,8 +47990,8 @@ function _rapierCfConsumeCallback(context) {
 	if (context.hash.startsWith('#join=')) history.replaceState(null, '', _rapierBootPathAndQuery());
 	void _rapierPartReady('notes').then(ready => { if (ready) _rapierNotesPart.sync.consume(context); });
 }
-function _rapierCfToggle() {
-	if (_rapierNotesPart) { _rapierNotesPart.sync.open(); return; }
+function _rapierCfToggle(options = {}) {
+	if (_rapierNotesPart) { _rapierNotesPart.sync.open(options); return; }
 	if (_rapierUiAndroid()) _rapierUiSyncOpen();
 }
 
@@ -48821,7 +49051,7 @@ const _RAPIER_UI_ACTIONS = Object.freeze({
 		} else change();
 	},
 	'code-toggle': () => { _rapierUi.codeOpen = !_rapierUi.codeOpen; renderSettings(); },
-	'pro-toggle': () => { _rapierUi.proOpen = !_rapierUi.proOpen; renderSettings(); },
+	fold: control => _rapierUiFold(control),
 	'icon-colour': () => _rapierUiOpenIconColour(),
 	'icon-select': control => _rapierUiPro.selectIcon(
 		RAPIER_ACCENT_PRESETS.find(preset => preset.name.toLowerCase() === control.dataset.value)),

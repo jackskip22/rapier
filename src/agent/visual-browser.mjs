@@ -342,9 +342,9 @@ async function mountVisual(root, {clip, signal, current, frame, deferPixels = fa
       if (source !== root) throw error('visual_resources_unavailable');
     }
     const className = `rapier-visual-${++cloneSequence}`;
-    for (const pseudo of ['::before', '::after']) {
+    for (const pseudo of ['::before', '::after', '::marker']) {
       const content = window.getComputedStyle(source, pseudo).content;
-      if (!content || content === 'none' || content === 'normal') continue;
+      if (!content || content === 'none' || content === 'normal' && pseudo !== '::marker') continue;
       copy.classList.add(className);
       const holder = document.createElement('span');
       await copyStyle(source, holder.style, pseudo);

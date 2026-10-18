@@ -226,8 +226,11 @@ const _rapierEmbeddedImages = (() => {
     signal?.throwIfAborted();
     id = _rapierEmbedAssetSource(id) || id;
     const direct = assets.dataImage(id);
-    if (!direct) id = assets.normalizeLabel(id);
-    const record = direct ? {id, url: id, ...direct, status: 'unverified'} : parsed.assets.get(assets.normalizeLabel(id));
+    const relative = !direct && globalThis.RapierPlatform?.files.relativeCandidate?.(id);
+    const original = relative ? globalThis.RapierPlatform.files.original(rapier.identity.authority) : null;
+    const notePicture = !direct && !relative && !!globalThis.RapierSiblingPictures?.has(id);
+    if (!direct && !relative && !notePicture) id = assets.normalizeLabel(id);
+    const record = relative || notePicture ? {id, url: id, status: 'unverified'} : direct ? {id, url: id, ...direct, status: 'unverified'} : parsed.assets.get(assets.normalizeLabel(id));
     if (!record || record.status !== 'unverified') {
       if (!direct && !record && !assets.referenceOccurs(source, id)) throw Object.assign(new Error('Embedded image reference retired'), {code: 'IMAGE_VANISHED'});
       throw new Error('Embedded image is missing or exceeds the document image limit');
@@ -243,8 +246,25 @@ const _rapierEmbeddedImages = (() => {
     const run = async () => {
       options.signal.throwIfAborted();
       assertCurrent(stamp, capturedAuthority);
-      if (!direct && source.slice(record.start, record.end) !== record.source) throw new Error('image_source_changed');
-      let prepared = await globalThis.RapierImageInspection.prepareImage(record.url, {signal: options.signal, dark: darkPaper(), paperInk: paperInk()});
+      if (!direct && !relative && !notePicture && source.slice(record.start, record.end) !== record.source) throw new Error('image_source_changed');
+      let lease;
+      try {
+      let input = record.url;
+      if (relative) {
+        if (!original) throw cancelled();
+        lease = await original.resource(id, options);
+        options.signal.throwIfAborted(); assertCurrent(stamp, capturedAuthority);
+        input = await _rapierBlobDataUrl(lease.blob);
+        options.signal.throwIfAborted(); assertCurrent(stamp, capturedAuthority);
+        record.codec = lease.mime;
+      }
+      if (notePicture) {
+        const blob = await globalThis.RapierSiblingPictures.read(id);
+        options.signal.throwIfAborted(); assertCurrent(stamp, capturedAuthority);
+        input = await _rapierBlobDataUrl(blob);
+        record.codec = blob.type;
+      }
+      let prepared = await globalThis.RapierImageInspection.prepareImage(input, {signal: options.signal, dark: darkPaper(), paperInk: paperInk()});
       if (prepared.type === 'image/svg+xml' && darkPaper() && !prepared.darkReady)
         prepared = await globalThis.RapierImageInspection.prepareImage(record.url, {signal: options.signal, dark: true, paperInk: paperInk()});
       assertCurrent(stamp, capturedAuthority);
@@ -278,7 +298,7 @@ const _rapierEmbeddedImages = (() => {
       }
       if (damaged) notifyDamaged();
       assertCurrent(stamp, capturedAuthority);
-      const row = {url, displayUrl: undisplayable ? url : displayUrl, width: dimensions.width, height: dimensions.height, type, signature, used: ++clock,
+      const row = {url, relative, displayUrl: undisplayable ? url : displayUrl, width: dimensions.width, height: dimensions.height, type, signature, used: ++clock,
         animated: prepared.animated, recipe: prepared.recipe, recipeError: prepared.recipeError, resources: prepared.resources, undisplayable, damaged,
         cost: (url === signature ? 0 : url.length) + signature.length + prepared.blob.size};
       const displaced = cache.get(signature);
@@ -294,6 +314,7 @@ const _rapierEmbeddedImages = (() => {
       retained = !undisplayable;
       return row;
       } finally { if (!retained) releaseURL(displayUrl); }
+      } finally { lease?.dispose(); }
     };
     request.job = rasterQueue.then(run, run).finally(() => {
       request.settled = true;
@@ -451,7 +472,8 @@ const _rapierEmbeddedImages = (() => {
   const imageKey = image => image.getAttribute('data-rapier-asset') || image.getAttribute('data-rapier-image-url');
   const recordFor = (id, index) => {
     const local = _rapierEmbedAssetSource(id) || id;
-    return assets.dataImage(local) ? {url: local} : index.assets.get(assets.normalizeLabel(id));
+    return assets.dataImage(local) || globalThis.RapierPlatform?.files.relativeCandidate?.(local) || globalThis.RapierSiblingPictures?.has(local)
+      ? {url: local} : index.assets.get(assets.normalizeLabel(id));
   };
   const darkPaper = () => RapierPreferences.read('invertImageAlpha') && !document.body.classList.contains('light');
   const darkened = new Map();
@@ -523,8 +545,18 @@ const _rapierEmbeddedImages = (() => {
     }
     schedule();
   }
+  function originalReady() {
+    for (const image of host.querySelectorAll('img[data-rapier-asset-state="held"]')) image.removeAttribute('data-rapier-asset-state');
+    schedule();
+  }
+  const originalViewHidden = () => rapier.view.mode === 'source' || document.body.classList.contains('rapier-notes-open');
   async function reveal(image) {
-    const id = imageKey(image), captured = documentIndex(), stamp = rapier.identity.authority;
+    const id = imageKey(image);
+    if (originalViewHidden() && globalThis.RapierPlatform?.files.relativeCandidate?.(id)) return;
+    if (globalThis.RapierPlatform?.files.relativeCandidate?.(id) && !globalThis.RapierPlatform.files.original(rapier.identity.authority)) {
+      image.dataset.rapierAssetState = 'held'; return;
+    }
+    const captured = documentIndex(), stamp = rapier.identity.authority;
     const record = recordFor(id, captured.index), ticket = {id, signature: record?.url, authority: stamp, dark: darkPaper()};
     const previous = revealing.get(image);
     if (previous && !previous.controller.signal.aborted && presented.get(image) === previous.ticket &&
@@ -579,6 +611,11 @@ const _rapierEmbeddedImages = (() => {
     frame = 0;
     if (suspended) return;
     const current = documentIndex();
+    const mountedRelative = new Set([...host.querySelectorAll('img[data-rapier-image-url]')].map(imageKey));
+    for (const [key, row] of cache) if (row.relative && (originalViewHidden() || !mountedRelative.has(key))) {
+      releasePresentation(row); cache.delete(key);
+    }
+    for (const [image, request] of revealing) if (originalViewHidden() && globalThis.RapierPlatform?.files.relativeCandidate?.(imageKey(image))) request.controller.abort();
     let area = null;
     const areaNow = () => area || (area = host.getBoundingClientRect());
     if (parked.size) { areaNow(); landParked(currentSource); }
@@ -599,6 +636,16 @@ const _rapierEmbeddedImages = (() => {
     }
     for (const image of host.querySelectorAll('img:is([data-rapier-asset],[data-rapier-image-url])')) {
       const id = imageKey(image), previous = presented.get(image), record = recordFor(id, current.index);
+      if (globalThis.RapierPlatform?.files.relativeCandidate?.(id)) {
+        if (originalViewHidden()) {
+          visibility?.unobserve(image); watched.delete(image); presented.delete(image);
+          image.dataset.rapierAssetState = 'held';
+          if (image.getAttribute('src') !== placeholder) image.src = placeholder;
+          continue;
+        }
+        if (image.dataset.rapierAssetState === 'held' && globalThis.RapierPlatform.files.original(rapier.identity.authority))
+          image.removeAttribute('data-rapier-asset-state');
+      }
       if (previous && (previous.authority !== authority || previous.signature !== record?.url)) {
         areaNow(); visibility?.unobserve(image); watched.delete(image); image.removeAttribute('data-rapier-asset-state');
       }
@@ -635,7 +682,7 @@ const _rapierEmbeddedImages = (() => {
     const current = () => isCurrent() && identity === rapier.identity.authority && root === rapier.document.source.rootId;
     while (current()) {
       if (suspended) { await new Promise(resolve => window.addEventListener('pageshow', resolve, {once: true})); continue; }
-      if (rapier.document.docKind !== 'markdown' || rapier.view.mode === 'source') return true;
+      if (rapier.document.docKind !== 'markdown' || originalViewHidden()) return true;
       layout();
       refresh();
       if (!current()) return false;
@@ -643,7 +690,7 @@ const _rapierEmbeddedImages = (() => {
       for (const image of host.querySelectorAll('img')) {
         const bounds = image.getBoundingClientRect();
         if (!image.getClientRects().length || bounds.bottom < area.top - 500 || bounds.top > area.bottom + 500) continue;
-        if (imageKey(image) && !['ready', 'error'].includes(image.dataset.rapierAssetState)) {
+        if (imageKey(image) && !['ready', 'error', 'held'].includes(image.dataset.rapierAssetState)) {
           visibility?.unobserve(image); watched.delete(image);
           jobs.push(reveal(image));
           continue;
@@ -1473,6 +1520,6 @@ const _rapierEmbeddedImages = (() => {
   function historySplices(target, redo) {
     return globalThis.RapierLedger.pictureHistorySplices({source: _rapierSourceText(), records: rapier.undo.ledger}, target, redo);
   }
-  return Object.freeze({cachedDrawing: url => primed?.signature === url ? primed : cache.get(url) || null, codec, imageHtml, geometry: imageGeometry, materialize, present, prepare, prepareView, insert, caretSplit, portable, clipboard, nativeImage, validatePaintRaster, schedule, retheme, stats, inkForPaper, downloadOriginal, jxlDisplayable, whenJxlDisplayKnown, index: () => documentIndex(), canFinishLater, finishLater, finishSettled, historySplices, historySubject});
+  return Object.freeze({cachedDrawing: url => primed?.signature === url ? primed : cache.get(url) || null, codec, imageHtml, originalReady, geometry: imageGeometry, materialize, present, prepare, prepareView, insert, caretSplit, portable, clipboard, nativeImage, validatePaintRaster, schedule, retheme, stats, inkForPaper, downloadOriginal, jxlDisplayable, whenJxlDisplayKnown, index: () => documentIndex(), canFinishLater, finishLater, finishSettled, historySplices, historySubject});
 })();
 globalThis.RapierEmbeddedImages = _rapierEmbeddedImages;

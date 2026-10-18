@@ -59,6 +59,16 @@ export class RemotePaintSurface {
 		const buffer = data.buffer;
 		this._push({target: 'surface', id: this.id, method: 'fromRGBA8', args: [data, width, height, x, y]}, {transfer: buffer instanceof ArrayBuffer && data.byteOffset === 0 && data.byteLength === buffer.byteLength ? buffer : null});
 	}
+ restoreHistory(surfaceId,point) {
+  if(this.options.mode!=='water'&&point.replay){
+   const {sheet,brush}=structuredClone(point.replay);
+   this.sheetId=sheet.id;this.importOffset=sheet.offset;this.options=sheet.options;this.scale=sheet.scale;this.paper=sheet.paper;this.gravity=sheet.gravity;
+   this.historyReplayBrush=brush;this.resumedReplayBrush=brush;
+  }
+  const work=this._push({target:'surface',id:this.id,method:'fromHistory',args:[surfaceId,point]},{structural:true,ticket:true}).promise;
+  this.materialReady=work;work.then(()=>{if(this.materialReady===work)this.materialReady=null;},()=>{});
+  this.remote.flush().catch(()=>{});return work;
+ }
 	fromWaterMaterial(replay,session) {
 		const work=this._push({target:'surface',id:this.id,method:'fromWaterMaterial',args:[structuredClone(replay),session,this.importOffset.slice()]},{structural:true,ticket:true}).promise;
 		this.materialReady=work;
@@ -73,8 +83,8 @@ export class RemotePaintSurface {
 		this._push({target: 'surface', id: this.id, method: 'grow', args: [left, top, right, bottom]}, {structural: true});
 		return {dx: left, dy: top};
 	}
-	beginStroke({record = false} = {}) {
-		const token = {id: ++this.remote._tokens, width: this.width, height: this.height, toothOX: this.toothOX, toothOY: this.toothOY, importOffset:this.importOffset.slice()};
+	beginStroke({record = false, history = null} = {}) {
+		const token = {id: ++this.remote._tokens, width: this.width, height: this.height, toothOX: this.toothOX, toothOY: this.toothOY, importOffset:this.importOffset.slice(), replay:this.historyReplayState()};
 		if(this.options.mode==='water')this.waterCheckpoint=token;
 		if (this.replay) {
 			const box = this.bounds();
@@ -84,14 +94,19 @@ export class RemotePaintSurface {
 		if (record) this.replay = {id: this.sheetId + '-' + token.id, actor: 'human',
 			sheet: {id: this.sheetId, width: this.width, height: this.height, options: structuredClone(this.options), offset: this.importOffset.slice(), scale: this.scale, toothOX: this.toothOX, toothOY: this.toothOY, paper: structuredClone(this.paper)},
 			brushes: [], commands: [{target: 'surface', id: this.id, method: 'tilt', args: this.gravity.slice()}]};
-		this._push({target: 'surface', id: this.id, method: 'beginStroke', args: [token.id]}, {mutates: false});
+		this._push({target: 'surface', id: this.id, method: 'beginStroke', args: [token.id], ...(history ? {history:{...structuredClone(history),paperKey:JSON.stringify({sheet:this.sheetId,paper:this.paper,options:this.options,scale:this.scale,tooth:[this.toothOX,this.toothOY]})}} : {})}, {mutates: false});
 		return token;
 	}
-	endStroke(token, cancel = false) {
+ startHistory(input) {
+  const token=++this.remote._tokens;
+  this._push({target:'surface',id:this.id,method:'historyStart',args:[token],history:{...structuredClone(input),paperKey:JSON.stringify({sheet:this.sheetId,paper:this.paper,options:this.options,scale:this.scale,tooth:[this.toothOX,this.toothOY]})}},{mutates:false});
+  return token;
+ }
+	endStroke(token, cancel = false, keepHistory = false) {
 		if (!token) return false;
-		if (cancel) { this.width = token.width; this.height = token.height; this.toothOX = token.toothOX; this.toothOY = token.toothOY; this.replay = null; }
+		if (cancel) { this.width = token.width; this.height = token.height; this.toothOX = token.toothOX; this.toothOY = token.toothOY; this.replay = null; this.historyReplayBrush=token.replay?.brush; }
 		if(cancel && this.options.mode==='water')this.importOffset=token.importOffset.slice();
-		this._push({target: 'surface', id: this.id, method: 'endStroke', args: [token.id, cancel === true]}, {structural: cancel === true});
+		this._push({target: 'surface', id: this.id, method: 'endStroke', args: [token.id, cancel === true], ...(keepHistory?{keepHistory:true}:{})}, {structural: cancel === true});
 		return true;
 	}
 	peekReplay() { return [...this.replayQueue, ...(this.replay ? [this.replay] : [])]; }
@@ -135,6 +150,9 @@ export class RemotePaintSurface {
 	}
 	async readRGBA8(box = null) { return (await this.remote.read(this, {box})).pixels; }
 	readBounds(options = {}) { return this.remote.read(this, {bounds: true, ...options}); }
+ historyReplayState() {
+  return this.options.mode==='water'?null:structuredClone({sheet:{id:this.sheetId,offset:this.importOffset,options:this.options,scale:this.scale,paper:this.paper,gravity:this.gravity},brush:this.historyReplayBrush||null});
+ }
 	observe(options = {}) { return this.remote.observe(this, options); }
 	waterSheet() { return {id:this.sheetId,width:this.width,height:this.height,offset:this.importOffset.slice(),scale:this.scale,toothOX:this.toothOX,toothOY:this.toothOY,options:{...structuredClone(this.options),mode:'water',paper:this.options.paper || 'cold-press'}}; }
 	applyWater(action) {
@@ -162,7 +180,7 @@ export class RemotePaintBrush {
 	_command(method, args) {
 		const wire = {target: 'brush', id: this.id, method, args};
 		if (method === 'seed') this.replaySetup = [];
-		this.replaySetup.push(structuredClone(wire));
+		this.replaySetup.push(structuredClone({...wire,id:this.replayId||this.id}));
 		this.remote._enqueue({wire, surface: null, mutates: false});
 	}
 	seed(value) { this._command('seed', [value]); }
@@ -175,10 +193,11 @@ export class RemotePaintBrush {
 	rebase(dx, dy) { if (dx || dy) this._command('rebase', [dx, dy]); }
 	strokeTo(surface, x, y, pressure, xtilt = 0, ytilt = 0, dtime = .001, viewzoom = 1, viewrotation = 0, barrel = 0, inputKind = 'script', inputTime = null) {
 		if (surface.gone) return;
+		surface.historyReplayBrush={id:this.replayId||this.id,definition:this.definition};
 		surface.pending++;
 		const args = [x, y, pressure, xtilt, ytilt, dtime, viewzoom, viewrotation, barrel];
 		if (surface.options.mode === 'water') args.push(inputKind,inputTime);
-		this.remote._enqueue({wire: {target: 'stroke', surfaceId: surface.id, brushId: this.id, args}, surface, mutates: true, brush: this});
+		this.remote._enqueue({wire: {target: 'stroke', surfaceId: surface.id, brushId: this.id, args, input:{kind:inputKind,time:inputTime}}, surface, mutates: true, brush: this});
 	}
 	drop() { this.remote.dropBrush(this); }
 }
@@ -213,28 +232,34 @@ export function createPaintRemote(client, {onFailure = null, frame = schedule} =
 			} else client.request('create', {surfaceId: id, width, height, options}).then(reply => remote._state(reply), remote._fail);
 			return surface;
 		},
-		brush(definition) {
+		brush(definition, historySurface = null) {
 			if (failure) throw failure;
 			const id = ++serial, brush = new RemotePaintBrush(remote, id, definition);
+			const held=historySurface?.resumedReplayBrush;
+			if(held&&JSON.stringify(held.definition)===JSON.stringify(brush.definition))brush.replayId=held.id;
+			if(historySurface)delete historySurface.resumedReplayBrush;
 			brushes.set(id, brush);
 			remote.flush().catch(() => {});
-			client.request('brush', {brushId: id, definition}).catch(remote._fail);
+			client.request('brush', {brushId: id, definition,...(historySurface?{historySurfaceId:historySurface.id}:{})}).catch(remote._fail);
 			return brush;
 		},
 		_enqueue(entry) {
 			if (failure) throw failure;
 			const wire = entry.wire;
 			if (wire.target === 'brush') {
-				for (const surface of surfaces.values()) if (surface.replay?.brushes.some(row => row.id === wire.id)) surface.replay.commands.push(structuredClone(wire));
+				const id=brushes.get(wire.id)?.replayId||wire.id;
+				for (const surface of surfaces.values()) if (surface.replay?.brushes.some(row => row.id === id)) surface.replay.commands.push(structuredClone({...wire,id}));
 			} else if (entry.surface?.replay) {
 				const record = entry.surface.replay;
 				if (wire.target === 'stroke') {
-					if (!record.brushes.some(row => row.id === entry.brush.id)) {
-						record.brushes.push({id: entry.brush.id, definition: structuredClone(entry.brush.definition)});
+					const id=entry.brush.replayId||entry.brush.id;
+					if (!record.brushes.some(row => row.id === id)) {
+						record.brushes.push({id, definition: structuredClone(entry.brush.definition)});
 						record.commands.push(...structuredClone(entry.brush.replaySetup));
 					}
-					record.commands.push(structuredClone(wire));
-				} else if (!['beginStroke', 'endStroke', 'fromRGBA8'].includes(wire.method)) {
+					const {input, ...command} = wire;
+					record.commands.push(structuredClone({...command,brushId:id}));
+				} else if (!['beginStroke', 'endStroke', 'fromRGBA8', 'fromHistory', 'historyStart'].includes(wire.method)) {
 					entry.replayRecord = record; entry.replayCommand = structuredClone(wire);
 					record.commands.push(entry.replayCommand);
 					if (wire.method === 'dryWet') wire.record = true;
@@ -297,7 +322,7 @@ export function createPaintRemote(client, {onFailure = null, frame = schedule} =
 				if (entry.wire.target === 'surface') {
 					if(entry.wire.method==='endStroke' && entry.surface?.waterCheckpoint?.id===entry.wire.args[0])entry.surface.waterCheckpoint=null;
 					const value = reply.values[at], work = reply.replayWork?.[at]; at++;
-					if(entry.wire.method==='fromWaterMaterial' && value && entry.surface) {
+					if(['fromWaterMaterial','fromHistory'].includes(entry.wire.method) && value && entry.surface) {
 						entry.surface.width=value.width;entry.surface.height=value.height;entry.surface.toothOX=value.toothOX;entry.surface.toothOY=value.toothOY;
 					}
 					if (entry.replayRecord && work) {
@@ -343,6 +368,7 @@ export function createPaintRemote(client, {onFailure = null, frame = schedule} =
 			return {...reply,verified};
 		},
 		async read(surface, request = {}) {
+			const replay=surface.historyReplayState();
 			const {signal, ...wire} = request;
 			const waterSheet=surface.options.mode==='water'?surface.waterSheet():null;
 			const live = () => {
@@ -362,7 +388,7 @@ export function createPaintRemote(client, {onFailure = null, frame = schedule} =
 				if (!verified) throw remote._fail(new Error('The painter\'s readout does not match its digest'));
 			}
 			if (!surface.gone && surfaces.get(surface.id) === surface && reply.meta && reply.meta.revision >= surface.meta.revision) surface.meta = {...surface.meta, ...reply.meta};
-			return {...reply, verified, ...(waterSheet?{waterSheet}: {})};
+			return {...reply, ...(reply.history&&replay?{history:{...reply.history,replay}}:{}), verified, ...(waterSheet?{waterSheet}: {})};
 		},
 		async footprint(request) {
 			if (failure) throw failure;

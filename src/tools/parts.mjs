@@ -12,7 +12,7 @@ export const PARTS = Object.freeze([
     scripts: ['draw/draw.js', 'draw/effects-tool.js', 'draw/liquid-live.js', 'draw/copier-live.js', 'draw/background-tool.js',
       'draw/paint-tool.js', 'draw/water-tool.js', 'draw/water-pro.js'],
     styles: ['rapier-draw-style'],
-    globals: {RapierDrawFit: 'draw/fit.mjs', RapierDrawWaterVideo: 'draw/water-video.mjs', RapierDrawPaint: 'draw/paint.mjs',
+    globals: {RapierDrawLetterPreviews: 'draw/letter-previews.mjs', RapierDrawFit: 'draw/fit.mjs', RapierDrawWaterVideo: 'draw/water-video.mjs', RapierDrawPaint: 'draw/paint.mjs',
       RapierDrawBrushes: 'draw/brushes.mjs', RapierDrawAgentPaint: 'draw/agent-paint.mjs', RapierDrawPaintWorker: 'draw/paint-worker.mjs',
       RapierDrawPaintRows: 'draw/paint-parallel.mjs', RapierDrawPaintRemote: 'draw/paint-remote.mjs', RapierDrawLiquid: 'draw/liquid-gpu.mjs',
       RapierDrawLiquidWorker: 'draw/liquid-worker.mjs', RapierDrawCopier: 'draw/copier-gpu.mjs', RapierDrawWater: 'draw/water.mjs',
@@ -25,11 +25,11 @@ export const PARTS = Object.freeze([
       ImportTextBundle: 'import-textbundle', ImportDayOne: 'import-dayone', ImportRoam: 'import-roam', ImportLogseq: 'import-logseq', Import: 'import',
       ImportPictures: 'import-pictures', ImportReceipt: 'import-receipt', ImportPlan: 'import-plan',
       FrontMatter: 'frontmatter', Links: 'links', Search: 'search', SearchCache: 'search-cache', ImportMarkdown: 'import-markdown', ImportEnex: 'import-enex',
-      ImportHtml: 'import-html', Restore: 'restore', Trash: 'trash', History: 'history', Integrity: 'integrity', Zip: 'zip', Backup: 'backup',
-      BackupWorker: 'backup-worker', OPFSWorker: 'opfs-worker', Owner: 'owner', OPFS: 'opfs', IdbStore: 'idb-store', WorkspaceStore: 'workspace-store', Folder: 'folder', Todo: 'todo',
-      Audio: 'audio', Attachments: 'attachments', HostWords: 'host-words', Sync: 'sync', Vault: 'vault', Merge: 'merge', SyncSession: 'sync-api'})
-      .map(([name, file]) => ['RapierNotes' + name, 'notes/' + file + '.mjs']).concat([['RapierCloudProviders', 'notes/cloud-providers.mjs'],
-        ['RapierWebDAVTransport', 'notes/transport-webdav.mjs']]))},
+      ImportHtml: 'import-html', Trash: 'trash', History: 'history', Integrity: 'integrity', Backup: 'backup',
+      BackupWorker: 'backup-worker', OPFSWorker: 'opfs-worker', OPFS: 'opfs', IdbStore: 'idb-store', WorkspaceStore: 'workspace-store', Folder: 'folder', Todo: 'todo',
+      Audio: 'audio', Attachments: 'attachments', HostWords: 'host-words', SyncSession: 'sync-api'})
+      .map(([name, file]) => ['RapierNotes' + name, 'notes/' + file + '.mjs'])
+        .concat([['RapierOriginalFolderCore', 'notes/original-folder/index.mjs']]))},
 ]);
 export const PART_IDS = Object.freeze(PARTS.map(part => part.id));
 

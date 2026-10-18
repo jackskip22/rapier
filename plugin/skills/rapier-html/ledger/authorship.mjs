@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import {readLedger, exportLedger, textRoot, rootAfter} from './format.mjs';
 import {_rapierTransformSplices, _rapierHistoryEffects} from './journal-records.mjs';
+import {projectInverseSource} from './inverse-source.mjs';
 import {sha256} from './hash.mjs';
 import {plainData, documentText, nonnegative, exactKeys, fault} from './data.mjs';
 function coalesce(runs) {
@@ -14,25 +15,15 @@ function coalesce(runs) {
   return out;
 }
 export function authorship(input) {
-  const {ledger, text} = readLedger(input), references = _rapierHistoryEffects(ledger.records).references, removed = new Map();
-  let runs = ledger.start.text ? [[0, ledger.start.text.length, 'system', 'unattributed', 0]] : [];
-  for (const record of ledger.records) {
-    const tx = record.transaction, gone = [], kept = (references?.get(tx.id) || []).flatMap(id => removed.get(id) || []);
-    for (const row of record.splices) {
-      const cut = row.pos + row.removed.length, delta = row.inserted.length - row.removed.length, before = [], after = [], inside = [];
-      for (const run of runs) {
-        if (run[0] < row.pos) before.push([run[0], Math.min(run[1], row.pos), ...run.slice(2)]);
-        if (run[1] > cut) after.push([Math.max(run[0], cut) + delta, run[1] + delta, ...run.slice(2)]);
-        if (run[0] < cut && run[1] > row.pos) inside.push([Math.max(run[0], row.pos) - row.pos, Math.min(run[1], cut) - row.pos, ...run.slice(2)]);
-      }
-      if (row.removed) gone.push({text: row.removed, runs: inside});
-      const at = row.inserted ? kept.findIndex(entry => entry.text === row.inserted) : -1;
-      const put = at < 0 ? [[row.pos, row.pos + row.inserted.length, tx.actor.kind, tx.actor.id, tx.createdAt]]
-        : kept.splice(at, 1)[0].runs.map(run => [run[0] + row.pos, run[1] + row.pos, ...run.slice(2)]);
-      runs = coalesce([...before, ...put, ...after]);
-    }
-    removed.set(tx.id, gone);
-  }
+  const {ledger, text} = readLedger(input), effects = _rapierHistoryEffects(ledger.records);
+  const projection = projectInverseSource({source: text, initialSource: ledger.start.text, records: ledger.records,
+    rows: ledger.records.map(record => ({record, splices: record.splices})), effects}, new Set(), effects, {origins: true});
+  if (!projection.ok) throw fault('authorship source history is invalid');
+  const authors = new Map(ledger.records.map(({transaction}) => [transaction.id, transaction]));
+  const runs = coalesce(projection.origins.map(([from, to, id]) => {
+    const tx = authors.get(id);
+    return [from, to, tx?.actor.kind ?? 'system', tx?.actor.id ?? 'unattributed', tx ? tx.createdAt : 0];
+  }));
   return {format: 'rapier-authorship/1', sha256: sha256(text), runs};
 }
 export function readAuthorship(input, text) {

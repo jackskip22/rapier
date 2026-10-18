@@ -63,3 +63,20 @@ export function shakeModule(source, drop) {
   for (const [start, end, text] of edits.sort((a, b) => b[0] - a[0])) out = out.slice(0, start) + text + out.slice(end);
   return {source: out, removed: rows.filter(unit => !kept.has(unit)).flatMap(unit => unit.names), unexported: [...dropping].filter(name => !exportedNow.has(name))};
 }
+
+export function pruneImports(source) {
+	const ast = acorn.parse(source, {ecmaVersion: 'latest', sourceType: 'module', locations: true}), lexical = lexicalBindings(ast), read = new Set();
+	for (const node of lexical.nodes) if (lexical.isReference(node)) {
+		const binding = lexical.bindingAt(node.name, node);
+		if (binding && binding.kind === 'import') read.add(binding);
+	}
+	const edits = [];
+	for (const statement of ast.body) if (statement.type === 'ImportDeclaration') {
+		const stay = statement.specifiers.filter(row => [...read].some(binding => binding.name === row.local.name));
+		if (stay.length === statement.specifiers.length) continue;
+		edits.push([statement.start, statement.end, stay.length
+			? 'import {' + stay.map(row => source.slice(row.start, row.end)).join(', ') + '} from ' + source.slice(statement.source.start, statement.source.end) + ';' : '']);
+	}
+	for (const [start, end, text] of edits.sort((a, b) => b[0] - a[0])) source = source.slice(0, start) + text + source.slice(end);
+	return source;
+}

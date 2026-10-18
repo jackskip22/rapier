@@ -11,14 +11,18 @@ export function fillBuiltinSlot(source, marker, value) {
 	return source.replace(marker, () => value);
 }
 
-export const BUILTIN_PLUGIN_IDS = Object.freeze(['math', 'mermaid', 'letters', 'font-subset']);
+export const BUILTIN_PLUGIN_IDS = Object.freeze(['math', 'mermaid', 'mermaid-zenuml', 'letters', 'font-subset']);
+export function builtinGroupHas(id, fileId) {
+	return id === 'mermaid' ? fileId === 'rapier-mermaid-core' : id === 'mermaid-zenuml' ? fileId === 'rapier-mermaid-zenuml'
+		: id === 'math' || id === 'font-subset' ? fileId === 'rapier-' + id : fileId.startsWith('rapier-' + id + '-');
+}
 
 export async function builtinPlugins(root, pack) {
 	const selected = (await pluginPackFiles()).filter(file =>
         file.id === 'rapier-math' || file.id === 'rapier-font-subset' || file.id.startsWith('rapier-mermaid-') || file.id.startsWith('rapier-letters-'));
 	const groups = [], elements = [], assets = [];
 	for (const id of BUILTIN_PLUGIN_IDS) {
-		const files = selected.filter(file => id === 'math' || id === 'font-subset' ? file.id === 'rapier-' + id : file.id.startsWith('rapier-' + id + '-'));
+		const files = selected.filter(file => builtinGroupHas(id, file.id));
 		if (!files.length) throw new Error('The editor resource has no ' + id + ' plug-in payload');
 		const spans = [], records = [];
 		for (const file of files) {

@@ -1,14 +1,14 @@
 {
-  "version": "font-subset-2",
+  "version": "font-subset-3",
   "files": [
     {
       "name": "subset",
-      "version": "2",
-      "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.11/site/plugins/rapier-font-subset-2.js",
-      "file": "plugins/rapier-font-subset-2.js",
-      "path": "shell/vendor/font-subset/rapier-font-subset-2.js",
-      "bytes": 1214356,
-      "sri": "q4mHA3+u3N3Yt8z1wisCEXQqWNo5UhHZ0nUESid8BGNZz6BtV8dSUlVOvyndc0Tj"
+      "version": "3",
+      "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.12/site/plugins/rapier-font-subset-3.js",
+      "file": "plugins/rapier-font-subset-3.js",
+      "path": "shell/vendor/font-subset/rapier-font-subset-3.js",
+      "bytes": 1214770,
+      "sri": "gOi4uP0F7r23fF2YH3Rvb3NisqOzz8H2T1qAFknqbSKZVeOzRykk7vDc5NEnqVm+"
     }
   ]
 }

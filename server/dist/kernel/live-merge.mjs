@@ -5,6 +5,7 @@ import {transformPair} from '../kit/ledger/transport.mjs';
 import {parseComments, commentSplices} from '../agent/comments.mjs';
 import {_rapierTransformSplices as transformSplices, _rapierHistoryEffects as historyEffects, journalOperations} from '../kit/ledger/journal-records.mjs';
 import {projectInverseSource} from '../kit/ledger/inverse-source.mjs';
+import {sourceView, replaceText} from '../kit/ledger/source.mjs';
 
 const orderKey = entry => entry.actId || entry.client;
 
@@ -70,12 +71,18 @@ export function createDoc(text = '') {
 
 export function applySplices(text, splices) {
 	if (typeof text !== 'string') throw new TypeError('source string required');
-	check(text.length, splices, text);
-	for (let i = splices.length - 1; i >= 0; i--) {
-		const s = splices[i];
-		text = text.slice(0, s.at) + s.insert + text.slice(s.at + s.remove);
+	if (text.length <= 4096) {
+		check(text.length, splices, text);
+		for (let index = splices.length - 1; index >= 0; index--) {
+			const row = splices[index]; text = text.slice(0, row.at) + row.insert + text.slice(row.at + row.remove);
+		}
+		return text;
 	}
-	return text;
+	if (!Array.isArray(splices)) throw new RangeError('bad splices');
+	const rows = Array.from(splices, row => row && ({at: row.at, remove: row.remove, insert: row.insert}));
+	const first = rows.at(-1);
+	check(text.length, rows, sourceView(text, first && {pos: first.at, length: first.remove, text: first.insert}));
+	return replaceText(text, rows.reverse().map(({at, remove, insert}) => ({pos: at, remove, insert})));
 }
 
 export function replay(text, log) {
@@ -273,7 +280,7 @@ function sourceAt(state, gen) {
 
 export function inverseSplices(text, splices) {
 	if (typeof text !== 'string') throw new TypeError('source string required');
-	check(text.length, splices, text);
+	check(text.length, splices, text.length <= 4096 ? text : sourceView(text));
 	let shift = 0;
 	return normalize(splices.map(row => {
 		const at = row.at + shift;
@@ -347,11 +354,12 @@ function semanticInverse(state, targets) {
 	if (!effects.ok || !projected.ok) throw new RangeError('undo target unavailable');
 	const result = projectInverseSource({source, initialSource, rows, effects}, selected, projected);
 	if (!result.ok) throw new RangeError('undo replay mismatch');
-	return parallelSplices(source, result.splices, {authoredRanges: true});
+	return {...result, splices: parallelSplices(source, result.splices, {authoredRanges: true})};
 }
 
 function actInverse(state, client, target, leftKey = client) {
-	if (sharedInverseTargets(state.log)) return semanticInverse(state, [target.gen]);
+	const plan = semanticInverse(state, [target.gen]);
+	if (plan.overlaps.length || sharedInverseTargets(state.log)) return plan.splices;
 	if (!state.log.some(entry => entry.undoes.length > 1)) return transportedInverse(state, target, leftKey);
 	let doc = {...createDoc(sourceAt(state, state.base)), base: state.base, gen: state.base};
 	const generations = new Map();
@@ -386,7 +394,8 @@ function actInverse(state, client, target, leftKey = client) {
 
 function inverseGroup(state, client, targets) {
 	const inactive = inactiveActs(state.log);
-	if (sharedInverseTargets(state.log) || targets.some(gen => inactive.has(gen))) return semanticInverse(state, targets);
+	const plan = semanticInverse(state, targets);
+	if (plan.overlaps.length || sharedInverseTargets(state.log) || targets.some(gen => inactive.has(gen))) return plan.splices;
 	if (targets.length === 1) return actInverse(state, client, state.log.find(entry => entry.gen === targets[0]), client);
 	let current = state;
 	const changes = [];
@@ -437,7 +446,7 @@ export function applyEdit(state, edit, {composing = []} = {}) {
 	}
 	if (last && gen < last.gen && !targets.length) throw new RangeError('base generation does not include the client\'s own earlier edit');
 	const before = sourceAt(state, gen);
-	check(before.length, edit.splices, before);
+	check(before.length, edit.splices, before.length <= 4096 ? before : sourceView(before));
 	if (targets.length) {
 		if (targets.some(target => target > gen || !state.log.some(entry => entry.gen === target))) throw new RangeError('undo target unavailable');
 		const atBase = {...state, text: before, gen, log: state.log.slice(0, gen - state.base)};
@@ -447,7 +456,7 @@ export function applyEdit(state, edit, {composing = []} = {}) {
 	const undoes = targets.slice();
 	const splices = targets.length ? inverseGroup(state, orderKey(edit), targets)
 		: rebaseHistory(state, orderKey(edit), gen, edit.splices);
-	check(state.text.length, splices, state.text);
+	check(state.text.length, splices, state.text.length <= 4096 ? state.text : sourceView(state.text));
 	if (request.agent && splices.length) for (const presence of composing) {
 		if (presence.client === client) continue;
 		const moved = rebasePresence(state, presence, presence.gen, presence.client);
@@ -474,7 +483,7 @@ export function rebasePresence(state, presence, gen, client = null) {
 	if (![anchor, head].every(value => Number.isSafeInteger(value) && value >= 0)) throw new RangeError('bad presence');
 	const source = sourceAt(state, gen);
 	if (anchor > source.length || head > source.length) throw new RangeError('presence out of range');
-	check(source.length, [anchor, head].sort((a, b) => a - b).map(at => ({at, remove: 0, insert: ''})), source);
+	check(source.length, [anchor, head].sort((a, b) => a - b).map(at => ({at, remove: 0, insert: ''})), source.length <= 4096 ? source : sourceView(source));
 	for (const e of since(state, gen))
 		for (let i = e.splices.length - 1; i >= 0; i--) {
 			const after = e.client === client;

@@ -1,22 +1,23 @@
 {
-  "version": "mermaid-12.1.0-zenuml-4.5.0-2",
+  "version": "pele-1.6.0-zenuml-4.5.0-3",
   "files": [
     {
       "name": "core",
-      "version": "12.1.0",
-      "url": "https://cdn.jsdelivr.net/npm/mermaid@12.1.0/dist/mermaid.min.js",
-      "file": "mermaid.min.js",
-      "bytes": 5493176,
-      "sri": "EbBpjO7rlR6eqZEcG7GaPpyk9H9WrMyPWX4d3KvPYltgt8Z8l0z6R56B1qP40pR4"
+      "version": "1.6.0",
+      "url": "https://cdn.jsdelivr.net/npm/pele@1.6.0/dist/pele.global.js",
+      "file": "plugins/pele-1.6.0.js",
+      "bytes": 682005,
+      "sri": "4lHoXtKDt+x/E+htiTc83bpFWyREQzJCMudNQHirqKiCTW7Mx790I/5Q7criNZ1G",
+      "path": "shell/vendor/pele/pele-1.6.0.js"
     },
     {
       "name": "zenuml",
-      "version": "4.5.0-2",
-      "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.11/site/plugins/rapier-zenuml-4.5.0-2.js",
-      "file": "plugins/rapier-zenuml-4.5.0-2.js",
-      "path": "shell/vendor/zenuml/rapier-zenuml-4.5.0-2.js",
-      "bytes": 1896464,
-      "sri": "8Ptjhh1zNTOvy1dxFHhXgYKfs290DSlpzow5rF9FvP38cohtbsBW381Whym1WI6E"
+      "version": "4.5.0-3",
+      "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.12/site/plugins/rapier-zenuml-4.5.0-3.js",
+      "file": "plugins/rapier-zenuml-4.5.0-3.js",
+      "path": "shell/vendor/zenuml/rapier-zenuml-4.5.0-3.js",
+      "bytes": 1890429,
+      "sri": "0tZDV6uy2r9boZwCWcBSrF+Mku7c14LvwAewLbraLrR+tvinNck31H8xsLCa5k6y"
     }
   ]
 }

@@ -572,7 +572,8 @@
 					<button type="button" class="settings-action-btn" id="notes-open-btn" data-action="notes-open" hidden>open</button>
 					<button type="button" class="settings-action-btn" id="notes-beside-btn" data-action="notes-beside" aria-pressed="false" hidden>beside</button>
 				</div>
-				<button type="button" class="settings-action-btn rapier-notes-sync rapier-cloudflare" id="notes-sync-btn" data-action="notes-sync" hidden>SYNC</button>
+				<button type="button" class="settings-action-btn rapier-notes-sync rapier-cloudflare" id="notes-sync-btn" data-action="notes-sync" hidden>SIGN IN WITH CLOUDFLARE</button>
+				<button type="button" class="settings-action-btn rapier-notes-sync-other" id="notes-sync-other-btn" data-action="notes-sync-other" hidden>other sync options</button>
 			</div>
 			<div id="settings-start-section" hidden>
 				<div class="settings-section__title">start in</div>
@@ -597,20 +598,6 @@
 					<button type="button" class="settings-action-btn settings-action-btn--apart"
 									id="settings-windows-uninstall" hidden
 									data-action="windows-uninstall">uninstall</button>
-				</div>
-			</div>
-			<div id="settings-storage-section" hidden>
-				<div class="settings-section__title">storage</div>
-				<div class="settings-stats" id="settings-storage-stats">
-					<span class="settings-stats__label">app files</span><span class="settings-stats__val" id="settings-storage-app">…</span>
-					<span class="settings-stats__label">notes</span><span class="settings-stats__val" id="settings-storage-notes">…</span>
-					<span class="settings-stats__label">kept</span><span class="settings-stats__val" id="settings-storage-kept">…</span>
-					<span class="settings-stats__label">temporary</span><span class="settings-stats__val" id="settings-storage-temporary">…</span>
-					<span class="settings-stats__label">page, approximate</span><span class="settings-stats__val" id="settings-storage-page">…</span>
-				</div>
-				<div class="settings-action-row">
-					<button type="button" class="settings-action-btn" id="settings-storage-clear" data-action="storage-clear-temporary">clear temporary files</button>
-					<button type="button" class="settings-action-btn settings-action-btn--apart" id="settings-storage-all" data-action="storage-clear-all">clear all app data</button>
 				</div>
 			</div>
 			<!-- RAPIER_EDITOR_ONLY_END -->
@@ -676,22 +663,35 @@
 				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="expanded" style="flex:1;width:auto">EXPAND</button>
 			</div>
 
-			<!-- Layout — Rapier's own live layout, or Plain (rung 0: no width/place/turn/align applied). -->
-			<div class="navigator-title-row" style="margin-bottom:var(--space-2)">
-				<div class="settings-section__title" style="margin:0;padding:0">layout</div>
-				<button type="button" class="settings-info-btn settings-info-btn--hang" id="layout-info" data-action="information" data-value="layout" aria-label="what these words mean" aria-haspopup="dialog"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button>
-			</div>
-			<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-layout" data-switch="layout" role="group" aria-label="layout" style="width:100%;margin-bottom:var(--space-4)">
-				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="rapier" style="flex:1;width:auto">RAPIER</button>
-				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="plain" style="flex:1;width:auto">PLAIN</button>
-				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="docx" style="flex:1;width:auto">DOCX</button>
-			</div>
-			<div class="settings-action-row" style="margin-bottom:var(--space-4)">
-				<button type="button" class="settings-action-btn" data-action="document-spacing" aria-haspopup="dialog">spacing</button>
-			</div>
-
-			<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-invert-image-alpha" data-switch="invertImageAlpha" data-switch-label="Invert image alpha in dark:" data-on="true" data-off="false" role="group" aria-label="invert image alpha in dark" style="width:100%;margin-bottom:var(--space-4)">
-				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="false" role="switch" aria-checked="true" style="flex:1;width:auto">INVERT IMAGE ALPHA IN DARK: ON</button>
+			<!-- Layout — Rapier's own live layout, or Plain (rung 0: no width/place/turn/align applied). Folded like code,
+			     closed until opened. -->
+			<div class="settings-disclosure-shell" id="settings-layout-section">
+				<div class="settings-disclosure-title settings-disclosure-title--split" id="settings-layout-title">
+					<button type="button" class="settings-section__title settings-disclosure-word" id="settings-layout-word"
+						data-action="fold" aria-expanded="false" aria-controls="settings-layout-controls">layout</button>
+					<button type="button" class="settings-info-btn settings-info-btn--hang" id="layout-info" data-action="information" data-value="layout" aria-label="what these words mean" aria-haspopup="dialog"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button>
+					<button type="button" class="settings-disclosure-glyph-btn" id="settings-layout-glyph"
+						data-action="fold" aria-expanded="false" aria-controls="settings-layout-controls" aria-label="show layout">
+						<span class="settings-disclosure-title__glyph" aria-hidden="true"></span>
+					</button>
+				</div>
+				<div class="settings-disclosure" id="settings-layout-controls" data-open="false">
+					<div class="settings-disclosure__inner">
+						<div class="code-toggle-group" style="margin-bottom:var(--space-4)">
+							<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-layout" data-switch="layout" role="group" aria-label="layout" style="width:100%">
+								<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="rapier" style="flex:1;width:auto">RAPIER</button>
+								<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="plain" style="flex:1;width:auto">PLAIN</button>
+								<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="docx" style="flex:1;width:auto">DOCX</button>
+							</div>
+							<div class="settings-action-row">
+								<button type="button" class="settings-action-btn" data-action="document-spacing" aria-haspopup="dialog">spacing</button>
+							</div>
+							<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-invert-image-alpha" data-switch="invertImageAlpha" data-switch-label="Invert image alpha in dark:" data-on="true" data-off="false" role="group" aria-label="invert image alpha in dark" style="width:100%">
+								<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="false" role="switch" aria-checked="true" style="flex:1;width:auto">INVERT IMAGE ALPHA IN DARK: ON</button>
+							</div>
+						</div>
+					</div>
+				</div>
 			</div>
 
 			<!-- Code: one collapsed section for everything a code block or a code file shows. The highlight
@@ -717,14 +717,29 @@
 				<!-- Highlights: the standard palette, or the accent palette (the same lexer's tokens worn in the accent colour). -->
 				<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-highlights" data-switch="highlights" role="group" aria-label="syntax highlights" style="width:100%">
 					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="standard" style="flex:1;width:auto">STANDARD</button>
-					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="accent" style="flex:1;width:auto">ACCENT</button>
+					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="accent" style="flex:1;width:auto">ACCENT COLOR</button>
 				</div>
 
 				<!-- RAPIER_READER_SKIP_BEGIN -->
+				<!-- Wrapping, with how a wrapped line's number fits joined beneath while it is on. Truncate is the default. -->
+				<div class="settings-switch-stack">
+					<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-wrap" data-switch="wrap" data-switch-label="Wrapping" data-on="true" data-off="false" role="group" aria-label="line wrapping" style="width:100%">
+						<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="true" role="switch" aria-checked="false" style="flex:1;width:auto">WRAPPING: OFF</button>
+					</div>
+					<div class="settings-disclosure settings-switch-stack__under" id="switch-line-fit-shell" data-open="false">
+						<div class="settings-disclosure__inner">
+							<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-line-fit" data-switch="lineFit" role="group" aria-label="long line numbers" style="width:100%">
+								<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="truncate" style="flex:1;width:auto">TRUNCATE</button>
+								<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="resize" style="flex:1;width:auto">RESIZE</button>
+							</div>
+						</div>
+					</div>
+				</div>
+
 				<!-- Checkerboard, with its contrast joined beneath while it is on. Dim is the default. -->
 				<div class="settings-switch-stack">
 					<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-checker" data-switch="checker" data-switch-label="Checkerboard" data-on="true" data-off="false" role="group" aria-label="checkerboard lines" style="width:100%">
-						<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="true" role="switch" aria-checked="false" style="flex:1;width:auto">CHECKERBOARD OFF</button>
+						<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="true" role="switch" aria-checked="false" style="flex:1;width:auto">CHECKERBOARD: OFF</button>
 					</div>
 					<div class="settings-disclosure settings-switch-stack__under" id="switch-dim-shell" data-open="false">
 						<div class="settings-disclosure__inner">
@@ -744,24 +759,9 @@
 					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="all" style="flex:1;width:auto">ALL NUMBERS</button>
 				</div>
 
-				<!-- Wrapping, with how a wrapped line's number fits joined beneath while it is on. Truncate is the default. -->
-				<div class="settings-switch-stack">
-					<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-wrap" data-switch="wrap" data-switch-label="Wrapping" data-on="true" data-off="false" role="group" aria-label="line wrapping" style="width:100%">
-						<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="true" role="switch" aria-checked="false" style="flex:1;width:auto">WRAPPING OFF</button>
-					</div>
-					<div class="settings-disclosure settings-switch-stack__under" id="switch-line-fit-shell" data-open="false">
-						<div class="settings-disclosure__inner">
-							<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-line-fit" data-switch="lineFit" role="group" aria-label="long line numbers" style="width:100%">
-								<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="truncate" style="flex:1;width:auto">TRUNCATE</button>
-								<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="resize" style="flex:1;width:auto">RESIZE</button>
-							</div>
-						</div>
-					</div>
-				</div>
-
 				<!-- Assets: the source view folds a document's trailing image records away unless this is on (off by default). -->
 				<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-assets" data-switch="assets" data-switch-label="Image data" data-on="true" data-off="false" role="group" aria-label="image data in the source view" style="width:100%">
-					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="true" role="switch" aria-checked="false" style="flex:1;width:auto">IMAGE DATA OFF</button>
+					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="true" role="switch" aria-checked="false" style="flex:1;width:auto">IMAGE DATA: OFF</button>
 				</div>
 				<!-- RAPIER_READER_SKIP_END -->
 
@@ -776,10 +776,10 @@
 			<div class="settings-disclosure-shell" id="settings-pro-section">
 				<div class="settings-disclosure-title settings-disclosure-title--split" id="settings-pro-title">
 					<button type="button" class="settings-section__title settings-disclosure-word" id="settings-pro-word"
-									data-action="pro-toggle" aria-expanded="false" aria-controls="settings-pro-controls">pro</button>
+									data-action="fold" aria-expanded="false" aria-controls="settings-pro-controls">pro</button>
 					<button type="button" class="settings-info-btn settings-info-btn--hang" id="pro-info" data-action="information" data-value="pro" aria-label="about pro" aria-haspopup="dialog"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button>
 					<button type="button" class="settings-disclosure-glyph-btn" id="settings-pro-glyph"
-									data-action="pro-toggle" aria-expanded="false" aria-controls="settings-pro-controls" aria-label="show pro">
+									data-action="fold" aria-expanded="false" aria-controls="settings-pro-controls" aria-label="show pro">
 						<span class="settings-disclosure-title__glyph" aria-hidden="true"></span>
 					</button>
 				</div>
@@ -792,10 +792,10 @@
 								<button type="button" class="settings-action-btn" data-action="pro-open" aria-haspopup="dialog">get pro</button>
 							</div>
 							<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-focus" data-switch="focus" data-switch-label="Sentence focus" data-on="true" data-off="false" role="group" aria-label="sentence focus" style="width:100%" hidden>
-								<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="true" role="switch" aria-checked="false" style="flex:1;width:auto">SENTENCE FOCUS OFF</button>
+								<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="true" role="switch" aria-checked="false" style="flex:1;width:auto">SENTENCE FOCUS: OFF</button>
 							</div>
 							<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-typewriter" data-switch="typewriter" data-switch-label="Typewriter scrolling" data-on="true" data-off="false" role="group" aria-label="typewriter scrolling" style="width:100%" hidden>
-								<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="true" role="switch" aria-checked="false" style="flex:1;width:auto">TYPEWRITER SCROLLING OFF</button>
+								<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="true" role="switch" aria-checked="false" style="flex:1;width:auto">TYPEWRITER SCROLLING: OFF</button>
 							</div>
 							<div class="settings-action-row" id="pro-icon-row" hidden>
 								<button type="button" class="settings-action-btn" id="pro-icon-colour" data-action="icon-colour" aria-haspopup="dialog">app icon color</button>
@@ -811,12 +811,51 @@
 				</div>
 			</div>
 
-			<!-- The plugin rows are one thing, so they sit under one title. -->
-			<div class="settings-section__title" id="settings-plugins-title">plugins</div>
+			<!-- RAPIER_EDITOR_ONLY_BEGIN -->
+			<!-- Android's own storage, below pro and collapsed. -->
+			<div class="settings-disclosure-shell" id="settings-storage-section" hidden>
+				<div class="settings-disclosure-title settings-disclosure-title--split" id="settings-android-title">
+					<button type="button" class="settings-section__title settings-disclosure-word" id="settings-android-word"
+									data-action="fold" aria-expanded="false" aria-controls="settings-android-controls">android</button>
+					<button type="button" class="settings-disclosure-glyph-btn" id="settings-android-glyph"
+									data-action="fold" aria-expanded="false" aria-controls="settings-android-controls" aria-label="show android">
+						<span class="settings-disclosure-title__glyph" aria-hidden="true"></span>
+					</button>
+				</div>
+				<div class="settings-disclosure" id="settings-android-controls" data-open="false">
+					<div class="settings-disclosure__inner">
+				<div class="settings-stats" id="settings-storage-stats">
+					<span class="settings-stats__label">app files</span><span class="settings-stats__val" id="settings-storage-app">…</span>
+					<span class="settings-stats__label">notes</span><span class="settings-stats__val" id="settings-storage-notes">…</span>
+					<span class="settings-stats__label">kept</span><span class="settings-stats__val" id="settings-storage-kept">…</span>
+					<span class="settings-stats__label">temporary</span><span class="settings-stats__val" id="settings-storage-temporary">…</span>
+					<span class="settings-stats__label">page, approximate</span><span class="settings-stats__val" id="settings-storage-page">…</span>
+				</div>
+				<div class="settings-action-row">
+					<button type="button" class="settings-action-btn" id="settings-storage-clear" data-action="storage-clear-temporary">clear temporary files</button>
+					<button type="button" class="settings-action-btn settings-action-btn--apart" id="settings-storage-all" data-action="storage-clear-all">clear all app data</button>
+				</div>
+					</div>
+				</div>
+			</div>
+			<!-- RAPIER_EDITOR_ONLY_END -->
+
+			<!-- The plugin rows are one thing, so they sit under one title, collapsed by default. -->
+			<div class="settings-disclosure-shell" id="settings-plugins-section">
+				<div class="settings-disclosure-title settings-disclosure-title--split" id="settings-plugins-title">
+					<button type="button" class="settings-section__title settings-disclosure-word" id="settings-plugins-word"
+									data-action="fold" aria-expanded="false" aria-controls="settings-plugins-controls">plugins</button>
+					<button type="button" class="settings-disclosure-glyph-btn" id="settings-plugins-glyph"
+									data-action="fold" aria-expanded="false" aria-controls="settings-plugins-controls" aria-label="show plugins">
+						<span class="settings-disclosure-title__glyph" aria-hidden="true"></span>
+					</button>
+				</div>
+				<div class="settings-disclosure" id="settings-plugins-controls" data-open="false">
+					<div class="settings-disclosure__inner settings-plugin-rows">
 
 			<!-- Optional math renderer: actionable text while absent; once installed, its status with a text-colour tick, which a tap
 					 asks to delete (editor/plugins.js), as every installed plugin row does. -->
-			<div class="settings-action-row" style="margin-top:var(--space-2);">
+			<div class="settings-action-row">
 				<button type="button" class="settings-text-action" id="math-plugin-action"
 								data-action="math-install">INSTALL MATH</button>
 				<button type="button" class="settings-text-action settings-text-action--status" id="math-plugin-installed" data-action="plugin-delete" data-plugin="math" aria-haspopup="dialog" hidden>
@@ -830,7 +869,7 @@
 			</div>
 
 			<!-- Optional renderer for diagrams beyond the built-in flowchart grammar. -->
-			<div class="settings-action-row" style="margin-top:var(--space-2);">
+			<div class="settings-action-row">
 				<button type="button" class="settings-text-action" id="mermaid-plugin-action"
 								data-action="mermaid-install">INSTALL DIAGRAM</button>
 				<button type="button" class="settings-text-action settings-text-action--status" id="mermaid-plugin-installed" data-action="plugin-delete" data-plugin="mermaid" aria-haspopup="dialog" hidden>
@@ -843,7 +882,7 @@
 				</button>
 			</div>
 
-			<div class="settings-action-row" style="margin-top:var(--space-2);">
+			<div class="settings-action-row">
 				<button type="button" class="settings-text-action" id="pdf-plugin-action" data-action="pdf-open-install">INSTALL PDF IMPORT</button>
 				<button type="button" class="settings-text-action settings-text-action--status" id="pdf-plugin-installed" data-action="plugin-delete" data-plugin="pdf" aria-haspopup="dialog" hidden>
 					<span>PDF IMPORT INSTALLED</span>
@@ -856,7 +895,7 @@
 			</div>
 
 			<!-- Text in pictures: the shared optional reader for Find and Notes search. -->
-			<div class="settings-action-row" style="margin-top:var(--space-2);">
+			<div class="settings-action-row">
 				<button type="button" class="settings-text-action" id="ocr-plugin-action" data-action="ocr-install">INSTALL TEXT IN PICTURES</button>
 				<button type="button" class="settings-text-action settings-text-action--status" id="ocr-plugin-installed" data-action="plugin-delete" data-plugin="ocr" aria-haspopup="dialog" hidden>
 					<span>TEXT IN PICTURES INSTALLED</span>
@@ -869,7 +908,7 @@
 			</div>
 
 			<!-- Drawing: the part of Rapier that draws, paints and paints in water (tools/parts.mjs), kept on this device once installed. -->
-			<div class="settings-action-row" id="drawing-plugin-row" style="margin-top:var(--space-2);" hidden>
+			<div class="settings-action-row" id="drawing-plugin-row" hidden>
 				<button type="button" class="settings-text-action" id="drawing-plugin-action" data-action="drawing-install">INSTALL DRAWING</button>
 				<button type="button" class="settings-text-action settings-text-action--status" id="drawing-plugin-installed" data-action="plugin-delete" data-plugin="drawing" aria-haspopup="dialog" hidden>
 					<span>DRAWING INSTALLED</span>
@@ -879,6 +918,22 @@
 						<path d="m5 12 4 4L19 6"></path>
 					</svg>
 				</button>
+			</div>
+
+			<!-- Notes: downloaded on demand like Drawing (tools/parts.mjs), kept on this device once installed. -->
+			<div class="settings-action-row" id="notes-plugin-row" hidden>
+				<button type="button" class="settings-text-action" id="notes-plugin-action" data-action="notes-part-install">INSTALL NOTES</button>
+				<button type="button" class="settings-text-action settings-text-action--status" id="notes-plugin-installed" data-action="plugin-delete" data-plugin="notes" aria-haspopup="dialog" hidden>
+					<span>NOTES INSTALLED</span>
+					<svg class="settings-text-action__check" xmlns="http://www.w3.org/2000/svg"
+							 viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25"
+							 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="m5 12 4 4L19 6"></path>
+					</svg>
+				</button>
+			</div>
+					</div>
+				</div>
 			</div>
 
 			<!-- About: exactly three rows, in this order -- the guide, the privacy policy, the licenses.
@@ -2081,7 +2136,7 @@ SOFTWARE.</pre>
 				<details class="license-entry"><summary><span class="license-name">Latin Modern Math 1.959 (optional font)</span><span class="license-id">GUST</span></summary>
 					<pre class="license-text" data-license="math-font"></pre>
 				</details></template>
-				<div class="license-row"><span class="license-name">Mermaid 12.1.0 (optional)</span><span class="license-id">MIT</span></div>
+				<details class="license-entry"><summary><span class="license-name">Pele 1.6.0 (optional)</span><span class="license-id">MIT</span></summary><pre class="license-text" data-license="pele"></pre></details>
 				<!-- RAPIER_NOTES_BEGIN -->
 				<!-- RAPIER_EDITOR_ONLY_BEGIN -->
 				<div class="license-row"><span class="license-name">ONNX Runtime Web 1.30.0 (optional)</span><span class="license-id">MIT</span></div>

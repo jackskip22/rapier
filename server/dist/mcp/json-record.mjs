@@ -1,4 +1,5 @@
 import {jsonValueParts} from '../agent/json-value.mjs';
+import {heldSourceFacts} from '../kit/ledger/source.mjs';
 const SMALL_CHARS = 65536;
 
 const GEAR = (() => {
@@ -87,6 +88,8 @@ export function jsonRecord(value, chunkChars = 32768, {contentDefined = false} =
     }
     const string = part.string;
     chars += 2; bytes += 2;
+    const measured = heldSourceFacts(string);
+    if (measured) { chars += measured.jsonChars; bytes += measured.jsonBytes; continue; }
     for (let index = 0; index < string.length; index++) {
       const code = string.charCodeAt(index);
       if (code === 34 || code === 92 || code === 8 || code === 9 || code === 10 || code === 12 || code === 13) {

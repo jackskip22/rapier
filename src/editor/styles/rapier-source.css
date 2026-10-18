@@ -1329,6 +1329,7 @@ html[data-compare="on"] #source-mode ,html:not([data-compare="on"]) .compare-mod
 
 .settings-disclosure-shell {
 	width: 100%;
+	border-bottom: 2px solid var(--color-text);
 	margin-bottom: var(--space-4);
 }
 .settings-disclosure-title {
@@ -1442,6 +1443,9 @@ html[data-compare="on"] #source-mode ,html:not([data-compare="on"]) .compare-mod
 }
 .settings-switch-stack__under .theme-switcher {
 	border-top: 0;
+}
+.settings-switch-stack__under[data-open="true"] {
+	margin-top: -1px;
 }
 
 .code-toggle-group .theme-switcher[data-switch-label] > .theme-switcher__btn {
@@ -1661,7 +1665,11 @@ button.settings-text-action {
 }
 @media (hover:hover) and (pointer:fine){button.settings-text-action:hover{opacity:.68}}
 button.settings-text-action:disabled { opacity: .6; cursor: wait; }
-#settings-plugins-title ~ .settings-action-row > .settings-text-action { background: var(--color-surface-2); }
+.settings-plugin-rows .settings-action-row > .settings-text-action { background: var(--color-surface-2); }
+.settings-plugin-rows { display: flex; flex-direction: column; gap: var(--space-2); margin-bottom: var(--space-4); }
+.settings-plugin-rows > .settings-action-row { margin: 0; }
+.settings-plugin-rows > [hidden] { display: none; }
+.theme-switcher--onoff[data-switch-label] .onoff-btn { justify-content: flex-start; text-align: left; padding-inline: var(--space-4); }
 .settings-text-action--status {
 	justify-content: flex-start;
 	gap: var(--space-2);

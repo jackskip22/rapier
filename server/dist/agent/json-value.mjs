@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import {heldSourceView} from '../kit/ledger/source.mjs';
 const LONG_STRING = 65536, ESCAPED = new Map();
-export function* jsonStringParts(value) {
+function escapedPart(value) {
   if (value.length >= LONG_STRING) {
     let escaped = ESCAPED.get(value);
     if (escaped === undefined) {
@@ -8,9 +9,24 @@ export function* jsonStringParts(value) {
       if (ESCAPED.size >= 4) ESCAPED.delete(ESCAPED.keys().next().value);
     } else ESCAPED.delete(value);
     ESCAPED.set(value, escaped);
-    yield '"'; yield escaped; yield '"';
-    return;
+    return escaped;
   }
+  return JSON.stringify(value).slice(1, -1);
+}
+export function* jsonStringParts(value) {
+  const source = value.length >= LONG_STRING && heldSourceView(value);
+  if (source) {
+    yield '"';
+    let high = '';
+    for (let part of source.parts()) {
+      if (high) { part = high + part; high = ''; }
+      if ((part.charCodeAt(part.length - 1) & 0xfc00) === 0xd800) { high = part.slice(-1); part = part.slice(0, -1); }
+      if (part) yield escapedPart(part);
+    }
+    if (high) yield escapedPart(high);
+    yield '"'; return;
+  }
+  if (value.length >= LONG_STRING) { yield '"'; yield escapedPart(value); yield '"'; return; }
   yield '"';
   for (let start = 0; start < value.length;) {
     let end = Math.min(value.length, start + 4096);

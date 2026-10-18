@@ -11,6 +11,8 @@ function _rapierNotesStartClass(on) {
 }
 function _rapierNotesShowDoors() {
 	for (const id of ['notes-open-btn', 'notes-sync-btn']) { const el = document.getElementById(id); if (el) el.hidden = false; }
+	const other = document.getElementById('notes-sync-other-btn');
+	if (other) other.hidden = globalThis.RapierPlatform?.environment?.native === true;
 	const start = document.getElementById('settings-start-section');
 	if (start) start.hidden = _rapierEmbed.active || globalThis.RAPIER_APPS_HOST === true || window.self !== window.top || typeof globalThis.RAPIER_PAIRED_DOCUMENT === 'string';
 }
@@ -36,10 +38,11 @@ const _rapierNotesDoor = (() => {
 	});
 	document.addEventListener('click', evt => {
 		if (_rapierNotesPart) return;
-		const open = evt.target.closest?.('[data-action="notes-open"]'), sync = evt.target.closest?.('[data-action="notes-sync"]');
-		if (!open && !sync) return;
+		const open = evt.target.closest?.('[data-action="notes-open"]'), sync = evt.target.closest?.('[data-action="notes-sync"]'),
+			other = evt.target.closest?.('[data-action="notes-sync-other"]');
+		if (!open && !sync && !other) return;
 		try { const overlay = _rapierUi?.refs?.settingsOverlay; if (overlay) closeDialog(overlay); } catch (_) {}
-		void _rapierPartReady('notes').then(done => { if (done) void (open ? _rapierNotesPart.open() : _rapierNotesPart.syncPress()); });
+		void _rapierPartReady('notes').then(done => { if (done) void (open ? _rapierNotesPart.open() : _rapierNotesPart.syncPress(other ? {others: true} : {})); });
 	});
 	document.addEventListener('click', evt => {
 		if (!evt.target.closest?.('[data-action="notes-beside"]')) return;

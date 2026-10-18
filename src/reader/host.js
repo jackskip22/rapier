@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 let md;
-const _rapierProviders = Object.seal({math: null, mermaid: null, flowchart: null, pdf: null, docx: null, ocr: null});
+const _rapierProviders = Object.seal({math: null, mermaid: null, 'mermaid-zenuml': null, flowchart: null, pdf: null, docx: null, ocr: null});
 const _rapierEmbedAssetSource = () => false;
 const _rapierDormantHeadings = (root, selector, includeLive) => includeLive ? Array.from(root.querySelectorAll(selector)) : [];
 

@@ -1,5 +1,5 @@
 {
-  "version": "2",
+  "version": "3",
   "dependencies": {
     "esbuild": "0.28.2",
     "fflate": "0.8.3",
@@ -7,14 +7,14 @@
     "wawoff2": "2.0.1"
   },
   "npmLockSha256": "eef83a0b0f152f759753aaa28dcbe6f37766168e6e5708e74566955be33cfa36",
-  "sourceSha256": "a9f29c8460ae573ee7710eeaefcc677c7314a0d452add055921ed64efb90dc39",
+  "sourceSha256": "d09688cb29d421d3b03c8984699fdad475cc30899b5ae97e6d47b464a650b597",
   "wasm": {
     "bytes": 667183,
     "sha256": "f8989b6c78493626b483d8e82dbfcdff38ac277f75f47a6ba440264dacdcedf1"
   },
   "noticesSha256": "5ef98f3c629342b504be7dc81a9b8642961c5f2653ec143d0227176a2b3deea7",
-  "bytes": 1214356,
-  "gzipBytes": 498863,
-  "sha256": "0111ccc516aa5c2aad74bc561f3e0d853111a7932ab29c125a3d2b9c220b0f3d",
-  "sha384": "q4mHA3+u3N3Yt8z1wisCEXQqWNo5UhHZ0nUESid8BGNZz6BtV8dSUlVOvyndc0Tj"
+  "bytes": 1214770,
+  "gzipBytes": 499068,
+  "sha256": "c9b2cfd144156f9916d4f70c678a19d00cfa0135fed4f355cd6e044b35a09715",
+  "sha384": "gOi4uP0F7r23fF2YH3Rvb3NisqOzz8H2T1qAFknqbSKZVeOzRykk7vDc5NEnqVm+"
 }

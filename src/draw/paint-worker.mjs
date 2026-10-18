@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {PaintSurface, PaintBrush, paintStroke} from './paint.mjs';
+import {PaintStrokeHistory, copyPaintState, snapshotPaintState} from './paint-history.mjs';
 import {AgentPaintRun, admitAgentStrokes, prepareAgentPainting, prepareAgentLayerPainting, encodeAgentPainting, agentPaintReplayRun, replayAgentPainting} from './agent-paint.mjs';
 import {sha256Yielding} from '../notes/integrity.mjs';
 import {createPaintRowPool, PAINT_SPLIT_PIXELS} from './paint-parallel.mjs';
@@ -20,7 +21,33 @@ const yieldPaint = () => new Promise(resolve => {
 });
 export function createPaintWorker({postMessage, spawnRows, isolated = false} = {}) {
  const surfaces=new Map(), brushes=new Map(), runs=new Map(), checkpoints=new Map();
- const agentJobs=new Map(), displays=new Map();
+ const agentJobs=new Map(), displays=new Map(), histories=new Map(), definitions=new Map(), historyBrushes=new Map(), resumedBrushes=new Map();
+ const copyState=value=>{
+  const out=copyPaintState(value);
+  for(const brush of [...out.brushes.values(),...(out.resumed?[out.resumed.brush]:[])]) {
+   brush.holdDab.adjust=color=>{const d=brush.holdDab;brush._colourDab(color,d.smudge,d.legacy,d.paint,d.linear);if(d.tint){color[0]*=d.tint.tr;color[1]*=d.tint.tg;color[2]*=d.tint.tb;}};
+  }
+  return out;
+ };
+ const historyFor=id=>{
+  if(!histories.has(id))histories.set(id,new PaintStrokeHistory({
+   capture:previous=>snapshotPaintState({surface:need(surfaces,id),brushes,definitions,brushId:historyBrushes.get(id),resumed:resumedBrushes.get(id)||null},previous),restore:copyState,canCapture:()=>!need(surfaces,id)._wetWork,
+   apply:(state,c)=>{
+    const s=state.surface,a=c.args||[];
+    if(c.target==='read'){s.readCommitted(c.box);return;}
+    if(c.target==='define'){state.brushes.set(c.id,c.restore?state.resumed.brush:new PaintBrush(c.definition));if(c.restore)state.resumed=null;state.definitions.set(c.id,c.definition);return;}
+    if(c.target==='brush'){state.brushes.get(c.id)[c.method](...a);return;}
+    if(c.target==='stroke'){state.brushes.get(c.brushId).strokeTo(s,...a);state.brushId=c.brushId;return;}
+    if(c.method==='set')s[a[0]]=a[1];
+    else if(c.method==='beginStroke')s.beginStroke();
+    else if(c.method==='endStroke')s.endStroke(s.strokeCheckpoint,a[1]===true);
+    else if(c.method==='dryWet'){let left=c.iterations;s.dryWet(Infinity,a[0]??8,a[1]??8,()=>left--<=0);}
+    else s[c.method](...a);
+   },
+   read:({surface:s},point)=>{const box=point.before?s.bounds():point.box;return {box,pixels:box?s.readCommitted(box):null,meta:metaOf(s)};}
+  }));
+  return histories.get(id);
+ };
  let lastId=0, failed=null, pool=null, chain=Promise.resolve();
  const releaseDisplay=bound=>{if(bound){bound.canvas.width=bound.canvas.height=0;}};
  const dropDisplay=id=>{const bound=displays.get(id);if(bound){releaseDisplay(bound.previous);releaseDisplay(bound);displays.delete(id);}};
@@ -64,7 +91,13 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
    const surface=new PaintSurface(width,height,request.options); surfaces.set(id,surface); pool?.attach(surface);
    return state(id);
   }
-  if(operation==='brush') { const id=idOf(request.brushId); if(brushes.has(id)) throw new Error('Brush identity already live'); brushes.set(id,new PaintBrush(request.definition)); return {}; }
+  if(operation==='brush') {
+   const id=idOf(request.brushId);if(brushes.has(id))throw new Error('Brush identity already live');
+   const held=resumedBrushes.get(request.historySurfaceId);resumedBrushes.delete(request.historySurfaceId);
+   const restore=!!held&&JSON.stringify(held.definition)===JSON.stringify(request.definition),brush=restore?held.brush:new PaintBrush(request.definition);
+   brushes.set(id,brush);definitions.set(id,structuredClone(request.definition));
+   for(const [sid,h]of histories)if(surfaces.has(sid))h.record({target:'define',id,definition:request.definition,...(restore&&sid===request.historySurfaceId?{restore:true}:{})});return {};
+  }
   if(operation==='bindDisplay') {
    const surface=need(surfaces,request.surfaceId), current=displays.get(request.surfaceId);
    if(!Number.isSafeInteger(request.generation)||request.generation<1||typeof request.canvas?.getContext!=='function'||current&&request.generation<=current.generation)throw new Error('Paint display identity is not current');
@@ -88,34 +121,51 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
    if(bound?.canvasGeneration===request.canvasGeneration&&!bound.adopted){bound.adopted=true;releaseDisplay(bound.previous);bound.previous=null;}
    return {};
   }
+  if(operation==='historyReplay'){const h=need(histories,request.surfaceId),point=request.point;const result=await h.replay(point.before&&point.at!=null?{...point,before:false}:point);return {...result,digest:result.pixels?await hash(result.pixels.data):null};}
+  if(operation==='historyStats')return need(histories,request.surfaceId).stats();
+  if(operation==='historyKeep'){
+   const kept=new Map(request.keep.map(row=>[row.surfaceId,row.points]));
+   for(const [id,h]of histories){const points=kept.get(id)||[];h.retained=!!points.length;if(!points.length&&!surfaces.has(id)){histories.delete(id);continue;}const at=points.map(p=>h.resolve(p)).filter(Number.isFinite);if(at.length)h.trim(Math.min(...at));}
+   return {};
+  }
   if(operation==='batch') {
    if(!Array.isArray(request.commands)||request.commands.length>32768) throw new Error('Invalid paint batch');
    const changed=new Map(), used=new Set();
    let values=[], replayWork=[], completed=0, turn=performance.now(), shown=turn-PAINT_PREVIEW_MS;
    const reply = async (final, render = true) => ({completed,surfaces:await Promise.all([...changed].map(([id,full])=>render ? state(id,full,final) : {surfaceId:id,meta:metaOf(need(surfaces,id)),patch:null,materialOnly:true})),values,replayWork,
     brushes:Object.fromEntries([...used].map(id=>[id,{loadFuel:brushes.get(id)?.loadFuel ?? null}])),stats:pool?.stats || null});
-   const apply = c => {
+   const apply = async c => {
     const args=c.args || [];
-    if(c.target==='brush') { if(!brushMethods.has(c.method)) throw new Error('Unknown brush command'); need(brushes,c.id)[c.method](...args); return; }
+    if(c.target==='brush') { if(!brushMethods.has(c.method)) throw new Error('Unknown brush command'); need(brushes,c.id)[c.method](...args); for(const [id,h]of histories)if(surfaces.has(id))h.record(c); return; }
     if(c.target==='stroke') {
      if(args.length<3||args.length>11||args.some((v,i)=> i<10 ? !Number.isFinite(v) : typeof v!=='boolean')) throw new Error('Invalid input sample');
-     const surface=need(surfaces,c.surfaceId); need(brushes,c.brushId).strokeTo(surface,...args); changed.set(c.surfaceId,changed.get(c.surfaceId)||false); used.add(c.brushId); return;
+     const surface=need(surfaces,c.surfaceId); need(brushes,c.brushId).strokeTo(surface,...args); changed.set(c.surfaceId,changed.get(c.surfaceId)||false); used.add(c.brushId);historyBrushes.set(c.surfaceId,c.brushId); histories.get(c.surfaceId)?.record(c); return;
     }
     if(c.target!=='surface') throw new Error('Unknown paint command target');
     const surface=need(surfaces,c.id); let full=changed.get(c.id)||false, value, recorded=null;
+    if(c.method==='historyStart'){await historyFor(c.id).begin(args[0],c.history);values.push(null);replayWork.push(null);return;}
     if(c.method==='set') { if(!properties.has(args[0])) throw new Error('Unknown paint property'); surface[args[0]]=args[1]; }
-    else if(c.method==='beginStroke') { if(checkpoints.has(c.id)) throw new Error('Stroke already open'); checkpoints.set(c.id,{id:args[0],value:surface.beginStroke()}); }
+    else if(c.method==='fromHistory') {const restored=await need(histories,args[0]).material(args[1]);pool?.detach(surface);surfaces.set(c.id,restored.surface);pool?.attach(restored.surface);restored.surface.revision=Math.max(restored.surface.revision,surface.revision+1);const held=restored.resumed||(restored.brushId!=null?{brush:restored.brushes.get(restored.brushId),definition:restored.definitions.get(restored.brushId)}:null);if(held)resumedBrushes.set(c.id,held);value=metaOf(restored.surface);full=true;}
+    else if(c.method==='beginStroke') {
+     if(checkpoints.has(c.id))throw new Error('Stroke already open');
+     if(surface._wetWork){surface._finishWetWork();histories.get(c.id)?.record({target:'surface',id:c.id,method:'_finishWetWork',args:[]});}
+     if(c.history)await historyFor(c.id).begin(args[0],c.history);
+     checkpoints.set(c.id,{id:args[0],value:surface.beginStroke()});
+    }
     else if(c.method==='endStroke') { const cp=checkpoints.get(c.id); if(!cp||cp.id!==args[0]) throw new Error('Stroke checkpoint does not match'); value=surface.endStroke(cp.value,args[1]===true); checkpoints.delete(c.id); full=args[1]===true; }
     else if(c.method==='dryWet') {
      if(c.record===true){recorded=[];surface.recordWetWork=(method,args)=>recorded.push({target:'surface',id:c.id,method,args});}
      try {value=surface.dryWet(performance.now()+8,args[0]??8,args[1]??8);}
      finally {surface.recordWetWork=null;}
+     if(histories.has(c.id))c={...c,iterations:surface.dryIterations};
     }
     else { if(!surfaceMethods.has(c.method)) throw new Error('Unknown surface command'); value=surface[c.method](...args); if(c.method==='grow') full=true; }
+    if(c.method==='endStroke'&&args[1]===true){if(!c.keepHistory)await histories.get(c.id)?.cancel(args[0]);}
+    else histories.get(c.id)?.record(c);
     values.push(value); replayWork.push(recorded); changed.set(c.id,full);
    };
    for(const c of request.commands) {
-    apply(c); completed++;
+    await apply(c); completed++;
     if(request.progress===true && completed<request.commands.length && performance.now()-turn>=PAINT_SLICE_MS) {
      if(performance.now()-shown>=PAINT_PREVIEW_MS) {
       const value=await reply(false); postMessage({id:request.id,progress:true,value},transfer(value));
@@ -136,7 +186,8 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
    const surface=need(surfaces,request.surfaceId), box=request.bounds ? surface.bounds() : request.box || null;
    const quality=request.quality==='live' ? 'live' : 'final', read=quality==='final' ? b=>{const p=surface.readCommitted(b);return {width:p.width,height:p.height,data:p.data.slice()};} : b=>surface.toRGBA8(b,true,quality);
    const pixels=request.bounds && !box ? null : read(box || undefined);
-   return {pixels,box,digest:pixels && request.verify !== false ? await hash(pixels.data) : null,meta:metaOf(surface),...(request.material ? {material:new Float32Array(surface.data),volume:surface.volume ? new Uint8Array(surface.volume) : null,oil:surface.oil ? new Uint16Array(surface.oil) : null} : {})};
+   if(pixels)histories.get(request.surfaceId)?.record({target:'read',box:box||{x0:0,y0:0,x1:surface.width-1,y1:surface.height-1}});
+   return {pixels,box,history:await histories.get(request.surfaceId)?.mark(box,{pixels,meta:metaOf(surface)}),digest:pixels && request.verify !== false ? await hash(pixels.data) : null,meta:metaOf(surface),...(request.material ? {material:new Float32Array(surface.data),volume:surface.volume ? new Uint8Array(surface.volume) : null,oil:surface.oil ? new Uint16Array(surface.oil) : null} : {})};
   }
   if(operation==='agent') {
    const signal=agentJobs.get(request.id)?.signal;
@@ -200,7 +251,7 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
    }
    finally { pool?.detach(surface); }
   }
-  if(operation==='drop') { for(const id of request.surfaceIds||[]) { const surface=surfaces.get(id); if(surface) pool?.detach(surface); dropDisplay(id); surfaces.delete(id); checkpoints.delete(id); runs.delete(id); } for(const id of request.brushIds||[]) brushes.delete(id); return {}; }
+  if(operation==='drop') { for(const id of request.surfaceIds||[]) { const surface=surfaces.get(id); if(surface) pool?.detach(surface); dropDisplay(id); surfaces.delete(id); checkpoints.delete(id); runs.delete(id);historyBrushes.delete(id);resumedBrushes.delete(id); if(!histories.get(id)?.retained)histories.delete(id); } for(const id of request.brushIds||[]){brushes.delete(id);definitions.delete(id);} return {}; }
   throw new Error('Unknown paint operation');
  }
  const receive = request => {
@@ -228,7 +279,7 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
   };
   chain=chain.then(run); return chain;
  };
- receive.close=async()=>{failed=paintAbort();for(const job of agentJobs.values())job.abort();await chain;await pool?.close();for(const id of displays.keys())dropDisplay(id);surfaces.clear();brushes.clear();runs.clear();checkpoints.clear();};
+ receive.close=async()=>{failed=paintAbort();for(const job of agentJobs.values())job.abort();await chain;await pool?.close();for(const id of displays.keys())dropDisplay(id);surfaces.clear();brushes.clear();runs.clear();checkpoints.clear();histories.clear();definitions.clear();historyBrushes.clear();resumedBrushes.clear();};
  return receive;
 }
 

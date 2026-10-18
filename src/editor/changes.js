@@ -39,7 +39,7 @@
   function identity() { return String(rapier.identity.authority || ''); }
   function inDraw() { return _rapierDrawShown(); }
   function busy() {
-    return !!(rapier.composition.block || rapier.composition.source ||
+    return !!(rapier.composition.block || rapier.composition.source || rapier.undo.flatBurstOpen ||
       _rapierMutationBarrierActive() || performance.now() < typingUntil);
   }
   function stored(id) {
@@ -237,7 +237,8 @@
       const others = records.some(record => otherAuthor(record.transaction?.actor));
       const projected = globalThis.RapierLedger.historyPlaces(input, others ? blockRows() : []);
       if (!projected.ok) return projected;
-      const word = globalThis.RapierDocxImport.wordReview(source);
+      const word = rapier.document.source.contains('<!-- rapier-word:v1\n')
+        ? globalThis.RapierDocxImport.wordReview(source) : {body: source, changes: []};
       const fallback = await snapshotPlaces(input, blockRows, id, rev, gen), next = fallback.places.filter(place => place.from < word.body.length);
       for (const row of word.changes) {
         const block = blockRows().find(block => block.from <= row.from && row.from < block.to)
@@ -589,7 +590,7 @@
     const id = documentId;
     if (active?.controls) for (const control of active.controls.querySelectorAll('button')) control.disabled = true;
     const target = place.kind === 'drawing' ? globalThis.RapierChangesDraw.undoTarget(place)
-      : place.turnId ? {turnId: place.turnId, actorId: place.actor?.id} : {actId: place.actId};
+      : place.turnId ? {turnId: place.turnId, actorId: place.actor?.id, actorKind: place.actor?.kind} : {actId: place.actId};
     if (place.kind !== 'drawing' && active) close();
     const selection = globalThis.getSelection?.();
     if (selection?.rangeCount && !document.querySelector('.block-wrapper--editing') &&

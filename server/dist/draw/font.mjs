@@ -38,7 +38,7 @@ function sameBytes(a, b) {
 	for (let at = 0; at < a.length; at++) if (a[at] !== b[at]) return false;
 	return true;
 }
-function inspect(bytes) {
+function inspect(bytes, {print = false} = {}) {
 	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), n = bytes.length;
 	const u16 = at => view.getUint16(at), s16 = at => view.getInt16(at), u32 = at => view.getUint32(at);
 	const flavor = u32(0), format = flavor === 0x00010000 ? 'ttf' : flavor === 0x4f54544f ? 'otf' : null;
@@ -64,7 +64,8 @@ function inspect(bytes) {
 	const version = u16(os.at), fsType = u16(os.at + 8), permission = fsType & 15;
 	if (version > 5 || os.length < [78, 86, 96, 96, 96, 100][version]) fail('The font embedding permissions are invalid.');
 	const editable = version < 3 ? !permission || !(permission & 1) && !!(permission & 8) : permission === 0 || permission === 8;
-	if (!editable || version >= 2 && (fsType & 0x200)) fail('This font does not permit embedding in an editable document.', 'drawing_font_permission');
+	const printable = version < 3 ? !permission || !!(permission & 12) : [0, 4, 8].includes(permission);
+	if (!(print ? printable : editable) || version >= 2 && (fsType & 0x200)) fail('This font does not permit embedding in ' + (print ? 'a printed' : 'an editable') + ' document.', 'drawing_font_permission');
 	const units = u16(head + 18), glyphs = u16(maxp + 4), horizontal = u16(hhea + 34), hmtx = table('hmtx', 4).at;
 	if (units < 16 || units > 16384 || !glyphs || !horizontal || horizontal > glyphs || table('hmtx', horizontal * 4 + (glyphs - horizontal) * 2).length < 4) fail('The font metrics are invalid.');
 	if (format === 'ttf') {
@@ -126,7 +127,7 @@ function inspect(bytes) {
 			if (tag === 'onum' || tag === 'lnum' || tag === 'tnum') features.add(tag);
 		}
 	}
-	return {view, format, name, family, subfamily, style, weight, stretch, axes: Object.freeze(axes), weightRange: Object.freeze(weightAxis ? [weightAxis.min, weightAxis.max] : [weight, weight]), embedding: Object.freeze({fsType, subset: !(fsType & 256)}), units, glyphs, horizontal, hmtx, mapping, features, metrics: Object.freeze({
+	return {view, format, name, postscriptName: names.get(6)?.text, family, subfamily, style, weight, stretch, axes: Object.freeze(axes), weightRange: Object.freeze(weightAxis ? [weightAxis.min, weightAxis.max] : [weight, weight]), embedding: Object.freeze({fsType, subset: !(fsType & 256)}), units, glyphs, horizontal, hmtx, mapping, features, metrics: Object.freeze({
 		ascent: Math.max(0, s16(hhea + 4)) / units, descent: Math.max(0, -s16(hhea + 6)) / units,
 		lineGap: Math.max(0, s16(hhea + 8)) / units, ink: Object.freeze({minX: minX / units, minY: -maxY / units, maxX: maxX / units, maxY: -minY / units})
 	})};
@@ -178,6 +179,16 @@ export async function importFonts(files) {
 }
 export function fontBytes(font) {
 	return parsed.get(checked(font)).bytes.slice();
+}
+export async function printFont(value, text, face = {}) {
+	const faces = await unpackFonts(value);
+	for (const bytes of faces) {
+		const info = inspect(bytes, {print: true});
+		if (faces.length > 1 && !(face.postscriptName && info.postscriptName === face.postscriptName || face.fullName && info.name === face.fullName)) continue;
+		const subset = subsetSfnt(bytes, String(text));
+		return {bytes: subset.bytes, axes: info.axes, style: info.style, postscriptName: info.postscriptName, subset: subset.stats.subset};
+	}
+	fail('The print font must identify one face.');
 }
 export async function subsetFont(font, text) {
 	font = checked(font); const result = subsetSfnt(parsed.get(font).bytes, String(text ?? ''));

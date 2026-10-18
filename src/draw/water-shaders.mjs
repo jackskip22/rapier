@@ -183,8 +183,7 @@ const body = {
  let q=uv(p);return Pair(sample(t0,q)*u.v[2].z,sample(t1,q)*u.v[2].z);
  }`,
  dried: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> Pair {
- let pix=vec2<i32>(px(p));let dry=smoothstep(0.02,0.45,loadTexel(t2,pix).r)<0.002;let settle=select(u.v[2].w,1.0,dry);
- let k=select(1.0-settle,settle,u.v[2].z>0.0);
+ let pix=vec2<i32>(px(p));let dry=smoothstep(0.02,0.45,loadTexel(t2,pix).r)<0.002;let k=select(f32(!dry),f32(dry),u.v[2].z>0.0);
  return Pair(loadTexel(t0,pix)*k,loadTexel(t1,pix)*k);
  }`,
  pigment: `

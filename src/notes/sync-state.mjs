@@ -35,3 +35,21 @@ export async function updateSyncState(folder, change, {guard} = {}) {
 		}, {brief: true, admissionGuard: guard});
 	} finally { await lease.release(); }
 }
+
+export async function lockedSyncBoundary(folder, parentGuard) {
+	if (folder.store.deviceOnly) throw Object.assign(new Error('Locked notes cannot sync.'), {code: 'notes_locked'});
+	const excluded = (await readSyncStateBytes(folder.store)).state.lockedFiles || [];
+	const serial = JSON.stringify(excluded), hashes = new Set(excluded), names = new Map();
+	return {
+		async allows(path) {
+			if (!hashes.size) return true;
+			if (!names.has(path)) names.set(path, sha256(path).then(hash => !hashes.has(hash)));
+			return names.get(path);
+		},
+		async guard() {
+			await parentGuard();
+			if (JSON.stringify((await readSyncStateBytes(folder.store)).state.lockedFiles || []) !== serial)
+				throw Object.assign(new Error('A note was locked. Run Sync again; locked notes stay on this phone.'), {code: 'notes_locked'});
+		},
+	};
+}

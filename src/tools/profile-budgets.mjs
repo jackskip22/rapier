@@ -1,7 +1,14 @@
 export const SIZE_BUDGETS = Object.freeze({
-	full: Object.freeze({warn: 2_980_000, refuse: 3_000_000}),
+	full: Object.freeze({warn: 1_700_000, refuse: 1_750_000}),
 	reader: Object.freeze({warn: 1_200_000, refuse: 1_250_000}),
 });
+
+export function checkProfileSize(profile, bytes, warn = console.warn) {
+	const budget = SIZE_BUDGETS[profile];
+	if (!budget || !Number.isSafeInteger(bytes) || bytes < 0) throw new Error('Invalid page size measurement');
+	if (bytes >= budget.warn) warn(`[build] ${profile} page is ${bytes} bytes: warning at ${budget.warn}; ceiling ${budget.refuse}`);
+	if (bytes > budget.refuse) throw new Error(`[build] ${profile} page is ${bytes} bytes, above its ${budget.refuse}-byte ceiling`);
+}
 
 // `RAPIER_PAINT_GRAIN = 3`, a 200-unit stroke on a 390 × 692
 export const PAINT_STROKE_BUDGETS = Object.freeze({

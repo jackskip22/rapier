@@ -13,7 +13,7 @@
 // Fail open: any doubt (the asset missing, encoded, without its markers or guide) serves the plain page. The worker never
 // refuses a person and never stands between `/` and its page.
 const ORIGIN = 'https://rapier.website';
-const PAGE = '/rapier.html';
+const PAGE = '/index.html';
 export function doorAssetPath(path) {
 	return '/door-' + path.slice(1) + '.html';
 }

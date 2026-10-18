@@ -1,6 +1,6 @@
 const RAPIER_NOTES_DIR = 'notes', RAPIER_NOTES_HOLD_MS = 500, RAPIER_NOTES_HOLD_SLOP = 8, RAPIER_NOTES_MOVED_PX = 8, RAPIER_NOTES_DWELL_MS = 120, RAPIER_NOTES_AUTOSAVE_MS = 700, RAPIER_NOTES_REMIND_MS = 30000;
 const _rapierNotes = {
-	surface: null, scroll: null, grids: {}, windows: {}, sheet: null, sheetRelease: null, open: false,
+	surface: null, scroll: null, grids: {}, windows: {}, sheet: null, sheetRelease: null, open: false, lockedCards: null,
 	index: null, texts: new Map(), titles: new Map(), hold: new Set(), sizes: new Map(), readFailed: new Map(), reading: null, reads: null, loadGen: 0, popup: null, sheetSwiped: false, fabDrag: null,
 	backgroundTouches: new Set(), backgroundInput: false, backgroundComposing: false,
 	query: '', current: null, currentProof: null, savedGen: -1, savedReceipt: null, savingGen: -1, savingText: null, savingDigest: null, autosave: 0, asciiNames: null, drag: null, selected: new Set(), snack: null, loading: null, indexing: null, persistAsked: false, persistReported: false, storageKnown: null, audioBytes: null, capturing: null, importFaults: 0, besideLeaving: null, renderAfterDrag: false, saveFailed: false, attempted: new Map(), attemptedLedger: new Map(), sheetFocus: false, sheetOpener: null, sheetMode: 'actions', importsOpen: null, importUndoReview: null, importUndoBusy: false, historyRows: null, historyOne: null, pastBytes: null, pastVersions: 0, untitled: new Set(), renaming: null, swallowClick: 0, unfolded: new Set(), thumbs: new Map(), thumbNames: null, thumbQueue: [], thumbBusy: false, remindTimer: 0, remindQueue: [], mode: false, compose: false, opened: new Set(), retaking: null, readerSaid: false, captureToken: null, capturePreparing: false, captured: new Set(), captureChain: Promise.resolve(), unlocking: null, remindSyncedKey: undefined, remindChain: Promise.resolve(),
@@ -124,9 +124,22 @@ async function _rapierNotesEditor() {
 	return state.returning;
 }
 function _rapierNotesIsApp() { return globalThis.RapierPlatform?.environment.android === true; }
+function _rapierNotesIsLocked() { return globalThis.RapierPlatform?.host?.lockedNotes === true; }
+let _rapierNotesPrivateDrafts = null;
+function _rapierNotesDraftStorage() {
+	if (!_rapierNotesIsLocked()) return globalThis.localStorage;
+	if (!_rapierNotesPrivateDrafts) throw new Error('The locked note is not ready.');
+	return _rapierNotesPrivateDrafts;
+}
+globalThis.rapierLockedCheckpoint = () => {
+	if (!_rapierNotesIsLocked()) return {};
+	_rapierNotesPending.keep();
+	return _rapierNotesPrivateDrafts?.checkpoint() || {};
+};
+
 
 const _rapierNotesPending = {
-	prefix: 'rapier-notes-pending:', held: new Map(), replaying: null, live: null, claiming: null, queued: false,
+	prefix: 'rapier-notes-pending:', held: new Map(), retired: new Set(), replaying: null, live: null, claiming: null, queued: false,
 	soon() {
 		if (this.queued) return;
 		this.queued = true;
@@ -268,8 +281,11 @@ const _rapierNotesPending = {
 		const state = _rapierNotes, kind = this.kind(), file = proof.file || state.current;
 		if (!['native', 'opfs', 'indexeddb'].includes(kind)) return false;
 		try {
+			if (this.retired.has(proof.id) && (state.currentProof !== proof || !_rapierNotesDocumentBound() ||
+				!_rapierMutationStampSharesDocument(stamp))) throw new Error('This note was locked. Unlock it with your phone.');
 			const digest = !paste && this.known(proof, stamp, text) || this.digest(paste ? JSON.stringify({text, paste}) : text);
 			const token = proof.id + ':' + stamp.documentEpoch, prior = this.held.get(token), key = prior?.key || this.prefix + crypto.randomUUID();
+			if (prior?.retired) throw new Error('This note was locked. Unlock it with your phone.');
 			if (canonical === undefined) {
 				try { canonical = this.canonical(); }
 				catch (_) { canonical = null; }
@@ -288,7 +304,7 @@ const _rapierNotesPending = {
 				prior.owner === this.live.id && prior.file === file && prior.expectedDigest.length === expectedDigest.length &&
 				prior.expectedDigest.every((value, i) => value === expectedDigest[i]);
 			const serial = same ? prior.serial : JSON.stringify({version: 1, store: kind, owner: this.live.id, file, id: proof.id, documentAuthority: stamp.documentAuthority, expectedDigest, expectedLedger, canonical, text, digest, ...(paste ? {paste} : {})});
-			if (localStorage.getItem(key) !== serial) localStorage.setItem(key, serial);
+			if (_rapierNotesDraftStorage().getItem(key) !== serial) _rapierNotesDraftStorage().setItem(key, serial);
 			this.held.set(token, {key, serial, id: proof.id, stamp, digest, text, paste, canonical, expectedLedger, store: kind, owner: this.live.id, file, expectedDigest});
 			if (digest === proof.digest && historySaved && expectedDigest.every(value => value === digest)) this.forget(proof, stamp, digest, proof.ledger);
 			return true;
@@ -300,11 +316,12 @@ const _rapierNotesPending = {
 	forget(proof, stamp, digest, ledger = proof?.ledger) {
 		if (!proof?.id || !stamp) return;
 		for (const [token, record] of this.held) {
+			if (record.retired) continue;
 			if (record.id !== proof.id || record.stamp.documentEpoch !== stamp.documentEpoch ||
 				record.stamp.documentAuthority !== stamp.documentAuthority || record.stamp.docGeneration > stamp.docGeneration ||
 				record.stamp.docGeneration === stamp.docGeneration && (record.digest !== digest || record.canonical?.unverified || record.canonical?.text !== record.text || record.canonical?.ledger.sha256 !== ledger)) continue;
 			try {
-				if (localStorage.getItem(record.key) === record.serial) localStorage.removeItem(record.key);
+				if (_rapierNotesDraftStorage().getItem(record.key) === record.serial) _rapierNotesDraftStorage().removeItem(record.key);
 				this.held.delete(token);
 			} catch (_) {  }
 		}
@@ -340,12 +357,12 @@ const _rapierNotesPending = {
 			const kind = this.kind(), own = new Set([...this.held.values()].map(record => record.key));
 			if (!['native', 'opfs', 'indexeddb'].includes(kind)) return false;
 			let keys;
-			try { keys = Array.from({length: localStorage.length}, (_, i) => localStorage.key(i)).filter(key => key?.startsWith(this.prefix) && !own.has(key)); }
+			try { keys = Array.from({length: _rapierNotesDraftStorage().length}, (_, i) => _rapierNotesDraftStorage().key(i)).filter(key => key?.startsWith(this.prefix) && !own.has(key)); }
 			catch (_) { return false; }
 			let changed = false;
 			for (const key of keys) {
 				try {
-					const serial = localStorage.getItem(key); if (serial == null) continue;
+					const serial = _rapierNotesDraftStorage().getItem(key); if (serial == null) continue;
 					const record = JSON.parse(serial);
 					if (record?.store !== kind) continue;
 					if (record.version !== 1 || !_rapierNotesModel().isNoteFile(record.file) || typeof record.id !== 'string' || !record.id ||
@@ -353,14 +370,14 @@ const _rapierNotesPending = {
 						!record.expectedDigest.length || record.expectedDigest.some(value => !/^[a-f0-9]{64}$/.test(value)) ||
 						await globalThis.RapierNotesIntegrity.sha256(record.paste ? JSON.stringify({text: record.text, paste: record.paste}) : record.text) !== record.digest) throw new Error('The unfinished note has no complete byte proof.');
 					const recover = async () => {
-						if (localStorage.getItem(key) !== serial) return;
+						if (_rapierNotesDraftStorage().getItem(key) !== serial) return;
 						const text = await this.resolve(record);
 						const ledger = this.ledger(record, text);
 						if (!Array.isArray(record.expectedLedger) || !record.expectedLedger.length || record.expectedLedger.some(value => !/^[a-f0-9]{64}$/.test(value)) ||
 							typeof record.documentAuthority !== 'string' || record.documentAuthority !== ledger.documentAuthority) throw new Error('The unfinished note has no complete history admission proof.');
 						const saved = await _rapierNotesStore.folder.save({...record, text, ledger});
 						changed = true;
-						if (localStorage.getItem(key) === serial) localStorage.removeItem(key);
+						if (_rapierNotesDraftStorage().getItem(key) === serial) _rapierNotesDraftStorage().removeItem(key);
 						if (saved.copied) showToast('An unfinished edit of ' + record.file + ' met a changed note. Your words were kept as ' + saved.file + '.', 'info');
 					};
 					if (typeof record.owner !== 'string' || !/^[a-f0-9-]{36}$/.test(record.owner) || !navigator.locks?.request)
@@ -386,7 +403,7 @@ const _rapierNotesStore = {
 	androidRestore: null,
 	async restoreAndroid() {
 		const call = globalThis.RapierPlatform?.host?.notesBackup;
-		if (!this.native || typeof call !== 'function') return;
+		if (_rapierNotesIsLocked() || !this.native || typeof call !== 'function') return;
 		if (!this.androidRestore) this.androidRestore = (async () => {
 			try {
 				const results = await globalThis.RapierNotesBackup.restoreAndroidBackups(this.folder, call);
@@ -415,9 +432,9 @@ const _rapierNotesStore = {
 			if (typeof globalThis.__rapierNotesHoldWrite === 'function') await globalThis.__rapierNotesHoldWrite(name, /\.md$/i.test(name) ? new TextDecoder().decode(bytes) : bytes);
 		}};
 		if (globalThis.RAPIER_WORKSPACE === true) this.workspace = globalThis.RapierNotesWorkspaceStore.createWorkspaceNotes(options);
-		this.bytes = this.workspace?.store || (this.native ? OPFS.createNativeByteStore : durable ? OPFS.createByteStore : globalThis.RapierNotesIdbStore.createIndexedDbByteStore)(options);
-		const channel = this.workspace?.channel || (typeof BroadcastChannel === 'function' ? new BroadcastChannel('rapier-notes') : null);
-		const shared = () => this.native || durable ? true : ['indexeddb', 'fault', 'unasked'].includes(this.bytes?.kind);
+		this.bytes = this.workspace?.store || (this.native ? (options => OPFS.createNativeByteStore({...options, privateStore: _rapierNotesIsLocked()})) : durable ? OPFS.createByteStore : globalThis.RapierNotesIdbStore.createIndexedDbByteStore)(options);
+		const channel = this.workspace?.channel || (!_rapierNotesIsLocked() && typeof BroadcastChannel === 'function' ? new BroadcastChannel('rapier-notes') : null);
+		const shared = () => _rapierNotesIsLocked() ? false : this.native || durable ? true : ['indexeddb', 'fault', 'unasked'].includes(this.bytes?.kind);
 		this.folder = F.createFolder({store: this.bytes, scope: RAPIER_NOTES_DIR, locks: this.workspace?.locks || (this.native ? OPFS.createNativeNotesLocks({call: globalThis.RapierPlatform.host.notesStore}) : navigator.locks), channel, shared, keep: file => file === _rapierNotes.current, onInvalidate: () => { void _rapierNotesFolderChanged(); }, onPending: () => { if (typeof _rapierBackHold === 'function') _rapierBackHold(); }});
 	},
 	async kind() {
@@ -436,6 +453,11 @@ const _rapierNotesStore = {
 				try {
 					if (typeof globalThis.RapierPlatform.host.notesStore !== 'function') throw new Error('The native Notes folder is unavailable.');
 					this.native = true; this.attach(true); await this.bytes.prepare();
+					if (_rapierNotesIsLocked()) {
+						if (!globalThis.RapierLockedDrafts) throw new Error('This phone cannot keep locked notes right now.');
+						const initial = await globalThis.RapierPlatform.host.notesStore('notes.store.draft.list', {});
+						_rapierNotesPrivateDrafts = globalThis.RapierNotesFolder.createPrivateDrafts({initial: initial.files, token: initial.token, native: globalThis.RapierLockedDrafts});
+					}
 					await this.restoreAndroid();
 					this.durable = true; this.storageFault = null; _rapierNotes.asciiNames = false;
 					return true;
@@ -874,6 +896,7 @@ async function _rapierNotesStorageAnswer(ask = false, {measure = true} = {}) {
 	_rapierNotesStorageLines();
 }
 async function _rapierNotesOpenSearchCache() {
+	if (_rapierNotesIsLocked()) return null;
 	const C = globalThis.RapierNotesSearchCache;
 	if (!C || typeof C.openSearchCache !== 'function') return null;
 	const store = _rapierNotesStore;
@@ -888,6 +911,7 @@ async function _rapierNotesLoad() {
 	const request = state.loadRequest = {};
 	if (!state.persistReported) { state.persistReported = true; void _rapierNotesStorageAnswer(false); }
 	await store.kind();
+	if (await _rapierNotesResumeLock()) return;
 	await _rapierNotesPending.claim();
 	let snapshot, damaged = null;
 	const read = async () => { try { return await store.folder.read({syncState: true}); }
@@ -1070,7 +1094,7 @@ function _rapierNotesReadRest() {
 }
 function _rapierNotesWindowTexts(files) {
 	const state = _rapierNotes, reads = state.reads;
-	const wanted = [...new Set(files)].filter(f => !state.texts.has(f) && !state.readFailed.has(f));
+	const wanted = [...new Set(files)].filter(f => !_rapierNotesLockedKey(f) && !state.texts.has(f) && !state.readFailed.has(f));
 	if (!wanted.length) return Promise.resolve();
 	return new Promise(resolve => { reads.waiters.push({files: wanted, resolve}); _rapierNotesReadsWindow(); });
 }
@@ -1338,12 +1362,14 @@ function _rapierNotesSyncBoxWear(b) {
 	if (!b) { for (const button of document.querySelectorAll('.rapier-notes-sync')) _rapierNotesSyncBoxWear(button); return; }
 	const facts = _rapierNotesSyncFacts();
 	b.classList.add('rapier-cloudflare');
-	b.replaceChildren(_rapierNotesEl('span', 'rapier-notes-sync__word', facts.app ? 'rapier sync (coming soon)' : !facts.connected ? 'sync'
+	b.replaceChildren(_rapierNotesEl('span', 'rapier-notes-sync__word', facts.app ? 'rapier sync (coming soon)' : !facts.connected ? 'sign in with cloudflare'
 		: facts.plain ? 'plain files on ' + (facts.service || 'your storage') : facts.at ? 'backed up to ' + (facts.service || 'cloudflare') : 'connected to ' + (facts.service || 'cloudflare')));
 	if (facts.connected) b.appendChild(_rapierNotesEl('span', 'rapier-notes-sync__when', facts.at ? _rapierNotesBackupWhen(facts.at) : facts.plain ? 'not synced yet' : 'not backed up yet'));
 	if (facts.connected) b.dataset.active = 'true'; else delete b.dataset.active;
+	for (const other of document.querySelectorAll('.rapier-notes-sync-other')) other.hidden = facts.app || facts.connected;
 }
-function _rapierNotesSyncPress() {
+function _rapierNotesSyncPress(options = {}) {
+	if (_rapierNotesIsLocked()) return;
 	const settings = _rapierUi?.refs?.settingsOverlay;
 	if (settings?.classList.contains('open')) closeDialog(settings);
 	if (_rapierNotesIsApp()) {
@@ -1353,7 +1379,7 @@ function _rapierNotesSyncPress() {
 		return;
 	}
 	if (navigator.onLine === false) { showToast('This device is not connected to the internet.', 'info'); return; }
-	if (typeof _rapierCfToggle === 'function') _rapierCfToggle();
+	if (typeof _rapierCfToggle === 'function') _rapierCfToggle(options);
 }
 function _rapierNotesSettingsEl() {
 	const overlay = _rapierNotesEl('div', 'settings-overlay rapier-notes-settings-overlay');
@@ -1394,7 +1420,10 @@ function _rapierNotesSettingsPaint() {
 	};
 	const row = (...buttons) => { const r = _rapierNotesEl('div', 'settings-action-row'); const pair = _rapierNotesEl('div', 'settings-action-pair'); pair.append(...buttons); r.appendChild(pair); return r; };
 	body.appendChild(_rapierNotesSettingsFirstRow());
+	if (!_rapierNotesIsLocked()) {
 	body.appendChild(row(_rapierNotesSyncBox()));
+	{ const other = action('other sync options', 'sync-other'); other.classList.add('rapier-notes-sync-other'); other.hidden = _rapierNotesIsApp(); body.appendChild(row(other)); }
+	}
 	body.appendChild(_rapierNotesSettingsTitle('sort by'));
 	body.appendChild(toggle('sort by', RAPIER_NOTES_SORT_ORDER, 'sort', 'notesSort'));
 	body.appendChild(_rapierNotesSettingsTitle('layout'));
@@ -1405,13 +1434,13 @@ function _rapierNotesSettingsPaint() {
 	body.appendChild(_rapierNotesSettingsTitle('folder', 'notes-folder'));
 	const imp = action('Import', 'menu-import'); imp.dataset.action = 'notes-import';
 	const bak = action('Backup', 'menu-backup'); bak.dataset.action = 'notes-backup';
-	body.appendChild(row(imp));
-	body.appendChild(row(bak));
+	if (!_rapierNotesIsLocked()) { body.appendChild(row(imp)); body.appendChild(row(bak)); }
 	if (_rapierNotesStore.native && globalThis.RapierPlatform?.host?.notesBackup) {
 		const status = _rapierNotesEl('p', 'rapier-notes-storage', _rapierNotesAndroidBackupSentence());
 		status.id = 'notes-android-backup-status'; body.appendChild(status);
 	}
 	body.appendChild(row(action('Saved files', 'menu-saved-files')));
+	if (typeof _rapierOriginalFolderAvailable === 'function' && _rapierOriginalFolderAvailable() && !_rapierNotesIsLocked()) body.appendChild(row(action('Open a folder', 'menu-original-folder')));
 	if (globalThis.RapierNotesHistory) body.appendChild(row(action('Tidy history', 'menu-history-tidy')));
 	const extra = [];
 	if (Array.isArray(state.index?.imports) && state.index.imports.length) extra.push(action('Imports', 'menu-imports'));
@@ -1435,7 +1464,7 @@ const _rapierNotesBorrowed = {nodes: null, marks: null};
 function _rapierNotesSettingsBorrow(body) {
 	const b = _rapierNotesBorrowed;
 	if (!b.nodes) {
-		const title = document.getElementById('settings-plugins-title'), about = document.getElementById('settings-about-section');
+		const title = document.getElementById('settings-plugins-section'), about = document.getElementById('settings-about-section');
 		if (!title || !about || title.parentNode !== about.parentNode) return;
 		const nodes = [];
 		for (let n = title; n && n !== about; n = n.nextElementSibling) nodes.push(n);
@@ -1845,6 +1874,7 @@ function _rapierNotesDropRecordingLines(el) {
 	}
 }
 function _rapierNotesCard(file) {
+	if (_rapierNotesLockedKey(file)) return _rapierNotesLockedCard(file);
 	const state = _rapierNotes, M = _rapierNotesModel(), entry = state.index.notes[file];
 	const held = state.texts.get(file), unread = held == null ? state.readFailed.get(file) || null : null;
 	const card = M.projectCard(file, held ?? ''), link = !unread && M.linkCard(held ?? '');
@@ -2224,7 +2254,7 @@ async function _rapierNotesThumbNames() {
 }
 function _rapierNotesThumbPump() {
 	const state = _rapierNotes;
-	if (state.thumbBusy || !state.thumbQueue.length) return;
+	if (state.locking || state.thumbBusy || !state.thumbQueue.length) return;
 	state.thumbBusy = true;
 	const job = state.thumbQueue.shift();
 	(async () => {
@@ -2419,7 +2449,7 @@ function _rapierNotesRender() {
 	for (const id of ids) {
 		const grid = state.grids[id], section = grid.parentElement, head = section.querySelector('.rapier-notes-section-head');
 		const word = head.querySelector('.rapier-notes-section-word'); word.textContent = word.dataset.word = RAPIER_NOTES_SECTION_WORDS[id] || id;
-		const files = _rapierNotesSorted((typeof _rapierNotesLibrarySortedSection === 'function' ? _rapierNotesLibrarySortedSection(id) : M.sortedSection(state.index, id))).filter(_rapierNotesMatches);
+		const files = _rapierNotesWithLocked(id, _rapierNotesSorted((typeof _rapierNotesLibrarySortedSection === 'function' ? _rapierNotesLibrarySortedSection(id) : M.sortedSection(state.index, id))).filter(_rapierNotesMatches));
 		if (id === 'others') othersEmpty = !files.length;
 		const own = !(id in RAPIER_NOTES_SECTION_WORDS);
 		const wanted = id === 'skills' ? skills : id === 'archive' ? files.length > 0 : true;
@@ -2511,7 +2541,7 @@ function _rapierNotesMode(on) {
 	document.body.classList.toggle('rapier-notes-mode', !!on);
 	const back = document.getElementById('btn-notes-back'); if (back) back.hidden = !state.current;
 	if (on) _rapierNotesMarkupGlyphs();
-	for (const id of RAPIER_NOTES_HEAD_BTNS) { const el = document.getElementById(id); if (el) el.hidden = !on || (id === 'btn-notes-remind' && !_rapierNotesIsApp()); }
+	for (const id of RAPIER_NOTES_HEAD_BTNS) { const el = document.getElementById(id); if (el) el.hidden = !on || (id === 'btn-notes-remind' && (!_rapierNotesIsApp() || _rapierNotesIsLocked())); }
 	_rapierNotesPicAttach(!!on);
 	_rapierNotesHeadAttach(!!on);
 	_rapierNotesHeadPaint();
@@ -3103,9 +3133,22 @@ async function _rapierNotesOpenNote(...args) {
 	if (typeof _rapierNotesPickerClose === 'function') _rapierNotesPickerClose();
 	state.noteOpening = (state.noteOpening || 0) + 1;
 	if (typeof _rapierBackHold === 'function') _rapierBackHold();
-	const opening = state.noteOpeningTask = _rapierNotesOpenNoteNow(...args);
+	let pin;
+	const opening = state.noteOpeningTask = (async () => {
+		if (_rapierNotesIsApp() && !_rapierNotesIsLocked()) {
+			const id = args[2] || state.index?.notes[args[0]]?.id;
+			if (id) pin = await _rapierNotesInputPin(id);
+		}
+		return _rapierNotesOpenNoteNow(...args);
+	})();
 	try { return await opening; }
-	finally { state.noteOpening--; if (typeof _rapierBackHold === 'function') _rapierBackHold(); }
+	finally {
+		if (pin) {
+			if (state.currentProof?.id === pin.id && _rapierNotesDocumentBound()) { state.inputPin?.release(); state.inputPin = pin; }
+			else pin.release();
+		}
+		state.noteOpening--; if (typeof _rapierBackHold === 'function') _rapierBackHold();
+	}
 }
 async function _rapierNotesOpenNoteNow(file, capture = false, expectedId = null, under = null, access = null, throwReadError = false) {
 	const state = _rapierNotes;
@@ -3205,6 +3248,7 @@ async function _rapierNotesOpenNoteNow(file, capture = false, expectedId = null,
 	return true;
 }
 async function _rapierNotesOpenAsDocument(file) {
+	if (_rapierNotesIsLocked()) throw Object.assign(new Error('Locked notes cannot be shared or opened as a document.'), {code: 'notes_locked'});
 	if (typeof rapierOpenPlatformPayload !== 'function') return false;
 	_rapierNotesCloseSheet();
 	try { await _rapierNotesFlush(); } catch (_) { return false; }
@@ -3359,7 +3403,7 @@ async function _rapierNotesHistoryTidy() {
 	const now = Date.now();
 	try {
 		before = H.storage(held.list);
-		plan = H.thin(held.list, H.DEFAULT_POLICY, {now, dayOf: _rapierNotesLocalDay, complete: true});
+		plan = H.thin(held.list, undefined, {now, dayOf: _rapierNotesLocalDay, complete: true});
 	} catch (error) { showToast('History could not be checked for tidying: ' + String(error?.message || error), 'error'); return; }
 	if (!plan.removes.length) {
 		showToast('Nothing is old enough to tidy. History holds ' + before.versions.toLocaleString('en') + (before.versions === 1 ? ' version' : ' versions') + ' in ' + _rapierNotesBytesWords(before.bytes) + '.', 'info');
@@ -3448,13 +3492,22 @@ function _rapierNotesWhen(time) {
 }
 async function _rapierNotesAdmitInverse(inverse) {
 	if (!_rapierNotesInANote()) return true;
-	const state = _rapierNotes, proof = state.currentProof, stamp = _rapierMutationStamp();
+	const state = _rapierNotes, proof = state.currentProof, file = state.current, stamp = _rapierMutationStamp();
 	if (!proof?.id || !_rapierNotesDocumentBound()) return false;
+	const current = () => state.current === file && state.currentProof?.id === proof.id &&
+		state.currentProof.folder === proof.folder && state.currentProof.bytes === proof.bytes &&
+		state.currentProof.authority === proof.authority && state.currentProof.epoch === proof.epoch &&
+		_rapierMutationStampIsCurrent(stamp) && _rapierNotesDocumentBound();
 	try {
 		const canonical = _rapierNotesPending.canonical();
 		await _rapierNotesStore.kind();
-		await _rapierNotesStore.folder.checkEditorInverse({file: state.current, id: proof.id, ...canonical, inverse});
-		return state.currentProof === proof && _rapierMutationStampIsCurrent(stamp) && _rapierNotesDocumentBound();
+		while (current()) {
+			const checked = state.currentProof;
+			const admitted = await proof.folder.checkEditorInverse({file, id: proof.id, ...canonical, inverse});
+			if (!current()) return false;
+			if (state.currentProof === checked) return admitted;
+		}
+		return false;
 	} catch (error) {
 		showToast('This edit cannot be restored: ' + String(error?.message || error), 'error');
 		return false;
@@ -3595,6 +3648,7 @@ async function _rapierNotesFlush({replacing = false} = {}) {
 }
 function _rapierNotesLeaveNote() {
 	const state = _rapierNotes;
+	state.inputPin?.release(); state.inputPin = null;
 	if (typeof _rapierNotesPickerClose === 'function') _rapierNotesPickerClose();
 	state.current = null; state.currentProof = null; state.savedReceipt = null; state.savedGen = -1;
 	if (state.autosave) { clearInterval(state.autosave); state.autosave = 0; }
@@ -3623,6 +3677,7 @@ function _rapierNotesSelect(file, toggle = true) {
 
 function _rapierNotesOpenCard(card) {
 	const state = _rapierNotes, file = card.dataset.notesFile;
+	if (card.dataset.notesLocked) { void _rapierNotesOpenLocked(card.dataset.notesLocked); return; }
 	if (state.selected.size) _rapierNotesSelect(file);
 	else { state.openFrom = _rapierNotesLiftSnapshot(file, card); void _rapierNotesOpenNote(file); }
 }
@@ -3646,6 +3701,7 @@ function _rapierNotesCardKey(evt) {
 	if (state.reorder) return false;
 	const key = String(evt.key || '').toLowerCase(), card = evt.target.closest?.('.rapier-notes-card');
 	if (evt.target !== card && evt.target !== state.surface) return false;
+	if (card?.dataset.notesLocked && !['j', 'k', 'arrowdown', 'arrowup', 'arrowleft', 'arrowright', 'c', '/'].includes(key)) return false;
 	const next = ['j', 'arrowdown', 'arrowright'].includes(key), previous = ['k', 'arrowup', 'arrowleft'].includes(key);
 	if (key === 'r' && !_rapierNotesIsApp()) return false;
 	if (!next && !previous && !['c', '/', 'e', '#', 'f', 'x', 'r', 'l'].includes(key) || (!card && !['c', '/', 'j', 'k'].includes(key))) return false;
@@ -3834,8 +3890,12 @@ function _rapierNotesOpenSheet(file, mode) {
 		if (icon && className === 'rapier-notes-btn') b.insertBefore(_rapierNotesIcon(icon), b.firstChild);
 		return b;
 	};
-	const asDocument = [['open-document', 'Open as document'], ['share', 'Share']];
-	if (state.sheetMode === 'colour') {
+	const asDocument = _rapierNotesIsLocked() ? [] : [['open-document', 'Open as document'], ['share', 'Share']];
+	const lockNote = _rapierNotesIsApp() && !_rapierNotesIsLocked() && files.length === 1 ? [['lock-note', 'Lock note']] : [];
+	if (state.sheetMode === 'lock') {
+		sheet.appendChild(_rapierNotesEl('div', 'rapier-notes-remind-label', 'On this phone only. No sync, backup or recovery. Earlier copies stay.'));
+		sheet.appendChild(button('lock-confirm', 'Lock note'));
+	} else if (state.sheetMode === 'colour') {
 		const worn = entries.every(e => e.colour === entries[0].colour) ? entries[0].colour : null;
 		const row = _rapierNotesEl('div', 'rapier-notes-swatches'); row.setAttribute('role', 'radiogroup'); row.setAttribute('aria-label', 'color');
 		for (const colour of M.NOTE_COLOURS) {
@@ -3954,15 +4014,15 @@ function _rapierNotesOpenSheet(file, mode) {
 		if (typeof _rapierNotesLibraryConnectionsFace === 'function') _rapierNotesLibraryConnectionsFace(sheet, files[0]);
 	} else if (state.compose) {
 		const homePin = typeof globalThis.RapierPlatform?.host?.pinNote === 'function' ? [['home-pin', 'Home screen']] : [];
-		for (const [act, word, icon] of [['copy', 'Duplicate'], ...asDocument, ...homePin, ['section-face', 'Section'], ['colour', 'Color'], ['find-note', 'Find in note'], ['archive', every('archived') ? 'Unarchive' : 'Archive'], ['connections', 'Connections'], ['tags-face', 'Tags'], ['history-face', 'History']]) sheet.appendChild(button(act, word, undefined, icon));
+		for (const [act, word, icon] of [['copy', 'Duplicate'], ...asDocument, ...homePin, ...lockNote, ['section-face', 'Section'], ['colour', 'Color'], ['find-note', 'Find in note'], ['archive', every('archived') ? 'Unarchive' : 'Archive'], ['connections', 'Connections'], ['tags-face', 'Tags'], ['history-face', 'History']]) sheet.appendChild(button(act, word, undefined, icon));
 		if (typeof _rapierTodoHasChecks === 'function' && _rapierTodoHasChecks()) {
 			sheet.append(button('uncheck-all', 'Uncheck all'), button('delete-checked', 'Delete checked items'));
 		}
 		{ const del = button('trash', 'Delete', undefined, RAPIER_NOTES_ROW_ICONS.trash); del.dataset.pop = 'destructive'; del.dataset.popBottom = ''; sheet.appendChild(del); }
 	} else {
 		const acts = every('trashed') ? [['restore', 'Restore'], ['delete-forever', 'Delete forever']]
-			: [['pin', every('pinned') ? 'Unpin' : 'Pin'], ...(_rapierNotesIsApp() ? [['remind-face', 'Remind']] : []), ['colour', 'Color'], ['section-face', 'Section'], ['archive', every('archived') ? 'Unarchive' : 'Archive'], ['trash', 'Delete']];
-		for (const [act, word] of acts) sheet.appendChild(button(act, word));
+			: [['pin', every('pinned') ? 'Unpin' : 'Pin'], ...(_rapierNotesIsApp() && !_rapierNotesIsLocked() ? [['remind-face', 'Remind']] : []), ['colour', 'Color'], ['section-face', 'Section'], ['archive', every('archived') ? 'Unarchive' : 'Archive'], ['trash', 'Delete']];
+		for (const [act, word] of [...acts, ...lockNote]) sheet.appendChild(button(act, word));
 		if (files.length === 1 && !every('trashed')) for (const [act, word, icon] of [['copy', 'Duplicate'], ...asDocument]) sheet.appendChild(button(act, word, undefined, icon));
 	}
 	const names = {colour: 'Note color', section: 'Note section', 'section-add': 'New section', 'section-edit': 'Edit section', remind: 'Reminder', add: 'Add to note', history: 'Note history', version: 'Earlier note version', tags: 'Note tags', connections: 'Note connections'};
@@ -4338,7 +4398,199 @@ async function _rapierNotesSectionEdit(act, arg) {
 	catch (error) { undo(); _rapierNotesRender(); showToast('The section change was not written to the notes folder: ' + String(error?.message || error), 'error'); return; }
 	if (snack) _rapierNotesSnack(snack, undo);
 }
+const _rapierNotesInputLockName = id => 'rapier-notes-input:' + _rapierNotesStore.folder.scope + ':' + id;
+async function _rapierNotesInputPin(id) {
+	if (!navigator.locks?.request) throw new Error('Close Notes, open it again, then lock the note.');
+	return new Promise((resolve, reject) => {
+		navigator.locks.request(_rapierNotesInputLockName(id), {mode: 'shared', ifAvailable: true}, lock => {
+			if (!lock) throw new Error('This note is being locked. Unlock it with your phone.');
+			return new Promise(release => resolve({id, release}));
+		}).catch(reject);
+	});
+}
+async function _rapierNotesLockInput(id, run) {
+	if (!navigator.locks?.request) throw new Error('Close other Rapier windows, then lock the note.');
+	return navigator.locks.request(_rapierNotesInputLockName(id), {mode: 'exclusive', ifAvailable: true}, lock => {
+		if (!lock) throw new Error('Close this note in the other page before locking it. Its words were kept.');
+		return run();
+	});
+}
+async function _rapierNotesClearLockProjections(file, id, digest, ledger) {
+	const state = _rapierNotes, store = _rapierNotesStore, pending = _rapierNotesPending, storage = _rapierNotesDraftStorage();
+	const catcher = _rapierNotesCatcher;
+	if (catcher && (catcher.record.id === id || !catcher.record.id && catcher.record.file === file)) {
+		catcher.keep();
+		throw new Error('Finish saving the opening words before locking this note.');
+	}
+	const records = () => {
+		const rows = [];
+		for (const key of Array.from({length: storage.length}, (_, i) => storage.key(i))) {
+			if (!key?.startsWith(pending.prefix) && !key?.startsWith(RAPIER_NOTES_OPENING_PREFIX)) continue;
+			const serial = storage.getItem(key), draft = JSON.parse(serial);
+			if (draft.id === id || !draft.id && draft.file === file) rows.push({key, serial, draft});
+		}
+		return rows;
+	};
+	const rows = records();
+	const retire = async () => {
+		for (const {key, draft} of rows) {
+			if (draft.id !== id || draft.version !== 1 || draft.store !== pending.kind() || typeof draft.text !== 'string')
+				throw new Error('Wait a moment and try again. Your words are kept.');
+			const opening = key.startsWith(RAPIER_NOTES_OPENING_PREFIX);
+			if (pending.digest(opening ? draft.text : draft.paste ? JSON.stringify({text: draft.text, paste: draft.paste}) : draft.text) !== draft.digest)
+				throw new Error('Wait a moment and try again. Your words are kept.');
+			if (opening && (!draft.delivered || pending.digest(JSON.stringify(draft.delivered)) !== draft.deliveredDigest))
+				throw new Error('Finish saving the opening words before locking this note.');
+			const text = await pending.resolve(opening ? draft.delivered : draft);
+			if (typeof text !== 'string' || pending.digest(text) !== digest)
+				throw new Error('The unfinished words are not in the saved note. They were kept for retry.');
+			if (!opening && (!ledger || draft.canonical?.unverified || draft.canonical?.text !== text || draft.canonical?.ledger?.sha256 !== ledger))
+				throw new Error('The unfinished history has not been saved. It was kept for retry.');
+		}
+		for (const name of await store.bytes.list('thumbs')) await store.bytes.remove('thumbs/' + name);
+		const cache = state.searchCache || await _rapierNotesOpenSearchCache();
+		if (!cache?.active) throw new Error('Open Notes again to finish locking.');
+		cache.drop(file);
+		if (!await cache.settled()) throw new Error('Open Notes again to finish locking.');
+		cache.close(); state.searchCache = null;
+		const current = records();
+		if (current.length !== rows.length || rows.some(row => storage.getItem(row.key) !== row.serial))
+			throw new Error('You typed while it was locking. Try again. Your words are kept.');
+		for (const row of rows) storage.removeItem(row.key);
+		pending.retired.add(id);
+		for (const record of pending.held.values()) if (record.id === id) {
+			record.retired = true; record.text = null; record.paste = null; record.serial = null; record.canonical = null;
+		}
+	};
+	const owners = [...new Set(rows.map(row => row.draft.owner))].filter(owner => owner !== pending.live?.id);
+	const claim = async at => {
+		if (at === owners.length) return retire();
+		const owner = owners[at];
+		if (typeof owner !== 'string' || !/^[a-f0-9-]{36}$/.test(owner) || !navigator.locks?.request)
+			throw new Error('Close other Rapier windows, then lock the note.');
+		return navigator.locks.request('rapier-notes-pending-owner:' + owner, {mode: 'exclusive', ifAvailable: true}, lock => {
+			if (!lock) throw new Error('Close the other page before locking this note. Its input was kept.');
+			return claim(at + 1);
+		});
+	};
+	await claim(0);
+}
+async function _rapierNotesResumeLock() {
+	if (!_rapierNotesIsApp() || _rapierNotesIsLocked() || _rapierNotes.locking) return false;
+	const call = globalThis.RapierPlatform.host.notesStore;
+	const pending = await call('notes.store.seal.pending', {});
+	if (!pending?.transfer) return false;
+	_rapierNotes.locking = true;
+	try {
+		await _rapierNotesLockInput(pending.id, async () => {
+		await _rapierNotesClearLockProjections(pending.file, pending.id, pending.digest, pending.ledger);
+		await _rapierNotesStore.folder.resumeLock(pending);
+		await call('notes.store.seal.commit', {id: pending.transfer});
+		});
+	} catch (error) {
+		showToast('Not locked. ' + String(error?.message || error), 'error');
+		await call('notes.store.seal.cancel', {}).catch(() => {});
+	} finally { _rapierNotes.locking = false; }
+	return true;
+}
+globalThis.rapierResumeLockedMove = async () => { await _rapierNotesStore.kind(); await _rapierNotesResumeLock(); };
+
+const RAPIER_NOTES_LOCKED_PREFIX = '\u0001locked:', RAPIER_NOTES_LOCKED_PLACES = 'rapier-notes-locked-places';
+function _rapierNotesLockedKey(file) { return typeof file === 'string' && file.startsWith(RAPIER_NOTES_LOCKED_PREFIX); }
+function _rapierNotesLockedPlaces() {
+	try { const all = JSON.parse(localStorage.getItem(RAPIER_NOTES_LOCKED_PLACES) || '{}'); return all && typeof all === 'object' ? all : {}; } catch (_) { return {}; }
+}
+function _rapierNotesLockedPlace(id, place) {
+	const all = _rapierNotesLockedPlaces();
+	if (place) all[id] = place; else delete all[id];
+	try { localStorage.setItem(RAPIER_NOTES_LOCKED_PLACES, JSON.stringify(all)); } catch (_) {}
+}
+async function _rapierNotesLockedLoad() {
+	const state = _rapierNotes, list = globalThis.RapierPlatform?.host?.lockedNoteCards;
+	if (typeof list !== 'function' || _rapierNotesIsLocked()) { state.lockedCards = []; return; }
+	let ids;
+	try { ids = (await list()).filter(id => typeof id === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(id)); } catch (_) { return; }
+	const places = _rapierNotesLockedPlaces();
+	for (const id of Object.keys(places)) if (!ids.includes(id)) _rapierNotesLockedPlace(id, null);
+	state.lockedCards = ids.map(id => ({id, section: String(places[id]?.section || 'others'), modified: Number(places[id]?.modified) || 0}));
+	if (state.open) _rapierNotesRender();
+}
+function _rapierNotesWithLocked(id, files) {
+	const state = _rapierNotes, cards = (state.lockedCards || []).filter(card => card.section === id);
+	if (!cards.length || state.query || state.reorder) return files;
+	const out = files.slice(), notes = state.index?.notes || {};
+	for (const card of cards.slice().sort((a, b) => b.modified - a.modified)) {
+		const at = out.findIndex(f => !_rapierNotesLockedKey(f) && (Number(notes[f]?.modified) || 0) < card.modified);
+		out.splice(at < 0 ? out.length : at, 0, RAPIER_NOTES_LOCKED_PREFIX + card.id);
+	}
+	return out;
+}
+function _rapierNotesLockedCard(key) {
+	const id = key.slice(RAPIER_NOTES_LOCKED_PREFIX.length), el = _rapierNotesEl('div', 'rapier-notes-card rapier-notes-card--locked');
+	el.dataset.notesLocked = id; el.dataset.notesAct = 'open-locked';
+	el.setAttribute('role', 'button'); el.setAttribute('aria-label', 'Locked note'); el.title = 'Locked note'; el.tabIndex = -1;
+	const lock = _rapierNotesIcon('M5 11h14v10H5z', 'M8 11V7a4 4 0 0 1 8 0v4');
+	for (const [key, value] of [['fill', 'none'], ['stroke', 'currentColor'], ['stroke-width', '2'], ['stroke-linecap', 'square']]) lock.setAttribute(key, value);
+	el.appendChild(lock);
+	return el;
+}
+async function _rapierNotesOpenLocked(id) {
+	const open = globalThis.RapierPlatform?.host?.openLockedNote;
+	if (typeof open !== 'function' || !id) return;
+	try { await open(id); }
+	catch (error) { if (!/cancel/i.test(String(error?.message || error))) showToast('This note did not open. Try again.', 'error'); }
+}
+
+async function _rapierNotesLock() {
+	const state = _rapierNotes, file = state.current || [...state.selected][0];
+	if (!file || state.locking || !_rapierNotesIsApp() || _rapierNotesIsLocked() || !_rapierRequireFeature('lockedNotes', {source: 'notes-lock'})) return;
+	const call = globalThis.RapierPlatform.host.notesStore, H = globalThis.RapierNotesIntegrity;
+	let transfer = null;
+	try {
+		await _rapierNotesFlush();
+		if ((state.current || state.cameFrom !== undefined) && !await _rapierNotesEditor()) return;
+		_rapierNotesCloseSheet(); state.locking = true; state.thumbQueue.length = 0;
+		while (state.thumbBusy) await new Promise(resolve => setTimeout(resolve, 20));
+		const store = _rapierNotesStore, snapshot = await store.folder.read({bodies: [file]});
+		const id = snapshot.index.notes[file]?.id, digest = await H.sha256(snapshot.bodies.get(file));
+		const base64 = bytes => { let out = ''; for (let at = 0; at < bytes.length; at += 32768) out += String.fromCharCode(...bytes.subarray(at, at + 32768)); return btoa(out); };
+		await _rapierNotesLockInput(id, () => store.folder.lockNote({file, id, digest}, async packet => {
+			const files = [];
+			for (const [name, bytes] of packet.files) files.push({name, base64: base64(bytes), size: bytes.length, sha256: await H.sha256(bytes)});
+			const bytes = H.exactBytes(JSON.stringify({version: 1, file, id, files}));
+			transfer = (await call('notes.store.seal.begin', {size: bytes.length, digest: await H.sha256(bytes)})).id;
+			for (let offset = 0; offset < bytes.length; offset += 48 * 1024) {
+				const chunk = bytes.subarray(offset, offset + 48 * 1024);
+				const result = await call('notes.store.seal.chunk', {id: transfer, offset, base64: base64(chunk)});
+				if (result.offset !== offset + chunk.length) throw new Error('Locking stopped. Try again.');
+			}
+			await call('notes.store.seal.stage', {id: transfer});
+			const entry = snapshot.index.notes[file] || {};
+			_rapierNotesLockedPlace(transfer, {section: _rapierNotesModel().sectionOf(entry, snapshot.index.sections), modified: Number(entry.modified) || Date.now()});
+			await _rapierNotesClearLockProjections(file, id, digest, packet.ledger);
+		}));
+		await _rapierNotesLoad(); _rapierNotesRender();
+		await call('notes.store.seal.commit', {id: transfer});
+		void _rapierNotesLockedLoad();
+	} catch (error) {
+		showToast('Not locked. ' + String(error?.message || error), 'error');
+		if (transfer) await call('notes.store.seal.cancel', {id: transfer}).catch(() => {});
+		void _rapierNotesLoad();
+	} finally { state.locking = false; }
+}
+
 async function _rapierNotesAct(act, arg) {
+	if (act === 'lock-note') {
+		if (_rapierNotesIsApp() && !_rapierNotesIsLocked() && _rapierRequireFeature('lockedNotes', {source: 'notes-lock'})) _rapierNotesOpenSheet(null, 'lock');
+		return;
+	}
+	if (act === 'lock-confirm') { await _rapierNotesLock(); return; }
+	if (_rapierNotesIsLocked() && (act.startsWith('backup-') || ['remind-face', 'home-pin', 'share', 'open-document'].includes(act))) {
+		const refused = {refused: 'notes_locked', message: 'Locked notes stay on this phone.'};
+		if (!act.startsWith('backup-')) showToast(refused.message, 'info');
+		return refused;
+	}
+
 	if (_rapierNotes.captureToken && !_rapierNotes.capturePreparing && !await _rapierNotesUnlock()) return;
 	if (act === 'backup-discard-unfinished') { await _rapierNotesDiscardUnfinishedBackup(); return; }
 	if (act === 'backup-cancel') { _rapierNotes.backupController?.abort(new Error('canceled by the person')); return; }
@@ -4763,7 +5015,7 @@ function _rapierNotesPointerDown(evt) {
 	const state = _rapierNotes;
 	if (state.drag && state.drag.id !== evt.pointerId) _rapierNotesAbortDrag();
 	const card = evt.target.closest('.rapier-notes-card');
-	if (!card || state.drag || (evt.pointerType === 'mouse' && evt.button !== 0)) return;
+	if (!card || card.dataset.notesLocked || state.drag || (evt.pointerType === 'mouse' && evt.button !== 0)) return;
 	const drag = state.drag = { card, file: card.dataset.notesFile, id: evt.pointerId, x0: evt.clientX, y0: evt.clientY, held: false, moved: false, ghost: null, timer: 0, cancelled: false, fold: evt.target.closest('[data-notes-fold]')?.dataset.notesFold || null, check: evt.target.closest('[data-notes-check]')?.dataset.notesCheck ?? null, play: evt.target.closest('[data-notes-play]')?.dataset.notesPlay ?? null };
 	const r = card.getBoundingClientRect();
 	card.style.setProperty('--px', Math.round(evt.clientX - r.left) + 'px'); card.style.setProperty('--py', Math.round(evt.clientY - r.top) + 'px');
@@ -5584,12 +5836,14 @@ async function _rapierNotesExportBackup(file, name) {
 	return {status: 'dispatched', name};
 }
 async function _rapierNotesBackupLease() {
+	if (_rapierNotesIsLocked()) throw Object.assign(new Error('Locked notes cannot be backed up.'), {code: 'notes_locked'});
 	if (!await _rapierNotesStore.kind()) return () => {};
 	if (typeof navigator.locks?.request !== 'function') throw new Error(_rapierNotesWords().Device + ' cannot make a backup safely.');
 	return globalThis.RapierNotesBackup.acquireBackupLease(callback => navigator.locks.request('rapier-notes-backup-staging', {ifAvailable:true}, callback));
 }
 async function _rapierNotesExportPreparedBackup() {
 	const state = _rapierNotes;
+	if (_rapierNotesIsLocked()) return {refused: 'notes_locked', message: 'Locked notes cannot be backed up.'};
 	if (state.backupBusy) return;
 	state.backupBusy = true; let release;
 	try { release = await _rapierNotesBackupLease(); await _rapierNotesSendPreparedBackup(); }
@@ -5676,14 +5930,17 @@ async function _rapierNotesRecoverBackupStage() {
 		} catch (error) { state.unfinishedBackup ||= {location, remove, reason:String(error?.message || error)}; }
 	}
 	found.sort((a, b) => Date.parse(b.stamp) - Date.parse(a.stamp));
+	const sent = found.filter(copy => copy.sequence && copy.sent.length === copy.plan.parts.length);
+	const candidates = found.filter(copy => !sent.includes(copy));
 	let newest;
-	while ((newest = found.shift()) && !newest.sequence && found.length) {
+	while ((newest = candidates.shift()) && !newest.sequence && candidates.length) {
 		try { await newest.sink.file(); break; }
 		catch (error) { state.unfinishedBackup ||= {location:newest.location, remove:newest.remove, reason:String(error?.message || error)}; }
 	}
+	newest ||= sent.shift();
 	if (!newest) return;
 	state.preparedBackup = newest;
-	if (!newest.sequence || newest.sent.length === newest.plan.parts.length) for (const copy of found) await _rapierNotesRetireBackup(copy);
+	for (const copy of [...candidates, ...sent]) await _rapierNotesRetireBackup(copy);
 }
 async function _rapierNotesSealBackupStage(prepared) {
 	if (!prepared.directory) return;
@@ -5847,8 +6104,17 @@ function _rapierNotesBackupName(stamp, before = []) {
 	return before.some(at => Math.floor(Date.parse(at) / 1000) === second) ? base + '-' + pad(stamp.getMilliseconds(), 3) + '.zip' : base + '.zip';
 }
 async function _rapierNotesRetireBackup(earlier) {
-	if (!earlier || _rapierNotes.preparedBackup === earlier) return;
-	try { await earlier.sink.discard(); }
+	const replacement = _rapierNotes.preparedBackup;
+	if (!earlier || !replacement || replacement === earlier) return;
+	try {
+		let emptyCursor = !!(earlier.sequence && earlier.sent.length === earlier.plan.parts.length && !earlier.pending && earlier.directory);
+		if (emptyCursor) for await (const [name] of earlier.directory) if (name !== 'ready.json') emptyCursor = false;
+		if (!emptyCursor) {
+			if (replacement.sequence || typeof replacement.sink?.file !== 'function') return;
+			await replacement.sink.file();
+		}
+		await earlier.sink.discard();
+	}
 	catch (error) { console.warn('[rapier] notes backup: the earlier prepared copy stays until the next open', error); }
 }
 async function _rapierNotesBackup() {
@@ -6074,21 +6340,22 @@ async function _rapierNotesDiscardUnseen(file) {
 let _rapierNotesCatcher = null;
 const RAPIER_NOTES_OPENING_PREFIX = 'rapier-notes-opening:';
 function _rapierNotesCatchKeep(held) {
+	if (held.stale) return false;
 	const record = held.record;
 	record.text = held.box.value + held.late;
 	try {
-		if (localStorage.getItem(held.key) !== held.serial) {
+		if (_rapierNotesDraftStorage().getItem(held.key) !== held.serial) {
 			held.stale = true; throw new Error('The opening input changed in another page.');
 		}
 		if (!record.text && !record.delivered) {
-			if (held.serial && localStorage.getItem(held.key) === held.serial) localStorage.removeItem(held.key);
+			if (held.serial && _rapierNotesDraftStorage().getItem(held.key) === held.serial) _rapierNotesDraftStorage().removeItem(held.key);
 			held.serial = null; return true;
 		}
 		if (!_rapierNotesPending.live) throw new Error('This page could not claim its opening input.');
 		record.owner = _rapierNotesPending.live.id;
 		record.digest = _rapierNotesPending.digest(record.text);
 		const serial = JSON.stringify(record);
-		localStorage.setItem(held.key, serial); held.serial = serial;
+		_rapierNotesDraftStorage().setItem(held.key, serial); held.serial = serial;
 		return true;
 	} catch (error) {
 		showToast('Your opening note is still in this page. Keep it open until the note can be saved: ' + String(error?.message || error), 'error', {outlive: 'save-failed'});
@@ -6096,10 +6363,11 @@ function _rapierNotesCatchKeep(held) {
 	}
 }
 function _rapierNotesCatchRelease(held, acknowledged = false) {
+	held.stale = true;
 	document.removeEventListener('focusin', held.focus, true); document.removeEventListener('beforeinput', held.input, true);
 	held.box.remove();
 	if (acknowledged && held.serial) {
-		try { if (localStorage.getItem(held.key) === held.serial) localStorage.removeItem(held.key); } catch (_) {}
+		try { if (_rapierNotesDraftStorage().getItem(held.key) === held.serial) _rapierNotesDraftStorage().removeItem(held.key); } catch (_) {}
 	}
 	if (_rapierNotesCatcher === held) _rapierNotesCatcher = null;
 }
@@ -6132,6 +6400,7 @@ function _rapierNotesCatchEnd(deliver) {
 	document.removeEventListener('focusin', held.focus, true); held.box.remove();
 	held.arrived = true;
 	setTimeout(async () => {
+		if (held.stale) return;
 		if (_rapierNotes.current !== held.record.file || _rapierNotes.currentProof?.id !== held.record.id) { _rapierNotesCatchRelease(held); return; }
 		held.delivering = true;
 		try {
@@ -6155,9 +6424,9 @@ async function _rapierNotesCatchResume() {
 	if (!state.open || state.opening || state.loading || _rapierNotesCatcher || state.catchingUp) return;
 	state.catchingUp = true;
 	try {
-		const keys = Array.from({length: localStorage.length}, (_, i) => localStorage.key(i)).filter(key => key?.startsWith(RAPIER_NOTES_OPENING_PREFIX));
+		const keys = Array.from({length: _rapierNotesDraftStorage().length}, (_, i) => _rapierNotesDraftStorage().key(i)).filter(key => key?.startsWith(RAPIER_NOTES_OPENING_PREFIX));
 		for (const key of keys) {
-			const serial = localStorage.getItem(key); if (serial == null) continue;
+			const serial = _rapierNotesDraftStorage().getItem(key); if (serial == null) continue;
 			try {
 				const record = JSON.parse(serial);
 				if (record.store !== _rapierNotesPending.kind()) continue;
@@ -6166,7 +6435,7 @@ async function _rapierNotesCatchResume() {
 				if (typeof record.owner !== 'string' || !/^[a-f0-9-]{36}$/.test(record.owner) || !navigator.locks?.request)
 					throw new Error('The opening input\'s owner could not be checked.');
 				const resume = async () => {
-					if (localStorage.getItem(key) !== serial || !state.open || state.opening || state.loading || _rapierNotesCatcher) return;
+					if (_rapierNotesDraftStorage().getItem(key) !== serial || !state.open || state.opening || state.loading || _rapierNotesCatcher) return;
 					if (record.delivered) {
 						if (_rapierNotesPending.digest(JSON.stringify(record.delivered)) !== record.deliveredDigest) throw new Error('The delivered opening input has no complete byte proof.');
 						const text = await _rapierNotesPending.resolve(record.delivered);
@@ -6174,7 +6443,7 @@ async function _rapierNotesCatchResume() {
 						if (!file) throw new Error('The note that received these opening words could not be found.');
 						const snapshot = await _rapierNotesStore.folder.readCanonical({file, id: record.id, checkpoint: true});
 						if (snapshot.text !== text) throw new Error('The note changed after these opening words were delivered.');
-						if (localStorage.getItem(key) === serial) localStorage.removeItem(key);
+						if (_rapierNotesDraftStorage().getItem(key) === serial) _rapierNotesDraftStorage().removeItem(key);
 					} else {
 						if (state.current || state.mode || state.noteOpening || state.liftOpen || state.liftBack) return;
 						if (!_rapierNotesPending.live) throw new Error('This page could not claim the opening input.');
@@ -6422,6 +6691,7 @@ function _rapierNotesBind(surface, search) {
 		if (act === 'close') { _rapierNotesAskOpen(true, el); return; }
 		if (act === 'ask-back') { _rapierNotesAskOpen(false); void _rapierNotesEditor(); return; }
 		if (act === 'search') { _rapierNotesSearchToggle(); return; }
+		if (act === 'open-locked') { void _rapierNotesOpenLocked(el.dataset.notesLocked); return; }
 		if (act === 'adds') { if (state.todayPress) state.todayPress = false; else _rapierNotesAddsToggle(); return; }
 		if (act === 'menu') { _rapierNotesSettingsOpen(!_rapierNotesSettingsIsOpen()); return; }
 		if (act === 'settings-close') { _rapierNotesSettingsOpen(false); return; }
@@ -6433,7 +6703,9 @@ function _rapierNotesBind(surface, search) {
 		if (act === 'popup-close') { _rapierNotesPopup(null); return; }
 		if (act === 'menu-import' || act === 'menu-backup') { _rapierNotesSettingsOpen(false); return; }
 		if (act === 'menu-saved-files') { _rapierNotesSettingsOpen(false); void _rapierAttachmentsShelf(); return; }
+		if (act === 'menu-original-folder') { void _rapierOriginalFolderOpen(); _rapierNotesSettingsOpen(false); return; }
 		if (act === 'sync') { _rapierNotesSyncPress(); return; }
+		if (act === 'sync-other') { _rapierNotesSyncPress({others: true}); return; }
 		if (act === 'role') { void _rapierNotesRequestRole(); return; }
 		if (act === 'menu-imports') { _rapierNotesSettingsOpen(false); _rapierNotesImportsSheet(); return; }
 		if (act === 'add') { const lift = el.dataset.notesAdd === 'drawing' ? _rapierNotesDrawLift(el) : el.dataset.notesAdd === 'note' ? _rapierNotesNoteLift(el) : null; _rapierNotesAddsToggle(false); _rapierNotesPopup(null); void _rapierNotesNew(el.dataset.notesAdd, false, lift); return; }
@@ -6512,6 +6784,7 @@ function _rapierNotesBind(surface, search) {
 		const box = evt.target.closest?.('[data-notes-check]');
 		if (box && (evt.key === 'Enter' || evt.key === ' ')) { evt.preventDefault(); void _rapierNotesToggleCheck(card.dataset.notesFile, Number(box.dataset.notesCheck)); return; }
 		if (evt.target !== card) return;
+		if (card.dataset.notesLocked && evt.key !== 'Enter') return;
 		if (evt.key === 'Enter') { evt.preventDefault(); if (!evt.repeat) _rapierNotesOpenCard(card); }
 		else if (evt.key === ' ') { evt.preventDefault(); if (!evt.repeat) _rapierNotesSelect(card.dataset.notesFile); }
 		else if (evt.key === 'ContextMenu' || (evt.shiftKey && evt.key === 'F10')) { evt.preventDefault(); _rapierNotesSelect(card.dataset.notesFile, false); _rapierNotesOpenSheet(null, 'actions'); }
@@ -7026,7 +7299,7 @@ async function _rapierNotesOpen(capture = false, {unseen = false, guard, departu
 		const loaded = await state.loading; state.loading = null;
 		if (!loaded || !state.index) { lift?.end(); _rapierNotesIndexingBegin(); return; }
 		let releaseBackup;
-		try { releaseBackup = await _rapierNotesBackupLease(); await _rapierNotesRecoverBackupStage(); }
+		try { if (!_rapierNotesIsLocked()) { releaseBackup = await _rapierNotesBackupLease(); await _rapierNotesRecoverBackupStage(); } }
 		catch (error) { console.warn('[rapier] notes backup recovery', error); }
 		finally { await releaseBackup?.(); }
 	}
@@ -7039,6 +7312,7 @@ async function _rapierNotesOpen(capture = false, {unseen = false, guard, departu
 	if (guard && !guard()) return false;
 	if (surface.hidden) surface.classList.toggle('rapier-notes-surface--in', !unseen && !lift && !_rapierNotesStill() && !document.documentElement.classList.contains('rapier-notes-start'));
 	surface.hidden = false; state.open = true; presented = true; document.body.classList.add('rapier-notes-open');
+	void _rapierNotesLockedLoad();
 	document.getElementById('toast-root')?._rapierDismissNoticeView?.('editor');
 	_rapierNotesStartClass(false);
 	_rapierNotesHeadPaint();
@@ -7086,6 +7360,7 @@ function _rapierNotesLayout() {
 }
 function _rapierNotesClose(authorized = false, toNote = false) {
 	if (!authorized && _rapierNotes.captureToken) { void _rapierNotesUnlock().then(ok => { if (ok) _rapierNotesClose(true); }); return; }
+	globalThis.RapierOriginalFolder?.leaveView();
 	const held = !toNote ? globalThis._rapierHeldExternalFiles?.[0] : null;
 	const state = _rapierNotes;
 	if (!state.surface) {
@@ -7132,6 +7407,7 @@ async function _rapierOpenHeldExternalFile(held) {
 	}
 }
 function _rapierNotesFence(on) {
+  globalThis.RapierEmbeddedImages?.schedule();
 	const state = _rapierNotes;
 	_rapierNotesToastHome(on);
 	if (on) {
@@ -7185,6 +7461,7 @@ function _rapierNotesHostRefusal(error) {
 	return {refused: String(error?.code || '').startsWith('notes_') ? error.code : error?.code === 'changed' ? 'notes_changed' : 'notes_folder_unreadable'};
 }
 function _rapierNotesHostLocked() {
+	if (_rapierNotesIsLocked()) return {refused: 'notes_locked', hint: 'Locked notes stay on this phone. Agents cannot read them.'};
 	return _rapierNotes.captureToken ? {availability: 'locked', reason: 'notes_locked', hint: 'Unlock the app to use Notes.'} : null;
 }
 async function _rapierNotesAgentChange(file, next, base, signal, guard, expectedId, writeOpenNote, canonical) {
@@ -7534,6 +7811,7 @@ function _rapierNotesInstall() {
 		if (evt.target.closest?.('[data-action="notes-import-close"]')) { _rapierNotesImportClose(); return; }
 		if (evt.target?.id === 'notes-import-overlay') { _rapierNotesImportClose(); return; }
 		if (evt.target.closest?.('[data-action="notes-sync"]')) { _rapierNotesSyncPress(); return; }
+		if (evt.target.closest?.('[data-action="notes-sync-other"]')) { _rapierNotesSyncPress({others: true}); return; }
 		if (evt.target.closest?.('[data-action="notes-backup"]')) { void _rapierNotesBackup(); return; }
 		if (!evt.target.closest?.('[data-action="notes-open"]')) return;
 		try { const overlay = _rapierUi?.refs?.settingsOverlay; if (overlay && typeof closeDialog === 'function') closeDialog(overlay); } catch (_) {}
@@ -7851,6 +8129,24 @@ async function _rapierNotesRemindConfirm(at, files) {
         showToast('Reminder saved, but Android could not check its alerts. Check Rapier’s notification and alarm settings.', 'info');
     }
 }
+const RAPIER_NOTES_PICTURE_TYPES = Object.freeze({svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+	gif: 'image/gif', webp: 'image/webp', avif: 'image/avif', jxl: 'image/jxl'});
+function _rapierNotesPictureName(href) {
+	if (typeof href !== 'string' || !_rapierNotesCurrentFile()) return null;
+	const name = globalThis.RapierNotesAttachments?.attachmentFromHref(href);
+	return name && Object.hasOwn(RAPIER_NOTES_PICTURE_TYPES, name.split('.').pop().toLowerCase()) ? name : null;
+}
+globalThis.RapierSiblingPictures = Object.freeze({
+	has: href => !!_rapierNotesPictureName(href),
+	async read(href) {
+		const name = _rapierNotesPictureName(href);
+		if (!name) throw new Error('This picture is not a file of an open note.');
+		const blob = await _rapierNotesStore.readAttachment(name);
+		if (!blob) throw new Error('This picture file is missing.');
+		return new Blob([blob], {type: RAPIER_NOTES_PICTURE_TYPES[name.split('.').pop().toLowerCase()]});
+	},
+});
+
 _rapierNotesPart = Object.freeze({
 	presetCaptureAllowed: () => !_rapierNotesHostLocked() && globalThis.RapierPlatform?.host?.lockedNotes !== true,
 	state: _rapierNotes, pending: _rapierNotesPending, admitInverse: _rapierNotesAdmitInverse, store: _rapierNotesStore, fields: _rapierNotesFields,

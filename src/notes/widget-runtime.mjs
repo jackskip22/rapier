@@ -40,7 +40,7 @@ export function startWidgetRuntime(host, {Channel = globalThis.BroadcastChannel,
 			const store = createNativeByteStore({call}), locks = createNativeNotesLocks({call});
 			if (await store.stat('notes.json') == null) throw Object.assign(new Error('Open Notes in Rapier once to prepare the home-screen widget.'), {code: 'setup'});
 			folder = createFolder({store, scope: 'notes', locks, channel, shared: true});
-			const widget = createWidgetNotes(folder);
+			const widget = createWidgetNotes(folder, {selected: Array.isArray(request.selected) ? request.selected.slice(0, 100) : []});
 			if (request?.kind === 'tick') await widget.tick(request.action);
 			else if (request?.kind !== 'refresh') throw Object.assign(new Error('Unknown widget action.'), {code: 'action'});
 			const snapshot = await widget.snapshot();

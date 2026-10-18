@@ -95,7 +95,7 @@ export function supportsRichStyle(style, contentLanguage = '') {
       !oneOf('fontStretch', ['normal', '100%']) || !oneOf('fontSizeAdjust', ['none']) ||
       !oneOf('textRendering', ['auto']) || !oneOf('verticalAlign', ['baseline']) ||
       !oneOf('whiteSpace', ['normal', 'pre-wrap', 'nowrap']) || !oneOf('wordBreak', ['normal', 'keep-all']) ||
-      !oneOf('hyphens', ['manual']) || !oneOf('lineBreak', ['auto']) || !oneOf('hangingPunctuation', ['none']) ||
+      !oneOf('hyphens', ['manual']) || !oneOf('lineBreak', ['auto', 'after-white-space']) || !oneOf('hangingPunctuation', ['none']) ||
       !oneOf('tabSize', ['8']) || !oneOf('textWrapStyle', ['auto', 'pretty'])) return false;
   for (const name of ['fontFeatureSettings', 'fontVariationSettings', 'fontVariant', 'fontVariantLigatures',
     'fontVariantCaps', 'fontVariantNumeric', 'fontVariantEastAsian', 'fontVariantPosition', 'fontVariantAlternates']) {

@@ -477,12 +477,14 @@ function _rapierDrawSnapshot(snapshot = _rapierDrawHistoryRecipe(), amend = fals
 		const previous = state.undoStack.at(-1);
 		snapshot = { ..._rapierDrawHistoryRecipe(_rapierDrawRestoreRecipe(previous)),
 			selection: previous.selection, shift: previous.shift, agent: previous.agent, act: previous.act };
+		if(previous.paintHistory)Object.defineProperty(snapshot,'paintHistory',{value:previous.paintHistory,configurable:true});
 		state.undoStack = state.undoStack.slice(0, -1).concat(snapshot);
 	} else state.undoStack = state.undoStack.concat(snapshot).slice(-60);
 	if (!snapshot.act) snapshot.act = {id: 'draw:' + state.session + ':' + (state.historyActSequence = (state.historyActSequence || 0) + 1),
 		actor: {kind: 'human', id: 'local'}, createdAt: Date.now(), operation: 'drawing.change'};
 	state.renderEdit.entry = snapshot;
 	state.redoStack = [];
+	if(typeof _rapierPaintTrimHistory==='function')_rapierPaintTrimHistory();
 	_rapierDrawRenderHistory();
 	return snapshot;
 }
@@ -509,6 +511,7 @@ function _rapierDrawSealHistory(before = _rapierDrawState.undoStack.at(-1)) {
 	const entry = _rapierDrawHistoryDelta(prior, state.recipe);
 	entry.selection = (before.selection || []).slice();
 	if (before.act) entry.act = before.act;
+	if(before.paintHistory)Object.defineProperty(entry,'paintHistory',{value:before.paintHistory,configurable:true});
 	if (before.shift) entry.shift = before.shift;
 	if (before.agent) entry.agent = { before: String(before.agent.before || ''), after: String(before.agent.after || ''), transactionId: before.agent.transactionId,
 		savedBefore: before.agent.savedBefore || null, savedAfter: before.agent.savedAfter || null };
@@ -714,6 +717,8 @@ function _rapierDrawRenderShapes(onlyIds) {
 		try {
 			if (onlyIds?.length && !attempt) _rapierDrawPatchShapeNodes(onlyIds);
 			else _rapierDrawAdoptShapeNodes();
+			if (typeof _rapierPaintSettleClosing === 'function') _rapierPaintSettleClosing();
+			if (state.paintLayer && typeof _rapierPaintReattachLive === 'function') _rapierPaintReattachLive();
 			state.renderEdit = null;
 			_rapierDrawLiquidSync(); _rapierDrawCopierSync();
 			if (globalThis.RapierDrawRefraction.hasRefraction(state.recipe) && !state.gesture) _rapierDrawEffectsPreviewSchedule();
@@ -828,7 +833,7 @@ function _rapierDrawUndoWalk(redo, target) {
 		return _rapierDrawUndoStep(redo, target);
 	});
 }
-function _rapierDrawUndoStep(redo, target) {
+function _rapierDrawUndoStep(redo, target, replayed = null) {
 	const state = _rapierDrawState;
 	if (target && (!state.open || target.session !== state.session)) return false;
 	if (state.gesture || state.markerPress) return _rapierDrawUndo(redo, target);
@@ -841,10 +846,17 @@ function _rapierDrawUndoStep(redo, target) {
 		return target.entry.agent ? globalThis.RapierAgentBrowser?.undoDrawingChange?.(target.entry, target.session) ?? false
 			: _rapierDrawUndoAct(target);
 	}
-	const from = redo ? state.redoStack : state.undoStack, to = redo ? state.undoStack : state.redoStack, prior = from.pop();
+	const from = redo ? state.redoStack : state.undoStack, to = redo ? state.undoStack : state.redoStack;
+ const head=from.at(-1);
+ if(head && replayed!==head && typeof _rapierPaintReplayHistory==='function'){
+  const replay=_rapierPaintReplayHistory(head,redo?'after':'before');
+  if(replay)return replay.then(()=>owns()?_rapierDrawUndoStep(redo,target,head):false);
+ }
+ const prior = from.pop();
 	if (!prior) return false;
 	if (prior.delta) { to.push(prior); state.recipe = _rapierDrawApplyHistory(prior, redo ? 'after' : 'before'); }
 	else { to.push(_rapierDrawHistoryRecipe()); state.recipe = _rapierDrawRestoreRecipe(prior); }
+ if(typeof _rapierPaintHistoryWalk==='function')_rapierPaintHistoryWalk(prior,redo?'after':'before');
 	if (state.recipe.background?.kind === 'paper' && typeof _rapierWaterFollowPaper === 'function') _rapierWaterFollowPaper(state.recipe.background.paper);
 	if (prior.shift) { const v = _rapierDrawView(), s = redo ? 1 : -1; v.x += s * prior.shift.dx; v.y += s * prior.shift.dy; }
 	const live = new Set(state.recipe.shapes.map(shape => shape.id)), ids = prior.delta ? (redo ? prior.redoSelection : prior.selection) : prior.selection;
@@ -3293,10 +3305,10 @@ function _rapierDrawGardenColour(kind, chosen) {
 function _rapierDrawLetterSets() { const sets = globalThis.RapierDrawLetters?.LETTER_SETS || []; return ['field', 'leaf', 'arabesque', 'relief'].map(id => sets.find(set => set.id === id)).filter(Boolean); }
 function _rapierDrawLetterFont(id) { return /^letters:/.test(id) && _rapierDrawLetterSets().some(set => 'letters:' + set.id === id); }
 function _rapierDrawLetterGlyph(set) {
-	const sample = set && globalThis.RapierDrawLetters.LETTER_PREVIEWS[set.id];
+	const sample = set && globalThis.RapierDrawLetterPreviews.LETTER_PREVIEWS[set.id];
 	return sample ? '<svg class="rapier-draw-glyph" viewBox="0 0 ' + sample.glyph[0] + ' ' + sample.em + '" aria-hidden="true"><path fill="currentColor" transform="translate(' + sample.bearing + ',0)" d="' + sample.glyph[1] + '"/></svg>' : '';
 }
-const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.11/letters/';
+const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.12/letters/';
 const _rapierDrawLettersDoor = { allowed: false, asking: null, providers: new Map(), bringing: new Map() };
 function _rapierDrawLettersProvider(set) {
 	const door = _rapierDrawLettersDoor;
@@ -5759,6 +5771,7 @@ function _rapierDrawOpenSurface(options) {
 	if (!recipe) { opts.onReady?.(false); showToast('This drawing could not be opened', 'error'); return; }
 	void _rapierDrawBackupRelease();
 	state.recipe = recipe; state.undoStack = []; state.redoStack = []; state.session = (state.session || 0) + 1; state.paintFastSources = new Map();
+	if(typeof _rapierPaintTrimHistory==='function')_rapierPaintTrimHistory();
 	if (state.agentPatchTimer) clearTimeout(state.agentPatchTimer);
 	state.agentPatchTimer = null; state.agentQueue = []; state.agentReceipts = _rapierDrawPresentationReceipts(); state.agentReceiptObservers ||= new Map(); state.humanChangePending = false;
 	state.agentContextSnapshot = null; state.agentSurfaceGeneration = 0; state.agentSession = crypto.randomUUID();
@@ -5966,6 +5979,7 @@ async function _rapierDrawClose({ recover = false, landed = false } = {}) {
 	globalThis.RapierDrawAgentPaint?.forgetWaterSession?.(globalThis.RapierDrawAgentPaint.waterSession(state.session));
 	state.paintFastSources?.clear(); state.finishHandoff = null;
 	state.open = false; state.painter = false; state.pencil = false; state.session = (state.session || 0) + 1; state.editing = null; state.insertTarget = null; state.notes = null; state.openSnapshot = null;
+	if(typeof _rapierPaintTrimHistory==='function')_rapierPaintTrimHistory();
 	_rapierDrawLiquidStop(); _rapierDrawCopierStop();
 	setTimeout(() => void _rapierDrawLiquidResume(), 0);
 	globalThis.RapierChanges?.close(); globalThis.RapierChanges?.schedule();
@@ -6895,7 +6909,7 @@ async function _rapierPainterORA(out, svg) {
 	const small = context.getImageData(0, 0, w, h).data; full.width = thumb.width = 0;
 	entries.push({name: 'stack.xml', bytes: '<?xml version="1.0" encoding="UTF-8"?>\n<image version="0.0.3" w="' + out.W + '" h="' + out.H + '"><stack>' + stack.join('') + '</stack></image>\n'},
 		{name: 'mergedimage.png', bytes: _rapierPngSoftware(await _rapierPainterPNG(out.W, out.H, out.merged))}, {name: 'Thumbnails/thumbnail.png', bytes: await _rapierPainterPNG(w, h, small)}, {name: 'drawing.svg', bytes: svg});
-	return globalThis.RapierNotesZip.zipStored(entries);
+	return globalThis.RapierZipRecords.zipStored(entries);
 }
 async function _rapierDrawSavePainting(leaving = false) {
 	const state = _rapierDrawState, session = state.session, live = () => state.open && state.session === session;

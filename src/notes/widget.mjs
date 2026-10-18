@@ -39,7 +39,7 @@ function widgetBody(text) {
 	}
 	return cutText(body.join('\n'), 360, 360);
 }
-export function createWidgetNotes(folder, {mayRead = widgetMayRead, limits = WIDGET_LIMITS} = {}) {
+export function createWidgetNotes(folder, {mayRead = widgetMayRead, limits = WIDGET_LIMITS, selected = []} = {}) {
 	if (!Number.isSafeInteger(limits.notes) || limits.notes < 1 || limits.notes > WIDGET_LIMITS.notes || !Number.isSafeInteger(limits.checks) || limits.checks < 1 || limits.checks > WIDGET_LIMITS.checks || !Number.isSafeInteger(limits.previewBytes) || limits.previewBytes < 1 || limits.previewBytes > WIDGET_LIMITS.previewBytes) throw new TypeError('Invalid widget projection limits.');
 	if (!folder?.owner?.acquire || typeof folder.scope !== 'string') throw new TypeError('A widget needs the existing Notes folder owner.');
 	const owned = async run => {
@@ -51,7 +51,7 @@ export function createWidgetNotes(folder, {mayRead = widgetMayRead, limits = WID
 		const fresh = await lease.read();
 		const files = fresh.files.filter(file => isNoteFile(file) && allowed(fresh.index, fresh.index.notes[file])).sort((a, b) => {
 			const x = fresh.index.notes[a], y = fresh.index.notes[b];
-			return Number(y.pinned) - Number(x.pinned) || (y.modified || y.created || 0) - (x.modified || x.created || 0) || (a < b ? -1 : a > b ? 1 : 0);
+			return Number(selected.includes(y.id)) - Number(selected.includes(x.id)) || Number(y.pinned) - Number(x.pinned) || (y.modified || y.created || 0) - (x.modified || x.created || 0) || (a < b ? -1 : a > b ? 1 : 0);
 		});
 		const planned = [], wanted = [];
 		const selectedFiles = files.slice(0, limits.notes);

@@ -1,6 +1,8 @@
 import {cloneSource} from './clone-source.mjs';
 import {htmlFence, htmlRemoved, retiredPosterSplices} from '../spec/html-blocks.mjs';
 import {sha256, sha256Parts} from '../kit/ledger/hash.mjs';
+import {sourceFacts as textFacts} from '../kit/ledger/source.mjs';
+import {dataOmissions} from '../spec/md-assets.mjs';
 import {jsonText, jsonValueParts} from './json-value.mjs';
 import {readBase} from '../kit/ledger/carried.mjs';
 import {agentActorId} from '../kit/ledger/format.mjs';
@@ -12,7 +14,7 @@ import { diff } from '../packages/rapier-diff/index.mjs';
 import { summary as summarize } from '../packages/rapier-diff/summary.mjs';
 import { outlineMarkdown, structureMarkdown } from './markdown.mjs';
 import { changedReferenceRegion, changedWillFraming } from './references.mjs';
-import { assetOmissions, retireDeletedImageDefinitions, documentAssets, markdownParser, normalizeLabel, createAsset, appendAsset, appendAssetText, escapeImageAlt, decodeDataImage, inspectSVG, editSVGNodes } from '../images/assets.mjs';
+import { retireDeletedImageDefinitions, documentAssets, markdownParser, normalizeLabel, createAsset, appendAsset, appendAssetText, escapeImageAlt, decodeDataImage, inspectSVG, editSVGNodes } from '../images/assets.mjs';
 import { RAPIER_DRAW_PAPERS, RAPIER_DRAW_NIB_DEFAULT, RAPIER_DRAW_SMOOTH_DEFAULT, _rapierDrawNormalizeAgentRecipe, _rapierDrawRecipeFault, _rapierDrawAdmitRecipe, _rapierDrawAssetGeneration, _rapierDrawMergeAgentRecipe, _rapierDrawUndoRecipe, _rapierDrawRecipeDelta, _rapierDrawBuildSVG, _rapierDrawTextAlternative, _rapierDrawNextAssetName, _rapierDrawApplyShapesPatch, _rapierDrawReadRecipeFromSVGText, _rapierDrawFigureFault } from '../draw/core.mjs';
 import { applyOperations } from '../draw/edit.mjs';
 import {hasRefraction} from '../draw/refraction-rendition.mjs';
@@ -273,15 +275,15 @@ export function documentKind(filename) {
 
 function admissibleSnapshotText(value) {
   if (typeof value !== 'string') return 'text_required';
-  if (value.length > LIMITS.documentBytes || value.length * 3 > LIMITS.documentBytes && bytes(value) > LIMITS.documentBytes) return 'text_too_large';
-  if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(value)) return 'text_control_characters';
+  if (value.length > LIMITS.documentBytes || value.length * 3 > LIMITS.documentBytes && textFacts(value).utf8 > LIMITS.documentBytes) return 'text_too_large';
+  if (textFacts(value).controls) return 'text_control_characters';
   return '';
 }
 
 export function admissibleText(value) {
   const invalid = admissibleSnapshotText(value);
   if (invalid) return invalid;
-  return /[\uD800-\uDFFF]/u.test(value) ? 'text_not_utf8_text' : '';
+  return textFacts(value).lone ? 'text_not_utf8_text' : '';
 }
 
 function validName(value) {
@@ -730,7 +732,7 @@ export function willRestores(restores, region, splices) {
     .toSorted((a, b) => a.pos - b.pos);
   if (!reaching.length || reaching.some((row, i) => row.pos < region.start || row.pos + row.removed.length > region.end ||
       (i && row.pos !== reaching[i - 1].pos + reaching[i - 1].removed.length) ||
-      !restores.some(back => back.removed === row.removed && back.inserted === row.inserted)) ||
+      !restores.includes(row)) ||
       !/^(?:\r\n|\r|\n)?$/.test(region.text.slice(reaching.at(-1).pos + reaching.at(-1).removed.length - region.start))) return null;
   return reaching;
 }
@@ -1349,23 +1351,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
 
   function imageSpans(text = state.text) {
     if (imageCache?.text === text) return imageCache.spans;
-    const envelopes = assetOmissions(text), spans = [...envelopes];
-    const pattern = /data:([a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+)(?:;[^,\s"'<>)]*)?,/ig;
-    let envelopeIndex = 0;
-    for (let match; (match = pattern.exec(text));) {
-      while (envelopeIndex < envelopes.length && envelopes[envelopeIndex].end <= match.index) envelopeIndex++;
-      const envelope = envelopes[envelopeIndex];
-      if (envelope && envelope.start <= match.index) { pattern.lastIndex = envelope.end; continue; }
-      const payloadStart = pattern.lastIndex;
-      const base64 = /;base64,/i.test(match[0]);
-      let end = payloadStart;
-      const permitted = base64 ? /[A-Za-z0-9+/=\s]/ : /[A-Za-z0-9\-._~!$&*+;=:@/?%]/;
-      while (end < text.length && permitted.test(text[end])) end++;
-      if (end > payloadStart) spans.push({ start: match.index, end, type: match[1], chars: end - match.index,
-        profile: base64 ? 'base64' : 'data' });
-      pattern.lastIndex = Math.max(pattern.lastIndex, end);
-    }
-    spans.sort((a, b) => a.start - b.start);
+    if (!textFacts(text).data) return [];
+    const spans = dataOmissions(text);
     if (text === state.text) imageCache = { text, spans };
     return spans;
   }
@@ -2438,6 +2425,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       ...(typeof got.reason === 'string' ? {reason: clip(got.reason, 128)} : {}),
       ...(typeof got.complete === 'boolean' ? {complete: got.complete} : {}), ...(typeof got.unchanged === 'boolean' ? {unchanged: got.unchanged} : {}),
       ...(Number.isSafeInteger(got.skipped) ? {skipped: got.skipped} : {}), ...(Number.isSafeInteger(got.missing) ? {missing: got.missing} : {}),
+      ...(Number.isSafeInteger(got.held) ? {held: got.held} : {}), ...(Number.isSafeInteger(got.conflicts) ? {conflicts: got.conflicts} : {}),
       ...(Number.isSafeInteger(got.backedUpAt) ? {backedUpAt: got.backedUpAt} : {})});
   }
 
@@ -3371,14 +3359,16 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         state.history.complete = projection.complete;
       }
       const requested = typeof target === 'string' ? {actId: target} : target || {};
+      const authorMatches = row => (!requested.actorId || row.author?.id === requested.actorId) &&
+        (!requested.actorKind || row.author?.kind === requested.actorKind);
       const entry = requested.actId ? state.journal.find(row => row.id === requested.actId)
         : requested.turnId ? state.journal.findLast(row => row.turnId === requested.turnId &&
-          (!requested.actorId || row.author?.id === requested.actorId)) : null;
+          authorMatches(row)) : null;
       if (!entry) return failure('act_unavailable', 'target_gone');
-      if (requested.actorId && entry.author?.id !== requested.actorId) return failure('act_unavailable', 'target_gone');
+      if (!authorMatches(entry)) return failure('act_unavailable', 'target_gone');
       return undo(requested.turnId ? {turn_id: requested.turnId} : {change_id: entry.id},
         participant({actor: 'human', principal: 'local', transport: 'platform', author: context.author}, mintId), context,
-        requested.actorId ? entry : null);
+        requested.actorId && requested.actorKind ? entry : null);
     };
     const result = queue.then(run, run);
     queue = result.then(() => undefined, () => undefined);
@@ -3483,7 +3473,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       commentInverses: commentEntries.slice().reverse(), commentRestorations: commentRestorations.slice().reverse(),
       sourceTransactionId: reversedIds.length === 1 ? reversedIds[0] : null,
       ...(reversedIds.length ? {sourceTransactionIds: reversedIds} : {}), restores: true, editCount: splices.length,
-      restored: (group || [entry]).flatMap(row => row.splices.map(({removed, inserted}) => ({removed: inserted, inserted: removed}))),
+      restored: plan.splices,
       ...(inversePatch ? {drawingPresentation: {...presentationBinding, presentation: {open: false, replay: false},
         reference: inversePatch.reference}} : {}),
       ...(painting ? {authoredCount: painting.authoredCount, drawAssets: painting.drawAssets, fence: painting.fence, drawingPatch: painting.drawingPatch}

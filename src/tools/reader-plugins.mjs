@@ -38,7 +38,7 @@ export function readerPluginLoader(loader, built) {
 		'\t});',
 		'',
 	].join('\n');
-	return replaceOnce(loader, '\twindow.RapierPluginLoader = Object.freeze({files: _rapierVerifiedFiles, portable});', built.map(definition).join('') + '\twindow.RapierPluginLoader = Object.freeze({files: _rapierVerifiedFiles, portable});', 'the loader\'s export');
+	return replaceOnce(loader, '\twindow.RapierPluginLoader = Object.freeze({files: _rapierVerifiedFiles, portable, zenumlSource});', built.map(definition).join('') + '\twindow.RapierPluginLoader = Object.freeze({files: _rapierVerifiedFiles, portable, zenumlSource});', 'the loader\'s export');
 }
 
 const entry = ({hostFile, file, bytes, sri, url, manifestUrl}, builds) => ({file: hostFile || file.split('/').pop(), bytes, sha384: Buffer.from(sri, 'base64').toString('hex'), sri, url: manifestUrl || url, ...(builds ? {builds} : {})});

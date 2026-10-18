@@ -10,6 +10,7 @@ export function plainCorsRule(origin) {
 		AllowedHeaders: ['authorization', 'content-type', 'x-amz-content-sha256', 'x-amz-date', 'if-match', 'if-none-match'], ExposeHeaders: ['ETag'], MaxAgeSeconds: 3600}];
 }
 const fail = (code, message) => Object.assign(new Error(message), {code});
+const sameConnection = (a, b) => ['provider', 'place', 'device', 'connectionId', 'destination'].every(key => a[key] === b[key]);
 const text = value => typeof value === 'string' ? value.trim() : '';
 const authorizeEndpoint = async ({network, cleartext}) => network === 'public' && !cleartext;
 const R2_JURISDICTIONS = ['default', 'eu', 'us', 'fedramp'];
@@ -53,11 +54,13 @@ async function destinationOf(provider, settings) {
 
 export function createPlainKeySession({folder, fetch: fetchFn, device = null, origin = 'https://rapier.website', now = Date.now} = {}) {
 	if (!folder?.owner || typeof fetchFn !== 'function') throw fail('config', 'plain files need the notes folder and the network.');
-	let held = null, remember = !!device && device.available !== false, inspected = false, running = null, activePlain = null, epoch = 0, locked = false, closing = null;
+	let held = null, bound = null, remember = !!device && device.available !== false, inspected = false, running = null, activePlain = null, epoch = 0, locked = false, closing = null;
 	const binding = (kept, identity) => JSON.stringify({kind: 'plain-keys', folder: identity, provider: kept.provider, place: kept.place, connectionId: kept.connectionId, origin});
 	async function kept() {
 		const plain = (await readSyncState(folder)).plain;
-		return plain && KEY_PLAIN_PROVIDERS.includes(plain.provider) ? plain : null;
+		if (!plain || !KEY_PLAIN_PROVIDERS.includes(plain.provider)) return null;
+		bound ||= {...plain};
+		return plain;
 	}
 	const identity = async () => (await folder.read()).index.folderDeviceId;
 	async function restore(plain) {
@@ -102,7 +105,10 @@ export function createPlainKeySession({folder, fetch: fetchFn, device = null, or
 			const {store, plain} = session(provider, place, settings, () => active(ticket), undefined, destination);
 			await store.connect(); active(ticket);
 			const connected = await plain.connect(); active(ticket);
+			const accepted = await kept(); active(ticket);
+			if (!accepted || ['provider', 'place', 'connectionId', 'destination'].some(key => accepted[key] !== connected[key])) throw fail('connection', 'the plain-files connection changed.');
 			locked = false;
+			bound = {...accepted};
 			held = {provider, place: plain.record.place, connectionId: connected.connectionId, typed: typedOf(provider, typed), settings};
 			await keep(connected);
 			return plain.syncNow();
@@ -117,7 +123,9 @@ export function createPlainKeySession({folder, fetch: fetchFn, device = null, or
 			if (await destinationOf(plain.provider, held.settings) !== plain.destination) throw fail('connection', 'the plain-files connection changed.');
 			active(ticket);
 			const result = await session(plain.provider, plain.place.replace(/^\//, ''), held.settings, () => active(ticket), plain.connectionId, plain.destination).plain.syncNow();
-			if (typed) await keep(plain);
+			active(ticket);
+			if (typed) { bound = {...plain}; await keep(plain); }
+			active(ticket);
 			return result;
 		}); },
 		async setRememberDevice(enabled) {
@@ -140,14 +148,18 @@ export function createPlainKeySession({folder, fetch: fetchFn, device = null, or
 		async lock() { locked = true; await stop(); held = null; },
 		forget() {
 			if (closing) return closing;
+			const expected = bound && {...bound}; locked = true;
+			const stopped = stop(), ticket = epoch;
 			closing = (async () => {
-			locked = true; await stop();
-			const plain = await kept();
-			if (plain) await createPlainSession({folder, store: {}, provider: plain.provider, place: plain.place, device: plain.device}).forget({connectionId: plain.connectionId, destination: plain.destination});
-			held = null;
+			await stopped; active(ticket);
+			const plain = await kept(); active(ticket);
+			if (plain && expected && !sameConnection(plain, expected)) throw fail('connection', 'the plain-files connection changed.');
+			if (plain) await createPlainSession({folder, store: {}, provider: plain.provider, place: plain.place, device: plain.device,
+				connectionId: plain.connectionId, destination: plain.destination, guard: () => active(ticket)}).forget({connectionId: plain.connectionId});
+			active(ticket); held = null; bound = null;
 			if (device && device.available !== false) {
-				try { if (!inspected) { await device.read('{}'); inspected = true; } await device.forget(); }
-				catch { throw fail('device', 'the files stopped syncing, but this device could not forget its storage key. clear this site’s storage before leaving a shared device.'); }
+				try { if (!inspected) { await device.read('{}'); active(ticket); inspected = true; } active(ticket); await device.forget(); }
+				catch (error) { if (error.code === 'cancelled') throw error; throw fail('device', 'the files stopped syncing, but this device could not forget its storage key. clear this site’s storage before leaving a shared device.'); }
 			}
 			})();
 			return closing.finally(() => { closing = null; });

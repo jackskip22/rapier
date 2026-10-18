@@ -87,7 +87,7 @@ export async function readDocxFontPart({name, family, bytes, key, type}, {asset 
   const normalized = normalizeFontFamily(family);
   if (!normalized) return refuse(name, 'The font family is invalid.');
   if (type === DOCX_FONT_TYPE) bytes = obfuscateDocxFont(bytes, key);
-  else if (type !== 'application/x-font-ttf' && type !== 'font/ttf' && type !== 'font/otf')
+  else if (!['application/x-font-ttf', 'application/x-font-truetype', 'application/vnd.ms-opentype', 'application/font-sfnt', 'font/ttf', 'font/otf'].includes(type))
     return refuse(name, 'The embedded font format is unsupported.');
   const font = await admitted(name, bytes);
   checkCurrent();

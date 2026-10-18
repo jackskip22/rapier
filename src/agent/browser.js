@@ -53,6 +53,7 @@
   }
 
   function admission() {
+    if (globalThis.RapierPlatform?.host?.lockedNotes === true) return 'notes_locked';
     if (_rapierBootstrapRuntime.failed) return 'bootstrap_failed';
     if (_rapierEmbed.active && !_rapierEmbed.capabilities?.includes('agent')) return 'embed_agent_not_granted';
     if (!_rapierBootstrapRuntime.complete) return 'document_not_ready';
@@ -73,6 +74,7 @@
     retainedPointer.generation === Number(rapier.revision.generation);
 
   function livePointer() {
+    if (globalThis.RapierPlatform?.host?.lockedNotes === true) return {selection: null, focus: null};
     if (typeof _rapierDrawState === 'object' && _rapierDrawState.open) {
       const selected = _rapierAskChatSelectionText();
       const range = selected?.objectId ? {...selected.selection, objectId: selected.objectId, active: false} : null;
@@ -213,6 +215,7 @@
   }
 
   async function humanContext() {
+    if (globalThis.RapierPlatform?.host?.lockedNotes === true) return {...fail('notes_locked'), message: 'Locked notes stay on this phone. Agents cannot read them.'};
     const basic = {documentId: String(rapier.identity.authority), revision: Number(rapier.revision.settled),
       generation: Number(rapier.revision.generation)};
     if (!readyDone || admission() || _rapierMutationBarrierActive()) {
@@ -262,6 +265,7 @@
     return comparisonBaseRecord?.authority === String(rapier.identity.authority) ? comparisonBaseRecord : null;
   }
   function comparisonExport() {
+    if (globalThis.RapierPlatform?.host?.lockedNotes === true) return null;
     const record = comparisonRecord();
     return record ? {text: _rapierSourceText(), base: record.base} : null;
   }
@@ -382,6 +386,7 @@
   }
 
   function editorContext() {
+    if (globalThis.RapierPlatform?.host?.lockedNotes === true) return {...fail('notes_locked'), message: 'Locked notes stay on this phone. Agents cannot read them.'};
     return editorProtocol.editorContext({preferences: RapierPreferences.snapshot(), receipts: [...editorRequests.values()]
       .filter(record => record.localDocumentId === String(rapier.identity.authority)).map(record => record.fact?.receipt)});
   }
@@ -579,6 +584,7 @@
   }
 
   function capturePlace() {
+    if (globalThis.RapierPlatform?.host?.lockedNotes === true) throw Object.assign(new Error('Locked notes stay on this phone'), {code: 'notes_locked'});
     const capture = _rapierCaptureForegroundSelection([]);
     const spans = _rapierExcerptCanonicalBlockSpans();
     const blocks = new Map(rapier.document.blocks.map((block, index) => [block.id,
@@ -1124,6 +1130,7 @@
   }
 
   function agentRecoveryState() {
+    if (globalThis.RapierPlatform?.host?.lockedNotes === true) return null;
     if (!kernel) return null;
     if (!kernel.invocationJournal().length && !comparisonRecord()) return null;
     try { kernel.reconcile(current(), {actor: 'system', principal: 'bootstrap'}); } catch (_) {}
@@ -1943,7 +1950,7 @@
               principal: transactionPrincipals.get(tx.id)?.principal || (tx.actor.kind === 'agent' ? 'unverified:' + doorSession : tx.actor.id),
             })) : [];
         if (!events.length) events.push({actor: replacing ? 'system' : 'human', principal: replacing ? 'mcp' : 'local'});
-        for (const entry of events) for (const notify of subscribers) {
+        for (const entry of events) for (const notify of admission() ? [] : subscribers) {
           try { notify({actor: entry.actor, principal: entry.principal, snapshot: value}); } catch (_) {}
         }
         if (value.documentId !== prior.documentId || !pointerCurrent()) retainedPointer = null;
@@ -2177,6 +2184,7 @@
   }
 
   function remoteLedger(value, before, mapped) {
+    if (globalThis.RapierPlatform?.host?.lockedNotes === true) throw Object.assign(new Error('Locked notes stay on this phone'), {code: 'notes_locked'});
     if (!Array.isArray(value.journal)) return null;
     if (typeof value.documentId !== 'string' || !value.documentId || before && before.documentId !== value.documentId)
       throw new Error('Remote document is missing');
@@ -2574,8 +2582,8 @@
     acceptImport: _rapierAcceptDocumentImport,
     importCurrent: result => !result.importStamp || _rapierMutationStampIsCurrent(result.importStamp),
     reconcile: (value, ctx) => kernel.reconcile(value, ctx),
-    subscribeContext: notify => { contextSubscribers.add(notify); return () => contextSubscribers.delete(notify); },
-    subscribe: notify => { subscribers.add(notify); return () => subscribers.delete(notify); }});
+    subscribeContext: notify => { if (globalThis.RapierPlatform?.host?.lockedNotes === true) throw Object.assign(new Error('Locked notes stay on this phone'), {code: 'notes_locked'}); contextSubscribers.add(notify); return () => contextSubscribers.delete(notify); },
+    subscribe: notify => { if (globalThis.RapierPlatform?.host?.lockedNotes === true) throw Object.assign(new Error('Locked notes stay on this phone'), {code: 'notes_locked'}); subscribers.add(notify); return () => subscribers.delete(notify); }});
   for (const type of ['pointerdown', 'pointerup', 'keydown', 'keyup', 'beforeinput', 'input', 'compositionstart', 'compositionend']) {
     document.addEventListener(type, humanActivity, {capture: true, passive: true});
   }

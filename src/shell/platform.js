@@ -172,12 +172,19 @@ const _rapierProviders = Object.seal({
 	speechUtterance: null,
 	math: null,
 	mermaid: null,
+	'mermaid-zenuml': null,
 	'font-subset': null,
 	ocr: null,
 	'letters-field': null,
 	'letters-relief': null,
 	'letters-leaf': null,
 	'letters-arabesque': null,
+	'letters-silhouette': null,
+	'letters-gothic': null,
+	'letters-sugar': null,
+	'letters-illuminated-1490': null,
+	'letters-tuscan-1845': null,
+	'letters-renaissance-alphabet': null,
 	templates: null,
 	elements: null,
 });
@@ -444,7 +451,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 	});
 	const _nativeIntakeRuntime = Object.seal({ transfer: null, waiters: [], last: null, failure: null, generation: 0, transport: null, expecting: false });
 	const _nativeSaveRuntime = Object.seal({ sequence: 0, pending: new Map() });
-	const _platformBindingRuntime = Object.seal({ files: new Map() });
+	const _platformBindingRuntime = Object.seal({ files: new Map(), originalProjections: 0 });
 	function _platformCheckpoint(checkpoint) {
 		var pending = [], accepting = true;
 		var collect = Object.freeze({checkpoint: checkpoint, waitUntil: function (completion) {
@@ -458,18 +465,26 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			return kept.length > 0 && kept.every(function (value) { return value === true; });
 		});
 	}
-	function _setPlatformFileBinding(authority, generation, writable) {
+	function _setPlatformFileBinding(authority, generation, writable, original) {
 		var id = String(authority || '').trim();
 		if (!id) return;
+		var previous = _platformBindingRuntime.files.get(id);
+		if (previous?.original && previous.original !== original) void previous.original.release().catch(() => {});
 		_platformBindingRuntime.files.set(id, {
+			original: original || null,
 			generation: generation == null ? null : generation,
 			writable: writable === true,
 		});
 	}
 	function _clearPlatformFileBinding(authority) {
 		var id = String(authority || '').trim();
-		if (id) _platformBindingRuntime.files.delete(id);
-		else _platformBindingRuntime.files.clear();
+		for (var [key, binding] of _platformBindingRuntime.files) if (!id || key === id) {
+			_platformBindingRuntime.files.delete(key);
+			if (binding.original) void binding.original.release().catch(() => {});
+		}
+	}
+	function _platformOriginal(authority) {
+		return _platformBindingRuntime.files.get(String(authority || ''))?.original || null;
 	}
 	function _setNativeCurrentFileBinding(authority, generation) {
 		_clearPlatformFileBinding();
@@ -1452,6 +1467,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			documentGeneration: Number(options.documentGeneration || 0),
 			documentRevision: Number(options.documentRevision || 0),
 			fileGeneration: options.fileGeneration == null ? null : options.fileGeneration,
+			exclusiveNewDestination: options.exclusiveNewDestination === true,
 			payloadLength: fingerprint.bytes,
 			payloadDigest: fingerprint.digest,
 		};
@@ -1524,11 +1540,11 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			pending.resolve(_saveResult('cancelled'));
 			return;
 		}
-		pending.reject(new Error(String(detail.error || (
+		pending.reject(Object.assign(new Error(String(detail.error || (
 			status === 'written-unverified'
 				? 'the provider accepted the write but Rapier could not verify it'
 				: 'native save failed'
-		))));
+		))), {code: String(detail.errorCode || 'native_save_failed')}));
 	});
 
 	async function _nativeSaveRequest(purpose, blob, filename, options) {
@@ -2669,16 +2685,75 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			get open() { return kept('open', 'openDocument'); },
 			get upload() { return method('uploadDocument'); },
 			get chooseCompare() { return method('chooseCompareDocument'); },
-			get readCurrent() { return method('readCurrentDocument'); },
-			get checkExternalChange() { return method('checkExternalFileChange'); },
-			get acceptOpened() { return kept('acceptOpened', 'acceptOpenedDocument'); },
-			get detach() { return kept('detach', 'detachCurrentFile'); },
+			get readCurrent() { return async function (authority) {
+				var original = _platformOriginal(authority);
+				if (!original) return method('readCurrentDocument')?.(authority) || null;
+				var blob = await original.read(), read = await RapierTextCodec.readDocumentRecord(blob);
+				return {text: read.text, bom: read.bom, admittedBytes: read.bytes, name: original.name,
+					documentAuthority: authority, originalFile: original, fileGeneration: await _webFileGeneration(blob), transient: false};
+			}; },
+			get checkExternalChange() { return async function (authority) {
+				var original = _platformOriginal(authority);
+				if (!original) return method('checkExternalFileChange')?.(authority) || false;
+				try { await original.validate(); return false; }
+				catch (error) { window.dispatchEvent(new CustomEvent('rapier:file-changed', {detail: {
+					documentAuthority: authority, missing: true, reason: error.code || 'original_unavailable'}})); return true; }
+			}; },
+			get acceptOpened() { return async function (payload) {
+				var original = payload?.originalFile, authority = String(payload?.documentAuthority || '');
+				if (!original) return kept('acceptOpened', 'acceptOpenedDocument')?.(payload) || {bound: true, persisted: false};
+				if (!_engineOwnsDocumentAuthority(authority)) return {bound: false, persisted: false};
+				await original.validate();
+				if (!_engineOwnsDocumentAuthority(authority)) return {bound: false, persisted: false};
+				_setPlatformFileBinding(authority, payload.fileGeneration, false, original);
+				return {bound: true, persisted: false};
+			}; },
+			get detach() { return async function (authority) {
+				var original = _platformOriginal(authority);
+				if (!original) return kept('detach', 'detachCurrentFile')?.(authority);
+				_clearPlatformFileBinding(authority); await original.release();
+			}; },
+			get hasOriginal() { return authority => !!_platformOriginal(authority); },
+			get original() { return authority => _platformOriginal(authority); },
+			get relativeCandidate() { return href => (!!_platformOriginal(_engineDocumentAuthority()) || _platformBindingRuntime.originalProjections > 0) &&
+				typeof href === 'string' && !!href && !/^(?:[a-z][a-z0-9+.-]*:|#)/i.test(href); },
+			get holdOriginalProjection() { return () => {
+				_platformBindingRuntime.originalProjections++;
+				let held = true;
+				return () => { if (held) { held = false; _platformBindingRuntime.originalProjections--; globalThis.RapierEmbeddedImages?.originalReady(); } };
+			}; },
 			get hasWritable() { return kept('hasWritable', 'hasWritableHandle'); },
 			get currentAuthority() { return method('currentFileAuthority'); },
 			get generation() { return kept('generation', 'currentFileGeneration'); },
-			get observeGeneration() { return method('observeFileGeneration'); },
-			get saveAs() { return kept('saveAs', 'saveAs'); },
-			get saveInPlace() { return kept('saveInPlace', 'saveInPlace'); },
+			get observeGeneration() { return method('observeFileGeneration') || _webFileGeneration; },
+			get saveAs() { return async function (blob, name, options = {}) {
+				var original = _platformOriginal(options.documentAuthority);
+				if (!original) return kept('saveAs', 'saveAs')?.(blob, name, options);
+				await options.beforeWrite; options.check?.();
+				var data = typeof blob === 'function' ? await blob(name) : blob;
+				if (!data) return {status: 'cancelled', confirmed: false, verified: false};
+				if (environment.id === 'web') return _webDownload(data, _webNextDownloadName(name, {...options, nameTaken: true}), options);
+				if (_nativeCapability('exclusiveNewDestination')) {
+					var copy;
+					try { copy = await _nativeExportArtifact(data, name, {...options, exclusiveNewDestination: true}); }
+					catch (error) {
+						if (options.signal?.aborted) return {status: 'cancelled', confirmed: false, verified: false};
+						return {status: 'retained-draft', confirmed: false, verified: false, originalPreserved: true,
+							reason: error.code || 'copy_not_created', recoveryChoices: ['keep-editing', 'save-copy', 'reopen-original']};
+					}
+					if (copy?.status === 'cancelled') return copy;
+					return {status: 'retained-draft', confirmed: false, verified: false,
+						reason: copy?.confirmed && copy?.verified ? 'copy_created_original_unchanged' : 'copy_not_created',
+						copyVerified: copy?.confirmed === true && copy?.verified === true, destinationName: copy?.destinationName || '',
+						originalPreserved: true, recoveryChoices: ['keep-editing', 'save-copy', 'reopen-original']};
+				}
+				return {status: 'retained-draft', confirmed: false, verified: false, originalPreserved: true,
+					reason: 'safe_new_destination_unavailable', recoveryChoices: ['keep-editing', 'reopen-original']};
+			}; },
+			get saveInPlace() { return function (blob, name, options = {}) {
+				var original = _platformOriginal(options.documentAuthority);
+				return original ? original.save(blob, options) : kept('saveInPlace', 'saveInPlace')?.(blob, name, options);
+			}; },
 			get exportArtifact() { return method('exportArtifact'); },
 			get prepareExportArtifact() { return method('prepareExportArtifact'); },
 			get takeBoot() { return method('takeBootDocument'); },
@@ -2712,7 +2787,15 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			get printArtifact() { return method('printArtifact'); },
 			get printCurrentDocument() { return method('printCurrentDocument'); },
 			get requestClose() { return method('requestClose'); },
+			get originalFolder() { return _nativeCapability('originalFolder') ? Object.freeze({
+				choose: () => _nativeHostCall('folder.choose', {}, 120000),
+				call: (token, method, args) => _nativeHostCall('folder.call', {token, method, args}),
+				close: token => _nativeHostCall('folder.close', {token}),
+			}) : null; },
 			get notesStore() { return method('notesStore'); },
+			get lockedNotes() { return raw.lockedNotes === true; },
+			get lockedNoteCards() { return method('lockedNoteCards'); },
+			get openLockedNote() { return method('openLockedNote'); },
 			get notesBackup() { return method('notesBackup'); },
 			get shareInbox() { return method('shareInbox'); },
 			get readShared() { return method('readShared'); },
@@ -2864,7 +2947,10 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 				return preferencesReady;
 			},
 			ownsPreferenceStore: false,
-			ownsRecoveryStore: false,
+			get ownsRecoveryStore() { return _nativeCapability('lockedNotes'); },
+			get persistRecovery() { return _nativeCapability('lockedNotes') ? function () {
+				return Promise.reject(Object.assign(new Error('Locked notes use their encrypted Notes store.'), {code: 'notes_locked'}));
+			} : null; },
 			get ownsRecoveryWriterBoundary() { return _nativeCapability('ownsRecoveryWriterBoundary'); },
 			allowsEmbed: false,
 			allowsBrowserIntake: false,
@@ -3203,6 +3289,11 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			get requestClose() {
 				return _nativeCapability('windowClose') ? function () { _nativeHostNotify('window.requestClose'); return true; } : null;
 			},
+			get lockedNotes() { return _nativeCapability('lockedNotes'); },
+			get lockedNoteCards() { return _nativeCapability('notesStore') && !_nativeCapability('lockedNotes')
+				? () => _nativeHostCall('notes.store.locked.list', {}) : null; },
+			get openLockedNote() { return _nativeCapability('notesStore') && !_nativeCapability('lockedNotes')
+				? id => _nativeHostCall('notes.store.locked.open', {id}) : null; },
 			get notesStore() {
 				return _nativeCapability('notesStore') ? function (operation, args) { return _nativeHostCall(operation, args); } : null;
 			},
@@ -3257,9 +3348,8 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 				} : null;
 			},
 			get openSync() {
-				return _nativeCapability('sync') ? function (vault) {
-					if (vault != null && (typeof vault !== 'string' || !/^[a-f0-9]{32}$/.test(vault))) return Promise.reject(new Error('invalid public vault identifier'));
-					return _nativeHostCall('sync.open', vault == null ? {} : {vault});
+				return _nativeCapability('sync') ? function () {
+					return _nativeHostCall('sync.open', {});
 				} : null;
 			},
 			get syncTransport() {

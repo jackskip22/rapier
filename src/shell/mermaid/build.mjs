@@ -45,7 +45,7 @@ try {
     banner: {js: '/* Rapier native ZenUML adapter. Licenses: rapier-zenuml-NOTICES.txt. */'}});
   if (Object.values(result.metafile.outputs).some(output => output.imports.length)) throw new Error('The ZenUML adapter must be self-contained');
   const bytes = Buffer.from(result.outputFiles[0].contents);
-  const output = join(repo, 'shell/vendor/zenuml/rapier-zenuml-4.5.0-2.js');
+  const output = join(repo, 'shell/vendor/zenuml/rapier-zenuml-4.5.0-3.js');
   const manifestPath = join(repo, 'shell/mermaid-resources.json');
   const resources = JSON.parse(await readFile(manifestPath, 'utf8'));
   const file = resources.files.find(file => file.name === 'zenuml');
@@ -62,7 +62,7 @@ try {
   notices.push('ANTLR4 4.11.0\n\n' + await readFile(join(here, 'ANTLR4-LICENSE.txt'), 'utf8'));
   notices.push(upstreamNotices.toString('utf8'));
   const noticeBytes = Buffer.from(notices.join('\n\n---\n\n'));
-  const provenance = {adapter: '4.5.0-2', npmLockSha256: sha(lock), sourceSha256: sha(source + coreSource), esbuild: esbuild.version,
+  const provenance = {adapter: '4.5.0-3', npmLockSha256: sha(lock), sourceSha256: sha(source + coreSource), esbuild: esbuild.version,
     core: packageJson.dependencies['@zenuml/core'], coreGitHead: upstream.gitHead, upstreamLockSha256: upstream.lockSha256,
     antlr4: packageJson.dependencies.antlr4, noticesSha256: sha(noticeBytes),
     bytes: bytes.length, sha256: sha(bytes), sha384: sha(bytes, 'sha384', 'base64'),
@@ -81,5 +81,31 @@ try {
     await writeFile(provenancePath, provenanceBytes);
     await writeFile(noticesPath, noticeBytes);
   }
-  console.log(JSON.stringify({...provenance, checked: check}, null, 2));
+  const peleRoot = join(dependencies, 'node_modules/pele');
+  const peleBytes = await readFile(join(peleRoot, 'dist/pele.global.js'));
+  const peleNotice = await readFile(join(peleRoot, 'LICENSE'));
+  const pelePackage = JSON.parse(await readFile(join(peleRoot, 'package.json'), 'utf8'));
+  const peleLock = JSON.parse(lock).packages['node_modules/pele'];
+  const pelePin = resources.files.find(file => file.name === 'core');
+  const peleProvenance = {package: 'pele', version: pelePackage.version, source: 'https://github.com/obsidianmd/pele',
+    path: 'dist/pele.global.js', tarball: peleLock.resolved, integrity: peleLock.integrity, license: 'MIT',
+    npmLockSha256: sha(lock), bytes: peleBytes.length, sha256: sha(peleBytes), sha384: sha(peleBytes, 'sha384', 'base64'),
+    noticesSha256: sha(peleNotice)};
+  const peleDirectory = join(repo, 'shell/vendor/pele');
+  const peleRecord = Buffer.from(JSON.stringify(peleProvenance, null, 2) + '\n');
+  if (check) {
+    if (!(await readFile(join(peleDirectory, 'pele-1.6.0.js'))).equals(peleBytes) ||
+        pelePin.bytes !== peleBytes.length || pelePin.sri !== peleProvenance.sha384 ||
+        !(await readFile(join(peleDirectory, 'PROVENANCE.json'))).equals(peleRecord) ||
+        !(await readFile(join(peleDirectory, 'LICENSE'))).equals(peleNotice))
+      throw new Error('The Pele resource is not the pinned npm build');
+  } else {
+    await mkdir(peleDirectory, {recursive: true});
+    await writeFile(join(peleDirectory, 'pele-1.6.0.js'), peleBytes);
+    await writeFile(join(peleDirectory, 'LICENSE'), peleNotice);
+    await writeFile(join(peleDirectory, 'PROVENANCE.json'), peleRecord);
+    pelePin.bytes = peleBytes.length; pelePin.sri = peleProvenance.sha384;
+    await writeFile(manifestPath, JSON.stringify(resources, null, 2) + '\n');
+  }
+  console.log(JSON.stringify({zenuml: provenance, pele: peleProvenance, checked: check}, null, 2));
 } finally { if (temporary) await rm(temporary, {recursive: true, force: true}); }

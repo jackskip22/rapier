@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import {fields, scalar, plainPrototype} from './data.mjs';
+import {transformText} from './source.mjs';
 
 const _RAPIER_TRANSACTION_ACTOR_LIMIT = 160;
 const _RAPIER_TRANSACTION_OPERATION_LIMIT = 96;
@@ -8,23 +9,7 @@ const _RAPIER_TRANSACTION_REQUEST_LIMIT = 160;
 function _rapierTransformSplices(text, splices, inverse = false) {
 	try {
 		if (!Array.isArray(splices)) return null;
-		let value = String(text == null ? '' : text);
-		const whole = text => typeof text === 'string' && !/[\uD800-\uDFFF]/u.test(text);
-		const splitsPair = at => at > 0 && at < value.length &&
-			(value.charCodeAt(at - 1) & 0xFC00) === 0xD800 &&
-			(value.charCodeAt(at) & 0xFC00) === 0xDC00;
-		const rows = inverse ? splices.slice().reverse() : splices;
-		for (const row of rows) {
-			if (!row || !Number.isSafeInteger(row.pos) || row.pos < 0 || Object.is(row.pos, -0)) return null;
-			const pos = row.pos;
-			const removed = inverse ? row.inserted : row.removed;
-			const inserted = inverse ? row.removed : row.inserted;
-			if (!whole(removed) || !whole(inserted) || pos > value.length ||
-					pos + removed.length > value.length || splitsPair(pos) || splitsPair(pos + removed.length) ||
-					value.slice(pos, pos + removed.length) !== removed) return null;
-			value = value.slice(0, pos) + inserted + value.slice(pos + removed.length);
-		}
-		return value;
+		return transformText(String(text == null ? '' : text), splices, inverse);
 	} catch (_) { return null; }
 }
 

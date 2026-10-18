@@ -16,6 +16,7 @@ import {IMAGE_LIMITS, inspectRaster, inspectSVG, inspectJPEGXL, isJxl, dataImage
 import {markdownParser, markdownBodyOffset, documentAssets, normalizeLabel} from '../spec/md-assets.mjs';
 import {parseComments, commentThreads, commentAnchor, writeComments, commentSplices, validCommentDate, validCommentTimestamp} from '../agent/comments.mjs';
 import {DOCX_FONTS} from '../shell/fonts/docx-fonts.mjs';
+import {_rapierHeadingSlugBase, _rapierNextHeadingSlug} from '../editor/source-facts.mjs';
 
 const DOCX_LIMITS = Object.freeze({xmlBytes: 8 * 1024 * 1024, totalXmlBytes: 12 * 1024 * 1024,
   elements: 200000, depth: 96, styles: 2048, paragraphs: 50000, images: 1024, tableColumns: 64});
@@ -53,6 +54,9 @@ const descendants = function* (node, family, name) {
   }
 };
 const MARKERS = ['bookmarkStart','bookmarkEnd','proofErr','permStart','permEnd','moveFromRangeStart','moveFromRangeEnd','moveToRangeStart','moveToRangeEnd','customXmlPr','smartTagPr'];
+const SYMBOL_GREEK = 'ΑΒΧΔΕΦΓΗΙϑΚΛΜΝΟΠΘΡΣΤΥςΩΞΨΖαβχδεφγηιϕκλμνοπθρστυϖωξψζ';
+const SYMBOL_SIGNS = {32:' ',34:'∀',36:'∃',39:'∋',42:'∗',45:'−',64:'≅',92:'∴',94:'⊥',96:'‾',126:'∼',163:'≤',165:'∞',171:'↔',172:'←',173:'↑',174:'→',175:'↓',176:'°',177:'±',179:'≥',180:'×',181:'∝',182:'∂',183:'•',184:'÷',185:'≠',186:'≡',187:'≈',188:'…',192:'ℵ',193:'ℑ',194:'ℜ',195:'℘',196:'⊗',197:'⊕',198:'∅',199:'∩',200:'∪',201:'⊃',202:'⊇',203:'⊄',204:'⊂',205:'⊆',206:'∈',207:'∉',209:'∇',213:'∏',214:'√',215:'⋅',216:'¬',217:'∧',218:'∨',219:'⇔',220:'⇐',221:'⇑',222:'⇒',223:'⇓',229:'∑',242:'∫'};
+const WINGDINGS_SIGNS = {33:'✏',34:'✂',40:'☎',41:'✆',42:'✉',54:'⌛',55:'⌨',74:'☺',75:'😐',76:'☹',108:'●',110:'■',111:'□',112:'□',113:'❑',114:'❒',116:'◆',117:'❖',118:'⬥',119:'⌖',128:'⓪',159:'•',160:'▪',161:'○',162:'◉',163:'◎',164:'◈',165:'✦',166:'★',167:'✧',168:'✴',216:'➢',217:'➣',218:'➤',231:'←',232:'→',233:'↑',234:'↓',251:'✗',252:'✓',253:'☒',254:'☑'};
 const FONT_KINDS = 'Fonts the Word file names but does not contain became Rapier’s fonts of the same kind.';
 const STRUCTURAL_EMPHASIS = 'RapierStructuralEmphasis';
 const STRUCTURAL_EMPHASIS_NAME = 'Rapier structural emphasis';
@@ -78,13 +82,13 @@ async function wordRecoveryBytes(stream, limit, work) {
   } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
 
-async function wordRecoveryRecord(source, work) {
+async function wordRecoveryRecord(source, work, equations = []) {
   const bytes = utf8.encode(source);
   const packed = await wordRecoveryBytes(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip')),
     Math.floor((DOCX_LIMITS.xmlBytes - 512) * .75), work);
   const parts = [];
   for (let at = 0; at < packed.length; at += 49152) parts.push(btoa(String.fromCharCode(...packed.subarray(at, at + 49152))));
-  return JSON.stringify({gzip: parts.join(''), sha256: await sha256(bytes)});
+  return JSON.stringify({gzip: parts.join(''), sha256: await sha256(bytes), ...(equations.length ? {equations} : {})});
 }
 
 async function readWordRecovery(text, work) {
@@ -490,7 +494,7 @@ function runProperties(node, theme = new Map(), inlineSize = true) {
   }
   else if (highlight === 'none') out.highlight = null;
   const shading = child(node, 'w', 'shd'), fill = '#' + String(attr(shading, 'w', 'fill')).toLowerCase();
-  if (out.highlight === undefined && val(shading) === 'clear' && fill === HIGHLIGHT_HEX.yellow) out.highlight = 'yellow';
+  if (out.highlight === undefined && val(shading) === 'clear' && /^#[0-9a-f]{6}$/.test(fill)) out.highlight = fill === HIGHLIGHT_HEX.yellow ? 'yellow' : fill;
   const language = languageTag(attr(child(node, 'w', 'lang'), 'w', 'val'));
   if (language) out.language = language;
   return out;
@@ -516,7 +520,7 @@ function textStyle(html, style) {
   if (style.highlight === 'default') html = '<mark>' + html + '</mark>';
   else if (style.highlight) {
     if (Object.values(DOCX_HIGHLIGHT_TO_RAPIER).includes(style.highlight)) html = '<mark data-rapier-highlight="' + style.highlight + '">' + html + '</mark>';
-    else html = sourceToken('<mark style="background-color:' + DOCX_HIGHLIGHT_HEX[style.highlight] + '">') + html + sourceToken('</mark>');
+    else html = sourceToken('<mark style="background-color:' + (DOCX_HIGHLIGHT_HEX[style.highlight] || style.highlight) + '">') + html + sourceToken('</mark>');
   }
   return html;
 }
@@ -576,6 +580,7 @@ function mathTex(node) {
     !(is(n, 'm') && n.localName.endsWith('Pr')) && !(is(n, 'w') && (n.localName === 'rPr' || MARKERS.includes(n.localName)))).map(mathTex).join('');
   const part = name => contents(child(node, 'm', name));
   if (is(node, 'm', 't') || is(node, 'w', 't')) return text(node.textContent);
+  if (is(node, 'w', 'br') || is(node, 'w', 'cr')) return '\\\\';
   if (!is(node, 'm')) return fail('DOCX contains unsupported equation content: ' + node.localName, 'docx_math_unsupported');
   const name = node.localName;
   if (['oMath', 'oMathPara', 'e', 'num', 'den', 'sub', 'sup', 'deg', 'lim', 'fName', 'box'].includes(name)) return contents(node);
@@ -601,6 +606,11 @@ function mathTex(node) {
     if (scripts[script]) value = '\\' + scripts[script] + '{' + value + '}';
     const command = style === 'bi' ? 'boldsymbol' : style === 'b' ? 'mathbf' : style === 'p' && !scripts[script] ? 'mathrm' : '';
     return painted(command ? '\\' + command + '{' + value + '}' : value);
+  }
+  if (name === 'phant') {
+    const value = part('e'), show = hidden(name, 'show'), zeroWidth = hidden(name, 'zeroWid');
+    if (show) return zeroWidth ? '\\rlap{' + value + '}' : value;
+    return (zeroWidth ? '\\vphantom' : hidden(name, 'zeroAsc') && hidden(name, 'zeroDesc') ? '\\hphantom' : '\\phantom') + '{' + value + '}';
   }
   if (name === 'f') return property('f', 'type') === 'noBar'
     ? '\\genfrac{}{}{0pt}{}{' + part('num') + '}{' + part('den') + '}'
@@ -737,13 +747,17 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       if (!node) { stack.pop(); continue; }
       if (++elements > DOCX_LIMITS.elements || stack.length > DOCX_LIMITS.depth) return fail('DOCX XML structure exceeds the import limit.');
       if (node.localName === 'parsererror') return fail('DOCX contains invalid XML: ' + path, 'docx_xml_invalid');
-      if (is(node, 'w') && /^(?:(?:pPr|rPr|sectPr|tblPr|tblGrid|trPr|tcPr)Change|cellIns|cellDel|cellMerge|numberingChange)$/.test(node.localName))
+      const historical = frame.historical || is(node, 'w') && /^(?:(?:pPr|rPr|sectPr|tblPr|tblGrid|trPr|tcPr)Change|numberingChange)$/.test(node.localName);
+      if (historical && !frame.historical) {
+        warn('Revision history was removed; current text was retained.');
+      }
+      if (!historical && is(node, 'w') && /^(?:cellIns|cellDel|cellMerge)$/.test(node.localName))
         return fail('Decide formatting and structural revisions before importing this Word file.', 'docx_revision_structure');
-      if (is(node, 'w') && ['ins','del','moveTo','moveFrom'].includes(node.localName) &&
+      if (!historical && is(node, 'w') && ['ins','del','moveTo','moveFrom'].includes(node.localName) &&
           (['comments','footnotes','endnotes'].includes(rootName) || is(node.parentNode, 'w') && ['trPr','tcPr'].includes(node.parentNode.localName)))
         return fail('Decide revisions in notes, comments or table structure before importing this Word file.', 'docx_revision_structure');
       const nested = node.children;
-      if (nested.length) stack.push({nodes: nested, at: 0});
+      if (nested.length) stack.push({nodes: nested, at: 0, historical});
       if ((elements & 127) === 0) await work.checkpoint();
     }
     xmlCache.set(path, document.documentElement);
@@ -791,7 +805,18 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
   if (!['document', 'template'].some(kind => contentType(mainPath) === 'application/vnd.openxmlformats-officedocument.wordprocessingml.' + kind + '.main+xml'))
     return fail('Only ordinary DOCX documents and DOTX templates can be imported.');
   const sourceParts = [...(await relationships('')).values()].filter(row => row.type === DOCX_SOURCE.relationship);
-  let canonical = null, base = null, equations = new Map();
+  let canonical = null, base = null, equations = new Map(), recoveryConflict = false;
+  const recover = (source, record = {}) => {
+    if (recoveryConflict) return;
+    if (canonical !== null && source !== canonical || base !== null && source !== base) {
+      canonical = base = null; equations.clear(); recoveryConflict = true;
+      warn('Conflicting Word recovery metadata was ignored. Current Word content was imported.');
+    } else {
+      if (canonical === null && base === null) base = source;
+      if (Array.isArray(record.equations) && record.equations.length <= DOCX_LIMITS.elements)
+        for (const pair of record.equations) if (Array.isArray(pair) && typeof pair[0] === 'string' && typeof pair[1] === 'string' && mathSourceParts(pair[1]) && source.includes(pair[1])) equations.set(pair[0], pair[1]);
+    }
+  };
   if (sourceParts.length) {
     const sourcePart = sourceParts[0];
     const stored = sourceParts.length === 1 && !sourcePart.external && contentType(sourcePart.path) === DOCX_SOURCE.type ? await readDocxSource(files, sourcePart.path, work) : null;
@@ -817,10 +842,22 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         xmlBytes = priorBytes; elements = priorElements; xmlCache.delete(customPath);
         warn('Invalid Word recovery metadata was ignored. Current Word content was imported.');
       }
-      else if (canonical !== null && source !== canonical || base !== null && source !== base) {
-        canonical = base = null;
-        warn('Conflicting Word recovery metadata was ignored. Current Word content was imported.');
-      } else if (canonical === null && base === null) base = source;
+      else recover(source, JSON.parse(child(saved[0], 'vt', 'lpwstr').textContent));
+    }
+  }
+  for (const relation of (await relationships(mainPath)).values()) {
+    if (relation.kind !== 'customXml' || relation.external || !entries.has(relation.path)) continue;
+    try {
+      const root = await readXml(relation.path, 'rapier', 'recovery');
+      let source;
+      try { source = await readWordRecovery(root.textContent, work); }
+      catch (_) { work.check(); source = null; }
+      if (source === null) throw Object.assign(new Error('Invalid recovery'), {code: 'docx_invalid'});
+      recover(source, JSON.parse(root.textContent));
+    } catch (error) {
+      work.check();
+      if (!['docx_invalid', 'docx_xml_invalid'].includes(error.code)) throw error;
+      xmlCache.delete(relation.path);
     }
   }
   progress(.2, 'native');
@@ -865,14 +902,20 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         const sameBuiltin = !!bundled && type === DOCX_FONT_TYPE && /^\{?[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}\}?$/i.test(fontKey || '') &&
           await sha256(obfuscateDocxFont(bytes, fontKey)) === bundled.sha256;
         builtin &&= sameBuiltin;
-        familyParts.push({name: part.path, family, bytes, key: fontKey, type});
+        familyParts.push({name: part.path, family, bytes, key: fontKey, type, subsetted: ['1', 'true', 'on'].includes(attr(embedded, 'w', 'subsetted'))});
       }
       const kind = val(child(font, 'w', 'family'));
-      if (!familyParts.length) fontKinds.set(family, val(child(font, 'w', 'pitch')) === 'fixed' || kind === 'modern' ? 'mono' : kind === 'roman' ? 'serif' : kind === 'script' ? 'hand' : null);
-      else if (builtin) builtinFontFamilies.add(family);
+      if (!familyParts.length || !builtin) fontKinds.set(family, val(child(font, 'w', 'pitch')) === 'fixed' || kind === 'modern' ? 'mono' : kind === 'roman' ? 'serif' : kind === 'script' ? 'hand' : null);
+      if (familyParts.length && builtin) builtinFontFamilies.add(family);
       else for (const part of familyParts) {
-        const asset = await readDocxFontPart(part, {asset: project, checkCurrent: work.check});
-        if (asset) fontAssets.push(asset);
+        try {
+          const asset = await readDocxFontPart(part, {asset: project, checkCurrent: work.check});
+          if (asset) fontAssets.push(asset);
+        } catch (error) {
+          work.check();
+          if (!part.subsetted || error.code !== 'docx_font_invalid') throw error;
+          warn(FONT_KINDS);
+        }
         await work.checkpoint();
       }
     }
@@ -910,7 +953,10 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     }
     return found;
   };
-  const indentPoints = referenceType(readDocumentSettings(base ?? '')).body;
+  const importedSettings = readDocumentSettings(base ?? ''), indentPoints = referenceType(importedSettings).body;
+  const itemSpace = nativeDocumentSpacing(importedSettings, 'item');
+  const listSpace = child(child([...styles].find(([id]) => id.toLowerCase() === 'listparagraph')?.[1], 'w', 'pPr'), 'w', 'spacing');
+  const looseGap = Math.max(240, ...['before', 'after'].map(side => Math.max(itemSpace[side] || 0, integer(attr(listSpace, 'w', side), 0, 0)) + 240));
   const style = (id, chain = []) => {
     if (!id) return {p: {}, r: {}};
     if (styleCache.has(id)) return styleCache.get(id);
@@ -988,7 +1034,10 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     counts.set(key, ordinal + 1);
     for (const [deeper, candidate] of levels) if (deeper > index) {
       const restart = integer(val(child(candidate, 'w', 'lvlRestart')), null, 0, 9);
-      if (restart !== 0 && (restart === null || restart === index + 1)) counts.delete(abstractId + ':' + deeper);
+      if (restart !== 0 && (restart === null || index < restart)) {
+        counts.delete(abstractId + ':' + deeper);
+        for (const [numId, number] of numbers) if (integer(val(child(number, 'w', 'abstractNumId'))) === abstractId) restarted.delete(numId + ':' + deeper);
+      }
     }
     return {id: properties.numId, level: index, tag: format === 'bullet' ? 'ul' : 'ol', ordinal, unmarked: format === 'bullet' && !template,
       delimiter: template.endsWith(')') ? ')' : '.', p: paragraphProperties(child(level, 'w', 'pPr'))};
@@ -1013,9 +1062,14 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     return value;
   };
   const quoteDepthOf = id => {
-    const node = styles.get(id), name = val(child(node, 'w', 'name')), deeper = /^Quote([2-9]|[1-9]\d)$/.exec(id || '');
-    if (id === 'Quote' || ['Intense Quote', 'Block Text'].includes(name)) return 1;
-    return deeper && name === 'Quote ' + deeper[1] && val(child(node, 'w', 'basedOn')) === 'Quote' ? Number(deeper[1]) : 0;
+    const node = styles.get(id), name = val(child(node, 'w', 'name')), deeper = /^Quote([2-9]|[1-9]\d)$/i.exec(id || '');
+    if (/^quote$/i.test(id || '') || /^(?:intense quote|block text)$/i.test(name || '')) return 1;
+    return deeper && name?.toLowerCase() === 'quote ' + deeper[1] && /^quote$/i.test(val(child(node, 'w', 'basedOn')) || '') ? Number(deeper[1]) : 0;
+  };
+  const quoteRule = properties => {
+    const borders = child(properties, 'w', 'pBdr');
+    const edge = child(borders, 'w', on(child(properties, 'w', 'bidi')) ? 'right' : 'left');
+    return val(edge) === 'single' && attr(edge, 'w', 'sz') === '12' && attr(edge, 'w', 'space') === '8';
   };
   const paragraphLayout = (properties, heading, list, base) => {
     const layout = {}, align = alignment(properties);
@@ -1046,6 +1100,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     }
     return child(node, 'mc', 'Fallback') || fail('DOCX contains unsupported alternate content.');
   };
+  const detailsControl = node => is(node, 'w', 'sdt') && val(child(child(node, 'w', 'sdtPr'), 'w', 'tag')) === 'rapier:details';
   const quoteControl = node => is(node, 'w', 'sdt') && val(child(child(node, 'w', 'sdtPr'), 'w', 'tag')) === 'rapier:quote';
   const sequence = async container => {
     const blocks = [], stack = [{nodes: container?.children || [], at: 0}];
@@ -1054,7 +1109,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       const frame = stack.at(-1), node = frame.nodes[frame.at++];
       if (!node) { stack.pop(); continue; }
       if ((visited++ & 127) === 0) await work.checkpoint();
-      if (is(node, 'w', 'p') || is(node, 'w', 'tbl') || quoteControl(node)) blocks.push(node);
+      if (is(node, 'w', 'p') || is(node, 'w', 'tbl') || quoteControl(node) || detailsControl(node)) blocks.push(node);
       else if (is(node, 'w', 'sdt')) stack.push({nodes: child(node, 'w', 'sdtContent')?.children || [], at: 0});
       else if (is(node, 'mc', 'AlternateContent')) stack.push({nodes: chooseAlternate(node).children, at: 0});
       else if (is(node, 'w', 'customXml')) {
@@ -1080,6 +1135,17 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     return {width: contentWidth, sectionWidth: contentWidth, assumed: !size || !margins};
   };
   const picture = async (node, context) => {
+    const boxes = [...descendants(node, 'w', 'txbxContent')].filter(box => {
+      for (let parent = box.parentNode; parent && parent !== node; parent = parent.parentNode)
+        if (is(parent, 'w', 'txbxContent')) return false;
+      return true;
+    });
+    if (boxes.length) {
+      warn('Text boxes became normal-flow content in source order.');
+      const parts = [];
+      for (const box of boxes) parts.push(await renderBlocks(await sequence(box), context));
+      return {html: parts.join(''), block: true, semantic: true};
+    }
     let id, alt = null, title = null, extent = null, extentHeight = null, align = null, opacity = 100, wrap = null, x = null, y = null, lines = null;
     const transform = {crop: {left:0, top:0, right:0, bottom:0}, rotation:0, flipH:false, flipV:false};
     if (is(node, 'w', 'drawing')) {
@@ -1344,7 +1410,30 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     }
     return project ? parts.join('') : text ? ' ' : '';
   };
+  const bookmarkTargets = new Map(), bookmarkSpans = new WeakMap(), headingSlugs = Object.create(null), headingTargets = new WeakMap();
+  for (const node of descendants(body, 'w', 'p')) {
+    const properties = child(node, 'w', 'pPr'), id = val(child(properties, 'w', 'pStyle')) || defaultStyle;
+    const outline = integer(paragraphProperties(properties).outline ?? style(id).p.outline, null, 0, 9);
+    if (!(outline !== null && outline < 6 || outline === null && /^Heading[1-6]$/i.test(id || ''))) continue;
+    const words = [...descendants(node, 'w', 't')].map(part => part.textContent).join('');
+    headingTargets.set(node, _rapierNextHeadingSlug(_rapierHeadingSlugBase(words), headingSlugs));
+  }
+  for (const mark of descendants(body, 'w', 'bookmarkStart')) {
+    const name = attr(mark, 'w', 'name');
+    if (!name || name === '_GoBack' || /[\u0000-\u0020\u007f]/.test(name) || bookmarkTargets.has(name)) continue;
+    let paragraph = mark.parentNode;
+    while (paragraph && !is(paragraph, 'w', 'p')) paragraph = paragraph.parentNode;
+    const heading = headingTargets.get(paragraph), target = heading || _rapierNextHeadingSlug(name, headingSlugs);
+    bookmarkTargets.set(name, '#' + encodeURIComponent(target));
+    if (!heading) bookmarkSpans.set(mark, target);
+  }
+  const fieldLink = instruction => {
+    const field = wordHyperlink(instruction);
+    if (field?.href.startsWith('#')) return {...field, href: bookmarkTargets.get(field.href.slice(1)), internal: true};
+    return field;
+  };
   let inlineSteps = 0;
+  const foreignPresentation = canonical === null && base === null;
   const baseFamily = mergeRunStyle(defaultRun, style(defaultStyle).r).family;
   const mainfont = baseFamily && !fontAssets.some(font => font.family === baseFamily) && !builtinFontFamilies.has(baseFamily) ? fontKinds.get(baseFamily) : null;
   const inline = async (container, context, inherited = {}, pieces = []) => {
@@ -1354,6 +1443,10 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     };
     for (const node of container.children) {
       if ((inlineSteps++ & 127) === 0) await work.checkpoint();
+      if (context.omitRevision && !(is(node, 'w') && ['ins','del','moveTo','moveFrom'].includes(node.localName))) {
+        if (node.children.length) await inline(node, context, inherited, pieces);
+        continue;
+      }
       if (revisionMarkers.has(node)) { if (project) pieces.push({html: sourceToken(revisionMarkers.get(node)), semantic: true}); continue; }
       if (is(node, 'w', 'r')) {
         const properties = child(node, 'w', 'rPr'), named = style(val(child(properties, 'w', 'rStyle')));
@@ -1361,15 +1454,15 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         if (formatting.hidden) { warn('Hidden text was not imported.'); continue; }
         let text = '';
         const projected = {...formatting}, styleName = val(child(styles.get(val(child(properties, 'w', 'rStyle'))), 'w', 'name'));
-        if (project && (styleName === 'Verbatim Char' || formatting.family === 'Geist Mono' && builtinFontFamilies.has('Geist Mono')) &&
+        if (project && !context.fields?.some(field => field.inInstruction) && (styleName === 'Verbatim Char' || formatting.family === 'Geist Mono' && builtinFontFamilies.has('Geist Mono')) &&
             Array.from(node.children).every(part => is(part, 'w') && ['rPr','t','tab'].includes(part.localName))) {
           let code = Array.from(node.children, part => is(part, 'w', 't') ? part.textContent : is(part, 'w', 'tab') ? '\t' : '').join('');
           const last = pieces.at(-1), field = context.fields?.findLast(field => field.href), href = field?.href || '', title = field?.title;
-          const marks = [['bold','strong'], ['italic','em'], ['strike','s']].filter(([key]) => formatting[key]).map(([, tag]) => tag), key = marks.join();
+          const marks = [['bold','strong'], ['italic','em'], ['strike','s']].filter(([key]) => formatting[key]).map(([, tag]) => tag), key = [...marks, formatting.color || ''].join();
           if (last?.code != null && last.href === href && last.title === title && last.marks === key) { pieces.pop(); code = last.code + code; }
           const fence = '`'.repeat(Math.max(0, ...(code.match(/`+/g) || []).map(ticks => ticks.length)) + 1), pad = /^`|`$|^ (?=.*[^ ]).* $/s.test(code) ? ' ' : '';
           const span = sourceToken(fence + pad + code + pad + fence, (fence + pad + code + pad + fence).replace(/[ \t]/g, '\u00a0'));
-          const marked = marks.reduceRight((html, tag) => '<' + tag + '>' + html + '</' + tag + '>', span);
+          const marked = typography.wrap(formatting.color ? {color: formatting.color} : {}, marks.reduceRight((html, tag) => '<' + tag + '>' + html + '</' + tag + '>', span));
           if (code) pieces.push({html: href ? linkOpen(href, false, title) + marked + '</a>' : marked, code, href, title, marks: key});
           continue;
         }
@@ -1380,12 +1473,13 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
           projected.family = kind === mainfont ? null : kind;
           warn(FONT_KINDS);
         }
-        if ((context.structuralBold || context.tableHeader && named.structuralBold) &&
+        if ((context.structuralBold || context.wordHeading || context.tableHeader && named.structuralBold) &&
             (!Object.hasOwn(named.r, 'bold') || named.structuralBold) && !Object.hasOwn(direct, 'bold')) projected.bold = false;
+        if (context.wordHeadingTheme && !Object.hasOwn(named.r, 'color') && !Object.hasOwn(direct, 'color')) projected.color = null;
         let field = context.fields?.findLast(field => field.href), href = field?.href, title = field?.title;
         const linkFormatting = href => {
           const result = {...projected};
-          if (project && (context.link || href) && canonical === null && base === null) {
+          if (project && (context.link || href || context.fields?.some(field => field.internal)) && canonical === null && base === null) {
             const underline = runSetting(properties, 'u'), color = runSetting(properties, 'color');
             if (result.underline && [null, 'single'].includes(val(underline))) result.underline = false;
             if (result.color && (['hyperlink', 'followedHyperlink'].includes(attr(color, 'w', 'themeColor')) || DOCX_LINK_COLORS.has(result.color) ||
@@ -1412,7 +1506,10 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
           }
         }
         flush();
+      } else if (is(node, 'w', 'bookmarkStart') && bookmarkSpans.has(node)) {
+        if (project) pieces.push({html: sourceToken('<span id="' + attributeText(bookmarkSpans.get(node)) + '"></span>'), semantic: true});
       } else if (is(node, 'w', 't') || is(node, 'w', 'delText')) {
+        if (context.fields?.some(field => field.inInstruction)) { context.fields.at(-1).instruction += node.textContent; continue; }
         pieces.push(fieldText(await imported(node.textContent)));
       }
       else if (is(node, 'w', 'tab') || is(node, 'w', 'ptab')) {
@@ -1420,9 +1517,12 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       }
       else if (is(node, 'w', 'sym')) {
         const encoded = attr(node, 'w', 'char'), code = /^[0-9a-f]{1,4}$/i.test(encoded || '') ? parseInt(encoded, 16) : -1;
-        if (code < 0x100 || code >= 0xd800 && code <= 0xf8ff || code >= 0xfffe)
-          return fail('DOCX contains a symbol that requires its original font mapping.', 'docx_symbol_font');
-        pieces.push(fieldText(await imported(String.fromCodePoint(code))));
+        if (code < 0 || code >= 0xd800 && code <= 0xdfff || code >= 0xfffe) return fail('DOCX contains an invalid symbol character.');
+        const font = attr(node, 'w', 'font')?.toLowerCase(), legacy = code >= 0xf000 && code <= 0xf0ff ? code - 0xf000 : code;
+        let glyph = font === 'symbol' ? legacy >= 65 && legacy <= 90 ? SYMBOL_GREEK[legacy - 65] : legacy >= 97 && legacy <= 122 ? SYMBOL_GREEK[26 + legacy - 97] : SYMBOL_SIGNS[legacy] || (legacy >= 48 && legacy <= 57 ? String.fromCharCode(legacy) : null) : font === 'wingdings' ? WINGDINGS_SIGNS[legacy] : null;
+        if (!glyph && code >= 0x100 && !(code >= 0xd800 && code <= 0xf8ff) && code < 0xfffe) glyph = String.fromCodePoint(code);
+        if (!glyph) { glyph = '•'; warn('Some symbols became bullets because their original font mapping is unavailable.'); }
+        pieces.push(fieldText(await imported(glyph)));
       }
       else if (is(node, 'm', 'oMath') || is(node, 'm', 'oMathPara')) {
         const displayMath = is(node, 'm', 'oMathPara'), projected = ommlSource(node, defaultHalfPoints);
@@ -1442,10 +1542,11 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       else if (is(node, 'w', 'drawing') || is(node, 'w', 'pict') || is(node, 'w', 'object')) pieces.push(await picture(node, context));
       else if (is(node, 'w', 'hyperlink')) {
         const relation = (await relationships(context.path)).get(attr(node, 'r', 'id'));
-        const href = relation?.kind === 'hyperlink' && relation.external && LINK_SCHEMES.test(relation.target) && !/[\u0000-\u0020\u007f]/.test(relation.target) ? relation.target : null;
+        const anchor = attr(node, 'w', 'anchor');
+        const href = relation?.kind === 'hyperlink' && relation.external && LINK_SCHEMES.test(relation.target) && !/[\u0000-\u0020\u007f]/.test(relation.target) ? relation.target : bookmarkTargets.get(anchor) || null;
         if (!href) warn('Internal document links became plain text.');
         const title = attr(node, 'w', 'tooltip');
-        const linked = await inline(node, href ? {...context, link: true} : context, inherited), only = linked.length === 1 && linked[0];
+        const linked = await inline(node, href || anchor ? {...context, link: true} : context, inherited), only = linked.length === 1 && linked[0];
         const auto = !!(project && href && title === null && canonical === null && base === null && only?.formatting && textStyle(only.words, only.formatting) === only.words &&
           (only.words === href && /^[A-Za-z][A-Za-z0-9+.-]{1,31}:[^<>]*$/.test(href) || href === 'mailto:' + only.words && DOCX_AUTOLINK_EMAIL.test(only.words)));
         for (const piece of linked) {
@@ -1472,11 +1573,11 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       else if (is(node, 'w') && ['ins','del','moveTo','moveFrom'].includes(node.localName)) {
         const row = revision(node), included = ['ins','moveTo'].includes(node.localName) === (revisionMode === 'accepted');
         if (project) pieces.push({html: sourceToken(reviewMarker + row.id + 'S' + reviewMarker), semantic: true});
-        if (included) await inline(node, context, inherited, pieces);
+        await inline(node, {...context, omitRevision: context.omitRevision || !included}, inherited, pieces);
         if (project) pieces.push({html: sourceToken(reviewMarker + row.id + 'E' + reviewMarker), semantic: true});
       }
       else if (is(node, 'w', 'fldSimple')) {
-        const field = wordHyperlink(attr(node, 'w', 'instr'));
+        const field = fieldLink(attr(node, 'w', 'instr'));
         if (!field) warn('Fields became their stored displayed text.');
         await inline(node, field ? {...context, fields: [...(context.fields || []), field]} : context, inherited, pieces);
       }
@@ -1495,12 +1596,13 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       }
       else if (is(node, 'w', 'commentReference') && activeComments.has(integer(attr(node, 'w', 'id')))) continue;
       else if (is(node, 'w') && ['footnoteReference','endnoteReference','commentReference'].includes(node.localName)) pieces.push({html: await noteReference(node, context), semantic: true});
-      else if (is(node, 'w') && ['instrText','fldChar'].includes(node.localName)) {
+      else if (is(node, 'w') && ['instrText','delInstrText','fldChar'].includes(node.localName)) {
         const fields = context.fields || [], type = attr(node, 'w', 'fldCharType'), field = fields.at(-1);
-        if (type === 'begin') fields.push({instruction: ''});
-        else if (type === 'end') fields.pop();
+        if (type === 'begin') fields.push({instruction: '', inInstruction: true});
+        else if (type === 'end') { if (field?.inInstruction) warn('Fields became their stored displayed text.'); fields.pop(); }
         else if (field && type === 'separate') {
-          const link = wordHyperlink(field.instruction);
+          field.inInstruction = false;
+          const link = fieldLink(field.instruction);
           if (link) Object.assign(field, link);
           else warn('Fields became their stored displayed text.');
         } else if (field && !type) field.instruction += node.textContent;
@@ -1514,9 +1616,10 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
   const paragraph = async (node, context) => {
     if (++stats.paragraphs > DOCX_LIMITS.paragraphs) return fail('DOCX contains too many paragraphs.');
     const properties = child(node, 'w', 'pPr'), id = val(child(properties, 'w', 'pStyle')) || defaultStyle;
-    if (id === 'RapierBlockSpacing' && val(child(styles.get(id), 'w', 'name')) === 'Rapier Block Spacing' &&
-        Array.from(node.children).every(part => is(part, 'w', 'pPr')))
-      return {html: () => '', list: null};
+    if (/^RapierBlockSpacing$/i.test(id || '') && /^Rapier Block Spacing$/i.test(val(child(styles.get(id), 'w', 'name')) || '') &&
+        Array.from(node.children).every(part => is(part, 'w', 'pPr') || is(part, 'w', 'r') &&
+          Array.from(part.children).every(run => is(run, 'w', 'rPr') || is(run, 'w', 't') && !run.textContent)))
+      return {html: () => '', list: null, transparent: true};
     const definition = !context.tableCell && !context.note && Object.hasOwn(DEFINITION_NAMES, id || '') && val(child(styles.get(id), 'w', 'name')) === DEFINITION_NAMES[id] ? id : null;
     const named = style(id), direct = paragraphProperties(properties), base = mergeParagraphProperties(defaultParagraph, context.p, named.p, direct);
     const list = numbering(base, id), effective = mergeParagraphProperties(defaultParagraph, context.p, list?.p, named.p, direct);
@@ -1524,6 +1627,9 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     for (const key of ['leftIndent', 'firstIndent', 'tabs']) if (Object.hasOwn(indents, key)) effective[key] = indents[key];
     if (definition === 'RapierDefinition' && effective.leftIndent === DEFINITION_INDENT && !Object.hasOwn(direct, 'leftIndent')) delete effective.leftIndent;
     if (!context.tableCell && !effective.bidi && ['left', 'start'].includes(effective.align)) delete effective.align;
+    const quoteDepth = quoteDepthOf(id) || (!context.tableCell && (quoteRule(properties) || quoteRule(child(styles.get(id), 'w', 'pPr'))) ?
+      1 + Math.max(0, Math.floor(((effective.leftIndent || 0) - (list ? (list.level + 1) * (list.tag === 'ol' ? 660 : 300) : 0)) / QUOTE_STEP)) : 0);
+    const quote = Math.max(0, quoteDepth - (context.quoteDepth || 0));
     const align = alignment(effective), outline = integer(effective.outline, null, 0, 9);
     if (outline !== null && outline >= 6 && outline < 9) warn('Headings deeper than level six became ordinary paragraphs.');
     const heading = outline !== null && outline < 6 ? outline + 1 : null;
@@ -1545,8 +1651,10 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       }
     }
     const inherited = mergeRunStyle(defaultRun, named.r);
-    const pieces = await inline(node, {...context, fields: [], initial: !!effective.dropLines, structuralBold: !!named.structuralBold && !!inherited.bold &&
-      !!(inferredHeading || context.tableHeader)}, inherited), output = [];
+    const wordHeading = foreignPresentation && /^Heading[1-6]$/i.test(id || '') && !['1', 'true', 'on'].includes(attr(styles.get(id), 'w', 'customStyle'));
+    const wordHeadingTheme = wordHeading && !!attr(child(child(styles.get(id), 'w', 'rPr'), 'w', 'color'), 'w', 'themeColor');
+    const pieces = await inline(node, {...context, fields: [], initial: !!effective.dropLines, wordHeading, wordHeadingTheme,
+      structuralBold: !!named.structuralBold && !!inherited.bold && !!(inferredHeading || context.tableHeader)}, inherited), output = [];
     const marks = [['bold','strong'], ['italic','em'], ['strike','s']];
     const formatted = runs => {
       let html = '';
@@ -1579,7 +1687,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     }
     const bottom = val(child(child(properties, 'w', 'pBdr'), 'w', 'bottom') || child(child(child(styles.get(id), 'w', 'pPr'), 'w', 'pBdr'), 'w', 'bottom'));
     if (!pieces.length && !list && bottom && !['nil','none'].includes(bottom)) return {html: () => project ? '<hr>' : '', list: null};
-    const codeStyle = /^(?:Source Code|HTML Preformatted|Plain Text)$|^Source Code \(([^()\s]+)\)$/.exec(val(child(styles.get(id), 'w', 'name')) || '');
+    const codeStyle = /^(?:Source Code|HTML Preformatted|Plain Text)$|^Source Code \(([^()\s]+)\)$/i.exec(val(child(styles.get(id), 'w', 'name')) || '');
     if (!list && !context.tableCell && !inferredHeading && pieces.every(piece => !piece.image && !piece.semantic) && codeStyle) {
       let code = '';
       const words = parent => { for (const part of parent.children) {
@@ -1596,12 +1704,14 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         else words(part);
       } };
       words(node);
-      return {html: () => '', code, language: codeStyle[1] || '', list: null};
+      return {html: () => '', code, language: codeStyle[1] || '', list: null, quote};
     }
     if (list?.unmarked) for (const item of descendants(node)) {
       if (is(item, 'w14', 'checkbox')) { list.task = true; break; }
       await work.checkpoint();
     }
+    const section = child(properties, 'w', 'sectPr');
+    if (section && !['continuous', 'nextColumn'].includes(val(child(section, 'w', 'type')))) pieces.push({pageBreak: true, semantic: true});
     if (effective.pageBreakBefore) pieces.unshift({pageBreak: true, semantic: true});
     const annotation = layout => {
       if (!context.tableCell) return layoutAttribute(layout);
@@ -1629,6 +1739,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     const padding = html => typeof html === 'string' && html.replace(/<span class="rapier-source-token" data-rapier-source="[^"]*" data-rapier-visible="[^"]*">[^<]*<\/span>/g, '') === '';
     for (let index = 0; index < pieces.length; index++) {
       const piece = pieces[index];
+      if (piece.block) { flush(); output.push(piece.html); continue; }
       if (piece.displayMath) { flush(); output.push('<p>' + piece.html + '</p>'); continue; }
       if (piece.rule) { flush(); output.push('<hr>'); continue; }
       if (piece.pageBreak) {
@@ -1658,7 +1769,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       output.push('<p' + annotation(layout) + '>' + lead + piece.image + tail + '</p>');
     }
     flush();
-    if (!output.length) output.push('<p><br></p>');
+    if (!output.length && !section) output.push('<p><br></p>');
     if (pieces.some(piece => piece.image && !piece.lines) && pieces.some(piece => piece.html?.trim() && !padding(piece.html))) warn('Pictures within text became separate source-order paragraphs.');
     const prose = tag === 'p' && !context.tableCell && output.length === 1 && pieces.every(piece => !piece.image && !piece.pageBreak && !piece.displayMath && !piece.rule);
     const initial = prose && effective.dropLines ? pieces.map(piece => piece.html || '').join('') : null;
@@ -1666,7 +1777,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     return {html: base => output.map(piece => typeof piece === 'function' ? piece(base) : piece).join(''),
       layout: base => paragraphLayout(effective, inferredHeading, list, base), list, tableCell: context.tableCell,
       before: spacing('before'), after: spacing('after'),
-      prose, initial, dropLines: effective.dropLines, definition, quote: inferredHeading ? 0 : Math.max(0, quoteDepthOf(id) - (context.quoteDepth || 0))};
+      prose, initial, dropLines: effective.dropLines, definition, quote: inferredHeading ? 0 : quote};
   };
   const groupLists = async (blocks, enclosingQuoteDepth = 0) => {
     const inset = Math.max(0, enclosingQuoteDepth - 1) * QUOTE_STEP;
@@ -1684,12 +1795,23 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
           .replace(/^(<p data-md-layout="[^"]*")(>(?:(?!<\/?p\b)[\s\S])*<\/p>)$/, '$1 data-md-layout-tight$2');
       emit('</li></' + level.tag + '>');
     };
-    let code = null, language = '', definitions = false, quoteAt = -1, quoteDepth = 0;
+    let code = null, language = '', definitions = false, quoted = [];
+    const flushQuote = async () => {
+      if (!quoted.length) return;
+      const html = await groupLists(quoted, enclosingQuoteDepth + 1); quoted = [];
+      emit(project ? '<blockquote>' + html + '</blockquote>' : html);
+    };
     const closeDefinitions = () => { if (definitions) { definitions = false; if (project) emit('</dl>'); } };
     const flushCode = () => { if (code != null) { while (stack.length) close();
       emit(project ? account('<pre><code' + (language ? ' class="language-' + escape(language) + '"' : '') + '>' + escape(code) + '</code></pre>') : 'x'); code = null; } };
     for await (const block of blocks) {
       if ((visited++ & 127) === 0) await work.checkpoint();
+      if (block.transparent) continue;
+      if (block.quote > 0) {
+        flushCode(); closeDefinitions(); while (stack.length) close();
+        quoted.push({...block, quote: block.quote - 1}); continue;
+      }
+      await flushQuote();
       if (block.code != null && code != null && block.language !== language) flushCode();
       if (block.code != null) { code = code == null ? block.code : code + '\n' + block.code; language = block.language; continue; }
       flushCode();
@@ -1702,25 +1824,18 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         continue;
       }
       closeDefinitions();
-      const content = base => block.quote ? '<blockquote>' + block.html(base) + '</blockquote>' : block.html(base);
+      const content = base => block.html(base);
       if (!block.list) {
         while (stack.length) close();
-        const depth = block.quote, html = depth ? block.html((enclosingQuoteDepth + depth - 1) * QUOTE_STEP) : block.html(inset);
-        const open = '<blockquote>', shut = '</blockquote>';
-        if (project && depth && quoteAt >= 0 && quoteAt === parts.length - 1)
-          parts[quoteAt] = parts[quoteAt].slice(0, -shut.length * quoteDepth) + shut.repeat(Math.max(0, quoteDepth - depth)) +
-            open.repeat(Math.max(0, depth - quoteDepth)) + html + shut.repeat(depth);
-        else emit(depth ? open.repeat(depth) + html + shut.repeat(depth) : html);
-        quoteAt = depth ? parts.length - 1 : -1; quoteDepth = depth;
+        emit(block.html(inset));
         continue;
       }
-      quoteAt = -1;
       const list = block.list;
       const same = prior => prior.tag === list.tag && (prior.id === list.id || list.tag === 'ul' && (prior.task || list.task) || list.tag === 'ol' && prior.delimiter === list.delimiter);
       while (stack.length && (stack.at(-1).level > list.level || stack.at(-1).level === list.level && !same(stack.at(-1)))) close();
-      if (stack.length && stack.at(-1).level === list.level) { if (project) emit('</li>'); stack.at(-1).loose ||= stack.at(-1).after + block.before >= 240; }
+      if (stack.length && stack.at(-1).level === list.level) { if (project) emit('</li>'); stack.at(-1).loose ||= Math.max(stack.at(-1).after, block.before) >= looseGap; }
       else {
-        if (stack.length) stack.at(-1).loose ||= stack.at(-1).after + block.before >= 240;
+        if (stack.length) stack.at(-1).loose ||= Math.max(stack.at(-1).after, block.before) >= looseGap;
         const parentMarker = block.tableCell && stack.at(-1)?.marker;
         const start = '<' + list.tag + (list.tag === 'ol' ? ' start="' + list.ordinal + '" data-rapier-list-numbering="authored" data-rapier-list-delimiter="' + list.delimiter + '"' : '') +
           (parentMarker ? ' style="' + indentStyle({indent: -parentMarker}, {portable: true, pointSize: referenceType(null).body}) + '"' : '') + '>';
@@ -1738,6 +1853,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       stack.at(-1).after = block.after;
       if (project) stack.at(-1).items.push(parts.length - 1);
     }
+    await flushQuote();
     flushCode();
     closeDefinitions();
     while (stack.length) close();
@@ -1786,12 +1902,21 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     for (let index = 0; index < nodes.length; index++) {
       await work.checkpoint();
       const node = nodes[index], active = sectionContexts ? {...context, ...sectionContexts[index]} : context;
+      if (detailsControl(node)) {
+        const content = await sequence(child(node, 'w', 'sdtContent')), summary = content.shift();
+        if (!is(summary, 'w', 'p')) return fail('DOCX details has no summary paragraph.');
+        const label = (await paragraph(summary, active)).html(0).replace(/^<p(?: [^>]*)?>([\s\S]*)<\/p>$/, '$1');
+        const html = await renderBlocks(content, active);
+        if (previous) yield previous;
+        previous = {html: () => project ? '<details><summary>' + label + '</summary>' + html + '</details>' : label + html, list: null};
+        continue;
+      }
       if (quoteControl(node)) {
         const content = child(node, 'w', 'sdtContent');
         if (!content) return fail('DOCX contains an unsupported document block: ' + node.localName);
         const html = await renderBlocks(await sequence(content), {...active, quoteDepth: (active.quoteDepth || 0) + 1});
         if (previous) yield previous;
-        previous = {html: () => project ? '<blockquote>' + html + '</blockquote>' : html, list: null};
+        previous = {html: () => html, list: null, quote: 1};
         continue;
       }
       const kind = !context.tableCell && is(node, 'w', 'p') && calloutKind(node);
@@ -1800,7 +1925,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         while (end < nodes.length && is(nodes[end], 'w', 'p') && calloutRule(nodes[end]) === calloutRule(node)) end++;
         const html = await callout(kind, nodes.slice(index + 1, end), active);
         if (previous) yield previous;
-        previous = {html: () => html, list: null};
+        previous = {html: () => html, list: null, quote: (await paragraph(node, active)).quote};
         index = end - 1;
         continue;
       }
@@ -1827,7 +1952,11 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       else {
         const html = is(node, 'w', 'tbl') ? await table(node, active) : commentBoundary(node);
         if (previous) yield previous;
-        previous = {html: () => html, list: null};
+        const tableQuote = is(node, 'w', 'tbl') && [...descendants(node, 'w', 'p')].length > 0 && [...descendants(node, 'w', 'p')].every(paragraph => quoteRule(child(paragraph, 'w', 'pPr')));
+        const inset = integer(attr(child(child(node, 'w', 'tblPr'), 'w', 'tblInd'), 'w', 'w'), 0, 0);
+        const title = is(node, 'w', 'tbl') && descendants(node, 'w', 'p').next().value;
+        const depth = title && calloutKind(title) ? quoteDepthOf(val(child(child(title, 'w', 'pPr'), 'w', 'pStyle'))) : tableQuote ? 1 + Math.floor(inset / QUOTE_STEP) : 0;
+        previous = {html: () => html, list: null, quote: Math.max(0, depth - (active.quoteDepth || 0))};
       }
     }
     if (previous) yield previous;
@@ -1993,7 +2122,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       rawBlocks.push({placeholder, html: content});
       html += placeholder;
       if (rejectedHtml !== null) rejectedHtml += placeholder;
-    } else html += content;
+    } else { html += content; if (rejectedHtml !== null) rejectedHtml += content; }
   }
   const comments = {marker: commentMarker, threads: []};
   for (const group of commentGroups) {
@@ -3195,19 +3324,6 @@ function cssColorHex(value) {
   if (m) return '#' + [m[1], m[2], m[3]].map(n => Math.max(0, Math.min(255, Number(n))).toString(16).padStart(2, '0')).join('');
   return null;
 }
-function nearestHighlight(value) {
-  const hex = cssColorHex(value);
-  if (!hex) return 'default';
-  const exact = Object.keys(DOCX_HIGHLIGHT_HEX).find(name => DOCX_HIGHLIGHT_HEX[name] === hex);
-  if (exact) return DOCX_HIGHLIGHT_TO_RAPIER[exact] || exact;
-  const rgb = [1, 3, 5].map(at => parseInt(hex.slice(at, at + 2), 16));
-  let best = 'yellow', bestD = Infinity;
-  for (const [name, ref] of Object.entries(HIGHLIGHT_RGB)) {
-    const d = ref.reduce((sum, c, i) => sum + (c - rgb[i]) ** 2, 0);
-    if (d < bestD) { bestD = d; best = name; }
-  }
-  return best;
-}
 const FOOTNOTE_ID = /^#?(?:.*?-)??fn(?:ref)?[-:]?(.+)$/;
 function footnoteTail(value) { const m = FOOTNOTE_ID.exec(String(value || '')); return m ? m[1] : null; }
 
@@ -3362,6 +3478,7 @@ function wordHyperlink(instruction) {
       href = token;
     }
   }
+  if (!href && anchor) return /[\u0000-\u0020\u007f]/.test(anchor) ? null : {href: '#' + anchor, title};
   if (!href || !LINK_SCHEMES.test(href)) return null;
   if (anchor) href += '#' + anchor;
   return /[\u0000-\u0020\u007f]/.test(href) ? null : {href, title};
@@ -3803,7 +3920,7 @@ function* docxBlocksFromDomSteps(root, {canonical, willTokens = [], pointSize = 
       else if (tag === 'SUB') next.sub = true;
       else if (tag === 'SUP') next.sup = true;
       else if (tag === 'MARK') next.highlight = HIGHLIGHT_TO_DOCX[child.getAttribute('data-rapier-highlight')] ? child.getAttribute('data-rapier-highlight') :
-        cssColorHex(child.style?.backgroundColor) === HIGHLIGHT_HEX.yellow ? 'default' : nearestHighlight(child.style?.backgroundColor || child.getAttribute('style'));
+        cssColorHex(child.style?.backgroundColor) || 'default';
       else if (tag === 'SPAN' && child.hasAttribute('data-md-color')) next.color = child.getAttribute('data-md-color');
       else if (tag === 'SPAN' && cssColorHex(child.style?.color)) next.color = cssColorHex(child.style.color);
       else if (tag === 'A') {
@@ -3892,7 +4009,7 @@ function* docxBlocksFromDomSteps(root, {canonical, willTokens = [], pointSize = 
           if (content[0]?.type === 'image') {
             const image = content.shift();
             begin({runs: [image]});
-            if (image.caption) content.unshift({type: 'paragraph', runs: [{type: 'text', text: 'Figure: ' + image.caption}], layout: {align: 'center'}});
+            if (image.caption) content.unshift({type: 'paragraph', runs: [{type: 'text', text: 'Figure: ' + image.caption, italic: true, size: 21}], layout: {align: 'center'}});
           } else if (content[0]?.type === 'code') {
             const code = content.shift(), lines = code.text.split('\n'), firstLine = lines.shift();
             const slice = (from, to) => {
@@ -3974,6 +4091,12 @@ function* docxBlocksFromDomSteps(root, {canonical, willTokens = [], pointSize = 
       }
       continue;
     }
+    if (tag === 'DETAILS') {
+      const clone = yield* cloneTree(element), summary = Array.from(clone.children).find(node => node.tagName === 'SUMMARY');
+      const runs = summary ? yield* runsOf(summary) : [];
+      summary?.remove();
+      blocks.push({type: 'details', runs, blocks: yield* nestedBlocks(clone)}); continue;
+    }
     if (tag === 'HR' && element.classList.contains('footnotes-sep')) continue;
     if ((tag === 'DIV' || tag === 'P') && (element.getAttribute('data-md-break') === 'page' || /page-break-before\s*:\s*always/i.test(element.getAttribute('style') || '')) && !element.textContent.trim()) { blocks.push({type: 'break'}); continue; }
     if (/^H[1-6]$/.test(tag)) {
@@ -4040,9 +4163,10 @@ function* docxBlocksFromDomSteps(root, {canonical, willTokens = [], pointSize = 
         continue;
       }
       const images = element.querySelectorAll('img');
-      if (images.length === 1 && !element.textContent.trim() && !images[0].closest('a')) {
-        const image = images[0];
-        blocks.push({type: 'image', alt: image.getAttribute('alt') || '', title: image.getAttribute('title'), src: image.getAttribute('src') || '', ref: null, layout: layoutOf(image) || layoutOf(element), original: animationOf(image),
+      if (images.length === 1 && !element.textContent.trim()) {
+        const image = images[0], link = image.closest('a'), href = link?.getAttribute('href') || '';
+        const linked = href.startsWith('#') || LINK_SCHEMES.test(href) ? {href, linkTitle: link.getAttribute('title')} : {};
+        blocks.push({type: 'image', ...linked, alt: image.getAttribute('alt') || '', title: image.getAttribute('title'), src: image.getAttribute('src') || '', ref: null, layout: layoutOf(image) || layoutOf(element), original: animationOf(image),
           capHeight: integer(image.getAttribute('data-md-picture-cap-height'), null, 1),
           capTop: integer(image.getAttribute('data-md-picture-cap-top'), null)});
         continue;
@@ -4081,7 +4205,8 @@ function rPrXml(style) {
   }
   if (languageTag(style.language)) bits.push('<w:lang w:val="' + languageTag(style.language) + '"/>');
   if (style.color && /^#[0-9a-f]{6}$/i.test(style.color)) bits.push('<w:color w:val="' + style.color.slice(1).toLowerCase() + '"/>');
-  if (style.highlight === 'yellow') bits.push('<w:shd w:val="clear" w:color="auto" w:fill="' + HIGHLIGHT_HEX.yellow.slice(1).toUpperCase() + '"/>');
+  if (style.highlight && /^#[0-9a-f]{6}$/i.test(style.highlight)) bits.push('<w:shd w:val="clear" w:color="auto" w:fill="' + style.highlight.slice(1).toUpperCase() + '"/>');
+  else if (style.highlight === 'yellow') bits.push('<w:shd w:val="clear" w:color="auto" w:fill="' + HIGHLIGHT_HEX.yellow.slice(1).toUpperCase() + '"/>');
   else if (style.highlight && HIGHLIGHT_TO_DOCX[style.highlight]) bits.push('<w:highlight w:val="' + HIGHLIGHT_TO_DOCX[style.highlight] + '"/>');
   if (style.sub) bits.push('<w:vertAlign w:val="subscript"/>');
   else if (style.sup) bits.push('<w:vertAlign w:val="superscript"/>');
@@ -4440,6 +4565,16 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
   const commentObjectXml = (inner, value) => (value.commentEvents || []).filter(event => event.start).map(commentEventXml).join('') +
     inner + (value.commentEvents || []).filter(event => !event.start).map(commentEventXml).join('');
 
+  const linkObject = (item, targets, inner) => {
+    const internal = item.href?.startsWith('#'), target = internal && targets.resolve(item.href);
+    const tooltip = item.linkTitle == null ? '' : ' w:tooltip="' + attributeText(item.linkTitle) + '"';
+    if (target) return '<w:hyperlink w:anchor="' + target.name + '"' + tooltip + '>' + inner + '</w:hyperlink>';
+    if (item.href && !internal) {
+      const id = nextRid(); rels.push({id, type: 'hyperlink', target: item.href, external: true});
+      return '<w:hyperlink r:id="' + id + '"' + tooltip + '>' + inner + '</w:hyperlink>';
+    }
+    return inner;
+  };
   const emitRuns = async (runList, targets = navigation, availableWidth = contentWidthEmu, runDefaults = null) => {
     let xml = '', abbreviation = null;
     for (const authored of runList) {
@@ -4457,17 +4592,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
           : '<w:bookmarkEnd w:id="' + mark.id + '"/>';
         continue;
       }
-      const internal = run.href?.startsWith('#');
-      const target = internal && targets.resolve(run.href);
-      const tooltip = run.linkTitle == null ? '' : ' w:tooltip="' + attributeText(run.linkTitle) + '"';
-      const link = inner => {
-        if (target) return '<w:hyperlink w:anchor="' + target.name + '"' + tooltip + '>' + inner + '</w:hyperlink>';
-        if (run.type === 'image' && run.href && !internal) {
-          const id = nextRid(); rels.push({id, type: 'hyperlink', target: run.href, external: true});
-          return '<w:hyperlink r:id="' + id + '"' + tooltip + '>' + inner + '</w:hyperlink>';
-        }
-        return inner;
-      };
+      const link = inner => linkObject(run, targets, inner);
       if (run.type === 'image') {
         const src = resolveSrc(run);
         if (!src) continue;
@@ -4483,8 +4608,8 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
       if (run.type === 'math') {
         const source = mathSourceOf(run), events = run.commentEvents || [];
         if (run.omml) {
-          xml += link(events.filter(event => event.start).map(commentEventXml).join('') + sizedEquationXml(run.omml, Number(run.halfPoints ?? run.size) || emPoints * 2) + events.filter(event => !event.start).map(commentEventXml).join(''));
-          equations.push([ommlSource(new DOMParser().parseFromString(sizedEquationXml(run.omml, Number(run.halfPoints ?? run.size) || emPoints * 2), 'application/xml').documentElement, emPoints * 2), source]);
+          xml += link(events.filter(event => event.start).map(commentEventXml).join('') + sizedEquationXml(run.omml, emPoints * 2) + events.filter(event => !event.start).map(commentEventXml).join(''));
+          equations.push([ommlSource(new DOMParser().parseFromString(sizedEquationXml(run.omml, emPoints * 2), 'application/xml').documentElement, emPoints * 2), source]);
         }
         else if (run.svg) {
           const picture = pictureXml(await mathAssetFor(run), run.alternative || source, null, availableWidth, run.display ? 0 : -(run.depth || 0));
@@ -4498,12 +4623,8 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
       }
       const text = run.text ?? '';
       if (!text) continue;
-      if (internal) xml += link(commentedTextXml(text, target ? {...run, underline: true} : run));
-      else if (run.href) {
-        const id = nextRid();
-        rels.push({id, type: 'hyperlink', target: run.href, external: true});
-        xml += '<w:hyperlink r:id="' + id + '"' + tooltip + '>' + commentedTextXml(text, {...run, underline: true}) + '</w:hyperlink>';
-      } else xml += commentedTextXml(text, run);
+      const resolved = run.href && (!run.href.startsWith('#') || targets.resolve(run.href));
+      xml += link(commentedTextXml(text, resolved ? {...run, underline: true} : run));
     }
     return xml + (abbreviation ? '</w:sdtContent></w:sdt>' : '');
   };
@@ -4579,6 +4700,12 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
      typography, prefix, Math.max(1, availableWidth - inset * 635),
      block.heading ? {...decoration?.runs, characterStyle: undefined} : decoration?.runs);
    const paragraphInd = layout => indOf(layout, {base: inset, pointSize: bodyPointSize});
+   const calloutTitleProps = (borders, direction) => {
+     const depth = decoration?.quoteDepth || 0;
+     if (depth) quotations = true;
+     if (depth > 1) quoteDepths.add(depth);
+     return {borders, direction, ind: paragraphInd(null), styleId: depth ? depth > 1 ? 'Quote' + depth : 'Quote' : null};
+   };
    const tableInd = inset ? '<w:tblInd w:w="' + Math.round(inset) + '" w:type="dxa"/>' : '';
    const typography = layout => {
      if (layout?.hyphens === 'auto') hyphenation = true;
@@ -4589,6 +4716,11 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
       groups.push({block, start: bodyParts.length});
       if (blocks === model.blocks) work?.onProgress?.(.72 + .13 * (++emitted / Math.max(1, blocks.length)));
       await tick();
+    if (block.type === 'details') {
+      const summary = paragraphPart(await renderRuns(block.runs));
+      const parts = [summary, ...await emitBlocks(block.blocks, inset, targets, availableWidth, decoration, tableCell)];
+      bodyParts.push({xml: '<w:sdt><w:sdtPr><w:tag w:val="rapier:details"/></w:sdtPr><w:sdtContent>' + writeBlocks(parts, tableCell) + '</w:sdtContent></w:sdt>'}); continue;
+    }
     if (block.type === 'break') {
       bodyParts.push(paragraphPart('<w:r><w:br w:type="page"/></w:r>'));
       continue;
@@ -4616,12 +4748,13 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
       if (templatePage && !pageBorder && !tableCell && isPageBorderLayout(block.layout) && /^data:image\/svg\+xml/i.test(src)) { pageBorder = {src, alt: block.alt || ''}; continue; }
       const drawing = /^data:image\/svg\+xml/i.test(src);
       const asset = await assetFor(src, block.alt, drawing, block.original), width = Math.max(1, availableWidth - inset * 635);
+      const draw = (layout, width, cap = null) => commentObjectXml(linkObject(block, targets, pictureXml(asset, block.alt, layout, width, 0, cap, block.title)), block);
       const next = blocks[index + 1];
       if (!tableCell && !block.caption && pictureInitialLayout(block.layout) && next?.type === 'paragraph' &&
           !next.rule && !next.layout?.lines && next.runs?.some(run => run.type === 'text' && run.text.trim())) {
         const type = referenceType(settings), cap = {height: integer(block.capHeight, null, 1) || linesEmu(block.layout.lines),
           top: integer(block.capTop, null) ?? Math.round(Math.max(0, (type.line - type.body) / 2 + type.body * .1) * 12700)};
-        const prefix = commentObjectXml(pictureXml(asset, block.alt, block.layout, width, 0, cap, block.title), block);
+        const prefix = draw(block.layout, width, cap);
         bodyParts.push(await prose(next, {align: jcOf(next.layout), ind: paragraphInd(next.layout), direction: next.direction, ...typography(next.layout)}, true, prefix));
         groups.at(-1).block = next;
         index++; emitted++; continue;
@@ -4633,18 +4766,18 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
         const distance = wrapDistances(width, left * 635, cellWidth * 635);
         const inlineLayout = {...block.layout, width: 100};
         for (const key of ['wrap', 'x', 'y', 'lines', 'align']) delete inlineLayout[key];
-        const image = commentObjectXml(pictureXml(asset, block.alt, inlineLayout, cellWidth * 635, 0, null, block.title), block);
+        const image = draw(inlineLayout, cellWidth * 635);
         bodyParts.push({xml: '<w:tbl><w:tblPr><w:tblpPr w:horzAnchor="text" w:vertAnchor="text" w:tblpX="' + left + '" w:tblpY="' + top +
           '" w:leftFromText="' + Math.round(distance.left / 635) + '" w:rightFromText="' + Math.round(distance.right / 635) + '" w:topFromText="0" w:bottomFromText="120"/>' +
           (block.layout.wrap === 'box' ? '<w:tblOverlap w:val="never"/>' : '') + '<w:tblW w:w="' + cellWidth + '" w:type="dxa"/><w:tblLayout w:type="fixed"/>' +
           '<w:tblCellMar>' + ['top', 'left', 'bottom', 'right'].map(edge => '<w:' + edge + ' w:w="0" w:type="dxa"/>').join('') + '</w:tblCellMar>' +
           '</w:tblPr><w:tblGrid><w:gridCol w:w="' + cellWidth + '"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc>' +
           '<w:tcPr><w:tcW w:w="' + cellWidth + '" w:type="dxa"/></w:tcPr>' +
-          pXml(image, {after: 60, keepNext: true}) + pXml(tXml('Figure: ' + block.caption, {italic: true, size: 21}), {after: 0}) +
+          pXml(image, {after: 60, keepNext: true}) + pXml(tXml('Figure: ' + block.caption, {italic: true, size: 21}), {align: 'center', after: 0}) +
           '</w:tc></w:tr></w:tbl>'});
         continue;
       }
-      bodyParts.push(paragraphPart(commentObjectXml(pictureXml(asset, block.alt, block.layout, width, 0, null, block.title), block),
+      bodyParts.push(paragraphPart(draw(block.layout, width),
         {align: jcOf(block.layout), ind: paragraphInd(null), ...(block.caption ? {after: 60, keepNext: true} : {})}));
       if (block.caption) bodyParts.push(paragraphPart(tXml('Figure: ' + block.caption, {italic: true, size: 21}), {align: 'center', ind: paragraphInd(null)}));
       continue;
@@ -4652,7 +4785,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
     if (block.blocks && (block.type === 'quote' || block.type === 'callout')) {
       const color = cssColorHex(block.color) || '#0969da';
       const borders = block.type === 'callout' ? '<w:pBdr><w:left w:val="single" w:sz="24" w:space="8" w:color="' + color.slice(1) + '"/></w:pBdr>' : quoteBorders(block.color);
-      if (block.type === 'callout') bodyParts.push(paragraphPart(tXml(block.kind.charAt(0) + block.kind.slice(1).toLowerCase(), {bold: true, ...(block.color ? {color} : {})}), {borders, direction: block.direction}));
+      if (block.type === 'callout') bodyParts.push(paragraphPart(tXml(block.kind.charAt(0) + block.kind.slice(1).toLowerCase(), {bold: true, ...(block.color ? {color} : {})}), calloutTitleProps(borders, block.direction)));
       const quoteDepth = block.type === 'quote' ? (decoration?.quoteDepth || 0) + 1 : decoration?.quoteDepth;
       const step = block.type === 'quote' && quoteDepth > 1 ? QUOTE_STEP : 0;
       const parts = await emitBlocks(block.blocks, inset + step, targets, availableWidth, {...decoration, borders, direction: block.direction, quoteDepth}, tableCell);
@@ -4664,7 +4797,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
       const label = tXml(block.kind.charAt(0) + block.kind.slice(1).toLowerCase(), {bold: true, ...(block.color ? {color} : {})});
       const body = await renderRuns(block.runs);
       const border = '<w:pBdr><w:left w:val="single" w:sz="24" w:space="8" w:color="' + color.slice(1) + '"/></w:pBdr>';
-      const parts = [paragraphPart(label, {borders: border, direction: block.direction}), paragraphPart(body || tXml(''), {borders: border, direction: block.direction})];
+      const parts = [paragraphPart(label, calloutTitleProps(border, block.direction)), paragraphPart(body || tXml(''), {borders: border, direction: block.direction})];
       bodyParts.push({xml: '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>' + tableInd + '<w:tblBorders>' +
         (block.direction === 'rtl' ? '<w:left w:val="nil"/><w:right' : '<w:right w:val="nil"/><w:left') + ' w:val="single" w:sz="24" w:space="0" w:color="' + color.slice(1) + '"/>' +
         '<w:top w:val="nil"/><w:bottom w:val="nil"/>' +
@@ -4731,7 +4864,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
         bodyParts.push(await prose(item, {styleId: item.heading ? 'Heading' + item.heading : item.nativeQuote ? 'Quote' : 'ListParagraph',
           outline: item.heading ? item.heading - 1 : null, numId, ilvl: item.level, align: jcOf(item.layout), ind, numTab, direction: item.direction,
           ...nativeDocumentSpacing(settings, item.heading ? 'h' + item.heading : 'item'),
-          ...(item.loose && !item.heading ? {after: Math.max(lineTwips, 240)} : {}),
+          ...(item.loose && !item.heading ? {after: Math.max(lineTwips, 240, (nativeDocumentSpacing(settings, 'item').before || 0) + 240, (nativeDocumentSpacing(settings, 'item').after || 0) + 240)} : {}),
           ...(!item.heading && !item.code ? typography(item.layout) : {}),
           borders: item.quote ? quoteBorders(item.quoteColor) : null, shading: item.code ? codeShading : null},
           !tableCell && !item.heading && !item.code, prefix));
@@ -4771,7 +4904,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
       const cell = async value => {
         const span = value.colspan || 1;
         const runs = {tableText: true}; tableStyle = true;
-        if (value.header && baseFamilies.has(bodyFace)) { runs.characterStyle = 'RapierTableHeader'; tableHeaderStyle = true; }
+        if (value.header) { runs.characterStyle = 'RapierTableHeader'; tableHeaderStyle = true; }
         const cellWidth = width * span * 635;
         const parts = value.continuation ? [paragraphPart('')] : value.blocks ?
           await emitBlocks(value.blocks, 0, targets, cellWidth, {...decoration, quoteDepth: 0, runs, after: 0}, true) :
@@ -4905,9 +5038,9 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
     '" xmlns:wp="' + NS.wp[0] + '" xmlns:pic="' + NS.pic[0] + '">\n<w:body>' +
     bodyXml + sectPr + '</w:body></w:document>';
 
-  const type = settings ? referenceType(settings) : null;
+  const type = referenceType(settings);
   const headingFace = settings?.sansfont?.word || (bodyFace === 'Geist' ? bodyFace : null);
-  const headingEmphasis = !!type && baseFamilies.has(headingFace);
+  const headingEmphasis = true;
   const headingStyles = [1, 2, 3, 4, 5, 6].map(level => {
     const size = type ? integer(Math.max(1, Math.round(documentHeadingSize(settings, level) * 2))) : 0;
     const space = nativeDocumentSpacing(settings, 'h' + level, type ? documentHeadingSize(settings, level) : 13.2);
@@ -4931,7 +5064,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
     '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/>' +
     (settings && !languageTag(settings.lang) ? '<w:rPr><w:lang w:val="' + documentLanguage(settings) + '"/></w:rPr>' : '') + '</w:style>' + emphasisStyles + headingStyles +
     (nativeSpacing ? '<w:style w:type="paragraph" w:customStyle="1" w:styleId="RapierBlockSpacing"><w:name w:val="Rapier Block Spacing"/><w:basedOn w:val="Normal"/></w:style>' : '') +
-    '<w:style w:type="paragraph" w:styleId="ListParagraph"><w:name w:val="List Paragraph"/><w:basedOn w:val="Normal"/></w:style>' +
+    '<w:style w:type="paragraph" w:styleId="ListParagraph"><w:name w:val="List Paragraph"/><w:basedOn w:val="Normal"/><w:pPr>' + spacingXml(nativeDocumentSpacing(settings, 'item')) + '</w:pPr></w:style>' +
     (quotations ? '<w:style w:type="paragraph" w:styleId="Quote"><w:name w:val="Quote"/><w:basedOn w:val="Normal"/></w:style>' : '') +
     [...quoteDepths].sort((a, b) => a - b).map(depth => '<w:style w:type="paragraph" w:customStyle="1" w:styleId="Quote' + depth + '"><w:name w:val="Quote ' + depth +
       '"/><w:basedOn w:val="Quote"/><w:pPr><w:ind w:left="' + (depth - 1) * QUOTE_STEP + '"/></w:pPr></w:style>').join('') +
@@ -4978,29 +5111,23 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
     ...(footerId ? [{id: footerId, type: 'footer', target: 'footer1.xml'}] : []),
     ...(commentsXml ? [{id: nextRid(), type: 'comments', target: 'comments.xml'},
       {id: nextRid(), type: 'http://schemas.microsoft.com/office/2011/relationships/commentsExtended', target: 'commentsExtended.xml'}] : []),
+    ...(carrySource ? [{id: nextRid(), type: 'customXml', target: '../customXml/item1.xml'}] : []),
     ...rels
   ];
   const types = ['png', 'jpeg', 'svg', 'gif'].filter(ext => media.some(row => row.name.endsWith('.' + ext)));
-  const defaults = '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
-    '<Default Extension="xml" ContentType="application/xml"/>' +
-    (fonts.length ? '<Default Extension="odttf" ContentType="' + DOCX_FONT_TYPE + '"/>' : '') +
-    (types.includes('png') ? '<Default Extension="png" ContentType="image/png"/>' : '') +
-    (types.includes('jpeg') ? '<Default Extension="jpeg" ContentType="image/jpeg"/>' : '') +
-    (types.includes('svg') ? '<Default Extension="svg" ContentType="image/svg+xml"/>' : '') +
-    (types.includes('gif') ? '<Default Extension="gif" ContentType="image/gif"/>' : '');
-  const overrides = [
-    '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>',
-    '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>',
-    '<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>'
-  ];
+  const defaultType = (extension, type) => '<Default Extension="' + extension + '" ContentType="' + type + '"/>';
+  const defaults = defaultType('rels', 'application/vnd.openxmlformats-package.relationships+xml') +
+    defaultType('xml', 'application/xml') + (fonts.length ? defaultType('odttf', DOCX_FONT_TYPE) : '') +
+    types.map(type => defaultType(type, 'image/' + (type === 'svg' ? 'svg+xml' : type))).join('');
+  const wordOverride = (name, kind = name) => '<Override PartName="/word/' + name + '.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.' + kind + '+xml"/>';
+  const overrides = [wordOverride('document', 'document.main'), wordOverride('styles'), wordOverride('numbering')];
   for (const [kind, xml] of [['footnotes', footnoteXml], ['endnotes', endnoteXml]])
-    if (xml) overrides.push('<Override PartName="/word/' + kind + '.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.' + kind + '+xml"/>');
-  if (fonts.length) overrides.push('<Override PartName="/word/fontTable.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml"/>');
-  if (fonts.length || hyphenation) overrides.push('<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>');
-  if (headerId) overrides.push('<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>');
-  if (footerId) overrides.push('<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>');
-  if (commentsXml) overrides.push('<Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/>',
-    '<Override PartName="/word/commentsExtended.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml"/>');
+    if (xml) overrides.push(wordOverride(kind));
+  if (fonts.length) overrides.push(wordOverride('fontTable'));
+  if (fonts.length || hyphenation) overrides.push(wordOverride('settings'));
+  if (headerId) overrides.push(wordOverride('header1', 'header'));
+  if (footerId) overrides.push(wordOverride('footer1', 'footer'));
+  if (commentsXml) overrides.push(wordOverride('comments'), wordOverride('commentsExtended'));
   const coreXml = corePropertiesXml(settings);
   if (coreXml) overrides.push('<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>');
   overrides.push('<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>');
@@ -5064,10 +5191,14 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
     '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Rapier</Application></Properties>')});
   if (carrySource && !native) {
     const source = (bom ? '\uFEFF' : '') + canonical;
+    const recovery = await wordRecoveryRecord(source, work, equations);
+    entries.push({name: 'customXml/item1.xml', bytes: await encodeXml('<?xml version="1.0" encoding="UTF-8"?><rapier:recovery xmlns:rapier="' + NS.rapier[0] + '">' + escape(recovery) + '</rapier:recovery>')});
+    entries.push({name: 'customXml/itemProps1.xml', bytes: await encodeXml('<?xml version="1.0" encoding="UTF-8"?><ds:datastoreItem ds:itemID="{269337D1-9D12-4B7F-AD04-DDBBD639D277}" xmlns:ds="http://schemas.openxmlformats.org/officeDocument/2006/customXml"><ds:schemaRefs><ds:schemaRef ds:uri="' + NS.rapier[0] + '"/></ds:schemaRefs></ds:datastoreItem>')});
+    entries.push({name: 'customXml/_rels/item1.xml.rels', bytes: await encodeXml(relXml([{id: 'rIdProps', type: 'customXmlProps', target: 'itemProps1.xml'}]))});
     entries.push({name: 'docProps/custom.xml', bytes: await encodeXml('<?xml version="1.0" encoding="UTF-8"?>' +
       '<Properties xmlns="' + NS.custom[0] + '" xmlns:vt="' + NS.vt[0] + '"><property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="2" name="RapierMarkdown"><vt:lpwstr>' +
-      escape(await wordRecoveryRecord(source, work)) + '</vt:lpwstr></property></Properties>')});
-    entries[0].bytes = await encodeXml(contentTypesXml.replace('</Types>', '<Override PartName="/docProps/custom.xml" ContentType="application/vnd.openxmlformats-officedocument.custom-properties+xml"/></Types>'));
+      escape(recovery) + '</vt:lpwstr></property></Properties>')});
+    entries[0].bytes = await encodeXml(contentTypesXml.replace('</Types>', '<Override PartName="/docProps/custom.xml" ContentType="application/vnd.openxmlformats-officedocument.custom-properties+xml"/><Override PartName="/customXml/itemProps1.xml" ContentType="application/vnd.openxmlformats-officedocument.customXmlProperties+xml"/></Types>'));
   }
   for (const row of media) entries.push({name: 'word/media/' + row.name, bytes: row.bytes});
   if (native) return entries;

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Pure text and markdown-it tokens: no DOM, no byte decoding, no globalThis.Rapier* (MIT kit; decoders stay in images/assets.mjs).
 import {isWordSidecarBlock} from './word-sidecar.mjs';
+import {sourceFacts, sourceView, sourceEdit} from '../kit/ledger/source.mjs';
 
 export const IMAGE_LIMITS = Object.freeze({bytes: 16 * 1024 * 1024, sourceChars: 64 * 1024 * 1024, dimension: 16384, pixels: 24000000, assets: 1024});
 const parsers = new WeakMap();
@@ -513,17 +514,107 @@ export function retireDeletedImageDefinitions(before, after, splices, factory) {
   } catch (_) { return []; }
 }
 
+const omissionCache = new WeakMap();
+function payloadFacts(text) {
+  let bad = 0, equals = 0;
+  for (let at = 0; at < text.length; at++) {
+    const code = text.charCodeAt(at);
+    if (code === 61) equals++;
+    else if (!(code >= 65 && code <= 90 || code >= 97 && code <= 122 || code >= 48 && code <= 57 || code === 43 || code === 47)) bad++;
+  }
+  return {bad, equals};
+}
+function payloadBytes(length, bad, equals, tail) {
+  return length % 4 === 0 && !bad && equals <= 2 && length > equals && tail === '='.repeat(equals)
+    ? length / 4 * 3 - equals : null;
+}
+function previousOmissions(view, kind) {
+  const changes = [];
+  let cursor = view, held;
+  while (!(held = omissionCache.get(cursor)?.[kind])) {
+    const after = cursor, change = sourceEdit(cursor);
+    if (!change || changes.length === 64 || !(cursor = change.before.deref())) return new Map();
+    changes.push({...change, after});
+  }
+  let rows = [...held.values()];
+  for (const change of changes.reverse()) {
+    const end = change.pos + change.removed, delta = change.inserted - change.removed;
+    rows = rows.flatMap(row => {
+      const permitted = kind === 'asset' ? /^[A-Za-z0-9+/=\\;&%#._~-]*$/
+        : row.profile === 'base64' ? /^[A-Za-z0-9+/=\s]*$/ : /^[A-Za-z0-9\-._~!$&*+;=:@/?%]*$/;
+      if (change.pos >= row.payloadStart && end <= row.end && permitted.test(change.text)) {
+        const next = {...row, end: row.end + delta, chars: row.chars + delta};
+        if (kind === 'asset') {
+          const was = payloadFacts(change.before.deref().slice(change.pos, end)), now = payloadFacts(change.text);
+          next.bad += now.bad - was.bad; next.equals += now.equals - was.equals;
+          next.bytes = payloadBytes(next.end - next.payloadStart, next.bad, next.equals,
+            next.equals <= 2 ? change.after.slice(next.end - next.equals, next.end) : '');
+        }
+        return [next];
+      }
+      if (change.pos > row.end) return [row];
+      if (end < row.start) return [{...row, start: row.start + delta, end: row.end + delta,
+        ...(row.payloadStart === undefined ? {} : {payloadStart: row.payloadStart + delta})}];
+      return [];
+    });
+  }
+  return new Map(rows.map(row => [row.start, row]));
+}
+function dataMatches(source, kind, envelopes = []) {
+  const measured = sourceFacts(source), view = sourceView(source), cached = omissionCache.get(view);
+  if (cached?.[kind]) return cached[kind];
+  const prior = previousOmissions(view, kind), rows = new Map();
+  const pattern = kind === 'asset' ? /data:(image\/[a-z0-9.+-]+);base64,[A-Za-z0-9+/=\\;&%#._~-]*/iy
+    : /data:([a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+)(?:;[^,\s"'<>)]*)?,/iy;
+  let end = 0, envelopeIndex = 0;
+  for (const at of measured.markers) {
+    if (kind === 'asset' && at < end) continue;
+    while (envelopeIndex < envelopes.length && envelopes[envelopeIndex].end <= at) envelopeIndex++;
+    if (envelopes[envelopeIndex]?.start <= at) continue;
+    let row = prior.get(at);
+    if (!row) {
+      pattern.lastIndex = at;
+      const match = pattern.exec(source);
+      if (!match) continue;
+      if (kind === 'asset') {
+        const value = match[0], payload = value.slice(value.indexOf(',') + 1);
+        const {bad, equals} = payloadFacts(payload);
+        const bytes = payloadBytes(payload.length, bad, equals, equals <= 2 ? payload.slice(payload.length - equals) : '');
+        row = {start: at, end: pattern.lastIndex, chars: value.length,
+          domain: 'image_bytes', reason: 'embedded_asset', profile: 'embedded', type: match[1].toLowerCase(), bytes,
+          payloadStart: pattern.lastIndex - payload.length, bad, equals};
+      } else {
+        const payloadStart = pattern.lastIndex, base64 = /;base64,/i.test(match[0]);
+        let to = payloadStart;
+        const permitted = base64 ? /[A-Za-z0-9+/=\s]/ : /[A-Za-z0-9\-._~!$&*+;=:@/?%]/;
+        while (to < source.length && permitted.test(source[to])) to++;
+        row = {start: at, end: to, payloadStart, type: match[1], chars: to - at, profile: base64 ? 'base64' : 'data'};
+      }
+      Object.freeze(row);
+    }
+    rows.set(at, row); end = row.end;
+  }
+  omissionCache.set(view, {...cached, [kind]: rows});
+  return rows;
+}
 export function assetOmissions(source) {
   if (typeof source !== 'string') return [];
-  const pattern = /data:(image\/[a-z0-9.+-]+);base64,[A-Za-z0-9+/=\\;&%#._~-]*/ig, spans = [];
-  for (let match; (match = pattern.exec(source));) {
-    const value = match[0], payload = value.slice(value.indexOf(',') + 1);
-    const bytes = payload.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(payload)
-      ? payload.length / 4 * 3 - (payload.endsWith('==') ? 2 : payload.endsWith('=') ? 1 : 0) : null;
-    spans.push({start: match.index, end: pattern.lastIndex, chars: value.length,
-      domain: 'image_bytes', reason: 'embedded_asset', profile: 'embedded', type: match[1].toLowerCase(), bytes});
+  return [...dataMatches(source, 'asset').values()].map(({payloadStart, bad, equals, ...row}) => row);
+}
+
+export function dataOmissions(source) {
+  const envelopes = assetOmissions(source), spans = [...envelopes];
+  let envelopeIndex = 0, end = 0;
+  for (const row of dataMatches(source, 'generic', envelopes).values()) {
+    if (row.start < end) continue;
+    while (envelopeIndex < envelopes.length && envelopes[envelopeIndex].end <= row.start) envelopeIndex++;
+    const envelope = envelopes[envelopeIndex];
+    if (envelope && envelope.start <= row.start) { end = envelope.end; continue; }
+    const {payloadStart, ...span} = row;
+    if (row.end > payloadStart) spans.push(span);
+    end = row.end;
   }
-  return spans;
+  return spans.sort((a, b) => a.start - b.start);
 }
 export function isAssetBlock(raw) {
   if (isWordSidecarBlock(raw)) return true;

@@ -60,7 +60,7 @@
 		files: [{name: MATH_FILE, file: MATH_FILE, version: MATH_VERSION,
 			bytes: 733943,
 			sri: 'c6Y4kudfuc16Hkmvfgr0MpdQcJs1jU4qbsKu2tUSduVuQdwLQ/38rR0GmQMatLsS',
-			url: 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.11/math/rapier-math-2.6.1.js'}],
+			url: 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.12/math/rapier-math-2.6.1.js'}],
 		missing: 'Rapier math loaded but its SVG renderer is missing — cache purged',
 		usable: function () { return !!(window.RapierMath && window.RapierMath.version === MATH_VERSION &&
 			typeof window.RapierMath.renderToString === 'function' && typeof window.RapierMath.renderWithMathML === 'function'); },
@@ -164,159 +164,14 @@
 		return null;
 	}
 
-	function _rapierMermaidPalette(paint) {
-		const t = {};
-		const p = name => paint('--md-' + name);
-		const set = (token, keys) => { for (const key of keys.split(' ')) t[key] = p(token); };
-		const series = index => p('mermaid-series-' + index);
-		const tint = index => p('mermaid-tint-' + index);
-		const ink = p('color-text'), paper = p('color-bg'), surface = p('mermaid-surface');
-		const border = p('mermaid-border'), grid = p('mermaid-grid'), muted = p('mermaid-muted');
-		const onSeries = p('mermaid-on-series');
-
-		set('color-text', 'text textColor primaryTextColor secondaryTextColor tertiaryTextColor titleColor labelColor actorTextColor signalTextColor labelTextColor loopTextColor noteTextColor taskTextOutsideColor classText stateLabelColor transitionLabelColor requirementTextColor relationLabelColor pieTitleTextColor pieSectionTextColor pieLegendTextColor vennTitleTextColor vennSetTextColor branchLabelColor tagLabelColor');
-		set('color-text', 'lineColor defaultLinkColor signalColor arrowheadColor transitionColor specialStateColor innerEndBackground archEdgeColor archEdgeArrowColor relationColor emArrowhead emRelationStroke');
-		set('color-bg', 'background compositeBackground altSectionBkgColor edgeLabelBackground relationLabelBackground rowOdd attributeBackgroundColorOdd commitLabelBackground');
-		set('mermaid-surface', 'primaryColor tertiaryColor mainBkg nodeBkg actorBkg labelBoxBkgColor activationBkgColor stateBkg labelBackgroundColor compositeTitleBackground altBackground rectBkgColor personBkg requirementBackground tagLabelBackground rowEven attributeBackgroundColorEven emUiFill');
-		set('color-surface', 'secondaryColor secondBkg clusterBkg sectionBkgColor sectionBkgColor2 excludeBkgColor');
-		set('mermaid-border', 'contrast border1 border2 primaryBorderColor secondaryBorderColor tertiaryBorderColor nodeBorder clusterBorder actorBorder labelBoxBorderColor activationBorderColor personBorder archGroupBorderColor flowContainerStroke stateBorder requirementBorderColor tagLabelBorder emUiStroke emSwimlaneBackgroundStroke');
-		set('mermaid-grid', 'gridColor actorLineColor');
-		set('mermaid-muted', 'done doneTaskBkgColor doneTaskBorderColor commitLabelColor');
-		set('mermaid-tint-6', 'note noteBkgColor');
-		set('mermaid-series-6', 'noteBorderColor');
-		set('mermaid-series-1', 'taskBkgColor taskBorderColor');
-		set('mermaid-series-4', 'activeTaskBkgColor activeTaskBorderColor');
-		set('mermaid-series-5', 'critical critBkgColor critBorderColor todayLineColor vertLineColor');
-		set('mermaid-series-7', 'taskTextClickableColor');
-		set('mermaid-on-series', 'taskTextLightColor taskTextColor taskTextDarkColor scaleLabelColor');
-		t.sequenceNumberColor = paper;
-		t.errorBkgColor = tint(5); t.errorTextColor = ink;
-		t.gradientStart = border; t.gradientStop = border;
-		t.useGradient = false; t.dropShadow = 'none';
-
-		for (let i = 0; i < 12; i++) {
-			t['cScale' + i] = series(i + 1);
-			t['cScalePeer' + i] = series(i + 1);
-			t['cScaleInv' + i] = border;
-			t['cScaleLabel' + i] = onSeries;
-			t['pie' + (i + 1)] = tint(i + 1);
-			if (i < 8) {
-				t['fillType' + i] = tint(i + 1);
-				t['git' + i] = series(i + 1);
-				t['gitInv' + i] = onSeries;
-				t['gitBranchLabel' + i] = onSeries;
-				t['venn' + (i + 1)] = series(i + 1);
-			}
-			if (i < 5) {
-				t['surface' + i] = surface;
-				t['surfacePeer' + i] = border;
-			}
-		}
-		t.pieStrokeColor = paper; t.pieOuterStrokeColor = border; t.pieOpacity = 1;
-		for (let i = 1; i <= 4; i++) {
-			t['quadrant' + i + 'Fill'] = p('color-surface');
-			t['quadrant' + i + 'TextFill'] = ink;
-		}
-		t.quadrantPointFill = series(1);
-		t.quadrantPointTextFill = ink; t.quadrantXAxisTextFill = ink; t.quadrantYAxisTextFill = ink;
-		t.quadrantInternalBorderStrokeFill = border; t.quadrantExternalBorderStrokeFill = border;
-		t.quadrantTitleFill = ink;
-		t.xyChart = {
-			backgroundColor: paper, titleColor: ink, dataLabelColor: ink, legendTextColor: ink,
-			xAxisTitleColor: ink, xAxisLabelColor: ink, xAxisTickColor: border, xAxisLineColor: border,
-			yAxisTitleColor: ink, yAxisLabelColor: ink, yAxisTickColor: border, yAxisLineColor: border,
-			plotColorPalette: Array.from({length: 12}, (_, i) => series(i + 1)).join(',')
-		};
-		t.radar = {
-			axisColor: ink, axisStrokeWidth: 2, axisLabelFontSize: 12,
-			graticuleColor: grid, graticuleStrokeWidth: 1, graticuleOpacity: 0,
-			curveOpacity: 0.16, curveStrokeWidth: 2, legendBoxSize: 12, legendFontSize: 12
-		};
-		t.cynefin = {
-			boundaryColor: border, cliffColor: series(5), arrowColor: ink,
-			complexBg: tint(4), complicatedBg: tint(1), chaoticBg: tint(5), clearBg: tint(6), confusionBg: tint(3),
-			textColor: ink, labelColor: ink
-		};
-		t.wardleyEvolutionColor = series(2);
-		t.wardley = {
-			backgroundColor: paper, axisColor: border, axisTextColor: ink, gridColor: border,
-			componentFill: surface, componentStroke: border, componentLabelColor: ink,
-			linkStroke: ink, evolutionStroke: series(2), annotationStroke: border,
-			annotationTextColor: ink, annotationFill: paper
-		};
-		t.packet = {
-			startByteColor: ink, endByteColor: ink, labelColor: ink, titleColor: ink,
-			blockStrokeColor: border, blockFillColor: surface
-		};
-		t.treemap = {
-			sectionStrokeColor: border, sectionFillColor: surface,
-			leafStrokeColor: border, leafFillColor: surface,
-			titleColor: ink, labelColor: ink, valueColor: ink
-		};
-		t.treeView = {
-			labelColor: ink, lineColor: border, iconColor: muted, descriptionColor: muted,
-			highlightBg: tint(6), highlightStroke: series(6)
-		};
-		t.emProcessorFill = tint(3); t.emProcessorStroke = series(3);
-		t.emReadModelFill = tint(4); t.emReadModelStroke = series(4);
-		t.emCommandFill = tint(7); t.emCommandStroke = series(7);
-		t.emEventFill = tint(2); t.emEventStroke = series(2);
-		t.emSwimlaneBackgroundOdd = p('color-surface');
-		return t;
-	}
-
-	function _rapierMermaidPresentation() {
-		const tokens = ['--md-color-text', '--md-color-bg', '--md-color-surface',
-			'--md-mermaid-surface', '--md-mermaid-border', '--md-mermaid-grid', '--md-mermaid-muted', '--md-mermaid-on-series'];
-		for (let i = 1; i <= 12; i++) tokens.push('--md-mermaid-series-' + i, '--md-mermaid-tint-' + i);
-		const reference = getComputedStyle(document.documentElement), sampler = document.createElement('span');
-		sampler.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;contain:layout style paint';
-		sampler.style.setProperty('color-scheme', 'light', 'important');
-		for (const token of tokens) sampler.style.setProperty(token, reference.getPropertyValue(token));
-		document.body.appendChild(sampler);
-		const values = new Map(), roles = new Map();
-		try {
-			for (const token of tokens) {
-				sampler.style.color = 'var(' + token + ')';
-				const value = getComputedStyle(sampler).color;
-				const rgb = value.match(/^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/);
-				if (!rgb) throw new Error('The diagram reference palette is unavailable');
-				const hex = '#' + rgb.slice(1).map(channel => Number(channel).toString(16).padStart(2, '0')).join('');
-				values.set(token, hex); roles.set(hex, token);
-			}
-		} finally { sampler.remove(); }
-		return {
-			themeVariables: _rapierMermaidPalette(token => values.get(token)),
-			paint: function (hex, alpha, context) {
-				const color = String(hex).toLowerCase();
-				let token;
-				if (context && context.family === 'zenuml') {
-					if (context.inline) return null;
-					token = {
-						'#ffffff': '--md-color-bg', '#666666': '--md-mermaid-border',
-						'#222222': '--md-color-text', '#000000': '--md-color-text', '#333333': '--md-color-text',
-						'#dedede': '--md-mermaid-tint-1', '#e5e7eb': '--md-mermaid-grid',
-						'#6b7280': '--md-mermaid-muted', '#aaaa33': '--md-mermaid-series-6', '#fff5ad': '--md-mermaid-tint-6'
-					}[color];
-				}
-				if (context && context.family === 'wardley' && !context.inline && color === '#000000') token = '--md-color-text';
-				if (!token) token = roles.get(color);
-				if (context && context.family === 'timeline' && !context.inline && context.property === 'stroke' &&
-					token === '--md-mermaid-on-series') token = '--md-mermaid-border';
-				if (!token) return null;
-				const value = 'var(' + token + ')';
-				return alpha === 1 ? value : 'color-mix(in srgb, ' + value + ' ' + (alpha * 100) + '%, transparent)';
-			}
-		};
-	}
 
 	var _mermaidRealm = null, _mermaidStarting = null, _mermaidGeneration = 0, _mermaidRendering = 0;
-	var _mermaidPresentation = null, _mermaidFontFaces = [], _mermaidScriptCancels = new Set();
+	var _zenumlStarting = null, _mermaidFontFaces = [], _mermaidScriptCancels = new Set();
 	function _disposeMermaid() {
 		_mermaidGeneration++;
 		_mermaidScriptCancels.forEach(function (cancel) { cancel(); });
 		if (_mermaidRealm) _mermaidRealm.remove();
-		_mermaidRealm = null; _mermaidStarting = null; _mermaidPresentation = null;
+		_mermaidRealm = null; _mermaidStarting = null; _zenumlStarting = null;
 		_mermaidFontFaces.forEach(function (face) { document.fonts.delete(face); });
 		_mermaidFontFaces = [];
 	}
@@ -353,6 +208,75 @@
 			} catch (error) { finish(error); }
 		});
 	}
+	function _zenumlPaint(hex, alpha, context) {
+		if (!context || context.family !== 'zenuml' || context.inline) return null;
+		var token = {'#ffffff': '--md-color-bg', '#666666': '--md-mermaid-border',
+			'#222222': '--md-color-text', '#000000': '--md-color-text', '#333333': '--md-color-text',
+			'#dedede': '--md-mermaid-tint-1', '#e5e7eb': '--md-mermaid-grid',
+			'#6b7280': '--md-mermaid-muted', '#aaaa33': '--md-mermaid-series-6', '#fff5ad': '--md-mermaid-tint-6'}[String(hex).toLowerCase()];
+		if (!token) return null;
+		var value = 'var(' + token + ')';
+		return alpha === 1 ? value : 'color-mix(in srgb, ' + value + ' ' + (alpha * 100) + '%, transparent)';
+	}
+
+	function _presentPele(svg, runtime) {
+		const tree = new runtime.DOMParser().parseFromString(svg.toWellFormed(), 'image/svg+xml'), drawing = tree.documentElement;
+		if (drawing.localName !== 'svg') throw new Error('The diagram renderer returned no SVG');
+		for (const shape of drawing.querySelectorAll('.pele-node > rect, .pele-cluster > rect')) {
+			if (shape.getAttribute('stroke') === 'var(--_b)') shape.setAttribute('stroke', 'none');
+		}
+		for (const rect of drawing.querySelectorAll('.pele-state > rect, .pele-edge-label > rect, .pele-legend-item > rect')) {
+			rect.setAttribute('rx', '0'); rect.setAttribute('ry', '0');
+		}
+		for (const rect of drawing.querySelectorAll('.pele-edge-label > rect')) rect.setAttribute('fill', 'var(--md-color-bg)');
+		for (const edges of drawing.querySelectorAll('.pele-edges')) edges.setAttribute('stroke-width', '2');
+		for (const figure of drawing.querySelectorAll('.pele-actor-actor > circle, .pele-actor-actor > path')) {
+			figure.setAttribute('stroke', 'var(--_l)'); figure.setAttribute('stroke-width', '2');
+		}
+		for (const label of drawing.querySelectorAll('text')) {
+			if (label.closest('[fill]')?.getAttribute('fill') !== 'var(--_bg)') continue;
+			let owner = label.parentElement, ground;
+			while (owner && owner !== drawing && !ground) {
+				ground = [...owner.children].find(shape => ['rect', 'polygon', 'circle', 'path'].includes(shape.localName) &&
+					shape.hasAttribute('fill') && shape.getAttribute('fill') !== 'none' &&
+					Number(shape.getAttribute('fill-opacity') ?? 1) === 1);
+				owner = owner.parentElement;
+			}
+			label.setAttribute('fill', ground ? 'contrast-color(' + ground.getAttribute('fill') + ')' : 'var(--_fg)');
+		}
+		const paint = typeof runtime.Path2D === 'function' && runtime.document.createElement('canvas').getContext('2d');
+		const slices = [...drawing.querySelectorAll('.pele-slice')];
+		for (const labels of drawing.querySelectorAll('.pele-slice-labels')) {
+			labels.setAttribute('fill', 'var(--_fg)');
+			if (!paint) continue;
+			for (const label of labels.querySelectorAll('text')) {
+				const x = Number(label.getAttribute('x')), y = Number(label.getAttribute('y')) - Number(labels.getAttribute('font-size') || 14) * .35;
+				const slice = slices.find(path => paint.isPointInPath(new runtime.Path2D(path.getAttribute('d')), x, y));
+				if (slice) label.setAttribute('fill', 'contrast-color(' + slice.getAttribute('fill') + ')');
+			}
+		}
+		return new runtime.XMLSerializer().serializeToString(drawing);
+	}
+
+	function _renderPele(runtime, source, id) {
+		const options = {idPrefix: id, fontFamily: MERMAID_FONT_FAMILY, fontSize: MERMAID_FONT_SIZE,
+			padding: 16, limit: MAX_SOURCE_LENGTH, maxEdges: MAX_EDGE_COUNT, images: false};
+		if (runtime.pele.detectType(source) === 'pie') {
+			const model = runtime.pele.parse(source, options);
+			const literal = text => text?.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+			model.sections = new Map([...model.sections].map(([label, value]) => [literal(label), value]));
+			source = model;
+		}
+		return _presentPele(runtime.pele.render(source, options).svg, runtime);
+	}
+
+	function zenumlSource(source) {
+		let text = String(source ?? '').replace(/^\uFEFF/, '').trimStart();
+		text = text.replace(/^---[ \t]*\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, '');
+		text = text.replace(/^(?:\s|%%\{[\s\S]*?\}%%|%%[^\n]*(?:\n|$))*/, '');
+		return /^zenuml\b/.test(text) ? text : null;
+	}
+
 	function _prepareMermaid(files) {
 		if (_mermaidStarting) return _mermaidStarting;
 		var generation = _mermaidGeneration;
@@ -365,102 +289,70 @@
 			var policy = owner.createElement('meta'); policy.httpEquiv = 'Content-Security-Policy';
 			policy.content = "default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval' blob:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'";
 			owner.head.appendChild(policy);
-			return _executeDiagramBundle(owner, files.core, 'mermaid.min.js').then(function () {
-				return _executeDiagramBundle(owner, files.zenuml, 'rapier-zenuml-4.5.0-2.js');
-			}).then(function () {
-				if (!runtime.mermaid || typeof runtime.mermaid.render !== 'function' || !runtime.RapierZenUML ||
-					typeof runtime.RapierZenUML.register !== 'function' || typeof runtime.RapierZenUML.allowSvgStyleAttribute !== 'function')
-					throw new Error('The verified diagram renderer is incomplete');
-				return runtime.RapierZenUML.register(runtime.mermaid);
-			}).then(function () {
+			return _executeDiagramBundle(owner, files.core, 'pele-1.6.0.js').then(function () {
 				if (generation !== _mermaidGeneration) throw new Error('The diagram renderer was released');
+				if (typeof runtime.pele?.render !== 'function') throw new Error('The verified diagram renderer is incomplete');
 				return runtime;
 			});
 		}).catch(function (error) { if (generation === _mermaidGeneration) _disposeMermaid(); throw error; });
 		return _mermaidStarting;
 	}
-	function _configureMermaid(runtime) {
-		if (_mermaidPresentation) return;
-		var presentation = _rapierMermaidPresentation();
-		var c4 = Object.fromEntries(('person external_person system external_system system_db external_system_db ' +
-			'system_queue external_system_queue boundary message container external_container container_db external_container_db ' +
-			'container_queue external_container_queue component external_component component_db external_component_db ' +
-			'component_queue external_component_queue').split(' ').map(function (kind) { return [kind + 'FontFamily', MERMAID_FONT_FAMILY]; }));
-			runtime.mermaid.initialize({
-				startOnLoad: false,
-				securityLevel: 'strict',
-				suppressErrorRendering: true,
-				htmlLabels: true,
-				legacyMathML: false,
-				forceLegacyMathML: false,
-				maxTextSize: MAX_SOURCE_LENGTH,
-				maxEdges: MAX_EDGE_COUNT,
-				secure: ['secure', 'securityLevel', 'startOnLoad', 'maxTextSize', 'maxEdges',
-					'suppressErrorRendering', 'htmlLabels', 'dompurifyConfig', 'legacyMathML',
-					'forceLegacyMathML', 'themeCSS', 'fontFamily', 'fontSize'],
-				dompurifyConfig: {
-					ALLOWED_TAGS: ['div', 'span', 'p', 'br', 'strong', 'em', 'b', 'i', 's', 'u', 'del', 'code', 'sub', 'sup', 'svg', 'g', 'path', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon',
-						'math', 'mrow', 'mi', 'mn', 'mo', 'mtext', 'mspace', 'ms', 'msub', 'msup', 'msubsup', 'mfrac', 'msqrt',
-						'mroot', 'mstyle', 'merror', 'mpadded', 'mphantom', 'mfenced', 'menclose', 'munder', 'mover', 'munderover',
-						'mtable', 'mtr', 'mtd', 'mlabeledtr', 'mmultiscripts', 'mprescripts', 'none', 'semantics'],
-					ALLOWED_ATTR: ['xmlns', 'viewBox', 'd', 'fill', 'fill-rule', 'clip-rule',
-						'x', 'y', 'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx', 'ry', 'points', 'transform',
-						'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'stroke-miterlimit', 'stroke-dasharray', 'stroke-dashoffset', 'opacity', 'fill-opacity', 'stroke-opacity', 'display', 'mathvariant', 'mathsize', 'mathcolor', 'mathbackground', 'dir', 'accent',
-						'accentunder', 'columnalign', 'columnlines', 'columnspacing', 'columnspan', 'columnwidth', 'depth',
-						'displaystyle', 'equalcolumns', 'equalrows', 'fence', 'frame', 'framespacing', 'height', 'largeop',
-						'linebreak', 'linethickness', 'lspace', 'maxsize', 'minsize', 'movablelimits', 'notation', 'rowalign',
-						'rowlines', 'rowspacing', 'rowspan', 'rspace', 'scriptlevel', 'scriptminsize', 'scriptsizemultiplier',
-						'separator', 'stretchy', 'subscriptshift', 'superscriptshift', 'valign', 'voffset', 'width'],
-					ADD_ATTR: runtime.RapierZenUML.allowSvgStyleAttribute,
-					ALLOW_DATA_ATTR: false,
-					ALLOW_ARIA_ATTR: false,
-				},
-				fontFamily: MERMAID_FONT_FAMILY,
-				fontSize: MERMAID_FONT_SIZE,
-				theme: 'base', look: 'classic',
-				themeVariables: Object.assign({}, presentation.themeVariables, { fontSize: MERMAID_FONT_SIZE + 'px' }),
-				radar: { marginLeft: 80, marginRight: 120 },
-				c4: c4,
-				flowchart: { useMaxWidth: true },
-				sequence: { useMaxWidth: true },
-				gantt: { useMaxWidth: true, useWidth: 1200, fontSize: MERMAID_FONT_SIZE, sectionFontSize: MERMAID_FONT_SIZE, barHeight: 24, barGap: 6 },
-				er: { useMaxWidth: true },
-			});
-		_mermaidPresentation = presentation;
+
+	function _prepareZenUML(runtime) {
+		if (_zenumlStarting) return _zenumlStarting;
+		var generation = _mermaidGeneration, provider = _rapierProviders['mermaid-zenuml'];
+		_zenumlStarting = Promise.resolve().then(async function () {
+			if (provider.status !== 'ready') {
+				const end = typeof _rapierPluginProgress === 'function' ? _rapierPluginProgress('mermaid-zenuml', 'diagram') : function () {};
+				try { await provider.install(); } finally { end(); }
+			}
+			var files = await provider.bytes();
+			if (generation !== _mermaidGeneration) throw new Error('The diagram renderer was released');
+			await _executeDiagramBundle(runtime.document, files.zenuml, 'rapier-zenuml-4.5.0-3.js');
+			if (generation !== _mermaidGeneration) throw new Error('The diagram renderer was released');
+			if (typeof runtime.RapierZenUML?.render !== 'function') throw new Error('The verified diagram renderer is incomplete');
+			return runtime.RapierZenUML;
+		}).catch(function (error) { if (generation === _mermaidGeneration) _zenumlStarting = null; throw error; });
+		return _zenumlStarting;
 	}
 
-	if (MERMAID_RESOURCES) _rapierVerifiedFiles({
-		key: 'mermaid', noun: 'diagram', dash: ' -- ',
-		version: MERMAID_RESOURCES.version, files: MERMAID_RESOURCES.files,
-		prepare: _prepareMermaid, discard: _disposeMermaid,
-		release: function () { if (_mermaidRendering || !_mermaidRealm) return false; _disposeMermaid(); return true; },
-		presentationPaint: function (hex, alpha, context) { return _mermaidPresentation ? _mermaidPresentation.paint(hex, alpha, context) : null; },
-		exportFontCss: function () { return _mermaidRealm && _mermaidRealm.contentWindow.RapierZenUML ? _mermaidRealm.contentWindow.RapierZenUML.fontCss : ''; },
-		render: function (src, opts, ready) {
-			var hit = _boundHit(src); if (hit) return Promise.reject(new Error(hit));
-			var resourceHit = _diagramResourceHit(src); if (resourceHit) return Promise.reject(new Error(resourceHit));
-			if (!ready || !_mermaidStarting) return Promise.reject(new Error('diagram plug-in is unavailable'));
-			var id = 'rapier-anchor-diagram-' + (++_renderSeq), generation = _mermaidGeneration;
-			_mermaidRendering++;
-			return _mermaidStarting.then(function (runtime) {
-				return document.fonts.load(MERMAID_FONT_SIZE + 'px ' + MERMAID_FONT_FAMILY).then(function () { return document.fonts.ready; }).then(function () {
+	if (MERMAID_RESOURCES) {
+		const core = MERMAID_RESOURCES.files.find(file => file.name === 'core');
+		const zenuml = MERMAID_RESOURCES.files.find(file => file.name === 'zenuml');
+		_rapierVerifiedFiles({key: 'mermaid-zenuml', noun: 'diagram', dash: ' -- ', version: zenuml.version,
+			files: [zenuml]});
+		_rapierVerifiedFiles({
+			key: 'mermaid', noun: 'diagram', dash: ' -- ',
+			version: core.version, files: [{...core, id: 'rapier-mermaid-core'}],
+			prepare: _prepareMermaid, discard: _disposeMermaid,
+			release: function () { if (_mermaidRendering || !_mermaidRealm) return false; _disposeMermaid(); return true; },
+			presentationPaint: _zenumlPaint,
+			exportFontCss: function () { return _mermaidRealm?.contentWindow.RapierZenUML?.fontCss || ''; },
+			render: function (src, opts, ready) {
+				var hit = _boundHit(src); if (hit) return Promise.reject(new Error(hit));
+				var resourceHit = _diagramResourceHit(src); if (resourceHit) return Promise.reject(new Error(resourceHit));
+				if (!ready || !_mermaidStarting) return Promise.reject(new Error('diagram plug-in is unavailable'));
+				var id = 'rapier-anchor-diagram-' + (++_renderSeq), generation = _mermaidGeneration;
+				_mermaidRendering++;
+				return _mermaidStarting.then(async function (runtime) {
+					await document.fonts.load(MERMAID_FONT_SIZE + 'px ' + MERMAID_FONT_FAMILY);
+					await document.fonts.ready;
 					if (generation !== _mermaidGeneration) throw new Error('The diagram renderer was released');
 					document.fonts.forEach(function (face) { if (face.status === 'loaded' && !runtime.document.fonts.has(face)) runtime.document.fonts.add(face); });
-					_configureMermaid(runtime);
-					var container = runtime.document.createElement('div'); runtime.document.body.appendChild(container);
-					return Promise.resolve().then(function () { return runtime.mermaid.render(id, String(src == null ? '' : src), container); })
-						.then(function (out) {
-							if (generation !== _mermaidGeneration) throw new Error('The diagram renderer was released');
-							runtime.document.fonts.forEach(function (face) {
-								if (face.status === 'loaded' && !document.fonts.has(face)) { document.fonts.add(face); _mermaidFontFaces.push(face); }
-							});
-							return out.svg;
-						})
-						.finally(function () { container.remove(); });
-				});
-			}).finally(function () { _mermaidRendering--; });
-		},
-	});
+					var source = String(src == null ? '' : src), zen = zenumlSource(source), out;
+					if (zen !== null) {
+						out = await (await _prepareZenUML(runtime)).render(zen);
+						runtime.document.fonts.forEach(function (face) {
+							if (face.status === 'loaded' && !document.fonts.has(face)) { document.fonts.add(face); _mermaidFontFaces.push(face); }
+						});
+					} else out = {svg: _renderPele(runtime, source, id)};
+					if (generation !== _mermaidGeneration) throw new Error('The diagram renderer was released');
+					return out.svg;
+				}).finally(function () { _mermaidRendering--; });
+			},
+		});
+	}
+
 	function _rapierVerifiedFiles(m) {
 		/* RAPIER_BUILTIN_FILES_REUSE */
 		var KEY = m.version;
@@ -485,7 +377,7 @@
 			}
 			return (reviving || Promise.resolve()).then(function () { return m.render(src, opts, ready); });
 		}
-		function id(file) { return 'rapier-' + m.key + (m.files.length > 1 ? '-' + file.name : ''); }
+		function id(file) { return file.id || 'rapier-' + m.key + (m.files.length > 1 ? '-' + file.name : ''); }
 		var viaHost = null;
 		function keeper() {
 			var host = _host();
@@ -683,7 +575,7 @@
 				version: entry.id + ' ' + entry.sha384,
 				files: [{name: entry.id, bytes: entry.bytes, sri: entry.sha384}]});
 		}
-		const keys = new Set([...Object.keys(_portableReaders).filter(key => /^(?:math|mermaid|letters-[a-z]+)$/.test(key)), ...required]);
+		const keys = new Set([...Object.keys(_portableReaders).filter(key => /^(?:math|mermaid(?:-zenuml)?|letters-[a-z]+)$/.test(key)), ...required]);
 		for (const key of [...keys].sort()) {
 			let files;
 			try { files = await _portableReaders[key]?.(); }
@@ -699,5 +591,5 @@
 				{code: 'offline_plugin_unavailable', plugin: key});
 		}
 	}
-	window.RapierPluginLoader = Object.freeze({files: _rapierVerifiedFiles, portable});
+	window.RapierPluginLoader = Object.freeze({files: _rapierVerifiedFiles, portable, zenumlSource});
 })();

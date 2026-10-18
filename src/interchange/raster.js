@@ -11,13 +11,7 @@ function _rapierCanonicalImportedTransform(transform) {
 }
 
 function _rapierTransformImportedRaster(image, width, height, transform) {
-  const crop = transform.crop || {};
-  const edges = ['left', 'top', 'right', 'bottom'].map(key => Number(crop[key] || 0));
-  const rotation = Number(transform.rotation || 0);
-  if (!edges.every(value => Number.isFinite(value) && value >= 0 && value < 1) ||
-      edges[0] + edges[2] >= 1 || edges[1] + edges[3] >= 1 || !Number.isFinite(rotation) || Math.abs(rotation) > 360)
-    throw new Error('This picture has an unsupported crop or rotation.');
-  const [left, top, right, bottom] = edges;
+  const {crop: {left, top, right, bottom}, rotation} = transform;
   const cropWidth = width * (1 - left - right), cropHeight = height * (1 - top - bottom);
   const radians = rotation * Math.PI / 180;
   const cosine = Math.abs(Math.cos(radians)), sine = Math.abs(Math.sin(radians));

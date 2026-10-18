@@ -1,52 +1,52 @@
 {
-  "version": "1.2.11",
+  "version": "1.2.12",
   "development": false,
   "chromium": "supplied and exactly pinned by the administrator",
   "profiles": {
     "reader": {
       "path": "rapier-reader.html",
-      "bytes": 370384,
-      "sha256": "e141a5dbd555f32fc2b213b9b24af92529863bfc41b6859c309b172dc5091aae",
-      "gzip": 356427,
+      "bytes": 362859,
+      "sha256": "f539189e6e63ec969b9c126fb100d29160d3326a2dbc2e112fde38ab2e62e6b3",
+      "gzip": 349066,
       "budget": {
         "warn": 1200000,
         "refuse": 1250000
       },
-      "builtAt": "2026-10-18T01:38:55.883Z",
+      "builtAt": "2026-10-18T14:09:27.739Z",
       "node": "v22.23.3",
       "mode": "release",
       "packing": "zopfli",
       "canonical": true,
       "parts": {
         "core": {
-          "raw": 924582,
-          "gzip": 298646,
-          "base124": 292010
+          "raw": 906247,
+          "gzip": 291950,
+          "base124": 285842
         },
         "licenses": {
-          "raw": 88030,
-          "gzip": 24847,
-          "base124": 24394
+          "raw": 88107,
+          "gzip": 24849,
+          "base124": 24393
         }
       }
     },
     "full": {
       "path": "rapier.html",
-      "bytes": 1843571,
-      "sha256": "f83cadcfebd37fac3c1097c0b2db36d28ecec72db3e144aabbdf3d140299a7f9",
+      "bytes": 1715466,
+      "sha256": "a6c3cb608ce27c8b3a5c33ad112096930d93a7519b4d38637d1f1be2f05cc021",
       "budget": {
-        "warn": 2980000,
-        "refuse": 3000000
+        "warn": 1700000,
+        "refuse": 1750000
       },
       "spans": [
         {
-          "element": "lib-dompurify",
+          "element": "lib-markdownit",
           "name": "dompurify-3.4.16.dist.purify.min.js",
           "bytes": 28885,
           "sha256": "2c90a9b46d6463f26038a29b686e82bc91de01fdac9d5229e7cfe3b360134ea2"
         },
         {
-          "element": "lib-turndown",
+          "element": "lib-markdownit",
           "name": "turndown-7.2.4.lib.turndown.browser.umd.rapier.min.js",
           "bytes": 12864,
           "sha256": "9f544a6f24be0e1884d9290a3e4ae2b81a8ed9526241e179effe0975079e6b7b"
@@ -120,8 +120,8 @@
         {
           "element": "rapier-jxl-worker",
           "name": "rapier-jxl-worker.js",
-          "bytes": 182432,
-          "sha256": "d2ed90692e907e61a0d6e42c01ead86872b4250e09622e8e95f1fbe6cd4a88f5"
+          "bytes": 185376,
+          "sha256": "a9969cb8222c113d6d37aa3cce39277c15ff0368d01d7a8b00bc9b6e95dfa7df"
         },
         {
           "element": "rapier-platform-runtime",
@@ -132,8 +132,8 @@
         {
           "element": "rapier-platform-runtime",
           "name": "rapier-platform.js",
-          "bytes": 96281,
-          "sha256": "58fb1545cafdeed963034791bfd950720c4d7b8389353359d9191209ed0659dd"
+          "bytes": 99925,
+          "sha256": "38432a5ce0d9c12b617638285e07dffae694548ede597bd2abc37cf11987cd17"
         },
         {
           "element": "rapier-platform-runtime",
@@ -150,20 +150,20 @@
         {
           "element": "rapier-platform-runtime",
           "name": "rapier-plugin-loader.js",
-          "bytes": 26060,
-          "sha256": "b7945719bb1162c878d32dcdebe8bfd012a6b7bffd2aa13ab7bc9c48be3945d2"
+          "bytes": 20546,
+          "sha256": "cd838ce5c4b3b69628e51359e8b2323e623d88a238d113bf73d86bae355f45b8"
         },
         {
           "element": "rapier-platform-runtime",
           "name": "rapier-font-subset-plugin.js",
-          "bytes": 845,
-          "sha256": "3349c19ce35cda5094de63921766a88701d39f1d672361beff53936dff8008b7"
+          "bytes": 849,
+          "sha256": "4c0684d596bc590337c0543cd72a1bc6c792452a1564aae6dcf45040d40ed0f4"
         },
         {
           "element": "rapier-platform-runtime",
           "name": "rapier-parts.js",
           "bytes": 5820,
-          "sha256": "a5dd13f30be3c9005eef56ec79ffa12cbb69030a47fd8ce543f5b2e7a264b73b"
+          "sha256": "a262ebd3c407d53697cc790492c0b23276335c6dbbab2694f1eb813e507ff0f9"
         },
         {
           "element": "rapier-styles-runtime",
@@ -174,8 +174,8 @@
         {
           "element": "rapier-styles-runtime",
           "name": "rapier-styles.json",
-          "bytes": 120588,
-          "sha256": "fdc50dfce61f8ce564674ad167a82371c94e32e4394eb3eb86e7013d1f1ad35c"
+          "bytes": 191289,
+          "sha256": "106cba50baff91523c1260a48df977dbe12b4998828c4e2cb730aba272e2f518"
         },
         {
           "element": "rapier-styles-runtime",
@@ -184,48 +184,36 @@
           "sha256": "eb657593d487e205ed4e62a5875a8bd2cf8db37c9adc954684cda132985e9e2d"
         },
         {
-          "element": "rapier-styles-runtime",
-          "name": "rapier-first-paint.json",
-          "bytes": 342635,
-          "sha256": "e190f3f3839d5be5f90d5799b3bbbd4e49d61dfb964a0044f2ab55926c176cdf"
-        },
-        {
-          "element": "rapier-style-rest-runtime",
-          "name": "rapier-styles-rest.json",
-          "bytes": 69232,
-          "sha256": "2d4cbb264b990b2672d1a2c908cb2b634c0a704154d01849a0512a860d4515fa"
-        },
-        {
           "element": "rapier-codec-runtime",
           "name": "rapier-codecs.js",
-          "bytes": 133675,
-          "sha256": "2529ecbbfd40199e951b7c2aec8658a422ee444aa839e6e6eab4d2312f0e789a"
+          "bytes": 78685,
+          "sha256": "ec366ba7bea91a00347b8f781e7c6c3cb35a28130e98749215d422341aa0ca88"
         },
         {
-          "element": "rapier-ui-runtime",
+          "element": "rapier-editor-runtime",
           "name": "rapier-ui.html",
-          "bytes": 160200,
-          "sha256": "dfcc3a5a3c1ea758dd5d80efdf00b9efb1b0cf31ac891fa18016daf43793a97d"
+          "bytes": 164983,
+          "sha256": "b4908f2bf3fdf58422834270a9df754ca203661b94b659ed067ed62fa25e9723"
         },
         {
           "element": "rapier-editor-runtime",
           "name": "rapier-shared.js",
-          "bytes": 2434461,
-          "sha256": "a2b424c30f5c75e1063522334e42a88adabe607b95991df1231c79764b599554"
+          "bytes": 2293326,
+          "sha256": "5f54caa4939b1447d20744a4d81cd3009b6d2f7365544011b2c8cd53364c75b1"
         },
         {
           "element": "rapier-editor-runtime",
           "name": "rapier-editor.js",
-          "bytes": 2202275,
-          "sha256": "8cb8bac1fa034afe6f9a733b06196b3aae2eb99ebf62b7b3773984ff9554ce4d"
+          "bytes": 2213987,
+          "sha256": "f25f1d921a6037162bd10e1c237787dcb5d88566a1af305a6a892cb7479e810c"
         }
       ],
       "parts": [
         {
           "id": "document",
-          "file": "rapier-document-4ceee2c0d3a4d977.txt",
-          "bytes": 899597,
-          "sri": "WpTJ9n1bwa0xJfdlzSL+p+Hm3zWzRthTaky8rNdHvGGV61LIYsaJRrxYVyt90+rH",
+          "file": "rapier-document-8b943399658250f7.txt",
+          "bytes": 900213,
+          "sri": "10bo+erN8Q/0C33h2uOZ5EuVQLFJenqTv1Ksp0n9LWIedu4dXP2YOVvuEREUfhUu",
           "scripts": [
             "editor/document-layout.js"
           ],
@@ -238,9 +226,9 @@
         },
         {
           "id": "presets",
-          "file": "rapier-presets-916fdc78eb428e02.txt",
-          "bytes": 24497,
-          "sri": "prd36xX5F4D4O+yzngu9/OTMRcsNnAXzkCixvXPInyi/0E5SsMx5sD3X2cFMWZwQ",
+          "file": "rapier-presets-86fa067c12fc8b3c.txt",
+          "bytes": 24483,
+          "sri": "fYd1O0Y0wE2Gl7micvE6n+FjSybd7wyoU4KMrtn6aLQsxME2V3IViprtYjpSc8cz",
           "scripts": [
             "presets/browser.js",
             "editor/composer.js"
@@ -262,9 +250,9 @@
         },
         {
           "id": "drawing",
-          "file": "rapier-drawing-cfe5ee2e8385ffb7.txt",
-          "bytes": 305481,
-          "sri": "pHw9H4Fg0D1uvDRr7g1qztWE+pHw0LFYcFs909bdhwMQlxT5dE0cYCVcFwiLhj7O",
+          "file": "rapier-drawing-c532f3d7fdca2eb3.txt",
+          "bytes": 331500,
+          "sri": "ih8H0Ry6RosUvlYuEj43t+OkwuYj63O3LBgBNoVQrN8HqywjF5Im+VfbvET+TaZ1",
           "scripts": [
             "draw/draw.js",
             "draw/effects-tool.js",
@@ -276,6 +264,7 @@
             "draw/water-pro.js"
           ],
           "modules": [
+            "draw/letter-previews.mjs",
             "draw/fit.mjs",
             "draw/water-video.mjs",
             "draw/agent-paint.mjs",
@@ -311,6 +300,7 @@
             "draw/water-worker.mjs"
           ],
           "globals": [
+            "RapierDrawLetterPreviews",
             "RapierDrawFit",
             "RapierDrawWaterVideo",
             "RapierDrawPaint",
@@ -329,9 +319,9 @@
         },
         {
           "id": "notes",
-          "file": "rapier-notes-e271d4e912470b42.txt",
-          "bytes": 366473,
-          "sri": "8nq9TD03VK7HwuAuljCrnvqKNIgJpkxdPD726F2sjsPVhwf0kLGexjFHSe5wPupE",
+          "file": "rapier-notes-caa3009dec8ff89e.txt",
+          "bytes": 371191,
+          "sri": "2RxMXdliY9ezYZwj9eoo2qha5Hx382w8GcyGYSsSKHLf3bBDWbndrLnoRJoLUykq",
           "scripts": [
             "notes/notes.js",
             "notes/todo.js",
@@ -342,6 +332,8 @@
             "notes/attachments.js"
           ],
           "modules": [
+            "notes/model.mjs",
+            "notes/frontmatter.mjs",
             "notes/library-window.mjs",
             "notes/library-reads.mjs",
             "notes/takeout.mjs",
@@ -359,6 +351,8 @@
             "notes/owner.mjs",
             "notes/delete-intent.mjs",
             "notes/trash.mjs",
+            "notes/history.mjs",
+            "notes/merge.mjs",
             "notes/import-storage.mjs",
             "notes/recording-files.mjs",
             "notes/sync-state.mjs",
@@ -399,11 +393,8 @@
             "notes/workspace-store.mjs",
             "notes/folder.mjs",
             "notes/recording.mjs",
+            "notes/locked.mjs",
             "notes/todo.mjs",
-            "notes/sync.mjs",
-            "notes/sync-canonical-admission.mjs",
-            "notes/sync-media.mjs",
-            "notes/sync-assets.mjs",
             "notes/sync-api.mjs",
             "notes/sync-plain.mjs",
             "notes/sync-plain-conflicts.mjs",
@@ -440,9 +431,15 @@
             "notes/cloudflare-oauth.mjs",
             "notes/provider-setup.mjs",
             "notes/sync-device.mjs",
-            "notes/drive-picker.mjs"
+            "notes/drive-picker.mjs",
+            "notes/original-folder/index.mjs",
+            "notes/original-folder/core.mjs",
+            "notes/original-folder/browser.mjs",
+            "notes/original-folder/native.mjs",
+            "notes/original-folder/intake.mjs"
           ],
           "globals": [
+            "RapierNotesModel",
             "RapierNotesLibraryWindow",
             "RapierNotesLibraryReads",
             "RapierNotesTakeout",
@@ -458,19 +455,18 @@
             "RapierNotesImportPictures",
             "RapierNotesImportReceipt",
             "RapierNotesImportPlan",
+            "RapierNotesFrontMatter",
             "RapierNotesLinks",
             "RapierNotesSearch",
             "RapierNotesSearchCache",
             "RapierNotesImportMarkdown",
             "RapierNotesImportEnex",
             "RapierNotesImportHtml",
-            "RapierNotesRestore",
             "RapierNotesTrash",
-            "RapierNotesZip",
+            "RapierNotesHistory",
             "RapierNotesBackup",
             "RapierNotesBackupWorker",
             "RapierNotesOPFSWorker",
-            "RapierNotesOwner",
             "RapierNotesOPFS",
             "RapierNotesIdbStore",
             "RapierNotesWorkspaceStore",
@@ -479,84 +475,548 @@
             "RapierNotesAudio",
             "RapierNotesAttachments",
             "RapierNotesHostWords",
-            "RapierNotesSync",
             "RapierNotesSyncSession",
-            "RapierCloudProviders",
-            "RapierWebDAVTransport"
+            "RapierOriginalFolderCore"
           ]
         }
       ],
       "coreHeldPartGlobals": [
-        "RapierNotesModel",
-        "RapierNotesFrontMatter",
-        "RapierNotesHistory",
-        "RapierNotesIntegrity",
-        "RapierNotesVault",
-        "RapierNotesMerge"
+        "RapierNotesIntegrity"
       ],
       "shakenExports": {
-        "agent/page-result.mjs": [
-          "parseReply"
+        "mcp/custody-recovery.mjs": [
+          "RECOVERY_LIMIT",
+          "durableCustody",
+          "custodyRecovery",
+          "recoverFrame"
         ],
-        "shell/preferences.mjs": [
-          "PREFERENCE_ACCENTS"
+        "agent/checkpoint.mjs": [
+          "CHECKPOINT_LIMITS"
         ],
-        "version.mjs": [
-          "RELEASE_TAG",
-          "cdnOrigin"
+        "mcp/custody-wire.mjs": [
+          "relayable",
+          "validAck"
         ],
-        "agent/operation-contracts.mjs": [
-          "UI_RESOURCE",
-          "RESULT_SCHEMA",
-          "validateInput"
+        "mcp/live-session.mjs": [
+          "LIVE_PROTOCOL",
+          "LIVE_LIMITS"
         ],
-        "spec/html-blocks.mjs": [
-          "HTML_ELEMENTS"
+        "mcp/editor-keys.mjs": [
+          "EDITOR_SECRET_CANONICAL_BYTES",
+          "classifyEditorSecret",
+          "editorSecretUsable",
+          "editorSecretKeyMaterial",
+          "mintEditorTicket",
+          "verifyEditorTicket"
         ],
-        "agent/json-value.mjs": [
-          "jsonStringParts"
+        "editor/live-session.mjs": [
+          "createLiveClient"
         ],
-        "kit/ledger/data.mjs": [
-          "documentBytes"
+        "editor/live-private.mjs": [
+          "openPrivate",
+          "privateInitial"
         ],
-        "packages/rapier-diff/tokens.mjs": [
-          "SPACELESS"
+        "kernel/live-private-wire.mjs": [
+          "PRIVATE_LIVE_LIMITS",
+          "privateJsonBytes"
         ],
-        "kit/ledger/transport.mjs": [
-          "transposeRecord"
+        "notes/vault.mjs": [
+          "VAULT_VERSION",
+          "SEAL_VERSION",
+          "KDF_NAME",
+          "KDF_N",
+          "KDF_R",
+          "KDF_P",
+          "HEADER_MAX_BYTES",
+          "SALT_BYTES",
+          "VDK_BYTES",
+          "NONCE_BYTES",
+          "TAG_BYTES",
+          "HEADER_KEY",
+          "HEADER_PREFIX",
+          "VERIFIER_PLAIN",
+          "RECOVERY_ALPHABET",
+          "RECOVERY_LENGTH",
+          "RECOVERY_GROUP",
+          "validateCreationPassphrase",
+          "generateSalt",
+          "encodeRecovery",
+          "decodeRecovery",
+          "deriveWrappingKey",
+          "wrapVdk",
+          "unwrapVdk",
+          "encodeHeader",
+          "decodeHeader",
+          "createVault",
+          "unlockVault",
+          "unlockVaultWithRecovery",
+          "rewrapVault",
+          "headerDigest",
+          "vaultId",
+          "headerObject"
         ],
-        "images/jxl/bits.mjs": [
-          "PHOTO_LIMITS",
-          "scaled"
+        "notes/scrypt.mjs": [
+          "scrypt"
         ],
-        "images/jxl/worker-input.mjs": [
-          "JPEG_XL_LIMITS"
+        "kernel/live-merge.mjs": [
+          "sourceEdits",
+          "mergeThreeWay",
+          "rebaseHistory",
+          "trim"
         ],
-        "images/header.mjs": [
-          "codecError",
-          "byteView",
-          "boundedDimensions"
+        "draw/flowchart.mjs": [
+          "lowerFlowchart",
+          "nextFlowchartId"
         ],
-        "draw/font-format.mjs": [
-          "fontChecksum",
-          "fontCompression"
+        "spec/flowchart.mjs": [
+          "nextFlowchartId"
         ],
-        "draw/liquid.mjs": [
-          "liquidNoise",
-          "liquidDecay",
-          "liquidWave",
-          "liquidFold",
-          "LIQUID_STILL_SIDE",
-          "liquidSource",
-          "LiquidReference"
+        "packages/rapier-embed/contract.mjs": [
+          "LIMITS",
+          "ASSET_TYPES",
+          "snapshotSettings",
+          "pickDeviceFile",
+          "assetURL",
+          "assetBytes",
+          "bytesHash"
         ],
-        "draw/effects.mjs": [
-          "fillCopier"
+        "skills/rapier-html/wrap.mjs": [
+          "encodeCarried",
+          "decodeCarried",
+          "pagePreview",
+          "CHOICES",
+          "carry",
+          "portableNeeds"
         ],
-        "draw/paper-field.mjs": [
-          "paperField",
-          "paperTiled",
-          "paperTile"
+        "kit/render-print.mjs": [
+          "applyPrintCapitals"
+        ],
+        "kit/render-sanitize.mjs": [
+          "createInertHtmlSanitizer",
+          "options"
+        ],
+        "agent/door-identity.mjs": [
+          "deriveInvocationKey",
+          "browserPresence",
+          "validateOrigin",
+          "frameAuthority",
+          "sealForEditor"
+        ],
+        "notes/original-folder/intake.mjs": [
+          "retained"
+        ],
+        "notes/original-folder/core.mjs": [
+          "decode",
+          "encode",
+          "relativeResource"
+        ],
+        "notes/sync-provider-session.mjs": [
+          "readSyncState",
+          "providerAvailability",
+          "providerSoon",
+          "PLAIN_CHOICES",
+          "verificationReturn"
+        ],
+        "notes/drive-picker.mjs": [
+          "PICKER_PAGE"
+        ],
+        "notes/cloud-providers.mjs": [
+          "createDriveTransport",
+          "allocateDriveVault",
+          "createDriveVault",
+          "createOneDriveTransport",
+          "createOneDriveVault",
+          "createDropboxTransport",
+          "createDropboxVault",
+          "createDriveOAuthClient",
+          "createOneDriveOAuthClient",
+          "createDropboxOAuthClient",
+          "createR2Transport",
+          "createCloudflareOAuthClient",
+          "createS3Transport",
+          "s3Destination",
+          "createWebDAVTransport",
+          "createProviderSetup",
+          "listProviders"
+        ],
+        "notes/provider-setup.mjs": [
+          "createProviderSetup"
+        ],
+        "notes/cloudflare-oauth.mjs": [
+          "AUTHORIZE_ENDPOINT",
+          "TOKEN_ENDPOINT",
+          "REVOKE_ENDPOINT",
+          "ISSUER",
+          "CODE_CHALLENGE_METHOD",
+          "isOAuthRefusal"
+        ],
+        "notes/transport-r2.mjs": [
+          "R2_API_ORIGIN",
+          "R2_API_PREFIX",
+          "PUT_MAX_BYTES",
+          "RETRY_CAP",
+          "RETRY_BASE_MS",
+          "RETRY_MAX_MS",
+          "encodeObjectKey",
+          "objectUrl",
+          "createR2Transport"
+        ],
+        "notes/sync-providers.mjs": [
+          "providerSoon",
+          "SETTINGS_DOMAIN",
+          "providerSettings",
+          "providerTransport",
+          "createProviderLocation",
+          "PROVIDER_ORIGINS",
+          "providerConnectOrigins"
+        ],
+        "notes/dropbox-oauth.mjs": [
+          "AUTHORIZE_ENDPOINT",
+          "TOKEN_ENDPOINT",
+          "REVOKE_ENDPOINT"
+        ],
+        "notes/onedrive-oauth.mjs": [
+          "AUTHORIZE_ENDPOINT",
+          "TOKEN_ENDPOINT",
+          "REVOKE_ENDPOINT"
+        ],
+        "notes/drive-oauth.mjs": [
+          "AUTHORIZE_ENDPOINT",
+          "TOKEN_ENDPOINT",
+          "REVOKE_ENDPOINT",
+          "RETURNS_TOKEN"
+        ],
+        "notes/sync-config.mjs": [
+          "SYNC_UNAVAILABLE",
+          "SYNC_CONSENT"
+        ],
+        "notes/plain-relay.mjs": [
+          "RELAY_PAGE"
+        ],
+        "notes/plain-companion.mjs": [
+          "PLAIN_CAPABILITY"
+        ],
+        "notes/sync-plain-keys.mjs": [
+          "plainKeySettings"
+        ],
+        "notes/transport-s3.mjs": [
+          "PUT_MAX_BYTES",
+          "LIST_MAX_BYTES",
+          "RETRY_CAP",
+          "s3Destination",
+          "createS3Transport"
+        ],
+        "notes/transport-webdav.mjs": [
+          "WEBDAV_MAX_OBJECT_BYTES",
+          "createWebDAVTransport"
+        ],
+        "notes/transport-onedrive.mjs": [
+          "PUT_MAX_BYTES",
+          "createOneDriveVault",
+          "createOneDriveTransport"
+        ],
+        "notes/plain-store.mjs": [
+          "sameBytes"
+        ],
+        "notes/transport-drive.mjs": [
+          "PUT_MAX_BYTES",
+          "allocateDriveVault",
+          "createDriveVault",
+          "createDriveTransport"
+        ],
+        "notes/transport-dropbox.mjs": [
+          "PUT_MAX_BYTES",
+          "createDropboxVault",
+          "createDropboxTransport"
+        ],
+        "notes/provider-objects.mjs": [
+          "objectKey",
+          "objectPrefix",
+          "listOptions",
+          "vaultName",
+          "objectName",
+          "nameKey",
+          "verifyBytes",
+          "writeBytes",
+          "readBudget",
+          "capabilities",
+          "keepRemote",
+          "pageResult",
+          "metadata"
+        ],
+        "notes/provider-http.mjs": [
+          "untilAbort"
+        ],
+        "notes/sync-plain-session.mjs": [
+          "PLAIN_PROVIDERS",
+          "plainRecord"
+        ],
+        "notes/plain-wiki-pictures.mjs": [
+          "isTopPicture",
+          "wikiPictureText"
+        ],
+        "notes/sync-plain.mjs": [
+          "isSyncLayout",
+          "memoryPlainStore"
+        ],
+        "notes/folder.mjs": [
+          "applyMetadata",
+          "planFolderRename"
+        ],
+        "notes/opfs-worker.mjs": [
+          "createOPFSWorker"
+        ],
+        "notes/backup-worker.mjs": [
+          "createBackupWorker"
+        ],
+        "notes/android-backup.mjs": [
+          "androidBackupSource"
+        ],
+        "notes/canonical-merge.mjs": [
+          "preservesActs"
+        ],
+        "notes/search-cache.mjs": [
+          "SEARCH_CACHE_LIMITS",
+          "searchCacheRowBytes",
+          "takeSearchCacheProjection"
+        ],
+        "notes/import-plan.mjs": [
+          "IMPORT_LANDING_DEFAULTS"
+        ],
+        "notes/import.mjs": [
+          "IMPORT_SOURCES",
+          "IMPORT_MAX_ENTRIES",
+          "IMPORT_MAX_BYTES",
+          "sourceOf",
+          "sniff",
+          "finalizeImport"
+        ],
+        "notes/import-receipt.mjs": [
+          "IMPORT_RECEIPT_LIMIT",
+          "prepareImportWrite",
+          "verifyImportWrite",
+          "importUndoRows"
+        ],
+        "notes/restore.mjs": [
+          "withBackupManifest",
+          "verifyBackup"
+        ],
+        "notes/owner.mjs": [
+          "folderGeneration"
+        ],
+        "notes/history.mjs": [
+          "sha256",
+          "HISTORY_VERSION",
+          "REASONS",
+          "DIFF_LIMITS",
+          "canonicalAct",
+          "carryCanonical",
+          "unboundMedia",
+          "joinMedia",
+          "versionMedia"
+        ],
+        "notes/merge.mjs": [
+          "mergeText",
+          "admitIndex",
+          "assignNoteFilenames",
+          "mergeIndex"
+        ],
+        "notes/zip-walk.mjs": [
+          "ZIP_NESTING_LIMIT"
+        ],
+        "notes/zip.mjs": [
+          "ZIP_METADATA_BYTES",
+          "readZip",
+          "ZIP_IO_BYTES",
+          "zipStored"
+        ],
+        "notes/frontmatter.mjs": [
+          "setProperty"
+        ],
+        "draw/copier-gpu.mjs": [
+          "copierLattice"
+        ],
+        "draw/liquid-gpu.mjs": [
+          "LIQUID_DYE_PIXELS",
+          "LIQUID_OUTPUT_PIXELS"
+        ],
+        "draw/paint-remote.mjs": [
+          "PAINT_BATCH_LIMIT",
+          "paintDigestMatches",
+          "RemotePaintSurface",
+          "RemotePaintBrush"
+        ],
+        "draw/water-video.mjs": [
+          "WATER_VIDEO_MAX_BYTES"
+        ],
+        "draw/agent-paint.mjs": [
+          "PAINT_REPLAY_MAX_BYTES",
+          "AGENT_PAINT_LIMITS",
+          "configurePaintRasterDecoder",
+          "validatePaintRaster",
+          "portablePaintPNG",
+          "AGENT_PAINT_GRAIN",
+          "AGENT_PAINT_WET",
+          "admitAgentStroke",
+          "agentPaintFrame",
+          "encodePaintRaster"
+        ],
+        "images/paint-raster.mjs": [
+          "configurePaintRasterDecoder"
+        ],
+        "images/jxl-native.mjs": [
+          "readNativeJXL",
+          "jxlNativeTraits"
+        ],
+        "draw/water-paths.mjs": [
+          "WATER_STROKE_SET_ID",
+          "WATER_LETTER_SETS"
+        ],
+        "images/jxl/painting.mjs": [
+          "admitPaintingProfile",
+          "paintingSteps"
+        ],
+        "images/jxl/lossless.mjs": [
+          "paletteKey",
+          "inspectPixels",
+          "planeFill",
+          "planGroup",
+          "encodeLossless",
+          "nativeSteps"
+        ],
+        "images/jxl/modular.mjs": [
+          "ZERO_PREDICTOR",
+          "PREDICTOR",
+          "LZ77",
+          "split",
+          "writeTransform",
+          "streamTree"
+        ],
+        "images/jxl/prefix.mjs": [
+          "codeLengths",
+          "canonicalCodes",
+          "priceCode",
+          "writeContextMap"
+        ],
+        "images/jxl/frame.mjs": [
+          "DC_GROUP_DIM",
+          "writeFrameHeaderEnd",
+          "writeTOC",
+          "finishSections"
+        ],
+        "images/jxl/admit.mjs": [
+          "admitSize",
+          "answer",
+          "guard"
+        ],
+        "shell/worker-execution.mjs": [
+          "yieldWork"
+        ],
+        "draw/water-gpu.mjs": [
+          "WATER_GPU_MAX_BYTES",
+          "WATER_GPU_ROOMY_BYTES",
+          "WATER_REFERENCE_TEXEL"
+        ],
+        "draw/paint.mjs": [
+          "PAINT_SIZE_DEFAULTS",
+          "PAINT_DIP_MIN",
+          "PAINT_DIP_MAX",
+          "PAINT_INPUTS",
+          "PaintRng",
+          "rgbToHsv",
+          "hsvToRgb",
+          "rgbToSpectral",
+          "spectralToRgb",
+          "encodePNG"
+        ],
+        "draw/paper.mjs": [
+          "step",
+          "XFER_FRACTION",
+          "MAX_XFER_QUANTITY",
+          "EQUAL_PAINT_CUTOFF",
+          "brushTotals"
+        ],
+        "draw/paint-controls.mjs": [
+          "PAINT_SIZE_DEFAULTS"
+        ],
+        "draw/paint-pigment.mjs": [
+          "paintPigment"
+        ],
+        "draw/fit.mjs": [
+          "fitCandidates"
+        ],
+        "draw/ornaments.mjs": [
+          "ORNAMENT_LIMITS",
+          "ornamentPath"
+        ],
+        "presets/ornaments.mjs": [
+          "borderSVG"
+        ],
+        "presets/presets.mjs": [
+          "passage"
+        ],
+        "notes/personal.mjs": [
+          "admitPersonal",
+          "mergePersonal",
+          "personalAsset"
+        ],
+        "interchange/docx.mjs": [
+          "docxPortableHtml"
+        ],
+        "images/archive.mjs": [
+          "unpackFiles",
+          "parseTextBundle"
+        ],
+        "spec/document-settings.mjs": [
+          "normalizeDocumentSpacing"
+        ],
+        "agent/kernel.mjs": [
+          "showTarget",
+          "REVISION_FORMS",
+          "revisionNumber",
+          "admitExportArtifact",
+          "HINTS",
+          "waitTimeout",
+          "documentKind",
+          "serializeJson",
+          "expandJournalDrawingPatch",
+          "willRestores"
+        ],
+        "agent/material.mjs": [
+          "MATERIAL_LIMITS"
+        ],
+        "agent/edit-passage.mjs": [
+          "EDIT_PASSAGE_BYTES"
+        ],
+        "agent/comments.mjs": [
+          "commentDigest",
+          "serializeComments"
+        ],
+        "agent/text-surface.mjs": [
+          "textOutline"
+        ],
+        "agent/guide.mjs": [
+          "INSTRUCTIONS",
+          "GUIDE_RESOURCES",
+          "guideResource",
+          "PROMPTS",
+          "promptResult"
+        ],
+        "draw/edit.mjs": [
+          "_rapierDrawReleaseAuthorPaint"
+        ],
+        "draw/paint-history.mjs": [
+          "PAINT_REPLAY_MAX_BYTES",
+          "PAINT_HISTORY_INTERVAL",
+          "PAINT_HISTORY_STROKES"
+        ],
+        "draw/water-data.mjs": [
+          "WATER_TIME_MAX_SECONDS",
+          "WATER_HAND_SIZE_MAX"
+        ],
+        "draw/water-color.mjs": [
+          "BASIS",
+          "WHITE"
         ],
         "draw/backgrounds.mjs": [
           "PAPERS",
@@ -569,218 +1029,132 @@
           "oklabToRgb",
           "invertColour"
         ],
-        "draw/water-color.mjs": [
-          "BASIS",
-          "WHITE"
+        "draw/paper-field.mjs": [
+          "paperField",
+          "paperTiled",
+          "paperTile"
         ],
-        "draw/water-data.mjs": [
-          "WATER_TIME_MAX_SECONDS",
-          "WATER_HAND_SIZE_MAX"
+        "draw/effects.mjs": [
+          "fillCopier"
         ],
-        "agent/text-surface.mjs": [
-          "textOutline"
+        "draw/liquid.mjs": [
+          "liquidNoise",
+          "liquidDecay",
+          "liquidWave",
+          "liquidFold",
+          "LIQUID_STILL_SIDE",
+          "liquidSource",
+          "LiquidReference"
         ],
-        "agent/edit-passage.mjs": [
-          "EDIT_PASSAGE_BYTES"
+        "draw/letters.mjs": [
+          "LETTER_LIMITS"
         ],
-        "agent/material.mjs": [
-          "MATERIAL_LIMITS"
+        "agent/markdown.mjs": [
+          "_rapierOutlineHeadingLabel",
+          "markdownBlocks"
         ],
-        "spec/document-settings.mjs": [
-          "normalizeDocumentSpacing"
+        "draw/font.mjs": [
+          "FONT_LIMITS",
+          "importFont",
+          "subsetFont"
         ],
-        "draw/paint-pigment.mjs": [
-          "paintPigment"
+        "notes/zip-reader.mjs": [
+          "ZIP_METADATA_BYTES",
+          "readZip",
+          "ZIP_IO_BYTES"
         ],
-        "draw/paper.mjs": [
-          "step",
-          "XFER_FRACTION",
-          "MAX_XFER_QUANTITY",
-          "EQUAL_PAINT_CUTOFF",
-          "brushTotals"
+        "draw/font-format.mjs": [
+          "fontChecksum",
+          "fontCompression"
         ],
-        "draw/water-gpu.mjs": [
-          "WATER_GPU_MAX_BYTES",
-          "WATER_GPU_ROOMY_BYTES",
-          "WATER_REFERENCE_TEXEL"
+        "images/header.mjs": [
+          "codecError",
+          "byteView",
+          "boundedDimensions"
         ],
-        "images/jxl/admit.mjs": [
-          "admitSize",
-          "answer",
-          "guard"
+        "images/jxl/worker-input.mjs": [
+          "JPEG_XL_LIMITS"
         ],
-        "images/jxl/frame.mjs": [
-          "DC_GROUP_DIM",
-          "writeFrameHeaderEnd",
-          "writeTOC",
-          "finishSections"
+        "images/jxl/bits.mjs": [
+          "PHOTO_LIMITS",
+          "complete",
+          "scaled"
         ],
-        "images/jxl/prefix.mjs": [
-          "codeLengths",
-          "canonicalCodes",
-          "priceCode",
-          "writeContextMap"
+        "agent/will.mjs": [
+          "terminatorWidth"
         ],
-        "images/jxl/modular.mjs": [
-          "ZERO_PREDICTOR",
-          "PREDICTOR",
-          "LZ77",
-          "split",
-          "writeTransform",
-          "streamTree"
+        "kit/ledger/transport.mjs": [
+          "transposeRecord"
         ],
-        "images/jxl/lossless.mjs": [
-          "paletteKey",
-          "inspectPixels",
-          "planeFill",
-          "planGroup",
-          "encodeLossless",
-          "nativeSteps"
+        "packages/rapier-diff/index.mjs": [
+          "merge"
         ],
-        "images/jxl/painting.mjs": [
-          "admitPaintingProfile",
-          "paintingSteps"
+        "packages/rapier-diff/merge.mjs": [
+          "merge"
         ],
-        "images/jxl-native.mjs": [
-          "readNativeJXL",
-          "jxlNativeTraits"
+        "packages/rapier-diff/tokens.mjs": [
+          "SPACELESS"
         ],
-        "notes/zip-walk.mjs": [
-          "ZIP_NESTING_LIMIT"
+        "kit/ledger/data.mjs": [
+          "documentBytes"
         ],
-        "notes/android-backup.mjs": [
-          "androidBackupSource"
+        "agent/json-value.mjs": [
+          "jsonStringParts"
         ],
-        "notes/sync-plain.mjs": [
-          "isSyncLayout",
-          "memoryPlainStore"
+        "kit/ledger/source.mjs": [
+          "heldSourceFacts",
+          "sourceText"
         ],
-        "notes/plain-wiki-pictures.mjs": [
-          "isTopPicture",
-          "wikiPictureText"
+        "spec/html-blocks.mjs": [
+          "HTML_ELEMENTS"
         ],
-        "notes/sync-plain-session.mjs": [
-          "PLAIN_PROVIDERS",
-          "plainRecord"
+        "agent/catalog.mjs": [
+          "ICONS",
+          "SET_VIEW_SCHEMA",
+          "SET_PREFERENCES_SCHEMA",
+          "READ_ALOUD_SCHEMA",
+          "COPY_SCHEMA",
+          "OPEN_FILE_SCHEMA",
+          "INSTALL_PLUGIN_SCHEMA",
+          "MARK",
+          "UI_RESOURCE",
+          "GUIDE_TOPICS",
+          "EDITOR_TOOLS",
+          "HUMAN_OPERATIONS",
+          "HOST_TOOLS",
+          "OPEN_WORLD",
+          "mcpDescriptors"
         ],
-        "notes/transport-dropbox.mjs": [
-          "PUT_MAX_BYTES"
+        "agent/operation-contracts.mjs": [
+          "UI_RESOURCE",
+          "SET_VIEW_SCHEMA",
+          "READ_ALOUD_SCHEMA",
+          "COPY_SCHEMA",
+          "OPEN_FILE_SCHEMA",
+          "INSTALL_PLUGIN_SCHEMA",
+          "RESULT_SCHEMA",
+          "MARK",
+          "ICONS",
+          "validateInput"
         ],
-        "notes/transport-drive.mjs": [
-          "PUT_MAX_BYTES"
+        "version.mjs": [
+          "VERSION",
+          "RELEASE_TAG",
+          "cdnOrigin"
         ],
-        "notes/plain-store.mjs": [
-          "sameBytes"
+        "agent/editor.mjs": [
+          "validPreference",
+          "editorPreferences"
         ],
-        "notes/transport-onedrive.mjs": [
-          "PUT_MAX_BYTES"
+        "shell/preferences.mjs": [
+          "PREFERENCE_ACCENTS"
         ],
-        "notes/transport-s3.mjs": [
-          "PUT_MAX_BYTES",
-          "LIST_MAX_BYTES",
-          "RETRY_CAP"
-        ],
-        "notes/sync-plain-keys.mjs": [
-          "plainKeySettings"
-        ],
-        "notes/plain-companion.mjs": [
-          "PLAIN_CAPABILITY"
-        ],
-        "notes/plain-relay.mjs": [
-          "RELAY_PAGE"
-        ],
-        "notes/sync-config.mjs": [
-          "SYNC_UNAVAILABLE",
-          "SYNC_CONSENT"
-        ],
-        "notes/drive-oauth.mjs": [
-          "AUTHORIZE_ENDPOINT",
-          "TOKEN_ENDPOINT",
-          "REVOKE_ENDPOINT",
-          "RETURNS_TOKEN"
-        ],
-        "notes/onedrive-oauth.mjs": [
-          "AUTHORIZE_ENDPOINT",
-          "TOKEN_ENDPOINT",
-          "REVOKE_ENDPOINT"
-        ],
-        "notes/dropbox-oauth.mjs": [
-          "AUTHORIZE_ENDPOINT",
-          "TOKEN_ENDPOINT",
-          "REVOKE_ENDPOINT"
-        ],
-        "notes/sync-providers.mjs": [
-          "SETTINGS_DOMAIN",
-          "providerSettings",
-          "providerTransport",
-          "createProviderLocation",
-          "PROVIDER_ORIGINS",
-          "providerConnectOrigins"
-        ],
-        "notes/transport-r2.mjs": [
-          "R2_API_ORIGIN",
-          "R2_API_PREFIX",
-          "PUT_MAX_BYTES",
-          "RETRY_CAP",
-          "RETRY_BASE_MS",
-          "RETRY_MAX_MS",
-          "encodeObjectKey",
-          "objectUrl"
-        ],
-        "notes/cloudflare-oauth.mjs": [
-          "AUTHORIZE_ENDPOINT",
-          "TOKEN_ENDPOINT",
-          "REVOKE_ENDPOINT",
-          "ISSUER",
-          "CODE_CHALLENGE_METHOD",
-          "isOAuthRefusal"
-        ],
-        "notes/drive-picker.mjs": [
-          "PICKER_PAGE"
-        ],
-        "notes/sync-provider-session.mjs": [
-          "readSyncState",
-          "providerAvailability",
-          "providerSoon",
-          "PLAIN_CHOICES",
-          "verificationReturn"
-        ],
-        "kernel/live-private-wire.mjs": [
-          "PRIVATE_LIVE_LIMITS",
-          "privateJsonBytes"
-        ],
-        "editor/live-private.mjs": [
-          "openPrivate",
-          "privateInitial"
-        ],
-        "mcp/editor-keys.mjs": [
-          "EDITOR_SECRET_CANONICAL_BYTES",
-          "classifyEditorSecret",
-          "editorSecretUsable",
-          "editorSecretKeyMaterial",
-          "mintEditorTicket",
-          "verifyEditorTicket"
-        ],
-        "mcp/live-session.mjs": [
-          "LIVE_PROTOCOL",
-          "LIVE_LIMITS"
-        ],
-        "mcp/custody-wire.mjs": [
-          "relayable",
-          "validAck"
-        ],
-        "agent/checkpoint.mjs": [
-          "CHECKPOINT_LIMITS"
-        ],
-        "mcp/custody-recovery.mjs": [
-          "RECOVERY_LIMIT",
-          "durableCustody",
-          "custodyRecovery",
-          "recoverFrame"
+        "agent/page-result.mjs": [
+          "parseReply"
         ]
       },
       "jxl": {
-        "version": "4.1.1",
+        "version": "4.2.0",
         "modules": [
           "images/jxl/kernel-hooks.mjs",
           "images/jxl/weighted-policy.mjs",
@@ -824,6 +1198,7 @@
           "images/jxl/jpeg-ans-effort.mjs",
           "images/jxl/jpeg-ans.mjs",
           "images/jxl/photo-dct.mjs",
+          "images/jxl/photo-xyb.mjs",
           "images/jxl/photo-job.mjs",
           "images/jxl/coefficient-ans.mjs",
           "images/jxl/photo.mjs",
@@ -833,11 +1208,11 @@
           "images/jxl/rapier.mjs"
         ],
         "worker": {
-          "bytes": 182432,
-          "sha256": "d2ed90692e907e61a0d6e42c01ead86872b4250e09622e8e95f1fbe6cd4a88f5"
+          "bytes": 185376,
+          "sha256": "a9969cb8222c113d6d37aa3cce39277c15ff0368d01d7a8b00bc9b6e95dfa7df"
         }
       },
-      "builtAt": "2026-10-18T01:39:57.785Z",
+      "builtAt": "2026-10-18T14:10:49.865Z",
       "node": "v22.23.3",
       "mode": "release",
       "packing": "zopfli",
@@ -879,28 +1254,32 @@
       "sha256": "e315f64a44a3eb9c7f50c0430daf524a7881f039cf8068871e79dd54f4d2cbb0"
     },
     "dist/mcp/json-record.mjs": {
-      "bytes": 4788,
-      "sha256": "9a374da0a3eab56405cdd6df702c4c968d2b0c21885506e126659c94dd1d8cea"
+      "bytes": 4982,
+      "sha256": "c64551518a26cf3f91b304c509dbc7bbb236f6c7f2cf5a0c73f7082ed874e2c7"
     },
     "dist/agent/json-value.mjs": {
-      "bytes": 3465,
-      "sha256": "b26be49e8752b39d129469098ef3945070d8d0dfc2be168fce472b5e42028ef9"
+      "bytes": 4104,
+      "sha256": "67657592b9cebf8d708b0da9fd2e05fca151676908e0f29f6b99956d7f098082"
+    },
+    "dist/kit/ledger/source.mjs": {
+      "bytes": 16271,
+      "sha256": "f935802c44acf7fbfcc63fc28969e51eeaefc1ce2ffca8e463b31f296a9e0900"
     },
     "dist/kit/ledger/transport.mjs": {
       "bytes": 20671,
       "sha256": "23e6da469ed969b21c639383c0d1c78398b3dfcfe05bd313843409d0a0d243ac"
     },
     "dist/kit/ledger/journal-records.mjs": {
-      "bytes": 33413,
-      "sha256": "ccf9a78927dc10290547c21e15a930f86ee82e5c655a617849fd916f9d138c16"
+      "bytes": 32577,
+      "sha256": "230eae691453ab1a3899b823c3bbb205d3362cb47044b9908107fa8fb0c003b6"
     },
     "dist/kit/ledger/data.mjs": {
       "bytes": 4775,
       "sha256": "0600af84dfe557b8b79cb728c0296b1bd2bbe0fb88a9995410eafb752e2c8c13"
     },
     "dist/kit/ledger/inverse-source.mjs": {
-      "bytes": 26370,
-      "sha256": "6132aeb604f6873e50a36143d96c5b28f700fc52f5cc730d34079925e1ed85c7"
+      "bytes": 20623,
+      "sha256": "ae288f91c2f789983e52427b43f271e2ff7f79605c3471430cc2cb4cfb12809e"
     },
     "dist/kit/ledger/authored-origin.mjs": {
       "bytes": 1795,
@@ -947,16 +1326,16 @@
       "sha256": "0965ae9aa2066b68244a8fea1ea8be1a9f1a3bbdca7f0c299af29ad584510118"
     },
     "dist/kit/ledger/format.mjs": {
-      "bytes": 17224,
-      "sha256": "2335e8c2c579e8d3a89db32479c12a344a5c5a568ea9d5d795a7d4d00a44d4b7"
+      "bytes": 17216,
+      "sha256": "d2ec719648962c00378aa06c6318d7d911f703cca6e69781683e4062b720ed50"
     },
     "dist/kit/ledger/history.mjs": {
-      "bytes": 22092,
-      "sha256": "2d405803bdbd4beb4b2dede6c2f2c63653b7ad1f8b8dc05c976f3251c3776444"
+      "bytes": 22558,
+      "sha256": "03cc1b8ebceb7eff39fcf83cce1d6f9a7a379e385a29f8e82929d5b5428db5fe"
     },
     "dist/agent/kernel.mjs": {
-      "bytes": 402695,
-      "sha256": "f77dc1e68ab66c5e8df90587259d522d4983d553d1a9e9039a6d3960c1ef117e"
+      "bytes": 401905,
+      "sha256": "5a1816ea56f16a197f1fb1e9dc9ef44bc5d717d2ce83a5edb8ed51f996b0b646"
     },
     "dist/agent/clone-source.mjs": {
       "bytes": 1343,
@@ -978,13 +1357,21 @@
       "bytes": 9383,
       "sha256": "2167a8fc33c3c1d596b4a60e4a173f11c47f08e722e9b63d7305c1c031042040"
     },
+    "dist/spec/md-assets.mjs": {
+      "bytes": 35661,
+      "sha256": "3d9bd35a8f31bac536269cd54df7241c741df3c28ddcc232a4af878c7d2dc144"
+    },
+    "dist/spec/word-sidecar.mjs": {
+      "bytes": 236,
+      "sha256": "74d461351c98ac3fd903c8bd2dd786d858090d9963929fbcb7b8805b8d55cd81"
+    },
     "dist/kit/ledger/carried.mjs": {
       "bytes": 7801,
       "sha256": "08042d9067ec5e0563c2b74741f429651a4eac5eb2a81632b0ed03d97b094f44"
     },
     "dist/kit/ledger/authorship.mjs": {
-      "bytes": 4111,
-      "sha256": "379255f0c7b66d194d4c894bf7d478a636012bf583b578841341883ce03426d0"
+      "bytes": 3464,
+      "sha256": "80fd169a28fb46236ae2cd0fdd14f103c0065ed7aa36abd9f16a1aec75ba617f"
     },
     "dist/kit/ledger/merge.mjs": {
       "bytes": 18668,
@@ -1031,24 +1418,24 @@
       "sha256": "31a16aa30e6bc0ba200a7a5b1e21ed3a87bf60c3e4296e4781bac737e3f1c16e"
     },
     "dist/draw/font.mjs": {
-      "bytes": 25781,
-      "sha256": "c31d0b704cd2eae91bd9ed1b749470d85075b06f07c04e527fb1e5ce26c534ef"
+      "bytes": 26565,
+      "sha256": "be9498259747296e43be4a125f3bb4ca02c46a8e68cddda07d36ec1cad6d9a04"
     },
     "dist/draw/font-format.mjs": {
       "bytes": 23692,
       "sha256": "7adb035cedc44a39e0e1d6113eb9e96f713bd589cfa6a17f6db646a4eadd8c0a"
     },
     "dist/draw/font-brotli.mjs": {
-      "bytes": 12001,
-      "sha256": "fc105f1f12b1b09bc410946a0474c7fc4871c01e29a99a4fc93ba50684aa0c2f"
+      "bytes": 12123,
+      "sha256": "9d223f709863c85c2df72d6fbc64d305b22ace7e6db4c15d2623526631a5f97d"
     },
     "dist/draw/font-brotli-dictionary.mjs": {
-      "bytes": 126313,
-      "sha256": "92d8fbacc2f0e7d906869d98d25cfec7a98a674e48ce19654d14a375de218063"
+      "bytes": 72096,
+      "sha256": "b51ed92733b41c70b4f05ffaf1b3bf37b112b2178ff83bab64c1693589f9abaf"
     },
     "dist/draw/font-subset.mjs": {
-      "bytes": 27896,
-      "sha256": "11cf6e37e8df7942935e9ed3bf873067cba3cf3deedc4b4801f6dae747f4b4a0"
+      "bytes": 29264,
+      "sha256": "d085ad1fcda1a3f766085a8c368b5c7d7db178f5900a621a81208995d9cfa60f"
     },
     "dist/notes/zip-reader.mjs": {
       "bytes": 16654,
@@ -1061,14 +1448,6 @@
     "dist/notes/size-words.mjs": {
       "bytes": 450,
       "sha256": "eae1fcd420c853820874713fb8801c37278f6e6c24f4e629853e666284f81c33"
-    },
-    "dist/spec/md-assets.mjs": {
-      "bytes": 31271,
-      "sha256": "eb9fe7bab7e3049c966a9a42edd11019783f0716fea6d61ae445118168a4376c"
-    },
-    "dist/spec/word-sidecar.mjs": {
-      "bytes": 236,
-      "sha256": "74d461351c98ac3fd903c8bd2dd786d858090d9963929fbcb7b8805b8d55cd81"
     },
     "dist/agent/structure-request.mjs": {
       "bytes": 1579,
@@ -1103,8 +1482,8 @@
       "sha256": "915ab5f66967a97b38cb18b4171c95d62dec76160c84106337300f422ed5a404"
     },
     "dist/draw/letters.mjs": {
-      "bytes": 59707,
-      "sha256": "65e67dacdea2797fee341615bf93ba7e3424fa82c42f2d8effbbc58ecd520346"
+      "bytes": 6645,
+      "sha256": "1ca279c572a5a9c23cc5613730c1d9e4e836cdf173876b5fca08c01b73387a8d"
     },
     "dist/layout/line-plan.mjs": {
       "bytes": 11513,
@@ -1147,8 +1526,8 @@
       "sha256": "d4ee7fe0ff0506656a992503dc854c40ae14df3815743235096337a99b5db55a"
     },
     "dist/draw/paint-history.mjs": {
-      "bytes": 10009,
-      "sha256": "1967a5fdec76f37695b32af75895b66b00b7294b52788ca77f9f647efcc1f2b4"
+      "bytes": 16301,
+      "sha256": "d103e33e80733cad3ab99cee4444c96486190c763ef7f6f251705a73ed74dd08"
     },
     "dist/draw/water-data.mjs": {
       "bytes": 21790,
@@ -1204,7 +1583,7 @@
     },
     "dist/version.mjs": {
       "bytes": 196,
-      "sha256": "3f52023b695a4581cc48b540ef527321c1c88da0966902d1bea5836048f84b2b"
+      "sha256": "71cffd041dd3285df8525b2a7543b20d3da383f16edb51bbe10f6c8f303bef7c"
     },
     "dist/agent/visual.mjs": {
       "bytes": 10397,
@@ -1303,16 +1682,16 @@
       "sha256": "2ff605d649d97e3ab470173384104483eb6b7d5fc00dcc6010e75fe7d936c287"
     },
     "dist/kernel/live-merge.mjs": {
-      "bytes": 30915,
-      "sha256": "5fd98560de5a00dd14a7732cf5ded422b6abb2c70c49e3064fe9ba6f62653a8e"
+      "bytes": 31766,
+      "sha256": "b9c950c6dbf0f982b2a6d0122298558378ac97eac627ca8b77818e147958bef0"
     },
     "dist/draw/agent-paint.mjs": {
       "bytes": 57703,
       "sha256": "99cb527e8193454a3b9e0cdfb136005ee9bcf61dcf9726deddefca2dd1dcbcc9"
     },
     "dist/draw/paint.mjs": {
-      "bytes": 178532,
-      "sha256": "05fb8cf9938d6cce3d460d06fd2c0ac7a6b7df44ffd0248d3cd4cc3143e02354"
+      "bytes": 178610,
+      "sha256": "afb846ce9e81943dcd9e4544b048ecbfac8e26650e7379748c359bf91f1c7363"
     },
     "dist/draw/paint-pigment.mjs": {
       "bytes": 4767,
@@ -1339,12 +1718,12 @@
       "sha256": "839ce158f3684662470d9e30c070fa9f46d8ad59459ce128a3ee8a23e2a38d64"
     },
     "dist/draw/water-gpu.mjs": {
-      "bytes": 91376,
-      "sha256": "2309ab06b3e20db0359715a74fc3d09e194529709b01d488cd28e97e7ec41bcf"
+      "bytes": 92597,
+      "sha256": "3076f182215a80bc22c3ed8f31b3be51b012339ce14f84c21ee0da1cba7f7fb5"
     },
     "dist/draw/water-shaders.mjs": {
-      "bytes": 24682,
-      "sha256": "9b6154c959ce6367028eeb586e0a76916f5c629ae2d99bd42651ba5ec0d71761"
+      "bytes": 24645,
+      "sha256": "10cd35fc79cc2da88dcebe8ed36a8c3347ad43765c51e342e7150ccf15236d6c"
     },
     "dist/draw/water-contact.mjs": {
       "bytes": 9135,
@@ -1607,8 +1986,8 @@
       "sha256": "4beb6d5ed720668cb591700455190544721f531bae90c9421bf9413a17b71c9a"
     },
     "dist/kit/export-fonts.mjs": {
-      "bytes": 23761,
-      "sha256": "64312f1d8efd3831dba434033a6b0b63b58a6f44422fd23738205c7ac8ffe6ce"
+      "bytes": 24058,
+      "sha256": "e1ceb392ede3051973adc1cf992e9d4ad747283d19b548c2ba638088e6c1fbff"
     },
     "dist/server/search.mjs": {
       "bytes": 3096,
@@ -1643,8 +2022,8 @@
       "sha256": "e708e8aef9688c0d0131064de742ac85c95ee33a0859529ef8e1de446efc11f8"
     },
     "dist/notes/recording-container.mjs": {
-      "bytes": 9728,
-      "sha256": "c57bb748e759b4b00c9bf0efc9d917ea926fd0b197d4aabac78e0b32ee4fb06d"
+      "bytes": 9931,
+      "sha256": "6af3938a3b15b7a988c40c112ea6705a05d5b01310d8770956328b8128d7f7c8"
     },
     "dist/notes/attachments.mjs": {
       "bytes": 8491,
@@ -1667,8 +2046,8 @@
       "sha256": "a7c9b2e4e54f85b8c5b8a5489b7df8979e74f6e9512b7340519ae6d2c5652fb9"
     },
     "dist/tools/search-cache-version.mjs": {
-      "bytes": 536,
-      "sha256": "d4f97ca757bf89521c7ff982088b0fa03525e98d5eacce39cfee1dbc1c251971"
+      "bytes": 589,
+      "sha256": "0bd8a2846d48f3582fc07cd559d88e48721ac6b270b14fe90ba705a29c30de86"
     },
     "dist/tools/strip-comments.mjs": {
       "bytes": 4434,
@@ -1715,12 +2094,12 @@
       "sha256": "c08addf494279c452116ebd2aca16619f0bca5f9e1d6174a619b501e2597cc50"
     },
     "dist/dist/chatgpt/rapier-app.html": {
-      "bytes": 1803971,
-      "sha256": "1fbfc28b8610cf6bdce3a9b4060558da9a462ed426a51b7b6ae355c75ce54978"
+      "bytes": 1746912,
+      "sha256": "9944f0a1c7239e331d362a78a67b91ac6f4bb2d38a882f91101a43dbb62fb556"
     },
     "dist/dist/chatgpt/rapier.html": {
-      "bytes": 6398250,
-      "sha256": "98bc260ff28d3836d295c5eb8983b6aaa1998a93692b4f353f5da5de48205b93"
+      "bytes": 5252185,
+      "sha256": "3f6e80c2bc5f8a5c1e5bad1826abc15b08ad11347c3c92a4005da1a0f136970e"
     },
     "dist/dist/chatgpt/icon-192.png": {
       "bytes": 1541,
@@ -1734,17 +2113,21 @@
       "bytes": 449506,
       "sha256": "e66cf26cbfd608a164a054e52001bebcb416d2d964ff5f164b168dd6d848bdea"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-plugin-mermaid-249958cab0da8b01.txt": {
-      "bytes": 1526406,
-      "sha256": "249958cab0da8b015e8d08678bddb2e1b4fa6d73ea5d8ea9a01db5f345ece3aa"
+    "dist/dist/chatgpt/editor-assets/rapier-plugin-mermaid-08c501e4f89b35c7.txt": {
+      "bytes": 225037,
+      "sha256": "08c501e4f89b35c72db7420c6998d4e5ff02fc310541392101e0b5dbd6269606"
+    },
+    "dist/dist/chatgpt/editor-assets/rapier-plugin-mermaid-zenuml-6ee6dadd4a7f7f6b.txt": {
+      "bytes": 251497,
+      "sha256": "6ee6dadd4a7f7f6bd6787076f7d818d9fd31ecac4c2444f840ed9e83de4d9b19"
     },
     "dist/dist/chatgpt/editor-assets/rapier-plugin-letters-925f0647db2df757.txt": {
       "bytes": 537485,
       "sha256": "925f0647db2df757a391c23ee251b4812a1fa1378a61874e41838348986d1001"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-plugin-font-subset-5f2583f17e90d715.txt": {
-      "bytes": 441109,
-      "sha256": "5f2583f17e90d715ab8b2e50dce214cac3ddf6c8a14f2d0a7b4203863a89c20e"
+    "dist/dist/chatgpt/editor-assets/rapier-plugin-font-subset-e88ece4ddd8f52eb.txt": {
+      "bytes": 441452,
+      "sha256": "e88ece4ddd8f52ebabeec82afcf44ffecaf546cd5ef3c1bf20cd27c0b962b9be"
     },
     "dist/LICENSE": {
       "bytes": 34253,
@@ -1775,8 +2158,8 @@
       "sha256": "85e219d2017276a2a1221afdfe3afb05ef33c4156700e983081f2d00ba9ecc2c"
     },
     "dist/dist/chatgpt/rapier-skills.json": {
-      "bytes": 905493,
-      "sha256": "c5c7a58defef5fa5cadacfd6a6ed06bed70b37f13c191f3edba7f6cae937463c"
+      "bytes": 916895,
+      "sha256": "c20ffdd8219212c01d04f32ccb26da75946b2264db6e4cd49dc669022b0b2271"
     }
   }
 }
