@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import {gunzipSync, brotliDecompressSync} from 'node:zlib';
+import {gunzipSync, gzipSync, brotliDecompressSync} from 'node:zlib';
 import {createHash} from 'node:crypto';
 import {zopfliGzip, brotliPack} from './zopfli.mjs';
 import {encodeTextPack} from './text-pack-build.mjs';
@@ -35,8 +35,11 @@ export function createGroupPacker(packedRecord = []) {
       if (words && !Buffer.from(decodeTextPack(words, combined.length)).equals(combined)) throw new Error('Word packing changed ' + id);
       const bootstrap = id === 'rapier-codec-runtime' || id === 'rapier-phone-bench-runtime';
       const inputs = [[combined, ''], ...(words ? [[words, ' prefilter=words2']] : [])];
-      packings.set(key, Promise.all(inputs.map(([input, prefilter]) => Promise.all([zopfliGzip(input), bootstrap ? null : brotliPack(input)])
-        .then(([gzip, brotli]) => ({input, prefilter, gzip, brotli})))));
+      packings.set(key, Promise.all(inputs.map(async ([input, prefilter]) => {
+        const brotli = bootstrap ? null : await brotliPack(input);
+        const gzip = brotli && brotli.length < 0.85 * gzipSync(input, {level: 9}).length ? null : await zopfliGzip(input);
+        return {input, prefilter, gzip, brotli};
+      })));
     }
     return packings.get(key);
   }
@@ -51,7 +54,7 @@ export function createGroupPacker(packedRecord = []) {
     const combined = Buffer.concat(buffers);
     let selected = null;
     for (const {input, prefilter, gzip, brotli} of await candidatePacking(id, combined)) {
-      const candidates = [['gzip', gzip]];
+      const candidates = gzip ? [['gzip', gzip]] : [];
       if (brotli) {
         if (!Buffer.from(decodeBrotli(brotli, input.length)).equals(input)) throw new Error('Brotli packing changed ' + id);
         candidates.push(['brotli', brotli]);

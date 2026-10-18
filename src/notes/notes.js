@@ -7520,10 +7520,17 @@ function _rapierNotesHostResolve(ref, index) {
 	const file = Object.keys(index.notes).find(file => index.notes[file]?.id === held.id);
 	return file ? {file, id: held.id, entry: index.notes[file]} : null;
 }
-function _rapierNotesHostDocument() {
+function _rapierNotesHostDocument(note_ref) {
 	if (_rapierNotesHostLocked() || !_rapierNotes.mode || !_rapierNotes.current ||
 		!_rapierNotesDocumentBound() ||
 		typeof _rapierNotesOwnTheDocument !== 'function' || !_rapierNotesOwnTheDocument()) return null;
+	if (note_ref !== undefined) {
+		const state = _rapierNotes, proof = state.currentProof, receipt = state.savedReceipt;
+		const resolved = _rapierNotesHostResolve(note_ref, state.index);
+		if (!resolved || resolved.file !== state.current || resolved.id !== proof.id || resolved.entry.trashed ||
+			state.saveFailed || !receipt || receipt.proof !== proof || state.savedGen !== receipt.generation ||
+			!_rapierMutationStampIsCurrent(receipt.stamp) || _rapierSourceText() !== proof.text) return null;
+	}
 	return {documentId: String(rapier.identity.authority), epoch: Number(rapier.identity.epoch || 0)};
 }
 globalThis.rapierNotesHost = Object.freeze({

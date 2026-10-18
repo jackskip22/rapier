@@ -5,7 +5,7 @@ import {dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {VERSION, RELEASE_TAG} from '../version.mjs';
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const VERSIONED_FILES = ['.claude-plugin/plugin.json', 'packages/rapier-embed/package.json', 'skills/rapier-html/package.json', 'kit/package.json', 'server/package.json',
 	'skills/README.md', 'skills/embed-rapier/SKILL.md', 'skills/rapier-agent-door/SKILL.md',
 	'skills/rapier-html/SKILL.md', 'skills/rapier-html/README.md', 'skills/rapier-markdown/SKILL.md',
@@ -14,39 +14,54 @@ export const ROUTE_FILES = ['draw/draw.js', 'editor/composer.js', 'shell/parts.j
 	'shell/font-subset-resources.json', 'shell/mermaid-resources.json'];
 const ROUTE = /(https:\/\/cdn\.jsdelivr\.net\/gh\/jackskip22\/rapier(?:-plugins)?@)[^/'"\s]+/g;
 
-export async function syncVersion({check = false, absent = 'refuse'} = {}) {
-	const drifted = [], missing = [];
+export async function syncVersion({check = false, absent = 'refuse', root = ROOT} = {}) {
+	const drifted = [], missing = [], problems = [], locations = {};
+	const read = async rel => {
+		try { return await readFile(resolve(root, rel), 'utf8'); }
+		catch (error) {
+			if (!check) throw error;
+			problems.push({path: rel, line: 1, message: error.message}); return null;
+		}
+	};
+	const location = (rel, text, next) => {
+		const after = next.split('\n');
+		locations[rel] = Math.max(1, text.split('\n').findIndex((line, at) => line !== after[at]) + 1);
+	};
 	for (const rel of VERSIONED_FILES) {
 		const path = resolve(root, rel);
 		if (absent === 'skip' && !existsSync(path)) { missing.push(rel); continue; }
-		const text = await readFile(path, 'utf8');
+		const text = await read(rel); if (text === null) continue;
 		const next = rel.endsWith('.json') ? text.replace(/("version"\s*:\s*")[^"]*(")/, (all, open, close) => open + VERSION + close)
 			: text.replace(/\b((?:npx(?:[ \t]+--)?|npm[ \t]+install)[ \t]+rapier-(?:html|embed|markdown-kit))(?:@[^\s`"']+)?/g, (_, command) => command + '@' + VERSION);
-		if (rel.endsWith('.json') && !/"version"\s*:/.test(text)) throw new Error(rel + ' has no "version" field to write');
+		if (rel.endsWith('.json') && !/"version"\s*:/.test(text)) {
+			if (!check) throw new Error(rel + ' has no "version" field to write');
+			problems.push({path: rel, line: 1, message: 'No version field'}); continue;
+		}
 		if (next === text) continue;
-		drifted.push(rel);
+		drifted.push(rel); location(rel, text, next);
 		if (!check) await writeFile(path, next);
 	}
 	for (const rel of ROUTE_FILES) {
 		const path = resolve(root, rel);
 		if (absent === 'skip' && !existsSync(path)) { missing.push(rel); continue; }
-		const text = await readFile(path, 'utf8'), next = text.replace(ROUTE, (_, route) => route + RELEASE_TAG);
+		const text = await read(rel); if (text === null) continue;
+		const next = text.replace(ROUTE, (_, route) => route + RELEASE_TAG);
 		if (next === text) continue;
-		drifted.push(rel);
+		drifted.push(rel); location(rel, text, next);
 		if (!check) await writeFile(path, next);
 	}
 	const skill = resolve(root, 'skills/embed-rapier/SKILL.md'), readme = resolve(root, 'packages/rapier-embed/README.md');
 	if (existsSync(skill) && (absent !== 'skip' || existsSync(readme))) {
 		const body = (await readFile(skill, 'utf8')).replace(/^---\n[\s\S]*?\n---\n\s*/, '');
 		const current = existsSync(readme) ? await readFile(readme, 'utf8') : '';
-		if (current !== body) { drifted.push('packages/rapier-embed/README.md'); if (!check) await writeFile(readme, body); }
+		if (current !== body) { drifted.push('packages/rapier-embed/README.md'); location('packages/rapier-embed/README.md', current, body); if (!check) await writeFile(readme, body); }
 	}
-	return {version: VERSION, files: VERSIONED_FILES.length + ROUTE_FILES.length, drifted, absent: missing};
+	return {version: VERSION, files: VERSIONED_FILES.length + ROUTE_FILES.length, drifted, absent: missing, problems, locations};
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
 	const check = process.argv.includes('--check');
 	const result = await syncVersion({check});
 	console.log(JSON.stringify({law: 'one version', ...result, mode: check ? 'check' : 'write'}));
-	if (check && result.drifted.length) { console.error('version drift: ' + result.drifted.join(', ') + ' do not say ' + VERSION); process.exit(1); }
+	if (check && (result.drifted.length || result.problems.length)) { console.error('version drift: ' + result.drifted.join(', ') + ' do not say ' + VERSION); process.exit(1); }
 }

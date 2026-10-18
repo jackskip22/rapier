@@ -11,7 +11,7 @@ const family = /^<!--[ \t]*md-layout(?=[: \t\r\n-]|$)/i;
 
 function validTargetLayout(value, imageOnly, listMarker = false, paragraph = true) {
   return validLayout(value) && (!Object.hasOwn(value, 'marker') || listMarker) &&
-    (imageOnly ? value.align !== 'justify' && !['first', 'indent', 'marker', 'hyphens', 'caps', 'hanging'].some(key => Object.hasOwn(value, key)) :
+    (imageOnly ? value.align !== 'justify' && !['first', 'indent', 'marker', 'hyphens', 'caps', 'hanging', 'line'].some(key => Object.hasOwn(value, key)) :
       !['width', 'wrap', 'x', 'y', 'rotate', 'opacity'].some(key => Object.hasOwn(value, key)) &&
       (paragraph || !['lines', 'hyphens', 'caps', 'hanging'].some(key => Object.hasOwn(value, key))));
 }
@@ -153,6 +153,9 @@ export function annotateMarkdownLayout(state) {
     if (info.layout.align) opener.attrSet('data-md-align', info.layout.align);
     if (info.layout.first) opener.attrSet('data-md-first', String(info.layout.first));
     if (info.layout.indent) opener.attrSet('data-md-indent', String(info.layout.indent));
+    for (const key of ['before', 'after']) {
+      if (info.layout[key] != null) opener.attrSet('data-md-' + key, String(info.layout[key]));
+    }
     if (!info.imageOnly) for (const key of ['lines', 'hyphens', 'caps', 'hanging']) {
       if (info.layout[key] != null) opener.attrSet('data-md-' + key, String(info.layout[key]));
     }
@@ -294,8 +297,6 @@ export function editLayout(source, parser, range, patch, env = {}) {
   const targets = layoutTargets(source, parser, env).filter(target => range.start === range.end ?
     target.start <= range.start && range.start <= target.end : target.start < range.end && target.end > range.start);
   if (!targets.length) return {edits: [], targets, reason: 'no_layout_target'};
-  const blocked = targets.find(target => target.reason || target.insert === null);
-  if (blocked) return {edits: [], targets, reason: blocked.reason || 'unmapped_layout_tail'};
   const edits = [];
   for (const target of targets) {
     const value = {...target.layout}, change = typeof patch === 'function' ? patch(target, source) : patch;
@@ -307,6 +308,7 @@ export function editLayout(source, parser, range, patch, env = {}) {
       } else if (value[key] !== change[key]) { value[key] = change[key]; changed = true; }
     }
     if (!changed) continue;
+    if (target.reason || target.insert === null) return {edits: [], targets, reason: target.reason || 'unmapped_layout_tail'};
     if (!validTargetLayout(value, target.imageOnly, target.listMarker, target.kind === 'paragraph')) {
       return {edits: [], targets, reason: 'invalid_layout_patch'};
     }

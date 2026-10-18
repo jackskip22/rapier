@@ -10,7 +10,12 @@ export const THIRD_PARTY = /(^|\/)(vendor|vendor-notices|node_modules|fonts|font
 const lineStart = (text, at) => text.lastIndexOf('\n', at - 1) + 1;
 const lineEnd = (text, at) => { const n = text.indexOf('\n', at); return n < 0 ? text.length : n; };
 
-function removeRanges(text, ranges) {
+function removeRanges(text, ranges, preserveLines = false) {
+	if (preserveLines) {
+		let at = 0, out = '';
+		for (const [start, end] of ranges) { out += text.slice(at, start) + text.slice(start, end).replace(/[^\r\n]/g, ' '); at = end; }
+		return out + text.slice(at);
+	}
 	let out = '', at = 0;
 	for (const [start, end] of ranges) {
 		if (start < at) continue;
@@ -32,7 +37,7 @@ function removeRanges(text, ranges) {
 	return out + text.slice(at);
 }
 
-export function stripJs(text, {module = true} = {}) {
+export function stripJs(text, {module = true, preserveLines = false} = {}) {
 	const comments = [];
 	const options = {ecmaVersion: 'latest', sourceType: module ? 'module' : 'script', allowHashBang: true, allowReturnOutsideFunction: true,
 		allowAwaitOutsideFunction: true, allowImportExportEverywhere: true, allowSuperOutsideMethod: true,
@@ -44,10 +49,10 @@ export function stripJs(text, {module = true} = {}) {
 		acorn.parse(text, {...options, sourceType: 'script'});
 	}
 	const drop = comments.filter(c => !text.startsWith('#!', c.start) && !KEEP.test((c.block ? '/*' : '//') + c.body)).map(c => [c.start, c.end]);
-	return removeRanges(text, drop);
+	return removeRanges(text, drop, preserveLines);
 }
 
-export function stripCss(text) {
+export function stripCss(text, {preserveLines = false} = {}) {
 	const drop = [];
 	for (let i = 0; i < text.length; i++) {
 		const ch = text[i];
@@ -60,14 +65,14 @@ export function stripCss(text) {
 			i = end + 1;
 		}
 	}
-	return removeRanges(text, drop);
+	return removeRanges(text, drop, preserveLines);
 }
 
-export function stripperFor(rel) {
+export function stripperFor(rel, {preserveLines = false} = {}) {
 	if (THIRD_PARTY.test(rel)) return null;
-	if (/\.(mjs)$/.test(rel)) return text => stripJs(text, {module: true});
-	if (/\.(js|cjs)$/.test(rel)) return text => stripJs(text, {module: !rel.endsWith('.cjs')});
-	if (/\.css$/.test(rel)) return stripCss;
+	if (/\.(mjs)$/.test(rel)) return text => stripJs(text, {module: true, preserveLines});
+	if (/\.(js|cjs)$/.test(rel)) return text => stripJs(text, {module: !rel.endsWith('.cjs'), preserveLines});
+	if (/\.css$/.test(rel)) return text => stripCss(text, {preserveLines});
 	return null;
 }
 

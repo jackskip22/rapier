@@ -24,6 +24,7 @@ function _rapierPortableRequiredPlugins(source, options = {}) {
       if (token.children) visit(token.children);
     }
   };
+  for (const text of [source, options.base]) if (typeof text === 'string' && /^template:[ \t]*page[ \t]*$/m.test(text.slice(0, assets.markdownBodyOffset(text)))) required.add('layout');
   for (const text of [source, options.base]) if (typeof text === 'string' && /[$\\]|mermaid|svg/i.test(text)) visit(parser.parse(text.slice(assets.markdownBodyOffset(text)), {}));
   return required;
 }
@@ -91,7 +92,7 @@ async function _rapierPackPlainGroups(html) {
 
 const _RAPIER_PORTABLE_PAYLOAD_TYPES = new Set(['application/rapier-runtime', 'application/rapier-jxl-worker', 'text/rapier-vendor', 'application/speedracer-app+json']);
 
-const _RAPIER_PORTABLE_CHOICES = [{id: 'drawing', label: 'Draw'}, {id: 'math', label: 'Math'}, {id: 'mermaid', label: 'Mermaid'}];
+const _RAPIER_PORTABLE_CHOICES = [{id: 'drawing', label: 'Draw'}, {id: 'layout', label: 'Document layout', part: 'document'}, {id: 'math', label: 'Math'}, {id: 'mermaid', label: 'Mermaid'}];
 
 async function _rapierPortableChoices(source, options = {}) {
   const {head, first} = globalThis.RapierPortableShell;
@@ -108,7 +109,7 @@ async function _rapierPortableChoices(source, options = {}) {
   const used = new Set([...required].map(key => key.startsWith('letters-') ? 'drawing' : key));
   for (const id of options.also || []) used.add(id);
   if (used.has('mermaid') && groups.some(group => group.id === 'mermaid-zenuml')) used.add('mermaid-zenuml');
-  const keys = [...used].filter(id => id !== 'drawing').concat(used.has('drawing') ? ['letters'] : []);
+  const keys = [...used].filter(id => id !== 'drawing' && id !== 'layout').concat(used.has('drawing') ? ['letters'] : []);
   const plugins = groups.length ? await RapierBundledPlugins.portable(keys) : {groups: [], bodies: new Map()};
   const rest = keys.filter(id => !plugins.bodies.has(id));
   if (rest.length && globalThis.RapierPluginLoader) {
@@ -127,8 +128,12 @@ async function _rapierPortableChoices(source, options = {}) {
       try { html = await RapierParts.element('drawing'); }
       catch (cause) { if (options.also?.includes('drawing')) throw Object.assign(new Error('Offline editor not written; open Draw once while connected, then save again.', {cause}), {code: 'offline_part_unavailable', part: 'drawing'}); continue; }
     }
+    if (choice.part) {
+      if (typeof RapierParts === 'undefined' || !RapierParts.has(choice.part)) continue;
+      try { html = await RapierParts.element(choice.part); } catch (_) { continue; }
+    }
     const carried = plugins.groups.filter(group => group.id === choice.id || choice.id === 'mermaid' && group.id === 'mermaid-zenuml' || choice.id === 'drawing' && group.id === 'letters');
-    if (choice.id !== 'drawing' && !carried.length) continue;
+    if (choice.id !== 'drawing' && !choice.part && !carried.length) continue;
     choices.push({...choice, html: html || '', needed: choice.id !== 'drawing' && required.has(choice.id), groups: carried});
   }
   const SEP = '\n<!--rapier-piece-->\n', pieces = [head, first, ...payloads.map(row => row.outerHTML), ...choices.map(choice => choice.html)];

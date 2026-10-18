@@ -60,7 +60,7 @@
 		files: [{name: MATH_FILE, file: MATH_FILE, version: MATH_VERSION,
 			bytes: 733943,
 			sri: 'c6Y4kudfuc16Hkmvfgr0MpdQcJs1jU4qbsKu2tUSduVuQdwLQ/38rR0GmQMatLsS',
-			url: 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.12/math/rapier-math-2.6.1.js'}],
+			url: 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.13/math/rapier-math-2.6.1.js'}],
 		missing: 'Rapier math loaded but its SVG renderer is missing — cache purged',
 		usable: function () { return !!(window.RapierMath && window.RapierMath.version === MATH_VERSION &&
 			typeof window.RapierMath.renderToString === 'function' && typeof window.RapierMath.renderWithMathML === 'function'); },
@@ -355,6 +355,7 @@
 
 	function _rapierVerifiedFiles(m) {
 		/* RAPIER_BUILTIN_FILES_REUSE */
+		if (!Object.prototype.hasOwnProperty.call(_rapierProviders, m.key)) throw new Error('This page has no place for the plug-in ' + m.key);
 		var KEY = m.version;
 		var total = m.files.reduce(function (sum, file) { return sum + file.bytes; }, 0);
 		var Cache = m.store || RapierBundleIO.store(m.key);
@@ -570,7 +571,7 @@
 	async function portable(requiredKeys) {
 		var required = new Set(requiredKeys || []), groups = new Map();
 		for (const entry of globalThis.RapierDrawLetters?.LETTER_SETS || []) {
-			if (_portableReaders['letters-' + entry.id]) continue;
+			if (_portableReaders['letters-' + entry.id] || !Object.prototype.hasOwnProperty.call(_rapierProviders, 'letters-' + entry.id)) continue;
 			_rapierVerifiedFiles({key: 'letters-' + entry.id, noun: entry.name + ' letter set', dash: ' — ',
 				version: entry.id + ' ' + entry.sha384,
 				files: [{name: entry.id, bytes: entry.bytes, sri: entry.sha384}]});

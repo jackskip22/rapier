@@ -20,7 +20,8 @@ function _rapierSyncDocumentRhythm(host = document.getElementById('editor-blocks
 	const edges = wrapper => {
 		const block = _rapierBoundBlock(wrapper);
 		const type = wrapper._rapierRhythmType || (block?.type === 'heading' ? 'h' + (wrapper.dataset.headingLevel || 1) : 'paragraph');
-		const row = spec.documentSpacing(settings, type);
+		const own = layout === 'plain' ? {} : _rapierBlockSpacing(block);
+		const row = {...spec.documentSpacing(settings, type), ...own};
 		return [row.before / 12, row.after / 12];
 	};
 	const setGap = (wrapper, next) => {
@@ -59,4 +60,16 @@ function _rapierReadBlockRhythm(wrapper, readDiv) {
 		readDiv.querySelector('hr') ? 'rule' : 'paragraph';
 	const host = wrapper.parentElement;
 	if (host) _rapierSyncDocumentRhythm(host, wrapper);
+}
+
+function _rapierBlockSpacing(block) {
+	if (!block || !['paragraph', 'heading'].includes(block.type)) return {};
+	const raw = String(block.raw || '').replace(/\s+$/, '').replace(/\r?\n[ \t]*(?:=+|-+)[ \t]*$/, '').replace(/[ \t]+#+[ \t]*$/, '');
+	const last = raw.slice(raw.lastIndexOf('\n') + 1);
+	const marker = !_rapierListItemTree(raw).list && /<!--md-layout:v1[ \t][^\r\n]*?-->$/.exec(last);
+	const layout = marker && globalThis.RapierMarkdownLayout?.parseLayout(marker[0]);
+	if (!layout) return {};
+	const own = {};
+	for (const key of ['before', 'after', 'line']) if (layout[key] != null) own[key] = layout[key];
+	return own;
 }

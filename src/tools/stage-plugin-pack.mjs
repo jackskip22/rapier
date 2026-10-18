@@ -6,6 +6,7 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 import {mermaidResourceFiles} from './mermaid-resources.mjs';
 import {fontSubsetResourceFiles} from './font-subset-resources.mjs';
 import {cdnOrigin} from '../version.mjs';
+import {unobservedBuildIO} from './build-reuse.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const PLUGIN_ORIGIN = cdnOrigin('rapier-plugins');
@@ -55,11 +56,14 @@ const sha384 = bytes => createHash('sha384').update(bytes).digest('base64');
 const exact = (file, bytes) => sha384(bytes) === file.sri && (file.bytes == null || bytes.length === file.bytes);
 
 export async function readPluginFile(file, path) {
+  const local = file.path ? await readFile(file.path) : null;
+  return unobservedBuildIO(async () => {
+	if (local && !exact(file, local)) throw new Error('plugin pack: local source is not the pinned file: ' + file.path);
 	const held = path ? await readFile(path).catch(() => null) : null;
 	if (held && exact(file, held)) return {bytes: held, fetched: false};
 	const response = file.path ? null : await fetch(file.url, {redirect: 'follow'});
 	if (response && !response.ok) throw new Error('plugin pack: HTTP ' + response.status + ' for ' + file.url);
-	const bytes = response ? Buffer.from(await response.arrayBuffer()) : await readFile(file.path);
+	const bytes = response ? Buffer.from(await response.arrayBuffer()) : local;
 	if (!exact(file, bytes)) {
 		if (path) await rm(path, {force: true});
 		throw new Error('plugin pack: ' + (file.url || file.path) + ' is not the pinned file (SHA-384 ' + sha384(bytes) + ', ' + bytes.length + ' bytes); refused, nothing written');
@@ -71,6 +75,7 @@ export async function readPluginFile(file, path) {
 		await rename(part, path);
 	}
 	return {bytes, fetched: true};
+  });
 }
 
 export async function stagePluginPack(out) {

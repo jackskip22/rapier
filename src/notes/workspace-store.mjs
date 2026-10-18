@@ -297,7 +297,7 @@ export function createWorkspaceNotes({url = globalThis.location?.href, fetch: se
 		if (!(name === SCOPE || stem && recordingStem(stem + '.json') === stem) || options?.mode !== 'exclusive' || typeof run !== 'function')
 			throw fail('ownership', 'A notes folder needs a stable lock scope.');
 		const lease = {name, id: token(), revisions: new Map(), active: false, abort: new AbortController()};
-		let renewal, timer, result, error, acquired = false, attempted = false;
+		let renewal, timer, result, error, acquired = false, attempted = false, retryDelay = 100;
 		const install = answer => {
 			if (answer?.acquired !== true || !Number.isSafeInteger(answer.expiresAt) || answer.expiresAt <= clock()) throw fail('busy', 'Another Rapier is writing these notes. Try again when it has finished or closed.');
 			lease.expiresAt = answer.expiresAt; lease.active = true;
@@ -311,8 +311,15 @@ export function createWorkspaceNotes({url = globalThis.location?.href, fetch: se
 				attempted = true; const answer = await leaseCall('acquire', lease, options.signal, options.ifAvailable);
 				if (answer?.acquired === true) { install(answer); acquired = true; leases.set(name, lease); renew(); break; }
 				if (answer?.acquired !== false) throw fail('protocol', 'A notes folder needs a stable lock scope.');
+				attempted = false;
 				if (options.ifAvailable) return await run(null);
-				await new Promise(resolve => timers.setTimeout(resolve, 100));
+				await new Promise(resolve => {
+					const done = () => { timers.clearTimeout(wait); options.signal?.removeEventListener('abort', done); resolve(); };
+					const wait = timers.setTimeout(done, retryDelay);
+					options.signal?.addEventListener('abort', done, {once: true});
+					if (options.signal?.aborted) done();
+				});
+				retryDelay = Math.min(retryDelay * 2, 1000);
 			}
 			result = await run({name, mode: 'exclusive'}); check(lease);
 		} catch (why) { error = why; }

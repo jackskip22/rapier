@@ -172,7 +172,7 @@
 
   function rememberEditorKey(result, document = toolData(result)?.document) {
     const meta = metadata(result);
-    if (!result?.isError && validToken(document) && meta.editorDocument === document &&
+    if (!result?.isError && validToken(document) && (pairedId ? document === pairedId : meta.editorDocument === document) &&
         typeof meta.live?.url === 'string' && typeof meta.live?.key === 'string') liveBindings.set(document, meta.live);
     if (result?.isError || !validToken(document) || meta.editorDocument !== document ||
         typeof meta.editorKey !== 'string' || !meta.editorKey.length || meta.editorKey.length > 512) return;

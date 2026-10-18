@@ -7,7 +7,7 @@ export const PARTS = Object.freeze([
   {id: 'document', label: 'Document layout', scripts: ['editor/document-layout.js'], styles: ['rapier-document-style'],
     globals: {RapierClipboardPictures: 'interchange/clipboard-pictures.mjs'}},
   {id: 'presets', label: 'Starters and elements', scripts: ['presets/browser.js', 'editor/composer.js'], styles: ['rapier-composer-style'],
-    globals: {RapierPresets: 'presets/presets.mjs', RapierStarters: 'presets/starters.mjs', RapierOrnaments: 'presets/ornaments.mjs', RapierPins: 'presets/pins.mjs', RapierDrawOrnaments: 'draw/ornaments.mjs'}},
+    globals: {RapierPresets: 'presets/presets.mjs', RapierOrnaments: 'presets/ornaments.mjs', RapierPins: 'presets/pins.mjs', RapierDrawOrnaments: 'draw/ornaments.mjs'}},
   {id: 'drawing', label: 'Drawing',
     scripts: ['draw/draw.js', 'draw/effects-tool.js', 'draw/liquid-live.js', 'draw/copier-live.js', 'draw/background-tool.js',
       'draw/paint-tool.js', 'draw/water-tool.js', 'draw/water-pro.js'],

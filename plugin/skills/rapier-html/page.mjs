@@ -11,10 +11,11 @@ export async function writePage(text, name = 'document.md', {include, ...options
 	const carries = include ?? [...(options.view === 'draw' || options.drawing != null ? ['drawing'] : []), ...portableNeeds(String(text), {base: options.base})];
 	return wrap(carry(await carriedPage(), carries), text, name, options);
 }
-const USAGE = 'usage: rapier-html <document.md> [out.html] [--include draw,math,mermaid] [--view draw] [--drawing sketch.svg] [--compare original.md [--by <your name>]] [--return <url> --return-expires-at <timestamp>]\n' +
+const USAGE = 'usage: rapier-html <document.md> [out.html] [--include draw,layout,math,mermaid] [--view draw] [--drawing sketch.svg] [--compare original.md [--by <your name>]] [--return <url> --return-expires-at <timestamp>]\n' +
 	'  writes <document>.rapier.html beside the file: Rapier with the document inside it, one file, offline.\n' +
 	'  It never overwrites: an output that already exists, the document itself included, is refused.\n' +
-	'  --include   what the file carries beyond the base editor: draw (drawing and painting), math, mermaid, or none;\n' +
+	'  --include   what the file carries beyond the base editor: draw (drawing and painting), layout (a template page), math,\n' +
+	'              mermaid, or none;\n' +
 	'              by default, the plug-ins the document displays with, and Draw for --view draw or --drawing\n' +
 	'  --view      draw: opens the page on Draw (sketch and paint, the document behind it)\n' +
 	'  --drawing   carries an SVG drawing alongside the document, opened on Draw as the page boots\n' +
@@ -40,7 +41,7 @@ export async function main(argv, pagesDir, {log = console.log} = {}) {
 		}
 		else if (arg === '--include') {
 			const listed = argv[i + 1] === 'none' ? [] : String(argv[i + 1] || '').split(',');
-			if (include !== null || listed.some(item => !['draw', 'math', 'mermaid'].includes(item))) throw new Error('--include takes draw, math and mermaid, comma-separated, or none');
+			if (include !== null || listed.some(item => !['draw', 'layout', 'math', 'mermaid'].includes(item))) throw new Error('--include takes draw, layout, math and mermaid, comma-separated, or none');
 			include = listed.map(item => item === 'draw' ? 'drawing' : item);
 			i++;
 		}

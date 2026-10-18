@@ -4256,6 +4256,18 @@ function spacingXml({before, after, line, lineRule = 'atLeast'}) {
     (line != null ? ' w:line="' + measure(line) + '" w:lineRule="' + lineRule + '"' : '') + '/>';
 }
 
+function ownSpacingOf(layout) {
+  const own = {};
+  if (layout?.before != null) own.before = Math.round(layout.before * 20);
+  if (layout?.after != null) own.after = Math.round(layout.after * 20);
+  if (typeof layout?.line === 'number') { own.line = Math.round(layout.line * 240); own.lineRule = 'auto'; }
+  else if (typeof layout?.line === 'string') {
+    const m = /^(\d+(?:\.\d+)?)pt(\+?)$/.exec(layout.line);
+    if (m) { own.line = Math.round(Number(m[1]) * 20); own.lineRule = m[2] ? 'atLeast' : 'exact'; }
+  }
+  return own;
+}
+
 function jcOf(layout) {
   const value = layout?.align;
   return value === 'justify' ? 'both' : ['left', 'right', 'center'].includes(value) ? value : null;
@@ -4677,8 +4689,13 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
         continue;
       }
       const previous = visible[index - 1], next = visible[++index];
-      const before = previous ? boundary(previous, part) : firstGap ? part.before || 0 : 0;
-      const after = next?.xml ? boundary(part, next) : next || inCell ? 0 : part.after || 0;
+      if (part.break) {
+        xml += wrapped(part, paragraphXml(part, {...part.props, before: 0, after: 0}));
+        continue;
+      }
+      const before = previous?.break ? part.before || 0 : previous ? boundary(previous, part)
+        : firstGap ? part.before || 0 : part.ownBefore ?? 0;
+      const after = next?.xml ? boundary(part, next) : next ? 0 : inCell ? part.ownAfter ?? 0 : part.after || 0;
       if (part.xml) {
         if (previous?.xml) xml += tableSpacing(before);
         xml += wrapped(part, part.xml);
@@ -4709,7 +4726,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
    const tableInd = inset ? '<w:tblInd w:w="' + Math.round(inset) + '" w:type="dxa"/>' : '';
    const typography = layout => {
      if (layout?.hyphens === 'auto') hyphenation = true;
-     return {hyphens: layout?.hyphens, hanging: tableCell ? undefined : layout?.hanging};
+     return {hyphens: layout?.hyphens, hanging: tableCell ? undefined : layout?.hanging, ...ownSpacingOf(layout)};
    };
    for (let index = 0; index < blocks.length; index++) {
       const block = blocks[index];
@@ -4731,7 +4748,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
     }
     if (block.type === 'heading') {
       const inner = await renderRuns(block.runs, {...decoration?.runs, characterStyle: undefined});
-      bodyParts.push(paragraphPart(inner, {direction: block.direction, styleId: 'Heading' + block.level, outline: block.level - 1, align: jcOf(block.layout), ind: indOf(block.layout, {first: false, base: inset, pointSize: bodyPointSize})}));
+      bodyParts.push(paragraphPart(inner, {direction: block.direction, styleId: 'Heading' + block.level, outline: block.level - 1, align: jcOf(block.layout), ind: indOf(block.layout, {first: false, base: inset, pointSize: bodyPointSize}), ...ownSpacingOf(block.layout)}));
       continue;
     }
     if (block.type === 'math') {
@@ -4778,7 +4795,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
         continue;
       }
       bodyParts.push(paragraphPart(draw(block.layout, width),
-        {align: jcOf(block.layout), ind: paragraphInd(null), ...(block.caption ? {after: 60, keepNext: true} : {})}));
+        {align: jcOf(block.layout), ind: paragraphInd(null), ...ownSpacingOf(block.layout), ...(block.caption ? {after: 60, keepNext: true} : {})}));
       if (block.caption) bodyParts.push(paragraphPart(tXml('Figure: ' + block.caption, {italic: true, size: 21}), {align: 'center', ind: paragraphInd(null)}));
       continue;
     }
@@ -4861,11 +4878,12 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
           '</w14:checkbox></w:sdtPr><w:sdtContent>' + tXml(item.task ? '☒' : '☐') + '</w:sdtContent></w:sdt>' +
           (firstRun?.type === 'text' && /^\s/.test(firstRun.text) ? '' : tXml(' '));
         if (item.nativeQuote) quotations = true;
+        const itemSpace = nativeDocumentSpacing(settings, item.heading ? 'h' + item.heading : 'item');
         bodyParts.push(await prose(item, {styleId: item.heading ? 'Heading' + item.heading : item.nativeQuote ? 'Quote' : 'ListParagraph',
           outline: item.heading ? item.heading - 1 : null, numId, ilvl: item.level, align: jcOf(item.layout), ind, numTab, direction: item.direction,
-          ...nativeDocumentSpacing(settings, item.heading ? 'h' + item.heading : 'item'),
-          ...(item.loose && !item.heading ? {after: Math.max(lineTwips, 240, (nativeDocumentSpacing(settings, 'item').before || 0) + 240, (nativeDocumentSpacing(settings, 'item').after || 0) + 240)} : {}),
-          ...(!item.heading && !item.code ? typography(item.layout) : {}),
+          ...(item.heading ? {before: itemSpace.before, after: itemSpace.after} : itemSpace),
+          ...(item.loose && !item.heading ? {after: Math.max(lineTwips, 240, (itemSpace.before || 0) + 240, (itemSpace.after || 0) + 240)} : {}),
+          ...(item.heading || item.code ? ownSpacingOf(item.layout) : typography(item.layout)),
           borders: item.quote ? quoteBorders(item.quoteColor) : null, shading: item.code ? codeShading : null},
           !tableCell && !item.heading && !item.code, prefix));
         lastNumberedLevel = item.level;
@@ -4909,7 +4927,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
         const parts = value.continuation ? [paragraphPart('')] : value.blocks ?
           await emitBlocks(value.blocks, 0, targets, cellWidth, {...decoration, quoteDepth: 0, runs, after: 0}, true) :
           [paragraphPart(await emitRuns(value.runs || [], targets, cellWidth, runs), {after: 0})];
-        for (const part of parts) if (part.props && !part.props.styleId?.startsWith('Heading'))
+        for (const part of parts) if (part.props && !part.props.styleId?.startsWith('Heading') && part.props.line == null)
           part.props = {...part.props, line: nativeDocumentSpacing(settings, 'table', 10.5).line, lineRule: nativeDocumentSpacing(settings, 'table', 10.5).lineRule};
         const inner = writeBlocks(parts, true);
         const tailParagraph = value.blocks?.at(-1)?.type === 'table' ? writeBlocks([paragraph('')], true) : '';
@@ -4969,8 +4987,12 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
      const {block, start} = groups[index], end = groups[index + 1]?.start ?? bodyParts.length;
      const parts = bodyParts.slice(start, end);
      if (!parts.length) continue;
-     if (block.type === 'will' || block.type === 'break') {
+     if (block.type === 'will') {
        for (const part of parts) part.transparent = true;
+       continue;
+     }
+     if (block.type === 'break') {
+       for (const part of parts) part.break = true;
        continue;
      }
      const kind = block.type === 'heading' ? 'h' + block.level : block.rule ? 'rule' : block.type === 'image'
@@ -4978,11 +5000,15 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
        : block.type === 'list' && block.items.every(item => item.runs.some(run => run.href?.startsWith('#'))) ? 'toc'
        : ['list', 'table', 'quote', 'code'].includes(block.type) ? block.type : 'paragraph';
      const space = nativeDocumentSpacing(settings, kind);
+     const firstOwn = ownSpacingOf(block.type === 'list' ? block.items?.[0]?.layout : block.blocks ? block.blocks[0]?.layout : block.layout);
+     const lastOwn = ownSpacingOf(block.type === 'list' ? block.items?.at(-1)?.layout : block.blocks ? block.blocks.at(-1)?.layout : block.layout);
      if (block.type === 'code') for (const part of parts) { part.before = 0; part.after = 0; }
      if (!['list', 'table', 'code', 'rule'].includes(kind) && !kind.startsWith('h'))
-       for (const part of parts) if (part.props) part.props = {...part.props, line: space.line, lineRule: space.lineRule};
-     parts[0].before = space.before;
-     parts.at(-1).after = space.after;
+       for (const part of parts) if (part.props && part.props.line == null) part.props = {...part.props, line: space.line, lineRule: space.lineRule};
+     if (firstOwn.before != null) parts[0].ownBefore = firstOwn.before;
+     if (lastOwn.after != null) parts.at(-1).ownAfter = lastOwn.after;
+     parts[0].before = firstOwn.before ?? space.before;
+     parts.at(-1).after = lastOwn.after ?? space.after;
    }
    return bodyParts.length ? bodyParts : [paragraphPart('')];
   };

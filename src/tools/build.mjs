@@ -969,13 +969,18 @@ if (PROFILE === 'full') {
   phoneBenchScript = await packedScript('rapier-phone-bench-runtime', 'application/rapier-runtime', 'rapier-phone-bench.js', benchCode);
   phoneBenchSpans = packedRecord.splice(benchSpanStart);
 }
+{
+  const {LETTER_SETS} = await import('../draw/letters.mjs'), platformSource = await read('shell/platform.js');
+  const unslotted = LETTER_SETS.filter(set => !platformSource.includes("'letters-" + set.id + "': null")).map(set => set.id);
+  if (unslotted.length) throw new Error('Letter sets without a plug-in slot in shell/platform.js: ' + unslotted.join(', '));
+}
 const runtimeLoaderSource = startupRelease + '\n' + startupRescue + '\n' +
   'const _rapierBase124 = (() => {\n' + base124Source +
   '\nreturn Object.freeze({encodeBase124, decodeBase124});\n})();\n' +
   (await read('tools/text-pack.mjs')).replace(/^export /gm, '') + '\n' +
   (await read('tools/packed-header.mjs')).replace(/^export /gm, '') + '\n' + await read('tools/runtime-loader.js');
 const runtimeLoader = await lean(fillBuiltinSlot(runtimeLoaderSource,
-  '/* RAPIER_BUILTIN_PLUGINS_READY */', 'await RapierBundledPlugins.ready();'), 'rapier-loader.js');
+  '/* RAPIER_BUILTIN_PLUGINS_READY */', 'try { await RapierBundledPlugins.ready(); } catch (error) { console.warn(\'[rapier] started without its plug-ins\', error); }'), 'rapier-loader.js');
 new vm.Script(runtimeLoader, {filename: 'rapier-runtime-loader.js'});
 const PAINT_STYLE_ORDER = ['rapier-font-style', 'rapier-content-style', 'rapier-app-style', 'rapier-editor-style', 'rapier-highlight-style'];
 const paintStyles = PAINT_STYLE_ORDER.map(id => styles.find(row => row.id === id)).filter(Boolean);
@@ -1085,8 +1090,8 @@ if (PROFILE === 'full') {
   const named = new RegExp('^rapier-(?:' + PART_IDS.join('|') + ')-[0-9a-f]{16}\\.txt$');
   buildPhase('outputs');
   const listed = await readdir(root);
-  buildPhase('assembly');
   for (const name of listed) if (named.test(name) && !partFiles.some(part => part.file === name)) await rm(resolve(root, name));
+  buildPhase('assembly');
   for (const part of partFiles) await writeFile(resolve(root, part.file), part.body);
 }
 if (PROFILE === 'full') {
@@ -1152,7 +1157,9 @@ if (PROFILE === 'full') {
   const destination = resolve(root, 'dist/chatgpt');
   await mkdir(destination, {recursive: true});
   const assetDirectory = resolve(destination, 'editor-assets');
+  buildPhase('outputs');
   await rm(assetDirectory, {recursive: true, force: true});
+  buildPhase('assembly');
   await mkdir(assetDirectory, {recursive: true});
   appAssets = [];
   for (const asset of [...partFiles, ...plugins.assets]) {

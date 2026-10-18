@@ -14,4 +14,4 @@ html[data-layout="docx"] .md-render ol>li::before{content:counter(rapier-ol) "."
 html[data-layout="docx"] .md-render ol>li::after{content:none}
 html[data-layout="docx"] .md-render pre{padding:0;border:0}
 html[data-layout="docx"] #editor-blocks[data-template-page]{min-height:var(--docx-page);align-self:flex-start}
-html[data-layout="docx"] #editor-blocks[data-template-page] img[data-rapier-image-layout*="wrap%3Dbehind"][data-rapier-image-layout*="lock%3Don"]{position:absolute!important;left:calc(-1 * var(--docx-margin))!important;top:calc(-1 * var(--docx-margin))!important;width:calc(100% + 2 * var(--docx-margin))!important;height:var(--docx-page)!important;max-width:none!important;margin:0!important;z-index:-1!important;pointer-events:none}
+html[data-layout="docx"] #editor-blocks[data-template-page] img[data-rapier-image-layout*="wrap%3Dbehind"][data-rapier-image-layout*="lock%3Don"]{position:absolute!important;left:calc(-1 * var(--docx-margin))!important;top:calc(-1 * var(--docx-margin))!important;width:var(--docx-sheet)!important;height:var(--docx-page)!important;max-width:none!important;margin:0!important;z-index:-1!important;pointer-events:none}

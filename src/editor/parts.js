@@ -8,6 +8,9 @@ async function _rapierOpenPresets() {
 async function _rapierOpenSpacing() {
 	if (await _rapierPartReady('document')) return _rapierDocumentPart.spacing();
 }
+async function _rapierOpenBlockSpacing(wrapper) {
+	if (await _rapierPartReady('document')) return _rapierDocumentPart.blockSpacing(wrapper);
+}
 function _rapierPartAvailable(id) { return typeof RapierParts !== 'undefined' && RapierParts.has(id); }
 function _rapierDrawOffered() { return !!_rapierDrawPart || _rapierPartAvailable('drawing'); }
 function _rapierPartWait(id) {

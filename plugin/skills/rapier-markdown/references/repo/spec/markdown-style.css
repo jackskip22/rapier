@@ -270,6 +270,8 @@
 .md-render h6{font-size:var(--md-text-body);font-weight:var(--md-fw-semibold);color:var(--md-heading-muted-color)}
 .md-render p{margin:0 0 var(--md-gap-paragraph)}
 .md-render p[data-md-picture]{margin-bottom:var(--md-gap-block)}
+.md-render :is(p,h1,h2,h3,h4,h5,h6)[data-md-before]{--md-before:0px;margin-top:var(--md-before)}
+.md-render :is(p,h1,h2,h3,h4,h5,h6)[data-md-after]{--md-after:0px;margin-bottom:var(--md-after)}
 .md-render ul,.md-render ol{margin:0 0 var(--md-gap-block);padding-inline-start:var(--md-space-5)}
 .md-render ul{list-style:none}
 .md-render ul>li{position:relative;--md-marker:0px}

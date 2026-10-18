@@ -368,11 +368,10 @@
 
 <!-- ════════ -->
 
-<details class="rapier-frontmatter" id="frontmatter-region" hidden>
-	<summary>Metadata</summary>
-	<pre id="frontmatter-raw" aria-label="metadata source" tabindex="0"></pre>
-	<button type="button" id="frontmatter-source">Edit source</button>
-</details>
+<!-- The document's metadata: one centered button that stands after the last block (editor/frontmatter.js). -->
+<div class="rapier-metadata-end" id="frontmatter-region" contenteditable="false" hidden>
+	<button type="button" class="settings-action-btn" id="frontmatter-open" aria-haspopup="dialog">metadata</button>
+</div>
 
 <!-- WYSIWYG (edit + read modes) -->
 <!-- Edit mode uses one native document selection root. -->

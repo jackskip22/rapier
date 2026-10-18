@@ -18,13 +18,13 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 
 export const BUILD_PROFILES = Object.freeze({reader: 'rapier-reader.html', full: 'rapier.html'});
 const HERE = fileURLToPath(import.meta.url), ROOT = resolve(dirname(HERE), '..');
-const SCHEMA = 'rapier-build-reuse/1';
+const SCHEMA = 'rapier-build-reuse/2';
 const ownImport = value => typeof value === 'string' && (value.startsWith('file:') ? value === pathToFileURL(HERE).href : resolve(value) === HERE);
 const stateKey = Symbol.for('rapier.build-observation');
 const internalIO = new AsyncLocalStorage();
 const NativeDate = globalThis.Date, nativeNow = NativeDate.now;
 const original = {readFileSync: fs.readFileSync, readdirSync: fs.readdirSync, statSync: fs.statSync, existsSync: fs.existsSync,
-  realpathSync: fs.realpathSync,
+  realpathSync: fs.realpathSync, lstatSync: fs.lstatSync,
   readFile: fsp.readFile, writeFile: fsp.writeFile, mkdir: fsp.mkdir, rename: fsp.rename, spawnSync: childProcess.spawnSync};
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const json = value => JSON.stringify(value);
@@ -67,8 +67,11 @@ export function buildShellSource(source) {
       '@id': '', softwareVersion: '', sameAs: [], publisher: {'@id': ''}})) data[name] = value;
     return open + json(data) + close;
   });
-  let region = 0;
-  text = text.replace(/<!-- RAPIER_SEO_BEGIN -->[\s\S]*?<!-- RAPIER_SEO_END -->\n?/g, value => ++region === 2 ? '<!-- RAPIER_SEO_BEGIN -->\n<!-- RAPIER_SEO_END -->\n' : value);
+  text = text.replace(/<!-- RAPIER_SEO_BEGIN -->[\s\S]*?<!-- RAPIER_SEO_END -->\n?/g, '<!-- RAPIER_SEO_BEGIN -->\n<!-- RAPIER_SEO_END -->\n');
+  for (const id of ['lib-dompurify', 'lib-turndown'])
+    text = text.replace(new RegExp('[\\r\\n]*(<script (?:id="' + id + '" type="text/rapier-vendor"|type="text/rapier-vendor" id="' + id + '")>)\\n</script>[\\r\\n]*', 'g'), '\n');
+  text = text.replace(/(<meta name="rapier-version" content="template">)\s*(<!-- RAPIER_SEO_BEGIN -->[\s\S]*?<!-- RAPIER_SEO_END -->)\s*/, '$1\n$2\n\n');
+  text = text.replace(/(<!-- RAPIER_PLATFORM_END -->)[\t\r\n ]*/, '$1\n');
   text = text.replace(/(<script[^>]*type="application\/speedracer-app\+json"[^>]*>)[\s\S]*?(<\/script>)/, '$1$2');
   return text;
 }
@@ -79,7 +82,7 @@ function record(observation, module = false) {
   if (!path) { unknown('non-path filesystem input', module); return; }
   if (path === resolve(ROOT, 'dist/BUILD.json')) return;
   if (current.written.has(path)) return;
-  if (portable(ROOT, path).startsWith('../')) { unknown('input outside the source tree: ' + path, module); return; }
+  if (portable(ROOT, path).startsWith('../') && !/^\.\.\/docs\/[^/]+$/.test(portable(ROOT, path))) { unknown('input outside the source tree: ' + path, module); return; }
   const key = observation.kind + '\0' + path + '\0' + (observation.encoding || '');
   const prior = current.inputs.get(key);
   if (prior && json(prior) !== json(observation)) unknown('input changed while assembling: ' + portable(ROOT, path), module);
@@ -93,13 +96,32 @@ function fileObservation(path, bytes, encoding = null, kind = 'file') {
 function directoryObservation(path, options, result) {
   const settings = typeof options === 'string' ? {encoding: options} : options || {};
   const rows = (result || original.readdirSync(path, settings)).map(row => typeof row === 'string' ? row : Buffer.isBuffer(row) ? {buffer: row.toString('base64')} :
-    {name: row.name, parentPath: row.parentPath, path: row.path, type: row.isDirectory() ? 'directory' : row.isFile() ? 'file' : row.isSymbolicLink() ? 'symlink' :
+    {name: row.name, type: row.isDirectory() ? 'directory' : row.isFile() ? 'file' : row.isSymbolicLink() ? 'symlink' :
       row.isBlockDevice() ? 'block' : row.isCharacterDevice() ? 'character' : row.isFIFO() ? 'fifo' : row.isSocket() ? 'socket' : 'other'});
   return {kind: 'directory', path, options: settings, entries: rows};
 }
-function statObservation(path) {
-  const row = original.statSync(path, {bigint: true});
-  return {kind: 'stat', path, fields: Object.fromEntries(['dev', 'ino', 'mode', 'nlink', 'uid', 'gid', 'rdev', 'size', 'blksize', 'blocks', 'atimeNs', 'mtimeNs', 'ctimeNs', 'birthtimeNs'].map(key => [key, String(row[key])]))};
+function statObservation(path, kind, fields, bigint = false) {
+  const row = original[kind === 'lstat' ? 'lstatSync' : 'statSync'](path, {bigint});
+  return {kind, path, bigint, fields: Object.fromEntries(fields.map(key => [key, String(row[key])]))};
+}
+function observeStat(result, path, kind, options) {
+  const current = state(), key = kind + '\0' + path + '\0';
+  const previous = current.inputs.get(key);
+  const observation = previous || {kind, path, bigint: options?.bigint === true, fields: {}};
+  if (previous && previous.bigint !== (options?.bigint === true)) unknown('stat mode changed: ' + portable(ROOT, path));
+  record(observation);
+  const remember = key => {
+    const value = result[key];
+    if (typeof key === 'string' && typeof value !== 'function') {
+      const before = observation.fields[key];
+      if (before !== undefined && before !== String(value)) unknown('input changed while assembling: ' + portable(ROOT, path));
+      observation.fields[key] = String(value);
+    }
+  };
+  return new Proxy(result, {
+    get(target, key, receiver) { remember(key); return Reflect.get(target, key, receiver); },
+    getOwnPropertyDescriptor(target, key) { remember(key); return Reflect.getOwnPropertyDescriptor(target, key); },
+  });
 }
 function scopeObservation(path, root = ROOT) {
   for (let at = dirname(path); ; at = dirname(at)) {
@@ -117,7 +139,28 @@ function failure(path, error) { if (error?.code === 'ENOENT') record({kind: 'abs
 function install() {
   if (state()) return;
   void process.stdout; void process.stderr; void process.stdin;
-  globalThis[stateKey] = {phase: 'imports', muted: 0, inputs: new Map(), written: new Set(), unknown: new Set(), started: performance.now()};
+  globalThis[stateKey] = {phase: 'imports', muted: 0, inputs: new Map(), written: new Set(), environment: new Set(), environmentValues: new Map(), unknown: new Set(), started: performance.now()};
+  const environmentRead = (target, key) => {
+    if (!active() || typeof key !== 'string') return;
+    const value = sha256(json(target[key] ?? null)), previous = state().environmentValues.get(key);
+    if (previous && previous !== value) unknown('environment input changed during assembly: ' + key);
+    state().environment.add(key); state().environmentValues.set(key, value);
+  };
+  process.env = new Proxy(process.env, {
+    get(target, key) {
+      environmentRead(target, key);
+      return Reflect.get(target, key);
+    },
+    has(target, key) {
+      environmentRead(target, key);
+      return Reflect.has(target, key);
+    },
+    getOwnPropertyDescriptor(target, key) { environmentRead(target, key); return Reflect.getOwnPropertyDescriptor(target, key); },
+    ownKeys(target) {
+      if (active()) unknown('environment enumeration during assembly');
+      return Reflect.ownKeys(target);
+    },
+  });
   if (/(?:^|\s)(?:--(?:require|import|(?:experimental-)?loader)(?:[=\s]|$)|-r(?:[=\s]|$))/.test(process.env.NODE_OPTIONS || '')) unknown('ambient executable preload or loader');
   for (let at = 0; at < process.execArgv.length; at++) {
     const flag = process.execArgv[at];
@@ -125,7 +168,7 @@ function install() {
     if (/^(?:--(?:require|import|(?:experimental-)?loader)(?:=|$)|-r(?:=|$))/.test(flag)) unknown('executable preload or loader: ' + flag);
   }
   record(fileObservation(HERE, original.readFileSync(HERE)));
-  const supported = new Set(['readFileSync', 'readFile', 'readdirSync', 'readdir', 'existsSync', 'statSync', 'stat', 'writeFileSync', 'writeFile', 'mkdirSync', 'mkdir', 'renameSync', 'rename', 'cpSync', 'cp', 'copyFileSync', 'copyFile']);
+  const supported = new Set(['readFileSync', 'readFile', 'readdirSync', 'readdir', 'existsSync', 'statSync', 'stat', 'lstatSync', 'lstat', 'writeFileSync', 'writeFile', 'mkdirSync', 'mkdir', 'renameSync', 'rename', 'cpSync', 'cp', 'copyFileSync', 'copyFile']);
   for (const owner of [fs, fsp]) for (const name of Object.keys(owner)) {
     const fn = owner[name];
     if (typeof fn !== 'function' || /^[A-Z]/.test(name) || ['promises', 'constants'].includes(name)) continue;
@@ -153,15 +196,23 @@ function install() {
       const capture = result => {
         if (!observed) return result;
         if (name.startsWith('readFile')) record(fileObservation(path, result, encoding(args[1])));
-        else if (name.startsWith('readdir')) record(quiet(() => directoryObservation(path, args[1], result)));
+        else if (name.startsWith('readdir')) {
+          record(quiet(() => directoryObservation(path, args[1], result)));
+          return result.map(row => typeof row !== 'object' || Buffer.isBuffer(row) ? row : new Proxy(row, {
+            get(target, key, receiver) {
+              if (key === 'path' || key === 'parentPath') unknown('absolute directory metadata read: ' + portable(ROOT, path));
+              return Reflect.get(target, key, receiver);
+            },
+          }));
+        }
         else if (name === 'existsSync') record({kind: 'exists', path, value: result});
-        else record(quiet(() => statObservation(path)));
+        else return observeStat(result, path, name.startsWith('lstat') ? 'lstat' : 'stat', args[1]);
         return result;
       };
       const callback = args.at(-1);
       if (owner === fs && !name.endsWith('Sync') && typeof callback === 'function') args[args.length - 1] = (error, result) => {
         if (error) { if (observed) failure(path, error); return callback(error); }
-        try { capture(result); } catch (captureError) { unknown('unreadable filesystem observation: ' + name); }
+        try { result = capture(result); } catch (captureError) { unknown('unreadable filesystem observation: ' + name); }
         callback(null, result);
       };
       try {
@@ -313,14 +364,15 @@ export async function readBuildNotice(root = ROOT) {
   } catch (error) { failure(path, error); throw error; }
 }
 
-function configuration(profile, env) {
-  const values = {...env, RAPIER_PROFILE: profile};
+function configuration(profile, env, names = [...(state()?.environment || [])], cwd = process.cwd(), root = ROOT) {
+  const environment = Object.fromEntries([...new Set([...names, 'RAPIER_PROFILE', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ'])].sort().map(key =>
+    [key, sha256(json(key === 'RAPIER_PROFILE' ? profile : env[key] ?? null))]));
   const flags = process.execArgv.filter((value, at, args) => !(value === '--import' && ownImport(args[at + 1])) && !(at > 0 && args[at - 1] === '--import' && ownImport(value)));
-  return {profile, environment: sha256(json(Object.keys(values).sort().map(key => [key, String(values[key])]))), flags, cwd: process.cwd(),
+  return {profile, environment, flags, cwd: portable(root, cwd),
     runtime: {node: process.version, versions: process.versions, platform: process.platform, arch: process.arch, executable: sha256(original.readFileSync(process.execPath))}};
 }
 function validatePath(root, path) {
-  if (typeof path !== 'string' || isAbsolute(path) || path.split('/').includes('..')) throw new Error('receipt path escapes the source tree');
+  if (typeof path !== 'string' || isAbsolute(path) || path.split('/').includes('..') && !/^\.\.\/docs\/[^/]+$/.test(path)) throw new Error('receipt path escapes the source tree');
   return resolve(root, path);
 }
 async function observe(root, expected) {
@@ -331,7 +383,7 @@ async function observe(root, expected) {
   }
   if (expected.kind === 'exists') return {kind: 'exists', path, value: original.existsSync(path)};
   if (expected.kind === 'directory') return directoryObservation(path, expected.options);
-  if (expected.kind === 'stat') return statObservation(path);
+  if (expected.kind === 'stat' || expected.kind === 'lstat') return statObservation(path, expected.kind, Object.keys(expected.fields), expected.bigint);
   if (expected.kind === 'scope') return scopeObservation(path, root);
   if (expected.kind === 'realpath') return {kind: 'realpath', path, target: portable(root, original.realpathSync(path))};
   if (expected.kind === 'shell') return fileObservation(path, buildShellSource(await original.readFile(path, 'utf8')), 'utf8', 'shell');
@@ -340,7 +392,7 @@ async function observe(root, expected) {
   return fileObservation(path, await original.readFile(path, expected.encoding || undefined), expected.encoding);
 }
 const withoutPath = row => { const {path, ...value} = row; return value; };
-async function changedObservations(root, observations) {
+export async function changedObservations(root, observations) {
   const changed = [];
   for (const expected of observations) {
     try {
@@ -366,11 +418,10 @@ export async function checkBuildInputs({root = ROOT, profile, record}) {
   return {inputs: reuse.inputs.length, certificate: digest};
 }
 
-export async function inspectBuildReuse({root = ROOT, profile = 'full', env = process.env} = {}) {
+export async function inspectBuildReuse({root = ROOT, profile = 'full', env = process.env, receipt, outputsRoot = root, checkGateOutputs = true} = {}) {
   if (!Object.hasOwn(BUILD_PROFILES, profile)) throw new Error('Unknown build profile: ' + profile);
   const refuse = (reason, extra = {}) => ({profile, reusable: false, requiresGates: true, reason, ...extra});
-  let receipt;
-  try { receipt = JSON.parse(await original.readFile(resolve(root, 'dist/BUILD.json'), 'utf8')); }
+  try { receipt ??= JSON.parse(await original.readFile(resolve(root, 'dist/BUILD.json'), 'utf8')); }
   catch (_) { return refuse('no readable build receipt'); }
   const record = receipt.profiles?.[profile], reuse = record?.reuse;
   if (!reuse || reuse.schema !== SCHEMA || reuse.profile !== profile || !Array.isArray(reuse.inputs) || !Array.isArray(reuse.outputs) || !Array.isArray(reuse.gateOutputs) || !reuse.inputs.length || !reuse.outputs.length)
@@ -378,12 +429,13 @@ export async function inspectBuildReuse({root = ROOT, profile = 'full', env = pr
   const {digest, ...body} = reuse;
   if (sha256(json(body)) !== digest) return refuse('build certificate is damaged');
   if (reuse.unknown?.length) return refuse('build has unobserved inputs', {unknown: reuse.unknown});
-  if (json(reuse.configuration) !== json(configuration(profile, env))) return refuse('build settings or toolchain changed');
+  if (json(reuse.configuration) !== json(configuration(profile, env, Object.keys(reuse.configuration.environment), state() ? process.cwd() : root, root)))
+    return refuse('observed build settings or toolchain changed');
   const changedInputs = await changedObservations(root, reuse.inputs);
   if (changedInputs.length) return refuse('build input changed', {changedInputs});
-  const changedOutputs = await changedObservations(root, reuse.outputs);
+  const changedOutputs = await changedObservations(outputsRoot, reuse.outputs);
   if (changedOutputs.length) return refuse('build output changed or missing', {changedOutputs});
-  const changedGateOutputs = await changedObservations(root, reuse.gateOutputs);
+  const changedGateOutputs = checkGateOutputs ? await changedObservations(outputsRoot, reuse.gateOutputs) : [];
   if (changedGateOutputs.length) return refuse('generated gate output changed or missing', {changedOutputs: changedGateOutputs});
   const page = reuse.outputs.find(row => row.path === BUILD_PROFILES[profile]);
   if (!page || page.sha256 !== record.sha256 || page.bytes !== record.bytes) return refuse('page and certificate disagree');
@@ -411,6 +463,8 @@ export async function finishBuildReuse({root = ROOT, profile = 'full'} = {}) {
   const current = state();
   if (!current) throw new Error('Build observation did not start before imports');
   buildPhase('receipt');
+  for (const [name, value] of current.environmentValues)
+    if (sha256(json(process.env[name] ?? null)) !== value) current.unknown.add('environment input changed during build: ' + name);
   const receiptPath = resolve(root, 'dist/BUILD.json'), receipt = JSON.parse(await original.readFile(receiptPath, 'utf8'));
   const inputs = [...current.inputs.values()].map(row => ({...row, path: portable(root, row.path)})).sort((a, b) => a.path.localeCompare(b.path) || a.kind.localeCompare(b.kind));
   const changedInputs = await changedObservations(root, inputs);

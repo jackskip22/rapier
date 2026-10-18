@@ -77,8 +77,7 @@ const RapierBundledPlugins = (() => {
 		const needed = (async () => {
 			await load(group);
 			if (id !== 'letters') return;
-			const letters = group;
-			const admitted = await Promise.all(letters.files.map(async file => {
+			const settled = await Promise.allSettled(group.files.map(async file => {
 				const entry = globalThis.RapierDrawLetters.LETTER_SETS.find(set => 'rapier-letters-' + set.id === file.id);
 				if (!entry) throw new Error('The editor letter set is unknown: ' + file.id);
 				const provider = RapierPluginLoader.files({key: 'letters-' + entry.id, noun: entry.name + ' letter set', dash: ' — ',
@@ -88,10 +87,11 @@ const RapierBundledPlugins = (() => {
 				const bytes = (await provider.bytes())[entry.id];
 				const set = globalThis.RapierDrawLetters.admitLetterSet(bytes);
 				if (!set || 'rapier-letters-' + set.id !== file.id) throw new Error('The editor letter set is invalid: ' + file.id);
+				if (!globalThis.RapierDrawLetters.holdLetterSet(set)) throw new Error('The editor letter set could not be held: ' + set.id);
 				return set;
 			}));
-			for (const set of admitted) if (!globalThis.RapierDrawLetters.holdLetterSet(set))
-				throw new Error('The editor letter set could not be held: ' + set.id);
+			const missed = settled.filter(row => row.status === 'rejected').map(row => row.reason);
+			if (missed.length) throw new AggregateError(missed, 'Some letter sets are unavailable');
 		})();
 		needs.set(id, needed);
 		needed.catch(() => { if (needs.get(id) === needed) needs.delete(id); });
@@ -111,9 +111,13 @@ const RapierBundledPlugins = (() => {
 			return out;
 		},
 		async ready() {
-			await carried;
-			await Promise.all(groups.filter(group => !group.asset && !['letters', 'font-subset'].includes(group.id)).map(group => installed(group.id)));
-			if (groups.some(group => group.id === 'letters' && !group.asset)) await need('letters');
+			const settle = (label, work) => Promise.race([
+				Promise.resolve().then(work).catch(error => { try { console.warn('[rapier] started without ' + label, error); } catch (_) {} }),
+				new Promise(resolve => setTimeout(resolve, 8000)),
+			]);
+			await Promise.all(groups.filter(group => !group.asset && !['letters', 'font-subset'].includes(group.id))
+				.map(group => settle(group.id, () => load(group).then(() => installed(group.id)))));
+			if (groups.some(group => group.id === 'letters' && !group.asset)) await settle('some letter sets', () => need('letters'));
 		},
 	});
 })();

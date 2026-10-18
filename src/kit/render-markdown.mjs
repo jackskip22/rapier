@@ -1217,7 +1217,7 @@ function* _rapierProjectPortableNodesSteps(semanticRoot, options) {
 		const alignment = paragraphLayout?.align || columnAlignment;
 		const imageLayout = element.tagName === 'IMG' ? globalThis.RapierMarkdownLayout.parseLayoutAttribute(element.getAttribute('data-rapier-image-layout')) : null;
 		const measurements = keepLayoutData && /^(?:P|H[1-6]|LI|OL|UL)$/.test(element.tagName)
-			? ['text-indent', 'margin-inline-start'].map(property => [property, element.style.getPropertyValue(property)]) : [];
+			? ['text-indent', 'margin-inline-start', 'margin-top', 'margin-bottom', 'line-height'].map(property => [property, element.style.getPropertyValue(property)]) : [];
 		if (keepLayoutData && element.tagName === 'P' && element.closest('table') && element.style.getPropertyValue('hyphens').trim() === 'auto')
 			measurements.push(['hyphens', 'auto']);
 		if (keepLayoutData && element.closest('pre')) for (const property of ['color', 'font-weight', 'font-style'])
@@ -1257,6 +1257,11 @@ function* _rapierProjectPortableNodesSteps(semanticRoot, options) {
 		for (const [property, value] of measurements) if (value) element.style.setProperty(property, value);
 		for (const [property, value] of runTypography) if (value) element.style.setProperty(property, value);
 		if (alignment) element.style.textAlign = alignment;
+		if (paragraphLayout && /^(?:P|H[1-6])$/.test(element.tagName)) {
+			if (paragraphLayout.line != null) element.style.lineHeight = String(paragraphLayout.line).replace(/\+$/, '');
+			if (paragraphLayout.before != null) element.style.marginTop = paragraphLayout.before + 'pt';
+			if (paragraphLayout.after != null) element.style.marginBottom = paragraphLayout.after + 'pt';
+		}
 		if (!keepLayoutData && element.tagName === 'P' && !element.closest('table,pre')) {
 			if (paragraphLayout?.hyphens === 'auto') { element.style.hyphens = 'auto'; element.style.textWrap = 'pretty'; }
 			if (paragraphLayout?.hanging === 'on') element.style.setProperty('hanging-punctuation', 'first allow-end');

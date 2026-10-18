@@ -9,6 +9,7 @@ async function _rapierRescueStartup() {
   controls.textContent = '#rapier-startup-rescue :is(a,button){box-sizing:border-box;width:100%;min-height:44px;padding:.65rem 0;border:0;background:none;color:inherit;font:inherit;overflow-wrap:anywhere;text-decoration:underline;text-underline-offset:.2em}'
     + '#rapier-startup-rescue :is(a,button):not([hidden]){display:block}'
     + '#rapier-startup-rescue :is(a,button):focus-visible{outline:none;text-decoration-thickness:3px}';
+  _rapierPlainEditor(panel, controls);
   section.id = 'rapier-startup-rescue'; section.dataset.state = 'loading';
   section.style.marginTop = '1.5rem';
   panel.style.maxHeight = '100dvh'; panel.style.overflow = 'auto'; panel.style.boxSizing = 'border-box';
@@ -70,4 +71,62 @@ async function _rapierRescueStartup() {
   };
   retry.addEventListener('click', read); addEventListener('pagehide', releaseUrls, {once: true});
   await read();
+}
+
+function _rapierPlainEditor(panel, controls) {
+  if (document.getElementById('rapier-plain-editor')) return;
+  const carried = document.getElementById('rapier-document');
+  let text = '', name = 'untitled.md';
+  if (carried) {
+    text = carried.textContent.replace(/\\([\\/!r0])/g, (_, c) => c === '\\' ? '\\' : c === 'r' ? '\r' : c === '0' ? '\0' : c === '/' ? '</' : '<!');
+    name = (carried.getAttribute('data-name') || 'document.md').replace(/[\\/\0]/g, '-') || 'document.md';
+  }
+  const title = panel.querySelector('.rapier-boot-failure__title, h1'), detail = document.getElementById('rapier-boot-failure-detail');
+  const reason = detail ? (/Startup resource: (.*)$/s.exec(detail.textContent)?.[1] || '') : '';
+  if (title) title.textContent = 'Rapier opened in plain text';
+  if (detail) detail.textContent = carried
+    ? 'The full editor could not start. ' + name + ' is below exactly as saved: edit it, then Save. Reload to try the full editor again.'
+    : 'The full editor could not start. Write below and Save, or download your saved documents. Reload to try the full editor again.';
+  const editor = document.createElement('section'), area = document.createElement('textarea'), row = document.createElement('div');
+  const save = document.createElement('button'), copy = document.createElement('button'), note = document.createElement('p');
+  editor.id = 'rapier-plain-editor';
+  editor.style.cssText = 'margin-top:1.25rem;text-align:left';
+  panel.style.maxWidth = '48rem'; panel.style.width = '100%'; panel.style.boxSizing = 'border-box';
+  area.value = text; area.spellcheck = true; area.setAttribute('aria-label', name);
+  if (!carried) area.placeholder = 'Write here.';
+  area.style.cssText = 'display:block;box-sizing:border-box;width:100%;min-height:55dvh;margin:0;padding:.85rem;border:0;border-radius:0;outline:none;resize:vertical;' +
+    'background:rgba(127,127,127,.14);color:inherit;font:15px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;tab-size:4';
+  row.style.cssText = 'display:flex;gap:1.5rem';
+  for (const [button, label] of [[save, 'Save'], [copy, 'Copy']]) { button.type = 'button'; button.textContent = label; button.style.width = 'auto'; }
+  note.style.cssText = 'min-height:1.55em';
+  if (reason) { const why = document.createElement('p'); why.style.cssText = 'margin-top:.75rem;font-size:12px'; why.textContent = 'Startup resource: ' + reason; editor.append(why); }
+  let edited = false;
+  area.addEventListener('input', () => { edited = area.value !== text; note.textContent = ''; });
+  addEventListener('beforeunload', event => { if (edited) event.preventDefault(); });
+  save.addEventListener('click', async () => {
+    const blob = new Blob([area.value], {type: 'text/markdown;charset=utf-8'});
+    try {
+      const host = globalThis.RapierHost ? globalThis.RapierPlatform?.files?.exportArtifact : null;
+      if (typeof host === 'function') await host(blob, name);
+      else {
+        const link = document.createElement('a'), url = URL.createObjectURL(blob);
+        link.href = url; link.download = name; document.body.append(link); link.click(); link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      }
+      text = area.value; edited = false; note.textContent = 'Saved as ' + name + '.';
+    } catch (error) { note.textContent = 'Not saved: ' + String(error?.message || error); }
+  });
+  copy.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(area.value); note.textContent = 'Copied.'; }
+    catch (_) { area.focus(); area.select(); note.textContent = 'Select all is on: copy it with your keyboard or the menu.'; }
+  });
+  editor.prepend(area);
+  row.append(save, copy);
+  editor.insertBefore(row, editor.children[1] || null);
+  editor.insertBefore(note, row.nextSibling);
+  panel.append(editor);
+  if (!controls.textContent.includes('#rapier-plain-editor'))
+    controls.textContent += '#rapier-plain-editor button{box-sizing:border-box;min-height:44px;padding:.65rem 0;border:0;background:none;color:inherit;font:inherit;text-decoration:underline;text-underline-offset:.2em;cursor:pointer}'
+      + '#rapier-plain-editor button:focus-visible{outline:none;text-decoration-thickness:3px}';
+  if (!controls.isConnected) panel.append(controls);
 }

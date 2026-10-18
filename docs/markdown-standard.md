@@ -90,9 +90,14 @@ Following prose can flow above, beside and below the picture.
 | `hyphens` | `auto` only | Paragraph hyphenation in the document's language, with refined line breaks and bounded word spacing for justification. Omitted when off. |
 | `caps` | `small` only | The paragraph's first line uses the font's real small capitals. An initial letter keeps its ordinary capital. Omitted when off. |
 | `hanging` | `on` only | Opening and closing punctuation may extend into the paragraph's margin. Omitted when off. |
+| `before` | Decimal from `0` to `720`, at most two decimal places, then `pt` | This block's own space above, in place of the document's spacing for its kind (the `spacing` setting). Word's paragraph Spacing Before. |
+| `after` | Decimal from `0` to `720`, at most two decimal places, then `pt` | This block's own space below, in place of the document's spacing for its kind. Word's Spacing After. Between two blocks the larger of one's `after` and the next one's `before` applies. |
+| `line` | Decimal from `0.5` to `4` (a multiple of its type size), or positive decimal up to `720` then `pt` (exact) or `pt+` (at least), at most two decimal places | This block's line spacing: a multiple (`1.5` is one and a half lines), an exact height (`14pt`), or a minimum height (`14pt+`). Word's Line spacing (Multiple, Exactly, At least). |
 
 - Text takes `align`, `first` and `indent`; a list item's leading paragraph also takes `marker`. Paragraphs also take
   `lines`, `hyphens`, `caps` and `hanging`; headings don't.
+- Paragraphs, headings and pictures take `before` and `after`; text takes `line`. A writer that changes the document's
+  `spacing` for every block removes these three fields from every marker.
 - Pictures take none of `hyphens`, `caps`, `hanging` or the indent fields. A picture is sized by `width` or `lines`,
   never both.
 - Images have exactly three modes:
@@ -151,6 +156,9 @@ ASCII spaces or tabs, and ends `-->`. Horizontal whitespace before the close is 
   within `-64` to `64`. No unit, leading zeroes, `+`, exponent or zero value. For example,
   `indent=2.863636 first=-1.395833` records a measured hanging paragraph. This precision keeps Word's integer
   twentieths of a point when an importer converts a measure to the paragraph's scale.
+- `before` and `after` take an unsigned decimal from `0` to `720` with at most two decimal places, then `pt`. `line`
+  takes an unsigned decimal from `0.5` to `4`, or a positive decimal up to `720` then `pt` or `pt+`, with at most two
+  decimal places.
 
 Measured paragraphs inside a table stay ordinary HTML when GFM cells can't express their block layout. Their `style`
 carries `text-indent` and `margin-inline-start` in points, keeping native absolute measurements independent of the
@@ -176,7 +184,7 @@ a block are inert and kept. A reader that doesn't know a field or value treats t
 the picture inline, upright, at its natural size.
 
 Writers emit one marker, lowercase keys, one ASCII space between fields, and the key order
-`align width lines wrap x y rotate opacity first indent marker lock hyphens caps hanging`. They remove insignificant
+`align width lines wrap x y rotate opacity first indent marker lock hyphens caps hanging before after line`. They remove insignificant
 trailing decimal zeroes, omit `y=0em`, `rotate=0deg` and `opacity=100%`, and remove the marker when no fields remain.
 Only an intentional edit changes source; opening, rendering and resizing the viewport never normalize it.
 
@@ -187,7 +195,7 @@ profile.
 
 **Rung 0: any CommonMark reader.** CommonMark hides layout comments as ordinary HTML comments. A picture shows inline,
 upright and solid, at the reader's default width. `align`, `x`, `y`, `wrap`, `lines`, `rotate`, `opacity`, `first`,
-`indent`, `marker`, `hyphens`, `caps` and `hanging` are all invisible.
+`indent`, `marker`, `hyphens`, `caps`, `hanging`, `before`, `after` and `line` are all invisible.
 
 **Rung 1: position and size.**
 

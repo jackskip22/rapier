@@ -18,7 +18,7 @@ async function _rapierDocumentSpacingOpen() {
 		], okLabel: 'Apply', prepare() {
 			remember();
 			if (!current()) throw new Error('The document changed. Open Spacing again.');
-			return spec.updateDocumentSettings(before, {spacing: draft});
+			return _rapierWithoutBlockSpacing(spec.updateDocumentSettings(before, {spacing: draft}));
 		}, async onOk(_, next) {
 			if (next === before) return;
 			if (!current() || !await _rapierCommitSourceProjection([_rapierPrefixSuffixDiff(before, next)], 'document.spacing', null, null,
@@ -45,6 +45,65 @@ async function _rapierDocumentSpacingOpen() {
 	paint();
 	return true;
 }
+function _rapierWithoutBlockSpacing(source) {
+	if (!source.includes('md-layout:v1')) return source;
+	const layout = globalThis.RapierMarkdownLayout, opening = _rapierSplitOpeningFrontmatter(source), body = opening.body;
+	const plan = layout.editLayout(body, md, {start: 0, end: body.length}, {before: null, after: null, line: null}, _rapierMarkdownEnvironment());
+	if (plan.reason) return source;
+	let next = body;
+	for (const edit of plan.edits.slice().sort((a, b) => b.start - a.start)) next = next.slice(0, edit.start) + edit.text + next.slice(edit.end);
+	return source.slice(0, opening.bodyOffset) + next;
+}
+
+async function _rapierBlockSpacingOpen(wrapper) {
+	const spec = globalThis.RapierMarkdownSpec, layout = globalThis.RapierMarkdownLayout, block = _rapierBoundBlock(wrapper);
+	if (!block || _rapierUserMutationBlocked() || rapier.document.docKind !== 'markdown') return false;
+	const raw = String(block.raw || ''), id = block.id;
+	const targets = layout.layoutTargets(raw, md, _rapierMarkdownEnvironment()).filter(target => !target.reason);
+	if (targets.length !== 1 || _rapierListItemTree(raw).list) { showToast('This block follows the document\'s spacing.', 'info'); return false; }
+	const authored = spec.readDocumentSettings(_rapierSourceText());
+	const settings = _rapierWordPage() ? spec.wordDocumentSettings(authored) : authored;
+	const kind = wrapper._rapierRhythmType || (block.type === 'heading' ? 'h' + (wrapper.dataset.headingLevel || 1) : 'paragraph');
+	const documentRow = spec.documentSpacing(settings, kind), own = _rapierBlockSpacing(block);
+	const shown = field => own[field] == null ? '' : typeof own[field] === 'number' ? String(Number(own[field].toFixed(2))) : own[field];
+	const hint = field => String(Number(documentRow[field].toFixed(2)));
+	const fields = targets[0].imageOnly ? ['before', 'after'] : ['before', 'after', 'line'];
+	const dialog = _openFieldDialog({title: 'Block spacing',
+		fields: fields.map(field => ({label: field === 'line' ? 'Line spacing' : 'Space ' + field + ' (pt)', value: shown(field), placeholder: hint(field)})),
+		okLabel: 'Apply', prepare() {
+			const patch = {};
+			for (const [index, field] of fields.entries()) {
+				const text = dialog.inputs[index].value.trim(), value = Number(text), min = field === 'line' ? .5 : 0, max = field === 'line' ? 4 : 720;
+				if (!text) { patch[field] = null; continue; }
+				const height = field === 'line' && /pt\+?$/i.test(text) ? layout.parseLayout('<!--md-layout:v1 line=' + text.toLowerCase() + '-->')?.line : null;
+				if (height) { patch.line = height; continue; }
+				if (!Number.isFinite(value) || value < min || value > max) throw new Error(field === 'line' ? 'Use 0.5 to 4, or a height such as 14pt, for line spacing.' :
+					'Use ' + min + ' to ' + max + ' for space ' + field + '.');
+				patch[field] = Math.round(value * 100) / 100;
+			}
+			return patch;
+		}, onOk(_, patch) {
+			const now = _rapierBlockWrapperById(id);
+			if (!now || _rapierBoundBlock(now)?.raw !== raw) { showToast('The block changed. Tap its handle again.', 'error'); return; }
+			_rapierEditBlockLayout(now, patch);
+		}});
+	for (const input of dialog.inputs) input.inputMode = 'decimal';
+	return true;
+}
+
+function _rapierEditBlockLayout(wrapper, patch) {
+	const layout = globalThis.RapierMarkdownLayout, block = _rapierBoundBlock(wrapper);
+	if (!block || _rapierUserMutationBlocked()) return false;
+	const raw = String(block.raw || '');
+	const plan = layout.editLayout(raw, md, {start: 0, end: raw.length}, patch, _rapierMarkdownEnvironment());
+	if (plan.reason) { showToast('This block\'s spacing cannot be changed without altering its words.', 'info'); return false; }
+	let value = raw;
+	for (const edit of plan.edits.slice().sort((a, b) => b.start - a.start)) value = value.slice(0, edit.start) + edit.text + value.slice(edit.end);
+	if (value === raw) return true;
+	const state = {selection: window.getSelection(), range: null, wrappers: [wrapper], blocksBefore: [_rapierHistoryBlock(block)]};
+	return _rapierApplyRawRange(state, [value], {keepEditing: true});
+}
+
 const _rapierWordView = (() => {
 	let frame = 0, observer = null, active = false;
 	const host = () => document.getElementById('editor-blocks');
@@ -55,7 +114,7 @@ const _rapierWordView = (() => {
 		observer?.disconnect();
 		for (const block of root.children) { block.style.removeProperty('--docx-page-gap'); block.removeAttribute('data-docx-page'); }
 		if (!enabled) {
-			for (const key of ['--docx-sheet', '--docx-margin', '--docx-scale', '--docx-page']) root.style.removeProperty(key);
+			for (const key of ['--docx-sheet', '--docx-margin', '--docx-scale', '--docx-page', '--rapier-page-zoom']) root.style.removeProperty(key);
 			root.removeAttribute('data-template-page');
 			active = false; return;
 		}
@@ -63,7 +122,7 @@ const _rapierWordView = (() => {
 		const settings = globalThis.RapierMarkdownSpec.readDocumentSettings(_rapierSourceText());
 		const width = (settings.papersize?.width || 12240) / 15, height = (settings.papersize?.height || 15840) / 15;
 		const margin = (settings.geometry?.twips ?? 1440) / 15;
-		const zoom = Number(getComputedStyle(root).getPropertyValue('--rapier-step')) || 1;
+		const zoom = (Number(getComputedStyle(root).getPropertyValue('--rapier-step')) || 1) * (Number(root.style.getPropertyValue('--rapier-page-zoom')) || 1);
 		const scale = Math.min(1, Math.max(1, (root.parentElement.clientWidth || document.documentElement.clientWidth) - 16) / width) * zoom;
 		root.style.setProperty('--docx-sheet', width + 'px');
 		root.style.setProperty('--docx-margin', margin + 'px');
@@ -118,4 +177,4 @@ function _rapierClipboardPictures(html, rtf) {
 	if (missing) showToast('Some Word shapes were not in the clipboard.', 'info');
 	return template.innerHTML;
 }
-_rapierDocumentPart = Object.freeze({spacing: _rapierDocumentSpacingOpen, sync: _rapierWordView.sync, clipboard: _rapierClipboardPictures});
+_rapierDocumentPart = Object.freeze({spacing: _rapierDocumentSpacingOpen, blockSpacing: _rapierBlockSpacingOpen, sync: _rapierWordView.sync, clipboard: _rapierClipboardPictures});

@@ -5,7 +5,6 @@ import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 import {admitPreset, PRESET_BYTES} from './record.mjs';
 import {portable, presentation, applyPresentation, insertPassage, preparePreset} from './presets.mjs';
-import {STARTERS} from './starters.mjs';
 import {applyMarkdownSpec} from '../agent/markdown-spec.mjs';
 import {installMarkdownImages} from '../spec/md-assets.mjs';
 import {layoutTargets} from '../layout/markdown.mjs';
@@ -24,15 +23,6 @@ test('record admission is bounded, closed and detached from caller mutation', ()
   assert.throws(() => admitPreset({...sample(), name: '../escape'}));
   assert.throws(() => admitPreset({...sample(), content: {scope: 'document', text: 'x'.repeat(PRESET_BYTES)}}));
   assert.throws(() => admitPreset({...sample(), presentation: {settings: {geometry: '1in'}, fonts: ''}}));
-});
-test('supplied designs have self-contained source and independent admitted copies', async () => {
-  for (const {description, ...record} of STARTERS.filter(row => row.presentation)) {
-    const copy = await preparePreset(record, md), original = record.content.text;
-    portable(copy.content.text, md); applyPresentation('', copy.presentation, md);
-    assert.equal(layoutTargets(original, md).filter(row => row.imageOnly && row.marker && !row.reason).length, 1);
-    copy.content.text += 'changed'; assert.equal(record.content.text, original);
-    assert.ok(md.parse(original, {}).some(row => row.type === 'table_open'));
-  }
 });
 test('page templates are pages: a locked border behind the words and no example text', async () => {
   const {templateMarkdown} = await import('./ornaments.mjs'), {admitTemplate} = await import('../draw/ornaments.mjs');

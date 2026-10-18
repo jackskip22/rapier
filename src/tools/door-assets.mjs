@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {readFile, rm, writeFile} from 'node:fs/promises';
+import {unobservedBuildIO} from './build-reuse.mjs';
 import {join} from 'node:path';
 import {DOORS, GUIDES, doorAssetPath, doorPage} from '../door-worker.js';
 import {createGroupPacker} from './packed-group.mjs';
@@ -14,7 +15,7 @@ export async function readGuides(docs, transform = text => text) {
 }
 
 async function removeDoorAssets(directory) {
-	await Promise.all(['index.html', ...DOOR_ASSET_NAMES, ...GUIDE_ASSET_NAMES].map(name => rm(join(directory, name), {force: true})));
+	await unobservedBuildIO(() => Promise.all(['index.html', ...DOOR_ASSET_NAMES, ...GUIDE_ASSET_NAMES].map(name => rm(join(directory, name), {force: true}))));
 }
 
 export async function writeDoorAssets(directory, page, guides = null, firstPaint = null) {

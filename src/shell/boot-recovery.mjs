@@ -11,6 +11,7 @@ export const scope = (() => {
 })();
 const encoder = new TextEncoder();
 const message = error => String(error?.message || error);
+const forbidden = error => error?.name === 'SecurityError' || error?.name === 'NotAllowedError';
 const missing = error => error?.name === 'NotFoundError';
 const heldSlot = slot => slot === 'current:held' || String(slot || '').startsWith('current:held:');
 const folders = ['', 'attachments', 'audio', 'history/manifests', 'history/texts', 'history/blobs', 'imports', 'thumbs'];
@@ -105,7 +106,7 @@ async function drafts(errors, publish) {
 	try {
 		const raw = localStorage.getItem('rapier:recovery:snapshot' + scope);
 		if (raw) { const row = candidate(JSON.parse(raw), 'local'); if (row) values.push(row); else errors.push('The safety draft failed its stored integrity check.'); }
-	} catch (error) { errors.push('Safety draft: ' + message(error)); }
+	} catch (error) { if (!forbidden(error)) errors.push('Safety draft: ' + message(error)); }
 	try {
 		const storage = globalThis.sessionStorage, prefix = 'rapier:embed:draft' + scope + ':';
 		for (let at = 0; at < (storage?.length || 0); at++) {
@@ -160,7 +161,7 @@ async function drafts(errors, publish) {
 				else if (typeof record.canonicalText === 'string') errors.push('A saved draft failed its stored integrity check: ' + String(record.filename || 'recovered.md'));
 			}
 		}
-	} catch (error) { errors.push('Drafts: ' + message(error)); }
+	} catch (error) { if (!forbidden(error)) errors.push('Drafts: ' + message(error)); }
 	finally { db?.close(); }
 	const result = files(); publish(result); return result;
 }
@@ -307,7 +308,7 @@ async function notes(options, errors, publish) {
 					for (const file of files) expose(file, index);
 				} catch (error) { errors.push('Notes: ' + message(error)); }
 			}
-		}); } catch (error) { errors.push('Notes: ' + message(error)); }
+		}); } catch (error) { if (!forbidden(error)) errors.push('Notes: ' + message(error)); }
 		finally { publish(result()); }
 	}));
 	return result();

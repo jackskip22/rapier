@@ -235,42 +235,15 @@ html[data-focus] #editor-blocks:has(> .block-wrapper--editing) :is(#editor-block
 }
 
 
-.rapier-frontmatter {
-	flex: none;
-	margin-inline: var(--editor-h-pad);
-	background: var(--color-surface);
-	color: var(--color-text);
+.rapier-metadata-end {
+	display: flex;
+	justify-content: center;
+	padding: var(--space-8) 0 var(--space-4);
+	user-select: none;
 }
-.rapier-frontmatter > summary,
-.rapier-frontmatter > button {
-	box-sizing: border-box;
-	min-height: 44px;
-	padding: 0 var(--space-3);
-	border: 0;
-	border-radius: 0;
-	background: transparent;
-	color: inherit;
-	font: var(--fw-semibold) var(--text-sm)/1.4 var(--font-mono);
-	letter-spacing: var(--track-caps);
-	text-transform: uppercase;
-	cursor: pointer;
-	touch-action: manipulation;
-}
-.rapier-frontmatter > summary { display: flex; align-items: center; justify-content: space-between; list-style: none; }
-.rapier-frontmatter > summary::-webkit-details-marker { display: none; }
-.rapier-frontmatter > summary::after { content: 'Show'; }
-.rapier-frontmatter[open] > summary::after { content: 'Hide'; }
-.rapier-frontmatter > pre {
-	max-height: min(24vh, 12rem);
-	overflow: auto;
-	overscroll-behavior: contain;
-	margin: 0;
-	padding: var(--space-2) var(--space-3);
-	font: var(--text-sm)/1.5 var(--font-mono);
-	white-space: pre;
-}
-.rapier-frontmatter > :focus-visible { outline: 0; background: var(--color-surface-hover); }
-body.rapier-notes-open .rapier-frontmatter { display: none; }
+.rapier-metadata-end[hidden] { display: none; }
+.rapier-metadata-end > .settings-action-btn { width: auto; min-width: 12rem; justify-content: center; text-align: center; }
+body.rapier-notes-open .rapier-metadata-end { display: none; }
 
 .editor-area .md-render { --md-table-header-top: calc(0px - var(--space-8)); }
 

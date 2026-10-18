@@ -11,7 +11,7 @@ export const SPACING_PRESETS = Object.freeze({compact: .7, standard: 1, roomy: 1
 const SPACING_SELECTORS = Object.freeze({paragraph: 'p', h1: 'h1', h2: 'h2', h3: 'h3', h4: 'h4', h5: 'h5', h6: 'h6',
 	list: ':is(ul,ol)', item: 'li', table: ':is(table,.table-scroll-wrap)', picture: 'p[data-md-picture]',
 	drawing: ':is(.diagram-block,p[data-md-picture]:has(img[data-md-svg],img[src^="data:image/svg+xml"]))', quote: 'blockquote',
-	code: 'pre', rule: 'hr:not(.footnotes-sep):not([data-md-break])', footnote: '.footnotes', toc: '.rapier-jump-list'});
+	code: 'pre', rule: 'hr:not(.footnotes-sep):not([data-md-break])', footnote: '.footnotes', toc: 'ul.rapier-jump-list'});
 const HEADING_LINE = [1.75 / 2.2, 1.5 / 1.75, 1.2 / 1.5, 1 / 1.25, .9 / 1.1, .82];
 
 export function normalizeDocumentSpacing(value) {
@@ -72,7 +72,10 @@ export function documentSpacingCss(settings, scope = '.md-render', defaults = fa
 		css += selector + '{margin-block:' + length(row.before) + ' ' + length(row.after) + ';line-height:' + row.line + '}';
 		if (settings?.word && /^h[1-6]$/.test(type)) css += selector + '{font-size:' + length(documentHeadingSize(settings, Number(type[1]))) + '}';
 	}
-	css += scope + ' :is(li,td,th,blockquote)>:last-child:not(input){margin-bottom:0}' +
+	css += scope + '>:first-child,' + scope + ' :is(blockquote,li,td,th,dd,.callout,details)>:first-child:not(input){margin-top:0}' +
+		scope + ' :is(li,td,th,blockquote,details,dd)>:last-child:not(input){margin-bottom:0}' +
+		scope + ' :is(p,h1,h2,h3,h4,h5,h6)[data-md-before]{margin-top:var(--md-before)}' +
+		scope + ' :is(p,h1,h2,h3,h4,h5,h6)[data-md-after]{margin-bottom:var(--md-after)}' +
 		scope + ' li:last-child{margin-bottom:0}' + scope + ' li>:is(ul,ol){margin-bottom:0}' +
 		scope + ' .table-scroll-wrap>table{margin-block:0}' +
 		scope + ' pre{font-size:calc(var(--md-text-body) * .7386)}' +

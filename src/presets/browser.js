@@ -117,12 +117,12 @@ _rapierPresetPart = (() => {
       button('Save', async () => { await action(owner.presetName(input.value)); showToast('Starter saved', 'info'); await list(); });
       button('Back', list); input.focus(); input.select();
     };
-    const choose = (record, builtin) => {
+    const choose = record => {
       title(record.name, record.description || [record.content?.scope === 'selection' ? 'Passage' : record.content ? 'Document' : '', record.presentation ? 'Fonts and line spacing' : ''].filter(Boolean).join(' · '));
-      const action = kind => async () => { if (builtin || gate()) await finish(use(record, kind, capture, current, builtin)); };
+      const action = kind => async () => { if (gate()) await finish(use(record, kind, capture, current, false)); };
       if (record.content) { button('New document', action('new')); button('Insert passage', action('insert')); }
       if (record.presentation) button('Apply style to document', action('style'));
-      if (!builtin) {
+      {
         button('Rename', () => { if (gate()) nameForm('Rename starter', record.name, name => store({...record, name}, current, {previous: record})); });
         button('Export starter', () => _download(new Blob([JSON.stringify(record, null, 2) + '\n'], {type: 'application/json'}), record.name + '.rapier-preset.json'));
         button('Remove', () => {
@@ -133,7 +133,7 @@ _rapierPresetPart = (() => {
               if (JSON.stringify(next.blobs[next.records['preset/' + record.id]?.value?.content]) !== JSON.stringify(record)) throw new Error('This starter changed in another window.');
             }); sync(); await list();
           });
-          button('Back', () => choose(record, false));
+          button('Back', () => choose(record));
         });
       }
       button('Back', list); box.querySelector('button')?.focus();
@@ -141,12 +141,11 @@ _rapierPresetPart = (() => {
     async function list() {
       requireCurrent(current); title('Starters');
       button('Page borders', () => { close(); _rapierComposerAct('borders'); });
-      for (const starter of globalThis.RapierStarters.STARTERS) button(starter.name, () => choose(starter, true));
       try { await shelf.ready; await shelf.snapshot(); }
       catch (error) { box.append(element('p', 'link-dialog__description', 'Personal starters could not be read. ' + String(error?.message || error))); button('Close', close); return; }
       requireCurrent(current);
       for (const record of Object.values(shelf.values('preset/'))) {
-        try { const admitted = owner.admitPreset(record); button(admitted.name, () => choose(admitted, false)); }
+        try { const admitted = owner.admitPreset(record); button(admitted.name, () => choose(admitted)); }
         catch (_) { box.append(element('p', 'link-dialog__description', 'A saved starter could not be read.')); }
       }
       const saving = (label, kind) => button(label, () => { if (gate()) nameForm(label, String(rapier.document.filename || 'My starter').replace(/\.md$/i, '').slice(0, 80), name => save(name, kind, capture, current)); });

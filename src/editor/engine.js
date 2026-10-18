@@ -15437,7 +15437,7 @@ function _rapierSectionDragStart(event) {
 		if (!drag.plan && (Math.abs(drag.y - drag.startY) < 4 || !begin())) return;
 		if (!drag.frame) drag.frame = requestAnimationFrame(tick);
 	};
-	const up = () => finish(true);
+	const up = () => { const tapped = !drag.plan; finish(true); if (tapped) void _rapierOpenBlockSpacing(handle.closest('.block-wrapper')); };
 	const cancel = () => finish(false);
 	const escape = e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); } };
 	handle.addEventListener('pointermove', move);
@@ -21125,6 +21125,7 @@ async function _rapierOpenFileInputChanged(event) {
 document.getElementById('file-input').addEventListener('change', _rapierOpenFileInputChanged);
 
 async function rapierOpenPlatformPayload(payload, opts = {}) {
+	const builtIn = _rapierNormalizeVirtualDocumentKind(opts.virtualDocumentKind) === 'welcome';
 	const releaseOriginalProjection = payload?.originalFile ? globalThis.RapierPlatform?.files.holdOriginalProjection() : null;
 	const blob = payload?.blob instanceof Blob ? payload.blob : null, type = String(blob?.type || '').toLowerCase().split(';')[0].trim();
 	const openEpoch = opts.openEpoch ?? ++rapier.identity.userLoadEpoch;
@@ -21316,8 +21317,8 @@ async function rapierOpenPlatformPayload(payload, opts = {}) {
 				carriedLedger: opts.carriedLedger,
 				virtualDocumentKind: _rapierNormalizeVirtualDocumentKind(opts.virtualDocumentKind),
 				  documentKind: opts.documentKind, codeName: opts.codeName,
-				saveAsRequired: payload.transient === true,
-				opensClean: false,
+				saveAsRequired: payload.transient === true && !builtIn,
+				opensClean: builtIn,
 				readingPointOwed: !viewContinuity && payload.transient !== true,
 				expectedMutationStamp: commitAdmission.value.stamp,
 
@@ -21344,7 +21345,7 @@ async function rapierOpenPlatformPayload(payload, opts = {}) {
 			try {
 				if (!_rapierPersistenceRuntime.recoveryHeld && !_rapierPersistenceCaptureBlocked(rapier.bindingTransition)) {
 					const openingSnapshot = _rapierCreatePersistenceSnapshot();
-					if (payload.transient !== true) openingSnapshot.savedGeneration = openedState.generation;
+					if (payload.transient !== true || builtIn) openingSnapshot.savedGeneration = openedState.generation;
 					kept = await rapierFlushDirty({ snapshot: true, durable: true,
 						persistenceSnapshot: openingSnapshot, mutationOwner: rapier.bindingTransition,
 						onPrepared: value => { openedRecovery = value; } });
@@ -22683,7 +22684,7 @@ function _rapierStripPlainLayoutFacts(root) {
 			node.removeAttribute('data-md-' + key);
 			node.style.removeProperty('--md-' + key);
 		}
-		for (const key of ['--md-drop-lines', '--md-drop-cap-font']) node.style.removeProperty(key);
+		for (const key of ['--md-drop-lines', '--md-drop-cap-font', 'line-height']) node.style.removeProperty(key);
 		node.removeAttribute('data-md-layout-tight');
 	});
 	root.querySelectorAll('img[data-rapier-image-layout]').forEach(image => {

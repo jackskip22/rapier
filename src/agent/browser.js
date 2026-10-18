@@ -1631,7 +1631,7 @@
       };
       if (request.expected_foreground?.binding !== before.binding || request.expected_foreground?.generation !== before.generation || !foreground())
         return {refused: 'notes_foreground_changed'};
-      const answer = await invitation('note', !!notesFact()?.open);
+      const answer = await invitation('note', !!notesFact()?.open || !!door.activeDocument?.(request.note_ref));
       if (answer === 'typing') return {refused: 'human_edit_in_progress'};
       if (answer === 'declined') return {refused: 'invitation_not_taken'};
       if (!foreground()) return {refused: 'notes_foreground_changed'};

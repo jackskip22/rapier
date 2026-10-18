@@ -259,12 +259,103 @@ function _rapierPinchIndicate(on, index) {
 	pill.classList.add('rapier-pinch-pill--on');
 }
 
+const RAPIER_PAGE_ZOOM = { least: 1, most: 4, band: 0.25, ease: 220 };
+const _rapierPageZoom = { phase: 'idle' };
+function _rapierPageView() { return document.documentElement.dataset.layout === 'docx'; }
+function _rapierPageDesk() { return document.getElementById('document-main'); }
+function _rapierPageZoomNow(host) { return Number(host.style.getPropertyValue('--rapier-page-zoom')) || 1; }
+function _rapierPageZoomMayStart(event, host) {
+	const desk = _rapierPageDesk();
+	if (!host || !desk || event.touches.length !== 2 || document.body.classList.contains('rapier-draw-open')) return false;
+	for (const touch of event.touches) if (!(touch.target instanceof Element) || !desk.contains(touch.target) || touch.target.closest(RAPIER_PINCH_OWNERS)) return false;
+	return true;
+}
+function _rapierPageZoomBegin(host, x, y, span) {
+	const state = _rapierPageZoom, box = host.getBoundingClientRect(), shown = Number(getComputedStyle(host).zoom) || 1;
+	const scale = Number(host.style.getPropertyValue('--docx-scale')) || shown;
+	Object.assign(state, { phase: 'zooming', host, base: _rapierPageZoomNow(host), scale, u: (x - box.left) / scale, v: (y - box.top) / scale,
+		x0: x, y0: y, x, y, span0: span, factor: 1, frame: 0 });
+	host.style.transformOrigin = (x - box.left) / shown + 'px ' + (y - box.top) / shown + 'px';
+	host.style.willChange = 'transform';
+	_rapierPinch.swallowUntil = performance.now() + 1500;
+}
+function _rapierPageZoomClamp(raw, base, band = true) {
+	const least = RAPIER_PAGE_ZOOM.least / base, most = RAPIER_PAGE_ZOOM.most / base;
+	if (!band) return Math.min(most, Math.max(least, raw));
+	if (raw > most) return most * (1 + RAPIER_PAGE_ZOOM.band * Math.log(raw / most));
+	if (raw < least) return least / (1 + RAPIER_PAGE_ZOOM.band * Math.log(least / raw));
+	return raw;
+}
+function _rapierPageZoomDraw() {
+	const state = _rapierPageZoom, shown = Number(getComputedStyle(state.host).zoom) || 1;
+	state.frame = 0;
+	state.host.style.transform = 'translate(' + (state.x - state.x0) / shown + 'px,' + (state.y - state.y0) / shown + 'px) scale(' + state.factor + ')';
+}
+function _rapierPageZoomTrack(factor, x, y) {
+	const state = _rapierPageZoom;
+	state.factor = _rapierPageZoomClamp(factor, state.base); state.x = x; state.y = y;
+	if (!state.frame) state.frame = requestAnimationFrame(_rapierPageZoomDraw);
+}
+function _rapierPageZoomSettle() {
+	const state = _rapierPageZoom, host = state.host, desk = _rapierPageDesk();
+	cancelAnimationFrame(state.frame); state.frame = 0;
+	const factor = _rapierPageZoomClamp(state.factor, state.base, false), zoom = state.base * factor;
+	host.style.transform = ''; host.style.transformOrigin = ''; host.style.willChange = '';
+	if (Math.abs(zoom - 1) < 0.01) host.style.removeProperty('--rapier-page-zoom'); else host.style.setProperty('--rapier-page-zoom', String(zoom));
+	const scale = state.scale * factor;
+	host.style.setProperty('--docx-scale', String(scale));
+	const box = host.getBoundingClientRect();
+	if (desk) { desk.scrollLeft += box.left + state.u * scale - state.x; desk.scrollTop += box.top + state.v * scale - state.y; }
+	state.phase = 'idle';
+	if (typeof _rapierDocumentPart !== 'undefined' && _rapierDocumentPart?.sync) _rapierDocumentPart.sync();
+}
+function _rapierPageZoomStart(event) {
+	const host = _rapierPinchHost(), state = _rapierPageZoom;
+	if (state.phase === 'zooming' || !_rapierPageZoomMayStart(event, host)) return;
+	const fingers = _rapierPinchFingers(event.touches);
+	state.phase = 'armed'; state.host = host; state.armed = fingers;
+	const move = moveEvent => {
+		if (moveEvent.touches.length < 2) return;
+		const now = _rapierPinchFingers(moveEvent.touches);
+		if (state.phase === 'armed') {
+			if (Math.abs(now.span - state.armed.span) <= Math.max(RAPIER_PINCH_BEGIN.share * state.armed.span, RAPIER_PINCH_BEGIN.pixels)) return;
+			_rapierPageZoomBegin(host, state.armed.x, state.armed.y, state.armed.span);
+		}
+		if (moveEvent.cancelable) moveEvent.preventDefault();
+		_rapierPageZoomTrack(now.span / state.span0, now.x, now.y);
+	};
+	const end = endEvent => {
+		if (endEvent.touches && endEvent.touches.length >= 2) return;
+		document.removeEventListener('touchmove', move, true); document.removeEventListener('touchend', end, true); document.removeEventListener('touchcancel', end, true);
+		if (state.phase === 'armed') { state.phase = 'idle'; return; }
+		if (endEvent.cancelable) endEvent.preventDefault();
+		_rapierPageZoomSettle();
+	};
+	document.addEventListener('touchmove', move, { capture: true, passive: false });
+	document.addEventListener('touchend', end, { capture: true, passive: false });
+	document.addEventListener('touchcancel', end, { capture: true, passive: false });
+}
+function _rapierPageZoomWheel(event) {
+	const state = _rapierPageZoom, host = _rapierPinchHost(), desk = _rapierPageDesk();
+	if (!event.ctrlKey || !host || !desk || !(event.target instanceof Element) || !desk.contains(event.target) || event.target.closest(RAPIER_PINCH_OWNERS)) return;
+	event.preventDefault();
+	if (state.phase !== 'zooming') { _rapierPageZoomBegin(host, event.clientX, event.clientY, 1); state.raw = 1; }
+	const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1;
+	state.raw *= Math.exp(-Math.max(-25, Math.min(25, event.deltaY * unit)) * 0.01);
+	_rapierPageZoomTrack(state.raw, state.x0, state.y0);
+	clearTimeout(state.wheel);
+	state.wheel = setTimeout(() => { if (state.phase === 'zooming') _rapierPageZoomSettle(); }, RAPIER_PINCH_WHEEL_REST_MS);
+}
+
 (function _rapierPinchInstall() {
 	const host = _rapierPinchHost();
 	if (!host) return;
-	host.addEventListener('touchstart', _rapierPinchStart, { capture: true, passive: true });
-	host.addEventListener('wheel', _rapierPinchWheel, { capture: true, passive: false });
-	for (const name of ['gesturestart', 'gesturechange']) host.addEventListener(name, event => event.preventDefault(), { capture: true, passive: false });
+	const desk = _rapierPageDesk();
+	const start = event => _rapierPageView() ? _rapierPageZoomStart(event) : _rapierPinchStart(event);
+	const wheel = event => _rapierPageView() ? _rapierPageZoomWheel(event) : _rapierPinchWheel(event);
+	(desk || host).addEventListener('touchstart', start, { capture: true, passive: true });
+	(desk || host).addEventListener('wheel', wheel, { capture: true, passive: false });
+	for (const name of ['gesturestart', 'gesturechange']) (desk || host).addEventListener(name, event => event.preventDefault(), { capture: true, passive: false });
 	host.addEventListener('click', event => {
 		if (performance.now() > _rapierPinch.swallowUntil) return;
 		event.preventDefault(); event.stopPropagation();

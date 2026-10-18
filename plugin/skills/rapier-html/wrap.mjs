@@ -64,7 +64,7 @@ export function offlineTemplate(pageHtml, address = null) {
 		head.slice(at) + pageHtml.slice(end);
 }
 
-export const CHOICES = Object.freeze(['drawing', 'math', 'mermaid']);
+export const CHOICES = Object.freeze(['drawing', 'layout', 'math', 'mermaid']);
 const INVENTORY = '<script type="application/json" id="rapier-builtin-plugins">';
 const element = (html, id) => {
 	const start = html.indexOf('<script type="application/rapier-runtime" id="' + id + '">');
@@ -79,8 +79,9 @@ export function carry(pageHtml, include = []) {
 	if (kept.has('drawing')) kept.add('letters');
 	let html = pageHtml;
 	const cut = id => { const at = element(html, id); if (at) html = html.slice(0, at.start) + html.slice(at.end); };
+	const parts = new Set([...(kept.has('drawing') ? ['rapier-part-drawing'] : []), ...(kept.has('layout') ? ['rapier-part-document'] : [])]);
 	for (const id of [...new Set([...html.matchAll(/<script type="application\/rapier-runtime" id="(rapier-part-[a-z-]+)">/g)].map(match => match[1]))])
-		if (id !== 'rapier-part-drawing' || !kept.has('drawing')) cut(id);
+		if (!parts.has(id)) cut(id);
 	const start = html.indexOf(INVENTORY);
 	if (start < 0) return html;
 	const close = html.indexOf(END, start), end = html[close + END.length] === '\n' ? close + END.length + 1 : close + END.length;
@@ -95,6 +96,8 @@ export function portableNeeds(text, {base, flowchart} = {}) {
 	for (const source of [text, base]) {
 		if (typeof source !== 'string') continue;
 		let prose = '';
+		const front = /^---[ \t]*\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(source);
+		if (front && /^template:[ \t]*page[ \t]*$/m.test(front[0])) needs.add('layout');
 		const lines = source.split(/\r\n|\r|\n/);
 		for (let at = 0; at < lines.length; at++) {
 			const open = /^ {0,3}(`{3,}|~{3,})\s*([^\s`]*)/.exec(lines[at]);

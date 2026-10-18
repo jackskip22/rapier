@@ -1,11 +1,22 @@
 // SPDX-License-Identifier: MIT
 
-export const fields = new Set(['align', 'width', 'lines', 'wrap', 'x', 'y', 'rotate', 'opacity', 'first', 'indent', 'marker', 'lock', 'hyphens', 'caps', 'hanging']);
+export const fields = new Set(['align', 'width', 'lines', 'wrap', 'x', 'y', 'rotate', 'opacity', 'first', 'indent', 'marker', 'lock', 'hyphens', 'caps', 'hanging', 'before', 'after', 'line']);
+export const SPACING_FIELDS = Object.freeze(['before', 'after', 'line']);
 export const alignments = new Set(['left', 'center', 'right', 'justify']);
 export const wraps = new Set(['around', 'box', 'behind', 'front']);
 const has = (value, key) => Object.hasOwn(value, key);
 const percent = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100;
 const lineCount = value => Number.isInteger(value) && value >= 1 && value <= 12;
+const hundredths = value => Math.abs(value * 100 - Math.round(value * 100)) < 1e-9;
+const spaceValue = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 720 && hundredths(value);
+const linePoint = value => {
+  if (typeof value !== 'string') return null;
+  const match = /^(?:0|[1-9]\d{0,2})(?:\.\d{1,2})?pt(\+)?$/.exec(value);
+  if (!match) return null;
+  const points = Number(value.slice(0, match[1] ? -3 : -2));
+  return points > 0 && points <= 720 && hundredths(points) && value === decimal(points) + (match[1] ? 'pt+' : 'pt') ? {points, atLeast: !!match[1]} : null;
+};
+const lineValue = value => typeof value === 'number' ? Number.isFinite(value) && value >= .5 && value <= 4 && hundredths(value) : !!linePoint(value);
 export const INDENT_LIMIT = 64;
 export const indentLevel = value => typeof value === 'number' && Number.isFinite(value) && value !== 0 &&
   Math.abs(value) <= INDENT_LIMIT && Number(value.toFixed(6)) === value;
@@ -34,6 +45,8 @@ export function validLayout(value) {
     (!has(value, 'hyphens') || value.hyphens === 'auto') &&
     (!has(value, 'caps') || value.caps === 'small') &&
     (!has(value, 'hanging') || value.hanging === 'on') &&
+    (!has(value, 'before') || spaceValue(value.before)) && (!has(value, 'after') || spaceValue(value.after)) &&
+    (!has(value, 'line') || lineValue(value.line)) &&
     !(has(value, 'align') && (has(value, 'wrap') || has(value, 'x')));
 }
 
@@ -68,6 +81,15 @@ export function parseLayout(comment) {
     } else if (key === 'lines') {
       if (!/^[1-9]\d?$/.test(raw)) return null;
       value.lines = Number(raw);
+    } else if (key === 'before' || key === 'after') {
+      if (!/^(?:0|[1-9]\d{0,2})(?:\.\d{1,2})?pt$/.test(raw)) return null;
+      value[key] = Number(raw.slice(0, -2));
+    } else if (key === 'line') {
+      if (/^[0-4](?:\.\d{1,2})?$/.test(raw)) value.line = Number(raw);
+      else if (/^(?:0|[1-9]\d{0,2})(?:\.\d{1,2})?pt\+?$/.test(raw)) {
+        const plus = raw.endsWith('+');
+        value.line = decimal(Number(raw.slice(0, plus ? -3 : -2))) + (plus ? 'pt+' : 'pt');
+      } else return null;
     } else if (key === 'first' || key === 'indent' || key === 'marker') {
       if (!/^-?(?:0|[1-9]\d?)(?:\.\d{1,6})?$/.test(raw)) return null;
       value[key] = Number(raw);
@@ -94,19 +116,47 @@ export function textStyle(value, {portable = false, pointSize, indentOffset = 0}
         'calc(' + measure + ' * var(--md-text-body))');
     });
   if (portable && value.hyphens === 'auto') css.push('hyphens:auto');
+  if (has(value, 'line')) {
+    const point = linePoint(value.line);
+    const unit = point && 'calc(' + decimal(Number((point.points / 12).toFixed(6))) + ' * var(--md-unit))';
+    css.push('line-height:' + (!point ? decimal(value.line) : portable ? decimal(point.points) + 'pt' : point.atLeast ? 'max(1.2em, ' + unit + ')' : unit));
+  }
+  for (const [key, prop] of [['before', 'margin-top'], ['after', 'margin-bottom']])
+    if (has(value, key)) css.push(portable ? prop + ':' + decimal(value[key]) + 'pt' :
+      '--md-' + key + ':calc(' + decimal(Number((value[key] / 12).toFixed(6))) + ' * var(--md-unit))');
   return css.join(';');
 }
 
 export function textLayout(style, {listMarker = false, pointSize, offset = 0} = {}) {
+  const get = property => (typeof style?.getPropertyValue === 'function' ? style.getPropertyValue(property) :
+    style?.[property] ?? style?.[property.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] ?? '').trim();
   const value = {};
   for (const [key, property] of (listMarker ? [['marker', 'margin-inline-start']] : [['first', 'text-indent'], ['indent', 'margin-inline-start']])) {
-    const raw = style?.getPropertyValue(property).trim() || '';
+    const raw = get(property);
     const match = /^(-?(?:0|[1-9]\d*)(?:\.\d{1,6})?)(em|pt)$/.exec(raw);
     const level = Number(((match ? Number(match[1]) / (match[2] === 'pt' ? pointSize : 1) / 2 : 0) +
       (key === 'first' ? 0 : offset)).toFixed(6));
     if (Number.isFinite(level) && level) value[key] = level;
   }
-  if (!listMarker && style?.getPropertyValue('hyphens').trim() === 'auto') value.hyphens = 'auto';
+  if (!listMarker) {
+    if (get('hyphens') === 'auto') value.hyphens = 'auto';
+    for (const [key, property] of [['before', 'margin-top'], ['after', 'margin-bottom']]) {
+      const raw = get(property);
+      if (/^(?:0|[1-9]\d{0,2})(?:\.\d{1,2})?pt$/i.test(raw)) {
+        const points = Number(raw.slice(0, -2));
+        if (spaceValue(points)) value[key] = points;
+      }
+    }
+    const line = get('line-height');
+    if (/^[0-4](?:\.\d{1,2})?$/.test(line)) {
+      const factor = Number(line);
+      if (lineValue(factor)) value.line = factor;
+    } else if (/^(?:0|[1-9]\d{0,2})(?:\.\d{1,2})?pt\+?$/i.test(line)) {
+      const atLeast = line.endsWith('+'), points = Number(line.slice(0, atLeast ? -3 : -2));
+      const formatted = decimal(points) + (atLeast ? 'pt+' : 'pt');
+      if (lineValue(formatted)) value.line = formatted;
+    }
+  }
   return value;
 }
 
@@ -173,7 +223,8 @@ export function formatLayout(value) {
     if (has(value, key) && !(key === 'y' && value.y === 0) && !(key === 'rotate' && value.rotate === 0) &&
       !(key === 'opacity' && value.opacity === 100)) pairs.push(key + '=' +
       (key === 'width' || key === 'x' || key === 'opacity' ? decimal(value[key]) + '%' : key === 'y' ? decimal(value.y) + 'em' :
-        key === 'rotate' ? decimal(value.rotate) + 'deg' : value[key]));
+        key === 'rotate' ? decimal(value.rotate) + 'deg' : key === 'before' || key === 'after' ? decimal(value[key]) + 'pt' :
+        key === 'line' ? (typeof value.line === 'number' ? decimal(value.line) : value.line) : value[key]));
   }
   return pairs.length ? '<!--md-layout:v1 ' + pairs.join(' ') + '-->' : '';
 }
