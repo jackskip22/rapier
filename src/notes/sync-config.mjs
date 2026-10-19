@@ -4,6 +4,13 @@ export const CLOUDFLARE_SYNC = Object.freeze({
 	scopes: Object.freeze([]),
 	browserRoundTripVerified: false,
 });
+export const CLOUDFLARE_SETUP = Object.freeze({
+	enabled: false,
+	clientId: '',
+	redirectUri: 'https://rapier.website/',
+	scopes: Object.freeze(['memberships.read', 'user-details.read', 'workers-scripts.write']),
+	browserRoundTripVerified: false,
+});
 export const OTHER_SYNC = Object.freeze({
 	drive: Object.freeze({clientId: '', redirectUri: 'https://rapier.website/notes', pickerKey: '', appId: ''}),
 	onedrive: Object.freeze({clientId: '', redirectUri: 'https://rapier.website/notes'}),

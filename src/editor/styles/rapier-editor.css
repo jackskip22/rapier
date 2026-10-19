@@ -393,6 +393,7 @@ body.rapier-notes-open .rapier-metadata-end { display: none; }
 .fence-copy[data-copied] .fence-copy__copy { display: none; }
 .fence-copy[data-copied] .fence-copy__done { display: block; }
 .block-wrapper--editing > .fence-copy { display: none; }
+.fence-copy--nested[hidden] { display: none; }
 
 .block-wrapper[data-folded="true"] > .section-fold-btn svg { transform: rotate(90deg); }
 .block-wrapper--heading[data-heading-level="1"] > :is(.section-fold-btn, .section-move-btn) { inset-block-start: min(0px, calc((var(--md-line) * 1.75 - 44px) / 2)); height: max(44px, calc(var(--md-line) * 1.75)); }

@@ -449,7 +449,7 @@
     }
     const textNodes = root => {
       const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {acceptNode(text) {
-        return text.parentElement?.closest('button, .code-copy-btn, .katex, svg') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+        return text.parentElement?.closest('button, .katex, svg') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
       }});
       const result = []; for (let text = walker.nextNode(); text; text = walker.nextNode()) result.push(text);
       return result;

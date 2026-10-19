@@ -9,12 +9,12 @@ async function _rapierRescueStartup() {
   controls.textContent = '#rapier-startup-rescue :is(a,button){box-sizing:border-box;width:100%;min-height:44px;padding:.65rem 0;border:0;background:none;color:inherit;font:inherit;overflow-wrap:anywhere;text-decoration:underline;text-underline-offset:.2em}'
     + '#rapier-startup-rescue :is(a,button):not([hidden]){display:block}'
     + '#rapier-startup-rescue :is(a,button):focus-visible{outline:none;text-decoration-thickness:3px}';
-  _rapierPlainEditor(panel, controls);
+  const plain = _rapierPlainEditor(panel, controls);
   section.id = 'rapier-startup-rescue'; section.dataset.state = 'loading';
   section.style.marginTop = '1.5rem';
   panel.style.maxHeight = '100dvh'; panel.style.overflow = 'auto'; panel.style.boxSizing = 'border-box';
   retry.type = 'button'; retry.textContent = 'Read saved work again'; retry.hidden = true;
-  section.append(controls, status, files, retry); panel.append(section);
+  section.append(controls, files, status, retry); panel.append(section);
   let result = null, generation = 0;
   const releaseUrls = () => { for (const url of urls) URL.revokeObjectURL(url); urls.clear(); };
   const renderStatus = () => {
@@ -61,6 +61,7 @@ async function _rapierRescueStartup() {
         fragment.appendChild(links.get(row));
       }
       files.replaceChildren(fragment); renderStatus(); retry.disabled = false;
+      void plain?.offer(result.drafts[0]);
     };
     try {
       render(await globalThis.RapierBootRecovery.collect({onUpdate: render}));
@@ -101,10 +102,13 @@ function _rapierPlainEditor(panel, controls) {
   note.style.cssText = 'min-height:1.55em';
   if (reason) { const why = document.createElement('p'); why.style.cssText = 'margin-top:.75rem;font-size:12px'; why.textContent = 'Startup resource: ' + reason; editor.append(why); }
   let edited = false;
-  area.addEventListener('input', () => { edited = area.value !== text; note.textContent = ''; });
+  const crlfOf = value => /\r\n/.test(value) && !/(?:^|[^\r])\n/.test(value);
+  let crlf = crlfOf(text);
+  const shown = () => text.replace(/\r\n?/g, '\n');
+  area.addEventListener('input', () => { edited = area.value !== shown(); note.textContent = ''; });
   addEventListener('beforeunload', event => { if (edited) event.preventDefault(); });
   save.addEventListener('click', async () => {
-    const blob = new Blob([area.value], {type: 'text/markdown;charset=utf-8'});
+    const blob = new Blob([crlf ? area.value.replace(/\n/g, '\r\n') : area.value], {type: 'text/markdown;charset=utf-8'});
     try {
       const host = globalThis.RapierHost ? globalThis.RapierPlatform?.files?.exportArtifact : null;
       if (typeof host === 'function') await host(blob, name);
@@ -113,7 +117,7 @@ function _rapierPlainEditor(panel, controls) {
         link.href = url; link.download = name; document.body.append(link); link.click(); link.remove();
         setTimeout(() => URL.revokeObjectURL(url), 60000);
       }
-      text = area.value; edited = false; note.textContent = 'Saved as ' + name + '.';
+      text = crlf ? area.value.replace(/\n/g, '\r\n') : area.value; edited = false; note.textContent = 'Saved as ' + name + '.';
     } catch (error) { note.textContent = 'Not saved: ' + String(error?.message || error); }
   });
   copy.addEventListener('click', async () => {
@@ -129,4 +133,15 @@ function _rapierPlainEditor(panel, controls) {
     controls.textContent += '#rapier-plain-editor button{box-sizing:border-box;min-height:44px;padding:.65rem 0;border:0;background:none;color:inherit;font:inherit;text-decoration:underline;text-underline-offset:.2em;cursor:pointer}'
       + '#rapier-plain-editor button:focus-visible{outline:none;text-decoration-thickness:3px}';
   if (!controls.isConnected) panel.append(controls);
+  let offered = null;
+  const offer = async row => {
+    if (carried || !row || row === offered || edited || area.value !== shown()) return;
+    let value;
+    try { value = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(await (row.blob || await row.read()).arrayBuffer()); }
+    catch (_) { return; }
+    if (edited || area.value !== shown()) return;
+    offered = row; text = value; crlf = crlfOf(value); name = row.name; area.value = value; area.setAttribute('aria-label', name); area.placeholder = '';
+    if (detail) detail.textContent = 'The full editor could not start. Your last draft, ' + name + ', is below: edit it, then Save. Reload to try the full editor again.';
+  };
+  return {offer};
 }

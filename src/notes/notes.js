@@ -35,7 +35,7 @@ async function _rapierNotesUnlock() {
 	if (!_rapierNotes.unlocking) _rapierNotes.unlocking = Promise.resolve().then(unlock).then(result => {
 		if (result?.unlocked !== true) return false;
 		_rapierNotes.captureToken = null; return true;
-	}).catch(error => { showToast('Unlock could not be completed. Your capture remains open.', 'error'); console.warn('[rapier] notes', error); return false; })
+	}).catch(error => { showToast('Could not unlock. Your note stays open.', 'error'); console.warn('[rapier] notes', error); return false; })
 		.finally(() => { _rapierNotes.unlocking = null; });
 	return _rapierNotes.unlocking;
 }
@@ -75,7 +75,7 @@ function _rapierNotesBesideLeave() {
 }
 async function _rapierNotesEditor() {
 	if (!await _rapierNotesUnlock()) {
-		showToast('Unlock to return to Rapier. Your capture remains open.', 'info');
+		showToast('Unlock your phone to go back to Rapier. Your note stays open.', 'info');
 		return false;
 	}
 	const state = _rapierNotes;

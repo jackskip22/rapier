@@ -112,14 +112,15 @@ const _rapierWordView = (() => {
 		const root = host(); if (!root) return;
 		const enabled = _rapierWordPage();
 		observer?.disconnect();
-		for (const block of root.children) { block.style.removeProperty('--docx-page-gap'); block.removeAttribute('data-docx-page'); }
+		const blocks = _blockWrapperChildren(root);
+		for (const block of blocks) if (block.hasAttribute('data-docx-page')) { block.style.removeProperty('--docx-page-gap'); block.removeAttribute('data-docx-page'); }
 		if (!enabled) {
 			for (const key of ['--docx-sheet', '--docx-margin', '--docx-scale', '--docx-page', '--rapier-page-zoom']) root.style.removeProperty(key);
 			root.removeAttribute('data-template-page');
 			active = false; return;
 		}
 		active = true;
-		const settings = globalThis.RapierMarkdownSpec.readDocumentSettings(_rapierSourceText());
+		const settings = globalThis.RapierMarkdownSpec.readDocumentSettings(String(rapier.document.frontmatter || ''));
 		const width = (settings.papersize?.width || 12240) / 15, height = (settings.papersize?.height || 15840) / 15;
 		const margin = (settings.geometry?.twips ?? 1440) / 15;
 		const zoom = (Number(getComputedStyle(root).getPropertyValue('--rapier-step')) || 1) * (Number(root.style.getPropertyValue('--rapier-page-zoom')) || 1);
@@ -130,17 +131,20 @@ const _rapierWordView = (() => {
 		root.style.setProperty('--docx-page', height + 'px');
 		root.toggleAttribute('data-template-page', _rapierTemplatePage());
 		const pageHeight = Math.max(1, (height - 2 * margin) * scale);
+		const shown = blocks.filter(block => !block.hidden && !block.classList.contains('block-wrapper--metadata'));
+		const heights = shown.map(block => block.getBoundingClientRect().height);
 		let used = 0, page = 1;
-		for (const block of root.children) {
-			if (!block.classList.contains('block-wrapper') || block.hidden || block.classList.contains('block-wrapper--metadata')) continue;
-			const box = block.getBoundingClientRect(), explicit = !!block.querySelector('[data-md-break="page"]');
-			if (used && (explicit || box.height <= pageHeight && used + box.height > pageHeight)) {
-				block.style.setProperty('--docx-page-gap', Math.max(0, pageHeight - used) / scale + 2 * margin + 'px');
-				block.dataset.docxPage = String(++page); used = 0;
+		shown.forEach((block, index) => {
+			const height = heights[index], asleep = !!block._rapierUnrendered;
+			const explicit = asleep ? _rapierIsPageBreakBlock(String(_rapierBoundBlock(block)?.raw || '')) : !!block.querySelector('[data-md-break="page"]');
+			if (used && (explicit || height <= pageHeight && used + height > pageHeight)) {
+				page++;
+				if (!asleep) { block.style.setProperty('--docx-page-gap', Math.max(0, pageHeight - used) / scale + 2 * margin + 'px'); block.dataset.docxPage = String(page); }
+				used = 0;
 			}
-			used += box.height;
+			used += height;
 			if (used > pageHeight) { page += Math.floor(used / pageHeight); used %= pageHeight; }
-		}
+		});
 		observer ||= new MutationObserver(sync);
 		observer.observe(root, {childList: true, subtree: true, characterData: true});
 	}

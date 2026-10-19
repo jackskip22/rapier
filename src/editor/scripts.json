@@ -7,6 +7,7 @@
   "editor/tables.js",
   "editor/find-controller.js",
   "editor/frontmatter.js",
+  "editor/fence-copy.js",
   "editor/document-rhythm.js",
   "editor/document-layout.js",
   "layout/actions.js",

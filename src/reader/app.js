@@ -215,7 +215,7 @@ function readerUpdateOverflow(shell) {
 function readerFenceControl() {
 	const svg = (name, child) => {
 		const node = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-		for (const [key, value] of [['class', 'fence-copy__' + name], ['viewBox', '0 0 24 24'], ['fill', 'none'], ['stroke', 'currentColor'], ['stroke-width', '2'], ['stroke-linecap', 'round'], ['stroke-linejoin', 'round'], ['aria-hidden', 'true']]) node.setAttribute(key, value);
+		for (const [key, value] of [['class', name], ['viewBox', '0 0 24 24'], ['fill', 'none'], ['stroke', 'currentColor'], ['stroke-width', '2'], ['stroke-linecap', 'round'], ['stroke-linejoin', 'round'], ['aria-hidden', 'true']]) node.setAttribute(key, value);
 		node.append(child);
 		return node;
 	};
@@ -227,7 +227,7 @@ function readerFenceControl() {
 	control.className = 'fence-copy';
 	control.setAttribute('aria-label', 'copy the code');
 	control.title = 'copy the code';
-	control.append(svg('copy', use), svg('done', check));
+	control.append(svg('fence-copy__copy', use), svg('fence-copy__done', check));
 	return control;
 }
 
@@ -251,7 +251,7 @@ function readerShapeOverflow(host) {
 		surface.parentNode.insertBefore(shell, surface);
 		shell.append(surface);
 		surface.classList.add('rapier-hscroll__surface');
-		if (kind === 'code' && shell.parentElement === host && surface.querySelector(':scope > code')) shell.append(readerFenceControl());
+		if (kind === 'code' && surface.querySelector(':scope > code')) shell.append(readerFenceControl());
 		surface.addEventListener('scroll', () => requestAnimationFrame(() => readerUpdateOverflow(shell)), {passive: true});
 	}
 	for (const shell of host.querySelectorAll('.rapier-hscroll')) { readerOverflow.observe(shell); readerUpdateOverflow(shell); }
