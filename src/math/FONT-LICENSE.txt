@@ -5,7 +5,7 @@ Copyright 2003, 2009 B. Jackowski and J. M. Nowacki (on behalf of TeX users grou
 Copyright 2003--2009 by B. Jackowski and J.M. Nowacki (on behalf of TeX USERS GROUPS).
 
 Rapier math font data, derived from Latin Modern Math 1.959,
-the sharp s of Latin Modern Mono 2.004, and one arrow hook
+text outlines from Latin Modern Mono 2.004, and one arrow hook
 from Latin Modern Math Italic 10 Regular 2.003.
 Changes: SVG outline conversion, character and MATH data extraction,
 optical-form closure and lossless path packing.

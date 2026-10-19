@@ -20,6 +20,7 @@ import urllib.request
 import zlib
 
 from fontTools.pens.svgPathPen import SVGPathPen
+from fontTools.pens.boundsPen import BoundsPen, ControlBoundsPen
 from fontTools.t1Lib import T1Font
 from fontTools.ttLib import TTFont
 
@@ -82,11 +83,11 @@ def extract(font: TTFont):
     cmap = font.getBestCmap()
     table = font["MATH"].table
     variants = table.MathVariants
-    scripts, flattened, dotless = (feature_alternates(font, tag) for tag in ("ssty", "flac", "dtls"))
+    scripts, dotless = (feature_alternates(font, tag) for tag in ("ssty", "dtls"))
     used = set(cmap.values())
     while True:
         previous = len(used)
-        for feature in (scripts, flattened, dotless):
+        for feature in (scripts, dotless):
             for name, alternates in feature.items():
                 if name in used:
                     used.update(alternates)
@@ -120,13 +121,11 @@ def extract(font: TTFont):
         "xHeight": font["OS/2"].sxHeight,
         "glyphs": glyphs,
         "chars": {cp: ids[name] for cp, name in sorted(cmap.items())},
-        "constants": {key: scalar(value) for key, value in vars(table.MathConstants).items() if not key.startswith("_")},
+        "constants": {key: scalar(value) for key, value in vars(table.MathConstants).items() if not key.startswith("_") and key not in UNUSED_CONSTANTS},
         "vertical": {},
         "horizontal": {},
         "minConnectorOverlap": variants.MinConnectorOverlap,
-        "kern": {},
         "scriptAlternates": {ids[name]: [ids[alternate] for alternate in alternates] for name, alternates in scripts.items() if name in ids},
-        "flatAccents": {ids[name]: ids[alternates[0]] for name, alternates in flattened.items() if name in ids},
         "dotless": {ids[name]: ids[alternates[0]] for name, alternates in dotless.items() if name in ids},
         "extendedShapes": {ids[name]: 1 for name in (info.ExtendedShapeCoverage.glyphs if info.ExtendedShapeCoverage else []) if name in ids},
     }
@@ -144,22 +143,32 @@ def extract(font: TTFont):
                     "parts": [[ids[p.glyph], p.StartConnectorLength, p.EndConnectorLength, p.FullAdvance, p.PartFlags & 1] for p in assembly.PartRecords],
                 }
             data[key][ids[name]] = record
-    kern_info = info.MathKernInfo
-    if kern_info:
-        for name, record in zip(kern_info.MathKernCoverage.glyphs, kern_info.MathKernInfoRecords):
-            if name in ids:
-                corners = []
-                for key in ("TopRightMathKern", "TopLeftMathKern", "BottomRightMathKern", "BottomLeftMathKern"):
-                    corner = getattr(record, key)
-                    corners.append([list(map(scalar, corner.CorrectionHeight)), list(map(scalar, corner.KernValue))] if corner else None)
-                data["kern"][ids[name]] = corners
+    # LuaTeX's CFF loader bounds curves by their control points. Keep those semantic vertical boxes separate
+    # from the exact ink bounds the outline decoder computes; large operators use them when centering on the axis.
+    vertical_ids = set(data["vertical"])
+    for record in data["vertical"].values():
+        vertical_ids.update(glyph for glyph, _ in record["variants"])
+    data["verticalBounds"] = {}
+    for glyph in sorted(vertical_ids):
+        exact, control = BoundsPen(glyph_set), ControlBoundsPen(glyph_set)
+        glyph_set[names[glyph]].draw(exact)
+        glyph_set[names[glyph]].draw(control)
+        if exact.bounds and control.bounds:
+            ink = [math.floor(exact.bounds[1]), math.ceil(exact.bounds[3])]
+            box = [round(control.bounds[1]), round(control.bounds[3])]
+            if box != ink:
+                data["verticalBounds"][glyph] = box
     return data
 
 
 PAGE_BYTES = 16384
 PAGE_STRIDE = 32768
 PARENT_DEPTH = 4
-SCALAR_MAPS = ("chars", "dotless", "flatAccents", "extendedShapes")
+# The pinned font has no MathKernInfo or flac records. These constants have no layout consumer.
+UNUSED_CONSTANTS = {"DelimitedSubFormulaMinHeight", "FlattenedAccentBaseHeight", "StretchStackTopShiftUp",
+                    "StretchStackBottomShiftDown", "StretchStackGapAboveMin", "StretchStackGapBelowMin",
+                    "SkewedFractionHorizontalGap", "SkewedFractionVerticalGap"}
+SCALAR_MAPS = ("chars", "dotless", "extendedShapes")
 
 
 def unsigned(value, target):
@@ -477,7 +486,7 @@ def main():
     parser.add_argument("--license", type=Path, help="Optional pinned GUST Font License; otherwise fetch it")
     parser.add_argument("--lppl", type=Path, help="Optional pinned LPPL 1.3c; otherwise fetch it")
     parser.add_argument("--text-font", type=Path, help="Optional pinned Geist calibration font; otherwise use the editor copy or fetch it")
-    parser.add_argument("--mono-font", type=Path, help="Optional pinned Latin Modern Mono font for its sharp s; otherwise fetch it")
+    parser.add_argument("--mono-font", type=Path, help="Optional pinned Latin Modern Mono font for text punctuation; otherwise fetch it")
     parser.add_argument("--hook-font", type=Path, help="Optional pinned Latin Modern Math Italic font for its arrow hook; otherwise fetch it")
     parser.add_argument("--out", type=Path, default=Path(__file__).with_name("font.js"))
     args = parser.parse_args()
@@ -490,16 +499,19 @@ def main():
     text_font = TTFont(io.BytesIO(text_bytes))
     mono = TTFont(io.BytesIO(source_bytes(args.mono_font, MONO_URL, MONO_SHA256)))
     data = extract(font)
-    # Unicode has no mathematical monospace sharp s; retain that one original Mono outline beside the math font.
+    # The math font already carries the exact 62 Mono letters and digits. Text punctuation, visible space and
+    # sharp s have no mathematical monospace code points; keep their original Mono outlines beside it.
     if mono["head"].unitsPerEm != data["units"]:
         raise ValueError("The monospace outline must share the math font's units")
     mono_glyphs = mono.getGlyphSet()
-    name = mono.getBestCmap()[0xDF]
-    path = SVGPathPen(mono_glyphs, ntos=number)
-    mono_glyphs[name].draw(path)
-    advance = mono["hmtx"].metrics[name][0]
-    data["styledGlyphs"] = {"monospace": {0xDF: len(data["glyphs"])}}
-    data["glyphs"].append([advance, 0, advance / 2, path.getCommands()])
+    data["styledGlyphs"] = {"monospace": {}}
+    for cp in [0xDF, *(cp for cp in range(33, 127) if not chr(cp).isalnum()), 0x2423]:
+        name = mono.getBestCmap()[cp]
+        path = SVGPathPen(mono_glyphs, ntos=number)
+        mono_glyphs[name].draw(path)
+        advance = mono["hmtx"].metrics[name][0]
+        data["styledGlyphs"]["monospace"][cp] = len(data["glyphs"])
+        data["glyphs"].append([advance, 0, advance / 2, path.getCommands()])
     # amsmath's hooked arrow uses the small math-italic hook, not Unicode's taller hooked-arrow glyph.
     with tempfile.NamedTemporaryFile() as source:
         source.write(source_bytes(args.hook_font, HOOK_URL, HOOK_SHA256))
@@ -516,7 +528,7 @@ def main():
                + mono["name"].getDebugName(0) + "\n\n"
                + hook["FontInfo"]["Notice"] + "\n\n"
                "Rapier math font data, derived from Latin Modern Math 1.959,\n"
-               "the sharp s of Latin Modern Mono 2.004, and one arrow hook\n"
+               "text outlines from Latin Modern Mono 2.004, and one arrow hook\n"
                "from Latin Modern Math Italic 10 Regular 2.003.\n"
                "Changes: SVG outline conversion, character and MATH data extraction,\n"
                "optical-form closure and lossless path packing.\n"

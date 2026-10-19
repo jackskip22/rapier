@@ -1,7 +1,7 @@
 # Math font data
 
-`font.js` contains SVG outlines and OpenType MATH data from **Latin Modern Math 1.959**, plus the sharp s
-outline from **Latin Modern Mono 2.004** for monospace text and one small arrow hook from
+`font.js` contains SVG outlines and OpenType MATH data from **Latin Modern Math 1.959**, plus punctuation, visible space
+and sharp s outlines from **Latin Modern Mono 2.004** for monospace text and one small arrow hook from
 **Latin Modern Math Italic 10 Regular 2.003**. The parser,
 layout engine, contour analysis and decoder are Rapier code. The converted font data remains under the
 GUST Font License.
@@ -15,7 +15,7 @@ GUST Font License.
 | Latin Modern Math Italic 10 Regular 2.003, `lmmi10.pfb` | `c24662506b402f3e0033cc75eb746eb490a1b7477e6b3ef52053f5025ec0fc57` |
 | Original GUST Font License | `2bd69affc3da00715116f713f57eab9707e96daf3562ad0215987b15b9c16f73` |
 | LPPL 1.3c | `3d262cdf34dafa6955f703c634a8c238ec44109bc8dd6ef34fb7aa54809f7e66` |
-| Combined `FONT-LICENSE.txt` | `6fb288a3363cb44eb0e247ead8afefed55fbe9b00ff2d0d1c75a1176d38f4091` |
+| Combined `FONT-LICENSE.txt` | `fb1f153e363d003180781b4a043f34ab76d17f1c338de9229c40149b52cfdf2f` |
 | Geist 1.800, weight axis 400–700 | `6e3a140e3812161e292fbe42a1fc90533b2407b699c65abc7a098b0979df4e82` |
 
 The [complete original font package](https://mirrors.ctan.org/fonts/lm-math.zip) is available from CTAN.
@@ -51,12 +51,16 @@ the combined license beside it. When available, the generator uses the editor's 
 
 The generator preserves all **2,045 Unicode mappings** in the math font and **4,741 glyphs** reachable from those
 mappings. The glyph set is closed over stretch variants, assembly parts, first- and second-level optical script
-forms (`ssty`), flattened accents (`flac`) and dotless bases (`dtls`). This font supplies 980 script records,
-48 dotless substitutions, 94 vertical constructions, 86 horizontal constructions and no flattened alternates.
+forms (`ssty`) and dotless bases (`dtls`). This font supplies 980 script records,
+48 dotless substitutions, 94 vertical constructions and 86 horizontal constructions. Its MATH table has no
+`MathKernInfo`, and its GSUB features are `aalt`, `dtls` and `ssty`: no flattened accents (`flac`) exist.
 Every included outline and mathematical metric retains its original values. Optional text shaping and stylistic
-substitutions that the math syntax does not select are not included. Two additional outlines bring the total to
-**4,743**. Unicode supplies no mathematical monospace sharp s, so that style selects the Mono outline and its
-525-unit advance through `styledGlyphs`. The small `arrowhookleft` outline supplies amsmath's extensible hooked
+substitutions that the math syntax does not select are not included. Thirty-five additional outlines bring the total to
+**4,776**. The math font's 62 mathematical monospace letters and digits exactly match the Mono source's original
+outlines and advances. Its 32 ASCII punctuation characters, U+2423 visible space and U+00DF sharp s have no
+mathematical monospace code points, so `styledGlyphs.monospace` selects their Mono outlines and 525-unit advances.
+The visible-space contour also matches Computer Modern Typewriter's visible space; `\verb*` assigns that command's
+TeX height and depth without changing its ink. The small `arrowhookleft` outline supplies amsmath's extensible hooked
 arrow; the composer assigns its five-mu advance and three-mu join. The outline-only hook record has zero advance,
 italic correction and accent attachment, and retains the original path.
 
@@ -98,30 +102,36 @@ vertical axis. Measurements are in design units unless specified otherwise.
 | `units`, `xHeight` | Math units per em and nominal x-height. |
 | `textUnits`, `textXHeight` | Geist units per em and nominal x-height. |
 | `chars` | Decimal Unicode code point to glyph index. |
-| `styledGlyphs` | A style's exceptional Unicode mappings: monospace U+00DF selects the original Mono sharp s. |
+| `styledGlyphs` | A style's exceptional Unicode mappings: monospace punctuation, visible space and sharp s select original Mono outlines. |
 | `arrowHook` | The original small math-italic hook outline; the arrow composer supplies its advance. |
 | `glyph(id)` | Demand-decoded `[advance, xMin, yMin, xMax, yMax, italicCorrection, topAccent, path]`. Missing IDs return `undefined`. |
-| `constants` | All 56 original OpenType `MathConstants`; percentage constants remain percentages. |
+| `constants` | The 48 consumed original OpenType `MathConstants`; percentage constants remain percentages. |
 | `vertical`, `horizontal` | Glyph index to `{variants, assembly?}`. |
 | `variants` | `[glyphIndex, advanceMeasurement]` pairs in font order. |
 | `assembly` | `{italic, parts}`. |
 | `parts` | `[glyphIndex, startConnector, endConnector, fullAdvance, isExtender]`. |
 | `minConnectorOverlap` | The font's minimum assembly overlap. |
-| `kern` | Four corner records per glyph, if present in the source; empty for Latin Modern. |
 | `scriptAlternates` | First- and second-level `ssty` glyph indices. |
-| `flatAccents`, `dotless` | Alternate glyph indices for `flac` and `dtls`. |
+| `dotless` | Alternate glyph indices for `dtls`. |
 | `extendedShapes` | Glyphs marked by `MathGlyphInfo.ExtendedShapeCoverage`. |
+| `verticalBounds` | Sparse `[bottom, top]` control bounds, in font units, for vertical glyphs whose LuaTeX box differs from their exact ink bounds. |
 
 Outline bounds round outward to whole units. The outlines themselves are unchanged, including exact fractional
 coordinates if present. Missing italic corrections are zero; missing accent attachments use half the advance.
 Assembly parts retain the OpenType order: bottom to top vertically, left to right horizontally. Latin Modern has
 no MATH Device adjustments. Hint programs and general text shaping tables are not used by the SVG renderer.
 
-The asset stores no bounds. The decoder derives them from the outline with the arithmetic of fontTools'
+The asset stores no per-glyph ink bounds. The decoder derives them from the outline with the arithmetic of fontTools'
 `BoundsPen`, operation for operation in IEEE double precision; for this font every derived bound equals the
 value the 2.2.0 asset stored. The contour profiles earlier versions derived (ink edges in 32-unit strips) are
 gone from the asset since 2.6.0: layout places scripts by TeX's rules, and only the typesetting verifier
 measures ink gaps, deriving the same strips from each outline itself.
+
+LuaTeX 1.17.0's CFF loader uses Bézier control points to measure its font boxes. Most vertical glyphs have the same
+box under both rules; twelve of the 325 vertical bases and variants differ. `verticalBounds` preserves those twelve
+boxes, derived by fontTools' `ControlBoundsPen`, independently of the ink decoder. Large operators use the semantic
+height and depth when centering on the axis; ink extents and original paths remain unchanged. The affected large
+operators are the small and large forms of `\bigtimes`, `\bigvee` and `\bigwedge`.
 
 Character mappings, optical substitutions, stretch constructions and record offsets
 occupy a compact index decoded at module load. Glyph metrics and outlines stay in independent raw DEFLATE pages
@@ -129,7 +139,7 @@ until requested. Every page
 ends at a record boundary and contains at most 16,384 decoded bytes. The complete set of pages travels in the
 same asset; rare characters, stretch parts and optical forms require no additional download.
 
-Outlines share exactly matching contours after translation. The 8,117 ordered contour references use 4,972
+Outlines share exactly matching contours after translation. The 8,166 ordered contour references use 5,013
 unique contour records. A record either stores its original command structure and relative coordinates, or
 exact differences from an earlier contour with the same structure. Parent chains have at most four links.
 The generator prefers small coordinate differences as well as short records, because the smallest initial
@@ -153,5 +163,6 @@ no network, font installation, font parser or platform font shaping at runtime. 
 internal font accessor; the public parser and rendering API remain independent of this storage format.
 
 The format follows the [OpenType MATH specification](https://learn.microsoft.com/en-us/typography/opentype/spec/math)
-and [RFC 1951](https://www.rfc-editor.org/rfc/rfc1951). Three retained constants have no active consumer:
-`DelimitedSubFormulaMinHeight`, `SkewedFractionHorizontalGap` and `SkewedFractionVerticalGap`.
+and [RFC 1951](https://www.rfc-editor.org/rfc/rfc1951). The generator omits eight unconsumed constants:
+`DelimitedSubFormulaMinHeight`, `FlattenedAccentBaseHeight`, the four `StretchStack` constants,
+`SkewedFractionHorizontalGap` and `SkewedFractionVerticalGap`.

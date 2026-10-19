@@ -302,7 +302,9 @@ export function createTypography() {
           !['static','relative'].includes(s.position) || element !== paragraph && element.tagName !== 'BR' && s.display !== 'inline' ||
           !['none','normal'].includes(before) || !['none','normal'].includes(after)) supported = false;
     }
-    keys.push(...attributes.map(name => paragraph.getAttribute(name)));
+    const sourceStyle = value => value == null ? null : value.split(';').map(part => part.trim())
+      .filter(part => part && !properties.some(name => part.startsWith(name + ':'))).join(';');
+    keys.push(...attributes.map(name => name === 'style' ? sourceStyle(paragraph.getAttribute(name)) : paragraph.getAttribute(name)));
     return {key: keys.join('\u0000'), generation:keys[0], styles, parents, supported};
   }
 

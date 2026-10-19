@@ -12,6 +12,7 @@ class MathTexError extends Error {
 
 function mathTexTokens(source, offset = 0) {
   const tokens = [];
+  let count = 0;
   for (let i = 0; i < source.length;) {
     const start = i, value = String.fromCodePoint(source.codePointAt(i));
     i += value.length;
@@ -26,8 +27,27 @@ function mathTexTokens(source, offset = 0) {
       let command = '';
       if (/[A-Za-z@]/.test(source[i])) {
         while (i < source.length && /[A-Za-z@]/.test(source[i])) command += source[i++];
-        tokens.push({kind: 'command', value: command, offset: offset + start});
-        while (i < source.length && /\s/.test(source[i])) i++;
+        if (command === 'verb') {
+          // Verbatim changes TeX's character categories before its body is read.
+          while (source[i] === ' ' || source[i] === '\t') i++;
+          const starred = source[i] === '*';
+          if (starred) i++;
+          while (source[i] === ' ' || source[i] === '\t') i++;
+          const delimiter = i < source.length ? String.fromCodePoint(source.codePointAt(i)) : '';
+          if (!delimiter || /[\r\n]/.test(delimiter))
+            throw new MathTexError('unclosed-verb', 'A verbatim span needs a delimiter on the same line.', offset + start, 'verb');
+          i += delimiter.length;
+          const end = source.indexOf(delimiter, i), newline = source.slice(i, end < 0 ? undefined : end).search(/[\r\n]/);
+          if (end < 0 || newline >= 0)
+            throw new MathTexError('unclosed-verb', 'A verbatim span must close on the same line.', offset + start, 'verb');
+          if (count + end - i + 1 > 100000)
+            throw new MathTexError('resource-limit', 'This formula has too many tokens to render safely.', offset + start, 'verb');
+          tokens.push({kind: 'verbatim', value: source.slice(i, end), starred, delimiter, offset: offset + start});
+          i = end + delimiter.length;
+        } else {
+          tokens.push({kind: 'command', value: command, offset: offset + start});
+          while (i < source.length && /\s/.test(source[i])) i++;
+        }
       } else {
         command = String.fromCodePoint(source.codePointAt(i));
         i += command.length;
@@ -37,7 +57,8 @@ function mathTexTokens(source, offset = 0) {
       while (i < source.length && /\s/.test(source[i])) i++;
       tokens.push({kind: 'space', value: ' ', offset: offset + start});
     } else tokens.push({kind: 'char', value, offset: offset + start});
-    if (tokens.length > 100000)
+    count += tokens.at(-1).kind === 'verbatim' ? 1 + tokens.at(-1).value.length : 1;
+    if (count > 100000)
       throw new MathTexError('resource-limit', 'This formula has too many tokens to render safely.', offset + start);
   }
   return tokens;
@@ -93,6 +114,8 @@ const MATH_TEX_ACCENTS = Object.freeze({
   overleftharpoon: ['↼', 'over', true], overrightharpoon: ['⇀', 'over', true], utilde: ['̃', 'under', true]
 });
 const MATH_TEX_LONG_ARROWS = {iff: 'Longleftrightarrow', implies: 'Longrightarrow', impliedby: 'Longleftarrow', And: 'And'};
+// These unicode-math aliases do not expose a binary/relation mathchar to amsmath's raw-token lookahead.
+const MATH_TEX_DOTS_LOW = new Set('circ bullet diamond lor land smallsetminus bigcirc dag ddag bigtriangledown le ge neq owns Join blacktriangleleft blacktriangleright therefore because coloneqq eqqcolon dblcolon gets to'.split(' '));
 // mathtools: a colon or double colon joined to a relation, 1.2 mu apart.
 const MATH_TEX_COLONS = {coloneq: '∶−', Coloneq: '∷−', Coloneqq: '∷=', Eqqcolon: '=∷', eqcolon: '−∶', Eqcolon: '−∷', colonapprox: '∶≈', Colonapprox: '∷≈', colonsim: '∶∼', Colonsim: '∷∼'};
 // dvipsnames in CMYK percent (LaTeX graphics bundle), converted as xcolor does: each RGB channel is 1 − min(1, CMY + K).
@@ -128,18 +151,24 @@ const MATH_SI_ABBREVIATIONS = Object.freeze(Object.fromEntries(`f,p,n,u,m,,k:g p
 }).filter(([name]) => name.length > 1 || /^[gmsAJLlVWNFHCTK]$/.test(name))));
 const MATH_SI_PREFIXES = mathSITable('quecto=q ronto=r yocto=y zepto=z atto=a femto=f pico=p nano=n micro=µ milli=m centi=c deci=d deca=da deka=da hecto=h kilo=k mega=M giga=G tera=T peta=P exa=E zetta=Z yotta=Y ronna=R quetta=Q');
 const MATH_TEX_PACKAGES = new Set(('ams amsmath amssymb amsfonts mathtools color newcommand unicode mhchem physics siunitx bbm bboldx dsfont cancel bbox boldsymbol').split(' '));
+const MATH_TEX_PHYSICS = new Set('dv derivative pdv pderivative fdv functionalderivative dd differential qty quantity pqty bqty Bqty vqty abs absolutevalue norm bra ket braket innerproduct ip ketbra dyad outerproduct op expval expectationvalue ev mel matrixel matrixelement comm commutator acomm anticommutator pb poissonbracket vb va vu vectorbold vectorarrow vectorunit grad gradient divergence curl laplacian eval evaluated order Tr tr trace rank diag Res mqty pmqty bmqty Bmqty Pmqty vmqty smqty dmat diagonalmatrix admat antidiagonalmatrix imat identitymatrix zmat zeromatrix xmat xmatrix pmat paulimatrix qq qc qcc qif qthen qelse qotherwise qunless qgiven qusing qassume qsince qlet qfor qall qeven qodd qinteger qand qor qas qin'.split(' '));
 const MATH_TEX_ENVIRONMENTS = new Set(('matrix pmatrix bmatrix Bmatrix vmatrix Vmatrix smallmatrix psmallmatrix bsmallmatrix Bsmallmatrix vsmallmatrix Vsmallmatrix array aligned alignedat align alignat flalign gathered lgathered rgathered gather split cases dcases rcases drcases subarray substack eqnarray multline multlined equation darray CD').split(' '));
+const MATH_TABLE_DELIMITERS = Object.freeze({pmatrix: ['(', ')'], bmatrix: ['[', ']'], Bmatrix: ['{', '}'], vmatrix: ['|', '|'], Vmatrix: ['‖', '‖'], cases: ['{', ''], rcases: ['', '}']});
+function mathTableDelimiters(environment) { return MATH_TABLE_DELIMITERS[environment.replace(/smallmatrix$/, 'matrix').replace(/^d(r?cases)$/, '$1')]; }
 const MATH_ENCLOSE_NOTATIONS = new Set('box roundedbox circle left right top bottom horizontalstrike verticalstrike updiagonalstrike downdiagonalstrike updiagonalarrow longdiv actuarial madruwb radical phasorangle'.split(' '));
 const MATH_TEX_LITERAL_CLASSES = Object.freeze({
   '+': 'bin', '−': 'bin', '-': 'bin', '±': 'bin', '∓': 'bin', '×': 'bin', '÷': 'bin', '*': 'bin', '⋅': 'bin',
   '=': 'rel', '<': 'rel', '>': 'rel', '≤': 'rel', '≥': 'rel', '≠': 'rel', ':': 'rel',
   '(': 'open', '[': 'open', '{': 'open', '⟨': 'open', ')': 'close', ']': 'close', '}': 'close', '⟩': 'close', ',': 'punct', ';': 'punct',
+  '!': 'close',
   '∑': 'op', '∏': 'op', '∫': 'op', '∮': 'op', '∬': 'op', '∭': 'op'
 });
 
 function mathTexTokenText(tokens) {
-  return tokens.map(token => token.kind === 'command' ? '\\' + token.value + (/^[A-Za-z@]+$/.test(token.value) ? ' ' : '') : token.value).join('');
+  return tokens.map(token => token.kind === 'verbatim' ? '\\verb' + (token.starred ? '*' : '') + token.delimiter + token.value + token.delimiter :
+    token.kind === 'command' ? '\\' + token.value + (/^[A-Za-z@]+$/.test(token.value) ? ' ' : '') : token.value).join('');
 }
+function mathChoice(node, context) { return node.choices[context.level ? Math.min(context.level + 1, 3) : context.display ? 0 : 1]; }
 // Whether braces in a token run pair up without closing below their start.
 function mathTexBalanced(tokens) {
   let depth = 0;
@@ -231,10 +260,12 @@ class MathTexParser {
       if (token.kind === 'command' && (Object.hasOwn(MATH_TEX_DECLARATIONS, token.value) || token.value === 'color')) {
         this.take();
         const fields = token.value === 'color' ? {color: this.readColor()} : MATH_TEX_DECLARATIONS[token.value];
+        // A math style is an ordered list node: a selected mathchoice can change the style of later atoms.
+        if (fields.mathStyle) { children.push(this.node('style', {...fields, declaration: true, body: this.row([])})); continue; }
         // A declaration styles each following atom; the atoms keep their own classes and spacing.
         const rest = this.nested(() => this.parseRow(stop, allowFraction));
         // The first one notes where the declaration stood: TeX keeps no italic correction across it.
-        for (const [at, body] of (rest.type === 'row' ? rest.children : [rest]).entries()) children.push(this.node('style', {...fields, body, ...(at ? {} : {declaration: true})}));
+        for (const [at, body] of (rest.type === 'row' ? rest.children : [rest]).entries()) children.push(this.styledDeclaration(fields, body, at === 0));
         break;
       }
       if (token.kind === 'command' && /^(over|atop|choose|brace|brack|above|overwithdelims|atopwithdelims|abovewithdelims)$/.test(token.value)) {
@@ -251,6 +282,7 @@ class MathTexParser {
       }
       if (token.kind === 'char' && (token.value === '^' || token.value === '_' || token.value === "'")) {
         let base = children.pop() || this.row([]);
+        if (base.type === 'choice' || base.type === 'style' && base.mathStyle && base.declaration && !base.body.children.length) { children.push(base); base = this.row([]); }
         children.push(this.readScripts(base));
         continue;
       }
@@ -264,11 +296,20 @@ class MathTexParser {
       const atom = this.parseAtom();
       // A symbol remembers where its source begins, so a tap on it can find its place in the source.
       if (atom && (atom.type === 'glyph' || atom.type === 'text') && atom.at === undefined) atom.at = token.offset;
-      if (atom) children.push(this.readScripts(atom));
+      if (atom) children.push(atom.type === 'choice' ? atom : this.readScripts(atom));
     }
     // An equation tag follows its equation wherever \tag was written.
     const tags = children.filter(child => child?.semanticRole === 'tag');
     return this.row(tags.length ? [...children.filter(child => child?.semanticRole !== 'tag'), ...tags] : children);
+  }
+  styledDeclaration(fields, body, first) {
+    // Font/color assignments are group-local; math-style nodes remain in the list even through these assignments.
+    if (body.type === 'style' && body.mathStyle && body.declaration) return body;
+    if (body.type === 'choice') {
+      for (const branch of body.choices) branch.children = branch.children.map((child, index) => this.styledDeclaration(fields, child, first && index === 0));
+      return body;
+    }
+    return this.node('style', {...fields, body, ...(first ? {declaration: true} : {})});
   }
   readScripts(base) {
     let result = base;
@@ -371,6 +412,7 @@ class MathTexParser {
   parseAtom() {
     const token = this.take();
     if (token.kind === 'eof') this.error('missing-argument', 'A mathematical expression is missing.', token);
+    if (token.kind === 'verbatim') return this.readVerb(token);
     if (token.kind === 'command') return this.command(token);
     if (token.value === '{') {
       return this.nested(() => {
@@ -403,15 +445,14 @@ class MathTexParser {
   }
   command(token) {
     const name = token.value;
+    if (name === 'mathchoice') return this.node('choice', {choices: Array.from({length: 4}, () => {
+      if (!this.is('{')) this.error('missing-argument', 'Each math choice needs a braced expression.');
+      return this.argument();
+    })});
     if (Object.hasOwn(MATH_TEX_SPACES, name)) return this.node('space', {width: MATH_TEX_SPACES[name]});
     // amsmath: \iff, \implies and \impliedby are a long double arrow between thick spaces, one relation.
     if (Object.hasOwn(MATH_TEX_LONG_ARROWS, name)) return this.node('style', {class: 'rel', body: this.row([this.node('space', {width: 5 / 18}), this.node('glyph', MATH_SYMBOLS[MATH_TEX_LONG_ARROWS[name]]), this.node('space', {width: 5 / 18})])});
-    // amsmath \dots: centred dots before a binary operator, a relation or an integral, low dots otherwise.
-    if (name === 'dots') {
-      const next = this.rawPeek(), after = next.kind === 'command' && Object.hasOwn(MATH_SYMBOLS, next.value) ? MATH_SYMBOLS[next.value] : null;
-      const centred = next.kind === 'char' ? '+-=<>*:'.includes(next.value) : !!after && (['bin', 'rel'].includes(after.class) || /^(?:int|iint|iiint|oint)$/.test(next.value));
-      if (centred) return this.node('glyph', MATH_SYMBOLS.cdots);
-    }
+    if (/^dots[bcimo]?$/.test(name)) return this.readDots(name);
     // amsmath's \colon: a colon 2 mu after the left side and 6 mu before the right, with no punctuation space.
     if (name === 'colon') return this.row([this.node('space', {width: 2 / 18}), this.node('glyph', {value: ':', class: 'ord', variant: 'roman', tokenKind: 'mo'}), this.node('space', {width: 6 / 18})]);
     if (Object.hasOwn(MATH_SYMBOLS, name)) return this.node('glyph', MATH_SYMBOLS[name]);
@@ -444,12 +485,12 @@ class MathTexParser {
       if (align && !/^[lr]$/.test(mathTexTokenText(align).trim())) this.error('invalid-option', 'Continued-fraction alignment must be l or r.', token);
       return this.node('frac', {num: this.argument(), den: this.argument(), bar: true, ...(name === 'dfrac' || name === 'cfrac' ? {style: 'display'} : name === 'tfrac' ? {style: 'text'} : {}), ...(align ? {align: mathTexTokenText(align).trim()} : {}), ...(name === 'cfrac' ? {strut: true} : {})});
     }
-    if (/^(binom|dbinom|tbinom)$/.test(name)) return this.node('frac', {num: this.argument(), den: this.argument(), bar: false, left: '(', right: ')', ...(name[0] === 'd' ? {style: 'display'} : name[0] === 't' ? {style: 'text'} : {})});
+    if (/^(binom|dbinom|tbinom)$/.test(name)) return this.node('frac', {num: this.argument(), den: this.argument(), bar: false, left: '(', right: ')', textDelimiters: true, ...(name[0] === 'd' ? {style: 'display'} : name[0] === 't' ? {style: 'text'} : {})});
     if (name === 'genfrac') {
       const left = this.delimiterArgument(), right = this.delimiterArgument(), thickness = this.plainArgument(), style = this.plainArgument();
       if (!/^[0-3]?$/.test(style)) this.error('invalid-style', 'The fraction style must be 0, 1, 2 or 3.', token);
       const barThickness = thickness ? this.dimension(thickness, token) : undefined;
-      return this.node('frac', {num: this.argument(), den: this.argument(), bar: barThickness !== 0, left, right, ...(barThickness === undefined ? {} : {barThickness}), ...(style ? {style: ['display', 'text', 'script', 'scriptscript'][Number(style)]} : {})});
+      return this.node('frac', {num: this.argument(), den: this.argument(), bar: barThickness !== 0, left, right, textDelimiters: true, ...(barThickness === undefined ? {} : {barThickness}), ...(style ? {style: ['display', 'text', 'script', 'scriptscript'][Number(style)]} : {})});
     }
     if (name === 'sqrt') {
       const index = this.optionalRaw();
@@ -475,7 +516,7 @@ class MathTexParser {
       return value ? this.literal(value, {class: 'rel', delimiter: true, variant: 'roman'}) : this.row([]);
     }
     if (/^(big|Big|bigg|Bigg)[lrm]?$/.test(name)) {
-      const value = this.readDelimiter(), sizes = {big: 1.2, Big: 1.8, bigg: 2.4, Bigg: 3};
+      const value = this.delimiterArgument(), sizes = {big: 1.2, Big: 1.8, bigg: 2.4, Bigg: 3};
       const base = name.replace(/[lrm]$/, '');
       return this.literal(value, {delimiterSize: sizes[base], class: name.endsWith('l') ? 'open' : name.endsWith('r') ? 'close' : name.endsWith('m') ? 'rel' : 'ord', variant: 'roman'});
     }
@@ -665,8 +706,13 @@ class MathTexParser {
       return this.node('overunder', {base: this.argument(), [name === 'accentset' ? 'over' : 'under']: decoration, accentGap: true});
     }
     if (name === 'slashed') return this.node('accent', {base: this.argument(), value: '/', position: 'through'});
-    if (name === 'mod' || name === 'bmod') return this.row([this.node('space', {width: name === 'bmod' ? 5 / 18 : 1}), this.node('text', {value: 'mod', variant: 'roman', class: name === 'bmod' ? 'bin' : 'op'}), this.node('space', {width: name === 'bmod' ? 5 / 18 : 1 / 3})]);
-    if (name === 'pmod' || name === 'pod') return this.row([this.node('space', {width: 1}), this.node('fence', {left: '(', right: ')', body: this.row([...(name === 'pmod' ? [this.node('text', {value: 'mod', variant: 'roman'}), this.node('space', {width: 1 / 3})] : []), this.argument()])})]);
+    if (name === 'bmod') return this.row([this.node('space', {width: 5 / 18}), this.node('text', {value: 'mod', variant: 'roman', class: 'bin'}), this.node('space', {width: 5 / 18})]);
+    if (name === 'mod' || name === 'pmod' || name === 'pod') return this.row([
+      this.node('space', {width: (name === 'mod' ? 12 : 8) / 18, displayWidth: 1}),
+      ...(name === 'mod' ? [] : [this.literal('(')]),
+      ...(name === 'pod' ? [] : [this.node('text', {value: 'mod', variant: 'roman'}), this.node('space', {width: 1 / 3})]),
+      this.argument(), ...(name === 'mod' ? [] : [this.literal(')')])
+    ]);
     if (name === 'ce') return {...this.chemistry(this.rawArgument()), semanticRole: 'chemistry'};
     if (name === 'pu') return {...this.units(this.rawArgument()), semanticRole: 'units'};
     if (/^(SI|si|num|unit|ang|SIrange|numrange|qtyrange)$/.test(name)) return {...this.siunitx(name, token), semanticRole: 'units'};
@@ -687,7 +733,7 @@ class MathTexParser {
       const integral = () => this.literal('∫', {large: true, limits: 'never', class: 'op'});
       return this.node('style', {class: 'op', limits: 'never', body: this.row([integral(), this.node('space', {width: -1 / 6}), this.node('glyph', MATH_SYMBOLS.cdots), this.node('space', {width: -1 / 6}), integral()])});
     }
-    if (this.physicsCommand(name)) return {...this.physics(name, token), semanticRole: 'physics'};
+    if (MATH_TEX_PHYSICS.has(name)) return {...this.physics(name, token), semanticRole: 'physics'};
     if (name === 'mmlToken') return this.mathmlToken(token);
     if (name === 'unicode' || name === 'char') return this.character(name, token);
     if (name === 'TeX' || name === 'LaTeX') return this.node('text', {value: name, variant: 'roman'});
@@ -703,8 +749,33 @@ class MathTexParser {
     if (!tokens.length) return '';
     const parser = new MathTexParser(this.source, {tokens, scopes: this.scopes, budget: this.budget});
     const delimiter = parser.readDelimiter();
-    if (parser.peek().kind !== 'eof') this.error('invalid-delimiter', 'A fraction delimiter must be one symbol.', tokens[0]);
+    if (parser.peek().kind !== 'eof') this.error('invalid-delimiter', 'A delimiter must be one symbol.', tokens[0]);
     return delimiter;
+  }
+  readDots(name) {
+    let next = this.rawPeek();
+    if (name === 'dots' && next.kind === 'command' && next.value === 'boldsymbol') {
+      const frames = this.frames.map(frame => ({...frame}));
+      try { this.rawTake(); next = this.rawArgument()[0] || this.eof; }
+      finally { this.frames = frames; }
+    }
+    let macro = next.kind === 'command' && !next.builtin && this.macro(next.value);
+    if (macro?.body?.[0]?.builtin) { next = macro.body[0]; macro = null; }
+    const first = macro?.body?.[0], command = next.kind === 'command' ? next.value : '',
+      centered = macro ? first?.kind === 'command' && /^(mathbin|mathrel|not|DOTSB)$/.test(first.value) :
+        next.kind === 'char' ? ['bin', 'rel'].includes(MATH_TEX_LITERAL_CLASSES[next.value]) :
+          command === 'not' || Object.hasOwn(MATH_TEX_LONG_ARROWS, command) ||
+          !MATH_TEX_DOTS_LOW.has(command) && ['bin', 'rel'].includes(MATH_SYMBOLS[command]?.class),
+      integral = name === 'dotsi' || name === 'dots' && (command === 'idotsint' || first?.value === 'DOTSI'),
+      raised = integral || name === 'dotsb' || name === 'dotsm' || name === 'dots' && centered,
+      closing = next.kind === 'eof' || next.kind === 'char' && /^(\)|\]|\$)$/.test(next.value) ||
+        /^(rbrack|\}|rbrace|rangle|rceil|rfloor|rgroup|rmoustache|right|bigr|biggr|Bigr|Biggr)$/.test(command),
+      extra = !integral && (name === 'dots' ? !raised && closing : closing || next.kind === 'char' &&
+        (name === 'dotsc' ? /^[.;]$/.test(next.value) : /^[,.;]$/.test(next.value))),
+      dots = this.node('glyph', raised ? MATH_SYMBOLS.cdots : MATH_SYMBOLS.ldots);
+    return integral || extra ? this.node('style', {class: 'inner', body: this.row([
+      ...(integral ? [this.node('space', {width: -1 / 6})] : []), dots, ...(extra ? [this.node('space', {width: 1 / 6})] : [])
+    ])}) : dots;
   }
   readLink(token) {
     const href = this.rawArgument().map(item => {
@@ -1094,6 +1165,14 @@ class MathTexParser {
     this.frames.push({tokens: replacement, at: 0});
   }
 
+  readVerb(token) {
+    // Raw spans are single tokens, but each copied character consumes the same admission budget as a glyph.
+    this.reserveParts(token.value.length, token);
+    // LaTeX places \verb in a text-size hbox, including when it occurs in a script.
+    return this.node('style', {mathStyle: 'text', body: this.node('text', {
+      value: token.value.replace(/[ \t]/g, token.starred ? '\u2423' : '\u00a0'), variant: 'monospace', verbatim: true, at: token.offset
+    })});
+  }
   parseText(variant = 'roman') {
     const children = [];
     let value = '';
@@ -1102,6 +1181,7 @@ class MathTexParser {
     for (;;) {
       const token = this.take(false);
       if (token.kind === 'eof') break;
+      if (token.kind === 'verbatim') { flush(); children.push(this.readVerb(token)); continue; }
       if (token.kind === 'space') { value += ' '; continue; }
       if (token.kind === 'char') {
         if (token.value === '{') {
@@ -1179,9 +1259,6 @@ class MathTexParser {
     return this.row(children);
   }
 
-  physicsCommand(name) {
-    return /^(dv|derivative|pdv|pderivative|fdv|functionalderivative|dd|differential|qty|quantity|pqty|bqty|Bqty|vqty|abs|absolutevalue|norm|bra|ket|braket|innerproduct|ip|ketbra|dyad|outerproduct|op|expval|expectationvalue|ev|mel|matrixel|matrixelement|comm|commutator|acomm|anticommutator|pb|poissonbracket|vb|va|vu|vectorbold|vectorarrow|vectorunit|grad|gradient|divergence|curl|laplacian|eval|evaluated|order|Tr|tr|trace|rank|diag|Res|mqty|pmqty|bmqty|Bmqty|Pmqty|vmqty|smqty|dmat|diagonalmatrix|admat|antidiagonalmatrix|imat|identitymatrix|zmat|zeromatrix|xmat|xmatrix|pmat|paulimatrix|qq|qc|qcc|q(?:if|then|else|otherwise|unless|given|using|assume|since|let|for|all|even|odd|integer|and|or|as|in))$/.test(name);
-  }
   physics(name, token) {
     const starred = this.is('*'); if (starred) this.take();
     if (/^(dv|derivative|pdv|pderivative|fdv|functionalderivative)$/.test(name)) {
@@ -1609,12 +1686,12 @@ function parseMathTexPreview(source, error, caret = source.length) {
 // two neighbouring letters is one edit.
 const MATH_TEX_STRUCTURE = 'enclose multicolumn hdotsfor intertext frac dfrac tfrac cfrac binom dbinom tbinom genfrac sqrt root left right middle big Big bigg Bigg bigl bigr Bigl Bigr begin end text textbf textit mathrm mathbf operatorname overset underset stackrel buildrel xrightarrow xleftarrow not phantom smash hspace quad qquad color textcolor mathcolor colorbox boxed cancel newcommand renewcommand def ce pu SI si num unit ang SIrange numrange qtyrange dv pdv qty abs norm bra ket braket substack tag label href';
 // Every other command the parser accepts: a name being typed toward one of them is not a misspelling.
-const MATH_TEX_OTHER = 'TeX let char rm rmfamily normalfont it itshape sl bf bfseries sf sffamily tt ttfamily cal displaystyle textstyle scriptstyle scriptscriptstyle tiny scriptsize footnotesize small normalsize large Large LARGE huge Huge over coloneq Coloneq Coloneqq Eqqcolon eqcolon Eqcolon colonapprox Colonapprox colonsim Colonsim LaTeX Set unicode bbox matrix pmatrix bmatrix Bmatrix vmatrix Vmatrix smallmatrix cases op atop choose brace brack above overwithdelims atopwithdelims abovewithdelims limits nolimits displaylimits long strut operatornamewithlimits mathop stackbin overunderset xlongequal hphantom vphantom mathstrut rlap llap clap mathrlap mathllap mathclap mspace kern mkern hskip mskip rule raise raisebox lower fcolorbox definecolor fbox bcancel xcancel sout cancelto providecommand gdef edef xdef DeclareMathOperator DeclarePairedDelimiter global outer require url notag nonumber relax allowbreak nobreak protect displaystylelimits mathopen mathclose Bra Ket Braket set nicefrac sfrac vcenter prescript sideset accentset underaccent slashed mod bmod pmod pod smashoperator mathmakebox idotsint mmlToken textbackslash textasciitilde textasciicircum dd derivative pderivative fdv functionalderivative differential quantity pqty bqty Bqty vqty absolutevalue innerproduct ip ketbra dyad outerproduct expval expectationvalue ev mel matrixel matrixelement comm commutator acomm anticommutator pb poissonbracket vb va vu vectorbold vectorarrow vectorunit grad gradient divergence curl laplacian eval evaluated order Tr tr trace rank diag Res mqty pmqty bmqty Bmqty Pmqty vmqty smqty dmat diagonalmatrix admat antidiagonalmatrix imat identitymatrix zmat zeromatrix xmat xmatrix pmat paulimatrix qq qc qcc qif';
+const MATH_TEX_OTHER = 'TeX let char over LaTeX Set unicode bbox matrix pmatrix bmatrix Bmatrix vmatrix Vmatrix smallmatrix cases atop choose brace brack above overwithdelims atopwithdelims abovewithdelims limits nolimits displaylimits long strut operatornamewithlimits mathop stackbin overunderset xlongequal hphantom vphantom mathstrut rlap llap clap mathrlap mathllap mathclap mspace kern mkern hskip mskip rule raise raisebox lower fcolorbox definecolor fbox bcancel xcancel sout cancelto providecommand gdef edef xdef DeclareMathOperator DeclarePairedDelimiter global outer require url notag nonumber relax allowbreak nobreak protect displaystylelimits mathopen mathclose mathbin mathrel mathord mathinner mathpunct Bra Ket Braket set nicefrac sfrac vcenter prescript sideset accentset underaccent slashed mod bmod pmod pod smashoperator mathmakebox idotsint mmlToken textbackslash textasciitilde textasciicircum mathchoice verb';
 let mathTexNames;
 function mathSuggest(name, environment = false) {
   if (typeof name !== 'string' || name.length < 2 || name.length > 32) return undefined;
   mathTexNames ||= {command: [...new Set([...MATH_TEX_STRUCTURE.split(' '), ...MATH_TEX_OTHER.split(' '), ...Object.keys(MATH_SYMBOLS), ...Object.keys(MATH_TEX_VARIANTS), ...Object.keys(MATH_TEX_TEXT_VARIANTS),
-    ...Object.keys(MATH_TEX_ACCENTS), ...MATH_NAMED_OPERATORS, ...MATH_LIMIT_OPERATORS, ...Object.keys(MATH_TEX_SPACES), ...Object.keys(MATH_TEX_LONG_ARROWS)])], environment: [...MATH_TEX_ENVIRONMENTS]};
+    ...Object.keys(MATH_TEX_ACCENTS), ...Object.keys(MATH_TEX_DECLARATIONS), ...Object.keys(MATH_TEX_COLONS), ...MATH_TEX_PHYSICS, ...MATH_NAMED_OPERATORS, ...MATH_LIMIT_OPERATORS, ...Object.keys(MATH_TEX_SPACES), ...Object.keys(MATH_TEX_LONG_ARROWS)])], environment: [...MATH_TEX_ENVIRONMENTS]};
   const limit = name.length > 5 ? 2 : 1;
   let best, bestDistance = limit + 1;
   for (const candidate of mathTexNames[environment ? 'environment' : 'command']) {
@@ -1631,4 +1708,4 @@ function mathSuggest(name, environment = false) {
 }
 
 import {MATH_SYMBOLS, MATH_NAMED_OPERATORS, MATH_LIMIT_OPERATORS} from './symbols.js';
-export {parseMathTex, parseMathTexPreview, mathSuggest};
+export {parseMathTex, parseMathTexPreview, mathSuggest, mathChoice, mathTableDelimiters};

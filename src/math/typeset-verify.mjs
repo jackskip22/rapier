@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: MIT
 // Typesetting faults, each with its reproducer. Where the TeXbook's Appendix G decides, the expected
 // value is LuaTeX's own output for the same formula (unicode-math, Latin Modern Math 1.959), in ems.
-// Replay: node tests/typeset.mjs [package-root]. Ink is measured from the font's own contour strips.
+// Replay: node repo/math/typeset-verify.mjs repo, or node tests/typeset.mjs [package-root].
+// Ink is measured from the font's own contour strips.
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {existsSync, readFileSync} from 'node:fs';
 import {dirname, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 
 const root = resolve(process.argv[2] || resolve(dirname(fileURLToPath(import.meta.url)), '..'));
-const load = file => import(pathToFileURL(resolve(root, 'src/math', file)).href);
+const mathRoot = resolve(root, existsSync(resolve(root, 'math/font.js')) ? 'math' : 'src/math');
+const load = file => import(pathToFileURL(resolve(mathRoot, file)).href);
 const {MATH_FONT} = await load('font.js'), L = await load('layout.js'), parser = await load('parser.js');
 const {mathPrepare} = await load('source.js'), {mathToMathML} = await load('semantic-api.js'), {renderMath} = await load('api.js');
 const context = (display = false) => ({size: 1, level: 0, variant: 'normal', cramped: false, display, cache: new WeakMap(), budget: {nodes: 0, outlineBytes: 0}});
@@ -543,6 +545,253 @@ cell('F52', 'monospace sharp s uses the original Latin Modern Mono outline and a
     assert(!ids.includes(MATH_FONT.chars[0xdf]) && !b.svg.includes('<text'), tex + ' stays self-contained');
   }
 });
+// F53 onward: LuaTeX 1.17.0, 10pt article, mathtools + unicode-math, \setmathfont{latinmodern-math.otf}.
+// Measure \setbox0=\hbox{$<formula>$}: tex.box[0].width/height/depth divided by 655360 sp per em.
+// Display cases prefix \displaystyle\csname @displaytrue\endcsname. No fontspec main/mono override.
+// Glyph origins come from traversing the resulting h/v lists, including shifts, kerns and set glue.
+const texBoxes = cases => {
+  for (const [tex, w, h, d, display = false] of cases) {
+    const b = layout(tex, display);
+    for (const [key, value] of Object.entries({w, h, d})) near(b[key], value, tex + ' ' + key, 0.002);
+  }
+};
+
+cell('F53', "a horizontal accent tests glyph advance and keeps the combining under-arrow", () => {
+  texBoxes([
+    [String.raw`\underleftarrow{x}`, 0.572, 0.442, 0.292],
+    [String.raw`\underrightarrow{x}`, 0.572, 0.442, 0.292]
+  ]);
+  for (const [tex, cp] of [[String.raw`\underleftarrow{x}`, 0x20ee], [String.raw`\underrightarrow{x}`, 0x20ef]]) {
+    const items = glyphs(layout(tex).svg), mark = items.find(g => g.id === MATH_FONT.chars[cp]);
+    assert.equal(items.length, 2, tex + ' is a base and a single accent');
+    assert(mark, tex + ' uses the combining accent');
+    near(mark.x, 0.592999, tex + ' mark origin', 0.002);
+  }
+});
+
+cell('F54', "the widest designed accent remains unscaled", () => {
+  texBoxes([
+    [String.raw`\widehat{ABCD}`, 3.149998, 1.015001, 0.022],
+    [String.raw`\widetilde{ABCD}`, 3.149998, 1.039, 0.022]
+  ]);
+  const hat = glyphs(layout(String.raw`\widehat{ABCD}`).svg).find(g => g.id === 2294);
+  assert(hat, 'Latin Modern Math gid 2340 (compressed 2294) is the widest hat');
+  near(hat.x, 0.626999, 'wide hat origin', 0.002);
+  near(hat.sx, 0.001, 'wide hat horizontal scale', 0.00000001);
+  near(hat.sy, 0.001, 'wide hat vertical scale', 0.00000001);
+});
+
+cell('F55', "amsmath fraction delimiters use their fixed style target and text-font box", () => {
+  texBoxes([
+    [String.raw`\binom{b}{p}`, 1.2563, 0.9298, 0.4808],
+    [String.raw`\tbinom{b}{p}`, 1.2563, 0.9298, 0.4808],
+    [String.raw`\genfrac[]{1pt}{2}{a}{b}`, 0.942999, 0.75, 0.327499],
+    [String.raw`\genfrac[]{1pt}{3}{a}{b}`, 0.942999, 0.75, 0.377499],
+    [String.raw`\binom{b}{p}`, 2.253, 1.745, 1.245, true],
+    [String.raw`\genfrac(){2pt}{0}{a}{b}`, 2.278999, 1.745, 1.245],
+    [String.raw`\genfrac(){2pt}{1}{a}{b}`, 1.278, 0.865701, 0.542801],
+    [String.raw`\genfrac(){2pt}{2}{a}{b}`, 1.164999, 0.748, 0.477499],
+    [String.raw`\genfrac(){2pt}{3}{a}{b}`, 1.164999, 0.748, 0.527499]
+  ]);
+});
+
+cell('F56', "an explicit fraction rule and its clearance retain point thickness in every math style", () => {
+  texBoxes([
+    [String.raw`\genfrac{}{}{0.4pt}{0}{a}{b}`, 0.768999, 1.119, 0.697],
+    [String.raw`\genfrac{}{}{1pt}{0}{a}{b}`, 0.768999, 1.119, 0.805005],
+    [String.raw`\genfrac{}{}{2pt}{0}{a}{b}`, 0.768999, 1.403008, 1.155008],
+    [String.raw`\genfrac{}{}{4pt}{0}{a}{b}`, 0.768999, 2.103015, 1.855016],
+    [String.raw`\genfrac{}{}{0.4pt}{1}{a}{b}`, 0.673999, 0.702701, 0.352],
+    [String.raw`\genfrac{}{}{1pt}{1}{a}{b}`, 0.673999, 0.715701, 0.392801],
+    [String.raw`\genfrac{}{}{2pt}{1}{a}{b}`, 0.673999, 0.865701, 0.542801],
+    [String.raw`\genfrac{}{}{4pt}{1}{a}{b}`, 0.673999, 1.165701, 0.842801],
+    [String.raw`\genfrac{}{}{0.4pt}{2}{a}{b}`, 0.626999, 0.4968, 0.246999],
+    [String.raw`\genfrac{}{}{1pt}{2}{a}{b}`, 0.626999, 0.5515, 0.327499],
+    [String.raw`\genfrac{}{}{2pt}{2}{a}{b}`, 0.626999, 0.7015, 0.477499],
+    [String.raw`\genfrac{}{}{4pt}{2}{a}{b}`, 0.626999, 1.0015, 0.777499],
+    [String.raw`\genfrac{}{}{0.4pt}{3}{a}{b}`, 0.626999, 0.418001, 0.287498],
+    [String.raw`\genfrac{}{}{1pt}{3}{a}{b}`, 0.626999, 0.5015, 0.377499],
+    [String.raw`\genfrac{}{}{2pt}{3}{a}{b}`, 0.626999, 0.6515, 0.527499],
+    [String.raw`\genfrac{}{}{4pt}{3}{a}{b}`, 0.626999, 0.9515, 0.827499]
+  ]);
+});
+
+cell('F57', "scripts use semantic height and depth for smash, vertical phantoms and struts", () => {
+  texBoxes([
+    [String.raw`x^{\smash{\dfrac{a}{b}}}`, 1.396999, 0.442, 0.011],
+    [String.raw`x_{\smash{\dfrac{a}{b}}}`, 1.396999, 0.442, 0.247],
+    [String.raw`x^{a\vphantom{\dfrac{a}{b}}}`, 1.062, 1.924001, 0.011],
+    [String.raw`x_{a\vphantom{\dfrac{a}{b}}}`, 1.062, 0.442, 1.472],
+    [String.raw`\smash{A}^2`, 1.2043, 0.8278, 0],
+    [String.raw`x^{\mathstrut}`, 0.628, 0.8866, 0.011],
+    [String.raw`x_{\mathstrut}`, 0.628, 0.442, 0.420599]
+  ]);
+});
+
+cell('F58', "a radical degree has an uncramped scriptscript box and a depth-independent origin", () => {
+  texBoxes([
+    [String.raw`\sqrt[i]{x}`, 1.405, 0.800499, 0.2395],
+    [String.raw`\sqrt[l]{x}`, 1.405, 0.800499, 0.2395],
+    [String.raw`\sqrt[3]{x}`, 1.4675, 0.800499, 0.2395],
+    [String.raw`\sqrt{\sqrt[n^2]{x}}`, 2.936, 1.30275, 0.53725],
+    [String.raw`\sqrt[\smash{3}]{x}`, 1.4675, 0.800499, 0.2395]
+  ]);
+  for (const tex of [String.raw`\sqrt[i]{x}`, String.raw`\sqrt[l]{x}`, String.raw`\sqrt[3]{x}`]) {
+    const degree = glyphs(layout(tex).svg).find(g => Math.abs(g.sx - 0.0005) < 1e-8);
+    assert(degree, tex + ' has a scriptscript degree');
+    near(degree.x, 0.278, tex + ' degree x', 0.002);
+    near(degree.y, -0.3605, tex + ' degree baseline', 0.002);
+  }
+  const degreeScript = glyphs(layout(String.raw`\sqrt{\sqrt[n^2]{x}}`).svg).filter(g => Math.abs(g.sx - 0.0005) < 1e-8)[1];
+  near(degreeScript.y, -0.542, 'nested radical degree superscript baseline', 0.002);
+});
+
+cell('F59', "inline and display operators center their TeX boxes on the axis while retaining exact ink", () => {
+  texBoxes([
+    [String.raw`\bigcup`, 0.833, 0.761, 0.261],
+    [String.raw`\bigcap`, 0.833, 0.761, 0.261],
+    [String.raw`\bigcup`, 1.111, 0.928, 0.428, true],
+    [String.raw`\bigtimes`, 1.092, 0.742999, 0.242999],
+    [String.raw`\bigtimes`, 1.371001, 0.883, 0.383, true],
+    [String.raw`\bigvee`, 0.833, 0.783, 0.283],
+    [String.raw`\bigvee`, 1.111, 0.958499, 0.458501, true],
+    [String.raw`\bigwedge`, 0.833, 0.783, 0.283],
+    [String.raw`\bigwedge`, 1.111, 0.958499, 0.458501, true]
+  ]);
+});
+
+cell('F60', "exclamation is a closing atom; a question mark retains its ordinary-atom spacing", () => {
+  texBoxes([
+    [String.raw`\left(n+1\right)!`, 3.378433, 0.748, 0.248],
+    [String.raw`a?b`, 1.429999, 0.705, 0.011],
+    [String.raw`\left(n+1\right)?`, 3.739096, 0.748, 0.248]
+  ]);
+});
+
+cell('F61', "modular gaps use the surrounding inline or display mode independently of math style", () => {
+  texBoxes([
+    [String.raw`a\pmod{n}`, 4.573758, 0.748, 0.248],
+    [String.raw`a\pod{n}`, 2.351433, 0.748, 0.248],
+    [String.raw`a\mod{n}`, 4.017975, 0.694, 0.011],
+    [String.raw`a\pmod{n}`, 5.1293, 0.748, 0.248, true],
+    [String.raw`a\pod{n}`, 2.906975, 0.748, 0.248, true],
+    [String.raw`a\mod{n}`, 4.3513, 0.694, 0.011, true],
+    [String.raw`\displaystyle a\pmod{n}`, 4.573758, 0.748, 0.248],
+    [String.raw`\textstyle a\pmod{n}`, 5.1293, 0.748, 0.248, true],
+    [String.raw`x^{a\pmod n}`, 4.531427, 0.8866, 0.011, true],
+    [String.raw`a\bmod n`, 3.573541, 0.694, 0.011]
+  ]);
+});
+
+cell('F62', "a sized delimiter accepts a braced delimiter argument", () => {
+  texBoxes([
+    [String.raw`\bigl{(}x\bigr{)}`, 1.416, 0.847598, 0.347597]
+  ]);
+});
+
+cell('F63', "mathchoice selects and splices the current display, text, script or scriptscript branch", () => {
+  texBoxes([
+    [String.raw`a\mathchoice{+b}{=c}{,d}{.e}`, 2.295541, 0.442, 0.011],
+    [String.raw`a\mathchoice{+b}{=c}{,d}{.e}`, 2.180432, 0.694, 0.083, true],
+    [String.raw`x^{\mathchoice{a}{b}{c}{d}}`, 0.985699, 0.671701, 0.011],
+    [String.raw`x^{y^{\mathchoice{a}{b}{c}{d}}}`, 1.448799, 0.964101, 0.011],
+    [String.raw`a\mathchoice{+b}{=c}{,d}{.e}_x`, 2.805141, 0.442, 0.254001],
+    [String.raw`a\mathchoice{\mathchoice{+b}{+c}{+d}{+e}}{=c}{,d}{.e}`, 2.180432, 0.694, 0.083, true]
+  ]);
+});
+
+cell('F64', "verbatim text preserves raw characters and separate spaces in the full-size Mono face", () => {
+  texBoxes([
+    [String.raw`\verb|a  b|`, 2.1, 0.611, 0.006],
+    [String.raw`\verb|a b % \x|`, 4.2, 0.694, 0.083],
+    [String.raw`\verb*|a b|`, 1.575, 0.611, 0.111111],
+    [String.raw`x^{\verb|a b|}`, 2.203, 0.974001, 0.011],
+    ["\\verb|a\tb|", 1.575, 0.611, 0.006],
+    ["\\verb*|a\t\tb|", 2.1, 0.611, 0.111111],
+    [String.raw`\verb|!%\\{}#$^_~|`, 5.775, 0.694, 0.167],
+    [String.raw`\verb*| |`, 0.525, 0.219444, 0.111111]
+  ]);
+  const raw = String.raw`\verb|a b % \x|`;
+  assert(renderMath(raw).svg.includes('<title>' + raw + '</title>'), 'verbatim rendering retains exact source');
+  assert(mathml(raw).includes('<annotation encoding="application/x-tex">' + raw + '</annotation>'), 'verbatim MathML retains exact source');
+});
+
+cell('F65', "text ties keep individual advances, including the Mono word space", () => {
+  texBoxes([
+    [String.raw`\text{a~~b}`, 1.722, 0.694, 0.011],
+    [String.raw`\texttt{a b}`, 1.575, 0.611, 0.006],
+    [String.raw`\texttt{a~~b}`, 2.1, 0.611, 0.006]
+  ]);
+});
+
+cell('F66', "contextual dots inspect the next raw token and retain each named command's trailing glue", () => {
+  texBoxes([
+    [String.raw`a_1+\dots+a_n`, 5.283365, 0.583, 0.254001],
+    [String.raw`\int\dots\int`, 2.500323, 0.805499, 0.305501],
+    [String.raw`a_1\dots a_n`, 3.232823, 0.442, 0.254001],
+    [String.raw`a_1,\dots,a_n`, 3.955486, 0.442, 0.254001],
+    [String.raw`a_1\dotsb a_n`, 3.171823, 0.442, 0.254001],
+    [String.raw`a_1\dotsm a_n`, 3.171823, 0.442, 0.254001],
+    [String.raw`\int\dotsi\int`, 2.272661, 0.805499, 0.305501],
+    [String.raw`a_1\dotso a_n`, 3.232823, 0.442, 0.254001],
+    [String.raw`\dots`, 1.003662, 0.106, 0],
+    [String.raw`\ldots`, 0.837, 0.106, 0],
+    [String.raw`\dotsb`, 0.942662, 0.303, 0],
+    [String.raw`\dotsm`, 0.942662, 0.303, 0],
+    [String.raw`\dotsi`, 0.609337, 0.303, 0],
+    [String.raw`\dotso`, 1.003662, 0.106, 0],
+    [String.raw`a\dots\times b`, 3.123094, 0.694, 0.011],
+    [String.raw`a\dots×b`, 3.123094, 0.694, 0.011],
+    [String.raw`a\dots`, 1.699324, 0.442, 0.011],
+    [String.raw`(a\dots)`, 2.477324, 0.748, 0.248],
+    [String.raw`a\dots,b`, 2.572986, 0.694, 0.192999],
+    [String.raw`a\dotso,b`, 2.739648, 0.694, 0.192999],
+    [String.raw`a\dotsc,b`, 2.572986, 0.694, 0.192999],
+    [String.raw`a\cdots`, 1.471661, 0.442, 0.011],
+    [String.raw`\def\plus{+}a\dots\plus b`, 3.184094, 0.694, 0.083],
+    [String.raw`a\dots\le b`, 3.295203, 0.694, 0.119],
+    [String.raw`a\dots{+}b`, 2.906323, 0.694, 0.083]
+  ]);
+});
+
+
+cell('F67', 'a chosen math-style declaration reaches later atoms and keeps font assignments scoped', () => {
+  texBoxes([
+    [String.raw`a\mathchoice{\scriptstyle b}{\scriptstyle c}{d}{e}f`, 1.284999, 0.492799, 0.142799],
+    [String.raw`a\mathchoice{\scriptstyle b}{\scriptstyle c}{d}{e}f`, 1.2703, 0.492799, 0.142799, true],
+    [String.raw`a\mathchoice{}{\scriptstyle}{}{}b`, 0.8804, 0.4858, 0.011],
+    [String.raw`a\mathchoice{}{\scriptstyle b\mathchoice{D}{T}{S}{Q}}{}{}c`, 1.7547, 0.492101, 0.014],
+    [String.raw`a{\mathchoice{\scriptstyle b}{\scriptstyle c}{d}{e}}f`, 1.376698, 0.705, 0.205],
+    [String.raw`x^{a\mathchoice{b}{c}{\textstyle d}{e}f}`, 2.095999, 1.068001, 0.011],
+    [String.raw`a\mathchoice{}{\rm b}{}{}c`, 1.517999, 0.694, 0.011],
+    [String.raw`a\mathchoice{}{\bf b}{}{}c`, 1.600999, 0.694, 0.011],
+    [String.raw`a\mathchoice{}{\rm\scriptstyle b}{}{}c`, 1.3284, 0.4858, 0.011],
+    [String.raw`a\mathchoice{}{\bf\scriptstyle b}{}{}c`, 1.389299, 0.4858, 0.011],
+    [String.raw`a\scriptstyle^b`, 0.884698, 0.6011, 0.011],
+    [String.raw`{\scriptstyle B}^x`, 1.113699, 0.671701, 0]
+  ]);
+  const chosen = mathml(String.raw`a\mathchoice{}{\scriptstyle c}{}{}f`);
+  assert(chosen.includes('scriptlevel="1"'), 'MathML keeps the selected script style');
+  assert(chosen.includes('<mi>c</mi>') && chosen.includes('<mi>f</mi>'), 'MathML keeps both affected symbols');
+});
+cell('F68', 'a group containing a choice remains boxed before branch selection', () => {
+  texBoxes([
+    [String.raw`{\mathchoice{A}{B}{C}{D}}^x`, 1.268599, 0.741701, 0],
+    [String.raw`\mathchoice{A}{B}{C}{D}^x`, 1.268599, 0.683, 0],
+    [String.raw`{\mathchoice{}{}{}{}B}^x`, 1.268599, 0.741701, 0],
+    [String.raw`{{\mathchoice{A}{B}{C}{D}}}^x`, 1.268599, 0.741701, 0],
+    [String.raw`{AB}^x`, 2.018599, 0.774701, 0],
+    [String.raw`{B}^x`, 1.293599, 0.683, 0],
+    [String.raw`a{+b}c`, 2.168999, 0.694, 0.083]
+  ]);
+});
+cell('F69', 'verbatim macro expansion is charged before repeated raw text is materialized', () => {
+  const source = String.raw`\def\a{\verb|` + ' '.repeat(10000) + '|}' + String.raw`\a`.repeat(100);
+  const prepared = mathPrepare(source);
+  assert.equal(prepared.error?.code, 'resource-limit', 'repeated raw text reaches the shared admission bound');
+  assert.equal(prepared.text, source, 'a refused expansion retains the authored source');
+});
+
 cell('P1', 'a formula being typed previews without an error', () => {
   for (const tex of [String.raw`\frac{-b\pm\sqrt{b^2-4ac}}{2a}`, String.raw`\begin{pmatrix}1 & 2\\3 & 4\end{pmatrix}`, String.raw`\left(x+1\right)^{\sqrt[3]{y}}`])
     for (let i = 1; i <= tex.length; i++) {
@@ -559,7 +808,7 @@ cell('P1', 'a formula being typed previews without an error', () => {
 cell('P2', 'a misspelled command keeps its fix at the caret; a name being typed does not', () => {
   for (const [tex, fix] of [[String.raw`\farc`, String.raw`\frac`], [String.raw`a+\alhpa`, String.raw`\alpha`]])
     assert.equal(renderMath(tex, {preview: true, caret: tex.length}).errors[0]?.suggestion, fix, 'the fix for ' + tex);
-  const {parseMathTex} = parser, text = ['parser.js', 'symbols.js', 'variants.js'].map(file => readFileSync(resolve(root, 'src/math', file), 'utf8')).join('\n');
+  const {parseMathTex} = parser, text = ['parser.js', 'symbols.js', 'variants.js'].map(file => readFileSync(resolve(mathRoot, file), 'utf8')).join('\n');
   const accepted = [...new Set(text.match(/[A-Za-z]{2,}/g))].filter(name => {
     try { parseMathTex('\\' + name + '{a}{b}{c}'); return true; } catch (error) { return !(error.code === 'unsupported-command' && error.offset === 0); }
   });

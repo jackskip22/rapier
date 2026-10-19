@@ -3699,6 +3699,13 @@ function _rapierCommitDocumentIdentity(options) {
 		globalThis.RapierRecoveryWorker.retireRecoveryRevision(_rapierPersistenceRuntime.recoveryRevision.token);
 		_rapierPersistenceRuntime.recoveryRevision = null;
 	}
+	const outgoingEdit = rapier.view.sharedEditDiv;
+	if (outgoingEdit) {
+		clearTimeout(outgoingEdit._rapierHistoryTimer);
+		outgoingEdit._rapierHistoryTimer = null;
+		_rapierResetEditHistoryBurst(outgoingEdit);
+		if (rapier.view.activeBlockId != null || outgoingEdit.parentElement?.classList.contains('block-wrapper')) _clearActiveBlock();
+	}
 	rapier.identity.epoch = (rapier.identity.epoch || 0) + 1;
 	rapier.identity.authority = nextAuthority;
 	globalThis.RapierChanges?.reset();
@@ -7103,6 +7110,10 @@ function _leaveOtherEditingBlocks(exceptWrapper, options = null) {
 }
 
 function _leaveAllEditingBlocks() {
+	const held = window.getSelection && window.getSelection(), host = _editorHostEl();
+	if (held?.rangeCount && host && (host.contains(held.anchorNode) || host.contains(held.focusNode))) {
+		try { held.removeAllRanges(); } catch (_) {}
+	}
 	if (_leaveOtherEditingBlocks(null) === false) return false;
 	const ae = document.activeElement;
 	if (ae && ae.classList && ae.classList.contains('block-edit') &&
@@ -7564,6 +7575,7 @@ function _rapierCheckpointEdit(editDiv, command = false) {
 	const blockId = wrapper && parseInt(wrapper.dataset.blockId, 10);
 	const block = Number.isFinite(blockId) ? rapier.document.blocks.find(b => b.id === blockId) : null;
 	if (!wrapper || !block || !wrapper.classList.contains('block-wrapper--editing')) return false;
+	if (editDiv._rapierEditEpoch !== undefined && editDiv._rapierEditEpoch !== Number(rapier.identity.epoch || 0)) return false;
 	if (editDiv._rapierCheckpointFresh) return false;
 	clearTimeout(editDiv._rapierHistoryTimer);
 	editDiv._rapierHistoryTimer = null;
@@ -7863,6 +7875,7 @@ function enterBlockEdit(block, wrapper, activation = null) {
 	rapier.view.lastActiveBlockId = block.id;
 	if (_leaveOtherEditingBlocks(wrapper) === false) return null;
 	const editDiv = _rapierAttachSharedEditHost(wrapper);
+	editDiv._rapierEditEpoch = Number(rapier.identity.epoch || 0);
 	editDiv._rapierHistorySession = (editDiv._rapierHistorySession || 0) + 1;
 	rapier.view.activeBlockId = block.id;
 	rapier.view.activeWrapper = wrapper;
@@ -15602,7 +15615,7 @@ function _rapierSyncItemGrip() {
 	if (open) _rapierSyncSectionMoveHandle(open.wrapper);
 	let grip = document.querySelector('#editor-blocks .section-move-btn--item');
 	if (grip?._rapierDragging) return;
-	if (!caret) { if (grip) grip.hidden = true; return; }
+	if (!caret) { if (grip && !grip.hidden) grip.hidden = true; return; }
 	if (grip && grip.parentElement !== open.wrapper) { grip.remove(); grip = null; }
 	if (!grip) {
 		grip = _rapierMoveGrip('move item');
@@ -15619,8 +15632,9 @@ function _rapierSyncItemGrip() {
 	}
 	const line = parseFloat(getComputedStyle(caret.li).lineHeight) || 24;
 	const top = caret.li.getBoundingClientRect().top - open.wrapper.getBoundingClientRect().top;
-	grip.style.top = Math.round(top + (line - 44) / 2) + 'px';
-	grip.hidden = false;
+	const at = Math.round(top + (line - 44) / 2) + 'px';
+	if (grip.style.top !== at) grip.style.top = at;
+	if (grip.hidden) grip.hidden = false;
 }
 
 function _rapierItemDragStart(event) {
@@ -22597,10 +22611,7 @@ function _rapierArtifactHighlight(code, lang) {
 
 function _rapierSettleListContinuations(host) {
 	host._rapierListSettle = 0;
-	host.querySelectorAll('[data-rapier-list-continues],[data-rapier-list-through]').forEach(element => {
-		element.removeAttribute('data-rapier-list-continues');
-		element.removeAttribute('data-rapier-list-through');
-	});
+	const names = ['data-rapier-list-continues', 'data-rapier-list-through'], wanted = new Map();
 	const blocks = [];
 	let previous = null;
 	for (const read of host.querySelectorAll(':is(:scope, :scope > .block-sleep-group) > .block-wrapper:not(.block-wrapper--editing) > .block-read')) {
@@ -22610,7 +22621,14 @@ function _rapierSettleListContinuations(host) {
 		blocks.push(read.childElementCount === 1 ? read.firstElementChild : null);
 		previous = wrapper;
 	}
-	_rapierRenderModule('render-markdown')._rapierMarkListContinuations(blocks);
+	_rapierRenderModule('render-markdown')._rapierMarkListContinuations(blocks, (element, name) => {
+		if (!wanted.has(element)) wanted.set(element, new Set());
+		wanted.get(element).add(name);
+	});
+	host.querySelectorAll('[data-rapier-list-continues],[data-rapier-list-through]').forEach(element => {
+		for (const name of names) if (element.hasAttribute(name) && !wanted.get(element)?.has(name)) element.removeAttribute(name);
+	});
+	for (const [element, marks] of wanted) for (const name of marks) if (!element.hasAttribute(name)) element.setAttribute(name, '');
 }
 function _rapierWatchListContinuations() {
 	const host = document.getElementById('editor-blocks');

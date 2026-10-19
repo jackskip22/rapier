@@ -150,6 +150,16 @@ function mathML(tree, source, safeSource, options = {}) {
   };
 
   function scripts(node, context, depth, base) {
+    if (node.pre) {
+      open('mmultiscripts');
+      if (base) base(); else emit(node.base, {...context, form: undefined, movableLimits: false}, depth + 1);
+      open('mprescripts'); close('mprescripts');
+      for (const part of [node.sub, node.sup]) {
+        if (part) emit(part, scriptContext(context), depth + 1);
+        else { open('mrow'); close('mrow'); }
+      }
+      close('mmultiscripts'); return;
+    }
     const limits = node.limits || limitsOf(node.base), stacked = limits === 'always' || limits === 'display' && context.display && context.level === 0;
     const name = stacked ? node.sub && node.sup ? 'munderover' : node.sub ? 'munder' : 'mover' : node.sub && node.sup ? 'msubsup' : node.sub ? 'msub' : 'msup';
     open(name, stacked ? {accent: node.sup ? 'false' : undefined, accentunder: node.sub ? 'false' : undefined} : {});
@@ -160,12 +170,42 @@ function mathML(tree, source, safeSource, options = {}) {
   }
 
   function row(children, context, depth) {
+    if (children.some(node => node.type === 'choice')) {
+      const selected = [];
+      let selectionContext = context;
+      const append = (nodes, level) => {
+        for (const node of nodes) {
+          if (node.type === 'style' && node.mathStyle && node.declaration && node.body.type === 'row' && !node.body.children.length)
+            selectionContext = styledContext(selectionContext, node);
+          if (node.type !== 'choice') { selected.push(node); continue; }
+          visit(node, level); family(node);
+          if (active.has(node)) fail('unsupported-semantic-node', 'A mathematical tree contains a cycle.');
+          active.add(node);
+          const branch = mathChoice(node, selectionContext);
+          visit(branch, level + 1);
+          append(branch.children, level + 2);
+          active.delete(node);
+        }
+      };
+      append(children, depth + 1); children = selected;
+      if (children.length !== 1) context = {...context, ordinary: undefined};
+    }
     // movablelimits belongs to an operator that is itself the base, not to operators inside a compound base.
     if (children.length > 1) context = {...context, movableLimits: undefined};
     open('mrow');
-    let previous;
+    let previous, styled = false;
     for (let index = 0; index < children.length; index++) {
       const node = children[index];
+      if (node.type === 'style' && node.mathStyle && node.declaration && node.body.type === 'row' && !node.body.children.length) {
+        visit(node, depth + 1); visit(node.body, depth + 2); context = styledContext(context, node);
+        if (styled) close('mstyle');
+        open('mstyle', {displaystyle: String(context.display), scriptlevel: String(context.level)}); styled = true; continue;
+      }
+      // The parser's prescript uses a phantom nucleus followed by the real nucleus for SVG placement.
+      if (node.type === 'scripts' && node.pre && node.base?.type === 'phantom' && node.base.body === children[index + 1]) {
+        emit({...node, base: children[++index]}, context, depth + 1);
+        previous = classOf(node.base.body); continue;
+      }
       if (numberPart(node)) {
         let end = index + 1;
         while (end < children.length && numberPart(children[end]) && sameNumberStyle(node, children[end])) end++;
@@ -190,12 +230,13 @@ function mathML(tree, source, safeSource, options = {}) {
       let form;
       if ((node.type === 'glyph' || node.type === 'style' && node.body.type === 'glyph') && classOf(node) === 'bin') {
         // TeX's rule 5: a binary operator before a relation, a closing symbol or nothing is not infix.
-        const next = children.slice(index + 1).find(child => child.type !== 'space');
+        const next = children.slice(index + 1).find(child => child.type !== 'space' && !(child.type === 'style' && child.mathStyle && child.declaration && child.body.type === 'row' && !child.body.children.length));
         form = !previous || ['bin', 'op', 'rel', 'open', 'punct'].includes(previous) ? 'prefix' : !next || ['rel', 'close', 'punct'].includes(classOf(next)) ? 'postfix' : 'infix';
       }
       emit(node, {...context, form}, depth + 1);
       if (node.type !== 'space') previous = classOf(node);
     }
+    if (styled) close('mstyle');
     close('mrow');
   }
 
@@ -222,9 +263,7 @@ function mathML(tree, source, safeSource, options = {}) {
     const small = /smallmatrix$/.test(node.env) || node.env === 'subarray' || node.env === 'substack';
     const display = /^(align(?:ed)?(?:at)?|flalign|split|[lr]?gather(?:ed)?|eqnarray|multline(?:d)?|equation|drcases|dcases|darray)$/.test(node.env);
     const cellContext = {...context, display: small ? false : display, level: small ? Math.max(1, context.level) : context.level};
-    const delimiters = {pmatrix: ['(', ')'], bmatrix: ['[', ']'], Bmatrix: ['{', '}'], vmatrix: ['|', '|'], Vmatrix: ['‖', '‖'],
-      psmallmatrix: ['(', ')'], bsmallmatrix: ['[', ']'], Bsmallmatrix: ['{', '}'], vsmallmatrix: ['|', '|'], Vsmallmatrix: ['‖', '‖'],
-      cases: ['{', ''], dcases: ['{', ''], rcases: ['', '}'], drcases: ['', '}']}[node.env];
+    const delimiters = mathTableDelimiters(node.env);
     if (delimiters) { open('mrow'); fence(delimiters[0], 'prefix', context); }
     open('mtable', {displaystyle: String(cellContext.display), scriptlevel: String(cellContext.level), 'data-math-environment': node.env});
     for (let at = 0; at < rows.length; at++) {
@@ -262,10 +301,11 @@ function mathML(tree, source, safeSource, options = {}) {
       switch (node.type) {
         // A braced group is an ordinary atom in TeX; an operator alone in it takes no spacing of its own.
         case 'row': row(node.children, node.group && node.children.length === 1 ? {...context, ordinary: true} : {...context, ordinary: undefined}, depth); break;
+        case 'choice': emit(mathChoice(node, context), context, depth + 1); break;
         case 'glyph': {
           const name = kind(node), attributes = {};
           if (name === 'mo') {
-            if (node.class === 'open' || node.class === 'close') { attributes.fence = 'true'; attributes.form = node.class === 'open' ? 'prefix' : 'postfix'; }
+            if (node.class === 'open' || node.class === 'close') { attributes.fence = String(!/^[!?]$/.test(node.value)); attributes.form = node.class === 'open' ? 'prefix' : 'postfix'; }
             else if (node.class === 'punct') attributes.separator = 'true';
             else if (context.form) attributes.form = context.form;
             if (node.large !== undefined) attributes.largeop = String(!!node.large);
@@ -281,7 +321,10 @@ function mathML(tree, source, safeSource, options = {}) {
         }
         case 'text': atom(node, node.value, ['op', 'bin', 'rel'].includes(node.class) ? 'mo' : 'mtext', context,
           node.class === 'op' ? {form: 'prefix', movablelimits: String(node.limits === 'display')} : {}); break;
-        case 'space': open('mspace', {width: em(Math.max(0, node.width)), style: node.width < 0 ? 'margin-left:' + em(node.width) : undefined}); close('mspace'); break;
+        case 'space': {
+          const width = options.displayMode && node.displayWidth !== undefined ? node.displayWidth : node.width;
+          open('mspace', {width: em(Math.max(0, width)), style: width < 0 ? 'margin-left:' + em(width) : undefined}); close('mspace'); break;
+        }
         case 'scripts': scripts(node, context, depth); break;
         case 'frac': {
           const local = node.style ? styledContext(context, {mathStyle: node.style}) : context;
@@ -350,6 +393,8 @@ function mathML(tree, source, safeSource, options = {}) {
           } else if (node.class) {
             const leaf = singleToken(node.body);
             if (leaf) emit({...leaf, class: node.class}, local, depth + 1);
+            else if (node.body.type === 'row' && node.body.children.filter(child => child.type !== 'space').length === 1 &&
+              node.body.children.every(child => child.type === 'space' || classOf(child) === node.class)) emit(node.body, local, depth + 1);
             else {
               warn('semantic-atom-class', 'A compound expression retains its mathematical children; its TeX atom class does not create a single MathML operator.');
               emit(node.body, local, depth + 1);
@@ -431,4 +476,5 @@ function mathML(tree, source, safeSource, options = {}) {
 
 import {mathDiagnostic} from './source.js';
 import {mathStyledCodePoint} from './variants.js';
+import {mathChoice, mathTableDelimiters} from './parser.js';
 export {mathML};

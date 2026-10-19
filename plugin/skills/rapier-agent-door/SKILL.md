@@ -62,7 +62,8 @@ expire after 30 idle days.
 5. **Show** your work or ask the person. `show {act}` presents that change; comparisons leave source unchanged. Check
    what was actually shown. A person's message carries the selection or drawing they pointed at and its revision;
    treat a stale referent as gone, never retarget it.
-6. **Export** and give the person the link. Files are independent; `html` carries the offline editor.
+6. **Export** and give the person the link. Files are independent; `html` carries the offline editor. Tell the person
+   only what the export receipt states, or what you saw: before saying a file opens or works somewhere, open it there.
 
 After a lost reply, retry the identical call with the same `operation_id`. Changed work needs a new one. Pending work
 is not finished: acceptance, commitment, presentation and delivery are separate facts.

@@ -1457,14 +1457,18 @@ const _rapierImageFlow = (() => {
       row.paragraphBounds = row.paragraph && rect(row.paragraph);
       row.flowingBounds = row.flowing && rect(row.flowing);
     }
+    for (const row of measured) if ((row.paragraphBounds || row.flowingBounds) && prose(row.wrapper)) {
+      const element = row.paragraph || row.flowing, edges = row.insets = ownerInsetsOf(element);
+      if (edges.lines === undefined && anchors.get(row.wrapper)?.some(({layout}) => layout.lines != null)) edges.lines = geometry.lineMetrics(element);
+    }
     const obstacles = [], pictures = [];
     let shift = 0, preparedCount = 0, lastBottom = 0;
     for (const row of measured) {
       const top = row.top + shift;
       if (placed.has(row) && row.standalone) continue;
       const natural = row.paragraphBounds || row.flowingBounds;
-      const owner = natural && prose(row.wrapper) && ownerBox(row.wrapper, row.paragraph || row.flowing, natural,
-        natural.left - area.left, top + natural.top - row.bounds.top);
+      const owner = natural && row.insets && ownerBox(row.wrapper, row.paragraph || row.flowing, natural,
+        natural.left - area.left, top + natural.top - row.bounds.top, row.insets);
       if (owner) ownerBoxes.set(row.wrapper, owner);
       const own = anchors.get(row.wrapper) || [];
       if (moving && moving.originalOwnerId !== moving.owner?.dataset.blockId) {
@@ -2115,7 +2119,7 @@ const _rapierImageFlow = (() => {
   }
 
   const ownerInsets = new WeakMap();
-  function ownerBox(wrapper, element, bounds, left, top) {
+  function ownerInsetsOf(element) {
     let edges = moving ? ownerInsets.get(element) : null;
     if (!edges || edges.gesture !== moving) {
       const computed = getComputedStyle(element);
@@ -2123,9 +2127,12 @@ const _rapierImageFlow = (() => {
       edges = {gesture: moving, left: inset('Left'), top: inset('Top'), right: inset('Right'), bottom: inset('Bottom'), em: parseFloat(computed.fontSize) || 16};
       if (moving) ownerInsets.set(element, edges);
     }
+    return edges;
+  }
+  function ownerBox(wrapper, element, bounds, left, top, edges = ownerInsetsOf(element)) {
     return {wrapper, left: left + edges.left, top: top + edges.top,
       width: Math.max(0, bounds.width - edges.left - edges.right),
-      height: Math.max(0, bounds.height - edges.top - edges.bottom), em: edges.em, element};
+      height: Math.max(0, bounds.height - edges.top - edges.bottom), em: edges.em, element, ...(edges.lines !== undefined ? {lines: edges.lines} : {})};
   }
 
   function ownerLines(owner) {

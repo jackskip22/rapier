@@ -928,13 +928,13 @@ function* _rapierMarkFigureCaptionsSteps(root) {
 	}
 }
 
-function _rapierMarkListContinuations(blocks) { return finish(_rapierMarkListContinuationsSteps(blocks)); }
+function _rapierMarkListContinuations(blocks, mark) { return finish(_rapierMarkListContinuationsSteps(blocks, mark)); }
 
 function* _rapierChildElements(root) {
 	for (let child = root.firstElementChild; child; child = child.nextElementSibling) yield child;
 }
 
-function* _rapierMarkListContinuationsSteps(blocks) {
+function* _rapierMarkListContinuationsSteps(blocks, mark = (element, name) => element.setAttribute(name, '')) {
 	const isHeading = element => !!element && /^H[1-6]$/.test(element.tagName);
 	let previous = null, headings = [], last = 0;
 	for (const element of blocks) { yield;
@@ -942,8 +942,8 @@ function* _rapierMarkListContinuationsSteps(blocks) {
 		if (!element || element.tagName !== 'OL') {previous = null; headings = []; continue;}
 		const start = parseInt(element.getAttribute('start'), 10);
 		if (previous && headings.length && start === last + 1) {
-			previous.setAttribute('data-rapier-list-continues', '');
-			for (const heading of headings) { yield;heading.setAttribute('data-rapier-list-through', '');}
+			mark(previous, 'data-rapier-list-continues');
+			for (const heading of headings) { yield;mark(heading, 'data-rapier-list-through');}
 		}
 		previous = element; headings = [];
 		last = (Number.isFinite(start) ? start : 1) + element.querySelectorAll(':scope > li').length - 1;

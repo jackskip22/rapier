@@ -608,9 +608,29 @@ function mathTex(node) {
     return painted(command ? '\\' + command + '{' + value + '}' : value);
   }
   if (name === 'phant') {
-    const value = part('e'), show = hidden(name, 'show'), zeroWidth = hidden(name, 'zeroWid');
-    if (show) return zeroWidth ? '\\rlap{' + value + '}' : value;
-    return (zeroWidth ? '\\vphantom' : hidden(name, 'zeroAsc') && hidden(name, 'zeroDesc') ? '\\hphantom' : '\\phantom') + '{' + value + '}';
+    let current = node, show = true, zeroWidth = false, zeroAsc = false, zeroDesc = false, value;
+    for (;;) {
+      const properties = child(current, 'm', 'phantPr'), flag = (key, fallback = false) => {
+        const bit = child(properties, 'm', key), value = bit ? attr(bit, 'm', 'val') ?? '1' : fallback ? '1' : '0';
+        if (!['0', '1', 'false', 'true', 'off', 'on'].includes(value))
+          return fail('DOCX contains an invalid phantom property.', 'docx_math_unsupported');
+        return ['1', 'true', 'on'].includes(value);
+      };
+      const visible = flag('show', true), width = flag('zeroWid'), ascent = flag('zeroAsc'), descent = flag('zeroDesc');
+      if (flag('transp')) return fail('DOCX contains unsupported transparent phantom spacing.', 'docx_math_unsupported');
+      show = show && visible; zeroWidth ||= width; zeroAsc ||= ascent; zeroDesc ||= descent;
+      const base = child(current, 'm', 'e');
+      if (!base) return fail('DOCX contains a phantom without its base.', 'docx_math_unsupported');
+      const parts = Array.from(base.children).filter(n => !(is(n, 'm') && n.localName.endsWith('Pr')));
+      if (parts.length === 1 && is(parts[0], 'm', 'phant')) { current = parts[0]; continue; }
+      value = contents(base); break;
+    }
+    if (!show) {
+      value = (zeroWidth ? '\\vphantom' : zeroAsc && zeroDesc ? '\\hphantom' : '\\phantom') + '{' + value + '}';
+      if (!zeroWidth && zeroAsc && zeroDesc) return value;
+    }
+    if (zeroAsc || zeroDesc) value = '\\smash' + (zeroAsc && zeroDesc ? '' : zeroAsc ? '[t]' : '[b]') + '{' + value + '}';
+    return show && zeroWidth ? '\\mathrlap{' + value + '}' : value;
   }
   if (name === 'f') return property('f', 'type') === 'noBar'
     ? '\\genfrac{}{}{0pt}{}{' + part('num') + '}{' + part('den') + '}'
@@ -620,9 +640,9 @@ function mathTex(node) {
     return '\\sqrt' + (degree ? '[{' + degree + '}]' : '') + '{' + part('e') + '}';
   }
   if (['sSub', 'sSup', 'sSubSup', 'sPre'].includes(name)) {
-    const base = '{' + part('e') + '}', sub = name !== 'sSup' ? '_{' + part('sub') + '}' : '',
-      sup = name !== 'sSub' ? '^{' + part('sup') + '}' : '';
-    return name === 'sPre' ? '{}' + sub + sup + base : base + sub + sup;
+    const base = '{' + part('e') + '}', sub = name !== 'sSup' ? part('sub') : '', sup = name !== 'sSub' ? part('sup') : '';
+    return name === 'sPre' ? '\\prescript{' + sup + '}{' + sub + '}' + base :
+      base + (name !== 'sSup' ? '_{' + sub + '}' : '') + (name !== 'sSub' ? '^{' + sup + '}' : '');
   }
   if (name === 'nary') {
     const symbol = property(name, 'chr', '∫');
@@ -649,8 +669,20 @@ function mathTex(node) {
       children(node, 'm', 'e').map(mathTex).join('\\middle' + delimiter(property(name, 'sepChr', '|'))) +
       '\\right' + delimiter(property(name, 'endChr', ')'));
   }
-  if (name === 'm') return '\\begin{matrix}' + children(node, 'm', 'mr')
-    .map(row => children(row, 'm', 'e').map(mathTex).join(' & ')).join(' \\\\ ') + '\\end{matrix}';
+  if (name === 'm') {
+    const rows = children(node, 'm', 'mr').map(row => children(row, 'm', 'e')), columns = rows.reduce((max, row) => Math.max(max, row.length), 0), align = [];
+    for (const column of children(child(child(node, 'm', 'mPr'), 'm', 'mcs'), 'm', 'mc')) {
+      const properties = child(column, 'm', 'mcPr'), count = attr(child(properties, 'm', 'count'), 'm', 'val') ?? '1',
+        value = attr(child(properties, 'm', 'mcJc'), 'm', 'val') ?? 'center';
+      if (!/^[1-9]\d*$/.test(count) || Number(count) + align.length > DOCX_LIMITS.tableColumns || !['left', 'center', 'right'].includes(value))
+        return fail('DOCX contains an invalid equation column alignment.', 'docx_math_unsupported');
+      align.push(...Array(Number(count)).fill(value[0]));
+    }
+    while (align.length < columns) align.push('c');
+    const body = rows.map(row => row.map(mathTex).join(' & ')).join(' \\\\ ');
+    return align.slice(0, columns).every(value => value === 'c') ? '\\begin{matrix}' + body + '\\end{matrix}' :
+      '\\begin{array}{' + align.slice(0, columns).join('') + '}' + body + '\\end{array}';
+  }
   if (name === 'eqArr') return '\\begin{aligned}' + children(node, 'm', 'e').map(mathTex).join(' \\\\ ') + '\\end{aligned}';
   if (name === 'func') return '\\operatorname{' + part('fName') + '}{' + part('e') + '}';
   if (name === 'limLow' || name === 'limUpp') {
@@ -3285,7 +3317,7 @@ function mathRunFromDom(node, style, pointSize) {
   if (equation && typeof toMathML === 'function') {
     try {
       const {mathml, status, errors} = toMathML(equation.tex, {displayMode: display});
-      if (status === 'complete' || status === 'presentation-fallback' && errors?.every(error => ['semantic-overlay', 'semantic-table-spacing'].includes(error.code)))
+      if (status === 'complete' || status === 'presentation-fallback' && errors?.every(error => ['semantic-overlay', 'semantic-table-spacing', 'semantic-chemistry-presentation'].includes(error.code)))
         return {...run, omml: nativeEquationXml(mathmlRecord(new DOMParser().parseFromString(mathml, 'application/xml').documentElement, style))};
     } catch (_) {}
   }
@@ -3502,7 +3534,7 @@ function mathmlRecord(root, style = {}) {
     for (let child = node, parent = node.parentNode; parent && parent.nodeType === 1; child = parent, parent = parent.parentNode) {
       if (parent.hasAttribute('scriptlevel')) return level + Number(parent.getAttribute('scriptlevel'));
       const index = Array.prototype.indexOf.call(parent.children, child);
-      if (['msub', 'msup', 'msubsup', 'munder', 'mover', 'munderover'].includes(parent.localName) && index > 0) level++;
+      if (['msub', 'msup', 'msubsup', 'mmultiscripts', 'munder', 'mover', 'munderover'].includes(parent.localName) && index > 0) level++;
       if (parent.localName === 'mroot' && index === 1) level += 2;
     }
     return level;
@@ -3577,7 +3609,7 @@ function mathmlRecord(root, style = {}) {
       mo: ['form', 'stretchy', 'fence', 'separator', 'symmetric', 'largeop', 'movablelimits', 'lspace', 'rspace', 'minsize', 'maxsize', 'accent', 'style'],
       mi: ['style'], mn: ['style'], mtext: ['style'],
       mover: ['accent'], munder: ['accentunder'], munderover: ['accent', 'accentunder'], mspace: ['width', 'height', 'depth', 'style'],
-      menclose: ['notation', 'style'],
+      menclose: ['notation', 'style'], mpadded: ['width', 'height', 'depth', 'lspace', 'voffset'],
       mstyle: ['displaystyle', 'scriptlevel', 'style'], mtable: ['columnalign', 'rowalign', 'columnspacing', 'rowspacing', 'displaystyle', 'scriptlevel', 'width', 'equalrows', 'equalcolumns'],
       mtr: ['columnalign', 'rowalign'], mtd: ['columnalign', 'rowalign', 'columnspan', 'style']}[name] || [];
     for (const attribute of Array.from(node.attributes)) {
@@ -3619,6 +3651,17 @@ function mathmlRecord(root, style = {}) {
       finally { scale = saved; }
     }
     if (name === 'mrow') return childrenXml();
+    if (name === 'mphantom' || name === 'mpadded') {
+      const zero = value => /^0(?:\.0*)?(?:em|ex|px|in|cm|mm|pt|pc|%)?$/.test(value);
+      const flags = [['width', 'zeroWid'], ['height', 'zeroAsc'], ['depth', 'zeroDesc']];
+      let properties = '<m:show m:val="' + (name === 'mphantom' ? '0' : '1') + '"/>';
+      for (const [dimension, key] of flags) if (node.hasAttribute(dimension)) {
+        if (!zero(node.getAttribute(dimension))) return refuse('<mpadded> ' + dimension);
+        properties += '<m:' + key + ' m:val="1"/>';
+      }
+      for (const key of ['lspace', 'voffset']) if (node.hasAttribute(key) && !zero(node.getAttribute(key))) return refuse('<mpadded> ' + key);
+      return '<m:phant><m:phantPr>' + properties + '</m:phantPr><m:e>' + childrenXml() + '</m:e></m:phant>';
+    }
     if (name === 'menclose') {
       const notation = new Set((node.getAttribute('notation') || 'longdiv').trim().split(/\s+/)),
         known = new Set(['box', 'actuarial', 'madruwb', ...MATH_BORDER_EDGES.map(([name]) => name), ...MATH_BORDER_STRIKES.map(([name]) => name)]);
@@ -3671,6 +3714,14 @@ function mathmlRecord(root, style = {}) {
       return '<m:' + type + '>' + argument('e', elements[0]) + (name !== 'msup' ? argument('sub', elements[1]) : '') +
         (name !== 'msub' ? argument('sup', elements[name === 'msubsup' ? 2 : 1]) : '') + '</m:' + type + '>';
     }
+    if (name === 'mmultiscripts') {
+      arity(4);
+      if (elements[1].localName !== 'mprescripts' || elements.filter(element => element.localName === 'mprescripts').length !== 1)
+        return refuse('multiple script pairs');
+      convert(elements[1], variant, depth + 1, paint);
+      return '<m:sPre>' + argument('sub', elements[2]) + argument('sup', elements[3]) + argument('e', elements[0]) + '</m:sPre>';
+    }
+    if (name === 'mprescripts' && node.parentNode?.localName === 'mmultiscripts') { arity(0); return ''; }
     if (name === 'msqrt' || name === 'mroot') {
       if (name === 'mroot') arity(2);
       const base = name === 'msqrt' ? childrenXml() : convert(elements[0], variant, depth + 1, paint);
@@ -3687,6 +3738,11 @@ function mathmlRecord(root, style = {}) {
       return '<m:d><m:dPr><m:begChr m:val="' + escape(open) + '"/><m:endChr m:val="' + escape(close) + '"/></m:dPr><m:e>' + body + '</m:e></m:d>';
     }
     if (name === 'mtable') {
+      const alignment = (element, column, fallback) => {
+        const values = (element.getAttribute('columnalign') || '').trim().split(/\s+/).filter(Boolean);
+        if (values.some(value => !['left', 'center', 'right'].includes(value))) return refuse('matrix column alignment');
+        return values[Math.min(column, values.length - 1)] || fallback;
+      };
       const rows = elements.map(row => {
         if (row.localName !== 'mtr' || !row.children.length) return refuse('matrix row');
         const spans = Array.from(row.children, cell => {
@@ -3700,7 +3756,23 @@ function mathmlRecord(root, style = {}) {
       const columns = rows[0]?.columns;
       if (!columns || columns > DOCX_LIMITS.tableColumns || rows.some(row => row.columns !== columns)) return refuse('nonrectangular matrix');
       if (rows.some(row => row.partial)) return refuse('partial matrix cell span');
-      const matrix = rows => '<m:m><m:mPr><m:mcs><m:mc><m:mcPr><m:count m:val="' + columns + '"/><m:mcJc m:val="center"/></m:mcPr></m:mc></m:mcs></m:mPr>' +
+      const align = Array.from({length: columns}, (_, column) => {
+        const values = rows.filter(row => !row.wide).map(row => {
+          const cell = row.node.children[column], own = declarations(cell, ['text-align']), value = own['text-align'] ||
+            alignment(cell, 0, alignment(row.node, column, alignment(node, column, 'center')));
+          if (!['left', 'center', 'right'].includes(value)) return refuse('matrix cell alignment');
+          return value;
+        });
+        if (values.some(value => value !== values[0])) return refuse('mixed alignment in a matrix column');
+        return values[0] || alignment(node, column, 'center');
+      }), groups = [];
+      for (const value of align) {
+        if (groups.at(-1)?.value === value) groups.at(-1).count++;
+        else groups.push({value, count: 1});
+      }
+      const properties = '<m:mPr><m:mcs>' + groups.map(({value, count}) => '<m:mc><m:mcPr><m:count m:val="' + count +
+        '"/><m:mcJc m:val="' + value + '"/></m:mcPr></m:mc>').join('') + '</m:mcs></m:mPr>';
+      const matrix = rows => '<m:m>' + properties +
         sequence(rows.map(row => row.node), variant, depth, paint) + '</m:m>';
       const saved = scale;
       scale *= levelScale(node);

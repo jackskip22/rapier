@@ -263,6 +263,7 @@ export async function admitPressureTrash({store, index, prepared, opId, row, int
  if (bytes == null || baseReceipt == null) throw fail('delete-unarmed', 'Low-space deletion needs the existing durable index receipt.');
  if (await sha256(exactBytes(bytes)) !== await sha256(exactBytes(baseReceipt)) || serializeIndex(parseIndex(new TextDecoder('utf-8', {fatal: true}).decode(baseReceipt))) !== serializeIndex(index)) throw fail('changed', 'The folder metadata changed after the deletion was selected. Nothing was removed.');
  const observation = await intent.api.observe(row.file);
+ if (keep && keep(row.file)) return blankResult(index);
  if (!observation || observation.digest !== row.digest) throw fail('changed', 'The selected note changed. Its bytes were kept.');
  const baseDigest = await sha256(exactBytes(bytes));
  const token = (await sha256(exactBytes(baseDigest + '\n' + opId))).slice(0, 32);
@@ -280,6 +281,7 @@ export async function admitPressureTrash({store, index, prepared, opId, row, int
  if (!row.sync) { const completed = {...proof, deletedAt: record.at}; delete completed.pending; preview.tombstones = {...preview.tombstones, [row.id]: [...(preview.tombstones?.[row.id] || []), completed]}; }
  const required = Math.max(cancelledBytes, exactBytes(serializeIndex(preview)).length);
  if (await sha256(exactBytes(await store.read('notes.json'))) !== baseDigest) throw fail('changed', 'The folder metadata changed before deletion admission. Nothing was removed.');
+ if (keep && keep(row.file)) return blankResult(index);
  await intent.admit(index, record, required);
  return recoverPressureTrash({store, index, intent, commit, keep, live: {token, identity: observation.identity}});
 }

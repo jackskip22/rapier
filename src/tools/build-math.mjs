@@ -11,7 +11,7 @@ import {mathModules, mathClassicSource} from '../math/package-build.mjs';
 import {mathReadme} from '../math/package-readme.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-export const MATH_VERSION = '2.6.1';
+export const MATH_VERSION = '2.7.0';
 export const MATH_BUNDLE = 'rapier-math-' + MATH_VERSION + '.js';
 export const MATH_SOURCES = ['font.js', 'symbols.js', 'parser.js', 'source.js', 'variants.js', 'layout.js', 'fallbacks.js', 'responsive.js', 'api.js', 'browser.js', 'mathml.js', 'semantic-api.js', 'combined.js', 'classic.js'].map(name => 'math/' + name);
 export const MATH_RECIPE = ['math/build-font.py', 'math/FONT-SOURCE.md', 'math/FONT-LICENSE.txt', 'math/package-verify.mjs', 'tools/build-math.mjs', 'math/LICENSE-MIT', 'math/adoption-verify.mjs', 'math/package-build.mjs', 'math/package-layout.mjs', 'math/package-check.mjs', 'math/package-readme.mjs', 'math/README.md', 'math/CHANGELOG.md', 'math/SEMANTICS.md', 'math/semantic-verify.mjs', 'math/typeset-verify.mjs'];
@@ -29,14 +29,14 @@ const FONT = {
   copyright: 'Copyright 2012--2014 for Latin Modern Math OTF by B. Jackowski, P. Strzelczyk and P. Pianowski (on behalf of TeX users groups). This work is released under the GUST Font License -- see http://tug.org/fonts/licenses/GUST-FONT-LICENSE.txt for details.',
   licenseSource: 'https://mirror.apps.cam.ac.uk/pub/tex-archive/fonts/lm-math/doc/GUST-FONT-LICENSE.txt',
   licenseFile: 'math/FONT-LICENSE.txt',
-  licenseSha256: '6fb288a3363cb44eb0e247ead8afefed55fbe9b00ff2d0d1c75a1176d38f4091',
+  licenseSha256: 'fb1f153e363d003180781b4a043f34ab76d17f1c338de9229c40149b52cfdf2f',
 };
 const MONO = {
   name: 'Latin Modern Mono', version: '2.004', license: FONT.license,
   source: 'https://ftp.riken.jp/CTAN/fonts/lm/fonts/opentype/public/lm/lmmono10-regular.otf',
   sha256: '22deb6d3be3ffcb40b33f0e010afb256c677d97c2a2bdee1f5740cdc97751558',
   copyright: 'Copyright 2003, 2009 B. Jackowski and J. M. Nowacki (on behalf of TeX users groups). This work is released under the GUST Font License --  see http://tug.org/fonts/licenses/GUST-FONT-LICENSE.txt for details.',
-  note: 'Monospace sharp s outline and advance; complete license in math-font-LICENSE.txt',
+  note: 'Monospace text outlines and advances; complete license in math-font-LICENSE.txt',
 };
 const HOOK = {
   name: 'Latin Modern Math Italic10 Regular', version: '2.003', license: FONT.license,
