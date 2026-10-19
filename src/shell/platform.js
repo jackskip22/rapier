@@ -134,6 +134,16 @@ const RapierTextCodec = Object.freeze({
 	readDocumentBlob: async function (blob) {
 		return (await RapierTextCodec.readDocumentRecord(blob)).text;
 	},
+	documentBlob: function (text, {bom = false, trailer = '', type = 'text/plain'} = {}) {
+		const parts = bom ? ['\uFEFF'] : [];
+		for (const value of [text, trailer]) for (let start = 0; start < value.length;) {
+			let end = Math.min(value.length, start + 65536);
+			if (end < value.length && value.charCodeAt(end - 1) >= 0xd800 && value.charCodeAt(end - 1) <= 0xdbff &&
+					value.charCodeAt(end) >= 0xdc00 && value.charCodeAt(end) <= 0xdfff) end++;
+			parts.push(value.slice(start, end)); start = end;
+		}
+		return new Blob(parts, {type});
+	},
 	readDocumentRecord: async function (blob, options = {}) {
 		const size = Number(blob?.size);
 		if (!blob || typeof blob.arrayBuffer !== 'function' || typeof blob.slice !== 'function' ||
@@ -235,8 +245,9 @@ const RapierStorage = Object.freeze({
 	webFileHandlesDb: 'rapier:file-handles' + RAPIER_STORAGE_SCOPE,
 	webGenerationPrefix: 'web:',
 	keptBindings: 'rapier:kept-bindings' + RAPIER_STORAGE_SCOPE,
-	recoveryDb: 'rapier:recovery' + RAPIER_STORAGE_SCOPE,
-	recoverySnapshot: 'rapier:recovery:snapshot' + RAPIER_STORAGE_SCOPE,
+	recoveryDb: 'rapier:recovery:6' + RAPIER_STORAGE_SCOPE,
+	recoverySnapshot: 'rapier:recovery:snapshot:6' + RAPIER_STORAGE_SCOPE,
+	nativeSaveIntents: 'rapier:native:save-intents' + RAPIER_STORAGE_SCOPE,
 	restoreCursor: 'rapier:recovery:restore-cursor' + RAPIER_STORAGE_SCOPE,
 	bootAttempt: 'rapier:recovery:boot-attempt' + RAPIER_STORAGE_SCOPE,
 	writerPromotion: 'rapier:recovery:writer-promotion' + RAPIER_STORAGE_SCOPE,
@@ -450,7 +461,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 		}),
 	});
 	const _nativeIntakeRuntime = Object.seal({ transfer: null, waiters: [], last: null, failure: null, generation: 0, transport: null, expecting: false });
-	const _nativeSaveRuntime = Object.seal({ sequence: 0, pending: new Map() });
+	const _nativeSaveRuntime = Object.seal({ sequence: 0, pending: new Map(), receipts: new Map(), replaying: false, booted: false });
 	const _platformBindingRuntime = Object.seal({ files: new Map(), originalProjections: 0 });
 	function _platformCheckpoint(checkpoint) {
 		var pending = [], accepting = true;
@@ -522,13 +533,13 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 	}
 
 	function _nativeHostCall(operation, args, timeoutMs, generation) {
-		if (!hasNative) return Promise.reject(new Error('native host is unavailable'));
+		if (!hasNative) return Promise.reject(Object.assign(new Error('native host is unavailable'), {nativeNotSent: true}));
 		var id = 'host-' + Date.now().toString(36) + '-' + (++_nativeHostRuntime.sequence).toString(36);
 		return new Promise(function (resolve, reject) {
 			var timeout = setTimeout(function () {
 				if (!_nativeHostRuntime.pending.has(id)) return;
 				_nativeHostRuntime.pending.delete(id);
-				reject(new Error('native ' + operation + ' timed out'));
+				reject(Object.assign(new Error('native ' + operation + ' timed out'), {nativeTimeout: true}));
 			}, Math.max(1000, Number(timeoutMs) || 15000));
 			_nativeHostRuntime.pending.set(id, { resolve: resolve, reject: reject, timeout: timeout });
 			try {
@@ -568,14 +579,6 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 		}
 		if (name === 'document.saveResult') {
 			try { window.dispatchEvent(new CustomEvent('rapier:platform-save-result', { detail: detail || {} })); } catch (_) {}
-			var saveRequestId = String(detail && detail.requestId || '');
-			var savePayloadDigest = String(detail && detail.payloadDigest || '').toLowerCase();
-			if (saveRequestId && saveRequestId.length <= 160 && /^[0-9a-f]{64}$/.test(savePayloadDigest)) {
-				_nativeHostNotify('document.ackSaveResult', {
-					requestId: saveRequestId,
-					payloadDigest: savePayloadDigest,
-				});
-			}
 			return;
 		}
 		if (name === 'pro.changed') {
@@ -685,7 +688,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 		_nativeHostRuntime.pending.delete(id);
 		clearTimeout(pending.timeout);
 		if (message.ok === true) pending.resolve(message.result);
-		else pending.reject(new Error(String(message.error || 'native operation failed')));
+		else pending.reject(Object.assign(new Error(String(message.error || 'native operation failed')), {nativeRejected: true}));
 	}
 
 	if (hasNative) nativeHost.onmessage = _nativeHostReceive;
@@ -1117,14 +1120,8 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 	}
 
 	async function _blobFingerprint(blob) {
-		if (blob.size <= 8 * 1024 * 1024 && window.crypto && window.crypto.subtle) {
-			try {
-				var digest = await window.crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
-				return { bytes: blob.size, algorithm: 'sha256', digest: _hexBytes(new Uint8Array(digest)) };
-			} catch (_) {}
-		}
 		var hash = globalThis.RapierLedger.sha256State();
-		for (var at = 0; at < blob.size; at += 4194304) hash.update(new Uint8Array(await blob.slice(at, at + 4194304).arrayBuffer()));
+		for (var at = 0; at < blob.size; at += 1048576) hash.update(new Uint8Array(await blob.slice(at, at + 1048576).arrayBuffer()));
 		return { bytes: blob.size, algorithm: 'sha256', digest: hash.finish() };
 	}
 
@@ -1473,8 +1470,11 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 		};
 		var begun = false;
 		try {
+			if (options.check) options.check();
 			var begin = await _nativeHostCall('transfer.begin', args, 15000);
 			begun = true;
+			if (options.onAccepted) options.onAccepted();
+			if (options.check) options.check();
 			var generation = begin && typeof begin.generation === 'string' ? begin.generation : '';
 			if (!generation) throw new Error('native transfer named no generation');
 			var chunkBytes = begin.chunkBytes;
@@ -1483,7 +1483,9 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			}
 			var sequence = 0;
 			for (var offset = 0; offset < blob.size; offset += chunkBytes) {
+				if (options.check) options.check();
 				var part = new Uint8Array(await blob.slice(offset, offset + chunkBytes).arrayBuffer());
+				if (options.check) options.check();
 				await _nativeHostCall('transfer.chunk', {
 					requestId: requestId,
 					sequence: sequence,
@@ -1491,61 +1493,124 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 				}, 30000, generation);
 				sequence += 1;
 			}
+			if (options.check) options.check();
 			return await _nativeHostCall('transfer.end', { requestId: requestId }, 120000);
 		} catch (error) {
-			if (begun) _nativeHostNotify('transfer.cancel', { requestId: requestId });
+			if (!begun && error.nativeRejected === true) error.nativeNeverAccepted = true;
+			if (begun && !options.onAccepted) _nativeHostNotify('transfer.cancel', { requestId: requestId });
 			throw error;
 		}
 	}
 
-	window.addEventListener('rapier:platform-save-result', function (event) {
-		var detail = event && event.detail;
-		var requestId = detail && String(detail.requestId || '');
-		if (!requestId) return;
-		var pending = _nativeSaveRuntime.pending.get(requestId);
-		if (!pending) return;
-		_nativeSaveRuntime.pending.delete(requestId);
+	function _nativeSaveIntents() {
+		var rows = JSON.parse(localStorage.getItem(RapierStorage.nativeSaveIntents) || '[]');
+		if (!Array.isArray(rows) || rows.some(function (row) {
+			return !row || typeof row.requestId !== 'string' || row.requestId.length > 160 ||
+				!['saveAs', 'saveInPlace', 'export'].includes(row.purpose) ||
+				typeof row.documentAuthority !== 'string' || !/^[0-9a-f]{64}$/.test(row.payloadDigest) ||
+				!Number.isSafeInteger(row.payloadLength) || row.payloadLength < 0 ||
+				!Number.isSafeInteger(row.documentGeneration) || !Number.isSafeInteger(row.documentRevision);
+		})) throw new Error('native save intents are unreadable');
+		return rows;
+	}
+	function _nativeKeepSaveIntent(intent) {
+		var rows = _nativeSaveIntents();
+		if (rows.some(function (row) { return row.requestId === intent.requestId; })) throw new Error('native save request was reused');
+		rows.push(intent);
+		localStorage.setItem(RapierStorage.nativeSaveIntents, JSON.stringify(rows));
+	}
+	function _nativeForgetSaveIntent(requestId) {
+		var rows = _nativeSaveIntents().filter(function (row) { return row.requestId !== requestId; });
+		if (rows.length) localStorage.setItem(RapierStorage.nativeSaveIntents, JSON.stringify(rows));
+		else localStorage.removeItem(RapierStorage.nativeSaveIntents);
+	}
+	function _nativeSaveReceiptMatches(detail, intent) {
+		return !!intent && detail.requestId === intent.requestId && detail.purpose === intent.purpose &&
+			detail.documentAuthority === intent.documentAuthority && detail.documentGeneration === intent.documentGeneration &&
+			detail.documentRevision === intent.documentRevision && detail.payloadDigest === intent.payloadDigest &&
+			detail.payloadLength === intent.payloadLength &&
+			(['cancelled', 'failed', 'written-unverified'].includes(detail.status) ||
+				detail.status === 'confirmed' && detail.ok === true && detail.verified === true);
+	}
+	function _nativeSaveBinding(detail) {
+		if (detail.status !== 'confirmed' || detail.purpose === 'export') return;
+		if (detail.bindingPublished === true && _engineOwnsDocumentAuthority(detail.documentAuthority)) {
+			_setNativeCurrentFileBinding(detail.documentAuthority, detail.fileGeneration);
+		} else _clearPlatformFileBinding(detail.documentAuthority);
+	}
+	function _nativeSaveStopWaiting(pending) {
 		if (pending.timeout) clearTimeout(pending.timeout);
-		var matches =
-			String(detail.documentAuthority || '') === pending.documentAuthority &&
-			Number(detail.documentGeneration || 0) === pending.documentGeneration &&
-			Number(detail.documentRevision || 0) === pending.documentRevision &&
-			String(detail.payloadDigest || '') === pending.payloadDigest &&
-			Number(detail.payloadLength || 0) === pending.payloadLength;
-		if (!matches) {
-			pending.reject(new Error('native save acknowledgement did not match the intended document'));
-			return;
+		if (pending.retry) clearTimeout(pending.retry);
+		if (pending.signal && pending.abort) pending.signal.removeEventListener('abort', pending.abort);
+	}
+	async function _nativeAcknowledgeSave(detail, applied) {
+		_nativeSaveRuntime.pending.delete(detail.requestId);
+		if (applied !== true) {
+			return false;
 		}
-		var status = detail.status;
-		if (status === 'confirmed' && detail.ok === true && detail.verified === true) {
-			if (String(detail.purpose || '') !== 'export') {
-				if (detail.bindingPublished === true && _engineOwnsDocumentAuthority(pending.documentAuthority)) {
-					_setNativeCurrentFileBinding(pending.documentAuthority, detail.fileGeneration);
-				} else {
-					_clearPlatformFileBinding(pending.documentAuthority);
+		try {
+			var answer = await _nativeHostCall('document.ackSaveResult', {requestId: detail.requestId, payloadDigest: detail.payloadDigest});
+			if (answer?.acknowledged !== true) throw new Error('native save result is still retained');
+			_nativeForgetSaveIntent(detail.requestId);
+			_nativeSaveRuntime.pending.delete(detail.requestId);
+			_nativeSaveRuntime.receipts.delete(detail.requestId);
+			return true;
+		} catch (_) {
+			setTimeout(function () { if (_nativeSaveRuntime.receipts.has(detail.requestId)) void _nativeAcknowledgeSave(detail, true); }, 30000);
+			return false;
+		}
+	}
+	function _nativeSaveOutcome(detail) {
+		return _saveResult(detail.status, {
+			verified: detail.verified === true, bytes: detail.payloadLength, fingerprint: detail.payloadDigest,
+			fileGeneration: detail.fileGeneration == null ? null : detail.fileGeneration,
+			destinationName: String(detail.destinationName || ''), destinationSelected: detail.destinationSelected === true,
+			bindingPublished: detail.bindingPublished === true,
+			applyBinding: function () { _nativeSaveBinding(detail); },
+			acknowledge: function (applied) { return _nativeAcknowledgeSave(detail, applied); },
+		});
+	}
+	async function _nativeReplaySaveResults() {
+		if (!_nativeSaveRuntime.booted || _nativeSaveRuntime.replaying) return;
+		_nativeSaveRuntime.replaying = true;
+		try {
+			for (var detail of _nativeSaveRuntime.receipts.values()) {
+				if (_nativeSaveRuntime.pending.has(detail.requestId)) continue;
+				var intent = _nativeSaveIntents().find(function (row) { return row.requestId === detail.requestId; });
+				if (!_nativeSaveReceiptMatches(detail, intent)) continue;
+				if (detail.status !== 'confirmed' || detail.purpose === 'export') { await _nativeAcknowledgeSave(detail, true); continue; }
+				var work = [], accepting = true;
+				var receipt = Object.freeze({intent: intent, result: _nativeSaveOutcome(detail),
+					applyBinding: function () { _nativeSaveBinding(detail); },
+					waitUntil: function (completion) { if (accepting) work.push(Promise.resolve(completion)); }});
+				window.dispatchEvent(new CustomEvent('rapier:platform-save-recovered', {detail: receipt}));
+				accepting = false;
+				if (work.length && (await Promise.all(work)).every(function (applied) { return applied === true; })) {
+					await _nativeAcknowledgeSave(detail, true);
 				}
 			}
-			pending.resolve(_saveResult('confirmed', {
-				verified: true,
-				bytes: pending.payloadLength,
-				fingerprint: pending.payloadDigest,
-				fileGeneration: detail.fileGeneration == null ? null : detail.fileGeneration,
-				destinationName: String(detail.destinationName || ''),
-				destinationSelected: detail.destinationSelected === true,
-				bindingPublished: detail.bindingPublished === true,
-			}));
-			return;
-		}
-		if (status === 'cancelled') {
-			pending.resolve(_saveResult('cancelled'));
-			return;
-		}
-		pending.reject(Object.assign(new Error(String(detail.error || (
-			status === 'written-unverified'
-				? 'the provider accepted the write but Rapier could not verify it'
-				: 'native save failed'
-		))), {code: String(detail.errorCode || 'native_save_failed')}));
+		} catch (error) { console.warn('[rapier-platform] retained save receipt is waiting for its document', error); }
+		finally { _nativeSaveRuntime.replaying = false; }
+	}
+	window.addEventListener('rapier:platform-save-result', function (event) {
+		var detail = event && event.detail;
+		if (!detail || typeof detail.requestId !== 'string') return;
+		var pending = _nativeSaveRuntime.pending.get(detail.requestId), intent;
+		try { intent = pending?.intent || _nativeSaveIntents().find(function (row) { return row.requestId === detail.requestId; }); }
+		catch (_) { return; }
+		if (!_nativeSaveReceiptMatches(detail, intent)) return;
+		_nativeSaveRuntime.receipts.set(detail.requestId, detail);
+		if (!pending) { void _nativeReplaySaveResults(); return; }
+		if (pending.terminal) return;
+		pending.terminal = true;
+		_nativeSaveStopWaiting(pending);
+		var outcome = _nativeSaveOutcome(detail);
+		if (detail.status === 'confirmed' || detail.status === 'cancelled') pending.resolve(outcome);
+		else pending.reject(Object.assign(new Error(String(detail.error || (
+			detail.status === 'written-unverified' ? 'the provider accepted the write but Rapier could not verify it' : 'native save failed'
+		))), {code: String(detail.errorCode || 'native_save_failed'), nativeSaveTerminal: true, acknowledge: outcome.acknowledge}));
 	});
+	window.addEventListener('rapier:document-admitted', function () { setTimeout(_nativeReplaySaveResults, 0); });
 
 	async function _nativeSaveRequest(purpose, blob, filename, options) {
 		if (!hasNative) throw new Error('native save is unavailable');
@@ -1553,37 +1618,53 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 		if (options.beforeWrite) await options.beforeWrite;
 		if (options.check) options.check();
 		var fingerprint = await _blobFingerprint(blob);
+		if (options.check) options.check();
 		var mime = (blob && blob.type) || 'application/octet-stream';
 		var requestId = 'save-' + Date.now().toString(36) + '-' + (++_nativeSaveRuntime.sequence).toString(36);
+		var intent = {requestId: requestId, purpose: purpose,
+			documentAuthority: String(options.documentAuthority || ''), documentGeneration: Number(options.documentGeneration || 0),
+			documentRevision: Number(options.documentRevision || 0), payloadDigest: fingerprint.digest, payloadLength: fingerprint.bytes,
+			resume: options.nativeSaveResume || null};
+		_nativeKeepSaveIntent(intent);
+		var pending;
 		var resultPromise = new Promise(function (resolve, reject) {
-			var timeout = setTimeout(function () {
-				var pending = _nativeSaveRuntime.pending.get(requestId);
-				if (!pending) return;
-				_nativeSaveRuntime.pending.delete(requestId);
-				_nativeHostNotify('transfer.cancel', { requestId: requestId });
-				reject(new Error('native save did not complete'));
-			}, 30 * 60 * 1000);
-			_nativeSaveRuntime.pending.set(requestId, {
-				resolve: resolve,
-				reject: reject,
-				timeout: timeout,
-				documentAuthority: String(options.documentAuthority || ''),
-				documentGeneration: Number(options.documentGeneration || 0),
-				documentRevision: Number(options.documentRevision || 0),
-				payloadDigest: fingerprint.digest,
-				payloadLength: fingerprint.bytes,
-			});
+			pending = {resolve: resolve, reject: reject, intent: intent, accepted: false, terminal: false,
+				timeout: null, retry: null, cancelling: false, signal: options.signal, abort: null};
+			_nativeSaveRuntime.pending.set(requestId, pending);
 		});
-		try {
-			await _sendNativeTransfer(purpose, blob, filename, mime, options, requestId, fingerprint);
-		} catch (error) {
-			var pending = _nativeSaveRuntime.pending.get(requestId);
-			if (pending) {
-				_nativeSaveRuntime.pending.delete(requestId);
-				clearTimeout(pending.timeout);
-				pending.reject(error);
-			}
-		}
+		var neverAccepted = function (error) {
+			if (pending.terminal) return;
+			pending.terminal = true; _nativeSaveStopWaiting(pending);
+			_nativeSaveRuntime.pending.delete(requestId);
+			try { _nativeForgetSaveIntent(requestId); } catch (_) {}
+			if (error && error.name !== 'AbortError') pending.reject(error);
+			else pending.resolve(_saveResult('cancelled'));
+		};
+		var cancel = async function (error) {
+			if (pending.terminal || pending.cancelling) return;
+			pending.cancelling = true;
+			try {
+				var answer = await _nativeHostCall('transfer.cancel', {requestId: requestId});
+				if (answer?.accepted === false && answer.cancelled === true) { neverAccepted(error); return; }
+				_nativeHostNotify('page.ready');
+			} catch (_) {}
+			finally { pending.cancelling = false; }
+			if (!pending.terminal) pending.retry = setTimeout(function () { void cancel(error); }, 30000);
+		};
+		pending.abort = function () { void cancel(new DOMException('Canceled', 'AbortError')); };
+		pending.timeout = setTimeout(function () { void cancel(); }, 30 * 60 * 1000);
+		if (options.signal) options.signal.addEventListener('abort', pending.abort, {once: true});
+		resultPromise.catch(function () {});
+		void _sendNativeTransfer(purpose, blob, filename, mime, Object.assign({}, options, {
+				check: function () {
+					if (pending.terminal || options.signal?.aborted) throw new DOMException('Canceled', 'AbortError');
+					if (options.check) options.check();
+				},
+				onAccepted: function () { pending.accepted = true; },
+			}), requestId, fingerprint).catch(function (error) {
+			if (!pending.accepted && (error.nativeNeverAccepted === true || error.nativeNotSent === true)) neverAccepted(error);
+			else void cancel(error);
+		});
 		return resultPromise;
 	}
 
@@ -1591,8 +1672,15 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 		return _nativeSaveRequest('saveAs', blob, filename || 'download', options);
 	}
 
-	function _nativeExportArtifact(blob, filename, options) {
-		return _nativeSaveRequest('export', blob, filename || 'download', options || {});
+	async function _nativeExportArtifact(blob, filename, options) {
+		try {
+			var result = await _nativeSaveRequest('export', blob, filename || 'download', options || {});
+			if (result.acknowledge) void result.acknowledge(true);
+			return result;
+		} catch (error) {
+			if (error.nativeSaveTerminal && error.acknowledge) void error.acknowledge(true);
+			throw error;
+		}
 	}
 
 	function _nativePrintCurrentDocument(filename) {
@@ -1880,6 +1968,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 		_nativeHostRuntime.state.recoveryAutoResume = value.recoveryAutoResume === true;
 		_nativeHostRuntime.state.notesStoreGeneration = typeof value.notesStoreGeneration === 'string' ? value.notesStoreGeneration : null;
 		if (_nativeHostRuntime.transport && _nativeHostRuntime.transport.connected().lane !== (_nativeCapability('binaryTransport') ? 'binary' : 'base64')) _nativeHostRuntime.transport = null;
+		if (_nativeIntakeRuntime.transport && _nativeIntakeRuntime.transport.connected().lane !== (_nativeCapability('binaryTransport') ? 'binary' : 'base64')) _nativeIntakeRuntime.transport = null;
 		if (value.currentFileBound === true && value.currentFileAuthority) {
 			_setNativeCurrentFileBinding(value.currentFileAuthority, value.currentFileGeneration);
 		} else if (value.currentFileBound === false) {
@@ -2077,6 +2166,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			Number(state.generation || 0),
 			Number(state.documentRevision || 0),
 			typeof state.savedGeneration === 'number' ? state.savedGeneration : null,
+			state.savedBaseline,
 			Number(state.nextBlockId || 1),
 			state.historyComplete === true,
 			state.dirty === true,
@@ -2183,7 +2273,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			Number.isSafeInteger(metadata.nextBlockId) && metadata.nextBlockId >= 1 &&
 			(metadata.savedGeneration === null ||
 				(Number.isSafeInteger(metadata.savedGeneration) && metadata.savedGeneration >= -1));
-		if (!snapshotAdmissible || !countersAdmissible || typeof metadata.historyComplete !== 'boolean' ||
+		if (!snapshotAdmissible || !countersAdmissible || !_rapierSavedBaselineValid(metadata.savedBaseline) || typeof metadata.historyComplete !== 'boolean' ||
 				typeof metadata.dirty !== 'boolean' || typeof metadata.checkpointId !== 'string' || !metadata.checkpointId ||
 				typeof metadata.sourceRootId !== 'string' || !metadata.sourceRootId ||
 				(metadata.baseFileGeneration !== null && typeof metadata.baseFileGeneration !== 'string')) {
@@ -2309,6 +2399,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			await _srDetachCurrent().catch(function () { return null; });
 			_srState.recovery.snapshot.saveAsRequired = true;
 			_srState.recovery.savedGeneration = null;
+			_srState.recovery.savedBaseline = null;
 			_srState.recovery.baseFileGeneration = null;
 		}
 		return recoveryKind && recoveryKind.indexOf('recovery-') === 0
@@ -2939,9 +3030,9 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			native: true,
 			get recoveryAutoResume() { return _nativeHostRuntime.state.recoveryAutoResume === true; },
 			ready: function () {
-				if (!preferencesReady) preferencesReady = _nativeHostRuntime.ready.then(async function () {
+				if (!preferencesReady) preferencesReady = _nativeHostRuntime.ready.then(function (state) {
 					if (!_nativeCapability('notesBackup')) return;
-					try { var restored = await _nativeHostCall('notes.backup.settings.get', {}); RapierPreferences.restoreAndroid(restored.values); }
+					try { if (state?.notesBackupSettings) RapierPreferences.restoreAndroid(state.notesBackupSettings.values); }
 					catch (error) { console.warn('[rapier] Android settings restore', error); }
 				});
 				return preferencesReady;
@@ -3125,7 +3216,9 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 				return !!(_rapierBootstrapRuntime.pendingIntake || _nativeIntakeRuntime.last || _nativeIntakePending());
 			},
 			finishBoot: function (state) {
+				_nativeSaveRuntime.booted = true;
 				_nativeHostNotify('page.ready');
+				void _nativeReplaySaveResults();
 				if (state && state.documentConsumed === true) return;
 				var payload = _rapierBootstrapRuntime.pendingIntake || _nativeIntakeRuntime.last;
 				if (!payload) return;

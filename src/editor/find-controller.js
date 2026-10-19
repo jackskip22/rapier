@@ -109,9 +109,9 @@ function _findOverlayRoot() {
 	return root;
 }
 
-function _findClearFallbackMarkers() {
+function _findClearFallbackMarkers(keep = null) {
 	document.querySelectorAll('.block-wrapper.rapier-find-current-fallback')
-		.forEach(element => element.classList.remove('rapier-find-current-fallback'));
+		.forEach(element => { if (element !== keep) element.classList.remove('rapier-find-current-fallback'); });
 }
 
 function _findClearVisualOverlay(removeRoot) {
@@ -120,7 +120,7 @@ function _findClearVisualOverlay(removeRoot) {
 	_findClearFallbackMarkers();
 	const root = document.getElementById('rapier-find-overlay');
 	if (!root) return;
-	root.replaceChildren();
+	if (root.firstChild) root.replaceChildren();
 	if (removeRoot) root.remove();
 }
 
@@ -133,37 +133,42 @@ function _findPaintCurrentOverlay() {
 	const range = _findCurrentRange();
 	const editor = document.getElementById('editor-blocks');
 	const root = _findOverlayRoot();
-	root.replaceChildren();
-	_findClearFallbackMarkers();
-	if (!editor || editor.hidden || getComputedStyle(editor).display === 'none') return;
+	if (!editor || editor.hidden || getComputedStyle(editor).display === 'none') { _findClearVisualOverlay(false); return; }
 
 	const clip = editor.getBoundingClientRect();
 	const frame = _rapierViewportFrame();
-	_rapierPictureFind.paint(root, clip, frame);
-	if (!range || rapier.find.ranges[rapier.find.current]?.surface === 'picture') return;
-	const rects = Array.from(range.getClientRects()).filter(rect => rect.width > 0 && rect.height > 0);
-	let painted = false;
-	for (const rect of rects) {
-		const left = Math.max(rect.left, clip.left);
-		const right = Math.min(rect.right, clip.right);
-		const top = Math.max(rect.top, clip.top);
-		const bottom = Math.min(rect.bottom, clip.bottom);
-		if (right <= left || bottom <= top) continue;
-		const mark = document.createElement('span');
-		mark.className = 'rapier-find-current-mark';
-		mark.style.left = (left - frame.originX).toFixed(2) + 'px';
-		mark.style.top = top.toFixed(2) + 'px';
-		mark.style.width = (right - left).toFixed(2) + 'px';
-		mark.style.height = (bottom - top).toFixed(2) + 'px';
-		root.appendChild(mark);
-		painted = true;
-	}
+	const next = document.createDocumentFragment();
+	_rapierPictureFind.paint(next, clip, frame);
+	let fallback = null;
+	if (range && rapier.find.ranges[rapier.find.current]?.surface !== 'picture') {
+		const rects = Array.from(range.getClientRects()).filter(rect => rect.width > 0 && rect.height > 0);
+		let painted = false;
+		for (const rect of rects) {
+			const left = Math.max(rect.left, clip.left);
+			const right = Math.min(rect.right, clip.right);
+			const top = Math.max(rect.top, clip.top);
+			const bottom = Math.min(rect.bottom, clip.bottom);
+			if (right <= left || bottom <= top) continue;
+			const mark = document.createElement('span');
+			mark.className = 'rapier-find-current-mark';
+			mark.style.left = (left - frame.originX).toFixed(2) + 'px';
+			mark.style.top = top.toFixed(2) + 'px';
+			mark.style.width = (right - left).toFixed(2) + 'px';
+			mark.style.height = (bottom - top).toFixed(2) + 'px';
+			next.appendChild(mark);
+			painted = true;
+		}
 
-	if (!painted) {
-		const node = range.startContainer.nodeType === Node.ELEMENT_NODE
-			? range.startContainer : range.startContainer.parentElement;
-		node?.closest?.('.block-wrapper')?.classList.add('rapier-find-current-fallback');
+		if (!painted) {
+			const node = range.startContainer.nodeType === Node.ELEMENT_NODE
+				? range.startContainer : range.startContainer.parentElement;
+			fallback = node?.closest?.('.block-wrapper');
+		}
 	}
+	_findClearFallbackMarkers(fallback);
+	fallback?.classList.toggle('rapier-find-current-fallback', true);
+	const current = [...root.childNodes];
+	if (current.length !== next.childNodes.length || current.some((node, index) => !node.isEqualNode(next.childNodes[index]))) root.replaceChildren(next);
 }
 
 function _findScheduleOverlay() {

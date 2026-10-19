@@ -703,47 +703,9 @@ pre.block-source-only { margin: 0; background: none; padding: 0; }
 
 @media (min-width: 900px) {
 	html { --editor-h-pad: clamp(24px, 3vw, 56px); }
-
-	.empty-doc-prompt {
-		left: max(var(--editor-h-pad), calc((100vw - var(--md-measure, 39.6rem)) / 2));
-	}
 }
 
 
-.empty-doc-prompt {
-	position: absolute;
-	top: var(--space-4);
-	left: var(--editor-h-pad);
-	transform: none;
-	display: flex;
-	flex-direction: row;
-	align-items: center;
-	gap: var(--space-3);
-	pointer-events: none;
-	opacity: 0;
-	transition: opacity 0.3s var(--ease-out);
-}
-.empty-doc-prompt.visible { opacity: 1; pointer-events: auto; }
-.empty-doc-btn {
-	width: 48px; height: 48px;
-	border-radius: 0;
-	border: 0;
-	background: var(--color-surface-2);
-	color: var(--color-text);
-	display: flex; align-items: center; justify-content: center;
-	cursor: pointer;
-	touch-action: manipulation;
-
-}
-@media (hover:hover) and (pointer:fine){.empty-doc-btn:hover{background:var(--color-surface-hover)}}
-.empty-doc-label {
-	font: var(--fw-regular) var(--text-sm) var(--font-sans);
-	color: var(--color-text-subtle);
-	text-align: left;
-	letter-spacing: var(--track-caps);
-	text-transform: uppercase;
-	font-size: var(--text-xs);
-}
 .fmt-btn {
 	display: inline-flex;
 	align-items: center;

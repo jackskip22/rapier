@@ -42,6 +42,36 @@ function _rapierAgentWho(node) {
 	node.replaceChildren(_rapierAgentMarkNode(mark), label);
 }
 
+function _rapierAgentNoteHome(surface) {
+	const line = document.getElementById('agent-note');
+	if (!line) return;
+	const home = surface?.querySelector('.rapier-draw-toolbar') || document.body;
+	if (line.parentElement === home) return;
+	home.appendChild(line);
+	if (surface && line.style.top) line.style.top = '';
+	_rapierApplyModalIsolation();
+	_rapierAgentBarRenderSoon();
+}
+function _rapierAgentNotePlace(line) {
+	const scrollFab = document.getElementById('scroll-fab');
+	const circle = !line.hidden && scrollFab && scrollFab.classList.contains('visible') ? scrollFab : null;
+	if (!circle) {
+		if (line.classList.contains('visible')) line.classList.remove('visible');
+		if (line.style.top) line.style.top = '';
+		return;
+	}
+	if (line.closest('.rapier-draw-toolbar')) {
+		if (line.style.top) line.style.top = '';
+	} else {
+		const box = circle.getBoundingClientRect(), top = (box.top + box.height / 2) + 'px';
+		if (line.style.top !== top) line.style.top = top;
+	}
+	if (_rapierAgentSpell.pending) {
+		_rapierAgentSpell.pending = false;
+		if (!line.classList.contains('visible')) line.classList.add('visible');
+	}
+}
+
 function _rapierAgentHereRender(ids) {
 	const want = new Set(ids.filter(id => id != null).map(String));
 	for (const node of document.querySelectorAll('#editor-blocks > .rapier-agent-here')) {

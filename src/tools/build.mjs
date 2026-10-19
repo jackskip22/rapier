@@ -698,7 +698,7 @@ html = html.replace(/<title>[^<]*<\/title>/, () => '<title>' + escapeHtml(SITE_T
       'Offline editable documents with rapier-html',
       'Embeddable editor and lightweight reader with rapier-embed', 'Self-contained Markdown pictures, editable drawings and layout',
       'Will/1 document regions', 'JPEG XL encoding in JavaScript', 'Self-hosted folder and bucket access with rapier-server',
-      'Optional encrypted sync to your own Cloudflare account'];
+      'Optional sync to your own Cloudflare account'];
     const origin = 'https://rapier.website', site = origin + '/#website', publisher = origin + '/#organization';
     const identity = {'@context': 'https://schema.org', '@graph': [
       {'@type': 'WebSite', '@id': site, url: origin + '/', name: data.name, alternateName: ['Rapier Markdown Editor', data.alternateName], description: data.description, inLanguage: 'en', publisher: {'@id': publisher},
@@ -711,7 +711,7 @@ html = html.replace(/<title>[^<]*<\/title>/, () => '<title>' + escapeHtml(SITE_T
     const name = 'RAPIER_DOOR_' + path.slice(1).toUpperCase();
     return '<!-- ' + name + '_BEGIN -->\n<template>\n' + section + '\n</template>\n<!-- ' + name + '_END -->';
   }).join('\n');
-  html = html.slice(0, guide.index) + '<!-- RAPIER_SEO_BEGIN -->\n' + seoSection(engineSource) + '\n' + doors + '\n<!-- RAPIER_SEO_END -->\n' + html.slice(guide.index + guide[0].length);
+  html = html.slice(0, guide.index) + '<!-- RAPIER_SEO_BEGIN -->\n' + seoSection() + '\n' + doors + '\n<!-- RAPIER_SEO_END -->\n' + html.slice(guide.index + guide[0].length);
 {
   const shellPolicy = /<meta http-equiv="Content-Security-Policy" content="([^"]*)">/.exec(html);
   if (!shellPolicy || shellPolicy[1] !== csp('web')) throw new Error('rapier.html <meta> Content-Security-Policy differs from security/csp.mjs csp("web")');

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import {_rapierSelectRestoreCandidate, _rapierRecoveryBomManifest, _rapierRecoveryStateFields} from '../editor/recovery-policy.mjs';
+import {_rapierSelectRestoreCandidate, _rapierRecoveryBomManifest, _rapierRecoveryStateFields, _rapierSavedBaselineValid} from '../editor/recovery-policy.mjs';
+import {readRecoveryBody, parseRecoveryBody, recoveryHeaderMatches} from '../editor/recovery-storage.mjs';
 import {crc32} from '../images/crc32.mjs';
 import {sha256State} from '../notes/integrity.mjs';
 import {dosDateTime, localHeader, centralHeader, dataDescriptor, endRecord, commentBytes} from '../notes/zip-records.mjs';
@@ -36,13 +37,14 @@ function matches(expected, text) {
 function stateMatches(row) {
 	if (!Number.isSafeInteger(row.generation) || row.generation < 0 || !Number.isSafeInteger(row.documentRevision)
 		|| row.documentRevision < 0 || !Number.isSafeInteger(row.nextBlockId) || row.nextBlockId < 1
-		|| !(row.savedGeneration === null || Number.isSafeInteger(row.savedGeneration) && row.savedGeneration >= -1)) return false;
+		|| !(row.savedGeneration === null || Number.isSafeInteger(row.savedGeneration) && row.savedGeneration >= -1)
+		|| !_rapierSavedBaselineValid(row.savedBaseline)) return false;
 	return matches(row.stateIntegrity, _rapierRecoveryStateFields(row));
 }
 function candidate(row, kind) {
 	if (!row || row.docId !== 'current' || String(row.documentAuthority || '').startsWith('notes:')) return null;
 	const held = heldSlot(row.slot);
-	if (row.integritySchema !== (kind === 'local' || held ? 5 : 4)) return null;
+	if (row.integritySchema !== 6) return null;
 	const text = kind === 'local' ? row.markdown : row.canonicalText;
 	if (typeof text !== 'string' || /[\uD800-\uDFFF]/u.test(text)) return null;
 	if (kind === 'local' && row.charCount !== text?.length) return null;
@@ -104,8 +106,14 @@ function downloadName(value, occupied) {
 async function drafts(errors, publish) {
 	const values = [], embedded = [], artifacts = new Map();
 	try {
-		const raw = localStorage.getItem('rapier:recovery:snapshot' + scope);
-		if (raw) { const row = candidate(JSON.parse(raw), 'local'); if (row) values.push(row); else errors.push('The safety draft failed its stored integrity check.'); }
+		const key = 'rapier:recovery:snapshot:6' + scope, raw = localStorage.getItem(key);
+		if (raw) {
+			const header = JSON.parse(raw);
+			if (!recoveryHeaderMatches(header) || !header.bodyKey?.startsWith(key + ':body:')) throw new Error('The safety draft failed its stored integrity check.');
+			const body = parseRecoveryBody(localStorage.getItem(header.bodyKey));
+			const row = candidate({...header, markdown: body.text}, 'local');
+			if (row) values.push(row); else errors.push('The safety draft failed its stored integrity check.');
+		}
 	} catch (error) { if (!forbidden(error)) errors.push('Safety draft: ' + message(error)); }
 	try {
 		const storage = globalThis.sessionStorage, prefix = 'rapier:embed:draft' + scope + ':';
@@ -114,8 +122,8 @@ async function drafts(errors, publish) {
 			try {
 				const row = JSON.parse(storage.getItem(key));
 				const manifest = JSON.stringify([row.integritySchema, row.baseRevision, row.content, row.filename, row.docKind,
-					row.generation, row.savedGeneration, row.nextBlockId, row.segmentIdentity, row.timestamp, row.ledger?.sha256]);
-				if (row.integritySchema !== 2 || typeof row.content !== 'string' || /[\uD800-\uDFFF]/u.test(row.content) || !matches(row.integrity, manifest)) {
+					row.generation, row.savedGeneration, row.savedBaseline, row.nextBlockId, row.segmentIdentity, row.timestamp, row.ledger?.sha256]);
+				if (row.integritySchema !== 2 || !_rapierSavedBaselineValid(row.savedBaseline) || typeof row.content !== 'string' || /[\uD800-\uDFFF]/u.test(row.content) || !matches(row.integrity, manifest)) {
 					throw new Error('The embedded draft failed its stored integrity check.');
 				}
 				embedded.push({key, filename: row.filename, text: row.content});
@@ -148,14 +156,14 @@ async function drafts(errors, publish) {
 	publish(files());
 	let db;
 	try {
-		db = await openDatabase('rapier:recovery' + scope);
+		db = await openDatabase('rapier:recovery:6' + scope);
 		if (db) {
 			const saved = await readRecords(db, {meta: ['current'], checkpoints: null});
 			for (const [kind, rows] of [['idb', saved.meta], ['checkpoint', saved.checkpoints]]) for (const record of rows.values()) {
 				if (!record) continue;
-				if (record.canonicalText instanceof Blob) try {
-					record.canonicalText = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(await record.canonicalText.arrayBuffer());
-				} catch (_) { errors.push('A saved draft failed its stored integrity check: ' + String(record.filename || 'recovered.md')); continue; }
+				if (record.docId !== 'current' || String(record.documentAuthority || '').startsWith('notes:')) continue;
+				try { record.canonicalText = (await readRecoveryBody(record)).text; }
+				catch (_) { errors.push('A saved draft failed its stored integrity check: ' + String(record.filename || 'recovered.md')); continue; }
 				const row = candidate(record, kind);
 				if (row) values.push(row);
 				else if (typeof record.canonicalText === 'string') errors.push('A saved draft failed its stored integrity check: ' + String(record.filename || 'recovered.md'));

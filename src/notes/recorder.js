@@ -494,12 +494,13 @@ function _rapierRecorderPaintView(view) {
 	const max = total > 0 ? total : 1;
 	if (view.bar.max !== String(max)) view.bar.max = String(max);
 	if (!view.seeking) view.bar.value = String(Math.min(at, max));
-	view.bar.disabled = view.off || !(total > 0);
+	view.bar.toggleAttribute('disabled', !!view.off || !(total > 0));
 	view.bar.style.setProperty('--played', (Math.min(1, at / max) * 100).toFixed(2) + '%');
-	view.bar.setAttribute('aria-label', 'Where in ' + view.label); view.bar.setAttribute('aria-valuetext', A.durationWords(at) + ' of ' + A.durationWords(total));
+	for (const [key, value] of [['aria-label', 'Where in ' + view.label], ['aria-valuetext', A.durationWords(at) + ' of ' + A.durationWords(total)]])
+		if (view.bar.getAttribute(key) !== value) view.bar.setAttribute(key, value);
 	const words = A.durationWords(at) + ' / ' + A.durationWords(total);
 	if (view.time.textContent !== words) view.time.textContent = words;
-	view.el.dataset.playing = String(playing); if (view.ui) view.ui.dataset.playing = String(playing);
+	for (const element of [view.el, view.ui]) if (element && element.dataset.playing !== String(playing)) element.dataset.playing = String(playing);
 	view.onPaint?.();
 }
 function _rapierRecorderQuiet(except) {

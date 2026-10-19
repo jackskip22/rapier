@@ -95,7 +95,7 @@
     documentId = identity(); revision = generation = -1; seen = stored(documentId); places = []; comparison = snapshot = seenRoot = null;
     dirty = true; presenceValue = null;
     for (const mark of marks.values()) mark.remove();
-    marks.clear(); away.hidden = edge.hidden = true;
+    marks.clear(); away.toggleAttribute('hidden', true); edge.toggleAttribute('hidden', true);
     schedule();
   }
   function schedule() {
@@ -317,14 +317,16 @@
         mark.addEventListener('click', event => { event.stopPropagation(); void show(place.key, {focus: event.detail === 0}); });
         marks.set(place.key, mark); layer.append(mark);
       }
-      mark.firstChild.textContent = String(index + 1);
-      mark.setAttribute('aria-label', 'Show the before of change ' + (index + 1));
-      mark.setAttribute('aria-expanded', String(active?.key === place.key));
+      const number = String(index + 1), label = 'Show the before of change ' + (index + 1), expanded = String(active?.key === place.key);
+      if (mark.firstChild.textContent !== number) mark.firstChild.textContent = number;
+      if (mark.getAttribute('aria-label') !== label) mark.setAttribute('aria-label', label);
+      if (mark.getAttribute('aria-expanded') !== expanded) mark.setAttribute('aria-expanded', expanded);
     });
-    count.textContent = String(rows.length);
-    phrase.textContent = rows.length === 1 ? 'place changed' : 'places changed';
-    nextButton.disabled = !rows.length;
-    if (!rows.length) away.hidden = true;
+    const total = String(rows.length), label = rows.length === 1 ? 'place changed' : 'places changed';
+    if (count.textContent !== total) count.textContent = total;
+    if (phrase.textContent !== label) phrase.textContent = label;
+    nextButton.toggleAttribute('disabled', !rows.length);
+    if (!rows.length) away.toggleAttribute('hidden', true);
     scheduleLocate();
   }
   function viewport() {
@@ -343,7 +345,7 @@
     if (parent && layer.parentElement !== parent) { parent.append(layer); layer.inert = false; layer.removeAttribute('aria-hidden'); }
     const rows = currentRows(), bounds = viewport();
     const live = new Set(rows.map(place => place.key));
-    for (const [key, mark] of marks) if (!live.has(key)) mark.hidden = true;
+    for (const [key, mark] of marks) if (!live.has(key)) mark.toggleAttribute('hidden', true);
     const obscured = rapier.compare.active || document.hidden || !bounds.height ||
       document.getElementById('settings-overlay')?.getAttribute('aria-hidden') === 'false';
     let left = Math.max(16, bounds.left + 16), right = bounds.right - 16;
@@ -352,7 +354,7 @@
     if (!inDraw() && rapier.view.mode !== 'source' && firstRead) {
       const readBox = firstRead.getBoundingClientRect(); left = Math.max(16, readBox.left); right = readBox.right;
     }
-    away.hidden = obscured || !rows.length || !!inDraw();
+    away.toggleAttribute('hidden', obscured || !rows.length || !!inDraw());
     let top = bounds.top;
     const liveBar = document.querySelector('.rapier-live-bar:not([hidden])')?.getBoundingClientRect();
     if (!away.hidden && liveBar?.width && liveBar.left < right && liveBar.bottom > top && liveBar.top < top + away.offsetHeight) {
@@ -366,12 +368,12 @@
       const mark = marks.get(place.key); if (!mark) return;
       const box = rect(place);
       const visible = !obscured && box && box.height >= 0 && box.bottom > bounds.top + 2 && box.top < bounds.bottom - 2;
-      mark.hidden = !visible;
-      if (!visible) return;
+      if (!visible) { mark.toggleAttribute('hidden', true); return; }
       let y = Math.max(bounds.top + (inDraw() ? 4 : 42), box.top);
       const x = Math.max(bounds.left, box.left - 20);
       while (occupied.some(prior => Math.abs(prior.x - x) < 18 && Math.abs(prior.y - y) < 22)) y += 23;
-      if (y + 24 > bounds.bottom) { mark.hidden = true; return; }
+      mark.toggleAttribute('hidden', y + 24 > bounds.bottom);
+      if (mark.hidden) return;
       occupied.push({x, y});
       mark.style.left = x + 'px'; mark.style.top = y + 'px';
     });
@@ -387,10 +389,11 @@
     const element = _rapierBlockWrapperById(target?.startBlock ? target.startBlock.id : presenceValue?.blockId, host);
     const agentBox = element?.getBoundingClientRect();
     const direction = agentBox && (agentBox.top >= bounds.bottom - 24 ? 'down' : agentBox.bottom <= bounds.top + 40 ? 'up' : '');
-    edge.hidden = obscured || !presenceValue?.active || !direction || !!inDraw();
+    edge.toggleAttribute('hidden', obscured || !presenceValue?.active || !direction || !!inDraw());
     if (!edge.hidden) {
-      edge.replaceChildren(arrow(direction));
-      edge.setAttribute('aria-label', 'Go to ' + (presenceValue.name || 'the agent') + (direction === 'down' ? ' below' : ' above'));
+      const glyph = arrow(direction), label = 'Go to ' + (presenceValue.name || 'the agent') + (direction === 'down' ? ' below' : ' above');
+      if (!edge.firstElementChild?.isEqualNode(glyph)) edge.replaceChildren(glyph);
+      if (edge.getAttribute('aria-label') !== label) edge.setAttribute('aria-label', label);
       edge.style.left = Math.max(0, left - 20) + 'px';
       edge.style.top = (direction === 'down' ? bounds.bottom - 30 : bounds.top + 42) + 'px';
     }
@@ -408,7 +411,7 @@
       }
     }
     globalThis.RapierChangesDraw?.closeBefore();
-    for (const mark of marks.values()) mark.setAttribute('aria-expanded', 'false');
+    for (const mark of marks.values()) if (mark.getAttribute('aria-expanded') !== 'false') mark.setAttribute('aria-expanded', 'false');
     scheduleLocate();
   }
   function beforeText(place) {

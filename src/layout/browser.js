@@ -1044,7 +1044,7 @@ const _rapierImageFlow = (() => {
         'margin-left': px(baseLeft + dx), 'margin-right': px(dx)};
       if (alone) { values.display = 'block'; values['margin-top'] = px(dy); values['margin-bottom'] = px(dy); }
       style(image, values);
-      image.setAttribute('data-rapier-inline-turn', '1');
+      if (image.getAttribute('data-rapier-inline-turn') !== '1') image.setAttribute('data-rapier-inline-turn', '1');
     }
   }
 
@@ -1273,8 +1273,7 @@ const _rapierImageFlow = (() => {
     if (!holding()) return;
     const last = wrappers.at(-1);
     if (!last || nextProse(last)) return;
-    tail ||= document.createElement('div');
-    tail.setAttribute('aria-hidden', 'true'); tail.className = 'rapier-flow-tail';
+    if (!tail) { tail = document.createElement('div'); tail.setAttribute('aria-hidden', 'true'); tail.className = 'rapier-flow-tail'; }
     if (!tail.isConnected || (parseFloat(tail.style.height) || 0) < moving.hold) tail.style.height = px(moving.hold);
     if (tail.previousElementSibling !== last) last.after(tail);
   }
@@ -1588,9 +1587,9 @@ const _rapierImageFlow = (() => {
     const last = measured.at(-1)?.wrapper;
     const held = holding() ? moving.hold : 0;
     if ((bottom > lastBottom + 1 || held > 0) && last && !nextProse(last)) {
-      tail ||= document.createElement('div');
-      tail.setAttribute('aria-hidden', 'true'); tail.className = 'rapier-flow-tail';
-      tail.style.height = px(Math.max(bottom - lastBottom, held)); last.after(tail);
+      if (!tail) { tail = document.createElement('div'); tail.setAttribute('aria-hidden', 'true'); tail.className = 'rapier-flow-tail'; }
+      tail.style.height = px(Math.max(bottom - lastBottom, held));
+      if (tail.previousElementSibling !== last) last.after(tail);
     }
     positionGrip();
   }
@@ -1700,9 +1699,7 @@ const _rapierImageFlow = (() => {
     const shown = gripsOk && selected?.isConnected && selected.naturalWidth > 0 && moving?.kind !== 'shape' && !fieldOpen && layoutOf(selected)?.lock !== 'on' &&
       !rapier.access.readOnly && !rapier.compare.active && rapier.view.mode !== 'source' && !_rapierPlainLayout();
     if (!shown) {
-      for (const button of resizeGrips) button.hidden = true;
-      if (moveHandle) moveHandle.hidden = true;
-      if (rotateGrip) rotateGrip.hidden = true;
+      for (const button of [...resizeGrips, moveHandle, rotateGrip]) button?.toggleAttribute('hidden', true);
       return;
     }
     const bounds = rect(selected), area = rect(host), toolbar = _rapierImageRuntime.toolbar;
@@ -1712,12 +1709,12 @@ const _rapierImageFlow = (() => {
     for (const button of resizeGrips) {
       const corner = button.dataset.corner, x = corner.includes('w') ? bounds.left : bounds.right;
       const y = corner.includes('n') ? bounds.top : bounds.bottom;
-      button.hidden = rotating || !!resizing && corner !== moving.corner || y < area.top || y + radius > bottom || x < area.left || x > area.right;
+      button.toggleAttribute('hidden', rotating || !!resizing && corner !== moving.corner || y < area.top || y + radius > bottom || x < area.left || x > area.right);
       button.style.left = px(x); button.style.top = px(y);
     }
     if (moveHandle) {
       const x = Math.max(bounds.left + 22, bounds.right - 34), y = Math.min(bounds.bottom - 22, bounds.top + 34);
-      moveHandle.hidden = rotating || !!resizing || y < area.top || y + radius > bottom || x < area.left || x > area.right;
+      moveHandle.toggleAttribute('hidden', rotating || !!resizing || y < area.top || y + radius > bottom || x < area.left || x > area.right);
       moveHandle.style.left = px(x); moveHandle.style.top = px(y);
     }
     if (rotateGrip) {
@@ -1725,10 +1722,10 @@ const _rapierImageFlow = (() => {
       if (rotating) {
         const at = moving.pointer != null ? moving.drag : null;
         const x = at ? at.clientX : bounds.left + bounds.width / 2, y = at ? at.clientY : bounds.top - 44;
-        rotateGrip.hidden = false; rotateGrip.style.left = px(x); rotateGrip.style.top = px(y);
+        rotateGrip.toggleAttribute('hidden', false); rotateGrip.style.left = px(x); rotateGrip.style.top = px(y);
       } else {
         const x = clamp(bounds.left + bounds.width / 2, area.left + 22, area.right - 22), y = bounds.top - 44;
-        rotateGrip.hidden = !allowed || y < area.top || x < area.left || x > area.right;
+        rotateGrip.toggleAttribute('hidden', !allowed || y < area.top || x < area.left || x > area.right);
         rotateGrip.style.left = px(x); rotateGrip.style.top = px(y);
       }
     }

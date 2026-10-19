@@ -61,7 +61,8 @@ const inkDrawing = () => {
 		const fragmentsOf = deps.fragments || inkFragments;
 		const layer = inkLayerOf(root, deps.place);
 		const origin = layer.getBoundingClientRect();
-		for (const child of Array.from(layer.children)) if (!child.hasAttribute('data-ink-live')) layer.removeChild(child);
+		const previous = Array.from(layer.children).filter(child => !child.hasAttribute('data-ink-live'));
+		let cursor = Array.from(layer.childNodes).findLast(child => child.nodeType !== 1 || child.hasAttribute('data-ink-live')) || null;
 		const pieces = [];
 		for (const { span, body, mark } of records) {
 			if (mark.kind === 'end') continue;
@@ -83,7 +84,7 @@ const inkDrawing = () => {
 			for (const piece of ink.deriveMark(mark, fragments, fragments[0], em, endFragments)) {
 				if (!piece.length) continue;
 				const box = ink.bounds(piece);
-				const svg = doc.createElementNS(SVG, 'svg');
+				let svg = doc.createElementNS(SVG, 'svg');
 				const w = box.width + 2 * pad, h = box.height + 2 * pad;
 				svg.setAttribute('class', 'rapier-ink-piece');
 				svg.setAttribute('data-ink-kind', mark.kind);
@@ -97,17 +98,26 @@ const inkDrawing = () => {
 				const path = doc.createElementNS(SVG, 'path');
 				path.setAttribute('d', inkPath(piece.map(p => ({x: p.x - box.x + pad, y: p.y - box.y + pad})), width));
 				svg.appendChild(path);
+				const drawn = { kind: mark.kind, opener: body, box: { x: box.x, y: box.y, width: box.width, height: box.height },
+					fragments: fragments.map(f => ({ x: f.x, y: f.y, width: f.width, height: f.height })),
+					endFragments: endFragments.map(f => ({ x: f.x, y: f.y, width: f.width, height: f.height })), em, element: svg, span, endSpan };
+				deps.decorate?.(drawn);
+				const prior = previous[pieces.length];
+				if (prior?.isEqualNode(svg)) svg = prior;
+				else prior?.remove();
+				const next = cursor ? cursor.nextSibling : layer.firstChild;
+				if (svg !== next) layer.insertBefore(svg, next);
+				cursor = svg;
 				svg._rapierInkSpan = span;
 				svg._rapierInkPoints = piece;
 				svg._rapierInkWidth = width;
 				svg._rapierInkOrigin = {x: box.x - pad, y: box.y - pad};
-				if (endSpan) svg._rapierInkEndSpan = endSpan;
-				layer.appendChild(svg);
-				pieces.push({ kind: mark.kind, opener: body, box: { x: box.x, y: box.y, width: box.width, height: box.height },
-					fragments: fragments.map(f => ({ x: f.x, y: f.y, width: f.width, height: f.height })),
-					endFragments: endFragments.map(f => ({ x: f.x, y: f.y, width: f.width, height: f.height })), em, element: svg, span, endSpan });
+				if (endSpan) svg._rapierInkEndSpan = endSpan; else delete svg._rapierInkEndSpan;
+				drawn.element = svg;
+				pieces.push(drawn);
 			}
 		}
+		for (const child of previous.slice(pieces.length)) child.remove();
 		return pieces;
 	}
 

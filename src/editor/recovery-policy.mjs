@@ -1,5 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+function _rapierSavedBaselineValid(value) {
+	if (value === null) return true;
+	if (!value || typeof value !== 'object' || Array.isArray(value) ||
+		Object.keys(value).length !== 3 || !['rootId', 'contentId', 'metadata'].every(key => Object.hasOwn(value, key)) ||
+		typeof value.rootId !== 'string' || !value.rootId || value.rootId.length > 128 ||
+		typeof value.contentId !== 'string' || !value.contentId || value.contentId.length > 128) return false;
+	const metadata = value.metadata;
+	return !!metadata && typeof metadata === 'object' && !Array.isArray(metadata) && Object.keys(metadata).length === 2 &&
+		Object.hasOwn(metadata, 'filename') && Object.hasOwn(metadata, 'docKind') &&
+		typeof metadata.filename === 'string' && metadata.filename.length > 0 && metadata.filename.length <= 512 &&
+		['markdown', 'text', 'code'].includes(metadata.docKind);
+}
+
+function _rapierSavedBaseline(value) {
+	if (!_rapierSavedBaselineValid(value)) return undefined;
+	return value === null ? null : Object.freeze({rootId: value.rootId, contentId: value.contentId,
+		metadata: Object.freeze({filename: value.metadata.filename, docKind: value.metadata.docKind})});
+}
+
 function _rapierRecoveryBomManifest(row) {
 	const integrity = row.canonicalIntegrity || row.integrity || {};
 	return JSON.stringify([String(row.documentAuthority || ''), integrity.chars, integrity.fnv, integrity.adler, row.bom === true]);
@@ -7,7 +26,7 @@ function _rapierRecoveryBomManifest(row) {
 
 function _rapierRecoveryStateFields(row) {
 	return JSON.stringify([row.filename, row.documentAuthority, row.virtualDocumentKind, row.saveAsRequired, row.docKind, row.generation,
-		row.documentRevision, row.savedGeneration, row.nextBlockId, row.historyComplete, row.segmentIdentity || []]);
+		row.documentRevision, row.savedGeneration, row.savedBaseline, row.nextBlockId, row.historyComplete, row.segmentIdentity || []]);
 }
 
 const _rapierRecoveryLedger = (() => {
@@ -59,20 +78,23 @@ function _rapierSelectRestoreCandidate(admission) {
 		|| (priority[b.kind] || 0) - (priority[a.kind] || 0));
 	const candidate = candidates[0];
 	const peers = candidates.filter(item => item.generation === candidate.generation);
-	const divergentPeers = peers.some(item => item.text !== candidate.text ||
+	const textIdentity = item => item.contentIntegrity
+		? [item.contentIntegrity.chars, item.contentIntegrity.fnv, item.contentIntegrity.adler].join(':') : item.text;
+	const divergentPeers = peers.some(item => textIdentity(item) !== textIdentity(candidate) ||
 		item.filename !== candidate.filename ||
 		item.documentAuthority !== candidate.documentAuthority ||
 		item.documentRevision !== candidate.documentRevision ||
 		item.savedGeneration !== candidate.savedGeneration ||
+		JSON.stringify(item.savedBaseline) !== JSON.stringify(candidate.savedBaseline) ||
 		item.nextBlockId !== candidate.nextBlockId ||
 		JSON.stringify(item.segmentIdentity || []) !== JSON.stringify(candidate.segmentIdentity || []) ||
 		item.docKind !== candidate.docKind ||
 		item.historyComplete !== candidate.historyComplete ||
 		(item.bom === true) !== (candidate.bom === true) ||
-		(item.carriedLedger?.sha256 || null) !== (candidate.carriedLedger?.sha256 || null) ||
+		(item.historyDigest || item.carriedLedger?.sha256 || null) !== (candidate.historyDigest || candidate.carriedLedger?.sha256 || null) ||
 		item.virtualDocumentKind !== candidate.virtualDocumentKind ||
 		item.saveAsRequired !== candidate.saveAsRequired);
-	const metadataUnverified = candidate.metadataVerified !== true;
+	const metadataUnverified = candidate.metadataVerified !== true || !_rapierSavedBaselineValid(candidate.savedBaseline);
 	const integrityIssue = divergentPeers || metadataUnverified
 		|| candidate.kind === 'idb-salvage'
 		|| (idbEvidence && !idb.valid);
@@ -82,6 +104,7 @@ function _rapierSelectRestoreCandidate(admission) {
 			candidate: {
 				...candidate,
 				savedGeneration: null,
+				savedBaseline: null,
 				saveAsRequired: true,
 			},
 			integrityIssue,
@@ -94,7 +117,8 @@ function _rapierSelectRestoreCandidate(admission) {
 function _rapierRecoveryStamp(meta) {
 	const integrity = (meta && meta.canonicalIntegrity) || {};
 	return meta ? [meta.generation, integrity.chars, integrity.fnv, integrity.adler,
-		meta.bom === true ? String(meta.bomIntegrity?.fnv || '') : ''].join(':') : '';
+		meta.bom === true ? String(meta.bomIntegrity?.fnv || '') : '', meta.historyDigest || ''].join(':') : '';
 }
 
-export { _rapierSelectRestoreCandidate, _rapierRecoveryLedger, _rapierRecoveryBomManifest, _rapierRecoveryStateFields, _rapierRecoveryStamp };
+export { _rapierSelectRestoreCandidate, _rapierRecoveryLedger, _rapierRecoveryBomManifest, _rapierRecoveryStateFields, _rapierRecoveryStamp,
+	_rapierSavedBaselineValid, _rapierSavedBaseline };

@@ -254,7 +254,7 @@
           },
           {
             "property": "top",
-            "value": "calc(var(--draw-safe-top) + var(--draw-cell) + 2 * var(--space-1))",
+            "value": "calc(var(--draw-safe-top) + 2 * var(--draw-cell) + 2 * var(--space-1))",
             "important": false
           }
         ]

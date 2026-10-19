@@ -6,6 +6,60 @@ const sourceEncoder = new TextEncoder();
 const PIECE_CHARS = 65536;
 const MERGE_CHARS = 4096;
 
+const CONTENT_STEP = 256, CONTENT_BASE_A = 65537, CONTENT_BASE_B = 65539;
+const CONTENT_PRIME_A = 2147483647, CONTENT_PRIME_B = 2147483629;
+const contentKey = (length, a, b) => length + ':' + (a >>> 0).toString(36) + ':' + (b >>> 0).toString(36);
+function contentProduct(a, b, prime) {
+	return ((a * (b >>> 16) % prime) * 65536 + a * (b & 65535)) % prime;
+}
+function contentIdOf(value) {
+	const text = String(value == null ? '' : value);
+	let a = 0, b = 0;
+	for (let i = 0; i < text.length; i++) {
+		const code = text.charCodeAt(i) + 1;
+		a = (a * CONTENT_BASE_A + code) % CONTENT_PRIME_A;
+		b = (b * CONTENT_BASE_B + code) % CONTENT_PRIME_B;
+	}
+	return contentKey(text.length, a, b);
+}
+function contentPower(base, length, prime) {
+	let result = 1;
+	for (; length; length >>>= 1, base = contentProduct(base, base, prime)) if (length & 1) result = contentProduct(result, base, prime);
+	return result;
+}
+function contentIndex(text) {
+	const checkpoints = new Uint32Array((Math.floor(text.length / CONTENT_STEP) + 1) * 2);
+	let a = 0, b = 0;
+	for (let i = 0; i < text.length; i++) {
+		const code = text.charCodeAt(i) + 1;
+		a = (a * CONTENT_BASE_A + code) % CONTENT_PRIME_A;
+		b = (b * CONTENT_BASE_B + code) % CONTENT_PRIME_B;
+		if ((i + 1) % CONTENT_STEP === 0) {
+			const slot = (i + 1) / CONTENT_STEP * 2;
+			checkpoints[slot] = a; checkpoints[slot + 1] = b;
+		}
+	}
+	return {text, checkpoints, a, b};
+}
+function contentRange(index, start, end) {
+	const prefix = at => {
+		if (at === index.text.length) return [index.a, index.b];
+		const slot = Math.floor(at / CONTENT_STEP);
+		let a = index.checkpoints[slot * 2], b = index.checkpoints[slot * 2 + 1];
+		for (let i = slot * CONTENT_STEP; i < at; i++) {
+			const code = index.text.charCodeAt(i) + 1;
+			a = (a * CONTENT_BASE_A + code) % CONTENT_PRIME_A;
+			b = (b * CONTENT_BASE_B + code) % CONTENT_PRIME_B;
+		}
+		return [a, b];
+	};
+	const [a, b] = prefix(start), [c, d] = prefix(end);
+	const powerA = contentPower(CONTENT_BASE_A, end - start, CONTENT_PRIME_A);
+	const powerB = contentPower(CONTENT_BASE_B, end - start, CONTENT_PRIME_B);
+	return {contentA: (c - contentProduct(a, powerA, CONTENT_PRIME_A) + CONTENT_PRIME_A) % CONTENT_PRIME_A,
+		contentB: (d - contentProduct(b, powerB, CONTENT_PRIME_B) + CONTENT_PRIME_B) % CONTENT_PRIME_B, powerA, powerB};
+}
+
 const SPACE = new Uint8Array(65536);
 for (const code of [9, 10, 11, 12, 13, 32, 0xa0, 0x1680, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009,
 	0x200a, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff]) SPACE[code] = 1;
@@ -94,6 +148,7 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 	};
 	const makePiece = (buffer, start, pieceLength) => {
 		const text = buffers[buffer].slice(start, start + pieceLength);
+		const content = contentIndex(text);
 		const ends = [], crlfEnds = [], projectedEnds = [], checkpoints = new Uint32Array(Math.ceil(text.length / 1024) + 1);
 		let words = 0, next = 1, word = false;
 		for (let at = 0; at < text.length; at++) {
@@ -113,7 +168,8 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 		while (next < checkpoints.length) checkpoints[next++] = words;
 		return { buffer, start, length: pieceLength, projected: pieceLength - crlfEnds.length, breaks: ends.length,
 			lineEnds: new Uint32Array(ends), crlfEnds: new Uint32Array(crlfEnds), projectedEnds: new Uint32Array(projectedEnds),
-			wordIndex: {text, checkpoints, words}, wordOffset: 0, words, headWord: /^\S/.test(text), tailWord: /\S$/.test(text) };
+			wordIndex: {text, checkpoints, words, content}, wordOffset: 0, words, headWord: /^\S/.test(text), tailWord: /\S$/.test(text),
+			...contentRange(content, 0, text.length) };
 	};
 	const chunk = (buffer, start, span) => {
 		const rows = [];
@@ -129,12 +185,12 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 	};
 	let pieces = snapshot ? snapshot.pieces.map(piece => ({ ...piece }))
 		: initial && !preparation ? chunk(0, 0, initial.length) : [];
-	let sourceStarts = [], projectionStarts = [], breakStarts = [], totalProjected = 0, totalBreaks = 0, totalWords = 0;
+	let sourceStarts = [], projectionStarts = [], breakStarts = [], totalProjected = 0, totalBreaks = 0, totalWords = 0, contentId = '';
 	const reindex = () => {
 		sourceStarts = new Array(pieces.length);
 		projectionStarts = new Array(pieces.length);
 		breakStarts = new Array(pieces.length);
-		let source = 0, projection = 0, breaks = 0, words = 0, tailWord = false;
+		let source = 0, projection = 0, breaks = 0, words = 0, tailWord = false, contentA = 0, contentB = 0;
 		for (let index = 0; index < pieces.length; index++) {
 			sourceStarts[index] = source;
 			projectionStarts[index] = projection;
@@ -144,10 +200,13 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 			breaks += pieces[index].breaks;
 			words += pieces[index].words - (tailWord && pieces[index].headWord ? 1 : 0);
 			tailWord = pieces[index].tailWord;
+			contentA = (contentProduct(contentA, pieces[index].powerA, CONTENT_PRIME_A) + pieces[index].contentA) % CONTENT_PRIME_A;
+			contentB = (contentProduct(contentB, pieces[index].powerB, CONTENT_PRIME_B) + pieces[index].contentB) % CONTENT_PRIME_B;
 		}
 		totalProjected = projection;
 		totalBreaks = breaks;
 		totalWords = words;
+		contentId = contentKey(source, contentA, contentB);
 	};
 	reindex();
 	const pieceText = piece => buffers[piece.buffer].slice(piece.start, piece.start + piece.length);
@@ -180,7 +239,7 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 		return {buffer: piece.buffer, start: offset + start, length: end - start, projected: end - start - crlfEnds.length,
 			breaks: lineEnds.length, lineEnds, crlfEnds, projectedEnds: crlfEnds.map((value, at) => value - at - 1),
 			wordIndex: index, wordOffset, words, headWord: end > start && /\S/.test(index.text[wordOffset]),
-			tailWord: end > start && /\S/.test(index.text[stop - 1])};
+			tailWord: end > start && /\S/.test(index.text[stop - 1]), ...contentRange(index.content, wordOffset, stop)};
 	};
 	const merge = rows => {
 		const out = [];
@@ -371,7 +430,7 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 		const savedPieces = pieces.map(piece => ({ ...piece }));
 		const savedPresence = Array.from(presence, ([key, entry]) => [key, {...entry}]);
 		const savedCacheKey = cacheKey;
-		const savedLength = length, savedBytes = utf8Bytes, savedRoot = rootNow(), savedInitialRoot = initialRootNow();
+		const savedLength = length, savedBytes = utf8Bytes, savedRoot = rootNow(), savedInitialRoot = initialRootNow(), savedContentId = contentId;
 		let savedText = cached;
 		let savedIntegrityValue = cachedIntegrityKey === savedCacheKey ? cachedIntegrityValue : null;
 		const savedRead = () => {
@@ -381,6 +440,7 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 		};
 		return Object.freeze({
 			rootId: savedRoot,
+			contentId: savedContentId,
 			read: savedRead,
 			reuseText() {
 				if (length !== savedLength) return false;
@@ -531,6 +591,7 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 		get wordCount() { return totalWords; },
 		get utf8Bytes() { return bytesNow(); },
 		get rootId() { return rootNow(); },
+		get contentId() { return contentId; },
 		get cacheKey() { return cacheKey; },
 		get initialRootId() { return initialRootNow(); },
 	});
@@ -562,7 +623,7 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 
 return Object.freeze({
 	create, createAsync: (value, options = {}) => create(value, '', null, options),
-	textIntegrity, fnv1a32, rootAfter, PIECE_CHARS, MAX_BYTES,
+	textIntegrity, fnv1a32, rootAfter, contentIdOf, PIECE_CHARS, MAX_BYTES,
 	encoder: sourceEncoder,
 });
 

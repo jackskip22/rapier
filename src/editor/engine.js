@@ -2265,7 +2265,9 @@ const rapier = {
 		},
 	},
 
-	revision: { settled: 0, generation: 0, savedGeneration: -1 },
+	revision: (function createRevisionState() {
+		return {settled: 0, generation: 0, savedGeneration: -1, savedBaseline: null, liveSourceDirty: false, publishedDirty: null};
+	})(),
 
 	semantic: {
 		facts: Object.freeze([]),
@@ -3651,9 +3653,9 @@ function _rapierIsBuiltInWelcomeDocument() {
 	return rapier.identity.virtualKind === 'welcome';
 }
 
-function _rapierClearVirtualDocumentKind(edited = false) {
+function _rapierClearVirtualDocumentKind() {
 	const changed = !!rapier.identity.virtualKind;
-	rapier.identity.virtualKind = edited && changed ? 'welcome-edited' : '';
+	rapier.identity.virtualKind = '';
 	return changed;
 }
 
@@ -3732,7 +3734,8 @@ function _rapierCommitDocumentIdentity(options) {
 	);
 	rapier.identity.saveAsRequired = !!(options && options.saveAsRequired === true);
 	rapier.revision.settled = 0;
-	rapier.revision.savedGeneration = -1;
+	_rapierDirtyMarkOwner.restore({savedGeneration: -1, savedBaseline: null});
+	rapier.revision.liveSourceDirty = false;
 	if (rapier.access.leaseReadOnly) { rapierSetReadOnly(!!RapierPreferences.read('readOnly')); renderRestore(); }
 }
 
@@ -3810,11 +3813,14 @@ function _rapierRestoredRevisionState(options = null) {
 	const nextBlockId = Math.max(1, safeNonNegativeInteger(raw.nextBlockId, 1));
 	const segmentIdentity = _rapierSegmentIdentity(raw.segmentIdentity, nextBlockId);
 	if (raw.segmentIdentity != null && !segmentIdentity) return null;
+	const savedBaseline = _rapierSavedBaseline(raw.savedBaseline);
+	if (savedBaseline === undefined) return null;
 	return Object.freeze({
 		generation: safeNonNegativeInteger(raw.generation, 0),
 		documentRevision: safeNonNegativeInteger(raw.documentRevision, 0),
 		savedGeneration: Number.isSafeInteger(rawSavedGeneration) && rawSavedGeneration >= -1
 			? rawSavedGeneration : -1,
+		savedBaseline,
 		nextBlockId,
 		segmentIdentity,
 	});
@@ -3824,7 +3830,7 @@ function _rapierApplyRestoredRevisionState(state) {
 	if (!state) return false;
 	rapier.revision.generation = state.generation;
 	rapier.revision.settled = state.documentRevision;
-	rapier.revision.savedGeneration = state.savedGeneration;
+	_rapierDirtyMarkOwner.restore(state);
 	return true;
 }
 
@@ -3879,8 +3885,7 @@ async function _loadFlatDoc(content, filename, kind, loadToken, options) {
 		_rapierApplyRestoredRevisionState(restoredRevisionState);
 		_syncNextBlockId([], restoredRevisionState.nextBlockId);
 	} else if (!options.restore && !options.sameDocument) {
-		_bumpDocGeneration({ preserveVirtualDocumentKind: true });
-		if (options.opensClean === true) rapier.revision.savedGeneration = Number(rapier.revision.generation || 0);
+		_bumpDocGeneration({ opensClean: options.opensClean === true });
 	}
 
 	const srcTA = document.getElementById('source-textarea');
@@ -4061,7 +4066,7 @@ function _rapierInstallMarkdownProjection(fragment, blocks, options = null) {
 	_rapierLoadLap = lap;
 	try { _rapierWysiwygLedgerSync(blocks); } finally { _rapierLoadLap = null; }
 	if (!sameDocument) container.scrollTop = 0;
-	_syncEmptyDocPrompt();
+	_rapierSyncStartersButton();
 	assignHeadingSlugs();
 	lap('slugs');
 	scheduleIdleHighlight(container);
@@ -4129,8 +4134,7 @@ async function _rapierLoadMarkdownSourceOnly(sourceMarkdown, filename, loadToken
 		_rapierApplyRestoredRevisionState(restoredRevisionState);
 		_syncNextBlockId([], restoredRevisionState.nextBlockId);
 	} else if (!options.restore && !options.sameDocument) {
-		_bumpDocGeneration({ preserveVirtualDocumentKind: true });
-		if (options.opensClean === true) rapier.revision.savedGeneration = Number(rapier.revision.generation || 0);
+		_bumpDocGeneration({ opensClean: options.opensClean === true });
 	}
 
 	_rapierInstallMarkdownProjection(document.createDocumentFragment(), []);
@@ -4285,8 +4289,8 @@ async function _loadMarkdownDoc(markdown, filename, loadToken, options) {
 	_rapierApplyRestoredRevisionState(restoredRevisionState);
 	commitLap('restored');
 	if (!options.restore) {
-		if (!options.sameDocument) _bumpDocGeneration({ preserveVirtualDocumentKind: true });
-		if (options.opensClean === true) rapier.revision.savedGeneration = Number(rapier.revision.generation || 0);
+		if (!options.sameDocument) _bumpDocGeneration({ opensClean: options.opensClean === true });
+		else if (options.opensClean === true) _rapierDirtyMarkOwner.acknowledge(rapier.revision.generation);
 		commitLap('generation');
 		rapier.document.blocks.forEach(b => rapier.autosave.dirty.add(b.id));
 		commitLap('dirty');
@@ -4426,7 +4430,7 @@ function scheduleIdleHighlight(root) {
 
 function renderAllBlocks(options = null) {
 	_reconcileBlockDOM(rapier.document.blocks, options);
-	_syncEmptyDocPrompt();
+	_rapierSyncStartersButton();
 	assignHeadingSlugs();
 }
 
@@ -5187,7 +5191,7 @@ function _rapierBlockSpliceScope(splices) {
 
 function _finishBlockDOMSplice(container, insertedWrappers = null, scope = null) {
 	if (!container) return;
-	_syncEmptyDocPrompt();
+	_rapierSyncStartersButton();
 	if (scope) _rapierWysiwygLedgerSyncSplice(rapier.document.blocks, scope);
 	else _rapierWysiwygLedgerSync(rapier.document.blocks, {keepGroups: true});
 	assignHeadingSlugs(scope);
@@ -5556,7 +5560,7 @@ function _activeBlockEditContext() {
 		? rapier.view.activeEditDiv
 		: wrapper.querySelector('.block-edit');
 	if (!editDiv || !editDiv.isContentEditable) return null;
-	const block = rapier.document.blocks.find(b => b.id === rapier.view.activeBlockId);
+	const block = _rapierBoundBlock(wrapper);
 	return block ? { block, wrapper, editDiv } : null;
 }
 
@@ -7065,7 +7069,7 @@ function _removeBlockById(blockId, commit = _rapierCommitDeletedBlock) {
 	_rapierArmAutosave();
 
 	updateStats();
-	try { _syncEmptyDocPrompt(); } catch (_) {}
+	try { _rapierSyncStartersButton(); } catch (_) {}
 	return snapshot;
 }
 
@@ -7159,7 +7163,7 @@ function _rapierBlankTap(event) {
 function _rapierOpenGroundBelow(host, event) {
 	if (rapier.access.readOnly || rapier.view.mode === 'source' || _rapierUserMutationBlocked()) return false;
 	const last = _rapierShownWrappers(host).at(-1);
-	if (!last) return false;
+	if (!last) return !rapier.document.blocks.length && _rapierMakeEdgeParagraph(null, true);
 
 	if (!(event.clientY > last.getBoundingClientRect().top - 2)) return false;
 	const block = _rapierBoundBlock(last);
@@ -7183,20 +7187,21 @@ function _rapierMakeEdgeParagraph(block, tail) {
 	const host = _editorHostEl();
 	_rapierCheckpointPendingTyping();
 	const mark = _rapierHistoryMark();
-	const id = host && _insertBlockAfter(tail ? block.id : null, '', tail ? { noEdit: true } : { before: block.id, noEdit: true });
-	const created = id != null && rapier.document.blocks.find(candidate => candidate.id === id);
-	const wrapper = created && _rapierBlockWrapperById(id, host);
-	if (!created || !wrapper) return false;
-	_rapierMarkEdgeParagraph(created, mark);
-	enterBlockEdit(created, wrapper, { charOffset: 0, preserveScroll: true });
-	_notifyHistoryState();
-	return true;
+	return _rapierDirtyMarkOwner.withEdgeVisit(mark, () => {
+		const id = host && _insertBlockAfter(tail ? block?.id : null, '', tail ? { noEdit: true } : { before: block.id, noEdit: true });
+		const created = id != null && rapier.document.blocks.find(candidate => candidate.id === id);
+		const wrapper = created && _rapierBlockWrapperById(id, host);
+		if (!created || !wrapper) return false;
+		_rapierMarkEdgeParagraph(created, mark);
+		enterBlockEdit(created, wrapper, { charOffset: 0, preserveScroll: true });
+		_notifyHistoryState();
+		return true;
+	});
 }
 
 function _rapierMarkEdgeParagraph(block, mark) {
 	block.dirty = true;
 	block._rapierEdge = _rapierEdgeRecord(mark);
-	if (mark.saved === mark.generation) { rapier.revision.savedGeneration = rapier.revision.generation; _notifyDirtyState(); }
 }
 
 function _rapierEdgeRecord(mark) {
@@ -7223,7 +7228,7 @@ function _rapierUntouchedEdge() {
 
 function _rapierSnapshotWithoutUntouchedEdge(persistence) {
 	const edge = _rapierUntouchedEdge();
-	return edge ? { ...persistence, canonicalText: edge.mark.source.read(), sourceRootId: edge.mark.source.rootId } : persistence;
+	return edge ? { ...persistence, canonicalText: edge.mark.source.read(), sourceRootId: edge.mark.source.rootId, sourceContentId: edge.mark.source.contentId } : persistence;
 }
 
 function _rapierRecoveryBeforeUntouchedEdge(persistence) {
@@ -7231,7 +7236,7 @@ function _rapierRecoveryBeforeUntouchedEdge(persistence) {
 	if (!edge || persistence.sourceRootId !== rapier.document.source.rootId ||
 			persistence.documentRevision !== Number(rapier.revision.settled || 0)) return persistence;
 	const mark = edge.mark;
-	return { ...persistence, canonicalText: mark.source.read(), sourceRootId: mark.source.rootId, documentRevision: mark.revision, nextBlockId: mark.nextBlockId,
+	return { ...persistence, canonicalText: mark.source.read(), sourceRootId: mark.source.rootId, sourceContentId: mark.source.contentId, documentRevision: mark.revision, nextBlockId: mark.nextBlockId,
 		segmentIdentity: mark.segments, history: { ledger: rapier.undo.ledger.slice(0, mark.ledger), branch: mark.branch, cursor: mark.cursor } };
 }
 
@@ -7243,15 +7248,12 @@ function _rapierEdgeRewinds(block) {
 function _rapierRewindEdgeParagraph(block, removed) {
 	if (!_rapierEdgeRewinds(block)) return false;
 	const edge = block._rapierEdge, mark = edge.mark;
-	const savedWithout = rapier.revision.savedGeneration === edge.generation;
 	mark.source.restore();
 	rapier.undo.ledger.splice(mark.ledger);
 	rapier.undo.branch = mark.branch;
 	rapier.undo.cursor = mark.cursor;
 	rapier.revision.settled = mark.revision;
-	const clean = savedWithout;
 	rapier.revision.generation = Number(rapier.revision.generation || 0) + 1;
-	rapier.revision.savedGeneration = clean ? rapier.revision.generation : mark.saved;
 	rapier.identity.nextBlockId = mark.nextBlockId;
 	rapier.autosave.dirty = mark.dirty;
 	if (removed.index === 0 && rapier.document.blocks[0]) rapier.document.blocks[0].leading = typeof removed.block.leading === 'string' ? removed.block.leading : null;
@@ -7592,6 +7594,7 @@ function _rapierCheckpointEdit(editDiv, command = false) {
 	if (!pending && (before === after || sameOpening)) {
 		editDiv._rapierCheckpointFresh = true;
 		_rapierResetEditHistoryBurst(editDiv);
+		_rapierDirtyMarkOwner.refresh();
 		return false;
 	}
 	if (pending) {
@@ -7638,7 +7641,7 @@ function _rapierCheckpointEdit(editDiv, command = false) {
 			_bumpDocGeneration();
 			_rapierArmAutosave();
 			hideFormatToolbar();
-			_syncEmptyDocPrompt();
+			_rapierSyncStartersButton();
 			_notifyHistoryState();
 			_scheduleStatsUpdate();
 			return true;
@@ -8110,20 +8113,22 @@ function leaveBlockEdit(block, wrapper, readDiv, editDiv, options = null) {
 			: _rapierLiveEditRaw(editDiv, wrapper);
 
 		if (!after && !(options && options.preserveEmptyBlock)) {
-			wrapper.classList.remove('block-wrapper--math-source', 'block-wrapper--source-edit');
-			_rapierDetachDiagramPreview(wrapper);
-			const snapshot = _removeBlockById(block.id, _rapierEdgeRewinds(block) ? null : _rapierCommitDeletedBlock);
-			if (snapshot && !_rapierRewindEdgeParagraph(block, snapshot)) _notifyHistoryState();
-			wrapper.classList.remove('block-wrapper--editing');
-			_rapierReleaseRawEditGeometry(editDiv);
-			_setBlockEditability(editDiv, false);
-			_rapierDiscardEditProjection(editDiv);
-			editDiv.removeAttribute('tabindex');
-			_clearActiveBlock(block.id);
-			hideFormatToolbar();
-			if (headingSlugsMayChange) assignHeadingSlugs();
-			_notifyHistoryState();
-			return;
+			const remove = () => {
+				wrapper.classList.remove('block-wrapper--math-source', 'block-wrapper--source-edit');
+				_rapierDetachDiagramPreview(wrapper);
+				const snapshot = _removeBlockById(block.id, _rapierEdgeRewinds(block) ? null : _rapierCommitDeletedBlock);
+				if (snapshot && !_rapierRewindEdgeParagraph(block, snapshot)) _notifyHistoryState();
+				wrapper.classList.remove('block-wrapper--editing');
+				_rapierReleaseRawEditGeometry(editDiv);
+				_setBlockEditability(editDiv, false);
+				_rapierDiscardEditProjection(editDiv);
+				editDiv.removeAttribute('tabindex');
+				_clearActiveBlock(block.id);
+				hideFormatToolbar();
+				if (headingSlugsMayChange) assignHeadingSlugs();
+				_notifyHistoryState();
+			};
+			return _rapierEdgeRewinds(block) ? _rapierDirtyMarkOwner.withEdgeVisit(block._rapierEdge.mark, remove) : remove();
 		}
 
 		if (before !== after) {
@@ -8313,6 +8318,7 @@ async function _rapierCaptureSettledExternalDocument(options = null) {
 			? (_rapierCompareRuntime.agentOpened ? rapier.compare.currentText : rapier.compare.incomingText) : comparison?.base?.text;
 		return Object.freeze({
 			canonical, comparisonBase: comparison?.base || null,
+			sourceRootId: rapier.document.source.rootId, sourceContentId: rapier.document.source.contentId,
 			wordComparison: typeof wordBase === 'string' && wordBase !== canonical ? {source: wordBase, ledger: _rapierLedgerCapture()} : null,
 			ledger: ['authorship', 'history'].includes(options?.carried) ? _rapierLedgerCapture() : null,
 			carried: options?.carried || 'none',
@@ -9063,7 +9069,7 @@ function _rapierRouteStrayEditingKey(event) {
 		return;
 	}
 	const control = target !== host && target.closest('button, a[href], summary, img, [role="button"], [role="menuitem"], [role="tab"], [role="switch"], [role="checkbox"], [role="radio"], [role="option"], [role="link"]');
-	const begins = key === 'Enter' && !rapier.document.blocks.length && (target === host || !!target.closest('#empty-doc-prompt'));
+	const begins = key === 'Enter' && !rapier.document.blocks.length && target === host;
 	const reenter = key === 'Enter' && !begins && !open && target === host && !event.shiftKey && rapier.document.blocks.length > 0 &&
 		!(held && held.rangeCount && !held.isCollapsed && _rangeIntersectsEditor(held.getRangeAt(0)));
 	if (key === 'Enter' ? !begins && !reenter && (target === host || control) : key === ' ' && (control || rapier.view.mode === 'read')) return;
@@ -11997,7 +12003,7 @@ async function _rapierWithCompoundTransaction(context, action, options = null) {
 		epoch: Number(rapier.identity.epoch || 0),
 		revision: Number(rapier.revision.settled || 0),
 		generation: Number(rapier.revision.generation || 0),
-		savedGeneration: Number(rapier.revision.savedGeneration ?? -1),
+		..._rapierDirtyMarkOwner.capture(),
 		nextBlockId: Number(rapier.identity.nextBlockId || 1),
 		ledgerLength: rapier.undo.ledger.length,
 		branch: rapier.undo.branch.slice(),
@@ -12099,7 +12105,7 @@ async function _rapierWithCompoundTransaction(context, action, options = null) {
 		rapier.undo.cursor = snapshot.cursor;
 		rapier.revision.settled = snapshot.revision;
 		rapier.revision.generation = snapshot.generation;
-		rapier.revision.savedGeneration = snapshot.savedGeneration;
+		_rapierDirtyMarkOwner.restore(snapshot);
 		rapier.identity.nextBlockId = snapshot.nextBlockId;
 		rapier.autosave.dirty = snapshot.dirty;
 		_rapierTransactionRuntime.compound = compound;
@@ -12108,7 +12114,7 @@ async function _rapierWithCompoundTransaction(context, action, options = null) {
 		finally {
 			_rapierTransactionRuntime.compound = null;
 			rapier.revision.generation = snapshot.generation;
-			rapier.revision.savedGeneration = snapshot.savedGeneration;
+			_rapierDirtyMarkOwner.restore(snapshot);
 			rapier.autosave.dirty = snapshot.dirty;
 			rapier.identity.saveAsRequired = snapshot.saveAsRequired;
 			rapier.identity.virtualKind = snapshot.virtualKind;
@@ -19665,19 +19671,73 @@ function _rapierDocumentReadError(error, fallback = 'could not read that file', 
 	if (message === 'document is not plain UTF-8 text') return noun + ' is not plain UTF-8 text';
 	return fallback;
 }
-function _rapierIsDirty() {
-	if (rapier.identity.saveAsRequired === true) return true;
-	if (rapier.revision.savedGeneration === -1 && !(rapier.revision.generation > 0)) return false;
-	const saved = rapier.revision.savedGeneration;
-	const gen   = rapier.revision.generation || 0;
-	if (typeof saved !== 'number') {
-		if (rapier.document.docKind !== 'markdown') return _rapierSourceText().length > 0;
-		return !!(rapier.document.blocks && rapier.document.blocks.length > 0);
-	}
-	return gen !== saved;
-}
+const _rapierDirtyMarkOwner = (function createDirtyMarkOwner() {
+	let edgeVisit = null;
+	return Object.freeze({
+	differs(rootId, metadata, baseline, contentId) {
+		return !baseline || !_rapierSameDocumentMetadata(metadata, baseline.metadata) ||
+			(rootId !== baseline.rootId && contentId !== baseline.contentId);
+	},
+	capture() {
+		return {savedGeneration: rapier.revision.savedGeneration, savedBaseline: rapier.revision.savedBaseline};
+	},
+	restore(state) {
+		const baseline = _rapierSavedBaseline(state.savedBaseline);
+		if (baseline === undefined) throw new Error('The saved document baseline is invalid.');
+		rapier.revision.savedGeneration = Number(state.savedGeneration ?? -1);
+		rapier.revision.savedBaseline = baseline;
+	},
+	acknowledge(generation, rootId = rapier.document.source.rootId, metadata = _rapierDocumentMetadata(), contentId = rapier.document.source.contentId) {
+		this.restore({savedGeneration: generation, savedBaseline: {rootId, contentId, metadata: {filename: metadata.filename, docKind: metadata.docKind}}});
+	},
+	withEdgeVisit(mark, create) {
+		const previous = edgeVisit;
+		edgeVisit = mark.source;
+		try { return create(); }
+		finally { edgeVisit = previous; this.refresh(); }
+	},
+	isDirty() {
+		if (rapier.identity.saveAsRequired === true) return true;
+		const source = edgeVisit || rapier.document.source, baseline = rapier.revision.savedBaseline;
+		if (!baseline && !(rapier.revision.generation > 0) && !source.length) return false;
+		let rootId = source.rootId, contentId = source.contentId, liveDirty = rapier.revision.liveSourceDirty === true;
+		const edit = rapier.view.activeEditDiv, wrapper = rapier.view.activeWrapper;
+		if (edit && wrapper?.isConnected && edit.closest('.block-wrapper') === wrapper &&
+				wrapper.classList.contains('block-wrapper--editing') && edit._rapierEditEpoch === Number(rapier.identity.epoch || 0)) {
+			const block = _rapierBoundBlock(wrapper), edge = block?._rapierEdge;
+			const raw = edit._rapierCheckpointFresh && !edge ? null : _rapierLiveEditRaw(edit, wrapper);
+			if (_rapierEdgeStands(edge) && !raw) {
+				rootId = edge.mark.source.rootId; contentId = edge.mark.source.contentId;
+			} else if (raw !== null && block) {
+				const before = edit._rapierHistoryBaselineRaw ?? block.raw;
+				liveDirty ||= raw !== before && !(before === edit._rapierEditOpenedRaw && raw === edit._rapierEditOpenedAs);
+			}
+		}
+		return liveDirty || this.differs(rootId, _rapierDocumentMetadata(), baseline, contentId);
+	},
+	sourceInput(dirty) {
+		rapier.revision.liveSourceDirty = dirty === true;
+		this.refresh();
+	},
+	refresh() {
+		const dirty = this.isDirty();
+		const virtualKind = rapier.identity.virtualKind;
+		if (virtualKind === 'welcome' || virtualKind === 'welcome-edited') rapier.identity.virtualKind = dirty ? 'welcome-edited' : 'welcome';
+		if (rapier.revision.publishedDirty !== dirty || virtualKind !== rapier.identity.virtualKind) _notifyDirtyState();
+		return dirty;
+	},
+	render(node, dirty = this.isDirty()) {
+		if (node && node.hidden !== !dirty) node.hidden = !dirty;
+	},
+	});
+})();
+function _rapierIsDirty() { return _rapierDirtyMarkOwner.isDirty(); }
 function _notifyDirtyState() {
 	const dirty = _rapierIsDirty();
+	rapier.revision.publishedDirty = dirty;
+	if (rapier.identity.virtualKind === 'welcome' || rapier.identity.virtualKind === 'welcome-edited') {
+		rapier.identity.virtualKind = dirty ? 'welcome-edited' : 'welcome';
+	}
 	_rapierBackHold();
 	renderFilename();
 	if (dirty && typeof _rapierCarriedKeepHint === 'function') _rapierCarriedKeepHint();
@@ -19688,15 +19748,12 @@ function _notifyDirtyState() {
 	}
 }
 function _bumpDocGeneration(options = null) {
-	if (!(options && options.preserveVirtualDocumentKind === true)) {
-		_rapierClearVirtualDocumentKind(true);
-	}
-	const wasDirty = _rapierIsDirty();
 	rapier.revision.generation = (rapier.revision.generation || 0) + 1;
+	if (options?.opensClean === true) _rapierDirtyMarkOwner.acknowledge(rapier.revision.generation);
 	_rapierEmbed.fileOpen?.check();
 	_rapierMarkSemanticFactsStale();
 	_rapierApplyDocumentSettings();
-	if (!wasDirty) _notifyDirtyState();
+	_rapierDirtyMarkOwner.refresh();
 	return rapier.revision.generation;
 }
 async function _markSavedGeneration(
@@ -19714,22 +19771,29 @@ async function _markSavedGeneration(
 		if (config.expectedEpoch != null && Number(config.expectedEpoch) !== documentEpoch) return null;
 		if (config.expectedAuthority != null && String(config.expectedAuthority) !== documentAuthority) return null;
 		if (config.expectedLoadToken != null && Number(config.expectedLoadToken) !== Number(rapier.identity.loadToken || 0)) return null;
-		const previousSavedGeneration = rapier.revision.savedGeneration;
+		const previousSavedState = _rapierDirtyMarkOwner.capture();
 		const nextSavedGeneration = Number(
 			generation == null ? (rapier.revision.generation || 0) : generation
 		);
-		const wasDirty = _rapierIsDirty();
 		if (config.clearVirtualDocumentKind === true) _rapierClearVirtualDocumentKind();
-		rapier.revision.savedGeneration = nextSavedGeneration;
+		const reviewText = savedText == null ? _rapierGetCanonicalText() : String(savedText);
+		const reviewName = savedName == null ? String(rapier.document.filename || '') : String(savedName);
+		const store = rapier.document.source;
+		const sourceRootId = config.sourceRootId || (reviewText === _rapierSourceText()
+			? store.rootId : _rapierCreateSourceStore(reviewText).rootId);
+		const sourceContentId = config.sourceContentId || globalThis.RapierSourceStore.contentIdOf(reviewText);
+		_rapierDirtyMarkOwner.acknowledge(nextSavedGeneration, sourceRootId,
+			{filename: reviewName, docKind: config.savedDocKind || rapier.document.docKind}, sourceContentId);
+		const nextSavedBaseline = rapier.revision.savedBaseline;
 		_rapierScheduleRestoreCursor(150);
 		return {
 			documentEpoch,
 			documentAuthority,
-			previousSavedGeneration,
+			previousSavedState,
 			nextSavedGeneration,
-			wasDirty,
-			reviewText: savedText == null ? _rapierGetCanonicalText() : String(savedText),
-			reviewName: savedName == null ? String(rapier.document.filename || '') : String(savedName),
+			nextSavedBaseline,
+			reviewText,
+			reviewName,
 			reviewRevision: savedRevision == null
 				? Number(rapier.revision.settled || 0) : Number(savedRevision),
 		};
@@ -19748,9 +19812,9 @@ async function _markSavedGeneration(
 		(config.expectedLoadToken == null || Number(config.expectedLoadToken) === Number(rapier.identity.loadToken || 0));
 
 	const {
-		previousSavedGeneration,
+		previousSavedState,
 		nextSavedGeneration,
-		wasDirty,
+		nextSavedBaseline,
 		reviewText,
 		reviewName,
 		reviewRevision,
@@ -19763,14 +19827,14 @@ async function _markSavedGeneration(
 		}
 	} catch (error) {
 		if (ownsCommitted() &&
-				rapier.revision.savedGeneration === nextSavedGeneration) {
-			rapier.revision.savedGeneration = previousSavedGeneration;
+				rapier.revision.savedBaseline === nextSavedBaseline) {
+			_rapierDirtyMarkOwner.restore(previousSavedState);
 		}
-		if (wasDirty !== _rapierIsDirty()) _notifyDirtyState();
+		_rapierDirtyMarkOwner.refresh();
 		throw error;
 	}
 	if (ownsCommitted() &&
-			rapier.revision.savedGeneration === nextSavedGeneration) {
+			rapier.revision.savedBaseline === nextSavedBaseline) {
 		try {
 			if (!globalThis.RapierRecoveryWorker.preparedIntegrity(preparedReview, reviewText)) {
 				preparedReview = await globalThis.RapierRecoveryWorker.prepareRecoveryCapture(
@@ -19778,7 +19842,7 @@ async function _markSavedGeneration(
 				);
 			}
 			if (!ownsCommitted() ||
-					rapier.revision.savedGeneration !== nextSavedGeneration) return true;
+					rapier.revision.savedBaseline !== nextSavedBaseline) return true;
 			_rapierRememberSavedReview(
 				reviewText,
 				reviewName,
@@ -19788,8 +19852,8 @@ async function _markSavedGeneration(
 			);
 		} catch (error) { console.warn('[rapier] saved review bookkeeping failed', error); }
 		if (!ownsCommitted() ||
-				rapier.revision.savedGeneration !== nextSavedGeneration) return true;
-		if (wasDirty !== _rapierIsDirty()) _notifyDirtyState();
+				rapier.revision.savedBaseline !== nextSavedBaseline) return true;
+		_rapierDirtyMarkOwner.refresh();
 	}
 	return true;
 }
@@ -21138,7 +21202,7 @@ async function rapierOpenPlatformPayload(payload, opts = {}) {
 			if (_rapierIsVectorFile({name: payload.name, type: blob.type})) {
 				let admittedSvg = false;
 				try {
-					const opened = await _rapierOpenSvgBlob(blob, payload.name, opts);
+					const opened = await _rapierOpenSvgBlob(blob, payload.name, opts, sourcePayload);
 					admittedSvg = opened === true;
 					return opened;
 				} finally {
@@ -21148,17 +21212,22 @@ async function rapierOpenPlatformPayload(payload, opts = {}) {
 			}
 			const rasterType = String(blob.type || '').toLowerCase().split(';')[0].trim();
 			if (_rapierRasterInputType(rasterType)) {
-				let admittedRaster = false;
+				const nativeIntake = window.RapierPlatform?.environment?.native === true && Number.isSafeInteger(Number(payload.nativeIntakeId)) &&
+					Number(payload.nativeIntakeId) > 0 ? payload : null;
+				let admittedRaster = false, intakeHandedToDialog = false;
 				try {
 					const opened = await rapierOpenPlatformPayload({text: '', name: 'untitled.md', transient: true}, opts);
 					if (!opened) return false;
 					const file = blob instanceof File ? blob : new File([blob], String(payload.name || 'picture'), {type: rasterType});
-					const pasted = await _rapierPasteRasterImage(file, {});
+					const pasted = await _rapierPasteRasterImage(file, nativeIntake ? {nativeIntake} : {});
 					admittedRaster = pasted === true;
+					intakeHandedToDialog = admittedRaster && !!nativeIntake;
 					return pasted;
 				} finally {
-					if (admittedRaster) _rapierMarkExternalIntakeAccepted(payload);
-					try { window.RapierPlatform?.files?.clearIntake?.(payload); } catch (_) {}
+					if (!intakeHandedToDialog) {
+						if (admittedRaster) _rapierMarkExternalIntakeAccepted(payload);
+						try { window.RapierPlatform?.files?.clearIntake?.(payload); } catch (_) {}
+					}
 				}
 			}
 			try {
@@ -21279,7 +21348,7 @@ async function rapierOpenPlatformPayload(payload, opts = {}) {
 			bindingTransitionToken = null;
 			_rapierEndBindingTransitionBusy(token);
 		};
-		let externalHandoffAccepted = false;
+		let externalHandoffAccepted = false, openedReceipt = null, openedBaseline = null;
 		try {
 
 			const text = await RapierTextCodec.normalizeDocumentAsync(payload.text, payload.admittedBytes,
@@ -21292,7 +21361,7 @@ async function rapierOpenPlatformPayload(payload, opts = {}) {
 				virtualDocumentKind: _rapierNormalizeVirtualDocumentKind(opts.virtualDocumentKind),
 				  documentKind: opts.documentKind, codeName: opts.codeName,
 				saveAsRequired: payload.transient === true && !builtIn,
-				opensClean: builtIn,
+				opensClean: payload.transient !== true || builtIn,
 				readingPointOwed: !viewContinuity && payload.transient !== true,
 				expectedMutationStamp: commitAdmission.value.stamp,
 
@@ -21301,6 +21370,8 @@ async function rapierOpenPlatformPayload(payload, opts = {}) {
 			});
 			if (openEpoch !== rapier.identity.userLoadEpoch || !loadReceipt) return false;
 			const openedState = loadReceipt;
+			openedReceipt = loadReceipt;
+			openedBaseline = rapier.revision.savedBaseline;
 			const openedFilename = String(rapier.document.filename || '');
 			const stillOpened = () => opts.signal?.aborted !== true && work.signal.aborted !== true &&
 				openEpoch === rapier.identity.userLoadEpoch &&
@@ -21319,7 +21390,6 @@ async function rapierOpenPlatformPayload(payload, opts = {}) {
 			try {
 				if (!_rapierPersistenceRuntime.recoveryHeld && !_rapierPersistenceCaptureBlocked(rapier.bindingTransition)) {
 					const openingSnapshot = _rapierCreatePersistenceSnapshot();
-					if (payload.transient !== true || builtIn) openingSnapshot.savedGeneration = openedState.generation;
 					kept = await rapierFlushDirty({ snapshot: true, durable: true,
 						persistenceSnapshot: openingSnapshot, mutationOwner: rapier.bindingTransition,
 						onPrepared: value => { openedRecovery = value; } });
@@ -21328,7 +21398,7 @@ async function rapierOpenPlatformPayload(payload, opts = {}) {
 			if (!stillOpened()) return false;
 			const guide = payload.transient === true && _rapierIsBuiltInWelcomeDocument();
 			if (kept !== true && !guide) {
-				rapier.revision.savedGeneration = -1;
+				_rapierDirtyMarkOwner.restore({savedGeneration: -1, savedBaseline: null});
 				rapier.identity.saveAsRequired = true;
 				if (previousAuthority && window.RapierPlatform?.files?.detach) {
 					try { await window.RapierPlatform.files.detach(previousAuthority); } catch (_) {}
@@ -21343,7 +21413,8 @@ async function rapierOpenPlatformPayload(payload, opts = {}) {
 			if (!stillOpened()) return false;
 			if (!viewContinuity) srAnnounce('Opened ' + openedFilename + '.');
 			if (payload.transient === true) {
-				rapier.revision.savedGeneration = guide ? Number(rapier.revision.generation || 0) : -1;
+				if (guide) _rapierDirtyMarkOwner.acknowledge(Number(rapier.revision.generation || 0));
+				else _rapierDirtyMarkOwner.restore({savedGeneration: -1, savedBaseline: null});
 				if (guide) rapier.identity.saveAsRequired = false;
 				if (window.RapierPlatform && window.RapierPlatform.files.detach) {
 					await window.RapierPlatform.files.detach(previousAuthority || openedState.authority);
@@ -21440,6 +21511,7 @@ async function rapierOpenPlatformPayload(payload, opts = {}) {
 				} catch (_) {}
 			}
 			externalHandoffAccepted = true;
+			try { window.dispatchEvent(new CustomEvent('rapier:document-admitted')); } catch (_) {}
 			return true;
 		} catch (err) {
 			if (err?.name === 'AbortError') return false;
@@ -21447,6 +21519,12 @@ async function rapierOpenPlatformPayload(payload, opts = {}) {
 			console.error(err);
 			return false;
 		} finally {
+			if (!externalHandoffAccepted && !builtIn && openedReceipt &&
+					_rapierLoadReceiptIsCurrent(openedReceipt) && rapier.revision.savedBaseline === openedBaseline) {
+				_rapierDirtyMarkOwner.restore({savedGeneration: -1, savedBaseline: null});
+				rapier.identity.saveAsRequired = true;
+				_rapierDirtyMarkOwner.refresh();
+			}
 			releaseBindingTransition();
 			if (openEpoch === rapier.identity.userLoadEpoch) _rapierReleaseReadingPoint();
 			if (externalHandoffAccepted) _rapierMarkExternalIntakeAccepted(payload);
@@ -21457,13 +21535,19 @@ async function rapierOpenPlatformPayload(payload, opts = {}) {
 	}
 }
 
-async function _rapierOpenSvgBlob(blob, name, opts) {
+async function _rapierOpenSvgBlob(blob, name, opts, sourcePayload = null) {
 	let text;
 	try { text = await blob.text(); }
 	catch (error) { showToast(_rapierDocumentReadError(error), 'error'); return false; }
 	let recipe = null;
 	try { recipe = globalThis.RapierDrawCore?._rapierDrawReadRecipeFromSVGText(text) ?? null; }
 	catch (error) { showToast(String(error.message || error), 'error'); return false; }
+	if (!recipe && Number(sourcePayload?.nativeIntakeId) > 0) {
+		try {
+			const record = await RapierTextCodec.readDocumentRecord(blob);
+			return await rapierOpenPlatformPayload({...sourcePayload, text: record.text, bom: record.bom, admittedBytes: record.bytes}, opts);
+		} catch (error) { showToast(_rapierDocumentReadError(error), 'error'); return false; }
+	}
 	const opened = await rapierOpenPlatformPayload({text: '', name: 'untitled.md', transient: true}, opts);
 	if (!opened) return false;
 	if (recipe && _rapierDrawOffered() && await _rapierPartReady('drawing')) { _rapierDrawPart.surface({recipe, editing: null}); return true; }
@@ -22230,7 +22314,8 @@ async function _rapierPerformSaveWork(options) {
 	}
 
 	const persistenceSnapshot = captured.value.persistence;
-	const payload = (captured.value.metadata.bom === true ? '\uFEFF' : '') + String(persistenceSnapshot.canonicalText == null ? '' : persistenceSnapshot.canonicalText);
+	const canonicalText = String(persistenceSnapshot.canonicalText == null ? '' : persistenceSnapshot.canonicalText);
+	const savedText = () => (captured.value.metadata.bom === true ? '\uFEFF' : '') + canonicalText;
 	const metadata = captured.value.metadata;
 	const saveGeneration = captured.value.generation;
 	const saveRevision = Number(persistenceSnapshot.documentRevision || 0);
@@ -22242,7 +22327,8 @@ async function _rapierPerformSaveWork(options) {
 		if (!saveAuthority || !platform || !platform.files.detach) return;
 		try { await platform.files.detach(saveAuthority); } catch (_) {}
 	};
-	const settle = (status, saved, providerResult = null, receiptName = metadata.saveName) => {
+	let nativeAcknowledgement = null, nativeApplied = false, nativeTerminalResult = null;
+	const settle = async (status, saved, providerResult = null, receiptName = metadata.saveName) => {
 		const receipt = Object.freeze({
 			status: String(status || 'failed'),
 			saved: saved === true,
@@ -22256,6 +22342,7 @@ async function _rapierPerformSaveWork(options) {
 			generation: saveGeneration,
 			documentRevision: saveRevision,
 		});
+		if (nativeAcknowledgement) await nativeAcknowledgement(nativeApplied);
 		return options.returnReceipt === true ? receipt : receipt.saved;
 	};
 	if (captured.value.ledger && metadata.docKind !== 'markdown' && !/\.rapier\.html$/i.test(metadata.saveName)) throw new Error('Use a shared web page to carry authorship or history with this document.');
@@ -22280,8 +22367,11 @@ async function _rapierPerformSaveWork(options) {
 				throw Object.assign(new Error('the document changed while saving'), {code: 'document_changed'});
 			return serialized.blob;
 		};
-		const writePlain = () => new Blob([RapierLedgerCarried.writeDocument(payload, _rapierLedgerParts(payload, captured.value.ledger, options.carried))],
-			{type: /\.rapier\.html$/i.test(metadata.saveName) ? (metadata.docKind === 'markdown' ? 'text/markdown' : 'text/plain') : metadata.mime});
+		const writePlain = () => RapierTextCodec.documentBlob(canonicalText, {
+			bom: metadata.bom === true,
+			trailer: RapierLedgerCarried.documentTrailer(canonicalText, _rapierLedgerParts(canonicalText, captured.value.ledger, options.carried)),
+			type: /\.rapier\.html$/i.test(metadata.saveName) ? (metadata.docKind === 'markdown' ? 'text/markdown' : 'text/plain') : metadata.mime,
+		});
 		let blob;
 		try { blob = editablePage ? await writePage() : null; }
 		catch (error) { if (error.code === 'document_changed') return settle('document-changed', false); throw error; }
@@ -22308,6 +22398,12 @@ async function _rapierPerformSaveWork(options) {
 			documentGeneration: saveGeneration,
 			documentRevision: saveRevision,
 			fileGeneration: platform && platform.files.generation ? platform.files.generation(saveAuthority) : null,
+			nativeSaveResume: platform?.native === true ? {
+				canonicalDigest: RapierLedger.sha256(canonicalText), sourceRootId: persistenceSnapshot.sourceRootId,
+				filename: metadata.filename, saveName: metadata.saveName, docKind: metadata.docKind, bom: metadata.bom === true,
+				metadataHead: captured.value.metadataHead, editablePage,
+				clearVirtualDocumentKind: options.clearVirtualDocumentKindOnSuccess === true,
+			} : null,
 		};
 
 		if (options.signal && options.signal.aborted) return settle('cancelled', false);
@@ -22325,8 +22421,10 @@ async function _rapierPerformSaveWork(options) {
 		} else {
 			throw new Error('This host does not provide a save destination.');
 		}
+		nativeAcknowledgement = typeof rawResult?.acknowledge === 'function' ? rawResult.acknowledge : null;
 		const result = _rapierNormalizeSaveResult(rawResult);
-		if (result.status === 'cancelled') return settle('cancelled', false, result);
+		nativeTerminalResult = nativeAcknowledgement ? result : null;
+		if (result.status === 'cancelled') { nativeApplied = true; return settle('cancelled', false, result); }
 		if (result.status === 'retained-draft') {
 			const draftRetained = platform?.recovery?.ownsStore === true ? await recoveryGuard === true
 				: await _rapierPersistDownloadDraft(captured.value.recovery, saveGeneration, saveRevision);
@@ -22414,13 +22512,13 @@ async function _rapierPerformSaveWork(options) {
 		if (!destinationKindMatches || !saveAsStillOwnsName) {
 
 			await detachCapturedBinding();
-		}
+		} else if (typeof rawResult?.applyBinding === 'function' && ownsRequested()) rawResult.applyBinding();
 		try {
 			if (!ownsRequested()) return settle('confirmed', true, result, destinationName);
 			const acknowledged = await _markSavedGeneration(
 				acknowledgedGeneration,
 				true,
-				payload,
+				persistenceSnapshot.canonicalText,
 				acknowledgedRevision,
 				destinationName,
 				{
@@ -22428,10 +22526,14 @@ async function _rapierPerformSaveWork(options) {
 					expectedEpoch: saveEpoch,
 					expectedAuthority: saveAuthority,
 					expectedLoadToken: requested.loadToken,
+					sourceRootId: persistenceSnapshot.sourceRootId,
+					sourceContentId: persistenceSnapshot.sourceContentId,
+					savedDocKind: metadata.docKind,
 					clearVirtualDocumentKind: options.clearVirtualDocumentKindOnSuccess === true,
 				},
 			);
 			if (!acknowledged) throw new Error('Save acknowledgement no longer owns the current document.');
+			nativeApplied = true;
 		} catch (persistenceError) {
 			console.warn('[rapier] file verified but save acknowledgement could not be persisted', persistenceError);
 			if (options.quiet !== true) {
@@ -22461,9 +22563,18 @@ async function _rapierPerformSaveWork(options) {
 		}
 		return settle('confirmed', true, result, destinationName);
 	} catch (error) {
-		if (options.signal?.aborted) return settle('cancelled', false);
+		if (nativeTerminalResult?.confirmed === true && nativeTerminalResult.verified === true) {
+			console.warn('[rapier] file verified but save acknowledgement could not be applied', error);
+			if (options.quiet !== true) showToast('file saved, but Rapier couldn’t note it here, so this stays unsaved', 'warning');
+			return settle('confirmed-unacknowledged', false, nativeTerminalResult);
+		}
+		if (error.nativeSaveTerminal === true) {
+			nativeAcknowledgement = error.acknowledge;
+			nativeApplied = true;
+		}
+		if (options.signal?.aborted && error.nativeSaveTerminal !== true) return settle('cancelled', false);
 		console.warn('[rapier] save failed', error);
-		if (options.throwOnError === true) throw error;
+		if (options.throwOnError === true) { if (nativeAcknowledgement) await nativeAcknowledgement(nativeApplied); throw error; }
 		if (options.quiet !== true) {
 			showToast(error && error.code === 'external_file_changed'
 				? 'file changed outside Rapier — compare or use Save As before overwriting'
@@ -22475,6 +22586,70 @@ async function _rapierPerformSaveWork(options) {
 		}
 		return settle('failed', false);
 	}
+}
+
+async function _rapierApplyRecoveredNativeSave(receipt) {
+	const {intent, result, applyBinding} = receipt, resume = intent?.resume;
+	if (!_rapierBootstrapRuntime.complete || !resume || result?.status !== 'confirmed' ||
+			result.verified !== true || String(rapier.identity.authority || '') !== intent.documentAuthority ||
+			!Number.isSafeInteger(intent.documentGeneration) || !Number.isSafeInteger(intent.documentRevision) ||
+			!/^[0-9a-f]{64}$/.test(resume.canonicalDigest || '') ||
+			!_rapierDocumentNameIsAdmissible(resume.filename) || !['markdown', 'text', 'code'].includes(resume.docKind)) return false;
+	if (Number(rapier.revision.savedGeneration) > intent.documentGeneration) return true;
+	const requested = _rapierMutationStamp(), owns = () => _rapierMutationStampSharesDocument(requested) &&
+		requested.loadToken === Number(rapier.identity.loadToken || 0);
+	let source = _rapierJournalTextAt(intent.documentRevision);
+	if (source == null || RapierLedger.sha256(source) !== resume.canonicalDigest) {
+		if (Number(rapier.revision.generation) !== intent.documentGeneration ||
+				rapier.document.source.rootId !== resume.sourceRootId) return false;
+		source = _rapierSourceText();
+		if (RapierLedger.sha256(source) !== resume.canonicalDigest) return false;
+	}
+	const destinationName = _rapierDocumentNameIsAdmissible(result.destinationName) ? result.destinationName : '';
+	const kindMatches = !!destinationName && (/\.rapier\.html$/i.test(destinationName) === resume.editablePage) &&
+		(resume.editablePage || _classifyDocKind(destinationName) === resume.docKind);
+	let generation = intent.documentGeneration, revision = intent.documentRevision;
+	const applied = await _rapierWithSettledExternalDocument(() => {
+		if (!owns() || _rapierMutationBarrierActive() || rapier.composition.block || rapier.composition.source) return null;
+		const currentNameRow = rapier.undo.ledger.findLast(row => RapierLedger._rapierRecordMetadata(row, rapier.undo.ledger)?.filename);
+		const currentNameHead = currentNameRow?.transaction.id || null;
+		const sameSource = _rapierSourceText() === source && rapier.document.docKind === resume.docKind;
+		const sameSave = sameSource && Number(rapier.revision.generation) === intent.documentGeneration;
+		const recordedName = sameSource && rapier.document.filename === destinationName &&
+			currentNameRow?.transaction.operation === 'document.save-as-name' &&
+			Number(currentNameRow.transaction.revision) === intent.documentRevision + 1 &&
+			Number(rapier.revision.generation) === intent.documentGeneration + 1;
+		const ownsName = (rapier.document.filename === resume.filename && currentNameHead === resume.metadataHead) || recordedName;
+		const wasDirty = _rapierIsDirty();
+		if (ownsName) {
+			if (kindMatches) {
+				if (destinationName !== rapier.document.filename) {
+					const effect = RapierLedger._rapierMetadataDelta(_rapierDocumentMetadata(), {filename: destinationName, docKind: resume.docKind});
+					if (!_rapierCommitSplices([], {metadata: effect, operation: 'document.save-as-name', changeSet: {label: 'Save file name'}})) return null;
+				}
+				if (sameSave || recordedName) { generation = rapier.revision.generation; revision = rapier.revision.settled; }
+				rapier.identity.saveAsRequired = false;
+			} else rapier.identity.saveAsRequired = true;
+			if (wasDirty !== _rapierIsDirty()) _notifyDirtyState();
+			updateFilenameDisplay();
+			if (kindMatches && rapier.document.docKind === 'code') { renderDocumentKind(); _refreshCodeHighlight(); }
+		}
+		if (kindMatches && ownsName) applyBinding();
+		return {detach: !kindMatches || !ownsName};
+	}, {quiet: true});
+	if (!applied.settled || !applied.value || !owns()) return false;
+	if (applied.value.detach) await window.RapierPlatform?.files?.detach?.(intent.documentAuthority);
+	if (!owns()) return false;
+	return await _markSavedGeneration(generation, true, (resume.bom === true ? '\uFEFF' : '') + source,
+		revision, destinationName || resume.saveName, {settled: true,
+			expectedEpoch: requested.documentEpoch, expectedAuthority: intent.documentAuthority, expectedLoadToken: requested.loadToken,
+			clearVirtualDocumentKind: resume.clearVirtualDocumentKind === true});
+}
+function _rapierReceiveRecoveredNativeSave(event) {
+	if (typeof event.detail?.waitUntil !== 'function') return;
+	event.detail.waitUntil(_rapierApplyRecoveredNativeSave(event.detail).catch(error => {
+		console.warn('[rapier] retained save could not yet be applied to this document', error); return false;
+	}));
 }
 
 function rapierSave(options = {}) {
@@ -23150,7 +23325,6 @@ async function _rapierBuildDocxHtml(context) {
 			'A picture exceeds the DOCX converter’s 10 MiB image limit. HTML and PDF export retain it.'), {code: 'DOCX_IMAGE_SIZE_LIMIT'});
 	}
 	stats.embeddedImageBytes = imageBytes;
-	portableRoot.querySelectorAll('details').forEach(details => { details.open = true; });
 	const blocks = work ? await globalThis.RapierDocxImport.docxBlocksFromDomAsync(portableRoot, {canonical: context.canonical, work, willTokens, ...(context.wordLayout ? {pointSize: globalThis.RapierMarkdownSpec.wordDocumentSettings(globalThis.RapierMarkdownSpec.readDocumentSettings(context.canonical)).fontsize.unit * 12} : {})})
 		: globalThis.RapierDocxImport.docxBlocksFromDom(portableRoot, {canonical: context.canonical, willTokens, ...(context.wordLayout ? {pointSize: globalThis.RapierMarkdownSpec.wordDocumentSettings(globalThis.RapierMarkdownSpec.readDocumentSettings(context.canonical)).fontsize.unit * 12} : {})});
 	stats.docxUnresolvedLinks = blocks.unresolvedLinks;
@@ -23676,7 +23850,7 @@ async function rapierNewDocument() {
 		rapier.autosave.dirty.clear();
 		_rapierClearRichSurface();
 
-		_bumpDocGeneration();
+		_bumpDocGeneration({opensClean: true});
 		_rapierResetReviewEvidence('', rapier.document.filename);
 		_notifyHistoryState();
 		renderDocumentKind();
@@ -23758,53 +23932,6 @@ async function rapierOpenWelcomeDocument() {
 
 	if (_rapierIsBuiltInWelcomeDocument()) await _rapierMarkWelcomeDocumentSaved(true);
 	return true;
-}
-
-function _emptyDocTapHandler(e) {
-	if (rapier.document.blocks.length !== 0) return;
-	if (rapier.view.mode === 'source') return;
-	if (e.target && e.target.closest && e.target.closest(
-		'.format-toolbar, .heading-picker, .highlight-picker, .hr-style-picker, .table-toolbar, .empty-doc-btn, .linenum-label, .linenum-popup'
-	)) return;
-	e.preventDefault();
-	try { rapierInsertBlock('paragraph', { immediateFocus: true }); } catch (_) {}
-	const p = document.getElementById('empty-doc-prompt');
-	if (p) p.classList.remove('visible');
-}
-
-function _syncEmptyDocPrompt() {
-	const container = document.getElementById('editor-blocks');
-	if (!container) return;
-	_rapierSyncStartersButton();
-	let prompt = document.getElementById('empty-doc-prompt');
-	if (rapier.document.blocks.length === 0 && rapier.view.mode !== 'source') {
-		if (!prompt) {
-			prompt = document.createElement('div');
-			prompt.id = 'empty-doc-prompt';
-			prompt.className = 'empty-doc-prompt';
-			prompt.innerHTML = `
-				<button type="button" class="empty-doc-btn" aria-label="new block">
-					<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-				</button>
-				<span class="empty-doc-label">tap to begin</span>
-			`;
-			const button = prompt.querySelector('.empty-doc-btn');
-			if (button) button.addEventListener('click', function (event) {
-				event.preventDefault();
-				event.stopPropagation();
-				rapierInsertBlock('paragraph', { immediateFocus: true });
-			});
-			container.appendChild(prompt);
-		}
-		container.removeEventListener('click', _emptyDocTapHandler);
-		container.addEventListener('click', _emptyDocTapHandler);
-
-		prompt.classList.add('visible');
-	} else {
-
-		if (prompt) prompt.remove();
-		container.removeEventListener('click', _emptyDocTapHandler);
-	}
 }
 
 /* RAPIER_VISIBLE_SOURCE_MODULE */
@@ -23927,7 +24054,6 @@ function openRapierDB() {
 		req.onupgradeneeded = () => {
 			const db = req.result;
 			db.createObjectStore('meta', { keyPath: 'docId' });
-			db.createObjectStore('undo-state', { keyPath: 'docId' });
 			db.createObjectStore('checkpoints', { keyPath: 'slot' });
 		};
 		req.onsuccess = () => {
@@ -24386,14 +24512,14 @@ function _rapierCreatePersistenceSnapshot(options = null) {
 		saveAsRequired: rapier.identity.saveAsRequired === true,
 		documentEpoch: Number(rapier.identity.epoch || 0),
 		generation: Number(rapier.revision.generation || 0),
-		savedGeneration: typeof rapier.revision.savedGeneration === 'number'
-			? rapier.revision.savedGeneration : null,
+		..._rapierDirtyMarkOwner.capture(),
 		nextBlockId: Number(rapier.identity.nextBlockId || 1),
 		documentRevision: Number(rapier.revision.settled || 0),
 		historyComplete,
 		docKind: String(rapier.document.docKind || 'markdown'),
 		canonicalText: source, history,
 		sourceRootId: rapier.document.source.rootId,
+		sourceContentId: store.contentId,
 		segmentIdentity: _rapierCurrentSegmentIdentity(),
 	};
 	_rapierPersistenceRuntime.captures.set(snapshot, {key: store.cacheKey, text: source, history,
@@ -24459,6 +24585,7 @@ function _rapierRecoveryStateManifest(value) {
 		generation: Number(state.generation || 0),
 		documentRevision: Number(state.documentRevision || 0),
 		savedGeneration: typeof state.savedGeneration === 'number' ? state.savedGeneration : null,
+		savedBaseline: state.savedBaseline,
 		nextBlockId: Number(state.nextBlockId || 1),
 		historyComplete: state.historyComplete === true,
 		segmentIdentity: _rapierSegmentIdentity(state.segmentIdentity),
@@ -24473,6 +24600,7 @@ function _rapierRecoveryStateIntegrityMatches(value) {
 	return !!value && Number.isSafeInteger(value.documentRevision) && value.documentRevision >= 0
 		&& Number.isSafeInteger(value.nextBlockId) && value.nextBlockId >= 1
 		&& (value.savedGeneration === null || Number.isSafeInteger(value.savedGeneration) && value.savedGeneration >= -1)
+		&& _rapierSavedBaselineValid(value.savedBaseline)
 		&& _rapierIntegrityMatches(value.stateIntegrity, _rapierRecoveryStateManifest(value))
 		&& (value.bom === undefined && value.bomIntegrity === undefined || typeof value.bom === 'boolean'
 			&& _rapierIntegrityMatches(value.bomIntegrity, _rapierRecoveryBomManifest(value)));
@@ -24505,6 +24633,7 @@ function _rapierDownloadDraftRecord(persistence, generation, documentRevision) {
 		generation: Number(generation || 0),
 		documentRevision: Number(documentRevision || 0),
 		savedGeneration: typeof persistence.savedGeneration === 'number' ? persistence.savedGeneration : null,
+		savedBaseline: _rapierSavedBaseline(persistence.savedBaseline),
 		nextBlockId: persistence.nextBlockId,
 		historyComplete: persistence.historyComplete === true,
 		segmentIdentity: persistence.segmentIdentity,
@@ -24513,7 +24642,7 @@ function _rapierDownloadDraftRecord(persistence, generation, documentRevision) {
 		integrity: _rapierIntegrityOf(persistence.canonicalText),
 		authorityIntegrity: persistence.documentAuthority
 			? _rapierTextIntegrity(persistence.documentAuthority) : null,
-		integritySchema: 4,
+		integritySchema: 6,
 		updatedAt: Date.now(),
 	};
 	record.checkpointId = String(persistence.documentAuthority || 'document') + ':' +
@@ -24527,12 +24656,15 @@ async function _rapierPersistDownloadDraft(persistence, generation, documentRevi
 	if (window.RapierPlatform && window.RapierPlatform.recovery.ownsStore === true) return false;
 	if (_rapierEmbed.active || String(persistence.documentAuthority || '').startsWith('notes:')) return false;
 	const record = _rapierDownloadDraftRecord(persistence, generation, documentRevision);
-	if (!_rapierRecoveryLedger(record, undefined, RapierLedger)) return false;
+	const ledger = _rapierRecoveryLedger(record, undefined, RapierLedger);
+	if (!ledger) return false;
+	record.historyDigest = globalThis.RapierRecoveryWorker.recoveryHistoryDigest(RapierLedger.historyEnvelope(ledger));
+	const stored = globalThis.RapierRecoveryWorker.recoveryRecord(record, record.canonicalText, null, ledger);
 	try {
 		const db = await openRapierDB();
 		await _rapierEnqueuePersistence(() => new Promise((resolve, reject) => {
 			const tx = _rapierDbTransaction(db, ['checkpoints'], 'readwrite', 'strict');
-			tx.objectStore('checkpoints').put(record);
+			tx.objectStore('checkpoints').put(stored);
 			tx.oncomplete = resolve;
 			tx.onerror = tx.onabort = () => reject(tx.error || new Error('IndexedDB transaction failed'));
 		}));
@@ -24593,6 +24725,8 @@ function rapierFlushDirty(opts) {
 	const documentRevision = Number(opts.documentRevision ?? persistence.documentRevision ?? 0);
 	const savedGeneration = typeof persistence.savedGeneration === 'number'
 		? persistence.savedGeneration : null;
+	const savedBaseline = _rapierSavedBaseline(persistence.savedBaseline);
+	if (savedBaseline === undefined) return Promise.resolve(false);
 	const historyComplete = persistence.historyComplete === true;
 	const checkpointId = String(persistence.documentAuthority || 'document') + ':' +
 		documentRevision.toString(36) + ':' + String(persistence.sourceRootId || '');
@@ -24608,6 +24742,7 @@ function rapierFlushDirty(opts) {
 		generation,
 		documentRevision,
 		savedGeneration,
+		savedBaseline,
 		nextBlockId: persistence.nextBlockId,
 		historyComplete,
 		segmentIdentity: persistence.segmentIdentity,
@@ -24629,8 +24764,10 @@ function rapierFlushDirty(opts) {
 	const documentRecord = {
 		schemaVersion: 4,
 		checkpointId,
-		dirty: persistence.saveAsRequired === true || generation !== savedGeneration,
+		dirty: persistence.saveAsRequired === true || _rapierDirtyMarkOwner.differs(persistence.sourceRootId,
+			{filename: persistence.filename, docKind: persistence.docKind}, savedBaseline, persistence.sourceContentId),
 		savedGeneration,
+		savedBaseline,
 		generation,
 		documentRevision,
 		historyComplete,
@@ -24673,10 +24810,11 @@ function rapierFlushDirty(opts) {
 				generation: Number(seenBaseline.generation || 0),
 				documentRevision: Number(seenBaseline.revision || 0),
 				savedGeneration,
+				savedBaseline,
 				nextBlockId: persistence.nextBlockId,
 				historyComplete,
 				authorityIntegrity,
-				integritySchema: 4,
+				integritySchema: 6,
 				canonicalText: seenBaseline.text,
 				integrity: null,
 				updatedAt: Date.now(),
@@ -24716,7 +24854,7 @@ function rapierFlushDirty(opts) {
 			needLedger: !!(browserSnapshot || embedCheckpoint), undo: {...ledgerState, ledger: null},
 			seenText: seenRecord?.canonicalText ?? null,
 			snapshot: browserSnapshot ? {docId: RAPIER_DOC_ID, ...recoveryState, sourceRootId: persistence.sourceRootId,
-				checkpointId, integritySchema: 5, stateIntegrity, authorityIntegrity,
+				checkpointId, integritySchema: 6, stateIntegrity, authorityIntegrity,
 				charCount: persistence.canonicalText.length, seenCurrent, ts: Date.now()} : null,
 		}, {workerSource: owner.workerSource});
 		if (!sourceKey) owner.retireRecoveryRevision(token);
@@ -24758,7 +24896,7 @@ function rapierFlushDirty(opts) {
 				persistence.canonicalText, persistence.filename, generation, documentRevision,
 				historyComplete, savedGeneration, persistence.documentAuthority,
 				persistence.virtualDocumentKind, persistence.saveAsRequired, persistence.docKind,
-				persistence.nextBlockId, persistence.segmentIdentity, recoveryLedger, persistence.bom, snapshotSequence, prepared,
+				persistence.nextBlockId, persistence.segmentIdentity, recoveryLedger, persistence.bom, savedBaseline, snapshotSequence, prepared,
 			);
 			const platform = window.RapierPlatform;
 			if (platform && platform.recovery.ownsStore === true) {
@@ -24774,7 +24912,7 @@ function rapierFlushDirty(opts) {
 				}
 			} else {
 				const db = await openRapierDB();
-				const stores = ['meta', 'undo-state'];
+				const stores = ['meta'];
 				if (opts.snapshot || seenRecord) stores.push('checkpoints');
 				const rows = [{ store: 'meta', text: true, value: {
 					docId: RAPIER_DOC_ID,
@@ -24782,14 +24920,16 @@ function rapierFlushDirty(opts) {
 					checkpointId,
 					sourceRootId: persistence.sourceRootId,
 					canonicalText: null,
+					undo: ledgerState,
+					historyDigest: prepared.historyDigest,
 					canonicalIntegrity: documentRecord.integrity,
 					bomIntegrity,
 					authorityIntegrity,
 					stateIntegrity,
-					integritySchema: 4,
+					integritySchema: 6,
 					seenCurrent,
 					updatedAt: Date.now(),
-				} }, { store: 'undo-state', value: { docId: RAPIER_DOC_ID, ...ledgerState } }];
+				} }];
 				if (opts.snapshot) {
 					rows.push({ store: 'checkpoints', text: true, value: {
 						slot: RAPIER_DOC_ID + ':' + (generation % 2 ? 'b' : 'a'),
@@ -24798,11 +24938,12 @@ function rapierFlushDirty(opts) {
 						checkpointId,
 						sourceRootId: persistence.sourceRootId,
 						canonicalText: null,
+						historyDigest: prepared.historyDigest,
 						integrity: documentRecord.integrity,
 						bomIntegrity,
 						authorityIntegrity,
 						stateIntegrity,
-						integritySchema: 4,
+						integritySchema: 6,
 						updatedAt: Date.now(),
 					} });
 				}
@@ -24822,18 +24963,20 @@ function rapierFlushDirty(opts) {
 					_rapierPersistenceRuntime.recoveryBase = false;
 					try {
 						const raw = localStorage.getItem(RAPIER_SNAPSHOT_KEY);
-						const snapshot = raw && _rapierParseLocalSnapshot(raw);
+							const snapshot = raw && _rapierParseLocalSnapshot(raw, false);
 						if (snapshot && _rapierLocalSnapshotOwnsAuthority(raw, persistence.documentAuthority) &&
 							snapshot.generation === generation && snapshot.documentRevision === documentRevision &&
-							snapshot.ledger.sha256 === recoveryLedger?.sha256) {
+								snapshot.historyDigest === prepared.historyDigest) {
 							localStorage.removeItem(RAPIER_SNAPSHOT_KEY);
+								localStorage.removeItem(snapshot.bodyKey);
 						}
 					} catch (_) {}
 					_rapierRequeuePersistenceCapture(capture);
 					_rapierWarnNewerRecovery(true);
 					return false;
 				}
-				_rapierPersistenceRuntime.recoveryBase = _rapierRecoveryStamp({ generation, canonicalIntegrity: documentRecord.integrity, bom: persistence.bom === true, bomIntegrity });
+				_rapierPersistenceRuntime.recoveryBase = _rapierRecoveryStamp({ generation, canonicalIntegrity: documentRecord.integrity,
+					bom: persistence.bom === true, bomIntegrity, historyDigest: prepared.historyDigest });
 			}
 			if (seenRecord) _rapierPersistenceRuntime.seenWritten = seenRecord.canonicalText;
 			if (opts.durable || opts.snapshot || (window.RapierPlatform && window.RapierPlatform.recovery.ownsStore === true)) {
@@ -24869,6 +25012,7 @@ function _writeLocalSnapshot(
 	segmentIdentity,
 	ledger,
 	bom = false,
+	savedBaseline,
 	snapshotSequence = null,
 	prepared = null,
 ) {
@@ -24877,7 +25021,7 @@ function _writeLocalSnapshot(
 	if (_rapierPersistenceRuntime.recoveryHeld || rapier.access.leaseReadOnly || _rapierPersistenceRuntime.recoveryBase === false ||
 			_rapierEmbed.active || _rapierEmbed.refused || (window.RapierPlatform && window.RapierPlatform.recovery.ownsStore === true)) return false;
 	try {
-		if (typeof markdown !== 'string' || String(documentAuthority || '').startsWith('notes:')) return false;
+		if (typeof markdown !== 'string' || String(documentAuthority || '').startsWith('notes:') || !_rapierSavedBaselineValid(savedBaseline)) return false;
 		if (snapshotSequence === null) snapshotSequence = ++_rapierPersistenceRuntime.snapshotSequence;
 		if (snapshotSequence < _rapierPersistenceRuntime.snapshotWritten) return false;
 		if (!_rapierLocalSnapshotFits(markdown)) return false;
@@ -24893,6 +25037,7 @@ function _writeLocalSnapshot(
 			generation: Number(generation || 0),
 			documentRevision: Number(documentRevision || 0),
 			savedGeneration: typeof savedGeneration === 'number' ? savedGeneration : null,
+			savedBaseline: _rapierSavedBaseline(savedBaseline),
 			nextBlockId: Number(nextBlockId || 1),
 			historyComplete: historyComplete === true,
 			segmentIdentity: _rapierSegmentIdentity(segmentIdentity) || [],
@@ -24905,18 +25050,20 @@ function _writeLocalSnapshot(
 		const stateIntegrity = _rapierRecoveryStateIntegrity(recoveryState);
 		const authorityIntegrity = documentAuthority ? _rapierTextIntegrity(String(documentAuthority)) : null;
 		const seenCurrent = !_rapierSeenAwaiting();
-		let encoded = globalThis.RapierRecoveryWorker.preparedSnapshot(prepared, markdown, ledger,
-			{...recoveryState, sourceRootId, checkpointId, integritySchema: 5, stateIntegrity, authorityIntegrity, charCount: markdown.length, seenCurrent}, RAPIER_DOC_ID);
+		const owner = globalThis.RapierRecoveryWorker;
+		let encoded = owner.preparedSnapshot(prepared, markdown, ledger,
+			{...recoveryState, sourceRootId, checkpointId, integritySchema: 6, stateIntegrity, authorityIntegrity, charCount: markdown.length, seenCurrent}, RAPIER_DOC_ID);
+		let header = encoded === null ? null : prepared.snapshotHeader;
 		if (encoded === null) {
 			const metadata = {filename: recoveryState.filename, docKind: recoveryState.docKind};
-			if (!globalThis.RapierRecoveryWorker.preparedLedger(ledger, markdown, metadata)) RapierLedger.readLedger(ledger, markdown, metadata);
+			if (!owner.preparedLedger(ledger, markdown, metadata)) RapierLedger.readLedger(ledger, markdown, metadata);
 			const integrity = _rapierIntegrityOf(markdown);
-			encoded = JSON.stringify({
+			header = {
 				docId: RAPIER_DOC_ID,
-				markdown,
 				...recoveryState,
-				ledger, sourceRootId, checkpointId,
-				integritySchema: 5,
+				sourceRootId, checkpointId,
+				integritySchema: 6,
+				historyDigest: owner.recoveryHistoryDigest(RapierLedger.historyEnvelope(ledger)),
 				stateIntegrity,
 				authorityIntegrity,
 				charCount: markdown.length,
@@ -24924,36 +25071,60 @@ function _writeLocalSnapshot(
 				bomIntegrity: _rapierTextIntegrity(_rapierRecoveryBomManifest({...recoveryState, integrity})),
 				seenCurrent,
 				ts: Date.now(),
-			});
+			};
+			encoded = Array.from(owner.recoveryBodyParts(markdown, null, ledger)).join('');
 		}
+		const previous = localStorage.getItem(snapshotKey);
+		const bodyKey = snapshotKey + ':body:' + crypto.randomUUID();
+		header = {...header, bodyKey};
+		header.headerIntegrity = owner.recoveryHeaderIntegrity(header);
+		const written = JSON.stringify(header);
 		try {
-			localStorage.setItem(snapshotKey, encoded);
+			localStorage.setItem(bodyKey, encoded);
+			localStorage.setItem(snapshotKey, written);
 			_rapierPersistenceRuntime.snapshotWritten = snapshotSequence;
+			try {
+				const old = previous && JSON.parse(previous);
+				if (old?.bodyKey?.startsWith(snapshotKey + ':body:') && old.bodyKey !== bodyKey && localStorage.getItem(snapshotKey) === written)
+					localStorage.removeItem(old.bodyKey);
+			} catch (_) {}
 			return true;
 		} catch (_) {
+			try { localStorage.removeItem(bodyKey); } catch (_) {}
 			return false;
 		}
 	} catch (_) { return false;   }
 }
 
-function _rapierParseLocalSnapshot(raw) {
+function _rapierParseLocalSnapshot(raw, loadBody = true) {
 	try {
 		if (!raw) return null;
 		const parsed = JSON.parse(raw);
 		if (!parsed || parsed.docId !== RAPIER_DOC_ID) return null;
-		if (typeof parsed.markdown !== 'string' ||
+		const owner = globalThis.RapierRecoveryWorker;
+		if (!owner.recoveryHeaderMatches(parsed) || typeof parsed.bodyKey !== 'string' ||
+				!parsed.bodyKey.startsWith(RAPIER_SNAPSHOT_KEY + ':body:') ||
 				!Number.isSafeInteger(parsed.generation) || parsed.generation < 0 ||
 				(parsed.segmentIdentity != null &&
 					!_rapierSegmentIdentity(parsed.segmentIdentity, Number(parsed.nextBlockId || 1)))) return null;
-		if (parsed.charCount !== parsed.markdown.length) return null;
-		if (!_rapierIntegrityMatches(parsed.integrity, parsed.markdown)) return null;
-		if (parsed.integritySchema !== 5 || !_rapierRecoveryLedger(parsed, undefined, RapierLedger)) return null;
 		const stateVerified = _rapierRecoveryStateIntegrityMatches(parsed);
 		if (!stateVerified) return null;
 		const filenameAdmissible = _rapierDocumentNameIsAdmissible(
 			String(parsed.filename || 'untitled.md'),
 		);
 		parsed.metadataVerified = stateVerified && filenameAdmissible;
+		if (!filenameAdmissible) return null;
+		if (!loadBody) return parsed;
+		if (loadBody) {
+			const body = owner.parseRecoveryBody(localStorage.getItem(parsed.bodyKey));
+			if (parsed.charCount !== body.text.length || !_rapierIntegrityMatches(parsed.integrity, body.text)) return null;
+			parsed.markdown = body.text;
+			parsed.ledger = body.ledger ? RapierLedger.ledgerWithStart(body.ledger, body.text) : null;
+			parsed.undo = body.undo;
+			const ledger = _rapierRecoveryLedger(parsed, body.undo, RapierLedger);
+			if (!ledger || owner.recoveryHistoryDigest(RapierLedger.historyEnvelope(ledger)) !== parsed.historyDigest) return null;
+			parsed.ledger = ledger;
+		}
 		if (parsed.documentAuthority && !_rapierIntegrityMatches(
 			parsed.authorityIntegrity,
 			String(parsed.documentAuthority),
@@ -24967,6 +25138,7 @@ function _rapierParseLocalSnapshot(raw) {
 			parsed.documentAuthority = '';
 			parsed.virtualDocumentKind = '';
 			parsed.savedGeneration = null;
+			parsed.savedBaseline = null;
 			parsed.saveAsRequired = true;
 		}
 		return parsed;
@@ -24976,7 +25148,7 @@ function _rapierParseLocalSnapshot(raw) {
 function _rapierLocalSnapshotOwnsAuthority(raw, documentAuthority) {
 	const authority = String(documentAuthority || '');
 	if (!authority) return false;
-	const parsed = _rapierParseLocalSnapshot(raw);
+	const parsed = _rapierParseLocalSnapshot(raw, false);
 	return !!parsed && _rapierTrustedDocumentAuthority(parsed) === authority;
 }
 
@@ -24988,10 +25160,10 @@ function _readLocalSnapshot() {
 	if (window.RapierPlatform && window.RapierPlatform.recovery.ownsStore === true) return null;
 	const raw = localStorage.getItem(RAPIER_SNAPSHOT_KEY);
 	if (raw == null) return null;
-	const snapshot = _rapierParseLocalSnapshot(raw);
+	const snapshot = _rapierParseLocalSnapshot(raw, false);
 	if (!snapshot) throw new Error('Saved safety copy could not be admitted');
 	if (_rapierSnapshotIsANote(snapshot)) {
-		try { localStorage.removeItem(RAPIER_SNAPSHOT_KEY); } catch (_) {}
+		try { localStorage.removeItem(RAPIER_SNAPSHOT_KEY); localStorage.removeItem(snapshot.bodyKey); } catch (_) {}
 		return null;
 	}
 	return snapshot;
@@ -25013,7 +25185,8 @@ function _fmtRelativeTs(ms) {
 	return Math.round(delta / 86400000) + ' d ago';
 }
 
-async function _restoreCanonicalDocument(text, filename, generation, documentRevision, nextBlockId, savedGeneration, documentAuthority, virtualDocumentKind, saveAsRequired, segmentIdentity, docKind, carriedLedger = null, bom = false) {
+async function _restoreCanonicalDocument(text, filename, generation, documentRevision, nextBlockId, savedGeneration, documentAuthority, virtualDocumentKind, saveAsRequired, segmentIdentity, docKind, carriedLedger = null, bom = false, savedBaseline) {
+	if (!_rapierSavedBaselineValid(savedBaseline)) return false;
 	const expectedMutationStamp = _rapierMutationStamp();
 	const opening = await _rapierProgressAhead(String(text ?? '').length, {label: 'Opening document'});
 	let loaded;
@@ -25030,6 +25203,7 @@ async function _restoreCanonicalDocument(text, filename, generation, documentRev
 			documentRevision,
 			nextBlockId,
 			savedGeneration: typeof savedGeneration === 'number' ? savedGeneration : -1,
+			savedBaseline,
 			segmentIdentity,
 		},
 		returnReceipt: true,
@@ -25050,17 +25224,14 @@ function _rapierReadDbState(db, kind = 'all') {
 		let settled = false;
 		const stores = ['checkpoints'];
 		if (source || auxiliary) stores.push('meta');
-		if (auxiliary) stores.push('undo-state');
 		const tx = db.transaction(stores, 'readonly');
 		if (source) {
 			const request = tx.objectStore('meta').get(RAPIER_DOC_ID);
 			request.onsuccess = () => { state.meta = request.result || null; };
 		}
 		if (auxiliary) {
-			const undo = tx.objectStore('undo-state').get(RAPIER_DOC_ID);
 			const agent = tx.objectStore('meta').get(RAPIER_AGENT_SLOT);
 			const seen = tx.objectStore('checkpoints').get(RAPIER_SEEN_SLOT);
-			undo.onsuccess = () => { state.undo = undo.result || null; };
 			agent.onsuccess = () => { state.agent = agent.result?.state || null; };
 			seen.onsuccess = () => { state.seen = seen.result || null; };
 		}
@@ -25094,7 +25265,7 @@ function _rapierReadDbState(db, kind = 'all') {
 
 function _rapierValidateIdbDocument(meta) {
 	const canonical = _canonicalFromIdb(meta);
-	const shapeOk = !!meta && meta.integritySchema === 4 &&
+	const shapeOk = !!meta && meta.integritySchema === 6 &&
 		typeof canonical === 'string' &&
 		Number.isSafeInteger(meta.generation) && meta.generation >= 0 &&
 		(meta.segmentIdentity == null ||
@@ -25120,7 +25291,7 @@ const _RAPIER_SEEN_LOST_LINE = 'changes since your last look could not be recove
 
 function _rapierInstallRestoredSeenBaseline(record, candidate) {
 	const authority = String((candidate && candidate.documentAuthority) || '');
-	const proven = !!record && typeof record === 'object' && record.integritySchema === 4 && !!authority
+	const proven = !!record && typeof record === 'object' && record.integritySchema === 6 && !!authority
 		&& typeof record.canonicalText === 'string'
 		&& String(record.documentAuthority || '') === authority
 		&& _rapierTrustedDocumentAuthority(record) === authority
@@ -25158,7 +25329,7 @@ function _rapierCheckpointCandidate(record) {
 			|| typeof record.canonicalText !== 'string'
 			|| !Number.isSafeInteger(record.generation) || record.generation < 0
 			|| !_rapierIntegrityMatches(record.integrity, record.canonicalText)) return null;
-	if (record.integritySchema !== 4) return null;
+	if (record.integritySchema !== 6) return null;
 	const stateVerified = _rapierRecoveryStateIntegrityMatches(record);
 	if (!stateVerified) return null;
 	const originalFilename = String(record.filename || 'untitled.md');
@@ -25177,6 +25348,7 @@ function _rapierCheckpointCandidate(record) {
 			? String(record.docKind || _classifyDocKind(originalFilename)) : 'text',
 		savedGeneration: filenameAdmissible && typeof record.savedGeneration === 'number'
 			? record.savedGeneration : null,
+		savedBaseline: filenameAdmissible ? _rapierSavedBaseline(record.savedBaseline) : null,
 		documentAuthority: filenameAdmissible ? _rapierTrustedDocumentAuthority(record) : '',
 		virtualDocumentKind: filenameAdmissible
 			? _rapierNormalizeVirtualDocumentKind(record.virtualDocumentKind) : '',
@@ -25187,6 +25359,7 @@ function _rapierCheckpointCandidate(record) {
 		checkpointId: String(record.checkpointId || ''),
 		sourceRootId: String(record.sourceRootId || ''),
 		undo: record.undo, carriedLedger: record.ledger,
+		historyDigest: record.historyDigest, seenCurrent: record.seenCurrent === true,
 	};
 }
 
@@ -25207,6 +25380,7 @@ function _rapierAdmitRecoveryRecords(dbState, snapshot) {
 			docKind: String(dbState.meta.docKind || _classifyDocKind(dbState.meta.filename)),
 			savedGeneration: typeof dbState.meta.savedGeneration === 'number'
 				? dbState.meta.savedGeneration : null,
+			savedBaseline: _rapierSavedBaseline(dbState.meta.savedBaseline),
 			documentAuthority: _rapierTrustedDocumentAuthority(dbState.meta),
 			virtualDocumentKind: _rapierNormalizeVirtualDocumentKind(dbState.meta.virtualDocumentKind),
 			saveAsRequired: dbState.meta.saveAsRequired === true,
@@ -25216,6 +25390,7 @@ function _rapierAdmitRecoveryRecords(dbState, snapshot) {
 			checkpointId: String(dbState.meta.checkpointId || ''),
 			sourceRootId: String(dbState.meta.sourceRootId || ''),
 			seenCurrent: dbState.meta.seenCurrent === true,
+			historyDigest: dbState.meta.historyDigest,
 		});
 	}
 	if (snapshot && (!idb.valid || !_rapierTrustedDocumentAuthority(dbState.meta) ||
@@ -25233,6 +25408,7 @@ function _rapierAdmitRecoveryRecords(dbState, snapshot) {
 			docKind: String(snapshot.docKind || _classifyDocKind(snapshot.filename)),
 			savedGeneration: typeof snapshot.savedGeneration === 'number'
 				? snapshot.savedGeneration : null,
+			savedBaseline: _rapierSavedBaseline(snapshot.savedBaseline),
 			documentAuthority: _rapierTrustedDocumentAuthority(snapshot),
 			virtualDocumentKind: _rapierNormalizeVirtualDocumentKind(snapshot.virtualDocumentKind),
 			saveAsRequired: snapshot.saveAsRequired === true,
@@ -25243,10 +25419,11 @@ function _rapierAdmitRecoveryRecords(dbState, snapshot) {
 			sourceRootId: String(snapshot.sourceRootId || ''),
 			carriedLedger: snapshot.ledger,
 			seenCurrent: snapshot.seenCurrent === true,
+			historyDigest: snapshot.historyDigest,
 		});
 	}
 
-	const currentMeta = dbState.meta?.integritySchema === 4 ? dbState.meta : null;
+	const currentMeta = dbState.meta?.integritySchema === 6 ? dbState.meta : null;
 	const primaryAuthority = _rapierTrustedDocumentAuthority(currentMeta) ||
 		(snapshot ? _rapierTrustedDocumentAuthority(snapshot) : '');
 	(dbState.checkpoints || []).forEach(record => {
@@ -25270,6 +25447,7 @@ function _rapierAdmitRecoveryRecords(dbState, snapshot) {
 			nextBlockId: Number(dbState.meta.nextBlockId || 1),
 			docKind: 'text',
 			savedGeneration: null,
+			savedBaseline: null,
 
 			documentAuthority: '',
 			virtualDocumentKind: '',
@@ -25279,12 +25457,87 @@ function _rapierAdmitRecoveryRecords(dbState, snapshot) {
 			metadataVerified: false,
 		});
 	}
-	for (const candidate of candidates) candidate.carriedLedger = _rapierRecoveryLedger(candidate, candidate.undo || dbState.undo, RapierLedger);
+	for (const candidate of candidates) {
+		candidate.carriedLedger = _rapierRecoveryLedger(candidate, candidate.undo || dbState.undo, RapierLedger);
+		candidate.sourceContentId = globalThis.RapierSourceStore.contentIdOf(candidate.text);
+		if (candidate.carriedLedger) candidate.historyDigest = globalThis.RapierRecoveryWorker.recoveryHistoryDigest(RapierLedger.historyEnvelope(candidate.carriedLedger));
+	}
 	const idbEvidence = !!currentMeta;
 	return { candidates, idb, idbEvidence };
 }
 
 /* RAPIER_RECOVERY_POLICY_MODULE */
+
+function _rapierRecoveryHeaderCandidate(record, kind) {
+	if (!record || record.docId !== RAPIER_DOC_ID || _rapierIsHeldSlot(record.slot) ||
+			!globalThis.RapierRecoveryWorker.recoveryHeaderMatches(record) ||
+			!Number.isSafeInteger(record.generation) || record.generation < 0 ||
+			!_rapierRecoveryStateIntegrityMatches(record) ||
+			!_rapierDocumentNameIsAdmissible(String(record.filename || 'untitled.md')) ||
+			!(record.segmentIdentity == null || _rapierSegmentIdentity(record.segmentIdentity, record.nextBlockId)) ||
+			!/^[a-f0-9]{64}$/.test(record.historyDigest || '')) return null;
+	const integrity = record.canonicalIntegrity || record.integrity;
+	if (!integrity || !Number.isSafeInteger(integrity.chars) || integrity.chars < 0 ||
+			!['fnv', 'adler'].every(key => typeof integrity[key] === 'string' && /^[a-z0-9]+$/.test(integrity[key]))) return null;
+	return {kind, record, contentIntegrity: integrity, historyDigest: record.historyDigest,
+		filename: record.filename, bom: record.bom === true,
+		documentAuthority: _rapierTrustedDocumentAuthority(record),
+		generation: record.generation, documentRevision: record.documentRevision,
+		savedGeneration: record.savedGeneration, savedBaseline: _rapierSavedBaseline(record.savedBaseline),
+		nextBlockId: record.nextBlockId,
+		segmentIdentity: record.segmentIdentity || [], docKind: record.docKind,
+		historyComplete: record.historyComplete === true,
+		virtualDocumentKind: _rapierNormalizeVirtualDocumentKind(record.virtualDocumentKind),
+		saveAsRequired: record.saveAsRequired === true, seenCurrent: record.seenCurrent === true,
+		checkpointId: record.checkpointId, sourceRootId: record.sourceRootId,
+		verified: true, metadataVerified: true, ts: Number(record.updatedAt || record.ts || 0)};
+}
+
+async function _rapierReadRecoveryCandidate(header) {
+	const owner = globalThis.RapierRecoveryWorker, record = header.record;
+	let body;
+	if (header.kind === 'local') {
+		if (!owner.recoveryHeaderMatches(record) || !record.bodyKey?.startsWith(RAPIER_SNAPSHOT_KEY + ':body:')) return null;
+		body = owner.parseRecoveryBody(localStorage.getItem(record.bodyKey));
+		if (record.charCount !== body.text.length || !_rapierIntegrityMatches(record.integrity, body.text)) return null;
+	} else body = await owner.readRecoveryBody(record);
+	const restored = {...record, canonicalText: body.text, undo: body.undo,
+		ledger: body.ledger ? RapierLedger.ledgerWithStart(body.ledger, body.text) : null};
+	if (header.kind === 'local') { restored.markdown = body.text; restored.metadataVerified = true; }
+	const admission = _rapierAdmitRecoveryRecords({meta: header.kind === 'idb' ? restored : null,
+		undo: body.undo, checkpoints: header.kind === 'checkpoint' ? [restored] : []}, header.kind === 'local' ? restored : null);
+	const candidate = admission.candidates.find(row => row.kind === header.kind);
+	if (!candidate?.carriedLedger || owner.recoveryHistoryDigest(RapierLedger.historyEnvelope(candidate.carriedLedger)) !== record.historyDigest)
+		return null;
+	return {...candidate, undo: body.undo};
+}
+
+async function _rapierParkRecoveryHeader(header) {
+	try {
+		const owner = globalThis.RapierRecoveryWorker;
+		if (!owner.recoveryHeaderMatches(header) || _rapierTrustedDocumentAuthority(header).startsWith('notes:')) return false;
+		let body = header.body;
+		if (!(body instanceof Blob)) {
+			if (!header.bodyKey?.startsWith(RAPIER_SNAPSHOT_KEY + ':body:')) return false;
+			const raw = localStorage.getItem(header.bodyKey);
+			if (raw == null) return false;
+			body = new Blob([raw], {type: 'application/json'});
+		}
+		const {bodyKey, canonicalIntegrity, ...stored} = header;
+		stored.slot = _rapierHeldSlot() + ':' + header.historyDigest + (header.bom === true ? ':bom' : '');
+		stored.integrity = canonicalIntegrity || header.integrity;
+		stored.setAside = true; stored.body = body;
+		stored.headerIntegrity = owner.recoveryHeaderIntegrity(stored);
+		const db = await openRapierDB();
+		await _rapierEnqueuePersistence(() => new Promise((resolve, reject) => {
+			const tx = _rapierDbTransaction(db, ['checkpoints'], 'readwrite', 'strict');
+			tx.objectStore('checkpoints').put(stored);
+			tx.oncomplete = resolve;
+			tx.onerror = tx.onabort = () => reject(tx.error || new Error('IndexedDB transaction failed'));
+		}));
+		return true;
+	} catch (error) { console.warn('[rapier] could not park a saved recovery body', error); return false; }
+}
 
 async function _rapierRetireForeignRecoveryBinding(candidate, restoreEpoch) {
 	const platform = window.RapierPlatform;
@@ -25311,15 +25564,26 @@ function _rapierIsHeldSlot(slot) {
 }
 
 function _rapierHeldSetAsideSlot(integrity, ledger = null) {
-	return _rapierHeldSlot() + ':' + (ledger ? ledger.sha256 : [integrity.chars, integrity.fnv, integrity.adler].map(String).join('.'));
+	return _rapierHeldSlot() + ':' + (ledger
+		? globalThis.RapierRecoveryWorker.recoveryHistoryDigest(RapierLedger.historyEnvelope(ledger))
+		: [integrity.chars, integrity.fnv, integrity.adler].map(String).join('.'));
 }
 
 async function _rapierHeldRead(row) {
 	try {
-		const text = row.canonicalText instanceof Blob
-			? new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(await row.canonicalText.arrayBuffer()) : row.canonicalText;
-		row.ledger = RapierLedger.ledgerWithStart(row.ledger, text);
-		row.canonicalText = text;
+		const body = await globalThis.RapierRecoveryWorker.readRecoveryBody(row);
+		if (!_rapierIntegrityMatches(row.integrity, body.text)) throw new Error('Saved recovery source could not be admitted');
+		row.canonicalText = body.text;
+		try {
+			row.ledger = body.ledger ? RapierLedger.ledgerWithStart(body.ledger, body.text) : null;
+			row.undo = body.undo;
+			row.ledger = _rapierRecoveryLedger(row, body.undo, RapierLedger);
+			if (!row.ledger || globalThis.RapierRecoveryWorker.recoveryHistoryDigest(RapierLedger.historyEnvelope(row.ledger)) !== row.historyDigest)
+				throw new Error('Saved recovery history could not be admitted');
+		} catch (error) {
+			row.ledger = null; row.undo = null;
+			console.warn('[rapier] a held document history could not be admitted', error);
+		}
 	} catch (error) {
 		console.warn('[rapier] a held document could not be read', error);
 		row.canonicalText = null;
@@ -25332,17 +25596,18 @@ async function _rapierParkHeldRecovery(candidate, options = {}) {
 	const text = String(candidate.text || '');
 	const integrity = _rapierIntegrityOf(text);
 	const bom = candidate.bom === true;
-	const record = {slot: _rapierHeldSetAsideSlot(integrity, ledger) + (bom ? ':bom' : '') + (options.picture ? ':' + crypto.randomUUID() : ''), integritySchema: 5,
+	const record = {slot: _rapierHeldSetAsideSlot(integrity, ledger) + (bom ? ':bom' : '') + (options.picture ? ':' + crypto.randomUUID() : ''), integritySchema: 6,
 		docId: RAPIER_DOC_ID, filename: ledger.head.metadata.filename, docKind: ledger.head.metadata.docKind,
 		documentAuthority: ledger.documentAuthority, documentRevision: ledger.head.revision,
 		sourceRootId: ledger.head.root, historyComplete: ledger.complete, ledger,
 		generation: Number(candidate.generation || 0), savedGeneration: candidate.savedGeneration ?? null,
+		savedBaseline: _rapierSavedBaseline(candidate.savedBaseline) ?? null,
 		nextBlockId: Number(candidate.nextBlockId || 1), segmentIdentity: candidate.segmentIdentity || [],
 		canonicalText: text, integrity, bom, updatedAt: Date.now(), ...(options.setAside === true ? {setAside: true} : {}),
 		...(options.picture === true ? {picture: true} : {})};
 	record.bomIntegrity = _rapierTextIntegrity(_rapierRecoveryBomManifest(record));
-	const {text: _start, ...start} = ledger.start;
-	const stored = {...record, ledger: {...ledger, start}, canonicalText: text.length > 65536 ? new Blob([text]) : text};
+	record.historyDigest = globalThis.RapierRecoveryWorker.recoveryHistoryDigest(RapierLedger.historyEnvelope(ledger));
+	const stored = globalThis.RapierRecoveryWorker.recoveryRecord(record, text, null, ledger);
 	try {
 		const db = await openRapierDB();
 		await _rapierEnqueuePersistence(() => new Promise((resolve, reject) => {
@@ -25377,7 +25642,7 @@ async function _rapierClearHeldRecovery(record, current = null) {
 			request.onsuccess = () => {
 				const held = request.result;
 				if (held && held.docId === record.docId && held.filename === record.filename &&
-						held.updatedAt === record.updatedAt && held.ledger?.sha256 === record.ledger?.sha256 &&
+						held.updatedAt === record.updatedAt && held.historyDigest === record.historyDigest &&
 						(held.bom === true) === (record.bom === true) &&
 						(record.bomIntegrity == null ? held.bomIntegrity == null : _rapierIntegrityMatches(held.bomIntegrity, record.bomIntegrity)) &&
 						_rapierIntegrityMatches(held.integrity, record.integrity) && (!current || current())) {
@@ -25400,7 +25665,7 @@ function _rapierOfferHeldRecovery(record, rest = []) {
 		showToast('The kept file metadata could not be verified. Its saved copy is unchanged.', 'error'); return;
 	}
 	const setAside = record.setAside === true;
-	const ledger = record.integritySchema === 5 ? _rapierRecoveryLedger(record, undefined, RapierLedger) : null;
+	const ledger = record.integritySchema === 6 ? _rapierRecoveryLedger(record, undefined, RapierLedger) : null;
 	const canRestore = !!ledger && typeof record.canonicalText === 'string' && record.docId === RAPIER_DOC_ID && _rapierIsHeldSlot(record.slot) &&
 		text.length <= RapierTextCodec.maxDocumentBytes && new Blob([text]).size <= RapierTextCodec.maxDocumentBytes &&
 		RapierTextCodec.isDocumentFragment(text) && _rapierIntegrityMatches(record.integrity, text);
@@ -25439,7 +25704,7 @@ function _rapierOfferHeldRecovery(record, rest = []) {
 							restore: true, saveAsRequired: true, ...(sourceOnly ? {sourceOnly: true} : {}),
 							carriedLedger: ledger, documentAuthority: ledger.documentAuthority, documentKind: ledger.head.metadata.docKind,
 							restoredRevisionState: {generation, documentRevision: ledger.head.revision,
-								nextBlockId: record.nextBlockId, segmentIdentity: record.segmentIdentity, savedGeneration: -1},
+								nextBlockId: record.nextBlockId, segmentIdentity: record.segmentIdentity, savedGeneration: -1, savedBaseline: null},
 							expectedMutationStamp: guard, returnReceipt: true,
 						});
 						const current = () => loaded && openEpoch === rapier.identity.userLoadEpoch && _rapierLoadReceiptIsCurrent(loaded);
@@ -25613,24 +25878,70 @@ async function _rapierReadBootRecovery(context, {manual = false} = {}) {
 			await _rapierHoldBootRecovery(null);
 			console.warn('[rapier] primary recovery storage unavailable; trying safety copy', error);
 		}
-		const primary = _rapierValidateIdbDocument(dbState.meta), primaryAuthority = _rapierTrustedDocumentAuthority(dbState.meta);
-		const primaryLedger = primary.valid ? _rapierRecoveryLedger(dbState.meta, dbState.undo, RapierLedger) : null;
-		if (primary.valid && !primaryLedger) {
-			readable = false; _rapierPersistenceRuntime.historyUnavailable = true;
-			await _rapierHoldBootRecovery(null);
-		}
-		if (snapshot && primary.valid && primaryAuthority) {
-			const foreign = _rapierTrustedDocumentAuthority(snapshot) !== primaryAuthority;
-			const divergent = !foreign && snapshot.generation === dbState.meta.generation && primaryLedger &&
-				snapshot.ledger.sha256 !== primaryLedger.sha256;
+		const primary = _rapierRecoveryHeaderCandidate(dbState.meta, 'idb');
+		const safety = _rapierRecoveryHeaderCandidate(snapshot, 'local');
+		const checkpointHeaders = dbState.checkpoints.map(row => _rapierRecoveryHeaderCandidate(row, 'checkpoint'));
+		const headerFailed = !!(dbState.meta && !primary) || dbState.checkpoints.some((row, index) =>
+			!_rapierIsHeldSlot(row.slot) && !checkpointHeaders[index]);
+		if (headerFailed) { readable = false; await _rapierHoldBootRecovery(null); }
+		const primaryAuthority = primary?.documentAuthority || '';
+		if (safety && primary && primaryAuthority) {
+			const foreign = safety.documentAuthority !== primaryAuthority;
+			const divergent = !foreign && safety.generation === primary.generation && safety.historyDigest !== primary.historyDigest;
 			if (foreign || divergent) {
-				const keptSafety = await _rapierParkHeldRecovery({...snapshot, text: snapshot.markdown, carriedLedger: snapshot.ledger}, {setAside: true});
-				const keptPrimary = !divergent || await _rapierParkHeldRecovery({...dbState.meta, text: primary.canonical,
-					carriedLedger: primaryLedger}, {setAside: true});
+				const keptSafety = await _rapierParkRecoveryHeader(snapshot);
+				const keptPrimary = !divergent || await _rapierParkRecoveryHeader(dbState.meta);
 				if (!keptSafety || !keptPrimary) { readable = false; await _rapierHoldBootRecovery(null); }
 			}
 		}
-		const selection = _rapierSelectRestoreCandidate(_rapierAdmitRecoveryRecords(dbState, snapshot));
+		const authority = primaryAuthority || safety?.documentAuthority || '';
+		const candidates = [primary, safety && (!primaryAuthority || safety.documentAuthority === primaryAuthority) ? safety : null,
+			...checkpointHeaders
+				.filter(row => row && (!authority || row.documentAuthority === authority))].filter(Boolean);
+		const idb = {valid: !!primary, verified: false, stateVerified: !!primary, canonical: null};
+		let selection = {candidate: null, integrityIssue: false, idb}, bodyFailed = false;
+		let foreignSafety = safety && primaryAuthority && safety.documentAuthority !== primaryAuthority ? safety : null;
+		while (candidates.length || foreignSafety) {
+			if (!candidates.length) { candidates.push(foreignSafety); foreignSafety = null; }
+			const chosen = _rapierSelectRestoreCandidate({candidates, idb, idbEvidence: dbState.meta?.integritySchema === 6});
+			const index = candidates.findIndex(row => row.record === chosen.candidate.record);
+			const header = candidates.splice(index, 1)[0];
+			let candidate = null;
+			try { candidate = await _rapierReadRecoveryCandidate(header); }
+			catch (error) { console.warn('[rapier] saved recovery body could not be admitted', error); }
+			if (!candidate) {
+				bodyFailed = true;
+				if (header.kind === 'idb') idb.valid = false;
+				continue;
+			}
+			const integrityIssue = chosen.integrityIssue || headerFailed || bodyFailed;
+			selection = {...chosen, integrityIssue, candidate: integrityIssue
+				? {...candidate, savedGeneration: null, saveAsRequired: true} : candidate};
+			dbState.undo = candidate.undo || null;
+			break;
+		}
+		if (bodyFailed) {
+			readable = false;
+			await _rapierHoldBootRecovery(null);
+		}
+		if (!selection.candidate && dbState.meta?.integritySchema === 6) {
+			try {
+				if (!(dbState.meta.body instanceof Blob)) throw new Error('Saved recovery body is unavailable');
+				const body = globalThis.RapierRecoveryWorker.parseRecoveryBody(await dbState.meta.body.text());
+				const salvage = _rapierAdmitRecoveryRecords({meta: {...dbState.meta, canonicalText: body.text}, checkpoints: []}, null);
+				const candidate = salvage.candidates[0];
+				if (candidate) selection = {candidate: {...candidate, kind: 'idb-salvage', filename: 'recovered.txt', docKind: 'text',
+					documentAuthority: '', virtualDocumentKind: '', savedGeneration: null, saveAsRequired: true,
+					historyComplete: false, carriedLedger: null}, integrityIssue: true, idb: {...idb, valid: false}};
+			} catch (_) {}
+			if (selection.candidate) { _rapierPersistenceRuntime.historyUnavailable = true; await _rapierHoldBootRecovery(null); }
+		}
+		if (selection.candidate && !selection.candidate.seenCurrent && dbState.seen) {
+			try {
+				const body = await globalThis.RapierRecoveryWorker.readRecoveryBody(dbState.seen);
+				dbState.seen = {...dbState.seen, canonicalText: body.text};
+			} catch (_) { dbState.seen = {unreadable: true}; }
+		} else dbState.seen = null;
 		if (!selection.candidate && (dbState.meta || snapshot ||
 				dbState.checkpoints.some(record => !_rapierIsHeldSlot(record.slot)))) {
 			readable = false;
@@ -25682,11 +25993,11 @@ async function rapierTryRestore(context) {
 			candidate.docKind,
 			candidate.carriedLedger,
 			candidate.bom,
+			candidate.savedBaseline,
 		);
 		if (restoreEpoch !== rapier.identity.userLoadEpoch) return 'superseded';
 		if (!restored) return await _rapierHoldBootRecovery(candidate);
 		sourceRestored = true;
-		_notifyDirtyState();
 		const loaded = {stamp: _rapierMutationStamp(), root: rapier.document.source.rootId};
 		if (restoreEpoch !== rapier.identity.userLoadEpoch) return 'superseded';
 		if (!_rapierMutationStampIsCurrent(loaded.stamp) || loaded.root !== rapier.document.source.rootId) return 'opened';
@@ -25694,6 +26005,7 @@ async function rapierTryRestore(context) {
 		if (candidate.sourceRootId) {
 			_rapierResetSource(_rapierSourceText(), candidate.sourceRootId);
 		}
+		_notifyDirtyState();
 
 		const undo = dbState.undo;
 		let undoIntegrityOk = false;
@@ -25998,6 +26310,7 @@ function _rapierDepartureFlush(event) {
 		Number(rapier.identity.epoch || 0),
 		Number(rapier.revision.generation || 0),
 		Number(rapier.revision.savedGeneration ?? -1),
+		JSON.stringify(rapier.revision.savedBaseline),
 		Number(rapier.revision.settled || 0),
 		rapier.identity.saveAsRequired === true ? 1 : 0,
 		String(rapier.document.filename || ''),
@@ -26027,6 +26340,7 @@ function _rapierDepartureFlush(event) {
 				state.segmentIdentity,
 				state.carriedLedger,
 				state.bom,
+				state.savedBaseline,
 			);
 		} catch (_) { state = null; }
 	}
@@ -27193,7 +27507,10 @@ async function _rapierPasteRasterImage(file, target = {}) {
         }
     }
     const fitLimit = 1600, prepared = new Map();
-    const keepHere = !_rapierEmbed.active && !_rapierNotesOwnTheDocument() && window.RapierPlatform?.recovery?.ownsStore !== true;
+    const nativeIntake = window.RapierPlatform?.environment?.native === true && Number.isSafeInteger(Number(target.nativeIntake?.nativeIntakeId)) &&
+        Number(target.nativeIntake?.nativeIntakeId) > 0 ? target.nativeIntake : null;
+    const keepHere = !nativeIntake && !_rapierEmbed.active && !_rapierNotesOwnTheDocument() && window.RapierPlatform?.recovery?.ownsStore !== true;
+    let nativeRetired = false;
     let keeping = null;
     const keepOriginal = () => {
         if (!keepHere) return Promise.resolve(null);
@@ -27212,15 +27529,19 @@ async function _rapierPasteRasterImage(file, target = {}) {
         return keeping;
     };
     const retireOriginal = async (discard = false) => {
-        const record = await keeping?.catch(() => null);
-        if (!record) return;
+        const record = nativeIntake ? null : await keeping?.catch(() => null);
+        if (nativeIntake ? nativeRetired : !record) return;
         const fresh = () => discard ? _rapierMutationStampIsCurrent(stamp) : _rapierMutationStampSharesDocument(stamp);
         if (!fresh()) return;
         if (!discard) {
             try { if (await rapierFlushDirty({snapshot: true, durable: true}) !== true) return; }
             catch (_) { return; }
         }
-        if (fresh()) await _rapierClearHeldRecovery(record, fresh);
+        if (!fresh()) return;
+        if (nativeIntake) {
+            _rapierMarkExternalIntakeAccepted(nativeIntake);
+            try { window.RapierPlatform?.files?.clearIntake?.(nativeIntake); nativeRetired = true; } catch (_) {}
+        } else await _rapierClearHeldRecovery(record, fresh);
     };
     let active = null, previewVersion = 0;
     const choiceKey = (profile, size) => (read.value.isJxl ? 'jxl' : profile) + ':' +
@@ -27589,7 +27910,7 @@ function _insertBlockAfter(afterId, raw, options) {
 	else container.appendChild(el);
 	rapierDirty(newBlock.id);
 	updateStats();
-	_syncEmptyDocPrompt();
+	_rapierSyncStartersButton();
 	_rapierWysiwygLedgerSync(rapier.document.blocks);
 	const referenceIndexChanged = rebuildReferenceIndex(rapier.document.blocks);
 	if (referenceIndexChanged) _rapierRefreshReferenceConsumers(new Set([newBlock.id]));
@@ -33372,7 +33693,7 @@ function _rapierEmbedDraftStorage() {
 function _rapierEmbedDraftManifest(value) {
 	const draft = value && typeof value === 'object' ? value : {};
 	return JSON.stringify([draft.integritySchema, draft.baseRevision, draft.content, draft.filename, draft.docKind,
-		draft.generation, draft.savedGeneration, draft.nextBlockId, draft.segmentIdentity, draft.timestamp, draft.ledger?.sha256]);
+		draft.generation, draft.savedGeneration, draft.savedBaseline, draft.nextBlockId, draft.segmentIdentity, draft.timestamp, draft.ledger?.sha256]);
 }
 function _rapierEmbedCaptureLedger(snapshot, records = null) {
 	return RapierLedger.exportLedger({text: snapshot.canonicalText,
@@ -33397,6 +33718,7 @@ function _rapierEmbedReadDraft(revision = _rapierEmbed.baseRevision) {
 				!_rapierDocumentNameIsAdmissible(value.filename) || !['markdown','text','code'].includes(value.docKind) ||
 				!Number.isSafeInteger(value.generation) || value.generation < 0 ||
 				!(value.savedGeneration === null || Number.isSafeInteger(value.savedGeneration) && value.savedGeneration >= -1) ||
+				!_rapierSavedBaselineValid(value.savedBaseline) ||
 				!Number.isSafeInteger(value.nextBlockId) || value.nextBlockId < 1 ||
 				!_rapierSegmentIdentity(value.segmentIdentity, value.nextBlockId) ||
 				!Number.isSafeInteger(value.timestamp) || value.timestamp <= 0 ||
@@ -33407,7 +33729,7 @@ function _rapierEmbedReadDraft(revision = _rapierEmbed.baseRevision) {
 	} catch (_) { throw _rapierEmbedDraftUnavailable(); }
 }
 function _rapierEmbedStoreDraft(snapshot, capturedKey = null, revision = _rapierEmbed.baseRevision, ledger = null, expectedRevision = revision) {
-	if (!snapshot || typeof snapshot.canonicalText !== 'string') return false;
+	if (!snapshot || typeof snapshot.canonicalText !== 'string' || !_rapierSavedBaselineValid(snapshot.savedBaseline)) return false;
 	const key = capturedKey || _rapierEmbedDraftKey(), storage = _rapierEmbedDraftStorage();
 	if (!storage || key !== _rapierEmbedDraftKey()) return false;
 	try {
@@ -33421,6 +33743,7 @@ function _rapierEmbedStoreDraft(snapshot, capturedKey = null, revision = _rapier
 		const record = {integritySchema: 2, baseRevision: revision, content: snapshot.canonicalText,
 			filename: snapshot.filename, docKind: snapshot.docKind, ledger,
 			generation: snapshot.generation, savedGeneration: snapshot.savedGeneration,
+			savedBaseline: _rapierSavedBaseline(snapshot.savedBaseline),
 			nextBlockId: snapshot.nextBlockId, segmentIdentity: snapshot.segmentIdentity, timestamp: Date.now()};
 		record.integrity = _rapierTextIntegrity(_rapierEmbedDraftManifest(record));
 		storage.setItem(key, JSON.stringify(record));
@@ -33659,12 +33982,15 @@ async function _rapierEmbedLoadRun(data, respond) {
 		}
 		const transitionGuard = admission.value.stamp;
 		let content = admittedContent;
-		let openedFilename = filename;
+		const admittedSource = _rapierCreateSourceStore(admittedContent);
+		const savedBaseline = {rootId: admittedSource.rootId, contentId: admittedSource.contentId,
+			metadata: {filename, docKind: _classifyDocKind(filename)}};
 		let recoveredDraft = false;
 		const draft = _rapierEmbedReadDraft(revision);
 		if (draft) {
 			content = draft.content;
-			recoveredDraft = draft.savedGeneration !== draft.generation || draft.content !== admittedContent || draft.filename !== filename;
+			recoveredDraft = _rapierDirtyMarkOwner.differs(draft.ledger.head.root,
+				{filename: draft.filename, docKind: draft.docKind}, savedBaseline, RapierSourceStore.contentIdOf(content));
 		}
 
 		const loaded = await rapierLoad(content, draft ? draft.filename : filename, {
@@ -33677,6 +34003,7 @@ async function _rapierEmbedLoadRun(data, respond) {
 				generation: draft ? draft.generation : 0,
 				documentRevision: draft ? draft.ledger.head.revision : 0,
 				savedGeneration: draft ? draft.savedGeneration : 0,
+				savedBaseline,
 				nextBlockId: draft ? draft.nextBlockId : 1,
 				segmentIdentity: draft ? draft.segmentIdentity : [],
 			},
@@ -33695,6 +34022,9 @@ async function _rapierEmbedLoadRun(data, respond) {
 		const marked = await _markSavedGeneration(draft ? draft.savedGeneration ?? -1 : 0, false, admittedContent, loaded.documentRevision, filename, {
 			expectedEpoch: loaded.epoch,
 			expectedAuthority: loaded.authority,
+			sourceRootId: savedBaseline.rootId,
+			sourceContentId: savedBaseline.contentId,
+			savedDocKind: savedBaseline.metadata.docKind,
 		});
 		if (operation !== _rapierEmbed.loadToken) return;
 		if (!marked || !_rapierLoadReceiptIsCurrent(loaded)) {
@@ -33791,7 +34121,8 @@ async function _rapierEmbedCompleteSave(data) {
 			const sameDocument = _rapierMutationStampSharesDocument(pending);
 			if (sameDocument) {
 				const wasDirty = _rapierIsDirty();
-				rapier.revision.savedGeneration = Number(pending.generation || 0);
+				_rapierDirtyMarkOwner.acknowledge(Number(pending.generation || 0), pending.sourceRootId,
+					{filename: pending.payload.filename, docKind: pending.payload.docKind}, pending.sourceContentId);
 				if (Number(rapier.revision.generation || 0) === Number(pending.generation || 0)) rapier.identity.saveAsRequired = false;
 
 				try {
@@ -34341,6 +34672,7 @@ async function rapierEmbedSave(options) {
 	const record = {
 		requestId: _rapierEmbedRequestId(),
 		generation: captured.generation,
+		sourceRootId: captured.sourceRootId, sourceContentId: captured.sourceContentId,
 		documentRevision: captured.documentRevision,
 		documentEpoch: captured.stamp.documentEpoch,
 		documentAuthority: captured.metadata.documentAuthority,
@@ -34588,8 +34920,8 @@ function _rapierStageFileLaunch(launchParams) {
 function _rapierCandidateIsDirty(candidate) {
 	if (!candidate) return false;
 	if (candidate.saveAsRequired === true) return true;
-	if (typeof candidate.savedGeneration !== 'number') return String(candidate.text || '').length > 0;
-	return candidate.generation !== candidate.savedGeneration;
+	return _rapierDirtyMarkOwner.differs(candidate.sourceRootId,
+		{filename: candidate.filename, docKind: candidate.docKind}, candidate.savedBaseline, candidate.sourceContentId);
 }
 async function _rapierBootOutgoingAtStake(context, incomingText) {
 	const recovery = await _rapierReadBootRecovery(context);
@@ -34665,6 +34997,7 @@ async function _rapierBootOpenPayload(context, payload, opts) {
 }
 
 function _rapierInitializeBootRuntime() {
+	window.addEventListener('rapier:platform-save-recovered', _rapierReceiveRecoveredNativeSave);
 	const immediateParseWorker = window.RapierPlatform &&
 		window.RapierPlatform.files.hasPendingBoot &&
 		window.RapierPlatform.files.hasPendingBoot();
@@ -34726,13 +35059,14 @@ async function _rapierConsumePlatformInitial(context) {
 				snapshot.docKind,
 				null,
 				snapshot.bom,
+				recovery.savedBaseline,
 			);
 			if (!restored) return;
 			context.documentConsumed = true;
-			_notifyDirtyState();
 			if (recovery.sourceRootId) {
 				_rapierResetSource(_rapierSourceText(), recovery.sourceRootId);
 			}
+			_notifyDirtyState();
 			if (!_rapierInstallRestoredHistory(recovery.undo)) {
 				_rapierPersistenceRuntime.historyUnavailable = true;
 				await _rapierHoldBootRecovery(null);
@@ -34774,6 +35108,7 @@ async function _rapierConsumeEmbedInitial(context) {
 		return;
 	}
 	if (!_rapierEmbed.active) return;
+	const emptySource = _rapierCreateSourceStore('');
 	const loaded = await rapierLoad('', 'document.md', {
 		restore: true,
 		embed: true,
@@ -34781,6 +35116,8 @@ async function _rapierConsumeEmbedInitial(context) {
 			generation: 0,
 			documentRevision: 0,
 			savedGeneration: 0,
+			savedBaseline: {rootId: emptySource.rootId, contentId: emptySource.contentId,
+				metadata: {filename: 'document.md', docKind: 'markdown'}},
 			nextBlockId: 1,
 		},
 		returnReceipt: true,
@@ -34997,7 +35334,6 @@ async function _rapierGuideStarter() {
 		const response = await fetch('/docs/' + file, {cache: 'no-cache'});
 		if (!response.ok || !/^text\/(?:markdown|plain)\b/i.test(response.headers.get('content-type') || '')) return null;
 		const text = await response.text();
-		document.querySelector('#rapier-seo > h1')?.remove();
 		return {name: file, text};
 	} catch (_) { return null; }
 }
@@ -35161,6 +35497,8 @@ async function _rapierPublishBootReady(context) {
 	}
 	if (_rapierBootstrapRuntime.failed) return;
 	for (const wrapper of document.querySelectorAll(':is(#editor-blocks, #editor-blocks > .block-sleep-group) > .block-wrapper--woke')) wrapper.classList.remove('block-wrapper--woke');
+	if (document.querySelectorAll('#editor-blocks h1').length === 1)
+		for (const node of document.querySelectorAll('#rapier-seo > h1, #rapier-seo > article')) node.remove();
 	_rapierRevealFirstScreen();
 	if (_rapierIsBuiltInWelcomeDocument()) {
 		_yieldToIdle(() => _rapierMarkWelcomeDocumentSaved(false).catch(() => {}));
@@ -36879,8 +37217,7 @@ function _markEditDivDirty(editDiv) {
 
 	if (editDiv) editDiv._rapierCheckpointFresh = false;
 	const wrapper = editDiv && editDiv.closest && editDiv.closest('.block-wrapper');
-	const blockId = wrapper && parseInt(wrapper.dataset.blockId, 10);
-	const block   = Number.isFinite(blockId) ? rapier.document.blocks.find(b => b.id === blockId) : null;
+	const block = _rapierBoundBlock(wrapper);
 	if (block) {
 		block.dirty = true;
 		rapierDirty(block.id);
@@ -37779,8 +38116,7 @@ function _rapierHandleMathIslandKeydown(e) {
 	if (!wrapper) return false;
 	if (wrapper.classList.contains('block-wrapper--math-source')) return false;
 
-	const blockId = parseInt(wrapper.dataset.blockId, 10);
-	const block   = Number.isFinite(blockId) ? rapier.document.blocks.find(b => b.id === blockId) : null;
+	const block = _rapierBoundBlock(wrapper);
 	if (!block) return false;
 
 	let isle = null, kind = null;
@@ -37859,7 +38195,7 @@ function _rapierMathIslandToSource(wrapper, editDiv, block, isle, edit) {
 	let mathRaw;
 	try { mathRaw = decodeURIComponent(isle.getAttribute('data-math-src')); }
 	catch (_) { mathRaw = isle.textContent || ''; }
-	const fullRaw = _markdownFromEditHTML(editDiv.innerHTML) || block.raw || '';
+	const fullRaw = editDiv._rapierCheckpointFresh ? block.raw || '' : _rapierLiveEditRaw(editDiv, wrapper);
 
 	const islands = Array.prototype.slice.call(
 		editDiv.querySelectorAll('.math-rendered[data-math-src]'));
@@ -37882,7 +38218,6 @@ function _rapierMathIslandToSource(wrapper, editDiv, block, isle, edit) {
 
 	_rapierLockRawEditGeometry(wrapper, editDiv, true);
 	editDiv.textContent = content;
-	block.dirty = true;
 	wrapper.classList.add('block-wrapper--math-source');
 
 	const textNode = editDiv.firstChild || editDiv.appendChild(document.createTextNode(''));
@@ -37894,7 +38229,12 @@ function _rapierMathIslandToSource(wrapper, editDiv, block, isle, edit) {
 	sel.addRange(nr);
 
 	updateStats();
-	rapierDirty(block.id);
+	if (content !== fullRaw) {
+		block.dirty = true;
+		editDiv._rapierCheckpointFresh = false;
+		rapierDirty(block.id);
+		_rapierScheduleEditCheckpoint(editDiv);
+	} else _rapierDirtyMarkOwner.refresh();
 	_syncEmptyClass(wrapper, editDiv);
 	return true;
 }
@@ -40887,13 +41227,15 @@ function _rapierSyncSingleLineHighlight() {
 			? {start: 0, end: rapier.document.source.length, direction: ta.selectionDirection}
 			: _rapierHeavyRuntime.selection(ta);
 		_rapierHeavyRuntime.draft = _rapierHeavyRuntime.ticket({...selected, mode: rapier.view.mode});
-		_compositionField = {draft: _rapierHeavyRuntime.draft, start: ta.selectionStart, end: ta.selectionEnd, length: ta.value.length};
+		_compositionField = {draft: _rapierHeavyRuntime.draft, start: ta.selectionStart, end: ta.selectionEnd, length: ta.value.length,
+			before: ta.value.slice(ta.selectionStart, ta.selectionEnd)};
 		_imeComposing = _rapierHeavyRuntime.composing = rapier.composition.source = true;
 		if (_rapierSourceOverlayActive()) _armPlainCode();
 	}
 
 	function _handleCompositionEnd(event) {
 		_compositionField = null;
+		rapier.revision.liveSourceDirty = false;
 		const draft = _rapierHeavyRuntime.draft;
 		_rapierHeavyRuntime.draft = null;
 		_imeComposing = _rapierHeavyRuntime.composing = rapier.composition.source = false;
@@ -40905,6 +41247,7 @@ function _rapierSyncSingleLineHighlight() {
 			_scheduleIdleReconciliation();
 		}
 		_rapierFinishPersistenceBarrier();
+		_rapierDirtyMarkOwner.refresh();
 	}
 
 	function _compositionTail(event) {
@@ -40929,10 +41272,12 @@ function _rapierSyncSingleLineHighlight() {
 
 	function _cancelSourceComposition() {
 		_compositionField = null;
+		rapier.revision.liveSourceDirty = false;
 		const draft = _rapierHeavyRuntime.draft;
 		_rapierHeavyRuntime.draft = null;
 		_imeComposing = _rapierHeavyRuntime.composing = rapier.composition.source = false;
 		if (draft && _rapierHeavyRuntime.owns(draft) && draft.mode === rapier.view.mode) _rapierProjectSourceSurface(draft);
+		_rapierDirtyMarkOwner.refresh();
 	}
 
 	function _replaceWholeWindowSelection(event) {
@@ -41265,7 +41610,14 @@ function _rapierSyncSingleLineHighlight() {
 	}
 
 	function _handleInput(event) {
-		if (_rapierHeavyRuntime.draft) return;
+		if (_rapierHeavyRuntime.draft) {
+			const field = _compositionField;
+			if (field && field.draft === _rapierHeavyRuntime.draft) {
+				const length = ta.value.length - field.length + field.end - field.start;
+				_rapierDirtyMarkOwner.sourceInput(length < 0 || ta.value.slice(field.start, field.start + length) !== field.before);
+			}
+			return;
+		}
 		const replayed = !_beforeInputTicket && !_burstStartSel && _rapierEditingRuntime.ownsInput(_rapierEditingRuntime.inputSettlement);
 		if (_compositionTail(event) || event.isComposing || !_beforeInputTicket && !_burstStartSel && !replayed ||
 				_beforeInputTicket && !_rapierHeavyRuntime.owns(_beforeInputTicket)) {
@@ -44777,8 +45129,6 @@ function _rapierSourceOutlineMemoKey(chars) {
 		Number(rapier.revision.generation || 0) + ':' + chars;
 }
 
-const _rapierOutlineTrimmedEnd = globalThis.RapierAgentMarkdown._rapierOutlineTrimmedEnd;
-
 const _RAPIER_OUTLINE_REF_GRAMMAR = new RegExp('^(' + _RAPIER_NAMES.outline.prefix
 	+ '[0-9a-f]{' + _RAPIER_NAMES.outline.width + '})_([0-9a-f]{'
 	+ _RAPIER_NAMES.outline.width + '})$');
@@ -44967,10 +45317,6 @@ function _rapierWillLawOfTarget(target, will) {
 		value.startBlockId == null ? null : value.startBlockId,
 		value.endBlockId == null ? null : value.endBlockId, will);
 }
-
-const _rapierSourcePassagesOf = globalThis.RapierAgentMarkdown._rapierSourcePassagesOf;
-
-const _rapierScanSourceHeadings = globalThis.RapierAgentMarkdown._rapierScanSourceHeadings;
 
 const _RAPIER_REVEAL_SCROLL_MS = 700;
 const _RAPIER_REVEAL_ALIGN_FRAMES = 6;
@@ -45973,19 +46319,7 @@ function _rapierAgentPresenceLine(word) {
 	document.getElementById('agent-note-undo').hidden = !(_rapierAgentSpell.kind === 'finished' && _rapierAgentSpell.undo.length);
 	document.getElementById('agent-note-go').hidden = _rapierAgentSpell.kind !== 'invite';
 	line.hidden = !said;
-	const scrollFab = document.getElementById('scroll-fab');
-	const circle = said && scrollFab && scrollFab.classList.contains('visible') ? scrollFab : null;
-	if (!circle) {
-		line.classList.remove('visible');
-		line.style.top = '';
-		return;
-	}
-	const box = circle.getBoundingClientRect();
-	line.style.top = (box.top + box.height / 2) + 'px';
-	if (_rapierAgentSpell.pending) {
-		_rapierAgentSpell.pending = false;
-		line.classList.add('visible');
-	}
+	_rapierAgentNotePlace(line);
 }
 
 function _rapierAgentBarRenderSoon() {
@@ -46393,7 +46727,7 @@ function renderFilename() {
 	refs.filenameBtn.setAttribute('aria-label', 'rename ' + (embedded && _rapierEmbed.title ? _rapierEmbed.title : name) + (dirty ? ', unsaved changes' : ''));
 	refs.filenameBtn.disabled = locked;
 	refs.filenameInput.hidden = editing !== 'base';
-	refs.filenameDirty.hidden = !dirty;
+	_rapierDirtyMarkOwner.render(refs.filenameDirty, dirty);
 	refs.filenameExtBtn.hidden = embedded || editing !== '';
 	refs.filenameExtBtn.disabled = locked;
 	refs.filenameExtText.textContent = extension.toUpperCase();
@@ -47235,7 +47569,7 @@ function renderSettings() {
 		button.disabled = _rapierUiPlatform.windowsBusy;
 	}
 
-	refs.proSection.hidden = false;
+	refs.proSection.hidden = !facts.androidPro;
 	refs.proControls.dataset.open = _rapierUi.proOpen ? 'true' : 'false';
 	refs.proControls.inert = !_rapierUi.proOpen;
 	for (const button of refs.proTitle.querySelectorAll('[data-action="fold"]')) button.setAttribute('aria-expanded', _rapierUi.proOpen ? 'true' : 'false');
@@ -47711,8 +48045,8 @@ function _rapierUpdateToastLift() {
 	const apply = result => {
 		const waiting = result.status !== 'placed';
 		if (waiting) {
-			root.dataset.rapierTransientState = 'waiting';
-			root.inert = true;
+			if (root.dataset.rapierTransientState !== 'waiting') root.dataset.rapierTransientState = 'waiting';
+			if (!root.inert) root.inert = true;
 		} else {
 			delete root.dataset.rapierTransientState;
 			root.inert = false;

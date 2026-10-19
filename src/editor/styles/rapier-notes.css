@@ -123,7 +123,7 @@ body.rapier-notes-mode #editor-blocks>:is(.rapier-notes-title,.rapier-notes-slot
 body.rapier-notes-mode #editor-blocks>.rapier-notes-title>:is(.block-read,.block-edit),
 body.rapier-notes-mode #editor-blocks>.rapier-notes-slot--title{font:var(--fw-semibold,600) 1.75rem/1.12 var(--font-sans);letter-spacing:-.02em}
 body.rapier-notes-mode #editor-blocks>.rapier-notes-title :is(h1,p){margin:0;padding:0;border:0;font:inherit;letter-spacing:inherit}
-body.rapier-notes-mode #editor-blocks>.rapier-notes-title>.section-fold-btn,body.rapier-notes-mode #empty-doc-prompt{display:none}
+body.rapier-notes-mode #editor-blocks>.rapier-notes-title>.section-fold-btn{display:none}
 body.rapier-notes-mode #editor-blocks>.rapier-notes-title.block-wrapper--empty>.block-edit::before,
 body.rapier-notes-mode #editor-blocks>.rapier-notes-slot--title::before{content:'Title'}
 body.rapier-notes-mode #editor-blocks>.rapier-notes-note.block-wrapper--editing.block-wrapper--empty>.block-edit::before,

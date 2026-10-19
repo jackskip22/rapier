@@ -15,9 +15,11 @@ const local = 'No. Rapier works in your browser. Local editing uploads nothing.'
 const saved = 'Yes. Press Done to download it as JPEG XL, PNG or layers (OpenRaster), or add it to your document';
 export const DOORS = Object.freeze({
 	'/privacy': Object.freeze({name: 'Privacy and terms', title: 'Rapier privacy and terms',
-		description: 'Rapier privacy and terms: local editing, optional services, data storage and deletion.'}),
+		description: 'Rapier privacy and terms: local editing, optional services, data storage and deletion.',
+		image: 'og-privacy.png', imageSize: [1200, 630], imageAlt: 'Rapier: privacy and terms'}),
 	'/commercial': Object.freeze({name: 'Commercial license', title: 'Rapier commercial license',
-		description: 'Commercial licenses for embedding Rapier in proprietary products. The editor is free under AGPL-3.0-only.'}),
+		description: 'Commercial licenses for embedding Rapier in proprietary products. The editor is free under AGPL-3.0-only.',
+		image: 'og-commercial.png', imageSize: [1200, 630], imageAlt: 'Rapier: commercial license'}),
 	'/notes': Object.freeze({name: 'Notes', title: 'Private notes app, free and offline | Rapier Notes',
 		description: 'Private Markdown notes with colors, pins, checklists, pictures, voice recordings and history. Import from Google Keep and 15+ apps. No account.',
 		image: 'og-notes.png', imageSize: [1200, 630], imageAlt: 'Rapier Notes: Markdown notes on your phone',
@@ -140,13 +142,17 @@ export const DOORS = Object.freeze({
 
 export const GUIDES = Object.freeze({
 	'/agents': Object.freeze({name: 'Rapier for agents', file: 'agents.md', title: 'Rapier for AI agents: MCP server, tools and skills',
-		description: 'Connect Claude, Cursor, ChatGPT or any MCP client to Rapier with no account. Read and edit one live document with a person, draw, paint and export.'}),
+		description: 'Connect Claude, Cursor, ChatGPT or any MCP client to Rapier with no account. Read and edit one live document with a person, draw, paint and export.',
+		image: 'og-agents.png', imageSize: [1200, 630], imageAlt: 'Rapier for agents'}),
 	'/gemini': Object.freeze({name: 'Add Rapier to Gemini', file: 'gemini.md', title: 'Add Rapier to Gemini | Rapier',
-		description: 'Use Rapier with Gemini through MCP: a shared Markdown editor in your browser, no account. Keep the result as Markdown or an offline HTML file.'}),
+		description: 'Use Rapier with Gemini through MCP: a shared Markdown editor in your browser, no account. Keep the result as Markdown or an offline HTML file.',
+		image: 'og-gemini.png', imageSize: [1200, 630], imageAlt: 'Add Rapier to Gemini'}),
 	'/markdown-standard': Object.freeze({name: 'Self-contained Markdown', file: 'markdown-standard.md', title: 'Self-contained Markdown: one .md file with its images | Rapier',
-		description: 'An open MIT convention: one UTF-8 Markdown file holds the document and every image, with optional layout, drawings and an HTML reader.'}),
+		description: 'An open MIT convention: one UTF-8 Markdown file holds the document and every image, with optional layout, drawings and an HTML reader.',
+		image: 'og-markdown-standard.png', imageSize: [1200, 630], imageAlt: 'Rapier: self-contained Markdown'}),
 	'/will': Object.freeze({name: 'Will/1', file: 'will.md', title: 'Will/1: a person\'s instructions for a document region | Rapier',
-		description: 'Will/1 marks a region of a Markdown, Word or PDF document with a person\'s instruction that agents and editors honor.'}),
+		description: 'Will/1 marks a region of a Markdown, Word or PDF document with a person\'s instruction that agents and editors honor.',
+		image: 'og-will.png', imageSize: [1200, 630], imageAlt: 'Rapier: Will/1'}),
 });
 export const PAGES = Object.freeze({...DOORS, ...GUIDES});
 

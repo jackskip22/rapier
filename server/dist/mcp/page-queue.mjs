@@ -1,11 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {sha256} from '../kit/ledger/hash.mjs';
+import {resolveCaller} from '../agent/door-identity.mjs';
 export const RELAY_LIMITS = Object.freeze({intents: 16, bytes: 256 * 1024, lifetimeMs: 24 * 60 * 60 * 1000});
 const HEAD = 'relay:head';
 const row = seq => 'relay:intent:' + String(seq).padStart(12, '0');
 const encoder = new TextEncoder();
 const bytesOf = value => encoder.encode(JSON.stringify(value)).byteLength;
 const emptyHead = () => ({seq: 0, rows: []});
+const identity = (operationId, agent) => {
+  const caller = resolveCaller({actor: 'agent', principal: agent?.principal, requestId: operationId}, {transport: 'mcp'});
+  return JSON.stringify([caller.transport, caller.actor, caller.principal, caller.invocationKey]);
+};
 
 function headOf(kv, now) {
   const head = kv.get(HEAD) || emptyHead();
@@ -22,7 +27,7 @@ export function queueIntent(kv, {intent, operationId = null, agent = null, same 
   if (!intent || typeof intent !== 'object' || Array.isArray(intent)) throw new TypeError('An intent object is required');
   const head = headOf(kv, now), bytes = bytesOf(intent), work = sha256(JSON.stringify(same));
   if (operationId) {
-    const prior = head.rows.find(entry => entry.operationId === operationId);
+    const prior = head.rows.find(entry => entry.operationId && identity(entry.operationId, entry.agent) === identity(operationId, agent));
     if (prior) return prior.work === work ? pendingReceipt(prior)
       : {outcome: 'refused', reason: 'operation_id_reused', hint: 'Use a new operation_id for different work.'};
   }

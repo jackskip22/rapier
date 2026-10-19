@@ -31,7 +31,7 @@ function _rapierPlaceNestedFenceCopies(wrapper) {
 	const codes = [...read.querySelectorAll(_RAPIER_NESTED_FENCE)], frame = wrapper.getBoundingClientRect();
 	for (const button of buttons) {
 		const pre = codes[Number(button.dataset.fence)]?.parentElement, box = pre?.getClientRects().length ? pre.getBoundingClientRect() : null;
-		button.hidden = !box || box.width < 48 || box.height < 24;
+		button.toggleAttribute('hidden', !box || box.width < 48 || box.height < 24);
 		if (button.hidden) continue;
 		const top = Math.round(box.top - frame.top + 5) + 'px', left = Math.round(box.right - frame.left - 45) + 'px';
 		if (button.style.top !== top) button.style.top = top;

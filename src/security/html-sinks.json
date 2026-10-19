@@ -253,11 +253,6 @@
 				"kind": "sanitized-document",
 				"reason": "main.innerHTML = artifact.bodyHtml, which is styledRoot.innerHTML captured immediately after _rapierBuildArtifact's sanitizeRapierHtml('export') pass."
 			},
-			"_syncEmptyDocPrompt": {
-				"count": 1,
-				"kind": "static-template",
-				"reason": "prompt.innerHTML is a fixed constant SVG/button string with no interpolation."
-			},
 			"_rapierEnsureImageUi": {
 				"count": 2,
 				"kind": "static-template",

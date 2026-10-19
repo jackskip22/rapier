@@ -35,9 +35,11 @@ const local = 'No. Rapier works in your browser. Local editing uploads nothing.'
 const saved = 'Yes. Press Done to download it as JPEG XL, PNG or layers (OpenRaster), or add it to your document';
 export const DOORS = Object.freeze({
 	'/privacy': Object.freeze({name: 'Privacy and terms', title: 'Rapier privacy and terms',
-		description: 'Rapier privacy and terms: local editing, optional services, data storage and deletion.'}),
+		description: 'Rapier privacy and terms: local editing, optional services, data storage and deletion.',
+		image: 'og-privacy.png', imageSize: [1200, 630], imageAlt: 'Rapier: privacy and terms'}),
 	'/commercial': Object.freeze({name: 'Commercial license', title: 'Rapier commercial license',
-		description: 'Commercial licenses for embedding Rapier in proprietary products. The editor is free under AGPL-3.0-only.'}),
+		description: 'Commercial licenses for embedding Rapier in proprietary products. The editor is free under AGPL-3.0-only.',
+		image: 'og-commercial.png', imageSize: [1200, 630], imageAlt: 'Rapier: commercial license'}),
 	// The editor views a search engine may show as sitelinks under the home result: each opens that view
 	// (the engine reads the address), and each is a page of its own for a reader that runs nothing.
 	// `image` is the card shown when the address is shared: a PNG at the site root, `imageSize` pixels wide and high.
@@ -64,7 +66,7 @@ export const DOORS = Object.freeze({
 			Object.freeze(['Is it free?', free]),
 		])}),
 	// The Watercolor card is drawn from `picture` (tools/og-card.mjs). To show a new painting instead, save it as a PNG, change `image` and `imageSize`
-	// here, and list the file in tools/stage-site.mjs and .assetsignore. A new file name makes social sites fetch the card again.
+	// here and allow the file in .assetsignore; tools/stage-site.mjs reads the image names here. A new file name makes social sites fetch the card again.
 	'/watercolor': Object.freeze({name: 'Watercolor', title: 'Free online watercolor painting | Rapier Watercolor',
 		description: 'Paint watercolor in your browser with flowing pigments, wet washes and textured paper. Keep transparent paintings in editable drawings. Free, no account.',
 		image: 'og-watercolor.png', imageSize: [1200, 630], imageAlt: 'Blue, yellow and rose watercolor washes painted with Rapier Water',
@@ -167,13 +169,17 @@ export const DOORS = Object.freeze({
 // editor opens the same document from the site's /docs/ (editor/engine.js _rapierGuideStarter). `file` is its name in docs/.
 export const GUIDES = Object.freeze({
 	'/agents': Object.freeze({name: 'Rapier for agents', file: 'agents.md', title: 'Rapier for AI agents: MCP server, tools and skills',
-		description: 'Connect Claude, Cursor, ChatGPT or any MCP client to Rapier with no account. Read and edit one live document with a person, draw, paint and export.'}),
+		description: 'Connect Claude, Cursor, ChatGPT or any MCP client to Rapier with no account. Read and edit one live document with a person, draw, paint and export.',
+		image: 'og-agents.png', imageSize: [1200, 630], imageAlt: 'Rapier for agents'}),
 	'/gemini': Object.freeze({name: 'Add Rapier to Gemini', file: 'gemini.md', title: 'Add Rapier to Gemini | Rapier',
-		description: 'Use Rapier with Gemini through MCP: a shared Markdown editor in your browser, no account. Keep the result as Markdown or an offline HTML file.'}),
+		description: 'Use Rapier with Gemini through MCP: a shared Markdown editor in your browser, no account. Keep the result as Markdown or an offline HTML file.',
+		image: 'og-gemini.png', imageSize: [1200, 630], imageAlt: 'Add Rapier to Gemini'}),
 	'/markdown-standard': Object.freeze({name: 'Self-contained Markdown', file: 'markdown-standard.md', title: 'Self-contained Markdown: one .md file with its images | Rapier',
-		description: 'An open MIT convention: one UTF-8 Markdown file holds the document and every image, with optional layout, drawings and an HTML reader.'}),
+		description: 'An open MIT convention: one UTF-8 Markdown file holds the document and every image, with optional layout, drawings and an HTML reader.',
+		image: 'og-markdown-standard.png', imageSize: [1200, 630], imageAlt: 'Rapier: self-contained Markdown'}),
 	'/will': Object.freeze({name: 'Will/1', file: 'will.md', title: 'Will/1: a person\'s instructions for a document region | Rapier',
-		description: 'Will/1 marks a region of a Markdown, Word or PDF document with a person\'s instruction that agents and editors honor.'}),
+		description: 'Will/1 marks a region of a Markdown, Word or PDF document with a person\'s instruction that agents and editors honor.',
+		image: 'og-will.png', imageSize: [1200, 630], imageAlt: 'Rapier: Will/1'}),
 });
 // Every page the site serves from a door file, with its head.
 export const PAGES = Object.freeze({...DOORS, ...GUIDES});

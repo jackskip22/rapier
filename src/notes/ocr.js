@@ -89,8 +89,11 @@ function _rapierOcrForgetWords() {
 
 function _rapierOcrMarkNote(host) {
 	for (const old of host.querySelectorAll('.rapier-ocr-marks')) {
+		if (old._rapierOcrCurrent?.()) continue;
+		const parent = old.parentElement;
 		old._rapierOcrWatch?.disconnect(); old._rapierOcrUnbind?.();
-		old.parentElement?.classList.remove('rapier-ocr-marked'); old.remove();
+		old.remove();
+		if (!parent?.querySelector(':scope > .rapier-ocr-marks')) parent?.classList.toggle('rapier-ocr-marked', false);
 	}
 	const M = _rapierOcrModule(), S = globalThis.RapierNotesSearch, notes = typeof _rapierNotes === 'object' ? _rapierNotes : null;
 	const query = String(notes?.query || '').trim();
@@ -101,23 +104,25 @@ function _rapierOcrMarkNote(host) {
 	const current = notes.current, generation = notes.loadGen, turn = _rapierOcr.turn;
 	for (const img of host.querySelectorAll('.block-read img')) {
 		const url = _rapierOcrImageUrl(img);
-		if (!/^(?:data:image\/|blob:)/i.test(url)) continue;
+		if (!/^(?:data:image\/|blob:)/i.test(url) || _rapierOcrNotes.layers.get(img)?.isConnected) continue;
+		const live = () => _rapierOcrLive() && turn === _rapierOcr.turn && notes.mode && notes.searchPictures &&
+			notes.current === current && notes.loadGen === generation && img.isConnected && host.contains(img) &&
+			_rapierOcrImageUrl(img) === url && String(notes.query || '').trim() === query;
 		void _rapierOcrCached(url).then(reading => {
-			if (reading && _rapierOcrLive() && turn === _rapierOcr.turn && notes.current === current && notes.loadGen === generation &&
-				img.isConnected && host.contains(img) && _rapierOcrImageUrl(img) === url && String(notes.query || '').trim() === query)
-				_rapierOcrMarks(img, reading, needles);
+			if (reading && live()) _rapierOcrMarks(img, reading, needles, live);
 		}).catch(() => {});
 	}
 }
-function _rapierOcrMarks(img, reading, needles) {
+function _rapierOcrMarks(img, reading, needles, live) {
 	const M = _rapierOcrModule(), fold = s => s.toLowerCase().normalize('NFD').replace(/\p{M}+/gu, '');
 	const quads = needles.flatMap(needle => M.pictureMarks(reading, needle, fold));
 	const parent = img.parentElement;
 	if (!quads.length || !parent || _rapierOcrNotes.layers.get(img)?.isConnected) return;
-	parent.classList.add('rapier-ocr-marked');
+	parent.classList.toggle('rapier-ocr-marked', true);
 	const layer = document.createElement('span');
 	layer.className = 'rapier-ocr-marks';
 	layer.setAttribute('aria-hidden', 'true');
+	layer._rapierOcrCurrent = () => img.parentElement === parent && live();
 	const place = () => {
 		const a = img.getBoundingClientRect(), b = parent.getBoundingClientRect();
 		layer.style.left = (a.left - b.left - parent.clientLeft) + 'px'; layer.style.top = (a.top - b.top - parent.clientTop) + 'px';

@@ -2,7 +2,7 @@ function _rapierRenderFrontmatter() {
 	const region = document.getElementById('frontmatter-region');
 	if (!region) return;
 	const header = rapier.document.docKind === 'markdown' ? String(rapier.document.frontmatter || '') : '';
-	region.hidden = !header || rapier.view.mode === 'source' || rapier.compare.active;
+	region.toggleAttribute('hidden', !header || rapier.view.mode === 'source' || rapier.compare.active);
 	const host = document.getElementById('editor-blocks');
 	if (host && region.parentElement !== host) host.appendChild(region);
 	if (host && host.lastElementChild !== region) host.appendChild(region);

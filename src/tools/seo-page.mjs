@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// sections (including Watercolor) or the interface's policy sheet. The build writes all guides between the body's RAPIER_SEO markers, the door guides in inert
+// The build writes all guides between the body's RAPIER_SEO markers, the door guides in inert
 import {formatColorRun} from '../spec/md-marks.mjs';
 import vm from 'node:vm';
 import {VERSION} from '../version.mjs';
@@ -34,7 +34,7 @@ MyPaint brushes, oil, bristle, scumble, pencil and pen, painted into a layer ins
 
 ## Notes
 
-Notes are Markdown files with colors, pins, checklists, voice recordings, attachments, tags, history and search. Import from 15+ note apps, including Google Keep, Evernote, Notion and Obsidian. Back up as a zip, or sync, encrypted, to storage you own. The Android app also has reminders and a home-screen widget.
+Notes are Markdown files with colors, pins, checklists, voice recordings, attachments, tags, history and search. Import from 15+ note apps, including Google Keep, Evernote, Notion and Obsidian. Back up as a zip, or sync to storage you own. The Android app also has reminders and a home-screen widget.
 
 ## Files in and out
 
@@ -99,11 +99,10 @@ const plain = html => html
 	.replace(/<input class="task-list-item-checkbox"( checked="")? type="checkbox">/g, (_, checked) => checked ? '☑' : '☐');
 const shiftHeadings = (html, by) => html.replace(/<(\/?)h([1-6])>/g, (_, close, level) => '<' + close + 'h' + Math.max(1, Math.min(6, Number(level) + by)) + '>');
 
-export function seoSection(engineSource) {
+export function seoSection() {
 	const parser = applyMarkdownSpec(markdownit(RAPIER_MARKDOWN_SPEC.options), markdownPlugins);
 	const summary = plain(parser.render(SUMMARY, {docId: 'summary'}));
-	const guide = shiftHeadings(plain(parser.render(withoutPictures(welcomeMarkdown(engineSource)), {docId: 'guide'})), 1);
-	const section = '<section id="rapier-seo">\n<h1>' + parser.utils.escapeHtml(SITE_TITLE) + '</h1>\n' + summary + '<article>\n' + guide + '</article>\n</section>';
+	const section = '<section id="rapier-seo">\n<h1>' + parser.utils.escapeHtml(SITE_TITLE) + '</h1>\n' + summary + '</section>';
 	if (/<(?:img|svg|script|style|iframe|form|input|!--)|data:|RAPIER_/i.test(section)) throw new Error('The search words must be plain text and links');
 	return section;
 }

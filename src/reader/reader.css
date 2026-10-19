@@ -13,6 +13,25 @@
 .theme-switcher>:first-child{border-start-start-radius:var(--rapier-radius,0);border-end-start-radius:var(--rapier-radius,0)}
 .theme-switcher>:last-child{border-start-end-radius:var(--rapier-radius,0);border-end-end-radius:var(--rapier-radius,0)}
 
+@media (min-width: 900px) {
+	.reader-open-prompt {
+		left: max(var(--editor-h-pad), calc((100vw - var(--md-measure, 39.6rem)) / 2));
+	}
+}
+.reader-open-prompt {
+	position: absolute;
+	top: var(--space-4);
+	left: var(--editor-h-pad);
+	transform: none;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: var(--space-3);
+	pointer-events: none;
+	opacity: 0;
+	transition: opacity 0.3s var(--ease-out);
+}
+.reader-open-prompt.visible { opacity: 1; pointer-events: auto; }
 #settings-open-pair{grid-template-columns:minmax(0,1fr)}
 
 html.rapier-host-accent #accent-swatches,html.rapier-host-accent .settings-section__title:has(+ #accent-swatches){display:none}

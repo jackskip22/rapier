@@ -2103,13 +2103,12 @@ function _rapierNotesCardInk(card) {
 		if (boxes.length) fragments.set(span, boxes);
 	}
 	if (!fragments.size) { card.querySelector('.rapier-ink-layer')?.remove(); return; }
-	const pieces = draw.drawInk(card, {spec, ink, spans: fragments.keys(), fragments: span => fragments.get(span) || []});
-	for (const piece of pieces) {
-		if (!clipped.has(piece.span) || (piece.endSpan && !clipped.has(piece.endSpan))) continue;
+	draw.drawInk(card, {spec, ink, spans: fragments.keys(), fragments: span => fragments.get(span) || [], decorate(piece) {
+		if (!clipped.has(piece.span) || (piece.endSpan && !clipped.has(piece.endSpan))) return;
 		const pad = (piece.kind === 'free' ? 0.09 : 0.11) * piece.em + 1, box = piece.box;
 		const edges = [clip.top - box.y + pad, box.x + box.width + pad - clip.right, box.y + box.height + pad - clip.bottom, clip.left - box.x + pad].map(value => Math.max(0, value));
 		if (edges.some(value => value > 0)) piece.element.style.clipPath = 'inset(' + edges.map(value => value.toFixed(2) + 'px').join(' ') + ')';
-	}
+	}});
 	if (!_rapierNotes.inkFonts) { _rapierNotes.inkFonts = true; document.fonts?.addEventListener?.('loadingdone', _rapierNotesRepackSoon); }
 }
 function _rapierNotesCollageRows(n) {
@@ -2151,10 +2150,13 @@ function _rapierNotesPicTile(el) {
 	const imgs = read.querySelectorAll('img'); if (imgs.length !== 1) return null;
 	return imgs[0];
 }
-function _rapierNotesPicClear(host) {
+function _rapierNotesPicClear(host, tiles = new Set(), after = new Set()) {
 	for (const el of host.querySelectorAll('.rapier-notes-pic, .rapier-notes-pic-after')) {
-		el.classList.remove('rapier-notes-pic', 'rapier-notes-pic-row', 'rapier-notes-pic-last', 'rapier-notes-pic-after');
-		el.style.removeProperty('width'); el.style.removeProperty('margin-right');
+		if (!tiles.has(el)) {
+			for (const name of ['rapier-notes-pic', 'rapier-notes-pic-row', 'rapier-notes-pic-last']) el.classList.toggle(name, false);
+			el.style.removeProperty('width'); el.style.removeProperty('margin-right');
+		}
+		el.classList.toggle('rapier-notes-pic-after', after.has(el));
 	}
 }
 function _rapierNotesPicLay(tiles) {
@@ -2165,7 +2167,7 @@ function _rapierNotesPicLay(tiles) {
 		const sum = ratios.reduce((a, b) => a + b, 0) || row.length;
 		const gaps = RAPIER_NOTES_PIC_GAP * (len - 1);
 		row.forEach((tile, k) => {
-			tile.el.classList.add('rapier-notes-pic');
+			tile.el.classList.toggle('rapier-notes-pic', true);
 			tile.el.classList.toggle('rapier-notes-pic-row', k === 0);
 			tile.el.classList.toggle('rapier-notes-pic-last', start + len >= tiles.length);
 			tile.el.style.width = len === 1 ? '100%' : 'calc((100% - ' + gaps + 'px) * ' + (ratios[k] / sum).toFixed(6) + ')';
@@ -2177,18 +2179,22 @@ function _rapierNotesPicLay(tiles) {
 }
 function _rapierNotesPicApply() {
 	const host = document.getElementById('editor-blocks'); if (!host) return;
-	_rapierNotesPicClear(host);
-	if (!_rapierNotes.mode || !_rapierNotes.current) return;
+	if (!_rapierNotes.mode || !_rapierNotes.current) { _rapierNotesPicClear(host); return; }
 	const blocks = [...host.children].filter(el => el.classList?.contains('block-wrapper') && !el.classList.contains('block-wrapper--metadata'));
+	const runs = [], tilesKept = new Set(), after = new Set();
 	for (let i = 0; i < blocks.length;) {
 		const tiles = [];
 		for (let j = i; j < blocks.length; j++) { const img = _rapierNotesPicTile(blocks[j]); if (!img) break; tiles.push({el: blocks[j], img}); }
 		if (tiles.length >= 2) {
-			_rapierNotesPicLay(tiles);
-			const after = blocks[i + tiles.length]; if (after) after.classList.add('rapier-notes-pic-after');
+			runs.push(tiles);
+			for (const tile of tiles) tilesKept.add(tile.el);
+			if (blocks[i + tiles.length]) after.add(blocks[i + tiles.length]);
 			i += tiles.length;
 		} else i += Math.max(1, tiles.length);
 	}
+	_rapierNotesPicClear(host, tilesKept, after);
+	for (const tiles of runs) _rapierNotesPicLay(tiles);
+	for (const el of after) el.classList.toggle('rapier-notes-pic-after', true);
 	if (typeof _rapierOcrMarkNote === 'function') _rapierOcrMarkNote(host);
 }
 function _rapierNotesPicSoon() {
@@ -2868,8 +2874,8 @@ function _rapierNotesHeadLay(host) {
 			else if (!String(blocks[from].raw || '').trim()) note = wrapper(from);
 		}
 	}
-	for (const w of host.querySelectorAll(':scope > .rapier-notes-title, :scope > .rapier-notes-note')) { if (w !== title) w.classList.remove('rapier-notes-title'); if (w !== note) w.classList.remove('rapier-notes-note'); }
-	title?.classList.add('rapier-notes-title'); note?.classList.add('rapier-notes-note');
+	for (const w of host.querySelectorAll(':scope > .rapier-notes-title, :scope > .rapier-notes-note')) { w.classList.toggle('rapier-notes-title', w === title); w.classList.toggle('rapier-notes-note', w === note); }
+	title?.classList.toggle('rapier-notes-title', true); note?.classList.toggle('rapier-notes-note', true);
 	if (titleAt === undefined && noteAt === undefined) { for (const row of H.rows || []) row.remove(); return; }
 	H.rows ||= [_rapierNotesHeadRow('title'), _rapierNotesHeadRow('note')];
 	const next = row => { let el = row.nextElementSibling; while (el && !el.classList.contains('block-wrapper')) el = el.nextElementSibling; return el; };
@@ -3211,7 +3217,7 @@ async function _rapierNotesOpenNoteNow(file, capture = false, expectedId = null,
 		transitioned = true;
 		state.cameFrom = suspended;
 		state.current = file; state.currentProof = Object.freeze({...proof, epoch: Number(rapier.identity.epoch || 0)}); state.savingGen = -1; state.savingText = state.savingDigest = null;
-		_rapierNotesMarkClean({canonical: text, generation: Number(rapier.revision.generation || 0), stamp: Object.freeze(_rapierMutationStamp()), ledger: opened.ledger});
+		_rapierNotesMarkClean({canonical: text, sourceRootId: rapier.document.source.rootId, sourceContentId: rapier.document.source.contentId, metadata: Object.freeze(_rapierGetDocumentMetadata()), generation: Number(rapier.revision.generation || 0), stamp: Object.freeze(_rapierMutationStamp()), ledger: opened.ledger});
 		_rapierNotesMode(true);
 		if (!state.autosave) state.autosave = setInterval(_rapierNotesAutosave, RAPIER_NOTES_AUTOSAVE_MS);
 		access?.onOpened?.({documentId: String(rapier.identity.authority), epoch: Number(rapier.identity.epoch || 0)});
@@ -3332,7 +3338,11 @@ function _rapierNotesNameByWords(file, text, {settle = false} = {}) {
 function _rapierNotesMarkClean(capture, ledger = capture?.ledger?.sha256) {
 	const state = _rapierNotes, proof = state.currentProof;
 	if (!capture && !state.current) {
-		try { rapier.revision.savedGeneration = Number(rapier.revision.generation || 0); rapier.identity.saveAsRequired = false; } catch (_) {}
+		try {
+			rapier.identity.saveAsRequired = false;
+			_rapierDirtyMarkOwner.acknowledge(Number(rapier.revision.generation || 0), rapier.document.source.rootId, _rapierGetDocumentMetadata(), rapier.document.source.contentId);
+			_rapierDirtyMarkOwner.refresh();
+		} catch (_) {}
 		return true;
 	}
 	if (!capture || !proof || !_rapierNotesDocumentBound() || !_rapierMutationStampIsCurrent(capture.stamp)) return false;
@@ -3340,7 +3350,11 @@ function _rapierNotesMarkClean(capture, ledger = capture?.ledger?.sha256) {
 	if (ledger !== proof.ledger || capture.canonical !== proof.text || _rapierSourceText() !== capture.canonical) return false;
 	state.savedGen = capture.generation;
 	state.savedReceipt = Object.freeze({proof, stamp: capture.stamp, generation: capture.generation});
-	try { rapier.revision.savedGeneration = capture.generation; rapier.identity.saveAsRequired = false; } catch (_) {}
+	try {
+		rapier.identity.saveAsRequired = false;
+		_rapierDirtyMarkOwner.acknowledge(capture.generation, capture.sourceRootId, capture.metadata, capture.sourceContentId);
+		_rapierDirtyMarkOwner.refresh();
+	} catch (_) {}
 	return true;
 }
 async function _rapierNotesHistoryOne(file, id) {
@@ -3523,7 +3537,9 @@ function _rapierNotesInputCapture() {
 	const canonical = _rapierNotesPending.canonical();
 	const ledger = _rapierNotesPending.ledger({id: proof.id, canonical}, captured.text, {input: true});
 	_rapierNotesPending.retain(proof, stamp, captured.text, false, null, {text: captured.text, ledger});
-	return Object.freeze({canonical: captured.text, generation: stamp.docGeneration, stamp, ledger});
+	return Object.freeze({canonical: captured.text, sourceRootId: rapier.document.source.rootId,
+		sourceContentId: rapier.document.source.contentId, metadata: Object.freeze(_rapierGetDocumentMetadata()),
+		generation: stamp.docGeneration, stamp, ledger});
 }
 function _rapierNotesInputChanged(event) {
 	const state = _rapierNotes, target = event.target;

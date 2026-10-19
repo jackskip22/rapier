@@ -2479,13 +2479,17 @@
   }
 
   async function acknowledge(value) {
+    const captured = {stamp: _rapierMutationStamp(), sourceRootId: rapier.document.source.rootId,
+      sourceContentId: rapier.document.source.contentId,
+      metadata: {filename: String(rapier.document.filename), docKind: String(rapier.document.docKind)}};
     const local = await snapshot();
-    if (local.documentId !== value.documentId || local.text !== value.text ||
+    if (!_rapierMutationStampIsCurrent(captured.stamp) ||
+        local.documentId !== value.documentId || local.text !== value.text ||
         local.filename !== value.filename || local.docKind !== value.docKind ||
         local.documentId !== String(rapier.identity.authority) ||
         local.generation !== Number(rapier.revision.generation) ||
         local.revision !== Number(rapier.revision.settled)) return fail('document_changed', 'conflict');
-    rapier.revision.savedGeneration = local.generation;
+    _rapierDirtyMarkOwner.acknowledge(local.generation, captured.sourceRootId, captured.metadata, captured.sourceContentId);
     rapier.identity.saveAsRequired = false;
     _notifyDirtyState(); updateFilenameDisplay();
     return {ok: true, localRevision: local.revision};

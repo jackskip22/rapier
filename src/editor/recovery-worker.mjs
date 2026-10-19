@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {createWorkerExecution} from '../shell/worker-execution.mjs';
-import {prepareLedgerAsync, readLedger, textRoot} from '../kit/ledger/format.mjs';
+import {prepareLedgerAsync, readLedger, historyEnvelope, textRoot} from '../kit/ledger/format.mjs';
 import {jsonParts, plainPrototype} from '../kit/ledger/data.mjs';
 import {_rapierRecoveryBomManifest, _rapierRecoveryStamp} from './recovery-policy.mjs';
+import {recoveryHistoryDigest, recoveryHeaderIntegrity, recoveryHeaderMatches, recoveryBodyParts,
+  recoveryRecord, readRecoveryBody, parseRecoveryBody} from './recovery-storage.mjs';
+export {recoveryHistoryDigest, recoveryHeaderIntegrity, recoveryHeaderMatches, recoveryBodyParts,
+  recoveryRecord, readRecoveryBody, parseRecoveryBody};
 
 const abort = () => Object.assign(new Error('Canceled'), {name: 'AbortError'});
 const freeze = value => {
@@ -113,7 +117,7 @@ async function integrityParts(parts, signal) {
 }
 async function preparation(core, state, signal) {
   signal?.throwIfAborted();
-  if (state.needLedger && !core.ledger) {
+  if ((state.needLedger || state.undo) && !core.ledger) {
     if (core.input.carriedLedger) {
       core.ledger = readLedger(core.input.carriedLedger, core.input.text, core.input.metadata).ledger;
       core.integrity ||= await integrityParts(textParts(core.input.text), signal);
@@ -132,15 +136,18 @@ async function preparation(core, state, signal) {
   const undo = state.undo ? {...state.undo, ledger: core.input.records} : null;
   if (undo) delete undo.integrity;
   const undoIntegrity = undo ? await integrityParts(jsonParts(undo), signal) : null;
+  const historyDigest = undo ? recoveryHistoryDigest(historyEnvelope(core.ledger)) : null;
   const seenIntegrity = typeof state.seenText === 'string'
     ? state.seenText === core.input.text ? integrity : await integrityParts(textParts(state.seenText), signal) : null;
-  const snapshot = state.snapshot ? {...state.snapshot, markdown: core.input.text, ledger, integrity,
+  const snapshot = state.snapshot ? {...state.snapshot, integrity,
+    historyDigest: recoveryHistoryDigest(historyEnvelope(ledger)),
     bomIntegrity: integrityOf(_rapierRecoveryBomManifest({...state.snapshot, integrity})),
     sourceRootId: ledger?.head?.root, checkpointId: String(core.input.documentAuthority || 'document') + ':' +
       Number(core.input.revision || 0).toString(36) + ':' + String(ledger?.head?.root || '')} : null;
   if (snapshot && snapshot.sourceRootId === undefined) delete snapshot.sourceRootId;
   signal?.throwIfAborted();
-  return {ledger, integrity, undoIntegrity, seenIntegrity, encoded: null, parts: snapshot ? jsonParts(snapshot) : null};
+  return {ledger, integrity, undoIntegrity, historyDigest, seenIntegrity, snapshotHeader: snapshot,
+    encoded: null, parts: snapshot ? recoveryBodyParts(core.input.text, null, ledger) : null};
 }
 const databases = new Map();
 function recoveryDatabase(idb, {name, version}) {
@@ -174,7 +181,16 @@ function storeRecords(text, write, db, signal) {
     current.onsuccess = () => {
       if (write.base != null && _rapierRecoveryStamp(current.result) !== write.base) { finish(null, true); tx.abort(); return; }
       try {
-        for (const row of write.records) tx.objectStore(row.store).put(row.text ? {...row.value, canonicalText: text} : row.value);
+        let body = null, bodyUndo = null;
+        for (const row of write.records) {
+          let value = row.value;
+          if (row.text || Object.hasOwn(value, 'canonicalText')) {
+            value = recoveryRecord(value, row.text ? text : value.canonicalText, value.undo || null, value.ledger || null,
+              row.text && row.value.undo === bodyUndo ? body : null);
+            if (row.text) { body = value.body; bodyUndo = row.value.undo; }
+          }
+          tx.objectStore(row.store).put(value);
+        }
       } catch (error) { try { tx.abort(); } catch (_) {} finish(error); }
     };
     tx.oncomplete = () => finish(null, false);

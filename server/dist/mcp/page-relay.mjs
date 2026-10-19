@@ -4,7 +4,7 @@ import {oauthGrantCurrent} from './oauth.mjs';
 import {LIVE_LIMITS} from './live-session.mjs';
 import {relayable, validAck, sourceHash, custodyBytes, CUSTODY_LIMITS} from './custody-wire.mjs';
 import {validHandover} from './page-door.mjs';
-import {queueIntent, waitingIntents, acknowledgeIntent, clearIntents} from './page-queue.mjs';
+import {queueIntent, waitingIntents, acknowledgeIntent} from './page-queue.mjs';
 import {writeCheckpoint, closedPageRead, deleteCheckpoint} from './page-checkpoint.mjs';
 
 const plain = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -88,13 +88,16 @@ export class PageRelay {
     socket.serializeAttachment({...attached, client: 'custody', custody: true});
     this.memory = {rev: state.revision, hash: sourceHash(state.text)};
     this.send(socket, frame);
+    if (waitingIntents(this.owner.ctx.storage.kv).length) void this.replayQueued(socket);
   }
 
   async route(input, signal) {
-    const head = this.head();
+    let head = this.head();
     if (!head?.custody) return null;
     if (!input.page) {
       try { await this.owner.assertAuthority(input); } catch { return null; }
+      head = this.head();
+      if (!head?.custody) return null;
       if (head.ownerKey !== input.ownerKey || head.capabilityHash !== input.capabilityHash || head.expiresAt <= Date.now()) return null;
     }
     if (this.recalling) return await this.recalling ? null : this.bind.envelope(input.operation, unavailable, head);
@@ -117,7 +120,12 @@ export class PageRelay {
       this.disconnected(socket);
       return this.bind.envelope(input.operation, unavailable, head);
     }
-    return this.turn(socket, input, head, signal);
+    if (this.recalling) return await this.recalling ? null : this.bind.envelope(input.operation, unavailable, this.head());
+    const current = this.head();
+    if (!current?.custody) return null;
+    if (this.holder(current) !== socket || current.capabilityHash !== head.capabilityHash)
+      return this.bind.envelope(input.operation, unavailable, current);
+    return this.turn(socket, input, current, signal);
   }
 
   closed(input, head) {
@@ -140,11 +148,14 @@ export class PageRelay {
       const input = entry.intent;
       let admitted = head.agentAccess !== false && head.ownerKey === input.ownerKey && head.capabilityHash === input.capabilityHash && relayable(input, head);
       if (admitted) try { await this.owner.assertAuthority(input); } catch { admitted = false; }
-      if (admitted) {
-        const ack = await this.exchange(socket, input, head);
-        if (ack.pending || ack.unsent) return;
-        if (Number.isSafeInteger(ack.rev)) this.memory = {rev: ack.rev, hash: ack.hash};
-      }
+      const current = this.head();
+      if (this.recalling || !current?.custody || this.holder(current) !== socket ||
+          current.capabilityHash !== head.capabilityHash || current.agentAccess === false) return;
+      if (!admitted) continue;
+      const ack = await this.exchange(socket, input, current);
+      if (ack.pending || ack.unsent || ack.refused || ['pending', 'uncertain'].includes(ack.value?.outcome)) return;
+      if (this.recalling || !this.head()?.custody || this.holder() !== socket) return;
+      if (Number.isSafeInteger(ack.rev)) this.memory = {rev: ack.rev, hash: ack.hash};
       this.owner.ctx.storage.transactionSync(() => acknowledgeIntent(kv, entry.id));
     }
   }
@@ -265,13 +276,22 @@ export class PageRelay {
     if (!head?.custody || custody.head.capabilityHash !== head.capabilityHash || custody.state.documentId !== head.documentId ||
         custody.state.revision < head.custody.since) return false;
     const {custody: _held, ...rest} = head;
-    const collaboration = createKernel({state: custody.state, host: {retainHistory: true, liveSession: true}, clock: Date.now,
-      mintId: prefix => prefix + crypto.randomUUID().replaceAll('-', ''), invocationJournal: custody.journal}).collaboration();
+    const kernel = createKernel({state: custody.state, host: {retainHistory: true, liveSession: true}, clock: Date.now,
+      mintId: prefix => prefix + crypto.randomUUID().replaceAll('-', ''), invocationJournal: custody.journal});
+    const collaboration = kernel.collaboration();
     const next = this.owner.describe(custody.state, rest, Math.max(custody.head.version, head.version), collaboration);
     const attached = socket && this.attachment(socket);
     await this.owner.persist(next, custody.state, custody.journal, false, null, undefined,
       attached?.access ? {access: attached.access, ownerKey: head.ownerKey} : null);
-    this.owner.ctx.storage.transactionSync(() => { deleteCheckpoint(this.owner.ctx.storage.kv); clearIntents(this.owner.ctx.storage.kv); });
+    const kv = this.owner.ctx.storage.kv;
+    this.owner.ctx.storage.transactionSync(() => {
+      deleteCheckpoint(kv);
+      for (const entry of waitingIntents(kv)) {
+        const input = entry.intent;
+        const result = kernel.replay(input.operation, input.args, this.bind.caller(input));
+        if (result?.replayed && !['pending', 'uncertain'].includes(result.outcome)) acknowledgeIntent(kv, entry.id);
+      }
+    });
     this.memory = null;
     if (socket) this.owner.live.close(socket, 4001, 'custody_released');
     return true;

@@ -47,11 +47,14 @@ export function takeParts(html, text) {
   return {html: stripped, ...readParts(text ?? '', elements)};
 }
 const OPEN = '\n\n<!-- rapier-carried/1\n', CLOSE = '\n-->\n';
-export function writeDocument(text, options) {
+export function documentTrailer(text, options) {
   const parts = validateParts(text, options);
-  if (!parts.ledger && !parts.authorship) return text;
+  if (!parts.ledger && !parts.authorship) return '';
   const json = JSON.stringify(parts).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
-  return text + OPEN + json + CLOSE;
+  return OPEN + json + CLOSE;
+}
+export function writeDocument(text, options) {
+  return text + documentTrailer(text, options);
 }
 export function readDocument(source) {
   if (!source.endsWith(CLOSE)) {

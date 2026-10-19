@@ -182,12 +182,12 @@ function readerRenderFilename() {
 
 function readerRenderEmpty() {
 	const host = $('editor-blocks');
-	let prompt = $('empty-doc-prompt');
+	let prompt = $('reader-open-prompt');
 	if (reader.loaded || _rapierEmbed.active) { prompt?.remove(); return; }
 	if (prompt) return;
 	prompt = document.createElement('div');
-	prompt.id = 'empty-doc-prompt';
-	prompt.className = 'empty-doc-prompt visible';
+	prompt.id = 'reader-open-prompt';
+	prompt.className = 'reader-open-prompt visible';
 	const open = document.createElement('button');
 	open.type = 'button';
 	open.className = 'settings-action-btn';
@@ -1152,7 +1152,7 @@ function readerReadAloud() {
 		readerRenderReadAloud();
 		return;
 	}
-	const blocks = [...$('editor-blocks').children].filter(block => !block.hidden && !block.matches('.rapier-ink-layer,.diagram-block,.empty-doc-prompt') && _readTextProjection(block).text.trim());
+	const blocks = [...$('editor-blocks').children].filter(block => !block.hidden && !block.matches('.rapier-ink-layer,.diagram-block,.reader-open-prompt') && _readTextProjection(block).text.trim());
 	if (!blocks.length) { readerToast('nothing to read', 'error'); return; }
 	if (!readerSpeech.armed) {
 		readerSpeech.armed = true;

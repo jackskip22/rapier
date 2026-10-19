@@ -639,7 +639,7 @@ const _rapierEmbeddedImages = (() => {
       if (globalThis.RapierPlatform?.files.relativeCandidate?.(id)) {
         if (originalViewHidden()) {
           visibility?.unobserve(image); watched.delete(image); presented.delete(image);
-          image.dataset.rapierAssetState = 'held';
+          if (image.dataset.rapierAssetState !== 'held') image.dataset.rapierAssetState = 'held';
           if (image.getAttribute('src') !== placeholder) image.src = placeholder;
           continue;
         }
@@ -1393,7 +1393,6 @@ const _rapierEmbeddedImages = (() => {
       run.optional && (run.controller?.signal.aborted || !_rapierMutationStampIsCurrent(run.attemptStamp))) return 'wait';
     primed = row || null;
     const giveBack = holdEdit();
-    const was = {clean: !_rapierIsDirty(), generation: rapier.revision.generation};
     let persisted = !run.optional;
     try {
       if (run.optional) run.committing = true;
@@ -1409,10 +1408,6 @@ const _rapierEmbeddedImages = (() => {
     } finally {
       primed = null;
       giveBack();
-      if (persisted && was.clean && rapier.revision.generation === was.generation + 1 && typeof rapier.revision.savedGeneration === 'number') {
-        rapier.revision.savedGeneration = rapier.revision.generation;
-        try { _notifyDirtyState(); } catch (error) { console.warn('[rapier] finish picture dirty state', error); }
-      }
       try { schedule(); } catch (error) { console.warn('[rapier] image presentation', error); }
     }
   }

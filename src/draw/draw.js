@@ -3308,7 +3308,7 @@ function _rapierDrawLetterGlyph(set) {
 	const sample = set && globalThis.RapierDrawLetterPreviews.LETTER_PREVIEWS[set.id];
 	return sample ? '<svg class="rapier-draw-glyph" viewBox="0 0 ' + sample.glyph[0] + ' ' + sample.em + '" aria-hidden="true"><path fill="currentColor" transform="translate(' + sample.bearing + ',0)" d="' + sample.glyph[1] + '"/></svg>' : '';
 }
-const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.16/letters/';
+const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.17/letters/';
 const _rapierDrawLettersDoor = { allowed: false, asking: null, providers: new Map(), bringing: new Map() };
 function _rapierDrawLettersProvider(set) {
 	const door = _rapierDrawLettersDoor;
@@ -3989,7 +3989,23 @@ function _rapierDrawPlaceMenu(box) {
 	menu.style.maxHeight = Math.min(full, Math.max(44, room)) + 'px';
 	const height = menu.offsetHeight, up = below < height && (above >= height || above > below);
 	menu.style.transform = 'translate(-50%,0)';
-	menu.style.top = _rapierDrawClamp(up ? boxTop - height - 10 : boxBottom + 10, ceiling, Math.max(ceiling, bottom - height - margin)) + 'px';
+	let y = _rapierDrawClamp(up ? boxTop - height - 10 : boxBottom + 10, ceiling, Math.max(ceiling, bottom - height - margin));
+	const center = Number.parseFloat(menu.style.left), natural = {left: center - menuWidth / 2, top: y, right: center + menuWidth / 2, bottom: y + height};
+	const viewportBox = {left: left + margin, top: ceiling, right: left + width - margin, bottom: bottom - margin};
+	const selected = new Set(_rapierDrawSelection()), rect = state.svgRoot.getBoundingClientRect(), vb = state.svgRoot.viewBox.baseVal, labels = [];
+	for (const shape of state.recipe.shapes) {
+		if (selected.has(shape.id) || shape.hidden || !shape.label) continue;
+		const b = _rapierDrawTextLayout(shape, state.recipe).bounds;
+		const a = _rapierDrawMapToScreen(b.minX, b.minY, rect, vb), z = _rapierDrawMapToScreen(b.maxX, b.maxY, rect, vb);
+		const label = {left: a[0] - 8, top: a[1] - 8, right: z[0] + 8, bottom: z[1] + 8};
+		if (RapierOcclusion.overlaps(label, viewportBox)) labels.push({id: 'label:' + shape.id, role: 'overlay', interactive: true, rect: label});
+	}
+	if (labels.some(label => RapierOcclusion.overlaps(label.rect, natural))) {
+		const placed = RapierOcclusion.placeTransient({viewport: viewportBox, transient: {rect: natural}, surfaces: [
+			{id: 'selection', role: 'overlay', interactive: true, rect: {left: box.left - 22, top: boxTop, right: box.right + 22, bottom: boxBottom}}, ...labels]});
+		if (placed.status === 'placed') { menu.style.left = (placed.rect.left + menuWidth / 2) + 'px'; y = placed.rect.top; }
+	}
+	menu.style.top = y + 'px';
 	_rapierDrawMenuTouchAction(menu);
 }
 function _rapierDrawMenuTouchAction(menu) { menu.style.touchAction = menu.scrollHeight > menu.clientHeight + 1 ? '' : 'none'; }
@@ -5831,6 +5847,7 @@ function _rapierDrawOpenSurface(options) {
 	clearTimeout(state.leaving); state.surface.classList.remove('rapier-draw-surface--closed', 'rapier-draw-surface--leave');
 	state.surface.classList.toggle('rapier-draw-surface--notes', !!state.notes);
 	state.surface.hidden = false; document.body.classList.add('rapier-draw-open'); document.documentElement?.classList.add('rapier-draw-open'); state.open = true; state.painter = state.painterNext === true; state.painterNext = false; state.surface.focus({ preventScroll: true });
+	if (typeof _rapierAgentNoteHome === 'function') _rapierAgentNoteHome(state.surface);
 	if (noWater && state.tool === 'paint') _rapierDrawWatercolourFallback();
 	if (_rapierDrawBackupHere()) { _rapierDrawBackupOwner(true); _rapierDrawBackupStore(); }
 	if (typeof _rapierBackHold === 'function') _rapierBackHold();
@@ -5964,6 +5981,7 @@ async function _rapierDrawClose({ recover = false, landed = false } = {}) {
 	if (surface && notes) surface.classList.add('rapier-draw-surface--closed'); else if (surface) surface.hidden = true;
 	document.body.classList.remove('rapier-draw-open'); document.documentElement?.classList.remove('rapier-draw-open');
 	state.releaseIsolation?.(); state.releaseIsolation = null;
+	if (typeof _rapierAgentNoteHome === 'function') _rapierAgentNoteHome(null);
 	const origin = state.focusBeforeOpen; state.focusBeforeOpen = null;
 	const available = element => element?.isConnected && !surface?.contains(element) && _rapierDrawChoiceAvailable(element);
 	let focus = origin !== document.body && available(origin) ? origin : null;

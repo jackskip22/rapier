@@ -54,6 +54,7 @@ const descendants = function* (node, family, name) {
   }
 };
 const MARKERS = ['bookmarkStart','bookmarkEnd','proofErr','permStart','permEnd','moveFromRangeStart','moveFromRangeEnd','moveToRangeStart','moveToRangeEnd','customXmlPr','smartTagPr'];
+const DETAILS_BOOKMARK = /^_RapierDetails_(open|closed)_\d+$/;
 const SYMBOL_GREEK = 'ΑΒΧΔΕΦΓΗΙϑΚΛΜΝΟΠΘΡΣΤΥςΩΞΨΖαβχδεφγηιϕκλμνοπθρστυϖωξψζ';
 const SYMBOL_SIGNS = {32:' ',34:'∀',36:'∃',39:'∋',42:'∗',45:'−',64:'≅',92:'∴',94:'⊥',96:'‾',126:'∼',163:'≤',165:'∞',171:'↔',172:'←',173:'↑',174:'→',175:'↓',176:'°',177:'±',179:'≥',180:'×',181:'∝',182:'∂',183:'•',184:'÷',185:'≠',186:'≡',187:'≈',188:'…',192:'ℵ',193:'ℑ',194:'ℜ',195:'℘',196:'⊗',197:'⊕',198:'∅',199:'∩',200:'∪',201:'⊃',202:'⊇',203:'⊄',204:'⊂',205:'⊆',206:'∈',207:'∉',209:'∇',213:'∏',214:'√',215:'⋅',216:'¬',217:'∧',218:'∨',219:'⇔',220:'⇐',221:'⇑',222:'⇒',223:'⇓',229:'∑',242:'∫'};
 const WINGDINGS_SIGNS = {33:'✏',34:'✂',40:'☎',41:'✆',42:'✉',54:'⌛',55:'⌨',74:'☺',75:'😐',76:'☹',108:'●',110:'■',111:'□',112:'□',113:'❑',114:'❒',116:'◆',117:'❖',118:'⬥',119:'⌖',128:'⓪',159:'•',160:'▪',161:'○',162:'◉',163:'◎',164:'◈',165:'✦',166:'★',167:'✧',168:'✴',216:'➢',217:'➣',218:'➤',231:'←',232:'→',233:'↑',234:'↓',251:'✗',252:'✓',253:'☒',254:'☑'};
@@ -1132,7 +1133,6 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     }
     return child(node, 'mc', 'Fallback') || fail('DOCX contains unsupported alternate content.');
   };
-  const detailsControl = node => is(node, 'w', 'sdt') && val(child(child(node, 'w', 'sdtPr'), 'w', 'tag')) === 'rapier:details';
   const quoteControl = node => is(node, 'w', 'sdt') && val(child(child(node, 'w', 'sdtPr'), 'w', 'tag')) === 'rapier:quote';
   const sequence = async container => {
     const blocks = [], stack = [{nodes: container?.children || [], at: 0}];
@@ -1141,18 +1141,54 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       const frame = stack.at(-1), node = frame.nodes[frame.at++];
       if (!node) { stack.pop(); continue; }
       if ((visited++ & 127) === 0) await work.checkpoint();
-      if (is(node, 'w', 'p') || is(node, 'w', 'tbl') || quoteControl(node) || detailsControl(node)) blocks.push(node);
+      if (is(node, 'w', 'p') || is(node, 'w', 'tbl') || quoteControl(node)) blocks.push(node);
       else if (is(node, 'w', 'sdt')) stack.push({nodes: child(node, 'w', 'sdtContent')?.children || [], at: 0});
       else if (is(node, 'mc', 'AlternateContent')) stack.push({nodes: chooseAlternate(node).children, at: 0});
       else if (is(node, 'w', 'customXml')) {
         stack.push({nodes: node.children, at: 0});
       } else if (is(node, 'w') && ['ins','del','moveTo','moveFrom'].includes(node.localName))
         return fail('Decide structural revisions before importing this Word file.', 'docx_revision_structure');
-      else if (is(node, 'w') && ['commentRangeStart','commentRangeEnd'].includes(node.localName)) blocks.push(node);
+      else if (is(node, 'w') && ['commentRangeStart','commentRangeEnd','bookmarkStart','bookmarkEnd'].includes(node.localName)) blocks.push(node);
       else if (is(node, 'w') && ['sectPr','tcPr','tblPr','tblGrid','trPr',...MARKERS].includes(node.localName)) continue;
       else return fail('DOCX contains an unsupported document block: ' + node.localName);
     }
-    return blocks;
+    const result = [], ranges = [], active = new Map(), used = new Set();
+    const destination = () => ranges.at(-1)?.blocks || result;
+    const transparent = node => is(node, 'w') && (node.localName.endsWith('Pr') || MARKERS.includes(node.localName) ||
+      node.localName === 'r' && Array.from(node.children).every(transparent));
+    const edge = (mark, block, start) => {
+      for (let node = mark; node !== block; node = node.parentNode) {
+        if (!node.parentNode) return false;
+        const siblings = Array.from(node.parentNode.children), at = siblings.indexOf(node);
+        if ((start ? siblings.slice(0, at) : siblings.slice(at + 1)).some(node => !transparent(node))) return false;
+      }
+      return true;
+    };
+    const refuse = mark => fail('DOCX contains an unsupported document block: ' + mark.localName, 'docx_details_boundary');
+    for (const node of blocks) {
+      await work.checkpoint();
+      const standalone = is(node, 'w', 'bookmarkStart') || is(node, 'w', 'bookmarkEnd');
+      const starts = is(node, 'w', 'bookmarkStart') ? [node] : is(node, 'w', 'p') ? [...descendants(node, 'w', 'bookmarkStart')] : [];
+      for (const mark of starts) {
+        const match = DETAILS_BOOKMARK.exec(attr(mark, 'w', 'name') || '');
+        if (!match) continue;
+        const id = integer(attr(mark, 'w', 'id'));
+        if (id === null || used.has(id) || !edge(mark, node, true) || ranges.length >= DOCX_LIMITS.depth) refuse(mark);
+        const range = {id, open: match[1] === 'open', blocks: []};
+        ranges.push(range); active.set(id, range); used.add(id);
+      }
+      if (!standalone) destination().push(node);
+      if (!ranges.length) continue;
+      for (const mark of is(node, 'w', 'bookmarkEnd') ? [node] : [...descendants(node, 'w', 'bookmarkEnd')]) {
+        const id = attr(mark, 'w', 'id'), range = id !== null && /^-?\d+$/.test(id) ? active.get(Number(id)) : null;
+        if (!range) continue;
+        if (range !== ranges.at(-1) || !edge(mark, node, false)) refuse(mark);
+        ranges.pop(); active.delete(range.id);
+        destination().push({details: range});
+      }
+    }
+    if (ranges.length) refuse(container);
+    return result;
   };
   const sectionWidth = section => {
     const size = child(section, 'w', 'pgSz'), margins = child(section, 'w', 'pgMar');
@@ -1452,7 +1488,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
   }
   for (const mark of descendants(body, 'w', 'bookmarkStart')) {
     const name = attr(mark, 'w', 'name');
-    if (!name || name === '_GoBack' || /[\u0000-\u0020\u007f]/.test(name) || bookmarkTargets.has(name)) continue;
+    if (!name || name === '_GoBack' || DETAILS_BOOKMARK.test(name) || /[\u0000-\u0020\u007f]/.test(name) || bookmarkTargets.has(name)) continue;
     let paragraph = mark.parentNode;
     while (paragraph && !is(paragraph, 'w', 'p')) paragraph = paragraph.parentNode;
     const heading = headingTargets.get(paragraph), target = heading || _rapierNextHeadingSlug(name, headingSlugs);
@@ -1934,13 +1970,13 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     for (let index = 0; index < nodes.length; index++) {
       await work.checkpoint();
       const node = nodes[index], active = sectionContexts ? {...context, ...sectionContexts[index]} : context;
-      if (detailsControl(node)) {
-        const content = await sequence(child(node, 'w', 'sdtContent')), summary = content.shift();
+      if (node.details) {
+        const [summary, ...content] = node.details.blocks;
         if (!is(summary, 'w', 'p')) return fail('DOCX details has no summary paragraph.');
         const label = (await paragraph(summary, active)).html(0).replace(/^<p(?: [^>]*)?>([\s\S]*)<\/p>$/, '$1');
         const html = await renderBlocks(content, active);
         if (previous) yield previous;
-        previous = {html: () => project ? '<details><summary>' + label + '</summary>' + html + '</details>' : label + html, list: null};
+        previous = {html: () => project ? '<details' + (node.details.open ? ' open' : '') + '><summary>' + label + '</summary>' + html + '</details>' : label + html, list: null};
         continue;
       }
       if (quoteControl(node)) {
@@ -2258,6 +2294,15 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
   if (html.length > ARCHIVE_LIMITS.bytes || new Blob([html]).size > ARCHIVE_LIMITS.bytes) return fail('Converted DOCX exceeds the 25 MB document limit.');
   for (const thread of comments.threads) for (const message of thread.messages)
     message.html = replaceImages(message.html);
+  const detailsOpen = {marker: '\uFFFERapierWordDetailsOpen\uFFFF'};
+  while ([html, rejectedHtml, base].some(value => typeof value === 'string' && value.includes(detailsOpen.marker))) detailsOpen.marker += 'x';
+  let guardedDetails = false;
+  const guardDetails = value => value.replace(/<details open><summary>/g, () => {
+    guardedDetails = true;
+    return '<details><summary>' + sourceToken(detailsOpen.marker);
+  });
+  html = guardDetails(html);
+  if (rejectedHtml !== null) rejectedHtml = guardDetails(rejectedHtml);
   const mathFences = {marker: '\uFFFERapierWordMathFence\uFFFF', tails: []};
   while ([html, rejectedHtml, base].some(value => typeof value === 'string' && value.includes(mathFences.marker))) mathFences.marker += 'x';
   const guardMathFences = value => value.replace(/<span class="math-rendered" data-math-src="([^"]*)">[\s\S]*?<\/span>/g, (whole, encoded) => {
@@ -2271,12 +2316,13 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
   });
   html = guardMathFences(html);
   if (rejectedHtml !== null) rejectedHtml = guardMathFences(rejectedHtml);
-  if (mathFences.tails.length && (html.length > ARCHIVE_LIMITS.bytes || new Blob([html]).size > ARCHIVE_LIMITS.bytes)) return fail('Converted DOCX exceeds the 25 MB document limit.');
+  if ((guardedDetails || mathFences.tails.length) && (html.length > ARCHIVE_LIMITS.bytes || new Blob([html]).size > ARCHIVE_LIMITS.bytes)) return fail('Converted DOCX exceeds the 25 MB document limit.');
   const acceptedHtml = html;
   for (const row of revisions) for (const edge of ['S', 'E']) html = html.split(sourceToken(reviewMarker + row.id + edge + reviewMarker)).join('');
   progress(1, 'complete');
   return {html, warnings: [...warnings], stats, ...(comments.threads.length ? {comments} : {}),
     ...(wordStyle ? {wordStyle} : {}), ...(revisions.length ? {review: {marker: reviewMarker, changes: revisions, html: rejectedHtml, acceptedHtml}} : {}),
+    ...(guardedDetails ? {detailsOpen} : {}),
     ...(mathFences.tails.length ? {mathFences} : {}),
     ...(fontAssets.length ? {fontAssets} : {}),
     ...(nativeLanguage ? {language: nativeLanguage} : {}), ...(mainfont ? {mainfont} : {}), ...(base !== null ? {base} : {})};
@@ -2788,13 +2834,15 @@ function stripDecorativeLinkUnderline(record) {
 }
 export function finishDocxMarkdown(source, result, options = {}) {
   if (typeof result?.canonical === 'string') return result.canonical;
+  const detailsOpen = result?.detailsOpen, restoreDetails = text => detailsOpen && /^\uFFFERapierWordDetailsOpen\uFFFFx*$/.test(detailsOpen.marker)
+    ? text.replace(new RegExp('<details>(\\n[ \\t>]*<summary>)' + detailsOpen.marker, 'g'), (_, summary) => '<details open>' + summary) : text;
   const fences = result?.mathFences, unguard = text => fences && /^\uFFFERapierWordMathFence\uFFFFx*$/.test(fences.marker) &&
     Array.isArray(fences.tails) && fences.tails.length > 0 && fences.tails.length <= DOCX_LIMITS.elements && fences.tails.every(tail => typeof tail === 'string' && /^[ \t]+$/.test(tail))
     ? text.replace(new RegExp('[ \\t]*\\n[ \\t>]*' + fences.marker + '(\\d+)' + fences.marker, 'g'), (whole, index) => fences.tails[Number(index)] ?? whole) : text;
-  source = unguard(source);
+  source = restoreDetails(unguard(source));
   if (typeof options.convertHtml === 'function') {
     const convert = options.convertHtml;
-    options = {...options, convertHtml: html => unguard(convert(html))};
+    options = {...options, convertHtml: html => restoreDetails(unguard(convert(html)))};
   }
   const strip = text => {
     const edges = new Map(), marker = result.review?.marker;
@@ -3372,6 +3420,10 @@ function* docxNavigationSteps(blocks, firstId = 0, parent) {
       const mark = {id, name};
       bookmarks.set(value.bookmark, mark);
       if (!targets.has(anchor)) targets.set(anchor, mark);
+    }
+    if (value.type === 'details') {
+      const id = firstId + bookmarks.size;
+      bookmarks.set(value, {id, name: '_RapierDetails_' + (value.open ? 'open' : 'closed') + '_' + id});
     }
     if (typeof value.href === 'string' && value.href.startsWith('#')) links.add(value.href);
     for (const key of ['runs', 'items', 'header', 'rows', 'blocks']) if (value[key]) yield* visit(value[key]);
@@ -4167,7 +4219,7 @@ function* docxBlocksFromDomSteps(root, {canonical, willTokens = [], pointSize = 
       const clone = yield* cloneTree(element), summary = Array.from(clone.children).find(node => node.tagName === 'SUMMARY');
       const runs = summary ? yield* runsOf(summary) : [];
       summary?.remove();
-      blocks.push({type: 'details', runs, blocks: yield* nestedBlocks(clone)}); continue;
+      blocks.push({type: 'details', open: element.hasAttribute('open'), runs, blocks: yield* nestedBlocks(clone)}); continue;
     }
     if (tag === 'HR' && element.classList.contains('footnotes-sep')) continue;
     if ((tag === 'DIV' || tag === 'P') && (element.getAttribute('data-md-break') === 'page' || /page-break-before\s*:\s*always/i.test(element.getAttribute('style') || '')) && !element.textContent.trim()) { blocks.push({type: 'break'}); continue; }
@@ -4808,7 +4860,9 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
     if (block.type === 'details') {
       const summary = paragraphPart(await renderRuns(block.runs));
       const parts = [summary, ...await emitBlocks(block.blocks, inset, targets, availableWidth, decoration, tableCell)];
-      bodyParts.push({xml: '<w:sdt><w:sdtPr><w:tag w:val="rapier:details"/></w:sdtPr><w:sdtContent>' + writeBlocks(parts, tableCell) + '</w:sdtContent></w:sdt>'}); continue;
+      const mark = targets.bookmarks.get(block);
+      bodyParts.push({xml: '<w:bookmarkStart w:id="' + mark.id + '" w:name="' + mark.name + '"/>' +
+        writeBlocks(parts, tableCell) + '<w:bookmarkEnd w:id="' + mark.id + '"/>'}); continue;
     }
     if (block.type === 'break') {
       bodyParts.push(paragraphPart('<w:r><w:br w:type="page"/></w:r>'));

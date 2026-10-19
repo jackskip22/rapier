@@ -81,7 +81,7 @@ function _rapierTodoStrip(wrapper) {
 	const head = read.querySelector(':scope > .rapier-todo-head'); if (head) head.remove();
 	const list = read.querySelector(':scope > ul, :scope > ol');
 	if (list) {
-		list.classList.remove('rapier-todo-list', 'rapier-todo-list--closed');
+		list.classList.toggle('rapier-todo-list', false); list.classList.toggle('rapier-todo-list--closed', false);
 		const row = list.querySelector(':scope > li.rapier-todo-ticked-row'); if (row) row.remove();
 		for (const nested of list.querySelectorAll('.rapier-todo-list')) nested.classList.remove('rapier-todo-list', 'rapier-todo-list--closed');
 		for (const row of list.querySelectorAll('li.rapier-todo-ticked-row')) row.remove();
@@ -187,10 +187,10 @@ function _rapierTodoDecorateEditing(wrapper) {
 		if (!box) {
 			if (handle) handle.remove();
 			_rapierTodoUnwrapLabel(li);
-			li.classList.remove('rapier-todo-item');
+			li.classList.toggle('rapier-todo-item', false);
 			continue;
 		}
-		li.classList.add('rapier-todo-item');
+		li.classList.toggle('rapier-todo-item', true);
 		if (!handle) li.insertBefore(_rapierTodoBuildHandle(), li.firstChild);
 		if (li.textContent.trim()) { _rapierTodoUnwrapLabel(li); _rapierTodoDropTrailingBreaks(li); }
 		else _rapierTodoEmptyRowKeepsOneLabel(li, box);
@@ -349,9 +349,9 @@ function _rapierTodoDecorateBoxed(file, key, read, list, range) {
 	const T = _rapierTodoModel();
 	const liElements = [...list.querySelectorAll('li')].filter(li => !li.classList.contains('rapier-todo-ticked-row'));
 	if (liElements.length !== range.items.length) { _rapierTodoStrip(read.closest('.block-wrapper')); return; }
-	list.classList.add('rapier-todo-list');
+	list.classList.toggle('rapier-todo-list', true);
 	liElements.forEach(li => {
-		li.classList.add('rapier-todo-item');
+		li.classList.toggle('rapier-todo-item', true);
 		if (!li.querySelector(':scope > .rapier-todo-handle')) li.insertBefore(_rapierTodoBuildHandle(), li.firstChild);
 		_rapierTodoEnsureLabel(li);
 	});
@@ -366,7 +366,7 @@ function _rapierTodoDecorateBoxed(file, key, read, list, range) {
 
 	liElements.forEach((li, i) => li.classList.toggle('rapier-todo-done', !!range.items[i].done));
 	for (const group of [list, ...list.querySelectorAll('ul, ol')]) {
-		group.classList.add('rapier-todo-list');
+		group.classList.toggle('rapier-todo-list', true);
 		const rows = _rapierTodoRows(group);
 		for (const li of rows) li.classList.toggle('rapier-todo-branch-open', !!li.querySelector('li.rapier-todo-item:not(.rapier-todo-done)'));
 		const groupKey = group === list ? key : key + ':' + liElements.indexOf(rows[0]);
@@ -376,7 +376,7 @@ function _rapierTodoDecorateBoxed(file, key, read, list, range) {
 
 function _rapierTodoLayoutTicked(file, key, list, tickedCount) {
 	let row = list.querySelector(':scope > li.rapier-todo-ticked-row');
-	if (!tickedCount) { if (row) row.remove(); list.classList.remove('rapier-todo-list--closed'); return; }
+	if (!tickedCount) { if (row) row.remove(); list.classList.toggle('rapier-todo-list--closed', false); return; }
 	if (!row) {
 		row = _rapierNotesEl('li', 'rapier-todo-ticked-row'); row.setAttribute('role', 'presentation');
 		const btn = _rapierNotesEl('button', 'rapier-notes-chip rapier-todo-ticked'); btn.type = 'button';
@@ -385,8 +385,9 @@ function _rapierTodoLayoutTicked(file, key, list, tickedCount) {
 	}
 	const btn = row.querySelector('.rapier-todo-ticked');
 	const closed = _rapierTodoIsCollapsed(file, key);
-	btn.querySelector('span').textContent = 'Checked (' + tickedCount + ')';
-	btn.setAttribute('aria-expanded', String(!closed));
+	const label = btn.querySelector('span'), words = 'Checked (' + tickedCount + ')';
+	if (label.textContent !== words) label.textContent = words;
+	if (btn.getAttribute('aria-expanded') !== String(!closed)) btn.setAttribute('aria-expanded', String(!closed));
 	btn.classList.toggle('rapier-todo-ticked--closed', closed);
 	btn.onclick = evt => { evt.stopPropagation(); _rapierTodoToggleCollapsed(file, key); _rapierTodoScheduleScan(); };
 	list.classList.toggle('rapier-todo-list--closed', closed);
@@ -403,10 +404,10 @@ function _rapierTodoToggleCollapsed(file, key) {
 
 function _rapierTodoDecoratePlain(key, read, list) {
 	read.querySelector(':scope > .rapier-todo-head')?.remove();
-	list.classList.remove('rapier-todo-list', 'rapier-todo-list--closed');
+	list.classList.toggle('rapier-todo-list', false); list.classList.toggle('rapier-todo-list--closed', false);
 	const staleRow = list.querySelector(':scope > li.rapier-todo-ticked-row'); if (staleRow) staleRow.remove();
 	for (const li of list.children) {
-		li.classList.remove('rapier-todo-item', 'rapier-todo-done');
+		li.classList.toggle('rapier-todo-item', false); li.classList.toggle('rapier-todo-done', false);
 		const h = li.querySelector(':scope > .rapier-todo-handle'); if (h) h.remove();
 		_rapierTodoUnwrapLabel(li);
 	}
