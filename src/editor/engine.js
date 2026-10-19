@@ -15145,46 +15145,6 @@ function _rapierSyncSectionFoldControl(wrapper, readDiv, controlHost = wrapper, 
 	if (button.getAttribute('aria-label') !== label) button.setAttribute('aria-label', label);
 }
 
-function _rapierSyncFenceCopyControl(wrapper, readDiv, controlHost = wrapper) {
-	if (!wrapper) return;
-	const read = readDiv || wrapper.querySelector(':scope > .block-read');
-	const fence = rapier.document.docKind === 'markdown' && read && read.childElementCount === 1
-		&& read.querySelector(':scope > pre > code, :scope > .rapier-hscroll--code > pre > code');
-	const button = controlHost.querySelector(':scope > .fence-copy');
-	if (!fence) { if (button) button.remove(); return; }
-	if (button) return;
-	const control = document.createElement('button');
-	control.type = 'button';
-	control.className = 'fence-copy';
-	control.setAttribute('contenteditable', 'false');
-	control.setAttribute('aria-label', 'copy the code');
-	control.title = 'copy the code';
-	const svgNS = 'http://www.w3.org/2000/svg';
-	const glyph = (name, child) => {
-		const svg = document.createElementNS(svgNS, 'svg');
-		for (const [key, value] of [['class', 'fence-copy__' + name], ['viewBox', '0 0 24 24'], ['fill', 'none'], ['stroke', 'currentColor'],
-			['stroke-width', '2'], ['stroke-linecap', 'round'], ['stroke-linejoin', 'round'], ['aria-hidden', 'true']]) svg.setAttribute(key, value);
-		svg.appendChild(child);
-		return svg;
-	};
-	const use = document.createElementNS(svgNS, 'use');
-	use.setAttribute('href', '#i-copy');
-	const check = document.createElementNS(svgNS, 'polyline');
-	check.setAttribute('points', /points="([^"]+)"/.exec(_RAPIER_COMMAND_ICONS.check)[1]);
-	control.append(glyph('copy', use), glyph('done', check));
-	controlHost.appendChild(control);
-}
-
-async function _rapierCopyFenceCode(button) {
-	const code = button.closest('.block-wrapper')?.querySelector(':scope > .block-read > pre > code, :scope > .block-read > .rapier-hscroll--code > pre > code');
-	if (!code) return;
-	const copied = await _rapierWriteTextClipboard(_rapierSemanticProjection(code).replace(/\n$/, ''));
-	if (!copied) { showToast('could not copy', 'error'); return; }
-	button.setAttribute('data-copied', '');
-	clearTimeout(button._rapierCopiedTimer);
-	button._rapierCopiedTimer = setTimeout(() => button.removeAttribute('data-copied'), 1500);
-}
-
 function _rapierSectionFoldPlan(items, foldedIds) {
 	const foldedAncestors = [];
 	return items.map(item => {
@@ -36809,6 +36769,35 @@ function _rapierHandleEnter(opts) {
 	const marker = _markdownListContinuationMarker(editDiv, range);
 	if (marker) {
 		_insertSoftBreakWithText(editDiv, range, marker);
+		return true;
+	}
+
+	const termEl = range.collapsed && startEl?.closest?.('dt, dd');
+	if (termEl && editDiv.contains(termEl) && termEl.parentElement?.tagName === 'DL') {
+		const blank = node => !node.textContent.replace(/[ \u200b]/g, '').trim() && !node.querySelector?.('img, input, math, .math-rendered');
+		const part = (from, to) => { const r = document.createRange(); r.setStart(...from); r.setEnd(...to); return r; };
+		if (blank(termEl)) {
+			_splitBlockAtCaret(editDiv, wrapper, block, range, { emptyLi: termEl, sourceCheckpointed: opts.sourceCheckpointed });
+			return true;
+		}
+		if (blank(part([termEl, 0], [range.startContainer, range.startOffset]).cloneContents())) {
+			if (termEl === termEl.parentElement.firstElementChild) {
+				const above = document.createRange();
+				above.setStartBefore(termEl.parentElement);
+				_splitBlockAtCaret(editDiv, wrapper, block, above, { sourceCheckpointed: opts.sourceCheckpointed });
+			} else {
+				termEl.before(document.createElement('dd'));
+				termEl.previousElementSibling.append(document.createElement('br'));
+				_markEditDivDirty(editDiv);
+			}
+			return true;
+		}
+		const tail = part([range.startContainer, range.startOffset], [termEl, termEl.childNodes.length]);
+		const rest = document.createElement(termEl.tagName === 'DT' || !blank(tail.cloneContents()) || termEl.nextElementSibling?.tagName === 'DD' ? 'dd' : 'dt');
+		if (termEl.dir) rest.dir = termEl.dir;
+		rest.append(tail.extractContents());
+		termEl.after(rest);
+		_insertQuoteParagraph(editDiv, range, termEl, rest);
 		return true;
 	}
 

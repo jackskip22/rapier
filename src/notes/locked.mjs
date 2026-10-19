@@ -11,9 +11,9 @@ export async function prepareLockedNote({store, index, file, id, digest}) {
 		if (bytes == null) continue;
 		let record;
 		try { record = JSON.stringify(JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(bytes))); }
-		catch { throw new Error('An import record could not be checked. Nothing was locked.'); }
+		catch { throw new Error('Rapier could not check where this note came from.'); }
 		if (record.includes(JSON.stringify(id)) || record.includes(JSON.stringify(file)))
-			throw new Error('This note still belongs to a retained import record. Its import history must stay intact, so it cannot be locked.');
+			throw new Error('It came from an import you can still undo.');
 	}
 	const source = await store.read(file), entry = index.notes[file];
 	if (!entry || entry.id !== id || source == null || await sha256(source) !== digest)
