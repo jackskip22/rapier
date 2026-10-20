@@ -5,7 +5,7 @@ and Windows, phone-first and offline. A person and an agent work in the same doc
 
 ## Choose a task
 
-1. **Work together live.** Connect to `https://mcp.rapier.website/mcp`, then call `open`. Keep the returned
+1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open`. Keep the returned
    `document` private and pass it on later calls. Read `read` before editing. Use the returned
    `editor_url`; when the editor is absent, deliver `export` with `format: "html"`.
 2. **Deliver one offline file.** Run `npx rapier-html notes.md`. The document and editor travel together in

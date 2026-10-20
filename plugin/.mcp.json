@@ -2,7 +2,7 @@
   "mcpServers": {
     "rapier": {
       "type": "http",
-      "url": "https://mcp.rapier.website/mcp"
+      "url": "https://mcp.rapier.website/door/mcp"
     }
   }
 }

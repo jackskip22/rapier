@@ -36,7 +36,7 @@ Export links last up to 24 hours within the workspace lifetime. Download a file 
 ## Install
 
 **Claude chat and Cowork:** add the plugin, open its **Connectors** tab, and add or connect **Rapier** at
-`https://mcp.rapier.website/mcp`. No Rapier account or login is needed. Installing the skills alone does not connect the tools.
+`https://mcp.rapier.website/door/mcp`. No Rapier account or login is needed. Installing the skills alone does not connect the tools.
 
 **Claude Code:** `claude plugin marketplace add jackskip22/rapier-plugins && claude plugin install rapier@rapier`
 

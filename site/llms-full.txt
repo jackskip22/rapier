@@ -4,7 +4,7 @@
 
 For people, Rapier is a Markdown editor and notes app on Android ([Google Play](https://play.google.com/store/apps/details?id=app.rapier)), on the web at https://rapier.website and on Windows. You write on the formatted page or in the Markdown source; there is no split preview. It works offline, with no account, ads or tracking.
 
-Connect an MCP client to `https://mcp.rapier.website/mcp` (Streamable HTTP, with or without OAuth) and call `open`. No account needed. Read the `rapier://guide` resources if your host supports MCP resources; otherwise use the [agent guide](https://rapier.website/agents) and the tool schemas. Your host's own tool approval rules still apply.
+Connect an MCP client to `https://mcp.rapier.website/door/mcp` (Streamable HTTP, anonymous, without OAuth) and call `open`. No account needed. Read the `rapier://guide` resources if your host supports MCP resources; otherwise use the [agent guide](https://rapier.website/agents) and the tool schemas. Your host's own tool approval rules still apply.
 
 Muse uses OAuth at `https://mcp.rapier.website/muse`, without an embedded editor: use the paired `editor_url` page, and send file text yourself because host-file imports are unavailable. Keep `document` private and pass it on later calls.
 
@@ -24,7 +24,7 @@ Free and offline, with no ads, tracking or Rapier account.
 - **On Android:** get Rapier on [Google Play](https://play.google.com/store/apps/details?id=app.rapier). The app
   has no Internet permission. Optional Google Play asset packs download on first use, then work offline.
 - **On Windows:** download [Rapier.exe](https://github.com/jackskip22/rapier/raw/main/Rapier.exe). It is not code-signed yet, so Windows SmartScreen may warn the first time: choose **More info**, then **Run anyway**.
-- **With an agent:** the Claude plugin, ChatGPT or another MCP client at `https://mcp.rapier.website/mcp`; Muse at `https://mcp.rapier.website/muse`.
+- **With an agent:** the Claude plugin or another MCP client at `https://mcp.rapier.website/door/mcp`; the OpenAI plugin at `https://mcp.rapier.website/openai/mcp`; Muse at `https://mcp.rapier.website/muse`.
 
 ## What it does
 
@@ -46,7 +46,7 @@ Free and offline, with no ads, tracking or Rapier account.
 
 ## For agents
 
-1. **Work together live.** Connect to `https://mcp.rapier.website/mcp`, then call `open` to share one document with the person.
+1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
 2. **Hand over an offline editor.** Run `npx rapier-html notes.md` to put the editor and document in one HTML file
    ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed the editor.** Use [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed)
@@ -71,7 +71,7 @@ npx rapier-html revised.md --compare original.md   # opens the edit beside its o
 npm install rapier-markdown-kit                     # read, write and render the Markdown without the editor (MIT)
 ```
 
-Any MCP client connects at `https://mcp.rapier.website/mcp` with no account; in ChatGPT, add it in developer mode
+Current MCP clients connect at `https://mcp.rapier.website/door/mcp` with no account; in ChatGPT, add the OpenAI connector at `https://mcp.rapier.website/openai/mcp` in developer mode
 ([OpenAI's guide](https://developers.openai.com/plugins/deploy/connect-chatgpt)). Hosted workspaces expire after 30
 idle days; use `export` to keep a copy. Data handling: [rapier.website/privacy](https://rapier.website/privacy).
 
@@ -213,7 +213,7 @@ Call `open` with one source:
 
 ### OAuth
 
-OAuth supports `rapier:read`, `rapier:write` and optional `offline_access`. The person can grant read only; a
+OAuth on the OpenAI connector and Muse supports `rapier:read`, `rapier:write` and optional `offline_access`. The person can grant read only; a
 read-only connection can't create or edit a workspace. The host keeps credentials out of tool arguments.
 
 - Access tokens last 15 minutes.
@@ -2912,7 +2912,7 @@ byte. Paint keeps transparency, and drawings stay readable on light or dark pape
 
 ## Choose a Rapier workflow
 
-1. **Work together live.** Connect to `https://mcp.rapier.website/mcp`, then call `open` to share one document with the person.
+1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
 2. **Hand over an offline editor.** `npx rapier-html@1.2.18 notes.md` puts the editor and document in one HTML file.
 3. **Embed the editor.** [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed)
    mounts the editor or reader in an app.
@@ -3099,7 +3099,7 @@ Rapier is a phone-first Markdown editor for notes, diagrams, drawing and waterco
 file for Android, the web and Windows. The agent edits live; the person sees its presence and changes, taps a change
 to see what was there before, and can undo it. Use `show {target:"comparison"}` to show a diff.
 
-1. **Work together live.** Connect to `https://mcp.rapier.website/mcp`, then call `open` to share one document with the person.
+1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
 2. **Hand over an offline editor.** `npx rapier-html@1.2.18 notes.md` puts the editor and document in one HTML file
    ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed the editor.** [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed)
@@ -3296,7 +3296,7 @@ Collaborate over MCP and WebMCP, use optional encrypted sync to your own Cloudfl
 editor and lightweight reader (about 360 kB). The agent edits live; the person sees its presence and
 changes, taps a change to see the before and undoes anything. Use `show {target:"comparison"}` to show a diff deliberately.
 
-1. **Work together live.** Connect to `https://mcp.rapier.website/mcp`, then call `open` to share one document with the person.
+1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
 2. **Deliver an offline editor.** Run `npx rapier-html@1.2.18 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed in your app.** Install [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed); mount the editor or reader, with your app's agent over WebMCP in the editor.
 4. **Keep portable Markdown.** Use [rapier-markdown-kit](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-markdown-kit) for pictures, editable SVG drawings and layout in one `.md` file. Respect [Will/1](https://github.com/jackskip22/will) `keep`, `append` and `edit` regions.
@@ -3733,7 +3733,7 @@ import {parseAssets} from 'rapier-markdown-kit/assets';   // the picture appendi
 Rapier is a phone-first Markdown editor for notes, diagrams, drawing and watercolor painting. It runs offline
 as one HTML file on Android, Web and Windows.
 
-1. **Work together live.** Connect to `https://mcp.rapier.website/mcp`, then call `open` to share one document with the person.
+1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
 2. **Deliver an offline editor.** Run `npx rapier-html notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed in your app.** Install [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed); mount the editor or reader, with your app's agent over WebMCP in the editor.
 4. **Keep portable Markdown.** Use [rapier-markdown-kit](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-markdown-kit) for pictures, editable SVG drawings and layout in one `.md` file. Respect [Will/1](https://github.com/jackskip22/will) `keep`, `append` and `edit` regions.
@@ -4440,7 +4440,7 @@ Collaborate over MCP and WebMCP, use optional encrypted sync to your own Cloudfl
 editor and lightweight reader (about 360 kB). The agent edits live; the person sees its presence and
 changes, taps a change to see the before and undoes anything. Use `show {target:"comparison"}` to show a diff deliberately.
 
-1. **Work together live.** Connect to `https://mcp.rapier.website/mcp`, then call `open` to share one document with the person.
+1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
 2. **Deliver an offline editor.** Run `npx rapier-html@1.2.18 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed in your app.** Install [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed); mount the editor or reader, with your app's agent over WebMCP in the editor.
 4. **Keep portable Markdown.** Use [rapier-markdown-kit](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-markdown-kit) for pictures, editable SVG drawings and layout in one `.md` file. Respect [Will/1](https://github.com/jackskip22/will) `keep`, `append` and `edit` regions.

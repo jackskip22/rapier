@@ -33,7 +33,7 @@ Will markers in the Markdown (`keep`, `append`, `edit`) control what agents may 
 
 ## Choose a Rapier workflow
 
-1. **Work together live.** Connect to `https://mcp.rapier.website/mcp`, then call `open` to share one document with the person.
+1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
 2. **Hand over an offline editor.** Use this package.
 3. **Embed the editor.** [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed)
    mounts the editor or reader in your app.

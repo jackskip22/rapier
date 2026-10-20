@@ -40,7 +40,7 @@ Rapier is a phone-first Markdown editor for notes, diagrams, drawing and waterco
 file for Android, the web and Windows. The agent edits live; the person sees its presence and changes, taps a change
 to see what was there before, and can undo it. Use `show {target:"comparison"}` to show a diff.
 
-1. **Work together live.** Connect to `https://mcp.rapier.website/mcp`, then call `open` to share one document with the person.
+1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
 2. **Hand over an offline editor.** `npx rapier-html@1.2.18 notes.md` puts the editor and document in one HTML file
    ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed the editor.** [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed)
