@@ -98,10 +98,12 @@ Templates and elements, by scan page (zero-based scan number; the book's own pag
   scan 90  book page 89  Verschiedene Schmuckelemente in Rokoko-Manier. Emil Rudolf Weiß u.a., um 1913 | Various decorative elements in rococo style. Emil Rudolf Weiß, et alii, about 1913
   scan 91  book page 90  Typographischer Schmuck, aus Einzelelementen zusammengesetzt. Emil Rudolf Weiß, um 1913 | Typographical decorations composed from single figures. Emil Rudolf Weiß, about 1913
   scan 93  book page 92  Titelverzierung in Holzschnitt. Erhart Ratdolt, Venedig 1478 | Title page decoration, woodcut. Erhart Ratdolt, Venice 1478
+    border-062  template
   scan 94  book page 93  Randeinfassung in Metallschnitt. Giovanni und Gregorio da Gregoriis, Venedig 1498 | Border edging, metal engraving. Giovanni and Gregorio da Gregoriis, Venice 1498
     border-001  template
   scan 95  book page 94  Satzprobe mit Umrandung. Conrad Fyner, Urach 1481 | Specimen with border. Conrad Fyner, Urach 1481
   scan 96  book page 95  Titelornament und Einfassung. L. Soardi, Venedig 1499 | Title page ornamentation and border. L. Soardi, Venice 1499
+    border-063  template
   scan 97  book page 96  Titeleinfassung in Holzschnitt. Sigismund Grimm und Max Wirsung, Augsburg 1519 | Title page border, woodcut. Sigismund Grimm and Max Wirsung, Augsburg 1519
     border-002  template
   scan 98  book page 97  Titeleinfassung in der Art des Hans Holbein. Johann Frobens, Basel 1518 | Title page border after Hans Holbein. Johann Frobens, Basel 1518
@@ -118,41 +120,62 @@ Templates and elements, by scan page (zero-based scan number; the book's own pag
   scan 104  book page 103  Randeinfassungen im Renaissance-Stil, Berlin 1884 | Border edgings in Renaissance style, Berlin 1884
     border-008  template
   scan 105  book page 104  Rahmen im sog. Westminster-Stil | Border in the so-called Westminster style
+    border-064  template
   scan 106  book page 105  Titelumrahmung. Albert Knab, 1903 | Title page border. Albert Knab, 1903
+    border-065  template
   scan 107  book page 106  Titelumrahmung. Paul Biirck, 1900 | Title page border. Paul Biirck, 1900
+    border-066  template
   scan 108  book page 107  Titeleinfassung. Carl Weidemeyer, 1909 | Title page border. Carl Weidemeyer, 1909
+    border-067  template
   scan 109  book page 108  Randeinfassung, Jugendstil, Anfang 20. Jh. | Border in Art Nouveau style, early 20th cn.
+    border-068  template
   scan 110  book page 109  Rahmen mit Flechtmuster, 19. Jh. | Border, plaited and woven, 19th cn.
+    border-069  template
   scan 111  book page 110  Titeleinfassung mit Arabesken, 1639 | Title page border with arabesques, 1639
+    border-070  template
   scan 112  book page 111  Titeleinfassung mit Arabesken, Basel 1654 | Title page border with arabesques, Basel 1654
+    border-071  template
   scan 113  book page 112  Gesetzte Titelumrandung mit Granjon-Arabesken. Guillaume Silvius, Antwerpen 1573 | Cast title page border with Granjon arabesques. Guillaume Silvius, Antwerp 1573
+    border-072  template
   scan 114  book page 113  Titeleinfassung mit Arabesken, 16. Jh. | Title page border with arabesques, 16th cn.
+    border-073  template
   scan 115  book page 114  Titelumrahmung mit Granjon-Arabesken, 16. Jh. | Title page border with Granjon arabesques, 16th cn.
+    border-074  template
   scan 116  book page 115  Titelumrandung mit Arabesken | Title page border with arabesques
+    border-075  template
   scan 117  book page 116  Titeleinfassung mit Arabesken | Title page border with arabesques
     border-009  template
   scan 118  book page 117  Titeleinfassung mit Arabesken | Title page border with arabesques
   scan 119  book page 118  Titeleinfassung mit Arabesken | Title page border with arabesques
+    border-076  template
   scan 120  book page 119  Titeleinfassung mit Arabesken | Title page border with arabesques
+    border-077  template
   scan 121  book page 120  Titeleinfassungen. Pierre-Simon Fournier d.J. und andere, 1742 | Title page borders. Pierre-Simon Fournier the younger and others, 1742
   scan 122  book page 121  Titelblatt. Pierre-Simon Fournier d. J., Paris 1742 | Title page by Pierre-Simon Fournier the younger, Paris 1742
+    border-078  template
   scan 123  book page 122  Rahmen mit Röschen. Holland, 1748 | Border with rosettes. Holland, 1748
     border-010  template
   scan 124  book page 123  Rahmen mit Röschen. Holland, 1748 | Border with rosettes. Holland, 1748
+    border-079  template
   scan 125  book page 124  Titelseite von Loyson et Briquet, Paris 1751 | Title page from Loyson et Briquet, Paris 1751
     border-011  template
   scan 126  book page 125  Verschiedene Titelseiten, Frankreich, 1751–1784 | Various title pages, France, 1751–1784
   scan 127  book page 126  Musterblatt mit Umrahmung, 1757 | Specimen sheet with border, 1757
+    border-080  template
   scan 128  book page 127  Musterblatt mit Umrahmung, 1768 | Specimen sheet with border, 1768
+    border-081  template
   scan 129  book page 128  Vorwort des Nekrologs auf Pierre-Simon Fournier d.J., 1770 | Foreword, eulogy of Pierre-Simon Fournier the younger, 1770
     border-012  template
   scan 130  book page 129  Titelblatt des Nekrologs auf Pierre-Simon Fournier d. J., 1770 | Title page, eulogy of Pierre-Simon Fournier the younger, 1770
     border-013  template
   scan 131  book page 130  Titeleinfassung im Rokoko-Stil. Frankreich, 18. Jh. | Title page border in rococo style, France, 18th cn.
+    border-082  template
   scan 132  book page 131  Titeleinfassung im Rokoko-Stil. Frankreich, 18. Jh. | Title page border in rococo style, France, 18th cn.
     border-014  template
   scan 133  book page 132  Titeleinrahmung, Holland, 1772 | Title page border, Holland, 1772
+    border-083  template
   scan 134  book page 133  Musterblatt mit Umrahmung. Christoffel Plantyn, Antwerpen 1768 | Specimen sheet with border, Christoffel Plantyn, Antwerp 1768
+    border-084  template
   scan 135  book page 134  Titelblatt eines Musterkatalogs. Wilhelm Haas, Basel 1772 | Title page of a specimen catalogue. Wilhelm Haas, Basel 1772
     border-015  template
   scan 136  book page 135  Musterblatt im Stil des Rokoko. Emil Rudolf Weiß, um 1910 | Specimen sheet in rococo style. Emil Rudolf Weiß, about 1910
@@ -162,12 +185,16 @@ Templates and elements, by scan page (zero-based scan number; the book's own pag
     border-017  template
   scan 139  book page 138  Musterblatt im Stil des Rokoko. Emil Rudolf Weiß, 1912 | Specimen sheet in rococo style. Emil Rudolf Weiß, 1912
   scan 140  book page 139  Titeleinfassung im Stil des Rokoko, Anfang 20. Jh. | Title page border in rococo style, early 20th cn.
+    border-085  template
   scan 141  book page 140  Einfassung in Tempelform. Historismus, Miinchen 1839 | Border in temple form. Academicism, Munich 1839
+    border-086  template
   scan 142  book page 141  Einfassung in Tempelform. Historismus, Miinchen 1839 | Border in temple form. Academicism, Munich 1839
+    border-087  template
   scan 143  book page 142  Titeleinfassung im Stil des Rokoko, Anfang 20. Jh. | Title page border in rococo style, early 20th cn.
     border-018  template
   scan 144  book page 143  Historistische Einfassungen. J.G. Schelter & Giesecke, um 1900 | Academicistic borders. J.G. Schelter & Giesecke, about 1900
   scan 145  book page 144  Rahmen. Peter Behrens, 1908 | Border. Peter Behrens, 1908
+    border-088  template
   scan 146  book page 145  Rahmen und Leisten. Peter Behrens, 1908 | Border and row ornaments. Peter Behrens, 1908
     border-019  template
   scan 147  book page 146  Rahmen und Leisten. Peter Behrens, 1908 | Border and row ornaments. Peter Behrens, 1908
@@ -175,9 +202,13 @@ Templates and elements, by scan page (zero-based scan number; the book's own pag
   scan 148  book page 147  Rahmen und Schmuck-Ecken. Friedrich Wilhelm Kleukens, um 1910 | Borders and decorative corner-pieces. Friedrich Wilhelm Kleukens, about 1910
     border-021  template
   scan 149  book page 148  Titeleinfassung. Friedrich Wilhelm Kleukens, 1913 | Title page border. Friedrich Wilhelm Kleukens, 1913
+    border-089  template
   scan 150  book page 149  Titelblatt der Schriftgießerei Stempel, Frankfurt am Main 1913 | Title page of type foundry catalogue of D. Stempel, Frankfurt 1913
+    border-090  template
   scan 151  book page 150  Rahmen im Rokoko-Stil der Monotype Corp., London 1926 | Border in rococo style of the Monotype Corp., London 1926
+    border-091  template
   scan 152  book page 151  Rahmen im Rokoko-Stil der Monotype Corp., London 1926 | Border in rococo style of the Monotype Corp., London 1926
+    border-092  template
   scan 153  book page 152  Rahmen im Rokoko-Stil der Monotype Corp., London 1926 | Border in rococo style of the Monotype Corp., London 1926
     border-022  template
   scan 154  book page 153  Rahmen im Rokoko-Stil der Monotype Corp., London 1926 | Border in rococo style of the Monotype Corp., London 1926
@@ -187,6 +218,7 @@ Templates and elements, by scan page (zero-based scan number; the book's own pag
   scan 156  book page 155  Rahmen im Rokoko-Stil der Monotype Corp., London 1926 | Border in rococo style of the Monotype Corp., London 1926
     border-025  template
   scan 157  book page 156  Rahmen im Rokoko-Stil der Monotype Corp., London 1926 | Border in rococo style of the Monotype Corp., London 1926
+    border-093  template
   scan 158  book page 157  Rahmen im Rokoko-Stil der Monotype Corp., London 1926 | Border in rococo style of the Monotype Corp., London 1926
     border-026  template
   scan 159  book page 158  Einfassung der Monotype Corp., London 1926 | Border of the Monotype Corp., London 1926
@@ -194,6 +226,7 @@ Templates and elements, by scan page (zero-based scan number; the book's own pag
   scan 160  book page 159  Einfassung der Monotype Corp., London 1926 | Border of the Monotype Corp., London 1926
     border-028  template
   scan 161  book page 160  Einfassung der Monotype Corp., London 1926 | Border of the Monotype-Corp., London 1926
+    border-094  template
   scan 162  book page 161  Rahmen im Rokoko-Stil der Monotype Corp. | Borders in rococo style of the Monotype Corp.
   scan 163  book page 162  Kartuschen. Historismus, um 1870 | Cartouches. Academicism, about 1870
   scan 164  book page 163  Kartuschen. Historismus, um 1870 | Cartouches. Academicism, about 1870
@@ -341,6 +374,7 @@ Templates and elements, by scan page (zero-based scan number; the book's own pag
   scan 295  book page 294  Granjon-Arabeske für ein Vorsatzpapier. Adam Islip, London 1596 | Granjon arabesque for an end paper. Adam Islip, London 1596
   scan 298  book page 297  Bucheinband. Samuel Mearne, 1669 | Book binding. Samuel Mearne, 1669
   scan 303  book page 302  Titelblatt eines Musterbuchs. Johann Thomas Trattner, Wien 1760 | Title page of a specimen book. Johann Thomas Trattner, Vienna 1760
+    border-095  template
   scan 304  book page 303  Musterbuch mit Schmuckleisten, Flächen und Initialen von A bis Z. Johann Thomas Trattner, Wien 1760 (S. 302–321) | Specimen book with decorative row ornaments, ornamental areas and initials from A to Z. Johann Thomas Trattner, Vienna 1760 (p. 302–321)
     border-042  template
   scan 305  book page 304  Musterbuch mit Schmuckleisten, Flächen und Initialen von A bis Z. Johann Thomas Trattner, Wien 1760 (S. 302–321) | Specimen book with decorative row ornaments, ornamental areas and initials from A to Z. Johann Thomas Trattner, Vienna 1760 (p. 302–321)

@@ -207,7 +207,7 @@ export async function runTrash({store, index, files, now, deviceId, mode = 'expi
 }
 
 
-export async function recoverPressureTrash({store, index, intent, commit, keep = null, live = null} = {}) {
+export async function recoverPressureTrash({store, index, intent, commit, keep = null, live = null, admission = null} = {}) {
  const result = blankResult(index); let state = await intent.read(index);
  if (!state.record || state.record.phase === 'idle') return result;
  let row = state.record;
@@ -220,11 +220,15 @@ export async function recoverPressureTrash({store, index, intent, commit, keep =
  for (const [file, entry] of Object.entries(index.notes)) if (entry.id === row.id && await sha256(exactBytes(file)) === row.fileDigest) matches.push(file);
  if (matches.length !== 1) throw fail('delete-pending', 'The deletion identity cannot be resolved from its exact metadata.');
  const file = matches[0], held = intent.heldName(row);
+ const finish = async () => {
+ const checkKeep = () => { if (keep && keep(file)) throw fail('delete-pending', 'This note is open or opening. Its deletion is still pending.'); };
+ checkKeep();
  let heldBytes = await intent.api.read(held);
  if (heldBytes != null && await sha256(heldBytes) !== row.digest) throw fail('delete-custody', 'The quarantined note changed. Every remaining byte was kept.');
  if (row.phase === 'admitted') {
   await intent.releaseReserve(row);
-  if (heldBytes == null && live?.token === row.token && !(keep && keep(file))) {
+  checkKeep();
+  if (heldBytes == null && live?.token === row.token) {
    const outcome = await intent.api.detach(file, {held, digest: row.digest, identity: live.identity});
    if (outcome === 'detached') heldBytes = await intent.api.read(held);
    if (heldBytes != null && await sha256(heldBytes) !== row.digest) throw fail('delete-custody', 'The detached note did not keep its admitted bytes.');
@@ -234,13 +238,16 @@ export async function recoverPressureTrash({store, index, intent, commit, keep =
  let next = clone(index);
  next.noteCounters = {...next.noteCounters, [row.device]: Math.max(next.noteCounters?.[row.device] || 1, row.counter)};
  if (row.phase === 'detached') {
+  checkKeep();
   if (heldBytes != null && !await intent.api.removeOwned(held, row.digest)) throw fail('delete-pending', 'The quarantined note could not be removed.');
   if (await intent.api.read(held) != null) throw fail('delete-pending', 'The quarantined note remains pending.');
   delete next.notes[file];
   const guardedHistory = {...store, remove: async path => {
    const bytes = await store.read(path); if (bytes == null) return;
-   if (!await intent.api.removeOwned(path, await sha256(exactBytes(bytes)))) throw fail('delete-pending', 'A history object changed. It was kept.');
+   const digest = await sha256(exactBytes(bytes)); checkKeep();
+   if (!await intent.api.removeOwned(path, digest)) throw fail('delete-pending', 'A history object changed. It was kept.');
   }};
+  checkKeep();
   const erased = await eraseNoteHistory({store: guardedHistory, index: next, noteId: row.id});
   if (erased.erased) result.erased.push(file);
   if (!row.sync) next.tombstones = {...next.tombstones, [row.id]: [...(next.tombstones?.[row.id] || []), {opId: row.opId, file, revision: 'sha256:' + row.digest, digest: row.digest, device: row.device, at: row.at, deletedAt: row.at, ...(row.checkpoint ? {checkpoint: row.checkpoint} : {})}]};
@@ -255,9 +262,12 @@ export async function recoverPressureTrash({store, index, intent, commit, keep =
  result.index = committed.index;
  await intent.retire(result.index, state);
  return result;
+ };
+ return admission ? admission(file, finish) : finish();
 }
 
-export async function admitPressureTrash({store, index, prepared, opId, row, intent, commit, keep = null, baseReceipt = null} = {}) {
+export async function admitPressureTrash({store, index, prepared, opId, row, intent, commit, keep = null, baseReceipt = null, admission = null} = {}) {
+ if (admission) return admission(row.file, () => admitPressureTrash({store, index, prepared, opId, row, intent, commit, keep, baseReceipt}), () => blankResult(index));
  if (keep && keep(row.file)) return blankResult(index);
  const bytes = await store.read('notes.json');
  if (bytes == null || baseReceipt == null) throw fail('delete-unarmed', 'Low-space deletion needs the existing durable index receipt.');

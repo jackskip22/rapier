@@ -4,7 +4,7 @@ const _rapierPaintPNG = globalThis.RapierDrawPaint.createPaintPNGCodec();
 const {RAPIER_PAINT_BRUSHES, paintBrushById} = globalThis.RapierDrawBrushes;
 
 const RAPIER_PAINT_SCALE = 2, RAPIER_PAINT_SCALE_MAX = 3, RAPIER_PAINT_AREA_MAX = 6000000;
-const RAPIER_WATER_SHEET_PIXELS = 2048 * 1536;
+const RAPIER_WATER_SHEET_PIXELS = 2100 * 2970;
 const RAPIER_PAINT_GRAIN = 3;
 const RAPIER_PAINT_SIM_START = 0.9, RAPIER_PAINT_SIM_SPEED = 900, RAPIER_PAINT_SIM_TAU = 46.73;
 const RAPIER_PAINT_SIM_LIGHT_SPEED = 350;
@@ -1138,13 +1138,16 @@ async function _rapierPaintSetLayer({ auto = false, kib = 0 } = {}) {
 	const state = _rapierDrawState, layer = state.paintLayer;
 	if (!layer || state.paintSetting) return;
 	const setting = state.paintSetting = { layer, session: state.session, auto };
+	const owns = () => state.open && state.session === setting.session && state.paintLayer === layer && state.paintSetting === setting;
 	if (!auto) srAnnounce('Setting painting as a picture');
 	_rapierPaintUpdateStrip();
 	let shape = null, laid = null;
 	try {
 		if(layer.mode==='water')layer.surface.finishWetWork();else layer.surface.settleWet(); await layer.surface.sync();
+		if (!owns()) return;
 		if (!auto) {
-			await _rapierPaintCommit(true);
+			await _rapierPaintCommit(true, null, false, owns);
+			if (!owns()) return;
 			shape = layer.id != null ? _rapierDrawShapeById(layer.id) : null;
 			if (!shape) { showToast('There is nothing painted to set yet.', 'info'); return; }
 		}
@@ -1157,6 +1160,7 @@ async function _rapierPaintSetLayer({ auto = false, kib = 0 } = {}) {
 		if (auto) {
 			for (let tries = 0; ; tries++) {
 				if(layer.mode==='water')layer.surface.finishWetWork();else layer.surface.settleWet(); await layer.surface.sync();
+				if (!owns()) return;
 				const version = layer.paintVersion || 0, box = layer.surface.bounds();
 				if (!box) return;
 				pieces = await _rapierPaintLosslessPieces(b => encode(b, { lossless: true }), box, budget, 0, layer.mode === 'water');
@@ -1165,7 +1169,7 @@ async function _rapierPaintSetLayer({ auto = false, kib = 0 } = {}) {
 				const moving = state.gesture?.kind === 'paint';
 				if (kept && (layer.paintVersion || 0) === version && !moving) break;
 				if (!kept || tries >= 7) {
-					if (!moving) { layer.pendingOverflow = true; await _rapierPaintCommit(true, null, true); layer.pendingOverflow = false; }
+					if (!moving) { layer.pendingOverflow = true; await _rapierPaintCommit(true, null, true, owns); if (!owns()) return; layer.pendingOverflow = false; }
 					// the real cap (the flip at RAPIER_PAINT_AREA_MAX * 2 bounds the surface at 12M pixels,
 					showToast(kept ? 'This painting is bigger than one working picture holds; it is kept as it is and saved when you press Done.'
 						: 'This painting is bigger than sixty-four pictures hold; it is kept as it is and saved when you press Done.', 'info');
@@ -1176,19 +1180,21 @@ async function _rapierPaintSetLayer({ auto = false, kib = 0 } = {}) {
 			const box = layer.surface.bounds();
 			_rapierPaintRememberFast(state.paintFastSources || (state.paintFastSources = new Map()), pieces, layer.raster, {x: box.x0, y: box.y0});
 			_rapierPaintKeepShown(pieces);
-			await _rapierPaintCommit(true, pieces.length === 1 ? kept.url : pieces, true);
+			await _rapierPaintCommit(true, pieces.length === 1 ? kept.url : pieces, true, owns);
+			if (!owns()) return;
 			shape = layer.id != null ? _rapierDrawShapeById(layer.id) : null;
 			if (!shape) return;
 		} else {
 			const box = layer.surface.bounds(), version = layer.paintVersion || 0;
 			const session = state.session, currentLayer = state.paintLayer;
 			pieces = await _rapierPaintLosslessPieces(b => encode(b, { lossless: true }), box, budget, 0, layer.mode === 'water');
-			const same = state.open && state.session === session && state.paintLayer === currentLayer && _rapierDrawShapeById(shape.id) === shape;
+			const same = owns() && state.session === session && state.paintLayer === currentLayer && _rapierDrawShapeById(shape.id) === shape;
 			if (!same || (layer.paintVersion || 0) !== version || state.gesture?.kind === 'paint' || (layer.mode !== 'water' && layer.surface.wetState)) {
 				if (behind && same) {
 					for (let waited = 0; state.gesture?.kind === 'paint' && state.open && state.session === session && waited < 20000; waited += 30) await new Promise(ok => setTimeout(ok, 30));
 					if (state.open && state.session === session && state.paintLayer === currentLayer && state.gesture?.kind !== 'paint') {
-						await _rapierPaintCommit(true);
+						await _rapierPaintCommit(true, null, false, owns);
+						if (!owns()) return;
 						const again = layer.id != null ? _rapierDrawShapeById(layer.id) : null;
 						if (again && state.paintLayer === currentLayer) {
 							shape = again; kept = { url: again.raster, options: { lossless: true } }; pieces = null;
@@ -1207,13 +1213,16 @@ async function _rapierPaintSetLayer({ auto = false, kib = 0 } = {}) {
 			_rapierPaintKeepShown(pieces);
 			_rapierDrawSnapshot();
 			shape.raster = kept.url;
+			if (layer.mode === 'water' && pieces.length === 1) layer.raster = kept.url;
 			if (pieces.length > 1) { _rapierPaintSplitShapeSync(state.recipe.shapes, shape, pieces.map(piece => ({ url: piece.url, box: { x0: piece.box.x0 - box.x0, y0: piece.box.y0 - box.y0, x1: piece.box.x1 - box.x0, y1: piece.box.y1 - box.y0 } }))); _rapierDrawRenderAll(); }
 			else _rapierDrawRenderShapes([shape.id]);
 			_rapierDrawSealHistory();
+			if (layer.mode === 'water' && pieces.length === 1) _rapierPaintHandBack(layer, [shape.id]);
 			if (behind && pieces.length === 1) void _rapierPaintEncodeShapeLater(shape.id, kept.url, null, { entry: state.undoStack.at(-1) });
 			}
 		}
-		await _rapierPaintCloseLayer();
+		const closed = await _rapierPaintCloseLayer(owns);
+		if (closed === false || !state.open || state.session !== setting.session || state.paintLayer) return;
 		_rapierPaintOpenLayer();
 		_rapierPaintSyncPaper();
 		const how = (kept.options?.lossless ? 'full quality' : 'quality ' + (kept.options?.quality ?? kept.quality)) + (pieces && pieces.length > 1 ? ', in ' + pieces.length + ' pieces' : '');
@@ -1912,23 +1921,37 @@ function _rapierPaintFinishClose(layer) {
 	if (layer?.dryRaf) cancelAnimationFrame(layer.dryRaf);
 	const leave = () => {
 		if (layer?.mount) layer.mount.remove();
-		if (layer?.id != null && state.svg && state.paintLayer?.id !== layer.id) state.svg.querySelector('[data-shape-id="' + layer.id + '"]')?.removeAttribute('data-paint-live');
+		if (layer?.id != null && state.session === layer.session && state.svg && state.paintLayer?.id !== layer.id) state.svg.querySelector('[data-shape-id="' + layer.id + '"]')?.removeAttribute('data-paint-live');
 		if (layer && state.gesture?.paintRollback?.layer !== layer) _rapierPaintReleaseSurface(layer);
 		_rapierPaintSweepBrushes();
 	};
 	const node = () => layer?.id != null ? state.svg?.querySelector('[data-shape-id="' + layer.id + '"]') : null;
 	const under = layer?.mode === 'water' && layer.gpuDisplay && layer.canvas?.style.visibility !== 'hidden' && !!node();
 	const decoded = layer?.decoding?.promise || (under ? _rapierPaintHandBack(layer, [layer.id]) : null);
-	if (!under) { if (decoded) decoded.then(leave); else leave(); return; }
-	let gone = false;
-	const once = () => { if (gone) return; gone = true; _rapierPaintClosing.delete(layer); leave(); };
+	if (!under && (!decoded || layer?.mode !== 'water')) { if (decoded) decoded.then(leave); else leave(); return; }
+	let gone = false, cleanupTimer = 0;
+	const once = () => { if (gone) return; gone = true; clearTimeout(cleanupTimer); _rapierPaintClosing.delete(layer); leave(); };
 	_rapierPaintClosing.set(layer, once);
+	const checkOwner = () => {
+		if (gone) return;
+		if (!state.open || state.session !== layer.session || !layer.mount?.isConnected || _rapierDrawShapeById(layer.id)?.raster !== layer.raster || _rapierPaintClosingReplaced(layer)) { once(); return; }
+		cleanupTimer = setTimeout(checkOwner, RAPIER_PAINT_DECODE_WAIT_MS);
+	};
+	cleanupTimer = setTimeout(checkOwner, RAPIER_PAINT_DECODE_WAIT_MS);
 	Promise.resolve(decoded).then(() => {
 		if (gone) return;
-		if (!layer.mount?.isConnected || state.paintLayer?.id === layer.id) { once(); return; }
+		if (!under || !state.open || state.session !== layer.session || !layer.mount?.isConnected || state.paintLayer?.id === layer.id) { once(); return; }
 		node()?.setAttribute('data-paint-live', 'under');
 		requestAnimationFrame(() => requestAnimationFrame(once));
 	}, once);
+}
+function _rapierPaintClosingReplaced(layer) {
+	const state = _rapierDrawState, next = state.paintLayer;
+	return layer?.id != null && state.open && state.session === layer.session && next && next !== layer &&
+		next.session === layer.session && next.id === layer.id && next.raster === layer.raster &&
+		next.mode === 'water' && next.gpuDisplay && next.displayReady && next.mount?.isConnected &&
+		next.canvas && next.canvas.style.visibility !== 'hidden' && next.surface && !next.surface.gone && !next.surface.failure && !_rapierPaintOverlayLost(next) &&
+		next.checkpoint?.raster === next.raster && next.displayMeta?.revision > 0 && next.displayMeta.revision >= next.checkpoint.revision;
 }
 const _rapierPaintClosing = new Map();
 function _rapierPaintSettleClosing() {
@@ -2463,6 +2486,7 @@ function _rapierPaintShowLive(on, layer = _rapierDrawState.paintLayer) {
 	if (layer.canvas.style.visibility !== visibility) layer.canvas.style.visibility = visibility;
 	const aside = on && !_rapierPaintOverlayLost(layer);
 	if (layer.id != null) { const g = state.svg?.querySelector('[data-shape-id="' + layer.id + '"]'); if (g && g.hasAttribute('data-paint-live') !== !!aside) { if (aside) g.setAttribute('data-paint-live', ''); else g.removeAttribute('data-paint-live'); } }
+	if (aside && layer.mode === 'water') for (const [closing, leave] of [..._rapierPaintClosing]) if (_rapierPaintClosingReplaced(closing)) leave();
 	if (RAPIER_WATER_CAPTURE && layer.mode === 'water') {
 		const row = {ev: 'live', wanted: layer.liveRequest, visible: !visibility, keptAside: aside, ready: !!layer.displayReady, decoding: !!layer.decoding, lost: !!_rapierPaintOverlayLost(layer), shown: layer.displayMeta?.revision ?? null, kept: layer.checkpoint?.revision ?? null}, key = JSON.stringify(row);
 		if (key !== _rapierWaterCapture.live) { _rapierWaterCapture.live = key; _rapierWaterNote(row); }
@@ -3613,7 +3637,7 @@ function _rapierPaintHandBack(layer, ids) {
 	const token = {};
 	let settled = false;
 	const decoded = Promise.allSettled(images.map(image => image.decode())).then(() => { settled = true; });
-	token.promise = Promise.race([decoded, new Promise(done => setTimeout(done, RAPIER_PAINT_DECODE_WAIT_MS))]).then(() => {
+	token.promise = (layer.mode === 'water' ? decoded : Promise.race([decoded, new Promise(done => setTimeout(done, RAPIER_PAINT_DECODE_WAIT_MS))])).then(() => {
 		if (layer.decoding !== token) return;
 		layer.decoding = null;
 		if (!settled) { decoded.then(() => { if (!layer.decoding) _rapierPaintShowLive(layer.liveRequest ?? false, layer); }); return; }

@@ -69,3 +69,38 @@ export function admitElements(raw) {
 	}
 	return Object.freeze({ id: raw.id, items: Object.freeze(items) });
 }
+
+export function admitLetterGallery(raw) {
+	raw = parse(raw, 1000000);
+	if (!raw || !ID.test(raw.id) || typeof raw.name !== 'string' || !NAME.test(raw.name) || raw.em !== 1000 || !raw.glyphs || typeof raw.glyphs !== 'object') return null;
+	const reading = typeof raw.reading === 'string' ? raw.reading : '', made = new Set(Array.isArray(raw.made) ? raw.made.filter(l => /^[A-Z]$/.test(l)) : []);
+	const letters = [], seen = new Set();
+	for (const [key, glyph] of Object.entries(raw.glyphs)) {
+		if (!/^[A-Z]$/.test(key) && !/^\d{1,3}$/.test(key)) continue;
+		const letter = /^[A-Z]$/.test(key) ? key : /^[A-Z]$/.test(reading[Number(key) - 1] || '') ? reading[Number(key) - 1] : null;
+		const name = letter || key;
+		if (seen.has(name) || !Array.isArray(glyph) || !whole(glyph[0], 1, 4000) || !ornamentPath(glyph[1], 60000)) continue;
+		seen.add(name);
+		letters.push(Object.freeze({ letter, key: name, w: glyph[0], path: glyph[1], made: !!letter && made.has(letter) }));
+	}
+	if (!letters.length) return null;
+	letters.sort((a, b) => (a.letter ? 0 : 1) - (b.letter ? 0 : 1) || (a.letter ? (a.letter < b.letter ? -1 : 1) : Number(a.key) - Number(b.key)));
+	return Object.freeze({ id: raw.id, name: raw.name, partial: raw.partial === true, source: text(raw.source), letters: Object.freeze(letters) });
+}
+
+export function outlineBox(d) {
+	let x = 0, y = 0, x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+	const take = (px, py) => { if (px < x0) x0 = px; if (py < y0) y0 = py; if (px > x1) x1 = px; if (py > y1) y1 = py; };
+	for (const outline of String(d).split('M').slice(1)) {
+		const [head, ...rest] = outline.replace(/z/g, '').split(/(?=[lc])/), start = head.match(/-?\d+/g).map(Number);
+		x = start[0]; y = start[1]; take(x, y);
+		for (const run of rest) {
+			const values = (run.slice(1).match(/-?\d+/g) || []).map(Number), step = run[0] === 'l' ? 2 : 6;
+			for (let k = 0; k + step <= values.length; k += step) {
+				if (step === 6) { take(x + values[k], y + values[k + 1]); take(x + values[k + 2], y + values[k + 3]); }
+				x += values[k + step - 2]; y += values[k + step - 1]; take(x, y);
+			}
+		}
+	}
+	return [x0, y0, x1, y1];
+}

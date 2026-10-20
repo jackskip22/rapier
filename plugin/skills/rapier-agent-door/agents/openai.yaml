@@ -10,7 +10,7 @@
         "value": "rapier",
         "description": "Read, edit and export a shared Rapier document.",
         "transport": "streamable_http",
-        "url": "https://mcp.rapier.website/door/mcp"
+        "url": "https://mcp.rapier.website/mcp"
       }
     ]
   }

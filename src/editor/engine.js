@@ -1944,7 +1944,55 @@ function _rapierMarkSemanticFactsStale() {
 /* RAPIER_BODY_SEGMENT_SPANS_MODULE */
 
 function _rapierCurrentBodyBlockSpans(blockIds = null) {
-	return _rapierBodySegmentSpans(rapier.document.blocks, rapier.document.markdownPrefix, blockIds);
+	const blocks = Array.isArray(rapier.document.blocks) ? rapier.document.blocks : [];
+	const prefix = String(rapier.document.markdownPrefix ?? '').length;
+	const wanted = blockIds == null ? null : new Set(Array.from(blockIds, Number));
+	if (wanted && !wanted.size) return [];
+	let cache = rapier.document.bodySpans;
+	if (!cache || cache.blocks !== blocks || cache.length !== blocks.length || cache.prefix !== prefix) {
+		const spans = [], ids = [], byId = new Map();
+		let indexed = 0, valid = 0, snapshot = null;
+		cache = rapier.document.bodySpans = {
+			blocks, prefix, length: blocks.length,
+			invalidateFrom(index) {
+				valid = Math.min(valid, index); indexed = Math.min(indexed, index);
+				this.length = blocks.length; snapshot = null;
+			},
+			invalidateBlock(id) {
+				const index = byId.get(Number(id));
+				if (index == null || index >= valid) return;
+				const block = blocks[index], span = spans[index];
+				const start = index ? spans[index - 1].end + String(block.leading ?? '\n\n').length : prefix;
+				if (span.id === block.id && span.start === start && span.end === start + String(block.raw || '').length) return;
+				valid = index; snapshot = null;
+			},
+			read(requested) {
+				if (indexed !== blocks.length || ids.length !== blocks.length) {
+					for (let index = indexed; index < ids.length; index++) {
+						if (byId.get(ids[index]) === index) byId.delete(ids[index]);
+					}
+					ids.length = blocks.length;
+					for (; indexed < blocks.length; indexed++) {
+						const id = ids[indexed] = Number(blocks[indexed].id);
+						if (!byId.has(id)) byId.set(id, indexed);
+					}
+				}
+				const indices = requested && Array.from(requested, id => byId.get(id)).filter(index => index != null).sort((a, b) => a - b);
+				const last = indices ? indices.at(-1) ?? -1 : blocks.length - 1;
+				let cursor = valid ? spans[valid - 1].end : prefix;
+				for (; valid <= last; valid++) {
+					const block = blocks[valid];
+					if (valid) cursor += String(block.leading ?? '\n\n').length;
+					const start = cursor;
+					cursor += String(block.raw || '').length;
+					spans[valid] = Object.freeze({id: block.id, start, end: cursor});
+				}
+				if (indices) return Object.freeze(indices.map(index => spans[index]));
+				return snapshot ||= Object.freeze(spans.slice(0, blocks.length));
+			},
+		};
+	}
+	return cache.read(wanted);
 }
 
 /* RAPIER_SOURCE_FACT_INDEX_MODULE */
@@ -2061,11 +2109,13 @@ function _rapierCreateSourceStore(value, restoredRootId = '', snapshot = null) {
 
 function _rapierSourceText() { return rapier.document.source.read(); }
 function _rapierResetSource(value, rootId = '', prepared = null) {
+	const current = rapier.document.source;
 	rapier.document.source = prepared && prepared.read() === value && (!rootId || prepared.rootId === rootId)
-		? prepared : _rapierCreateSourceStore(value, rootId);
+		? prepared : rootId && current && current.read() === value ? current.fork(rootId) : _rapierCreateSourceStore(value, rootId);
 	if (rapier.document.docKind === 'markdown') {
 		const source = rapier.document.source;
 		source.contains('data:image/', true); source.contains(']:');
+		globalThis.RapierSourceAssets?.primeRetirement(value);
 		if (source.contains('<!--')) globalThis.RapierMarkdownSpec.mayRetireInk(source, []);
 		source.contains('md-comments:');
 		globalThis.RapierComments.prepareCommentSource(source, {rootAfter: globalThis.RapierSourceStore.rootAfter});
@@ -2081,7 +2131,7 @@ function _rapierSpliceHash(value) {
 	return fact.chars + ':' + fact.fnv + ':' + fact.adler;
 }
 
-function _rapierApplySourceSplices(splices, inverse = false) {
+function _rapierApplySourceSplices(splices, inverse = false, sourceBurst = null) {
 	const rows = splices;
 	const ordered = inverse ? rows.slice().reverse() : rows;
 	const applied = [];
@@ -2098,7 +2148,7 @@ function _rapierApplySourceSplices(splices, inverse = false) {
 			});
 		}
 		const assetProof = globalThis.RapierSourceAssets?.changing(source, splice);
-		applied.push(source.splice(splice.pos, splice.removed, splice.inserted));
+		applied.push(source.splice(splice.pos, splice.removed, splice.inserted, sourceBurst));
 		if (assetProof) globalThis.RapierSourceAssets.spliced(source, splice, assetProof);
 	}
 	if (rapier.document.docKind === 'markdown') globalThis.RapierComments.commentSourceCommitted(
@@ -2148,11 +2198,11 @@ function _rapierInitialView() {
 	};
 }
 
-const rapier = {
-
-	document: {
+function _rapierInitialDocument() {
+	return {
 		source: _rapierCreateSourceStore(''),
 		blocks: [],
+		bodySpans: null,
 		filename: 'untitled.md',
 		docKind: 'markdown',
 		codeLang: '',
@@ -2164,7 +2214,12 @@ const rapier = {
 		projection: Object.seal({
 			wysiwyg: 'available', reason: '', observed: 0, limit: 0,
 		}),
-	},
+	};
+}
+
+const rapier = {
+
+	document: _rapierInitialDocument(),
 
 	view: _rapierInitialView(),
 
@@ -2513,6 +2568,7 @@ function _rapierRawIsBlank(raw) { const text = String(raw == null ? '' : raw).tr
 function _rapierEmptyParagraphRaw(count) { return count > 1 ? '&nbsp;' : ''; }
 
 function _reassignOrderForRange(startIndex, count) {
+	rapier.document.bodySpans?.invalidateFrom(startIndex);
 	if (count <= 0) return;
 	const before = rapier.document.blocks[startIndex - 1];
 	const after  = rapier.document.blocks[startIndex + count];
@@ -3873,6 +3929,7 @@ async function _loadFlatDoc(content, filename, kind, loadToken, options) {
 	rapier.document.markdownPrefix = '';
 	rapier.document.markdownTail = '';
 	rapier.document.blocks = [];
+	rapier.document.bodySpans = null;
 	const source = content == null ? '' : String(content);
 	if (!(options.sameDocument && source === _rapierSourceText())) _rapierResetSource(source, '', options.preparedSource);
 	rapier.document.sourceNewline = _rapierPreferredSourceNewline(_rapierSourceText());
@@ -4123,6 +4180,7 @@ async function _rapierLoadMarkdownSourceOnly(sourceMarkdown, filename, loadToken
 	rapier.document.projection.observed = Math.max(0, Number(failure?.observed || 0));
 	rapier.document.projection.limit = Math.max(0, Number(failure?.limit || 0));
 	rapier.document.blocks = [];
+	rapier.document.bodySpans = null;
 	_rapierApplyReferenceIndex(_rapierBuildReferenceIndex([], ''));
 	_rapierResetSemanticFacts('unsupported');
 	_clearActiveBlock();
@@ -4274,6 +4332,7 @@ async function _loadMarkdownDoc(markdown, filename, loadToken, options) {
 	commitLap('earliestHash');
 	if (!sourceCommitGuard) _rapierHeavyWindowReset();
 	rapier.document.blocks = parsedBlocks;
+	rapier.document.bodySpans = null;
 	_rapierApplyReferenceIndex(referenceIndex);
 	_clearActiveBlock();
 	commitLap('refindex');
@@ -7057,6 +7116,7 @@ function _removeBlockById(blockId, commit = _rapierCommitDeletedBlock) {
 	const pressHost = _editorHostEl(); if (pressHost?._rapierLastPress?.blockId === blockId) pressHost._rapierLastPress = null;
 
 	rapier.document.blocks.splice(index, 1);
+	rapier.document.bodySpans?.invalidateFrom(index);
 	const wrapper = document.querySelector('[data-block-id="' + blockId + '"]');
 	if (wrapper && wrapper.parentNode) _rapierRemoveBlockWrapper(wrapper);
 	_rapierWysiwygLedgerSync(rapier.document.blocks);
@@ -7608,7 +7668,10 @@ function _rapierCheckpointEdit(editDiv, command = false) {
 		const ending = kept
 			.map(row => ({ ..._rapierHistoryBlock(row), ...(row === block ? { raw: after } : {}) }));
 		if (!_rapierCommitBlockRange(pending.startIndex, pending.blocksBefore, ending)) return false;
-		if (removed.length) rapier.document.blocks.splice(pending.startIndex, rows.length, ...kept);
+		if (removed.length) {
+			rapier.document.blocks.splice(pending.startIndex, rows.length, ...kept);
+			rapier.document.bodySpans?.invalidateFrom(pending.startIndex);
+		}
 		const selection = getSelection(), range = selection?.rangeCount ? selection.getRangeAt(0) : null;
 		const offset = range && editDiv.contains(range.startContainer)
 			? _charOffsetForRangePoint(editDiv, range.startContainer, range.startOffset) : 0;
@@ -8135,6 +8198,7 @@ function leaveBlockEdit(block, wrapper, readDiv, editDiv, options = null) {
 			_rapierCommitBlockEdit(block.id, before, after);
 			_notifyHistoryState();
 			block.raw = after;
+			rapier.document.bodySpans?.invalidateBlock(block.id);
 		}
 		referenceIndexChanged = rebuildReferenceIndex(rapier.document.blocks,
 			[{...block, raw: wrapper._rapierBlockRaw ?? before}], [block]);
@@ -11322,11 +11386,11 @@ function _rapierJournalRowsText(rows, includeFirstLeading) {
 
 function _rapierJournalWindowOffset(startIndex) {
 	const at = Math.max(0, Number(startIndex) || 0);
-	const spans = _rapierCurrentBodyBlockSpans();
-	if (at <= 0 || !spans.length) {
+	const blocks = rapier.document.blocks;
+	if (at <= 0 || !blocks.length) {
 		return _rapierCanonicalOffsetOfBody(String(rapier.document.markdownPrefix || '').length);
 	}
-	const previous = spans[Math.min(at, spans.length) - 1];
+	const previous = _rapierCurrentBodyBlockSpans([blocks[Math.min(at, blocks.length) - 1].id])[0];
 	return _rapierCanonicalOffsetOfBody(previous.end);
 }
 
@@ -11357,8 +11421,8 @@ function _rapierJournalBlockRangeSplice(entry) {
 }
 
 function _rapierCommitBlockEdit(blockId, before, after, options = null) {
-	const span = _rapierCurrentBodyBlockSpans().find(row => row.id === blockId);
-	if (!span) return null;
+	const span = _rapierCurrentBodyBlockSpans([blockId])[0];
+	if (!span || span.id !== blockId) return null;
 	const row = {
 		pos: _rapierCanonicalOffsetOfBody(span.start),
 		removed: String(before == null ? '' : before),
@@ -11424,7 +11488,7 @@ function _rapierCommitBlockLayoutInPlace(blockId, before, after, operation) {
 		leading: typeof block.leading === 'string' ? block.leading : null };
 	const blockRange = blockIndex > -1 ? { startIndex: blockIndex,
 		blocksBefore: [{ ...rowShape, raw: before }], blocksAfter: [{ ...rowShape, raw: after }] } : null;
-	const span = _rapierCurrentBodyBlockSpans().find(row => row.id === blockId);
+	const span = _rapierCurrentBodyBlockSpans([blockId])[0];
 	if (!span) return false;
 	const diff = _rapierPrefixSuffixDiff(before, after);
 	const committed = _rapierCommitSplices([{ ...diff, pos: _rapierCanonicalOffsetOfBody(span.start) + diff.pos }],
@@ -11556,6 +11620,7 @@ function _rapierRetireImageProjection(rows) {
 		if (block.type !== 'link_reference' || !removed.has(block.raw)) continue;
 
 		block.raw = ''; block.rendered = ''; block.dirty = true;
+		rapier.document.bodySpans?.invalidateBlock(block.id);
 		rapier.autosave.dirty.add(block.id);
 		const wrapper = document.querySelector('.block-wrapper[data-block-id="' + block.id + '"]');
 		if (wrapper) { wrapper._rapierBlockRaw = ''; wrapper.querySelector('.block-read')?.replaceChildren(); }
@@ -11584,6 +11649,7 @@ function _rapierRetireInkProjection(rows) {
 			const raw = clean(block.raw);
 			if (raw === block.raw) continue;
 			block.raw = raw; block.rendered = renderBlock(raw); block.dirty = true;
+			rapier.document.bodySpans?.invalidateBlock(block.id);
 			rapier.autosave.dirty.add(block.id);
 			const wrapper = document.querySelector('.block-wrapper[data-block-id="' + block.id + '"]');
 			if (!wrapper) continue;
@@ -11715,8 +11781,8 @@ function _rapierCommitSplices(splices, options = null) {
 	let comments = [], ink = [];
 	if (!alreadyApplied && config.derive !== false && !config.retiredImages && !config.sourceTransactionId && config.navigation !== false &&
 			rapier.document.docKind === 'markdown' && rapier.document.source.contains('data:image/', true) &&
-			(rapier.document.source.contains('rapier-poster-v1-') || (globalThis.RapierSourceAssets ? RapierSourceAssets.mayRetireImages(rows)
-				: globalThis.RapierImageAssets.mayRetireImageDefinitions(rapier.document.source, rows)))) {
+			(globalThis.RapierSourceAssets ? RapierSourceAssets.mayRetireImages(rows)
+				: rapier.document.source.contains('rapier-poster-v1-') || globalThis.RapierImageAssets.mayRetireImageDefinitions(rapier.document.source, rows))) {
 		const before = _rapierSourceText(), after = _rapierTransformSplices(before, rows);
 		if (after == null) return null;
 		retired = globalThis.RapierKernel.imageDeletionSplices(before, after, rows,
@@ -11769,7 +11835,7 @@ function _rapierCommitSplices(splices, options = null) {
 		}
 		if (publishing) prepared = _rapierLive.prepareRecord(rows, config, _rapierSourceText);
 		const checkpoint = rapier.document.source.capture();
-		try { _rapierApplySourceSplices(rows); }
+		try { _rapierApplySourceSplices(rows, false, config.sourceBurst); }
 		catch (error) {
 			checkpoint.restore();
 			if (error?.code === 'target_changed') return null;
@@ -12358,6 +12424,7 @@ function _rapierCommitInlineFormat(state) {
 
 	changed.forEach(({ wrapper, block, after }) => {
 		block.raw = after;
+		rapier.document.bodySpans?.invalidateBlock(block.id);
 		block.rendered = renderBlock(after);
 
 		block.dirty = wrapper.classList.contains('block-wrapper--editing');
@@ -13836,6 +13903,7 @@ function _rapierApplyRawRange(state, nextRaw, {keepEditing = false, segments = n
 		const block = _rapierBoundBlock(wrapper);
 		if (!block) return;
 		block.raw = nextRaw[index];
+		rapier.document.bodySpans?.invalidateBlock(block.id);
 		block.dirty = wrapper === editing;
 		rapier.autosave.dirty.add(block.id);
 	});
@@ -15297,8 +15365,10 @@ function _rapierMoveSection(blockId, target, planOf = _rapierSectionMovePlan) {
 	rows.forEach(row => { row.order = undefined; });
 	rows[0].leading = leadFirst;
 	rows[second.length].leading = leadSecond;
+	rapier.document.bodySpans?.invalidateFrom(lo);
 	if (!_rapierCommitBlockRange(lo, before, rows.map(_rapierHistoryBlock))) {
 		first.concat(second).forEach((row, index) => { row.leading = before[index].leading; row.order = before[index].order ?? undefined; });
+		rapier.document.bodySpans?.invalidateFrom(lo);
 		return false;
 	}
 	_rapierInstallBlockRange(lo, rows.length, rows);
@@ -17221,6 +17291,18 @@ function _rapierModalOpen(overlay, { panel = overlay, raised = false, contain = 
 	};
 	overlay.addEventListener('keydown', record.onKeydown);
 	if (!contain && dismiss) document.addEventListener('keydown', record.onEscape, true);
+	if (dismiss) {
+		const openedAt = Date.now();
+		let fromBackdrop = false;
+		record.onBackdropDown = event => { fromBackdrop = event.target === overlay; };
+		record.onBackdropClick = event => {
+			if (event.target !== overlay || !fromBackdrop || Date.now() - openedAt < 350) return;
+			fromBackdrop = false;
+			_rapierModalDismiss(record);
+		};
+		overlay.addEventListener('pointerdown', record.onBackdropDown);
+		overlay.addEventListener('click', record.onBackdropClick);
+	}
 	_rapierDialogRuntime.open.set(overlay, record);
 	return record;
 }
@@ -17236,6 +17318,10 @@ function _rapierModalClose(record) {
 	_rapierDialogRuntime.open.delete(record.overlay);
 	record.overlay.removeEventListener('keydown', record.onKeydown);
 	document.removeEventListener('keydown', record.onEscape, true);
+	if (record.onBackdropClick) {
+		record.overlay.removeEventListener('pointerdown', record.onBackdropDown);
+		record.overlay.removeEventListener('click', record.onBackdropClick);
+	}
 	record.restoreIsolation();
 	return true;
 }
@@ -23837,6 +23923,7 @@ async function rapierNewDocument() {
 		const outgoingAuthority = String(rapier.identity.authority || '');
 		_rapierCommitDocumentIdentity({});
 		rapier.document.blocks = [];
+		rapier.document.bodySpans = null;
 		rapier.undo.flatBurstOpen = false;
 		rapier.document.filename = 'untitled.md';
 		rapier.document.frontmatter = null;
@@ -24488,6 +24575,7 @@ function _rapierArmAutosave() {
 }
 
 function rapierDirty(blockId) {
+	if (blockId != null) rapier.document.bodySpans?.invalidateBlock(blockId);
 	if (blockId != null) rapier.autosave.dirty.add(blockId);
 	_bumpDocGeneration();
 	_rapierArmAutosave();
@@ -29611,6 +29699,7 @@ function _rapierCommitPasteModel(plan) {
 	const committed = _rapierCommitBlockRangeReceipt(context.startIndex, context.blocksBefore, plan.blocksAfter);
 	if (!committed) return false;
 	rapier.document.blocks.splice(context.startIndex, context.replaceCount, ...plan.blocks);
+	rapier.document.bodySpans?.invalidateFrom(context.startIndex);
 
 	const held = _editorHostEl()?._rapierHeldWord, open = _activeBlockEditContext();
 	if (!(held && held.live === true && held.text && held.end != null && held.commit == null && !held.ended && open &&
@@ -30125,7 +30214,10 @@ function _crossBlockDelete(range, clipboardData, { pushHistory = true, fieldScop
 
 	const replaceCount    = endIndex - startIndex + 1;
 	if (pushHistory && !_rapierCommitBlockRange(startIndex, blocksBefore, newBlocks.map(_rapierHistoryBlock))) return null;
-	if (previousOwner) { previousOwner.block.raw = liveRaw; previousOwner.block.dirty = true; }
+	if (previousOwner) {
+		previousOwner.block.raw = liveRaw; previousOwner.block.dirty = true;
+		rapier.document.bodySpans?.invalidateBlock(previousOwner.block.id);
+	}
 	if (pushHistory && spots) _rapierRememberHistoryCaret(spots, { blockId: caretBlockId, offset: caretCharOffset });
 	_rapierInstallBlockRange(startIndex, replaceCount, newBlocks);
 
@@ -38331,6 +38423,7 @@ function _commitLiveBlockBeforeStructure(block, wrapper, editDiv) {
 	if (before !== liveRaw && !sameEmptyHeading && !sameOpening) {
 		_rapierCommitBlockEdit(block.id, before, liveRaw);
 		block.raw = liveRaw;
+		rapier.document.bodySpans?.invalidateBlock(block.id);
 		block.rendered = renderBlock(liveRaw);
 	}
 	block.dirty = false;
@@ -41048,7 +41141,6 @@ function _rapierSyncSingleLineHighlight() {
 	let _burstChars = 0;
 	let _burstBoundaryPending = false;
 	let _burstHasText = false;
-	let _burstSplices = [];
 	let _burstStartRoot = '';
 	let _burstEndRoot = '';
 	let _burstStartCapture = null;
@@ -41071,7 +41163,7 @@ function _rapierSyncSingleLineHighlight() {
 		_burstChars = 0;
 		_burstBoundaryPending = false;
 		_burstHasText = false;
-		_burstSplices = [];
+		_burstStartCapture?.source.release();
 		_burstStartRoot = '';
 		_burstEndRoot = '';
 		_burstStartCapture = null;
@@ -41091,16 +41183,26 @@ function _rapierSyncSingleLineHighlight() {
 		if (_imeComposing || _burstClosing) return false;
 		if (_burstStartSel == null) return false;
 		const selBefore = _burstStartSel;
-		const splices = _burstSplices.slice();
 		const beforeRoot = _burstStartRoot;
-		if (!splices.length) {
-			if (!_rapierHeavyRuntime.owns(_beforeInputTicket)) _resetFlatBurstState();
-			return false;
-		}
+		const start = _burstStartCapture, store = rapier.document.source;
+		if (start.sourceStore !== store || start.source.rootId !== beforeRoot ||
+				start.authority !== String(rapier.identity.authority || '') || start.epoch !== Number(rapier.identity.epoch || 0) ||
+				start.revision !== Number(rapier.revision.settled || 0) || start.ledgerLength !== rapier.undo.ledger.length ||
+				store.rootId !== (_burstEndRoot || beforeRoot)) return false;
 		_burstClosing = true;
 		try {
+			const unpublished = store.capture(), endRoot = _burstEndRoot;
+			const sealed = start.source.seal();
+			if (!sealed) return false;
+			const splices = sealed.splices;
+			if (!splices.length) {
+				if (!_rapierHeavyRuntime.owns(_beforeInputTicket)) _resetFlatBurstState();
+				return false;
+			}
+			_burstEndRoot = sealed.rootId;
 			const selectionBefore = selBefore;
-			const committed = _rapierCommitSplices(splices, {
+			let committed;
+			try { committed = _rapierCommitSplices(splices, {
 				operation: rapier.document.docKind === 'markdown'
 					? 'document.replace-source-range' : 'document.replace-range',
 				sourceAlreadyApplied: true,
@@ -41109,8 +41211,8 @@ function _rapierSyncSingleLineHighlight() {
 				beforeHash: beforeRoot,
 				selectionBefore,
 				selectionAfter: _rapierHeavyRuntime.selection(ta),
-			});
-			if (!committed) return false;
+			}); } catch (error) { unpublished.restore(); _burstEndRoot = endRoot; throw error; }
+			if (!committed) { unpublished.restore(); _burstEndRoot = endRoot; return false; }
 			_resetFlatBurstState();
 			_notifyHistoryState();
 			return true;
@@ -41340,7 +41442,7 @@ function _rapierSyncSingleLineHighlight() {
 		if (_burstStartSel != null) return;
 		if (!_rapierFlatSurface()) return;
 		const sourceStore = rapier.document.source;
-		_burstStartCapture = {sourceStore, source: sourceStore.capture(), authority: String(rapier.identity.authority || ''),
+		_burstStartCapture = {sourceStore, source: sourceStore.capture({coalesce: true}), authority: String(rapier.identity.authority || ''),
 			epoch: Number(rapier.identity.epoch || 0), revision: Number(rapier.revision.settled || 0), ledgerLength: rapier.undo.ledger.length,
 			historySnapshot: _rapierNotesPart?.currentFile() ? _rapierCreatePersistenceSnapshot({historyComplete: true}) : null};
 		_burstStartRoot = _burstStartCapture.source.rootId;
@@ -41653,6 +41755,7 @@ function _rapierSyncSingleLineHighlight() {
 			} : _burstStartSel || {start, end};
 			let staged = null, refusal = null;
 			try { staged = _rapierCommitSplices([splice], {deferLedger: burstOwnsCommit,
+				sourceBurst: burstOwnsCommit ? _burstStartCapture.source : null,
 				visibleText: ta.value,
 				operation: rapier.document.docKind === 'markdown'
 					? 'document.replace-source-range' : 'document.replace-range',
@@ -41675,14 +41778,6 @@ function _rapierSyncSingleLineHighlight() {
 					: 'that text cannot be added to this document', 'error');
 				_scheduleIdleReconciliation();
 				return;
-			}
-			if (burstOwnsCommit) for (const row of staged.splices) {
-				const last = _burstSplices.at(-1);
-				if (last && row.pos === last.pos + last.inserted.length)
-					_burstSplices[_burstSplices.length - 1] = {pos: last.pos, removed: last.removed + row.removed, inserted: last.inserted + row.inserted};
-				else if (last && !row.inserted && !last.inserted && row.pos + row.removed.length === last.pos)
-					_burstSplices[_burstSplices.length - 1] = {pos: row.pos, removed: row.removed + last.removed, inserted: ''};
-				else _burstSplices.push(row);
 			}
 			if (burstOwnsCommit) _burstEndRoot = rapier.document.source.rootId;
 			const companions = !!(staged.retiredImages.length || staged.commentSplices.length || staged.inkSplices.length);

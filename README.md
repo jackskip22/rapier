@@ -12,7 +12,7 @@ Free and offline, with no ads, tracking or Rapier account.
 - **On Android:** get Rapier on [Google Play](https://play.google.com/store/apps/details?id=app.rapier). The app
   has no Internet permission. Optional Google Play asset packs download on first use, then work offline.
 - **On Windows:** download [Rapier.exe](https://github.com/jackskip22/rapier/raw/main/Rapier.exe). It is not code-signed yet, so Windows SmartScreen may warn the first time: choose **More info**, then **Run anyway**.
-- **With an agent:** the Claude plugin or another MCP client at `https://mcp.rapier.website/door/mcp`; the OpenAI plugin at `https://mcp.rapier.website/mcp`; Muse at `https://mcp.rapier.website/muse`.
+- **With an agent:** the Claude plugin, ChatGPT or another MCP client at `https://mcp.rapier.website/mcp`; Muse at `https://mcp.rapier.website/muse`.
 
 ## What it does
 
@@ -34,7 +34,7 @@ Free and offline, with no ads, tracking or Rapier account.
 
 ## For agents
 
-1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
+1. **Work together live.** Connect to `https://mcp.rapier.website/mcp`, then call `open` to share one document with the person.
 2. **Hand over an offline editor.** Run `npx rapier-html notes.md` to put the editor and document in one HTML file
    ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed the editor.** Use [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed)
@@ -59,7 +59,7 @@ npx rapier-html revised.md --compare original.md   # opens the edit beside its o
 npm install rapier-markdown-kit                     # read, write and render the Markdown without the editor (MIT)
 ```
 
-Current MCP clients connect at `https://mcp.rapier.website/door/mcp` with no account; in ChatGPT, add the OpenAI connector at `https://mcp.rapier.website/mcp` in developer mode
+Any MCP client connects at `https://mcp.rapier.website/mcp` with no account; in ChatGPT, add it in developer mode
 ([OpenAI's guide](https://developers.openai.com/plugins/deploy/connect-chatgpt)). Hosted workspaces expire after 30
 idle days; use `export` to keep a copy. Data handling: [rapier.website/privacy](https://rapier.website/privacy).
 

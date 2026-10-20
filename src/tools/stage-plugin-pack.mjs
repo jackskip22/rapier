@@ -30,7 +30,7 @@ export async function pluginPackFiles({root = ROOT, loader = null} = {}) {
 	loader ??= await readFile(join(root, 'shell/plugin-loader.js'), 'utf8');
 	const {OCR_FILES} = await import(pathToFileURL(join(root, 'images/ocr.mjs')).href);
 	const {LETTER_SETS} = await import(pathToFileURL(join(root, 'draw/letters.mjs')).href);
-	const {BORDER_PINS, ELEMENT_PINS} = await import(pathToFileURL(join(root, 'presets/pins.mjs')).href);
+	const {BORDER_PINS, ELEMENT_PINS, LETTERSET_PINS = []} = await import(pathToFileURL(join(root, 'presets/pins.mjs')).href);
 	const ornamentsAt = /const RAPIER_ORNAMENTS_URL = '([^']+)'/.exec(await readFile(join(root, 'editor/composer.js'), 'utf8'))?.[1];
 	if (ornamentsAt !== PLUGIN_ORIGIN) throw new Error('Starters ornament address disagrees with the resource owner');
 	const {PDF_JS_VERSION} = await import(pathToFileURL(join(root, 'interchange/pdf-resources.mjs')).href);
@@ -49,6 +49,8 @@ export async function pluginPackFiles({root = ROOT, loader = null} = {}) {
 			url: ornamentsAt + 'templates/' + pin.id + '.json', path: join(root, 'draw/templates', pin.id + '.json'), sri: pin.sha384, bytes: pin.bytes})),
 		...ELEMENT_PINS.map(pin => ({id: 'rapier-elements-' + pin.id, plugin: 'elements', hostFile: 'elements-' + pin.id + '.json',
 			url: ornamentsAt + 'elements/' + pin.id + '.json', path: join(root, 'draw/elements', pin.id + '.json'), sri: pin.sha384, bytes: pin.bytes})),
+		...LETTERSET_PINS.map(pin => ({id: 'rapier-lettersets-' + pin.id, plugin: 'lettersets', hostFile: 'lettersets-' + pin.id + '.json',
+			url: ornamentsAt + 'lettersets/' + pin.id + '.json', path: join(root, 'draw', pin.file), sri: pin.sha384, bytes: pin.bytes})),
 		...pdfFiles(JSON.parse(await readFile(join(root, 'interchange/pdf-pins.json'), 'utf8')), PDF_JS_VERSION, root)];
 }
 

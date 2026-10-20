@@ -1061,6 +1061,13 @@
     return Math.max(0, typing ? sentAt + TYPING_CONTEXT_MS - now : Math.min(sentAt + TYPING_CONTEXT_MS, editedAt + SETTLED_CONTEXT_MS) - now);
   }
 
+  function liveFallbackDelay(now = Date.now()) {
+    const live = joinedLive();
+    if (!live || live.state === 'live' || live.state === 'syncing') { liveDownSince = 0; return Infinity; }
+    liveDownSince ||= now;
+    return Math.max(0, liveDownSince + LIVE_OFFLINE_MS - now);
+  }
+
   function quietDelay(live, now) {
     return live ? Math.max(0, Math.min(syncWanted, catchUpAt, lastSyncAt + LIVE_HTTP_MS) - now) : QUIET_DELAYS[Math.min(quietSyncs, QUIET_DELAYS.length - 1)];
   }
@@ -1634,8 +1641,9 @@
       running = null;
       publishModelContext();
       const live = !!joinedLive(), now = Date.now();
-      schedule(failures ? Math.min(30000, 1500 * 2 ** (failures - 1)) : editorContextBusy() ? 0 : dirty ? 500 :
-        live && now >= catchUpAt ? 5000 : quietDelay(live, now));
+      const delay = failures ? Math.min(30000, 1500 * 2 ** (failures - 1)) : editorContextBusy() ? 0 : dirty ? Math.max(500, coalesceUntil - now) :
+        live && now >= catchUpAt ? 5000 : quietDelay(live, now);
+      schedule(failures ? delay : Math.min(delay, liveFallbackDelay(now)));
     });
     return running;
   }
@@ -2664,9 +2672,18 @@
     }, {signal: listeners.signal});
     document.addEventListener('rapier:live-changed', event => heardNotice(event.detail), {signal: listeners.signal});
     document.addEventListener('rapier:live-state', event => {
-      const value = event.detail, key = value?.active && value.ready ? value.client + ':' + value.documentId : '';
-      if (key && key !== liveReady && base && value.documentId === base.documentId) { liveReady = key; contextChanged(); }
-      else if (!key) liveReady = '';
+      const value = event.detail;
+      if (value?.documentId && value.documentId !== base?.documentId) return;
+      const healthy = value?.state === 'live' || value?.state === 'syncing';
+      const key = value?.active && value.ready && healthy ? value.client + ':' + value.documentId : '';
+      const wasReady = !!liveReady;
+      if (key && key !== liveReady && base && value.documentId === base.documentId) {
+        liveReady = key; checkSentAt = 0; contextChanged();
+      } else if (!key) liveReady = '';
+      if (base && value?.documentId === base.documentId && liveBindings.has(token)) {
+        const delay = joinedLive() ? liveFallbackDelay() : wasReady ? 0 : Infinity;
+        if (!failures && Number.isFinite(delay)) scheduleBy(delay);
+      }
     }, {signal: listeners.signal});
     window.addEventListener('pagehide', () => {
       cancelEditorRequests('editor_unavailable', {forget: true});

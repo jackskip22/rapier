@@ -4,7 +4,7 @@ import {oauthGrantCurrent} from './oauth.mjs';
 import {LIVE_LIMITS} from './live-session.mjs';
 import {relayable, validAck, sourceHash, custodyBytes, CUSTODY_LIMITS} from './custody-wire.mjs';
 import {validHandover} from './page-door.mjs';
-import {queueIntent, waitingIntents, acknowledgeIntent} from './page-queue.mjs';
+import {queueIntent, waitingIntents, acknowledgeIntent, queuedConflict} from './page-queue.mjs';
 import {writeCheckpoint, closedPageRead, deleteCheckpoint} from './page-checkpoint.mjs';
 
 const plain = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -125,6 +125,9 @@ export class PageRelay {
     if (!current?.custody) return null;
     if (this.holder(current) !== socket || current.capabilityHash !== head.capabilityHash)
       return this.bind.envelope(input.operation, unavailable, current);
+    const conflict = queuedConflict(this.owner.ctx.storage.kv, {operationId: input.operationId,
+      agent: {principal: this.bind.caller(input).principal}, same: {operation: input.operation, args: input.args}});
+    if (conflict) return this.bind.envelope(input.operation, conflict, current);
     return this.turn(socket, input, current, signal);
   }
 

@@ -479,9 +479,19 @@ const _rapierLive = (() => {
     }
     return prepared;
   }
+  function canonicalRow(row) {
+    const store = rapier.document.source;
+    if (!row || !Number.isSafeInteger(row.pos) || typeof row.removed !== 'string' || typeof row.inserted !== 'string' ||
+        row.pos < 0 || row.pos + row.removed.length > store.length) return null;
+    const from = Math.max(0, row.pos - 2), to = Math.min(store.length, row.pos + row.removed.length + 2);
+    const local = canonicalRows([{pos: row.pos - from, removed: row.removed, inserted: row.inserted}], store.readSlice(from, to));
+    return local.map(item => item.pos === row.pos - from && item.removed === row.removed && item.inserted === row.inserted
+      ? row : Object.freeze({pos: item.pos + from, removed: item.removed, inserted: item.inserted}));
+  }
   function canonicalRows(rows, beforeSource) {
     if ((!own() && !(loading && binding?.baseline?.documentId === String(rapier.identity.authority))) || applying) return rows;
     if (!rows.length) { if (typeof beforeSource === 'function') beforeSource(); return rows; }
+    if (beforeSource === undefined && rows.length === 1) return canonicalRow(rows[0]) || rows;
     const before = typeof beforeSource === 'function' ? beforeSource() : beforeSource ?? _rapierSourceText();
     const after = _rapierTransformSplices(before, rows);
     if (after === null) return rows;
@@ -524,7 +534,22 @@ const _rapierLive = (() => {
     const block = editingBlockSpan(Math.min(selected.start, selected.end));
     if (block) { heldPresence = block; return; }
     let start = selected.start, end = selected.end;
-    const source = _rapierSourceText(), word = /^[\p{L}\p{N}\p{M}_]$/u;
+    const store = rapier.document.source, word = /^[\p{L}\p{N}\p{M}_]$/u;
+    let base = Math.max(0, Math.min(start, end) - 256), stop = Math.min(store.length, Math.max(start, end) + 256);
+    let text = store.readSlice(base, stop);
+    const source = {
+      get length() { return store.length; },
+      reach(at) {
+        if ((at >= base && at < stop) || at < 0 || at >= store.length) return;
+        const grow = Math.max(4096, stop - base);
+        if (at < base) base = Math.max(0, Math.min(at, base - grow));
+        else stop = Math.min(store.length, Math.max(at + 1, stop + grow));
+        text = store.readSlice(base, stop);
+      },
+      charCodeAt(at) { this.reach(at); return text.charCodeAt(at - base); },
+      codePointAt(at) { this.reach(at); this.reach(at + 1); return text.codePointAt(at - base); },
+      slice(from, to) { this.reach(from); this.reach(to - 1); return text.slice(from - base, to - base); },
+    };
     while (start > 0) {
       let previous = start - 1;
       if (previous > 0 && (source.charCodeAt(previous) & 0xfc00) === 0xdc00 &&

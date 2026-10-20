@@ -43,19 +43,18 @@ function _rapierComposerOpen(title, fill, onClose) {
 	return state;
 }
 
-const RAPIER_ORNAMENTS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.17/';
+const RAPIER_ORNAMENTS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.18/';
 const _rapierOrnamentDoor = {providers: new Map(), allowed: new Set(), held: new Map(), bringing: new Map()};
 const _RAPIER_ORNAMENT_KINDS = Object.freeze({
 	templates: {noun: 'Page borders', pins: () => RapierPins.BORDER_PINS, admit: bytes => RapierDrawOrnaments.admitTemplate(bytes), what: 'traced page borders'},
 	elements: {noun: 'Elements', pins: () => RapierPins.ELEMENT_PINS, admit: bytes => RapierDrawOrnaments.admitElements(bytes), what: 'traced ornaments'},
+	lettersets: {noun: 'Letter sets', pins: () => RapierPins.LETTERSET_PINS, admit: bytes => RapierDrawOrnaments.admitLetterGallery(bytes), what: 'ornamental letter sets'},
 });
 function _rapierOrnamentProvider(kind) {
 	const door = _rapierOrnamentDoor, spec = _RAPIER_ORNAMENT_KINDS[kind];
 	if (!door.providers.has(kind) && globalThis.RapierPluginLoader) {
 		const pins = spec.pins();
-		const files = kind === 'templates'
-			? pins.map(pin => ({name: pin.id, flat: 'templates-' + pin.id + '.json', url: RAPIER_ORNAMENTS_URL + 'templates/' + pin.id + '.json', bytes: pin.bytes, sri: pin.sha384}))
-			: pins.map(pin => ({name: pin.id, flat: 'elements-' + pin.id + '.json', url: RAPIER_ORNAMENTS_URL + 'elements/' + pin.id + '.json', bytes: pin.bytes, sri: pin.sha384}));
+		const files = pins.map(pin => ({name: pin.id, flat: kind + '-' + pin.id + '.json', url: RAPIER_ORNAMENTS_URL + kind + '/' + pin.id + '.json', bytes: pin.bytes, sri: pin.sha384}));
 		door.providers.set(kind, RapierPluginLoader.files({key: kind, noun: spec.noun, dash: ' — ', version: kind + ' ' + pins.length + ' ' + pins[0].sha384.slice(0, 16), files}));
 	}
 	return door.providers.get(kind) || null;
@@ -154,6 +153,19 @@ async function _rapierComposerAdd(item, options, target, stamp) {
 	const raw = '![' + _rapierEscapeImageAlt(item.name) + '][' + asset.label + '] <!--md-layout:v1 ' + RapierOrnaments.elementLayout(item) + '-->';
 	const normalized = {asset, reference: asset.label, dataUrl: asset.url, width: asset.width, height: asset.height};
 	return RapierEmbeddedImages.insert(normalized, raw, target, stamp);
+}
+async function _rapierComposerPlace(svg, title, layout, target) {
+	if (_rapierUserMutationBlocked() || !svg) return false;
+	if (rapier.document.docKind !== 'markdown') { showToast('Letters go in Markdown documents', 'info'); return false; }
+	const settled = await _rapierWithSettledExternalDocument(() => Object.freeze(_rapierMutationStamp()), {quiet: true});
+	if (!settled.settled) return false;
+	try {
+		const asset = await RapierImageAssets.createAsset(new TextEncoder().encode(svg), null, {codec: 'image/svg+xml', title});
+		const raw = '![' + _rapierEscapeImageAlt(title) + '][' + asset.label + '] <!--md-layout:v1 ' + layout + '-->';
+		const done = await RapierEmbeddedImages.insert({asset, reference: asset.label, dataUrl: asset.url, width: asset.width, height: asset.height}, raw, target || _rapierImageInsertionTarget(), settled.value);
+		if (!done) showToast('Document changed; choose the letter again', 'info');
+		return !!done;
+	} catch (error) { showToast(String(error.message || error), 'error'); return false; }
 }
 async function _rapierComposerInsert(request = {}) {
 	if (_rapierUserMutationBlocked()) return false;

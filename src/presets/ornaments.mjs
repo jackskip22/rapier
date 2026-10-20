@@ -65,3 +65,11 @@ export function thumbnailSVG(item, ink) {
 	const path = item.frame ? item.frame.path : item.path;
 	return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + item.w + ' ' + item.h + '" preserveAspectRatio="xMidYMid meet"><path fill="' + ink + '" fill-rule="evenodd" d="' + path + '"/></svg>';
 }
+
+export function letterSVG(set, entry, {ink = ELEMENT_INK, box} = {}) {
+	if (!set || !entry || !HEX.test(ink) || !Array.isArray(box)) return null;
+	const pad = 12, x = box[0] - pad, y = box[1] - pad, w = box[2] - box[0] + 2 * pad, h = box[3] - box[1] + 2 * pad;
+	const piece = (set.id + '-' + String(entry.key).toLowerCase()).slice(0, 48), record = JSON.stringify({version: 1, pack: 'letters', piece, ink});
+	return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="' + x + ' ' + y + ' ' + w + ' ' + h + '" width="' + w + '" height="' + h + '" color="' + ink + '" role="img"><title>' +
+		xml(set.name + ' ' + (entry.letter || entry.key)) + '</title><metadata id="rapier-element">' + xml(record) + '</metadata><path fill="' + ink + '" fill-rule="evenodd" d="' + entry.path + '"/></svg>';
+}

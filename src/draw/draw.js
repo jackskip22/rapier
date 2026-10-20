@@ -897,17 +897,29 @@ function _rapierDrawFollowAgentJournal(redo, agent) {
 		return ok;
 	});
 }
-function _rapierDrawClearAll() {
-	_rapierDrawCancelGesture();
-	const refused = error => showToast('The painting could not be kept for Undo, so Clear was canceled. It is still open: ' + String(error?.message || error), 'error');
-	const clear = () => {
-		const ids = _rapierDrawGroupSelection(_rapierDrawState.recipe, _rapierDrawState.recipe.shapes.map(shape => shape.id));
-		if (ids.length) return _rapierDrawEditSelection({ type: 'delete' }, ids);
-	};
-	let settled;
-	try { settled = _rapierPaintAfter(_rapierPaintFlushRevision(), () => _rapierPaintAfter(_rapierPaintSettleOverflow(), () => _rapierPaintCloseLayer())); }
-	catch (error) { refused(error); return; }
-	return settled ? settled.then(clear, refused) : clear();
+async function _rapierDrawClearAll(session) {
+	const state = _rapierDrawState, current = () => state.open && state.session === session && !state.finishing;
+	const idle = () => current() && !state.waterAction && !state.paintEraseFan && !state.paintDeparture && !state.gesture && !state.markerPress;
+	try {
+		while (current()) {
+			_rapierDrawCancelGesture();
+			const pending = _rapierPaintPendingStroke();
+			if (pending) { await pending; continue; }
+			const settled = _rapierPaintSettleOverflow(); if (settled) await settled;
+			if (!current()) return;
+			if (!idle()) continue;
+			const closed = _rapierPaintCloseLayer(idle); if (closed) await closed;
+			if (!current()) return;
+			if (!idle() || state.paintLayer) continue;
+			const flushing = _rapierPaintFlushRevision();
+			if (flushing) { await flushing; continue; }
+			const ids = _rapierDrawGroupSelection(state.recipe, state.recipe.shapes.map(shape => shape.id));
+			if (ids.length) return _rapierDrawEditSelection({ type: 'delete' }, ids);
+			return;
+		}
+	} catch (error) {
+		if (current()) showToast('The painting could not be kept for Undo, so Clear was canceled. It is still open: ' + String(error?.message || error), 'error');
+	}
 }
 function _rapierDrawCanvasBlank() {
 	const state = _rapierDrawState, surface = state.surface;
@@ -928,14 +940,7 @@ function _rapierDrawSetClearWord() {
 	if (button.textContent !== word) button.textContent = word;
 }
 async function _rapierDrawRequestClear() {
-	const state = _rapierDrawState;
-	const session = state.session;
-	const flushing = _rapierPaintFlushRevision();
-	if (flushing) await flushing;
-	const live = state.paintLayer?.surface;
-	if (live && !live.settled && !live.failure) await live.sync().catch(() => {});
-	if (state.finishing || !state.open || state.session !== session || !state.recipe?.shapes?.length && !state.paintLayer?.surface?.bounds()) return;
-	await _rapierDrawClearAll();
+	await _rapierDrawClearAll(_rapierDrawState.session);
 }
 function _rapierDrawShapeById(id) { return _rapierDrawState.recipe.shapes.find(s => s.id === id) || null; }
 
@@ -3308,7 +3313,7 @@ function _rapierDrawLetterGlyph(set) {
 	const sample = set && globalThis.RapierDrawLetterPreviews.LETTER_PREVIEWS[set.id];
 	return sample ? '<svg class="rapier-draw-glyph" viewBox="0 0 ' + sample.glyph[0] + ' ' + sample.em + '" aria-hidden="true"><path fill="currentColor" transform="translate(' + sample.bearing + ',0)" d="' + sample.glyph[1] + '"/></svg>' : '';
 }
-const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.17/letters/';
+const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.18/letters/';
 const _rapierDrawLettersDoor = { allowed: false, asking: null, providers: new Map(), bringing: new Map() };
 function _rapierDrawLettersProvider(set) {
 	const door = _rapierDrawLettersDoor;
@@ -6805,17 +6810,21 @@ async function _rapierDrawTooLarge(session) {
 	await _rapierDrawDownload(session);
 }
 async function _rapierDrawDownload(session) {
-	const state = _rapierDrawState;
+	const state = _rapierDrawState, live = () => state.open && state.session === session;
+	const check = () => { if (!live()) throw Object.assign(new Error('The drawing changed before its file was written.'), {name: 'AbortError'}); };
+	if (!live()) return;
 	try {
+		const docBase = String(rapier.document.filename || 'document').replace(/\.[a-z0-9]+$/i, '') || 'document';
+		const name = (state.editing?.asset || (docBase + '-drawing')) + '.svg';
+		const reserve = window.RapierPlatform?.files?.prepareExportArtifact;
+		const reserved = typeof reserve === 'function' ? await reserve(name) : undefined;
+		if (reserved === null || !state.open || state.session !== session) return;
 		await _rapierDrawLoadFonts(state.recipe, session);
 		if (!state.open || state.session !== session) return;
 		const flushing = _rapierPaintFlushRevision(undefined, true);
 		if (flushing) { await flushing; if (!state.open || state.session !== session) return; }
 		let recipe = _rapierDrawRestoreRecipe(_rapierDrawHistoryRecipe());
 		const recovery = _rapierDrawBackupTicket();
-		const editing = state.editing;
-		const docBase = String(rapier.document.filename || 'document').replace(/\.[a-z0-9]+$/i, '') || 'document';
-		const name = (editing?.asset || (docBase + '-drawing')) + '.svg';
 		if (typeof _rapierPaintKeepAsJXL === 'function') {
 			try {
 				const split = await _rapierPaintKeepAsJXL(recipe);
@@ -6831,9 +6840,28 @@ async function _rapierDrawDownload(session) {
 		const svgText = _rapierDrawBuildSVG(recipe, _rapierDrawMeasuredView, true);
 		if (!svgText) throw new Error('The complete drawing could not be prepared');
 		const svgBytes = new TextEncoder().encode(svgText);
-		const saved = await _download(new Blob([svgBytes], { type: 'image/svg+xml' }), name);
+		const blob = new Blob([svgBytes], { type: 'image/svg+xml' });
+		let receipt, saved;
+		if (reserved) {
+			receipt = await reserved(blob, {check}); saved = _rapierExportOutcome(receipt);
+		} else {
+			const files = window.RapierPlatform?.files;
+			const exportFile = typeof files?.exportArtifact === 'function' ? files.exportArtifact : typeof files?.saveAs === 'function' ? files.saveAs : null;
+			if (exportFile) {
+				try { receipt = await exportFile(blob, name, {check}); saved = _rapierExportOutcome(receipt); }
+				catch (error) { console.warn('[rapier] platform export failed; inline fallback was not attempted', error); saved = null; }
+			} else saved = await _download(blob, name);
+		}
+		if (!live()) return;
 		if (saved === true) {
-			await _rapierDrawBackupClear(recovery);
+			if (receipt?.status === 'confirmed' && receipt.confirmed === true) await _rapierDrawBackupClear(recovery);
+			else {
+				if (!live()) return;
+				_rapierDrawBackupTouch();
+				const kept = await _rapierDrawBackupFlush();
+				if (!live()) return;
+				if (!kept) { _rapierDrawShowCloseOnFailure(); return; }
+			}
 			if (state.open && state.session === session) _rapierDrawClose();
 		}
 		else if (saved !== false && state.open && state.session === session) { _rapierDrawShowCloseOnFailure(); showToast('The drawing could not be saved as a file. It is still open; try Done again.', 'error'); }
@@ -6983,6 +7011,10 @@ async function _rapierDrawSavePainting(leaving = false) {
 		for (const control of overlay.querySelectorAll('.rapier-draw-save button')) control.disabled = true;
 		say('');
 		try {
+			const reserve = window.RapierPlatform?.files?.prepareExportArtifact;
+			const reserved = typeof reserve === 'function' ? await reserve(name) : undefined;
+			if (reserved === null) return;
+			controller.signal.throwIfAborted(); if (!live()) return;
 			let recipe = _rapierDrawRestoreRecipe(_rapierDrawHistoryRecipe());
 			await _rapierDrawLoadFonts(recipe, session);
 			recipe = await _rapierDrawEffectStills(recipe, task => task({signal: controller.signal, progress: f => row.set(f * .5)}));
@@ -6997,7 +7029,8 @@ async function _rapierDrawSavePainting(leaving = false) {
 			else { bytes = await _rapierPainterORA(out, svg); type = 'image/openraster'; }
 			controller.signal.throwIfAborted(); if (!live()) return;
 			row.end();
-			const saved = await _download(new Blob([bytes], {type}), name);
+			const blob = new Blob([bytes], {type});
+			const saved = reserved ? _rapierExportOutcome(await reserved(blob, {check: () => controller.signal.throwIfAborted()})) : await _download(blob, name);
 			if (RAPIER_WATER_CAPTURE) await _rapierWaterCaptureSave();
 			if (live() && !controller.signal.aborted) { if (saved === true) say(name + (native ? ' saved' : ' sent to downloads')); else if (saved !== false) say('Not saved: the file could not be written.', true); }
 		} catch (error) {

@@ -13,7 +13,7 @@
         "name": "io.github.jackskip22/rapier",
         "title": "Rapier - Markdown Editor & Art",
         "description": "Markdown editor for writing, notes, editable diagrams, drawing and painting with your AI assistant.",
-        "version": "1.2.17",
+        "version": "1.2.18",
         "websiteUrl": "https://rapier.website/agents",
         "repository": {
           "url": "https://github.com/jackskip22/rapier-plugins",
@@ -31,7 +31,7 @@
         "remotes": [
           {
             "type": "streamable-http",
-            "url": "https://mcp.rapier.website/door/mcp"
+            "url": "https://mcp.rapier.website/mcp"
           }
         ]
       }

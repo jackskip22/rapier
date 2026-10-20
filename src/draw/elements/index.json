@@ -215,11 +215,11 @@
 			"kind": "elements",
 			"id": "elements-flourishes-1",
 			"group": "Flourishes",
-			"items": 32,
+			"items": 37,
 			"file": "elements/elements-flourishes-1.json",
-			"bytes": 69612,
-			"deflated": 28528,
-			"sha384": "7lEOnKcfNhchMDET4LHg5aH2PHticBNsdwLbxfIXaCm8MUJIneX6Uw/ZvpGglEzx"
+			"bytes": 225309,
+			"deflated": 92621,
+			"sha384": "gwCLjrwIyxlQWv44CvIbYnwg1EEHOf54AzxwOYXsLK1mhBBiuik0j8tqMGQ5WCux"
 		},
 		{
 			"kind": "elements",
@@ -1152,6 +1152,346 @@
 			"h": 1236,
 			"bytes": 218841,
 			"sha384": "rhS7HSTddzxQNGLzaN57wRMsTrR62I/zO7EGhoKCjJ04bc+jHOTh5fXMHLLeVf2Y"
+		},
+		{
+			"kind": "template",
+			"id": "border-062",
+			"name": "Title border 62",
+			"file": "templates/border-062.json",
+			"w": 878,
+			"h": 1246,
+			"bytes": 82576,
+			"sha384": "3AokgtFNa/ZgGHMzulylvXUmoFC7ii4WnHMRBbZWax2YJsUDMNrufLS142EP8cNE"
+		},
+		{
+			"kind": "template",
+			"id": "border-063",
+			"name": "Title border 63",
+			"file": "templates/border-063.json",
+			"w": 878,
+			"h": 1331,
+			"bytes": 221556,
+			"sha384": "KdvBkg3WpV0JL5UFZStlbz35ht5QwlB2RK6wqsH/TJW+vgekt6bYJTeHlekvvei3"
+		},
+		{
+			"kind": "template",
+			"id": "border-064",
+			"name": "Border 64",
+			"file": "templates/border-064.json",
+			"w": 875,
+			"h": 1239,
+			"bytes": 217974,
+			"sha384": "FSMx+6LONZH/HME/kzZI8bPb+W6aF3oCwCgVAy2rDE/1aNIKZU/ERNfohoN7TVln"
+		},
+		{
+			"kind": "template",
+			"id": "border-065",
+			"name": "Title border 65",
+			"file": "templates/border-065.json",
+			"w": 876,
+			"h": 1247,
+			"bytes": 12517,
+			"sha384": "rf1hn6ELXPD24tWcbCspSBQyPimUdVVBrUWgiHVnDcUbCaKk+5od/Q6LXtXHQyc+"
+		},
+		{
+			"kind": "template",
+			"id": "border-066",
+			"name": "Title border 66",
+			"file": "templates/border-066.json",
+			"w": 848,
+			"h": 1238,
+			"bytes": 11410,
+			"sha384": "Eqk9lYCAcACWD0mO6i76yrIEraN8tdAHqM/5BHy10cv5DnDXk4mfj5K/gW748/mW"
+		},
+		{
+			"kind": "template",
+			"id": "border-067",
+			"name": "Title border 67",
+			"file": "templates/border-067.json",
+			"w": 923,
+			"h": 1249,
+			"bytes": 133920,
+			"sha384": "v0XNAbNl5gHhisl433TjEVPCksjZIg7YALKbNZlCAAkN6vHilt3sKcdefKumooWW"
+		},
+		{
+			"kind": "template",
+			"id": "border-068",
+			"name": "Border 68",
+			"file": "templates/border-068.json",
+			"w": 775,
+			"h": 1221,
+			"bytes": 51616,
+			"sha384": "aYqgE7fvhhaIE8RNaWPUhDp+14Ci948TqqzGahsPCY3iI6bfoYSB18fy4/LkZxzf"
+		},
+		{
+			"kind": "template",
+			"id": "border-069",
+			"name": "Border 69",
+			"file": "templates/border-069.json",
+			"w": 904,
+			"h": 1137,
+			"bytes": 184755,
+			"sha384": "e0i87knszG3Xth99oD0S+xiSir/taarD9MRcVVGzhFXmddiP6PRWgULmv70k1jZz"
+		},
+		{
+			"kind": "template",
+			"id": "border-070",
+			"name": "Title border 70",
+			"file": "templates/border-070.json",
+			"w": 733,
+			"h": 1243,
+			"bytes": 53300,
+			"sha384": "Bj//edrjZa1RpqrAYrqdKKz9mwWyKmMVuoGLg/FfTOF1y9u2F3yb+Wqa2SSRrtut"
+		},
+		{
+			"kind": "template",
+			"id": "border-071",
+			"name": "Title border 71",
+			"file": "templates/border-071.json",
+			"w": 891,
+			"h": 1247,
+			"bytes": 98126,
+			"sha384": "LZewcIwAL+7/xex0j3UqT6zMvsJSdGf7oFaHFo3Huv3E/WTMNwRJLDrHQccCwN+E"
+		},
+		{
+			"kind": "template",
+			"id": "border-072",
+			"name": "Title border 72",
+			"file": "templates/border-072.json",
+			"w": 874,
+			"h": 1246,
+			"bytes": 102133,
+			"sha384": "22QVtefYNTvjINPW8qW8nOfmlmmwB5861+HtCqtimjrUueOVATvS/oY9A32bkfSH"
+		},
+		{
+			"kind": "template",
+			"id": "border-073",
+			"name": "Title border 73",
+			"file": "templates/border-073.json",
+			"w": 781,
+			"h": 1247,
+			"bytes": 84221,
+			"sha384": "VRLVurHznVb5TXy4TREfUqL7iz/5YRl+9llVFe24y6EB4/TrV4gF8EGlVQNUKCJM"
+		},
+		{
+			"kind": "template",
+			"id": "border-074",
+			"name": "Title border 74",
+			"file": "templates/border-074.json",
+			"w": 795,
+			"h": 1242,
+			"bytes": 164158,
+			"sha384": "0pxwzLAFLEcVDnWOMfeQVT7NdmfWYdNhUQD2X1IJSlOul+xc/C6EacO8Dk0zF1iq"
+		},
+		{
+			"kind": "template",
+			"id": "border-075",
+			"name": "Title border 75",
+			"file": "templates/border-075.json",
+			"w": 732,
+			"h": 1246,
+			"bytes": 93554,
+			"sha384": "0heHW7Ybzvqr4fTswiLuHHf1o3vk4cwyEfV+ORFUy4xWzw3PnzQGFLtApM2uH9dS"
+		},
+		{
+			"kind": "template",
+			"id": "border-076",
+			"name": "Title border 76",
+			"file": "templates/border-076.json",
+			"w": 813,
+			"h": 1238,
+			"bytes": 110862,
+			"sha384": "UOss5euPTzXUjuHo7yP1T07fOCI073410bZY2c1U2sBYt4xFkTR5sFgHKJ6L12S6"
+		},
+		{
+			"kind": "template",
+			"id": "border-077",
+			"name": "Title border 77",
+			"file": "templates/border-077.json",
+			"w": 919,
+			"h": 1326,
+			"bytes": 204774,
+			"sha384": "q6SkCuyrmAxrpyLD7/jXcl+FYxa7xgW5RPJn5TKZygUMMzr/8Op11LfEyfJLNRk9"
+		},
+		{
+			"kind": "template",
+			"id": "border-078",
+			"name": "Title border 78",
+			"file": "templates/border-078.json",
+			"w": 792,
+			"h": 1247,
+			"bytes": 72685,
+			"sha384": "RVzPqePAzJa71jeEEDyd3ZT/JFV4Dx2Qe/6g3ulyiXuUPFXujxITBdmquvpEao9n"
+		},
+		{
+			"kind": "template",
+			"id": "border-079",
+			"name": "Border 79",
+			"file": "templates/border-079.json",
+			"w": 765,
+			"h": 1247,
+			"bytes": 56847,
+			"sha384": "vf9U929TL0i8ApZ80AX/erDq8Kh0HGitzv2uEFfGcz3SQqsMpasglTbSK4ioWm8w"
+		},
+		{
+			"kind": "template",
+			"id": "border-080",
+			"name": "Border 80",
+			"file": "templates/border-080.json",
+			"w": 701,
+			"h": 1243,
+			"bytes": 68642,
+			"sha384": "72rIgGLHzl5bEkHgBhumEevj8nleW2f8sXgOazzy2jC0duw5kIvGpcOSvWpTg0vq"
+		},
+		{
+			"kind": "template",
+			"id": "border-081",
+			"name": "Border 81",
+			"file": "templates/border-081.json",
+			"w": 772,
+			"h": 1247,
+			"bytes": 77688,
+			"sha384": "kxLC/qberFVyNqiGFB1xiH59vDJyUomsiuetZJDU+vLq3RuDxcy+nLuWH94YHe0y"
+		},
+		{
+			"kind": "template",
+			"id": "border-082",
+			"name": "Title border 82",
+			"file": "templates/border-082.json",
+			"w": 912,
+			"h": 1281,
+			"bytes": 65870,
+			"sha384": "wz5UWnU8ZyEAPTHoKISlYRcJ0mLJJn2+1SIZcLkgLrdVzAhJXEyvuIMO844oTRau"
+		},
+		{
+			"kind": "template",
+			"id": "border-083",
+			"name": "Title border 83",
+			"file": "templates/border-083.json",
+			"w": 737,
+			"h": 1234,
+			"bytes": 20811,
+			"sha384": "2gcOlWoje6HS+TGdc0SrDj8LgCqWlC1UukSdQI4qeOrk2sx7jK18jik8WGJkFlyw"
+		},
+		{
+			"kind": "template",
+			"id": "border-084",
+			"name": "Border 84",
+			"file": "templates/border-084.json",
+			"w": 717,
+			"h": 1248,
+			"bytes": 70252,
+			"sha384": "cUE90QLxEx/FhQxQTuDBUtcvUwtNNsLa+MB+Xa1KfDFdRKN4aluJ+GwzGrIUnTHs"
+		},
+		{
+			"kind": "template",
+			"id": "border-085",
+			"name": "Title border 85",
+			"file": "templates/border-085.json",
+			"w": 890,
+			"h": 1233,
+			"bytes": 110068,
+			"sha384": "Du0tenCcxl0lDo6qFfMHK/qomHSYGmA/rZUdPZ/lbvPR+K+6lMAUTQOWW9jFAiBs"
+		},
+		{
+			"kind": "template",
+			"id": "border-086",
+			"name": "Border 86",
+			"file": "templates/border-086.json",
+			"w": 754,
+			"h": 1244,
+			"bytes": 299975,
+			"sha384": "pnQsyhn2nN+p2sfX0twS9FR0DViXPaREg1FbJ8nVedjt0ixhNWZo16xpqS3/Jy7F"
+		},
+		{
+			"kind": "template",
+			"id": "border-087",
+			"name": "Border 87",
+			"file": "templates/border-087.json",
+			"w": 677,
+			"h": 1243,
+			"bytes": 264899,
+			"sha384": "5xxjvUtw1tRvJtB8ml7z9cGUtnH3F5HHNtg2IA3q41876hSKaX/Jv3pdm0tltfJe"
+		},
+		{
+			"kind": "template",
+			"id": "border-088",
+			"name": "Border 88",
+			"file": "templates/border-088.json",
+			"w": 882,
+			"h": 1193,
+			"bytes": 77484,
+			"sha384": "c90ZD7lTW6eUovEpxp51itL7l/fB2J7bi9TnIE+6Pn7DoCE6Uue2Ml/mNNRp4hwZ"
+		},
+		{
+			"kind": "template",
+			"id": "border-089",
+			"name": "Title border 89",
+			"file": "templates/border-089.json",
+			"w": 866,
+			"h": 1238,
+			"bytes": 85220,
+			"sha384": "gF9YOY0qCXMfmsUBz1L7GA95OIRI04cMS1YBfaPddw1jFADxcRhop6zciZBXAI5U"
+		},
+		{
+			"kind": "template",
+			"id": "border-090",
+			"name": "Title border 90",
+			"file": "templates/border-090.json",
+			"w": 834,
+			"h": 1246,
+			"bytes": 60275,
+			"sha384": "uQksJWPYOkWNkAQbkvvliHsKiz9vI/Ea88WEc1/WXM7932d/3fykzVakdi+NGCvC"
+		},
+		{
+			"kind": "template",
+			"id": "border-091",
+			"name": "Border 91",
+			"file": "templates/border-091.json",
+			"w": 915,
+			"h": 1272,
+			"bytes": 171241,
+			"sha384": "ipN3bGo2Z1gamHxmvW3aFR+BaJ4a2nVpk6CdqxIDIRs48tu97WTZz59aYJnR3zCv"
+		},
+		{
+			"kind": "template",
+			"id": "border-092",
+			"name": "Border 92",
+			"file": "templates/border-092.json",
+			"w": 900,
+			"h": 1241,
+			"bytes": 110760,
+			"sha384": "Rb5g+/0jeqinmpO7Uk+U2u468Aj7HibRdLdjKm2o5YDkXQQEtdnpkNWakWxWC4He"
+		},
+		{
+			"kind": "template",
+			"id": "border-093",
+			"name": "Border 93",
+			"file": "templates/border-093.json",
+			"w": 840,
+			"h": 1238,
+			"bytes": 152901,
+			"sha384": "74UBG3hIGjw/Ud5EpvQX8pWDbnbFzolvNa6yvdiuE7F234lWG3dnbo62bOtu948G"
+		},
+		{
+			"kind": "template",
+			"id": "border-094",
+			"name": "Border 94",
+			"file": "templates/border-094.json",
+			"w": 880,
+			"h": 1226,
+			"bytes": 113484,
+			"sha384": "gemcSOhM1WaFBPb8jeZmfg9UmtkaSdlXLAC0LSUWkMaA9mrG2hUjKSPBLamFW0RT"
+		},
+		{
+			"kind": "template",
+			"id": "border-095",
+			"name": "Title border 95",
+			"file": "templates/border-095.json",
+			"w": 824,
+			"h": 1235,
+			"bytes": 92757,
+			"sha384": "eX10OMOS0wBdFudrP1IIct8LiP8lohbjlzqi1kXxVtuUb7A8UbWf60YsQlCwav09"
 		}
 	]
 }

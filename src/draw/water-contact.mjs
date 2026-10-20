@@ -36,6 +36,22 @@ export class WaterContact {
  radius(pressure,speed){
   return contactRadius(this.profile,this.params,this.tool,this.radiusScale,pressure,speed);
  }
+ materialPlan(){
+  const p=this.profile,tool=this.tool,gpu=this.gpu,points=this.queue.slice(),s=this.state;
+  if(s)points.push({x:s.x,y:s.y},{x:s.cx,y:s.cy});if(!points.length)return null;
+  const lifting=tool==='lift'||tool==='erase',ink=tool!=='water'&&!lifting,finish=this.pigmentFinish;
+  const sheen=ink&&!!finish?.sheen.some(v=>v>0),settling=ink&&finish?.settling>0;
+  const radius=this.radius(1,0)*(tool==='water'?1.3:1);
+  const extent=lifting?(gpu.finish?3.2:2):tool==='pen'?3.2*2.6:
+   p.scatter+.5*p.splay+Math.max(1.5,Math.hypot(1,p.aspect)*1.02)*Math.min(2,1+p.sizeJitter)*(1+p.splay)*(tool==='water'?1:1+.12*p.wetRound);
+  const reach=Math.ceil(radius*extent*gpu.height)+4;
+  let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+  for(const q of points){const x=q.x*gpu.width,y=(1-q.y)*gpu.height;x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x);y1=Math.max(y1,y);}
+  const box=[Math.max(0,Math.floor(x0-reach)),Math.max(0,Math.floor(y0-reach)),Math.min(gpu.width,Math.ceil(x1+reach)),Math.min(gpu.height,Math.ceil(y1+reach))];
+  if(box[2]<=box[0]||box[3]<=box[1])return null;
+  const indices=lifting?[0,1,2,3,4,...(tool==='erase'?[5]:[]),...(gpu.finish?[6]:[])]:[...(ink?[0,1]:[]),4,...(settling?[2,3]:[]),...(sheen?[6]:[])];
+  return {box,indices,finish:sheen&&!gpu.finish,tip:!lifting&&tool!=='pen'?this.brush:null};
+ }
  _angle(s){
   const p=this.profile,rotation=p.rotation==='random'?'random':this.follow===null?p.rotation:this.follow?'follow':'fixed';
   let angle=rotation==='random'?this.rng()*TAU:rotation==='follow'?Math.atan2(s.dy,s.dx)+p.angle*DEG:s.azimuth??(this.fixedAngle??p.angle)*DEG;

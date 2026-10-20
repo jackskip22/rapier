@@ -1,14 +1,16 @@
 globalThis.RapierSourceAssets = (() => {
   let authority = '', expanded = false, cachedSource = null, boundary = -1, cached = null, prepared = null;
   let admitted = null, inertLine = null, excluded = null;
+  let retirementSpans = new WeakMap();
   const active = () => _rapierHeavyRuntime.window?.assetFold === true;
   const wanted = () => !!RapierPreferences.read('assets');
-  function identity() {
+  function identity(source) {
     if (authority === rapier.identity.authority) return;
     authority = rapier.identity.authority;
     expanded = wanted(); cachedSource = null; boundary = -1; cached = null;
     admitted = null; inertLine = null; excluded = null;
-    const value = rapier.document.source.read();
+    retirementSpans = new WeakMap();
+    const value = source === undefined ? rapier.document.source.read() : source;
     if (prepared?.source !== value) prepared = null;
     if (_rapierSourceRuntime.documentLineStartCache.source !== value)
       _rapierSourceRuntime.documentLineStartCache = {source: null, text: null, starts: [0]};
@@ -100,9 +102,64 @@ globalThis.RapierSourceAssets = (() => {
     admitted = {key: store.cacheKey, summary};
     return summary;
   }
+  function posterSpans(value) {
+    const spans = [], open = /^ {0,3}(`{3,}|~{3,})html(?=[\s{]|$)[^\r\n]*\r?\n/gm;
+    for (let found; (found = open.exec(value));) {
+      const close = new RegExp('^ {0,3}' + found[1][0] + '{' + found[1].length + ',}[ \\t]*(?:\\r?\\n|$)', 'gm');
+      close.lastIndex = open.lastIndex;
+      const closing = close.exec(value);
+      let end = closing ? closing.index + closing[0].length : value.length;
+      open.lastIndex = end;
+      const layout = /^<!--md-layout:v1[^\r\n]*(?:\r?\n|$)/.exec(value.slice(end));
+      if (layout) end += layout[0].length;
+      spans.push({start: found.index, end});
+    }
+    for (const found of value.matchAll(/data:image\/(?:gif|jxl);base64,[A-Za-z0-9+/]+={0,2}/gi))
+      spans.push({start: found.index, end: found.index + found[0].length});
+    spans.sort((a, b) => a.start - b.start || a.end - b.end);
+    const merged = [];
+    for (const span of spans) {
+      const last = merged[merged.length - 1];
+      if (last && span.start <= last.end) last.end = Math.max(last.end, span.end);
+      else merged.push(span);
+    }
+    return merged;
+  }
+  function spansForStore(store) {
+    let spans = retirementSpans.get(store.cacheKey);
+    if (!spans) { spans = posterSpans(store.read()); retirementSpans.set(store.cacheKey, spans); }
+    return spans;
+  }
+  function primeRetirement(value) {
+    const store = rapier.document.source;
+    if (typeof value !== 'string' || store.read() !== value) return;
+    identity(value);
+    if (store.contains('rapier-poster-v1-') && !retirementSpans.has(store.cacheKey))
+      retirementSpans.set(store.cacheKey, posterSpans(value));
+  }
+  function touchesPoster(spans, start, end) {
+    let lo = 0, hi = spans.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (spans[mid].end < start) lo = mid + 1; else hi = mid;
+    }
+    return lo < spans.length && spans[lo].start <= end;
+  }
+  function changesPosterSyntax(store, row) {
+    if (/[\r\n]/.test(row.removed + row.inserted)) return true;
+    const left = store.readSlice(Math.max(0, row.pos - 32), row.pos);
+    const right = store.readSlice(row.pos + row.removed.length, row.pos + row.removed.length + 32);
+    const next = left + row.inserted + right;
+    const prefix = / {0,3}(?:`{3,}|~{3,})(?:html(?=[\s{]|$))?|data:image\/(?:gif|jxl);base64,|<!--md-layout:v1/gi;
+    for (let found; (found = prefix.exec(next));)
+      if (found.index <= left.length + row.inserted.length && prefix.lastIndex >= left.length) return true;
+    return false;
+  }
   function mayRetireImages(rows) {
     identity();
     const store = rapier.document.source, row = rows.length === 1 ? rows[0] : null;
+    if (store.contains('rapier-poster-v1-') && (rows.length > 1 ||
+        row && touchesPoster(spansForStore(store), row.pos, row.pos + row.removed.length))) return true;
     if (row && excluded?.key === store.cacheKey && row.pos >= excluded.start &&
         row.pos + row.removed.length <= excluded.end) return false;
     const hint = {};
@@ -126,7 +183,9 @@ globalThis.RapierSourceAssets = (() => {
     }
     const negative = excluded?.key === key && row.pos > excluded.start && stop <= excluded.end &&
       !/[!\[\r\n]/.test(row.inserted + row.removed) ? {...excluded, end: excluded.end + delta} : null;
-    return {key, plain, delta, negative};
+    const posters = rapier.document.docKind === 'markdown' && store.contains('rapier-poster-v1-') ? spansForStore(store) : null;
+    const posterPlain = posters && !touchesPoster(posters, row.pos, stop) && !changesPosterSyntax(store, row);
+    return {key, plain, delta, negative, posters, posterPlain};
   }
   function spliced(store, row, proof) {
     const win = _rapierHeavyRuntime.window;
@@ -142,6 +201,12 @@ globalThis.RapierSourceAssets = (() => {
     }
     inertLine = proof.plain ? {...inertLine, key: store.cacheKey, end: inertLine.end + proof.delta} : null;
     excluded = proof.negative && {...proof.negative, key: store.cacheKey};
+    if (rapier.document.docKind === 'markdown' && store.contains('rapier-poster-v1-')) {
+      const stop = row.pos + row.removed.length;
+      const spans = proof.posterPlain ? proof.posters.map(span => span.start > stop
+        ? {start: span.start + proof.delta, end: span.end + proof.delta} : span) : posterSpans(store.read());
+      retirementSpans.set(store.cacheKey, spans);
+    }
     admitted = null;
   }
   function unfoldFoldedAppendix(source) {
@@ -245,5 +310,5 @@ globalThis.RapierSourceAssets = (() => {
   RapierPreferences.subscribe('assets', () => { void sync(); });
   const imageIndex = source => prepared?.source === source ? prepared.imageIndex : prepared?.body === source ? prepared.bodyImageIndex : null;
   const blockHash = raw => prepared?.blockHashes.get(raw) || null;
-  return Object.freeze({active, mount, refresh, toggle, sync, prepare, imageIndex, blockHash, mayRetireImages, changing, spliced});
+  return Object.freeze({active, mount, refresh, toggle, sync, prepare, imageIndex, blockHash, primeRetirement, mayRetireImages, changing, spliced});
 })();

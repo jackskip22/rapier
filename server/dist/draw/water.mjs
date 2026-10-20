@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {WaterGPU,waterReady,waterSoftwareAdmitted,waterSoftwareAdapter,waterWarm,waterUnfilteredTest,waterTiming,waterTimingOn,waterCapture,waterCaptureOn,waterNote,waterHandSheetFits,waterGpuBudget,waterSheetShows} from './water-gpu.mjs';
 import {WaterContact,waterContactReach} from './water-contact.mjs';
-import {getBrush,makeTip,CUSTOM_PARAMS} from './water-materials.mjs';
+import {getBrush,makeTip,CUSTOM_PARAMS,WATER_TIP_SIZE} from './water-materials.mjs';
 import {WATER_PAPER_UNITS,WATER_PAPER_SEED,WATER_PAPER_PERIOD} from './paper-field.mjs';
 import {encodeRgb,toLinear,waterMixes} from './water-color.mjs';
 export {waterMixes};
@@ -111,6 +111,16 @@ export class WaterSurface {
   this._sync();return true;
  }
  async _atomic(work){const own=!this._transaction,checkpoint=own?await this.beginStroke():this._transaction;try{const value=await work();if(own)await this.endStroke(checkpoint);return value;}catch(error){if(this._transaction===checkpoint)await this.endStroke(checkpoint,true);throw error;}}
+ async _frameContact(contact,dt){
+  const queue=contact.queue,count=queue.length,state=contact.state,ending=contact.ending,radiusScale=contact.radiusScale,width=this.width,height=this.height,brush=this._brush,attached=brush?.contact===contact;
+  const plan=contact.materialPlan();
+  if(plan){
+   const tip=plan.tip,id=tip?.id??tip?.brush,tipBytes=tip&&!this.gpu.tips.has(id)?(tip.tip?tip.tip.width*tip.tip.height:WATER_TIP_SIZE*WATER_TIP_SIZE):0;
+   await this.gpu._roomForRollback(plan.box,plan.indices,0,tipBytes+(plan.finish?width*height*8:0),true);
+  }
+  if(contact.gpu!==this.gpu||attached&&(this._brush!==brush||brush.contact!==contact)||contact.queue!==queue||queue.length!==count||contact.state!==state||contact.ending!==ending||contact.radiusScale!==radiusScale||this.width!==width||this.height!==height||this.gpu.width!==width||this.gpu.height!==height)throw waterError('WATER_BUSY','The Water contact changed while its frame was being prepared.');
+  contact.frame(dt);
+ }
  async _flushContact(dt=null,finish=false){
   const brush=this._brush;if(!brush?.contact)return false;
   const contact=brush.contact,count=contact.queue.length;if(!count&&!finish&&dt==null)return false;
@@ -118,7 +128,7 @@ export class WaterSurface {
   this.gpu._age(elapsed);
   this._appendFrame(brush,elapsed,count,finish);
   this.gpu.painting=true;
-  if(finish)contact.finish();contact.frame(elapsed);await this.gpu.step(elapsed);this.tick++;this.revision++;this._pendingDt=0;brush.loadFuel=contact.loadFuel;this._sync();
+  if(finish)contact.finish();await this._frameContact(contact,elapsed);await this.gpu.step(elapsed);this.tick++;this.revision++;this._pendingDt=0;brush.loadFuel=contact.loadFuel;this._sync();
   if(finish){brush.lastDirection=contact.lastDirection.slice();brush.contact=null;brush.action=null;this._brush=null;this.gpu.painting=false;}
   return true;
  }
@@ -196,20 +206,20 @@ export class WaterSurface {
      const path=action.paths[pathIndex],contact=brush._contactFor(this,action.inputKind??'script');let pointIndex=0;
      const sample=point=>{time=point[6]??point[3]*1000/60;contact.sample((point[0]*this.pixelScale-this.origin[0])/this.width,1-(point[1]*this.pixelScale-this.origin[1])/this.height,(action.inputKind??'script')==='script'?clip(point[2],.02,1):point[2],time,(point[4]??0)*90,(point[5]??0)*90);};
      if(action.frames){
-      for(const [dt,count,finish,change] of action.frames){if(change){await this._replayFrame(change,frameOffset,contact);continue;}const first=pointIndex;for(let i=0;i<count;i++)sample(path[pointIndex++]);if(finish)contact.finish();contact.frame(dt);await this._advance(dt);for(let point=first;point<pointIndex;point++)yield {path:pathIndex,point,tick:this.tick};}
-      if(contact.state){contact.finish();contact.frame(1/60);await this._advance(1/60);}
+      for(const [dt,count,finish,change] of action.frames){if(change){await this._replayFrame(change,frameOffset,contact);continue;}const first=pointIndex;for(let i=0;i<count;i++)sample(path[pointIndex++]);if(finish)contact.finish();await this._frameContact(contact,dt);await this._advance(dt);for(let point=first;point<pointIndex;point++)yield {path:pathIndex,point,tick:this.tick};}
+      if(contact.state){contact.finish();await this._frameContact(contact,1/60);await this._advance(1/60);}
      }else {
       while(pointIndex<path.length){
        const tick=path[pointIndex][3];
        if(previousTick!==null&&tick!==previousTick){
         await this._advance(1/60);for(const point of pending)yield {...point,tick:this.tick};pending=[];
         const from=pointIndex?path[pointIndex-1]:null,to=path[pointIndex];
-        for(let idle=previousTick+1;idle<tick;idle++){if(from){const u=(idle-previousTick)/(tick-previousTick);sample(from.map((v,i)=>i===3?idle:v+((to[i]??v)-v)*u));}previousContact.frame(1/60);
+        for(let idle=previousTick+1;idle<tick;idle++){if(from){const u=(idle-previousTick)/(tick-previousTick);sample(from.map((v,i)=>i===3?idle:v+((to[i]??v)-v)*u));}await this._frameContact(previousContact,1/60);
          this.gpu.painting=!!previousContact.state;await this._advance(1/60);this.gpu.painting=true;yield {kind:'advance',tick:this.tick};}
        }
        do{sample(path[pointIndex]);pending.push({path:pathIndex,point:pointIndex++});}while(pointIndex<path.length&&path[pointIndex][3]===tick);
        if(pointIndex===path.length)contact.finish();
-       contact.frame(1/60);previousTick=tick;previousContact=contact;
+       await this._frameContact(contact,1/60);previousTick=tick;previousContact=contact;
       }
      }
      brush.lastDirection=contact.lastDirection.slice();
@@ -227,6 +237,9 @@ export class WaterSurface {
   const fill=buildWaterFill(image,x,y,action.tolerance,random),color=coefficients(action.pigment),amount=.15*Math.exp(2.8*action.controls.load)*.84*action.controls.light;
   if(fill.count<4)return;
   const pigment=Array.from(color,(v,i)=>v*amount*(i===7?1.6:1)),water=(.25+.75*action.controls.water)*.9;
+  const finish=waterPigmentFinish(action.pigment),ink=action.tool!=='water',sheen=ink&&!!finish?.sheen.some(v=>v>0);
+  const indices=[...(ink?[0,1]:[]),4,...(ink&&finish?.settling>0?[2,3]:[]),...(sheen?[6]:[])];
+  await this.gpu._roomForRollback(fill.box,indices,0,this.width*this.height*(8+(sheen&&!this.gpu.finish?8:0)),true);
   this.gpu.beginFill(fill.field,fill.box);
   const reach=this.gpu.reach;
   try{let front=-.5;const end=fill.maxDistance+28*reach;while(front<end){const next=Math.min(end,front+600/60*reach);this.gpu.fillStep({from:front,to:next,coefficients:action.tool==='water'?null:pigment,finish:waterPigmentFinish(action.pigment),dose:amount,water,soft:12*reach});front=next;await this._advance(1/60);yield {kind:'fill',front,tick:this.tick};}}
@@ -270,7 +283,11 @@ export class WaterSurface {
  }
  async _restore(raw){const state=admitWaterState(raw);if(!state||state.frame.width!==this.width||state.frame.height!==this.height)throw waterError('WATER_INPUT','The Water material checkpoint does not fit this sheet.');return installWaterState(this,state);}
  async fromSnapshot(raw){await this.ready;await this._finishContact();return this._restore(raw);}
- async clear(){await this.ready;await this._finishContact();this.gpu._protect([0,0,this.width,this.height]);for(const t of this.gpu._material())this.gpu._clear(t);for(const pair of [this.gpu.ink,this.gpu.wet])pair.read.forEach((t,i)=>this.gpu._copy(t,pair.write[i]));this.gpu.sleep();this.gpu.painted=null;this.gpu.dirty=[0,0,this.width,this.height];this.gpu.submit();this._bounds=null;this.revision++;this._sync();}
+ async clear(){
+  await this.ready;await this._finishContact();const rect=[0,0,this.width,this.height];
+  await this.gpu._roomForRollback(rect,[0,1,2,3,4,5,6],this.gpu.active?4*1024*1024:0);
+  this.gpu._protect(rect);for(const t of this.gpu._material())if(t)this.gpu._clear(t);this.gpu.sleep();this.gpu.painted=null;this.gpu.dirty=rect;this.gpu.submit();this._bounds=null;this.revision++;this._sync();
+ }
  stats(){return {...this.gpu.stats(),tick:this.tick,sourceBytes:this._bytes};}
  dispose(){if(this._disposed)return;this.gpu.dispose();this._brush=null;this._actions=[];this._tips.clear();this._disposed=true;}
 }

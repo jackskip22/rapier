@@ -23,14 +23,27 @@ export function pendingReceipt(entry) {
     expiresAt: new Date(entry.expiresAt).toISOString()};
 }
 
+function priorReceipt(head, operationId, agent, work) {
+  if (!operationId) return null;
+  const prior = head.rows.find(entry => entry.operationId && identity(entry.operationId, entry.agent) === identity(operationId, agent));
+  if (!prior) return null;
+  return prior.work === work ? pendingReceipt(prior)
+    : {outcome: 'refused', reason: 'operation_id_reused', hint: 'Use a new operation_id for different work.'};
+}
+
+export function queuedConflict(kv, {operationId = null, agent = null, same, now = Date.now()} = {}) {
+  if (!operationId) return null;
+  const head = headOf(kv, now);
+  if (!head.rows.length) return null;
+  const receipt = priorReceipt(head, operationId, agent, sha256(JSON.stringify(same)));
+  return receipt?.outcome === 'refused' ? receipt : null;
+}
+
 export function queueIntent(kv, {intent, operationId = null, agent = null, same = intent, now = Date.now()} = {}) {
   if (!intent || typeof intent !== 'object' || Array.isArray(intent)) throw new TypeError('An intent object is required');
   const head = headOf(kv, now), bytes = bytesOf(intent), work = sha256(JSON.stringify(same));
-  if (operationId) {
-    const prior = head.rows.find(entry => entry.operationId && identity(entry.operationId, entry.agent) === identity(operationId, agent));
-    if (prior) return prior.work === work ? pendingReceipt(prior)
-      : {outcome: 'refused', reason: 'operation_id_reused', hint: 'Use a new operation_id for different work.'};
-  }
+  const prior = priorReceipt(head, operationId, agent, work);
+  if (prior) return prior;
   if (head.rows.length >= RELAY_LIMITS.intents)
     return {outcome: 'refused', reason: 'page_queue_full', hint: `${RELAY_LIMITS.intents} edits are already waiting for the person's page. Ask them to open it (show), then continue.`};
   if (head.rows.reduce((sum, entry) => sum + entry.bytes, 0) + bytes > RELAY_LIMITS.bytes)

@@ -40,6 +40,7 @@
           const next = raw.slice(0, at) + row.inserted + raw.slice(at + row.removed.length);
           if (!next.startsWith(opening)) {if (cacheCurrent) break; continue;}
           block.raw = next; block.dirty = false;
+          rapier.document.bodySpans?.invalidateBlock(block.id);
           rapier.autosave.dirty.add(block.id);
           project.carrier = {blocks, block, index};
           const wrapper = document.querySelector('.block-wrapper[data-block-id="' + block.id + '"]');
@@ -55,6 +56,7 @@
         const next = after.parts[0] + raw.slice(row.removed.length);
         if (block.raw !== next) {
           block.raw = next; block.dirty = false;
+          rapier.document.bodySpans?.invalidateBlock(block.id);
           rapier.autosave.dirty.add(block.id);
           block.rendered = renderBlock(block.raw);
           const wrapper = document.querySelector('.block-wrapper[data-block-id="' + block.id + '"]');

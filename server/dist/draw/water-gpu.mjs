@@ -9,17 +9,18 @@ export function waterGpuBudget(memory=globalThis.navigator?.deviceMemory){return
 const UNIFORM_SLOTS=2048,UNIFORM_BYTES=64*UNIFORM_SLOTS*4;
 function sheetLayout(w,h){
  const aspect=w/h,sw=aspect>=1?Math.round(256*aspect):256,sh=aspect>=1?256:Math.round(256/aspect);
- return {sw,sh,bytes:w*h*64+sw*sh*16+Math.ceil(w/16)*Math.ceil(h/16)*4};
+ return {sw,sh,bytes:w*h*42+sw*sh*16+Math.ceil(w/16)*Math.ceil(h/16)};
+}
+export function waterHandSheetBytes(w,h,growth,tip=null){
+ if(![w,h,growth].every(Number.isSafeInteger)||w<1||h<1||growth<0)return Infinity;
+ const W=w+growth,H=h+growth,next=sheetLayout(W,H);
+ const tipBytes=tip?tip.width*tip.height:WATER_TIP_SIZE*WATER_TIP_SIZE;
+ const rollback=4*128*128*34+next.sw*next.sh*6;
+ const pigmentWork=Math.ceil(W/16)*Math.ceil(H/16)*4+12,presentation=w*h*4+W*H*8;
+ return UNIFORM_BYTES+4+tipBytes+next.bytes+rollback+pigmentWork+presentation;
 }
 export function waterHandSheetFits(w,h,growth,tip=null,maxBytes=waterGpuBudget()){
- if(![w,h,growth].every(Number.isSafeInteger)||w<1||h<1||growth<0)return false;
- const W=w+growth,H=h+growth,old=sheetLayout(w,h),next=growth?sheetLayout(W,H):{bytes:0};
- const tipBytes=tip?tip.width*tip.height:WATER_TIP_SIZE*WATER_TIP_SIZE;
- const rollback=4*128*128*38+old.sw*old.sh*6;
- const scratch=512*512*8+old.sw*old.sh*16;
- const pigmentWork=Math.ceil(W/16)*Math.ceil(H/16)*4+12;
- const presentation=w*h*4+W*H*8;
- return UNIFORM_BYTES+4+tipBytes+old.bytes+rollback+next.bytes+scratch+pigmentWork+presentation<=maxBytes;
+ const bytes=waterHandSheetBytes(w,h,growth,tip);return Number.isFinite(bytes)&&bytes<=maxBytes;
 }
 
 export function waterSheetShows(w,h,shownW=w,shownH=h,maxBytes=waterGpuBudget()){
@@ -36,6 +37,7 @@ const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const WATER_IDLE_SECONDS=1;
 const PAPER_BAND_PIXELS=196608;
 const PAPER_CACHE_BYTES=16*1024*1024;
+const READBACK_BYTES=8*1024*1024;
 const WATER_LIVE_SLOW_MS=20,WATER_LIVE_WINDOW=8;
 export const WATER_REFERENCE_TEXEL=1100/900;
 const linearHex=hex=>[1,3,5].map(i=>{const v=parseInt(hex.slice(i,i+2),16)/255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;});
@@ -162,7 +164,7 @@ async function programLibrary(device,firstPaper){
    stampFinish:['rgba16float','add'],fillFinish:['rgba16float','add'],liftFinish:['rgba16float','lift'],
    velocity:['rg16float'],curl:['r16float'],vorticity:['rg16float'],divergence:['r16float'],pressureDecay:['r16float'],pressure:['r16float'],project:['rg16float'],
    wet:['r16float'],fix:['rgba16float','rgba16float','add'],dried:['rgba16float','rgba16float','add'],driedKeep:['rgba16float','rgba16float'],
-   mask:['rgba8unorm'],paperField:['rgba16float'],paperLight:['rgba8unorm'],present:['rgba8unorm']};
+   mask:['r8unorm'],paperField:['rgba16float'],paperLight:['rgba8unorm'],present:['rgba8unorm']};
   const blend={add:{srcFactor:'one',dstFactor:'one',operation:'add'},max:{srcFactor:'one',dstFactor:'one',operation:'max'},
    lift:{srcFactor:'zero',dstFactor:'one-minus-src',operation:'add'}};
   const modules=new Map(),pipelines={},loadOps={},later=new Map();let paperDescription;
@@ -209,7 +211,7 @@ export class WaterGPU {
   this.tips=new Map();this.targets=new Set();this.buffers=new Map();this.bindings=new Map();this.targetSequence=0;this.fill=null;
   this.pendingErrors=new Set();this.gpuError=null;this.errorListener=null;this.simBox=null;this.painting=false;this._scratch=new Float32Array(64);
   this.pendingRetire=[];this.encoder=null;this.slots=0;this.uniformData=new Float32Array(UNIFORM_BYTES/4);
-  this.queued=new Map();this.scratch=new Map();this.inFlight=[];this.maskRead=null;this.trimEpoch=0;this.recovery=null;
+  this.queued=new Map();this.scratch=new Map();this.inFlight=[];this.maskRead=null;this.maskBuffer=null;this.trimEpoch=0;this.recovery=null;
   this.ready=this._initialize(options.device);
  }
  async _initialize(given){
@@ -301,16 +303,16 @@ export class WaterGPU {
   this.uniforms=null;this.library=null;this.encoder=null;this.slots=0;this.pigmentWork=null;this.recovery=null;
  }
  _pair(w,h,formats,make=(...args)=>this._texture(...args),storage=false){const usage=storage?FULL()|GPUTextureUsage.STORAGE_BINDING:undefined;return {read:formats.map(f=>make(w,h,f,usage)),write:formats.map(f=>make(w,h,f,usage))};}
- _allocate(w,h,withFinish=!!this.finish){
+ _allocate(w,h,withFinish=!!this.finish,withBase=false){
   const {sw,sh,bytes}=sheetLayout(w,h);
   this._dimensions(w,h);this._dimensions(sw,sh);
-  this._reserve(bytes+w*h*(withFinish?8:0));
+  this._reserve(bytes+w*h*((withFinish?8:0)+(withBase?4:0)));
   const made=[],make=(...args)=>{const t=this._texture(...args);made.push(t);return t;};
   try{
    const sheet={width:w,height:h,sw,sh,velocity:this._pair(sw,sh,['rg16float'],make),pressure:this._pair(sw,sh,['r16float'],make),
-    curl:make(sw,sh,'r16float'),divergence:make(sw,sh,'r16float'),ink:this._pair(w,h,['rgba16float','rgba16float'],make,true),
-    wet:this._pair(w,h,['r16float'],make),fixed:[make(w,h,'rgba16float'),make(w,h,'rgba16float')],
-    paper:make(w,h,'rgba8unorm'),base:make(w,h,'rgba8unorm'),output:make(w,h,'rgba8unorm',FULL()|GPUTextureUsage.STORAGE_BINDING),mask:make(Math.ceil(w/16),Math.ceil(h/16),'rgba8unorm'),finish:withFinish?make(w,h,'rgba16float'):null};
+    curl:make(sw,sh,'r16float'),divergence:make(sw,sh,'r16float'),ink:{read:[make(w,h,'rgba16float'),make(w,h,'rgba16float')],write:[]},
+    wet:{read:[make(w,h,'r16float')],write:[]},fixed:[make(w,h,'rgba16float'),make(w,h,'rgba16float')],
+    paper:make(w,h,'rgba8unorm'),base:withBase?make(w,h,'rgba8unorm'):null,output:make(w,h,'rgba8unorm',FULL()|GPUTextureUsage.STORAGE_BINDING),mask:make(Math.ceil(w/16),Math.ceil(h/16),'r8unorm'),finish:withFinish?make(w,h,'rgba16float'):null};
    Object.assign(this,sheet);this.flowMayMove=false;this.outputCanonical=false;return sheet;
   }catch(error){made.forEach(t=>this._drop(t));throw error;}
  }
@@ -321,14 +323,14 @@ export class WaterGPU {
   for(const key of ['curl','divergence','output','mask']){this._drop(sheet[key],false);sheet[key]=null;}
  }
  _expandSheet(sheet){
-  const pairs=[sheet.ink,sheet.wet,sheet.velocity,sheet.pressure],missing=pairs.filter(pair=>!pair.write.length);
+  const pairs=[sheet.velocity,sheet.pressure],missing=pairs.filter(pair=>!pair.write.length);
   const descriptions=[['curl',sheet.sw,sheet.sh,'r16float'],['divergence',sheet.sw,sheet.sh,'r16float'],
-   ['output',sheet.width,sheet.height,'rgba8unorm',FULL()|GPUTextureUsage.STORAGE_BINDING],['mask',Math.ceil(sheet.width/16),Math.ceil(sheet.height/16),'rgba8unorm']].filter(([key])=>!sheet[key]);
+   ['output',sheet.width,sheet.height,'rgba8unorm',FULL()|GPUTextureUsage.STORAGE_BINDING],['mask',Math.ceil(sheet.width/16),Math.ceil(sheet.height/16),'r8unorm']].filter(([key])=>!sheet[key]);
   const bytes=missing.reduce((sum,pair)=>sum+pair.read.reduce((n,t)=>n+t.bytes,0),0)+descriptions.reduce((sum,[,w,h,format])=>sum+w*h*bytesPerPixel[format],0);
   this._reserve(bytes);const made=[],writes=[],fields={};
   const make=(...args)=>{const target=this._texture(...args);made.push(target);return target;};
   try{
-   for(const pair of missing)writes.push([pair,pair.read.map(t=>make(t.w,t.h,t.format,pair===sheet.ink?FULL()|GPUTextureUsage.STORAGE_BINDING:undefined))]);
+   for(const pair of missing)writes.push([pair,pair.read.map(t=>make(t.w,t.h,t.format,undefined))]);
    for(const [key,...args]of descriptions)fields[key]=make(...args);
   }catch(error){made.forEach(t=>this._drop(t,false));throw error;}
   for(const [pair,targets]of writes){pair.write=targets;pair.read.forEach((t,i)=>this._copy(t,targets[i]));}
@@ -339,9 +341,10 @@ export class WaterGPU {
   const retired=[];
   if(sheet.paper!==tx.paper){retired.push(sheet.paper);sheet.paper=tx.paper;}
   if(sheet.finish!==tx.finish){if(sheet.finish)retired.push(sheet.finish);sheet.finish=tx.finish;}
+  if(!tx.base&&sheet.base){retired.push(sheet.base);sheet.base=null;}
   const targets=[...sheet.ink.read,...sheet.fixed,...sheet.wet.read,sheet.base,...(sheet.finish?[sheet.finish]:[])];
-  for(const {r,layers}of tx.tiles.values())for(const [i,target]of layers){this._copy(target,targets[i],null,r);retired.push(target);}
-  targets.forEach((target,i)=>{target.written=tx.materialRects[i]?.slice()??null;});
+  for(const {r,layers}of tx.tiles.values())for(const [i,target]of layers){if(targets[i])this._copy(target,targets[i],null,r);retired.push(target);}
+  targets.forEach((target,i)=>{if(target)target.written=tx.materialRects[i]?.slice()??null;});
   for(const [i,pair]of [sheet.velocity,sheet.pressure].entries()){retired.push(...pair.read);pair.read=[tx.sim[i]];}
   await this._finishMaterial();this._compactSheet(sheet);tx.sheet=sheet;tx.tiles.clear();tx.sim=[];tx.paper=sheet.paper;tx.finish=sheet.finish;
   retired.forEach(t=>this._drop(t,false));
@@ -447,27 +450,30 @@ export class WaterGPU {
   const t=this._texture(width,height,format,undefined,true);
   pool.push(t);while(pool.length>3)this._retire(pool.shift());return t;
  }
- _regionPass(entries,destinations,rect){
+ _regionPass(entries,destinations,rect,outputs=null){
   const targets=Array.isArray(destinations)?destinations:[destinations],target=targets[0];
   const R=[clamp(Math.floor(rect[0]),0,target.w),clamp(Math.floor(rect[1]),0,target.h),clamp(Math.ceil(rect[2]),0,target.w),clamp(Math.ceil(rect[3]),0,target.h)];
   const rw=R[2]-R[0],rh=R[3]-R[1];if(rw<=0||rh<=0)return;
   if(this.slots+entries.length>UNIFORM_SLOTS)this._submitEncoder();
   const blended=entries.some(e=>this.library.loadOps[e.name]==='load');
   const full=R[0]===0&&R[1]===0&&R[2]===target.w&&R[3]===target.h;
-  const directArea=target.w*target.h*(full&&!blended?1:2),maxArea=directArea/(blended?2:1)-2*rw*rh;
-  let scratch=null;
-  if(maxArea>rw*rh)try{scratch=targets.map((t,i)=>this._scratchFor(t.format,rw,rh,i,maxArea));if(scratch.some(t=>!t))scratch=null;}
+  const covers=full||!blended&&entries.some(e=>!e.rect)&&targets.every(t=>t.written===null||
+   t.written&&R[0]<=t.written[0]&&R[1]<=t.written[1]&&R[2]>=t.written[2]&&R[3]>=t.written[3]);
+  const directArea=target.w*target.h*(covers&&!blended?1:2),maxArea=directArea/(blended?2:1)-2*rw*rh;
+  let scratch=outputs;
+  if(!scratch&&!covers&&maxArea>rw*rh)try{
+   scratch=targets.map((t,i)=>this._scratchFor(t.format,rw,rh,i,maxArea));
+   if(scratch.some(t=>!t||t.w!==scratch[0]?.w||t.h!==scratch[0]?.h))scratch=null;
+  }
   catch(error){
    if(error?.code!=='WATER_BUDGET')throw error;
    this._dropScratch();
    for(const e of entries){e.data[60]=0;e.data[61]=0;this._draw(e.name,targets,e.inputs,e.data,e.rect??R);}
    return;
   }
-  const clear=!scratch&&!blended&&entries.some(e=>!e.rect)&&targets.every(t=>t.written===null||
-   t.written&&R[0]<=t.written[0]&&R[1]<=t.written[1]&&R[2]>=t.written[2]&&R[3]>=t.written[3]);
   const encoder=this._command();
   if(scratch&&blended)targets.forEach((t,i)=>encoder.copyTextureToTexture({texture:t.texture,origin:[R[0],R[1]]},{texture:scratch[i].texture,origin:[0,0]},[rw,rh]));
-  const origin=scratch?R:[0,0],loadOp=scratch?(blended?'load':'clear'):(full||clear)&&!blended?'clear':'load';
+  const origin=scratch?R:[0,0],loadOp=scratch?(blended?'load':'clear'):covers&&!blended?'clear':'load';
   const pass=encoder.beginRenderPass({colorAttachments:(scratch??targets).map(t=>({view:t.view,loadOp,clearValue:[0,0,0,0],storeOp:'store'}))});capturePass([...new Set(entries.map(e=>e.name))].join('+')+(scratch?' scratch':''),loadOp);
   for(const e of entries){
    const r=e.rect?[Math.max(R[0],Math.floor(e.rect[0])),Math.max(R[1],Math.floor(e.rect[1])),Math.min(R[2],Math.ceil(e.rect[2])),Math.min(R[3],Math.ceil(e.rect[3]))]:R;
@@ -484,10 +490,42 @@ export class WaterGPU {
  _dropScratch(){for(const pool of this.scratch.values())for(const t of pool)this._retire(t);this.scratch.clear();}
  _region(name,destinations,inputs,data,rect){
   if(name!=='paperLight')this._flushStamps();
-  this._regionPass([{name,inputs,data:Float32Array.from(data),rect:null}],destinations,rect);
+  this._regionPass([{name,inputs,data,rect:null}],destinations,rect);
  }
- _pigment(data,rect){
+ _inkTargets(w,h){
+  const current=this.ink.write,first=current[0];
+  if(first&&first.w===w&&first.h===h)return current;
+  this._submitEncoder();for(const target of current)this._drop(target,false);this.ink.write=[];
+  this._reserve(w*h*16);const made=[];
+  try{for(let i=0;i<2;i++)made.push(this._texture(w,h,'rgba16float',FULL()|GPUTextureUsage.STORAGE_BINDING));}
+  catch(error){made.forEach(target=>this._drop(target,false));throw error;}
+  return this.ink.write=made;
+ }
+ async _pigment(data,rect){
   this._flushStamps();
+  const w=rect[2]-rect[0],h=rect[3]-rect[1],credit=this.ink.write.reduce((sum,t)=>sum+t.bytes,0);
+  const headroom=Math.max(1048576,Math.min(16*1048576,Math.floor((this.maxBytes-this.bytes+credit)/4)));
+  this._reclaimScratch(w*h*16+headroom,credit);
+  const room=this.maxBytes-this.bytes+credit-headroom;
+  if(w*h*16<=room){
+   this._inkTargets(w,h);this._pigmentPass(data,rect);
+   this.ink.write.forEach((t,i)=>this._copyRaw(t,this.ink.read[i],[0,0,w,h],rect));return;
+  }
+  const rows=Math.min(h,Math.floor(room/(w*32)));
+  if(rows<1)this._reserve(w*32+headroom);
+  const height=Math.max(1,rows),result=[new Uint8Array(w*h*8),new Uint8Array(w*h*8)],parameters=Float32Array.from(data);
+  this._inkTargets(w,height);
+  for(let top=rect[1];top<rect[3];top+=height){
+   const band=[rect[0],top,rect[2],Math.min(rect[3],top+height)];
+   this._pigmentPass(parameters,band);
+   const values=await this._readMany(this.ink.write.map(target=>({target,box:[0,0,w,band[3]-top]})));
+   values.forEach((bytes,i)=>result[i].set(bytes,(top-rect[1])*w*8));
+  }
+  this.ink.read.forEach((target,i)=>this._writeTexture({texture:target.texture,origin:rect.slice(0,2)},result[i],{bytesPerRow:w*8},[w,h]));
+ }
+ _pigmentPass(data,rect){
+  this._flushStamps();
+  this.ink.read.forEach((t,i)=>this._copyRaw(t,this.ink.write[i],rect,[0,0]));
   const size=Math.ceil(this.width/16)*Math.ceil(this.height/16)*4;
   if(!this.pigmentWork||this.pigmentWork.size<size){
    this._reserve(size+12);this._submitEncoder();
@@ -510,13 +548,13 @@ export class WaterGPU {
      {binding:11,resource:{buffer:tiles}},...this.ink.write.map((t,i)=>({binding:12+i,resource:t.view}))]})];
    if(this.bindings.size>=256)this.bindings.clear();this.bindings.set(key,groups);
   }
-  data[0]=this.width;data[1]=this.height;data.set(rect,56);data[60]=Math.floor(rect[0]/16)*16;data[61]=Math.floor(rect[1]/16)*16;
+  data[0]=this.width;data[1]=this.height;data.set(rect,56);data[60]=Math.floor(rect[0]/16)*16;data[61]=Math.floor(rect[1]/16)*16;data[62]=rect[0];data[63]=rect[1];
   const slot=this.slots++;this.uniformData.set(data,slot*64);
   const encoder=this._command();encoder.clearBuffer(dispatch,0,4);
   capturePass('pigment','compute','-');const classify=encoder.beginComputePass();classify.setPipeline(this.library.pipelines.pigmentTiles);classify.setBindGroup(0,groups[0],[slot*256]);
   classify.dispatchWorkgroups(Math.ceil((rect[2]-data[60])/16),Math.ceil((rect[3]-data[61])/16));classify.end();
   const pigment=encoder.beginComputePass();pigment.setPipeline(this.library.pipelines.pigmentCompute);pigment.setBindGroup(0,groups[1],[slot*256]);pigment.dispatchWorkgroupsIndirect(dispatch,0);pigment.end();
-  this.ink.write.forEach(t=>this._markWritten(t,rect));
+  this.ink.write.forEach(t=>this._markWritten(t,[0,0,rect[2]-rect[0],rect[3]-rect[1]]));
  }
  _display(inputs,data,box){
   this._flushStamps();if(this.slots===UNIFORM_SLOTS)this.submit();
@@ -564,14 +602,14 @@ export class WaterGPU {
  beginTransaction(){
   this._check();if(this.transaction)throw failure('WATER_BUSY','A Water gesture is already open.');
   this.endFill();this._flushStamps();const tx={tiles:new Map(),span:0,meta:this._meta(),width:this.width,height:this.height,sim:[],paper:this.paper,finish:this.finish,sheet:null,simBox:this.simBox?.slice()??null,
-   materialRects:this._material().map(t=>t.written===undefined?[0,0,t.w,t.h]:t.written?.slice()??null)};
+   base:this.base,materialRects:this._material().map(t=>!t?null:t.written===undefined?[0,0,t.w,t.h]:t.written?.slice()??null)};
   const sim=[...this.velocity.read,...this.pressure.read];this._reserve(sim.reduce((n,t)=>n+t.bytes,0));
   try{for(const t of sim){const copy=this._texture(t.w,t.h,t.format);tx.sim.push(copy);this._copy(t,copy);}}
   catch(error){this.submit();tx.sim.forEach(t=>this._drop(t));throw error;}
   this.transaction=tx;return tx;
  }
  _protectPlan(rect,indices){
-  const tx=this.transaction,material=this._material(),pending=[];indices=indices.filter(i=>material[i]&&(i!==6||tx.finish));let bytes=0;
+  const tx=this.transaction,material=this._material(),pending=[];indices=indices.filter(i=>material[i]&&(i!==5||tx.base)&&(i!==6||tx.finish));let bytes=0;
   for(let y=Math.floor(rect[1]/128)*128;y<rect[3];y+=128)for(let x=Math.floor(rect[0]/128)*128;x<rect[2];x+=128){
    const key=x+','+y,existing=tx.tiles.get(key),missing=indices.filter(i=>!existing?.layers.has(i));if(!missing.length)continue;
    const r=existing?.r??[x,y,Math.min(this.width,x+128),Math.min(this.height,y+128)];
@@ -590,11 +628,22 @@ export class WaterGPU {
   catch(error){this.submit();made.forEach(t=>this._drop(t));throw error;}
   for(const {key,r,existing,copies} of pending){const layers=existing?.layers??new Map();for(const [i,copy]of copies)layers.set(i,copy);tx.tiles.set(key,{r,layers});}
  }
- async _roomForRollback(){
-  const tx=this.transaction;if(!tx||tx.sheet||tx.cpu||!this.active)return;
-  const grow=Math.ceil(this.growCarry+3.4*this.reach)+1,a=this.active,front=[Math.max(0,a[0]-grow),Math.max(0,a[1]-grow),Math.min(this.width,a[2]+grow),Math.min(this.height,a[3]+grow)];
-  const side=2*tx.span+256,next=Math.min(this.width,side)*Math.min(this.height,side)*(tx.finish?46:38);
-  if(this.bytes+this._protectPlan(front,[0,1,2,3,4]).bytes+next<=this.maxBytes)return;
+ async _roomForRollback(a=this.active,indices=[0,1,2,3,4],workingBytes=0,extraBytes=0,reclaimOutputs=false){
+  const tx=this.transaction;if(!a)return;
+  const box=this.active?union(this.active,a):a;
+  const grow=Math.ceil(this.growCarry+3.4*this.reach)+1,front=[Math.max(0,box[0]-grow),Math.max(0,box[1]-grow),Math.min(this.width,box[2]+grow),Math.min(this.height,box[3]+grow)];
+  const span=Math.max(tx?.span??0,box[2]-box[0],box[3]-box[1]),side=2*span+256;
+  const next=Math.max(workingBytes,Math.min(this.width,side)*Math.min(this.height,side)*(this.finish||tx?.finish?46:38));
+  const paperWork=(Math.min(PAPER_BAND_PIXELS,this.width*this.height)+2*this.width+2*this.height+4)*8;
+  const protectedIndices=[...new Set([...indices,0,1,4,...(this.fixTimer>0?[2,3]:[])])];
+  const gpuRollback=tx&&!tx.sheet&&!tx.cpu,rollback=gpuRollback?this._protectPlan(front,protectedIndices).bytes:0;
+  const need=extraBytes+paperWork+rollback+next;
+  if(reclaimOutputs&&this.ink.write.length&&this.bytes+(gpuRollback?need:extraBytes+paperWork)>this.maxBytes){
+   this.submit();for(const target of this.ink.write)this._drop(target,false);this.ink.write=[];
+  }
+  if(!tx||tx.sheet||tx.cpu)return;
+  this._reclaimScratch(need);
+  if(this.bytes+need<=this.maxBytes)return;
   this._flushStamps();this.submit();
   const sheet=this._sheet(),capture=await this._captureCheckpoint(tx,await this._captureSheet(sheet,tx.meta),sheet);
   const retired=[...tx.sim];for(const {layers}of tx.tiles.values())retired.push(...layers.values());
@@ -607,7 +656,7 @@ export class WaterGPU {
   if(tx.cpu){
    this.submit();
    if(cancel){
-    const retired=this._sheetTextures(this._sheet()),need=sheetLayout(tx.cpu.width,tx.cpu.height).bytes+tx.cpu.width*tx.cpu.height*(tx.cpu.layers.length>6?8:0);
+    const retired=this._sheetTextures(this._sheet()),need=sheetLayout(tx.cpu.width,tx.cpu.height).bytes+tx.cpu.width*tx.cpu.height*((tx.cpu.layers.length>6?8:0)+(tx.cpu.layers[5].rect?4:0));
     const credit=retired.reduce((sum,t)=>sum+t.bytes,0);this._reclaimScratch(need,credit);
     if(this.bytes-credit+need>this.maxBytes)throw failure('WATER_GPU_MEMORY','Water cannot restore this sheet in GPU memory. The last published painting is safe; reopen Water to continue.');
     try{await this.device.queue.onSubmittedWorkDone();}catch(error){this._poison(error);}await this._settleErrors();
@@ -618,7 +667,7 @@ export class WaterGPU {
   if(cancel){
    if(tx.sheet){
     const current=this._sheetTextures(this._sheet()),credit=current.reduce((sum,t)=>sum+t.bytes,0);
-    const kept=this._sheetTextures(tx.sheet).reduce((sum,t)=>sum+t.bytes,0),missing=sheetLayout(tx.sheet.width,tx.sheet.height).bytes+(tx.sheet.finish?tx.sheet.width*tx.sheet.height*8:0)-kept;
+    const kept=this._sheetTextures(tx.sheet).reduce((sum,t)=>sum+t.bytes,0),missing=sheetLayout(tx.sheet.width,tx.sheet.height).bytes+tx.sheet.width*tx.sheet.height*((tx.sheet.finish?8:0)+(tx.sheet.base?4:0))-kept;
     this._reclaimScratch(missing,credit);
     if(this.bytes-credit+missing>this.maxBytes)throw failure('WATER_GPU_MEMORY','Water cannot restore this sheet in GPU memory. The last published painting is safe; reopen Water to continue.');
     await this._finishMaterial();current.forEach(t=>this._drop(t,false));Object.assign(this,tx.sheet);this.outputCanonical=false;
@@ -626,12 +675,13 @@ export class WaterGPU {
    }
    if(this.paper!==tx.paper){retired.push(this.paper);this.paper=tx.paper;}
    if(this.finish!==tx.finish){if(this.finish)retired.push(this.finish);this.finish=tx.finish;}
-   const targets=this._material();for(const {r,layers} of tx.tiles.values())layers.forEach((t,i)=>this._copy(t,targets[i],null,r));
-   targets.forEach((target,i)=>{target.written=tx.materialRects[i]?.slice()??null;});
+   if(!tx.base&&this.base){retired.push(this.base);this.base=null;}
+   const targets=this._material();for(const {r,layers} of tx.tiles.values())layers.forEach((t,i)=>{if(targets[i])this._copy(t,targets[i],null,r);});
+   targets.forEach((target,i)=>{if(target)target.written=tx.materialRects[i]?.slice()??null;});
    for(let i=0;i<tx.sim.length;i++){this._copy(tx.sim[i],i?this.pressure.read[0]:this.velocity.read[0]);}
    for(const [key,value] of Object.entries(tx.meta))this[key]=value;
    this.simBox=tx.simBox?tx.simBox.slice():null;this.painting=false;this.flowMayMove=true;
-   for(const pair of [this.ink,this.wet,this.velocity,this.pressure])pair.read.forEach((t,i)=>this._copy(t,pair.write[i]));
+   for(const pair of [this.velocity,this.pressure])pair.read.forEach((t,i)=>this._copy(t,pair.write[i]));
   }else if(tx.sheet)retired.push(...this._sheetTextures(tx.sheet));
   if(tx.paper!==this.paper)retired.push(tx.paper);
   if(tx.finish&&tx.finish!==this.finish)retired.push(tx.finish);
@@ -725,7 +775,7 @@ export class WaterGPU {
   data[54]=(finish?.settling??0)*(getPaper(this.paperId).params.tooth??1);
   if(lift){data[25]=lift;data[26]=2;data[27]=erase?1:0;this._queue('liftInk',this.ink.read,[],data,rect);data[25]=lift*.8;this._queue('liftWet',this.wet.read,[],data,rect);
    if(this.finish){data[25]=lift;this._queue('liftFinish',this.finish,[],data,own);}
-   data[25]=erase?lift:lift*.3;this._queue('eraseFixed',this.fixed,[],data,rect);if(erase)this._queue('eraseBase',this.base,[],data,rect);return;}
+   data[25]=erase?lift:lift*.3;this._queue('eraseFixed',this.fixed,[],data,rect);if(erase&&this.base)this._queue('eraseBase',this.base,[],data,rect);return;}
   const bounds=circular?rect:this._rect(x,y,r,Math.sqrt(1+(settings.aspect??1)**2)*1.02);
   const tip=circular?null:this._tip(profile),inputs=tip?[tip,this.paper]:finish?[this.dummy,this.paper]:[];
   if(coefficients){
@@ -804,9 +854,15 @@ export class WaterGPU {
   for(let i=0;i<20;i++){this._region('pressure',this.pressure.write,[this.pressure.read[0],this.divergence],data,sim);this._swap(this.pressure);}
   this._region('project',this.velocity.write,[this.velocity.read[0],this.pressure.read[0]],data,sim);this._swap(this.velocity);
   }
-  this._region('wet',this.wet.write,[this.velocity.read[0],this.wet.read[0]],data,rect);this._swap(this.wet);
-  if(fixing)this._regionPass([{name:'fix',inputs:this.ink.read,data:Float32Array.from(data),rect:null}],this.fixed,rect);
-  this._pigment(data,rect);this._swap(this.ink);
+  const width=rect[2]-rect[0],height=rect[3]-rect[1];
+  if(this.bytes+width*height*2>this.maxBytes&&this.ink.write.length){
+   this._submitEncoder();for(const target of this.ink.write)this._drop(target,false);this.ink.write=[];
+  }
+  const wet=this._texture(width,height,'r16float');
+  try{this._regionPass([{name:'wet',inputs:[this.velocity.read[0],this.wet.read[0]],data,rect:null}],this.wet.read,rect,[wet]);}
+  finally{this._retire(wet);}
+  if(fixing)this._regionPass([{name:'fix',inputs:this.ink.read,data,rect:null}],this.fixed,rect);
+  await this._pigment(data,rect);
   this.brushNow=[0,0,0];
   this.dirty=union(this.dirty,rect);this.painted=union(this.painted,rect);
   if(fixing&&!this.fixTimer){this.wetPeak=0;this.awakeUntil=0;this.painted=null;}
@@ -816,18 +872,24 @@ export class WaterGPU {
   this.submit();await this._pace();return true;
  }
  _trimStart(){
-  this._draw('mask',this.mask,this.wet.read,this._parameters(this.mask.w,this.mask.h));
-  const w=this.mask.w,h=this.mask.h,stride=w*4,pitch=Math.ceil(stride/256)*256,buffer=this._buffer(pitch*h,GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ);
+  const w=this.mask.w,h=this.mask.h;
+  this._draw('mask',this.mask,this.wet.read,this._parameters(w,h));
+  const stride=w,pitch=Math.ceil(stride/256)*256;
+  if(!this.maskBuffer||(this.buffers.get(this.maskBuffer)??0)<pitch*h){
+   if(this.maskBuffer)this._dropBuffer(this.maskBuffer);
+   this.maskBuffer=this._buffer(pitch*h,GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ);
+  }
+  const buffer=this.maskBuffer;
   this._command().copyTextureToBuffer({texture:this.mask.texture},{buffer,bytesPerRow:pitch},[w,h]);this.submit();
   const read=this.maskRead={buffer,w,h,stride,pitch,epoch:this.trimEpoch,state:'pending',due:this.frame+2};
   read.mapped=buffer.mapAsync(GPUMapMode.READ).then(()=>{read.state='ready';},()=>{read.state='failed';});
  }
  _trimPixels(read){
   if(read.state!=='ready')return null;
-  if(read.pixels)return read.pixels.slice();
+  if(read.pixels)return read.pixels;
   const source=new Uint8Array(read.buffer.getMappedRange()),pixels=new Uint8Array(read.stride*read.h);
   for(let y=0;y<read.h;y++)pixels.set(source.subarray(y*read.pitch,y*read.pitch+read.stride),y*read.stride);
-  read.pixels=pixels;return pixels.slice();
+  read.pixels=pixels;return pixels;
  }
  async _trimFinish(){
   const read=this.maskRead;if(!read||this.frame<read.due)return;
@@ -835,32 +897,44 @@ export class WaterGPU {
   if(this.maskRead!==read)return;this.maskRead=null;
   let pixels=null;
   try{if(read.epoch===this.trimEpoch&&!this.painting&&this.active)pixels=this._trimPixels(read);}
-  finally{if(read.buffer){if(read.buffer.mapState==='mapped')read.buffer.unmap();this._dropBuffer(read.buffer);}}
-  if(pixels)this._trim(pixels);
+  finally{if(read.buffer?.mapState==='mapped')read.buffer.unmap();}
+  if(pixels)await this._trim(pixels);
  }
- _trim(pixels){
+ async _trim(pixels){
   const previous=this.active;if(!previous)return;
   let x0=this.mask.w,y0=this.mask.h,x1=-1,y1=-1;
-  for(let y=0;y<this.mask.h;y++)for(let x=0;x<this.mask.w;x++)if(pixels[(y*this.mask.w+x)*4]){x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x);y1=Math.max(y1,y);}
+  for(let y=0;y<this.mask.h;y++)for(let x=0;x<this.mask.w;x++)if(pixels[y*this.mask.w+x]){x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x);y1=Math.max(y1,y);}
   const next=x1>=0?[Math.max(previous[0],x0*16-24),Math.max(previous[1],y0*16-24),Math.min(previous[2],(x1+1)*16+24),Math.min(previous[3],(y1+1)*16+24)]:null;
   if(next&&next.every((v,i)=>v===previous[i]))return;
-  this._bind(previous);for(const pair of [this.ink,this.wet])pair.read.forEach((t,i)=>this._copy(t,pair.write[i],previous));
-  if(next&&next[2]>next[0]&&next[3]>next[1])this.active=next;else this.sleep();
+  const epoch=this.trimEpoch,transaction=this.transaction,mask=this.mask,frame=this.frame,W=this.width,H=this.height;
+  const width=previous[2]-previous[0],height=previous[3]-previous[1];
+  const bindBytes=width*Math.min(height,Math.max(1,Math.floor(262144/width)))*16;
+  await this._roomForRollback(previous,[0,1,2,3,4],bindBytes);
+  this._check();
+  if(this.trimEpoch!==epoch||this.transaction!==transaction||this.mask!==mask||this.frame!==frame||this.width!==W||this.height!==H||this.active!==previous||this.painting)return;
+  if(!next||next[2]<=next[0]||next[3]<=next[1]){this.sleep();return;}
+  this._bind(previous);this.active=next;
  }
  _bind(rect){
   this._protect(rect,[0,1,2,3]);const data=this._parameters(),inputs=[...this.ink.read,this.wet.read[0]];
-  data[10]=1;this._region('dried',this.fixed,inputs,data,rect);data[10]=0;this._region('driedKeep',this.ink.write,inputs,data,rect);this._swap(this.ink);
+  data[10]=1;this._region('dried',this.fixed,inputs,data,rect);data[10]=0;
+  const width=rect[2]-rect[0],rows=Math.max(1,Math.floor(262144/width));
+  for(let y=rect[1];y<rect[3];y+=rows){
+   const band=[rect[0],y,rect[2],Math.min(rect[3],y+rows)],outputs=this._inkTargets(width,band[3]-y);
+   this._regionPass([{name:'driedKeep',inputs,data,rect:null}],this.ink.read,band,outputs);
+  }
  }
  sleep(){
   this.trimEpoch++;
   if(this.active)this._bind(this.active);
-  if(this.active)for(const pair of [this.ink,this.wet])pair.read.forEach((t,i)=>this._copy(t,pair.write[i],this.active));
+  for(const target of this.ink.write)this._retire(target);this.ink.write=[];this._dropScratch();
   for(const pair of [this.velocity,this.pressure])for(const t of [...pair.read,...pair.write])this._clear(t);
   this.active=null;this.wetPeak=0;this.flowSpeed=0;this.flowMayMove=false;this.simBox=null;
  }
  dry(){this.trimEpoch++;if(this.painted){this.active=union(this.active,this.painted);this.fixTimer=1.2;this.awakeUntil=this.elapsed+1.2;}}
  async upload(data,width=this.width,height=this.height,x=0,y=0){
   this._check();if(data.length!==width*height*4||x<0||y<0||x+width>this.width||y+height>this.height)throw failure('WATER_INPUT','The saved Water pixels do not fit the sheet.');
+  this.base??=this._texture(this.width,this.height,'rgba8unorm');
   this._protect([x,y,x+width,y+height],[5]);this.submit();
   this._writeTexture({texture:this.base.texture,origin:[x,y]},data,{bytesPerRow:width*4},[width,height]);
   this.dirty=union(this.dirty,[x,y,x+width,y+height]);await this._settleErrors();return this;
@@ -879,17 +953,17 @@ export class WaterGPU {
   });
   const result=new Array(transfers.length);let index=0;
   while(index<transfers.length){
-   const batch=[];
+   const batch=[];let batchBytes=0;
    try{
     while(index<transfers.length){
      const item=transfers[index];
-     if(this.bytes+item.size>this.maxBytes&&this.pendingRetire.length)this.submit();
-     this._reclaimScratch(item.size);
-     const available=Math.min(this.maxBytes-this.bytes,this.device.limits.maxBufferSize);
+     if(this.bytes+Math.min(item.size,READBACK_BYTES)>this.maxBytes&&this.pendingRetire.length)this.submit();
+     this._reclaimScratch(Math.min(item.size,READBACK_BYTES));
+     const available=Math.min(this.maxBytes-this.bytes,this.device.limits.maxBufferSize,READBACK_BYTES-batchBytes);
      if(batch.length&&item.size>available)break;
      const rows=Math.min(item.h-item.row,Math.max(1,Math.floor(available/item.pitch)));
      const out=result[index]??=new Uint8Array(item.stride*item.h),buffer=this._buffer(item.pitch*rows,GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ);
-     batch.push({...item,buffer,out,rows});
+     batch.push({...item,buffer,out,rows});batchBytes+=item.pitch*rows;
      this._command().copyTextureToBuffer({texture:item.target.texture,origin:[item.r[0],item.r[1]+item.row]},{buffer,bytesPerRow:item.pitch},[item.w,rows]);
      item.row+=rows;if(item.row===item.h)index++;else break;
     }
@@ -919,7 +993,7 @@ export class WaterGPU {
   const data=this._parameters();data.set([live?1:0,this.finish?1:0,this.paperScale,quick?1:0],48);data.set(live?this.light:WATER_FINISH_LIGHT,52);data.set([...this.paperOrigin,this.seed,this.height],56);
   data.set([this.params.granulation*.55*(p.tooth??1),.8,paper?1:white?3:2,flat?1:0],36);
   data.set([...linearHex(p.tint??'#ffffff'),1],40);data.set([...linearHex(p.fleck??'#665544'),p.mottle??.05],44);
-  const inputs=[...this.ink.read,...this.fixed,this.wet.read[0],this.paper,this.base,...(this.finish?[this.finish]:[])];
+  const inputs=[...this.ink.read,...this.fixed,this.wet.read[0],this.paper,this.base??this.dummy,...(this.finish?[this.finish]:[])];
   this._display(inputs,data,box);
   if(paper||white||flat)this.outputCanonical=false;else if(!box)this.outputCanonical=true;
   this.outputLight=lightMode;if(live)this.lightDirty=false;
@@ -961,30 +1035,36 @@ export class WaterGPU {
   return this._readTexture(this.output,box);
  }
  _snapshotPlanes(checkpoint,finish=this.finish){
-  const targets={ink0:this.ink.read[0],ink1:this.ink.read[1],fixed0:this.fixed[0],fixed1:this.fixed[1],wet:this.wet.read[0],base:this.base,velocity:this.velocity.read[0],pressure:this.pressure.read[0],...(finish?{finish}:{}),...(checkpoint?{paper:this.paper}:{})};
+  const targets={ink0:this.ink.read[0],ink1:this.ink.read[1],fixed0:this.fixed[0],fixed1:this.fixed[1],wet:this.wet.read[0],base:this.base??{w:this.width,h:this.height,format:'rgba8unorm',written:null},velocity:this.velocity.read[0],pressure:this.pressure.read[0],...(finish?{finish}:{}),...(checkpoint?{paper:this.paper}:{})};
   return Object.entries(targets).map(([name,target])=>{
    const box=checkpoint&&target.written===null?null:checkpoint&&target.written?target.written.slice():[0,0,target.w,target.h];
    return {name,target,box,bytes:box?(box[2]-box[0])*(box[3]-box[1])*bytesPerPixel[target.format]:0};
   });
  }
  checkpointBytes(){
-  this._check();this._flushStamps();
-  return this._snapshotPlanes(true).reduce((sum,p)=>sum+p.bytes,0)+(this.maskRead?this.maskRead.w*this.maskRead.h*4:0);
+  this._check();const pending=new Map();
+  for(const {targets,rect}of this.queued.values())for(const target of targets){
+   const r=[clamp(Math.floor(rect[0]),0,target.w),clamp(Math.floor(rect[1]),0,target.h),clamp(Math.ceil(rect[2]),0,target.w),clamp(Math.ceil(rect[3]),0,target.h)];
+   if(r[2]>r[0]&&r[3]>r[1])pending.set(target,union(pending.get(target),r));
+  }
+  return this._snapshotPlanes(true).reduce((sum,p)=>{const r=pending.get(p.target),box=r?union(p.box,r):p.box;
+   return sum+(box?(box[2]-box[0])*(box[3]-box[1])*bytesPerPixel[p.target.format]:0);
+  },0)+(this.maskRead?this.maskRead.w*this.maskRead.h:0);
  }
  async snapshot({checkpoint=false}={}){
   this._check();if(checkpoint)this._flushStamps();
   const state={width:this.width,height:this.height,paperScale:this.paperScale,paperOrigin:this.paperOrigin.slice(),meta:this._meta()},entries=this._snapshotPlanes(checkpoint);
   const pending=checkpoint?this.maskRead:null;
   const transient=checkpoint?{paper:{regions:this.paper.field.regions.map(r=>r.slice()),unknown:this.paper.field.unknown},simBox:this.simBox?.slice()??null,flowMayMove:this.flowMayMove,trimEpoch:this.trimEpoch}:null;
-  const requests=entries.filter(p=>p.box).map(({target,box})=>({target,box,cacheOnly:checkpoint}));
+  const requests=entries.filter(p=>p.box&&p.target.texture).map(({target,box})=>({target,box,cacheOnly:checkpoint}));
   if(!requests.length)this.submit();
   const values=await this._readMany(requests);let index=0;
-  const layers=Object.fromEntries(entries.map(({name,box})=>[name,box?values[index++]:new Uint8Array(0)]));
+  const layers=Object.fromEntries(entries.map(({name,box,target,bytes})=>[name,box&&target.texture?values[index++]:new Uint8Array(bytes)]));
   if(checkpoint){
    if(pending?.state==='pending')await pending.mapped;
    transient.layerRects=Object.fromEntries(entries.map(({name,box})=>[name,box]));
    transient.paper.bytes=layers.paper;delete layers.paper;
-   transient.trim=pending?{pixels:this._trimPixels(pending),width:pending.w,height:pending.h,due:pending.due,epoch:pending.epoch}:null;state.checkpoint=transient;
+   transient.trim=pending?{pixels:this._trimPixels(pending)?.slice()??null,width:pending.w,height:pending.h,due:pending.due,epoch:pending.epoch}:null;state.checkpoint=transient;
   }
   return {...state,layers};
  }
@@ -1020,7 +1100,7 @@ export class WaterGPU {
    if(!checkpoint||typeof checkpoint!=='object'||!checkpoint.layerRects||Object.keys(checkpoint.layerRects).length!==planes.length||!Array.isArray(checkpoint.paper?.regions)||checkpoint.paper.regions.some(r=>!rect(r,this.width,this.height))||typeof checkpoint.paper.unknown!=='boolean'||typeof checkpoint.flowMayMove!=='boolean'||!Number.isSafeInteger(checkpoint.trimEpoch)||checkpoint.trimEpoch<0||checkpoint.simBox!==null&&!rect(checkpoint.simBox,this.sw,this.sh))throw failure('WATER_INPUT','The Water continuation checkpoint is invalid.');
    const trim=checkpoint.trim;
    const maskLimit=Math.ceil(this.device.limits.maxTextureDimension2D/16);
-   if(trim!==null&&(!trim||!Number.isSafeInteger(trim.due)||trim.due<0||!Number.isSafeInteger(trim.epoch)||trim.epoch<0||![trim.width,trim.height].every(n=>Number.isSafeInteger(n)&&n>0&&n<=maskLimit)||trim.pixels!==null&&(!ArrayBuffer.isView(trim.pixels)||trim.pixels.byteLength!==trim.width*trim.height*4)))throw failure('WATER_INPUT','The Water continuation mask is invalid.');
+   if(trim!==null&&(!trim||!Number.isSafeInteger(trim.due)||trim.due<0||!Number.isSafeInteger(trim.epoch)||trim.epoch<0||![trim.width,trim.height].every(n=>Number.isSafeInteger(n)&&n>0&&n<=maskLimit)||trim.pixels!==null&&(!ArrayBuffer.isView(trim.pixels)||trim.pixels.byteLength!==trim.width*trim.height)))throw failure('WATER_INPUT','The Water continuation mask is invalid.');
   }
   for(const plane of planes){
    const {name,target}=plane,r=checkpoint?checkpoint.layerRects[name]:plane.box,bytes=name==='paper'?checkpoint.paper.bytes:state.layers?.[name];
@@ -1028,29 +1108,36 @@ export class WaterGPU {
    plane.box=r?.slice()??null;plane.data=bytes;
   }
   if(checkpoint?.paper.regions.some(r=>{const kept=checkpoint.layerRects.paper;return !kept||r[0]<kept[0]||r[1]<kept[1]||r[2]>kept[2]||r[3]>kept[3];}))throw failure('WATER_INPUT','The Water continuation paper bounds are invalid.');
+  const basePlane=planes.find(plane=>plane.name==='base'),baseBytes=basePlane.data;
+  const hasBase=checkpoint?basePlane.box!==null:new Uint8Array(baseBytes.buffer,baseBytes.byteOffset,baseBytes.byteLength).some(value=>value!==0);
   const targets=planes.filter(p=>p.name!=='paper');
-  const write=({target,box,data})=>{if(box)this._writeTexture({texture:target.texture,origin:[box[0],box[1]]},data,{bytesPerRow:(box[2]-box[0])*bytesPerPixel[target.format]},[box[2]-box[0],box[3]-box[1]]);target.written=box?.slice()??null;};
-  const fresh=!this.transaction&&[...this._material(),...this.velocity.read,...this.velocity.write,...this.pressure.read,...this.pressure.write,this.paper].every(t=>t.written===null)&&!this.paper.field.regions.length;
-  this.endFill();this.submit();this._protect([0,0,this.width,this.height]);this._reserve(this.width*this.height*((checkpoint?0:8)+(fresh?0:4)+(hasFinish&&!(fresh&&this.finish)?8:0)));
+  const write=({target,box,data})=>{if(!target)return;if(box)this._writeTexture({texture:target.texture,origin:[box[0],box[1]]},data,{bytesPerRow:(box[2]-box[0])*bytesPerPixel[target.format]},[box[2]-box[0],box[3]-box[1]]);target.written=box?.slice()??null;};
+  const fresh=!this.transaction&&!this.queued.size&&[...this._material(),...this.velocity.read,...this.velocity.write,...this.pressure.read,...this.pressure.write].every(t=>!t||t.written===null);
+  this.endFill();this.submit();this._protect([0,0,this.width,this.height]);this._reserve(this.width*this.height*((checkpoint?0:8)+(fresh?0:4)+(hasFinish&&!(fresh&&this.finish)?8:0)+(hasBase&&!this.base?4:0)));
+  if(hasBase)this.base??=this._texture(this.width,this.height,'rgba8unorm');
+  targets.find(plane=>plane.name==='base').target=this.base;
   const paper=fresh?this.paper:this._texture(this.width,this.height,'rgba8unorm');let finish=null;
   try{
    if(hasFinish){finish=fresh&&this.finish?this.finish:this._texture(this.width,this.height,'rgba16float');targets.find(plane=>plane.name==='finish').target=finish;}
+   if(fresh&&paper.written!==null){this._clear(paper);this.submit();}
    this._paper(paper,meta.paperId,meta,checkpoint?.paper.regions??null);paper.field.unknown=checkpoint?.paper.unknown??true;
    if(checkpoint)write({...planes.at(-1),target:paper});
    this.submit();await this._settleErrors();
   }catch(error){if(paper!==this.paper)this._retire(paper);if(finish&&finish!==this.finish)this._retire(finish);throw error;}
-  if(checkpoint){for(const {target}of targets)if(target.written!==null)this._clear(target);this.submit();}
+  if(checkpoint){for(const {target}of targets)if(target&&target.written!==null)this._clear(target);this.submit();}
   for(const plane of targets)write(plane);
+  if(!hasBase&&!this.transaction&&this.base){this._drop(this.base);this.base=null;}
   const old=this.paper,oldFinish=this.finish;this.paper=paper;this.finish=finish;Object.assign(this,meta);this.painting=false;this.outputCanonical=false;
   this.flowMayMove=checkpoint?.flowMayMove??true;this.simBox=checkpoint?checkpoint.simBox?.slice()??null:this.active?[0,0,this.sw,this.sh]:null;
   if(checkpoint){
-   if(this.maskRead?.buffer){if(this.maskRead.buffer.mapState==='mapped')this.maskRead.buffer.unmap();this._dropBuffer(this.maskRead.buffer);}
+   const pending=this.maskRead;if(pending?.state==='pending')await pending.mapped;
+   if(pending?.buffer?.mapState==='mapped')pending.buffer.unmap();
    this.maskRead=checkpoint.trim?{...checkpoint.trim,w:checkpoint.trim.width,h:checkpoint.trim.height,pixels:checkpoint.trim.pixels?.slice()??null,state:checkpoint.trim.pixels?'ready':'failed'}:null;
    this.trimEpoch=checkpoint.trimEpoch;
   }
   if(old!==paper&&old!==this.transaction?.paper && old!==this.transaction?.sheet?.paper)this._retire(old);
   if(oldFinish&&oldFinish!==finish&&oldFinish!==this.transaction?.finish&&oldFinish!==this.transaction?.sheet?.finish)this._retire(oldFinish);
-  for(const pair of [this.ink,this.wet,this.velocity,this.pressure])pair.read.forEach((t,i)=>{
+  for(const pair of [this.velocity,this.pressure])pair.read.forEach((t,i)=>{
    const destination=pair.write[i];
    if(!checkpoint){this._copy(t,destination);return;}
    if(destination.written!==null)this._clear(destination);
@@ -1063,12 +1150,12 @@ export class WaterGPU {
   return this.reframe(this.width+left+right,this.height+top+bottom,left,top);
  }
  async _capturePlane(target){
-  const rect=target.written===undefined?[0,0,target.w,target.h]:target.written?.slice()??null;
+  const rect=!target?null:target.written===undefined?[0,0,target.w,target.h]:target.written?.slice()??null;
   return {rect,bytes:rect?(await this._readMany([{target,box:rect,cacheOnly:true}]))[0]:new Uint8Array(0)};
  }
  async _captureSheet(sheet,meta,paper=sheet.paper,simulation=[...sheet.velocity.read,...sheet.pressure.read]){
   const material=[...sheet.ink.read,...sheet.fixed,...sheet.wet.read,sheet.base,...(sheet.finish?[sheet.finish]:[])];
-  const planes=[...material,...simulation,paper].map(target=>({target,rect:target.written===null?null:target.written?.slice()??[0,0,target.w,target.h]}));
+  const planes=[...material,...simulation,paper].map(target=>({target,rect:!target||target.written===null?null:target.written?.slice()??[0,0,target.w,target.h]}));
   const values=await this._readMany(planes.filter(p=>p.rect).map(({target,rect})=>({target,box:rect,cacheOnly:true})));let index=0;
   const captured=planes.map(({rect})=>({rect,bytes:rect?values[index++]:new Uint8Array(0)}));
   return {width:sheet.width,height:sheet.height,meta,layers:captured.slice(0,material.length),sim:captured.slice(material.length,-1),paper:{...captured.at(-1),field:structuredClone(paper.field)}};
@@ -1082,13 +1169,13 @@ export class WaterGPU {
   this._writeTexture({texture:target.texture,origin:[to[0]+source[0]-r[0],to[1]+source[1]-r[1]]},plane.bytes,{offset:start,bytesPerRow:stride},[source[2]-source[0],source[3]-source[1]]);
  }
  async _restoreCapture(state){
-  this._allocate(state.width,state.height,state.layers.length>6);
+  this._allocate(state.width,state.height,state.layers.length>6,!!state.layers[5].rect);
   this._material().forEach((target,i)=>this._uploadCaptured(target,state.layers[i],state.width,state.height));
   for(const [i,target]of [...this.velocity.read,...this.pressure.read].entries())this._uploadCaptured(target,state.sim[i],target.w,target.h);
   this._uploadCaptured(this.paper,state.paper,state.width,state.height);this.paper.field=structuredClone(state.paper.field);
   Object.assign(this,state.meta);this.outputCanonical=false;this.painting=false;this.flowMayMove=true;
   this.simBox=this.active?[0,0,this.sw,this.sh]:null;
-  for(const pair of [this.ink,this.wet,this.velocity,this.pressure])pair.read.forEach((t,i)=>this._copy(t,pair.write[i]));
+  for(const pair of [this.velocity,this.pressure])pair.read.forEach((t,i)=>this._copy(t,pair.write[i]));
   this.submit();await this._settleErrors();
  }
  async _captureCheckpoint(tx,current,old){
@@ -1132,7 +1219,7 @@ export class WaterGPU {
   const previous=this._material(),old=this._sheet(),meta=this._meta(),tx=this.transaction;
   const nextLayout=sheetLayout(w,h);this._dimensions(nextLayout.sw,nextLayout.sh);
   const disposable=[old.curl,old.divergence,old.output,old.mask];
-  const need=nextLayout.bytes+w*h*(this.finish?8:0),pressure=this.bytes-disposable.reduce((sum,t)=>sum+t.bytes,0)+need>this.maxBytes;
+  const need=nextLayout.bytes+w*h*((this.finish?8:0)+(this.base?4:0)),pressure=this.bytes-disposable.reduce((sum,t)=>sum+t.bytes,0)+need>this.maxBytes;
   const retired=new Set(this._sheetTextures(old));
   if(pressure&&tx){if(tx.sheet)this._sheetTextures(tx.sheet).forEach(t=>retired.add(t));if(tx.paper)retired.add(tx.paper);if(tx.finish)retired.add(tx.finish);tx.sim.forEach(t=>retired.add(t));for(const {layers}of tx.tiles.values())layers.forEach(t=>retired.add(t));}
   if(pressure&&this.bytes-[...retired].reduce((sum,t)=>sum+(t.dead?0:t.bytes),0)+need>this.maxBytes)this._reserve(need);
@@ -1143,11 +1230,10 @@ export class WaterGPU {
     current=await this._captureSheet(old,meta);checkpoint=await this._captureCheckpoint(tx,current,old);
     this.recovery={current,checkpoint};retired.forEach(t=>this._drop(t,false));released=true;
    }
-   grown=this._allocate(w,h);const next=this._material();
+   grown=this._allocate(w,h,!!this.finish,!!old.base);const next=this._material();
    const sx=Math.max(0,-x),sy=Math.max(0,-y),dx=Math.max(0,x),dy=Math.max(0,y);
    const cw=Math.min(old.width-sx,w-dx),ch=Math.min(old.height-sy,h-dy);
-   if(cw>0&&ch>0)previous.forEach((t,i)=>current?this._uploadCaptured(next[i],current.layers[i],old.width,old.height,[sx,sy,sx+cw,sy+ch],[dx,dy]):this._copy(t,next[i],[sx,sy,sx+cw,sy+ch],[dx,dy]));
-   for(const pair of [this.ink,this.wet])pair.read.forEach((t,i)=>this._copy(t,pair.write[i]));
+   if(cw>0&&ch>0)previous.forEach((t,i)=>{if(t)current?this._uploadCaptured(next[i],current.layers[i],old.width,old.height,[sx,sy,sx+cw,sy+ch],[dx,dy]):this._copy(t,next[i],[sx,sy,sx+cw,sy+ch],[dx,dy]);});
    const bottom=h-old.height-y;
    this.paperOrigin=[meta.paperOrigin[0]-x,meta.paperOrigin[1]-bottom];
    this.brushNow=[(meta.brushNow[0]*old.width+x)/w,(meta.brushNow[1]*old.height+bottom)/h,meta.brushNow[2]*old.height/h];
@@ -1167,6 +1253,7 @@ export class WaterGPU {
    if(current){this._retainCapture(tx,checkpoint);this.recovery=null;}
    else if(tx&&!tx.sheet&&!tx.cpu)await this._keepCheckpointSheet(tx,old);
    else {await this._finishMaterial();this._sheetTextures(old).forEach(t=>{if(t!==tx?.paper)this._drop(t,false);});}
+   this.trimEpoch++;
   }catch(error){
    this.encoder=null;this.slots=0;this.pendingRetire.forEach(t=>this._drop(t,false));this.pendingRetire=[];
    try{await this.device.queue.onSubmittedWorkDone();}catch(cause){this._poison(cause);}

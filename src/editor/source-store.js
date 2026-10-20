@@ -120,6 +120,7 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 	let rootId = snapshot ? snapshot.rootId : (restoredRootId || null);
 	let cacheKey = snapshot ? snapshot.cacheKey : Object.freeze({});
 	let cachedIntegrityKey = snapshot ? (snapshot.cachedIntegrityKey ?? null) : null;
+	let coalescing = null;
 	let initialRoot = snapshot ? (snapshot.initialRoot ?? null) : (restoredRootId || null);
 	const rootNow = () => {
 		if (rootId == null) {
@@ -268,21 +269,13 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 		return out.filter(row => row.length);
 	};
 	const split = (start, stop = start) => {
-		const left = [], right = [];
-		let cursor = 0;
-		for (const piece of pieces) {
-			const end = cursor + piece.length;
-			if (end <= start) left.push(piece);
-			else if (cursor >= stop) right.push(piece);
-			else {
-				if (cursor < start) left.push(slicePiece(piece, 0, start - cursor));
-				if (stop < end) {
-					const cutAt = stop - cursor;
-					right.push(slicePiece(piece, cutAt, piece.length));
-				}
-			}
-			cursor = end;
-		}
+		const from = pieceAt(sourceStarts, start), to = pieceAt(sourceStarts, stop);
+		const left = pieces.slice(0, from), right = pieces.slice(to + 1);
+		const first = pieces[from], last = pieces[to];
+		if (first && start > sourceStarts[from]) left.push(start === sourceStarts[from] + first.length
+			? first : slicePiece(first, 0, start - sourceStarts[from]));
+		if (last && stop < sourceStarts[to] + last.length) right.unshift(stop === sourceStarts[to]
+			? last : slicePiece(last, stop - sourceStarts[to], last.length));
 		return [left, right];
 	};
 	const read = () => {
@@ -425,11 +418,13 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 		const target = offset - projectionStarts[index];
 		return sourceStarts[index] + target + countThrough(pieces[index].projectedEnds, target);
 	};
-	const capture = () => {
+	const capture = (options = null) => {
+		const coalesce = options?.coalesce === true;
 		const savedBuffers = buffers.slice();
 		const savedPieces = pieces.map(piece => ({ ...piece }));
 		const savedPresence = Array.from(presence, ([key, entry]) => [key, {...entry}]);
 		const savedCacheKey = cacheKey;
+		const savedCoalescing = coalescing;
 		const savedLength = length, savedBytes = utf8Bytes, savedRoot = rootNow(), savedInitialRoot = initialRootNow(), savedContentId = contentId;
 		let savedText = cached;
 		let savedIntegrityValue = cachedIntegrityKey === savedCacheKey ? cachedIntegrityValue : null;
@@ -438,7 +433,7 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 				savedBuffers[piece.buffer].slice(piece.start, piece.start + piece.length)).join('');
 			return savedText;
 		};
-		return Object.freeze({
+		const saved = {
 			rootId: savedRoot,
 			contentId: savedContentId,
 			read: savedRead,
@@ -474,16 +469,38 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 				pieces = savedPieces.map(piece => ({ ...piece }));
 				length = savedLength; utf8Bytes = savedBytes; cached = savedText; rootId = savedRoot; initialRoot = savedInitialRoot;
 				cacheKey = savedCacheKey;
+				coalescing = savedCoalescing && !savedCoalescing.lifecycle.closed ? savedCoalescing : null;
 				cachedIntegrityValue = savedIntegrityValue;
 				cachedIntegrityKey = savedIntegrityValue == null ? null : savedCacheKey;
 				presence.clear();
 				for (const [key, entry] of savedPresence) presence.set(key, {...entry});
 				reindex();
 			},
-		});
+		};
+		if (coalesce) {
+			const lifecycle = {token: saved, closed: false};
+			saved.seal = () => {
+				if (lifecycle.closed || coalescing?.lifecycle !== lifecycle || coalescing.key !== cacheKey) return null;
+				if (coalescing.sealed) return coalescing.sealed;
+				const splices = [];
+				for (let tail = coalescing.tail; tail; tail = tail.previous) splices.push(tail.row);
+				splices.reverse();
+				const sealed = Object.freeze({splices: Object.freeze(splices), rootId: splices.reduce(rootAfter, savedRoot)});
+				rootId = sealed.rootId;
+				coalescing = {...coalescing, sealed};
+				return sealed;
+			};
+			saved.release = () => {
+				lifecycle.closed = true; lifecycle.token = null;
+				if (coalescing?.lifecycle === lifecycle) coalescing = null;
+			};
+			coalescing = {lifecycle, key: cacheKey, tail: null};
+		}
+		return Object.freeze(saved);
 	};
-	const fork = () => create('', rootNow(), {
-		buffers, pieces, length, utf8Bytes, cached, rootId, cacheKey, initialRoot: initialRootNow(), cachedIntegrityKey, cachedIntegrityValue,
+	const fork = (restoredRootId = '') => create('', restoredRootId || rootNow(), {
+		buffers, pieces, length, utf8Bytes, cached, rootId: restoredRootId || rootId, cacheKey,
+		initialRoot: restoredRootId || initialRootNow(), cachedIntegrityKey, cachedIntegrityValue,
 		presence: Array.from(presence, ([key, entry]) => [key, {...entry}]),
 	});
 	const sourceOffsetFromProjection = (projectionOffset, start = 0, end = length) => {
@@ -503,10 +520,14 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 		return projectionAtSource(to) - projectionAtSource(from) +
 			(to > from && from > 0 && readSlice(from - 1, from + 1) === '\r\n' ? 1 : 0);
 	};
-	const splice = (start, removed, inserted) => {
+	const splice = (start, removed, inserted, captureToken = null) => {
 		const at = Number(start);
 		const oldText = String(removed == null ? '' : removed);
 		const newText = String(inserted == null ? '' : inserted);
+		const owner = captureToken == null ? null : coalescing;
+		if (captureToken != null && (!owner || owner.lifecycle.closed || owner.lifecycle.token !== captureToken || owner.key !== cacheKey)) {
+			throw Object.assign(new Error('The captured source no longer owns this splice.'), {code: 'target_changed'});
+		}
 		if (!Number.isSafeInteger(at) || at < 0 || at + oldText.length > length ||
 				readSlice(at, at + oldText.length) !== oldText) {
 			throw Object.assign(new Error('Canonical splice no longer matches the document.'), {
@@ -556,9 +577,22 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 			buffers.push(...live);
 			bufferChars = live.reduce((total, buffer) => total + buffer.length, 0);
 		}
-		rootId = rootAfter(priorRoot, { pos: at, removed: oldText, inserted: newText });
+		const row = {pos: at, removed: oldText, inserted: newText};
+		rootId = rootAfter(priorRoot, row);
 		cacheKey = Object.freeze({});
-		return { pos: at, removed: oldText, inserted: newText };
+		if (owner) {
+			const tail = owner.tail, last = tail?.row;
+			let next = row, previous = tail;
+			if (last && at === last.pos + last.inserted.length) {
+				next = {pos: last.pos, removed: last.removed + oldText, inserted: last.inserted + newText};
+				previous = tail.previous;
+			} else if (last && !newText && !last.inserted && at + oldText.length === last.pos) {
+				next = {pos: at, removed: oldText + last.removed, inserted: ''};
+				previous = tail.previous;
+			}
+			coalescing = {lifecycle: owner.lifecycle, key: cacheKey, tail: {row: Object.freeze({...next}), previous}};
+		} else coalescing = null;
+		return row;
 	};
 	const warm = () => { bytesNow(); rootNow(); };
 	const warmAsync = async ({yield: yieldWork, signal, onProgress} = {}) => {

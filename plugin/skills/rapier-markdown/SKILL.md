@@ -20,7 +20,7 @@ other Markdown readers show the same words and ignore what they don't know. No i
 particular app is needed.
 
 The standard is [Self-contained Markdown](references/markdown-standard.md), also at
-https://rapier.website/markdown-standard. The MIT reader and writer is `npm install rapier-markdown-kit@1.2.17`.
+https://rapier.website/markdown-standard. The MIT reader and writer is `npm install rapier-markdown-kit@1.2.18`.
 Rapier renders it exactly and writes it back byte for byte; so can any editor.
 
 Rapier has two kinds of diagram, kept apart:
@@ -40,8 +40,8 @@ Rapier is a phone-first Markdown editor for notes, diagrams, drawing and waterco
 file for Android, the web and Windows. The agent edits live; the person sees its presence and changes, taps a change
 to see what was there before, and can undo it. Use `show {target:"comparison"}` to show a diff.
 
-1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
-2. **Hand over an offline editor.** `npx rapier-html@1.2.17 notes.md` puts the editor and document in one HTML file
+1. **Work together live.** Connect to `https://mcp.rapier.website/mcp`, then call `open` to share one document with the person.
+2. **Hand over an offline editor.** `npx rapier-html@1.2.18 notes.md` puts the editor and document in one HTML file
    ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed the editor.** [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed)
    mounts the editor or reader in your app; your app's agent can use the editor over WebMCP.

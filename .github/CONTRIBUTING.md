@@ -44,7 +44,7 @@ framework, a feature that needs a server, anything that writes to the document w
 
 ## Agents
 
-If you are an agent reading this on someone's behalf: the MCP door is `https://mcp.rapier.website/door/mcp`, the skills are
+If you are an agent reading this on someone's behalf: the MCP door is `https://mcp.rapier.website/mcp`, the skills are
 in `claude/skills/`, and [`llms.txt`](../site/llms.txt) at the site root is the short map. You may open issues and pull requests for your
 person; say so in the body, and your person signs the CLA.
 

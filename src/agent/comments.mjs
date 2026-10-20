@@ -194,8 +194,12 @@ const sourceStore = value => value && typeof value === 'object' && typeof value.
 const sourceState = source => {
   const owned = sources.get(source);
   if (owned?.current.rootId === source.rootId) return owned.current;
-  const restored = revisions.get(source.cacheKey);
-  if (restored?.rootId === source.rootId) {
+  let restored = revisions.get(source.cacheKey);
+  if (restored) {
+    if (restored.rootId !== source.rootId) {
+      restored = {...restored, rootId: source.rootId};
+      revisions.set(source.cacheKey, restored);
+    }
     sources.set(source, {current: restored, pending: null});
     return restored;
   }

@@ -3488,13 +3488,13 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     return result;
   }
 
-  function buildComparison(baseline, incoming, name, who) {
+  function buildComparison(baseline, incoming, name, who, sourceSplices) {
     if (bytes(baseline) + bytes(incoming) > LIMITS.compareBytes) return failure('compare_byte_limit');
     const lines = (baseline.match(/\n/g)?.length || 0) + (incoming.match(/\n/g)?.length || 0);
     if (lines > LIMITS.compareLines) return failure('compare_line_limit');
     const budget = {left: 1e7};
     const {edits: ranges} = diff(baseline, incoming, {_unit: 'line', _budget: budget,
-      from: journalOperations(baseline, incoming, state.journal)});
+      from: sourceSplices || journalOperations(baseline, incoming, state.journal)});
     let edits = 0;
     for (const range of ranges) {
       if (range.coarse) return failure('compare_too_complex');
@@ -3546,7 +3546,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   async function storedAlternative(text, who, context) {
     if (who.actor === 'human' || state.docKind !== 'markdown' || text.includes('<!-- rapier-block:')) return {text};
     const {projection, targets} = publicSurface();
-    if (projection.text === state.text) return {text};
+    if (projection.text === state.text && !parseWill(projection.text).present) return {text};
     const plan = planTextChanges(projection.text, [{text}], targets);
     if (plan.reason) return {text};
     let blocks; try {blocks = fencedBlocks(text);} catch {return {text};}
@@ -3556,15 +3556,16 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const operation = compiled.commentsChanged ? (compiled.options.authoredCount ? 'document.edit' : 'comments.write') : 'document.replace';
     const computed = committedText(state.text, compiled.splices, compiled.options.authoredCount ?? compiled.splices.length, who.actor, state.docKind,
       operation, false, null, compiled.options.drawAssets);
-    return {text: computed && !computed.reason ? computed.text : text};
+    return computed && !computed.reason ? {text: computed.text, sourceSplices: computed.splices} : {text};
   }
 
   async function compareText(input, who, context, baseline = state.text) {
     const invalid = admissibleText(input.text);
     if (invalid) return failure(invalid, 'invalid');
     if (state.compare && who.actor !== 'human' && state.compare.owner !== ownerOf(who)) return failure('compare_not_owned');
-    if (baseline === state.text) input = {...input, text: (await storedAlternative(input.text, who, context)).text};
-    const compared = buildComparison(baseline, input.text, input.name, who);
+    const alternative = baseline === state.text ? await storedAlternative(input.text, who, context) : {text: input.text};
+    input = {...input, text: alternative.text};
+    const compared = buildComparison(baseline, input.text, input.name, who, alternative.sourceSplices);
     if (compared.outcome) return compared;
     const presentation = {presentation: {status: 'unconfirmed', acknowledged: false}};
     if (typeof host.compare === 'function') {
@@ -4765,6 +4766,75 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   }
 
   async function compileTextPlan(projection, plan, who, context) {
+    const whole = plan.ranges?.length === 0 && plan.splices.length === 1 && plan.splices[0].pos === 0 && plan.splices[0].removed === projection.text;
+    const budget = {left: 1e7}, hidden = projection.segments.filter(row => row.hidden), groups = [];
+    for (const row of hidden) {
+      const last = groups.at(-1);
+      if (last && last.from === row.from && last.end === row.start) last.end = row.end;
+      else groups.push({...row});
+    }
+    const exactChanges = (before, after) => diff(before, after, {_unit: 'char', _budget: budget}).edits;
+    const ambiguous = () => failure('text_changes_ambiguous', 'refused', {hint: 'Use separate exact old/new or after/insert changes around retained blocks.'});
+    const tooComplex = () => failure('text_changes_too_complex', 'refused', {hint: 'Use smaller exact old/new or after/insert changes.'});
+    let mappedPlan = plan;
+    const will = whole ? parseWill(projection.text) : null;
+    if (whole && (hidden.length || will.present)) {
+      const edits = exactChanges(projection.text, plan.text);
+      if (edits.some(row => row.coarse)) return tooComplex();
+      if (who.actor !== 'human' && will.present && edits.length) {
+        const after = parseWill(plan.text), envelopes = new Map();
+        for (const region of will.regions) {
+          const raw = projection.text.slice(region.openerStart, region.closerEnd);
+          envelopes.set(raw, (envelopes.get(raw) || 0) + 1);
+        }
+        let leftIndex = 0, rightIndex = 0;
+        for (const region of will.regions) {
+          while (leftIndex < edits.length && edits[leftIndex].before[1] <= region.openerStart) leftIndex++;
+          while (rightIndex < edits.length && edits[rightIndex].before[0] < region.closerEnd) rightIndex++;
+          const left = edits[leftIndex - 1], right = edits[rightIndex];
+          if (left && right && !/\S/.test(projection.text.slice(left.before[1], region.openerStart)) &&
+              !/\S/.test(projection.text.slice(region.closerEnd, right.before[0]))) {
+            const removedLeft = /\S/.test(projection.text.slice(...left.before)), insertedLeft = /\S/.test(plan.text.slice(...left.after));
+            const removedRight = /\S/.test(projection.text.slice(...right.before)), insertedRight = /\S/.test(plan.text.slice(...right.after));
+            if (insertedLeft && removedRight && (!removedLeft || !insertedRight) ||
+                insertedRight && removedLeft && (!removedRight || !insertedLeft)) return ambiguous();
+          }
+          if (envelopes.get(projection.text.slice(region.openerStart, region.closerEnd)) > 1 &&
+              edits[0].before[0] < region.closerEnd && edits.at(-1).before[1] > region.openerStart) return ambiguous();
+        }
+        const outsideLines = (text, regions) => {
+          const found = new Map(); let start = 0;
+          for (let index = 0; index <= regions.length; index++) {
+            const end = regions[index]?.openerStart ?? text.length;
+            for (const match of text.slice(start, end).matchAll(/[^\r\n]+/g)) if (/\S/.test(match[0])) {
+              const counts = found.get(match[0]) || new Map();
+              counts.set(index, (counts.get(index) || 0) + 1); found.set(match[0], counts);
+            }
+            start = regions[index]?.closerEnd ?? end;
+          }
+          return found;
+        };
+        if (!after.faults.length && after.regions.length === will.regions.length) {
+          const beforeLines = outsideLines(projection.text, will.regions), afterLines = outsideLines(plan.text, after.regions);
+          for (const [line, counts] of beforeLines) {
+            const next = afterLines.get(line);
+            if (next && [...counts].some(([index, count]) => count > (next.get(index) || 0)) &&
+                [...next].some(([index, count]) => count > (counts.get(index) || 0))) return ambiguous();
+          }
+        }
+      }
+      const cuts = [...groups.map(row => row.from), ...will.markers.flatMap(row => [row.start, row.end])].sort((a, b) => a - b), merged = [];
+      let cut = 0;
+      for (const row of edits) {
+        const last = merged.at(-1);
+        if (last) while (cut < cuts.length && cuts[cut] < last.before[1]) cut++;
+        if (last && !(cut < cuts.length && cuts[cut] <= row.before[0])) {last.before[1] = row.before[1]; last.after[1] = row.after[1];}
+        else merged.push({before: [...row.before], after: [...row.after]});
+      }
+      if (merged.length > 64) return tooComplex();
+      mappedPlan = {...plan, splices: merged.toReversed().map(row => ({pos: row.before[0],
+        removed: projection.text.slice(...row.before), inserted: plan.text.slice(...row.after)}))};
+    }
     const blocks = fencedBlocks(plan.text), previous = new Map(projection.segments.filter(row => row.id && row.kind !== 'asset').map(row => [row.id, row]));
     const prepared = new Map(), assets = [], options = {}, commentBlocks = blocks.filter(row => row.kind === 'rapier-comment');
     const parsed = parseComments(state.text), threads = commentThreads(state.text, parsed);
@@ -4851,20 +4921,35 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       }
       if (result.options.drawingPresentation) options.drawingPresentation = result.options.drawingPresentation;
     }
-    const splices = [], whole = plan.splices?.length === 1 && plan.splices[0].pos === 0 && plan.splices[0].removed === projection.text;
+    const splices = [];
     let definitionsTouched = false;
-    for (let range of expandedChanges(projection, plan)) {
-      if (range.end === projection.text.length) range = {...range, until: state.text.length};
+    for (const range of expandedChanges(projection, mappedPlan)) {
       let inserted = range.inserted, framing = range.framing;
       const replace = (from, until, text) => {
         framing = keptRangesAfterSplice(framing, {pos: from, removed: inserted.slice(from, until), inserted: text});
         inserted = inserted.slice(0, from) + text + inserted.slice(until);
       };
       const original = projection.text.slice(range.start, range.end), kept = minimalSplice(original, inserted), placed = [];
-      for (const row of projection.segments.filter(row => row.hidden && row.start >= range.pos && row.end <= range.until).toReversed()) {
+      const held = groups.filter(row => row.start >= range.pos && row.end <= range.until);
+      if (held.length > 64) return tooComplex();
+      let changes;
+      for (const row of held.toReversed()) {
         const offset = row.from - range.start;
-        const at = offset <= kept.pos ? offset : offset >= kept.pos + kept.removed.length ? inserted.length - (original.length - offset) : -1;
-        if (at < 0) continue;
+        let at = offset <= kept.pos ? offset : offset >= kept.pos + kept.removed.length ? offset + kept.inserted.length - kept.removed.length : -1;
+        if (at < 0) {
+          changes ||= exactChanges(original, range.inserted);
+          if (changes.some(row => row.coarse)) return tooComplex();
+          let delta = 0;
+          for (const change of changes) {
+            if (offset <= change.before[0]) {at = offset + delta; break;}
+            if (offset < change.before[1]) {
+              if (change.after[0] !== change.after[1]) return ambiguous();
+              at = change.after[0]; break;
+            }
+            delta = change.after[1] - change.before[1];
+          }
+          if (at < 0) at = offset + delta;
+        }
         const sentinel = '\n\u0000rapier-definition-' + placed.length + '\u0000';
         replace(at, at, sentinel); placed.push({...row, sentinel});
       }
@@ -4879,7 +4964,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         const raw = state.text.slice(row.start, row.end);
         for (let at = inserted.indexOf(row.text); at >= 0; at = inserted.indexOf(row.text, at + raw.length)) replace(at, at + row.text.length, raw);
       }
-      for (const row of projection.segments.filter(row => row.hidden)) {
+      for (const row of inserted.includes('<!-- rapier-asset:') ? hidden : []) {
         for (let at = inserted.indexOf(row.marker); at >= 0; at = inserted.indexOf(row.marker)) {
           const lead = /(?:\r\n|\r|\n)*$/.exec(inserted.slice(0, at))[0].length;
           replace(at - lead, at + row.marker.length, '');
@@ -4888,8 +4973,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (inserted.includes('<!-- rapier-asset:')) return failure('asset_marker_unknown', 'invalid');
       for (const row of placed) {
         const at = inserted.indexOf(row.sentinel); if (at < 0) continue;
-        replace(at, at + row.sentinel.length, !whole || pictureReferences(state.text.slice(0, range.pos) + inserted + state.text.slice(range.until)).has(row.id)
-          ? state.text.slice(row.start, row.end) : '');
+        replace(at, at + row.sentinel.length, state.text.slice(row.start, row.end));
       }
       if (projection.segments.some(row => row.hidden && row.start >= range.pos && row.end <= range.until)) definitionsTouched = true;
       const removed = state.text.slice(range.pos, range.until);
@@ -4934,8 +5018,24 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       const narrow = minimalSplice(removed, inserted);
       splices.push({...narrow, pos: range.pos + narrow.pos});
     }
+    if (hidden.length && splices.length) {
+      const text = transformSplices(state.text, splices);
+      if (text == null) return failure('target_changed', 'conflict');
+      const retained = new Map();
+      for (const row of documentAssets(text).blocks) retained.set(row.source, (retained.get(row.source) || 0) + 1);
+      for (const row of hidden) {
+        const count = retained.get(row.source) || 0;
+        if (!count) return failure('asset_definition_boundary', 'refused', {hint: 'Keep a blank line before retained image definitions; finish the inserted text with a line break.'});
+        retained.set(row.source, count - 1);
+      }
+      if (whole) {
+        const retired = imageDeletionSplices(state.text, text, [{pos: 0, removed: state.text, inserted: text}], who.actor);
+        if (retired.length) {options.authoredCount = splices.length; splices.push(...retired);}
+      }
+    }
     if (commentsChanged) {
-      const computed = committedText(state.text, splices, splices.length, who.actor, state.docKind, 'comments.write', false, null, assets);
+      const authoredCount = options.authoredCount ?? splices.length;
+      const computed = committedText(state.text, splices, authoredCount, who.actor, state.docKind, 'comments.write', false, null, assets);
       if (!computed || computed.reason) return failure(computed?.reason || 'target_changed', 'conflict');
       const current = parseComments(computed.text), next = commentThreads(computed.text, current).map(clone), retained = new Set(commentBlocks.map(row => row.id));
       for (const thread of next) if (!retained.has(thread.id) && thread.messages.some(row => row.author.kind === 'human')) return failure('human_comment_preserved', 'refused');
@@ -4965,9 +5065,10 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         thread.resolved = block.attrs.resolved === 'true';
       }
       const row = writeComments(computed.text, wanted, current);
-      options.authoredCount = splices.length;
+      options.authoredCount = authoredCount;
       splices.splice(0, splices.length, ...computed.splices, row);
     }
+    if (splices.length > 64) return tooComplex();
     if (definitionsTouched || splices.some(row => /!\[[^\r\n]*\]\[/.test(row.inserted))) {
       const restored = keptDefinitions(splices, assets);
       if (restored.outcome) return restored;

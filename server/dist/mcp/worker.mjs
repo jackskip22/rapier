@@ -40,6 +40,7 @@ import {LiveSessions, LIVE_PROTOCOL, LIVE_LIMITS} from './live-session.mjs';
 import {createCommitFence} from '../agent/commit-fence.mjs';
 import {viewChanged} from './custody-wire.mjs';
 import {PageRelay} from './page-relay.mjs';
+import {queuedConflict} from './page-queue.mjs';
 import {PRIVATE_LIVE_PROTOCOL, PRIVATE_LIVE_LIMITS, privateSecret} from '../kernel/live-private-wire.mjs';
 import {MATERIAL_LIMITS, materialDescription, materialMatches, admitMaterialResult} from '../agent/material.mjs';
 import {handlePublishedPages} from './publish.mjs';
@@ -3264,6 +3265,9 @@ export class RapierDocument {
     const principal = 'remote:' + capabilityHash;
     const actor = (['comments.write', 'document.read'].includes(operation) || operation === 'comparison.present' && args.action === 'close') && input.humanTool === true ? 'human' : 'agent';
     const agentCaller = () => ({...resolveCaller({ actor, principal: actor === 'human' ? principal : remotePrincipal(input), ...(actor === 'human' ? {session: 'editor'} : {}), requestId: input.operationId }, { transport: 'mcp' }), ...(actor === 'agent' && input.hostAgent ? {hostAgent: input.hostAgent} : {})});
+    const queued = actor === 'agent' && queuedConflict(this.ctx.storage.kv, {operationId: input.operationId,
+      agent: {principal: agentCaller().principal}, same: {operation, args}});
+    if (queued) return operationEnvelope(operation, queued, head, {notesVersions: this.env.ACCESS_PROFILE === true});
     const invocationKey = agentCaller().invocationKey;
     const inFlight = [this.returnWaiter, this.visualWaiter, this.exportWaiter, this.editorWaiter, head.materialOwner].filter(row => row &&
       row.capabilityHash === capabilityHash && row.caller.invocationKey !== invocationKey).map(row => row.caller);

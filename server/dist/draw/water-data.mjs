@@ -213,7 +213,7 @@ export function admitWaterState(raw){
   const p=c?.paper,t=c?.trim;
   if(!object(c)||!ownKeys(c,['paper','trim','simBox','flowMayMove','trimEpoch','layerRects'])||!object(c.layerRects)||!ownKeys(c.layerRects,Object.keys(layouts))||typeof c.flowMayMove!=='boolean'||!integer(c.trimEpoch)||c.simBox!==null&&!rect(c.simBox,sw,sh))return null;
   if(!object(p)||!ownKeys(p,['bytes','regions','unknown'])||typeof p.unknown!=='boolean'||!Array.isArray(p.regions)||p.regions.length>pixels||!p.regions.every(r=>rect(r,f.width,f.height)))return null;
-  if(t!==null&&(!object(t)||!ownKeys(t,['pixels','width','height','due','epoch'])||!integer(t.width)||!t.width||!integer(t.height)||!t.height||t.width*t.height>12000000||!integer(t.due)||!integer(t.epoch)||t.pixels!==null&&(!(t.pixels instanceof Uint8Array)||t.pixels.byteLength!==t.width*t.height*4)))return null;
+  if(t!==null&&(!object(t)||!ownKeys(t,['pixels','width','height','due','epoch'])||!integer(t.width)||!t.width||!integer(t.height)||!t.height||t.width*t.height>12000000||!integer(t.due)||!integer(t.epoch)||t.pixels!==null&&(!(t.pixels instanceof Uint8Array)||t.pixels.byteLength!==t.width*t.height)))return null;
  }
  for(const [name,[w,h,size]]of Object.entries(layouts)){
   if(name==='paper'&&c===undefined)continue;

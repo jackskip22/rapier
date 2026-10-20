@@ -153,6 +153,30 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 	if (!Number.isFinite(timeoutMs) || timeoutMs < 0) throw fail('timeout', 'The owner wait must be bounded.');
 	const isShared = () => typeof shared === 'function' ? !!shared() : !!shared;
 	let localTail = Promise.resolve(), closed = false, incarnation = crypto.randomUUID();
+	const openingNotes = new Map(), deletionSteps = new Map();
+	const keepDeletion = file => !!deleteKeep?.(file) || (openingNotes.get(file) || 0) > 0;
+	const admitOpen = async file => {
+		while (deletionSteps.has(file)) await deletionSteps.get(file);
+		if (closed) throw fail('closed', 'The notes owner is closed.');
+		openingNotes.set(file, (openingNotes.get(file) || 0) + 1);
+		let released = false;
+		return () => {
+			if (released) return; released = true;
+			const left = openingNotes.get(file) - 1;
+			if (left) openingNotes.set(file, left); else openingNotes.delete(file);
+		};
+	};
+	const deletionAdmission = async (file, run, deferred) => {
+		if (keepDeletion(file)) {
+			if (deferred) return deferred();
+			throw fail('delete-pending', 'This note is open or opening. Its deletion is still pending.');
+		}
+		if (deletionSteps.has(file)) throw fail('delete-pending', 'This note already has a deletion in progress.');
+		let finish;
+		deletionSteps.set(file, new Promise(resolve => { finish = resolve; }));
+		try { return await run(); }
+		finally { deletionSteps.delete(file); finish(); }
+	};
 	const receive = event => {
 		const value = event?.data;
 		if (value?.type !== 'rapier-notes-commit' || typeof value.scope !== 'string' || !Number.isSafeInteger(value.generation) || value.generation < 0) return;
@@ -399,7 +423,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				args = {...args, index: armed.index}; await tryArmDeletion(armed.index);
 			}
 			const baseReceipt = indexReceipt?.slice();
-			const admit = () => admitPressureTrash({...args, store, intent: deletion, commit: commitPressure, keep: deleteKeep, baseReceipt});
+			const admit = () => admitPressureTrash({...args, store, intent: deletion, commit: commitPressure, keep: keepDeletion, baseReceipt, admission: deletionAdmission});
 			let result;
 			try { result = await admit(); }
 			catch (error) {
@@ -515,7 +539,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				const state = await deletion.read(index);
 				if (state.record && state.record.phase !== 'idle') {
 					if (journal) throw fail('delete-pending', 'Deletion and save custody both need attention. Every remaining byte was kept.');
-					try { index = (await recoverPressureTrash({store, index, intent: deletion, commit: commitPressure, keep: deleteKeep})).index; }
+					try { index = (await recoverPressureTrash({store, index, intent: deletion, commit: commitPressure, keep: keepDeletion, admission: deletionAdmission})).index; }
 					catch (error) { return {index: await readIndex(), pressurePending: {record: (await deletion.read(await readIndex())).record, error: String(error?.message || error), failure: deletionFailure(error)}}; }
 				}
 			}
@@ -1164,6 +1188,6 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			return {certified: false, kind: 'deletion-recovery', entries: [...entries].map(([name, bytes]) => ({name, bytes}))};
 		} finally { await lease?.release(); }
 	};
-	return {validateDeletionScratch, pendingDeletion, captureDeletion, get incarnation() { return incarnation; }, acquire, read, readImportReceipt, transact: async (scope, plan, options) => { const lease = await acquire(scope); try { return await lease.transact(plan, options); } finally { await lease.release(); } }, close: () => { closed = true; channel?.removeEventListener?.('message', receive); }};
+	return {admitOpen, keepDeletion, validateDeletionScratch, pendingDeletion, captureDeletion, get incarnation() { return incarnation; }, acquire, read, readImportReceipt, transact: async (scope, plan, options) => { const lease = await acquire(scope); try { return await lease.transact(plan, options); } finally { await lease.release(); } }, close: () => { closed = true; channel?.removeEventListener?.('message', receive); }};
 }
 

@@ -2,7 +2,7 @@
 
 Turn Markdown into one offline HTML file that contains the full Rapier editor. It opens in any browser, on a phone or
 computer, with no account. People read, edit, draw and paint; agents hand over documents, show what changed and get
-the edited copy back. Start with `npx rapier-html@1.2.17 notes.md`.
+the edited copy back. Start with `npx rapier-html@1.2.18 notes.md`.
 
 Use it for a plan to rearrange, a guide to annotate, a draft to keep writing, or a revision to review. The file works
 without any hosted workspace.
@@ -17,14 +17,14 @@ without any hosted workspace.
 Needs Node 22 or newer.
 
 ```sh
-npx -- rapier-html@1.2.17 notes.md                          # the editor, notes.md inside it, written beside the file
-npx -- rapier-html@1.2.17 notes.md --view draw              # opens on Draw: sketch and paint, the document behind it
-npx -- rapier-html@1.2.17 notes.md --include draw,math     # carries Draw and Math (default: what the document needs)
-npx -- rapier-html@1.2.17 notes.md --drawing sketch.svg     # carries a drawing, opened on Draw over the document
-npx -- rapier-html@1.2.17 revised.md --compare original.md # opens showing what changed
-npx -- rapier-html@1.2.17 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT" # Send back
-npx -- rapier-html@1.2.17 notes.md out.html                 # a named output
-npm install rapier-html@1.2.17                              # as a library: writePage, unwrap
+npx -- rapier-html@1.2.18 notes.md                          # the editor, notes.md inside it, written beside the file
+npx -- rapier-html@1.2.18 notes.md --view draw              # opens on Draw: sketch and paint, the document behind it
+npx -- rapier-html@1.2.18 notes.md --include draw,math     # carries Draw and Math (default: what the document needs)
+npx -- rapier-html@1.2.18 notes.md --drawing sketch.svg     # carries a drawing, opened on Draw over the document
+npx -- rapier-html@1.2.18 revised.md --compare original.md # opens showing what changed
+npx -- rapier-html@1.2.18 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT" # Send back
+npx -- rapier-html@1.2.18 notes.md out.html                 # a named output
+npm install rapier-html@1.2.18                              # as a library: writePage, unwrap
 ```
 
 The first `--` is for npm, so `--help` reaches the command. It never overwrites a file.
@@ -33,7 +33,7 @@ Will markers in the Markdown (`keep`, `append`, `edit`) control what agents may 
 
 ## Choose a Rapier workflow
 
-1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
+1. **Work together live.** Connect to `https://mcp.rapier.website/mcp`, then call `open` to share one document with the person.
 2. **Hand over an offline editor.** Use this package.
 3. **Embed the editor.** [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed)
    mounts the editor or reader in your app.

@@ -1447,7 +1447,7 @@
       "role": "overlay",
       "interactive": false,
       "edge": "none",
-      "reason": "Source-offset carets are measured in viewport coordinates and cannot intercept the writer\u2019s pointer."
+      "reason": "Source-offset carets are measured in viewport coordinates and cannot intercept the writer’s pointer."
     },
     {
       "id": "live-presence-selection",
@@ -2772,7 +2772,7 @@
         ]
       },
       "owner": ".rapier-live-caret",
-      "reason": "An offscreen collaborator\u2019s upper-edge label stays inside the caret\u2019s right boundary."
+      "reason": "An offscreen collaborator’s upper-edge label stays inside the caret’s right boundary."
     },
     {
       "id": "live-presence-label-down",
@@ -2796,7 +2796,7 @@
         ]
       },
       "owner": ".rapier-live-caret",
-      "reason": "An offscreen collaborator\u2019s lower-edge label stays inside the caret\u2019s right boundary."
+      "reason": "An offscreen collaborator’s lower-edge label stays inside the caret’s right boundary."
     },
     {
       "id": "changes-away-next-reach",
@@ -3047,6 +3047,30 @@
       },
       "owner": ".settings-info-btn--hang",
       "reason": "The hanging information circle keeps its 40px place by its word; this empty box only widens its touch area to 48 by 48 inside its own button and positions no viewport surface."
+    },
+    {
+      "id": "gallery-head",
+      "file": "editor/styles/rapier-composer.css",
+      "selector": ".rapier-gallery__head",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "sticky",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "calc(-1 * var(--space-4))",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".link-dialog.rapier-gallery",
+      "reason": "The Gallery tab row and its close stay at the top of the Gallery sheet while its pictures scroll; it never leaves the sheet."
     }
   ]
 }

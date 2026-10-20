@@ -72,11 +72,14 @@ function _rapierSyncStartersButton() {
 	const empty = _rapierPartAvailable('presets') && rapier.document.docKind === 'markdown' && rapier.view.mode !== 'source' && !rapier.access.readOnly &&
 		typeof globalThis.RAPIER_PAIRED_DOCUMENT !== 'string' && !_rapierEmbed.active && rapier.document.source.length === 0;
 	if (!empty) { box?.remove(); return; }
-	if (box) return;
-	box = document.createElement('div'); box.className = 'rapier-empty-starters'; box.contentEditable = 'false';
-	const button = document.createElement('button'); button.type = 'button'; button.className = 'rapier-empty-starters__btn'; button.textContent = 'Starters';
-	button.dataset.action = 'starters';
-	box.append(button); host.append(box);
+	if (!box) {
+		box = document.createElement('div'); box.className = 'rapier-empty-starters'; box.contentEditable = 'false';
+		const button = document.createElement('button'); button.type = 'button'; button.className = 'settings-action-btn rapier-empty-starters__btn'; button.textContent = 'Gallery';
+		button.dataset.action = 'starters';
+		box.append(button);
+	}
+	const line = host.querySelector(':scope > .block-wrapper');
+	if (line ? line.nextElementSibling !== box : box.parentNode !== host) (line ? line.after(box) : host.append(box));
 }
 function _rapierComposerCommands() {
 	return !_rapierComposerOffered() ? [] : [
@@ -88,8 +91,8 @@ function _rapierPartCommands() {
 	return [
 	{ id: 'insert.draw', label: 'Draw', group: 'insert', icon: 'pen-tool', glyph: '✎',
 		keywords: ['sketch', 'shape', 'svg', 'picture', 'pen', 'finger', 'circle', 'triangle', 'arrow'], mutates: true, run: () => { _rapierOpenDrawPart(); } },
-	{ id: 'insert.starters', label: 'Starters', group: 'insert', icon: 'book-open', glyph: '▤',
-		keywords: ['preset', 'template', 'passage', 'style', 'cv', 'menu', 'invitation'], run: () => _rapierOpenPresets() },
+	{ id: 'insert.starters', label: 'Gallery', group: 'insert', icon: 'book-open', glyph: '▤',
+		keywords: ['starter', 'template', 'border', 'title page', 'frame', 'art', 'classical', 'page'], run: () => _rapierOpenPresets() },
 	];
 }
 function _rapierCommandSet(list) {

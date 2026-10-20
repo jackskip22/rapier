@@ -168,7 +168,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		return previous !== deviceId || assigned.length > 0;
 	};
 	const owner = createOwner({store, locks, channel, shared, timeoutMs, clock, onInvalidate, deleteKeep: keep, recover: async args => {
-		const repaired = await recoverTrash({...args, clock, keep});
+		const repaired = await recoverTrash({...args, clock, keep: file => owner.keepDeletion(file)});
 		const listing = await store.list();
 		const names = [...new Set([...Object.keys(repaired.index.notes), ...listing.filter(isNoteFile)])];
 		const fixed = reconcile(repaired.index, names), index = fixed.index;
@@ -767,7 +767,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		const admitted = expected && new Map([...expected].map(([file, proof]) => [file, {id: proof.id, content: proof.digest}]));
 		let result;
 		try {
-			result = await runTrash({store, index: before.index, files, mode, expected: admitted, deviceId: before.index.folderDeviceId, commitIndex: lease.commitIndex, pressureDelete: store.deletePressure ? lease.pressureDelete : null, now: clock(), clock, keep, checkpoint: (await readSyncStateBytes(store)).state.head?._key || null});
+			result = await runTrash({store, index: before.index, files, mode, expected: admitted, deviceId: before.index.folderDeviceId, commitIndex: lease.commitIndex, pressureDelete: store.deletePressure ? lease.pressureDelete : null, now: clock(), clock, keep: owner.keepDeletion, checkpoint: (await readSyncStateBytes(store)).state.head?._key || null});
 		} catch (error) { throw deletionRefusal(error); }
 		return {...await lease.read(), result};
 	}, {deletePressure: !!store.deletePressure});
@@ -1344,5 +1344,5 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 	const recordingCustody = createRecordings({store, owned, underLease, locks, scope, shared: isShared, clock, audioName, discardAudio,
 		canOwn: () => store.writable !== false && (!isShared() || !!(locks?.request && channel?.postMessage)), readSnapshot: () => owner.read(scope)});
 	return {beginRecording: recordingCustody.begin, recoverRecordings: recordingCustody.recover, openRecording: recordingCustody.open, readRecording: recordingCustody.preview, acknowledgeRecording: recordingCustody.acknowledge,
-		captureDeletionRecovery: () => owner.captureDeletion(scope), owner, store, scope, read, readCanonical: readCanonicalNote, planCanonicalChange, checkEditorInverse, rebuildIndex, metadata, controls, controlsUndo, reminderActions, reminderChange, leaveVault, create, createShared, save, recordHistory, historyInventory, tidyHistory, rename, trash, lockNote, resumeLock, discardEmpty, mark, createAudio, createAttachment, attachmentReferences, fileReferences, reviewAttachmentDeletion, deleteAttachment, reviewRecordingDeletion, deleteRecording, asset, discardAudio, importBatch, checkpointImportReceipt, readImportReceipt, restoreSnapshot, previewImportUndo, undoImport, backupSnapshot, capture, readFile, settle, get deviceId() { return deviceId; }, get pending() { return pending.size; }, close: () => { recordingCustody.close(); owner.close(); channel?.close?.(); }};
+		admitOpen: owner.admitOpen, captureDeletionRecovery: () => owner.captureDeletion(scope), owner, store, scope, read, readCanonical: readCanonicalNote, planCanonicalChange, checkEditorInverse, rebuildIndex, metadata, controls, controlsUndo, reminderActions, reminderChange, leaveVault, create, createShared, save, recordHistory, historyInventory, tidyHistory, rename, trash, lockNote, resumeLock, discardEmpty, mark, createAudio, createAttachment, attachmentReferences, fileReferences, reviewAttachmentDeletion, deleteAttachment, reviewRecordingDeletion, deleteRecording, asset, discardAudio, importBatch, checkpointImportReceipt, readImportReceipt, restoreSnapshot, previewImportUndo, undoImport, backupSnapshot, capture, readFile, settle, get deviceId() { return deviceId; }, get pending() { return pending.size; }, close: () => { recordingCustody.close(); owner.close(); channel?.close?.(); }};
 }

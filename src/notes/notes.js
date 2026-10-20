@@ -3136,19 +3136,27 @@ async function _rapierNotesOpenById(id) {
 }
 async function _rapierNotesOpenNote(...args) {
 	const state = _rapierNotes;
+	const folder = _rapierNotesStore.folder, bytes = _rapierNotesStore.bytes;
+	if (!folder) return false;
+	const openingScope = () => _rapierNotesStore.folder === folder && _rapierNotesStore.bytes === bytes;
 	if (typeof _rapierNotesPickerClose === 'function') _rapierNotesPickerClose();
 	state.noteOpening = (state.noteOpening || 0) + 1;
 	if (typeof _rapierBackHold === 'function') _rapierBackHold();
-	let pin;
+	let pin, releaseOpening;
 	const opening = state.noteOpeningTask = (async () => {
+		releaseOpening = await folder.admitOpen(args[0]);
+		if (!openingScope()) return false;
 		if (_rapierNotesIsApp() && !_rapierNotesIsLocked()) {
 			const id = args[2] || state.index?.notes[args[0]]?.id;
 			if (id) pin = await _rapierNotesInputPin(id);
 		}
+		if (!openingScope()) return false;
+		args[6] = openingScope;
 		return _rapierNotesOpenNoteNow(...args);
 	})();
 	try { return await opening; }
 	finally {
+		releaseOpening?.();
 		if (pin) {
 			if (state.currentProof?.id === pin.id && _rapierNotesDocumentBound()) { state.inputPin?.release(); state.inputPin = pin; }
 			else pin.release();
@@ -3156,10 +3164,11 @@ async function _rapierNotesOpenNote(...args) {
 		state.noteOpening--; if (typeof _rapierBackHold === 'function') _rapierBackHold();
 	}
 }
-async function _rapierNotesOpenNoteNow(file, capture = false, expectedId = null, under = null, access = null, throwReadError = false) {
+async function _rapierNotesOpenNoteNow(file, capture = false, expectedId = null, under = null, access = null, throwReadError = false, openingScope = null) {
 	const state = _rapierNotes;
 	let transitioned = false;
 	const current = () => {
+		if (openingScope && !openingScope()) return false;
 		if (transitioned && access?.signal?.aborted) return false;
 		access?.signal?.throwIfAborted(); access?.guard?.();
 		if (!transitioned && access?.stamp && !(_rapierMutationStampIsCurrent(access.stamp) && (!access.cards || state.open))) return false;
@@ -3181,6 +3190,7 @@ async function _rapierNotesOpenNoteNow(file, capture = false, expectedId = null,
 	let lift = from && state.open ? _rapierNotesLiftGrow(from) : under;
 	let guard;
 	try { guard = await _rapierNotesFlush({replacing: true}); } catch (_) { lift?.drop(); return; }
+	if (!current()) { lift?.drop(); return false; }
 	const store = _rapierNotesStore, folder = store.folder, bytes = store.bytes;
 	let opened;
 	try { opened = await folder.readCanonical({file, id: expectedId || state.index.notes[file]?.id}); }
@@ -3213,7 +3223,7 @@ async function _rapierNotesOpenNoteNow(file, capture = false, expectedId = null,
 		const checked = await folder.readCanonical({file, id: proof.id});
 		if (!current() || !_rapierMutationStampIsCurrent(guard) || store.folder !== folder || store.bytes !== bytes || checked.ledger.sha256 !== proof.ledger) { lift?.drop(); return false; }
 		const loaded = await rapierLoad(text, opened.metadata.filename, {expectedMutationStamp: guard, returnReceipt: true, deferFlush: true, restore: true, documentAuthority: opened.documentAuthority, carriedLedger: opened.ledger, documentKind: opened.metadata.docKind});
-		if (!loaded || !_rapierLoadReceiptIsCurrent(loaded)) { lift?.drop(); showToast('This note could not be opened', 'error'); return; }
+		if (!loaded || !_rapierLoadReceiptIsCurrent(loaded) || openingScope && !openingScope()) { lift?.drop(); showToast('This note could not be opened', 'error'); return; }
 		transitioned = true;
 		state.cameFrom = suspended;
 		state.current = file; state.currentProof = Object.freeze({...proof, epoch: Number(rapier.identity.epoch || 0)}); state.savingGen = -1; state.savingText = state.savingDigest = null;
@@ -3222,7 +3232,7 @@ async function _rapierNotesOpenNoteNow(file, capture = false, expectedId = null,
 		if (!state.autosave) state.autosave = setInterval(_rapierNotesAutosave, RAPIER_NOTES_AUTOSAVE_MS);
 		access?.onOpened?.({documentId: String(rapier.identity.authority), epoch: Number(rapier.identity.epoch || 0)});
 		const landed = await folder.readCanonical({file, id: proof.id});
-		if (!_rapierNotesDocumentBound()) { lift?.drop(); return false; }
+		if (!_rapierNotesDocumentBound() || openingScope && !openingScope()) { lift?.drop(); return false; }
 		if (landed.ledger.sha256 !== proof.ledger) {
 			state.saveFailed = true; lift?.drop();
 			throw Object.assign(new Error('The note changed while it opened. Its loaded history and stored source were kept.'), {code: 'notes_changed'});

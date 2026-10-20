@@ -197,6 +197,7 @@ const _rapierProviders = Object.seal({
 	'letters-renaissance-alphabet': null,
 	templates: null,
 	elements: null,
+	lettersets: null,
 });
 const _rapierBootstrapRuntime = Object.seal({ pendingIntake: null, complete: false, failed: false, opened: false });
 let _rapierPublishBootFacts;
@@ -1132,11 +1133,6 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 
 	async function _webFileGeneration(file) {
 		if (!file) return null;
-		if (Number(file.size || 0) > RapierTextCodec.maxDocumentBytes) {
-			
-
-			return 'web:oversize:' + String(file.size) + ':' + String(file.lastModified || 0);
-		}
 		return _webGenerationFromFingerprint(await _blobFingerprint(file));
 	}
 
@@ -1172,9 +1168,6 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			if (options.fileGeneration != null) {
 				if (!handle || typeof handle.getFile !== 'function') throw new Error('saved file cannot be inspected before writing');
 				var previousFile = await handle.getFile();
-				if (Number(previousFile.size || 0) > RapierTextCodec.maxDocumentBytes) {
-					throw _externalFileChangedError();
-				}
 				var previousGeneration = await _webFileGeneration(previousFile);
 				if (previousGeneration !== String(options.fileGeneration)) {
 					throw _externalFileChangedError();
@@ -1232,6 +1225,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			'.html': 'text/html', '.htm': 'text/html', '.css': 'text/css',
 			'.js':   'text/javascript', '.mjs': 'text/javascript', '.cjs': 'text/javascript',
 			'.json': 'application/json', '.xml': 'application/xml', '.svg': 'image/svg+xml',
+			'.png':  'image/png', '.jxl': 'image/jxl', '.ora': 'image/openraster',
 			'.csv':  'text/csv', '.yaml': 'application/yaml', '.yml': 'application/yaml',
 		})[ext.toLowerCase()] || 'application/octet-stream';
 		accept[mime] = [ext];
@@ -1373,9 +1367,6 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 				throw new Error('selected destination cannot be inspected before writing');
 			}
 			var selectedFile = await handle.getFile();
-			if (Number(selectedFile.size || 0) > RapierTextCodec.maxDocumentBytes) {
-				throw new Error('selected destination is too large to verify safely');
-			}
 			var selectedGeneration = await _webFileGeneration(selectedFile);
 			return { handle: handle, generation: selectedGeneration };
 		}).catch(function (error) {

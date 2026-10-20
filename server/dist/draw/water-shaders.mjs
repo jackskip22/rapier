@@ -358,8 +358,8 @@ export function waterShaderSources(){
    dirty=!(smoothstep(0.02,0.45,water)<0.002);
    if(!dirty){
     let a=textureLoad(t1,p,0);let b=textureLoad(t2,p,0);
-    dirty=any(bitcast<vec4<u32>>(a)!=bitcast<vec4<u32>>(textureLoad(t4,p,0)))||
-     any(bitcast<vec4<u32>>(b)!=bitcast<vec4<u32>>(textureLoad(t5,p,0)))||
+    dirty=any(bitcast<vec4<u32>>(a)!=bitcast<vec4<u32>>(textureLoad(t4,p-vec2<i32>(u.v[15].zw),0)))||
+     any(bitcast<vec4<u32>>(b)!=bitcast<vec4<u32>>(textureLoad(t5,p-vec2<i32>(u.v[15].zw),0)))||
      (u.v[2].w!=1.0&&(any(a!=vec4<f32>(0))||any(b!=vec4<f32>(0))));
    }
    if(dirty){break;}
@@ -379,7 +379,7 @@ export function waterShaderSources(){
   let tile=tiles[group.x];let coord=vec2<u32>(tile&65535u,tile>>16u)+local.xy;
   if(any(coord<vec2<u32>(u.v[14].xy))||any(coord>=vec2<u32>(u.v[14].zw))){return;}
   let result=pigment(vec4<f32>(vec2<f32>(coord)+0.5-u.v[15].xy,0,1));
-  textureStore(ink0,coord,result.a);textureStore(ink1,coord,result.b);
+  let output=coord-vec2<u32>(u.v[15].zw);textureStore(ink0,output,result.a);textureStore(ink1,output,result.b);
  }`;
  return Object.freeze(sources);
 }

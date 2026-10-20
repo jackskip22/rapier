@@ -15,7 +15,7 @@ This package is **AGPL-3.0-only**, with a commercial license available. The rend
 Rapier is a phone-first Markdown editor for notes, diagrams, drawing and watercolor painting. It runs offline
 as one HTML file on Android, Web and Windows.
 
-1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
+1. **Work together live.** Connect to `https://mcp.rapier.website/mcp`, then call `open` to share one document with the person.
 2. **Deliver an offline editor.** Run `npx rapier-html notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed in your app.** Install [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed); mount the editor or reader, with your app's agent over WebMCP in the editor.
 4. **Keep portable Markdown.** Use [rapier-markdown-kit](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-markdown-kit) for pictures, editable SVG drawings and layout in one `.md` file. Respect [Will/1](https://github.com/jackskip22/will) `keep`, `append` and `edit` regions.
