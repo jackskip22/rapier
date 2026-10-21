@@ -87,16 +87,20 @@ async function _rapierAttachmentsDelete(name, row) {
 		showToast(name + ' deleted forever. Notes and their earlier versions were not changed.', 'info');
 	} finally { if (sheet) await _rapierAttachmentsShelf(); }
 }
-function _rapierAttachmentsRow(entry, {owner = '', unlink = false, link = false, deletion = false, references = null} = {}) {
+function _rapierAttachmentsRow(entry, {owner = '', unlink = false, link = false, deletion = false, references = null, player = true} = {}) {
 	const A = _rapierAttachmentsModel(), row = _rapierNotesEl('span', 'rapier-attachment-row'); row.contentEditable = 'false';
 	row.dataset.attachmentName = entry.name;
 	const details = _rapierNotesEl('span', 'rapier-attachment-details'), name = _rapierNotesEl('strong', 'rapier-attachment-name', entry.label || entry.name);
 	if (entry.label && entry.label !== entry.name) name.title = entry.name;
 	const meta = _rapierNotesEl('span', 'rapier-attachment-meta', A.attachmentKind(entry.name) + ' · Reading size');
 	details.append(name, meta); row.appendChild(details);
-	const open = _rapierAttachmentsButton('Open', () => _rapierAttachmentsOpen(entry.name)); row.appendChild(open);
+	const audio = player && A.attachmentKind(entry.name) === 'Audio' && typeof _rapierRecorderFileView === 'function' ? _rapierRecorderFileView(entry.name, entry.label, unlink && owner ? () => [
+		['Open', RAPIER_NOTES_ICONS.page, () => _rapierAttachmentsOpen(entry.name)],
+		unlink && owner ? ['Unlink', RAPIER_NOTES_ICONS.link, async () => { await _rapierAttachmentsEdit(owner, text => A.removeAttachmentLink(text, entry)); showToast('Link removed. The file remains in Saved files.', 'info'); }] : null] : null) : null;
+	const kebab = !!audio && unlink && !!owner;
+	const open = _rapierAttachmentsButton('Open', () => _rapierAttachmentsOpen(entry.name)); if (!kebab) row.appendChild(open);
 	if (link && owner) row.appendChild(_rapierAttachmentsButton('Link', () => _rapierAttachmentsLink(entry.name, owner)));
-	if (unlink && owner) row.appendChild(_rapierAttachmentsButton('Unlink', async () => {
+	if (unlink && owner && !kebab) row.appendChild(_rapierAttachmentsButton('Unlink', async () => {
 		await _rapierAttachmentsEdit(owner, text => A.removeAttachmentLink(text, entry));
 		showToast('Link removed. The file remains in Saved files.', 'info');
 	}));
@@ -104,6 +108,7 @@ function _rapierAttachmentsRow(entry, {owner = '', unlink = false, link = false,
 		details.appendChild(_rapierNotesEl('span', 'rapier-attachment-meta', A.attachmentReferenceWords(references)));
 		row.appendChild(_rapierAttachmentsButton('Delete forever', () => _rapierAttachmentsDelete(entry.name, row)));
 	}
+	if (audio) { row.classList.add('rapier-attachment-audio'); row.appendChild(audio); }
 	row.addEventListener('pointerdown', event => event.stopPropagation());
 	row.addEventListener('click', event => event.stopPropagation());
 	row.addEventListener('keydown', event => {
@@ -260,6 +265,7 @@ function _rapierAttachmentsScan() {
 		const found = new Map(), seen = new Set();
 		for (const entry of A.attachmentsOf(_rapierSourceText())) { const rows = found.get(entry.name) || []; rows.push(entry); found.set(entry.name, rows); }
 		for (const link of host.querySelectorAll('.block-wrapper:not(.block-wrapper--editing) > .block-read a[href]')) {
+			if (/#t=\d+$/.test(link.getAttribute('href'))) { found.get(A.attachmentFromHref(link.getAttribute('href')))?.shift(); continue; }
 			const name = A.attachmentFromHref(link.getAttribute('href')), entry = found.get(name)?.shift();
 			if (!entry) continue;
 			let row = S.rows.get(link);
@@ -280,7 +286,7 @@ function _rapierAttachmentsInit() {
 }
 function _rapierAttachmentsCard(host, file, text) {
 	const rows = _rapierAttachmentsModel()?.attachmentsOf(text) || [], names = [...new Set(rows.map(row => row.name))];
-	for (const name of names.slice(0, 2)) host.appendChild(_rapierAttachmentsRow({name, label: rows.find(row => row.name === name).label}));
+	for (const name of names.slice(0, 2)) host.appendChild(_rapierAttachmentsRow({name, label: rows.find(row => row.name === name).label}, {player: false}));
 	if (names.length > 2) host.appendChild(_rapierAttachmentsButton((names.length - 2) + ' more files', () => _rapierNotesOpenNote(file)));
 }
 function _rapierAttachmentsBind() {

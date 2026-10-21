@@ -3995,10 +3995,15 @@ function _rapierNotesOpenSheet(file, mode) {
 			_rapierNotesReminderFields(sheet, entries);
 			sheet.appendChild(button('remind-remove', 'Remove reminder'));
 		}
+	} else if (state.sheetMode === 'audio') {
+		(typeof _rapierRecorderMenuRows === 'function' ? _rapierRecorderMenuRows() : []).forEach(([word, icon], index) => {
+			const b = button('audio-row', word, 'rapier-notes-btn', icon); b.dataset.notesAdd = String(index); sheet.appendChild(b);
+		});
 	} else if (state.sheetMode === 'add') {
 		sheet.appendChild(button('boxes', (typeof _rapierTodoBoxesWord === 'function' && _rapierTodoBoxesWord()) || 'Show tick boxes'));
-		for (const [kind, word] of [['drawing', 'Drawing'], ['picture', 'Add image'], ['photo', 'Take photo'], ['recording', 'Recording'], ['attachment', 'Add file'], ['files', 'Saved files']]) {
-			const b = button('add-kind', word, 'rapier-notes-btn', RAPIER_NOTES_ADD_ICONS[kind]); b.dataset.notesAdd = kind;
+		const link = typeof _rapierRecorderLinkWords === 'function' ? _rapierRecorderLinkWords() : '';
+		for (const [kind, word] of [['drawing', 'Drawing'], ['picture', 'Add image'], ['photo', 'Take photo'], ['recording', 'Recording'], ...(link ? [['timelink', link]] : []), ['attachment', 'Add file'], ['files', 'Saved files']]) {
+			const b = button('add-kind', word, 'rapier-notes-btn', RAPIER_NOTES_ADD_ICONS[kind === 'timelink' ? 'recording' : kind]); b.dataset.notesAdd = kind;
 			sheet.appendChild(b);
 		}
 	} else if (state.sheetMode === 'history') {
@@ -4577,6 +4582,7 @@ async function _rapierNotesLock() {
 		await _rapierNotesFlush();
 		if ((state.current || state.cameFrom !== undefined) && !await _rapierNotesEditor()) return;
 		_rapierNotesCloseSheet(); state.locking = true; state.thumbQueue.length = 0;
+		if (typeof _rapierRecorderSoundClose === 'function' && _rapierRecorder.sound?.file === file) _rapierRecorderSoundClose();
 		while (state.thumbBusy) await new Promise(resolve => setTimeout(resolve, 20));
 		const store = _rapierNotesStore, snapshot = await store.folder.read({bodies: [file]});
 		const id = snapshot.index.notes[file]?.id, digest = await H.sha256(snapshot.bodies.get(file));
@@ -4664,7 +4670,8 @@ async function _rapierNotesAct(act, arg) {
 		if (file && Number.isSafeInteger(id)) await _rapierNotesHistoryRestore(file, id);
 		return;
 	}
-	if (act === 'add-kind') { const kind = String(arg || ''); _rapierNotesCloseSheet(); if (['drawing', 'picture', 'photo', 'recording', 'attachment', 'files'].includes(kind)) _rapierNotesTrigger(kind); return; }
+	if (act === 'audio-row') { _rapierNotesCloseSheet(); if (typeof _rapierRecorderMenuRow === 'function') _rapierRecorderMenuRow(Number(arg)); return; }
+	if (act === 'add-kind') { const kind = String(arg || ''); _rapierNotesCloseSheet(); if (['drawing', 'picture', 'photo', 'recording', 'timelink', 'attachment', 'files'].includes(kind)) _rapierNotesTrigger(kind); return; }
 	if (act === 'find-note') { _rapierNotesCloseSheet(); setTimeout(_rapierNotesFindInNote, 0); return; }
 	if (act === 'boxes') { _rapierNotesCloseSheet(); if (typeof _rapierTodoBoxesFlip === 'function') await _rapierTodoBoxesFlip(); return; }
 	if (act === 'uncheck-all' || act === 'delete-checked') { _rapierNotesCloseSheet(); if (typeof _rapierTodoBatch === 'function') await _rapierTodoBatch(act); return; }
@@ -6567,6 +6574,7 @@ function _rapierNotesDrewNothing(file) {
 }
 function _rapierNotesTrigger(kind, fresh = false) {
 	if (kind === 'recording') { _rapierRecorderOpen(false); return; }
+	if (kind === 'timelink') { if (typeof _rapierRecorderLinkNow === 'function') void _rapierRecorderLinkNow(); return; }
 	if (kind === 'attachment') { void _rapierAttachmentsPick(); return; }
 	if (kind === 'files') { void _rapierAttachmentsShelf(); return; }
 	if (kind === 'photo') { if (typeof rapierInsertPhoto === 'function') { rapierInsertPhoto(); return; } kind = 'picture'; }

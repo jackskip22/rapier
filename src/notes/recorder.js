@@ -1,4 +1,4 @@
-const _rapierRecorder = {draft: null, dialog: null, players: new Map(), shelf: new Set(), observer: null, scan: 0, epoch: 0, speech: null, transcript: null, said: null};
+const _rapierRecorder = {draft: null, dialog: null, players: new Map(), shelf: new Set(), attached: new Set(), observer: null, scan: 0, epoch: 0, speech: null, transcript: null, said: null, sound: null, bar: null};
 function _rapierRecorderModel() { return globalThis.RapierNotesAudio; }
 function _rapierRecorderOwner() { return _rapierNotes.current && !_rapierNotes.open && _rapierNotes.mode ? String(rapier.identity.authority || '') : ''; }
 function _rapierRecorderButton(word, act) {
@@ -43,7 +43,7 @@ function _rapierRecorderOpen(fresh) {
 		R.draft = {fresh, owner: fresh ? '' : _rapierRecorderOwner(), note: fresh ? _rapierNotesModel().noteFileName('Recording', Object.keys(_rapierNotes.index.notes)) : _rapierNotes.current, phase: 'idle', chunks: [], held: [], pending: [], session: null, entry: null, saved: 0, custody: '', streamFault: '', blob: null, duration: null, stream: null, recorder: null, timer: 0, name: '', file: '', linked: false, fault: ''};
 		start = true;
 	}
-	_rapierRecorderClosePlayers();
+	_rapierRecorderClosePlayers(); _rapierRecorderQuiet();
 	const d = R.dialog = _rapierNotesEl('dialog', 'rapier-recording-sheet rapier-recording-live');
 	d.addEventListener('cancel', e => { e.preventDefault(); _rapierRecorderDismiss(); });
 	d.addEventListener('click', e => {
@@ -373,12 +373,15 @@ function _rapierRecorderStamp() {
 	else document.execCommand('insertText', false, '[' + words + '](#t=' + seconds + ') ');
 }
 function _rapierRecorderPlayAt(href) {
-	const m = /^(.*)#t=(\d+)$/.exec(String(href)), name = m && _rapierRecorderModel()?.recordingFromHref(m[1]);
-	if (!name) return false;
-	const p = [..._rapierRecorder.players.values()].find(view => view.name === name);
-	if (!p) { showToast('That recording is not in this note.', 'info'); return true; }
-	void (async () => { const audio = await _rapierRecorderLoad(p); _rapierRecorderQuiet(p); audio.currentTime = Number(m[2]); await audio.play(); })()
-		.catch(error => { if (!p.gone) showToast(String(error?.message || error), 'error'); });
+	const m = /^(.*)#t=(\d+)$/.exec(String(href)), k = m && _rapierRecorderKeyOf(m[1]);
+	if (!k) return false;
+	const R = _rapierRecorder, p = R.sound?.key === k.key ? null : [..._rapierRecorder.players.values()].find(view => view.key === k.key);
+	const view = p || Object.assign(_rapierRecorderView(R.sound?.key === k.key ? R.sound.label : 'the recording', k.source, R.sound?.key === k.key ? R.sound.duration : null, k.key), {name: k.name, file: _rapierNotes.current || ''});
+	void (async () => {
+		if (R.speech) { showToast('Finish transcription before playing another recording', 'info'); return; }
+		const audio = await _rapierRecorderLoad(view); _rapierRecorderQuiet(view); R.sound.kept = true;
+		audio.currentTime = Number(m[2]); await audio.play();
+	})().catch(error => showToast(String(error?.message || error), 'error'));
 	return true;
 }
 async function _rapierRecorderEdit(owner, transform) {
@@ -445,16 +448,19 @@ function _rapierRecorderDownload(blob, name) {
 	const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 const RAPIER_RECORDER_GLYPHS = {play: ['M7 4.5v15l12.5-7.5z'], pause: ['M6.5 4.5h4v15h-4z', 'M13.5 4.5h4v15h-4z']};
-function _rapierRecorderView(label, source, duration = null) {
+function _rapierRecorderView(label, source, duration = null, key = '') {
 	const el = _rapierNotesEl('span', 'rapier-recording-player');
 	const play = _rapierRecorderButton('', 'play'); play.classList.add('rapier-recording-play');
 	const bar = document.createElement('input'); bar.type = 'range'; bar.className = 'rapier-recording-bar'; bar.min = '0'; bar.max = '1'; bar.step = 'any'; bar.value = '0';
 	const time = _rapierNotesEl('span', 'rapier-recording-time');
 	el.append(play, bar, time);
-	const view = {el, play, bar, time, label, source, duration, audio: null, url: '', blob: null, loading: null, seeking: false, playing: null};
+	const view = {el, play, bar, time, label, source, duration, key, audio: null, url: '', blob: null, loading: null, seeking: false, playing: null};
+	if (key) for (const field of ['audio', 'blob', 'url']) Object.defineProperty(view, field, {get() { const s = _rapierRecorder.sound; return s?.key === view.key ? s[field] : field === 'url' ? '' : null; }, set() {}});
 	play.addEventListener('click', () => void _rapierRecorderToggle(view));
-	bar.addEventListener('input', () => { view.seeking = true; _rapierRecorderPaintView(view); void _rapierRecorderSeek(view, Number(bar.value)); });
-	bar.addEventListener('change', () => { view.seeking = false; _rapierRecorderPaintView(view); });
+	bar.addEventListener('input', () => { view.seeking = true; bar.dataset.dragging = 'true'; _rapierRecorderPaintView(view); void _rapierRecorderSeek(view, Number(bar.value)); });
+	bar.addEventListener('change', () => { view.seeking = false; delete bar.dataset.dragging; _rapierRecorderPaintView(view); });
+	bar.addEventListener('pointerdown', () => { bar.dataset.dragging = 'true'; });
+	for (const name of ['pointerup', 'pointercancel', 'blur']) bar.addEventListener(name, () => { if (!view.seeking) delete bar.dataset.dragging; });
 	bar.addEventListener('keydown', e => {
 		const step = {ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1}[e.key];
 		if (!step) return;
@@ -462,10 +468,24 @@ function _rapierRecorderView(label, source, duration = null) {
 		const at = Number.isFinite(view.audio?.currentTime) ? view.audio.currentTime : Number(bar.value) || 0;
 		void _rapierRecorderSeek(view, Math.max(0, Math.min(Number(bar.max) || 0, at + step)));
 	});
+	el.addEventListener('keydown', e => {
+		if (e.ctrlKey || e.metaKey || e.altKey) return;
+		const k = e.key.toLowerCase(), skip = {j: -15, l: 30}[k];
+		if (k === 'k' || k === ' ' && e.target === bar) { e.preventDefault(); e.stopPropagation(); void _rapierRecorderToggle(view); }
+		else if (skip) { e.preventDefault(); e.stopPropagation(); void _rapierRecorderSkip(view, skip); }
+	});
 	_rapierRecorderPaintView(view);
 	return view;
 }
+function _rapierRecorderKeyOf(href) {
+	const A = _rapierRecorderModel(), clean = String(href || '').split('#')[0], name = A?.recordingFromHref(clean);
+	if (name) return {key: 'audio/' + name, name, source: () => _rapierNotesStore.readAudio(name)};
+	const T = globalThis.RapierNotesAttachments, file = T?.attachmentFromHref(clean);
+	if (file && T.attachmentKind(file) === 'Audio') return {key: 'attachments/' + file, name: file, source: () => _rapierNotesStore.readAttachment(file)};
+	return null;
+}
 async function _rapierRecorderLoad(view) {
+	if (view.key) return _rapierRecorderSoundFor(view);
 	if (view.audio) return view.audio;
 	if (view.loading) return view.loading;
 	view.loading = (async () => {
@@ -481,6 +501,163 @@ async function _rapierRecorderLoad(view) {
 	})().finally(() => { view.loading = null; });
 	return view.loading;
 }
+function _rapierRecorderSpeed() { const v = Number(RapierPreferences.read('audioSpeed')); return v > 0 ? v : 1; }
+async function _rapierRecorderSoundFor(view) {
+	const R = _rapierRecorder;
+	if (R.sound?.key === view.key) {
+		const s = R.sound;
+		if (!s.file && view.file) s.file = view.file;
+		return s.audio || await s.loading;
+	}
+	_rapierRecorderSoundClose();
+	const s = R.sound = {key: view.key, name: view.name || view.key.replace(/^[^/]*\//, ''), label: view.label, file: view.file || _rapierNotes.current || '', duration: view.duration, source: view.source, audio: null, url: '', blob: null, loading: null, kept: true};
+	s.loading = (async () => {
+		const file = await view.source();
+		if (R.sound !== s) throw new Error('The recording was closed');
+		if (!file) throw new Error('The recording file is missing. Import or restore it with the note.');
+		const audio = new Audio(), speed = _rapierRecorderSpeed();
+		s.url = URL.createObjectURL(file.type ? file : new Blob([file], {type: _rapierRecorderModel().audioMime('', s.name)}));
+		s.blob = file; audio.preload = 'metadata'; audio.defaultPlaybackRate = speed; audio.playbackRate = speed; audio.src = s.url;
+		for (const type of ['timeupdate', 'durationchange', 'play', 'pause', 'ended', 'seeked', 'ratechange']) audio.addEventListener(type, () => { if (R.sound === s) _rapierRecorderSoundPaint(type); });
+		audio.addEventListener('error', () => { if (R.sound === s) showToast(_rapierNotesWords().Device + ' cannot play this recording. Save its audio file to open it elsewhere.', 'error'); });
+		s.audio = audio; _rapierRecorderSession(s);
+		return audio;
+	})();
+	s.loading.catch(() => { if (R.sound === s) _rapierRecorderSoundClose(); }).finally(() => { s.loading = null; });
+	return s.loading;
+}
+function _rapierRecorderSoundClose() {
+	const R = _rapierRecorder, s = R.sound;
+	if (!s) return;
+	R.sound = null;
+	if (s.audio) { s.audio.pause(); s.audio.removeAttribute('src'); s.audio.load(); }
+	if (s.url) URL.revokeObjectURL(s.url);
+	_rapierRecorderSession(null); _rapierRecorderSoundPaint('close');
+}
+function _rapierRecorderViews() {
+	const R = _rapierRecorder;
+	for (const view of R.attached) { if (view.el.isConnected) view.seen = true; else if (view.seen) R.attached.delete(view); }
+	return [...R.players.values(), ...R.shelf, ...R.attached, R.card, R.bar?.view].filter(Boolean);
+}
+function _rapierRecorderSoundPaint(type) {
+	const R = _rapierRecorder, s = R.sound;
+	for (const view of _rapierRecorderViews()) if (view.el.isConnected || view === R.card) _rapierRecorderPaintView(view);
+	_rapierRecorderCardPaint();
+	if (s?.audio && (type === 'play' || type === 'pause' || type === 'ended')) _rapierRecorderHost(!s.audio.paused && !s.audio.ended);
+	if (!s) _rapierRecorderHost(false);
+	_rapierRecorderSessionState();
+	_rapierRecorderSaid();
+	_rapierRecorderBarPaint();
+}
+async function _rapierRecorderSkip(view, seconds) {
+	try {
+		const audio = await _rapierRecorderLoad(view), total = Number.isFinite(audio.duration) ? audio.duration : view.duration ?? Infinity;
+		audio.currentTime = Math.max(0, Math.min(total, (audio.currentTime || 0) + seconds));
+	} catch (error) { if (!view.gone || view.key) showToast(String(error?.message || error), 'error'); }
+}
+const RAPIER_RECORDER_SPEEDS = ['1', '1.25', '1.5', '2', '0.75'];
+function _rapierRecorderSpeedNext() {
+	const now = String(_rapierRecorderSpeed()), next = RAPIER_RECORDER_SPEEDS[(RAPIER_RECORDER_SPEEDS.indexOf(now) + 1) % RAPIER_RECORDER_SPEEDS.length];
+	RapierPreferences.write('audioSpeed', next);
+	const audio = _rapierRecorder.sound?.audio; if (audio) { audio.defaultPlaybackRate = Number(next); audio.playbackRate = Number(next); }
+	_rapierRecorderSoundPaint('ratechange');
+}
+function _rapierRecorderStampNow(view) {
+	const s = _rapierRecorder.sound, audio = s?.key === view.key ? s.audio : null, A = _rapierRecorderModel();
+	const seconds = Math.floor(audio?.currentTime || 0), words = A.durationWords(seconds);
+	const node = getSelection()?.focusNode, host = node && (node.nodeType === 1 ? node : node.parentElement)?.closest('.block-edit');
+	if (!host?.isContentEditable || !_rapierRecorderOwner()) { showToast('Tap in the note where the time goes, then tap the time.', 'info'); return; }
+	const href = (view.key.startsWith('audio/') ? A.recordingHref(s?.name || view.name) : globalThis.RapierNotesAttachments.attachmentHref(s?.name || view.name)) + '#t=' + seconds;
+	if (typeof _rangeInsertHTML === 'function' && !host.closest('.block-wrapper--source-edit')) { _rangeInsertHTML('<a href="' + href.replace(/&/g, '&amp;').replace(/"/g, '&quot;') + '">' + words + '</a>'); document.execCommand('insertText', false, ' '); }
+	else document.execCommand('insertText', false, '[' + words + '](' + href + ') ');
+}
+const RAPIER_RECORDER_LINES = {play: [['polygon', {points: '5 3 19 12 5 21 5 3'}]], pause: [['rect', {x: 6, y: 4, width: 4, height: 16}], ['rect', {x: 14, y: 4, width: 4, height: 16}]],
+	back: [['path', {d: 'm11 19-9-7 9-7v14Zm11 0-9-7 9-7v14Z'}]], forward: [['path', {d: 'm2 5 9 7-9 7V5Zm11 0 9 7-9 7V5Z'}]], head: [['circle', {cx: 16, cy: 16, r: 15}]]};
+function _rapierRecorderLine(name) {
+	const NS = 'http://www.w3.org/2000/svg', svg = document.createElementNS(NS, 'svg');
+	svg.setAttribute('viewBox', name === 'head' ? '0 0 32 32' : '0 0 24 24'); svg.setAttribute('aria-hidden', 'true');
+	for (const [tag, attrs] of RAPIER_RECORDER_LINES[name]) { const el = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v)); svg.appendChild(el); }
+	return svg;
+}
+function _rapierRecorderControl(act, label) {
+	const b = _rapierRecorderButton('', act); b.classList.add('rapier-recording-icon'); b.setAttribute('aria-label', label);
+	for (const name of ['pointerdown', 'mousedown']) b.addEventListener(name, e => e.preventDefault());
+	return b;
+}
+function _rapierRecorderControls(view) {
+	const back = _rapierRecorderControl('back', 'Back 15 seconds'), on = _rapierRecorderControl('forward', 'On 30 seconds');
+	back.append(_rapierRecorderLine('back')); on.append(_rapierRecorderLine('forward'));
+	back.addEventListener('click', () => void _rapierRecorderSkip(view, -15));
+	on.addEventListener('click', () => void _rapierRecorderSkip(view, 30));
+	for (const name of ['pointerdown', 'mousedown']) view.play.addEventListener(name, e => e.preventDefault());
+	view.outline = true; view.playing = null;
+	const speed = _rapierRecorderButton('1×', 'speed'); speed.classList.add('rapier-recording-speed');
+	for (const name of ['pointerdown', 'mousedown']) speed.addEventListener(name, e => e.preventDefault());
+	speed.addEventListener('click', () => _rapierRecorderSpeedNext());
+	view.speed = speed;
+	return {speed, back, on, play: view.play};
+}
+function _rapierRecorderSeekRail(view) {
+	const seek = _rapierNotesEl('span', 'rapier-recording-seek'), track = _rapierNotesEl('span', 'rapier-recording-track'), head = _rapierRecorderLine('head');
+	head.classList.add('rapier-recording-head');
+	seek.append(track, head, view.bar);
+	view.seekEl = seek;
+	return seek;
+}
+function _rapierRecorderDeck(view, rows = null) {
+	const {speed, back, on, play} = _rapierRecorderControls(view);
+	const controls = _rapierNotesEl('span', 'rapier-recording-controls'), quiet = _rapierNotesEl('span', 'rapier-recording-pair');
+	if (rows) quiet.append(_rapierRecorderKebab(rows));
+	quiet.append(speed, back, on); controls.append(quiet, play);
+	view.el.classList.add('rapier-recording-deck');
+	view.el.replaceChildren(_rapierRecorderSeekRail(view), view.time, controls);
+	_rapierRecorderPaintView(view);
+	return view.el;
+}
+function _rapierRecorderKebab(rows) {
+	const b = _rapierRecorderButton('', 'more'); b.classList.add('rapier-recording-icon', 'rapier-recording-kebab');
+	b.setAttribute('aria-label', 'More'); b.setAttribute('aria-haspopup', 'dialog'); b.append(_rapierNotesGlyph('kebab'));
+	b.addEventListener('click', e => {
+		e.preventDefault(); e.stopPropagation();
+		const R = _rapierRecorder; R.menu = rows().filter(Boolean);
+		if (!R.menu.length || !_rapierRecorderOwner()) return;
+		_rapierNotesNoteSheet('audio');
+	});
+	return b;
+}
+function _rapierRecorderMenuRows() { return (_rapierRecorder.menu || []).map(([word, icon]) => [word, icon]); }
+function _rapierRecorderMenuRow(index) { const R = _rapierRecorder, row = R.menu?.[index]; R.menu = null; if (row) Promise.resolve().then(row[2]).catch(error => showToast(String(error?.message || error), 'error')); }
+function _rapierRecorderLinkPlace() {
+	const R = _rapierRecorder, owner = _rapierRecorderOwner();
+	R.linkAt = null;
+	if (!R.sound?.audio || !owner || typeof _rapierPictureCaretTarget !== 'function' || typeof _pasteTargetWrapperFromRange !== 'function') return;
+	try {
+		const sel = getSelection(); if (!sel?.rangeCount || !sel.isCollapsed) return;
+		const range = sel.getRangeAt(0), wrapper = _pasteTargetWrapperFromRange(range), split = wrapper && _rapierPictureCaretTarget(range, wrapper)?.sourceSplit;
+		if (split && Number.isSafeInteger(split.start) && Number.isSafeInteger(split.point)) R.linkAt = {owner, at: split.start + split.point, source: _rapierSourceText()};
+	} catch (_) { R.linkAt = null; }
+}
+document.addEventListener('pointerdown', e => { if (e.target?.closest?.('#btn-notes-plus')) _rapierRecorderLinkPlace(); }, true);
+function _rapierRecorderLinkWords() {
+	const R = _rapierRecorder, s = R.sound;
+	if (!s?.audio || !_rapierRecorderOwner()) return '';
+	R.linkSeconds = Math.floor(s.audio.currentTime || 0);
+	return 'Link to ' + _rapierRecorderModel().durationWords(R.linkSeconds);
+}
+async function _rapierRecorderLinkNow() {
+	const R = _rapierRecorder, s = R.sound, place = R.linkAt, seconds = R.linkSeconds ?? Math.floor(s?.audio?.currentTime || 0);
+	R.linkAt = null;
+	if (!s) return;
+	if (!place) { _rapierRecorderStampNow({key: s.key, name: s.name}); return; }
+	const A = _rapierRecorderModel(), href = (s.key.startsWith('audio/') ? A.recordingHref(s.name) : globalThis.RapierNotesAttachments.attachmentHref(s.name)) + '#t=' + seconds;
+	try {
+		await _rapierRecorderEdit(place.owner, text => {
+			if (text !== place.source) throw new Error('The note changed before the link was added. Tap where it goes and try again.');
+			const before = text.slice(0, place.at), gap = before && !/\s$/.test(before) ? ' ' : '';
+			return before + gap + '[' + A.durationWords(seconds) + '](' + href + ')' + (/^\s/.test(text.slice(place.at)) ? '' : ' ') + text.slice(place.at);
+		});
+	} catch (error) { showToast(String(error?.message || error), 'error'); }
+}
 function _rapierRecorderPaintView(view) {
 	const A = _rapierRecorderModel(), audio = view.audio;
 	const total = view.duration ?? (Number.isFinite(audio?.duration) ? audio.duration : null);
@@ -488,7 +665,7 @@ function _rapierRecorderPaintView(view) {
 	const at = view.seeking ? Number(view.bar.value) || 0 : Math.min(Number.isFinite(audio?.currentTime) ? audio.currentTime : 0, total ?? Infinity);
 	if (view.playing !== playing) {
 		view.playing = playing;
-		view.play.replaceChildren(_rapierNotesIcon(RAPIER_RECORDER_GLYPHS[playing ? 'pause' : 'play']));
+		view.play.replaceChildren(view.outline ? _rapierRecorderLine(playing ? 'pause' : 'play') : _rapierNotesIcon(RAPIER_RECORDER_GLYPHS[playing ? 'pause' : 'play']));
 		view.play.setAttribute('aria-label', (playing ? 'Pause ' : 'Play ') + view.label);
 	}
 	const max = total > 0 ? total : 1;
@@ -500,15 +677,20 @@ function _rapierRecorderPaintView(view) {
 		if (view.bar.getAttribute(key) !== value) view.bar.setAttribute(key, value);
 	const words = A.durationWords(at) + ' / ' + A.durationWords(total);
 	if (view.time.textContent !== words) view.time.textContent = words;
+	if (view.speed) { const x = String(_rapierRecorderSpeed()).replace(/^0\./, '.') + '×'; if (view.speed.textContent !== x) { view.speed.textContent = x; view.speed.setAttribute('aria-label', 'Speed ' + _rapierRecorderSpeed() + ' times'); } }
+	if (view.sub) { const words = (view.note ? view.note + ' · ' : '') + A.durationWords(at) + ' / ' + A.durationWords(total); if (view.sub.textContent !== words) view.sub.textContent = words; }
+	if (view.line) view.line.style.setProperty('--played', (Math.min(1, at / max) * 100).toFixed(2) + '%');
+	if (view.seekEl) view.seekEl.style.setProperty('--p', Math.min(1, at / max).toFixed(4));
 	for (const element of [view.el, view.ui]) if (element && element.dataset.playing !== String(playing)) element.dataset.playing = String(playing);
 	view.onPaint?.();
 }
 function _rapierRecorderQuiet(except) {
 	const R = _rapierRecorder;
-	for (const view of [...R.players.values(), ...R.shelf, R.review, R.card]) if (view && view !== except) view.audio?.pause();
+	if (R.sound && R.sound.key !== except?.key) R.sound.audio?.pause();
+	if (R.review && R.review !== except) R.review.audio?.pause();
 }
 function _rapierRecorderCardButton(button, file, take) {
-	const view = _rapierRecorder.card, playing = !!view && view.file === file && view.name === take.name && !!view.audio && !view.audio.paused && !view.audio.ended;
+	const s = _rapierRecorder.sound, playing = !!s && s.key === 'audio/' + take.name && (!s.file || s.file === file) && !!s.audio && !s.audio.paused && !s.audio.ended;
 	button.dataset.label = take.label; button.dataset.playing = String(playing);
 	button.replaceChildren(_rapierNotesIcon(RAPIER_RECORDER_GLYPHS[playing ? 'pause' : 'play']));
 	button.setAttribute('aria-label', (playing ? 'Pause ' : 'Play ') + take.label);
@@ -525,8 +707,8 @@ function _rapierRecorderCardToggle(file, name) {
 	if (!R.card) {
 		const take = _rapierNotesRecordings(file).find(row => row.name === name);
 		if (!take) return;
-		R.card = _rapierRecorderView(take.label, () => _rapierNotesStore.readAudio(name), take.duration);
-		Object.assign(R.card, {file, name, onPaint: _rapierRecorderCardPaint});
+		R.card = _rapierRecorderView(take.label, () => _rapierNotesStore.readAudio(name), take.duration, 'audio/' + name);
+		Object.assign(R.card, {file, name});
 	}
 	void _rapierRecorderToggle(R.card);
 }
@@ -535,24 +717,162 @@ function _rapierRecorderCardClose() {
 	if (!view) return;
 	R.card = null; _rapierRecorderDrop(view); _rapierRecorderCardPaint();
 }
-function _rapierRecorderShelfView(name, seconds) { const view = _rapierRecorderView(name, () => _rapierNotesStore.readAudio(name), seconds); _rapierRecorder.shelf.add(view); return view; }
+function _rapierRecorderShelfView(name, seconds) { const view = Object.assign(_rapierRecorderView(name, () => _rapierNotesStore.readAudio(name), seconds, 'audio/' + name), {name}); _rapierRecorderDeck(view); _rapierRecorderShelfWatch(view); _rapierRecorder.shelf.add(view); return view; }
 function _rapierRecorderShelfClose() { const R = _rapierRecorder; for (const view of R.shelf) _rapierRecorderDrop(view); R.shelf.clear(); }
 async function _rapierRecorderToggle(view) {
 	try {
 		if (_rapierRecorder.speech) { showToast('Finish transcription before playing another recording', 'info'); return; }
 		const audio = await _rapierRecorderLoad(view);
-		if (!audio.paused && !audio.ended) { audio.pause(); return; }
+		if (!audio.paused && !audio.ended) { audio.pause(); if (view.key && view !== _rapierRecorder.bar?.view && _rapierRecorderInSight(view)) _rapierRecorder.sound.kept = false; return; }
 		_rapierRecorderQuiet(view);
+		if (view.key && _rapierRecorder.sound) _rapierRecorder.sound.kept = true;
 		if (audio.ended || view.duration > 0 && audio.currentTime >= view.duration - 0.05) audio.currentTime = 0;
 		await audio.play();
-	} catch (error) { if (!view.gone) showToast(String(error?.message || error), 'error'); }
+	} catch (error) { if (!view.gone || view.key) showToast(String(error?.message || error), 'error'); }
 }
 async function _rapierRecorderSeek(view, seconds) {
 	try { const audio = await _rapierRecorderLoad(view); audio.currentTime = seconds; _rapierRecorderPaintView(view); }
-	catch (error) { if (!view.gone) showToast(String(error?.message || error), 'error'); }
+	catch (error) { if (!view.gone || view.key) showToast(String(error?.message || error), 'error'); }
+}
+function _rapierRecorderShelfWatch(view) {
+	const R = _rapierRecorder;
+	if (!R.sight && typeof IntersectionObserver === 'function') {
+		R.inSight = new Set();
+		R.sight = new IntersectionObserver(entries => { for (const e of entries) { if (e.isIntersecting) R.inSight.add(e.target); else R.inSight.delete(e.target); } _rapierRecorderBarPaint(); });
+	}
+	R.sight?.observe(view.el);
+}
+function _rapierRecorderInSight(view) {
+	const R = _rapierRecorder, key = view?.key || R.sound?.key;
+	return !!key && _rapierRecorderViews().some(v => v !== R.bar?.view && v.key === key && v.el.isConnected && R.inSight?.has(v.el));
+}
+function _rapierRecorderBar() {
+	const R = _rapierRecorder;
+	if (R.bar) return R.bar;
+	const el = _rapierNotesEl('div', 'rapier-recording-row rapier-recording-now'); el.hidden = true;
+	el.setAttribute('role', 'region'); el.setAttribute('aria-label', 'Playing');
+	const view = _rapierRecorderView('the recording', () => R.sound?.source?.(), null, 'none');
+	const line = _rapierNotesEl('span', 'rapier-recording-line'), go = _rapierRecorderButton('', 'go'), close = _rapierRecorderControl('close', 'Stop and close the player');
+	const title = _rapierNotesEl('span', 'rapier-recording-title'), sub = _rapierNotesEl('span', 'rapier-recording-sub');
+	go.classList.add('rapier-recording-go'); go.append(title, sub);
+	close.append(_rapierNotesGlyph('close'));
+	go.addEventListener('click', () => void _rapierRecorderGoBack());
+	close.addEventListener('click', () => _rapierRecorderSoundClose());
+	const {back, on, play} = _rapierRecorderControls(view);
+	view.speed = null; view.line = line; view.sub = sub; view.titleEl = title;
+	back.classList.add('rapier-recording-wide'); on.classList.add('rapier-recording-wide');
+	el.append(line, go, back, on, play, close);
+	el.addEventListener('pointerdown', e => e.stopPropagation()); el.addEventListener('click', e => e.stopPropagation());
+	el.addEventListener('keydown', e => {
+		if (e.key === 'Tab' || e.key === 'Escape') return;
+		const control = e.target?.closest?.('[data-recording-act]');
+		if (control && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.stopPropagation(); control.click(); }
+	});
+	view.ui = el;
+	document.body.appendChild(el);
+	return R.bar = {el, view, go, title};
+}
+function _rapierRecorderBarPaint() {
+	const R = _rapierRecorder, s = R.sound;
+	const show = !!s?.audio && s.kept && !R.dialog?.open && !_rapierRecorderInSight();
+	if (!show && !R.bar) return;
+	const bar = _rapierRecorderBar(), view = bar.view;
+	if (s) {
+		const title = s.file ? String(s.file).replace(/\.md$/i, '').split('/').pop() : s.name;
+		if (view.key !== s.key) { view.key = s.key; view.playing = null; }
+		view.label = s.label; view.duration = s.duration; view.name = s.name;
+		const name = s.label && s.label !== 'the recording' ? s.label : s.name;
+		view.note = s.file ? title : '';
+		if (bar.title.textContent !== name) { bar.title.textContent = name; bar.go.setAttribute('aria-label', s.file ? 'Open ' + title : name); }
+		bar.go.disabled = !s.file;
+		_rapierRecorderPaintView(view);
+	}
+	if (show) {
+		const cards = _rapierNotes.open && !_rapierNotes.surface?.hidden ? _rapierNotes.surface.querySelector('.rapier-notes-head') : null;
+		const head = cards || document.querySelector('.top-bar'), top = Math.max(0, Math.round(head?.getBoundingClientRect().bottom || 0));
+		const layer = cards ? _rapierNotes.surface : document.body;
+		if (bar.el.parentElement !== layer) layer.appendChild(bar.el);
+		if (bar.top !== top) { bar.top = top; bar.el.style.setProperty('--rapier-now-top', top + 'px'); }
+	}
+	if (bar.el.hidden === show) {
+		bar.el.hidden = !show;
+		document.body.classList.toggle('rapier-recording-now-on', show);
+	}
+	if (show && bar.height !== bar.el.offsetHeight) { bar.height = bar.el.offsetHeight; document.body.style.setProperty('--rapier-now-h', bar.height + 'px'); }
+}
+async function _rapierRecorderGoBack() {
+	const R = _rapierRecorder, s = R.sound, state = _rapierNotes;
+	if (!s?.file) return;
+	const show = () => { const row = [...R.players.values()].find(p => p.key === s.key)?.ui || [..._rapierRecorder.attached].find(v => v.key === s.key && v.el.isConnected)?.el; row?.scrollIntoView({block: 'center'}); };
+	try {
+		if (state.mode && state.current === s.file) { show(); return; }
+		const id = state.index?.notes?.[s.file]?.id;
+		const opened = state.open || state.mode ? await _rapierNotesOpenNote(s.file) : id ? await _rapierNotesOpenById(id) : false;
+		if (opened !== false) requestAnimationFrame(() => requestAnimationFrame(show));
+	} catch (error) { showToast(String(error?.message || error), 'error'); }
+}
+function _rapierRecorderSession(s) {
+	const M = navigator.mediaSession;
+	if (!M) return;
+	const R = _rapierRecorder, act = fn => details => { const audio = R.sound?.audio; if (audio) fn(audio, details || {}); };
+	const handlers = s ? {
+		play: act(audio => { R.sound.kept = true; _rapierRecorderQuiet(R.bar?.view || {key: R.sound.key}); void audio.play().catch(() => {}); }),
+		pause: act(audio => audio.pause()),
+		stop: () => _rapierRecorderSoundClose(),
+		seekbackward: act((audio, d) => { audio.currentTime = Math.max(0, audio.currentTime - (d.seekOffset || 15)); }),
+		seekforward: act((audio, d) => { audio.currentTime = Math.min(Number.isFinite(audio.duration) ? audio.duration : Infinity, audio.currentTime + (d.seekOffset || 30)); }),
+		seekto: act((audio, d) => { if (Number.isFinite(d.seekTime)) { if (d.fastSeek && typeof audio.fastSeek === 'function') audio.fastSeek(d.seekTime); else audio.currentTime = d.seekTime; } }),
+	} : {};
+	for (const name of ['play', 'pause', 'stop', 'seekbackward', 'seekforward', 'seekto']) { try { M.setActionHandler(name, handlers[name] || null); } catch (_) {} }
+	try {
+		M.metadata = s && typeof MediaMetadata === 'function' ? new MediaMetadata({title: s.label && s.label !== 'the recording' ? s.label : s.name, artist: s.file ? String(s.file).replace(/\.md$/i, '').split('/').pop() : '', album: 'Rapier Notes'}) : null;
+		if (!s) M.playbackState = 'none';
+	} catch (_) {}
+}
+function _rapierRecorderSessionState() {
+	const M = navigator.mediaSession, audio = _rapierRecorder.sound?.audio;
+	if (!M || !audio) return;
+	try {
+		M.playbackState = audio.paused || audio.ended ? 'paused' : 'playing';
+		const duration = Number.isFinite(audio.duration) ? audio.duration : _rapierRecorder.sound.duration;
+		if (duration > 0 && typeof M.setPositionState === 'function') M.setPositionState({duration, playbackRate: audio.playbackRate || 1, position: Math.min(duration, Math.max(0, audio.currentTime || 0))});
+	} catch (_) {}
+}
+function _rapierRecorderHost(playing) {
+	const R = _rapierRecorder;
+	if (R.hostPlaying === playing) return;
+	R.hostPlaying = playing;
+	try { globalThis.RapierPlatform?.host?.mediaPlaying?.(playing); } catch (_) {}
+}
+function _rapierRecorderSaid() {
+	const R = _rapierRecorder, s = R.sound, host = document.getElementById('editor-blocks');
+	let block = null;
+	if (s?.audio && host && _rapierRecorderOwner() && (!s.file || s.file === _rapierNotes.current) && s.audio.currentTime > 0) {
+		const at = s.audio.currentTime;
+		let best = -1;
+		for (const link of host.querySelectorAll('.block-read a[href*="#t="]')) {
+			const m = /^(.*)#t=(\d+)$/.exec(link.getAttribute('href') || ''), k = m && _rapierRecorderKeyOf(m[1]);
+			if (!k || k.key !== s.key) continue;
+			const t = Number(m[2]);
+			if (t <= at && t >= best) { best = t; block = link.closest('.block-wrapper'); }
+		}
+	}
+	if (R.saidBlock === block) return;
+	R.saidBlock?.classList.remove('rapier-recording-said-now');
+	R.saidBlock = block; block?.classList.add('rapier-recording-said-now');
+}
+function _rapierRecorderFileView(name, label, rows = null) {
+	const R = _rapierRecorder, k = _rapierRecorderKeyOf(globalThis.RapierNotesAttachments.attachmentHref(name));
+	if (!k) return null;
+	const view = Object.assign(_rapierRecorderView(label || name, k.source, null, k.key), {name, file: _rapierNotes.current || ''});
+	const box = _rapierNotesEl('span', 'rapier-recording-file'); box.append(_rapierRecorderDeck(view, rows));
+	R.attached.add(view); _rapierRecorderShelfWatch(view);
+	return box;
 }
 function _rapierRecorderRelease(view) {
 	if (!view) return;
+	_rapierRecorder.sight?.unobserve(view.el); _rapierRecorder.inSight?.delete(view.el);
+	if (view.key) { view.playing = null; return; }
 	view.audio?.pause();
 	if (view.audio) { view.audio.removeAttribute('src'); view.audio.load(); }
 	if (view.url) URL.revokeObjectURL(view.url);
@@ -589,7 +909,7 @@ function _rapierRecorderClosePlayers() {
 	R.observer?.disconnect();
 	if (R.speech) { R.speech.cancelled = true; try { R.speech.recognition?.abort(); } catch (_) {} R.speech.cleanup?.(); R.speech = null; }
 	for (const p of R.players.values()) { _rapierRecorderDrop(p); p.link?.classList.remove('rapier-recording-link'); }
-	R.players.clear();
+	R.players.clear(); requestAnimationFrame(() => _rapierRecorderBarPaint());
 }
 function _rapierRecorderDrop(p) { p.gone = true; _rapierRecorderRelease(p); p.ui?.remove(); }
 async function _rapierRecorderDelete(p) {
@@ -618,7 +938,7 @@ function _rapierRecorderInit() {
 		if (!R.scan) R.scan = requestAnimationFrame(() => { R.scan = 0; _rapierRecorderScan(); });
 	});
 	R.observer.observe(host, {childList: true, subtree: true});
-	_rapierRecorderScan();
+	_rapierRecorderScan(); requestAnimationFrame(() => _rapierRecorderBarPaint());
 }
 function _rapierRecorderScan() {
 	const R = _rapierRecorder, A = _rapierRecorderModel(), host = document.getElementById('editor-blocks');
@@ -637,13 +957,13 @@ function _rapierRecorderScan() {
 			if (!p && loose.get(name)?.length) { p = loose.get(name).shift(); p.link = link; link.classList.add('rapier-recording-link'); link.after(p.ui); R.players.set(link, p); }
 			if (!p) {
 				const ui = _rapierNotesEl('span', 'rapier-recording-row'); ui.contentEditable = 'false'; ui.dataset.recordingName = name;
-				p = Object.assign(_rapierRecorderView(row.label || 'the recording', () => _rapierNotesStore.readAudio(name), row.duration), {row, link, ui, name});
-				const acts = _rapierNotesEl('span', 'rapier-recording-row-acts'), save = _rapierRecorderButton('Save', 'download'), remove = _rapierRecorderButton('Delete', 'delete');
-				save.setAttribute('aria-label', 'Save the audio file'); remove.setAttribute('aria-label', 'Delete the recording from this note');
-				acts.append(save);
-				if (_rapierRecorderLocalSpeech()) { const transcribe = _rapierRecorderButton('Transcribe', 'transcribe'); transcribe.addEventListener('click', () => void _rapierRecorderTranscribe(p)); acts.append(transcribe); }
-				acts.append(remove);
-				ui.append(p.el, acts); link.classList.add('rapier-recording-link'); link.after(ui);
+				p = Object.assign(_rapierRecorderView(row.label || 'the recording', () => _rapierNotesStore.readAudio(name), row.duration, 'audio/' + name), {row, link, ui, name, file: _rapierNotes.current || ''});
+				const I = RAPIER_NOTES_ICONS;
+				_rapierRecorderDeck(p, () => [
+					['Save', I.page, async () => { await _rapierRecorderLoad(p); _rapierRecorderDownload(p.blob, p.row.name); }],
+					_rapierRecorderLocalSpeech() ? ['Transcribe', I.mic, () => _rapierRecorderTranscribe(p)] : null,
+					['Delete', I.trash, () => _rapierRecorderDelete(p)]]);
+				ui.append(p.el); link.classList.add('rapier-recording-link'); link.after(ui);
 				ui.addEventListener('pointerdown', e => e.stopPropagation()); ui.addEventListener('click', e => { e.stopPropagation(); });
 				ui.addEventListener('keydown', e => {
 					if (e.key === 'Tab' || e.key === 'Escape') return;
@@ -651,12 +971,11 @@ function _rapierRecorderScan() {
 					e.stopPropagation();
 					if (control && (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar')) { e.preventDefault(); control.click(); }
 				});
-				save.addEventListener('click', async () => { try { await _rapierRecorderLoad(p); _rapierRecorderDownload(p.blob, p.row.name); } catch (error) { showToast(String(error?.message || error), 'error'); } });
-				remove.addEventListener('click', () => void _rapierRecorderDelete(p));
-				R.players.set(link, p);
+				R.players.set(link, p); _rapierRecorderShelfWatch(p);
 			}
 			p.row = row; p.duration = row.duration; seen.add(link); _rapierRecorderPaintView(p);
 		}
+		_rapierRecorderSaid();
 		for (const list of loose.values()) for (const p of list) _rapierRecorderDrop(p);
 		for (const [link, p] of R.players) if (!seen.has(link)) { _rapierRecorderDrop(p); link.classList.remove('rapier-recording-link'); R.players.delete(link); }
 	} finally { R.observer?.observe(host, {childList: true, subtree: true}); }
@@ -685,22 +1004,26 @@ async function _rapierRecorderTranscribe(p) {
 		const recognition = job.recognition = new C();
 		recognition.processLocally = true;
 		if (recognition.processLocally !== true) throw new Error(_rapierNotesWords().Device + ' could not guarantee on-device transcription');
-		recognition.lang = lang; recognition.continuous = true; recognition.interimResults = false;
+		recognition.lang = lang; recognition.continuous = true; recognition.interimResults = true;
 		job.cleanup = () => { audio.pause(); for (const t of stream.getTracks()) t.stop(); };
 		const words = await new Promise((resolve, reject) => {
-			const final = new Map(); let timer;
+			const final = new Map(), began = new Map(); let timer;
 			const endAudio = () => { recognition.stop(); };
 			const cleanup = () => { clearTimeout(timer); audio.removeEventListener('ended', endAudio); };
-			recognition.onresult = e => { for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) final.set(i, e.results[i][0].transcript); };
-			recognition.onerror = e => { cleanup(); const partial = [...final.values()].join(' ').trim(); if (partial) { showToast('Transcription stopped. Keeping the words recognized so far.', 'info'); resolve(partial); } else reject(new Error('On-device transcription stopped: ' + e.error)); };
-			recognition.onend = () => { cleanup(); resolve([...final.values()].join(' ').trim()); };
+			recognition.onresult = e => { for (let i = e.resultIndex; i < e.results.length; i++) {
+				if (!began.has(i)) began.set(i, Math.max(0, Math.floor(audio.currentTime - 1)));
+				if (e.results[i].isFinal) final.set(i, {at: began.get(i), text: e.results[i][0].transcript.trim()});
+			} };
+			const said = () => [...final.values()].filter(line => line.text);
+			recognition.onerror = e => { cleanup(); const partial = said(); if (partial.length) { showToast('Transcription stopped. Keeping the words recognized so far.', 'info'); resolve(partial); } else reject(new Error('On-device transcription stopped: ' + e.error)); };
+			recognition.onend = () => { cleanup(); resolve(said()); };
 			audio.addEventListener('ended', endAudio, {once: true});
 			timer = setTimeout(() => { recognition.abort(); }, Math.max(30000, ((p.row.duration || 600) + 30) * 1000));
 			try { recognition.start(track); audio.play().catch(error => { recognition.abort(); cleanup(); reject(error); }); } catch (error) { cleanup(); reject(error); }
 		});
 		if (job.cancelled) return;
-		if (!words) { showToast('No words were recognized', 'info'); return; }
-		R.transcript = {owner, name: p.row.name, raw: p.row.raw, line: p.row.line, words};
+		if (!words.length) { showToast('No words were recognized', 'info'); return; }
+		R.transcript = {owner, name: p.row.name, raw: p.row.raw, line: p.row.line, words: words.map(line => line.text).join(' '), lines: words};
 		await _rapierRecorderKeepTranscript();
 	} catch (error) { if (!job.cancelled) showToast(String(error?.message || error), 'error'); }
 	finally { job.cleanup?.(); if (R.speech === job) R.speech = null; }
@@ -713,7 +1036,8 @@ async function _rapierRecorderKeepTranscript() {
 			const matches = _rapierRecorderModel().recordingsOf(text).filter(r => r.name === draft.name && r.raw === draft.raw);
 			const row = matches.length === 1 ? matches[0] : matches.find(r => r.line === draft.line);
 			if (!row) throw new Error('The recording link changed. The recognized words are still here; restore the link and retry.');
-			const words = globalThis.RapierNotesImport.literalBlock(draft.words);
+			const I = globalThis.RapierNotesImport, A = _rapierRecorderModel();
+			const words = draft.lines?.length ? draft.lines.map(line => '[' + A.durationWords(line.at) + '](' + A.recordingHref(draft.name) + '#t=' + line.at + ') ' + I.literalBlock(line.text)).join('\n\n') : I.literalBlock(draft.words);
 			const end = text.indexOf('\n', row.end), at = end < 0 ? text.length : end;
 			const addition = '\n\n' + words + '\n';
 			if (text.slice(at, at + addition.length) === addition) return text;
@@ -832,5 +1156,5 @@ async function _rapierRecorderOfferDiscard(offer, row) {
 	}
 }
 window.addEventListener('beforeunload', e => { const R = _rapierRecorder; if (R.transcript || R.draft && !['idle', 'requesting'].includes(R.draft.phase)) { e.preventDefault(); e.returnValue = ''; } });
-window.addEventListener('pagehide', () => { _rapierRecorderStop(); _rapierRecorderClosePlayers(); });
-Object.defineProperty(globalThis, 'rapierRecordingFacts', {configurable: true, get: () => ({phase: _rapierRecorder.draft?.phase || 'closed', recorderState: _rapierRecorder.draft?.recorder?.state ?? null, name: _rapierRecorder.draft?.name || '', duration: _rapierRecorder.draft?.duration ?? null, bitrate: _rapierRecorder.draft?.bitrate ?? null, bytes: _rapierRecorder.draft?.blob?.size ?? _rapierRecorder.draft?.entry?.size ?? 0, streaming: !!(_rapierRecorder.draft?.session || _rapierRecorder.draft?.entry), saved: _rapierRecorder.draft?.saved ?? 0, level: _rapierRecorder.draft?.meter?.level ?? null, levelPeak: _rapierRecorder.draft?.meter?.peak ?? null, custody: _rapierRecorder.draft?.custody || '', entry: _rapierRecorder.draft?.entry ? {name: _rapierRecorder.draft.entry.name, state: _rapierRecorder.draft.entry.state, size: _rapierRecorder.draft.entry.size} : null, offers: (_rapierNotes.recordingOffers || []).length, recovery: !!_rapierRecorder.offers?.open, players: [..._rapierRecorder.players.values()].map(p => ({name: p.row.name, duration: p.row.duration, playing: !!p.audio && !p.audio.paused, ended: !!p.audio?.ended, at: p.audio?.currentTime ?? 0, url: p.url})), review: _rapierRecorder.review ? {playing: !!_rapierRecorder.review.audio && !_rapierRecorder.review.audio.paused && !_rapierRecorder.review.audio.ended, at: _rapierRecorder.review.audio?.currentTime ?? 0, duration: _rapierRecorder.review.duration} : null, card: _rapierRecorder.card ? {file: _rapierRecorder.card.file, name: _rapierRecorder.card.name, playing: !!_rapierRecorder.card.audio && !_rapierRecorder.card.audio.paused && !_rapierRecorder.card.audio.ended, at: _rapierRecorder.card.audio?.currentTime ?? 0} : null, localSpeech: !!_rapierRecorderLocalSpeech(), transcriptPending: !!_rapierRecorder.transcript})});
+window.addEventListener('pagehide', e => { _rapierRecorderStop(); _rapierRecorderClosePlayers(); if (!e.persisted) _rapierRecorderSoundClose(); });
+Object.defineProperty(globalThis, 'rapierRecordingFacts', {configurable: true, get: () => ({phase: _rapierRecorder.draft?.phase || 'closed', recorderState: _rapierRecorder.draft?.recorder?.state ?? null, name: _rapierRecorder.draft?.name || '', duration: _rapierRecorder.draft?.duration ?? null, bitrate: _rapierRecorder.draft?.bitrate ?? null, bytes: _rapierRecorder.draft?.blob?.size ?? _rapierRecorder.draft?.entry?.size ?? 0, streaming: !!(_rapierRecorder.draft?.session || _rapierRecorder.draft?.entry), saved: _rapierRecorder.draft?.saved ?? 0, level: _rapierRecorder.draft?.meter?.level ?? null, levelPeak: _rapierRecorder.draft?.meter?.peak ?? null, custody: _rapierRecorder.draft?.custody || '', entry: _rapierRecorder.draft?.entry ? {name: _rapierRecorder.draft.entry.name, state: _rapierRecorder.draft.entry.state, size: _rapierRecorder.draft.entry.size} : null, offers: (_rapierNotes.recordingOffers || []).length, recovery: !!_rapierRecorder.offers?.open, players: [..._rapierRecorder.players.values()].map(p => ({name: p.row.name, duration: p.row.duration, playing: !!p.audio && !p.audio.paused, ended: !!p.audio?.ended, at: p.audio?.currentTime ?? 0, url: p.url})), review: _rapierRecorder.review ? {playing: !!_rapierRecorder.review.audio && !_rapierRecorder.review.audio.paused && !_rapierRecorder.review.audio.ended, at: _rapierRecorder.review.audio?.currentTime ?? 0, duration: _rapierRecorder.review.duration} : null, card: _rapierRecorder.card ? {file: _rapierRecorder.card.file, name: _rapierRecorder.card.name, playing: !!_rapierRecorder.card.audio && !_rapierRecorder.card.audio.paused && !_rapierRecorder.card.audio.ended, at: _rapierRecorder.card.audio?.currentTime ?? 0} : null, localSpeech: !!_rapierRecorderLocalSpeech(), transcriptPending: !!_rapierRecorder.transcript, now: _rapierRecorder.sound ? {key: _rapierRecorder.sound.key, file: _rapierRecorder.sound.file, playing: !!_rapierRecorder.sound.audio && !_rapierRecorder.sound.audio.paused && !_rapierRecorder.sound.audio.ended, at: _rapierRecorder.sound.audio?.currentTime ?? 0, rate: _rapierRecorder.sound.audio?.playbackRate ?? null, url: _rapierRecorder.sound.url, bar: !!_rapierRecorder.bar && !_rapierRecorder.bar.el.hidden} : null})});

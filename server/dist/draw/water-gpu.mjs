@@ -73,6 +73,8 @@ const watchLoss=(device,reference)=>device.lost.then(info=>{const surface=refere
 const watchErrors=reference=>event=>{reference.deref()?._poison(event.error,'uncaptured');};
 
 let unfilteredTest=false;
+let waterFixName='';
+export function waterFix(name){waterFixName=['submit','inplace','copy'].includes(name)?name:'';}
 export function waterUnfilteredTest(on){if(on===unfilteredTest)return;unfilteredTest=on;deviceTask=null;}
 export const waterTiming={on:false,presents:0,gpu:0,gpuFrames:0,stamp:0,stampBuffers:0,stampSkipped:0};
 export function waterTimingOn(on){if(on===waterTiming.on)return;waterTiming.on=on;deviceTask=null;}
@@ -578,9 +580,10 @@ export class WaterGPU {
   const headroom=Math.max(1048576,Math.min(16*1048576,Math.floor((this.maxBytes-this.bytes+credit)/4)));
   this._reclaimScratch(w*h*16+headroom,credit);
   const room=this.maxBytes-this.bytes+credit-headroom;
-  if(w*h*16<=room){
-   this._inkTargets(w,h);this._pigmentPass(data,rect);
-   this.ink.write.forEach((t,i)=>this._copyRaw(t,this.ink.read[i],[0,0,w,h],rect));return;
+  if(w*h*16<=room||waterFixName==='inplace'){
+   try{this._inkTargets(w,h);}catch(error){if(error.code!=='WATER_BUDGET'||w*h*16<=room)throw error;}
+   if(this.ink.write.length){this._pigmentPass(data,rect);
+   this.ink.write.forEach((t,i)=>this._copyRaw(t,this.ink.read[i],[0,0,w,h],rect));return;}
   }
   const rows=Math.min(h,Math.floor(room/(w*32)));
   if(rows<1)this._reserve(w*32+headroom);
@@ -1079,8 +1082,11 @@ export class WaterGPU {
   const data=this._parameters();data.set([live?1:0,this.finish?1:0,this.paperScale,quick?1:0],48);data.set(live?this.light:WATER_FINISH_LIGHT,52);data.set([...this.paperOrigin,this.seed,this.height],56);
   data.set([this.params.granulation*.55*(p.tooth??1),.8,paper?1:white?3:2,flat?1:0],36);
   data.set([...linearHex(p.tint??'#ffffff'),1],40);data.set([...linearHex(p.fleck??'#665544'),p.mottle??.05],44);
-  const inputs=[...this.ink.read,...this.fixed,this.wet.read[0],this.paper,this.base??this.dummy,...(this.finish?[this.finish]:[])];
+  let copies=null;
+  if(waterFixName==='copy'){try{copies=this.ink.read.map(t=>{const c=this._texture(t.w,t.h,t.format);this._copy(t,c);return c;});}catch(error){copies?.forEach(t=>this._retire(t));copies=null;}}
+  const inputs=[...(copies??this.ink.read),...this.fixed,this.wet.read[0],this.paper,this.base??this.dummy,...(this.finish?[this.finish]:[])];
   this._display(inputs,data,box);
+  copies?.forEach(t=>this._retire(t));
   if(paper||white||flat)this.outputCanonical=false;else if(!box)this.outputCanonical=true;
   this.outputLight=lightMode;if(live)this.lightDirty=false;
   if(quick)this.outputQuick=true;else if(!box)this.outputQuick=false;
@@ -1090,6 +1096,7 @@ export class WaterGPU {
   const sorted=times.slice().sort((a,b)=>a-b);this.liveSlow=times.length>=4&&sorted[sorted.length>>1]>WATER_LIVE_SLOW_MS;
  }
  async present(texture,box=null,capture=null){
+  if(waterFixName==='submit'){this.submit();await this.device.queue.onSubmittedWorkDone();}
   this.render({box:this.outputCanonical?box:null,live:true});
   this._draw('present',{view:texture.createView(),w:this.width,h:this.height},[this.output]);
   this.submit();

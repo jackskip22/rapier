@@ -2913,6 +2913,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			get pinNote() { return method('pinNote'); },
 			get noteOpened() { return method('noteOpened'); },
 			get noteGone() { return method('noteGone'); },
+			get mediaPlaying() { return method('mediaPlaying'); },
 			get openSync() { return method('openSync'); },
 			get scheduleReminder() { return method('scheduleReminder'); },
 			get reminderState() { return method('reminderState'); },
@@ -3449,6 +3450,9 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			},
 			get noteGone() {
 				return _nativeCapability('notesPin') ? function (id) { _nativeHostNotify('notes.gone', {id: String(id)}); } : null;
+			},
+			get mediaPlaying() {
+				return _nativeCapability('mediaPlaying') ? function (playing) { _nativeHostNotify('media.playing', {playing: playing === true}); } : null;
 			},
 			get requestNotesRole() {
 				return _nativeCapability('notesRole') ? function () {

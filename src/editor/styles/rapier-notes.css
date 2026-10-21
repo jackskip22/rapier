@@ -357,6 +357,41 @@ body:has(.rapier-recording-docked[open]) #editor-blocks{margin-top:var(--find-ba
 .rapier-recording-row-acts [data-recording-act="delete"]{margin-inline-start:auto}
 .rapier-recording-time{font:var(--text-sm) var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
 .block-read a.rapier-recording-link{display:none}
+.rapier-recording-deck{display:flex;flex-direction:column;align-items:stretch;width:100%;padding-top:var(--space-2)}
+.rapier-recording-seek{--join:19px;--at:calc(16px + (100% - 32px) * var(--p,0));position:relative;display:block;height:36px}
+.rapier-recording-track{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
+.rapier-recording-track::before,.rapier-recording-track::after{content:'';position:absolute;top:50%;height:2px;transform:translateY(-50%)}
+.rapier-recording-track::before{left:16px;width:max(0px,calc(var(--at) - var(--join) - 16px));background:var(--color-text)}
+.rapier-recording-track::after{left:min(calc(100% - 16px),calc(var(--at) + var(--join)));right:16px;background:color-mix(in srgb,var(--color-text) 28%,transparent)}
+.rapier-recording-head{position:absolute;left:var(--at);top:50%;width:32px;height:32px;transform:translate(-50%,-50%);fill:none;stroke:var(--color-text);stroke-width:1.5;pointer-events:none;transition:fill 70ms linear}
+.rapier-recording-seek:has(>input[data-dragging]) .rapier-recording-head,.rapier-recording-seek:has(>input:focus-visible) .rapier-recording-head{fill:var(--color-text)}
+.rapier-recording-deck .rapier-recording-seek>.rapier-recording-bar{position:absolute;left:0;right:0;top:-6px;width:100%;height:48px;margin:0;opacity:0;cursor:pointer}
+.rapier-recording-deck .rapier-recording-bar::-webkit-slider-runnable-track{height:48px;background:transparent}
+.rapier-recording-deck .rapier-recording-bar::-webkit-slider-thumb{-webkit-appearance:none;width:32px;height:48px;margin:0;border:0;background:transparent}
+.rapier-recording-deck .rapier-recording-bar::-moz-range-track{height:48px;background:transparent;border:0}
+.rapier-recording-deck .rapier-recording-bar::-moz-range-thumb{width:32px;height:48px;border:0;background:transparent}
+.rapier-recording-deck .rapier-recording-time{display:block;margin-top:9px;font:400 clamp(14.4px,3.2vw,18px)/1 var(--font-mono);letter-spacing:.025em;color:var(--color-text)}
+.rapier-recording-controls{display:flex;align-items:center;justify-content:space-between;width:100%;margin-top:4px}
+.rapier-recording-pair{display:flex;align-items:center;gap:4px;margin-inline-start:-13px}
+.rapier-recording-icon.rapier-notes-btn{width:44px;min-width:44px;height:52px;padding:0;margin:0;color:var(--color-text)}
+.rapier-recording-icon svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round}
+.rapier-recording-deck .rapier-recording-play.rapier-notes-btn{width:64px;min-width:64px;height:72px;padding:0;margin:0 -10px 0 0;color:var(--color-text)}
+.rapier-recording-deck .rapier-recording-play svg,.rapier-recording-now .rapier-recording-play svg{width:56px;height:56px;fill:none;stroke:currentColor;stroke-width:1.25;stroke-linecap:round;stroke-linejoin:round}
+.rapier-recording-speed.rapier-notes-btn{min-width:44px;height:52px;padding:0 var(--space-1);color:var(--color-text);font:400 clamp(14.4px,3.2vw,18px)/1 var(--font-mono);letter-spacing:.025em;text-transform:none}
+.rapier-recording-row.rapier-recording-now{position:fixed;left:0;right:0;top:var(--rapier-now-top,calc(56px + env(safe-area-inset-top,0px)));z-index:19;margin:0;padding-left:calc(var(--space-3) + env(safe-area-inset-left,0px));padding-right:calc(var(--space-2) + env(safe-area-inset-right,0px))}
+.rapier-notes-surface>.rapier-recording-now{z-index:5}
+.rapier-recording-row.rapier-recording-now{flex-direction:row;align-items:center;gap:0;min-height:66px;padding-top:2px;padding-bottom:0}
+.rapier-recording-line{position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(to right,var(--color-text) var(--played,0%),color-mix(in srgb,var(--color-text) 28%,transparent) var(--played,0%));pointer-events:none}
+.rapier-recording-now .rapier-recording-go.rapier-notes-btn{flex:1 1 auto;min-width:0;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;padding:0 var(--space-2) 0 0;text-transform:none;letter-spacing:0}
+.rapier-recording-title{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:var(--fw-semibold) var(--text-sm)/1.2 var(--font-sans)}
+.rapier-recording-sub{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:400 13px/1.2 var(--font-mono);letter-spacing:.025em;color:var(--color-text)}
+.rapier-recording-now .rapier-recording-icon.rapier-notes-btn,.rapier-recording-now .rapier-recording-play.rapier-notes-btn{width:44px;min-width:44px;height:44px;margin:0;padding:0}
+.rapier-recording-now .rapier-recording-play svg{width:28px;height:28px;stroke-width:1.65}
+.rapier-recording-now .rapier-recording-icon svg{width:26px;height:26px}
+.rapier-recording-now .rapier-recording-wide{display:none}
+@media (min-width:600px){.rapier-recording-now .rapier-recording-wide.rapier-notes-btn{display:inline-flex}}
+body.rapier-recording-now-on #editor-blocks,body.rapier-recording-now-on .rapier-notes-scroll{margin-top:var(--rapier-now-h,0px)}
+.block-wrapper.rapier-recording-said-now>.block-read{background:color-mix(in srgb,var(--color-accent) 35%,transparent)}
 
 .rapier-recording-words{box-sizing:border-box;width:100%;min-height:132px;padding:12px;background:var(--color-bg);color:var(--color-text);border:0;font:inherit;resize:vertical}
 
@@ -466,6 +501,7 @@ body{--rapier-app-surface:var(--color-surface);--rapier-app-surface-2:var(--colo
 .rapier-attachment-heading{margin-top:var(--space-5);font:var(--fw-semibold) var(--text-xs) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase}
 .rapier-attachment-row .rapier-recording-player .rapier-notes-btn{padding:0}
 .rapier-attachment-row .rapier-attachment-apart{margin-inline-start:auto}
+.rapier-attachment-row .rapier-recording-file,.rapier-attachment-row>.rapier-recording-deck{display:flex;flex-direction:column;flex:1 0 100%;min-width:0}
 .rapier-attachment-sheet::backdrop{background:var(--color-scrim,rgba(12,12,12,.8))}
 .rapier-attachment-sheet .rapier-notes-sheet-name{white-space:normal;overflow-wrap:anywhere}
 .rapier-attachment-sheet button:focus-visible,.rapier-attachment-row button:focus-visible{outline:none}

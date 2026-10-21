@@ -251,8 +251,9 @@ export function createTypography({normalizeFontFamily, fontFamilyCss, FONT_STACK
 		if (md.__rapierTypography) return md;
 		md.__rapierTypography = true;
 		md.core.ruler.after('linkify', 'rapier-typography', state => {
-			for (const block of state.tokens) {
-				if (block.type !== 'inline' || !block.children) continue;
+			for (let at = 0; at < state.tokens.length; at++) {
+				const block = state.tokens[at];
+				if (block.type !== 'inline' || !block.children || block.content.indexOf('<') < 0) continue;
 				const stack = []; let depth = 0, overflow = 0;
 				for (const token of block.children) {
 					if (token.type !== 'html_inline') { depth += token.nesting || 0; continue; }

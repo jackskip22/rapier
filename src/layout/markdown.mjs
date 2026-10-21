@@ -19,6 +19,7 @@ function validTargetLayout(value, imageOnly, listMarker = false, paragraph = tru
 const whitespaceToken = token => token.type === 'text' && !token.content.trim();
 
 function malformedText(inline) {
+  if ((inline.content || '').indexOf('<!--') < 0) return false;
   if (!(inline.children || []).some(token => token.type === 'text' && /<!--[ \t]*md-layout(?=[: \t-]|$)/i.test(token.content))) return false;
   const source = inline.content || '', pattern = /<!--[ \t]*md-layout(?=[: \t-]|$)/ig;
   for (let match; (match = pattern.exec(source));) {
@@ -32,27 +33,35 @@ function malformedText(inline) {
 
 function inspectInline(inline, paragraph, listMarker) {
   const children = inline.children || [];
-  const candidates = children.filter(token => token.type === 'html_inline' && family.test(token.content));
+  let candidates = 0, markerToken = null;
+  for (const token of children) {
+    if (token.type === 'html_inline' && family.test(token.content)) { candidates++; markerToken = token; }
+  }
+  if (candidates !== 1) markerToken = null;
   let tail = children.length - 1;
   while (tail >= 0 && whitespaceToken(children[tail])) tail--;
-  const markerToken = candidates.length === 1 ? candidates[0] : null;
   const marker = markerToken?.content || '';
   const parsed = marker ? parseLayout(marker) : null;
   let reason;
-  if (candidates.length > 1) reason = 'duplicate_layout';
+  if (candidates > 1) reason = 'duplicate_layout';
   else if (markerToken && !parsed) reason = 'invalid_layout';
   else if (markerToken && (children[tail] !== markerToken || !inline.content.trimEnd().endsWith(marker))) reason = 'non_tail_layout';
   else if (malformedText(inline)) reason = 'malformed_layout';
-  const visible = children.filter(token => token !== markerToken && !whitespaceToken(token) && token.type !== 'softbreak');
-  const images = visible.filter(token => token.type === 'image');
-  const imageOnly = paragraph && images.length === 1 && (visible.length === 1 ||
-    visible.length === 3 && visible[0].type === 'link_open' && visible[1].type === 'image' && visible[2].type === 'link_close');
+  let visibleCount = 0, imageCount = 0, image = null;
+  const first = [];
+  for (const token of children) {
+    if (token === markerToken || token.type === 'softbreak' || whitespaceToken(token)) continue;
+    if (visibleCount++ < 3) first.push(token);
+    if (token.type === 'image' && !imageCount++) image = token;
+  }
+  const imageOnly = paragraph && imageCount === 1 && (visibleCount === 1 ||
+    visibleCount === 3 && first[0].type === 'link_open' && first[1].type === 'image' && first[2].type === 'link_close');
   if (!reason && parsed && !validTargetLayout(parsed, imageOnly, listMarker, paragraph)) {
     reason = Object.hasOwn(parsed, 'marker') && !listMarker ? 'marker_outside_list' :
       imageOnly ? 'invalid_image_alignment' : !paragraph && ['lines', 'hyphens', 'caps', 'hanging'].some(key => Object.hasOwn(parsed, key)) ?
         'prose_layout_on_heading' : 'image_layout_on_prose';
   }
-  return {layout: !reason && parsed ? parsed : {}, marker, markerToken, imageOnly, listMarker, image: imageOnly ? images[0] : null, reason};
+  return {layout: !reason && parsed ? parsed : {}, marker, markerToken, imageOnly, listMarker, image: imageOnly ? image : null, reason};
 }
 
 function lineStarts(source) {

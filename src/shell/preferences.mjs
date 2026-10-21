@@ -38,4 +38,5 @@ export const PREFERENCE_DEFINITIONS = Object.freeze({
 	notesSort:      Object.freeze({ key: 'rapier:preference:notes-sort', fallback: 'custom', values: Object.freeze(['custom', 'created', 'modified']) }),
 	notesLayout:    Object.freeze({ key: 'rapier:preference:notes-layout', fallback: 'half', values: Object.freeze(['half', 'full']) }),
 	notesColour:    Object.freeze({ key: 'rapier:preference:notes-colour', fallback: 'bar', values: Object.freeze(['bar', 'page']) }),
+	audioSpeed:     Object.freeze({ key: 'rapier:preference:audio-speed', fallback: '1', values: Object.freeze(['0.75', '1', '1.25', '1.5', '2']), agent: false }),
 });

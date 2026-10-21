@@ -476,7 +476,7 @@ const shakenExports = {};
 const VENDOR_GROUPS = {
   'lib-dompurify': ['dompurify-3.4.16.dist.purify.min.js'],
   'lib-turndown': ['turndown-7.2.4.lib.turndown.browser.umd.js'],
-  'lib-markdownit': ['markdown-it-15.0.2.umd.min.js', 'markdown-it-task-lists-2.1.1.min.js', 'markdown-it-footnote-4.0.0.min.js',
+  'lib-markdownit': ['markdown-it-15.0.2.es2022.umd.js', 'markdown-it-task-lists-2.1.1.min.js', 'markdown-it-footnote-4.0.0.min.js',
     'markdown-it-mark-4.0.0.min.js', 'markdown-it-sup-2.0.0.min.js', 'markdown-it-emoji-3.1.0-light.min.js',
     'markdown-it-abbr-2.0.0.min.js', 'markdown-it-ins-4.0.0.min.js', 'markdown-it-deflist-4.0.0.min.js'],
   'lib-gpu-lexer': ['gpu-lexer-0.0.1.js'],

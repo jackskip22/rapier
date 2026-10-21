@@ -12,7 +12,7 @@ import {createPersonalOwner, admitPersonal, mergePersonal} from '../notes/person
 import {editorRequest, editorNeedsTap, editorResult} from '../agent/editor.mjs';
 import {TOOLS} from '../agent/catalog.mjs';
 const context = vm.createContext({atob, btoa});
-for (const name of ['markdown-it-15.0.2.umd.min', 'markdown-it-task-lists-2.1.1.min', 'markdown-it-footnote-4.0.0.min', 'markdown-it-mark-4.0.0.min', 'markdown-it-sup-2.0.0.min', 'markdown-it-emoji-3.1.0-light.min', 'markdown-it-abbr-2.0.0.min', 'markdown-it-ins-4.0.0.min', 'markdown-it-deflist-4.0.0.min'])
+for (const name of ['markdown-it-15.0.2.es2022.umd', 'markdown-it-task-lists-2.1.1.min', 'markdown-it-footnote-4.0.0.min', 'markdown-it-mark-4.0.0.min', 'markdown-it-sup-2.0.0.min', 'markdown-it-emoji-3.1.0-light.min', 'markdown-it-abbr-2.0.0.min', 'markdown-it-ins-4.0.0.min', 'markdown-it-deflist-4.0.0.min'])
   vm.runInContext(readFileSync(new URL('../shell/vendor/' + name + '.js', import.meta.url), 'utf8'), context);
 const md = applyMarkdownSpec(context.markdownit({html: true}), context); installMarkdownImages(md);
 const sample = () => ({version: 1, id: 'p' + 'a'.repeat(24), name: 'My passage', content: {scope: 'selection', text: '\ufeffA\r\n\r\n**B**\r\n'}});

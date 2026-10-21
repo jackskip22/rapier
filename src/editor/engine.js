@@ -5320,13 +5320,21 @@ function _updateBlockInteractiveState(wrapper, readDiv) {
 function _rapierRawEditorReason(raw, referenceIndex = null) {
 	let value = String(raw || '');
 	if (_rapierBlockRenderBudgetExceeded(value)) return 'block-chars-limit';
+	let parsedValue = null, parsedValueTokens = null;
+	const parseValue = source => {
+		if (source !== parsedValue) {
+			parsedValueTokens = md.parse(source, _rapierMarkdownEnvironment(referenceIndex || rapier.semantic.references));
+			parsedValue = source;
+		}
+		return parsedValueTokens;
+	};
 
 	const inkSpec = globalThis.RapierMarkdownSpec;
 	const inkMarkers = inkSpec && value.includes('<!--') ? inkSpec.scanInkMarkers(value) : [];
 	if (inkMarkers.length) {
 		let parsed = 0;
 		try {
-			for (const token of md.parse(value, _rapierMarkdownEnvironment(referenceIndex || rapier.semantic.references))) {
+			for (const token of parseValue(value)) {
 				if (token.type !== 'inline') continue;
 				for (const child of token.children || []) if (child.type === 'rapier_ink_open' || child.type === 'rapier_ink_close') parsed++;
 			}
@@ -5359,7 +5367,7 @@ function _rapierRawEditorReason(raw, referenceIndex = null) {
 		try {
 			const tags = [];
 			const collect = rows => (rows || []).forEach(token => { if (token.type === 'html_inline') tags.push(token.content); else collect(token.children); });
-			collect(md.parse(value, _rapierMarkdownEnvironment(referenceIndex || rapier.semantic.references)));
+			collect(parseValue(value));
 			const pairs = [...Object.keys(RAPIER_HIGHLIGHT_HEX).map(colour => [highlightOpen(colour), '</mark>']),
 				['<u>', '</u>'], ['<sub>', '</sub>'], ['<sup>', '</sup>']];
 			const escape = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -5379,7 +5387,7 @@ function _rapierRawEditorReason(raw, referenceIndex = null) {
 		if (md && typeof md.parse === 'function') {
 			try {
 				const markerRe = /^<!--(?:c (?:#[0-9a-f]{6}|green|red|blue|gold|purple)|\/c)-->$/;
-				const tokens = md.parse(value, _rapierMarkdownEnvironment(referenceIndex || rapier.semantic.references));
+				const tokens = parseValue(value);
 				inert = tokens.some(token => (token.type === 'html_block' && colorMarkerAnywhere.test(token.content)) ||
 					(token.type === 'inline' && Array.isArray(token.children) &&
 						token.children.some(child => child.type === 'html_inline' && markerRe.test(child.content))));
@@ -5402,7 +5410,7 @@ function _rapierRawEditorReason(raw, referenceIndex = null) {
 			sourceTokens = null;
 			return sourceTokens;
 		}
-		try { sourceTokens = md.parse(value, _rapierMarkdownEnvironment(referenceIndex || rapier.semantic.references)); }
+		try { sourceTokens = parseValue(value); }
 		catch (_) { sourceParseFailed = true; sourceTokens = null; }
 		return sourceTokens;
 	};
@@ -22005,8 +22013,9 @@ function _rapierReconcileMarkdownEditRaw(previousRaw, editedRaw, tildeSource = p
 	let edited = String(editedRaw == null ? '' : editedRaw);
 	if (rapier?.document?.docKind !== 'markdown') return edited;
 	const source = _rapierNormalizeSourceNewlines(String(tildeSource ?? ''));
+	const rendered = new Map(), render = raw => rendered.get(raw) ?? rendered.set(raw, md.render(raw, _rapierMarkdownEnvironment())).get(raw);
 	const kept = _rapierKeepSourceTildes(source, edited);
-	if (kept !== edited && md && md.render(kept, _rapierMarkdownEnvironment()) === md.render(edited, _rapierMarkdownEnvironment())) edited = kept;
+	if (kept !== edited && md && render(kept) === render(edited)) edited = kept;
 	{
 		let head = 0, tail = 0;
 		while (head < source.length && head < edited.length && source[head] === edited[head]) head++;
@@ -22018,7 +22027,7 @@ function _rapierReconcileMarkdownEditRaw(previousRaw, editedRaw, tildeSource = p
 		const marks = new Set(), walk = tokens => { for (const token of tokens || []) { if (token.type === 's_open') marks.add(token.markup); walk(token.children); } };
 		walk(md.parse(source, _rapierMarkdownEnvironment()));
 		const single = marks.size === 1 && marks.has('~') ? edited.replace(/(^|[^~\\])~~(?=[^~\s])([^\n]*?[^~\s\\])~~(?!~)/g, '$1~$2~') : edited;
-		if (single !== edited && md.render(single, _rapierMarkdownEnvironment()) === md.render(edited, _rapierMarkdownEnvironment())) edited = single;
+		if (single !== edited && render(single) === render(edited)) edited = single;
 	}
 	if (md && source && edited && source !== edited && source.length + edited.length <= 131072) {
 		const plain = raw => {
@@ -22040,7 +22049,7 @@ function _rapierReconcileMarkdownEditRaw(previousRaw, editedRaw, tildeSource = p
 			b = to + length;
 		}
 		spelled += edited.slice(now.at[b], now.at[now.text.length]);
-		const reads = raw => md.render(raw, _rapierMarkdownEnvironment())
+		const reads = raw => render(raw)
 			.replace(/<span class="rapier-source-token rapier-source-token--escape" data-rapier-source="[^"]*" data-rapier-visible="[^"]*">([^<]*)<\/span>/g, '$1');
 		if (spelled !== edited && reads(spelled) === reads(edited) && _rapierInkStrays(spelled) <= _rapierInkStrays(edited)) edited = spelled;
 	}

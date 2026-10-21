@@ -1,6 +1,7 @@
 import {createMathMatcher} from '../math/delimiters.mjs';
 import {SPACING_TYPES, SPACING_PRESETS, PAGE_SIZES, documentSpacing, documentSpacingCss, wordDocumentSettings} from '../spec/document-settings.mjs';
 import {installMathRules} from '../math/markdown-rules.mjs';
+import {tuneMarkdownEngine} from '../spec/md-engine.mjs';
 import {splitOpeningFrontmatter as _rapierSplitOpeningFrontmatter} from '../spec/frontmatter.mjs';
 import {readDocumentSettings as _rapierReadDocumentSettings, updateDocumentSettings as _rapierUpdateDocumentSettings, DOCUMENT_LEADING as RAPIER_DOCUMENT_LEADING, documentTitle as _rapierDocumentTitle, documentLanguage as _rapierDocumentLanguage, documentSettingsStyle as _rapierDocumentSettingsStyle, documentSettingsPageRule as _rapierDocumentSettingsPageRule,
 	documentFont as _rapierDocumentFont, writeDocumentFontSetting as _rapierWriteDocumentFontSetting} from '../spec/document-settings.mjs';
@@ -69,6 +70,80 @@ const RAPIER_MARKDOWN_SPEC = Object.freeze({
 	rules: Object.freeze({ mathBlock: 'temml_math_block' }),
 });
 
+const _rapierLinkifyCandidate = {names: null, pattern: null};
+function _rapierLinkifyText(state) {
+	const md = state.md;
+	if (!md.options.linkify) return;
+	const names = md.linkify.re.get_schema_names();
+	if (_rapierLinkifyCandidate.names !== names) {
+		_rapierLinkifyCandidate.names = names;
+		_rapierLinkifyCandidate.pattern = new RegExp(names.source + '|@|\\.[^ \\t\\n\\v\\f\\r]', 'i');
+	}
+	const candidate = _rapierLinkifyCandidate.pattern;
+	for (let at = 0; at < state.tokens.length; at++) {
+		const block = state.tokens[at];
+		if (block.type !== 'inline' || !candidate.test(block.content)) continue;
+		const children = block.children;
+		const source = block.content;
+		let htmlDepth = 0, wholeSource, changes;
+		for (let index = children.length - 1; index >= 0; index--) {
+			const child = children[index];
+			if (child.type === 'link_close') {
+				index--;
+				while (children[index].level !== child.level && children[index].type !== 'link_open') index--;
+				continue;
+			}
+			if (child.type === 'html_inline') {
+				if (/^<a[>\s]/i.test(child.content) && htmlDepth > 0) htmlDepth--;
+				if (/^<\/a\s*>/i.test(child.content)) htmlDepth++;
+			}
+			if (htmlDepth || child.type !== 'text' || !candidate.test(child.content)) continue;
+			let matches = md.linkify.match(child.content);
+			if (!matches?.length) continue;
+			wholeSource ??= md.linkify.test(source);
+			if (!wholeSource) break;
+			if (matches[0].index === 0 && index > 0 && children[index - 1].type === 'text_special') matches = matches.slice(1);
+			const replacement = [];
+			let position = 0, level = child.level;
+			const textToken = text => {
+				const token = new state.Token('text', '', 0);
+				token.content = text; token.level = level; replacement.push(token);
+			};
+			for (const match of matches) {
+				const destination = md.normalizeLink(match.url);
+				if (!md.validateLink(destination)) continue;
+				if (match.index > position) textToken(child.content.slice(position, match.index));
+				const open = new state.Token('link_open', 'a', 1);
+				open.attrs = [['href', destination]]; open.level = level++;
+				open.markup = 'linkify'; open.info = 'auto'; replacement.push(open);
+				let label;
+				if (!match.schema) label = md.normalizeLinkText('http://' + match.text).replace(/^http:\/\//, '');
+				else if (match.schema === 'mailto:' && !/^mailto:/i.test(match.text)) label = md.normalizeLinkText('mailto:' + match.text).replace(/^mailto:/, '');
+				else label = md.normalizeLinkText(match.text);
+				textToken(label);
+				const close = new state.Token('link_close', 'a', -1);
+				close.level = --level; close.markup = 'linkify'; close.info = 'auto'; replacement.push(close);
+				position = match.lastIndex;
+			}
+			if (position < child.content.length) textToken(child.content.slice(position));
+			(changes ||= []).push({index, tokens: replacement});
+		}
+		if (changes) {
+			const result = [];
+			let next = changes.length - 1;
+			for (let index = 0; index < children.length; index++) {
+				const change = changes[next];
+				if (change?.index === index) {
+					for (const token of change.tokens) result.push(token);
+					next--;
+				}
+				else result.push(children[index]);
+			}
+			block.children = result;
+		}
+	}
+}
+
 function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 	const pluginSpecs = Array.from(spec.plugins || []);
 	const missing = pluginSpecs
@@ -82,6 +157,7 @@ function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 		throw new Error('Markdown core ruler unavailable');
 	}
 
+	tuneMarkdownEngine(instance);
 	for (const pluginSpec of pluginSpecs) {
 		const plugin = root[pluginSpec.global];
 		if (pluginSpec.options) instance.use(plugin, pluginSpec.options);
@@ -115,16 +191,18 @@ function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 		return strikeRule(state, silent);
 	});
 	instance.inline.ruler2.after('strikethrough', 'rapier-single-tilde', function rapierSingleTilde(state) {
-		for (const delimiters of [state.delimiters, ...state.tokens_meta.map(meta => meta && meta.delimiters)]) {
+		const retype = delimiters => {
 			for (const open of delimiters || []) {
 				if (open.marker !== SINGLE || open.end < 0) continue;
 				for (const [at, type, nesting] of [[open.token, 's_open', 1], [delimiters[open.end].token, 's_close', -1]])
 					Object.assign(state.tokens[at], {type, tag: 's', nesting, markup: '~', content: ''});
 			}
-		}
+		};
+		retype(state.delimiters);
+		for (const meta of state.tokens_meta) if (meta) retype(meta.delimiters);
 	});
 	const render = instance.renderer.render;
-	instance.renderer.rapierTransformHtml = html => html.replace(
+	instance.renderer.rapierTransformHtml = html => html.indexOf('[!') < 0 ? html : html.replace(
 			/<blockquote>\s*(<p(?:\s[^>]*)?>)\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION|DANGER|INFO)\]\s*(?:<br\s*\/?>)?\s*/gi,
 			(_match, paragraph, value) => {
 				const type = value.toLowerCase(), icons = spec.callouts;
@@ -142,7 +220,8 @@ function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 		const taskLists = instance.core.ruler.__rules__.find(rule => rule.name === 'github-task-lists').fn;
 		instance.core.ruler.at('github-task-lists', function rapierTaskLists(state) {
 			const stranded = [], levels = new Set();
-			for (const token of state.tokens) {
+			for (let at = 0; at < state.tokens.length; at++) {
+				const token = state.tokens[at];
 				if (token.type === 'list_item_open' && !levels.has(token.level - 1)) stranded.push(token);
 				levels.add(token.level);
 			}
@@ -151,8 +230,10 @@ function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 		});
 		instance.core.ruler.after('github-task-lists', 'rapier-empty-task-lists', function rapierEmptyTaskLists(state) {
 			const tokens = state.tokens || [];
-			for (const token of tokens) {
+			for (let index = 0; index < tokens.length; index++) {
+				const token = tokens[index];
 				if (token?.type !== 'inline' || !Array.isArray(token.children)) continue;
+				if (tokens[index - 2]?.type !== 'list_item_open' && !token.content.includes('"type="checkbox"')) continue;
 				for (const child of token.children) {
 					if (child?.type === 'html_inline' && typeof child.content === 'string' &&
 							child.content.includes('"type="checkbox"')) {
@@ -183,6 +264,7 @@ function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 				const paragraph = tokens[index - 1];
 				const item = tokens[index - 2];
 				if (inline?.type !== 'inline' || paragraph?.type !== 'paragraph_open' || item?.type !== 'list_item_open') continue;
+				if (inline.content?.length !== 3) continue;
 				if (!/^\[(?: |x|X)\]$/.test(inline.content || '')) continue;
 				if (!Array.isArray(inline.children) || inline.children.length !== 1 || inline.children[0].type !== 'text') continue;
 				const checked = inline.content[1] === 'x' || inline.content[1] === 'X';
@@ -248,8 +330,9 @@ function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 		}
 		rapierTypography.install(instance);
 		instance.core.ruler.after('rapier-typography', 'rapier-ink', function rapierInkPairs(state) {
-			for (const blockToken of state.tokens) {
-				if (blockToken.type !== 'inline' || !Array.isArray(blockToken.children)) continue;
+			for (let at = 0; at < state.tokens.length; at++) {
+				const blockToken = state.tokens[at];
+				if (blockToken.type !== 'inline' || !Array.isArray(blockToken.children) || blockToken.content.indexOf('<') < 0) continue;
 				const children = blockToken.children;
 				const stack = [];
 				let depth = 0;
@@ -282,7 +365,8 @@ function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 	}
 	{
 		instance.core.ruler.after('block', 'rapier-page-break', function rapierPageBreak(state) {
-			for (const token of state.tokens) {
+			for (let at = 0; at < state.tokens.length; at++) {
+				const token = state.tokens[at];
 				if (token.type !== 'html_block' || !rapierIsPageBreakBlock(token.content)) continue;
 				token.type = 'rapier_break';
 				token.tag = 'div';
@@ -291,7 +375,8 @@ function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 		});
 	}
 	instance.core.ruler.after('block', 'rapier-fence-boundaries', function rapierFenceBoundaries(state) {
-		for (const token of state.tokens) {
+		for (let at = 0; at < state.tokens.length; at++) {
+			const token = state.tokens[at];
 			if (token.type !== 'fence' || !token.map) continue;
 			const body = token.content;
 			let lines = body && !body.endsWith('\n') ? 1 : 0;
@@ -302,16 +387,7 @@ function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 	if (spec.linkify) {
 		const linkify = instance.linkify;
 		linkify.set(spec.linkify);
-		const fuzzyCandidate = /@|\.[^ \t\n\v\f\r]/;
-		const nativeTest = linkify.test;
-		linkify.test = function (source) {
-			if (!fuzzyCandidate.test(source)) {
-				const schema = this.re.get_schema_search();
-				schema.lastIndex = 0;
-				if (!schema.test(source)) return false;
-			}
-			return nativeTest.call(this, source);
-		};
+		instance.core.ruler.at('linkify', _rapierLinkifyText);
 		const allowedStart = (source, index) => index === 0 || /[ \t\n\v\f\r*_~(]/.test(source[index - 1]);
 		linkify.add('www.', {
 			validate(source, start) {
@@ -384,9 +460,10 @@ function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 				token.content = token.content.replace(disallowedTag, tag => '&lt;' + tag.slice(1));
 			}
 		};
-		for (const token of state.tokens) {
+		for (let at = 0; at < state.tokens.length; at++) {
+			const token = state.tokens[at];
 			filter(token);
-			if (token.type === 'inline') for (const child of token.children || []) filter(child);
+			if (token.type === 'inline' && token.content.indexOf('<') >= 0) for (const child of token.children || []) filter(child);
 		}
 	});
 	if (spec.core && spec.core.retainReferenceDefinitions) {

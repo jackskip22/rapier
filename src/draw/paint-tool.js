@@ -2218,6 +2218,65 @@ function _rapierPaintDisplay(layer, reply) {
 	const timing = _rapierDrawState.paintTiming;
 	if (timing && timing.seat && !timing.blit) timing.blit = performance.now();
 }
+// takes half the ink away. A long run of such frames is shown after RAPIER_WATER_GUARD_LIMIT, so a real change cannot
+const RAPIER_WATER_PARAMS = (() => { try { const opened = globalThis.performance?.getEntriesByType?.('navigation')?.[0]?.name; return new URLSearchParams(new URL(opened || location.href).search + '&' + location.search.slice(1)); } catch (_) { return {get: () => null}; } })();
+const RAPIER_WATER_GUARD = RAPIER_WATER_PARAMS.get('water-guard') !== '0';
+function _rapierWaterFixSwitch() { const name = RAPIER_WATER_PARAMS.get('water-fix'); return ['submit', 'inplace', 'filter', 'copy'].includes(name) ? name : ''; }
+const RAPIER_WATER_GUARD_LIMIT = 240;
+const _rapierWaterGuardSeen = {frames: 0, dropped: 0, last: null};
+let _rapierWaterGuardProbe = null;
+function _rapierWaterInk(bitmap) {
+	if (!_rapierWaterGuardProbe) { const c = document.createElement('canvas'); c.width = c.height = 32; _rapierWaterGuardProbe = c.getContext('2d'); }
+	const c = _rapierWaterGuardProbe;
+	c.globalCompositeOperation = 'copy'; c.drawImage(bitmap, 0, 0, 32, 32);
+	const d = c.getImageData(0, 0, 32, 32).data;
+	let ink = 0;
+	for (let i = 0; i < d.length; i += 4) ink += d[i + 3] / 255 * (1 - (.2126 * d[i] + .7152 * d[i + 1] + .0722 * d[i + 2]) / 255);
+	return ink / 1024;
+}
+function _rapierWaterGuardDrops(layer, bitmap, meta) {
+	const state = _rapierDrawState, seen = _rapierWaterGuardSeen;
+	seen.frames++;
+	if (!RAPIER_WATER_GUARD && !RAPIER_WATER_PROBE) return false;
+	let ink;
+	try { ink = _rapierWaterInk(bitmap); } catch (_) { return false; }
+	const redo = state.redoStack.length, shapes = state.recipe?.shapes.length ?? 0, sheet = layer.surface?.id, guard = layer.waterGuard;
+	const lowers = !!state.gesture && (_rapierDrawTool() === 'erase' || ['lift', 'water'].includes(_rapierWaterState().tool) || !!state.gesture.paint?.erasing);
+	const acted = !guard || lowers || state.paintSetting || guard.redo !== redo || shapes < guard.shapes || guard.sheet !== sheet;
+	seen.last = {ink, meta};
+	const drop = RAPIER_WATER_GUARD && !acted && guard.ink > .0015 && ink < guard.ink * .5 && guard.streak < RAPIER_WATER_GUARD_LIMIT;
+	if (drop) { guard.streak++; guard.shapes = shapes; seen.dropped++; }
+	else layer.waterGuard = {redo, shapes, sheet, ink, streak: 0};
+	if (RAPIER_WATER_CAPTURE) _rapierWaterNote({ev: 'guard', frame: meta.revision, ink: Math.round(ink * 1e4) / 1e4, shown: guard ? Math.round(guard.ink * 1e4) / 1e4 : null, dropped: !!drop});
+	if (RAPIER_WATER_PROBE) _rapierWaterProbeShow(layer, meta);
+	return drop;
+}
+const RAPIER_WATER_PROBE = RAPIER_WATER_PARAMS.get('water-probe') === '1';
+let _rapierWaterProbeAdapter = null;
+function _rapierWaterProbeShow(layer, meta) {
+	const surface = _rapierDrawState.surface;
+	if (!surface) return;
+	let box = surface.querySelector('.rapier-water-probe');
+	if (!box) {
+		box = document.createElement('pre'); box.className = 'rapier-water-probe';
+		box.style.cssText = 'position:absolute;left:0;bottom:0;z-index:10;margin:0;padding:4px 6px;background:#fff;color:#000;font:10px/1.3 monospace;pointer-events:none;white-space:pre-wrap;max-width:100%;box-sizing:border-box';
+		surface.appendChild(box);
+		if (!_rapierWaterProbeAdapter) {
+			_rapierWaterProbeAdapter = 'asking';
+			Promise.resolve(navigator.gpu?.requestAdapter?.({powerPreference: 'high-performance'})).then(a => { const i = a?.info || {}; _rapierWaterProbeAdapter = a ? ([i.vendor, i.architecture, i.device, i.description].filter(Boolean).join(' / ') || 'adapter (no info)') + '\nfloat32-filterable: ' + (a.features.has('float32-filterable') ? 'yes' : 'no') + ', float32-blendable: ' + (a.features.has('float32-blendable') ? 'yes' : 'no') + ', fallback adapter: ' + (i.isFallbackAdapter ? 'yes' : 'no') : 'none'; }, e => { _rapierWaterProbeAdapter = 'error ' + (e?.message || e); });
+		}
+	}
+	const stats = meta?.stats || {}, memory = navigator.deviceMemory, budget = Number(memory) >= 8 ? 1024 * 1048576 : 384 * 1048576, seen = _rapierWaterGuardSeen;
+	const active = stats.active, w = active ? active[2] - active[0] : 0, h = active ? active[3] - active[1] : 0;
+	const free = budget - (stats.bytes || 0), headroom = Math.max(1048576, Math.min(16 * 1048576, Math.floor(free / 4)));
+	box.textContent = ['water probe', 'renderer: ' + (layer.gpuDisplay ? 'WebGPU' : 'fallback'), 'adapter: ' + (_rapierWaterProbeAdapter || '?'),
+		'memory hint: ' + (memory ?? '?') + ' GB, budget ' + Math.round(budget / 1048576) + ' MiB, used ' + Math.round((stats.bytes || 0) / 1048576) + ' MiB',
+		'sheet: ' + (meta?.width ?? '?') + ' x ' + (meta?.height ?? '?') + ', simulation ' + (stats.simulation || ['?', '?']).join(' x ') + ', scale ' + (stats.simulation ? (meta.width / stats.simulation[0]).toFixed(2) : '?') + ', step ' + (stats.frames ?? '?') + ', tick ' + (stats.tick ?? '?'),
+		'formats: ink and fixed rgba16float, wet r16float, output rgba8unorm',
+		'pigment path: ' + (!active ? 'idle' : w * h * 16 > free - headroom ? 'banded readback (estimated)' : 'in place (estimated)'),
+		'fix: ' + (_rapierWaterFixSwitch() || 'none'),
+		'guard: ' + (RAPIER_WATER_GUARD ? 'on' : 'off') + ', frames ' + seen.frames + ', dropped ' + seen.dropped + ', ink ' + (seen.last ? seen.last.ink.toFixed(4) : '?')].join('\n');
+}
 function _rapierPaintWaterFrame(layer, reply) {
 	const surface = layer.surface, display = reply.display, bitmap = display?.bitmap, meta = reply.meta;
 	if (!bitmap) return;
@@ -2229,6 +2288,7 @@ function _rapierPaintWaterFrame(layer, reply) {
 			_rapierPaintOverlayLost(layer)) return;
 		const kept = layer.checkpoint;
 		if (layer.raster && (!meta.revision || kept?.raster === layer.raster && meta.revision < kept.revision)) return;
+		if (_rapierWaterGuardDrops(layer, bitmap, meta)) return;
 		const canvas = layer.canvas, context = canvas.getContext('2d');
 		if (!context) return;
 		if (canvas.width !== meta.width) canvas.width = meta.width;

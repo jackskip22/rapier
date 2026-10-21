@@ -3,13 +3,15 @@ import {readFileSync, writeFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {createRequire} from 'node:module';
+const {minify_sync} = createRequire(import.meta.url)('./vendor/terser/bundle.min.js');
 
 export const BROWSER_ENTITIES = JSON.parse(readFileSync(new URL('../agent/vendor/BROWSER-ENTITIES.json', import.meta.url), 'utf8'));
 const sha256 = text => createHash('sha256').update(text).digest('hex');
 
-const TRIE = ['function ce(e){let t=atob(e),n=t.length&-2,r=new Uint16Array(n/2);for(let e=0,i=0;e<n;e+=2){let n=t.charCodeAt(e),a=t.charCodeAt(e+1);r[i++]=n|a<<8}return r}var le=ce(`',
-  '`),C;(function(e){e[e.VALUE_LENGTH=49152]=`VALUE_LENGTH`,e[e.FLAG13=8192]=`FLAG13`,e[e.BRANCH_LENGTH=8064]=`BRANCH_LENGTH`,e[e.JUMP_TABLE=127]=`JUMP_TABLE`})(C||(C={}));'];
-const DECODER = ['var E;(function(e){e[e.NUM=35]=`NUM`', 'function xe(e){return be(e,O.Strict)}'];
+const TRIE = ['function decodeBase64(input){', '})(BinTrieFlags||(BinTrieFlags={}));'];
+const TRIE_DATA = ['var htmlDecodeTree=decodeBase64("', '");var BinTrieFlags;'];
+const DECODER = ['var CharCodes;', 'function decodeHTMLStrict(htmlString){return htmlDecoder(htmlString,DecodingMode.Strict)}'];
 function once(text, anchor) {
   const at = text.indexOf(anchor);
   if (at < 0 || text.indexOf(anchor, at + 1) >= 0) throw new Error('markdown-it entity derivation: expected exactly one ' + JSON.stringify(anchor.slice(0, 48)));
@@ -17,7 +19,7 @@ function once(text, anchor) {
 }
 
 export function entityTrie(source) {
-  const from = once(source, TRIE[0]) + TRIE[0].length, to = once(source, TRIE[1]);
+  const from = once(source, TRIE_DATA[0]) + TRIE_DATA[0].length, to = once(source, TRIE_DATA[1]);
   const bytes = Buffer.from(source.slice(from, to), 'base64'), words = new Uint16Array(bytes.length >> 1);
   for (let i = 0; i < words.length; i++) words[i] = bytes[2 * i] | bytes[2 * i + 1] << 8;
   return words;
@@ -68,12 +70,13 @@ export function deriveEntities(source, {drop = null} = {}) {
   for (const [name, value] of names) if (!seeded.some(([n]) => n === name)) (byValue.get(value) || byValue.set(value, []).get(value)).push(name);
   const order = (a, b) => a < b ? -1 : a > b ? 1 : 0;
   const list = [...byValue.keys()].sort(order).map(value => value + byValue.get(value).sort(order).join(' ')).join('');
-  const table = 'var le=new Map(' + (seeded.length ? JSON.stringify(seeded) : '') + ');{let e=/([^A-Za-z\\d ]+)|[A-Za-z\\d]+/g,t,n,r=`' + templateText(list) + '`;for(;n=e.exec(r);)n[1]?t=n[1]:le.set(n[0],t)}';
-  const decoder = 'function xe(e){return e.replace(/&(?:#(?:[xX]([\\dA-Fa-f]+)|(\\d+))|([A-Za-z\\d]+));/g,(e,t,n,r)=>r?le.has(r)?le.get(r):e:String.fromCodePoint(se(t?parseInt(t,16):+n)))}';
+  const table = 'var entityNames=new Map(' + (seeded.length ? JSON.stringify(seeded) : '') + ');{let e=/([^A-Za-z\\d ]+)|[A-Za-z\\d]+/g,t,n,r=`' + templateText(list) + '`;for(;n=e.exec(r);)n[1]?t=n[1]:entityNames.set(n[0],t)}';
+  const decoder = 'function decodeHTMLStrict(e){return e.replace(/&(?:#(?:[xX]([\\dA-Fa-f]+)|(\\d+))|([A-Za-z\\d]+));/g,(e,t,n,r)=>r?entityNames.has(r)?entityNames.get(r):e:String.fromCodePoint(replaceCodePoint(t?parseInt(t,16):+n)))}';
   const trieFrom = once(source, TRIE[0]), trieTo = once(source, TRIE[1]) + TRIE[1].length;
   const decoderFrom = once(source, DECODER[0]), decoderTo = once(source, DECODER[1]) + DECODER[1].length;
   if (!(trieTo <= decoderFrom)) throw new Error('markdown-it entity derivation: the trie must precede its decoder');
-  return source.slice(0, trieFrom) + table + source.slice(trieTo, decoderFrom) + decoder + source.slice(decoderTo);
+  const compact = source.slice(0, trieFrom) + table + source.slice(trieTo, decoderFrom) + decoder + source.slice(decoderTo);
+  return minify_sync(compact, structuredClone(BROWSER_ENTITIES.tool.options)).code + '\n';
 }
 
 export function entitiesVendor(name, source) {

@@ -1495,6 +1495,42 @@
       "interactive": true,
       "edge": "all",
       "reason": "The JPEG XL converter owns its whole page while it is open; document notices must wait instead of floating above it."
+    },
+    {
+      "id": "recording-now",
+      "file": "editor/styles/rapier-notes.css",
+      "selector": ".rapier-recording-row.rapier-recording-now",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "left",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "var(--rapier-now-top,calc(56px + env(safe-area-inset-top,0px)))",
+            "important": false
+          }
+        ]
+      },
+      "role": "bar",
+      "interactive": true,
+      "edge": "top",
+      "reason": "The playing bar stands under the head while a Notes sound plays out of sight; the page moves down by its height and every menu, sheet and toast stands over it."
     }
   ],
   "localRules": [

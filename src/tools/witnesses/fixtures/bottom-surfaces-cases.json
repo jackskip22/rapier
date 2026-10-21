@@ -1868,6 +1868,47 @@
           "aria-hidden": "false"
         }
       }
+    },
+    {
+      "id": "recording-now",
+      "selector": ".rapier-recording-row.rapier-recording-now",
+      "rule": {
+        "file": "editor/styles/rapier-notes.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "left",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "var(--rapier-now-top,calc(56px + env(safe-area-inset-top,0px)))",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-recording-row rapier-recording-now",
+        "controlClass": "rapier-notes-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
     }
   ],
   "liveCases": [

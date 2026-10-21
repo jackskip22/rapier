@@ -149,7 +149,7 @@ export function installSourceWorker(scope) {
 }
 
 function blockParser(md, work) {
-  let budget = null;
+  let budget = null, completed = null;
   const refuse = (reason, observed, limit) => {
     throw Object.assign(new Error(reason), {rapierProjectionRefusal: true, reason, observed, limit});
   };
@@ -189,16 +189,155 @@ function blockParser(md, work) {
     budget.used.blocks = blocks;
     if (blocks > budget.limits.blocks) refuse('wysiwyg_block_limit', blocks, budget.limits.blocks);
   });
-  const bareLinkCandidate = /@|[^\x00-\x7f]|\.\S/, linkTest = md.linkify.test;
-  md.linkify.test = function (text) {
-    if (!bareLinkCandidate.test(text)) {
-      const schema = this.re.get_schema_search();
-      schema.lastIndex = 0;
-      if (!schema.test(text)) return false;
-    }
-    return linkTest.call(this, text);
-  };
   const split = (markdown, env, tokens) => _splitByTokenStream(markdown, md, env, tokens);
+  const coordinates = source => {
+    const lines = [0], normalized = [0];
+    let collapsed = 0;
+    for (const match of source.matchAll(/\r\n?|\n/g)) {
+      collapsed += match[0].length - 1;
+      const end = match.index + match[0].length;
+      lines.push(end); normalized.push(end - collapsed);
+    }
+    return {lines, normalized};
+  };
+  const lineAt = (lines, offset) => {
+    let low = 0, high = lines.length;
+    while (low < high) { const mid = (low + high) >>> 1; if (lines[mid] < offset) low = mid + 1; else high = mid; }
+    return lines[low] === offset ? low : -1;
+  };
+  const groups = (source, tokens, positions) => {
+    const out = [];
+    for (let index = 0; index < tokens.length;) {
+      const token = tokens[index], first = index;
+      if (token.level !== 0 || token.nesting === -1 || !token.map) return null;
+      if (token.nesting === 1) {
+        do { index++; } while (index < tokens.length && !(tokens[index].level === 0 && tokens[index].nesting === -1));
+        if (index === tokens.length) return null;
+      }
+      index++;
+      const start = positions.lines[token.map[0]] ?? source.length;
+      const end = positions.lines[token.map[1]] ?? source.length;
+      out.push({first, stop: index, start, end, line: token.map[0], endLine: token.map[1]});
+    }
+    return out;
+  };
+  const moveToken = (token, lineDelta, charDelta) => {
+    if (!lineDelta && !charDelta) return token;
+    let map = token.map, meta = token.meta, children = token.children;
+    if (lineDelta && map) map = map.map(line => line + lineDelta);
+    if (charDelta && meta?.mdLayoutSource) {
+      const target = {...meta.mdLayoutSource};
+      for (const key of ['start', 'end', 'insert']) if (Number.isFinite(target[key])) target[key] += charDelta;
+      if (target.marker) target.marker = {...target.marker, start: target.marker.start + charDelta, end: target.marker.end + charDelta};
+      meta = {...meta, mdLayoutSource: target};
+    }
+    if (children) {
+      for (let index = 0; index < children.length; index++) {
+        const child = moveToken(token.children[index], lineDelta, charDelta);
+        if (child === token.children[index]) continue;
+        if (children === token.children) children = children.slice();
+        children[index] = child;
+      }
+      if (children !== token.children) {
+        const probe = Object.getOwnPropertyDescriptor(token.children, '_rapierInlineProbeId');
+        if (probe) Object.defineProperty(children, '_rapierInlineProbeId', probe);
+      }
+    }
+    if (map === token.map && meta === token.meta && children === token.children) return token;
+    const moved = Object.create(Object.getPrototypeOf(token), Object.getOwnPropertyDescriptors(token));
+    if (map !== token.map) moved.map = map;
+    if (meta !== token.meta) moved.meta = meta;
+    if (children !== token.children) moved.children = children;
+    return moved;
+  };
+  const fingerprint = (record, group) => JSON.stringify(record.tokens.slice(group.first, group.stop)
+    .map(token => moveToken(token, -group.line, -(record.positions.normalized[group.line] || 0))));
+  const record = (source, tokens, env, references) => {
+    const positions = coordinates(source);
+    return {source, tokens, env, references, positions, groups: groups(source, tokens, positions)};
+  };
+  const resetBudget = () => { if (budget) budget.used = {blocks: 0, tokens: 0, inlineCandidates: 0, nodes: 0}; };
+  const fullParse = async (source, references, key, reuse) => {
+    resetBudget();
+    const env = {references: {...references}};
+    const tokens = await parseMarkdownWork(md, source, env, work);
+    reuse.parsedChars += source.length; reuse.windows++;
+    return record(source, tokens, env, key);
+  };
+  const parseCompleted = async (source, references, key, reuse) => {
+    const old = completed;
+    const full = reason => { reuse.invalidation = reason; return fullParse(source, references, key, reuse); };
+    if (!old || !old.groups) return full('no_complete_parse');
+    if (old.references !== key) return full('supplied_definitions');
+    if (old.source === source) { reuse.blocks = old.groups.length; return old; }
+    if (/\[\^|\^\[/.test(old.source) || /\[\^|\^\[/.test(source)) return full('footnotes');
+    if (splitOpeningFrontmatter(old.source).frontmatter !== splitOpeningFrontmatter(source).frontmatter) return full('frontmatter');
+    const prior = old.groups;
+    if (!prior.length) return full('no_source_blocks');
+    let prefix = 0, before = old.source.length, after = source.length;
+    while (prefix < before && prefix < after && old.source.charCodeAt(prefix) === source.charCodeAt(prefix)) prefix++;
+    while (before > prefix && after > prefix && old.source.charCodeAt(before - 1) === source.charCodeAt(after - 1)) { before--; after--; }
+    const delta = source.length - old.source.length;
+    let touched = prior.findIndex(group => group.end >= prefix);
+    if (touched < 0) touched = prior.length - 1;
+    const from = Math.max(0, touched - 2), start = from ? prior[from].start : 0;
+    const firstLine = from ? prior[from].line : 0, firstChar = old.positions.normalized[firstLine] || 0;
+    let anchor = Math.max(from, prior.findIndex(group => group.start >= before));
+    if (anchor < from || prior[anchor]?.start < before) anchor = prior.length;
+    let until = Math.min(prior.length, anchor + 3);
+    if (!from && anchor === prior.length) return full('changed_all_source_blocks');
+    const positions = coordinates(source);
+    for (;;) {
+      const stop = until === prior.length ? source.length : prior[until].start + delta;
+      const oldStop = until === prior.length ? old.source.length : prior[until].start;
+      const fragment = source.slice(start, stop);
+      if (old.source.slice(start, oldStop).includes(']:') || fragment.includes(']:')) return full('definitions');
+      resetBudget();
+      const env = {...old.env, references: {...old.env.references}, __rapierInlineCandidates: []};
+      if (old.env.abbreviations) env.abbreviations = {...old.env.abbreviations};
+      const parsed = await parseMarkdownWork(md, fragment, env, work);
+      reuse.parsedChars += fragment.length; reuse.windows++;
+      const local = record(fragment, parsed, env, key);
+      let join = -1, localJoin = -1;
+      if (local.groups) {
+        for (let index = anchor; index + 1 < until; index++) {
+          if (until < prior.length && index + 2 >= until) break;
+          const first = prior[index], second = prior[index + 1];
+          const candidate = local.groups.findIndex(group => group.start + start === first.start + delta);
+          if (candidate < 0 || candidate + 1 >= local.groups.length) continue;
+          const a = local.groups[candidate], b = local.groups[candidate + 1];
+          if (a.end + start !== first.end + delta || b.start + start !== second.start + delta || b.end + start !== second.end + delta ||
+              fragment.slice(a.start, a.end) !== old.source.slice(first.start, first.end) ||
+              fragment.slice(b.start, b.end) !== old.source.slice(second.start, second.end) ||
+              fingerprint(local, a) !== fingerprint(old, first) || fingerprint(local, b) !== fingerprint(old, second)) continue;
+          join = index; localJoin = candidate; break;
+        }
+      }
+      if (join >= 0 || until === prior.length) {
+        const newStop = join < 0 ? parsed.length : local.groups[localJoin].first;
+        const tokens = old.tokens.slice(0, prior[from].first);
+        for (const token of parsed.slice(0, newStop)) tokens.push(moveToken(token, firstLine, firstChar));
+        if (join >= 0) {
+          const suffix = prior[join], nextLine = lineAt(positions.lines, suffix.start + delta);
+          if (nextLine < 0) return full('changed_line_boundary');
+          const lineDelta = nextLine - suffix.line;
+          const charDelta = positions.normalized[nextLine] - old.positions.normalized[suffix.line];
+          for (const token of old.tokens.slice(suffix.first)) tokens.push(moveToken(token, lineDelta, charDelta));
+        }
+        const ids = new Set();
+        const collect = token => {
+          if (token._rapierInlineProbeId) ids.add(token._rapierInlineProbeId);
+          if (token.children) { if (token.children._rapierInlineProbeId) ids.add(token.children._rapierInlineProbeId); token.children.forEach(collect); }
+        };
+        tokens.forEach(collect);
+        env.__rapierInlineCandidates = [...old.env.__rapierInlineCandidates || [], ...env.__rapierInlineCandidates || []]
+          .filter(candidate => ids.has(candidate.inlineId));
+        reuse.blocks = from + (join < 0 ? 0 : prior.length - join);
+        return {source, tokens, env, references: key, positions, groups: groups(source, tokens, positions)};
+      }
+      until = Math.min(prior.length, Math.max(until + 3, from + (until - from) * 2));
+    }
+  };
   const blockTokens = async (markdown, env) => {
     const tokens = await parseMarkdownWork(md, markdown, env, work, true);
     for (let i = 1; i < tokens.length; i++) {
@@ -224,12 +363,20 @@ function blockParser(md, work) {
       return [name, Number.isFinite(limit) ? limit : Infinity];
     })), used: {blocks: 0, tokens: 0, inlineCandidates: 0, nodes: 0}};
     const timing = {received: performance.now(), parseMs: 0, blockOnlyMs: 0, twoPhase: data.twoPhase === true};
+    const reuse = {blocks: 0, parsedChars: 0, windows: 0, invalidation: null};
+    const references = data.references || Object.create(null), referenceKey = JSON.stringify(references);
+    let parsed = null;
     try {
       if (data.plainText) markdown = _rapierNormalizePlainTextPaste(markdown);
       const t0 = performance.now();
-      const env = {references: data.references || Object.create(null)};
-      const tokens = data.twoPhase ? await blockTokens(markdown, env) : await parseMarkdownWork(md, markdown, env, work);
-      blocks = split(markdown, env, tokens);
+      if (data.twoPhase) {
+        const env = {references: {...references}};
+        blocks = split(markdown, env, await blockTokens(markdown, env));
+      } else {
+        parsed = await parseCompleted(markdown, references, referenceKey, reuse);
+        blocks = split(markdown, parsed.env, parsed.tokens);
+        timing.reuse = reuse;
+      }
       timing.parseMs = performance.now() - t0;
       if (data.timeBlockOnly) {
         const t1 = performance.now(), state = new md.core.State(markdown, md, {});
@@ -251,6 +398,7 @@ function blockParser(md, work) {
       ['wysiwyg_node_limit', metrics.nodes, limits.nodes],
     ].find(row => Number.isFinite(row[2]) && row[1] > row[2]);
     if (exceeded) { scope.postMessage({reqId, refusal: {reason: exceeded[0], observed: exceeded[1], limit: exceeded[2]}}); return; }
+    if (parsed && !error) completed = parsed;
     const blockTypes = [], typeIndexes = Object.create(null), blockSpans = new Int32Array(blocks.length * 3);
     blocks.forEach((block, index) => {
       const type = String(block.type || 'paragraph');
@@ -265,10 +413,11 @@ function blockParser(md, work) {
     if (!data.twoPhase || error) return;
     try {
       const t2 = performance.now();
-      const env = {references: data.references || Object.create(null)};
-      const tokens = await parseMarkdownWork(md, markdown, env, work);
-      const full = split(markdown, env, tokens);
-      scope.postMessage({reqId, phase: 2, facts: full._rapierFacts || [], metrics: {timing: {inlineMs: performance.now() - t2}}});
+      const parsed = await parseCompleted(markdown, references, referenceKey, reuse);
+      const full = split(markdown, parsed.env, parsed.tokens);
+      const counts = full._rapierProjectionMetrics;
+      if (counts && ['blocks', 'tokens', 'inlineCandidates', 'nodes'].every(name => !Number.isFinite(limits[name]) || counts[name] <= limits[name])) completed = parsed;
+      scope.postMessage({reqId, phase: 2, facts: full._rapierFacts || [], metrics: {timing: {inlineMs: performance.now() - t2, reuse}}});
     } catch (err) {
       scope.postMessage({reqId, phase: 2, facts: null, error: String(err?.message || err)});
     }

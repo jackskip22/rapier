@@ -23,6 +23,7 @@ export function installMarkdownImages(md) {
   const reference = md.block.ruler.__rules__.find(row => row.name === 'reference').fn;
   md.block.ruler.at('reference', (state, start, end, silent) => {
     if (silent) return reference(state, start, end, silent);
+    if (state.src.charCodeAt(state.bMarks[start] + state.tShift[start]) !== 0x5B) return false;
     const saved = state.env.references, local = Object.create(null);
     state.env.references = local;
     let accepted;
@@ -40,12 +41,12 @@ export function installMarkdownImages(md) {
   md.inline.ruler.at('image', (state, silent) => {
     const start = state.pos;
     if (state.src[start] !== '!' || state.src[start + 1] !== '[') return false;
-    const close = state.md.helpers.parseLinkLabel(state, start + 1, false);
     const before = state.tokens.length;
     if (!image(state, silent)) return false;
     if (!silent && state.tokens.length > before) {
       const token = state.tokens[state.tokens.length - 1], source = state.src.slice(start, state.pos);
       if (token.type === 'image') {
+        const close = state.md.helpers.parseLinkLabel(state, start + 1, false);
         let reference = null;
         if (close >= 0 && state.src[close + 1] !== '(') {
           const explicit = state.src[close + 1] === '[' ? state.src.slice(close + 2, state.pos - 1) : '';

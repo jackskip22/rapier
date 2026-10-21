@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {WaterSurface,WaterBrush,paintWaterBrushPreview,waterError,waterReady,waterSoftwareAdmitted,waterWarm,waterUnfilteredTest,waterTiming,waterTimingOn,waterCapture,waterCaptureOn,waterNote} from './water.mjs';
+import {waterFix} from './water-gpu.mjs';
 import {PaintStrokeHistory,copyPaintState,snapshotPaintState} from './paint-history.mjs';
 import {sha256Yielding} from '../notes/integrity.mjs';
 import {paintAgentStrokes,replayAgentPainting,sampleAgentPainting,agentPaintReplayRun,restoreWaterReplay,waterReplayAt} from './agent-paint.mjs';
@@ -197,7 +198,7 @@ export function createWaterWorker({postMessage}={}){
  }
  async function execute(request){
   const op=request.operation;
-  if(op==='configure'){if(request.preview===true)return {helpers:0,backend:'contact'};waterSoftwareAdmitted(request.software===true);waterUnfilteredTest(request.unfilteredTest===true);slowTest=Number.isFinite(request.slowTest)&&request.slowTest>1?request.slowTest:1;waterTimingOn(request.stats===true);waterCaptureOn(request.capture===true);const ready=await waterReady();watchDevice(ready);waterWarm().catch(()=>{});return {helpers:0,backend:'webgpu',filterable:ready.features.has('float32-filterable'),features:[...ready.features].sort()};}
+  if(op==='configure'){if(request.preview===true)return {helpers:0,backend:'contact'};waterSoftwareAdmitted(request.software===true);waterUnfilteredTest(request.unfilteredTest===true);waterFix(request.fix);slowTest=Number.isFinite(request.slowTest)&&request.slowTest>1?request.slowTest:1;waterTimingOn(request.stats===true);waterCaptureOn(request.capture===true);const ready=await waterReady();watchDevice(ready);waterWarm().catch(()=>{});return {helpers:0,backend:'webgpu',filterable:ready.features.has('float32-filterable'),features:[...ready.features].sort()};}
   if(op==='preview'){
    if(!integer(request.width)||!integer(request.height))throw waterError('WATER_INPUT','The Water preview size is not valid');
    const canvas=typeof OffscreenCanvas==='function'?new OffscreenCanvas(request.width,request.height):globalThis.document?.createElement('canvas');

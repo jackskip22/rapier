@@ -1,5 +1,5 @@
 {
-  "what": "The vendor libraries the page executes as classic scripts, packed by tools/build.mjs (VENDOR_GROUPS) into the text/rapier-vendor elements of rapier.html. Each file is the published build of its package at the named version, byte for byte as it was first vendored; the build refuses a file whose bytes or SHA-256 differ from this record. The path is the file inside the published package as far as the vendoring record names it; the digests here are the identities the packed spans carry.",
+  "what": "The vendor libraries the page executes as classic scripts, packed by tools/build.mjs (VENDOR_GROUPS) into the text/rapier-vendor elements of rapier.html. Each file is the published build of its package at the named version or an explicitly pinned unchanged-source build; the build refuses a file whose bytes or SHA-256 differ from this record. The path is the file inside the published package as far as the vendoring record names it; the digests here are the identities the packed spans carry.",
   "movedFrom": "These bytes once lived only as the packed groups inside rapier.html, and every build re-read its own output to pack them again.",
   "files": {
     "dompurify-3.4.16.dist.purify.min.js": {
@@ -19,16 +19,6 @@
       "license": "MIT (agent/vendor/NOTICE.txt)",
       "bytes": 26946,
       "sha256": "cdf933e0a2085df3c64d6c763331f04345f6c3b25746216e8f1426c9c5253045"
-    },
-    "markdown-it-15.0.2.umd.min.js": {
-      "package": "markdown-it",
-      "version": "15.0.2",
-      "path": "dist/browser/markdown-it.umd.min.js",
-      "license": "MIT (agent/vendor/NOTICE.txt; linkify-it inside it)",
-      "bytes": 115080,
-      "sha256": "635972b985228e8af9f0143647c68616b7a3bb09f6946e7e4a52e43dcf5e7be5",
-      "tarball": "https://registry.npmjs.org/markdown-it/-/markdown-it-15.0.2.tgz",
-      "integrity": "sha512-q4IGxMv56jCqT4OCRCADBoDP3LO4MhmTXjFbphHPXs4g3j9Xg5RDnxqN8IF/3vIWEU+VCnUq+7JUg/cfy2E6Qw=="
     },
     "markdown-it-task-lists-2.1.1.min.js": {
       "package": "markdown-it-task-lists",
@@ -119,6 +109,18 @@
       "license": "MIT AND LicenseRef-GUST-Font-License (math/LICENSE-MIT; math/FONT-LICENSE.txt)",
       "bytes": 742684,
       "sha256": "cb1c935e84744d41d516c03607a8383ff801ecfc6acdfd63b2eb38be0bc20d80"
+    },
+    "markdown-it-15.0.2.es2022.umd.js": {
+      "package": "markdown-it",
+      "version": "15.0.2",
+      "path": "src/index.ts (unchanged release source, ES2022 bundle)",
+      "license": "MIT (agent/vendor/NOTICE.txt; linkify-it inside it)",
+      "bytes": 155422,
+      "sha256": "f397ccdb81dcf0815e719f76af19a423e7b6a784f4a993b1b4631227b63cfb3e",
+      "tarball": "https://registry.npmjs.org/markdown-it/-/markdown-it-15.0.2.tgz",
+      "integrity": "sha512-q4IGxMv56jCqT4OCRCADBoDP3LO4MhmTXjFbphHPXs4g3j9Xg5RDnxqN8IF/3vIWEU+VCnUq+7JUg/cfy2E6Qw==",
+      "build": "tools/markdown-it-vendor.mjs",
+      "provenance": "agent/vendor/MARKDOWNIT.json"
     }
   }
 }

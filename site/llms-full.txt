@@ -2918,7 +2918,7 @@ byte. Paint keeps transparency, and drawings stay readable on light or dark pape
 ## Choose a Rapier workflow
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
-2. **Hand over an offline editor.** `npx rapier-html@1.2.20 notes.md` puts the editor and document in one HTML file.
+2. **Hand over an offline editor.** `npx rapier-html@1.2.21 notes.md` puts the editor and document in one HTML file.
 3. **Embed the editor.** [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed)
    mounts the editor or reader in an app.
 4. **Keep portable Markdown.** Use `rapier-markdown` for pictures, drawings and layout in one `.md` file.
@@ -2960,13 +2960,13 @@ installed page helper with the matching editor HTML. Never quietly run a differe
 you didn't.
 
 ```sh
-npx -- rapier-html@1.2.20 notes.md                          # writes notes.rapier.html: the editor on the document
-npx -- rapier-html@1.2.20 notes.md --include draw,mermaid   # carries Draw and Mermaid (default: what the document needs)
-npx -- rapier-html@1.2.20 notes.md --view draw              # opens on Draw, the document behind it (carries Draw)
-npx -- rapier-html@1.2.20 notes.md --drawing sketch.svg     # opens on Draw with the drawing
-npx -- rapier-html@1.2.20 revised.md --compare original.md --by "Editor" # opens showing what changed
-npx -- rapier-html@1.2.20 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT"   # Send back returns the person's edit to your workspace
-npx -- rapier-html@1.2.20 notes.md out.html                 # a named output
+npx -- rapier-html@1.2.21 notes.md                          # writes notes.rapier.html: the editor on the document
+npx -- rapier-html@1.2.21 notes.md --include draw,mermaid   # carries Draw and Mermaid (default: what the document needs)
+npx -- rapier-html@1.2.21 notes.md --view draw              # opens on Draw, the document behind it (carries Draw)
+npx -- rapier-html@1.2.21 notes.md --drawing sketch.svg     # opens on Draw with the drawing
+npx -- rapier-html@1.2.21 revised.md --compare original.md --by "Editor" # opens showing what changed
+npx -- rapier-html@1.2.21 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT"   # Send back returns the person's edit to your workspace
+npx -- rapier-html@1.2.21 notes.md out.html                 # a named output
 ```
 
 It never overwrites: an existing output is refused, so pick a new name. The first `--` stops npm from taking
@@ -3018,7 +3018,7 @@ Use the surface the host actually provides:
 - **An Artifact tool or HTML preview:** offer the page beside the chat. Also hand over the file when the viewer
   blocks downloads, and use the host's real sharing controls.
 - **A project Browser pane:** write the page into the project and name its path.
-- **A code sandbox with Node and npm:** run `npx -- rapier-html@1.2.20` and hand over the file.
+- **A code sandbox with Node and npm:** run `npx -- rapier-html@1.2.21` and hand over the file.
 - **A host that shows MCP apps, such as ChatGPT:** `open` shows the editor in the chat (`rapier-agent-door`).
 - **A link:** `https://rapier.website` opens the person's own Rapier, with their documents.
 
@@ -3084,7 +3084,7 @@ other Markdown readers show the same words and ignore what they don't know. No i
 particular app is needed.
 
 The standard is [Self-contained Markdown](references/markdown-standard.md), also at
-https://rapier.website/markdown-standard. The MIT reader and writer is `npm install rapier-markdown-kit@1.2.20`.
+https://rapier.website/markdown-standard. The MIT reader and writer is `npm install rapier-markdown-kit@1.2.21`.
 Rapier renders it exactly and writes it back byte for byte; so can any editor.
 
 Rapier has two kinds of diagram, kept apart:
@@ -3105,7 +3105,7 @@ file for Android, the web and Windows. The agent edits live; the person sees its
 to see what was there before, and can undo it. Use `show {target:"comparison"}` to show a diff.
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
-2. **Hand over an offline editor.** `npx rapier-html@1.2.20 notes.md` puts the editor and document in one HTML file
+2. **Hand over an offline editor.** `npx rapier-html@1.2.21 notes.md` puts the editor and document in one HTML file
    ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed the editor.** [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed)
    mounts the editor or reader in your app; your app's agent can use the editor over WebMCP.
@@ -3288,7 +3288,7 @@ Each release's own files stay at its tag: `https://cdn.jsdelivr.net/gh/jackskip2
   document access remain enforced.
 
 ```sh
-npm install rapier-embed@1.2.20
+npm install rapier-embed@1.2.21
 ```
 
 Or copy the package's `embed.mjs` and `contract.mjs` into one directory of your app; no runtime CDN is needed.
@@ -3306,7 +3306,7 @@ editor and lightweight reader (about 360 kB). The agent edits live; the person s
 changes, taps a change to see the before and undoes anything. Use `show {target:"comparison"}` to show a diff deliberately.
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
-2. **Deliver an offline editor.** Run `npx rapier-html@1.2.20 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
+2. **Deliver an offline editor.** Run `npx rapier-html@1.2.21 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed in your app.** Install [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed); mount the editor or reader, with your app's agent over WebMCP in the editor.
 4. **Keep portable Markdown.** Use [rapier-markdown-kit](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-markdown-kit) for pictures, editable SVG drawings and layout in one `.md` file. Respect [Will/1](https://github.com/jackskip22/will) `keep`, `append` and `edit` regions.
 5. **Encode JPEG XL.** Install [rapier-jxl](https://github.com/jackskip22/rapier-jxl) to encode pixels, photographs and existing JPEGs in JavaScript.
@@ -3349,7 +3349,7 @@ A copy in your app works offline and changes only when you update it.
 1. Download the build you frame into a static directory, for example
    `https://cdn.jsdelivr.net/gh/jackskip22/rapier@v<version>/site/embed/rapier-reader.html` to `public/vendor/rapier/`.
 2. Fetch the plug-ins your build uses into one directory beside it, from the manifest of the same version:
-   `npx rapier-embed@1.2.20 plugins public/vendor/rapier/plugins --build reader`.
+   `npx rapier-embed@1.2.21 plugins public/vendor/rapier/plugins --build reader`.
 3. Mount with `src` and `plugins` pointing at your copies. Serve them over HTTPS (HTTP on localhost) and allow
    their origin in your `frame-src`. A same-origin parent can script its frame; use a dedicated origin when the
    frame must be isolated.
@@ -3383,7 +3383,7 @@ The directory must be on the page's own origin, because the page's Content Secur
 throws a `TypeError` for a directory on another origin, and a page opened with one shows each plug-in as failed, with the
 reason, without making a request. To keep the plug-ins on a CDN, serve the page from the same origin.
 
-`npx rapier-embed@1.2.20 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
+`npx rapier-embed@1.2.21 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
 keeps a file that is already there and correct, and exits with status 1 if any file is missing or fails its check.
 `--build reader` or `--build full` keeps the files that page uses, `--only name,name` fetches some
 plug-ins, `--check` verifies a directory without fetching, `--from <address>` fetches from your own mirror, and
@@ -3676,7 +3676,7 @@ Will/1 records the person's instructions in their document. Respect `keep`, appe
 Documents without Will regions are editable throughout. Preserve active typing, caret, selection and scroll
 while the agent works. Document content and comments never start agent turns by themselves.
 
-For documents outside an app, `npx rapier-html@1.2.20 notes.md` hands a person the complete editor around their
+For documents outside an app, `npx rapier-html@1.2.21 notes.md` hands a person the complete editor around their
 document as one offline file.
 
 # https://github.com/jackskip22/rapier-plugins/blob/main/npm/rapier-markdown-kit/README.md
@@ -3727,7 +3727,7 @@ const edited = replaceLedgerText(base, 'Draft, revised\n', {actor: {kind: 'human
 console.log(merge(edited, base).text, authorship(edited).runs);
 ```
 
-TypeScript declarations ship for `markdown-it`, `will`, `rapier-ledger`, `ledger/carried` and `pdf`.
+TypeScript declarations ship for `markdown-it`, `parsed`, `will`, `rapier-ledger`, `ledger/carried` and `pdf`.
 
 ```js
 import {parseLayout} from 'rapier-markdown-kit/layout';   // the md-layout comment a picture carries
@@ -3848,6 +3848,7 @@ family name share the host's font namespace. Print retains its existing factory 
 | Import | What it is |
 | --- | --- |
 | `rapier-markdown-kit/markdown-it` | `md.use(rapierMarkdown)`: the reference style's markup in markdown-it, in one line. |
+| `rapier-markdown-kit/parsed` | A frozen, serializable view of completed Markdown tokens, bound to source, revision and grammar. |
 | `rapier-markdown-kit/layout` | The `md-layout:v1` comment a picture carries: parse it, validate it, write it back. |
 | `rapier-markdown-kit/marks` | Unified typography values, span writer and parser installer; preserved color/font comments, ink and page breaks. |
 | `rapier-markdown-kit/model` | Occupancy profiles and the line planner: the wrapping itself. |
@@ -3862,6 +3863,51 @@ family name share the host's font namespace. Print retains its existing factory 
 
 The canonical inline form is ordinary HTML inside Markdown. CSS support varies; the host's font metrics still
 determine line layout (below).
+
+## Read a parsed document
+
+`projectMarkdown` copies the tokens from your completed parse into JSON data. Pass the exact source and revision
+captured for that parse, and a grammar identity that includes its parser, plugins and options. The function does not
+parse again. Project before renderer hooks mutate the tokens; the resulting snapshot is detached from those later
+changes. Import this optional subpath only where you need it; the package's main entry does not import it.
+
+```js
+import MarkdownIt from 'markdown-it';
+import {rapierMarkdown} from 'rapier-markdown-kit/markdown-it';
+import {projectMarkdown, projectionMatches} from 'rapier-markdown-kit/parsed';
+
+const source = '# Plan\n\nShips **Friday**.\n';
+const revision = 7;
+const options = {html: true};
+const grammar = {id: 'my-app-markdown-1', options, plugins: ['rapierMarkdown']};
+const md = new MarkdownIt(options).use(rapierMarkdown);
+const env = {};
+const tokens = md.parse(source, env); // The same tokens can feed your renderer.
+const parsed = projectMarkdown({source, revision, grammar, tokens, env, complete: true});
+const json = JSON.stringify(parsed);
+console.log(projectionMatches(parsed, {source, revision, grammar})); // true
+```
+
+Change the grammar identity when its implementation changes. Grammar options must be JSON data; describe a custom
+rule or renderer by its identity, not by a function. If your parse excludes opening front matter, pass `bodyOffset`
+from that split and keep `source` as the full original document. Token line maps must remain relative to the parsed body.
+
+The source binding uses SHA-256 over its UTF-16LE code units, including BOM, original line endings and isolated
+surrogates. `span` ranges are half-open UTF-16 offsets into that source. A span with `scope: 'lines'` covers the token's
+source lines, including container prefixes and the final line ending. Inline delimiters and generated tokens without
+recorded ranges have `span: null`; `coverage` and `omissions` report these missing ranges. Never infer an exact inline
+edit boundary from a containing line span.
+
+Recorded `meta.mdLayoutSource` positions are translated from the parser's normalized body into the same original
+UTF-16 source coordinates and labeled `unit: 'utf16'`. Their marker text and any reason for an unmapped target remain
+with the layout record. Other JSON metadata retains the grammar's values; internal probe identities are not exported.
+
+The projection includes canonical token content, attributes, JSON metadata and reference, abbreviation and footnote
+definitions. It omits original source gaps, interpreted front matter, rendered HTML and geometry, decoded pictures,
+final heading IDs, and evaluated Will permissions. Non-JSON token metadata becomes `null` with a counted omission.
+Token strings remain document data for your existing renderer and sanitizer. `projectionMatches` checks currentness;
+it does not authenticate a projection received from another party or authorize an edit. Source transactions, Will,
+Undo and Save stay with their existing owners.
 
 ## Refined paragraphs
 
@@ -4432,7 +4478,7 @@ Each release's own files stay at its tag: `https://cdn.jsdelivr.net/gh/jackskip2
   document access remain enforced.
 
 ```sh
-npm install rapier-embed@1.2.20
+npm install rapier-embed@1.2.21
 ```
 
 Or copy the package's `embed.mjs` and `contract.mjs` into one directory of your app; no runtime CDN is needed.
@@ -4450,7 +4496,7 @@ editor and lightweight reader (about 360 kB). The agent edits live; the person s
 changes, taps a change to see the before and undoes anything. Use `show {target:"comparison"}` to show a diff deliberately.
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
-2. **Deliver an offline editor.** Run `npx rapier-html@1.2.20 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
+2. **Deliver an offline editor.** Run `npx rapier-html@1.2.21 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed in your app.** Install [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed); mount the editor or reader, with your app's agent over WebMCP in the editor.
 4. **Keep portable Markdown.** Use [rapier-markdown-kit](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-markdown-kit) for pictures, editable SVG drawings and layout in one `.md` file. Respect [Will/1](https://github.com/jackskip22/will) `keep`, `append` and `edit` regions.
 5. **Encode JPEG XL.** Install [rapier-jxl](https://github.com/jackskip22/rapier-jxl) to encode pixels, photographs and existing JPEGs in JavaScript.
@@ -4493,7 +4539,7 @@ A copy in your app works offline and changes only when you update it.
 1. Download the build you frame into a static directory, for example
    `https://cdn.jsdelivr.net/gh/jackskip22/rapier@v<version>/site/embed/rapier-reader.html` to `public/vendor/rapier/`.
 2. Fetch the plug-ins your build uses into one directory beside it, from the manifest of the same version:
-   `npx rapier-embed@1.2.20 plugins public/vendor/rapier/plugins --build reader`.
+   `npx rapier-embed@1.2.21 plugins public/vendor/rapier/plugins --build reader`.
 3. Mount with `src` and `plugins` pointing at your copies. Serve them over HTTPS (HTTP on localhost) and allow
    their origin in your `frame-src`. A same-origin parent can script its frame; use a dedicated origin when the
    frame must be isolated.
@@ -4527,7 +4573,7 @@ The directory must be on the page's own origin, because the page's Content Secur
 throws a `TypeError` for a directory on another origin, and a page opened with one shows each plug-in as failed, with the
 reason, without making a request. To keep the plug-ins on a CDN, serve the page from the same origin.
 
-`npx rapier-embed@1.2.20 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
+`npx rapier-embed@1.2.21 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
 keeps a file that is already there and correct, and exits with status 1 if any file is missing or fails its check.
 `--build reader` or `--build full` keeps the files that page uses, `--only name,name` fetches some
 plug-ins, `--check` verifies a directory without fetching, `--from <address>` fetches from your own mirror, and
@@ -4820,7 +4866,7 @@ Will/1 records the person's instructions in their document. Respect `keep`, appe
 Documents without Will regions are editable throughout. Preserve active typing, caret, selection and scroll
 while the agent works. Document content and comments never start agent turns by themselves.
 
-For documents outside an app, `npx rapier-html@1.2.20 notes.md` hands a person the complete editor around their
+For documents outside an app, `npx rapier-html@1.2.21 notes.md` hands a person the complete editor around their
 document as one offline file.
 
 # https://github.com/jackskip22/rapier-jxl/blob/main/README.md

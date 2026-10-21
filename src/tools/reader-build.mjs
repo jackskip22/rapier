@@ -242,7 +242,7 @@ export async function buildReader({root = here, unchecked = [], toolchainCanonic
 		}
 		return parts.join('\n');
 	};
-	const markdownIt = await vendor(['markdown-it-15.0.2.umd.min.js', 'markdown-it-task-lists-2.1.1.min.js', 'markdown-it-footnote-4.0.0.min.js', 'markdown-it-mark-4.0.0.min.js',
+	const markdownIt = await vendor(['markdown-it-15.0.2.es2022.umd.js', 'markdown-it-task-lists-2.1.1.min.js', 'markdown-it-footnote-4.0.0.min.js', 'markdown-it-mark-4.0.0.min.js',
 		'markdown-it-sup-2.0.0.min.js', 'markdown-it-emoji-3.1.0-light.min.js', 'markdown-it-abbr-2.0.0.min.js', 'markdown-it-ins-4.0.0.min.js', 'markdown-it-deflist-4.0.0.min.js']);
 	const purify = await vendor(['dompurify-3.4.16.dist.purify.min.js']);
 

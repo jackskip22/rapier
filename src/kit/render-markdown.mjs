@@ -90,9 +90,11 @@ function initMarkdownIt() {
 	md.renderer.rules.softbreak = () =>
 		sourceToken('\n', '\u2060', 'rapier-source-token--softbreak');
 	md.core.ruler.before('text_join', 'rapier_escape_token', state => {
-		for (const token of state.tokens) {
+		for (let at = 0; at < state.tokens.length; at++) {
+			const token = state.tokens[at];
 			if (token.type !== 'inline' || !token.children) continue;
-			for (const child of token.children) {
+			for (let next = 0; next < token.children.length; next++) {
+				const child = token.children[next];
 				if (child.type === 'text_special' && child.info === 'escape' && child.content.length === 1 && !/[\\*`[\]_]/.test(child.content)) child.type = 'rapier_escape';
 			}
 		}
@@ -251,7 +253,8 @@ function initMarkdownIt() {
 
 	md.core.ruler.push('rapier_setext_rule', function (state) {
 		let lines = null;
-		for (const token of state.tokens) {
+		for (let at = 0; at < state.tokens.length; at++) {
+			const token = state.tokens[at];
 			if (token.type !== 'heading_open') continue;
 			if (token.markup !== '=' && token.markup !== '-') continue;
 			if (!token.map) continue;
@@ -489,14 +492,14 @@ function _rapierInstallSemanticProbe(instance) {
 		const nextId = (targetEnv.__rapierInlineProbeSeq || 0) + 1;
 		targetEnv.__rapierInlineProbeSeq = nextId;
 		targetEnv.__rapierInlineProbeId = nextId;
-		try {
-			Object.defineProperty(outTokens, '_rapierInlineProbeId', { value: nextId, configurable: true });
-		} catch (_) { outTokens._rapierInlineProbeId = nextId; }
+		const candidateStart = targetEnv.__rapierInlineCandidates?.length || 0;
 		try {
 			const result = originalParse.call(this, source, parser, targetEnv, outTokens);
-			for (const token of outTokens) {
-				try { Object.defineProperty(token, '_rapierInlineProbeId', { value: nextId, configurable: true }); }
-				catch (_) { token._rapierInlineProbeId = nextId; }
+			if ((targetEnv.__rapierInlineCandidates?.length || 0) > candidateStart) {
+				Object.defineProperty(outTokens, '_rapierInlineProbeId', { value: nextId, configurable: true });
+				for (const token of outTokens) {
+					Object.defineProperty(token, '_rapierInlineProbeId', { value: nextId, configurable: true });
+				}
 			}
 			return result;
 		} finally { targetEnv.__rapierInlineProbeId = priorId; }
@@ -504,6 +507,8 @@ function _rapierInstallSemanticProbe(instance) {
 
 	instance.inline.ruler.before('escape', 'rapier_semantic_probe', function (state, silent) {
 		if (silent || !state || !state.env) return false;
+		const opener = state.src.charCodeAt(state.pos);
+		if (opener !== 0x5b && opener !== 0x21) return false;
 		const inlineId = Number(state.env.__rapierInlineProbeId || 0);
 		if (!inlineId) return false;
 		const src = state.src;
@@ -561,6 +566,8 @@ function _rapierInstallSemanticProbe(instance) {
 		if (src.charCodeAt(after) === 0x28) {
 			let destinationPos = after + 1;
 			while (destinationPos < max && /[ \t\n]/.test(src.charAt(destinationPos))) destinationPos++;
+			const first = src.charCodeAt(destinationPos);
+			if (first !== 0x23 && first !== 0x3c && first !== 0x5c && first !== 0x26) return false;
 			const destination = state.md.helpers.parseLinkDestination(src, destinationPos, max);
 			if (!destination || !destination.ok || !String(destination.str || '').startsWith('#')) return false;
 			const rawDestination = String(destination.str || '');

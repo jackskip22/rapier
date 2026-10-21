@@ -1064,7 +1064,7 @@ function _rapierDrawPaintClient(purpose = 'human', mode = 'paint') {
 			const mode = await worker.ready;
 			const isolated = mode === 'worker' && globalThis.crossOriginIsolated === true && typeof rows?.workerSource === 'function';
 			const helpers = !water && purpose !== 'preview' && isolated ? 4 : 0;
-			await client.request('configure', {preview: water && purpose === 'preview', unfilteredTest: water && globalThis.__rapierWaterUnfilteredTest === true, software: water && globalThis.__rapierWaterSoftwareTest === true, slowTest: water ? globalThis.__rapierWaterSlowTest : undefined, stats: water && purpose === 'human' && new URLSearchParams(location.search).has('waterstats'), capture: water && purpose === 'human' && new URLSearchParams(location.search).has('water-capture'), helpers, ...(helpers ? {helperSource: rows.workerSource()} : {})});
+			await client.request('configure', {preview: water && purpose === 'preview', unfilteredTest: water && (globalThis.__rapierWaterUnfilteredTest === true || purpose === 'human' && _rapierWaterFixSwitch() === 'filter'), fix: water && purpose === 'human' ? _rapierWaterFixSwitch() : '', software: water && globalThis.__rapierWaterSoftwareTest === true, slowTest: water ? globalThis.__rapierWaterSlowTest : undefined, stats: water && purpose === 'human' && new URLSearchParams(location.search).has('waterstats'), capture: water && purpose === 'human' && new URLSearchParams(location.search).has('water-capture'), helpers, ...(helpers ? {helperSource: rows.workerSource()} : {})});
 			return client;
 		} catch (error) { worker.terminate(); throw error; }
 	})().catch(error => { if (_rapierDrawPaintWorkers.get(role) === holder) _rapierDrawPaintWorkers.delete(role); throw error; });
@@ -3337,7 +3337,7 @@ function _rapierDrawLetterGlyph(set) {
 	const sample = set && globalThis.RapierDrawLetterPreviews.LETTER_PREVIEWS[set.id];
 	return sample ? '<svg class="rapier-draw-glyph" viewBox="0 0 ' + sample.glyph[0] + ' ' + sample.em + '" aria-hidden="true"><path fill="currentColor" transform="translate(' + sample.bearing + ',0)" d="' + sample.glyph[1] + '"/></svg>' : '';
 }
-const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/letters/';
+const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.21/letters/';
 const _rapierDrawLettersDoor = { allowed: false, asking: null, providers: new Map(), bringing: new Map() };
 function _rapierDrawLettersProvider(set) {
 	const door = _rapierDrawLettersDoor;
