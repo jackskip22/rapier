@@ -17,6 +17,7 @@ import {admitWaterActions, waterPaperById} from './water-data.mjs';
 import {sha256} from '../kit/ledger/hash.mjs';
 import {inspectJPEGXL} from '../images/header.mjs';
 import {inspectRaster} from '../images/raster.mjs';
+import {ornamentPath} from './ornaments.mjs';
 import {hasRefraction, refractionRecipeKey, admitRefractionRenditions, currentRefractionRenditions, stripRefractionRenditions, restoreRefractionRenditions} from './refraction-rendition.mjs';
 
 const _rapierDrawAssetGenerations = [];
@@ -360,7 +361,7 @@ function _rapierDrawShapePolygon(shape, recipe) {
 	if (shape.recognized === 'circle') return _rapierDrawEllipsePolygon(g.cx, g.cy, g.r, g.r, 0, 48);
 	if (shape.recognized === 'ellipse') return _rapierDrawEllipsePolygon(g.cx, g.cy, g.rx, g.ry, g.rot || 0, 64);
 	if (RAPIER_DRAW_BOXES.has(shape.recognized)) { const contour = _rapierDrawBoxContours(shape); if (contour) return contour.outline; }
-	if (shape.recognized === 'rect' || shape.recognized === 'paint') return g.p ? g.p.map(p => [p[0], p[1]]) : _rapierDrawRectPolygon(g.cx, g.cy, g.w, g.h, g.rot || 0);
+	if (shape.recognized === 'rect' || shape.recognized === 'paint' || shape.recognized === 'ornament') return g.p ? g.p.map(p => [p[0], p[1]]) : _rapierDrawRectPolygon(g.cx, g.cy, g.w, g.h, g.rot || 0);
 	if (shape.recognized === 'triangle') return g.p.map(p => [p[0], p[1]]);
 	const n = shape.recognized === 'star' ? (g.points || 5) * 2 : RAPIER_DRAW_POLYGONS[shape.recognized];
 	if (n) {
@@ -519,7 +520,7 @@ function _rapierDrawEdgeSnapPoint(px, py, shape, recipe) {
 	const g = shape.geom;
 	if (shape.recognized === 'circle') { const p = _rapierDrawEllipseEdgePoint(g.cx, g.cy, g.r, g.r, 0, px, py); return { point: p, dist: _rapierDrawDist([px, py], p) }; }
 	if (shape.recognized === 'ellipse') { const p = _rapierDrawEllipseEdgePoint(g.cx, g.cy, g.rx, g.ry, g.rot || 0, px, py); return { point: p, dist: _rapierDrawDist([px, py], p) }; }
-	if (RAPIER_DRAW_BOXES.has(shape.recognized) || shape.recognized === 'paint' || shape.recognized === 'triangle' || shape.recognized === 'text' || Object.hasOwn(RAPIER_DRAW_POLYGONS, shape.recognized)) {
+	if (RAPIER_DRAW_BOXES.has(shape.recognized) || shape.recognized === 'paint' || shape.recognized === 'ornament' || shape.recognized === 'triangle' || shape.recognized === 'text' || Object.hasOwn(RAPIER_DRAW_POLYGONS, shape.recognized)) {
 		const poly = _rapierDrawShapePolygon(shape, recipe);
 		return poly ? _rapierDrawNearestOnPolygon([px, py], poly) : null;
 	}
@@ -533,11 +534,11 @@ function _rapierDrawAnchorFrame(shape, recipe) {
 		const p = _rapierDrawTextLayout(shape, recipe).polygon;
 		return { x: p[0][0], y: p[0][1], ux: p[1][0] - p[0][0], uy: p[1][1] - p[0][1], vx: p[3][0] - p[0][0], vy: p[3][1] - p[0][1] };
 	}
-	if (shape.recognized === 'triangle' || g.p && (RAPIER_DRAW_BOXES.has(shape.recognized) || shape.recognized === 'paint' || Object.hasOwn(RAPIER_DRAW_POLYGONS, shape.recognized))) {
+	if (shape.recognized === 'triangle' || g.p && (RAPIER_DRAW_BOXES.has(shape.recognized) || shape.recognized === 'paint' || shape.recognized === 'ornament' || Object.hasOwn(RAPIER_DRAW_POLYGONS, shape.recognized))) {
 		const p = g.p, q = p[shape.recognized === 'triangle' ? 2 : 3];
 		return { x: p[0][0], y: p[0][1], ux: p[1][0] - p[0][0], uy: p[1][1] - p[0][1], vx: q[0] - p[0][0], vy: q[1] - p[0][1] };
 	}
-	if (!['circle', 'ellipse', 'paint'].includes(shape.recognized) && !RAPIER_DRAW_BOXES.has(shape.recognized) && !Object.hasOwn(RAPIER_DRAW_POLYGONS, shape.recognized)) return null;
+	if (!['circle', 'ellipse', 'paint', 'ornament'].includes(shape.recognized) && !RAPIER_DRAW_BOXES.has(shape.recognized) && !Object.hasOwn(RAPIER_DRAW_POLYGONS, shape.recognized)) return null;
 	const rx = g.r ?? g.rx ?? g.w / 2, ry = g.r ?? g.ry ?? g.h / 2, c = Math.cos(g.rot || 0), s = Math.sin(g.rot || 0);
 	return { x: g.cx - rx * c + ry * s, y: g.cy - rx * s - ry * c, ux: 2 * rx * c, uy: 2 * rx * s, vx: -2 * ry * s, vy: 2 * ry * c };
 }
@@ -1073,7 +1074,7 @@ function _rapierDrawDashActive(shape) {
 	if (shape.recognized === 'arc' || shape.recognized === 'parabola') return true;
 	if (shape.recognized === 'line' || shape.recognized === 'arrow') return !shape.brush || shape.brush === 'ink';
 	if (shape.recognized === 'ink') return !!shape.cut;
-	if (shape.recognized === 'text' || shape.recognized === 'paint') return false;
+	if (shape.recognized === 'text' || shape.recognized === 'paint' || shape.recognized === 'ornament') return false;
 	return (!shape.brush || shape.brush === 'ink') && shape.style !== 'solid';
 }
 
@@ -1140,7 +1141,7 @@ function _rapierDrawAngleMarkup(shape) {
 
 function _rapierDrawStylesFor(kind) {
 	if (kind === 'line' || kind === 'arrow') return ['plain', 'arrow', 'dimension'];
-	if (kind === 'arc' || kind === 'parabola' || kind === 'ink' || kind === 'text' || kind === 'paint') return [];
+	if (kind === 'arc' || kind === 'parabola' || kind === 'ink' || kind === 'text' || kind === 'paint' || kind === 'ornament') return [];
 	return ['outline', 'hatch', 'stipple', 'solid'];
 }
 function _rapierDrawDefaultStyle(kind) {
@@ -2237,6 +2238,8 @@ function _rapierDrawShapeMarkup(shape, recipe, renderOptions) {
 		body = '<path d="' + _rapierDrawSegmentsPathD([shape.geom.p]) + '" fill="none" stroke="' + ink + '" stroke-width="' + _rapierDrawFmt(width) + '" stroke-linecap="round"' + _rapierDrawDashAttrs(length, width * _rapierDrawNibScale(shape, recipe), shape.dash) + '/>';
 	} else if (shape.recognized === 'paint') {
 		body = _rapierDrawPaintMarkup(shape, recipe);
+	} else if (shape.recognized === 'ornament') {
+		body = _rapierDrawOrnamentMarkup(shape, recipe, ink);
 	} else if (shape.recognized !== 'text') {
 		const g = shape.geom, style = shape.style || 'outline', solid = style === 'solid';
 		const border = shape.authorStyle?.stroke || shape.border, contours = RAPIER_DRAW_BOXES.has(shape.recognized) && _rapierDrawBoxContours(shape);
@@ -2288,6 +2291,15 @@ function _rapierDrawPaintMarkup(shape, recipe) {
 	const a = (frame[1][0] - frame[0][0]) / w, b = (frame[1][1] - frame[0][1]) / w, c = (frame[3][0] - frame[0][0]) / h, d = (frame[3][1] - frame[0][1]) / h;
 	const matrix = [a, b, c, d, frame[0][0], frame[0][1]].map(n => (Math.round(n * 100000) / 100000).toString()).join(' ');
 	return '<image data-rapier-paint="' + _rapierDrawEscapeAttr(shape.id) + '" x="0" y="0" width="' + w + '" height="' + h + '" preserveAspectRatio="none" transform="matrix(' + matrix + ')" href="' + shape.raster + '"/>';
+}
+
+function _rapierDrawOrnamentMarkup(shape, recipe, ink) {
+	const frame = _rapierDrawShapePolygon(shape, recipe), piece = shape.ornament;
+	if (!frame || !piece) return '';
+	const a = (frame[1][0] - frame[0][0]) / piece.w, b = (frame[1][1] - frame[0][1]) / piece.w, c = (frame[3][0] - frame[0][0]) / piece.h, d = (frame[3][1] - frame[0][1]) / piece.h;
+	const matrix = [a, b, c, d, frame[0][0], frame[0][1]].map(n => (Math.round(n * 100000) / 100000).toString()).join(' ');
+	return '<g transform="matrix(' + matrix + ')" fill="' + ink + '" fill-rule="evenodd" stroke="none">' + (piece.layers || []).map(layer =>
+		'<path fill-opacity="' + _rapierDrawFmt(layer.opacity / 255) + '" d="' + layer.d + '"/>').join('') + '<path d="' + piece.d + '"/></g>';
 }
 
 function _rapierDrawStripRasters(recipe) {
@@ -2399,7 +2411,7 @@ function _rapierDrawSceneWork(recipe) {
 	for (const shape of recipe.shapes) {
 		text += shape.label?.length || 0;
 		const paintsInk = _rapierDrawShapePaintsInk(shape, recipe);
-		if (!paintsInk && (['circle', 'ellipse', 'rect', 'triangle', 'text', 'paint'].includes(shape.recognized) || Object.hasOwn(RAPIER_DRAW_POLYGONS, shape.recognized))) obstacles++;
+		if (!paintsInk && (['circle', 'ellipse', 'rect', 'triangle', 'text', 'paint', 'ornament'].includes(shape.recognized) || Object.hasOwn(RAPIER_DRAW_POLYGONS, shape.recognized))) obstacles++;
 		if (!paintsInk && (shape.recognized === 'arrow' || shape.recognized === 'line') && shape.route === 'auto') automatic++;
 		const points = _rapierDrawShapeStroke(shape, recipe)?.pts;
 		if (!points || !paintsInk) continue;
@@ -2496,7 +2508,7 @@ function _rapierDrawInterpolatePoint(a, b, t) {
 }
 
 function _rapierDrawStrokeHalf(shape, recipe) {
-	if (shape.recognized === 'paint') return 0;
+	if (shape.recognized === 'paint' || shape.recognized === 'ornament') return 0;
 	const nib = _rapierDrawShapeNib(shape, recipe);
 	if (shape.cutWidth && (shape.cut || !_rapierDrawShapePaintsInk(shape, recipe))) return shape.cutWidth * nib / (2 * RAPIER_DRAW_NIB_DEFAULT);
 	// paints (RAPIER_DRAW_SHAPE_WIDTH's own half, 1.3, falls out of this unchanged for a Shape-tool
@@ -3482,7 +3494,7 @@ function _rapierDrawTestBudget(name, fallback) {
 	const value = typeof globalThis !== 'undefined' ? globalThis[name] : null;
 	return Number.isInteger(value) && value > 0 ? value : fallback;
 }
-const _rapierDrawKnownKind = kind => ['ink', 'circle', 'ellipse', 'triangle', 'line', 'arrow', 'arc', 'parabola', 'text', 'paint'].includes(kind) || Object.hasOwn(RAPIER_DRAW_POLYGONS, kind) || RAPIER_DRAW_BOXES.has(kind);
+const _rapierDrawKnownKind = kind => ['ink', 'circle', 'ellipse', 'triangle', 'line', 'arrow', 'arc', 'parabola', 'text', 'paint', 'ornament'].includes(kind) || Object.hasOwn(RAPIER_DRAW_POLYGONS, kind) || RAPIER_DRAW_BOXES.has(kind);
 export function refractionSourceFault(recipe, sourceCounts) {
 	const shapes = Array.isArray(recipe?.shapes) ? recipe.shapes : [];
 	const counts = sourceCounts || new Map();
@@ -3524,7 +3536,7 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 	if (input.frame && ['x', 'y', 'w', 'h'].every(k => spatial(input.frame[k])) && input.frame.w >= 1 && input.frame.h >= 1 && input.frame.w <= 65536 && input.frame.h <= 65536) out.frame = { x: Math.round(input.frame.x), y: Math.round(input.frame.y), w: Math.round(input.frame.w), h: Math.round(input.frame.h) };
 	const reserved = new Set(input.shapes.map(s => typeof s?.id === 'string' && _RAPIER_DRAW_ID.test(s.id) ? s.id : '').filter(Boolean));
 	const ids = new Set(), sourceIds = new Map(), duplicates = new Set();
-	let seq = 0, points = 0, textUnits = 0, rasterUnits = 0;
+	let seq = 0, points = 0, textUnits = 0, rasterUnits = 0, ornamentUnits = 0;
 	for (const raw of input.shapes) {
 		if (!raw || typeof raw !== 'object') return null;
 		let id = typeof raw.id === 'string' && _RAPIER_DRAW_ID.test(raw.id) ? raw.id : '';
@@ -3533,7 +3545,7 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 		ids.add(id);
 		if (typeof raw.id === 'string' && !sourceIds.has(raw.id)) sourceIds.set(raw.id, id);
 		let kind = raw.recognized, geom = null;
-		const polygon = Object.hasOwn(RAPIER_DRAW_POLYGONS, kind), frame = RAPIER_DRAW_BOXES.has(kind) || kind === 'paint' || polygon;
+		const polygon = Object.hasOwn(RAPIER_DRAW_POLYGONS, kind), frame = RAPIER_DRAW_BOXES.has(kind) || kind === 'paint' || kind === 'ornament' || polygon;
 		if (!_rapierDrawKnownKind(kind)) return null;
 		if (kind !== 'ink') {
 			const g = raw.geom;
@@ -3541,7 +3553,7 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 			if (kind === 'triangle' || kind === 'parabola' || frame && g.p) {
 				if (!Array.isArray(g.p) || g.p.length !== (kind === 'triangle' || kind === 'parabola' ? 3 : 4) || !g.p.every(p => Array.isArray(p) && p.length === 2 && p.every(spatial))) return null;
 				geom = { p: g.p.map(p => p.slice()) };
-				if ((polygon || kind === 'paint' || kind !== 'rect' && RAPIER_DRAW_BOXES.has(kind) || raw.corner) && g.p.some((p, i) => i === 2 && (Math.abs(p[0] - g.p[1][0] - g.p[3][0] + g.p[0][0]) > .01 || Math.abs(p[1] - g.p[1][1] - g.p[3][1] + g.p[0][1]) > .01))) return null;
+				if ((polygon || kind === 'paint' || kind === 'ornament' || kind !== 'rect' && RAPIER_DRAW_BOXES.has(kind) || raw.corner) && g.p.some((p, i) => i === 2 && (Math.abs(p[0] - g.p[1][0] - g.p[3][0] + g.p[0][0]) > .01 || Math.abs(p[1] - g.p[1][1] - g.p[3][1] + g.p[0][1]) > .01))) return null;
 			} else {
 				geom = {};
 				for (const key of frame ? ['cx', 'cy', 'w', 'h'] : kind === 'text' ? ['cx', 'cy'] : _RAPIER_DRAW_GEOM_FIELDS[kind]) {
@@ -3556,7 +3568,7 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 			({ kind, geom } = _rapierDrawClampArcSweep(kind, geom));
 		}
 		let stroke = null;
-		if ((kind === 'text' || kind === 'paint') && raw.stroke != null) return null;
+		if ((kind === 'text' || kind === 'paint' || kind === 'ornament') && raw.stroke != null) return null;
 		if (raw.stroke != null) {
 			if (!Number.isInteger(raw.stroke) || raw.stroke < 0 || !input.strokes[raw.stroke]) return null;
 			const pts = input.strokes[raw.stroke].pts;
@@ -3588,6 +3600,16 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 			if (!border || !_rapierDrawBorderActive(shape)) return null;
 			shape.border = border;
 		}
+		if (kind === 'ornament') {
+			const piece = raw.ornament, side = n => Number.isInteger(n) && n >= 1 && n <= 524288;
+			if (!piece || typeof piece !== 'object' || !side(piece.w) || !side(piece.h) || !ornamentPath(piece.d, 1000000) || (ornamentUnits += piece.d.length) > 4000000) return null;
+			shape.ornament = { d: piece.d, w: piece.w, h: piece.h };
+			if (piece.layers != null) {
+				if (!Array.isArray(piece.layers) || !piece.layers.length || piece.layers.length > 8) return null;
+				for (const layer of piece.layers) if (!layer || !Number.isInteger(layer.opacity) || layer.opacity < 1 || layer.opacity > 254 || !ornamentPath(layer.d, 1000000) || (ornamentUnits += layer.d.length) > 4000000) return null;
+				shape.ornament.layers = piece.layers.map(layer => ({ d: layer.d, opacity: layer.opacity }));
+			}
+		} else if (raw.ornament != null) return null;
 		if (kind === 'paint') {
 			const raster = _rapierDrawRasterInfo(raw.raster, keepRasters ? Infinity : RAPIER_DRAW_RASTER_MAX);
 			if (!raster || !keepRasters && (rasterUnits += raw.raster.length) > RAPIER_DRAW_RASTER_TOTAL) return null;
@@ -3630,7 +3652,7 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 		if (raw.locked) shape.locked = true;
 		if (raw.labelGrow != null) {
 			const m = raw.labelGrow;
-			if (line || kind === 'arc' || kind === 'parabola' || kind === 'ink' || kind === 'text' || kind === 'paint' || !Array.isArray(m) || m.length !== 6 || !m.every(n => finite(n) && Math.abs(n) <= 1e12)) return null;
+			if (line || kind === 'arc' || kind === 'parabola' || kind === 'ink' || kind === 'text' || kind === 'paint' || kind === 'ornament' || !Array.isArray(m) || m.length !== 6 || !m.every(n => finite(n) && Math.abs(n) <= 1e12)) return null;
 			const d = m[0] * m[3] - m[1] * m[2];
 			if (!d || ![m[3] / d, -m[1] / d, -m[2] / d, m[0] / d, (m[2] * m[5] - m[3] * m[4]) / d, (m[1] * m[4] - m[0] * m[5]) / d].every(n => finite(n) && Math.abs(n) <= 1e12)) return null;
 			shape.labelGrow = m.slice();

@@ -7,7 +7,7 @@ import {readLedger} from '../kit/ledger/format.mjs';
 import {canonicalJSON} from '../kit/ledger/data.mjs';
 import {authoredBasis, authoredPlacement} from '../kit/ledger/transport.mjs';
 import {canonicalLiveAct, placedLiveAct} from '../kernel/live-act.mjs';
-import {initialLiveLedger, carriedLiveLedger, appendLiveJournal, liveLedgerPatch, liveRows} from './live-ledger.mjs';
+import {initialLiveLedger, carriedLiveLedger, appendLiveJournal, liveLedgerPrefix, liveLedgerPatch, liveRows} from './live-ledger.mjs';
 import {createPrivateInvitation, sealPrivate, openPrivateInitial, openPrivatePresence, openPrivateRecord, privateAuthor} from './live-private.mjs';
 import {PRIVATE_LIVE_PROTOCOL, privateId, privatePeer, privateInteger, privateSecret} from '../kernel/live-private-wire.mjs';
 import {portSocket} from './port-socket.mjs';
@@ -283,19 +283,36 @@ export function createLiveClient({post, socket: Socket, store, clock, timer, can
       throw new Error('live_record_invalid');
     if (entry.gen <= state.gen) return false;
     if (entry.gen !== state.gen + 1) throw new Error('live_generation_gap');
+    let pending = state.pending, move = null;
+    const sameAct = pending.findIndex(row => row.actId === entry.actId);
+    if (sameAct >= 0 && (pending[sameAct].client !== entry.client || pending[sameAct].seq !== entry.seq)) {
+      const head = pending[0];
+      if (sameAct !== 0 || entry.client === state.client || pending.slice(1).some(row => row.sent) ||
+          placedLiveAct(head.act, head.splices) !== head.act) throw new Error('live_acknowledgement_unproven');
+      const baseline = carriedLiveLedger(state.baselineLedger, state.log.filter(row => !row.baseline));
+      const proposed = carriedLiveLedger(baseline, [], [head]);
+      const acknowledged = carriedLiveLedger(baseline, [entry]);
+      if (!liveLedgerPrefix(proposed, acknowledged)) throw new Error('live_acknowledgement_unproven');
+      move = target => target.client !== state.client ? target : target.seq === head.seq
+        ? {client: entry.client, seq: entry.seq} : target.seq > head.seq ? {...target, seq: target.seq - 1} : target;
+      pending = pending.map((row, index) => ({...row, ...(index ? {seq: row.seq - 1} : {client: entry.client, seq: entry.seq}),
+        ...(row.undoTarget ? {undoTarget: move(row.undoTarget)} : {}),
+        ...(row.undoTargets ? {undoTargets: row.undoTargets.map(move)} : {})}));
+    }
     const undo = inverseSplices(state.base, entry.splices);
-    const localId = state.pending.find(row => row.client === entry.client && row.seq === entry.seq)?.localId;
+    const localId = pending.find(row => row.client === entry.client && row.seq === entry.seq)?.localId;
     const witnessed = {...entry, undo, ...(localId ? {localTransactionId: localId} : {})};
-    const result = reconcileQueue(state.base, state.pending, entry, [...state.log, witnessed]);
+    const result = reconcileQueue(state.base, pending, entry, [...state.log, witnessed]);
     if (result.splices.length) corrections.push({client: entry.client, actId: entry.actId, splices: result.splices, act: witnessed});
     else pendingActs.push(witnessed);
     state.base = result.base; state.text = result.text; state.pending = result.pending;
+    if (move) { state.nextSeq--; state.redo = state.redo.map(move); }
     placePending();
     state.gen = entry.gen;
     state.log.push(witnessed);
     canonical = null;
     received++;
-    if (result.accepted) { cancelTimer(retry); retry = 0; }
+    if (result.accepted) { inFlight = null; cancelTimer(retry); retry = 0; }
     return true;
   };
   const enqueue = value => {
@@ -346,6 +363,44 @@ export function createLiveClient({post, socket: Socket, store, clock, timer, can
     checkpoint(value.revision, value.root, value.journal);
     canonical = null;
   };
+  const recoverAcknowledgements = () => {
+    const byId = new Map(state.log.map(row => [row.actId, row]));
+    if (!state.pending.some(row => byId.has(row.actId))) return;
+    const firstUnaccepted = state.pending.findIndex(row => !byId.has(row.actId));
+    const count = firstUnaccepted < 0 ? state.pending.length : firstUnaccepted;
+    const acknowledged = state.pending.slice(0, count), remaining = state.pending.slice(count);
+    if (!count || remaining.some(row => byId.has(row.actId) || row.sent)) throw new Error('live_acknowledgement_unproven');
+    const baseline = carriedLiveLedger(state.baselineLedger, state.log.filter(row => !row.baseline), [], state.base);
+    const ui = readLedger(state.ui.ledger, state.ui.source);
+    if (!liveLedgerPrefix(baseline, ui.ledger) || ui.ledger.records.length !== baseline.records.length + remaining.length)
+      throw new Error('live_acknowledgement_unproven');
+    const targets = new Map();
+    for (const row of acknowledged) {
+      const known = byId.get(row.actId), index = state.log.indexOf(known);
+      if (known.baseline || known.client === state.client || row.client !== state.client || !row.act.authored ||
+          placedLiveAct(row.act, known.splices) !== row.act) throw new Error('live_acknowledgement_unproven');
+      const before = carriedLiveLedger(state.baselineLedger, state.log.slice(0, index).filter(row => !row.baseline));
+      const proposed = carriedLiveLedger(before, [{...known, act: row.act}]);
+      if (!liveLedgerPrefix(proposed, carriedLiveLedger(before, [known]))) throw new Error('live_acknowledgement_unproven');
+      targets.set(row.seq, {client: known.client, seq: known.seq});
+    }
+    const move = target => target.client !== state.client ? target : targets.get(target.seq) ||
+      {...target, seq: target.seq - acknowledged.filter(row => row.seq < target.seq).length};
+    let text = state.base;
+    const pending = remaining.map((row, index) => {
+      const journal = ui.ledger.records[baseline.records.length + index];
+      if (journal.transaction.id !== row.actId || row.client !== state.client) throw new Error('live_acknowledgement_unproven');
+      const splices = parallelSplices(text, journal.splices, {authoredRanges: true});
+      text = applySplices(text, splices);
+      return {...row, seq: row.seq - count, splices,
+        ...(row.undoTarget ? {undoTarget: move(row.undoTarget)} : {}),
+        ...(row.undoTargets ? {undoTargets: row.undoTargets.map(move)} : {})};
+    });
+    const carried = carriedLiveLedger(baseline, [], pending, ui.text);
+    if (!liveLedgerPrefix(carried, ui.ledger)) throw new Error('live_acknowledgement_unproven');
+    state.pending = pending; state.nextSeq -= count; state.redo = state.redo.map(move);
+    state.text = text; corrections = state.corrections = []; canonical = null;
+  };
   const recover = local => {
     if (!state.ui?.ledger || !local || local.ledger?.documentAuthority !== state.documentId) return;
     const checked = readLedger(local.ledger, local.source), current = state.ui.ledger;
@@ -355,18 +410,15 @@ export function createLiveClient({post, socket: Socket, store, clock, timer, can
       view = local.source; corrections = []; pendingActs = [];
       checkpoint(checked.revision, checked.root, null, checked.ledger); return;
     }
-    const samePrefix = (before, after) => before.records.length <= after.records.length &&
-      before.start.root === after.start.root && before.start.text === after.start.text &&
-      before.records.every((row, index) => canonicalJSON(row) === canonicalJSON(after.records[index]));
     const known = state.ui.checkpoints.some(row => row.sha256 === local.ledger.sha256 && row.revision === checked.revision &&
-      row.root === checked.root && row.digest === sha256(local.source)) || samePrefix(local.ledger, current);
+      row.root === checked.root && row.digest === sha256(local.source)) || liveLedgerPrefix(local.ledger, current);
     if (known) {
       const splices = liveLedgerPatch(local.ledger, current), last = current.records.at(-1)?.transaction;
       if (!last) throw new Error('live_recovery_history_missing');
       return {before: local.source, revision: checked.revision, root: checked.root,
         records: [{transaction: last, splices}], ledger: current, acts: state.log};
     }
-    const prefix = [current, accepted].find(value => samePrefix(value, local.ledger));
+    const prefix = [current, accepted].find(value => liveLedgerPrefix(value, local.ledger));
     if (!prefix) throw new Error('live_recovery_branch_unproven');
     if (prefix.sha256 !== current.sha256) {
       view = readLedger(prefix).text; corrections = []; pendingActs = [];
@@ -380,7 +432,8 @@ export function createLiveClient({post, socket: Socket, store, clock, timer, can
       enqueue({id: row.transaction.id, splices: row.splices, revision: row.transaction.revision, root: row.afterHash,
         baseRevision: row.transaction.baseRevision, beforeRoot: row.beforeHash, journal: row});
     }
-    if (view !== local.source || state.ui.ledger.sha256 !== local.ledger.sha256) throw new Error('live_recovery_branch_unproven');
+    if (view !== local.source || state.ui.ledger.records.length !== local.ledger.records.length ||
+        !liveLedgerPrefix(state.ui.ledger, local.ledger)) throw new Error('live_recovery_branch_unproven');
   };
   const completeHello = async () => {
     if (state.expected && (state.gen !== state.expected.gen || (descriptor.private
@@ -630,6 +683,7 @@ export function createLiveClient({post, socket: Socket, store, clock, timer, can
       }
       if (state.documentId && descriptor.requestedId && state.documentId !== descriptor.requestedId) throw new Error('live_store_document_mismatch');
       if (state.client || state.initial) {
+        recoverAcknowledgements();
         state.text = state.pending.reduce((text, row) => applySplices(text, row.splices), state.base);
         view = state.ui?.source ?? state.text; corrections = state.corrections || [];
         if (corrections.reduce((text, row) => applySplices(text, row.splices), view) !== state.text)

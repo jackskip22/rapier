@@ -131,14 +131,21 @@ function unquote(value) {
 }
 
 function marginOf(value) {
-	const match = /^margin\s*=\s*(\d+(?:\.\d+)?)(cm|mm|in|pt)$/i.exec(unquote(value));
-	if (!match) return null;
-	const number = Number(match[1]);
-	if (!Number.isFinite(number) || number < 0) return null;
-	const unit = match[2].toLowerCase();
-	const twips = Math.round(unit === 'in' ? number * 1440 : unit === 'pt' ? number * 20 : unit === 'cm' ? number * 1440 / 2.54 : number * 1440 / 25.4);
-	if (!Number.isSafeInteger(twips) || twips < 0 || twips > 1440 * 6) return null;
-	return Object.freeze({margin: match[1] + unit, twips});
+	const lengths = new Map();
+	for (const part of unquote(value).split(',')) {
+		const match = /^\s*(margin|top|right|bottom|left)\s*=\s*(\d+(?:\.\d+)?)(cm|mm|in|pt)\s*$/i.exec(part);
+		if (!match) return null;
+		const key = match[1].toLowerCase(), number = Number(match[2]), unit = match[3].toLowerCase();
+		const twips = Math.round(unit === 'in' ? number * 1440 : unit === 'pt' ? number * 20 : unit === 'cm' ? number * 1440 / 2.54 : number * 1440 / 25.4);
+		if (lengths.has(key) || !Number.isSafeInteger(twips) || twips < 0 || twips > 1440 * 6) return null;
+		lengths.set(key, {css: match[2] + unit, twips});
+	}
+	const sides = ['top', 'right', 'bottom', 'left'].map(key => lengths.get(key) || lengths.get('margin'));
+	if (sides.some(side => !side)) return null;
+	const [top, right, bottom, left] = sides.map(side => side.twips);
+	const uniform = sides.every(side => side.twips === top);
+	return Object.freeze({margin: uniform ? sides[0].css : sides.map(side => side.css).join(' '),
+		twips: uniform ? top : null, top, right, bottom, left});
 }
 
 function quotedEnd(text, start = 0, limit = text.length) {
@@ -352,14 +359,14 @@ export function updateDocumentSettings(markdown, patch) {
 		text: (source[field.start - 1] === ':' ? ' ' : '') + text + (source[field.end] === '#' ? ' ' : '')});
 	for (const [key, supplied] of Object.entries(patch || {})) {
 		const font = ['mainfont', 'sansfont', 'monofont', 'defaultfont'].includes(key);
-		if (!font && !['fontsize', 'linestretch', 'spacing'].includes(key)) throw new TypeError('Unknown document setting: ' + key);
+		if (!font && !['fontsize', 'linestretch', 'spacing', 'geometry'].includes(key)) throw new TypeError('Unknown document setting: ' + key);
 		const matches = fields.filter(item => item.key === key);
 		if (matches.length > 1) throw new RangeError('Duplicate document setting: ' + key);
 		const field = matches[0];
-		const value = supplied === null ? null : font ? documentFont(supplied) : key === 'fontsize' ? fontSize(supplied) : key === 'spacing' ? normalizeDocumentSpacing(supplied) : leading(supplied);
+		const value = supplied === null ? null : font ? documentFont(supplied) : key === 'fontsize' ? fontSize(supplied) : key === 'spacing' ? normalizeDocumentSpacing(supplied) : key === 'geometry' ? marginOf(supplied) : leading(supplied);
 		if (supplied !== null && !value) throw new TypeError('Invalid document setting: ' + key);
-		const encoded = value === null ? '' : font ? JSON.stringify(value.family) : key === 'fontsize' ? value.step : key === 'spacing' ? JSON.stringify(value) : String(value.factor);
-		if (value !== null && before[key] && (font ? before[key].family === value.family : key === 'fontsize' ? same(before.fontsize.unit, value.unit) : key === 'spacing' ? JSON.stringify(before.spacing) === encoded : before.linestretch.factor === value.factor)) continue;
+		const encoded = value === null ? '' : font ? JSON.stringify(value.family) : key === 'fontsize' ? value.step : key === 'spacing' ? JSON.stringify(value) : key === 'geometry' ? unquote(supplied).trim() : String(value.factor);
+		if (value !== null && before[key] && (font ? before[key].family === value.family : key === 'fontsize' ? same(before.fontsize.unit, value.unit) : key === 'spacing' ? JSON.stringify(before.spacing) === encoded : key === 'geometry' ? ['top', 'right', 'bottom', 'left'].every(side => before.geometry[side] === value[side]) : before.linestretch.factor === value.factor)) continue;
 		if (key === 'fontsize' && value !== null && fontSize(encoded)?.unit !== value.unit) refuse(key);
 		if (!field) { if (value !== null) append.push(key + ': ' + encoded + eol); continue; }
 		if (field.opaque || field.invalid || field.multiline || field.block) refuse(key);

@@ -602,7 +602,8 @@ export class WaterGPU {
  beginTransaction(){
   this._check();if(this.transaction)throw failure('WATER_BUSY','A Water gesture is already open.');
   this.endFill();this._flushStamps();const tx={tiles:new Map(),span:0,meta:this._meta(),width:this.width,height:this.height,sim:[],paper:this.paper,finish:this.finish,sheet:null,simBox:this.simBox?.slice()??null,
-   base:this.base,materialRects:this._material().map(t=>!t?null:t.written===undefined?[0,0,t.w,t.h]:t.written?.slice()??null)};
+   base:this.base,flowMayMove:this.flowMayMove,trimEpoch:this.trimEpoch,trim:this.maskRead,
+   materialRects:this._material().map(t=>!t?null:t.written===undefined?[0,0,t.w,t.h]:t.written?.slice()??null)};
   const sim=[...this.velocity.read,...this.pressure.read];this._reserve(sim.reduce((n,t)=>n+t.bytes,0));
   try{for(const t of sim){const copy=this._texture(t.w,t.h,t.format);tx.sim.push(copy);this._copy(t,copy);}}
   catch(error){this.submit();tx.sim.forEach(t=>this._drop(t));throw error;}
@@ -650,6 +651,15 @@ export class WaterGPU {
   if(tx.paper!==this.paper)retired.push(tx.paper);if(tx.finish&&tx.finish!==this.finish)retired.push(tx.finish);
   this._retainCapture(tx,capture);retired.forEach(t=>this._drop(t));
  }
+ async _restoreContinuation(tx){
+  const read=tx.trim,current=this.maskRead;
+  if(read?.state==='pending')await read.mapped;
+  const pixels=read?this._trimPixels(read):null;
+  if(current?.state==='pending')await current.mapped;
+  if(current?.buffer?.mapState==='mapped')current.buffer.unmap();
+  this.maskRead=read?{w:read.w,h:read.h,due:read.due,epoch:read.epoch,pixels,state:pixels?'ready':'failed'}:null;
+  this.trimEpoch=tx.trimEpoch;this.simBox=tx.simBox?.slice()??null;this.flowMayMove=tx.flowMayMove;
+ }
  async endTransaction(tx,cancel=false){
   if(tx!==this.transaction)throw failure('WATER_INPUT','The Water checkpoint is not current.');
   this.endFill();const retired=[];
@@ -660,7 +670,7 @@ export class WaterGPU {
     const credit=retired.reduce((sum,t)=>sum+t.bytes,0);this._reclaimScratch(need,credit);
     if(this.bytes-credit+need>this.maxBytes)throw failure('WATER_GPU_MEMORY','Water cannot restore this sheet in GPU memory. The last published painting is safe; reopen Water to continue.');
     try{await this.device.queue.onSubmittedWorkDone();}catch(error){this._poison(error);}await this._settleErrors();
-    retired.forEach(t=>this._drop(t));await this._restoreCapture(tx.cpu);
+    retired.forEach(t=>this._drop(t));await this._restoreCapture(tx.cpu);await this._restoreContinuation(tx);
    }
    this.transaction=null;tx.cpu=null;return;
   }
@@ -680,7 +690,7 @@ export class WaterGPU {
    targets.forEach((target,i)=>{if(target)target.written=tx.materialRects[i]?.slice()??null;});
    for(let i=0;i<tx.sim.length;i++){this._copy(tx.sim[i],i?this.pressure.read[0]:this.velocity.read[0]);}
    for(const [key,value] of Object.entries(tx.meta))this[key]=value;
-   this.simBox=tx.simBox?tx.simBox.slice():null;this.painting=false;this.flowMayMove=true;
+   await this._restoreContinuation(tx);this.painting=false;
    for(const pair of [this.velocity,this.pressure])pair.read.forEach((t,i)=>this._copy(t,pair.write[i]));
   }else if(tx.sheet)retired.push(...this._sheetTextures(tx.sheet));
   if(tx.paper!==this.paper)retired.push(tx.paper);
@@ -896,7 +906,10 @@ export class WaterGPU {
   if(read.state==='pending')await read.mapped;
   if(this.maskRead!==read)return;this.maskRead=null;
   let pixels=null;
-  try{if(read.epoch===this.trimEpoch&&!this.painting&&this.active)pixels=this._trimPixels(read);}
+  try{
+   if(this.transaction?.trim===read)this._trimPixels(read);
+   if(read.epoch===this.trimEpoch&&!this.painting&&this.active)pixels=this._trimPixels(read);
+  }
   finally{if(read.buffer?.mapState==='mapped')read.buffer.unmap();}
   if(pixels)await this._trim(pixels);
  }
@@ -1268,6 +1281,10 @@ export class WaterGPU {
  stats(){return {backend:'webgpu',bytes:this.bytes,presentationBytes:this.presentationBytes,width:this.width,height:this.height,simulation:[this.sw,this.sh],active:this.active?.slice()??null,frames:this.frame};}
  dispose(){
   if(this.disposed)return;
-  try{this.submit();}finally{this._release();for(const stamp of this.timeStamps??[]){stamp.set.destroy();stamp.resolve.destroy();stamp.read.destroy();}this.timeStamps=null;this.transaction=null;this.fill=null;this.disposed=true;}
+  try{if(!this.gpuError&&!this.lost)this.submit();}finally{
+   this.queued.clear();this.scratch.clear();this.inFlight=[];this.maskRead=null;this.maskBuffer=null;
+   this._release();for(const stamp of this.timeStamps??[]){stamp.set.destroy();stamp.resolve.destroy();stamp.read.destroy();}
+   this.timeStamps=null;this.transaction=null;this.fill=null;this.disposed=true;
+  }
  }
 }

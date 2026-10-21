@@ -403,7 +403,7 @@ export async function waitForFonts(root, {settings, css = '', fontCss = '', inst
     for (const [css, name] of [['font-style', 'style'], ['font-weight', 'weight'], ['font-stretch', 'stretch'], ['unicode-range', 'unicodeRange']])
       if (record.properties[css]) descriptor[name] = record.properties[css];
     const bytes = Uint8Array.from(atob(record.source.slice(record.source.indexOf(',') + 1)), character => character.charCodeAt(0));
-    try { return await new Font(record.properties['font-family'], bytes, descriptor).load(); }
+    try { return await new Font(family, bytes, descriptor).load(); }
     catch (cause) { throw Object.assign(new Error('The embedded font could not be loaded: ' + family, {cause}), {code: 'export_font_unavailable'}); }
   }));
   if (install) for (const face of loaded) doc.fonts.add(face);

@@ -14,6 +14,7 @@ const OFFLINE_POLICY = "default-src 'none'; script-src 'unsafe-inline' 'wasm-uns
 export {encodeCarried, decodeCarried};
 
 const PREVIEW = /<meta (?:name="(?:description|generator)"|property="og:(?:title|description)") content="[^"]*" data-rapier-preview>\n?/g;
+const APPEARANCE = /<meta name="rapier-appearance" content="(light|dark)">\n?/g;
 const plainWords = text => text.replace(/!\[[^\]]*\]\[[^\]]*\]|!\[[^\]]*\]\([^)]*\)/g, '').replace(/\[([^\]]*)\](?:\([^)]*\)|\[[^\]]*\])/g, '$1')
 	.replace(/<[^>]*>/g, '').replace(/[*_`~=]+|\[\^[^\]]*\]/g, '').replace(/\s+/g, ' ').trim();
 export function pagePreview(markdown) {
@@ -118,6 +119,8 @@ export function wrap(pageHtml, text, name, options) {
 	text = saved.text;
 	const previous = unwrap(pageHtml);
 	const opts = {...saved, ...(options || {})};
+	const theme = opts.theme ?? previous.theme;
+	if (theme != null && !['light', 'dark'].includes(theme)) throw new Error('the theme is light or dark');
 	const docName = safeName(name, 'document.md');
 	if (opts.kind != null && !['markdown', 'text', 'code'].includes(opts.kind)) throw new Error('invalid document kind');
 	if (opts.view != null && !['draw', 'notes'].includes(opts.view)) throw new Error('the view is draw or notes');
@@ -148,11 +151,12 @@ export function wrap(pageHtml, text, name, options) {
 	}
 	if (baseline) baseline = readBase({...baseline, ...(opts.by != null ? {by: String(opts.by).trim()} : {}), ...(opts.at != null ? {at: String(opts.at)} : {})});
 	carriedBlocks += '\n' + writeBase(text, baseline);
-	const unseeded = offlineTemplate(previous.html.replace(SEARCH_WORDS, '').replace(PREVIEW, '').split(PAGE_SEED + '\n').join(''), address);
+	const unseeded = offlineTemplate(previous.html.replace(SEARCH_WORDS, '').replace(PREVIEW, '').replace(APPEARANCE, '').split(PAGE_SEED + '\n').join(''), address);
 	const headTag = /<meta charset[^>]*>\n?/i.exec(unseeded) || /<head[^>]*>\n?/.exec(unseeded);
 	if (!headTag) throw new Error('not a Rapier page: no <head>');
 	const seededAt = headTag.index + headTag[0].length;
-	const stripped = unseeded.slice(0, seededAt) + PAGE_SEED + '\n' + unseeded.slice(seededAt);
+	const stripped = unseeded.slice(0, seededAt) + PAGE_SEED + '\n'
+		+ (theme ? '<meta name="rapier-appearance" content="' + theme + '">\n' : '') + unseeded.slice(seededAt);
 	const bodyTag = /<body[^>]*>/.exec(stripped);
 	if (!bodyTag) throw new Error('not a Rapier page: no <body>');
 	const at = bodyTag.index + bodyTag[0].length;
@@ -162,6 +166,7 @@ export function wrap(pageHtml, text, name, options) {
 	return titled.slice(0, at + shift) + '\n' + block + carriedBlocks + titled.slice(at + shift);
 }
 export function unwrap(pageHtml) {
+	const theme = Array.from(pageHtml.matchAll(APPEARANCE), match => match[1])[0] || null;
 	let html = pageHtml, text = null, name = null, kind = null, view = null, address = null, expiry = null;
 	const a = pageHtml.indexOf(START);
 	if (a >= 0) {
@@ -192,5 +197,5 @@ export function unwrap(pageHtml) {
 	const carriedBase = takeBase(html); html = carriedBase.html;
 	const comparisonBase = carriedBase.base;
 	const parts = takeParts(html, text);
-	return {...parts, text, name, kind, view, drawing, drawingName, comparisonBase, base: comparisonBase?.text ?? null, baseName: comparisonBase?.name ?? null, baseSha256: comparisonBase?.sha256 ?? null, baseRevision: comparisonBase?.revision ?? null, by: comparisonBase?.by ?? null, at: comparisonBase?.at ?? null, return: address, return_expires_at: expiry};
+	return {...parts, text, name, kind, view, theme, drawing, drawingName, comparisonBase, base: comparisonBase?.text ?? null, baseName: comparisonBase?.name ?? null, baseSha256: comparisonBase?.sha256 ?? null, baseRevision: comparisonBase?.revision ?? null, by: comparisonBase?.by ?? null, at: comparisonBase?.at ?? null, return: address, return_expires_at: expiry};
 }

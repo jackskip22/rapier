@@ -169,7 +169,7 @@ const _rapierDocumentFonts = (() => {
 				const font = original || embedded || await read(asset);
 				if (!active()) return;
 				records.push(font);
-				const face = await new FontFace(spec.fontFamilyCss(asset.family), fonts.fontBytes(font), descriptors(asset)).load();
+				const face = await new FontFace(asset.family, fonts.fontBytes(font), descriptors(asset)).load();
 				if (!active()) return;
 				nextFaces.push(face);
 			}

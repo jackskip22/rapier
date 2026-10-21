@@ -2,6 +2,7 @@
 import {applySplices, parallelSplices} from '../kernel/live-merge.mjs';
 import {exportLedger, readLedger} from '../kit/ledger/format.mjs';
 import {canonicalJSON} from '../kit/ledger/data.mjs';
+import {authoredHistory} from '../kit/ledger/transport.mjs';
 import {placedLiveAct} from '../kernel/live-act.mjs';
 import {textRoot, rootAfter} from '../kit/ledger/hash.mjs';
 import {_rapierTransformSplices as transformSplices, _rapierReplayMetadata as replayMetadata,
@@ -62,6 +63,28 @@ export function appendLiveJournal(ledger, journal, source) {
     revision: journal.transaction.revision, root: journal.afterHash, complete: ledger.complete});
 }
 
+function liveRecordIdentity(record, origin = null) {
+  const transaction = {...record.transaction}, value = {...record, transaction};
+  if (origin) value.authored = origin;
+  if (transaction.remoteTransactionId === transaction.id) delete transaction.remoteTransactionId;
+  if (transaction.actor.kind === 'agent' && transaction.transport === 'webmcp') transaction.transport = 'platform';
+  if (transaction.label === null) delete transaction.label;
+  if (value.changeSet?.label === null && Object.keys(value.changeSet).length === 1) delete value.changeSet;
+  return canonicalJSON(value);
+}
+
+export function liveLedgerPrefix(before, after) {
+  readLedger(before); readLedger(after);
+  if (before.documentAuthority !== after.documentAuthority || before.complete !== after.complete ||
+      canonicalJSON(before.start) !== canonicalJSON(after.start) || before.records.length > after.records.length) return false;
+  const origins = before.records.some(row => row.authored) || after.records.some(row => row.authored);
+  const left = origins ? authoredHistory(before.start.text, before.records).origins : null;
+  const right = origins ? authoredHistory(after.start.text, after.records).origins : null;
+  return before.records.every((row, index) =>
+    liveRecordIdentity(row, left?.get(row.transaction.id)) ===
+    liveRecordIdentity(after.records[index], right?.get(after.records[index].transaction.id)));
+}
+
 export function liveLedgerPatch(before, after) {
   const from = readLedger(before), to = readLedger(after);
   if (before.documentAuthority !== after.documentAuthority || before.start.text !== after.start.text ||
@@ -69,7 +92,7 @@ export function liveLedgerPatch(before, after) {
     throw new Error('live_recovery_branch_unproven');
   let prefix = 0;
   while (prefix < before.records.length && prefix < after.records.length &&
-      canonicalJSON(before.records[prefix]) === canonicalJSON(after.records[prefix])) prefix++;
+      liveRecordIdentity(before.records[prefix]) === liveRecordIdentity(after.records[prefix])) prefix++;
   const rows = [];
   for (const record of before.records.slice(prefix).reverse()) for (const row of record.splices.slice().reverse())
     rows.push({pos: row.pos, removed: row.inserted, inserted: row.removed});

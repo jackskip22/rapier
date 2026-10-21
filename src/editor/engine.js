@@ -519,7 +519,7 @@ function _rapierDialSay(button, label, nothing) {
 
 function initThemePreference() {
 	try {
-		applyTheme(RapierPreferences.read('theme'));
+		applyTheme(RapierPreferences.look('theme'));
 		window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
 			if (RapierPreferences.look('theme') === 'system') applyTheme('system');
 		});
@@ -529,7 +529,7 @@ function initThemePreference() {
 (function projectInitialTheme() {
 	try {
 		if (window.RapierPlatform && window.RapierPlatform.preferences.ownsStore === true) return;
-		applyTheme(RapierPreferences.read('theme'));
+		applyTheme(RapierPreferences.look('theme'));
 	} catch (_) {}
 })();
 
@@ -3358,7 +3358,7 @@ function rapierWelcomeMarkdown() {
 		"",
 		"![P][letter-p] <!--md-layout:v1 lines=4 wrap=around-->",
 		"",
-		"aint with your finger. **Paint Brush** is real paint: oil, bristle, marker, pencil, pen and watercolor. Rapier runs its own mobile paint engine and MyPaint brushes. Watercolor spreads and dries. Smudge, smear, blend and erase paint that's already down. A painting is just a picture layer on your canvas, saved losslessly, which you can resize, export or continue painting.",
+		"aint with your finger. **Brushes** are real paint: oil, bristle, marker, pencil, pen and watercolor. Rapier runs its own mobile paint engine and MyPaint brushes. Watercolor spreads and dries. Smudge, smear, blend and erase paint that's already down. A painting is just a picture layer on your canvas, saved losslessly, which you can resize, export or continue painting.",
 		"",
 		"### Watercolor",
 		"",
@@ -9185,6 +9185,7 @@ function _rapierStrayKeyOpensBlock(target, host, begins, keepCaret = false) {
 	if (!wrapper || wrapper.hidden || wrapper.classList.contains('block-wrapper--metadata')) return null;
 	const block = _rapierBoundBlock(wrapper);
 	if (!block || _rapierLoneControlBlock(block)) return null;
+	if (_rapierPictureOnlyBlock(block)) return _rapierMakeEdgeParagraph(block, true) ? _activeBlockEditContext() : null;
 	enterBlockEdit(block, wrapper, {charOffset: kept && kept.blockId === block.id ? kept.offset : 0, preserveScroll: true});
 	const open = _activeBlockEditContext();
 	if (open && kept?.end && kept.blockId === block.id) _setCursorCharOffset(open.editDiv, String(open.editDiv.textContent || '').replace(/\n+$/, '').length);
@@ -17391,9 +17392,11 @@ function _rapierInstallModalIsolation(overlay) {
 		if (released) return;
 		released = true;
 		announcer.remove();
+		const notices = overlay.querySelector(':scope > #toast-root');
 		const at = _rapierDialogRuntime.isolation.lastIndexOf(overlay);
 		if (at >= 0) _rapierDialogRuntime.isolation.splice(at, 1);
 		_rapierApplyModalIsolation();
+		if (notices && !notices.isConnected) _rapierProgressFollowModal(notices);
 	};
 }
 
@@ -17409,14 +17412,18 @@ function _rapierIsolationHolds(node) {
 	return !!record && record.inert === false;
 }
 
-function _rapierProgressFollowModal() {
-	const root = document.getElementById('toast-root');
+function _rapierProgressFollowModal(held = null) {
+	const root = document.getElementById('toast-root') || held;
 	if (!root || root._rapierProgressFollowing) return;
 	root._rapierProgressFollowing = true;
 	try {
 		const top = _rapierDialogRuntime.isolation.at(-1);
 		const overlay = top?.isConnected ? top : null, lifted = !!overlay && root._rapierProgressLift?.overlay === overlay;
-		const notice = !!overlay && (lifted || !overlay.contains(root)) && [...root.children].some(child => child.classList.contains('toast') && !child.hidden);
+		const sheet = overlay?.querySelector(':scope > .link-dialog')?.getBoundingClientRect(), ground = overlay?.getBoundingClientRect();
+		const fills = !!sheet && sheet.width >= ground.width - 1 && sheet.height >= ground.height - 1;
+		if (fills && root._rapierUnder?.overlay !== overlay) root._rapierUnder = {overlay, standing: new Set(root.children)};
+		const raised = child => !fills || !root._rapierUnder.standing.has(child);
+		const notice = !!overlay && (lifted || !overlay.contains(root)) && [...root.children].some(child => child.classList.contains('toast') && !child.hidden && raised(child));
 		const running = !!document.querySelector('.rapier-progress') || notice;
 		if (root._rapierProgressLift && (root._rapierProgressLift.overlay !== overlay || !running)) { const {handle} = root._rapierProgressLift; root._rapierProgressLift = null; handle.release(); }
 		if (overlay && !root._rapierProgressLift && running) {
@@ -22484,7 +22491,7 @@ async function _rapierPerformSaveWork(options) {
 			documentGeneration: saveGeneration,
 			documentRevision: saveRevision,
 			fileGeneration: platform && platform.files.generation ? platform.files.generation(saveAuthority) : null,
-			nativeSaveResume: platform?.native === true ? {
+			nativeSaveResume: platform?.environment?.native === true ? {
 				canonicalDigest: RapierLedger.sha256(canonicalText), sourceRootId: persistenceSnapshot.sourceRootId,
 				filename: metadata.filename, saveName: metadata.saveName, docKind: metadata.docKind, bom: metadata.bom === true,
 				metadataHead: captured.value.metadataHead, editablePage,
@@ -22853,7 +22860,7 @@ function _rapierStyleText(id) {
 function _rapierArtifactPreference(field, allowed) {
 	const spec = RapierStorage.preferences[field];
 	const fallback = spec ? spec.fallback : '';
-	const value = String(RapierPreferences.read(field) ?? fallback).toLowerCase();
+	const value = String(RapierPreferences.look(field) ?? fallback).toLowerCase();
 	return allowed.indexOf(value) >= 0 ? value : fallback;
 }
 
@@ -35327,6 +35334,17 @@ async function _rapierAskBootShare({text, name}) {
 	});
 	if (wanted === true && epoch === rapier.identity.userLoadEpoch) await rapierOpenPlatformPayload({text, name, transient: true});
 }
+async function _rapierOpenGalleryLink(name) {
+	try { history.replaceState(history.state, '', _rapierCleanBootPath()); } catch (_) {}
+	if (_rapierEmbed.active || !_rapierPartAvailable('presets') || !/^(?:templates|elements|lettersets)\/[a-z][a-z0-9-]{0,47}(?:\/[A-Za-z0-9-]{1,48})?$/.test(name)) return;
+	const epoch = rapier.identity.userLoadEpoch;
+	try {
+		if (!await _rapierPartReady('presets')) return;
+		const piece = await _rapierComposerPart.galleryPiece(name);
+		if (!piece) { showToast('That Gallery piece is not in this version of Rapier.', 'info'); return; }
+		if (epoch === rapier.identity.userLoadEpoch) await rapierOpenPlatformPayload({text: piece.text, name: piece.name + '.md', transient: true});
+	} catch (error) { showToast(String(error?.message || error), 'error'); }
+}
 
 function _rapierDecodeCarried(text) {
 	return String(text == null ? '' : text).replace(/\\([\\/!r0])/g, (_, c) =>
@@ -35936,6 +35954,7 @@ async function _rapierBoot() {
 	_rapierPersistenceRuntime.bootSettled = true;
 	await _rapierPublishBootReady(context);
 	if (context.sharedAsk && _rapierBootstrapRuntime.complete) void _rapierAskBootShare(context.sharedAsk).catch(error => console.warn('[rapier] shared item', error));
+	if (context.params.has('gallery') && _rapierBootstrapRuntime.complete) void _rapierOpenGalleryLink(context.params.get('gallery'));
 }
 function _rapierStartBoot() {
 	_rapierBoot().catch(error => _rapierUiFailBoot('The editor could not finish starting.', error));
@@ -37320,7 +37339,9 @@ function _markEditDivDirty(editDiv) {
 
 function _markdownListContinuationMarker(editDiv, range) {
 	if (!range.collapsed) return '';
-	const before = _textWithBrLineBreaks(_cloneRangeTo(editDiv, range.startContainer, range.startOffset));
+	const words = _cloneRangeTo(editDiv, range.startContainer, range.startOffset);
+	words.querySelectorAll('.rapier-source-token--escape').forEach(token => token.replaceWith('\\' + token.textContent));
+	const before = _textWithBrLineBreaks(words);
 	const line = before.split('\n').pop() || '';
 	let m = /^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$/.exec(line);
 	if (m && m[3].trim()) return m[1] + '- [ ] ';

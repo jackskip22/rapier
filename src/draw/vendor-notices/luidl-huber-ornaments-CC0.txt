@@ -1,40 +1,68 @@
 Draw's ornament packs (letter sets, templates and elements) are traced from the plates of Philipp Luidl and Helmut Huber,
 "Ornamente / Ornaments" (Bruckmann, Munich, 1983; https://archive.org/details/luidl-p.-huber-h.-ornamente-ornaments).
+The Archive item identifies its scan under Attribution-NonCommercial 4.0 International. That scan label
+is separate from Rapier’s dedication of its own work below; the scanned edition is the third revised edition (1990).
 The plates reproduce printed ornament by the artists, foundries and printers each caption names, in the years it gives
 (the book's own pages and captions follow, German and English as printed). The selection, the traces and their arrangement
 are Rapier's own and are dedicated to the public domain under CC0 1.0 (https://creativecommons.org/publicdomain/zero/1.0/).
 
 Letter sets
 
-  Silhouette (silhouette): scan pages 353, 354; J drawn from I (the printed alphabet shares the form)
-  Gothic (gothic): scan pages 348; J drawn from I, V drawn from U (the printed alphabet shares the form)
+Original scan recoveries and modern reconstructions are distinguished in each set’s data.
+
+  Silhouette (silhouette): scan pages 353, 354; modern local clothing adaptations: C, D, L, R.
+  N and V retain their printed figures without clothing changes.
+  Gothic (gothic): scan pages 348
   Sugar (sugar): scan pages 356
-  Illuminated 1490 (illuminated-1490, incomplete): scan pages 333
-  English 15th (english-15th, incomplete): scan pages 334
-  Missale 1515 (missale-1515, incomplete): scan pages 335
-  Schoeffer 1518 (schoeffer-1518, incomplete): scan pages 336
-  Pen 1554 (pen-1554, incomplete): scan pages 337
-  German Baroque (german-baroque, incomplete): scan pages 338
-  Frank 1600 (frank-1600, incomplete): scan pages 339
-  Baroque 1655 (baroque-1655, incomplete): scan pages 340
-  Fine 1532 (fine-1532, incomplete): scan pages 341
-  Arabesque 16th (arabesque-16th, incomplete): scan pages 342
-  Voskens 1654 (voskens-1654, incomplete): scan pages 343, 344
-  Versteegh (versteegh, incomplete): scan pages 345
-  Tuscan 1845 (tuscan-1845, incomplete): scan pages 346
-  Renaissance 19th (renaissance-19th, incomplete): scan pages 347
-  English decorative (english-decorative, incomplete): scan pages 349
-  Renaissance alphabet (renaissance-alphabet, incomplete): scan pages 350
-  Late Gothic (late-gothic, incomplete): scan pages 351
-  Gothic 1880 (gothic-1880, incomplete): scan pages 352
-  Baroque 1884 (baroque-1884, incomplete): scan pages 355
-  Neogothic (neogothic, incomplete): scan pages 357
-  Andrade (andrade, incomplete): scan pages 358
-  Tendril 1900 (tendril-1900, incomplete): scan pages 359
-  Walthari (walthari, incomplete): scan pages 360
-  Nouveau initials (nouveau-initials, incomplete): scan pages 362
-  Behrens 1908 (behrens-1908, incomplete): scan pages 363
-  Reibetanz 1925 (reibetanz-1925, incomplete): scan pages 364
+  Illuminated 1490 (illuminated-1490): scan pages 333; modern reconstructions: J, W
+  Tuscan 1845 (tuscan-1845): scan pages 346; modern reconstructions: J, Q
+  Renaissance alphabet (renaissance-alphabet): scan pages 350; modern reconstructions: J, W
+  English 15th (english-15th): scan pages 334; modern reconstructions: I, J, P, Q, T, V
+  Missale 1515 (missale-1515): scan pages 335; modern reconstructions: F, I, J, K, P, Q, S, T, U, V, W, X, Y, Z
+  Schoeffer 1518 (schoeffer-1518): scan pages 336; modern reconstructions: C, E, F, G, J, K, M, N, Q, R, S, T, V, W, X, Y, Z
+  German Baroque (german-baroque): scan pages 338; modern reconstructions: J, Q, S, T, U, W, X, Y, Z; placeholder positions: V
+  Baroque 1655 (baroque-1655): scan pages 340; modern reconstructions: C, G, L, P, R; placeholder positions: D, H, I, M, N, O, Q, S, T, U, V, W, X, Y, Z
+  Fine 1532 (fine-1532): scan pages 341; modern reconstructions: A, B, D, E, F, G, J, K, L, M, P, R, S, T, U, V, W, X, Y, Z; placeholder positions: Q
+  Arabesque 16th (arabesque-16th): scan pages 342; modern reconstructions: D, F, I, J, N, Q, S, U, W, Y
+  Voskens 1654 (voskens-1654): scan pages 343, 344; modern reconstructions: J, O, U
+  Versteegh (versteegh): scan pages 345; modern reconstructions: B, D
+  Renaissance 19th (renaissance-19th): scan pages 347; modern reconstructions: J, N, O, P, Q, R, S, T, U, V, W, X, Y; placeholder positions: F, Z
+  English decorative (english-decorative): scan pages 349; modern reconstructions: I, J
+  Late Gothic (late-gothic): scan pages 351; modern reconstructions: A, B, C, F, I, J, K, L, M, O, Q, R, U, V, X, Y, Z; placeholder positions: S, T
+  Gothic 1880 (gothic-1880): scan pages 352; modern reconstructions: I, J, Q
+  Baroque 1884 (baroque-1884): scan pages 355; placeholder positions: K, M, N, O, P, Q, R, T, U, V, W, X, Y, Z
+  Neogothic (neogothic): scan pages 357; modern reconstructions: J, X, Y, Z
+  Andrade (andrade): scan pages 358; modern reconstructions: H, J, K, U, W, Y
+  Tendril 1900 (tendril-1900): scan pages 359; modern reconstructions: I, Q
+  Walthari (walthari): scan pages 360; modern reconstructions: J, P
+  Nouveau initials (nouveau-initials): scan pages 362; modern reconstructions: C, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z
+  Behrens 1908 (behrens-1908): scan pages 363; modern reconstructions: U, Z
+  Cross Stitch (cross-stitch): the cross-stitch initials of the book's printer-flower specimen panels, formerly
+  Patterns 2, 7, 9, 15, 18, 36, 44, 52, 55, 62 and Frames 325, 328, 331, 334; D, G, I, M, Q, S, X and Y from the same
+  Trattner framed initials on the border pages; placeholder positions: J, O, U, W
+
+Elements from letter plates
+
+  Flourishes 34–37: four of the five printed Frank 1600 pen designs, scan 339.
+  Flourishes 38–39: printed Pen 1554 designs D and E, Venice 1554, scan 337 (printed page 336).
+  Cartouches 63, 68, 96 and 97: independently usable frames from scan 168 (printed page 167);
+  the connected three-panel composition is retained as Cartouche 68.
+
+Individually finished Elements
+
+  Arabesques 127–131 and Band 823: Peter Flötner, about 1546,
+  scan 19 (printed page 18); three knots, two interlace panels and a strip.
+  Cartouches 35, 38, 39, 41, 42, 99–101 and 103, Bands 824–826 and Flourishes 42, 44 and 45:
+  Academicism, about 1870, scan 164 (printed page 163). Independent frames, corner
+  ornaments and rules separated from the printed specimen arrangement. The straight
+  rules are geometric redraws; the long frame has three small local line repairs.
+  Cartouche 22: Academicism, about 1870, scan 163; modern high-bodice adaptation.
+  Frame 347: Academicism, scan 55; the surrounding scrollwork retained as a blank frame.
+  Ornament 248 and Border 86: Munich 1839, scan 141; two small guard outlines locally adapted.
+  Ship of Fools cart (ornaments-1478), Vine with fools (ornaments-1473) and Flower vine (ornaments-1474):
+  Albrecht Dürer, Basel 1494, scan 181 (printed page 180); the picture and its two border vines, without the page's type.
+  Initial P with a writer (ornaments-1476), Initial M (ornaments-1477) and Fraktur W (ornaments-1475): decorated initials
+  cut from type specimen pages, scans 94, 147 and 104.
 
 Templates and elements, by scan page (zero-based scan number; the book's own page number follows)
 
@@ -146,6 +174,7 @@ Templates and elements, by scan page (zero-based scan number; the book's own pag
   scan 117  book page 116  Titeleinfassung mit Arabesken | Title page border with arabesques
     border-009  template
   scan 118  book page 117  Titeleinfassung mit Arabesken | Title page border with arabesques
+    border-096  template; arabesques-073 retains its existing ID; manually selected, complete outline
   scan 119  book page 118  Titeleinfassung mit Arabesken | Title page border with arabesques
     border-076  template
   scan 120  book page 119  Titeleinfassung mit Arabesken | Title page border with arabesques

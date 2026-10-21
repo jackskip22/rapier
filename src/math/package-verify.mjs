@@ -11,7 +11,8 @@ import {mathReadme} from '../src/math/package-readme.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = path => readFile(resolve(root, path));
 const hash = (bytes, algorithm = 'sha256', encoding = 'hex') => createHash(algorithm).update(bytes).digest(encoding);
-const resources = JSON.parse(await read('docs/math-resources.json'));
+const receipt = await read('docs/math-resources.json');
+const resources = JSON.parse(receipt);
 const payload = await read(resources.packageBundle);
 assert.equal(payload.length, resources.bytes, 'payload length');
 assert.equal(hash(payload), resources.sha256, 'payload SHA-256');
@@ -35,6 +36,11 @@ for (const text of [payload, await read('LICENSE')]) {
   assert(text.includes(fontLicense.toString('utf8').trim()), 'complete font license');
 }
 const sbom = JSON.parse(await read('docs/math-components.json'));
+const renderers = sbom.packages.filter(item => item.name === 'rapier-math');
+assert.equal(renderers.length, 1, 'one renderer provenance identity');
+assert.equal(renderers[0].sourceInfo,
+  'Verified public build inputs: docs/math-resources.json (SHA-256 ' + hash(receipt) + ').',
+  'public build receipt path and SHA-256');
 const font = sbom.packages.find(item => item.name === resources.font.name);
 assert.equal(font?.copyrightText, resources.font.copyright, 'font copyright');
 assert.equal(font.licenseDeclared, resources.font.license, 'font license identity');

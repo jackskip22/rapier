@@ -43,7 +43,7 @@ function _rapierComposerOpen(title, fill, onClose) {
 	return state;
 }
 
-const RAPIER_ORNAMENTS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.18/';
+const RAPIER_ORNAMENTS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/';
 const _rapierOrnamentDoor = {providers: new Map(), allowed: new Set(), held: new Map(), bringing: new Map()};
 const _RAPIER_ORNAMENT_KINDS = Object.freeze({
 	templates: {noun: 'Page borders', pins: () => RapierPins.BORDER_PINS, admit: bytes => RapierDrawOrnaments.admitTemplate(bytes), what: 'traced page borders'},
@@ -96,6 +96,7 @@ function _rapierOrnamentBring(kind) {
 		}
 		const bytes = await provider.bytes(), rows = [];
 		for (const pin of spec.pins()) {
+			if (rows.length) await new Promise(resolve => setTimeout(resolve, 0));
 			const row = spec.admit(bytes[pin.id]);
 			if (!row) throw new Error(spec.noun + ' could not be read: ' + pin.id);
 			rows.push(row);
@@ -105,14 +106,80 @@ function _rapierOrnamentBring(kind) {
 	})().finally(() => door.bringing.delete(kind)));
 	return door.bringing.get(kind);
 }
+const _rapierOrnamentWaiting = new Map();
+let _rapierOrnamentFrame = 0;
+function _rapierOrnamentDrain() {
+	_rapierOrnamentFrame = 0;
+	const end = performance.now() + 6;
+	for (const [image, rect] of _rapierOrnamentWaiting) {
+		if (performance.now() > end) break;
+		_rapierOrnamentWaiting.delete(image);
+		_rapierOrnamentSeen.unobserve(image);
+		if (image.isConnected) image._rapierDraw?.(rect);
+	}
+	if (_rapierOrnamentWaiting.size) _rapierOrnamentFrame = requestAnimationFrame(_rapierOrnamentDrain);
+}
 const _rapierOrnamentSeen = typeof IntersectionObserver === 'function' ? new IntersectionObserver(entries => {
-	for (const entry of entries) if (entry.isIntersecting) { _rapierOrnamentSeen.unobserve(entry.target); entry.target.dataset.draw && entry.target._rapierDraw?.(); }
+	for (const entry of entries) {
+		if (!entry.target.isConnected) { _rapierOrnamentWaiting.delete(entry.target); _rapierOrnamentSeen.unobserve(entry.target); }
+		else if (entry.isIntersecting) _rapierOrnamentWaiting.set(entry.target, entry.boundingClientRect);
+		else _rapierOrnamentWaiting.delete(entry.target);
+	}
+	if (_rapierOrnamentWaiting.size && !_rapierOrnamentFrame) _rapierOrnamentFrame = requestAnimationFrame(_rapierOrnamentDrain);
 }, {rootMargin: '200px'}) : null;
+function _rapierOrnamentWatch(image) { if (_rapierOrnamentSeen) _rapierOrnamentSeen.observe(image); else image._rapierDraw(); }
+const _RAPIER_ORNAMENT_PAINT = 'onmessage=async({data:{id,d,box,tiles,ink,width,height}})=>{try{' +
+	'const canvas=new OffscreenCanvas(width,height),context=canvas.getContext("2d"),path=new Path2D(d),[x,y,w,h]=box,scale=Math.min(width/(w*tiles),height/h);' +
+	'context.translate((width-w*tiles*scale)/2,(height-h*scale)/2);context.scale(scale,scale);context.translate(-x,-y);context.fillStyle=ink;' +
+	'for(let i=0;i<tiles;i++){context.fill(path,"evenodd");context.translate(w,0);}' +
+	'postMessage({id,blob:await canvas.convertToBlob({type:"image/png"})});}catch(error){postMessage({id,error:String(error&&error.message||error)});}};';
+const _rapierOrnamentPainter = {worker: null, broken: typeof Worker !== 'function' || typeof OffscreenCanvas !== 'function' || typeof Path2D !== 'function', pending: new Map(), next: 1};
+const _rapierOrnamentSVG = image => { image.src = 'data:image/svg+xml;base64,' + btoa(image._rapierPiece.svg()); };
+function _rapierOrnamentPaint(image, rect, done) {
+	const piece = image._rapierPiece, ratio = Math.min(3, window.devicePixelRatio || 1), painter = _rapierOrnamentPainter;
+	if (!painter.broken && !painter.worker) {
+		try {
+			const url = URL.createObjectURL(new Blob([_RAPIER_ORNAMENT_PAINT], {type: 'text/javascript'}));
+			painter.worker = new Worker(url);
+			URL.revokeObjectURL(url);
+			painter.worker.onmessage = ({data: {id, blob, error}}) => {
+				const waiting = painter.pending.get(id);
+				painter.pending.delete(id);
+				if (!waiting) return;
+				if (error || !blob) _rapierOrnamentSVG(waiting.image);
+				else if (waiting.image.isConnected) waiting.image.src = waiting.image._rapierUrl = URL.createObjectURL(blob);
+				waiting.done?.();
+			};
+			painter.worker.onerror = () => {
+				painter.broken = true;
+				for (const waiting of painter.pending.values()) { _rapierOrnamentSVG(waiting.image); waiting.done?.(); }
+				painter.pending.clear();
+			};
+		} catch (_) { painter.broken = true; }
+	}
+	const width = Math.round((rect?.width || image.clientWidth) * ratio), height = Math.round((rect?.height || image.clientHeight) * ratio);
+	if (painter.broken || width < 1 || height < 1) { _rapierOrnamentSVG(image); done?.(); return; }
+	const id = painter.next++;
+	painter.pending.set(id, {image, done});
+	painter.worker.postMessage({id, d: piece.d, box: piece.box, tiles: piece.tiles, ink: piece.ink, width, height});
+}
+function _rapierOrnamentTile(piece, className, watched = true) {
+	const image = _rapierComposerEl('img', className);
+	image.alt = ''; image.draggable = false; image.decoding = 'async';
+	image._rapierPiece = piece;
+	image.dataset.draw = '1';
+	image._rapierDraw = (rect, done) => _rapierOrnamentPaint(image, rect, done);
+	if (watched) _rapierOrnamentWatch(image);
+	return image;
+}
+function _rapierOrnamentRelease(root) {
+	for (const image of root.querySelectorAll('img')) if (image._rapierUrl) { URL.revokeObjectURL(image._rapierUrl); image._rapierUrl = null; }
+}
 function _rapierOrnamentThumbnail(item, ink, tiles) {
 	const image = _rapierComposerEl('img', 'rapier-composer__picture');
-	image.alt = ''; image.draggable = false; image.dataset.draw = '1';
+	image.alt = ''; image.draggable = false; image.decoding = 'async'; image.dataset.draw = '1';
 	image._rapierDraw = () => { image.src = 'data:image/svg+xml;base64,' + btoa(tiles ? RapierOrnaments.elementSVG(item, {ink, tiles}) : RapierOrnaments.thumbnailSVG(item, ink)); };
-	if (_rapierOrnamentSeen) _rapierOrnamentSeen.observe(image); else image._rapierDraw();
+	_rapierOrnamentWatch(image);
 	return image;
 }
 
@@ -198,9 +265,7 @@ function _rapierComposerElements() {
 					for (const [name, items] of groups) {
 						const card = _rapierComposerEl('button', 'rapier-composer__card rapier-composer__card--group');
 						card.type = 'button'; card.dataset.group = name; card.setAttribute('aria-label', name + ', ' + items.length);
-						const near = items.filter(item => item.tile !== true && item.w / item.h >= .7 && item.w / item.h <= 2.2);
-						const pool = near.length ? near.slice().sort((a, b) => a.path.length - b.path.length) : items.slice().sort((a, b) => a.w / a.h - b.w / b.h);
-						const sample = pool[Math.floor(pool.length * (near.length ? .6 : .1))];
+						const sample = items[0];
 						card.append(_rapierOrnamentThumbnail(sample, ink(), sample.tile ? 2 : 0), _rapierComposerEl('span', 'rapier-composer__name', name + ' \u00b7 ' + items.length));
 						card.addEventListener('click', () => { open = name; draw(); panelTop(); });
 						list.append(card);
@@ -276,4 +341,25 @@ function _rapierComposerRecolor() {
 	})]);
 }
 
-_rapierComposerPart = Object.freeze({borders: _rapierComposerBorders, elements: _rapierComposerElements, insert: _rapierComposerInsert, recolor: _rapierComposerRecolor});
+async function _rapierComposerGalleryPiece(name) {
+	const [kind, file, key, extra] = String(name).split('/'), spec = Object.hasOwn(_RAPIER_ORNAMENT_KINDS, kind) ? _RAPIER_ORNAMENT_KINDS[kind] : null;
+	const pin = spec?.pins().find(row => row.id === file);
+	if (!pin || extra !== undefined || (kind === 'templates') !== (key === undefined)) return null;
+	const response = await fetch(RAPIER_ORNAMENTS_URL + kind + '/' + pin.id + '.json', {integrity: 'sha384-' + pin.sha384, credentials: 'omit'});
+	if (!response.ok) throw new Error(spec.noun + ' could not be reached. Try again.');
+	const row = spec.admit(new Uint8Array(await response.arrayBuffer()));
+	if (!row) return null;
+	if (kind === 'templates') {
+		const text = RapierOrnaments.templateMarkdown(row, {paper: RapierOrnaments.paperFor(navigator.language)});
+		return text && {name: row.name, text};
+	}
+	if (kind === 'elements') {
+		const item = row.items.find(each => each.id === key);
+		return item ? {name: item.name, text: RapierOrnaments.pieceMarkdown(RapierOrnaments.elementSVG(item), item.name, RapierOrnaments.elementLayout(item))} : null;
+	}
+	const entry = row.letters.find(each => each.key === key), title = entry && row.name + ' ' + (entry.letter || entry.key);
+	return entry ? {name: title, text: RapierOrnaments.pieceMarkdown(RapierOrnaments.letterSVG(row, entry, {box: RapierDrawOrnaments.outlineBox(entry.path)}), title, 'width=25% x=50%')} : null;
+}
+
+_rapierComposerPart = Object.freeze({borders: _rapierComposerBorders, elements: _rapierComposerElements, insert: _rapierComposerInsert, recolor: _rapierComposerRecolor,
+	galleryPiece: _rapierComposerGalleryPiece});

@@ -282,7 +282,7 @@ export async function prepareDocxTypography(root, canonical, {work, willTokens =
   const document = root.ownerDocument, view = document?.defaultView;
   if (!paragraphs.length || !document?.body || !view?.getComputedStyle) return;
   const authored = readDocumentSettings(canonical), settings = wordLayout ? wordDocumentSettings(authored) : authored, type = referenceType(settings);
-  const width = ((settings.papersize?.width || 12240) - 2 * (settings.geometry?.twips ?? 1440)) / 15;
+  const width = ((settings.papersize?.width || 12240) - (settings.geometry?.left ?? 1440) - (settings.geometry?.right ?? 1440)) / 15;
   const measure = root.cloneNode(true);
   measure.classList.add('md-render');
   measure.setAttribute('aria-hidden', 'true'); measure.setAttribute('inert', '');
@@ -4445,10 +4445,10 @@ function sectionPropertiesXml(settings, footerId, headerId = '') {
     '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>';
   const width = settings.papersize ? settings.papersize.width : 12240;
   const height = settings.papersize ? settings.papersize.height : 15840;
-  const margin = settings.geometry ? settings.geometry.twips : 1440;
+  const margins = Object.fromEntries(['top', 'right', 'bottom', 'left'].map(side => [side, settings.geometry?.[side] ?? 1440]));
   const footer = (headerId ? '<w:headerReference w:type="default" r:id="' + headerId + '"/>' : '') + (footerId ? '<w:footerReference w:type="default" r:id="' + footerId + '"/>' : '');
   return '<w:sectPr>' + footer + '<w:pgSz w:w="' + width + '" w:h="' + height + '"/>' +
-    '<w:pgMar w:top="' + margin + '" w:right="' + margin + '" w:bottom="' + margin + '" w:left="' + margin + '" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>';
+    '<w:pgMar w:top="' + margins.top + '" w:right="' + margins.right + '" w:bottom="' + margins.bottom + '" w:left="' + margins.left + '" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>';
 }
 
 function pageNumberFooterXml() {
@@ -4517,7 +4517,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
   const bodyFace = settings?.mainfont?.word || settings?.sansfont?.word || 'Geist';
   const lineTwips = integer(Math.max(1, Math.round(referenceType(settings).line * 20)));
   const blockSpace = referenceSpacing(settings);
-  const contentWidth = (settings?.papersize?.width || 12240) - 2 * (settings?.geometry?.twips ?? 1440);
+  const contentWidth = (settings?.papersize?.width || 12240) - (settings?.geometry?.left ?? 1440) - (settings?.geometry?.right ?? 1440);
   if (contentWidth <= 0) return fail('DOCX page margins leave no text width.');
   const contentWidthEmu = contentWidth * 635;
   const navigation = await finishAsync(docxNavigationSteps([...blocks, ...Array.from(notes.values()).flatMap(note => note.blocks || [])]), work);

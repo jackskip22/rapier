@@ -115,22 +115,23 @@ const _rapierWordView = (() => {
 		const blocks = _blockWrapperChildren(root);
 		for (const block of blocks) if (block.hasAttribute('data-docx-page')) { block.style.removeProperty('--docx-page-gap'); block.removeAttribute('data-docx-page'); }
 		if (!enabled) {
-			for (const key of ['--docx-sheet', '--docx-margin', '--docx-scale', '--docx-page', '--rapier-page-zoom']) root.style.removeProperty(key);
+			for (const key of ['--docx-sheet', '--docx-margin-top', '--docx-margin-right', '--docx-margin-bottom', '--docx-margin-left', '--docx-scale', '--docx-page', '--rapier-page-zoom']) root.style.removeProperty(key);
 			root.removeAttribute('data-template-page');
+			_rapierTemplateArea.close();
 			active = false; return;
 		}
 		active = true;
 		const settings = globalThis.RapierMarkdownSpec.readDocumentSettings(String(rapier.document.frontmatter || ''));
 		const width = (settings.papersize?.width || 12240) / 15, height = (settings.papersize?.height || 15840) / 15;
-		const margin = (settings.geometry?.twips ?? 1440) / 15;
+		const margins = _rapierTemplateArea.margins(settings);
 		const zoom = (Number(getComputedStyle(root).getPropertyValue('--rapier-step')) || 1) * (Number(root.style.getPropertyValue('--rapier-page-zoom')) || 1);
 		const scale = Math.min(1, Math.max(1, (root.parentElement.clientWidth || document.documentElement.clientWidth) - 16) / width) * zoom;
 		root.style.setProperty('--docx-sheet', width + 'px');
-		root.style.setProperty('--docx-margin', margin + 'px');
+		for (const side of ['top', 'right', 'bottom', 'left']) root.style.setProperty('--docx-margin-' + side, margins[side] / 15 + 'px');
 		root.style.setProperty('--docx-scale', String(scale));
 		root.style.setProperty('--docx-page', height + 'px');
 		root.toggleAttribute('data-template-page', _rapierTemplatePage());
-		const pageHeight = Math.max(1, (height - 2 * margin) * scale);
+		const pageHeight = Math.max(1, (height - (margins.top + margins.bottom) / 15) * scale);
 		const shown = blocks.filter(block => !block.hidden && !block.classList.contains('block-wrapper--metadata'));
 		const heights = shown.map(block => block.getBoundingClientRect().height);
 		let used = 0, page = 1;
@@ -139,7 +140,7 @@ const _rapierWordView = (() => {
 			const explicit = asleep ? _rapierIsPageBreakBlock(String(_rapierBoundBlock(block)?.raw || '')) : !!block.querySelector('[data-md-break="page"]');
 			if (used && (explicit || height <= pageHeight && used + height > pageHeight)) {
 				page++;
-				if (!asleep) { block.style.setProperty('--docx-page-gap', Math.max(0, pageHeight - used) / scale + 2 * margin + 'px'); block.dataset.docxPage = String(page); }
+				if (!asleep) { block.style.setProperty('--docx-page-gap', Math.max(0, pageHeight - used) / scale + (margins.top + margins.bottom) / 15 + 'px'); block.dataset.docxPage = String(page); }
 				used = 0;
 			}
 			used += height;
@@ -147,6 +148,7 @@ const _rapierWordView = (() => {
 		});
 		observer ||= new MutationObserver(sync);
 		observer.observe(root, {childList: true, subtree: true, characterData: true});
+		_rapierTemplateArea.paint();
 	}
 	function sync() {
 		if (!active && !_rapierWordPage()) return;
@@ -155,6 +157,167 @@ const _rapierWordView = (() => {
 	addEventListener('resize', sync);
 	document.fonts?.addEventListener('loadingdone', sync);
 	return {sync};
+})();
+
+const _rapierTemplateArea = (() => {
+	const sides = ['top', 'right', 'bottom', 'left'], grips = [];
+	const selector = 'img[data-rapier-image-layout*="wrap%3Dbehind"][data-rapier-image-layout*="lock%3Don"]';
+	let selected = null, drag = null, tap = null, ticket = 0, click = null;
+	const border = () => _rapierTemplatePage() && _rapierWordPage() && rapier.view.mode !== 'source'
+		? document.querySelector('#editor-blocks[data-template-page] ' + selector) : null;
+	const allowed = () => !_rapierUserMutationBlocked(false) && !rapier.composition.block && !rapier.composition.source;
+	const readMargins = settings => Object.fromEntries(sides.map(side => [side, settings.geometry?.[side] ?? 1440]));
+	const current = state => selected === state && !rapier.access.readOnly && !rapier.compare.active &&
+		!rapier.composition.block && !rapier.composition.source && _rapierMutationStampIsCurrent(state.held.stamp);
+	function close() {
+		ticket++; tap = null;
+		const old = drag; drag = null;
+		const preview = selected?.preview; selected = null;
+		for (const grip of grips) grip.hidden = true;
+		if (old?.pointer != null) try { old.grip.releasePointerCapture(old.pointer); } catch (_) {}
+		if (preview) _rapierWordView.sync();
+	}
+	function margins(settings) {
+		return selected?.preview && current(selected) ? selected.preview : readMargins(settings);
+	}
+	function paint() {
+		if (!selected) return;
+		const image = border(), state = selected;
+		if (state.busy && current(state) && !image) return;
+		if (!image || !current(state) && !(state.busy && !rapier.access.readOnly && !rapier.compare.active &&
+			_rapierMutationStampSharesDocument(state.held.stamp) && _rapierSourceText() === state.next)) { close(); return; }
+		const rect = image.getBoundingClientRect(), scale = rect.width / state.width;
+		const value = state.preview || state.margins;
+		for (const grip of grips) {
+			const corner = grip.dataset.corner;
+			grip.style.left = (corner.includes('w') ? rect.left + value.left / 15 * scale : rect.right - value.right / 15 * scale) + 'px';
+			grip.style.top = (corner.includes('n') ? rect.top + value.top / 15 * scale : rect.bottom - value.bottom / 15 * scale) + 'px';
+			grip.hidden = false;
+		}
+	}
+	async function open() {
+		close();
+		const own = ticket;
+		_rapierCloseImageTools();
+		const held = await _rapierCaptureSettledExternalDocument();
+		if (own !== ticket || !held || !border() || !allowed() || !_rapierMutationStampIsCurrent(held.stamp)) return;
+		const settings = globalThis.RapierMarkdownSpec.readDocumentSettings(held.canonical);
+		selected = {held, margins: readMargins(settings), width: (settings.papersize?.width || 12240) / 15,
+			height: (settings.papersize?.height || 15840) / 15, preview: null, busy: false};
+		if (!grips.length) for (const [corner, label] of [['nw', 'top left'], ['ne', 'top right'], ['sw', 'bottom left'], ['se', 'bottom right']]) {
+			const grip = document.createElement('button');
+			grip.type = 'button'; grip.className = 'rapier-image-grip'; grip.dataset.corner = corner;
+			grip.dataset.rapierTextArea = ''; grip.setAttribute('aria-label', 'Resize text area from ' + label);
+			grip.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); });
+			grips.push(grip);
+		}
+		for (const grip of grips) if (!grip.isConnected) document.body.append(grip);
+		paint();
+	}
+	function onBorder(event) {
+		const image = border(), root = document.getElementById('editor-blocks');
+		if (!image || !root?.contains(event.target) || event.target.closest('button,input,textarea,select,a,.block-edit')) return false;
+		const rect = image.getBoundingClientRect(), settings = globalThis.RapierMarkdownSpec.readDocumentSettings(String(rapier.document.frontmatter || ''));
+		const value = margins(settings), scale = rect.width / ((settings.papersize?.width || 12240) / 15);
+		const x = event.clientX, y = event.clientY;
+		return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom &&
+			(x < rect.left + Math.max(8, value.left / 15 * scale) || x > rect.right - Math.max(8, value.right / 15 * scale) ||
+			 y < rect.top + Math.max(8, value.top / 15 * scale) || y > rect.bottom - Math.max(8, value.bottom / 15 * scale));
+	}
+	function begin(grip, event) {
+		if (!selected || selected.busy || !allowed() || !current(selected)) { close(); return false; }
+		_rapierCancelViewRestore();
+		drag = {grip, corner: grip.dataset.corner, pointer: event?.pointerId ?? null,
+			x: event?.clientX || 0, y: event?.clientY || 0, initial: {...selected.margins},
+			scale: border().getBoundingClientRect().width / selected.width};
+		selected.preview = {...selected.margins};
+		if (event) try { grip.setPointerCapture(event.pointerId); } catch (_) { close(); return false; }
+		return true;
+	}
+	function resize(dx, dy) {
+		if (!drag || !selected || !current(selected)) { close(); return; }
+		const {corner, initial} = drag, value = {...initial};
+		const clamp = (value, maximum) => Math.round(Math.max(0, Math.min(8640, maximum, value)));
+		if (corner.includes('w')) value.left = clamp(initial.left + dx, selected.width * 15 - initial.right - 720);
+		else value.right = clamp(initial.right - dx, selected.width * 15 - initial.left - 720);
+		if (corner.includes('n')) value.top = clamp(initial.top + dy, selected.height * 15 - initial.bottom - 720);
+		else value.bottom = clamp(initial.bottom - dy, selected.height * 15 - initial.top - 720);
+		selected.preview = value; _rapierWordView.sync();
+	}
+	async function finish() {
+		const state = selected, old = drag; drag = null;
+		if (old?.pointer != null) try { old.grip.releasePointerCapture(old.pointer); } catch (_) {}
+		if (!state || !current(state)) { close(); return; }
+		const value = state.preview;
+		if (!value || sides.every(side => value[side] === state.margins[side])) { state.preview = null; paint(); return; }
+		const before = state.held.canonical;
+		try {
+			state.next = globalThis.RapierMarkdownSpec.updateDocumentSettings(before, {geometry: sides.map(side => side + '=' + value[side] / 20 + 'pt').join(', ')});
+			state.busy = true;
+			const valid = () => current(state) && _rapierSourceText() === before;
+			const committed = await _rapierCommitSourceProjection([_rapierPrefixSuffixDiff(before, state.next)],
+				'document.geometry', null, null, _rapierCaptureEditorViewport(), null, valid);
+			if (!committed || selected !== state || !_rapierMutationStampSharesDocument(state.held.stamp) || _rapierSourceText() !== state.next) { close(); return; }
+			state.held = {canonical: state.next, stamp: _rapierMutationStamp()};
+			state.margins = value; state.preview = null; state.busy = false;
+			_rapierWordView.sync();
+		} catch (error) { close(); showToast(error.message, 'error'); }
+	}
+	const stop = event => { event.preventDefault(); event.stopImmediatePropagation(); };
+	window.addEventListener('pointerdown', event => {
+		if (!event.isTrusted) return;
+		click = null;
+		if (!event.isPrimary) { close(); return; }
+		if (event.button !== 0) return;
+		const grip = event.target.closest?.('[data-rapier-text-area]');
+		if (grips.includes(grip)) { stop(event); begin(grip, event); return; }
+		if (allowed() && onBorder(event)) { stop(event); tap = {pointer: event.pointerId, x: event.clientX, y: event.clientY}; return; }
+		close();
+	}, {capture: true, passive: false});
+	window.addEventListener('pointermove', event => {
+		if (tap?.pointer === event.pointerId && Math.hypot(event.clientX - tap.x, event.clientY - tap.y) > 8) tap = null;
+		if (!drag || drag.pointer !== event.pointerId) return;
+		stop(event); resize((event.clientX - drag.x) * 15 / drag.scale, (event.clientY - drag.y) * 15 / drag.scale);
+	}, {capture: true, passive: false});
+	window.addEventListener('pointerup', event => {
+		if (!event.isTrusted) return;
+		if (drag?.pointer === event.pointerId) {
+			stop(event); resize((event.clientX - drag.x) * 15 / drag.scale, (event.clientY - drag.y) * 15 / drag.scale);
+			click = {x: event.clientX, y: event.clientY, at: performance.now()}; void finish(); return;
+		}
+		if (tap?.pointer !== event.pointerId) return;
+		tap = null;
+		if (onBorder(event)) { stop(event); click = {x: event.clientX, y: event.clientY, at: performance.now()}; void open(); }
+	}, {capture: true, passive: false});
+	window.addEventListener('click', event => {
+		if (click && performance.now() - click.at < 600 && Math.hypot(event.clientX - click.x, event.clientY - click.y) < 12) {
+			click = null; stop(event);
+		}
+	}, true);
+	window.addEventListener('pointercancel', close, true);
+	window.addEventListener('lostpointercapture', event => { if (drag?.pointer === event.pointerId) close(); }, true);
+	window.addEventListener('keydown', event => {
+		if (!selected || !event.isTrusted) return;
+		if (event.key === 'Escape') { stop(event); close(); return; }
+		if (!grips.includes(event.target) || !/^Arrow(Left|Right|Up|Down)$/.test(event.key) || event.ctrlKey || event.metaKey || event.altKey) return;
+		stop(event);
+		if (!drag && !begin(event.target)) return;
+		if (drag?.pointer != null) return;
+		drag.initial = {...selected.preview};
+		const step = event.shiftKey ? 150 : 15;
+		resize(event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0,
+			event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0);
+	}, true);
+	window.addEventListener('keyup', event => {
+		if (drag && drag.pointer == null && /^Arrow/.test(event.key)) { stop(event); void finish(); }
+	}, true);
+	window.addEventListener('scroll', paint, true);
+	window.addEventListener('resize', paint);
+	window.visualViewport?.addEventListener('resize', paint);
+	window.visualViewport?.addEventListener('scroll', paint);
+	window.addEventListener('blur', close);
+	document.addEventListener('visibilitychange', () => { if (document.hidden) close(); });
+	return {margins, paint, close};
 })();
 function _rapierClipboardPictures(html, rtf) {
 	const template = document.createElement('template'); template.innerHTML = html;

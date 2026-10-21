@@ -34,7 +34,7 @@ export const DOORS = Object.freeze({
 	'/draw': Object.freeze({name: 'Draw', title: 'Free drawing app online: draw on your phone | Rapier Draw',
 		description: 'Draw freehand with a finger, mouse or pen, build diagrams with arrows that stay attached, and paint. Free in your browser, no download or account.',
 		image: 'og-draw.png', imageSize: [1200, 630], imageAlt: 'Rapier Draw: draw and paint in Markdown',
-		h1: 'Free drawing app online', view: 'draw', related: ['/paint', '/watercolor', '/mermaid-editor'],
+		h1: 'Free drawing app online', view: 'draw', related: ['/paint', '/watercolor', '/gallery', '/mermaid-editor'],
 		lead: 'Rapier Draw opens a canvas in your browser. Draw with your finger on a phone, or with a mouse or a pressure-sensitive pen. Brush follows your pressure and speed. Select a shape to move, resize, label or restyle it, or attach an arrow that moves with it. Drawings are SVG: sharp at any size and editable later.',
 		faq: Object.freeze([
 			Object.freeze(['Can I draw on my phone?', 'Yes. Rapier is made for phones first: draw with your finger, and pinch to zoom.']),
@@ -155,6 +155,13 @@ export const GUIDES = Object.freeze({
 		image: 'og-will.png', imageSize: [1200, 630], imageAlt: 'Rapier: Will/1'}),
 });
 export const PAGES = Object.freeze({...DOORS, ...GUIDES});
+export const STANDALONE = Object.freeze({
+	'/gallery': Object.freeze({name: 'Gallery', file: 'gallery.html', title: 'Free vintage ornaments, borders and decorative letters | Rapier Gallery',
+		description: 'Thousands of free ornaments, page borders and decorative capital letters, traced from old books. Open any piece in Rapier or download it as SVG.',
+		image: 'og-gallery.png', imageSize: [1200, 630], imageAlt: 'Rapier Gallery: ornaments, borders and decorative letters',
+		h1: 'Gallery', lead: 'Borders, ornaments and decorative letters, free in Rapier.'}),
+});
+export const SITE_PAGES = Object.freeze({...PAGES, ...STANDALONE});
 
 const encoder = new TextEncoder(), decoder = new TextDecoder('utf-8', {fatal: true});
 const beginBytes = encoder.encode(BEGIN), endBytes = encoder.encode(END);
@@ -250,8 +257,15 @@ export function doorHead(head, path) {
 		out = set(out, /<meta property="og:image:height" content="[^"]*">/, '<meta property="og:image:height" content="' + door.imageSize[1] + '">');
 		out = set(out, /<meta name="twitter:image" content="[^"]*">/, '<meta name="twitter:image" content="' + ORIGIN + '/' + door.image + '">');
 	}
-	const data = {'@context': 'https://schema.org', '@graph': [
-		{'@type': 'WebPage', '@id': url + '#webpage', url, name: door.title, description: door.description, inLanguage: 'en',
+	out = out.replace(graph[0], () => '<script type="application/ld+json">' + jsonInScript(pageData(path)) + '</script>');
+	const home = {title: text(title[1]), description: text(description[1]), canonical: text(canonical[1])};
+	return out.slice(0, out.length - END.length) + '<script type="application/json" id="rapier-home-head">' + jsonInScript(home) + '</script>\n' + END;
+}
+
+export function pageData(path) {
+	const door = SITE_PAGES[path], url = ORIGIN + path;
+	return {'@context': 'https://schema.org', '@graph': [
+		{'@type': STANDALONE[path] ? 'CollectionPage' : 'WebPage', '@id': url + '#webpage', url, name: door.title, description: door.description, inLanguage: 'en',
 			isPartOf: {'@id': ORIGIN + '/#website'}, breadcrumb: {'@id': url + '#breadcrumb'},
 			...(door.image ? {primaryImageOfPage: {'@id': url + '#image'}} : {})},
 		...(GUIDES[path] ? [{'@type': 'TechArticle', '@id': url + '#article', headline: door.name, url, description: door.description, inLanguage: 'en',
@@ -261,13 +275,10 @@ export function doorHead(head, path) {
 			{'@type': 'ListItem', position: 2, name: door.name, item: url}]},
 		...(door.image ? [{'@type': 'ImageObject', '@id': url + '#image', url: ORIGIN + '/' + (door.picture || door.image),
 			caption: door.imageAlt}] : []),
-		...(door.h1 ? [{'@type': 'WebApplication', '@id': url + '#application', name: door.h1, url, description: door.description,
+		...(DOORS[path]?.h1 ? [{'@type': 'WebApplication', '@id': url + '#application', name: door.h1, url, description: door.description,
 			applicationCategory: /^\/(?:draw|paint|watercolor)$/.test(path) ? 'DesignApplication' : 'UtilitiesApplication',
 			operatingSystem: 'Web', browserRequirements: 'Requires JavaScript', isAccessibleForFree: true,
 			offers: {'@type': 'Offer', price: '0', priceCurrency: 'USD'}, isPartOf: {'@id': ORIGIN + '/#website'}}] : [])]};
-	out = out.replace(graph[0], () => '<script type="application/ld+json">' + jsonInScript(data) + '</script>');
-	const home = {title: text(title[1]), description: text(description[1]), canonical: text(canonical[1])};
-	return out.slice(0, out.length - END.length) + '<script type="application/json" id="rapier-home-head">' + jsonInScript(home) + '</script>\n' + END;
 }
 
 function doorGuide(body, path) {

@@ -5,6 +5,9 @@
 !/door-notes.html
 !/door-draw.html
 !/door-watercolor.html
+!/gallery.html
+!/gallery/
+!/gallery/**
 !/door-privacy.html
 !/door-commercial.html
 !/door-paint.html
@@ -49,6 +52,7 @@
 !/og-notes.png
 !/og-draw.png
 !/og-watercolor.png
+!/og-gallery.png
 !/og-paint.png
 !/og-markdown-editor.png
 !/og-markdown-viewer.png

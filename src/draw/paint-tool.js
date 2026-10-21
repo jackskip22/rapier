@@ -489,7 +489,7 @@ function _rapierPaintMode(erasing = false) {
 function _rapierPaintRemoteNow(mode = _rapierPaintMode()) { const remote = _rapierPaintPainters.get(mode)?.remote; return remote && !remote.failure ? remote : null; }
 function _rapierPaintLossSaid(error) {
 	const state = _rapierDrawState, lost = state.waterLost;
-	return !!lost && lost.session === state.session && (error === lost.error || error?.code === 'WATER_DEVICE_LOST');
+	return !!lost && lost.session === state.session && (error === lost.error || error?.code === lost.error?.code);
 }
 function _rapierPaintStartPainter(mode = _rapierPaintMode()) {
 	const lost = _rapierDrawState.waterLost;
@@ -512,7 +512,7 @@ function _rapierPaintPainterLost(holder, error) {
 	try { if (typeof _rapierDrawPaintRelease === 'function') _rapierDrawPaintRelease(holder.remote?.client); } catch (_) {}
 	if (!state.open || state.paintLayer && state.paintLayer.mode !== holder.mode) return;
 	const said = _rapierPaintLossSaid(error);
-	if (holder.mode === 'water' && error?.code === 'WATER_DEVICE_LOST') state.waterLost = {session: state.session, error};
+	if (holder.mode === 'water' && ['WATER_DEVICE_LOST', 'WATER_GPU_FAILED', 'WATER_GPU_MEMORY'].includes(error?.code)) state.waterLost = {session: state.session, error};
 	if (!said) showToast('The painting could not be kept. It is still open: ' + String(error?.message || error), 'error');
 	const gesture = state.gesture, saved = gesture?.paintRollback;
 	if (gesture?.kind === 'paint') {
@@ -524,6 +524,7 @@ function _rapierPaintPainterLost(holder, error) {
 		}
 		if (typeof _rapierDrawEndGesture === 'function') _rapierDrawEndGesture(); else { state.gesture = null; state.pointerId = null; }
 	}
+	const closing = [];
 	for (const layer of _rapierPaintRevisionLayers()) {
 		const queue = layer.revisions || [];
 		for (const job of queue.splice(0)) {
@@ -536,14 +537,24 @@ function _rapierPaintPainterLost(holder, error) {
 		layer.dryFinishing = false; layer.dryBusy = false;
 		for (const ok of layer.wetWaiters?.splice(0) || []) ok();
 		if (layer.pngWorker) { try { layer.pngWorker.worker.terminate(); URL.revokeObjectURL(layer.pngWorker.url); } catch (_) {} layer.pngWorker = null; }
-		layer.mount?.remove();
-		if (layer.canvas && !layer.gpuDisplay) layer.canvas.width = layer.canvas.height = 0;
+		if (layer.mode === 'water' && layer.gpuDisplay && layer.displayReady && layer.canvas?.style.visibility !== 'hidden' &&
+			!_rapierPaintOverlayLost(layer) && _rapierDrawShapeById(layer.id)?.raster) closing.push(layer);
+		else {
+			layer.mount?.remove();
+			if (layer.canvas && !layer.gpuDisplay) layer.canvas.width = layer.canvas.height = 0;
+		}
 		layer.previousFlip = layer.nextFlip = null;
 	}
 	state.paintLayer = null; state.paintSetting = false; state.paintFlipping = false;
 	if (state.paintBrushes) state.paintBrushes.clear();
 	_rapierPaintSyncPaper();
 	_rapierDrawRenderAll();
+	for (const layer of closing) {
+		layer.raster = _rapierDrawShapeById(layer.id).raster; layer.decoding = null;
+		_rapierPaintPositionMount(layer.mount, layer.id);
+		state.svg?.querySelector('[data-shape-id="' + layer.id + '"]')?.setAttribute('data-paint-live', '');
+		_rapierPaintFinishClose(layer);
+	}
 }
 function _rapierPaintStrokeFailed(gesture, error) {
 	if (gesture?.waterStroke) _rapierPaintWaterFinish(gesture);
@@ -900,7 +911,8 @@ function _rapierPaintBlobURL(raster) {
 		for (const [key, old] of _rapierPaintBlobs) {
 			if (_rapierPaintBlobs.size <= RAPIER_PAINT_BLOBS_KEPT) break;
 			if (key === raster || svg?.querySelector('image[href="' + old + '"]')) continue;
-			_rapierPaintBlobs.delete(key); URL.revokeObjectURL(old);
+			_rapierPaintBlobs.delete(key);
+			if (![..._rapierPaintBlobs.values()].includes(old)) URL.revokeObjectURL(old);
 		}
 	}
 	return url;
@@ -1210,6 +1222,11 @@ async function _rapierPaintSetLayer({ auto = false, kib = 0 } = {}) {
 			if (kept) {  } else {
 			if (!pieces) { showToast('This painting is past what even sixty-four pictures can hold. Erase some of it and set it again.', 'info'); return; }
 			kept = { url: pieces[0].url, options: { lossless: true } };
+			if (layer.mode === 'water' && pieces.length === 1 && layer.surface.settled && !layer.surface._wetWork &&
+				layer.checkpoint?.revision === layer.surface.revision && layer.checkpoint.raster === shape.raster) {
+				const shown = _rapierPaintBlobURL(_rapierPaintShownAs.get(shape.raster) || shape.raster);
+				if (shown.startsWith('blob:')) _rapierPaintBlobs.set(kept.url, shown);
+			}
 			_rapierPaintKeepShown(pieces);
 			_rapierDrawSnapshot();
 			shape.raster = kept.url;
@@ -1220,6 +1237,12 @@ async function _rapierPaintSetLayer({ auto = false, kib = 0 } = {}) {
 			if (layer.mode === 'water' && pieces.length === 1) _rapierPaintHandBack(layer, [shape.id]);
 			if (behind && pieces.length === 1) void _rapierPaintEncodeShapeLater(shape.id, kept.url, null, { entry: state.undoStack.at(-1) });
 			}
+		}
+		if (!auto && layer.mode === 'water' && (!pieces || pieces.length === 1) &&
+			layer.surface.settled && !state.gesture && layer.checkpoint?.revision === layer.surface.revision) {
+			layer.raster = shape.raster;
+			layer.checkpoint = layer.published = {revision: layer.surface.revision, raster: shape.raster};
+			layer.flipStroke = null;
 		}
 		const closed = await _rapierPaintCloseLayer(owns);
 		if (closed === false || !state.open || state.session !== setting.session || state.paintLayer) return;
@@ -1981,7 +2004,20 @@ function _rapierPaintMountLive(canvas, atShapeId) {
 function _rapierPaintPositionMount(mount, id) {
 	const host = _rapierDrawState.svg, at = id != null ? host?.querySelector('[data-shape-id="' + id + '"]') : null;
 	const parent = at ? at.parentNode : host?.querySelector('[data-rapier-effect-scene]') || host;
-	if (at ? at.nextSibling !== mount : parent && (mount.parentNode !== parent || parent.lastChild !== mount)) { if (at) at.after(mount); else parent?.appendChild(mount); }
+	if (at ? at.nextSibling !== mount : parent && (mount.parentNode !== parent || parent.lastChild !== mount)) {
+		if (mount.parentNode === parent) {
+			if (at) {
+				const after = !!(mount.compareDocumentPosition(at) & 4), moved = [];
+				for (let node = after ? mount.nextSibling : at.nextSibling; node && node !== (after ? at.nextSibling : mount); node = node.nextSibling) moved.push(node);
+				if (after) for (const node of moved) parent.insertBefore(node, mount);
+				else mount.after(...moved);
+			} else {
+				const moved = [];
+				for (let node = mount.nextSibling; node; node = node.nextSibling) moved.push(node);
+				for (const node of moved) parent.insertBefore(node, mount);
+			}
+		} else if (at) at.after(mount); else parent?.appendChild(mount);
+	}
 	const shape = id != null ? _rapierDrawShapeById(id) : null;
 	if (shape?.opacity != null && !mount.closest('[data-rapier-effect-layer]')) mount.setAttribute('opacity', String(shape.opacity));
 	else mount.removeAttribute('opacity');
@@ -3264,12 +3300,13 @@ async function _rapierPaintEncodeShapeLater(shapeId, was, captured = null, strok
 	const encodes = state.paintEncodes || (state.paintEncodes = new Map());
 	const notice = typeof _rapierProgressOpen === 'function' ? _rapierProgressOpen({label: 'Finishing at full quality', after: 1500}) : null;
 	const link = {to: null}, work = notice ? {progress: fraction => link.to ? link.to(fraction) : notice.set(fraction)} : null;
-	let task;
+	let task, exactSource = false;
 	try {
 		if (typeof _rapierDefaultImageProfile === 'function' && _rapierDefaultImageProfile() !== 'jxl') return;
 		task = (async () => {
 			await new Promise(ok => _rapierPaintTask(ok));
 			const pixels = captured || await _rapierPaintPNG.decode(was), surface = pixels ? _rapierPaintPixelsSurface(pixels) : null;
+			exactSource = !!pixels && !captured;
 			const canvas = surface ? null : await _rapierPaintRasterCanvas(was), source = surface || canvas;
 			const encode = async box => {
 				if (!surface) return _rapierPaintEncodeCanvasBox(canvas, box, {lossless: true});
@@ -3286,6 +3323,10 @@ async function _rapierPaintEncodeShapeLater(shapeId, was, captured = null, strok
 		if (stroke && stroke.entry !== state.undoStack.at(-1)) return;
 		if (stroke) _rapierDrawSnapshot(undefined, true);
 		_rapierPaintRememberFast(state.paintFastSources || (state.paintFastSources = new Map()), pieces, was);
+		if (exactSource && shape.paint?.mode === 'water' && pieces.length === 1) {
+			const shown = _rapierPaintBlobs.get(_rapierPaintShownAs.get(was) || was);
+			if (shown) _rapierPaintBlobs.set(pieces[0].shown || pieces[0].url, shown);
+		}
 		_rapierPaintKeepShown(pieces);
 		if (pieces.length === 1) { shape.raster = pieces[0].url; _rapierDrawRenderShapes([shape.id]); }
 		else if (_rapierPaintSplitShapeSync(state.recipe.shapes, shape, pieces)) _rapierDrawRenderAll();

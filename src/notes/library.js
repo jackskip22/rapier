@@ -385,7 +385,8 @@ function _rapierNotesLibraryHit(file) {
 	return snip && snip.text ? snip : null;
 }
 function _rapierNotesLibraryPlain(s, head, tail) {
-	let text = String(s).replace(/(^|\n)[ \t]*(?:[-*]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]*)?/g, (marker, lead, at) => head || at ? lead : marker)
+	const words = String(s).replace(/&(nbsp|lt|gt|quot|#39|amp);/g, (_, name) => ({nbsp: ' ', lt: '<', gt: '>', quot: '"', '#39': "'", amp: '&'})[name]);
+	let text = words.replace(/(^|\n)[ \t]*(?:[-*]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]*)?/g, (marker, lead, at) => head || at ? lead : marker)
 		.replace(/[ \t]*\n[ \t\n]*/g, ' \u00b7 ').replace(/[ \t]+/g, ' ');
 	if (head) text = text.replace(/^ ?\u00b7 /, '');
 	if (tail) text = text.replace(/ \u00b7 ?$/, '');

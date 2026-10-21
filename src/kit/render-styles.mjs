@@ -33,7 +33,7 @@ function _rapierArtifactPrintCss() {
 	html,body{
 		width:auto!important;height:auto!important;min-height:0!important;max-height:none!important;
 		margin:0!important;padding:0!important;overflow:visible!important;position:static!important;
-		background:#fff!important;color:#111!important;color-scheme:light
+		background:#fff!important;color:#111!important;color-scheme:light!important
 	}
 	.rapier-page{
 		display:block!important;width:100%!important;max-width:none!important;height:auto!important;
@@ -49,7 +49,7 @@ function _rapierDocumentPrintCss(hostSelector) {
 	return `
 @page{size:auto;margin:12mm 14mm 14mm}
 @media print{
-	${p('.md-render')}{--md-color-line:#000000!important}
+	${p('.md-render')}{color-scheme:light!important;--md-color-line:#000000!important}
 	${list('.md-render h1','.md-render h2','.md-render h3','.md-render h4','.md-render h5','.md-render h6')}{page-break-after:avoid;break-after:avoid-page;color:#111}
 	${list('.md-render p','.md-render li','.md-render blockquote')}{orphans:3;widows:3}
 	${p('.md-render img')}{max-width:100%!important;height:auto!important;break-inside:avoid-page}
@@ -97,8 +97,10 @@ function _rapierArtifactStyles(theme, includeFonts, printMode, houseDefaults = f
 :root,.md-render{--md-font-sans:'Geist','Geist/Roboto','Geist/Helvetica Neue','Geist/Segoe UI','Geist/Arial','Geist/Noto Sans','Geist/Ubuntu','Geist/Liberation Sans','Geist/DejaVu Sans',system-ui,sans-serif}`);
 	const highlightCss = _rapierStyleText('rapier-highlight-style');
 	parts.push(highlightCss);
-	if (theme === 'system') for (const [, palette, light] of highlightCss.matchAll(/html\[data-highlights="(standard|accent)"\] body\.light\s*\{([^}]*)\}/g))
-		parts.push('@media (prefers-color-scheme:light){html[data-rapier-theme="system"][data-highlights="' + palette + '"] body{' + light.trim() + '}}');
+	for (const [, palette, light] of highlightCss.matchAll(/html\[data-highlights="(standard|accent)"\] body\.light\s*\{([^}]*)\}/g)) {
+		if (theme === 'system') parts.push('@media (prefers-color-scheme:light){html[data-rapier-theme="system"][data-highlights="' + palette + '"] body{' + light.trim() + '}}');
+		if (printMode) parts.push('@media print{html[data-highlights="' + palette + '"] body{' + light.trim() + '}}');
+	}
 	if (printMode) parts.push(_rapierArtifactPrintCss());
 	return parts.filter(Boolean).join('\n\n');
 }

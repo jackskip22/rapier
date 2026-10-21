@@ -7,16 +7,24 @@ const encode = text => { let binary = ''; const bytes = new TextEncoder().encode
 
 const moved = (path, dx, dy) => dx || dy ? path.replace(/M(-?\d+)[ ,]?(-?\d+)/g, (_, x, y) => 'M' + (Number(x) + dx) + ' ' + (Number(y) + dy)) : path;
 
+function elementPaths(item, ink, repeats = 1) {
+	let svg = '';
+	for (const layer of [...(item.layers || []), {path: item.path}]) {
+		let path = '';
+		for (let i = 0; i < repeats; i++) path += moved(layer.path, i * item.w, 0);
+		svg += '<path fill="' + ink + '"' + (layer.opacity === undefined ? '' : ' fill-opacity="' + layer.opacity / 255 + '"') + ' fill-rule="evenodd" d="' + path + '"/>';
+	}
+	return svg;
+}
+
 export const bandTiles = item => item.tile === true ? Math.max(2, Math.min(64, Math.round(2400 / item.w))) : 1;
 
 export function elementSVG(item, {ink = ELEMENT_INK, tiles = bandTiles(item)} = {}) {
 	if (!item || !ELEMENT_ID.test(item.id) || !HEX.test(ink) || !Number.isInteger(tiles) || tiles < 1 || tiles > 64) return null;
 	const repeats = item.tile === true ? tiles : 1, width = item.w * repeats;
-	let path = '';
-	for (let i = 0; i < repeats; i++) path += moved(item.path, i * item.w, 0);
 	const record = JSON.stringify({version: 1, pack: 'traced', piece: item.id, ink, ...(item.tile === true ? {tiles: repeats} : {})});
 	return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + width + ' ' + item.h + '" width="' + width + '" height="' + item.h + '" color="' + ink + '" role="img"><title>' +
-		xml(item.name) + '</title><metadata id="rapier-element">' + xml(record) + '</metadata><path fill="' + ink + '" fill-rule="evenodd" d="' + path + '"/></svg>';
+		xml(item.name) + '</title><metadata id="rapier-element">' + xml(record) + '</metadata>' + elementPaths(item, ink, repeats) + '</svg>';
 }
 
 export function readElement(svgText) {
@@ -61,9 +69,13 @@ export function templateMarkdown(row, {ink = ELEMENT_INK, paper = 'a4'} = {}) {
 		'[template-border]: data:image/svg+xml;base64,' + encode(svg) + '\n';
 }
 
+export function pieceMarkdown(svg, name, layout) {
+	return svg ? '![' + xml(name) + '][gallery-piece] <!--md-layout:v1 ' + layout + '-->\n\n[gallery-piece]: data:image/svg+xml;base64,' + encode(svg) + '\n' : null;
+}
+
 export function thumbnailSVG(item, ink) {
-	const path = item.frame ? item.frame.path : item.path;
-	return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + item.w + ' ' + item.h + '" preserveAspectRatio="xMidYMid meet"><path fill="' + ink + '" fill-rule="evenodd" d="' + path + '"/></svg>';
+	return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + item.w + ' ' + item.h + '" preserveAspectRatio="xMidYMid meet">' +
+		(item.frame ? '<path fill="' + ink + '" fill-rule="evenodd" d="' + item.frame.path + '"/>' : elementPaths(item, ink)) + '</svg>';
 }
 
 export function letterSVG(set, entry, {ink = ELEMENT_INK, box} = {}) {

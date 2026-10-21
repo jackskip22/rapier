@@ -4,7 +4,7 @@ import { admitText } from './text.mjs';
 import {fillEffect, admitEffect, remapRefractionSources, remapRefractionRecipeSources} from './effects.mjs';
 
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
-const FRAMES = new Set(['rect', 'paint', 'diamond', 'star', 'hexagon', 'pentagon', 'octagon', 'cylinder', 'subroutine', 'asymmetric']);
+const FRAMES = new Set(['rect', 'paint', 'ornament', 'diamond', 'star', 'hexagon', 'pentagon', 'octagon', 'cylinder', 'subroutine', 'asymmetric']);
 const AXES = { x: ['minX', 'maxX'], y: ['minY', 'maxY'] };
 const clone = value => JSON.parse(JSON.stringify(value));
 const signature = recipe => JSON.stringify({ ...recipe, fonts: recipe.fonts?.map(font => font.id) });
@@ -413,7 +413,7 @@ const OPERATION_FIELDS = {
 	ungroup: [], lock: [], unlock: [], unlockAll: [], delete: [], front: [], back: [], forward: [], backward: [], clean: [], unclean: [],
 };
 function setLabel(shape, recipe, label) {
-	if (typeof label !== 'string' || label.length > RAPIER_DRAW_LABEL_MAX || /[\ud800-\udfff\ufffe\uffff]/u.test(label) || ['ink', 'paint', 'arc', 'parabola'].includes(shape.recognized) || shape.recognized === 'text' && !label) fail('drawing_label_invalid', 'label');
+	if (typeof label !== 'string' || label.length > RAPIER_DRAW_LABEL_MAX || /[\ud800-\udfff\ufffe\uffff]/u.test(label) || ['ink', 'paint', 'ornament', 'arc', 'parabola'].includes(shape.recognized) || shape.recognized === 'text' && !label) fail('drawing_label_invalid', 'label');
 	if (!shape.label && !['text', 'line', 'arrow'].includes(shape.recognized)) shape.labelIn = true;
 	if (label) shape.label = label; else { delete shape.label; delete shape.step; }
 }
@@ -457,16 +457,16 @@ function setProperties(shape, recipe, properties) {
 		next.effect = effect;
 	}
 	if ('label' in properties) { setLabel(next, recipe, properties.label ?? ''); }
-	if ('labelIn' in properties && properties.labelIn != null && (typeof properties.labelIn !== 'boolean' || properties.labelIn && ['text', 'line', 'arrow', 'arc', 'parabola', 'ink', 'paint'].includes(shape.recognized))) fail('drawing_label_invalid', 'labelIn');
+	if ('labelIn' in properties && properties.labelIn != null && (typeof properties.labelIn !== 'boolean' || properties.labelIn && ['text', 'line', 'arrow', 'arc', 'parabola', 'ink', 'paint', 'ornament'].includes(shape.recognized))) fail('drawing_label_invalid', 'labelIn');
 	for (const key of TEXT_PROPERTIES) if (key in properties) {
 		const value = properties[key];
 		if (value !== null && !admitText({label: next.label, labelIn: next.labelIn, route: next.route, [key]: value}, shape.recognized)) fail('drawing_label_invalid', key);
 		if (key === 'textFont' && typeof value === 'string' && /^f[\da-f]{24}$/.test(value) && !recipe.fonts?.some(font => font.id === value)) fail('drawing_label_invalid', key);
-		if (key === 'step' && value != null && (!next.label || !next.labelIn || ['text', 'line', 'arrow', 'ink', 'paint', 'arc', 'parabola'].includes(shape.recognized))) fail('drawing_label_invalid', key);
+		if (key === 'step' && value != null && (!next.label || !next.labelIn || ['text', 'line', 'arrow', 'ink', 'paint', 'ornament', 'arc', 'parabola'].includes(shape.recognized))) fail('drawing_label_invalid', key);
 	}
 	if (!admitText(next, shape.recognized)) fail('drawing_label_invalid', 'labelIn' in properties ? 'labelIn' : 'label');
 	for (const [key, max, min] of [['nib', RAPIER_DRAW_NIB_MAX, RAPIER_DRAW_NIB_MIN], ['smooth', 100, 0]]) if (key in properties && properties[key] != null) {
-		if (!Number.isInteger(properties[key]) || properties[key] < min || properties[key] > max || ['text', 'paint'].includes(shape.recognized)) fail('drawing_look_invalid', key);
+		if (!Number.isInteger(properties[key]) || properties[key] < min || properties[key] > max || ['text', 'paint', 'ornament'].includes(shape.recognized)) fail('drawing_look_invalid', key);
 	}
 	if ('brush' in properties && properties.brush != null && !_rapierDrawBrushesFor(shape.recognized, shape.stroke != null).includes(properties.brush)) fail('drawing_look_invalid', 'brush');
 	if ('style' in properties && properties.style != null && !_rapierDrawStylesFor(shape.recognized).includes(properties.style)) fail('drawing_look_invalid', 'style');

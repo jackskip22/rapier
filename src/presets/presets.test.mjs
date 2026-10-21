@@ -28,7 +28,8 @@ test('page templates are pages: a locked border behind the words and no example 
   const {templateMarkdown} = await import('./ornaments.mjs'), {admitTemplate} = await import('../draw/ornaments.mjs');
   const {readFileSync, readdirSync} = await import('node:fs');
   const files = readdirSync(new URL('../draw/templates/', import.meta.url)).filter(name => /^border-\d+\.json$/.test(name));
-  assert.equal(files.length, 61);
+  const {BORDER_PINS} = await import('./pins.mjs');
+  assert.equal(files.length, BORDER_PINS.length);
   for (const file of files) {
     const row = admitTemplate(readFileSync(new URL('../draw/templates/' + file, import.meta.url)));
     assert.ok(row, file + ' is a template');

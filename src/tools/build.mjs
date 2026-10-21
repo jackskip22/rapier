@@ -27,7 +27,7 @@ import {inlineFonts, keepsComment, stripStyleComments, styleText} from './style-
 import {shakeModule, pruneImports} from './tree-shake.mjs';
 import {commercialPage} from './commercial-page.mjs';
 import {seoSection, seoDoorSections} from './seo-page.mjs';
-import {DOORS, PAGES, doorAssetPath} from '../door-worker.js';
+import {DOORS, PAGES, SITE_PAGES, doorAssetPath} from '../door-worker.js';
 import {readGuides, writeDoorAssets} from './door-assets.mjs';
 import {fillMermaidResources} from './mermaid-resources.mjs';
 import {fillFontSubsetResources} from './font-subset-resources.mjs';
@@ -648,7 +648,7 @@ if (new Set(styles.map(row => row.id)).size !== styles.length || styles.some(row
 const styleSlots = /<style id="rapier-boot-style">[\s\S]*?<\/style>/;
 if (!styleSlots.test(html) || !html.includes('<template id="rapier-ui-slot"></template>')) throw new Error('Editor interface slots are missing');
 html = html.replace(styleSlots, critical => critical.replace(/#rapier-first-screen[^<]*/, ''));
-const bootTheme = '<script id="rapier-boot-theme">globalThis.RapierBenchRoute=!!document.querySelector(\'meta[name="rapier-phone-bench"][content="1"]\')||/^https?:$/.test(location.protocol)&&/^\\/bench\\/?$/.test(location.pathname);document.documentElement.classList.add("rapier-script");try{var t;try{t=globalThis.RapierBenchRoute||globalThis.RapierBenchSession?.active===true?null:JSON.parse(localStorage.getItem("rapier:preference:theme"))}catch(e){}if(t==="light"||(t!=="dark"&&matchMedia("(prefers-color-scheme: light)").matches))document.documentElement.classList.add("rapier-boot-light")}catch(e){}</script>\n' +
+const bootTheme = '<script id="rapier-boot-theme">globalThis.RapierBenchRoute=!!document.querySelector(\'meta[name="rapier-phone-bench"][content="1"]\')||/^https?:$/.test(location.protocol)&&/^\\/bench\\/?$/.test(location.pathname);document.documentElement.classList.add("rapier-script");try{var t=document.querySelector(\'meta[name="rapier-appearance"]\')?.content;try{if(t!=="light"&&t!=="dark")t=globalThis.RapierBenchRoute||globalThis.RapierBenchSession?.active===true?null:JSON.parse(localStorage.getItem("rapier:preference:theme"))}catch(e){}if(t==="light"||(t!=="dark"&&matchMedia("(prefers-color-scheme: light)").matches))document.documentElement.classList.add("rapier-boot-light")}catch(e){}</script>\n' +
   '<style id="rapier-boot-theme-style">html{background:#000}html.rapier-boot-light{color-scheme:light;background:#fff}html.rapier-script body:not(.rapier-first-ready):not(.rapier-boot-failed)>:not(.settings-overlay):not(dialog):not(#toast-root:has(>.rapier-progress)),html.rapier-script body:not(.rapier-first-ready):not(.rapier-boot-failed) #rapier-first-screen>*{opacity:0;pointer-events:none}html:not(.rapier-script) #rapier-first-screen{display:none}#rapier-first-screen{display:contents}</style>\n';
 html = html.replace(/<script id="rapier-boot-theme">[\s\S]*?<\/script>\s*<style id="rapier-boot-theme-style">[\s\S]*?<\/style>\s*/, '');
 html = html.replace(/(<meta name="viewport")/, (_, anchor) => bootTheme + anchor);
@@ -702,7 +702,7 @@ html = html.replace(/<title>[^<]*<\/title>/, () => '<title>' + escapeHtml(SITE_T
     const origin = 'https://rapier.website', site = origin + '/#website', publisher = origin + '/#organization';
     const identity = {'@context': 'https://schema.org', '@graph': [
       {'@type': 'WebSite', '@id': site, url: origin + '/', name: data.name, alternateName: ['Rapier Markdown Editor', data.alternateName], description: data.description, inLanguage: 'en', publisher: {'@id': publisher},
-        hasPart: Object.entries(PAGES).map(([path, door]) => ({'@type': 'WebPage', '@id': origin + path + '#webpage', url: origin + path, name: door.name}))},
+        hasPart: Object.entries(SITE_PAGES).map(([path, door]) => ({'@type': 'WebPage', '@id': origin + path + '#webpage', url: origin + path, name: door.name}))},
       {'@type': 'Organization', '@id': publisher, name: data.name, url: origin + '/', logo: {'@type': 'ImageObject', url: origin + '/icon-512.png', width: 512, height: 512}, sameAs}]};
     return open + JSON.stringify({...data, '@id': origin + '/#application', softwareVersion: VERSION, sameAs: [...sameAs, PLAY_URL], publisher: {'@id': publisher}}) + close + '\n' + open + JSON.stringify(identity) + close;
   });

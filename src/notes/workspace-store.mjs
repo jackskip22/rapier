@@ -4,7 +4,7 @@ import {FOLDERS, parts} from './opfs-paths.mjs';
 import {recordingStem} from './recording-files.mjs';
 
 const SCOPE = 'rapier-notes:notes', RECORDING_SCOPE = 'rapier-notes-recording:notes:', PRIVATE = '.rapier/notes/', PUBLIC = 'notes/';
-const FILE_BYTES = 16 * 1024 * 1024, SOURCE_BYTES = 2 * 1024 * 1024, PAGE_BYTES = 1024 * 1024, FILES = 1024;
+const FILE_BYTES = 16 * 1024 * 1024, SOURCE_BYTES = 2 * 1024 * 1024, PAGE_BYTES = 1024 * 1024, FILES = 4096;
 const fail = (code, message) => Object.assign(new Error(message), {code});
 const abortError = () => Object.assign(new Error(''), {name: 'AbortError', code: 'cancelled'});
 const strongEtag = value => {
@@ -247,7 +247,7 @@ export function createWorkspaceNotes({url = globalThis.location?.href, fetch: se
 		if (await stat(name) !== null) throw fail('verify', 'The notes folder did not remove ' + name + '.');
 		await afterStep('remove', name);
 	};
-	const statAll = async (prefix = '') => {
+	const statAll = async (prefix = '', namesOnly = false) => {
 		if (!FOLDERS.has(prefix)) throw fail('name', 'This folder is not part of Notes.');
 		const ticket = {generation: usageGeneration, sequence: ++usageSequence};
 		staleUsage('refreshing');
@@ -257,15 +257,21 @@ export function createWorkspaceNotes({url = globalThis.location?.href, fetch: se
 		for (const root of roots) {
 			const cursors = new Set(); let cursor;
 			do {
-				const response = await request('files', {query: {prefix: root, ...(cursor ? {cursor} : {})}, lease});
+				const response = await request('files', {query: {prefix: root, ...(namesOnly ? {names: '1'} : {}), ...(cursor ? {cursor} : {})}, lease});
 				await accepted(response); const page = await readJSON(response, PAGE_BYTES, lease);
-				if (!Array.isArray(page?.files) || page.files.length > 1000 || !Number.isSafeInteger(count += page.files.length) || count > FILES)
+				const names = namesOnly && Array.isArray(page?.names), rows = names ? page.names : page?.files;
+				if (!Array.isArray(rows) || rows.length > 1000 || !Number.isSafeInteger(count += rows.length) || count > FILES)
 					throw fail('protocol', 'A saved file could not be read; nothing was lost.');
-				for (const row of page.files) {
+				for (const value of rows) {
+					const row = names ? {path: value} : value;
 					if (typeof row?.path !== 'string' || !row.path.startsWith(root)) throw fail('protocol', 'This file does not belong to the notes folder.');
 					const leaf = row.path.slice(root.length); if (leaf.includes('/')) continue;
 					const name = prefix ? prefix + '/' + leaf : leaf;
 					if (physical(name) !== row.path) continue;
+					if (names) {
+						if (out.has(leaf)) throw fail('protocol', 'A saved file could not be read; nothing was lost.');
+						out.set(leaf, null); continue;
+					}
 					if (!Number.isSafeInteger(row.bytes) || row.bytes < 0 || row.bytes > FILE_BYTES || out.has(leaf)) throw fail('protocol', 'A saved file could not be read; nothing was lost.');
 					const info = {size: row.bytes, modified: null, etag: strongEtag('"' + row.etag + '"')};
 					observe(lease, name, info); out.set(leaf, info);
@@ -333,8 +339,8 @@ export function createWorkspaceNotes({url = globalThis.location?.href, fetch: se
 		}
 		if (error) throw error; return result;
 	}};
-	const store = {read, readChunks, stat, statAll, write, writeBlob, remove, assertRemovable, list: async prefix => [...(await statAll(prefix)).keys()],
-		async prepare() { if (!prepared) { await statAll(); prepared = true; } return true; },
+	const store = {read, readChunks, stat, statAll, write, writeBlob, remove, assertRemovable, list: async prefix => [...(await statAll(prefix, true)).keys()],
+		async prepare() { if (!prepared) { await statAll('', true); prepared = true; } return true; },
 		get writable() { return true; }, durable: true, ascii: false, streamingAttachments: true};
 	return {store, locks, channel, scope: 'notes', getUsageSnapshot, setUsageOwner};
 }

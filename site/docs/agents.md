@@ -45,7 +45,7 @@ Call `open` with one source:
 
 ### OAuth
 
-OAuth supports `rapier:read`, `rapier:write` and optional `offline_access`. The person can grant read only; a
+OAuth on the OpenAI connector and Muse supports `rapier:read`, `rapier:write` and optional `offline_access`. The person can grant read only; a
 read-only connection can't create or edit a workspace. The host keeps credentials out of tool arguments.
 
 - Access tokens last 15 minutes.

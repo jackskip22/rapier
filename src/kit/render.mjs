@@ -48,6 +48,9 @@ function createRenderer(runtime) {
 async function _rapierBuildArtifact(options, providedContext) {
 	const opts = options || {};
 	const context = providedContext || _rapierBuildInterchangeContext(opts);
+	const preference = _rapierArtifactPreference('theme', ['system', 'light', 'dark']);
+	const theme = opts.print ? 'light' : preference === 'system'
+		? (globalThis.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : preference;
 	const metadata = context.metadata;
 	const base = context.baseName;
 	const work = context.work || opts.work;
@@ -110,7 +113,8 @@ async function _rapierBuildArtifact(options, providedContext) {
 	const styledRoot = work ? await _rapierProjectStyledRootAsync(context.semanticRoot, styledOptions)
 		: _rapierProjectStyledRoot(context.semanticRoot, styledOptions);
 	styledRoot.setAttribute('lang', language);
-	const templatePage = _rapierTemplatePage(context.canonical, settings, styledRoot);
+	const darkPaper = theme === 'dark' && _rapierArtifactPreference('invertImageAlpha', ['true', 'false']) !== 'false';
+	const templatePage = _rapierTemplatePage(context.canonical, settings, styledRoot, darkPaper);
 	if (completePage && typeof _rapierFinalizeExportCode === 'function') await _rapierFinalizeExportCode(styledRoot);
 	if (!opts.print) _rapierAnnotateExportBoxPolygons(styledRoot);
 	if (completePage || opts.print) {
@@ -123,9 +127,6 @@ async function _rapierBuildArtifact(options, providedContext) {
 	}
 	if (typeof opts.afterRoot === 'function') await opts.afterRoot(styledRoot);
 	markPrintCapitals(styledRoot);
-	const theme = opts.print || templatePage
-		? 'light'
-		: _rapierArtifactPreference('theme', ['system', 'light', 'dark']);
 	const highlights = _rapierArtifactPreference('highlights', ['accent', 'standard']);
 	const invertImageAlpha = _rapierArtifactPreference('invertImageAlpha', ['true', 'false']) !== 'false';
 	const versionMeta = document.querySelector('meta[name="rapier-version"]');
@@ -138,9 +139,10 @@ async function _rapierBuildArtifact(options, providedContext) {
 	const willFont = opts.print && opts.willFont ? opts.willFont : null;
 	const settingsCss = _rapierDocumentSettingsCss(settings);
 	const refined = styledRoot.querySelector('p[data-md-hyphens="auto"],p[data-md-lines],p[data-md-caps="small"],p[data-md-hanging="on"],img[data-rapier-print-lines]');
-	const printMargin = settings?.geometry ? settings.geometry.twips / 15 : 14 * 96 / 25.4;
-	const printWidth = settings?.papersize ? settings.papersize.width / 15 - 2 * printMargin : null;
-	const typographyPrintCss = refined ? '@media print{.md-render{--rapier-print-margin-left:' + printMargin + 'px;--rapier-print-margin-right:' + printMargin + 'px'
+	const printLeft = settings?.geometry ? settings.geometry.left / 15 : 14 * 96 / 25.4;
+	const printRight = settings?.geometry ? settings.geometry.right / 15 : 14 * 96 / 25.4;
+	const printWidth = settings?.papersize ? settings.papersize.width / 15 - printLeft - printRight : null;
+	const typographyPrintCss = refined ? '@media print{.md-render{--rapier-print-margin-left:' + printLeft + 'px;--rapier-print-margin-right:' + printRight + 'px'
 		+ (printWidth > 0 ? ';--rapier-print-width:' + printWidth + 'px' : '') + '}'
 		+ (printWidth > 0 ? '.rapier-page.md-render{width:' + printWidth + 'px!important}' : '') + '}' : '';
 	const pageTitle = settings && settings.title ? globalThis.RapierMarkdownSpec.documentTitle(settings) : metadata.filename;
@@ -194,7 +196,7 @@ async function _rapierBuildArtifact(options, providedContext) {
 		fontCss,
 		fontRequests: fontCss ? fontRequests(styledRoot, {settings, css, fontCss}) : [],
 		settings,
-		templatePage: templatePage && {url: templatePage.url, width: templatePage.width, height: templatePage.height, margin: templatePage.margin},
+		templatePage: templatePage && {url: templatePage.url, width: templatePage.width, height: templatePage.height, margins: templatePage.margins},
 		docClass,
 		language,
 		metadata,
@@ -202,7 +204,7 @@ async function _rapierBuildArtifact(options, providedContext) {
 	};
 }
 
-function _rapierTemplatePage(canonical, settings, root) {
+function _rapierTemplatePage(canonical, settings, root, darkPaper = false) {
 	if (!isTemplatePage(canonical) || !settings?.papersize) return null;
 	let url = '';
 	for (const paragraph of root.querySelectorAll(':scope > p[data-md-layout]')) {
@@ -212,15 +214,31 @@ function _rapierTemplatePage(canonical, settings, root) {
 		if (isPageBorderLayout(layout) && /^data:image\/svg\+xml;base64,[A-Za-z0-9+/=]+$/.test(source)) { url = source; paragraph.remove(); break; }
 	}
 	if (!url) return null;
-	const width = settings.papersize.width / 15, height = settings.papersize.height / 15, margin = (settings.geometry?.twips ?? 1440) / 15;
+	const width = settings.papersize.width / 15, height = settings.papersize.height / 15;
+	const margins = ['top', 'right', 'bottom', 'left'].map(side => (settings.geometry?.[side] ?? 1440) / 15);
+	const padding = margins.map(value => value + 'px').join(' ');
 	const ground = 'background:var(--rapier-template-border) 0 0/100% 100% no-repeat';
+	const shown = darkPaper ? _rapierDarkPaperSvgUrl(url, '#fafafa') : url;
 	const css = ':root{--rapier-template-border:url("' + url + '")}\n'
-		+ '@media screen{.rapier-template-border{display:none}body{background:#e8e8e8}.rapier-page{box-sizing:border-box;width:min(100%,' + width + 'px);min-height:' + height + 'px;margin:0 auto;padding:' + margin
-		+ 'px;background:var(--rapier-template-border) 0 0/100% ' + height + 'px repeat-y,#fff;color:#111}}\n'
+		+ '@media screen{' + (shown !== url ? ':root{--rapier-template-border:url("' + shown + '")}' : '') + '.rapier-template-border{display:none}body{background:var(--md-color-inset)}.rapier-page{box-sizing:border-box;width:min(100%,' + width + 'px);min-height:' + height + 'px;margin:0 auto;padding:' + padding
+		+ ';background:var(--rapier-template-border) 0 0/100% ' + height + 'px repeat-y,var(--md-color-bg);color:var(--md-color-text)}}\n'
 		+ '@media print{@page{size:' + width + 'px ' + height + 'px;margin:0}html,body{margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
-		+ '.rapier-page{box-sizing:border-box;width:auto;max-width:none;margin:0;padding:' + margin + 'px!important;position:relative!important;z-index:1;box-decoration-break:clone;-webkit-box-decoration-break:clone}'
+		+ '.rapier-page{box-sizing:border-box;width:auto;max-width:none;margin:0;padding:' + padding + '!important;position:relative!important;z-index:1;box-decoration-break:clone;-webkit-box-decoration-break:clone}'
 		+ '.rapier-template-border{display:block;position:fixed;left:0;top:0;width:' + width + 'px;height:' + height + 'px;z-index:0;' + ground + '}}';
-	return {url, width, height, margin, css};
+	return {url, width, height, margins, css};
+}
+
+function _rapierDarkPaperSvgUrl(url, paperInk) {
+	const ink = globalThis.RapierImageInspection?.inkForPaper;
+	if (typeof ink !== 'function') return url;
+	let text;
+	try { text = new TextDecoder('utf-8', {fatal: true}).decode(Uint8Array.from(atob(url.slice(26)), c => c.charCodeAt(0))); }
+	catch (_) { return url; }
+	const inked = ink(text, {dark: true, paperInk});
+	if (inked === text) return url;
+	let binary = '';
+	for (const byte of new TextEncoder().encode(inked)) binary += String.fromCharCode(byte);
+	return 'data:image/svg+xml;base64,' + btoa(binary);
 }
 
 function _rapierPagePreviewMeta(root, fallbackTitle) {
@@ -346,7 +364,8 @@ function _rapierDocxRenderStyles(root) {
 		const sheet = into.createElement('style');
 		sheet.textContent = _rapierArtifactStyles('light', false, false);
 		into.head.appendChild(sheet);
-		const surface = into.createElement('div'); surface.className = 'md-render'; into.body.appendChild(surface);
+		const surface = into.createElement('div'); surface.className = 'md-render';
+		surface.setAttribute('data-md-theme', 'light'); into.body.appendChild(surface);
 		const canvas = into.createElement('canvas'); canvas.width = canvas.height = 1;
 		const paint = canvas.getContext('2d'), colours = new Map();
 		if (!paint) throw new Error('Word text colors could not be read.');

@@ -266,6 +266,7 @@ body.light.rapier-notes-mode #editor-blocks[class*="rapier-notes-tint-"]{--color
 .rapier-notes-glided{opacity:0!important}
 body.rapier-notes-mode .filename-normal{gap:2px}
 body.rapier-notes-mode #btn-notes-back .icon{width:28px;height:28px}
+@media (max-width:375px){body.rapier-notes-mode .filename-normal:has(#btn-notes-remind:not([hidden])) > .icon-btn{width:42px;min-width:42px}}
 body.rapier-notes-mode #btn-notes-plus svg{width:32px;height:32px}
 body.rapier-notes-mode #btn-notes-pin[data-active],
 body.rapier-notes-mode #btn-notes-remind[data-active],

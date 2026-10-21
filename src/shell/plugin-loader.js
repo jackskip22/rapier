@@ -8,9 +8,13 @@
 		var r = window.RapierPlatform && window.RapierPlatform.resources;
 		return r && typeof r.ensure === 'function' ? r : null;
 	}
-	function _onHostChange(fn) {
+	function _onHostChange(key, fn) {
 		if (typeof window.addEventListener !== 'function') return;
-		window.addEventListener('rapier:platform-resources', function (event) { fn((event && event.detail) || {}); });
+		window.addEventListener('rapier:platform-resources', function (event) {
+			var detail = (event && event.detail) || {};
+			if (Array.isArray(detail.plugins) && detail.plugins.indexOf(String(key).split('-')[0]) < 0) return;
+			fn(detail);
+		});
 	}
 
 	function _friendly(m, err, host) {
@@ -60,7 +64,7 @@
 		files: [{name: MATH_FILE, file: MATH_FILE, version: MATH_VERSION,
 			bytes: 742684,
 			sri: '1rjhOOw690Mr3aVXwRTPlwQO2atMrWHY8Rm3nZ+SZRrm5mB9HK5FkY6ZWCDYtgzv',
-			url: 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.18/math/rapier-math-2.7.0.js'}],
+			url: 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/math/rapier-math-2.7.0.js'}],
 		missing: 'Rapier math loaded but its SVG renderer is missing — cache purged',
 		usable: function () { return !!(window.RapierMath && window.RapierMath.version === MATH_VERSION &&
 			typeof window.RapierMath.renderToString === 'function' && typeof window.RapierMath.renderWithMathML === 'function'); },
@@ -556,7 +560,7 @@
 			removing.then(function () { removing = null; }, function () { removing = null; });
 			return removing;
 		}
-		_onHostChange(function (detail) {
+		_onHostChange(m.key, function (detail) {
 			if (!_host()) return;
 			if (detail.status === 'downloading') {
 				if (Plugin.status === 'ready' || Plugin.status === 'installing') return;

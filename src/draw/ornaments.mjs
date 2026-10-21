@@ -62,10 +62,22 @@ export function admitElements(raw) {
 	for (const item of raw.items) {
 		if (!item || typeof item !== 'object' || !ID.test(item.id) || seen.has(item.id) || typeof item.name !== 'string' || !NAME.test(item.name) || typeof item.group !== 'string' || !NAME.test(item.group)) return null;
 		if (!whole(item.w, 1, ORNAMENT_LIMITS.side) || !whole(item.h, 1, ORNAMENT_LIMITS.side) || !ornamentPath(item.path, ORNAMENT_LIMITS.item) || (item.tile !== undefined && item.tile !== true)) return null;
-		bytes += item.path.length;
+		let size = item.path.length, layers;
+		if (item.layers !== undefined) {
+			if (!Array.isArray(item.layers) || !item.layers.length || item.layers.length > 8) return null;
+			layers = [];
+			for (const layer of item.layers) {
+				if (!layer || !whole(layer.opacity, 1, 254) || !ornamentPath(layer.path, ORNAMENT_LIMITS.item)) return null;
+				size += layer.path.length;
+				if (size > ORNAMENT_LIMITS.item) return null;
+				layers.push(Object.freeze({ path: layer.path, opacity: layer.opacity }));
+			}
+			Object.freeze(layers);
+		}
+		bytes += size;
 		if (bytes > ORNAMENT_LIMITS.pack) return null;
 		seen.add(item.id);
-		items.push(Object.freeze(item.tile ? { id: item.id, name: item.name, group: item.group, w: item.w, h: item.h, path: item.path, tile: true } : { id: item.id, name: item.name, group: item.group, w: item.w, h: item.h, path: item.path }));
+		items.push(Object.freeze({ id: item.id, name: item.name, group: item.group, w: item.w, h: item.h, path: item.path, ...(layers ? { layers } : {}), ...(item.tile ? { tile: true } : {}) }));
 	}
 	return Object.freeze({ id: raw.id, items: Object.freeze(items) });
 }

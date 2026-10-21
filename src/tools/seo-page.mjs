@@ -9,7 +9,7 @@ import {markdownPlugins} from '../agent/vendor/markdown-plugins.mjs';
 import {RAPIER_MARKDOWN_SPEC, applyMarkdownSpec} from '../agent/markdown-spec.mjs';
 import {installMarkdownLayout} from '../layout/markdown.mjs';
 import {installMarkdownImages} from '../spec/md-assets.mjs';
-import {DOORS, GUIDES, PAGES} from '../door-worker.js';
+import {DOORS, GUIDES, SITE_PAGES} from '../door-worker.js';
 import {APP_DESCRIPTION, PLAY_URL, CURRENT_DOOR, MUSE_DOOR, SITE_TITLE} from './discovery.mjs';
 
 const SUMMARY = `${APP_DESCRIPTION}
@@ -26,7 +26,7 @@ PNG, JPEG, WebP and SVG pictures live inside the Markdown file, and text wraps a
 
 ## Draw
 
-Draw freehand, build diagrams with connected arrows, and create typographic art. SVG drawings stay sharp and editable inside your Markdown file.
+Draw freehand, build diagrams with connected arrows, and create typographic art. SVG drawings stay sharp and editable inside your Markdown file. The [Gallery](https://rapier.website/gallery) holds thousands of free ornaments, page borders and decorative letters.
 
 ## Paint
 
@@ -54,7 +54,7 @@ On Android ([Google Play](${PLAY_URL})), in a browser, on Windows, or as one HTM
 
 ${Object.entries(DOORS).filter(([, door]) => door.h1).map(([path, door]) => '[' + door.h1 + '](https://rapier.website' + path + ')').join(' · ')}
 
-[Rapier](https://rapier.website/) · [Rapier Notes](https://rapier.website/notes) · [Rapier Draw](https://rapier.website/draw) · [Rapier Watercolor](https://rapier.website/watercolor) · [Google Play](${PLAY_URL}) · [Source](https://github.com/jackskip22/rapier) · [Agent guide](https://rapier.website/agents) · [llms.txt](https://rapier.website/llms.txt) · [Privacy and terms](https://rapier.website/privacy) · [Commercial license](https://rapier.website/commercial)
+[Rapier](https://rapier.website/) · [Rapier Notes](https://rapier.website/notes) · [Rapier Draw](https://rapier.website/draw) · [Rapier Watercolor](https://rapier.website/watercolor) · [Rapier Gallery](https://rapier.website/gallery) · [Google Play](${PLAY_URL}) · [Source](https://github.com/jackskip22/rapier) · [Agent guide](https://rapier.website/agents) · [llms.txt](https://rapier.website/llms.txt) · [Privacy and terms](https://rapier.website/privacy) · [Commercial license](https://rapier.website/commercial)
 `;
 
 function declarations(node, name, found = []) {
@@ -164,8 +164,8 @@ function sheetGuide(markup, name) {
 		.replace(/[ \t]*\n[ \t]*/g, '\n').trim();
 }
 
-function pageLinks(path, escape) {
-	return [['/', 'Rapier'], ...Object.entries(PAGES).filter(([other]) => other !== path).map(([other, value]) => [other, value.name])]
+export function pageLinks(path, escape) {
+	return [['/', 'Rapier'], ...Object.entries(SITE_PAGES).filter(([other]) => other !== path).map(([other, value]) => [other, value.name])]
 		.map(([address, label]) => '<a href="https://rapier.website' + address + '">' + escape(label) + '</a>').join(' · ');
 }
 
@@ -218,11 +218,11 @@ export function seoDoorSections(engineSource, uiMarkup) {
 	};
 	const escape = value => parser.utils.escapeHtml(String(value));
 	const searched = door => !door.h1 ? '' : '<p>' + escape(door.lead) + '</p>\n' +
-		(door.related?.length ? '<p>Also: ' + door.related.map(other => '<a href="https://rapier.website' + other + '">' + escape(DOORS[other].h1 || DOORS[other].name) + '</a>').join(' · ') + '</p>\n' : '') +
+		(door.related?.length ? '<p>Also: ' + door.related.map(other => '<a href="https://rapier.website' + other + '">' + escape(SITE_PAGES[other].h1 || SITE_PAGES[other].name) + '</a>').join(' · ') + '</p>\n' : '') +
 		'<h2>Questions</h2>\n' + door.faq.map(([question, answer]) => '<h3>' + escape(question) + '</h3>\n<p>' + escape(answer) + '</p>\n').join('');
 	return Object.fromEntries(Object.entries(DOORS).map(([path, door]) => {
 		if (!bodies[path] && !door.h1) throw new Error('The site door has no guide: ' + path);
-		if (door.h1 && (!door.lead || !door.faq?.length || !door.view || door.related?.some(other => !DOORS[other]))) throw new Error('A searched door needs its paragraph, questions, view and known pages: ' + path);
+		if (door.h1 && (!door.lead || !door.faq?.length || !door.view || door.related?.some(other => !SITE_PAGES[other]))) throw new Error('A searched door needs its paragraph, questions, view and known pages: ' + path);
 		const links = pageLinks(path, escape);
 		const picture = door.picture ? '<figure><img src="https://rapier.website/' + escape(door.picture) + '" alt="' + escape(door.imageAlt) +
 			'" width="1200" height="630" style="display:block;max-width:100%;height:auto;background:#fff"><figcaption>Overlapping pigment washes painted with Rapier Water.</figcaption></figure>\n' : '';

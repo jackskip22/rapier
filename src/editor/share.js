@@ -226,6 +226,7 @@ async function _rapierBuildEditablePage(captured, options = {}) {
 }
 
 async function _rapierPrepareEditablePage(captured, options = {}) {
+	const theme = document.body.classList.contains('light') ? 'light' : 'dark';
 	if (!globalThis.RapierPortableShell || !globalThis.RapierPortablePage)
 		throw new Error('The offline editor package is unavailable on this host.');
 	const pictured = text => /!\[|<(?:img|image|source)\b/i.test(text);
@@ -247,7 +248,7 @@ async function _rapierPrepareEditablePage(captured, options = {}) {
 		if (!carriedParts.has(carried)) carriedParts.set(carried, _rapierLedgerParts(text, captured.ledger, carried));
 		const parts = carriedParts.get(carried);
 		const html = globalThis.RapierPortablePage.wrap(portable.assemble(ids), text, ext ? filename.replace(/\.rapier\.html$/i, '.' + ext) : filename, {
-			kind: captured.metadata.docKind, base: captured.comparisonBase || undefined, ...parts,
+			kind: captured.metadata.docKind, theme, base: captured.comparisonBase || undefined, ...parts,
 		});
 		const blob = new Blob([html], {type: 'text/html; charset=utf-8'});
 		if (blob.size > RapierTextCodec.maxDocumentBytes) throw new Error('This HTML editor file exceeds 64 MiB.');

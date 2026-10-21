@@ -180,9 +180,8 @@ async function _rapierWritePrintPdf({root, css, fontCss = '', canonical, bom = f
 	if (!root?.ownerDocument || typeof capture !== 'function') refuse('pdf_render_unavailable');
 	const paper = settings?.papersize || {width: 11906, height: 16838};
 	const width = paper.width / 20, height = paper.height / 20;
-	const margin = settings?.geometry ? settings.geometry.twips / 20 : null;
-	const margins = {top: margin ?? 12 * 72 / 25.4, right: margin ?? 14 * 72 / 25.4,
-		bottom: margin ?? 14 * 72 / 25.4, left: margin ?? 14 * 72 / 25.4};
+	const margins = Object.fromEntries(['top', 'right', 'bottom', 'left'].map(side =>
+		[side, settings?.geometry ? settings.geometry[side] / 20 : (side === 'top' ? 12 : 14) * 72 / 25.4]));
 	const bodyWidth = Math.floor((width - margins.left - margins.right) * 4 / 3);
 	const bodyHeight = Math.floor((height - margins.top - margins.bottom) * 4 / 3);
 	if (bodyWidth < 1 || bodyHeight < 1 || bodyWidth * bodyHeight > 4 * 1024 * 1024) refuse('pdf_page_geometry_invalid');

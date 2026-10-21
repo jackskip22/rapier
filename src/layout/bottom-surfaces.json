@@ -213,7 +213,7 @@
           },
           {
             "property": "top",
-            "value": "calc(var(--draw-safe-top) + 2 * var(--draw-cell) + 2 * var(--space-1))",
+            "value": "calc(var(--draw-safe-top) + var(--draw-cell) + 2 * var(--space-1))",
             "important": false
           }
         ]
@@ -221,7 +221,7 @@
       "role": "overlay",
       "interactive": true,
       "edge": "bottom",
-      "reason": "The stage is the viewport under the head and its reserved agent line: it fills the surface to the bottom edge and the settings row floats over it, so folding the row never resizes the canvas."
+      "reason": "The stage fills the surface under the head to the bottom edge. Settings and the existing agent note float over it, so folding the row or showing a note never resizes the canvas."
     },
     {
       "id": "draw-menu",
@@ -1498,12 +1498,12 @@
           },
           {
             "property": "top",
-            "value": "auto",
+            "value": "calc(100% + var(--draw-cell) + 2 * var(--space-1))",
             "important": false
           },
           {
             "property": "bottom",
-            "value": "0",
+            "value": "auto",
             "important": false
           },
           {
@@ -1514,7 +1514,7 @@
         ]
       },
       "owner": ".rapier-draw-toolbar",
-      "reason": "The existing agent note is contained by the Draw toolbar's reserved band; these local offsets keep its actions outside the stage without adding another viewport surface."
+      "reason": "The existing agent note floats below the settings row from the Draw toolbar, without reserving a blank band or adding another viewport surface."
     },
     {
       "id": "draw-replay-bar",
@@ -3047,30 +3047,6 @@
       },
       "owner": ".settings-info-btn--hang",
       "reason": "The hanging information circle keeps its 40px place by its word; this empty box only widens its touch area to 48 by 48 inside its own button and positions no viewport surface."
-    },
-    {
-      "id": "gallery-head",
-      "file": "editor/styles/rapier-composer.css",
-      "selector": ".rapier-gallery__head",
-      "rule": {
-        "origin": "stylesheet",
-        "at": [],
-        "occurrence": 1,
-        "declarations": [
-          {
-            "property": "position",
-            "value": "sticky",
-            "important": false
-          },
-          {
-            "property": "top",
-            "value": "calc(-1 * var(--space-4))",
-            "important": false
-          }
-        ]
-      },
-      "owner": ".link-dialog.rapier-gallery",
-      "reason": "The Gallery tab row and its close stay at the top of the Gallery sheet while its pictures scroll; it never leaves the sheet."
     }
   ]
 }

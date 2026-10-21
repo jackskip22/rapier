@@ -7,6 +7,8 @@
 /draw /door-draw.html 200
 /watercolor/ /watercolor 308
 /watercolor /door-watercolor.html 200
+/gallery/ /gallery 308
+/gallery /gallery.html 200
 /agents/ /agents 308
 /agents /door-agents.html 200
 /gemini/ /gemini 308

@@ -305,6 +305,8 @@ const RapierPreferences = (function () {
 var _preferenceListeners = Object.create(null);
 var _preferenceRevisions = Object.create(null);
 var _preferenceHeld = Object.create(null);
+var _carriedTheme = document.querySelector('meta[name="rapier-appearance"]')?.content;
+if (_carriedTheme === 'light' || _carriedTheme === 'dark') _preferenceHeld.theme = _carriedTheme;
 var _androidPreferenceRestore = false, _androidPreferenceLoaded = false, _androidPreferenceWrites = Promise.resolve();
 function _preferenceAdmits(spec, value) {
 	return value != null && typeof value === typeof spec.fallback &&
@@ -1112,12 +1114,6 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			confirmed: status === 'confirmed',
 			verified: false,
 		}, extra || {});
-	}
-
-	function _hexBytes(bytes) {
-		return Array.from(bytes).map(function (value) {
-			return value.toString(16).padStart(2, '0');
-		}).join('');
 	}
 
 	async function _blobFingerprint(blob) {
@@ -1932,12 +1928,27 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 
 	function _applyNativeResources(value) {
 		if (!value || typeof value !== 'object') return;
-		_nativeHostRuntime.state.resources = value;
-		try {
-			window.dispatchEvent(new CustomEvent('rapier:platform-resources', {
-				detail: { status: String(value.status || 'absent'), progress: Number(value.progress) || 0, error: value.error || null },
-			}));
-		} catch (_) {}
+		var held = _nativeHostRuntime.state.resources, said = Array.isArray(value.packs) ? value.packs : [value];
+		if (Array.isArray(value.packs)) _nativeHostRuntime.state.resources = { packs: value.packs.slice() };
+		else if (value.pack && held && Array.isArray(held.packs)) {
+			var packs = held.packs.slice(), at = packs.findIndex(function (row) { return row && row.pack === value.pack; });
+			if (at < 0) packs.push(value); else packs[at] = value;
+			_nativeHostRuntime.state.resources = { packs: packs };
+		} else _nativeHostRuntime.state.resources = value;
+		said.forEach(function (row) {
+			if (!row || typeof row !== 'object') return;
+			try {
+				window.dispatchEvent(new CustomEvent('rapier:platform-resources', {
+					detail: { status: String(row.status || 'absent'), progress: Number(row.progress) || 0, error: row.error || null,
+						plugins: row.plugins == null ? null : String(row.plugins).split(',') },
+				}));
+			} catch (_) {}
+		});
+	}
+	function _nativeResourcePack(resource) {
+		var state = _nativeHostRuntime.state.resources, key = String(resource).split('-')[0];
+		var packs = state && Array.isArray(state.packs) ? state.packs : state ? [state] : [];
+		return packs.find(function (row) { return row && String(row.plugins || '').split(',').indexOf(key) >= 0; }) || null;
 	}
 
 	function _applyNativeHostState(value) {
@@ -3280,8 +3291,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			},
 			get resourceInstallMessage() {
 				return _nativeCapability('resources') ? function (resource, phase) {
-					var state = _nativeHostRuntime.state.resources, words = state && state.words;
-					if (String(state && state.plugins || '').split(',').indexOf(String(resource)) < 0) return '';
+					var pack = _nativeResourcePack(resource), words = pack && pack.words;
 					return words && typeof words[phase] === 'string' ? words[phase] : '';
 				} : null;
 			},
