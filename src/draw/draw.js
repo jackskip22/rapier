@@ -3337,7 +3337,7 @@ function _rapierDrawLetterGlyph(set) {
 	const sample = set && globalThis.RapierDrawLetterPreviews.LETTER_PREVIEWS[set.id];
 	return sample ? '<svg class="rapier-draw-glyph" viewBox="0 0 ' + sample.glyph[0] + ' ' + sample.em + '" aria-hidden="true"><path fill="currentColor" transform="translate(' + sample.bearing + ',0)" d="' + sample.glyph[1] + '"/></svg>' : '';
 }
-const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/letters/';
+const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/letters/';
 const _rapierDrawLettersDoor = { allowed: false, asking: null, providers: new Map(), bringing: new Map() };
 function _rapierDrawLettersProvider(set) {
 	const door = _rapierDrawLettersDoor;
@@ -4062,17 +4062,35 @@ function _rapierDrawPaperView(recipe, frame = recipe.frame) {
 	if (frame) { x = Math.min(x, frame.x); y = Math.min(y, frame.y); r = Math.max(r, frame.x + frame.w); b = Math.max(b, frame.y + frame.h); }
 	return { x, y, w: r - x, h: b - y };
 }
-function _rapierDrawViewBaseReset(rect = _rapierDrawState.svgRoot?.getBoundingClientRect()) {
+function _rapierDrawViewBaseReset(rect = _rapierDrawState.svgRoot?.getBoundingClientRect(), bars = 0) {
 	const state = _rapierDrawState;
 	if (!state.recipe?.canvas) return;
 	const canvas = _rapierDrawPaperView(state.recipe);
-	const W = Math.max(1, rect?.width || canvas.w), H = Math.max(1, rect?.height || canvas.h), inset = Math.min(state.viewInset || 0, H / 2);
+	const W = Math.max(1, rect?.width || canvas.w), H = Math.max(1, (rect?.height || canvas.h) + bars), inset = Math.min(state.viewInset || 0, H / 2);
 	const scale = Math.max(1e-6, Math.min(W / canvas.w, (H - inset) / canvas.h));
-	state.viewBase = { w: W / scale, h: H / scale };
+	state.viewBase = { w: W / scale, h: H / scale }; state.viewFit = { w: W, h: H };
 	const v = _rapierDrawView();
 	v.k = 1;
 	v.x = canvas.x + (canvas.w - state.viewBase.w) / 2;
 	v.y = canvas.y - (inset + (H - inset - canvas.h * scale) / 2) / scale;
+}
+function _rapierDrawViewFollowStage(rect = _rapierDrawState.svgRoot?.getBoundingClientRect()) {
+	const state = _rapierDrawState, base = state.viewBase, fit = state.viewFit;
+	if (!base || !rect?.width || !rect.height || fit && fit.w === rect.width && fit.h === rect.height) return false;
+	const v = _rapierDrawView();
+	if (fit && Math.abs(fit.w - rect.width) < .5) base.h = base.w * rect.height / rect.width;
+	else {
+		const span = { w: base.w / v.k, h: base.h / v.k }, t = Math.min(rect.width / span.w, rect.height / span.h);
+		v.x -= (rect.width - span.w * t) / 2 / t; v.y -= (rect.height - span.h * t) / 2 / t;
+		base.w = rect.width / t * v.k; base.h = rect.height / t * v.k;
+	}
+	state.viewFit = { w: rect.width, h: rect.height };
+	return true;
+}
+function _rapierDrawBarsRoom() {
+	const probe = _rapierDrawState.surface?.querySelector('.rapier-draw-viewport-probe');
+	const tall = probe?.getBoundingClientRect().height || 0;
+	return tall > innerHeight ? Math.round(tall - innerHeight) : 0;
 }
 function _rapierDrawSettingsInset() {
 	const state = _rapierDrawState, row = state.surface?.querySelector('.rapier-draw-settings');
@@ -4082,6 +4100,7 @@ function _rapierDrawSettingsInset() {
 function _rapierDrawApplyView() {
 	const state = _rapierDrawState, recipe = state.recipe, svg = state.svgRoot;
 	if (!svg || !recipe?.canvas) return;
+	_rapierDrawViewFollowStage(svg.getBoundingClientRect());
 	const v = _rapierDrawView(), base = _rapierDrawViewBase(), w = base.w / v.k, h = base.h / v.k;
 	const extent = _rapierDrawPaperView(recipe, state.resize?.frame || recipe.frame);
 	const box = _rapierDrawFmt(v.x) + ' ' + _rapierDrawFmt(v.y) + ' ' + _rapierDrawFmt(w) + ' ' + _rapierDrawFmt(h);
@@ -5385,7 +5404,7 @@ function _rapierDrawBuildSurface() {
 		'<div class="rapier-draw-smooth rapier-draw-erase-edge" data-draw-panel="eraseEdge" hidden><label class="rapier-draw-smooth-label" for="rapier-draw-erase-edge-input">Edge</label>' +
 		'<input id="rapier-draw-erase-edge-input" class="rapier-draw-nib-range" type="range" min="0" max="100" step="1" value="0" aria-describedby="rapier-draw-erase-edge-word">' +
 		'<span class="rapier-draw-edge-sample" aria-hidden="true"></span><output id="rapier-draw-erase-edge-word" class="rapier-draw-nib-word" for="rapier-draw-erase-edge-input">Hard</output></div></div>' +
-		'<div class="rapier-draw-stage"><svg class="rapier-draw-canvas" xmlns="http://www.w3.org/2000/svg" tabindex="0" role="application" aria-describedby="rapier-draw-keys"><desc id="rapier-draw-keys">Page Down and Page Up select shapes. Home selects the first, End the last. Shift adds to the selection. Arrow keys move; Shift moves farther. Enter edits a label or places the chosen shape or text. Delete removes the selection. Tab reaches tools and handles.</desc><defs>' + RAPIER_DRAW_PAINT_INK_FILTER + '</defs><style class="rapier-draw-dark"></style><rect class="rapier-draw-paper" x="0" y="0"/><path class="rapier-draw-replay-lead" d=""/><g class="rapier-draw-shapes"></g><g class="rapier-draw-replay-paint" aria-hidden="true"></g><g class="rapier-draw-preview"></g><g class="rapier-draw-guides"></g><path class="rapier-draw-press-ring" d=""/><path class="rapier-draw-scribble" d=""/><path class="rapier-draw-live" d=""/><rect class="rapier-draw-marquee" hidden/><g class="rapier-draw-replay-nib" aria-hidden="true"></g></svg>' +
+		'<div class="rapier-draw-viewport-probe" aria-hidden="true"></div><div class="rapier-draw-stage"><svg class="rapier-draw-canvas" xmlns="http://www.w3.org/2000/svg" tabindex="0" role="application" aria-describedby="rapier-draw-keys"><desc id="rapier-draw-keys">Page Down and Page Up select shapes. Home selects the first, End the last. Shift adds to the selection. Arrow keys move; Shift moves farther. Enter edits a label or places the chosen shape or text. Delete removes the selection. Tab reaches tools and handles.</desc><defs>' + RAPIER_DRAW_PAINT_INK_FILTER + '</defs><style class="rapier-draw-dark"></style><rect class="rapier-draw-paper" x="0" y="0"/><path class="rapier-draw-replay-lead" d=""/><g class="rapier-draw-shapes"></g><g class="rapier-draw-replay-paint" aria-hidden="true"></g><g class="rapier-draw-preview"></g><g class="rapier-draw-guides"></g><path class="rapier-draw-press-ring" d=""/><path class="rapier-draw-scribble" d=""/><path class="rapier-draw-live" d=""/><rect class="rapier-draw-marquee" hidden/><g class="rapier-draw-replay-nib" aria-hidden="true"></g></svg>' +
 		'<svg class="rapier-paint-head-overlay" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" width="0" height="0"><path class="rapier-draw-outline" d=""/></svg>' +
 		'<span class="rapier-draw-nib-tag" aria-hidden="true" hidden></span>' +
 		'<div class="rapier-draw-replay-bar" hidden>' +
@@ -5544,7 +5563,11 @@ function _rapierDrawBuildSurface() {
 	}, true);
 	window.addEventListener('blur', _rapierDrawCancelGesture);
 	document.addEventListener('visibilitychange', () => { if (document.hidden) { _rapierDrawBackupFlush(); _rapierDrawCancelGesture(); } });
-	const reposition = () => { if (state.open && !state.gesture) { _rapierDrawFollowStage(); _rapierDrawUpdateMenu(); _rapierDrawUpdateHandles(); _rapierDrawPlaceTextInput(); _rapierPaintPlaceLive(); } };
+	const reposition = () => {
+		if (!state.open) return;
+		if (_rapierDrawViewFollowStage()) _rapierDrawApplyView();
+		if (!state.gesture) { _rapierDrawFollowStage(); _rapierDrawUpdateMenu(); _rapierDrawUpdateHandles(); _rapierDrawPlaceTextInput(); _rapierPaintPlaceLive(); }
+	};
 	window.addEventListener('resize', reposition); window.visualViewport?.addEventListener('resize', reposition); window.visualViewport?.addEventListener('scroll', reposition);
 	if (typeof ResizeObserver === 'function') new ResizeObserver(reposition).observe(surface.querySelector('.rapier-draw-stage'));
 	const togglePanel = (button, name) => {
@@ -5832,16 +5855,16 @@ function _rapierDrawToastHome(up) {
 	else if (root.parentElement === state.surface) { if (typeof _rapierNotesToastHome === 'function') _rapierNotesToastHome(_rapierNotes.open === true); else document.body.appendChild(root); }
 	_rapierScheduleToastLift();
 }
-function _rapierDrawWatercolourFallback() {
+function _rapierDrawWatercolourFallback(notice = true) {
 	const state = _rapierDrawState;
 	state.paintBrush = 'rapier/watercolour'; state.paintSize = _rapierPaintSizeFor(state.paintBrush);
 	state.waterFallbackRemembered = _rapierPaintRememberedBrush();
-	showToast('Watercolor needs WebGPU. Using Brushes.', 'info');
+	if (notice) showToast('Watercolor needs WebGPU. Using Brushes.', 'info');
 }
-function _rapierDrawWaterUnavailable(error) {
+function _rapierDrawWaterUnavailable(error, notice = true) {
 	const state = _rapierDrawState;
 	if (error?.code !== 'water_webgpu_unavailable' || !state.open || !_rapierDrawToolAllowed('paint')) return false;
-	_rapierDrawWatercolourFallback();
+	_rapierDrawWatercolourFallback(notice);
 	if (state.tool === 'water') void _rapierDrawSetTool('paint', false);
 	return true;
 }
@@ -5885,7 +5908,7 @@ function _rapierDrawOpenSurface(options) {
 		const session = state.session;
 		_rapierPaintStartPainter('water').catch(() => {
 			if (!state.open || state.session !== session || state.tool !== 'water' || state.gesture) return;
-			if (_rapierDrawToolAllowed('paint')) _rapierDrawWaterUnavailable({code: 'water_webgpu_unavailable'});
+			if (_rapierDrawToolAllowed('paint')) _rapierDrawWaterUnavailable({code: 'water_webgpu_unavailable'}, false);
 			else void _rapierDrawSetTool(fallback, false);
 		});
 	}
@@ -5919,7 +5942,7 @@ function _rapierDrawOpenSurface(options) {
 	state.surface.classList.toggle('rapier-draw-surface--notes', !!state.notes);
 	state.surface.hidden = false; document.body.classList.add('rapier-draw-open'); document.documentElement?.classList.add('rapier-draw-open'); state.open = true; state.painter = state.painterNext === true; state.painterNext = false; state.surface.focus({ preventScroll: true });
 	if (typeof _rapierAgentNoteHome === 'function') _rapierAgentNoteHome(state.surface);
-	if (noWater && state.tool === 'paint') _rapierDrawWatercolourFallback();
+	if (noWater && state.tool === 'paint') _rapierDrawWatercolourFallback(false);
 	if (_rapierDrawBackupHere()) { _rapierDrawBackupOwner(true); _rapierDrawBackupStore(); }
 	if (typeof _rapierBackHold === 'function') _rapierBackHold();
 	if (typeof _rapierDoorPathMark === 'function') _rapierDoorPathMark('draw', true);
@@ -5929,12 +5952,13 @@ function _rapierDrawOpenSurface(options) {
 	const opening = state.openFirst = _rapierDrawHistoryRecipe(baseline || recipe);
 	const rect = state.svgRoot.getBoundingClientRect();
 	state.viewInset = _rapierDrawSettingsInset();
-	if (!opts.recipe) recipe.canvas = { w: Math.max(1, Math.round(rect.width)), h: Math.max(1, Math.round(rect.height - state.viewInset)) };
+	const bars = opts.recipe ? 0 : _rapierDrawBarsRoom();
+	if (!opts.recipe) recipe.canvas = { w: Math.max(1, Math.round(rect.width)), h: Math.max(1, Math.round(rect.height + bars - state.viewInset)) };
 	state.canvasFollowsStage = !opts.recipe;
 	state.openWindow = { w: innerWidth, h: innerHeight, bars: ['top', 'bottom', 'left', 'right'].map(side => document.documentElement?.style?.getPropertyValue('--native-inset-' + side)).join() };
 	if (opts.recipe) _rapierDrawGrowCanvasToContent(recipe, 0);
 	state.view = { x: 0, y: 0, k: 1 };
-	_rapierDrawViewBaseReset(rect);
+	_rapierDrawViewBaseReset(rect, bars);
 	_rapierDrawApplyView();
 	_rapierDrawRenderAll();
 	state.openSnapshot = state.undoStack.length ? opening : _rapierDrawHistoryRecipe(baseline || state.recipe);
@@ -6000,10 +6024,10 @@ function _rapierDrawFollowStage() {
 		state.paintRehydrateWaiters?.some(gesture => gesture.paint?.pending && !gesture.paint.discarded);
 	if (pending || recipe.strokes.length || _rapierDrawHasContent(recipe) || state.undoStack.length || state.redoStack.length || state.paintLayer?.surface?.bounds()) { state.canvasFollowsStage = false; return; }
 	state.openWindow = now;
-	const rect = state.svgRoot.getBoundingClientRect(), w = Math.max(1, Math.round(rect.width)), h = Math.max(1, Math.round(rect.height - (state.viewInset || 0)));
+	const rect = state.svgRoot.getBoundingClientRect(), bars = _rapierDrawBarsRoom(), w = Math.max(1, Math.round(rect.width)), h = Math.max(1, Math.round(rect.height + bars - (state.viewInset || 0)));
 	if (w === recipe.canvas.w && h === recipe.canvas.h) return;
 	recipe.canvas = { w, h };
-	_rapierDrawViewBaseReset(rect);
+	_rapierDrawViewBaseReset(rect, bars);
 	_rapierDrawApplyView();
 	if (state.paintLayer && state.paintLayer.id == null) _rapierPaintCloseLayer();
 	state.openSnapshot = _rapierDrawHistoryRecipe();
@@ -6783,6 +6807,8 @@ async function _rapierDrawFinishWith(row) {
 		let recipe = _rapierDrawRestoreRecipe(drawn);
 		const stamp = Object.freeze(_rapierMutationStamp());
 		recipe.tool = state.tool;
+		const paperImage = await _rapierBgPaperSnapshot(recipe);
+		if (!state.open || !sameSession()) return;
 		const idleSources = new Map(state.paintFastSources || []);
 		const measure = typeof _rapierDrawMeasuredView === 'function' ? _rapierDrawMeasuredView : undefined;
 		if (typeof _rapierPaintKeepAsJXL === 'function') {
@@ -6802,7 +6828,7 @@ async function _rapierDrawFinishWith(row) {
 		if (!state.open || !sameSession()) return;
 		if (row) { row.cancel = null; row.set(null); }
 		given();
-		let svgText = _rapierDrawBuildSVG(recipe, measure, true);
+		let svgText = _rapierDrawBuildSVG(recipe, measure, true, {paperImage});
 		if (!svgText) throw new Error('The complete drawing could not be prepared');
 		let svgBytes = new TextEncoder().encode(svgText);
 		if (svgBytes.length > _rapierDrawAssetBudget() && (typeof _rapierDefaultImageProfile !== 'function' || _rapierDefaultImageProfile() === 'jxl')) {
@@ -6814,7 +6840,7 @@ async function _rapierDrawFinishWith(row) {
 			}
 			await _rapierDrawLiquidStills(recipe);
 			if (globalThis.RapierDrawRefraction.hasRefraction(recipe)) recipe = await keeping(work => globalThis.RapierDrawRefraction.prepare(recipe, {...work, displayRaster: url => _rapierPaintShownAs.get(url)}), false);
-			const smallerText = _rapierDrawBuildSVG(recipe, _rapierDrawMeasuredView, true), smallerBytes = new TextEncoder().encode(smallerText);
+			const smallerText = _rapierDrawBuildSVG(recipe, _rapierDrawMeasuredView, true, {paperImage}), smallerBytes = new TextEncoder().encode(smallerText);
 			if (smallerBytes.length > _rapierDrawAssetBudget()) {
 				await _rapierDrawTooLarge(session);
 				return;
@@ -6892,6 +6918,8 @@ async function _rapierDrawDownload(session) {
 		if (flushing) { await flushing; if (!state.open || state.session !== session) return; }
 		let recipe = _rapierDrawRestoreRecipe(_rapierDrawHistoryRecipe());
 		const recovery = _rapierDrawBackupTicket();
+		const paperImage = await _rapierBgPaperSnapshot(recipe);
+		if (!state.open || state.session !== session) return;
 		if (typeof _rapierPaintKeepAsJXL === 'function') {
 			try {
 				const split = await _rapierPaintKeepAsJXL(recipe);
@@ -6904,7 +6932,7 @@ async function _rapierDrawDownload(session) {
 		if (!state.open || state.session !== session) return;
 		recipe = await _rapierDrawEffectStills(recipe);
 		if (!state.open || state.session !== session) return;
-		const svgText = _rapierDrawBuildSVG(recipe, _rapierDrawMeasuredView, true);
+		const svgText = _rapierDrawBuildSVG(recipe, _rapierDrawMeasuredView, true, {paperImage});
 		if (!svgText) throw new Error('The complete drawing could not be prepared');
 		const svgBytes = new TextEncoder().encode(svgText);
 		const blob = new Blob([svgBytes], { type: 'image/svg+xml' });

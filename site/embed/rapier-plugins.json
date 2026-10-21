@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "release": "1.2.19",
+  "release": "1.2.20",
   "directory": "Put every file in one directory, keeping each file's folder, and give the page its address with `plugins`. The reader and the full editor read the same directory; `builds` says which use a plug-in.",
   "plugins": [
     {
@@ -11,11 +11,11 @@
       ],
       "files": [
         {
-          "file": "rapier-flowchart-1.2.19.js",
-          "bytes": 302659,
-          "sha384": "844a38dbbd1c15e5e4b108f7cd3b0e815cd59123628dfa06291907c918de45c31b8e87c469905917adbcbd1906a69c8e",
-          "sri": "hEo4270cFeXksQj3zTsOgVzVkSNijfoGKRkHyRjeRcMbjofEaZBZF628vRkGppyO",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/flowchart/rapier-flowchart-1.2.19.js"
+          "file": "rapier-flowchart-1.2.20.js",
+          "bytes": 302518,
+          "sha384": "ad8e4a179c27688b3fb852502c8a6dd9ce2dbf3fb017342439fcd96ad6c7296f449e59a4ae24a9ed8c28cb519286470c",
+          "sri": "rY5KF5wnaIs/uFJQLIpt2c4tvz+wFzQkOfzZatbHKW9EnlmkriSp7Ywoy1GShkcM",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/flowchart/rapier-flowchart-1.2.20.js"
         }
       ]
     },
@@ -27,11 +27,11 @@
       ],
       "files": [
         {
-          "file": "rapier-docx-1.2.19.js",
-          "bytes": 602170,
-          "sha384": "a144ec9dccff7141ee3433b2b9a79ff742d2f0ab356747f2461b19afe8d0f0f1e0fcba2c72c744907c55284847893f39",
-          "sri": "oUTsncz/cUHuNDOyuaef90LS8Ks1Z0fyRhsZr+jQ8PHg/LoscsdEkHxVKEhHiT85",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/docx/rapier-docx-1.2.19.js"
+          "file": "rapier-docx-1.2.20.js",
+          "bytes": 602554,
+          "sha384": "8220b17f1cc1d6b5f158b5706b9d362bc4ea071e085a307913f562bc630c919a0c9a9e319ec54313543a8027f83799b3",
+          "sri": "giCxfxzB1rXxWLVwa502K8TqBx4IWjB5E/VivGMMkZoMmp4xnsVDE1Q6gCf4N5mz",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/docx/rapier-docx-1.2.20.js"
         }
       ]
     },
@@ -48,7 +48,7 @@
           "bytes": 742684,
           "sha384": "d6b8e138ec3af7432bdda557c114cf97040ed9ab4cad61d8f119b79d9f92651ae6e6607d1cae45918e995820d8b60cef",
           "sri": "1rjhOOw690Mr3aVXwRTPlwQO2atMrWHY8Rm3nZ+SZRrm5mB9HK5FkY6ZWCDYtgzv",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/math/rapier-math-2.7.0.js"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/math/rapier-math-2.7.0.js"
         }
       ]
     },
@@ -72,7 +72,7 @@
           "bytes": 1890429,
           "sha384": "d2d64357abb2dabf5ba19c0259c052ac5f8c92eedcd782efc007b02dbada2eb47eb6f8a735c937d47f31b0b09ae64eb2",
           "sri": "0tZDV6uy2r9boZwCWcBSrF+Mku7c14LvwAewLbraLrR+tvinNck31H8xsLCa5k6y",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.19/site/plugins/rapier-zenuml-4.5.0-3.js"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.20/site/plugins/rapier-zenuml-4.5.0-3.js"
         }
       ]
     },
@@ -85,11 +85,11 @@
       ],
       "files": [
         {
-          "file": "rapier-pdf-1.2.19.js",
-          "bytes": 39070,
-          "sha384": "55ed7e41be2b9c740213a0dbf24b2fd8cfe0301ea298fe62e5e231423ed0c471cec0503f7c73462bd7df6d48885c68f5",
-          "sri": "Ve1+Qb4rnHQCE6Db8ksv2M/gMB6imP5i5eIxQj7QxHHOwFA/fHNGK9ffbUiIXGj1",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/pdf/rapier-pdf-1.2.19.js",
+          "file": "rapier-pdf-1.2.20.js",
+          "bytes": 40540,
+          "sha384": "e4c05a286e622a7fd2a22debb60540b7af1833382e2f05728e1f7bc3f8efb9fb1210517449384481418ce39013ab6e22",
+          "sri": "5MBaKG5iKn/Soi3rtgVAt68YMzguLwVyjh97w/jvufsSEFF0SThEgUGM45ATq24i",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/pdf/rapier-pdf-1.2.20.js",
           "builds": [
             "reader"
           ]
@@ -1471,7 +1471,7 @@
           "bytes": 48225,
           "sha384": "2af42ff9bc5271369931cc62d3346b9e477c54e9e1e7b9506d8d809a7e787addbada0801a69d033d8332b3896c218432",
           "sri": "KvQv+bxScTaZMcxi0zRrnkd8VOnh57lQbY2Amn54et262ggBpp0DPYMys4lsIYQy",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/pdfjs-dist-6.3.289/rapier-pdf-reader-1a1a2eb124f69792.mjs"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/pdfjs-dist-6.3.289/rapier-pdf-reader-1a1a2eb124f69792.mjs"
         }
       ]
     },
@@ -1567,7 +1567,7 @@
           "bytes": 1214770,
           "sha384": "80e8b8b8fd05eebdb77c5d981f746f6f7362b2a3b3cfc1f64f5a801649ea6d229955e3b3472924eef0dce4d127a959be",
           "sri": "gOi4uP0F7r23fF2YH3Rvb3NisqOzz8H2T1qAFknqbSKZVeOzRykk7vDc5NEnqVm+",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.19/site/plugins/rapier-font-subset-3.js"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.20/site/plugins/rapier-font-subset-3.js"
         }
       ]
     },
@@ -1583,70 +1583,70 @@
           "bytes": 96902,
           "sha384": "545b0213fef34ba2a4abf116d7fecd7d81d51a85573549b4a561ddb499b35f085680958148a84d1ee534383b8609aaf4",
           "sri": "VFsCE/7zS6Kkq/EW1/7NfYHVGoVXNUm0pWHdtJmzXwhWgJWBSKhNHuU0ODuGCar0",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/letters/field.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/letters/field.json"
         },
         {
           "file": "letters-relief.json",
           "bytes": 95172,
           "sha384": "b5072d05a91eda0bbb07fbf9ff58c2e9716de6c995e6e560ed6ec67495ec259059eb665cedcad23f7cd19193e042a82a",
           "sri": "tQctBake2gu7B/v5/1jC6XFt5smV5uVg7W7GdJXsJZBZ62Zc7crSP3zRkZPgQqgq",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/letters/relief.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/letters/relief.json"
         },
         {
           "file": "letters-leaf.json",
           "bytes": 134918,
           "sha384": "0ed48a5ad5a18a2b6534e7e3c7da3925fd0561ca562f0e27996023a3578003714ebecd8e8c1da175d1e54429ebb59ee0",
           "sri": "DtSKWtWhiitlNOfjx9o5Jf0FYcpWLw4nmWAjo1eAA3FOvs2OjB2hddHlRCnrtZ7g",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/letters/leaf.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/letters/leaf.json"
         },
         {
           "file": "letters-arabesque.json",
           "bytes": 136035,
           "sha384": "671db3d9b1290f854d90871c2de8dc518ebc7aa005ada3c437b86ab2a91c56a1ce286bec48ca9b2cb8975e496f648365",
           "sri": "Zx2z2bEpD4VNkIccLejcUY68eqAFraPEN7hqsqkcVqHOKGvsSMqbLLiXXklvZINl",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/letters/arabesque.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/letters/arabesque.json"
         },
         {
           "file": "letters-silhouette.json",
           "bytes": 159609,
           "sha384": "c8916a15a5c96d1d90d75308a5df619bb55f8104e1ded4e0cf34e8d7a744ed70befa83d6e2b8c2f153c6cd02facac1a6",
           "sri": "yJFqFaXJbR2Q11MIpd9hm7VfgQTh3tTgzzTo16dE7XC++oPW4rjC8VPGzQL6ysGm",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/letters/silhouette.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/letters/silhouette.json"
         },
         {
           "file": "letters-gothic.json",
           "bytes": 133989,
           "sha384": "d59e1355695408114c6e892238ebf46c7fa4a6fe5445bd195dc29589abd6e00cd700f1c91d8530a6d9296ed7b09911ee",
           "sri": "1Z4TVWlUCBFMbokiOOv0bH+kpv5URb0ZXcKViavW4AzXAPHJHYUwptkpbtewmRHu",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/letters/gothic.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/letters/gothic.json"
         },
         {
           "file": "letters-sugar.json",
           "bytes": 98129,
           "sha384": "a4a162a430fd12308c8d6813a2e1970fd41bebb09ee9e830126efe23f8d107471e59ca17589a8c15595df1a0e3ad3b68",
           "sri": "pKFipDD9EjCMjWgTouGXD9Qb67Ce6egwEm7+I/jRB0ceWcoXWJqMFVld8aDjrTto",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/letters/sugar.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/letters/sugar.json"
         },
         {
           "file": "letters-illuminated-1490.json",
           "bytes": 150674,
           "sha384": "8a9f1146447e975f6ef6b6bbe2195adf04134dbadb6df6b574344493251855b826a58ff76990408e7087569d9008245d",
           "sri": "ip8RRkR+l19u9ra74hla3wQTTbrbbfa1dDREkyUYVbgmpY/3aZBAjnCHVp2QCCRd",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/letters/illuminated-1490.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/letters/illuminated-1490.json"
         },
         {
           "file": "letters-tuscan-1845.json",
           "bytes": 148919,
           "sha384": "e397344c63d0e5892fd69b75109b24608173966bd30b29ab31f6ae2cdedd5ddcc91d9c0a7e30d436a52bdd2443bb0d8b",
           "sri": "45c0TGPQ5Ykv1pt1EJskYIFzlmvTCymrMfauLN7dXdzJHZwKfjDUNqUr3SRDuw2L",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/letters/tuscan-1845.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/letters/tuscan-1845.json"
         },
         {
           "file": "letters-renaissance-alphabet.json",
           "bytes": 153858,
           "sha384": "70d329d9e244abb511efb7ddaa3080e527073cbb5e58c7035426c3a617baa947598b1188346f76f37f3c8029d6ed2469",
           "sri": "cNMp2eJEq7UR77fdqjCA5ScHPLteWMcDVCbDphe6qUdZixGING928388gCnW7SRp",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/letters/renaissance-alphabet.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/letters/renaissance-alphabet.json"
         }
       ]
     },
@@ -1658,508 +1658,508 @@
       ],
       "files": [
         {
-          "file": "templates-border-002.json",
-          "bytes": 124113,
-          "sha384": "5cecc31fd60209dfc486909d5d8bed9a123c23b1c2f82f413da0550aacc3cc63a50ceafa2c02b4c2fd6468acfe2341aa",
-          "sri": "XOzDH9YCCd/EhpCdXYvtmhI8I7HC+C9BPaBVCqzDzGOlDOr6LAK0wv1kaKz+I0Gq",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-002.json"
+          "file": "templates-border-002.json.gz",
+          "bytes": 46830,
+          "sha384": "a0813cb6f135f90efceaac3d27acb895b99875c4bbef441745c3f7027222a46060f0677b069f29a1956673f748ff346b",
+          "sri": "oIE8tvE1+Q786qw9J6y4lbmYdcS770QXRcP3AnIipGBg8Gd7Bp8poZVmc/dI/zRr",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-002.json.gz"
         },
         {
-          "file": "templates-border-005.json",
-          "bytes": 166627,
-          "sha384": "c585c9faf6ea565cd965833bdc6b8c3b95d8297e937725d1d259e0e09de11b1c658ada9581c7fc6cd56f4d3d244f40b5",
-          "sri": "xYXJ+vbqVlzZZYM73GuMO5XYKX6TdyXR0lng4J3hGxxlitqVgcf8bNVvTT0kT0C1",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-005.json"
+          "file": "templates-border-005.json.gz",
+          "bytes": 59664,
+          "sha384": "0085263dd6c37dcb1963aaab02b4e3ec8ff5d5742b476608f9a32855150782ec074c0b4c631a623220d5e490ae623274",
+          "sri": "AIUmPdbDfcsZY6qrArTj7I/11XQrR2YI+aMoVRUHguwHTAtMYxpiMiDV5JCuYjJ0",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-005.json.gz"
         },
         {
-          "file": "templates-border-006.json",
-          "bytes": 389095,
-          "sha384": "ec913ea291b3a446bdcf58587ca3414d30b13bd4f891dda769e3cf997ee8af614a58ef7320f5b02c30680d574bc9e5ae",
-          "sri": "7JE+opGzpEa9z1hYfKNBTTCxO9T4kd2naePPmX7or2FKWO9zIPWwLDBoDVdLyeWu",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-006.json"
+          "file": "templates-border-006.json.gz",
+          "bytes": 128598,
+          "sha384": "34821a0e64307261ce1f9f2ce43fccf8f7040eff603885d4e1cb6c8c5169f0d082c6d451e07a07e84dab4c31dba513ac",
+          "sri": "NIIaDmQwcmHOH58s5D/M+PcEDv9gOIXU4ctsjFFp8NCCxtRR4HoH6E2rTDHbpROs",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-006.json.gz"
         },
         {
-          "file": "templates-border-007.json",
-          "bytes": 748649,
-          "sha384": "78394b1a3f5035d32d5ab7c135eab581738bbdc4dcd83e59882ad0f687d3c66c648db47f4de1238e1fee53c19e19a7d9",
-          "sri": "eDlLGj9QNdMtWrfBNeq1gXOLvcTc2D5ZiCrQ9ofTxmxkjbR/TeEjjh/uU8GeGafZ",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-007.json"
+          "file": "templates-border-007.json.gz",
+          "bytes": 261061,
+          "sha384": "39736b947b7d578eafbdcd8516af3e316e723326093212715cb3d814b705032e6c96b530759595da6900827143bd28ac",
+          "sri": "OXNrlHt9V46vvc2FFq8+MW5yMyYJMhJxXLPYFLcFAy5slrUwdZWV2mkAgnFDvSis",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-007.json.gz"
         },
         {
-          "file": "templates-border-019.json",
-          "bytes": 251245,
-          "sha384": "dd9d06dced5d0af8c092808703d8b9202d04eee02742c8d89d6b80b14e7dc709d5a83a1240f9895c945dd1a40989b5bb",
-          "sri": "3Z0G3O1dCvjAkoCHA9i5IC0E7uAnQsjYnWuAsU59xwnVqDoSQPmJXJRd0aQJibW7",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-019.json"
+          "file": "templates-border-019.json.gz",
+          "bytes": 81801,
+          "sha384": "47313984906333493ade0b2bcb3a73c5a8b44a70be24731596ed032977d9dfbb857a765ff9b5ee4fa29764bb9a4feaa7",
+          "sri": "RzE5hJBjM0k63gsryzpzxai0SnC+JHMVlu0DKXfZ37uFenZf+bXuT6KXZLuaT+qn",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-019.json.gz"
         },
         {
-          "file": "templates-border-020.json",
-          "bytes": 48474,
-          "sha384": "e435c0e444925fb2d13d71b3cbc45f2189aed60e0f663b844843ceb9775110afcf9d0d01dd7bb7c2bc3da14e4a675398",
-          "sri": "5DXA5ESSX7LRPXGzy8RfIYmu1g4PZjuESEPOuXdREK/PnQ0B3Xu3wrw9oU5KZ1OY",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-020.json"
+          "file": "templates-border-020.json.gz",
+          "bytes": 19239,
+          "sha384": "1b3d7f2031a534516db95154e41b28f7233fb3d7d75ef1a3174189507ea5f5c88c797be3a4dacc2e736cb5fbdc56cd15",
+          "sri": "Gz1/IDGlNFFtuVFU5Bso9yM/s9fXXvGjF0GJUH6l9ciMeXvjpNrMLnNstfvcVs0V",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-020.json.gz"
         },
         {
-          "file": "templates-border-034.json",
-          "bytes": 655451,
-          "sha384": "452ba5b4ad290653a9d83dcc6a26925b3678c4eb058eb744f3face7b895e3ff949ec0b0334b0c229efb97a09361288a7",
-          "sri": "RSultK0pBlOp2D3MaiaSWzZ4xOsFjrdE8/rOe4leP/lJ7AsDNLDCKe+5egk2Eoin",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-034.json"
+          "file": "templates-border-034.json.gz",
+          "bytes": 217169,
+          "sha384": "909c141146542812ce5159835e596ae077744a5342f27584783f3e03d088a8394c6853aa851d06d874955c048cd627a9",
+          "sri": "kJwUEUZUKBLOUVmDXllq4Hd0SlNC8nWEeD8+A9CIqDlMaFOqhR0G2HSVXASM1iep",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-034.json.gz"
         },
         {
-          "file": "templates-border-061.json",
-          "bytes": 339187,
-          "sha384": "0c73d1ce8dc5f5cdf3bf10c2707c34972d2be52db527edfcf0142154272dd26b842e3c0106969398650098ea416a6c5c",
-          "sri": "DHPRzo3F9c3zvxDCcHw0ly0r5S21J+388BQhVCct0muELjwBBpaTmGUAmOpBamxc",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-061.json"
+          "file": "templates-border-061.json.gz",
+          "bytes": 112112,
+          "sha384": "04772e635aad49313fca76c01aed40fa113a716755902f7c0289e735d6b5b8854ce03b7704379a79574ed7ca0933f2b9",
+          "sri": "BHcuY1qtSTE/ynbAGu1A+hE6cWdVkC98AonnNda1uIVM4Dt3BDeaeVdO18oJM/K5",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-061.json.gz"
         },
         {
-          "file": "templates-border-065.json",
-          "bytes": 12517,
-          "sha384": "adfd619fa10b5cf0f6e2d59c6c2b294814323e2994755541ad45a08875670dc51b09a2a4fb9a1dfd0e8b5ed5c743273e",
-          "sri": "rf1hn6ELXPD24tWcbCspSBQyPimUdVVBrUWgiHVnDcUbCaKk+5od/Q6LXtXHQyc+",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-065.json"
+          "file": "templates-border-065.json.gz",
+          "bytes": 5567,
+          "sha384": "a8691c679ec1c03a6eb4c543eda5504a896cc344ce177f14868fb9ef41e018934cb45bbfdd0c9caeb63b7f542c390403",
+          "sri": "qGkcZ57BwDputMVD7aVQSolsw0TOF38Uho+570HgGJNMtFu/3QycrrY7f1QsOQQD",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-065.json.gz"
         },
         {
-          "file": "templates-border-066.json",
-          "bytes": 11410,
-          "sha384": "12a93d9580807000960f498eea2efacab204ada37cb5d007a8cff9047cb5d1cbf90e70d793899f8f92bf816ef8f3f996",
-          "sri": "Eqk9lYCAcACWD0mO6i76yrIEraN8tdAHqM/5BHy10cv5DnDXk4mfj5K/gW748/mW",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-066.json"
+          "file": "templates-border-066.json.gz",
+          "bytes": 5111,
+          "sha384": "63c90d00a2d79af8b75fc8965343d10c11f53c21f6ed241f61552ba4409f36a1c2dc52232981a52b3dbbc9f1cccadd1b",
+          "sri": "Y8kNAKLXmvi3X8iWU0PRDBH1PCH27SQfYVUrpECfNqHC3FIjKYGlKz27yfHMyt0b",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-066.json.gz"
         },
         {
-          "file": "templates-border-067.json",
-          "bytes": 457137,
-          "sha384": "5521a36cc87a849b130765f21787732ccd31f3086bce92b532ff98dc1a89385522c0a562bad2625a50f25ad2f17a5f44",
-          "sri": "VSGjbMh6hJsTB2XyF4dzLM0x8whrzpK1Mv+Y3BqJOFUiwKViutJiWlDyWtLxel9E",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-067.json"
+          "file": "templates-border-067.json.gz",
+          "bytes": 142160,
+          "sha384": "4706f27a011d2143f120b8a3308c94362c12bddece496d37bafa346e332e2fca787ad8319aea4b690db0da7af896736e",
+          "sri": "RwbyegEdIUPxILijMIyUNiwSvd7OSW03uvo0bjMuL8p4etgxmupLaQ2w2nr4lnNu",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-067.json.gz"
         },
         {
-          "file": "templates-border-068.json",
-          "bytes": 51616,
-          "sha384": "698aa013b7ef86168813c44d6963d4843a7ed780a2f78f13aaacc66a1b0f098de223a6dfa18481d7c7f2e3f2e4671cdf",
-          "sri": "aYqgE7fvhhaIE8RNaWPUhDp+14Ci948TqqzGahsPCY3iI6bfoYSB18fy4/LkZxzf",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-068.json"
+          "file": "templates-border-068.json.gz",
+          "bytes": 20948,
+          "sha384": "e2a0180ed085f7bf6e340b77a8d7cc33eb5731af363ba5b3374a5337cc6c32d908508d64ec03db180f40c770bbaca88a",
+          "sri": "4qAYDtCF979uNAt3qNfMM+tXMa82O6WzN0pTN8xsMtkIUI1k7APbGA9Ax3C7rKiK",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-068.json.gz"
         },
         {
-          "file": "templates-border-069.json",
-          "bytes": 494818,
-          "sha384": "f258d77ca126fdd44ded6da8d390e399cee2c32a6c2f40e87bfdf6bcb8f68f697bf4ea2afd429c38474c65e76e619ed9",
-          "sri": "8ljXfKEm/dRN7W2o05Djmc7iwypsL0Doe/32vLj2j2l79Ooq/UKcOEdMZeduYZ7Z",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-069.json"
+          "file": "templates-border-069.json.gz",
+          "bytes": 163064,
+          "sha384": "c91a19540ccf9df1b11a2b689f479f3e7f139fe7535d748ab16e42da44889fd03b768c4a6a4a35af4358c02ea04f3440",
+          "sri": "yRoZVAzPnfGxGiton0efPn8Tn+dTXXSKsW5C2kSIn9A7doxKako1r0NYwC6gTzRA",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-069.json.gz"
         },
         {
-          "file": "templates-border-072.json",
-          "bytes": 102133,
-          "sha384": "db6415b5e7d8353be320d3d6f2a5bc9ce7e69669b0079f3ad7e1ed0aab629a3ad4b9e395013bd2fe863d037d9b91f487",
-          "sri": "22QVtefYNTvjINPW8qW8nOfmlmmwB5861+HtCqtimjrUueOVATvS/oY9A32bkfSH",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-072.json"
+          "file": "templates-border-072.json.gz",
+          "bytes": 37794,
+          "sha384": "037f133d77c44c8a9bb4fc26c1d738919f379eacced8573a82acbcd77865128cb2f610045b3dd94d4909ae4a25629b61",
+          "sri": "A38TPXfETIqbtPwmwdc4kZ83nqzO2Fc6gqy813hlEoyy9hAEWz3ZTUkJrkolYpth",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-072.json.gz"
         },
         {
-          "file": "templates-border-073.json",
-          "bytes": 84221,
-          "sha384": "5512d5bab1f39d56f94d7cb84d111f52a2fb8b3ff961197ef6595515edb8cba101e3f4eb578805f041a555035428224c",
-          "sri": "VRLVurHznVb5TXy4TREfUqL7iz/5YRl+9llVFe24y6EB4/TrV4gF8EGlVQNUKCJM",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-073.json"
+          "file": "templates-border-073.json.gz",
+          "bytes": 29125,
+          "sha384": "ada7577cf0deb68f26ab4d8fc99e93e8367b9c774dac707c5fb75e9734595438abc279f6c27618f04d43ce9993cfe5cb",
+          "sri": "radXfPDeto8mq02PyZ6T6DZ7nHdNrHB8X7delzRZVDirwnn2wnYY8E1DzpmTz+XL",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-073.json.gz"
         },
         {
-          "file": "templates-border-074.json",
-          "bytes": 164158,
-          "sha384": "d29c70ccb0052c47150e758e31f790553ecd7667d661d3615100f65f52094a53ae97ec5cfc2e8469c3bc0e4d331758aa",
-          "sri": "0pxwzLAFLEcVDnWOMfeQVT7NdmfWYdNhUQD2X1IJSlOul+xc/C6EacO8Dk0zF1iq",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-074.json"
+          "file": "templates-border-074.json.gz",
+          "bytes": 58223,
+          "sha384": "d701249a3beff4ba450cd09f82abc2a19f536fcfdbbf414ee56543239b911bd15b266798bfd17e744b730f9aab6fcfb4",
+          "sri": "1wEkmjvv9LpFDNCfgqvCoZ9Tb8/bv0FO5WVDI5uRG9FbJmeYv9F+dEtzD5qrb8+0",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-074.json.gz"
         },
         {
-          "file": "templates-border-075.json",
-          "bytes": 93554,
-          "sha384": "d217875bb61bcefaabe1f4ecc222ee1c77f5a37be4e1cc3211f57e391154cb8c56cf0dcf9f340614bb40a4cdae1fd752",
-          "sri": "0heHW7Ybzvqr4fTswiLuHHf1o3vk4cwyEfV+ORFUy4xWzw3PnzQGFLtApM2uH9dS",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-075.json"
+          "file": "templates-border-075.json.gz",
+          "bytes": 32633,
+          "sha384": "727cd791271e91946c7a3bb06f8f3487ecf5add68aa3376658b62c3567aa1122faad0274c76f619ea2daf1612f2dca75",
+          "sri": "cnzXkScekZRsejuwb480h+z1rdaKozdmWLYsNWeqESL6rQJ0x29hnqLa8WEvLcp1",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-075.json.gz"
         },
         {
-          "file": "templates-border-076.json",
-          "bytes": 110862,
-          "sha384": "50eb2ce5eb8f4f35d48ee1e8ef23f54f4edf382234ef7e35d1b658d9cd54dac058b78c45913479b05807289e8bd764ba",
-          "sri": "UOss5euPTzXUjuHo7yP1T07fOCI073410bZY2c1U2sBYt4xFkTR5sFgHKJ6L12S6",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-076.json"
+          "file": "templates-border-076.json.gz",
+          "bytes": 38644,
+          "sha384": "bf9702bce2c756a75f9b72e117138826889f4729fd6be5f4cdcde78375e2f2589b66e4a6f0329d80ade6ce96e947a4b8",
+          "sri": "v5cCvOLHVqdfm3LhFxOIJoifRyn9a+X0zc3ng3Xi8libZuSm8DKdgK3mzpbpR6S4",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-076.json.gz"
         },
         {
-          "file": "templates-border-077.json",
-          "bytes": 375996,
-          "sha384": "f161f16bee9eb4b44614ac7e1bf5bff7377af03a72c434128838ee81d4f94d02623dac20a66f5f4d982697736b027189",
-          "sri": "8WHxa+6etLRGFKx+G/W/9zd68DpyxDQSiDjugdT5TQJiPawgpm9fTZgml3NrAnGJ",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-077.json"
+          "file": "templates-border-077.json.gz",
+          "bytes": 122451,
+          "sha384": "fca26c93972606b3367523fc73212f01b5cd76e8ca20938533b15045ba4387c1bda9f341b78acc7c505a6b595f3e1be6",
+          "sri": "/KJsk5cmBrM2dSP8cyEvAbXNdujKIJOFM7FQRbpDh8G9qfNBt4rMfFBaa1lfPhvm",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-077.json.gz"
         },
         {
-          "file": "templates-border-086.json",
-          "bytes": 315784,
-          "sha384": "51d76f36486d73dcb9e23fbed73255b855f5d652623c84a6a165684152b7a964f95ef6430eb5d4a107716609d40b6f6d",
-          "sri": "UddvNkhtc9y54j++1zJVuFX11lJiPISmoWVoQVK3qWT5XvZDDrXUoQdxZgnUC29t",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-086.json"
+          "file": "templates-border-086.json.gz",
+          "bytes": 95238,
+          "sha384": "34660444c595cce7c827db59d7269cb1d209da7ed81c645b19195fecca0ae346f906f5d80ebb2852d27b526e9ead925e",
+          "sri": "NGYERMWVzOfIJ9tZ1yacsdIJ2n7YHGRbGRlf7MoK40b5BvXYDrsoUtJ7Um6erZJe",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-086.json.gz"
         },
         {
-          "file": "templates-border-087.json",
-          "bytes": 482594,
-          "sha384": "e60a33017c6e2c6095347fc69cdcd8d12e1c9219da0fe3ab942bbec716dd1fc730610cfc1b2f9b0fc98e5135302d4a2e",
-          "sri": "5gozAXxuLGCVNH/GnNzY0S4ckhnaD+OrlCu+xxbdH8cwYQz8Gy+bD8mOUTUwLUou",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-087.json"
+          "file": "templates-border-087.json.gz",
+          "bytes": 164642,
+          "sha384": "367118829e9694b920172f1ab279a2ba09f2fc43a6e519c084fa4da2b1d05c9ae55da5606305f8d0f1d9571b83c4f436",
+          "sri": "NnEYgp6WlLkgFy8asnmiugny/EOm5RnAhPpNorHQXJrlXaVgYwX40PHZVxuDxPQ2",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-087.json.gz"
         },
         {
-          "file": "templates-border-088.json",
-          "bytes": 252071,
-          "sha384": "b83f24940f851608be87ec142010f6616165f5660a88acc0648e2924ca5d9c67bee517a8386feb90b7edd1857daf40cc",
-          "sri": "uD8klA+FFgi+h+wUIBD2YWFl9WYKiKzAZI4pJMpdnGe+5ReoOG/rkLft0YV9r0DM",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-088.json"
+          "file": "templates-border-088.json.gz",
+          "bytes": 81338,
+          "sha384": "f2c26a027a76022fe1084bd72f086a989c33d00557023f2172300b8ed9103f702b5baa37e7d96a1a902daa8999268a28",
+          "sri": "8sJqAnp2Ai/hCEvXLwhqmJwz0AVXAj8hcjALjtkQP3ArW6o359lqGpAtqomZJooo",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-088.json.gz"
         },
         {
-          "file": "templates-border-089.json",
-          "bytes": 250889,
-          "sha384": "359510e274b67ab64685f6291189c8247c6f70150faed6c1b783900a502c6b72dcd80cfe3332b0c2b09a60a067e0f411",
-          "sri": "NZUQ4nS2erZGhfYpEYnIJHxvcBUPrtbBt4OQClAsa3Lc2Az+MzKwwrCaYKBn4PQR",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-089.json"
+          "file": "templates-border-089.json.gz",
+          "bytes": 83560,
+          "sha384": "0e5173eb9badac3a2b3a74ef54ee9b0bb913a4d1c72225e22b705deabcabbac13579594952c44529d6e3a8a84b35423e",
+          "sri": "DlFz65utrDorOnTvVO6bC7kTpNHHIiXiK3Bd6ryrusE1eVlJUsRFKdbjqKhLNUI+",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-089.json.gz"
         },
         {
-          "file": "templates-border-090.json",
-          "bytes": 192106,
-          "sha384": "18236b527215d0a2af8fedf9741a0414737ac4da82ec260d92db94964c05c50921962913f683ecf069779de404bc7902",
-          "sri": "GCNrUnIV0KKvj+35dBoEFHN6xNqC7CYNktuUlkwFxQkhlikT9oPs8Gl3neQEvHkC",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-090.json"
+          "file": "templates-border-090.json.gz",
+          "bytes": 61789,
+          "sha384": "0ff768cf0e7cd256f6ac8619a9ca3e09635c86f5a307b33a4a7d9ff3a63f209f3d71c8b9d5b2f838436860741dee06b9",
+          "sri": "D/dozw580lb2rIYZqco+CWNchvWjB7M6Sn2f86Y/IJ89cci51bL4OENoYHQd7ga5",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-090.json.gz"
         },
         {
-          "file": "templates-border-091.json",
-          "bytes": 351134,
-          "sha384": "bca58083e02ac70e4afba7ccaa4b7c02977bc678ae648254b60b6f879ea935c04f2d09a1360ecd7b5c538324f994c1d3",
-          "sri": "vKWAg+Aqxw5K+6fMqkt8Apd7xniuZIJUtgtvh56pNcBPLQmhNg7Ne1xTgyT5lMHT",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-091.json"
+          "file": "templates-border-091.json.gz",
+          "bytes": 118175,
+          "sha384": "2951c01d3102b8ed14cb79ac5fb7e394edd76a325b946c59794265914d23d8d875715e835aae5719d1e61850cc73d9a1",
+          "sri": "KVHAHTECuO0Uy3msX7fjlO3XajJblGxZeUJlkU0j2Nh1cV6DWq5XGdHmGFDMc9mh",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-091.json.gz"
         },
         {
-          "file": "templates-border-092.json",
-          "bytes": 260892,
-          "sha384": "91c2ffb49c9aeeb68eb1f8e97930159b1463b2cc1f82682862ff9726b61f062c27d2dbeb587ca4cf8ef442960f722e99",
-          "sri": "kcL/tJya7raOsfjpeTAVmxRjsswfgmgoYv+XJrYfBiwn0tvrWHykz470QpYPci6Z",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-092.json"
+          "file": "templates-border-092.json.gz",
+          "bytes": 87160,
+          "sha384": "d8a650f25c17509052f74f425ccf594d1619adb61bdf0c99af37fd997e3f534e9e285e78d31378d54beec9331d16d445",
+          "sri": "2KZQ8lwXUJBS909CXM9ZTRYZrbYb3wyZrzf9mX4/U06eKF540xN41UvuyTMdFtRF",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-092.json.gz"
         },
         {
-          "file": "templates-border-093.json",
-          "bytes": 338151,
-          "sha384": "6fba41912b29f64de827757fdaaea42b7b8797d73c7494c131dd789f09a32f27c7c4bbf6aa32e1ef46cb64a9840e1caa",
-          "sri": "b7pBkSsp9k3oJ3V/2q6kK3uHl9c8dJTBMd14nwmjLyfHxLv2qjLh70bLZKmEDhyq",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-093.json"
+          "file": "templates-border-093.json.gz",
+          "bytes": 111888,
+          "sha384": "ea505a2acbdc8c6adcaf64075e147f665067a1d2baa7743004b26b3f98c25db5b214c5f02b4803af7c74a3d8c9753a75",
+          "sri": "6lBaKsvcjGrcr2QHXhR/ZlBnodK6p3QwBLJrP5jCXbWyFMXwK0gDr3x0o9jJdTp1",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-093.json.gz"
         },
         {
-          "file": "templates-border-094.json",
-          "bytes": 252963,
-          "sha384": "e75d2e2911b13daa28d76f6cb88dafdc37d074f471b36df7bcd63ad92a4717a306d9b46ce61afcd02f9b901308893c9f",
-          "sri": "510uKRGxPaoo129suI2v3DfQdPRxs233vNY62SpHF6MG2bRs5hr80C+bkBMIiTyf",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-094.json"
+          "file": "templates-border-094.json.gz",
+          "bytes": 83523,
+          "sha384": "2998327ec3bc6bf620d11831d1ee095bcbf6d83a02de5e643d9dcf032c06e632d3e515c5fc6eca90660d430cbc0eddf8",
+          "sri": "KZgyfsO8a/Yg0Rgx0e4JW8v22DoC3l5kPZ3PAywG5jLT5RXF/G7KkGYNQwy8Dt34",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-094.json.gz"
         },
         {
-          "file": "templates-border-095.json",
-          "bytes": 390073,
-          "sha384": "1bb39346ea799d199c7138a916e3a84ad1074d25936484f7277abbd6bebc7bde58e6a9da04be7fdb6053ef296d8c575f",
-          "sri": "G7OTRup5nRmccTipFuOoStEHTSWTZIT3J3q71r68e95Y5qnaBL5/22BT7yltjFdf",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-095.json"
+          "file": "templates-border-095.json.gz",
+          "bytes": 127634,
+          "sha384": "9f19ecb6a0296c047700c1b09f6600428b42c23246eb13bc2ba4108fcbf5d8fa2c752e6b804d6ea38618660b13237876",
+          "sri": "nxnstqApbAR3AMGwn2YAQotCwjJG6xO8K6QQj8v12PosdS5rgE1uo4YYZgsTI3h2",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-095.json.gz"
         },
         {
-          "file": "templates-border-096.json",
-          "bytes": 443635,
-          "sha384": "57a27c39a122163cef7e010a0b0477a2988ab78d35127d7f9f4c8765b57210ca03df5ddbb51803c9763a97ce3ea49493",
-          "sri": "V6J8OaEiFjzvfgEKCwR3opiKt401En1/n0yHZbVyEMoD313btRgDyXY6l84+pJST",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-096.json"
+          "file": "templates-border-096.json.gz",
+          "bytes": 150992,
+          "sha384": "3bd2f4a438360b27d87259e16fd3a25467bdc7194dada26b2e72efb6f90ce360c5a6395ac68bf080d9ccadd7e9e3d887",
+          "sri": "O9L0pDg2CyfYclnhb9OiVGe9xxlNraJrLnLvtvkM42DFpjlaxovwgNnMrdfp49iH",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-096.json.gz"
         },
         {
-          "file": "templates-border-060.json",
-          "bytes": 275750,
-          "sha384": "8fbab51bc125241a72f23eccbca5c2d2fbe5436ab5aaedc536f20dcbd789a77d222646c1702660e80f6e36d3510a1cfb",
-          "sri": "j7q1G8ElJBpy8j7MvKXC0vvlQ2q1qu3FNvINy9eJp30iJkbBcCZg6A9uNtNRChz7",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-060.json"
+          "file": "templates-border-060.json.gz",
+          "bytes": 89822,
+          "sha384": "40ac29098bec9fd41659ccd2b44034449b1ab8fb69f301173ec12a15debeb57d30f40d03b23efbb8387dee507b7bb6c6",
+          "sri": "QKwpCYvsn9QWWczStEA0RJsauPtp8wEXPsEqFd6+tX0w9A0Dsj77uDh97lB7e7bG",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-060.json.gz"
         },
         {
-          "file": "templates-border-032.json",
-          "bytes": 598296,
-          "sha384": "b36ccd88a309edb6db188bdd5c14342dfde4d2c4cde617c1a9463c8e6d4c7ac5a84cac1e4345bfa1e140a3d5d76d6a58",
-          "sri": "s2zNiKMJ7bbbGIvdXBQ0Lf3k0sTN5hfBqUY8jm1MesWoTKweQ0W/oeFAo9XXbWpY",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-032.json"
+          "file": "templates-border-032.json.gz",
+          "bytes": 201075,
+          "sha384": "8749e438f61433fc1c8043d531eda7b4d10b95bd7b68fa7d5b763302e22003e95cb2d10fa5061ab4f02fc75b077aec37",
+          "sri": "h0nkOPYUM/wcgEPVMe2ntNELlb17aPp9W3YzAuIgA+lcstEPpQYatPAvx1sHeuw3",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-032.json.gz"
         },
         {
-          "file": "templates-border-033.json",
-          "bytes": 123967,
-          "sha384": "7de091ba9ca0c07d58b20130e38ab3b95f6d0c6812f853fcdf934bb751a4a7b4aa35a3052b476ea92a74260ac0752a31",
-          "sri": "feCRupygwH1YsgEw44qzuV9tDGgS+FP835NLt1Gkp7SqNaMFK0duqSp0JgrAdSox",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-033.json"
+          "file": "templates-border-033.json.gz",
+          "bytes": 42998,
+          "sha384": "78d9eef73cfe478bfae8013e36c91c9d6d4c839e77f46826f654021e9962c67309b4bc63ec974d9f2052af1074430b3e",
+          "sri": "eNnu9zz+R4v66AE+NskcnW1Mg5539Ggm9lQCHplixnMJtLxj7JdNnyBSrxB0Qws+",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-033.json.gz"
         },
         {
-          "file": "templates-border-038.json",
-          "bytes": 252893,
-          "sha384": "883a02fcf4b8f7f8f4b1130728a80abd4ed1aa3ee4fadddedf6c3fc46a918c9a15cd0b80ba2d95fb1bbd1908c59e167f",
-          "sri": "iDoC/PS49/j0sRMHKKgKvU7Rqj7k+t3e32w/xGqRjJoVzQuAui2V+xu9GQjFnhZ/",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-038.json"
+          "file": "templates-border-038.json.gz",
+          "bytes": 81944,
+          "sha384": "13e8db4d3a8226cee2975c654e10724f0277cbda6a5b7bf8695dc38ea138cb16eb29303c1b49c0a0e2f07058321e9e62",
+          "sri": "E+jbTTqCJs7il1xlThByTwJ3y9pqW3v4aV3DjqE4yxbrKTA8G0nAoOLwcFgyHp5i",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-038.json.gz"
         },
         {
-          "file": "templates-border-039.json",
-          "bytes": 149612,
-          "sha384": "8ce2f66cf094ee9147be7838b3592b1d936f5b8b9de2fb97475b73baaf7fa5d3b89b6965a9cb04891dc923e36f6dd394",
-          "sri": "jOL2bPCU7pFHvng4s1krHZNvW4ud4vuXR1tzuq9/pdO4m2llqcsEiR3JI+NvbdOU",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-039.json"
+          "file": "templates-border-039.json.gz",
+          "bytes": 49017,
+          "sha384": "1284634bc99969b16f4c0495670260c45aa4d8206645c3c2a467fd0228d979cc061f4460eab2e241b82025cb224ae998",
+          "sri": "EoRjS8mZabFvTASVZwJgxFqk2CBmRcPCpGf9AijZecwGH0Rg6rLiQbggJcsiSumY",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-039.json.gz"
         },
         {
-          "file": "templates-border-022.json",
-          "bytes": 229234,
-          "sha384": "386a136af65edf527464905a9595328803163bd95e464523930e2beaee0c47fbd04abf67d889312180a199a56a04a881",
-          "sri": "OGoTavZe31J0ZJBalZUyiAMWO9leRkUjkw4r6u4MR/vQSr9n2IkxIYChmaVqBKiB",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-022.json"
+          "file": "templates-border-022.json.gz",
+          "bytes": 76204,
+          "sha384": "3396ef9df41eba5ee8c1823d6ff376e0292109a7250a216c10c7a537171daeb1c4653b7f704c57daea53542a45f97200",
+          "sri": "M5bvnfQeul7owYI9b/N24CkhCaclCiFsEMelNxcdrrHEZTt/cExX2upTVCpF+XIA",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-022.json.gz"
         },
         {
-          "file": "templates-border-023.json",
-          "bytes": 67388,
-          "sha384": "7312c5585f91acd44148cf7b55e9115a5cb794b5cdc01174ef5354779cf59c95e6bfae128d1ad0b71918c35aae111d58",
-          "sri": "cxLFWF+RrNRBSM97VekRWly3lLXNwBF071NUd5z1nJXmv64SjRrQtxkYw1quER1Y",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-023.json"
+          "file": "templates-border-023.json.gz",
+          "bytes": 23523,
+          "sha384": "98b42a71b23412ed86b7305d001a8255ba6f604c0fcc41a703dcd95d9577bb5c0e174ba0d20554ea79661bc466f4e95f",
+          "sri": "mLQqcbI0Eu2GtzBdABqCVbpvYEwPzEGnA9zZXZV3u1wOF0ug0gVU6nlmG8Rm9Olf",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-023.json.gz"
         },
         {
-          "file": "templates-border-028.json",
-          "bytes": 460270,
-          "sha384": "357fcc806cfd961e86b0e81286d1fe9f2aead97730fa8707a6cdbd9f8b35f6501daaa94912a4786a8711ce5480c2e386",
-          "sri": "NX/MgGz9lh6GsOgShtH+nyrq2Xcw+ocHps29n4s19lAdqqlJEqR4aocRzlSAwuOG",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-028.json"
+          "file": "templates-border-028.json.gz",
+          "bytes": 147330,
+          "sha384": "1c1d2eeb312d2120185303c7dbb684b01083adfc6800ce011654f083b1f044ffc918b7f647898ca178ddf9cf56065afb",
+          "sri": "HB0u6zEtISAYUwPH27aEsBCDrfxoAM4BFlTwg7HwRP/JGLf2R4mMoXjd+c9WBlr7",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-028.json.gz"
         },
         {
-          "file": "templates-border-029.json",
-          "bytes": 149703,
-          "sha384": "62f6f27344e156c511b54a5181d6778c41c00107553d365f63903cc87f7832121b4d27840a742963333d20cc6df2b7a4",
-          "sri": "Yvbyc0ThVsURtUpRgdZ3jEHAAQdVPTZfY5A8yH94MhIbTSeECnQpYzM9IMxt8rek",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-029.json"
+          "file": "templates-border-029.json.gz",
+          "bytes": 49448,
+          "sha384": "ad03d4537f264c039ddebd67a77a6917e2b696dd31415b8c6fc124f128a14917e3706e94510a5a2ecddf5ae8be70dadd",
+          "sri": "rQPUU38mTAOd3r1np3ppF+K2lt0xQVuMb8Ek8SihSRfjcG6UUQpaLs3fWui+cNrd",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-029.json.gz"
         },
         {
-          "file": "templates-border-071.json",
-          "bytes": 426362,
-          "sha384": "17388d629d5d0bf4961f6a9645016b2e35ebf66410e01a668ef7b85312fa4c88c85dd8d8444e137da2db1da051206d25",
-          "sri": "FziNYp1dC/SWH2qWRQFrLjXr9mQQ4Bpmjve4UxL6TIjIXdjYRE4TfaLbHaBRIG0l",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-071.json"
+          "file": "templates-border-071.json.gz",
+          "bytes": 149526,
+          "sha384": "fff7ce82c6f8dde5a84ef42fb48a4487c18162e7d56d39c4f816ba0428e3271323102ea6420cf4706c1a26be62faf32e",
+          "sri": "//fOgsb43eWoTvQvtIpEh8GBYufVbTnE+Ba6BCjjJxMjEC6mQgz0cGwaJr5i+vMu",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-071.json.gz"
         },
         {
-          "file": "templates-border-062.json",
-          "bytes": 337750,
-          "sha384": "29a8696c89276795324dee28678ab9da8c26fea789992013fb4eafcc99c35577b9fe01d52394816e4bcb661b84402f1c",
-          "sri": "KahpbIknZ5UyTe4oZ4q52owm/qeJmSAT+06vzJnDVXe5/gHVI5SBbkvLZhuEQC8c",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-062.json"
+          "file": "templates-border-062.json.gz",
+          "bytes": 118251,
+          "sha384": "86d70671d9dbe42868d6b3a93d5d6b0252de06dc8e42d5ab94e42391a44f6b54ca5c1cb8a44c44fc2f78b90381228231",
+          "sri": "htcGcdnb5Cho1rOpPV1rAlLeBtyOQtWrlOQjkaRPa1TKXBy4pExE/C94uQOBIoIx",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-062.json.gz"
         },
         {
-          "file": "templates-border-070.json",
-          "bytes": 53300,
-          "sha384": "063fff79dae365ad51a6aac062ba9d28acfd9b05b22a6315ba818b83f15f4ce175cbdbb6177c9bf96a9ad92491aedbad",
-          "sri": "Bj//edrjZa1RpqrAYrqdKKz9mwWyKmMVuoGLg/FfTOF1y9u2F3yb+Wqa2SSRrtut",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-070.json"
+          "file": "templates-border-070.json.gz",
+          "bytes": 19114,
+          "sha384": "012875d27451f05a78cdf3ce9bfa327fcb136052f35cfd84c24c7ffce59c1d5776ce78fabb75f2abda419af13033fa5f",
+          "sri": "ASh10nRR8Fp4zfPOm/oyf8sTYFLzXP2Ewkx//OWcHVd2znj6u3Xyq9pBmvEwM/pf",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-070.json.gz"
         },
         {
-          "file": "templates-border-078.json",
-          "bytes": 208309,
-          "sha384": "9ead6e77ecb5057a57d15441208882ad284387ca1e3e0232818e7e9876b2aad41348313d665ccf7467d7503a9a620019",
-          "sri": "nq1ud+y1BXpX0VRBIIiCrShDh8oePgIygY5+mHayqtQTSDE9ZlzPdGfXUDqaYgAZ",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-078.json"
+          "file": "templates-border-078.json.gz",
+          "bytes": 67978,
+          "sha384": "fdf3328bdffe8c5ca6cf8a1734ed1ce06d4d9d18fba15d2935f0dd7efaab376084641eeeefc3c978ec099bd85b918308",
+          "sri": "/fMyi9/+jFymz4oXNO0c4G1NnRj7oV0pNfDdfvqrN2CEZB7u78PJeOwJm9hbkYMI",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-078.json.gz"
         },
         {
-          "file": "templates-border-085.json",
-          "bytes": 110068,
-          "sha384": "0eed2d7a709cc65d250e8eaa15f3072bfaa89874981a603fad951d3d9fe56ef3d1f8afba94c0144d03965bd8c502206c",
-          "sri": "Du0tenCcxl0lDo6qFfMHK/qomHSYGmA/rZUdPZ/lbvPR+K+6lMAUTQOWW9jFAiBs",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-085.json"
+          "file": "templates-border-085.json.gz",
+          "bytes": 36229,
+          "sha384": "05fa41c02f531a93303e246faac0abaefe91fb6ea8bf268b2b3f2ee5bd0d28f3be41d5b8bb0adac3867c3be7a5926455",
+          "sri": "BfpBwC9TGpMwPiRvqsCrrv6R+26ovyaLKz8u5b0NKPO+QdW4uwraw4Z8O+elkmRV",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-085.json.gz"
         },
         {
-          "file": "templates-border-036.json",
-          "bytes": 116396,
-          "sha384": "010539af2cef1fe7f77bf2898df9823e58a026933ce91cb5754bec2347db78daa98d69b4724dcfa5c571c11f64337267",
-          "sri": "AQU5ryzvH+f3e/KJjfmCPligJpM86Ry1dUvsI0fbeNqpjWm0ck3PpcVxwR9kM3Jn",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-036.json"
+          "file": "templates-border-036.json.gz",
+          "bytes": 36865,
+          "sha384": "315a1e5b31b81c9778c02e75c46b518937dcb9e9f93d5e930c17840efb66a0ea4a9cf1fdb54b1d43a210283bb44d60fe",
+          "sri": "MVoeWzG4HJd4wC51xGtRiTfcuen5PV6TDBeEDvtmoOpKnPH9tUsdQ6IQKDu0TWD+",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-036.json.gz"
         },
         {
-          "file": "templates-border-009.json",
-          "bytes": 387130,
-          "sha384": "f9d82214a663defe91263acbf5871ab9938d0054a603d5d76ed4feb390eee73fa50e015952341a6b7b3d6a08acb1877d",
-          "sri": "+dgiFKZj3v6RJjrL9YcauZONAFSmA9XXbtT+s5Du5z+lDgFZUjQaa3s9agissYd9",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-009.json"
+          "file": "templates-border-009.json.gz",
+          "bytes": 130216,
+          "sha384": "8c7fc16455f87e90704d4bcb5ecbe871e3c769a2ee63486b8d456b2b400066a439ba9fce483f0d65a5fca8b1af52bd9c",
+          "sri": "jH/BZFX4fpBwTUvLXsvocePHaaLuY0hrjUVrK0AAZqQ5up/OSD8NZaX8qLGvUr2c",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-009.json.gz"
         },
         {
-          "file": "templates-border-011.json",
-          "bytes": 576711,
-          "sha384": "f02eb8893b26f342117a3bca2bdc2d81c695d70a6d5b7033b2efdff698b9351b9a944c43bf2cea367ece7ccdabac9f5c",
-          "sri": "8C64iTsm80IRejvKK9wtgcaV1wptW3Azsu/f9pi5NRualExDvyzqNn7OfM2rrJ9c",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-011.json"
+          "file": "templates-border-011.json.gz",
+          "bytes": 203959,
+          "sha384": "475bf8c7ec6b6558d8f3c2213f24f8855e3db897564f32383438c28dee8fcde539b66729f1542fa78cfdf39568d88ce3",
+          "sri": "R1v4x+xrZVjY88IhPyT4hV49uJdWTzI4NDjCje6PzeU5tmcp8VQvp4z985Vo2Izj",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-011.json.gz"
         },
         {
-          "file": "templates-border-013.json",
-          "bytes": 256483,
-          "sha384": "27066bb29bd02982d8fd2b81911a424cbc89d86252c94f0bc260478e2deee03ee8851e34214d8125872b9936a49cfcb3",
-          "sri": "JwZrspvQKYLY/SuBkRpCTLyJ2GJSyU8LwmBHji3u4D7ohR40IU2BJYcrmTaknPyz",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-013.json"
+          "file": "templates-border-013.json.gz",
+          "bytes": 86902,
+          "sha384": "7d1235d4941a9b6367a3247fff0e366cccc3a06831e6d942149ead505eda1a09e352ff0a2bb036770e556393ef145f88",
+          "sri": "fRI11JQam2NnoyR//w42bMzDoGgx5tlCFJ6tUF7aGgnjUv8KK7A2dw5VY5PvFF+I",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-013.json.gz"
         },
         {
-          "file": "templates-border-015.json",
-          "bytes": 378906,
-          "sha384": "c16f802d063069cef1983b21132568a17b0fdae3912aa8c341e0ccc4b8c9d93ea5686a3b6f1ed6dfac57a6a540b5d6f8",
-          "sri": "wW+ALQYwac7xmDshEyVooXsP2uORKqjDQeDMxLjJ2T6laGo7bx7W36xXpqVAtdb4",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-015.json"
+          "file": "templates-border-015.json.gz",
+          "bytes": 125964,
+          "sha384": "2c59bb5e805f332df65f59e8eba79d3f778308dffbe50d95521e455dd6ea4ba5172832abc31b3918513a9d48c5c7b0fe",
+          "sri": "LFm7XoBfMy32X1no66edP3eDCN/75Q2VUh5FXdbqS6UXKDKrwxs5GFE6nUjFx7D+",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-015.json.gz"
         },
         {
-          "file": "templates-border-025.json",
-          "bytes": 681737,
-          "sha384": "5d253c0ee44fc0f759941cf2a0d4dd93667bb63b35a3149b422fa85620a1625407179045884356da048c300a11754cef",
-          "sri": "XSU8DuRPwPdZlBzyoNTdk2Z7tjs1oxSbQi+oViChYlQHF5BFiENW2gSMMAoRdUzv",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-025.json"
+          "file": "templates-border-025.json.gz",
+          "bytes": 227470,
+          "sha384": "731964b61abb3ea80a1b2e687b592d5e4350e70521080ed3491856ed4c228058b0deb6461ac072b02cd7487b6711e22a",
+          "sri": "cxlkthq7PqgKGy5oe1ktXkNQ5wUhCA7TSRhW7UwigFiw3rZGGsBysCzXSHtnEeIq",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-025.json.gz"
         },
         {
-          "file": "templates-border-017.json",
-          "bytes": 197528,
-          "sha384": "11169ab3d4ccdaf080dd80966f5e4e01926c1f70cb1ae6ae2dac18cb7d0543c1caf86ab13d6a6b644871b2732117af45",
-          "sri": "ERaas9TM2vCA3YCWb15OAZJsH3DLGuauLawYy30FQ8HK+GqxPWprZEhxsnMhF69F",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-017.json"
+          "file": "templates-border-017.json.gz",
+          "bytes": 65428,
+          "sha384": "19149c40601134db3adf315119ac428cbf3027a5e323a0395857250ed8dc137289556a31bd6c7fbfbdf9b2ac2d25fb9d",
+          "sri": "GRScQGARNNs63zFRGaxCjL8wJ6XjI6A5WFclDtjcE3KJVWoxvWx/v735sqwtJfud",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-017.json.gz"
         },
         {
-          "file": "templates-border-014.json",
-          "bytes": 384342,
-          "sha384": "d9c0e50db0d9aab92dc0ed3265115c655b8cd0ca7ddf19a40b889a080fd596520d970f3ab3f9896c41f0263609607a13",
-          "sri": "2cDlDbDZqrktwO0yZRFcZVuM0Mp93xmkC4iaCA/VllINlw86s/mJbEHwJjYJYHoT",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-014.json"
+          "file": "templates-border-014.json.gz",
+          "bytes": 136716,
+          "sha384": "458ad2c2513898480739f99e235a1415c283a646246151f2073f7222df48ff1d1b1d018e62c61a1fe911112ccf73ed0a",
+          "sri": "RYrSwlE4mEgHOfmeI1oUFcKDpkYkYVHyBz9yIt9I/x0bHQGOYsYaH+kRESzPc+0K",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-014.json.gz"
         },
         {
-          "file": "templates-border-018.json",
-          "bytes": 306208,
-          "sha384": "29007d44721d0ac574982d073b171c724309044752147ee72b4572a1bcf830959a123cedc9093b1ac7e036f7e6b32412",
-          "sri": "KQB9RHIdCsV0mC0HOxccckMJBEdSFH7nK0Vyobz4MJWaEjztyQk7GsfgNvfmsyQS",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-018.json"
+          "file": "templates-border-018.json.gz",
+          "bytes": 104510,
+          "sha384": "d70a8774887cdee34042e5d12a868889a7d5db551b80b4d2c27f5108b91693bc146e1828ed46fce8d1e587a7fdbfa485",
+          "sri": "1wqHdIh83uNAQuXRKoaIiafV21UbgLTSwn9RCLkWk7wUbhgo7Ub86NHlh6f9v6SF",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-018.json.gz"
         },
         {
-          "file": "templates-border-024.json",
-          "bytes": 370134,
-          "sha384": "fa0a11b7db1695e91f3957004e04f3cb73b87978161ab56c155662042cea342f88a7860c6399944492ed66e606d45185",
-          "sri": "+goRt9sWlekfOVcATgTzy3O4eXgWGrVsFVZiBCzqNC+Ip4YMY5mURJLtZuYG1FGF",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-024.json"
+          "file": "templates-border-024.json.gz",
+          "bytes": 127295,
+          "sha384": "d9cede3c1edef9cb68ab9641fb903a5b7a094f0a917821cd07d315485ad227644e8ef3431fe42788abff666b65144572",
+          "sri": "2c7ePB7e+ctoq5ZB+5A6W3oJTwqReCHNB9MVSFrSJ2ROjvNDH+QniKv/ZmtlFEVy",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-024.json.gz"
         },
         {
-          "file": "templates-border-027.json",
-          "bytes": 214760,
-          "sha384": "b58a1d2e21e1e2a0dd4974859ad7150dc26c5eb84a944bf205eacf322ac23e5c651a7a5c7a255d8ef2d9a3f5b2b33b0b",
-          "sri": "tYodLiHh4qDdSXSFmtcVDcJsXrhKlEvyBerPMirCPlxlGnpceiVdjvLZo/WyszsL",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-027.json"
+          "file": "templates-border-027.json.gz",
+          "bytes": 69923,
+          "sha384": "18c6c471597b5b30d95edc5901496ffdffb7df14b02a10f387441671032a8f933bc7a0aece9b414fc9fac67eb4bf4c0e",
+          "sri": "GMbEcVl7WzDZXtxZAUlv/f+33xSwKhDzh0QWcQMqj5M7x6CuzptBT8n6xn60v0wO",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-027.json.gz"
         },
         {
-          "file": "templates-border-026.json",
-          "bytes": 226258,
-          "sha384": "3837d9f103e2ff8ee17181930320783de0d11696c2986300c26eb33acb6fa4166838e3a1410e152dd675420a55ef1b18",
-          "sri": "ODfZ8QPi/47hcYGTAyB4PeDRFpbCmGMAwm6zOstvpBZoOOOhQQ4VLdZ1QgpV7xsY",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-026.json"
+          "file": "templates-border-026.json.gz",
+          "bytes": 75574,
+          "sha384": "7d85b705c0d273e9a97bd9beecf54a3059c5022ee4763923a1a1c25f2c358568ac652d435d8582852eaa23ef0de53a1e",
+          "sri": "fYW3BcDSc+mpe9m+7PVKMFnFAi7kdjkjoaHCXyw1hWisZS1DXYWChS6qI+8N5Toe",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-026.json.gz"
         },
         {
-          "file": "templates-border-012.json",
-          "bytes": 117489,
-          "sha384": "1ac44980c785a18010ba877b682bc3806d5b4798df7da58f72b089943c28196bc92c1049e07b52a589f69f94721f02b2",
-          "sri": "GsRJgMeFoYAQuod7aCvDgG1bR5jffaWPcrCJlDwoGWvJLBBJ4HtSpYn2n5RyHwKy",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-012.json"
+          "file": "templates-border-012.json.gz",
+          "bytes": 38963,
+          "sha384": "6b82d0435e845b594986f9d65ae471aef69e470d58dbdc1fdf8c9175a5260188c4b11751c80ce825c784ef12b84e0167",
+          "sri": "a4LQQ16EW1lJhvnWWuRxrvaeRw1Y29wf34yRdaUmAYjEsRdRyAzoJceE7xK4TgFn",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-012.json.gz"
         },
         {
-          "file": "templates-border-016.json",
-          "bytes": 304228,
-          "sha384": "4188195d8a7da80a95dc11307cf686989f6951cb4bcf083bedf4c6b33aa8bf76aafcba68880ce7334dc2260a40b98bb5",
-          "sri": "QYgZXYp9qAqV3BEwfPaGmJ9pUctLzwg77fTGszqov3aq/LpoiAznM03CJgpAuYu1",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-016.json"
+          "file": "templates-border-016.json.gz",
+          "bytes": 105011,
+          "sha384": "186a72cdb75159bb19ce92be83e6a032c510a183319904d0adcebbcedc8ea81aaa7bee5762a563de7cdbd9148342b0e8",
+          "sri": "GGpyzbdRWbsZzpK+g+agMsUQoYMxmQTQrc67ztyOqBqqe+5XYqVj3nzb2RSDQrDo",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-016.json.gz"
         },
         {
-          "file": "templates-border-010.json",
-          "bytes": 124359,
-          "sha384": "a48869a888c0bd2b3af9b2c0e552261a2ff244cdca221037b03efaab68806dc93a9c20bb8adddb638fe636bba8a5dd1f",
-          "sri": "pIhpqIjAvSs6+bLA5VImGi/yRM3KIhA3sD76q2iAbck6nCC7it3bY4/mNruopd0f",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-010.json"
+          "file": "templates-border-010.json.gz",
+          "bytes": 42414,
+          "sha384": "a97054520ec4504ea727c6a9b534dde2c66a86a50d550aeb6af68bf620ab85cfe42c8c6a6592ded5a6967685659808e9",
+          "sri": "qXBUUg7EUE6nJ8aptTTd4sZqhqUNVQrravaL9iCrhc/kLIxqZZLe1aaWdoVlmAjp",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-010.json.gz"
         },
         {
-          "file": "templates-border-021.json",
-          "bytes": 29942,
-          "sha384": "336c47a56b857f190a1f209a410eab54b0e87cf8c2f95b323ea95cd6a1c9fc7d1218c50d85d9d1d000e6892ac03d04f3",
-          "sri": "M2xHpWuFfxkKHyCaQQ6rVLDofPjC+VsyPqlc1qHJ/H0SGMUNhdnR0ADmiSrAPQTz",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-021.json"
+          "file": "templates-border-021.json.gz",
+          "bytes": 8971,
+          "sha384": "a8c39b98cf895488054183495103f1704499a5b56538420266027180a30c98cd6431a5670de0347769fcce44803df9e8",
+          "sri": "qMObmM+JVIgFQYNJUQPxcESZpbVlOEICZgJxgKMMmM1kMaVnDeA0d2n8zkSAPfno",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-021.json.gz"
         },
         {
-          "file": "templates-border-030.json",
-          "bytes": 85031,
-          "sha384": "744a66fb5a1a3a3c80de9d6f57594dee043ed495c2c82424e636c189a996f591bc07f5ba59bc4c51de00f453002de581",
-          "sri": "dEpm+1oaOjyA3p1vV1lN7gQ+1JXCyCQk5jbBiamW9ZG8B/W6WbxMUd4A9FMALeWB",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-030.json"
+          "file": "templates-border-030.json.gz",
+          "bytes": 29421,
+          "sha384": "0246fa88b3202de73343c50cfc0d08a8a8aae9ca5d4cc632e60a6a552009c3a756ea35b2c90e475abc336c503170a552",
+          "sri": "Akb6iLMgLeczQ8UM/A0IqKiq6cpdTMYy5gpqVSAJw6dW6jWyyQ5HWrwzbFAxcKVS",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-030.json.gz"
         },
         {
-          "file": "templates-border-031.json",
-          "bytes": 110665,
-          "sha384": "3ad6f5d77c9e7a0879cf9b3ae66fc7b38eb654b67e29ea5ae8dfed2d65c9ba6ff8377a0f8b71649df5f1ee24a4abb8fe",
-          "sri": "Otb113yeegh5z5s65m/Hs462VLZ+Kepa6N/tLWXJum/4N3oPi3FknfXx7iSkq7j+",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-031.json"
+          "file": "templates-border-031.json.gz",
+          "bytes": 38661,
+          "sha384": "fb8b0dd70348ab0ea27bd370770cf9504ecad655599a269ce6043ee1680ffbacccf36bff2f2f8a51f1ed45c638935ecd",
+          "sri": "+4sN1wNIqw6ie9Nwdwz5UE7K1lVZmiac5gQ+4WgP+6zM82v/Ly+KUfHtRcY4k17N",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-031.json.gz"
         },
         {
-          "file": "templates-border-035.json",
-          "bytes": 167839,
-          "sha384": "c4486d89fa705c995ef6fd4d76be6701974a82f4711700472556b599250138a67b089c6433a5ac541c3cdf1e278ff180",
-          "sri": "xEhtifpwXJle9v1Ndr5nAZdKgvRxFwBHJVa1mSUBOKZ7CJxkM6WsVBw83x4nj/GA",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-035.json"
+          "file": "templates-border-035.json.gz",
+          "bytes": 58260,
+          "sha384": "badcfbdf650e98e451f5ee08960c39bc522e6c2fcd1df46349f704160df4b413f4e0cb30a44c11cba2da0134b6dcbca5",
+          "sri": "utz732UOmORR9e4Ilgw5vFIubC/NHfRjSfcEFg30tBP04MswpEwRy6LaATS23Lyl",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-035.json.gz"
         },
         {
-          "file": "templates-border-037.json",
-          "bytes": 66521,
-          "sha384": "f2406bf3e3636bd20334bdb1beb720a5f0fa4c336a0991e4e1a969410fbae13717ab4d0288c39bfc65454b610a21c543",
-          "sri": "8kBr8+Nja9IDNL2xvrcgpfD6TDNqCZHk4alpQQ+64TcXq00CiMOb/GVFS2EKIcVD",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-037.json"
+          "file": "templates-border-037.json.gz",
+          "bytes": 22698,
+          "sha384": "02df43a26b73e8bd96d7949a0d4fdbdc804ebb1036d2d3fda3c19b6d6fb3c532fcc03af37e404fbc82e2a45eaad24493",
+          "sri": "At9Domtz6L2W15SaDU/b3IBOuxA20tP9o8GbbW+zxTL8wDrzfkBPvILipF6q0kST",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-037.json.gz"
         },
         {
-          "file": "templates-border-040.json",
-          "bytes": 53580,
-          "sha384": "417b09c83650eed9541fee7e8abd1a4e86868343ac37d86de1c88c469e96084de3228e3dd70d65d7bfbd38665f02f6c5",
-          "sri": "QXsJyDZQ7tlUH+5+ir0aToaGg0OsN9ht4ciMRp6WCE3jIo491w1l17+9OGZfAvbF",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-040.json"
+          "file": "templates-border-040.json.gz",
+          "bytes": 17548,
+          "sha384": "f3c02c9a19d2fe7c0b8757941f78e26e0ebde60e9bb518c895d094fca56d9e0ff8ce2dd66909fbf7dee0156d57d64141",
+          "sri": "88AsmhnS/nwLh1eUH3jibg695g6btRjIldCU/KVtng/4zi3WaQn7997gFW1X1kFB",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-040.json.gz"
         },
         {
-          "file": "templates-border-041.json",
-          "bytes": 151471,
-          "sha384": "df9fbc30bbd6310e796092c464c628bc1094ba889debc378ed10972bea885d6b42a5f3369c5eeb31014fe3aff4eeda75",
-          "sri": "35+8MLvWMQ55YJLEZMYovBCUuoid68N47RCXK+qIXWtCpfM2nF7rMQFP46/07tp1",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-041.json"
+          "file": "templates-border-041.json.gz",
+          "bytes": 49064,
+          "sha384": "9c67aac2e1f4f74820085b7ff82844f2ad9c35d5a2deb492b7c1e3638a2c62a0a520df16d527be762f6252e85d6387a7",
+          "sri": "nGeqwuH090ggCFt/+ChE8q2cNdWi3rSSt8HjY4osYqClIN8W1Se+di9iUuhdY4en",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-041.json.gz"
         },
         {
-          "file": "templates-border-079.json",
-          "bytes": 131184,
-          "sha384": "d9bca32ad443b5395fbe5e8efbd7da85e266b9f04f6a5d550569ccbc0e9ac79984c89e77a4ff5cd26cf840fa704abad3",
-          "sri": "2byjKtRDtTlfvl6O+9faheJmufBPal1VBWnMvA6ax5mEyJ53pP9c0mz4QPpwSrrT",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-079.json"
+          "file": "templates-border-079.json.gz",
+          "bytes": 43865,
+          "sha384": "6c79f4441c89b07e3b960287293149fb4c731ec0a26040c9d92b6c78688bf2bac2960d01bdf1210e1b051ade7c7d67a9",
+          "sri": "bHn0RByJsH47lgKHKTFJ+0xzHsCiYEDJ2StseGiL8rrClg0BvfEhDhsFGt58fWep",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-079.json.gz"
         },
         {
-          "file": "templates-border-080.json",
-          "bytes": 102593,
-          "sha384": "c3721e4d13fd7b43103fff87c59d8b0454729fc77cbaa055023fad3512bc70fd74baf786d40347e77a179b8879d2b113",
-          "sri": "w3IeTRP9e0MQP/+HxZ2LBFRyn8d8uqBVAj+tNRK8cP10uveG1ANH53oXm4h50rET",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-080.json"
+          "file": "templates-border-080.json.gz",
+          "bytes": 35523,
+          "sha384": "d3fa6eb8b076baebc857335d19308fcc101248243eab953640968a5d47c862406e197b864845acc6be660e9e1b832f13",
+          "sri": "0/puuLB2uuvIVzNdGTCPzBASSCQ+q5U2QJaKXUfIYkBuGXuGSEWsxr5mDp4bgy8T",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-080.json.gz"
         },
         {
-          "file": "templates-border-081.json",
-          "bytes": 175408,
-          "sha384": "e3ee4f5ed7a070ac2362efa2025d93b980557f13fd00bc34872527ba20be49548964f0e2bb652f91645eab9a18017d87",
-          "sri": "4+5PXtegcKwjYu+iAl2TuYBVfxP9ALw0hyUnuiC+SVSJZPDiu2UvkWReq5oYAX2H",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-081.json"
+          "file": "templates-border-081.json.gz",
+          "bytes": 59117,
+          "sha384": "c6bd0d15b0c923e076d54a635e78648c8b2011af5dbee455f7b0066a746026ee2c8c1908404815c031e1ebcac2a605d8",
+          "sri": "xr0NFbDJI+B21UpjXnhkjIsgEa9dvuRV97AGanRgJu4sjBkIQEgVwDHh68rCpgXY",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-081.json.gz"
         },
         {
-          "file": "templates-border-082.json",
-          "bytes": 135412,
-          "sha384": "3c99d83bddd9255c5d56409f967fecc972826c6528896966d911b3fcdebbcd468654b467cb056fccc42ed111fefc6c7d",
-          "sri": "PJnYO93ZJVxdVkCfln/syXKCbGUoiWlm2RGz/N67zUaGVLRnywVvzMQu0RH+/Gx9",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-082.json"
+          "file": "templates-border-082.json.gz",
+          "bytes": 47394,
+          "sha384": "ebf0044fc537de17acf70d3d9059179ae41aab9851410aa56a398e36d30413380d246b1cc3cb62b6be6e46aac944687c",
+          "sri": "6/AET8U33hes9w09kFkXmuQaq5hRQQqlajmONtMEEzgNJGscw8titr5uRqrJRGh8",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-082.json.gz"
         },
         {
-          "file": "templates-border-083.json",
-          "bytes": 167046,
-          "sha384": "70bd791fd49bc9a58dc52cab06731715c0a03c0c82f7d908aad6100e639a459fdb3a06ed4a8d2ea2d2f032b1da5f44e4",
-          "sri": "cL15H9SbyaWNxSyrBnMXFcCgPAyC99kIqtYQDmOaRZ/bOgbtSo0uotLwMrHaX0Tk",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-083.json"
+          "file": "templates-border-083.json.gz",
+          "bytes": 58202,
+          "sha384": "def93e35e618b8d4afbf82ef16e9b55dc5934dd9c67d02addff79913ca2c2fd2f852a8b4c5c8532d9714dba2284f24bc",
+          "sri": "3vk+NeYYuNSvv4LvFum1XcWTTdnGfQKt3/eZE8osL9L4Uqi0xchTLZcU26IoTyS8",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-083.json.gz"
         },
         {
-          "file": "templates-border-084.json",
-          "bytes": 219670,
-          "sha384": "e5c8e8dd0caf9b7deadf70c80d539e32d6e8c138d5f7559640638be0fb28fe740cd91208a5cfbe395d1d188b155ff9d1",
-          "sri": "5cjo3Qyvm33q33DIDVOeMtbowTjV91WWQGOL4Pso/nQM2RIIpc++OV0dGIsVX/nR",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/templates/border-084.json"
+          "file": "templates-border-084.json.gz",
+          "bytes": 79705,
+          "sha384": "6313eabce20d8cf9e6f1e663e0fce279779a557e67eeb9f2fc2eb95d8bf631d8f49edd32df50b3f98a325f67f653a114",
+          "sri": "YxPqvOINjPnm8eZj4PzieXeaVX5n7rny/C65XYv2Mdj0nt0y31Cz+YoyX2f2U6EU",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/templates/border-084.json.gz"
         }
       ]
     },
@@ -2171,368 +2171,368 @@
       ],
       "files": [
         {
-          "file": "elements-elements-arabesques-1.json",
-          "bytes": 1064425,
-          "sha384": "bc13fd183757c9a1109773b5bffe42487f1d8ae429fd6d0b6bced177e8852a7542823629c5ac33416caaf3efe4d386e2",
-          "sri": "vBP9GDdXyaEQl3O1v/5CSH8diuQp/W0La87Rd+iFKnVCgjYpxawzQWyq8+/k04bi",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-arabesques-1.json"
+          "file": "elements-elements-arabesques-1.json.gz",
+          "bytes": 150166,
+          "sha384": "f7ef0f3bdb75c4786ff75b81643f5d0f9ed0e478dfcf20218e6ffe03013f46f8bcd218734072d199ba07a619f5321800",
+          "sri": "9+8PO9t1xHhv91uBZD9dD57Q5HjfzyAhjm/+AwE/Rvi80hhzQHLRmboHphn1MhgA",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-arabesques-1.json.gz"
         },
         {
-          "file": "elements-elements-arabesques-2.json",
-          "bytes": 431319,
-          "sha384": "2cd8e6d20a50791b04de6ced25b3b92a014f1c815bed9c010553a6485491fa0d7e55630c1f12849111c1769ec4314241",
-          "sri": "LNjm0gpQeRsE3mztJbO5KgFPHIFb7ZwBBVOmSFSR+g1+VWMMHxKEkRHBdp7EMUJB",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-arabesques-2.json"
+          "file": "elements-elements-arabesques-2.json.gz",
+          "bytes": 397552,
+          "sha384": "9c56fe42d3ec1e4b33e4273e9362b5da4ee48ed0b07781398f3ae25a4abbc17e81a2570a49a977d2da5e345ea404b30b",
+          "sri": "nFb+QtPsHksz5Cc+k2K12k7kjtCwd4E5jzriWkq7wX6BolcKSal30tpeNF6kBLML",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-arabesques-2.json.gz"
         },
         {
-          "file": "elements-elements-bands-1.json",
-          "bytes": 1042910,
-          "sha384": "f30186231c530b7b58400f1000af20c864a30154cef1b670e6f1b775c7082488bcbee78ecfc8d9c21f73dc63282a3b3e",
-          "sri": "8wGGIxxTC3tYQA8QAK8gyGSjAVTO8bZw5vG3dccIJIi8vueOz8jZwh9z3GMoKjs+",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-bands-1.json"
+          "file": "elements-elements-bands-1.json.gz",
+          "bytes": 395374,
+          "sha384": "6931ee190464f8aa85bb376784cbb2c5a997d9ba3ab02fbb7eb02b331476bcb838570ce72dcd17c388e7f145c814af98",
+          "sri": "aTHuGQRk+KqFuzdnhMuyxamX2bo6sC+7frArMxR2vLg4VwznLc0Xw4jn8UXIFK+Y",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-bands-1.json.gz"
         },
         {
-          "file": "elements-elements-bands-10.json",
-          "bytes": 1091795,
-          "sha384": "397d820cffb5882182b8b0f891f50ed641ce20258cbe9b956f274a94c99f81fd45f9b5bee347133f91f0fbd6f0503b3d",
-          "sri": "OX2CDP+1iCGCuLD4kfUO1kHOICWMvpuVbydKlMmfgf1F+bW+40cTP5Hw+9bwUDs9",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-bands-10.json"
+          "file": "elements-elements-bands-10.json.gz",
+          "bytes": 397129,
+          "sha384": "4a980517b57e300af2955b7c6ee1937d532fdd8fe49faa0193aab4b3925d1824d4b91db4e24b234a0e5e225a02f3263d",
+          "sri": "SpgFF7V+MArylVt8buGTfVMv3Y/kn6oBk6q0s5JdGCTUuR204ksjSg5eIloC8yY9",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-bands-10.json.gz"
         },
         {
-          "file": "elements-elements-bands-2.json",
-          "bytes": 1053448,
-          "sha384": "d47486bd45c6527cc7d400a01fb472958ddc068cae5bf1d4aa42944d0f48d07762f0322e7b4d040d3bd675b444a44127",
-          "sri": "1HSGvUXGUnzH1ACgH7RylY3cBoyuW/HUqkKUTQ9I0Hdi8DIue00EDTvWdbREpEEn",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-bands-2.json"
+          "file": "elements-elements-bands-2.json.gz",
+          "bytes": 395319,
+          "sha384": "56f5eef056199a655519325cbc74176c333066ecb4998752709fb520f9a66f689c845965200adbf0918c0f58403269a2",
+          "sri": "VvXu8FYZmmVVGTJcvHQXbDMwZuy0mYdScJ+1IPmmb2ichFllIArb8JGMD1hAMmmi",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-bands-2.json.gz"
         },
         {
-          "file": "elements-elements-bands-3.json",
-          "bytes": 1033051,
-          "sha384": "9fb51a0bd07c5dca989ae1e07783e6e693c2814898c1811283f3823f9bcea13e25646ac450d29dcefcb7be2799799724",
-          "sri": "n7UaC9B8XcqYmuHgd4Pm5pPCgUiYwYESg/OCP5vOoT4lZGrEUNKdzvy3vieZeZck",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-bands-3.json"
+          "file": "elements-elements-bands-3.json.gz",
+          "bytes": 393071,
+          "sha384": "12815b065c917cb7def5174e3b1f863acb3a88e6378c7450b9e1eb356bb111aad7f801326dfc12f84a44c3b5ea5fc5cc",
+          "sri": "EoFbBlyRfLfe9RdOOx+GOss6iOY3jHRQueHrNWuxEarX+AEybfwS+EpEw7XqX8XM",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-bands-3.json.gz"
         },
         {
-          "file": "elements-elements-bands-4.json",
-          "bytes": 1077551,
-          "sha384": "63bcf4eb2537379d748b8b03f7548fd28087c181d85fe909620a425fc757aac4507672589c9277d72187f43dcbfd310e",
-          "sri": "Y7z06yU3N510i4sD91SP0oCHwYHYX+kJYgpCX8dXqsRQdnJYnJJ31yGH9D3L/TEO",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-bands-4.json"
+          "file": "elements-elements-bands-4.json.gz",
+          "bytes": 396328,
+          "sha384": "1d306277b83faffae29d4e4d8e488d7ae2d3be11c3c0867f8f3c8ae872010624f30bc5df8322e93ae35b06193eea2cd8",
+          "sri": "HTBid7g/r/rinU5NjkiNeuLTvhHDwIZ/jzyK6HIBBiTzC8XfgyLpOuNbBhk+6izY",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-bands-4.json.gz"
         },
         {
-          "file": "elements-elements-bands-5.json",
-          "bytes": 1059497,
-          "sha384": "be745eaa759441c3dbe25ca7a38f1c35b6c8211d1c597526684c6df62c496ba8efd6b345e49b8ce50b6f46b5f2fbce21",
-          "sri": "vnReqnWUQcPb4lyno48cNbbIIR0cWXUmaExt9ixJa6jv1rNF5JuM5QtvRrXy+84h",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-bands-5.json"
+          "file": "elements-elements-bands-5.json.gz",
+          "bytes": 388087,
+          "sha384": "8eaec385a45b21906cbd3a232d4699fc18e23757eae16155c5f142626e5a24d38c98620da5fa6553cd7e542b855fd037",
+          "sri": "jq7DhaRbIZBsvTojLUaZ/BjiN1fq4WFVxfFCYm5aJNOMmGINpfplU81+VCuFX9A3",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-bands-5.json.gz"
         },
         {
-          "file": "elements-elements-bands-6.json",
-          "bytes": 1067772,
-          "sha384": "da20922ef189ca8a1d9e1f9671bcab8463a7ff664f0b906b9c47294d32a8c876a911b5d204c9e8f1ea9cbccd44a5a784",
-          "sri": "2iCSLvGJyoodnh+WcbyrhGOn/2ZPC5BrnEcpTTKoyHapEbXSBMno8eqcvM1EpaeE",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-bands-6.json"
+          "file": "elements-elements-bands-6.json.gz",
+          "bytes": 397400,
+          "sha384": "af9fc155e909b8fbcb72434eeae3d671a8a4708f7d1df7dcd7304eec81e13ec1ac986910934fb76bddb58fa1752f8b0b",
+          "sri": "r5/BVekJuPvLckNO6uPWcaikcI99Hffc1zBO7IHhPsGsmGkQk0+3a921j6F1L4sL",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-bands-6.json.gz"
         },
         {
-          "file": "elements-elements-bands-7.json",
-          "bytes": 1034598,
-          "sha384": "08feb33d80242a13fb8720916ca4e5fd91fb5d24d589e5e7a29d3f0c57100ef46827c9a1c34e22402b3e0e2548da8dce",
-          "sri": "CP6zPYAkKhP7hyCRbKTl/ZH7XSTVieXnop0/DFcQDvRoJ8mhw04iQCs+DiVI2o3O",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-bands-7.json"
+          "file": "elements-elements-bands-7.json.gz",
+          "bytes": 395245,
+          "sha384": "edec19091e4678a5ff7825be5d140394f4891d752b0e2ade95227a97305389526cf58549bd7a6d00a0ea9b3d60d7df63",
+          "sri": "7ewZCR5GeKX/eCW+XRQDlPSJHXUrDirelSJ6lzBTiVJs9YVJvXptAKDqmz1g199j",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-bands-7.json.gz"
         },
         {
-          "file": "elements-elements-bands-8.json",
-          "bytes": 992985,
-          "sha384": "07012f440b2f899dd29395f07f18146b6147b25ee3324e0e9bca6611a04beb91c739c4e9b7b6064645a27941735c8d3d",
-          "sri": "BwEvRAsviZ3Sk5XwfxgUa2FHsl7jMk4Om8pmEaBL65HHOcTpt7YGRkWieUFzXI09",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-bands-8.json"
+          "file": "elements-elements-bands-8.json.gz",
+          "bytes": 365198,
+          "sha384": "934e48a522da7b53bf3c9466192f97dcec567e19f719a32db3195388cb081b54f3989ede2f9790b6287a8a382040e817",
+          "sri": "k05IpSLae1O/PJRmGS+X3OxWfhn3GaMtsxlTiMsIG1TzmJ7eL5eQtih6ijggQOgX",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-bands-8.json.gz"
         },
         {
-          "file": "elements-elements-bands-9.json",
-          "bytes": 1044275,
-          "sha384": "6525e148c928663322fa1f18073ec39c7f408806331e28eff9a4e2d0c7c04bff70dbf0cafae6000e89874491f2fff32f",
-          "sri": "ZSXhSMkoZjMi+h8YBz7DnH9AiAYzHijv+aTi0MfAS/9w2/DK+uYADomHRJHy//Mv",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-bands-9.json"
+          "file": "elements-elements-bands-9.json.gz",
+          "bytes": 381346,
+          "sha384": "0b9bfafd8848d343d26fe14cb5b8d87980f8937ba019fb6fb6b849e66d3e1d09253b59fa5cc163bc46b4cf5ffb69cdf4",
+          "sri": "C5v6/YhI00PSb+FMtbjYeYD4k3ugGftvtrhJ5m0+HQklO1n6XMFjvEa0z1/7ac30",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-bands-9.json.gz"
         },
         {
-          "file": "elements-elements-cartouches-1.json",
-          "bytes": 1059504,
-          "sha384": "4a6d98e4ef1536f3e9e98098ab4d77fb9d3cb5fd1707c901b619ec76a2e0cb95991a4f2d269e4a6b3928a7c32050ea51",
-          "sri": "Sm2Y5O8VNvPp6YCYq013+508tf0XB8kBthnsdqLgy5WZGk8tJp5Kazkop8MgUOpR",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-cartouches-1.json"
+          "file": "elements-elements-cartouches-1.json.gz",
+          "bytes": 393493,
+          "sha384": "a7c61362392e6ce6d5f8c568a930349c571621a32fb963c33e166f4015fa86106e151f4d8cda9987240c151e1065530a",
+          "sri": "p8YTYjkubObV+MVoqTA0nFcWIaMvuWPDPhZvQBX6hhBuFR9NjNqZhyQMFR4QZVMK",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-cartouches-1.json.gz"
         },
         {
-          "file": "elements-elements-cartouches-2.json",
-          "bytes": 823293,
-          "sha384": "3af5a10366ff4df90a6338bba74ab85079d4bcbd24574a30d327621e4b36cb66d627e9579afbdfb116783c7df1f6b030",
-          "sri": "OvWhA2b/TfkKYzi7p0q4UHnUvL0kV0ow0ydiHks2y2bWJ+lXmvvfsRZ4PH3x9rAw",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-cartouches-2.json"
+          "file": "elements-elements-cartouches-2.json.gz",
+          "bytes": 302430,
+          "sha384": "8162872e19de2cc9540fa30d14bf83ee3f8331ba1f0862ab84cd00c9aaf17feed2660728c8e863d828786bc259af8bda",
+          "sri": "gWKHLhneLMlUD6MNFL+D7j+DMbofCGKrhM0Ayarxf+7SZgcoyOhj2Ch4a8JZr4va",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-cartouches-2.json.gz"
         },
         {
-          "file": "elements-elements-corners-1.json",
-          "bytes": 586467,
-          "sha384": "3589c46dfcc227573327d99870256c203cc45fcb06d11422e7a35c0672885bcbe1aa7ef048e70c42efe66683476ff4aa",
-          "sri": "NYnEbfzCJ1czJ9mYcCVsIDzEX8sG0RQi56NcBnKIW8vhqn7wSOcMQu/mZoNHb/Sq",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-corners-1.json"
+          "file": "elements-elements-corners-1.json.gz",
+          "bytes": 229423,
+          "sha384": "3a8e32cddaac20055b547dd47c376e51acdc39d0b82b06f811052440a1e0528daa6e8d3110feb9f7bf1960637509a7d5",
+          "sri": "Oo4yzdqsIAVbVH3UfDduUazcOdC4Kwb4EQUkQKHgUo2qbo0xEP65978ZYGN1CafV",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-corners-1.json.gz"
         },
         {
-          "file": "elements-elements-dividers-1.json",
-          "bytes": 1078720,
-          "sha384": "47909033d167c74803bd03369e79421c5b23b3912fe7560b84f5b29b3151aa25e5bbc1e9a5d8b0da62041c6c3f470894",
-          "sri": "R5CQM9Fnx0gDvQM2nnlCHFsjs5Ev51YLhPWymzFRqiXlu8Hppdiw2mIEHGw/RwiU",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-dividers-1.json"
+          "file": "elements-elements-dividers-1.json.gz",
+          "bytes": 396909,
+          "sha384": "397f2da63adea02e128dffb1511eb41aae2f902abe91d6c77218dc8a5e6efa5179aa64bf6d3659fd6c53ea2503cb71c1",
+          "sri": "OX8tpjreoC4Sjf+xUR60Gq4vkCq+kdbHchjcil5u+lF5qmS/bTZZ/WxT6iUDy3HB",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-dividers-1.json.gz"
         },
         {
-          "file": "elements-elements-dividers-2.json",
-          "bytes": 1092432,
-          "sha384": "50d32319c744010fee408b694a4cf34ac070c0bcedff0da9f73950e1ebec4ccda697b6fc1120343ca63f3fac34ed3bea",
-          "sri": "UNMjGcdEAQ/uQItpSkzzSsBwwLzt/w2p9zlQ4evsTM2ml7b8ESA0PKY/P6w07Tvq",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-dividers-2.json"
+          "file": "elements-elements-dividers-2.json.gz",
+          "bytes": 397279,
+          "sha384": "6ff9ef567d231031d638e1687dd1d274ab16586165c555c04f4d34deaece93a9f457284a156a9b70708a7cd7d7f52402",
+          "sri": "b/nvVn0jEDHWOOFofdHSdKsWWGFlxVXAT0003q7Ok6n0VyhKFWqbcHCKfNfX9SQC",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-dividers-2.json.gz"
         },
         {
-          "file": "elements-elements-dividers-3.json",
-          "bytes": 151717,
-          "sha384": "369a58d14500f06c0ddf7914b95bc8e62dfa9e7bb7f16cdfbd4a5a4df1352286dce2e745cd6e623ddc8714fb7d21c804",
-          "sri": "NppY0UUA8GwN33kUuVvI5i36nnu38WzfvUpaTfE1Iobc4udFzW5iPdyHFPt9IcgE",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-dividers-3.json"
+          "file": "elements-elements-dividers-3.json.gz",
+          "bytes": 58059,
+          "sha384": "e0932c36eadb5c02eecee9532929c4492faf808867449b11e18799185f6ab27ea7e7c477efa483b8c8f089759ba07a52",
+          "sri": "4JMsNurbXALuzulTKSnESS+vgIhnRJsR4YeZGF9qsn6n58R376SDuMjwiXWboHpS",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-dividers-3.json.gz"
         },
         {
-          "file": "elements-elements-flourishes-1.json",
-          "bytes": 229327,
-          "sha384": "877765890c52d6e775b56e54fe56bf5f3e20e55bc3e9944ca8e5be42b4b7cd6859439ec47d2cd8fc98c898cb3916bda7",
-          "sri": "h3dliQxS1ud1tW5U/la/Xz4g5VvD6ZRMqOW+QrS3zWhZQ57EfSzY/JjImMs5Fr2n",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-flourishes-1.json"
+          "file": "elements-elements-flourishes-1.json.gz",
+          "bytes": 88687,
+          "sha384": "5350bae58b8742d65fd870bd121f59d8e74de86360399f0bb1b939ed8649ff95ba2a04ab867b8d102e1d4e5904cada57",
+          "sri": "U1C65YuHQtZf2HC9Eh9Z2OdN6GNgOZ8Lsbk57YZJ/5W6KgSrhnuNEC4dTlkEytpX",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-flourishes-1.json.gz"
         },
         {
-          "file": "elements-elements-flowers-1.json",
-          "bytes": 134053,
-          "sha384": "599ac9a1eec61f789c142c76114df4844b82774091e5bf837e09ea5195c20c2d3e43ba408a2a11c25d6bdf8b4bb199a4",
-          "sri": "WZrJoe7GH3icFCx2EU30hEuCd0CR5b+DfgnqUZXCDC0+Q7pAiioRwl1r34tLsZmk",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-flowers-1.json"
+          "file": "elements-elements-flowers-1.json.gz",
+          "bytes": 54504,
+          "sha384": "08248133b171b6f1680130d2fe394c0212e631bbd3bb361803e9db936fb773e3067489fd1ac22e055d659a608ae5b5df",
+          "sri": "CCSBM7FxtvFoATDS/jlMAhLmMbvTuzYYA+nbk2+3c+MGdIn9GsIuBV1lmmCK5bXf",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-flowers-1.json.gz"
         },
         {
-          "file": "elements-elements-frames-1.json",
-          "bytes": 983023,
-          "sha384": "022bcc929c6bba83b58baa5d53e8b72bd6aae09ee6accaa432968e50435795c6e445879b41888a851452eaf6dbc5e004",
-          "sri": "AivMkpxruoO1i6pdU+i3K9aq4J7mrMqkMpaOUENXlcbkRYebQYiKhRRS6vbbxeAE",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-frames-1.json"
+          "file": "elements-elements-frames-1.json.gz",
+          "bytes": 358781,
+          "sha384": "ad1057e843608520d475aa9aa0f9b7b423920db0731c1f03ed84173eb4bf7e6cf442beba5dc6d9aca994afee95338924",
+          "sri": "rRBX6ENghSDUdaqaoPm3tCOSDbBzHB8D7YQXPrS/fmz0Qr66XcbZrKmUr+6VM4kk",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-frames-1.json.gz"
         },
         {
-          "file": "elements-elements-frames-10.json",
-          "bytes": 1122060,
-          "sha384": "eb91bbd08414c75425ad906dcbfae4fd60f3b4ed33139acaf6e79d88985776b233afc97e2ecf5a54d98400a0866b4a1a",
-          "sri": "65G70IQUx1QlrZBty/rk/WDztO0zE5rK9uediJhXdrIzr8l+Ls9aVNmEAKCGa0oa",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-frames-10.json"
+          "file": "elements-elements-frames-10.json.gz",
+          "bytes": 394361,
+          "sha384": "c6e0c7913911bd224c9ccc6b7c05ee2a2b72e106d2eac5d2e290b54c0198fd3446f19d4d840dfb494320c188e614682a",
+          "sri": "xuDHkTkRvSJMnMxrfAXuKity4QbS6sXS4pC1TAGY/TRG8Z1NhA37SUMgwYjmFGgq",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-frames-10.json.gz"
         },
         {
-          "file": "elements-elements-frames-11.json",
-          "bytes": 1072995,
-          "sha384": "cdd9fe7d3892a3476eff5f201684c09f011595aa6b43b58c89203e11492dbe31c37ee627fbeb949252e48492e8e98948",
-          "sri": "zdn+fTiSo0du/18gFoTAnwEVlaprQ7WMiSA+EUktvjHDfuYn++uUklLkhJLo6YlI",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-frames-11.json"
+          "file": "elements-elements-frames-11.json.gz",
+          "bytes": 374791,
+          "sha384": "fd61ed68595b246c482cb418afa53300648ef965d584c33dc19f4c393d8ab1112fa288910c6e944879743d6311edb6ed",
+          "sri": "/WHtaFlbJGxILLQYr6UzAGSO+WXVhMM9wZ9MOT2KsREvooiRDG6USHl0PWMR7bbt",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-frames-11.json.gz"
         },
         {
-          "file": "elements-elements-frames-12.json",
-          "bytes": 1057797,
-          "sha384": "92f597e45765f781478344ab79ebfc05968a5141b249d7a26ef4c95992fa99ed741ae64a020f482a56e316af345c7a7c",
-          "sri": "kvWX5Fdl94FHg0Sreev8BZaKUUGySdeibvTJWZL6me10GuZKAg9IKlbjFq80XHp8",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-frames-12.json"
+          "file": "elements-elements-frames-12.json.gz",
+          "bytes": 384571,
+          "sha384": "8ca25bf1699c40699c3a8082e108c2b4fa7a9f32e78cc1cf6fd81167feb20b5c9896da4efb086abf02c506c2ac01206e",
+          "sri": "jKJb8WmcQGmcOoCC4QjCtPp6nzLnjMHPb9gRZ/6yC1yYltpO+whqvwLFBsKsASBu",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-frames-12.json.gz"
         },
         {
-          "file": "elements-elements-frames-13.json",
-          "bytes": 1064633,
-          "sha384": "43f6a6f2b6b27f3932cf356f2bfcad4d2350b2ab722806d3a14ee0644320c1d29f6781678c8d6050be58e46f7f389370",
-          "sri": "Q/am8rayfzkyzzVvK/ytTSNQsqtyKAbToU7gZEMgwdKfZ4FnjI1gUL5Y5G9/OJNw",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-frames-13.json"
+          "file": "elements-elements-frames-13.json.gz",
+          "bytes": 396811,
+          "sha384": "2e5e123c0326c6b41f9e00b4406dd5639045ced418fe2946c59d283cb574771d85a88edd6289288dca63a10136922357",
+          "sri": "Ll4SPAMmxrQfngC0QG3VY5BFztQY/ilGxZ0oPLV0dx2FqI7dYokojcpjoQE2kiNX",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-frames-13.json.gz"
         },
         {
-          "file": "elements-elements-frames-14.json",
-          "bytes": 1087458,
-          "sha384": "c2c6a4a3ad44566abaec78f7aa26b416519d4930e171dcd69c162b1496c9636a1b95166bdae20a842819ef96b81387be",
-          "sri": "wsako61EVmq67Hj3qia0FlGdSTDhcdzWnBYrFJbJY2oblRZr2uIKhCgZ75a4E4e+",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-frames-14.json"
+          "file": "elements-elements-frames-14.json.gz",
+          "bytes": 394546,
+          "sha384": "971e5f91649faf0687e82d0b7ddd9dbbbcc8cc8fa583ceb03e8006fdda2c1dbe80d5446602455adb7dfe6f1769a203a0",
+          "sri": "lx5fkWSfrwaH6C0Lfd2du7zIzI+lg86wPoAG/dosHb6A1URmAkVa233+bxdpogOg",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-frames-14.json.gz"
         },
         {
-          "file": "elements-elements-frames-15.json",
-          "bytes": 192328,
-          "sha384": "8e11f34b75c51c8700a32ef904e7b9d5ae9c1627bd27c6177be1ea9033791896dfc427d0b53a7234d26c9dc7feab3db6",
-          "sri": "jhHzS3XFHIcAoy75BOe51a6cFie9J8YXe+HqkDN5GJbfxCfQtTpyNNJsncf+qz22",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-frames-15.json"
+          "file": "elements-elements-frames-15.json.gz",
+          "bytes": 74864,
+          "sha384": "9f45b98beea36f79608e79b6acc93dfa0a1b3ada2e5198fb429bf1d8c9ec08132eb260e4e8fd311660c1d59b0ea4e20b",
+          "sri": "n0W5i+6jb3lgjnm2rMk9+gobOtouUZj7Qpvx2MnsCBMusmDk6P0xFmDB1ZsOpOIL",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-frames-15.json.gz"
         },
         {
-          "file": "elements-elements-frames-2.json",
-          "bytes": 1118109,
-          "sha384": "99dbf735850bba477fb645a697e114d7a5f224c2f49a8ae54a341080be2d88d2b863942eb040b4820451727294c7c225",
-          "sri": "mdv3NYULukd/tkWml+EU16XyJML0morlSjQQgL4tiNK4Y5QusEC0ggRRcnKUx8Il",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-frames-2.json"
+          "file": "elements-elements-frames-2.json.gz",
+          "bytes": 393683,
+          "sha384": "7f46fa9f67cf77b85f2263ead1b4efb20e4f73b394c9673e7677717cbd586ac33c35f66a089bc242516b3dcf91092756",
+          "sri": "f0b6n2fPd7hfImPq0bTvsg5Pc7OUyWc+dndxfL1YasM8NfZqCJvCQlFrPc+RCSdW",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-frames-2.json.gz"
         },
         {
-          "file": "elements-elements-frames-3.json",
-          "bytes": 1057158,
-          "sha384": "c21e223f6517b64542264b9cff5a165d69651b90e6ec3d34bb581d2b0cb90209c1910ab0bae919d15d7a80d5657c4fbf",
-          "sri": "wh4iP2UXtkVCJkuc/1oWXWllG5Dm7D00u1gdKwy5AgnBkQqwuukZ0V16gNVlfE+/",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-frames-3.json"
+          "file": "elements-elements-frames-3.json.gz",
+          "bytes": 391909,
+          "sha384": "79a8cafc72a6379278c147a4fac44b43ac792b4c9fdd7ef8dca172c5579f1fbfec221a20803deb0ecd8a840e08caba97",
+          "sri": "eajK/HKmN5J4wUek+sRLQ6x5K0yf3X743KFyxVefH7/sIhoggD3rDs2KhA4IyrqX",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-frames-3.json.gz"
         },
         {
-          "file": "elements-elements-frames-4.json",
-          "bytes": 1109312,
-          "sha384": "50c2eba68c93ff5843a0ce0b0fa1ecbf3565859db4f8fe5670427aac349939ba745740ba5a7093df8d4ba6b7c81095db",
-          "sri": "UMLrpoyT/1hDoM4LD6HsvzVlhZ20+P5WcEJ6rDSZObp0V0C6WnCT341LprfIEJXb",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-frames-4.json"
+          "file": "elements-elements-frames-4.json.gz",
+          "bytes": 392864,
+          "sha384": "74c89c5d46357fb27990387a736fa87bce560fcb2173634ec0d555347f915ac40ee8cb604928e19bd0b88c1e7d31bb9c",
+          "sri": "dMicXUY1f7J5kDh6c2+oe85WD8shc2NOwNVVNH+RWsQO6MtgSSjhm9C4jB59Mbuc",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-frames-4.json.gz"
         },
         {
-          "file": "elements-elements-frames-5.json",
-          "bytes": 1094779,
-          "sha384": "53a9cd8e29cf668c1eed2230c32a3d7c5aac6b14457e0cdd52b5f433f63738da7d14393ed6faa0847b93fc9f018426c0",
-          "sri": "U6nNjinPZowe7SIwwyo9fFqsaxRFfgzdUrX0M/Y3ONp9FDk+1vqghHuT/J8BhCbA",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-frames-5.json"
+          "file": "elements-elements-frames-5.json.gz",
+          "bytes": 393809,
+          "sha384": "9852daeeab0c878bbea81d43705d48474ae82abd2faa24903fcf84bbca8524d4ff5c888ffa1b3d88a77a072543df091a",
+          "sri": "mFLa7qsMh4u+qB1DcF1IR0roKr0vqiSQP8+Eu8qFJNT/XIiP+hs9iKd6ByVD3wka",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-frames-5.json.gz"
         },
         {
-          "file": "elements-elements-frames-6.json",
-          "bytes": 1062166,
-          "sha384": "acb25aff34dab28a27f626e200eee81ed127f071f9cec9987673082c588ee4a920b1a2fe6a01b4571ce08803717ca2b9",
-          "sri": "rLJa/zTasoon9ibiAO7oHtEn8HH5zsmYdnMILFiO5KkgsaL+agG0VxzgiANxfKK5",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-frames-6.json"
+          "file": "elements-elements-frames-6.json.gz",
+          "bytes": 390849,
+          "sha384": "c2c6161d5ab54e98ee6c31f243774995db9977d630fb3e0b70d4879cc51c612c8df7f1bac77ddc4d0f7f3db3ee0cda80",
+          "sri": "wsYWHVq1TpjubDHyQ3dJlduZd9Yw+z4LcNSHnMUcYSyN9/G6x33cTQ9/PbPuDNqA",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-frames-6.json.gz"
         },
         {
-          "file": "elements-elements-frames-7.json",
-          "bytes": 1172382,
-          "sha384": "04bed1e56520e2f846224a185359dcf05c0f0b0a33bdfc3e22d0b44d4b622d75013062edb850c706600458a31914667e",
-          "sri": "BL7R5WUg4vhGIkoYU1nc8FwPCwozvfw+ItC0TUtiLXUBMGLtuFDHBmAEWKMZFGZ+",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-frames-7.json"
+          "file": "elements-elements-frames-7.json.gz",
+          "bytes": 394921,
+          "sha384": "4aa62d100aa3d96cb18ead36b9916cd0d5849925140b24ea9313cbc4415a634344f58643a5135e33a448229b6190f390",
+          "sri": "SqYtEAqj2Wyxjq02uZFs0NWEmSUUCyTqkxPLxEFaY0NE9YZDpRNeM6RIIpthkPOQ",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-frames-7.json.gz"
         },
         {
-          "file": "elements-elements-frames-8.json",
-          "bytes": 1086875,
-          "sha384": "5414391159054b78e84c9ba53471a397ad8b620798fe56a4dc1d78dea1b6851200dbd73b245b8630c3708006f5d188f0",
-          "sri": "VBQ5EVkFS3joTJulNHGjl62LYgeY/lak3B143qG2hRIA29c7JFuGMMNwgAb10Yjw",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-frames-8.json"
+          "file": "elements-elements-frames-8.json.gz",
+          "bytes": 396082,
+          "sha384": "7fc8e586d5e23cc48c5398ad6a2fe5c96f8faf6063d14b0649c5e5c968c0a1be8e625db518d06892fea5d7e5d19c2fcf",
+          "sri": "f8jlhtXiPMSMU5itai/lyW+Pr2Bj0UsGScXlyWjAob6OYl21GNBokv6l1+XRnC/P",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-frames-8.json.gz"
         },
         {
-          "file": "elements-elements-frames-9.json",
-          "bytes": 1047090,
-          "sha384": "2187278784668fd7c0da72de03d1a6e2a013ad2cc77aae753946ab28e6174ae2f6b60e710ebb90fd9db513d181d23ef9",
-          "sri": "IYcnh4Rmj9fA2nLeA9Gm4qATrSzHeq51OUarKOYXSuL2tg5xDruQ/Z21E9GB0j75",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-frames-9.json"
+          "file": "elements-elements-frames-9.json.gz",
+          "bytes": 330057,
+          "sha384": "7e7b7a5111f4444e7f2a0e3e1ae44acb8d68c30adf788fe716199942fbf4bcc1b07c1a419b035f65f5e757e5eb4daf62",
+          "sri": "fnt6URH0RE5/Kg4+GuRKy41owwrfeI/nFhmZQvv0vMGwfBpBmwNfZfXnV+XrTa9i",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-frames-9.json.gz"
         },
         {
-          "file": "elements-elements-initials-1.json",
-          "bytes": 62928,
-          "sha384": "3ff47cf38523ec224f3a348e85b22877533f28d33feeddc3d8a379fb29381d1e8009d931abf0bc90fdd4be56ec9db228",
-          "sri": "P/R884Uj7CJPOjSOhbIod1M/KNM/7t3D2KN5+yk4HR6ACdkxq/C8kP3UvlbsnbIo",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-initials-1.json"
+          "file": "elements-elements-initials-1.json.gz",
+          "bytes": 23531,
+          "sha384": "cc9c0845ec0c38fb1590c6a9f1a6c2b2600bc02ac2e6ba84e9ea46ae4b86633ea6bceb8d25a83a492ab94914f6ba78fb",
+          "sri": "zJwIRewMOPsVkMap8abCsmALwCrC5rqE6epGrkuGYz6mvOuNJag6SSq5SRT2unj7",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-initials-1.json.gz"
         },
         {
-          "file": "elements-elements-lettering-1.json",
-          "bytes": 178064,
-          "sha384": "3837ff075749fa2322860de649d16c0047b2b2e9872d5439ef7b14a643b55e26c4a9c9493e896a0a0c42e72deccfbd52",
-          "sri": "ODf/B1dJ+iMihg3mSdFsAEeysumHLVQ573sUpkO1XibEqclJPolqCgxC5y3sz71S",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-lettering-1.json"
+          "file": "elements-elements-lettering-1.json.gz",
+          "bytes": 73848,
+          "sha384": "be9384b4234fcdba922e7de94d6d8660879f0d4227d7189f8c5465d35a717f8c8556ea88f5a2df160865242d6dd769eb",
+          "sri": "vpOEtCNPzbqSLn3pTW2GYIefDUIn1xifjFRl01pxf4yFVuqI9aLfFghlJC1t12nr",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-lettering-1.json.gz"
         },
         {
-          "file": "elements-elements-ornaments-1.json",
-          "bytes": 1020879,
-          "sha384": "0e63ffa14bfc0a6eb78f007557e83ef20e457e7208fa7f9517ecebee396b4dea317f9eab72445f8fdffeae32763b1f10",
-          "sri": "DmP/oUv8Cm63jwB1V+g+8g5FfnII+n+VF+zr7jlrTeoxf56rckRfj9/+rjJ2Ox8Q",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-ornaments-1.json"
+          "file": "elements-elements-ornaments-1.json.gz",
+          "bytes": 389608,
+          "sha384": "ff3f6376f0932b3e517ce31d4aa5b45d702f94dbfef0c9809553d74b8c6524a5a66b25ad13ca5ebd7091302dd2dfaf35",
+          "sri": "/z9jdvCTKz5RfOMdSqW0XXAvlNv+8MmAlVPXS4xlJKWmayWtE8pevXCRMC3S3681",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-ornaments-1.json.gz"
         },
         {
-          "file": "elements-elements-ornaments-2.json",
-          "bytes": 1019508,
-          "sha384": "59734f354b698b1df8abfe741500db58c41aa3fa6ecdd7d8c766f2689c94022378e3b4f31e82973d785619673c9bb7a6",
-          "sri": "WXNPNUtpix34q/50FQDbWMQao/puzdfYx2byaJyUAiN447TzHoKXPXhWGWc8m7em",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-ornaments-2.json"
+          "file": "elements-elements-ornaments-2.json.gz",
+          "bytes": 394420,
+          "sha384": "737c380f53f78bb2ee77858d0894f1d705a2a70f456d014c54138365176d2a07f4d4c8b25282ee972b321facf8141269",
+          "sri": "c3w4D1P3i7Lud4WNCJTx1wWipw9FbQFMVBODZRdtKgf01MiyUoLulysyH6z4FBJp",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-ornaments-2.json.gz"
         },
         {
-          "file": "elements-elements-ornaments-3.json",
-          "bytes": 1008059,
-          "sha384": "6697e9242953e9d9936c8ea480b48d5bc072279d2b9e3cdebca50495b1a4881b4d2e34f66c438fa0af03ec6a547f7776",
-          "sri": "ZpfpJClT6dmTbI6kgLSNW8ByJ50rnjzevKUElbGkiBtNLjT2bEOPoK8D7GpUf3d2",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-ornaments-3.json"
+          "file": "elements-elements-ornaments-3.json.gz",
+          "bytes": 396895,
+          "sha384": "1d072a11b252454f41690560f06b25771720dcad61734b37df768fa1fe043b6a6f2ca4d52bf91997125335cb05358fdd",
+          "sri": "HQcqEbJSRU9BaQVg8Gsldxcg3K1hc0s333aPof4EO2pvLKTVK/kZlxJTNcsFNY/d",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-ornaments-3.json.gz"
         },
         {
-          "file": "elements-elements-ornaments-4.json",
-          "bytes": 1054001,
-          "sha384": "3c62397c9c265c4bd170e3b699719d75f98616c976fed78f1b8ecb5ee6a9b5e8f8aab372a56f56a31d691753860f1cd8",
-          "sri": "PGI5fJwmXEvRcOO2mXGddfmGFsl2/tePG47LXuaptej4qrNypW9Wox1pF1OGDxzY",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-ornaments-4.json"
+          "file": "elements-elements-ornaments-4.json.gz",
+          "bytes": 392954,
+          "sha384": "e849e43c761633b60db4e90ebdfaf8b0c632b45242c577eb91f9d815bf09ae6007ea9fa3b700366b991aa87203a9b79a",
+          "sri": "6EnkPHYWM7YNtOkOvfr4sMYytFJCxXfrkfnYFb8JrmAH6p+jtwA2a5kaqHIDqbea",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-ornaments-4.json.gz"
         },
         {
-          "file": "elements-elements-ornaments-5.json",
-          "bytes": 394164,
-          "sha384": "e7d84856d7c7df85a2d8a45edcd60eded59b9a2315610846e1b7f705f3299755042f19fd9f09ae9b42c1a15171d6b3bc",
-          "sri": "59hIVtfH34Wi2KRe3NYO3tWbmiMVYQhG4bf3BfMpl1UELxn9nwmum0LBoVFx1rO8",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-ornaments-5.json"
+          "file": "elements-elements-ornaments-5.json.gz",
+          "bytes": 143178,
+          "sha384": "860f2bc0a3d07e8a80104c741272e0bfc36384c867265e49089d9d0c93b317626f3111236cb5d25fc6d80a21a7206a89",
+          "sri": "hg8rwKPQfoqAEEx0EnLgv8NjhMhnJl5JCJ2dDJOzF2JvMREjbLXSX8bYCiGnIGqJ",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-ornaments-5.json.gz"
         },
         {
-          "file": "elements-elements-panels-1.json",
-          "bytes": 1057888,
-          "sha384": "1589c1fb08752305776effec8ecd24a8051f10d501e9f6239f751ba2b7b9e6bb47ede1a093e3a3aeba5f42fb899e7b05",
-          "sri": "FYnB+wh1IwV3bv/sjs0kqAUfENUB6fYjn3Ubore55rtH7eGgk+OjrrpfQvuJnnsF",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-panels-1.json"
+          "file": "elements-elements-panels-1.json.gz",
+          "bytes": 304584,
+          "sha384": "853731b7002279c299440ea1ea706a4509de06527992d766a44727071d212d8086bb3e71cd49d9d2cae2e09fa059c080",
+          "sri": "hTcxtwAiecKZRA6h6nBqRQneBlJ5ktdmpEcnBx0hLYCGuz5xzUnZ0sri4J+gWcCA",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-panels-1.json.gz"
         },
         {
-          "file": "elements-elements-panels-2.json",
-          "bytes": 1168008,
-          "sha384": "760486239b3f72a5c9e2b6252ade6a320b82707237f37195c4c616d9a0941d1d9611283b3b9f0974ebbdc1d90f4a491a",
-          "sri": "dgSGI5s/cqXJ4rYlKt5qMguCcHI383GVxMYW2aCUHR2WESg7O58JdOu9wdkPSkka",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-panels-2.json"
+          "file": "elements-elements-panels-2.json.gz",
+          "bytes": 294365,
+          "sha384": "d4d635900cd6039bac4669269f209d5672cc520aa643d50ba35c2923c9f5b771014877b3287e232006efb7bb772df5a5",
+          "sri": "1NY1kAzWA5usRmkmnyCdVnLMUgqmQ9ULo1wpI8n1t3EBSHezKH4jIAbvt7t3LfWl",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-panels-2.json.gz"
         },
         {
-          "file": "elements-elements-panels-3.json",
-          "bytes": 101148,
-          "sha384": "544bf729877cddda9ac8c3b951eefde09841fe71a1ccd3cb3356bdad341584ca029397981358034d01227f21416c6473",
-          "sri": "VEv3KYd83dqayMO5Ue794JhB/nGhzNPLM1a9rTQVhMoCk5eYE1gDTQEifyFBbGRz",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-panels-3.json"
+          "file": "elements-elements-panels-3.json.gz",
+          "bytes": 184843,
+          "sha384": "77d992abe8b539085c883e62364e8a2e33b86b637f5c6ef730c488a7085abcb31664c1922e5f44e257e0937b34802b80",
+          "sri": "d9mSq+i1OQhciD5iNk6KLjO4a2N/XG73MMSIpwhavLMWZMGSLl9E4lfgk3s0gCuA",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-panels-3.json.gz"
         },
         {
-          "file": "elements-elements-patterns-1.json",
-          "bytes": 984186,
-          "sha384": "7861d2a7cdbb08506b21012ff8c52f7bd85c61d26dda52b8c3fd8609cb633e64e7738f0060326ed3b2f45b14a5f9afae",
-          "sri": "eGHSp827CFBrIQEv+MUve9hcYdJt2lK4w/2GCctjPmTnc48AYDJu07L0WxSl+a+u",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-patterns-1.json"
+          "file": "elements-elements-patterns-1.json.gz",
+          "bytes": 168318,
+          "sha384": "9a3ee04a3ea8bd9b96d049f1d6188a761e9cef0e9f9fdc083c47b185d09e579922f1255d9bcbe7b333ef806381eeb8d3",
+          "sri": "mj7gSj6ovZuW0Enx1hiKdh6c7w6fn9wIPEexhdCeV5ki8SVdm8vnszPvgGOB7rjT",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-patterns-1.json.gz"
         },
         {
-          "file": "elements-elements-patterns-2.json",
-          "bytes": 898704,
-          "sha384": "e1a8db29e889f49ad0b9c0470a3f51af7725460ffa45ce9c35e825da9644856ea30d46ee1f7d3facadc661b1ee552850",
-          "sri": "4ajbKeiJ9JrQucBHCj9Rr3clRg/6Rc6cNegl2pZEhW6jDUbuH30/rK3GYbHuVShQ",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-patterns-2.json"
+          "file": "elements-elements-patterns-2.json.gz",
+          "bytes": 394169,
+          "sha384": "3b6da123df6aab9c4cd74a6f7a0f83243951600a4cc6cf2e58d9942fe4f1bd2522b81f16fb574aedae03b1d016617189",
+          "sri": "O22hI99qq5xM10pveg+DJDlRYApMxs8uWNmUL+TxvSUiuB8W+1dK7a4DsdAWYXGJ",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-patterns-2.json.gz"
         },
         {
-          "file": "elements-elements-patterns-3.json",
-          "bytes": 511333,
-          "sha384": "5f651a2c10bb0832e1d4a3c4c9a8805848df8511a1416f2b8ea16748c99033d0a1500d5bb678bda7e01cbcaf5a0c9963",
-          "sri": "X2UaLBC7CDLh1KPEyaiAWEjfhRGhQW8rjqFnSMmQM9ChUA1btni9p+AcvK9aDJlj",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-patterns-3.json"
+          "file": "elements-elements-patterns-3.json.gz",
+          "bytes": 293435,
+          "sha384": "c8cd6ff7725e9132ce67c0f4fa8a78576ef077038eb82e56a087f095160ddacc1292a61504cac66912171e641dabe432",
+          "sri": "yM1v93JekTLOZ8D0+op4V27wdwOOuC5WoIfwlRYN2swSkqYVBMrGaRIXHmQdq+Qy",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-patterns-3.json.gz"
         },
         {
-          "file": "elements-elements-rosettes-1.json",
-          "bytes": 347495,
-          "sha384": "e97d26b986e840fe8eb624f2085b138895c73fc3171046dcbb78da2d6099ac52340bb7eead3f6276a941e10c93a2c028",
-          "sri": "6X0muYboQP6OtiTyCFsTiJXHP8MXEEbcu3jaLWCZrFI0C7furT9idqlB4QyTosAo",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-rosettes-1.json"
+          "file": "elements-elements-rosettes-1.json.gz",
+          "bytes": 133924,
+          "sha384": "58fce21f2e415fdeb88e74b9bbc02d7c53005b4cbb665e978c4c59be044346da27bdfd516f93801084af4e9184c36df7",
+          "sri": "WPziHy5BX964jnS5u8AtfFMAW0y7Zl6XjExZvgRDRtonvf1Rb5OAEISvTpGEw233",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-rosettes-1.json.gz"
         },
         {
-          "file": "elements-elements-tailpieces-1.json",
-          "bytes": 1035639,
-          "sha384": "b5bd687fc09a96043f26c22160c153e1bcf46af66b1da869d9caa3b9432fa73dcd3bb3133b817e5c6413442c6ad5a5c6",
-          "sri": "tb1of8CalgQ/JsIhYMFT4bz0avZrHahp2cqjuUMvpz3NO7MTO4F+XGQTRCxq1aXG",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-tailpieces-1.json"
+          "file": "elements-elements-tailpieces-1.json.gz",
+          "bytes": 394016,
+          "sha384": "6792055c925c551394d2748fd5ad31d887d0a44ae5faf3dbdbb280c28bbef0419688204f4c047a9a95fb33feb03479f2",
+          "sri": "Z5IFXJJcVROU0nSP1a0x2IfQpErl+vPb27KAwou+8EGWiCBPTAR6mpX7M/6wNHny",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-tailpieces-1.json.gz"
         },
         {
-          "file": "elements-elements-tailpieces-2.json",
-          "bytes": 998487,
-          "sha384": "e09f833212d801a7e9e4213eac002fe18bc742a16ae04eca7bbadcab1f95a5397451c44ada7419d7e40b3f7939f14604",
-          "sri": "4J+DMhLYAafp5CE+rAAv4YvHQqFq4E7Ke7rcqx+VpTl0UcRK2nQZ1+QLP3k58UYE",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-tailpieces-2.json"
+          "file": "elements-elements-tailpieces-2.json.gz",
+          "bytes": 389041,
+          "sha384": "d17ad1825a68599bbd5a222989d96accbe583a7b2591dc89bf631ad73e45ee48975ed0260f79b645824edf70af867fa3",
+          "sri": "0XrRglpoWZu9WiIpidlqzL5YOnslkdyJv2Ma1z5F7kiXXtAmD3m2RYJO33Cvhn+j",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-tailpieces-2.json.gz"
         },
         {
-          "file": "elements-elements-vignettes-1.json",
-          "bytes": 899786,
-          "sha384": "ffb58abf691a7208da4f48bc4867d0784f9feaf6926d6852042ada604476e80f16862da0980cc948932e46f66409a820",
-          "sri": "/7WKv2kacgjaT0i8SGfQeE+f6vaSbWhSBCraYER26A8Whi2gmAzJSJMuRvZkCagg",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/elements/elements-vignettes-1.json"
+          "file": "elements-elements-vignettes-1.json.gz",
+          "bytes": 346165,
+          "sha384": "cbbd4e25d24fc9de5a08a86f0b8ddf90ed15422390a98b83423cc983ce2228fe548b723d530a111d858d4a5ac510a324",
+          "sri": "y71OJdJPyd5aCKhvC43fkO0VQiOQqYuDQjzJg84iKP5Ui3I9UwoRHYWNSlrFEKMk",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/elements/elements-vignettes-1.json.gz"
         }
       ]
     },
@@ -2544,221 +2544,221 @@
       ],
       "files": [
         {
-          "file": "lettersets-andrade.json",
-          "bytes": 213018,
-          "sha384": "c2b13e89bfaa63c763e15110fd8cdef67f0d379d505b26bb1ea23778dc36386afa1c9299e69c53c42cd95e9bebb96015",
-          "sri": "wrE+ib+qY8dj4VEQ/Yze9n8NN51QWya7HqI3eNw2OGr6HJKZ5pxTxCzZXpvruWAV",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/andrade.json"
+          "file": "lettersets-andrade.json.gz",
+          "bytes": 90195,
+          "sha384": "ca2897e8e5fa3b9f9823a44b97327a021d1e2882c1dfd587340e35fe79d171df9a324b8fda1609cb8426155a0425fb83",
+          "sri": "yiiX6OX6O5+YI6RLlzJ6Ah0eKILB39WHNA41/nnRcd+aMkuP2hYJy4QmFVoEJfuD",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/andrade.json.gz"
         },
         {
-          "file": "lettersets-arabesque-16th.json",
-          "bytes": 158128,
-          "sha384": "bd49b4374d108b6c3ca90c0c296c5c17d227fd153f917b0946efa2b72b18d30c8b7299fe423d17d284778ae5415c7842",
-          "sri": "vUm0N00Qi2w8qQwMKWxcF9In/RU/kXsJRu+itysY0wyLcpn+Qj0X0oR3iuVBXHhC",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/arabesque-16th.json"
+          "file": "lettersets-arabesque-16th.json.gz",
+          "bytes": 60648,
+          "sha384": "4eda0064696a72a34e7eeebc5f5785a93a2cdc1a7513b09d8e5282445cc92d61214c9cd648c69a1d62651e717df75436",
+          "sri": "TtoAZGlqcqNOfu68X1eFqTos3Bp1E7CdjlKCRFzJLWEhTJzWSMaaHWJlHnF991Q2",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/arabesque-16th.json.gz"
         },
         {
-          "file": "lettersets-arabesque.json",
-          "bytes": 136035,
-          "sha384": "671db3d9b1290f854d90871c2de8dc518ebc7aa005ada3c437b86ab2a91c56a1ce286bec48ca9b2cb8975e496f648365",
-          "sri": "Zx2z2bEpD4VNkIccLejcUY68eqAFraPEN7hqsqkcVqHOKGvsSMqbLLiXXklvZINl",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/arabesque.json"
+          "file": "lettersets-arabesque.json.gz",
+          "bytes": 59602,
+          "sha384": "36a835bd8248563d50b6005b323d33a45dc3366f09a3c08f4b18c7cd8c4a7beb9585460aba1b60e6f94bc945baaa0906",
+          "sri": "Nqg1vYJIVj1QtgBbMj0zpF3DNm8Jo8CPSxjHzYxKe+uVhUYKuhtg5vlLyUW6qgkG",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/arabesque.json.gz"
         },
         {
-          "file": "lettersets-behrens-1908.json",
-          "bytes": 154340,
-          "sha384": "b789efa85c6ac08cb9d1d36fb2f7e6c27c735979e6b4d78247f8b61b8745104c95ed013a65366775e25a4ebe6f8ea742",
-          "sri": "t4nvqFxqwIy50dNvsvfmwnxzWXnmtNeCR/i2G4dFEEyV7QE6ZTZndeJaTr5vjqdC",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/behrens-1908.json"
+          "file": "lettersets-behrens-1908.json.gz",
+          "bytes": 67497,
+          "sha384": "3d396750be57ce7d413714dc0669536466496a27a63a69ca2a0012687b9b1078aa60714981e7abcf035a6df7ce8e0967",
+          "sri": "PTlnUL5Xzn1BNxTcBmlTZGZJaiemOmnKKgASaHubEHiqYHFJgeerzwNabffOjgln",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/behrens-1908.json.gz"
         },
         {
-          "file": "lettersets-english-15th.json",
-          "bytes": 60296,
-          "sha384": "4b6b3d59b86cf9a4b10a4b8c7a3748c528383b237fbdf867ee633ff12193c12e781c3fef15575c205441bb721df5637f",
-          "sri": "S2s9Wbhs+aSxCkuMejdIxSg4OyN/vfhn7mM/8SGTwS54HD/vFVdcIFRBu3Id9WN/",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/english-15th.json"
+          "file": "lettersets-english-15th.json.gz",
+          "bytes": 25313,
+          "sha384": "e56964a304c4582edd0b069b64ea131c9263e7c2acde16170d886e6162b466dfeed92107d1a501a9054369289956209e",
+          "sri": "5WlkowTEWC7dCwabZOoTHJJj58Ks3hYXDYhuYWK0Zt/u2SEH0aUBqQVDaSiZViCe",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/english-15th.json.gz"
         },
         {
-          "file": "lettersets-english-decorative.json",
-          "bytes": 158832,
-          "sha384": "0732e3d3df0e47136e166fc4814c1f57ffe3a071409a818520f62cf7369bb74f1bfa9a246adc2e9c4b0ee3dde6dba0cb",
-          "sri": "BzLj098ORxNuFm/EgUwfV//joHFAmoGFIPYs9zabt08b+pokatwunEsO493m26DL",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/english-decorative.json"
+          "file": "lettersets-english-decorative.json.gz",
+          "bytes": 68944,
+          "sha384": "e066d2c2d1cd3b880a9f0141a09322a990353f0a752003bfe28219ef57a5719f50e128756821dc5008e501d149f29884",
+          "sri": "4GbSwtHNO4gKnwFBoJMiqZA1Pwp1IAO/4oIZ71elcZ9Q4Sh1aCHcUAjlAdFJ8piE",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/english-decorative.json.gz"
         },
         {
-          "file": "lettersets-field.json",
-          "bytes": 96902,
-          "sha384": "545b0213fef34ba2a4abf116d7fecd7d81d51a85573549b4a561ddb499b35f085680958148a84d1ee534383b8609aaf4",
-          "sri": "VFsCE/7zS6Kkq/EW1/7NfYHVGoVXNUm0pWHdtJmzXwhWgJWBSKhNHuU0ODuGCar0",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/field.json"
+          "file": "lettersets-field.json.gz",
+          "bytes": 43483,
+          "sha384": "711685d550a8f823463918f52846068759904537622f7c626ec22b217c63da378f5a892b27f5381075229d886463a5b8",
+          "sri": "cRaF1VCo+CNGORj1KEYGh1mQRTdiL3xibsIrIXxj2jePWokrJ/U4EHUinYhkY6W4",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/field.json.gz"
         },
         {
-          "file": "lettersets-gothic-1880.json",
-          "bytes": 157147,
-          "sha384": "90a1f67165c47b44e5c44fe7aaf420be032e7129f84ca756b9797f94c0e7bda4f5dd2d96dc03eeadba0e47e7a12f616c",
-          "sri": "kKH2cWXEe0TlxE/nqvQgvgMucSn4TKdWuXl/lMDnvaT13S2W3APurboOR+ehL2Fs",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/gothic-1880.json"
+          "file": "lettersets-gothic-1880.json.gz",
+          "bytes": 68318,
+          "sha384": "bf4872499230151aaf501161bdfdbc63722d8fa1f9c5345dbd6162fe3b7263a771a82143b6a2ad2d9e736babf5a5caae",
+          "sri": "v0hySZIwFRqvUBFhvf28Y3Itj6H5xTRdvWFi/jtyY6dxqCFDtqKtLZ5za6v1pcqu",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/gothic-1880.json.gz"
         },
         {
-          "file": "lettersets-gothic.json",
-          "bytes": 133989,
-          "sha384": "d59e1355695408114c6e892238ebf46c7fa4a6fe5445bd195dc29589abd6e00cd700f1c91d8530a6d9296ed7b09911ee",
-          "sri": "1Z4TVWlUCBFMbokiOOv0bH+kpv5URb0ZXcKViavW4AzXAPHJHYUwptkpbtewmRHu",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/gothic.json"
+          "file": "lettersets-gothic.json.gz",
+          "bytes": 53112,
+          "sha384": "c84f8c0e16c788ddec585f4b725e0f2061ae61e9743f65042e9a49d20c781c58572e6f6ef1bd0ffb2d547a5703c4db51",
+          "sri": "yE+MDhbHiN3sWF9Lcl4PIGGuYel0P2UELppJ0gx4HFhXLm9u8b0P+y1UelcDxNtR",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/gothic.json.gz"
         },
         {
-          "file": "lettersets-illuminated-1490.json",
-          "bytes": 150674,
-          "sha384": "8a9f1146447e975f6ef6b6bbe2195adf04134dbadb6df6b574344493251855b826a58ff76990408e7087569d9008245d",
-          "sri": "ip8RRkR+l19u9ra74hla3wQTTbrbbfa1dDREkyUYVbgmpY/3aZBAjnCHVp2QCCRd",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/illuminated-1490.json"
+          "file": "lettersets-illuminated-1490.json.gz",
+          "bytes": 63580,
+          "sha384": "fd97904de22e6a752c7db6478f76dbe72f3f28bd03e401a60053ae3cc2fc5be9d20e0642d66581e18da651d2d24e2163",
+          "sri": "/ZeQTeIuanUsfbZHj3bb5y8/KL0D5AGmAFOuPML8W+nSDgZC1mWB4Y2mUdLSTiFj",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/illuminated-1490.json.gz"
         },
         {
-          "file": "lettersets-leaf.json",
-          "bytes": 134918,
-          "sha384": "0ed48a5ad5a18a2b6534e7e3c7da3925fd0561ca562f0e27996023a3578003714ebecd8e8c1da175d1e54429ebb59ee0",
-          "sri": "DtSKWtWhiitlNOfjx9o5Jf0FYcpWLw4nmWAjo1eAA3FOvs2OjB2hddHlRCnrtZ7g",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/leaf.json"
+          "file": "lettersets-leaf.json.gz",
+          "bytes": 59818,
+          "sha384": "8b0215fad815005b256ad12b6d03c1fd70955a11c21d5dfafde0be96f499eabd66bc16122038c957e4b9500c9d1dc45a",
+          "sri": "iwIV+tgVAFslatErbQPB/XCVWhHCHV36/eC+lvSZ6r1mvBYSIDjJV+S5UAydHcRa",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/leaf.json.gz"
         },
         {
-          "file": "lettersets-missale-1515.json",
-          "bytes": 316018,
-          "sha384": "c65408b7cbd9e4c65bdba3247543823173c8c13fc5af2fc220ad44e8bb7b6ffd60f60f6fee03ef5c5af20e5403eb6173",
-          "sri": "xlQIt8vZ5MZb26MkdUOCMXPIwT/Fry/CIK1E6Lt7b/1g9g9v7gPvXFryDlQD62Fz",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/missale-1515.json"
+          "file": "lettersets-missale-1515.json.gz",
+          "bytes": 104828,
+          "sha384": "3e7d9f83cdded0b47e14ea952fc65ca7093858ac1b2217771c286b3a4bc133c591e492805b9bed49821b9bbfc6c06add",
+          "sri": "Pn2fg83e0LR+FOqVL8Zcpwk4WKwbIhd3HChrOkvBM8WR5JKAW5vtSYIbm7/GwGrd",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/missale-1515.json.gz"
         },
         {
-          "file": "lettersets-neogothic.json",
-          "bytes": 121427,
-          "sha384": "dda6bf6110ca6100871695c164eda1dbfd1bfcd8f7d58f723c0d02a2698d5c901fbc35cffd66f2baff3458d2d7a1d2c4",
-          "sri": "3aa/YRDKYQCHFpXBZO2h2/0b/Nj31Y9yPA0CommNXJAfvDXP/Wbyuv80WNLXodLE",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/neogothic.json"
+          "file": "lettersets-neogothic.json.gz",
+          "bytes": 52222,
+          "sha384": "3be44968ec71c13f53f1bf1017c5af9c11880c4bc577dd1f353626028cad0039830c41e12a8ba203d9032b0587167155",
+          "sri": "O+RJaOxxwT9T8b8QF8WvnBGIDEvFd90fNTYmAoytADmDDEHhKouiA9kDKwWHFnFV",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/neogothic.json.gz"
         },
         {
-          "file": "lettersets-nouveau-initials.json",
-          "bytes": 531012,
-          "sha384": "7a340bba888d694ff990637565957b5a4deff82b65d2911ef86ac2123e839180ad3d669b482eab3e6aab63dfe4b4cd98",
-          "sri": "ejQLuoiNaU/5kGN1ZZV7Wk3v+Ctl0pEe+GrCEj6DkYCtPWabSC6rPmqrY9/ktM2Y",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/nouveau-initials.json"
+          "file": "lettersets-nouveau-initials.json.gz",
+          "bytes": 154310,
+          "sha384": "7fe0a84324db8b042190b5632048e0ccf865471764f2fc05aaf6b8cb0adffb62978dd6944aa9cc6779aad0bb5baa60ca",
+          "sri": "f+CoQyTbiwQhkLVjIEjgzPhlRxdk8vwFqva4ywrf+2KXjdaUSqnMZ3mq0LtbqmDK",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/nouveau-initials.json.gz"
         },
         {
-          "file": "lettersets-relief.json",
-          "bytes": 95172,
-          "sha384": "b5072d05a91eda0bbb07fbf9ff58c2e9716de6c995e6e560ed6ec67495ec259059eb665cedcad23f7cd19193e042a82a",
-          "sri": "tQctBake2gu7B/v5/1jC6XFt5smV5uVg7W7GdJXsJZBZ62Zc7crSP3zRkZPgQqgq",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/relief.json"
+          "file": "lettersets-relief.json.gz",
+          "bytes": 42089,
+          "sha384": "46bb2f5b386738c70dae146ee9268429eeb3590e8a1b1bcb669e6770ec6f770c904921d60d5d2fe46d3dc85cf2e5d138",
+          "sri": "RrsvWzhnOMcNrhRu6SaEKe6zWQ6KGxvLZp5ncOxvdwyQSSHWDV0v5G09yFzy5dE4",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/relief.json.gz"
         },
         {
-          "file": "lettersets-renaissance-alphabet.json",
-          "bytes": 153858,
-          "sha384": "70d329d9e244abb511efb7ddaa3080e527073cbb5e58c7035426c3a617baa947598b1188346f76f37f3c8029d6ed2469",
-          "sri": "cNMp2eJEq7UR77fdqjCA5ScHPLteWMcDVCbDphe6qUdZixGING928388gCnW7SRp",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/renaissance-alphabet.json"
+          "file": "lettersets-renaissance-alphabet.json.gz",
+          "bytes": 66353,
+          "sha384": "67a81c10f14ba3ea064adeabef0d25bf2b510d7fe5a3cf5b0aba9565b1a75c325503d52592f0d1b984b7b1f146b19e9f",
+          "sri": "Z6gcEPFLo+oGSt6r7w0lvytRDX/lo89bCrqVZbGnXDJVA9UlkvDRuYS3sfFGsZ6f",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/renaissance-alphabet.json.gz"
         },
         {
-          "file": "lettersets-schoeffer-1518.json",
-          "bytes": 638267,
-          "sha384": "c39dad814b17fcca13db95ca006bd0679d8b42fee668c9407719ada09b843580fb987ec9e727b47b4943e4c8a8665a7a",
-          "sri": "w52tgUsX/MoT25XKAGvQZ52LQv7maMlAdxmtoJuENYD7mH7J5ye0e0lD5MioZlp6",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/schoeffer-1518.json"
+          "file": "lettersets-schoeffer-1518.json.gz",
+          "bytes": 226659,
+          "sha384": "cde242e1ce380f8ef9a576a1695a2ded47a46044a5f554a82942bee19f9b2e4d723f78e38c1f771be2d6d0a624121bb1",
+          "sri": "zeJC4c44D475pXahaVot7UekYESl9VSoKUK+4Z+bLk1yP3jjjB93G+LW0KYkEhux",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/schoeffer-1518.json.gz"
         },
         {
-          "file": "lettersets-silhouette.json",
-          "bytes": 159609,
-          "sha384": "c8916a15a5c96d1d90d75308a5df619bb55f8104e1ded4e0cf34e8d7a744ed70befa83d6e2b8c2f153c6cd02facac1a6",
-          "sri": "yJFqFaXJbR2Q11MIpd9hm7VfgQTh3tTgzzTo16dE7XC++oPW4rjC8VPGzQL6ysGm",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/silhouette.json"
+          "file": "lettersets-silhouette.json.gz",
+          "bytes": 63879,
+          "sha384": "a76e35c82f87263ce0c69abcbf16850829e33496bfbe551497fd29132d91e2a15332a11d7f531fa59b264983d66b1753",
+          "sri": "p241yC+HJjzgxpq8vxaFCCnjNJa/vlUUl/0pEy2R4qFTMqEdf1MfpZsmSYPWaxdT",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/silhouette.json.gz"
         },
         {
-          "file": "lettersets-sugar.json",
-          "bytes": 98129,
-          "sha384": "a4a162a430fd12308c8d6813a2e1970fd41bebb09ee9e830126efe23f8d107471e59ca17589a8c15595df1a0e3ad3b68",
-          "sri": "pKFipDD9EjCMjWgTouGXD9Qb67Ce6egwEm7+I/jRB0ceWcoXWJqMFVld8aDjrTto",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/sugar.json"
+          "file": "lettersets-sugar.json.gz",
+          "bytes": 42646,
+          "sha384": "afec67dbbc91a42ff06ffa3661a70200363ab44365e92bb144492096809d79f87af4e4a6854c9c6061181e0fd7de9dab",
+          "sri": "r+xn27yRpC/wb/o2YacCADY6tENl6SuxREkgloCdefh69OSmhUycYGEYHg/X3p2r",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/sugar.json.gz"
         },
         {
-          "file": "lettersets-tendril-1900.json",
-          "bytes": 166072,
-          "sha384": "171e3651c412e63f8e83d533e4771af27ce6cacd7210ffca9ace34f8801eafc26be6bacd8587ecfc610671fc25eb903c",
-          "sri": "Fx42UcQS5j+Og9Uz5Hca8nzmys1yEP/Kms40+IAer8Jr5rrNhYfs/GEGcfwl65A8",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/tendril-1900.json"
+          "file": "lettersets-tendril-1900.json.gz",
+          "bytes": 71427,
+          "sha384": "4f32ebc7ef3f608fb85c57dd069086a02ab76b66e82e15adc67dcf356175703872532e668187533a7230e12db22b29f0",
+          "sri": "TzLrx+8/YI+4XFfdBpCGoCq3a2boLhWtxn3PNWF1cDhyUy5mgYdTOnIw4S2yKynw",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/tendril-1900.json.gz"
         },
         {
-          "file": "lettersets-tuscan-1845.json",
-          "bytes": 148919,
-          "sha384": "e397344c63d0e5892fd69b75109b24608173966bd30b29ab31f6ae2cdedd5ddcc91d9c0a7e30d436a52bdd2443bb0d8b",
-          "sri": "45c0TGPQ5Ykv1pt1EJskYIFzlmvTCymrMfauLN7dXdzJHZwKfjDUNqUr3SRDuw2L",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/tuscan-1845.json"
+          "file": "lettersets-tuscan-1845.json.gz",
+          "bytes": 61991,
+          "sha384": "04805634ea527d939b7bc952c7a083edecc8ac9b0a73c81192c7ffa7e439a3ea53962e40239be0dffaa6cdd11f5815c8",
+          "sri": "BIBWNOpSfZObe8lSx6CD7ezIrJsKc8gRksf/p+Q5o+pTli5AI5vg3/qmzdEfWBXI",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/tuscan-1845.json.gz"
         },
         {
-          "file": "lettersets-versteegh.json",
-          "bytes": 149921,
-          "sha384": "010ae9675a4dba65904a7fa37845663cc8bb6536fe8e75b18f6cbce6bfc5b65438a40ca29aea1153729a5373612f6d86",
-          "sri": "AQrpZ1pNumWQSn+jeEVmPMi7ZTb+jnWxj2y85r/FtlQ4pAyimuoRU3KaU3NhL22G",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/versteegh.json"
+          "file": "lettersets-versteegh.json.gz",
+          "bytes": 61160,
+          "sha384": "2a6ff24c35adf31a7acf52d47d2940740f163d1b114ca9c0014d1ace73b48e25cab3135f8a4691acfba68a8a21e52c0c",
+          "sri": "Km/yTDWt8xp6z1LUfSlAdA8WPRsRTKnAAU0aznO0jiXKsxNfikaRrPumiooh5SwM",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/versteegh.json.gz"
         },
         {
-          "file": "lettersets-voskens-1654.json",
-          "bytes": 425607,
-          "sha384": "f8d7982babc15b1428d0e25d32fd2fd1a436a0c77460e42063a4796b0446fdfe2aa9ab0ef9db5febc9f6d9577e072612",
-          "sri": "+NeYK6vBWxQo0OJdMv0v0aQ2oMd0YOQgY6R5awRG/f4qqasO+dtf68n22Vd+ByYS",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/voskens-1654.json"
+          "file": "lettersets-voskens-1654.json.gz",
+          "bytes": 182867,
+          "sha384": "73171f92c41f7227e957e8a285428499e27e84f3ef25b7defa3648e98203e78079237f4f0454127d90ad13cd2757e68f",
+          "sri": "cxcfksQfcifpV+iihUKEmeJ+hPPvJbfe+jZI6YID54B5I39PBFQSfZCtE80nV+aP",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/voskens-1654.json.gz"
         },
         {
-          "file": "lettersets-walthari.json",
-          "bytes": 184535,
-          "sha384": "aab5710d71f2da1bc759518b03cb5a4dbd9760ac7e5310f906bdc6c63774514166ccf163b2c1fb07f296b32cdbd87f67",
-          "sri": "qrVxDXHy2hvHWVGLA8taTb2XYKx+UxD5Br3Gxjd0UUFmzPFjssH7B/KWsyzb2H9n",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/walthari.json"
+          "file": "lettersets-walthari.json.gz",
+          "bytes": 77217,
+          "sha384": "b0c2a338bed66ee94a93d791524a54fbd7ed3866e2421cdb082ca09a51be9e89a873ad2c565926828b6010193b7d90f2",
+          "sri": "sMKjOL7WbulKk9eRUkpU+9ftOGbiQhzbCCygmlG+nomoc60sVlkmgotgEBk7fZDy",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/walthari.json.gz"
         },
         {
-          "file": "lettersets-baroque-1655.json",
-          "bytes": 168501,
-          "sha384": "134b5e39f5036ee93c5e737e3b722f5e520056db00a7b3988722226ac8e789500920aafc3e4a29329b2d4a7d6438ac46",
-          "sri": "E0teOfUDbuk8XnN+O3IvXlIAVtsAp7OYhyIiasjniVAJIKr8PkopMpstSn1kOKxG",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/baroque-1655.json"
+          "file": "lettersets-baroque-1655.json.gz",
+          "bytes": 60249,
+          "sha384": "2a702352fd87664aaaeb9f9f1277092e989aa46ea00143ab156736c73c9d01498038a9ca5017b1cbad8b720e321aa3ee",
+          "sri": "KnAjUv2HZkqq65+fEncJLpiapG6gAUOrFWc2xzydAUmAOKnKUBexy62Lcg4yGqPu",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/baroque-1655.json.gz"
         },
         {
-          "file": "lettersets-baroque-1884.json",
-          "bytes": 136378,
-          "sha384": "345ddc3b7b1acb2e88a6dbc35dc8fa907b01bada2a995851dcaef9ceb1495e8bb80c910f6f815867fffec8b98e07a9d9",
-          "sri": "NF3cO3sayy6IptvDXcj6kHsButoqmVhR3K75zrFJXou4DJEPb4FYZ//+yLmOB6nZ",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/baroque-1884.json"
+          "file": "lettersets-baroque-1884.json.gz",
+          "bytes": 41576,
+          "sha384": "22ee620ef69fe0d244d6134ec2642a315f9f3c3bcbba565a951a9ebddb49b93d4e90d18a7944a29963acbb4a98f43968",
+          "sri": "Iu5iDvaf4NJE1hNOwmQqMV+fPDvLulZalRqevdtJuT1OkNGKeUSimWOsu0qY9Dlo",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/baroque-1884.json.gz"
         },
         {
-          "file": "lettersets-cross-stitch.json",
-          "bytes": 487256,
-          "sha384": "fe067ee99b627f5b266225a031360e9eaf49da8b590f15d99acd730148d27daade7ee6b57a1f202b01bc7be26a1d89c0",
-          "sri": "/gZ+6Ztif1smYiWgMTYOnq9J2otZDxXZms1zAUjSfarefua1eh8gKwG8e+JqHYnA",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/cross-stitch.json"
+          "file": "lettersets-cross-stitch.json.gz",
+          "bytes": 187387,
+          "sha384": "918683740b531fdb7580a12b3db7b72457a8916c2d95feb379c511ae91a3b195f449ea5c6dd7479747d5dd1def9e25e7",
+          "sri": "kYaDdAtTH9t1gKErPbe3JFeokWwtlf6zecURrpGjsZX0SepcbddHl0fV3R3vniXn",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/cross-stitch.json.gz"
         },
         {
-          "file": "lettersets-fine-1532.json",
-          "bytes": 812558,
-          "sha384": "363b66d5f641e81b1b94cafdc3eeb02d4adec2aa9ad815028c9014b0bc2e94a71209019a1b347562ad165cd75546af76",
-          "sri": "Njtm1fZB6BsblMr9w+6wLUrewqqa2BUCjJAUsLwulKcSCQGaGzR1Yq0WXNdVRq92",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/fine-1532.json"
+          "file": "lettersets-fine-1532.json.gz",
+          "bytes": 331620,
+          "sha384": "7d4c4aea6e9190807120c13a6c0933856e17e5376ca78d65e983ac0d067091192778c09ff10fedfd18de8e96a4590f92",
+          "sri": "fUxK6m6RkIBxIME6bAkzhW4X5Tdsp41l6YOsDQZwkRkneMCf8Q/t/RjejpakWQ+S",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/fine-1532.json.gz"
         },
         {
-          "file": "lettersets-german-baroque.json",
-          "bytes": 191523,
-          "sha384": "fc1d7be9460ec083c8bf610c6eec2897e81087fbe535c5a64defed91027f213ffb40aed8869700f299590185da207d54",
-          "sri": "/B176UYOwIPIv2EMbuwol+gQh/vlNcWmTe/tkQJ/IT/7QK7YhpcA8plZAYXaIH1U",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/german-baroque.json"
+          "file": "lettersets-german-baroque.json.gz",
+          "bytes": 79834,
+          "sha384": "97aa59269663e85b79f4528a5b88620e07e43f148a2a114a404d88e492225b4c20af005c9dd3a42185b16670a0f8454d",
+          "sri": "l6pZJpZj6Ft59FKKW4hiDgfkPxSKKhFKQE2I5JIiW0wgrwBcndOkIYWxZnCg+EVN",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/german-baroque.json.gz"
         },
         {
-          "file": "lettersets-late-gothic.json",
-          "bytes": 358282,
-          "sha384": "469cfa01c07158ca8244e1b5e1cf15f7aa434643886c60073a8405b6684bbfba1cc4b17a55085c0a66a1b983c1439fe9",
-          "sri": "Rpz6AcBxWMqCROG14c8V96pDRkOIbGAHOoQFtmhLv7ocxLF6VQhcCmahuYPBQ5/p",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/late-gothic.json"
+          "file": "lettersets-late-gothic.json.gz",
+          "bytes": 122406,
+          "sha384": "ee18c1665e9e4114ae31241c3aad108f6052d3de13d590f9c83ac1466adc924b989e0bb15e1e0f13928c64a9eac822f3",
+          "sri": "7hjBZl6eQRSuMSQcOq0Qj2BS094T1ZD5yDrBRmrckkuYnguxXh4PE5KMZKnqyCLz",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/late-gothic.json.gz"
         },
         {
-          "file": "lettersets-renaissance-19th.json",
-          "bytes": 194096,
-          "sha384": "614d3d80f7b2bb601995df71059360b61ab75a6d9b9d2c9808c3ac782f1552f509cc92499872c48158a4925a6f39a55f",
-          "sri": "YU09gPeyu2AZld9xBZNgthq3Wm2bnSyYCMOseC8VUvUJzJJJmHLEgVikklpvOaVf",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/lettersets/renaissance-19th.json"
+          "file": "lettersets-renaissance-19th.json.gz",
+          "bytes": 79253,
+          "sha384": "4b9e7ceec11d44bdd8abba2a3741e16418a812d96d3c578e048bc22ef96d3d57205061c2d7764345a423e03733922924",
+          "sri": "S5587sEdRL3Yq7oqN0HhZBioEtltPFeOBIvCLvltPVcgUGHC13ZDRaQj4Dczkikk",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/lettersets/renaissance-19th.json.gz"
         }
       ]
     }

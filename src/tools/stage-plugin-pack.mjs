@@ -45,12 +45,12 @@ export async function pluginPackFiles({root = ROOT, loader = null} = {}) {
 		...OCR_FILES.map(file => ({id: 'rapier-ocr-' + file.name, plugin: 'ocr', hostFile: file.flat, url: file.url, sri: file.sri, bytes: file.bytes})),
 		...LETTER_SETS.map(set => ({id: 'rapier-letters-' + set.id, plugin: 'letters', hostFile: 'letters-' + set.id + '.json',
 			url: lettersAt + set.id + '.json', path: join(root, 'draw/letters', set.id + '.json'), sri: set.sha384, bytes: set.bytes})),
-		...BORDER_PINS.map(pin => ({id: 'rapier-templates-' + pin.id, plugin: 'templates', hostFile: 'templates-' + pin.id + '.json',
-			url: ornamentsAt + 'templates/' + pin.id + '.json', path: join(root, 'draw/templates', pin.id + '.json'), sri: pin.sha384, bytes: pin.bytes})),
-		...ELEMENT_PINS.map(pin => ({id: 'rapier-elements-' + pin.id, plugin: 'elements', hostFile: 'elements-' + pin.id + '.json',
-			url: ornamentsAt + 'elements/' + pin.id + '.json', path: join(root, 'draw/elements', pin.id + '.json'), sri: pin.sha384, bytes: pin.bytes})),
-		...LETTERSET_PINS.map(pin => ({id: 'rapier-lettersets-' + pin.id, plugin: 'lettersets', hostFile: 'lettersets-' + pin.id + '.json',
-			url: ornamentsAt + 'lettersets/' + pin.id + '.json', path: join(root, 'draw', pin.file), sri: pin.sha384, bytes: pin.bytes})),
+		...BORDER_PINS.map(pin => ({id: 'rapier-templates-' + pin.id, plugin: 'templates', hostFile: 'templates-' + pin.id + '.json.gz',
+			url: ornamentsAt + 'templates/' + pin.id + '.json.gz', path: join(root, 'draw/templates', pin.id + '.json.gz'), sri: pin.zsha384, bytes: pin.zbytes})),
+		...ELEMENT_PINS.map(pin => ({id: 'rapier-elements-' + pin.id, plugin: 'elements', hostFile: 'elements-' + pin.id + '.json.gz',
+			url: ornamentsAt + 'elements/' + pin.id + '.json.gz', path: join(root, 'draw/elements', pin.id + '.json.gz'), sri: pin.zsha384, bytes: pin.zbytes})),
+		...LETTERSET_PINS.map(pin => ({id: 'rapier-lettersets-' + pin.id, plugin: 'lettersets', hostFile: 'lettersets-' + pin.id + '.json.gz',
+			url: ornamentsAt + 'lettersets/' + pin.id + '.json.gz', path: join(root, 'draw', pin.file + '.gz'), sri: pin.zsha384, bytes: pin.zbytes})),
 		...pdfFiles(JSON.parse(await readFile(join(root, 'interchange/pdf-pins.json'), 'utf8')), PDF_JS_VERSION, root)];
 }
 

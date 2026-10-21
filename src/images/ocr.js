@@ -58,7 +58,7 @@ function _rapierOcrSetup() {
 		document.addEventListener('click', event => {
 			const control = event.target instanceof Element ? event.target.closest('[data-action]') : null;
 			const act = control?.dataset.action;
-			if (act === 'ocr-install') _rapierOcrRequest(true);
+			if (act === 'ocr-install') { if (_rapierOcr.provider?.update && _rapierOcr.provider.status !== 'error') void _rapierOcrInstall(); else _rapierOcrRequest(true); }
 			else if (act === 'ocr-install-now') void _rapierOcrInstall();
 			else if (act === 'ocr-dismiss') _rapierOcrDismiss();
 		});
@@ -125,21 +125,23 @@ function _rapierOcrPaint() {
 	const provider = _rapierOcr.provider, action = document.getElementById('ocr-plugin-action'), installed = document.getElementById('ocr-plugin-installed');
 	const busy = provider?.status === 'downloading' || provider?.status === 'installing';
 	if (action && installed) {
-		action.hidden = provider?.status === 'ready';
-		installed.hidden = provider?.status !== 'ready';
+		const updatable = !!provider?.update && (provider.status === 'ready' || provider.status === 'absent');
+		action.hidden = provider?.status === 'ready' && !updatable;
+		installed.hidden = provider?.status !== 'ready' || updatable;
 		action.disabled = busy;
-		action.textContent = _rapierOcrLabel(provider);
+		action.textContent = updatable ? 'UPDATE TEXT IN PICTURES · ' + _rapierPluginSize(provider.update.bytes) : _rapierOcrLabel(provider);
 	}
 	const title = document.getElementById('ocr-plugin-title');
 	if (!title) return;
 	const status = provider?.status;
 	title.textContent = status === 'downloading' ? 'Text in pictures plug-in downloading'
 		: status === 'installing' ? 'Text in pictures plug-in installing'
-		: status === 'error' ? 'Text in pictures plug-in unavailable' : 'Install text in pictures plug-in?';
+		: status === 'error' ? 'Text in pictures plug-in unavailable' : _rapierPluginRequired(provider) ? 'Update text in pictures plug-in?' : 'Install text in pictures plug-in?';
 	const M = _rapierOcrModule();
 	const hostWords = phase => window.RapierPlatform?.resources.installMessage?.('ocr', phase) || '';
 	document.getElementById('ocr-plugin-body').textContent = status === 'error'
 		? hostWords('error') || (window.RapierPlatform?.environment.native === true ? 'Rapier could not read or verify its text reader. Tap retry.' : 'Rapier could not reach or verify the text reader. Check your internet connection and tap retry.')
+		: _rapierPluginRequired(provider) ? '\u2022 ' + _rapierPluginRequiredWords('Text in pictures', _rapierPluginRequired(provider)) + '.'
 		: hostWords('prompt') || '• Search finds words in pictures.\n• ' + Math.round((M ? M.OCR_TRANSFER_BYTES : 0) / 1e6) + ' MB, once.\n• Pictures never leave your device.';
 	document.getElementById('ocr-plugin-body').style.whiteSpace = 'pre-line';
 	const progress = document.getElementById('ocr-plugin-progress'), error = document.getElementById('ocr-plugin-error'), install = document.getElementById('ocr-plugin-install');
@@ -148,7 +150,7 @@ function _rapierOcrPaint() {
 	error.hidden = status !== 'error';
 	error.textContent = 'Last attempt failed: ' + (provider?.error || 'unknown error');
 	install.disabled = busy;
-	install.textContent = status === 'downloading' ? 'downloading…' : status === 'installing' ? 'installing…' : status === 'error' ? 'retry' : 'install now';
+	install.textContent = status === 'downloading' ? 'downloading…' : status === 'installing' ? 'installing…' : status === 'error' ? 'retry' : _rapierPluginRequired(provider) ? 'update now' : 'install now';
 }
 function _rapierOcrRequest(asked) {
 	const provider = _rapierOcrProvider();
@@ -169,6 +171,7 @@ async function _rapierOcrInstall() {
 }
 function _rapierOcrDismiss() {
 	_rapierOcr.dismissed = true;
+	if (_rapierPluginRequired(_rapierOcr.provider)) showToast('Text in pictures waits for the update', 'info');
 	window.dispatchEvent(new CustomEvent('rapier:ocrdismissed'));
 	closeDialog(document.getElementById('ocr-plugin-overlay'));
 }

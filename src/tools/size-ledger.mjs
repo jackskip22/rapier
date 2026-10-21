@@ -195,7 +195,7 @@ export const GROUPS = [
     inputs: () => ['notes/qr-code.mjs'], carries: a => modules(a).has('notes/qr-code.mjs')},
   {id: 'jxl', name: 'JPEG XL encoder (the worker, its adapter and its refusal stay)', edits: {'tools/build.mjs': omitEncoder},
     inputs: (a, ctx) => ctx.jxlModules,
-    carries: a => a.jxl?.modules.includes('images/jxl/rapier.mjs') === true,
+    carries: a => a.jxl?.modules.includes('images/jxl/rapier-core.mjs') === true,
     leaves: (a, ctx) => hash(a.text('rapier-jxl-worker.js')) === ctx.encoderlessWorkerSha256},
   {id: 'fonts', name: 'Geist + Geist Mono (four static 400/560 faces, shared by native layout and exports)',
     edits: {'shell/fonts/docx-fonts.mjs': () => 'export const DOCX_FONTS = Object.freeze([]);\n'},
@@ -228,7 +228,7 @@ export async function context(root) {
   const buildSource = await readFile(join(root, 'tools/build.mjs'), 'utf8');
   const vendors = one(find(buildSource, node => node.type === 'VariableDeclarator' && node.id?.name === 'VENDOR_GROUPS'), 'vendor groups').init;
   assert.equal(vendors.type, 'ObjectExpression', 'vendor groups are an explicit inventory');
-  const [completeWorker, encoderlessWorker] = await Promise.all([buildJPEGXLArtifact(root), buildJPEGXLArtifact(root, {encoder: false})]);
+  const [completeWorker, encoderlessWorker] = await Promise.all([buildJPEGXLArtifact(root, {still: true}), buildJPEGXLArtifact(root, {encoder: false})]);
   return {jxlModules: completeWorker.modules.map(name => 'images/jxl/' + name), encoderlessWorkerSha256: encoderlessWorker.sha256, vendors: Object.fromEntries(vendors.properties.map(row => [row.key.value, row.value.elements.map(node => node.value)])),
     styles: JSON.parse(await readFile(join(root, STYLES), 'utf8')),
     drawScripts: await Promise.all(scripts.map(async path => ({path, functions: scriptFunctions(await readFile(join(root, path), 'utf8'))})))};

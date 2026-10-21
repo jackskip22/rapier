@@ -1,13 +1,14 @@
+const _rapierFrontmatterRegion = document.getElementById('frontmatter-region');
 function _rapierRenderFrontmatter() {
-	const region = document.getElementById('frontmatter-region');
+	const region = _rapierFrontmatterRegion;
 	if (!region) return;
 	const header = rapier.document.docKind === 'markdown' ? String(rapier.document.frontmatter || '') : '';
-	region.toggleAttribute('hidden', !header || rapier.view.mode === 'source' || rapier.compare.active);
+	region.toggleAttribute('hidden', !globalThis.RapierMarkdownSpec.isTemplatePage(header) || rapier.view.mode === 'source' || rapier.compare.active);
 	const host = document.getElementById('editor-blocks');
 	if (host && region.parentElement !== host) host.appendChild(region);
 	if (host && host.lastElementChild !== region) host.appendChild(region);
 	if (host && !host._rapierMetadataKeeper) {
-		host._rapierMetadataKeeper = new MutationObserver(() => { if (region.isConnected && host.lastElementChild !== region) host.appendChild(region); });
+		host._rapierMetadataKeeper = new MutationObserver(() => { if (host.lastElementChild !== region) host.appendChild(region); });
 		host._rapierMetadataKeeper.observe(host, {childList: true});
 	}
 }
@@ -58,27 +59,40 @@ const _rapierYamlWrite = value => _rapierYamlPlain(value) ? value : JSON.stringi
 
 function _rapierFrontmatterOpen() {
 	const header = rapier.document.docKind === 'markdown' ? String(rapier.document.frontmatter || '') : '';
-	if (!header || _rapierUserMutationBlocked()) return false;
+	if (!header || !_rapierTemplatePage() || _rapierUserMutationBlocked()) return false;
 	const before = _rapierSourceText(), {lines, entries} = _rapierFrontmatterEntries(header);
 	const shown = entries.filter(entry => entry.key);
 	const value = entry => entry.block ? entry.raw.slice(entry.raw.indexOf(':') + 1).replace(entry.inline ? /^[ \t]+/ : /^[ \t]*\r?\n/, '').replace(/\r?\n$/, '') : _rapierYamlRead(entry.inline);
+	const sizes = globalThis.RapierMarkdownSpec.PAGE_SIZES;
+	const sizeName = size => ({letter: 'Letter', legal: 'Legal', tabloid: 'Tabloid', a3: 'A3', a4: 'A4', a5: 'A5'})[size] || size.replace(/^(\d+)x(\d+)px$/, '$1 \u00d7 $2');
+	const field = entry => {
+		if (entry.key === 'papersize' && !entry.block) {
+			const now = value(entry), known = sizes.includes(now.toLowerCase());
+			return {label: entry.key, type: 'select', value: known ? now.toLowerCase() : now,
+				options: [...known ? [] : [{value: now, label: now}], ...sizes.map(size => ({value: size, label: sizeName(size)}))]};
+		}
+		return {label: entry.key, value: value(entry), type: entry.block ? 'multiline' : undefined};
+	};
 	const dialog = _openFieldDialog({title: 'Metadata',
-		fields: shown.map(entry => ({label: entry.key, value: value(entry), type: entry.block ? 'multiline' : undefined})),
+		fields: shown.map(field),
 		okLabel: 'Apply',
-		secondaryActions: [{label: rapier.access.readOnly ? 'source' : 'edit source', onSelect() { _rapierFrontmatterSource(); }}],
+		secondaryActions: [{label: rapier.access.readOnly ? 'source' : 'edit source', onSelect() { _rapierFrontmatterSource(); }},
+			...!rapier.access.readOnly && _rapierPartAvailable('presets') ? [{label: 'Save as page template', onSelect() {
+				void _rapierPartReady('presets').then(ready => ready && _rapierPresetPart.savePageTemplate());
+			}}] : []],
 		prepare() {
 			if (_rapierSourceText() !== before) throw new Error('The document changed. Open Metadata again.');
 			const next = lines.slice(), eol = /\r\n/.test(header) ? '\r\n' : '\n';
 			shown.forEach((entry, index) => {
 				const typed = dialog.inputs[index].value;
-				if (typed === value(entry)) return;
+				if (typed === value(entry) || dialog.inputs[index].tagName === 'SELECT' && typed === value(entry).toLowerCase()) return;
 				const written = entry.block
 					? entry.key + ':' + (entry.inline ? ' ' : eol) + typed.split(/\r?\n/).join(eol) + eol
 					: entry.key + ':' + (typed === '' ? '' : ' ' + _rapierYamlWrite(typed)) + eol;
 				next[entry.first] = written;
 				for (let at = entry.first + 1; at <= entry.last; at++) next[at] = '';
 			});
-			return next.join('') + before.slice(header.length);
+			return _rapierFrontmatterBorderMargins(before, next.join('') + before.slice(header.length));
 		},
 		async onOk(_, next) {
 			if (next === before) return;
@@ -86,8 +100,18 @@ function _rapierFrontmatterOpen() {
 				_rapierCaptureEditorViewport(), null, () => _rapierSourceText() === before)) showToast('The document changed. Open Metadata again.', 'error');
 		}});
 	shown.forEach((entry, index) => { if (entry.block) dialog.inputs[index].style.height = 'calc(' + (value(entry).split('\n').length + 1) + 'lh + 20px)'; });
-	if (rapier.access.readOnly) for (const input of dialog.inputs) input.readOnly = true;
+	if (rapier.access.readOnly) for (const input of dialog.inputs) { input.readOnly = true; if (input.tagName === 'SELECT') input.disabled = true; }
 	return true;
 }
 
-document.getElementById('frontmatter-open').addEventListener('click', () => _rapierFrontmatterOpen());
+_rapierFrontmatterRegion?.querySelector('#frontmatter-open')?.addEventListener('click', () => _rapierFrontmatterOpen());
+
+function _rapierFrontmatterBorderMargins(before, next) {
+	const spec = globalThis.RapierMarkdownSpec, was = spec.readDocumentSettings(before), now = spec.readDocumentSettings(next);
+	if (!was.papersize || !now.papersize || !was.geometry || !now.geometry || !rapier.document.blocks.some(_rapierPageBorderBlock) ||
+		was.papersize.width === now.papersize.width && was.papersize.height === now.papersize.height ||
+		['top', 'right', 'bottom', 'left'].some(side => was.geometry[side] !== now.geometry[side])) return next;
+	const across = now.papersize.width / was.papersize.width, down = now.papersize.height / was.papersize.height;
+	const side = (name, ratio) => name + '=' + Math.min(1440 * 6, Math.round(was.geometry[name] * ratio)) / 20 + 'pt';
+	return spec.updateDocumentSettings(next, {geometry: [side('top', down), side('right', across), side('bottom', down), side('left', across)].join(', ')});
+}

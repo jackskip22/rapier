@@ -64,7 +64,7 @@
 		files: [{name: MATH_FILE, file: MATH_FILE, version: MATH_VERSION,
 			bytes: 742684,
 			sri: '1rjhOOw690Mr3aVXwRTPlwQO2atMrWHY8Rm3nZ+SZRrm5mB9HK5FkY6ZWCDYtgzv',
-			url: 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/math/rapier-math-2.7.0.js'}],
+			url: 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/math/rapier-math-2.7.0.js'}],
 		missing: 'Rapier math loaded but its SVG renderer is missing — cache purged',
 		usable: function () { return !!(window.RapierMath && window.RapierMath.version === MATH_VERSION &&
 			typeof window.RapierMath.renderToString === 'function' && typeof window.RapierMath.renderWithMathML === 'function'); },
@@ -361,6 +361,7 @@
 		/* RAPIER_BUILTIN_FILES_REUSE */
 		if (!Object.prototype.hasOwnProperty.call(_rapierProviders, m.key)) throw new Error('This page has no place for the plug-in ' + m.key);
 		var KEY = m.version;
+		var FORMAT = m.format || 1, READS = m.reads || [FORMAT];
 		var total = m.files.reduce(function (sum, file) { return sum + file.bytes; }, 0);
 		var Cache = m.store || RapierBundleIO.store(m.key);
 		var pack = m.pack || function (bytes) { return bytes; };
@@ -370,10 +371,12 @@
 			return Promise.resolve(m.usable() || _runScript(files[name], name)).then(function () { if (!m.usable()) throw new Error(m.missing); });
 		};
 		var pending = null, checking = null, removing = null, released = false, reviving = null;
+		var holding = null, noted = false;
 		if (m.release) window.addEventListener('rapier:memory-trimmed', function () {
 			if (Plugin.status === 'ready' && !pending && !checking && !reviving && m.release()) released = true;
 		});
 		function render(src, opts) {
+			noteUse();
 			var ready = Plugin.status === 'ready';
 			if (released && ready) {
 				released = false;
@@ -396,6 +399,8 @@
 			version: m.version,
 			error: null,
 			progress: 0,
+			update: null,
+			updateError: null,
 			downloadBytes: total,
 			files: m.files,
 			get deletable() { return !viaHost || typeof viaHost.remove === 'function'; },
@@ -408,10 +413,10 @@
 			},
 			reinstall: function () { return install(true); },
 			check:     check,
-			bytes:     bytes,
+			bytes:     function () { noteUse(); return bytes(); },
 			forget:    forget,
 			isNeeded: function () { return Plugin.status !== 'ready'; },
-			renderToString: !m.render ? undefined : m.release ? render : function (src, opts) { return m.render(src, opts, Plugin.status === 'ready'); },
+			renderToString: !m.render ? undefined : m.release ? render : function (src, opts) { noteUse(); return m.render(src, opts, Plugin.status === 'ready'); },
 			renderWithMathML: m.renderWithMathML ? function (src, opts) { return m.renderWithMathML(src, opts, Plugin.status === 'ready'); } : undefined,
 			presentationPaint: m.presentationPaint,
 			exportFontCss: m.exportFontCss,
@@ -425,7 +430,7 @@
 		};
 		function set(s, err) {
 			Plugin.status = s; Plugin.error = err || null;
-			try { window.dispatchEvent(new CustomEvent('rapier:' + m.key + 'plugin', {detail: {status: s, installed: s === 'ready', error: Plugin.error, progress: Plugin.progress}})); } catch (_) {}
+			try { window.dispatchEvent(new CustomEvent('rapier:' + m.key + 'plugin', {detail: {status: s, installed: s === 'ready', error: Plugin.error, progress: Plugin.progress, update: Plugin.update}})); } catch (_) {}
 		}
 		function complete(record) {
 			return !!record && record.version === KEY && !!record.files && m.files.every(function (file) {
@@ -445,7 +450,10 @@
 			checking = keeper().then(function (host) {
 				if (host) return Promise.all(m.files.map(function (file) { return Promise.resolve(host.status(id(file))).catch(function () { return null; }); }))
 					.then(function (states) { return states.every(function (s) { return s && s.status === 'ready'; }); });
-				return Cache.get(KEY).then(complete, function () { return false; });
+				return Cache.get(KEY).then(function (record) {
+					if (complete(record)) { holding = {key: KEY, old: false}; Plugin.update = null; return true; }
+					return adopt();
+				}, function () { return adopt(); });
 			}).then(function (available) {
 				if (available) return prepared();
 				if (m.discard) m.discard();
@@ -456,6 +464,39 @@
 			});
 			checking.then(function () { checking = null; });
 			return checking;
+		}
+		function adopt() {
+			holding = null; Plugin.update = null;
+			if (typeof Cache.keys !== 'function') return Promise.resolve(false);
+			return Cache.keys().then(function (keys) {
+				return Promise.all(keys.filter(function (key) { return key !== KEY; }).map(function (key) {
+					return Cache.get(key).then(function (record) { return record && {key: key, record: record}; }, function () { return null; });
+				}));
+			}).then(function (rows) {
+				var best = null;
+				rows.forEach(function (row) { if (row && row.record.pins && row.record.files && (!best || row.record.savedAt > best.record.savedAt)) best = row; });
+				if (!best) return false;
+				var oldNames = Object.keys(best.record.pins), names = {}, shared = m.files.filter(function (file) { return best.record.pins[file.name]; });
+				if (shared.length) shared.forEach(function (file) { names[file.name] = file.name; });
+				else if (oldNames.length === m.files.length) m.files.forEach(function (file, at) { names[file.name] = oldNames[at]; });
+				else return false;
+				for (var name in names) if (!best.record.files[names[name]]) return false;
+				var changed = m.files.filter(function (file) { var pin = best.record.pins[names[file.name]]; return !names[file.name] || !pin || pin[0] !== file.sri || pin[1] !== file.bytes; });
+				var readable = READS.indexOf(best.record.format || 1) >= 0;
+				if (!changed.length && readable) {
+					var record = Object.assign({}, best.record, {version: KEY, files: {}, pins: {}});
+					m.files.forEach(function (file) { record.files[file.name] = best.record.files[names[file.name]]; record.pins[file.name] = [file.sri, file.bytes]; });
+					return Cache.put(KEY, record).then(function () { return Cache.remove(best.key); }).then(function () { holding = {key: KEY, old: false}; return true; }, function () { return false; });
+				}
+				holding = {key: best.key, old: true, names: names, required: !readable};
+				Plugin.update = {from: best.key, files: changed.length, bytes: changed.reduce(function (sum, file) { return sum + file.bytes; }, 0), required: !readable};
+				return readable;
+			}, function () { return false; });
+		}
+		function noteUse() {
+			if (!Plugin.update || noted || m.quiet) return;
+			noted = true;
+			try { window.dispatchEvent(new CustomEvent('rapier:plugin-update', {detail: {key: m.key, noun: m.noun, plural: !!m.plural, version: KEY, bytes: Plugin.update.bytes}})); } catch (_) {}
 		}
 		function hostInstall(host) {
 			Plugin.progress = 0; set('downloading');
@@ -474,6 +515,11 @@
 				return keeper();
 			}).then(function (host) { via = host; return host ? hostInstall(host) : fetchInstall(force); }).catch(function (err) {
 				try { console.error('[rapier] ' + m.noun + ' plug-in install failed:', err); } catch (_) {}
+				if (holding && holding.old && !via) {
+					Plugin.updateError = _friendly(m, err, via); Plugin.progress = 0;
+					if (holding.required) { set('absent'); throw err; }
+					return prepared().then(function () { throw err; }, function () { throw err; });
+				}
 				set('error', _friendly(m, err, via));
 				throw err;
 			});
@@ -481,16 +527,17 @@
 			return pending;
 		}
 		function fetchInstall(force) {
-			var held = Object.create(null), got = Object.create(null), next = 0, failure = null;
+			var held = Object.create(null), got = Object.create(null), reused = Object.create(null), next = 0, failure = null, span = total;
 			function tick(file, n) {
 				got[file.name] = n;
 				var sum = 0; for (var name in got) sum += got[name];
-				var percent = Math.floor(sum / total * 100);
+				var percent = Math.floor(sum / span * 100);
 				if (percent !== Plugin.progress) { Plugin.progress = percent; set('downloading'); }
 			}
 			function lane() {
 				if (next >= m.files.length || failure) return Promise.resolve();
 				var file = m.files[next++];
+				if (reused[file.name]) { held[file.name] = reused[file.name]; return lane(); }
 				var localUrl = file.file && RapierBundleIO.sameOriginUrl(file.file), urls;
 				try {
 					var hosted = RapierBundleIO.pluginUrl(file.flat || String(file.file || '').split('/').pop());
@@ -512,15 +559,28 @@
 			});
 			function download() {
 				return Cache.remove(KEY).catch(function () {}).then(function () {
+					return (!force && holding && holding.old ? Cache.get(holding.key).catch(function () { return null; }) : Promise.resolve(null)).then(function (old) {
+						if (!old || !old.files || !old.pins) return;
+						return m.files.reduce(function (chain, file) {
+							var from = holding.names[file.name], pin = old.pins[from];
+							if (!pin || pin[0] !== file.sri || pin[1] !== file.bytes) return chain;
+							return chain.then(function () { return unpack(old.files[from]); }).then(function (value) { return verified(file, value); })
+								.then(function (value) { reused[file.name] = value; span -= file.bytes; }, function () {});
+						}, Promise.resolve());
+					});
+				}).then(function () {
 					Plugin.progress = 0; set('downloading');
 					return Promise.all([lane(), lane(), lane()]);
 				}).then(function () {
 					if (failure) throw failure;
 					set('installing');
-					var record = { version: KEY, savedAt: Date.now(), files: {} };
+					var record = { version: KEY, format: FORMAT, savedAt: Date.now(), files: {}, pins: {} };
 					return m.files.reduce(function (chain, file) {
+						record.pins[file.name] = [file.sri, file.bytes];
 						return chain.then(function () { return pack(held[file.name]); }).then(function (value) { record.files[file.name] = value; });
-					}, Promise.resolve()).then(function () { return Cache.put(KEY, record); });
+					}, Promise.resolve()).then(function () { return Cache.put(KEY, record); }).then(function () {
+						return typeof Cache.keys === 'function' ? Cache.keys().then(function (keys) { return Promise.all(keys.filter(function (key) { return key !== KEY; }).map(function (key) { return Cache.remove(key); })); }) : null;
+					}).then(function () { holding = {key: KEY, old: false}; Plugin.update = null; Plugin.updateError = null; });
 				}).then(prepared);
 			}
 		}
@@ -539,23 +599,32 @@
 			});
 		}
 		function heldBytes() {
-			return Cache.get(KEY).then(function (record) {
-				if (!complete(record)) throw new Error('The ' + m.noun + ' is not installed');
+			if (holding && holding.required) return Promise.reject(new Error('The ' + m.noun + ' needs an update to work with this Rapier'));
+			var key = holding ? holding.key : KEY, old = !!(holding && holding.old);
+			return Cache.get(key).then(function (record) {
+				if (old ? !record || !record.files || !record.pins : !complete(record)) throw new Error('The ' + m.noun + ' is not installed');
 				var out = {};
 				return m.files.reduce(function (chain, file) {
-					return chain.then(function () { return unpack(record.files[file.name]); })
-						.then(function (value) { return verified(file, value); })
+					if (old && !holding.names[file.name]) return chain;
+					var from = old ? holding.names[file.name] : file.name, pin = old ? record.pins[from] : null;
+					var against = old ? {name: file.name, sri: pin && pin[0], bytes: pin && pin[1]} : file;
+					return chain.then(function () { return unpack(record.files[from]); })
+						.then(function (value) { return verified(against, value); })
 						.then(function (value) { out[file.name] = value; });
 				}, Promise.resolve()).then(function () { return out; }, function (err) {
-					return Cache.remove(KEY).catch(function () {}).then(function () { Plugin.progress = 0; set('absent', _friendly(m, err)); throw err; });
+					return Cache.remove(key).catch(function () {}).then(function () { holding = null; Plugin.update = null; Plugin.progress = 0; set('absent', _friendly(m, err)); throw err; });
 				});
 			});
+		}
+		function forgetAll() {
+			if (typeof Cache.keys !== 'function') return Cache.remove(KEY);
+			return Cache.keys().then(function (keys) { return Promise.all(keys.concat(keys.indexOf(KEY) < 0 ? [KEY] : []).map(function (key) { return Cache.remove(key); })); });
 		}
 		function forget() {
 			if (removing) return removing;
 			removing = (pending || checking || Promise.resolve()).catch(function () {}).then(keeper).then(function (host) {
 				if (host && typeof host.remove !== 'function') return false;
-				return (host ? host.remove(id(m.files[0])) : Cache.remove(KEY)).then(function () { if (m.discard) m.discard(); Plugin.progress = 0; set('absent'); return true; });
+				return (host ? host.remove(id(m.files[0])) : forgetAll()).then(function () { if (m.discard) m.discard(); holding = null; Plugin.update = null; Plugin.updateError = null; Plugin.progress = 0; set('absent'); return true; });
 			});
 			removing.then(function () { removing = null; }, function () { removing = null; });
 			return removing;

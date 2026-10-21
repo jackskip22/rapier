@@ -1983,7 +1983,7 @@ function _rapierPaintSettleClosing() {
 function _rapierPaintReleaseSurface(layer) {
 	const surface = layer?.surface;
 	if (!surface) return;
-	if (layer.mode === 'water' && layer.gpuDisplay) { try { layer.canvas?.getContext('bitmaprenderer')?.transferFromImageBitmap(null); } catch (_) {} }
+	if (layer.mode === 'water' && layer.gpuDisplay && layer.canvas) layer.canvas.width = layer.canvas.height = 0;
 	try { surface.drop(); } catch (_) {}
 }
 function _rapierPaintSweepBrushes(keep = _rapierDrawState.gesture?.paint?.brush || null) {
@@ -2062,7 +2062,7 @@ function _rapierPaintBlankCanvas(w, h, prepared = null, mode = 'paint') {
 	if (canvas.height !== h) canvas.height = h;
 	canvas.setAttribute('aria-hidden', 'true');
 	if (mode === 'water' && typeof OffscreenCanvas === 'function') {
-		if (!canvas.getContext('bitmaprenderer')) throw new Error('Water could not create its bitmap display');
+		if (!canvas.getContext('2d')) throw new Error('Water could not create its display');
 		return {canvas, ctx:null};
 	}
 	if (typeof canvas.transferControlToOffscreen === 'function') return {canvas, ctx:null};
@@ -2229,11 +2229,11 @@ function _rapierPaintWaterFrame(layer, reply) {
 			_rapierPaintOverlayLost(layer)) return;
 		const kept = layer.checkpoint;
 		if (layer.raster && (!meta.revision || kept?.raster === layer.raster && meta.revision < kept.revision)) return;
-		const canvas = layer.canvas, context = canvas.getContext('bitmaprenderer');
+		const canvas = layer.canvas, context = canvas.getContext('2d');
 		if (!context) return;
 		if (canvas.width !== meta.width) canvas.width = meta.width;
 		if (canvas.height !== meta.height) canvas.height = meta.height;
-		try { context.transferFromImageBitmap(bitmap); } catch (_) { return; }
+		try { context.globalCompositeOperation = 'copy'; context.drawImage(bitmap, 0, 0); } catch (_) { return; }
 		accepted = true;
 		layer.canvasGeneration = display.canvasGeneration; layer.displayFrame = display.frame;
 		layer.displayMeta = {...meta}; layer.displayReady = true; layer.lost = false; layer.liveBox = null;
@@ -2499,6 +2499,12 @@ function _rapierPaintAmendDeparted(layer, stroke, geom, raster, paint) {
 	if (!_rapierDrawStepAmendable(entry, [shape.id])) return null;
 	shape.geom = geom; shape.raster = raster; shape.paint = paint;
 	_rapierDrawAmendStep(entry, [shape]);
+	const parts = (stroke.histories || [stroke.history]).filter(h => h?.after);
+	if (parts.length) {
+		const other = entry.paintHistory?.parts.filter(h => !parts.some(p => p.remote === h.remote && p.surfaceId === h.surfaceId)) || [];
+		Object.defineProperty(entry, 'paintHistory', {value: {parts: [...other, ...parts.map(h => ({...h}))]}, configurable: true});
+		if (typeof _rapierPaintTrimHistory === 'function') _rapierPaintTrimHistory();
+	}
 	_rapierDrawRenderShapes([shape.id]); _rapierDrawUpdateMenu();
 	if (typeof _rapierDrawBackupPublished === 'function') _rapierDrawBackupPublished();
 	return shape;

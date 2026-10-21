@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {waterShaderSources} from './water-shaders.mjs';
 import {getPaper,makeTip,getBrush,WATER_TIP_SIZE} from './water-materials.mjs';
+import {WATER_PAPER_PERIOD,WATER_PAPER_SEED} from './paper-field.mjs';
 import {waterTimeFits} from './water-data.mjs';
 import {WATER_FINISH_LIGHT,waterFinishLight,admitWaterFinish} from './water-specialty.mjs';
 
-export const WATER_GPU_MAX_BYTES=384*1024*1024,WATER_GPU_ROOMY_BYTES=1024*1024*1024;
+import {WATER_GPU_MAX_BYTES} from './paint-limits.mjs';
+
+export {WATER_GPU_MAX_BYTES};
+export const WATER_GPU_ROOMY_BYTES=1024*1024*1024;
 export function waterGpuBudget(memory=globalThis.navigator?.deviceMemory){return Number(memory)>=8?WATER_GPU_ROOMY_BYTES:WATER_GPU_MAX_BYTES;}
 const UNIFORM_SLOTS=2048,UNIFORM_BYTES=64*UNIFORM_SLOTS*4;
 function sheetLayout(w,h){
@@ -138,6 +142,73 @@ export async function waterReady(){
 }
 
 const LATER_PIPELINES=new Set(['fillInk','fillWet','fillFinish','stampFinish','liftInk','liftWet','liftFinish','eraseFixed','eraseBase','displayQuick']);
+const paperLibraries=new WeakMap();
+async function paperPrograms(device,kind){
+ let library=paperLibraries.get(device);
+ if(!library){
+  const sources=waterShaderSources();
+  library={field:device.createShaderModule({label:'Water paper field',code:sources.paperField}),fields:new Map()};
+  const light=device.createShaderModule({label:'Water paper light',code:sources.paperLight});
+  library.light=device.createRenderPipelineAsync({layout:'auto',vertex:{module:light,entryPoint:'vertex'},
+   fragment:{module:light,entryPoint:'fragment',targets:[{format:'rgba8unorm'}]},primitive:{topology:'triangle-list'}});
+  paperLibraries.set(device,library);
+ }
+ if(!library.fields.has(kind))library.fields.set(kind,device.createRenderPipelineAsync({layout:'auto',vertex:{module:library.field,entryPoint:'vertex'},
+  fragment:{module:library.field,entryPoint:'fragment',constants:{paperKind:kind},targets:[{format:'rgba16float'}]},primitive:{topology:'triangle-list'}}));
+ try{const [field,light]=await Promise.all([library.fields.get(kind),library.light]);return {field,light};}
+ catch(error){paperLibraries.delete(device);throw error;}
+}
+export async function waterPaperPixels(id,size){
+ const profile=getPaper(id);if(!profile)return null;
+ const device=await waterReady(),limit=device.limits.maxTextureDimension2D;
+ if(!Number.isSafeInteger(size)||size<1||size+2>limit)throw failure('WATER_INPUT','The Water paper size is not valid.');
+ const p=profile.params??profile,kind=profile.kind??p.kind??0,bump=p.bump??1,{field,light}=await paperPrograms(device,kind);
+ const rows=Math.min(size,Math.max(1,Math.floor(PAPER_BAND_PIXELS/(size+2))-2)),pitch=Math.ceil(size*4/256)*256;
+ if(size*size*4+(size+2)*(rows+2)*8+pitch*rows+256>WATER_GPU_MAX_BYTES)throw failure('WATER_GPU_MEMORY','The Water paper is too large for GPU memory.');
+ const resources=[],errors=[];
+ const guard=action=>{
+  device.pushErrorScope('out-of-memory');device.pushErrorScope('validation');
+  try{return action();}finally{errors.push(device.popErrorScope().catch(error=>error),device.popErrorScope().catch(error=>error));}
+ };
+ const check=async()=>{const error=(await Promise.all(errors.splice(0))).find(Boolean);if(error)throw failure(error?.constructor?.name==='GPUOutOfMemoryError'?'WATER_GPU_MEMORY':'WATER_GPU_FAILED',error.message);};
+ let buffer;
+ try{
+  const state=guard(()=>{
+   const uniform=device.createBuffer({size:256,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});resources.push(uniform);
+   const paper=device.createTexture({size:[size,size],format:'rgba8unorm',usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.COPY_SRC});resources.push(paper);
+   const height=device.createTexture({size:[size+2,rows+2],format:'rgba16float',usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.TEXTURE_BINDING});resources.push(height);
+   buffer=device.createBuffer({size:pitch*rows,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});resources.push(buffer);
+   const fieldGroup=device.createBindGroup({layout:field.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:uniform}}]});
+   const lightGroup=device.createBindGroup({layout:light.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:uniform}},{binding:3,resource:height.createView()}]});
+   return {uniform,paper,height,fieldGroup,lightGroup};
+  });
+  await check();
+  const data=new Float32Array(64),pixels=new Uint8Array(size*size*4),scale=WATER_PAPER_PERIOD/size;
+  data.set([size,size],0);data.set([scale,WATER_PAPER_SEED,kind,1.4*bump/scale],48);data.set([0,-size],52);
+  for(let top=0;top<size;top+=rows){
+   const count=Math.min(rows,size-top);data.set([-1,top-1,size,size],56);
+   guard(()=>{
+    device.queue.writeBuffer(state.uniform,0,data);
+    const encoder=device.createCommandEncoder();
+    const fieldPass=encoder.beginRenderPass({colorAttachments:[{view:state.height.createView(),loadOp:'clear',storeOp:'store'}]});
+    fieldPass.setPipeline(field);fieldPass.setBindGroup(0,state.fieldGroup);fieldPass.setScissorRect(0,0,size+2,count+2);fieldPass.draw(3);fieldPass.end();
+    const lightPass=encoder.beginRenderPass({colorAttachments:[{view:state.paper.createView(),loadOp:top?'load':'clear',storeOp:'store'}]});
+    lightPass.setPipeline(light);lightPass.setBindGroup(0,state.lightGroup);lightPass.setScissorRect(0,top,size,count);lightPass.draw(3);lightPass.end();
+    encoder.copyTextureToBuffer({texture:state.paper,origin:[0,top]},{buffer,bytesPerRow:pitch},[size,count]);device.queue.submit([encoder.finish()]);
+   });
+   await buffer.mapAsync(GPUMapMode.READ);await check();
+   const mapped=new Uint8Array(buffer.getMappedRange());
+   for(let row=0;row<count;row++)pixels.set(mapped.subarray(row*pitch,row*pitch+size*4),(top+row)*size*4);
+   buffer.unmap();
+  }
+  return {width:size,height:size,paper:pixels};
+ }finally{
+  if(buffer?.mapState==='mapped')buffer.unmap();
+  for(const resource of resources)resource.destroy();
+  await check();
+ }
+}
+
 async function programLibrary(device,firstPaper){
  if(libraries.has(device))return libraries.get(device);
  const task=(async()=>{
@@ -716,13 +787,15 @@ export class WaterGPU {
   if(!regions.length){if(!rect)settings.unknown=false;return;}
   const profile=getPaper(settings.id),p=profile.params??profile,data=this._parameters();
   data.set([settings.paperScale,settings.seed,profile.kind??p.kind??0,1.4*(p.bump??1)/settings.paperScale],48);data.set(settings.paperOrigin,52);
-  const bands=[];
+  const bands=[],limit=this.device.limits.maxTextureDimension2D-2,columns=Math.min(limit,Math.floor(PAPER_BAND_PIXELS/3)-2);
   for(const region of regions){
-   const rows=Math.max(1,Math.floor(PAPER_BAND_PIXELS/(region[2]-region[0])));
-   for(let top=region[1];top<region[3];top+=rows)bands.push([region[0],top,region[2],Math.min(region[3],top+rows)]);
+   for(let left=region[0];left<region[2];left+=columns){
+    const right=Math.min(region[2],left+columns),rows=Math.min(limit,Math.max(1,Math.floor(PAPER_BAND_PIXELS/(right-left+2))-2));
+    for(let top=region[1];top<region[3];top+=rows)bands.push([left,top,right,Math.min(region[3],top+rows)]);
+   }
   }
   for(const band of bands){
-   const x=Math.max(0,band[0]-1),y=Math.max(0,band[1]-1),right=Math.min(w,band[2]+1),bottom=Math.min(h,band[3]+1);
+   const x=band[0]-1,y=band[1]-1,right=band[2]+1,bottom=band[3]+1;
    if(this.pendingRetire.length||bands.length>1)this._submitEncoder();
    const field=this._texture(right-x,bottom-y,'rgba16float');
    data.set([x,y,w,h],56);

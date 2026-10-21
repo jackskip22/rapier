@@ -1837,6 +1837,37 @@
         "condition": "The ordinary bottom-surface fixture has no shared session; the live bar is hidden and its presence layer empty.",
         "reason": "Actual collaborators are inspected at phone and desktop sizes in both themes; retained live rows assert data only."
       }
+    },
+    {
+      "id": "jxl-view",
+      "selector": ".rapier-jxl-view",
+      "rule": {
+        "file": "editor/styles/rapier-jxl.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-jxl-view",
+        "controlClass": "rapier-jxl-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
     }
   ],
   "liveCases": [

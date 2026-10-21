@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 export function createMediaPlayback(win, inspectGIF) {
+  const FRAMES = 3600, LOOP_MS = 3600000;
   const active = new Map(), encode = bytes => bytes.toBase64();
   const bytes = async url => {
     const text = url.slice(url.indexOf(',') + 1), slice = 1 << 20;
@@ -14,7 +15,7 @@ export function createMediaPlayback(win, inspectGIF) {
   function raster(url, canvas, changed = () => {}, dimensions = null) {
     if (url.length > 24 * 1024 * 1024 || !/^data:image\/(gif|jxl);base64,/i.test(url) || (url.length - url.indexOf(',') - 1) % 4) throw new Error('Unsupported animation source');
     const type = url.slice(5, url.indexOf(';')).toLowerCase();
-    let data = null, info = null, size = null, decoder = null, timer = 0, closed = false, paused = true, ticket = 0, next = 0, loops = 0, duration = 0, single = false, held = false;
+    let data = null, info = null, size = null, decoder = null, timer = 0, closed = false, paused = true, ticket = 0, next = 0, loops = 0, duration = 0, single = false, held = false, due = 0;
     const state = {animated: true, status: 'loading', first: '', frames: 0};
     const admitted = (async () => {
       const buffer = await bytes(url); info = type === 'image/gif' ? inspectGIF(buffer) : null;
@@ -47,11 +48,12 @@ export function createMediaPlayback(win, inspectGIF) {
             state.status = 'playback-budget'; paused = true; changed(state); return;
           }
           active.set(canvas, size.width * size.height);
+          next = 0; duration = 0; due = 0;
           decoder = new win.ImageDecoder({data, type, preferAnimation: true});
           const current = decoder; await settle(current.tracks.ready);
           if (closed || paused || stamp !== ticket || decoder !== current) return;
           const track = current.tracks.selectedTrack;
-          if (!track || track.frameCount < 1 || track.frameCount > 240 || info && track.frameCount !== info.frames) throw new Error('Animation frame budget or container mismatch');
+          if (!track || track.frameCount < 1 || track.frameCount > FRAMES || info && track.frameCount !== info.frames) throw new Error('Animation frame budget or container mismatch');
           state.frames = track.frameCount; state.animated = track.animated;
         }
         const current = decoder, decoding = current.decode({frameIndex: next, completeFramesOnly: true});
@@ -62,13 +64,13 @@ export function createMediaPlayback(win, inspectGIF) {
         try {
           if (closed || paused || stamp !== ticket || decoder !== current) return;
           const w = frame.displayWidth, h = frame.displayHeight;
-          if (!result.complete || w !== size.width || h !== size.height || w * h * state.frames > 96000000) throw new Error('Decoded animation exceeds the image budget');
+          if (!result.complete || w !== size.width || h !== size.height) throw new Error('Decoded animation exceeds the image budget');
           if (canvas.width !== w) canvas.width = w;
           if (canvas.height !== h) canvas.height = h;
           const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, w, h); ctx.drawImage(frame, 0, 0);
           if (!state.first && next === 0) state.first = canvas.toDataURL('image/png');
           const delay = type !== 'image/gif' ? Math.max(8, frame.duration / 1000) : frame.duration > 10000 ? Math.max(20, frame.duration / 1000) : 100;
-          duration += delay; if (duration > 120000) throw new Error('Animation exceeds the duration budget');
+          duration += delay; if (duration > LOOP_MS) throw new Error('Animation exceeds the duration budget');
           state.status = 'ready'; state.frame = next; changed(state);
           if (single) {paused = true; closeDecoder(); return;}
           next++;
@@ -76,7 +78,8 @@ export function createMediaPlayback(win, inspectGIF) {
             next = 0; duration = 0; loops++;
             if (!state.animated || Number.isFinite(current.tracks.selectedTrack.repetitionCount) && loops > current.tracks.selectedTrack.repetitionCount) {paused = true; closeDecoder(); return;}
           }
-          timer = win.setTimeout(step, delay);
+          const now = win.performance.now(); due = due && now - due < 1000 ? due + delay : now + delay;
+          timer = win.setTimeout(step, Math.max(0, due - now));
         } finally {frame.close();}
       } catch (error) {
         if (closed || stamp !== ticket) return;
@@ -85,7 +88,7 @@ export function createMediaPlayback(win, inspectGIF) {
     }
     return {state, play() {if (!closed && paused && !['decode-failed', 'admission-failed'].includes(state.status)) {paused = false; void step();}},
       async first() {if (!state.first && !closed) {single = true; next = 0; paused = false; try {await step();} finally {single = false; paused = true; closeDecoder(); if (held) {held = false; this.suspend();}}} return state.first;},
-      pause() {paused = true; ticket++; win.clearTimeout(timer); timer = 0;},
+      pause() {paused = true; ticket++; win.clearTimeout(timer); timer = 0; due = 0;},
       suspend() {if (single) {held = true; return;} paused = true; closeDecoder(); canvas.width = canvas.height = 0; state.status = 'suspended'; changed(state);},
       close() {closed = true; paused = true; closeDecoder(); canvas.width = canvas.height = 0;},
       get paused() {return paused;}};

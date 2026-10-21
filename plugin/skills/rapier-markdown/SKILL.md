@@ -20,7 +20,7 @@ other Markdown readers show the same words and ignore what they don't know. No i
 particular app is needed.
 
 The standard is [Self-contained Markdown](references/markdown-standard.md), also at
-https://rapier.website/markdown-standard. The MIT reader and writer is `npm install rapier-markdown-kit@1.2.19`.
+https://rapier.website/markdown-standard. The MIT reader and writer is `npm install rapier-markdown-kit@1.2.20`.
 Rapier renders it exactly and writes it back byte for byte; so can any editor.
 
 Rapier has two kinds of diagram, kept apart:
@@ -41,7 +41,7 @@ file for Android, the web and Windows. The agent edits live; the person sees its
 to see what was there before, and can undo it. Use `show {target:"comparison"}` to show a diff.
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
-2. **Hand over an offline editor.** `npx rapier-html@1.2.19 notes.md` puts the editor and document in one HTML file
+2. **Hand over an offline editor.** `npx rapier-html@1.2.20 notes.md` puts the editor and document in one HTML file
    ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed the editor.** [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed)
    mounts the editor or reader in your app; your app's agent can use the editor over WebMCP.
@@ -104,6 +104,10 @@ Use `read` for the exact source and its block index, and follow continuations wh
   such as `11pt`), `mainfont` (`serif`, `sans`, `mono`, `system`, `hand` or a font name), `linestretch` (such as
   `1.5`), `papersize`, `geometry: margin=1in`, `pagestyle: plain` for page numbers, `title` and `subtitle`.
   Rapier's view, exported page, Word and PDF read them; other readers ignore them.
+- Make a single page with `template: page` in that front matter: one sheet of `papersize` (`letter`, `legal`,
+  `tabloid`, `a3`, `a4`, `a5`, or pixels such as `1080x1350px`). Its first picture marked
+  `<!--md-layout:v1 width=100% x=50% wrap=behind lock=on-->` is the page's ground, drawn over the whole sheet behind
+  the words; `geometry` sets where the words go. A page template is such a file; share it as it is.
 
 ## HTML previews
 

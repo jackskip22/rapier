@@ -91,6 +91,51 @@ _rapierPresetPart = (() => {
     try { return await use(record, 'new', null, () => _rapierMutationStampIsCurrent(stamp), true); }
     catch (error) { showToast(String(error?.message || error), 'error'); return false; }
   }
+  const BLANK_PAGE = '---\ntemplate: page\npapersize: a4\ngeometry: margin=1in\n---\n';
+  const isPage = text => globalThis.RapierMarkdownSpec.isTemplatePage(text);
+  const isPageTemplate = record => record.content?.scope === 'document' && isPage(record.content.text);
+  const ELEMENT = /^!\[([^\]\n]*)\]\[element\] <!--md-layout:v1 [^>\n]*-->\n\n\[element\]: (data:image\/svg\+xml;base64,[A-Za-z0-9+/]+=*)\n$/;
+  const ownElement = record => record.content?.scope === 'selection' && !record.presentation && ELEMENT.exec(record.content.text);
+  const svgOf = url => new TextDecoder().decode(Uint8Array.from(atob(url.slice(url.indexOf(',') + 1)), character => character.charCodeAt(0)));
+  const own = test => Object.values(shelf.values('preset/')).flatMap(record => { try { const admitted = owner.admitPreset(record); return test(admitted) ? [admitted] : []; } catch (_) { return []; } });
+  async function startText(name, text, stamp) {
+    if (_rapierMutationStampIsCurrent(stamp) && _rapierUntouchedEdge() && _rapierLeaveEdgeParagraph()) stamp = Object.freeze(_rapierMutationStamp());
+    const record = {version: 1, id: owner.newId(), name: owner.presetName(name), content: {scope: 'document', text}};
+    try { return await use(record, 'new', null, () => _rapierMutationStampIsCurrent(stamp), true); }
+    catch (error) { showToast(String(error?.message || error), 'error'); return false; }
+  }
+  const nameOf = (text, fallback) => (String(text || '').replace(/\.[^.]*$/, '').replace(/[\x00-\x1f\x7f/\\<>:"|?*]/g, ' ').trim().slice(0, 80)) || fallback;
+  async function savePageTemplate() {
+    try {
+      if (!_rapierTemplatePage()) throw new Error('Open a page first.');
+      const stamp = Object.freeze(_rapierMutationStamp()), settings = globalThis.RapierMarkdownSpec.readDocumentSettings(_rapierSourceText());
+      await save(nameOf(settings.title || rapier.document.filename, 'Page'), 'document', null, () => _rapierMutationStampIsCurrent(stamp));
+      showToast('Page template saved', 'info'); return true;
+    } catch (error) { showToast(String(error?.message || error), 'error'); return false; }
+  }
+  async function keepElement(bytes, name) {
+    const title = nameOf(name, 'Element'), asset = await RapierImageAssets.createAsset(bytes, null, {codec: 'image/svg+xml', title});
+    if (!/^data:image\/svg\+xml;base64,/.test(asset.url)) throw new Error('Choose an SVG picture.');
+    const ratio = asset.width / Math.max(1, asset.height), layout = ratio >= 2.5 ? 'width=70% x=50%' : ratio >= 1.4 ? 'width=45% x=50%' : 'width=30% x=50%';
+    const text = '![' + _rapierEscapeImageAlt(title) + '][element] <!--md-layout:v1 ' + layout + '-->\n\n[element]: ' + asset.url + '\n';
+    if (!ELEMENT.test(text)) throw new Error('Choose an SVG picture.');
+    await store({version: 1, id: owner.newId(), name: title, content: {scope: 'selection', text}}, () => true);
+    showToast('Saved to your Elements', 'info'); return true;
+  }
+  async function saveElement(image, name) {
+    try {
+      const url = image && _rapierDrawImageDataUrl(image);
+      if (!url || !/^data:image\/svg\+xml;base64,/i.test(url)) throw new Error('Only an SVG picture can be an Element.');
+      return await keepElement(Uint8Array.from(atob(url.slice(url.indexOf(',') + 1)), character => character.charCodeAt(0)), name);
+    } catch (error) { showToast(String(error?.message || error), 'error'); return false; }
+  }
+  const chooseFile = (accept, then) => {
+    const input = document.createElement('input'); input.type = 'file'; input.accept = accept; input.hidden = true;
+    document.body.append(input);
+    input.addEventListener('change', () => { const file = input.files?.[0]; input.remove(); if (file) then(file); }, {once: true});
+    input.addEventListener('cancel', () => input.remove(), {once: true});
+    input.click();
+  };
   const gallery = {tab: 'borders', group: {}, scroll: {}};
   function open(capture, {place = null} = {}) {
     const overlay = document.createElement('div'), box = document.createElement('div');
@@ -98,17 +143,17 @@ _rapierPresetPart = (() => {
     box.className = 'link-dialog rapier-gallery'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-label', 'Starters'); overlay.append(box);
     let active = true, busy = false;
     const ending = new AbortController(), end = () => { remember(); active = false; ending.abort(); _rapierOrnamentRelease(box); };
-    const state = _rapierBeginEngineDialog(overlay, () => end()); state.capture = capture;
+    const state = _rapierBeginEngineDialog(overlay, () => end()); state.capture = capture; state.blocking = () => busy;
     const current = () => active && _rapierMutationStampIsCurrent(state.documentGuard);
     const element = (tag, cls, text) => { const node = document.createElement(tag); if (cls) node.className = cls; if (text) node.textContent = text; return node; };
     const close = () => { end(); state.close(); };
     const run = async work => {
       if (busy || !_rapierEngineDialogSubmitAdmission(state)) return;
-      busy = true; state.blocking = true;
+      busy = true;
       for (const input of box.querySelectorAll('button,input')) if (!input.closest('.rapier-gallery__head')) input.disabled = true;
       try { await work(); }
-      catch (error) { showToast(String(error?.message || error), 'error'); }
-      finally { busy = false; state.blocking = false; for (const input of box.querySelectorAll('button,input')) input.disabled = false; }
+      catch (error) { if (!error?.canceled) showToast(String(error?.message || error), 'error'); }
+      finally { busy = false; for (const input of box.querySelectorAll('button,input')) input.disabled = false; }
     };
     const button = (text, action) => { const node = element('button', 'settings-action-btn', text); node.type = 'button'; node.addEventListener('click', () => void run(action)); box.append(node); return node; };
     const title = (name, description = '') => { box.classList.remove('rapier-gallery'); box.replaceChildren(element('div', 'link-dialog__title', name)); if (description) box.append(element('p', 'link-dialog__description', description)); };
@@ -120,6 +165,16 @@ _rapierPresetPart = (() => {
       button('Save', async () => { await action(owner.presetName(input.value)); showToast('Starter saved', 'info'); await list(); });
       button('Back', list); input.focus(); input.select();
     };
+    const remove = (record, back) => {
+      title('Remove ' + record.name + '?', 'Documents already made from it keep their content.');
+      button('Remove from library', async () => {
+        await shelf.set('preset/' + record.id, null, next => {
+          requireCurrent(current);
+          if (JSON.stringify(next.blobs[next.records['preset/' + record.id]?.value?.content]) !== JSON.stringify(record)) throw new Error('This starter changed in another window.');
+        }); sync(); await list();
+      });
+      button('Back', back);
+    };
     const choose = record => {
       title(record.name, record.description || [record.content?.scope === 'selection' ? 'Passage' : record.content ? 'Document' : '', record.presentation ? 'Fonts and line spacing' : ''].filter(Boolean).join(' · '));
       const action = kind => async () => { if (gate()) await finish(use(record, kind, capture, current, false)); };
@@ -128,16 +183,7 @@ _rapierPresetPart = (() => {
       {
         button('Rename', () => { if (gate()) nameForm('Rename starter', record.name, name => store({...record, name}, current, {previous: record})); });
         button('Export starter', () => _download(new Blob([JSON.stringify(record, null, 2) + '\n'], {type: 'application/json'}), record.name + '.rapier-preset.json'));
-        button('Remove', () => {
-          title('Remove ' + record.name + '?', 'Documents already made from it keep their content.');
-          button('Remove from library', async () => {
-            await shelf.set('preset/' + record.id, null, next => {
-              requireCurrent(current);
-              if (JSON.stringify(next.blobs[next.records['preset/' + record.id]?.value?.content]) !== JSON.stringify(record)) throw new Error('This starter changed in another window.');
-            }); sync(); await list();
-          });
-          button('Back', () => choose(record));
-        });
+        button('Remove', () => remove(record, () => choose(record)));
       }
       button('Back', list); box.querySelector('button')?.focus();
     };
@@ -150,14 +196,14 @@ _rapierPresetPart = (() => {
       for (const type of ['pointerup', 'pointercancel', 'pointerleave']) node.addEventListener(type, up);
       node.addEventListener('click', () => void run(action)); return node;
     };
-    const installed = async kind => {
-      if (_rapierOrnamentDoor.held.has(kind)) return true;
-      const provider = _rapierOrnamentProvider(kind);
+    const installed = async (kind, family = null) => {
+      if (_rapierOrnamentDoor.held.has(_rapierOrnamentSlot(kind, family))) return true;
+      const provider = _rapierOrnamentProvider(kind, family);
       if (!provider) return false;
       await _rapierOrnamentSettled(provider);
       return provider.status === 'ready';
     };
-    const bring = async kind => { _rapierOrnamentDoor.allowed.add(kind); await _rapierOrnamentBring(kind); requireCurrent(current); await list(); };
+    const bring = async (kind, family = null) => { await _rapierOrnamentBring(kind, family); requireCurrent(current); await list(); };
     const shaped = (row, ink, tiles) => _rapierOrnamentTile({d: row.frame ? row.frame.path : row.path, box: [0, 0, row.w, row.h], tiles: row.tile === true && tiles ? tiles : 1, ink,
       svg: () => tiles ? RapierOrnaments.elementSVG(row, {ink, tiles}) : RapierOrnaments.thumbnailSVG(row, ink)}, 'rapier-gallery__picture', false);
     const previews = (grid, list, kind) => {
@@ -177,28 +223,46 @@ _rapierPresetPart = (() => {
       if (place) return;
       try {
         await shelf.ready; await shelf.snapshot(); requireCurrent(current);
-        for (const record of Object.values(shelf.values('preset/'))) {
-          try { const admitted = owner.admitPreset(record); grid.append(card(element('span', 'rapier-gallery__name', admitted.name), admitted.name, () => choose(admitted))); } catch (_) {}
-        }
+        for (const admitted of own(record => !ownElement(record))) grid.append(card(element('span', 'rapier-gallery__name', admitted.name), admitted.name, () => choose(admitted)));
       } catch (_) {}
     }
     async function elements(grid, open) {
-      if (!await installed('elements')) return previews(grid, globalThis.RapierGalleryPreviews?.ELEMENT_PREVIEWS, 'elements');
-      const packs = await _rapierOrnamentBring('elements'); requireCurrent(current);
-      const groups = new Map();
-      for (const pack of packs) for (const item of pack.items) { if (!groups.has(item.group)) groups.set(item.group, []); groups.get(item.group).push(item); }
-      if (groups.has('Lettering')) { const lettering = groups.get('Lettering'); groups.delete('Lettering'); groups.set('Lettering', lettering); }
       const ink = _rapierComposerInk() === RapierOrnaments.ELEMENT_INK ? _rapierComposerHex(getComputedStyle(document.body).color) : _rapierComposerInk();
-      if (!open || !groups.has(open)) {
+      const covers = globalThis.RapierGalleryPreviews?.ELEMENT_PREVIEWS || [];
+      await Promise.all(_RAPIER_ELEMENT_FAMILIES.map(async family => { if (await installed('elements', family)) await _rapierOrnamentBring('elements', family); }));
+      requireCurrent(current);
+      let mine = [];
+      if (!place) try { await shelf.ready; await shelf.snapshot(); requireCurrent(current); mine = own(ownElement); } catch (_) {}
+      const picture = record => { const image = element('img', 'rapier-gallery__picture'); image.alt = ''; image.draggable = false; image.decoding = 'async'; image.src = ownElement(record)[2]; return image; };
+      if (open === YOURS && mine.length) {
+        grid.dataset.opened = YOURS;
+        const yours = record => {
+          title(record.name);
+          button('Insert', async () => {
+            const [, , url] = ownElement(record); close();
+            await _rapierComposerPlace(svgOf(url), record.name, /<!--md-layout:v1 ([^>]*)-->/.exec(record.content.text)[1], target);
+          });
+          button('Remove', () => remove(record, () => yours(record)));
+          button('Back', list); box.querySelector('button')?.focus();
+        };
+        for (const record of mine) grid.append(card(picture(record), record.name, () => yours(record)));
+        return;
+      }
+      const groups = _rapierElementGroups(), chosen = groups.find(group => group.name === open && group.items);
+      if (!chosen) {
         grid.classList.add('rapier-gallery__grid--large');
-        for (const [name, items] of groups) {
-          const sample = items[0];
-          grid.append(card(shaped(sample, ink, sample.tile ? 2 : 0), name + ', ' + items.length, () => enter(name), name));
+        if (mine.length) grid.append(card(picture(mine[0]), YOURS + ', ' + mine.length, () => enter(YOURS), YOURS));
+        for (const group of groups) {
+          const sample = group.items?.[0], preview = !sample && covers.find(row => row.group === group.name);
+          let picture;
+          if (sample) picture = shaped(sample, ink, sample.tile ? 2 : 0);
+          else { picture = element('img', 'rapier-gallery__picture rapier-gallery__picture--preview'); picture.alt = ''; picture.draggable = false; picture.decoding = 'async'; if (preview) picture.src = preview.src; }
+          grid.append(card(picture, group.name + ', ' + group.count, async () => { if (group.items) return enter(group.name); remember(); gallery.group.elements = group.name; await bring('elements', group.family); }, group.name));
         }
         return;
       }
       grid.dataset.opened = open;
-      for (const item of groups.get(open)) grid.append(card(shaped(item, ink, item.tile ? Math.min(3, RapierOrnaments.bandTiles(item)) : 0), item.name,
+      for (const item of chosen.items) grid.append(card(shaped(item, ink, item.tile ? Math.min(3, RapierOrnaments.bandTiles(item)) : 0), item.name,
         async () => { close(); await (place ? place({item}) : _rapierComposerInsert({item, ink: _rapierComposerSheet.ink, target})); }));
     }
     async function letters(grid, open) {
@@ -225,6 +289,24 @@ _rapierPresetPart = (() => {
         await _rapierComposerPlace(svg, set.name + ' ' + (entry.letter || entry.key), 'width=25% x=50%', target);
       }));
     }
+    const YOURS = 'Yours', blank = !place && rapier.document.docKind === 'markdown' && !/\S/.test(_rapierSourceText());
+    async function importPage() {
+      await shelf.ready; await shelf.snapshot(); requireCurrent(current);
+      title('Import page');
+      for (const record of own(isPageTemplate)) button(record.name, async () => { close(); await startText(record.name, record.content.text, stamp); });
+      button('Choose file', () => chooseFile('text/markdown,.md,.markdown,.txt', file => void run(async () => {
+        if (file.size > owner.PRESET_BYTES) throw new Error('That page is over 4 MB.');
+        const {text} = await RapierTextCodec.readDocumentRecord(file);
+        if (!isPage(text)) throw new Error('That file is not a page.');
+        close(); await startText(nameOf(file.name, 'Page'), text, stamp);
+      })));
+      button('Back', list); box.querySelector('button')?.focus();
+    }
+    const importElement = () => chooseFile('image/svg+xml,.svg', file => void run(async () => {
+      if (file.size > owner.PRESET_BYTES) throw new Error('That SVG is over 4 MB.');
+      await keepElement(new Uint8Array(await file.arrayBuffer()), file.name);
+      requireCurrent(current); await list();
+    }));
     const head = element('div', 'rapier-gallery__head'), tabs = element('div', 'theme-switcher theme-switcher--joined theme-switcher--onoff rapier-gallery__tabs');
     const body = element('div', 'rapier-gallery__body'), backRow = element('div', 'rapier-gallery__back-row');
     tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Gallery');
@@ -294,6 +376,9 @@ _rapierPresetPart = (() => {
       const opened = grid.dataset.opened || null;
       if (!opened) gallery.group[section] = null;
       backRow.replaceChildren();
+      const row = (text, action) => { const node = element('button', 'link-dialog__btn rapier-gallery__back', text); node.type = 'button'; node.addEventListener('click', () => void run(action)); backRow.append(node); };
+      if (section === 'borders' && blank) { row('Create blank page', async () => { close(); await startText('Page', BLANK_PAGE, stamp); }); row('Import page', importPage); }
+      if (section === 'elements' && !opened && !place) row('Import element', importElement);
       if (opened) {
         const named = section === 'letters' ? _rapierOrnamentDoor.held.get('lettersets')?.find(s => s.id === opened)?.name || opened : opened;
         const back = element('button', 'link-dialog__btn rapier-gallery__back', '‹ ' + named); back.type = 'button';
@@ -309,5 +394,5 @@ _rapierPresetPart = (() => {
     box.setAttribute('aria-label', 'Gallery');
     void run(list);
   }
-  return Object.freeze({open, startPage, saveFromAgent: (name, kind, current) => save(name, kind, null, current, true)});
+  return Object.freeze({open, startPage, savePageTemplate, saveElement, saveFromAgent: (name, kind, current) => save(name, kind, null, current, true)});
 })();

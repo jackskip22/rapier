@@ -25,10 +25,38 @@ _rapierBg._rapierDrawPaperListen?.(() => {
 	if (presets) { presets.dataset.sig = ''; _rapierBgSyncPanel(); }
 });
 
-function _rapierBgPaperRequest(paper) {
+async function _rapierBgPaperLoad(paper, strength = 1, options = {}) {
+	if (!strength) return null;
+	if (!_rapierBg._rapierDrawPaperRequest) throw new Error('The paper texture could not be prepared');
 	const deflate = typeof CompressionStream === 'function' ? async bytes => new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer()) : null;
-	const render = globalThis.navigator?.gpu && globalThis.RapierDrawWater?.paperTileFromGPU ? id => globalThis.RapierDrawWater.paperTileFromGPU(id) : null;
-	_rapierBg._rapierDrawPaperRequest?.(paper, {now: () => performance.now(), pause: () => new Promise(resolve => setTimeout(resolve, 0)), deflate, render}).catch(() => {});
+	const render = globalThis.navigator?.gpu && globalThis.RapierDrawWater?.paperTileFromGPU ? (id, options) => globalThis.RapierDrawWater.paperTileFromGPU(id, options) : null;
+	return _rapierBg._rapierDrawPaperRequest(paper, {strength, pixelRatio: globalThis.devicePixelRatio || 1, ...options, now: () => performance.now(), pause: () => new Promise(resolve => setTimeout(resolve, 0)), deflate, render});
+}
+async function _rapierBgPaperSnapshot(recipe) {
+	if (recipe.background === undefined) return null;
+	const background = _rapierBg._rapierDrawNormalizeBackground(recipe.background);
+	if (!background) throw new Error('The drawing background is not valid');
+	if (background.kind !== 'paper' || !background.strength) return null;
+	const image = await _rapierBgPaperLoad(background.paper, background.strength, {ready: true});
+	if (!image || image.id !== background.paper || image.strength !== background.strength) throw new Error('The paper texture could not be prepared');
+	return image;
+}
+let _rapierBgPaperWanted = null, _rapierBgPaperBusy = false, _rapierBgPaperMade = null;
+function _rapierBgPaperRequest(paper, strength = 1) {
+	if (!strength || !_rapierBg._rapierDrawPaperRequest) return;
+	_rapierBgPaperWanted = {paper, strength};
+	if (_rapierBgPaperBusy) return;
+	_rapierBgPaperBusy = true;
+	(async () => {
+		while (_rapierBgPaperWanted) {
+			const next = _rapierBgPaperWanted; _rapierBgPaperWanted = null;
+			if (_rapierBgPaperMade !== next.paper) {
+				await _rapierBgPaperLoad(next.paper, next.strength, {ready: true, pixelRatio: 0}).catch(() => {});
+				if (_rapierBgPaperWanted) continue;
+			}
+			if (await _rapierBgPaperLoad(next.paper, next.strength).catch(() => null)) _rapierBgPaperMade = next.paper;
+		}
+	})().catch(() => {}).finally(() => { _rapierBgPaperBusy = false; });
 }
 function _rapierBgOpen() { const panel = _rapierBgPanel(); return !!panel && !panel.hidden; }
 function _rapierBgCurrent() { const state = _rapierDrawState; return state.bgDraft !== undefined ? state.bgDraft : (state.recipe?.background || (typeof _rapierWaterPaperDefault === 'function' ? _rapierWaterPaperDefault() : null)); }
@@ -53,7 +81,7 @@ function _rapierDrawBackgroundSync() {
 	if (!layer && paper) { layer = document.createElementNS('http://www.w3.org/2000/svg', 'g'); layer.setAttribute('class', 'rapier-draw-background'); paper.after(layer); }
 	if (!layer) return;
 	const bg = _rapierBgCurrent(), rect = _rapierBgRect(), dark = _rapierBgDark();
-	if (bg?.kind === 'paper') _rapierBgPaperRequest(bg.paper);
+	if (bg?.kind === 'paper') _rapierBgPaperRequest(bg.paper, bg.strength);
 	if (bg?.kind === 'paper' && rect) svg.setAttribute('data-paper-ground', ''); else svg.removeAttribute?.('data-paper-ground');
 	const origin = bg?.kind === 'paper' && bg.origin ? bg.origin : [0, 0], drawn = origin[0] || origin[1] ? {...bg, origin: undefined} : bg;
 	const sheet = bg?.kind === 'paper' && rect ? _rapierBgPaperSheet({...rect, x: rect.x - origin[0], y: rect.y - origin[1]}, layer.dataset.sheet) : rect;

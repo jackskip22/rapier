@@ -9,6 +9,7 @@
   "assets": {
     "directory": "./site",
     "binding": "ASSETS",
-    "html_handling": "none"
+    "html_handling": "none",
+    "not_found_handling": "404-page"
   }
 }

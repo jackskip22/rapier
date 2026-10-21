@@ -184,7 +184,8 @@ async function _rapierWritePrintPdf({root, css, fontCss = '', canonical, bom = f
 		[side, settings?.geometry ? settings.geometry[side] / 20 : (side === 'top' ? 12 : 14) * 72 / 25.4]));
 	const bodyWidth = Math.floor((width - margins.left - margins.right) * 4 / 3);
 	const bodyHeight = Math.floor((height - margins.top - margins.bottom) * 4 / 3);
-	if (bodyWidth < 1 || bodyHeight < 1 || bodyWidth * bodyHeight > 4 * 1024 * 1024) refuse('pdf_page_geometry_invalid');
+	if (bodyWidth < 1 || bodyHeight < 1) refuse('pdf_page_geometry_invalid');
+	const tiled = bodyWidth > CAPTURE_EDGE || bodyHeight > CAPTURE_EDGE || bodyWidth * bodyHeight > CAPTURE_PIXELS;
 	const frame = document.createElement('iframe');
 	let vectors, backdrop = null, nativeGlyphs, filmSession;
 	let rejectAbort;
@@ -319,7 +320,21 @@ async function _rapierWritePrintPdf({root, css, fontCss = '', canonical, bom = f
 			if (imageBytes > maxBytes) refuse('export_too_large');
 			pages.push({rgb: packed});
 		};
-		for (let first = 0; first < count;) {
+		const tileWidth = Math.min(bodyWidth, CAPTURE_EDGE), tileHeight = Math.min(bodyHeight, CAPTURE_EDGE, Math.floor(CAPTURE_PIXELS / tileWidth));
+		for (let index = 0; tiled && index < count; index++) {
+			const tiles = [];
+			for (let y = 0; y < bodyHeight; y += tileHeight) for (let x = 0; x < bodyWidth; x += tileWidth) {
+				check();
+				const width = Math.min(tileWidth, bodyWidth - x), height = Math.min(tileHeight, bodyHeight - y);
+				const shot = await step(filmSession.raster({x: index * bodyWidth + x, y, width, height}));
+				if (shot?.width !== width || shot?.height !== height || !(shot.rgb instanceof Uint8Array)) refuse('pdf_render_unavailable');
+				await pack(shot.rgb);
+				shot.rgb = null;
+				tiles.push({...pages.pop(), x, y, width, height});
+			}
+			pages.push({tiles});
+		}
+		for (let first = 0; !tiled && first < count;) {
 			check();
 			const span = Math.min(share, count - first);
 			try {
@@ -698,9 +713,10 @@ async function writeRasterPdf({pages, textPages, linkPages = [], vectorPages = [
 		const marked = [];
 		parentTree.push(marked);
 		const held = pages[index], flate = !!held?.rgb;
-		const picture = stream('/Type /XObject /Subtype /Image /Width ' + pixelWidth + ' /Height ' + pixelHeight + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /' + (flate ? 'FlateDecode' : 'DCTDecode'), flate ? held.rgb : held);
+		const tiles = held?.tiles || [{...(flate ? held : {jpeg: held}), x: 0, y: 0, width: pixelWidth, height: pixelHeight}];
+		const pictures = tiles.map((tile, at) => '/Im0_' + at + ' ' + stream('/Type /XObject /Subtype /Image /Width ' + tile.width + ' /Height ' + tile.height +
+			' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /' + (tile.rgb ? 'FlateDecode' : 'DCTDecode'), tile.rgb || tile.jpeg) + ' 0 R'), states = [];
 		pages[index] = null;
-		const pictures = ['/Im0 ' + picture + ' 0 R'], states = [];
 		const emit = (drawing, left, top, clipWidth, clipHeight) => {
 			let out = `q\n.75 0 0 -.75 ${decimal(left)} ${decimal(top)} cm\n0 0 ${clipWidth} ${clipHeight} re W n\n1 0 0 1 ${decimal(drawing.x)} 0 cm\n`;
 			out += [drawing.clip.x, drawing.clip.y, drawing.clip.width, drawing.clip.height].map(decimal).join(' ') + ' re W n\n';
@@ -728,7 +744,8 @@ async function writeRasterPdf({pages, textPages, linkPages = [], vectorPages = [
 		};
 		let commands = '';
 		for (const drawing of backdrop || []) commands += emit(drawing, 0, height, Math.round(width * 4 / 3), Math.round(height * 4 / 3));
-		commands += '/Artifact BMC\nq\n' + [decimal(pixelWidth * .75), 0, 0, decimal(pixelHeight * .75), decimal(margins.left), decimal(height - margins.top - pixelHeight * .75)].join(' ') + ' cm\n/Im0 Do\nQ\nEMC\n';
+		commands += '/Artifact BMC\n' + tiles.map((tile, at) => 'q\n' + [decimal(tile.width * .75), 0, 0, decimal(tile.height * .75), decimal(margins.left + tile.x * .75),
+			decimal(height - margins.top - (tile.y + tile.height) * .75)].join(' ') + ' cm\n/Im0_' + at + ' Do\nQ\n').join('') + 'EMC\n';
 		for (const drawing of vectorPages[index] || []) commands += emit(drawing, margins.left, height - margins.top, pixelWidth, pixelHeight);
 		const textAlphas = new Map();
 		for (const run of textPages[index]) {

@@ -42,6 +42,10 @@
     "path": "editor/styles/rapier-draw.css"
   },
   {
+    "id": "rapier-jxl-style",
+    "path": "editor/styles/rapier-jxl.css"
+  },
+  {
     "id": "rapier-notes-style",
     "path": "editor/styles/rapier-notes.css"
   },

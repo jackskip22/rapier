@@ -16,6 +16,30 @@ const RAPIER_PLUGIN_DELETE = Object.freeze({
 	notes: {name: 'Notes', what: 'the Notes part kept on this device', after: 'Notes downloads it again when you next open it. Your notes stay where they are.',
 		held: () => RapierParts.status('notes')?.status === 'stored' || RapierParts.status('notes')?.status === 'ready' && RapierParts.deletable('notes'),
 		async forget() { await RapierParts.forget('notes'); _rapierNotesPartRowPaint(); }},
+	'jxl-complete': {name: 'JPEG XL complete', what: 'JPEG XL complete kept on this device', after: 'Converting a video or an animation downloads it again. Pictures convert as before.',
+		held: () => RapierParts.status('jxlcomplete')?.status === 'stored' || RapierParts.status('jxlcomplete')?.status === 'ready' && RapierParts.deletable('jxlcomplete'),
+		async forget() { await RapierParts.forget('jxlcomplete'); _rapierJxlCompleteRowPaint(); }},
+	borders: {host: 'templates', name: 'Page borders', what: 'the page borders kept on this device', after: 'They download again when you next open them.',
+		held: () => _rapierGalleryRows.get('borders').held,
+		async forget() {
+			if (!_rapierComposerPart) await RapierParts.need('presets');
+			await _rapierComposerPart.gallery.forget('borders');
+			_rapierGalleryRows.get('borders').held = false; _rapierGalleryRowsPaint();
+		}},
+	elements: {host: 'elements', name: 'Elements', what: 'every Element kept on this device', after: 'They download again when you next open them.',
+		held: () => _rapierGalleryRows.get('elements').held,
+		async forget() {
+			if (!_rapierComposerPart) await RapierParts.need('presets');
+			await _rapierComposerPart.gallery.forget('elements');
+			_rapierGalleryRows.get('elements').held = false; _rapierGalleryRowsPaint();
+		}},
+	letters: {host: 'lettersets', name: 'Letter sets', what: 'the letter sets kept on this device', after: 'They download again when you next open them.',
+		held: () => _rapierGalleryRows.get('letters').held,
+		async forget() {
+			if (!_rapierComposerPart) await RapierParts.need('presets');
+			await _rapierComposerPart.gallery.forget('letters');
+			_rapierGalleryRows.get('letters').held = false; _rapierGalleryRowsPaint();
+		}},
 	ocr: {name: 'text in pictures', what: 'the text reader and every word it read in your pictures', after: 'Search stops finding the words in pictures.',
 		held: () => _rapierProviders.ocr?.status === 'ready' && _rapierProviders.ocr.deletable,
 		async forget() { await _rapierOcrForgetPlugin(); }},
@@ -26,7 +50,7 @@ function _rapierPluginDeleteAsk(key) {
 	if (!plugin || !overlay || !plugin.held() || _rapierPluginDelete.busy) return;
 	_rapierPluginDelete.asking = key;
 	document.getElementById('plugin-delete-title').textContent = 'Delete the ' + plugin.name + ' plugin?';
-	const hostWords = window.RapierPlatform?.resources.installMessage?.(key, 'delete') || '';
+	const hostWords = window.RapierPlatform?.resources.installMessage?.(plugin.host || key, 'delete') || '';
 	document.getElementById('plugin-delete-body').textContent = hostWords ? hostWords + '\n• ' + plugin.after
 		: '• Removes ' + plugin.what + '.\n• ' + plugin.after;
 	document.getElementById('plugin-delete-body').style.whiteSpace = 'pre-line';
@@ -79,3 +103,19 @@ function _rapierPluginDeleteBind() {
 	overlay?.addEventListener('click', event => { if (event.target === overlay) _rapierPluginDeleteKeep(); });
 }
 setTimeout(_rapierPluginDeleteBind, 0);
+
+function _rapierPluginRequired(provider) { return provider && provider.status !== 'ready' && provider.update && provider.update.required ? provider.update : null; }
+function _rapierPluginRequiredWords(noun, update, plural = false) { return noun + (plural ? ' need' : ' needs') + ' an update to work with this Rapier \u00b7 ' + _rapierPluginSize(update.bytes); }
+function _rapierPluginSize(bytes) { return bytes >= 1e6 ? (bytes / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(bytes / 1e3)) + ' KB'; }
+const RAPIER_PLUGIN_TOLD = 'rapier:plugin:told';
+addEventListener('rapier:plugin-update', event => {
+	const {key, noun, plural, version, bytes} = event.detail || {};
+	if (!key || !noun) return;
+	let told = {};
+	try { told = JSON.parse(localStorage.getItem(RAPIER_PLUGIN_TOLD) || '{}') || {}; } catch (_) {}
+	if (told[key] === version) return;
+	told[key] = version;
+	try { localStorage.setItem(RAPIER_PLUGIN_TOLD, JSON.stringify(told)); } catch (_) {}
+	const name = String(noun).charAt(0).toUpperCase() + String(noun).slice(1);
+	showToast(name + (plural ? ' have' : ' has') + ' an update \u00b7 ' + _rapierPluginSize(bytes), 'info');
+});

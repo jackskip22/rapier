@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import {encodeCarried, decodeCarried, writeParts, takeParts, readDocument, readBase, writeBase, takeBase} from './ledger/carried.mjs';
 import {sha256} from './ledger/hash.mjs';
+import {isTemplatePage} from './ledger/template-page.mjs';
 import {PAGE_SEED, returnAddress, returnExpiresAt} from './return-address.mjs';
 
 const START = '<script type="text/markdown" id="rapier-document"';
@@ -97,8 +98,7 @@ export function portableNeeds(text, {base, flowchart} = {}) {
 	for (const source of [text, base]) {
 		if (typeof source !== 'string') continue;
 		let prose = '';
-		const front = /^---[ \t]*\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(source);
-		if (front && /^template:[ \t]*page[ \t]*$/m.test(front[0])) needs.add('layout');
+		if (isTemplatePage(source)) needs.add('layout');
 		const lines = source.split(/\r\n|\r|\n/);
 		for (let at = 0; at < lines.length; at++) {
 			const open = /^ {0,3}(`{3,}|~{3,})\s*([^\s`]*)/.exec(lines[at]);

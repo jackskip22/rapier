@@ -194,14 +194,14 @@ function curveStops(stops) {
 	if (stops.at(-1).at < 1) out.push([1, stops.at(-1).color]);
 	return out.map(([at, color]) => '<stop offset="' + fmt(at) + '" stop-color="' + color + '"/>').join('');
 }
-export function backgroundSVG(input, rect, idPrefix = 'rapier-bg', dark = false) {
+export function backgroundSVG(input, rect, idPrefix = 'rapier-bg', dark = false, paperImage) {
 	const bg = normalizeBackground(input);
 	if (!bg || !rect || !(rect.w > 0) || !(rect.h > 0)) return '';
 	const c = col => dark ? invertColour(col) : col;
 	const flip = stops => dark ? stops.map(s => ({...s, color: invertColour(s.color)})) : stops;
 	const {x, y, w, h} = rect, box = '<rect x="' + fmt(x) + '" y="' + fmt(y) + '" width="' + fmt(w) + '" height="' + fmt(h) + '"';
 	const id = String(idPrefix).replace(/[^A-Za-z0-9_-]/g, '');
-	if (bg.kind === 'paper') return paperSVG(bg, rect, id);
+	if (bg.kind === 'paper') return paperSVG(bg, rect, id, paperImage);
 	if (bg.kind === 'texture') {
 		const ground = dark ? '#000000' : '#ffffff', ink = bg.color ? c(bg.color) : dark ? '#ffffff' : '#000000', tile = Math.min(w, h) * bg.scale;
 		let defs;
@@ -495,20 +495,18 @@ export function paperShifted(bg, dx, dy) {
 	if (bg?.kind !== 'paper' || !Number.isSafeInteger(dx) || !Number.isSafeInteger(dy) || !dx && !dy) return bg;
 	return normalizeBackground({...bg, origin: [(bg.origin?.[0] || 0) + dx, (bg.origin?.[1] || 0) + dy]}) || bg;
 }
-function paperSVG(bg, rect, id) {
+function paperSVG(bg, rect, id, paperImage) {
 	const {x, y, w, h} = rect, box = '<rect x="' + fmt(x) + '" y="' + fmt(y) + '" width="' + fmt(w) + '" height="' + fmt(h) + '"';
-	const tint = paperKindById(bg.paper).params.tint, image = paperTileImage(bg.paper);
+	const tint = paperKindById(bg.paper).params.tint, image = bg.strength ? paperImage === undefined ? paperTileImage(bg.paper, bg.strength) : paperImage : null;
+	if (paperImage !== undefined && bg.strength && (!image || image.id !== bg.paper || image.strength !== bg.strength || !/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(image.url))) throw new Error('The paper image does not match this drawing');
 	if (!image) return '<g data-rapier-background="paper">' + box + ' fill="' + tint + '"/></g>';
-	const s = bg.strength, base = [1, 3, 5].map(i => parseInt(tint.slice(i, i + 2), 16) / 255);
-	const row = c => fmt(s * image.gain[c]) + ' 0 0 0 ' + fmt(base[c] + s * (image.offset[c] - base[c]));
-	const T = WATER_PAPER_PERIOD / WATER_PAPER_UNITS, grey = Math.round(image.mean * 255).toString(16).padStart(2, '0');
+	const T = WATER_PAPER_PERIOD / WATER_PAPER_UNITS;
 	const [ox, oy] = bg.origin ? bg.origin.map(n => n % T) : [0, 0];
 	let copies = '';
 	for (let ty = Math.floor((y - oy) / T); oy + ty * T < y + h; ty++) for (let tx = Math.floor((x - ox) / T); ox + tx * T < x + w; tx++) copies += '<use href="#' + id + '-i" x="' + fmt(ox + tx * T) + '" y="' + fmt(oy + ty * T) + '"/>';
 	return '<g data-rapier-background="paper"><defs><clipPath id="' + id + '-c">' + box + '/></clipPath>' +
-		'<filter id="' + id + '-f" filterUnits="userSpaceOnUse" x="' + fmt(x) + '" y="' + fmt(y) + '" width="' + fmt(w) + '" height="' + fmt(h) + '" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="' + row(0) + ' ' + row(1) + ' ' + row(2) + ' 0 0 0 1 0"/></filter>' +
 		'<image id="' + id + '-i" width="' + fmt(T) + '" height="' + fmt(T) + '" preserveAspectRatio="none" href="' + image.url + '"/></defs>' +
-		'<g clip-path="url(#' + id + '-c)" filter="url(#' + id + '-f)">' + box + ' fill="#' + grey + grey + grey + '"/>' + copies + '</g></g>';
+		'<g clip-path="url(#' + id + '-c)">' + box + ' fill="' + tint + '"/>' + copies + '</g></g>';
 }
 
 export function sampleStops(stops, t) {

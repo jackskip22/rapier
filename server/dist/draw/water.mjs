@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import {WaterGPU,waterReady,waterSoftwareAdmitted,waterSoftwareAdapter,waterWarm,waterUnfilteredTest,waterTiming,waterTimingOn,waterCapture,waterCaptureOn,waterNote,waterHandSheetFits,waterGpuBudget,waterSheetShows} from './water-gpu.mjs';
+import {WaterGPU,waterReady,waterSoftwareAdmitted,waterSoftwareAdapter,waterWarm,waterUnfilteredTest,waterTiming,waterTimingOn,waterCapture,waterCaptureOn,waterNote,waterHandSheetFits,waterGpuBudget,waterSheetShows,waterPaperPixels} from './water-gpu.mjs';
 import {WaterContact,waterContactReach} from './water-contact.mjs';
 import {getBrush,makeTip,CUSTOM_PARAMS,WATER_TIP_SIZE} from './water-materials.mjs';
-import {WATER_PAPER_UNITS,WATER_PAPER_SEED,WATER_PAPER_PERIOD} from './paper-field.mjs';
+import {WATER_PAPER_UNITS,WATER_PAPER_SEED,paperTileSize,paperTileColour} from './paper-field.mjs';
 import {encodeRgb,toLinear,waterMixes} from './water-color.mjs';
 export {waterMixes};
 import {buildWaterFill} from './water-fill.mjs';
@@ -34,13 +34,10 @@ async function installWaterState(surface,state){
  surface.scale=f.scale/3;surface.origin=f.origin.slice();surface.toothOX=surface.origin[0];surface.toothOY=surface.origin[1];surface.seed=f.seed;surface.paperId=f.paper;surface.tick=state.tick;
  surface._restoreTips(state.tips??[]);surface._bounds=state.bounds??null;surface._brush=null;surface._actions=[];surface._bytes=2;surface._actionStart=0;surface._dirty={x0:0,y0:0,x1:surface.width-1,y1:surface.height-1};surface.revision++;surface._sync();return surface;
 }
-export async function paperTileFromGPU(id,density=1){
- const size=Math.round(WATER_PAPER_PERIOD*density),gpu=new WaterGPU(size,size,{paper:id,seed:WATER_PAPER_SEED,paperScale:1/density,paperOrigin:[0,-size],maxBytes:size*size*96});
- try{
-  await gpu.ready;const rgba=await gpu.read({paper:true}),rgb=new Uint8ClampedArray(size*size*3);
-  for(let i=0;i<size*size;i++){rgb[i*3]=rgba[i*4];rgb[i*3+1]=rgba[i*4+1];rgb[i*3+2]=rgba[i*4+2];}
-  return {width:size,height:size,rgb};
- }finally{gpu.dispose();}
+export async function paperTileFromGPU(id,{density=1,strength=1,now=null,pause=null}={}){
+ const size=paperTileSize(density);if(!size)throw waterError('WATER_INPUT','The Water paper size is not valid.');
+ const tile=await waterPaperPixels(id,size);
+ return tile?paperTileColour(id,tile,{strength,now,pause}):null;
 }
 export function waterPigmentRGB(value){const linear=toLinear(value),white=1-Math.exp(-2.2*Math.max(0,value[7]??0));return linear.map((v,i)=>rgbChannel(v*(1-white)+[.96,.955,.94][i]*white));}
 export function waterPigmentFromRGB(r,g,b){return {coefficients:Array.from(encodeRgb([r,g,b].map(v=>clip(v)))),granulation:0,staining:0,source:'raster'};}

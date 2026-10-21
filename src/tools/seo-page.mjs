@@ -54,7 +54,7 @@ On Android ([Google Play](${PLAY_URL})), in a browser, on Windows, or as one HTM
 
 ${Object.entries(DOORS).filter(([, door]) => door.h1).map(([path, door]) => '[' + door.h1 + '](https://rapier.website' + path + ')').join(' · ')}
 
-[Rapier](https://rapier.website/) · [Rapier Notes](https://rapier.website/notes) · [Rapier Draw](https://rapier.website/draw) · [Rapier Watercolor](https://rapier.website/watercolor) · [Rapier Gallery](https://rapier.website/gallery) · [Google Play](${PLAY_URL}) · [Source](https://github.com/jackskip22/rapier) · [Agent guide](https://rapier.website/agents) · [llms.txt](https://rapier.website/llms.txt) · [Privacy and terms](https://rapier.website/privacy) · [Commercial license](https://rapier.website/commercial)
+[Rapier](https://rapier.website/) · [Rapier Notes](https://rapier.website/notes) · [Rapier Draw](https://rapier.website/draw) · [Rapier Watercolor](https://rapier.website/watercolor) · [Rapier Gallery](https://rapier.website/gallery) · [JPEG XL converter](https://rapier.website/jxl) · [Google Play](${PLAY_URL}) · [Source](https://github.com/jackskip22/rapier) · [Agent guide](https://rapier.website/agents) · [llms.txt](https://rapier.website/llms.txt) · [Privacy and terms](https://rapier.website/privacy) · [Commercial license](https://rapier.website/commercial)
 `;
 
 function declarations(node, name, found = []) {
@@ -219,7 +219,9 @@ export function seoDoorSections(engineSource, uiMarkup) {
 	const escape = value => parser.utils.escapeHtml(String(value));
 	const searched = door => !door.h1 ? '' : '<p>' + escape(door.lead) + '</p>\n' +
 		(door.related?.length ? '<p>Also: ' + door.related.map(other => '<a href="https://rapier.website' + other + '">' + escape(SITE_PAGES[other].h1 || SITE_PAGES[other].name) + '</a>').join(' · ') + '</p>\n' : '') +
-		'<h2>Questions</h2>\n' + door.faq.map(([question, answer]) => '<h3>' + escape(question) + '</h3>\n<p>' + escape(answer) + '</p>\n').join('');
+		'<h2>Questions</h2>\n' + door.faq.map(([question, answer]) => '<h3>' + escape(question) + '</h3>\n<p>' + escape(answer) + '</p>\n').join('') +
+		(door.sections || []).map(([heading, text, links]) => '<h2>' + escape(heading) + '</h2>\n<p>' + escape(text) + '</p>\n' +
+			(links?.length ? '<p>' + links.map(([label, href]) => '<a href="' + escape(href) + '">' + escape(label) + '</a>').join(' · ') + '</p>\n' : '')).join('');
 	return Object.fromEntries(Object.entries(DOORS).map(([path, door]) => {
 		if (!bodies[path] && !door.h1) throw new Error('The site door has no guide: ' + path);
 		if (door.h1 && (!door.lead || !door.faq?.length || !door.view || door.related?.some(other => !SITE_PAGES[other]))) throw new Error('A searched door needs its paragraph, questions, view and known pages: ' + path);

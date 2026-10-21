@@ -119,7 +119,16 @@ const PAPERS = Object.freeze({
 	a4: Object.freeze({name: 'a4', width: 11906, height: 16838, css: 'A4'}),
 	a5: Object.freeze({name: 'a5', width: 8391, height: 11906, css: 'A5'}),
 	legal: Object.freeze({name: 'legal', width: 12240, height: 20160, css: 'legal'}),
+	tabloid: Object.freeze({name: 'tabloid', width: 15840, height: 24480, css: '11in 17in'}),
+	a3: Object.freeze({name: 'a3', width: 16838, height: 23811, css: 'A3'}),
 });
+function paperOf(value) {
+	const name = String(value || '').toLowerCase(), named = Object.hasOwn(PAPERS, name) ? PAPERS[name] : null;
+	if (named) return named;
+	const pixels = /^(\d{3,5})x(\d{3,5})px$/.exec(name), width = Number(pixels?.[1]), height = Number(pixels?.[2]);
+	return pixels && width <= 10000 && height <= 10000 ? Object.freeze({name, width: width * 15, height: height * 15, css: width + 'px ' + height + 'px'}) : null;
+}
+export const PAGE_SIZES = Object.freeze(['letter', 'legal', 'tabloid', 'a3', 'a4', 'a5', '1080x1080px', '1080x1350px', '1920x1080px', '1200x630px']);
 const EMPTY = Object.freeze({
 	title: null, subtitle: null, lang: null, fontsize: null, mainfont: null, sansfont: null, monofont: null, defaultfont: null, linestretch: null,
 	papersize: null, geometry: null, pagestyle: null, spacing: null,
@@ -334,7 +343,7 @@ export function readDocumentSettings(markdown) {
 	const monofont = documentFont(take('monofont'));
 	const defaultfont = documentFont(take('defaultfont'));
 	const linestretch = leading(take('linestretch'));
-	const papersize = PAPERS[String(take('papersize') || '').toLowerCase()] || null;
+	const papersize = paperOf(take('papersize'));
 	const geometry = take('geometry') != null ? marginOf(take('geometry')) : null;
 	const page = String(take('pagestyle') || '').toLowerCase();
 	return Object.freeze({
@@ -359,14 +368,14 @@ export function updateDocumentSettings(markdown, patch) {
 		text: (source[field.start - 1] === ':' ? ' ' : '') + text + (source[field.end] === '#' ? ' ' : '')});
 	for (const [key, supplied] of Object.entries(patch || {})) {
 		const font = ['mainfont', 'sansfont', 'monofont', 'defaultfont'].includes(key);
-		if (!font && !['fontsize', 'linestretch', 'spacing', 'geometry'].includes(key)) throw new TypeError('Unknown document setting: ' + key);
+		if (!font && !['fontsize', 'linestretch', 'spacing', 'geometry', 'papersize'].includes(key)) throw new TypeError('Unknown document setting: ' + key);
 		const matches = fields.filter(item => item.key === key);
 		if (matches.length > 1) throw new RangeError('Duplicate document setting: ' + key);
 		const field = matches[0];
-		const value = supplied === null ? null : font ? documentFont(supplied) : key === 'fontsize' ? fontSize(supplied) : key === 'spacing' ? normalizeDocumentSpacing(supplied) : key === 'geometry' ? marginOf(supplied) : leading(supplied);
+		const value = supplied === null ? null : font ? documentFont(supplied) : key === 'fontsize' ? fontSize(supplied) : key === 'spacing' ? normalizeDocumentSpacing(supplied) : key === 'geometry' ? marginOf(supplied) : key === 'papersize' ? paperOf(supplied) : leading(supplied);
 		if (supplied !== null && !value) throw new TypeError('Invalid document setting: ' + key);
-		const encoded = value === null ? '' : font ? JSON.stringify(value.family) : key === 'fontsize' ? value.step : key === 'spacing' ? JSON.stringify(value) : key === 'geometry' ? unquote(supplied).trim() : String(value.factor);
-		if (value !== null && before[key] && (font ? before[key].family === value.family : key === 'fontsize' ? same(before.fontsize.unit, value.unit) : key === 'spacing' ? JSON.stringify(before.spacing) === encoded : key === 'geometry' ? ['top', 'right', 'bottom', 'left'].every(side => before.geometry[side] === value[side]) : before.linestretch.factor === value.factor)) continue;
+		const encoded = value === null ? '' : font ? JSON.stringify(value.family) : key === 'fontsize' ? value.step : key === 'spacing' ? JSON.stringify(value) : key === 'geometry' ? unquote(supplied).trim() : key === 'papersize' ? value.name : String(value.factor);
+		if (value !== null && before[key] && (font ? before[key].family === value.family : key === 'fontsize' ? same(before.fontsize.unit, value.unit) : key === 'spacing' ? JSON.stringify(before.spacing) === encoded : key === 'geometry' ? ['top', 'right', 'bottom', 'left'].every(side => before.geometry[side] === value[side]) : key === 'papersize' ? before.papersize.name === value.name : before.linestretch.factor === value.factor)) continue;
 		if (key === 'fontsize' && value !== null && fontSize(encoded)?.unit !== value.unit) refuse(key);
 		if (!field) { if (value !== null) append.push(key + ': ' + encoded + eol); continue; }
 		if (field.opaque || field.invalid || field.multiline || field.block) refuse(key);

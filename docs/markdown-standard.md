@@ -800,7 +800,7 @@ pagestyle: plain
   `footnote`, and `toc`. Missing values use the named set, or `standard`. Adjacent block gaps use the
   larger value. Explicit point values stay fixed when you change the body size. Word writes explicit
   line values as exact point heights; its default lines remain minimum heights so inline pictures fit.
-- `papersize`: `letter`, `a4`, `a5` or `legal`.
+- `papersize`: `letter`, `legal`, `tabloid`, `a3`, `a4` or `a5`, or a web size in CSS pixels, `WIDTHxHEIGHTpx` (each side 100 to 10000, such as `1080x1350px`).
 - `geometry`: `margin=` a nonnegative decimal length in `in`, `cm`, `mm` or `pt`, at most `6in` once converted. Comma-separated `top=`, `right=`, `bottom=` and `left=` lengths override individual sides; without `margin=`, supply all four. For example, `top=54pt, right=72pt, bottom=90pt, left=60pt`.
 - `template`: `page` makes the document a page: the sheet of `papersize` and `geometry`, fitted to the screen width and zoomable, as Layout: DOCX shows it, whatever the Layout choice (Plain stays plain). A picture with `wrap=behind lock=on` is its border; Rapier draws the first such picture over the whole sheet, margins included. Tapping the border reveals handles for the inner text area. Resizing writes the geometry margins; the border artwork stays fixed. Other readers show an ordinary document with the picture behind its words.
 - `pagestyle`: `plain` (page numbers) or `empty`.

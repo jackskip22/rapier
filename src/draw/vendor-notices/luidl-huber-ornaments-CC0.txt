@@ -21,8 +21,8 @@ Original scan recoveries and modern reconstructions are distinguished in each se
   Missale 1515 (missale-1515): scan pages 335; modern reconstructions: F, I, J, K, P, Q, S, T, U, V, W, X, Y, Z
   Schoeffer 1518 (schoeffer-1518): scan pages 336; modern reconstructions: C, E, F, G, J, K, M, N, Q, R, S, T, V, W, X, Y, Z
   German Baroque (german-baroque): scan pages 338; modern reconstructions: J, Q, S, T, U, W, X, Y, Z; placeholder positions: V
-  Baroque 1655 (baroque-1655): scan pages 340; modern reconstructions: C, G, L, P, R; placeholder positions: D, H, I, M, N, O, Q, S, T, U, V, W, X, Y, Z
-  Fine 1532 (fine-1532): scan pages 341; modern reconstructions: A, B, D, E, F, G, J, K, L, M, P, R, S, T, U, V, W, X, Y, Z; placeholder positions: Q
+  Baroque 1655 (baroque-1655): scan pages 340; modern reconstructions: C, G, H, L, M, N, P, R, T; placeholder positions: D, I, O, Q, S, U, V, W, X, Y, Z
+  Fine 1532 (fine-1532): scan pages 341; modern reconstructions: A, B, E, F, G, J, K, L, R, S, T, U, V, W, X, Y, Z
   Arabesque 16th (arabesque-16th): scan pages 342; modern reconstructions: D, F, I, J, N, Q, S, U, W, Y
   Voskens 1654 (voskens-1654): scan pages 343, 344; modern reconstructions: J, O, U
   Versteegh (versteegh): scan pages 345; modern reconstructions: B, D

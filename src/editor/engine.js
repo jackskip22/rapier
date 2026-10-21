@@ -7322,9 +7322,25 @@ function _rapierRewindEdgeParagraph(block, removed) {
 	return true;
 }
 
+function _rapierPageBorderBlock(block) {
+	if (!block || !_rapierTemplatePage() || rapier.view.mode === 'source') return false;
+	const first = rapier.document.blocks.find(row => _rapierBlockWrapperById(row.id)?.classList.contains('block-wrapper--metadata') !== true && !_rapierRawIsBlank(row.raw));
+	const raw = String(block.raw || '');
+	return first === block && /<!--md-layout:v1\b[^>]*\bwrap=behind\b[^>]*\block=on\b/.test(raw) && _rapierPictureOnlyBlock(block);
+}
+
+function _rapierPageBorderWords(border) {
+	const blocks = rapier.document.blocks, next = blocks[blocks.indexOf(border) + 1];
+	const wrapper = next && _rapierBlockWrapperById(next.id);
+	if (next && wrapper && _rapierBlockHoldsWords(next)) return enterBlockEdit(next, wrapper, { charOffset: 0, preserveScroll: true });
+	return _rapierMakeEdgeParagraph(border, true) ? _activeBlockEditContext()?.editDiv || null : null;
+}
+
+
 function _rapierOpenEdgeParagraph(tail, selectedId = null) {
 	const host = _editorHostEl(), shown = host ? _rapierShownWrappers(host) : [];
 	const block = _rapierBoundBlock(tail ? shown.at(-1) : shown[0]);
+	if (!tail && _rapierPageBorderBlock(block)) return false;
 	if (!block || _rapierBlockHoldsWords(block) || selectedId != null && block.id !== selectedId ||
 			rapier.view.mode === 'source' || rapier.document.docKind !== 'markdown' || _rapierReadOnlyBlocked(false)) return false;
 	return _rapierMakeEdgeParagraph(block, tail);
@@ -7918,6 +7934,7 @@ function _rapierDiscardEditProjection(editDiv) {
 
 function enterBlockEdit(block, wrapper, activation = null) {
 	if (_rapierReadOnlyBlocked(false) || !block || !wrapper) return null;
+	if (_rapierPageBorderBlock(block)) return _rapierPageBorderWords(block);
 	if (globalThis.RapierFlowchartEditor?.close() === false) return null;
 	const liveBlock = rapier.document.blocks.find(candidate => candidate.id === block.id);
 	if (!liveBlock || !wrapper.isConnected) return null;
@@ -17420,7 +17437,8 @@ function _rapierProgressFollowModal(held = null) {
 		const top = _rapierDialogRuntime.isolation.at(-1);
 		const overlay = top?.isConnected ? top : null, lifted = !!overlay && root._rapierProgressLift?.overlay === overlay;
 		const sheet = overlay?.querySelector(':scope > .link-dialog')?.getBoundingClientRect(), ground = overlay?.getBoundingClientRect();
-		const fills = !!sheet && sheet.width >= ground.width - 1 && sheet.height >= ground.height - 1;
+		const panel = overlay?.querySelector(':scope > .settings-panel')?.getBoundingClientRect();
+		const fills = !!sheet && sheet.width >= ground.width - 1 && sheet.height >= ground.height - 1 || !!panel && panel.height >= ground.height * 0.9;
 		if (fills && root._rapierUnder?.overlay !== overlay) root._rapierUnder = {overlay, standing: new Set(root.children)};
 		const raised = child => !fills || !root._rapierUnder.standing.has(child);
 		const notice = !!overlay && (lifted || !overlay.contains(root)) && [...root.children].some(child => child.classList.contains('toast') && !child.hidden && raised(child));
@@ -19825,6 +19843,19 @@ const _rapierDirtyMarkOwner = (function createDirtyMarkOwner() {
 	});
 })();
 function _rapierIsDirty() { return _rapierDirtyMarkOwner.isDirty(); }
+async function _rapierKeepSavedThrough(rows, commit) {
+	let expected = null;
+	if (!_rapierIsDirty()) try {
+		const preview = rapier.document.source.fork();
+		for (const row of rows) preview.splice(row.pos, row.removed, row.inserted);
+		expected = preview.read();
+	} catch (_) {}
+	const result = await commit();
+	if (result && expected !== null && rapier.revision.liveSourceDirty !== true && _rapierSourceText() === expected) {
+		_rapierDirtyMarkOwner.acknowledge(Number(rapier.revision.generation || 0)); _rapierDirtyMarkOwner.refresh();
+	}
+	return result;
+}
 function _notifyDirtyState() {
 	const dirty = _rapierIsDirty();
 	rapier.revision.publishedDirty = dirty;
@@ -21803,7 +21834,7 @@ async function _rapierCheckExternalBoundFile() {
 			_rapierLifecycleRuntime.externalFileCheckAuthority = authority;
 			_rapierLifecycleRuntime.externalFileCheckQueuedAuthority = '';
 			try { await platform.files.checkExternalChange(authority); }
-			catch (error) { try { console.warn('[rapier-platform] external file check failed', error); } catch (_) {} }
+			catch (error) { if (error?.name !== 'NotAllowedError') try { console.warn('[rapier-platform] external file check failed', error); } catch (_) {} }
 			const currentAuthority = String(rapier.identity.authority || '');
 			const queuedAuthority = _rapierLifecycleRuntime.externalFileCheckQueuedAuthority;
 
@@ -23632,10 +23663,19 @@ async function _rapierCreateDocxArtifact(suppliedCapture = null) {
 }
 
 async function _rapierPerformDocxAction() {
-	let captured;
+	let captured, exportTo = null;
 	const task = _rapierProgressTask({leaves: true, label: 'Exporting Word', size: rapier.document.source.length, current: () => !captured?.stamp || _rapierMutationStampIsCurrent(captured.stamp)});
 	const work = task;
+	const prepare = window.RapierPlatform?.files?.prepareExportArtifact, requestedFilename = _rapierGetDocumentMetadata().filename;
+	const destination = typeof prepare === 'function'
+		? Promise.resolve(prepare(_rapierExportStem(requestedFilename) + '.docx')).then(value => ({value}), error => ({error})) : null;
 	try {
+		if (destination) {
+			const selected = await destination;
+			if (selected.error) throw selected.error;
+			if (!selected.value) return false;
+			exportTo = selected.value;
+		}
 		await task.yield(0);
 		captured = await _rapierCaptureSettledExternalDocument();
 		if (!captured) return false;
@@ -23644,7 +23684,7 @@ async function _rapierPerformDocxAction() {
 		const artifact = await _rapierCreateDocxArtifact(captured);
 		if (!artifact || _rapierUiDocx.cancelled) return false;
 		task.check(); task.end();
-		const saved = await _download(artifact.blob, artifact.filename);
+		const saved = exportTo ? _rapierExportOutcome(await exportTo(artifact.blob, {check: task.check})) : await _download(artifact.blob, artifact.filename);
 		if (saved !== true) {
 			if (saved === null) showToast('DOCX document could not be saved', 'error');
 			return false;
@@ -23703,7 +23743,8 @@ function _rapierApplyDocumentSettings() {
 	if (document.documentElement.dataset.layout !== layout) { document.documentElement.dataset.layout = layout; _rapierSyncDocumentMode(); }
 	const settings = layout === 'docx' ? globalThis.RapierMarkdownSpec.wordDocumentSettings(authored) : authored;
 	const inherited = _rapierDocumentFonts.defaultFamily();
-	const bodyFont = settings?.mainfont || (inherited === undefined ? settings?.defaultfont : globalThis.RapierMarkdownSpec.documentFont(inherited));
+	const faces = _rapierTemplatePage() ? authored : settings;
+	const bodyFont = faces?.mainfont || (inherited === undefined ? settings?.defaultfont : globalThis.RapierMarkdownSpec.documentFont(inherited));
 	const fontCss = font => font ? font.css || globalThis.RapierMarkdownSpec.fontFamilyCss(font.family) : '';
 	const fontState = JSON.stringify([rapier.identity.authority, rapier.identity.epoch, rapier.identity.loadToken, _rapierDocumentFonts.stateKey(), RapierPreferences.read('layout')]);
 	const language = globalThis.RapierMarkdownSpec.documentLanguage(settings, navigator.language);
@@ -23714,7 +23755,7 @@ function _rapierApplyDocumentSettings() {
 	const set = (name, value) => value ? host.style.setProperty(name, value) : host.style.removeProperty(name);
 	set('--rapier-doc-size', settings && settings.fontsize ? String(settings.fontsize.unit) : '');
 	set('--rapier-doc-face', fontCss(bodyFont));
-	set('--rapier-doc-heading-face', fontCss(settings?.sansfont));
+	set('--rapier-doc-heading-face', fontCss(faces?.sansfont));
 	set('--rapier-doc-mono-face', fontCss(settings?.monofont));
 	void _rapierDocumentFonts.refresh(_rapierSourceText());
 	const leading = settings?.linestretch || settings?.fontsize ? String(settings.linestretch?.factor ?? globalThis.RapierMarkdownSpec.DOCUMENT_LEADING) : '';
@@ -23801,11 +23842,12 @@ async function rapierExport(fmt) {
 			(!captured?.stamp || _rapierMutationStampIsCurrent(captured.stamp))});
 	const work = task;
 	try {
+		const extension = {pdf: '.pdf', txt: '.txt', html: '.html', 'html-standalone': '.html', 'html-publishing': '.html', 'html-fragment': '.html'}[fmt];
 		const prepare = window.RapierPlatform?.files?.prepareExportArtifact;
-		if ((fmt === 'html' || fmt === 'html-standalone') && typeof prepare === 'function') {
+		if (extension && typeof prepare === 'function') {
 			requested = _rapierMutationStamp();
 			requestedFilename = _rapierGetDocumentMetadata().filename;
-			const filename = _rapierExportStem(requestedFilename) + '.html';
+			const filename = _rapierExportStem(requestedFilename) + extension;
 			destination = Promise.resolve(prepare(filename)).then(value => ({value}), error => ({error}));
 		}
 		await task.yield(0);
@@ -23824,7 +23866,7 @@ async function rapierExport(fmt) {
 			const artifact = await _rapierBuildEditorExport('export_pdf', {}, {captured, signal: task.signal, onProgress: task.onProgress,
 				maxBytes: RapierTextCodec.maxDocumentBytes});
 			task.check(); task.end();
-			return await _download(new Blob([artifact.bytes], {type: artifact.mimeType}), artifact.filename) === true;
+			return await _rapierExportSave(new Blob([artifact.bytes], {type: artifact.mimeType}), artifact.filename, exportTo, task);
 		}
 		if (fmt === 'html-editor') {
 			const page = await _rapierEditablePageChosen(captured, 'export', task);
@@ -23840,26 +23882,31 @@ async function rapierExport(fmt) {
 		if (fmt === 'txt') {
 			const text = await renderer._rapierPlainTextFileAsync(context);
 			task.check(); task.end();
-			return await _download(new Blob([text], {type: 'text/plain'}), context.baseName + '.txt') === true;
+			return await _rapierExportSave(new Blob([text], {type: 'text/plain'}), context.baseName + '.txt', exportTo, task);
 		}
 		if (fmt === 'html-publishing' || fmt === 'html-fragment') {
 			const artifact = await _rapierRenderModule('render')._rapierBuildArtifact({kind: 'publishing'}, context);
 			task.check(); task.end();
-			return await _download(new Blob([artifact.html], {type: 'text/html'}), artifact.filename) === true;
+			return await _rapierExportSave(new Blob([artifact.html], {type: 'text/html'}), artifact.filename, exportTo, task);
 		}
 		if (fmt === 'html' || fmt === 'html-standalone') {
 			const artifact = await _rapierRenderModule('render')._rapierBuildArtifact({kind: 'standalone'}, context);
 			const blob = new Blob([artifact.html], {type: 'text/html'});
 			if (blob.size > RapierTextCodec.maxDocumentBytes) throw new Error('This web page exceeds 64 MiB. Use Share or reduce the pictures');
 			task.check(); task.end();
-			if (exportTo) return _rapierExportOutcome(await exportTo(blob, {check: task.check})) === true;
-			return await _download(blob, artifact.filename) === true;
+			return await _rapierExportSave(blob, artifact.filename, exportTo, task);
 		}
 		return false;
 	} catch (error) {
 		if (error?.name !== 'AbortError' && error?.code !== 'cancelled') showToast('Could not export: ' + String(error?.message || error), 'error');
 		return false;
 	} finally { task.end(); }
+}
+
+async function _rapierExportSave(blob, filename, exportTo, task) {
+	const saved = exportTo ? _rapierExportOutcome(await exportTo(blob, {check: task.check})) : await _download(blob, filename);
+	if (saved === null) showToast('The file could not be saved: ' + filename, 'error');
+	return saved === true;
 }
 
 function _rapierExportOutcome(result) {
@@ -23878,8 +23925,10 @@ async function _download(blob, filename) {
 		);
 		if (exportFile) return _rapierExportOutcome(await exportFile(blob, filename));
 	} catch (error) {
-		console.warn('[rapier] platform export failed; inline fallback was not attempted', error);
-		return null;
+		if (error?.name !== 'SecurityError' && error?.name !== 'NotAllowedError') {
+			console.warn('[rapier] platform export failed; inline fallback was not attempted', error);
+			return null;
+		}
 	}
 
 	try {
@@ -24112,6 +24161,8 @@ function _rapierDownloadDraftSlot(documentAuthority) {
 }
 const RAPIER_SNAPSHOT_KEY = RapierStorage.recoverySnapshot;
 const _rapierPersistenceRuntime = Object.seal({
+	storageAsked: false,
+	storageBase: null,
 	dbPromise: null,
 	lastWarning: 0,
 	chain: Promise.resolve(),
@@ -24817,6 +24868,8 @@ function rapierFlushDirty(opts) {
 	const persistence = _rapierRecoveryBeforeUntouchedEdge(opts.persistenceSnapshot || _rapierCreatePersistenceSnapshot());
 	const dirtyIds = Array.from(rapier.autosave.dirty);
 	const generation = Number(opts.generation ?? persistence.generation ?? 0);
+	if (_rapierPersistenceRuntime.storageBase === null) _rapierPersistenceRuntime.storageBase = generation;
+	else if (generation > _rapierPersistenceRuntime.storageBase) _rapierAskPersistOnce();
 	const documentRevision = Number(opts.documentRevision ?? persistence.documentRevision ?? 0);
 	const savedGeneration = typeof persistence.savedGeneration === 'number'
 		? persistence.savedGeneration : null;
@@ -27071,6 +27124,8 @@ function _rapierEnsureImageUi() {
 			'<button type="button" class="rapier-image-tools__btn rapier-image-tools__draw" data-image-act="draw" aria-label="edit drawing" hidden></button>' +
 			'<button type="button" class="rapier-image-tools__btn" data-image-act="element" aria-label="element color" hidden>' +
 				'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + _RAPIER_COMMAND_ICONS.droplet + '</svg></button>' +
+			'<button type="button" class="rapier-image-tools__btn" data-image-act="save-element" aria-label="Save as Element" title="Save as Element" hidden>' +
+				'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + _RAPIER_COMMAND_ICONS.bookmark + '</svg></button>' +
 			'<button type="button" class="rapier-image-tools__btn" data-image-act="download" aria-label="download image">' +
 				'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg></button>' +
 			'<button type="button" class="rapier-image-tools__btn" data-image-act="delete" aria-label="delete image">' +
@@ -27143,6 +27198,8 @@ function _rapierRefreshImageTools() {
     _rapierImageRuntime.toolbar.querySelector('[data-image-act="element"]').hidden = !element;
     if (drawBtn && element) drawBtn.hidden = true;
     for (const action of ['view', 'download']) _rapierImageRuntime.toolbar.querySelector('[data-image-act="' + action + '"]').hidden = !!record.image.htmlBlock;
+    _rapierImageRuntime.toolbar.querySelector('[data-image-act="save-element"]').hidden = !!record.image.htmlBlock ||
+        _rapierSelectedImageCodec(record) !== 'image/svg+xml' || !_rapierPartAvailable('presets') || rapier.document.docKind !== 'markdown';
     const edit = _rapierImageRuntime.toolbar.querySelector('[data-image-act="edit"]');
     edit.setAttribute('aria-label', record.image.htmlBlock ? 'Edit HTML source' : 'image description and format');
     edit.title = record.image.htmlBlock ? 'Edit HTML source' : 'Image description and format';
@@ -27339,6 +27396,11 @@ function _rapierRunImageAction(action) {
     }
     if (action === 'view') { _rapierOpenImagePreview(); return; }
     if (action === 'element') { _rapierComposerAct('recolor'); return; }
+    if (action === 'save-element') {
+        const image = _rapierImageRuntime.image, name = image?.getAttribute('alt') || '';
+        void _rapierPartReady('presets').then(ready => ready && _rapierPresetPart.saveElement(image, name));
+        return;
+    }
     if (!record) { _rapierCloseImageTools(); return; }
     if (action === 'download') { void globalThis.RapierEmbeddedImages?.downloadOriginal(record); return; }
     if (action === 'smaller' || action === 'larger') {
@@ -35443,7 +35505,8 @@ async function _rapierGuideStarter() {
 	try {
 		const response = await fetch('/docs/' + file, {cache: 'no-cache'});
 		if (!response.ok || !/^text\/(?:markdown|plain)\b/i.test(response.headers.get('content-type') || '')) return null;
-		const text = await response.text();
+		const guides = {'agents.md': '/agents', 'gemini.md': '/gemini', 'markdown-standard.md': '/markdown-standard', 'will.md': '/will'};
+		const text = (await response.text()).replace(/\]\(([a-z0-9-]+\.md)(#[^)\s]*)?\)/g, (all, name, fragment = '') => '](' + (guides[name] || 'https://github.com/jackskip22/rapier/blob/main/docs/' + name) + fragment + ')');
 		return {name: file, text};
 	} catch (_) { return null; }
 }
@@ -35968,11 +36031,11 @@ if (_rapierFrameAuthoritySideEffectsAllowed(_rapierEmbed.refused) &&
 	window.launchQueue.setConsumer(_rapierStageFileLaunch);
 }
 
-if (_rapierFrameAuthoritySideEffectsAllowed(_rapierEmbed.refused) &&
-		globalThis.RapierBenchSession?.active !== true && globalThis.RAPIER_APPS_HOST !== true && navigator.storage && navigator.storage.persist && navigator.storage.persisted) {
-	navigator.storage.persisted()
-		.then(isPersisted => isPersisted || navigator.storage.persist())
-		.catch(() => {});
+function _rapierAskPersistOnce() {
+	const store = navigator.storage, run = _rapierPersistenceRuntime;
+	if (run.storageAsked || !store?.persist || !store.persisted || globalThis.RapierBenchSession?.active === true || globalThis.RAPIER_APPS_HOST === true || !_rapierFrameAuthoritySideEffectsAllowed(_rapierEmbed.refused)) return;
+	run.storageAsked = true;
+	store.persisted().then(kept => kept || store.persist()).catch(() => {});
 }
 
 function _rapierMac() { return /^(?:Mac|iP)/.test(navigator.platform || ''); }
@@ -36027,7 +36090,7 @@ function _rapierKeysBelongElsewhere(target) {
 
 function _rapierFieldOwnsHistory(target) {
 	const host = _editorHostEl();
-	return target instanceof Element && (target.matches('input, textarea, select') && target.id !== 'source-textarea' ||
+	return target instanceof Element && (target.matches('textarea, input:is(:not([type]), [type="text"], [type="search"], [type="url"], [type="email"], [type="tel"], [type="password"], [type="number"])') && target.id !== 'source-textarea' ||
 		target.isContentEditable && !(host && host.contains(target)));
 }
 
@@ -46880,9 +46943,9 @@ function _rapierRenderDocumentHead() {
 	try { viewDoor = !sheet && head.served && /^https?:$/.test(location.protocol) && new URL(head.served.canonical, location.href).pathname === location.pathname.replace(/\/+$/, '') ? head.served : null; } catch (_) {}
 	const settingsTitle = !sheet && !rapier.compare.active ? _rapierRenderModule('render')._rapierDocumentSettingsOf(String(rapier.document.frontmatter || '')) : null;
 	const titled = settingsTitle && settingsTitle.title ? globalThis.RapierMarkdownSpec.documentTitle(settingsTitle) + ' \u2014 Rapier' : '';
-	const noteOpen = typeof _rapierNotes !== 'undefined' && !!_rapierNotes?.current;
+	const noteOpen = typeof _rapierNotes !== 'undefined' && !!_rapierNotes?.current && !_rapierNotes.untitled?.has(_rapierNotes.current);
 	document.title = sheet ? sheet.title : rapier.compare.active ? 'Rapier \u2014 compare'
-		: viewDoor && !noteOpen && !_rapierEmbed.active && (_rapierIsBuiltInWelcomeDocument() || /^\/(?:notes|draw|watercolor|paint)\/?$/.test(location.pathname)) ? viewDoor.title
+		: viewDoor && !noteOpen && !_rapierEmbed.active && (_rapierIsBuiltInWelcomeDocument() || /^\/(?:notes|draw|watercolor|paint|jxl)\/?$/.test(location.pathname)) ? viewDoor.title
 		: _rapierIsBuiltInWelcomeDocument() && !_rapierEmbed.active ? head.title
 		: titled || ('Rapier \u2014 ' + (_rapierEmbed.active && _rapierEmbed.title ? _rapierEmbed.title : _rapierUiFilenameParts().name));
 	if (head.description) head.description.content = sheet ? sheet.description : viewDoor ? viewDoor.description : head.descriptionValue;
@@ -47717,12 +47780,12 @@ function renderSettings() {
 	refs.proRestoreBtn.disabled = _rapierUiPro.busy;
 	refs.proBugReport.hidden = !facts.pro;
 
-	refs.mathAction.hidden = _rapierUiMath.installed();
-	refs.mathInstalled.hidden = !_rapierUiMath.installed();
+	refs.mathAction.hidden = _rapierUiMath.installed() && !_rapierUiMath.updatable();
+	refs.mathInstalled.hidden = !_rapierUiMath.installed() || _rapierUiMath.updatable();
 	refs.mathAction.disabled = _rapierUiMath.busy();
 	refs.mathAction.textContent = _rapierUiMath.buttonLabel();
-	refs.mermaidAction.hidden = _rapierUiDiagram.installed();
-	refs.mermaidInstalled.hidden = !_rapierUiDiagram.installed();
+	refs.mermaidAction.hidden = _rapierUiDiagram.installed() && !_rapierUiDiagram.updatable();
+	refs.mermaidInstalled.hidden = !_rapierUiDiagram.installed() || _rapierUiDiagram.updatable();
 	refs.mermaidAction.disabled = _rapierUiDiagram.busy();
 	refs.mermaidAction.textContent = _rapierUiDiagram.buttonLabel();
 	_rapierPdfSettingsRefresh();
@@ -48003,6 +48066,7 @@ function _rapierUpdateToastLift() {
 	const model = _rapierTransientModel();
 	const root = document.getElementById('toast-root');
 	if (!root) return;
+	_rapierYieldRestoreCard();
 	if (!root._rapierToastListen) {
 		root._rapierToastListen = true;
 		if (typeof MutationObserver === 'function') {
@@ -48175,6 +48239,14 @@ function _rapierUpdateToastLift() {
 			}
 		}
 	};
+	const leaveRoom = px => {
+		const overlay = root.parentElement?.classList.contains('settings-overlay') ? root.parentElement : null, held = root._rapierRoomOverlay;
+		if (held && held !== overlay) held.style.removeProperty('--rapier-toast-room');
+		root._rapierRoomOverlay = overlay;
+		if (!overlay) return;
+		if (px > 0) overlay.style.setProperty('--rapier-toast-room', px + 'px');
+		else overlay.style.removeProperty('--rapier-toast-room');
+	};
 	root._rapierViewport = model.viewport.advanceViewport(root._rapierViewport, sample());
 	const view = root._rapierViewport;
 	const {viewport} = model.viewport.usableViewport(view.sample);
@@ -48186,6 +48258,7 @@ function _rapierUpdateToastLift() {
 		root.style.removeProperty('max-height');
 		root.removeAttribute('data-rapier-notice-scroll');
 		apply({status: 'placed', cssLift: 0});
+		leaveRoom(0);
 		if (_rapierUi.refs?.restoreCard) _rapierUi.refs.restoreCard._rapierNoticeExposure = null;
 		_rapierUiRestore.pauseClock();
 		try { _rapierNotesPart?.snackPlace(); } catch (_) {}
@@ -48222,6 +48295,7 @@ function _rapierUpdateToastLift() {
 	});
 	apply(result);
 	const status = result.status === 'placed' ? 'placed' : 'wait';
+	leaveRoom(status === 'placed' ? Math.ceil(root.getBoundingClientRect().height) : 0);
 	for (const toast of root.children) {
 		const exposure = status === 'placed' && !toast.hidden ? hittable(toast) : {reachable: false, complete: false};
 		toast._rapierNoticeExposure = exposure;
@@ -48458,11 +48532,15 @@ function _rapierUiPlugin(key, label, renderPrompt, noun) {
 		status: 'checking',
 		error: null,
 		dismissed: false,
+		update: null,
 		installed() { return this.status === 'ready'; },
+		pending() { return _rapierProviders[key]?.update || null; },
+		updatable() { return !!this.pending() && (this.status === 'ready' || this.status === 'absent'); },
 		busy() { return this.status === 'downloading' || this.status === 'installing'; },
 		apply(detail) {
 			this.status = (detail && detail.status) || this.status;
 			this.error = (detail && detail.error) || null;
+			this.update = (detail && detail.update) || null;
 			if (this.installed()) closeDialog(_rapierUi.refs[key + 'Overlay']);
 			renderPrompt();
 			renderSettings();
@@ -48486,8 +48564,10 @@ function _rapierUiPlugin(key, label, renderPrompt, noun) {
 		dismiss() {
 			this.dismissed = true;
 			closeDialog(_rapierUi.refs[key + 'Overlay']);
+			if (_rapierPluginRequired(_rapierProviders[key])) showToast(noun.charAt(0).toUpperCase() + noun.slice(1) + ' waits for the update', 'info');
 		},
 		buttonLabel() {
+			if (this.updatable()) return 'UPDATE ' + label + ' \u00b7 ' + _rapierPluginSize(this.pending().bytes);
 			if (this.installed()) return label + ' INSTALLED';
 			if (this.status === 'downloading') return 'DOWNLOADING ' + label + '…';
 			if (this.status === 'installing') return 'INSTALLING ' + label + '…';
@@ -48506,12 +48586,13 @@ function renderMathPrompt() {
 	refs.mathTitle.textContent =
 		status === 'downloading' ? 'Math plug-in downloading'
 		: status === 'installing' ? 'Math plug-in installing'
-		: status === 'error' ? 'Math plug-in unavailable' : 'Install math plug-in?';
+		: status === 'error' ? 'Math plug-in unavailable' : _rapierPluginRequired(_rapierProviders.math) ? 'Update math plug-in?' : 'Install math plug-in?';
 	const platformMessage = window.RapierPlatform && window.RapierPlatform.resources.installMessage
 		? window.RapierPlatform.resources.installMessage('math', 'prompt') : '';
 	refs.mathBody.textContent = status === 'error'
 		? ((window.RapierPlatform && window.RapierPlatform.resources.installMessage && window.RapierPlatform.resources.installMessage('math', 'error'))
 			|| (window.RapierPlatform?.environment.native === true ? 'Rapier could not read or verify its math renderer. Tap retry.' : 'Rapier could not reach or verify the math renderer. Check your internet connection and tap retry.'))
+		: _rapierPluginRequired(_rapierProviders.math) ? '\u2022 ' + _rapierPluginRequiredWords('Math', _rapierPluginRequired(_rapierProviders.math)) + '.'
 		: (platformMessage || '• Shows the math in this document.\n• 1.8 MB, once.\n• Works offline.');
 	refs.mathBody.style.whiteSpace = 'pre-line';
 	refs.mathProgress.hidden = !_rapierUiMath.busy();
@@ -48521,7 +48602,7 @@ function renderMathPrompt() {
 	refs.mathError.textContent = 'Last attempt failed: ' + (_rapierUiMath.error || 'unknown error');
 	refs.mathInstall.disabled = _rapierUiMath.busy();
 	refs.mathInstall.textContent = status === 'downloading' ? 'downloading…'
-		: status === 'installing' ? 'installing…' : status === 'error' ? 'retry' : 'install now';
+		: status === 'installing' ? 'installing…' : status === 'error' ? 'retry' : _rapierPluginRequired(_rapierProviders.math) ? 'update now' : 'install now';
 }
 
 const _rapierUiDiagram = _rapierUiPlugin('mermaid', 'MERMAID', renderDiagramPrompt, 'diagrams');
@@ -48533,12 +48614,13 @@ function renderDiagramPrompt() {
 	refs.mermaidTitle.textContent =
 		status === 'downloading' ? 'Diagram plug-in downloading'
 		: status === 'installing' ? 'Diagram plug-in installing'
-		: status === 'error' ? 'Diagram plug-in unavailable' : 'Install diagram plug-in?';
+		: status === 'error' ? 'Diagram plug-in unavailable' : _rapierPluginRequired(_rapierProviders.mermaid) ? 'Update diagram plug-in?' : 'Install diagram plug-in?';
 	const platformMessage = window.RapierPlatform && window.RapierPlatform.resources.installMessage
 		? window.RapierPlatform.resources.installMessage('mermaid', 'prompt') : '';
 	refs.mermaidBody.textContent = status === 'error'
 		? ((window.RapierPlatform && window.RapierPlatform.resources.installMessage && window.RapierPlatform.resources.installMessage('mermaid', 'error'))
 			|| (window.RapierPlatform?.environment.native === true ? 'Rapier could not read or verify its diagram renderer. Tap retry.' : 'Rapier could not reach or verify the diagram renderer. Check your internet connection and tap retry.'))
+		: _rapierPluginRequired(_rapierProviders.mermaid) ? '\u2022 ' + _rapierPluginRequiredWords('Diagrams', _rapierPluginRequired(_rapierProviders.mermaid), true) + '.'
 		: (platformMessage || '• Shows the diagrams in this document.\n• Downloads once.\n• Works offline.');
 	refs.mermaidBody.style.whiteSpace = 'pre-line';
 	refs.mermaidProgress.hidden = !_rapierUiDiagram.busy();
@@ -48548,7 +48630,7 @@ function renderDiagramPrompt() {
 	refs.mermaidError.textContent = 'Last attempt failed: ' + (_rapierUiDiagram.error || 'unknown error');
 	refs.mermaidInstall.disabled = _rapierUiDiagram.busy();
 	refs.mermaidInstall.textContent = status === 'downloading' ? 'downloading…'
-		: status === 'installing' ? 'installing…' : status === 'error' ? 'retry' : 'install now';
+		: status === 'installing' ? 'installing…' : status === 'error' ? 'retry' : _rapierPluginRequired(_rapierProviders.mermaid) ? 'update now' : 'install now';
 }
 
 const _rapierUiDocx = {
@@ -48730,6 +48812,16 @@ const _rapierUiRestore = {
 	},
 };
 
+function _rapierOtherNoticeUp() {
+	const root = document.getElementById('toast-root'), card = _rapierUi.refs?.restoreCard;
+	return !!root && [...root.children].some(child => child !== card && !child.hidden);
+}
+function _rapierYieldRestoreCard() {
+	const root = document.getElementById('toast-root');
+	if (!root || !_rapierUi.refs?.restoreCard) return;
+	const other = _rapierOtherNoticeUp();
+	if (root._rapierOffered !== other) { root._rapierOffered = other; renderRestore(); }
+}
 function renderRestore() {
 	const refs = _rapierUi.refs;
 	if (!refs) return;
@@ -48739,7 +48831,7 @@ function renderRestore() {
 	let changed = false;
 	const text = (element, value) => { if (element.textContent !== value) { element.textContent = value; changed = true; } };
 	const hide = (element, value) => { if (element.hidden !== value) { element.hidden = value; changed = true; } };
-	hide(refs.restoreCard, !(state.visible || lease));
+	hide(refs.restoreCard, !(state.visible || lease) || _rapierOtherNoticeUp() && !lease);
 	if (lease) refs.restoreCard.dataset.lease = 'true'; else delete refs.restoreCard.dataset.lease;
 
 	text(refs.restoreLine, lease ? 'editing in another ' + _rapierUiWords().pane
@@ -49899,6 +49991,7 @@ function _rapierUiMount() {
 		release: closed => { if (!closed) _rapierUiRestore.startClock(); },
 		dismiss: direction => _rapierUiRestore.dismiss(direction),
 	});
+	new MutationObserver(_rapierYieldRestoreCard).observe(document.getElementById('toast-root'), {childList: true});
 	refs.restoreCard.addEventListener('focusin', () => _rapierUiRestore.focusIn());
 	refs.restoreCard.addEventListener('focusout', () => _rapierUiRestore.focusOut());
 	document.addEventListener('visibilitychange', () => {

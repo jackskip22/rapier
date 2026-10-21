@@ -33,7 +33,7 @@ export function graph(texts, roots) {
 	return order;
 }
 
-function scopedModules(texts, names, bindings) {
+function scopedModules(texts, names, bindings, {classic = false, suffix = ''} = {}) {
   const ids = new Map(names.map((name, i) => [name, 'module' + i]));
   const declared = pattern => pattern.type === 'Identifier' ? [pattern.name]
     : pattern.type === 'ObjectPattern' ? pattern.properties.flatMap(p => declared(p.value || p.argument))
@@ -61,15 +61,17 @@ function scopedModules(texts, names, bindings) {
     for (const [start, end, text] of edits.reverse()) body = body.slice(0, start) + text + body.slice(end);
     return 'const ' + ids.get(name) + '=(()=>{' + body + '\nreturn {' + exports.join(',') + '};})();';
   });
-  return modules.join('\n') + '\n' + Object.entries(bindings).map(([name, module], i) =>
-    'const public' + i + '=' + ids.get(module) + '.' + name + ';export {public' + i + ' as ' + name + '};').join('\n');
+  return modules.join('\n') + '\n' + Object.entries(bindings).map(([name, module], i) => classic
+    ? 'const ' + name + '=' + ids.get(module) + '.' + name + ';'
+    : 'const public' + i + '=' + ids.get(module) + '.' + name + ';export {public' + i + ' as ' + name + '};').join('\n') +
+    (classic ? '\n' + suffix : '');
 }
 
-export function bundle(texts, names, exportsList, banner, {classic = false, suffix = "", scoped = null} = {}) {
-	const code = scoped ? scopedModules(texts, names, scoped) : names.map(name => texts[name].replace(/^import .*;\n/gm, '').replace(/^export \{[^\n]+\};\n/gm, '').replace(/^export /gm, '')).join('\n') + (classic ? '\n' + suffix : '\nexport {' + exportsList.join(', ') + '};\n');
+export function bundle(texts, names, exportsList, banner, {classic = false, suffix = "", scoped = null, reserved = []} = {}) {
+	const code = scoped ? scopedModules(texts, names, scoped, {classic, suffix}) : names.map(name => texts[name].replace(/^import .*;\n/gm, '').replace(/^export \{[^\n]+\};\n/gm, '').replace(/^export /gm, '')).join('\n') + (classic ? '\n' + suffix : '\nexport {' + exportsList.join(', ') + '};\n');
 	let best = null;
 	for (const compress of [{passes: 2}, {passes: 2, inline: 1}, {passes: 2, hoist_funs: true, hoist_vars: true}]) {
-		const properties = {regex: PRIVATE_PROPERTIES};
+		const properties = {regex: PRIVATE_PROPERTIES, reserved};
 		const out = minify_sync(code, {module: true, compress, mangle: {properties}, format: {comments: false}});
 		if (out.error) throw out.error;
 		const bytes = Buffer.from(banner + (classic ? "'use strict';\n" : '') + out.code + '\n'), gzip = gzipSync(bytes, {level: 9});
@@ -85,13 +87,20 @@ export async function jxlModuleTexts(directory) {
   return Object.fromEntries(await Promise.all(names.map(async file => [file.slice(0, -4),
     (await readFile(join(directory, file), 'utf8')).replaceAll('MIT (images/jxl/LICENSE)', 'MIT (LICENSE)')])));
 }
-export async function buildRapierWorker(directory, {encoder = true} = {}) {
+export const RAPIER_WORKERS = Object.freeze({
+	still: Object.freeze({root: 'rapier-core', encoder: 'rapier-still', format: 'format-still'}),
+	complete: Object.freeze({root: 'rapier', encoder: 'rapier-encoder', format: 'format-worker'}),
+});
+export async function buildRapierWorker(directory, {encoder = true, still = false} = {}) {
   const texts = await jxlModuleTexts(directory), full = encoder !== false;
-  const modules = graph(texts, [full ? 'rapier' : 'worker']);
+  const root = full ? RAPIER_WORKERS[still ? 'still' : 'complete'].root : 'worker';
+  const modules = graph(texts, [root]);
+  if (still) for (const entry of [RAPIER_WORKERS.complete.encoder, RAPIER_WORKERS.complete.format])
+    if (modules.includes(entry)) throw new Error('The still worker reaches the complete-only ' + entry + '.mjs');
   const {version} = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
   const license = (await readFile(join(directory, 'LICENSE'), 'utf8')).trim().replace(/\s+/g, ' ');
   const banner = '/*! Rapier JXL ' + version + ' | ' + license + ' */\n';
-  const built = bundle(texts, modules, [], banner, {classic: true,
+  const built = bundle(texts, modules, [], banner, {classic: true, ...(full ? {scoped: {installWorker: root}} : {}),
     suffix: full ? 'installWorker();\n' : 'installJPEGXLWorker({encoderFactory:undefined});\n'});
   new vm.Script(built.bytes.toString('utf8'), {filename: 'rapier-worker.js'});
   return {...built, version, modules: modules.map(name => name + '.mjs'),

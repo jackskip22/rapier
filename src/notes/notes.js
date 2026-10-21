@@ -2469,6 +2469,7 @@ function _rapierNotesRender() {
 		if (head.tagName === 'BUTTON' && !state.reorder) head.setAttribute('aria-expanded', String(!closed));
 		else head.removeAttribute('aria-expanded');
 		grid.replaceChildren();
+		grid.setAttribute('role', files.length ? 'list' : 'group');
 		if (!files.length) {
 			const empty = _rapierNotesEl('div', 'rapier-notes-empty', id === 'skills' ? 'A note your agent can fetch. Write one here.' : id === 'others' ? (state.query ? (state.reading && !state.reading.complete ? 'Reading notes, ' + state.reading.done + ' of ' + state.reading.total + '.' : (typeof _rapierNotesLibraryNotice === 'function' && _rapierNotesLibraryNotice() && _rapierNotesLibraryNotice().stage !== 'complete') ? _rapierNotesLibraryNotice().message : (typeof _rapierNotesLibraryPartial === 'function' && _rapierNotesLibraryPartial()) ? (_rapierNotesLibraryPartial().unread ? 'Some notes unsearched. Open Notes again.' : 'Searching, ' + _rapierNotesLibraryPartial().done + ' of ' + _rapierNotesLibraryPartial().total + '.') : 'Nothing matches.') : '') : own ? 'No notes yet.' : '');
 			if (id === 'others' && !state.query && !Object.keys(state.index.notes).length) {

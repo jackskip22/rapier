@@ -196,7 +196,9 @@ const _rapierProviders = Object.seal({
 	'letters-tuscan-1845': null,
 	'letters-renaissance-alphabet': null,
 	templates: null,
-	elements: null,
+	'elements-ac': null,
+	'elements-dn': null,
+	'elements-oz': null,
 	lettersets: null,
 });
 const _rapierBootstrapRuntime = Object.seal({ pendingIntake: null, complete: false, failed: false, opened: false });
@@ -1346,8 +1348,10 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 		return true;
 	}
 
+	var _WEB_PICKER_UNAVAILABLE = Object.freeze({ unavailable: true }), _webPickerSilent = false;
 	function _webPickSaveDestination(filename, offerRapierFile) {
-		var pickerPromise;
+		if (_webPickerSilent) return Promise.resolve(_WEB_PICKER_UNAVAILABLE);
+		var pickerPromise, asked = Date.now();
 		try {
 			var pickerOptions = { suggestedName: filename || 'document' };
 			var pickerTypes = _pickerAcceptFor(filename, offerRapierFile);
@@ -1366,7 +1370,10 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			var selectedGeneration = await _webFileGeneration(selectedFile);
 			return { handle: handle, generation: selectedGeneration };
 		}).catch(function (error) {
-			if (error && (error.name === 'AbortError' || error.code === 20)) return null;
+			if (error && (error.name === 'AbortError' || error.code === 20)) {
+				if (Date.now() - asked < 150) { _webPickerSilent = true; return _WEB_PICKER_UNAVAILABLE; }
+				return null;
+			}
 			throw error;
 		});
 	}
@@ -1378,6 +1385,12 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 		var chooses = typeof blob === 'function';
 		return (selected ? Promise.resolve(selected) : _webPickSaveDestination(filename, chooses)).then(async function (destination) {
 			if (!destination) return _saveResult('cancelled');
+			if (destination === _WEB_PICKER_UNAVAILABLE) {
+				var bytes = chooses ? await blob(String(filename || '')) : blob;
+				if (!bytes) return _saveResult('cancelled');
+				var name = _webNextDownloadName(filename, options);
+				return _webDownload(bytes, name, options).then(function (result) { return Object.assign(result, { downloadName: name }); });
+			}
 			var handle = destination.handle;
 			var writeOptions = Object.assign({}, options || {}, { fileGeneration: destination.generation });
 			var data = chooses ? await blob(String(handle && handle.name || filename || '')) : blob;
@@ -1410,6 +1423,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 
 	function _webPrepareExportArtifact(filename) {
 		return _webPickSaveDestination(filename).then(function (selected) {
+			if (selected === _WEB_PICKER_UNAVAILABLE) return function (blob, options) { return _webDownload(blob, filename, options); };
 			return selected ? function (blob, options) {
 				return _webPickerSave(blob, filename, options, null, selected);
 			} : null;

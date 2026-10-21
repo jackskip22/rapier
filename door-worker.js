@@ -81,13 +81,34 @@ export const DOORS = Object.freeze({
 	'/paint': Object.freeze({name: 'Paint', title: 'Free painting app online, no download | Rapier Paint',
 		description: 'Paint in your browser with oil, bristle, pencil, pen and watercolor brushes. Use a finger, mouse or pen. Free, no download, no account.',
 		image: 'og-paint.png', imageSize: [1200, 630], imageAlt: 'Rapier Paint: paint on your phone',
-		h1: 'Free painting app online', view: 'paint', related: ['/watercolor', '/draw', '/notes'],
+		h1: 'Free painting app online', view: 'paint', related: ['/watercolor', '/draw', '/jxl', '/notes'],
 		lead: 'This page opens a canvas with real brushes: oil, bristle, scumble, pencil and pen from MyPaint, and watercolor that flows. Paint with your finger, then smudge, erase and undo. Nothing to download or sign up for.',
 		faq: Object.freeze([
 			Object.freeze(['Is it free?', free]),
 			Object.freeze(['Do I need to download an app?', 'No. It runs in your browser. On Android you can also install Rapier from Google Play.']),
 			Object.freeze(['Can kids use it?', 'Yes. There are no ads, accounts or tracking.']),
 			Object.freeze(['Can I save my painting?', saved + '.']),
+		])}),
+	'/jxl': Object.freeze({name: 'JPEG XL converter', title: 'Free JPEG XL converter: JPG, PNG, GIF and video to JXL | Rapier',
+		description: 'Convert JPG, PNG, GIF and video to JPEG XL (JXL) in your browser, free. A JPEG restores exactly; videos and GIFs become animated JXL. Offline, nothing uploaded.',
+		image: 'og-jxl.png', imageSize: [1200, 630], imageAlt: 'Rapier: convert pictures and videos to JPEG XL on your device',
+		h1: 'Free JPEG XL converter', view: 'jxl', encoder: Object.freeze({name: 'rapier-jxl', repository: 'https://github.com/jackskip22/rapier-jxl', package: 'https://www.npmjs.com/package/rapier-jxl'}), related: ['/paint', '/draw', '/notes'],
+		lead: 'Convert JPG and PNG pictures, GIFs and videos to JPEG XL (JXL) online, free, as many as you like. Rapier makes the files on your device with the encoder inside it, so it works offline and nothing is uploaded. A JPEG converts losslessly and restores the exact original; a video or animation becomes an animated JPEG XL.',
+		faq: Object.freeze([
+			Object.freeze(['How do I convert JPG to JXL?', 'Choose or drop your JPEGs, then download each file or all of them as one zip. A JPEG converts losslessly: the original comes back byte for byte.']),
+			Object.freeze(['How do I convert PNG to JXL?', 'The same way. A PNG converts losslessly by default, transparency included. For photos you can choose High quality for a smaller file.']),
+			Object.freeze(['How do I convert a video to JPEG XL?', 'Choose or drop an MP4, WebM or MOV your browser plays. It becomes an animated JPEG XL at up to 30 frames a second, without sound. A long or large video is made smaller or cut to fit your device, and the row says so.']),
+			Object.freeze(['How do I convert a GIF to JPEG XL?', 'The same way. An animated GIF, APNG or animated WebP becomes an animated JPEG XL with every frame and its timing. Lossless keeps every pixel of every frame.']),
+			Object.freeze(['Does it work offline?', 'Yes. The JPEG XL encoder is inside Rapier. Keep Rapier as one HTML file and convert pictures with no connection. Videos and animations need JPEG XL complete, a small download asked for once; after that they convert offline too.']),
+			Object.freeze(['How many pictures can I convert?', 'As many as you like. Rapier works through them a few at a time, and you can cancel. Download each file or all of them as zip files. If a device runs out of memory, the finished files are kept.']),
+			Object.freeze(['Is my picture uploaded?', 'No. Pictures and videos are converted on your device and never leave it.']),
+			Object.freeze(['Is it free?', free]),
+			Object.freeze(['Which browsers open JPEG XL?', 'Chrome 155, Firefox 158 and Safari 17 and later open JPEG XL. Any browser can make the files here.']),
+		]),
+		sections: Object.freeze([
+			Object.freeze(['How it works', 'The JPEG XL encoder is part of Rapier, which is one offline HTML file. Your browser reads each picture, or plays each video frame by frame, and the encoder writes the JPEG XL file on your device. Nothing is uploaded. A JPEG is carried into JPEG XL without decoding it, then restored and checked against the original before you download.']),
+			Object.freeze(['Why JPEG XL', 'A JPEG converts to a smaller file and restores the exact original. Other pictures come out smaller at the same quality. JPEG XL also holds transparency, high dynamic range and animation.']),
+			Object.freeze(['Use rapier-jxl in your site or app', 'rapier-jxl is the JPEG XL encoder inside Rapier: pure JavaScript with optional WebAssembly, MIT licensed, no dependencies. It encodes lossless and lossy pictures and animations, carries a JPEG exactly, and keeps alpha and HDR. The still encoder is about 86 KB gzipped; the complete one, with animation and the rest of the format, about 153 KB. Run npm install rapier-jxl, then import {toJXL} from rapier-jxl/image: toJXL(file, {worker}) returns a JPEG XL Blob.', Object.freeze([Object.freeze(['rapier-jxl on GitHub', 'https://github.com/jackskip22/rapier-jxl']), Object.freeze(['rapier-jxl on npm', 'https://www.npmjs.com/package/rapier-jxl'])])]),
 		])}),
 	'/markdown-editor': Object.freeze({name: 'Markdown editor', title: 'Free online Markdown editor, no sign-up | Rapier',
 		description: 'Write Markdown on the formatted page or in the source: tables, Mermaid, math, pictures. Export PDF and Word. Free, no account, works offline.',
@@ -300,6 +321,11 @@ export function doorHead(head, path) {
 
 // A page's structured data: a page of the site, under the home page, not a second copy of the application's description.
 // The Gallery is a collection of pictures (CollectionPage, a kind of WebPage).
+// The JPEG XL encoder a page names (`encoder`): its repository and package are the same software as the page's application.
+function encoderData(encoder, url) {
+	return {'@type': 'SoftwareSourceCode', '@id': url + '#encoder', name: encoder.name, codeRepository: encoder.repository, url: encoder.package,
+		programmingLanguage: 'JavaScript', license: 'https://opensource.org/license/mit'};
+}
 export function pageData(path) {
 	const door = SITE_PAGES[path], url = ORIGIN + path;
 	return {'@context': 'https://schema.org', '@graph': [
@@ -318,7 +344,9 @@ export function pageData(path) {
 		...(DOORS[path]?.h1 ? [{'@type': 'WebApplication', '@id': url + '#application', name: door.h1, url, description: door.description,
 			applicationCategory: /^\/(?:draw|paint|watercolor)$/.test(path) ? 'DesignApplication' : 'UtilitiesApplication',
 			operatingSystem: 'Web', browserRequirements: 'Requires JavaScript', isAccessibleForFree: true,
-			offers: {'@type': 'Offer', price: '0', priceCurrency: 'USD'}, isPartOf: {'@id': ORIGIN + '/#website'}}] : [])]};
+			offers: {'@type': 'Offer', price: '0', priceCurrency: 'USD'}, isPartOf: {'@id': ORIGIN + '/#website'},
+			...(door.encoder ? {isBasedOn: {'@id': url + '#encoder'}} : {})}] : []),
+		...(door.encoder ? [encoderData(door.encoder, url)] : [])]};
 }
 
 function doorGuide(body, path) {

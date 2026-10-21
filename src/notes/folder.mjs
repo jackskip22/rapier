@@ -1156,14 +1156,15 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		const admit = async () => { checkByteAbort(signal); await guard?.(); checkByteAbort(signal); };
 		await admit();
 		const plan = entries?.parts ? await planSnapshotStream(entries) : await planSnapshot(entries), sidecar = plan.files.find(row => row.name === NOTES_INDEX_FILE);
+		const identity = [];
+		for (const row of plan.files) identity.push([row.name, row.size ?? row.bytes.length, row.sha256 ?? await sha256(row.bytes ?? await row.read())]);
+		identity.sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+		const restoreSource = await sha256(exactBytes(JSON.stringify(identity)));
 		const sourceRows = new Map(plan.files.map(row => [row.name, row]));
 		const scratch = await deleteIdleScratch(plan.index, [...sourceRows.keys()], async name => { const row = sourceRows.get(name); return row ? row.bytes ?? await row.read() : null; });
 		plan.files = plan.files.filter(row => !scratch.has(row.name));
 		let indexBytes = sidecar.bytes ?? await sidecar.read(), checkpoint = null;
 		const restoredIndex = JSON.parse(decode(indexBytes).replace(/^﻿/, ''));
-		restoredIndex.folderDeviceId = crypto.randomUUID().replace(/-/g, '');
-		indexBytes = exactBytes(JSON.stringify(restoredIndex));
-		plan.index = parseIndex(decodeIndex(indexBytes));
 		const writes = [];
 		for (const row of plan.files) {
 			if (row === sidecar) continue;
@@ -1183,7 +1184,11 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			const lease = await owner.acquire(scope);
 			try {
 				await admit();
-				const snapshot = await lease.transact({kind: 'restore', index: plan.index, exactIndex: indexBytes, writes}, {exactRestore: true, replace});
+				restoredIndex.folderDeviceId = await lease.restoreWriter(restoreSource) || crypto.randomUUID().replace(/-/g, '');
+				indexBytes = exactBytes(JSON.stringify(restoredIndex));
+				plan.index = parseIndex(decodeIndex(indexBytes));
+				const snapshot = await lease.transact({kind: 'restore', index: plan.index, exactIndex: indexBytes, writes, restoreSource},
+					{exactRestore: true, replace, restoreGuard: admit});
 				deviceId = snapshot.index.folderDeviceId || '';
 				return {...snapshot, verification: plan.verification};
 			} finally { await lease.release(); }

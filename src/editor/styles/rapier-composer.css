@@ -28,7 +28,7 @@
 .rapier-gallery__tabs .theme-switcher__btn{flex:1 1 0;width:auto;min-width:0;padding:0 2px;white-space:nowrap}
 .rapier-gallery__tabs>.theme-switcher__btn:focus-visible{outline:none;text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:4px}
 .rapier-gallery__head>.navigator-close{width:48px;height:48px;margin-right:calc(-1 * var(--space-2))}
-.rapier-gallery__back-row{flex:none;display:flex}
+.rapier-gallery__back-row{flex:none;display:flex;flex-wrap:wrap;gap:var(--space-2)}
 .rapier-gallery__back-row:empty{display:none}
 .rapier-gallery__back{width:auto}
 .rapier-gallery__body{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-bottom:calc(var(--space-4) + var(--native-inset-bottom,env(safe-area-inset-bottom,0px)))}

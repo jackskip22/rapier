@@ -1,42 +1,42 @@
 {
-  "version": "1.2.19",
+  "version": "1.2.20",
   "development": false,
   "chromium": "supplied and exactly pinned by the administrator",
   "profiles": {
     "reader": {
       "path": "rapier-reader.html",
-      "bytes": 363958,
-      "sha256": "a272d85d12868a0f6499a4f905faf91221807281f10c33a29340624dd8b46c27",
-      "gzip": 350173,
+      "bytes": 365484,
+      "sha256": "62a76b747fab63360157990f2e8c3fa749810d97779579683ec1291ea29bff19",
+      "gzip": 351409,
       "budget": {
         "warn": 1200000,
         "refuse": 1250000
       },
-      "builtAt": "2026-10-21T00:24:06.488Z",
+      "builtAt": "2026-10-21T17:04:12.278Z",
       "node": "v22.23.3",
       "mode": "release",
       "packing": "zopfli",
       "canonical": true,
       "parts": {
         "core": {
-          "raw": 909675,
-          "gzip": 292998,
-          "base124": 286889
+          "raw": 913875,
+          "gzip": 294278,
+          "base124": 288063
         },
         "licenses": {
           "raw": 88111,
-          "gzip": 24783,
-          "base124": 24264
+          "gzip": 24847,
+          "base124": 24204
         }
       }
     },
     "full": {
       "path": "rapier.html",
-      "bytes": 1740244,
-      "sha256": "c5e39d881cc9631e4f55fa72d059940de72d2b759ffe1055154c256e7a5ece77",
+      "bytes": 1758269,
+      "sha256": "3778858d1dbfee4d7e204c8ca29bbe8903c7387bf2c6a9e2dc3db6c1c261667c",
       "budget": {
-        "warn": 1700000,
-        "refuse": 1750000
+        "warn": 1800000,
+        "refuse": 1900000
       },
       "spans": [
         {
@@ -120,8 +120,8 @@
         {
           "element": "rapier-jxl-worker",
           "name": "rapier-jxl-worker.js",
-          "bytes": 190512,
-          "sha256": "5d2eb7c7234e31717c20b417b22a9b88fbec593d6231d6551439450c49d433af"
+          "bytes": 223038,
+          "sha256": "1a08ee6409d86fb0e3ae36ebb35d038e1bb4c4d3bfeca9979810ab45a6c3cfee"
         },
         {
           "element": "rapier-platform-runtime",
@@ -132,8 +132,8 @@
         {
           "element": "rapier-platform-runtime",
           "name": "rapier-platform.js",
-          "bytes": 104371,
-          "sha256": "8b5ba668ae8b94f503b9636fe986dbd5f47c1a860289e5584bd89d98aab5c470"
+          "bytes": 104735,
+          "sha256": "4c60c3cde02c8a5ef408c20ffd56265eacbc90cab35270cf8b2285a4bfd3aca1"
         },
         {
           "element": "rapier-platform-runtime",
@@ -150,20 +150,20 @@
         {
           "element": "rapier-platform-runtime",
           "name": "rapier-plugin-loader.js",
-          "bytes": 20837,
-          "sha256": "de1c41caed5852c680072630b6ca865f0fd65e8bcccb2841fdd0ba5b564a92cd"
+          "bytes": 24001,
+          "sha256": "43b4d15c5110001034e27e9e4cbc909e70b3c5d566cd9dc7f99510746701db96"
         },
         {
           "element": "rapier-platform-runtime",
           "name": "rapier-font-subset-plugin.js",
           "bytes": 849,
-          "sha256": "31454ebb75bd99d29f8214787aecfd48813186d10d23ba97183d950766172727"
+          "sha256": "e67155031095dc853a87b64691a97a4dcd3c94d1bc6964bec52d054516f84e5a"
         },
         {
           "element": "rapier-platform-runtime",
           "name": "rapier-parts.js",
-          "bytes": 5807,
-          "sha256": "58c855389f15c42c12e6f9555c32009d8a22de694de88b9e2587cc126498a6ef"
+          "bytes": 8494,
+          "sha256": "1df6ddc9217d56360651ea53c5c2ef474dfac49d2d9db97fe3a23cdd0bd4586c"
         },
         {
           "element": "rapier-styles-runtime",
@@ -174,8 +174,8 @@
         {
           "element": "rapier-styles-runtime",
           "name": "rapier-styles.json",
-          "bytes": 189833,
-          "sha256": "2da96294e375dbbdbf5b0977da21d5be9869170ae586e0ff84444225b30e2b5f"
+          "bytes": 190066,
+          "sha256": "757c7921c3d64df0a2e6bd1db92cfb6a42bcbb93d7f091da0ac161c2d0c4b7b7"
         },
         {
           "element": "rapier-styles-runtime",
@@ -198,22 +198,22 @@
         {
           "element": "rapier-editor-runtime",
           "name": "rapier-shared.js",
-          "bytes": 2319560,
-          "sha256": "a3c0d115ffac8a4489f003ec30d907b7365b861afad67e670a66e6106af8367b"
+          "bytes": 2325771,
+          "sha256": "33dc6773031a193a44798d8392385fd4073827ad11aba1fe803b2eb65d17a0b2"
         },
         {
           "element": "rapier-editor-runtime",
           "name": "rapier-editor.js",
-          "bytes": 2248153,
-          "sha256": "29084a67fa6c1a3c2389a22a1ef6856d4c2757ed5adc51ff7ec56fa9e79cf49e"
+          "bytes": 2266718,
+          "sha256": "16d2409a805f24dc6f7f617f460feea5e6b21766dce0a985147a10b09f435398"
         }
       ],
       "parts": [
         {
           "id": "document",
-          "file": "rapier-document-60d28e95fd56e35e.txt",
-          "bytes": 902083,
-          "sri": "ZIFYVG+ZmktRERNIuul9yM0A0jusLrwptf1WPh50Y4gzTg/Wg0AQdB9mJiR4hsme",
+          "file": "rapier-document-a9468fb97b833163.txt",
+          "bytes": 902069,
+          "sri": "kQOh8bxRq1NC8SsPBw1DmJjssVaGbNtIQMnUvP0JH3Ck+QZimLi18aibBOShtwo0",
           "scripts": [
             "editor/document-layout.js"
           ],
@@ -226,9 +226,9 @@
         },
         {
           "id": "presets",
-          "file": "rapier-presets-323cc2b9392f946e.txt",
-          "bytes": 176374,
-          "sri": "7PVvi5Ja+0lu/Jnmf+b/SCpa8Lx+zIyHzc/PtO9KaRhSttHjGEA2gns+FeeBEz5h",
+          "file": "rapier-presets-f3227bb69997db8a.txt",
+          "bytes": 259600,
+          "sri": "NWGcaH5oJSsWgCk/1M0dKP8Ubbkd3X/tRT7k9HPcXdxcrnOJoduYR/Ernevp5CNt",
           "scripts": [
             "presets/browser.js",
             "editor/composer.js"
@@ -248,9 +248,9 @@
         },
         {
           "id": "drawing",
-          "file": "rapier-drawing-9657f420af26699e.txt",
-          "bytes": 335623,
-          "sri": "nInLX2BwxiitKLcldViMZl3eWAUaKa9wvDp8DdVV2/mwiUM3Py9o9NtxNQIwHdga",
+          "file": "rapier-drawing-cd1551a2451430e3.txt",
+          "bytes": 339396,
+          "sri": "XWxNOaL+JWr2PXKUmEvkzgLec/hCT/JzpXeyOgDgaLSZTqrgs5+tw4idl30DEWM2",
           "scripts": [
             "draw/draw.js",
             "draw/effects-tool.js",
@@ -282,8 +282,12 @@
             "images/jxl/kernel-hooks.mjs",
             "images/jxl/frame.mjs",
             "images/jxl/admit.mjs",
+            "images/jxl/fault.mjs",
+            "images/jxl/icc-write.mjs",
             "images/jxl/prefix.mjs",
+            "images/jxl/screen-lz77.mjs",
             "images/jxl/modular.mjs",
+            "images/jxl/icc-profile.mjs",
             "images/jxl/lossless-coding.mjs",
             "draw/water-paths.mjs",
             "draw/stroke-letters.mjs",
@@ -316,10 +320,38 @@
           ]
         },
         {
+          "id": "jxl",
+          "file": "rapier-jxl-4de248d0e762d671.txt",
+          "bytes": 14174,
+          "sri": "vrRBT4PQoacPjwgqaHs17XXLV5Nyvkhfb00VDj8TbRDW99FXACUCpZ5NRr6mzGpJ",
+          "scripts": [
+            "jxl/view.js"
+          ],
+          "modules": [
+            "jxl/convert.mjs",
+            "jxl/png.mjs",
+            "jxl/frames.mjs"
+          ],
+          "globals": [
+            "RapierJxlConvert"
+          ]
+        },
+        {
+          "id": "jxlcomplete",
+          "file": "rapier-jxlcomplete-6e6594e44b1a1a9d.txt",
+          "bytes": 138323,
+          "sri": "PyK/TOXzoht0CQ+3mKp8GTnGqxU5RGWc3NE3WErS+jHP3AXf05wGrHPlLog4AubD",
+          "scripts": [
+            "jxl/complete.js"
+          ],
+          "modules": [],
+          "globals": []
+        },
+        {
           "id": "notes",
-          "file": "rapier-notes-ec3c23975e266964.txt",
-          "bytes": 372010,
-          "sri": "XcEw78rhwrdXS2ycGXuHuyuFM9A9IVVezqiVZNhF30BtdtslgpY0/5ezbk2COgh0",
+          "file": "rapier-notes-ab4e3da15017a697.txt",
+          "bytes": 372899,
+          "sri": "MqxGkGP4R2O2K8sMincYQB/70qH9po1MCryifvMbEy9IdlR36EgjdMKR6Kx5hRRU",
           "scripts": [
             "notes/notes.js",
             "notes/todo.js",
@@ -836,6 +868,29 @@
         "notes/frontmatter.mjs": [
           "setProperty"
         ],
+        "jxl/convert.mjs": [
+          "ZIP_BYTES",
+          "ZIP_ENTRIES",
+          "kindOf",
+          "resultOf",
+          "effortFor",
+          "pixelsOf"
+        ],
+        "jxl/frames.mjs": [
+          "FRAME_PIXELS",
+          "PIXELS",
+          "FRAMES",
+          "DOCUMENT_BYTES",
+          "FPS",
+          "LONG_SIDE",
+          "SHORT_LONG_SIDE",
+          "SECONDS",
+          "PIXEL_RATE",
+          "readAnimation",
+          "videoPlan",
+          "readVideo",
+          "oneAtATime"
+        ],
         "draw/copier-gpu.mjs": [
           "copierLattice"
         ],
@@ -880,12 +935,30 @@
           "paintingSteps"
         ],
         "images/jxl/lossless.mjs": [
+          "shapeFloors",
           "paletteKey",
           "inspectPixels",
           "planeFill",
           "planGroup",
           "encodeLossless",
           "nativeSteps"
+        ],
+        "images/jxl/frame.mjs": [
+          "DC_GROUP_DIM",
+          "writeFrameHeaderEnd",
+          "writeTOC",
+          "finishSections"
+        ],
+        "images/jxl/admit.mjs": [
+          "admitSize",
+          "answer",
+          "guard"
+        ],
+        "images/jxl/screen-lz77.mjs": [
+          "screenResiduals",
+          "screenLZ77",
+          "screenModel",
+          "writeScreenModel"
         ],
         "images/jxl/modular.mjs": [
           "ZERO_PREDICTOR",
@@ -900,17 +973,6 @@
           "canonicalCodes",
           "priceCode",
           "writeContextMap"
-        ],
-        "images/jxl/frame.mjs": [
-          "DC_GROUP_DIM",
-          "writeFrameHeaderEnd",
-          "writeTOC",
-          "finishSections"
-        ],
-        "images/jxl/admit.mjs": [
-          "admitSize",
-          "answer",
-          "guard"
         ],
         "shell/worker-execution.mjs": [
           "yieldWork"
@@ -953,7 +1015,6 @@
           "borderSVG"
         ],
         "presets/presets.mjs": [
-          "PRESET_BYTES",
           "passage"
         ],
         "notes/personal.mjs": [
@@ -961,11 +1022,10 @@
           "mergePersonal",
           "personalAsset"
         ],
-        "presets/record.mjs": [
-          "PRESET_BYTES"
-        ],
         "interchange/docx.mjs": [
-          "docxPortableHtml"
+          "docxPortableHtml",
+          "WORD_PAGE_LIMIT",
+          "wordPage"
         ],
         "images/archive.mjs": [
           "unpackFiles",
@@ -1037,8 +1097,9 @@
           "invertColour"
         ],
         "draw/paper-field.mjs": [
-          "paperField",
+          "WATER_PAPER_MM",
           "paperTiled",
+          "PAPER_TILE_MAX_BYTES",
           "paperTile"
         ],
         "draw/effects.mjs": [
@@ -1163,29 +1224,40 @@
         ]
       },
       "jxl": {
-        "version": "4.2.1",
+        "version": "5.0.0",
         "modules": [
           "images/jxl/kernel-hooks.mjs",
           "images/jxl/weighted-policy.mjs",
           "images/jxl/bits.mjs",
+          "images/jxl/fault.mjs",
+          "images/jxl/prefix.mjs",
+          "images/jxl/modular.mjs",
+          "images/jxl/screen-lz77.mjs",
+          "images/jxl/icc-profile.mjs",
+          "images/jxl/icc-write.mjs",
           "images/jxl/admit.mjs",
           "images/jxl/kernels-bytes.mjs",
           "images/jxl/kernels.mjs",
           "images/jxl/frame.mjs",
-          "images/jxl/prefix.mjs",
-          "images/jxl/modular.mjs",
           "images/jxl/lossless-coding.mjs",
           "images/jxl/lossless.mjs",
           "images/jxl/squeeze.mjs",
           "images/jxl/lossy.mjs",
+          "images/jxl/effort-level.mjs",
+          "images/jxl/photo-dct.mjs",
+          "images/jxl/photo-xyb.mjs",
+          "images/jxl/photo-job.mjs",
+          "images/jxl/entropy.mjs",
+          "images/jxl/jfif.mjs",
+          "images/jxl/vardct.mjs",
+          "images/jxl/coefficient-effort.mjs",
+          "images/jxl/ans.mjs",
+          "images/jxl/coefficient-ans.mjs",
           "images/jxl/weighted.mjs",
           "images/jxl/local.mjs",
           "images/jxl/rct-search.mjs",
-          "images/jxl/screen-lz77.mjs",
           "images/jxl/screen.mjs",
           "images/jxl/screen-patches.mjs",
-          "images/jxl/entropy.mjs",
-          "images/jxl/ans.mjs",
           "images/jxl/sampled.mjs",
           "images/jxl/palette-search.mjs",
           "images/jxl/screen-local.mjs",
@@ -1194,34 +1266,128 @@
           "images/jxl/effort-job.mjs",
           "images/jxl/effort.mjs",
           "images/jxl/pool.mjs",
-          "images/jxl/jfif.mjs",
-          "images/jxl/vardct.mjs",
           "images/jxl/jpeg-coefficients.mjs",
           "images/jxl/container.mjs",
           "images/jxl/jpeg-reconstruction.mjs",
-          "images/jxl/effort-level.mjs",
           "images/jxl/jpeg-job.mjs",
-          "images/jxl/coefficient-effort.mjs",
           "images/jxl/coefficient-coding.mjs",
           "images/jxl/jpeg-effort.mjs",
           "images/jxl/jpeg-ans-effort.mjs",
           "images/jxl/jpeg-ans.mjs",
-          "images/jxl/photo-dct.mjs",
-          "images/jxl/photo-xyb.mjs",
-          "images/jxl/photo-job.mjs",
-          "images/jxl/coefficient-ans.mjs",
           "images/jxl/photo.mjs",
-          "images/jxl/rapier-encoder.mjs",
+          "images/jxl/async-job.mjs",
+          "images/jxl/photo-pool.mjs",
+          "images/jxl/rapier-still.mjs",
           "images/jxl/worker-input.mjs",
           "images/jxl/worker.mjs",
-          "images/jxl/rapier.mjs"
+          "images/jxl/image-source.mjs",
+          "images/jxl/rapier-core.mjs"
         ],
         "worker": {
-          "bytes": 190512,
-          "sha256": "5d2eb7c7234e31717c20b417b22a9b88fbec593d6231d6551439450c49d433af"
+          "bytes": 223038,
+          "sha256": "1a08ee6409d86fb0e3ae36ebb35d038e1bb4c4d3bfeca9979810ab45a6c3cfee"
+        },
+        "complete": {
+          "modules": [
+            "images/jxl/kernel-hooks.mjs",
+            "images/jxl/weighted-policy.mjs",
+            "images/jxl/bits.mjs",
+            "images/jxl/fault.mjs",
+            "images/jxl/prefix.mjs",
+            "images/jxl/modular.mjs",
+            "images/jxl/screen-lz77.mjs",
+            "images/jxl/icc-profile.mjs",
+            "images/jxl/icc-write.mjs",
+            "images/jxl/admit.mjs",
+            "images/jxl/kernels-bytes.mjs",
+            "images/jxl/kernels.mjs",
+            "images/jxl/frame.mjs",
+            "images/jxl/lossless-coding.mjs",
+            "images/jxl/lossless.mjs",
+            "images/jxl/squeeze.mjs",
+            "images/jxl/lossy.mjs",
+            "images/jxl/effort-level.mjs",
+            "images/jxl/photo-dct.mjs",
+            "images/jxl/photo-xyb.mjs",
+            "images/jxl/photo-job.mjs",
+            "images/jxl/entropy.mjs",
+            "images/jxl/jfif.mjs",
+            "images/jxl/vardct.mjs",
+            "images/jxl/coefficient-effort.mjs",
+            "images/jxl/ans.mjs",
+            "images/jxl/coefficient-ans.mjs",
+            "images/jxl/weighted.mjs",
+            "images/jxl/local.mjs",
+            "images/jxl/rct-search.mjs",
+            "images/jxl/screen.mjs",
+            "images/jxl/screen-patches.mjs",
+            "images/jxl/sampled.mjs",
+            "images/jxl/palette-search.mjs",
+            "images/jxl/screen-local.mjs",
+            "images/jxl/screen-search.mjs",
+            "images/jxl/painting.mjs",
+            "images/jxl/effort-job.mjs",
+            "images/jxl/effort.mjs",
+            "images/jxl/pool.mjs",
+            "images/jxl/jpeg-coefficients.mjs",
+            "images/jxl/container.mjs",
+            "images/jxl/jpeg-reconstruction.mjs",
+            "images/jxl/jpeg-job.mjs",
+            "images/jxl/coefficient-coding.mjs",
+            "images/jxl/jpeg-effort.mjs",
+            "images/jxl/jpeg-ans-effort.mjs",
+            "images/jxl/jpeg-ans.mjs",
+            "images/jxl/photo.mjs",
+            "images/jxl/async-job.mjs",
+            "images/jxl/photo-pool.mjs",
+            "images/jxl/rapier-still.mjs",
+            "images/jxl/framing.mjs",
+            "images/jxl/animation-frames.mjs",
+            "images/jxl/animation.mjs",
+            "images/jxl/animation-pool.mjs",
+            "images/jxl/rapier-encoder.mjs",
+            "images/jxl/worker-input.mjs",
+            "images/jxl/worker.mjs",
+            "images/jxl/image-source.mjs",
+            "images/jxl/afv-basis.mjs",
+            "images/jxl/quantization-defaults.mjs",
+            "images/jxl/quantization-params.mjs",
+            "images/jxl/vardct-strategies.mjs",
+            "images/jxl/vardct-progressive.mjs",
+            "images/jxl/noise.mjs",
+            "images/jxl/photo-crop.mjs",
+            "images/jxl/lf-frames.mjs",
+            "images/jxl/photo-advanced.mjs",
+            "images/jxl/noise-estimation.mjs",
+            "images/jxl/photo-noise.mjs",
+            "images/jxl/color-info.mjs",
+            "images/jxl/icc.mjs",
+            "images/jxl/format-fields.mjs",
+            "images/jxl/channel-lossless.mjs",
+            "images/jxl/channels.mjs",
+            "images/jxl/layers.mjs",
+            "images/jxl/hybrid.mjs",
+            "images/jxl/delta-palette.mjs",
+            "images/jxl/patches.mjs",
+            "images/jxl/splines.mjs",
+            "images/jxl/source.mjs",
+            "images/jxl/container-stream.mjs",
+            "images/jxl/container-advanced.mjs",
+            "images/jxl/brotli.mjs",
+            "images/jxl/metadata.mjs",
+            "images/jxl/progressive-container.mjs",
+            "images/jxl/opsin.mjs",
+            "images/jxl/toc-permutation.mjs",
+            "images/jxl/delivery.mjs",
+            "images/jxl/photo-plan.mjs",
+            "images/jxl/format-worker.mjs",
+            "images/jxl/rapier.mjs"
+          ],
+          "bytes": 415097,
+          "sha256": "4a9f344b8894d4b79d4386260e15da0e7b6d54741efdba3b8a50b6920d163f9c"
         }
       },
-      "builtAt": "2026-10-21T00:26:54.501Z",
+      "builtAt": "2026-10-21T17:08:53.455Z",
       "node": "v22.23.3",
       "mode": "release",
       "packing": "zopfli",
@@ -1251,8 +1417,8 @@
       "sha256": "94b5941c8bf905ea8c96e18994ac5444288bac13615f8e18ed7f110383c2c3b5"
     },
     "dist/mcp/worker.mjs": {
-      "bytes": 305897,
-      "sha256": "20c2fbd316060207c479d5ab2a4b7e272a76d80d28e8a9cc43bfa2bace4e0fc9"
+      "bytes": 306714,
+      "sha256": "56badd7a68861ee59207bef575b17ea1bbab11d0353ad06b41466984116523f5"
     },
     "dist/mcp/incremental-json.mjs": {
       "bytes": 19335,
@@ -1359,8 +1525,8 @@
       "sha256": "b2b69093c47efe6d8ddd8468ce244fdac367ef2d3b1f8f89419940db68b713c8"
     },
     "dist/images/playback.mjs": {
-      "bytes": 6831,
-      "sha256": "1572e53bc718e43dd0113254a1d09207594a6199647f3720fe108cdcf4ffd9be"
+      "bytes": 7024,
+      "sha256": "521979141a36463473f09af10007b0525f6fd2f9c9280c113d858af65aca63da"
     },
     "dist/spec/md-layout.mjs": {
       "bytes": 12636,
@@ -1467,8 +1633,8 @@
       "sha256": "c35456bc682b7bd76566bd9ae9d62b1e6a39de1434a0db2ba476ce1f097d798b"
     },
     "dist/draw/core.mjs": {
-      "bytes": 252919,
-      "sha256": "46ba400325eb102e476210ea04f6b37b36fc2d251a87a22ce1d50e3e35dfea64"
+      "bytes": 252946,
+      "sha256": "9ba0c25a43e90045636f5afecd1fbf81d8f8a8eb8513add4a1efc59555ea7aac"
     },
     "dist/draw/freehand.mjs": {
       "bytes": 14360,
@@ -1523,12 +1689,12 @@
       "sha256": "96ab39684e8f83351914e5d0703a2d912fe07e5f42e97dbb49a4d3cc1b459aa2"
     },
     "dist/draw/backgrounds.mjs": {
-      "bytes": 53125,
-      "sha256": "2cad2bb1cde78ff7fd1aac957c101e4a11754b5b27b367bbf771476e91b97ab1"
+      "bytes": 52893,
+      "sha256": "bacbf91d6ae626338ca7d0f276e99813cafd517023d7a16e44ba3e517275186d"
     },
     "dist/draw/paper-field.mjs": {
-      "bytes": 19094,
-      "sha256": "7f814228d412d6a8b75aebf75535701bbb8efd4384bf7789468c7157ea3bb42d"
+      "bytes": 23253,
+      "sha256": "722dfeda4277e51c41a3689f087077d5b11b2925cc9990a5efe34861bce8b133"
     },
     "dist/draw/paint-png.mjs": {
       "bytes": 8843,
@@ -1547,8 +1713,8 @@
       "sha256": "c19c0a8372ad29de4a92fe23a335c016a764190aafb1ccc7854ca17b21625bb7"
     },
     "dist/draw/water-materials.mjs": {
-      "bytes": 19151,
-      "sha256": "a4e7b566660d2dbd992e462e3b9f2c75e9a4c7b44f7f5d373b0fd9a8a144abae"
+      "bytes": 20157,
+      "sha256": "45ab5235bd2812e8cd7e79a57d53fd9d73ffd51887d441d86c3774b8d6a46d37"
     },
     "dist/draw/water-specialty.mjs": {
       "bytes": 2398,
@@ -1559,8 +1725,8 @@
       "sha256": "8da5e6f19cfbca80ff7b3b5a8459e48367807a33626c8c4f1a2f621f6f0293eb"
     },
     "dist/draw/paint-limits.mjs": {
-      "bytes": 828,
-      "sha256": "adc8a53017255244fd8f4ee6843cc59beb9ac94ee4c7d9f233e81517e920e392"
+      "bytes": 882,
+      "sha256": "8a74affc881daafa2e36d43e6d783e482c20185ae27a783111d7b88a4199ab0d"
     },
     "dist/draw/ornaments.mjs": {
       "bytes": 6659,
@@ -1596,15 +1762,15 @@
     },
     "dist/version.mjs": {
       "bytes": 196,
-      "sha256": "b39707d1d1260052d56e71d175fc4438f7380f91c958880186bd6e2d3260271a"
+      "sha256": "74f370d94b6d2a2fcf2308b297efcaf67d3fc3692e36d714b1a2c79f39a430e1"
     },
     "dist/agent/visual.mjs": {
       "bytes": 10397,
       "sha256": "9fd94fd1d63ac7e095bdc0dcb53c4c707048499eeb834383d774372fa1f6326f"
     },
     "dist/agent/guide.mjs": {
-      "bytes": 24118,
-      "sha256": "cc4b1917cbf14e5f10db33b215284c85201f1da2362ee65d6dbf78cbd600ddf1"
+      "bytes": 25649,
+      "sha256": "dd07ddae1586262c01fbc080f42a6686f7e82cc320d52fb32d7efaf1b9420edb"
     },
     "dist/agent/text-surface.mjs": {
       "bytes": 20047,
@@ -1727,16 +1893,16 @@
       "sha256": "bcea144f6b6da2f21f98742958009f866ca3097f30f45ee3ba43d034b91a1b0d"
     },
     "dist/draw/water.mjs": {
-      "bytes": 39407,
-      "sha256": "8ea941284f42ec5848148239d8eb543c7e9f29087e9caee6c54187c8103b10e0"
+      "bytes": 39250,
+      "sha256": "4e729627b3f12180d7f34a1468ba73944a7d5f396939fb3a3ce02933857e491b"
     },
     "dist/draw/water-gpu.mjs": {
-      "bytes": 98832,
-      "sha256": "c40db762841d12d43792b2cf971085935094653a97da3a85ef26c9cd2da73de6"
+      "bytes": 104047,
+      "sha256": "3a5b518a2e813401ab1f6b065a77282a4a71a5c6f30578ac4c8c3786c64170e4"
     },
     "dist/draw/water-shaders.mjs": {
       "bytes": 24730,
-      "sha256": "73e0c591304bfd4db4e4f8bb1fdf48217aa8a1f53b465c80b0a0d0d6f70bc8f0"
+      "sha256": "bd77287d9bacaf55ee43283bf3d91d647541fbd72cc3e5802eadc7b628562e56"
     },
     "dist/draw/water-contact.mjs": {
       "bytes": 10479,
@@ -1759,28 +1925,44 @@
       "sha256": "d6b26d68e1598277c5291a33de69771d2d4be480793bc801d18d8d64617440ec"
     },
     "dist/images/jxl/lossless.mjs": {
-      "bytes": 16457,
-      "sha256": "35a2f477f00c862df2823e27ec3fee2a9bbb17d7106e5ad1f8f2a5d586a04ef9"
+      "bytes": 16724,
+      "sha256": "87d44f6bd35da89174f1e2d5a39b880ecddfedc33bc2d126d6d6e9785844e7c6"
     },
     "dist/images/jxl/kernel-hooks.mjs": {
-      "bytes": 193,
-      "sha256": "df24d2f21d49cd48de200ad8b513aa7bd6fd5b813356cec2bf318e5dbad32205"
+      "bytes": 204,
+      "sha256": "3d44e187b8072693ddadb553a143cc80be5efdc3c8ced0264f3734b494cfb37f"
     },
     "dist/images/jxl/frame.mjs": {
-      "bytes": 5113,
-      "sha256": "3fd2d3319ff247d2f8aebba12312273574592e7aa69203679535063c8ea38815"
+      "bytes": 6114,
+      "sha256": "ecf8c7da9a577ef927195c7298a0143897b8c4c39bcafee8611731eea75ee1d1"
     },
     "dist/images/jxl/admit.mjs": {
-      "bytes": 5109,
-      "sha256": "318eb3c2bfd23e6eb1a218bfcd8a845da02f590cf17851a663fa74be611f7e5b"
+      "bytes": 6438,
+      "sha256": "3fd62175c68d33553ff870cfc80c9a56782f3844879f7926bd8a20a9662195c8"
+    },
+    "dist/images/jxl/fault.mjs": {
+      "bytes": 115,
+      "sha256": "f96f769feebf1d58ec1dac5d00a3601b64570f304e93acdb6e1135f3375d60d2"
+    },
+    "dist/images/jxl/icc-write.mjs": {
+      "bytes": 5715,
+      "sha256": "29a6327f2d9b9ac2a9c4edacbea3f22440c234e270a81e3ab6c359c2aab20ccd"
     },
     "dist/images/jxl/prefix.mjs": {
       "bytes": 9237,
       "sha256": "4df649c1b7aba5285e04a354a63a27a6043696506d8aa3d4e2353813bd8c36e6"
     },
+    "dist/images/jxl/screen-lz77.mjs": {
+      "bytes": 14561,
+      "sha256": "f16ac8faf045e89e290b166a83960033dd7027e90ff0d13c9da44f5803d1fe71"
+    },
     "dist/images/jxl/modular.mjs": {
       "bytes": 6663,
       "sha256": "ffc702778a1de49072463aee089429757d9359256f7cd5f23339017fadb1c13a"
+    },
+    "dist/images/jxl/icc-profile.mjs": {
+      "bytes": 2443,
+      "sha256": "5872e2f4737d6c6a7c5abea8865863aff6db6fd8f45e08f77c7f87f0e6bbcf6e"
     },
     "dist/images/jxl/lossless-coding.mjs": {
       "bytes": 1827,
@@ -1811,8 +1993,12 @@
       "sha256": "408594392e2fae4ecfbdd1923adf24ef8485ff41195f860f4321783955d41662"
     },
     "dist/skills/rapier-html/wrap.mjs": {
-      "bytes": 13954,
-      "sha256": "542838eebeffbfe547c98680c8c515f5f6b5e3d366e1a36241153879035a349f"
+      "bytes": 13891,
+      "sha256": "5110249b0e7c8addff89ae69a22f9302d7c748b0e99f37d667f94da93edcf783"
+    },
+    "dist/spec/template-page.mjs": {
+      "bytes": 360,
+      "sha256": "f8c62ed05406be113da7e335123e5796a2d800d651846641970bbb4602333029"
     },
     "dist/spec/flowchart.mjs": {
       "bytes": 32482,
@@ -1839,16 +2025,16 @@
       "sha256": "6b667f4cb802f23ec01d493b165b089518a5f8d80359b98cd214bb553df3f106"
     },
     "dist/agent/markdown-spec.mjs": {
-      "bytes": 24122,
-      "sha256": "d915f0c5e56e269799be3bb25116a0578f1b0693e58ba490d32dcf22fc50e8b9"
+      "bytes": 24220,
+      "sha256": "dabcf986617c69c0dc935911aec33e913dc56256b6bfd826c41b56eeed5acb25"
     },
     "dist/math/delimiters.mjs": {
       "bytes": 1872,
       "sha256": "cbbac2fc424a70e5512714d4fa1cb8b9787a3b47bc4a1a75ac8d803925de820e"
     },
     "dist/spec/document-settings.mjs": {
-      "bytes": 22801,
-      "sha256": "9c008ec645b217e90ad58c1ec878c962eb044938ff511797d78224ced0e5cf75"
+      "bytes": 23667,
+      "sha256": "4498dca70202daf3dd33b0d92baf11af27f327daf32323a0c396fb7f7aef4c80"
     },
     "dist/math/markdown-rules.mjs": {
       "bytes": 5254,
@@ -2107,12 +2293,12 @@
       "sha256": "c08addf494279c452116ebd2aca16619f0bca5f9e1d6174a619b501e2597cc50"
     },
     "dist/dist/chatgpt/rapier-app.html": {
-      "bytes": 1771410,
-      "sha256": "c304cdab5b7d99fbd4dc8c1378b6949df374100fc642c690e2a52fee9158cb1c"
+      "bytes": 1790394,
+      "sha256": "5c868cb9f03df2fab8c432b5c5dcbf648af08496862104ee44412ebd5f52e324"
     },
     "dist/dist/chatgpt/rapier.html": {
-      "bytes": 5442212,
-      "sha256": "6d1a04bde888bf56759d8b264475018e103cc55c35829224a7c366d521b3d603"
+      "bytes": 5700762,
+      "sha256": "f10164995712271f987c38ce76bfc4344cb3b5a97b2a3794db9636c0ce72bf99"
     },
     "dist/dist/chatgpt/icon-192.png": {
       "bytes": 1541,
@@ -2171,8 +2357,8 @@
       "sha256": "85e219d2017276a2a1221afdfe3afb05ef33c4156700e983081f2d00ba9ecc2c"
     },
     "dist/dist/chatgpt/rapier-skills.json": {
-      "bytes": 940797,
-      "sha256": "acede1fceeea37ba837b020f72a879555f3e6e0dc1e6887d0159f7e5f7c8c767"
+      "bytes": 943642,
+      "sha256": "295aa958c5e4c673b09fe1bfe76d1cd8c9ee62f80fd0d0866faec21e118149d1"
     }
   }
 }

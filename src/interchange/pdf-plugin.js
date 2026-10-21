@@ -12,13 +12,16 @@ globalThis.RapierPdfPlugin = (() => {
   const base = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@' + version + '/';
   const decoder = new TextDecoder('utf-8', {fatal: true});
   const sessions = new Set();
+  const FORMAT = 1, READS = [1];
+  let active = {version, manifest, root, readerFile};
+  let update = null, noted = false;
   let files = null, api = null, reader = null, persistent = false, bundled = false, lastError = '';
   let checking = null, installing = null, loading = null, removing = null;
   const abortError = () => new DOMException('PDF reader download canceled.', 'AbortError');
   const state = () => ({version, downloadBytes, installed: !!files, loaded: !!api,
-    persistent, deletable: !bundled, downloading: !!installing, error: lastError});
+    persistent, deletable: !bundled, downloading: !!installing, error: lastError, update});
 
-  async function admitted(files) {
+  async function admitted(files, manifest = active.manifest, root = active.root) {
     const entries = [];
     for (const [path, length] of manifest) {
       const bytes = RapierBundleIO.bytes(files[path]);
@@ -31,8 +34,23 @@ globalThis.RapierPdfPlugin = (() => {
 
   async function verified(record) {
     if (!record || record.version !== version || !record.files) return null;
-    await admitted(record.files);
+    await admitted(record.files, manifest, root);
+    active = {version, manifest, root, readerFile};
     return new Map(manifest.map(([path]) => [path, RapierBundleIO.bytes(record.files[path])]));
+  }
+  async function olderSet() {
+    let best = null;
+    for (const name of (await cache.keys().catch(() => [])).filter(name => name.startsWith('pdfjs-') && name !== key)) {
+      const record = await cache.get(name).catch(() => null);
+      if (record?.files && (!best || (record.savedAt || 0) > (best.record.savedAt || 0))) best = {name, record};
+    }
+    if (!best) return null;
+    const {record} = best;
+    if (!READS.includes(record.format) || !Array.isArray(record.manifest) || !record.root || !record.readerFile) return {name: best.name, readable: false};
+    try {
+      await admitted(record.files, record.manifest, record.root);
+      return {name: best.name, readable: true, record};
+    } catch (_) { await cache.remove(best.name).catch(() => {}); return null; }
   }
 
   async function checkInstalled() {
@@ -56,6 +74,15 @@ globalThis.RapierPdfPlugin = (() => {
         }
         files = await verified(await cache.get(key));
         persistent = !!files;
+        if (files) { update = null; return true; }
+        const other = await olderSet();
+        update = other ? {bytes: downloadBytes, required: !other.readable} : null;
+        if (other?.readable) {
+          const record = other.record;
+          files = new Map(record.manifest.map(([path]) => [path, RapierBundleIO.bytes(record.files[path])]));
+          active = {version: record.version, manifest: record.manifest, root: record.root, readerFile: record.readerFile};
+          persistent = true;
+        }
         return !!files;
       } catch (error) {
         lastError = String(error.message || error);
@@ -75,7 +102,7 @@ globalThis.RapierPdfPlugin = (() => {
     let reader;
     try {
       const hostedPath = 'pdfjs-dist-' + version + '/' + path;
-      const address = path === readerFile ? 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.19/' + hostedPath : base + path;
+      const address = path === readerFile ? 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.20/' + hostedPath : base + path;
       const response = await fetch(RapierBundleIO.pluginUrl(hostedPath) || address, {mode: 'cors', credentials: 'omit',
         referrerPolicy: 'no-referrer', cache: 'default', signal: controller.signal});
       if (!response.ok) throw new Error('PDF reader download returned HTTP ' + response.status + '.');
@@ -109,7 +136,7 @@ globalThis.RapierPdfPlugin = (() => {
     if (installing) return installing;
     installing = (async () => {
       if (signal?.aborted) throw abortError();
-      if (await checkInstalled()) return {...state(), downloading: false};
+      if (await checkInstalled() && !update) return {...state(), downloading: false};
       const controller = new AbortController();
       const abort = () => controller.abort();
       signal?.addEventListener('abort', abort, {once: true});
@@ -130,11 +157,13 @@ globalThis.RapierPdfPlugin = (() => {
         }));
         if (failure) throw failure;
         if (controller.signal.aborted) throw abortError();
-        await admitted(downloaded);
-        const record = {version, files: downloaded};
+        await admitted(downloaded, manifest, root);
+        const record = {version, format: FORMAT, savedAt: Date.now(), manifest, root, readerFile, files: downloaded};
         try { persistent = !!await cache.put(key, record); }
         catch (_) { persistent = false; }
-        files = new Map(Object.entries(downloaded));
+        if (persistent) for (const name of (await cache.keys().catch(() => [])).filter(name => name.startsWith('pdfjs-') && name !== key)) await cache.remove(name).catch(() => {});
+        if (!api) { files = new Map(Object.entries(downloaded)); active = {version, manifest, root, readerFile}; }
+        update = null;
         lastError = '';
         return {...state(), downloading: false};
       } catch (error) {
@@ -155,14 +184,18 @@ globalThis.RapierPdfPlugin = (() => {
     loading = (async () => {
       if (!await checkInstalled()) throw new Error('Download the PDF import plugin before opening a PDF.');
       const url = URL.createObjectURL(new Blob([files.get('legacy/build/pdf.mjs')], {type: 'text/javascript'}));
-      const readerUrl = URL.createObjectURL(new Blob([files.get(readerFile)], {type: 'text/javascript'}));
+      const readerUrl = URL.createObjectURL(new Blob([files.get(active.readerFile)], {type: 'text/javascript'}));
       try {
         const loaded = await import(/* webpackIgnore: true */ url);
-        if (loaded.version !== version || typeof loaded.getDocument !== 'function')
+        if (loaded.version !== active.version || typeof loaded.getDocument !== 'function')
           throw new Error('The cached PDF reader has an unexpected version.');
         const structure = await import(/* webpackIgnore: true */ readerUrl);
         if (typeof structure.readPdf !== 'function') throw new Error('The cached PDF structure reader is invalid.');
         reader = structure; api = loaded;
+        if (update && !update.required && !noted) {
+          noted = true;
+          try { window.dispatchEvent(new CustomEvent('rapier:plugin-update', {detail: {key: 'pdf', noun: 'PDF import', plural: false, version: active.version + '>' + version, bytes: downloadBytes}})); } catch (_) {}
+        }
         return api;
       } catch (error) {
         lastError = String(error.message || error);
@@ -242,9 +275,9 @@ globalThis.RapierPdfPlugin = (() => {
     if (sessions.size || installing || loading || checking)
       return Promise.reject(new Error('Finish PDF import before removing its plugin.'));
     removing = (async () => {
-      try { await cache.remove(key); }
+      try { for (const name of (await cache.keys().catch(() => [])).concat(key).filter(name => name.startsWith('pdfjs-'))) await cache.remove(name); }
       catch (error) { if (persistent) throw error; }
-      files = null; api = null; reader = null; persistent = false; lastError = '';
+      files = null; api = null; reader = null; persistent = false; lastError = ''; update = null;
       return state();
     })();
     removing.finally(() => { removing = null; }).catch(() => {});

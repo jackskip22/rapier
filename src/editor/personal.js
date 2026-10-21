@@ -50,7 +50,7 @@ const _rapierPersonal = globalThis.__rapierServerRenderHost === true ? null : ((
 		const here = key => { const p = provider(key); return !p ? 'none' : key === 'pdf' ? (p.state().installed ? 'ready' : p.state().downloading || p.state().error ? 'busy' : 'absent') : p.status; };
 		const wished = key => owner.values('plugin/')[key] === true;
 		function record(key) { if (transient) return; mark(key, false); if (!wished(key)) owner.set('plugin/' + key, true).then(changed).catch(report); }
-		function fulfil() { if (transient) return; for (const key of KEYS) if (wished(key) && !declined().has(key) && here(key) === 'absent') Promise.resolve(provider(key).install()).catch(() => {}); }
+		function fulfil() { if (transient) return; for (const key of KEYS) if (wished(key) && !declined().has(key) && here(key) === 'absent' && !provider(key).update?.required) Promise.resolve(provider(key).install()).catch(() => {}); }
 		for (const key of KEYS) if (key !== 'pdf') addEventListener('rapier:' + key + 'plugin', event => { if (event.detail?.installed) record(key); else if (event.detail?.status === 'absent') fulfil(); });
 		return {record, fulfil, decline: key => { if (!transient) mark(key, true); }, scan: () => { if (!transient) for (const key of KEYS) if (here(key) === 'ready') record(key); }};
 	})();

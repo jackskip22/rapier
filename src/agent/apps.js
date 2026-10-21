@@ -2420,6 +2420,7 @@
     cancelMaterial('editor_unavailable', {forget: true});
     post({id, result: {}});
     closed = true;
+    void globalThis.RapierAgentBrowser?.refresh?.();
     exportFlight = null;
     listeners.abort();
     observer?.disconnect();
@@ -2513,6 +2514,7 @@
       updateContext(result.hostContext);
       post({method: 'ui/notifications/initialized', params: {}});
       initialized = true;
+      void globalThis.RapierAgentBrowser?.refresh?.();
       notifySize();
       contextChanged();
       schedule(0);
@@ -2700,6 +2702,7 @@
 
   window.RapierMcpApp = Object.freeze({
     flush, retry, invoke, invokeComment, sendMessage, openDocument, saveCurrent, closeComparison, requestDisplayMode, exportFile, importFile, uploadCurrent, showHome, askAboutSelection, openExternalLink, disconnectAgents, shareDocument,
+    hostOrigin: () => closed ? null : origin,
     hostLocale: () => (typeof context.locale === 'string' || typeof context.timeZone === 'string') ?
       Object.freeze({locale: context.locale || null, timeZone: context.timeZone || null}) : null,
     get status() { return Object.freeze({state: status, documentId: base?.documentId || null, revision: base?.revision ?? null, version,

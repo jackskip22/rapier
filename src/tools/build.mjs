@@ -10,6 +10,7 @@ import {BROTLI_SETTINGS, FAST_PACK} from './zopfli.mjs';
 import vm from 'node:vm';
 import {scriptMinifier, reflectedNames} from './minify.mjs';
 import {buildJPEGXLArtifact} from '../images/codec-build.mjs';
+import {buildRapierWorker} from './jxl-bundle.mjs';
 import acorn from '../agent/vendor/acorn.mjs';
 import {TOOLS, UI_RESOURCE, mcpDescriptors, publishedSchema} from '../agent/catalog.mjs';
 import {pairedShell, PAIRED_SHELL_FILE, PAIRED_SHELL_HEADERS, PAIRED_SHELL_REDIRECTS} from '../mcp/paired.mjs';
@@ -814,7 +815,7 @@ for (const [path, {tree}] of satelliteModules) {
 for (const {slot, text} of satelliteProjections) insertSource('/* RAPIER_' + slot + '_MODULE */', text);
 const editorScriptsAll = JSON.parse(await read('editor/scripts.json'));
 if (!Array.isArray(editorScriptsAll) || new Set(editorScriptsAll).size !== editorScriptsAll.length || editorScriptsAll.some(path =>
-  typeof path !== 'string' || !/^(?:agent|draw|editor|images|interchange|layout|notes|presets)\/[a-z-]+\.js$/.test(path)))
+  typeof path !== 'string' || !/^(?:agent|draw|editor|images|interchange|jxl|layout|notes|presets)\/[a-z-]+\.js$/.test(path)))
   throw new Error('Editor script sources are invalid');
 const partScripts = new Set(PARTS.flatMap(part => part.scripts));
 if (PARTS.some(part => part.scripts.some(path => !editorScriptsAll.includes(path)))) throw new Error('A part names an editor script editor/scripts.json does not');
@@ -885,10 +886,18 @@ for (const id of textVendorIds.slice(0, -1)) html = html.replace(vendorElement(i
 for (const id of vendorIds) if (!vendorElement(id).test(html)) throw new Error('The shell has no vendor slot ' + id);
 const vendorGroupSpans = await Promise.all(vendorIds.map(browserVendorSpans));
 const vendorPacks = Promise.all(vendorIds.map((id, at) => packedSpans(id, 'text/rapier-vendor', vendorGroupSpans[at])));
-const jxlArtifact = await buildJPEGXLArtifact(root, {encoder: true});
+// (jxl/complete.js), written into its slice at the mark (tools/jxl-bundle.mjs RAPIER_WORKERS).
+const jxlArtifact = await buildJPEGXLArtifact(root, {encoder: true, still: true});
 const jxlWorker = jxlArtifact.bytes.toString('utf8');
+const jxlComplete = await buildRapierWorker(resolve(root, 'images/jxl'));
 const jxl = {version: jxlArtifact.version, modules: jxlArtifact.modules.map(name => 'images/jxl/' + name),
-  worker: {bytes: jxlArtifact.bytes.length, sha256: jxlArtifact.sha256}};
+  worker: {bytes: jxlArtifact.bytes.length, sha256: jxlArtifact.sha256},
+  complete: {modules: jxlComplete.modules.map(name => 'images/jxl/' + name), bytes: jxlComplete.bytes.length, sha256: jxlComplete.sha256}};
+if (editorSlices.parts.has('jxlcomplete')) {
+  const slice = editorSlices.parts.get('jxlcomplete'), mark = /(['"])RAPIER_JXL_COMPLETE_WORKER\1/g;
+  if ((slice.match(mark) || []).length !== 1) throw new Error('The JPEG XL complete part has no one worker mark');
+  editorSlices.parts.set('jxlcomplete', slice.replace(mark, () => JSON.stringify(jxlComplete.bytes.toString('utf8'))));
+}
 const jxlPack = packedScript('rapier-jxl-worker', 'application/rapier-jxl-worker', 'rapier-jxl-worker.js', jxlWorker);
 // shell's RAPIER_PLATFORM slot; the runtime
 const partPacks = Promise.all(PARTS.map(part => packedSpans('rapier-part-' + part.id, 'application/rapier-runtime', [

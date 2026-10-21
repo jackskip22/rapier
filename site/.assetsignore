@@ -6,8 +6,10 @@
 !/door-draw.html
 !/door-watercolor.html
 !/gallery.html
+!/404.html
 !/gallery/
 !/gallery/**
+!/door-jxl.html
 !/door-privacy.html
 !/door-commercial.html
 !/door-paint.html
@@ -26,6 +28,8 @@
 !/rapier-document-*.txt
 !/rapier-presets-*.txt
 !/rapier-drawing-*.txt
+!/rapier-jxl-*.txt
+!/rapier-jxlcomplete-*.txt
 !/rapier-bench.html
 !/sw.js
 !/manifest.json
@@ -53,6 +57,7 @@
 !/og-draw.png
 !/og-watercolor.png
 !/og-gallery.png
+!/og-jxl.png
 !/og-paint.png
 !/og-markdown-editor.png
 !/og-markdown-viewer.png

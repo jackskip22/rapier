@@ -1542,7 +1542,7 @@ async function handleRequest(request, env, authority, route) {
     }
     return new Response(null, {status: 202, headers: {'Cache-Control': 'no-store'}});
   }
-  const fields = {initialize: ['protocolVersion', 'capabilities', 'clientInfo'], 'server/discover': [],
+  const fields = {initialize: ['protocolVersion', 'capabilities', 'clientInfo'], 'server/discover': [], 'subscriptions/listen': ['notifications'],
     ping: [], 'tools/list': ['cursor'], 'tools/call': ['name', 'arguments'],
     'prompts/list': [], 'prompts/get': ['name', 'arguments'], 'resources/list': ['cursor'], 'resources/templates/list': ['cursor'], 'resources/read': ['uri'], 'skills/list': ['cursor'], 'skills/get': ['uri'],
     'tasks/get': ['taskId'], 'tasks/update': ['taskId', 'inputResponses'], 'tasks/cancel': ['taskId']};
@@ -1580,6 +1580,14 @@ async function handleRequest(request, env, authority, route) {
         if (!modern) return rpcError(id, -32601, 'Method not found.');
         result = { supportedVersions: PROTOCOL_VERSIONS, capabilities: { prompts: {listChanged: false}, tools: {}, resources: {}, extensions: { 'io.modelcontextprotocol/ui': { mimeTypes: [UI_MIME] }, 'io.modelcontextprotocol/skills': {}, ...(taskHosting(env, authority) ? {[TASK_EXTENSION]: {}} : {}) } }, instructions, ttlMs: 3600000, cacheScope: 'public' };
         break;
+      case 'subscriptions/listen': {
+        if (!modern) return rpcError(id, -32601, 'Method not found.');
+        if (params.notifications !== undefined && !plain(params.notifications)) return rpcError(id, -32602, 'params.notifications: expected an object.');
+        const subscriptionId = {'io.modelcontextprotocol/subscriptionId': id};
+        const event = message => `event: message\ndata: ${JSON.stringify({jsonrpc: '2.0', ...message})}\n\n`;
+        return new Response(event({method: 'notifications/subscriptions/acknowledged', params: {_meta: subscriptionId, notifications: {}}}) +
+          event({id, result: {resultType: 'complete', _meta: subscriptionId}}), {status: 200, headers: {'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store'}});
+      }
       case 'tasks/get':
       case 'tasks/update':
       case 'tasks/cancel': {

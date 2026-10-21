@@ -55,7 +55,12 @@ const _rapierEmbeddedImages = (() => {
       assertCurrent(stamp, identity);
       if (worker && workerOperation !== operation) releaseWorker();
       let code = '';
-      if (!worker) {
+      if (!worker && operation === 'animation') {
+        await RapierParts.need('jxlcomplete');
+        signal?.throwIfAborted();
+        assertCurrent(stamp, identity);
+        code = _rapierJxlCompletePart.worker;
+      } else if (!worker) {
         await _rapierWhenRuntime('rapier-jxl-worker');
         signal?.throwIfAborted();
         assertCurrent(stamp, identity);
@@ -79,7 +84,7 @@ const _rapierEmbeddedImages = (() => {
           reject(error);
         } else {
           if (worker === instance) {
-            if (operation === 'encode') releaseWorker();
+            if (operation === 'encode' || operation === 'animation') releaseWorker();
             else idleTimer = setTimeout(() => { if (!active && worker === instance) releaseWorker(); }, 30000);
           }
           resolve(value);
@@ -99,7 +104,7 @@ const _rapierEmbeddedImages = (() => {
         instance = worker;
         const id = ++serial;
         active = {finish};
-        const megapixels = Math.ceil((input.width * input.height || 0) / 1e6);
+        const megapixels = Math.ceil((input.width * input.height * (input.frames?.length || 1) || 0) / 1e6);
         const watch = () => { clearTimeout(timer); timer = setTimeout(() => finish(new Error('Image processing took too long')), 45000 + megapixels * 15000); };
         watch();
         instance.onmessage = event => {
@@ -111,9 +116,8 @@ const _rapierEmbeddedImages = (() => {
         };
         instance.onerror = event => { event.preventDefault(); finish(new Error(event.message || 'Image worker failed')); };
         instance.onmessageerror = () => finish(new Error('Image worker returned an unreadable result'));
-        const data = input.data ?? input.bytes;
-        const transfer = data instanceof ArrayBuffer ? data : data?.buffer;
-        instance.postMessage({...input, id, operation, ...(typeof progress === 'function' ? {progress: true} : {})}, transfer instanceof ArrayBuffer ? [transfer] : []);
+        const buffers = [...new Set((input.frames || [{data: input.data ?? input.bytes}]).map(({data}) => data instanceof ArrayBuffer ? data : data?.buffer))];
+        instance.postMessage({...input, id, operation, ...(typeof progress === 'function' ? {progress: true} : {})}, buffers.filter(buffer => buffer instanceof ArrayBuffer));
       } catch (error) { finish(error); }
       });
     };
@@ -1398,8 +1402,9 @@ const _rapierEmbeddedImages = (() => {
       if (run.optional) run.committing = true;
       const current = run.optional ? () => !run.controller?.signal.aborted && !document.hidden && !run.busy() &&
         !foregroundCodecs && canFinishLater() && _rapierMutationStampIsCurrent(run.attemptStamp) : null;
-      if (!await _rapierCommitSourceProjection(plan.rows, FINISH_OPERATION, null, null, undefined,
-        {navigation: false, sourceTransactionId: plan.done?.transaction.id}, current)) return 'refused';
+      const commit = () => _rapierCommitSourceProjection(plan.rows, FINISH_OPERATION, null, null, undefined,
+        {navigation: false, sourceTransactionId: plan.done?.transaction.id}, current);
+      if (!await (run.optional ? commit() : _rapierKeepSavedThrough(plan.rows, commit))) return 'refused';
       if (run.optional) {
         const kept = Object.freeze(_rapierMutationStamp());
         persisted = await run.persist(kept) === true && _rapierMutationStampIsCurrent(kept);

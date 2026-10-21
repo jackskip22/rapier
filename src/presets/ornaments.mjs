@@ -64,7 +64,7 @@ function marginFor(row, size) {
 export function templateMarkdown(row, {ink = ELEMENT_INK, paper = 'a4'} = {}) {
 	const size = PAPERS[paper], svg = row && size && borderSVG(row, {ink});
 	if (!svg) return null;
-	return '---\ntemplate: page\npapersize: ' + paper + '\ngeometry: margin=' + marginFor(row, size) + 'in\nfontsize: 12pt\nmainfont: serif\npagestyle: empty\n---\n\n' +
+	return '---\ntemplate: page\npapersize: ' + paper + '\ngeometry: margin=' + marginFor(row, size) + 'in\nfontsize: 12pt\npagestyle: empty\n---\n\n' +
 		'![' + xml(row.name) + '][template-border] <!--md-layout:v1 width=100% x=50% wrap=behind lock=on-->\n\n' +
 		'[template-border]: data:image/svg+xml;base64,' + encode(svg) + '\n';
 }

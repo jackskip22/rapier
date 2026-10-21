@@ -531,7 +531,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			await writeJournal(next);
 			return next;
 		};
-		const recover = async (ours = null) => {
+		const recover = async (ours = null, continuation = null) => {
 			active();
 			const preparation = resolveHistoryPreparation(ours?.historyPreparation) || createHistoryPreparation();
 			let index = ours ? ours.index : await readIndex(), journal = ours ? ours.journal : await readJournal();
@@ -584,7 +584,9 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 					if (exactIndexAfter.transaction || exactIndexAfter.ownerNotice || Object.keys(exactIndexAfter.deletions || {}).length) throw fail('corrupt', 'The exact snapshot has an unfinished operation.');
 					const check = copy(exactIndexAfter); check.folderGeneration = journal.generation;
 					if (canonicalJSON(check) !== canonicalJSON(journal.after)) throw fail('corrupt', 'The pending restore sidecar does not match its exact bytes.');
-					const base = parseIndex(exact.base == null ? null : decode(unpack(exact.base)));
+					const baseBytes = exact.base == null ? null : unpack(exact.base);
+					if (await digestOf(baseBytes) !== journal.baseDigest) throw fail('corrupt', 'The restore base bytes do not match their admitted digest. Its files were kept.');
+					const base = parseIndex(baseBytes == null ? null : decode(baseBytes));
 					if (base.transaction || folderGeneration(base) !== journal.baseGeneration || await digestOf(await readBytes(NOTES_INDEX_FILE)) !== journal.baseDigest)
 						throw fail('changed', 'The folder metadata changed during exact restore. It was kept; keep the source backup.');
 				}
@@ -605,12 +607,15 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 					return owned || bytes;
 				};
 				if (exact && !['preparing', 'ready'].includes(exact.phase)) throw fail('corrupt', 'The pending restore phase is not readable.');
+				if (exact && (exact.source !== undefined && !/^[0-9a-f]{64}$/.test(exact.source) ||
+					exact.cursor !== undefined && (!Number.isSafeInteger(exact.cursor) || exact.cursor < 0 || exact.cursor > journal.writes.length) ||
+					exact.retired !== undefined && (!Number.isSafeInteger(exact.retired) || exact.retired < 0 || exact.retired > journal.removes.length)))
+					throw fail('corrupt', 'The restore progress is unreadable. Its files were kept.');
 				for (const row of journal.writes) {
 					fileName(row.file, !!exact); if (seen.has(row.file)) throw fail('corrupt', 'A pending transaction names one file twice.'); seen.add(row.file);
 					if (exact) {
 						if (!/^\.rapier-restore-[0-9a-f]{32}-[0-9]+$/.test(row.stage) || stages.has(row.stage) || !Number.isSafeInteger(row.size) || row.size < 0 || !/^[0-9a-f]{64}$/.test(row.digest) || row.data !== undefined) throw fail('corrupt', 'The pending restore file record is not readable.');
 						stages.add(row.stage);
-						if (exact.phase === 'ready') await stagedBytes(row);
 						writes.push(row);
 					} else if (row.caseSource !== undefined) {
 						fileName(row.caseSource);
@@ -641,7 +646,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 					const removed = new Map(journal.removes.map(row => [row.file, row.digest]));
 					if (removed.size !== journal.removes.length || [...original].some(([file, digest]) => !seen.has(file) && removed.get(file) !== digest) || [...removed].some(([file, digest]) => seen.has(file) || original.get(file) !== digest)) throw fail('corrupt', 'The restore removals do not match its original library.');
 				}
-				if (exact?.phase === 'preparing') {
+				if (exact?.phase === 'preparing' && !exact.source) {
 					for (const [file, digest] of original) if (await storedFileDigest(store, file) !== digest) throw fail('changed', 'The library changed during restore preparation. Its bytes were kept.');
 					for (const row of writes) {
 						if (await digestOf(await readBytes(row.file)) !== row.before) throw fail('changed', 'The folder changed while preparing restore. Its files were kept; keep the source backup.');
@@ -659,12 +664,113 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 					if ((await snapshotFiles()).some(file => file !== NOTES_INDEX_FILE && file !== OWNER_JOURNAL_FILE && !original.has(file))) throw fail('changed', 'The folder changed while removing restore preparation. Its files were kept.');
 					const base = parseIndex(exact.base == null ? null : decode(unpack(exact.base)));
 					if (await digestOf(await readBytes(NOTES_INDEX_FILE)) !== journal.baseDigest) throw fail('changed', 'The folder sidecar changed during restore preparation. It was kept.');
-					if (exact.base == null) { await store.remove(NOTES_INDEX_FILE); if (await readBytes(NOTES_INDEX_FILE) != null) throw fail('verify', 'The original empty sidecar could not be restored.'); }
-					else await writeVerified(NOTES_INDEX_FILE, unpack(exact.base));
 					await clearJournal();
 					return {index: base};
 				}
-				for (const row of journal.removes) { fileName(row.file, !!exact); if (seen.has(row.file) || isNoteFile(row.file) && own(journal.after.notes, row.file) || !/^[0-9a-f]{64}$/.test(row.digest)) throw fail('corrupt', 'The pending removal is not readable.'); seen.add(row.file); }
+				if (exact) {
+					const resume = async () => {
+						const plan = continuation?.plan, sources = new Map(plan?.writes?.map(row => [row.file, row]) || []);
+						if (plan && (plan.restoreSource !== exact.source || await digestOf(exactBytes(plan.exactIndex)) !== exact.digest ||
+							sources.size !== writes.length || plan.writes.length !== writes.length || writes.some(row => {
+								const source = sources.get(row.file);
+								return !source || source.size !== row.size || source.digest !== row.digest || typeof source.read !== 'function';
+							}))) throw fail('changed', 'Select the same verified backup to continue this restore. Its files were kept.');
+						const baseCurrent = async () => {
+							active(); await continuation?.guard?.();
+							if (await digestOf(await readBytes(NOTES_INDEX_FILE)) !== journal.baseDigest)
+								throw fail('changed', 'The folder sidecar changed during restore. Its files were kept.');
+						};
+						const stageBytes = async row => {
+							const bytes = await readBytes(row.stage);
+							if (bytes != null && (bytes.length !== row.size || await digestOf(bytes) !== row.digest))
+								throw fail('changed', 'A staged restore file changed. It was kept; keep the source backup.');
+							return bytes;
+						};
+						const checkpoint = async () => { await baseCurrent(); await writeJournal(journal); };
+						if (exact.phase === 'preparing') {
+							if (!plan) throw fail('restore-source', 'Select the same backup to continue preparing this restore. Keep the backup.');
+							while ((exact.cursor || 0) < writes.length) {
+								await baseCurrent();
+								const end = Math.min(writes.length, (exact.cursor || 0) + 64);
+								for (let at = exact.cursor || 0; at < end; at++) {
+									const row = writes[at];
+									active(); await continuation?.guard?.();
+									if (await digestOf(await readBytes(row.file)) !== row.before) throw fail('changed', 'The library changed during restore preparation. Its files were kept.');
+									if (await stageBytes(row) == null) {
+										const bytes = exactBytes(await sources.get(row.file).read());
+										if (bytes.length !== row.size || await digestOf(bytes) !== row.digest) throw fail('changed', 'The source backup changed during restore. Its files were kept.');
+										await writeVerified(row.stage, bytes);
+									}
+								}
+								exact.cursor = end; await checkpoint();
+							}
+							for (const [file, digest] of original) if (await storedFileDigest(store, file) !== digest) throw fail('changed', 'The library changed during restore preparation. Its files were kept.');
+							for (const row of writes) {
+								if (await digestOf(await readBytes(row.file)) !== row.before || await stageBytes(row) == null)
+									throw fail('changed', 'Restore preparation no longer has its complete byte custody. Its files were kept.');
+							}
+							const inventory = await snapshotFiles();
+							if (inventory.some(file => file !== NOTES_INDEX_FILE && file !== OWNER_JOURNAL_FILE && !original.has(file) && !stages.has(file)))
+								throw fail('changed', 'The library changed while preparing restore. Its files were kept.');
+							exact.phase = 'ready'; exact.cursor = 0; await checkpoint();
+						}
+						while ((exact.cursor || 0) < writes.length) {
+							await baseCurrent();
+							const end = Math.min(writes.length, (exact.cursor || 0) + 64);
+							for (let at = exact.cursor || 0; at < end; at++) {
+								const row = writes[at], staged = await stageBytes(row);
+								const current = await readBytes(row.file), digest = await digestOf(current);
+								if (digest !== row.digest) {
+									if (digest !== row.before) throw fail('changed', 'A restore destination changed. Its bytes were kept; keep the source backup.');
+									if (staged == null) throw fail('corrupt', 'A restore member has no verified byte custody. Keep the source backup.');
+									await writeVerified(row.file, staged);
+								}
+								const landed = await readBytes(row.file);
+								if (landed == null || landed.length !== row.size || await digestOf(landed) !== row.digest)
+									throw fail('changed', 'A restored member could not be verified. Its stage was kept.');
+								if (staged != null) {
+									await store.remove(row.stage);
+									if (await readBytes(row.stage) != null) throw fail('verify', 'The restore stage could not be retired.');
+								}
+							}
+							exact.cursor = end; await checkpoint();
+						}
+						while ((exact.retired || 0) < journal.removes.length) {
+							const end = Math.min(journal.removes.length, (exact.retired || 0) + 64);
+							for (let at = exact.retired || 0; at < end; at++) {
+								const row = journal.removes[at], digest = await digestOf(await readBytes(row.file));
+								if (digest != null && digest !== row.digest) throw fail('changed', 'An old library file changed during restore. Its bytes were kept.');
+								if (digest != null) { await store.remove(row.file); if (await readBytes(row.file) != null) throw fail('verify', 'An old library file could not be retired.'); }
+							}
+							exact.retired = end; await checkpoint();
+						}
+						for (const row of writes) {
+							const bytes = await readBytes(row.file);
+							if (bytes == null || bytes.length !== row.size || await digestOf(bytes) !== row.digest)
+								throw fail('changed', 'A restored file changed before publication. Keep the source backup.');
+						}
+						const inventory = (await snapshotFiles()).filter(file => file !== NOTES_INDEX_FILE && file !== OWNER_JOURNAL_FILE);
+						if (inventory.length !== writes.length || inventory.some(file => !seen.has(file)))
+							throw fail('changed', 'The restored inventory differs from the backup. Its files were kept.');
+						await verifyCanonical(journal, exactIndexAfter, preparation);
+						await baseCurrent();
+						journal.publicationDigest = exact.digest; await writeJournal(journal);
+						await writeVerified(NOTES_INDEX_FILE, exactBytesAfter, exact.digest);
+						dirty = notice(scope, exactIndexAfter, writes.map(row => row.file), 'restore');
+						if (isShared() && !dirty.sent) throw fail('notify', 'The restored folder must notify its other owners before another edit.');
+						await clearJournal();
+						return {index: exactIndexAfter};
+					};
+					try { return await (store.restoreReads ? store.restoreReads(resume) : resume()); }
+					catch (error) {
+						if (['workspace-limit', 'workspace_allowance_reached'].includes(error?.code)) {
+							throw Object.assign(fail('restore-paused', 'Restore paused at the workspace allowance. Keep the backup and continue when allowance is available.'),
+								{progress: {phase: exact.phase, cursor: exact.cursor || 0, total: writes.length}, cause: error});
+						}
+						throw error;
+					}
+				}
+				for (const row of journal.removes) { fileName(row.file); if (seen.has(row.file) || isNoteFile(row.file) && own(journal.after.notes, row.file) || !/^[0-9a-f]{64}$/.test(row.digest)) throw fail('corrupt', 'The pending removal is not readable.'); seen.add(row.file); }
 				const byFile = new Map(writes.map(row => [row.file, row]));
 				const caseMoves = writes.filter(row => row.caseSource !== undefined);
 				for (const row of caseMoves) if (!journal.removes.some(remove => remove.file === row.caseSource && remove.digest === row.sourceDigest && remove.requires === row.file) ||
@@ -694,7 +800,6 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 					if (journal.canonical?.some(row => row.file === file || row.history === file)) throw fail('changed', 'The note changed during canonical publication. Both originals and the pending save were kept.');
 					if (isImportReceiptFile(file)) throw fail('changed', 'Import receipt ' + file + ' changed during publication. Its bytes and the pending transaction were kept.');
 					if (file.startsWith('history/')) throw fail('changed', 'The note history changed before replacement. Its words and pending history were kept.');
-					if (exact) throw fail('changed', 'The file ' + file + ' changed during exact restore. Its newer bytes and the pending restore were kept; keep the source backup.');
 					if (!dropped.includes(file)) dropped.push(file);
 					if (!isNoteFile(file)) return;
 					if (digest == null) delete journal.after.notes[file];
@@ -732,40 +837,13 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 					await writeVerified(row.file, stage, row.digest);
 				}
 				for (const row of writes) {
-					if (!exact && syncStateFile(row.file) || row.caseSource !== undefined) continue;
+					if (syncStateFile(row.file) || row.caseSource !== undefined) continue;
 					if (dropped.includes(row.file) || !await ready(row)) continue;
 					const digest = await digestOf(await readBytes(row.file));
 					if (digest !== row.digest) {
 						if (digest !== row.before) { drop(row.file, digest); continue; }
-						await writeVerified(row.file, exact ? await stagedBytes(row) : row.bytes);
+						await writeVerified(row.file, row.bytes);
 					}
-					if (exact) {
-						const bytes = await readBytes(row.stage);
-						if (bytes != null) {
-							if (bytes.length !== row.size || await sha256(bytes) !== row.digest) throw fail('changed', 'A staged restore file changed. It was kept; keep the source backup.');
-							await store.remove(row.stage);
-							if (await readBytes(row.stage) != null) throw fail('verify', 'The restore stage could not be removed.');
-						}
-					}
-				}
-				if (exact) {
-					for (const row of journal.removes) {
-						const digest = await digestOf(await readBytes(row.file));
-						if (digest != null && digest !== row.digest) throw fail('changed', 'An old library file changed during restore. Its bytes were kept.');
-						if (digest != null) { await store.remove(row.file); if (await readBytes(row.file) != null) throw fail('verify', 'An old library file could not be retired.'); }
-						seen.delete(row.file);
-					}
-					for (const row of writes) if (await digestOf(await readBytes(row.file)) !== row.digest) throw fail('changed', 'A restored file changed before publication. Keep the source backup.');
-					const inventory = (await snapshotFiles()).filter(file => file !== NOTES_INDEX_FILE && file !== OWNER_JOURNAL_FILE);
-					if (inventory.length !== seen.size || inventory.some(file => !seen.has(file))) throw fail('changed', 'The restored file inventory differs from the backup. Every file was kept; keep the source backup.');
-					const base = parseIndex(exact.base == null ? null : decode(unpack(exact.base)));
-					if (await digestOf(await readBytes(NOTES_INDEX_FILE)) !== journal.baseDigest) throw fail('changed', 'The folder sidecar changed during restore. It was kept; keep the source backup.');
-					journal.publicationDigest = await sha256(exactBytesAfter); await writeJournal(journal);
-					await writeVerified(NOTES_INDEX_FILE, exactBytesAfter, journal.publicationDigest);
-					dirty = notice(scope, exactIndexAfter, writes.map(row => row.file), 'restore');
-					if (isShared() && !dirty.sent) throw fail('notify', 'The restored folder must notify its other owners before another edit.');
-					await clearJournal();
-					return {index: exactIndexAfter};
 				}
 				for (const row of journal.removes) {
 					if (caseMoves.some(move => move.caseSource === row.file)) continue;
@@ -876,6 +954,11 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			if (pressureOnly) throw fail('delete-pending', 'Finish deletion recovery before saving or syncing.');
 			const restoring = options?.exactRestore === true, replacing = restoring && options?.replace === true;
 			if (restoring) incarnation = crypto.randomUUID();
+			if (restoring && (await readJournal())?.exactIndex?.source) {
+				if (typeof planner !== 'object' || planner?.kind !== 'restore') throw fail('plan', 'A restore continuation needs its verified source plan.');
+				const {index} = await recover(null, {plan: planner, guard: options?.restoreGuard});
+				return {index, files: Object.keys(index.notes).sort(), bodies: new Map(), generation: folderGeneration(index), readOnly: false, notice: dirty, dropped: [], kept: []};
+			}
 			if (restoring && !replacing) await emptyDestination();
 			const ordinary = options?.ordinarySave;
 			let direct = null;
@@ -1056,6 +1139,13 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				raw.folderGeneration = after.folderGeneration;
 				if (serializeIndex(raw) !== serializeIndex(after)) throw fail('plan', 'Exact restore must use the original complete sidecar.');
 				journal.exactIndex = {data: pack(bytes), digest: await sha256(bytes), base: baseBytes == null ? null : pack(baseBytes), phase: 'preparing', ...(replacing ? {original} : {})};
+				if (plan.restoreSource !== undefined) {
+					if (!/^[0-9a-f]{64}$/.test(plan.restoreSource)) throw fail('plan', 'The restore source identity is unreadable.');
+					journal.exactIndex.source = plan.restoreSource; journal.exactIndex.cursor = 0;
+				}
+				const canonical = Object.entries(raw.notes).filter(([, entry]) => entry.canonicalHistory).map(([file, entry]) =>
+					({file, id: entry.id, history: 'history/' + manifestName(entry.id), ledger: entry.canonicalHistory}));
+				if (canonical.length) journal.canonical = canonical;
 				for (const old of original) for (const next of writes) {
 					const a = old.file.normalize('NFC').toLowerCase(), b = next.file.normalize('NFC').toLowerCase();
 					if (a === b && old.file !== next.file || a.startsWith(b + '/') || b.startsWith(a + '/')) throw fail('name', 'The restore paths conflict with existing files. Existing files were kept.');
@@ -1093,7 +1183,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				journal.staging = 'ready';
 				await writeJournal(journal);
 			}
-			if (restoring) {
+			if (restoring && !journal.exactIndex.source) {
 				for (const row of writes) {
 					const bytes = exactBytes(await sources.get(row.file)());
 					if (bytes.length !== row.size || await sha256(bytes) !== row.digest) throw fail('changed', 'The source backup changed during restore: ' + row.file + '. Nothing was published; keep the source backup.');
@@ -1110,7 +1200,8 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				journal.exactIndex.phase = 'ready';
 				await writeJournal(journal);
 			}
-			const {index: recovered} = await recover({index: before.index, journal, payloads, historyPreparation: plan.historyPreparation});
+			const {index: recovered} = await recover({index: before.index, journal, payloads, historyPreparation: plan.historyPreparation},
+				restoring && journal.exactIndex.source ? {plan, guard: options?.restoreGuard} : null);
 			const dropped = lastDropped, kept = lastKept; lastDropped = []; lastKept = [];
 			await tryArmDeletion(recovered);
 			return {index: recovered, files: Object.keys(recovered.notes).sort(), bodies: new Map(), generation: folderGeneration(recovered), readOnly: false, notice: dirty, dropped, kept};
@@ -1121,7 +1212,18 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			const result = jobs.catch(() => {}).then(() => fn(...args));
 			jobs = result; return result;
 		};
-		return {pressureDelete: pressureDelete && serial(pressureDelete), read: serial(read), readImportReceipt: serial(async id => receiptFrom((await read()).index, id)), rebuildIndex: serial(rebuildIndex), recover: serial(async () => (await recover()).index), commitIndex: serial(commitIndex), transact: serial(transact), release: () => {
+		const restoreWriter = async source => {
+			active();
+			const journal = await readJournal();
+			if (!journal) return null;
+			const exact = journal.kind === 'restore' && journal.exactIndex;
+			if (!exact?.source || exact.source !== source) throw fail('changed', 'Select the same verified backup to continue this restore. Its files were kept.');
+			const bytes = unpack(exact.data), index = parseIndex(decode(bytes));
+			if (await digestOf(bytes) !== exact.digest || !/^[0-9a-f]{32}$/.test(index.folderDeviceId || ''))
+				throw fail('corrupt', 'The pending restore writer is unreadable. Its files were kept.');
+			return index.folderDeviceId;
+		};
+		return {restoreWriter: serial(restoreWriter), pressureDelete: pressureDelete && serial(pressureDelete), read: serial(read), readImportReceipt: serial(async id => receiptFrom((await read()).index, id)), rebuildIndex: serial(rebuildIndex), recover: serial(async () => (await recover()).index), commitIndex: serial(commitIndex), transact: serial(transact), release: () => {
 			if (releasePromise) return releasePromise;
 			releaseStarted = true;
 			releasePromise = (async () => { await jobs.catch(() => {}); released = true; unlock(); await settled; })();

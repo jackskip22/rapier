@@ -348,6 +348,7 @@ body.light .restore-notice__resume{background:rgb(0 0 0 / .07)}
 	display:flex;align-items:center;justify-content:center;
 	padding:var(--space-4);
 }
+#confirm-overlay{z-index:2100}
 .link-dialog{
 	background:var(--color-surface);
 	color:var(--color-text);
@@ -653,6 +654,7 @@ html[data-rapier-host-features]:not([data-rapier-host-features~="readAloud"]) [d
 html[data-rapier-host-features]:not([data-rapier-host-features~="share"]) [data-action="open-share-menu"],
 html[data-rapier-host-features]:not([data-rapier-host-features~="find"]) [data-action="find"] { display:none !important; }
 html.rapier-draw-start body>*:not(.rapier-draw-surface):not(#toast-root):not(#confirm-overlay):not(#sr-live){visibility:hidden}
+html.rapier-jxl-start body>*:not(.rapier-jxl-view):not(#toast-root):not(#confirm-overlay):not(#sr-live){visibility:hidden}
 html.rapier-notes-start body{background:#191919}
 html.rapier-notes-start body.light{background:#dddbd7}
 html.rapier-notes-start body>*:not(.rapier-notes-surface):not(#toast-root):not(#confirm-overlay):not(#sr-live){visibility:hidden}

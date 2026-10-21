@@ -6,6 +6,8 @@ For people, Rapier is a Markdown editor and notes app on Android ([Google Play](
 
 Connect an MCP client to `https://mcp.rapier.website/door/mcp` (Streamable HTTP, anonymous, without OAuth) and call `open`. No account needed. Read the `rapier://guide` resources if your host supports MCP resources; otherwise use the [agent guide](https://rapier.website/agents) and the tool schemas. Your host's own tool approval rules still apply.
 
+Rapier is listed in the [MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.jackskip22%2Frapier/versions/latest) and the [GitHub MCP Registry](https://github.com/mcp) as `io.github.jackskip22/rapier`.
+
 Muse uses OAuth at `https://mcp.rapier.website/muse`, without an embedded editor: use the paired `editor_url` page, and send file text yourself because host-file imports are unavailable. Keep `document` private and pass it on later calls.
 
 ## What you can do
@@ -59,4 +61,5 @@ For a painting, the person needs a visible full editor with WebGPU: open `editor
 - [Notes](https://rapier.website/notes): `read {search:"words"}` finds notes in the configured store. Pass the returned `note_ref` as `note` to `read` and `edit`; an edit needs the revision from a current read. `open {note}` opens a note, `open {note:"new",title,text}` creates one, and `export {to:"sync"}` runs the existing sync. On MCP each of these calls also passes `document` from `open`. A locked store is not an empty library.
 - [Draw](https://rapier.website/draw) and [Watercolor](https://rapier.website/watercolor): the canvas on its own.
 - [Gallery](https://rapier.website/gallery): free ornaments, page borders and decorative letters, each opened in Rapier or downloaded as SVG.
+- [JPEG XL converter](https://rapier.website/jxl): converts any number of JPEG and PNG pictures to JPEG XL inside Rapier, offline and nothing uploaded; a JPEG converts losslessly and restores exactly; results download alone or as zip.
 - Hosted workspaces expire after 30 idle days. Export links last up to 24 hours, within the workspace's lifetime; OAuth links need the connected owner. Downloaded files are yours to keep.

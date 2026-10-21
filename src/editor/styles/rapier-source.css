@@ -1491,6 +1491,7 @@ html[data-compare="on"] #source-mode ,html:not([data-compare="on"]) .compare-mod
 }
 @media (hover:hover) and (pointer:fine){.settings-close-btn:hover{opacity:.7}}
 
+.settings-overlay > .settings-panel { padding-bottom: var(--rapier-toast-room, 0px); }
 .settings-panel__body {
 	flex: 1;
 	overflow-y: auto;

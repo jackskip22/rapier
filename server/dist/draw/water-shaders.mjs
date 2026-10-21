@@ -228,7 +228,7 @@ const body = {
     lowA=min(lowA,na);highA=max(highA,na);lowB=min(lowB,nb);highB=max(highB,nb);
    }
   }
-  resultA=bounded(clamp(resultA+driftA,lowA,highA));resultB=bounded(clamp(resultB+driftB,lowB,highB));resultB.a=max(resultB.a,0.0);
+  resultA=bounded(clamp(resultA,lowA,highA)+driftA);resultB=bounded(clamp(resultB,lowB,highB)+driftB);resultB.a=max(resultB.a,0.0);
   return Pair(resultA*keep,resultB*keep);
  }`,
  mask: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> {

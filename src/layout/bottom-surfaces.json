@@ -1469,6 +1469,32 @@
       "interactive": false,
       "edge": "none",
       "reason": "Source selections are pointer-transparent rectangles measured from the current document projection."
+    },
+    {
+      "id": "jxl-view",
+      "file": "editor/styles/rapier-jxl.css",
+      "selector": ".rapier-jxl-view",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": true,
+      "edge": "all",
+      "reason": "The JPEG XL converter owns its whole page while it is open; document notices must wait instead of floating above it."
     }
   ],
   "localRules": [
@@ -3047,6 +3073,30 @@
       },
       "owner": ".settings-info-btn--hang",
       "reason": "The hanging information circle keeps its 40px place by its word; this empty box only widens its touch area to 48 by 48 inside its own button and positions no viewport surface."
+    },
+    {
+      "id": "jxl-pick-input",
+      "file": "editor/styles/rapier-jxl.css",
+      "selector": ".rapier-jxl-view__pick input",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".rapier-jxl-view__pick",
+      "reason": "The file input fills its choice box so a tap anywhere on the box opens the picker; it is invisible and owns no edge of the page."
     }
   ]
 }

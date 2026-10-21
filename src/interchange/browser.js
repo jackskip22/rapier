@@ -23,17 +23,26 @@ function _rapierPdfSettingsRefresh() {
   const status = document.getElementById('pdf-plugin-installed');
   if (!button || !status) return;
   const state = globalThis.RapierPdfPlugin?.state();
-  button.hidden = !!state?.installed;
+  const update = state?.update;
+  button.hidden = !!state?.installed && !update;
   button.disabled = !!state?.downloading;
-  button.textContent = state?.downloading ? 'DOWNLOADING PDF IMPORT…' : 'INSTALL PDF IMPORT';
-  status.hidden = !state?.installed;
+  button.textContent = state?.downloading ? 'DOWNLOADING PDF IMPORT…' : update ? 'UPDATE PDF IMPORT \u00b7 ' + _rapierPluginSize(update.bytes) : 'INSTALL PDF IMPORT';
+  status.hidden = !state?.installed || !!update;
   (status.querySelector('span') || status).textContent = state?.persistent ? 'PDF IMPORT INSTALLED' : 'PDF IMPORT READY THIS SESSION';
 }
 
-async function _rapierEnsurePdfImportPlugin(run) {
+async function _rapierEnsurePdfImportPlugin(run, tapped = false) {
   const plugin = globalThis.RapierPdfPlugin;
   if (!plugin) throw new Error('The PDF import plugin is unavailable.');
-  if (!await plugin.checkInstalled()) {
+  const here = await plugin.checkInstalled(), waiting = plugin.state().update;
+  if (here && tapped && waiting && !_rapierUiAndroid()) {
+    _rapierImportProgress(run, 'Updating PDF reader');
+    await plugin.install({signal: run.controller.signal, onProgress: fraction => _rapierImportProgress(run, 'Updating PDF reader', fraction)});
+  } else if (!here && waiting?.required && !_rapierUiAndroid()) {
+    if (!tapped && await rapierConfirm({title: 'Update PDF import?', message: 'PDF import needs an update to work with this Rapier \u00b7 ' + _rapierPluginSize(waiting.bytes), confirmLabel: 'update', plain: true}) !== true) { showToast('PDF import waits for the update', 'info'); return false; }
+    _rapierImportProgress(run, 'Updating PDF reader');
+    await plugin.install({signal: run.controller.signal, onProgress: fraction => _rapierImportProgress(run, 'Updating PDF reader', fraction)});
+  } else if (!here) {
     if (_rapierUiAndroid()) {
       const resources = globalThis.RapierPlatform?.resources;
       if (typeof resources?.ensure !== 'function') throw new Error('Google Play cannot bring the PDF reader on this device.');
@@ -62,7 +71,7 @@ async function _rapierInstallPdfImportPlugin() {
   const run = {controller: new AbortController(), banner: null};
   _rapierDocumentImport.active = run;
   try {
-    if (await _rapierEnsurePdfImportPlugin(run)) showToast(globalThis.RapierPdfPlugin.state().persistent
+    if (await _rapierEnsurePdfImportPlugin(run, true)) showToast(globalThis.RapierPdfPlugin.state().persistent
       ? 'PDF import plugin installed' : 'PDF import plugin ready for this session; offline storage is unavailable', 'success');
   } catch (error) {
     if (error.name !== 'AbortError') showToast('PDF import plugin: ' + String(error.message || error), 'error');

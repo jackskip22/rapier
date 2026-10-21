@@ -1835,7 +1835,7 @@
 
   function status() {
     return {available: registrations.size > 0, ready: readyDone,
-      reason: apps ? 'mcp_apps_host' : admission() || (registrationOwner ? '' : 'webmcp_unavailable'),
+      reason: admission() || (registrationOwner ? '' : apps ? 'mcp_apps_host' : 'webmcp_unavailable'),
       registered: [...registrations.keys()], failures: Object.fromEntries(failures)};
   }
 
@@ -1850,13 +1850,16 @@
   async function register() {
     let owner = null;
     try { owner = document.modelContext; } catch (_) {}
-    if (apps || admission() || location.protocol === 'file:' || !owner?.registerTool) { retire(); return; }
-    const exposure = _rapierEmbed.active && _rapierEmbed.hostOrigin && _rapierEmbed.hostOrigin !== location.origin
-      ? String(_rapierEmbed.hostOrigin) : '';
+    if (!owner?.registerTool) { try { owner = navigator.modelContext; } catch (_) {} }
+    const appsOrigin = apps ? window.RapierMcpApp?.hostOrigin?.() : null;
+    if (admission() || location.protocol === 'file:' || !owner?.registerTool || (apps && !appsOrigin)) { retire(); return; }
+    const hostOrigin = apps ? appsOrigin : _rapierEmbed.active ? _rapierEmbed.hostOrigin : '';
+    const exposure = hostOrigin && hostOrigin !== location.origin ? String(hostOrigin) : '';
     if (registrationOwner !== owner || registrationExposure !== exposure) retire();
     registrationOwner = owner; registrationExposure = exposure;
     nameAtDoor(owner.clientInfo?.name, 'webmcp');
     for (const tool of PAGE_TOOLS) {
+      if (apps && tool.name === 'open') continue;
       if (registrations.has(tool.name) || failures.has(tool.name)) continue;
       const controller = new AbortController();
       registrations.set(tool.name, controller);

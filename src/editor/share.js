@@ -24,7 +24,7 @@ function _rapierPortableRequiredPlugins(source, options = {}) {
       if (token.children) visit(token.children);
     }
   };
-  for (const text of [source, options.base]) if (typeof text === 'string' && /^template:[ \t]*page[ \t]*$/m.test(text.slice(0, assets.markdownBodyOffset(text)))) required.add('layout');
+  for (const text of [source, options.base]) if (typeof text === 'string' && globalThis.RapierMarkdownSpec.isTemplatePage(text)) required.add('layout');
   for (const text of [source, options.base]) if (typeof text === 'string' && /[$\\]|mermaid|svg/i.test(text)) visit(parser.parse(text.slice(assets.markdownBodyOffset(text)), {}));
   return required;
 }
@@ -687,7 +687,7 @@ async function _rapierShareQuoteCard() {
 		const metadata = {..._rapierGetDocumentMetadata(), bom: false};
 		const context = await _rapierPrepareInterchangeContext({kind: 'share', work: task}, {canonical: held.markdown, metadata, work: task});
 		const artifact = await _rapierRenderModule('render')._rapierBuildArtifact({kind: 'page', scripts: false}, context);
-		const paper = await RapierDrawCore._rapierDrawPaperRequest('hot-press', {now: () => performance.now(), pause: () => task.yield()});
+		const paper = await RapierDrawCore._rapierDrawPaperRequest('hot-press', {ready: true, now: () => performance.now(), pause: () => task.yield()});
 		task.check();
 		const escape = _rapierRenderModule('render-sanitize').escapeRapierHtmlText;
 		frame = document.createElement('iframe');
@@ -748,15 +748,7 @@ async function _rapierQuotePaper(paper, context2d) {
 	const image = new Image();
 	image.src = paper.url;
 	await image.decode();
-	const tile = new OffscreenCanvas(image.width, image.height), pen = tile.getContext('2d');
-	pen.drawImage(image, 0, 0);
-	const pixels = pen.getImageData(0, 0, tile.width, tile.height), data = pixels.data;
-	for (let at = 0; at < data.length; at += 4) {
-		const grey = data[at] / 255;
-		for (let c = 0; c < 3; c++) data[at + c] = 255 * (paper.gain[c] * grey + paper.offset[c]);
-	}
-	pen.putImageData(pixels, 0, 0);
-	return context2d.createPattern(tile, 'repeat');
+	return context2d.createPattern(image, 'repeat');
 }
 
 function _rapierLedgerCapture() {

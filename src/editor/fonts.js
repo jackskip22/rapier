@@ -359,6 +359,14 @@ const _rapierFontPicker = (() => {
 			catch (_) {  }
 		}
 		for (const family of [...new Set(records.map(font => font.family || font.name))].sort((a, b) => a.localeCompare(b))) row(family, family);
+		control.setAttribute('aria-label', held.whole ? 'Font for the document' : 'Font for selected text');
+		if (held.whole) {
+			const named = spec.readDocumentSettings(held.before)?.mainfont?.family || '';
+			const value = Object.hasOwn({sans: 1, serif: 1, mono: 1, system: 1, hand: 1}, named.toLowerCase()) ? named.toLowerCase() : named;
+			if (![...control.options].some(option => option.value === value)) row(value, value, true);
+			control.value = value;
+			return;
+		}
 		const range = held.format.range, common = range.commonAncestorContainer, names = new Set();
 		const walker = document.createTreeWalker(common, NodeFilter.SHOW_TEXT);
 		let node = common.nodeType === Node.TEXT_NODE ? common : walker.nextNode();
@@ -383,12 +391,13 @@ const _rapierFontPicker = (() => {
 		if (_rapierUserMutationBlocked() || rapier.document.docKind !== 'markdown') return false;
 		_rapierRestoreToolbarSelection();
 		const format = _rapierFormatSelectionState({marks: true}), segments = format && _rapierHighlightSegments(format);
-		if (!segments?.some(segment => segment.start < segment.end) ||
-			(rapier.view.mode !== 'edit' && (rapier.view.mode !== 'read' || format.wrappers.length < 2))) {
-			showToast('Select the words whose font you want to change.'); return false;
-		}
-		const held = {format, segments, range: format.range.cloneRange(), intent: rapier.view.restoreToken, bookmark: _rapierSelectionBookmark(format, segments), before: _rapierSourceText(),
-			stamp: Object.freeze(_rapierMutationStamp()), viewport: _rapierCaptureEditorViewport(), busy: false};
+		const words = segments?.some(segment => segment.start < segment.end) &&
+			(rapier.view.mode === 'edit' || rapier.view.mode === 'read' && format.wrappers.length >= 2);
+		const caret = !words && window.getSelection()?.rangeCount ? window.getSelection().getRangeAt(0).cloneRange() : null;
+		const held = words ? {format, segments, range: format.range.cloneRange(), intent: rapier.view.restoreToken, bookmark: _rapierSelectionBookmark(format, segments), before: _rapierSourceText(),
+			stamp: Object.freeze(_rapierMutationStamp()), viewport: _rapierCaptureEditorViewport(), busy: false}
+			: {whole: true, range: caret || document.createRange(), intent: rapier.view.restoreToken, before: _rapierSourceText(),
+				stamp: Object.freeze(_rapierMutationStamp()), viewport: _rapierCaptureEditorViewport(), busy: false};
 		session = held;
 		paint(held);
 		refreshFormatToolbar();
@@ -409,6 +418,22 @@ const _rapierFontPicker = (() => {
 		if (!current(held)) { showToast('The document changed. Open Fonts again.', 'error'); return false; }
 		const family = control.value || null, fontState = _rapierDocumentFonts.stateKey();
 		held.busy = true; control.disabled = true; control.setAttribute('aria-busy', 'true');
+		if (held.whole) try {
+			const candidate = globalThis.RapierMarkdownSpec.writeDocumentFontSetting(held.before, 'mainfont', family);
+			const portable = await _rapierDocumentFonts.materialize(candidate, {force: true});
+			if (!current(held) || fontState !== _rapierDocumentFonts.stateKey()) return false;
+			_rapierUiClosePicker('font', false);
+			rapierFocusEditingHost();
+			if (held.range.startContainer?.isConnected) { const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(held.range); }
+			if (portable === held.before) return true;
+			const admitted = () => _rapierMutationStampIsCurrent(held.stamp) && _rapierSourceText() === held.before &&
+				fontState === _rapierDocumentFonts.stateKey() && !rapier.composition.block && !rapier.composition.source;
+			if (!await _rapierCommitSourceProjection([_rapierPrefixSuffixDiff(held.before, portable)], 'document.typography', null, null, held.viewport, null, admitted)) return false;
+			if (_rapierSourceText() === portable) _rapierDocumentFonts.prepared(portable);
+			_rapierRestoreEditorViewport(held.viewport);
+			return true;
+		} catch (error) { if (_rapierMutationStampSharesDocument(held.stamp)) showToast(String(error.message || error), 'error'); return false; }
+		finally { if (session === held) { held.busy = false; control.disabled = false; control.removeAttribute('aria-busy'); } }
 		try {
 			const splices = [], spans = _rapierCurrentBodyBlockSpans();
 			for (let index = 0; index < held.segments.length; index++) {

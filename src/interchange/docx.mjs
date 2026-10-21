@@ -282,7 +282,7 @@ export async function prepareDocxTypography(root, canonical, {work, willTokens =
   const document = root.ownerDocument, view = document?.defaultView;
   if (!paragraphs.length || !document?.body || !view?.getComputedStyle) return;
   const authored = readDocumentSettings(canonical), settings = wordLayout ? wordDocumentSettings(authored) : authored, type = referenceType(settings);
-  const width = ((settings.papersize?.width || 12240) - (settings.geometry?.left ?? 1440) - (settings.geometry?.right ?? 1440)) / 15;
+  const page = wordPage(settings), width = (page.width - page.margins.left - page.margins.right) / 15;
   const measure = root.cloneNode(true);
   measure.classList.add('md-render');
   measure.setAttribute('aria-hidden', 'true'); measure.setAttribute('inert', '');
@@ -4439,13 +4439,19 @@ function documentDefaultsXml(settings, hyphens) {
     '</w:docDefaults>';
 }
 
+export const WORD_PAGE_LIMIT = 31680;
+export function wordPage(settings) {
+  const width = settings?.papersize?.width || 12240, height = settings?.papersize?.height || 15840;
+  const scale = Math.min(1, WORD_PAGE_LIMIT / Math.max(width, height)), fit = value => Math.round(value * scale);
+  return {width: fit(width), height: fit(height),
+    margins: Object.fromEntries(['top', 'right', 'bottom', 'left'].map(side => [side, fit(settings?.geometry?.[side] ?? 1440)]))};
+}
+
 function sectionPropertiesXml(settings, footerId, headerId = '') {
   const base = !settings || (!settings.papersize && !settings.geometry && !footerId && !headerId);
   if (base) return '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>' +
     '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>';
-  const width = settings.papersize ? settings.papersize.width : 12240;
-  const height = settings.papersize ? settings.papersize.height : 15840;
-  const margins = Object.fromEntries(['top', 'right', 'bottom', 'left'].map(side => [side, settings.geometry?.[side] ?? 1440]));
+  const {width, height, margins} = wordPage(settings);
   const footer = (headerId ? '<w:headerReference w:type="default" r:id="' + headerId + '"/>' : '') + (footerId ? '<w:footerReference w:type="default" r:id="' + footerId + '"/>' : '');
   return '<w:sectPr>' + footer + '<w:pgSz w:w="' + width + '" w:h="' + height + '"/>' +
     '<w:pgMar w:top="' + margins.top + '" w:right="' + margins.right + '" w:bottom="' + margins.bottom + '" w:left="' + margins.left + '" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>';
@@ -4517,7 +4523,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
   const bodyFace = settings?.mainfont?.word || settings?.sansfont?.word || 'Geist';
   const lineTwips = integer(Math.max(1, Math.round(referenceType(settings).line * 20)));
   const blockSpace = referenceSpacing(settings);
-  const contentWidth = (settings?.papersize?.width || 12240) - (settings?.geometry?.left ?? 1440) - (settings?.geometry?.right ?? 1440);
+  const page = wordPage(settings), contentWidth = page.width - page.margins.left - page.margins.right;
   if (contentWidth <= 0) return fail('DOCX page margins leave no text width.');
   const contentWidthEmu = contentWidth * 635;
   const navigation = await finishAsync(docxNavigationSteps([...blocks, ...Array.from(notes.values()).flatMap(note => note.blocks || [])]), work);
@@ -5174,7 +5180,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
   if (pageBorder) {
     const asset = await assetFor(pageBorder.src, pageBorder.alt, true, null);
     headerId = nextRid();
-    const cx = settings.papersize.width * 635, cy = settings.papersize.height * 635, pr = docPr++, description = attributeText(pageBorder.alt);
+    const cx = page.width * 635, cy = page.height * 635, pr = docPr++, description = attributeText(pageBorder.alt);
     const blip = '<a:blip r:embed="' + asset.id + (asset.svgId ? '"><a:extLst><a:ext uri="{96DAC541-7B7A-43D3-8B79-37D633B846F1}"><asvg:svgBlip xmlns:asvg="' + NS.svg[0] + '" r:embed="' + asset.svgId + '"/></a:ext></a:extLst></a:blip>' : '"/>');
     headerXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:hdr xmlns:w="' + NS.w[0] + '" xmlns:r="' + NS.r[0] + '" xmlns:a="' + NS.a[0] + '" xmlns:wp="' + NS.wp[0] + '" xmlns:pic="' + NS.pic[0] + '"><w:p><w:r><w:drawing>' +
       '<wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="1" locked="1" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/>' +

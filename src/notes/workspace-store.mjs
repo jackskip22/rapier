@@ -104,6 +104,7 @@ export function createWorkspaceNotes({url = globalThis.location?.href, fetch: se
 		for (const source of signals) { if (source.aborted) cancel(); else source.addEventListener('abort', cancel, {once: true}); }
 		try {
 			const response = await send(endpoint(name, query), {method, headers: {...headers, ...(lease ? {'X-Rapier-Notes-Lease': lease.id} : {}),
+				...(lease?.restoreReads && name === 'files' && ['GET', 'HEAD'].includes(method) ? {'X-Rapier-Notes-Recovery': 'restore'} : {}),
 				...(recording ? {'X-Rapier-Recording-Lease': recording.id} : {})},
 				body, signal: abort.signal, credentials: 'same-origin', cache: 'no-store', redirect: 'error'});
 			check(lease); check(recording); if (signal?.aborted) throw abortError();
@@ -340,6 +341,11 @@ export function createWorkspaceNotes({url = globalThis.location?.href, fetch: se
 		if (error) throw error; return result;
 	}};
 	const store = {read, readChunks, stat, statAll, write, writeBlob, remove, assertRemovable, list: async prefix => [...(await statAll(prefix, true)).keys()],
+		async restoreReads(run) {
+			const lease = writer(), previous = lease.restoreReads;
+			lease.restoreReads = true;
+			try { return await run(); } finally { lease.restoreReads = previous; }
+		},
 		async prepare() { if (!prepared) { await statAll('', true); prepared = true; } return true; },
 		get writable() { return true; }, durable: true, ascii: false, streamingAttachments: true};
 	return {store, locks, channel, scope: 'notes', getUsageSnapshot, setUsageOwner};

@@ -4,7 +4,7 @@ const immutable = value => {
  if (value && typeof value === 'object') { for (const item of Object.values(value)) immutable(item); Object.freeze(value); }
  return value;
 };
-import {PAPER_KINDS, PRO_PAPER_KINDS, paperKindById, WATER_PAPER_PERIOD, WATER_PAPER_BAND} from './paper-field.mjs';
+import {PAPER_KINDS, PRO_PAPER_KINDS, paperKindById, WATER_PAPER_PERIOD, WATER_PAPER_LEVELS} from './paper-field.mjs';
 export {PAPER_KINDS, PRO_PAPER_KINDS};
 
 const brushDefaults = {
@@ -142,6 +142,7 @@ export function makeTip(brush,size=WATER_TIP_SIZE,seed=7) {
 }
 
 export const PAPER_WGSL = `
+const wp_period=${WATER_PAPER_PERIOD.toFixed(1)};
 fn wp_permute(value:u32)->u32 {
  let state=value*747796405u+2891336453u;
  let bits=((state>>((state>>28u)+4u))^state)*277803737u;
@@ -154,39 +155,38 @@ fn wp_hash(cell:vec2<f32>,stream:u32,seed:u32)->f32 {
 fn wp_pair(cell:vec2<f32>,stream:u32,seed:u32)->vec2<f32> {
  return vec2<f32>(wp_hash(cell,stream,seed),wp_hash(cell,stream+1u,seed));
 }
-fn wp_noise(point:vec2<f32>,stream:u32,seed:u32)->f32 {
- let cell=floor(point);let fraction=fract(point);
+fn wp_wrap(cell:vec2<f32>,n:vec2<f32>)->vec2<f32>{return cell-n*floor(cell/n);}
+fn wp_noise(point:vec2<f32>,n:vec2<f32>,stream:u32,seed:u32)->f32 {
+ let p=point*n/wp_period;let cell=floor(p);let fraction=p-cell;
  let weight=fraction*fraction*(3.0-2.0*fraction);
- let lower=mix(wp_hash(cell,stream,seed),wp_hash(cell+vec2<f32>(1.0,0.0),stream,seed),weight.x);
- let upper=mix(wp_hash(cell+vec2<f32>(0.0,1.0),stream,seed),wp_hash(cell+vec2<f32>(1.0),stream,seed),weight.x);
+ let c0=wp_wrap(cell,n);let c1=wp_wrap(cell+1.0,n);
+ let lower=mix(wp_hash(c0,stream,seed),wp_hash(vec2<f32>(c1.x,c0.y),stream,seed),weight.x);
+ let upper=mix(wp_hash(vec2<f32>(c0.x,c1.y),stream,seed),wp_hash(c1,stream,seed),weight.x);
  return mix(lower,upper,weight.y);
 }
-fn wp_fractal(point:vec2<f32>,octaves:u32,stream:u32,seed:u32)->f32 {
- var p=point;var sum=0.0;var scale=0.5;var total=0.0;
+fn wp_fractal(point:vec2<f32>,n:vec2<f32>,octaves:u32,stream:u32,seed:u32)->f32 {
+ var sum=0.0;var scale=0.5;var total=0.0;var cells=n;
  for(var octave=0u;octave<octaves;octave++) {
-  sum+=scale*wp_noise(p,stream+13u*octave,seed);total+=scale;
-  p=vec2<f32>(0.8*p.x+0.6*p.y,-0.6*p.x+0.8*p.y)*2.03+17.1;scale*=0.5;
+  sum+=scale*wp_noise(point+vec2<f32>(37.3,19.7)*f32(octave),cells,stream+13u*octave,seed);total+=scale;scale*=0.5;cells*=2.0;
  }
  return sum/total;
 }
-fn wp_displace(point:vec2<f32>,frequency:f32,amplitude:f32,stream:u32,seed:u32)->vec2<f32> {
- let offset=vec2<f32>(wp_fractal(point*frequency,3u,stream,seed),wp_fractal(point*frequency,3u,stream+50u,seed));
+fn wp_displace(point:vec2<f32>,n:f32,amplitude:f32,stream:u32,seed:u32)->vec2<f32> {
+ let offset=vec2<f32>(wp_fractal(point,vec2<f32>(n),3u,stream,seed),wp_fractal(point,vec2<f32>(n),3u,stream+50u,seed));
  return point+(offset-0.5)*amplitude;
 }
-fn wp_neighbors(point:vec2<f32>,jitter:f32,stream:u32,seed:u32)->vec2<f32> {
- let cell=floor(point);let local=fract(point);var nearest=vec2<f32>(9.0);
+fn wp_cells(point:vec2<f32>,n:f32,jitter:f32,stream:u32,seed:u32)->f32 {
+ let p=point*n/wp_period;let cell=floor(p);let local=p-cell;var nearest=9.0;
  for(var y:i32=-1;y<=1;y++) {for(var x:i32=-1;x<=1;x++) {
-  let offset=vec2<f32>(f32(x),f32(y));
-  let delta=offset+0.5+(wp_pair(cell+offset,stream,seed)-0.5)*jitter-local;
-  let distance=length(delta);
-  if(distance<nearest.x){nearest=vec2<f32>(distance,nearest.x);}else{nearest.y=min(nearest.y,distance);}
+  let offset=vec2<f32>(f32(x),f32(y));let identity=wp_wrap(cell+offset,vec2<f32>(n));
+  nearest=min(nearest,length(offset+0.5+(wp_pair(identity,stream,seed)-0.5)*jitter-local));
  }}
  return nearest;
 }
-fn wp_hills(point:vec2<f32>,stream:u32,seed:u32)->f32 {
- let cell=floor(point);let local=fract(point);var sum=0.0;
+fn wp_hills(point:vec2<f32>,n:f32,stream:u32,seed:u32)->f32 {
+ let p=point*n/wp_period;let cell=floor(p);let local=p-cell;var sum=0.0;
  for(var y:i32=-1;y<=1;y++){for(var x:i32=-1;x<=1;x++){
-  let offset=vec2<f32>(f32(x),f32(y));let identity=cell+offset;
+  let offset=vec2<f32>(f32(x),f32(y));let identity=wp_wrap(cell+offset,vec2<f32>(n));
   let center=wp_pair(identity,stream,seed);let shape=wp_pair(identity,stream+2u,seed);
   let delta=offset+center-local;let radius=0.35+0.4*shape.x;
   sum+=(0.5+0.5*shape.y)*exp(-dot(delta,delta)/(radius*radius));
@@ -197,26 +197,25 @@ fn wp_segment(point:vec2<f32>,a:vec2<f32>,b:vec2<f32>)->f32 {
  let direction=b-a;let local=point-a;
  return length(local-direction*clamp(dot(local,direction)/dot(direction,direction),0.0,1.0));
 }
-fn wp_fibers(point:vec2<f32>,pitch:f32,span:f32,width:f32,density:f32,alignment:f32,stream:u32,seed:u32)->f32 {
- let p=point/pitch;let grid=floor(p);var coverage=0.0;
+fn wp_fibers(point:vec2<f32>,n:f32,span:f32,width:f32,density:f32,alignment:f32,stream:u32,seed:u32)->f32 {
+ let pitch=wp_period/n;let p=point/pitch;let grid=floor(p);var coverage=0.0;
  for(var y:i32=-2;y<=2;y++){for(var x:i32=-2;x<=2;x++){for(var fiber=0u;fiber<2u;fiber++){
-  let cell=grid+vec2<f32>(f32(x),f32(y));let lane=stream+31u*fiber;
-  let origin=wp_pair(cell,lane,seed);let choice=wp_pair(cell,lane+2u,seed);
+  let cell=grid+vec2<f32>(f32(x),f32(y));let identity=wp_wrap(cell,vec2<f32>(n));let lane=stream+31u*fiber;
+  let origin=wp_pair(identity,lane,seed);let choice=wp_pair(identity,lane+2u,seed);
   if(choice.y<density){
    let angle=(choice.x-0.5)*3.14159265*(1.0-alignment);
-   let radius=span*(0.35+0.65*wp_hash(cell,lane+4u,seed))*0.5;
+   let radius=span*(0.35+0.65*wp_hash(identity,lane+4u,seed))*0.5;
    let endpoint=vec2<f32>(cos(angle),sin(angle))*radius;
    let distance=wp_segment(p,cell+origin-endpoint,cell+origin+endpoint)*pitch;
-   let opacity=(1.0-smoothstep(width*0.5,width*0.5+0.9,distance))*(0.55+0.45*wp_hash(cell,lane+5u,seed));
-   coverage=max(coverage,opacity);
+   coverage=max(coverage,(1.0-smoothstep(width*0.5,width*0.5+0.9,distance))*(0.55+0.45*wp_hash(identity,lane+5u,seed)));
   }
  }}}
  return coverage;
 }
-fn wp_specks(point:vec2<f32>,pitch:f32,radius:f32,density:f32,stream:u32,seed:u32)->f32 {
- let cell=floor(point/pitch);let local=point/pitch-cell;var coverage=0.0;
+fn wp_specks(point:vec2<f32>,n:f32,radius:f32,density:f32,stream:u32,seed:u32)->f32 {
+ let pitch=wp_period/n;let cell=floor(point/pitch);let local=point/pitch-cell;var coverage=0.0;
  for(var y:i32=-1;y<=1;y++){for(var x:i32=-1;x<=1;x++){
-  let offset=vec2<f32>(f32(x),f32(y));let identity=cell+offset;
+  let offset=vec2<f32>(f32(x),f32(y));let identity=wp_wrap(cell+offset,vec2<f32>(n));
   if(wp_hash(identity,stream+2u,seed)<density){
    let size=radius*(0.4+0.6*wp_hash(identity,stream+3u,seed));
    let distance=length(offset+wp_pair(identity,stream,seed)-local)*pitch;
@@ -225,6 +224,9 @@ fn wp_specks(point:vec2<f32>,pitch:f32,radius:f32,density:f32,stream:u32,seed:u3
  }}
  return coverage;
 }
+fn wp_ragged(point:vec2<f32>,n:f32,radius:f32,density:f32,stream:u32,seed:u32)->f32 {
+ return wp_specks(wp_displace(point,160.0,3.0,stream+7u,seed),n,radius,density,stream,seed);
+}
 fn wp_repeat(point:vec2<f32>,period:vec2<f32>)->vec2<f32>{return point-period*floor(point/period);}
 fn wp_hexagonal(point:vec2<f32>)->f32 {
  let period=vec2<f32>(1.0,1.7320508);
@@ -232,121 +234,111 @@ fn wp_hexagonal(point:vec2<f32>)->f32 {
  let second=wp_repeat(point-0.5*period,period)-0.5*period;
  return min(length(first),length(second));
 }
-fn waterPaperField(point:vec2<f32>,seedValue:f32,kind:u32)->vec3<f32> {
- let seed=u32(seedValue*7919.0);var height=0.5;var formation=0.5;var inclusions=0.5;
+fn wp_thread(t:f32,width:f32)->f32{let r=2.0*t/width;return sqrt(max(0.0,1.0-r*r));}
+// The raw height, formation and inclusions at a point of one period (paper-field.mjs paperRaw notes each paper's sizes).
+fn waterPaperRaw(point:vec2<f32>,seed:u32,kind:u32)->vec3<f32> {
+ var raw=0.5;var formation=0.5;var inclusions=0.5;let x=point.x;let y=point.y;
  switch kind {
   case 1u: {
-   let felt=0.6*wp_fractal(point*0.06,4u,200u,seed)+0.25*wp_noise(point*0.4,210u,seed);
-   let fiber=wp_fibers(point,16.0,2.5,0.8,0.3,0.0,220u,seed);
-   height=0.5+(felt+0.05*fiber-0.4)*0.45;formation=wp_fractal(point*0.01,4u,230u,seed);
+   let fiber=wp_fibers(point,90.0,1.4,0.45,0.35,0.0,220u,seed);
+   raw=0.55*wp_fractal(point,vec2<f32>(160.0),3u,200u,seed)+0.3*wp_noise(point,vec2<f32>(560.0),210u,seed)+0.15*fiber;
+   formation=wp_fractal(point,vec2<f32>(9.0),4u,230u,seed);
   }
   case 2u: {
-   let coarse=wp_displace(point,0.01,40.0,300u,seed);
-   let large=smoothstep(0.3,0.7,wp_fractal(point*0.006,3u,305u,seed));
-   let hills=wp_hills(coarse/26.0,310u,seed)*(0.35+0.4*large)+wp_hills(coarse/12.0,315u,seed)*(0.45-0.25*large);
-   height=0.5+(0.65*hills+0.25*wp_fractal(coarse*0.06,5u,320u,seed)+0.1*wp_noise(point*0.45,325u,seed)-0.52)*1.5;
-   formation=wp_fractal(point*0.01,4u,330u,seed);
+   let c=wp_displace(point,10.0,16.0,300u,seed);let large=smoothstep(0.3,0.7,wp_fractal(point,vec2<f32>(6.0),3u,305u,seed));
+   let h=wp_hills(c,36.0,310u,seed)*(0.35+0.4*large)+wp_hills(c,70.0,315u,seed)*(0.45-0.25*large);
+   raw=0.65*h+0.25*wp_fractal(c,vec2<f32>(44.0),5u,320u,seed)+0.1*wp_noise(point,vec2<f32>(300.0),325u,seed);
+   formation=wp_fractal(point,vec2<f32>(10.0),4u,330u,seed);
   }
   case 3u: {
-   let coarse=wp_displace(point,0.008,60.0,400u,seed);
-   let hills=1.0-smoothstep(0.0,0.9,wp_neighbors(coarse/13.0,1.0,420u,seed).x);
-   let fiber=wp_fibers(wp_displace(point,0.05,8.0,430u,seed),9.0,3.0,1.1,0.6,0.0,440u,seed);
-   let felt=0.5*wp_fractal(coarse*0.035,5u,410u,seed)+0.3*hills+0.16*wp_fractal(point*0.2,3u,450u,seed)+0.03*fiber;
-   let fleck=max(wp_specks(point,60.0,2.0,0.3,460u,seed),0.6*wp_fibers(wp_displace(point,0.06,10.0,465u,seed),110.0,0.4,0.9,0.3,0.0,470u,seed));
-   height=0.5+(felt-0.5)*1.6;formation=0.7*wp_fractal(point*0.006,4u,480u,seed)+0.25*fiber;inclusions=0.5-0.35*fleck+0.06*fiber;
+   let c=wp_displace(point,8.0,40.0,400u,seed);let knobs=1.0-smoothstep(0.0,0.9,wp_cells(c,26.0,1.0,420u,seed));
+   let fiber=wp_fibers(wp_displace(point,40.0,6.0,430u,seed),50.0,2.2,0.9,0.6,0.0,440u,seed);
+   let fleck=max(wp_ragged(point,14.0,1.8,0.35,460u,seed),0.7*wp_fibers(wp_displace(point,30.0,8.0,465u,seed),10.0,0.25,0.8,0.35,0.0,470u,seed));
+   raw=0.45*wp_fractal(c,vec2<f32>(18.0),5u,410u,seed)+0.33*knobs+0.14*wp_fractal(point,vec2<f32>(110.0),3u,450u,seed)+0.015*fiber;
+   formation=0.7*wp_fractal(point,vec2<f32>(5.0),4u,480u,seed)+0.1*fiber;inclusions=0.5-0.4*fleck+0.02*fiber;
   }
   case 4u: {
-   let longFiber=wp_fibers(wp_displace(point,0.025,28.0,500u,seed),42.0,3.4,1.3,0.4,0.0,510u,seed)*(0.6+0.4*wp_noise(point*0.05,512u,seed));
-   let fineFiber=wp_fibers(wp_displace(point,0.05,10.0,515u,seed),14.0,3.0,0.6,0.45,0.0,520u,seed);
-   height=0.5+(0.8*wp_fractal(point*0.05,4u,530u,seed)+0.08*longFiber+0.03*fineFiber-0.42)*0.7;
-   formation=0.85*wp_fractal(point*0.005,5u,540u,seed)+0.15*longFiber;
-   inclusions=0.5+0.16*longFiber+0.05*fineFiber-0.4*wp_specks(point,70.0,1.6,0.18,550u,seed);
+   let longFiber=wp_fibers(wp_displace(point,20.0,24.0,500u,seed),14.0,1.7,0.8,0.75,0.0,510u,seed)*(0.6+0.4*wp_noise(point,vec2<f32>(12.0),512u,seed));
+   let fine=wp_fibers(wp_displace(point,40.0,8.0,515u,seed),40.0,1.8,0.5,0.6,0.0,520u,seed);
+   raw=0.8*wp_fractal(point,vec2<f32>(30.0),4u,530u,seed)+0.1*longFiber+0.04*fine;
+   formation=0.7*wp_fractal(point,vec2<f32>(6.0),5u,540u,seed)+0.3*max(longFiber,0.6*fine);
+   inclusions=0.5+0.2*longFiber+0.07*fine-0.35*wp_ragged(point,10.0,1.1,0.3,550u,seed);
   }
   case 5u: {
-   let horizontal=(wp_fractal(point*vec2<f32>(0.004,0.02),3u,600u,seed)-0.5)*6.0;
-   let laid=pow(0.5+0.5*cos(2.0*3.14159265*(point.y+horizontal)/5.6),2.0);
-   let vertical=point.x+(wp_fractal(point*vec2<f32>(0.02,0.004),3u,610u,seed)-0.5)*8.0;
-   let distance=abs(fract(vertical/140.0)-0.5)*140.0;
-   let chain=1.0-smoothstep(1.0,3.5,distance);
-   height=0.5+(0.1*laid+0.05*chain+0.6*wp_fractal(point*0.08,4u,620u,seed)-0.36)*1.1;
-   formation=0.5-0.12*exp(-distance/12.0)-0.06*laid+(wp_fractal(point*0.01,3u,630u,seed)-0.5)*0.6;
+   let wobble=(wp_fractal(point,vec2<f32>(4.0,20.0),3u,600u,seed)-0.5)*2.5;
+   let laid=pow(0.5+0.5*cos(2.0*3.14159265*(y+wobble)*100.0/wp_period),2.0);
+   let across=(x+(wp_fractal(point,vec2<f32>(20.0,4.0),3u,610u,seed)-0.5)*4.0)*4.0/wp_period;
+   let distance=abs(fract(across)-0.5)*wp_period/4.0;let chain=1.0-smoothstep(1.0,3.0,distance);
+   raw=0.12*laid+0.08*chain+0.6*wp_fractal(point,vec2<f32>(100.0),4u,620u,seed);
+   formation=0.5-0.2*exp(-distance/10.0)-0.07*laid+(wp_fractal(point,vec2<f32>(10.0),3u,630u,seed)-0.5)*0.6;
+   inclusions=0.5-0.14*wp_fibers(wp_displace(point,30.0,6.0,645u,seed),16.0,0.3,0.6,0.2,0.0,640u,seed);
   }
   case 6u: {
-   let p=point+(vec2<f32>(wp_noise(point*0.02,700u,seed),wp_noise(point*0.02,701u,seed))-0.5)*8.0*1.2;
-   let cell=p/8.0;let slot=floor(cell);let center=fract(cell)-0.5;
-   let warp=0.8+0.2*wp_hash(vec2<f32>(slot.x,0.0),702u,seed)+0.3*(wp_noise(vec2<f32>(slot.x*5.0,cell.y*0.35),703u,seed)-0.5);
-   let weft=0.8+0.2*wp_hash(vec2<f32>(0.0,slot.y),704u,seed)+0.3*(wp_noise(vec2<f32>(cell.x*0.35,slot.y*5.0),705u,seed)-0.5);
-   let parity=slot.x+slot.y-2.0*floor((slot.x+slot.y)/2.0);let raised=parity>0.5;
-   let ellipse=center*select(vec2<f32>(1.15,2.3),vec2<f32>(2.3,1.15),raised);
-   let thread=max(0.0,1.0-dot(ellipse,ellipse))*select(weft,warp,raised);
-   height=0.5+(0.75*sqrt(thread)+0.25*wp_fractal(p*0.15,3u,706u,seed)-0.55)*1.1;
-   formation=wp_fractal(p*0.01,3u,707u,seed);
+   let q=wp_displace(point,24.0,2.0,700u,seed);let u=q*160.0/wp_period;let slot=floor(u);let t=u-slot-0.5;
+   let warpWidth=0.68+0.32*wp_noise(vec2<f32>(slot.x*wp_period/160.0,q.y),vec2<f32>(160.0,16.0),702u,seed);
+   let weftWidth=0.68+0.32*wp_noise(vec2<f32>(q.x,slot.y*wp_period/160.0),vec2<f32>(16.0,160.0),704u,seed);
+   let warpLift=0.78+0.44*wp_hash(vec2<f32>(wp_wrap(slot,vec2<f32>(160.0)).x,0.0),709u,seed);let weftLift=0.78+0.44*wp_hash(vec2<f32>(0.0,wp_wrap(slot,vec2<f32>(160.0)).y),710u,seed);
+   let warp=warpLift*wp_thread(t.x,warpWidth)*(0.55+0.45*cos(3.14159265*(u.y-0.5-slot.x)))*(1.0+0.08*cos(2.0*3.14159265*(3.0*u.y+2.0*t.x)));
+   let weft=weftLift*wp_thread(t.y,weftWidth)*(0.55-0.45*cos(3.14159265*(u.x-0.5-slot.y)))*(1.0+0.08*cos(2.0*3.14159265*(3.0*u.x+2.0*t.y)));
+   raw=0.78*max(max(warp,weft),0.32)+0.14*wp_fractal(point,vec2<f32>(60.0),3u,706u,seed)+0.08*wp_noise(point,vec2<f32>(500.0),707u,seed);
+   formation=wp_fractal(point,vec2<f32>(8.0),3u,708u,seed);
   }
   case 7u: {
-   let coarse=wp_displace(point,0.05,7.0,800u,seed)/9.0;
-   let radius=wp_hexagonal(coarse)*(0.8+0.4*wp_noise(coarse*2.0,805u,seed));
-   let rims=smoothstep(0.1,0.55,radius);
-   height=0.5+(0.28*rims+0.6*wp_fractal(point*0.09,4u,810u,seed)+0.04*wp_fibers(point,12.0,2.0,0.9,0.35,0.0,820u,seed)-0.42)*1.2;
-   formation=wp_fractal(point*0.012,4u,830u,seed);inclusions=0.5-0.3*wp_specks(point,60.0,1.2,0.2,840u,seed);
+   let d=wp_displace(point,40.0,4.0,800u,seed);
+   let radius=wp_hexagonal(vec2<f32>(d.x*110.0,d.y*64.0*1.7320508)/wp_period)*(0.85+0.3*wp_noise(point,vec2<f32>(110.0),805u,seed));let rims=smoothstep(0.12,0.55,radius);
+   raw=0.3*rims+0.58*wp_fractal(point,vec2<f32>(80.0),4u,810u,seed)+0.05*wp_fibers(point,60.0,1.6,0.6,0.35,0.0,820u,seed);
+   formation=wp_fractal(point,vec2<f32>(10.0),4u,830u,seed);
+   inclusions=0.5-0.3*wp_ragged(point,24.0,1.1,0.25,840u,seed)+0.12*wp_fibers(wp_displace(point,30.0,6.0,845u,seed),14.0,0.35,0.7,0.3,0.0,850u,seed);
   }
   case 8u: {
-   let felt=0.6*wp_fractal(point*0.07,4u,900u,seed)+0.32*wp_noise(point*0.35,910u,seed)+0.04*wp_fibers(point,10.0,2.5,0.9,0.6,0.7,920u,seed);
-   let fleck=max(0.6*wp_fibers(wp_displace(point,0.08,10.0,935u,seed),60.0,0.35,0.7,0.2,0.6,940u,seed),wp_specks(point,40.0,1.3,0.35,950u,seed));
-   let light=wp_fibers(wp_displace(point,0.08,10.0,955u,seed),70.0,0.4,1.0,0.25,0.5,960u,seed);
-   height=0.5+(felt-0.45)*0.7;formation=0.8*wp_fractal(point*vec2<f32>(0.004,0.03),5u,930u,seed)+0.2*wp_fractal(point*0.01,3u,970u,seed);
-   inclusions=0.5-0.28*fleck+0.12*light;
+   let shive=max(0.7*wp_fibers(wp_displace(point,30.0,6.0,935u,seed),18.0,0.35,0.7,0.25,0.6,940u,seed),wp_ragged(point,30.0,1.2,0.15,950u,seed));
+   let light=wp_fibers(wp_displace(point,30.0,6.0,955u,seed),16.0,0.4,0.9,0.3,0.5,960u,seed);
+   raw=0.6*wp_fractal(point,vec2<f32>(60.0),4u,900u,seed)+0.3*wp_noise(point,vec2<f32>(240.0),910u,seed)+0.06*wp_fibers(point,120.0,2.0,0.5,0.6,0.7,920u,seed);
+   formation=0.75*wp_fractal(point,vec2<f32>(4.0,32.0),5u,930u,seed)+0.25*wp_fractal(point,vec2<f32>(12.0),3u,970u,seed);
+   inclusions=0.5-0.3*shive+0.12*light;
   }
   case 9u: {
-   let coarse=wp_displace(point,0.03,3.0,995u,seed);
-   let bumps=1.0-smoothstep(0.0,0.7,wp_neighbors(coarse/7.0,0.7,1000u,seed).x);
-   height=0.5+(0.6*bumps+0.4*wp_fractal(point*0.12,3u,1010u,seed)-0.48)*1.1;
-   formation=wp_fractal(point*0.015,3u,1020u,seed);
+   let bumps=1.0-smoothstep(0.0,0.7,wp_cells(wp_displace(point,30.0,2.0,995u,seed),100.0,0.85,1000u,seed));
+   raw=0.62*bumps+0.3*wp_fractal(point,vec2<f32>(150.0),3u,1010u,seed)+0.08*wp_noise(point,vec2<f32>(500.0),1015u,seed);
+   formation=wp_fractal(point,vec2<f32>(14.0),3u,1020u,seed);
   }
   case 10u: {
-   let micro=0.7*wp_noise(point*0.35,1100u,seed)+0.3*wp_fractal(point*0.065,3u,1108u,seed);
-   height=0.5+(micro-0.5)*0.16;formation=0.5+(wp_fractal(point*0.009,3u,1116u,seed)-0.5)*0.55;
+   raw=0.6*wp_noise(point,vec2<f32>(520.0),1100u,seed)+0.4*wp_fractal(point,vec2<f32>(110.0),3u,1108u,seed);
+   formation=0.5+(wp_fractal(point,vec2<f32>(10.0),3u,1116u,seed)-0.5)*0.55;
   }
   case 11u: {
-   let coarse=wp_displace(point,0.018,15.0,1200u,seed);
-   let basins=1.0-smoothstep(0.08,0.85,wp_neighbors(coarse/18.0,1.0,1210u,seed).x);
-   height=0.5+(0.58*basins+0.3*wp_fractal(coarse*0.055,4u,1220u,seed)+0.12*wp_noise(point*0.4,1230u,seed)-0.45)*1.65;
-   formation=wp_fractal(point*0.008,3u,1240u,seed);
+   let c=wp_displace(point,12.0,14.0,1200u,seed);let basins=1.0-smoothstep(0.08,0.85,wp_cells(c,28.0,1.0,1210u,seed));
+   raw=0.55*basins+0.25*wp_hills(c,60.0,1225u,seed)+0.2*wp_fractal(c,vec2<f32>(40.0),4u,1220u,seed)+0.08*wp_noise(point,vec2<f32>(300.0),1230u,seed);
+   formation=wp_fractal(point,vec2<f32>(9.0),3u,1240u,seed);
   }
   case 12u: {
-   let fiber=wp_fibers(point,17.0,1.7,0.7,0.3,0.15,1300u,seed);
-   height=0.5+(0.72*wp_fractal(point*0.095,4u,1310u,seed)+0.22*wp_noise(point*0.4,1320u,seed)+0.06*fiber-0.48)*0.72;
-   formation=wp_fractal(point*0.012,3u,1330u,seed);inclusions=0.5+0.07*fiber-0.16*wp_specks(point,48.0,1.1,0.14,1340u,seed);
+   let fiber=wp_fibers(point,30.0,1.6,0.55,0.35,0.15,1300u,seed);
+   raw=0.7*wp_fractal(point,vec2<f32>(110.0),4u,1310u,seed)+0.22*wp_noise(point,vec2<f32>(320.0),1320u,seed)+0.06*fiber;
+   formation=wp_fractal(point,vec2<f32>(10.0),3u,1330u,seed);inclusions=0.5+0.12*fiber-0.25*wp_ragged(point,22.0,1.1,0.2,1340u,seed);
   }
   case 13u: {
-   let coarse=wp_displace(point,0.012,30.0,1400u,seed);
-   let longFiber=wp_fibers(coarse,28.0,3.2,1.1,0.55,0.08,1410u,seed);
-   let fine=wp_fibers(point,11.0,2.3,0.6,0.4,0.0,1420u,seed);
-   let pulp=wp_fractal(coarse*0.034,4u,1430u,seed);
-   height=0.5+(0.63*pulp+0.22*wp_fractal(point*0.14,3u,1440u,seed)+0.1*longFiber+0.05*fine-0.44)*1.25;
-   formation=0.8*wp_fractal(coarse*0.006,4u,1450u,seed)+0.2*longFiber;
-   inclusions=0.5+0.1*longFiber-0.3*wp_specks(point,62.0,1.6,0.22,1460u,seed);
+   let c=wp_displace(point,10.0,30.0,1400u,seed);
+   let longFiber=wp_fibers(c,20.0,1.6,0.9,0.6,0.08,1410u,seed);let fine=wp_fibers(point,50.0,2.0,0.55,0.45,0.0,1420u,seed);
+   let lumps=1.0-smoothstep(0.0,0.9,wp_cells(c,34.0,1.0,1435u,seed));
+   raw=0.45*wp_fractal(c,vec2<f32>(16.0),4u,1430u,seed)+0.2*lumps+0.22*wp_fractal(point,vec2<f32>(90.0),3u,1440u,seed)+0.08*longFiber+0.04*fine;
+   formation=0.75*wp_fractal(c,vec2<f32>(6.0),4u,1450u,seed)+0.25*longFiber;
+   inclusions=0.5+0.12*longFiber-0.35*wp_ragged(point,12.0,1.6,0.28,1460u,seed);
   }
   default: {
-   let coarse=wp_displace(point,0.02,10.0,100u,seed);
-   let hills=0.6*wp_hills(coarse/11.0,110u,seed)+0.4*wp_hills(coarse/5.5,115u,seed);
-   height=0.5+(0.5*hills+0.38*wp_fractal(coarse*0.09,5u,120u,seed)+0.12*wp_noise(point*0.5,130u,seed)-0.5)*1.3;
-   formation=wp_fractal(point*0.012,4u,140u,seed);
+   let c=wp_displace(point,20.0,6.0,100u,seed);
+   let felt=0.6*wp_hills(c,80.0,110u,seed)+0.4*wp_hills(c,140.0,115u,seed);
+   raw=0.55*felt+0.3*wp_fractal(c,vec2<f32>(48.0),4u,120u,seed)+0.07*wp_noise(point,vec2<f32>(520.0),130u,seed);
+   formation=wp_fractal(point,vec2<f32>(10.0),4u,140u,seed);
   }
  }
- return clamp(vec3<f32>(height,formation,inclusions),vec3<f32>(0.0),vec3<f32>(1.0));
+ return vec3<f32>(raw,formation,inclusions);
 }
-// The sheet repeats every period. Across a period's last band the field fades into the one a period earlier, keeping
-// its variance, so the edges meet without a seam and the paper background (paper-field.mjs) can be one tile.
+// Height, formation and inclusions: every lattice has a whole number of cells in a period, so the sheet repeats without a
+// seam and the paper background (paper-field.mjs, paperTiled) can be one tile.
 fn waterPaperTile(point:vec2<f32>,seedValue:f32,kind:u32)->vec3<f32> {
- let period=${WATER_PAPER_PERIOD.toFixed(1)};let q=point-period*floor(point/period);
- let w=smoothstep(vec2<f32>(period-${WATER_PAPER_BAND.toFixed(1)}),vec2<f32>(period),q);
- var sum=vec3<f32>(0.0);var norm=0.0;
- for(var i=0u;i<4u;i++){
-  let shift=vec2<f32>(f32(i&1u),f32(i>>1u));
-  let weight=mix(1.0-w.x,w.x,shift.x)*mix(1.0-w.y,w.y,shift.y);
-  if(weight<=0.0){continue;}
-  sum+=weight*(waterPaperField(q-shift*period,seedValue,kind)-0.5);norm+=weight*weight;
- }
- return clamp(0.5+sum/sqrt(norm),vec3<f32>(0.0),vec3<f32>(1.0));
+ var levels=array<vec2<f32>,${WATER_PAPER_LEVELS.length}>(${WATER_PAPER_LEVELS.map(([c,g])=>'vec2<f32>('+c.toFixed(3)+','+g.toFixed(3)+')').join(',')});
+ let known=select(0u,kind,kind<${WATER_PAPER_LEVELS.length}u);let level=levels[known];
+ let field=waterPaperRaw(wp_repeat(point,vec2<f32>(wp_period)),u32(seedValue*7919.0),known);
+ return clamp(vec3<f32>(0.5+(field.x-level.x)*level.y,field.y,field.z),vec3<f32>(0.0),vec3<f32>(1.0));
 }
 `;

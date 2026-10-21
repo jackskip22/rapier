@@ -2489,7 +2489,7 @@ function _rapierDrawSerializeSVG(recipe, measure, keepRasters = false, renderOpt
 	}
 	recipe.view = view;
 	const bgId = 'rapier-bg-' + _rapierDrawBackgroundKey(recipe);
-	const background = !recipe.background ? '' : recipe.paper || recipe.background.kind === 'paper' ? backgroundSVG(recipe.background, paper, bgId, recipe.paper === 'black')
+	const background = !recipe.background ? '' : recipe.paper || recipe.background.kind === 'paper' ? backgroundSVG(recipe.background, paper, bgId, recipe.paper === 'black', renderOptions?.paperImage)
 		: '<style>.' + bgId + '-d{display:none}@media (prefers-color-scheme:dark){.' + bgId + '-l{display:none}.' + bgId + '-d{display:inline}}</style>'
 			+ '<g class="' + bgId + '-l">' + backgroundSVG(recipe.background, paper, bgId + '-l', false) + '</g>'
 			+ '<g class="' + bgId + '-d">' + backgroundSVG(recipe.background, paper, bgId + '-d', true) + '</g>';

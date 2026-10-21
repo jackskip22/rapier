@@ -28,8 +28,8 @@ For “make me a CV” or a menu, invitation, lesson, social card, brief, recipe
 start with a clear heading, short paragraphs and compact two- or three-column
 Markdown tables. Keep every word as editable text. Use original SVG document objects
 for the design: read guide:"draw", then edit the rapier-draw fence; document.draw is
-its existing owner. Avoid text baked into pictures, fixed page-sized canvases and
-remote assets. A person can move and resize these objects in the document.
+its existing owner. Avoid text baked into pictures, fixed page-sized canvases (a page,
+below, is the one exception) and remote assets. A person can move and resize these objects in the document.
 Put an md-layout:v1 comment on the next line after a drawing fence, or on the same
 line after an ordinary Markdown image. For example, width=30% wrap=around x=100% y=0em. Leave space for words at 390 px. Check the
 result with read {as:"image"}; also inspect wide and narrow, light and dark views.
@@ -37,6 +37,36 @@ Use front matter mainfont and linestretch for portable presentation. Keep custom
 fonts embedded. Use real sample copy, no executable placeholders or template code.
 Read the draw guide first: its recipe becomes editable SVG through the existing
 six-tool edit path; do not invent another graphics protocol.
+
+## Make a page
+
+A page is one sheet: a poster, card, certificate, flyer or social post. Open a
+blank page for the person with open {text, filename} (in an open empty document,
+edit with changes [{text}]) whose text starts with this front matter:
+
+---
+template: page
+papersize: a4
+geometry: margin=1in
+---
+
+Sizes: letter, legal, tabloid; a3, a4, a5; web sizes in pixels such as 1080x1080px,
+1080x1350px, 1920x1080px and 1200x630px (any WIDTHxHEIGHTpx from 100 to 10000).
+geometry sets the text area's margins. Never turn a long document into a page.
+
+Make any SVG and set it as the page's ground: the first picture marked
+wrap=behind lock=on fills the whole sheet, margins included, behind the words.
+Give the SVG the sheet's shape (viewBox 0 0 1080 1350 for 1080x1350px), or
+preserveAspectRatio="none" to stretch it:
+
+![Ground][page-ground] <!--md-layout:v1 width=100% x=50% wrap=behind lock=on-->
+
+[page-ground]: data:image/svg+xml;base64,PHN2Zy4uLg==
+
+Place other SVGs on the page as ordinary pictures with md-layout:v1. Leave the words
+to the person: they write in the text area over or inside your SVG, and move its
+corners by tapping the ground's edge. Check with read {as:"image"}. In the page's
+metadata the person changes its size and saves it as a page template to reuse or share.
 
 If Draw is still open, let the person close its preview before saving: the library
 needs a settled document. After they review the result, read its current revision and call
@@ -247,6 +277,10 @@ A text edit of the block still becomes one source act through the Draw owner.
 Painting uses that owner's material pipeline; accepted work has not yet committed.
 Painting needs an open editor; Water also needs WebGPU. Guide "water" says how a
 painting is kept and what it costs.
+
+A page's ground (guide overview, "Make a page") is an ordinary SVG picture marked
+wrap=behind lock=on, not a rapier-draw fence: write that SVG yourself, then place
+drawings and other pictures over it.
 
 Edit the drawing, inspect the small picture in the result, then adjust. For full
 detail, read {as:"image",block:"id"}, including while Draw is open. Check its
