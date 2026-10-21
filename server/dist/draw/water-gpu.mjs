@@ -74,7 +74,8 @@ const watchErrors=reference=>event=>{reference.deref()?._poison(event.error,'unc
 
 let unfilteredTest=false;
 let waterFixName='';
-export function waterFix(name){waterFixName=['submit','inplace','copy'].includes(name)?name:'';}
+export function waterFix(name){waterFixName=['submit','inplace','copy','direct'].includes(name)?name:'';}
+export const waterFixIs=name=>waterFixName===name;
 export function waterUnfilteredTest(on){if(on===unfilteredTest)return;unfilteredTest=on;deviceTask=null;}
 export const waterTiming={on:false,presents:0,gpu:0,gpuFrames:0,stamp:0,stampBuffers:0,stampSkipped:0};
 export function waterTimingOn(on){if(on===waterTiming.on)return;waterTiming.on=on;deviceTask=null;}

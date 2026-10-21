@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {WaterSurface,WaterBrush,paintWaterBrushPreview,waterError,waterReady,waterSoftwareAdmitted,waterWarm,waterUnfilteredTest,waterTiming,waterTimingOn,waterCapture,waterCaptureOn,waterNote} from './water.mjs';
-import {waterFix} from './water-gpu.mjs';
+import {waterFix,waterFixIs} from './water-gpu.mjs';
 import {PaintStrokeHistory,copyPaintState,snapshotPaintState} from './paint-history.mjs';
 import {sha256Yielding} from '../notes/integrity.mjs';
 import {paintAgentStrokes,replayAgentPainting,sampleAgentPainting,agentPaintReplayRun,restoreWaterReplay,waterReplayAt} from './agent-paint.mjs';
@@ -123,13 +123,14 @@ export function createWaterWorker({postMessage}={}){
      if(waterCapture.on)waterNote({ev:'configure',surface:id,generation:bound.generation,canvas:[bound.canvas.width,bound.canvas.height],...configuration,usage:bound.context.getConfiguration?.()?.usage});
     }
     if(waterCapture.on&&(bound.canvas.width!==s.width||bound.canvas.height!==s.height))waterNote({ev:'mismatch',canvas:[bound.canvas.width,bound.canvas.height],sheet:[s.width,s.height]});
-    const bitmap=await s.gpu.present(bound.context.getCurrentTexture(),full||relight?null:[box.x0,box.y0,box.x1+1,box.y1+1],()=>bound.canvas.transferToImageBitmap());
-    if(!bitmap||bitmap.width!==s.width||bitmap.height!==s.height){bitmap?.close();throw waterError('WATER_DISPLAY','The Water frame is unavailable');}
+    const direct=waterFixIs('direct');
+    const bitmap=await s.gpu.present(bound.context.getCurrentTexture(),full||relight?null:[box.x0,box.y0,box.x1+1,box.y1+1],direct?null:()=>bound.canvas.transferToImageBitmap());
+    if(!direct&&(!bitmap||bitmap.width!==s.width||bitmap.height!==s.height)){bitmap?.close();throw waterError('WATER_DISPLAY','The Water frame is unavailable');}
     bound.toothOX=s.toothOX;bound.toothOY=s.toothOY;bound.full=false;
     const meta=metadata(s),frame={generation:bound.generation,canvasGeneration:bound.canvasGeneration,frame:++bound.sequence,revision:meta.revision,width:meta.width,height:meta.height,bytes};
     bound.pending=frame;displayed.set(id,performance.now());
     if(waterCapture.on)waterNote({ev:'send',surface:id,frame:frame.frame,generation:frame.generation,revision:frame.revision,full:!!full});
-    return {surfaceId:id,meta,patch:null,display:{...frame,submitted:true,complete:true,bitmap}};
+    return {surfaceId:id,meta,patch:null,display:direct?{...frame,submitted:true,complete:true,direct:true}:{...frame,submitted:true,complete:true,bitmap}};
    }catch(error){
     bound.full=true;
     if(waterCapture.on)waterNote({ev:'refused',surface:id,code:error.code,message:String(error?.message??error)});

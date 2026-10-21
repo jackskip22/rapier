@@ -1983,7 +1983,7 @@ function _rapierPaintSettleClosing() {
 function _rapierPaintReleaseSurface(layer) {
 	const surface = layer?.surface;
 	if (!surface) return;
-	if (layer.mode === 'water' && layer.gpuDisplay && layer.canvas) layer.canvas.width = layer.canvas.height = 0;
+	if (layer.mode === 'water' && layer.gpuDisplay && layer.canvas) try { layer.canvas.width = layer.canvas.height = 0; } catch (_) {}
 	try { surface.drop(); } catch (_) {}
 }
 function _rapierPaintSweepBrushes(keep = _rapierDrawState.gesture?.paint?.brush || null) {
@@ -1997,9 +1997,20 @@ function _rapierPaintMountLive(canvas, atShapeId) {
 	mount.style.overflow = 'visible';
 	if (canvas.getAttribute?.('data-water') != null) mount.setAttribute('data-water', '');
 	canvas.style.display = 'block';
-	mount.appendChild(canvas);
+	if (canvas.getAttribute?.('data-water') != null && _rapierWaterFixSwitch() === 'direct' && _rapierWaterDirectHost()) {
+		_rapierWaterDirectHost().appendChild(canvas);
+		mount.remove = function () { canvas.remove(); Element.prototype.remove.call(this); };
+	}
+	else mount.appendChild(canvas);
 	_rapierPaintPositionMount(mount, atShapeId);
 	return mount;
+}
+function _rapierWaterDirectHost() {
+	const stage = _rapierDrawState.stageEl;
+	if (!stage) return null;
+	let host = stage.querySelector(':scope > .rapier-water-direct');
+	if (!host) { host = document.createElement('div'); host.className = 'rapier-water-direct'; host.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;mix-blend-mode:multiply'; stage.appendChild(host); }
+	return host;
 }
 function _rapierPaintPositionMount(mount, id) {
 	const host = _rapierDrawState.svg, at = id != null ? host?.querySelector('[data-shape-id="' + id + '"]') : null;
@@ -2051,7 +2062,7 @@ function _rapierPaintBlankSheet(w, h, scale, prepared = null, mode = _rapierPain
 	const surface = remote.surface(w, h, mode === 'water' ? {mode: 'water', pixelScale: scale, paper: _rapierWaterState().paper, waterSession: _rapierWaterSession(), trackedGrowth: true, ...material} : {wet: RAPIER_PAINT_WET, trackedGrowth: true}, waterMaterial ? {...waterMaterial, display:!!restoredCanvas.ctx} : null);
 	if (mode !== 'water') { surface.set('paper', RAPIER_PAINT_PAPER); surface.set('scale', scale / RAPIER_PAINT_GRAIN); }
 	const {canvas, ctx} = restoredCanvas || _rapierPaintBlankCanvas(w, h, prepared, mode);
-	if (!ctx) surface.bindDisplay(mode === 'water' ? new OffscreenCanvas(w, h) : canvas.transferControlToOffscreen()).catch(() => {});
+	if (!ctx) surface.bindDisplay(mode === 'water' && _rapierWaterFixSwitch() !== 'direct' ? new OffscreenCanvas(w, h) : canvas.transferControlToOffscreen()).catch(() => {});
 	return {surface, canvas, ctx};
 }
 function _rapierPaintBlankCanvas(w, h, prepared = null, mode = 'paint') {
@@ -2062,6 +2073,7 @@ function _rapierPaintBlankCanvas(w, h, prepared = null, mode = 'paint') {
 	if (canvas.height !== h) canvas.height = h;
 	canvas.setAttribute('aria-hidden', 'true');
 	if (mode === 'water' && typeof OffscreenCanvas === 'function') {
+		if (_rapierWaterFixSwitch() === 'direct') return {canvas, ctx:null};
 		if (!canvas.getContext('2d')) throw new Error('Water could not create its display');
 		return {canvas, ctx:null};
 	}
@@ -2131,6 +2143,14 @@ function _rapierPaintPlaceLive(layer = _rapierDrawState.paintLayer) {
 		matrix[4] += dx * matrix[0] + dy * matrix[2]; matrix[5] += dx * matrix[1] + dy * matrix[3];
 	}
 	mount.setAttribute('transform', 'matrix(' + matrix.map(n => (Number.isFinite(n) ? n : 0)).join(',') + ')');
+	if (canvas.parentNode?.classList?.contains('rapier-water-direct')) {
+		const svg = _rapierDrawState.svgRoot, ctm = svg?.getScreenCTM(), stage = canvas.parentNode.getBoundingClientRect();
+		if (ctm) {
+			const m = new DOMMatrix([ctm.a, ctm.b, ctm.c, ctm.d, ctm.e - stage.left, ctm.f - stage.top]).multiply(new DOMMatrix(matrix.map(n => (Number.isFinite(n) ? n : 0))));
+			canvas.style.position = 'absolute'; canvas.style.left = canvas.style.top = '0'; canvas.style.transformOrigin = '0 0';
+			canvas.style.transform = 'matrix(' + [m.a, m.b, m.c, m.d, m.e, m.f].join(',') + ')';
+		}
+	}
 }
 function _rapierPaintWatchOverlay(layer) {
 	const canvas = layer.canvas;
@@ -2221,7 +2241,7 @@ function _rapierPaintDisplay(layer, reply) {
 // takes half the ink away. A long run of such frames is shown after RAPIER_WATER_GUARD_LIMIT, so a real change cannot
 const RAPIER_WATER_PARAMS = (() => { try { const opened = globalThis.performance?.getEntriesByType?.('navigation')?.[0]?.name; return new URLSearchParams(new URL(opened || location.href).search + '&' + location.search.slice(1)); } catch (_) { return {get: () => null}; } })();
 const RAPIER_WATER_GUARD = RAPIER_WATER_PARAMS.get('water-guard') !== '0';
-function _rapierWaterFixSwitch() { const name = RAPIER_WATER_PARAMS.get('water-fix'); return ['submit', 'inplace', 'filter', 'copy'].includes(name) ? name : ''; }
+function _rapierWaterFixSwitch() { const name = RAPIER_WATER_PARAMS.get('water-fix'); return ['submit', 'inplace', 'filter', 'copy', 'direct'].includes(name) ? name : ''; }
 const RAPIER_WATER_GUARD_LIMIT = 240;
 const _rapierWaterGuardSeen = {frames: 0, dropped: 0, last: null};
 let _rapierWaterGuardProbe = null;
@@ -2277,8 +2297,24 @@ function _rapierWaterProbeShow(layer, meta) {
 		'fix: ' + (_rapierWaterFixSwitch() || 'none'),
 		'guard: ' + (RAPIER_WATER_GUARD ? 'on' : 'off') + ', frames ' + seen.frames + ', dropped ' + seen.dropped + ', ink ' + (seen.last ? seen.last.ink.toFixed(4) : '?')].join('\n');
 }
+function _rapierPaintWaterDirect(layer, reply) {
+	const surface = layer.surface, display = reply.display, meta = reply.meta;
+	let accepted = false;
+	try {
+		if (!display.complete || display.generation !== surface.displayGeneration || reply.surfaceId !== surface.id ||
+			!Number.isSafeInteger(display.frame) || display.frame <= (layer.displayFrame || 0) || display.revision !== meta.revision) return;
+		accepted = true;
+		layer.canvasGeneration = display.canvasGeneration; layer.displayFrame = display.frame;
+		layer.displayMeta = {...meta}; layer.displayReady = true; layer.lost = false; layer.liveBox = null;
+		if (meta.bounds) _rapierPaintRecordLiveBox(layer, meta.bounds);
+		_rapierPaintPlaceLive(layer); _rapierPaintShowLive(layer.liveWanted, layer);
+		if (layer.setPending) { layer.setPending = false; _rapierPaintAfterFrame(_rapierPaintSyncSet); }
+		if (RAPIER_WATER_PROBE) { _rapierWaterGuardSeen.frames++; _rapierWaterProbeShow(layer, meta); }
+	} finally { surface.adoptDisplay(display.canvasGeneration, display.frame, accepted); }
+}
 function _rapierPaintWaterFrame(layer, reply) {
 	const surface = layer.surface, display = reply.display, bitmap = display?.bitmap, meta = reply.meta;
+	if (display?.direct) { _rapierPaintWaterDirect(layer, reply); return; }
 	if (!bitmap) return;
 	let accepted = false;
 	try {

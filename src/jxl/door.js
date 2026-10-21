@@ -9,7 +9,11 @@ const _rapierJxlDoor = (() => {
 	} catch (_) {}
 	if (born) {
 		try { document.documentElement.classList.add('rapier-jxl-start'); } catch (_) {}
-		_rapierPartWait('jxl').catch(error => { document.documentElement.classList.remove('rapier-jxl-start'); showToast(String(error?.message || error), 'error'); });
+		_rapierPartWait('jxl').catch(error => {
+			document.documentElement.classList.remove('rapier-jxl-start');
+			document.querySelector('[data-rapier-early-part="jxl"]')?.remove();
+			showToast(String(error?.message || error), 'error');
+		});
 	}
 	return Object.freeze({born});
 })();

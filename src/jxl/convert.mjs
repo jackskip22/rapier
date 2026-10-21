@@ -5,7 +5,7 @@ import {readPng, isPng} from './png.mjs';
 import {mediaKind, convertMedia, mediaNote as framesNote} from './frames.mjs';
 
 export const CARRY_BYTES = 16 * 1024 * 1024, PIXELS = 24_000_000;
-export const QUALITY = Object.freeze({lossless: 100, high: 90});
+export const QUALITY = Object.freeze({lossless: 100, high: 90, smaller: 75});
 export const ZIP_BYTES = 1024 * 1024 * 1024, ZIP_ENTRIES = 60000;
 
 export const LINKS = Object.freeze([['rapier-jxl on GitHub', 'https://github.com/jackskip22/rapier-jxl'], ['rapier-jxl on npm', 'https://www.npmjs.com/package/rapier-jxl']]);

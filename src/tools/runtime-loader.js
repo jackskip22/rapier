@@ -155,6 +155,8 @@ function _rapierWhenRuntime(id) {
 }
 
 function _rapierRevealFirstScreen() {
+  const screen = document.getElementById('rapier-first-screen');
+  if (screen?.dataset.rapierEarly !== undefined) { screen.inert = false; delete screen.dataset.rapierEarly; }
   document.body.classList.add('rapier-first-ready');
   try { performance.mark('rapier-first-ready'); } catch (_) {}
 }
@@ -205,6 +207,84 @@ const _rapierFirstPaintEligible = (() => {
     return localStorage.length === 0 && sessionStorage.length === 0;
   } catch (_) { return false; }
 })();
+
+const _rapierFirstEarlyStorage = (async () => {
+  if (!_rapierFirstPaintEligible || typeof indexedDB?.databases !== 'function') return false;
+  return (await indexedDB.databases()).every(row => row.name === 'rapier:cache');
+})().catch(() => false);
+let _rapierFirstEarlyClosed = false;
+
+async function _rapierShowFirstEarly(fonts) {
+  const early = document.getElementById('rapier-first-early');
+  if (!early) return false;
+  early.remove();
+  const eligible = await _rapierFirstEarlyStorage;
+  await Promise.race([fonts, new Promise(resolve => setTimeout(resolve, 1500))]);
+  const screen = document.getElementById('rapier-first-screen'), host = document.getElementById('editor-blocks');
+  if (!eligible || _rapierFirstEarlyClosed || !screen || !host || host.firstElementChild ||
+      document.body.matches('.rapier-first-ready, .rapier-boot-failed')) return false;
+  let view;
+  try { view = JSON.parse(early.getAttribute('data-rapier-presentation') || ''); } catch (_) { return false; }
+  if (!view?.light || !view.dark || typeof view.mark !== 'string' && typeof view.part !== 'string') return false;
+  if (typeof view.gpu === 'boolean' && view.gpu !== !!navigator.gpu) return false;
+  if (Array.isArray(view.viewport) && (view.viewport[0] !== innerWidth || view.viewport[1] !== innerHeight)) return false;
+  if (typeof view.reach === 'number' && innerWidth > view.reach) return false;
+  const theme = view[document.documentElement.classList.contains('rapier-boot-light') ? 'light' : 'dark'];
+  const apply = (element, attributes) => {
+    for (const [name, value] of Object.entries(attributes || {})) {
+      if (name === 'class') element.classList.add(...String(value).split(/\s+/).filter(token => token && token !== 'rapier-first-ready'));
+      else element.setAttribute(name, value);
+    }
+  };
+  apply(document.documentElement, theme.root);
+  apply(document.body, {class: theme.body});
+  for (const [id, record] of Object.entries(view.shell || {})) {
+    const element = document.getElementById(id);
+    if (!element || !record) continue;
+    apply(element, record.attributes);
+    if (typeof record.text === 'string') element.textContent = record.text;
+  }
+  if (view.part) {
+    const themed = early.content.querySelector('[data-rapier-early-theme="' + (document.documentElement.classList.contains('rapier-boot-light') ? 'light' : 'dark') + '"]');
+    const surface = themed || early.content.querySelector('[data-rapier-early-part]');
+    if (!surface) return false;
+    surface.removeAttribute('data-rapier-early-theme');
+    for (const style of early.content.querySelectorAll('style[data-rapier-early-sheet]')) {
+      style.id = style.dataset.rapierEarlySheet + '-early';
+      document.head.append(style);
+    }
+    if (typeof view.built === 'string') surface.dataset.rapierEarlyBuilt = view.built;
+    const field = surface.querySelector('input[type="file"]');
+    for (let node = field; node && node !== surface; node = node.parentElement)
+      for (const sibling of node.parentElement.children) if (sibling !== node) { sibling.inert = true; sibling.dataset.rapierEarlyInert = ''; }
+    if (!field) { surface.inert = true; surface.dataset.rapierEarlyInert = ''; }
+    else {
+      const early = new AbortController();
+      surface._rapierEarlyRetire = () => early.abort();
+      surface.addEventListener('dragover', event => { if (event.dataTransfer?.types.includes('Files')) event.preventDefault(); }, {signal: early.signal});
+      surface.addEventListener('drop', event => { if (!event.dataTransfer?.files.length) return; event.preventDefault(); field.files = event.dataTransfer.files; }, {signal: early.signal});
+    }
+    screen.after(surface);
+    field?.focus({preventScroll: true});
+  } else {
+    for (const style of early.content.querySelectorAll('style[data-rapier-early-sheet]')) {
+      style.id = style.dataset.rapierEarlySheet;
+      document.head.append(style);
+    }
+    host.append(early.content);
+    host.setAttribute('data-rapier-early-source', view.mark);
+  }
+  screen.inert = true;
+  screen.dataset.rapierEarly = '';
+  const sheet = document.createElement('style');
+  sheet.id = 'rapier-first-early-style';
+  sheet.textContent = 'html.rapier-script.rapier-first-early body:not(.rapier-first-ready):not(.rapier-boot-failed) #rapier-first-screen>*{opacity:1}' +
+    'html.rapier-script.rapier-first-early body:not(.rapier-first-ready):not(.rapier-boot-failed)>#rapier-first-screen~[data-rapier-early-part]:not(#rapier-first-early){opacity:1;pointer-events:auto}';
+  document.head.append(sheet);
+  document.documentElement.classList.add('rapier-first-early');
+  try { performance.mark('rapier-first-early'); } catch (_) {}
+  return true;
+}
 
 async function _rapierShowFirstPaint(fonts) {
   if (!_rapierFirstPaintEligible || !document.getElementById('rapier-first-paint-runtime')) return;
@@ -290,7 +370,8 @@ function _rapierKeepPortableTemplate() {
     for (const {name, source} of await _rapierInflateVendor('rapier-platform-runtime')) _rapierExecuteVendorSource(name, source);
     const {sheets, fonts} = await _rapierLoadPaintStyles();
     const editorPending = _rapierWhenRuntime('rapier-editor-runtime').then(() => _rapierInflateVendor('rapier-editor-runtime'));
-    _rapierShowFirstPaint(fonts).catch(error => console.warn('[rapier] first picture skipped', error));
+    if (document.getElementById('rapier-first-early')) _rapierShowFirstEarly(fonts).catch(error => console.warn('[rapier] early first screen skipped', error));
+    else _rapierShowFirstPaint(fonts).catch(error => console.warn('[rapier] first picture skipped', error));
     const editor = await editorPending;
     if (editor.length !== 3 || editor[0].name !== 'rapier-ui.html' || editor[1].name !== 'rapier-shared.js' || editor[2].name !== 'rapier-editor.js')
       throw new Error('Editor runtime records are invalid');
@@ -311,6 +392,7 @@ function _rapierKeepPortableTemplate() {
       else throw new Error('Editor interface slot is missing');
     };
     await Promise.race([fonts, new Promise(resolve => setTimeout(resolve, 1500))]);
+    _rapierFirstEarlyClosed = true;
     await _rapierExecuteBootSource(editor[2], mountInterface);
     if (globalThis.RAPIER_APPS_HOST === true) {
       await _rapierWhenRuntime('rapier-apps-runtime');

@@ -30,6 +30,7 @@ import {commercialPage} from './commercial-page.mjs';
 import {seoSection, seoDoorSections} from './seo-page.mjs';
 import {DOORS, PAGES, SITE_PAGES, doorAssetPath} from '../door-worker.js';
 import {readGuides, writeDoorAssets} from './door-assets.mjs';
+import {firstScreenKey as firstScreenKeyOf} from './first-screen-record.mjs';
 import {fillMermaidResources} from './mermaid-resources.mjs';
 import {fillFontSubsetResources} from './font-subset-resources.mjs';
 import {builtinPlugins, builtinFilesReuse, fillBuiltinSlot} from './builtin-plugins.mjs';
@@ -1013,6 +1014,14 @@ try {
   if (firstPaintCurrent) firstPaintRecord = {version: kept.version, css: kept.css || [], paths: kept.paths};
   else console.warn('first paint: editor/first-paint.json is stale; after this build run node tools/first-paint.mjs, then build again');
 } catch (error) { if (error.code !== 'ENOENT') throw error; }
+const firstScreenKey = firstScreenKeyOf([VERSION, firstScreenMarkup, ui, styleRecord([...paintStyles, ...restStyles]),
+  JSON.stringify([...partStyles]), bundleText, compiledEditor, JSON.stringify(await readGuides(resolve(root, '../docs')))]);
+let firstScreenRecord = null;
+try {
+  const kept = JSON.parse(await read('editor/first-screen.json'));
+  if (kept.key === firstScreenKey) firstScreenRecord = kept;
+  else console.warn('first screen: editor/first-screen.json is stale; after this build run node tools/first-screen.mjs, then build again');
+} catch (error) { if (error.code !== 'ENOENT') throw error; }
 const [stylesRuntime, codecRuntime, editorRuntime] = await Promise.all([
   packedSpans('rapier-styles-runtime', 'application/rapier-runtime', [
     {name: 'rapier-factory-fonts.js', source: factoryFontText},
@@ -1092,7 +1101,7 @@ const BUDGET = SIZE_BUDGETS[PROFILE];
 }
 await writeFile(resolve(root, OUTPUT_FILE), html);
 if (PROFILE === 'full') {
-  const doorFiles = await writeDoorAssets(root, Buffer.from(siteHtml), await readGuides(resolve(root, '../docs')), firstPaintRecord);
+  const doorFiles = await writeDoorAssets(root, Buffer.from(siteHtml), await readGuides(resolve(root, '../docs')), firstPaintRecord, firstScreenRecord);
   if (doorFiles.length !== Object.keys(PAGES).length) throw new Error('The site page did not produce a dedicated file for every door and document');
 }
 if (PROFILE === 'full') {
@@ -1206,7 +1215,7 @@ const profileRecord = {path: OUTPUT_FILE, bytes: Buffer.byteLength(html), sha256
   coreHeldPartGlobals: Object.keys(partGlobals).filter(name => !partOf.has(partGlobals[name])), shakenExports, jxl,
   builtAt: BUILT_AT, node: process.version, mode: PACK_MODE, packing: PACKING, codecs: ['gzip', 'brotli'], brotli: {...BROTLI_SETTINGS}, canonical: toolchainCanonical};
 // (`RAPIER_PACK=fast`), 'release' for Zopfli; tools/release-gate.mjs checks it.
-const receipt = {firstPaint: {key: firstPaintKey, current: firstPaintCurrent}, phoneBench: phoneBenchReceipt, release: VERSION, builtAt: BUILT_AT, node: process.version, mode: PACK_MODE, packing: PACKING, codecs: profileRecord.codecs, brotli: profileRecord.brotli, validation: 'JavaScript syntax and source assembly only; no runtime or host verification', profile: PROFILE, jxl, profiles: {...priorProfiles, [PROFILE]: profileRecord}, editor: {path: OUTPUT_FILE, bytes: Buffer.byteLength(html), sha256: checksum(html)}, apps: PROFILE === 'full' ? {path: 'dist/chatgpt/rapier-app.html', bytes: appHtmlBytes, sha256: appHtmlSha256, spans: appsSpans, plugins: hostedPlugins, assets: appAssets} : priorReceipt?.apps ?? null, offline: PROFILE === 'full' ? {path: 'dist/chatgpt/rapier.html', bytes: Buffer.byteLength(portableHtml), sha256: checksum(portableHtml), plugins: appPlugins} : priorReceipt?.offline ?? null, shell: PROFILE === 'full' ? {sha256: shellDigest} : priorReceipt?.shell ?? null, htmlSinks: {named: htmlSinks.total, files: htmlSinks.files, inventory: 'security/html-sinks.json'}, tools: TOOLS.map(row => row.name), toolchain: {canonical: toolchainCanonical, node: {expected: toolchain.node.version, actual: process.version}}, unchecked};
+const receipt = {firstPaint: {key: firstPaintKey, current: firstPaintCurrent}, firstScreen: {key: firstScreenKey, current: !!firstScreenRecord}, phoneBench: phoneBenchReceipt, release: VERSION, builtAt: BUILT_AT, node: process.version, mode: PACK_MODE, packing: PACKING, codecs: profileRecord.codecs, brotli: profileRecord.brotli, validation: 'JavaScript syntax and source assembly only; no runtime or host verification', profile: PROFILE, jxl, profiles: {...priorProfiles, [PROFILE]: profileRecord}, editor: {path: OUTPUT_FILE, bytes: Buffer.byteLength(html), sha256: checksum(html)}, apps: PROFILE === 'full' ? {path: 'dist/chatgpt/rapier-app.html', bytes: appHtmlBytes, sha256: appHtmlSha256, spans: appsSpans, plugins: hostedPlugins, assets: appAssets} : priorReceipt?.apps ?? null, offline: PROFILE === 'full' ? {path: 'dist/chatgpt/rapier.html', bytes: Buffer.byteLength(portableHtml), sha256: checksum(portableHtml), plugins: appPlugins} : priorReceipt?.offline ?? null, shell: PROFILE === 'full' ? {sha256: shellDigest} : priorReceipt?.shell ?? null, htmlSinks: {named: htmlSinks.total, files: htmlSinks.files, inventory: 'security/html-sinks.json'}, tools: TOOLS.map(row => row.name), toolchain: {canonical: toolchainCanonical, node: {expected: toolchain.node.version, actual: process.version}}, unchecked};
 await mkdir(resolve(root, 'dist'), {recursive: true});
 await writeFile(resolve(root, 'dist/runtime-symbols-' + PROFILE + '.json'), JSON.stringify(lean.symbols) + '\n');
 await writeFile(resolve(root, 'dist/BUILD.json'), JSON.stringify(receipt, null, 2) + '\n');

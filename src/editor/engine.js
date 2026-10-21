@@ -4012,7 +4012,9 @@ function _rapierProjectionHeadCount(blocks) {
 }
 
 function _rapierRefreshPreparedReadProjections(fragment, referenceIndex, state) {
-	const wrappers = Array.from(fragment.children).filter(wrapper => !wrapper._rapierUnrendered);
+	const kept = fragment._rapierEarly;
+	const wrappers = [...fragment.children, ...kept?.adopted || [], ...(kept?.replace || []).map(pair => pair[1])]
+		.filter(wrapper => !wrapper._rapierUnrendered);
 	for (let start = 0; start < wrappers.length; start += _RAPIER_RENDER_BATCH) {
 		const batch = wrappers.slice(start, start + _RAPIER_RENDER_BATCH), blocks = batch.map(_rapierBoundBlock);
 		const rendered = _rapierRenderBlocksBatched(blocks, referenceIndex, null, true);
@@ -4042,6 +4044,8 @@ async function _rapierPrepareMarkdownProjection(blocks, sourceLength, loadToken,
 	const head = _rapierProjectionHeadCount(blocks), staged = fresh ? new Map() : null;
 	const ledgerOption = {deferLedger: !fresh, ledger: staged};
 	if (!current()) return abandon();
+	const early = _rapierTakeEarlyBlocks(document.getElementById('editor-blocks'), blocks);
+	fragment._rapierEarly = early ? {adopted: [], replace: [], order: []} : null;
 	for (let start = 0; start < blocks.length; start += _RAPIER_RENDER_BATCH) {
 		const slice = blocks.slice(start, start + _RAPIER_RENDER_BATCH);
 		const demanded = slice.filter((block, index) => start + index < head && !_rapierWysiwygRenderHidden(block));
@@ -4050,13 +4054,21 @@ async function _rapierPrepareMarkdownProjection(blocks, sourceLength, loadToken,
 		for (let index = 0; index < slice.length; index++) {
 			const block = slice[index]; block.order = start + index;
 			let node;
-			if (demanded[at] === block) {
-				const projection = prepared[at++]; projection.state = state;
-				block.rendered = projection.html;
-				node = render(() => makeBlockEl(block, {...ledgerOption, projection}));
-			} else node = makeBlockEl(block, {...ledgerOption, unrendered: true});
+			const demand = demanded[at] === block, projection = demand ? prepared[at++] : null;
+			if (projection) { projection.state = state; block.rendered = projection.html; }
+			const kept = early?.[start + index] ? render(() => makeBlockEl(block, {...ledgerOption, early: early[start + index], unrendered: !demand, projection})) : null;
+			if (kept) {
+				kept._rapierBlockRaw = block.raw;
+				fragment._rapierEarly.adopted.push(kept);
+				fragment._rapierEarly.order.push(kept);
+				continue;
+			}
+			if (demand) node = render(() => makeBlockEl(block, {...ledgerOption, projection}));
+			else node = makeBlockEl(block, {...ledgerOption, unrendered: true});
 			node._rapierBlockRaw = block.raw;
-			fragment.appendChild(node);
+			if (early?.[start + index]) fragment._rapierEarly.replace.push([early[start + index], node]);
+			if (early) fragment._rapierEarly.order.push(node);
+			else fragment.appendChild(node);
 		}
 		if (_rapierNow() - sliceStarted < 8) continue;
 		options?.work?.set(0.65 + (start + slice.length) / Math.max(1, blocks.length) * 0.3);
@@ -4095,7 +4107,20 @@ function _rapierInstallMarkdownProjection(fragment, blocks, options = null) {
 	if (document.activeElement === container) {
 		try { container.blur(); } catch (_) {}
 	}
-	const oldWrappers = _blockWrapperChildren(container);
+	const early = fragment._rapierEarly, kept = new Set(early?.adopted);
+	if (early && ![...early.adopted, ...early.replace.map(pair => pair[0])].every(wrapper => wrapper.parentNode === container)) {
+		kept.clear();
+		fragment.append(...early.order);
+	} else if (early) {
+		for (const [from, to] of early.replace) { from.replaceWith(to); kept.add(to); }
+		let after = null;
+		for (const node of early.order) {
+			if (node.parentNode === container) { after = node; continue; }
+			if (after) after.after(node); else container.prepend(node);
+			after = node; kept.add(node);
+		}
+	}
+	const oldWrappers = _blockWrapperChildren(container).filter(wrapper => !kept.has(wrapper));
 	oldWrappers.forEach(_rapierRemoveBlockWrapper);
 
 	_rapierWysiwygLedger.pending.clear();
@@ -5035,6 +5060,8 @@ function _reconcileBlockDOM(newBlocks, options = null) {
 	const window = _rapierWysiwygLedger.window;
 	const wanted = index => rapier.view.mode !== 'source' && (!virtual ||
 		(window ? index >= window[0] && index <= window[1] : index < head));
+	const early = _rapierTakeEarlyBlocks(container, newBlocks);
+	for (const wrapper of container.querySelectorAll(':scope > .block-wrapper[data-rapier-early]')) wrapper.remove();
 	try {
 
 	const existing = new Map();
@@ -5066,7 +5093,12 @@ function _reconcileBlockDOM(newBlocks, options = null) {
 		const fragment = document.createDocumentFragment();
 		for (let i = 0; i < newBlocks.length; i++) {
 			const block = newBlocks[i];
-			const node = makeBlockEl(block, {unrendered: !wanted(i)});
+			let node = null;
+			if (early) {
+				try { node = makeBlockEl(block, {unrendered: !wanted(i), early: early[i]}); }
+				catch (error) { console.warn('[rapier] early block not kept', error); }
+			}
+			node ||= makeBlockEl(block, {unrendered: !wanted(i)});
 			node._rapierBlockRaw = block.raw;
 			fragment.appendChild(node);
 		}
@@ -5725,7 +5757,8 @@ function _rapierMarkFigureCaptionCandidate(readDiv, raw) {
 
 function _createBlockReadSurface(block, projection = null) {
 	const prepared = projection?.root && projection.raw === block.raw && projection.html === block.rendered;
-	const readDiv = prepared ? document.adoptNode(projection.root) : document.createElement('div');
+	const readDiv = prepared ? projection.root.isConnected && projection.root.ownerDocument === document ? projection.root
+		: document.adoptNode(projection.root) : document.createElement('div');
 	readDiv.className = 'block-read md-render';
 	const html = prepared ? projection.html : block.rendered || renderBlock(block.raw);
 	if (prepared) {
@@ -7036,9 +7069,49 @@ function _rapierMetadataBlock(block) {
 		|| /^<!--[ \t]*continuation[ \t]+brief\b[\s\S]*-->\s*$/i.test(String(block.raw || ''));
 }
 
+function _rapierFirstEarlyStands() {
+	return document.documentElement.classList.contains('rapier-first-early') && !document.body.classList.contains('rapier-first-ready');
+}
+
+function _rapierTakeEarlyBlocks(container, blocks) {
+	const marked = container?.getAttribute('data-rapier-early-source');
+	if (marked == null) return null;
+	container.removeAttribute('data-rapier-early-source');
+	const early = Array.from(container.querySelectorAll(':scope > .block-wrapper[data-rapier-early]'));
+	return marked === _rapierEarlySourceMark(blocks) && early.length && early.length <= blocks.length ? early : null;
+}
+
+function _rapierEarlySourceMark(blocks) {
+	let hash = 2166136261;
+	for (const block of blocks) {
+		const raw = String(block.raw ?? '') + '\u0000';
+		for (let index = 0; index < raw.length; index++) hash = Math.imul(hash ^ raw.charCodeAt(index), 16777619);
+	}
+	return blocks.length + ':' + (hash >>> 0).toString(36);
+}
+
+function _rapierAdoptEarlyBlock(early, block, unrendered, projection = null) {
+	const read = early.querySelector(':scope > .block-read');
+	let kept = null;
+	if (!unrendered) {
+		const html = projection?.html ?? (block.rendered || renderBlock(block.raw));
+		const seen = read?.cloneNode(true);
+		for (const element of seen?.querySelectorAll('[style=""]') || []) element.removeAttribute('style');
+		for (const image of seen?.querySelectorAll('img[data-rapier-asset]') || []) { image.removeAttribute('loading'); image.removeAttribute('data-rapier-asset-state'); }
+		if (!seen || seen.innerHTML !== html) return null;
+		block.rendered = html;
+		kept = {root: read, raw: block.raw, html, state: projection?.state || null};
+	}
+	early.removeAttribute('data-rapier-early');
+	for (const child of Array.from(early.children)) if (child !== kept?.root && !child.matches('.section-fold-btn')) child.remove();
+	return {wrapper: early, projection: kept};
+}
+
 function makeBlockEl(block, options = null) {
-	const wrapper = document.createElement('div');
-	wrapper.className = 'block-wrapper';
+	const adopted = options?.early ? _rapierAdoptEarlyBlock(options.early, block, !!options.unrendered, options.projection) : null;
+	if (options?.early && !adopted) return null;
+	const wrapper = adopted?.wrapper || document.createElement('div');
+	if (!adopted) wrapper.className = 'block-wrapper';
 	if (_rapierMetadataBlock(block)) wrapper.classList.add('block-wrapper--metadata');
 	wrapper.dataset.blockId = block.id;
 	wrapper._rapierBlock = block;
@@ -7050,7 +7123,7 @@ function makeBlockEl(block, options = null) {
 		wrapper.classList.add('block-wrapper--dormant');
 		return wrapper;
 	}
-	_rapierFillBlockEl(wrapper, block, options?.projection || null);
+	_rapierFillBlockEl(wrapper, block, adopted ? adopted.projection : options?.projection || null);
 	return wrapper;
 }
 
@@ -7058,7 +7131,7 @@ function _rapierFillBlockEl(wrapper, block, projection = null) {
 	const toolbar = _createTableToolbar(block);
 	wrapper.classList.toggle('block-wrapper--table', !!toolbar);
 	const readDiv = _createBlockReadSurface(block, projection);
-	wrapper.appendChild(readDiv);
+	if (readDiv.parentNode !== wrapper) wrapper.appendChild(readDiv);
 	if (toolbar) wrapper.appendChild(toolbar);
 	_rapierSyncFenceCopyControl(wrapper, readDiv);
 	_syncEmptyClass(wrapper, null, readDiv);
@@ -17468,6 +17541,7 @@ function _rapierApplyModalIsolation() {
 		if (!record.node.isConnected) continue;
 		const beside = record.node.id === 'toast-root' || record.node.id === 'scroll-fab' && record.node.classList.contains('scroll-fab--edge');
 		if (top && !beside && record.node !== top && !record.node.contains(top) && !top.contains(record.node)) {
+			if (record.node.contains(document.activeElement)) document.activeElement.blur();
 			record.node.inert = true;
 			record.node.setAttribute('aria-hidden', 'true');
 			continue;
@@ -17480,6 +17554,7 @@ function _rapierApplyModalIsolation() {
 		for (const node of document.body.children) {
 			if (!node.classList.contains('settings-overlay')) continue;
 			const active = node === top || node.contains(top);
+			if (!active && node.contains(document.activeElement)) document.activeElement.blur();
 			node.inert = !active;
 			node.setAttribute('aria-hidden', active ? 'false' : 'true');
 		}
@@ -35682,6 +35757,7 @@ async function _rapierPublishBootReady(context) {
 	if (document.querySelectorAll('#editor-blocks h1').length === 1)
 		for (const node of document.querySelectorAll('#rapier-seo > h1, #rapier-seo > article')) node.remove();
 	_rapierRevealFirstScreen();
+	renderFilename();
 	if (_rapierIsBuiltInWelcomeDocument()) {
 		_yieldToIdle(() => _rapierMarkWelcomeDocumentSaved(false).catch(() => {}));
 	}
@@ -35943,9 +36019,10 @@ async function _rapierVendorsReady() {
 
 async function _rapierBoot() {
 	if (globalThis.__rapierServerRenderHost === true) return;
-	const starting = _rapierProgressOpen({label: 'Starting Rapier', after: 500 - performance.now()});
+	const starting = document.documentElement.classList.contains('rapier-first-early') ? null
+		: _rapierProgressOpen({label: 'Starting Rapier', after: 500 - performance.now()});
 	const started = new MutationObserver(() => {
-		if (document.body.matches('.rapier-first-ready, .rapier-boot-failed')) { started.disconnect(); starting.end(); }
+		if (document.body.matches('.rapier-first-ready, .rapier-boot-failed')) { started.disconnect(); starting?.end(); }
 	});
 	started.observe(document.body, {attributes: true, attributeFilter: ['class']});
 	if (!await _rapierRuntimeReady) return;
@@ -46900,6 +46977,7 @@ function renderReadAloud() {
 function renderFilename() {
 	const refs = _rapierUi.refs;
 	if (!refs) return;
+	if (_rapierFirstEarlyStands()) return;
 	const { name, base, extension } = _rapierUiFilenameParts();
 	const embedded = _rapierEmbed.active;
 	const editing = _rapierUi.filenameEditing;
@@ -47223,6 +47301,7 @@ function _rapierUiRaise(overlay) {
 
 function _rapierUiLower(overlay) {
 	overlay.classList.remove('open');
+	if (overlay.contains(document.activeElement)) document.activeElement.blur();
 	overlay.inert = true;
 	overlay.setAttribute('aria-hidden', 'true');
 }
@@ -47262,8 +47341,8 @@ function closeDialog(overlay) {
 	const active = document.activeElement;
 	const ownedFocus = overlay.contains(active) || active === document.body || !active?.isConnected;
 	_rapierModalClose(record);
-	_rapierUiLower(overlay);
 	if (record.opener && ownedFocus) _rapierModalReturnFocus(record.opener);
+	_rapierUiLower(overlay);
 	_rapierUiReleaseStrandedFocus(overlay);
 	return true;
 }

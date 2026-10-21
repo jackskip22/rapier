@@ -1281,13 +1281,51 @@ function _rapierNotesBuildSurface() {
 	const ask = _rapierNotesAskEl();
 	const bin = _rapierNotesBinEl();
 	surface.append(head, find, addsBar, scroll, fab, popup, sheet, status, help, selected, jump, ask, settings, bin);
-	document.body.appendChild(surface);
-	state.surface = surface; state.scroll = scroll; state.scrollRoom = scrollRoom; state.sheet = sheet; state.find = find; state.search = search; state.fab = fab; state.popupEl = popup;
+	const early = _rapierNotesAdoptEarly(surface, [head, scroll, fab]);
+	const live = early?.surface || surface, at = early?.at || (node => node);
+	document.body.appendChild(live);
+	state.surface = live; state.scroll = at(scroll); state.scrollRoom = at(scrollRoom); state.sheet = sheet; state.find = find; state.search = search; state.fab = at(fab); state.popupEl = popup;
 	state.addsBar = addsBar; state.settingsEl = settings; state.jumpEl = jump; state.askEl = ask; state.binEl = bin; state.binPicked = new Set();
-	_rapierNotesBind(surface, search);
-	_rapierNotesFabBind(fab, scroll);
+	if (early) for (const id of Object.keys(state.grids)) { state.grids[id] = at(state.grids[id]); _rapierNotesGridBind(state.grids[id]); }
+	_rapierNotesBind(live, search);
+	_rapierNotesFabBind(at(fab), at(scroll));
 	_rapierNotesSheetSwipe(sheet);
-	return surface;
+	return live;
+}
+
+function _rapierNotesAdoptEarly(fresh, keep) {
+	const early = document.querySelector('[data-rapier-early-part="notes"]');
+	if (!early) return null;
+	const built = early.dataset.rapierEarlyBuilt;
+	let hash = 2166136261;
+	const markup = fresh.outerHTML;
+	for (let index = 0; index < markup.length; index++) hash = Math.imul(hash ^ markup.charCodeAt(index), 16777619);
+	const children = [...fresh.childNodes], seen = [], extra = [];
+	let cursor = early.firstChild;
+	for (const node of children) {
+		while (cursor && !(cursor.nodeName === node.nodeName && cursor.nodeType === node.nodeType &&
+				(cursor.nodeType !== 1 || cursor.classList[0] === node.classList[0]))) { extra.push(cursor); cursor = cursor.nextSibling; }
+		if (!cursor) break;
+		seen.push(cursor); cursor = cursor.nextSibling;
+	}
+	for (; cursor; cursor = cursor.nextSibling) extra.push(cursor);
+	if (built !== markup.length + ':' + (hash >>> 0).toString(36) || seen.length !== children.length) {
+		early.remove();
+		return null;
+	}
+	for (const node of extra) node.remove();
+	for (const sheet of document.querySelectorAll('style[data-rapier-early-sheet]')) sheet.remove();
+	for (const node of early.querySelectorAll('[data-rapier-early-inert]')) { node.inert = false; delete node.dataset.rapierEarlyInert; }
+	early.removeAttribute('data-rapier-early-part'); delete early.dataset.rapierEarlyBuilt; delete early.dataset.rapierEarlyInert;
+	const map = new Map();
+	const pair = (from, to) => {
+		map.set(from, to);
+		const a = from.childNodes, b = to.childNodes;
+		for (let index = 0; index < a.length && index < b.length; index++) if (a[index].nodeName === b[index].nodeName) pair(a[index], b[index]);
+	};
+	children.forEach((node, index) => { if (keep.includes(node)) pair(node, seen[index]); else seen[index].replaceWith(node); });
+	early.inert = true; early.dataset.rapierEarlyHeld = '';
+	return {surface: early, at: node => map.get(node) || node};
 }
 
 const RAPIER_NOTES_SORT_ORDER = [['custom', 'Custom'], ['created', 'Created'], ['modified', 'Modified']];
@@ -1793,13 +1831,16 @@ function _rapierNotesSectionEl(id) {
 	headBtn.appendChild(grip);
 	section.appendChild(headBtn);
 	const grid = _rapierNotesEl('div', 'rapier-notes-grid'); grid.setAttribute('role', 'list'); grid.setAttribute('aria-label', RAPIER_NOTES_SECTION_WORDS[id] || id);
+	_rapierNotesGridBind(grid);
+	section.appendChild(grid);
+	state.grids[id] = grid;
+	return section;
+}
+function _rapierNotesGridBind(grid) {
 	grid.addEventListener('focusin', event => {
 		const card = event.target.closest('.rapier-notes-card');
 		if (card) _rapierNotesGridTabstop(grid, card.dataset.notesFile);
 	});
-	section.appendChild(grid);
-	state.grids[id] = grid;
-	return section;
 }
 function _rapierNotesGridTabstop(grid, file = grid._rapierNotesTabFile) {
 	const cards = [...grid.querySelectorAll('.rapier-notes-card')];
@@ -2468,7 +2509,8 @@ function _rapierNotesRender() {
 		section.classList.toggle('rapier-notes-section--closed', closed);
 		if (head.tagName === 'BUTTON' && !state.reorder) head.setAttribute('aria-expanded', String(!closed));
 		else head.removeAttribute('aria-expanded');
-		grid.replaceChildren();
+		const standing = grid.childElementCount === 1 && grid.firstElementChild.matches('.rapier-notes-empty') ? grid.firstElementChild : null;
+		grid.replaceChildren(...standing && !files.length ? [standing] : []);
 		grid.setAttribute('role', files.length ? 'list' : 'group');
 		if (!files.length) {
 			const empty = _rapierNotesEl('div', 'rapier-notes-empty', id === 'skills' ? 'A note your agent can fetch. Write one here.' : id === 'others' ? (state.query ? (state.reading && !state.reading.complete ? 'Reading notes, ' + state.reading.done + ' of ' + state.reading.total + '.' : (typeof _rapierNotesLibraryNotice === 'function' && _rapierNotesLibraryNotice() && _rapierNotesLibraryNotice().stage !== 'complete') ? _rapierNotesLibraryNotice().message : (typeof _rapierNotesLibraryPartial === 'function' && _rapierNotesLibraryPartial()) ? (_rapierNotesLibraryPartial().unread ? 'Some notes unsearched. Open Notes again.' : 'Searching, ' + _rapierNotesLibraryPartial().done + ' of ' + _rapierNotesLibraryPartial().total + '.') : 'Nothing matches.') : '') : own ? 'No notes yet.' : '');
@@ -2477,7 +2519,8 @@ function _rapierNotesRender() {
 				importOthers.dataset.action = 'notes-import';
 				empty.appendChild(importOthers);
 			}
-			grid.appendChild(empty); grid.style.height = ''; delete state.windows[id]; continue;
+			if (!standing?.isEqualNode(empty)) grid.replaceChildren(empty);
+			grid.style.height = ''; delete state.windows[id]; continue;
 		}
 		if (closed) { delete state.windows[id]; continue; }
 		if (_rapierNotesWindowStart(grid, id, files)) void _rapierNotesWindowFill(grid, id, keyboard && files.includes(keyboard.file) ? keyboard : null);
@@ -7347,6 +7390,7 @@ async function _rapierNotesOpen(capture = false, {unseen = false, guard, departu
 	if (guard && !guard()) return false;
 	if (surface.hidden) surface.classList.toggle('rapier-notes-surface--in', !unseen && !lift && !_rapierNotesStill() && !document.documentElement.classList.contains('rapier-notes-start'));
 	surface.hidden = false; state.open = true; presented = true; document.body.classList.add('rapier-notes-open');
+	if (surface.dataset.rapierEarlyHeld !== undefined) { surface.inert = false; delete surface.dataset.rapierEarlyHeld; }
 	void _rapierNotesLockedLoad();
 	document.getElementById('toast-root')?._rapierDismissNoticeView?.('editor');
 	_rapierNotesStartClass(false);
@@ -7366,6 +7410,8 @@ async function _rapierNotesOpen(capture = false, {unseen = false, guard, departu
 	}
 	} finally {
 		if (!presented) lift?.end(); state.opening = false;
+		const held = state.surface;
+		if (!presented && held?.dataset.rapierEarlyHeld !== undefined) { held.hidden = true; held.inert = false; delete held.dataset.rapierEarlyHeld; }
 		if (typeof _rapierBackHold === 'function') _rapierBackHold();
 		if (presented) queueMicrotask(() => { void _rapierNotesCatchResume(); });
 	}

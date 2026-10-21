@@ -22,7 +22,11 @@ const _rapierNotesDoor = (() => {
 	try { born = RAPIER_NOTES_URL_AT_BIRTH.startsWith('#n/') || RAPIER_NOTES_DOOR_AT_BIRTH || (_rapierBareLaunch() && RapierPreferences.read('startIn') === 'notes'); } catch (_) {}
 	if (born) {
 		_rapierNotesStartClass(true);
-		_rapierPartWait('notes').catch(error => { _rapierNotesStartClass(false); showToast(String(error?.message || error), 'error'); });
+		_rapierPartWait('notes').catch(error => {
+			_rapierNotesStartClass(false);
+			document.querySelector('[data-rapier-early-part="notes"]')?.remove();
+			showToast(String(error?.message || error), 'error');
+		});
 	}
 	for (const name of ['rapierNotesStart', 'rapierNotesWidgetOpen', 'rapierNotesReceiveShares', 'rapierNotesReceiveReminderActions']) {
 		const entry = (...args) => _rapierPartWait('notes').then(() => {

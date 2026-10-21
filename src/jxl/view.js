@@ -175,10 +175,41 @@
 		zips.forEach((zip, at) => setTimeout(() => save(zip.blob, zips.length === 1 ? 'rapier-jxl.zip' : 'rapier-jxl-' + (at + 1) + '.zip'), at * 600));
 	}
 
+	function adopt(fresh) {
+		const early = document.querySelector('[data-rapier-early-part="jxl"]');
+		if (!early) return fresh;
+		early._rapierEarlyRetire?.();
+		const chosen = [...early.querySelector('input[type="file"]')?.files || []];
+		early.remove();
+		fresh.chosen = chosen;
+		for (const sheet of document.querySelectorAll('style[data-rapier-early-sheet]')) sheet.remove();
+		const held = [early, ...early.querySelectorAll('[data-rapier-early-inert]')];
+		for (const node of held) { node.inert = false; delete node.dataset.rapierEarlyInert; }
+		early.removeAttribute('data-rapier-early-part');
+		for (const node of early.querySelectorAll('[style=""]')) node.removeAttribute('style');
+		overall(fresh);
+		if (!early.isEqualNode(fresh.root)) return fresh;
+		const at = node => {
+			const steps = [];
+			for (; node !== fresh.root; node = node.parentNode) steps.unshift(Array.prototype.indexOf.call(node.parentNode.childNodes, node));
+			return steps.reduce((parent, index) => parent.childNodes[index], early);
+		};
+		const kept = {...fresh, root: early};
+		for (const [key, value] of Object.entries(fresh)) {
+			if (key !== 'root' && value instanceof Node) kept[key] = at(value);
+			else if (Array.isArray(value) && value.length && value.every(item => item instanceof Node)) kept[key] = value.map(at);
+		}
+		return kept;
+	}
+
 	function open() {
 		if (view) return;
-		if (!_rapierJxlEncoderPresent()) { showToast('This copy of Rapier has no JPEG XL encoder.', 'error'); return; }
-		view = build();
+		if (!_rapierJxlEncoderPresent()) {
+			document.querySelector('[data-rapier-early-part="jxl"]')?.remove();
+			showToast('This copy of Rapier has no JPEG XL encoder.', 'error');
+			return;
+		}
+		view = adopt(build());
 		const {root} = view;
 		view.wasFocus = document.activeElement;
 		for (const node of document.body.children) if (!node.inert && node.id !== 'toast-root' && node.id !== 'sr-live') { node.inert = true; view.inert.push(node); }
@@ -212,6 +243,7 @@
 		root.addEventListener('paste', event => { const files = [...event.clipboardData?.files || []].filter(file => /^(image|video)\//.test(file.type)); if (files.length) { event.preventDefault(); add(files); } });
 		overall();
 		view.pick.querySelector('input').focus({preventScroll: true});
+		if (view.chosen?.length) { const chosen = view.chosen; view.chosen = null; view.input.value = ''; add(chosen); }
 	}
 	function close() {
 		if (!view) return;

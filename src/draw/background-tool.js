@@ -89,15 +89,19 @@ function _rapierDrawBackgroundSync() {
 	if (layer.dataset.key !== key) {
 		layer.dataset.key = key;
 		layer.dataset.sheet = sheet !== rect ? JSON.stringify(sheet) : '';
-		layer.replaceChildren();
-		if (key) {
+		if (!key) layer.replaceChildren();
+		else {
 			const ns = 'http://www.w3.org/2000/svg', image = document.createElementNS(ns, 'image');
 			const doc = '<svg xmlns="' + ns + '" viewBox="' + [sheet.x, sheet.y, sheet.w, sheet.h].join(' ') + '" width="' + sheet.w + '" height="' + sheet.h + '">' + _rapierBg._rapierDrawBackgroundSVG(drawn, sheet, 'rapier-draw-live-bg', dark) + '</svg>';
+			const href = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(doc);
 			for (const [name, value] of [['x', sheet.x + origin[0]], ['y', sheet.y + origin[1]], ['width', sheet.w], ['height', sheet.h], ['preserveAspectRatio', 'none']]) image.setAttribute(name, String(value));
-			image.setAttribute('href', 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(doc));
+			image.setAttribute('href', href);
 			image.setAttribute('pointer-events', 'none');
-			if (sheet === rect) layer.appendChild(image);
-			else { const clip = document.createElementNS(ns, 'svg'); clip.setAttribute('class', 'rapier-draw-background-clip'); clip.appendChild(image); layer.appendChild(clip); }
+			let node = image;
+			if (sheet !== rect) { node = document.createElementNS(ns, 'svg'); node.setAttribute('class', 'rapier-draw-background-clip'); node.appendChild(image); }
+			const swap = () => { if (layer.dataset.key !== key || !layer.isConnected) return; layer.replaceChildren(node); _rapierDrawBackgroundSync(); };
+			if (!layer.firstChild) swap();
+			else { const ready = new Image(); ready.src = href; ready.decode().then(swap, swap); }
 		}
 	}
 	const clip = layer.firstElementChild?.matches?.('.rapier-draw-background-clip') ? layer.firstElementChild : null;

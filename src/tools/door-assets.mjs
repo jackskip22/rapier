@@ -5,6 +5,7 @@ import {join} from 'node:path';
 import {DOORS, GUIDES, doorAssetPath, doorPage} from '../door-worker.js';
 import {createGroupPacker} from './packed-group.mjs';
 import {guideSection} from './seo-page.mjs';
+import {firstScreenElement} from './first-screen-record.mjs';
 
 export const DOOR_ASSET_NAMES = Object.freeze(Object.keys(DOORS).map(path => doorAssetPath(path).slice(1)));
 export const GUIDE_ASSET_NAMES = Object.freeze(Object.keys(GUIDES).map(path => doorAssetPath(path).slice(1)));
@@ -18,7 +19,7 @@ async function removeDoorAssets(directory) {
 	await unobservedBuildIO(() => Promise.all(['index.html', ...DOOR_ASSET_NAMES, ...GUIDE_ASSET_NAMES].map(name => rm(join(directory, name), {force: true}))));
 }
 
-export async function writeDoorAssets(directory, page, guides = null, firstPaint = null) {
+export async function writeDoorAssets(directory, page, guides = null, firstPaint = null, firstScreen = null) {
 	const bytes = page instanceof Uint8Array ? page : new Uint8Array(page);
 	const produced = [];
 	const pictures = createGroupPacker();
@@ -32,6 +33,13 @@ export async function writeDoorAssets(directory, page, guides = null, firstPaint
 			const slot = '<div id="rapier-first-screen"></div>';
 			if (text.split(slot).length !== 2) throw new Error('The site page needs its first-screen anchor');
 			text = text.replace(slot, () => element + slot);
+		}
+		const early = firstScreen?.paths?.[path];
+		if (early) {
+			const slot = '<div id="rapier-first-screen"></div>';
+			const version = /<meta name="rapier-version" content="([^"]+)">/.exec(text)?.[1];
+			if (text.split(slot).length !== 2 || !version) throw new Error('The site page needs its first-screen anchor and version');
+			text = text.replace(slot, () => firstScreenElement(early, version) + slot);
 		}
 		return text;
 	};
