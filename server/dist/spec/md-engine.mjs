@@ -72,6 +72,72 @@ function cleanWebLink(url) {
   return match !== null && match[1].length <= 255;
 }
 
+function releasedState(state, md) {
+  for (const key of Object.keys(state)) {
+    const value = state[key];
+    if (typeof value === 'string') state[key] = '';
+    else if (typeof value === 'function') state[key] = released;
+    else if (value !== null && typeof value === 'object' && value !== md) state[key] = Array.isArray(value) ? [] : {};
+  }
+  return state;
+}
+function released() {}
+function sampleTokens(tokens) {
+  const kept = new Map();
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index];
+    if (!kept.has(token.type)) kept.set(token.type, token);
+    const children = token.children;
+    if (children) for (let at = 0; at < children.length; at++) {
+      const child = children[at];
+      if (!kept.has(child.type)) kept.set(child.type, child);
+    }
+  }
+  return kept;
+}
+
+function keepClasses(md) {
+  const anchors = {core: null, block: null, inline: null, tokens: null};
+  const finish = (state, tokens) => {
+    anchors.core = releasedState(state, md);
+    if (anchors.block) releasedState(anchors.block, md);
+    if (anchors.inline) releasedState(anchors.inline, md);
+    anchors.tokens = sampleTokens(tokens);
+  };
+  const release = (owner, key) => Object.getPrototypeOf(owner)[key] === owner[key];
+  if (release(md, 'parse') && release(md, 'parseInline')) {
+    md.parse = function (src, env) {
+      if (typeof src !== 'string') throw new Error('Input data should be a String');
+      const state = new this.core.State(src, this, env);
+      this.core.process(state);
+      const tokens = state.tokens;
+      finish(state, tokens);
+      return tokens;
+    };
+    md.parseInline = function (src, env) {
+      const state = new this.core.State(src, this, env);
+      state.inlineMode = true;
+      this.core.process(state);
+      const tokens = state.tokens;
+      finish(state, tokens);
+      return tokens;
+    };
+  }
+  if (release(md.block, 'parse')) md.block.parse = function (src, md, env, outTokens) {
+    if (!src) return;
+    const state = new this.State(src, md, env, outTokens);
+    this.tokenize(state, state.line, state.lineMax);
+    anchors.block = state;
+  };
+  if (release(md.inline, 'parse')) md.inline.parse = function (str, md, env, outTokens) {
+    const state = new this.State(str, md, env, outTokens);
+    this.tokenize(state);
+    const rules = this.ruler2.getRules(''), length = rules.length;
+    for (let index = 0; index < length; index++) rules[index](state);
+    anchors.inline = state;
+  };
+}
+
 export function tuneMarkdownEngine(md) {
   if (md.__rapierEngineTuned) return md;
   md.__rapierEngineTuned = true;
@@ -86,5 +152,6 @@ export function tuneMarkdownEngine(md) {
   md.inline.ruler.at('backticks', backticks);
   const normalizeLink = md.normalizeLink;
   md.normalizeLink = url => cleanWebLink(url) ? url : normalizeLink.call(md, url);
+  keepClasses(md);
   return md;
 }

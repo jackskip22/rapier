@@ -35594,8 +35594,8 @@ async function _rapierGuideStarter() {
 		return {name: file, text};
 	} catch (_) { return null; }
 }
-async function _rapierOpenSiteStarter() {
-	const starter = _rapierSearchStarter() || await _rapierGuideStarter();
+async function _rapierOpenSiteStarter(context) {
+	const starter = _rapierSearchStarter() || await (context?.guide ?? _rapierGuideStarter());
 	return starter ? rapierLoad(starter.text, starter.name, {virtualDocumentKind: 'welcome', opensClean: true}) : null;
 }
 
@@ -35670,9 +35670,12 @@ async function _rapierRestoreBootDocument(context) {
 			if (/\.rapier\.html$/i.test(filename) && typeof _rapierCarriedKeep !== 'undefined') _rapierCarriedKeep.authority = String(loaded.authority || '');
 			_rapierBindPageReturn(carried.return, {documentEpoch: loaded.epoch, documentAuthority: loaded.authority}, carried.return_expires_at);
 		}
-		else if (await (_rapierNotesDoor?.born || typeof RAPIER_DRAW_START_IN_PAINT !== 'undefined' && RAPIER_DRAW_START_IN_PAINT &&
-				globalThis._rapierDrawDoorYielded !== true ? rapierLoad('', 'untitled.md', {opensClean: true})
-			: (await _rapierOpenSiteStarter()) ?? _rapierLoadBuiltInWelcome()) === false) return false;
+		else {
+			context.extendStep?.(2000);
+			if (await (_rapierNotesDoor?.born || typeof RAPIER_DRAW_START_IN_PAINT !== 'undefined' && RAPIER_DRAW_START_IN_PAINT &&
+					globalThis._rapierDrawDoorYielded !== true ? rapierLoad('', 'untitled.md', {opensClean: true})
+				: (await _rapierOpenSiteStarter(context)) ?? _rapierLoadBuiltInWelcome()) === false) return false;
+		}
 		if (_rapierBootSuperseded(context)) return false;
 		await _rapierOpenCarriedDrawing();
 		if (_rapierBootSuperseded(context)) return false;
@@ -36040,6 +36043,7 @@ async function _rapierBoot() {
 	}
 	const context = {
 		budget: performance.now() + 3500,
+		guide: _rapierGuideStarter(),
 		epoch: rapier.identity.userLoadEpoch,
 		params: new URLSearchParams(location.search),
 		hash: String(location.hash || ''),
