@@ -35,12 +35,20 @@ export function graph(texts, roots) {
 
 function scopedModules(texts, names, bindings, {classic = false, suffix = ''} = {}) {
   const ids = new Map(names.map((name, i) => [name, 'module' + i]));
+  const asts = new Map(names.map(name => [name, acorn.parse(texts[name], {ecmaVersion: 'latest', sourceType: 'module'})]));
+  const needed = new Map(names.map(name => [name, new Set()]));
+  for (const [name, module] of Object.entries(bindings)) needed.get(module).add(name);
+  for (const ast of asts.values()) for (const node of ast.body) if (node.type === 'ImportDeclaration')
+    for (const specifier of node.specifiers) {
+      if (specifier.type !== 'ImportSpecifier') throw new Error('Unsupported combined import');
+      needed.get(node.source.value.slice(2, -4)).add(specifier.imported.name);
+    }
   const declared = pattern => pattern.type === 'Identifier' ? [pattern.name]
     : pattern.type === 'ObjectPattern' ? pattern.properties.flatMap(p => declared(p.value || p.argument))
     : pattern.type === 'ArrayPattern' ? pattern.elements.filter(Boolean).flatMap(declared)
     : declared(pattern.left || pattern.argument);
   const modules = names.map(name => {
-    const source = texts[name], ast = acorn.parse(source, {ecmaVersion: 'latest', sourceType: 'module'}), edits = [], exports = [];
+    const source = texts[name], ast = asts.get(name), edits = [], exports = [];
     for (const node of ast.body) {
       if (node.type === 'ImportDeclaration') {
         const dependency = node.source.value.slice(2, -4), id = ids.get(dependency);
@@ -51,9 +59,9 @@ function scopedModules(texts, names, bindings, {classic = false, suffix = ''} = 
         if (node.source) throw new Error('Unsupported combined re-export in ' + name);
         if (node.declaration) {
           const d = node.declaration, locals = d.type === 'VariableDeclaration' ? d.declarations.flatMap(v => declared(v.id)) : [d.id.name];
-          exports.push(...locals.map(local => local + ':' + local)); edits.push([node.start, d.start, '']);
+          exports.push(...locals.filter(local => needed.get(name).has(local)).map(local => local + ':' + local)); edits.push([node.start, d.start, '']);
         } else {
-          exports.push(...node.specifiers.map(s => s.exported.name + ':' + s.local.name)); edits.push([node.start, node.end, '']);
+          exports.push(...node.specifiers.filter(s => needed.get(name).has(s.exported.name)).map(s => s.exported.name + ':' + s.local.name)); edits.push([node.start, node.end, '']);
         }
       }
     }

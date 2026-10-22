@@ -1,3 +1,3 @@
-export const VERSION = '1.2.24';
+export const VERSION = '1.2.25';
 export const RELEASE_TAG = 'v' + VERSION;
 export const cdnOrigin = repository => 'https://cdn.jsdelivr.net/gh/jackskip22/' + repository + '@' + RELEASE_TAG + '/';
