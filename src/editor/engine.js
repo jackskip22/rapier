@@ -35676,12 +35676,12 @@ function _rapierSearchStarter() {
 async function _rapierGuideStarter() {
 	let path = '';
 	try { path = /^https?:$/.test(location.protocol) && window.self === window.top ? location.pathname.replace(/\/+$/, '') : ''; } catch (_) {}
-	const file = {'/agents': 'agents.md', '/gemini': 'gemini.md', '/markdown-standard': 'markdown-standard.md', '/will': 'will.md'}[path];
+	const file = {'/agents': 'agents.md'}[path];
 	if (!file) return null;
 	try {
 		const response = await fetch('/docs/' + file, {cache: 'no-cache'});
 		if (!response.ok || !/^text\/(?:markdown|plain)\b/i.test(response.headers.get('content-type') || '')) return null;
-		const guides = {'agents.md': '/agents', 'gemini.md': '/gemini', 'markdown-standard.md': '/markdown-standard', 'will.md': '/will'};
+		const guides = {'agents.md': '/agents'};
 		const text = (await response.text()).replace(/\]\(([a-z0-9-]+\.md)(#[^)\s]*)?\)/g, (all, name, fragment = '') => '](' + (guides[name] || 'https://github.com/jackskip22/rapier/blob/main/docs/' + name) + fragment + ')');
 		return {name: file, text};
 	} catch (_) { return null; }

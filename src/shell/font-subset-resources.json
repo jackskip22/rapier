@@ -4,7 +4,7 @@
     {
       "name": "subset",
       "version": "3",
-      "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.30/site/plugins/rapier-font-subset-3.js",
+      "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.31/site/plugins/rapier-font-subset-3.js",
       "file": "plugins/rapier-font-subset-3.js",
       "path": "shell/vendor/font-subset/rapier-font-subset-3.js",
       "bytes": 1214779,

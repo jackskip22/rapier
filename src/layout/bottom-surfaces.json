@@ -1235,7 +1235,7 @@
         "declarations": [
           {
             "property": "position",
-            "value": "absolute",
+            "value": "fixed",
             "important": false
           },
           {
@@ -1249,8 +1249,8 @@
             "important": false
           },
           {
-            "property": "bottom",
-            "value": "100%",
+            "property": "transform",
+            "value": "translateY(-100%)",
             "important": false
           }
         ]
@@ -1258,7 +1258,7 @@
       "role": "storey",
       "interactive": true,
       "edge": "support",
-      "reason": "The absolute wrap row stands on image-tools; it outranks only that support chain.",
+      "reason": "The fixed wrap row stands on image-tools' top edge; it outranks only that support chain.",
       "on": "image-tools"
     },
     {

@@ -75,6 +75,18 @@ window. Pairing lasts one day. Your request is not the person's approval.
 
 The offline editor needs no account. Connecting a workspace doesn't set up Notes.
 
+### Gemini
+
+- Gemini app: on a computer, open [gemini.google.com](https://gemini.google.com), then **Settings**, **Connected Apps**
+  and, under **Custom apps**, **Add a custom app**. Enter `https://mcp.rapier.website/door/mcp` and choose **Next**. In a
+  chat, type **@** and choose **Rapier**; the app on your phone has it too. Gemini asks you to confirm each change. Custom
+  apps need a personal Google Account, age 18 or over, the United States, English and Keep Activity turned on.
+- Gemini CLI: `gemini mcp add --transport http rapier https://mcp.rapier.website/door/mcp`.
+- Antigravity: `agy plugin install https://github.com/jackskip22/rapier-plugins` adds the skills and the server;
+  `agy mcp add rapier https://mcp.rapier.website/door/mcp` adds only the server.
+- Gemini Enterprise: an administrator opens **Settings & help**, **Manage team**, **Connected apps**, adds an MCP server
+  with that URL and **No authentication**, and turns the connector on.
+
 ## Read and edit
 
 `open` includes short documents. For a larger one, `read` one of:

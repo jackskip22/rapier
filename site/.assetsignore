@@ -18,9 +18,6 @@
 !/door-word-to-markdown.html
 !/door-mermaid-editor.html
 !/door-agents.html
-!/door-gemini.html
-!/door-markdown-standard.html
-!/door-will.html
 !/rapier-notes-*.txt
 !/rapier-document-*.txt
 !/rapier-presets-*.txt
@@ -63,9 +60,6 @@
 !/og-privacy.png
 !/og-commercial.png
 !/og-agents.png
-!/og-gemini.png
-!/og-markdown-standard.png
-!/og-will.png
 !/watercolor-painting.png
 !/embed/
 !/embed/**

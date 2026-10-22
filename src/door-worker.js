@@ -136,15 +136,6 @@ export const GUIDES = Object.freeze({
 	'/agents': Object.freeze({name: 'Rapier for agents', file: 'agents.md', title: 'Rapier for AI agents: MCP server, tools and skills',
 		description: 'Connect Claude, Cursor, ChatGPT or any MCP client to Rapier with no account. Read and edit one live document with a person, draw, paint and export.',
 		image: 'og-agents.png', imageSize: [1200, 630], imageAlt: 'Rapier for agents'}),
-	'/gemini': Object.freeze({name: 'Add Rapier to Gemini', file: 'gemini.md', title: 'Add Rapier to Gemini | Rapier',
-		description: 'Use Rapier with Gemini through MCP: a shared Markdown editor in your browser, no account. Keep the result as Markdown or an offline HTML file.',
-		image: 'og-gemini.png', imageSize: [1200, 630], imageAlt: 'Add Rapier to Gemini'}),
-	'/markdown-standard': Object.freeze({name: 'Self-contained Markdown', file: 'markdown-standard.md', title: 'Self-contained Markdown: one .md file with its images | Rapier',
-		description: 'An open MIT convention: one UTF-8 Markdown file holds the document and every image, with optional layout, drawings and an HTML reader.',
-		image: 'og-markdown-standard.png', imageSize: [1200, 630], imageAlt: 'Rapier: self-contained Markdown'}),
-	'/will': Object.freeze({name: 'Will/1', file: 'will.md', title: 'Will/1: a person\'s instructions for a document region | Rapier',
-		description: 'Will/1 marks a region of a Markdown, Word or PDF document with a person\'s instruction that agents and editors honor.',
-		image: 'og-will.png', imageSize: [1200, 630], imageAlt: 'Rapier: Will/1'}),
 });
 export const PAGES = Object.freeze({...DOORS, ...GUIDES});
 export const STANDALONE = Object.freeze({

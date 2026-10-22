@@ -50,7 +50,7 @@ The welcome text and interface wording are authored content; change them only wh
 
 Keep verification focused on document bytes, authority and shipped packages. Do not add tests of appearance,
 interface wording or incidental implementation details. Read the [contribution guide](https://github.com/jackskip22/rapier/blob/main/.github/CONTRIBUTING.md)
-and [format specification](https://rapier.website/markdown-standard) before changing their contracts.
+and [format specification](https://github.com/jackskip22/rapier/blob/main/docs/markdown-standard.md) before changing their contracts.
 
 ## Owner approval for interface changes
 

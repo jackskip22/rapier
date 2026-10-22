@@ -24,7 +24,7 @@ const _rapierImageFlow = (() => {
   const rotatePerf = {writer: 0, urlsCreated: 0, urlsRevoked: 0, decodesStarted: 0, inFlight: 0, maxInFlight: 0};
   function resetRotatePerf() { rotatePerf.writer = rotatePerf.urlsCreated = rotatePerf.urlsRevoked = rotatePerf.decodesStarted = rotatePerf.inFlight = rotatePerf.maxInFlight = 0; }
 
-  let moveHandle = null, rotateGrip = null, wrapRow = null, wrapRowOpen = false, fadeRow = null, fadeRowOpen = false, fadeHold = false, armed = false;
+  let moveHandle = null, rotateGrip = null, wrapRow = null, wrapRowOpen = false, aroundPlace = null, fadeRow = null, fadeRowOpen = false, fadeHold = false, armed = false;
   let fieldOpen = null;
   const MOVE_REST_MS = 150, ROTATE_REST_MS = 150, ROTATE_STEP = Math.PI / 12, ROTATE_MAGNET_RAD = 4 * Math.PI / 180, ROTATE_GRAVITY_RAD = 5 * Math.PI / 180;
   let lastWidth = 0, lastHeight = 0, restoring = false, printing = false, lastObstacles = [], userIntent = 0, caretPlaced = null;
@@ -1768,9 +1768,9 @@ const _rapierImageFlow = (() => {
   function updateWrapRow(layout) {
     if (!wrapRow) return;
     const current = layout?.wrap || null;
+    const place = current === 'around' ? (aroundPlace?.src === selected?.getAttribute('src') ? aroundPlace.place : 'around') : WRAP_PLACEMENTS.find(row => row.wrap === current)?.place;
     for (const button of wrapRow.children) {
-      const entry = WRAP_PLACEMENTS.find(row => row.place === button.dataset.wrapPlace);
-      button.setAttribute('aria-pressed', String(entry.wrap === current));
+      button.setAttribute('aria-pressed', String(button.dataset.wrapPlace === place));
       button.disabled = rapier.access.readOnly || rapier.compare.active;
     }
   }
@@ -1871,6 +1871,7 @@ const _rapierImageFlow = (() => {
         button.addEventListener('click', event => {
           event.preventDefault();
           if (!event.isTrusted) return;
+          if (entry.wrap === 'around') aroundPlace = {place: entry.place, src: selected?.getAttribute('src')};
           if (entry.wrap == null) inline(); else setWrapShape(entry.wrap);
           updateWrapRow(selected && layoutOf(selected));
         });
@@ -3100,11 +3101,15 @@ const _rapierImageFlow = (() => {
     .rapier-image-wrap[aria-pressed="true"]{color:var(--color-accent)}
     .rapier-image-lock[aria-pressed="true"] rect{fill:currentColor}
     img[data-rapier-image-layout*="lock%3Don"]{pointer-events:none}
-    /* The placement row sits directly on top of the bar (its bottom edge is the bar's own top edge
-       -- \`bottom:100%\` inside the bar's own fixed containing block), same background, same
-       button grid (it reuses .rapier-image-tools__btn). The current placement reads as a filled,
-       inverted pill, same rule as .rapier-draw-btn--mode[aria-pressed="true"]. */
-    .rapier-image-wrap-row{position:absolute;left:0;right:0;bottom:100%;display:flex;align-items:stretch;justify-content:center;background:linear-gradient(var(--format-toolbar-bg),var(--format-toolbar-bg)),var(--color-bg)}
+    /* The placement row sits directly on top of the bar (its bottom edge is the bar's own top edge),
+       same background, same button grid (it reuses .rapier-image-tools__btn). The current placement
+       reads as a filled, inverted pill, same rule as .rapier-draw-btn--mode[aria-pressed="true"].
+       Fixed, not absolute: on a touch screen the bar scrolls sideways, and a scroller clips every
+       absolute child on both axes, so an absolute row above it was cut away and a tap fell through to
+       the words. A fixed row escapes that clip; with no top or bottom it stands at its static place,
+       the bar's own top edge, and the translate lifts it by its own height. */
+    .rapier-image-wrap-row{position:fixed;left:0;right:0;transform:translateY(-100%);display:flex;align-items:stretch;justify-content:center;background:linear-gradient(var(--format-toolbar-bg),var(--format-toolbar-bg)),var(--color-bg)}
+    @media(pointer:coarse){.rapier-image-wrap-row .rapier-image-tools__btn{min-width:48px}}
     .rapier-image-wrap-row[hidden]{display:none}
     .rapier-image-wrap-row .rapier-image-tools__btn[aria-pressed="true"]{background:var(--color-icon);color:var(--color-bg)}
     .rapier-image-fade[aria-pressed="true"]{color:var(--color-accent)}
@@ -3690,6 +3695,18 @@ const _rapierImageFlow = (() => {
       (resizeGrips.includes(target) ? target : selected).focus({preventScroll: true});
     });
   }
+  for (const name of ['copy', 'cut']) document.addEventListener(name, event => {
+    if (!event.isTrusted || !selected?.isConnected || moving || !event.clipboardData || event.defaultPrevented) return;
+    const live = window.getSelection();
+    if (live?.rangeCount && !live.isCollapsed || _rapierClipboardOutsideDocument(event)) return;
+    const range = document.createRange();
+    range.selectNode(selected);
+    event.preventDefault(); event.stopImmediatePropagation();
+    _clipboardReadRange(range, event.clipboardData);
+    const markdown = event.clipboardData.getData('text/markdown');
+    if (markdown && !event.clipboardData.getData('text/plain')) event.clipboardData.setData('text/plain', markdown);
+    if (name === 'cut' && !rapier.access.readOnly) void remove();
+  }, true);
   document.addEventListener('keydown', event => {
     if (!event.isTrusted || !selected || moving?.committing) return;
     const handle = event.target?.closest?.('.rapier-image-grip');

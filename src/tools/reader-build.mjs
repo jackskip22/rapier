@@ -189,7 +189,7 @@ export async function buildReader({root = here, unchecked = [], toolchainCanonic
 	const loaderSource = await read('shell/plugin-loader.js');
 	const pluginParts = (await read('shell/bundle-io.js')) + '\n' + readerPluginLoader(fillMermaidResources(loaderSource), built);
 
-	const pools = [await platformUnits(), await sharedUnits('editor/pop.js'), await sharedUnits('editor/sheet-gesture.js'), await renderWorkUnits(), await engineUnits()];
+	const pools = [await platformUnits(), await sharedUnits('editor/pop.js'), await sharedUnits('editor/sheet-gesture.js'), await sharedUnits('editor/plugins.js'), await renderWorkUnits(), await engineUnits()];
 	const kit = {}, exports = await kitExports();
 	let keep = Object.fromEntries(Object.keys(KIT).map(kind => [kind, new Set()])), linked = null, slices = null, ownScript = '';
 	const forbid = ['rapier', '_rapierUi', 'showToast', 'rapierConfirm', 'renderBlock', '_rapierEmbedPublishState'];
@@ -211,6 +211,12 @@ export async function buildReader({root = here, unchecked = [], toolchainCanonic
 		if (!grew && round > 0) break;
 	}
 	report.unresolved = linked.unresolved.filter(name => !BROWSER.has(name));
+	const PROVIDED = ['DOMPurify', 'IDBKeyRange', 'URIError', 'RapierImageAssets', 'RapierPictureMarks', 'RapierPluginLoader', 'RapierUnpack', 'modules'];
+	const GUARDED = ['_rapierDrawReadSVGRecipe', '_rapierDrawShapeProfileFor', 'RapierBundledPlugins'];
+	const UNREACHED = ['RapierLedgerCarried'];
+	const known = new Set([...PROVIDED, ...GUARDED, ...UNREACHED]);
+	const missing = report.unresolved.filter(name => !known.has(name));
+	if (missing.length) throw new Error('rapier-reader.html uses names it does not carry: ' + missing.join(', ') + ' (tools/reader-build.mjs: carry them, guard them with typeof, or list them)');
 
 	const used = new Map();
 	const everything = linked.text + '\n' + ownScript;
