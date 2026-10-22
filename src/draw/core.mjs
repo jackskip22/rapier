@@ -2268,7 +2268,7 @@ function _rapierDrawShapeMarkup(shape, recipe, renderOptions) {
 		const g = shape.geom, mx = (g.x1 + g.x2) / 2, my = (g.y1 + g.y2) / 2;
 		const ang = Math.atan2(g.y2 - g.y1, g.x2 - g.x1), nx = -Math.sin(ang), ny = Math.cos(ang);
 		const lenPx = Math.round(Math.hypot(g.x2 - g.x1, g.y2 - g.y1));
-		body += '<text x="' + _rapierDrawFmt(mx + nx * 12) + '" y="' + _rapierDrawFmt(my + ny * 12) + '" font-family="system-ui, sans-serif" font-size="14" fill="currentColor" text-anchor="middle">' + lenPx + '</text>';
+		body += '<text x="' + _rapierDrawFmt(mx + nx * 12) + '" y="' + _rapierDrawFmt(my + ny * 12) + '" font-family="system-ui, sans-serif" font-size="14" fill="' + ink + '" text-anchor="middle">' + lenPx + '</text>';
 	}
 
 	const scale = _rapierDrawNibScale(shape, recipe);

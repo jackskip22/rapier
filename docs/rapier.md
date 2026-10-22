@@ -33,8 +33,8 @@ Your browser can clear notes it stores. To keep a separate copy:
 
 A local save or an open share sheet is not a backup. Without browser storage, notes last only until you close the page.
 
-**Sync with Cloudflare**, in Notes settings, keeps an encrypted copy in your own Cloudflare R2 bucket that Rapier
-never sees. Sync is not a backup; keep backing up.
+**Sync**, in Notes settings, writes your notes as plain Markdown files to cloud storage you choose, which Rapier never
+sees. Anyone with access to that storage can read them. Sync is not a backup; keep backing up.
 
 ## Put it on your phone
 

@@ -685,6 +685,10 @@ const RECORDING_LINE = /^\[(?:\\.|[^\]\\])*\]\(\s*<?(?:audio|attachments)\/[^()<
 function cardInkWords(line) {
 	return line.includes('<!--') ? stripInkMarkers(line) : line;
 }
+const TITLE_ENTITIES = {nbsp: ' ', lt: '<', gt: '>', quot: '"', '#39': "'", amp: '&'};
+export function titleWords(text) {
+	return text.replace(/\\([\\`*_{}\[\]()#+\-.!~|<>&])|[*_`~]|&(nbsp|lt|gt|quot|#39|amp);/g, (_, kept, entity) => kept || (entity ? TITLE_ENTITIES[entity] : '')).trim();
+}
 export function cardHead(lines, rawLines = lines) {
 	let lead = -1;
 	for (let i = 0; i < lines.length; i++) {
@@ -694,7 +698,7 @@ export function cardHead(lines, rawLines = lines) {
 		if (RECORDING_LINE.test(line)) continue;
 		const raw = rawLines[i].trim(), atx = /^#\s+(.*?)(?:\s+#+)?\s*$/.exec(raw);
 		const setext = !atx && /^ {0,3}=+\s*$/.test(rawLines[i + 1] || '') && !/^(?:#|>|[-*+]\s|\d+[.)]\s|\|)/.test(raw);
-		const word = atx ? cardInkWords(atx[1]).replace(/[*_`~]/g, '').trim() : setext ? line.replace(/[*_`~]/g, '').trim() : '';
+		const word = atx ? titleWords(cardInkWords(atx[1])) : setext ? titleWords(line) : '';
 		if (word) return {title: cutText(word, 80, 80), start: i + (setext ? 2 : 1), lead, at: i};
 		return {title: '', start: i, lead, at: i};
 	}

@@ -415,10 +415,6 @@
 
   async function editorAction(record) {
     const request = record.request;
-    if (request.action === 'save_preset') {
-      if (!await _rapierPartReady('presets') || !editorCurrent(record)) return false;
-      return !!await _rapierPresetPart.saveFromAgent(request.name, request.value, () => editorCurrent(record));
-    }
     if (request.action === 'playback') return document.rapierObjects?.playback(playbackImage(request), request.value)?.ok === true;
     if (request.action === 'read_aloud') return _readFlatDoc(0, request.text) === true;
     if (request.action === 'copy') {
@@ -478,9 +474,9 @@
 
   function editorShowCard(record) {
     const request = record.request;
-    const labels = {read_aloud: 'read aloud', copy: 'copy passage', open_file: 'open a file', install_plugin: 'install plug-in', save_preset: 'Save starter'};
+    const labels = {read_aloud: 'read aloud', copy: 'copy passage', open_file: 'open a file', install_plugin: 'install plug-in'};
     const shown = request.text ? editorProtocol.editorPreview(request.text) : null;
-    const message = request.action === 'save_preset' ? 'Save ' + (request.value === 'style' ? 'this document’s fonts and line spacing' : 'this document') + ' in your personal starters as “' + request.name + '”?' : shown ? (shown.omitted ? shown.head + ' … ' + shown.omitted + ' more characters … ' + shown.tail : shown.head) : (request.plugin ? 'Install ' + request.plugin + ' on this device?' : 'Choose a file from this device to open in Rapier.');
+    const message = shown ? (shown.omitted ? shown.head + ' … ' + shown.omitted + ' more characters … ' + shown.tail : shown.head) : (request.plugin ? 'Install ' + request.plugin + ' on this device?' : 'Choose a file from this device to open in Rapier.');
     const answer = rapierConfirm({title: labels[request.action], message, confirmLabel: labels[request.action]});
     record.confirmId = _rapierUi.confirmId;
     editorCard = record;

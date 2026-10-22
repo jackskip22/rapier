@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {createHTTP, refuse} from './provider-http.mjs';
-import {s3Bucket, signV4, encodeObjectKey, canonicalQuery, readS3XML, s3XMLScalar, EMPTY_SHA256} from './transport-s3.mjs';
+import {s3Bucket, signV4, encodeObjectKey, canonicalQuery, readS3XML, s3XMLScalar, EMPTY_SHA256} from './s3-wire.mjs';
 import {plainConflict, plainName, plainBytes, plainFolder, PLAIN_MAX_BYTES} from './plain-store.mjs';
 
 const td = new TextDecoder('utf-8', {fatal: true});
@@ -62,7 +62,7 @@ export function createS3PlainStore(options = {}) {
 	}
 	return Object.freeze({
 		pause: http.pause, connect, prefix,
-		pictures: () => createS3PlainStore({...options, folder: prefix + 'attachments'}),
+		area: name => createS3PlainStore({...options, folder: prefix + name}),
 		async list() {
 			const out = [], seen = new Set();
 			let cursor = null;

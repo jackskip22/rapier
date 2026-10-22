@@ -9,8 +9,6 @@ import {applyMarkdownSpec} from '../agent/markdown-spec.mjs';
 import {installMarkdownImages} from '../spec/md-assets.mjs';
 import {layoutTargets} from '../layout/markdown.mjs';
 import {createPersonalOwner, admitPersonal, mergePersonal} from '../notes/personal.mjs';
-import {editorRequest, editorNeedsTap, editorResult} from '../agent/editor.mjs';
-import {TOOLS} from '../agent/catalog.mjs';
 const context = vm.createContext({atob, btoa});
 for (const name of ['markdown-it-15.0.2.es2022.umd', 'markdown-it-task-lists-2.1.1.min', 'markdown-it-footnote-4.0.0.min', 'markdown-it-mark-4.0.0.min', 'markdown-it-sup-2.0.0.min', 'markdown-it-emoji-3.1.0-light.min', 'markdown-it-abbr-2.0.0.min', 'markdown-it-ins-4.0.0.min', 'markdown-it-deflist-4.0.0.min'])
   vm.runInContext(readFileSync(new URL('../shell/vendor/' + name + '.js', import.meta.url), 'utf8'), context);
@@ -87,13 +85,6 @@ test('personal storage persists, isolates input, keeps failed writes and recheck
   await cold.set('preset/' + record.id, null); await first.snapshot(); assert.deepEqual(first.values('preset/'), {});
   assert.deepEqual(mergePersonal(before.records, (await disk.read()).records), (await disk.read()).records);
   assert.throws(() => admitPersonal({'preset/bad': {by: 'a'.repeat(32), n: 1, value: null}}));
-});
-test('agent library request requires a trusted tap and retains document/revision identity', () => {
-  assert.deepEqual(TOOLS.map(row => row.name), ['open', 'read', 'edit', 'undo', 'show', 'export']);
-  const {request} = editorRequest({documentId: 'here', revision: 7}, 'document.device_action', {action: 'save_preset', name: 'CV', value: 'document'});
-  assert.ok(editorNeedsTap(request)); assert.equal(request.name, 'CV');
-  assert.equal(editorRequest({documentId: 'here', revision: 7}, 'document.device_action', {action: 'save_preset', name: 'CV', value: 'execute'}).outcome, 'refused');
-  assert.equal(editorResult(request, {...request, revision: 8, receipt: {status: 'done'}}).outcome, 'refused');
 });
 test('a missing named font refuses before a preset can be stored or applied', async () => {
   await assert.rejects(preparePreset({...sample(), presentation: {settings: {mainfont: 'Unavailable custom family'}, fonts: ''}}, md), /missing/);

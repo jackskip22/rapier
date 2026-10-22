@@ -58,8 +58,8 @@ export function withWikiPictures(store) {
 		},
 		async put(name, bytes, condition) { return store.put(name, isNoteFile(name) ? mapBytes(bytes, await topNames(), 'out') : bytes, condition); },
 	};
-	if (typeof store.pictures === 'function') wrapped.pictures = () => {
-		const attachments = store.pictures(), where = new Map();
+	if (typeof store.area === 'function') wrapped.area = folder => folder !== 'attachments' ? store.area(folder) : (() => {
+		const attachments = store.area('attachments'), where = new Map();
 		const pick = name => where.get(name) === 'top' ? store : attachments;
 		return {
 			...attachments,
@@ -74,6 +74,6 @@ export function withWikiPictures(store) {
 			put: (name, bytes, condition) => pick(name).put(name, bytes, condition),
 			remove: (name, condition) => pick(name).remove(name, condition),
 		};
-	};
+	})();
 	return Object.freeze(wrapped);
 }

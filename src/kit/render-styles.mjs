@@ -16,7 +16,7 @@ body{
 	--color-text-subtle:var(--md-color-text-subtle);--color-accent-text:var(--md-color-accent-text);
 	margin:0;background:var(--md-color-bg);color:var(--md-color-text);font-family:var(--md-font-sans);-webkit-font-smoothing:antialiased
 }
-.rapier-page{width:min(100%,calc(var(--md-measure,39.6rem) + 32px));margin:0 auto;padding:48px 16px 72px}
+.rapier-page{width:min(100%,calc(var(--md-measure,39.6rem) + 32px));margin:0 auto;padding:48px 16px 72px;isolation:isolate}
 .rapier-page [id]{scroll-margin-top:var(--md-space-8)}
 .artifact-flat{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;tab-size:2}
 .artifact-flat--text{font:var(--md-fw-regular) 1rem/1.7 var(--md-font-sans)}

@@ -2713,11 +2713,23 @@ function createTurndown() {
 		.replace(/^(\d+)([.)]) /, '$1\\$2 ');
 
 	const escapeMarkdownText = turndown.escape.bind(turndown);
-	turndown.escape = value => globalThis.RapierMarkdownSpec.markRuns(escapeMarkdownText(String(value || '').replace(/\u00a0/g, ' '))
+	const escapeWords = value => globalThis.RapierMarkdownSpec.markRuns(escapeMarkdownText(value)
 		.replace(/^(\d+)\) /, '$1\\) ')
 		.replace(/\{\{[^{}\r\n]*\}\}/g, token => token.replace(/\\_/g, '_'))
 		.replace(/([A-Za-z0-9_$])\\_(?=[A-Za-z0-9_$])/g, '$1_')
 		.replace(/&/g, '&amp;').replace(/</g, '&lt;'));
+	turndown.escape = value => {
+		const text = String(value || '').replace(/\u00a0/g, ' ');
+		if (!text.includes('$')) return escapeWords(text);
+		const match = globalThis.RapierMarkdownSpec.createMathMatcher(text, {singleDollar: true, brackets: false}), spans = [];
+		let words = '';
+		for (let at = 0; at < text.length;) {
+			const span = text[at] === '$' && !/[\uE000\uE001]/.test(text) ? match(at) : null;
+			if (span) { words += '\uE000' + spans.length + '\uE001'; spans.push(text.slice(span.start, span.end)); at = span.end; }
+			else words += text[at++];
+		}
+		return spans.length ? escapeWords(words).replace(/\uE000(\d+)\uE001/g, (_, index) => spans[index]) : escapeWords(text);
+	};
 
 	turndown.addRule('rapierSourceToken', {
 		filter: node => node && node.nodeName === 'SPAN' &&
@@ -3414,7 +3426,7 @@ function rapierWelcomeMarkdown() {
 		"",
 		"Open **Notes** from the ••• menu at the top right.",
 		"",
-		"Every note is a Markdown file shown as a card. Pin, color, sort into sections, attach pictures and voice notes. You can turn on proper checklists inside Notes and, if you use the Android app, add reminders and other native features. Search your notes, link and tag them, and restore any earlier version. **Import** brings in Google Keep, Apple Notes, Evernote, Notion, Obsidian and more. **Backup** saves everything as one ZIP file. **Sync** keeps them in your own Cloudflare account, encrypted with a key that never leaves your device.",
+		"Every note is a Markdown file shown as a card. Pin, color, sort into sections, attach pictures and voice notes. You can turn on proper checklists inside Notes and, if you use the Android app, add reminders and other native features. Search your notes, link and tag them, and restore any earlier version. **Import** brings in Google Keep, Apple Notes, Evernote, Notion, Obsidian and more. **Backup** saves everything as one ZIP file. **Sync** keeps them as plain files in your own cloud storage.",
 		"",
 		"> [!TIP]",
 		"> Back up the notes you care about. The Android app keeps notes in its own files, outside Android's automatic backup.",
@@ -6887,7 +6899,7 @@ function _rapierInitBlockInteractionRouter() {
 		if (diagram) {
 			event.preventDefault();
 			event.stopPropagation();
-			if (!globalThis.RapierFlowchartTouch?.tap(diagram, pressed)) globalThis.RapierFlowchartEditor?.open(diagram, pressed);
+			if (!globalThis.RapierFlowchartTouch?.tap(diagram, pressed, event.pointerType)) globalThis.RapierFlowchartEditor?.open(diagram, pressed);
 			return;
 		}
 		const behindPicture = !_rapierInteractiveControlTarget(pressed, readDiv) && _rapierBehindPictureAt(event.clientX, event.clientY);
@@ -23664,9 +23676,6 @@ function _rapierCarryWillMarkersXml(xmlText, markers, sentinel) {
 		tokens.delete(text);
 		let properties = child(paragraph, 'pPr');
 		if (!properties) properties = paragraph.insertBefore(make('pPr'), paragraph.firstChild);
-		const markProperties = child(properties, 'rPr') ||
-			properties.insertBefore(make('rPr'), child(properties, 'sectPr') || child(properties, 'pPrChange') || null);
-		hide(markProperties);
 		for (const node of Array.from(paragraph.childNodes)) if (node !== properties) node.remove();
 		const run = paragraph.appendChild(make('r'));
 		hide(ensure(run, 'rPr'));
@@ -28710,7 +28719,7 @@ function _maybeAutoConvert(editDiv, block, options = null) {
 	}
 	if (decision && enter && tail.replace(/\u00a0/g, ' ').trim()) return false;
 	let runEnd = markOnly ? offset : offset - 1, mark = null;
-	if (!decision && (!enter || markOnly) && /^(?:P|LI|H[1-6])$/.test(node.parentElement.tagName)) {
+	if (!decision && (!enter || markOnly) && (/^(?:P|LI|H[1-6])$/.test(node.parentElement.tagName) || node.parentElement === editDiv)) {
 		if (!enter && /[*_`]/.test(typed)) {
 			mark = _rapierTypedMark(node.data.slice(0, offset));
 			if (mark) runEnd = offset;
@@ -29958,7 +29967,23 @@ function _rapierFinalizePasteCommit(plan, commit) {
 	}
 	_notifyHistoryState();
 	updateStats();
-	_enterBlockEditAtOffset(plan.blocks[plan.caretIndex].id, plan.caretCharOffset);
+	_rapierOpenPasteCaret(plan);
+}
+
+function _rapierPasteEndsInTable(plan) {
+	const block = plan.blocks[plan.caretIndex];
+	return rapier.view.mode !== 'source' && !!block && _isTableBlock(block.raw);
+}
+
+function _rapierOpenPasteCaret(plan) {
+	const block = plan.blocks[plan.caretIndex], before = plan.blocks[plan.caretIndex - 1];
+	if (before && !plan.caretCharOffset && rapier.view.mode !== 'source' && _rapierPictureOnlyBlock(block) && _rapierBlockHoldsWords(before))
+		return _enterBlockEditAtOffset(before.id, Infinity);
+	if (!_rapierPasteEndsInTable(plan)) return _enterBlockEditAtOffset(plan.blocks[plan.caretIndex].id, plan.caretCharOffset);
+	const after = plan.blocks[plan.caretIndex + 1];
+	if (after) return _enterBlockEditAtOffset(after.id, 0);
+	const table = rapier.document.blocks.find(row => row.id === plan.blocks[plan.caretIndex].id);
+	return table && _rapierMakeEdgeParagraph(table, true) ? _activeBlockEditContext()?.editDiv : undefined;
 }
 
 function _rapierCommitPastePlan(plan) {
@@ -30038,7 +30063,8 @@ async function _rapierMountPastePlan(plan, isCurrent) {
 				const block = plan.blocks[plan.caretIndex + offset];
 				if (block) _rapierWysiwygLedgerPrepare(wrapper, block);
 			});
-			const editDiv = _enterBlockEditAtOffset(plan.blocks[plan.caretIndex].id, plan.caretCharOffset);
+			const editDiv = _rapierPasteEndsInTable(plan) || (!plan.caretCharOffset && _rapierPictureOnlyBlock(plan.blocks[plan.caretIndex])) ? null
+				: _enterBlockEditAtOffset(plan.blocks[plan.caretIndex].id, plan.caretCharOffset);
 			plan.caretOpen = editDiv ? { editDiv, blockId: plan.blocks[plan.caretIndex].id } : null;
 			splice.ref = tail[0];
 		}
@@ -30126,7 +30152,7 @@ async function _rapierCommitPastePlanAsync(plan, job) {
 	if (!isCurrent()) return true;
 	const open = _activeBlockEditContext();
 	if (!(plan.caretOpen && open && open.editDiv === plan.caretOpen.editDiv && open.block.id === plan.caretOpen.blockId)) {
-		_enterBlockEditAtOffset(plan.blocks[plan.caretIndex].id, plan.caretCharOffset);
+		_rapierOpenPasteCaret(plan);
 	}
 	return true;
 }
@@ -35635,19 +35661,12 @@ function _rapierSearchStarter() {
 	try { path = /^https?:$/.test(location.protocol) && window.self === window.top ? location.pathname.replace(/\/+$/, '') : ''; } catch (_) {}
 	const menu = 'Tap ••• at the top right';
 	const starters = {
-		'/markdown-editor': ['markdown.md', '# Markdown editor\n\nType here. This is the formatted view of a plain Markdown file: tap a line to edit it.\n\n' +
-			'- **Bold**, *italic*, `code` and [links](https://rapier.website)\n- [ ] A checklist\n- [x] A ticked box\n\n' +
-			'> [!TIP]\n> ' + menu + ' to **open**, **save** and **export** as PDF, Word, text or a web page.\n'],
-		'/markdown-viewer': ['viewer.md', '# Open a Markdown file\n\n' + menu + ', then **open**, and pick a `.md` file. It opens here, formatted. Nothing is uploaded.\n\n' +
-			'Turn on **read only** in the same panel to read without changing anything.\n'],
 		'/markdown-to-pdf': ['document.md', '# Markdown to PDF\n\n1. Paste your Markdown over this text, or ' + menu.toLowerCase() + ' and **open** a file.\n' +
 			'2. ' + menu + ', then **.pdf** under **export**.\n\nTables, code, math and pictures come through. The PDF is written on your device.\n'],
 		'/markdown-to-word': ['document.md', '# Markdown to Word\n\n1. Paste your Markdown over this text, or ' + menu.toLowerCase() + ' and **open** a file.\n' +
 			'2. ' + menu + ', then **.docx** under **export**.\n\nHeadings, lists, tables, code and pictures come through. The Word file is written on your device.\n'],
 		'/word-to-markdown': ['document.md', '# Word to Markdown\n\n1. ' + menu + ', then **open**, and pick a `.docx` file.\n' +
 			'2. It becomes an editable Markdown page here, pictures and all. **Save** writes the `.md` file.\n\nThe document is converted on your device.\n'],
-		'/markdown-table-editor': ['table.md', '# Markdown table\n\n| Item | Amount | Done |\n|---|---:|:---:|\n| Paper | 2 | ✓ |\n| Paint | 5 |  |\n\n' +
-			'Tap a cell to edit it. The **+** and **−** buttons on the bar under the table add and remove cells. Paste cells from a spreadsheet and the table grows to fit.\n'],
 		'/mermaid-editor': ['diagram.md', '# Mermaid diagram\n\n```mermaid\nflowchart TD\n  A[Idea] --> B[Draft]\n  B --> C{Ready?}\n  C -- yes --> D[Share]\n  C -- no --> B\n```\n\n' +
 			'Change the words in the `mermaid` block and the diagram follows.\n'],
 	};
@@ -35782,7 +35801,7 @@ async function _rapierPublishBootReady(context) {
 			rapierSetMode(record.mode === 'edit' ? 'edit' : 'read');
 		}
 		if (bootContinuity.autoResume) resume = record;
-	} else {
+	} else if (!(context.handledShortcut && context.params?.get('new') === '1' && rapier.view.mode === 'edit')) {
 		rapierSetMode('read');
 	}
 	const resumeGuard = Object.freeze(_rapierMutationStamp());
@@ -36534,7 +36553,7 @@ function _rapierDeleteWholeLine() {
 	const caretBefore = { blockId: block.id, offset: _charOffsetForRangePoint(editDiv, range.startContainer, range.startOffset) };
 	_rapierCommitLiveBoundaryBlock(context);
 	const next = blocks[index + 1];
-	const opaque = !/^(?:paragraph|heading|bullet_list|ordered_list|blockquote)$/.test(String(next.type || ''));
+	const opaque = !/^(?:paragraph|heading|bullet_list|ordered_list|blockquote)$/.test(String(next.type || '')) || _rapierPictureOnlyBlock(next);
 	if (count === 1) {
 		editDiv._rapierSkipBlurCommit = true;
 		hideFormatToolbar();
@@ -37254,6 +37273,12 @@ function _rapierQuoteCaretOnEmptyLastLine(quoteEl, range) {
 }
 
 function _rapierHandleEnter(opts) {
+	const handled = _rapierHandleEnterStep(opts), open = handled && _activeBlockEditContext();
+	if (open && open.editDiv._rapierHistoryEntered != null) _rapierCheckpointEdit(open.editDiv);
+	return handled;
+}
+
+function _rapierHandleEnterStep(opts) {
 	if (rapier.access.readOnly) return false;
 	opts = opts || {};
 	if (!opts.softBreak && _rapierTakeSelectedBreak(true)) return true;
@@ -38648,6 +38673,13 @@ document.addEventListener('keydown', e => {
 function _insertRawNewline(editDiv, range) {
 	const textNode = document.createTextNode('\n');
 	range.insertNode(textNode);
+	const pre = textNode.parentElement && textNode.parentElement.closest('pre');
+	if (pre && editDiv.contains(pre)) {
+		const rest = document.createRange();
+		rest.setStartAfter(textNode);
+		rest.setEnd(pre, pre.childNodes.length);
+		if (!rest.toString()) textNode.data = '\n\n';
+	}
 	const after = document.createRange();
 	after.setStart(textNode, 1);
 	after.collapse(true);
@@ -48754,6 +48786,7 @@ function _rapierUiPlugin(key, label, renderPrompt, noun) {
 		status: 'checking',
 		error: null,
 		dismissed: false,
+		deferred: 0,
 		update: null,
 		installed() { return this.status === 'ready'; },
 		pending() { return _rapierProviders[key]?.update || null; },
@@ -48767,9 +48800,19 @@ function _rapierUiPlugin(key, label, renderPrompt, noun) {
 			renderPrompt();
 			renderSettings();
 		},
-		request() {
+		request(asked = false) {
 			if (this.installed() || this.dismissed || this.busy()) return;
 			if (_rapierPortableLacks(key === 'math' ? 'Math' : 'Mermaid')) { this.dismissed = true; return; }
+			const typing = () => !!(rapier.composition.block || _activeBlockEditContext());
+			if (typing() && !asked) {
+				this.deferred ||= setInterval(() => {
+					if (typing()) return;
+					clearInterval(this.deferred);
+					this.deferred = 0;
+					this.request(true);
+				}, 1000);
+				return;
+			}
 			renderPrompt();
 			openDialog(_rapierUi.refs[key + 'Overlay'], { panel: '.settings-panel' });
 		},

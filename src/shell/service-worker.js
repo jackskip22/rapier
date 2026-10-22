@@ -11,6 +11,8 @@ const SHELL_RELEASE_SHA256 = '20a02a518285ee3904dbfbdfa84d459935a5526ca6a0e77bc3
 const SHELL_PAGE_SHA256 = 'de1f732bce1e8292ff1d967eca0e2c5d2251d52dd9cbf24cdb880120ededb4c4';
 const SHELL_BOOT_ID = '__RAPIER_BOOT_ID__';
 const SHELL_DOOR_SHA256 = __RAPIER_DOOR_SHA256__;
+const SHELL_SITE_PAGES = __RAPIER_SITE_PAGES__;
+const SITE_PAGE_CACHE = `rapier-pages:${CACHE_SCOPE}:v1`;
 const SHELL_PARTS = __RAPIER_PARTS__;
 const SHELL_GENERATION = SHELL_CACHE_PREFIX + SHELL_RELEASE_SHA256.slice(0, 32);
 const SHELL_PAGE_URL = new URL('./rapier.html', self.location).href;
@@ -90,6 +92,11 @@ self.addEventListener('fetch', event => {
 
   const isNavigation = req.mode === 'navigate';
 
+  if (isNavigation && isSitePage(url)) {
+    event.respondWith(sitePageNavigation(req));
+    return;
+  }
+
   if (isNavigation) {
     event.respondWith((async () => {
       const state = await inspectStartup(event).catch(() => null);
@@ -131,17 +138,47 @@ self.addEventListener('fetch', event => {
 
 function isShellDoor(value) {
   const requested = new URL(value);
-  const root = new URL(SHELL_ROOT_URL);
   const page = new URL(SHELL_PAGE_URL);
-  const door = requested.pathname.startsWith(root.pathname) &&
-    /^(?:notes|draw|watercolor|privacy|commercial|paint|markdown-editor|markdown-viewer|markdown-to-pdf|markdown-to-word|word-to-markdown|markdown-table-editor|mermaid-editor)\/?$/.test(requested.pathname.slice(root.pathname.length));
-  return requested.origin === root.origin &&
-    (requested.pathname === root.pathname || requested.pathname === page.pathname || door);
+  const path = scopePath(requested);
+  return requested.origin === page.origin &&
+    (requested.pathname === page.pathname || path !== null && Object.hasOwn(SHELL_DOOR_SHA256, path));
+}
+
+function scopePath(url) {
+  const root = new URL(SHELL_ROOT_URL);
+  if (url.origin !== root.origin || !url.pathname.startsWith(root.pathname)) return null;
+  return '/' + url.pathname.slice(root.pathname.length).replace(/\/+$/, '');
+}
+
+function isSitePage(url) {
+  const path = scopePath(url);
+  return path !== null && SHELL_SITE_PAGES.includes(path);
+}
+
+async function sitePageNavigation(request) {
+  const cache = await caches.open(SITE_PAGE_CACHE);
+  const key = new URL(request.url);
+  key.search = '';
+  key.pathname = key.pathname.replace(/\/+$/, '');
+  try {
+    const response = await fetch(request, {cache: 'no-cache'});
+    if (response.ok && !response.redirected && new URL(response.url || request.url).pathname === key.pathname &&
+        /^text\/html(?:;|$)/i.test((response.headers.get('Content-Type') || '').trim())) {
+      await cache.put(key.href, response.clone()).catch(() => {});
+    }
+    return response;
+  } catch (_) {
+    const copy = await cache.match(key.href);
+    if (copy) return copy;
+    return new Response('Rapier is unavailable offline.', {
+      status: 503, headers: {'Content-Type': 'text/plain; charset=utf-8'},
+    });
+  }
 }
 
 function matchesPage(url, digest) {
   if (!isShellDoor(url)) return false;
-  const path = '/' + new URL(url).pathname.slice(new URL(SHELL_ROOT_URL).pathname.length);
+  const path = scopePath(new URL(url));
   return digest === SHELL_PAGE_SHA256 || digest === SHELL_DOOR_SHA256[path];
 }
 
@@ -160,6 +197,7 @@ async function cachedNavigationResponse(request, release = null) {
   return copy;
 }
 
+const PART_FORMAT = 1;
 async function keepParts() {
   const db = await new Promise((resolve, reject) => {
     const request = indexedDB.open('rapier:cache', 1);
@@ -173,15 +211,29 @@ async function keepParts() {
     tx.onerror = tx.onabort = () => reject(tx.error || new Error('IndexedDB refused the parts'));
   });
   try {
-    const keys = await run('readonly', store => store.getAllKeys());
-    for (const pin of SHELL_PARTS) {
-      if (keys.includes('parts/' + pin.file) || !keys.some(key => String(key).startsWith('parts/rapier-' + pin.id + '-'))) continue;
-      const response = await fetch(new Request(new URL(pin.file, self.location), {cache: 'reload'}));
+    const keys = (await run('readonly', store => store.getAllKeys())).map(String);
+    const fetched = await Promise.all(SHELL_PARTS.map(async pin => {
+      const stem = 'parts/rapier-' + pin.id + '-';
+      if (keys.includes('parts/' + pin.file) || !keys.some(key => key.startsWith(stem))) return null;
+      let response;
+      try { response = await fetch(new Request(new URL(pin.file, self.location), {cache: 'reload'})); }
+      catch (_) { return null; }
+      if (!response.ok) return null;
       const bytes = new Uint8Array(await response.arrayBuffer());
       const sri = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest('SHA-384', bytes))));
-      if (!response.ok || bytes.byteLength !== pin.bytes || sri !== pin.sri) throw new Error('invalid part: ' + pin.file);
-      await run('readwrite', store => store.put({bytes, savedAt: Date.now()}, 'parts/' + pin.file));
-    }
+      if (bytes.byteLength !== pin.bytes || sri !== pin.sri) throw new Error('invalid part: ' + pin.file);
+      const earlier = await Promise.all(keys.filter(key => key.startsWith(stem)).map(async key => [key, (await run('readonly', store => store.get(key)))?.savedAt || 0]));
+      return {pin, bytes, newest: earlier.sort((a, b) => b[1] - a[1])[0][0], earlier};
+    }));
+    const kept = fetched.filter(Boolean);
+    if (kept.length) await run('readwrite', store => {
+      let last;
+      for (const {pin, bytes, newest, earlier} of kept) {
+        for (const [key] of earlier) if (key !== newest) store.delete(key);
+        last = store.put({bytes, savedAt: Date.now(), format: PART_FORMAT, sri: pin.sri, size: pin.bytes}, 'parts/' + pin.file);
+      }
+      return last;
+    });
   } finally { db.close(); }
 }
 

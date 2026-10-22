@@ -7,9 +7,10 @@ export const MUSE_DOOR = 'https://mcp.rapier.website/muse';
 export const DISCOVERY_LINKS = '<link rel="describedby" href="https://rapier.website/llms.txt" type="text/plain">\n' +
   '<link rel="ai-catalog" href="https://rapier.website/.well-known/ai-catalog.json" type="application/ai-catalog+json">';
 export const PLAY_URL = 'https://play.google.com/store/apps/details?id=app.rapier';
-export const SITE_TITLE = 'Rapier - Markdown Editor & Art';
-export const SITE_DESCRIPTION = 'Free Markdown editor with notes, drawing and painting, for the web and Android. ' +
-  'Works offline, with no account, ads or tracking.';
+export const HOME_TITLE = 'Rapier - Free Online Markdown Editor, Viewer & Art';
+export const HOME_H1 = 'Free online Markdown editor and viewer';
+export const HOME_DESCRIPTION = 'Free online Markdown editor and viewer. Convert Markdown to PDF or Word and Word to ' +
+  'Markdown, and draw Mermaid diagrams. No sign-up; works offline.';
 export const APP_DESCRIPTION = 'Free Markdown editor and notes app for Android, the web and Windows. ' +
   'Write on the formatted page or in the Markdown source, make Mermaid diagrams, draw editable SVG and paint watercolor. ' +
   'Text and pictures stay in one plain Markdown file. Import Word and PDF; export Word, PDF, text and offline HTML for free. ' +

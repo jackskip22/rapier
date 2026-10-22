@@ -5,8 +5,9 @@ export const EDITOR_LIMITS = Object.freeze({textChars: 4096, preferenceChars: 25
   previewHead: 360, previewTail: 120});
 export const EDITOR_TOOL_ACTIONS = Object.freeze({'editor.read_aloud': 'read_aloud', 'editor.copy': 'copy',
   'editor.open_file': 'open_file', 'editor.install_plugin': 'install_plugin'});
-export const EDITOR_ACTIONS = Object.freeze([...Object.values(EDITOR_TOOL_ACTIONS), 'playback', 'save_preset']);
-export const EDITOR_PLUGINS = Object.freeze(['math', 'mermaid', 'pdf', 'ocr', 'letters-field', 'letters-relief', 'letters-leaf', 'letters-arabesque']);
+export const EDITOR_ACTIONS = Object.freeze([...Object.values(EDITOR_TOOL_ACTIONS), 'playback']);
+export const EDITOR_PLUGINS = Object.freeze(['math', 'mermaid', 'pdf', 'ocr', 'letters-field', 'letters-relief', 'letters-leaf', 'letters-arabesque',
+  'letters-silhouette', 'letters-gothic', 'letters-sugar', 'letters-illuminated-1490', 'letters-tuscan-1845', 'letters-renaissance-alphabet']);
 export const EDITOR_COPY_FORMATS = Object.freeze(['markdown', 'plain', 'formatted', 'complete']);
 export const PREFERENCE_SCHEMAS = Object.freeze(Object.fromEntries(Object.entries(PREFERENCE_DEFINITIONS).filter(([name]) => name !== 'readOnly').map(([name, definition]) => [name,
   Object.freeze({...definition.values ? {type: typeof definition.fallback, enum: [...definition.values]}
@@ -24,7 +25,7 @@ export function editorPreview(text) {
   return {head: points.slice(0, head).join(''), omitted: points.length - head - tail, tail: points.slice(-tail).join('')};
 }
 export const editorNeedsTap = request => request?.operation === 'document.device_action' &&
-  (request.action === 'open_file' || request.action === 'save_preset' || request.action === 'install_plugin' && request.plugin === 'ocr');
+  (request.action === 'open_file' || request.action === 'install_plugin' && request.plugin === 'ocr');
 export const editorFailure = reason => ({outcome: 'refused', reason, receipt: {status: 'unavailable', reason},
   ...(reason === 'editor_unavailable' ? {hint: 'Open this document in Rapier, then ask the editor again.'} : {})});
 
@@ -55,10 +56,6 @@ export function editorRequest(state, operation, args = {}) {
   } else if (operation === 'document.device_action') {
     if (!EDITOR_ACTIONS.includes(args.action)) return editorFailure('editor_action_invalid');
     request.action = args.action;
-    if (args.action === 'save_preset') {
-      if (typeof args.name !== 'string' || !args.name.trim() || args.name.length > 80 || /[\x00-\x1f\x7f/\\]/.test(args.name) || !['document', 'style'].includes(args.value)) return editorFailure('editor_arguments_invalid');
-      request.name = args.name.trim(); request.value = args.value;
-    }
     if (args.action === 'playback') {
       if (typeof args.value !== 'boolean') return editorFailure('editor_arguments_invalid');
       request.value = args.value;

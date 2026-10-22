@@ -4349,25 +4349,24 @@ function tXml(text, style = {}) {
     part === '\t' ? '<w:tab/>' : '<w:t xml:space="preserve">' + escape(part).replace(/\r/g, '&#13;') + '</w:t>').join('') + '</w:r>';
 }
 
-function pPrXml({styleId, outline, align, numId, ilvl, vanish, borders, shading, ind, numTab, leftTab, direction, before, after, line, lineRule = 'atLeast', keepNext, hyphens, hanging, frame} = {}) {
+function pPrXml({styleId, outline, align, numId, ilvl, borders, shading, ind, numTab, leftTab, direction, before, after, line, lineRule = 'atLeast', keepNext, hyphens, hanging, frame} = {}) {
   const bits = [];
   if (styleId) bits.push('<w:pStyle w:val="' + escape(styleId) + '"/>');
   if (keepNext) bits.push('<w:keepNext/>');
   if (frame) bits.push('<w:framePr w:dropCap="drop" w:lines="' + integer(frame, null, 1, 12) + '" w:hSpace="80" w:wrap="around" w:vAnchor="text" w:hAnchor="text"/>');
   if (numId != null) bits.push('<w:numPr><w:ilvl w:val="' + (ilvl || 0) + '"/><w:numId w:val="' + numId + '"/></w:numPr>');
+  if (borders) bits.push(direction === 'rtl' ? borders.replace('<w:left ', '<w:right ') : borders);
+  if (shading) bits.push(shading);
   if (numTab != null) bits.push('<w:tabs><w:tab w:val="num" w:pos="' + integer(numTab, null, -2147483648) + '"/></w:tabs>');
   else if (leftTab != null) bits.push('<w:tabs><w:tab w:val="left" w:pos="' + integer(leftTab, null, -2147483648) + '"/></w:tabs>');
   if (hyphens === 'auto') bits.push('<w:suppressAutoHyphens w:val="0"/>');
   if (hanging === 'on') bits.push('<w:overflowPunct/>');
   else if (hanging === 'off') bits.push('<w:overflowPunct w:val="0"/>');
-  if (align && ['left', 'right', 'center', 'both'].includes(align)) bits.push('<w:jc w:val="' + align + '"/>');
   if (direction) bits.push('<w:bidi w:val="' + (direction === 'rtl' ? '1' : '0') + '"/>');
   if (before != null || after != null || line != null) bits.push(spacingXml({before, after, line, lineRule}));
   if (ind) bits.push(ind);
+  if (align && ['left', 'right', 'center', 'both'].includes(align)) bits.push('<w:jc w:val="' + align + '"/>');
   if (outline != null) bits.push('<w:outlineLvl w:val="' + outline + '"/>');
-  if (vanish) bits.push('<w:rPr><w:vanish/></w:rPr>');
-  if (borders) bits.push(direction === 'rtl' ? borders.replace('<w:left ', '<w:right ') : borders);
-  if (shading) bits.push(shading);
   return bits.length ? '<w:pPr>' + bits.join('') + '</w:pPr>' : '';
 }
 
@@ -4875,7 +4874,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
       continue;
     }
     if (block.type === 'will') {
-      bodyParts.push(paragraphPart(tXml(block.text, {vanish: true}), {vanish: true}));
+      bodyParts.push(paragraphPart(tXml(block.text, {vanish: true})));
       continue;
     }
     if (block.type === 'heading') {

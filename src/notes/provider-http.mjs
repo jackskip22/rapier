@@ -163,3 +163,11 @@ export function createHTTP(options = {}) {
 	return Object.freeze({request, retry, wait, check, pause, get answered() { return answered; }});
 }
 
+export function providerId(value) {
+	if (typeof value !== 'string' || !/^[A-Za-z0-9_.!:-]{1,256}$/.test(value)) refuse('config', 'a provider-issued folder or file id is required');
+	return value;
+}
+export function tokenFor(token, provider) {
+	if (!token || token.provider !== provider || token.tokenType !== 'Bearer' || typeof token.accessToken !== 'string' || !token.accessToken || /[\x00-\x20\x7f]/.test(token.accessToken)) refuse('auth', `a ${provider} OAuth bearer record is required, not an S3 credential or another provider's token`);
+	return 'Bearer ' + token.accessToken;
+}

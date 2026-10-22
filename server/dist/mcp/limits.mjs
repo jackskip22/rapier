@@ -12,5 +12,4 @@ export const DOOR_LIMITS = Object.freeze({
   dayMs: 24 * 60 * 60 * 1000,
   hourMs: 60 * 60 * 1000,
   minuteMs: 60 * 1000,
-  dayMs: 24 * 60 * 60 * 1000,
 });

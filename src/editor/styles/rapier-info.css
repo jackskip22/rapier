@@ -6,6 +6,7 @@
 .settings-info-btn--hang{position:relative;}
 .settings-info-btn--hang::after{content:"";position:absolute;inset:-4px -8px -4px 0;}
 .settings-info-btn--hang .icon{width:18px;height:18px;}
+#notes-info.settings-info-btn--hang{width:44px;height:44px;margin:calc(-.22em - 2px) 0 0 -8px;}
 #share-overlay .navigator-title-row .settings-info-btn--hang{margin-right:0;}
 .info-action-overlay{position:fixed;inset:0 0 var(--bottom) 0;z-index:2100;display:flex;align-items:flex-end;background:rgba(0,0,0,.46);color:#fff;opacity:0;visibility:hidden;pointer-events:none;transition:opacity var(--dur-enter) var(--ease-out),visibility 0s linear var(--dur-enter);}
 .info-action-overlay.open{opacity:1;visibility:visible;pointer-events:auto;transition-delay:0s;}

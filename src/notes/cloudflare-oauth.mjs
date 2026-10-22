@@ -11,7 +11,7 @@ export const SEAMS = Object.freeze({
 	clientCredentials: 'never; it authenticates an application, and this authenticates a person',
 	deviceCode: 'not implemented; the person is already at a browser',
 	plainChallenge: 'refused; S256 only, even though Cloudflare would accept plain',
-	s3SigV4: 'not implemented here; see notes/transport-r2.mjs SEAMS -- a bearer is not an access key',
+	s3SigV4: 'not implemented here -- a bearer is not an access key',
 });
 
 export const isOAuthRefusal = isProviderRefusal;

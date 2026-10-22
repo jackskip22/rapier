@@ -2,12 +2,14 @@
 import {syncPlainFiles} from './sync-plain.mjs';
 import {plainConflicts, writePlainNote} from './sync-plain-conflicts.mjs';
 import {readSyncState, readSyncStateBytes, updateSyncState} from './sync-state.mjs';
-import {syncPlainPictures} from './sync-plain-pictures.mjs';
+import {syncPlainMedia} from './sync-plain-media.mjs';
+import {syncPlainCards} from './sync-plain-cards.mjs';
 import {withWikiPictures} from './plain-wiki-pictures.mjs';
 
 export const PLAIN_PROVIDERS = Object.freeze(['dropbox', 'drive', 'onedrive', 'webdav', 's3', 'r2', 'companion']);
 const fail = (code, message) => Object.assign(new Error(message), {code});
 const DEVICE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const IDLE_STAMP_MS = 5 * 60 * 1000;
 const PLACE = /^[^\x00-\x1f\x7f]{1,1024}$/;
 
 export function plainRecord({provider, place, device, destination}) {
@@ -18,7 +20,7 @@ export function plainRecord({provider, place, device, destination}) {
 	return Object.freeze({...(destination ? {destination} : {}), layout: 'plain', provider, place, device});
 }
 
-export function createPlainSession({folder, store: given, provider, place, device, pictures = true, now = Date.now, guard: parentGuard = () => {}, connectionId, destination}) {
+export function createPlainSession({folder, store: given, provider, place, device, media = true, cards = true, now = Date.now, guard: parentGuard = () => {}, connectionId, destination}) {
 	const record = plainRecord({provider, place, device, destination});
 	if (!folder || !given) throw fail('config', 'a plain-files sync needs the folder and its store.');
 	const store = withWikiPictures(given);
@@ -49,7 +51,7 @@ export function createPlainSession({folder, store: given, provider, place, devic
 		transports.add(remote);
 		return new Proxy({}, {get(_target, key) {
 			const target = remote;
-			if (key === 'pictures') return typeof target.pictures === 'function' ? () => guarded(target.pictures(), guard) : undefined;
+			if (key === 'area') return typeof target.area === 'function' ? name => guarded(target.area(name), guard) : undefined;
 			const value = target[key];
 			if (typeof value !== 'function') return value;
 			return async (...args) => { await guard(); const result = await value.apply(target, args); await guard(); return result; };
@@ -65,11 +67,18 @@ export function createPlainSession({folder, store: given, provider, place, devic
 			}, {guard});
 		},
 	};
-	const pictureBase = {
-		async read() { return structuredClone((await readSyncState(folder)).plain?.pictures || {}); },
+	const cardsBase = {
+		async read() { return structuredClone((await readSyncState(folder)).plain?.cards || {}); },
 		async write(value, guard) { await updateSyncState(folder, state => {
 			if (state.plain?.provider !== record.provider || state.plain.place !== record.place) throw fail('connection', 'the plain-files connection changed.');
-			return {...state, plain: {...state.plain, pictures: value}};
+			return {...state, plain: {...state.plain, cards: value}};
+		}, {guard}); },
+	};
+	const mediaBase = {
+		async read() { return structuredClone((await readSyncState(folder)).plain?.media || {}); },
+		async write(value, guard) { await updateSyncState(folder, state => {
+			if (state.plain?.provider !== record.provider || state.plain.place !== record.place) throw fail('connection', 'the plain-files connection changed.');
+			return {...state, plain: {...state.plain, media: value}};
 		}, {guard}); },
 	};
 	return Object.freeze({
@@ -82,10 +91,9 @@ export function createPlainSession({folder, store: given, provider, place, devic
 				await guard();
 				await updateSyncState(folder, async state => {
 					await guard();
-					if (state.vault || state.head) throw fail('connection', 'this folder syncs as an encrypted vault: stop that sync before choosing plain files.');
 					if (state.plain && (state.plain.provider !== record.provider || state.plain.place !== record.place || state.plain.destination !== record.destination)) throw fail('connection', 'this folder already syncs plain files to another place: forget that connection first.');
 					if (state.plain) { connected = state.plain; return null; }
-					connected = {...record, connectionId: crypto.randomUUID(), base: {}, pictures: {}};
+					connected = {...record, connectionId: crypto.randomUUID(), base: {}, media: {}};
 					return {...state, plain: connected};
 				}, {guard});
 				await guard();
@@ -105,10 +113,14 @@ export function createPlainSession({folder, store: given, provider, place, devic
 				const guard = connectionGuard(ticket, saved); await guard();
 				if (typeof store.resume === 'function') await store.resume();
 				await guard();
-				const result = await syncPlainFiles({folder, store: guarded(store, guard), base: {read: base.read, write: value => base.write(value, guard)}, device: record.device, other: 'files', guard});
-				if (pictures) result.pictures = await syncPlainPictures({folder, store: guarded(store, guard), base: {read: pictureBase.read, write: value => pictureBase.write(value, guard)}, guard});
+				const remote = guarded(store, guard), listing = await remote.list();
+				const result = await syncPlainFiles({folder, store: remote, base: {read: base.read, write: value => base.write(value, guard)}, device: record.device, other: 'files', listing, guard, now});
+				if (cards) result.cards = await syncPlainCards({folder, store: remote, base: {read: cardsBase.read, write: value => cardsBase.write(value, guard)}, listing, guard, now});
+				if (media) result.media = await syncPlainMedia({folder, store: guarded(store, guard), base: {read: mediaBase.read, write: value => mediaBase.write(value, guard)}, guard});
 				await guard();
-				await updateSyncState(folder, state => state.plain?.provider === record.provider && state.plain.place === record.place ? {...state, plain: {...state.plain, syncedAt: now()}} : null, {guard});
+				const moved = row => ['pushed', 'pulled', 'created', 'renamed', 'trashed', 'removed', 'conflicts'].some(key => row?.[key]);
+				if (moved(result) || moved(result.media) || moved(result.cards) || !(saved.syncedAt > now() - IDLE_STAMP_MS))
+					await updateSyncState(folder, state => state.plain?.provider === record.provider && state.plain.place === record.place ? {...state, plain: {...state.plain, syncedAt: now()}} : null, {guard});
 				return result;
 			})();
 			try { return await running; } finally { running = null; transports.clear(); transports.add(store); }

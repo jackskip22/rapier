@@ -8,8 +8,6 @@ Connect an MCP client to `https://mcp.rapier.website/door/mcp` (Streamable HTTP,
 
 Rapier is listed in the [MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.jackskip22%2Frapier/versions/latest) and the [GitHub MCP Registry](https://github.com/mcp) as `io.github.jackskip22/rapier`.
 
-Muse uses OAuth at `https://mcp.rapier.website/muse`, without an embedded editor: use the paired `editor_url` page, and send file text yourself because host-file imports are unavailable. Keep `document` private and pass it on later calls.
-
 ## What you can do
 
 - [1. Work with a person in one live document](https://rapier.website/agents): connect to `https://mcp.rapier.website/door/mcp`, then `open`. It returns the revision, the whole text or a document map, and `editor_url`. `read` exact text by heading, block id, lines or query; `edit` unique exact text as one undoable act and keep its `act` id; `undo` keeps later work; `show {target:"comparison"}` shows a diff. The person's typing wins overlapping changes.

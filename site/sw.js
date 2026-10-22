@@ -7,11 +7,13 @@ const SHELL_URLS = [
   './icon-192.png',
   './icon-512.png',
 ];
-const SHELL_RELEASE_SHA256 = 'f328b0de37953ac4a962278f73d4f442c0df2e98bddb15fa88f9f57a541bfb43';
-const SHELL_PAGE_SHA256 = '8a29f16a93512f8fe2219e2a37230f7ce060115d85809a5ff622a34c72936192';
-const SHELL_BOOT_ID = '63575a688f464a44d8473fed73763546bbcc27a3d5e0b66787294d3d40be3538';
-const SHELL_DOOR_SHA256 = {"/":"5830859ce69aea74474588fc0852f07c3550b741699cdf3c7867007ae88100bf","/privacy":"b2e66cf7105161254535edd64411153f529c4123d941a062d5f196f9692c028b","/commercial":"a74bbc97078d6b68eb540f5b5f494e3e85dd110c4fca456a3e40113b5a532e69","/notes":"a7770894588e98d5b87e42f825b7bc70ff39548940c98e9fbb6f2e9104d26cce","/draw":"0f60e7737c4da49375518acf6dd51984bb556bed6b0a513591077d63744daa15","/watercolor":"5e0c17d3dfa442ce130f9692e6b600824c0c1116edeabb8a9460e3a55c3a0780","/paint":"659ca6e9a90c10f5e0b14f7f680b5b913dfcf52f49b09c8d2e785b6eed2dcd9e","/jxl":"f2570d957c912611ffbb6bba44a9ec64d51bd63b337a844433a74c6f2774fe14","/markdown-editor":"8ff364721202674ff8566a5299d67fbf2ba8ce2b1432afa608d66fe9b5d08e54","/markdown-viewer":"50f2dc4be4304d81f12835047e0301af9146911d661c7c23bd75eebd1bac4ad2","/markdown-to-pdf":"b2a81d0d5e66d1576a4ce6c2647562dabd4ddf8a66832343b707a34d375aed79","/markdown-to-word":"7bd0f7396f9cf4b1aced1a5fc3b016009d850606c716296f5a1ca5c036ac1303","/word-to-markdown":"23767ca367650df394cc874ca8371375050b81a401a1845f16518adcbc61eddb","/markdown-table-editor":"414470a1d565e38f6650514bf711ef40ca424c926358cb4902039f7a962fe186","/mermaid-editor":"37c725cb617d0e0d327767702d679f95a384ef6b14c6eb5614425a35ad9cf051"};
-const SHELL_PARTS = [{"id":"document","file":"rapier-document-0fd72f95cfe0a8d4.txt","bytes":902513,"sri":"PcPSyQS3r7RmOQp7b4nvxgBe2eq7A/Iv5QJcKpIGEI+vIRY+U4dPi7VZJ6UU80ui"},{"id":"presets","file":"rapier-presets-75764d88ece8dcd4.txt","bytes":259747,"sri":"4wiXofd3XVQD1jrFINtFZl/66SiZGrD/nw2kLheW/nAUkfCda1NJ1oeJ+FGjnLhk"},{"id":"drawing","file":"rapier-drawing-a04097b69f24cfc2.txt","bytes":340943,"sri":"aGdouvml0+auhmrquXKVTfSrgpB/nYxFplJiapkjYyvClmJbw+rD/QkNogwJc5J1"},{"id":"jxl","file":"rapier-jxl-907c11c49325d0aa.txt","bytes":17443,"sri":"cl5kTF9zj1apcUQsdeAdOODTgo43yWmBtwd/eLfbZzY1Q4QI6PO5AX1NNdY3B8cj"},{"id":"jxlcomplete","file":"rapier-jxlcomplete-c5e84752c1f4c921.txt","bytes":155718,"sri":"4TUA9/oPaLCgBB3odpzhJxKSfWNGpIyHzvgZlSntnpLpyOjA7PWuaeSv86uXLBHi"},{"id":"notes","file":"rapier-notes-416a41e6998b7580.txt","bytes":378037,"sri":"j+YYoiFG+9UbSs4c/d3QAECh1XKvQ0hA99MLw+XZ1rh6y1xU/WuegLDfSzE7Udc7"}];
+const SHELL_RELEASE_SHA256 = 'cb054daf44aef59a3e73cd1b0c58c63300319a89976cc6ddd33ab62ff883d872';
+const SHELL_PAGE_SHA256 = '4803b48928e831747578ade373e8ecfe08551c3fd1e2b1011e6fd3ccd87f5ce2';
+const SHELL_BOOT_ID = '88d2ca18aab2a4dc675632862417758668667d0b85a2ed725d77897e2b3386e6';
+const SHELL_DOOR_SHA256 = {"/":"339486e554448efdd1a0aea4c314baf7306c5e225b44cea86fd3c7866882ad95","/privacy":"21f99932faa72ffe96d6733029cfb2fa6131e2e1fcdb2819d05af2dd8e8fb875","/commercial":"6c75b1751e4f9ae46d9275b550f3f37da695afaa6e66aea293d443cf121ce4f8","/notes":"384ed5cb6c88b5c353c8d2f3ecea611b5bdeef2596d11aa6d8b3c5d32c80309b","/draw":"68c7e93b8085c310783d0778eddafc60315fae6b11b9c0a2af6d76030d7e7b21","/watercolor":"f48ff74068741d86094de94a1c2b8a2e57e315bccff5ab386ee755514a0b9cba","/paint":"2dbe8cd1abccc248561529344738c3802c34f296dc82e3848354bc2c55bcd0af","/jxl":"d4e181dc35120a1d19c9a4f3b00f0448a65b7d9909abbe654e6783c9c6ff2388","/markdown-to-pdf":"394b9c8d4543b91fd4cc4a3cc98bc6245ca7a90b766caa11bc6c1a475b146eb4","/markdown-to-word":"cebc75ac86b41eb5048372ca7e5c96d3a3a28f4a9ad93de52a8e8a47bcd716e9","/word-to-markdown":"d0e995ab529beea311f74c89e03abbc8b5ce84fdf930f766234d28a4cda99ce6","/mermaid-editor":"66509fbe045af8ae6478ad99bf72895fc5c4262d13d018b5836444fa94a032f8"};
+const SHELL_SITE_PAGES = ["/gallery"];
+const SITE_PAGE_CACHE = `rapier-pages:${CACHE_SCOPE}:v1`;
+const SHELL_PARTS = [{"id":"document","file":"rapier-document-cb75eaeb2bc967f1.txt","bytes":903364,"sri":"1fHapIwrYg4ewBJ9un6iq5lw/hy+GAWFfOH464v/SbIFdaVtELQK3o6/USrTQfdJ"},{"id":"presets","file":"rapier-presets-4b53cd171b01a2e4.txt","bytes":260955,"sri":"/mMfPBQtYzZ7SdTSvC0yfd2Y4d+BO3ULwkBPy7VclGIVMarXQCgQPW9V7QE+1rFf"},{"id":"drawing","file":"rapier-drawing-d4bef62b23239c98.txt","bytes":342357,"sri":"xRINC1OnY3XFyTwLFoFGPfR5CraTOjYu+Z9JUEmg8Wj9QG3L1SOM90PCjow0ac1m"},{"id":"jxl","file":"rapier-jxl-44680b92c2251d23.txt","bytes":17464,"sri":"v6/5WIrd0I67O1kQejU/o5PsLp5JQ7txO1I50zMp61oBWIcUYPoqe2bO53AvnOKp"},{"id":"jxlcomplete","file":"rapier-jxlcomplete-459dc138cf05df65.txt","bytes":155872,"sri":"nAf8VgZwrWYZPcs+DIfqWi0yiPVhejDP/BK92E1C5tHvRXaOeb1Qu9C/xA7eWHSu"},{"id":"notes","file":"rapier-notes-d9a34d397aaaa39c.txt","bytes":379682,"sri":"X2mKpDBn1qd9EP/OwfHBRkiwkEmtzSXKYpeiRZJxsnyDe+CyDy8I7yQI7u/u25zr"}];
 const SHELL_GENERATION = SHELL_CACHE_PREFIX + SHELL_RELEASE_SHA256.slice(0, 32);
 const SHELL_PAGE_URL = new URL('./rapier.html', self.location).href;
 const SHELL_ROOT_URL = new URL('./', self.location).href;
@@ -90,6 +92,11 @@ self.addEventListener('fetch', event => {
 
   const isNavigation = req.mode === 'navigate';
 
+  if (isNavigation && isSitePage(url)) {
+    event.respondWith(sitePageNavigation(req));
+    return;
+  }
+
   if (isNavigation) {
     event.respondWith((async () => {
       const state = await inspectStartup(event).catch(() => null);
@@ -131,17 +138,47 @@ self.addEventListener('fetch', event => {
 
 function isShellDoor(value) {
   const requested = new URL(value);
-  const root = new URL(SHELL_ROOT_URL);
   const page = new URL(SHELL_PAGE_URL);
-  const door = requested.pathname.startsWith(root.pathname) &&
-    /^(?:notes|draw|watercolor|privacy|commercial|paint|markdown-editor|markdown-viewer|markdown-to-pdf|markdown-to-word|word-to-markdown|markdown-table-editor|mermaid-editor)\/?$/.test(requested.pathname.slice(root.pathname.length));
-  return requested.origin === root.origin &&
-    (requested.pathname === root.pathname || requested.pathname === page.pathname || door);
+  const path = scopePath(requested);
+  return requested.origin === page.origin &&
+    (requested.pathname === page.pathname || path !== null && Object.hasOwn(SHELL_DOOR_SHA256, path));
+}
+
+function scopePath(url) {
+  const root = new URL(SHELL_ROOT_URL);
+  if (url.origin !== root.origin || !url.pathname.startsWith(root.pathname)) return null;
+  return '/' + url.pathname.slice(root.pathname.length).replace(/\/+$/, '');
+}
+
+function isSitePage(url) {
+  const path = scopePath(url);
+  return path !== null && SHELL_SITE_PAGES.includes(path);
+}
+
+async function sitePageNavigation(request) {
+  const cache = await caches.open(SITE_PAGE_CACHE);
+  const key = new URL(request.url);
+  key.search = '';
+  key.pathname = key.pathname.replace(/\/+$/, '');
+  try {
+    const response = await fetch(request, {cache: 'no-cache'});
+    if (response.ok && !response.redirected && new URL(response.url || request.url).pathname === key.pathname &&
+        /^text\/html(?:;|$)/i.test((response.headers.get('Content-Type') || '').trim())) {
+      await cache.put(key.href, response.clone()).catch(() => {});
+    }
+    return response;
+  } catch (_) {
+    const copy = await cache.match(key.href);
+    if (copy) return copy;
+    return new Response('Rapier is unavailable offline.', {
+      status: 503, headers: {'Content-Type': 'text/plain; charset=utf-8'},
+    });
+  }
 }
 
 function matchesPage(url, digest) {
   if (!isShellDoor(url)) return false;
-  const path = '/' + new URL(url).pathname.slice(new URL(SHELL_ROOT_URL).pathname.length);
+  const path = scopePath(new URL(url));
   return digest === SHELL_PAGE_SHA256 || digest === SHELL_DOOR_SHA256[path];
 }
 
@@ -160,6 +197,7 @@ async function cachedNavigationResponse(request, release = null) {
   return copy;
 }
 
+const PART_FORMAT = 1;
 async function keepParts() {
   const db = await new Promise((resolve, reject) => {
     const request = indexedDB.open('rapier:cache', 1);
@@ -173,15 +211,29 @@ async function keepParts() {
     tx.onerror = tx.onabort = () => reject(tx.error || new Error('IndexedDB refused the parts'));
   });
   try {
-    const keys = await run('readonly', store => store.getAllKeys());
-    for (const pin of SHELL_PARTS) {
-      if (keys.includes('parts/' + pin.file) || !keys.some(key => String(key).startsWith('parts/rapier-' + pin.id + '-'))) continue;
-      const response = await fetch(new Request(new URL(pin.file, self.location), {cache: 'reload'}));
+    const keys = (await run('readonly', store => store.getAllKeys())).map(String);
+    const fetched = await Promise.all(SHELL_PARTS.map(async pin => {
+      const stem = 'parts/rapier-' + pin.id + '-';
+      if (keys.includes('parts/' + pin.file) || !keys.some(key => key.startsWith(stem))) return null;
+      let response;
+      try { response = await fetch(new Request(new URL(pin.file, self.location), {cache: 'reload'})); }
+      catch (_) { return null; }
+      if (!response.ok) return null;
       const bytes = new Uint8Array(await response.arrayBuffer());
       const sri = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest('SHA-384', bytes))));
-      if (!response.ok || bytes.byteLength !== pin.bytes || sri !== pin.sri) throw new Error('invalid part: ' + pin.file);
-      await run('readwrite', store => store.put({bytes, savedAt: Date.now()}, 'parts/' + pin.file));
-    }
+      if (bytes.byteLength !== pin.bytes || sri !== pin.sri) throw new Error('invalid part: ' + pin.file);
+      const earlier = await Promise.all(keys.filter(key => key.startsWith(stem)).map(async key => [key, (await run('readonly', store => store.get(key)))?.savedAt || 0]));
+      return {pin, bytes, newest: earlier.sort((a, b) => b[1] - a[1])[0][0], earlier};
+    }));
+    const kept = fetched.filter(Boolean);
+    if (kept.length) await run('readwrite', store => {
+      let last;
+      for (const {pin, bytes, newest, earlier} of kept) {
+        for (const [key] of earlier) if (key !== newest) store.delete(key);
+        last = store.put({bytes, savedAt: Date.now(), format: PART_FORMAT, sri: pin.sri, size: pin.bytes}, 'parts/' + pin.file);
+      }
+      return last;
+    });
   } finally { db.close(); }
 }
 

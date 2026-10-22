@@ -46,6 +46,24 @@ fn sample(image:texture_2d<f32>,p:vec2<f32>) -> vec4<f32> {
  if(weight.x!=0.0){bottom=mix(bottom,loadTexel(image,origin+vec2<i32>(1,1)),weight.x);}
  return mix(top,bottom,weight.y);
 }
+// A texel of a texture the sheet's size, plus an offset in its texels (y down). A position carried as a fraction of the sheet
+// keeps only the GPU's precision near 1: a phone GPU that rounds it to half precision samples up to half a texel off, by an
+// amount that is the same along a whole column or row and changes where the fraction crosses a power of two. Every frame's
+// transport then pulls pigment sideways in fixed columns and rows, into fine stripes in straight-edged blocks. Here the
+// texel is an exact integer and the offset small, so the reconstruction holds at any
+// precision; in exact arithmetic it is the same as sample().
+fn sampleAt(image:texture_2d<f32>,pixel:vec2<i32>,offset:vec2<f32>) -> vec4<f32> {
+ let o=floor(offset);let weight=offset-o;let origin=pixel+vec2<i32>(o);
+ let a=loadTexel(image,origin);
+ var top=a;
+ if(weight.x!=0.0){top=mix(a,loadTexel(image,origin+vec2<i32>(1,0)),weight.x);}
+ if(weight.y==0.0){return top;}
+ var bottom=loadTexel(image,origin+vec2<i32>(0,1));
+ if(weight.x!=0.0){bottom=mix(bottom,loadTexel(image,origin+vec2<i32>(1,1)),weight.x);}
+ return mix(top,bottom,weight.y);
+}
+// A displacement in sheet fractions (y up) as sheet texels (y down).
+fn texels(d:vec2<f32>) -> vec2<f32> { return d*vec2<f32>(u.v[0].x,-u.v[0].y); }
 fn nearest(image:texture_2d<f32>,p:vec2<f32>) -> vec4<f32> {
  let size=vec2<f32>(textureDimensions(image));
  return loadTexel(image,vec2<i32>(floor(vec2<f32>(p.x,1.0-p.y)*size)));
@@ -166,11 +184,17 @@ const body = {
  return vec4<f32>(nearest(t0,q).xy-0.5*vec2<f32>(n.y-n.x,n.w-n.z),0,1);
  }`,
  wet: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> {
- let origin=uv(p);
- let q=origin-0.6*u.v[1].x*sample(t0,origin).xy/u.v[0].zw;
- let h=vec2<f32>(1.6*u.v[3].w*u.v[12].x)/u.v[0].xy;
- var sum=0.0;for(var i=0u;i<4u;i++){sum+=sample(t1,q+cardinal(i,h)).r;}
- let w=mix(sample(t1,q).r,0.25*sum,0.12*clamp(u.v[1].x*60.0,0.0,1.0))*u.v[2].x;
+ let origin=uv(p);let pix=vec2<i32>(px(p));
+ let shift=-0.6*u.v[1].x*sample(t0,origin).xy/u.v[0].zw;
+ var sum=0.0;var here=0.0;
+ if(exactPositions){
+  let d=texels(shift);let h=vec2<f32>(1.6*u.v[3].w*u.v[12].x);
+  for(var i=0u;i<4u;i++){sum+=sampleAt(t1,pix,d+cardinal(i,h)).r;}here=sampleAt(t1,pix,d).r;
+ }else{
+  let q=origin+shift;let h=vec2<f32>(1.6*u.v[3].w*u.v[12].x)/u.v[0].xy;
+  for(var i=0u;i<4u;i++){sum+=sample(t1,q+cardinal(i,h)).r;}here=sample(t1,q).r;
+ }
+ let w=mix(here,0.25*sum,0.12*clamp(u.v[1].x*60.0,0.0,1.0))*u.v[2].x;
  // Wetness is kept in 16 bits: one fast frame's evaporation can be under half a step, and the wash would round back to the same
  // wetness every frame and never dry. The rounding is made stochastic, by a hash of the paper's own texel and the frame, so a
  // replay rounds as the painting did.
@@ -180,6 +204,7 @@ const body = {
  return vec4<f32>(select(w,max(0.0,w+(f32(n>>8u)/16777216.0-0.5)*unit),w>0.0),0,0,1);
  }`,
  fix: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> Pair {
+ if(exactPositions){let pix=vec2<i32>(px(p));return Pair(loadTexel(t0,pix)*u.v[2].z,loadTexel(t1,pix)*u.v[2].z);}
  let q=uv(p);return Pair(sample(t0,q)*u.v[2].z,sample(t1,q)*u.v[2].z);
  }`,
  pigment: `
@@ -190,8 +215,10 @@ const body = {
   let water=loadTexel(t3,pix).r;let m=mobility(water);
   let a=loadTexel(t1,pix);let b=loadTexel(t2,pix);let keep=u.v[2].w;
   if(m<0.002){return Pair(a*keep,b*keep);}
-  let back=q-u.v[1].x*sample(t0,q).xy/u.v[0].zw*m;
-  let advectedA=sample(t1,back);let advectedB=sample(t2,back);
+  let shift=-u.v[1].x*sample(t0,q).xy/u.v[0].zw*m;
+  var advectedA=vec4<f32>(0);var advectedB=vec4<f32>(0);
+  if(exactPositions){let back=texels(shift);advectedA=sampleAt(t1,pix,back);advectedB=sampleAt(t2,pix,back);}
+  else{let back=q+shift;advectedA=sample(t1,back);advectedB=sample(t2,back);}
   var resultA=mix(a,advectedA,m);var resultB=mix(b,advectedB,m);
   // Advection and bleeding may not create an extreme: what they write stays within the pigment they drew from (this texel, the
   // one it was carried from, the faces it exchanged with). Together they can overshoot, and where the flow is fast the overshoot
@@ -250,6 +277,7 @@ const body = {
  }`,
  display: COLOR_WGSL+`
  fn density(p:vec2<f32>)->f32{return sample(t0,p).r+sample(t2,p).r;}
+ fn densityAt(pixel:vec2<i32>,offset:vec2<f32>)->f32{return sampleAt(t0,pixel,offset).r+sampleAt(t2,pixel,offset).r;}
  fn flakeHash(point:vec2<i32>,salt:u32)->f32 {
   var value=bitcast<u32>(point.x)*747796405u+bitcast<u32>(point.y)*2891336453u+salt;
   value=(value^(value>>16u))*2246822519u;return f32(value^(value>>13u))/4294967296.0;
@@ -283,8 +311,13 @@ const body = {
    gradient=vec2<f32>(loadTexel(t0,pixel+side).r+loadTexel(t2,pixel+side).r-loadTexel(t0,pixel-side).r-loadTexel(t2,pixel-side).r,
     loadTexel(t0,pixel-up).r+loadTexel(t2,pixel-up).r-loadTexel(t0,pixel+up).r-loadTexel(t2,pixel+up).r);
   }else{
-   let h=u.v[3].w/u.v[0].xy;
-   gradient=vec2<f32>(density(q+vec2<f32>(h.x,0))-density(q-vec2<f32>(h.x,0)),density(q+vec2<f32>(0,h.y))-density(q-vec2<f32>(0,h.y)));
+   if(exactPositions){
+    let h=u.v[3].w;
+    gradient=vec2<f32>(densityAt(pixel,vec2<f32>(h,0))-densityAt(pixel,vec2<f32>(-h,0)),densityAt(pixel,vec2<f32>(0,-h))-densityAt(pixel,vec2<f32>(0,h)));
+   }else{
+    let h=u.v[3].w/u.v[0].xy;
+    gradient=vec2<f32>(density(q+vec2<f32>(h.x,0))-density(q-vec2<f32>(h.x,0)),density(q+vec2<f32>(0,h.y))-density(q-vec2<f32>(0,h.y)));
+   }
   }
   let edge=min(length(gradient)/(a.x+1.0),1.0);
   let strength=mix((1+u.v[9].x*(0.5-paper.g)*2.2)*(1+u.v[9].y*edge),1.0,flat);
@@ -328,8 +361,8 @@ const body = {
  }`,
 };
 
-export function waterShaderSources(){
- const common = head + manualSample + rest;
+export function waterShaderSources({precisionTest='',exactPositions=false}={}){
+ const common = `const exactPositions=${exactPositions};\n`+(precisionTest==='half'?head.replace('fn uv(p:vec4<f32>) -> vec2<f32> { let q=px(p); return vec2<f32>(q.x/u.v[0].x,1-q.y/u.v[0].y); }','fn uv(p:vec4<f32>) -> vec2<f32> { let q=px(p); return unpack2x16float(pack2x16float(vec2<f32>(q.x/u.v[0].x,1-q.y/u.v[0].y))); }'):head) + manualSample + rest;
  const sources=Object.fromEntries(Object.entries(body).filter(([name])=>name!=='pigment'&&name!=='display').map(([name,source])=>[name,common+source]));
  sources.displayCompute=common+`override quickEdge:bool=false;`+body.display+`
  @group(0) @binding(11) var output:texture_storage_2d<rgba8unorm,write>;

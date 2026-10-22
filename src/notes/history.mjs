@@ -522,7 +522,8 @@ export function diffLines(a, b) {
 export function changePreview(before, after, {words = 6, limit = 48} = {}) {
 	requireThat((before == null || typeof before === 'string') && typeof after === 'string', 'A change preview needs strings', 'text');
 	const few = text => {
-		const all = text.replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+		const plain = text.replace(/&(nbsp|lt|gt|quot|#39|amp);/g, (_, name) => ({nbsp: ' ', lt: '<', gt: '>', quot: '"', '#39': "'", amp: '&'})[name]);
+		const all = plain.replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
 		let out = all.slice(0, words).join(' ');
 		const points = Array.from(out);
 		if (points.length > limit) out = points.slice(0, limit - 1).join('');

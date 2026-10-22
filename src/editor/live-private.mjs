@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import {generateVdk, seal, open} from '../notes/vault.mjs';
 import {applyEdit} from '../kernel/live-merge.mjs';
 import {validateLiveAct} from '../kernel/live-act.mjs';
 import {readLedger} from '../kit/ledger/format.mjs';
@@ -9,6 +8,22 @@ import {sha256} from '../kit/ledger/hash.mjs';
 import {PRIVATE_LIVE_PROTOCOL, privateId, privatePeer, privateInteger, privateDigest, privateSecret,
   privateCiphertext, privateBase64, privateUnbase64, privateInitialHash, privateRecordHash} from '../kernel/live-private-wire.mjs';
 
+const NONCE_BYTES = 12, TAG_BYTES = 16, SEAL_VERSION = 1;
+const generateVdk = () => crypto.getRandomValues(new Uint8Array(32));
+async function seal(rawKey, aad, bytes) {
+  const nonce = crypto.getRandomValues(new Uint8Array(NONCE_BYTES)), key = await crypto.subtle.importKey('raw', rawKey, {name: 'AES-GCM'}, false, ['encrypt']);
+  const sealed = new Uint8Array(await crypto.subtle.encrypt({name: 'AES-GCM', iv: nonce, tagLength: 128, additionalData: new TextEncoder().encode(aad)}, key, bytes));
+  const out = new Uint8Array(1 + NONCE_BYTES + sealed.length);
+  out[0] = SEAL_VERSION; out.set(nonce, 1); out.set(sealed, 1 + NONCE_BYTES);
+  return out;
+}
+async function open(rawKey, aad, envelope) {
+  if (envelope.length < 1 + NONCE_BYTES + TAG_BYTES || envelope[0] !== SEAL_VERSION) fail('live_private_refused');
+  const key = await crypto.subtle.importKey('raw', rawKey, {name: 'AES-GCM'}, false, ['decrypt']);
+  try {
+    return new Uint8Array(await crypto.subtle.decrypt({name: 'AES-GCM', iv: envelope.subarray(1, 1 + NONCE_BYTES), tagLength: 128, additionalData: new TextEncoder().encode(aad)}, key, envelope.subarray(1 + NONCE_BYTES)));
+  } catch {fail('live_private_refused');}
+}
 const utf8 = new TextEncoder(), decoder = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true});
 const plain = value => value && typeof value === 'object' && !Array.isArray(value);
 const fields = (value, allowed, required = allowed) => plain(value) && required.every(name => Object.hasOwn(value, name)) &&

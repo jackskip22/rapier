@@ -1054,6 +1054,8 @@ function _rapierRemoveCalloutMarker(first) {
 	);
 }
 
+const mathSource = /^\$\$[\s\S]+\$\$$|^\$[^$\n]+\$$/;
+
 function _rapierMathSource(node) {
 	if (!node) return '';
 	const carrier = node.matches && node.matches('[data-math-src]')
@@ -1404,7 +1406,7 @@ function* _rapierPortableInlineTextSteps(node, options) {
 	}
 	if (tag === 'CODE' && !opts.inPre) {
 		const source = String(node.textContent || '');
-		return opts.visible ? source : source ? '`' + source + '`' : '';
+		return opts.visible || mathSource.test(source) ? source : source ? '`' + source + '`' : '';
 	}
 	const parts = [];
 	for (let child = node.firstChild; child; child = child.nextSibling) parts.push(yield* _rapierPortableInlineTextSteps(child, opts));

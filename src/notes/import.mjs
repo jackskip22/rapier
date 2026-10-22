@@ -128,9 +128,10 @@ export function literalDestination(url) {
 	return String(url).replace(/[\u0000-\u0020()<>\\]/g, c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0').toUpperCase())
 		.replace(/&/g, '&amp;');
 }
+const WEB_ADDRESS = /(https?:\/\/[^\s<>]+)/g, ADDRESS_MARKS = /([\\*`\[\]])/g;
 export function literalInline(text) {
-	return String(text).replace(INLINE_MARKS, (m, mark, before, under, under2) =>
-		mark ? '\\' + mark : under ? before + '\\_' : under2 ? '\\_' : m)
+	return String(text).split(WEB_ADDRESS).map((part, i) => i % 2 ? part.replace(ADDRESS_MARKS, '\\$1') : part.replace(INLINE_MARKS, (m, mark, before, under, under2) =>
+		mark ? '\\' + mark : under ? before + '\\_' : under2 ? '\\_' : m)).join('')
 		.replace(/&(?=(?:#[xX][0-9a-fA-F]+|#\d+|[a-zA-Z][a-zA-Z0-9]*);)/g, '\\&')
 		.replace(/(^|[ \t])(#+)$/, (_, gap, hashes) => gap + hashes.replace(/#/g, '\\#'));
 }

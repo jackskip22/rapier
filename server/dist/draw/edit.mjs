@@ -116,7 +116,7 @@ function transformShape(shape, recipe, matrix, preserveGrow = true) {
 			geom = { p: frame.map(point) };
 			if (!g.p && det > 0) {
 				const cs = Math.cos(g.rot || 0), sn = Math.sin(g.rot || 0), ux = a * cs + c * sn, uy = b * cs + d * sn, vx = c * cs - a * sn, vy = d * cs - b * sn, lu = Math.hypot(ux, uy), lv = Math.hypot(vx, vy);
-				if (Math.abs(ux * vx + uy * vy) <= lu * lv * 1e-10) { const center = point([g.cx, g.cy]); geom = { cx: center[0], cy: center[1], w: g.w * lu, h: g.h * lv, rot: Math.atan2(uy, ux) }; }
+				if (Math.abs(ux * vx + uy * vy) <= lu * lv * 1e-10) { const center = point([g.cx, g.cy]); const tidy = n => Math.round(n * 1e6) / 1e6; geom = { cx: tidy(center[0]), cy: tidy(center[1]), w: tidy(g.w * lu), h: tidy(g.h * lv), rot: Math.atan2(uy, ux) }; }
 			}
 			if (g.inner != null) geom.inner = g.inner;
 			if (g.points != null) geom.points = g.points;

@@ -28,7 +28,7 @@ import {inlineFonts, keepsComment, stripStyleComments, styleText} from './style-
 import {shakeModule, pruneImports} from './tree-shake.mjs';
 import {commercialPage} from './commercial-page.mjs';
 import {seoSection, seoDoorSections} from './seo-page.mjs';
-import {DOORS, PAGES, SITE_PAGES, doorAssetPath} from '../door-worker.js';
+import {DOORS, PAGES, SITE_PAGES, STANDALONE, doorAssetPath} from '../door-worker.js';
 import {readGuides, writeDoorAssets} from './door-assets.mjs';
 import {firstScreenKey as firstScreenKeyOf} from './first-screen-record.mjs';
 import {fillMermaidResources} from './mermaid-resources.mjs';
@@ -39,7 +39,7 @@ import {fillMathLicense} from './build-math.mjs';
 import {buildExportAssets} from './build-export-assets.mjs';
 import {satelliteSlots} from './engine-slots.mjs';
 import {editorOnlyMarkup} from './reader-profile.mjs';
-import {APP_DESCRIPTION, SITE_TITLE, SITE_DESCRIPTION, DISCOVERY_LINKS, PLAY_URL} from './discovery.mjs';
+import {APP_DESCRIPTION, HOME_TITLE, HOME_DESCRIPTION, DISCOVERY_LINKS, PLAY_URL} from './discovery.mjs';
 import {lexicalBindings, ENGINE_MODULE_SLOTS} from './engine-census.mjs';
 import {bundleModules, readNames} from './reader-modules.mjs';
 import {PARTS, PART_IDS, partition, partMark, partElement, inlineParts, splitProgram, realmNames, topLevelNames} from './parts.mjs';
@@ -670,12 +670,12 @@ html = html.replace(/(<meta name="rapier-version" content="[^"]+">\n)/, (_, vers
 const seoRegions = [...html.matchAll(seoRegion)], bodyAt = html.indexOf('<body');
 if (seoRegions.length !== 2 || bodyAt < 0 || seoRegions[0].index > bodyAt || seoRegions[1].index < bodyAt || !/<script type="application\/ld\+json">/.test(seoRegions[0][0]) ||
     html.split('<!-- RAPIER_SEO_').length !== 5) throw new Error('The shell must carry its two RAPIER_SEO regions: metadata in the head, the guide in the body');
-html = html.replace(/<title>[^<]*<\/title>/, () => '<title>' + escapeHtml(SITE_TITLE) + '</title>');
+html = html.replace(/<title>[^<]*<\/title>/, () => '<title>' + escapeHtml(HOME_TITLE) + '</title>');
   const siteAttribute = value => escapeHtml(value).replaceAll('"', '&quot;');
   for (const [attribute, name, value] of [
-    ['name', 'description', SITE_DESCRIPTION], ['property', 'og:title', SITE_TITLE],
-    ['property', 'og:description', SITE_DESCRIPTION], ['name', 'twitter:title', SITE_TITLE],
-    ['name', 'twitter:description', SITE_DESCRIPTION],
+    ['name', 'description', HOME_DESCRIPTION], ['property', 'og:title', HOME_TITLE],
+    ['property', 'og:description', HOME_DESCRIPTION], ['name', 'twitter:title', HOME_TITLE],
+    ['name', 'twitter:description', HOME_DESCRIPTION],
   ]) {
     const pattern = new RegExp('<meta ' + attribute + '="' + name + '" content="[^"]*">');
     if (!pattern.test(html)) throw new Error('The site head is missing ' + name);
@@ -1137,6 +1137,7 @@ if (PROFILE === 'full') {
   const worker = serviceWorkerSource
     .replace('__RAPIER_BOOT_ID__', bootId)
     .replace('__RAPIER_DOOR_SHA256__', JSON.stringify(doorHashes))
+    .replace('__RAPIER_SITE_PAGES__', JSON.stringify(Object.keys(STANDALONE)))
     .replace('__RAPIER_PARTS__', JSON.stringify(partFiles.map(({id, file, bytes, sri}) => ({id, file, bytes, sri}))))
     .replace(/const SHELL_RELEASE_SHA256 = '[0-9a-f]{64}';/, `const SHELL_RELEASE_SHA256 = '${shellDigest}';`)
     .replace(/const SHELL_PAGE_SHA256 = '[0-9a-f]{64}';/, `const SHELL_PAGE_SHA256 = '${shellPageDigest}';`);

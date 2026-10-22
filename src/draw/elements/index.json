@@ -29,25 +29,25 @@
 			"kind": "elements",
 			"id": "elements-bands-1",
 			"group": "Bands",
-			"items": 67,
+			"items": 66,
 			"file": "elements/elements-bands-1.json",
-			"bytes": 1042910,
-			"deflated": 395362,
-			"sha384": "8wGGIxxTC3tYQA8QAK8gyGSjAVTO8bZw5vG3dccIJIi8vueOz8jZwh9z3GMoKjs+",
-			"zbytes": 395374,
-			"zsha384": "aTHuGQRk+KqFuzdnhMuyxamX2bo6sC+7frArMxR2vLg4VwznLc0Xw4jn8UXIFK+Y"
+			"bytes": 1039652,
+			"deflated": 394033,
+			"sha384": "32dkh66eyHsvjhCWzw+oR8FUJMubr7/aUO1tiuX2LPvRt5JsGchht5a0bRUCSo+G",
+			"zbytes": 394045,
+			"zsha384": "I/tkqNOhTYOnAB8+aI6O/6r0WEPMbWA/NY2VGynNjsqWc/9w9suHtZyEKYYFcLxo"
 		},
 		{
 			"kind": "elements",
 			"id": "elements-bands-10",
 			"group": "Bands",
-			"items": 23,
+			"items": 16,
 			"file": "elements/elements-bands-10.json",
-			"bytes": 1091795,
-			"deflated": 397117,
-			"sha384": "OX2CDP+1iCGCuLD4kfUO1kHOICWMvpuVbydKlMmfgf1F+bW+40cTP5Hw+9bwUDs9",
-			"zbytes": 397129,
-			"zsha384": "SpgFF7V+MArylVt8buGTfVMv3Y/kn6oBk6q0s5JdGCTUuR204ksjSg5eIloC8yY9"
+			"bytes": 646988,
+			"deflated": 239429,
+			"sha384": "ejQW6LN/o2yBUB2RPEfz4XqfRhoqzTf/qpqwfmdsnu7mbNV3pWViAuyuwIlLwr2J",
+			"zbytes": 239441,
+			"zsha384": "RoDF9MKMTN4o+Y9RZQ95zkCLAfYilsO6pFL4fvm7AAAqBxWM7QEOiPQsbOZuIKuq"
 		},
 		{
 			"kind": "elements",
@@ -65,37 +65,37 @@
 			"kind": "elements",
 			"id": "elements-bands-3",
 			"group": "Bands",
-			"items": 105,
+			"items": 94,
 			"file": "elements/elements-bands-3.json",
-			"bytes": 1033051,
-			"deflated": 393059,
-			"sha384": "n7UaC9B8XcqYmuHgd4Pm5pPCgUiYwYESg/OCP5vOoT4lZGrEUNKdzvy3vieZeZck",
-			"zbytes": 393071,
-			"zsha384": "EoFbBlyRfLfe9RdOOx+GOss6iOY3jHRQueHrNWuxEarX+AEybfwS+EpEw7XqX8XM"
+			"bytes": 990072,
+			"deflated": 376194,
+			"sha384": "LgU1A8AH/15wesSqToKPlV1swKpaBRUm83PbdAL33gbmxXBXNGMI0HYcwj5RA/ev",
+			"zbytes": 376206,
+			"zsha384": "DduURUkxPpDOUMKrMzGOgvUd8I9g69c+ZxG4wIZaJ19B4zeZ3DMLjaKsOwsvtlcL"
 		},
 		{
 			"kind": "elements",
 			"id": "elements-bands-4",
 			"group": "Bands",
-			"items": 101,
+			"items": 97,
 			"file": "elements/elements-bands-4.json",
-			"bytes": 1077551,
-			"deflated": 396316,
-			"sha384": "Y7z06yU3N510i4sD91SP0oCHwYHYX+kJYgpCX8dXqsRQdnJYnJJ31yGH9D3L/TEO",
-			"zbytes": 396328,
-			"zsha384": "HTBid7g/r/rinU5NjkiNeuLTvhHDwIZ/jzyK6HIBBiTzC8XfgyLpOuNbBhk+6izY"
+			"bytes": 1053847,
+			"deflated": 387356,
+			"sha384": "N/rDCit1aad4Dh7pJdkWpoDjRkFuActowgPR+isqpiLfwtjsrwp06kULpcqkcX+9",
+			"zbytes": 387368,
+			"zsha384": "1U52gk7YWxz3F+8NpmLb/oKnFiYSsIkTxoUhFxSjhDtpAJD9n4tkUVgqSOb3wths"
 		},
 		{
 			"kind": "elements",
 			"id": "elements-bands-5",
 			"group": "Bands",
-			"items": 41,
+			"items": 39,
 			"file": "elements/elements-bands-5.json",
-			"bytes": 1059497,
-			"deflated": 388075,
-			"sha384": "vnReqnWUQcPb4lyno48cNbbIIR0cWXUmaExt9ixJa6jv1rNF5JuM5QtvRrXy+84h",
-			"zbytes": 388087,
-			"zsha384": "jq7DhaRbIZBsvTojLUaZ/BjiN1fq4WFVxfFCYm5aJNOMmGINpfplU81+VCuFX9A3"
+			"bytes": 1036580,
+			"deflated": 379256,
+			"sha384": "39kx9J1autR/R2pEmHezJpbmK1mzLM6A1E9oDit4lwLetSI44+lcOwxgp3VjsJFn",
+			"zbytes": 379268,
+			"zsha384": "riXWbVpl4GaAyqBfEUjMuemLpNVANA+GVWHqnAvmEZWgMrvzNeRE5ekBkE6HsQeu"
 		},
 		{
 			"kind": "elements",
@@ -103,35 +103,35 @@
 			"group": "Bands",
 			"items": 56,
 			"file": "elements/elements-bands-6.json",
-			"bytes": 1067772,
-			"deflated": 397388,
-			"sha384": "2iCSLvGJyoodnh+WcbyrhGOn/2ZPC5BrnEcpTTKoyHapEbXSBMno8eqcvM1EpaeE",
-			"zbytes": 397400,
-			"zsha384": "r5/BVekJuPvLckNO6uPWcaikcI99Hffc1zBO7IHhPsGsmGkQk0+3a921j6F1L4sL"
+			"bytes": 1066973,
+			"deflated": 397094,
+			"sha384": "7Me5hppqsTWP/CNFcpIPuL5bxlDxGM2nh1qXpteJM2Pv2jZY3WhamCNRRqhWKsoL",
+			"zbytes": 397106,
+			"zsha384": "0qRyDKhr3d1dfkpFcv65w+yU9N8B5rDzwmaOWrb19//SGC76dCEi0Hanytkod99s"
 		},
 		{
 			"kind": "elements",
 			"id": "elements-bands-7",
 			"group": "Bands",
-			"items": 126,
+			"items": 124,
 			"file": "elements/elements-bands-7.json",
-			"bytes": 1034598,
-			"deflated": 395233,
-			"sha384": "CP6zPYAkKhP7hyCRbKTl/ZH7XSTVieXnop0/DFcQDvRoJ8mhw04iQCs+DiVI2o3O",
-			"zbytes": 395245,
-			"zsha384": "7ewZCR5GeKX/eCW+XRQDlPSJHXUrDirelSJ6lzBTiVJs9YVJvXptAKDqmz1g199j"
+			"bytes": 1010613,
+			"deflated": 385974,
+			"sha384": "j4LZjbk0UrGrxidiICwcIoH15vTFPk962LkVxBpXOyUpQn8/tneXTimj1EnXD5XB",
+			"zbytes": 385986,
+			"zsha384": "C0lj0qHmu14N/V8/slGU9i4m/LBy2VnFkLgq+PUUwC5P4QxBTqV7xoZwLA2JeVX2"
 		},
 		{
 			"kind": "elements",
 			"id": "elements-bands-8",
 			"group": "Bands",
-			"items": 100,
+			"items": 98,
 			"file": "elements/elements-bands-8.json",
-			"bytes": 992985,
-			"deflated": 365186,
-			"sha384": "BwEvRAsviZ3Sk5XwfxgUa2FHsl7jMk4Om8pmEaBL65HHOcTpt7YGRkWieUFzXI09",
-			"zbytes": 365198,
-			"zsha384": "k05IpSLae1O/PJRmGS+X3OxWfhn3GaMtsxlTiMsIG1TzmJ7eL5eQtih6ijggQOgX"
+			"bytes": 913439,
+			"deflated": 336186,
+			"sha384": "5Qh9eLByQeKR8z++brmTEtw7BFWsZYL6PPwpyb2l1ovbPAAb5x2XKfQ5Ke/ZMqfL",
+			"zbytes": 336198,
+			"zsha384": "xAkoD3hYLaqYZMK+wlLoToMlG5WNk7rHrJkKbi1TLmxA/oYWwqpxgzGhHh5AqTYE"
 		},
 		{
 			"kind": "elements",
@@ -175,35 +175,35 @@
 			"group": "Corners",
 			"items": 76,
 			"file": "elements/elements-corners-1.json",
-			"bytes": 586467,
-			"deflated": 229411,
-			"sha384": "NYnEbfzCJ1czJ9mYcCVsIDzEX8sG0RQi56NcBnKIW8vhqn7wSOcMQu/mZoNHb/Sq",
-			"zbytes": 229423,
-			"zsha384": "Oo4yzdqsIAVbVH3UfDduUazcOdC4Kwb4EQUkQKHgUo2qbo0xEP65978ZYGN1CafV"
+			"bytes": 586456,
+			"deflated": 229405,
+			"sha384": "lJyej7YiZLQQfO8z4632rV8YoFWW2wxSUOf5+VtPhw+4Cz9+74UYRb7iX5FB6p58",
+			"zbytes": 229417,
+			"zsha384": "6D2L6Tr9ZglDlcDN7wxbT+qRFrRumNQL1Hapsk6QtRoEN5HEeBoiL/gUsppDVnkb"
 		},
 		{
 			"kind": "elements",
 			"id": "elements-dividers-1",
 			"group": "Dividers",
-			"items": 163,
+			"items": 159,
 			"file": "elements/elements-dividers-1.json",
-			"bytes": 1078720,
-			"deflated": 396897,
-			"sha384": "R5CQM9Fnx0gDvQM2nnlCHFsjs5Ev51YLhPWymzFRqiXlu8Hppdiw2mIEHGw/RwiU",
-			"zbytes": 396909,
-			"zsha384": "OX8tpjreoC4Sjf+xUR60Gq4vkCq+kdbHchjcil5u+lF5qmS/bTZZ/WxT6iUDy3HB"
+			"bytes": 1067920,
+			"deflated": 392799,
+			"sha384": "eZkagbMTclodkq4qyVnHzU7gbqwpyyWkwMlyTIDFWEFfA3/j9/oyFrYkkvZwaD/H",
+			"zbytes": 392811,
+			"zsha384": "xRKEtYoS3JG0wbj4SQcu9JcdMYjH22QesBL93FqiRTEHZMN5EJ40l9U0v3AD8S3T"
 		},
 		{
 			"kind": "elements",
 			"id": "elements-dividers-2",
 			"group": "Dividers",
-			"items": 232,
+			"items": 223,
 			"file": "elements/elements-dividers-2.json",
-			"bytes": 1092432,
-			"deflated": 397267,
-			"sha384": "UNMjGcdEAQ/uQItpSkzzSsBwwLzt/w2p9zlQ4evsTM2ml7b8ESA0PKY/P6w07Tvq",
-			"zbytes": 397279,
-			"zsha384": "b/nvVn0jEDHWOOFofdHSdKsWWGFlxVXAT0003q7Ok6n0VyhKFWqbcHCKfNfX9SQC"
+			"bytes": 1084385,
+			"deflated": 394168,
+			"sha384": "AveYRUlRqi/G1jN2I8XjmROdfyZQLUBKOnUON4prQi7lmTKVN0J8X2RizX3CgBzO",
+			"zbytes": 394180,
+			"zsha384": "j80U+Ulg3sb/luoWMg+jnv2bC5Za7zDns1dBjhPbGFLsXQ09hCqkQbPOh9rEgxJV"
 		},
 		{
 			"kind": "elements",
@@ -307,11 +307,11 @@
 			"group": "Frames",
 			"items": 54,
 			"file": "elements/elements-frames-14.json",
-			"bytes": 1087458,
-			"deflated": 394534,
-			"sha384": "wsako61EVmq67Hj3qia0FlGdSTDhcdzWnBYrFJbJY2oblRZr2uIKhCgZ75a4E4e+",
-			"zbytes": 394546,
-			"zsha384": "lx5fkWSfrwaH6C0Lfd2du7zIzI+lg86wPoAG/dosHb6A1URmAkVa233+bxdpogOg"
+			"bytes": 1087444,
+			"deflated": 394527,
+			"sha384": "HwuWzqihORE35tkCEO9CnSZ+9pbUiQl0MOiGNBttR4fyiHfzelInp2Xv526qk0Tg",
+			"zbytes": 394539,
+			"zsha384": "EKNVul5iGosJ04SAR1mcF38u6XsFYEYcibd1dqOWErKgDp2Igr38q+KEXkFMtVmr"
 		},
 		{
 			"kind": "elements",
@@ -329,13 +329,13 @@
 			"kind": "elements",
 			"id": "elements-frames-2",
 			"group": "Frames",
-			"items": 26,
+			"items": 25,
 			"file": "elements/elements-frames-2.json",
-			"bytes": 1118109,
-			"deflated": 393671,
-			"sha384": "mdv3NYULukd/tkWml+EU16XyJML0morlSjQQgL4tiNK4Y5QusEC0ggRRcnKUx8Il",
-			"zbytes": 393683,
-			"zsha384": "f0b6n2fPd7hfImPq0bTvsg5Pc7OUyWc+dndxfL1YasM8NfZqCJvCQlFrPc+RCSdW"
+			"bytes": 1113471,
+			"deflated": 391759,
+			"sha384": "XWfiAfijUNOLe7LkxmrljOUHZ+SJfjHFPopsVrO06VdBnyP4AS59Q0FkwNDtaaUr",
+			"zbytes": 391771,
+			"zsha384": "Oj6y9mnvpECayFIKRyMDUXDdi6rS7K5U/LG9ZOy3t87Q5n5cEKT/dU44w8l6ok+n"
 		},
 		{
 			"kind": "elements",
@@ -353,13 +353,13 @@
 			"kind": "elements",
 			"id": "elements-frames-4",
 			"group": "Frames",
-			"items": 65,
+			"items": 63,
 			"file": "elements/elements-frames-4.json",
-			"bytes": 1109312,
-			"deflated": 392852,
-			"sha384": "UMLrpoyT/1hDoM4LD6HsvzVlhZ20+P5WcEJ6rDSZObp0V0C6WnCT341LprfIEJXb",
-			"zbytes": 392864,
-			"zsha384": "dMicXUY1f7J5kDh6c2+oe85WD8shc2NOwNVVNH+RWsQO6MtgSSjhm9C4jB59Mbuc"
+			"bytes": 1108230,
+			"deflated": 392425,
+			"sha384": "5x3uYoGPml1xGtwHvx3m4dZ4nNRInmcibxLUTVrHwgu+BI6Vux3gnumTJ3WBFRs8",
+			"zbytes": 392437,
+			"zsha384": "xzz0xtLE3NWdlplkrYSBzlXMH2goewgcafnRAc6g5CCgxFGyUWMIxQ5PMLUioTMw"
 		},
 		{
 			"kind": "elements",
@@ -461,49 +461,49 @@
 			"kind": "elements",
 			"id": "elements-ornaments-2",
 			"group": "Ornaments",
-			"items": 256,
+			"items": 246,
 			"file": "elements/elements-ornaments-2.json",
-			"bytes": 1019508,
-			"deflated": 394408,
-			"sha384": "WXNPNUtpix34q/50FQDbWMQao/puzdfYx2byaJyUAiN447TzHoKXPXhWGWc8m7em",
-			"zbytes": 394420,
-			"zsha384": "c3w4D1P3i7Lud4WNCJTx1wWipw9FbQFMVBODZRdtKgf01MiyUoLulysyH6z4FBJp"
+			"bytes": 988525,
+			"deflated": 382516,
+			"sha384": "xuKcgKerjBgG8pEpyvc8tfE8Jzo2FpETe3SuHu/69UU/fbb0H3zav/jSwFoSlQAa",
+			"zbytes": 382528,
+			"zsha384": "Fda+qwbbLdB4fxotgkrfGSJ7fqykMo8ycDKkRgJFLNO4NfeidxLOHssgwQOR6xKQ"
 		},
 		{
 			"kind": "elements",
 			"id": "elements-ornaments-3",
 			"group": "Ornaments",
-			"items": 405,
+			"items": 377,
 			"file": "elements/elements-ornaments-3.json",
-			"bytes": 1008059,
-			"deflated": 396883,
-			"sha384": "ZpfpJClT6dmTbI6kgLSNW8ByJ50rnjzevKUElbGkiBtNLjT2bEOPoK8D7GpUf3d2",
-			"zbytes": 396895,
-			"zsha384": "HQcqEbJSRU9BaQVg8Gsldxcg3K1hc0s333aPof4EO2pvLKTVK/kZlxJTNcsFNY/d"
+			"bytes": 957165,
+			"deflated": 377295,
+			"sha384": "lb2So19yeICZPkpk2Oad6hS/UnDCoUyx8mmARInfASjvLo4jwltZ//Q7nOQ0aduJ",
+			"zbytes": 377307,
+			"zsha384": "9y1gYnBxGUz2+TdkK2Ki7hUalxf+JDm+ps1z5rDxKGMvtrOKgFqCDlHjfGPy1Gu1"
 		},
 		{
 			"kind": "elements",
 			"id": "elements-ornaments-4",
 			"group": "Ornaments",
-			"items": 287,
+			"items": 276,
 			"file": "elements/elements-ornaments-4.json",
-			"bytes": 1054001,
-			"deflated": 392942,
-			"sha384": "PGI5fJwmXEvRcOO2mXGddfmGFsl2/tePG47LXuaptej4qrNypW9Wox1pF1OGDxzY",
-			"zbytes": 392954,
-			"zsha384": "6EnkPHYWM7YNtOkOvfr4sMYytFJCxXfrkfnYFb8JrmAH6p+jtwA2a5kaqHIDqbea"
+			"bytes": 1033407,
+			"deflated": 385017,
+			"sha384": "sXHwAPbEh8ZejKbfPmSOYcWZA6VSRzD6WSqm3OIhweGwukvS60wp1QT77m2GXqSx",
+			"zbytes": 385029,
+			"zsha384": "zHWcm3Rnkpr968deJ2YdfZ1UUKQTlQk7OMgYGb2AjIVOf15XVUtun1DcIXyfEfR/"
 		},
 		{
 			"kind": "elements",
 			"id": "elements-ornaments-5",
 			"group": "Ornaments",
-			"items": 15,
+			"items": 14,
 			"file": "elements/elements-ornaments-5.json",
-			"bytes": 394164,
-			"deflated": 143166,
-			"sha384": "59hIVtfH34Wi2KRe3NYO3tWbmiMVYQhG4bf3BfMpl1UELxn9nwmum0LBoVFx1rO8",
-			"zbytes": 143178,
-			"zsha384": "hg8rwKPQfoqAEEx0EnLgv8NjhMhnJl5JCJ2dDJOzF2JvMREjbLXSX8bYCiGnIGqJ"
+			"bytes": 389936,
+			"deflated": 141622,
+			"sha384": "0Af1zG1XG93dOJThLbB2Vlv0dni3ug2etL5vfK1N4OYIm39oe3zfM8f2yEwDkJXm",
+			"zbytes": 141634,
+			"zsha384": "peRUeFPk+ryECmrOnQYGz3oQ44Q3y+YQ0aaCTXgsrfUP6jwG5BTrIORcotFTSz/J"
 		},
 		{
 			"kind": "elements",
@@ -545,13 +545,13 @@
 			"kind": "elements",
 			"id": "elements-patterns-1",
 			"group": "Patterns",
-			"items": 23,
+			"items": 21,
 			"file": "elements/elements-patterns-1.json",
-			"bytes": 463828,
-			"deflated": 168306,
-			"sha384": "ae5v0X7+JrFcluG/GwGWCA29VZ8bC83lQ4T4C/Ym2j9edfv7cDuK6MNAUCfEDGOv",
-			"zbytes": 168318,
-			"zsha384": "mj7gSj6ovZuW0Enx1hiKdh6c7w6fn9wIPEexhdCeV5ki8SVdm8vnszPvgGOB7rjT"
+			"bytes": 319438,
+			"deflated": 119173,
+			"sha384": "4ldQYbXRlvoGNGVSQyflNhsMRuFlGpXcDVWCND3GX5A0RnLzSnvmnDtT/VbQs37P",
+			"zbytes": 119185,
+			"zsha384": "tkReCN7XMVdQjwVCUKAfZ3/zDaxq8vhUzk+O1IrfujoQs6XJbAY5eJe/tRb1xwvG"
 		},
 		{
 			"kind": "elements",
@@ -605,25 +605,25 @@
 			"kind": "elements",
 			"id": "elements-tailpieces-2",
 			"group": "Tailpieces",
-			"items": 100,
+			"items": 98,
 			"file": "elements/elements-tailpieces-2.json",
-			"bytes": 998487,
-			"deflated": 389029,
-			"sha384": "4J+DMhLYAafp5CE+rAAv4YvHQqFq4E7Ke7rcqx+VpTl0UcRK2nQZ1+QLP3k58UYE",
-			"zbytes": 389041,
-			"zsha384": "0XrRglpoWZu9WiIpidlqzL5YOnslkdyJv2Ma1z5F7kiXXtAmD3m2RYJO33Cvhn+j"
+			"bytes": 985674,
+			"deflated": 383821,
+			"sha384": "aQ1t1CSOeyZkSAN7Peoudq90dTBG4VwoGyWjvIS+HlMX18U5HvkK8WRzTCqcUqct",
+			"zbytes": 383833,
+			"zsha384": "hMpsXAaUf7f1j1gfJ593Xf0FsO+3twe+txHKBSY+ddZuJ8jMCgSw0qMhzmAJolhp"
 		},
 		{
 			"kind": "elements",
 			"id": "elements-vignettes-1",
 			"group": "Vignettes",
-			"items": 58,
+			"items": 56,
 			"file": "elements/elements-vignettes-1.json",
-			"bytes": 899786,
-			"deflated": 346153,
-			"sha384": "/7WKv2kacgjaT0i8SGfQeE+f6vaSbWhSBCraYER26A8Whi2gmAzJSJMuRvZkCagg",
-			"zbytes": 346165,
-			"zsha384": "y71OJdJPyd5aCKhvC43fkO0VQiOQqYuDQjzJg84iKP5Ui3I9UwoRHYWNSlrFEKMk"
+			"bytes": 894669,
+			"deflated": 344182,
+			"sha384": "RBpFDPSTrlXyR5tzHlxz6qM0qSXEX7OWa7jfvvwkbF4jpIrnwiXtLiiv3w5QtLEQ",
+			"zbytes": 344194,
+			"zsha384": "AN3S7oF4+l8Fu5mOy5wOMDbSUnSJCUr6ml8ZHoSCXN0+i7pLOzKQbCKeim7ojIW7"
 		}
 	],
 	"templates": [
@@ -635,9 +635,9 @@
 			"w": 862,
 			"h": 1241,
 			"bytes": 124113,
-			"sha384": "XOzDH9YCCd/EhpCdXYvtmhI8I7HC+C9BPaBVCqzDzGOlDOr6LAK0wv1kaKz+I0Gq",
-			"zbytes": 46830,
-			"zsha384": "oIE8tvE1+Q786qw9J6y4lbmYdcS770QXRcP3AnIipGBg8Gd7Bp8poZVmc/dI/zRr"
+			"sha384": "mZqKxpQ6UQ7bVh+oHWBV+cVnvz7JEaL+SG605edSX8971/qP11x8pbsEwlQQ7RO5",
+			"zbytes": 46829,
+			"zsha384": "5r+4NDf3WUKLuZPumICP7bDA9nUIRQ6Rm88y3a+v9JVLgkFty/zvr6qc+qbPnNuf"
 		},
 		{
 			"kind": "template",
@@ -695,9 +695,9 @@
 			"w": 830,
 			"h": 1239,
 			"bytes": 48474,
-			"sha384": "5DXA5ESSX7LRPXGzy8RfIYmu1g4PZjuESEPOuXdREK/PnQ0B3Xu3wrw9oU5KZ1OY",
+			"sha384": "hPXMc7Pp7qsMMIgWOFHjHLQs13bRAmtzu6UFh84a6AHMYBA4OR5eNj57SMmPHYfZ",
 			"zbytes": 19239,
-			"zsha384": "Gz1/IDGlNFFtuVFU5Bso9yM/s9fXXvGjF0GJUH6l9ciMeXvjpNrMLnNstfvcVs0V"
+			"zsha384": "c98cUXbPM45n8XhT/TFxdDh1t7viYVYniGV/oQsp2dTGDH0jfeexuHGL0Yuc8Kqc"
 		},
 		{
 			"kind": "template",
@@ -1067,9 +1067,9 @@
 			"w": 847,
 			"h": 1246,
 			"bytes": 67388,
-			"sha384": "cxLFWF+RrNRBSM97VekRWly3lLXNwBF071NUd5z1nJXmv64SjRrQtxkYw1quER1Y",
+			"sha384": "zYgvhI24d9R6FEd5xsyFVorPJ3mu8PJb4qMa9dSWVlrj21xj6FjGN7OF9cyY51vQ",
 			"zbytes": 23523,
-			"zsha384": "mLQqcbI0Eu2GtzBdABqCVbpvYEwPzEGnA9zZXZV3u1wOF0ug0gVU6nlmG8Rm9Olf"
+			"zsha384": "GBt31NNQgaiXSQr4S+zOtp8lghVG4rz7Rvkn+lHDB0siYfbahbz9NTtLyd4HBPgt"
 		},
 		{
 			"kind": "template",

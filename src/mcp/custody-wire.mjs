@@ -17,7 +17,7 @@ export function viewChanged(before, after) {
   return left.length !== right.length || left.some((row, index) => row.id !== right[index].id || row.status !== right[index].status);
 }
 
-const MATERIAL = /"(?:kind|recognized)":"paint"|"mode":"water"|"strokes":|"actions":|"paintSample":|"return_id":|"figures":|"shapes":|"recipe":/;
+const MATERIAL = /"(?:kind|recognized)":"paint"|"mode":"water"|"strokes":|"actions":|"paintSample":|"return_id":/;
 
 export function relayable(input, head) {
   if (!plain(input) || !plain(input.args) || input.page || input.create === true || input.task || input.editorAuthorized === true ||

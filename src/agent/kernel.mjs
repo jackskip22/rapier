@@ -4853,7 +4853,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (block.kind === 'html') {prepared.set(block.id, block.text.trimEnd()); continue;}
       const prior = previous.get(block.id), unchanged = prior && block.text.trimEnd() === prior.fence;
       if (unchanged) {prepared.set(block.id, state.text.slice(prior.start, prior.end)); continue;}
-      let body; try {body = JSON.parse(block.body);} catch {return failure('block_json_invalid', 'invalid', {block: block.id});}
+      let body; try {body = JSON.parse(block.body);} catch (error) {return failure('block_json_invalid', 'invalid', {block: block.id, hint: 'The ' + block.kind + ' fence holds one JSON object, and it did not parse (' + String(error.message).slice(0, 160) + ').'});}
       if (!body || typeof body !== 'object' || Array.isArray(body)) return failure('block_body_invalid', 'invalid', {block: block.id});
       const previousBlock = prior && fencedBlocks(prior.fence)[0];
       const {alt, ...attrs} = block.attrs, {alt: previousAlt, ...previousAttrs} = previousBlock?.attrs || {};
@@ -5544,10 +5544,6 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (target === 'preferences') return askEditor('editor.set_preferences', {preference: input.preference, value: input.value}, who, context);
     if (target === 'plugin') return askEditor('document.device_action', {action: 'install_plugin', plugin: input.name}, who, context);
     if (target === 'file') return askEditor('document.device_action', {action: 'open_file'}, who, context);
-    if (target === 'preset') {
-      if (input.revision !== surfaceRevision()) return failure('document_changed', 'conflict');
-      return askEditor('document.device_action', {action: 'save_preset', name: input.name, value: input.value || 'document'}, who, context);
-    }
     if (target === 'playback') {
       const {projection, targets} = publicSurface(), given = givenRevision(input.revision, surfaceRevision(projection));
       if (given.outcome) return given;

@@ -912,16 +912,19 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 		};
 		const read = async options => {
 			const requested = requestedBodies(options);
-			const recovered = await recover(), listing = recovered.listing || await store.list();
+			let recovered;
+			try { recovered = await recover(); }
+			catch (error) { if (error?.code !== 'restore-source') throw error; recovered = {index: await readIndex(), restorePending: true}; }
+			const listing = recovered.listing || await store.list();
 			let index = recovered.index;
 			let files = listing.filter(isNoteFile).sort();
-			if (recovered.pressurePending || recovered.pressureReadOnly) {
+			if (recovered.pressurePending || recovered.pressureReadOnly || recovered.restorePending) {
 				const row = recovered.pressurePending?.record;
 				if (row && row.phase === 'detached') {
 					for (const [file, entry] of Object.entries(index.notes)) if (entry.id === row.id && await sha256(exactBytes(file)) === row.fileDigest) files = files.filter(name => name !== file);
 				}
 				const bodies = await readBodies(files, requested);
-				return {index: reconcile(index, files).index, files, listing, bodies, generation: folderGeneration(index), readOnly: true, notice: dirty, pressurePending: recovered.pressurePending || null};
+				return {index: reconcile(index, files).index, files, listing, bodies, generation: folderGeneration(index), readOnly: true, notice: dirty, pressurePending: recovered.pressurePending || null, restorePending: recovered.restorePending === true};
 			}
 			const fixed = repairListing(index, files, clock);
 			if (fixed.added.length || fixed.dropped.length) {
@@ -1109,7 +1112,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				for (const entry of Object.values(after.notes)) stampNoteControls(prior.get(entry.id), entry, before.generation + 1, touches.get(entry.id));
 			}
 			if (!restoring && !writes.length && !removes.length && jsonSame(before.index, after)) {
-				if (await readJournal()) throw fail('pending', 'A pending notes journal must finish before another starts.');
+				{ const pending = await readJournal(); if (pending) throw fail('pending', pending.exactIndex ? 'A restore is unfinished. Choose the same backup in Import to finish it.' : 'A pending notes journal must finish before another starts.'); }
 				for (const [file, bytes] of observed) if (!equal(bytes, await readBytes(file))) throw fail('changed', 'The note changed before the transaction was admitted.');
 				if (await digestOf(await readBytes(NOTES_INDEX_FILE)) !== baseDigest) throw fail('changed', 'The folder sidecar changed before the transaction was admitted.');
 				await options?.admissionGuard?.();
@@ -1165,7 +1168,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				if (!equal(await readBytes(OWNER_JOURNAL_FILE), admissionBytes)) throw fail('verify', 'The notes folder did not keep its admitted journal.');
 				indexReceipt = baseBytes;
 			} else {
-				if (await readJournal()) throw fail('pending', 'A pending notes journal must finish before another starts.');
+				{ const pending = await readJournal(); if (pending) throw fail('pending', pending.exactIndex ? 'A restore is unfinished. Choose the same backup in Import to finish it.' : 'A pending notes journal must finish before another starts.'); }
 				if (await digestOf(await readBytes(NOTES_INDEX_FILE)) !== baseDigest) throw fail('changed', 'The folder sidecar changed before the transaction was admitted.');
 				await options?.admissionGuard?.();
 				admit(); await writeVerified(OWNER_JOURNAL_FILE, admissionBytes);

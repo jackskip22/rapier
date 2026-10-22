@@ -8,8 +8,6 @@ Connect an MCP client to `https://mcp.rapier.website/door/mcp` (Streamable HTTP,
 
 Rapier is listed in the [MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.jackskip22%2Frapier/versions/latest) and the [GitHub MCP Registry](https://github.com/mcp) as `io.github.jackskip22/rapier`.
 
-Muse uses OAuth at `https://mcp.rapier.website/muse`, without an embedded editor: use the paired `editor_url` page, and send file text yourself because host-file imports are unavailable. Keep `document` private and pass it on later calls.
-
 # https://github.com/jackskip22/rapier/blob/main/README.md
 
 # Rapier - Markdown Editor & Art
@@ -26,7 +24,7 @@ Free and offline, with no ads, tracking or Rapier account.
 - **On Android:** get Rapier on [Google Play](https://play.google.com/store/apps/details?id=app.rapier). The app
   has no Internet permission. Optional Google Play asset packs download on first use, then work offline.
 - **On Windows:** download [Rapier.exe](https://github.com/jackskip22/rapier/raw/main/Rapier.exe). It is not code-signed yet, so Windows SmartScreen may warn the first time: choose **More info**, then **Run anyway**.
-- **With an agent:** the Claude plugin or another MCP client at `https://mcp.rapier.website/door/mcp`; the OpenAI plugin at `https://mcp.rapier.website/openai/mcp`; Muse at `https://mcp.rapier.website/muse`.
+- **With an agent:** the Claude plugin, ChatGPT or another MCP client at `https://mcp.rapier.website/mcp`.
 
 ## What it does
 
@@ -38,7 +36,7 @@ Free and offline, with no ads, tracking or Rapier account.
 - **Paint.** MyPaint brushes, smudge and blend. Water is watercolor that mixes, flows and dries on textured paper.
 - **Notes.** One Markdown file per note, with colors, pins, checklists, voice recordings, links, history, and
   search that reads text in pictures. Import from Google Keep, Apple Notes, Evernote, Notion, Obsidian, Joplin and other note apps. Back up
-  as a ZIP file, or sync encrypted copies to your own Cloudflare R2 bucket. Android adds reminders and a home-screen
+  as a ZIP file, or sync plain Markdown files to your own cloud storage. Android adds reminders and a home-screen
   widget.
 - **Files.** Open Markdown, text, code, Word and PDF. Save Markdown; Rapier never overwrites a file that changed
   elsewhere. Export Word, PDF, text or an offline HTML page. A `.rapier.html` file holds the editor and the
@@ -155,8 +153,8 @@ Your browser can clear notes it stores. To keep a separate copy:
 
 A local save or an open share sheet is not a backup. Without browser storage, notes last only until you close the page.
 
-**Sync with Cloudflare**, in Notes settings, keeps an encrypted copy in your own Cloudflare R2 bucket that Rapier
-never sees. Sync is not a backup; keep backing up.
+**Sync**, in Notes settings, writes your notes as plain Markdown files to cloud storage you choose, which Rapier never
+sees. Anyone with access to that storage can read them. Sync is not a backup; keep backing up.
 
 ## Put it on your phone
 
@@ -2679,81 +2677,6 @@ This native wire format deliberately refuses the former split `RPR1`/`undo/curre
 
 Embedded local recovery retains this same full canonical ledger in the existing sessionStorage draft owner. Its slot is stable for the authenticated host/document/session; source, metadata, history and acknowledged host revision replace together. Equal-source and clean histories are retained, without the former 4 MiB/age discard. Quota refusal keeps the previous complete value and prevents a close-success acknowledgment when history was not retained. Reopen validates the original authority, source, metadata and all records before installing the carried ledger. Old per-revision source-only drafts and a retained slot for a different host revision refuse explicitly without decoding or removing their bytes. Session recovery does not promise persistent history support from an arbitrary embedding host; browser session lifetime remains its storage boundary.
 
-# https://github.com/jackskip22/rapier/blob/main/docs/sync-check.md
-
-# Check the encryption
-
-Rapier Sync seals notes in the editor before copying them to your bucket. No Rapier account is involved; no Rapier server can read them.
-
-The script opens one bucket object on your machine without contacting the bucket or sending the code anywhere.
-
-## Bucket CORS
-
-For the browser’s bucket-key connection, open your Cloudflare bucket’s **Settings → CORS policy**.
-Use this rule from Rapier’s Sync setup:
-
-```json
-[
-  {
-    "AllowedOrigins": ["https://rapier.website"],
-    "AllowedMethods": ["GET", "PUT", "HEAD"],
-    "AllowedHeaders": ["authorization", "content-type", "x-amz-content-sha256", "x-amz-date"],
-    "ExposeHeaders": ["ETag"],
-    "MaxAgeSeconds": 3600
-  }
-]
-```
-
-Until the destination answers, an unreadable request may mean missing CORS, an offline connection,
-DNS or TLS failure; the browser cannot distinguish them, and the outcome stays unconfirmed. An HTTP refusal or a response whose body is cut proves the destination answered, without
-proving that the operation completed. Setup does not send notes; sync begins when you press **sync now**.
-
-## What a sealed note is
-
-A sealed object is a version byte (`1`), a `12`-byte nonce, then the ciphertext and its `16`-byte authentication tag. The cipher is AES-256-GCM. Every seal draws a new nonce. One changed byte in the ciphertext or the tag and the object does not open.
-
-The additional data on a note or file object is the fixed string `object`, never the object's name.
-
-## The key
-
-The vault key is `32` bytes. The recovery code is that key in Crockford's base32: `52` symbols in groups of four. It is not in the bucket, and anyone who has it can open the vault.
-
-The header records how a wrapping key is derived from the passphrase: `scrypt` with N=`32768`, r=`8`, p=`1` and a `16`-byte salt. That key seals the vault key with AES-256-GCM. To change the passphrase, start a new vault. Rewrapping the same key would leave old headers and device codes usable with the old passphrase.
-
-The header is unsealed JSON: format version `1`, the derivation's name and parameters, the salt, the wrapped vault key and a verifier. The salt and parameters are public, and the wrapped key does nothing without the passphrase or the recovery code.
-
-The verifier is a seal of the text `rapier-notes-vault-v1` with additional data `vault.json`. A recovery code that cannot open it is refused; nothing else is decrypted.
-
-## What the bucket holds
-
-Each header or object name is its prefix followed by the SHA-256 of its bytes, in hex.
-
-| Name | What it is |
-| --- | --- |
-| `keys/` and the header's SHA-256 | The header. Not sealed. |
-| `objects/` and the sealed bytes' SHA-256 | One sealed note or file. |
-| `heads/`, then a device, then a twelve-digit generation and the sealed head’s SHA-256 | A sealed list of names, parents and history. Not the text of a note. |
-
-## What the bucket never holds
-
-Your passphrase. The unwrapped vault key. A note's name in the clear. A note's words in the clear.
-
-An OAuth bearer token is not a bucket credential; Rapier does not accept one as the key to R2 or S3. The vault key is unwrapped in two places only: the editor, for sync, and this script, on a machine you choose, with a code you type there.
-
-## Open one object
-
-Run [tools/check-vault.mjs](../src/tools/check-vault.mjs) from a copy of Rapier’s source, with a header and one object copied from your bucket. It uses only Node’s own crypto:
-
-```
-node tools/check-vault.mjs <header> <object>
-```
-
-It asks for the recovery code and hides it as you type; you can pipe it in instead. It refuses the code as a command argument: shells keep history, and the code opens the whole vault.
-
-It prints the note to standard output. A code that does not open the header is refused with a message and prints nothing.
-
-The numbers on this page come from `notes/vault.mjs` and `notes/sync.mjs`.
-
 # https://github.com/jackskip22/rapier/blob/main/plugin/skills/rapier-agent-door/SKILL.md
 
 ---
@@ -2888,9 +2811,7 @@ For a CV, menu, invitation, lesson card, social post, brief, recipe card or even
 
 For one sheet the person writes on (a poster, card, certificate or social post), open a blank page: `open {text, filename}` with front matter `template: page`, `papersize` (`letter`, `legal`, `tabloid`, `a3`, `a4`, `a5`, or a web size such as `1080x1350px`) and `geometry: margin=1in`. Make any SVG and set it as the page's ground: one picture with `<!--md-layout:v1 width=100% x=50% wrap=behind lock=on-->` on its line fills the whole sheet behind the words. Place other SVGs as ordinary pictures, and leave the text area for the person to write over or inside your SVG. The overview guide, "Make a page", has the whole example. Never turn a long document into a page.
 
-Only after the person reviews the design, request library saving with `show {target:"preset",revision,name:"My CV",value:"document"}` (or `value:"style"`). This opens the existing editor approval card. Read state for the final receipt; waiting is not saved. A changed document or declined card must not save. Do not synthesize a click or bypass this approval. The agent workflow and supplied starters are free; Android human personal-library convenience controls use Pro.
-
-If Draw is still open, let the person close its preview before requesting the library save; capture requires a settled document.
+The person reuses a page as a template from its metadata; an agent cannot save it to their library.
 
 # https://github.com/jackskip22/rapier/blob/main/plugin/skills/rapier-html/SKILL.md
 
@@ -2920,7 +2841,7 @@ byte. Paint keeps transparency, and drawings stay readable on light or dark pape
 ## Choose a Rapier workflow
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
-2. **Hand over an offline editor.** `npx rapier-html@1.2.29 notes.md` puts the editor and document in one HTML file.
+2. **Hand over an offline editor.** `npx rapier-html@1.2.30 notes.md` puts the editor and document in one HTML file.
 3. **Embed the editor.** [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed)
    mounts the editor or reader in an app.
 4. **Keep portable Markdown.** Use `rapier-markdown` for pictures, drawings and layout in one `.md` file.
@@ -2962,13 +2883,13 @@ installed page helper with the matching editor HTML. Never quietly run a differe
 you didn't.
 
 ```sh
-npx -- rapier-html@1.2.29 notes.md                          # writes notes.rapier.html: the editor on the document
-npx -- rapier-html@1.2.29 notes.md --include draw,mermaid   # carries Draw and Mermaid (default: what the document needs)
-npx -- rapier-html@1.2.29 notes.md --view draw              # opens on Draw, the document behind it (carries Draw)
-npx -- rapier-html@1.2.29 notes.md --drawing sketch.svg     # opens on Draw with the drawing
-npx -- rapier-html@1.2.29 revised.md --compare original.md --by "Editor" # opens showing what changed
-npx -- rapier-html@1.2.29 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT"   # Send back returns the person's edit to your workspace
-npx -- rapier-html@1.2.29 notes.md out.html                 # a named output
+npx -- rapier-html@1.2.30 notes.md                          # writes notes.rapier.html: the editor on the document
+npx -- rapier-html@1.2.30 notes.md --include draw,mermaid   # carries Draw and Mermaid (default: what the document needs)
+npx -- rapier-html@1.2.30 notes.md --view draw              # opens on Draw, the document behind it (carries Draw)
+npx -- rapier-html@1.2.30 notes.md --drawing sketch.svg     # opens on Draw with the drawing
+npx -- rapier-html@1.2.30 revised.md --compare original.md --by "Editor" # opens showing what changed
+npx -- rapier-html@1.2.30 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT"   # Send back returns the person's edit to your workspace
+npx -- rapier-html@1.2.30 notes.md out.html                 # a named output
 ```
 
 It never overwrites: an existing output is refused, so pick a new name. The first `--` stops npm from taking
@@ -3020,7 +2941,7 @@ Use the surface the host actually provides:
 - **An Artifact tool or HTML preview:** offer the page beside the chat. Also hand over the file when the viewer
   blocks downloads, and use the host's real sharing controls.
 - **A project Browser pane:** write the page into the project and name its path.
-- **A code sandbox with Node and npm:** run `npx -- rapier-html@1.2.29` and hand over the file.
+- **A code sandbox with Node and npm:** run `npx -- rapier-html@1.2.30` and hand over the file.
 - **A host that shows MCP apps, such as ChatGPT:** `open` shows the editor in the chat (`rapier-agent-door`).
 - **A link:** `https://rapier.website` opens the person's own Rapier, with their documents.
 
@@ -3086,7 +3007,7 @@ other Markdown readers show the same words and ignore what they don't know. No i
 particular app is needed.
 
 The standard is [Self-contained Markdown](references/markdown-standard.md), also at
-https://rapier.website/markdown-standard. The MIT reader and writer is `npm install rapier-markdown-kit@1.2.29`.
+https://rapier.website/markdown-standard. The MIT reader and writer is `npm install rapier-markdown-kit@1.2.30`.
 Rapier renders it exactly and writes it back byte for byte; so can any editor.
 
 Rapier has two kinds of diagram, kept apart:
@@ -3107,7 +3028,7 @@ file for Android, the web and Windows. The agent edits live; the person sees its
 to see what was there before, and can undo it. Use `show {target:"comparison"}` to show a diff.
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
-2. **Hand over an offline editor.** `npx rapier-html@1.2.29 notes.md` puts the editor and document in one HTML file
+2. **Hand over an offline editor.** `npx rapier-html@1.2.30 notes.md` puts the editor and document in one HTML file
    ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed the editor.** [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed)
    mounts the editor or reader in your app; your app's agent can use the editor over WebMCP.
@@ -3290,7 +3211,7 @@ Each release's own files stay at its tag: `https://cdn.jsdelivr.net/gh/jackskip2
   document access remain enforced.
 
 ```sh
-npm install rapier-embed@1.2.29
+npm install rapier-embed@1.2.30
 ```
 
 Or copy the package's `embed.mjs` and `contract.mjs` into one directory of your app; no runtime CDN is needed.
@@ -3303,12 +3224,12 @@ sends Markdown only when saving; change notifications contain no source.
 
 Rapier is a phone-first Markdown editor for notes, diagrams, drawing and watercolor painting. It runs offline
 as one HTML file on Android, Web and Windows.
-Collaborate over MCP and WebMCP, use optional encrypted sync to your own Cloudflare account, or embed the
+Collaborate over MCP and WebMCP, use optional plain-file sync to your own cloud storage, or embed the
 editor and lightweight reader (about 360 kB). The agent edits live; the person sees its presence and
 changes, taps a change to see the before and undoes anything. Use `show {target:"comparison"}` to show a diff deliberately.
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
-2. **Deliver an offline editor.** Run `npx rapier-html@1.2.29 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
+2. **Deliver an offline editor.** Run `npx rapier-html@1.2.30 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed in your app.** Install [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed); mount the editor or reader, with your app's agent over WebMCP in the editor.
 4. **Keep portable Markdown.** Use [rapier-markdown-kit](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-markdown-kit) for pictures, editable SVG drawings and layout in one `.md` file. Respect [Will/1](https://github.com/jackskip22/will) `keep`, `append` and `edit` regions.
 5. **Encode JPEG XL.** Install [rapier-jxl](https://github.com/jackskip22/rapier-jxl) to encode pixels, photographs and existing JPEGs in JavaScript.
@@ -3351,7 +3272,7 @@ A copy in your app works offline and changes only when you update it.
 1. Download the build you frame into a static directory, for example
    `https://cdn.jsdelivr.net/gh/jackskip22/rapier@v<version>/site/embed/rapier-reader.html` to `public/vendor/rapier/`.
 2. Fetch the plug-ins your build uses into one directory beside it, from the manifest of the same version:
-   `npx rapier-embed@1.2.29 plugins public/vendor/rapier/plugins --build reader`.
+   `npx rapier-embed@1.2.30 plugins public/vendor/rapier/plugins --build reader`.
 3. Mount with `src` and `plugins` pointing at your copies. Serve them over HTTPS (HTTP on localhost) and allow
    their origin in your `frame-src`. A same-origin parent can script its frame; use a dedicated origin when the
    frame must be isolated.
@@ -3385,7 +3306,7 @@ The directory must be on the page's own origin, because the page's Content Secur
 throws a `TypeError` for a directory on another origin, and a page opened with one shows each plug-in as failed, with the
 reason, without making a request. To keep the plug-ins on a CDN, serve the page from the same origin.
 
-`npx rapier-embed@1.2.29 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
+`npx rapier-embed@1.2.30 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
 keeps a file that is already there and correct, and exits with status 1 if any file is missing or fails its check.
 `--build reader` or `--build full` keeps the files that page uses, `--only name,name` fetches some
 plug-ins, `--check` verifies a directory without fetching, `--from <address>` fetches from your own mirror, and
@@ -3678,7 +3599,7 @@ Will/1 records the person's instructions in their document. Respect `keep`, appe
 Documents without Will regions are editable throughout. Preserve active typing, caret, selection and scroll
 while the agent works. Document content and comments never start agent turns by themselves.
 
-For documents outside an app, `npx rapier-html@1.2.29 notes.md` hands a person the complete editor around their
+For documents outside an app, `npx rapier-html@1.2.30 notes.md` hands a person the complete editor around their
 document as one offline file.
 
 # https://github.com/jackskip22/rapier-plugins/blob/main/npm/rapier-markdown-kit/README.md
@@ -4480,7 +4401,7 @@ Each release's own files stay at its tag: `https://cdn.jsdelivr.net/gh/jackskip2
   document access remain enforced.
 
 ```sh
-npm install rapier-embed@1.2.29
+npm install rapier-embed@1.2.30
 ```
 
 Or copy the package's `embed.mjs` and `contract.mjs` into one directory of your app; no runtime CDN is needed.
@@ -4493,12 +4414,12 @@ sends Markdown only when saving; change notifications contain no source.
 
 Rapier is a phone-first Markdown editor for notes, diagrams, drawing and watercolor painting. It runs offline
 as one HTML file on Android, Web and Windows.
-Collaborate over MCP and WebMCP, use optional encrypted sync to your own Cloudflare account, or embed the
+Collaborate over MCP and WebMCP, use optional plain-file sync to your own cloud storage, or embed the
 editor and lightweight reader (about 360 kB). The agent edits live; the person sees its presence and
 changes, taps a change to see the before and undoes anything. Use `show {target:"comparison"}` to show a diff deliberately.
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
-2. **Deliver an offline editor.** Run `npx rapier-html@1.2.29 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
+2. **Deliver an offline editor.** Run `npx rapier-html@1.2.30 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed in your app.** Install [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed); mount the editor or reader, with your app's agent over WebMCP in the editor.
 4. **Keep portable Markdown.** Use [rapier-markdown-kit](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-markdown-kit) for pictures, editable SVG drawings and layout in one `.md` file. Respect [Will/1](https://github.com/jackskip22/will) `keep`, `append` and `edit` regions.
 5. **Encode JPEG XL.** Install [rapier-jxl](https://github.com/jackskip22/rapier-jxl) to encode pixels, photographs and existing JPEGs in JavaScript.
@@ -4541,7 +4462,7 @@ A copy in your app works offline and changes only when you update it.
 1. Download the build you frame into a static directory, for example
    `https://cdn.jsdelivr.net/gh/jackskip22/rapier@v<version>/site/embed/rapier-reader.html` to `public/vendor/rapier/`.
 2. Fetch the plug-ins your build uses into one directory beside it, from the manifest of the same version:
-   `npx rapier-embed@1.2.29 plugins public/vendor/rapier/plugins --build reader`.
+   `npx rapier-embed@1.2.30 plugins public/vendor/rapier/plugins --build reader`.
 3. Mount with `src` and `plugins` pointing at your copies. Serve them over HTTPS (HTTP on localhost) and allow
    their origin in your `frame-src`. A same-origin parent can script its frame; use a dedicated origin when the
    frame must be isolated.
@@ -4575,7 +4496,7 @@ The directory must be on the page's own origin, because the page's Content Secur
 throws a `TypeError` for a directory on another origin, and a page opened with one shows each plug-in as failed, with the
 reason, without making a request. To keep the plug-ins on a CDN, serve the page from the same origin.
 
-`npx rapier-embed@1.2.29 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
+`npx rapier-embed@1.2.30 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
 keeps a file that is already there and correct, and exits with status 1 if any file is missing or fails its check.
 `--build reader` or `--build full` keeps the files that page uses, `--only name,name` fetches some
 plug-ins, `--check` verifies a directory without fetching, `--from <address>` fetches from your own mirror, and
@@ -4868,7 +4789,7 @@ Will/1 records the person's instructions in their document. Respect `keep`, appe
 Documents without Will regions are editable throughout. Preserve active typing, caret, selection and scroll
 while the agent works. Document content and comments never start agent turns by themselves.
 
-For documents outside an app, `npx rapier-html@1.2.29 notes.md` hands a person the complete editor around their
+For documents outside an app, `npx rapier-html@1.2.30 notes.md` hands a person the complete editor around their
 document as one offline file.
 
 # https://github.com/jackskip22/rapier-jxl/blob/main/README.md

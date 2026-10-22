@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 const RapierParts = (() => {
 	const PINS = /* RAPIER_PARTS */ null;
-	const CDN = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.29/';
+	const CDN = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.30/';
 	const pins = new Map((PINS || []).map((pin, order) => [pin.id, {...pin, order}]));
 	const runs = new Map(), states = new Map(), kept = new Set(), updates = new Map(), noted = new Set();
 	const FORMAT = 1, READS = [1];
@@ -45,13 +45,13 @@ const RapierParts = (() => {
 		}
 		throw failure || new Error('could not download ' + pin.id);
 	}
-	function body(pin) {
-		return pin.held ||= held(pin).catch(error => { pin.held = null; throw error; });
-	}
-	async function held(pin) {
+	async function body(pin) {
 		if (document.readyState === 'loading') await new Promise(done => document.addEventListener('DOMContentLoaded', done, {once: true}));
 		const element = carried(pin);
-		if (element) return verified(pin, new TextEncoder().encode(element.textContent), 'carried ' + pin.id);
+		if (element) return element.textContent;
+		return pin.held ||= held(pin).then(bytes => new TextDecoder('utf-8', {fatal: true}).decode(bytes)).catch(error => { pin.held = null; throw error; });
+	}
+	async function held(pin) {
 		if (sealed()) throw Object.assign(new Error('not in this file'), {code: 'part_not_carried'});
 		if (local()) {
 			const packed = window.RapierPlatform?.resources?.part?.(pin.id, at => say(pin.id, 'downloading', null, at));
@@ -77,9 +77,9 @@ const RapierParts = (() => {
 		return bytes;
 	}
 	async function run(pin) {
-		const bytes = await body(pin);
+		const text = await body(pin);
 		say(pin.id, 'installing');
-		const spans = await _rapierInflateVendor('rapier-part-' + pin.id, new TextDecoder('utf-8', {fatal: true}).decode(bytes));
+		const spans = await _rapierInflateVendor('rapier-part-' + pin.id, text);
 		const names = ['-shared.js', '-styles.json', '.js'].map(end => 'rapier-part-' + pin.id + end);
 		if (spans.length !== 3 || spans.some((span, index) => span.name !== names[index])) throw new Error('The ' + pin.id + ' part is incomplete');
 		if (pin.id === 'drawing') await RapierBundledPlugins.need('letters');
@@ -116,7 +116,7 @@ const RapierParts = (() => {
 		if (!await store().put(pin.file, {bytes, savedAt: Date.now(), format: pin.format || FORMAT, sri: pin.sri, size: pin.bytes}).catch(() => false)) throw new Error('This device has no room to keep ' + pin.label + '.');
 		for (const key of (await store().keys().catch(() => [])).filter(key => String(key).startsWith('rapier-' + id + '-') && key !== pin.file)) await store().remove(key).catch(() => {});
 		kept.add(id); updates.delete(id); pin.updating = false;
-		pin.held = Promise.resolve(bytes);
+		pin.held = Promise.resolve(new TextDecoder('utf-8', {fatal: true}).decode(bytes));
 		say(id, runs.has(id) ? 'ready' : 'stored');
 		return true;
 	}
@@ -156,8 +156,7 @@ const RapierParts = (() => {
 	async function element(id) {
 		const pin = pins.get(id);
 		if (!pin) throw new Error('This Rapier does not carry ' + id);
-		const bytes = await body(pin);
-		return '<script type="application/rapier-runtime" id="rapier-part-' + id + '">' + new TextDecoder('utf-8', {fatal: true}).decode(bytes) + '</script>\n';
+		return '<script type="application/rapier-runtime" id="rapier-part-' + id + '">' + await body(pin) + '</script>\n';
 	}
 	async function check(id) {
 		const pin = pins.get(id);

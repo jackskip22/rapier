@@ -1258,7 +1258,7 @@ function _rapierNotesBuildSurface() {
 	const headGap = _rapierNotesEl('div', 'rapier-notes-head__gap'); headGap.setAttribute('aria-hidden', 'true');
 	head.append(backBtn, mark, headGap, addBtn, searchBtn, menuBtn);
 	const find = _rapierNotesEl('div', 'find-bar rapier-notes-find'); find.id = 'rapier-notes-find'; searchBtn.setAttribute('aria-controls', find.id); find.setAttribute('role', 'search'); find.setAttribute('aria-label', 'search notes'); find.hidden = true;
-	const search = _rapierNotesEl('input', 'find-input rapier-notes-search'); search.type = 'search'; search.placeholder = 'search…'; search.setAttribute('aria-label', 'Search notes'); search.autocomplete = 'off';
+	const search = _rapierNotesEl('input', 'find-input rapier-notes-search'); search.type = 'search'; search.placeholder = 'search…'; search.setAttribute('aria-label', 'Search notes'); search.autocomplete = 'off'; search.spellcheck = false;
 	find.appendChild(search);
 	const addsBar = _rapierNotesEl('div', 'find-bar rapier-notes-addsbar'); addsBar.id = 'rapier-notes-addsbar'; addsBar.hidden = true; addsBar.setAttribute('role', 'group'); addsBar.setAttribute('aria-label', 'add a note'); addBtn.setAttribute('aria-controls', addsBar.id);
 	for (const [kind, word] of [['note', 'Note'], ['list', 'List'], ['recording', 'Record'], ['picture', 'Image'], ['drawing', 'Draw']]) {

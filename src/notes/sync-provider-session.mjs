@@ -15,8 +15,8 @@ import {sha256} from './integrity.mjs';
 export {readSyncState, PROVIDERS, OTHER_PROVIDERS, providerAvailability, providerSoon, isOtherProvider, providerUsesSignIn};
 import {createDeviceStorage, createRememberedDevice} from './sync-device.mjs';
 import {openDrivePicker, pickerRegistered} from './drive-picker.mjs';
-import {PLAIN_CHOICES} from './sync-plain.mjs';
-export {createDeviceStorage, createRememberedDevice, openDrivePicker, pickerRegistered, PLAIN_CHOICES};
+import {PLAIN_DETAIL} from './sync-plain.mjs';
+export {createDeviceStorage, createRememberedDevice, openDrivePicker, pickerRegistered, PLAIN_DETAIL};
 export const DRIVE_PICKER = OTHER_SYNC.drive;
 export function providerGate(provider, environment = {}) {
  return providerAvailability(provider, {environment, registration: OTHER_SYNC[provider], listed: listedProviders});

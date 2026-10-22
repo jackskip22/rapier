@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import {createHTTP, jsonBody, providerError, retryAfter, refuse} from './provider-http.mjs';
-import {tokenFor} from './provider-objects.mjs';
-import {DROPBOX_API_ORIGIN, DROPBOX_CONTENT_ORIGIN} from './transport-dropbox.mjs';
+import {createHTTP, jsonBody, providerError, retryAfter, refuse, tokenFor} from './provider-http.mjs';
+
+const DROPBOX_API_ORIGIN = 'https://api.dropboxapi.com', DROPBOX_CONTENT_ORIGIN = 'https://content.dropboxapi.com';
 
 const MAX_BYTES = 150000000;
 const conflict = () => Object.assign(new Error('the file changed since it was read; nothing was replaced'), {code: 'conflict'});
@@ -52,7 +52,7 @@ export function createDropboxPlainStore(options = {}) {
 			rootId = row.id;
 			return Object.freeze({id: rootId});
 		},
-		pictures: () => createDropboxPlainStore({...options, folder: folder + '/attachments', rootId, relative: relative + '/attachments'}),
+		area: name => createDropboxPlainStore({...options, folder: folder + '/' + name, rootId, relative: relative + '/' + name}),
 		async list() {
 			const out = [], seen = new Set();
 			let response = await request(DROPBOX_API_ORIGIN, 'files/list_folder', {path: rootPath(), recursive: false, include_deleted: false, limit: 2000});

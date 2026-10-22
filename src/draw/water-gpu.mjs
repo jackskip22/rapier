@@ -77,6 +77,28 @@ let waterFixName='';
 export function waterFix(name){waterFixName=['submit','inplace','copy','direct'].includes(name)?name:'';}
 export const waterFixIs=name=>waterFixName===name;
 export function waterUnfilteredTest(on){if(on===unfilteredTest)return;unfilteredTest=on;deviceTask=null;}
+let precisionTest='';
+const positionChecks=new WeakMap();
+async function waterPositionsExact(device){
+ if(!positionChecks.has(device))positionChecks.set(device,(async()=>{
+  const n=4096,code=`@group(0) @binding(0) var<storage,read> width:array<f32>;@group(0) @binding(1) var<storage,read_write> out:array<f32>;
+@compute @workgroup_size(64) fn main(@builtin(global_invocation_id) id:vec3<u32>){if(id.x>=${n}u){return;}let w=width[0];
+let q=f32(id.x)+0.5;let u=vec2<f32>(q/w,1.0-q/w);let back=vec2<f32>(u.x,1.0-u.y)*w-0.5;out[id.x]=max(abs(back.x-f32(id.x)),abs(back.y-f32(id.x)));}`;
+  const input=device.createBuffer({size:4,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST}),output=device.createBuffer({size:n*4,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_SRC}),read=device.createBuffer({size:n*4,usage:GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST});
+  try{
+   const pipeline=device.createComputePipeline({layout:'auto',compute:{module:device.createShaderModule({label:'Water position check',code}),entryPoint:'main'}});
+   device.queue.writeBuffer(input,0,new Float32Array([1758]));
+   const encoder=device.createCommandEncoder(),pass=encoder.beginComputePass();
+   pass.setPipeline(pipeline);pass.setBindGroup(0,device.createBindGroup({layout:pipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:input}},{binding:1,resource:{buffer:output}}]}));
+   pass.dispatchWorkgroups(n/64);pass.end();encoder.copyBufferToBuffer(output,0,read,0,n*4);device.queue.submit([encoder.finish()]);
+   await read.mapAsync(GPUMapMode.READ);const errors=new Float32Array(read.getMappedRange().slice(0));read.unmap();
+   return errors.every(e=>e<=.01);
+  }catch{return true;}
+  finally{input.destroy();output.destroy();read.destroy();}
+ })());
+ return positionChecks.get(device);
+}
+export function waterPrecisionTest(mode=''){if(mode===precisionTest)return;precisionTest=mode;deviceTask=null;}
 export const waterTiming={on:false,presents:0,gpu:0,gpuFrames:0,stamp:0,stampBuffers:0,stampSkipped:0};
 export function waterTimingOn(on){if(on===waterTiming.on)return;waterTiming.on=on;deviceTask=null;}
 export const waterCapture={on:false,rows:[],frame:null,textures:new WeakMap(),texture:0};
@@ -242,7 +264,8 @@ async function programLibrary(device,firstPaper){
   const blend={add:{srcFactor:'one',dstFactor:'one',operation:'add'},max:{srcFactor:'one',dstFactor:'one',operation:'max'},
    lift:{srcFactor:'zero',dstFactor:'one-minus-src',operation:'add'}};
   const modules=new Map(),pipelines={},loadOps={},later=new Map();let paperDescription;
-  const sources=waterShaderSources();
+  const exactPositions=precisionTest?precisionTest==='half-exact':!await waterPositionsExact(device);
+  const sources=waterShaderSources({precisionTest:precisionTest&&'half',exactPositions});
   for(const [name,source] of Object.entries(sources))modules.set(name,device.createShaderModule({label:'Water '+name,code:source}));
   const compile=await Promise.allSettled(Object.entries(descriptions).map(async([name,settings])=>{
    const kind=name==='paperField'?firstPaper:null;

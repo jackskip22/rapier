@@ -763,7 +763,7 @@ function* _rapierSharedPageLayoutSteps(root) {
 			if (layout.width != null || image.getAttribute('width')) image.style.width = '100%';
 		}
 		if (layout.rotate) { image.style.transform = 'rotate(' + layout.rotate + 'deg)'; image.style.transformOrigin = '50% 50%'; }
-		if (layout.wrap === 'around' && !layout.rotate && !layout.y && !image.dataset.rapierContour?.endsWith('-box')) {
+		if (layout.wrap === 'around' && !layout.rotate && !layout.y && layout.width == null && !image.dataset.rapierContour?.endsWith('-box')) {
 			const src = image.getAttribute('src');
 			if (src) {
 				paragraph.style.setProperty('shape-outside', 'url("' + src + '")');

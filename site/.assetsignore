@@ -13,12 +13,9 @@
 !/door-privacy.html
 !/door-commercial.html
 !/door-paint.html
-!/door-markdown-editor.html
-!/door-markdown-viewer.html
 !/door-markdown-to-pdf.html
 !/door-markdown-to-word.html
 !/door-word-to-markdown.html
-!/door-markdown-table-editor.html
 !/door-mermaid-editor.html
 !/door-agents.html
 !/door-gemini.html
@@ -59,12 +56,9 @@
 !/og-gallery.png
 !/og-jxl.png
 !/og-paint.png
-!/og-markdown-editor.png
-!/og-markdown-viewer.png
 !/og-markdown-to-pdf.png
 !/og-markdown-to-word.png
 !/og-word-to-markdown.png
-!/og-markdown-table-editor.png
 !/og-mermaid-editor.png
 !/og-privacy.png
 !/og-commercial.png

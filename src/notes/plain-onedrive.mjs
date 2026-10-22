@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import {createHTTP, jsonBody, providerError, retryAfter, byteCount, refuse, fail} from './provider-http.mjs';
-import {tokenFor, providerId} from './provider-objects.mjs';
-import {ONEDRIVE_API_ORIGIN} from './transport-onedrive.mjs';
+import {createHTTP, jsonBody, providerError, retryAfter, byteCount, refuse, fail, tokenFor, providerId} from './provider-http.mjs';
 import {plainConflict, plainName, plainBytes, plainFolder} from './plain-store.mjs';
 
+const ONEDRIVE_API_ORIGIN = 'https://graph.microsoft.com';
 const DRIVE = ONEDRIVE_API_ORIGIN + '/v1.0/me/drive';
 const MAX_BYTES = 250000000;
 const FIELDS = 'id,name,size,file,folder,parentReference,eTag,remoteItem,deleted';
@@ -31,7 +30,7 @@ export function createOneDrivePlainStore(options = {}) {
 			const app = jsonBody(response);
 			parent = providerId(app.id); driveId = app.parentReference?.driveId || null;
 		}
-		for (const name of options.parent ? ['attachments'] : path) {
+		for (const name of options.parent ? [path.at(-1)] : path) {
 			const address = item(parent) + ':/' + encodeURIComponent(name) + '?$select=' + FIELDS;
 			response = await request(address);
 			if (response.status === 404) {
@@ -72,7 +71,7 @@ export function createOneDrivePlainStore(options = {}) {
 			const id = await folder(create);
 			return Object.freeze({driveId: providerId(driveId), id});
 		},
-		pictures: () => createOneDrivePlainStore({...options, folder: [...path, 'attachments'].join('/'), parent: async () => ({id: await folder(), driveId})}),
+		area: name => createOneDrivePlainStore({...options, folder: [...path, name].join('/'), parent: async () => ({id: await folder(), driveId})}),
 		async list() {
 			const parent = await folder(), out = [], seen = new Set();
 			let address = children(parent);

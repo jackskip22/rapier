@@ -79,7 +79,7 @@ export const PAGE_TOOLS = Object.freeze(TOOLS.map(entry => entry.name !== 'open'
     ],
   },
 })));
-export const publishedSchema = ({allOf, ...schema}) => schema;
+export const publishedSchema = ({allOf, oneOf, ...schema}) => schema;
 export const getTool = name => TOOLS.find(entry => entry.name === name) || EDITOR_TOOLS.find(entry => entry.name === name);
 export function inputGuide(name, {mcp = false} = {}) {
   const entry = (mcp ? TOOLS : PAGE_TOOLS).find(tool => tool.name === name);

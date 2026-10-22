@@ -2057,6 +2057,7 @@ export class RapierDocument {
     this.cachedJournal = null;
     this.live = new LiveSessions(this);
     this.relay = new PageRelay(this, {
+      markdown: {analyze: analyzeMarkdown, check: checkMarkdownReferences},
       caller: input => ({...resolveCaller({actor: 'agent', principal: remotePrincipal(input), requestId: input.operationId}, {transport: 'mcp'}),
         ...(input.hostAgent ? {hostAgent: input.hostAgent} : {})}),
       inFlight: (input, head, caller) => [this.returnWaiter, this.visualWaiter, this.exportWaiter, this.editorWaiter, head.materialOwner].filter(row => row &&

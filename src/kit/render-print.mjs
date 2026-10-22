@@ -171,6 +171,31 @@ function _rapierPrintWillPageCss() {
 
 const CAPTURE_EDGE = 4096, CAPTURE_PIXELS = 4 * 1024 * 1024;
 
+function wrapMasks(main) {
+	const doc = main.ownerDocument;
+	for (const float of main.querySelectorAll('.rapier-wrap-picture')) {
+		const image = float.querySelector('img'), layout = decodeURIComponent(image?.getAttribute('data-rapier-image-layout') || '');
+		if (!image || !/\bwrap=around\b/.test(layout) || /\b(rotate|y)=/.test(layout) || image.dataset.rapierContour?.endsWith('-box')) continue;
+		if (/^(inset|polygon)\(/.test(float.style.getPropertyValue('shape-outside'))) continue;
+		const bounds = image.getBoundingClientRect(), width = Math.ceil(bounds.width), height = Math.ceil(bounds.height);
+		float.style.removeProperty('shape-outside');
+		if (!(width > 0 && height > 0) || width * height > 4e6) continue;
+		const canvas = doc.createElement('canvas');
+		canvas.width = width; canvas.height = height;
+		try {
+			const context = canvas.getContext('2d', {willReadFrequently: true});
+			context.drawImage(image, 0, 0, width, height);
+			const alpha = context.getImageData(0, 0, width, height).data;
+			let clear = false;
+			for (let index = 3; index < alpha.length && !clear; index += 4) clear = alpha[index] < 250;
+			if (!clear) continue;
+			float.style.setProperty('shape-outside', 'url("' + canvas.toDataURL('image/png') + '")');
+			float.style.setProperty('shape-image-threshold', '0.1');
+			float.style.setProperty('shape-margin', '1rem');
+		} catch (_) {  }
+	}
+}
+
 async function _rapierWritePrintPdf({root, css, fontCss = '', canonical, bom = false, filename, title, settings, templatePage = null}, {capture, signal, current, maxBytes = 8 * 1024 * 1024, film, ink} = {}) {
 	const refuse = code => { throw Object.assign(new Error(code), {code}); };
 	const check = () => {
@@ -240,6 +265,7 @@ async function _rapierWritePrintPdf({root, css, fontCss = '', canonical, bom = f
 		if (fontCss) await step(waitForFonts(main, {fontCss, css, settings}));
 		await step(into.fonts.ready);
 		for (const image of main.querySelectorAll('img')) { image.loading = 'eager'; await step(image.decode()); }
+		wrapMasks(main);
 		check();
 		for (const node of [main, ...main.querySelectorAll('*')]) {
 			const style = into.defaultView.getComputedStyle(node);

@@ -10,51 +10,56 @@ import {RAPIER_MARKDOWN_SPEC, applyMarkdownSpec} from '../agent/markdown-spec.mj
 import {installMarkdownLayout} from '../layout/markdown.mjs';
 import {installMarkdownImages} from '../spec/md-assets.mjs';
 import {DOORS, GUIDES, SITE_PAGES} from '../door-worker.js';
-import {APP_DESCRIPTION, PLAY_URL, CURRENT_DOOR, MUSE_DOOR, SITE_TITLE} from './discovery.mjs';
+import {HOME_H1, PLAY_URL, CURRENT_DOOR, MUSE_DOOR} from './discovery.mjs';
 
-const SUMMARY = `${APP_DESCRIPTION}
+const sitePage = path => 'https://rapier.website' + path;
+const SUMMARY = `Rapier is a free Markdown editor and viewer that runs in your browser. Write on the formatted page, as in a word processor, or switch to the Markdown source; there is no split preview. Your file stays plain Markdown. Free and open source (AGPL-3.0-only), with no sign-up, ads or tracking, and it keeps working offline.
 
-Free and open source (AGPL-3.0-only), with no account or telemetry.
+## Write Markdown online
 
-## Write
+Headings, lists, checklists, tables, footnotes, callouts, syntax-colored code, LaTeX math and Mermaid diagrams, with find and replace, text-to-speech and undo. Paste cells from a spreadsheet and they become a Markdown table. PNG, JPEG, WebP and SVG pictures live inside the Markdown file, and text wraps around their real shape. Rapier keeps a draft as you work, and Save writes a .md file.
 
-Write on the formatted page, as in a word processor, or switch to the Markdown source. There is no split preview. Tables, callouts, footnotes, checklists, LaTeX equations, Mermaid diagrams, syntax-colored code, text-to-speech, find and replace, and undo. Your file stays plain Markdown.
+## Markdown to PDF
 
-## Pictures
+Paste or open your Markdown, tap ••• at the top right, then .pdf under export. The PDF is written on your device, nothing uploaded: searchable text, tables, code, math and pictures as they look on the page. The Markdown travels inside the PDF, so Rapier opens it again as the same file. [Markdown to PDF](${sitePage('/markdown-to-pdf')})
 
-PNG, JPEG, WebP and SVG pictures live inside the Markdown file, and text wraps around their real shape. New rasters are JPEG XL.
+## Markdown to Word
 
-## Draw
+Tap ••• at the top right, then .docx under export, for an editable Word document with headings, lists, tables, code and pictures. [Markdown to Word](${sitePage('/markdown-to-word')})
 
-Draw freehand, build diagrams with connected arrows, and create typographic art. SVG drawings stay sharp and editable inside your Markdown file. The [Gallery](https://rapier.website/gallery) holds thousands of free ornaments, page borders and decorative letters.
+## Word to Markdown
 
-## Paint
+Tap ••• at the top right, then open, and pick a .docx file. It becomes an editable Markdown page, pictures included, and Save writes the .md file. [Word to Markdown](${sitePage('/word-to-markdown')})
 
-MyPaint brushes, oil, bristle, scumble, pencil and pen, painted into a layer inside the drawing, with undo. [Watercolor](https://rapier.website/watercolor) mixes flowing pigments and wet washes on textured paper, in a transparent layer.
+## Markdown viewer
 
-## Notes
+Tap ••• at the top right, then open, and pick a .md file; on Android, open it from your file manager. It opens formatted: headings, tables, checklists, code, math and Mermaid diagrams. The page is the preview, so you can edit it in place, switch to the source, or turn on read only in settings to keep the file as it is.
 
-Notes are Markdown files with colors, pins, checklists, voice recordings, attachments, tags, history and search. Import from 15+ note apps, including Google Keep, Evernote, Notion and Obsidian. Back up as a zip, or sync to storage you own. The Android app also has reminders and a home-screen widget.
+## Mermaid diagram editor
 
-## Files in and out
+Write a mermaid code block and the diagram is drawn on the page. Flowcharts draw at once; sequence diagrams, Gantt charts and the rest use the free diagram plug-in, which downloads once. [Mermaid diagram editor](${sitePage('/mermaid-editor')})
 
-Open Markdown, Word (DOCX), text, code, TextPack and PDF. Export Word, PDF, text and a static offline HTML page for free. Share a .rapier.html file with the full editor inside so someone can edit, comment or suggest changes offline and send the file back.
+## Other files
 
-## Privacy
+Rapier also opens text, code, TextPack and PDF (PDF import is a free plug-in), and exports plain text and a static offline web page. Share a .rapier.html file with the whole editor inside so someone can edit, comment or suggest changes offline and send it back.
 
-No account, no analytics, no advertising. Local editing and Notes stay on your device. Connecting an online agent workspace or optional sync service sends the work you choose to share; see the privacy and terms page.
+## Notes, drawing and painting
 
-## Agents
+[Notes](${sitePage('/notes')}) are Markdown files with colors, pins, checklists, voice recordings, tags, history and search; import from Google Keep, Evernote, Notion, Obsidian and 15+ other apps. [Draw](${sitePage('/draw')}) freehand or build diagrams with connected arrows, kept as editable SVG inside your file. [Paint](${sitePage('/paint')}) with MyPaint brushes, or [watercolor](${sitePage('/watercolor')}) with flowing pigments on textured paper. The [Gallery](${sitePage('/gallery')}) holds thousands of free ornaments, borders and decorative letters, and the [JPEG XL converter](${sitePage('/jxl')}) makes JXL pictures on your device.
 
-An AI agent edits notes, text, diagrams and paintings live, beside you or while you are away. See its presence and changes, tap a change to see what was there before, and undo anything. It reads the passages it needs, changes exactly what it read and preserves what you are typing. It can show a diff of any part with \`show {target:"comparison"}\`. Native SVG diagrams stay editable shapes; Mermaid diagrams stay in Markdown fences. Will regions carry your instructions. Connect Claude, Cursor or another MCP client to ${CURRENT_DOOR} with no account, Muse to ${MUSE_DOOR}, or use WebMCP in the browser. Live collaboration needs an internet connection.
+## Private and offline
+
+Local editing and Notes stay on your device. Connecting an online agent workspace or an optional sync service sends only the work you choose to share; see [privacy and terms](${sitePage('/privacy')}).
+
+## AI agents
+
+An AI agent can edit with you live, and you see its changes and undo any of them. Connect Claude, Cursor or another MCP client to ${CURRENT_DOOR} with no account, Muse to ${MUSE_DOOR}, or use WebMCP in the browser. See the [agent guide](${sitePage('/agents')}).
 
 ## Where it runs
 
-On Android ([Google Play](${PLAY_URL})), in a browser, on Windows, or as one HTML file that you keep in a folder. Let the web editor and the optional features you need load before going offline. The Android app has no Internet permission; optional Google Play asset packs download on first use and then work offline.
+In a browser, on Android ([Google Play](${PLAY_URL})) and Windows, or as one HTML file that you keep in a folder. The Android app has no internet permission.
 
-${Object.entries(DOORS).filter(([, door]) => door.h1).map(([path, door]) => '[' + door.h1 + '](https://rapier.website' + path + ')').join(' · ')}
-
-[Rapier](https://rapier.website/) · [Rapier Notes](https://rapier.website/notes) · [Rapier Draw](https://rapier.website/draw) · [Rapier Watercolor](https://rapier.website/watercolor) · [Rapier Gallery](https://rapier.website/gallery) · [JPEG XL converter](https://rapier.website/jxl) · [Google Play](${PLAY_URL}) · [Source](https://github.com/jackskip22/rapier) · [Agent guide](https://rapier.website/agents) · [llms.txt](https://rapier.website/llms.txt) · [Privacy and terms](https://rapier.website/privacy) · [Commercial license](https://rapier.website/commercial)
+[Rapier](https://rapier.website/) · [Source](https://github.com/jackskip22/rapier) · [llms.txt](https://rapier.website/llms.txt) · [Privacy and terms](https://rapier.website/privacy) · [Commercial license](https://rapier.website/commercial)
 `;
 
 function declarations(node, name, found = []) {
@@ -102,7 +107,7 @@ const shiftHeadings = (html, by) => html.replace(/<(\/?)h([1-6])>/g, (_, close, 
 export function seoSection() {
 	const parser = applyMarkdownSpec(markdownit(RAPIER_MARKDOWN_SPEC.options), markdownPlugins);
 	const summary = plain(parser.render(SUMMARY, {docId: 'summary'}));
-	const section = '<section id="rapier-seo">\n<h1>' + parser.utils.escapeHtml(SITE_TITLE) + '</h1>\n' + summary + '</section>';
+	const section = '<section id="rapier-seo">\n<h1>' + parser.utils.escapeHtml(HOME_H1) + '</h1>\n' + summary + '</section>';
 	if (/<(?:img|svg|script|style|iframe|form|input|!--)|data:|RAPIER_/i.test(section)) throw new Error('The search words must be plain text and links');
 	return section;
 }
@@ -207,24 +212,19 @@ export function seoDoorSections(engineSource, uiMarkup) {
 		'/draw': render(welcomeGuidePart(source, 'Drawing', {omitSpecimens: true}), 'draw'),
 		'/paint': render(welcomeGuidePart(source, 'Paint', {stopAt: 'Watercolor'}), 'paint'),
 		'/watercolor': shiftHeadings(render(welcomeGuidePart(source, 'Watercolor', {omitTitle: true}), 'watercolor'), -2),
-		'/markdown-editor': render(welcomeGuidePart(source, 'Writing', {omitLead: true}) + '\n' + welcomeGuidePart(source, 'Lists'), 'markdown-editor'),
-		'/markdown-viewer': render(welcomeGuidePart(source, 'Open, save and export'), 'markdown-viewer'),
-		'/markdown-to-pdf': render(welcomeGuidePart(source, 'Open, save and export'), 'markdown-to-pdf'),
-		'/markdown-to-word': render(welcomeGuidePart(source, 'Open, save and export'), 'markdown-to-word'),
-		'/word-to-markdown': render(welcomeGuidePart(source, 'Open, save and export'), 'word-to-markdown'),
-		'/markdown-table-editor': render(welcomeGuidePart(source, 'Tables'), 'markdown-table-editor'),
 		'/privacy': sheetGuide(uiMarkup, 'privacy-words') + '\n<p><a href="https://github.com/jackskip22/rapier-plugins/blob/main/PRIVACY.md">Connector privacy and terms</a> use the same policy.</p>\n',
 		'/commercial': sheetGuide(uiMarkup, 'commercial-words') + '\n',
 	};
 	const escape = value => parser.utils.escapeHtml(String(value));
 	const searched = door => !door.h1 ? '' : '<p>' + escape(door.lead) + '</p>\n' +
-		(door.related?.length ? '<p>Also: ' + door.related.map(other => '<a href="https://rapier.website' + other + '">' + escape(SITE_PAGES[other].h1 || SITE_PAGES[other].name) + '</a>').join(' · ') + '</p>\n' : '') +
+		(door.related?.length ? '<p>Also: ' + door.related.map(other => '<a href="https://rapier.website' + other + '">' + escape(other === '/' ? HOME_H1 : SITE_PAGES[other].h1 || SITE_PAGES[other].name) + '</a>').join(' · ') + '</p>\n' : '') +
+		(door.howTo ? '<h2>' + escape(door.howTo[0]) + '</h2>\n<ol>\n' + door.howTo[1].map(step => '<li>' + escape(step) + '</li>\n').join('') + '</ol>\n' : '') +
 		'<h2>Questions</h2>\n' + door.faq.map(([question, answer]) => '<h3>' + escape(question) + '</h3>\n<p>' + escape(answer) + '</p>\n').join('') +
 		(door.sections || []).map(([heading, text, links]) => '<h2>' + escape(heading) + '</h2>\n<p>' + escape(text) + '</p>\n' +
 			(links?.length ? '<p>' + links.map(([label, href]) => '<a href="' + escape(href) + '">' + escape(label) + '</a>').join(' · ') + '</p>\n' : '')).join('');
 	return Object.fromEntries(Object.entries(DOORS).map(([path, door]) => {
 		if (!bodies[path] && !door.h1) throw new Error('The site door has no guide: ' + path);
-		if (door.h1 && (!door.lead || !door.faq?.length || !door.view || door.related?.some(other => !SITE_PAGES[other]))) throw new Error('A searched door needs its paragraph, questions, view and known pages: ' + path);
+		if (door.h1 && (!door.lead || !door.faq?.length || !door.view || door.related?.some(other => other !== '/' && !SITE_PAGES[other]))) throw new Error('A searched door needs its paragraph, questions, view and known pages: ' + path);
 		const links = pageLinks(path, escape);
 		const picture = door.picture ? '<figure><img src="https://rapier.website/' + escape(door.picture) + '" alt="' + escape(door.imageAlt) +
 			'" width="1200" height="630" style="display:block;max-width:100%;height:auto;background:#fff"><figcaption>Overlapping pigment washes painted with Rapier Water.</figcaption></figure>\n' : '';

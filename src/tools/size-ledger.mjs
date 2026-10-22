@@ -38,10 +38,6 @@ export function omitEncoder(source) {
   assert.equal(call.arguments[1]?.type, 'ObjectExpression', 'the worker build takes its profile as an options object');
   return edits(source, [[call.arguments[1].start, call.arguments[1].end, '{encoder: false}']]);
 }
-export function omitQR(source) {
-  const node = one(find(source, n => n.type === 'ImportDeclaration' && n.source.value === './qr-code.mjs'), 'QR encoder import');
-  return edits(source, [[node.start, node.end, "const encodeQR = () => { throw new Error('qr omitted'); }, qrDrawing = () => null;"]]);
-}
 export function omitLoader(source, path) {
   const found = [];
   walk(parse(source), node => {
@@ -191,8 +187,6 @@ export function partition(a) {
 
 const SCRIPTS = 'editor/scripts.json', STYLES = 'editor/styles.json';
 export const GROUPS = [
-  {id: 'qr', name: 'QR encoder (the selectable device code and sheet stay)', edits: {'notes/sync-session.mjs': omitQR},
-    inputs: () => ['notes/qr-code.mjs'], carries: a => modules(a).has('notes/qr-code.mjs')},
   {id: 'jxl', name: 'JPEG XL encoder (the worker, its adapter and its refusal stay)', edits: {'tools/build.mjs': omitEncoder},
     inputs: (a, ctx) => ctx.jxlModules,
     carries: a => a.jxl?.modules.includes('images/jxl/rapier-core.mjs') === true,

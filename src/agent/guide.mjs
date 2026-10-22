@@ -68,15 +68,8 @@ to the person: they write in the text area over or inside your SVG, and move its
 corners by tapping the ground's edge. Check with read {as:"image"}. In the page's
 metadata the person changes its size and saves it as a page template to reuse or share.
 
-If Draw is still open, let the person close its preview before saving: the library
-needs a settled document. After they review the result, read its current revision and call
-show {target:"preset", revision, name:"My CV", value:"document"} to request saving
-it to their library. value:"style" saves only fonts and line spacing. Rapier asks
-the person to approve in the editor; a waiting receipt is not success. Declining,
-editing, switching documents or cancellation invalidates that request. Never claim
-it is saved before read {state:true} reports done. This agent action is free;
-Android Pro applies to the person's personal-library convenience controls.
-Each use is independent ordinary Markdown. Saving cannot change the source.
+A page stays ordinary Markdown with the front matter above; the person reuses it as a page template
+from its metadata. You cannot save it to their library.
 
 ## Open
 

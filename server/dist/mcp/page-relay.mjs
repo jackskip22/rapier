@@ -131,7 +131,7 @@ export class PageRelay {
     return this.turn(socket, input, current, signal);
   }
 
-  closed(input, head) {
+  async closed(input, head) {
     const kv = this.owner.ctx.storage.kv;
     if (input.operation === 'edit') {
       const {signal: _signal, requestKey: _key, requestExpiresAt: _expires, ...intent} = input;
@@ -139,7 +139,8 @@ export class PageRelay {
         agent: {principal: this.bind.caller(input).principal}, same: {operation: input.operation, args: input.args}}));
       return this.bind.envelope(input.operation, value, head);
     }
-    if (input.operation === 'read') return this.bind.envelope(input.operation, closedPageRead(kv), head);
+    if (input.operation === 'read') return this.bind.envelope(input.operation,
+      await closedPageRead(kv, Date.now(), {args: input.args, caller: this.bind.caller(input), kept: this.closedKept ||= {}, markdown: this.bind.markdown}), head);
     return this.bind.envelope(input.operation, unavailable, head);
   }
 

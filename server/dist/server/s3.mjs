@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {webcrypto} from 'node:crypto';
-import {signV4,encodeObjectKey,canonicalQuery,readS3XML,s3XMLScalar as scalar} from '../notes/transport-s3.mjs';
+import {signV4,encodeObjectKey,canonicalQuery,readS3XML,s3XMLScalar as scalar} from '../notes/s3-wire.mjs';
 import {sha256,refusal} from './store.mjs';
 
 const decode=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true});

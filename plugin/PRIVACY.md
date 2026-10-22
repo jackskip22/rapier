@@ -1,6 +1,6 @@
 # Privacy and terms
 
-Rapier needs no account signup and uses no analytics or advertising. It collects no personal information from anyone, children included. Your files stay on your device until you save, share, back up or sync them. Sync uses your bucket, encrypted with a key that never leaves your devices. You keep or delete local files; Delete forever removes notes and their history.
+Rapier needs no account signup and uses no analytics or advertising. It collects no personal information from anyone, children included. Your files stay on your device until you save, share, back up or sync them. Sync writes plain files to the storage you choose. You keep or delete local files; Delete forever removes notes and their history.
 
 The Android editor has no Internet permission. It records audio only when you press Record, into your notes. Google Play handles purchases, reviews and optional plugin downloads under its policy.
 

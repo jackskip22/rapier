@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {sha256} from '../kit/ledger/hash.mjs';
+import {createKernel, createState} from '../agent/kernel.mjs';
 
 const HEAD = 'checkpoint:head';
 const chunkKey = id => 'checkpoint:chunk:' + id;
@@ -44,14 +45,17 @@ export function deleteCheckpoint(kv) {
   return head.chunks.length + 1;
 }
 
-export const CLOSED_READ_CHARS = 12000;
-export function closedPageRead(kv, now = Date.now()) {
+export async function closedPageRead(kv, now = Date.now(), {args = {}, caller, kept = {}, markdown} = {}) {
   const checkpoint = readCheckpoint(kv, now);
   if (!checkpoint) return {outcome: 'refused', reason: 'page_closed',
     hint: "The person's page is closed and left no copy to read. Ask them to open it: show hands over the link."};
-  const whole = checkpoint.text.length <= CLOSED_READ_CHARS, last = checkpoint.text.charCodeAt(CLOSED_READ_CHARS - 1);
-  const cut = CLOSED_READ_CHARS - (last >= 0xd800 && last <= 0xdbff ? 1 : 0);
-  return {outcome: 'ok', text: whole ? checkpoint.text : checkpoint.text.slice(0, cut), complete: whole, revision: checkpoint.revision, source: 'checkpoint',
-    checkpointAt: new Date(checkpoint.at).toISOString(),
+  if (kept.hash !== checkpoint.hash || kept.revision !== checkpoint.revision) {
+    const state = createState({documentId: 'checkpoint', filename: checkpoint.filename, text: checkpoint.text, revision: checkpoint.revision});
+    kept.hash = checkpoint.hash; kept.revision = checkpoint.revision;
+    kept.kernel = createKernel({state, host: markdown ? {markdown: markdown.analyze, referenceCheck: markdown.check} : {}, clock: () => now,
+      mintId: prefix => prefix + crypto.randomUUID().replaceAll('-', '')});
+  }
+  const read = await kept.kernel.invoke('read', args, caller);
+  return {...read, source: 'checkpoint', checkpointAt: new Date(checkpoint.at).toISOString(),
     hint: 'This is the page as it was when it last closed; the person may have changed it since. Edits wait for the page.'};
 }

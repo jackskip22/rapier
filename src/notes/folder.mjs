@@ -803,7 +803,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			if (next.missingFiles?.[file]?.entry?.id === id) delete next.missingFiles[file];
 			const {state, bytes} = await readSyncStateBytes(store), sync = copy(state);
 			if (sync.plain?.base?.[id]) { privatePaths.push(sync.plain.base[id].name); delete sync.plain.base[id]; }
-			for (const path of privatePaths) if (path.startsWith('attachments/') && sync.plain?.pictures) delete sync.plain.pictures[path.slice(12)];
+			for (const path of privatePaths) { if (sync.plain?.media) delete sync.plain.media[path]; if (sync.plain?.cards?.notes) delete sync.plain.cards.notes[path]; }
 			sync.lockedFiles = [...new Set([...(sync.lockedFiles || []), ...await Promise.all(privatePaths.map(path => sha256(path)))])].sort();
 			return {kind: 'lock-note', index: next, writes: [await syncStateWrite(sync, bytes)]};
 		});

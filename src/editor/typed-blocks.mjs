@@ -20,7 +20,7 @@ function _rapierTypedBlock(before, key, where) {
 	if (key === 'enter') {
 		const escaped = text.split('').map(character => /[-*_`~\\[\]<&]/.test(character) ? '\\' + character : character).join('');
 		if (/^(?:-{3,}|\*{3,}|_{3,})$/.test(text)) return { kind: 'divider', raw: text, literal: text[0] === '-' ? '\\' + text : escaped };
-		const fence = /^(`{3,})([^`\s]*)$/.exec(text);
+		const fence = /^(`{3,})([^`\s]*)$/.exec(text) || /^(~{3,})(\S*)$/.exec(text);
 		if (fence) return { kind: 'fence', raw: text + '\n' + fence[1], literal: escaped };
 	}
 	return null;

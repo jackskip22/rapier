@@ -173,7 +173,7 @@ const _rapierNotesSyncUi = (() => {
 		for (const id of (api().KEY_PLAIN_PROVIDERS || []).filter(id => id !== 'r2' && keyReachable(id))) choice(api().KEY_PLAIN_LABELS[id].toLowerCase(), 'plain files, not private', async () => { await readKeyPlain(); keyId = id; keyDraft = {}; }, {enabled: !acting && !status().busy, key: 'plain-key:' + id});
 	}
 	const plainWords = run => {
-		const waiting = (run?.held?.length || 0) + (run?.pictures?.held?.length || 0);
+		const waiting = (run?.held?.length || 0) + (run?.media?.held?.length || 0);
 		return (run?.conflicts ? run.conflicts + (run.conflicts === 1 ? ' note has' : ' notes have') + ' both versions to review. ' : '')
 			+ (waiting ? waiting + (waiting === 1 ? ' file waits' : ' files wait') + ' for the next sync: it changed in two places at once.' : 'notes and files match.');
 	};
@@ -322,7 +322,7 @@ const _rapierNotesSyncUi = (() => {
 			}, {key: 'plain-forget'});
 			return;
 		}
-		paragraph(api().PLAIN_CHOICES.find(row => row.id === 'plain').detail);
+		paragraph(api().PLAIN_DETAIL);
 		const fields = keyFields(id), place = input('folder name', {value: plainPlace});
 		place.addEventListener('input', () => { plainPlace = place.value; });
 		keyAccess(id);
@@ -351,7 +351,7 @@ const _rapierNotesSyncUi = (() => {
 			choice('stop syncing plain files', 'your notes and the files stay', async () => { await plainThroughCompanion().forget(); plainKept = null; conflicts = null; automatic = false; await _rapierNotesFolderChanged(); }, {key: 'plain-forget'});
 			return;
 		}
-		paragraph(api().PLAIN_CHOICES.find(row => row.id === 'plain').detail);
+		paragraph(api().PLAIN_DETAIL);
 		const places = companionPlaces?.places || [];
 		if (!places.length) paragraph('choose a folder for plain files in rapier sync first.');
 		const serviceLabel = id => (api().PROVIDERS?.[id]?.label || api().KEY_PLAIN_LABELS?.[id] || id).toLowerCase();
@@ -400,7 +400,7 @@ const _rapierNotesSyncUi = (() => {
 			if (acting || syncing || session?.status().busy) return refused('notes_sync_busy');
 			submitted = true;
 			const result = await runSync(stopped);
-			const held = (result?.held?.length || 0) + (result?.pictures?.held?.length || 0), both = result?.conflicts || 0;
+			const held = (result?.held?.length || 0) + (result?.media?.held?.length || 0), both = result?.conflicts || 0;
 			return {action: 'now', synced: true, complete: !held, held, conflicts: both};
 		} catch (error) {
 			if (submitted && error?.notesSyncStarted !== false) return {outcome: 'uncertain', reason: 'notes_sync_unconfirmed'};

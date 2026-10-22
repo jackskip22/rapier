@@ -102,7 +102,7 @@ html.rapier-draw-open{overscroll-behavior:none}
 @media(prefers-reduced-motion:reduce){.rapier-draw-panels>*,.rapier-draw-tool-menu{transition:none}}
 .rapier-draw-viewport-probe{position:absolute;width:0;height:100vh;height:100lvh;visibility:hidden;pointer-events:none}
 .rapier-draw-stage{position:absolute;left:var(--draw-safe-left);right:var(--draw-safe-right);bottom:var(--draw-safe-bottom);top:calc(var(--draw-safe-top) + var(--draw-cell) + 2 * var(--space-1))}
-.rapier-draw-canvas{width:100%;height:100%;display:block;touch-action:none;color:var(--color-text)}
+.rapier-draw-canvas{width:100%;height:100%;display:block;touch-action:none;color:var(--color-text);-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
 .rapier-draw-live{fill:none;stroke:currentColor;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;opacity:.85;pointer-events:none}
 .rapier-draw-preview{pointer-events:none}
 .rapier-draw-live--pen{fill:currentColor;stroke:none;opacity:.9}
@@ -126,7 +126,6 @@ html.rapier-draw-open{overscroll-behavior:none}
 .rapier-draw-replay-btn[aria-disabled="true"]{opacity:.45}
 @media(prefers-reduced-motion:reduce){.rapier-draw-nib-tag{transition:none}}
 .rapier-draw-hint{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--space-1);padding:0 var(--space-6);text-align:center;pointer-events:none;font:var(--fw-semibold) var(--text-sm) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;color:var(--color-text-muted)}
-.rapier-draw-hint-sub{font-size:var(--text-xs);color:var(--color-text-muted)}
 #rapier-draw-surface:has(.rapier-draw-shapes>*,.rapier-draw-preview>*,.rapier-draw-live[d]:not([d=""]),.rapier-draw-replay-bar:not([hidden])) .rapier-draw-hint{display:none}
 .rapier-draw-canvas{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
 .rapier-draw-menu{position:fixed;box-sizing:border-box;display:flex;flex-wrap:wrap;gap:var(--space-1);padding:var(--space-2);border:0;background:color-mix(in srgb,var(--color-bg) 65%,transparent);box-shadow:none;z-index:901;max-width:min(96vw,26rem);overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y}
@@ -342,7 +341,7 @@ body.light .rapier-draw-menu{--color-text:#000;--color-text-secondary:#000;--col
 .rapier-draw-surface--paper .rapier-draw-stage{background:#fff}
 .rapier-draw-surface--black .rapier-draw-stage{background:#000;--color-text:#fafafa;--color-text-muted:#878787}
 .rapier-draw-surface--paper .rapier-draw-canvas{color:#121212}
-.rapier-draw-surface--paper .rapier-draw-hint,.rapier-draw-surface--paper .rapier-draw-hint-sub{color:#000}
+.rapier-draw-surface--paper .rapier-draw-hint{color:#000}
 .rapier-draw-surface--paper .rapier-draw-marquee{fill:#2c70d9}
 .rapier-draw-surface--paper .rapier-draw-scribble,.rapier-draw-surface--paper .rapier-draw-press-ring,.rapier-draw-surface--paper .rapier-draw-guides{stroke:#2c70d9}
 .rapier-draw-brushes{flex:none;min-width:0;display:flex;flex-wrap:nowrap;align-items:stretch;gap:0;min-height:52px;padding:0 var(--space-2);box-sizing:border-box;background:var(--color-surface-2);overflow-x:auto;overflow-y:hidden;scrollbar-width:none;overscroll-behavior-x:contain}

@@ -2272,7 +2272,24 @@ function _rapierWaterGuardDrops(layer, bitmap, meta) {
 	return drop;
 }
 const RAPIER_WATER_PROBE = RAPIER_WATER_PARAMS.get('water-probe') === '1';
-let _rapierWaterProbeAdapter = null;
+let _rapierWaterProbeAdapter = null, _rapierWaterProbePrecision = null;
+async function _rapierWaterProbePrecisionRun() {
+	const adapter = await navigator.gpu?.requestAdapter?.(); if (!adapter) return 'no adapter';
+	const device = await adapter.requestDevice(), n = 2048;
+	try {
+		const code = `@group(0) @binding(0) var<storage,read> width:array<f32>;@group(0) @binding(1) var<storage,read_write> out:array<f32>;
+@compute @workgroup_size(64) fn main(@builtin(global_invocation_id) id:vec3<u32>){ if(id.x>=${n}u){return;} let w=width[0];
+let q=f32(id.x)+0.5;let u=1.0-q/w;let back=(1.0-u)*w-0.5;out[id.x]=abs(back-f32(id.x)); }`;
+		const pipeline = device.createComputePipeline({layout: 'auto', compute: {module: device.createShaderModule({code}), entryPoint: 'main'}});
+		const input = device.createBuffer({size: 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST}), output = device.createBuffer({size: n * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC}), read = device.createBuffer({size: n * 4, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST});
+		device.queue.writeBuffer(input, 0, new Float32Array([1758]));
+		const encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();
+		pass.setPipeline(pipeline); pass.setBindGroup(0, device.createBindGroup({layout: pipeline.getBindGroupLayout(0), entries: [{binding: 0, resource: {buffer: input}}, {binding: 1, resource: {buffer: output}}]}));
+		pass.dispatchWorkgroups(n / 64); pass.end(); encoder.copyBufferToBuffer(output, 0, read, 0, n * 4); device.queue.submit([encoder.finish()]);
+		await read.mapAsync(GPUMapMode.READ); const errors = new Float32Array(read.getMappedRange().slice(0)); read.unmap();
+		return 'worst ' + Math.max(...errors).toFixed(4) + ' texel on a 1758 sheet';
+	} finally { device.destroy(); }
+}
 function _rapierWaterProbeShow(layer, meta) {
 	const surface = _rapierDrawState.surface;
 	if (!surface) return;
@@ -2283,6 +2300,8 @@ function _rapierWaterProbeShow(layer, meta) {
 		surface.appendChild(box);
 		if (!_rapierWaterProbeAdapter) {
 			_rapierWaterProbeAdapter = 'asking';
+			_rapierWaterProbePrecision = 'measuring';
+			_rapierWaterProbePrecisionRun().then(v => { _rapierWaterProbePrecision = v; }, e => { _rapierWaterProbePrecision = 'error ' + (e?.message || e); });
 			Promise.resolve(navigator.gpu?.requestAdapter?.({powerPreference: 'high-performance'})).then(a => { const i = a?.info || {}; _rapierWaterProbeAdapter = a ? ([i.vendor, i.architecture, i.device, i.description].filter(Boolean).join(' / ') || 'adapter (no info)') + '\nfloat32-filterable: ' + (a.features.has('float32-filterable') ? 'yes' : 'no') + ', float32-blendable: ' + (a.features.has('float32-blendable') ? 'yes' : 'no') + ', fallback adapter: ' + (i.isFallbackAdapter ? 'yes' : 'no') : 'none'; }, e => { _rapierWaterProbeAdapter = 'error ' + (e?.message || e); });
 		}
 	}
@@ -2293,6 +2312,7 @@ function _rapierWaterProbeShow(layer, meta) {
 		'memory hint: ' + (memory ?? '?') + ' GB, budget ' + Math.round(budget / 1048576) + ' MiB, used ' + Math.round((stats.bytes || 0) / 1048576) + ' MiB',
 		'sheet: ' + (meta?.width ?? '?') + ' x ' + (meta?.height ?? '?') + ', simulation ' + (stats.simulation || ['?', '?']).join(' x ') + ', scale ' + (stats.simulation ? (meta.width / stats.simulation[0]).toFixed(2) : '?') + ', step ' + (stats.frames ?? '?') + ', tick ' + (stats.tick ?? '?'),
 		'formats: ink and fixed rgba16float, wet r16float, output rgba8unorm',
+		'position round trip: ' + (_rapierWaterProbePrecision || '?'),
 		'pigment path: ' + (!active ? 'idle' : w * h * 16 > free - headroom ? 'banded readback (estimated)' : 'in place (estimated)'),
 		'fix: ' + (_rapierWaterFixSwitch() || 'none'),
 		'guard: ' + (RAPIER_WATER_GUARD ? 'on' : 'off') + ', frames ' + seen.frames + ', dropped ' + seen.dropped + ', ink ' + (seen.last ? seen.last.ink.toFixed(4) : '?')].join('\n');

@@ -386,7 +386,7 @@ function _rapierNotesLibraryHit(file) {
 }
 function _rapierNotesLibraryPlain(s, head, tail) {
 	const words = String(s).replace(/&(nbsp|lt|gt|quot|#39|amp);/g, (_, name) => ({nbsp: ' ', lt: '<', gt: '>', quot: '"', '#39': "'", amp: '&'})[name]);
-	let text = words.replace(/(^|\n)[ \t]*(?:[-*]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]*)?/g, (marker, lead, at) => head || at ? lead : marker)
+	let text = words.replace(/(^|\n)[ \t]*(?:[-*]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]*)?/g, (marker, lead) => lead || head ? lead : marker)
 		.replace(/[ \t]*\n[ \t\n]*/g, ' \u00b7 ').replace(/[ \t]+/g, ' ');
 	if (head) text = text.replace(/^ ?\u00b7 /, '');
 	if (tail) text = text.replace(/ \u00b7 ?$/, '');
@@ -990,10 +990,10 @@ globalThis.RapierOriginalFolder = Object.freeze({
     }
     return result;
   },
-  async list(directory, {limit = 64, signal} = {}) {
+  async list(path, {limit = 64, signal} = {}) {
     const folder = _rapierOriginalFolderView.folder;
     if (!folder) throw Object.assign(new Error('folder_not_selected'), {code: 'folder_not_selected'});
-    const held = await folder.retain(directory || folder.root, {signal});
+    const held = path ? await folder.lookup(path, {signal}) : folder.root;
     globalThis.RapierOriginalFolder.leaveView();
     const cancel = _rapierOriginalFolderView.cancel = new AbortController();
     const lifetime = signal ? AbortSignal.any([signal, cancel.signal]) : cancel.signal;
@@ -1007,10 +1007,13 @@ globalThis.RapierOriginalFolder = Object.freeze({
       async return() { cancel.abort(); try { return await iterator.return(); } finally { release(); } },
     });
   },
-  async open(entry, {signal} = {}) {
+  async open(path, {signal} = {}) {
     const folder = _rapierOriginalFolderView.folder;
     if (!folder) return false;
-    const prepared = await globalThis.RapierOriginalFolderCore.prepare(folder, entry, globalThis.RapierPlatform.files, {signal});
+    const entry = await folder.lookup(path, {signal});
+    let prepared;
+    try { prepared = await globalThis.RapierOriginalFolderCore.prepare(folder, entry, globalThis.RapierPlatform.files, {signal}); }
+    finally { await folder.release(entry); }
     let opened = false;
     try {
       if (!await _rapierNotesEditor()) return false;
@@ -1059,12 +1062,12 @@ function _rapierOriginalFolderRow(name, meta, act) {
 	row.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') go(event); });
 	return row;
 }
-async function _rapierOriginalFolderShow(directory, trail) {
-	const d = _rapierAttachmentsDialog(directory ? directory.name : 'Folder');
+async function _rapierOriginalFolderShow(path, trail) {
+	const d = _rapierAttachmentsDialog(path ? path.split('/').at(-1) : 'Folder');
 	if (trail.length) d.appendChild(_rapierAttachmentsButton('Back', () => { d.close(); return _rapierOriginalFolderShow(trail.at(-1), trail.slice(0, -1)); }));
 	const status = _rapierNotesEl('p', '', 'Reading the folder'); d.appendChild(status);
 	let pages;
-	try { pages = await globalThis.RapierOriginalFolder.list(directory || undefined); }
+	try { pages = await globalThis.RapierOriginalFolder.list(path); }
 	catch (_) { status.textContent = 'This folder could not be read.'; return; }
 	const more = _rapierAttachmentsButton('Show more', () => page()); more.hidden = true; d.appendChild(more);
 	d.addEventListener('close', () => { void pages.return?.(); }, {once: true});
@@ -1075,8 +1078,8 @@ async function _rapierOriginalFolderShow(directory, trail) {
 		const entries = next.done ? [] : next.value.entries.filter(e => e.kind === 'directory' || /\.(?:md|markdown)$/i.test(e.name));
 		entries.sort((a, b) => (a.kind === 'directory' ? 0 : 1) - (b.kind === 'directory' ? 0 : 1) || a.name.localeCompare(b.name));
 		for (const entry of entries) d.insertBefore(entry.kind === 'directory'
-			? _rapierOriginalFolderRow(entry.name, 'Folder', () => { d.close(); return _rapierOriginalFolderShow(entry, directory ? [...trail, directory] : [...trail, null]); })
-			: _rapierOriginalFolderRow(entry.name, 'Markdown', async () => { d.close(); if (!await globalThis.RapierOriginalFolder.open(entry)) showToast('That file did not open.', 'error'); }), more);
+			? _rapierOriginalFolderRow(entry.name, 'Folder', () => { d.close(); return _rapierOriginalFolderShow(entry.displayPath, [...trail, path]); })
+			: _rapierOriginalFolderRow(entry.name, 'Markdown', async () => { d.close(); if (!await globalThis.RapierOriginalFolder.open(entry.displayPath)) showToast('That file did not open.', 'error'); }), more);
 		shown += entries.length;
 		more.hidden = next.done || next.value.complete;
 		status.textContent = shown ? '' : more.hidden ? 'No Markdown files here.' : 'Reading the folder';

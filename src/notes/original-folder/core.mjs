@@ -205,7 +205,7 @@ export class Folder {
       if (!this.capabilities.pinnedIdentity || !this.capabilities.confinedRead) throw fail('identity_or_confinement_unproven');
       if (!this.capabilities.coherentRead) throw fail('coherent_snapshot_unavailable');
     }
-    if (entry.kind !== 'file' || !/\.md$/i.test(entry.name)) throw fail('not_markdown');
+    if (entry.kind !== 'file' || !/\.(?:md|markdown)$/i.test(entry.name)) throw fail('not_markdown');
     const row = await this.#provider.retain(this.#row(entry));
     let reserved = 0;
     try {

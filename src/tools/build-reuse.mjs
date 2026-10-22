@@ -58,6 +58,7 @@ export function buildShellSource(source) {
   for (const id of ['lib-gpu-lexer', 'lib-acorn'])
     text = text.replace(new RegExp('[\\t\\r\\n]*(<script (?:id="' + id + '" type="text/rapier-vendor"|type="text/rapier-vendor" id="' + id + '")>)\\n</script>[\\t\\r\\n]*', 'g'), '\n$1\n</script>\n');
   text = text.replace(/(<meta name="rapier-version" content=")[^"]+(">)/, '$1template$2');
+  text = text.replace(/<title>[^<]*<\/title>/, '<title>template</title>');
   text = text.replace(/(<meta http-equiv="Content-Security-Policy" content=")[^"]*(">)/g, '$1$2');
   text = text.replace(/<link rel="(?:describedby|ai-catalog)"[^>]*>\n?/g, '');
   text = text.replace(/\n<script type="application\/ld\+json">\{"@context":"https:\/\/schema\.org","@graph":[\s\S]*?<\/script>/, '');

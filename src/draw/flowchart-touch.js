@@ -330,7 +330,7 @@
   }
 
 
-  function tap(diagram, pressed) {
+  function tap(diagram, pressed, pointerType) {
     if (Date.now() - lastDragAt < 400) return true;
     const data = diagram._rapierFlowchart, {block} = blockOf(diagram);
     if (!data || !block) return false;
@@ -347,7 +347,7 @@
     if (!part) { editor().close(); deselect(); return true; }
     if (part.kind === 'node') {
       select({blockId: block.id, kind: 'node', id: part.id});
-      return editor().open(diagram, pressed);
+      return pointerType === 'mouse' ? editor().open(diagram, pressed) : true;
     }
     if (part.kind === 'edge') {
       const info = graphOf(block), edge = info?.graph.edges[part.id];

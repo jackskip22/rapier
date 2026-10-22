@@ -294,8 +294,8 @@
 	--md-task-box: clamp(14px, .92em, 24px);
 	color: inherit;
 	position: relative;
-	left: calc(-1 * var(--md-space-5) - 16px);
-	margin: -16px calc(var(--md-space-1) - 16px) -16px 0;
+	left: calc(-1 * var(--md-space-5));
+	margin: -16px calc(var(--md-space-1) - 16px) -16px -16px;
 	width: 48px; height: 48px;
 	font: inherit;
 	-webkit-appearance: none; appearance: none;

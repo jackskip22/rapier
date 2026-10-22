@@ -12,7 +12,7 @@ Free and offline, with no ads, tracking or Rapier account.
 - **On Android:** get Rapier on [Google Play](https://play.google.com/store/apps/details?id=app.rapier). The app
   has no Internet permission. Optional Google Play asset packs download on first use, then work offline.
 - **On Windows:** download [Rapier.exe](https://github.com/jackskip22/rapier/raw/main/Rapier.exe). It is not code-signed yet, so Windows SmartScreen may warn the first time: choose **More info**, then **Run anyway**.
-- **With an agent:** the Claude plugin or another MCP client at `https://mcp.rapier.website/door/mcp`; the OpenAI plugin at `https://mcp.rapier.website/openai/mcp`; Muse at `https://mcp.rapier.website/muse`.
+- **With an agent:** the Claude plugin, ChatGPT or another MCP client at `https://mcp.rapier.website/mcp`.
 
 ## What it does
 
@@ -24,7 +24,7 @@ Free and offline, with no ads, tracking or Rapier account.
 - **Paint.** MyPaint brushes, smudge and blend. Water is watercolor that mixes, flows and dries on textured paper.
 - **Notes.** One Markdown file per note, with colors, pins, checklists, voice recordings, links, history, and
   search that reads text in pictures. Import from Google Keep, Apple Notes, Evernote, Notion, Obsidian, Joplin and other note apps. Back up
-  as a ZIP file, or sync encrypted copies to your own Cloudflare R2 bucket. Android adds reminders and a home-screen
+  as a ZIP file, or sync plain Markdown files to your own cloud storage. Android adds reminders and a home-screen
   widget.
 - **Files.** Open Markdown, text, code, Word and PDF. Save Markdown; Rapier never overwrites a file that changed
   elsewhere. Export Word, PDF, text or an offline HTML page. A `.rapier.html` file holds the editor and the

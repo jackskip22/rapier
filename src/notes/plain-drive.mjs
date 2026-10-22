@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import {createHTTP, jsonBody, providerError, retryAfter, pinnedURL, byteCount, refuse} from './provider-http.mjs';
-import {tokenFor, providerId} from './provider-objects.mjs';
-import {DRIVE_API_ORIGIN, UPLOAD_CHUNK_BYTES} from './transport-drive.mjs';
+import {createHTTP, jsonBody, providerError, retryAfter, pinnedURL, byteCount, refuse, tokenFor, providerId} from './provider-http.mjs';
 import {plainConflict, plainName, plainBytes, plainFolder} from './plain-store.mjs';
 
+const DRIVE_API_ORIGIN = 'https://www.googleapis.com';
+const UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024;
 const FILES = DRIVE_API_ORIGIN + '/drive/v3/files';
 const UPLOAD = DRIVE_API_ORIGIN + '/upload/drive/v3/files';
 const FOLDER = 'application/vnd.google-apps.folder';
@@ -116,7 +116,7 @@ function drivePlainStore(options, parentFolder = null) {
 	return Object.freeze({
 		pause: http.pause,
 		folderId: ({create = false} = {}) => folder(create === true),
-		pictures: () => drivePlainStore({...options, folder: 'attachments'}, folder),
+		area: name => drivePlainStore({...options, folder: name}, folder),
 		async list() {
 			const parent = await folder(), rows = (await search(`${quote(parent)} in parents and trashed = false`)).filter(row => row.mimeType !== FOLDER).map(row => fileRow(row, parent)).filter(Boolean);
 			const count = new Map(); for (const row of rows) count.set(row.name, (count.get(row.name) || 0) + 1);

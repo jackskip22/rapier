@@ -130,6 +130,4 @@ For a CV, menu, invitation, lesson card, social post, brief, recipe card or even
 
 For one sheet the person writes on (a poster, card, certificate or social post), open a blank page: `open {text, filename}` with front matter `template: page`, `papersize` (`letter`, `legal`, `tabloid`, `a3`, `a4`, `a5`, or a web size such as `1080x1350px`) and `geometry: margin=1in`. Make any SVG and set it as the page's ground: one picture with `<!--md-layout:v1 width=100% x=50% wrap=behind lock=on-->` on its line fills the whole sheet behind the words. Place other SVGs as ordinary pictures, and leave the text area for the person to write over or inside your SVG. The overview guide, "Make a page", has the whole example. Never turn a long document into a page.
 
-Only after the person reviews the design, request library saving with `show {target:"preset",revision,name:"My CV",value:"document"}` (or `value:"style"`). This opens the existing editor approval card. Read state for the final receipt; waiting is not saved. A changed document or declined card must not save. Do not synthesize a click or bypass this approval. The agent workflow and supplied starters are free; Android human personal-library convenience controls use Pro.
-
-If Draw is still open, let the person close its preview before requesting the library save; capture requires a settled document.
+The person reuses a page as a template from its metadata; an agent cannot save it to their library.

@@ -438,6 +438,7 @@ html[data-headings="off"] .section-fold-btn { display: none !important; }
 .section-move-btn:focus-visible { opacity: 1; color: var(--color-text); }
 .section-move-btn:focus-visible svg { stroke-width: 3; }
 @media (hover:hover) and (pointer:fine) { .section-move-btn:hover { opacity: 1; color: var(--color-text); } }
+@media (hover:hover) and (pointer:fine) { .section-move-btn:not(.section-move-btn--item) { width: var(--editor-h-pad); } }
 html[data-section-dragging], html[data-section-dragging] * { cursor: grabbing !important; }
 :is(#editor-blocks, #editor-blocks > .block-sleep-group) > .block-wrapper[data-section-moving] { opacity: .37; }
 .section-move-mark { position: fixed; z-index: 30; height: 4px; background: var(--color-text); pointer-events: none; }

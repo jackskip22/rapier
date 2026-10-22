@@ -13,7 +13,7 @@ const CODES = Object.freeze({NOT_CONFIGURED: 'config', PRO_REQUIRED: 'pro_requir
 export function createCompanionPlainStore({call, destination, area = 'notes', cancellation} = {}) {
 	if (typeof call !== 'function') refuse('config', 'this device has no rapier sync seam');
 	if (!ID.test(destination || '')) refuse('config', 'open rapier sync and choose the folder for plain files');
-	if (!['notes', 'attachments'].includes(area)) refuse('config', 'plain files keep notes and their attachments only');
+	if (!['notes', 'attachments', 'audio'].includes(area)) refuse('config', 'plain files keep notes, their attachments and their recordings only');
 	const owner = cancellation || {paused: false, epoch: 0, pending: new Set(), pauseFlight: null};
 	const guard = (ticket, allowPaused = false) => { if (ticket !== owner.epoch || owner.paused && !allowPaused) refuse('cancelled', 'sync is paused; local work is kept'); };
 	function track(action) {
@@ -65,7 +65,7 @@ export function createCompanionPlainStore({call, destination, area = 'notes', ca
 	const transferId = value => typeof value === 'string' && ID.test(value) ? value : refuse('response', 'rapier sync answered in an unreadable form');
 	return Object.freeze({
 		pause, resume,
-		pictures: area === 'notes' ? () => createCompanionPlainStore({call, destination, area: 'attachments', cancellation: owner}) : undefined,
+		area: area === 'notes' ? name => createCompanionPlainStore({call, destination, area: name, cancellation: owner}) : undefined,
 		list: () => run(async ticket => {
 			const page = await ask('plain.list', {}, ticket);
 			if (!Array.isArray(page.files) || page.files.length > 100000) refuse('response', 'the listing is not readable');

@@ -403,5 +403,5 @@ _rapierPresetPart = (() => {
     box.setAttribute('aria-label', 'Gallery');
     void run(list);
   }
-  return Object.freeze({open, startPage, savePageTemplate, saveElement, saveFromAgent: (name, kind, current) => save(name, kind, null, current, true)});
+  return Object.freeze({open, startPage, savePageTemplate, saveElement});
 })();

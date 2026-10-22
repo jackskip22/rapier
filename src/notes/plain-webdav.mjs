@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {createHTTP, refuse} from './provider-http.mjs';
-import {parseWebDAVMultistatus, isStrongWebDAVETag, checkedWebDAVURL, webDAVLanHost} from './transport-webdav.mjs';
+import {parseWebDAVMultistatus, isStrongWebDAVETag, checkedWebDAVURL, webDAVLanHost} from './webdav-wire.mjs';
 import {plainConflict, plainName, plainBytes, PLAIN_MAX_BYTES} from './plain-store.mjs';
 
 const te = new TextEncoder();
@@ -95,7 +95,7 @@ export function createWebDAVPlainStore(options = {}) {
 	}
 	return Object.freeze({
 		pause: http.pause, connect,
-		pictures: () => createWebDAVPlainStore({...options, endpoint: urlFor([...folder, 'attachments'], true)}),
+		area: name => createWebDAVPlainStore({...options, endpoint: urlFor([...folder, name], true)}),
 		async list() {
 			const rows = await listing(folder, 1);
 			if (!rows) return [];
