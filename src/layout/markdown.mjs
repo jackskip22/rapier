@@ -298,6 +298,8 @@ export function layoutWindow(source, start, end) {
   return from === 0 && to === source.length ? null : {start: from, end: to};
 }
 
+export const hasBlockSpacing = source => /<!--md-layout:v1[^\r\n]*?[ \t](?:before|after|line)=/.test(source);
+
 export function editLayout(source, parser, range, patch, env = {}) {
   if (typeof source !== 'string' || !range || !Number.isSafeInteger(range.start) || !Number.isSafeInteger(range.end) ||
       range.start < 0 || range.end < range.start || range.end > source.length) return {edits: [], targets: [], reason: 'invalid_layout_range'};

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-rapier-html">
+    <sub-class-of type="text/html"/>
+    <comment>rapier document</comment>
+    <glob pattern="*.rapier.html" weight="60"/>
+  </mime-type>
+</mime-info>

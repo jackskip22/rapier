@@ -34,7 +34,14 @@ test('page templates are pages: a locked border behind the words and no example 
     for (const paper of ['letter', 'a4']) {
       const text = templateMarkdown(row, {paper});
       portable(text, md);
-      assert.match(text, new RegExp('^---\\ntemplate: page\\npapersize: ' + paper + '\\ngeometry: margin=[\\d.]+in\\n'));
+      assert.match(text, new RegExp('^---\\ntemplate: page\\npapersize: ' + paper + '\\ngeometry: (margin=[\\d.]+in|top=[\\d.]+in,right=[\\d.]+in,bottom=[\\d.]+in,left=[\\d.]+in)\\n'));
+      const size = paper === 'a4' ? {width: 8.27, height: 11.69} : {width: 8.5, height: 11};
+      const geometry = /^geometry: (.*)$/m.exec(text)[1], side = name => Number((new RegExp('(?:' + name + '|margin)=([\\d.]+)in').exec(geometry) || [])[1]);
+      const {x, y, w, h} = row.content, need = {top: y / row.h * size.height, right: (row.w - x - w) / row.w * size.width, bottom: (row.h - y - h) / row.h * size.height, left: x / row.w * size.width};
+      for (const [name, inches] of Object.entries(need)) {
+        assert.ok(side(name) + 1e-9 >= Math.min(6, inches), row.id + ' ' + paper + ' ' + name + ': the words reach the art');
+        assert.ok(side(name) <= Math.max(.5, inches) + .1 + 1e-9, row.id + ' ' + paper + ' ' + name + ': ' + side(name) + 'in where ' + inches.toFixed(2) + 'in is the writing area');
+      }
       assert.equal(layoutTargets(text, md).filter(r => r.imageOnly && r.marker && !r.reason).length, 1);
       assert.match(text, /wrap=behind lock=on-->/);
       assert.equal(text.replace(/^---[\s\S]*?---\n/, '').replace(/^\[[a-z-]+\]: data:.*$/gm, '').replace(/!\[[^\]]*\]\[[a-z-]+\] <!--md-layout:v1 [^>]*-->/g, '').trim(), '');

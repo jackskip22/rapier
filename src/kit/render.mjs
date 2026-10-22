@@ -4,7 +4,7 @@ import {finish, finishAsync, cloneTree, cleanTree, serializeTree, encodeUtf8Step
 import {fontFamilyCss} from '../spec/md-marks.mjs';
 import {readFontAssets, documentFontsCss} from '../spec/document-fonts.mjs';
 import {fontRequests, requireDocumentFonts} from './export-fonts.mjs';
-import {documentLanguage, documentSettingsFonts} from '../spec/document-settings.mjs';
+import {documentLanguage, documentSettingsFonts, pageSizeOf} from '../spec/document-settings.mjs';
 import {createLineMeasurer, linesHeight} from '../layout/model.mjs';
 import {markPrintCapitals, createPrintCapitals, followingPrintProse} from './print-capitals.mjs';
 import {freezePublishedInk} from './render-ink.mjs';
@@ -205,23 +205,26 @@ async function _rapierBuildArtifact(options, providedContext) {
 }
 
 function _rapierTemplatePage(canonical, settings, root, darkPaper = false) {
-	if (!isTemplatePage(canonical) || !settings?.papersize) return null;
+	if (!isTemplatePage(canonical)) return null;
+	const paper = pageSizeOf(settings);
 	let url = '';
 	for (const paragraph of root.querySelectorAll(':scope > p[data-md-layout]')) {
 		const image = paragraph.querySelector('img');
 		const layout = globalThis.RapierMarkdownLayout.parseLayoutAttribute(paragraph.getAttribute('data-md-layout'));
 		const source = image?.getAttribute('src') || '';
-		if (isPageBorderLayout(layout) && /^data:image\/svg\+xml;base64,[A-Za-z0-9+/=]+$/.test(source)) { url = source; paragraph.remove(); break; }
+		if (isPageBorderLayout(layout) && /^data:image\/(?:png|jpeg|webp|gif|svg\+xml|jxl);base64,[A-Za-z0-9+/=]+$/i.test(source)) { url = source; paragraph.remove(); break; }
 	}
 	if (!url) return null;
-	const width = settings.papersize.width / 15, height = settings.papersize.height / 15;
-	const margins = ['top', 'right', 'bottom', 'left'].map(side => (settings.geometry?.[side] ?? 1440) / 15);
+	const width = paper.width / 15, height = paper.height / 15;
+	const margins = ['top', 'right', 'bottom', 'left'].map(side => (settings?.geometry?.[side] ?? 1440) / 15);
 	const padding = margins.map(value => value + 'px').join(' ');
 	const ground = 'background:var(--rapier-template-border) 0 0/100% 100% no-repeat';
-	const shown = darkPaper ? _rapierDarkPaperSvgUrl(url, '#fafafa') : url;
+	const shown = darkPaper && url.startsWith('data:image/svg+xml;base64,') ? _rapierDarkPaperSvgUrl(url, '#fafafa') : url;
 	const css = ':root{--rapier-template-border:url("' + url + '")}\n'
 		+ '@media screen{' + (shown !== url ? ':root{--rapier-template-border:url("' + shown + '")}' : '') + '.rapier-template-border{display:none}body{background:var(--md-color-inset)}.rapier-page{box-sizing:border-box;width:min(100%,' + width + 'px);min-height:' + height + 'px;margin:0 auto;padding:' + padding
 		+ ';background:var(--rapier-template-border) 0 0/100% ' + height + 'px repeat-y,var(--md-color-bg);color:var(--md-color-text)}}\n'
+		+ '@media screen and (max-width:' + width + 'px){.rapier-page{min-height:auto;aspect-ratio:' + width + '/' + height + ';padding:'
+		+ margins.map(value => 'min(' + value + 'px,' + Number((value / width * 100).toFixed(4)) + '%)').join(' ') + ';background-size:100% auto,auto}}\n'
 		+ '@media print{@page{size:' + width + 'px ' + height + 'px;margin:0}html,body{margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
 		+ '.rapier-page{box-sizing:border-box;width:auto;max-width:none;margin:0;padding:' + padding + '!important;position:relative!important;z-index:1;box-decoration-break:clone;-webkit-box-decoration-break:clone}'
 		+ '.rapier-template-border{display:block;position:fixed;left:0;top:0;width:' + width + 'px;height:' + height + 'px;z-index:0;' + ground + '}}';
@@ -256,11 +259,7 @@ async function _rapierBuildPublishedPage(context) {
 		throw new TypeError('Publishing requires a captured document.');
 	const current = {...context, ledger: null, carried: 'none', comparisonBase: null};
 	return _rapierBuildArtifact({
-		kind: 'standalone', scripts: false, extraCss: _rapierSharedPageFallbackCss(),
-		async afterRoot(root) {
-			if (current.work) await finishAsync(_rapierSharedPageLayoutSteps(root), current.work);
-			else _rapierSharedPageLayout(root);
-		},
+		kind: 'standalone', scripts: false,
 		afterFonts: (root, style) => freezePublishedInk(root, {...style, document, work: current.work,
 			spec: globalThis.RapierMarkdownSpec, ink: globalThis.RapierInk, draw: globalThis.RapierInkDraw}),
 	}, current);
@@ -729,6 +728,14 @@ function* _rapierSharedPageLayoutSteps(root) {
 		}
 		image.style.margin = '0';
 		const naturalWidth = Number(image.getAttribute('width')) || 0, naturalHeight = Number(image.getAttribute('height')) || 0;
+		let turned = '';
+		const turnedCorners = (bounds, width, height, rad) => {
+			const cos = Math.cos(rad), sin = Math.sin(rad), round = value => Math.round(value * 100) / 100 + '%';
+			return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, y]) => {
+				const dx = x * width / 2, dy = y * height / 2;
+				return round(50 + (dx * cos - dy * sin) / bounds.width * 100) + ' ' + round(50 + (dx * sin + dy * cos) / bounds.height * 100);
+			}).join(', ');
+		};
 		if (layout.rotate && naturalWidth > 0 && naturalHeight > 0) {
 			const rad = layout.rotate * Math.PI / 180, aspect = naturalHeight / naturalWidth;
 			image.style.maxWidth = 'none';
@@ -741,6 +748,7 @@ function* _rapierSharedPageLayoutSteps(root) {
 					height *= scale;
 					bounds = globalThis.RapierImageLayout.rotatedBoundsRad(width, height, rad);
 				}
+				turned = turnedCorners(bounds, width, height, rad);
 				paragraph.style.width = bounds.width + '%';
 				paragraph.style.paddingTop = ((bounds.height - height) / 2) + '%';
 				paragraph.style.paddingBottom = ((bounds.height - height) / 2) + '%';
@@ -748,6 +756,7 @@ function* _rapierSharedPageLayoutSteps(root) {
 				image.style.marginLeft = image.style.marginRight = (((bounds.width - width) / 2) / bounds.width * 100) + '%';
 			} else {
 				const bounds = globalThis.RapierImageLayout.rotatedBoundsRad(naturalWidth, naturalHeight, rad);
+				turned = turnedCorners(bounds, naturalWidth, naturalHeight, rad);
 				paragraph.style.width = bounds.width + 'px';
 				paragraph.style.paddingTop = ((bounds.height - naturalHeight) / 2) + 'px';
 				paragraph.style.paddingBottom = ((bounds.height - naturalHeight) / 2) + 'px';
@@ -763,6 +772,7 @@ function* _rapierSharedPageLayoutSteps(root) {
 			if (layout.width != null || image.getAttribute('width')) image.style.width = '100%';
 		}
 		if (layout.rotate) { image.style.transform = 'rotate(' + layout.rotate + 'deg)'; image.style.transformOrigin = '50% 50%'; }
+		if (turned) paragraph.style.setProperty('shape-outside', 'polygon(' + turned + ') padding-box');
 		if (layout.wrap === 'around' && !layout.rotate && !layout.y && layout.width == null && !image.dataset.rapierContour?.endsWith('-box')) {
 			const src = image.getAttribute('src');
 			if (src) {
@@ -779,15 +789,16 @@ function* _rapierSharedPageLayoutSteps(root) {
 		const layout = globalThis.RapierMarkdownLayout.parseLayoutAttribute(image.getAttribute('data-rapier-image-layout'));
 		if (layout?.wrap !== 'behind' && layout?.wrap !== 'front') continue;
 		const paragraph = _rapierSharePictureParagraph(image);
-		if (paragraph) positionedAssignments.push({image, paragraph, layout});
+		if (paragraph) positionedAssignments.push({image, paragraph, layout, owner: globalThis.RapierMarkdownLayout.wrapNeighbour(paragraph, _rapierShareWrapKind)});
 	}
-	for (const {image, paragraph, layout} of positionedAssignments) {
+	for (const {image, paragraph, layout, owner} of positionedAssignments) {
 		yield;
 		paragraph.style.cssText = 'position:relative;height:0;margin:0;padding:0;line-height:0';
 		const x = layout.x, naturalWidth = Number(image.getAttribute('width')) || 0;
-		if (layout.width != null) image.style.width = layout.width + '%';
+		if (layout.lines != null) { image.style.width = 'auto'; image.style.height = globalThis.RapierMarkdownLayout.linesHeightCss(layout.lines); }
+		else if (layout.width != null) image.style.width = layout.width + '%';
 		else if (naturalWidth > 0) image.style.width = naturalWidth + 'px';
-		image.style.left = x == null ? '0' : layout.width != null ? (x - layout.width / 2) + '%'
+		image.style.left = x == null ? '0' : layout.width != null ? Math.max(0, Math.min(100 - layout.width, x - layout.width / 2)) + '%'
 			: naturalWidth > 0 ? 'calc(' + x + '% - ' + (naturalWidth / 2) + 'px)' : x + '%';
 		image.style.position = 'absolute';
 		image.style.top = (layout.y || 0) + 'em';
@@ -795,6 +806,7 @@ function* _rapierSharedPageLayoutSteps(root) {
 		if (layout.rotate) { image.style.transform = 'rotate(' + layout.rotate + 'deg)'; image.style.transformOrigin = '50% 50%'; }
 		if (layout.wrap === 'behind') image.style.zIndex = '-1';
 		paragraph.classList.add('rapier-positioned-picture');
+		if (owner && owner !== paragraph.nextElementSibling) owner.before(paragraph);
 	}
 	const positioned = new Set([...assignments, ...positionedAssignments].map(row => row.image));
 	for (const image of root.querySelectorAll('img[data-rapier-image-layout]')) {
@@ -807,11 +819,13 @@ function* _rapierSharedPageLayoutSteps(root) {
 		const naturalWidth = Number(image.getAttribute('width')) || 0, naturalHeight = Number(image.getAttribute('height')) || 0;
 		if (naturalWidth > 0 && naturalHeight > 0) {
 			const rad = layout.rotate * Math.PI / 180;
-			const boundWidth = naturalWidth * Math.abs(Math.cos(rad)) + naturalHeight * Math.abs(Math.sin(rad));
-			const boundHeight = naturalWidth * Math.abs(Math.sin(rad)) + naturalHeight * Math.abs(Math.cos(rad));
+			const width = layout.width != null && !layout.lines ? layout.width : naturalWidth, height = layout.width != null && !layout.lines ? layout.width * naturalHeight / naturalWidth : naturalHeight;
+			const unit = layout.width != null && !layout.lines ? '%' : 'px';
+			const boundWidth = width * Math.abs(Math.cos(rad)) + height * Math.abs(Math.sin(rad));
+			const boundHeight = width * Math.abs(Math.sin(rad)) + height * Math.abs(Math.cos(rad));
 			image.style.display = 'block';
-			image.style.marginLeft = image.style.marginRight = ((boundWidth - naturalWidth) / 2) + 'px';
-			image.style.marginTop = image.style.marginBottom = ((boundHeight - naturalHeight) / 2) + 'px';
+			image.style.marginLeft = image.style.marginRight = ((boundWidth - width) / 2) + unit;
+			image.style.marginTop = image.style.marginBottom = ((boundHeight - height) / 2) + unit;
 		}
 	}
 }
@@ -1349,6 +1363,7 @@ function _rapierProjectArtifactLayout(root, metadata, geometry, preparation) {
       balance: 0};
   }
 
+  let inkIds = 0;
   function fragmentNode(record, fragment, idsKept) {
     const run = record.runs[fragment.itemIndex], mapped = geometry.mapFragment(run, fragment, {whiteSpace: record.whiteSpace});
     if (!mapped) return null;
@@ -1374,6 +1389,8 @@ function _rapierProjectArtifactLayout(root, metadata, geometry, preparation) {
     if (!plan) return false;
     const output = doc.createDocumentFragment();
     const idsKept = new Set();
+    for (const run of record.runs) for (const parent of run.parents)
+      if (parent.matches?.('span.rapier-ink-mark[data-rapier-ink]') && !parent.hasAttribute('data-rapier-ink-id')) parent.setAttribute('data-rapier-ink-id', String(++inkIds));
     let previous = null;
     for (const line of plan.lines) {
       const element = doc.createElement('span');

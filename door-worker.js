@@ -27,7 +27,8 @@ const WINDOW = 1024 * 1024;
 // runtime-pack-roundtrip reads the served head and the opened sheet's head and refuses a difference.
 // A door that is a tool people search for (`h1`) says, in the words a crawler reads without running the page, what
 // the searcher came to do: one heading, a short paragraph (`lead`), the steps (`howTo`), questions and answers (`faq`)
-// and the pages next to it (`related`; `/` is the editor itself, the home page). It is the free web application at its own address (WebApplication data).
+// and the pages next to it (`related`; `/` is the editor itself, the home page); `howTo` is one [heading, steps] or a list of them,
+// and `features` the application's feature list, each shown in the guide. It is the free web application at its own address (WebApplication data).
 // `view` names what the address opens (the engine's _rapierSearchStarter, draw/door.js, notes/door.js).
 const free = 'Yes. Rapier is free and open source, with no account, ads or tracking.';
 const offline = 'Yes, once the page has loaded. Add it to your home screen to open it like an app, or keep the whole editor as one HTML file.';
@@ -89,21 +90,28 @@ export const DOORS = Object.freeze({
 			Object.freeze(['Can kids use it?', 'Yes. There are no ads, accounts or tracking.']),
 			Object.freeze(['Can I save my painting?', saved + '.']),
 		])}),
+	// /jxl answers the JPEG XL searches: what goes in, what comes out, and the steps. Each claim is the
+	// converter's (jxl/convert.mjs, jxl/frames.mjs, jxl/png.mjs); the sizes are its own results for the card's painting (og-card.mjs).
 	'/jxl': Object.freeze({name: 'JPEG XL converter', title: 'Free JPEG XL converter: JPG, PNG, GIF and video to JXL | Rapier',
-		description: 'Convert JPG, PNG, GIF and video to JPEG XL (JXL) in your browser, free. A JPEG restores exactly; videos and GIFs become animated JXL. Offline, nothing uploaded.',
-		image: 'og-jxl.png', imageSize: [1200, 630], imageAlt: 'Rapier: convert pictures and videos to JPEG XL on your device',
+		description: 'Convert JPG, PNG, GIF, WebP and video to JPEG XL (JXL), free, in your browser. Lossless or smaller; a JPEG restores exactly. Offline, nothing uploaded.',
+		image: 'og-jxl-flowers.png', imageSize: [1200, 630], imageAlt: 'Watercolor flowers painted in Rapier. flowers.png: 710 KB to 428 KB, lossless. flowers.jpg: 152 KB to 125 KB, restores the JPEG exactly.',
 		h1: 'Free JPEG XL converter', view: 'jxl', encoder: Object.freeze({name: 'rapier-jxl', repository: 'https://github.com/jackskip22/rapier-jxl', package: 'https://www.npmjs.com/package/rapier-jxl'}), related: ['/paint', '/draw', '/notes'],
-		lead: 'Convert JPG and PNG pictures, GIFs and videos to JPEG XL (JXL) online, free, as many as you like. Rapier makes the files on your device with the encoder inside it, so it works offline and nothing is uploaded. A JPEG converts losslessly and restores the exact original; a video or animation becomes an animated JPEG XL.',
+		features: Object.freeze(['JPG, PNG, GIF, WebP, AVIF and APNG to JPEG XL', 'MP4, WebM and MOV to animated JPEG XL', 'Lossless, High or Medium quality', 'Exact JPEG recompression', 'Keeps transparency, 16-bit PNG, color profiles and HDR', 'Runs offline on your device', 'Many files at once, zip download']),
+		lead: 'Convert JPG, PNG, GIF and video to JPEG XL (JXL), free. Files are made on your device, offline; nothing is uploaded. Choose the quality: Lossless, High or Medium. A JPEG converts exactly: smaller, and the original restores byte for byte.',
+		howTo: Object.freeze([
+			Object.freeze(['How to convert JPG or PNG to JPEG XL', Object.freeze(['Choose or drop pictures: JPG, PNG, WebP, AVIF or any picture your browser opens.', 'Choose the quality: Lossless, High or Medium. Effort keeps the picture: more effort makes a smaller file and takes longer. Under Lossless a JPEG converts exactly.', 'Download each .jxl file, or all of them as one zip.'])]),
+			Object.freeze(['How to convert a video to animated JPEG XL', Object.freeze(['Choose or drop an MP4, WebM or MOV.', 'The first time, download JPEG XL complete: free, once, then offline.', 'Up to 30 frames a second, without sound. A long or large video is scaled down or cut, and its row says so.', 'Download the .jxl file.'])]),
+			Object.freeze(['How to convert a GIF to animated JXL', Object.freeze(['Choose or drop an animated GIF, APNG or animated WebP.', 'The first time, download JPEG XL complete: free, once, then offline.', 'Choose the quality: Lossless, or High or Medium for a smaller file. Frame timing is kept.', 'Download the .jxl file.'])]),
+		]),
 		faq: Object.freeze([
-			Object.freeze(['How do I convert JPG to JXL?', 'Choose or drop your JPEGs, then download each file or all of them as one zip. A JPEG converts losslessly: the original comes back byte for byte.']),
-			Object.freeze(['How do I convert PNG to JXL?', 'The same way. A PNG converts losslessly by default, transparency included. For photos you can choose High quality for a smaller file.']),
-			Object.freeze(['How do I convert a video to JPEG XL?', 'Choose or drop an MP4, WebM or MOV your browser plays. It becomes an animated JPEG XL at up to 30 frames a second, without sound. A long or large video is made smaller or cut to fit your device, and the row says so.']),
-			Object.freeze(['How do I convert a GIF to JPEG XL?', 'The same way. An animated GIF, APNG or animated WebP becomes an animated JPEG XL with every frame and its timing. Lossless keeps every pixel of every frame.']),
-			Object.freeze(['Does it work offline?', 'Yes. The JPEG XL encoder is inside Rapier. Keep Rapier as one HTML file and convert pictures with no connection. Videos and animations need JPEG XL complete, a small download asked for once; after that they convert offline too.']),
-			Object.freeze(['How many pictures can I convert?', 'As many as you like. Rapier works through them a few at a time, and you can cancel. Download each file or all of them as zip files. If a device runs out of memory, the finished files are kept.']),
-			Object.freeze(['Is my picture uploaded?', 'No. Pictures and videos are converted on your device and never leave it.']),
 			Object.freeze(['Is it free?', free]),
-			Object.freeze(['Which browsers open JPEG XL?', 'Chrome 155, Firefox 158 and Safari 17 and later open JPEG XL. Any browser can make the files here.']),
+			Object.freeze(['Is my picture uploaded?', 'No. Files are converted on your device.']),
+			Object.freeze(['Does it work offline?', 'Yes. The encoder is inside Rapier. Videos and animations need JPEG XL complete, a one-time download; after that they convert offline too.']),
+			Object.freeze(['Is JPEG XL lossless?', 'Lossless is. High and Medium are lossy and much smaller. A JPEG converted under Lossless restores byte for byte.']),
+			Object.freeze(['How much smaller is JPEG XL?', 'An exact JPEG: usually 10 to 20% smaller. A 710 KB PNG painting: 428 KB lossless, 73 KB at High, 35 KB at Medium.']),
+			Object.freeze(['What does it keep?', 'Transparency, 16-bit PNG (Lossless), color profiles such as Display P3 and Adobe RGB, and HDR PNGs (PQ or HLG). Video sound is dropped.']),
+			Object.freeze(['How many pictures can I convert?', 'Any number. Rapier converts a few at a time; Cancel stops it. If the device runs out of memory, finished files are kept.']),
+			Object.freeze(['Which browsers open JPEG XL?', 'Chrome 155, Firefox 158 and Safari 17 and later. Safari does not play animated JPEG XL. Any browser can make the files here.']),
 		]),
 		sections: Object.freeze([
 			Object.freeze(['How it works', 'The JPEG XL encoder is part of Rapier, which is one offline HTML file. Your browser reads each picture, or plays each video frame by frame, and the encoder writes the JPEG XL file on your device. Nothing is uploaded. A JPEG is carried into JPEG XL without decoding it, then restored and checked against the original before you download.']),
@@ -307,6 +315,7 @@ export function pageData(path) {
 			applicationCategory: /^\/(?:draw|paint|watercolor)$/.test(path) ? 'DesignApplication' : 'UtilitiesApplication',
 			operatingSystem: 'Web', browserRequirements: 'Requires JavaScript', isAccessibleForFree: true,
 			offers: {'@type': 'Offer', price: '0', priceCurrency: 'USD'}, isPartOf: {'@id': ORIGIN + '/#website'},
+			...(door.features ? {featureList: door.features} : {}),
 			...(door.encoder ? {isBasedOn: {'@id': url + '#encoder'}} : {})}] : []),
 		...(door.encoder ? [encoderData(door.encoder, url)] : [])]};
 }

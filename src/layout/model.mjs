@@ -12,7 +12,8 @@ export function mapFragment(run, fragment, {whiteSpace = 'normal'} = {}) {
   const raw = typeof run === 'string' ? run : run?.raw;
   if (run?.break === 'never') whiteSpace = 'normal';
   const start = fragment?.sourceStart, end = fragment?.sourceEnd;
-  if (typeof raw !== 'string' || typeof fragment?.text !== 'string' ||
+  const derived = fragment?.derive === true;
+  if (typeof raw !== 'string' || !derived && typeof fragment?.text !== 'string' ||
       !Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start || end > raw.length ||
       whiteSpace !== 'normal' && whiteSpace !== 'pre-wrap') return null;
   const pieces = [], offsets = [start];
@@ -33,6 +34,13 @@ export function mapFragment(run, fragment, {whiteSpace = 'normal'} = {}) {
     }
   }
   let text = pieces.join('');
+  if (derived) {
+    if (fragment.glyph) {
+      if (lastSoftHyphen === end - 1) offsets[offsets.length - 1] = lastSoftHyphen;
+      offsets.push(end); text += fragment.glyph;
+    }
+    return {text, offsets, start, end};
+  }
   if (lastSoftHyphen === end - 1 && fragment.text === text + '-') {
     offsets[offsets.length - 1] = lastSoftHyphen;
     offsets.push(end); text += '-';

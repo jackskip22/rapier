@@ -1967,7 +1967,7 @@
     },
     {
       "id": "seek-track",
-      "file": "editor/styles/rapier-draw.css",
+      "file": "editor/styles/rapier-app.css",
       "selector": ".rapier-draw-seek-track",
       "rule": {
         "origin": "stylesheet",
@@ -1991,7 +1991,7 @@
     },
     {
       "id": "seek-input",
-      "file": "editor/styles/rapier-draw.css",
+      "file": "editor/styles/rapier-app.css",
       "selector": ".rapier-draw-seek input[type=\"range\"]",
       "rule": {
         "origin": "stylesheet",

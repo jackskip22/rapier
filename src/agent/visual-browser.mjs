@@ -244,11 +244,38 @@ async function mountVisual(root, {clip, signal, current, frame, deferPixels = fa
     }
     return value;
   };
+  let scratch = null;
+  const defaultsOf = new Map();
+  const defaultStyle = source => {
+    const key = source.namespaceURI + ' ' + source.localName;
+    let values = defaultsOf.get(key);
+    if (values) return values;
+    if (!scratch) {
+      scratch = document.createElement('iframe');
+      scratch.setAttribute('aria-hidden', 'true');
+      scratch.style.cssText = 'position:fixed;left:-100000px;top:0;width:800px;height:600px;border:0;visibility:hidden;pointer-events:none';
+      document.body.append(scratch);
+      scratch.contentDocument.open(); scratch.contentDocument.write('<!doctype html><html><body></body></html>'); scratch.contentDocument.close();
+    }
+    const element = source.namespaceURI === SVG ? scratch.contentDocument.createElementNS(SVG, source.localName) : scratch.contentDocument.createElement(source.localName);
+    (source.namespaceURI === SVG ? scratch.contentDocument.body.appendChild(scratch.contentDocument.createElementNS(SVG, 'svg')) : scratch.contentDocument.body).append(element);
+    const computed = scratch.contentWindow.getComputedStyle(element);
+    values = new Map();
+    for (const property of computed) values.set(property, computed.getPropertyValue(property));
+    element.remove();
+    defaultsOf.set(key, values);
+    return values;
+  };
+  const placed = /^(?:width|height|inline-size|block-size|perspective-origin|transform-origin)$/;
   const copyStyle = async (source, destination, pseudo) => {
     const style = window.getComputedStyle(source, pseudo);
     if (!pseudo) for (const family of style.fontFamily.split(',')) fonts.add(family.trim().replace(/^['"]|['"]$/g, ''));
+    const parent = pseudo ? window.getComputedStyle(source) : source !== root && source.parentElement ? window.getComputedStyle(source.parentElement) : null;
+    const defaults = parent && !pseudo ? defaultStyle(source) : null;
     for (const property of style) {
       let value = style.getPropertyValue(property);
+      if (parent && property.startsWith('--') && value === parent.getPropertyValue(property)) continue;
+      if (defaults && !placed.test(property) && value === defaults.get(property) && value === parent.getPropertyValue(property)) continue;
       if (value.includes('url(')) value = await inlineCss(value);
       destination.setProperty(property, value, style.getPropertyPriority(property));
     }
@@ -379,6 +406,7 @@ async function mountVisual(root, {clip, signal, current, frame, deferPixels = fa
     disarm();
     signal?.removeEventListener('abort', cancelled);
     releasePictures();
+    scratch?.remove(); scratch = null;
     clone = null;
     deferred.length = 0;
     deferredSvg.length = 0;
@@ -486,5 +514,5 @@ export async function openVisualFilm({root, signal, current, frame}) {
   const session = await mountVisual(root, {
     clip: {x: 0, y: 0, width, height}, signal, current, frame: {width, height}, deferPixels: true, imageScale: 1,
   });
-  return {raster: region => session.draw({clip: region, transparent: false, scale: 1, pixels: 'rgb'}), close: () => session.close()};
+  return {raster: (region, {transparent = false} = {}) => session.draw({clip: region, transparent, scale: 1, pixels: transparent ? 'rgba' : 'rgb'}), close: () => session.close()};
 }

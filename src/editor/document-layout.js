@@ -46,8 +46,9 @@ async function _rapierDocumentSpacingOpen() {
 	return true;
 }
 function _rapierWithoutBlockSpacing(source) {
-	if (!source.includes('md-layout:v1')) return source;
-	const layout = globalThis.RapierMarkdownLayout, opening = _rapierSplitOpeningFrontmatter(source), body = opening.body;
+	const layout = globalThis.RapierMarkdownLayout;
+	if (!layout.hasBlockSpacing(source)) return source;
+	const opening = _rapierSplitOpeningFrontmatter(source), body = opening.body;
 	const plan = layout.editLayout(body, md, {start: 0, end: body.length}, {before: null, after: null, line: null}, _rapierMarkdownEnvironment());
 	if (plan.reason) return source;
 	let next = body;

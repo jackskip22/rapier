@@ -2,7 +2,7 @@
 import {dosDateTime, localHeader, centralHeader, endRecord} from '../notes/zip-records.mjs';
 import {crc32} from '../images/crc32.mjs';
 import {readPng, isPng} from './png.mjs';
-import {embeddedProfile} from './profile.mjs';
+import {embeddedProfile, avifColors, displayP3Profile, isSrgbProfile} from './profile.mjs';
 import {mediaKind, convertMedia, mediaNote as framesNote} from './frames.mjs';
 
 export const CARRY_BYTES = 16 * 1024 * 1024, PIXELS = 24_000_000;
@@ -91,14 +91,35 @@ export function resultOf(bytes) {
 function lossyPng(own) {
 	const keys = Object.keys(own.options || {});
 	if (keys.length && !(keys.length === 1 && keys[0] === 'icc') && !(own.options.colorSpace === 'display-p3' && own.options.transferFunction === 'srgb' && keys.length === 2)) return null;
-	if (own.bitDepth !== 16) return own;
-	const {bitDepth, ...rest} = own;
-	return {...rest, data: Uint8Array.from(own.data, value => Math.round(value / 257))};
+	return own;
+}
+
+function stillOf(bytes) {
+	const parts = [bytes.subarray(0, 8)];
+	for (let at = 8; at + 12 <= bytes.length;) {
+		const size = (bytes[at] << 24 | bytes[at + 1] << 16 | bytes[at + 2] << 8 | bytes[at + 3]) >>> 0, name = String.fromCharCode(...bytes.subarray(at + 4, at + 8));
+		if (at + 12 + size > bytes.length) break;
+		if (!['acTL', 'fcTL', 'fdAT'].includes(name)) parts.push(bytes.subarray(at, at + 12 + size));
+		at += 12 + size;
+	}
+	const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
+	for (let at = 0, part = 0; part < parts.length; at += parts[part++].length) out.set(parts[part], at);
+	return out;
+}
+
+async function animationColors(bytes, type) {
+	if (type === 'image/png') {
+		const read = await readPng(stillOf(bytes), PIXELS, {colorsOnly: true});
+		return !read || read.browser ? {browser: true} : read.options.icc ? isSrgbProfile(read.options.icc) ? {} : displayP3Profile(read.options.icc) || {browser: true} : read.options;
+	}
+	if (type === 'image/webp') { const icc = embeddedProfile(bytes); return !icc || isSrgbProfile(icc) ? {} : displayP3Profile(icc) || {browser: true}; }
+	return {};
 }
 
 const same = (a, b) => { if (a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; };
 export const exhausted = error => error?.code === 'JXL_MEMORY' || error instanceof RangeError || /out of memory|allocation failed|Array buffer allocation/i.test(String(error?.message || ''));
-export const effortFor = pixels => pixels > 8e6 ? 4 : pixels > 2e6 ? 5 : 7;
+export const EFFORT = Object.freeze({min: 1, max: 9, start: 7});
+export const effortOf = value => Math.min(EFFORT.max, Math.max(EFFORT.min, Math.round(Number(value)) || EFFORT.start));
 
 export async function pixelsOf(file, {raw = false} = {}) {
 	const bitmap = await createImageBitmap(file, {premultiplyAlpha: 'none', ...raw && {colorSpaceConversion: 'none'}});
@@ -135,7 +156,8 @@ async function opens(bytes) {
 	try { (await createImageBitmap(new Blob([bytes], {type: 'image/jxl'}))).close(); return true; } catch (_) { return false; }
 }
 
-export async function convert(file, {mode = 'lossless', videoMode = '', complete, signal, say = () => {}, progress = () => {}, codec = globalThis.RapierEmbeddedImages.codec} = {}) {
+export async function convert(file, {mode = 'lossless', effort: asked = EFFORT.start, videoMode = '', complete, signal, say = () => {}, progress = () => {}, codec = globalThis.RapierEmbeddedImages.codec} = {}) {
+	const effort = effortOf(asked), effortFor = () => effort;
 	const head = new Uint8Array(await file.slice(0, 64).arrayBuffer());
 	if (kindOf(head) === 'other' && mediaKind(head, file.type) === 'video')
 		return convertMedia(file, null, 'video', {mode: videoMode || mode, quality: QUALITY[videoMode || mode], effortFor, resultOf, signal, say, progress, codec, complete});
@@ -143,18 +165,21 @@ export async function convert(file, {mode = 'lossless', videoMode = '', complete
 	const kind = kindOf(bytes), before = bytes.length;
 	const animation = kind === 'other' || kind === 'png' ? mediaKind(bytes, file.type) : '';
 	if (animation && animation !== 'video') {
-		const made = await convertMedia(file, bytes, animation, {mode, quality: QUALITY[mode], effortFor, resultOf, signal, say, progress, codec, complete});
+		const made = await convertMedia(file, bytes, animation, {mode, quality: QUALITY[mode], effortFor, resultOf, signal, say, progress, codec, complete, colors: await animationColors(bytes, animation)});
 		if (made) return made;
 	}
 	if (kind === 'jxl') throw Object.assign(new Error('Already JPEG XL.'), {shown: true});
+	if (kind === 'other' && /^\s*(?:<\?xml[^>]*>\s*)?(?:<!--[\s\S]*?-->\s*)*<svg[\s>]/i.test(new TextDecoder().decode(bytes.subarray(0, 1024)))) throw Object.assign(new Error('A vector drawing has no pixels to convert.'), {shown: true});
+	let exact = null;
 	if (kind === 'jpeg' && before <= CARRY_BYTES) {
 		try {
 			say('Carrying the JPEG');
-			const carried = await codec('transcode', {bytes: bytes.slice()}, {signal, progress});
+			const carried = await codec('transcode', {bytes: bytes.slice(), options: {effort}}, {signal, progress});
 			say('Checking it restores the original'); progress(1);
 			const restored = await codec('reconstruct', {bytes: carried.bytes.slice()}, {signal});
-			if (carried.bytes && restored.bytes && same(restored.bytes, bytes)) return {...resultOf(carried.bytes), before, exact: true, jpeg: true, width: carried.width, height: carried.height};
+			if (carried.bytes && restored.bytes && same(restored.bytes, bytes)) exact = {...resultOf(carried.bytes), before, exact: true, jpeg: true, mode: 'lossless', width: carried.width, height: carried.height};
 		} catch (error) { if (error?.name === 'AbortError' || exhausted(error)) throw error; }
+		if (exact && mode === 'lossless') return exact;
 	}
 	say('Reading the picture'); progress(0);
 	const lossless = mode === 'lossless';
@@ -163,11 +188,12 @@ export async function convert(file, {mode = 'lossless', videoMode = '', complete
 		own = await readPng(bytes, PIXELS);
 		if (!lossless && own?.data) own = lossyPng(own) || (note = 'colors', null);
 	} else if (kind !== 'jxl') profile = embeddedProfile(bytes);
+	const said = !own && !profile && kind === 'other' ? avifColors(bytes) : null, declared = said?.browser ? null : said;
+	if (said?.browser) note = 'colors';
 	if (own?.browser) note = own.depth === 16 && lossless ? 'bits8' : 'colors';
-	let picture = own?.data ? own : profile ? {...await pixelsOf(file, {raw: true}), options: {icc: profile}} : await pixelsOf(file);
+	let picture = own?.data ? own : profile ? {...await pixelsOf(file, {raw: true}), options: {icc: profile}} : declared ? {...await pixelsOf(file, {raw: true}), options: declared} : await pixelsOf(file);
 	const shown = await globalThis.RapierEmbeddedImages.whenJxlDisplayKnown?.() === true;
 	for (let attempt = 0;; attempt++) {
-		const pixels = picture.width * picture.height, effort = effortFor(pixels);
 		const native = picture.options ? {...picture.bitDepth === 16 && {bitDepth: 16}, ...picture.options} : {};
 		const encode = (data, options) => codec('encode', {width: picture.width, height: picture.height, data, options: {...options, ...native}}, {signal, progress});
 		const again = shown && !lossless ? picture.data.slice() : null;
@@ -178,7 +204,8 @@ export async function convert(file, {mode = 'lossless', videoMode = '', complete
 				if (lossless) refused = true;
 				else { say('Making it lossless'); progress(0); made = await encode(again, {lossless: true, effort}); fallback = true; refused = !await opens(made.bytes); }
 			}
-			return {...resultOf(made.bytes), before, exact: false, jpeg: kind === 'jpeg', mode: fallback ? 'lossless' : mode, fallback, refused, note, width: picture.width, height: picture.height};
+			const result = {...resultOf(made.bytes), before, exact: false, jpeg: kind === 'jpeg', mode: fallback ? 'lossless' : mode, fallback, refused, note, width: picture.width, height: picture.height};
+			return exact ? {...(result.size < exact.size && !result.refused ? result : {...exact, mode, exactKept: true}), also: exact} : result;
 		} catch (error) {
 			if (attempt || !picture.options?.icc || error?.name === 'AbortError' || exhausted(error) || !/^JXL_(INPUT|OPTIONS|SIZE|RGBA)$/.test(error?.code || '')) throw error;
 			console.warn('JPEG XL profile refused', error.code, error.message);

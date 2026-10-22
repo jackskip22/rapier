@@ -57,6 +57,11 @@
 				"kind": "static-template",
 				"reason": "menu.innerHTML is either cleared ('' when nothing is selected, L1814) or built from _rapierDrawIconChip/_rapierDrawSelectControl, which escape all interpolated text via _rapierDrawEscapeAttr (L1894)."
 			},
+			"_rapierDrawChainPreview": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "state.preview.innerHTML is _rapierDrawDisplayMarkup(_rapierDrawShapeMarkup(...)) of a preview arrow built from numeric geometry (a \"+\" handle dragged out), the drawing engine's own geometry markup."
+			},
 			"_rapierDrawPaintLive": {
 				"count": 2,
 				"kind": "static-template",

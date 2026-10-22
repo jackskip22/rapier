@@ -11,13 +11,14 @@ Free and offline, with no ads, tracking or Rapier account.
   [rapier-reader.html](https://github.com/jackskip22/rapier/raw/main/rapier-reader.html).
 - **On Android:** get Rapier on [Google Play](https://play.google.com/store/apps/details?id=app.rapier). The app
   has no Internet permission. Optional Google Play asset packs download on first use, then work offline.
-- **On Windows:** download [Rapier.exe](https://github.com/jackskip22/rapier/raw/main/Rapier.exe). It is not code-signed yet, so Windows SmartScreen may warn the first time: choose **More info**, then **Run anyway**.
+- **On Windows:** download [Rapier.exe](https://github.com/jackskip22/rapier/raw/main/Rapier.exe) (version 1.2.30), the whole app in one file, and run it. It is not code-signed yet, so Windows SmartScreen may warn the first time: choose **More info**, then **Run anyway**.
+- **On Linux (x86_64):** download [rapier-linux](https://github.com/jackskip22/rapier/raw/main/rapier-linux) (version 1.2.31), the whole app in one file. Run `chmod +x rapier-linux && ./rapier-linux --install` once to add Rapier to your launcher; it opens as an app window in your Chromium-based browser. [Requirements](src/linux/README.md).
 - **With an agent:** the Claude plugin, ChatGPT or another MCP client at `https://mcp.rapier.website/mcp`.
 
 ## What it does
 
 - **Write.** Edit the page or the Markdown source; text you don't touch stays byte for byte. Tables, checklists,
-  footnotes, LaTeX, Mermaid, find and replace, compare, read aloud, right-to-left, comments and suggested edits.
+  footnotes, LaTeX, Mermaid, find and replace, compare, read aloud, right-to-left, comments, live agent changes and selective undo.
 - **Pictures.** Stored inside the `.md` file. New pictures use JPEG XL from
   [Rapier's own encoder](https://github.com/jackskip22/rapier-jxl). Text can wrap around a picture's shape.
 - **Draw.** Editable SVG: pen, pressure brush, shapes, arrows that stay attached, and text.
@@ -28,7 +29,7 @@ Free and offline, with no ads, tracking or Rapier account.
   widget.
 - **Files.** Open Markdown, text, code, Word and PDF. Save Markdown; Rapier never overwrites a file that changed
   elsewhere. Export Word, PDF, text or an offline HTML page. A `.rapier.html` file holds the editor and the
-  document together, so someone can edit, comment or suggest changes offline and send it back.
+  document together, so someone can edit or comment offline and send it back.
 - **Privacy.** Editing and Notes run on your device, with no analytics. Agent workspaces use hosted storage. Remote
   pictures load only when you allow them.
 

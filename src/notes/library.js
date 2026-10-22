@@ -649,10 +649,10 @@ function _rapierNotesLibraryConnectionsFace(sheet, file) {
 	};
 	sheet.appendChild(title('links to'));
 	if (found.out.length) for (const to of found.out) sheet.appendChild(row(to));
-	else sheet.appendChild(_rapierNotesEl('div', 'rapier-notes-conn-none', found.incomplete ? 'Some links have not been read back yet. Open Notes again to retry.' : 'This note links to nothing yet. Type [[ in it to link another.'));
+	else if (found.incomplete) sheet.appendChild(_rapierNotesEl('div', 'rapier-notes-conn-none', 'Some links have not been read back yet. Open Notes again to retry.'));
 	sheet.appendChild(title('linked from'));
 	if (found.back.length) found.back.forEach((to, i) => sheet.appendChild(row(to, _rapierNotesLibraryContext(to, found.spans[i].start, found.spans[i].end, true))));
-	else sheet.appendChild(_rapierNotesEl('div', 'rapier-notes-conn-none', found.incomplete ? 'Some backlinks have not been read back yet. Open Notes again to retry.' : 'No note links here yet.'));
+	else if (found.incomplete) sheet.appendChild(_rapierNotesEl('div', 'rapier-notes-conn-none', 'Some backlinks have not been read back yet. Open Notes again to retry.'));
 	if (found.mentions.length) {
 		sheet.appendChild(title('mentioned in'));
 		for (const hit of found.mentions) {
@@ -819,7 +819,7 @@ function _rapierNotesPickerOpen() {
 			b.onmousedown = evt => evt.preventDefault();
 			b.onclick = evt => { evt.preventDefault(); _rapierNotesPickerChoose(i); };
 			return b;
-		}), Object.assign(_rapierNotesEl('div', 'rapier-notes-picker-empty', 'Tags already in your notes'), {ariaHidden: 'true'}));
+		}));
 		picker.el.hidden = false;
 		_rapierNotesPickerPlace(picker);
 		_rapierNotesPickerAnnounce(picker);

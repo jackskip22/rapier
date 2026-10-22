@@ -20,15 +20,16 @@ export function createNotesAgentHost({folder, store = folder?.store, refs = new 
 	if (!folder?.owner || !store?.read || !(refs instanceof Map) || !(readReceipts instanceof Map)) throw new TypeError('notes_owner_unavailable');
 	const active = request => { request.signal?.throwIfAborted(); guard(); request.guard?.(); request.signal?.throwIfAborted(); };
 	const indexOf = async request => { active(request); const snapshot = await folder.read(); active(request); return snapshot.index; };
-	const refFor = (file, index) => {
+	const refFor = (file, index, answered) => {
 		const id = index.notes[file]?.id; if (!id) return null;
 		for (const [ref, held] of refs) {
 			if (held.folder !== folder || held.ownerEpoch !== folder.owner.incarnation) { refs.delete(ref); continue; }
-			if (held.id === id) return ref;
+			if (held.id === id) { answered?.add(ref); return ref; }
 		}
 		const ref = 'note_' + crypto.randomUUID();
 		refs.set(ref, {id, folder, ownerEpoch: folder.owner.incarnation});
-		while (refs.size > 1024) refs.delete(refs.keys().next().value);
+		answered?.add(ref);
+		for (const old of refs.keys()) { if (refs.size <= 1024) break; if (!answered?.has(old)) refs.delete(old); }
 		return ref;
 	};
 	const resolve = (ref, index) => {
@@ -49,11 +50,12 @@ export function createNotesAgentHost({folder, store = folder?.store, refs = new 
 		notesReadReceipts: readReceipts,
 		async notesFind(request = {}) {
 			try {
-				const {query = ''} = request, index = await indexOf(request), rows = [];
+				const {query = ''} = request, index = await indexOf(request), rows = [], answered = new Set();
 				for (const [file, entry] of Object.entries(index.notes)) {
 					if (entry.trashed && !query) continue;
-					const text = decode(await store.read(file)); active(request);
-					if (text === null) return {refused: 'notes_search_incomplete'};
+					let text; try { text = decode(await store.read(file)); } catch (error) { if (!(error instanceof TypeError)) throw error; text = null; }
+					active(request);
+					if (text === null) continue;
 					if (query) {
 						const texts = new Map([[file, text]]), built = buildSearchIndex(texts, index);
 						const found = confirmSearch(search(built, query, {limit: 1}), texts);
@@ -61,7 +63,7 @@ export function createNotesAgentHost({folder, store = folder?.store, refs = new 
 						if (!found.results.length) continue;
 					}
 					const card = M.projectCard(file, text);
-					rows.push({file, note_ref: refFor(file, index), title: card.title || '', section: M.sectionOf(entry, index.sections),
+					rows.push({file, note_ref: refFor(file, index, answered), title: card.title || '', section: M.sectionOf(entry, index.sections),
 						skill: entry.skill === true, ...(Number.isFinite(entry.modified) ? {modified: entry.modified} : {})});
 				}
 				active(request); return rows;

@@ -244,11 +244,12 @@ async function _rapierPrepareEditablePage(captured, options = {}) {
 	const text = (captured.metadata.bom ? '\uFEFF' : '') + captured.canonical;
 	const {filename, codeLang} = captured.metadata, ext = codeLang && Object.keys(EXT_TO_LANG).find(e => EXT_TO_LANG[e] === codeLang);
 	const carriedParts = new Map();
+	const readable = _rapierReadableWithoutScripts(captured);
 	const write = (ids, carried = captured.carried) => {
 		if (!carriedParts.has(carried)) carriedParts.set(carried, _rapierLedgerParts(text, captured.ledger, carried));
 		const parts = carriedParts.get(carried);
 		const html = globalThis.RapierPortablePage.wrap(portable.assemble(ids), text, ext ? filename.replace(/\.rapier\.html$/i, '.' + ext) : filename, {
-			kind: captured.metadata.docKind, theme, base: captured.comparisonBase || undefined, ...parts,
+			kind: captured.metadata.docKind, theme, base: captured.comparisonBase || undefined, readable, ...parts,
 		});
 		const blob = new Blob([html], {type: 'text/html; charset=utf-8'});
 		if (blob.size > RapierTextCodec.maxDocumentBytes) throw new Error('This HTML editor file exceeds 64 MiB.');
@@ -256,6 +257,20 @@ async function _rapierPrepareEditablePage(captured, options = {}) {
 			included: portable.choices.filter(choice => ids.has(choice.id)).map(choice => choice.id)};
 	};
 	return {choices: portable.choices, needs: portable.needs, write};
+}
+
+function _rapierReadableWithoutScripts(captured) {
+	const {docKind, filename} = captured.metadata;
+	try {
+		if (docKind !== 'markdown') {
+			const pre = document.createElement('pre');
+			pre.textContent = captured.canonical;
+			return pre.outerHTML;
+		}
+		const render = _rapierRenderModule('render-markdown');
+		const root = render._rapierRenderSemanticRoot(captured.canonical, captured.metadata);
+		return render._rapierProjectPortableRoot(render._rapierHeldPicturesAsWords(root), {baseName: _rapierExportStem(filename)}).innerHTML;
+	} catch (_) { return ''; }
 }
 
 function _rapierPortableLacks(name) {

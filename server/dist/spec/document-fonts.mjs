@@ -216,6 +216,11 @@ export function documentFontUsage(markdown, parser, defaultFont) {
 	for (const token of md.parse(splitOpeningFrontmatter(source).body, {})) {
 		if (token.type === 'heading_open') blockFamily = sans;
 		else if (token.type === 'heading_close' || token.type === 'paragraph_open') blockFamily = main;
+		else if (token.type === 'fence' && /^html(?:\s+\{[^{}]*\})?\s*$/i.test(token.info)) {
+			const text = plain(token.content);
+			add(blockFamily, text);
+			for (const name of htmlFontFamilies(token.content, md)) add(name, text);
+		}
 		else if (token.type === 'fence' || token.type === 'code_block') add(mono, token.content);
 		else if (token.type === 'html_block') {
 			const text = plain(token.content);

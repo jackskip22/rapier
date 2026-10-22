@@ -1,11 +1,23 @@
 // SPDX-License-Identifier: MIT
 import {next, weight, exceptions, maximum} from '../agent/vendor/hyphen-en-us/patterns.js';
 
-function englishCuts(word) {
-  if (!/^[A-Z]?[a-z]+$/.test(word)) return null;
+export function englishCuts(word) {
+  if (!/^[A-Za-z]+$/.test(word)) return null;
+  if (word.length < 6) return [];
+  const cuts = [];
+  let offset = 0, before = 0;
+  for (const part of word.match(/[A-Z]+(?![a-z])|[A-Z]?[a-z]+/g)) {
+    if (before >= 3 && part.length >= 3) cuts.push(offset);
+    for (const at of partCuts(part)) cuts.push(offset+at);
+    offset += part.length; before = part.length;
+  }
+  return cuts.filter(at => at >= 3 && at <= word.length-3).sort((a, b) => a-b).filter((at, index, all) => at !== all[index-1]);
+}
+
+function partCuts(word) {
   if (word.length < 6) return [];
   const lower = word.toLowerCase(), known = exceptions[lower];
-  if (Array.isArray(known)) return known.filter(at => at >= 3 && at <= word.length-3);
+  if (Array.isArray(known)) return known;
   const source = '.'+lower+'.', weights = new Uint8Array(source.length+1);
   for (let start = 0; start < source.length; start++) {
     let node = 0;

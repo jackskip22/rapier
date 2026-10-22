@@ -18,12 +18,10 @@
 !/door-word-to-markdown.html
 !/door-mermaid-editor.html
 !/door-agents.html
-!/rapier-notes-*.txt
-!/rapier-document-*.txt
-!/rapier-presets-*.txt
-!/rapier-drawing-*.txt
-!/rapier-jxl-*.txt
-!/rapier-jxlcomplete-*.txt
+!/parts/
+!/parts/rapier-*.txt
+!/plugins/
+!/plugins/**
 !/rapier-bench.html
 !/sw.js
 !/manifest.json
@@ -51,7 +49,7 @@
 !/og-draw.png
 !/og-watercolor.png
 !/og-gallery.png
-!/og-jxl.png
+!/og-jxl-flowers.png
 !/og-paint.png
 !/og-markdown-to-pdf.png
 !/og-markdown-to-word.png

@@ -50,15 +50,27 @@ const OPEN = '\n\n<!-- rapier-carried/1\n', CLOSE = '\n-->\n';
 export function documentTrailer(text, options) {
   const parts = validateParts(text, options);
   if (!parts.ledger && !parts.authorship) return '';
-  const json = JSON.stringify(parts).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+  const json = JSON.stringify(parts).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/-/g, '\\u002d');
   return OPEN + json + CLOSE;
 }
 export function writeDocument(text, options) {
   return text + documentTrailer(text, options);
 }
+function unfinishedTrailer(source) {
+  const at = source.lastIndexOf(OPEN);
+  if (at < 0) return false;
+  let fence = null;
+  for (const line of source.slice(0, at).split('\n')) {
+    const found = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    if (!found) continue;
+    if (!fence) fence = found[1];
+    else if (found[1][0] === fence[0] && found[1].length >= fence.length && !line.slice(found[0].length).trim()) fence = null;
+  }
+  return !fence;
+}
 export function readDocument(source) {
   if (!source.endsWith(CLOSE)) {
-    if (source.includes(OPEN)) throw fault('unfinished document metadata');
+    if (unfinishedTrailer(source)) throw fault('unfinished document metadata');
     return {text: source, ledger: null, authorship: null};
   }
   const at = source.lastIndexOf(OPEN);

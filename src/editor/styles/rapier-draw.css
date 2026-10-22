@@ -135,20 +135,6 @@ html.rapier-draw-open{overscroll-behavior:none}
 .rapier-draw-smooth{flex:none;display:flex;align-items:center;gap:var(--space-2);padding:0 var(--space-3);background:var(--color-surface-2)}
 .rapier-draw-smooth-label{font:var(--fw-semibold) var(--text-sm) var(--font-mono);text-transform:uppercase;color:var(--color-text-secondary);white-space:nowrap}
 .rapier-draw-smooth-word,.rapier-draw-nib-word{min-width:4.5em;font:var(--fw-semibold) var(--text-sm) var(--font-mono);text-transform:uppercase;color:var(--color-text);text-align:right;white-space:nowrap}
-.rapier-draw-seek{position:relative;flex:1 1 auto;min-width:0;height:48px;display:flex;align-items:center;--seek-frac:0;--seek:calc(22px + (100% - 44px) * var(--seek-frac));--seek-join:14px}
-.rapier-draw-seek-track{position:absolute;inset:0;pointer-events:none}
-.rapier-draw-seek-track::before,.rapier-draw-seek-track::after{content:"";position:absolute;top:50%;height:2px;transform:translateY(-50%)}
-.rapier-draw-seek-track::before{left:0;width:max(0px,calc(var(--seek) - var(--seek-join)));background:var(--color-text)}
-.rapier-draw-seek-track::after{left:min(100%,calc(var(--seek) + var(--seek-join)));right:0;background:color-mix(in srgb,var(--color-text) 28%,transparent)}
-.rapier-draw-seek-head{position:absolute;left:var(--seek);top:50%;width:32px;height:32px;transform:translate(-50%,-50%);fill:none;stroke:var(--color-text);stroke-width:1.5;pointer-events:none;transition:fill 70ms linear}
-.rapier-draw-seek--active .rapier-draw-seek-head{fill:var(--color-text)}
-.rapier-draw-seek input[type="range"]{position:absolute;inset:0;appearance:none;width:100%;height:48px;margin:0;background:transparent;cursor:pointer;touch-action:none}
-.rapier-draw-seek input[type="range"]::-webkit-slider-runnable-track{height:48px;background:transparent}
-.rapier-draw-seek input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:44px;height:48px;margin:0;border:0;border-radius:0;background:transparent}
-.rapier-draw-seek input[type="range"]::-moz-range-track{height:48px;background:transparent;border:0}
-.rapier-draw-seek input[type="range"]::-moz-range-thumb{width:44px;height:48px;border:0;border-radius:0;background:transparent}
-.rapier-draw-seek input[type="range"]:focus-visible{outline:0}
-@media(prefers-reduced-motion:reduce){.rapier-draw-seek-head{transition:none}}
 .rapier-draw-btn--dip svg{width:26px;height:26px}
 .rapier-draw-dip{flex:none;display:flex;flex-direction:column;gap:var(--space-2);padding:var(--space-2) var(--space-3) var(--space-3);background:var(--color-surface-2)}
 .rapier-paint-mixer{font:var(--fw-semibold) var(--text-sm) var(--font-mono);text-transform:uppercase;color:var(--color-text-secondary)}

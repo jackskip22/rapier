@@ -14,6 +14,7 @@ const SHELL_DOOR_SHA256 = __RAPIER_DOOR_SHA256__;
 const SHELL_SITE_PAGES = __RAPIER_SITE_PAGES__;
 const SITE_PAGE_CACHE = `rapier-pages:${CACHE_SCOPE}:v1`;
 const SHELL_PARTS = __RAPIER_PARTS__;
+const PART_DIRECTORY = 'parts/';
 const SHELL_GENERATION = SHELL_CACHE_PREFIX + SHELL_RELEASE_SHA256.slice(0, 32);
 const SHELL_PAGE_URL = new URL('./rapier.html', self.location).href;
 const SHELL_ROOT_URL = new URL('./', self.location).href;
@@ -216,7 +217,7 @@ async function keepParts() {
       const stem = 'parts/rapier-' + pin.id + '-';
       if (keys.includes('parts/' + pin.file) || !keys.some(key => key.startsWith(stem))) return null;
       let response;
-      try { response = await fetch(new Request(new URL(pin.file, self.location), {cache: 'reload'})); }
+      try { response = await fetch(new Request(new URL(PART_DIRECTORY + pin.file, self.location), {cache: 'reload'})); }
       catch (_) { return null; }
       if (!response.ok) return null;
       const bytes = new Uint8Array(await response.arrayBuffer());

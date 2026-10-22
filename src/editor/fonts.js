@@ -96,7 +96,6 @@ const _rapierDocumentFonts = (() => {
 		try { await _rapierPersonalStore.set('preference/' + preference, value); }
 		catch (_) { throw new Error('The default font is kept on this device, but its personal profile could not be saved. Try again.'); }
 		if (stateKey() !== appliedState) { preferenceChanged(); _rapierApplyDocumentSettings(); renderSettings(); }
-		_rapierNotesPart?.sync.changed('settings');
 		return true;
 	}
 	async function add(files) {
@@ -112,7 +111,6 @@ const _rapierDocumentFonts = (() => {
 		}
 		prunePreviews();
 		if (accepted.length) { libraryRevision++; preferenceChanged(); }
-		if (accepted.length) _rapierNotesPart?.sync.changed('settings');
 		if (accepted.length && rapier.document.docKind === 'markdown') {
 			const source = _rapierSourceText(), assets = spec.readFontAssets(source, md).assets;
 			const used = new Set([...spec.documentFontUsage(source, md).keys()].map(family => family.toLowerCase()));

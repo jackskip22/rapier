@@ -290,6 +290,18 @@
 	position: relative;
 }
 
+.md-render .task-list-item > p:has(> input[type="checkbox"]:first-child),
+.md-render .task-list-item:has(> input[type="checkbox"]:first-child) {
+	--md-task-space: .24em;
+	padding-inline-start: calc(16px + var(--md-space-1) + var(--md-task-space));
+	text-indent: calc(-16px - var(--md-space-1) - var(--md-task-space));
+}
+.md-render .task-list-item > p:has(> input[type="checkbox"]:first-child) *,
+.md-render .task-list-item:has(> input[type="checkbox"]:first-child) * { text-indent: 0; }
+.md-render .task-list-item:has(> input[type="checkbox"]:first-child) > :is(p, ul, ol, pre, blockquote, table, div, dl, details, figure, hr) {
+	margin-inline-start: calc(-16px - var(--md-space-1) - var(--md-task-space));
+}
+
 .md-render .task-list-item input[type="checkbox"] {
 	--md-task-box: clamp(14px, .92em, 24px);
 	color: inherit;

@@ -97,7 +97,7 @@ const ASSET_TOKEN = '\uFFFC', DATA_URL = /data:[a-zA-Z0-9.+\/+-]+;base64,([A-Za-
 const IMAGE_EXT = /\.(?:png|jpe?g|gif|webp|jxl|bmp|ico)$/i;
 
 const ACCENTED = /([\p{sc=Latin}\p{sc=Greek}\p{sc=Cyrillic}\p{sc=Arabic}\p{sc=Hebrew}])\p{M}+/gu;
-function fold(s) {
+export function fold(s) {
 	s = String(s ?? '');
 	return /[^\x00-\x7f]/.test(s) ? s.normalize('NFD').replace(ACCENTED, '$1').toLowerCase().replace(/[‘’]/g, "'").replace(/ß/g, 'ss') : s.toLowerCase();
 }

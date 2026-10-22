@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {crc32} from '../images/crc32.mjs';
-import {isSrgbProfile} from './profile.mjs';
 
 const SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
 const PASSES = [[0, 0, 8, 8], [4, 0, 8, 8], [0, 4, 4, 8], [2, 0, 4, 4], [0, 2, 2, 4], [1, 0, 2, 2], [0, 1, 1, 2]];
@@ -151,7 +150,7 @@ async function colorOf(chunks, gray) {
 		if (!icc || icc.length < 132 || new DataView(icc.buffer, icc.byteOffset).getUint32(0) !== icc.length) return null;
 		const space = String.fromCharCode(...icc.subarray(16, 20));
 		if (space !== (gray ? 'GRAY' : 'RGB ')) return null;
-		return gray || !isSrgbProfile(icc) ? {icc} : {};
+		return {icc};
 	}
 	if (chunks.has('sRGB')) return {};
 	const gamma = chunks.get('gAMA'), chroma = chunks.get('cHRM');

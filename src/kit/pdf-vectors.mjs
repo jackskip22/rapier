@@ -92,7 +92,7 @@ function geometry(node) {
   unsupported();
 }
 
-export async function collectPdfVectors(main, {width, height, count, capture, signal, current, check, maxBytes, sanitizeSvg, collectText}) {
+export async function collectPdfVectors(main, {width, height, count, capture, signal, current, check, maxBytes, sanitizeSvg, collectText, pictures = false, underlay = false}) {
   const document = main.ownerDocument, window = document.defaultView, origin = main.getBoundingClientRect();
   const pages = Array.from({length: count}, () => []), hidden = [], temporary = [], textRoots = [], textRestores = [];
   const colorCanvas = document.createElement('canvas'); colorCanvas.width = colorCanvas.height = 1;
@@ -117,20 +117,33 @@ export async function collectPdfVectors(main, {width, height, count, capture, si
   try {
     for (const original of roots) {
       check();
-      let root = original, mount = null;
+      let root = original, mount = null, turned = false, groupOpacity = 1, asImage = false, under = false;
       const originalBox = original.getBoundingClientRect();
       if (!(originalBox.width > 0 && originalBox.height > 0)) continue;
       if (original.localName === 'img') {
         if (typeof sanitizeSvg !== 'function') continue;
         const address = original.getAttribute('src') || '', match = /^data:image\/svg\+xml(?:;charset=[^;,]+)?(;base64)?,([\s\S]*)$/i.exec(address);
-        if (!match) continue;
+        if (!match && !(pictures && /^data:image\//i.test(address))) continue;
+        asImage = !match;
+      }
+      if (original.localName === 'img' && !asImage) {
+        const address = original.getAttribute('src') || '', match = /^data:image\/svg\+xml(?:;charset=[^;,]+)?(;base64)?,([\s\S]*)$/i.exec(address);
         let text;
         try {text = match[1] ? new TextDecoder('utf-8', {fatal: true}).decode(Uint8Array.from(atob(match[2]), ch => ch.charCodeAt(0))) : decodeURIComponent(match[2]);} catch (_) {continue;}
         const parsed = new window.DOMParser().parseFromString(sanitizeSvg(text), 'image/svg+xml');
         if (parsed.querySelector('parsererror') || parsed.documentElement.namespaceURI !== SVG) continue;
+        const shown = window.getComputedStyle(original);
+        under = Number(shown.zIndex) < 0;
+        if (under && !underlay) continue;
+        turned = shown.transform !== 'none'; groupOpacity = Number(shown.opacity);
+        const unturnedWidth = turned ? Number.parseFloat(shown.width) : originalBox.width, unturnedHeight = turned ? Number.parseFloat(shown.height) : originalBox.height;
+        if (!(unturnedWidth > 0 && unturnedHeight > 0)) continue;
+        const [originX, originY] = shown.transformOrigin.split(' ').map(Number.parseFloat);
+        if (turned && !(Math.abs(originX - unturnedWidth / 2) < .5 && Math.abs(originY - unturnedHeight / 2) < .5)) continue;
+        const left = originalBox.left + originalBox.width / 2 - unturnedWidth / 2, top = originalBox.top + originalBox.height / 2 - unturnedHeight / 2;
         root = document.importNode(parsed.documentElement, true);
-        root.style.setProperty('width', originalBox.width + 'px', 'important'); root.style.setProperty('height', originalBox.height + 'px', 'important');
-        mount = document.createElement('div'); mount.style.cssText = `position:fixed;left:${originalBox.left}px;top:${originalBox.top}px;width:${originalBox.width}px;height:${originalBox.height}px;pointer-events:none`;
+        root.style.setProperty('width', unturnedWidth + 'px', 'important'); root.style.setProperty('height', unturnedHeight + 'px', 'important');
+        mount = document.createElement('div'); mount.style.cssText = `position:fixed;left:${left}px;top:${top}px;width:${unturnedWidth}px;height:${unturnedHeight}px;pointer-events:none` + (turned ? `;transform:${shown.transform};transform-origin:50% 50%` : '');
         mount.attachShadow({mode: 'open'}).append(root); document.body.append(mount); temporary.push(mount); await document.fonts.ready;
         const glyphs = await collectText?.(root); if (glyphs) textRestores.push(glyphs.restore);
         textRoots.push({root, original, text: glyphs});
@@ -181,7 +194,7 @@ export async function collectPdfVectors(main, {width, height, count, capture, si
         } catch (_) { sequence.push({raster: node}); return; }
         if (!path) return;
         const matrix = node.getScreenCTM(); if (!matrix || ![matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f].every(Number.isFinite)) {sequence.push({raster: node}); return;}
-        const opacity = Number(style.opacity), fillAlpha = fill ? fill[3] * Number(style.fillOpacity) * opacity : 1, strokeAlpha = stroke ? stroke[3] * Number(style.strokeOpacity) * opacity : 1;
+        const opacity = Number(style.opacity) * groupOpacity, fillAlpha = fill ? fill[3] * Number(style.fillOpacity) * opacity : 1, strokeAlpha = stroke ? stroke[3] * Number(style.strokeOpacity) * opacity : 1;
         let commands = nums([matrix.a, matrix.b, matrix.c, matrix.d, matrix.e - origin.left, matrix.f - origin.top]) + ' cm\n';
         if (fill) commands += nums(fill.slice(0, 3)) + ' rg\n';
         if (stroke) {
@@ -193,12 +206,19 @@ export async function collectPdfVectors(main, {width, height, count, capture, si
         commands += path + (fill && stroke ? style.fillRule === 'evenodd' ? 'B*' : 'B' : fill ? style.fillRule === 'evenodd' ? 'f*' : 'f' : stroke ? 'S' : 'n') + '\n';
         sequence.push({commands, fillAlpha, strokeAlpha}); geometries++;
       };
-      await walk(root);
-      if (!geometries && !textRoots.find(entry => entry.root === root)?.text?.nodes.size) continue;
+      if (asImage) sequence.push({raster: root}); else await walk(root);
+      if ((turned || groupOpacity !== 1) && (sequence.some(piece => piece.raster) || textRoots.find(entry => entry.root === root)?.text?.nodes.size)) {
+        const entry = textRoots.find(row => row.root === root);
+        if (entry?.text) textRestores.pop()?.();
+        if (entry) textRoots.splice(textRoots.indexOf(entry), 1);
+        mount?.remove(); temporary.splice(temporary.indexOf(mount), 1);
+        continue;
+      }
+      if (!geometries && !asImage && !textRoots.find(entry => entry.root === root)?.text?.nodes.size) continue;
       const painted = [];
       for (const piece of sequence) {const held = piece.raster ? await raster(piece.raster) : piece; if (held) painted.push(held);}
       const first = Math.max(0, Math.floor((box.left - origin.left + .01) / width)), last = Math.min(count - 1, Math.floor((box.right - origin.left - .01) / width));
-      for (let page = first; page <= last; page++) pages[page].push({sequence: painted, x: -page * width, clip: {x: box.left - origin.left, y: box.top - origin.top, width: box.width, height: box.height}});
+      for (let page = first; page <= last; page++) pages[page].push({sequence: painted, x: -page * width, clip: {x: box.left - origin.left, y: box.top - origin.top, width: box.width, height: box.height}, ...(under && {under: true})});
       hidden.push({node: original, style: original.getAttribute('style')}); original.style.setProperty('visibility', 'hidden', 'important');
     }
     return {pages, textRoots, restore};

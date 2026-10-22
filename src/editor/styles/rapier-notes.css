@@ -315,7 +315,7 @@ body.rapier-notes-mode #btn-notes-remind[data-notes-filled] svg{fill:currentColo
 .rapier-recording-sheet::backdrop{background:var(--color-scrim,rgba(12,12,12,0.8))}
 body.light .rapier-recording-sheet::backdrop{background:var(--color-scrim,rgba(246,246,243,0.6))}
 .rapier-recording-sheet .rapier-notes-sheet-name{white-space:normal}
-.rapier-attachment-sheet p,.rapier-recording-caption{white-space:pre-line}
+.rapier-recording-caption{white-space:pre-line}
 .rapier-recording-live{--color-text:#ffffff;display:flex;flex-direction:column}
 body.light .rapier-recording-live{--color-text:#000000}
 .rapier-recording-live[open]{animation:rapier-recording-rise 240ms var(--ease-out)}

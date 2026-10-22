@@ -7,7 +7,9 @@ export function failure(code) { return Object.assign(new Error(code), {code}); }
 export function check(signal) { if (signal?.aborted) throw failure('cancelled'); }
 
 export async function linuxTree(rootPath) {
-  const process = spawn('python3', [fileURLToPath(new URL('./linux-broker.py', import.meta.url)), rootPath],
+  const broker = globalThis.process.env.RAPIER_FOLDER_BROKER ||
+    fileURLToPath(new URL('../../linux/app/target/debug/examples/folder-broker', import.meta.url));
+  const process = spawn(broker, [rootPath],
     {stdio: ['pipe', 'pipe', 'pipe']});
   let serial = 0, closed = false;
   const pending = new Map();
@@ -32,6 +34,7 @@ export async function linuxTree(rootPath) {
   });
   function call(method, args = {}) {
     if (closed) return Promise.reject(failure('revoked'));
+    if (typeof args.path === 'string' && !args.path.isWellFormed()) return Promise.reject(failure('invalid_path'));
     const id = ++serial;
     const request = JSON.stringify({id, method, args}) + '\n';
     if (Buffer.byteLength(request, 'utf8') > 16384) return Promise.reject(failure('request_limit'));

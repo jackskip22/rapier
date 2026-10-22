@@ -41,7 +41,7 @@ html[data-linenumbers="on"] #source-mode:not(.source-mode--prose) .source-stack 
 
 
 .filename-ext-btn {
-	min-width: 40px;
+	min-width: 44px;
 	height: 48px;
 	min-height: 48px;
 	max-width: 88px;
@@ -552,6 +552,17 @@ html[data-compare="on"] #source-mode ,html:not([data-compare="on"]) .compare-mod
 }
 .compare-word--add { background: color-mix(in srgb, var(--color-success) 32%, transparent); }
 .compare-word--remove { background: color-mix(in srgb, var(--color-error) 32%, transparent); }
+.compare-content--blocks > * { max-width: calc(var(--md-measure, 39.6rem) + 2 * var(--editor-h-pad)); margin-inline: auto; }
+.compare-block { padding-bottom: var(--space-3); }
+.compare-block__label { display: flex; justify-content: space-between; gap: var(--space-4); }
+.compare-panel { margin: 0 var(--editor-h-pad) var(--space-2); padding: var(--space-4) var(--space-5); overflow-x: auto; }
+.compare-panel--remove, .compare-mark--remove { background: color-mix(in srgb, var(--color-error) 11%, transparent); }
+.compare-panel--add, .compare-mark--add { background: color-mix(in srgb, var(--color-success) 11%, transparent); }
+.compare-panel--move { background: var(--color-surface-2); }
+.compare-block__context { padding: var(--space-3) var(--editor-h-pad); }
+.compare-panel :is(pre, table, thead, tbody, tr, th, td) { background: transparent; }
+.compare-block__body > :first-child { margin-block-start: 0; }
+.compare-block__body > :last-child { margin-block-end: 0; }
 
 .compare-omitted {
 	width: 100%;

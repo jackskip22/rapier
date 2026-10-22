@@ -385,12 +385,8 @@ export function waterShaderSources({precisionTest='',exactPositions=false}={}){
    let p=vec2<i32>(coord);let water=textureLoad(t3,p,0).r;
    // Mobile water can change pigment through the flow even when its own half-float value is unchanged.
    dirty=!(smoothstep(0.02,0.45,water)<0.002);
-   if(!dirty){
-    let a=textureLoad(t1,p,0);let b=textureLoad(t2,p,0);
-    dirty=any(bitcast<vec4<u32>>(a)!=bitcast<vec4<u32>>(textureLoad(t4,p-vec2<i32>(u.v[15].zw),0)))||
-     any(bitcast<vec4<u32>>(b)!=bitcast<vec4<u32>>(textureLoad(t5,p-vec2<i32>(u.v[15].zw),0)))||
-     (u.v[2].w!=1.0&&(any(a!=vec4<f32>(0))||any(b!=vec4<f32>(0))));
-   }
+   // Pigment on paper too dry to move changes only while Dry settles it (keep below 1).
+   if(!dirty&&u.v[2].w!=1.0){let a=textureLoad(t1,p,0);let b=textureLoad(t2,p,0);dirty=any(a!=vec4<f32>(0))||any(b!=vec4<f32>(0));}
    if(dirty){break;}
   }
   if(dirty){atomicStore(&changed,1u);}

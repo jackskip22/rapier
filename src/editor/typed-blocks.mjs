@@ -26,7 +26,7 @@ function _rapierTypedBlock(before, key, where) {
 	return null;
 }
 
-const _RAPIER_TYPED_MARKS = Object.freeze([['**', 'strong'], ['__', 'strong'], ['*', 'em'], ['_', 'em'], ['`', 'code']]);
+const _RAPIER_TYPED_MARKS = Object.freeze([['**', 'strong'], ['__', 'strong'], ['~~', 's'], ['*', 'em'], ['_', 'em'], ['`', 'code']]);
 const _RAPIER_TYPED_OPENER = /[\s(\[{"'\u2018\u201c]/;
 
 function _rapierTypedLink(text) {

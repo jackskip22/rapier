@@ -1243,7 +1243,7 @@ function* _rapierProjectPortableNodesSteps(semanticRoot, options) {
 			? (element.style.backgroundColor || RAPIER_PORTABLE_HIGHLIGHT_HEX[String(element.getAttribute('data-rapier-highlight') || '').toLowerCase()] || RAPIER_PORTABLE_HIGHLIGHT_HEX.yellow)
 			: null;
 
-		const isTableCaption = element.tagName === 'P' && element.classList.contains('rapier-table-caption');
+		const isTableCaption = element.tagName === 'P' && (element.classList.contains('rapier-table-caption') || element.classList.contains('rapier-figure-caption'));
 
 		const isPageBreak = element.hasAttribute('data-md-break');
 		for (const attribute of Array.from(element.attributes)) { yield;
@@ -1270,6 +1270,13 @@ function* _rapierProjectPortableNodesSteps(semanticRoot, options) {
 			if (paragraphLayout.line != null) element.style.lineHeight = String(paragraphLayout.line).replace(/\+$/, '');
 			if (paragraphLayout.before != null) element.style.marginTop = paragraphLayout.before + 'pt';
 			if (paragraphLayout.after != null) element.style.marginBottom = paragraphLayout.after + 'pt';
+		}
+		if (!keepLayoutData && paragraphLayout && /^(?:P|H[1-6])$/.test(element.tagName) && !element.closest('table,pre') && (paragraphLayout.first != null || paragraphLayout.indent != null)) {
+			const indents = {...(paragraphLayout.first != null && {first: paragraphLayout.first}), ...(paragraphLayout.indent != null && {indent: paragraphLayout.indent})};
+			for (const declaration of globalThis.RapierMarkdownLayout.textStyle(indents, {portable: true}).split(';').filter(Boolean)) {
+				const at = declaration.indexOf(':');
+				element.style.setProperty(declaration.slice(0, at), declaration.slice(at + 1));
+			}
 		}
 		if (!keepLayoutData && element.tagName === 'P' && !element.closest('table,pre')) {
 			if (paragraphLayout?.hyphens === 'auto') { element.style.hyphens = 'auto'; element.style.textWrap = 'pretty'; }

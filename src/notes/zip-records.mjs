@@ -58,6 +58,12 @@ function normalisedName(name) {
 	return name;
 }
 function bytesOf(bytes, enc) { return typeof bytes === 'string' ? enc.encode(bytes) : bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes); }
+export function zipStoredSize(entries) {
+	const enc = new TextEncoder();
+	let size = 22;
+	for (const e of entries) size += 76 + 2 * enc.encode(normalisedName(e.name)).length + bytesOf(e.bytes, enc).length;
+	return size;
+}
 export function zipStored(entries, options = {}) { return finish(zipStoredSteps(entries, options)); }
 export async function zipStoredAsync(entries, options = {}) { return finishAsync(zipStoredSteps(entries, options), options.work); }
 function* zipStoredSteps(entries, options = {}) {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {isTemplatePage, isPageBorderLayout} from '../spec/template-page.mjs';
 import {openArchive, createImportWork, ARCHIVE_LIMITS, crc32} from '../images/archive.mjs';
-import {zipStored, zipStoredAsync} from '../notes/zip-records.mjs';
+import {zipStored, zipStoredAsync, zipStoredSize} from '../notes/zip-records.mjs';
 import {finish, finishAsync, cloneTree, encodeUtf8Steps, pause, check} from '../kit/render-work.mjs';
 import {formatLayout, parseLayout, decodeLayoutAttribute, indentLevel, textStyle as indentStyle, textLayout, wrapColumnFloor} from '../spec/md-layout.mjs';
 import {parseInkBody, normalizeFontFamily, fontFamilyCss, FONT_STACKS, typography} from '../spec/md-marks.mjs';
@@ -18,7 +18,7 @@ import {parseComments, commentThreads, commentAnchor, writeComments, commentSpli
 import {DOCX_FONTS} from '../shell/fonts/docx-fonts.mjs';
 import {_rapierHeadingSlugBase, _rapierNextHeadingSlug} from '../editor/source-facts.mjs';
 
-const DOCX_LIMITS = Object.freeze({xmlBytes: 8 * 1024 * 1024, totalXmlBytes: 12 * 1024 * 1024,
+const DOCX_LIMITS = Object.freeze({xmlBytes: 8 * 1024 * 1024, totalXmlBytes: 12 * 1024 * 1024, recoveryBytes: 16 * 1024 * 1024,
   elements: 200000, depth: 96, styles: 2048, paragraphs: 50000, images: 1024, tableColumns: 64});
 
 const NS = Object.freeze({
@@ -74,7 +74,7 @@ async function wordRecoveryBytes(stream, limit, work) {
       await pause(work);
       const {value, done} = await reader.read();
       if (done) break;
-      if (value.length > limit - length) return fail('Word recovery exceeds its limit.', 'docx_recovery_limit');
+      if (value.length > limit - length) return fail('This document is too large for a Word file. Use fewer or smaller pictures, or export a PDF or an HTML page.', 'docx_recovery_limit');
       chunks.push(value); length += value.length;
     }
     const bytes = new Uint8Array(length); let at = 0;
@@ -86,7 +86,7 @@ async function wordRecoveryBytes(stream, limit, work) {
 async function wordRecoveryRecord(source, work, equations = []) {
   const bytes = utf8.encode(source);
   const packed = await wordRecoveryBytes(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip')),
-    Math.floor((DOCX_LIMITS.xmlBytes - 512) * .75), work);
+    Math.floor((DOCX_LIMITS.recoveryBytes - 512) * .75), work);
   const parts = [];
   for (let at = 0; at < packed.length; at += 49152) parts.push(btoa(String.fromCharCode(...packed.subarray(at, at + 49152))));
   return JSON.stringify({gzip: parts.join(''), sha256: await sha256(bytes), ...(equations.length ? {equations} : {})});
@@ -512,7 +512,6 @@ function textStyle(html, style) {
   for (const [key, tag] of [['bold','strong'], ['italic','em'], ['strike','s'], ['underline','u']]) if (style[key]) html = '<' + tag + '>' + html + '</' + tag + '>';
   if (style.vertical === 'superscript') html = '<sup>' + html + '</sup>';
   if (style.vertical === 'subscript') html = '<sub>' + html + '</sub>';
-  if (style.smallCaps) html = sourceToken('<span style="font-variant-caps:small-caps">') + html + sourceToken('</span>');
   const typed = {};
   if (style.halfPoints != null) typed.size = style.halfPoints / 2 + 'pt';
   if (style.color) typed.color = style.color;
@@ -720,7 +719,7 @@ function mathTex(node) {
   return fail('DOCX contains an unsupported equation structure: ' + name, 'docx_math_unsupported');
 }
 
-export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgress, work, name = 'Word.dotx'} = {}) {
+export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgress, work, name = 'Word.dotx', inspect = false} = {}) {
   if (!(blob instanceof Blob) || blob.size > ARCHIVE_LIMITS.bytes) return fail('DOCX exceeds the 25 MB import limit.');
   if (typeof DOMParser !== 'function') return fail('DOCX import requires an XML parser.');
   work ||= createImportWork({signal, checkCurrent, onProgress});
@@ -754,7 +753,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     if (outputBytes > ARCHIVE_LIMITS.bytes) return fail('Converted DOCX exceeds the 25 MB document limit.');
     return html;
   };
-  const readXml = async (path, family, rootName) => {
+  const readXml = async (path, family, rootName, {carrier = false} = {}) => {
     if (xmlCache.has(path)) {
       const root = xmlCache.get(path);
       if (!is(root, family, rootName)) return fail('DOCX contains invalid XML: ' + path, 'docx_xml_invalid');
@@ -762,8 +761,8 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     }
     const entry = entries.get(path);
     if (!entry) return fail('DOCX is missing a required part: ' + path);
-    xmlBytes += entry.size;
-    if (entry.size > DOCX_LIMITS.xmlBytes || xmlBytes > DOCX_LIMITS.totalXmlBytes) return fail('DOCX XML exceeds the import limit.');
+    if (!carrier) xmlBytes += entry.size;
+    if (entry.size > (carrier ? DOCX_LIMITS.recoveryBytes : DOCX_LIMITS.xmlBytes) || xmlBytes > DOCX_LIMITS.totalXmlBytes) return fail('DOCX XML exceeds the import limit.');
     let source = await xmlText(await files.read(path), work);
     if (/<!\s*(?:DOCTYPE|ENTITY)\b/i.test(source)) return fail('DOCX XML declarations are not supported.', 'docx_xml_declaration');
     await work.checkpoint();
@@ -860,7 +859,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
   if (customPath) {
     const priorBytes = xmlBytes, priorElements = elements;
     let properties;
-    try { properties = await readXml(customPath, 'custom', 'Properties'); }
+    try { properties = await readXml(customPath, 'custom', 'Properties', {carrier: true}); }
     catch (error) {
       if (!['docx_invalid','docx_xml_invalid'].includes(error.code)) throw error;
       work.check(); xmlBytes = priorBytes; elements = priorElements;
@@ -881,7 +880,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
   for (const relation of (await relationships(mainPath)).values()) {
     if (relation.kind !== 'customXml' || relation.external || !entries.has(relation.path)) continue;
     try {
-      const root = await readXml(relation.path, 'rapier', 'recovery');
+      const root = await readXml(relation.path, 'rapier', 'recovery', {carrier: true});
       let source;
       try { source = await readWordRecovery(root.textContent, work); }
       catch (_) { work.check(); source = null; }
@@ -899,6 +898,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
   if (canonical !== null && Array.from(descendants(body, 'w')).some(node => ['ins','del','moveFrom','moveTo'].includes(node.localName)) &&
       !wordReview(canonical).changes.length) { base = canonical; canonical = null; }
   const project = canonical === null;
+  if (inspect) return {canonical, pictures: [...entries.keys()].filter(path => path.startsWith('word/media/')).length};
   const stylesPath = await related(mainPath, 'styles'), numberingPath = await related(mainPath, 'numbering');
   const settingsPath = await related(mainPath, 'settings');
   const nativeSettings = settingsPath ? await readXml(settingsPath, 'w', 'settings') : null;
@@ -1123,6 +1123,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       if (properties.dropLines) layout.lines = properties.dropLines;
       if (autoHyphens && properties.suppressHyphens !== true) layout.hyphens = 'auto';
       if (properties.hangingPunctuation) layout.hanging = 'on';
+      if (properties.smallCapsLead) layout.caps = 'small';
     }
     return layout;
   };
@@ -1723,6 +1724,13 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     const wordHeadingTheme = wordHeading && !!attr(child(child(styles.get(id), 'w', 'rPr'), 'w', 'color'), 'w', 'themeColor');
     const pieces = await inline(node, {...context, fields: [], initial: !!effective.dropLines, wordHeading, wordHeadingTheme,
       structuralBold: !!named.structuralBold && !!inherited.bold && !!(inferredHeading || context.tableHeader)}, inherited), output = [];
+    if (project) {
+      const runs = pieces.filter(piece => piece.formatting);
+      let lead = true, later = false;
+      for (const piece of runs) { if (!piece.formatting.smallCaps) { if (piece.words?.trim()) lead = false; } else if (!lead) later = true; }
+      if (runs[0]?.formatting.smallCaps) effective.smallCapsLead = true;
+      if (later) warn('Small capitals became ordinary letters.');
+    }
     const marks = [['bold','strong'], ['italic','em'], ['strike','s']];
     const formatted = runs => {
       let html = '';
@@ -2072,7 +2080,6 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
   const callout = async (kind, nodes, context) => project
     ? '<blockquote class="callout callout-' + kind + '"><div class="callout__label">' + kind + '</div>' + await renderBlocks(nodes, context) + '</blockquote>' : renderBlocks(nodes, context);
   const table = async (node, context) => {
-    stats.tables++;
     const properties = child(node, 'w', 'tblPr'), styleId = val(child(properties, 'w', 'tblStyle')), named = style(styleId);
     const rapierTable = val(child(styles.get(styleId), 'w', 'name')) === 'Rapier table' && val(child(child(styles.get(styleId), 'w', 'rPr'), 'w', 'sz')) === '21';
     const only = children(node, 'w', 'tr'), cell = only.length === 1 && children(only[0], 'w', 'tc').length === 1 && child(only[0], 'w', 'tc');
@@ -2085,6 +2092,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       const top = integer(attr(float, 'w', 'tblpY'), 0, -31680, 31680), y = top ? Math.max(-50, Math.round(top * 635 / pictureMeasure.em * 100) / 100) : null;
       return renderBlocks(inner, {...context, figure: {wrap, x: percent((integer(attr(float, 'w', 'tblpX'), 0) + cellWidth / 2) * 635), ...(y ? {y} : {}), width: percent(cellWidth * 635)}});
     }
+    stats.tables++;
     if (children(styles.get(styleId), 'w', 'tblStylePr').length) warn('Conditional table styling was not imported.');
     const rows = await tableParts(node, 'tr', ['tblPr','tblGrid',...MARKERS]), output = [], spanning = new Map();
     for (const row of rows) {
@@ -3956,6 +3964,19 @@ const DIRECTION_RUNS = new RegExp(String.raw`\P{L}*(?:[R](?:[R]|\P{L})*|(?![R])\
 const directionRuns = text => RTL_LETTER.test(text) ? text.match(DIRECTION_RUNS) : [text];
 export function docxBlocksFromDom(root, options = {}) { return finish(docxBlocksFromDomSteps(root, options)); }
 export async function docxBlocksFromDomAsync(root, options = {}) { return finishAsync(docxBlocksFromDomSteps(root, options), options.work); }
+function captionOf(all, lead) {
+  const runs = all.filter(run => run.type !== 'bookmarkStart' && run.type !== 'bookmarkEnd').map(({color, family, halfPoints, size, rtl, language, ...marks}) => marks);
+  const found = lead.exec(runs.map(run => run.type === 'text' ? run.text : '').join(''));
+  let skip = found ? found[0].length : 0;
+  const kept = [];
+  for (const run of runs) {
+    if (run.type !== 'text' || !skip) { kept.push(run); continue; }
+    if (run.text.length <= skip) { skip -= run.text.length; continue; }
+    kept.push({...run, text: run.text.slice(skip)}); skip = 0;
+  }
+  return {caption: kept.map(run => run.type === 'text' ? run.text : '').join('').trim(), captionRuns: kept};
+}
+
 function* docxBlocksFromDomSteps(root, {canonical, willTokens = [], pointSize = referenceType(typeof canonical === 'string' ? readDocumentSettings(canonical) : null).body, indentOffset = 0} = {}) {
   const blocks = [], refs = new Map(), notes = new Map();
   const directionOf = element => {
@@ -4133,7 +4154,7 @@ function* docxBlocksFromDomSteps(root, {canonical, willTokens = [], pointSize = 
           if (content[0]?.type === 'image') {
             const image = content.shift();
             begin({runs: [image]});
-            if (image.caption) content.unshift({type: 'paragraph', runs: [{type: 'text', text: 'Figure: ' + image.caption, italic: true, size: 21}], layout: {align: 'center'}});
+            if (image.caption) content.unshift({type: 'paragraph', runs: [{type: 'text', text: 'Figure: '}, ...(image.captionRuns || [{type: 'text', text: image.caption}])].map(run => ({italic: true, size: 21, ...run})), layout: {align: 'center'}});
           } else if (content[0]?.type === 'code') {
             const code = content.shift(), lines = code.text.split('\n'), firstLine = lines.shift();
             const slice = (from, to) => {
@@ -4274,11 +4295,11 @@ function* docxBlocksFromDomSteps(root, {canonical, willTokens = [], pointSize = 
       continue;
     }
     if (tag === 'P' && element.classList.contains('rapier-table-caption') && blocks.length && blocks[blocks.length - 1].type === 'table') {
-      blocks[blocks.length - 1].caption = element.textContent.replace(/^Table:\s*/, '').trim();
+      Object.assign(blocks[blocks.length - 1], captionOf(yield* runsOf(element), /^(?:Table:|:) +/));
       continue;
     }
     if (tag === 'P' && element.classList.contains('rapier-figure-caption') && blocks.length && blocks[blocks.length - 1].type === 'image') {
-      blocks[blocks.length - 1].caption = element.textContent.replace(/^Figure:\s*/, '').trim();
+      Object.assign(blocks[blocks.length - 1], captionOf(yield* runsOf(element), /^Figure: +/));
       continue;
     }
     if (['P', 'DIV', 'FIGURE', 'DETAILS', 'SECTION', 'ARTICLE', 'ASIDE', 'MAIN', 'HEADER', 'FOOTER'].includes(tag)) {
@@ -4512,7 +4533,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
   }
   fonts.push(...baseFamilies.values());
   const carrySource = typeof canonical === 'string';
-  const templatePage = carrySource && !!settings?.papersize && isTemplatePage(canonical);
+  const templatePage = carrySource && isTemplatePage(canonical);
   let pageBorder = null;
   const quoteDepths = new Set();
   let hyphenation = false, quotations = false, definitions = false, tableHeaderStyle = false, sourceCode = false, tableStyle = false;
@@ -4842,6 +4863,15 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
      borders: props?.borders || decoration?.borders, direction: props?.direction || decoration?.direction});
    const paragraphPart = (inner, props) => paragraph(inner, inheritedProps(props));
    const renderRuns = (runs, defaults = decoration?.runs) => emitRuns(runs, targets, Math.max(1, availableWidth - inset * 635), defaults);
+   const plainRun = run => run?.type === 'text' && Object.entries(run).every(([key, value]) => key === 'type' || key === 'text' || value == null || value === false);
+   const captionXml = (label, block) => {
+     const words = (block.captionRuns || [{type: 'text', text: block.caption}]).map(run => ({...run})), lead = {type: 'text', text: label};
+     const runs = plainRun(words[0]) ? [{...lead, text: label + words[0].text}, ...words.slice(1)] : [lead, ...words];
+     return renderRuns(runs.reduce((merged, run) => {
+       if (plainRun(merged.at(-1)) && plainRun(run)) merged.at(-1).text += run.text; else merged.push(run);
+       return merged;
+     }, []), {italic: true, size: 21});
+   };
    const prose = (block, props, typography = true, prefix = '') => prosePart(block, inheritedProps(props), targets,
      typography, prefix, Math.max(1, availableWidth - inset * 635),
      block.heading ? {...decoration?.runs, characterStyle: undefined} : decoration?.runs);
@@ -4893,7 +4923,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
     if (block.type === 'image') {
       const src = block.src || (block.ref ? refs.get(String(block.ref).toLowerCase()) : null);
       if (!src) continue;
-      if (templatePage && !pageBorder && !tableCell && isPageBorderLayout(block.layout) && /^data:image\/svg\+xml/i.test(src)) { pageBorder = {src, alt: block.alt || ''}; continue; }
+      if (templatePage && !pageBorder && !tableCell && isPageBorderLayout(block.layout) && /^data:image\/(?:png|jpeg|webp|gif|svg\+xml|jxl)[;,]/i.test(src)) { pageBorder = {src, alt: block.alt || ''}; continue; }
       const drawing = /^data:image\/svg\+xml/i.test(src);
       const asset = await assetFor(src, block.alt, drawing, block.original), width = Math.max(1, availableWidth - inset * 635);
       const draw = (layout, width, cap = null) => commentObjectXml(linkObject(block, targets, pictureXml(asset, block.alt, layout, width, 0, cap, block.title)), block);
@@ -4921,13 +4951,13 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
           '<w:tblCellMar>' + ['top', 'left', 'bottom', 'right'].map(edge => '<w:' + edge + ' w:w="0" w:type="dxa"/>').join('') + '</w:tblCellMar>' +
           '</w:tblPr><w:tblGrid><w:gridCol w:w="' + cellWidth + '"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc>' +
           '<w:tcPr><w:tcW w:w="' + cellWidth + '" w:type="dxa"/></w:tcPr>' +
-          pXml(image, {after: 60, keepNext: true}) + pXml(tXml('Figure: ' + block.caption, {italic: true, size: 21}), {align: 'center', after: 0}) +
+          pXml(image, {after: 60, keepNext: true}) + pXml(await captionXml('Figure: ', block), {align: 'center', after: 0}) +
           '</w:tc></w:tr></w:tbl>'});
         continue;
       }
       bodyParts.push(paragraphPart(draw(block.layout, width),
         {align: jcOf(block.layout), ind: paragraphInd(null), ...ownSpacingOf(block.layout), ...(block.caption ? {after: 60, keepNext: true} : {})}));
-      if (block.caption) bodyParts.push(paragraphPart(tXml('Figure: ' + block.caption, {italic: true, size: 21}), {align: 'center', ind: paragraphInd(null)}));
+      if (block.caption) bodyParts.push(paragraphPart(await captionXml('Figure: ', block), {align: 'center', ind: paragraphInd(null)}));
       continue;
     }
     if (block.blocks && (block.type === 'quote' || block.type === 'callout')) {
@@ -5084,7 +5114,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
       }
       tbl += '</w:tbl>';
       bodyParts.push({xml: tbl});
-      if (block.caption) bodyParts.push(paragraphPart(tXml('Table: ' + block.caption, {italic: true, size: 21}), {align: 'center', ind: paragraphInd(null), before: 60}));
+      if (block.caption) bodyParts.push(paragraphPart(await captionXml('Table: ', block), {align: 'center', ind: paragraphInd(null), before: 60}));
       continue;
     }
     if (block.type === 'code') {
@@ -5177,7 +5207,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
   const footerId = settings && settings.pagestyle === 'plain' ? nextRid() : '';
   let headerId = '', headerXml = '';
   if (pageBorder) {
-    const asset = await assetFor(pageBorder.src, pageBorder.alt, true, null);
+    const asset = await assetFor(pageBorder.src, pageBorder.alt, /^data:image\/svg\+xml/i.test(pageBorder.src), null);
     headerId = nextRid();
     const cx = page.width * 635, cy = page.height * 635, pr = docPr++, description = attributeText(pageBorder.alt);
     const blip = '<a:blip r:embed="' + asset.id + (asset.svgId ? '"><a:extLst><a:ext uri="{96DAC541-7B7A-43D3-8B79-37D633B846F1}"><asvg:svgBlip xmlns:asvg="' + NS.svg[0] + '" r:embed="' + asset.svgId + '"/></a:ext></a:extLst></a:blip>' : '"/>');
@@ -5458,14 +5488,13 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
   }
   let nativeXmlBytes = 0;
   for (const entry of entries) if (/\.(?:xml|rels)$/.test(entry.name)) {
-    nativeXmlBytes += entry.bytes.length;
-    if (entry.bytes.length > DOCX_LIMITS.xmlBytes || nativeXmlBytes > DOCX_LIMITS.totalXmlBytes)
-      return fail('DOCX XML exceeds the import limit.');
+    const carrier = entry.name === 'customXml/item1.xml' || entry.name === 'docProps/custom.xml';
+    if (!carrier) nativeXmlBytes += entry.bytes.length;
+    if (entry.bytes.length > (carrier ? DOCX_LIMITS.recoveryBytes : DOCX_LIMITS.xmlBytes) || nativeXmlBytes > DOCX_LIMITS.totalXmlBytes)
+      return fail('This document is too large for a Word file. Use fewer or smaller pictures, or export a PDF or an HTML page.', 'docx_too_large');
   }
   await pause(work, .87);
-  const packed = work ? await zipStoredAsync(entries.map(entry => ({...entry, modified: 0})), {utf8Flag: false, work}) : packDocx(entries);
-  if (packed.length > ARCHIVE_LIMITS.bytes) return fail('DOCX exceeds the 25 MB document limit.');
-  if (typeof rewriteDocument !== 'function' && !carrySource) return packed;
+  if (zipStoredSize(entries) > ARCHIVE_LIMITS.bytes) return fail('DOCX exceeds the 25 MB document limit.');
   if (typeof rewriteDocument === 'function') {
     const at = entries.findIndex(entry => entry.name === 'word/document.xml');
     entries[at] = {name: entries[at].name, bytes: await encodeXml(rewriteDocument(new TextDecoder('utf-8').decode(entries[at].bytes)))};

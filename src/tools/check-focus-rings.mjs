@@ -7,6 +7,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SOURCES = [
   ...readdirSync(join(root, 'editor/styles')).filter(name => name.endsWith('.css')).map(name => join(root, 'editor/styles', name)),
   join(root, 'spec/markdown-style.css'),
+  ...readdirSync(join(root, 'notes')).filter(name => name.endsWith('.css')).map(name => join(root, 'notes', name)),
 ];
 const NONE = /^(?:none|0|0px|unset|initial)(?:\s*!important)?$/i;
 

@@ -73,6 +73,19 @@ async function _rapierOcrReadNote(file) {
 		const words = reading ? _rapierOcrModule().pictureText(reading) : '';
 		if (words) said.push(words);
 	}
+	const kept = [...new Set((globalThis.RapierNotesAttachments?.attachmentsOf(text) || []).map(row => row.name).filter(name => /\.(?:png|jpe?g|gif|webp|avif|jxl)$/i.test(name)))];
+	for (const name of kept) {
+		let reading = null;
+		try {
+			const file = await _rapierNotesStore.readAttachment(name);
+			if (!file || !current()) continue;
+			const url = await new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => no(r.error); r.readAsDataURL(new Blob([file], {type: RAPIER_NOTES_PICTURE_TYPES[name.split('.').pop().toLowerCase()]})); });
+			reading = await _rapierOcrReading(url);
+		} catch (_) { continue; }
+		if (!current()) return;
+		const words = reading ? _rapierOcrModule().pictureText(reading) : '';
+		if (words) said.push(words);
+	}
 	const words = said.join('\n');
 	if ((state.words.get(file) || '') === words) return;
 	if (words) state.words.set(file, words); else state.words.delete(file);
@@ -114,7 +127,7 @@ function _rapierOcrMarkNote(host) {
 	}
 }
 function _rapierOcrMarks(img, reading, needles, live) {
-	const M = _rapierOcrModule(), fold = s => s.toLowerCase().normalize('NFD').replace(/\p{M}+/gu, '');
+	const M = _rapierOcrModule(), fold = globalThis.RapierNotesSearch.fold;
 	const quads = needles.flatMap(needle => M.pictureMarks(reading, needle, fold));
 	const parent = img.parentElement;
 	if (!quads.length || !parent || _rapierOcrNotes.layers.get(img)?.isConnected) return;

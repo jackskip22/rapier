@@ -1809,7 +1809,6 @@ function _rapierNotesReorderBarPaint() {
 	let bar = state.reorderBar;
 	if (!bar) {
 		bar = _rapierNotesEl('div', 'find-bar rapier-notes-reorderbar'); bar.id = 'rapier-notes-reorderbar'; bar.hidden = true;
-		bar.appendChild(_rapierNotesEl('span', 'rapier-notes-reorderbar__word', 'drag or press to reorder and rename'));
 		const done = _rapierNotesEl('button', 'rapier-notes-add rapier-notes-reorderbar__done', 'Done'); done.type = 'button'; done.dataset.notesAct = 'reorder-done';
 		bar.appendChild(done);
 		state.surface.insertBefore(bar, state.scroll);
@@ -2269,6 +2268,8 @@ function _rapierNotesThumbKey(src, width) {
 }
 function _rapierNotesCardPicture(img, text) {
 	const id = img.getAttribute('data-rapier-asset'), direct = img.getAttribute('data-rapier-image-url');
+	const kept = !id && !direct ? _rapierNotesCardAttachment(img.getAttribute('src')) : null;
+	if (kept) { void _rapierNotesThumbForAttachment(img, kept); return; }
 	if (!id && !direct) { _rapierNotesThumbFor(img, img.getAttribute('src') || '', null, null); return; }
 	const images = globalThis.RapierEmbeddedImages, assets = globalThis.RapierImageAssets;
 	if (!images || typeof images.present !== 'function' || !assets) return;
@@ -2288,6 +2289,22 @@ function _rapierNotesThumbFor(img, src, text, ref) {
 	const have = state.thumbs.get(key);
 	if (have) { _rapierNotesCardShow(img, have); return; }
 	if (!state.thumbQueue.some(q => q.key === key)) state.thumbQueue.push({ key, src, text, ref, width });
+	_rapierNotesThumbPump();
+}
+function _rapierNotesCardAttachment(src) {
+	const name = globalThis.RapierNotesAttachments?.attachmentFromHref(src);
+	return name && /\.(?:png|jpe?g|gif|webp|avif|jxl|svg)$/i.test(name) ? name : null;
+}
+async function _rapierNotesThumbForAttachment(img, name) {
+	const state = _rapierNotes;
+	img.removeAttribute('src');
+	let stat; try { stat = await _rapierNotesStore.attachmentStat(name); } catch (_) { return; }
+	if (!stat || !img.isConnected) return;
+	const width = _rapierNotesThumbWidth(), key = _rapierNotesThumbKey(name + '\0' + stat.size + '\0' + (stat.modified ?? 0), width);
+	img.dataset.notesThumb = key;
+	const have = state.thumbs.get(key);
+	if (have) { _rapierNotesCardShow(img, have); return; }
+	if (!state.thumbQueue.some(q => q.key === key)) state.thumbQueue.push({ key, attachment: name, width });
 	_rapierNotesThumbPump();
 }
 function _rapierNotesThumbShow(key, url) {
@@ -2319,7 +2336,18 @@ function _rapierNotesThumbPump() {
 	})();
 }
 async function _rapierNotesThumbMake(job) {
-	let src = job.src;
+	let src = job.src, held = null;
+	if (job.attachment) {
+		const file = await _rapierNotesStore.readAttachment(job.attachment);
+		if (!file) return null;
+		const type = RAPIER_NOTES_PICTURE_TYPES[job.attachment.split('.').pop().toLowerCase()];
+		held = URL.createObjectURL(new Blob([file], {type}));
+		if (type === 'image/svg+xml') return { url: held };
+		src = held;
+	}
+	try { return await _rapierNotesThumbDraw(job, src); } finally { if (held && job.attachment) setTimeout(() => URL.revokeObjectURL(held), 0); }
+}
+async function _rapierNotesThumbDraw(job, src) {
 	if (job.ref) {
 		const images = globalThis.RapierEmbeddedImages;
 		if (!images || typeof images.present !== 'function') return null;
@@ -3385,9 +3413,27 @@ function _rapierNotesNameByWords(file, text, {settle = false} = {}) {
 		if (!capture || !_rapierNotesDocumentBound() || state.current !== file) return;
 		await _rapierNotesSave(file, capture.canonical, capture.ledger);
 		state.untitled.delete(file);
+		await _rapierNotesMoveToName(file, wanted, capture.canonical);
 		_rapierNotesMarkClean(capture);
 	})().finally(() => { state.renaming = null; });
 	return state.renaming;
+}
+async function _rapierNotesMoveToName(file, wanted, text) {
+	const state = _rapierNotes, entry = state.index?.notes[file], proof = state.currentProof;
+	if (!entry || wanted === file || state.current !== file || !proof || proof.file !== file) return;
+	let renamed;
+	try {
+		renamed = await _rapierNotesStore.folder.rename({file, id: entry.id, expectedDigest: proof.digest, wanted, linking: []}, {guard: () => {
+			if (state.current !== file || state.currentProof !== proof || !_rapierNotesDocumentBound()) throw Object.assign(new Error('The note owner changed before it was named.'), {code: 'notes_changed'});
+		}});
+	} catch (_) { return; }
+	_rapierNotesTake(renamed);
+	state.texts.delete(file); state.titles.delete(file); state.sizes?.delete?.(file);
+	state.current = renamed.file;
+	state.currentProof = Object.freeze({...proof, file: renamed.file});
+	_rapierNotesHold(renamed.file, text);
+	if (renamed.file !== wanted && rapierRenameDocument(renamed.file) !== renamed.file) return;
+	if (typeof _rapierNotesLibraryTouch === 'function') { _rapierNotesLibraryTouch(file); _rapierNotesLibraryTouch(renamed.file); }
 }
 function _rapierNotesMarkClean(capture, ledger = capture?.ledger?.sha256) {
 	const state = _rapierNotes, proof = state.currentProof;
@@ -4051,7 +4097,7 @@ function _rapierNotesOpenSheet(file, mode) {
 		}
 	} else if (state.sheetMode === 'history') {
 		const rows = state.historyRows;
-		if (!rows || !rows.length) sheet.appendChild(_rapierNotesEl('div', 'rapier-notes-remind-label', rows === null ? 'This note\'s past could not be read.' : 'Nothing in this note\'s past yet: each save adds to it.'));
+		if (rows === null) sheet.appendChild(_rapierNotesEl('div', 'rapier-notes-remind-label', 'This note\'s past could not be read.'));
 		else for (const row of rows) {
 			const b = button('history-put', _rapierNotesWhen(row.time) + (row.current ? '  ·  now' : '') + '  ·  ' + _rapierNotesReasonWords(row.reason, row.first) + '  ·  ' + _rapierNotesBytesWords(row.size) + (row.preview ? '  ·  ' + row.preview : ''));
 			b.dataset.notesVersion = String(row.id);
@@ -7673,9 +7719,9 @@ globalThis.rapierNotesHost = Object.freeze({
 				try { text = (_rapierNotes.index === index ? _rapierNotes.texts.get(file) : undefined) ?? await _rapierNotesStore.read(file); }
 				catch (error) { if (error?.code !== 'unreadable') throw error; }
 				if (signal?.aborted || denied()) return null;
-				if (query && typeof text !== 'string') return {refused: 'notes_search_incomplete'};
+				if (typeof text !== 'string') continue;
 				if (query) texts.set(file, text);
-				const card = M.projectCard(file, typeof text === 'string' ? text : '');
+				const card = M.projectCard(file, text);
 				rows.push({file, note_ref: _rapierNotesHostRef(file, index), title: card.title || '', section: M.sectionOf(entry, index.sections), skill: entry.skill === true, ...(Number.isFinite(entry.modified) ? {modified: entry.modified} : {})});
 			}
 			if (denied()) return null;

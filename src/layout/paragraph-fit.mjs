@@ -22,7 +22,7 @@ export function createParagraphFitter() {
     return handle;
   }
 
-  function* solveSteps(handle, width, {indent = 0, left = 0, right = 0, widths = null} = {}, known) {
+  function* solveSteps(handle, width, {indent = 0, left = 0, right = 0, widths = null, shrink = .4, stretch = .8} = {}, known) {
     const prepared = indexes.get(handle);
     if (!prepared || ![width, indent, left, right].every(Number.isFinite) || width <= 0) return null;
     const measures = Array.isArray(widths) && widths.every(value => Number.isFinite(value) && value > 0) ? widths : [];
@@ -44,7 +44,7 @@ export function createParagraphFitter() {
       const closing = Math.min(Math.max(0, right), words.at(-1).closing);
       const target = measure(base) - (segmentIndex === 0 ? indent : 0) + opening + closing;
       const count = words.length - 1;
-      const delta = !count ? 0 : Math.max(-smallest * .4, Math.min(0, (target - natural) / count));
+      const delta = !count ? 0 : Math.max(-smallest * shrink, Math.min(0, (target - natural) / count));
       const overflow = natural + delta * count - target;
       const cost = 1 + 100 * Math.max(0, overflow / target) ** 2;
       if (Number.isFinite(natural) && target > 0 && cost < 2 && minimum[words.length - 1] - minimum[Math.min(words.length - 1, 1)] <= ceiling + .02 &&
@@ -111,7 +111,7 @@ export function createParagraphFitter() {
             const target = measure(base + lineClass) - (segmentIndex === 0 && startIndex === 0 ? indent : 0) + opening + closing;
             if (target <= 0) continue;
             const remaining = target - natural;
-            const delta = !count ? 0 : Math.max(-smallest * .4, Math.min(final ? 0 : smallest * .8, remaining / count));
+            const delta = !count ? 0 : Math.max(-smallest * shrink, Math.min(final ? 0 : smallest * stretch, remaining / count));
             const overflow = natural + delta * count - target;
             if (overflow > .02 && (count || start.cut || end.cut || words[lastWord].breaks.length)) continue;
             const residual = Math.max(0, remaining - delta * count);

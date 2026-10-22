@@ -2,7 +2,8 @@
 import {diff} from '../packages/rapier-diff/index.mjs';
 import {restore, restoreEdits} from '../packages/rapier-diff/restore.mjs';
 import {toHTML} from '../packages/rapier-diff/html.mjs';
-export {diff, restore, restoreEdits, toHTML};
+import {review, OPEN, CLOSE, marked} from '../packages/rapier-diff/review.mjs';
+export {diff, restore, restoreEdits, toHTML, review, OPEN, CLOSE, marked};
 
 export function compare(before, after, options = {}) {
   const stats = {}, code = options.docKind === 'code';
@@ -177,5 +178,5 @@ function movedPieces(before, after, move, edits, code) {
 }
 
 export function installDiffWorker(scope) {
-  scope.RapierDiff = {compare};
+  scope.RapierDiff = {compare, review};
 }

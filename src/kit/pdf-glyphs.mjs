@@ -337,8 +337,8 @@ export async function collectPdfGlyphs(main, {width, check, faces = [], prepareF
         probe.style.setProperty('visibility', 'hidden', 'important'); probe.textContent = String(value); item.prepend(probe);
         const parts = await measure(probe.firstChild, style, font); probe.remove();
         if (!parts.length || parts.some(part => !part.font)) continue;
-        parts.at(-1).text += ' ';
-        markers.set(item, {text: String(value) + ' ', parts, ...Object.fromEntries(['x','y','width','height','page'].map(key => [key, parts[0][key]]))});
+        parts.at(-1).text += '. ';
+        markers.set(item, {text: String(value) + '. ', parts, ...Object.fromEntries(['x','y','width','height','page'].map(key => [key, parts[0][key]]))});
         const id = 'm' + markers.size, old = item.getAttribute('data-rapier-pdf-marker'); item.setAttribute('data-rapier-pdf-marker', id);
         restoreSteps.push(() => old == null ? item.removeAttribute('data-rapier-pdf-marker') : item.setAttribute('data-rapier-pdf-marker', old));
         markerRules.push('[data-rapier-pdf-marker="' + id + '"]::before{-webkit-text-fill-color:transparent!important}');

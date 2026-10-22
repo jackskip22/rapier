@@ -13,11 +13,15 @@ import {DOORS, GUIDES, SITE_PAGES} from '../door-worker.js';
 import {HOME_H1, PLAY_URL, CURRENT_DOOR, MUSE_DOOR} from './discovery.mjs';
 
 const sitePage = path => 'https://rapier.website' + path;
-const SUMMARY = `Rapier is a free Markdown editor and viewer that runs in your browser. Write on the formatted page, as in a word processor, or switch to the Markdown source; there is no split preview. Your file stays plain Markdown. Free and open source (AGPL-3.0-only), with no sign-up, ads or tracking, and it keeps working offline.
+const SUMMARY = `Rapier is a free online Markdown editor and viewer. Open a .md file to read it formatted. Write on the formatted page or in the Markdown source; there is no split preview. The file stays plain Markdown. Free and open source (AGPL-3.0-only); no account, ads or tracking; works offline.
 
-## Write Markdown online
+## Free online Markdown editor
 
 Headings, lists, checklists, tables, footnotes, callouts, syntax-colored code, LaTeX math and Mermaid diagrams, with find and replace, text-to-speech and undo. Paste cells from a spreadsheet and they become a Markdown table. PNG, JPEG, WebP and SVG pictures live inside the Markdown file, and text wraps around their real shape. Rapier keeps a draft as you work, and Save writes a .md file.
+
+## Free online Markdown viewer
+
+Tap ••• at the top right, then open, and pick a .md file; on Android, open it from your file manager. Headings, tables, checklists, code, math and Mermaid diagrams show formatted. Nothing is uploaded; it works offline. Edit in place, switch to the source, or turn on read only in settings.
 
 ## Markdown to PDF
 
@@ -31,17 +35,13 @@ Tap ••• at the top right, then .docx under export, for an editable Word do
 
 Tap ••• at the top right, then open, and pick a .docx file. It becomes an editable Markdown page, pictures included, and Save writes the .md file. [Word to Markdown](${sitePage('/word-to-markdown')})
 
-## Markdown viewer
-
-Tap ••• at the top right, then open, and pick a .md file; on Android, open it from your file manager. It opens formatted: headings, tables, checklists, code, math and Mermaid diagrams. The page is the preview, so you can edit it in place, switch to the source, or turn on read only in settings to keep the file as it is.
-
 ## Mermaid diagram editor
 
 Write a mermaid code block and the diagram is drawn on the page. Flowcharts draw at once; sequence diagrams, Gantt charts and the rest use the free diagram plug-in, which downloads once. [Mermaid diagram editor](${sitePage('/mermaid-editor')})
 
 ## Other files
 
-Rapier also opens text, code, TextPack and PDF (PDF import is a free plug-in), and exports plain text and a static offline web page. Share a .rapier.html file with the whole editor inside so someone can edit, comment or suggest changes offline and send it back.
+Rapier also opens text, code, TextPack and PDF (PDF import is a free plug-in), and exports plain text and a static offline web page. Share a .rapier.html file with the whole editor inside so someone can edit or comment offline and send it back.
 
 ## Notes, drawing and painting
 
@@ -218,7 +218,8 @@ export function seoDoorSections(engineSource, uiMarkup) {
 	const escape = value => parser.utils.escapeHtml(String(value));
 	const searched = door => !door.h1 ? '' : '<p>' + escape(door.lead) + '</p>\n' +
 		(door.related?.length ? '<p>Also: ' + door.related.map(other => '<a href="https://rapier.website' + other + '">' + escape(other === '/' ? HOME_H1 : SITE_PAGES[other].h1 || SITE_PAGES[other].name) + '</a>').join(' · ') + '</p>\n' : '') +
-		(door.howTo ? '<h2>' + escape(door.howTo[0]) + '</h2>\n<ol>\n' + door.howTo[1].map(step => '<li>' + escape(step) + '</li>\n').join('') + '</ol>\n' : '') +
+		(!door.howTo ? [] : typeof door.howTo[0] === 'string' ? [door.howTo] : door.howTo).map(([heading, steps]) =>
+			'<h2>' + escape(heading) + '</h2>\n<ol>\n' + steps.map(step => '<li>' + escape(step) + '</li>\n').join('') + '</ol>\n').join('') +
 		'<h2>Questions</h2>\n' + door.faq.map(([question, answer]) => '<h3>' + escape(question) + '</h3>\n<p>' + escape(answer) + '</p>\n').join('') +
 		(door.sections || []).map(([heading, text, links]) => '<h2>' + escape(heading) + '</h2>\n<p>' + escape(text) + '</p>\n' +
 			(links?.length ? '<p>' + links.map(([label, href]) => '<a href="' + escape(href) + '">' + escape(label) + '</a>').join(' · ') + '</p>\n' : '')).join('');

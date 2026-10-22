@@ -46,35 +46,41 @@ const inkDrawing = () => {
 	function drawInk(root, deps) {
 		const { spec, ink } = deps;
 		const doc = root.ownerDocument, view = doc.defaultView;
-		const records = [], arrows = new Map();
+		const records = [], arrows = new Map(), joined = new Map();
 		for (const span of deps.spans || root.querySelectorAll(SPAN_SELECTOR)) {
 			if (span.closest('.' + LAYER_CLASS)) continue;
 			const body = span.getAttribute('data-rapier-ink') || '', mark = spec.parseInkBody(body);
 			if (!mark) continue;
-			const record = { span, body, mark };
+			const id = span.getAttribute('data-rapier-ink-id');
+			if (id && joined.has(id)) { joined.get(id).parts.push(span); continue; }
+			const record = { span, body, mark, parts: [span] };
+			if (id) joined.set(id, record);
 			records.push(record);
 			if (mark.kind === 'arrow' || mark.kind === 'end') {
 				if (!arrows.has(mark.id)) arrows.set(mark.id, []);
 				arrows.get(mark.id).push(record);
 			}
 		}
-		const fragmentsOf = deps.fragments || inkFragments;
+		const wordsOf = deps.fragments || inkFragments;
+		const fragmentsOf = record => record.parts.length === 1 ? wordsOf(record.parts[0]) : record.parts.flatMap(part => wordsOf(part)).sort((a, b) => a.y - b.y || a.x - b.x);
 		const layer = inkLayerOf(root, deps.place);
 		const origin = layer.getBoundingClientRect();
 		const previous = Array.from(layer.children).filter(child => !child.hasAttribute('data-ink-live'));
 		let cursor = Array.from(layer.childNodes).findLast(child => child.nodeType !== 1 || child.hasAttribute('data-ink-live')) || null;
 		const pieces = [];
-		for (const { span, body, mark } of records) {
+		for (const record of records) {
+			const { span, body, mark } = record;
 			if (mark.kind === 'end') continue;
 			let endSpan = null, endFragments = [];
 			if (mark.kind === 'arrow') {
 				const pair = arrows.get(mark.id);
 				if (pair.length !== 2 || !pair.some(r => r.mark.kind === 'end')) continue;
-				endSpan = pair.find(r => r.mark.kind === 'end').span;
-				endFragments = fragmentsOf(endSpan);
+				const end = pair.find(r => r.mark.kind === 'end');
+				endSpan = end.span;
+				endFragments = fragmentsOf(end);
 				if (!endFragments.length) continue;
 			}
-			const fragments = fragmentsOf(span);
+			const fragments = fragmentsOf(record);
 			if (!fragments.length) continue;
 			const em = parseFloat(view.getComputedStyle(span).fontSize) || 16;
 			const hex = mark.hex || DEFAULT_HEX;

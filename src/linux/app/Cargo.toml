@@ -1,0 +1,28 @@
+[package]
+name = "rapier-linux"
+version = "0.0.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+description = "rapier for Linux as one file: the page, its parts and plug-ins inside, run as an app window in the person's Chromium"
+publish = false
+
+[[bin]]
+name = "rapier-linux"
+path = "src/main.rs"
+
+[dependencies]
+base64 = "0.22"
+flate2 = "1"
+libc = "0.2"
+rustix = { version = "1", features = ["fs"] }
+serde_json = "1"
+sha2 = "0.10"
+tar = "0.4"
+zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

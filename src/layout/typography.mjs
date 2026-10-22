@@ -308,10 +308,27 @@ export function createTypography() {
     return {key: keys.join('\u0000'), generation:keys[0], styles, parents, supported};
   }
 
+  function smallCapsAsPlanned(paragraph, text, inspection) {
+    if (paragraph.getAttribute('data-md-caps') !== 'small') return true;
+    const doc = paragraph.ownerDocument, style = inspection.styles.get(paragraph);
+    if (!style || !doc.body) return false;
+    const probe = caps => {
+      const span = doc.createElement('span');
+      span.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;left:0;top:0;font-synthesis-small-caps:none;font-variant-caps:' + caps;
+      for (const name of ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'fontStretch', 'letterSpacing', 'fontKerning', 'fontFeatureSettings'])
+        span.style[name] = style[name];
+      span.textContent = text.trim().slice(0, 80);
+      doc.body.append(span);
+      const width = span.getBoundingClientRect().width;
+      span.remove();
+      return width;
+    };
+    return Math.abs(probe('small-caps') - probe('normal')) < .01;
+  }
+
   function snapshot(paragraph, inspection) {
     const text = paragraph.textContent, language = paragraph.closest('[lang]')?.getAttribute('lang') ?? '';
-    if (!inspection.supported || !text.trim() || paragraph.hasAttribute('data-md-lines') ||
-        paragraph.getAttribute('data-md-caps') === 'small' || paragraph.closest('[data-rapier-published-ink]') ||
+    if (!inspection.supported || !text.trim() || !smallCapsAsPlanned(paragraph, text, inspection) || paragraph.closest('[data-rapier-published-ink]') ||
         /[^\p{Script=Latin}\p{Script=Greek}\p{Script=Cyrillic}\p{Script=Common}\p{Script=Inherited}]/u.test(text) ||
         /[\u061c\u200e\u200f\u2028-\u202e\u2066-\u2069]/u.test(text)) return null;
     const hard = [], items = runs(paragraph, hard), atoms = [];
@@ -425,6 +442,24 @@ export function createTypography() {
       shape.box.height, shape.points.join(' ')].join(':')).join('|')};
   }
 
+  function dropMeasure(paragraph, view, width) {
+    if (!paragraph.hasAttribute('data-md-lines')) return null;
+    const letter = view.getComputedStyle(paragraph, '::first-letter');
+    const lines = Math.ceil(parseFloat(letter.initialLetter)), initial = initialRange(paragraph);
+    const advance = ['width', 'marginLeft', 'marginRight', 'paddingLeft', 'paddingRight', 'borderLeftWidth', 'borderRightWidth']
+      .reduce((sum, name) => sum + (parseFloat(letter[name]) || 0), 0);
+    const at = initial && point(runs(paragraph), initial.start);
+    if (!letter.initialLetter) return {refuse: true};
+    if (!(lines > 1)) return null;
+    if (!(advance > 0 && advance < width) || !at?.node.parentElement) return {refuse: true};
+    const style = view.getComputedStyle(at.node.parentElement), context = paragraph.ownerDocument.createElement('canvas').getContext('2d');
+    context.font = style.fontStyle + ' ' + style.fontWeight + ' ' + style.fontSize + ' ' + style.fontFamily;
+    context.letterSpacing = style.letterSpacing;
+    const text = paragraph.textContent, word = text.slice(initial.start, initial.start + (/\s/u.exec(text.slice(initial.start))?.index ?? text.length));
+    const lead = context.measureText(word).width - context.measureText(word.slice(initial.text.length)).width;
+    return {lines, advance, lead};
+  }
+
   const topology = plan => plan && plan.lines.map(line => [line.start,line.end,line.next,line.kind,line.glyph].join(':')).join('|');
   function updateProjection(projection, plan) {
     for (const {node,property,line,sign} of projection.bindings) {
@@ -517,13 +552,6 @@ export function createTypography() {
     return Math.abs(inner - job.plan.lines.length * job.beside.lineHeight) < 1;
   }
 
-  function editKey(paragraph, generation) {
-    const page = paragraph.ownerDocument.documentElement;
-    return [generation, paragraph.innerHTML, ...[...paragraph.attributes].map(item => item.name + '=' + item.value),
-      ...[...page.attributes].map(item => item.name + '=' + item.value), paragraph.ownerDocument.body?.className,
-      paragraph.ownerDocument.defaultView.innerWidth].join('\u0000');
-  }
-
   function apply(root, {all=false, editing=false}={}) {
     const started = performance.now();
     const generation = captureFontAuthority(root?.ownerDocument || globalThis.document);
@@ -533,31 +561,40 @@ export function createTypography() {
     }
     const jobs=[];let pending=false,changed=0,released=0,preparedCount=0;
     for (const paragraph of paragraphs(root)) {
+      if (paragraph.dataset.rapierFlow==='true') continue;
       if (paragraph.closest('table,pre,code,h1,h2,h3,h4,h5,h6')) {clear(paragraph);continue;}
       if (paragraph.closest('.block-edit')) {
         if (!editing) continue;
-        if (paragraph.getAttribute('data-md-align')!=='justify' || paragraph.getAttribute('data-md-hyphens')!=='auto') {
-          if (paragraph.hasAttribute(mark)) clear(paragraph);
-          protectInitial(paragraph);continue;
-        }
+        if (paragraph.hasAttribute(mark)) clear(paragraph);
+        protectInitial(paragraph);
+        continue;
       }
       else if (paragraph.isContentEditable && !paragraph.closest('.block-read')) {clear(paragraph);continue;}
       if (!paragraph.isConnected || !all && paragraph.checkVisibility && !paragraph.checkVisibility({contentVisibilityAuto:true})) continue;
       const view=paragraph.ownerDocument.defaultView;
       if (!view || !paragraph.getClientRects().length) continue;
-      if (editing && states.get(paragraph)?.editKey===editKey(paragraph,generation)) continue;
       const style=view.getComputedStyle(paragraph),box=paragraph.getBoundingClientRect(),prior=states.get(paragraph);
       if (!all && (box.bottom < -100 || box.top > view.innerHeight+100)) continue;
       const hanging=paragraph.getAttribute('data-md-hanging')==='on',size=dimensions(paragraph,style,box,hanging);
       if (!(size.width>0)) continue;
+      if (paragraph.getAttribute('data-md-align')!=='justify') {size.shrink=0;size.stretch=0;}
       const beside=floatMeasures(paragraph,style,box,size.width);
       if (beside?.refuse) {clear(paragraph);continue;}
       if (beside?.widths.some(width=>!(width>0))) {clear(paragraph);continue;}
       if (beside) size.widths=beside.widths;
+      const drop=dropMeasure(paragraph,view,size.width);
+      if (drop?.refuse) {clear(paragraph);continue;}
+      if (drop) {
+        const widths=[...(size.widths||[])];
+        while (widths.length<drop.lines) widths.push(size.width);
+        for (let line=0;line<drop.lines;line++) widths[line]=Math.floor((widths[line]-drop.advance+(line?0:drop.lead))*64)/64;
+        if (widths.some(value=>!(value>0))) {clear(paragraph);continue;}
+        size.widths=widths;
+      }
       const parents=prior?.parents || own(paragraph);
       const inspection=inspect(paragraph,parents,prior,style);
       const reusable=prior?.html===paragraph.innerHTML && prior.key===inspection.key && (!prior.geometry || scope(paragraph.ownerDocument).current(prior.geometry));
-      const sizeKey=[size.width,size.indent,size.left,size.right,beside?.key||''].join('|');
+      const sizeKey=[size.width,size.indent,size.left,size.right,beside?.key||'',drop?drop.lines+'/'+drop.advance+'/'+drop.lead:''].join('|');
       if (refused.get(paragraph)===sizeKey+'\u0000'+paragraph.textContent) {if (paragraph.hasAttribute(mark)) clear(paragraph);continue;}
       if (reusable && !prior.pending && prior.sizeKey===sizeKey) continue;
       const fitWork=reusable && prior.sizeKey===sizeKey?prior.fitWork:null;
@@ -565,12 +602,12 @@ export function createTypography() {
       if (!all && jobs.length===4) {if (!reusable) clear(paragraph);pending=true;continue;}
       jobs.push({paragraph,view,style,inspection,size,sizeKey,hanging,beside,selected:selectionBefore(paragraph),
         cap:paragraph.hasAttribute('data-md-lines'),justified:paragraph.getAttribute('data-md-align')==='justify' && paragraph.getAttribute('data-md-hyphens')==='auto',
+        ragged:paragraph.getAttribute('data-md-align')!=='justify' && paragraph.getAttribute('data-md-hyphens')==='auto' && /^(start|left)$/.test(style.textAlign),
         saved:reusable?prior.saved:null,geometry:reusable?prior.geometry:null,prepared:reusable?prior.prepared:null,
         work:reusable?prior.work:null,fitWork,
         prior,reusable,needsClear:paragraph.hasAttribute(mark)});
     }
-    if (editing && jobs.some(job=>job.selected && !job.reusable)) root.ownerDocument.getSelection()?.removeAllRanges();
-    for (const job of jobs) if (job.needsClear && !job.saved) clear(job.paragraph,{keepSelection:!editing});
+    for (const job of jobs) if (job.needsClear && !job.saved) clear(job.paragraph);
     function stateFor(job) {
       return {properties:new Map(),moves:[],saved:job.saved,geometry:job.geometry,prepared:job.prepared,plan:job.plan,
         work:job.work,fitWork:job.fitWork,parents:job.inspection.parents,key:job.inspection.key,generation:job.inspection.generation,sizeKey:job.sizeKey};
@@ -584,12 +621,8 @@ export function createTypography() {
     for (let jobIndex = 0; jobIndex < jobs.length; jobIndex++) {
       if (!all && jobIndex && performance.now() - started >= 8) {pending=true;break;}
       const job = jobs[jobIndex];
-      if (!job.saved && job.justified) {
-        if (job.needsClear) {
-          const elements=own(job.paragraph),parents=job.inspection.parents;
-          if (!editing || !job.prior?.saved || elements.length!==parents.length || elements.some((element,index)=>element!==parents[index]))
-            job.inspection=inspect(job.paragraph,elements,null,job.view.getComputedStyle(job.paragraph));
-        }
+      if (!job.saved && (job.justified || job.ragged)) {
+        if (job.needsClear) job.inspection=inspect(job.paragraph,own(job.paragraph),null,job.view.getComputedStyle(job.paragraph));
         job.saved=snapshot(job.paragraph,job.inspection);
         if (job.saved) {
           job.work=scope(job.paragraph.ownerDocument).prepareSteps(job.paragraph,job.saved.inline,{policy:'paragraph',language:job.saved.language,
@@ -611,15 +644,15 @@ export function createTypography() {
       if (job.fitWork) {
         for (;;) {
           const step=job.fitWork.next();
-          if (step.done) {job.plan=step.value;job.fitWork=null;break;}
+          if (step.done) {job.plan=job.ragged && step.value ? Object.freeze({...step.value,lines:Object.freeze(step.value.lines.map(line=>Object.freeze({...line,wordSpacing:0})))}) : step.value;job.fitWork=null;break;}
           if (!all && performance.now()-started>=8) break;
         }
         if (job.fitWork) {suspend(job);continue;}
       }
       job.projection=job.reusable && job.plan && job.prior?.projection?.topology===topology(job.plan) ? job.prior.projection : null;
-      if (job.needsClear && job.saved && !job.projection) clear(job.paragraph,{forget:false,keepSelection:!editing});
-      const {paragraph,view,hanging,cap,justified}=job;
-      if (!cap && !hanging && !justified) {restoreSelection(paragraph,job.selected);continue;}
+      if (job.needsClear && job.saved && !job.projection) clear(job.paragraph,{forget:false});
+      const {paragraph,view,hanging,cap,justified,ragged}=job;
+      if (!cap && !hanging && !justified && !ragged) {restoreSelection(paragraph,job.selected);continue;}
       const state=stateFor(job);
       states.set(paragraph,state);live.add(paragraph);paragraph.setAttribute(mark,'');
       if (cap || hanging) protectInitial(paragraph);
@@ -631,6 +664,7 @@ export function createTypography() {
       }
       if (job.projection) {updateProjection(job.projection,job.plan);state.projection=job.projection;}
       else if (job.plan) state.projection=project(paragraph,job.saved,job.geometry,job.plan);
+      paragraph.toggleAttribute(mark+'-ragged',!!ragged && !!state.projection);
       if (state.projection && job.beside && !laidAsPlanned(paragraph,job)) {
         refused.set(paragraph,job.sizeKey+'\u0000'+paragraph.textContent);clear(paragraph);restoreSelection(paragraph,job.selected);continue;
       }
@@ -638,9 +672,94 @@ export function createTypography() {
       else if (hanging) hangPunctuation(paragraph,state,job.style,hangingEdge(paragraph,job.style,paragraph.getBoundingClientRect()));
       state.html=paragraph.innerHTML;
       restoreSelection(paragraph,job.selected);changed++;
-      if (editing) state.editKey=editKey(paragraph,generation);
     }
     return {changed,released,pending,prepared:preparedCount};
+  }
+
+  const slotPlans = new WeakMap();
+  function slotPlan(paragraph, items, options, input) {
+    const {width, top, obstacles, lineHeight, minWidth, justify, hyphenate} = input;
+    const round = value => Math.round(value * 100) / 100;
+    const key = [captureFontAuthority(paragraph.ownerDocument), width, lineHeight, minWidth, justify, hyphenate, options.language, options.wordBreak,
+      items.map(item => [item.text, item.font, item.letterSpacing, item.break, item.extraWidth].join('\u0001')).join('\u0002'),
+      obstacles.map(item => [item.x, item.y - top, item.width, item.height].map(round).join(',')).join(';')].join('\u0000');
+    const known = slotPlans.get(paragraph);
+    if (known?.key === key) return known.plan;
+    const plan = slotLines(paragraph, items, options, input);
+    slotPlans.set(paragraph, {key, plan});
+    return plan;
+  }
+  function slotLines(paragraph, items, options, {width, top, obstacles, lineHeight, minWidth, slotsForBand, justify, hyphenate}) {
+    if (!obstacles.length) return null;
+    const doc = paragraph.ownerDocument, words = scope(doc);
+    const source = items.map(item => ({...item, hyphenate}));
+    const geometry = words.prepare(paragraph, source, {policy: 'paragraph', language: options.language, whiteSpace: 'normal',
+      wordBreak: options.wordBreak, hanging: false, paragraphBreaks: [0, source.length]});
+    if (!geometry) return null;
+    const sequence = [], bottom = Math.max(...obstacles.map(item => item.y + item.height)) - top;
+    let y = 0, rows = 0;
+    while (y < bottom && rows < 512 && sequence.length < 1024) {
+      const bands = slotsForBand(width, obstacles, top + y, lineHeight, Math.min(minWidth, width));
+      if (!bands) return null;
+      if (bands.length) {
+        for (const band of bands) sequence.push({x: band.x, y, width: band.width});
+        y += lineHeight; rows++; continue;
+      }
+      let next = Infinity;
+      for (const obstacle of obstacles) if (obstacle.x < width && obstacle.x + obstacle.width > 0 &&
+          obstacle.y < top + y + lineHeight && obstacle.y + obstacle.height > top + y) next = Math.min(next, obstacle.y + obstacle.height - top);
+      if (!Number.isFinite(next) || next <= y) return null;
+      y = next;
+    }
+    const prepared = fitter.prepare(geometry);
+    let slots = sequence, plan = null;
+    for (let pass = 0; prepared && pass < 8; pass++) {
+      const measures = slots.map(slot => Math.floor(slot.width * 64) / 64);
+      if (!measures.length) return null;
+      plan = words.fit(paragraph, geometry, known => fitter.solveSteps(prepared, width, {widths: measures, shrink: justify ? undefined : 0}, known));
+      if (!plan) return null;
+      const wide = new Set();
+      plan.lines.forEach((line, index) => {
+        if (index >= slots.length || line.firstWord !== line.lastWord || line.kind === 'soft' || line.kind === 'auto') return;
+        const word = geometry.segments[line.segment].words[line.firstWord];
+        if (line.start === word.start && line.end === word.end && word.width > measures[index] + .5) wide.add(slots[index]);
+      });
+      if (!wide.size) break;
+      slots = slots.filter(slot => !wide.has(slot)); plan = null;
+    }
+    const perRow = new Map();
+    for (const slot of slots) perRow.set(slot.y, (perRow.get(slot.y) || 0) + 1);
+    if (!plan || ![...perRow.values()].some(count => count > 1)) return null;
+    const lines = [], text = geometry.text, offsets = geometry.offsets, space = /^[\t\n\f\r ]*$/;
+    for (let index = 0; index < plan.lines.length; index++) {
+      const line = plan.lines[index], slot = sequence[index] || {x: 0, y: y + (index - sequence.length) * lineHeight, width};
+      const spacing = justify ? line.wordSpacing : 0, fragments = [];
+      const segment = geometry.segments[line.segment].words.slice(line.firstWord, line.lastWord + 1);
+      let at = 0, previous = null;
+      while (at < source.length - 1 && offsets[at + 1] <= line.start) at++;
+      for (; at < source.length && offsets[at] < line.end; at++) {
+        let from = Math.max(line.start, offsets[at]), to = Math.min(line.end, offsets[at + 1]);
+        if (previous) while (from < to && /[\t\n\f\r ]/.test(text[from])) from++;
+        if (offsets[at + 1] < line.end) while (to > from && /[\t\n\f\r ]/.test(text[to - 1])) to--;
+        if (to <= from) continue;
+        const fragment = {itemIndex: at, sourceStart: from - offsets[at], sourceEnd: to - offsets[at], derive: true, occupiedWidth: 0, gapItemIndex: at, gapBefore: 0};
+        if (previous) {
+          fragment.gapItemIndex = previous.itemIndex;
+          if (previous.end < from) {
+            if (!space.test(text.slice(previous.end, from))) return null;
+            const before = segment.find(word => word.end === previous.end);
+            if (!before?.gap) return null;
+            fragment.gapBefore = before.gap.width + spacing;
+          } else fragment.gapBefore = 0;
+        }
+        fragments.push(fragment); previous = {itemIndex: at, end: to};
+      }
+      if (!fragments.length) return null;
+      if (line.kind === 'soft' || line.kind === 'auto') fragments.at(-1).glyph = line.glyph || '-';
+      lines.push({x: slot.x, y: slot.y, width: slot.width, fragments, wordSpacing: spacing});
+    }
+    const last = lines.at(-1);
+    return {lines, height: last ? Math.max(lineHeight, last.y + lineHeight) : lineHeight};
   }
 
   function retire(root, {documentChanged=false}={}) {
@@ -649,7 +768,7 @@ export function createTypography() {
     scope(root?.ownerDocument || root || globalThis.document).retire({documentChanged});
   }
   const invalidateFonts = document => scope(document || globalThis.document).invalidateFonts();
-  return {apply,clear,clearSelection,firstLineEnd,initialRange,protectInitial,invalidateFonts,retire};
+  return {apply,clear,clearSelection,firstLineEnd,initialRange,protectInitial,invalidateFonts,retire,slotPlan};
 }
 
 const typography = createTypography();
@@ -661,3 +780,4 @@ export const initialRange = typography.initialRange;
 export const protectInitial = typography.protectInitial;
 export const invalidateFonts = typography.invalidateFonts;
 export const retire = typography.retire;
+export const slotPlan = typography.slotPlan;

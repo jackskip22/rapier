@@ -127,7 +127,6 @@ async function _rapierAttachmentsShelf() {
 		await _rapierNotesReady();
 		const owner = _rapierAttachmentsOwner(), d = _rapierAttachmentsDialog('Saved files');
 		if (typeof _rapierRecorderShelfClose === 'function') d.addEventListener('close', () => _rapierRecorderShelfClose(), {once: true});
-		d.appendChild(_rapierNotesEl('p', '', '• Files stay here after their notes go.\n• Backup includes them.\n• In a note, tap Link to reuse one.'));
 		const status = _rapierNotesEl('p', '', 'Reading saved files'); d.appendChild(status);
 		await _rapierNotesFlush();
 		let references;
@@ -137,7 +136,7 @@ async function _rapierAttachmentsShelf() {
 		const recordings = (await _rapierNotesStore.audioNames()).sort((a, b) => a.localeCompare(b));
 		if (!d.open) return;
 		const counted = [[names.length, 'file'], [recordings.length, 'recording']].filter(([n]) => n).map(([n, word]) => n.toLocaleString('en') + ' ' + word + (n === 1 ? '' : 's'));
-		status.textContent = counted.length ? counted.join(' and ') : 'No saved files yet. In a note, use + → Add file to add one.';
+		status.textContent = counted.length ? counted.join(' and ') : 'No saved files';
 		if (names.length && recordings.length) d.appendChild(_rapierNotesEl('h3', 'rapier-attachment-heading', 'Files'));
 		let cursor = 0;
 		const more = _rapierAttachmentsButton('Show more files', () => { show(); });

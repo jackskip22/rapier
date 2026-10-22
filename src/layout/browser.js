@@ -306,6 +306,14 @@ const _rapierImageFlow = (() => {
     return {node: point.node, offset: point.offset, transformed: !!transformed};
   }
 
+  function selectedWrappers(range) {
+    const touched = new Set();
+    for (const record of projections.values()) if (range.intersectsNode(record.wrapper)) touched.add(record.wrapper);
+    for (const picture of lastPictures) if (range.intersectsNode(picture.row.wrapper)) touched.add(picture.row.wrapper);
+    for (const row of lastObstacles) if (range.intersectsNode(row.wrapper)) touched.add(row.wrapper);
+    return touched;
+  }
+
   function restoreSelection() {
     const viewport = _rapierCaptureEditorViewport();
     try {
@@ -314,6 +322,22 @@ const _rapierImageFlow = (() => {
       const start = mappedPoint(selection.anchorNode, selection.anchorOffset);
       const end = mappedPoint(selection.focusNode, selection.focusOffset);
       restore();
+      if (start?.node?.isConnected && end?.node?.isConnected) {
+        try { selection.setBaseAndExtent(start.node, start.offset, end.node, end.offset); } catch (_) {}
+      }
+    } finally { _rapierRestoreEditorViewport(viewport); }
+  }
+
+  function restoreSelected() {
+    const viewport = _rapierCaptureEditorViewport();
+    try {
+      const selection = window.getSelection();
+      if (!selection?.rangeCount) return;
+      const touched = selectedWrappers(selection.getRangeAt(0));
+      if (!touched.size) return;
+      const start = mappedPoint(selection.anchorNode, selection.anchorOffset);
+      const end = mappedPoint(selection.focusNode, selection.focusOffset);
+      for (const wrapper of touched) restore(wrapper);
       if (start?.node?.isConnected && end?.node?.isConnected) {
         try { selection.setBaseAndExtent(start.node, start.offset, end.node, end.offset); } catch (_) {}
       }
@@ -508,8 +532,12 @@ const _rapierImageFlow = (() => {
     const refuse = () => { rich?.forget(paragraph); cache.delete(paragraph); return null; };
     const computed = getComputedStyle(paragraph);
     const language = paragraph.closest('[lang]')?.getAttribute('lang') || '';
-    if (!rich || computed.textAlign === 'justify' || computed.textWrapStyle === 'balance' || computed.whiteSpace !== 'normal' ||
-        !preparation.supportsRichStyle(computed, language) ||
+    const editing = !!paragraph.closest('.block-edit'), hyphenate = !editing && paragraph.getAttribute('data-md-hyphens') === 'auto';
+    const justify = !editing && computed.textAlign === 'justify';
+    const readable = style => preparation.supportsRichStyle(paragraph.getAttribute('data-md-hyphens') === 'auto'
+      ? new Proxy(style, {get: (target, key) => key === 'hyphens' ? 'manual' : Reflect.get(target, key, target)}) : style, language);
+    if (!rich || computed.textWrapStyle === 'balance' || computed.whiteSpace !== 'normal' || paragraph.hasAttribute('data-md-lines') && (justify || hyphenate) ||
+        !readable(computed) ||
         ['::before', '::after'].some(pseudo => !['none', 'normal'].includes(getComputedStyle(paragraph, pseudo).content))) return refuse();
     for (let parent = paragraph; parent; parent = parent.parentElement) {
       const inherited = getComputedStyle(parent);
@@ -531,14 +559,14 @@ const _rapierImageFlow = (() => {
         if (!/^(A|SPAN|EM|I|STRONG|B|DEL|S|MARK|CODE|U|INS|ABBR|SUP|SUB)$/.test(parent.tagName) ||
             parent.hidden || parent.getAttribute('aria-hidden') === 'true' || parent.style.textWrapStyle === 'pretty') return refuse();
         const parentStyle = getComputedStyle(parent);
-        if (!preparation.supportsRichStyle(parentStyle, language) || parentStyle.display !== 'inline' ||
+        if (!readable(parentStyle) || parentStyle.display !== 'inline' ||
             parentStyle.cssFloat !== 'none' || !['static', 'relative'].includes(parentStyle.position) ||
             parentStyle.transform !== 'none' || !['1', 'normal'].includes(parentStyle.zoom) ||
             ['::before', '::after'].some(pseudo => !['none', 'normal'].includes(getComputedStyle(parent, pseudo).content))) return refuse();
         parents.unshift(parent);
       }
       const style = getComputedStyle(node.parentElement);
-      if (!preparation.supportsRichStyle(style, language) ||
+      if (!readable(style) ||
           (node.parentElement.closest('[lang]')?.getAttribute('lang') || '') !== language ||
           (style.whiteSpace === 'pre-wrap') !== (options.whiteSpace === 'pre-wrap')) return refuse();
       const font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
@@ -559,7 +587,9 @@ const _rapierImageFlow = (() => {
     const record = {wrapper, paragraph, runs, items, options, flow,
       original: [...paragraph.childNodes], raw: _rapierBoundBlock(wrapper)?.raw, fontSize,
       lineHeight: parseFloat(computed.lineHeight) || fontSize * 1.65,
-      direction: computed.direction, align: computed.textAlign, balance: computed.textWrapStyle === 'balance' ? fontSize : 0};
+      direction: computed.direction, align: computed.textAlign, balance: computed.textWrapStyle === 'balance' ? fontSize : 0,
+      fit: justify || hyphenate ? {justify, hyphenate} : null,
+      open: editing && computed.textAlign === 'justify'};
     cache.set(paragraph, record);
     return record;
   }
@@ -714,8 +744,9 @@ const _rapierImageFlow = (() => {
       ? record.align : record.direction === 'rtl' ? 'right' : 'left';
     let lineIndex = 0;
     for (const line of plan.lines) {
+      const open = record.open && line !== plan.lines.at(-1);
       const attributes = [['class', 'rapier-flow-line'],
-        ['style', `left:${px(line.x)};top:${px(line.y)};width:${px(line.width)};height:${px(lineHeight)};direction:${record.direction};text-align:${align}`]];
+        ['style', `left:${px(line.x)};top:${px(line.y)};width:${px(line.width)};height:${px(lineHeight)};direction:${record.direction};text-align:${align}${open ? ';text-align-last:justify;white-space:pre-wrap;text-wrap:nowrap' : ''}${line.wordSpacing ? `;word-spacing:${px(line.wordSpacing)}` : ''}`]];
       const element = projectedSpan(attributes, current?.childNodes.item(lineIndex++), updates);
       if (!element) return null;
       let childAt = updates ? element.firstChild : null;
@@ -746,7 +777,12 @@ const _rapierImageFlow = (() => {
 
   function project(record, width, top, obstacles) {
     if (!rich.current(record.flow)) return null;
-    const plan = geometry.flowLines(record.flow, width, top, obstacles, record.lineHeight,
+    let plan;
+    if (record.fit) {
+      plan = globalThis.RapierTypography?.slotPlan?.(record.paragraph, record.items, record.options, {width, top, obstacles,
+        lineHeight: record.lineHeight, minWidth: narrowestColumn(record.fontSize), slotsForBand: geometry.slotsForBand, ...record.fit});
+      if (!plan) { rich.forget(record.paragraph); cache.delete(record.paragraph); return null; }
+    } else plan = geometry.flowLines(record.flow, width, top, obstacles, record.lineHeight,
       narrowestColumn(record.fontSize), record.direction, record.balance, record.align);
     if (!plan) return null;
     const output = projectedLines(record, plan);
@@ -772,8 +808,8 @@ const _rapierImageFlow = (() => {
         /\S/.test(text.data[offset - 1]) && /\S/.test(text.data[offset]))) return null;
     if (text?.data?.[offset - 1] === ' ') return null;
     const edit = record.wrapper.querySelector(':scope > .block-edit');
-    if (!record.geometry || text?.nodeType !== Node.TEXT_NODE || mapping?.record !== record ||
-        text.parentElement?.parentElement !== record.paragraph || edit?._rapierTypingMarks ||
+    if (record.fit || !record.geometry || text?.nodeType !== Node.TEXT_NODE || mapping?.record !== record ||
+        text.parentElement?.closest('.rapier-flow-line')?.parentElement !== record.paragraph || edit?._rapierTypingMarks ||
         text.data !== mapping.text || !event.getTargetRanges) return null;
     const targets = event.getTargetRanges();
     if (targets.length !== 1 || targets[0].startContainer !== text || targets[0].endContainer !== text ||
@@ -781,10 +817,11 @@ const _rapierImageFlow = (() => {
     const points = mapping.points || mapping.offsets?.map(at => ({node: mapping.node, offset: at, parents: mapping.parents}));
     const first = points?.[0], point = points?.[offset];
     if (!first || !point || points.length !== text.data.length + 1 ||
-        points.some((value, index) => value.node !== first.node || value.offset !== first.offset + index || value.parents?.length) ||
+        points.some((value, index) => value.node !== first.node || value.offset !== first.offset + index) ||
         first.node.data.slice(first.offset, points.at(-1).offset) !== text.data) return null;
     const index = record.runs.findIndex(run => run.node === point.node);
-    if (index < 0 || record.runs[index].parents.length || point.offset === 0 && index > 0 ||
+    if (index < 0 || record.runs[index].parents.some(parent => parent.getAttribute('contenteditable') === 'false' || parent.hasAttribute('data-rapier-source')) ||
+        point.offset === 0 && index > 0 ||
         point.offset === point.node.data.length && index < record.runs.length - 1 ||
         _rapierCaretBoundary(point.node.data, point.offset) !== point.offset) return null;
     const future = record.runs.map(run => run.node === point.node
@@ -833,7 +870,7 @@ const _rapierImageFlow = (() => {
 
   function reflowProjected(record) {
     const selection = window.getSelection(), paragraph = record.paragraph;
-    if (cache.get(paragraph) !== record || !rich.current(record.flow) || projections.get(paragraph) !== record || !record.geometry ||
+    if (record.fit || cache.get(paragraph) !== record || !rich.current(record.flow) || projections.get(paragraph) !== record || !record.geometry ||
         !selection?.isCollapsed || !paragraph.contains(selection.anchorNode) ||
         !record.projected || paragraph.childNodes.length !== record.projected.length ||
         record.projected.some((node, at) => node !== paragraph.childNodes[at])) return false;
@@ -3783,14 +3820,14 @@ const _rapierImageFlow = (() => {
     event.preventDefault(); event.stopImmediatePropagation(); commitKeyboard();
   }, true);
   for (const name of ['copy', 'cut']) document.addEventListener(name, event => {
-    if (!_rapierClipboardOutsideDocument(event) && hasSelection() && projections.size) restoreSelection();
+    if (!_rapierClipboardOutsideDocument(event) && hasSelection() && projections.size) restoreSelected();
   }, true);
   let reprojectAfterInput = null, reprojectHeight = null, insertInProjection = null;
   window.addEventListener('beforeinput', event => {
     reprojectAfterInput = null; reprojectHeight = null; insertInProjection = null;
     if (_rapierHostNativeField(event.target)) return;
     const composing = event.isComposing || event.inputType === 'insertCompositionText' || rapier.composition.block;
-    if (event.isTrusted && !composing && hasSelection() && projections.size) { restoreSelection(); return; }
+    if (event.isTrusted && !composing && hasSelection() && projections.size) { restoreSelected(); return; }
 
     if (!event.isTrusted || !projections.size || composing) return;
     const selection = window.getSelection();
@@ -3853,7 +3890,7 @@ const _rapierImageFlow = (() => {
   window.addEventListener('compositionstart', event => {
     if (!event.isTrusted || event.defaultPrevented || rapier.composition.block ||
         !host.contains(event.target) || _rapierHostNativeField(event.target)) return;
-    if (hasSelection() && projections.size) restoreSelection();
+    if (hasSelection() && projections.size) restoreSelected();
   }, true);
 
   let composeWrapper = null, composeHeight = null;
@@ -3880,7 +3917,7 @@ const _rapierImageFlow = (() => {
   });
   window.addEventListener('keydown', event => {
     if (event.isTrusted && !event.isComposing && !_rapierHostNativeField(event.target) && !moving && hasSelection() && projections.size &&
-        ['Backspace', 'Delete', 'Enter'].includes(event.key)) restoreSelection();
+        ['Backspace', 'Delete', 'Enter'].includes(event.key)) restoreSelected();
   }, true);
   window.addEventListener('beforeprint', () => { printing = true; restoreSelection(); close(); });
   window.addEventListener('afterprint', () => { printing = false; schedule(); });

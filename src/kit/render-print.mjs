@@ -3,7 +3,7 @@ import {collectPdfVectors} from './pdf-vectors.mjs';
 import {collectPdfGlyphs} from './pdf-glyphs.mjs';
 import {pdfFontSources, waitForFonts} from './export-fonts.mjs';
 import {apply as applyTypography} from '../layout/typography.mjs';
-import {documentLanguage} from '../spec/document-settings.mjs';
+import {documentLanguage, pageSizeOf} from '../spec/document-settings.mjs';
 import {applyPrintCapitals} from './print-capitals.mjs';
 import {stripOneTerminator as _rapierWillStripOneTerminator} from '../agent/will.mjs';
 import {quotedWillSpan} from '../spec/md-marks.mjs';
@@ -196,14 +196,31 @@ function wrapMasks(main) {
 	}
 }
 
+const REFUSALS = {
+	visual_too_large: 'This document is too large for a PDF. Use Word or HTML, or split it.',
+	visual_resources_unavailable: 'A picture or font could not be read for the PDF.',
+	visual_capture_expired: 'The PDF took too long to draw. Try again, or split the document.',
+	pdf_render_timeout: 'The PDF took too long to draw. Try again, or split the document.',
+	pdf_render_unavailable: 'This browser could not draw the PDF.',
+	pdf_page_geometry_invalid: 'The page size is not one a PDF can use.',
+	pdf_text_glyph_limit: 'The PDF cannot hold this many different letters. Use Word or HTML.',
+	pdf_template_border_unavailable: 'The page border could not be drawn.',
+	document_changed: 'The document changed while the PDF was drawn. Try again.',
+	export_too_large: 'The file is larger than the limit. Split the document.',
+};
+
 async function _rapierWritePrintPdf({root, css, fontCss = '', canonical, bom = false, filename, title, settings, templatePage = null}, {capture, signal, current, maxBytes = 8 * 1024 * 1024, film, ink} = {}) {
 	const refuse = code => { throw Object.assign(new Error(code), {code}); };
+	const spoken = error => {
+		const code = error?.code || error?.message, words = REFUSALS[code];
+		return words && error.message !== words ? Object.assign(new Error(words), {code}) : error;
+	};
 	const check = () => {
 		if (signal?.aborted) refuse('cancelled');
 		if (current?.() === false) refuse('document_changed');
 	};
 	if (!root?.ownerDocument || typeof capture !== 'function') refuse('pdf_render_unavailable');
-	const paper = settings?.papersize || {width: 11906, height: 16838};
+	const paper = settings?.papersize || (templatePage ? pageSizeOf(settings) : {width: 11906, height: 16838});
 	const width = paper.width / 20, height = paper.height / 20;
 	const margins = Object.fromEntries(['top', 'right', 'bottom', 'left'].map(side =>
 		[side, settings?.geometry ? settings.geometry[side] / 20 : (side === 'top' ? 12 : 14) * 72 / 25.4]));
@@ -301,7 +318,7 @@ async function _rapierWritePrintPdf({root, css, fontCss = '', canonical, bom = f
 		nativeGlyphs = await collectPdfGlyphs(main, glyphOptions);
 		const textPages = await _rapierPrintTextPages(main, bodyWidth, count, check, undefined, nativeGlyphs.nodes, nativeGlyphs.markers);
 		const linkPages = _rapierPrintLinkPages(main, bodyWidth, bodyHeight, count);
-		vectors = await collectPdfVectors(main, {width: bodyWidth, height: bodyHeight, count, capture, signal, current, check, maxBytes,
+		vectors = await collectPdfVectors(main, {width: bodyWidth, height: bodyHeight, count, capture, signal, current, check, maxBytes, underlay: true,
 			sanitizeSvg: globalThis.RapierImageAssets?.sanitizeSvgText,
             collectText: root => collectPdfGlyphs(root, {...glyphOptions, origin: main.getBoundingClientRect()})});
         for (const {root, original, text} of vectors.textRoots) {
@@ -322,6 +339,8 @@ async function _rapierWritePrintPdf({root, css, fontCss = '', canonical, bom = f
 		strip.style.width = count * bodyWidth + 'px';
 		strip.style.transform = 'none';
 		if (typeof film !== 'function') refuse('pdf_render_unavailable');
+		const underlay = vectors.pages.some(items => items.some(drawing => drawing.under));
+		if (underlay) surface.style.setProperty('background', 'transparent');
 		let pendingFilm = null, abandonFilm = false;
 		const trackedFilm = Promise.resolve(film({root: surface, signal, current, frame: {width: count * bodyWidth, height: bodyHeight}})).then(session => {
 			if (abandonFilm) session?.close?.();
@@ -340,22 +359,23 @@ async function _rapierWritePrintPdf({root, css, fontCss = '', canonical, bom = f
 		let share = Math.max(1, Math.min(Math.floor(CAPTURE_EDGE / bodyWidth), Math.floor(CAPTURE_PIXELS / (bodyWidth * bodyHeight))));
 		const pages = [];
 		let imageBytes = 0;
-		const pack = async rgb => {
-			const packed = new Uint8Array(await step(new Response(new Blob([rgb]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer()));
+		const deflate = async bytes => {
+			const packed = new Uint8Array(await step(new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer()));
 			imageBytes += packed.byteLength;
 			if (imageBytes > maxBytes) refuse('export_too_large');
-			pages.push({rgb: packed});
+			return packed;
 		};
+		const pack = async (rgb, alpha = null) => pages.push({rgb: await deflate(rgb), ...(alpha && {alpha: await deflate(alpha)})});
 		const tileWidth = Math.min(bodyWidth, CAPTURE_EDGE), tileHeight = Math.min(bodyHeight, CAPTURE_EDGE, Math.floor(CAPTURE_PIXELS / tileWidth));
 		for (let index = 0; tiled && index < count; index++) {
 			const tiles = [];
 			for (let y = 0; y < bodyHeight; y += tileHeight) for (let x = 0; x < bodyWidth; x += tileWidth) {
 				check();
 				const width = Math.min(tileWidth, bodyWidth - x), height = Math.min(tileHeight, bodyHeight - y);
-				const shot = await step(filmSession.raster({x: index * bodyWidth + x, y, width, height}));
-				if (shot?.width !== width || shot?.height !== height || !(shot.rgb instanceof Uint8Array)) refuse('pdf_render_unavailable');
-				await pack(shot.rgb);
-				shot.rgb = null;
+				const shot = await step(filmSession.raster({x: index * bodyWidth + x, y, width, height}, {transparent: underlay}));
+				if (shot?.width !== width || shot?.height !== height || !(shot.rgb instanceof Uint8Array) || underlay && !(shot.alpha instanceof Uint8Array)) refuse('pdf_render_unavailable');
+				await pack(shot.rgb, shot.alpha);
+				shot.rgb = shot.alpha = null;
 				tiles.push({...pages.pop(), x, y, width, height});
 			}
 			pages.push({tiles});
@@ -364,21 +384,22 @@ async function _rapierWritePrintPdf({root, css, fontCss = '', canonical, bom = f
 			check();
 			const span = Math.min(share, count - first);
 			try {
-				const shot = await step(filmSession.raster({x: first * bodyWidth, y: 0, width: span * bodyWidth, height: bodyHeight}));
-				if (shot?.width !== span * bodyWidth || shot?.height !== bodyHeight || !(shot.rgb instanceof Uint8Array)) refuse('pdf_render_unavailable');
-				if (span === 1) await pack(shot.rgb);
+				const shot = await step(filmSession.raster({x: first * bodyWidth, y: 0, width: span * bodyWidth, height: bodyHeight}, {transparent: underlay}));
+				if (shot?.width !== span * bodyWidth || shot?.height !== bodyHeight || !(shot.rgb instanceof Uint8Array) || underlay && !(shot.alpha instanceof Uint8Array)) refuse('pdf_render_unavailable');
+				if (span === 1) await pack(shot.rgb, shot.alpha);
 				else {
 					const row = bodyWidth * 3;
 					for (let offset = 0; offset < span; offset++) {
-						const rgb = new Uint8Array(bodyWidth * bodyHeight * 3);
+						const rgb = new Uint8Array(bodyWidth * bodyHeight * 3), alpha = shot.alpha ? new Uint8Array(bodyWidth * bodyHeight) : null;
 						for (let y = 0; y < bodyHeight; y++) {
 							const from = (y * shot.width + offset * bodyWidth) * 3;
 							rgb.set(shot.rgb.subarray(from, from + row), y * row);
+							if (alpha) alpha.set(shot.alpha.subarray(y * shot.width + offset * bodyWidth, y * shot.width + (offset + 1) * bodyWidth), y * bodyWidth);
 						}
-						await pack(rgb);
+						await pack(rgb, alpha);
 					}
 				}
-				shot.rgb = null;
+				shot.rgb = shot.alpha = null;
 			} catch (error) {
 				if (error?.code === 'visual_too_large' && span > 1) { share = Math.ceil(span / 2); continue; }
 				throw error;
@@ -394,14 +415,15 @@ async function _rapierWritePrintPdf({root, css, fontCss = '', canonical, bom = f
 			holder.append(picture); into.body.append(holder);
 			await step(picture.decode());
 			backdrop = await collectPdfVectors(holder, {width: sheetWidth, height: sheetHeight, count: 1, capture, signal, current, check, maxBytes,
-				sanitizeSvg: globalThis.RapierImageAssets?.sanitizeSvgText});
+				sanitizeSvg: globalThis.RapierImageAssets?.sanitizeSvgText, pictures: true});
 			if (!backdrop.pages[0].length) refuse('pdf_template_border_unavailable');
 		}
 		const bytes = await writeRasterPdf({pages, textPages, linkPages, vectorPages: vectors.pages, canonical, bom, filename, title, font, width, height, margins, backdrop: backdrop?.pages[0] || null,
 			pixelWidth: bodyWidth, pixelHeight: bodyHeight, pageNumbers: settings?.pagestyle === 'plain', maxBytes, check});
 		check();
 		return {bytes, pages: count, painted: nativeGlyphs.painted};
-	} finally { filmSession?.close(); backdrop?.restore(); vectors?.restore(); nativeGlyphs?.restore(); signal?.removeEventListener('abort', abort); frame.remove(); }
+	} catch (error) { throw spoken(error); }
+	finally { filmSession?.close(); backdrop?.restore(); vectors?.restore(); nativeGlyphs?.restore(); signal?.removeEventListener('abort', abort); frame.remove(); }
 }
 
 async function _rapierPrintTextPages(main, pageWidth, count, check, origin = main.getBoundingClientRect(), nativeNodes = null, markerNodes = null) {
@@ -471,14 +493,14 @@ async function _rapierPrintTextPages(main, pageWidth, count, check, origin = mai
                 parts = joined;
             }
 			const last = pages[page].at(-1);
-			if (last && !formula && !last.math && last.block === block && last.carrier === carrier && (last.marker || Math.abs(last.y - y) < Math.max(2, Math.min(last.height, bottom - y) * .2))) {
+			if (last && !formula && !last.math && !last.marker && last.block === block && last.carrier === carrier && Math.abs(last.y - y) < Math.max(2, Math.min(last.height, bottom - y) * .2)) {
 				if (!preserve && last.text.endsWith(' ') && text.startsWith(' ') && parts.length) {
 					const first = parts[0];
 					if (first.text === ' ') parts.shift();
 					else {const advance = first.width / Array.from(first.text).length; first.text = first.text.slice(1); first.x += advance; first.width -= advance;}
 				}
 				last.text = preserve ? last.text + text : (last.text + text).replace(/[ \t\r\n\f]+/g, ' ');
-				last.parts.push(...parts); last.marker = false;
+				last.parts.push(...parts);
 				last.width = Math.max(last.x + last.width, right) - Math.min(last.x, x);
 				last.height = Math.max(last.y + last.height, bottom) - Math.min(last.y, y);
 				last.x = Math.min(last.x, x); last.y = Math.min(last.y, y);
@@ -512,13 +534,29 @@ async function _rapierPrintTextPages(main, pageWidth, count, check, origin = mai
 	}
 	const ROLES = {TABLE: 'Table', TR: 'TR', TD: 'TD', TH: 'TH', UL: 'L', OL: 'L', LI: 'LI', BLOCKQUOTE: 'BlockQuote', P: 'P', PRE: 'Code', FIGCAPTION: 'Caption',
 		H1: 'H1', H2: 'H2', H3: 'H3', H4: 'H4', H5: 'H5', H6: 'H6'};
-	const tags = block => {
+	const bodies = new WeakMap(), labels = new WeakMap();
+	const tags = (block, marker) => {
 		const chain = [];
 		for (let node = block; node && node !== main; node = node.parentElement)
 			if (ROLES[node.tagName] || node === block && node.matches('.rapier-will-carrier')) chain.unshift({node, role: ROLES[node.tagName] || 'P'});
-		return chain;
+		const out = [];
+		chain.forEach((entry, at) => {
+			const note = entry.node.localName === 'li' && entry.node.classList.contains('footnote-item');
+			out.push(note ? {...entry, role: 'Note'} : entry);
+			if (entry.node.localName !== 'li') return;
+			const last = !chain.slice(at + 1).some(inner => inner.node.localName === 'li');
+			if (marker && last) {
+				if (!labels.has(entry.node)) labels.set(entry.node, {});
+				out.push({node: labels.get(entry.node), role: 'Lbl'});
+			}
+			else if (!note) {
+				if (!bodies.has(entry.node)) bodies.set(entry.node, {});
+				out.push({node: bodies.get(entry.node), role: 'LBody'});
+			}
+		});
+		return out;
 	};
-	return pages.map(page => page.map(({block, ...run}) => ({...run, tags: tags(block)})));
+	return pages.map(page => page.map(({block, ...run}) => ({...run, tags: tags(block, run.marker)})));
 }
 
 function _rapierPrintLinkPages(main, width, height, count) {
@@ -595,7 +633,7 @@ async function writeRasterPdf({pages, textPages, linkPages = [], vectorPages = [
 	const hex = value => Array.from({length: value.length}, (_, index) => value.charCodeAt(index).toString(16).padStart(4, '0')).join('');
 	const literal = value => '(' + String(value).replace(/[\\()\r\n]/g, character => ({'\\': '\\\\', '(': '\\(', ')': '\\)', '\r': '\\r', '\n': '\\n'}[character])) + ')';
 	const source = encoder.encode((bom ? '\uFEFF' : '') + canonical);
-	const embedded = stream('/Type /EmbeddedFile /Subtype /text#2Fplain /Params <</Size ' + source.length + '>> /Filter /FlateDecode', await compressed(source));
+	const embedded = stream('/Type /EmbeddedFile /Subtype /text#2Fmarkdown /Params <</Size ' + source.length + '>> /Filter /FlateDecode', await compressed(source));
 	const file = add('<< /Type /Filespec /F ' + literal(String(filename).replace(/[^\x20-\x7e]/g, '_')) + ' /UF <feff' + hex(filename) + '> /AFRelationship /Source /EF << /F ' + embedded + ' 0 R /UF ' + embedded + ' 0 R >> >>');
 	for (const page of textPages) for (const run of page) {
 		let previous = null;
@@ -741,7 +779,9 @@ async function writeRasterPdf({pages, textPages, linkPages = [], vectorPages = [
 		const held = pages[index], flate = !!held?.rgb;
 		const tiles = held?.tiles || [{...(flate ? held : {jpeg: held}), x: 0, y: 0, width: pixelWidth, height: pixelHeight}];
 		const pictures = tiles.map((tile, at) => '/Im0_' + at + ' ' + stream('/Type /XObject /Subtype /Image /Width ' + tile.width + ' /Height ' + tile.height +
-			' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /' + (tile.rgb ? 'FlateDecode' : 'DCTDecode'), tile.rgb || tile.jpeg) + ' 0 R'), states = [];
+			' /ColorSpace /DeviceRGB /BitsPerComponent 8' + (tile.alpha ? ' /SMask ' + stream('/Type /XObject /Subtype /Image /Width ' + tile.width + ' /Height ' + tile.height +
+				' /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode', tile.alpha) + ' 0 R' : '') +
+			' /Filter /' + (tile.rgb ? 'FlateDecode' : 'DCTDecode'), tile.rgb || tile.jpeg) + ' 0 R'), states = [];
 		pages[index] = null;
 		const emit = (drawing, left, top, clipWidth, clipHeight) => {
 			let out = `q\n.75 0 0 -.75 ${decimal(left)} ${decimal(top)} cm\n0 0 ${clipWidth} ${clipHeight} re W n\n1 0 0 1 ${decimal(drawing.x)} 0 cm\n`;
@@ -770,9 +810,10 @@ async function writeRasterPdf({pages, textPages, linkPages = [], vectorPages = [
 		};
 		let commands = '';
 		for (const drawing of backdrop || []) commands += emit(drawing, 0, height, Math.round(width * 4 / 3), Math.round(height * 4 / 3));
+		for (const drawing of vectorPages[index] || []) if (drawing.under) commands += emit(drawing, margins.left, height - margins.top, pixelWidth, pixelHeight);
 		commands += '/Artifact BMC\n' + tiles.map((tile, at) => 'q\n' + [decimal(tile.width * .75), 0, 0, decimal(tile.height * .75), decimal(margins.left + tile.x * .75),
 			decimal(height - margins.top - (tile.y + tile.height) * .75)].join(' ') + ' cm\n/Im0_' + at + ' Do\nQ\n').join('') + 'EMC\n';
-		for (const drawing of vectorPages[index] || []) commands += emit(drawing, margins.left, height - margins.top, pixelWidth, pixelHeight);
+		for (const drawing of vectorPages[index] || []) if (!drawing.under) commands += emit(drawing, margins.left, height - margins.top, pixelWidth, pixelHeight);
 		const textAlphas = new Map();
 		for (const run of textPages[index]) {
 			if (!run.text && !run.parts?.some(part => part.font)) continue;

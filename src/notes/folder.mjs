@@ -143,7 +143,7 @@ export async function planFolderRename({index, files, bodies}, {file, id, expect
 		const path = 'history/' + manifestName(entry.id), prior = await readHistory(path), manifest = parseManifest(prior, {noteId: entry.id, now});
 		const before = readCanonical(manifest, decode(bodies.get(originalFile)));
 		if (before.ledger.sha256 !== entry.canonicalHistory) throw fail('notes_history_unavailable', 'The renamed note does not prove its history.');
-		const appended = appendCanonical(manifest, {text: decode(row.bytes), author, now, operation: 'notes.rename.links'});
+		const appended = appendCanonical(manifest, {text: decode(row.bytes), metadata: {...before.metadata, filename: row.file}, author, now, operation: 'notes.rename.links'});
 		entry.canonicalHistory = appended.ledger.sha256;
 		const history = await recordVersion(appended.manifest, {file: row.file, text: decode(row.bytes), entry, reason: 'rename', now});
 		for (const write of history.writes) {

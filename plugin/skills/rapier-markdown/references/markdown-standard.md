@@ -293,8 +293,8 @@ Every refinement needs a layout field. An existing `align=justify` paragraph kee
 person turns on `hyphens=auto`. The document's `lang` is Pandoc's language key; without it, the renderer uses the
 device language. Automatic hyphenation and `text-wrap: pretty` apply to prose only; code, tables and headings keep
 their own line breaking. These refinements never add soft hyphens or forced line breaks to the text. While a paragraph
-is open for editing, opted-in justification uses natural start alignment to keep gaps bounded; leaving the paragraph
-restores its refined justified layout.
+is open for editing, it keeps the browser's own justification and hyphenation, so it reads the same open and at rest
+within that; leaving the paragraph restores its refined layout.
 
 For an admitted read-only paragraph, the reference renderer considers the whole paragraph before choosing its lines:
 
@@ -571,6 +571,10 @@ on their original rendered ranges. A range with no Word text or object equivalen
 comment; comment-local footnotes keep their labels and formatted details inside the native comment. The complete saved
 Markdown still travels in an unchanged Word package's exact source carrier.
 
+Conformance vectors for the record are in [`repo/spec/md-comments-v1.json`](repo/spec/md-comments-v1.json): whole
+documents, and for each the state a reader finds (no record, a valid one, or a malformed one read as no threads), whether
+the body digest matches, and how many messages each thread holds.
+
 ## Inline typography
 
 Use one ordinary inline HTML `span` for size, color and family, together or separately. Markdown still owns headings,
@@ -802,7 +806,7 @@ pagestyle: plain
   line values as exact point heights; its default lines remain minimum heights so inline pictures fit.
 - `papersize`: `letter`, `legal`, `tabloid`, `a3`, `a4` or `a5`, or a web size in CSS pixels, `WIDTHxHEIGHTpx` (each side 100 to 10000, such as `1080x1350px`).
 - `geometry`: `margin=` a nonnegative decimal length in `in`, `cm`, `mm` or `pt`, at most `6in` once converted. Comma-separated `top=`, `right=`, `bottom=` and `left=` lengths override individual sides; without `margin=`, supply all four. For example, `top=54pt, right=72pt, bottom=90pt, left=60pt`.
-- `template`: `page` makes the document a page: the sheet of `papersize` and `geometry`, fitted to the screen width and zoomable, as Layout: DOCX shows it, whatever the Layout choice (Plain stays plain). A picture with `wrap=behind lock=on` is its border; Rapier draws the first such picture over the whole sheet, margins included. Tapping the border reveals handles for the inner text area. Resizing writes the geometry margins; the border artwork stays fixed. Other readers show an ordinary document with the picture behind its words.
+- `template`: `page` makes the document a page: the sheet of `papersize` and `geometry`, fitted to the screen width and zoomable, as Layout: DOCX shows it, whatever the Layout choice (Plain stays plain). A picture with `wrap=behind lock=on` is its border; Rapier draws the first such picture over the whole sheet, margins included. Any picture format may be the border; a page with no `papersize` is a Letter sheet. An exported page on a screen narrower than the sheet shows it whole, margins and border scaled with it. Tapping the border reveals handles for the inner text area. Resizing writes the geometry margins; the border artwork stays fixed. Other readers show an ordinary document with the picture behind its words.
 - `pagestyle`: `plain` (page numbers) or `empty`.
 - `title` and `subtitle`: the window title, the exported page's `<title>`, Word's document title and subject, and the
   PDF's title. The visible title is still the document's first `# ` heading.
@@ -1001,6 +1005,9 @@ editor global is needed. The example wraps the result in `.md-render` and loads 
 - Task-list and footnote plugins emit the classes above; a renderer for callouts, highlights, diagrams or mathematics
   emits their listed wrappers.
 - A host rendering untrusted source applies its own HTML sanitization policy before displaying it.
+- `rapier-markdown-kit/markdown-it` implements rung 1 for a paragraph, a heading and a picture, linked or not: `align`
+  (`justify` on a paragraph only), `first`, `indent`, `width`, `x`, `opacity`, `lines`, `hyphens`, `caps`, `hanging`,
+  `before`, `after` and `line`, and `marker` on a list item's leading paragraph. `wrap`, `y`, `rotate` and `lock` are rung 2.
 
 Rapier emits these class and attribute names. The remaining `rapier-*` presentation hooks will take `md-*` names in one
 change with their producers and readers.
@@ -1095,6 +1102,14 @@ are extension syntax that CommonMark-only readers show. Pandoc 3.1.11.1 keeps th
 ordinary LaTeX and DOCX writers don't map size and color CSS to native styling. Rapier's own Word exporter does the
 native mapping above. A Pandoc filter or target-specific custom styles are a separate host choice; this convention
 supplies no filter suite. Use Copy without typography when the destination needs plain semantic Markdown.
+
+## The source in a PDF
+
+A PDF Rapier writes carries its Markdown as an associated file (ISO 32000-2, "Associated Files"): an embedded
+`text/markdown` stream (`/Subtype /text#2Fmarkdown`) named by a file specification with `/AFRelationship /Source`, listed
+in the catalog's `/AF` array and in its `/Names /EmbeddedFiles` tree. A reader that finds exactly that file restores the
+document from its source and the pages stay the picture of it. A PDF another program saved after Rapier no longer
+describes its source, and the pages are read instead.
 
 ## Preservation and display
 

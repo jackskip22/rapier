@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-export function isTemplatePage(source) {
-  const match = /^(?:﻿)?---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(String(source).slice(0, 65536));
-  return !!match && /^template:[ \t]*page[ \t]*(?:#.*)?$/m.test(match[1]);
-}
+import {readDocumentSettings} from './document-settings.mjs';
+export const isTemplatePage = source => readDocumentSettings(source).template === 'page';
 export const isPageBorderLayout = layout => layout?.wrap === 'behind' && layout.lock === 'on';

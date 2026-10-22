@@ -58,15 +58,15 @@ export function borderSVG(row, {ink = ELEMENT_INK} = {}) {
 	return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + row.w + ' ' + row.h + '" width="' + row.w + '" height="' + row.h + '" preserveAspectRatio="none" color="' + ink + '" role="img"><title>' +
 		xml(row.name) + '</title><metadata id="rapier-element">' + xml(record) + '</metadata><path fill="' + ink + '" fill-rule="evenodd" d="' + row.frame.path + '"/></svg>';
 }
-function marginFor(row, size) {
-	const {x, y, w, h} = row.content;
-	const inches = Math.max(x / row.w * size.width, (row.w - x - w) / row.w * size.width, y / row.h * size.height, (row.h - y - h) / row.h * size.height);
-	return Math.min(6, Math.max(.5, Math.ceil(inches * 10) / 10));
+function marginsFor(row, size) {
+	const {x, y, w, h} = row.content, inch = value => Math.min(6, Math.max(.5, Math.ceil(value * 10) / 10));
+	const [top, right, bottom, left] = [y / row.h * size.height, (row.w - x - w) / row.w * size.width, (row.h - y - h) / row.h * size.height, x / row.w * size.width].map(inch);
+	return top === right && right === bottom && bottom === left ? 'margin=' + top + 'in' : 'top=' + top + 'in,right=' + right + 'in,bottom=' + bottom + 'in,left=' + left + 'in';
 }
 export function templateMarkdown(row, {ink = ELEMENT_INK, paper = 'a4'} = {}) {
 	const size = PAPERS[paper], svg = row && size && borderSVG(row, {ink});
 	if (!svg) return null;
-	return '---\ntemplate: page\npapersize: ' + paper + '\ngeometry: margin=' + marginFor(row, size) + 'in\nfontsize: 12pt\npagestyle: empty\n---\n\n' +
+	return '---\ntemplate: page\npapersize: ' + paper + '\ngeometry: ' + marginsFor(row, size) + '\nfontsize: 12pt\npagestyle: empty\n---\n\n' +
 		'![' + xml(row.name) + '][template-border] <!--md-layout:v1 width=100% x=50% wrap=behind lock=on-->\n\n' +
 		'[template-border]: data:image/svg+xml;base64,' + encode(svg) + '\n';
 }

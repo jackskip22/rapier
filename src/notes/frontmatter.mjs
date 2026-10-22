@@ -269,7 +269,7 @@ function listOf(text, keys, hash) {
 }
 
 export function tagsOf(text) { return listOf(text, ['tags', 'tag'], true); }
-export function aliasesOf(text) { return listOf(text, ['aliases'], false); }
+export function aliasesOf(text) { return listOf(text, ['aliases', 'alias'], false); }
 export function stripFrontMatter(text) { return parseFrontMatter(text).body; }
 export function propertiesOf(text) {
 	const out = new Map();

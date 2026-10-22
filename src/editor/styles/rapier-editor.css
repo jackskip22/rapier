@@ -633,7 +633,7 @@ pre.block-source-only { margin: 0; background: none; padding: 0; }
 	position: relative;
 	width: 100%;
 	min-width: 0;
-	background: var(--format-toolbar-bg);
+	background: linear-gradient(var(--format-toolbar-bg), var(--format-toolbar-bg)), var(--color-bg);
 	border: 0;
 	box-shadow: none;
 	overflow: hidden;
@@ -1262,7 +1262,6 @@ html[data-linenums="all"][data-linefit="resize"] .source-mode--code .source-high
 	74%{text-decoration-color:color-mix(in srgb,var(--color-accent) 35%,transparent)}
 	100%{text-decoration-color:transparent}}
 
-.block-edit p[data-rapier-typography-fit][data-rapier-typography-composing],.block-edit p[data-rapier-typography-fit][data-rapier-typography-composing] *{text-wrap:wrap}
 html[data-layout="plain"] [data-md-align]{text-align:inherit!important}
 html[data-layout="plain"] .md-render p[data-md-first]{text-indent:0}
 html[data-layout="plain"] .md-render :is(p,h1,h2,h3,h4,h5,h6)[data-md-indent]{margin-inline-start:0}

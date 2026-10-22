@@ -3012,7 +3012,25 @@ function _rapierDrawChainable(shapes) {
 	const shape = shapes.length === 1 && shapes[0];
 	return !!shape?.geom && RAPIER_DRAW_CHAIN_KINDS.has(shape.recognized) && !shape.asDrawn && (shape.brush || 'ink') === 'ink' && !shape.geom.rot && !shape.locked;
 }
-function _rapierDrawChain(side) {
+function _rapierDrawChainDrop(gesture, point) {
+	const state = _rapierDrawState, from = _rapierDrawSelectedShapes()[0];
+	if (!from || !point) return;
+	const hit = _rapierDrawHitShape(point), target = hit && hit !== from.id ? _rapierDrawShapeById(hit) : null;
+	if (hit === from.id) { _rapierDrawChain(gesture.handle.id.slice(4)); return; }
+	const joinable = target?.geom && !['line', 'arrow', 'text', 'paint', 'image'].includes(target.recognized) ? target : null;
+	_rapierDrawChain(gesture.handle.id.slice(4), {point: point.slice(0, 2), target: joinable});
+}
+function _rapierDrawChainPreview(gesture, point) {
+	const state = _rapierDrawState, from = _rapierDrawSelectedShapes()[0];
+	if (!from || !state.preview) return;
+	const hit = _rapierDrawHitShape(point), over = hit && hit !== from.id ? _rapierDrawShapeById(hit) : null;
+	const to = over?.geom && !['line', 'arrow', 'text', 'paint', 'image'].includes(over.recognized) ? (() => { const b = _rapierDrawShapeBBoxIn(over, state.recipe); return [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2]; })() : point;
+	const [x1, y1] = gesture.handle.point;
+	const markup = _rapierDrawShapeMarkup({ id: 'preview', recognized: 'arrow', geom: { x1, y1, x2: to[0], y2: to[1] }, stroke: null, brush: 'ink', style: _rapierDrawDefaultStyle('arrow'), ink: state.ink, nib: state.nib }, state.recipe);
+	state.preview.innerHTML = _rapierDrawDisplayMarkup(markup);
+	if (_rapierDrawNoteColours(state.preview.innerHTML)) _rapierDrawDarkStyleSync();
+}
+function _rapierDrawChain(side, drop = null) {
 	const state = _rapierDrawState, from = _rapierDrawSelectedShapes()[0], step = RAPIER_DRAW_CHAIN_SIDES[side];
 	if (!step || !_rapierDrawChainable([from]) || !_rapierDrawFinishText()) return;
 	const recipe = state.recipe, before = _rapierDrawHistoryRecipe(), box = _rapierDrawShapeBBoxIn(from, recipe), gap = 48;
@@ -3022,7 +3040,10 @@ function _rapierDrawChain(side) {
 	const branch = recipe.shapes.filter(shape => shape.recognized === 'arrow' && shape.bind?.start?.to === from.id && shape.bind.end?.to !== from.id && shape.bind.start[normal] === (step[0] + step[1] + 1) / 2);
 	const across = perp[0] ? box.maxX - box.minX + gap : box.maxY - box.minY + gap;
 	let dx = 0, dy = 0, free = false;
-	for (let i = 1; i <= 24; i++) {
+	const mid = [(box.minX + box.maxX) / 2, (box.minY + box.maxY) / 2];
+	if (drop?.point && !drop.target) { dx = drop.point[0] - mid[0]; dy = drop.point[1] - mid[1]; free = true; }
+	else if (drop?.target) { const t = _rapierDrawShapeBBoxIn(drop.target, recipe); dx = (t.minX + t.maxX) / 2 - mid[0]; dy = (t.minY + t.maxY) / 2 - mid[1]; free = true; }
+	else for (let i = 1; i <= 24; i++) {
 		const beside = i % 2 ? (1 - i) / 2 : i / 2;
 		dx = branch.length ? step[0] * along + perp[0] * across * beside : step[0] * along * i; dy = branch.length ? step[1] * along + perp[1] * across * beside : step[1] * along * i;
 		if (!taken.some(b => b.minX < box.maxX + dx + gap / 2 && b.maxX > box.minX + dx - gap / 2 && b.minY < box.maxY + dy + gap / 2 && b.maxY > box.minY + dy - gap / 2)) { free = true; break; }
@@ -3035,12 +3056,14 @@ function _rapierDrawChain(side) {
 	Object.assign(next, { id: _rapierDrawNextId(), stroke: null, seed: _rapierDrawMintSeed() });
 	next.geom = g.p ? { ...g, p: g.p.map(p => [p[0] + dx, p[1] + dy]) } : { ...g, cx: g.cx + dx, cy: g.cy + dy };
 	const port = ([x, y]) => ({ ax: (x + 1) / 2, ay: (y + 1) / 2 });
+	const facing = drop ? (Math.abs(dx) >= Math.abs(dy) ? [-(Math.sign(dx) || 1), 0] : [0, -(Math.sign(dy) || 1)]) : [-step[0], -step[1]];
 	const arrow = { id: _rapierDrawNextId(), stroke: null, recognized: 'arrow', asDrawn: false, brush: 'ink', style: _rapierDrawDefaultStyle('arrow'), route: 'auto',
 		geom: { x1: (box.minX + box.maxX + step[0] * (box.maxX - box.minX)) / 2, y1: (box.minY + box.maxY + step[1] * (box.maxY - box.minY)) / 2, x2: 0, y2: 0 },
-		bind: { start: { to: from.id, ...port(step) }, end: { to: next.id, ...port([-step[0], -step[1]]) } },
+		bind: { start: { to: from.id, ...port(step) }, end: { to: (drop?.target || next).id, ...port(facing) } },
 		seed: _rapierDrawMintSeed(), smooth: _rapierDrawSmoothLevel(state.smooth), nib: _rapierDrawNibLevel(state.nib) };
 	if (state.ink) arrow.ink = state.ink;
-	arrow.geom.x2 = arrow.geom.x1 + step[0] * gap; arrow.geom.y2 = arrow.geom.y1 + step[1] * gap;
+	if (drop) { arrow.geom.x2 = mid[0] + dx; arrow.geom.y2 = mid[1] + dy; }
+	else { arrow.geom.x2 = arrow.geom.x1 + step[0] * gap; arrow.geom.y2 = arrow.geom.y1 + step[1] * gap; }
 	const centre = shape => { const b = _rapierDrawShapeBBoxIn(shape, recipe); return perp[0] ? b.minX + b.maxX : b.minY + b.maxY; };
 	const order = branch.map(shape => [shape, centre(recipe.shapes.find(child => child.id === shape.bind.end.to) || shape)]).concat([[arrow, perp[0] ? box.minX + box.maxX + 2 * dx : box.minY + box.maxY + 2 * dy]]).sort((a, b) => a[1] - b[1]).map(([shape]) => shape);
 	const spread = new Map(order.map((shape, i) => [shape, (i + 1) / (order.length + 1)]));
@@ -3052,8 +3075,16 @@ function _rapierDrawChain(side) {
 	const startFor = (shape, start) => diamondPorts?.has(shape) ? { ...start, ...diamondPorts.get(shape) } : { ...start, [tangent]: spread.get(shape) };
 	arrow.bind.start = startFor(arrow, arrow.bind.start);
 	const shapes = recipe.shapes.map(shape => spread.has(shape) ? { ...shape, bind: { ...shape.bind, start: startFor(shape, shape.bind.start) } } : shape === from && outcome ? { ...shape, ink: diagram.box[0] } : shape);
-	const candidate = _rapierDrawAdmitCreation({ ...recipe, shapes: shapes.concat([next, arrow]) });
+	const candidate = _rapierDrawAdmitCreation({ ...recipe, shapes: shapes.concat(drop?.target ? [arrow] : [next, arrow]) });
 	if (!candidate) return;
+	if (drop?.target) {
+		_rapierDrawSnapshot();
+		state.recipe = candidate;
+		_rapierDrawSetSelection([arrow.id]);
+		_rapierDrawRenderAll();
+		_rapierDrawSealHistory();
+		return;
+	}
 	state.recipe = candidate;
 	_rapierDrawSetSelection([next.id]);
 	_rapierDrawRevealBox(_rapierDrawShapeBBoxIn(next, candidate));
@@ -3330,12 +3361,13 @@ function _rapierDrawGardenColour(kind, chosen) {
 	return chosen ? (typeof _rapierDeriveDarkColor === 'function' ? _rapierDeriveDarkColor(chosen) : chosen) : dark;
 }
 function _rapierDrawLetterSets() { const sets = globalThis.RapierDrawLetters?.LETTER_SETS || []; return ['field', 'leaf', 'arabesque', 'relief'].map(id => sets.find(set => set.id === id)).filter(Boolean); }
-function _rapierDrawLetterFont(id) { return /^letters:/.test(id) && _rapierDrawLetterSets().some(set => 'letters:' + set.id === id); }
+function _rapierDrawAnyLetterSet(font) { return (globalThis.RapierDrawLetters?.LETTER_SETS || []).find(set => 'letters:' + set.id === font) || null; }
+function _rapierDrawLetterFont(id) { return /^letters:/.test(id) && !!_rapierDrawAnyLetterSet(id); }
 function _rapierDrawLetterGlyph(set) {
 	const sample = set && globalThis.RapierDrawLetterPreviews.LETTER_PREVIEWS[set.id];
 	return sample ? '<svg class="rapier-draw-glyph" viewBox="0 0 ' + sample.glyph[0] + ' ' + sample.em + '" aria-hidden="true"><path fill="currentColor" transform="translate(' + sample.bearing + ',0)" d="' + sample.glyph[1] + '"/></svg>' : '';
 }
-const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.31/letters/';
+const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.32/letters/';
 const _rapierDrawLettersDoor = { allowed: false, asking: null, providers: new Map(), bringing: new Map() };
 function _rapierDrawLettersProvider(set) {
 	const door = _rapierDrawLettersDoor;
@@ -3349,9 +3381,9 @@ function _rapierDrawLettersProvider(set) {
 	}
 	return door.providers.get(set.id) || null;
 }
-function _rapierDrawLettersWake() { try { for (const set of _rapierDrawLetterSets()) _rapierDrawLettersProvider(set); } catch (_) {} }
+function _rapierDrawLettersWake() { try { for (const set of globalThis.RapierDrawLetters?.LETTER_SETS || []) _rapierDrawLettersProvider(set); } catch (_) {} }
 function _rapierDrawLettersAsk(font, apply) {
-	const set = _rapierDrawLetterSets().find(item => 'letters:' + item.id === font);
+	const set = _rapierDrawAnyLetterSet(font);
 	if (!set || globalThis.RapierDrawLetters.letterSetHeld(set.id)) return false;
 	const door = _rapierDrawLettersDoor, provider = _rapierDrawLettersProvider(set);
 	if (!provider) return false;
@@ -4448,7 +4480,7 @@ function _rapierDrawResizeBox(box, handle, delta, lock, centered) {
 }
 function _rapierDrawApplyHandle(point, evt = {}, commit = false) {
 	const state = _rapierDrawState, gesture = state.gesture;
-	if (gesture.handle.side) return;
+	if (gesture.handle.side) { _rapierDrawChainPreview(gesture, point); return; }
 	_rapierDrawStartTransform();
 	const shapes = _rapierDrawRestoreTransformShapes(), handle = gesture.handle, delta = [point[0] - gesture.origin[0], point[1] - gesture.origin[1]], box = gesture.box;
 	const p = [handle.point[0] + delta[0], handle.point[1] + delta[1]], shape = shapes[0];
@@ -4800,7 +4832,7 @@ function _rapierDrawOnPointerUp(evt) {
 	_rapierDrawOnPointerMove(evt, true);
 	if (state.gesture !== gesture) return;
 	if (gesture.kind === 'resize') { _rapierDrawEndGesture(); _rapierDrawResizeDraw(); return; }
-	const pts = ['shape', 'text'].includes(gesture.tool) ? [gesture.origin, state.pointerPos] : state.stroke || [], kind = gesture.kind, selected = _rapierDrawSelection();
+	const release = state.pointerPos, pts = ['shape', 'text'].includes(gesture.tool) ? [gesture.origin, release] : state.stroke || [], kind = gesture.kind, selected = _rapierDrawSelection();
 	const doubleTapDist = gesture.touch ? RAPIER_DRAW_DOUBLE_TAP_DIST_TOUCH_PX : RAPIER_DRAW_DOUBLE_TAP_DIST_PX;
 	const priorTap = state.lastTap, double = !gesture.dragged && priorTap && evt.timeStamp - priorTap.time < 450 && priorTap.id === gesture.downId && _rapierDrawDist(priorTap.point, gesture.origin) * gesture.scale < doubleTapDist;
 	state.lastTap = gesture.dragged ? null : { time: evt.timeStamp, id: gesture.downId, point: gesture.origin, handle: gesture.handle?.id || null };
@@ -4834,7 +4866,7 @@ function _rapierDrawOnPointerUp(evt) {
 		return;
 	}
 	if (resetHandle) { reset(); return; }
-	if (!gesture.dragged && gesture.handle?.side) { _rapierDrawChain(gesture.handle.id.slice(4)); return; }
+	if (gesture.handle?.side) { if (gesture.dragged) _rapierDrawChainDrop(gesture, release); else _rapierDrawChain(gesture.handle.id.slice(4)); return; }
 	if (!gesture.dragged && gesture.handle?.id === 'label') { _rapierDrawEditLabelInPlace(_rapierDrawSelectedShapes()[0], {at: gesture.origin}); return; }
 	if (double && gesture.tool === 'select' && !gesture.handle && gesture.downId) {
 		const shape = _rapierDrawShapeById(gesture.downId);

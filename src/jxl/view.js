@@ -2,10 +2,11 @@
 (() => {
 	const C = globalThis.RapierJxlConvert;
 	const LANES = 2;
+	const QUALITY_WORDS = Object.freeze({lossless: 'Lossless', high: 'High', smaller: 'Medium'});
 	let view = null;
 	const make = (tag, cls, text) => { const node = document.createElement(tag); if (cls) node.className = cls; if (text !== undefined) node.textContent = text; return node; };
 	const size = bytes => bytes < 1024 ? bytes + ' B' : bytes < 1048576 ? (bytes / 1024).toFixed(bytes < 10240 ? 1 : 0) + ' KB' : bytes < 1073741824 ? (bytes / 1048576).toFixed(bytes < 10485760 ? 2 : 1) + ' MB' : (bytes / 1073741824).toFixed(2) + ' GB';
-	const percent = row => { const change = Math.round((1 - row.after / row.before) * 100); return change > 0 ? change + '% smaller' : change < 0 ? -change + '% larger' : 'same size'; };
+	const percent = r => { const change = Math.round((1 - r.size / r.before) * 100); return change > 0 ? change + '% smaller' : change < 0 ? -change + '% larger' : 'same size'; };
 
 	const anchor = (label, href) => { const link = make('a', '', label); link.href = href; link.target = '_blank'; link.rel = 'noopener'; return link; };
 	function about() {
@@ -28,15 +29,24 @@
 		const pick = make('label', 'settings-action-btn rapier-jxl-view__pick'), input = make('input');
 		pick.append(make('span', '', 'Choose or drop pictures or videos'), input);
 		input.type = 'file'; input.accept = 'image/*,video/*'; input.multiple = true;
-		const quality = make('p', 'rapier-jxl-view__note', 'Quality for pictures, animations and videos (videos start at high). JPEGs keep every bit when they can.'), group = make('div', 'theme-switcher theme-switcher--joined theme-switcher--onoff');
-		quality.id = 'rapier-jxl-quality'; group.setAttribute('role', 'radiogroup'); group.setAttribute('aria-labelledby', quality.id);
+		const group = make('div', 'theme-switcher theme-switcher--joined theme-switcher--onoff');
+		group.setAttribute('role', 'radiogroup'); group.setAttribute('aria-label', 'Quality');
+		const qualityNote = make('p', 'rapier-jxl-view__note', 'Quality');
 		const modes = Object.keys(C.QUALITY).map((mode, at) => {
-			const button = make('button', 'theme-switcher__btn onoff-btn', mode);
+			const button = make('button', 'theme-switcher__btn onoff-btn', QUALITY_WORDS[mode]);
 			button.type = 'button'; button.dataset.mode = mode; button.setAttribute('role', 'radio'); button.setAttribute('aria-checked', String(at === 0));
 			button.toggleAttribute('data-active', at === 0);
 			return button;
 		});
 		group.append(...modes);
+		const effortRow = make('div', 'rapier-jxl-view__effort'), slider = make('input'), seek = make('span', 'rapier-draw-seek'), track = make('span', 'rapier-draw-seek-track'), head = document.createElementNS('http://www.w3.org/2000/svg', 'svg'), ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle'), level = make('output', 'rapier-jxl-view__effort-level');
+		effortRow.setAttribute('role', 'group'); effortRow.setAttribute('aria-label', 'Effort');
+		slider.type = 'range'; slider.min = String(C.EFFORT.min); slider.max = String(C.EFFORT.max); slider.step = '1'; slider.value = String(C.EFFORT.start); slider.setAttribute('aria-label', 'Effort');
+		track.setAttribute('aria-hidden', 'true'); head.setAttribute('class', 'rapier-draw-seek-head'); head.setAttribute('viewBox', '0 0 24 24'); head.setAttribute('aria-hidden', 'true');
+		for (const [name, value] of [['cx', '12'], ['cy', '12'], ['r', '10']]) ring.setAttribute(name, value);
+		head.append(ring); seek.append(track, head, slider);
+		effortRow.append(make('span', '', 'Faster'), seek, make('span', '', 'Smallest file'), level);
+		const effortNote = make('p', 'rapier-jxl-view__note', 'Effort: same picture, smaller file, more time.');
 		const status = make('div', 'rapier-jxl-view__status'), line = make('div', 'rapier-progress__bar rapier-jxl-view__line'), cancel = make('button', 'settings-action-btn', 'Cancel');
 		cancel.type = 'button'; status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
 		const summary = make('div', 'rapier-jxl-view__summary'), count = make('div', 'rapier-jxl-view__count');
@@ -45,19 +55,20 @@
 		all.type = 'button';
 		const help = make('p', 'rapier-jxl-view__note'), links = make('p', 'rapier-jxl-view__note rapier-jxl-view__links');
 		links.append(...C.LINKS.flatMap(([label, href], at) => [...(at ? [' · '] : []), anchor(label, href)]));
-		body.append(note, pick, quality, group, line, summary, help, list, all, links);
+		body.append(note, pick, qualityNote, group, effortNote, effortRow, line, summary, help, list, all, links);
 		root.append(bar, body);
-		return {info, root, shut, input, group, modes, line, count, cancel, list, all, help, pick, rows: [], mode: 'lossless', touched: false, running: false, controller: null, inert: [], wasFocus: null};
+		return {info, root, shut, input, group, modes, effort: C.EFFORT.start, slider, seek, level, line, count, cancel, list, all, help, pick, rows: [], mode: 'lossless', touched: false, running: false, controller: null, inert: [], wasFocus: null};
 	}
 
 	function paint(row) {
 		const note = row.node.querySelector('.rapier-jxl-view__row-note'), download = row.node.querySelector('.rapier-jxl-view__row-download');
 		let text = '';
+		const r = row.result;
 		if (row.state === 'waiting') text = size(row.file.size) + ' · waiting';
 		else if (row.state === 'working') text = size(row.file.size) + (row.say ? ' · ' + row.say : '') + (row.progress > 0 && row.progress < 1 ? ' · ' + Math.round(row.progress * 100) + '%' : '');
 		else if (row.state === 'failed' || row.state === 'stopped') text = row.say;
-		else if (row.frames) text = size(row.before) + ' → ' + size(row.after) + (row.video ? '' : ' · ' + percent(row)) + C.mediaNote(row) + (row.video && row.mode !== 'lossless' && view?.mode === 'lossless' ? ' · ' + row.mode : '');
-		else text = size(row.before) + ' → ' + size(row.after) + ' · ' + percent(row) + (row.exact ? ' · restores your JPEG exactly' : row.fallback ? ' · made lossless: this browser could not open the smaller file' : row.jpeg ? (row.before > C.CARRY_BYTES ? ' · over ' + C.CARRY_BYTES / 1048576 + ' MB, so made from its pixels' : ' · made from its pixels, not bit for bit') : row.note === 'bits8' ? ' · kept at 8 bits' : row.note === 'colors' ? ' · converted to sRGB' : row.mode === 'lossless' ? ' · every pixel kept' : '') + (row.refused ? ' · this browser cannot open this file' : '');
+		else if (r.frames) text = size(r.before) + ' → ' + size(r.size) + (r.video ? '' : ' · ' + percent(r)) + C.mediaNote(r) + (r.video && r.mode !== 'lossless' && view?.mode === 'lossless' ? ' · ' + QUALITY_WORDS[r.mode].toLowerCase() : '');
+		else text = size(r.before) + ' → ' + size(r.size) + ' · ' + percent(r) + (r.exact ? ' · restores your JPEG exactly' + (r.exactKept ? ' · lossy is no smaller' : '') : r.fallback ? ' · made lossless: this browser could not open the smaller file' : r.jpeg ? (r.before > C.CARRY_BYTES ? ' · over ' + C.CARRY_BYTES / 1048576 + ' MB, so made from its pixels' : ' · ' + (r.mode === 'lossless' ? 'made from its pixels, not bit for bit' : 'lossy')) : r.note === 'bits8' ? ' · kept at 8 bits' : r.note === 'colors' ? ' · converted to sRGB' : r.mode === 'lossless' ? ' · lossless' : '') + (r.refused ? ' · this browser cannot open this file' : '');
 		note.textContent = text;
 		download.hidden = row.state !== 'done';
 	}
@@ -68,7 +79,7 @@
 		let fraction = rows.length ? (settled + rows.filter(row => row.state === 'working').reduce((sum, row) => sum + (row.progress || 0), 0)) / rows.length : 0;
 		of.line.style.setProperty('--rapier-progress', String(Math.min(1, fraction)));
 		of.line.hidden = !working;
-		const before = done.reduce((sum, row) => sum + row.before, 0), after = done.reduce((sum, row) => sum + row.after, 0);
+		const before = done.reduce((sum, row) => sum + row.result.before, 0), after = done.reduce((sum, row) => sum + row.result.size, 0);
 		of.count.textContent = !rows.length ? '' : (working ? settled + ' of ' + rows.length + ' · ' : done.length + ' of ' + rows.length + ' converted · ') + (done.length ? size(before) + ' → ' + size(after) : '');
 		of.cancel.hidden = !of.running;
 		of.all.hidden = done.length < 2;
@@ -119,8 +130,13 @@
 				if (!row) return;
 				row.state = 'working'; row.progress = 0; row.say = ''; row.stop = new AbortController(); paint(row); overall(self);
 				try {
-					const made = await C.convert(row.file, {mode: self.mode, videoMode: self.touched ? self.mode : 'high', complete: completeFor(self, row), signal: AbortSignal.any([signal, row.stop.signal]), say: text => { row.say = text; paint(row); follow1(self, row); }, progress: value => { row.progress = value; paint(row); overall(self); follow1(self, row); }});
-					Object.assign(row, made); row.after = made.size; row.state = 'done';
+					const key = keyOf(self), mode = self.mode;
+					const made = await C.convert(row.file, {mode, effort: self.effort, videoMode: self.touched ? mode : 'high', complete: completeFor(self, row), signal: AbortSignal.any([signal, row.stop.signal]), say: text => { row.say = text; paint(row); follow1(self, row); }, progress: value => { row.progress = value; paint(row); overall(self); follow1(self, row); }});
+					const {also, ...kept} = made;
+					row.results.set(key, kept);
+					if (also) row.results.set('lossless|' + self.effort, also);
+					const now = row.results.get(keyOf(self));
+					if (now) { row.result = now; row.state = 'done'; } else row.state = 'waiting';
 				} catch (error) {
 					if (error?.name === 'AbortError') { row.state = 'stopped'; row.say = 'Canceled'; }
 					else if (C.exhausted(error)) {
@@ -129,7 +145,7 @@
 					} else { row.state = 'failed'; row.say = C.refusal(error, row.file); }
 				}
 				row.stop = null;
-				if (row.removed) row.blob = null;
+				if (row.removed) row.results.clear();
 				paint(row); overall(self); follow1(self, row);
 			}
 		};
@@ -141,26 +157,43 @@
 		}
 	}
 
+	const keyOf = of => of.mode + '|' + of.effort;
+	function remake() {
+		for (const row of view.rows) {
+			if (row.state === 'working') continue;
+			const hit = row.results.get(keyOf(view));
+			if (hit) { row.result = hit; row.state = 'done'; } else row.state = 'waiting';
+			paint(row);
+		}
+		overall(); void run();
+	}
+	function seekTo(of) {
+		const {min, max} = C.EFFORT, value = C.effortOf(of.slider.value);
+		of.seek.style.setProperty('--seek-frac', String((value - min) / (max - min)));
+		of.level.textContent = String(value);
+		of.slider.setAttribute('aria-valuetext', 'Effort ' + value);
+	}
+
 	function add(files) {
 		if (!view || !files.length) return;
 		view.help.textContent = '';
 		const fragment = document.createDocumentFragment();
 		for (const file of files) {
-			const row = {file, state: 'waiting', progress: 0, say: ''};
+			const row = {file, state: 'waiting', progress: 0, say: '', results: new Map(), result: null};
 			const node = make('li', 'rapier-jxl-view__row'), text = make('div', 'rapier-jxl-view__row-text'), actions = make('div', 'rapier-jxl-view__row-actions');
 			const download = make('button', 'settings-action-btn rapier-jxl-view__row-download', 'Download'), remove = make('button', 'navigator-close');
 			text.append(make('div', 'rapier-jxl-view__row-name', file.name), make('div', 'rapier-jxl-view__row-note'));
 			download.type = 'button'; download.hidden = true; remove.type = 'button'; remove.setAttribute('aria-label', 'Remove ' + file.name);
 			remove.innerHTML = view.shut.innerHTML;
-			download.addEventListener('click', () => save(row.blob, C.outputName(row.name || file.name)));
+			download.addEventListener('click', () => save(row.result.blob, row.outputName));
 			remove.addEventListener('click', () => {
 				if (row.state === 'working') { row.removed = true; row.stop?.abort(); }
 				const at = view.rows.indexOf(row);
-				view.rows.splice(at, 1); node.remove(); row.blob = null; overall();
+				view.rows.splice(at, 1); node.remove(); row.results.clear(); row.result = null; overall();
 				(view.list.children[at]?.querySelector('.navigator-close') || view.pick.querySelector('input'))?.focus();
 			});
 			actions.append(download, remove); node.append(text, actions); fragment.append(node);
-			row.node = node; view.rows.push(row); row.name = file.name; paint(row);
+			row.node = node; row.name = file.name; row.outputName = C.outputName(file.name, new Set(view.rows.map(other => other.outputName.toLowerCase()))); view.rows.push(row); paint(row);
 		}
 		view.list.append(fragment); overall(); void run();
 	}
@@ -170,7 +203,7 @@
 		setTimeout(() => URL.revokeObjectURL(url), 4000);
 	}
 	function saveAll() {
-		const taken = new Set(), done = view.rows.filter(row => row.state === 'done').map(row => ({name: C.outputName(row.name, taken), blob: row.blob, crc: row.crc, size: row.size}));
+		const done = view.rows.filter(row => row.state === 'done').map(row => ({name: row.outputName, blob: row.result.blob, crc: row.result.crc, size: row.result.size}));
 		const zips = C.zipSeries(done);
 		zips.forEach((zip, at) => setTimeout(() => save(zip.blob, zips.length === 1 ? 'rapier-jxl.zip' : 'rapier-jxl-' + (at + 1) + '.zip'), at * 600));
 	}
@@ -227,9 +260,13 @@
 			if (button.dataset.mode === view.mode) return;
 			view.mode = button.dataset.mode; view.touched = true;
 			for (const each of view.modes) { const on = each === button; each.toggleAttribute('data-active', on); each.setAttribute('aria-checked', String(on)); }
-			for (const row of view.rows) if (!row.exact && row.state !== 'working') { row.state = 'waiting'; row.blob = null; paint(row); }
-			void run();
+			remake();
 		});
+		view.slider.addEventListener('input', () => seekTo(view));
+		view.slider.addEventListener('pointerdown', () => view.seek.classList.add('rapier-draw-seek--active'));
+		for (const event of ['pointerup', 'pointercancel', 'lostpointercapture', 'blur']) view.slider.addEventListener(event, () => view.seek.classList.remove('rapier-draw-seek--active'));
+		view.slider.addEventListener('change', () => { view.effort = C.effortOf(view.slider.value); remake(); });
+		seekTo(view);
 		view.group.addEventListener('keydown', event => {
 			const step = {ArrowRight: 1, ArrowLeft: -1, ArrowDown: 1, ArrowUp: -1}[event.key];
 			if (!step) return;
@@ -251,7 +288,7 @@
 		const done = view;
 		view = null;
 		done.follow?.popup.end();
-		for (const row of done.rows) row.blob = null;
+		for (const row of done.rows) { row.results.clear(); row.result = null; }
 		if (done.notices?.root.parentElement === done.root) done.notices.home.append(done.notices.root);
 		done.root.remove();
 		for (const node of done.inert) node.inert = false;

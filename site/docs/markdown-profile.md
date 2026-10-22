@@ -82,7 +82,7 @@ The release run checks Rapier’s differences from CommonMark against this profi
 
 ## DOCX export (`interchange/docx.mjs` `writeDocx`)
 
-A JPEG XL picture arrives as the portable picture the export already made of it (PNG, or JPEG for an opaque photograph when smaller). WebP and SVG pictures and drawings are rasterized to PNG in the package. Drawings use PNG, not EMF. Math is TeX source with its `$`/`$$` delimiters: Word shows the source, and Rapier re-import recovers the math. Export `.docx` uses `writeDocx` through `_rapierConvertPortableHtmlToDocx`. No plug-in.
+A JPEG XL picture arrives as the portable picture the export already made of it (PNG, or JPEG for an opaque photograph when smaller). A WebP picture is written as PNG. An SVG picture or drawing is written as an SVG picture (`asvg:svgBlip`) with a PNG preview, not EMF. Math is written as native Word equations (`m:oMath`), and Rapier re-import recovers the TeX. Export `.docx` uses `writeDocx` through `_rapierConvertPortableHtmlToDocx`. No plug-in.
 
 Headings 1–6, bold, italic, underline, strikethrough, links, sized/colored/font-family runs, highlights, nested ordered and bullet lists, task lists (`[ ]`/`[x]` prefixes), tables with `Table:` captions, page breaks (`w:br w:type="page"`) and math TeX source round-trip through `writeDocx` and `readDocx`. Exceptions:
 
@@ -90,14 +90,14 @@ Headings 1–6, bold, italic, underline, strikethrough, links, sized/colored/fon
 | --- | --- | --- | --- | --- | --- |
 | Callouts `> [!NOTE]` … `[!INFO]` | established extension (GitHub Alerts/Obsidian) | Insert ▸ Note/Tip/Important/Warning/Caution | yes, kind and words | n/a; export | a one-cell Word table with a colored rule and the bold label; re-import is the same callout |
 | Definition lists `Term` / `: Definition` | established extension (PHP Markdown Extra) | typing | yes, one paragraph per definition | n/a; export | a term paragraph and indented definition paragraphs in the styles *Rapier Definition Term* and *Rapier Definition*; a definition of several paragraphs re-imports as one definition per paragraph, separated by a blank line |
-| Disclosures `<details>` | HTML block | typing | no | n/a; export | the summary as a bold paragraph and the body after it, always open; re-import is those paragraphs |
+| Disclosures `<details>` | HTML block | typing | yes | n/a; export | the summary as a bold paragraph and the body after it, always open, inside a bookmark range; re-import is the `<details>` again |
 | Nested quotes `> >` | CommonMark | typing | no, one level | n/a; export | every level is a Word *Quote* paragraph with the same rule; re-import is one-level quotes, one per paragraph |
 | Internal links `[text](#heading)` | CommonMark | Insert link | no, through DOCX | n/a; export | a Word bookmark link; re-import is the link text, with the warning "Internal document links became plain text." |
 | Drawings (SVG recipe) | CommonMark SVG image | Draw | no, through DOCX | n/a; export | SVG picture with a PNG preview (`DOCX_EXPORT.drawingCodec = svg`) |
 | JPEG XL picture bytes | CommonMark data URL | Insert picture | no, codec bytes | n/a; export | PNG, or JPEG for an opaque photograph when smaller; re-import re-encodes JPEG XL |
 | Footnote labels `[^1]` | established extension (PHP Markdown Extra) | Insert Footnote | no, labels only | n/a; export | note text kept; import assigns `docx-fn-N` labels |
-| Image `wrap`/`x`/`y` | authored convention (`spec/md-layout.mjs`) | Drag/resize | no, through DOCX | n/a; export | floating DrawingML (`wp:anchor`); re-import is a normal-flow picture, with the warning "Floating pictures became normal-flow images in source order." |
-| `caps=small` | authored convention (`spec/md-layout.mjs`) | Typography | no | n/a; export | re-import drops `caps=small` |
+| Image `wrap`/`x`/`y` | authored convention (`spec/md-layout.mjs`) | Drag/resize | yes, to the hundredth of the column | n/a; export | floating DrawingML (`wp:anchor`); re-import reads `wrapSquare`, `wrapTight`, `wrapThrough` and `wrapNone` back into `wrap`, `x` and `y`; another anchor is a normal-flow picture, with the warning "Floating pictures became normal-flow images in source order." |
+| `caps=small` | authored convention (`spec/md-layout.mjs`) | Typography | no | n/a; export | small-caps runs on the paragraph's opening line; re-import drops `caps=small` |
 | Abbreviations `*[HTML]:`, link and picture titles, `<small>` | established extension / CommonMark | typing | no | n/a; export | the words without the title or the smaller size |
 
 Comments keep their ranges in Word: the export anchors each comment on the words the Word text kept, also when callouts,
@@ -126,7 +126,7 @@ omissions. Body text and referenced footnotes are checked separately in XML orde
 as an attachment on the Notes import path.
 
 Outside this profile: Word's review and comment workflows, named styles, themes and font schemes, custom tab
-stops, section and page geometry, conditional table styling, and anchored picture positioning and wrapping.
+stops, section and page geometry, and conditional table styling.
 Markdown has no shared model for them. Tab characters survive without their stops; footnote labels may change
 while content and paragraph boundaries stay intact.
 

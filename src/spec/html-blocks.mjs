@@ -53,7 +53,7 @@ export function htmlFence(raw) {
   const tail = raw.slice(end), attached = /^(\r?\n)(<!--md-layout:v1[^\r\n]*-->)(?:\r?\n)?$/.exec(tail);
   const layout = attached && parseLayout(attached[2]);
   if (tail.trim() && !layout) return null;
-  if (layout && ['align', 'first', 'indent', 'marker', 'hyphens', 'caps', 'hanging'].some(key => key in layout)) return null;
+  if (layout && ['align', 'first', 'indent', 'marker', 'hyphens', 'caps', 'hanging', 'lines', 'before', 'after', 'line'].some(key => key in layout)) return null;
   return {attrs, info: opening[3].trim(), body: rest.slice(0, found.index), infoStart: opening[1].length + mark.length,
     infoEnd: opening[0].replace(/\r?\n$/, '').length, source: raw, start: 0, end: raw.length, fenceEnd: end,
     layout: layout || HTML_FLOW, marker: attached ? {start: end + attached[1].length, end: end + attached[1].length + attached[2].length, text: attached[2]} : null};
@@ -545,24 +545,43 @@ export function mountHtmlBlocks(doc, options = {}) {
         value.width < 1 || value.viewportHeight < 1 || value.width > 4096 || value.viewportHeight > 4096) return;
     if (Math.abs(row.frame.clientWidth - value.width) > 1 || Math.abs(row.frame.clientHeight - value.viewportHeight) > 1) {message(row, 'snapshot'); return;}
     const stamp = ++row.generation, scale = Math.min(1, 1024 / Math.max(value.width, value.viewportHeight));
-    const canvas = doc.createElement('canvas'); canvas.width = Math.max(1, Math.ceil(value.width * scale)); canvas.height = Math.max(1, Math.ceil(value.viewportHeight * scale));
-    const snapshot = new win.Image();
+    const ratio = win.devicePixelRatio || 1, sharp = Math.min(ratio, 4096 / Math.max(value.width, value.viewportHeight), Math.sqrt(16777216 / (value.width * value.viewportHeight)));
+    const current = () => !dead && owned.get(row.image) === row && stamp === row.generation && keyOf(row.image) === row.key;
+    const draw = async factor => {
+      const canvas = doc.createElement('canvas'), snapshot = new win.Image();
+      canvas.width = Math.max(1, Math.ceil(value.width * factor)); canvas.height = Math.max(1, Math.ceil(value.viewportHeight * factor));
+      try {
+        snapshot.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="' + canvas.width + '" height="' + canvas.height + '" viewBox="0 0 ' + value.width + ' ' + value.viewportHeight + '"><foreignObject width="100%" height="100%">' + value.markup + '</foreignObject></svg>');
+        await Promise.race([snapshot.decode(), new Promise((_, reject) => win.setTimeout(() => reject(new Error('Snapshot decode timeout')), 2000))]);
+        if (!current()) return null;
+        const ctx = canvas.getContext('2d'); ctx.drawImage(snapshot, 0, 0); ctx.getImageData(0, 0, 1, 1);
+        return canvas.toDataURL('image/png');
+      } finally {snapshot.removeAttribute('src'); canvas.width = canvas.height = 0;}
+    };
     try {
-      snapshot.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="' + canvas.width + '" height="' + canvas.height + '" viewBox="0 0 ' + value.width + ' ' + value.viewportHeight + '"><foreignObject width="100%" height="100%">' + value.markup + '</foreignObject></svg>');
-      await Promise.race([snapshot.decode(), new Promise((_, reject) => win.setTimeout(() => reject(new Error('Snapshot decode timeout')), 2000))]);
-      if (dead || owned.get(row.image) !== row || stamp !== row.generation || keyOf(row.image) !== row.key) return;
+      const first = await draw(scale);
+      if (first == null) return;
       if (Math.abs(row.frame.clientWidth - value.width) > 1 || Math.abs(row.frame.clientHeight - value.viewportHeight) > 1) {message(row, 'snapshot'); return;}
-      const ctx = canvas.getContext('2d'); ctx.drawImage(snapshot, 0, 0); ctx.getImageData(0, 0, 1, 1);
-      const first = canvas.toDataURL('image/png'); if (first.length > 4 * 1024 * 1024) throw new Error('Snapshot byte budget');
-      row.image.dataset.rapierFirstFrame = first; row.image.src = first;
+      if (first.length > 4 * 1024 * 1024) throw new Error('Snapshot byte budget');
+      const shown = sharp > scale ? await draw(sharp).catch(() => first) : first;
+      if (shown == null) return;
+      row.ratio = ratio;
+      row.image.dataset.rapierFirstFrame = first; row.image.src = shown;
       row.snapshot = true;
       row.image.dataset.rapierLiveSurface = '';
       row.image.dataset.rapierContour = row.animated ? 'animation-box' : value.snapshotStatus === 'sampled' ? 'sampled' : 'unavailable-box';
       row.image.dataset.rapierNaturalWidth = String(value.width); row.image.dataset.rapierNaturalHeight = String(value.viewportHeight);
       row.image.dispatchEvent(new win.Event('rapier-html-resize', {bubbles: true})); schedule();
     } catch {if (owned.get(row.image) === row) {row.image.dataset.rapierContour = 'unavailable-box'; row.image.dataset.rapierSnapshot = 'unavailable';}}
-    finally {snapshot.removeAttribute('src'); canvas.width = canvas.height = 0;}
   }
+  let density = null;
+  const redraw = () => {
+    density?.removeEventListener('change', redraw);
+    if (dead) return;
+    density = win.matchMedia('(resolution: ' + (win.devicePixelRatio || 1) + 'dppx)'); density.addEventListener('change', redraw);
+    for (const row of owned.values()) if (row.snapshot && row.ratio !== (win.devicePixelRatio || 1)) {row.generation++; message(row, 'snapshot');}
+  };
+  redraw();
   const changedVisibility = () => {for (const row of owned.values()) applyPlayback(row);};
   const hidden = event => {if (!event.persisted) {api.close(); return;} for (const row of owned.values()) {row.visible = false; applyPlayback(row);}};
   const shown = () => {scan(); for (const row of owned.values()) {const box = row.image.getBoundingClientRect();
@@ -580,7 +599,7 @@ export function mountHtmlBlocks(doc, options = {}) {
       snapshot: image.dataset.rapierSnapshot || null, contour: image.dataset.rapierContour || null, status: image.dataset.rapierPlayback || 'ready'} : null;},
     close() {dead = true; win.cancelAnimationFrame(pending); observer.disconnect(); resize.disconnect(); visibility?.disconnect();
       win.removeEventListener('message', receive); win.removeEventListener('resize', schedule); doc.removeEventListener('scroll', schedule, true);
-      doc.removeEventListener('visibilitychange', changedVisibility); reduced.removeEventListener('change', changedMotion);
+      doc.removeEventListener('visibilitychange', changedVisibility); reduced.removeEventListener('change', changedMotion); density?.removeEventListener('change', redraw);
       for (const row of [...owned.values()]) release(row); sheet.remove(); local.clear();
       win.removeEventListener('pagehide', hidden); win.removeEventListener('pageshow', shown); if (doc.rapierObjects === api) delete doc.rapierObjects;}};
   win.addEventListener('pagehide', hidden); win.addEventListener('pageshow', shown); if (!options.root) doc.rapierObjects = api; scan(); return api;

@@ -281,7 +281,11 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 		}
 		let pressureOnly = !!(deletePressure && deletion);
 		try {
-			if (deletion) { const state = await deletion.read(await readIndex()); if (state.record && state.record.phase !== 'idle') pressureOnly = true; }
+			if (deletion) {
+				let state = null;
+				try { state = await deletion.read(await readIndex()); } catch (error) { if (error?.code !== 'corrupt') throw error; }
+				if (state?.record && state.record.phase !== 'idle') pressureOnly = true;
+			}
 			if (!pressureOnly) {
 				try { await store.recoverIntakes?.(); if (store.prepare && !await store.prepare()) throw fail('read-only', store.reason || 'These notes are read-only here.'); }
 				catch (error) { if (deletion && (error?.name === 'QuotaExceededError' || error?.code === 'storage-full')) pressureOnly = true; else throw error; }

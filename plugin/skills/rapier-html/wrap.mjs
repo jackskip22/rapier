@@ -8,6 +8,7 @@ const START = '<script type="text/markdown" id="rapier-document"';
 const DRAWING_START = '<script type="text/plain" id="rapier-drawing"';
 const END = '</script>';
 // The page's search words (rapier.html's RAPIER_SEO regions: description, canonical address, previews, structured data and the plain guide
+const READABLE = /<noscript id="rapier-readable">[\s\S]*?<\/noscript>\n?/g;
 const SEARCH_WORDS = /<!-- RAPIER_SEO_BEGIN -->[\s\S]*?<!-- RAPIER_SEO_END -->\n?/g;
 const OFFLINE_POLICY = "default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval' blob:; style-src 'unsafe-inline'; " +
 	"img-src data: blob:; media-src data: blob:; font-src data: blob:; connect-src 'none'; worker-src blob:; manifest-src 'none'; base-uri 'none'; form-action 'none'";
@@ -42,6 +43,11 @@ function previewHead(markdown, fallbackTitle) {
 	const meta = (key, name, value) => '<meta ' + key + '="' + name + '" content="' + value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;') + '" data-rapier-preview>\n';
 	return (description ? meta('name', 'description', description) : '') + meta('property', 'og:title', title || fallbackTitle) +
 		(description ? meta('property', 'og:description', description) : '') + meta('name', 'generator', 'Rapier (https://rapier.website)');
+}
+
+function readableBlock(html) {
+	if (typeof html !== 'string' || !html.trim() || /<\/noscript|<!--/i.test(html)) return '';
+	return '\n<noscript id="rapier-readable"><style>html,body{background:#fff;color:#000}a{color:#0000ee}</style><main style="max-width:44rem;margin:0 auto;padding:1rem">' + html + '</main></noscript>';
 }
 
 function safeName(name, fallback) {
@@ -163,7 +169,7 @@ export function wrap(pageHtml, text, name, options) {
 	const titled = stripped.replace(/<title>[^<]*<\/title>\n?/, all => '<title>' + docName.replace(/&/g, '&amp;').replace(/</g, '&lt;') + ' — Rapier</title>' +
 		(all.endsWith('\n') ? '\n' : '') + previewHead(text, docName.replace(/\.[^.]*$/, '')));
 	const shift = titled.length - stripped.length;
-	return titled.slice(0, at + shift) + '\n' + block + carriedBlocks + titled.slice(at + shift);
+	return titled.slice(0, at + shift) + '\n' + block + carriedBlocks + readableBlock(opts.readable) + titled.slice(at + shift);
 }
 export function unwrap(pageHtml) {
 	const theme = Array.from(pageHtml.matchAll(APPEARANCE), match => match[1])[0] || null;
@@ -197,5 +203,5 @@ export function unwrap(pageHtml) {
 	const carriedBase = takeBase(html); html = carriedBase.html;
 	const comparisonBase = carriedBase.base;
 	const parts = takeParts(html, text);
-	return {...parts, text, name, kind, view, theme, drawing, drawingName, comparisonBase, base: comparisonBase?.text ?? null, baseName: comparisonBase?.name ?? null, baseSha256: comparisonBase?.sha256 ?? null, baseRevision: comparisonBase?.revision ?? null, by: comparisonBase?.by ?? null, at: comparisonBase?.at ?? null, return: address, return_expires_at: expiry};
+	return {...parts, html: parts.html.replace(READABLE, ''), text, name, kind, view, theme, drawing, drawingName, comparisonBase, base: comparisonBase?.text ?? null, baseName: comparisonBase?.name ?? null, baseSha256: comparisonBase?.sha256 ?? null, baseRevision: comparisonBase?.revision ?? null, by: comparisonBase?.by ?? null, at: comparisonBase?.at ?? null, return: address, return_expires_at: expiry};
 }

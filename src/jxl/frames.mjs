@@ -38,9 +38,9 @@ async function rgbaOf(image, width, height) {
 	return data;
 }
 
-export async function readAnimation(bytes, type, {signal, say = () => {}, progress = () => {}} = {}) {
+export async function readAnimation(bytes, type, {signal, say = () => {}, progress = () => {}, convert = false} = {}) {
 	if (typeof ImageDecoder !== 'function' || !await ImageDecoder.isTypeSupported(type)) throw shown('This browser cannot read animations.');
-	const decoder = new ImageDecoder({data: bytes, type, premultiplyAlpha: 'none', colorSpaceConversion: 'none', preferAnimation: true});
+	const decoder = new ImageDecoder({data: bytes, type, premultiplyAlpha: 'none', colorSpaceConversion: convert ? 'default' : 'none', preferAnimation: true});
 	try {
 		await decoder.tracks.ready; await decoder.completed;
 		const track = decoder.tracks.selectedTrack, count = track?.frameCount || 0;
@@ -193,25 +193,25 @@ export function oneAtATime(work) {
 
 const seconds = frames => frames.reduce((sum, frame) => sum + frame.duration, 0) / 1000;
 export function mediaNote(row) {
-	return ' · ' + row.frames + ' frames · ' + row.seconds.toFixed(1) + ' s' + (row.scaled ? ' · made ' + row.width + '×' + row.height : '') +
+	return ' · ' + row.frames + ' frames · ' + row.seconds.toFixed(1) + ' s' + (row.scaled ? ' · made ' + row.width + '×' + row.height : '') + (row.note === 'colors' ? ' · converted to sRGB' : '') +
 		(row.cut ? (row.video ? ' · cut to fit this device' : ' · first ' + row.frames + ' of ' + row.total + ' frames, to fit this device') : '') + (row.sound ? ' · sound dropped' : '') + (row.size > DOCUMENT_BYTES ? ' · too large to play in a Rapier document' : '');
 }
 
-export async function convertMedia(file, bytes, kind, {mode, quality, effortFor, resultOf, signal, say = () => {}, progress = () => {}, codec, complete = async () => {}}) {
+export async function convertMedia(file, bytes, kind, {mode, quality, effortFor, resultOf, signal, say = () => {}, progress = () => {}, codec, complete = async () => {}, colors = {}}) {
 	return oneAtATime(async () => {
 		signal?.throwIfAborted();
 		const video = kind === 'video';
 		if (video) await complete();
-		const read = video ? await readVideo(file, {signal, say, progress}) : await readAnimation(bytes, kind, {signal, say, progress});
+		const read = video ? await readVideo(file, {signal, say, progress}) : await readAnimation(bytes, kind, {signal, say, progress, convert: !!colors.browser});
 		if (!read) return null;
 		if (!video) await complete();
 		const {width, height, loops, frames} = read, count = frames.length, length = seconds(frames), lossless = mode === 'lossless';
 		say('Making the file'); progress(0);
 		const effort = effortFor(width * height * Math.min(count, 4));
-		const options = lossless ? {lossless: true, effort} : {quality, photo: true, effort};
+		const {browser, ...declared} = colors, options = {...(lossless ? {lossless: true, effort} : {quality, photo: true, effort}), ...declared};
 		const made = await codec('animation', {width, height, loops, frames, options}, {signal, progress: value => { say('Making frame ' + Math.min(count, Math.max(1, Math.ceil(value * count))) + ' of ' + count); progress(value); }});
 		frames.length = 0;
-		return {...resultOf(made.bytes), before: file.size, exact: false, jpeg: false, mode, fallback: false, refused: false, note: '', width, height,
+		return {...resultOf(made.bytes), before: file.size, exact: false, jpeg: false, mode, fallback: false, refused: false, note: colors.browser ? 'colors' : '', width, height,
 			frames: count, total: read.total, seconds: length, cut: read.cut, sound: read.sound, scaled: read.scaled, video};
 	});
 }

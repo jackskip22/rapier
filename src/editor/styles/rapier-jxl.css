@@ -24,3 +24,6 @@
 .rapier-jxl-view__heading{display:flex;align-items:center;min-width:0}
 .rapier-jxl-view__links a,.info-action-body a{color:inherit;text-decoration:underline;text-underline-offset:.2em}
 .rapier-jxl-view>#toast-root{z-index:2}
+.rapier-jxl-view__effort{display:flex;align-items:center;gap:var(--space-2);font:var(--fw-regular) var(--text-sm)/1.4 var(--font-sans)}
+.rapier-jxl-view__effort .rapier-draw-seek{flex:1 1 auto;min-width:96px}
+.rapier-jxl-view__effort-level{min-width:1ch;text-align:right;font-family:var(--font-mono)}

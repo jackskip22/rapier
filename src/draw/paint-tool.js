@@ -2287,7 +2287,7 @@ let q=f32(id.x)+0.5;let u=1.0-q/w;let back=(1.0-u)*w-0.5;out[id.x]=abs(back-f32(
 		pass.setPipeline(pipeline); pass.setBindGroup(0, device.createBindGroup({layout: pipeline.getBindGroupLayout(0), entries: [{binding: 0, resource: {buffer: input}}, {binding: 1, resource: {buffer: output}}]}));
 		pass.dispatchWorkgroups(n / 64); pass.end(); encoder.copyBufferToBuffer(output, 0, read, 0, n * 4); device.queue.submit([encoder.finish()]);
 		await read.mapAsync(GPUMapMode.READ); const errors = new Float32Array(read.getMappedRange().slice(0)); read.unmap();
-		return 'worst ' + Math.max(...errors).toFixed(4) + ' texel on a 1758 sheet';
+		return 'worst ' + Math.max(...errors).toExponential(2) + ' texel on a 1758 sheet' + (Math.max(...errors) > .01 ? ' (exact positions on)' : ' (full precision)');
 	} finally { device.destroy(); }
 }
 function _rapierWaterProbeShow(layer, meta) {

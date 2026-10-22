@@ -83,10 +83,17 @@ _rapierPresetPart = (() => {
     return _rapierCommitSourceProjection([splice], action === 'style' ? 'Apply saved style' : 'Insert passage',
       action === 'style' ? null : {start: splice.pos + splice.inserted.length, end: splice.pos + splice.inserted.length}, null, capture?.viewport, null, permit);
   }
+  const leaveLine = async stamp => {
+    if (!_rapierMutationStampIsCurrent(stamp) || !_activeBlockEditContext()) return stamp;
+    _rapierLeaveEdgeParagraph();
+    await _rapierAwaitMutationBarrier();
+    await _rapierYieldToPaint();
+    return Object.freeze(_rapierMutationStamp());
+  };
   async function startPage(row, stamp) {
     const text = globalThis.RapierOrnaments.templateMarkdown(row, {paper: globalThis.RapierOrnaments.paperFor(globalThis.navigator?.language)});
     if (!text) throw new Error('That border could not be made into a page.');
-    if (_rapierMutationStampIsCurrent(stamp) && _rapierUntouchedEdge() && _rapierLeaveEdgeParagraph()) stamp = Object.freeze(_rapierMutationStamp());
+    stamp = await leaveLine(stamp);
     const record = {version: 1, id: owner.newId(), name: owner.presetName(row.name), content: {scope: 'document', text}};
     try { return await use(record, 'new', null, () => _rapierMutationStampIsCurrent(stamp), true); }
     catch (error) { showToast(String(error?.message || error), 'error'); return false; }
@@ -99,7 +106,7 @@ _rapierPresetPart = (() => {
   const svgOf = url => new TextDecoder().decode(Uint8Array.from(atob(url.slice(url.indexOf(',') + 1)), character => character.charCodeAt(0)));
   const own = test => Object.values(shelf.values('preset/')).flatMap(record => { try { const admitted = owner.admitPreset(record); return test(admitted) ? [admitted] : []; } catch (_) { return []; } });
   async function startText(name, text, stamp) {
-    if (_rapierMutationStampIsCurrent(stamp) && _rapierUntouchedEdge() && _rapierLeaveEdgeParagraph()) stamp = Object.freeze(_rapierMutationStamp());
+    stamp = await leaveLine(stamp);
     const record = {version: 1, id: owner.newId(), name: owner.presetName(name), content: {scope: 'document', text}};
     try { return await use(record, 'new', null, () => _rapierMutationStampIsCurrent(stamp), true); }
     catch (error) { showToast(String(error?.message || error), 'error'); return false; }
@@ -207,11 +214,16 @@ _rapierPresetPart = (() => {
     const bring = async (kind, family = null) => { await _rapierOrnamentBring(kind, family); requireOpen(); await list(); };
     const shaped = (row, ink, tiles) => _rapierOrnamentTile({d: row.frame ? row.frame.path : row.path, box: [0, 0, row.w, row.h], tiles: row.tile === true && tiles ? tiles : 1, ink,
       svg: () => tiles ? RapierOrnaments.elementSVG(row, {ink, tiles}) : RapierOrnaments.thumbnailSVG(row, ink)}, 'rapier-gallery__picture', false);
-    const previews = (grid, list, kind) => {
+    const previews = (grid, list, kind, named = false) => {
       for (const preview of list || []) {
         const image = element('img', 'rapier-gallery__picture rapier-gallery__picture--preview');
         image.alt = ''; image.draggable = false; image.decoding = 'async'; image.src = preview.src;
-        grid.append(card(image, preview.name, () => bring(kind)));
+        grid.append(card(image, preview.name, async () => {
+          if (kind === 'lettersets') { remember(); gallery.group.letters = preview.id; }
+          await bring(kind);
+          const row = kind === 'templates' ? (await _rapierOrnamentBring('templates')).find(each => each.id === preview.id) : null;
+          if (row) { requireOpen(); close(); await (place ? place({border: row}) : startPage(row, stamp)); }
+        }, named ? preview.name : undefined));
       }
     };
     async function borders(grid) {
@@ -275,7 +287,7 @@ _rapierPresetPart = (() => {
         async () => { close(); await (place ? place({item}) : _rapierComposerInsert({item, ink: _rapierComposerSheet.ink, target})); }));
     }
     async function letters(grid, open) {
-      if (!await installed('lettersets')) return previews(grid, globalThis.RapierGalleryPreviews?.LETTER_PREVIEWS, 'lettersets');
+      if (!await installed('lettersets')) { grid.classList.add('rapier-gallery__grid--large'); return previews(grid, globalThis.RapierGalleryPreviews?.LETTER_PREVIEWS, 'lettersets', true); }
       const sets = await _rapierOrnamentBring('lettersets'); requireOpen();
       const ink = _rapierComposerInk() === RapierOrnaments.ELEMENT_INK ? _rapierComposerHex(getComputedStyle(document.body).color) : _rapierComposerInk();
       const picture = (set, entry) => {

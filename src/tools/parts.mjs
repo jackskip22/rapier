@@ -35,6 +35,7 @@ export const PARTS = Object.freeze([
         .concat([['RapierOriginalFolderCore', 'notes/original-folder/index.mjs']]))},
 ]);
 export const PART_IDS = Object.freeze(PARTS.map(part => part.id));
+export const PART_DIRECTORY = 'parts';
 
 export function partition({roots, partRoots, deps, order}) {
   const closure = starts => {

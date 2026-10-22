@@ -140,18 +140,29 @@ async function _rapierReadImportedDocument(file, name = file?.name || '') {
       return {text, filename: base + '.md', admittedBytes: await textBytes(text),
         importStamp: run.stamp, importSummary: 'TextPack imported'};
     }
+    let asksPictures = true;
+    if (kind === 'docx') {
+      const looked = await globalThis.RapierDocxImport.readDocx(file, {name, checkCurrent, signal: work.signal, work, inspect: true});
+      await work.checkpoint();
+      if (typeof looked.canonical === 'string') {
+        const admittedBytes = await textBytes(looked.canonical);
+        const stem = String(name).replace(/\.docx$/i, '').replace(/[\u0000-\u001f\u007f/\\]/g, '_').slice(0, 180) || 'imported';
+        return {text: looked.canonical, filename: stem + '.md', admittedBytes, importStamp: run.stamp, warnings: [], importSummary: 'Word source restored'};
+      }
+      asksPictures = looked.pictures > 0;
+    }
     const fields = kind === 'pdf' ? [{label: 'import as', type: 'select', value: 'text', options: [
       {value: 'text', label: 'Editable text'}, {value: 'pages', label: 'Page images'},
     ]}] : [];
-    fields.push({label: 'Keep original image format', type: 'toggle', value: RapierPreferences.read('imageStorage') === 'original'});
-    const values = await _rapierImportFields({title: 'import ' + kind.toUpperCase(),
+    if (asksPictures) fields.push({label: 'Keep original image format', type: 'toggle', value: RapierPreferences.read('imageStorage') === 'original'});
+    const values = fields.length ? await _rapierImportFields({title: 'import ' + kind.toUpperCase(),
       description: kind === 'pdf'
         ? 'Editable text reconstructs text and pictures; check the reading order. Page images preserve appearance. Pictures use JPEG XL unless the original format is kept.'
         : 'Create an editable copy with headings, lists, tables, alignment and pictures. Pictures use JPEG XL unless the original format is kept.',
-      fields, okLabel: 'import'});
+      fields, okLabel: 'import'}) : [];
     if (!values) return null;
     checkCurrent();
-    const profile = values[values.length - 1] ? 'original' : 'jxl';
+    const profile = asksPictures && values[values.length - 1] ? 'original' : 'jxl';
     const mode = kind === 'pdf' ? values[0] : null;
     if (kind === 'pdf' && !await _rapierEnsurePdfImportPlugin(run)) return null;
     checkCurrent();

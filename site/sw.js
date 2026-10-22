@@ -7,13 +7,14 @@ const SHELL_URLS = [
   './icon-192.png',
   './icon-512.png',
 ];
-const SHELL_RELEASE_SHA256 = '81f22cf73c65d633210d49864b286e84198375cbb33f1d67266965a6e8bbb223';
-const SHELL_PAGE_SHA256 = '85350c1f7c7752d316831764966810cb2b50b007ecc61ff884754756193b93a5';
-const SHELL_BOOT_ID = 'd042b8aeee0e981132fd5385bb9531f7fd12a26480de377b8c20a67f6a740a41';
-const SHELL_DOOR_SHA256 = {"/":"a4bd3d7ce7cb8dc9ef9d018c3f79f61c9895716ed4ee78b3f49421bad3ba7ba3","/privacy":"73557ecaead14940a5800b0f0f42f94b4cb929c09b514073d1bcd4e4c9b81c4e","/commercial":"fa04e02f22e6586014e62282ac8ffb9d351c73a64947e9f653d0caa06632fc04","/notes":"9c3be38e2a2b36e7e11f91318de4bd559f12d9485aca2c3f5279c84f27e5c3b4","/draw":"5062c4d5b9143f5a40f0714f478a1a7be6634f7423ec89bfa912ee7045208cdd","/watercolor":"bd0e40e5f8cfcdf174f360366185703913d1638e613aa8ae24907b0d682e6e22","/paint":"d35d20fc66686389b6fe08c215fd5e40758eb5090dc40c33be62fce39259c749","/jxl":"5ed0b636a9dded82197abc226ee824d71f5a8ee0561d75fbe734c6d21842c6d5","/markdown-to-pdf":"8668019f123a8262589d23ac5452ad230995affe45be4355a46fb98fc27e7658","/markdown-to-word":"3a84234faee75369650f48e7d3ad605a29963851f9a2a4d064a3981131d66e89","/word-to-markdown":"42e473ea688892f5bf21cc1ea4f1a49c24209e17b5ccc83d0af5821e9f983bf5","/mermaid-editor":"90a3ba787ae5e26140c2a8534221b9ed72702c3758e77ab43b2aceeccbe1451d"};
+const SHELL_RELEASE_SHA256 = 'afe4483fecceb9e12ce917b695401ce255d660343f0b9ee5e50a2f5ca40f6f1e';
+const SHELL_PAGE_SHA256 = '98ebc37f1c379c8f8a845f33349c7b028fc19fe2d826b3fc94a2e4815f93b84b';
+const SHELL_BOOT_ID = '964836b641bce4f1c10687ad3679a2666e50f27d3c27d2d33990f59a3099f9f1';
+const SHELL_DOOR_SHA256 = {"/":"bd5801e3ab6e2e37eade57c8f5b9cdb6b50bf07ff23958d182269b31adf4e7dd","/privacy":"f4b5be2593ed544412fc5b02cf1d5930a24dbc11890f24aeddcffdb937a8b7fd","/commercial":"2b692a8ab222615e56fab88fe5bac616e0b4812441fe20ef2087a1c45387f52f","/notes":"8727cb6b5efecf68c3bc920b561e6cca603f8ce45d29c2857ad4334f612d913d","/draw":"fde1c3b122e32d7c1e22abed99e222d59ef677cc0cda3ad21b9436434f99af90","/watercolor":"73b4e2c6ebaa7db5d20afb861227cc68bc8c301903abec1121f63f6d38501545","/paint":"0006e5da7e755c3ddea55af163337bf564a604b50df5e2ee638294fe1c517ddf","/jxl":"c9727e3f431c259444e2b4d067c66ea42ab54fc96b4398513c94e8f44bfcfddf","/markdown-to-pdf":"33739e445b9ca942f681b34e8a91343c8047a79acf35151509ca264e171c3d94","/markdown-to-word":"f5e2870f1e9cd5e40a5d00cc9deadbc40fc829170f5e20b4c7047b9a4ff82b4d","/word-to-markdown":"2a17574c733a8cae31a7fb0f5e135ca685ad2f7cd4143cb2017203b1e0da968c","/mermaid-editor":"1f30108582c87b3cd411260dc50cbbc8c4440d33dac2367b3299bb7ec17de0f9"};
 const SHELL_SITE_PAGES = ["/gallery"];
 const SITE_PAGE_CACHE = `rapier-pages:${CACHE_SCOPE}:v1`;
-const SHELL_PARTS = [{"id":"document","file":"rapier-document-cb75eaeb2bc967f1.txt","bytes":903364,"sri":"1fHapIwrYg4ewBJ9un6iq5lw/hy+GAWFfOH464v/SbIFdaVtELQK3o6/USrTQfdJ"},{"id":"presets","file":"rapier-presets-8c38561936d2c40d.txt","bytes":260969,"sri":"iuPiSL9F8W/WQezy+KSOsh3xIL6iQq96CUNU77vGyEh7ZyDfryXIeT+wg0JbJa7U"},{"id":"drawing","file":"rapier-drawing-134b809320f46231.txt","bytes":342672,"sri":"fQ+UOffng3H9+ZXyFzloSxoztZswbqvXrRYUNCHUHLjQ9DNiFivjaC0AjqJC61uj"},{"id":"jxl","file":"rapier-jxl-44680b92c2251d23.txt","bytes":17464,"sri":"v6/5WIrd0I67O1kQejU/o5PsLp5JQ7txO1I50zMp61oBWIcUYPoqe2bO53AvnOKp"},{"id":"jxlcomplete","file":"rapier-jxlcomplete-459dc138cf05df65.txt","bytes":155872,"sri":"nAf8VgZwrWYZPcs+DIfqWi0yiPVhejDP/BK92E1C5tHvRXaOeb1Qu9C/xA7eWHSu"},{"id":"notes","file":"rapier-notes-a13ba5840b96e8e4.txt","bytes":379458,"sri":"p2gQ2CrtdNg8vJ70+KfN9/Da/dTxb/Ukv6cT1reoJKvBxbRZMXaGfSPFu8SDmAai"}];
+const SHELL_PARTS = [{"id":"document","file":"rapier-document-59d97804da757301.txt","bytes":903287,"sri":"Qc3miQx3ovWL9NHAJ4n1/g0bNbu/QPMR/xtqaNN/MOIAitD//3ChaCtjpxAEflfR"},{"id":"presets","file":"rapier-presets-49fc6e17b880974f.txt","bytes":252257,"sri":"lYEkQ7lbw1904m1p3w93rhJrvV3XWeNTSjdAiIggOG9U/jJfgBa+L3opsrLg7kDX"},{"id":"drawing","file":"rapier-drawing-19246736259c2827.txt","bytes":342826,"sri":"W0NGoctKkhR6bHNldwD79J1az6aLRbLCDAgP8x8D0MHl5m/1Q5HH2X0IznA+HEdx"},{"id":"jxl","file":"rapier-jxl-d5464be795de963c.txt","bytes":18801,"sri":"izsG7+MRCYicCfLC6HARGApOFWsu7493owBf+9xXkvsiQnIjucOgFrvvir9ZhbD5"},{"id":"jxlcomplete","file":"rapier-jxlcomplete-e42387fa8d41edeb.txt","bytes":155809,"sri":"my6xugvp8Az2eoM8JPJx32lm3/ihuXvFYMAYExmR1PTYW+dePVyZMpgq7odatQ11"},{"id":"notes","file":"rapier-notes-6c0d9c216ec4f00f.txt","bytes":379584,"sri":"tGJoA7fRxPpoxdThSA93Z/TPhfaQFrxoywtySK2PhNOJRfqSsn6Kj/2JfDAPQYn/"}];
+const PART_DIRECTORY = 'parts/';
 const SHELL_GENERATION = SHELL_CACHE_PREFIX + SHELL_RELEASE_SHA256.slice(0, 32);
 const SHELL_PAGE_URL = new URL('./rapier.html', self.location).href;
 const SHELL_ROOT_URL = new URL('./', self.location).href;
@@ -216,7 +217,7 @@ async function keepParts() {
       const stem = 'parts/rapier-' + pin.id + '-';
       if (keys.includes('parts/' + pin.file) || !keys.some(key => key.startsWith(stem))) return null;
       let response;
-      try { response = await fetch(new Request(new URL(pin.file, self.location), {cache: 'reload'})); }
+      try { response = await fetch(new Request(new URL(PART_DIRECTORY + pin.file, self.location), {cache: 'reload'})); }
       catch (_) { return null; }
       if (!response.ok) return null;
       const bytes = new Uint8Array(await response.arrayBuffer());

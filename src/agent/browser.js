@@ -285,15 +285,16 @@
   }
 
   function documentState(includeText = true) {
-    const notes = notesFact();
-    return {documentId: String(rapier.identity.authority), revision: Number(rapier.revision.settled), ...(notes ? {notes} : {}),
-      comparisonBase: comparisonRecord()?.base || null, ledgerRoot: rapier.document.source?.rootId || null,
+    const notes = notesFact(), edge = _rapierUntouchedEdgeMark();
+    return {documentId: String(rapier.identity.authority), revision: Number(edge ? edge.revision : rapier.revision.settled), ...(notes ? {notes} : {}),
+      comparisonBase: comparisonRecord()?.base || null, ledgerRoot: (edge ? edge.source.rootId : rapier.document.source?.rootId) || null,
       generation: Number(rapier.revision.generation), filename: String(rapier.document.filename),
-      docKind: String(rapier.document.docKind), ...(includeText ? {text: _rapierSourceText()} : {})};
+      docKind: String(rapier.document.docKind), ...(includeText ? {text: edge ? edge.source.read() : _rapierSourceText()} : {})};
   }
 
   function current() {
-    const journal = rapier.undo.ledger.flatMap(entry => {
+    const edge = _rapierUntouchedEdgeMark();
+    const journal = (edge ? rapier.undo.ledger.slice(0, edge.ledger) : rapier.undo.ledger).flatMap(entry => {
       const tx = entry.transaction;
       const splices = tx && _rapierRecordSplices(entry, rapier.undo.ledger);
       return splices ? [{id: tx.id, ...(tx.remoteTransactionId ? {remoteTransactionId: tx.remoteTransactionId} : {}), revision: tx.revision, baseRevision: tx.baseRevision,
@@ -344,6 +345,9 @@
   }
 
   function matches(request, revision = request.revision ?? request.baseRevision) {
+    const edge = _rapierUntouchedEdgeMark();
+    if (edge && request.documentId === String(rapier.identity.authority) && (revision == null || revision === Number(edge.revision)) &&
+        (request.beforeText == null || request.beforeText === edge.source.read())) _rapierLeaveEdgeParagraph();
     return request.documentId === String(rapier.identity.authority) &&
       (revision == null || revision === Number(rapier.revision.settled)) &&
       (request.beforeText == null || request.beforeText === _rapierSourceText()) &&

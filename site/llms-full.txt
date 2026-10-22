@@ -2,7 +2,7 @@
 
 > Markdown editor for writing, notes, editable diagrams, drawing and painting with your AI assistant.
 
-For people, Rapier is a Markdown editor and notes app on Android ([Google Play](https://play.google.com/store/apps/details?id=app.rapier)), on the web at https://rapier.website and on Windows. You write on the formatted page or in the Markdown source; there is no split preview. It works offline, with no account, ads or tracking.
+For people, Rapier is a free online Markdown editor and viewer and a notes app, on Android ([Google Play](https://play.google.com/store/apps/details?id=app.rapier)), on the web at https://rapier.website and on Windows. You write on the formatted page or in the Markdown source; there is no split preview. It works offline, with no account, ads or tracking.
 
 Connect an MCP client to `https://mcp.rapier.website/door/mcp` (Streamable HTTP, anonymous, without OAuth) and call `open`. No account needed. Read the `rapier://guide` resources if your host supports MCP resources; otherwise use the [agent guide](https://rapier.website/agents) and the tool schemas. Your host's own tool approval rules still apply.
 
@@ -23,13 +23,14 @@ Free and offline, with no ads, tracking or Rapier account.
   [rapier-reader.html](https://github.com/jackskip22/rapier/raw/main/rapier-reader.html).
 - **On Android:** get Rapier on [Google Play](https://play.google.com/store/apps/details?id=app.rapier). The app
   has no Internet permission. Optional Google Play asset packs download on first use, then work offline.
-- **On Windows:** download [Rapier.exe](https://github.com/jackskip22/rapier/raw/main/Rapier.exe). It is not code-signed yet, so Windows SmartScreen may warn the first time: choose **More info**, then **Run anyway**.
+- **On Windows:** download [Rapier.exe](https://github.com/jackskip22/rapier/raw/main/Rapier.exe) (version 1.2.30), the whole app in one file, and run it. It is not code-signed yet, so Windows SmartScreen may warn the first time: choose **More info**, then **Run anyway**.
+- **On Linux (x86_64):** download [rapier-linux](https://github.com/jackskip22/rapier/raw/main/rapier-linux) (version 1.2.31), the whole app in one file. Run `chmod +x rapier-linux && ./rapier-linux --install` once to add Rapier to your launcher; it opens as an app window in your Chromium-based browser. [Requirements](src/linux/README.md).
 - **With an agent:** the Claude plugin, ChatGPT or another MCP client at `https://mcp.rapier.website/mcp`.
 
 ## What it does
 
 - **Write.** Edit the page or the Markdown source; text you don't touch stays byte for byte. Tables, checklists,
-  footnotes, LaTeX, Mermaid, find and replace, compare, read aloud, right-to-left, comments and suggested edits.
+  footnotes, LaTeX, Mermaid, find and replace, compare, read aloud, right-to-left, comments, live agent changes and selective undo.
 - **Pictures.** Stored inside the `.md` file. New pictures use JPEG XL from
   [Rapier's own encoder](https://github.com/jackskip22/rapier-jxl). Text can wrap around a picture's shape.
 - **Draw.** Editable SVG: pen, pressure brush, shapes, arrows that stay attached, and text.
@@ -40,7 +41,7 @@ Free and offline, with no ads, tracking or Rapier account.
   widget.
 - **Files.** Open Markdown, text, code, Word and PDF. Save Markdown; Rapier never overwrites a file that changed
   elsewhere. Export Word, PDF, text or an offline HTML page. A `.rapier.html` file holds the editor and the
-  document together, so someone can edit, comment or suggest changes offline and send it back.
+  document together, so someone can edit or comment offline and send it back.
 - **Privacy.** Editing and Notes run on your device, with no analytics. Agent workspaces use hosted storage. Remote
   pictures load only when you allow them.
 
@@ -1300,8 +1301,8 @@ Every refinement needs a layout field. An existing `align=justify` paragraph kee
 person turns on `hyphens=auto`. The document's `lang` is Pandoc's language key; without it, the renderer uses the
 device language. Automatic hyphenation and `text-wrap: pretty` apply to prose only; code, tables and headings keep
 their own line breaking. These refinements never add soft hyphens or forced line breaks to the text. While a paragraph
-is open for editing, opted-in justification uses natural start alignment to keep gaps bounded; leaving the paragraph
-restores its refined justified layout.
+is open for editing, it keeps the browser's own justification and hyphenation, so it reads the same open and at rest
+within that; leaving the paragraph restores its refined layout.
 
 For an admitted read-only paragraph, the reference renderer considers the whole paragraph before choosing its lines:
 
@@ -1578,6 +1579,10 @@ on their original rendered ranges. A range with no Word text or object equivalen
 comment; comment-local footnotes keep their labels and formatted details inside the native comment. The complete saved
 Markdown still travels in an unchanged Word package's exact source carrier.
 
+Conformance vectors for the record are in [`repo/spec/md-comments-v1.json`](../src/spec/md-comments-v1.json): whole
+documents, and for each the state a reader finds (no record, a valid one, or a malformed one read as no threads), whether
+the body digest matches, and how many messages each thread holds.
+
 ## Inline typography
 
 Use one ordinary inline HTML `span` for size, color and family, together or separately. Markdown still owns headings,
@@ -1809,7 +1814,7 @@ pagestyle: plain
   line values as exact point heights; its default lines remain minimum heights so inline pictures fit.
 - `papersize`: `letter`, `legal`, `tabloid`, `a3`, `a4` or `a5`, or a web size in CSS pixels, `WIDTHxHEIGHTpx` (each side 100 to 10000, such as `1080x1350px`).
 - `geometry`: `margin=` a nonnegative decimal length in `in`, `cm`, `mm` or `pt`, at most `6in` once converted. Comma-separated `top=`, `right=`, `bottom=` and `left=` lengths override individual sides; without `margin=`, supply all four. For example, `top=54pt, right=72pt, bottom=90pt, left=60pt`.
-- `template`: `page` makes the document a page: the sheet of `papersize` and `geometry`, fitted to the screen width and zoomable, as Layout: DOCX shows it, whatever the Layout choice (Plain stays plain). A picture with `wrap=behind lock=on` is its border; Rapier draws the first such picture over the whole sheet, margins included. Tapping the border reveals handles for the inner text area. Resizing writes the geometry margins; the border artwork stays fixed. Other readers show an ordinary document with the picture behind its words.
+- `template`: `page` makes the document a page: the sheet of `papersize` and `geometry`, fitted to the screen width and zoomable, as Layout: DOCX shows it, whatever the Layout choice (Plain stays plain). A picture with `wrap=behind lock=on` is its border; Rapier draws the first such picture over the whole sheet, margins included. Any picture format may be the border; a page with no `papersize` is a Letter sheet. An exported page on a screen narrower than the sheet shows it whole, margins and border scaled with it. Tapping the border reveals handles for the inner text area. Resizing writes the geometry margins; the border artwork stays fixed. Other readers show an ordinary document with the picture behind its words.
 - `pagestyle`: `plain` (page numbers) or `empty`.
 - `title` and `subtitle`: the window title, the exported page's `<title>`, Word's document title and subject, and the
   PDF's title. The visible title is still the document's first `# ` heading.
@@ -2008,6 +2013,9 @@ editor global is needed. The example wraps the result in `.md-render` and loads 
 - Task-list and footnote plugins emit the classes above; a renderer for callouts, highlights, diagrams or mathematics
   emits their listed wrappers.
 - A host rendering untrusted source applies its own HTML sanitization policy before displaying it.
+- `rapier-markdown-kit/markdown-it` implements rung 1 for a paragraph, a heading and a picture, linked or not: `align`
+  (`justify` on a paragraph only), `first`, `indent`, `width`, `x`, `opacity`, `lines`, `hyphens`, `caps`, `hanging`,
+  `before`, `after` and `line`, and `marker` on a list item's leading paragraph. `wrap`, `y`, `rotate` and `lock` are rung 2.
 
 Rapier emits these class and attribute names. The remaining `rapier-*` presentation hooks will take `md-*` names in one
 change with their producers and readers.
@@ -2102,6 +2110,14 @@ are extension syntax that CommonMark-only readers show. Pandoc 3.1.11.1 keeps th
 ordinary LaTeX and DOCX writers don't map size and color CSS to native styling. Rapier's own Word exporter does the
 native mapping above. A Pandoc filter or target-specific custom styles are a separate host choice; this convention
 supplies no filter suite. Use Copy without typography when the destination needs plain semantic Markdown.
+
+## The source in a PDF
+
+A PDF Rapier writes carries its Markdown as an associated file (ISO 32000-2, "Associated Files"): an embedded
+`text/markdown` stream (`/Subtype /text#2Fmarkdown`) named by a file specification with `/AFRelationship /Source`, listed
+in the catalog's `/AF` array and in its `/Names /EmbeddedFiles` tree. A reader that finds exactly that file restores the
+document from its source and the pages stay the picture of it. A PDF another program saved after Rapier no longer
+describes its source, and the pages are read instead.
 
 ## Preservation and display
 
@@ -2215,7 +2231,7 @@ The release run checks Rapier’s differences from CommonMark against this profi
 
 ## DOCX export (`interchange/docx.mjs` `writeDocx`)
 
-A JPEG XL picture arrives as the portable picture the export already made of it (PNG, or JPEG for an opaque photograph when smaller). WebP and SVG pictures and drawings are rasterized to PNG in the package. Drawings use PNG, not EMF. Math is TeX source with its `$`/`$$` delimiters: Word shows the source, and Rapier re-import recovers the math. Export `.docx` uses `writeDocx` through `_rapierConvertPortableHtmlToDocx`. No plug-in.
+A JPEG XL picture arrives as the portable picture the export already made of it (PNG, or JPEG for an opaque photograph when smaller). A WebP picture is written as PNG. An SVG picture or drawing is written as an SVG picture (`asvg:svgBlip`) with a PNG preview, not EMF. Math is written as native Word equations (`m:oMath`), and Rapier re-import recovers the TeX. Export `.docx` uses `writeDocx` through `_rapierConvertPortableHtmlToDocx`. No plug-in.
 
 Headings 1–6, bold, italic, underline, strikethrough, links, sized/colored/font-family runs, highlights, nested ordered and bullet lists, task lists (`[ ]`/`[x]` prefixes), tables with `Table:` captions, page breaks (`w:br w:type="page"`) and math TeX source round-trip through `writeDocx` and `readDocx`. Exceptions:
 
@@ -2223,14 +2239,14 @@ Headings 1–6, bold, italic, underline, strikethrough, links, sized/colored/fon
 | --- | --- | --- | --- | --- | --- |
 | Callouts `> [!NOTE]` … `[!INFO]` | established extension (GitHub Alerts/Obsidian) | Insert ▸ Note/Tip/Important/Warning/Caution | yes, kind and words | n/a; export | a one-cell Word table with a colored rule and the bold label; re-import is the same callout |
 | Definition lists `Term` / `: Definition` | established extension (PHP Markdown Extra) | typing | yes, one paragraph per definition | n/a; export | a term paragraph and indented definition paragraphs in the styles *Rapier Definition Term* and *Rapier Definition*; a definition of several paragraphs re-imports as one definition per paragraph, separated by a blank line |
-| Disclosures `<details>` | HTML block | typing | no | n/a; export | the summary as a bold paragraph and the body after it, always open; re-import is those paragraphs |
+| Disclosures `<details>` | HTML block | typing | yes | n/a; export | the summary as a bold paragraph and the body after it, always open, inside a bookmark range; re-import is the `<details>` again |
 | Nested quotes `> >` | CommonMark | typing | no, one level | n/a; export | every level is a Word *Quote* paragraph with the same rule; re-import is one-level quotes, one per paragraph |
 | Internal links `[text](#heading)` | CommonMark | Insert link | no, through DOCX | n/a; export | a Word bookmark link; re-import is the link text, with the warning "Internal document links became plain text." |
 | Drawings (SVG recipe) | CommonMark SVG image | Draw | no, through DOCX | n/a; export | SVG picture with a PNG preview (`DOCX_EXPORT.drawingCodec = svg`) |
 | JPEG XL picture bytes | CommonMark data URL | Insert picture | no, codec bytes | n/a; export | PNG, or JPEG for an opaque photograph when smaller; re-import re-encodes JPEG XL |
 | Footnote labels `[^1]` | established extension (PHP Markdown Extra) | Insert Footnote | no, labels only | n/a; export | note text kept; import assigns `docx-fn-N` labels |
-| Image `wrap`/`x`/`y` | authored convention (`spec/md-layout.mjs`) | Drag/resize | no, through DOCX | n/a; export | floating DrawingML (`wp:anchor`); re-import is a normal-flow picture, with the warning "Floating pictures became normal-flow images in source order." |
-| `caps=small` | authored convention (`spec/md-layout.mjs`) | Typography | no | n/a; export | re-import drops `caps=small` |
+| Image `wrap`/`x`/`y` | authored convention (`spec/md-layout.mjs`) | Drag/resize | yes, to the hundredth of the column | n/a; export | floating DrawingML (`wp:anchor`); re-import reads `wrapSquare`, `wrapTight`, `wrapThrough` and `wrapNone` back into `wrap`, `x` and `y`; another anchor is a normal-flow picture, with the warning "Floating pictures became normal-flow images in source order." |
+| `caps=small` | authored convention (`spec/md-layout.mjs`) | Typography | no | n/a; export | small-caps runs on the paragraph's opening line; re-import drops `caps=small` |
 | Abbreviations `*[HTML]:`, link and picture titles, `<small>` | established extension / CommonMark | typing | no | n/a; export | the words without the title or the smaller size |
 
 Comments keep their ranges in Word: the export anchors each comment on the words the Word text kept, also when callouts,
@@ -2259,7 +2275,7 @@ omissions. Body text and referenced footnotes are checked separately in XML orde
 as an attachment on the Notes import path.
 
 Outside this profile: Word's review and comment workflows, named styles, themes and font schemes, custom tab
-stops, section and page geometry, conditional table styling, and anchored picture positioning and wrapping.
+stops, section and page geometry, and conditional table styling.
 Markdown has no shared model for them. Tab characters survive without their stops; footnote labels may change
 while content and paragraph boundaries stay intact.
 
@@ -2792,7 +2808,7 @@ byte. Paint keeps transparency, and drawings stay readable on light or dark pape
 ## Choose a Rapier workflow
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
-2. **Hand over an offline editor.** `npx rapier-html@1.2.31 notes.md` puts the editor and document in one HTML file.
+2. **Hand over an offline editor.** `npx rapier-html@1.2.32 notes.md` puts the editor and document in one HTML file.
 3. **Embed the editor.** [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed)
    mounts the editor or reader in an app.
 4. **Keep portable Markdown.** Use `rapier-markdown` for pictures, drawings and layout in one `.md` file.
@@ -2834,13 +2850,13 @@ installed page helper with the matching editor HTML. Never quietly run a differe
 you didn't.
 
 ```sh
-npx -- rapier-html@1.2.31 notes.md                          # writes notes.rapier.html: the editor on the document
-npx -- rapier-html@1.2.31 notes.md --include draw,mermaid   # carries Draw and Mermaid (default: what the document needs)
-npx -- rapier-html@1.2.31 notes.md --view draw              # opens on Draw, the document behind it (carries Draw)
-npx -- rapier-html@1.2.31 notes.md --drawing sketch.svg     # opens on Draw with the drawing
-npx -- rapier-html@1.2.31 revised.md --compare original.md --by "Editor" # opens showing what changed
-npx -- rapier-html@1.2.31 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT"   # Send back returns the person's edit to your workspace
-npx -- rapier-html@1.2.31 notes.md out.html                 # a named output
+npx -- rapier-html@1.2.32 notes.md                          # writes notes.rapier.html: the editor on the document
+npx -- rapier-html@1.2.32 notes.md --include draw,mermaid   # carries Draw and Mermaid (default: what the document needs)
+npx -- rapier-html@1.2.32 notes.md --view draw              # opens on Draw, the document behind it (carries Draw)
+npx -- rapier-html@1.2.32 notes.md --drawing sketch.svg     # opens on Draw with the drawing
+npx -- rapier-html@1.2.32 revised.md --compare original.md --by "Editor" # opens showing what changed
+npx -- rapier-html@1.2.32 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT"   # Send back returns the person's edit to your workspace
+npx -- rapier-html@1.2.32 notes.md out.html                 # a named output
 ```
 
 It never overwrites: an existing output is refused, so pick a new name. The first `--` stops npm from taking
@@ -2892,7 +2908,7 @@ Use the surface the host actually provides:
 - **An Artifact tool or HTML preview:** offer the page beside the chat. Also hand over the file when the viewer
   blocks downloads, and use the host's real sharing controls.
 - **A project Browser pane:** write the page into the project and name its path.
-- **A code sandbox with Node and npm:** run `npx -- rapier-html@1.2.31` and hand over the file.
+- **A code sandbox with Node and npm:** run `npx -- rapier-html@1.2.32` and hand over the file.
 - **A host that shows MCP apps, such as ChatGPT:** `open` shows the editor in the chat (`rapier-agent-door`).
 - **A link:** `https://rapier.website` opens the person's own Rapier, with their documents.
 
@@ -2958,7 +2974,7 @@ other Markdown readers show the same words and ignore what they don't know. No i
 particular app is needed.
 
 The standard is [Self-contained Markdown](references/markdown-standard.md), also at
-https://github.com/jackskip22/rapier/blob/main/docs/markdown-standard.md. The MIT reader and writer is `npm install rapier-markdown-kit@1.2.31`.
+https://github.com/jackskip22/rapier/blob/main/docs/markdown-standard.md. The MIT reader and writer is `npm install rapier-markdown-kit@1.2.32`.
 Rapier renders it exactly and writes it back byte for byte; so can any editor.
 
 Rapier has two kinds of diagram, kept apart:
@@ -2979,7 +2995,7 @@ file for Android, the web and Windows. The agent edits live; the person sees its
 to see what was there before, and can undo it. Use `show {target:"comparison"}` to show a diff.
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
-2. **Hand over an offline editor.** `npx rapier-html@1.2.31 notes.md` puts the editor and document in one HTML file
+2. **Hand over an offline editor.** `npx rapier-html@1.2.32 notes.md` puts the editor and document in one HTML file
    ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed the editor.** [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed)
    mounts the editor or reader in your app; your app's agent can use the editor over WebMCP.
@@ -3162,7 +3178,7 @@ Each release's own files stay at its tag: `https://cdn.jsdelivr.net/gh/jackskip2
   document access remain enforced.
 
 ```sh
-npm install rapier-embed@1.2.31
+npm install rapier-embed@1.2.32
 ```
 
 Or copy the package's `embed.mjs` and `contract.mjs` into one directory of your app; no runtime CDN is needed.
@@ -3180,7 +3196,7 @@ editor and lightweight reader (about 360 kB). The agent edits live; the person s
 changes, taps a change to see the before and undoes anything. Use `show {target:"comparison"}` to show a diff deliberately.
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
-2. **Deliver an offline editor.** Run `npx rapier-html@1.2.31 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
+2. **Deliver an offline editor.** Run `npx rapier-html@1.2.32 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed in your app.** Install [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed); mount the editor or reader, with your app's agent over WebMCP in the editor.
 4. **Keep portable Markdown.** Use [rapier-markdown-kit](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-markdown-kit) for pictures, editable SVG drawings and layout in one `.md` file. Respect [Will/1](https://github.com/jackskip22/will) `keep`, `append` and `edit` regions.
 5. **Encode JPEG XL.** Install [rapier-jxl](https://github.com/jackskip22/rapier-jxl) to encode pixels, photographs and existing JPEGs in JavaScript.
@@ -3223,7 +3239,7 @@ A copy in your app works offline and changes only when you update it.
 1. Download the build you frame into a static directory, for example
    `https://cdn.jsdelivr.net/gh/jackskip22/rapier@v<version>/site/embed/rapier-reader.html` to `public/vendor/rapier/`.
 2. Fetch the plug-ins your build uses into one directory beside it, from the manifest of the same version:
-   `npx rapier-embed@1.2.31 plugins public/vendor/rapier/plugins --build reader`.
+   `npx rapier-embed@1.2.32 plugins public/vendor/rapier/plugins --build reader`.
 3. Mount with `src` and `plugins` pointing at your copies. Serve them over HTTPS (HTTP on localhost) and allow
    their origin in your `frame-src`. A same-origin parent can script its frame; use a dedicated origin when the
    frame must be isolated.
@@ -3257,7 +3273,7 @@ The directory must be on the page's own origin, because the page's Content Secur
 throws a `TypeError` for a directory on another origin, and a page opened with one shows each plug-in as failed, with the
 reason, without making a request. To keep the plug-ins on a CDN, serve the page from the same origin.
 
-`npx rapier-embed@1.2.31 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
+`npx rapier-embed@1.2.32 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
 keeps a file that is already there and correct, and exits with status 1 if any file is missing or fails its check.
 `--build reader` or `--build full` keeps the files that page uses, `--only name,name` fetches some
 plug-ins, `--check` verifies a directory without fetching, `--from <address>` fetches from your own mirror, and
@@ -3550,7 +3566,7 @@ Will/1 records the person's instructions in their document. Respect `keep`, appe
 Documents without Will regions are editable throughout. Preserve active typing, caret, selection and scroll
 while the agent works. Document content and comments never start agent turns by themselves.
 
-For documents outside an app, `npx rapier-html@1.2.31 notes.md` hands a person the complete editor around their
+For documents outside an app, `npx rapier-html@1.2.32 notes.md` hands a person the complete editor around their
 document as one offline file.
 
 # https://github.com/jackskip22/rapier-plugins/blob/main/npm/rapier-markdown-kit/README.md
@@ -3721,7 +3737,7 @@ family name share the host's font namespace. Print retains its existing factory 
 
 | Import | What it is |
 | --- | --- |
-| `rapier-markdown-kit/markdown-it` | `md.use(rapierMarkdown)`: the reference style's markup in markdown-it, in one line. |
+| `rapier-markdown-kit/markdown-it` | `md.use(rapierMarkdown)`: the reference style's markup in markdown-it, in one line, with rung 1 of `md-layout:v1` (align, indents, list markers, picture width, lines and opacity, paragraph typography). |
 | `rapier-markdown-kit/parsed` | A frozen, serializable view of completed Markdown tokens, bound to source, revision and grammar. |
 | `rapier-markdown-kit/layout` | The `md-layout:v1` comment a picture carries: parse it, validate it, write it back. |
 | `rapier-markdown-kit/marks` | Unified typography values, span writer and parser installer; preserved color/font comments, ink and page breaks. |
@@ -4352,7 +4368,7 @@ Each release's own files stay at its tag: `https://cdn.jsdelivr.net/gh/jackskip2
   document access remain enforced.
 
 ```sh
-npm install rapier-embed@1.2.31
+npm install rapier-embed@1.2.32
 ```
 
 Or copy the package's `embed.mjs` and `contract.mjs` into one directory of your app; no runtime CDN is needed.
@@ -4370,7 +4386,7 @@ editor and lightweight reader (about 360 kB). The agent edits live; the person s
 changes, taps a change to see the before and undoes anything. Use `show {target:"comparison"}` to show a diff deliberately.
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
-2. **Deliver an offline editor.** Run `npx rapier-html@1.2.31 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
+2. **Deliver an offline editor.** Run `npx rapier-html@1.2.32 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed in your app.** Install [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed); mount the editor or reader, with your app's agent over WebMCP in the editor.
 4. **Keep portable Markdown.** Use [rapier-markdown-kit](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-markdown-kit) for pictures, editable SVG drawings and layout in one `.md` file. Respect [Will/1](https://github.com/jackskip22/will) `keep`, `append` and `edit` regions.
 5. **Encode JPEG XL.** Install [rapier-jxl](https://github.com/jackskip22/rapier-jxl) to encode pixels, photographs and existing JPEGs in JavaScript.
@@ -4413,7 +4429,7 @@ A copy in your app works offline and changes only when you update it.
 1. Download the build you frame into a static directory, for example
    `https://cdn.jsdelivr.net/gh/jackskip22/rapier@v<version>/site/embed/rapier-reader.html` to `public/vendor/rapier/`.
 2. Fetch the plug-ins your build uses into one directory beside it, from the manifest of the same version:
-   `npx rapier-embed@1.2.31 plugins public/vendor/rapier/plugins --build reader`.
+   `npx rapier-embed@1.2.32 plugins public/vendor/rapier/plugins --build reader`.
 3. Mount with `src` and `plugins` pointing at your copies. Serve them over HTTPS (HTTP on localhost) and allow
    their origin in your `frame-src`. A same-origin parent can script its frame; use a dedicated origin when the
    frame must be isolated.
@@ -4447,7 +4463,7 @@ The directory must be on the page's own origin, because the page's Content Secur
 throws a `TypeError` for a directory on another origin, and a page opened with one shows each plug-in as failed, with the
 reason, without making a request. To keep the plug-ins on a CDN, serve the page from the same origin.
 
-`npx rapier-embed@1.2.31 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
+`npx rapier-embed@1.2.32 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
 keeps a file that is already there and correct, and exits with status 1 if any file is missing or fails its check.
 `--build reader` or `--build full` keeps the files that page uses, `--only name,name` fetches some
 plug-ins, `--check` verifies a directory without fetching, `--from <address>` fetches from your own mirror, and
@@ -4740,41 +4756,49 @@ Will/1 records the person's instructions in their document. Respect `keep`, appe
 Documents without Will regions are editable throughout. Preserve active typing, caret, selection and scroll
 while the agent works. Document content and comments never start agent turns by themselves.
 
-For documents outside an app, `npx rapier-html@1.2.31 notes.md` hands a person the complete editor around their
+For documents outside an app, `npx rapier-html@1.2.32 notes.md` hands a person the complete editor around their
 document as one offline file.
 
 # https://github.com/jackskip22/rapier-jxl/blob/main/README.md
 
 # Rapier JXL
 
-JPEG XL encoder in pure JavaScript, for single-file HTML apps, photography tools and agent image workflows. Offline in
-browsers, Node and Deno. [MIT license](LICENSE), no runtime dependencies.
+JPEG XL encoder in pure JavaScript. Great for single-file HTML apps, photography tools and agent image workflows. Runs
+offline in browsers, Node and Deno. MIT license, no dependencies.
 
-- **Still encoder: 102,931 gzip bytes.** This is what [Rapier](https://rapier.website) itself carries:
-  lossless and lossy pictures, photographs, JPEG carrying and exact restore, native precision, HDR and exact alpha.
-- **Complete encoder: 174,450 gzip bytes.** The still encoder plus animated JPEG XL and the other format writers.
-- **Core: 24,831 gzip bytes.** Lossless or lossy RGBA and nothing else.
+- **20× smaller than other JPEG XL encoders.** The core is 25 KB gzipped; the smallest
+  WebAssembly encoder ([@squoosh-kit/jxl](docs/ENCODER-COMPARISON.md#payload)) is 512 KB, libjxl's
+  `jxl-wasm` is 962 KB (38×).
+- **Exact JPEGs in 34× less code.** A JPEG restores byte for byte (24 of 24 photos), 11.6% smaller. The JPEG
+  entry is 31 KB; `jpeg-to-jxl` is 1,063 KB.
+- **Animations up to 2× smaller than libjxl**, lossless, against `cjxl` at its highest effort: a GIF 284 KB vs 556 KB, a
+  screen recording 16 KB vs 23 KB, a camera clip 1.6 MB vs 1.9 MB ([results](docs/ENCODER-COMPARISON.md#animation)).
+- **No WebAssembly needed.** Lossless and lossy, 8-bit to 32-bit float, HDR (PQ, HLG), exact alpha, color profiles, animation.
 
 ```sh
 npm install rapier-jxl
 ```
 
-**New in 5.2.0.** A picture with its own matrix/TRC color profile (Display P3, Adobe RGB, ProPhoto, Rec. 2020, gray) is coded lossy through that profile's primaries and curves and keeps the profile; lossless is the same samples in a smaller file.
+## Convert a file in a page
 
-**New in 5.1.0.**
-- No 16 MiB output limit: pictures, animations, JPEG carrying and metadata use available memory. Byte budgets you
-  pass still apply.
-- A carried RGB JPEG now restores byte for byte through libjxl's `djxl` as well as through this package.
-- `rapier-jxl/graphics`: screenshots and flat art within an error you set. `rapier-jxl/animation-atlas`: repeated
-  glyphs and tiles stored once across an animation's frames.
-- More of the format: progressive Modular, Squeeze, custom weighted prediction, high bit-depth color transforms and
-  palettes, more ICC and original color spaces, typed extra channels beside photos, patches from several sources and
-  coefficient orders for every VarDCT strategy. See [format coverage](docs/reference/FORMAT-COVERAGE.md).
-- The still worker answers five format actions: `photo`, `profile`, `readSource`, `encodeSource` and `opsin`.
+Copy `node_modules/rapier-jxl/dist/rapier-still-worker.js` beside your page (`rapier-worker.js` adds animation), then:
 
-**New in 5.0.0.** Lossy pictures use the photo coding unless you pass `photo: false`. Animated JPEG XL
-(`rapier-jxl/animation`) stores only changed rectangles, with exact timing. The still worker is a separate file,
-`rapier-jxl/rapier/still-worker`. Version 5 does not keep 4.x callers working.
+```js
+import {toJXL} from 'rapier-jxl/image';
+const jxl = await toJXL(file, {worker: './rapier-still-worker.js'}); // an image/jxl Blob
+```
+
+For one offline HTML file, embed the worker as text and start it from a Blob URL
+([example](docs/reference/ARCHITECTURE.md#complete-rapier-worker)).
+
+## Encode pixels
+
+```js
+import {encode} from 'rapier-jxl';
+const bytes = encode(rgba, width, height, {quality: 100}); // 100 is lossless; 1 to 99 is lossy
+```
+
+Alpha stays exact at every quality. [API and options](docs/reference/API.md).
 
 ## Builds
 
@@ -4789,79 +4813,22 @@ npm install rapier-jxl
 | WASM · `rapier-jxl/wasm/min` | 60,129 | Effort with inlined WASM and JavaScript fallback. |
 | Photo · `rapier-jxl/photo/min` | 25,190 | Lossy photographs from RGBA pixels. |
 | JPEG · `rapier-jxl/jpeg/min` | 30,616 | Existing JPEGs, preserving admitted coefficients and orientation. |
-| Metadata · `rapier-jxl/metadata/min` | 12,293 | Attach, replace or remove caller-supplied Exif/XMP. |
+| Metadata · `rapier-jxl/metadata/min` | 12,292 | Attach, replace or remove caller-supplied Exif/XMP. |
 | Animation · `rapier-jxl/animation/min` | 58,816 | Animated JPEG XL from frames: only changed rectangles stored, exact timing, lossless or lossy. |
 
-Each size measures a complete standalone file at gzip level 9. Readable imports such as `rapier-jxl/rapier` share
-dependencies when bundled together; separate minified files each include theirs. Optional JPEG and Photo ANS builds,
-combined sizes and file hashes are listed in [Entry points and embedding](docs/reference/ARCHITECTURE.md).
+Sizes are standalone files gzipped at level 9. [Entry points and embedding](docs/reference/ARCHITECTURE.md).
 
-**Used by Rapier:** each app release embeds its own still worker; Rapier's JPEG XL converter downloads the complete
-worker once, for animations and video. Standalone package versions can differ.
-Pixel encoding defaults to effort 7 and
-quality 90; `lossless: true` selects quality 100. JPEG transcoding takes effort 1 to 9, 7 by default. WASM falls back to JavaScript;
-larger lossless images use available helper workers. Painting saves add `losslessProfile: 'painting'` for core
-lossless coding without the effort ladder, with helper workers from 32 groups. [Complete API](docs/reference/API.md#complete-rapier-system).
+## Effort
 
-## Compression measurements
+Effort 1 to 9 trades time for size; 7 is the default. On 71 lossless images:
 
-On a 71-image lossless corpus, effort 8 used **2.083% fewer bytes** than effort 7 at **4.247×** its summed observed handler time; effort 9 used **2.395% fewer bytes** at **9.546×**. These are single observations on one host, not phone timings. [Times, protocol and per-image/group results](docs/ENCODER-COMPARISON.md#lossless-effort-cost).
+| Effort | Size | Time |
+| ---: | --- | ---: |
+| 7 | baseline | 1× |
+| 8 | 2.1% smaller | 4.2× |
+| 9 | 2.4% smaller | 9.5× |
 
-The [five-image comparison with libjxl](docs/ENCODER-COMPARISON.md#complete-worker-versus-libjxl) records Rapier 3.1.0 on 2026-10-08. Its bytes and times apply to that frozen worker, not the current search.
+[What each effort adds](docs/reference/API.md#lossless-effort) · [Measurements](docs/ENCODER-COMPARISON.md#lossless-effort-cost)
 
-## Use a worker
-
-Copy `node_modules/rapier-jxl/dist/rapier-still-worker.js` (or `rapier-worker.js` for animation) beside your page:
-
-```js
-const worker = new Worker('./rapier-still-worker.js');
-worker.onmessage = ({data}) => {
-  if (data.ok) console.log(new Blob([data.bytes], {type: 'image/jxl'}));
-  else console.error(data.error.message);
-};
-worker.postMessage({
-  id: 1, operation: 'encode', width: 1, height: 1,
-  data: new Uint8Array([255, 0, 0, 255]), options: {lossless: true}
-});
-```
-
-For one offline HTML file, embed the worker as text and create it through a Blob URL.
-[Copyable worker and module examples](docs/reference/ARCHITECTURE.md#complete-rapier-worker).
-Keep the MIT notice. No network download or decoder is needed for encoding.
-
-From a page, `await toJXL(file, {worker: './rapier-still-worker.js'})` (`rapier-jxl/image`) returns an `image/jxl` Blob. A JPEG is carried and rebuilds to its exact bytes. [Image API](docs/reference/API.md#one-call-from-a-page)
-
-The core and effort modules expose `encode(rgba, width, height, options)`. Quality 100 preserves every sample,
-including RGB under transparent pixels; 1–99 is lossy. Alpha stays exact. Core/effort default to quality 100,
-and the separate effort entry defaults to effort 1. [API and options](docs/reference/API.md).
-
-### Lossless efforts
-
-For painting saves, use `{quality: 100, losslessProfile: 'painting'}` with the effort or wasm entry point,
-or `{lossless: true, losslessProfile: 'painting'}` with the complete encoder. This separate RGBA8 profile keeps
-every pixel exact and may produce larger files. Omit it to use the effort search below.
-
-Each level retains the earlier candidates, except that 3 replaces 2's weighted search. Extra search costs depend on the picture; no level has a deadline.
-
-| Effort | What it adds and costs |
-| ---: | --- |
-| 1 | Channel prediction and zero runs; shortest search. |
-| 2 | Weighted prediction; another prediction family. |
-| 3 | A small learned tree per group with ANS coding; for a screen, error contexts, palettes and repeated regions instead; additional image passes. |
-| 4 | Error contexts, color transforms and local palettes; several candidates. |
-| 5 | Learned group trees and entropy-model selection; tree-learning work. |
-| 6 | The first-ranked color transform; another learned candidate. |
-| 7 | Broader predictor and context search; the worker default. |
-| 8 | Denser samples, wider trees and local screen transforms; more learned candidates. |
-| 9 | Another color transform and deeper trees; the longest search. |
-
-JPEG entry points also add order and entropy-model combinations at efforts 8 and 9, retaining the smaller complete
-stream without changing pixels. The workers' JPEG route remains at effort 7. [Effort details](docs/reference/API.md#lossless-effort).
-
-Native inputs include 8/10/12/16-bit integers, binary16/32 floats, PQ/HLG and Rec. 2020. `rapier-jxl/source` reads
-supported PNG16/OpenEXR files. Displaying encoded output requires JPEG XL support.
-
-Agent skills: [Single-file apps](skills/rapier-jxl-single-file-app/SKILL.md) · [Photography](skills/rapier-jxl-photography/SKILL.md).
-
-[API](docs/reference/API.md) · [Entry points and embedding](docs/reference/ARCHITECTURE.md) · [Agent reference](llms.txt) ·
-[Comparisons](docs/ENCODER-COMPARISON.md) · [Browser example](examples/browser.html)
+[API](docs/reference/API.md) · [Comparisons](docs/ENCODER-COMPARISON.md) · [Agent reference](llms.txt) ·
+[Agent skills](skills/rapier-jxl-photography/SKILL.md) · [Browser example](examples/browser.html)

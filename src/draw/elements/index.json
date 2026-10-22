@@ -425,25 +425,13 @@
 			"kind": "elements",
 			"id": "elements-initials-1",
 			"group": "Initials",
-			"items": 2,
+			"items": 8,
 			"file": "elements/elements-initials-1.json",
-			"bytes": 62928,
-			"deflated": 23519,
-			"sha384": "P/R884Uj7CJPOjSOhbIod1M/KNM/7t3D2KN5+yk4HR6ACdkxq/C8kP3UvlbsnbIo",
-			"zbytes": 23531,
-			"zsha384": "zJwIRewMOPsVkMap8abCsmALwCrC5rqE6epGrkuGYz6mvOuNJag6SSq5SRT2unj7"
-		},
-		{
-			"kind": "elements",
-			"id": "elements-lettering-1",
-			"group": "Lettering",
-			"items": 7,
-			"file": "elements/elements-lettering-1.json",
-			"bytes": 178064,
-			"deflated": 73836,
-			"sha384": "ODf/B1dJ+iMihg3mSdFsAEeysumHLVQ573sUpkO1XibEqclJPolqCgxC5y3sz71S",
-			"zbytes": 73848,
-			"zsha384": "vpOEtCNPzbqSLn3pTW2GYIefDUIn1xifjFRl01pxf4yFVuqI9aLfFghlJC1t12nr"
+			"bytes": 227695,
+			"deflated": 91668,
+			"sha384": "C+1kIiMhjPuSkdQ1UtvlxIytpzwX/tBQkSK1aOZN+F41tGDtkdd1WHsxAl8Ukc38",
+			"zbytes": 91680,
+			"zsha384": "ip+rLexLZwIa/DvCpRKuJlhb475WKC0lFt6bdGLHJdTZ/GGj8+vA8KM4+mFk0Tex"
 		},
 		{
 			"kind": "elements",

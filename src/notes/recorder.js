@@ -960,7 +960,7 @@ function _rapierRecorderScan() {
 				p = Object.assign(_rapierRecorderView(row.label || 'the recording', () => _rapierNotesStore.readAudio(name), row.duration, 'audio/' + name), {row, link, ui, name, file: _rapierNotes.current || ''});
 				const I = RAPIER_NOTES_ICONS;
 				_rapierRecorderDeck(p, () => [
-					['Save', I.page, async () => { await _rapierRecorderLoad(p); _rapierRecorderDownload(p.blob, p.row.name); }],
+					['Save', I.page, async () => { const file = p.blob || await p.source(); if (file) _rapierRecorderDownload(file.type ? file : new Blob([file], {type: _rapierRecorderModel().audioMime('', p.row.name)}), p.row.name); }],
 					_rapierRecorderLocalSpeech() ? ['Transcribe', I.mic, () => _rapierRecorderTranscribe(p)] : null,
 					['Delete', I.trash, () => _rapierRecorderDelete(p)]]);
 				ui.append(p.el); link.classList.add('rapier-recording-link'); link.after(ui);

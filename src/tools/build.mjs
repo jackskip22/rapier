@@ -42,7 +42,7 @@ import {editorOnlyMarkup} from './reader-profile.mjs';
 import {APP_DESCRIPTION, HOME_TITLE, HOME_DESCRIPTION, DISCOVERY_LINKS, PLAY_URL} from './discovery.mjs';
 import {lexicalBindings, ENGINE_MODULE_SLOTS} from './engine-census.mjs';
 import {bundleModules, readNames} from './reader-modules.mjs';
-import {PARTS, PART_IDS, partition, partMark, partElement, inlineParts, splitProgram, realmNames, topLevelNames} from './parts.mjs';
+import {PARTS, PART_IDS, PART_DIRECTORY, partition, partMark, partElement, inlineParts, splitProgram, realmNames, topLevelNames} from './parts.mjs';
 import {prefixSymbols} from './runtime-symbols.mjs';
 
 if (!buildObservationActive()) process.exit(runObservedBuild());
@@ -691,9 +691,10 @@ html = html.replace(/<title>[^<]*<\/title>/, () => '<title>' + escapeHtml(HOME_T
     data.description = APP_DESCRIPTION;
     data.operatingSystem = ['Android', 'Web', 'Windows'];
     data.softwareHelp = {'@type': 'CreativeWork', url: 'https://rapier.website/agents'};
-    data.featureList = ['Plain Markdown notes with embedded pictures', 'Mermaid diagrams and LaTeX equations',
+    data.featureList = ['Free online Markdown editor', 'Markdown viewer: open a .md file formatted',
+      'Plain Markdown notes with embedded pictures', 'Mermaid diagrams and LaTeX equations',
       'Editable SVG drawing and typographic art', 'MyPaint brushes and watercolor painting',
-      'Word and PDF import', 'Free Word, PDF, text and offline HTML export', 'Comments and suggested edits',
+      'Word and PDF import', 'Free Word, PDF, text and offline HTML export', 'Comments',
       'One offline HTML file',
       'Live collaboration with agents over MCP and WebMCP', 'See agent presence and changes live',
       'Tap a change to see what was there before and undo anything', 'Agents can show exact changes with the show tool',
@@ -1106,11 +1107,13 @@ if (PROFILE === 'full') {
 }
 if (PROFILE === 'full') {
   const named = new RegExp('^rapier-(?:' + PART_IDS.join('|') + ')-[0-9a-f]{16}\\.txt$');
+  const folder = resolve(root, PART_DIRECTORY);
   buildPhase('outputs');
-  const listed = await readdir(root);
-  for (const name of listed) if (named.test(name) && !partFiles.some(part => part.file === name)) await rm(resolve(root, name));
+  await mkdir(folder, {recursive: true});
+  const listed = await readdir(folder);
+  for (const name of listed) if (named.test(name) && !partFiles.some(part => part.file === name)) await rm(resolve(folder, name));
   buildPhase('assembly');
-  for (const part of partFiles) await writeFile(resolve(root, part.file), part.body);
+  for (const part of partFiles) await writeFile(resolve(folder, part.file), part.body);
 }
 if (PROFILE === 'full') {
   const benchmarkHtml = html.replace('<meta charset="UTF-8">', '<meta charset="UTF-8"><meta name="rapier-phone-bench" content="1">')

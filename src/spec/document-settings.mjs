@@ -128,10 +128,11 @@ function paperOf(value) {
 	const pixels = /^(\d{3,5})x(\d{3,5})px$/.exec(name), width = Number(pixels?.[1]), height = Number(pixels?.[2]);
 	return pixels && width <= 10000 && height <= 10000 ? Object.freeze({name, width: width * 15, height: height * 15, css: width + 'px ' + height + 'px'}) : null;
 }
+export const pageSizeOf = settings => settings?.papersize || PAPERS.letter;
 export const PAGE_SIZES = Object.freeze(['letter', 'legal', 'tabloid', 'a3', 'a4', 'a5', '1080x1080px', '1080x1350px', '1920x1080px', '1200x630px']);
 const EMPTY = Object.freeze({
 	title: null, subtitle: null, lang: null, fontsize: null, mainfont: null, sansfont: null, monofont: null, defaultfont: null, linestretch: null,
-	papersize: null, geometry: null, pagestyle: null, spacing: null,
+	papersize: null, geometry: null, pagestyle: null, spacing: null, template: null,
 });
 
 function unquote(value) {
@@ -351,6 +352,7 @@ export function readDocumentSettings(markdown) {
 		fontsize, mainfont, sansfont, monofont, defaultfont, linestretch, papersize, geometry,
 		spacing: normalizeDocumentSpacing(take('spacing')),
 		pagestyle: page === 'plain' || page === 'empty' ? page : null,
+		template: String(take('template') || '').toLowerCase() === 'page' ? 'page' : null,
 	});
 }
 
@@ -368,14 +370,14 @@ export function updateDocumentSettings(markdown, patch) {
 		text: (source[field.start - 1] === ':' ? ' ' : '') + text + (source[field.end] === '#' ? ' ' : '')});
 	for (const [key, supplied] of Object.entries(patch || {})) {
 		const font = ['mainfont', 'sansfont', 'monofont', 'defaultfont'].includes(key);
-		if (!font && !['fontsize', 'linestretch', 'spacing', 'geometry', 'papersize'].includes(key)) throw new TypeError('Unknown document setting: ' + key);
+		if (!font && !['fontsize', 'linestretch', 'spacing', 'geometry', 'papersize', 'pagestyle'].includes(key)) throw new TypeError('Unknown document setting: ' + key);
 		const matches = fields.filter(item => item.key === key);
 		if (matches.length > 1) throw new RangeError('Duplicate document setting: ' + key);
 		const field = matches[0];
-		const value = supplied === null ? null : font ? documentFont(supplied) : key === 'fontsize' ? fontSize(supplied) : key === 'spacing' ? normalizeDocumentSpacing(supplied) : key === 'geometry' ? marginOf(supplied) : key === 'papersize' ? paperOf(supplied) : leading(supplied);
+		const value = supplied === null ? null : font ? documentFont(supplied) : key === 'fontsize' ? fontSize(supplied) : key === 'spacing' ? normalizeDocumentSpacing(supplied) : key === 'geometry' ? marginOf(supplied) : key === 'papersize' ? paperOf(supplied) : key === 'pagestyle' ? (['plain', 'empty'].includes(supplied) ? {name: supplied} : null) : leading(supplied);
 		if (supplied !== null && !value) throw new TypeError('Invalid document setting: ' + key);
-		const encoded = value === null ? '' : font ? JSON.stringify(value.family) : key === 'fontsize' ? value.step : key === 'spacing' ? JSON.stringify(value) : key === 'geometry' ? unquote(supplied).trim() : key === 'papersize' ? value.name : String(value.factor);
-		if (value !== null && before[key] && (font ? before[key].family === value.family : key === 'fontsize' ? same(before.fontsize.unit, value.unit) : key === 'spacing' ? JSON.stringify(before.spacing) === encoded : key === 'geometry' ? ['top', 'right', 'bottom', 'left'].every(side => before.geometry[side] === value[side]) : key === 'papersize' ? before.papersize.name === value.name : before.linestretch.factor === value.factor)) continue;
+		const encoded = value === null ? '' : font ? JSON.stringify(value.family) : key === 'fontsize' ? value.step : key === 'spacing' ? JSON.stringify(value) : key === 'geometry' ? unquote(supplied).trim() : key === 'papersize' || key === 'pagestyle' ? value.name : String(value.factor);
+		if (value !== null && before[key] && (font ? before[key].family === value.family : key === 'fontsize' ? same(before.fontsize.unit, value.unit) : key === 'spacing' ? JSON.stringify(before.spacing) === encoded : key === 'geometry' ? ['top', 'right', 'bottom', 'left'].every(side => before.geometry[side] === value[side]) : key === 'papersize' ? before.papersize.name === value.name : key === 'pagestyle' ? before.pagestyle === value.name : before.linestretch.factor === value.factor)) continue;
 		if (key === 'fontsize' && value !== null && fontSize(encoded)?.unit !== value.unit) refuse(key);
 		if (!field) { if (value !== null) append.push(key + ': ' + encoded + eol); continue; }
 		if (field.opaque || field.invalid || field.multiline || field.block) refuse(key);

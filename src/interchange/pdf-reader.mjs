@@ -20,7 +20,8 @@ const bounds = rows => rows.reduce((b, r) => ({x: Math.min(b.x,r.x), y: Math.min
   right: Math.max(b.right,r.x+r.w), bottom: Math.max(b.bottom,r.y+r.h)}), {x:Infinity,y:Infinity,right:-Infinity,bottom:-Infinity});
 const overlaps = (a, b) => Math.max(0, Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x)) *
   Math.max(0, Math.min(a.y+a.h,b.y+b.h)-Math.max(a.y,b.y));
-const willLine = text => /^<!-- ?(?:will\/|\/will)/.test(text);
+const willLine = text => text === '<!-- /will -->' ||
+  /^<!-- will\/1 [^:\s]+(?:: [^\r\n]+)? -->$/.test(text) && !text.slice(10, -4).includes('--');
 const carried = line => line.runs.every(run => run.carrier) && willLine(inline(line).text);
 const carrierFont = (page, name) => { try { return /RapierWillCarrier/.test(page.commonObjs.get(name)?.name || ''); } catch (_) { return false; } };
 const sourceToken = text => '<span class="rapier-source-token" data-rapier-source="' + escape(encodeURIComponent(text)) +
@@ -146,8 +147,8 @@ function footnotes(pages) {
       if(node.role==='Note'||node.role==='FENote'){
         const label=node.children?.find(c=>c.role==='Lbl'), labelIds=label?ids(label):[];
         const labelRuns=page.runs.filter(r=>labelIds.includes(r.id));
-        const mark=plain(linesFrom(labelRuns));
-        if(/^\d{1,9}$/.test(mark)){
+        const mark=/^(\d{1,9})[.)]?$/.exec(plain(linesFrom(labelRuns)))?.[1]||'';
+        if(mark){
           const content=new Set(ids(node)),runs=page.runs.filter(r=>content.has(r.id)),box=bounds(runs);
           notes.push({page,node,label,labelRuns,mark,runs,box});
         }
@@ -163,7 +164,7 @@ function footnotes(pages) {
     });
     if(!note)continue;
     const box=rectangle(page.transform,...a.rect);
-    const run=page.runs.find(r=>r.str.trim()===note.mark&&!note.labelRuns.includes(r)&&overlaps(r,box)>r.w*r.h*.5);
+    const run=page.runs.find(r=>[note.mark,'['+note.mark+']'].includes(r.str.trim())&&!note.labelRuns.includes(r)&&overlaps(r,box)>r.w*r.h*.5);
     if(run){note.node.note ||= String(notes.indexOf(note)+1);run.note=note.node.note;}
   }
 }
@@ -212,7 +213,7 @@ function tagBlocks(tree, runs, pictures) {
       const rows=[];
       const find=n=>{if(n.role==='TR')rows.push(n);else for(const c of n.children||[])find(c);};find(node);
       const cells=rows.map(r=>(r.children||[]).filter(c=>c.role==='TD'||c.role==='TH'));
-      if(cells.length>=2 && cells[0].length>=2 && cells[0].length<=24 && cells.every(r=>r.length===cells[0].length && r.every(c=>!(c.colSpan>1||c.rowSpan>1)))) {
+      if(cells.length>=2 && cells[0].length>=1 && cells[0].length<=24 && cells.every(r=>r.length===cells[0].length && r.every(c=>!(c.colSpan>1||c.rowSpan>1)))) {
         const table=cells.map(row=>row.map(c=>block('p',c)));
         return [{type:'table',cells:table,lines:table.flatMap(r=>r.flatMap(c=>c.lines))}];
       }
@@ -229,6 +230,11 @@ function tagBlocks(tree, runs, pictures) {
       const marker=label?plain(linesFrom(items(label))):'';
       if(label)for(const r of items(label))used.add(r);
       const result=block('li',body,{marker,level});
+      const parts=body.children.flatMap(c=>c.role==='LBody'?c.children||[]:[c]).filter(c=>['P','Caption','Code'].includes(c.role));
+      if(parts.length>1){
+        const paragraphs=parts.map(part=>block('p',part,{}).lines).filter(lines=>lines.length);
+        if(paragraphs.length>1)result.paragraphs=paragraphs;
+      }
       return [result,...nested.flatMap(c=>visit(c,depth+1,level))];
     }
     if(role==='Figure'){
@@ -260,20 +266,23 @@ function tagBlocks(tree, runs, pictures) {
 }
 
 function geometricBlocks(runs, pictures, width, height) {
-  const rows=linesFrom(runs), lines=[];
-  for(const row of rows){
-    if(row.vertical){lines.push(row);continue;}
-    let segment=[];
-    const flush=()=>{if(segment.length)lines.push(...linesFrom(segment));segment=[];};
-    for(const run of row.runs){
-      const prior=segment.at(-1);
-      const gap=prior && (row.rtl?prior.x-run.x-run.w:run.x-prior.x-prior.w);
-      if(gap>Math.max(row.size*1.1,6) && !/^(?:\d{1,9}[.)]|[•◦▪●○‣*+\-–])$/.test(plain([{runs:segment}])))flush();
-      segment.push(run);
+  const segmentRows=(source,limit)=>{
+    const lines=[];
+    for(const row of linesFrom(source)){
+      if(row.vertical){lines.push(row);continue;}
+      let segment=[];
+      const flush=()=>{if(segment.length)lines.push(...linesFrom(segment));segment=[];};
+      for(const run of row.runs){
+        const prior=segment.at(-1);
+        const gap=prior && (row.rtl?prior.x-run.x-run.w:run.x-prior.x-prior.w);
+        if(gap>Math.max(row.size*limit,6) && !/^(?:\d{1,9}[.)]|[•◦▪●○‣*+\-–])$/.test(plain([{runs:segment}])))flush();
+        segment.push(run);
+      }
+      flush();
     }
-    flush();
-  }
-  lines.sort((a,b)=>a.y-b.y||a.x-b.x);
+    return lines.sort((a,b)=>a.y-b.y||a.x-b.x);
+  };
+  let lines=segmentRows(runs,.55);
   const blocks=[],tables=[],taken=new Set();
   for(let i=0;i<lines.length;i++){
     if(taken.has(lines[i])||lines[i].vertical)continue;
@@ -282,7 +291,7 @@ function geometricBlocks(runs, pictures, width, height) {
     first.sort((a,b)=>a.x-b.x);
     const grid=[first];let y=first[0].y;
     for(const candidate of lines){
-      if(candidate.y<=y+first[0].size*.6 || candidate.y>y+first[0].size*2.2)continue;
+      if(candidate.y<=y+first[0].size*.6 || candidate.y>y+first[0].size*3.2)continue;
       const row=lines.filter(l=>!taken.has(l)&&Math.abs(l.y-candidate.y)<l.size*.4).sort((a,b)=>a.x-b.x);
       if(row.length!==first.length || row.some((l,c)=>Math.abs(l.x-first[c].x)>first[0].size || plain([l]).length>48 || plain([l]).split(/\s+/).length>7))break;
       grid.push(row);y=row[0].y;
@@ -294,7 +303,9 @@ function geometricBlocks(runs, pictures, width, height) {
     grid.flat().forEach(l=>taken.add(l));
     tables.push({type:'table',cells:grid.map(row=>row.map(l=>({lines:[l]}))),lines:grid.flat(),y:grid[0][0].y,h:0});
   }
-  const free=lines.filter(l=>!taken.has(l));
+  const tabled=new Set(tables.flatMap(t=>t.lines.flatMap(l=>l.runs)));
+  lines=segmentRows(runs.filter(r=>!tabled.has(r)),1.1);
+  const free=lines;
   const candidates=free.filter(l=>!l.vertical&&l.w>width*.18&&l.w<width*.58), counts=new Map();
   for(const l of candidates){const x=Math.round(l.x/4);counts.set(x,(counts.get(x)||0)+1);}
   const starts=candidates.filter(l=>counts.get(Math.round(l.x/4))>=(candidates.length<12?2:3)).map(l=>l.x).sort((a,b)=>a-b);
@@ -395,10 +406,10 @@ function renderBlocks(blocks, styles) {
   });
   for(const b of blocks){
     if(b.type==='will'){closeLists();flushCode();output.push('<p>'+sourceToken(inline(b.lines[0]).text)+'</p>');continue;}
-    if(b.type==='image'){closeLists();flushCode();output.push('<p><img data-rapier-asset="'+b.reference+'" alt="'+escape(b.alt)+'"></p>');continue;}
+    if(b.type==='image'){closeLists();flushCode();output.push('<p'+(b.rotate?' data-md-layout="'+encodeURIComponent('<!--md-layout:v1 rotate='+b.rotate+'deg-->')+'"':'')+'><img data-rapier-asset="'+b.reference+'" alt="'+escape(b.alt)+'"></p>');continue;}
     if(!b.lines.length)continue;
     if(b.type==='footnote'){
-      notes.push('<li id="fn'+b.note+'"><p>'+paragraph(b.lines)+' <a class="footnote-backref" href="#fnref'+b.note+'">↩︎</a></p></li>');continue;
+      notes.push('<li id="fn'+b.note+'"><p>'+paragraph(b.lines).replace(/\s*\u21a9\ufe0e?\s*$/u,'')+' <a class="footnote-backref" href="#fnref'+b.note+'">↩︎</a></p></li>');continue;
     }
     const text=plain(b.lines),size=median(b.lines.map(l=>l.size));
     const mono=b.lines.every(l=>l.runs.every(r=>r.mono));
@@ -416,7 +427,7 @@ function renderBlocks(blocks, styles) {
       if(lists.length===depth&&lists.at(-1).tag!==tag){output.push('</li></'+lists.pop().tag+'>');}
       if(lists.length===depth)output.push('</li><li>');
       else {output.push('<'+tag+(match&&+match[1]!==1?' start="'+Number(match[1])+'"':'')+'><li>');lists.push({tag});}
-      output.push(paragraph(b.lines,b.strip||0));continue;
+      output.push(b.paragraphs?b.paragraphs.map(lines=>'<p>'+paragraph(lines)+'</p>').join(''):paragraph(b.lines,b.strip||0));continue;
     }
     closeLists();
     if(b.type==='table'){
@@ -510,11 +521,11 @@ async function pagePictures(page, viewport, api, operators, ids, {embedImage, st
       const blob=await step(new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('The PDF picture could not be encoded.')),'image/png')),'encode a picture');
       if(!blob.size||blob.size>limits.rasterBytes)throw failure('The PDF picture exceeds its image memory limit.','PDF_RASTER_SIZE');
       const m=multiply(picture.matrix,[1,0,0,-1,0,1]);
-      const rotation=composite?0:Math.atan2(m[1],m[0])*180/Math.PI,flipV=!composite&&m[0]*m[3]-m[1]*m[2]<0;
+      const turned=composite?0:Math.round(Math.atan2(m[1],m[0])*1800/Math.PI)/10,rotate=turned===-180?180:turned,flipV=!composite&&m[0]*m[3]-m[1]*m[2]<0;
       const reference=await step(embedImage({bytes:new Uint8Array(await blob.arrayBuffer()),name:'picture-'+(stats.images+1)+'.png',mime:'image/png',
-        alt:'',displayWidth:box.w,displayHeight:box.h,transform:rotation||flipV?{rotation,flipV}:null}),'embed a picture');
+        alt:'',displayWidth:box.w,displayHeight:box.h,transform:flipV?{flipV}:null}),'embed a picture');
       if(typeof reference!=='string'||!/^[a-z0-9-]+$/i.test(reference))throw new Error('The PDF picture did not return an image reference.');
-      result.push({x:box.x,y:box.y,w:box.w,h:box.h,type:'image',id:group.id,reference,alt:'',composite});stats.images++;stats.pixels+=width*height;
+      result.push({x:box.x,y:box.y,w:box.w,h:box.h,type:'image',id:group.id,reference,alt:'',composite,...(rotate?{rotate}:{})});stats.images++;stats.pixels+=width*height;
     }finally{canvas.width=canvas.height=0;}
   }
   return result;
