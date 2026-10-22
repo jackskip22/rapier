@@ -8070,6 +8070,8 @@ function _rapierDiscardEditProjection(editDiv) {
 function enterBlockEdit(block, wrapper, activation = null) {
 	if (_rapierReadOnlyBlocked(false) || !block || !wrapper) return null;
 	if (_rapierPageBorderBlock(block)) return _rapierPageBorderWords(block);
+	if (rapier.view.mode !== 'source' && _rapierPictureOnlyBlock(block))
+		return _rapierMakeEdgeParagraph(block, true) ? _activeBlockEditContext()?.editDiv || null : null;
 	if (globalThis.RapierFlowchartEditor?.close() === false) return null;
 	const liveBlock = rapier.document.blocks.find(candidate => candidate.id === block.id);
 	if (!liveBlock || !wrapper.isConnected) return null;

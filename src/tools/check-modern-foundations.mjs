@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Inspect executable syntax, not comments, license notices or document strings.
+import {existsSync} from 'node:fs';
 import {readFile, readdir} from 'node:fs/promises';
 import {resolve, dirname, join, relative, isAbsolute} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
@@ -139,7 +140,7 @@ export async function checkModernFoundations({root = ROOT} = {}) {
       else if (/\.(?:mjs|cjs|js)$/.test(entry.name) && !/\.(?:test|spec)\.[cm]?js$/.test(entry.name)) paths.push(directory + '/' + entry.name);
     }
   }
-  for (const directory of RUNTIME_DIRECTORIES) await visit(directory);
+  for (const directory of RUNTIME_DIRECTORIES) if (existsSync(resolve(root, directory))) await visit(directory);
   const runtimeEntries = new Set(), pending = [...RUNTIME_ENTRY_POINTS];
   while (pending.length) {
     const path = pending.pop();
@@ -167,12 +168,16 @@ export async function checkModernFoundations({root = ROOT} = {}) {
   const byPath = new Map(files.map(file => [resolve(root, file.path), file]));
   const plugins = [], acceptedHostBranches = [];
   for (const resource of executable) {
-    let bytes;
+    let bytes, remote = false;
     try { ({bytes} = await readPluginFile(resource, resource.path ? null : join(root, 'dist/plugin-cache', resource.id))); }
-    catch (cause) { throw new Error('Modern foundation resource could not be verified: ' + resource.id + ' (' + resource.url + ')', {cause}); }
+    catch (cause) {
+      if (!resource.path || !/local source is not the pinned file/.test(cause?.message)) throw new Error('Modern foundation resource could not be verified: ' + resource.id + ' (' + resource.url + ')', {cause});
+      try { ({bytes} = await readPluginFile({...resource, path: null}, join(root, 'dist/plugin-cache', resource.id))); remote = true; }
+      catch (again) { throw new Error('Modern foundation resource could not be verified: ' + resource.id + ' (' + resource.url + ')', {cause: again}); }
+    }
     const source = new TextDecoder('utf-8', {fatal: true}).decode(bytes);
     if (!Buffer.from(source).equals(bytes)) throw new Error('An executable plug-in is not exact UTF-8: ' + resource.id);
-    let scanned = resource.path && byPath.get(resolve(resource.path));
+    let scanned = !remote && resource.path && byPath.get(resolve(resource.path));
     if (scanned) {
       if (scanned.sha256 !== createHash('sha256').update(bytes).digest('hex'))
         throw new Error('A foundation changed during the scan: ' + resource.path);

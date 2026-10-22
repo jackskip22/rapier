@@ -770,6 +770,7 @@ const _rapierImageFlow = (() => {
     const text = selection.anchorNode, offset = selection.anchorOffset, mapping = endpoints.get(text);
     if (/\s/.test(event.data) && !(event.data === ' ' && offset > 0 && offset < text?.data?.length &&
         /\S/.test(text.data[offset - 1]) && /\S/.test(text.data[offset]))) return null;
+    if (text?.data?.[offset - 1] === ' ') return null;
     const edit = record.wrapper.querySelector(':scope > .block-edit');
     if (!record.geometry || text?.nodeType !== Node.TEXT_NODE || mapping?.record !== record ||
         text.parentElement?.parentElement !== record.paragraph || edit?._rapierTypingMarks ||
@@ -3787,8 +3788,41 @@ const _rapierImageFlow = (() => {
     reprojectAfterInput = unproject(record.wrapper) ? record.wrapper : null;
   }, true);
 
+  const ownersLaid = new WeakSet(), PHRASING = /^(?:A|ABBR|B|BDI|BDO|BR|CODE|DEL|EM|I|INS|KBD|MARK|Q|S|SAMP|SMALL|SPAN|STRONG|SUB|SUP|U|WBR)$/;
+  function besideWrapped(wrapper) {
+    for (const direction of [-1, 1]) {
+      for (let node = _rapierAdjacentBlockWrapper(wrapper, direction); node && pictureOnly(node); node = _rapierAdjacentBlockWrapper(node, direction)) {
+        const image = readOf(node)?.querySelector('img[data-rapier-image-layout]');
+        if (image && wrapped(layoutOf(image))) return node;
+      }
+    }
+    return null;
+  }
+  function holdParagraph(surface) {
+    if (!surface.textContent.trim() || [...surface.children].some(child => !PHRASING.test(child.tagName))) return;
+    const selection = window.getSelection(), point = (node, offset) => node === surface ? {node: paragraph, offset} : {node, offset};
+    const paragraph = document.createElement('p');
+    const anchor = selection?.rangeCount && surface.contains(selection.anchorNode) ? point(selection.anchorNode, selection.anchorOffset) : null;
+    const focus = anchor ? point(selection.focusNode, selection.focusOffset) : null;
+    paragraph.append(...surface.childNodes);
+    surface.append(paragraph);
+    if (anchor) try { selection.setBaseAndExtent(anchor.node, anchor.offset, focus.node, focus.offset); } catch (_) {}
+  }
+  function newOwner() {
+    const node = window.getSelection()?.anchorNode, wrapper = (node?.nodeType === Node.TEXT_NODE ? node.parentElement : node)?.closest?.('.block-wrapper--editing');
+    if (!wrapper || ownersLaid.has(wrapper) || wrapper.classList.contains('block-wrapper--source-edit') || !host?.contains(wrapper) || hasFlow(wrapper)) return false;
+    const picture = besideWrapped(wrapper), surface = wrapper.querySelector(':scope > .block-edit');
+    if (!picture || !surface) return false;
+    holdParagraph(surface);
+    if (!editProse(wrapper) || wrapOwner(picture) !== wrapper) return false;
+    ownersLaid.add(wrapper);
+    return true;
+  }
   window.addEventListener('input', event => {
-    if (!reprojectAfterInput) return;
+    if (!reprojectAfterInput) {
+      if (event.isTrusted && !rapier.composition.block && !_rapierHostNativeField(event.target) && newOwner()) schedule();
+      return;
+    }
     const wrapper = reprojectAfterInput, wasHeight = reprojectHeight, pending = insertInProjection;
     reprojectAfterInput = null; reprojectHeight = null; insertInProjection = null;
     if (pending) {

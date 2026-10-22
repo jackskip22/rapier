@@ -116,7 +116,7 @@ _rapierPresetPart = (() => {
   async function keepElement(bytes, name) {
     const title = nameOf(name, 'Element'), asset = await RapierImageAssets.createAsset(bytes, null, {codec: 'image/svg+xml', title});
     if (!/^data:image\/svg\+xml;base64,/.test(asset.url)) throw new Error('Choose an SVG picture.');
-    const ratio = asset.width / Math.max(1, asset.height), layout = ratio >= 2.5 ? 'width=70% x=50%' : ratio >= 1.4 ? 'width=45% x=50%' : 'width=30% x=50%';
+    const ratio = asset.width / Math.max(1, asset.height), layout = RapierOrnaments.pieceLayout(ratio);
     const text = '![' + _rapierEscapeImageAlt(title) + '][element] <!--md-layout:v1 ' + layout + '-->\n\n[element]: ' + asset.url + '\n';
     if (!ELEMENT.test(text)) throw new Error('Choose an SVG picture.');
     await store({version: 1, id: owner.newId(), name: title, content: {scope: 'selection', text}}, () => true);
@@ -229,7 +229,8 @@ _rapierPresetPart = (() => {
     async function elements(grid, open) {
       const ink = _rapierComposerInk() === RapierOrnaments.ELEMENT_INK ? _rapierComposerHex(getComputedStyle(document.body).color) : _rapierComposerInk();
       const covers = globalThis.RapierGalleryPreviews?.ELEMENT_PREVIEWS || [];
-      await Promise.all(_RAPIER_ELEMENT_FAMILIES.map(async family => { if (await installed('elements', family)) await _rapierOrnamentBring('elements', family); }));
+      const kept = await Promise.all(_RAPIER_ELEMENT_FAMILIES.map(family => installed('elements', family)));
+      if (kept.every(Boolean)) await Promise.all(_RAPIER_ELEMENT_FAMILIES.map(family => _rapierOrnamentBring('elements', family)));
       requireCurrent(current);
       let mine = [];
       if (!place) try { await shelf.ready; await shelf.snapshot(); requireCurrent(current); mine = own(ownElement); } catch (_) {}
@@ -257,7 +258,14 @@ _rapierPresetPart = (() => {
           let picture;
           if (sample) picture = shaped(sample, ink, sample.tile ? 2 : 0);
           else { picture = element('img', 'rapier-gallery__picture rapier-gallery__picture--preview'); picture.alt = ''; picture.draggable = false; picture.decoding = 'async'; if (preview) picture.src = preview.src; }
-          grid.append(card(picture, group.name + ', ' + group.count, async () => { if (group.items) return enter(group.name); remember(); gallery.group.elements = group.name; await bring('elements', group.family); }, group.name));
+          grid.append(card(picture, group.name + ', ' + group.count, async () => {
+            if (group.items) return enter(group.name);
+            remember(); gallery.group.elements = group.name;
+            const here = (await Promise.all(_RAPIER_ELEMENT_FAMILIES.map(family => installed('elements', family)))).every(Boolean);
+            await _rapierGalleryEnsure('elements');
+            const opening = _rapierProgressOpen({label: 'Opening Elements', after: here ? 400 : 0});
+            try { await bring('elements', group.family); } finally { opening.end(); }
+          }, group.name));
         }
         return;
       }

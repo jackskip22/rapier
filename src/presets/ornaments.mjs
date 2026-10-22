@@ -43,8 +43,10 @@ export function recolorElement(svgText, ink) {
 
 export function elementLayout(item) {
 	if (item.tile === true) return 'width=100% x=50%';
-	const ratio = item.w / item.h;
-	return ratio >= 2.5 ? 'width=70% x=50%' : ratio >= 1.4 ? 'width=45% x=50%' : 'width=30% x=50%';
+	return pieceLayout(item.w / item.h);
+}
+export function pieceLayout(ratio) {
+	return ratio >= 2.5 ? 'width=70% x=50%' : ratio >= 1.4 ? 'width=45% wrap=around x=22.5%' : 'width=30% wrap=around x=15%';
 }
 
 const PAPERS = Object.freeze({letter: {width: 8.5, height: 11}, a4: {width: 8.27, height: 11.69}});

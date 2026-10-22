@@ -29,8 +29,8 @@
 		}
 		if (/AbortError|aborted|timeout/i.test(s))
 			return 'connection timed out' + d + 'check your internet and tap retry';
-		if (/Failed to fetch|NetworkError|ERR_INTERNET|Unable to resolve|UnknownHost|networkerror/i.test(s))
-			return 'no internet' + d + 'connect to a network and tap retry';
+		if (/Failed to fetch|NetworkError|ERR_INTERNET|Unable to resolve|UnknownHost|networkerror|Load failed/i.test(s))
+			return navigator.onLine === false ? 'no internet' + d + 'connect to a network and tap retry' : 'the download did not finish' + d + 'tap retry';
 		if (/HTTP 4\d\d/.test(s)) return 'the download request was rejected' + d + 'tap retry';
 		if (/HTTP 5\d\d/.test(s)) return 'jsDelivr is temporarily unavailable' + d + 'tap retry';
 		if (/SHA-384 mismatch|unexpected size/.test(s)) return 'downloaded file failed verification' + d + 'refusing to install';
@@ -64,7 +64,7 @@
 		files: [{name: MATH_FILE, file: MATH_FILE, version: MATH_VERSION,
 			bytes: 742684,
 			sri: '1rjhOOw690Mr3aVXwRTPlwQO2atMrWHY8Rm3nZ+SZRrm5mB9HK5FkY6ZWCDYtgzv',
-			url: 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/math/rapier-math-2.7.0.js'}],
+			url: 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.27/math/rapier-math-2.7.0.js'}],
 		missing: 'Rapier math loaded but its SVG renderer is missing — cache purged',
 		usable: function () { return !!(window.RapierMath && window.RapierMath.version === MATH_VERSION &&
 			typeof window.RapierMath.renderToString === 'function' && typeof window.RapierMath.renderWithMathML === 'function'); },
@@ -543,14 +543,16 @@
 					var hosted = RapierBundleIO.pluginUrl(file.flat || String(file.file || '').split('/').pop());
 					urls = hosted ? [hosted] : localUrl ? [localUrl, file.url] : [file.url];
 				} catch (error) { failure = failure || error; return Promise.resolve(); }
-				function attempt(index) {
+				function attempt(index, tries) {
 					return RapierBundleIO.fetchBytes(urls[index], m.timeoutMs || 180000, { length: file.bytes, cache: 'no-store', onBytes: !m.usable && function (n) { tick(file, n); } })
 						.then(function (value) { return verified(file, value); }).catch(function (error) {
-							if (index + 1 < urls.length) return attempt(index + 1);
+							if (tries < 2 && /Failed to fetch|NetworkError|networkerror|Load failed|HTTP 5\d\d|HTTP 429/i.test(String(error && error.message || error)))
+								return new Promise(function (resolve) { setTimeout(resolve, 1500 * (tries + 1)); }).then(function () { return attempt(index, tries + 1); });
+							if (index + 1 < urls.length) return attempt(index + 1, 0);
 							throw error;
 						});
 				}
-				return attempt(0)
+				return attempt(0, 0)
 					.then(function (value) { held[file.name] = value; if (!m.usable) tick(file, file.bytes); }, function (err) { failure = failure || err; })
 					.then(lane);
 			}
