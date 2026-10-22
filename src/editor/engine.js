@@ -8072,6 +8072,7 @@ function enterBlockEdit(block, wrapper, activation = null) {
 	if (_rapierPageBorderBlock(block)) return _rapierPageBorderWords(block);
 	if (rapier.view.mode !== 'source' && _rapierPictureOnlyBlock(block))
 		return _rapierMakeEdgeParagraph(block, true) ? _activeBlockEditContext()?.editDiv || null : null;
+	if (rapier.view.mode !== 'source' && _rapierPictureLeadBlock(block)) return _rapierOpenLeadWords(block, wrapper, activation);
 	if (globalThis.RapierFlowchartEditor?.close() === false) return null;
 	const liveBlock = rapier.document.blocks.find(candidate => candidate.id === block.id);
 	if (!liveBlock || !wrapper.isConnected) return null;
@@ -9277,6 +9278,18 @@ function _rapierRouteStrayEditingKey(event) {
 	if ((typed || key === 'Backspace' || key === 'Delete') && held && held.rangeCount && !held.isCollapsed && _rangeIntersectsEditor(held.getRangeAt(0))) return;
 	let open = _activeBlockEditContext();
 	if (edge && (open || _rapierImageRuntime.blockId == null)) return;
+	if (typed && _rapierImageRuntime.blockId != null && _rapierImageRuntime.image?.isConnected && !_rapierImageRuntime.image.closest('.block-edit') &&
+			(target === host || _rapierPageOwnsTheKeys(target)) && !target.closest('input, textarea, select, [contenteditable="true"]:not(#editor-blocks)')) {
+		const block = rapier.document.blocks.find(row => row.id === _rapierImageRuntime.blockId), wrapper = block && _rapierBlockWrapperById(block.id);
+		event.preventDefault();
+		event.stopImmediatePropagation();
+		if (block && wrapper && rapier.view.mode !== 'source' && _rapierPictureOnlyBlock(block)) {
+			_rapierCloseImageTools();
+			const editDiv = enterBlockEdit(block, wrapper);
+			if (editDiv) { host.focus({ preventScroll: true }); _rapierInsertStrayKey(editDiv, key); }
+		}
+		return;
+	}
 	if (open && (target === host || open.editDiv.contains(target)) || !_rapierPageOwnsTheKeys(target)) return;
 	if (!open && _rapierImageRuntime.blockId != null && (edge || key === 'Enter')) {
 		if (_rapierOpenEdgeParagraph(key !== 'ArrowUp', _rapierImageRuntime.blockId)) {
@@ -27326,8 +27339,8 @@ function _rapierRefreshImageTools() {
         if (btn) btn.hidden = plain;
     }
     const size = _rapierImageRuntime.toolbar.querySelector('.rapier-image-tools__size');
-    if (size) size.textContent = record.image.placement?.width != null ? record.image.placement.width + '%' :
-        (_rapierRenderModule('render-markdown')._rapierImageAltSourceParts(record.image.altSource).width ? _rapierSelectedImageWidth(record) + '%' : 'AUTO');
+    if (size) size.textContent = record.image.placement?.width != null ? Math.round(record.image.placement.width) + '%' :
+        (_rapierRenderModule('render-markdown')._rapierImageAltSourceParts(record.image.altSource).width ? Math.round(_rapierSelectedImageWidth(record)) + '%' : 'AUTO');
     const drawBtn = _rapierImageRuntime.toolbar.querySelector('.rapier-image-tools__draw');
     if (drawBtn) {
         const present = _rapierDrawOffered();
@@ -27351,6 +27364,7 @@ function _rapierRefreshImageTools() {
 }
 function _rapierSelectImage(block, image) {
 	if (!block || !image) return false;
+	if (rapier.view.mode !== 'source' && _rapierPictureLeadBlock(block)) return _rapierSelectLeadPicture(block);
 
 	const readDiv = image.closest('.block-read, .block-edit');
 	const images = readDiv ? Array.from(readDiv.querySelectorAll('[data-rapier-markdown-image]')) : [];
@@ -37943,6 +37957,58 @@ function _rapierPictureOnlyBlock(block) {
 		.find(row => row.start <= image.start && row.end >= end);
 	return !!target?.imageOnly && !target.reason && !(raw.slice(0, target.start) + raw.slice(target.end)).trim();
 }
+function _rapierPictureLeadBlock(block) {
+	const raw = String(block?.raw || '');
+	if (!raw.includes('![') || !raw.includes('<!--md-layout:') || /\n[ \t]*\n/.test(raw) || /^ {0,3}(?:#{1,6}\s|>|[-*+]\s|\d+[.)]\s|```|~~~|<)/.test(raw)) return null;
+	const images = _rapierRenderModule('render')._rapierScanMarkdownImages(raw);
+	if (images.length !== 1) return null;
+	const image = images[0], end = image.tokenEnd ?? image.end, markers = [...raw.matchAll(/<!--md-layout:v1 [^>\r\n]{1,180}-->/g)];
+	if (markers.length !== 1 || raw[image.start - 1] === '[' || raw.slice(end).startsWith('](')) return null;
+	const marker = markers[0], layout = globalThis.RapierMarkdownLayout.parseLayout(marker[0]);
+	if (!layout || !['width', 'wrap', 'x', 'y', 'rotate', 'opacity'].some(key => Object.hasOwn(layout, key)) || marker.index < end && marker.index + marker[0].length > image.start) return null;
+	const before = raw.slice(0, image.start).trim(), between = raw.slice(end, marker.index), after = raw.slice(marker.index + marker[0].length);
+	const tail = !after.trim(), words = (tail ? between : after.trim() ? between + after : between).trim();
+	if (!before && !words) return null;
+	const picture = raw.slice(image.start, end) + ' ' + marker[0];
+	return {pieces: [before, picture, words].filter(part => part), focus: words ? 2 : 0, focusAfter: !!words, words: words || before, picture, before: !!before};
+}
+
+function _rapierLiftPictureLead(block) {
+	const lead = _rapierPictureLeadBlock(block), span = _rapierExcerptCanonicalBlockSpans().get(block.id);
+	const blockIndex = rapier.document.blocks.indexOf(block);
+	if (!lead || !span || blockIndex < 0) return null;
+	const source = block.raw, rows = lead.pieces.map((raw, index) => ({
+		id: index === 0 ? block.id : _nextBlockId(), raw, type: undefined, order: index === 0 ? block.order : undefined,
+		leading: index === 0 ? (typeof block.leading === 'string' ? block.leading : null) : '\n\n'}));
+	const committed = _rapierCommitRangesInPlace([{startIndex: blockIndex, blocksBefore: [{id: block.id, raw: source, type: block.type,
+		order: block.order, leading: block.leading}], blocksAfter: rows}],
+		[{pos: span.start, removed: source, inserted: lead.pieces.join('\n\n')}], 'document.lift-picture', rows.map(row => row.id));
+	return committed === true ? {lead, rows} : null;
+}
+
+function _rapierOpenLeadWords(block, wrapper, activation) {
+	const range = activation?.liveRange, node = range?.startContainer, lead = _rapierPictureLeadBlock(block);
+	const wordsParagraph = [...wrapper.querySelectorAll(':scope > .block-read > p')].find(row => !row.querySelector('img') && row.contains(node));
+	const offset = wordsParagraph && lead && !lead.before ? _charOffsetForRangePoint(wordsParagraph, node, range.startOffset) : lead?.words.length || 0;
+	const lifted = _rapierLiftPictureLead(block);
+	if (!lifted) return null;
+	const focusRow = lifted.lead.focusAfter ? lifted.rows.at(-1) : lifted.rows[0], next = rapier.document.blocks.find(row => row.id === focusRow.id);
+	const nextWrapper = next && _rapierBlockWrapperById(next.id);
+	return next && nextWrapper ? enterBlockEdit(next, nextWrapper, {charOffset: offset, preserveScroll: true}) : null;
+}
+
+function _rapierSelectLeadPicture(block) {
+	const lifted = _rapierLiftPictureLead(block);
+	if (!lifted) return false;
+	const pictureRow = lifted.rows[lifted.lead.before ? 1 : 0];
+	requestAnimationFrame(() => {
+		const wrapper = _rapierBlockWrapperById(pictureRow.id), next = rapier.document.blocks.find(row => row.id === pictureRow.id);
+		const image = wrapper?.querySelector('.block-read [data-rapier-markdown-image]');
+		if (next && image) _rapierSelectImage(next, image);
+	});
+	return true;
+}
+
 function _rapierWholeBlock(block) { return _rapierPictureOnlyBlock(block) || _rapierLoneControlBlock(block); }
 function _rapierLoneControlBlock(block) { return !!_rapierNotesPart?.loneBlock(block); }
 function _rapierMergeBoundaryPair(leftBlock, leftWrapper, leftEditDiv,
@@ -39292,7 +39358,8 @@ function _rapierAdoptPasteTarget(event) {
 	};
 	if (!addressed(event && event.target) && !addressed(document.activeElement)) return null;
 	if (!rapier.document.blocks.length) return _createEmptyPasteTarget();
-	const block = rapier.document.blocks[rapier.document.blocks.length - 1];
+	const selected = _rapierImageRuntime.image?.isConnected ? rapier.document.blocks.find(row => row.id === _rapierImageRuntime.blockId) : null;
+	const block = selected || _rapierBoundBlock(_rapierShownWrappers(host).at(-1)) || rapier.document.blocks[rapier.document.blocks.length - 1];
 	const wrapper = _rapierBlockWrapperById(block.id, host);
 	let editDiv = null;
 	if (wrapper) { try { editDiv = enterBlockEdit(block, wrapper); } catch (_) {} }

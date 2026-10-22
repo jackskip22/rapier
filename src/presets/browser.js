@@ -145,6 +145,7 @@ _rapierPresetPart = (() => {
     const ending = new AbortController(), end = () => { remember(); active = false; ending.abort(); _rapierOrnamentRelease(box); };
     const state = _rapierBeginEngineDialog(overlay, () => end()); state.capture = capture; state.blocking = () => busy;
     const current = () => active && _rapierMutationStampIsCurrent(state.documentGuard);
+    const requireOpen = () => { if (!active) throw Object.assign(new Error('The Gallery was closed.'), {canceled: true}); requireCurrent(current); };
     const element = (tag, cls, text) => { const node = document.createElement(tag); if (cls) node.className = cls; if (text) node.textContent = text; return node; };
     const close = () => { end(); state.close(); };
     const run = async work => {
@@ -169,7 +170,7 @@ _rapierPresetPart = (() => {
       title('Remove ' + record.name + '?', 'Documents already made from it keep their content.');
       button('Remove from library', async () => {
         await shelf.set('preset/' + record.id, null, next => {
-          requireCurrent(current);
+          requireOpen();
           if (JSON.stringify(next.blobs[next.records['preset/' + record.id]?.value?.content]) !== JSON.stringify(record)) throw new Error('This starter changed in another window.');
         }); sync(); await list();
       });
@@ -203,7 +204,7 @@ _rapierPresetPart = (() => {
       await _rapierOrnamentSettled(provider);
       return provider.status === 'ready';
     };
-    const bring = async (kind, family = null) => { await _rapierOrnamentBring(kind, family); requireCurrent(current); await list(); };
+    const bring = async (kind, family = null) => { await _rapierOrnamentBring(kind, family); requireOpen(); await list(); };
     const shaped = (row, ink, tiles) => _rapierOrnamentTile({d: row.frame ? row.frame.path : row.path, box: [0, 0, row.w, row.h], tiles: row.tile === true && tiles ? tiles : 1, ink,
       svg: () => tiles ? RapierOrnaments.elementSVG(row, {ink, tiles}) : RapierOrnaments.thumbnailSVG(row, ink)}, 'rapier-gallery__picture', false);
     const previews = (grid, list, kind) => {
@@ -217,12 +218,12 @@ _rapierPresetPart = (() => {
       grid.classList.add('rapier-gallery__grid--large', 'rapier-gallery__grid--borders');
       const ink = _rapierComposerHex(getComputedStyle(document.body).color);
       if (await installed('templates')) {
-        const rows = await _rapierOrnamentBring('templates'); requireCurrent(current);
+        const rows = await _rapierOrnamentBring('templates'); requireOpen();
         for (const row of rows) grid.append(card(shaped(row, ink, 0), row.name, async () => { close(); await (place ? place({border: row}) : startPage(row, stamp)); }));
       } else previews(grid, globalThis.RapierGalleryPreviews?.GALLERY_PREVIEWS, 'templates');
       if (place) return;
       try {
-        await shelf.ready; await shelf.snapshot(); requireCurrent(current);
+        await shelf.ready; await shelf.snapshot(); requireOpen();
         for (const admitted of own(record => !ownElement(record))) grid.append(card(element('span', 'rapier-gallery__name', admitted.name), admitted.name, () => choose(admitted)));
       } catch (_) {}
     }
@@ -231,9 +232,9 @@ _rapierPresetPart = (() => {
       const covers = globalThis.RapierGalleryPreviews?.ELEMENT_PREVIEWS || [];
       const kept = await Promise.all(_RAPIER_ELEMENT_FAMILIES.map(family => installed('elements', family)));
       if (kept.every(Boolean)) await Promise.all(_RAPIER_ELEMENT_FAMILIES.map(family => _rapierOrnamentBring('elements', family)));
-      requireCurrent(current);
+      requireOpen();
       let mine = [];
-      if (!place) try { await shelf.ready; await shelf.snapshot(); requireCurrent(current); mine = own(ownElement); } catch (_) {}
+      if (!place) try { await shelf.ready; await shelf.snapshot(); requireOpen(); mine = own(ownElement); } catch (_) {}
       const picture = record => { const image = element('img', 'rapier-gallery__picture'); image.alt = ''; image.draggable = false; image.decoding = 'async'; image.src = ownElement(record)[2]; return image; };
       if (open === YOURS && mine.length) {
         grid.dataset.opened = YOURS;
@@ -275,7 +276,7 @@ _rapierPresetPart = (() => {
     }
     async function letters(grid, open) {
       if (!await installed('lettersets')) return previews(grid, globalThis.RapierGalleryPreviews?.LETTER_PREVIEWS, 'lettersets');
-      const sets = await _rapierOrnamentBring('lettersets'); requireCurrent(current);
+      const sets = await _rapierOrnamentBring('lettersets'); requireOpen();
       const ink = _rapierComposerInk() === RapierOrnaments.ELEMENT_INK ? _rapierComposerHex(getComputedStyle(document.body).color) : _rapierComposerInk();
       const picture = (set, entry) => {
         const box = RapierDrawOrnaments.outlineBox(entry.path), pad = 12;
@@ -299,7 +300,7 @@ _rapierPresetPart = (() => {
     }
     const YOURS = 'Yours', blank = !place && rapier.document.docKind === 'markdown' && !/\S/.test(_rapierSourceText());
     async function importPage() {
-      await shelf.ready; await shelf.snapshot(); requireCurrent(current);
+      await shelf.ready; await shelf.snapshot(); requireOpen();
       title('Import page');
       for (const record of own(isPageTemplate)) button(record.name, async () => { close(); await startText(record.name, record.content.text, stamp); });
       button('Choose file', () => chooseFile('text/markdown,.md,.markdown,.txt', file => void run(async () => {
@@ -313,7 +314,7 @@ _rapierPresetPart = (() => {
     const importElement = () => chooseFile('image/svg+xml,.svg', file => void run(async () => {
       if (file.size > owner.PRESET_BYTES) throw new Error('That SVG is over 4 MB.');
       await keepElement(new Uint8Array(await file.arrayBuffer()), file.name);
-      requireCurrent(current); await list();
+      requireOpen(); await list();
     }));
     const head = element('div', 'rapier-gallery__head'), tabs = element('div', 'theme-switcher theme-switcher--joined theme-switcher--onoff rapier-gallery__tabs');
     const body = element('div', 'rapier-gallery__body'), backRow = element('div', 'rapier-gallery__back-row');
@@ -372,7 +373,7 @@ _rapierPresetPart = (() => {
     addEventListener('resize', () => { metrics = null; schedule(); }, {passive: true, signal: ending.signal});
     let shown = 0;
     async function show() {
-      requireCurrent(current);
+      requireOpen();
       const mine = ++shown, section = gallery.tab;
       if (head.parentNode !== box) { box.classList.add('rapier-gallery'); box.replaceChildren(head, backRow, body); }
       for (const t of sections) { const on = t.dataset.tab === section; t.toggleAttribute('data-active', on); t.setAttribute('aria-selected', String(on)); t.tabIndex = on ? 0 : -1; }

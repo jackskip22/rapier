@@ -2158,7 +2158,7 @@ const _rapierImageFlow = (() => {
     if (owner) {
       moving.ownerGeometry = owner;
       moving.column = {left: owner.left, width: owner.width};
-      if (moving.layout.lines == null) moving.layout.width ??= Number(clamp(moving.box.width / owner.width * 100, .01, 100).toFixed(2));
+      if (moving.layout.lines == null) moving.layout.width ??= Math.max(1, Math.round(clamp(moving.box.width / owner.width * 100, .01, 100)));
       setPosition(moving.box.x, moving.box.y);
     } else { moving.owner = null; setFree(); }
   }
@@ -2183,7 +2183,7 @@ const _rapierImageFlow = (() => {
   function setFree() {
     if (!moving || moving.free) return;
     moving.free = true; moving.owner = null; moving.ownerGeometry = null;
-    if (moving.layout.lines == null) moving.layout.width ??= Number(clamp(moving.box.width / moving.column.width * 100, .01, 100).toFixed(2));
+    if (moving.layout.lines == null) moving.layout.width ??= Math.max(1, Math.round(clamp(moving.box.width / moving.column.width * 100, .01, 100)));
 
     moving.fade?.cancel();
     freeBox(moving.point?.x ?? moving.box.x, moving.point?.y ?? moving.box.y);
@@ -2892,7 +2892,7 @@ const _rapierImageFlow = (() => {
     if (layout.lines != null) delete layout.x;
     else if (layout.x != null && layout.width == null) {
       const column = selected?.closest('p'), width = column && rect(column).width;
-      if (width > 0) layout.width = Number(clamp(rect(selected).width / width * 100, .01, 100).toFixed(4));
+      if (width > 0) layout.width = Math.max(1, Math.round(clamp(rect(selected).width / width * 100, .01, 100)));
       else delete layout.x;
     }
     void commitLayout(record, occurrence, layout);
@@ -2968,8 +2968,9 @@ const _rapierImageFlow = (() => {
     const afterId = afterWrapper ? Number(afterWrapper.dataset.blockId) : null;
     const after = afterWrapper ? spans.get(afterId) : null;
     if (!to && !after && !ownSlot) { cancel(); return false; }
-    const value = gesture.free ? {} : {wrap: ['box', 'behind', 'front'].includes(gesture.layout.wrap) ? gesture.layout.wrap : 'around', x: gesture.layout.x ?? occurrence.layout.x ?? 0, y: gesture.layout.y || 0};
-    if (gesture.free && slot.align) value.align = slot.align;
+    const keepsWrap = gesture.free && wrapped(occurrence.layout);
+    const value = keepsWrap ? {wrap: occurrence.layout.wrap, x: occurrence.layout.x ?? 0} : gesture.free ? {} : {wrap: ['box', 'behind', 'front'].includes(gesture.layout.wrap) ? gesture.layout.wrap : 'around', x: gesture.layout.x ?? occurrence.layout.x ?? 0, y: gesture.layout.y || 0};
+    if (gesture.free && slot.align && !keepsWrap) value.align = slot.align;
     if (gesture.free) { if (occurrence.layout.width != null) value.width = occurrence.layout.width; }
     else if (gesture.layout.width != null) value.width = gesture.layout.width;
     const lines = gesture.free ? occurrence.layout.lines : gesture.layout.lines;
@@ -3265,7 +3266,7 @@ const _rapierImageFlow = (() => {
     moving.owner = owner; moving.free = false; moving.ownerGeometry = measureOwner(owner);
     if (!moving.ownerGeometry) { moving.owner = null; setFree(); return; }
     moving.column = {left: moving.ownerGeometry.left, width: moving.ownerGeometry.width};
-    if (moving.layout.lines == null) moving.layout.width = Number(clamp(moving.box.width / moving.column.width * 100, .01, 100).toFixed(2));
+    if (moving.layout.lines == null) moving.layout.width = Math.max(1, Math.round(clamp(moving.box.width / moving.column.width * 100, .01, 100)));
 
     moving.fade?.cancel();
     const drag = moving.drag;
@@ -3300,7 +3301,7 @@ const _rapierImageFlow = (() => {
     let room = west ? start.x + start.width - column.left : column.left + column.width - start.x;
     if (owner && north) room = Math.min(room, (start.y + start.height - owner.top) * start.width / start.height);
     width = Math.max(.01, Math.min(room, clamp(width, Math.min(32, start.width), column.width)));
-    const percent = Number((width / column.width * 100).toFixed(4));
+    const percent = Math.max(1, Math.round(width / column.width * 100));
     moving.resized = true;
     const lines = moving.layout.lines != null && owner ? ownerLines(owner) : null;
     if (lines) {

@@ -237,7 +237,7 @@ async function programLibrary(device,firstPaper){
    eraseFixed:['rgba16float','rgba16float','lift'],eraseBase:['rgba8unorm','lift','alpha'],
    stampFinish:['rgba16float','add'],fillFinish:['rgba16float','add'],liftFinish:['rgba16float','lift'],
    velocity:['rg16float'],curl:['r16float'],vorticity:['rg16float'],divergence:['r16float'],pressureDecay:['r16float'],pressure:['r16float'],project:['rg16float'],
-   wet:['r16float'],fix:['rgba16float','rgba16float','add'],dried:['rgba16float','rgba16float','add'],driedKeep:['rgba16float','rgba16float'],
+   wet:['r16float'],fix:['rgba16float','rgba16float','add'],
    mask:['r8unorm'],paperField:['rgba16float'],paperLight:['rgba8unorm'],present:['rgba8unorm']};
   const blend={add:{srcFactor:'one',dstFactor:'one',operation:'add'},max:{srcFactor:'one',dstFactor:'one',operation:'max'},
    lift:{srcFactor:'zero',dstFactor:'one-minus-src',operation:'add'}};
@@ -250,7 +250,7 @@ async function programLibrary(device,firstPaper){
    const mode=blend[blendSettings.at(-1)]?blendSettings.at(-1):null;
    const formats=mode?blendSettings.slice(0,-1):blendSettings;
    loadOps[name]=mode||alphaOnly?'load':'clear';
-   const module=modules.get(name==='velocitySplat'||name==='wetSplat'?'splat':name==='eraseFixed'?'liftInk':name==='driedKeep'?'dried':name==='eraseBase'||name==='liftFinish'?'liftWet':name);
+   const module=modules.get(name==='velocitySplat'||name==='wetSplat'?'splat':name==='eraseFixed'?'liftInk':name==='eraseBase'||name==='liftFinish'?'liftWet':name);
    const description={label:'Water '+name,layout:name.startsWith('fill')?fillPipelineLayout:pipelineLayout,vertex:{module,entryPoint:'vertex'},
     fragment:{module,entryPoint:'fragment',...(kind===null?{}:{constants:{paperKind:kind}}),targets:formats.map(format=>({format,...(mode?{blend:{color:blend[mode],alpha:blend[mode]}}:{}),...(alphaOnly?{writeMask:8}:{})}))},primitive:{topology:'triangle-list'}};
    if(name==='paperField')paperDescription=description;
@@ -856,13 +856,13 @@ export class WaterGPU {
   if(finish&&(!admitWaterFinish(finish)||!Number.isFinite(dose)||dose<0))throw failure('WATER_INPUT','The Water mineral dose is invalid.');
   const sheen=coefficients&&finish?.sheen.some(v=>v>0);if(sheen)this._ensureFinish();
   const rect=this._rect(x,y,r,lift?2:circular?(hardness>1.4?2.2:3.2):1.5),own=this._rect(x,y,r,circular?3.2:1.5);
-  this._touch(rect,lift?(erase?undefined:[0,1,2,3,4]):[...(coefficients?[0,1]:[]),...(water>0?[4]:[])]);
+  this._touch(rect,lift?(erase?undefined:[0,1,4]):[...(coefficients?[0,1]:[]),...(water>0?[4]:[])]);
   if(lift?this.finish:coefficients&&(finish?.settling>0||sheen))this._touch(own,lift?[6]:[...(finish?.settling>0?[2,3]:[]),...(sheen?[6]:[])]);
   const data=this._parameters();data.set([x,y,r,settings.aspect??1],16);data.set([Math.cos(angle),Math.sin(angle),round,grain],20);data.set([threshold,water,hardness,finish?0:settle],24);
   data[54]=(finish?.settling??0)*(getPaper(this.paperId).params.tooth??1);
   if(lift){data[25]=lift;data[26]=2;data[27]=erase?1:0;this._queue('liftInk',this.ink.read,[],data,rect);data[25]=lift*.8;this._queue('liftWet',this.wet.read,[],data,rect);
    if(this.finish){data[25]=lift;this._queue('liftFinish',this.finish,[],data,own);}
-   data[25]=erase?lift:lift*.3;this._queue('eraseFixed',this.fixed,[],data,rect);if(erase&&this.base)this._queue('eraseBase',this.base,[],data,rect);return;}
+   if(erase){data[25]=lift;this._queue('eraseFixed',this.fixed,[],data,rect);if(this.base)this._queue('eraseBase',this.base,[],data,rect);}return;}
   const bounds=circular?rect:this._rect(x,y,r,Math.sqrt(1+(settings.aspect??1)**2)*1.02);
   const tip=circular?null:this._tip(profile),inputs=tip?[tip,this.paper]:finish?[this.dummy,this.paper]:[];
   if(coefficients){
@@ -988,35 +988,18 @@ export class WaterGPU {
    if(read.epoch===this.trimEpoch&&!this.painting&&this.active)pixels=this._trimPixels(read);
   }
   finally{if(read.buffer?.mapState==='mapped')read.buffer.unmap();}
-  if(pixels)await this._trim(pixels);
+  if(pixels)this._trim(pixels);
  }
- async _trim(pixels){
+ _trim(pixels){
   const previous=this.active;if(!previous)return;
   let x0=this.mask.w,y0=this.mask.h,x1=-1,y1=-1;
   for(let y=0;y<this.mask.h;y++)for(let x=0;x<this.mask.w;x++)if(pixels[y*this.mask.w+x]){x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x);y1=Math.max(y1,y);}
   const next=x1>=0?[Math.max(previous[0],x0*16-24),Math.max(previous[1],y0*16-24),Math.min(previous[2],(x1+1)*16+24),Math.min(previous[3],(y1+1)*16+24)]:null;
   if(next&&next.every((v,i)=>v===previous[i]))return;
-  const epoch=this.trimEpoch,transaction=this.transaction,mask=this.mask,frame=this.frame,W=this.width,H=this.height;
-  const width=previous[2]-previous[0],height=previous[3]-previous[1];
-  const bindBytes=width*Math.min(height,Math.max(1,Math.floor(262144/width)))*16;
-  await this._roomForRollback(previous,[0,1,2,3,4],bindBytes);
-  this._check();
-  if(this.trimEpoch!==epoch||this.transaction!==transaction||this.mask!==mask||this.frame!==frame||this.width!==W||this.height!==H||this.active!==previous||this.painting)return;
-  if(!next||next[2]<=next[0]||next[3]<=next[1]){this.sleep();return;}
-  this._bind(previous);this.active=next;
- }
- _bind(rect){
-  this._protect(rect,[0,1,2,3]);const data=this._parameters(),inputs=[...this.ink.read,this.wet.read[0]];
-  data[10]=1;this._region('dried',this.fixed,inputs,data,rect);data[10]=0;
-  const width=rect[2]-rect[0],rows=Math.max(1,Math.floor(262144/width));
-  for(let y=rect[1];y<rect[3];y+=rows){
-   const band=[rect[0],y,rect[2],Math.min(rect[3],y+rows)],outputs=this._inkTargets(width,band[3]-y);
-   this._regionPass([{name:'driedKeep',inputs,data,rect:null}],this.ink.read,band,outputs);
-  }
+  if(next&&next[2]>next[0]&&next[3]>next[1])this.active=next;else this.sleep();
  }
  sleep(){
   this.trimEpoch++;
-  if(this.active)this._bind(this.active);
   for(const target of this.ink.write)this._retire(target);this.ink.write=[];this._dropScratch();
   for(const pair of [this.velocity,this.pressure])for(const t of [...pair.read,...pair.write])this._clear(t);
   this.active=null;this.wetPeak=0;this.flowSpeed=0;this.flowMayMove=false;this.simBox=null;

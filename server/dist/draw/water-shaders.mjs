@@ -182,10 +182,6 @@ const body = {
  fix: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> Pair {
  let q=uv(p);return Pair(sample(t0,q)*u.v[2].z,sample(t1,q)*u.v[2].z);
  }`,
- dried: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> Pair {
- let pix=vec2<i32>(px(p));let dry=smoothstep(0.02,0.45,loadTexel(t2,pix).r)<0.002;let k=select(f32(!dry),f32(dry),u.v[2].z>0.0);
- return Pair(loadTexel(t0,pix)*k,loadTexel(t1,pix)*k);
- }`,
  pigment: `
  fn mobility(w:f32)->f32{return smoothstep(0.02,0.45,w);}
  fn bounded(v:vec4<f32>)->vec4<f32>{return select(vec4<f32>(0),clamp(v,vec4<f32>(-48),vec4<f32>(48)),v==v);}

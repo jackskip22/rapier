@@ -505,13 +505,20 @@ export function retireDeletedImageDefinitions(before, after, splices, factory) {
     let remaining = '', at = 0;
     for (const row of current.blocks) { remaining += after.slice(at, row.start); at = row.end; }
     remaining = normalizeLabel(remaining + after.slice(at)).replace(/\[\s+/g, '[');
-    return current.blocks.filter(row => {
+    const retired = current.blocks.filter(row => {
       const old = prior.assets.get(row.id);
       return deleted.has(row.id) && row.active && row.topLevel && old?.topLevel &&
         row.status === 'unverified' && old.source === row.source && !now.urls.has(row.url) &&
         !prior.duplicateLabels.has(row.id) && !current.duplicateLabels.has(row.id) &&
         !remaining.includes('[' + row.id) && !now.html.includes(row.id) && !now.html.includes(row.url.toUpperCase());
-    }).sort((a, b) => b.start - a.start).map(row => ({pos: row.start, removed: row.source, inserted: ''}));
+    });
+    return retired.sort((a, b) => b.start - a.start).map(row => {
+      const gap = /(?:\r\n\r\n|\n\n|\r\r)$/.exec(after.slice(Math.max(0, row.start - 4), row.start));
+      let tail = after.slice(row.end);
+      for (const other of retired) if (other.start >= row.end) tail = tail.replace(other.source, '');
+      const whole = gap && !/\S/.test(tail) && row.start - gap[0].length > markdownBodyOffset(after);
+      return whole ? {pos: row.start - gap[0].length, removed: gap[0] + row.source, inserted: ''} : {pos: row.start, removed: row.source, inserted: ''};
+    });
   } catch (_) { return []; }
 }
 
