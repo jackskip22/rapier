@@ -14,11 +14,11 @@ import {buildRapierWorker} from './jxl-bundle.mjs';
 import acorn from '../agent/vendor/acorn.mjs';
 import {TOOLS, UI_RESOURCE, mcpDescriptors, publishedSchema} from '../agent/catalog.mjs';
 import {pairedShell, PAIRED_SHELL_FILE, PAIRED_SHELL_HEADERS, PAIRED_SHELL_REDIRECTS} from '../mcp/paired.mjs';
-import {minifyVendor, BROWSER_MINIFY} from './minify-vendor.mjs';
 import {entitiesVendor} from './entities-vendor.mjs';
 import {VERSION} from '../version.mjs';
 import {syncVersion, VERSIONED_FILES} from './version-sync.mjs';
 import {checkPurity} from './purity-gate.mjs';
+import {assertModernFoundations} from './check-modern-foundations.mjs';
 import {csp} from '../security/csp.mjs';
 import {checkHtmlSinks} from './html-sinks.mjs';
 import {checkToolchain} from './check-toolchain.mjs';
@@ -66,6 +66,7 @@ if (RAPIER_PROFILE_RAW !== undefined && !Object.hasOwn(PROFILE_PAGES, RAPIER_PRO
 const PROFILE = RAPIER_PROFILE_RAW || 'full';
 const OUTPUT_FILE = PROFILE_PAGES[PROFILE];
 buildPhase('gates');
+await assertModernFoundations(root);
 const toolchain = JSON.parse(await readBuildInput({root, path: 'tools/toolchain.json'}));
 const NODE_MAJOR_MIN = toolchain.nodeFloor.major;
 if (Number(process.versions.node.split('.')[0]) < NODE_MAJOR_MIN) throw new Error('Rapier builds on Node ' + NODE_MAJOR_MIN + '+; this is ' + process.version);
@@ -475,13 +476,13 @@ const shakenExports = {};
   }
 }
 const VENDOR_GROUPS = {
-  'lib-dompurify': ['dompurify-3.4.16.dist.purify.min.js'],
-  'lib-turndown': ['turndown-7.2.4.lib.turndown.browser.umd.js'],
+  'lib-dompurify': ['dompurify-3.4.16.es2024.min.js'],
+  'lib-turndown': ['turndown-7.2.4.es2024.min.js'],
   'lib-markdownit': ['markdown-it-15.0.2.es2022.umd.js', 'markdown-it-task-lists-2.1.1.min.js', 'markdown-it-footnote-4.0.0.min.js',
     'markdown-it-mark-4.0.0.min.js', 'markdown-it-sup-2.0.0.min.js', 'markdown-it-emoji-3.1.0-light.min.js',
     'markdown-it-abbr-2.0.0.min.js', 'markdown-it-ins-4.0.0.min.js', 'markdown-it-deflist-4.0.0.min.js'],
   'lib-gpu-lexer': ['gpu-lexer-0.0.1.js'],
-  'lib-acorn': ['acorn-8.19.0.dist.acorn.js'],
+  'lib-acorn': ['acorn-8.19.0.modern.js'],
 };
 const vendorSpans = new Map();
 async function deriveVendorGroup(id) {
@@ -490,9 +491,8 @@ async function deriveVendorGroup(id) {
   for (const name of VENDOR_GROUPS[id]) {
     const bytes = await readFile(resolve(root, 'shell/vendor', name)), record = provenance.files[name];
     if (!record || record.bytes !== bytes.length || record.sha256 !== checksum(bytes)) throw new Error('Vendor file ' + name + ' does not match shell/vendor/PROVENANCE.json');
-    const source = bytes.toString('utf8'), minified = minifyVendor(name, source), reencoded = entitiesVendor(name, source);
-    if (minified !== null && reencoded) throw new Error('Vendor file ' + name + ' has two pinned derivations');
-    spans.push(reencoded || (minified === null ? {name, source} : {name: BROWSER_MINIFY.vendors.find(row => row.upstream.name === name).derived.name, source: minified}));
+    const source = bytes.toString('utf8');
+    spans.push(entitiesVendor(name, source) || {name, source});
   }
   vendorSpans.set(id, spans);
   return spans;
@@ -856,7 +856,7 @@ async function realmSources() {
     'shell/font-subset-plugin.js', 'shell/parts.js', 'agent/apps.js', 'agent/host-files.mjs'].map(async path => (await read(path)).replace(/^export /gm, '')));
   const inline = [...bootTheme.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map(match => match[1]);
   const vendors = (await Promise.all(Object.keys(VENDOR_GROUPS).map(deriveVendorGroup))).flat().map(span => span.source);
-  const plugins = await Promise.all((await pluginPackFiles()).filter(file => /^rapier-(?:math|mermaid-.*|font-subset|pdf-legacy-build-pdf\.mjs)$/.test(file.id))
+  const plugins = await Promise.all((await pluginPackFiles()).filter(file => /^rapier-(?:math|mermaid-.*|font-subset|pdf-build-pdf\.mjs)$/.test(file.id))
     .map(async file => {
       const source = (await readPluginFile(file, file.path ? null : resolve(root, 'dist/plugin-cache', file.id))).bytes.toString('utf8');
       return file.id.endsWith('.mjs') ? {source, module: true} : source;

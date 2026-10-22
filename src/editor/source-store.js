@@ -12,13 +12,23 @@ const contentKey = (length, a, b) => length + ':' + (a >>> 0).toString(36) + ':'
 function contentProduct(a, b, prime) {
 	return ((a * (b >>> 16) % prime) * 65536 + a * (b & 65535)) % prime;
 }
+function contentStepA(value, code) {
+	const full = value * CONTENT_BASE_A + code;
+	const folded = (full & 0x7fffffff) + (full / 2147483648 | 0);
+	return folded >= CONTENT_PRIME_A ? folded - CONTENT_PRIME_A : folded;
+}
+function contentStepB(value, code) {
+	const full = value * CONTENT_BASE_B + code;
+	const folded = (full & 0x7fffffff) + (full / 2147483648 | 0) * 19;
+	return folded >= CONTENT_PRIME_B ? folded - CONTENT_PRIME_B : folded;
+}
 function contentIdOf(value) {
 	const text = String(value == null ? '' : value);
 	let a = 0, b = 0;
 	for (let i = 0; i < text.length; i++) {
 		const code = text.charCodeAt(i) + 1;
-		a = (a * CONTENT_BASE_A + code) % CONTENT_PRIME_A;
-		b = (b * CONTENT_BASE_B + code) % CONTENT_PRIME_B;
+		a = contentStepA(a, code);
+		b = contentStepB(b, code);
 	}
 	return contentKey(text.length, a, b);
 }
@@ -32,8 +42,8 @@ function contentIndex(text) {
 	let a = 0, b = 0;
 	for (let i = 0; i < text.length; i++) {
 		const code = text.charCodeAt(i) + 1;
-		a = (a * CONTENT_BASE_A + code) % CONTENT_PRIME_A;
-		b = (b * CONTENT_BASE_B + code) % CONTENT_PRIME_B;
+		a = contentStepA(a, code);
+		b = contentStepB(b, code);
 		if ((i + 1) % CONTENT_STEP === 0) {
 			const slot = (i + 1) / CONTENT_STEP * 2;
 			checkpoints[slot] = a; checkpoints[slot + 1] = b;
@@ -48,8 +58,8 @@ function contentRange(index, start, end) {
 		let a = index.checkpoints[slot * 2], b = index.checkpoints[slot * 2 + 1];
 		for (let i = slot * CONTENT_STEP; i < at; i++) {
 			const code = index.text.charCodeAt(i) + 1;
-			a = (a * CONTENT_BASE_A + code) % CONTENT_PRIME_A;
-			b = (b * CONTENT_BASE_B + code) % CONTENT_PRIME_B;
+			a = contentStepA(a, code);
+			b = contentStepB(b, code);
 		}
 		return [a, b];
 	};

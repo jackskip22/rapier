@@ -23,7 +23,7 @@ import { HOST_TOOLS, TOOLS, HUMAN_OPERATIONS, ICONS, MAX_TEXT_BYTES, MAX_EXPORT_
 import { analyzeDocument } from '../agent/structure.mjs';
 import { analyzeMarkdown, checkMarkdownReferences } from '../agent/markdown-server.mjs';
 import { resolveCaller, validateOrigin, WORKER_PRESENCE, sealForEditor, fromBase64url } from '../agent/door-identity.mjs';
-import { mintEditorKey, verifyEditorKey, mintEditorTicket, verifyEditorTicket, editorSecretUsable, classifyEditorSecret, editorSecretKeyMaterial } from './editor-keys.mjs';
+import { mintEditorKey, verifyEditorKey, mintEditorTicket, verifyEditorTicket, editorSecretUsable, classifyEditorSecret, editorSecretKeyMaterial, EDITOR_KEY_LIFETIME_MS, CLIENT_SESSION_PATTERN, mintClientSession, clientSessionApps } from './editor-keys.mjs';
 import { visualResult, sameVisualDrawing, DRAWING_PREVIEW_CHARS, DRAWING_PREVIEW_TOTAL_CHARS } from '../agent/visual.mjs';
 import {editorResult, editorFailure, editorPreferences, EDITOR_LIMITS, EDITOR_TOOL_ACTIONS} from '../agent/editor.mjs';
 import { createRequestWait, createRequestLifetime, responsiveJson, REQUEST_CANCELLED } from './request-lifetime.mjs';
@@ -183,7 +183,7 @@ const DAY = 86400000;
 const REQUEST_LEASE_MS = 300000;
 const MATERIAL_RETRY_WAIT_MS = 20000;
 const CLOCK_SKEW_MS = 60000;
-const REQUEST_SESSION = /^rps_[A-Za-z0-9_-]{43}$/;
+const REQUEST_SESSION = CLIENT_SESSION_PATTERN;
 const TASK_HANDLE = /^rptask_[A-Za-z0-9_-]{43}$/;
 const TASK_METHODS = new Set(['tasks/get', 'tasks/update', 'tasks/cancel']);
 const taskTool = (name, args) => name === 'show' && args?.target === 'ask' || name === 'read' && args?.as === 'image' ||
@@ -649,6 +649,9 @@ function declaresAppsUi(params) {
   const ui = plain(capabilities.extensions) ? capabilities.extensions['io.modelcontextprotocol/ui'] : null;
   return !!(plain(ui) && Array.isArray(ui.mimeTypes) && ui.mimeTypes.includes(UI_MIME));
 }
+function clientSessionBinding(request, authority, door) {
+  return [new URL(request.url).origin, door, authority.source, authority.ownerId || '', authority.connectionId || ''];
+}
 function listedTools(env, appsClient, authority) {
   const descriptors = authority?.source === 'server' ? SERVER_DESCRIPTORS : DESCRIPTORS;
   const listed = env.HOST_TOOLS_LISTING === 'all' || appsClient ? descriptors : descriptors.filter(tool => !EDITOR_ONLY_TOOLS.has(tool.name));
@@ -765,11 +768,17 @@ async function waitedRead(args, env, request, authority, hostAgent, door, editor
   }
 }
 
+function toolInputShape(descriptor) {
+  if (!['open', 'read', 'undo'].includes(descriptor.name)) return descriptor.inputSchema;
+  const {oneOf, ...shape} = descriptor.inputSchema;
+  return shape;
+}
+
 async function callTool(name, args, env, request, authority, hostAgent = null, door = '/mcp', editorProof = null, editorActivity = false, task = null, peek = false, wait = null, visualObservation = null) {
   if (name === 'show' && plain(args) && args.target === undefined) args = {...args, target: showTarget(args)};
   if (name === 'read' && plain(args) && (args.wait_ms !== undefined || args.after_revision !== undefined) && authority?.source !== 'page') {
     const descriptor = TOOL_BY_NAME.get(name);
-    try { validateInput(descriptor.inputSchema, args, 'arguments', true); } catch (error) { if (error.code === 'invalid_arguments') return inputErrorResult(error); throw error; }
+    try { validateInput(toolInputShape(descriptor), args, 'arguments', true); } catch (error) { if (error.code === 'invalid_arguments') return inputErrorResult(error); throw error; }
     if (args.as === 'image') return waitedRead({wait_ms: 0, ...args}, env, request, authority, hostAgent, door, editorProof, editorActivity, task);
     const {wait_ms: asked = 0, after_revision: after, ...plainArgs} = args;
     if (after === undefined) return toolError(failure('INVALID_DOCUMENT_INPUT', 'wait_ms needs after_revision, the revision you last read.'));
@@ -784,7 +793,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   const descriptor = TOOL_BY_NAME.get(name);
   if (!descriptor) throw failure('UNKNOWN_TOOL', 'Unknown tool.');
   if (name === 'open' && args?.url !== undefined) {
-    try {validateInput(descriptor.inputSchema,args,'arguments',true);} catch(error) {if(error.code==='invalid_arguments') return inputErrorResult(error); throw error;}
+    try {validateInput(toolInputShape(descriptor),args,'arguments',true);} catch(error) {if(error.code==='invalid_arguments') return inputErrorResult(error); throw error;}
     if (Object.keys(args).some(key => !['url', 'agent', 'operation_id'].includes(key))) return toolError(failure('OPEN_ARGUMENTS_CONFLICT', 'Open a document link with url alone.'));
     let url; try {url = new URL(args.url);} catch {}
     const id = url && url.origin === new URL(request.url).origin && PAIRED_PATH.exec(url.pathname)?.[1];
@@ -798,7 +807,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   if (humanNamed && (door === '/muse' || authority.source !== 'page' && typeof editorProof !== 'string')) return toolError(failure('HUMAN_AUTHORITY_REQUIRED', "This operation needs the editor's own authority."));
   const keyArgument = humanNamed ? args.editorKey ?? editorProof : undefined;
   if (humanNamed) { args = {...args}; delete args.editorKey; }
-  try { args = validateInput(descriptor.inputSchema, args, 'arguments', !EDITOR_ONLY_TOOLS.has(name)); }
+  try { args = validateInput(toolInputShape(descriptor), args, 'arguments', !EDITOR_ONLY_TOOLS.has(name)); }
   catch (error) {
     if (error.code !== 'invalid_arguments') throw error;
     return inputErrorResult(error);
@@ -823,6 +832,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   if (name === 'open' && args.file && ['document', 'text', 'filename', 'docKind'].some(key => Object.hasOwn(args, key))) return toolError(failure('OPEN_ARGUMENTS_CONFLICT', 'Open a host file with file alone; its contents are read by the editor through the host.'));
   if (name === 'open' && args.file && (/[\\/\u0000-\u001f\u007f]/.test(args.file.name) || !args.file.resourceUri.trim())) return toolError(failure('INVALID_DOCUMENT_INPUT', 'A host file needs a filename without a path and a nonempty resource URI.'));
   if (!page && name === 'read' && args.guide && args.document === undefined) {
+    try {validateInput(descriptor.inputSchema, args, 'arguments', true);} catch (error) {if (error.code === 'invalid_arguments') return inputErrorResult(error); throw error;}
     const guide = guideResult({topic: args.guide}, args.guide === 'water' ? agentPaintBrushRegistry() : null);
     return envelope(guide.outcome === 'ok' ? {guide: args.guide, instructions: guide.instructions, complete: true, next_cursor: null} : guide);
   }
@@ -841,12 +851,20 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     if (refusal) return toolError(failure('INVALID_CREATE_TOKEN', refusal));
   }
   if (!create && args.createToken !== undefined) return toolError(failure('OPEN_ARGUMENTS_CONFLICT', 'createToken belongs to a create. Reopening uses the existing document value.'));
+  if (!create && name === 'open' && args.note !== 'new' && ['text', 'filename', 'docKind'].some(key => Object.hasOwn(args, key))) return toolError(failure('OPEN_ARGUMENTS_CONFLICT', 'Reopen with document alone; create with text and no document; replace content with edit.'));
+  if (!page && ['open', 'read'].includes(name)) {
+    try {validateInput(descriptor.inputSchema, args, 'arguments', true);} catch (error) {
+      if (error.code !== 'invalid_arguments') throw error;
+      if (create && args.filename !== undefined && !_rapierValidMetadata({filename: args.filename, docKind: 'markdown'}))
+        return toolError(failure('INVALID_DOCUMENT_INPUT', 'filename_invalid'));
+      return inputErrorResult(error);
+    }
+  }
   const createNamespace = authority.source === 'oauth' ? connectedOwner + ':connection:' + authority.connectionId : connectedOwner;
   const minted = create ? (createToken !== null ? await tokenCapability(createToken, env, createNamespace) : newCapability()) : null;
   const createBudget = create ? { takeId: await takeIdOf(minted), retryable: createToken !== null,
     principalKey: await digest(anonymous ? 'anonymous' : authority.source + ':' + authority.ownerId + ':' + (authority.connectionId || '')),
     ...(anonymous ? {anonymous: true} : {}) } : null;
-  if (!create && name === 'open' && args.note !== 'new' && ['text', 'filename', 'docKind'].some(key => Object.hasOwn(args, key))) return toolError(failure('OPEN_ARGUMENTS_CONFLICT', 'Reopen with document alone; create with text and no document; replace content with edit.'));
   const humanTool = humanNamed;
   const document = create ? minted : page ? null : args.document;
   const ownerKey = page ? null : anonymous ? await anonymousOwner(document) : connectedOwner;
@@ -932,6 +950,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     return result;
   }
   if (name === 'open' && result.structuredContent) result.structuredContent = {...result.structuredContent,
+    editor_open: result.structuredContent.human?.active === true,
     ...(file ? {hydration: {status: result._meta?.rapier?.fileHydration?.status || 'unavailable', destination: 'host_file'}} : {}),
     presentation: {status: door === '/muse' ? 'link_available' : 'requested', acknowledged: false}};
   if (page) { if (result.structuredContent) delete result.structuredContent.pairing; return result; }
@@ -984,7 +1003,28 @@ async function openCursor(env, sealed) {
   } catch { return null; }
 }
 
-function publicToolResult(name, result, door, {workspaceNotes = false} = {}) {
+function editorCapabilityScopes(meta, value) {
+  const scopes = {}, documentExpiry = Date.parse(value.expiresAt);
+  const describe = (scope, key, lifetime) => {
+    const issued = /^ek1\.[A-Za-z0-9_-]+\.(\d+)\./.exec(key || '')?.[1];
+    const until = issued ? Math.min(Number(issued) + EDITOR_KEY_LIFETIME_MS, Number.isFinite(documentExpiry) ? documentExpiry : Infinity) : documentExpiry;
+    return {scope, ...(Number.isFinite(until) ? {expiresAt: new Date(until).toISOString()} : {}), lifetime};
+  };
+  const documentLifetime = 'Ends when the document expires, is deleted, or its access is revoked.';
+  const keyLifetime = 'At most 24 hours from issue; ends sooner with document access, connection revocation, or deployment key rotation.';
+  const liveLifetime = keyLifetime + ' Stop live also revokes this value.';
+  if (meta.editorKey) scopes.editorKey = describe('Editor operations for this document and connection; not proof of a person.', meta.editorKey, keyLifetime);
+  if (meta.editorDocument) scopes.editorDocument = describe('Document selector for the editor transport; hosted document values also grant the caller document access.', null, documentLifetime);
+  if (meta.editorTransport?.ticket) scopes['editorTransport.ticket'] = describe('Private /editor transport for this document with the original caller permissions.', meta.editorKey, keyLifetime);
+  if (meta.open?.document) scopes['open.document'] = describe('Same document access as the public document value.', null, documentLifetime);
+  for (const [key, scope] of Object.entries({key: 'Read and edit this live document.', stopKey: 'Disconnect live sharing and agent access for this document.', custodyKey: 'Editor custody of this document.'}))
+    if (meta.live?.[key]) scopes['live.' + key] = describe(scope, meta.live[key], key === 'stopKey' ? keyLifetime : liveLifetime);
+  if (meta.live?.joinUrl) scopes['live.joinUrl'] = describe('Editor link carrying live.key with the same live document access.', meta.live.key, liveLifetime);
+  return scopes;
+}
+
+function publicToolResult(name, result, door, {workspaceNotes = false, appsClient = false} = {}) {
+  const facts = result.structuredContent || {};
   if (door === '/muse' && result._meta) { const {_meta, ...value} = result; result = value; }
   if (['open', 'read', 'edit', 'undo', 'show', 'export'].includes(name) && plain(result.structuredContent)) {
     const reply = modelReply(name, result.structuredContent, {notesVersions: workspaceNotes}), {text, ...shaped} = reply;
@@ -1008,6 +1048,16 @@ function publicToolResult(name, result, door, {workspaceNotes = false} = {}) {
     if (plain(value) && typeof value.code === 'string' && value.reason === undefined) {
       const {isError: _error, code, message, ...rest} = value;
       result = {...result, content: [{type: 'text', text: JSON.stringify({outcome: rest.outcome, reason: code.toLowerCase(), ...(typeof message === 'string' ? {hint: message} : {}), ...rest})}, ...result.content.slice(1)]};
+    }
+  }
+  if (result._meta?.rapier && !(['page', '/editor'].includes(door) &&
+      (EDITOR_ONLY_TOOLS.has(name) || HUMAN_OPERATIONS.some(operation => operation.name === name)))) {
+    if (appsClient && door !== '/muse') result._meta = {...result._meta, rapier: {...result._meta.rapier,
+      capabilities: editorCapabilityScopes(result._meta.rapier, facts)}};
+    else {
+      const {rapier, ...meta} = result._meta;
+      const {_meta, ...value} = result;
+      result = Object.keys(meta).length ? {...value, _meta: meta} : value;
     }
   }
   return result;
@@ -1185,12 +1235,12 @@ async function withOrigin(request, env, dispatch) {
   const response = request.method === 'OPTIONS'
     ? new Response(null, {status: 204, headers: {'Cache-Control': 'no-store',
       'Access-Control-Allow-Methods': DOORS.has(path) ? 'POST' : 'GET, POST',
-      'Access-Control-Allow-Headers': 'Authorization, Content-Type, MCP-Protocol-Version, Mcp-Method, Mcp-Name, Mcp-Session-Id, X-Rapier-Apps-Client, X-Rapier-Name'}})
+      'Access-Control-Allow-Headers': 'Authorization, Content-Type, MCP-Protocol-Version, Mcp-Method, Mcp-Name, Mcp-Session-Id, X-Rapier-Name'}})
     : await dispatch();
   if (!origin) return response;
   const headers = new Headers(response.headers);
   headers.set('Access-Control-Allow-Origin', origin);
-  headers.set('Access-Control-Expose-Headers', 'X-Rapier-Apps-Client, Mcp-Session-Id, WWW-Authenticate');
+  headers.set('Access-Control-Expose-Headers', 'Mcp-Session-Id, WWW-Authenticate');
   headers.set('Vary', 'Origin');
   return new Response(response.body, {status: response.status, statusText: response.statusText, headers});
 }
@@ -1529,7 +1579,7 @@ async function handleRequest(request, env, authority, route) {
     appsClient = declaresAppsUi({ capabilities: meta[META_CLIENT] });
   } else {
     if (message.method !== 'initialize' && header !== null && !LEGACY_VERSIONS.includes(header)) return rpcError(id ?? null, -32600, `MCP-Protocol-Version must be one of ${LEGACY_VERSIONS.join(', ')}.`, 400);
-    appsClient = request.headers.get('X-Rapier-Apps-Client') === '1';
+    appsClient = await clientSessionApps(editorSecret(env), request.headers.get('Mcp-Session-Id'), clientSessionBinding(request, authority, door));
   }
   const scope = requestScope(request, authority, door, modern);
   if (!Object.hasOwn(message, 'id')) {
@@ -1573,8 +1623,7 @@ async function handleRequest(request, env, authority, route) {
         if (modern) return rpcError(id, -32601, 'Method not found.', 404);
         if (typeof params.protocolVersion !== 'string' || !plain(params.capabilities) || !plain(params.clientInfo) || typeof params.clientInfo.name !== 'string' || typeof params.clientInfo.version !== 'string') return rpcError(id, -32602, 'initialize requires protocolVersion, capabilities, and clientInfo.');
         result = { protocolVersion: LEGACY_VERSIONS.includes(params.protocolVersion) ? params.protocolVersion : PROTOCOL_VERSION, capabilities: { prompts: {listChanged: false}, tools: { listChanged: false }, resources: { subscribe: false, listChanged: false }, extensions: { 'io.modelcontextprotocol/ui': { mimeTypes: [UI_MIME] }, 'io.modelcontextprotocol/skills': {} } }, serverInfo: serverInfo(env), instructions };
-        headers['Mcp-Session-Id'] = 'rps_' + base64url(crypto.getRandomValues(new Uint8Array(32)));
-        if (declaresAppsUi(params)) headers['X-Rapier-Apps-Client'] = '1';
+        headers['Mcp-Session-Id'] = await mintClientSession(editorSecret(env), declaresAppsUi(params), clientSessionBinding(request, authority, door));
         break;
       case 'server/discover':
         if (!modern) return rpcError(id, -32601, 'Method not found.');
@@ -1691,7 +1740,7 @@ async function handleRequest(request, env, authority, route) {
     if (message.method === 'tools/call') result = toolError(failure('WORKSPACE_UNAVAILABLE', 'The workspace operation was not acknowledged. Retry an editor commit only with the same commitId.'));
     else return rpcError(id, -32603, 'The server could not complete this request.');
   }
-  if (message.method === 'tools/call' && result.resultType !== 'task') result = publicToolResult(params.name, result, door, {workspaceNotes: env.ACCESS_PROFILE === true});
+  if (message.method === 'tools/call' && result.resultType !== 'task') result = publicToolResult(params.name, result, door, {workspaceNotes: env.ACCESS_PROFILE === true, appsClient});
   if (door === '/muse' && message.method === 'tools/call' && result.resultType !== 'task' && params.name === 'export' && params.arguments?.format === 'markdown' && parseReply(result.content[0].text).outcome === 'ok') {
     const link = result.content.find(item => item.type === 'resource_link');
     const file = link ? await handleRequest(new Request(link.uri), env, authority) : null;
@@ -2757,7 +2806,7 @@ export class RapierDocument {
       if (hash !== row.sha256) throw new Error('export changed');
       await this.assertAuthority(authority);
       const name = encodeURIComponent(row.name).replace(/['()*]/g, char => '%' + char.charCodeAt(0).toString(16).toUpperCase());
-      return new Response(request.method === 'HEAD' ? null : bytes, {headers: {...headers, 'Content-Type': row.mimeType + '; charset=utf-8',
+      return new Response(request.method === 'HEAD' ? null : bytes, {headers: {...headers, 'Content-Type': row.mimeType + (row.mimeType.startsWith('text/') ? '; charset=utf-8' : ''),
         'Content-Length': String(row.bytes), 'Content-Disposition': "attachment; filename*=UTF-8''" + name}});
     } catch { return new Response(null, {status: 503, headers}); }
   }

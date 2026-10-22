@@ -101,6 +101,7 @@ or lines. Reads return revision and relevant human context. Text pages hold only
 the chosen text. A document map lists heading and fence-opening lines in order; query
 returns matching lines. Both carry line numbers and continue by cursor.
 read {state:true} reports receipts and pending work; history:true adds acts.
+preferences:true includes state and the person's editor settings; ordinary state reads omit them.
 read {as:"image"} asks an editor for PNG pixels; it can be pending or unavailable.
 For a drawing's full detail, name its block: read {as:"image",block:"id"}. This also
 works while it is open in Draw. The result reports wet or settled when known;
@@ -128,6 +129,7 @@ drawing gets one small picture in the result. Look at it, then adjust.
 If a picture is unavailable, keep the applied receipt; request detail when the editor is ready.
 edit {revision,filename} alone renames the document stem at the current revision and keeps the exact extension; changing the extension needs document conversion.
 Use turn_id across related acts. undo {act} or undo {turn_id} keeps later work.
+If changed holds the edit reply, undo {act:changed.act} passes its act id string.
 Will intent can narrow the authorized task, never grant authority; human foreground
 work is rechecked.
 
@@ -148,9 +150,13 @@ or selection; it is never edit approval or an ongoing subscription. A person's
 message freezes the selection or drawing they pointed at and its revision; if that
 target later moved or changed, the referent is marked stale. Return and pair
 belong to hosted workspaces: return makes a one-use Send back address for offline
-HTML; pair uses the person's code, and they still confirm in their browser. Check what happened; later human navigation wins.
+HTML; pair uses the person's code, and they still confirm in their browser.
+pairing.status is none (no current pairing), code_shown (ask for its code),
+owner_approval_required (open owner_approval_url), awaiting_allow (the person chooses
+ALLOW), or paired. A paired page can be silent; pairing alone does not prove it is open.
+Check what happened; later human navigation wins.
 show {target:"preferences",preference,value} changes a listed device preference;
-read {state:true} reports its stored value. show {target:"plugin",name} asks the
+read {preferences:true} reports its stored value. show {target:"plugin",name} asks the
 editor to install a plugin; PDF keeps its download confirmation, and OCR waits for
 the person's tap on the editor's confirmation card. Check the receipt: a request
 doesn't prove a provider installed or native storage persisted.
@@ -183,8 +189,9 @@ stay the person's decisions.
 
 Export makes an independent file; html carries the offline editor with the plug-ins
 the document displays with, named in fidelity.carries, not Draw or Notes. Complete pages,
-Word and PDF need an open editor or the server's isolated renderer; without either
-they return editor_unavailable. Saving uses the bound location; check destination
+Word and PDF need the person's paired, open editor on the hosted Door. A self-hosted
+server can provide an isolated renderer instead; without either they return
+editor_unavailable. Saving uses the bound location; check destination
 and verified. Clipboard copying uses an exact passage; plain, formatted and complete
 formats apply only there, and a complete copy needs inspected context.
 A resource_link is the download; resources/read can retrieve its complete bytes.

@@ -160,7 +160,8 @@ export async function subset(value, characters, {format = 'woff', coordinates = 
   if (typeof characters !== 'string' || !characters.length) fail('The font subset needs document characters.');
   // Shaping may compose or decompose the text before looking up its glyphs.
   // Keep those canonical equivalents without changing the authored string.
-  const repertoire = characters + characters.normalize('NFC') + characters.normalize('NFD');
+  // Preserve code point strings as entries: joining them could pair isolated surrogates.
+  const repertoire = new Set(characters + characters.normalize('NFC') + characters.normalize('NFD'));
   const container = tag(original, 0), sfnt = container === 'wOF2' ? bytesOf(await decodeWoff2(original))
     : container === 'wOFF' ? readWoff(original) : original;
   const {tables} = tableDirectory(sfnt), permission = tables.find(row => row.name === 'OS/2');

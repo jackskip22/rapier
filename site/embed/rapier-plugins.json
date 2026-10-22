@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "release": "1.2.25",
+  "release": "1.2.26",
   "directory": "Put every file in one directory, keeping each file's folder, and give the page its address with `plugins`. The reader and the full editor read the same directory; `builds` says which use a plug-in.",
   "plugins": [
     {
@@ -11,11 +11,11 @@
       ],
       "files": [
         {
-          "file": "rapier-flowchart-1.2.25.js",
+          "file": "rapier-flowchart-1.2.26.js",
           "bytes": 302488,
           "sha384": "ba41a1dcd125fd06b36dad1b9ecfac959084b0edacc53a9503b6829ff57c8853e1a733f3cc798c8354b24a99cbe7e7b8",
           "sri": "ukGh3NEl/Qazba0bns+slZCEsO2sxTqVA7aCn/V8iFPhpzPzzHmMg1SySpnL5+e4",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/flowchart/rapier-flowchart-1.2.25.js"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/flowchart/rapier-flowchart-1.2.26.js"
         }
       ]
     },
@@ -27,11 +27,11 @@
       ],
       "files": [
         {
-          "file": "rapier-docx-1.2.25.js",
-          "bytes": 602645,
-          "sha384": "483df3a7df99dfcd6b96d0b6054786574b9dfaa4696f360b60a84e4d47aeeedc95987e1517d52508ea39932e90a28170",
-          "sri": "SD3zp9+Z381rltC2BUeGV0ud+qRpbzYLYKhOTUeu7tyVmH4VF9UlCOo5ky6QooFw",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/docx/rapier-docx-1.2.25.js"
+          "file": "rapier-docx-1.2.26.js",
+          "bytes": 602072,
+          "sha384": "c61e76d3bab5d4721e9ab50d06b006fd500b36a6bd48d8a16562d10094f9d30e9065d039605d361828979a708b0bfe5f",
+          "sri": "xh5207q11HIemrUNBrAG/VALNqa9SNihZWLRAJT50w6QZdA5YF02GCiXmnCLC/5f",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/docx/rapier-docx-1.2.26.js"
         }
       ]
     },
@@ -48,7 +48,7 @@
           "bytes": 742684,
           "sha384": "d6b8e138ec3af7432bdda557c114cf97040ed9ab4cad61d8f119b79d9f92651ae6e6607d1cae45918e995820d8b60cef",
           "sri": "1rjhOOw690Mr3aVXwRTPlwQO2atMrWHY8Rm3nZ+SZRrm5mB9HK5FkY6ZWCDYtgzv",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/math/rapier-math-2.7.0.js"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/math/rapier-math-2.7.0.js"
         }
       ]
     },
@@ -62,17 +62,17 @@
       "files": [
         {
           "file": "pele-1.6.0.js",
-          "bytes": 682005,
-          "sha384": "e251e85ed283b7ec7f13e86d89373cddba455b244443324232e74d4078aba8a8824d6eccc7bf7423fe50edcae2359d46",
-          "sri": "4lHoXtKDt+x/E+htiTc83bpFWyREQzJCMudNQHirqKiCTW7Mx790I/5Q7criNZ1G",
-          "url": "https://cdn.jsdelivr.net/npm/pele@1.6.0/dist/pele.global.js"
+          "bytes": 677968,
+          "sha384": "c2f67cca2f5f9751b8537b584d182e1fb7472710a097b460bbf05bfaccfe8a9f34b68aa5f0173437668b789082b54312",
+          "sri": "wvZ8yi9fl1G4U3tYTRguH7dHJxCgl7Rgu/Bb+sz+ip80toql8Bc0N2aLeJCCtUMS",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.26/site/plugins/pele-1.6.0.js"
         },
         {
           "file": "rapier-zenuml-4.5.0-3.js",
-          "bytes": 1890429,
-          "sha384": "d2d64357abb2dabf5ba19c0259c052ac5f8c92eedcd782efc007b02dbada2eb47eb6f8a735c937d47f31b0b09ae64eb2",
-          "sri": "0tZDV6uy2r9boZwCWcBSrF+Mku7c14LvwAewLbraLrR+tvinNck31H8xsLCa5k6y",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.25/site/plugins/rapier-zenuml-4.5.0-3.js"
+          "bytes": 1888111,
+          "sha384": "fc90180503e04dab2542d51c93dd519f172a5c8f15f13d2261af9d47073d4ad26177430f2462d33822e3f5a3434470c6",
+          "sri": "/JAYBQPgTaslQtUck91RnxcqXI8V8T0iYa+dRwc9StJhd0MPJGLTOCLj9aNDRHDG",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.26/site/plugins/rapier-zenuml-4.5.0-3.js"
         }
       ]
     },
@@ -85,11 +85,11 @@
       ],
       "files": [
         {
-          "file": "rapier-pdf-1.2.25.js",
-          "bytes": 40540,
-          "sha384": "2bbeed2f58e211f09c6031361b0be3333b30055936c7abcafcb40b68ca09bb208ac938eabc899d8f642da5b2fca7fbe9",
-          "sri": "K77tL1jiEfCcYDE2GwvjMzswBVk2x6vK/LQLaMoJuyCKyTjqvImdj2QtpbL8p/vp",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/pdf/rapier-pdf-1.2.25.js",
+          "file": "rapier-pdf-1.2.26.js",
+          "bytes": 39938,
+          "sha384": "f70da3806d5bd28c0f1c7b21863e9fddb82375a36e95d36052608a5b1884f03d35dd3aeea8f558b67da9166f58e098f2",
+          "sri": "9w2jgG1b0owPHHshhj6f3bgjdaNuldNgUmCKWxiE8D013TruqPVYtn2pFm9Y4Jjy",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/pdf/rapier-pdf-1.2.26.js",
           "builds": [
             "reader"
           ]
@@ -1285,18 +1285,18 @@
           "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/WP-Symbol.bcmap"
         },
         {
-          "file": "pdfjs-dist-6.3.289/legacy/build/pdf.mjs",
-          "bytes": 1047456,
-          "sha384": "fe4c8512ae8170799829b73a4ffca04af666746162f2a7ecee27d81fee0e45be883cc665d536baa4bce99ddd25b2f9fb",
-          "sri": "/kyFEq6BcHmYKbc6T/ygSvZmdGFi8qfs7ifYH+4ORb6IPMZl1Ta6pLzpnd0lsvn7",
-          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/legacy/build/pdf.mjs"
+          "file": "pdfjs-dist-6.3.289/build/pdf.mjs",
+          "bytes": 860384,
+          "sha384": "d0e8161d97d7a2bfaa7331da8023c29573e15393cd46640737f9cb966f96a12d626b943dd666afbcde509a405536ae85",
+          "sri": "0OgWHZfXor+qczHagCPClXPhU5PNRmQHN/nLlm+WoS1ia5Q91mavvN5QmkBVNq6F",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.mjs"
         },
         {
-          "file": "pdfjs-dist-6.3.289/legacy/build/pdf.worker.mjs",
-          "bytes": 2395538,
-          "sha384": "96a47a47f54d2816af01739e5ac45266909ecd78225a4ce1a704e741bc2d6a870926cdac9b44b550895b5ffaaa531d81",
-          "sri": "lqR6R/VNKBavAXOeWsRSZpCezXgiWkzhpwTnQbwtaocJJs2sm0S1UIlbX/qqUx2B",
-          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/legacy/build/pdf.worker.mjs"
+          "file": "pdfjs-dist-6.3.289/build/pdf.worker.mjs",
+          "bytes": 2228489,
+          "sha384": "0337185f6e723cbf915ced5ec465716274ce965298b071fc5a8657fa7f99f827a4962e76509a15e22f1fda70bd2f010b",
+          "sri": "AzcYX25yPL+RXO1exGVxYnTOllKYsHH8WoZX+n+Z+Cekli52UJoV4i8f2nC9LwEL",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.worker.mjs"
         },
         {
           "file": "pdfjs-dist-6.3.289/standard_fonts/FoxitDingbats.pfb",
@@ -1471,7 +1471,7 @@
           "bytes": 48225,
           "sha384": "2af42ff9bc5271369931cc62d3346b9e477c54e9e1e7b9506d8d809a7e787addbada0801a69d033d8332b3896c218432",
           "sri": "KvQv+bxScTaZMcxi0zRrnkd8VOnh57lQbY2Amn54et262ggBpp0DPYMys4lsIYQy",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/pdfjs-dist-6.3.289/rapier-pdf-reader-1a1a2eb124f69792.mjs"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/pdfjs-dist-6.3.289/rapier-pdf-reader-1a1a2eb124f69792.mjs"
         }
       ]
     },
@@ -1564,10 +1564,10 @@
       "files": [
         {
           "file": "rapier-font-subset-3.js",
-          "bytes": 1214770,
-          "sha384": "80e8b8b8fd05eebdb77c5d981f746f6f7362b2a3b3cfc1f64f5a801649ea6d229955e3b3472924eef0dce4d127a959be",
-          "sri": "gOi4uP0F7r23fF2YH3Rvb3NisqOzz8H2T1qAFknqbSKZVeOzRykk7vDc5NEnqVm+",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.25/site/plugins/rapier-font-subset-3.js"
+          "bytes": 1214779,
+          "sha384": "8808dc70e0a52c36f9e3d14f0899df973b0d2252dae06e0dfd2466fc69c8be1714c9077408e5b6ebbd8003632575c9f3",
+          "sri": "iAjccOClLDb549FPCJnflzsNIlLa4G4N/SRm/GnIvhcUyQd0COW2672AA2Mldcnz",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.26/site/plugins/rapier-font-subset-3.js"
         }
       ]
     },
@@ -1583,70 +1583,70 @@
           "bytes": 96902,
           "sha384": "545b0213fef34ba2a4abf116d7fecd7d81d51a85573549b4a561ddb499b35f085680958148a84d1ee534383b8609aaf4",
           "sri": "VFsCE/7zS6Kkq/EW1/7NfYHVGoVXNUm0pWHdtJmzXwhWgJWBSKhNHuU0ODuGCar0",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/letters/field.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/letters/field.json"
         },
         {
           "file": "letters-relief.json",
           "bytes": 95172,
           "sha384": "b5072d05a91eda0bbb07fbf9ff58c2e9716de6c995e6e560ed6ec67495ec259059eb665cedcad23f7cd19193e042a82a",
           "sri": "tQctBake2gu7B/v5/1jC6XFt5smV5uVg7W7GdJXsJZBZ62Zc7crSP3zRkZPgQqgq",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/letters/relief.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/letters/relief.json"
         },
         {
           "file": "letters-leaf.json",
           "bytes": 134918,
           "sha384": "0ed48a5ad5a18a2b6534e7e3c7da3925fd0561ca562f0e27996023a3578003714ebecd8e8c1da175d1e54429ebb59ee0",
           "sri": "DtSKWtWhiitlNOfjx9o5Jf0FYcpWLw4nmWAjo1eAA3FOvs2OjB2hddHlRCnrtZ7g",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/letters/leaf.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/letters/leaf.json"
         },
         {
           "file": "letters-arabesque.json",
           "bytes": 136035,
           "sha384": "671db3d9b1290f854d90871c2de8dc518ebc7aa005ada3c437b86ab2a91c56a1ce286bec48ca9b2cb8975e496f648365",
           "sri": "Zx2z2bEpD4VNkIccLejcUY68eqAFraPEN7hqsqkcVqHOKGvsSMqbLLiXXklvZINl",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/letters/arabesque.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/letters/arabesque.json"
         },
         {
           "file": "letters-silhouette.json",
           "bytes": 159609,
           "sha384": "c8916a15a5c96d1d90d75308a5df619bb55f8104e1ded4e0cf34e8d7a744ed70befa83d6e2b8c2f153c6cd02facac1a6",
           "sri": "yJFqFaXJbR2Q11MIpd9hm7VfgQTh3tTgzzTo16dE7XC++oPW4rjC8VPGzQL6ysGm",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/letters/silhouette.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/letters/silhouette.json"
         },
         {
           "file": "letters-gothic.json",
           "bytes": 133989,
           "sha384": "d59e1355695408114c6e892238ebf46c7fa4a6fe5445bd195dc29589abd6e00cd700f1c91d8530a6d9296ed7b09911ee",
           "sri": "1Z4TVWlUCBFMbokiOOv0bH+kpv5URb0ZXcKViavW4AzXAPHJHYUwptkpbtewmRHu",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/letters/gothic.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/letters/gothic.json"
         },
         {
           "file": "letters-sugar.json",
           "bytes": 98129,
           "sha384": "a4a162a430fd12308c8d6813a2e1970fd41bebb09ee9e830126efe23f8d107471e59ca17589a8c15595df1a0e3ad3b68",
           "sri": "pKFipDD9EjCMjWgTouGXD9Qb67Ce6egwEm7+I/jRB0ceWcoXWJqMFVld8aDjrTto",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/letters/sugar.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/letters/sugar.json"
         },
         {
           "file": "letters-illuminated-1490.json",
           "bytes": 150674,
           "sha384": "8a9f1146447e975f6ef6b6bbe2195adf04134dbadb6df6b574344493251855b826a58ff76990408e7087569d9008245d",
           "sri": "ip8RRkR+l19u9ra74hla3wQTTbrbbfa1dDREkyUYVbgmpY/3aZBAjnCHVp2QCCRd",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/letters/illuminated-1490.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/letters/illuminated-1490.json"
         },
         {
           "file": "letters-tuscan-1845.json",
           "bytes": 148919,
           "sha384": "e397344c63d0e5892fd69b75109b24608173966bd30b29ab31f6ae2cdedd5ddcc91d9c0a7e30d436a52bdd2443bb0d8b",
           "sri": "45c0TGPQ5Ykv1pt1EJskYIFzlmvTCymrMfauLN7dXdzJHZwKfjDUNqUr3SRDuw2L",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/letters/tuscan-1845.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/letters/tuscan-1845.json"
         },
         {
           "file": "letters-renaissance-alphabet.json",
           "bytes": 153858,
           "sha384": "70d329d9e244abb511efb7ddaa3080e527073cbb5e58c7035426c3a617baa947598b1188346f76f37f3c8029d6ed2469",
           "sri": "cNMp2eJEq7UR77fdqjCA5ScHPLteWMcDVCbDphe6qUdZixGING928388gCnW7SRp",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/letters/renaissance-alphabet.json"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/letters/renaissance-alphabet.json"
         }
       ]
     },
@@ -1662,504 +1662,504 @@
           "bytes": 46830,
           "sha384": "a0813cb6f135f90efceaac3d27acb895b99875c4bbef441745c3f7027222a46060f0677b069f29a1956673f748ff346b",
           "sri": "oIE8tvE1+Q786qw9J6y4lbmYdcS770QXRcP3AnIipGBg8Gd7Bp8poZVmc/dI/zRr",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-002.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-002.json.gz"
         },
         {
           "file": "templates-border-005.json.gz",
           "bytes": 59664,
           "sha384": "0085263dd6c37dcb1963aaab02b4e3ec8ff5d5742b476608f9a32855150782ec074c0b4c631a623220d5e490ae623274",
           "sri": "AIUmPdbDfcsZY6qrArTj7I/11XQrR2YI+aMoVRUHguwHTAtMYxpiMiDV5JCuYjJ0",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-005.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-005.json.gz"
         },
         {
           "file": "templates-border-006.json.gz",
           "bytes": 128598,
           "sha384": "34821a0e64307261ce1f9f2ce43fccf8f7040eff603885d4e1cb6c8c5169f0d082c6d451e07a07e84dab4c31dba513ac",
           "sri": "NIIaDmQwcmHOH58s5D/M+PcEDv9gOIXU4ctsjFFp8NCCxtRR4HoH6E2rTDHbpROs",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-006.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-006.json.gz"
         },
         {
           "file": "templates-border-007.json.gz",
           "bytes": 261061,
           "sha384": "39736b947b7d578eafbdcd8516af3e316e723326093212715cb3d814b705032e6c96b530759595da6900827143bd28ac",
           "sri": "OXNrlHt9V46vvc2FFq8+MW5yMyYJMhJxXLPYFLcFAy5slrUwdZWV2mkAgnFDvSis",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-007.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-007.json.gz"
         },
         {
           "file": "templates-border-019.json.gz",
           "bytes": 81801,
           "sha384": "47313984906333493ade0b2bcb3a73c5a8b44a70be24731596ed032977d9dfbb857a765ff9b5ee4fa29764bb9a4feaa7",
           "sri": "RzE5hJBjM0k63gsryzpzxai0SnC+JHMVlu0DKXfZ37uFenZf+bXuT6KXZLuaT+qn",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-019.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-019.json.gz"
         },
         {
           "file": "templates-border-020.json.gz",
           "bytes": 19239,
           "sha384": "1b3d7f2031a534516db95154e41b28f7233fb3d7d75ef1a3174189507ea5f5c88c797be3a4dacc2e736cb5fbdc56cd15",
           "sri": "Gz1/IDGlNFFtuVFU5Bso9yM/s9fXXvGjF0GJUH6l9ciMeXvjpNrMLnNstfvcVs0V",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-020.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-020.json.gz"
         },
         {
           "file": "templates-border-034.json.gz",
           "bytes": 217169,
           "sha384": "909c141146542812ce5159835e596ae077744a5342f27584783f3e03d088a8394c6853aa851d06d874955c048cd627a9",
           "sri": "kJwUEUZUKBLOUVmDXllq4Hd0SlNC8nWEeD8+A9CIqDlMaFOqhR0G2HSVXASM1iep",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-034.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-034.json.gz"
         },
         {
           "file": "templates-border-061.json.gz",
           "bytes": 112112,
           "sha384": "04772e635aad49313fca76c01aed40fa113a716755902f7c0289e735d6b5b8854ce03b7704379a79574ed7ca0933f2b9",
           "sri": "BHcuY1qtSTE/ynbAGu1A+hE6cWdVkC98AonnNda1uIVM4Dt3BDeaeVdO18oJM/K5",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-061.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-061.json.gz"
         },
         {
           "file": "templates-border-065.json.gz",
           "bytes": 5567,
           "sha384": "a8691c679ec1c03a6eb4c543eda5504a896cc344ce177f14868fb9ef41e018934cb45bbfdd0c9caeb63b7f542c390403",
           "sri": "qGkcZ57BwDputMVD7aVQSolsw0TOF38Uho+570HgGJNMtFu/3QycrrY7f1QsOQQD",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-065.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-065.json.gz"
         },
         {
           "file": "templates-border-066.json.gz",
           "bytes": 5111,
           "sha384": "63c90d00a2d79af8b75fc8965343d10c11f53c21f6ed241f61552ba4409f36a1c2dc52232981a52b3dbbc9f1cccadd1b",
           "sri": "Y8kNAKLXmvi3X8iWU0PRDBH1PCH27SQfYVUrpECfNqHC3FIjKYGlKz27yfHMyt0b",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-066.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-066.json.gz"
         },
         {
           "file": "templates-border-067.json.gz",
           "bytes": 142160,
           "sha384": "4706f27a011d2143f120b8a3308c94362c12bddece496d37bafa346e332e2fca787ad8319aea4b690db0da7af896736e",
           "sri": "RwbyegEdIUPxILijMIyUNiwSvd7OSW03uvo0bjMuL8p4etgxmupLaQ2w2nr4lnNu",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-067.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-067.json.gz"
         },
         {
           "file": "templates-border-068.json.gz",
           "bytes": 20948,
           "sha384": "e2a0180ed085f7bf6e340b77a8d7cc33eb5731af363ba5b3374a5337cc6c32d908508d64ec03db180f40c770bbaca88a",
           "sri": "4qAYDtCF979uNAt3qNfMM+tXMa82O6WzN0pTN8xsMtkIUI1k7APbGA9Ax3C7rKiK",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-068.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-068.json.gz"
         },
         {
           "file": "templates-border-069.json.gz",
           "bytes": 163064,
           "sha384": "c91a19540ccf9df1b11a2b689f479f3e7f139fe7535d748ab16e42da44889fd03b768c4a6a4a35af4358c02ea04f3440",
           "sri": "yRoZVAzPnfGxGiton0efPn8Tn+dTXXSKsW5C2kSIn9A7doxKako1r0NYwC6gTzRA",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-069.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-069.json.gz"
         },
         {
           "file": "templates-border-072.json.gz",
           "bytes": 37794,
           "sha384": "037f133d77c44c8a9bb4fc26c1d738919f379eacced8573a82acbcd77865128cb2f610045b3dd94d4909ae4a25629b61",
           "sri": "A38TPXfETIqbtPwmwdc4kZ83nqzO2Fc6gqy813hlEoyy9hAEWz3ZTUkJrkolYpth",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-072.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-072.json.gz"
         },
         {
           "file": "templates-border-073.json.gz",
           "bytes": 29125,
           "sha384": "ada7577cf0deb68f26ab4d8fc99e93e8367b9c774dac707c5fb75e9734595438abc279f6c27618f04d43ce9993cfe5cb",
           "sri": "radXfPDeto8mq02PyZ6T6DZ7nHdNrHB8X7delzRZVDirwnn2wnYY8E1DzpmTz+XL",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-073.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-073.json.gz"
         },
         {
           "file": "templates-border-074.json.gz",
           "bytes": 58223,
           "sha384": "d701249a3beff4ba450cd09f82abc2a19f536fcfdbbf414ee56543239b911bd15b266798bfd17e744b730f9aab6fcfb4",
           "sri": "1wEkmjvv9LpFDNCfgqvCoZ9Tb8/bv0FO5WVDI5uRG9FbJmeYv9F+dEtzD5qrb8+0",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-074.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-074.json.gz"
         },
         {
           "file": "templates-border-075.json.gz",
           "bytes": 32633,
           "sha384": "727cd791271e91946c7a3bb06f8f3487ecf5add68aa3376658b62c3567aa1122faad0274c76f619ea2daf1612f2dca75",
           "sri": "cnzXkScekZRsejuwb480h+z1rdaKozdmWLYsNWeqESL6rQJ0x29hnqLa8WEvLcp1",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-075.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-075.json.gz"
         },
         {
           "file": "templates-border-076.json.gz",
           "bytes": 38644,
           "sha384": "bf9702bce2c756a75f9b72e117138826889f4729fd6be5f4cdcde78375e2f2589b66e4a6f0329d80ade6ce96e947a4b8",
           "sri": "v5cCvOLHVqdfm3LhFxOIJoifRyn9a+X0zc3ng3Xi8libZuSm8DKdgK3mzpbpR6S4",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-076.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-076.json.gz"
         },
         {
           "file": "templates-border-077.json.gz",
           "bytes": 122451,
           "sha384": "fca26c93972606b3367523fc73212f01b5cd76e8ca20938533b15045ba4387c1bda9f341b78acc7c505a6b595f3e1be6",
           "sri": "/KJsk5cmBrM2dSP8cyEvAbXNdujKIJOFM7FQRbpDh8G9qfNBt4rMfFBaa1lfPhvm",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-077.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-077.json.gz"
         },
         {
           "file": "templates-border-086.json.gz",
           "bytes": 95238,
           "sha384": "34660444c595cce7c827db59d7269cb1d209da7ed81c645b19195fecca0ae346f906f5d80ebb2852d27b526e9ead925e",
           "sri": "NGYERMWVzOfIJ9tZ1yacsdIJ2n7YHGRbGRlf7MoK40b5BvXYDrsoUtJ7Um6erZJe",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-086.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-086.json.gz"
         },
         {
           "file": "templates-border-087.json.gz",
           "bytes": 164642,
           "sha384": "367118829e9694b920172f1ab279a2ba09f2fc43a6e519c084fa4da2b1d05c9ae55da5606305f8d0f1d9571b83c4f436",
           "sri": "NnEYgp6WlLkgFy8asnmiugny/EOm5RnAhPpNorHQXJrlXaVgYwX40PHZVxuDxPQ2",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-087.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-087.json.gz"
         },
         {
           "file": "templates-border-088.json.gz",
           "bytes": 81338,
           "sha384": "f2c26a027a76022fe1084bd72f086a989c33d00557023f2172300b8ed9103f702b5baa37e7d96a1a902daa8999268a28",
           "sri": "8sJqAnp2Ai/hCEvXLwhqmJwz0AVXAj8hcjALjtkQP3ArW6o359lqGpAtqomZJooo",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-088.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-088.json.gz"
         },
         {
           "file": "templates-border-089.json.gz",
           "bytes": 83560,
           "sha384": "0e5173eb9badac3a2b3a74ef54ee9b0bb913a4d1c72225e22b705deabcabbac13579594952c44529d6e3a8a84b35423e",
           "sri": "DlFz65utrDorOnTvVO6bC7kTpNHHIiXiK3Bd6ryrusE1eVlJUsRFKdbjqKhLNUI+",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-089.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-089.json.gz"
         },
         {
           "file": "templates-border-090.json.gz",
           "bytes": 61789,
           "sha384": "0ff768cf0e7cd256f6ac8619a9ca3e09635c86f5a307b33a4a7d9ff3a63f209f3d71c8b9d5b2f838436860741dee06b9",
           "sri": "D/dozw580lb2rIYZqco+CWNchvWjB7M6Sn2f86Y/IJ89cci51bL4OENoYHQd7ga5",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-090.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-090.json.gz"
         },
         {
           "file": "templates-border-091.json.gz",
           "bytes": 118175,
           "sha384": "2951c01d3102b8ed14cb79ac5fb7e394edd76a325b946c59794265914d23d8d875715e835aae5719d1e61850cc73d9a1",
           "sri": "KVHAHTECuO0Uy3msX7fjlO3XajJblGxZeUJlkU0j2Nh1cV6DWq5XGdHmGFDMc9mh",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-091.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-091.json.gz"
         },
         {
           "file": "templates-border-092.json.gz",
           "bytes": 87160,
           "sha384": "d8a650f25c17509052f74f425ccf594d1619adb61bdf0c99af37fd997e3f534e9e285e78d31378d54beec9331d16d445",
           "sri": "2KZQ8lwXUJBS909CXM9ZTRYZrbYb3wyZrzf9mX4/U06eKF540xN41UvuyTMdFtRF",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-092.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-092.json.gz"
         },
         {
           "file": "templates-border-093.json.gz",
           "bytes": 111888,
           "sha384": "ea505a2acbdc8c6adcaf64075e147f665067a1d2baa7743004b26b3f98c25db5b214c5f02b4803af7c74a3d8c9753a75",
           "sri": "6lBaKsvcjGrcr2QHXhR/ZlBnodK6p3QwBLJrP5jCXbWyFMXwK0gDr3x0o9jJdTp1",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-093.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-093.json.gz"
         },
         {
           "file": "templates-border-094.json.gz",
           "bytes": 83523,
           "sha384": "2998327ec3bc6bf620d11831d1ee095bcbf6d83a02de5e643d9dcf032c06e632d3e515c5fc6eca90660d430cbc0eddf8",
           "sri": "KZgyfsO8a/Yg0Rgx0e4JW8v22DoC3l5kPZ3PAywG5jLT5RXF/G7KkGYNQwy8Dt34",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-094.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-094.json.gz"
         },
         {
           "file": "templates-border-095.json.gz",
           "bytes": 127634,
           "sha384": "9f19ecb6a0296c047700c1b09f6600428b42c23246eb13bc2ba4108fcbf5d8fa2c752e6b804d6ea38618660b13237876",
           "sri": "nxnstqApbAR3AMGwn2YAQotCwjJG6xO8K6QQj8v12PosdS5rgE1uo4YYZgsTI3h2",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-095.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-095.json.gz"
         },
         {
           "file": "templates-border-096.json.gz",
           "bytes": 150992,
           "sha384": "3bd2f4a438360b27d87259e16fd3a25467bdc7194dada26b2e72efb6f90ce360c5a6395ac68bf080d9ccadd7e9e3d887",
           "sri": "O9L0pDg2CyfYclnhb9OiVGe9xxlNraJrLnLvtvkM42DFpjlaxovwgNnMrdfp49iH",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-096.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-096.json.gz"
         },
         {
           "file": "templates-border-060.json.gz",
           "bytes": 89822,
           "sha384": "40ac29098bec9fd41659ccd2b44034449b1ab8fb69f301173ec12a15debeb57d30f40d03b23efbb8387dee507b7bb6c6",
           "sri": "QKwpCYvsn9QWWczStEA0RJsauPtp8wEXPsEqFd6+tX0w9A0Dsj77uDh97lB7e7bG",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-060.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-060.json.gz"
         },
         {
           "file": "templates-border-032.json.gz",
           "bytes": 201075,
           "sha384": "8749e438f61433fc1c8043d531eda7b4d10b95bd7b68fa7d5b763302e22003e95cb2d10fa5061ab4f02fc75b077aec37",
           "sri": "h0nkOPYUM/wcgEPVMe2ntNELlb17aPp9W3YzAuIgA+lcstEPpQYatPAvx1sHeuw3",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-032.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-032.json.gz"
         },
         {
           "file": "templates-border-033.json.gz",
           "bytes": 42998,
           "sha384": "78d9eef73cfe478bfae8013e36c91c9d6d4c839e77f46826f654021e9962c67309b4bc63ec974d9f2052af1074430b3e",
           "sri": "eNnu9zz+R4v66AE+NskcnW1Mg5539Ggm9lQCHplixnMJtLxj7JdNnyBSrxB0Qws+",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-033.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-033.json.gz"
         },
         {
           "file": "templates-border-038.json.gz",
           "bytes": 81944,
           "sha384": "13e8db4d3a8226cee2975c654e10724f0277cbda6a5b7bf8695dc38ea138cb16eb29303c1b49c0a0e2f07058321e9e62",
           "sri": "E+jbTTqCJs7il1xlThByTwJ3y9pqW3v4aV3DjqE4yxbrKTA8G0nAoOLwcFgyHp5i",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-038.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-038.json.gz"
         },
         {
           "file": "templates-border-039.json.gz",
           "bytes": 49017,
           "sha384": "1284634bc99969b16f4c0495670260c45aa4d8206645c3c2a467fd0228d979cc061f4460eab2e241b82025cb224ae998",
           "sri": "EoRjS8mZabFvTASVZwJgxFqk2CBmRcPCpGf9AijZecwGH0Rg6rLiQbggJcsiSumY",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-039.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-039.json.gz"
         },
         {
           "file": "templates-border-022.json.gz",
           "bytes": 76204,
           "sha384": "3396ef9df41eba5ee8c1823d6ff376e0292109a7250a216c10c7a537171daeb1c4653b7f704c57daea53542a45f97200",
           "sri": "M5bvnfQeul7owYI9b/N24CkhCaclCiFsEMelNxcdrrHEZTt/cExX2upTVCpF+XIA",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-022.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-022.json.gz"
         },
         {
           "file": "templates-border-023.json.gz",
           "bytes": 23523,
           "sha384": "98b42a71b23412ed86b7305d001a8255ba6f604c0fcc41a703dcd95d9577bb5c0e174ba0d20554ea79661bc466f4e95f",
           "sri": "mLQqcbI0Eu2GtzBdABqCVbpvYEwPzEGnA9zZXZV3u1wOF0ug0gVU6nlmG8Rm9Olf",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-023.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-023.json.gz"
         },
         {
           "file": "templates-border-028.json.gz",
           "bytes": 147330,
           "sha384": "1c1d2eeb312d2120185303c7dbb684b01083adfc6800ce011654f083b1f044ffc918b7f647898ca178ddf9cf56065afb",
           "sri": "HB0u6zEtISAYUwPH27aEsBCDrfxoAM4BFlTwg7HwRP/JGLf2R4mMoXjd+c9WBlr7",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-028.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-028.json.gz"
         },
         {
           "file": "templates-border-029.json.gz",
           "bytes": 49448,
           "sha384": "ad03d4537f264c039ddebd67a77a6917e2b696dd31415b8c6fc124f128a14917e3706e94510a5a2ecddf5ae8be70dadd",
           "sri": "rQPUU38mTAOd3r1np3ppF+K2lt0xQVuMb8Ek8SihSRfjcG6UUQpaLs3fWui+cNrd",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-029.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-029.json.gz"
         },
         {
           "file": "templates-border-071.json.gz",
           "bytes": 149526,
           "sha384": "fff7ce82c6f8dde5a84ef42fb48a4487c18162e7d56d39c4f816ba0428e3271323102ea6420cf4706c1a26be62faf32e",
           "sri": "//fOgsb43eWoTvQvtIpEh8GBYufVbTnE+Ba6BCjjJxMjEC6mQgz0cGwaJr5i+vMu",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-071.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-071.json.gz"
         },
         {
           "file": "templates-border-062.json.gz",
           "bytes": 118251,
           "sha384": "86d70671d9dbe42868d6b3a93d5d6b0252de06dc8e42d5ab94e42391a44f6b54ca5c1cb8a44c44fc2f78b90381228231",
           "sri": "htcGcdnb5Cho1rOpPV1rAlLeBtyOQtWrlOQjkaRPa1TKXBy4pExE/C94uQOBIoIx",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-062.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-062.json.gz"
         },
         {
           "file": "templates-border-070.json.gz",
           "bytes": 19114,
           "sha384": "012875d27451f05a78cdf3ce9bfa327fcb136052f35cfd84c24c7ffce59c1d5776ce78fabb75f2abda419af13033fa5f",
           "sri": "ASh10nRR8Fp4zfPOm/oyf8sTYFLzXP2Ewkx//OWcHVd2znj6u3Xyq9pBmvEwM/pf",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-070.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-070.json.gz"
         },
         {
           "file": "templates-border-078.json.gz",
           "bytes": 67978,
           "sha384": "fdf3328bdffe8c5ca6cf8a1734ed1ce06d4d9d18fba15d2935f0dd7efaab376084641eeeefc3c978ec099bd85b918308",
           "sri": "/fMyi9/+jFymz4oXNO0c4G1NnRj7oV0pNfDdfvqrN2CEZB7u78PJeOwJm9hbkYMI",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-078.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-078.json.gz"
         },
         {
           "file": "templates-border-085.json.gz",
           "bytes": 36229,
           "sha384": "05fa41c02f531a93303e246faac0abaefe91fb6ea8bf268b2b3f2ee5bd0d28f3be41d5b8bb0adac3867c3be7a5926455",
           "sri": "BfpBwC9TGpMwPiRvqsCrrv6R+26ovyaLKz8u5b0NKPO+QdW4uwraw4Z8O+elkmRV",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-085.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-085.json.gz"
         },
         {
           "file": "templates-border-036.json.gz",
           "bytes": 36865,
           "sha384": "315a1e5b31b81c9778c02e75c46b518937dcb9e9f93d5e930c17840efb66a0ea4a9cf1fdb54b1d43a210283bb44d60fe",
           "sri": "MVoeWzG4HJd4wC51xGtRiTfcuen5PV6TDBeEDvtmoOpKnPH9tUsdQ6IQKDu0TWD+",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-036.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-036.json.gz"
         },
         {
           "file": "templates-border-009.json.gz",
           "bytes": 130216,
           "sha384": "8c7fc16455f87e90704d4bcb5ecbe871e3c769a2ee63486b8d456b2b400066a439ba9fce483f0d65a5fca8b1af52bd9c",
           "sri": "jH/BZFX4fpBwTUvLXsvocePHaaLuY0hrjUVrK0AAZqQ5up/OSD8NZaX8qLGvUr2c",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-009.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-009.json.gz"
         },
         {
           "file": "templates-border-011.json.gz",
           "bytes": 203959,
           "sha384": "475bf8c7ec6b6558d8f3c2213f24f8855e3db897564f32383438c28dee8fcde539b66729f1542fa78cfdf39568d88ce3",
           "sri": "R1v4x+xrZVjY88IhPyT4hV49uJdWTzI4NDjCje6PzeU5tmcp8VQvp4z985Vo2Izj",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-011.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-011.json.gz"
         },
         {
           "file": "templates-border-013.json.gz",
           "bytes": 86902,
           "sha384": "7d1235d4941a9b6367a3247fff0e366cccc3a06831e6d942149ead505eda1a09e352ff0a2bb036770e556393ef145f88",
           "sri": "fRI11JQam2NnoyR//w42bMzDoGgx5tlCFJ6tUF7aGgnjUv8KK7A2dw5VY5PvFF+I",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-013.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-013.json.gz"
         },
         {
           "file": "templates-border-015.json.gz",
           "bytes": 125964,
           "sha384": "2c59bb5e805f332df65f59e8eba79d3f778308dffbe50d95521e455dd6ea4ba5172832abc31b3918513a9d48c5c7b0fe",
           "sri": "LFm7XoBfMy32X1no66edP3eDCN/75Q2VUh5FXdbqS6UXKDKrwxs5GFE6nUjFx7D+",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-015.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-015.json.gz"
         },
         {
           "file": "templates-border-025.json.gz",
           "bytes": 227470,
           "sha384": "731964b61abb3ea80a1b2e687b592d5e4350e70521080ed3491856ed4c228058b0deb6461ac072b02cd7487b6711e22a",
           "sri": "cxlkthq7PqgKGy5oe1ktXkNQ5wUhCA7TSRhW7UwigFiw3rZGGsBysCzXSHtnEeIq",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-025.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-025.json.gz"
         },
         {
           "file": "templates-border-017.json.gz",
           "bytes": 65428,
           "sha384": "19149c40601134db3adf315119ac428cbf3027a5e323a0395857250ed8dc137289556a31bd6c7fbfbdf9b2ac2d25fb9d",
           "sri": "GRScQGARNNs63zFRGaxCjL8wJ6XjI6A5WFclDtjcE3KJVWoxvWx/v735sqwtJfud",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-017.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-017.json.gz"
         },
         {
           "file": "templates-border-014.json.gz",
           "bytes": 136716,
           "sha384": "458ad2c2513898480739f99e235a1415c283a646246151f2073f7222df48ff1d1b1d018e62c61a1fe911112ccf73ed0a",
           "sri": "RYrSwlE4mEgHOfmeI1oUFcKDpkYkYVHyBz9yIt9I/x0bHQGOYsYaH+kRESzPc+0K",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-014.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-014.json.gz"
         },
         {
           "file": "templates-border-018.json.gz",
           "bytes": 104510,
           "sha384": "d70a8774887cdee34042e5d12a868889a7d5db551b80b4d2c27f5108b91693bc146e1828ed46fce8d1e587a7fdbfa485",
           "sri": "1wqHdIh83uNAQuXRKoaIiafV21UbgLTSwn9RCLkWk7wUbhgo7Ub86NHlh6f9v6SF",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-018.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-018.json.gz"
         },
         {
           "file": "templates-border-024.json.gz",
           "bytes": 127295,
           "sha384": "d9cede3c1edef9cb68ab9641fb903a5b7a094f0a917821cd07d315485ad227644e8ef3431fe42788abff666b65144572",
           "sri": "2c7ePB7e+ctoq5ZB+5A6W3oJTwqReCHNB9MVSFrSJ2ROjvNDH+QniKv/ZmtlFEVy",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-024.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-024.json.gz"
         },
         {
           "file": "templates-border-027.json.gz",
           "bytes": 69923,
           "sha384": "18c6c471597b5b30d95edc5901496ffdffb7df14b02a10f387441671032a8f933bc7a0aece9b414fc9fac67eb4bf4c0e",
           "sri": "GMbEcVl7WzDZXtxZAUlv/f+33xSwKhDzh0QWcQMqj5M7x6CuzptBT8n6xn60v0wO",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-027.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-027.json.gz"
         },
         {
           "file": "templates-border-026.json.gz",
           "bytes": 75574,
           "sha384": "7d85b705c0d273e9a97bd9beecf54a3059c5022ee4763923a1a1c25f2c358568ac652d435d8582852eaa23ef0de53a1e",
           "sri": "fYW3BcDSc+mpe9m+7PVKMFnFAi7kdjkjoaHCXyw1hWisZS1DXYWChS6qI+8N5Toe",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-026.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-026.json.gz"
         },
         {
           "file": "templates-border-012.json.gz",
           "bytes": 38963,
           "sha384": "6b82d0435e845b594986f9d65ae471aef69e470d58dbdc1fdf8c9175a5260188c4b11751c80ce825c784ef12b84e0167",
           "sri": "a4LQQ16EW1lJhvnWWuRxrvaeRw1Y29wf34yRdaUmAYjEsRdRyAzoJceE7xK4TgFn",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-012.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-012.json.gz"
         },
         {
           "file": "templates-border-016.json.gz",
           "bytes": 105011,
           "sha384": "186a72cdb75159bb19ce92be83e6a032c510a183319904d0adcebbcedc8ea81aaa7bee5762a563de7cdbd9148342b0e8",
           "sri": "GGpyzbdRWbsZzpK+g+agMsUQoYMxmQTQrc67ztyOqBqqe+5XYqVj3nzb2RSDQrDo",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-016.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-016.json.gz"
         },
         {
           "file": "templates-border-010.json.gz",
           "bytes": 42414,
           "sha384": "a97054520ec4504ea727c6a9b534dde2c66a86a50d550aeb6af68bf620ab85cfe42c8c6a6592ded5a6967685659808e9",
           "sri": "qXBUUg7EUE6nJ8aptTTd4sZqhqUNVQrravaL9iCrhc/kLIxqZZLe1aaWdoVlmAjp",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-010.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-010.json.gz"
         },
         {
           "file": "templates-border-021.json.gz",
           "bytes": 8971,
           "sha384": "a8c39b98cf895488054183495103f1704499a5b56538420266027180a30c98cd6431a5670de0347769fcce44803df9e8",
           "sri": "qMObmM+JVIgFQYNJUQPxcESZpbVlOEICZgJxgKMMmM1kMaVnDeA0d2n8zkSAPfno",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-021.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-021.json.gz"
         },
         {
           "file": "templates-border-030.json.gz",
           "bytes": 29421,
           "sha384": "0246fa88b3202de73343c50cfc0d08a8a8aae9ca5d4cc632e60a6a552009c3a756ea35b2c90e475abc336c503170a552",
           "sri": "Akb6iLMgLeczQ8UM/A0IqKiq6cpdTMYy5gpqVSAJw6dW6jWyyQ5HWrwzbFAxcKVS",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-030.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-030.json.gz"
         },
         {
           "file": "templates-border-031.json.gz",
           "bytes": 38661,
           "sha384": "fb8b0dd70348ab0ea27bd370770cf9504ecad655599a269ce6043ee1680ffbacccf36bff2f2f8a51f1ed45c638935ecd",
           "sri": "+4sN1wNIqw6ie9Nwdwz5UE7K1lVZmiac5gQ+4WgP+6zM82v/Ly+KUfHtRcY4k17N",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-031.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-031.json.gz"
         },
         {
           "file": "templates-border-035.json.gz",
           "bytes": 58260,
           "sha384": "badcfbdf650e98e451f5ee08960c39bc522e6c2fcd1df46349f704160df4b413f4e0cb30a44c11cba2da0134b6dcbca5",
           "sri": "utz732UOmORR9e4Ilgw5vFIubC/NHfRjSfcEFg30tBP04MswpEwRy6LaATS23Lyl",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-035.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-035.json.gz"
         },
         {
           "file": "templates-border-037.json.gz",
           "bytes": 22698,
           "sha384": "02df43a26b73e8bd96d7949a0d4fdbdc804ebb1036d2d3fda3c19b6d6fb3c532fcc03af37e404fbc82e2a45eaad24493",
           "sri": "At9Domtz6L2W15SaDU/b3IBOuxA20tP9o8GbbW+zxTL8wDrzfkBPvILipF6q0kST",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-037.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-037.json.gz"
         },
         {
           "file": "templates-border-040.json.gz",
           "bytes": 17548,
           "sha384": "f3c02c9a19d2fe7c0b8757941f78e26e0ebde60e9bb518c895d094fca56d9e0ff8ce2dd66909fbf7dee0156d57d64141",
           "sri": "88AsmhnS/nwLh1eUH3jibg695g6btRjIldCU/KVtng/4zi3WaQn7997gFW1X1kFB",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-040.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-040.json.gz"
         },
         {
           "file": "templates-border-041.json.gz",
           "bytes": 49064,
           "sha384": "9c67aac2e1f4f74820085b7ff82844f2ad9c35d5a2deb492b7c1e3638a2c62a0a520df16d527be762f6252e85d6387a7",
           "sri": "nGeqwuH090ggCFt/+ChE8q2cNdWi3rSSt8HjY4osYqClIN8W1Se+di9iUuhdY4en",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-041.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-041.json.gz"
         },
         {
           "file": "templates-border-079.json.gz",
           "bytes": 43865,
           "sha384": "6c79f4441c89b07e3b960287293149fb4c731ec0a26040c9d92b6c78688bf2bac2960d01bdf1210e1b051ade7c7d67a9",
           "sri": "bHn0RByJsH47lgKHKTFJ+0xzHsCiYEDJ2StseGiL8rrClg0BvfEhDhsFGt58fWep",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-079.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-079.json.gz"
         },
         {
           "file": "templates-border-080.json.gz",
           "bytes": 35523,
           "sha384": "d3fa6eb8b076baebc857335d19308fcc101248243eab953640968a5d47c862406e197b864845acc6be660e9e1b832f13",
           "sri": "0/puuLB2uuvIVzNdGTCPzBASSCQ+q5U2QJaKXUfIYkBuGXuGSEWsxr5mDp4bgy8T",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-080.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-080.json.gz"
         },
         {
           "file": "templates-border-081.json.gz",
           "bytes": 59117,
           "sha384": "c6bd0d15b0c923e076d54a635e78648c8b2011af5dbee455f7b0066a746026ee2c8c1908404815c031e1ebcac2a605d8",
           "sri": "xr0NFbDJI+B21UpjXnhkjIsgEa9dvuRV97AGanRgJu4sjBkIQEgVwDHh68rCpgXY",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-081.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-081.json.gz"
         },
         {
           "file": "templates-border-082.json.gz",
           "bytes": 47394,
           "sha384": "ebf0044fc537de17acf70d3d9059179ae41aab9851410aa56a398e36d30413380d246b1cc3cb62b6be6e46aac944687c",
           "sri": "6/AET8U33hes9w09kFkXmuQaq5hRQQqlajmONtMEEzgNJGscw8titr5uRqrJRGh8",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-082.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-082.json.gz"
         },
         {
           "file": "templates-border-083.json.gz",
           "bytes": 58202,
           "sha384": "def93e35e618b8d4afbf82ef16e9b55dc5934dd9c67d02addff79913ca2c2fd2f852a8b4c5c8532d9714dba2284f24bc",
           "sri": "3vk+NeYYuNSvv4LvFum1XcWTTdnGfQKt3/eZE8osL9L4Uqi0xchTLZcU26IoTyS8",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-083.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-083.json.gz"
         },
         {
           "file": "templates-border-084.json.gz",
           "bytes": 79705,
           "sha384": "6313eabce20d8cf9e6f1e663e0fce279779a557e67eeb9f2fc2eb95d8bf631d8f49edd32df50b3f98a325f67f653a114",
           "sri": "YxPqvOINjPnm8eZj4PzieXeaVX5n7rny/C65XYv2Mdj0nt0y31Cz+YoyX2f2U6EU",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/templates/border-084.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/templates/border-084.json.gz"
         }
       ]
     },
@@ -2175,364 +2175,364 @@
           "bytes": 150166,
           "sha384": "f7ef0f3bdb75c4786ff75b81643f5d0f9ed0e478dfcf20218e6ffe03013f46f8bcd218734072d199ba07a619f5321800",
           "sri": "9+8PO9t1xHhv91uBZD9dD57Q5HjfzyAhjm/+AwE/Rvi80hhzQHLRmboHphn1MhgA",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-arabesques-1.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-arabesques-1.json.gz"
         },
         {
           "file": "elements-elements-arabesques-2.json.gz",
           "bytes": 397552,
           "sha384": "9c56fe42d3ec1e4b33e4273e9362b5da4ee48ed0b07781398f3ae25a4abbc17e81a2570a49a977d2da5e345ea404b30b",
           "sri": "nFb+QtPsHksz5Cc+k2K12k7kjtCwd4E5jzriWkq7wX6BolcKSal30tpeNF6kBLML",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-arabesques-2.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-arabesques-2.json.gz"
         },
         {
           "file": "elements-elements-bands-1.json.gz",
           "bytes": 395374,
           "sha384": "6931ee190464f8aa85bb376784cbb2c5a997d9ba3ab02fbb7eb02b331476bcb838570ce72dcd17c388e7f145c814af98",
           "sri": "aTHuGQRk+KqFuzdnhMuyxamX2bo6sC+7frArMxR2vLg4VwznLc0Xw4jn8UXIFK+Y",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-bands-1.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-bands-1.json.gz"
         },
         {
           "file": "elements-elements-bands-10.json.gz",
           "bytes": 397129,
           "sha384": "4a980517b57e300af2955b7c6ee1937d532fdd8fe49faa0193aab4b3925d1824d4b91db4e24b234a0e5e225a02f3263d",
           "sri": "SpgFF7V+MArylVt8buGTfVMv3Y/kn6oBk6q0s5JdGCTUuR204ksjSg5eIloC8yY9",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-bands-10.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-bands-10.json.gz"
         },
         {
           "file": "elements-elements-bands-2.json.gz",
           "bytes": 395319,
           "sha384": "56f5eef056199a655519325cbc74176c333066ecb4998752709fb520f9a66f689c845965200adbf0918c0f58403269a2",
           "sri": "VvXu8FYZmmVVGTJcvHQXbDMwZuy0mYdScJ+1IPmmb2ichFllIArb8JGMD1hAMmmi",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-bands-2.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-bands-2.json.gz"
         },
         {
           "file": "elements-elements-bands-3.json.gz",
           "bytes": 393071,
           "sha384": "12815b065c917cb7def5174e3b1f863acb3a88e6378c7450b9e1eb356bb111aad7f801326dfc12f84a44c3b5ea5fc5cc",
           "sri": "EoFbBlyRfLfe9RdOOx+GOss6iOY3jHRQueHrNWuxEarX+AEybfwS+EpEw7XqX8XM",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-bands-3.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-bands-3.json.gz"
         },
         {
           "file": "elements-elements-bands-4.json.gz",
           "bytes": 396328,
           "sha384": "1d306277b83faffae29d4e4d8e488d7ae2d3be11c3c0867f8f3c8ae872010624f30bc5df8322e93ae35b06193eea2cd8",
           "sri": "HTBid7g/r/rinU5NjkiNeuLTvhHDwIZ/jzyK6HIBBiTzC8XfgyLpOuNbBhk+6izY",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-bands-4.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-bands-4.json.gz"
         },
         {
           "file": "elements-elements-bands-5.json.gz",
           "bytes": 388087,
           "sha384": "8eaec385a45b21906cbd3a232d4699fc18e23757eae16155c5f142626e5a24d38c98620da5fa6553cd7e542b855fd037",
           "sri": "jq7DhaRbIZBsvTojLUaZ/BjiN1fq4WFVxfFCYm5aJNOMmGINpfplU81+VCuFX9A3",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-bands-5.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-bands-5.json.gz"
         },
         {
           "file": "elements-elements-bands-6.json.gz",
           "bytes": 397400,
           "sha384": "af9fc155e909b8fbcb72434eeae3d671a8a4708f7d1df7dcd7304eec81e13ec1ac986910934fb76bddb58fa1752f8b0b",
           "sri": "r5/BVekJuPvLckNO6uPWcaikcI99Hffc1zBO7IHhPsGsmGkQk0+3a921j6F1L4sL",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-bands-6.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-bands-6.json.gz"
         },
         {
           "file": "elements-elements-bands-7.json.gz",
           "bytes": 395245,
           "sha384": "edec19091e4678a5ff7825be5d140394f4891d752b0e2ade95227a97305389526cf58549bd7a6d00a0ea9b3d60d7df63",
           "sri": "7ewZCR5GeKX/eCW+XRQDlPSJHXUrDirelSJ6lzBTiVJs9YVJvXptAKDqmz1g199j",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-bands-7.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-bands-7.json.gz"
         },
         {
           "file": "elements-elements-bands-8.json.gz",
           "bytes": 365198,
           "sha384": "934e48a522da7b53bf3c9466192f97dcec567e19f719a32db3195388cb081b54f3989ede2f9790b6287a8a382040e817",
           "sri": "k05IpSLae1O/PJRmGS+X3OxWfhn3GaMtsxlTiMsIG1TzmJ7eL5eQtih6ijggQOgX",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-bands-8.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-bands-8.json.gz"
         },
         {
           "file": "elements-elements-bands-9.json.gz",
           "bytes": 381346,
           "sha384": "0b9bfafd8848d343d26fe14cb5b8d87980f8937ba019fb6fb6b849e66d3e1d09253b59fa5cc163bc46b4cf5ffb69cdf4",
           "sri": "C5v6/YhI00PSb+FMtbjYeYD4k3ugGftvtrhJ5m0+HQklO1n6XMFjvEa0z1/7ac30",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-bands-9.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-bands-9.json.gz"
         },
         {
           "file": "elements-elements-cartouches-1.json.gz",
           "bytes": 393493,
           "sha384": "a7c61362392e6ce6d5f8c568a930349c571621a32fb963c33e166f4015fa86106e151f4d8cda9987240c151e1065530a",
           "sri": "p8YTYjkubObV+MVoqTA0nFcWIaMvuWPDPhZvQBX6hhBuFR9NjNqZhyQMFR4QZVMK",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-cartouches-1.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-cartouches-1.json.gz"
         },
         {
           "file": "elements-elements-cartouches-2.json.gz",
           "bytes": 302430,
           "sha384": "8162872e19de2cc9540fa30d14bf83ee3f8331ba1f0862ab84cd00c9aaf17feed2660728c8e863d828786bc259af8bda",
           "sri": "gWKHLhneLMlUD6MNFL+D7j+DMbofCGKrhM0Ayarxf+7SZgcoyOhj2Ch4a8JZr4va",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-cartouches-2.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-cartouches-2.json.gz"
         },
         {
           "file": "elements-elements-corners-1.json.gz",
           "bytes": 229423,
           "sha384": "3a8e32cddaac20055b547dd47c376e51acdc39d0b82b06f811052440a1e0528daa6e8d3110feb9f7bf1960637509a7d5",
           "sri": "Oo4yzdqsIAVbVH3UfDduUazcOdC4Kwb4EQUkQKHgUo2qbo0xEP65978ZYGN1CafV",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-corners-1.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-corners-1.json.gz"
         },
         {
           "file": "elements-elements-dividers-1.json.gz",
           "bytes": 396909,
           "sha384": "397f2da63adea02e128dffb1511eb41aae2f902abe91d6c77218dc8a5e6efa5179aa64bf6d3659fd6c53ea2503cb71c1",
           "sri": "OX8tpjreoC4Sjf+xUR60Gq4vkCq+kdbHchjcil5u+lF5qmS/bTZZ/WxT6iUDy3HB",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-dividers-1.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-dividers-1.json.gz"
         },
         {
           "file": "elements-elements-dividers-2.json.gz",
           "bytes": 397279,
           "sha384": "6ff9ef567d231031d638e1687dd1d274ab16586165c555c04f4d34deaece93a9f457284a156a9b70708a7cd7d7f52402",
           "sri": "b/nvVn0jEDHWOOFofdHSdKsWWGFlxVXAT0003q7Ok6n0VyhKFWqbcHCKfNfX9SQC",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-dividers-2.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-dividers-2.json.gz"
         },
         {
           "file": "elements-elements-dividers-3.json.gz",
           "bytes": 58059,
           "sha384": "e0932c36eadb5c02eecee9532929c4492faf808867449b11e18799185f6ab27ea7e7c477efa483b8c8f089759ba07a52",
           "sri": "4JMsNurbXALuzulTKSnESS+vgIhnRJsR4YeZGF9qsn6n58R376SDuMjwiXWboHpS",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-dividers-3.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-dividers-3.json.gz"
         },
         {
           "file": "elements-elements-flourishes-1.json.gz",
           "bytes": 88687,
           "sha384": "5350bae58b8742d65fd870bd121f59d8e74de86360399f0bb1b939ed8649ff95ba2a04ab867b8d102e1d4e5904cada57",
           "sri": "U1C65YuHQtZf2HC9Eh9Z2OdN6GNgOZ8Lsbk57YZJ/5W6KgSrhnuNEC4dTlkEytpX",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-flourishes-1.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-flourishes-1.json.gz"
         },
         {
           "file": "elements-elements-flowers-1.json.gz",
           "bytes": 54504,
           "sha384": "08248133b171b6f1680130d2fe394c0212e631bbd3bb361803e9db936fb773e3067489fd1ac22e055d659a608ae5b5df",
           "sri": "CCSBM7FxtvFoATDS/jlMAhLmMbvTuzYYA+nbk2+3c+MGdIn9GsIuBV1lmmCK5bXf",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-flowers-1.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-flowers-1.json.gz"
         },
         {
           "file": "elements-elements-frames-1.json.gz",
           "bytes": 358781,
           "sha384": "ad1057e843608520d475aa9aa0f9b7b423920db0731c1f03ed84173eb4bf7e6cf442beba5dc6d9aca994afee95338924",
           "sri": "rRBX6ENghSDUdaqaoPm3tCOSDbBzHB8D7YQXPrS/fmz0Qr66XcbZrKmUr+6VM4kk",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-frames-1.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-frames-1.json.gz"
         },
         {
           "file": "elements-elements-frames-10.json.gz",
           "bytes": 394361,
           "sha384": "c6e0c7913911bd224c9ccc6b7c05ee2a2b72e106d2eac5d2e290b54c0198fd3446f19d4d840dfb494320c188e614682a",
           "sri": "xuDHkTkRvSJMnMxrfAXuKity4QbS6sXS4pC1TAGY/TRG8Z1NhA37SUMgwYjmFGgq",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-frames-10.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-frames-10.json.gz"
         },
         {
           "file": "elements-elements-frames-11.json.gz",
           "bytes": 374791,
           "sha384": "fd61ed68595b246c482cb418afa53300648ef965d584c33dc19f4c393d8ab1112fa288910c6e944879743d6311edb6ed",
           "sri": "/WHtaFlbJGxILLQYr6UzAGSO+WXVhMM9wZ9MOT2KsREvooiRDG6USHl0PWMR7bbt",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-frames-11.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-frames-11.json.gz"
         },
         {
           "file": "elements-elements-frames-12.json.gz",
           "bytes": 384571,
           "sha384": "8ca25bf1699c40699c3a8082e108c2b4fa7a9f32e78cc1cf6fd81167feb20b5c9896da4efb086abf02c506c2ac01206e",
           "sri": "jKJb8WmcQGmcOoCC4QjCtPp6nzLnjMHPb9gRZ/6yC1yYltpO+whqvwLFBsKsASBu",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-frames-12.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-frames-12.json.gz"
         },
         {
           "file": "elements-elements-frames-13.json.gz",
           "bytes": 396811,
           "sha384": "2e5e123c0326c6b41f9e00b4406dd5639045ced418fe2946c59d283cb574771d85a88edd6289288dca63a10136922357",
           "sri": "Ll4SPAMmxrQfngC0QG3VY5BFztQY/ilGxZ0oPLV0dx2FqI7dYokojcpjoQE2kiNX",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-frames-13.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-frames-13.json.gz"
         },
         {
           "file": "elements-elements-frames-14.json.gz",
           "bytes": 394546,
           "sha384": "971e5f91649faf0687e82d0b7ddd9dbbbcc8cc8fa583ceb03e8006fdda2c1dbe80d5446602455adb7dfe6f1769a203a0",
           "sri": "lx5fkWSfrwaH6C0Lfd2du7zIzI+lg86wPoAG/dosHb6A1URmAkVa233+bxdpogOg",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-frames-14.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-frames-14.json.gz"
         },
         {
           "file": "elements-elements-frames-15.json.gz",
           "bytes": 74864,
           "sha384": "9f45b98beea36f79608e79b6acc93dfa0a1b3ada2e5198fb429bf1d8c9ec08132eb260e4e8fd311660c1d59b0ea4e20b",
           "sri": "n0W5i+6jb3lgjnm2rMk9+gobOtouUZj7Qpvx2MnsCBMusmDk6P0xFmDB1ZsOpOIL",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-frames-15.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-frames-15.json.gz"
         },
         {
           "file": "elements-elements-frames-2.json.gz",
           "bytes": 393683,
           "sha384": "7f46fa9f67cf77b85f2263ead1b4efb20e4f73b394c9673e7677717cbd586ac33c35f66a089bc242516b3dcf91092756",
           "sri": "f0b6n2fPd7hfImPq0bTvsg5Pc7OUyWc+dndxfL1YasM8NfZqCJvCQlFrPc+RCSdW",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-frames-2.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-frames-2.json.gz"
         },
         {
           "file": "elements-elements-frames-3.json.gz",
           "bytes": 391909,
           "sha384": "79a8cafc72a6379278c147a4fac44b43ac792b4c9fdd7ef8dca172c5579f1fbfec221a20803deb0ecd8a840e08caba97",
           "sri": "eajK/HKmN5J4wUek+sRLQ6x5K0yf3X743KFyxVefH7/sIhoggD3rDs2KhA4IyrqX",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-frames-3.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-frames-3.json.gz"
         },
         {
           "file": "elements-elements-frames-4.json.gz",
           "bytes": 392864,
           "sha384": "74c89c5d46357fb27990387a736fa87bce560fcb2173634ec0d555347f915ac40ee8cb604928e19bd0b88c1e7d31bb9c",
           "sri": "dMicXUY1f7J5kDh6c2+oe85WD8shc2NOwNVVNH+RWsQO6MtgSSjhm9C4jB59Mbuc",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-frames-4.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-frames-4.json.gz"
         },
         {
           "file": "elements-elements-frames-5.json.gz",
           "bytes": 393809,
           "sha384": "9852daeeab0c878bbea81d43705d48474ae82abd2faa24903fcf84bbca8524d4ff5c888ffa1b3d88a77a072543df091a",
           "sri": "mFLa7qsMh4u+qB1DcF1IR0roKr0vqiSQP8+Eu8qFJNT/XIiP+hs9iKd6ByVD3wka",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-frames-5.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-frames-5.json.gz"
         },
         {
           "file": "elements-elements-frames-6.json.gz",
           "bytes": 390849,
           "sha384": "c2c6161d5ab54e98ee6c31f243774995db9977d630fb3e0b70d4879cc51c612c8df7f1bac77ddc4d0f7f3db3ee0cda80",
           "sri": "wsYWHVq1TpjubDHyQ3dJlduZd9Yw+z4LcNSHnMUcYSyN9/G6x33cTQ9/PbPuDNqA",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-frames-6.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-frames-6.json.gz"
         },
         {
           "file": "elements-elements-frames-7.json.gz",
           "bytes": 394921,
           "sha384": "4aa62d100aa3d96cb18ead36b9916cd0d5849925140b24ea9313cbc4415a634344f58643a5135e33a448229b6190f390",
           "sri": "SqYtEAqj2Wyxjq02uZFs0NWEmSUUCyTqkxPLxEFaY0NE9YZDpRNeM6RIIpthkPOQ",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-frames-7.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-frames-7.json.gz"
         },
         {
           "file": "elements-elements-frames-8.json.gz",
           "bytes": 396082,
           "sha384": "7fc8e586d5e23cc48c5398ad6a2fe5c96f8faf6063d14b0649c5e5c968c0a1be8e625db518d06892fea5d7e5d19c2fcf",
           "sri": "f8jlhtXiPMSMU5itai/lyW+Pr2Bj0UsGScXlyWjAob6OYl21GNBokv6l1+XRnC/P",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-frames-8.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-frames-8.json.gz"
         },
         {
           "file": "elements-elements-frames-9.json.gz",
           "bytes": 330057,
           "sha384": "7e7b7a5111f4444e7f2a0e3e1ae44acb8d68c30adf788fe716199942fbf4bcc1b07c1a419b035f65f5e757e5eb4daf62",
           "sri": "fnt6URH0RE5/Kg4+GuRKy41owwrfeI/nFhmZQvv0vMGwfBpBmwNfZfXnV+XrTa9i",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-frames-9.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-frames-9.json.gz"
         },
         {
           "file": "elements-elements-initials-1.json.gz",
           "bytes": 23531,
           "sha384": "cc9c0845ec0c38fb1590c6a9f1a6c2b2600bc02ac2e6ba84e9ea46ae4b86633ea6bceb8d25a83a492ab94914f6ba78fb",
           "sri": "zJwIRewMOPsVkMap8abCsmALwCrC5rqE6epGrkuGYz6mvOuNJag6SSq5SRT2unj7",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-initials-1.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-initials-1.json.gz"
         },
         {
           "file": "elements-elements-lettering-1.json.gz",
           "bytes": 73848,
           "sha384": "be9384b4234fcdba922e7de94d6d8660879f0d4227d7189f8c5465d35a717f8c8556ea88f5a2df160865242d6dd769eb",
           "sri": "vpOEtCNPzbqSLn3pTW2GYIefDUIn1xifjFRl01pxf4yFVuqI9aLfFghlJC1t12nr",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-lettering-1.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-lettering-1.json.gz"
         },
         {
           "file": "elements-elements-ornaments-1.json.gz",
           "bytes": 389608,
           "sha384": "ff3f6376f0932b3e517ce31d4aa5b45d702f94dbfef0c9809553d74b8c6524a5a66b25ad13ca5ebd7091302dd2dfaf35",
           "sri": "/z9jdvCTKz5RfOMdSqW0XXAvlNv+8MmAlVPXS4xlJKWmayWtE8pevXCRMC3S3681",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-ornaments-1.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-ornaments-1.json.gz"
         },
         {
           "file": "elements-elements-ornaments-2.json.gz",
           "bytes": 394420,
           "sha384": "737c380f53f78bb2ee77858d0894f1d705a2a70f456d014c54138365176d2a07f4d4c8b25282ee972b321facf8141269",
           "sri": "c3w4D1P3i7Lud4WNCJTx1wWipw9FbQFMVBODZRdtKgf01MiyUoLulysyH6z4FBJp",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-ornaments-2.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-ornaments-2.json.gz"
         },
         {
           "file": "elements-elements-ornaments-3.json.gz",
           "bytes": 396895,
           "sha384": "1d072a11b252454f41690560f06b25771720dcad61734b37df768fa1fe043b6a6f2ca4d52bf91997125335cb05358fdd",
           "sri": "HQcqEbJSRU9BaQVg8Gsldxcg3K1hc0s333aPof4EO2pvLKTVK/kZlxJTNcsFNY/d",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-ornaments-3.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-ornaments-3.json.gz"
         },
         {
           "file": "elements-elements-ornaments-4.json.gz",
           "bytes": 392954,
           "sha384": "e849e43c761633b60db4e90ebdfaf8b0c632b45242c577eb91f9d815bf09ae6007ea9fa3b700366b991aa87203a9b79a",
           "sri": "6EnkPHYWM7YNtOkOvfr4sMYytFJCxXfrkfnYFb8JrmAH6p+jtwA2a5kaqHIDqbea",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-ornaments-4.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-ornaments-4.json.gz"
         },
         {
           "file": "elements-elements-ornaments-5.json.gz",
           "bytes": 143178,
           "sha384": "860f2bc0a3d07e8a80104c741272e0bfc36384c867265e49089d9d0c93b317626f3111236cb5d25fc6d80a21a7206a89",
           "sri": "hg8rwKPQfoqAEEx0EnLgv8NjhMhnJl5JCJ2dDJOzF2JvMREjbLXSX8bYCiGnIGqJ",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-ornaments-5.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-ornaments-5.json.gz"
         },
         {
           "file": "elements-elements-panels-1.json.gz",
           "bytes": 304584,
           "sha384": "853731b7002279c299440ea1ea706a4509de06527992d766a44727071d212d8086bb3e71cd49d9d2cae2e09fa059c080",
           "sri": "hTcxtwAiecKZRA6h6nBqRQneBlJ5ktdmpEcnBx0hLYCGuz5xzUnZ0sri4J+gWcCA",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-panels-1.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-panels-1.json.gz"
         },
         {
           "file": "elements-elements-panels-2.json.gz",
           "bytes": 294365,
           "sha384": "d4d635900cd6039bac4669269f209d5672cc520aa643d50ba35c2923c9f5b771014877b3287e232006efb7bb772df5a5",
           "sri": "1NY1kAzWA5usRmkmnyCdVnLMUgqmQ9ULo1wpI8n1t3EBSHezKH4jIAbvt7t3LfWl",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-panels-2.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-panels-2.json.gz"
         },
         {
           "file": "elements-elements-panels-3.json.gz",
           "bytes": 184843,
           "sha384": "77d992abe8b539085c883e62364e8a2e33b86b637f5c6ef730c488a7085abcb31664c1922e5f44e257e0937b34802b80",
           "sri": "d9mSq+i1OQhciD5iNk6KLjO4a2N/XG73MMSIpwhavLMWZMGSLl9E4lfgk3s0gCuA",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-panels-3.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-panels-3.json.gz"
         },
         {
           "file": "elements-elements-patterns-1.json.gz",
           "bytes": 168318,
           "sha384": "9a3ee04a3ea8bd9b96d049f1d6188a761e9cef0e9f9fdc083c47b185d09e579922f1255d9bcbe7b333ef806381eeb8d3",
           "sri": "mj7gSj6ovZuW0Enx1hiKdh6c7w6fn9wIPEexhdCeV5ki8SVdm8vnszPvgGOB7rjT",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-patterns-1.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-patterns-1.json.gz"
         },
         {
           "file": "elements-elements-patterns-2.json.gz",
           "bytes": 394169,
           "sha384": "3b6da123df6aab9c4cd74a6f7a0f83243951600a4cc6cf2e58d9942fe4f1bd2522b81f16fb574aedae03b1d016617189",
           "sri": "O22hI99qq5xM10pveg+DJDlRYApMxs8uWNmUL+TxvSUiuB8W+1dK7a4DsdAWYXGJ",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-patterns-2.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-patterns-2.json.gz"
         },
         {
           "file": "elements-elements-patterns-3.json.gz",
           "bytes": 293435,
           "sha384": "c8cd6ff7725e9132ce67c0f4fa8a78576ef077038eb82e56a087f095160ddacc1292a61504cac66912171e641dabe432",
           "sri": "yM1v93JekTLOZ8D0+op4V27wdwOOuC5WoIfwlRYN2swSkqYVBMrGaRIXHmQdq+Qy",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-patterns-3.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-patterns-3.json.gz"
         },
         {
           "file": "elements-elements-rosettes-1.json.gz",
           "bytes": 133924,
           "sha384": "58fce21f2e415fdeb88e74b9bbc02d7c53005b4cbb665e978c4c59be044346da27bdfd516f93801084af4e9184c36df7",
           "sri": "WPziHy5BX964jnS5u8AtfFMAW0y7Zl6XjExZvgRDRtonvf1Rb5OAEISvTpGEw233",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-rosettes-1.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-rosettes-1.json.gz"
         },
         {
           "file": "elements-elements-tailpieces-1.json.gz",
           "bytes": 394016,
           "sha384": "6792055c925c551394d2748fd5ad31d887d0a44ae5faf3dbdbb280c28bbef0419688204f4c047a9a95fb33feb03479f2",
           "sri": "Z5IFXJJcVROU0nSP1a0x2IfQpErl+vPb27KAwou+8EGWiCBPTAR6mpX7M/6wNHny",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-tailpieces-1.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-tailpieces-1.json.gz"
         },
         {
           "file": "elements-elements-tailpieces-2.json.gz",
           "bytes": 389041,
           "sha384": "d17ad1825a68599bbd5a222989d96accbe583a7b2591dc89bf631ad73e45ee48975ed0260f79b645824edf70af867fa3",
           "sri": "0XrRglpoWZu9WiIpidlqzL5YOnslkdyJv2Ma1z5F7kiXXtAmD3m2RYJO33Cvhn+j",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-tailpieces-2.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-tailpieces-2.json.gz"
         },
         {
           "file": "elements-elements-vignettes-1.json.gz",
           "bytes": 346165,
           "sha384": "cbbd4e25d24fc9de5a08a86f0b8ddf90ed15422390a98b83423cc983ce2228fe548b723d530a111d858d4a5ac510a324",
           "sri": "y71OJdJPyd5aCKhvC43fkO0VQiOQqYuDQjzJg84iKP5Ui3I9UwoRHYWNSlrFEKMk",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/elements/elements-vignettes-1.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/elements/elements-vignettes-1.json.gz"
         }
       ]
     },
@@ -2548,217 +2548,217 @@
           "bytes": 90195,
           "sha384": "ca2897e8e5fa3b9f9823a44b97327a021d1e2882c1dfd587340e35fe79d171df9a324b8fda1609cb8426155a0425fb83",
           "sri": "yiiX6OX6O5+YI6RLlzJ6Ah0eKILB39WHNA41/nnRcd+aMkuP2hYJy4QmFVoEJfuD",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/andrade.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/andrade.json.gz"
         },
         {
           "file": "lettersets-arabesque-16th.json.gz",
           "bytes": 60648,
           "sha384": "4eda0064696a72a34e7eeebc5f5785a93a2cdc1a7513b09d8e5282445cc92d61214c9cd648c69a1d62651e717df75436",
           "sri": "TtoAZGlqcqNOfu68X1eFqTos3Bp1E7CdjlKCRFzJLWEhTJzWSMaaHWJlHnF991Q2",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/arabesque-16th.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/arabesque-16th.json.gz"
         },
         {
           "file": "lettersets-arabesque.json.gz",
           "bytes": 59602,
           "sha384": "36a835bd8248563d50b6005b323d33a45dc3366f09a3c08f4b18c7cd8c4a7beb9585460aba1b60e6f94bc945baaa0906",
           "sri": "Nqg1vYJIVj1QtgBbMj0zpF3DNm8Jo8CPSxjHzYxKe+uVhUYKuhtg5vlLyUW6qgkG",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/arabesque.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/arabesque.json.gz"
         },
         {
           "file": "lettersets-behrens-1908.json.gz",
           "bytes": 67497,
           "sha384": "3d396750be57ce7d413714dc0669536466496a27a63a69ca2a0012687b9b1078aa60714981e7abcf035a6df7ce8e0967",
           "sri": "PTlnUL5Xzn1BNxTcBmlTZGZJaiemOmnKKgASaHubEHiqYHFJgeerzwNabffOjgln",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/behrens-1908.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/behrens-1908.json.gz"
         },
         {
           "file": "lettersets-english-15th.json.gz",
           "bytes": 25313,
           "sha384": "e56964a304c4582edd0b069b64ea131c9263e7c2acde16170d886e6162b466dfeed92107d1a501a9054369289956209e",
           "sri": "5WlkowTEWC7dCwabZOoTHJJj58Ks3hYXDYhuYWK0Zt/u2SEH0aUBqQVDaSiZViCe",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/english-15th.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/english-15th.json.gz"
         },
         {
           "file": "lettersets-english-decorative.json.gz",
           "bytes": 68944,
           "sha384": "e066d2c2d1cd3b880a9f0141a09322a990353f0a752003bfe28219ef57a5719f50e128756821dc5008e501d149f29884",
           "sri": "4GbSwtHNO4gKnwFBoJMiqZA1Pwp1IAO/4oIZ71elcZ9Q4Sh1aCHcUAjlAdFJ8piE",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/english-decorative.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/english-decorative.json.gz"
         },
         {
           "file": "lettersets-field.json.gz",
           "bytes": 43483,
           "sha384": "711685d550a8f823463918f52846068759904537622f7c626ec22b217c63da378f5a892b27f5381075229d886463a5b8",
           "sri": "cRaF1VCo+CNGORj1KEYGh1mQRTdiL3xibsIrIXxj2jePWokrJ/U4EHUinYhkY6W4",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/field.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/field.json.gz"
         },
         {
           "file": "lettersets-gothic-1880.json.gz",
           "bytes": 68318,
           "sha384": "bf4872499230151aaf501161bdfdbc63722d8fa1f9c5345dbd6162fe3b7263a771a82143b6a2ad2d9e736babf5a5caae",
           "sri": "v0hySZIwFRqvUBFhvf28Y3Itj6H5xTRdvWFi/jtyY6dxqCFDtqKtLZ5za6v1pcqu",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/gothic-1880.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/gothic-1880.json.gz"
         },
         {
           "file": "lettersets-gothic.json.gz",
           "bytes": 53112,
           "sha384": "c84f8c0e16c788ddec585f4b725e0f2061ae61e9743f65042e9a49d20c781c58572e6f6ef1bd0ffb2d547a5703c4db51",
           "sri": "yE+MDhbHiN3sWF9Lcl4PIGGuYel0P2UELppJ0gx4HFhXLm9u8b0P+y1UelcDxNtR",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/gothic.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/gothic.json.gz"
         },
         {
           "file": "lettersets-illuminated-1490.json.gz",
           "bytes": 63580,
           "sha384": "fd97904de22e6a752c7db6478f76dbe72f3f28bd03e401a60053ae3cc2fc5be9d20e0642d66581e18da651d2d24e2163",
           "sri": "/ZeQTeIuanUsfbZHj3bb5y8/KL0D5AGmAFOuPML8W+nSDgZC1mWB4Y2mUdLSTiFj",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/illuminated-1490.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/illuminated-1490.json.gz"
         },
         {
           "file": "lettersets-leaf.json.gz",
           "bytes": 59818,
           "sha384": "8b0215fad815005b256ad12b6d03c1fd70955a11c21d5dfafde0be96f499eabd66bc16122038c957e4b9500c9d1dc45a",
           "sri": "iwIV+tgVAFslatErbQPB/XCVWhHCHV36/eC+lvSZ6r1mvBYSIDjJV+S5UAydHcRa",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/leaf.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/leaf.json.gz"
         },
         {
           "file": "lettersets-missale-1515.json.gz",
           "bytes": 104828,
           "sha384": "3e7d9f83cdded0b47e14ea952fc65ca7093858ac1b2217771c286b3a4bc133c591e492805b9bed49821b9bbfc6c06add",
           "sri": "Pn2fg83e0LR+FOqVL8Zcpwk4WKwbIhd3HChrOkvBM8WR5JKAW5vtSYIbm7/GwGrd",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/missale-1515.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/missale-1515.json.gz"
         },
         {
           "file": "lettersets-neogothic.json.gz",
           "bytes": 52222,
           "sha384": "3be44968ec71c13f53f1bf1017c5af9c11880c4bc577dd1f353626028cad0039830c41e12a8ba203d9032b0587167155",
           "sri": "O+RJaOxxwT9T8b8QF8WvnBGIDEvFd90fNTYmAoytADmDDEHhKouiA9kDKwWHFnFV",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/neogothic.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/neogothic.json.gz"
         },
         {
           "file": "lettersets-nouveau-initials.json.gz",
           "bytes": 154310,
           "sha384": "7fe0a84324db8b042190b5632048e0ccf865471764f2fc05aaf6b8cb0adffb62978dd6944aa9cc6779aad0bb5baa60ca",
           "sri": "f+CoQyTbiwQhkLVjIEjgzPhlRxdk8vwFqva4ywrf+2KXjdaUSqnMZ3mq0LtbqmDK",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/nouveau-initials.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/nouveau-initials.json.gz"
         },
         {
           "file": "lettersets-relief.json.gz",
           "bytes": 42089,
           "sha384": "46bb2f5b386738c70dae146ee9268429eeb3590e8a1b1bcb669e6770ec6f770c904921d60d5d2fe46d3dc85cf2e5d138",
           "sri": "RrsvWzhnOMcNrhRu6SaEKe6zWQ6KGxvLZp5ncOxvdwyQSSHWDV0v5G09yFzy5dE4",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/relief.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/relief.json.gz"
         },
         {
           "file": "lettersets-renaissance-alphabet.json.gz",
           "bytes": 66353,
           "sha384": "67a81c10f14ba3ea064adeabef0d25bf2b510d7fe5a3cf5b0aba9565b1a75c325503d52592f0d1b984b7b1f146b19e9f",
           "sri": "Z6gcEPFLo+oGSt6r7w0lvytRDX/lo89bCrqVZbGnXDJVA9UlkvDRuYS3sfFGsZ6f",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/renaissance-alphabet.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/renaissance-alphabet.json.gz"
         },
         {
           "file": "lettersets-schoeffer-1518.json.gz",
           "bytes": 226659,
           "sha384": "cde242e1ce380f8ef9a576a1695a2ded47a46044a5f554a82942bee19f9b2e4d723f78e38c1f771be2d6d0a624121bb1",
           "sri": "zeJC4c44D475pXahaVot7UekYESl9VSoKUK+4Z+bLk1yP3jjjB93G+LW0KYkEhux",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/schoeffer-1518.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/schoeffer-1518.json.gz"
         },
         {
           "file": "lettersets-silhouette.json.gz",
           "bytes": 63879,
           "sha384": "a76e35c82f87263ce0c69abcbf16850829e33496bfbe551497fd29132d91e2a15332a11d7f531fa59b264983d66b1753",
           "sri": "p241yC+HJjzgxpq8vxaFCCnjNJa/vlUUl/0pEy2R4qFTMqEdf1MfpZsmSYPWaxdT",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/silhouette.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/silhouette.json.gz"
         },
         {
           "file": "lettersets-sugar.json.gz",
           "bytes": 42646,
           "sha384": "afec67dbbc91a42ff06ffa3661a70200363ab44365e92bb144492096809d79f87af4e4a6854c9c6061181e0fd7de9dab",
           "sri": "r+xn27yRpC/wb/o2YacCADY6tENl6SuxREkgloCdefh69OSmhUycYGEYHg/X3p2r",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/sugar.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/sugar.json.gz"
         },
         {
           "file": "lettersets-tendril-1900.json.gz",
           "bytes": 71427,
           "sha384": "4f32ebc7ef3f608fb85c57dd069086a02ab76b66e82e15adc67dcf356175703872532e668187533a7230e12db22b29f0",
           "sri": "TzLrx+8/YI+4XFfdBpCGoCq3a2boLhWtxn3PNWF1cDhyUy5mgYdTOnIw4S2yKynw",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/tendril-1900.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/tendril-1900.json.gz"
         },
         {
           "file": "lettersets-tuscan-1845.json.gz",
           "bytes": 61991,
           "sha384": "04805634ea527d939b7bc952c7a083edecc8ac9b0a73c81192c7ffa7e439a3ea53962e40239be0dffaa6cdd11f5815c8",
           "sri": "BIBWNOpSfZObe8lSx6CD7ezIrJsKc8gRksf/p+Q5o+pTli5AI5vg3/qmzdEfWBXI",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/tuscan-1845.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/tuscan-1845.json.gz"
         },
         {
           "file": "lettersets-versteegh.json.gz",
           "bytes": 61160,
           "sha384": "2a6ff24c35adf31a7acf52d47d2940740f163d1b114ca9c0014d1ace73b48e25cab3135f8a4691acfba68a8a21e52c0c",
           "sri": "Km/yTDWt8xp6z1LUfSlAdA8WPRsRTKnAAU0aznO0jiXKsxNfikaRrPumiooh5SwM",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/versteegh.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/versteegh.json.gz"
         },
         {
           "file": "lettersets-voskens-1654.json.gz",
           "bytes": 182867,
           "sha384": "73171f92c41f7227e957e8a285428499e27e84f3ef25b7defa3648e98203e78079237f4f0454127d90ad13cd2757e68f",
           "sri": "cxcfksQfcifpV+iihUKEmeJ+hPPvJbfe+jZI6YID54B5I39PBFQSfZCtE80nV+aP",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/voskens-1654.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/voskens-1654.json.gz"
         },
         {
           "file": "lettersets-walthari.json.gz",
           "bytes": 77217,
           "sha384": "b0c2a338bed66ee94a93d791524a54fbd7ed3866e2421cdb082ca09a51be9e89a873ad2c565926828b6010193b7d90f2",
           "sri": "sMKjOL7WbulKk9eRUkpU+9ftOGbiQhzbCCygmlG+nomoc60sVlkmgotgEBk7fZDy",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/walthari.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/walthari.json.gz"
         },
         {
           "file": "lettersets-baroque-1655.json.gz",
           "bytes": 60249,
           "sha384": "2a702352fd87664aaaeb9f9f1277092e989aa46ea00143ab156736c73c9d01498038a9ca5017b1cbad8b720e321aa3ee",
           "sri": "KnAjUv2HZkqq65+fEncJLpiapG6gAUOrFWc2xzydAUmAOKnKUBexy62Lcg4yGqPu",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/baroque-1655.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/baroque-1655.json.gz"
         },
         {
           "file": "lettersets-baroque-1884.json.gz",
           "bytes": 41576,
           "sha384": "22ee620ef69fe0d244d6134ec2642a315f9f3c3bcbba565a951a9ebddb49b93d4e90d18a7944a29963acbb4a98f43968",
           "sri": "Iu5iDvaf4NJE1hNOwmQqMV+fPDvLulZalRqevdtJuT1OkNGKeUSimWOsu0qY9Dlo",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/baroque-1884.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/baroque-1884.json.gz"
         },
         {
           "file": "lettersets-cross-stitch.json.gz",
           "bytes": 187387,
           "sha384": "918683740b531fdb7580a12b3db7b72457a8916c2d95feb379c511ae91a3b195f449ea5c6dd7479747d5dd1def9e25e7",
           "sri": "kYaDdAtTH9t1gKErPbe3JFeokWwtlf6zecURrpGjsZX0SepcbddHl0fV3R3vniXn",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/cross-stitch.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/cross-stitch.json.gz"
         },
         {
           "file": "lettersets-fine-1532.json.gz",
           "bytes": 331620,
           "sha384": "7d4c4aea6e9190807120c13a6c0933856e17e5376ca78d65e983ac0d067091192778c09ff10fedfd18de8e96a4590f92",
           "sri": "fUxK6m6RkIBxIME6bAkzhW4X5Tdsp41l6YOsDQZwkRkneMCf8Q/t/RjejpakWQ+S",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/fine-1532.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/fine-1532.json.gz"
         },
         {
           "file": "lettersets-german-baroque.json.gz",
           "bytes": 79834,
           "sha384": "97aa59269663e85b79f4528a5b88620e07e43f148a2a114a404d88e492225b4c20af005c9dd3a42185b16670a0f8454d",
           "sri": "l6pZJpZj6Ft59FKKW4hiDgfkPxSKKhFKQE2I5JIiW0wgrwBcndOkIYWxZnCg+EVN",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/german-baroque.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/german-baroque.json.gz"
         },
         {
           "file": "lettersets-late-gothic.json.gz",
           "bytes": 122406,
           "sha384": "ee18c1665e9e4114ae31241c3aad108f6052d3de13d590f9c83ac1466adc924b989e0bb15e1e0f13928c64a9eac822f3",
           "sri": "7hjBZl6eQRSuMSQcOq0Qj2BS094T1ZD5yDrBRmrckkuYnguxXh4PE5KMZKnqyCLz",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/late-gothic.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/late-gothic.json.gz"
         },
         {
           "file": "lettersets-renaissance-19th.json.gz",
           "bytes": 79253,
           "sha384": "4b9e7ceec11d44bdd8abba2a3741e16418a812d96d3c578e048bc22ef96d3d57205061c2d7764345a423e03733922924",
           "sri": "S5587sEdRL3Yq7oqN0HhZBioEtltPFeOBIvCLvltPVcgUGHC13ZDRaQj4Dczkikk",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/lettersets/renaissance-19th.json.gz"
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/lettersets/renaissance-19th.json.gz"
         }
       ]
     }

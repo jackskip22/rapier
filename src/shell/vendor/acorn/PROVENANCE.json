@@ -1,0 +1,34 @@
+{
+  "package": "acorn",
+  "version": "8.19.0",
+  "source": "https://github.com/acornjs/acorn",
+  "tag": "8.19.0",
+  "commit": "0e0ece7cc7202624d4aca531be4b515b0114b5d0",
+  "license": "MIT",
+  "sourceManifestSha256": "dca898fdd00bc8e8a2fe32f47cb721d08aef590d2ce80e9b80a55ace05aa5738",
+  "npmLockSha256": "cd962c300530716e401c049ab3acf3a64105f903976f8836dbafb2a1b038a896",
+  "build": {
+    "esbuild": "0.28.2",
+    "target": "es2022",
+    "minify": true,
+    "strictIIFE": true,
+    "nativeIntrinsics": [
+      "Object.hasOwn",
+      "Array.isArray"
+    ],
+    "browserRegExp": "tools/acorn-engine-regexp.mjs; unchanged engine grammar and Acorn Unicode-table rule"
+  },
+  "recipeSha256": "2852b8addcb65cd88af21215848039e5259d615ac14bee27bb52b3faebf82f96",
+  "regexpRecipeSha256": "8848688d7af329424066cb6e70a58a13400041ebc97a0494a8bf93c113b5e762",
+  "artifacts": {
+    "agent/vendor/acorn.mjs": {
+      "bytes": 118146,
+      "sha256": "36c547738aa649f9d75c9000c1f57cbf758b7e118cbbc49c3c0ef5a6f69d3db1"
+    },
+    "shell/vendor/acorn-8.19.0.modern.js": {
+      "bytes": 100487,
+      "sha256": "d1ef1e8d60e976445a4a38d64fd0794e8e0545c936926d55e6f6776a5384eb79"
+    }
+  },
+  "strictRecipeSha256": "f17d9757fd29a0adc2faeda9e213eea0ed589d473f9d5815b7c818f32b3ddb14"
+}

@@ -16,7 +16,7 @@ const DOCX_MODULES = {RapierDocxImport: 'interchange/docx.mjs', RapierHtmlReadin
 const DOCX_READS = new Set(['readDocx', 'finishDocxMarkdown']);
 const WRITER_READS = new Set(['markRuns']);
 export const READER_PLUGIN_ENTRIES = [...Object.values(FLOWCHART_MODULES), ...Object.values(PDF_MODULES), ...Object.values(DOCX_MODULES)];
-export const READER_PLUGIN_READS = ['shell/vendor/turndown-7.2.4.lib.turndown.browser.umd.js', 'reader/markdown.js', 'editor/engine.js', 'interchange/pdf-plugin.js', 'reader/pdf.js', 'reader/docx.js'];
+export const READER_PLUGIN_READS = ['shell/vendor/turndown-7.2.4.es2024.min.js', 'reader/markdown.js', 'editor/engine.js', 'interchange/pdf-plugin.js', 'reader/pdf.js', 'reader/docx.js'];
 
 export async function buildReaderPlugins({root = here, version = VERSION, minify = true} = {}) {
 	const read = path => readFile(resolve(root, path), 'utf8');
@@ -25,7 +25,7 @@ export async function buildReaderPlugins({root = here, version = VERSION, minify
 	const flowText = "(() => {\n'use strict';\n" + flowRegistry.text + '\n})();';
 	new vm.Script(flowText, {filename: 'rapier-flowchart.js'});
 	const flowFile = Buffer.from('/* SPDX-License-Identifier: AGPL-3.0-only. The Rapier flowchart plug-in: Mermaid flowchart syntax drawn by Rapier\'s own SVG engine. */\n' + await squeeze(flowText) + '\n');
-	const writerText = await read('shell/vendor/turndown-7.2.4.lib.turndown.browser.umd.js') + '\n' + await read('reader/markdown.js');
+	const writerText = await read('shell/vendor/turndown-7.2.4.es2024.min.js') + '\n' + await read('reader/markdown.js');
 	const turndownNotice = (await mitNotice(root, entry => /Turndown|collapse-whitespace/.test(entry))).replaceAll('*/', '* /');
 	const pdfRegistry = await bundleModules({root, entries: PDF_MODULES, used: new Map([['RapierPdf', null], ['RapierHtmlReading', WRITER_READS]])});
 	const pdfPlugin = await read('interchange/pdf-plugin.js');

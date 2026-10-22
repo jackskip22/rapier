@@ -2,6 +2,7 @@
 import {dosDateTime, localHeader, centralHeader, endRecord} from '../notes/zip-records.mjs';
 import {crc32} from '../images/crc32.mjs';
 import {readPng, isPng} from './png.mjs';
+import {embeddedProfile} from './profile.mjs';
 import {mediaKind, convertMedia, mediaNote as framesNote} from './frames.mjs';
 
 export const CARRY_BYTES = 16 * 1024 * 1024, PIXELS = 24_000_000;
@@ -87,12 +88,20 @@ export function resultOf(bytes) {
 	return {blob: new Blob([bytes], {type: 'image/jxl'}), crc: crc >>> 0, size: bytes.length};
 }
 
+function lossyPng(own) {
+	const keys = Object.keys(own.options || {});
+	if (keys.length && !(keys.length === 1 && keys[0] === 'icc') && !(own.options.colorSpace === 'display-p3' && own.options.transferFunction === 'srgb' && keys.length === 2)) return null;
+	if (own.bitDepth !== 16) return own;
+	const {bitDepth, ...rest} = own;
+	return {...rest, data: Uint8Array.from(own.data, value => Math.round(value / 257))};
+}
+
 const same = (a, b) => { if (a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; };
 export const exhausted = error => error?.code === 'JXL_MEMORY' || error instanceof RangeError || /out of memory|allocation failed|Array buffer allocation/i.test(String(error?.message || ''));
 export const effortFor = pixels => pixels > 8e6 ? 4 : pixels > 2e6 ? 5 : 7;
 
-export async function pixelsOf(file) {
-	const bitmap = await createImageBitmap(file, {premultiplyAlpha: 'none'});
+export async function pixelsOf(file, {raw = false} = {}) {
+	const bitmap = await createImageBitmap(file, {premultiplyAlpha: 'none', ...raw && {colorSpaceConversion: 'none'}});
 	try {
 		const width = bitmap.width, height = bitmap.height;
 		if (width * height > PIXELS) throw Object.assign(new Error('Over ' + PIXELS / 1e6 + ' megapixels.'), {shown: true});
@@ -149,18 +158,32 @@ export async function convert(file, {mode = 'lossless', videoMode = '', complete
 	}
 	say('Reading the picture'); progress(0);
 	const lossless = mode === 'lossless';
-	const own = kind === 'png' && lossless ? await readPng(bytes, PIXELS) : null;
-	const picture = own?.data ? own : await pixelsOf(file), pixels = picture.width * picture.height;
-	const note = own?.browser ? (own.depth === 16 ? 'bits8' : 'colors') : '';
-	say('Making the file');
-	const effort = effortFor(pixels), native = own?.data ? {...own.bitDepth === 16 && {bitDepth: 16}, ...own.options} : {};
-	const encode = (data, options) => codec('encode', {width: picture.width, height: picture.height, data, options: {...options, ...native}}, {signal, progress});
+	let own = null, profile = null, note = '';
+	if (kind === 'png') {
+		own = await readPng(bytes, PIXELS);
+		if (!lossless && own?.data) own = lossyPng(own) || (note = 'colors', null);
+	} else if (kind !== 'jxl') profile = embeddedProfile(bytes);
+	if (own?.browser) note = own.depth === 16 && lossless ? 'bits8' : 'colors';
+	let picture = own?.data ? own : profile ? {...await pixelsOf(file, {raw: true}), options: {icc: profile}} : await pixelsOf(file);
 	const shown = await globalThis.RapierEmbeddedImages.whenJxlDisplayKnown?.() === true;
-	const again = shown && !lossless ? picture.data.slice() : null;
-	let made = await encode(picture.data, lossless ? {lossless: true, effort} : {quality: QUALITY[mode], photo: true, effort}), fallback = false, refused = false;
-	if (shown && !await opens(made.bytes)) {
-		if (lossless) refused = true;
-		else { say('Making it lossless'); progress(0); made = await encode(again, {lossless: true, effort}); fallback = true; refused = !await opens(made.bytes); }
+	for (let attempt = 0;; attempt++) {
+		const pixels = picture.width * picture.height, effort = effortFor(pixels);
+		const native = picture.options ? {...picture.bitDepth === 16 && {bitDepth: 16}, ...picture.options} : {};
+		const encode = (data, options) => codec('encode', {width: picture.width, height: picture.height, data, options: {...options, ...native}}, {signal, progress});
+		const again = shown && !lossless ? picture.data.slice() : null;
+		try {
+			say('Making the file');
+			let made = await encode(picture.data, lossless ? {lossless: true, effort} : {quality: QUALITY[mode], photo: true, effort}), fallback = false, refused = false;
+			if (shown && !await opens(made.bytes)) {
+				if (lossless) refused = true;
+				else { say('Making it lossless'); progress(0); made = await encode(again, {lossless: true, effort}); fallback = true; refused = !await opens(made.bytes); }
+			}
+			return {...resultOf(made.bytes), before, exact: false, jpeg: kind === 'jpeg', mode: fallback ? 'lossless' : mode, fallback, refused, note, width: picture.width, height: picture.height};
+		} catch (error) {
+			if (attempt || !picture.options?.icc || error?.name === 'AbortError' || exhausted(error) || !/^JXL_(INPUT|OPTIONS|SIZE|RGBA)$/.test(error?.code || '')) throw error;
+			console.warn('JPEG XL profile refused', error.code, error.message);
+			note = own?.depth === 16 || picture.bitDepth === 16 ? 'bits8' : 'colors';
+			picture = await pixelsOf(file);
+		}
 	}
-	return {...resultOf(made.bytes), before, exact: false, jpeg: kind === 'jpeg', mode: fallback ? 'lossless' : mode, fallback, refused, note, width: picture.width, height: picture.height};
 }

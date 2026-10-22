@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 export const PDF_JS_VERSION = "6.3.289";
 export const PDF_READER_FILE = "rapier-pdf-reader-1a1a2eb124f69792.mjs";
-export const PDF_JS_DOWNLOAD_BYTES = 6438177;
-export const PDF_JS_RESOURCE_ROOT = "qHGdkXakt0trH8AMgXvIiEartJ52CLjJ/WnEDdIMfKcqPEU9QJQbbEsYB/rx4Qqq";
+export const PDF_JS_DOWNLOAD_BYTES = 6084056;
+export const PDF_JS_RESOURCE_ROOT = "UvUARfT5yQcv94159hqRY+qWH2ThodgMCOw3PNT6WcGrGPtN6rFEsiVX4yt303A9";
 export const pdfResourceRootText = entries => entries.map(([path, length, digest]) => path + '\n' + length + '\n' + digest + '\n').join('');
 export const PDF_JS_RESOURCE_MANIFEST = Object.freeze([
   ["LICENSE",10174],
@@ -175,8 +175,8 @@ export const PDF_JS_RESOURCE_MANIFEST = Object.freeze([
   ["cmaps/UniKS-UTF8-V.bcmap",169],
   ["cmaps/V.bcmap",166],
   ["cmaps/WP-Symbol.bcmap",179],
-  ["legacy/build/pdf.mjs",1047456],
-  ["legacy/build/pdf.worker.mjs",2395538],
+  ["build/pdf.mjs",860384],
+  ["build/pdf.worker.mjs",2228489],
   ["standard_fonts/FoxitDingbats.pfb",29513],
   ["standard_fonts/FoxitFixed.pfb",17597],
   ["standard_fonts/FoxitFixedBold.pfb",18055],

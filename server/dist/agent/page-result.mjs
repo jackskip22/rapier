@@ -66,7 +66,13 @@ export function modelReply(name, result, {notesVersions = false} = {}) {
   const noteRead = notesVersions === true && name === 'read' && result?.availability === 'available' && typeof result.note_ref === 'string';
   const clean = (value, path = '') => {
     if (value == null) return undefined;
-    if (typeof value !== 'object') return value;
+    if (typeof value !== 'object') {
+      if (Number.isSafeInteger(value) && (['human.expiresAt', 'collaboration.presence.expiresAt',
+          'collaboration.agentPresence.pointer.expiresAt', 'retryExpiresAt'].includes(path) ||
+          name === 'show' && result.pointerId && ['createdAt', 'expires_at'].includes(path)) && Number.isFinite(new Date(value).getTime()))
+        return new Date(value).toISOString();
+      return value;
+    }
     if (Object.hasOwn(idleFacts, path) && idleFacts[path](value)) return undefined;
     if (Array.isArray(value)) {
       const rows = value.map(row => clean(row, path + '[]')).filter(row => row !== undefined);

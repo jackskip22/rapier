@@ -102,7 +102,7 @@ globalThis.RapierPdfPlugin = (() => {
     let reader;
     try {
       const hostedPath = 'pdfjs-dist-' + version + '/' + path;
-      const address = path === readerFile ? 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.25/' + hostedPath : base + path;
+      const address = path === readerFile ? 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.26/' + hostedPath : base + path;
       const response = await fetch(RapierBundleIO.pluginUrl(hostedPath) || address, {mode: 'cors', credentials: 'omit',
         referrerPolicy: 'no-referrer', cache: 'default', signal: controller.signal});
       if (!response.ok) throw new Error('PDF reader download returned HTTP ' + response.status + '.');
@@ -183,7 +183,7 @@ globalThis.RapierPdfPlugin = (() => {
     if (loading) return loading;
     loading = (async () => {
       if (!await checkInstalled()) throw new Error('Download the PDF import plugin before opening a PDF.');
-      const url = URL.createObjectURL(new Blob([files.get('legacy/build/pdf.mjs')], {type: 'text/javascript'}));
+      const url = URL.createObjectURL(new Blob([files.get('build/pdf.mjs')], {type: 'text/javascript'}));
       const readerUrl = URL.createObjectURL(new Blob([files.get(active.readerFile)], {type: 'text/javascript'}));
       try {
         const loaded = await import(/* webpackIgnore: true */ url);
@@ -229,7 +229,7 @@ globalThis.RapierPdfPlugin = (() => {
       const fallback = Object.create(null);
       for (const name of ['jbig2_nowasm_fallback.js', 'openjpeg_nowasm_fallback.js'])
         fallback[name] = moduleUrl(files.get('wasm/' + name));
-      let source = decoder.decode(files.get('legacy/build/pdf.worker.mjs'));
+      let source = decoder.decode(files.get('build/pdf.worker.mjs'));
       const original = '`${WasmImage.#wasmUrl}${this._noWasmFilename}`';
       if (source.indexOf(original) < 0 || source.indexOf(original) !== source.lastIndexOf(original))
         throw new Error('The pinned PDF decoder resource hook has changed.');

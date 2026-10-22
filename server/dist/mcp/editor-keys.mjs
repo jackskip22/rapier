@@ -3,6 +3,7 @@ import { base64url, fromBase64url } from '../agent/door-identity.mjs';
 
 export const EDITOR_KEY_LIFETIME_MS = 24 * 60 * 60 * 1000;
 const EDITOR_KEY_PREFIX = 'ek1';
+export const CLIENT_SESSION_PATTERN = /^rps_[A-Za-z0-9_-]{43}(?:\.[A-Za-z0-9_-]{43})?$/;
 
 export const EDITOR_SECRET_CANONICAL_BYTES = 32;
 export function classifyEditorSecret(secret) {
@@ -26,6 +27,20 @@ export function editorSecretKeyMaterial(secret, domain = '') {
 async function editorKeyMac(secret, body) {
   const key = await crypto.subtle.importKey('raw', editorSecretKeyMaterial(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   return base64url(new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body))));
+}
+const appsSessionBody = (session, binding) => JSON.stringify(['rapier-mcp-apps-v1', session, binding]);
+export async function mintClientSession(secret, apps, binding) {
+  const session = 'rps_' + base64url(crypto.getRandomValues(new Uint8Array(32)));
+  return apps && editorSecretUsable(secret) ? session + '.' + await editorKeyMac(secret, appsSessionBody(session, binding)) : session;
+}
+export async function clientSessionApps(secret, session, binding) {
+  if (!editorSecretUsable(secret) || !CLIENT_SESSION_PATTERN.test(session || '')) return false;
+  const [nonce, tag] = session.split('.');
+  if (!tag) return false;
+  const signature = fromBase64url(tag);
+  if (base64url(signature) !== tag) return false;
+  const key = await crypto.subtle.importKey('raw', editorSecretKeyMaterial(secret), {name: 'HMAC', hash: 'SHA-256'}, false, ['verify']);
+  return crypto.subtle.verify('HMAC', key, signature, new TextEncoder().encode(appsSessionBody(nonce, binding)));
 }
 const editorKeyBody = (nonce, issued, binding) => JSON.stringify(['rapier-editor-v2', binding.workspace || '', binding.connection || '', nonce, issued]);
 export async function mintEditorKey(secret, now = Date.now(), binding = {}) {

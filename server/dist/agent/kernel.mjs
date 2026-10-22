@@ -3318,9 +3318,18 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       (left.author?.id || left.principal) === (right.author?.id || right.principal);
   }
 
+  function unavailableAct(kind = 'act', author = false) {
+    const history = {complete: state.history.complete, earliestRevision: state.history.earliestRevision, retainedChanges: state.journal.length};
+    return failure('act_unavailable', 'target_gone', {history, hint: author
+      ? 'No ' + kind + ' with this id is recorded for the requested author. Check the id and author with read {history:true}.'
+      : history.complete
+        ? 'No ' + kind + ' with this id is recorded in this document\'s complete history. Check the id from edit or read {history:true}.'
+        : 'This ' + kind + ' is not in the retained history, which starts at revision ' + history.earliestRevision + '. It may be older or the id may be mistyped. Check read {history:true}.'});
+  }
+
   function turnChanges(name, changes = state.journal, author = null) {
     const entries = changes.filter(row => row.turnId === name && (!author || sameHistoryAuthor(row, author)));
-    if (!entries.length) return failure('act_unavailable', 'target_gone');
+    if (!entries.length) return unavailableAct('turn', !!author);
     if (entries.some(row => !sameHistoryAuthor(row, entries[0]))) return failure('turn_ambiguous', 'conflict');
     if (!since(Math.min(...entries.map(row => row.baseRevision)))) return failure('history_unavailable', 'conflict');
     return entries;
@@ -3364,8 +3373,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       const entry = requested.actId ? state.journal.find(row => row.id === requested.actId)
         : requested.turnId ? state.journal.findLast(row => row.turnId === requested.turnId &&
           authorMatches(row)) : null;
-      if (!entry) return failure('act_unavailable', 'target_gone');
-      if (!authorMatches(entry)) return failure('act_unavailable', 'target_gone');
+      if (!entry) return unavailableAct(requested.turnId ? 'turn' : 'act', !!(requested.actorId || requested.actorKind));
+      if (!authorMatches(entry)) return unavailableAct('act', true);
       return undo(requested.turnId ? {turn_id: requested.turnId} : {change_id: entry.id},
         participant({actor: 'human', principal: 'local', transport: 'platform', author: context.author}, mintId), context,
         requested.actorId && requested.actorKind ? entry : null);
@@ -3383,7 +3392,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const group = input.turn_id ? turnChanges(input.turn_id, changes, turnAuthor) : null;
     if (group?.outcome) return group;
     const entry = input.change_id ? changes.find(row => row.id === input.change_id) : group?.at(-1);
-    if (!entry) return failure('act_unavailable', 'target_gone');
+    if (!entry) return unavailableAct();
     if (who.actor === 'agent' && (group || [entry]).some(row => row.actor !== 'agent')) return failure('act_not_agent_authored', 'refused');
     const selectedIds = new Set((group || [entry]).map(row => row.id));
     const commentEntries = [], commentRestorations = [];
@@ -3669,7 +3678,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const changes = state.journal;
     const entry = input.change_id ? changes.find(row => row.id === input.change_id)
       : input.turn_id ? changes.filter(row => row.turnId === input.turn_id).at(-1) : changes.at(-1);
-    if (!entry) return failure('act_unavailable', 'target_gone');
+    if (!entry) return unavailableAct(input.turn_id ? 'turn' : 'act');
     const turnId = input.turn_id;
     const group = turnId ? turnChanges(turnId, changes) : null;
     if (group?.outcome) return group;
@@ -4499,7 +4508,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       reveal = host.revealChange;
     } else if (input.change_id) {
       const entry = state.journal.find(row => row.id === input.change_id);
-      if (!entry) return failure('act_unavailable', 'target_gone');
+      if (!entry) return unavailableAct();
       const later = since(entry.revision);
       if (!later) return failure('history_unavailable', 'conflict');
       for (let index = 0; index < entry.splices.length; index++) {
@@ -5132,8 +5141,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (reason === 'text_missing' && typeof needle === 'string' && !scope.reason) {
       let low = 0, high = needle.length;
       while (low < high) {const mid = Math.ceil((low + high) / 2); if (exactMatches(source, needle.slice(0, mid), scope, 1).length) low = mid; else high = mid - 1;}
-      facts.matched = low;
-      if (low) {start = exactMatches(source, needle.slice(0, low), scope, 1)[0]; end = start + low;
+      facts.hint = 'The text was not found. Copy the exact text from a fresh read.';
+      if (low >= 8 && low * 2 >= needle.length) {facts.matched = low; start = exactMatches(source, needle.slice(0, low), scope, 1)[0]; end = start + low;
         facts.hint = 'The first ' + low + ' of ' + needle.length + ' characters of old are found (the context shows where); the text differs after them.';}
       if (change.heading !== undefined || change.block) {
         const outside = exactMatches(source, needle, undefined, 2);
@@ -5223,7 +5232,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       hint: 'versions and version choose a Note\'s saved versions and need note. For this document\'s acts use history:true.'});
     if (input.since !== undefined && state.cursors[input.since]?.kind !== 'observation') return failure('since_unknown', 'invalid', {field: 'since',
       hint: 'since takes the value a read gave in continuation.next, not an act id or a revision. For this document\'s acts use history:true.'});
-    if (input.cursor && ['block','heading','lines','as','state','history','since','comparison','return_id'].some(key=>own(input,key)))
+    if (input.cursor && ['block','heading','lines','as','state','preferences','history','since','comparison','return_id'].some(key=>own(input,key)))
       return failure('cursor_options_conflict','invalid');
     if (input.as && !['text', 'image', 'outline'].includes(input.as)) return failure('representation_unknown', 'invalid');
     if (input.as === 'image') {
@@ -5234,6 +5243,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         if (scope.reason) return {...surfaceFailure(scope.reason, projection.text, input, {}, targets), outcome: 'target_gone'};
         if (input.lines) {
           if (input.heading || input.block || input.lines[1] < input.lines[0]) return failure('lines_invalid', 'invalid');
+          const last_line = targets.lines.number(projection.text.length);
+          if (input.lines[0] > last_line) return failure('lines_invalid', 'invalid', {last_line,
+            hint: 'The document\'s last line is ' + last_line + '. Read a range starting at or before that line.'});
           scope = {start: targets.lines.offset(input.lines[0] - 1), end: targets.lines.offset(input.lines[1])};
         }
         sourceRange = {start: sourcePosition(projection, scope.start), end: sourcePosition(projection, scope.end, true)};
@@ -5259,7 +5271,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         current: textHead(current, limit), alternative: textHead(alternative, limit),
         complete: textBytes(current) <= limit && textBytes(alternative) <= limit}});
     }
-    const observed = await observe({since:input.since,refs:false,facets: ['receipts','changes','brief', ...(input.history ? ['history'] : []), ...(input.state ? ['returns', 'capabilities', 'drawing'] : [])], budget_bytes: context.transport === 'webmcp' ? 4096 : 12288}, who, context);
+    const stateRead = input.state || input.preferences === true;
+    const observed = await observe({since:input.since,refs:false,facets: ['receipts','changes','brief', ...(input.history ? ['history'] : []), ...(stateRead ? ['returns', 'capabilities', 'drawing'] : [])], budget_bytes: context.transport === 'webmcp' ? 4096 : 12288}, who, context);
     if (observed.outcome !== 'ok') return observed;
     const surface = publicSurface(), {projection, targets} = surface, source = projection.text;
     const sourceDigest = () => surface.digest ??= sha256(source);
@@ -5270,19 +5283,24 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const continuation = {...observed.continuation, person: {...observed.continuation.person, intents: observed.continuation.person.intents.map(located), intentsRead: {tool: 'read', arguments: {}}}};
     if (continuation.next) continuation.next = {tool: 'read', arguments: {since: observed.observation_cursor}};
     const info = {revision: surfaceRevision(projection), filename: state.filename, selection: rangeText(observed.selection),
-      human: observed.human, focus: rangeText(observed.focus), ...(observed.foreground ? {foreground: observed.foreground} : {}), continuation,
+      human: observed.human?.active === true ? observed.human : {active: false},
+      focus: rangeText(observed.focus), ...(observed.foreground ? {foreground: observed.foreground} : {}), continuation,
       ...(observed.omissions ? {omissions: observed.omissions} : {}),
       view: observed.view || observed.collaboration?.view || null, collaboration: observed.collaboration, will: observed.law, surface:observed.surface, sourceChanges, observation_cursor:observed.observation_cursor, brief:observed.brief,
       ...(observed.history ? {history: {...observed.history, acts: state.journal.slice(-32).map(publicAct), more: state.journal.length > 32}} : {})};
     if (info.history) while (info.history.acts.length && bytes(JSON.stringify(info.history)) > 3072) {
       info.history.acts.shift(); info.history.more = true;
     }
-    if (input.history && !input.state && !['cursor', 'block', 'heading', 'lines', 'query', 'as'].some(key => own(input, key))) return accepted(info);
-    if (input.state) return accepted({...info, state: observed.state, editor: {...observed.editor,preferences: observed.editorPreferences}, returnWaiting:observed.returnWaiting, drawing: observed.drawing, notes: observed.notes, returns: observed.returns, capabilities: observed.capabilities, paint: observed.paint ? {...observed.paint, guide: {resource: 'rapier://guide/water'}} : undefined});
+    if (input.history && !stateRead && !['cursor', 'block', 'heading', 'lines', 'query', 'as'].some(key => own(input, key))) return accepted(info);
+    if (stateRead) return accepted({...info, state: observed.state, editor: {...observed.editor, ...(input.preferences === true ? {preferences: observed.editorPreferences} : {})}, returnWaiting:observed.returnWaiting, drawing: observed.drawing, notes: observed.notes, returns: observed.returns, capabilities: observed.capabilities, paint: observed.paint ? {...observed.paint, guide: {resource: 'rapier://guide/water'}} : undefined});
     const scope = textScope(source, input, targets); if (scope.reason) return {...surfaceFailure(scope.reason, source, input, {}, targets), outcome: 'target_gone'};
     let start = scope.start, end = scope.end;
     if (input.lines) {
       if (input.heading || input.block || input.lines[1] < input.lines[0]) return failure('lines_invalid', 'invalid');
+      const last_line = targets.lines.number(source.length);
+      if (input.lines[0] > last_line) return failure('lines_invalid', 'invalid', {last_line,
+        hint: 'The document\'s last line is ' + last_line + '. Read a range starting at or before that line.'});
+      info.last_line = last_line;
       start = targets.lines.offset(input.lines[0] - 1); end = targets.lines.offset(input.lines[1]);
     }
     let offset = start, query = input.query, headingRow = input.as === 'outline' ? 0 : -1;

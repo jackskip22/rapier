@@ -1,24 +1,48 @@
 {
-  "what": "The vendor libraries the page executes as classic scripts, packed by tools/build.mjs (VENDOR_GROUPS) into the text/rapier-vendor elements of rapier.html. Each file is the published build of its package at the named version or an explicitly pinned unchanged-source build; the build refuses a file whose bytes or SHA-256 differ from this record. The path is the file inside the published package as far as the vendoring record names it; the digests here are the identities the packed spans carry.",
+  "what": "The vendor libraries the page executes as classic scripts, packed by tools/build.mjs (VENDOR_GROUPS). Published modern builds are kept byte for byte; source builds record the exact package/source, compiler, target and rebuild recipe. The build refuses a file whose bytes or SHA-256 differ from this record. The digests here are the identities the packed spans carry.",
   "movedFrom": "These bytes once lived only as the packed groups inside rapier.html, and every build re-read its own output to pack them again.",
   "files": {
-    "dompurify-3.4.16.dist.purify.min.js": {
+    "dompurify-3.4.16.es2024.min.js": {
       "package": "dompurify",
       "version": "3.4.16",
-      "path": "dist/purify.min.js",
+      "path": "tools/build-import-vendors.mjs; shell/vendor/source/dompurify-3.4.16/SOURCE.json",
       "license": "Apache-2.0 OR MPL-2.0 (the notice is the file's own first comment)",
-      "bytes": 28885,
-      "sha256": "2c90a9b46d6463f26038a29b686e82bc91de01fdac9d5229e7cfe3b360134ea2",
+      "bytes": 27452,
+      "sha256": "f6b76cf7310215fb2322ab05d09284713888170ae4cddfbbeadf00380905c1b4",
       "tarball": "https://registry.npmjs.org/dompurify/-/dompurify-3.4.16.tgz",
-      "integrity": "sha512-sqo+pNp3qRhCIpbgRi1y8Tgk27Bo2Ry7w0dC1NBeNTdZChWjz9Xb/KOoZbRP/R6pQZ80Qw8YhXw13hWWBbMRnQ=="
+      "integrity": "sha512-sqo+pNp3qRhCIpbgRi1y8Tgk27Bo2Ry7w0dC1NBeNTdZChWjz9Xb/KOoZbRP/R6pQZ80Qw8YhXw13hWWBbMRnQ==",
+      "gitHead": "b9b9d80f7e401771c2ccaef5f45def7eec8f27d7",
+      "build": {
+        "compiler": "esbuild",
+        "version": "0.28.2",
+        "target": "es2024",
+        "strict": "inside IIFE",
+        "strictRecipeSha256": "f17d9757fd29a0adc2faeda9e213eea0ed589d473f9d5815b7c818f32b3ddb14",
+        "npmLockSha256": "fa1f70a5a0db1ac0490f9201be45689bad0c487b6be2731406db4051f972544c"
+      },
+      "note": "Published TypeScript source compiled without Babel; selects native Object.freeze/seal, Reflect.apply/construct and BigInt/Symbol. Captured intrinsics and all sanitizer, DOM, clobbering, capability and hook logic are unchanged.",
+      "gzipBytes": 10584
     },
-    "turndown-7.2.4.lib.turndown.browser.umd.js": {
+    "turndown-7.2.4.es2024.min.js": {
       "package": "turndown",
       "version": "7.2.4",
-      "path": "lib/turndown.browser.umd.js",
+      "path": "tools/build-import-vendors.mjs; shell/vendor/source/turndown-7.2.4/SOURCE.json",
       "license": "MIT (agent/vendor/NOTICE.txt)",
-      "bytes": 26946,
-      "sha256": "cdf933e0a2085df3c64d6c763331f04345f6c3b25746216e8f1426c9c5253045"
+      "bytes": 10463,
+      "sha256": "3290b5aec1114d1523ca99aef6d5a07e5825cdabd9193fb765186856411cb741",
+      "tarball": "https://registry.npmjs.org/turndown/-/turndown-7.2.4.tgz",
+      "integrity": "sha512-I8yFsfRzmzK0WV1pNNOA4A7y4RDfFxPRxb3t+e3ui14qSGOxGtiSP6GjeX+Y6CHb7HYaFj7ECUD7VE5kQMZWGQ==",
+      "gitHead": "fb7a865ef5eba4081dfd4e20a894a61ef7a2edca",
+      "build": {
+        "compiler": "esbuild",
+        "version": "0.28.2",
+        "target": "es2024",
+        "strict": "inside IIFE",
+        "strictRecipeSha256": "f17d9757fd29a0adc2faeda9e213eea0ed589d473f9d5815b7c818f32b3ddb14",
+        "npmLockSha256": "fa1f70a5a0db1ac0490f9201be45689bad0c487b6be2731406db4051f972544c"
+      },
+      "note": "Source from the published package gitHead, with native block scope. The HTML parser import selects globalThis.DOMParser; conversion rules are unchanged.",
+      "gzipBytes": 4032
     },
     "markdown-it-task-lists-2.1.1.min.js": {
       "package": "markdown-it-task-lists",
@@ -94,14 +118,6 @@
       "bytes": 59967,
       "sha256": "75f260aa052a82d5204a82b5b9dd0cf4c3dbe28bb77e42a2732f4121918fcba0"
     },
-    "acorn-8.19.0.dist.acorn.js": {
-      "package": "acorn",
-      "version": "8.19.0",
-      "path": "dist/acorn.js",
-      "license": "MIT (agent/vendor/NOTICE.txt)",
-      "bytes": 246643,
-      "sha256": "b95392d79457d0357555c5ed3e56302d074b92dff119bcf3b44179500b10e9df"
-    },
     "rapier-math-2.7.0.js": {
       "package": "rapier-math",
       "version": "2.7.0",
@@ -109,6 +125,29 @@
       "license": "MIT AND LicenseRef-GUST-Font-License (math/LICENSE-MIT; math/FONT-LICENSE.txt)",
       "bytes": 742684,
       "sha256": "cb1c935e84744d41d516c03607a8383ff801ecfc6acdfd63b2eb38be0bc20d80"
+    },
+    "acorn-8.19.0.modern.js": {
+      "package": "acorn",
+      "version": "8.19.0",
+      "path": "tools/build-acorn.mjs; shell/vendor/acorn/PROVENANCE.json",
+      "license": "MIT (agent/vendor/NOTICE.txt)",
+      "bytes": 100487,
+      "sha256": "d1ef1e8d60e976445a4a38d64fd0794e8e0545c936926d55e6f6776a5384eb79",
+      "source": "https://github.com/acornjs/acorn",
+      "tag": "8.19.0",
+      "commit": "0e0ece7cc7202624d4aca531be4b515b0114b5d0",
+      "build": {
+        "esbuild": "0.28.2",
+        "target": "es2022",
+        "minify": true,
+        "strictIIFE": true,
+        "nativeIntrinsics": [
+          "Object.hasOwn",
+          "Array.isArray"
+        ],
+        "browserRegExp": "tools/acorn-engine-regexp.mjs; unchanged engine grammar and Acorn Unicode-table rule"
+      },
+      "note": "Native class/accessor source, with Rapier’s existing browser RegExp grammar and Unicode-table admission unchanged; full agent build retains the upstream validator."
     },
     "markdown-it-15.0.2.es2022.umd.js": {
       "package": "markdown-it",

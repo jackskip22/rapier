@@ -1,0 +1,123 @@
+{
+  "package": "acorn",
+  "version": "8.19.0",
+  "source": "https://github.com/acornjs/acorn",
+  "tag": "8.19.0",
+  "commit": "0e0ece7cc7202624d4aca531be4b515b0114b5d0",
+  "license": "MIT",
+  "files": {
+    "src/expression.js": {
+      "bytes": 44988,
+      "sha256": "d5387f319528b5b0fb3b8a5f72b28c73ea313e77975d496b8bd5850c7df839d7"
+    },
+    "src/generated/astralIdentifierCodes.js": {
+      "bytes": 1290,
+      "sha256": "b34cac918078ca32fa33778061b66dbf5f6447534658c32ad133a80020ab885c"
+    },
+    "src/generated/astralIdentifierStartCodes.js": {
+      "bytes": 2370,
+      "sha256": "9e1bcdf049bd79fe38d43b5d768b10994713adaaaa273cac529ee3c215690476"
+    },
+    "src/generated/nonASCIIidentifierChars.js": {
+      "bytes": 2726,
+      "sha256": "1a2d2869023e1d5ad18a01b28f60357101ae6dd555b03e401d16ad0fa7b0e2fe"
+    },
+    "src/generated/nonASCIIidentifierStartChars.js": {
+      "bytes": 4350,
+      "sha256": "8e7ed6754891b8cf007a738e0ce6fd4d231dfdac18c6e1e12b780ab859e8d90b"
+    },
+    "src/generated/scriptValuesAddedInUnicode.js": {
+      "bytes": 332,
+      "sha256": "7c6db7a096402d03a6e3f74b6f0b7e73cb0d84ceae0bf99df9b9dac5fd15d2c4"
+    },
+    "src/identifier.js": {
+      "bytes": 3322,
+      "sha256": "f85fd1acbab36f4da63c91b5de4a950094ab4e06731cc584a7ac9e5bd7335824"
+    },
+    "src/index.js": {
+      "bytes": 2548,
+      "sha256": "c4b7fad02488322598ffc93a60cd03bf61279ed3fab197047d22ea2b9c60afad"
+    },
+    "src/location.js": {
+      "bytes": 862,
+      "sha256": "1bf393b7a86bffd7dca85335b303e7bd0e81d6c0d86a765ee85d6436217fed7c"
+    },
+    "src/locutil.js": {
+      "bytes": 978,
+      "sha256": "a546816b2e0936baf39cfee6d5116f62f3b75029780d6c7c64de036c339aba58"
+    },
+    "src/lval.js": {
+      "bytes": 11079,
+      "sha256": "24a316f6d8fcd1373b969214cef84aee8cb7ab458fc5939c242b5ff3e1a0aca6"
+    },
+    "src/node.js": {
+      "bytes": 1361,
+      "sha256": "a8c2c2f43fa3769ba092fcc9c07ae8a2a829148bffc59b10cd95984ac0313182"
+    },
+    "src/options.js": {
+      "bytes": 7413,
+      "sha256": "8dfdf477fbd083451435e4cfb50b2215e5ef78512a80354a34730e4d84145e60"
+    },
+    "src/parseutil.js": {
+      "bytes": 5782,
+      "sha256": "deb3fbb43aa1d0b7b606b5ce951b174d8e108910772348639bc715d19a647c2d"
+    },
+    "src/regexp.js": {
+      "bytes": 40636,
+      "sha256": "1fb13029b518dc33bdf3a947c3739addfa40c54f69925303d734cc09cfd4b596"
+    },
+    "src/scope.js": {
+      "bytes": 3589,
+      "sha256": "ec1da48591d7c0b7040a2d4fab2e980a4cce3c0091ae349b35db72bb28df0001"
+    },
+    "src/scopeflags.js": {
+      "bytes": 987,
+      "sha256": "667b9245ad09271d699ed167d5c4175d54674c519d474aed1e66351986d6e0f5"
+    },
+    "src/state.js": {
+      "bytes": 6497,
+      "sha256": "586a9c7f417e6539f039bbaba38d8703a3490edf774445f9c11383a6d677700f"
+    },
+    "src/statement.js": {
+      "bytes": 43109,
+      "sha256": "681982a0dc02fdb98929c50f5ed22beeff78683d78195f6f2a31d28d6e19e139"
+    },
+    "src/tokencontext.js": {
+      "bytes": 5231,
+      "sha256": "f7136610ca98f2678927ca99c18520da874ff05bf4fec7fd8e3745a687a547a6"
+    },
+    "src/tokenize.js": {
+      "bytes": 26424,
+      "sha256": "5c65f260027ca966061e5e5b95de58ed0374cef53fb3b318708ef50b1684e542"
+    },
+    "src/tokentype.js": {
+      "bytes": 5599,
+      "sha256": "ce3db24844b6fa9450f915851e70280b36e31f0e92e1d89ad7760b52ccff0539"
+    },
+    "src/unicode-property-data.js": {
+      "bytes": 6662,
+      "sha256": "96eb7534cea13b4ce425f2789000c6f2c7db8f0f7ae6332fd84e377cb57659b0"
+    },
+    "src/util.js": {
+      "bytes": 704,
+      "sha256": "2393efd75a970cc835699abbeaae37b5df0cf822a18e9a8008092baf48a1d3b9"
+    },
+    "src/whitespace.js": {
+      "bytes": 737,
+      "sha256": "ea96d1c714abf6865a75d53e2311e1f77d2a80d15079f54dfc21f46c2384bdaa"
+    },
+    "LICENSE": {
+      "bytes": 1099,
+      "sha256": "76a876cf886ff9be2a8b5e2e86514fed06223c8c9f0c1e9ee9606e93841e00b7"
+    }
+  },
+  "reference": {
+    "path": "reference/acorn-8.19.0.js",
+    "packagePath": "dist/acorn.js",
+    "purpose": "Independent npm reference for regexp, identifier and AST proofs; never a runtime build input.",
+    "tarball": "https://registry.npmjs.org/acorn/-/acorn-8.19.0.tgz",
+    "integrity": "sha512-oJlA3XiRm7Cyk6qFD2Jn8ak9B7jSy0qy00ADO3+8dpT0LSjFihQYv4C02LFCSYJV3Q37xYwwRy5m+IpIiUzqWw==",
+    "bytes": 246643,
+    "sha256": "b95392d79457d0357555c5ed3e56302d074b92dff119bcf3b44179500b10e9df"
+  }
+}

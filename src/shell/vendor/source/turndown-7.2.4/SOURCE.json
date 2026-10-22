@@ -1,0 +1,62 @@
+{
+  "package": "turndown",
+  "version": "7.2.4",
+  "gitHead": "fb7a865ef5eba4081dfd4e20a894a61ef7a2edca",
+  "repository": "https://github.com/mixmark-io/turndown",
+  "tarball": "https://registry.npmjs.org/turndown/-/turndown-7.2.4.tgz",
+  "integrity": "sha512-I8yFsfRzmzK0WV1pNNOA4A7y4RDfFxPRxb3t+e3ui14qSGOxGtiSP6GjeX+Y6CHb7HYaFj7ECUD7VE5kQMZWGQ==",
+  "note": "The published npm tarball contains builds only; source is from the package metadata gitHead at v7.2.4.",
+  "files": [
+    {
+      "path": "LICENSE",
+      "bytes": 1069,
+      "sha256": "a055e3a15db4b4cbb5af381230eba085603126d7d5d8c4dae45ee85b877a9729"
+    },
+    {
+      "path": "src/collapse-whitespace.js",
+      "bytes": 3885,
+      "sha256": "c5d6e20c912e0fafb304437f3b60eb077a47668e96b027daef256d1f7824074f"
+    },
+    {
+      "path": "src/commonmark-rules.js",
+      "bytes": 7059,
+      "sha256": "d514a97cc39f1e01994889b061f75a1a25d70b84e21ba96c744b5807d79142f3"
+    },
+    {
+      "path": "src/html-parser.js",
+      "bytes": 1609,
+      "sha256": "def8cd21713cb80d89ddef07d4a608db5504d43f8599aed0d421183301ebbfa9"
+    },
+    {
+      "path": "src/node.js",
+      "bytes": 2146,
+      "sha256": "29a4afd11a5a726d07f510e52beb041fe5a06a2ee4b4445547cca96112e9d2c6"
+    },
+    {
+      "path": "src/root-node.js",
+      "bytes": 995,
+      "sha256": "4af4b8508135d2e6f59fe4043bb8467c7b4db4922f61266695013fa7c849d1cc"
+    },
+    {
+      "path": "src/rules.js",
+      "bytes": 1914,
+      "sha256": "3a13bbb5c46be721dc620de4721cb70af39bb7abe97289dbadf45907f8d63a71"
+    },
+    {
+      "path": "src/turndown.js",
+      "bytes": 6038,
+      "sha256": "9225cb155477fc715ff2b8c6c10105b2530cdfabeb27bb2ec20097572ad90fcc"
+    },
+    {
+      "path": "src/utilities.js",
+      "bytes": 2682,
+      "sha256": "ae473405c8c9826bc8ee76d14953920942cefeffca8009275e9b225018d2cd61"
+    },
+    {
+      "path": "test/index.html",
+      "bytes": 35476,
+      "sha256": "89e1896e8d601d53eea0f4492ec342f096fff714fc82044c46fc4f946bed3cb5"
+    }
+  ],
+  "testSource": "Pinned upstream test data, from the same gitHead as the implementation; used only by tools/probes/import-vendors.mjs."
+}

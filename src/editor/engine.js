@@ -4040,20 +4040,35 @@ async function _rapierPrepareMarkdownProjection(blocks, sourceLength, loadToken,
 		return null;
 	};
 	const render = work => _rapierWithReadRenderPolicy({remote: fresh ? false : _rapierRemoteContent.allowed}, work);
+	const priorState = _rapierReadProjectionRuntime.renderState;
 	let state = render(() => _rapierReadRenderState(referenceIndex)), sliceStarted = _rapierNow();
 	const head = _rapierProjectionHeadCount(blocks), staged = fresh ? new Map() : null;
 	const ledgerOption = {deferLedger: !fresh, ledger: staged};
 	if (!current()) return abandon();
 	const early = _rapierTakeEarlyBlocks(document.getElementById('editor-blocks'), blocks);
 	fragment._rapierEarly = early ? {adopted: [], replace: [], order: []} : null;
+	const reusable = !fresh && !early && options?.reuse === true && state === priorState ? _rapierReusableWrappers() : null;
+	const retained = reusable ? new Set() : null, order = reusable ? [] : null;
+	const reusing = (block, index) => {
+		const old = reusable?.get(String(block.id));
+		return old && old._rapierBlockRaw === block.raw && !retained.has(old) && !(old._rapierUnrendered && index < head) ? old : null;
+	};
 	for (let start = 0; start < blocks.length; start += _RAPIER_RENDER_BATCH) {
 		const slice = blocks.slice(start, start + _RAPIER_RENDER_BATCH);
-		const demanded = slice.filter((block, index) => start + index < head && !_rapierWysiwygRenderHidden(block));
+		const demanded = slice.filter((block, index) => start + index < head && !_rapierWysiwygRenderHidden(block) && !reusing(block, start + index));
 		const prepared = render(() => _rapierRenderBlocksBatched(demanded, referenceIndex, null, true));
 		let at = 0;
 		for (let index = 0; index < slice.length; index++) {
 			const block = slice[index]; block.order = start + index;
 			let node;
+			const old = reusing(block, start + index);
+			if (old) {
+				const prior = old._rapierBlock;
+				block.rendered = old._rapierUnrendered ? null : prior?.rendered ?? null;
+				old._rapierBlock = block;
+				retained.add(old); order.push(old);
+				continue;
+			}
 			const demand = demanded[at] === block, projection = demand ? prepared[at++] : null;
 			if (projection) { projection.state = state; block.rendered = projection.html; }
 			const kept = early?.[start + index] ? render(() => makeBlockEl(block, {...ledgerOption, early: early[start + index], unrendered: !demand, projection})) : null;
@@ -4068,7 +4083,7 @@ async function _rapierPrepareMarkdownProjection(blocks, sourceLength, loadToken,
 			node._rapierBlockRaw = block.raw;
 			if (early?.[start + index]) fragment._rapierEarly.replace.push([early[start + index], node]);
 			if (early) fragment._rapierEarly.order.push(node);
-			else fragment.appendChild(node);
+			else { fragment.appendChild(node); order?.push(node); }
 		}
 		if (_rapierNow() - sliceStarted < 8) continue;
 		options?.work?.set(0.65 + (start + slice.length) / Math.max(1, blocks.length) * 0.3);
@@ -4086,9 +4101,46 @@ async function _rapierPrepareMarkdownProjection(blocks, sourceLength, loadToken,
 		if (!render(() => _rapierReadRenderStateIsCurrent(state, referenceIndex))) continue;
 		fragment._rapierRenderState = state;
 		if (staged) fragment._rapierLedgerEntries = staged;
+		if (retained?.size) { fragment._rapierKept = retained; fragment._rapierOrder = order; }
 		return fragment;
 	}
 	return abandon();
+}
+
+function _rapierReusableWrappers() {
+	const found = new Map();
+	for (const wrapper of _blockWrapperChildren(document.getElementById('editor-blocks'))) {
+		const id = wrapper.dataset.blockId;
+		if (id == null || found.has(id)) { if (id != null) found.set(id, null); continue; }
+		if (wrapper.classList.contains('block-wrapper--editing') || typeof wrapper._rapierBlockRaw !== 'string' || !wrapper._rapierBlock) continue;
+		found.set(id, wrapper);
+	}
+	return found;
+}
+
+function _rapierPlaceKeptWrappers(container, order, kept) {
+	const standing = _blockWrapperChildren(container);
+	let at = 0;
+	for (const node of order) if (kept.has(node)) { if (standing[at++] !== node) return _rapierPlaceAllWrappers(container, order); }
+	if (at !== standing.length) return _rapierPlaceAllWrappers(container, order);
+	let reference = Array.from(container.children).find(child => !child.classList.contains('block-wrapper') && !child.classList.contains('block-sleep-group')) || null;
+	for (let index = order.length - 1; index >= 0; index--) {
+		const node = order[index];
+		if (kept.has(node)) { reference = node; continue; }
+		let target = reference;
+		const group = reference?.parentElement;
+		if (group && group !== container) {
+			if (reference === group.firstElementChild) target = group;
+			else { _rapierUnpackSleepGroup(group); target = reference; }
+		}
+		container.insertBefore(node, target);
+		reference = node;
+	}
+}
+function _rapierPlaceAllWrappers(container, order) {
+	for (const node of order) _rapierUnpackSleepGroup(node.parentElement);
+	const rest = Array.from(container.children).find(child => !child.classList.contains('block-wrapper')) || null;
+	for (const node of order) container.insertBefore(node, rest);
 }
 
 function _rapierRemoveBlockWrapper(wrapper) {
@@ -4120,7 +4172,8 @@ function _rapierInstallMarkdownProjection(fragment, blocks, options = null) {
 			after = node; kept.add(node);
 		}
 	}
-	const oldWrappers = _blockWrapperChildren(container).filter(wrapper => !kept.has(wrapper));
+	const reused = fragment._rapierKept;
+	const oldWrappers = _blockWrapperChildren(container).filter(wrapper => !kept.has(wrapper) && !reused?.has(wrapper));
 	oldWrappers.forEach(_rapierRemoveBlockWrapper);
 
 	_rapierWysiwygLedger.pending.clear();
@@ -4137,7 +4190,8 @@ function _rapierInstallMarkdownProjection(fragment, blocks, options = null) {
 	_rapierWysiwygConfigureVirtualization(container, blocks);
 	if (!staged) _rapierWysiwygInvalidateHeightWidth();
 	lap('configure');
-	container.insertBefore(fragment, container.firstChild);
+	if (reused) _rapierPlaceKeptWrappers(container, fragment._rapierOrder, reused);
+	else container.insertBefore(fragment, container.firstChild);
 	lap('insert');
 	if (!staged) {
 		const wrappers = _blockWrapperChildren(container);
@@ -4146,7 +4200,7 @@ function _rapierInstallMarkdownProjection(fragment, blocks, options = null) {
 		});
 	}
 	_rapierLoadLap = lap;
-	try { _rapierWysiwygLedgerSync(blocks); } finally { _rapierLoadLap = null; }
+	try { _rapierWysiwygLedgerSync(blocks, {keepGroups: !!reused}); } finally { _rapierLoadLap = null; }
 	if (!sameDocument) container.scrollTop = 0;
 	_rapierSyncStartersButton();
 	assignHeadingSlugs();
@@ -4297,7 +4351,7 @@ async function _loadMarkdownDoc(markdown, filename, loadToken, options) {
 	const referenceIndex = _rapierBuildReferenceIndex(parsedBlocks, bodyMarkdown);
 	_rapierLoadMark('refindex');
 	const projection = await _rapierPrepareMarkdownProjection(
-		parsedBlocks, bodyMarkdown.length, loadToken, referenceIndex, loadCommitGuard, {fresh: options.sameDocument !== true, work: options.work});
+		parsedBlocks, bodyMarkdown.length, loadToken, referenceIndex, loadCommitGuard, {fresh: options.sameDocument !== true, reuse: options.sameDocument === true && priorSegments != null, work: options.work});
 	_rapierLoadMark('project');
 	if (!projection || loadToken !== rapier.identity.loadToken || !loadCommitCurrent() ||
 			(sourceCommitGuard && !_rapierSourceCommitGuardIsCurrent(sourceCommitGuard, loadToken))) return false;

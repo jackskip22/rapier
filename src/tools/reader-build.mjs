@@ -17,7 +17,6 @@ import {readerBlocks, spriteFor, dropElements, readerTokenCss, checkReaderPackag
 import {readerStyles} from './reader-css.mjs';
 import {zopfliGzip, FAST_PACK} from './zopfli.mjs';
 import {encodeBase124} from './base124.mjs';
-import {minifyVendor, BROWSER_MINIFY} from './minify-vendor.mjs';
 import {entitiesVendor} from './entities-vendor.mjs';
 import {fillMermaidResources} from './mermaid-resources.mjs';
 import {readerPluginLoader, pluginManifest} from './reader-plugins.mjs';
@@ -237,14 +236,14 @@ export async function buildReader({root = here, unchecked = [], toolchainCanonic
 		for (const name of names) {
 			const bytes = await readFile(resolve(here, 'shell/vendor', name)), record = provenance.files[name];
 			if (!record || record.bytes !== bytes.length || record.sha256 !== sha256(bytes)) throw new Error('Vendor file ' + name + ' does not match shell/vendor/PROVENANCE.json');
-			const source = bytes.toString('utf8'), minified = minifyVendor(name, source), reencoded = entitiesVendor(name, source);
-			parts.push(reencoded?.source ?? (minified === null ? source : minified));
+			const source = bytes.toString('utf8');
+			parts.push(entitiesVendor(name, source)?.source ?? source);
 		}
 		return parts.join('\n');
 	};
 	const markdownIt = await vendor(['markdown-it-15.0.2.es2022.umd.js', 'markdown-it-task-lists-2.1.1.min.js', 'markdown-it-footnote-4.0.0.min.js', 'markdown-it-mark-4.0.0.min.js',
 		'markdown-it-sup-2.0.0.min.js', 'markdown-it-emoji-3.1.0-light.min.js', 'markdown-it-abbr-2.0.0.min.js', 'markdown-it-ins-4.0.0.min.js', 'markdown-it-deflist-4.0.0.min.js']);
-	const purify = await vendor(['dompurify-3.4.16.dist.purify.min.js']);
+	const purify = await vendor(['dompurify-3.4.16.es2024.min.js']);
 
 	const carriesPretext = /agent\/vendor\/pretext\/|Pretext bac1774/.test(scriptPackage);
 	const lazy = licensesSheet(licenses, carriesPretext ? await read('agent/vendor/pretext/LICENSE') : '', await mitNotice(here), carriesPretext);

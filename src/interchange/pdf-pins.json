@@ -1,4 +1,4 @@
-{"what":"The PDF reader's pins: every pdfjs-dist file and the structure reader the plug-in downloads, with its byte length and SHA-384 (base64). Provenance only, never shipped; interchange/pdf-resources.mjs is its projection (node tools/check-pdfjs-pins.mjs --write) and carries one root over this list. The structure reader is interchange/pdf-reader.mjs under its content-addressed name; all other files are the exact npm distribution files of pdfjs-dist at this version, fetched from https://cdn.jsdelivr.net/npm/pdfjs-dist@<version>/<path>; each file is pinned by itself.","version":"6.3.289","downloadBytes":6438177,"root":"qHGdkXakt0trH8AMgXvIiEartJ52CLjJ/WnEDdIMfKcqPEU9QJQbbEsYB/rx4Qqq","reader":"rapier-pdf-reader-1a1a2eb124f69792.mjs","files":[
+{"what":"The PDF reader's pins: every pdfjs-dist file and the structure reader the plug-in downloads, with its byte length and SHA-384 (base64). Provenance only, never shipped; interchange/pdf-resources.mjs is its projection (node tools/check-pdfjs-pins.mjs --write) and carries one root over this list. The structure reader is interchange/pdf-reader.mjs under its content-addressed name; all other files are the exact npm distribution files of pdfjs-dist at this version, fetched from https://cdn.jsdelivr.net/npm/pdfjs-dist@<version>/<path>; each file is pinned by itself.","version":"6.3.289","downloadBytes":6084056,"root":"UvUARfT5yQcv94159hqRY+qWH2ThodgMCOw3PNT6WcGrGPtN6rFEsiVX4yt303A9","reader":"rapier-pdf-reader-1a1a2eb124f69792.mjs","upstream":{"package":"pdfjs-dist","version":"6.3.289","tarball":"https://registry.npmjs.org/pdfjs-dist/-/pdfjs-dist-6.3.289.tgz","integrity":"sha512-ZHjSVpDa3D6izMq8/04lvkhkATUmL9px6ChPaXc1k6nU2Mrhlg1/7F0bdUqCwUjw3NsPTfPZsMDUU6ZIcRaeQw==","gitHead":"1c8020a7d4e43668ac287a3ecf9a8dbea17e4c56","build":"Published modern browser ESM files, byte-for-byte npm distribution; no legacy polyfills or transpilation."},"files":[
 ["LICENSE",10174,"dIfJx5IERVwWkDwmUITjq6FFmOOiUluv24tT2o6vrjEpXyjYGE/BIj5rw25rSNr0"],
 ["cmaps/78-EUC-H.bcmap",2404,"8B6vD8ASBkrE04TBihkzPoSYkGcFVNMpC4RoZ1qavGI0IFXU+XcWakJ0N1XWQLWv"],
 ["cmaps/78-EUC-V.bcmap",173,"rxU7UYCGw7/R7lqb2p5xiKR0UmQlhNlRqOc+VnxGZEsXXF7Zt5+xB4DqbhGck5Id"],
@@ -169,8 +169,8 @@
 ["cmaps/UniKS-UTF8-V.bcmap",169,"e+QYmkfdYvgYuVIsP/vx4EuPCvG+h22HD4eXbQTNQDXSw+i3Ig45SZ1292myvL64"],
 ["cmaps/V.bcmap",166,"FsbgYCUylaeQqHlmvz3et6RkJQKzEo1QNow4hUHzCXrxcJDnys/1s6Xbe35h6dlw"],
 ["cmaps/WP-Symbol.bcmap",179,"xxb3ANBVDdxqKBJCY4OMTGuf/4/G+F3ECxnuALhv32QWgqThFkaQmoCOHwXTxjno"],
-["legacy/build/pdf.mjs",1047456,"/kyFEq6BcHmYKbc6T/ygSvZmdGFi8qfs7ifYH+4ORb6IPMZl1Ta6pLzpnd0lsvn7"],
-["legacy/build/pdf.worker.mjs",2395538,"lqR6R/VNKBavAXOeWsRSZpCezXgiWkzhpwTnQbwtaocJJs2sm0S1UIlbX/qqUx2B"],
+["build/pdf.mjs",860384,"0OgWHZfXor+qczHagCPClXPhU5PNRmQHN/nLlm+WoS1ia5Q91mavvN5QmkBVNq6F"],
+["build/pdf.worker.mjs",2228489,"AzcYX25yPL+RXO1exGVxYnTOllKYsHH8WoZX+n+Z+Cekli52UJoV4i8f2nC9LwEL"],
 ["standard_fonts/FoxitDingbats.pfb",29513,"J6D0tuQ7hS4r7c36w4Knq9lCvK5fVNcMVS42w1akJ6d50IRQpIiDUHAx9p5Qauy7"],
 ["standard_fonts/FoxitFixed.pfb",17597,"G+pbNzvaEqW9j5UWUdLjo+D48ORIOVf1HvsdEYtoeNQ0q1yk4FrRlUjY/Q6RmM/p"],
 ["standard_fonts/FoxitFixedBold.pfb",18055,"4/tnth9xUAxEYByFlQTurvox7hqAD46o8O4eI5JYnZjjystXeppy3lxk0IdoHI4+"],

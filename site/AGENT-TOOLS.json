@@ -1,5 +1,5 @@
 {
-  "release": "1.2.25",
+  "release": "1.2.26",
   "core": [
     {
       "name": "open",
@@ -16,7 +16,8 @@
           },
           "url": {
             "type": "string",
-            "maxLength": 2048
+            "maxLength": 2048,
+            "description": "This Door's editor_url, through its authorized connection. Use alone; other URLs are not fetched."
           },
           "text": {
             "type": "string",
@@ -58,7 +59,8 @@
             "maxLength": 128
           },
           "agent": {
-            "type": "string"
+            "type": "string",
+            "description": "Your display name on acts; never grants authority."
           },
           "operation_id": {
             "type": "string",
@@ -151,6 +153,10 @@
           "state": {
             "type": "boolean"
           },
+          "preferences": {
+            "type": "boolean",
+            "description": "Include editor preferences in state; omitted by default."
+          },
           "history": {
             "type": "boolean"
           },
@@ -188,7 +194,8 @@
             ]
           },
           "agent": {
-            "type": "string"
+            "type": "string",
+            "description": "Your display name on acts; never grants authority."
           },
           "operation_id": {
             "type": "string",
@@ -205,99 +212,31 @@
               ]
             },
             "then": {
-              "not": {
-                "anyOf": [
-                  {
-                    "required": [
-                      "note"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "block"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "heading"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "lines"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "query"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "search"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "as"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "versions"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "version"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "cursor"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "limit"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "state"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "history"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "since"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "comparison"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "return_id"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "after_revision"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "wait_ms"
-                    ]
-                  }
-                ]
+              "type": "object",
+              "propertyNames": {
+                "not": {
+                  "enum": [
+                    "note",
+                    "block",
+                    "heading",
+                    "lines",
+                    "query",
+                    "search",
+                    "as",
+                    "versions",
+                    "version",
+                    "cursor",
+                    "limit",
+                    "state",
+                    "preferences",
+                    "history",
+                    "since",
+                    "comparison",
+                    "return_id",
+                    "after_revision",
+                    "wait_ms"
+                  ]
+                }
               }
             }
           }
@@ -429,7 +368,8 @@
             "description": "Groups acts for undo {turn_id}."
           },
           "label": {
-            "type": "string"
+            "type": "string",
+            "description": "Short description of this edit in history."
           },
           "fields": {
             "type": "object",
@@ -486,7 +426,8 @@
             "maxLength": 256
           },
           "agent": {
-            "type": "string"
+            "type": "string",
+            "description": "Your display name on acts; never grants authority."
           },
           "operation_id": {
             "type": "string",
@@ -520,7 +461,8 @@
             "description": "Undo a whole turn; pass act or turn_id."
           },
           "agent": {
-            "type": "string"
+            "type": "string",
+            "description": "Your display name on acts; never grants authority."
           },
           "operation_id": {
             "type": "string",
@@ -534,7 +476,7 @@
     {
       "name": "show",
       "title": "Show or ask in Rapier",
-      "description": "Present work or ask the person. An omitted target is inferred from its fields. A 4-letter browser code pairs that editor (target:\"pair\"); a connected workspace's owner first approves at owner_approval_url, then the person chooses ALLOW. Inspect actual presentation; a request is not proof the person saw it. A comparison leaves source unchanged. Later human navigation wins.",
+      "description": "Present work or ask the person. An omitted target is inferred from its fields. A 4-letter browser code pairs that editor (target:\"pair\"); a connected workspace's owner first approves at owner_approval_url, then the person chooses ALLOW. pairing.status: none, code_shown, owner_approval_required, awaiting_allow or paired; only paired confirms pairing. Inspect actual presentation; a request is not proof the person saw it. A comparison leaves source unchanged. Later human navigation wins.",
       "effect": "view",
       "class": "sensitive-write",
       "inputSchema": {
@@ -699,7 +641,8 @@
             "maxLength": 128
           },
           "agent": {
-            "type": "string"
+            "type": "string",
+            "description": "Your display name on acts; never grants authority."
           },
           "operation_id": {
             "type": "string",
@@ -739,7 +682,7 @@
     {
       "name": "export",
       "title": "Save or export Rapier",
-      "description": "to:\"file\" (default) delivers markdown, html (the offline editor), page, txt, docx or pdf; to:\"save\" saves to the bound destination; to:\"clipboard\" copies a passage as plain, markdown, formatted or complete. to:\"sync\" alone syncs the Notes store and can replace files. page, docx and pdf need an editor or renderer. Inspect delivery; export never publishes a website.",
+      "description": "to:\"file\" (default) delivers markdown, html (the offline editor), page, txt, docx or pdf; to:\"save\" saves to the bound destination; to:\"clipboard\" copies a passage as plain, markdown, formatted or complete. to:\"sync\" alone syncs the Notes store and can replace files. On the hosted Door, page, docx and pdf need the person's paired, open editor; a self-hosted server can provide a renderer. Inspect delivery; export never publishes a website.",
       "effect": "durable",
       "class": "sensitive-write",
       "inputSchema": {
@@ -805,7 +748,8 @@
             "maxLength": 128
           },
           "agent": {
-            "type": "string"
+            "type": "string",
+            "description": "Your display name on acts; never grants authority."
           },
           "operation_id": {
             "type": "string",
@@ -828,39 +772,18 @@
               }
             },
             "then": {
-              "not": {
-                "anyOf": [
-                  {
-                    "required": [
-                      "format"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "text"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "block"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "heading"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "revision"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "compare_id"
-                    ]
-                  }
-                ]
+              "type": "object",
+              "propertyNames": {
+                "not": {
+                  "enum": [
+                    "format",
+                    "text",
+                    "block",
+                    "heading",
+                    "revision",
+                    "compare_id"
+                  ]
+                }
               }
             }
           }
@@ -882,7 +805,8 @@
           },
           "url": {
             "type": "string",
-            "maxLength": 2048
+            "maxLength": 2048,
+            "description": "This Door's editor_url, through its authorized connection. Use alone; other URLs are not fetched."
           },
           "text": {
             "type": "string",
@@ -924,7 +848,8 @@
             "maxLength": 128
           },
           "agent": {
-            "type": "string"
+            "type": "string",
+            "description": "Your display name on acts; never grants authority."
           },
           "operation_id": {
             "type": "string",
@@ -932,7 +857,106 @@
             "minLength": 1
           }
         },
-        "additionalProperties": false
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "required": [
+              "text"
+            ],
+            "type": "object",
+            "propertyNames": {
+              "not": {
+                "enum": [
+                  "document",
+                  "url",
+                  "file",
+                  "note",
+                  "title"
+                ]
+              }
+            }
+          },
+          {
+            "required": [
+              "document"
+            ],
+            "type": "object",
+            "propertyNames": {
+              "not": {
+                "enum": [
+                  "url",
+                  "file",
+                  "filename",
+                  "createToken"
+                ]
+              }
+            },
+            "if": {
+              "required": [
+                "note"
+              ],
+              "properties": {
+                "note": {
+                  "type": "string",
+                  "const": "new"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "text"
+              ]
+            },
+            "else": {
+              "type": "object",
+              "propertyNames": {
+                "not": {
+                  "enum": [
+                    "text",
+                    "title"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "required": [
+              "file"
+            ],
+            "type": "object",
+            "propertyNames": {
+              "not": {
+                "enum": [
+                  "document",
+                  "url",
+                  "text",
+                  "filename",
+                  "note",
+                  "title"
+                ]
+              }
+            }
+          },
+          {
+            "required": [
+              "url"
+            ],
+            "type": "object",
+            "propertyNames": {
+              "not": {
+                "enum": [
+                  "document",
+                  "file",
+                  "text",
+                  "filename",
+                  "note",
+                  "title",
+                  "createToken"
+                ]
+              }
+            }
+          }
+        ]
       },
       "annotations": {
         "title": "Open Rapier",
@@ -1049,6 +1073,10 @@
           "state": {
             "type": "boolean"
           },
+          "preferences": {
+            "type": "boolean",
+            "description": "Include editor preferences in state; omitted by default."
+          },
           "history": {
             "type": "boolean"
           },
@@ -1086,7 +1114,8 @@
             ]
           },
           "agent": {
-            "type": "string"
+            "type": "string",
+            "description": "Your display name on acts; never grants authority."
           },
           "operation_id": {
             "type": "string",
@@ -1095,7 +1124,60 @@
           }
         },
         "additionalProperties": false,
-        "required": []
+        "required": [],
+        "oneOf": [
+          {
+            "required": [
+              "guide"
+            ],
+            "type": "object",
+            "propertyNames": {
+              "not": {
+                "enum": [
+                  "document",
+                  "note",
+                  "block",
+                  "heading",
+                  "lines",
+                  "query",
+                  "search",
+                  "as",
+                  "versions",
+                  "version",
+                  "cursor",
+                  "limit",
+                  "state",
+                  "preferences",
+                  "history",
+                  "since",
+                  "comparison",
+                  "return_id",
+                  "after_revision",
+                  "wait_ms"
+                ]
+              }
+            }
+          },
+          {
+            "anyOf": [
+              {
+                "required": [
+                  "document"
+                ]
+              },
+              {
+                "required": [
+                  "cursor"
+                ]
+              }
+            ],
+            "not": {
+              "required": [
+                "guide"
+              ]
+            }
+          }
+        ]
       },
       "annotations": {
         "title": "Read Rapier",
@@ -1251,7 +1333,8 @@
             "description": "Groups acts for undo {turn_id}."
           },
           "label": {
-            "type": "string"
+            "type": "string",
+            "description": "Short description of this edit in history."
           },
           "fields": {
             "type": "object",
@@ -1308,7 +1391,8 @@
             "maxLength": 256
           },
           "agent": {
-            "type": "string"
+            "type": "string",
+            "description": "Your display name on acts; never grants authority."
           },
           "operation_id": {
             "type": "string",
@@ -1371,7 +1455,8 @@
             "description": "Undo a whole turn; pass act or turn_id."
           },
           "agent": {
-            "type": "string"
+            "type": "string",
+            "description": "Your display name on acts; never grants authority."
           },
           "operation_id": {
             "type": "string",
@@ -1382,6 +1467,18 @@
         "additionalProperties": false,
         "required": [
           "document"
+        ],
+        "oneOf": [
+          {
+            "required": [
+              "act"
+            ]
+          },
+          {
+            "required": [
+              "turn_id"
+            ]
+          }
         ]
       },
       "annotations": {
@@ -1414,7 +1511,7 @@
     {
       "name": "show",
       "title": "Show or ask in Rapier",
-      "description": "Present work or ask the person. An omitted target is inferred from its fields. A 4-letter browser code pairs that editor (target:\"pair\"); a connected workspace's owner first approves at owner_approval_url, then the person chooses ALLOW. Inspect actual presentation; a request is not proof the person saw it. A comparison leaves source unchanged. Later human navigation wins.",
+      "description": "Present work or ask the person. An omitted target is inferred from its fields. A 4-letter browser code pairs that editor (target:\"pair\"); a connected workspace's owner first approves at owner_approval_url, then the person chooses ALLOW. pairing.status: none, code_shown, owner_approval_required, awaiting_allow or paired; only paired confirms pairing. Inspect actual presentation; a request is not proof the person saw it. A comparison leaves source unchanged. Later human navigation wins.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1581,7 +1678,8 @@
             "maxLength": 128
           },
           "agent": {
-            "type": "string"
+            "type": "string",
+            "description": "Your display name on acts; never grants authority."
           },
           "operation_id": {
             "type": "string",
@@ -1597,7 +1695,7 @@
       "annotations": {
         "title": "Show or ask in Rapier",
         "readOnlyHint": false,
-        "destructiveHint": true,
+        "destructiveHint": false,
         "idempotentHint": false,
         "openWorldHint": true
       },
@@ -1624,7 +1722,7 @@
     {
       "name": "export",
       "title": "Save or export Rapier",
-      "description": "to:\"file\" (default) delivers markdown, html (the offline editor), page, txt, docx or pdf; to:\"save\" saves to the bound destination; to:\"clipboard\" copies a passage as plain, markdown, formatted or complete. to:\"sync\" alone syncs the Notes store and can replace files. page, docx and pdf need an editor or renderer. Inspect delivery; export never publishes a website.",
+      "description": "to:\"file\" (default) delivers markdown, html (the offline editor), page, txt, docx or pdf; to:\"save\" saves to the bound destination; to:\"clipboard\" copies a passage as plain, markdown, formatted or complete. to:\"sync\" alone syncs the Notes store and can replace files. On the hosted Door, page, docx and pdf need the person's paired, open editor; a self-hosted server can provide a renderer. Inspect delivery; export never publishes a website.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1692,7 +1790,8 @@
             "maxLength": 128
           },
           "agent": {
-            "type": "string"
+            "type": "string",
+            "description": "Your display name on acts; never grants authority."
           },
           "operation_id": {
             "type": "string",
@@ -1708,7 +1807,7 @@
       "annotations": {
         "title": "Save or export Rapier",
         "readOnlyHint": false,
-        "destructiveHint": true,
+        "destructiveHint": false,
         "idempotentHint": false,
         "openWorldHint": true
       },

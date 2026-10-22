@@ -2,13 +2,24 @@
   "package": "pele",
   "version": "1.6.0",
   "source": "https://github.com/obsidianmd/pele",
-  "path": "dist/pele.global.js",
+  "path": "dist/pele.js",
+  "sourceSha256": "d1ebc1889f3069d7759fe5db34c4ad4b4823285edbee2b537d0ef3d505a76d8d",
   "tarball": "https://registry.npmjs.org/pele/-/pele-1.6.0.tgz",
   "integrity": "sha512-VfAiVItsOGlGhvnBfphdT28VCG7mXMZxQNOwAGsCtxI2ztbUsT39MraEOYjsapLxVETkdUZscm0DdotYDQMLdw==",
   "license": "MIT",
+  "build": {
+    "esbuild": "0.28.2",
+    "target": "es2022",
+    "format": "iife",
+    "globalName": "pele",
+    "minify": true,
+    "nativeClassFields": true,
+    "strictIIFE": true
+  },
+  "strictRecipeSha256": "f17d9757fd29a0adc2faeda9e213eea0ed589d473f9d5815b7c818f32b3ddb14",
   "npmLockSha256": "52056ea8d3d5974d6e70a86d6087d5043a7b703912453c14747bb692660efb3e",
-  "bytes": 682005,
-  "sha256": "b82d1bcd435302779a945e1e0f4a54ea56fb26e010ce3f2122f4216fcfc095d7",
-  "sha384": "4lHoXtKDt+x/E+htiTc83bpFWyREQzJCMudNQHirqKiCTW7Mx790I/5Q7criNZ1G",
+  "bytes": 677968,
+  "sha256": "93a62d5c8a9562af512ca572bac99e05af63205a1395aa3541284ddd14475649",
+  "sha384": "wvZ8yi9fl1G4U3tYTRguH7dHJxCgl7Rgu/Bb+sz+ip80toql8Bc0N2aLeJCCtUMS",
   "noticesSha256": "311bccc30de6f7b9cbfb64232bb0c911ccb2191abe316550813ae25b2c7925b9"
 }

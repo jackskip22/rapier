@@ -4,20 +4,20 @@
     {
       "name": "core",
       "version": "1.6.0",
-      "url": "https://cdn.jsdelivr.net/npm/pele@1.6.0/dist/pele.global.js",
+      "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.26/site/plugins/pele-1.6.0.js",
       "file": "plugins/pele-1.6.0.js",
-      "bytes": 682005,
-      "sri": "4lHoXtKDt+x/E+htiTc83bpFWyREQzJCMudNQHirqKiCTW7Mx790I/5Q7criNZ1G",
+      "bytes": 677968,
+      "sri": "wvZ8yi9fl1G4U3tYTRguH7dHJxCgl7Rgu/Bb+sz+ip80toql8Bc0N2aLeJCCtUMS",
       "path": "shell/vendor/pele/pele-1.6.0.js"
     },
     {
       "name": "zenuml",
       "version": "4.5.0-3",
-      "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.25/site/plugins/rapier-zenuml-4.5.0-3.js",
+      "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.26/site/plugins/rapier-zenuml-4.5.0-3.js",
       "file": "plugins/rapier-zenuml-4.5.0-3.js",
       "path": "shell/vendor/zenuml/rapier-zenuml-4.5.0-3.js",
-      "bytes": 1890429,
-      "sri": "0tZDV6uy2r9boZwCWcBSrF+Mku7c14LvwAewLbraLrR+tvinNck31H8xsLCa5k6y"
+      "bytes": 1888111,
+      "sri": "/JAYBQPgTaslQtUck91RnxcqXI8V8T0iYa+dRwc9StJhd0MPJGLTOCLj9aNDRHDG"
     }
   ]
 }
