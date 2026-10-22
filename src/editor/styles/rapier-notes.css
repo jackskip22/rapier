@@ -407,10 +407,10 @@ body.rapier-recording-now-on #editor-blocks,body.rapier-recording-now-on .rapier
 .rapier-notes-filters{top:calc(var(--notes-head-h) + var(--find-bar-h))}
 .rapier-notes-addsbar[hidden],.rapier-notes-reorderbar[hidden]{display:none}
 .rapier-notes-addsbar,.rapier-recording-band{gap:var(--space-1);padding:var(--space-1)}
-.rapier-notes-addsbar .rapier-notes-add,.rapier-recording-band .rapier-notes-add{flex:1 1 0;min-width:0;min-height:calc(var(--find-bar-h) - 2 * var(--space-1));gap:6px;background:color-mix(in srgb,var(--color-bg) 14%,transparent);color:var(--color-bg)}
+.rapier-notes-addsbar .rapier-notes-add,.rapier-recording-band .rapier-notes-add{flex:1 1 0;min-width:0;min-height:var(--find-bar-h);margin-block:calc(-1 * var(--space-1));padding-block:var(--space-1);gap:6px;background:color-mix(in srgb,var(--color-bg) 14%,transparent);background-clip:content-box;color:var(--color-bg)}
 .rapier-notes-addsbar .rapier-notes-add svg,.rapier-recording-band .rapier-notes-add svg{flex:none;width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-@media (hover:hover) and (pointer:fine){.rapier-notes-addsbar .rapier-notes-add:hover,.rapier-recording-band button.rapier-notes-add:hover{background:color-mix(in srgb,var(--color-bg) 24%,transparent)}}
-.rapier-notes-addsbar .rapier-notes-add:focus-visible,.rapier-recording-band .rapier-notes-add:focus-visible{outline:none;background:color-mix(in srgb,var(--color-bg) 30%,transparent)}
+@media (hover:hover) and (pointer:fine){.rapier-notes-addsbar .rapier-notes-add:hover,.rapier-recording-band button.rapier-notes-add:hover{background-color:color-mix(in srgb,var(--color-bg) 24%,transparent)}}
+.rapier-notes-addsbar .rapier-notes-add:focus-visible,.rapier-recording-band .rapier-notes-add:focus-visible{outline:none;background-color:color-mix(in srgb,var(--color-bg) 30%,transparent)}
 .rapier-notes-reorderbar{justify-content:space-between}
 .rapier-notes-reorderbar__word{color:var(--color-bg);font:var(--fw-semibold) var(--text-xs) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase}
 .rapier-notes-reorderbar__done{flex:none;min-height:44px;padding:0 var(--space-3);background:var(--color-bg);color:var(--color-text)}

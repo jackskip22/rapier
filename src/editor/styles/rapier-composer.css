@@ -11,7 +11,7 @@
 .rapier-composer__blank{display:block;height:132px;background:var(--color-bg)}
 .rapier-composer__name{overflow-wrap:anywhere}
 .rapier-composer__inks{display:flex;flex-wrap:wrap;gap:var(--space-2)}
-.rapier-composer__swatch{display:block;box-sizing:border-box;width:40px;height:40px;padding:0;border:none;border-radius:0;background-color:var(--swatch);background-repeat:no-repeat;background-position:center;background-size:0 0;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.rapier-composer__swatch{display:block;box-sizing:border-box;width:44px;height:44px;margin:-2px;padding:2px;border:none;border-radius:0;background-clip:content-box;background-origin:content-box;background-color:var(--swatch);background-repeat:no-repeat;background-position:center;background-size:0 0;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 .rapier-composer__swatch--text{background-color:var(--color-text)}
 .rapier-composer__swatch--custom{background-image:conic-gradient(#b32034,#c2410c,#865818,#1c7547,#0f766e,#175dc4,#7924d7,#be185d,#b32034);background-size:100% 100%}
 .rapier-composer__swatch--custom input{display:block;width:100%;height:100%;margin:0;padding:0;border:none;opacity:0;cursor:pointer}

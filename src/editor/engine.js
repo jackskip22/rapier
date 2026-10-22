@@ -9285,8 +9285,11 @@ function _rapierRouteStrayEditingKey(event) {
 		event.stopImmediatePropagation();
 		if (block && wrapper && rapier.view.mode !== 'source' && _rapierPictureOnlyBlock(block)) {
 			_rapierCloseImageTools();
-			const editDiv = enterBlockEdit(block, wrapper);
-			if (editDiv) { host.focus({ preventScroll: true }); _rapierInsertStrayKey(editDiv, key); }
+			const made = key.trim() ? _insertBlockAfter(block.id, key, { noEdit: true }) : null;
+			const created = made != null ? rapier.document.blocks.find(row => row.id === made) : null, createdWrapper = created && _rapierBlockWrapperById(created.id);
+			const editDiv = created && createdWrapper ? enterBlockEdit(created, createdWrapper, { charOffset: Infinity, preserveScroll: true }) : enterBlockEdit(block, wrapper);
+			if (editDiv) host.focus({ preventScroll: true });
+			if (editDiv && !created) _rapierInsertStrayKey(editDiv, key);
 		}
 		return;
 	}
@@ -48465,7 +48468,11 @@ function _rapierUpdateToastLift() {
 	root._rapierViewport = model.viewport.advanceViewport(root._rapierViewport, sample());
 	const view = root._rapierViewport;
 	const {viewport} = model.viewport.usableViewport(view.sample);
-	const left = viewport.left + 'px', right = Math.max(0, view.sample.layout.right - viewport.right) + 'px';
+	const panel = modalHome?.classList.contains('settings-overlay') && !modalHome.classList.contains('restore-modal-overlay') && modalHome.classList.contains('open')
+		? modalHome.querySelector(':scope > .settings-panel') : null;
+	const panelEdge = panel ? parseFloat(getComputedStyle(panel).left) : NaN;
+	const beside = panelEdge >= 240 && panelEdge - viewport.left >= 240;
+	const left = viewport.left + 'px', right = Math.max(0, view.sample.layout.right - viewport.right, beside ? view.sample.layout.right - panelEdge : 0) + 'px';
 	if (root.style.left !== left) root.style.left = left;
 	if (root.style.right !== right) root.style.right = right;
 	const natural = naturalRect(view.sample);
@@ -48510,7 +48517,7 @@ function _rapierUpdateToastLift() {
 	});
 	apply(result);
 	const status = result.status === 'placed' ? 'placed' : 'wait';
-	leaveRoom(status === 'placed' ? Math.ceil(root.getBoundingClientRect().height) : 0);
+	leaveRoom(status === 'placed' && !beside ? Math.ceil(root.getBoundingClientRect().height) : 0);
 	for (const toast of root.children) {
 		const exposure = status === 'placed' && !toast.hidden ? hittable(toast) : {reachable: false, complete: false};
 		toast._rapierNoticeExposure = exposure;
