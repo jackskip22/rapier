@@ -19,6 +19,7 @@ import {inspectJPEGXL} from '../images/header.mjs';
 import {inspectRaster} from '../images/raster.mjs';
 import {ornamentPath} from './ornaments.mjs';
 import {hasRefraction, refractionRecipeKey, admitRefractionRenditions, currentRefractionRenditions, stripRefractionRenditions, restoreRefractionRenditions} from './refraction-rendition.mjs';
+import {layoutIncrementalGraph} from './flowchart-layout.mjs';
 
 const _rapierDrawAssetGenerations = [];
 export function _rapierDrawAssetGeneration(value) {
@@ -2039,11 +2040,26 @@ function _rapierDrawArrowRoutePoints(shape, recipe) {
 		const my = g.y1 + dy * t;
 		return [[g.x1, g.y1], [g.x1, my], [g.x2, my], [g.x2, g.y2]];
 	}
-	if (route === 'curved' && (shape.bend || shape.curveT != null && shape.curveT !== .5)) {
+	if (route === 'curved') {
 		const dx = g.x2 - g.x1, dy = g.y2 - g.y1, len = Math.hypot(dx, dy) || 1, t = shape.curveT ?? .5;
-		const control = [g.x1 + dx * t - dy / len * (shape.bend || 0) * 2, g.y1 + dy * t + dx / len * (shape.bend || 0) * 2];
-		if (!control.every(_rapierDrawSpatial)) throw Object.assign(new RangeError('Drawing exceeds its coordinate range'), { code: 'drawing_geometry_limit' });
-		return [[g.x1, g.y1], control, [g.x2, g.y2]];
+		let bend = shape.bend || 0;
+		if (!bend && shape.bind && recipe?.shapes) {
+			const ends = new Set([shape.bind.start?.to, shape.bind.end?.to].filter(Boolean));
+			const obs = recipe.shapes.filter(s => s !== shape && !ends.has(s.id) && !_rapierDrawShapePaintsInk(s, recipe) && _rapierDrawAnchorFrame(s, recipe)).map(s => _rapierDrawObstacleBox(s, recipe));
+			const hits = b => {
+				const c = [g.x1 + dx * t - dy / len * b * 2, g.y1 + dy * t + dx / len * b * 2];
+				const sample = [0.2, 0.35, 0.5, 0.65, 0.8].map(u => _rapierDrawQuadraticAt([[g.x1, g.y1], c, [g.x2, g.y2]], u));
+				return obs.some(o => sample.some(p => p[0] >= o.minX - 6 && p[0] <= o.maxX + 6 && p[1] >= o.minY - 6 && p[1] <= o.maxY + 6));
+			};
+			if (hits(0)) {
+				for (const mag of [32, -32, 64, -64, 96, -96, 140, -140]) { if (!hits(mag)) { bend = mag; break; } }
+			}
+		}
+		if (bend || shape.curveT != null && shape.curveT !== .5) {
+			const control = [g.x1 + dx * t - dy / len * bend * 2, g.y1 + dy * t + dx / len * bend * 2];
+			if (!control.every(_rapierDrawSpatial)) throw Object.assign(new RangeError('Drawing exceeds its coordinate range'), { code: 'drawing_geometry_limit' });
+			return [[g.x1, g.y1], control, [g.x2, g.y2]];
+		}
 	}
 	return [[g.x1, g.y1], [g.x2, g.y2]];
 }
@@ -2582,7 +2598,8 @@ function _rapierDrawFigurePoint(value) {
 
 function _rapierDrawFigureSeed(figure, index) { return _rapierDrawSeed(index + ':' + JSON.stringify(figure)); }
 
-function _rapierDrawLayered(nodes, edges, across, gap, sibling = gap, compact = false) {
+function _rapierDrawLayered(nodes, edges, across, gap, sibling = gap, compact = false, options = null) {
+	if (options?.prior) return layoutIncrementalGraph(nodes, edges, options.prior, { across, gap, sibling, compact, groups: options.groups });
 	const byId = new Map(nodes.map(node => [node.id, node])), next = new Map(nodes.map(node => [node.id, []]));
 	for (const edge of edges) if (byId.has(edge.from) && byId.has(edge.to)) next.get(edge.from).push(edge);
 	const state = new Map(), order = [], backward = new Set();
@@ -2829,7 +2846,7 @@ function _rapierDrawChooseReturnSides(edges, alternatives, scene) {
 	}
 }
 
-function _rapierDrawLayoutFigures(shapes, automatic, groups, existing, direction, captionSize, compact) {
+function _rapierDrawLayoutFigures(shapes, automatic, groups, existing, direction, captionSize, compact, options = null) {
 	const across = direction === 'across' || direction === 'back', reverse = direction === 'up' || direction === 'back', nodes = automatic.map(_rapierDrawMeasureFigure), nodeMap = new Map(nodes.map(node => [node.id, node]));
 	const edges = shapes.filter(shape => shape.recognized === 'arrow' || shape.recognized === 'line')
 		.filter(shape => nodeMap.has(shape.bind?.start?.to) || nodeMap.has(shape.bind?.end?.to));
@@ -2852,16 +2869,16 @@ function _rapierDrawLayoutFigures(shapes, automatic, groups, existing, direction
 	for (const unitsGap of ladder) {
 		if (unitsGap !== ladder.at(-1) && _RAPIER_DRAW_ROUTE_SPENT.work - spentAtStart > RAPIER_DRAW_LAYOUT_WORK) continue;
 		scene.routeLabelRails = unitsGap === ladder.at(-1);
-		const gap = 8 * unitsGap, units = nodes.filter(node => !grouped.has(node.id));
+		const gap = 8 * unitsGap, siblingGap = Math.max(compact ? 32 : 64, gap / 2), units = nodes.filter(node => !grouped.has(node.id));
 		for (const group of groups) {
 			const words = links.filter(link => link.shape.label && group.members.includes(link.from) && group.members.includes(link.to) && link.from !== link.to)
 				.map(link => Math.ceil((layoutText({...link.shape, labelPos: .5}, {path: [[-512, 0], [512, 0]]}).bounds.w + 64) / 8) * 8);
-			const members = group.members.map(id => nodeMap.get(id)), inner = _rapierDrawLayered(members, links, true, Math.max(gap, ...words), Math.max(compact ? 32 : 64, gap / 2), compact);
+			const members = group.members.map(id => nodeMap.get(id)), inner = _rapierDrawLayered(members, links, true, Math.max(gap, ...words), siblingGap, compact);
 			const title = layoutText(group.title), w = Math.max(inner.w + 64, title.bounds.w + 64), h = inner.h + title.bounds.h + 128;
 			group.unit = {id: group.id, w, h}; units.push(group.unit);
 			for (const node of members) { node.x += (w - inner.w) / 2; node.y += title.bounds.h + 96; }
 		}
-		_rapierDrawLayered(units, links.map(edge => ({from: owner.get(edge.from) || edge.from, to: owner.get(edge.to) || edge.to})).filter(edge => edge.from !== edge.to), across, gap, Math.max(compact ? 32 : 64, gap / 2), compact);
+		_rapierDrawLayered(units, links.map(edge => ({from: owner.get(edge.from) || edge.from, to: owner.get(edge.to) || edge.to})).filter(edge => edge.from !== edge.to), across, gap, siblingGap, compact, !groups.length ? options : null);
 		const settled = new Set();
 		for (const group of groups.slice().sort((a, b) => a.unit.y - b.unit.y || a.unit.x - b.unit.x)) {
 			const members = group.members.map(id => nodeMap.get(id)), centre = node => (owner.get(node.id) ? groups.find(g => g.id === owner.get(node.id)).unit.x : 0) + node.x + node.w / 2;
@@ -3022,7 +3039,7 @@ function _rapierDrawDiagramSet(shapes, steps, direction) {
 	return shapes;
 }
 
-function _rapierDrawLowerFiguresOrFault(figures, existing = [], direction = 'down', captionSize = 10, compact = false) {
+function _rapierDrawLowerFiguresOrFault(figures, existing = [], direction = 'down', captionSize = 10, compact = false, options = null) {
 	const INK = 'an ink name (green, red, blue, gold, purple) or #rrggbb';
 	const fault = (figure, field, want) => ({ fault: { figure, field, want } });
 	if (!Array.isArray(figures) || !figures.length || figures.length > 128) return fault(-1, 'figures', 'a list of 1 to 128 figures');
@@ -3156,13 +3173,13 @@ function _rapierDrawLowerFiguresOrFault(figures, existing = [], direction = 'dow
 	}
 	if (automatic.length) {
 		const steps = _rapierDrawDiagramDress(shapes, automatic, groups, captionSize);
-		try { return {shapes: _rapierDrawDiagramSet(_rapierDrawLayoutFigures(shapes, automatic, groups, existing, direction, captionSize, compact), steps, direction)}; }
+		try { return {shapes: _rapierDrawDiagramSet(_rapierDrawLayoutFigures(shapes, automatic, groups, existing, direction, captionSize, compact, options), steps, direction)}; }
 		catch (error) { if (/^drawing_(?:geometry_limit|work_limit|route_blocked)/.test(error.code || '')) return fault(-1, 'figures', 'a diagram within the drawing geometry and routing limits'); throw error; }
 	}
 	_rapierDrawFaceFigureBindings(shapes.filter(shape => shape.bind), {shapes: [...existing, ...shapes], strokes: []});
 	return { shapes };
 }
-function _rapierDrawLowerFigures(figures, existing = [], direction = 'down', captionSize = 10, compact = false) { return _rapierDrawLowerFiguresOrFault(figures, existing, direction, captionSize, compact).shapes || null; }
+function _rapierDrawLowerFigures(figures, existing = [], direction = 'down', captionSize = 10, compact = false, options = null) { return _rapierDrawLowerFiguresOrFault(figures, existing, direction, captionSize, compact, options).shapes || null; }
 function _rapierDrawFigureFault(figures, existing = [], direction = 'down') { return _rapierDrawLowerFiguresOrFault(figures, existing, direction).fault || null; }
 
 function _rapierDrawRestoreSVGRecipe(raw, svg, restored) {
@@ -3184,8 +3201,8 @@ function _rapierDrawReadRecipeFromSVGText(svg, restored) {
 function _rapierDrawAgentCandidate(input) {
 	if (input?.shapes?.some?.(shape => shape?.labelBeside != null)) return null;
 	if (!input || typeof input !== 'object') return null;
-	const { figures, version = RAPIER_DRAW_VERSION, ...rest } = input;
-	const shapes = Array.isArray(rest.shapes) ? rest.shapes : Array.isArray(figures) ? _rapierDrawLowerFigures(figures, [], input.direction) : null;
+	const { figures, prior, version = RAPIER_DRAW_VERSION, ...rest } = input;
+	const shapes = Array.isArray(rest.shapes) ? rest.shapes : Array.isArray(figures) ? _rapierDrawLowerFigures(figures, [], input.direction, 10, false, prior ? {prior} : null) : null;
 	if (!Array.isArray(shapes) || !shapes.length || shapes.length > 128) return null;
 	if (rest.background !== undefined) rest.background = fillBackground(rest.background);
 	if (rest.effect !== undefined) rest.effect = fillEffect(rest.effect);

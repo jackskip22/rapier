@@ -3,9 +3,8 @@ MIT License
 These components are distributed under the MIT licence,
 each under its own copyright notice:
 
-gpu-lexer 0.0.1 — no LICENSE file ships in the published
-package; this notice is the standard MIT text for its declared licence.
-	Copyright (c) 2026 Vercel, Inc.
+gpu-lexer 0.0.4
+	Copyright (c) 2026 Shu Ding
 acorn 8.19.0
 	Copyright (C) 2012-2022 by various contributors (see AUTHORS)
 markdown-it 15.0.2

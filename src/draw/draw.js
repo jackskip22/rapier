@@ -2118,6 +2118,7 @@ const RAPIER_DRAW_TOOLS = ['select', 'brush', 'pen', 'paint', 'water', 'shape', 
 // first control in its row (RAPIER_DRAW_PEN_MODES). A new mode is one more row there.
 const RAPIER_DRAW_TOOL_SECTIONS = [['Tools', ['select', 'erase', 'image', 'effects']], ['SVG', ['brush', 'shape', 'text', 'gallery']], ['Raster', ['paint', 'water']]];
 const RAPIER_DRAW_TOOL_WORDS = { select: 'Select', brush: 'Pen', pen: 'Pen', paint: 'Brushes', water: 'Watercolor', shape: 'Shape', text: 'Text', erase: 'Eraser', image: 'Image', gallery: 'Gallery', effects: 'Effects' };
+const _rapierDrawToolIcon = name => RAPIER_DRAW_ICONS[name === 'brush' ? 'pen' : name];
 const RAPIER_DRAW_TOOL_SHORT = { select: 'Select', brush: 'Pen', pen: 'Pen', paint: 'Brushes', water: 'Water', shape: 'Shape', text: 'Text', erase: 'Eraser', effects: 'Effects' };
 const RAPIER_DRAW_HINT_WORDS = {
 	effects: 'Choose an effect for the artwork',
@@ -2485,7 +2486,7 @@ function _rapierDrawShowTool(tool) {
 	if (!trigger || trigger.dataset.drawShown === shown) return;
 	const changed = !!trigger.dataset.drawShown;
 	trigger.dataset.drawShown = shown;
-	trigger.innerHTML = RAPIER_DRAW_ICONS[tool] + '<span>' + RAPIER_DRAW_TOOL_SHORT[tool] + '</span>';
+	trigger.innerHTML = _rapierDrawToolIcon(tool) + '<span>' + RAPIER_DRAW_TOOL_SHORT[tool] + '</span>';
 	trigger.setAttribute('aria-label', 'Current tool: ' + RAPIER_DRAW_TOOL_WORDS[tool] + '. Choose tool.');
 	if (changed) { _rapierDrawPlay(trigger.firstElementChild, 'rise'); _rapierDrawPlay(trigger.lastElementChild, 'riseWord'); }
 }
@@ -2500,7 +2501,7 @@ function _rapierDrawUpdatePenBtn() {
 			if (!btn) continue;
 			btn.hidden = !_rapierDrawToolAllowed(name);
 			btn.setAttribute('aria-checked', String(name === tool || (name === 'brush' && tool === 'pen')));
-			btn.innerHTML = RAPIER_DRAW_ICONS[name] + '<span>' + RAPIER_DRAW_TOOL_WORDS[name] + '</span>';
+			btn.innerHTML = _rapierDrawToolIcon(name) + '<span>' + RAPIER_DRAW_TOOL_WORDS[name] + '</span>';
 			btn.setAttribute('aria-label', RAPIER_DRAW_TOOL_SAYS[name]);
 		}
 		_rapierDrawShowTool(tool);
@@ -3030,6 +3031,25 @@ function _rapierDrawChainPreview(gesture, point) {
 	state.preview.innerHTML = _rapierDrawDisplayMarkup(markup);
 	if (_rapierDrawNoteColours(state.preview.innerHTML)) _rapierDrawDarkStyleSync();
 }
+function _rapierDrawSpreadSideBindings(recipe, targetShape, sideStep, newArrow, endKey) {
+	const tangent = sideStep[0] ? 'ay' : 'ax', normal = sideStep[0] ? 'ax' : 'ay', perp = [sideStep[1] ? 1 : 0, sideStep[0] ? 1 : 0];
+	const normalVal = (sideStep[0] + sideStep[1] + 1) / 2, peerEnd = endKey === 'start' ? 'end' : 'start';
+	const siblings = recipe.shapes.filter(s => (s.recognized === 'arrow' || s.recognized === 'line') && s.bind?.[endKey]?.to === targetShape.id && s.bind[peerEnd]?.to !== targetShape.id && Math.abs((s.bind[endKey][normal] ?? .5) - normalVal) < 1e-6);
+	const centre = shape => {
+		const peer = recipe.shapes.find(c => c.id === shape.bind?.[peerEnd]?.to);
+		if (peer) { const b = _rapierDrawShapeBBoxIn(peer, recipe); return perp[0] ? b.minX + b.maxX : b.minY + b.maxY; }
+		return perp[0] ? (endKey === 'start' ? shape.geom.x2 : shape.geom.x1) * 2 : (endKey === 'start' ? shape.geom.y2 : shape.geom.y1) * 2;
+	};
+	const all = (siblings.includes(newArrow) ? siblings : siblings.concat([newArrow])).map(s => [s, centre(s)]).sort((a, b) => a[1] - b[1]).map(([s]) => s);
+	const spread = new Map(all.map((s, i) => [s, (i + 1) / (all.length + 1)]));
+	const diamondPorts = targetShape.recognized === 'diamond' && all.length > 1 ? (() => {
+		const sides = perp[0] ? [{ ax: 0, ay: .5 }, { ax: 1, ay: .5 }] : [{ ax: .5, ay: 0 }, { ax: .5, ay: 1 }], flow = { ax: (sideStep[0] + 1) / 2, ay: (sideStep[1] + 1) / 2 };
+		const at = all.length === 3 ? [sides[0], flow, sides[1]] : all.map((_, i) => sides[i < all.length / 2 ? 0 : 1]);
+		return new Map(all.map((s, i) => [s, at[i]]));
+	})() : null;
+	const portFor = (s, b) => diamondPorts?.has(s) ? { ...b, ...diamondPorts.get(s) } : { ...b, [normal]: normalVal, [tangent]: spread.get(s) };
+	return { spread, portFor };
+}
 function _rapierDrawChain(side, drop = null) {
 	const state = _rapierDrawState, from = _rapierDrawSelectedShapes()[0], step = RAPIER_DRAW_CHAIN_SIDES[side];
 	if (!step || !_rapierDrawChainable([from]) || !_rapierDrawFinishText()) return;
@@ -3075,7 +3095,13 @@ function _rapierDrawChain(side, drop = null) {
 	const startFor = (shape, start) => diamondPorts?.has(shape) ? { ...start, ...diamondPorts.get(shape) } : { ...start, [tangent]: spread.get(shape) };
 	arrow.bind.start = startFor(arrow, arrow.bind.start);
 	const shapes = recipe.shapes.map(shape => spread.has(shape) ? { ...shape, bind: { ...shape.bind, start: startFor(shape, shape.bind.start) } } : shape === from && outcome ? { ...shape, ink: diagram.box[0] } : shape);
-	const candidate = _rapierDrawAdmitCreation({ ...recipe, shapes: shapes.concat(drop?.target ? [arrow] : [next, arrow]) });
+	let made = shapes.concat(drop?.target ? [arrow] : [next, arrow]);
+	if (drop?.target) {
+		const meet = _rapierDrawSpreadSideBindings({ ...recipe, shapes: made }, drop.target, facing, arrow, 'end');
+		arrow.bind.end = meet.portFor(arrow, arrow.bind.end);
+		made = made.map(shape => meet.spread.has(shape) && shape !== arrow ? { ...shape, bind: { ...shape.bind, end: meet.portFor(shape, shape.bind.end) } } : shape);
+	}
+	const candidate = _rapierDrawAdmitCreation({ ...recipe, shapes: made });
 	if (!candidate) return;
 	if (drop?.target) {
 		_rapierDrawSnapshot();
@@ -3367,7 +3393,7 @@ function _rapierDrawLetterGlyph(set) {
 	const sample = set && globalThis.RapierDrawLetterPreviews.LETTER_PREVIEWS[set.id];
 	return sample ? '<svg class="rapier-draw-glyph" viewBox="0 0 ' + sample.glyph[0] + ' ' + sample.em + '" aria-hidden="true"><path fill="currentColor" transform="translate(' + sample.bearing + ',0)" d="' + sample.glyph[1] + '"/></svg>' : '';
 }
-const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.32/letters/';
+const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.33/letters/';
 const _rapierDrawLettersDoor = { allowed: false, asking: null, providers: new Map(), bringing: new Map() };
 function _rapierDrawLettersProvider(set) {
 	const door = _rapierDrawLettersDoor;
@@ -5359,7 +5385,7 @@ function _rapierDrawBuildSurface() {
 		'<div class="rapier-draw-tool-menu" role="menu" aria-label="Drawing tools" hidden>' + RAPIER_DRAW_TOOL_SECTIONS.map(([title, names]) =>
 			'<div class="rapier-draw-tool-menu-section" role="group" aria-label="' + title + '"><div class="rapier-draw-tool-menu-head" role="presentation">' + title + '</div>' + names.filter(name => name !== 'gallery' || _rapierDrawGalleryOffered()).map(name => name === 'image' || name === 'gallery'
 			? '<button type="button" class="rapier-draw-tool-menu-item" role="menuitem" data-draw-act="' + name + '" aria-label="' + RAPIER_DRAW_TOOL_SAYS[name] + '">' + RAPIER_DRAW_ICONS[name] + '<span>' + RAPIER_DRAW_TOOL_WORDS[name] + '</span></button>'
-			: '<button type="button" class="rapier-draw-tool-menu-item" role="menuitemradio" data-draw-act="tool" data-draw-tool="' + name + '" aria-checked="false" aria-label="' + RAPIER_DRAW_TOOL_SAYS[name] + '">' + RAPIER_DRAW_ICONS[name] + '<span>' + RAPIER_DRAW_TOOL_WORDS[name] + '</span></button>').join('') + '</div>').join('') +
+			: '<button type="button" class="rapier-draw-tool-menu-item" role="menuitemradio" data-draw-act="tool" data-draw-tool="' + name + '" aria-checked="false" aria-label="' + RAPIER_DRAW_TOOL_SAYS[name] + '">' + _rapierDrawToolIcon(name) + '<span>' + RAPIER_DRAW_TOOL_WORDS[name] + '</span></button>').join('') + '</div>').join('') +
 			'</div>' +
 		'<div class="rapier-draw-tool-menu rapier-draw-canvas-menu" role="menu" aria-label="Canvas" hidden>' +
 		'<button type="button" class="rapier-draw-tool-menu-item rapier-draw-canvas-row" role="menuitem" data-draw-act="canvasSwap"><span>Canvas</span></button>' +

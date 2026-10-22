@@ -65,7 +65,7 @@ export const reviewCSS = `.rd-review{--rd-old:light-dark(color-mix(in srgb,#d124
 .rd-fold>summary::-webkit-details-marker{display:none}.rd-fold>summary::before{content:'⋯ '}.rd-fold[open]>summary{display:none}.rd-fold>.rd-block+.rd-block{margin-top:16px}
 .rd-change{display:grid;gap:8px}.rd-label{display:flex;justify-content:space-between;gap:16px;color:var(--rd-muted);font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.06em;text-transform:uppercase;font-variant-numeric:tabular-nums}
 .rd-panel{padding:16px 20px;overflow-x:auto}.rd-old{background:var(--rd-old)}.rd-new{background:var(--rd-new)}.rd-move{background:color-mix(in srgb,currentColor 6%,transparent)}
-.rd-panel mark{color:inherit}.rd-panel .rd-del{background:var(--rd-old)}.rd-panel .rd-ins{background:var(--rd-new)}`;
+.rd-panel mark{color:inherit}.rd-panel .rd-del{background:light-dark(color-mix(in srgb,#d1242f 32%,transparent),color-mix(in srgb,#f85149 40%,transparent))}.rd-panel .rd-ins{background:light-dark(color-mix(in srgb,#1a7f37 32%,transparent),color-mix(in srgb,#3fb950 40%,transparent))}`;
 
 const LABELS = {replace: 'Changed', insert: 'Added', delete: 'Removed', move: 'Moved', spacing: 'Spacing'};
 

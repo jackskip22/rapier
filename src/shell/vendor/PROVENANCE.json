@@ -108,15 +108,15 @@
       "bytes": 2376,
       "sha256": "ac514a9a3e285269b6c0381ec7f6a8488982095e07d2268356d4fb657bf16cd7"
     },
-    "gpu-lexer-0.0.1.js": {
+    "gpu-lexer-0.0.4.js": {
       "package": "gpu-lexer",
-      "version": "0.0.1",
-      "author": "Vercel Labs",
-      "path": "the package's published ES module, as the file's own first comment describes it (an earlier tree carried it as editor/vendor/gpu-lexer.js, byte-identical)",
-      "license": "MIT (declared by the package, which ships no LICENSE file; agent/vendor/NOTICE.txt carries the standard MIT text)",
-      "note": "The upstream module's trailing `export{UB as highlight}` is replaced by `globalThis.RapierGpuLexer = Object.freeze({highlight:UB})` so the file runs as a classic script like every other vendor library here; the file's own first comment says so. Nothing else differs.",
-      "bytes": 59967,
-      "sha256": "75f260aa052a82d5204a82b5b9dd0cf4c3dbe28bb77e42a2732f4121918fcba0"
+      "version": "0.0.4",
+      "author": "Shu Ding",
+      "path": "dist/index.js (the package's default entry, the tree model)",
+      "license": "MIT (the package's LICENSE, Copyright (c) 2026 Shu Ding; agent/vendor/NOTICE.txt)",
+      "note": "The upstream module's trailing `export{nB as parse}` is replaced by `globalThis.RapierGpuLexer=Object.freeze({highlight:nB})` so the file runs as a classic script like every other vendor library here; Rapier keeps calling it `highlight`. The file's own first comment says so. Nothing else differs.",
+      "bytes": 60879,
+      "sha256": "5a6dc742101ca150e97b03b9a6d815c8519cfe8868047d6ddf04991c79fd62e7"
     },
     "rapier-math-2.7.0.js": {
       "package": "rapier-math",

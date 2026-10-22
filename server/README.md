@@ -13,7 +13,7 @@ This package is **AGPL-3.0-only**, with a commercial license available. The rend
 ## Choose a Rapier workflow
 
 Rapier is a phone-first Markdown editor for notes, diagrams, drawing and watercolor painting. It runs offline
-as one HTML file on Android, Web and Windows.
+as one HTML file on Android, Web, Windows and Linux.
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
 2. **Deliver an offline editor.** Run `npx rapier-html notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).

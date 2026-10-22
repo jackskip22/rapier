@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 const RapierBundledPlugins = (() => {
 	const manifest = document.getElementById('rapier-builtin-plugins');
-	if (!manifest) return Object.freeze({has: () => false, ready: async () => {}, need: async () => {}});
+	if (!manifest) return Object.freeze({has: () => false, ready: async () => {}, need: async () => {}, portable: async () => ({groups: [], bodies: new Map()})});
 	const groups = JSON.parse(manifest.textContent);
 	const known = new Map(groups.flatMap(group => group.files.map(file => [file.id, group])));
 	const loads = new Map(), needs = new Map(), held = new Map();

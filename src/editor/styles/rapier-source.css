@@ -556,8 +556,12 @@ html[data-compare="on"] #source-mode ,html:not([data-compare="on"]) .compare-mod
 .compare-block { padding-bottom: var(--space-3); }
 .compare-block__label { display: flex; justify-content: space-between; gap: var(--space-4); }
 .compare-panel { margin: 0 var(--editor-h-pad) var(--space-2); padding: var(--space-4) var(--space-5); overflow-x: auto; }
-.compare-panel--remove, .compare-mark--remove { background: color-mix(in srgb, var(--color-error) 11%, transparent); }
-.compare-panel--add, .compare-mark--add { background: color-mix(in srgb, var(--color-success) 11%, transparent); }
+.compare-panel--remove { background: color-mix(in srgb, var(--color-error) 11%, transparent); }
+.compare-panel--add { background: color-mix(in srgb, var(--color-success) 11%, transparent); }
+.compare-mark--remove { background: color-mix(in srgb, var(--color-error) 40%, transparent); }
+.compare-mark--add { background: color-mix(in srgb, var(--color-success) 40%, transparent); }
+body.light .compare-mark--remove { background: color-mix(in srgb, var(--color-error) 32%, transparent); }
+body.light .compare-mark--add { background: color-mix(in srgb, var(--color-success) 32%, transparent); }
 .compare-panel--move { background: var(--color-surface-2); }
 .compare-block__context { padding: var(--space-3) var(--editor-h-pad); }
 .compare-panel :is(pre, table, thead, tbody, tr, th, td) { background: transparent; }

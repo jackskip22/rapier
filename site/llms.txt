@@ -2,7 +2,7 @@
 
 > Markdown editor for writing, notes, editable diagrams, drawing and painting with your AI assistant.
 
-For people, Rapier is a free online Markdown editor and viewer and a notes app, on Android ([Google Play](https://play.google.com/store/apps/details?id=app.rapier)), on the web at https://rapier.website and on Windows. You write on the formatted page or in the Markdown source; there is no split preview. It works offline, with no account, ads or tracking.
+For people, Rapier is a free online Markdown editor and viewer and a notes app, on Android ([Google Play](https://play.google.com/store/apps/details?id=app.rapier)), on the web at https://rapier.website, on Windows and on Linux. You write on the formatted page or in the Markdown source; there is no split preview. It works offline, with no account, ads or tracking.
 
 Connect an MCP client to `https://mcp.rapier.website/door/mcp` (Streamable HTTP, anonymous, without OAuth) and call `open`. No account needed. Read the `rapier://guide` resources if your host supports MCP resources; otherwise use the [agent guide](https://rapier.website/agents) and the tool schemas. Your host's own tool approval rules still apply.
 

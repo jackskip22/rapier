@@ -4,13 +4,23 @@
 
 The download targets **x86_64 Linux**. Check `rapier-linux.json` beside it for the executable's SHA-256 and minimum glibc version. Original folders require Linux 5.6 or newer and a supported local filesystem: ext, XFS, Btrfs, tmpfs, or overlayfs. Network filesystems and FUSE folders are refused.
 
-Install a current Chromium-compatible browser. File and folder choosers need a session D-Bus, `xdg-desktop-portal`, and a backend for your desktop. Omarchy theme colors are followed automatically; `fontconfig` supplies its chosen monospace font.
+Install a current Chromium-compatible browser. File and folder choosers need a session D-Bus, `xdg-desktop-portal`, and a backend for your desktop. Omarchy theme colors and accent are followed automatically, and a theme switch reaches an open window at once through Omarchy's theme hooks; `fontconfig` supplies its chosen monospace font.
 
 ```sh
 chmod +x rapier-linux
 ./rapier-linux --install
 ./rapier-linux
 ```
+
+`rapier-linux file.md` opens a file, `rapier-linux --new` a new document, and `printf '# Notes' | rapier-linux -` the text on standard input. While rapier is open, each further document opens in a window of its own. `--help` lists every option. If no Chromium-compatible browser is installed, rapier says so on the desktop and in the terminal.
+
+On X11 the window's class is `rapier`. On Wayland, Chromium names an app window after its address and profile, so the class (app ID) is `chrome-rapier.local__rapier.html-Default`; `--install` adds a hidden launcher entry by that name so the window shows rapier's name and icon. To match it in a Hyprland window rule (Hyprland 0.53 syntax):
+
+```
+windowrule = opacity 1 1, match:class ^(chrome-rapier\.local__rapier\.html-Default)$
+```
+
+On Omarchy, `sudo pacman -S perl-file-mimeinfo` lets `xdg-open file.md` open rapier; without it, `xdg-open` sees a `.md` file as plain text. Your file manager opens `.md` files in rapier either way.
 
 Keep the executable where you installed it. After moving it, run `--install` again. `--uninstall` removes the launcher entry and extracted cache; documents and Notes remain. `--licenses` prints the included license notices.
 

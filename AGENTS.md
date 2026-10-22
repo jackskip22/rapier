@@ -1,7 +1,7 @@
 # Rapier
 
-Fast Markdown editor for notes, diagrams, drawing and watercolor painting in one HTML file. Runs on Android, Web
-and Windows, phone-first and offline. A person and an agent work in the same document over MCP or WebMCP.
+Fast Markdown editor for notes, diagrams, drawing and watercolor painting in one HTML file. Runs on Android, Web,
+Windows and Linux, phone-first and offline. A person and an agent work in the same document over MCP or WebMCP.
 
 ## Choose a task
 

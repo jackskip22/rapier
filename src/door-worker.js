@@ -35,7 +35,7 @@ export const DOORS = Object.freeze({
 		description: 'Draw freehand with a finger, mouse or pen, build diagrams with arrows that stay attached, and paint. Free in your browser, no download or account.',
 		image: 'og-draw.png', imageSize: [1200, 630], imageAlt: 'Rapier Draw: draw and paint in Markdown',
 		h1: 'Free drawing app online', view: 'draw', related: ['/paint', '/watercolor', '/gallery', '/mermaid-editor'],
-		lead: 'Rapier Draw opens a canvas in your browser. Draw with your finger on a phone, or with a mouse or a pressure-sensitive pen. Brush follows your pressure and speed. Select a shape to move, resize, label or restyle it, or attach an arrow that moves with it. Drawings are SVG: sharp at any size and editable later.',
+		lead: 'Rapier Draw opens a canvas in your browser. Draw with your finger on a phone, or with a mouse or a pen. Select a shape to move, resize, label or restyle it, or attach an arrow that moves with it. Drawings are SVG: sharp at any size and editable later.',
 		faq: Object.freeze([
 			Object.freeze(['Can I draw on my phone?', 'Yes. Rapier is made for phones first: draw with your finger, and pinch to zoom.']),
 			Object.freeze(['Do I need to download anything?', 'No. Draw runs in your browser. There is also an Android app on Google Play.']),
@@ -65,7 +65,7 @@ export const DOORS = Object.freeze({
 			Object.freeze(['Can I save my painting?', saved + '.']),
 		])}),
 	'/jxl': Object.freeze({name: 'JPEG XL converter', title: 'Free JPEG XL converter: JPG, PNG, GIF and video to JXL | Rapier',
-		description: 'Convert JPG, PNG, GIF, WebP and video to JPEG XL (JXL), free, in your browser. Lossless or smaller; a JPEG restores exactly. Offline, nothing uploaded.',
+		description: 'Convert JPG, PNG, GIF, WebP and video to JPEG XL (JXL), free, in your browser. Lossless or lossy; a JPEG restores exactly. Offline, nothing uploaded.',
 		image: 'og-jxl-flowers.png', imageSize: [1200, 630], imageAlt: 'Watercolor flowers painted in Rapier. flowers.png: 710 KB to 428 KB, lossless. flowers.jpg: 152 KB to 125 KB, restores the JPEG exactly.',
 		h1: 'Free JPEG XL converter', view: 'jxl', encoder: Object.freeze({name: 'rapier-jxl', repository: 'https://github.com/jackskip22/rapier-jxl', package: 'https://www.npmjs.com/package/rapier-jxl'}), related: ['/paint', '/draw', '/notes'],
 		features: Object.freeze(['JPG, PNG, GIF, WebP, AVIF and APNG to JPEG XL', 'MP4, WebM and MOV to animated JPEG XL', 'Lossless, High or Medium quality', 'Exact JPEG recompression', 'Keeps transparency, 16-bit PNG, color profiles and HDR', 'Runs offline on your device', 'Many files at once, zip download']),

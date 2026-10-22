@@ -54,7 +54,7 @@ const BROWSER = new Set(('window document globalThis self location navigator his
 	'Range Highlight CSS CSSStyleSheet DOMParser URL URLSearchParams TextEncoder TextDecoder Blob Response FontFace Image Event CustomEvent MessageChannel DecompressionStream CompressionStream AbortSignal requestIdleCallback ' +
 	'NodeFilter ResizeObserver IntersectionObserver MutationObserver matchMedia getComputedStyle requestAnimationFrame cancelAnimationFrame setTimeout clearTimeout setInterval clearInterval ' +
 	'queueMicrotask addEventListener removeEventListener postMessage fetch atob btoa structuredClone indexedDB caches isSecureContext DOMException AbortController Promise Math JSON Object ' +
-	'Array String Number Boolean Symbol Map Set WeakMap WeakSet WeakRef Error TypeError RangeError SyntaxError Date RegExp Intl Uint8Array Uint16Array Uint32Array Int8Array Float32Array ' +
+	'Array String Number Boolean Symbol Map Set WeakMap WeakSet WeakRef Error TypeError RangeError SyntaxError Date RegExp Intl Uint8Array Uint16Array Uint32Array Int8Array Int32Array Float32Array ' +
 	'Float64Array ArrayBuffer DataView Reflect Proxy parseInt parseFloat isNaN isFinite encodeURIComponent decodeURIComponent encodeURI decodeURI escape unescape undefined NaN Infinity ' +
 	'BigInt Function eval OffscreenCanvas ImageData createImageBitmap ImageDecoder Worker SharedWorker WebAssembly speechSynthesis SpeechSynthesisUtterance getSelection devicePixelRatio ' +
 	'innerWidth innerHeight scrollX scrollY open close focus blur alert parent top frames opener name length origin visualViewport screen File print').split(' '));
@@ -212,7 +212,7 @@ export async function buildReader({root = here, unchecked = [], toolchainCanonic
 	}
 	report.unresolved = linked.unresolved.filter(name => !BROWSER.has(name));
 	const PROVIDED = ['DOMPurify', 'IDBKeyRange', 'URIError', 'RapierImageAssets', 'RapierPictureMarks', 'RapierPluginLoader', 'RapierUnpack', 'modules'];
-	const GUARDED = ['_rapierDrawReadSVGRecipe', '_rapierDrawShapeProfileFor', 'RapierBundledPlugins'];
+	const GUARDED = ['_rapierDrawReadSVGRecipe', '_rapierDrawShapeProfileFor', 'RapierBundledPlugins', 'RapierLexer'];
 	const UNREACHED = ['RapierLedgerCarried'];
 	const known = new Set([...PROVIDED, ...GUARDED, ...UNREACHED]);
 	const missing = report.unresolved.filter(name => !known.has(name));

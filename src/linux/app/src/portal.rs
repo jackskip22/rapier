@@ -27,14 +27,15 @@ pub fn percent_decode(text: &str) -> String {
 
 /// What a person reads when no file chooser answers (no xdg-desktop-portal or no backend for the desktop).
 pub const NO_CHOOSER: &str =
-    "No file chooser is available. Install xdg-desktop-portal and its backend for your desktop.";
+    "No file chooser is available. Open a file from your file manager or run rapier-linux with its path, or install xdg-desktop-portal and its backend for your desktop.";
 
 /// A path, '' when the person cancelled, or an error when no portal answers: never a silent cancel.
-pub fn pick(save: bool, name: &str, title: &str, directory: bool) -> Result<String, String> {
-    pick_inner(save, name, title, directory).map_err(|_| NO_CHOOSER.to_string())
+/// The chooser opens in `start` (the portal's current_folder).
+pub fn pick(save: bool, name: &str, title: &str, directory: bool, start: &std::path::Path) -> Result<String, String> {
+    pick_inner(save, name, title, directory, start).map_err(|_| NO_CHOOSER.to_string())
 }
 
-fn pick_inner(save: bool, name: &str, title: &str, directory: bool) -> zbus::Result<String> {
+fn pick_inner(save: bool, name: &str, title: &str, directory: bool, start: &std::path::Path) -> zbus::Result<String> {
     let connection = Connection::session()?;
     let sender = connection
         .unique_name()
@@ -57,6 +58,12 @@ fn pick_inner(save: bool, name: &str, title: &str, directory: bool) -> zbus::Res
     }
     if save {
         options.insert("current_name", Value::from(name));
+    }
+    // current_folder is a NUL-terminated byte path (xdg-desktop-portal FileChooser).
+    let mut folder = std::os::unix::ffi::OsStrExt::as_bytes(start.as_os_str()).to_vec();
+    if start.is_dir() && !folder.is_empty() {
+        folder.push(0);
+        options.insert("current_folder", Value::from(folder));
     }
     let chooser = Proxy::new(
         &connection,
@@ -84,4 +91,35 @@ fn pick_inner(save: bool, name: &str, title: &str, directory: bool) -> zbus::Res
         .and_then(|uri| uri.strip_prefix("file://"))
         .map(percent_decode)
         .unwrap_or_default())
+}
+
+/// Tell the person something when no terminal shows stderr (a launcher start): a desktop notification
+/// (org.freedesktop.Notifications, which mako, dunst, GNOME and KDE all serve), else a zenity or kdialog box.
+pub fn tell(summary: &str, body: &str) {
+    let notified = (|| -> zbus::Result<u32> {
+        let connection = Connection::session()?;
+        let notifications = Proxy::new(
+            &connection,
+            "org.freedesktop.Notifications",
+            "/org/freedesktop/Notifications",
+            "org.freedesktop.Notifications",
+        )?;
+        let actions: Vec<&str> = Vec::new();
+        let hints: HashMap<&str, Value> = HashMap::new();
+        notifications.call("Notify", &("Rapier", 0u32, "rapier", summary, body, actions, hints, 0i32))
+    })();
+    if notified.is_ok() {
+        return;
+    }
+    let text = format!("{summary}\n\n{body}");
+    for (tool, args) in [
+        ("zenity", vec!["--error", "--title=Rapier", "--no-markup", "--text"]),
+        ("kdialog", vec!["--title", "Rapier", "--error"]),
+    ] {
+        if let Some(path) = crate::which(tool) {
+            if std::process::Command::new(path).args(&args).arg(&text).status().is_ok() {
+                return;
+            }
+        }
+    }
 }

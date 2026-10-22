@@ -19,10 +19,16 @@ mod theme;
 use std::io::{Read, Write};
 use std::os::linux::net::SocketAddrExt;
 use std::os::unix::net::{SocketAddr, UnixListener, UnixStream};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;
 
 pub const ORIGIN: &str = "https://rapier.local";
+/// What a launch asks the window to open besides files: a new document, or text read from stdin (`-`).
+pub const NEW_DOCUMENT: &str = "rapier:new";
+pub const STDIN_DOCUMENT: &str = "rapier:stdin:";
+/// Omarchy's theme-set and font-set hooks (payload::install) send this to a running rapier.
+pub const THEME_CHANGED: &str = "rapier:theme";
 pub const PAGE: &str = "https://rapier.local/rapier.html";
 const BROWSERS: [&str; 8] = [
     "chromium",
@@ -79,13 +85,64 @@ pub fn random_hex(bytes: usize) -> String {
 
 fn fail(message: &str) -> ! {
     eprintln!("rapier: {message}");
+    // Started from the launcher, nobody reads stderr: the person is told on the desktop too.
+    if unsafe { libc::isatty(2) } == 0 {
+        portal::tell("Rapier could not start", message);
+    }
     std::process::exit(1)
 }
 
+/// stdin, set aside in a private file (0600, in XDG_RUNTIME_DIR) for the window to open as a new document.
+fn stdin_document() -> String {
+    let mut text = Vec::new();
+    std::io::stdin().take(64 * 1024 * 1024).read_to_end(&mut text).unwrap_or_else(|error| fail(&error.to_string()));
+    let folder = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).filter(|d| d.is_dir()).unwrap_or_else(std::env::temp_dir);
+    let path = folder.join(format!("rapier-stdin-{}.md", random_hex(8)));
+    let mut file = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&path)
+        .unwrap_or_else(|error| fail(&error.to_string()));
+    file.write_all(&text).unwrap_or_else(|error| fail(&error.to_string()));
+    format!("{STDIN_DOCUMENT}{}", path.display())
+}
+
+/// The installed Chromium-based browser: RAPIER_BROWSER, then each name on PATH, then the usual install paths (a
+/// launcher's PATH can be short). Snap Chromium is used with a profile its confinement allows (browser_profile).
+fn find_browser() -> Option<PathBuf> {
+    if let Some(named) = std::env::var_os("RAPIER_BROWSER") {
+        return Some(PathBuf::from(named));
+    }
+    BROWSERS.iter().find_map(|name| which(name)).or_else(|| {
+        [
+            "/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/lib/chromium/chromium",
+            "/usr/bin/google-chrome-stable", "/opt/google/chrome/chrome", "/opt/brave.com/brave/brave",
+            "/opt/microsoft/msedge/msedge", "/opt/vivaldi/vivaldi", "/snap/bin/chromium",
+        ]
+        .iter()
+        .map(PathBuf::from)
+        .find(|path| path.is_file())
+    })
+}
+
+/// What to say when no browser is found: a Flatpak Chromium is named, since it cannot take the private pipe rapier
+/// talks to its window over.
+fn no_browser() -> String {
+    let flatpak = ["/var/lib/flatpak", &format!("{}/.local/share/flatpak", home().display())]
+        .iter()
+        .any(|root| Path::new(root).join("app/org.chromium.Chromium").is_dir());
+    let mut message = String::from("Rapier opens in a Chromium-based browser and found none. Install Chromium (on Omarchy and Arch: sudo pacman -S chromium), Chrome, Brave, Edge, Vivaldi or Helium, then open Rapier again.");
+    if flatpak {
+        message.push_str(" The Flatpak Chromium cannot host Rapier's window; install your distribution's Chromium package.");
+    }
+    message
+}
+
 /// One window: a second launch hands its paths to the first and exits.
-fn single_instance(paths: &[String]) -> UnixListener {
+fn instance_address() -> SocketAddr {
     let name = format!("rapier-{}", unsafe { libc::getuid() });
-    let address = SocketAddr::from_abstract_name(name.as_bytes()).expect("socket name");
+    SocketAddr::from_abstract_name(name.as_bytes()).expect("socket name")
+}
+
+fn single_instance(paths: &[String]) -> UnixListener {
+    let address = instance_address();
     match UnixListener::bind_addr(&address) {
         Ok(listener) => listener,
         Err(_) => {
@@ -135,6 +192,30 @@ fn main() {
             println!("rapier {}", payload::version());
             return;
         }
+        Some("--theme-changed") => {
+            // From Omarchy's hook: tell a running rapier; never start one.
+            if let Ok(mut client) = UnixStream::connect_addr(&instance_address()) {
+                let _ = client.write_all(serde_json::to_string(&[THEME_CHANGED]).unwrap_or_default().as_bytes());
+            }
+            return;
+        }
+        Some("--help") | Some("-h") => {
+            println!(
+                "rapier {} — Markdown editor, notes, drawing and painting, offline.\n\n\
+                 Usage: rapier-linux [--online] [--new] [FILE... | -]\n\n\
+                 \x20 FILE...      open these files (.md, .markdown, .txt, .rapier.html)\n\
+                 \x20 -            open the text on standard input as a new document\n\
+                 \x20 --new        open a new document\n\
+                 \x20 --online     let the app use the network (it starts offline)\n\
+                 \x20 --install    add rapier to your app launcher and make it open Markdown\n\
+                 \x20 --uninstall  remove the launcher entry and the unpacked cache (documents stay)\n\
+                 \x20 --licenses   print the included license notices\n\
+                 \x20 --version    print the version\n\
+                 \x20 --help       print this help",
+                payload::version()
+            );
+            return;
+        }
         _ => {}
     }
     if args.first().map(String::as_str) == Some("--install") {
@@ -154,13 +235,15 @@ fn main() {
     let paths: Vec<String> = args
         .iter()
         .filter(|a| a.as_str() != "--online")
-        .map(|a| absolute(a))
+        .map(|a| match a.as_str() {
+            "--new" => NEW_DOCUMENT.to_string(),
+            "-" => stdin_document(),
+            _ => absolute(a),
+        })
         .collect();
     let listener = single_instance(&paths);
     let app = payload::unpacked().unwrap_or_else(|error| fail(&error));
-    let browser = std::env::var_os("RAPIER_BROWSER").map(PathBuf::from)
-        .or_else(|| BROWSERS.iter().find_map(|name| which(name)))
-        .unwrap_or_else(|| fail("rapier needs Chromium or another Chromium-based browser (Chrome, Brave, Edge, Vivaldi, Helium)."));
+    let browser = find_browser().unwrap_or_else(|| fail(&no_browser()));
     let (sender, receiver) = std::sync::mpsc::channel();
     accept_forever(listener, sender.clone());
     let mut host = host::Host::launch(app, &browser, online, paths, sender)

@@ -34,14 +34,13 @@ function _rapierBindRenderOwner(kind) {
           !code.parentElement?.classList.contains('diagram-source') &&
           _rapierCodeReading(_rapierRenderModule('render-markdown')._rapierLanguageClass(code) || 'text') === 'code' && _rapierHighlightAdmitted(code.textContent || ''));
         if (!codes.length || !RapierLexer.available(navigator) || !_rapierEnsureLexer()) return;
-        for (const code of codes) {
-          if (!RapierLexer.available(navigator)) break;
+        await Promise.all(codes.map(async code => {
           const source = code.textContent || '';
           try {
             const answer = await RapierLexer.ask(window, source, _rapierLexerRefused);
             _rapierRenderModule('render')._rapierPaintCode(code, _rapierTokensHtml(source, answer.spans));
           } catch (_) {  }
-        }
+        }));
       },
       _rapierLanguageClass: (...args) => _rapierRenderModule('render-markdown')._rapierLanguageClass(...args),
       _rapierLineStartOffsets: typeof _rapierLineStartOffsets === 'undefined' ? undefined : _rapierLineStartOffsets,
@@ -77,7 +76,7 @@ function _rapierBindRenderOwner(kind) {
       RAPIER_RENDERED_HEADING_SELECTOR: typeof RAPIER_RENDERED_HEADING_SELECTOR === 'undefined' ? undefined : RAPIER_RENDERED_HEADING_SELECTOR,
       _rapierApplyMarkdownSpec: typeof _rapierApplyMarkdownSpec === 'undefined' ? undefined : _rapierApplyMarkdownSpec,
       _rapierChromeOwnsId: (...args) => _rapierRenderModule('render-sanitize')._rapierChromeOwnsId(...args),
-      _rapierCodeHtml: typeof _rapierCodeHtml === 'undefined' ? undefined : _rapierCodeHtml,
+      _rapierCodeHtml: typeof _rapierCodeHtml === 'undefined' ? undefined : _rapierLexedCodeHtml,
       _rapierDeriveDarkColor: typeof _rapierDeriveDarkColor === 'undefined' ? undefined : _rapierDeriveDarkColor,
       _rapierDormantHeadings: typeof _rapierDormantHeadings === 'undefined' ? undefined : _rapierDormantHeadings,
       _rapierEmbedAssetSource: typeof _rapierEmbedAssetSource === 'undefined' ? undefined : _rapierEmbedAssetSource,

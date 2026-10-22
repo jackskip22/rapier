@@ -2,9 +2,18 @@
 globalThis.RapierLexer = (() => {
 
 const BACKOFF_MS = Object.freeze([5000, 30000, 120000, 300000]);
+const CACHE_ENTRIES = 512;
+const CACHE_UNITS = 8 * 1024 * 1024;
+
+function softwareAdapter(adapter) {
+	const info = adapter.info || {};
+	return info.isFallbackAdapter === true || adapter.isFallbackAdapter === true ||
+		/swiftshader|llvmpipe|softpipe|basic render/i.test([info.vendor, info.architecture, info.device, info.description].join(' '));
+}
 
 function create(now = () => Date.now()) {
-	const state = Object.seal({ spans: null, failed: false, stale: false, executed: null, refusedAt: 0, refusals: 0, episode: 0, asks: 0, answers: 0 });
+	const state = Object.seal({ spans: null, failed: false, stale: false, executed: null, refusedAt: 0, refusals: 0, episode: 0, asks: 0, answers: 0,
+		adapter: '', admission: null, cache: new Map(), cacheUnits: 0, hits: 0 });
 
 	function store(spans) {
 		if (!Array.isArray(spans) || !spans.length || !spans.every(span => span && typeof span.name === 'string' && typeof span.source === 'string')) throw new Error('gpu-lexer');
@@ -13,10 +22,11 @@ function create(now = () => Date.now()) {
 	const stored = () => !!state.spans;
 	const failed = () => state.failed;
 	const refusal = () => ({ at: state.refusedAt, count: state.refusals });
-	const counts = () => ({ asks: state.asks, answers: state.answers });
+	const counts = () => ({ asks: state.asks, answers: state.answers, hits: state.hits });
+	const adapter = () => state.adapter;
 
 	function available(navigatorLike) {
-		if (state.failed || !navigatorLike || !navigatorLike.gpu) return false;
+		if (state.failed || state.adapter === 'software' || !navigatorLike || !navigatorLike.gpu) return false;
 		if (!state.refusedAt) return true;
 		return now() >= state.refusedAt + BACKOFF_MS[Math.min(state.refusals, BACKOFF_MS.length) - 1];
 	}
@@ -38,12 +48,45 @@ function create(now = () => Date.now()) {
 		}
 	}
 
+	function admission(navigatorLike) {
+		return state.admission ||= (async () => {
+			const gpu = navigatorLike && navigatorLike.gpu;
+			let found = null;
+			try { found = gpu && typeof gpu.requestAdapter === 'function' ? await gpu.requestAdapter() : null; } catch (_) {}
+			if (found) state.adapter = softwareAdapter(found) ? 'software' : 'hardware';
+			return state.adapter !== 'software';
+		})();
+	}
+
+	function cached(source) {
+		const spans = state.cache.get(source);
+		if (!spans) return null;
+		state.cache.delete(source); state.cache.set(source, spans);
+		return spans;
+	}
+	function keep(source, spans) {
+		if (!Array.isArray(spans) || source.length > CACHE_UNITS / 4 || state.cache.has(source)) return;
+		state.cache.set(source, spans); state.cacheUnits += source.length;
+		for (const [text] of state.cache) {
+			if (state.cache.size <= CACHE_ENTRIES && state.cacheUnits <= CACHE_UNITS) break;
+			state.cache.delete(text); state.cacheUnits -= text.length;
+		}
+	}
+
 	async function ask(globalLike, source, refused = null) {
+		const kept = cached(source);
+		if (kept) { state.hits++; return { spans: kept, recovered: false }; }
+		const lexer = globalLike.RapierGpuLexer;
+		if (!state.adapter && lexer === state.executed && !await admission(globalLike.navigator)) {
+			throw Object.assign(new Error('software WebGPU adapter'), { software: true });
+		}
+		if (state.adapter === 'software' && lexer === state.executed) throw Object.assign(new Error('software WebGPU adapter'), { software: true });
 		const episode = state.episode;
 		state.asks++;
 		try {
-			const spans = await globalLike.RapierGpuLexer.highlight(source);
+			const spans = await lexer.highlight(source);
 			state.answers++;
+			keep(source, spans);
 			if (episode !== state.episode) return { spans, recovered: false };
 			const recovered = state.refusals > 0;
 			state.refusedAt = 0; state.refusals = 0;
@@ -60,7 +103,7 @@ function create(now = () => Date.now()) {
 
 	function retry() { state.refusedAt = 0; }
 
-	return Object.freeze({ store, stored, failed, refusal, counts, available, retry, ensure, ask });
+	return Object.freeze({ store, stored, failed, refusal, counts, adapter, available, retry, ensure, ask, cached });
 }
 
 function codeHoldsSelection(code, documentLike) {

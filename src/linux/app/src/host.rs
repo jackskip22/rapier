@@ -45,6 +45,26 @@ const ADAPTER: &str = r#"(() => {
   const theme = new CSSStyleSheet();
   document.adoptedStyleSheets = [...document.adoptedStyleSheets, theme];
   Object.defineProperty(window, '__rapierLinuxTheme', { configurable: false, value: css => theme.replaceSync(String(css)) });
+  // Until the editor names the document, the window is "Rapier", not the website's search title.
+  let searchTitle = null;
+  const titled = new MutationObserver(() => {
+    const element = document.querySelector('head > title');
+    if (!element) return;
+    titled.disconnect();
+    searchTitle = element.textContent;
+    document.title = 'Rapier';
+  });
+  titled.observe(document, { childList: true, subtree: true });
+  addEventListener('DOMContentLoaded', () => { titled.disconnect(); if (searchTitle !== null && document.title === searchTitle) document.title = 'Rapier'; }, { once: true });
+  // The first window never stays taller or wider than the screen's work area: the host resizes it (fit_window).
+  // The window manager's frame is outside outerWidth/outerHeight (xfwm4: 29 px on top, 5 below), so the
+  // window is fitted to the work area less a frame allowance and placed at its corner.
+  const fit = () => {
+    const width = Math.min(outerWidth, screen.availWidth - 16), height = Math.min(outerHeight, screen.availHeight - 64);
+    if (screen.availWidth > 0 && screen.availHeight > 0 && (width < outerWidth || height < outerHeight))
+      send(JSON.stringify({ channel: 'window', payload: JSON.stringify({ width, height, left: screen.availLeft || 0, top: screen.availTop || 0 }) }));
+  };
+  addEventListener('load', () => { fit(); setTimeout(fit, 1000); }, { once: true });
   Object.defineProperty(window, '__rapierLinuxDeliver', { configurable: false, value: value => {
     const target = value && value.channel === 'host' ? host : value && value.channel === 'intake' ? intake : null;
     if (target && typeof target.onmessage === 'function') target.onmessage({ data: String(value.payload == null ? '' : value.payload) });
@@ -127,6 +147,29 @@ impl Folder {
     }
 }
 
+/// One window's own state. The Host's fields of the same names belong to the window being served; the others wait
+/// here and are swapped in when a DevTools message names their session (swap_to). Each window holds one document.
+#[derive(Default)]
+struct Win {
+    session: Option<String>,
+    target: String,
+    context: Option<i64>,
+    page_ready: bool,
+    intake_ready: bool,
+    pending_paths: VecDeque<String>,
+    intake: Option<Intake>,
+    candidate: Option<Candidate>,
+    current: Option<Bound>,
+    transfer: Option<Transfer>,
+    folder: Option<Folder>,
+    receipts: Vec<((String, String), Value)>,
+    theme_script: Option<String>,
+    theme_adds: Vec<u64>,
+    saved_where: Option<String>,
+    window_id: Option<i64>,
+    text_held: bool,
+}
+
 pub struct Host {
     app: PathBuf,
     out: File,
@@ -148,6 +191,18 @@ pub struct Host {
     theme: Option<(Option<theme::Palette>, String)>,
     theme_script: Option<String>,
     theme_adds: Vec<u64>,
+    // Where a save went when no file chooser answered; the next save result names it.
+    saved_where: Option<String>,
+    window_id: Option<i64>,
+    // A new document or text from stdin opened here: the window holds it though no file is bound.
+    text_held: bool,
+    // The other windows, and paths waiting for a window of their own (a second document never replaces the first).
+    others: Vec<Win>,
+    waiting_paths: VecDeque<String>,
+    new_windows: VecDeque<String>,
+    // How the browser was started, to ask it for another app window (spawn_window).
+    browser_path: PathBuf,
+    browser_args: Vec<String>,
     deferred: VecDeque<Event>,
     events: Sender<Event>,
     browser: Child,
@@ -169,8 +224,16 @@ impl Host {
         paths: Vec<String>,
         events: Sender<Event>,
     ) -> Result<Host, String> {
-        let profile = crate::data_dir().join("rapier/browser");
+        // Snap Chromium may not write hidden folders in home (~/.local): its profile lives in the snap's own area.
+        let profile = if browser.starts_with("/snap/") {
+            crate::home().join("snap/chromium/common/rapier-browser")
+        } else {
+            crate::data_dir().join("rapier/browser")
+        };
         std::fs::create_dir_all(&profile).map_err(|e| e.to_string())?;
+        // The first document opens in the first window; each other one gets a window of its own.
+        let mut rest: VecDeque<String> = paths.into();
+        let first = rest.pop_front();
         let (to_browser, out) = pipe().map_err(|e| e.to_string())?;
         let (inp, from_browser) = pipe().map_err(|e| e.to_string())?;
         // The window is named after its first URL (chrome-rapier.local__rapier.html-Default), so it opens the page at
@@ -180,6 +243,8 @@ impl Host {
             format!("--user-data-dir={}", profile.display()),
             format!("--app={PAGE}"),
             "--host-resolver-rules=MAP rapier.local ~NOTFOUND".into(),
+            // The window's class (X11 WM_CLASS, Wayland app_id) is rapier's, matching the launcher's StartupWMClass.
+            "--class=rapier".into(),
             "--no-first-run".into(),
             "--no-default-browser-check".into(),
             "--disable-sync".into(),
@@ -227,7 +292,7 @@ impl Host {
             context: None,
             page_ready: false,
             intake_ready: false,
-            pending_paths: paths.into(),
+            pending_paths: first.into_iter().collect(),
             intake: None,
             candidate: None,
             intake_id: 0,
@@ -239,10 +304,94 @@ impl Host {
             theme: None,
             theme_script: None,
             theme_adds: Vec::new(),
+            saved_where: None,
+            window_id: None,
+            text_held: false,
+            others: Vec::new(),
+            waiting_paths: rest,
+            new_windows: VecDeque::new(),
+            browser_path: browser.to_path_buf(),
+            browser_args: args.iter().filter(|a| a.as_str() != "--remote-debugging-pipe").cloned().collect(),
             deferred: VecDeque::new(),
             events,
             browser: child,
         })
+    }
+
+    /// Serve window `w`: its fields and the Host's change places.
+    fn exchange(&mut self, w: &mut Win) {
+        std::mem::swap(&mut self.session, &mut w.session);
+        std::mem::swap(&mut self.target, &mut w.target);
+        std::mem::swap(&mut self.context, &mut w.context);
+        std::mem::swap(&mut self.page_ready, &mut w.page_ready);
+        std::mem::swap(&mut self.intake_ready, &mut w.intake_ready);
+        std::mem::swap(&mut self.pending_paths, &mut w.pending_paths);
+        std::mem::swap(&mut self.intake, &mut w.intake);
+        std::mem::swap(&mut self.candidate, &mut w.candidate);
+        std::mem::swap(&mut self.current, &mut w.current);
+        std::mem::swap(&mut self.transfer, &mut w.transfer);
+        std::mem::swap(&mut self.folder, &mut w.folder);
+        std::mem::swap(&mut self.receipts, &mut w.receipts);
+        std::mem::swap(&mut self.theme_script, &mut w.theme_script);
+        std::mem::swap(&mut self.theme_adds, &mut w.theme_adds);
+        std::mem::swap(&mut self.saved_where, &mut w.saved_where);
+        std::mem::swap(&mut self.window_id, &mut w.window_id);
+        std::mem::swap(&mut self.text_held, &mut w.text_held);
+    }
+
+    /// Make the window with this DevTools session the one served; false when no window has it.
+    fn swap_to(&mut self, session: &str) -> bool {
+        if self.session.as_deref() == Some(session) {
+            return true;
+        }
+        let Some(at) = self.others.iter().position(|w| w.session.as_deref() == Some(session)) else {
+            return false;
+        };
+        let mut w = self.others.swap_remove(at);
+        self.exchange(&mut w);
+        self.others.push(w);
+        true
+    }
+
+    /// A window that holds or is receiving a document: another document gets its own window.
+    fn busy(&self) -> bool {
+        self.current.is_some() || self.text_held || self.candidate.is_some() || self.intake.is_some() || !self.pending_paths.is_empty()
+    }
+
+    /// Ask the running browser for another app window: the same profile hands the request to it (its singleton), which
+    /// opens the page as an app window; Target.targetCreated then names it and adopt() attaches it.
+    fn spawn_window(&mut self) {
+        let _ = Command::new(&self.browser_path)
+            .args(&self.browser_args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .process_group(0)
+            .spawn();
+    }
+
+    /// Attach a new app window and give it the next waiting document.
+    fn adopt(&mut self, receiver: &Receiver<Event>, target: String) -> Result<(), String> {
+        let mut parked = Win::default();
+        self.exchange(&mut parked);
+        self.others.push(parked);
+        self.target = target;
+        let id = self.cdp("Target.attachToTarget", json!({"targetId": self.target, "flatten": true}), false);
+        self.session = Some(str_of(&self.wait(receiver, id)?, "sessionId"));
+        self.prepare_window(receiver)?;
+        self.pending_paths.extend(self.waiting_paths.pop_front());
+        self.cdp("Page.navigate", json!({"url": PAGE}), true);
+        Ok(())
+    }
+
+    /// A window closed: its state goes, and another window is served.
+    fn forget_window(&mut self, session: &str) {
+        if !self.swap_to(session) {
+            return;
+        }
+        self.close_folder();
+        let mut next = self.others.pop().unwrap_or_default();
+        self.exchange(&mut next);
     }
 
     // -- DevTools pipe ------------------------------------------------------------------------------------------------
@@ -279,6 +428,30 @@ impl Host {
         result
     }
 
+    /// What every window needs before its page loads: the served origin, the bridge, the adapter, the theme and its size.
+    fn prepare_window(&mut self, receiver: &Receiver<Event>) -> Result<(), String> {
+        for (method, params) in [
+            (
+                "Fetch.enable",
+                json!({"patterns": [{"urlPattern": "*", "requestStage": "Request"}]}),
+            ),
+            ("Runtime.addBinding", json!({"name": "__rapierLinux"})),
+            ("Runtime.enable", json!({})),
+            ("Page.enable", json!({})),
+            (
+                "Page.addScriptToEvaluateOnNewDocument",
+                json!({"source": ADAPTER}),
+            ),
+        ] {
+            let id = self.cdp(method, params, true);
+            self.wait(receiver, id)?;
+        }
+        self.theme_to_window();
+        let id = self.cdp("Browser.getWindowForTarget", json!({"targetId": self.target.clone()}), false);
+        self.window_id = self.wait(receiver, id).ok().and_then(|w| w.get("windowId").and_then(Value::as_i64));
+        Ok(())
+    }
+
     fn start(&mut self, receiver: &Receiver<Event>) -> Result<(), String> {
         let id = self.cdp("Target.getTargets", json!({}), false);
         let targets = self.wait(receiver, id)?;
@@ -299,25 +472,15 @@ impl Host {
             false,
         );
         self.wait(receiver, id)?;
-        for (method, params) in [
-            (
-                "Fetch.enable",
-                json!({"patterns": [{"urlPattern": "*", "requestStage": "Request"}]}),
-            ),
-            ("Runtime.addBinding", json!({"name": "__rapierLinux"})),
-            ("Runtime.enable", json!({})),
-            ("Page.enable", json!({})),
-            (
-                "Page.addScriptToEvaluateOnNewDocument",
-                json!({"source": ADAPTER}),
-            ),
-        ] {
-            let id = self.cdp(method, params, true);
-            self.wait(receiver, id)?;
-        }
-        self.apply_theme();
+        self.read_theme();
+        self.prepare_window(receiver)?;
         let sender = self.events.clone();
+        // On Omarchy the theme-set and font-set hooks tell rapier (payload::install); elsewhere the files are watched.
+        let hooked = crate::payload::omarchy_hooks().iter().all(|hook| hook.is_file());
         std::thread::spawn(move || {
+            if hooked {
+                return;
+            }
             let mut seen = theme::signature();
             loop {
                 std::thread::sleep(std::time::Duration::from_millis(500));
@@ -346,6 +509,10 @@ impl Host {
             let _ = self.browser.kill();
             return;
         }
+        // Each further document given at launch opens in a window of its own.
+        for _ in 0..self.waiting_paths.len() {
+            self.spawn_window();
+        }
         loop {
             let event = match self.deferred.pop_front() {
                 Some(event) => event,
@@ -358,9 +525,21 @@ impl Host {
                 Event::Exit => return,
                 Event::Cdp(message) => self.on_cdp(message),
                 Event::Theme => self.apply_theme(),
+                Event::Open(path) if path == crate::THEME_CHANGED => self.apply_theme(),
                 Event::Open(path) => {
-                    self.pending_paths.push_back(path);
-                    self.pump();
+                    // A window holding a document keeps it: the new one waits for a window of its own.
+                    if self.busy() || !self.waiting_paths.is_empty() {
+                        self.waiting_paths.push_back(path);
+                        self.spawn_window();
+                    } else {
+                        self.pending_paths.push_back(path);
+                        self.pump();
+                    }
+                }
+            }
+            while let Some(target) = self.new_windows.pop_front() {
+                if let Err(error) = self.adopt(&receiver, target) {
+                    eprintln!("rapier: a new window did not start: {error}");
                 }
             }
         }
@@ -369,6 +548,12 @@ impl Host {
     fn on_cdp(&mut self, message: Value) {
         let method = str_of(&message, "method");
         let params = message.get("params").cloned().unwrap_or(json!({}));
+        // A window's own messages carry its session: serve that window. A session no window holds is not ours.
+        if let Some(session) = message.get("sessionId").and_then(Value::as_str) {
+            if !self.swap_to(session) {
+                return;
+            }
+        }
         if let Some(id) = message.get("id").and_then(Value::as_u64) {
             if let Some(index) = self.theme_adds.iter().position(|&x| x == id) {
                 let identifier = message
@@ -415,10 +600,19 @@ impl Host {
                     self.on_page(&payload);
                 }
             }
+            "Target.detachedFromTarget" => self.forget_window(&str_of(&params, "sessionId")),
             "Target.targetCreated" => {
                 let info = &params["targetInfo"];
+                let opener = str_of(info, "openerId");
+                let ours = opener == self.target || self.others.iter().any(|w| w.target == opener);
+                // An app window the browser opened at rapier's request (spawn_window) is attached in run().
+                let target = str_of(info, "targetId");
+                let known = target == self.target || self.others.iter().any(|w| w.target == target) || self.new_windows.contains(&target);
+                if info["type"] == "page" && opener.is_empty() && !known && self.new_windows.len() < self.waiting_paths.len() {
+                    self.new_windows.push_back(target);
+                }
                 // A new window from the page opens in the person's browser, never inside the app.
-                if info["type"] == "page" && info.get("openerId") == Some(&json!(self.target)) {
+                else if info["type"] == "page" && !opener.is_empty() && ours {
                     self.cdp(
                         "Target.closeTarget",
                         json!({"targetId": info["targetId"]}),
@@ -431,9 +625,69 @@ impl Host {
         }
     }
 
+    /// Where a file chooser opens: beside the open file, else the last folder chosen (kept across launches), else Documents
+    /// (never the process's working directory).
+    fn start_folder(&self) -> PathBuf {
+        if let Some(folder) = self.current.as_ref().and_then(|c| Path::new(&c.path).parent().map(Path::to_path_buf)) {
+            return folder;
+        }
+        std::fs::read_to_string(crate::data_dir().join("rapier/last-folder"))
+            .ok()
+            .map(|text| PathBuf::from(text.trim_end_matches('\n')))
+            .filter(|path| path.is_absolute() && path.is_dir())
+            .unwrap_or_else(|| Some(files::documents_dir()).filter(|d| d.is_dir()).unwrap_or_else(crate::home))
+    }
+
+    /// The folder a person just chose in, for the next chooser.
+    fn remember_folder(&self, chosen: &str, is_folder: bool) {
+        let path = Path::new(chosen);
+        let folder = if is_folder { Some(path) } else { path.parent() };
+        if let Some(folder) = folder.filter(|f| f.is_absolute()) {
+            let file = crate::data_dir().join("rapier/last-folder");
+            let _ = std::fs::create_dir_all(file.parent().unwrap());
+            let _ = std::fs::write(file, folder.to_string_lossy().as_bytes());
+        }
+    }
+
+    /// The window never stays larger than the screen's work area (945 x 1180 on a 1080p screen hid
+    /// the menu's lower rows). The page reports the sizes once it has loaded and the window is final (ADAPTER); a tiling
+    /// compositor sizes the window itself and ignores this.
+    fn fit_window(&mut self, sizes: &Value) {
+        let (Some(window_id), Some(width), Some(height)) =
+            (self.window_id, sizes["width"].as_i64(), sizes["height"].as_i64())
+        else {
+            return;
+        };
+        if width < 320 || height < 240 {
+            return;
+        }
+        self.cdp(
+            "Browser.setWindowBounds",
+            json!({"windowId": window_id, "bounds": {"windowState": "normal", "left": sizes["left"].as_i64().unwrap_or(0),
+                "top": sizes["top"].as_i64().unwrap_or(0), "width": width, "height": height}}),
+            false,
+        );
+    }
+
     // -- Omarchy ------------------------------------------------------------------------------------------------------
     /// Give the page the person's Omarchy theme and font, at start and after each switch.
+    /// The Omarchy theme changed (or was read at start): every window takes it.
     fn apply_theme(&mut self) {
+        if !self.read_theme() {
+            return;
+        }
+        self.theme_to_window();
+        for _ in 0..self.others.len() {
+            let mut w = self.others.remove(0);
+            self.exchange(&mut w);
+            self.theme_to_window();
+            self.exchange(&mut w);
+            self.others.push(w);
+        }
+    }
+
+    /// Read the theme and font; true when they differ from what the windows have.
+    fn read_theme(&mut self) -> bool {
         let mut palette = theme::palette();
         if palette.is_none() {
             if let Some((last, _)) = &self.theme {
@@ -441,11 +695,19 @@ impl Host {
             }
         }
         let css = theme::css(palette.as_ref(), &theme::font());
-        let next = (palette.clone(), css.clone());
-        if self.theme.as_ref() == Some(&next) || (self.theme.is_none() && css.is_empty()) {
-            return;
+        let next = (palette, css);
+        if self.theme.as_ref() == Some(&next) || (self.theme.is_none() && next.1.is_empty()) {
+            return false;
         }
         self.theme = Some(next);
+        true
+    }
+
+    /// Give the window being served the current theme, now and on every load.
+    fn theme_to_window(&mut self) {
+        let Some((palette, css)) = self.theme.clone() else {
+            return;
+        };
         if let Some(p) = &palette {
             // rapier's System theme follows the media query, so it follows Omarchy's light or dark.
             self.cdp(
@@ -508,6 +770,8 @@ impl Host {
         let path = match (name.strip_prefix("plugins/"), name.strip_prefix("parts/")) {
             (Some(resource), _) => self.plugin_path(resource),
             (None, Some(part)) => plain(part).then(|| self.app.join("parts").join(part)),
+            // The page's icons are rapier's own (the window and taskbar show it, not a globe).
+            (None, None) if name == "icon-192.png" || name == "icon-512.png" => Some(self.app.join("rapier.png")),
             (None, None) => plain(&name).then(|| self.app.join(&name)),
         };
         match path
@@ -574,6 +838,8 @@ impl Host {
         };
         if channel == "intake" {
             self.on_intake(&inner);
+        } else if channel == "window" {
+            self.fit_window(&inner);
         } else if channel == "host" && inner.is_object() {
             if inner.get("v").is_some() || inner.get("op").is_some() {
                 self.on_frame(&inner);
@@ -637,7 +903,7 @@ impl Host {
                 self.pump();
             }
             "folder.choose" => {
-                let path = match portal::pick(false, "", "Open", true) {
+                let path = match portal::pick(false, "", "Open", true, &self.start_folder()) {
                     Ok(path) => path,
                     Err(reason) => {
                         self.ok(ident, json!({"status": "unavailable", "provider": "linux", "reason": reason}));
@@ -648,6 +914,7 @@ impl Host {
                     self.ok(ident, json!({"cancelled": true}));
                     return Ok(());
                 }
+                self.remember_folder(&path, true);
                 match self.open_folder(&path).and_then(|mut folder| {
                     folder
                         .call("hello", &json!({}))
@@ -700,16 +967,26 @@ impl Host {
             }
             "file.open" => {
                 let compare = str_of(args, "purpose") == "compare";
-                let path = portal::pick(
+                let path = match portal::pick(
                     false,
                     "",
                     if compare { "Compare with" } else { "Open" },
                     false,
-                )?;
+                    &self.start_folder(),
+                ) {
+                    Ok(path) => path,
+                    Err(reason) => {
+                        // The page names this case (no_file_chooser) instead of "could not open that file".
+                        let message = json!({"type": "response", "id": ident, "ok": false, "error": reason, "code": "no_file_chooser"});
+                        self.post("host", message);
+                        return Ok(());
+                    }
+                };
                 if path.is_empty() {
                     self.ok(ident, json!({"cancelled": true}));
                     return Ok(());
                 }
+                self.remember_folder(&path, false);
                 self.begin_intake(&path, if compare { "compare" } else { "open" })
                     .map_err(|e| e.to_string())?;
                 self.ok(ident, json!({"started": true}));
@@ -979,11 +1256,38 @@ impl Host {
         }
     }
 
+    /// A new document with no file behind it (`--new`, or text read from stdin with `rapier -`): Save asks where.
+    fn begin_text(&mut self, data: Vec<u8>) -> std::io::Result<()> {
+        if self.intake.is_some() || self.candidate.is_some() {
+            return Err(std::io::Error::other("another file open is already in progress"));
+        }
+        self.text_held = true;
+        self.intake_id += 1;
+        self.delivery += 1;
+        let frame = crate::random_hex(16);
+        self.post("intake", json!({"type": "begin", "id": self.intake_id, "deliveryGeneration": self.delivery, "generation": frame,
+            "name": "untitled.md", "path": null, "documentAuthority": "", "fileGeneration": null, "purpose": "external",
+            "transient": true, "binary": false}));
+        self.intake = Some(Intake { id: self.intake_id, delivery: self.delivery, frame, bytes: data, offset: 0, sequence: 0,
+            generation: String::new() });
+        self.send_chunk();
+        Ok(())
+    }
+
     fn begin_intake(&mut self, path: &str, purpose: &str) -> std::io::Result<()> {
         if self.intake.is_some() || self.candidate.is_some() {
             return Err(std::io::Error::other(
                 "another file open is already in progress",
             ));
+        }
+        if path == crate::NEW_DOCUMENT {
+            return self.begin_text(Vec::new());
+        }
+        if let Some(text) = path.strip_prefix(crate::STDIN_DOCUMENT) {
+            // The text main() set aside from stdin, in a private file that is read once and removed.
+            let data = std::fs::read(text)?;
+            let _ = std::fs::remove_file(text);
+            return self.begin_text(data);
         }
         let path = files::normalize(&std::env::current_dir().unwrap_or_default().join(path))
             .to_string_lossy()
@@ -1093,17 +1397,33 @@ impl Host {
         }
         let session = self.transfer.take().unwrap();
         let picked = session.purpose != "saveInPlace";
+        // No file chooser on this desktop (no xdg-desktop-portal): a person can still save. The copy goes beside the open
+        // file, or into Documents, under a name nothing has, and the page says where.
+        let mut unchosen = false;
         let destination = if picked {
-            let chosen = match portal::pick(true, &session.name, "Save as", false) {
+            let chosen = match portal::pick(true, &session.name, "Save as", false, &self.start_folder()) {
                 Ok(chosen) => chosen,
                 Err(reason) => {
-                    self.save_result(&session, "failed", false, &reason, "", "", false, false, "no_file_chooser");
-                    return Ok(json!({"accepted": true, "picker": true}));
+                    let folder = self
+                        .current
+                        .as_ref()
+                        .and_then(|c| Path::new(&c.path).parent().map(Path::to_path_buf))
+                        .unwrap_or_else(files::documents_dir);
+                    if std::fs::create_dir_all(&folder).is_err() {
+                        self.save_result(&session, "failed", false, &reason, "", "", false, false, "no_file_chooser");
+                        return Ok(json!({"accepted": true, "picker": true}));
+                    }
+                    unchosen = true;
+                    self.saved_where = Some(files::shown(&folder));
+                    files::unused_name(&folder, &session.name).to_string_lossy().into_owned()
                 }
             };
             if chosen.is_empty() {
                 self.save_result(&session, "cancelled", false, "", "", "", false, false, "");
                 return Ok(json!({"accepted": true, "picker": true}));
+            }
+            if !unchosen {
+                self.remember_folder(&chosen, false);
             }
             chosen
         } else {
@@ -1155,7 +1475,15 @@ impl Host {
                     }));
                 }
             }
-            if session.exclusive {
+            if unchosen {
+                // A new file a person saved, readable as any file they save is (0644 before their umask), not a private copy.
+                files::write_new_copy(&destination, &session.bytes, &session.digest).and_then(|generation| {
+                    let mask = unsafe { libc::umask(0o022) };
+                    unsafe { libc::umask(mask) };
+                    std::fs::set_permissions(&destination, std::os::unix::fs::PermissionsExt::from_mode(0o644 & !(mask as u32)))?;
+                    Ok(generation)
+                })
+            } else if session.exclusive {
                 if session.purpose != "export" {
                     return Err(std::io::Error::other(
                         "exclusive copy cannot replace a document binding",
@@ -1239,6 +1567,11 @@ impl Host {
             "destinationName": if path.is_empty() { String::new() } else { basename(path) }, "destinationSelected": selected});
         if !code.is_empty() {
             detail["errorCode"] = json!(code);
+        }
+        if let Some(folder) = self.saved_where.take() {
+            if status == "confirmed" {
+                detail["savedWhere"] = json!(folder);
+            }
         }
         if !error.is_empty() {
             detail["error"] = json!(error);

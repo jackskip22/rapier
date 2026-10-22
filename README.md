@@ -1,7 +1,7 @@
 # Rapier - Markdown Editor & Art
 
 Markdown editor for writing, notes, editable diagrams, drawing and painting with your AI assistant.
-Use it on the web, Android or Windows. Keep text and pictures in one Markdown file, or share an editable offline HTML file.
+Use it on the web, Android, Windows or Linux. Keep text and pictures in one Markdown file, or share an editable offline HTML file.
 Free and offline, with no ads, tracking or Rapier account.
 
 - **On the web:** open [rapier.website](https://rapier.website). To use it offline, add it to your home screen and
@@ -12,7 +12,7 @@ Free and offline, with no ads, tracking or Rapier account.
 - **On Android:** get Rapier on [Google Play](https://play.google.com/store/apps/details?id=app.rapier). The app
   has no Internet permission. Optional Google Play asset packs download on first use, then work offline.
 - **On Windows:** download [Rapier.exe](https://github.com/jackskip22/rapier/raw/main/Rapier.exe) (version 1.2.30), the whole app in one file, and run it. It is not code-signed yet, so Windows SmartScreen may warn the first time: choose **More info**, then **Run anyway**.
-- **On Linux (x86_64):** download [rapier-linux](https://github.com/jackskip22/rapier/raw/main/rapier-linux) (version 1.2.31), the whole app in one file. Run `chmod +x rapier-linux && ./rapier-linux --install` once to add Rapier to your launcher; it opens as an app window in your Chromium-based browser. [Requirements](src/linux/README.md).
+- **On Linux (x86_64):** download [rapier-linux](https://github.com/jackskip22/rapier/raw/main/rapier-linux) (version 1.2.32), the whole app in one file. Run `chmod +x rapier-linux && ./rapier-linux --install` once to add Rapier to your launcher; it opens as an app window in your Chromium-based browser. [Requirements](src/linux/README.md).
 - **With an agent:** the Claude plugin, ChatGPT or another MCP client at `https://mcp.rapier.website/mcp`.
 
 ## What it does
@@ -21,7 +21,7 @@ Free and offline, with no ads, tracking or Rapier account.
   footnotes, LaTeX, Mermaid, find and replace, compare, read aloud, right-to-left, comments, live agent changes and selective undo.
 - **Pictures.** Stored inside the `.md` file. New pictures use JPEG XL from
   [Rapier's own encoder](https://github.com/jackskip22/rapier-jxl). Text can wrap around a picture's shape.
-- **Draw.** Editable SVG: pen, pressure brush, shapes, arrows that stay attached, and text.
+- **Draw.** Editable SVG: pen, brush, shapes, arrows that stay attached, and text.
 - **Paint.** MyPaint brushes, smudge and blend. Water is watercolor that mixes, flows and dries on textured paper.
 - **Notes.** One Markdown file per note, with colors, pins, checklists, voice recordings, links, history, and
   search that reads text in pictures. Import from Google Keep, Apple Notes, Evernote, Notion, Obsidian, Joplin and other note apps. Back up

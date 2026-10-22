@@ -9,4 +9,4 @@ Terminal=false
 Categories=Office;TextEditor;
 Keywords=markdown;notes;writing;
 MimeType=text/markdown;text/x-markdown;application/x-rapier-html;
-StartupWMClass=chrome-rapier.local__rapier.html-Default
+StartupWMClass=rapier

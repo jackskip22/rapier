@@ -4,7 +4,7 @@
 @font-face{font-family:Calibri;src:local('Calibri Bold'),url('../../shell/fonts/carlito/Bold.woff2') format('woff2');font-weight:700;font-style:normal;font-display:swap}
 @font-face{font-family:Calibri;src:local('Calibri Italic'),url('../../shell/fonts/carlito/Italic.woff2') format('woff2');font-weight:400;font-style:italic;font-display:swap}
 @font-face{font-family:Calibri;src:local('Calibri Bold Italic'),url('../../shell/fonts/carlito/BoldItalic.woff2') format('woff2');font-weight:700;font-style:italic;font-display:swap}
-html[data-layout="docx"] #document-main{display:flex;flex:1;min-height:0;overflow:auto;background:var(--color-surface-2)}
+html[data-layout="docx"] #document-main{display:flex;flex-direction:column;flex:1;min-height:0;overflow:auto;background:var(--color-surface-2)}
 html[data-layout="docx"] #editor-blocks{flex:0 0 auto;box-sizing:border-box;width:var(--docx-sheet,100%);zoom:var(--docx-scale,1);max-width:none;margin:16px auto;padding:var(--docx-margin-top,32px) var(--docx-margin-right,8px) var(--docx-margin-bottom,32px) var(--docx-margin-left,8px);background:var(--color-bg)}
 html[data-layout="docx"] #editor-blocks,html[data-layout="docx"] #editor-blocks .md-render{--md-unit:16px;text-wrap:wrap}
 html[data-layout="docx"] :is(#editor-blocks, #editor-blocks > .block-sleep-group) > .block-wrapper[data-docx-page]::before{content:'';display:block;margin-left:calc(-1 * var(--docx-margin-left,0px));margin-right:calc(-1 * var(--docx-margin-right,0px));height:calc(var(--docx-page-gap,0px) + 16px);background:linear-gradient(to bottom,transparent calc(var(--docx-page-gap,0px) - var(--docx-margin-top,0px)),var(--color-surface-2) 0 calc(var(--docx-page-gap,0px) - var(--docx-margin-top,0px) + 16px),transparent 0)}

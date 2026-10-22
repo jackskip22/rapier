@@ -1756,11 +1756,6 @@
             "property": "top",
             "value": "calc(var(--md-ol-top) + 1.0875 * var(--md-ol-circle))",
             "important": false
-          },
-          {
-            "property": "bottom",
-            "value": "calc(-1 * max(var(--md-item-gap, 0px), var(--md-line) / 4))",
-            "important": false
           }
         ]
       },
@@ -1789,11 +1784,6 @@
           {
             "property": "top",
             "value": "calc(var(--md-ol-top) + 1.0875 * var(--md-ol-circle))",
-            "important": false
-          },
-          {
-            "property": "bottom",
-            "value": "calc(-1 * max(var(--md-item-gap, 0px), var(--md-line) / 4))",
             "important": false
           }
         ]

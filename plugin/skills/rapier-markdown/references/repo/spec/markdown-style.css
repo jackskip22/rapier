@@ -359,6 +359,7 @@
 	min-height:var(--md-ol-circle);
 	padding-top:min(0.15 * var(--md-unit), 0.6 * max(0px, var(--md-ol-circle) - var(--md-item-line)));
 }
+.md-render{--md-ol-dot-line:radial-gradient(circle closest-side, var(--md-color-line) calc(100% - 0.5px), transparent 100%) center top / 3px 6px repeat-y}
 .md-render ol>li::before{
 	content:counter(rapier-ol);
 	position:absolute;
@@ -381,11 +382,13 @@
 
 	inset-inline-start:calc(calc(-1.75 * var(--md-unit)) - 1.5px + var(--md-marker, 0px));
 	top:calc(var(--md-ol-top) + 1.0875 * var(--md-ol-circle));
-	bottom:calc(-1 * max(var(--md-item-gap, 0px), var(--md-line) / 4));
-	border-inline-start:3px dotted var(--md-color-line);
+	--md-ol-dots:calc(100% - var(--md-ol-top) - 1.0875 * var(--md-ol-circle) + max(var(--md-item-gap, 0px), var(--md-line) / 4));
+	height:clamp(0px, (var(--md-ol-dots) - var(--md-line) / 2) * 9999, var(--md-ol-dots));
+	width:3px;
+	background:var(--md-ol-dot-line);
 	z-index:0;
 }
-.md-render ol[data-rapier-list-continues]>li:last-child::after{bottom:calc(-1 * var(--md-list-heading-before,var(--md-gap-heading-before)))}
+.md-render ol[data-rapier-list-continues]>li:last-child::after{height:auto;bottom:calc(-1 * var(--md-list-heading-before,var(--md-gap-heading-before)))}
 .md-render ol>li[data-rapier-wrap-step]::after{content:none!important}
 .md-render :is(h1,h2,h3,h4,h5,h6)[data-rapier-list-through]{position:relative;padding-inline-start:calc(2.75 * var(--md-unit))}
 .md-render :is(h1,h2,h3,h4,h5,h6)[data-rapier-list-through]::before{
@@ -394,7 +397,8 @@
 	inset-inline-start:calc(calc(1 * var(--md-unit)) - 1.5px);
 	top:0;
 	bottom:calc(-1 * var(--md-list-heading-after,var(--md-gap-heading-after)));
-	border-inline-start:3px dotted var(--md-color-line);
+	width:3px;
+	background:var(--md-ol-dot-line);
 	z-index:0;
 }
 .md-render :is(h1,h2,h3,h4,h5,h6)[data-rapier-list-through]:has(+:is(h1,h2,h3,h4,h5,h6)){--md-list-heading-after:var(--md-gap-heading-before)}

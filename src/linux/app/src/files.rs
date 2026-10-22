@@ -171,3 +171,58 @@ pub fn write_new_copy(path: &str, data: &[u8], digest: &str) -> std::io::Result<
     }
     Ok(generation(&held, actual.len(), digest))
 }
+
+/// The person's Documents folder: XDG_DOCUMENTS_DIR from ~/.config/user-dirs.dirs, else ~/Documents.
+pub fn documents_dir() -> PathBuf {
+    let home = crate::home();
+    let config = std::env::var_os("XDG_CONFIG_HOME")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.join(".config"));
+    let named = fs::read_to_string(config.join("user-dirs.dirs"))
+        .ok()
+        .and_then(|text| {
+            text.lines().find_map(|line| {
+                let value = line.trim().strip_prefix("XDG_DOCUMENTS_DIR=")?.trim().trim_matches('"');
+                let path = match value.strip_prefix("$HOME") {
+                    Some(rest) => home.join(rest.trim_start_matches('/')),
+                    None => PathBuf::from(value),
+                };
+                (path.is_absolute() && path != home).then_some(path)
+            })
+        });
+    named.unwrap_or_else(|| home.join("Documents"))
+}
+
+/// A folder as a person reads it: under the home folder as ~/...
+pub fn shown(folder: &Path) -> String {
+    match folder.strip_prefix(crate::home()) {
+        Ok(rest) if rest.as_os_str().is_empty() => "~".into(),
+        Ok(rest) => format!("~/{}", rest.display()),
+        Err(_) => folder.display().to_string(),
+    }
+}
+
+/// `name` in `folder`, or `stem (2).ext`, `stem (3).ext`, ... when it is taken; never an existing file.
+pub fn unused_name(folder: &Path, name: &str) -> PathBuf {
+    let name = Path::new(name)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .filter(|n| !n.is_empty() && n != "." && n != "..")
+        .unwrap_or_else(|| "document.md".into());
+    let first = folder.join(&name);
+    if fs::symlink_metadata(&first).is_err() {
+        return first;
+    }
+    let lower = name.to_ascii_lowercase();
+    let split = if lower.ends_with(".rapier.html") {
+        name.len() - ".rapier.html".len()
+    } else {
+        name.rfind('.').filter(|&at| at > 0).unwrap_or(name.len())
+    };
+    let (stem, ext) = name.split_at(split);
+    (2..)
+        .map(|n| folder.join(format!("{stem} ({n}){ext}")))
+        .find(|path| fs::symlink_metadata(path).is_err())
+        .unwrap()
+}

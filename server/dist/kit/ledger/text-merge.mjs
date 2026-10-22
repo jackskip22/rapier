@@ -272,13 +272,167 @@ function textDeclarations(units) {
 	return [...definitions, ...continuations, ...(text.match(/<!--[\s\S]*?(?:-->|$)/g) || [])].join('\0');
 }
 
+function* textGroups(units, a, b) {
+	const changes = [...a.map(e => ({...e, side: 0})), ...b.map(e => ({...e, side: 1}))].sort((x, y) => x.start - y.start || x.end - y.end || x.side - y.side);
+	for (let i = 0; i < changes.length;) {
+		const group = [changes[i++]], start = group[0].start; let end = group[0].end;
+		while (i < changes.length && (changes[i].start < end || group.some(e => {
+			const next = changes[i];
+			const afterBlock = (edit, insert) => insert.start === insert.end && insert.start === edit.end && edit.start < edit.end && units.slice(edit.start, edit.end).every(unit => textEnvelopeAt(unit));
+			if (afterBlock(e, next) || afterBlock(next, e)) return false;
+			if (e.start === e.end && next.start <= e.start && e.start <= next.end) return true;
+			if (next.start === next.end && e.start <= next.start && next.start <= e.end) return true;
+			return next.start >= e.end && units.slice(e.start, e.end).every(textSpace) &&
+				units.slice(e.end, next.start).every(textSpace) && units.slice(next.start, next.end).every(textSpace);
+		}))) {
+			group.push(changes[i]); end = Math.max(end, changes[i++].end);
+		}
+		const before = units.slice(start, end).join('');
+		const version = side => {
+			let value = '', at = start;
+			for (const e of group.filter(e => e.side === side)) { value += units.slice(at, e.start).join('') + e.text; at = e.end; }
+			return value + units.slice(at, end).join('');
+		};
+		yield {start, end, before, av: version(0), bv: version(1)};
+	}
+}
+
+function textMoves(groups) {
+	const blank = value => !value.trim();
+	const side = (g, which) => which === 0 ? g.av : g.bv;
+	for (const g of groups) {
+		if (g.resolved !== undefined || blank(g.before)) continue;
+		for (const gone of [0, 1]) {
+			const removed = side(g, gone), other = side(g, 1 - gone);
+			if (!blank(removed) || other === g.before) continue;
+			if (other.split(g.before).length === 2) { g.resolved = other.replace(g.before, ''); break; }
+			const homes = groups.filter(h => h !== g && h.resolved === undefined && blank(h.before) && blank(side(h, 1 - gone)) && side(h, gone).trim() === g.before.trim());
+			if (homes.length === 1) {
+				const trailing = side(homes[0], gone).match(/\s*$/)[0], edited = other.replace(/\s*$/, '');
+				g.resolved = ''; homes[0].resolved = side(homes[0], gone).match(/^\s*/)[0] + edited + trailing; break;
+			}
+		}
+	}
+	return groups;
+}
+
+const textLines = text => text.match(/[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+$/g) || [];
+const textWords = text => text.match(/\s+|\S+/g) || [];
+const TEXT_ITEM = /^( {0,3})(?:[-+*]|\d{1,9}[.)])[ \t]+\S/;
+const TEXT_TAGS = /^(tags|aliases):[ \t]*\[([^\[\]\r\n]*)\][ \t]*(\r\n|\r|\n|$)/;
+function textCounts(text) {
+	const counts = new Map();
+	for (const word of text.match(/[\p{L}\p{N}_]+/gu) || []) counts.set(word, (counts.get(word) || 0) + 1);
+	return counts;
+}
+function textConserved(before, av, bv, merged) {
+	const [b, a, t, m] = [before, av, bv, merged].map(textCounts);
+	for (const word of new Set([...b.keys(), ...a.keys(), ...t.keys(), ...m.keys()])) {
+		const base = b.get(word) || 0, da = (a.get(word) || 0) - base, dt = (t.get(word) || 0) - base, got = (m.get(word) || 0) - base;
+		const both = [da + dt, da, dt];
+		if (da * dt > 0 ? got < Math.min(...both) || got > Math.max(...both) : got !== da + dt) return false;
+	}
+	return true;
+}
+function textRefine(before, av, bv, options, level = 'line') {
+	const merged = textRefineLevel(before, av, bv, options, level);
+	return merged !== null && textConserved(before, av, bv, merged) ? merged : null;
+}
+function textRefineLevel(before, av, bv, options, level) {
+	const split = level === 'line' ? textLines : textWords;
+	const units = split(before), oursUnits = split(av), theirsUnits = split(bv);
+	const reordered = textPermuted(units, oursUnits, theirsUnits);
+	if (reordered !== null) return reordered;
+	const a = textEdits(units, oursUnits), b = textEdits(units, theirsUnits);
+	if (!a || !b) return null;
+	let out = '', pos = 0;
+	for (const g of textGroups(units, a, b)) {
+		out += units.slice(pos, g.start).join('');
+		if (g.av === g.bv) out += g.av;
+		else if (g.av === g.before) out += g.bv;
+		else if (g.bv === g.before) out += g.av;
+		else {
+			const fine = level === 'line' ? textRefineGroup(g, options) : null;
+			if (fine === null) return null;
+			out += fine;
+		}
+		pos = g.end;
+	}
+	return out + units.slice(pos).join('');
+}
+function textPermuted(units, ours, theirs) {
+	const solid = list => list.filter(unit => !textSpace(unit));
+	const baseSolid = solid(units), known = new Map(baseSolid.map((unit, k) => [unit, k]));
+	if (known.size !== baseSolid.length) return null;
+	const reorders = side => { const x = solid(side); return x.length === baseSolid.length && x.every(unit => known.has(unit)) && new Set(x).size === x.length && side.join('') !== units.join(''); };
+	const [first, second] = [reorders(ours), reorders(theirs)];
+	if (first === second) return null;
+	const [moved, changed] = first ? [ours, theirs] : [theirs, ours];
+	const edits = textEdits(units, changed);
+	if (!edits) return null;
+	const replace = new Map(), after = new Map();
+	for (const e of edits) {
+		const inner = []; for (let i = e.start; i < e.end; i++) if (!textSpace(units[i])) inner.push(i);
+		if (!inner.length) {
+			if (!e.text.trim()) continue;
+			let k = -1; for (let i = e.start - 1; i >= 0; i--) if (!textSpace(units[i])) { k = known.get(units[i]); break; }
+			const gap = e.start > 0 && textSpace(units[e.start - 1]);
+			after.set(k, [...(after.get(k) || []), {text: e.text, gap}]);
+		} else if (inner.length === 1) {
+			if (!e.text.trim()) replace.set(known.get(units[inner[0]]), units.slice(e.start, e.end).some(textSpace) ? ' ' : '');
+			else if (units.slice(e.start, e.end).some(textSpace)) return null;
+			else replace.set(known.get(units[inner[0]]), e.text);
+		} else return null;
+	}
+	const out = [], place = (k, from) => {
+		const rows = after.get(k) || [];
+		return rows.filter(row => row.gap === from).map(row => row.text);
+	};
+	out.push(...place(-1, false));
+	for (let i = 0; i < moved.length; i++) {
+		const unit = moved[i];
+		if (textSpace(unit)) { out.push(unit); continue; }
+		const k = known.get(unit);
+		if (replace.get(k) === '' || replace.get(k) === ' ') {
+			if (replace.get(k) === ' ') { if (i + 1 < moved.length && textSpace(moved[i + 1])) i++; else if (out.length && textSpace(out[out.length - 1])) out.pop(); }
+		} else out.push(replace.has(k) ? replace.get(k) : unit);
+		out.push(...place(k, false));
+		if (after.get(k)?.some(row => row.gap)) { if (i + 1 < moved.length && textSpace(moved[i + 1])) out.push(moved[++i]); out.push(...place(k, true)); }
+	}
+	return out.join('');
+}
+
+function textRefineGroup({before, av, bv}, options) {
+	const [first, second] = textDeviceOptions(options), ids = first < second ? [0, 1] : [1, 0];
+	const added = (side, base) => side.startsWith(base) ? side.slice(base.length) : null;
+	const oursAdded = added(av, before), theirsAdded = added(bv, before);
+	if (oursAdded !== null && theirsAdded !== null && textLines(oursAdded + theirsAdded).every(line => TEXT_ITEM.test(line))) {
+		const tail = value => value && !/[\r\n]$/.test(value) ? value + (before.includes('\r\n') ? '\r\n' : '\n') : value;
+		const parts = [tail(oursAdded), tail(theirsAdded)];
+		const last = tail(before) === before ? '' : (before.includes('\r\n') ? '\r\n' : '\n');
+		return before + last + parts[ids[0]] + parts[ids[1]];
+	}
+	const lines = textLines(before);
+	if (lines.length === 1) {
+		const tags = TEXT_TAGS.exec(before), x = TEXT_TAGS.exec(av), y = TEXT_TAGS.exec(bv);
+		if (tags && x && y && x[1] === tags[1] && y[1] === tags[1]) {
+			const list = row => row[2].split(',').map(item => item.trim()).filter(Boolean);
+			const base = list(tags), ours = list(x), theirs = list(y);
+			const kept = base.filter(item => ours.includes(item) && theirs.includes(item));
+			const added = [ours, theirs].map(list => list.filter(item => !base.includes(item)));
+			const joined = [...new Set([...kept, ...added[ids[0]], ...added[ids[1]]])];
+			return tags[1] + ': [' + joined.join(', ') + ']' + tags[3];
+		}
+	}
+	return textRefineLevel(before, av, bv, options, 'word');
+}
 export function mergeText(base, ours, theirs, options = {}) {
 	canonicalNote(ours); canonicalNote(theirs); if (base !== null) canonicalNote(base);
 	const unchanged = value => ({text: value, clean: !value.includes(TEXT_CONFLICT), conflicts: value.includes(TEXT_CONFLICT) ? [{kind: 'existing-conflict', advisory: true}] : []});
 	if (ours === theirs) return unchanged(ours);
 	if (base === ours) return unchanged(theirs);
 	if (base === theirs) return unchanged(ours);
-	const conflicts = []; let text = '';
+	const conflicts = []; let text = '', a, b;
 	const conflict = (before, a, b, kind) => {
 		const ab = inspectTextConflicts(a), bb = inspectTextConflicts(b);
 		const au = textUnits(a), bu = textUnits(b); let first = 0, last = 0;
@@ -316,38 +470,21 @@ export function mergeText(base, ours, theirs, options = {}) {
 	if (base === null) conflict(null, ours, theirs, 'no-ancestor');
 	else if (textDeclarations(oursUnits) !== declared || textDeclarations(theirsUnits) !== declared) conflict(base, ours, theirs, 'document-bindings');
 	else {
-		const a = textEdits(units, oursUnits), b = textEdits(units, theirsUnits);
-		if (!a || !b) conflict(base, ours, theirs, 'ambiguous-alignment-or-budget');
+		const reordered = textPermuted(units, oursUnits, theirsUnits);
+		if (reordered !== null && textConserved(base, ours, theirs, reordered)) text += reordered;
+		else if (!(a = textEdits(units, oursUnits)) || !(b = textEdits(units, theirsUnits))) conflict(base, ours, theirs, 'ambiguous-alignment-or-budget');
 		else {
-			const changes = [...a.map(e => ({...e, side: 0})), ...b.map(e => ({...e, side: 1}))].sort((x, y) => x.start - y.start || x.end - y.end || x.side - y.side);
 			let pos = 0;
-			for (let i = 0; i < changes.length;) {
-				const group = [changes[i++]], start = group[0].start; let end = group[0].end;
-				while (i < changes.length && (changes[i].start < end || group.some(e => {
-					const next = changes[i];
-					const afterBlock = (edit, insert) => insert.start === insert.end && insert.start === edit.end && edit.start < edit.end && units.slice(edit.start, edit.end).every(unit => textEnvelopeAt(unit));
-					if (afterBlock(e, next) || afterBlock(next, e)) return false;
-					if (e.start === e.end && next.start <= e.start && e.start <= next.end) return true;
-					if (next.start === next.end && e.start <= next.start && next.start <= e.end) return true;
-					return next.start >= e.end && units.slice(e.start, e.end).every(textSpace) &&
-						units.slice(e.end, next.start).every(textSpace) && units.slice(next.start, next.end).every(textSpace);
-				}))) {
-					group.push(changes[i]); end = Math.max(end, changes[i++].end);
-				}
+			for (const {start, end, before, av, bv, resolved} of textMoves([...textGroups(units, a, b)])) {
 				text += units.slice(pos, start).join('');
-				const before = units.slice(start, end).join('');
-				const version = side => {
-					let value = '', at = start;
-					for (const e of group.filter(e => e.side === side)) { value += units.slice(at, e.start).join('') + e.text; at = e.end; }
-					return value + units.slice(at, end).join('');
-				};
-				const av = version(0), bv = version(1);
-				if (av === bv) text += av;
+				if (resolved !== undefined) text += resolved;
+				else if (av === bv) text += av;
 				else if (av === before) text += bv;
 				else if (bv === before) text += av;
 				else {
 					const tick = end === start + 1 ? textTick(before, av, bv) : null;
-					if (tick !== null) text += tick; else conflict(before, av, bv, 'text');
+					const fine = tick === null ? textRefine(before, av, bv, options) : null;
+					if (tick !== null) text += tick; else if (fine !== null) text += fine; else conflict(before, av, bv, 'text');
 				}
 				pos = end;
 			}

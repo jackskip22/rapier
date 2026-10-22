@@ -693,7 +693,8 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 		_nativeHostRuntime.pending.delete(id);
 		clearTimeout(pending.timeout);
 		if (message.ok === true) pending.resolve(message.result);
-		else pending.reject(Object.assign(new Error(String(message.error || 'native operation failed')), {nativeRejected: true}));
+		else pending.reject(Object.assign(new Error(String(message.error || 'native operation failed')), {nativeRejected: true},
+			message.code ? {code: String(message.code)} : {}));
 	}
 
 	if (hasNative) nativeHost.onmessage = _nativeHostReceive;
@@ -1566,6 +1567,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			verified: detail.verified === true, bytes: detail.payloadLength, fingerprint: detail.payloadDigest,
 			fileGeneration: detail.fileGeneration == null ? null : detail.fileGeneration,
 			destinationName: String(detail.destinationName || ''), destinationSelected: detail.destinationSelected === true,
+			savedWhere: String(detail.savedWhere || ''),
 			bindingPublished: detail.bindingPublished === true,
 			applyBinding: function () { _nativeSaveBinding(detail); },
 			acknowledge: function (applied) { return _nativeAcknowledgeSave(detail, applied); },

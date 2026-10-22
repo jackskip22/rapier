@@ -38,7 +38,10 @@ impl Chooser {
             .create(true).append(true).open(self.0.join("requests.jsonl")).unwrap();
         writeln!(log, "{}", serde_json::json!({
             "method": kind, "chosen": chosen,
-            "directory": options.get("directory").and_then(|v| bool::try_from(v).ok()).unwrap_or(false)
+            "directory": options.get("directory").and_then(|v| bool::try_from(v).ok()).unwrap_or(false),
+            "currentFolder": options.get("current_folder").and_then(|v| v.try_clone().ok())
+                .and_then(|v| Vec::<u8>::try_from(v).ok())
+                .map(|bytes| String::from_utf8_lossy(bytes.strip_suffix(&[0]).unwrap_or(&bytes)).into_owned())
         })).unwrap();
         let signal_handle = handle.clone();
         let connection = zbus::blocking::Connection::from(connection.clone());

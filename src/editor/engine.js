@@ -3270,8 +3270,10 @@ function rapierWelcomeMarkdown() {
 		'# ' + _rapierFormatColorRun('#04917a', 'get rapier'),
 		"",
 		"- **[The Rapier app for Android.](https://play.google.com/store/apps/details?id=app.rapier)** No internet permission. Nothing leaves your phone. This is the best way to use Rapier.",
-		"- **[rapier.website](https://rapier.website)** in your phone's browser. Tap \"Add to home screen\" and it opens like an app, offline too.",
-		"- **With Claude, ChatGPT, Muse or any agent that speaks MCP.** Add Rapier as a connector and say \"open Rapier\". It puts the page in front of you and works on it with you.",
+		"- **[rapier.website](https://rapier.website)** in any browser. On a phone, tap **Add to home screen** and it opens like an app, offline too.",
+		"- **[Rapier for Windows.](https://github.com/jackskip22/rapier/raw/main/Rapier.exe)**",
+		"- **[Rapier for Linux.](https://github.com/jackskip22/rapier/raw/main/rapier-linux)** It follows your Omarchy theme.",
+		"- **With Claude, ChatGPT, Grok Bot, Muse or any agent that speaks MCP.** Add Rapier as a connector and say \"open Rapier\". It puts the page in front of you and works on it with you.",
 		"",
 		"> [!TIP]",
 		"> **Drag the circle** at the right edge to fly through a long document, or **tap it** to see the headings.",
@@ -3284,13 +3286,13 @@ function rapierWelcomeMarkdown() {
 		"- [Pictures](#pictures)",
 		"- [Drawing](#drawing)",
 		"- [Paint](#paint)",
+		"- [Gallery](#gallery)",
 		"- [Tables](#tables)",
 		"- [Code](#code)",
 		"- [Notes](#notes)",
 		"- [Open, save and export](#open-save-and-export)",
 		"- [Compare](#compare)",
 		"- [Agents](#agents)",
-		"- [Under the hood](#under-the-hood)",
 		"- [Where it runs](#where-it-runs)",
 		"- [Keyboard](#keyboard)",
 		"- [For developers and agents](#for-developers-and-agents)",
@@ -3300,117 +3302,91 @@ function rapierWelcomeMarkdown() {
 		"",
 		"## Start here",
 		"",
-		"1. **Tap this line** to edit it.",
+		"1. **Tap or click this line** to edit it.",
 		"   1. The bar at the bottom has the everyday tools. **+** has everything else.",
 		"   2. Type Markdown if you like. Rapier formats as you go.",
 		"   3. Tap outside the text when you're done.",
-		"2. **Tap a line in the contents** to jump there. **+** → **Table of contents** adds one to any document.",
+		"2. **Tap a line in the contents** to jump there.",
 		"3. **Tick a box.**",
 		"   - [x] Open Rapier",
 		"   - [ ] Change these words",
 		"   - [ ] Tick this box",
-		"4. Rapier has its own JPEG XL encoder, so you can put pictures straight into your documents with the 🖼️ button on the bar.",
+		"4. **Start your own document:** tap ••• then **new**. A new document offers the [Gallery](#gallery).",
 		"",
 		"## Writing",
 		"",
 		"![W][leaf-w] <!--md-layout:v1 lines=5 wrap=around-->",
 		"",
-		"rite the way you would on paper. Rapier keeps it as plain Markdown. This W is an SVG, from one of Draw's four letter sets, traced from old books in the British Library. Tap it, then the brush, and change it. Every big letter on this page is one of them.",
+		"hatever you write stays plain Markdown. This W is an SVG from the Gallery's letters, traced from an old book in the British Library. Tap it, then the brush, to change it.",
 		"",
-		"**Bold**, *italic*, ~~struck through~~, <u>underlined</u>, `code`, ==highlighted==, <mark style=\"background-color:#35c57a\">green</mark>, <mark style=\"background-color:#f05a62\">red</mark>, <mark style=\"background-color:#4f91f7\">blue</mark>, H<sub>2</sub>O and 1<sup>st</sup>. All plain Markdown. Any other Markdown app can open the file.[^1]",
+		"**Bold**, *italic*, ~~struck through~~, <u>underlined</u>, `code`, ==highlighted==, <mark style=\"background-color:#35c57a\">green</mark>, <mark style=\"background-color:#f05a62\">red</mark>, <mark style=\"background-color:#4f91f7\">blue</mark>, H<sub>2</sub>O and 1<sup>st</sup>. Any Markdown app can open the file.[^1]",
 		"",
-		"> A quote like this starts with `>`.",
+		"> A quote starts with `>`.",
 		"",
 		"> [!NOTE]",
-		"> A callout is a quote that starts with `[!NOTE]`, `[!TIP]` or `[!WARNING]`. Apps that don't know callouts show a quote. Nothing breaks.",
+		"> A callout is a quote that starts with `[!NOTE]`, `[!TIP]` or `[!WARNING]`. Apps that don't know callouts show a quote.",
 		"",
 		"<details>",
 		"<summary>Expanding section</summary>",
 		"",
-		"Keeps a long page short. Tap the title to open or close it. **+** → **Expanding section** adds one.",
+		"Keeps a long page short. Tap the title to open or close it.",
 		"",
 		"</details>",
 		"",
-		"Find and replace is behind the magnifier. **+** → **Line** adds a page break for PDF and Word. **Footnote**, **Divider** and **Table of contents** live there too.",
+		"**+** adds footnotes, dividers, a table of contents, expanding sections and page breaks. Find and replace is behind the magnifier.",
 		"",
 		"## Lists",
 		"",
-		"1. A numbered list keeps its numbers when you add, move or delete lines.",
-		"2. Put the cursor in an item and tap **Nest** to indent it. **Resume** brings it back.",
+		"1. In a list item, **›** on the formatting toolbar indents it and **‹** brings it back.",
 		"   1. Numbers start again inside.",
 		"   2. Bullets and numbers mix.",
 		"      - A bullet inside a number",
 		"      - Another one",
 		"   3. Then back out.",
-		"3. **Tab** and **Shift Tab** do the same on a keyboard.",
-		"4. A checklist is a list with boxes:",
-		"   - [x] ticked from the page",
-		"   - [ ] still to do",
-		"5. A list pasted from Word or a web page stays a list.",
+		"2. **Tab** and **Shift Tab** do the same on a keyboard.",
 		"",
 		"## Pictures",
 		"",
 		"![A][letter-a] <!--md-layout:v1 lines=4 wrap=around-->",
 		"",
-		"dd a picture: PNG, JPEG, WebP or JPEG XL. Drag it to move or resize it. Words wrap around the picture's outline, not its box. Tap a picture for its controls: the **brush** opens it in Draw, **T** changes its description, and you can rotate or fade it. Pictures live inside this Markdown file. Nothing is uploaded, ever. New pictures are saved as JPEG XL by Rapier's own encoder, so they stay small.",
+		"dd a picture with 🖼️ on the formatting toolbar. Tap it to resize, rotate or edit it.",
+		"",
+		"Rapier has its own JPEG XL encoder. Convert pictures and videos to JPEG XL for free at [rapier.website/jxl](https://rapier.website/jxl).",
 		"",
 		"## Drawing",
 		"",
-		"Draw with the brush in the formatting toolbar. **Brush** follows your pressure and speed. **Select** a shape to move, resize, label or restyle it, or attach an arrow to it that moves with the shape. Drawings are saved in the file as SVG: sharp at any size, editable forever.",
+		"Draw with the brush on the formatting toolbar. Drawings are saved in the file as SVG: sharp at any size, editable forever.",
 		"",
 		"![An aurora over dark hills: a canvas background made in Draw, with a moon drawn on it][aurora] <!--md-layout:v1 width=100%-->",
 		"",
 		"![A rapier with a red tassel, drawn in Draw][rapier-sword] <!--md-layout:v1 width=36% wrap=around x=70.84% y=4.138em-->",
 		"",
-		"**Background** makes beautiful adaptive SVGs you control with sliders. Aurora, topographic, textures, gradients and a lot more. Inside **Draw** mode, tap the canvas icon and then **Background**.",
+		"The aurora is a **Background**: in Draw, tap the canvas icon, then **Background**.",
 		"",
-		"This rapier is a drawing too. The words follow its outline, not a box, unless you want them to. Tap it, then the brush, and you can edit this SVG. Its grip is a line turned into a tube and a rope: **Select**, tap a line, then **Style → Look** for a spring, rope or tube.",
+		"This rapier is a drawing too. Tap it, then the brush, to edit it. Its grip is a line drawn as a tube and a rope: **Select** a line, then **Style → Look** for a spring, rope or tube.",
 		"",
 		"## Paint",
 		"",
 		"![P][letter-p] <!--md-layout:v1 lines=4 wrap=around-->",
 		"",
-		"aint with your finger. **Brushes** are real paint: oil, bristle, marker, pencil, pen and watercolor. Rapier runs its own mobile paint engine and MyPaint brushes. Watercolor spreads and dries. Smudge, smear, blend and erase paint that's already down. A painting is just a picture layer on your canvas, saved losslessly, which you can resize, export or continue painting.",
+		"aint with a finger, a mouse or a pen: oil, pencil, marker and MyPaint brushes, or watercolor that spreads and dries on the paper. Smudge and blend what's already down.",
 		"",
-		"### Watercolor",
+		"[Rapier Watercolor](https://rapier.website/watercolor) and [Rapier Draw](https://rapier.website/draw) open straight into a new painting or drawing.",
 		"",
-		"Paint watercolor online with Rapier Water. Blend pigments, lay transparent washes and let wet color spread across textured paper. Use a mouse, a finger or a pressure-sensitive pen. The editor is free, with no account or installation required.",
+		"## Gallery",
 		"",
-		"Water needs a compatible browser with WebGPU; the editor reports whether it is available.",
-		"",
-		"#### Start a watercolor painting",
-		"",
-		"[Rapier Watercolor](https://rapier.website/watercolor) opens Draw with Water selected. You can also choose **Water** inside any drawing. Choose a brush and a pigment, set the brush size, and paint on the canvas. Change the water and paint load for a light wash or a stronger mark. Add another color while the first is wet to mix them on the paper.",
-		"",
-		"#### Water, pigment and paper",
-		"",
-		"Water continues moving after a stroke. Wet washes meet and spread; pigment settles into the paper's texture and gathers at drying edges. Control flow, bleed, edge darkening, granulation and drying to shape the result. Paper settings change how the wash behaves, while the canvas background stays separate from the paint.",
-		"",
-		"Use the water tool to wet the paper and the lift tool to take pigment back out. A light wash leaves room for the next color; a drier brush brings out the paper's grain. Undo lets you return to an earlier stroke while you explore a mixture or composition.",
-		"",
-		"#### Keep transparent, movable artwork",
-		"",
-		"The painting is a transparent layer inside an editable drawing. Set the paint, then move or resize it alongside shapes, lettering and other pictures. The paper background is independent, so the painting can sit over a different canvas color or become part of an illustrated document.",
-		"",
-		"Press Done to place the drawing in your document. Text and pictures travel together in one Markdown file, including the image bytes. Save that file, or keep the whole editor and document as an offline HTML page. Your work remains yours to reopen, revise and share.",
-		"",
-		"#### Paint beside your writing",
-		"",
-		"Add a watercolor sketch to a field journal, illustrate a garden plan, paint a study for a letter or make a picture for a note. [Rapier Draw](https://rapier.website/draw) adds editable shapes, connected arrows and text. [Rapier Notes](https://rapier.website/notes) keeps your writing and illustrations together as Markdown notes.",
-		"",
-		"#### Free and private",
-		"",
-		"Painting runs on your device. Ordinary local painting does not upload your work, and there is no account, advertising or tracking. An explicitly connected workspace or sync service can send work you choose to share. After the editor has loaded, you can keep working offline. See [privacy and terms](https://rapier.website/privacy) for connected features.",
+		"A huge collection of public domain historical artwork as SVG: document borders, ornaments and letter sets. Open it with the **Gallery** button in a new document, or from the tool menu in Draw, or browse it at [rapier.website/gallery](https://rapier.website/gallery).",
 		"",
 		"## Tables",
 		"",
-		"| Task | Status |",
-		"|---|---|",
-		"| Write the draft | Done |",
-		"| Send it for review | Waiting |",
-		"| Print it | Not yet |",
-		"",
-		"Tap a cell to edit it, or drag the handles to move cells. Add cells with the **+** and **−** buttons on the bar that appears under the table. Paste cells from a spreadsheet and the table grows to fit.",
+		"| File | Open | Save |",
+		"|---|:---:|:---:|",
+		"| Markdown | ✓ | ✓ |",
+		"| Word | ✓ | ✓ |",
+		"| PDF | ✓ | ✓ |",
+		"| Rapier web page | ✓ | ✓ |",
+		"| Text and code | ✓ | ✓ |",
+		"| TextPack | ✓ | |",
 		"",
 		"## Code",
 		"",
@@ -3420,30 +3396,26 @@ function rapierWelcomeMarkdown() {
 		"}",
 		"```",
 		"",
-		"Code is highlighted offline. Text and code files open in a source editor, where the circle jumps to a line or a declaration. The eye/code switch in Settings shows the Markdown source of this page.",
-		"",
 		"## Notes",
 		"",
-		"Open **Notes** from the ••• menu at the top right.",
+		"Open **Notes** from the ••• menu at the top right, or go to [Rapier Notes](https://rapier.website/notes).",
 		"",
-		"Every note is a Markdown file shown as a card. Pin, color, sort into sections, attach pictures and voice notes. You can turn on proper checklists inside Notes and, if you use the Android app, add reminders and other native features. Search your notes, link and tag them, and restore any earlier version. **Import** brings in Google Keep, Apple Notes, Evernote, Notion, Obsidian and more. **Backup** saves everything as one ZIP file. **Sync** keeps them as plain files in your own cloud storage.",
+		"Every note is a Markdown file shown as a card. **Import** brings in Google Keep, Apple Notes, Evernote, Notion, Obsidian and Joplin. **Sync** keeps notes as plain files in your own cloud storage.",
 		"",
 		"> [!TIP]",
-		"> Back up the notes you care about. The Android app keeps notes in its own files, outside Android's automatic backup.",
+		"> Back up the notes you care about. The Android app keeps notes outside Android's automatic backup.",
 		"",
 		"## Open, save and export",
 		"",
-		"Open Markdown, text, code, Word, TextPack or PDF files. A Word document becomes an editable page, pictures and everything. A PDF comes in as text when possible.",
+		"Rapier keeps a draft as you work. Press **Save** to keep your work for good.",
 		"",
-		"Rapier keeps a draft as you work, so a closed app or tab keeps your work for a while. Press **Save** often to keep it properly.",
+		"Under the three dots, **Copy**, **Share** and **Export** send your work as text, PDF, Word or an offline web page that Rapier can open again for editing.",
 		"",
-		"Under the three dots, **Copy**, **Share** and **Export** send your work as text, PDF, Word or an offline web page that opens on any device, and Rapier can open it again for editing.",
-		"",
-		"**Share → HTML editor** makes a `.rapier.html` file with Rapier inside. Open it offline, edit, save and send it back.",
+		"Press **Share** and choose **HTML editor** to save your document as a `.rapier.html` file. It wraps the whole Rapier editor around your document in one file anybody can open offline in any browser, so others can read and edit it with no Markdown app installed.",
 		"",
 		"## Compare",
 		"",
-		"**Compare**, in the settings panel, shows what changed between this document and another.",
+		"**Compare**, in Settings, shows what changed between this document and another.",
 		"",
 		"```diff",
 		"- Rapier is a good Markdown editor",
@@ -3454,31 +3426,19 @@ function rapierWelcomeMarkdown() {
 		"",
 		"## Agents",
 		"",
-		"Muse, Claude, ChatGPT or any agent that speaks MCP can work or make art with you right here on the page. Ask it to explain, diagram, rewrite, plan, draw or paint. It reads only the parts it needs through Rapier's agent tools. Your agent can't overwrite what you're typing. Every change shows where it lands, and you can keep it or drop it. Undoing its change never undoes yours.",
+		"Claude, ChatGPT, Grok Bot, Muse or any agent that speaks MCP can work with you on the page: explain, rewrite, plan, draw diagrams or paint. It reads only the parts it needs and can't overwrite what you're typing. Every change shows where it lands, and you keep it or drop it. Undoing its change never undoes yours.",
 		"",
-		"The agent has every control you have, without touching the screen. It draws SVG diagrams you can move by hand, makes SVGs and paintings on the canvas, writes Mermaid flowcharts as text, and reads the shape of a document or a code file before its words. Rapier supports two kinds of diagram: the default is an SVG drawing you can move around; a Mermaid flowchart is a `mermaid` fence in the Markdown, drawn by the Mermaid plugin if you prefer it.",
+		"To connect, add `https://mcp.rapier.website/door/mcp` as a connector. No account, no key. In Claude Code, the Rapier plugin sets it up.",
 		"",
-		"While an agent is here, the scroll circle on the right pulses. Tap it for status, messages and changes. Select a passage and tap **Ask** to talk about that part.",
+		"While an agent is here, the circle on the right pulses. Tap it for status, messages and changes. Select a passage and tap **Ask** to talk about it.",
 		"",
-		"To connect, add `https://mcp.rapier.website/door/mcp` as a connector in Claude, ChatGPT, Muse or any app that takes MCP. No account, no key. In Claude Code, the Rapier plugin sets it up.",
-		"",
-		"Try: **\"Explain how Rapier works.\"** The agent draws a diagram like this one, with numbered steps, colors and arrows.",
+		"Try **\"Explain how Rapier works.\"** The agent draws a diagram like this one.",
 		"",
 		"![How Rapier lays out a page: your Markdown file, the kernel, the parser, then words around a picture or in plain lines, and only what is on screen drawn][agent-diagram] <!--md-layout:v1 width=100%-->",
 		"",
-		"Tap a diagram once to select it. Move or resize it like a picture, tap a label to type new words, or drag a box and its arrows follow.",
-		"",
-		"## Under the hood",
-		"",
-		"Most editors turn your file into their own format and back again. Rapier doesn't. Its kernel keeps your Markdown exactly as you wrote it, character for character. Every change is one small edit to that text. That's why Undo takes back exactly one thing, an agent can rewrite one sentence while you type in another, and the file you save opens unchanged anywhere. <!--md-layout:v1 first=1-->",
-		"",
-		"On a long document Rapier lays out only what's near your screen. A whole book opens almost at once. <!--md-layout:v1 first=1-->",
-		"",
-		"Pictures are saved as JPEG XL by Rapier's own encoder, written in JavaScript, so they stay small and nothing is uploaded. Drawings stay SVG: sharp at any size and editable. <!--md-layout:v1 first=1-->",
-		"",
 		"## Where it runs",
 		"",
-		"Made for your phone, works anywhere with a browser. Use it at rapier.website, install it as an app, or keep `rapier.html` on a USB stick. The Android app has no internet permission. The whole editor is one file, under 2 MB.",
+		"Any browser at rapier.website, and apps for Android, Windows and Linux, Omarchy included. The whole editor is also one file, `rapier.html`, under 2 MB, that you can keep on a USB stick. It works offline.",
 		"",
 		"## Keyboard",
 		"",
@@ -3510,9 +3470,10 @@ function rapierWelcomeMarkdown() {
 		"npx rapier-html notes.md --view draw",
 		"npm install rapier-markdown-kit",
 		"npm install rapier-embed",
+		"npm install rapier-jxl",
 		"```",
 		"",
-		"`rapier-html` opens a document in the whole editor. `rapier-markdown-kit` reads and writes Markdown. `rapier-embed` puts Rapier inside your own app. The agent tools are described in `llms.txt` and `agents.md`; the hosted connection is `https://mcp.rapier.website/door/mcp`.",
+		"`rapier-html` opens a document in the whole editor. `rapier-markdown-kit` reads and writes Markdown. `rapier-embed` puts Rapier inside your app. `rapier-jxl` is the JPEG XL encoder. Agents read `llms.txt` and `agents.md`.",
 		"",
 		"Rapier is open source under AGPL-3.0-only. The Markdown kit, the JPEG XL encoder and Will are MIT.",
 		"",
@@ -3522,7 +3483,7 @@ function rapierWelcomeMarkdown() {
 		"",
 		"## Will",
 		"",
-		"Working with an agent? Say what it may do with each part of the document. Select a section, tap **W** on the bar, then type an intent or lock the section. Agents read them from invisible comments that travel in the file: Markdown, Word, PDF and Rapier's exported web pages.",
+		"Working with an agent? Tell it what it may do with each part. Select a section, tap **W** on the formatting toolbar, then type an intent or lock the section. Agents read these from invisible comments that travel in the file: Markdown, Word, PDF and Rapier's web pages.",
 		"",
 		"[rapier-logo]: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxOTIgMTkyIiB3aWR0aD0iMTkyIiBoZWlnaHQ9IjE5MiI+PHN0eWxlPkBtZWRpYSAocHJlZmVycy1jb2xvci1zY2hlbWU6ZGFyayl7cmVjdHtmaWxsOiNmZmZ9cGF0aHtmaWxsOiMwMDB9fTwvc3R5bGU+PHJlY3Qgd2lkdGg9IjE5MiIgaGVpZ2h0PSIxOTIiLz48cGF0aCBmaWxsPSIjZmZmIiBkPSJNNTUuMyAxNDNWMTI5LjRIODhMODAuNCAxMzYuN1Y1Mi4zTDg4IDU5LjlINTUuM1Y0Ni4ySDkzLjNMOTQuOCA3Mi4yTDkzLjMgNzEuMVE5NC44IDU4LjUgMTAxIDUyLjNRMTA3LjIgNDYuMiAxMTcuNiA0Ni4ySDEzNy42VjYwLjJIMTE3LjlRMTEwLjcgNjAuMiAxMDUuOSA2My4xUTEwMS4xIDY1LjkgOTguNSA3MS4yUTk2IDc2LjYgOTYgODQuNlYxMzYuN0w4OC42IDEyOS40SDEyNi42VjE0M1oiLz48L3N2Zz4=",
 		"[leaf-w]: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjQ5IDM4IDIwMyAyMDQiIHdpZHRoPSIyMDMiIGhlaWdodD0iMjA0IiBjb2xvcj0iIzEyMTIxMiI+PG1ldGFkYXRhIGlkPSJyYXBpZXItZHJhdyI+eyJ2ZXJzaW9uIjoxLCJjYW52YXMiOnsidyI6MzAwLCJoIjozMDB9LCJzdHJva2VzIjpbXSwic2hhcGVzIjpbeyJpZCI6ImMxIiwic3Ryb2tlIjpudWxsLCJyZWNvZ25pemVkIjoidGV4dCIsImFzRHJhd24iOmZhbHNlLCJicnVzaCI6ImluayIsInN0eWxlIjpudWxsLCJnZW9tIjp7ImN4IjoxNTAsImN5IjoxNTB9LCJpbmsiOiIjYjMyNjFlIiwibGFiZWwiOiJXIiwidGV4dFNpemUiOjIwMCwidGV4dEZvbnQiOiJsZXR0ZXJzOmxlYWYifV0sInZpZXciOnsieCI6NDksInkiOjM4LCJ3IjoyMDMsImgiOjIwNH19PC9tZXRhZGF0YT48ZyBkYXRhLXNoYXBlLWlkPSJjMSIgZGF0YS1icnVzaD0iaW5rIj48ZyBmaWxsPSIjYjMyNjFlIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIHRyYW5zZm9ybT0ibWF0cml4KDAuMiAwIDAgMC4yIDUwLjQgNDApIiBkPSJNNzgzIDc4Yy02LTEyIDAtMjgtNi00MC0xMCA4LTggMjQtMTcgMzQtNS0xMi0xLTI3LTYtMzktMTggNS0yIDM0LTIwIDQ1LTUtMTEgMC0yMi0zLTM0LTE3IDAtMjQgNzUtMTUgODcgMy0xIDQtMSA2LTMgOC0xMi00LTM0IDktNDEgMTAtNSAyNDgtOSAyNTMtNiA5IDUgOCAxOSA3IDI3LTIgMTktMTE1IDMzLTExNiAxMTcgNi0xIDExLTQgMTctOCAxNSAxMiA3MS0zNCA1Mi0zOS0xOC01LTI5IDktNDAgMTkgMTMtNTMgOTgtMjUgMzcgMTggMTMgMzEgNzggNTIgMjkgOTItNyA1LTIyIDE0LTIwIDIzIDYgNTIgMTAyIDEwOCA0IDIwMi0xMjggMTIzLTE2MC0xMjMtNzYtNjEtOSAxNy00OSAxMy0zNSA0NyA0MyAxMDEgMTQ3LTE0OS0xMS0xNDMtMTMgMS0xNSAyMy0xOCAzMy0xNCA0NC03MCAxNjYtNjMgMjA2IDkxLTYgMTQ5LTExOCAxMjUgNzYgMTQgMiAyOC00IDQyLTcgMTcyLTQwLTg5LTE0NCAyNi00NS01NCA1MC00NC0xMTQgMjktNDIgNTYgNTYtMjMgODUtNjAgMTAzIDIyIDIyIDEwNSAzNiA4MCA5NS0zIDYtNjYtOC04MS0yLTg3IDM3LTEzNyAxMzUtMjQ3IDgyLTEyIDE0LTEwIDMyLTI1IDQzLTE3LTE0LTExLTQyLTI0LTYxLTExLTE1LTM3LTE3LTQ5LTMyLTM1LTQ0LTIwLTk5LTM4LTE0OC04LTIzLTU4LTM0LTU4LTQxIDItMzIgNDAtMzEgNjEtMzQgMi0yNS0yMS0xMDItNDAtMTE3LTEyIDIyLTc3IDIyNi03MyAyNDAgMyA4IDYxIDEwIDc0IDIzIDMxIDMwIDMwIDc5IDYyIDEwNyAxNiAxNCA0MyAzIDU1IDE0LTc1IDY2LTk3LTEzOS0xNzAtMTIzLTY4IDE1LTYxIDE5Mi0xMDkgMTc3LTIxIDIwLTQzIDMyLTY2IDQ3IDI0IDcgMzQtMTIgNTQtMTYgNCA1IDYgOCA5IDE0IDc2LTIgNTItMTAwIDc4LTExMSAxOSAyNSAyNCA2MyA2OSA1NSAxLTE2LTQ2LTY5LTYtNzQgNTAgMTEwIDMxIDk5IDE1MCA2MCAzMyA0NC05NyAzNy0xMTggMzItNy0xLTEwLTEtMTUgMiAxNCAxNyA0MSAyMyA2MiAyOSAxNTggNDcgMjAyLTYzIDMxOC05OCAzMS05IDU3LTggODYgNiA2MSAzMSAyNCAxNDgtNDYgMTIzLTExNC00MCA4MS0zOCAxNC03MS01NS0yNy0xNjAgNjQtMjE4IDc0LTcyIDEzLTE0NCA2LTIwNy0zMi0xNS05LTI5LTI1LTQ2LTI5IDkgNjktMzYgOTAtNjYgMzItMTcgMC0zMiAxNS00OSAxOS02MyAxNS0xMDQtNy0xNTktMjQtMTMgMjQtMjggMzYtNTcgMzctMTA2IDYtNjYtMTE1LTgzLTE3NS01LTE5LTIxLTI1LTI3LTQwIDIxLTI1IDQ3IDAgNzAtMyA4LTI0LTItNTIgOC03OCAyMy02MyA4Ni0xMTQgNjMtMTg3LTQtMTMtMTgtMTktMjItMzEgNDEtNDUgNzYgNzIgNzggOTVsMSAxMSAxIDktMSA2IDAgMiAwIDMtMSA2Yy01IDQzLTIzIDg1LTUgMTI3IDUgOSAxNiAxNCAyNCA2IDEyLTEzLTE4LTQzLTUtNjAgMjMgMTQgNDUgNTcgNjYgNzcgNi0xNC0xMDUtMzk2LTEyNC00MjAtMTAgMjYtNiA1OC0xNyA4Mi0xMyAyNy03NiA5OC0xMDcgODMtMTItNy0yNS0yMC0yNC0zMyA4LTQgMzctMiAzOS0xNCAyLTE4LTMxLTI4LTMzLTQ3LTMtMjUgMzItMzQgMzYtNTQgMi0xMC0xMi0xNC0xNC0yMy0xMy01MSAyLTEzMiA1Ny0xNTEtNiA0OC03NCAxMjQtMjYgMTc3IDYzIDY5IDk5LTU3IDM2LTM4IDIgMTEgMTIgMTMgMTcgMjMtMjkgNDYtNzQtOTMtMTAtMTI5IDUgMjktMjQgNTctMTQgODkgMjEgNCAzNCA1IDU0IDE0LTMtMzgtMzAtMTMyLTU0LTE1NS0zNS0zMy0xMTYtMjEtOTgtODcgMzgtMiA3OSAxMCAxMTUgMiA1LTI1LTM5LTE2LTU1LTE2bC05IDE0Yy00NC0zLTczLTUyLTIwLTcwIDIyLTggNDggNDMgODQgMzYgNDItOCA4Ny00NiAxMzItNDQgMjcgMiA1NSA0OCA3MiA0NSA4NC0xNiAxMDgtNjAgMjEzLTQwIDU3IDEyIDk1IDcwIDEzMSA3NiA0IDE4LTYgMzkgMTAgNTIgOS01MiAxMi0xNDkgOTgtMTI1IDExIDMgMjMgMTkgMzUgMTggMTYtMyAyOC0yMyA0MC0yOSAxNi03IDEyMiAxNyAxMDkgMzgtOCAxNC01OC0xMy03NS0xMi00NCAzLTY0IDM2LTEwMCA1MXpNMTc1IDY5Yy00LTctNy0xMC0xNC0xMy0yNSAyNyAxMyAzOSAzNiAyNyAwLTEzLTMtMjYgNy0zMyA2IDkgNCAyMSA2IDMyIDIyIDMgNy0zMSAyMC00MiA1IDExLTIgMzMgNSA0MyAxIDAgMjkyIDM1IDIwMi01OC0xMCA0LTM4IDUyLTg2IDUyIDktMjAgMzctMjUgNTUtMzUtMjItMTYtNzggMzAtMTA3IDMwIDItMTEgMy0xNi01LTI0LTEyIDUtOSAxNy0xNSAyOC0xMS0xMiA0LTM1LTgtNDUtMzItMjgtODYgMTItOTYgMzh6TTQ2MCA3OWM1MS0xNSA2OC0zMiAxMjgtMjUtMTUtMzctMTM2LTMxLTEyOCAyNXpNNDc4IDgzYzMxIDE0IDczLTQgMTA2IDgtMzcgMjctMTYwIDExLTIwNCAxLTEgMTMgMTEgMTIgMjMgMTggNTAgMjYgNjUgNjggODEgMTE5IDI5IDk4IDE0MyA1MzcgMTc4IDU5MSAzNS0zOCAxNTctNDc5IDE4Mi01NjIgMTMtNDIgMTktODggNDUtMTIzIDEwLTEzIDQwLTI1IDQxLTM4LTI0LTUtMTAxLTktMTE5IDMgMTQgMTYgNDEgMTcgNDIgNDYgMSAyOC0xNDMgNDg4LTE1NCA0OTktMjYtMTUtMzktMTExLTUwLTE0Mi0yNC03MS0xMTgtMjk3LTk5LTM1OSA5LTMzIDUxLTUwIDc3LTU5LTQwLTE3LTExNy00Ni0xNDktMnpNNzA1IDE2NGM0LTE3IDctODAtMy05My0xNiAxNi0xNiA4MyAzIDkzek04NSAxMDNjMTggMTUgNDYgMjYgNjAgNDYgNzYgMTA5IDE0MyA0MTggMTg2IDU1OCAxMiAzOSAxNSA5MiAzNCAxMjYgMjItMzcgMTI2LTM4NyAxMTMtNDA2LTI2IDQxLTUwIDE5OS03NSAyMTYtOS05LTE1MS00NDYtMTUzLTQ3NC0xLTI5IDI3LTUwIDQ1LTY2LTgtNi0yMDAtNi0yMTAgMHpNNjAwIDE5NWMyMi0xNiA0NiA0IDY4IDEyIDMxLTQ2LTQ0LTEyMS05Ni00Ny0xNiAyMyAzOCAyMjYgNzQgMTI3IDQtMTIgMTEtMjIgNS0zNS0xMC0yMi00Ny0zOC01MS01N3pNNzA4IDM5NmMxMS03IDQyLTMyIDQ3LTQzIDEyLTI1LTI2LTU2LTktODkgMTYtMzMgODQtNjggNTktMTEyLTgtMTUtMjAtMjEtMzctMjMtOCAwLTE4LTktMjYtNS0zMSAxOC0zNiAxNDItMzQgMTcyIDMgMzItNyA2OCAwIDEwMHpNMjgyIDIyMmM4LTggMTYtNDUgMzQtMzggMTQgNS0yMCA1My0yMSA2OCAwIDM0IDI3IDEyMyA3MyAxMTAtOTQtMTA4IDM5LTEzOC02LTIxOS0yMi0zOS0xMTkgMTEtODAgNzl6TTM5MiAyOTNjNDUtMjkgNjYgNjIgMTEgODItMjQgOC00OC00LTY5IDEgNyAxOSA1MyAyNSA2OSA0NyAxMSAxNiAxMiA2Ny0xNiA1MSAxNi0zMi00LTc3LTQ1LTcwIDAgMTYgNDUgMTU5IDUyIDE2MyAyMy0zNCA2Ny0xODYgNjctMjI4LTEtNDQtMzYtMTYyLTc2LTE4My03IDEyIDMgMjYtMSA0Mi0xMSA0NC03MCA5MS0yNCAxMzggMTcgMTggNzMgMjUgNjYtMTUtNC0xOS0yOS0xMi0zNC0yOHpNODYzIDM2M2M2LTcgNy0xNSAxMi0yMyA1IDEzLTUgMjYgNiAzNSAxMy0xMCA5LTQwIDIzLTU0IDEzLTEzIDMzLTcgNDgtMjAgMjQtMjEgMjItMzYtMy01Ny02MS01My0xNjEgMTA2LTg2IDExOXpNNjc5IDQzNmMxNy0zNiAyOC0xMTYgOS0xNTEtMzAgMTAtMjUgMTI5LTkgMTUxek02MTggMzQyYy0yIDIzIDI4IDEzMyA0NyAxNDYgNC0xNC03LTE1Ni0xMi0xNjUtMTIgNS0yMyAxMy0zNSAxOXpNODk0IDM4MmM2IDIgOSAyIDE1IDAgMSA2IDEgMTEgMyAxNyA4IDAgOSAwIDE1LTUgMSAxMC0zIDIwIDAgMzBsMTIgMWMtNCAxMi04IDIyLTQgMzRsMTEgMWMtNiAxOS0xNSAzNy0xOSA1NyAzMS0xMiA1Ni01MiA0NS05MmwtNy0zYzItMTYgMTAtMzQtOS00MCAwLTEwIDItMTgtMy0yNi02IDEtNyAwLTEyIDUtOC00OS01NS0xOS00NyAyMXpNNTcgMzc5Yy00NCAyMyAxNyA5OCA2NCA2NCA3LTUgMTMtMTcgMTItMjctMS0yNS0zNCAyNS01NCAxMi0xNC05IDItNjEtMjItNDl6TTY4NSA1NTVjMTAtNiA2Mi0xNjEgNTktMTc2LTM1IDUtNzkgMTQ3LTU5IDE3NnpNNDMgNDkxYzMwIDI5IDQzLTYwIDAgMHpNMTU4IDQ5N2MwIDE4IDE1IDM0IDEzIDU1LTUgNzUtNjYgMTI2LTc4IDIwMS00IDI4IDQ2IDEwNSAzMyAxMTQtMjAtMTEtNDktMTAxLTg2LTc2IDkgNDgtMiAxODggNjkgMTg1IDEzIDAgMzEtMyA0MC0xMiAyMy0yNC00MS02My0yMy02OCAzNS0xMCA0NSA1NiA3OSA1Ni0yLTE3LTIxLTI2LTIyLTQ2IDAtMTcgNzcgMiA5NS0yOSAxOC0zMyAxOC0xMjktMzQtMTM3LTE2LTIgNCA2OC0yIDgxLTEzLTEwIDAtODEtNDQtNTgtMTIgNyAxOSAxMzMtMjAgNzktNTgtODAgNjUtMzEwLTIwLTM0NXpNODQ5IDU4NmMtMzAgMjAtMzkgNzAtNjYgOTcgNy0yMyAzNS00OCAzNC03Mi00MS00LTQ1IDE1LTY2IDQwbC01LTEzYy0xNCA1LTE3IDQ3LTE1IDYxIDIwIDMgMTktMjAgMzMtMjYtMyA5LTggMTctMTEgMjYgMjMgMjggMjAgMTMgNDYgMi0yIDctMyAxMi0yIDE5IDc3IDIzIDk0LTEwNyA1Mi0xMzR6TTUwMyA2MjRjNSA0IDcgNSAxNSA0bDkgMTNjMzgtMTEtMTYtNDUtMjQtMTd6TTg1MiA2MThjLTYgMjctMzEgNjQtNTIgODMgMy0yMCAzNy03NSA1Mi04M3pNNjk2IDgwMGMtMi0zMyA0OS00OSA1Ny03Ni00NC00OC04MiAxMTAtODUgMTM2IDI4IDAgNDItNDUgNjktMzgtNiAxNS0yNCAyNC0yOSAzOSA2LTEgMTEtMyAxNy02LTEgNSAwIDkgMSAxMyAyNS0yIDM4LTQgNjQtMTdsNCA3YzcxLTUgNzEtOTQgMTgyLTgyIDEtMTMtNi0yMy0xNS0zMy02NS03OC0xMDIgMTMtMTUyIDIyLTIyIDUtMS00NC00NS0yNi0yNiAxMC00MyA2My02OCA2MXpNMTgxIDczM2MtMTEgMTYtMTEgNDYtNSA2MyAxNi01IDE4LTUwIDUtNjN6TTU1OSA3NzNsMTIgM2MtMiAxMi03IDE4LTEgMjggNyAwIDEwLTIgMTctNy0zIDIwIDEgMzIgMjAgNDAgMy0xOS0xMS02Ny0yOC03NSAzLTEyIDQtMTctNC0yNy0xNCA3LTIwIDIzLTE2IDM4ek0zMDggODMzYy0yMiA1My0zNiA5OC0xMDcgNzgtMzMgNDMgMTg3IDg5IDEwNy03OHpNNzM0IDk1OGM1NiAxNiAxNTAtMTA0IDIwMS00MCAyNiAzMS0yMCAzNC0zNCA0OCAzOSAyOCA4Mi0zMyA2MC02OS00Mi03Mi0xOTAgMTctMjI3IDYxek00MTEgOTExYy01IDktOCAyMS0xMCAzMmw5IDZjMCA5LTEgMTYgMSAyNSAyOS00IDI0LTUzIDAtNjN6Ii8+PC9nPjwvZz48L3N2Zz4=",
@@ -4512,11 +4473,26 @@ function _rapierCodeHoldsSelection(el) {
 	return RapierLexer.codeHoldsSelection(el, document);
 }
 
+function _rapierLexedHtml(source) {
+	const spans = typeof RapierLexer === 'undefined' ? null : RapierLexer.cached(source);
+	if (!spans) return '';
+	try { return _rapierTokensHtml(source, spans); } catch (_) { return ''; }
+}
+function _rapierLexedCodeHtml(source, language) {
+	return _rapierCodeReading(language) === 'code' && _rapierLexedHtml(source) || _rapierCodeHtml(source, language);
+}
+
 function _rapierColourCodeElement(el) {
 	const source = el.textContent || '';
-	if (source.length > RAPIER_CODE_COLOUR_MAX_CHARS || !_rapierHighlightAdmitted(source) || _rapierCodeHoldsSelection(el)) return;
+	if (!_rapierHighlightAdmitted(source) || _rapierCodeHoldsSelection(el)) return;
 	const lang = _rapierRenderModule('render-markdown')._rapierLanguageClass(el) || 'text', reading = _rapierCodeReading(lang);
-	if (el.firstElementChild || reading === 'plain') el.classList.add('tok');
+	const kept = reading === 'code' ? _rapierLexedHtml(source) : '';
+	if (kept) {
+		if (el.innerHTML !== kept) _rapierRenderModule('render')._rapierPaintCode(el, kept);
+		el.classList.add('tok', 'tok-lexed');
+		return;
+	}
+	if (el.firstElementChild || reading === 'plain' || source.length > RAPIER_CODE_COLOUR_MAX_CHARS) el.classList.add('tok');
 	else _rapierRenderModule('render')._rapierPaintCode(el, _rapierCodeHtml(source, lang));
 	if (reading === 'code') void _rapierColourCodeGpu(el, source);
 }
@@ -4553,13 +4529,15 @@ function _rapierRelexRendered() {
 
 function _drainCodeColourQueue() {
 	_rapierHighlightRuntime.scheduled = false;
-	const el = _rapierHighlightRuntime.queue.shift();
-	if (!el) return;
-	_rapierHighlightRuntime.queued.delete(el);
-	if (el.isConnected) {
+	const until = performance.now() + 8;
+	do {
+		const el = _rapierHighlightRuntime.queue.shift();
+		if (!el) break;
+		_rapierHighlightRuntime.queued.delete(el);
+		if (!el.isConnected) continue;
 		if (!el.classList.contains('tok')) _rapierColourCodeElement(el);
 		else if (!el.classList.contains('tok-lexed') && _rapierCodeReading(_rapierRenderModule('render-markdown')._rapierLanguageClass(el) || 'text') === 'code') void _rapierColourCodeGpu(el, el.textContent || '');
-	}
+	} while (performance.now() < until);
 	if (_rapierHighlightRuntime.queue.length) { _rapierHighlightRuntime.scheduled = true; _yieldToIdle(_drainCodeColourQueue); }
 }
 function scheduleIdleHighlight(root) {
@@ -8405,6 +8383,7 @@ function leaveBlockEdit(block, wrapper, readDiv, editDiv, options = null) {
 	_rapierReleaseRawEditGeometry(editDiv);
 	_setBlockEditability(editDiv, false);
 	if (editDiv.childNodes.length) _rapierDiscardEditProjection(editDiv);
+	if (readDiv && document.documentElement.dataset.layout !== 'plain' && !globalThis.matchMedia?.('print').matches) globalThis.RapierTypography?.apply(readDiv, {all: true});
 	editDiv.removeAttribute('tabindex');
 	_clearActiveBlock(block.id);
 	_updateBlockInteractiveState(wrapper, readDiv);
@@ -17910,6 +17889,13 @@ function _openFieldDialog(opts) {
 	});
 	return {overlay, inputs, advanced, signal: lifetime.signal, progress: options => progress.open(options)};
 }
+function _rapierLinkAddress(value) {
+	const text = String(value || '').trim(), host = /^(?:www\.)?([a-z0-9-]+\.)+([a-z]{2,})(?::\d+)?(?:[/?#]\S*)?$/i.exec(text);
+	if (!host || /^[a-z][a-z0-9+.-]*:/i.test(text)) return value;
+	const web = /^(?:com|org|net|io|dev|app|co|ai|edu|gov|info|me|uk|au|nz|ca|us|de|fr|nl|es|it|eu|jp|in|website|site|blog|news|xyz|tv)$/i;
+	return /^www\./i.test(text) || web.test(host[2]) ? 'https://' + text : value;
+}
+
 function _escHtml(s) { return String(s == null ? "" : s).replace(/[&<>]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]; }); }
 function _escAttr(s) { return _escHtml(s).replace(/"/g, "&quot;"); }
 
@@ -18003,7 +17989,7 @@ function _openLinkDialog({ url, canClear, onOk, onClear, onCancel, title = 'link
 	}
 
 	function submit(note = null) {
-		const value = input.value;
+		const value = _rapierLinkAddress(input.value);
 		if (!_rapierEngineDialogSubmitAdmission(state)) return;
 		if (!state.close(true)) return;
 		if (typeof onOk === 'function') onOk(value, note);
@@ -20768,8 +20754,9 @@ function _rapierCompareReviewPage(result, title, summary, escape) {
 		' font: 600 11px/1.4 ' + mono + '; letter-spacing: .06em; text-transform: uppercase; }\n' +
 		'summary { display: block; list-style: none; cursor: pointer; text-transform: none; }\nsummary::-webkit-details-marker { display: none; }\n' +
 		'.compare-panel { margin-bottom: 8px; padding: 16px 20px; overflow-x: auto; }\n' +
-		'.compare-panel--remove, .compare-mark--remove { background: var(--remove); }\n' +
-		'.compare-panel--add, .compare-mark--add { background: var(--add); }\n.compare-panel--move { background: var(--ground); }\n' +
+		'.compare-panel--remove { background: var(--remove); }\n.compare-panel--add { background: var(--add); }\n.compare-panel--move { background: var(--ground); }\n' +
+		'.compare-mark--remove { background: light-dark(color-mix(in srgb, #c00 32%, transparent), color-mix(in srgb, #ec5156 40%, transparent)); }\n' +
+		'.compare-mark--add { background: light-dark(color-mix(in srgb, #188844 32%, transparent), color-mix(in srgb, #45d483 40%, transparent)); }\n' +
 		'.compare-block__context { padding: 8px 0; }\n.md-render > :first-child { margin-top: 0; }\n.md-render > :last-child { margin-bottom: 0; }\n' +
 		'pre { overflow-x: auto; }\ncode, pre { font-family: ' + mono + '; font-size: .9em; }\n' +
 		'table { border-collapse: collapse; }\nth, td { padding: 6px 12px; border: 1px solid; text-align: left; }\nimg { max-width: 100%; }\n' +
@@ -22748,6 +22735,7 @@ function _rapierNormalizeSaveResult(value) {
 		destinationName: _rapierDocumentNameIsAdmissible(reportedDestinationName)
 			? reportedDestinationName : '',
 		destinationSelected: value.destinationSelected === true,
+		savedWhere: String(value.savedWhere || ''),
 		reason: String(value.reason || ''), originalPreserved: value.originalPreserved === true,
 		copyVerified: value.copyVerified === true,
 		recoveryChoices: Array.isArray(value.recoveryChoices) ? value.recoveryChoices.filter(x => ['keep-editing', 'save-copy', 'reopen-original'].includes(x)) : [],
@@ -23061,9 +23049,10 @@ async function _rapierPerformSaveWork(options) {
 			return settle('confirmed-destination-mismatch', false, result, destinationName);
 		}
 		if (options.quiet !== true) {
+			const where = result?.savedWhere ? ' in ' + result.savedWhere + ' — this desktop has no file chooser' : '';
 			showToast(!saveAsStillOwnsName
-				? 'saved ' + destinationName + '; the newer filename still needs Save As'
-				: 'saved ' + destinationName, !saveAsStillOwnsName ? 'warning' : 'success');
+				? 'saved ' + destinationName + where + '; the newer filename still needs Save As'
+				: 'saved ' + destinationName + where, !saveAsStillOwnsName ? 'warning' : 'success');
 		}
 		return settle('confirmed', true, result, destinationName);
 	} catch (error) {
@@ -23284,7 +23273,7 @@ function _rapierArtifactAccent() {
 
 function _rapierArtifactHighlight(code, lang) {
 	const source = String(code || '');
-	return _rapierHighlightAdmitted(source) ? _rapierCodeHtml(source, lang) : _rapierRenderModule('render-sanitize').escapeRapierHtmlText(source);
+	return _rapierHighlightAdmitted(source) ? _rapierLexedCodeHtml(source, lang) : _rapierRenderModule('render-sanitize').escapeRapierHtmlText(source);
 }
 
 
@@ -41338,6 +41327,12 @@ function _rapierHighlightedSlabInner(slabText, lang, firstLine) {
 	const key = lang + '|' + firstLine + '|' + _fnv1a32(slabText);
 	const lexed = _slabCacheGet('gpu|' + key);
 	if (typeof lexed === 'string') return lexed;
+	const kept = lexed === undefined && _rapierCodeReading(lang) === 'code' ? _rapierLexedHtml(slabText) : '';
+	if (kept) {
+		const wrapped = _rapierWrapHighlightedLines(kept, firstLine);
+		_slabCacheSet('gpu|' + key, wrapped);
+		return wrapped;
+	}
 	let inner = _slabCacheGet(key);
 	if (inner === undefined) {
 		inner = _highlightSlab(slabText, lang, firstLine);
@@ -49686,9 +49681,8 @@ const RAPIER_MIT_NOTICE = `MIT License
 These components are distributed under the MIT license,
 each under its own copyright notice:
 
-gpu-lexer 0.0.1 — no LICENSE file ships in the published
-package; this notice is the standard MIT text for its declared license.
-	Copyright (c) 2026 Vercel, Inc.
+gpu-lexer 0.0.4
+	Copyright (c) 2026 Shu Ding
 acorn 8.19.0
 	Copyright (C) 2012-2022 by various contributors (see AUTHORS)
 markdown-it 15.0.2
@@ -49984,7 +49978,9 @@ async function _rapierUiBeginOpenDocument(event) {
 	if (platform && typeof platform.files.open === 'function') {
 		Promise.resolve(platform.files.open()).then(_rapierUiOpenPlatformPayload).catch(error => {
 			try { console.warn('[rapier] platform open failed', error); } catch (_) {}
-			showToast('could not open that file', 'error');
+			showToast(error?.code === 'no_file_chooser'
+				? 'this desktop has no file chooser — open the file from your file manager, or run rapier-linux with its path'
+				: 'could not open that file', 'error');
 		});
 		return;
 	}

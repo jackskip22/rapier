@@ -1,10 +1,10 @@
 {
   "version": 1,
   "limits": {
-    "mutableRoots": 92,
+    "mutableRoots": 91,
     "domSinks": 58,
     "storageKeys": 7,
-    "remainderBytes": 70781
+    "remainderBytes": 70310
   },
   "engineRoots": {
     "_pendingLeaves@module/iife1": {
@@ -334,10 +334,6 @@
     "_rapierWillRuntime@module/iife1": {
       "name": "_rapierWillRuntime",
       "reason": "The Will UI owner retains active presentation and interaction state."
-    },
-    "_rapierWillTestGate@module/iife1": {
-      "name": "_rapierWillTestGate",
-      "reason": "The editor's existing Will witness seam owns its pending test continuation."
     },
     "_rapierWriterRuntime@module/iife1": {
       "name": "_rapierWriterRuntime",

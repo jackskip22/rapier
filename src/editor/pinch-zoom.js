@@ -7,6 +7,7 @@ const RAPIER_PINCH_PILL_MS = 600, RAPIER_PINCH_WHEEL_REST_MS = 150;
 const RAPIER_PINCH_OWNERS = '.rapier-image-grip, .rapier-image-move, .rapier-image-tools, img[data-rapier-image-selected], [data-rapier-diagram-edit], .section-fold-btn, .section-move-btn, .scroll-fab, input, textarea, select';
 
 const _rapierPinch = { phase: 'idle', host: null, wheel: 0, swallowUntil: 0, indicator: null };
+const RAPIER_PINCH_LIFT_MS = 350;
 
 function _rapierPinchHost() { return document.getElementById('editor-blocks'); }
 
@@ -159,6 +160,7 @@ function _rapierPinchEnd(event) {
 	if (state.phase === 'armed') { state.phase = 'idle'; return; }
 	if (state.phase !== 'zooming') return;
 	if (event.cancelable) event.preventDefault();
+	state.swallowUntil = performance.now() + RAPIER_PINCH_LIFT_MS;
 	_rapierPinchRelease();
 }
 
@@ -329,6 +331,7 @@ function _rapierPageZoomStart(event) {
 		document.removeEventListener('touchmove', move, true); document.removeEventListener('touchend', end, true); document.removeEventListener('touchcancel', end, true);
 		if (state.phase === 'armed') { state.phase = 'idle'; return; }
 		if (endEvent.cancelable) endEvent.preventDefault();
+		_rapierPinch.swallowUntil = performance.now() + RAPIER_PINCH_LIFT_MS;
 		_rapierPageZoomSettle();
 	};
 	document.addEventListener('touchmove', move, { capture: true, passive: false });

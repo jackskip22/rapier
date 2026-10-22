@@ -11,7 +11,7 @@ export const HOME_TITLE = 'Rapier - Free Online Markdown Editor, Viewer & Art';
 export const HOME_H1 = 'Free online Markdown editor and viewer';
 export const HOME_DESCRIPTION = 'Free online Markdown editor and viewer. Convert Markdown to PDF or Word and Word to ' +
   'Markdown, and draw Mermaid diagrams. No sign-up; works offline.';
-export const APP_DESCRIPTION = 'Free Markdown editor and notes app for Android, the web and Windows. ' +
+export const APP_DESCRIPTION = 'Free Markdown editor and notes app for Android, the web, Windows and Linux. ' +
   'Write on the formatted page or in the Markdown source, make Mermaid diagrams, draw editable SVG and paint watercolor. ' +
   'Text and pictures stay in one plain Markdown file. Import Word and PDF; export Word, PDF, text and offline HTML for free. ' +
   'Works offline, with no account, ads or tracking. Optionally, an AI agent edits with you over MCP and WebMCP.';

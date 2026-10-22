@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 const RapierParts = (() => {
 	const PINS = /* RAPIER_PARTS */ null;
-	const CDN = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.32/';
+	const CDN = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.33/';
 	const PART_DIRECTORY = 'parts/';
 	const pins = new Map((PINS || []).map((pin, order) => [pin.id, {...pin, order}]));
 	const runs = new Map(), states = new Map(), kept = new Set(), updates = new Map(), noted = new Set();

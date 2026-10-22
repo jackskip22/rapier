@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import {copyFile, mkdtemp, mkdir, readFile, rm, stat, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
+import {spawnSync} from 'node:child_process';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {stageLinuxPublic, stageLinuxPackage, verifyLinuxArtifact} from '../../../tools/stage-linux.mjs';
@@ -57,11 +58,28 @@ try {
     } finally {await writeFile(full,bytes);}
   }
   await stageLinuxPackage(join(dir,'arch'));
-  const pkg=await readFile(join(dir,'arch/PKGBUILD'),'utf8');
+  const pkg=await readFile(join(dir,'arch/aur/rapier-bin/PKGBUILD'),'utf8');
   assert(pkg.includes("arch=('x86_64')"));
   assert(pkg.includes("'glibc>="+built.runtime.glibc+"'"));
+  assert(pkg.includes("'chromium' 'perl-file-mimeinfo'"));
   assert(pkg.includes(built.sha256));assert(!pkg.includes('python'));
-  note('Arch package pins exact ELF, architecture and glibc floor without Python');
+  assert(pkg.includes('$pkgdir/opt/rapier/rapier-linux')&&pkg.includes('hicolor/scalable/apps/rapier.svg'));
+  assert.equal(await readFile(join(dir,'arch/omarchy-pkgs/rapier-bin/PKGBUILD'),'utf8'),pkg);
+  assert.equal(JSON.parse(await readFile(join(dir,'arch/omarchy-pkgs/rapier-bin/.omarchy/package.json'),'utf8')).source,'local');
+  assert((await readFile(join(dir,'arch/aur/rapier-bin/.SRCINFO'),'utf8')).includes('sha256sums = '+built.sha256));
+  {// package() as makepkg runs it: the executable, launcher, both entries, MIME types, icon and license land where Arch keeps them.
+    const src=join(dir,'arch/aur/rapier-bin'),pkgdir=join(dir,'pkg');
+    await writeFile(join(src,'rapier-linux-'+built.version),'#!/bin/sh\n');await writeFile(join(src,'LICENSE-'+built.version),'license\n');
+    const made=spawnSync('bash',['-euc','cd "$1"; source ./PKGBUILD; package','bash',src],{env:{...process.env,pkgdir},encoding:'utf8'});
+    assert.equal(made.status,0,made.stderr);
+    for(const [path,mode] of [['opt/rapier/rapier-linux',0o755],['usr/bin/rapier',0o755],['usr/share/applications/rapier.desktop',0o644],
+      ['usr/share/applications/chrome-rapier.local__rapier.html-Default.desktop',0o644],['usr/share/mime/packages/rapier.xml',0o644],
+      ['usr/share/icons/hicolor/scalable/apps/rapier.svg',0o644],['usr/share/licenses/rapier-bin/LICENSE',0o644]])
+      assert.equal((await stat(join(pkgdir,path))).mode&0o777,mode,path);
+    assert.match(await readFile(join(pkgdir,'usr/share/applications/chrome-rapier.local__rapier.html-Default.desktop'),'utf8'),/^NoDisplay=true$/m);
+    assert.match(await readFile(join(pkgdir,'usr/bin/rapier'),'utf8'),/exec \/opt\/rapier\/rapier-linux "\$@"/);
+  }
+  note('AUR and omarchy-pkgs recipes pin the exact ELF, /opt and /usr/bin, chromium and perl-file-mimeinfo, without Python');
   await verifyLinuxArtifact();
   note('restored original inputs verify');
   console.log(JSON.stringify({elf:built.sha256,checks:report}));

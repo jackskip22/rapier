@@ -5,11 +5,16 @@ function _rapierRenderFrontmatter() {
 	const header = rapier.document.docKind === 'markdown' ? String(rapier.document.frontmatter || '') : '';
 	region.toggleAttribute('hidden', !globalThis.RapierMarkdownSpec.isTemplatePage(header) || rapier.view.mode === 'source' || rapier.compare.active);
 	const host = document.getElementById('editor-blocks');
-	if (host && region.parentElement !== host) host.appendChild(region);
-	if (host && host.lastElementChild !== region) host.appendChild(region);
+	const place = () => {
+		if (!host) return;
+		if (document.documentElement.dataset.layout === 'docx') { if (host.nextElementSibling !== region) host.after(region); }
+		else if (host.lastElementChild !== region) host.appendChild(region);
+	};
+	place();
 	if (host && !host._rapierMetadataKeeper) {
-		host._rapierMetadataKeeper = new MutationObserver(() => { if (host.lastElementChild !== region) host.appendChild(region); });
+		host._rapierMetadataKeeper = new MutationObserver(place);
 		host._rapierMetadataKeeper.observe(host, {childList: true});
+		host._rapierMetadataKeeper.observe(document.documentElement, {attributes: true, attributeFilter: ['data-layout']});
 	}
 }
 

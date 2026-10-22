@@ -1,0 +1,936 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+const FLOWCHART_LAYOUT_LIMITS = Object.freeze({
+	figures: 1024,
+	obstacles: 512,
+	labelChars: 4096,
+	textChars: 262144,
+	searchStates: 32768,
+	gridCells: 65536
+});
+
+
+export function findFeedbackArcSet(nodes, edges, idToIdx = null) {
+	const n = nodes.length;
+	if (!idToIdx) {
+		idToIdx = new Map();
+		for (let i = 0; i < n; i++) idToIdx.set(nodes[i].id, i);
+	}
+	const m = edges.length;
+	const head = new Int32Array(n).fill(-1);
+	const toArr = new Int32Array(m);
+	const nextArr = new Int32Array(m);
+	const edgeIdxArr = new Int32Array(m);
+	const inDeg = new Int32Array(n);
+	const selfLoops = new Set();
+	let eCount = 0;
+
+	for (let i = m - 1; i >= 0; i--) {
+		const e = edges[i];
+		const u = idToIdx.get(e.from), v = idToIdx.get(e.to);
+		if (u === undefined || v === undefined) continue;
+		if (u === v) { selfLoops.add(e); continue; }
+		toArr[eCount] = v;
+		edgeIdxArr[eCount] = i;
+		nextArr[eCount] = head[u];
+		head[u] = eCount++;
+		inDeg[v]++;
+	}
+
+	const state = new Uint8Array(n);
+	const backward = new Set();
+
+	const visit = u => {
+		state[u] = 1;
+		for (let ei = head[u]; ei !== -1; ei = nextArr[ei]) {
+			const to = toArr[ei];
+			if (state[to] === 1) backward.add(edges[edgeIdxArr[ei]]);
+			else if (state[to] === 0) visit(to);
+		}
+		state[u] = 2;
+	};
+
+	for (let i = 0; i < n; i++) if (inDeg[i] === 0 && state[i] === 0) visit(i);
+	for (let i = 0; i < n; i++) if (state[i] === 0) visit(i);
+
+	return { backward, selfLoops };
+}
+
+export function assignRanksNetworkSimplex(nodes, edges, backward, options = {}) {
+	const n = nodes.length;
+	if (n === 0) return new Map();
+	let idToIdx = options.idToIdx || null;
+	if (!idToIdx) {
+		idToIdx = new Map();
+		for (let i = 0; i < n; i++) idToIdx.set(nodes[i].id, i);
+	}
+	const priorRanks = options.priorRanks || null;
+
+	const outHead = new Int32Array(n).fill(-1);
+	const inHead = new Int32Array(n).fill(-1);
+	const inDeg = new Int32Array(n);
+	const edgeU = [], edgeV = [], edgeW = [], outNext = [], inNext = [];
+
+	for (let i = 0; i < edges.length; i++) {
+		const e = edges[i];
+		const u0 = idToIdx.get(e.from), v0 = idToIdx.get(e.to);
+		if (u0 === undefined || v0 === undefined || u0 === v0) continue;
+		const isBack = backward.has(e);
+		const u = isBack ? v0 : u0;
+		const v = isBack ? u0 : v0;
+		const idx = edgeU.length;
+		edgeU.push(u);
+		edgeV.push(v);
+		edgeW.push(isBack ? 1 : (e.weight || 2));
+		outNext.push(outHead[u]);
+		outHead[u] = idx;
+		inNext.push(inHead[v]);
+		inHead[v] = idx;
+		inDeg[v]++;
+	}
+
+	const rank = new Int32Array(n);
+	if (priorRanks) {
+		for (let i = 0; i < n; i++) {
+			const pr = priorRanks.get(nodes[i].id);
+			if (Number.isInteger(pr) && pr >= 0) rank[i] = pr;
+		}
+	}
+
+	const topo = new Int32Array(n);
+	const remIn = new Int32Array(inDeg);
+	let qHead = 0, qTail = 0;
+	for (let i = 0; i < n; i++) if (remIn[i] === 0) topo[qTail++] = i;
+	while (qHead < qTail) {
+		const u = topo[qHead++];
+		for (let ei = outHead[u]; ei !== -1; ei = outNext[ei]) {
+			const v = edgeV[ei];
+			if (rank[v] < rank[u] + 1) rank[v] = rank[u] + 1;
+			if (--remIn[v] === 0) topo[qTail++] = v;
+		}
+	}
+	if (qTail < n) {
+		for (let i = 0; i < n; i++) if (remIn[i] > 0) topo[qTail++] = i;
+	}
+
+	if (!priorRanks) {
+		for (let pass = 0; pass < 4; pass++) {
+			let changed = false;
+			for (let ti = n - 1; ti >= 0; ti--) {
+				const u = topo[ti];
+				if (outHead[u] === -1) continue;
+				let minChildR = 0x3fffffff, maxParentR = -1;
+				let outW = 0, inW = 0;
+				for (let ei = outHead[u]; ei !== -1; ei = outNext[ei]) {
+					const v = edgeV[ei];
+					outW += edgeW[ei];
+					if (rank[v] - 1 < minChildR) minChildR = rank[v] - 1;
+				}
+				for (let ei = inHead[u]; ei !== -1; ei = inNext[ei]) {
+					const w = edgeU[ei];
+					inW += edgeW[ei];
+					if (rank[w] + 1 > maxParentR) maxParentR = rank[w] + 1;
+				}
+				if (inHead[u] === -1 || outW > inW) {
+					const target = Math.max(maxParentR, minChildR);
+					if (target > rank[u] && target <= minChildR) {
+						rank[u] = target;
+						changed = true;
+					}
+				}
+			}
+			if (!changed) break;
+		}
+	}
+
+	let minR = 0x3fffffff;
+	for (let i = 0; i < n; i++) if (rank[i] < minR) minR = rank[i];
+	if (minR > 0 && minR < 0x3fffffff) {
+		for (let i = 0; i < n; i++) rank[i] -= minR;
+	}
+
+	const out = new Map();
+	for (let i = 0; i < n; i++) out.set(nodes[i].id, rank[i]);
+	return out;
+}
+
+let _fenwick = new Int32Array(512);
+function countBipartiteCrossings(lowerLen, flatPairs, pairCount) {
+	if (pairCount <= 1) return 0;
+	if (_fenwick.length <= lowerLen + 2) _fenwick = new Int32Array((lowerLen + 2) * 2);
+	_fenwick.fill(0, 0, lowerLen + 2);
+	let crossings = 0;
+	for (let i = 0; i < pairCount; i++) {
+		const idx = (flatPairs[i] & 0xffff) + 1;
+		let sumLE = 0;
+		for (let k = idx; k > 0; k -= k & -k) sumLE += _fenwick[k];
+		crossings += (i - sumLE);
+		for (let k = idx; k <= lowerLen; k += k & -k) _fenwick[k]++;
+	}
+	return crossings;
+}
+
+export function layoutLayeredGraph(nodes, edges, options = {}) {
+	const across = !!options.across;
+	const baseGap = options.gap ?? 52;
+	const baseSibling = options.sibling ?? 36;
+	const compact = !!options.compact;
+	const groups = options.groups || [];
+	const prior = options.prior || null;
+	const pins = options.pins || null;
+
+	const itemIdToIdx = new Map();
+	for (let i = 0; i < nodes.length; i++) itemIdToIdx.set(nodes[i].id, i);
+	const validEdges = [];
+	for (let i = 0; i < edges.length; i++) {
+		const e = edges[i];
+		if (itemIdToIdx.has(e.from) && itemIdToIdx.has(e.to)) validEdges.push(e);
+	}
+
+	const { backward, selfLoops } = findFeedbackArcSet(nodes, validEdges, itemIdToIdx);
+	const ranks = assignRanksNetworkSimplex(nodes, validEdges, backward, { priorRanks: prior?.ranks, idToIdx: itemIdToIdx });
+
+	const groupOf = new Map();
+	for (let g = 0; g < groups.length; g++) {
+		const grp = groups[g];
+		for (const m of grp.members || []) groupOf.set(m, g + 1);
+	}
+
+	let maxRank = 0;
+	for (const r of ranks.values()) if (r > maxRank) maxRank = r;
+	const rows = Array.from({ length: maxRank + 1 }, () => []);
+
+	const allItems = new Array(nodes.length);
+	for (let i = 0; i < nodes.length; i++) {
+		const node = nodes[i];
+		const r = ranks.get(node.id) || 0;
+		if (node.x === undefined) node.x = 0;
+		if (node.y === undefined) node.y = 0;
+		node._idx = i;
+		node._rank = r;
+		node._isDummy = false;
+		node._group = groupOf.get(node.id) || 0;
+		allItems[i] = node;
+		rows[r].push(i);
+	}
+
+	const upAdj = Array.from({ length: nodes.length }, () => []);
+	const downAdj = Array.from({ length: nodes.length }, () => []);
+	const dummyChains = new Map();
+
+	for (let i = 0; i < validEdges.length; i++) {
+		const edge = validEdges[i];
+		if (edge.from === edge.to) continue;
+		const isBack = backward.has(edge);
+		const uId = isBack ? edge.to : edge.from;
+		const vId = isBack ? edge.from : edge.to;
+		const rU = ranks.get(uId), rV = ranks.get(vId);
+		if (rU === rV) continue;
+		const topId = rU < rV ? uId : vId;
+		const botId = rU < rV ? vId : uId;
+		const loR = Math.min(rU, rV), hiR = Math.max(rU, rV);
+		let prevIdx = itemIdToIdx.get(topId);
+		const botIdx = itemIdToIdx.get(botId);
+
+		if (hiR - loR === 1) {
+			downAdj[prevIdx].push(botIdx);
+			upAdj[botIdx].push(prevIdx);
+		} else {
+			const chain = [];
+			const midR = (loR + hiR) >> 1;
+			const sharedGrp = allItems[prevIdx]._group === allItems[botIdx]._group ? allItems[prevIdx]._group : 0;
+			for (let r = loR + 1; r < hiR; r++) {
+				const dIdx = allItems.length;
+				const labelText = edge.label || edge.shape?.label;
+				const hasLabelHere = r === midR && !!labelText;
+				const labelSpan = hasLabelHere ? Math.min(140, labelText.length * 6.5 + 24) : 0;
+				const dNode = {
+					id: '__d' + dIdx,
+					shape: 'dummy',
+					label: '',
+					style: null,
+					w: across ? 14 : Math.max(18, labelSpan),
+					h: across ? Math.max(18, labelSpan) : 14,
+					labelWidth: 0,
+					x: 0,
+					y: 0,
+					_idx: dIdx,
+					_rank: r,
+					_isDummy: true,
+					_group: sharedGrp
+				};
+				allItems.push(dNode);
+				upAdj.push([prevIdx]);
+				downAdj.push([]);
+				downAdj[prevIdx].push(dIdx);
+				rows[r].push(dIdx);
+				chain.push(dNode);
+				prevIdx = dIdx;
+			}
+			downAdj[prevIdx].push(botIdx);
+			upAdj[botIdx].push(prevIdx);
+			dummyChains.set(edge, chain);
+		}
+	}
+
+	const totalN = allItems.length;
+	const posInRow = new Int32Array(totalN);
+	const initialOrd = new Int32Array(totalN);
+	const weights = new Float64Array(totalN);
+
+	for (let r = 0; r < rows.length; r++) {
+		const row = rows[r];
+		for (let i = 0; i < row.length; i++) {
+			const u = row[i];
+			const pOrd = !allItems[u]._isDummy && prior?.order?.get(allItems[u].id);
+			initialOrd[u] = pOrd !== undefined ? pOrd : u;
+			posInRow[u] = i;
+		}
+	}
+
+	const updateRowPos = row => {
+		for (let i = 0; i < row.length; i++) posInRow[row[i]] = i;
+	};
+
+	let flatPairs = new Uint32Array(Math.max(256, validEdges.length * 2));
+	const countAllCrossings = () => {
+		let total = 0;
+		for (let r = 0; r + 1 < rows.length; r++) {
+			const upper = rows[r];
+			let pCount = 0;
+			for (let i = 0; i < upper.length; i++) {
+				const u = upper[i];
+				const dn = downAdj[u];
+				const dLen = dn.length;
+				if (dLen === 0) continue;
+				if (pCount + dLen >= flatPairs.length) {
+					const next = new Uint32Array((flatPairs.length + dLen) * 2);
+					next.set(flatPairs);
+					flatPairs = next;
+				}
+				if (dLen === 1) {
+					flatPairs[pCount++] = posInRow[dn[0]];
+				} else if (dLen === 2) {
+					const p0 = posInRow[dn[0]], p1 = posInRow[dn[1]];
+					flatPairs[pCount++] = p0 < p1 ? p0 : p1;
+					flatPairs[pCount++] = p0 < p1 ? p1 : p0;
+				} else {
+					const startP = pCount;
+					for (let j = 0; j < dLen; j++) flatPairs[pCount++] = posInRow[dn[j]];
+					for (let a = startP + 1; a < pCount; a++) {
+						const v = flatPairs[a];
+						let b = a - 1;
+						while (b >= startP && flatPairs[b] > v) { flatPairs[b + 1] = flatPairs[b]; b--; }
+						flatPairs[b + 1] = v;
+					}
+				}
+			}
+			if (pCount > 1) {
+				total += countBipartiteCrossings(rows[r + 1].length, flatPairs, pCount);
+			}
+		}
+		return total;
+	};
+
+	const computeWeight = (u, downward) => {
+		const adj = downward ? upAdj[u] : downAdj[u];
+		const len = adj.length;
+		if (len === 0) return posInRow[u];
+		if (len === 1) return posInRow[adj[0]];
+		if (len === 2) return (posInRow[adj[0]] + posInRow[adj[1]]) * 0.5;
+		const tmp = [];
+		let sum = 0;
+		for (let i = 0; i < len; i++) {
+			const p = posInRow[adj[i]];
+			tmp.push(p);
+			sum += p;
+		}
+		tmp.sort((a, b) => a - b);
+		const mid = len >> 1;
+		const med = (len & 1) ? tmp[mid] : (tmp[mid - 1] + tmp[mid]) * 0.5;
+		return 0.65 * (sum / len) + 0.35 * med;
+	};
+
+	const hasAnyGroups = groups.length > 0;
+	const sortRow = row => {
+		const len = row.length;
+		if (len <= 1) return;
+		if (!hasAnyGroups) {
+			if (len <= 32) {
+				for (let i = 1; i < len; i++) {
+					const v = row[i];
+					const wv = weights[v], ov = initialOrd[v];
+					let j = i - 1;
+					while (j >= 0) {
+						const u = row[j];
+						const d = weights[u] - wv;
+						if (d > 0 || (d === 0 && initialOrd[u] > ov)) {
+							row[j + 1] = u;
+							j--;
+						} else break;
+					}
+					row[j + 1] = v;
+				}
+			} else {
+				row.sort((a, b) => (weights[a] - weights[b]) || (initialOrd[a] - initialOrd[b]));
+			}
+			for (let i = 0; i < len; i++) posInRow[row[i]] = i;
+			return;
+		}
+		row.sort((a, b) => (weights[a] - weights[b]) || (initialOrd[a] - initialOrd[b]));
+		const clusterMean = new Map();
+		const clusterCount = new Map();
+		for (let i = 0; i < row.length; i++) {
+			const g = allItems[row[i]]._group;
+			if (g) {
+				clusterMean.set(g, (clusterMean.get(g) || 0) + weights[row[i]]);
+				clusterCount.set(g, (clusterCount.get(g) || 0) + 1);
+			}
+		}
+		if (clusterMean.size > 0) {
+			for (const [g, sum] of clusterMean) clusterMean.set(g, sum / clusterCount.get(g));
+			row.sort((a, b) => {
+				const ga = allItems[a]._group, gb = allItems[b]._group;
+				if (ga === gb) return (weights[a] - weights[b]) || (initialOrd[a] - initialOrd[b]);
+				const wa = ga ? clusterMean.get(ga) : weights[a];
+				const wb = gb ? clusterMean.get(gb) : weights[b];
+				return (wa - wb) || (initialOrd[a] - initialOrd[b]);
+			});
+		}
+		updateRowPos(row);
+	};
+
+	const transposeRows = () => {
+		for (let r = 0; r < rows.length; r++) {
+			const row = rows[r];
+			if (row.length < 2) continue;
+			for (let i = 0; i + 1 < row.length; i++) {
+				const u = row[i], v = row[i + 1];
+				if (allItems[u]._group !== allItems[v]._group && allItems[u]._group && allItems[v]._group) continue;
+				let cBefore = 0, cAfter = 0;
+				const uUp = upAdj[u], vUp = upAdj[v];
+				for (let a = 0; a < uUp.length; a++) {
+					const pa = posInRow[uUp[a]];
+					for (let b = 0; b < vUp.length; b++) {
+						const pb = posInRow[vUp[b]];
+						if (pa > pb) cBefore++;
+						else if (pa < pb) cAfter++;
+					}
+				}
+				const uDn = downAdj[u], vDn = downAdj[v];
+				for (let a = 0; a < uDn.length; a++) {
+					const pa = posInRow[uDn[a]];
+					for (let b = 0; b < vDn.length; b++) {
+						const pb = posInRow[vDn[b]];
+						if (pa > pb) cBefore++;
+						else if (pa < pb) cAfter++;
+					}
+				}
+				if (cAfter < cBefore) {
+					row[i] = v; row[i + 1] = u;
+					posInRow[v] = i; posInRow[u] = i + 1;
+				}
+			}
+		}
+	};
+
+	let bestRows = rows.map(r => r.slice());
+	let bestCross = countAllCrossings();
+	const numSweeps = bestCross === 0 ? (totalN > 120 ? 0 : 1) : (totalN > 120 ? 2 : 8);
+	for (let pass = 0; pass < numSweeps; pass++) {
+		if ((pass & 1) === 0) {
+			for (let r = 1; r < rows.length; r++) {
+				const row = rows[r];
+				for (let i = 0; i < row.length; i++) weights[row[i]] = computeWeight(row[i], true);
+				sortRow(row);
+			}
+		} else {
+			for (let r = rows.length - 2; r >= 0; r--) {
+				const row = rows[r];
+				for (let i = 0; i < row.length; i++) weights[row[i]] = computeWeight(row[i], false);
+				sortRow(row);
+			}
+		}
+		if (bestCross > 0) transposeRows();
+		const curCross = countAllCrossings();
+		if (curCross < bestCross) {
+			bestCross = curCross;
+			bestRows = rows.map(r => r.slice());
+			if (bestCross === 0) break;
+		}
+	}
+	for (let r = 0; r < rows.length; r++) {
+		rows[r] = bestRows[r];
+		updateRowPos(rows[r]);
+	}
+
+	const breadthArr = new Float64Array(totalN);
+	const depthArr = new Float64Array(totalN);
+	for (let i = 0; i < totalN; i++) {
+		breadthArr[i] = across ? allItems[i].h : allItems[i].w;
+		depthArr[i] = across ? allItems[i].w : allItems[i].h;
+	}
+
+	const sameRankCaption = new Map();
+	for (let i = 0; i < validEdges.length; i++) {
+		const e = validEdges[i];
+		const labelText = e.label || e.shape?.label;
+		if (labelText && ranks.get(e.from) === ranks.get(e.to)) {
+			const u = itemIdToIdx.get(e.from), v = itemIdToIdx.get(e.to);
+			const key = u < v ? u * 65536 + v : v * 65536 + u;
+			const span = Math.ceil((labelText.length * 7 + 56) / 8) * 8;
+			if (span > (sameRankCaption.get(key) || 0)) sameRankCaption.set(key, span);
+		}
+	}
+
+	const getSep = (u, v) => {
+		const cap = sameRankCaption.size ? (sameRankCaption.get(u < v ? u * 65536 + v : v * 65536 + u) || 0) : 0;
+		const gExtra = (allItems[u]._group !== allItems[v]._group && (allItems[u]._group || allItems[v]._group)) ? 20 : 0;
+		const base = (allItems[u]._isDummy || allItems[v]._isDummy) ? Math.max(16, Math.round(baseSibling * 0.55)) : baseSibling;
+		return Math.max(base + gExtra, cap);
+	};
+
+	const root = new Int32Array(totalN);
+	const align = new Int32Array(totalN);
+	const blockX = new Float64Array(totalN);
+	const visitedBlock = new Uint8Array(totalN);
+
+	const runBK = (downward, leftToRight) => {
+		for (let i = 0; i < totalN; i++) { root[i] = i; align[i] = i; blockX[i] = 0; visitedBlock[i] = 0; }
+		const rStart = downward ? 1 : rows.length - 2;
+		const rEnd = downward ? rows.length : -1;
+		const rStep = downward ? 1 : -1;
+
+		for (let r = rStart; r !== rEnd; r += rStep) {
+			const row = rows[r];
+			let lastPos = leftToRight ? -1 : 0x3fffffff;
+			const iStart = leftToRight ? 0 : row.length - 1;
+			const iEnd = leftToRight ? row.length : -1;
+			const iStep = leftToRight ? 1 : -1;
+			for (let i = iStart; i !== iEnd; i += iStep) {
+				const v = row[i];
+				const adj = downward ? upAdj[v] : downAdj[v];
+				const d = adj.length;
+				if (!d) continue;
+				if (d > 1) adj.sort((a, b) => posInRow[a] - posInRow[b]);
+				const m1 = (d - 1) >> 1, m2 = d >> 1;
+				const med0 = leftToRight ? adj[m1] : adj[m2];
+				const med1 = leftToRight ? adj[m2] : adj[m1];
+				for (let m = 0; m < (m1 === m2 ? 1 : 2); m++) {
+					const u = m === 0 ? med0 : med1;
+					if (align[v] !== v) break;
+					const uPos = posInRow[u];
+					const canAlign = leftToRight ? (uPos > lastPos) : (uPos < lastPos);
+					if (canAlign && align[u] === u) {
+						align[u] = v;
+						root[v] = root[u];
+						align[v] = root[v];
+						lastPos = uPos;
+					}
+				}
+			}
+		}
+
+		const placeBlock = v => {
+			if (visitedBlock[v]) return;
+			visitedBlock[v] = 1;
+			blockX[v] = 0;
+			let w = v;
+			let guard = 0;
+			do {
+				const r = allItems[w]._rank;
+				const row = rows[r];
+				const idx = posInRow[w];
+				const nIdx = leftToRight ? idx - 1 : idx + 1;
+				if (nIdx >= 0 && nIdx < row.length) {
+					const u = row[nIdx];
+					const uRoot = root[u];
+					placeBlock(uRoot);
+					const sep = (breadthArr[u] + breadthArr[w]) * 0.5 + getSep(leftToRight ? u : w, leftToRight ? w : u);
+					if (leftToRight) {
+						if (blockX[uRoot] + sep > blockX[v]) blockX[v] = blockX[uRoot] + sep;
+					} else {
+						if (blockX[uRoot] - sep < blockX[v]) blockX[v] = blockX[uRoot] - sep;
+					}
+				}
+				w = align[w];
+			} while (w !== v && ++guard <= rows.length + 2);
+		};
+
+		for (let i = 0; i < totalN; i++) if (root[i] === i) placeBlock(i);
+		const out = new Float64Array(totalN);
+		for (let i = 0; i < totalN; i++) out[i] = blockX[root[i]];
+		return out;
+	};
+
+	const centrePos = new Float64Array(totalN);
+	if (totalN > 120) {
+		const a0 = runBK(true, true);
+		const a1 = runBK(true, false);
+		let lo0 = Infinity, hi0 = -Infinity, lo1 = Infinity, hi1 = -Infinity;
+		for (let i = 0; i < totalN; i++) {
+			const h = breadthArr[i] * 0.5;
+			if (a0[i] - h < lo0) lo0 = a0[i] - h;
+			if (a0[i] + h > hi0) hi0 = a0[i] + h;
+			if (a1[i] - h < lo1) lo1 = a1[i] - h;
+			if (a1[i] + h > hi1) hi1 = a1[i] + h;
+		}
+		const shift1 = (lo0 + hi0) * 0.5 - (lo1 + hi1) * 0.5;
+		for (let i = 0; i < totalN; i++) centrePos[i] = (a0[i] + a1[i] + shift1) * 0.5;
+	} else {
+		const a0 = runBK(true, true);
+		const a1 = runBK(true, false);
+		const a2 = runBK(false, true);
+		const a3 = runBK(false, false);
+		const assigns = [a0, a1, a2, a3];
+
+		let minSpan = Infinity, bestIdx = 0;
+		const spans = assigns.map((arr, idx) => {
+			let lo = Infinity, hi = -Infinity;
+			for (let i = 0; i < totalN; i++) {
+				const h = breadthArr[i] * 0.5;
+				if (arr[i] - h < lo) lo = arr[i] - h;
+				if (arr[i] + h > hi) hi = arr[i] + h;
+			}
+			if (hi - lo < minSpan) { minSpan = hi - lo; bestIdx = idx; }
+			return { lo, hi };
+		});
+		for (let k = 0; k < 4; k++) {
+			const shift = (k & 1) === 0 ? (spans[bestIdx].lo - spans[k].lo) : (spans[bestIdx].hi - spans[k].hi);
+			if (shift !== 0) {
+				const arr = assigns[k];
+				for (let i = 0; i < totalN; i++) arr[i] += shift;
+			}
+		}
+
+		for (let i = 0; i < totalN; i++) {
+			let x0 = a0[i], x1 = a1[i], x2 = a2[i], x3 = a3[i];
+			if (x0 > x1) { const t = x0; x0 = x1; x1 = t; }
+			if (x2 > x3) { const t = x2; x2 = x3; x3 = t; }
+			if (x0 > x2) { const t = x0; x0 = x2; x2 = t; }
+			if (x1 > x3) { const t = x1; x1 = x3; x3 = t; }
+			centrePos[i] = (x1 + x2) * 0.5;
+		}
+	}
+
+	const leftBuf = new Float64Array(totalN);
+	const rightBuf = new Float64Array(totalN);
+	const wantBuf = new Float64Array(totalN);
+
+	const beyondDiamond = (fromIdx, toIdx) => {
+		const fromNode = allItems[fromIdx];
+		if ((fromNode.shape?.recognized || fromNode.shape) !== 'diamond') return 0;
+		const ch = downAdj[fromIdx];
+		if (ch.length < 2 || ch.length > 3) return 0;
+		let rankOrder = 0;
+		for (let i = 0; i < ch.length; i++) if (centrePos[ch[i]] < centrePos[toIdx]) rankOrder++;
+		const reach = compact
+			? Math.max(breadthArr[fromIdx] * 0.5 + 12, (breadthArr[toIdx] + baseSibling) * 0.5)
+			: breadthArr[fromIdx] * 0.5 + 24 + breadthArr[toIdx] * 0.5;
+		return rankOrder === 0 ? -reach : rankOrder === ch.length - 1 ? reach : 0;
+	};
+
+	const refineRow = (row, down) => {
+		const len = row.length;
+		if (!len) return;
+		for (let i = 0; i < len; i++) {
+			const u = row[i];
+			const item = allItems[u];
+			if (!item._isDummy && pins?.has(item.id)) {
+				const p = pins.get(item.id);
+				wantBuf[i] = across ? p.y : p.x;
+				continue;
+			}
+			const links = down ? upAdj[u] : downAdj[u];
+			if (!links.length) { wantBuf[i] = centrePos[u]; continue; }
+			let wSum = 0, wTot = 0;
+			for (let k = 0; k < links.length; k++) {
+				const peer = links[k];
+				const peerLinks = down ? downAdj[peer] : upAdj[peer];
+				const w = (item._isDummy && allItems[peer]._isDummy) ? 8 : (links.length === 1 && peerLinks.length === 1) ? 4 : 1;
+				const off = down ? beyondDiamond(peer, u) : -beyondDiamond(u, peer);
+				wSum += (centrePos[peer] + off) * w;
+				wTot += w;
+			}
+			wantBuf[i] = wSum / wTot;
+		}
+		for (let i = 0; i < len; i++) {
+			const u = row[i];
+			const minA = i > 0 ? leftBuf[i - 1] + (breadthArr[row[i - 1]] + breadthArr[u]) * 0.5 + getSep(row[i - 1], u) : -Infinity;
+			leftBuf[i] = wantBuf[i] > minA ? wantBuf[i] : minA;
+		}
+		for (let i = len - 1; i >= 0; i--) {
+			const u = row[i];
+			const maxA = i + 1 < len ? rightBuf[i + 1] - (breadthArr[u] + breadthArr[row[i + 1]]) * 0.5 - getSep(u, row[i + 1]) : Infinity;
+			rightBuf[i] = wantBuf[i] < maxA ? wantBuf[i] : maxA;
+		}
+		for (let i = 0; i < len; i++) {
+			const u = row[i];
+			const item = allItems[u];
+			if (!item._isDummy && pins?.has(item.id)) {
+				const p = pins.get(item.id);
+				centrePos[u] = across ? p.y : p.x;
+			} else {
+				centrePos[u] = (leftBuf[i] + rightBuf[i]) * 0.5;
+			}
+		}
+	};
+
+	const refinePasses = totalN > 120 ? 1 : 2;
+	for (let pass = 0; pass < refinePasses; pass++) {
+		for (let r = 1; r < rows.length; r++) refineRow(rows[r], true);
+		for (let r = rows.length - 2; r >= 0; r--) refineRow(rows[r], false);
+	}
+
+	let least = Infinity, most = -Infinity;
+	for (let i = 0; i < nodes.length; i++) {
+		const c = centrePos[i], h = breadthArr[i] * 0.5;
+		if (c - h < least) least = c - h;
+		if (c + h > most) most = c + h;
+	}
+	if (!Number.isFinite(least)) { least = 0; most = 0; }
+	const shiftT = -least;
+
+	const rankGaps = new Float64Array(Math.max(1, rows.length)).fill(baseGap);
+	for (let i = 0; i < validEdges.length; i++) {
+		const e = validEdges[i];
+		const labelText = e.label || e.shape?.label;
+		if (!labelText) continue;
+		const rU = ranks.get(e.from), rV = ranks.get(e.to);
+		if (Math.abs(rU - rV) === 1) {
+			const r = Math.min(rU, rV);
+			const needed = across ? Math.min(160, labelText.length * 7 + 48) : 64;
+			if (needed > rankGaps[r]) rankGaps[r] = Math.ceil(needed / 8) * 8;
+		}
+	}
+
+	let cursor = 0;
+	for (let r = 0; r < rows.length; r++) {
+		const row = rows[r];
+		let high = 24;
+		for (let i = 0; i < row.length; i++) {
+			const u = row[i];
+			if (!allItems[u]._isDummy && depthArr[u] > high) high = depthArr[u];
+		}
+		for (let i = 0; i < row.length; i++) {
+			const u = row[i];
+			const item = allItems[u];
+			const side = centrePos[u] - breadthArr[u] * 0.5 + shiftT;
+			const along = cursor + (high - depthArr[u]) * 0.5;
+			if (across) { item.x = along; item.y = side; }
+			else { item.x = side; item.y = along; }
+			if (!item._isDummy && pins?.has(item.id)) {
+				const p = pins.get(item.id);
+				item.x = p.x - item.w * 0.5;
+				item.y = p.y - item.h * 0.5;
+			}
+		}
+		if (r + 1 < rows.length) cursor += high + rankGaps[r];
+		else cursor += high;
+	}
+
+	const corridors = new Map();
+	for (const [edge, chain] of dummyChains) {
+		const pts = chain.map(d => [d.x + d.w * 0.5, d.y + d.h * 0.5]);
+		if (backward.has(edge)) pts.reverse();
+		corridors.set(edge, pts);
+	}
+
+	const orderOut = new Map();
+	for (let r = 0; r < rows.length; r++) {
+		const row = rows[r];
+		for (let i = 0; i < row.length; i++) {
+			const u = row[i];
+			if (!allItems[u]._isDummy) orderOut.set(allItems[u].id, i);
+		}
+	}
+	const posOut = new Map();
+	for (let i = 0; i < nodes.length; i++) {
+		const n = nodes[i];
+		posOut.set(n.id, { x: n.x, y: n.y, w: n.w, h: n.h, cx: n.x + n.w * 0.5, cy: n.y + n.h * 0.5 });
+	}
+
+	const span = nodes.length ? most - least : 0;
+	return {
+		w: across ? Math.max(0, cursor) : span,
+		h: across ? span : Math.max(0, cursor),
+		backward,
+		selfLoops,
+		ranks,
+		order: orderOut,
+		positions: posOut,
+		corridors,
+		crossings: bestCross
+	};
+}
+
+export function layoutIncrementalGraph(nodes, edges, priorLayout, options = {}) {
+	if (!priorLayout || !priorLayout.positions || priorLayout.positions.size === 0) {
+		return layoutLayeredGraph(nodes, edges, options);
+	}
+	const across = !!options.across;
+	const baseGap = options.gap ?? 52;
+	const baseSibling = options.sibling ?? 36;
+	const pins = options.pins || null;
+
+	const nodeMap = new Map();
+	for (let i = 0; i < nodes.length; i++) nodeMap.set(nodes[i].id, nodes[i]);
+
+	const { backward, selfLoops } = findFeedbackArcSet(nodes, edges);
+	const ranks = new Map();
+	const order = new Map();
+	const addedNodes = [];
+
+	for (let i = 0; i < nodes.length; i++) {
+		const n = nodes[i];
+		if (pins?.has(n.id)) {
+			const p = pins.get(n.id);
+			n.x = p.x - n.w * 0.5;
+			n.y = p.y - n.h * 0.5;
+		}
+		const oldPos = priorLayout.positions.get(n.id);
+		if (oldPos) {
+			if (!pins?.has(n.id)) {
+				n.x = oldPos.cx - n.w * 0.5;
+				n.y = oldPos.cy - n.h * 0.5;
+			}
+			ranks.set(n.id, priorLayout.ranks?.get(n.id) ?? 0);
+			order.set(n.id, priorLayout.order?.get(n.id) ?? i);
+		} else {
+			addedNodes.push(n);
+		}
+	}
+
+	for (const n of addedNodes) {
+		let parent = null, child = null;
+		for (const e of edges) {
+			if (e.to === n.id && priorLayout.positions.has(e.from)) parent = nodeMap.get(e.from);
+			if (e.from === n.id && priorLayout.positions.has(e.to)) child = nodeMap.get(e.to);
+		}
+		if (parent) {
+			const pRank = ranks.get(parent.id) ?? 0;
+			const targetRank = pRank + 1;
+			ranks.set(n.id, targetRank);
+			order.set(n.id, (order.get(parent.id) ?? 0) + 0.5);
+			const stepSign = priorLayout.reverse ? -1 : 1;
+			let rankPeer = null;
+			for (const peer of nodes) {
+				if (peer !== n && priorLayout.positions.has(peer.id) && ranks.get(peer.id) === targetRank) {
+					rankPeer = peer;
+					break;
+				}
+			}
+			if (across) {
+				n.x = rankPeer ? (rankPeer.x + (rankPeer.w - n.w) * 0.5) : (parent.x + stepSign * (parent.w + baseGap));
+				n.y = parent.y + (parent.h - n.h) * 0.5;
+			} else {
+				n.x = parent.x + (parent.w - n.w) * 0.5;
+				n.y = rankPeer ? (rankPeer.y + (rankPeer.h - n.h) * 0.5) : (parent.y + stepSign * (parent.h + baseGap));
+			}
+		} else if (child) {
+			const cRank = Math.max(0, (ranks.get(child.id) ?? 1) - 1);
+			ranks.set(n.id, cRank);
+			order.set(n.id, (order.get(child.id) ?? 0) - 0.5);
+			const stepSign = priorLayout.reverse ? -1 : 1;
+			if (across) {
+				n.x = child.x - stepSign * (n.w + baseGap);
+				n.y = child.y + (child.h - n.h) * 0.5;
+			} else {
+				n.x = child.x + (child.w - n.w) * 0.5;
+				n.y = child.y - stepSign * (n.h + baseGap);
+			}
+		} else {
+			ranks.set(n.id, 0);
+			order.set(n.id, nodes.length);
+			n.x = 40; n.y = 40;
+		}
+	}
+
+	const byRank = new Map();
+	for (const n of nodes) {
+		const r = ranks.get(n.id) ?? 0;
+		if (!byRank.has(r)) byRank.set(r, []);
+		byRank.get(r).push(n);
+	}
+
+	for (const [, row] of byRank) {
+		if (row.length < 2) continue;
+		const minGap = Math.max(28, baseSibling * 0.8);
+		const fixedRow = row.filter(n => priorLayout.positions.has(n.id));
+		const newInRow = row.filter(n => !priorLayout.positions.has(n.id));
+		if (newInRow.length > 0 && fixedRow.length > 0) {
+			for (const nw of newInRow) {
+				fixedRow.sort((a, b) => across ? a.y - b.y : a.x - b.x);
+				let placed = false;
+				for (let i = 0; i < fixedRow.length; i++) {
+					const f = fixedRow[i];
+					const ov = across
+						? (nw.y < f.y + f.h + minGap && nw.y + nw.h + minGap > f.y)
+						: (nw.x < f.x + f.w + minGap && nw.x + nw.w + minGap > f.x);
+					if (ov) {
+						const last = fixedRow[fixedRow.length - 1];
+						if (across) nw.y = last.y + last.h + minGap;
+						else nw.x = last.x + last.w + minGap;
+						fixedRow.push(nw);
+						placed = true;
+						break;
+					}
+				}
+				if (!placed) fixedRow.push(nw);
+			}
+		} else {
+			row.sort((a, b) => across ? (a.y + a.h * 0.5) - (b.y + b.h * 0.5) : (a.x + a.w * 0.5) - (b.x + b.w * 0.5));
+			for (let i = 0; i + 1 < row.length; i++) {
+				const u = row[i], v = row[i + 1];
+				const gap = across ? (v.y - (u.y + u.h)) : (v.x - (u.x + u.w));
+				if (gap < minGap) {
+					const deficit = minGap - gap;
+					if (across) v.y += deficit;
+					else v.x += deficit;
+				}
+			}
+		}
+	}
+
+	const posOut = new Map();
+	let maxX = 0, maxY = 0;
+	for (const n of nodes) {
+		posOut.set(n.id, { x: n.x, y: n.y, w: n.w, h: n.h, cx: n.x + n.w * 0.5, cy: n.y + n.h * 0.5 });
+		if (n.x + n.w > maxX) maxX = n.x + n.w;
+		if (n.y + n.h > maxY) maxY = n.y + n.h;
+	}
+
+	return {
+		w: maxX,
+		h: maxY,
+		backward,
+		selfLoops,
+		ranks,
+		order,
+		positions: posOut,
+		corridors: priorLayout.corridors || new Map(),
+		crossings: 0
+	};
+}
+
+
+export function simplifyOrthogonalPolyline(pts) {
+	if (!pts || pts.length <= 2) return pts ? pts.map(p => [p[0], p[1]]) : [];
+	const out = [];
+	for (let i = 0; i < pts.length; i++) {
+		const p = pts[i];
+		if (out.length && Math.abs(out[out.length - 1][0] - p[0]) + Math.abs(out[out.length - 1][1] - p[1]) < 1e-5) continue;
+		while (out.length >= 2) {
+			const a = out[out.length - 2], b = out[out.length - 1];
+			const cross = (b[0] - a[0]) * (p[1] - b[1]) - (b[1] - a[1]) * (p[0] - b[0]);
+			const dot = (b[0] - a[0]) * (p[0] - b[0]) + (b[1] - a[1]) * (p[1] - b[1]);
+			if (Math.abs(cross) > 1e-4 || dot < -1e-4) break;
+			out.pop();
+		}
+		out.push([p[0], p[1]]);
+	}
+	return out.length === 1 ? [out[0], out[0].slice()] : out;
+}
+
+
+export { FLOWCHART_LAYOUT_LIMITS };

@@ -47,10 +47,6 @@ Rapier also opens text, code, TextPack and PDF (PDF import is a free plug-in), a
 
 [Notes](${sitePage('/notes')}) are Markdown files with colors, pins, checklists, voice recordings, tags, history and search; import from Google Keep, Evernote, Notion, Obsidian and 15+ other apps. [Draw](${sitePage('/draw')}) freehand or build diagrams with connected arrows, kept as editable SVG inside your file. [Paint](${sitePage('/paint')}) with MyPaint brushes, or [watercolor](${sitePage('/watercolor')}) with flowing pigments on textured paper. The [Gallery](${sitePage('/gallery')}) holds thousands of free ornaments, borders and decorative letters, and the [JPEG XL converter](${sitePage('/jxl')}) makes JXL pictures on your device.
 
-## Private and offline
-
-Local editing and Notes stay on your device. Connecting an online agent workspace or an optional sync service sends only the work you choose to share; see [privacy and terms](${sitePage('/privacy')}).
-
 ## AI agents
 
 An AI agent can edit with you live, and you see its changes and undo any of them. Connect Claude, Cursor or another MCP client to ${CURRENT_DOOR} with no account, Muse to ${MUSE_DOOR}, or use WebMCP in the browser. See the [agent guide](${sitePage('/agents')}).
@@ -200,6 +196,35 @@ export function guideSection(markdown, path) {
 	return section;
 }
 
+const WATERCOLOR_GUIDE = `Paint watercolor online with Rapier Water. Blend pigments, lay transparent washes and let wet color spread across textured paper. Use a mouse, a finger or a pen. The editor is free, with no account or installation required.
+
+Water needs a compatible browser with WebGPU; the editor reports whether it is available.
+
+#### Start a watercolor painting
+
+[Rapier Watercolor](https://rapier.website/watercolor) opens Draw with Water selected. You can also choose **Water** inside any drawing. Choose a brush and a pigment, set the brush size, and paint on the canvas. Change the water and paint load for a light wash or a stronger mark. Add another color while the first is wet to mix them on the paper.
+
+#### Water, pigment and paper
+
+Water continues moving after a stroke. Wet washes meet and spread; pigment settles into the paper's texture and gathers at drying edges. Control flow, bleed, edge darkening, granulation and drying to shape the result. Paper settings change how the wash behaves, while the canvas background stays separate from the paint.
+
+Use the water tool to wet the paper and the lift tool to take pigment back out. A light wash leaves room for the next color; a drier brush brings out the paper's grain. Undo lets you return to an earlier stroke while you explore a mixture or composition.
+
+#### Keep transparent, movable artwork
+
+The painting is a transparent layer inside an editable drawing. Set the paint, then move or resize it alongside shapes, lettering and other pictures. The paper background is independent, so the painting can sit over a different canvas color or become part of an illustrated document.
+
+Press Done to place the drawing in your document. Text and pictures travel together in one Markdown file, including the image bytes. Save that file, or keep the whole editor and document as an offline HTML page. Your work remains yours to reopen, revise and share.
+
+#### Paint beside your writing
+
+Add a watercolor sketch to a field journal, illustrate a garden plan, paint a study for a letter or make a picture for a note. [Rapier Draw](https://rapier.website/draw) adds editable shapes, connected arrows and text. [Rapier Notes](https://rapier.website/notes) keeps your writing and illustrations together as Markdown notes.
+
+#### Free and offline
+
+Painting runs on your device, with no account or ads. After the editor has loaded, you can keep working offline.
+`;
+
 export function seoDoorSections(engineSource, uiMarkup) {
 	const parser = applyMarkdownSpec(markdownit(RAPIER_MARKDOWN_SPEC.options), markdownPlugins);
 	installMarkdownImages(parser);
@@ -210,8 +235,8 @@ export function seoDoorSections(engineSource, uiMarkup) {
 	const bodies = {
 		'/notes': render(welcomeGuidePart(source, 'Notes', {omitTitle: true, omitLead: true}), 'notes'),
 		'/draw': render(welcomeGuidePart(source, 'Drawing', {omitSpecimens: true}), 'draw'),
-		'/paint': render(welcomeGuidePart(source, 'Paint', {stopAt: 'Watercolor'}), 'paint'),
-		'/watercolor': shiftHeadings(render(welcomeGuidePart(source, 'Watercolor', {omitTitle: true}), 'watercolor'), -2),
+		'/paint': render(welcomeGuidePart(source, 'Paint'), 'paint'),
+		'/watercolor': shiftHeadings(render(WATERCOLOR_GUIDE, 'watercolor'), -2),
 		'/privacy': sheetGuide(uiMarkup, 'privacy-words') + '\n<p><a href="https://github.com/jackskip22/rapier-plugins/blob/main/PRIVACY.md">Connector privacy and terms</a> use the same policy.</p>\n',
 		'/commercial': sheetGuide(uiMarkup, 'commercial-words') + '\n',
 	};

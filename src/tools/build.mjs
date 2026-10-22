@@ -481,7 +481,7 @@ const VENDOR_GROUPS = {
   'lib-markdownit': ['markdown-it-15.0.2.es2022.umd.js', 'markdown-it-task-lists-2.1.1.min.js', 'markdown-it-footnote-4.0.0.min.js',
     'markdown-it-mark-4.0.0.min.js', 'markdown-it-sup-2.0.0.min.js', 'markdown-it-emoji-3.1.0-light.min.js',
     'markdown-it-abbr-2.0.0.min.js', 'markdown-it-ins-4.0.0.min.js', 'markdown-it-deflist-4.0.0.min.js'],
-  'lib-gpu-lexer': ['gpu-lexer-0.0.1.js'],
+  'lib-gpu-lexer': ['gpu-lexer-0.0.4.js'],
   'lib-acorn': ['acorn-8.19.0.modern.js'],
 };
 const vendorSpans = new Map();
@@ -689,7 +689,7 @@ html = html.replace(/<title>[^<]*<\/title>/, () => '<title>' + escapeHtml(HOME_T
     const data = JSON.parse(json);
     if (data['@type'] !== 'SoftwareApplication') throw new Error('The structured data must describe the SoftwareApplication');
     data.description = APP_DESCRIPTION;
-    data.operatingSystem = ['Android', 'Web', 'Windows'];
+    data.operatingSystem = ['Android', 'Web', 'Windows', 'Linux'];
     data.softwareHelp = {'@type': 'CreativeWork', url: 'https://rapier.website/agents'};
     data.featureList = ['Free online Markdown editor', 'Markdown viewer: open a .md file formatted',
       'Plain Markdown notes with embedded pictures', 'Mermaid diagrams and LaTeX equations',

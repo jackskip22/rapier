@@ -143,9 +143,14 @@ fn refresh_desktop(data: &Path) {
     }
 }
 
-fn places(data: &Path) -> [PathBuf; 3] {
+/// Chromium names an app window on Wayland after its address and profile (chrome-<app>-<profile>), whatever --class
+/// says; a hidden entry by that name gives the window rapier's name and icon there (on X11 StartupWMClass=rapier does).
+pub const WAYLAND_ENTRY: &str = "chrome-rapier.local__rapier.html-Default.desktop";
+
+fn places(data: &Path) -> [PathBuf; 4] {
     [
         data.join("applications/rapier.desktop"),
+        data.join("applications").join(WAYLAND_ENTRY),
         data.join("mime/packages/rapier.xml"),
         data.join("icons/hicolor/512x512/apps/rapier.png"),
     ]
@@ -156,7 +161,7 @@ pub fn install(app: &Path) -> Result<(), String> {
     let me = std::env::current_exe().map_err(|e| e.to_string())?;
     let me = fs::canonicalize(&me).unwrap_or(me);
     let data = crate::data_dir();
-    let [desktop, mime, icon] = places(&data);
+    let [desktop, window, mime, icon] = places(&data);
     for path in [&desktop, &mime, &icon] {
         fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
     }
@@ -173,9 +178,21 @@ pub fn install(app: &Path) -> Result<(), String> {
     let entry = fs::read_to_string(app.join("rapier.desktop"))
         .map_err(|e| e.to_string())?
         .replace("Exec=rapier %F", &format!("Exec={quoted} %F"));
-    fs::write(&desktop, entry).map_err(|e| e.to_string())?;
+    fs::write(&desktop, &entry).map_err(|e| e.to_string())?;
+    let hidden: String = entry.lines().filter(|l| !l.starts_with("MimeType=")).map(|l| format!("{l}\n")).collect();
+    fs::write(&window, hidden + "NoDisplay=true\n").map_err(|e| e.to_string())?;
     refresh_desktop(&data);
+    defaults(true);
+    // On Omarchy, its theme-set and font-set hooks tell a running rapier at once (main.rs --theme-changed).
+    if crate::home().join(".config/omarchy").is_dir() {
+        for hook in omarchy_hooks() {
+            fs::create_dir_all(hook.parent().unwrap()).map_err(|e| e.to_string())?;
+            fs::write(&hook, format!("#!/bin/bash\n# Written by rapier --install: a running rapier follows the new theme.\nexec {quoted} --theme-changed\n"))
+                .map_err(|e| e.to_string())?;
+        }
+    }
     println!("rapier is in your app launcher and opens Markdown and .rapier.html files.");
+    println!("On Omarchy, `sudo pacman -S perl-file-mimeinfo` lets `xdg-open file.md` open rapier too.");
     println!(
         "Keep this file where it is ({}); after moving it, run it again with --install.",
         me.display()
@@ -190,5 +207,67 @@ pub fn uninstall() {
     }
     let _ = fs::remove_dir_all(cache_root());
     refresh_desktop(&data);
+    defaults(false);
+    for hook in omarchy_hooks() {
+        let _ = fs::remove_file(hook);
+    }
     println!("rapier is removed from your app launcher. Your documents and notes are untouched.");
+}
+
+/// The person's own default apps (~/.config/mimeapps.list): --install makes rapier the default for Markdown and
+/// .rapier.html where nothing is the default yet, so a file manager or the portal opens them in rapier rather than in
+/// another app that also lists text/markdown. A default the person chose stays. --uninstall removes only rapier's lines.
+fn defaults(install: bool) {
+    const TYPES: [&str; 3] = ["text/markdown", "text/x-markdown", "application/x-rapier-html"];
+    let config = std::env::var_os("XDG_CONFIG_HOME")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| crate::home().join(".config"));
+    let path = config.join("mimeapps.list");
+    let text = fs::read_to_string(&path).unwrap_or_default();
+    let mut lines: Vec<String> = text.lines().map(String::from).collect();
+    let section = |lines: &Vec<String>| lines.iter().position(|l| l.trim() == "[Default Applications]");
+    let in_defaults = |lines: &Vec<String>, at: usize, key: &str| {
+        lines[at + 1..]
+            .iter()
+            .take_while(|l| !l.trim_start().starts_with('['))
+            .any(|l| l.split_once('=').map(|(k, _)| k.trim() == key).unwrap_or(false))
+    };
+    if install {
+        let at = match section(&lines) {
+            Some(at) => at,
+            None => {
+                if lines.last().is_some_and(|l| !l.trim().is_empty()) {
+                    lines.push(String::new());
+                }
+                lines.push("[Default Applications]".into());
+                lines.len() - 1
+            }
+        };
+        let missing: Vec<String> = TYPES
+            .iter()
+            .filter(|t| !in_defaults(&lines, at, t))
+            .map(|t| format!("{t}=rapier.desktop"))
+            .collect();
+        if missing.is_empty() {
+            return;
+        }
+        for (i, line) in missing.into_iter().enumerate() {
+            lines.insert(at + 1 + i, line);
+        }
+    } else {
+        let before = lines.len();
+        lines.retain(|l| !TYPES.iter().any(|t| l.trim() == format!("{t}=rapier.desktop")));
+        if lines.len() == before {
+            return;
+        }
+    }
+    let _ = fs::create_dir_all(&config);
+    let _ = fs::write(&path, lines.join("\n") + "\n");
+}
+
+/// The Omarchy hook drop-ins rapier installs (omarchy-hook runs every file in ~/.config/omarchy/hooks/<name>.d/).
+pub fn omarchy_hooks() -> [PathBuf; 2] {
+    let hooks = crate::home().join(".config/omarchy/hooks");
+    [hooks.join("theme-set.d/rapier"), hooks.join("font-set.d/rapier")]
 }
