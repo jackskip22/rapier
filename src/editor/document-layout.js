@@ -17,12 +17,12 @@ async function _rapierDocumentSpacingOpen() {
 			...['before', 'after', 'line'].map(field => ({label: field === 'line' ? 'Line spacing' : 'Space ' + field + ' (pt)', value: String(row()[field])}))
 		], okLabel: 'Apply', prepare() {
 			remember();
-			if (!current()) throw new Error('The document changed. Open Spacing again.');
+			if (!current()) throw new Error('Document changed. Open Spacing again.');
 			return _rapierWithoutBlockSpacing(spec.updateDocumentSettings(before, {spacing: draft}));
 		}, async onOk(_, next) {
 			if (next === before) return;
 			if (!current() || !await _rapierCommitSourceProjection([_rapierPrefixSuffixDiff(before, next)], 'document.spacing', null, null,
-				_rapierCaptureEditorViewport(), null, current)) showToast('The document changed. Open Spacing again.', 'error');
+				_rapierCaptureEditorViewport(), null, current)) showToast('Document changed. Open Spacing again.', 'error');
 		}});
 	const paint = () => ['before', 'after', 'line'].forEach((field, index) => {
 		const input = dialog.inputs[index + 2]; input.value = String(Number(row()[field].toFixed(2))); input.dataset.initial = input.value;
@@ -40,7 +40,7 @@ async function _rapierDocumentSpacingOpen() {
 	dialog.inputs[0].addEventListener('change', () => { draft = {preset: dialog.inputs[0].value}; paint(); });
 	dialog.inputs[1].addEventListener('change', () => {
 		try { remember(); type = dialog.inputs[1].value; paint(); }
-		catch (error) { dialog.inputs[1].value = type; showToast(error.message, 'error'); }
+		catch (error) { dialog.inputs[1].value = type; showToast(_rapierErrorWords(error, 'Couldn’t change the spacing.'), 'error'); }
 	});
 	paint();
 	return true;
@@ -62,7 +62,7 @@ async function _rapierBlockSpacingOpen(wrapper) {
 	const raw = String(block.raw || ''), id = block.id;
 	const targets = layout.layoutTargets(raw, md, _rapierMarkdownEnvironment()).filter(target => !target.reason);
 	if (targets.length !== 1 || _rapierListItemTree(raw).list) {
-		showToast(_rapierRawIsBlank(raw) ? 'An empty line follows the document\'s spacing.' : 'This block follows the document\'s spacing.', 'info');
+		showToast(_rapierRawIsBlank(raw) ? 'Empty lines use the document’s spacing.' : 'This block uses the document’s spacing.', 'info');
 		return false;
 	}
 	const authored = spec.readDocumentSettings(_rapierSourceText());
@@ -88,7 +88,7 @@ async function _rapierBlockSpacingOpen(wrapper) {
 			return patch;
 		}, onOk(_, patch) {
 			const now = _rapierBlockWrapperById(id);
-			if (!now || _rapierBoundBlock(now)?.raw !== raw) { showToast('The block changed. Tap its handle again.', 'error'); return; }
+			if (!now || _rapierBoundBlock(now)?.raw !== raw) { showToast('Block changed. Tap its handle again.', 'error'); return; }
 			_rapierEditBlockLayout(now, patch);
 		}});
 	for (const input of dialog.inputs) input.inputMode = 'decimal';
@@ -100,7 +100,7 @@ function _rapierEditBlockLayout(wrapper, patch) {
 	if (!block || _rapierUserMutationBlocked()) return false;
 	const raw = String(block.raw || '');
 	const plan = layout.editLayout(raw, md, {start: 0, end: raw.length}, patch, _rapierMarkdownEnvironment());
-	if (plan.reason) { showToast('This block\'s spacing cannot be changed without altering its words.', 'info'); return false; }
+	if (plan.reason) { showToast('Can’t change this block’s spacing.', 'info'); return false; }
 	let value = raw;
 	for (const edit of plan.edits.slice().sort((a, b) => b.start - a.start)) value = value.slice(0, edit.start) + edit.text + value.slice(edit.end);
 	if (value === raw) return true;
@@ -265,7 +265,7 @@ const _rapierTemplateArea = (() => {
 			state.held = {canonical: state.next, stamp: _rapierMutationStamp()};
 			state.margins = value; state.preview = null; state.busy = false;
 			_rapierWordView.sync();
-		} catch (error) { close(); showToast(error.message, 'error'); }
+		} catch (error) { close(); showToast(_rapierErrorWords(error, 'Couldn’t change the spacing.'), 'error'); }
 	}
 	const stop = event => { event.preventDefault(); event.stopImmediatePropagation(); };
 	window.addEventListener('pointerdown', event => {
@@ -333,7 +333,7 @@ function _rapierClipboardPictures(html, rtf) {
 	originals.innerHTML = html.replace(/<!--\[if[^\]]*\]>/gi, '').replace(/<!\[endif\]-->/gi, '');
 	const shapes = Array.from(originals.content.querySelectorAll('v\\:shape')).filter(shape => shape.querySelector('v\\:imagedata[src]'));
 	const byShape = shapes.length === pictures.length && shapes.length > 0;
-	if (!byShape && pictures.length !== names.length) { showToast('Some pictures were not in the clipboard. Copy them with the text.', 'info'); return html; }
+	if (!byShape && pictures.length !== names.length) { showToast('Some pictures weren’t copied. Copy them with the text.', 'info'); return html; }
 	const urls = pictures.map(({bytes, type}) => {
 		let binary = ''; for (let at = 0; at < bytes.length; at += 8192) binary += String.fromCharCode(...bytes.subarray(at, at + 8192));
 		return 'data:' + type + ';base64,' + btoa(binary);
@@ -345,7 +345,7 @@ function _rapierClipboardPictures(html, rtf) {
 		if (index >= 0) image.setAttribute('src', urls[index]);
 		else { missing = true; image.replaceWith(document.createTextNode(image.getAttribute('alt') || '')); }
 	}
-	if (missing) showToast('Some Word shapes were not in the clipboard.', 'info');
+	if (missing) showToast('Some Word shapes weren’t copied.', 'info');
 	return template.innerHTML;
 }
 _rapierDocumentPart = Object.freeze({spacing: _rapierDocumentSpacingOpen, blockSpacing: _rapierBlockSpacingOpen, sync: _rapierWordView.sync, clipboard: _rapierClipboardPictures});

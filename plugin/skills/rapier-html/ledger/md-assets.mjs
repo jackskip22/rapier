@@ -607,7 +607,9 @@ function dataMatches(source, kind, envelopes = []) {
       pattern.lastIndex = at;
       let match = pattern.exec(source), percent = false;
       if (!match && kind === 'asset') {
-        svgPattern.lastIndex = at; match = svgPattern.exec(source); percent = !!match;
+        svgPattern.lastIndex = at; match = svgPattern.exec(source);
+        if (match && !dataImage(match[0])) match = null;
+        percent = !!match;
         if (percent) pattern.lastIndex = svgPattern.lastIndex;
       }
       if (!match) continue;

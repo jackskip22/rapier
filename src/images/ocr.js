@@ -171,7 +171,7 @@ async function _rapierOcrInstall() {
 }
 function _rapierOcrDismiss() {
 	_rapierOcr.dismissed = true;
-	if (_rapierPluginRequired(_rapierOcr.provider)) showToast('Text in pictures waits for the update', 'info');
+	if (_rapierPluginRequired(_rapierOcr.provider)) showToast('Text in pictures needs the update', 'info');
 	window.dispatchEvent(new CustomEvent('rapier:ocrdismissed'));
 	closeDialog(document.getElementById('ocr-plugin-overlay'));
 }

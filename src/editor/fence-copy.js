@@ -69,7 +69,7 @@ async function _rapierCopyFenceCode(button) {
 		: wrapper?.querySelector(':scope > .block-read > pre > code, :scope > .block-read > .rapier-hscroll--code > pre > code');
 	if (!code) return;
 	const copied = await _rapierWriteTextClipboard(_rapierSemanticProjection(code).replace(/\n$/, ''));
-	if (!copied) { showToast('could not copy', 'error'); return; }
+	if (!copied) { showToast('Couldn’t copy.', 'error'); return; }
 	button.setAttribute('data-copied', '');
 	clearTimeout(button._rapierCopiedTimer);
 	button._rapierCopiedTimer = setTimeout(() => button.removeAttribute('data-copied'), 1500);

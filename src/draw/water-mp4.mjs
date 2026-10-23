@@ -57,7 +57,7 @@ export class WaterMP4 {
   if(description){const next=configuration(description);if(this.description&&(next.bytes.length!==this.description.length||next.bytes.some((value,index)=>value!==this.description[index])))throw fail('The video encoder changed its configuration.');this.description=next.bytes;this.lengthSize=next.lengthSize;}
   if(!this.description)throw fail('The video encoder omitted its AVC configuration.');
   if(!(data instanceof Uint8Array)||!data.length||this.sizes.length>=3600||typeof key!=='boolean'||timestamp!==Math.round(this.sizes.length*1000000/this.fps)||!this.sizes.length&&!key)throw fail('The video encoder omitted or reordered a frame.');
-  if(this.bytes+data.length+65536>this.maxBytes)throw Object.assign(new Error('The video exceeds the app’s share limit. Choose a shorter duration.'),{code:'water_video_budget'});
+  if(this.bytes+data.length+65536>this.maxBytes)throw Object.assign(new Error('Video too long to share. Choose a shorter one.'),{code:'water_video_budget'});
   validateSample(data,this.lengthSize,key);
   this.parts.push(new Blob([data]));this.sizes.push(data.length);this.bytes+=data.length;if(key)this.keys.push(this.sizes.length);
  }

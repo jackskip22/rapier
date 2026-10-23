@@ -27,7 +27,7 @@ const _rapierPersonalStore = globalThis.__rapierServerRenderHost === true ? null
 			return new Promise((resolve, reject) => {
 				const tx = db.transaction('personal', 'readonly'), store = tx.objectStore('personal'), read = store.get('profile');
 				read.onsuccess = () => hydrate(store, read.result, resolve, error => { reject(error); tx.abort(); });
-				tx.onerror = tx.onabort = () => reject(tx.error || new Error('Personal settings could not be read.'));
+				tx.onerror = tx.onabort = () => reject(tx.error || new Error('Couldn’t read your settings.'));
 			});
 		},
 		async update(change) {
@@ -46,7 +46,7 @@ const _rapierPersonalStore = globalThis.__rapierServerRenderHost === true ? null
 					} catch (caught) { refuse(caught); }
 				}, refuse);
 				tx.oncomplete = () => { for (const [key, body] of Object.entries(next.blobs)) bodies.set(key, body); resolve(next); };
-				tx.onerror = tx.onabort = () => reject(error || tx.error || new Error('Personal settings could not be saved.'));
+				tx.onerror = tx.onabort = () => reject(error || tx.error || new Error('Couldn’t save your settings.'));
 			});
 		}
 	};
@@ -75,7 +75,7 @@ const _rapierPersonalStore = globalThis.__rapierServerRenderHost === true ? null
 	}});
 	return Object.freeze({...owner, validateAsset, subscribe(listener) {
 		listeners.add(listener);
-		if (applied) Promise.resolve(listener(applied)).catch(error => showToast(String(error.message || error), 'error'));
+		if (applied) Promise.resolve(listener(applied)).catch(error => showToast(_rapierErrorWords(error, 'Couldn’t apply your settings.'), 'error'));
 		return () => listeners.delete(listener);
 	}});
 })();

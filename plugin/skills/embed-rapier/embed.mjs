@@ -253,7 +253,7 @@ function pictureBase(value) {
 return {FEATURES, LIMITS, ASSET_TYPES, refusal, normalizeSettings, snapshotSettings, pickDeviceFile, createFilePicker, assetURL, assetBytes, bytesHash, externalImage, createAssetBroker, pictureBase};
 })();
 const BUILDS = Object.freeze({full: 'https://rapier.website/embed/rapier.html', reader: 'https://rapier.website/embed/rapier-reader.html'});
-const PACKAGE_VERSION = '1.2.36';
+const PACKAGE_VERSION = '1.2.37';
 const OPTIONS = ['build', 'src', 'plugins', 'approvePlugins', 'sessionId', 'documentId', 'agent', 'agentName', 'theme', 'save', 'assets', 'openFile', 'load',
   'onState', 'compare', 'onClose', 'settings', 'style', 'title', 'onError', 'timeout'];
 const READER_FEATURES = ['find', 'readAloud', 'share'];
@@ -263,6 +263,16 @@ const identifier = value => typeof value === 'string' && value.length > 0 && val
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const themeValue = value => ['light', 'dark', 'system'].includes(value);
 const mint = prefix => prefix + '-' + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2));
+const autoLive = new Map();
+const fnv = text => { let h = 0x811c9dc5; for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193); } return (h >>> 0).toString(36); };
+function autoIdentity(options) {
+  const load = options.load;
+  if (!options.save || !load || typeof load !== 'object' || typeof load.content !== 'string') return null;
+  const base = fnv(location.origin + location.pathname) + '-' + fnv(String(load.filename ?? '') + '|' + load.content.length + '|' + load.content.slice(0, 2048));
+  let at = 0;
+  while (autoLive.get(base + '-' + at)?.()) at++;
+  return base + '-' + at;
+}
 function deferred() {
   let resolve, reject;
   const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
@@ -335,7 +345,8 @@ function mount(target, options = {}) {
     source.searchParams.set('plugins', directory.href);
   }
   if (options.approvePlugins === true) source.searchParams.set('approvePlugins', '1');
-  const origin = source.origin, sessionId = options.sessionId ?? mint('session'), documentId = options.documentId ?? mint('document');
+  const origin = source.origin, auto = options.sessionId === undefined && options.documentId === undefined ? autoIdentity(options) : null;
+  const sessionId = options.sessionId ?? (auto ? 'page-' + auto : mint('session')), documentId = options.documentId ?? (auto ? 'doc-' + auto : mint('document'));
   if (!identifier(sessionId) || !identifier(documentId)) throw new TypeError('Session and document IDs must be nonempty strings of at most 256 code units');
   const agentName = options.agentName;
   if (agentName !== undefined && (typeof agentName !== 'string' || !agentName.trim() || agentName.length > 96 || /[\u0000-\u001f\u007f]/.test(agentName))) throw new TypeError('agentName must be a host-given name of at most 96 characters');
@@ -361,7 +372,7 @@ function mount(target, options = {}) {
     throw new TypeError('Agent access needs both load and save');
   const ids = {sessionId, documentId}, answers = new Map(), waiting = new Map(), listeners = new Map();
   let port = null, posted = false, connected = false, ended = false, sawLoad = false, seq = 0, activeSave = null, activeClose = null;
-  let currentTheme = options.theme, lastSaved = null, readOnly = false, connectedWait = deferred(), boot, bootTimer = 0, settled = null, frameFacts = {};
+  let currentTheme = options.theme, lastSaved = null, readOnly = false, connectedWait = deferred(), boot, bootTimer = 0, frameFacts = {};
   let held = null;
   const ready = deferred();
   const emit = (type, value) => { for (const fn of listeners.get(type) || []) fn(value); };
@@ -372,7 +383,7 @@ function mount(target, options = {}) {
   };
   function send(type, payload, baseRevision, quiet = false) {
     if (ended || !connected || !port) return Promise.reject(new Error('The ' + noun + ' connection has ended or is not connected'));
-    if (type === 'load') { cancelOpen('open_stale'); settled = null; }
+    if (type === 'load') cancelOpen('open_stale');
     const requestId = 'host-' + ++seq;
     const message = {type, ...ids, requestId, ...(baseRevision !== undefined ? {baseRevision} : {}), ...(payload !== undefined ? {payload} : {})};
     const pending = deferred();
@@ -382,6 +393,7 @@ function mount(target, options = {}) {
     return pending.promise;
   }
   function requestCapture() {
+    if (activeSave) activeSave.commandId = 'host-' + (seq + 1);
     send('save', undefined, undefined, true).catch(error => { activeSave?.reject(error); activeSave = null; });
   }
   async function answerSave(message, channel) {
@@ -550,7 +562,10 @@ function mount(target, options = {}) {
       if (!['loaded', 'dirty', 'saving', 'closing', 'readOnly'].every(key => typeof payload[key] === 'boolean')
         || Object.keys(payload).some(key => !['loaded', 'dirty', 'saving', 'closing', 'readOnly', 'filename', 'docKind'].includes(key))) return;
       readOnly = payload.readOnly; emit('state', payload); options.onState?.(payload);
-      settled = payload.loaded && !payload.dirty && !payload.saving && revision(message.baseRevision) ? {revision: message.baseRevision} : null;
+      if (activeSave && !activeSave.acknowledged && activeSave.commandId && message.requestId === activeSave.commandId && payload.loaded && !payload.dirty && !payload.saving && revision(message.baseRevision)) {
+        activeSave.resolve({revision: message.baseRevision}); activeSave = null;
+        return;
+      }
       if (activeSave?.acknowledged && !payload.saving && message.baseRevision === lastSaved?.revision) {
         if (payload.dirty) { activeSave.acknowledged = false; requestCapture(); }
         else { activeSave.resolve(lastSaved); activeSave = null; }
@@ -578,7 +593,6 @@ function mount(target, options = {}) {
       waiting.delete(requestId);
       if (type === 'load-ack') {
         readOnly = payload.readOnly === true;
-        settled = payload.recoveredDraft === false && revision(payload.revision) ? {revision: payload.revision} : null;
       }
       if (type.endsWith('-nack')) pending.reject(refused(payload)); else pending.resolve(payload);
     }
@@ -618,7 +632,7 @@ function mount(target, options = {}) {
       cancelOpen('open_disconnected');
       rejectPending(new Error('The ' + noun + ' reconnected')); port?.close();
       assetAbort.abort(refusal('asset_disconnected')); assetAbort = new AbortController();
-      connected = false; posted = false; readOnly = false; settled = null; connectedWait = deferred(); prepareBoot();
+      connected = false; posted = false; readOnly = false; connectedWait = deferred(); prepareBoot();
     }
     sawLoad = true;
     clearTimeout(bootTimer);
@@ -668,8 +682,7 @@ function mount(target, options = {}) {
       if (!options.save) throw new Error('No save callback was granted');
       if (ended) throw new Error('The ' + noun + ' connection has ended');
       if (readOnly) throw new Error('The document is read-only');
-      if (!activeSave && settled) return {...settled};
-      if (!activeSave) activeSave = {...deferred(), acknowledged: false};
+      if (!activeSave) activeSave = {...deferred(), acknowledged: false, commandId: ''};
       const promise = activeSave.promise;
       requestCapture(); return promise;
     },
@@ -707,6 +720,7 @@ function mount(target, options = {}) {
       return () => listeners.get(type)?.delete(fn);
     },
   });
+  if (auto) autoLive.set(auto, () => iframe.isConnected && !ended);
   prepareBoot();
   iframe.setAttribute('title', options.title || (reader ? 'Markdown reader' : 'Markdown editor'));
   iframe.setAttribute('allow', options.agent ? 'clipboard-write; tools' : 'clipboard-write');

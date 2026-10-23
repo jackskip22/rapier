@@ -121,7 +121,7 @@ export function waterSoftwareAdapter(adapter){
 }
 const WATER_ADAPTER_FRAME_MS=100,WATER_ADAPTER_START_MS=3000;
 const waterUnavailable=()=>failure('water_webgpu_unavailable','Water could not obtain a WebGPU adapter on this device.');
-const waterTooSlow=()=>failure('water_webgpu_unavailable','This graphics processor is too slow for Water.');
+const waterTooSlow=()=>failure('water_webgpu_unavailable','Too slow for watercolor on this device.');
 async function openWaterDevice(owner){
  let device=null,probe=null,timer,stopped=false,refuse;
  const check=()=>{if(stopped)throw waterUnavailable();};
@@ -189,7 +189,7 @@ export async function waterPaperPixels(id,size){
  if(!Number.isSafeInteger(size)||size<1||size+2>limit)throw failure('WATER_INPUT','The Water paper size is not valid.');
  const p=profile.params??profile,kind=profile.kind??p.kind??0,bump=p.bump??1,{field,light}=await paperPrograms(device,kind);
  const rows=Math.min(size,Math.max(1,Math.floor(PAPER_BAND_PIXELS/(size+2))-2)),pitch=Math.ceil(size*4/256)*256;
- if(size*size*4+(size+2)*(rows+2)*8+pitch*rows+256>WATER_GPU_MAX_BYTES)throw failure('WATER_GPU_MEMORY','The Water paper is too large for GPU memory.');
+ if(size*size*4+(size+2)*(rows+2)*8+pitch*rows+256>WATER_GPU_MAX_BYTES)throw failure('WATER_GPU_MEMORY','Paper too large for this device.');
  const resources=[],errors=[];
  const guard=action=>{
   device.pushErrorScope('out-of-memory');device.pushErrorScope('validation');
@@ -326,14 +326,14 @@ export class WaterGPU {
   const {description,compute}=library.later.get(name);
   return library.pipelines[name]=this._guard(()=>compute?this.device.createComputePipeline(description):this.device.createRenderPipeline(description));
  }
- _check(){if(this.disposed)throw failure('WATER_CLOSED','The Water surface is closed.');if(this.lost)throw failure('WATER_DEVICE_LOST','The GPU stopped. The last published painting is safe; reopen Water to continue.');if(this.gpuError)throw this.gpuError;}
+ _check(){if(this.disposed)throw failure('WATER_CLOSED','Watercolor is closed.');if(this.lost)throw failure('WATER_DEVICE_LOST','Watercolor stopped. Painting saved. Reopen to continue.');if(this.gpuError)throw this.gpuError;}
  _poison(error,kind){
   if(waterCapture.on)waterNote({ev:'error',kind:kind??error?.constructor?.name,message:String(error?.message??error),first:!this.gpuError});
   if(this.disposed||this.gpuError)return;
   const memory=kind==='out-of-memory'||error?.constructor?.name==='GPUOutOfMemoryError';
   this.gpuError=failure(memory?'WATER_GPU_MEMORY':'WATER_GPU_FAILED',memory?
-   'Water ran out of GPU memory. The last published painting is safe; reopen Water on a smaller layer.':
-   'The GPU could not complete the Water edit. The last published painting is safe; reopen Water to continue.');
+   'Out of memory. Painting saved. Reopen on a smaller layer.':
+   'Watercolor stopped. Painting saved. Reopen to continue.');
   this.gpuError.cause=error;
  }
  _watchError(task,kind){

@@ -109,7 +109,7 @@ function _rapierDrawEffectsChange(effect, continuous = false) {
 	};
 	const apply = () => {
 		if (!current()) {
-			if (owns() && state.recipe === request.recipe && !samePieces()) showToast('The painting changed while its pixels were being kept. Select it again to apply the effect.', 'info');
+			if (owns() && state.recipe === request.recipe && !samePieces()) showToast('Painting changed. Select it again.', 'info');
 			return finish(false);
 		}
 		const waiting = _rapierPaintFlushRevision();
@@ -127,7 +127,7 @@ function _rapierDrawEffectsChange(effect, continuous = false) {
 		}, !sweeping, false);
 		return result?.then ? result.then(ok => finish(ok && changed)) : finish(result && changed);
 	};
-	const failed = error => { if (owns()) showToast(String(error.message || error), 'error'); return finish(false); };
+	const failed = error => { if (owns()) showToast(_rapierErrorWords(error, 'Couldn’t apply the effect.'), 'error'); return finish(false); };
 	try {
 		const result = apply();
 		if (result?.then) { request.promise = result.catch(failed); return request.promise; }
@@ -264,7 +264,7 @@ function _rapierDrawEffectsPreviewSchedule(gesture = null) {
 			catch (error) {
 				if (error.name !== 'AbortError' && !state.effectsPreviewPending && _rapierDrawEffectsPreviewWanted()) {
 					_rapierDrawEffectsPreviewRelease(false);
-					showToast('The effect preview could not be rendered: ' + String(error.message || error), 'error');
+					showToast('Couldn’t preview the effect.', 'error', null, error);
 				}
 			}
 			if (state.effectsPreviewFlight === job) { state.effectsPreviewFlight = null; state.effectsPreviewOwner = null; }
@@ -339,7 +339,7 @@ function _rapierDrawEffectsSourceChoices(input, recipe, selected) {
 		const group = shape.recognized === 'paint' && shape.paint?.group;
 		if (group && groups.has(group)) continue;
 		if (group) groups.add(group);
-		const kind = shape.recognized === 'paint' ? shape.paint?.mode === 'water' ? 'Water layer' : 'Paint layer' : shape.recognized;
+		const kind = shape.recognized === 'paint' ? shape.paint?.mode === 'water' ? 'Watercolor layer' : 'Paint layer' : shape.recognized;
 		const name = shape.label?.trim().replace(/\s+/g, ' ').slice(0, 36) || kind.charAt(0).toUpperCase() + kind.slice(1);
 		const id = group && current?.paint?.group === group ? current.id : shape.id;
 		choices.push(['shape:' + id, name + ' · ' + (index + 1)]);

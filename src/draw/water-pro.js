@@ -4,7 +4,7 @@ function _rapierWaterProBrushAvailable(row) {
 	const water = row?.water, engine = _rapierWaterEngine();
 	return !water || _rapierWaterProAvailable() || (!engine.isWaterSpecialtyPigment(water.pigment) && !engine.waterPaperById(water.paper)?.pro);
 }
-function _rapierWaterProError(error) { if (error?.name !== 'AbortError') showToast(String(error?.message || error), 'error'); }
+function _rapierWaterProError(error) { if (error?.name !== 'AbortError') showToast(_rapierErrorWords(error, 'That didn’t work. Try again.'), 'error'); }
 function _rapierWaterProOpenDialog(options) {
 	const state = _rapierDrawState, dialog = _openFieldDialog(options);
 	state.waterProDialog = dialog;
@@ -38,7 +38,7 @@ async function _rapierWaterProAuthorizeActions(actions, options = {}) {
 }
 function _rapierWaterProRefuseAgent(actions, options = {}) {
 	if (_rapierWaterEngine().waterProFeature(actions, options.paper))
-		throw Object.assign(new Error('Specialty pigments, Pro papers and Trace are only in the Android app, which agents cannot reach.'), {code:'water_pro_unavailable'});
+		throw Object.assign(new Error('Specialty pigments, Pro papers and Trace are Android-only.'), {code:'water_pro_unavailable'});
 }
 async function _rapierWaterProChoose(key, value) {
 	const state = _rapierDrawState, session = state.session, engine = _rapierWaterEngine();
@@ -67,9 +67,9 @@ async function _rapierWaterProReadPalettes() {
 	const owner = globalThis.RapierPlatform?.water;
 	if (!owner?.available || !owner.readPalettes) throw new Error('Saved palettes are unavailable.');
 	const record = await owner.readPalettes();
-	if (typeof record?.revision !== 'string' || !Array.isArray(record.palettes)) throw new Error('The saved palettes could not be read.');
+	if (typeof record?.revision !== 'string' || !Array.isArray(record.palettes)) throw new Error('Couldn’t read your palettes.');
 	for (const palette of record.palettes) for (const entry of palette.entries) {
-		if (!_rapierWaterEngine().admitWaterPigment(entry.pigment)) throw new Error('A saved pigment is unavailable. The palette was kept.');
+		if (!_rapierWaterEngine().admitWaterPigment(entry.pigment)) throw new Error('A saved pigment is missing. Palette kept.');
 	}
 	return record;
 }

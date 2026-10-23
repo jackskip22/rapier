@@ -768,7 +768,7 @@ function _rapierDrawRenderShapes(onlyIds) {
 			_rapierDrawLiquidSync(); _rapierDrawCopierSync();
 			if (globalThis.RapierDrawRefraction.hasRefraction(state.recipe) && !state.gesture) _rapierDrawEffectsPreviewSchedule();
 			else if (state.effectsPreviewNode) _rapierDrawEffectsPreviewRelease(false);
-			if (refused) showToast(refused.code === 'drawing_route_blocked' ? 'That move blocks a connector. Your diagram was kept.' : refused.message, 'error');
+			if (refused) showToast(refused.code === 'drawing_route_blocked' ? 'That move blocks a connector.' : refused.message, 'error');
 			globalThis.RapierChanges?.locate();
 			return;
 		} catch (error) {
@@ -912,7 +912,7 @@ function _rapierDrawUndoStep(redo, target, replayed = null) {
 	const live = new Set(state.recipe.shapes.map(shape => shape.id)), ids = prior.delta ? (redo ? prior.redoSelection : prior.selection) : prior.selection;
 	_rapierDrawSetSelection(state.tool === 'select' ? (ids || []).filter(id => live.has(id)) : []); _rapierDrawRenderAll();
 	if (typeof _rapierPaintSyncPaper === 'function') _rapierPaintSyncPaper();
-	state.fontReady = _rapierDrawLoadFonts(state.recipe, state.session); state.fontReady.catch(error => showToast(String(error.message || error), 'error'));
+	state.fontReady = _rapierDrawLoadFonts(state.recipe, state.session); state.fontReady.catch(error => showToast('Couldn’t load the font.', 'error', null, error));
 	let journal = null;
 	if (prior.agent) {
 		const asset = redo ? prior.agent.after : prior.agent.before;
@@ -968,7 +968,7 @@ async function _rapierDrawClearAll(session) {
 			return;
 		}
 	} catch (error) {
-		if (current()) showToast('The painting could not be kept for Undo, so Clear was canceled. It is still open: ' + String(error?.message || error), 'error');
+		if (current()) showToast('Couldn’t clear. Painting unchanged.', 'error', null, error);
 	}
 }
 function _rapierDrawCanvasBlank() {
@@ -1951,7 +1951,7 @@ function _rapierDrawEditLabelInPlace(shape, options = {}) {
 			input.value = live.label || '';
 			const caret = edit.caret || [input.value.length, input.value.length, 'none'];
 			input.setSelectionRange(Math.min(caret[0], input.value.length), Math.min(caret[1], input.value.length), caret[2]);
-			showToast('Text is limited to ' + RAPIER_DRAW_LABEL_MAX + ' characters', 'error');
+			showToast('Text is ' + RAPIER_DRAW_LABEL_MAX + ' characters max', 'error');
 			return;
 		}
 		if (applyChange(changed => { changed.label = input.value; })) {
@@ -1967,13 +1967,13 @@ function _rapierDrawEditLabelInPlace(shape, options = {}) {
 	input.addEventListener('beforeinput', evt => {
 		if (!edit.composing) edit.caret = [input.selectionStart, input.selectionEnd, input.selectionDirection];
 		if (!evt.isComposing && typeof evt.data === 'string' && input.value.length - input.selectionEnd + input.selectionStart + evt.data.length > RAPIER_DRAW_LABEL_MAX) {
-			evt.preventDefault(); showToast('Text is limited to ' + RAPIER_DRAW_LABEL_MAX + ' characters', 'error');
+			evt.preventDefault(); showToast('Text is ' + RAPIER_DRAW_LABEL_MAX + ' characters max', 'error');
 		}
 	});
 	input.addEventListener('paste', evt => {
 		const value = evt.clipboardData?.getData('text/plain');
 		if (typeof value === 'string' && input.value.length - input.selectionEnd + input.selectionStart + value.length > RAPIER_DRAW_LABEL_MAX) {
-			evt.preventDefault(); showToast('Text is limited to ' + RAPIER_DRAW_LABEL_MAX + ' characters', 'error');
+			evt.preventDefault(); showToast('Text is ' + RAPIER_DRAW_LABEL_MAX + ' characters max', 'error');
 		}
 	});
 	input.addEventListener('input', update);
@@ -2022,7 +2022,7 @@ function _rapierDrawEditLabelInPlace(shape, options = {}) {
 	_rapierDrawPlaceTextInput(); input.focus({ preventScroll: true });
 }
 function _rapierDrawCreateText(a, b = a, initial = '') {
-	if (typeof initial !== 'string' || initial.length > RAPIER_DRAW_LABEL_MAX || /[\ud800-\udfff\ufffe\uffff]/u.test(initial)) { showToast('Drawing text must contain complete characters and at most ' + RAPIER_DRAW_LABEL_MAX + ' characters', 'error'); return; }
+	if (typeof initial !== 'string' || initial.length > RAPIER_DRAW_LABEL_MAX || /[\ud800-\udfff\ufffe\uffff]/u.test(initial)) { showToast('Text is ' + RAPIER_DRAW_LABEL_MAX + ' characters max', 'error'); return; }
 	const state = _rapierDrawState, before = _rapierDrawHistoryRecipe(), selection = _rapierDrawSelection(), textStyle = _rapierDrawTextDefaults();
 	const scale = _rapierDrawViewTransform(state.svgRoot.getBoundingClientRect(), state.svgRoot.viewBox.baseVal).scale;
 	const fixed = Math.abs(b[0] - a[0]) * scale > RAPIER_DRAW_MOVE_THRESHOLD_PX;
@@ -2041,7 +2041,7 @@ function _rapierDrawCreateText(a, b = a, initial = '') {
 	let base = state.recipe;
 	if (textStyle.textFont && !['sans', 'serif', 'mono'].includes(textStyle.textFont) && !_rapierDrawLetterFont(textStyle.textFont) && !base.fonts?.some(font => font.id === textStyle.textFont)) {
 		const draft = _rapierDrawOfferedFonts().find(font => font.id === textStyle.textFont);
-		if (!draft) { showToast('That custom font is no longer available', 'error'); return; }
+		if (!draft) { showToast('That font isn’t available.', 'error'); return; }
 		try { base = { ...base, fonts: globalThis.RapierDrawFonts.admitFonts([...(base.fonts || []), draft]) }; }
 		catch (error) { showToast(String(error.message || error), 'error'); return; }
 	}
@@ -2113,7 +2113,7 @@ async function _rapierDrawUploadFont(files, target = 'selection') {
 		const face = state.fontFaces.get(font.id)?.font.data === font.data ? state.fontFaces.get(font.id).face : await new FontFace(fonts.fontFaceFamily(font), 'url(' + fonts.fontDataURL(font) + ')').load();
 		if (!state.open || state.session !== session || state.fontUpload !== upload || state.finishing || state.textEdit) return;
 		const saved = state.recipe.fonts || [], drafts = [...(state.textFontDrafts?.values() || [])], existing = saved.find(item => item.id === font.id) || drafts.find(item => item.id === font.id);
-		if (existing && existing.data !== font.data) throw new Error('The new font conflicts with a font already in the drawing. Choose a different font.');
+		if (existing && existing.data !== font.data) throw new Error('A different font has that name. Choose another.');
 		const admitted = fonts.admitFonts([font]);
 		const admittedFont = admitted.find(item => item.id === font.id) || existing || font;
 		if (!state.open || state.session !== session || state.fontUpload !== upload || state.finishing || state.textEdit) return;
@@ -2142,14 +2142,14 @@ const RAPIER_DRAW_TOOLS = ['select', 'brush', 'pen', 'paint', 'water', 'shape', 
 const RAPIER_DRAW_TOOL_SECTIONS = [['Tools', ['select', 'erase', 'image', 'effects']], ['SVG', ['brush', 'shape', 'text', 'gallery']], ['Raster', ['paint', 'water']]];
 const RAPIER_DRAW_TOOL_WORDS = { select: 'Select', brush: 'Pen', pen: 'Pen', paint: 'Brushes', water: 'Watercolor', shape: 'Shape', text: 'Text', erase: 'Eraser', image: 'Image', gallery: 'Gallery', effects: 'Effects' };
 const _rapierDrawToolIcon = name => RAPIER_DRAW_ICONS[name === 'brush' ? 'pen' : name];
-const RAPIER_DRAW_TOOL_SHORT = { select: 'Select', brush: 'Pen', pen: 'Pen', paint: 'Brushes', water: 'Water', shape: 'Shape', text: 'Text', erase: 'Eraser', effects: 'Effects' };
+const RAPIER_DRAW_TOOL_SHORT = { select: 'Select', brush: 'Pen', pen: 'Pen', paint: 'Brushes', water: 'Watercolor', shape: 'Shape', text: 'Text', erase: 'Eraser', effects: 'Effects' };
 const RAPIER_DRAW_HINT_WORDS = {
 	effects: 'Choose an effect for the artwork',
 	select: 'Tap a shape to select it',
 	brush: 'Tap to draw',
 	pen: 'Tap to draw',
 	paint: 'Tap to paint',
-	water: 'If Water slows down, tap Set to keep your painting and start a fresh layer above it.',
+	water: 'If watercolor slows down, tap Set to start a fresh layer.',
 	shape: 'Drag out a shape',
 	text: 'Tap to write',
 	erase: 'Draw through anything to cut it',
@@ -2235,19 +2235,19 @@ const RAPIER_DRAW_ICONS = {
 	'space-y': RAPIER_DRAW_ICON_WRAP('<line x1="4" y1="4" x2="20" y2="4"></line><line x1="4" y1="20" x2="20" y2="20"></line><rect x="8" y="9" width="8" height="6" rx="1"></rect>'),
 };
 const RAPIER_DRAW_TOOL_SAYS = {
-	select: 'Select tool: tap a shape to choose it, drag empty space to choose several.',
-	brush: 'Pen: Ink draws with pressure and speed, Line draws one even width.',
-	pen: 'Pen: Ink draws with pressure and speed, Line draws one even width.',
-	paint: 'Brushes: MyPaint brushes on a paint layer inside the drawing; pressure, speed and direction shape the stroke.',
-	water: 'Watercolor: pigments flow, bloom and dry on textured paper.',
-	shape: 'Shape tool: drag out the shape you picked.',
-	text: 'Text tool: tap for growing text, or drag to set its wrapping width.',
-	erase: 'Eraser: draw through anything to cut it into pieces.',
-	image: 'Image: choose one or more pictures to place on the canvas.',
-	gallery: 'Gallery: place an element, border or letter on the canvas.',
-	effects: 'Effects: Copy machine and Refracted light for the drawing, selected objects or a paint layer.',
+	select: 'Select: tap a shape, or drag across several.',
+	brush: 'Pen: Ink, or Line for one even width.',
+	pen: 'Pen: Ink, or Line for one even width.',
+	paint: 'Brushes: MyPaint brushes on a paint layer.',
+	water: 'Watercolor: paint that flows, blooms and dries.',
+	shape: 'Shape: drag out the shape.',
+	text: 'Text: tap to type, or drag to set a width.',
+	erase: 'Eraser: cuts through what you draw over.',
+	image: 'Image: place pictures on the canvas.',
+	gallery: 'Gallery: place an element, border or letter.',
+	effects: 'Effects: Copy machine and Refracted light.',
 };
-const RAPIER_DRAW_PEN_MODES = [['brush', 'Ink', 'pressure and speed shape the stroke'], ['pen', 'Line', 'one even width for lines, curves and shapes']];
+const RAPIER_DRAW_PEN_MODES = [['brush', 'Ink', 'width follows your speed'], ['pen', 'Line', 'one even width']];
 function _rapierDrawPenMode() {
 	const state = _rapierDrawState;
 	return state.tool === 'brush' || state.tool === 'pen' ? state.tool : state.penMode || _rapierDrawRemembered('penMode');
@@ -2609,7 +2609,7 @@ async function _rapierDrawSetTool(name, remember = true) {
 			if (!(typeof _rapierPaintDepart === 'function' && _rapierPaintDepart())) {
 				const closed = _rapierPaintCloseLayer(current); if (closed) await closed;
 			}
-		} catch (error) { showToast('The painting could not be kept. The tool was not changed: ' + String(error?.message || error), 'error'); return; }
+		} catch (error) { showToast('Couldn’t save the painting. Tool unchanged.', 'error', null, error); return; }
 		if (!current()) return;
 		if (name === 'effects') _rapierDrawEffectsEnter();
 		else if (state.tool === 'effects') {
@@ -2736,7 +2736,7 @@ function _rapierDrawEraseWith(path) {
 		let cut = false, work = 0, refused = false;
 		const budget = points => {
 			work += points * path.length;
-			if (work > 4194304) throw Object.assign(new RangeError('Erase a smaller part of this drawing at a time'), { code: 'drawing_work_limit' });
+			if (work > 4194304) throw Object.assign(new RangeError('Erase a smaller part at a time.'), { code: 'drawing_work_limit' });
 		};
 		const touches = (poly, radius) => {
 			budget(poly.length);
@@ -2850,7 +2850,7 @@ function _rapierDrawEraseWith(path) {
 		const kept = new Set(next.map(shape => shape.id));
 		remapRefractionRecipeSources(draft, new Map(recipe.shapes.filter(shape => !kept.has(shape.id)).map(shape => [shape.id, null])));
 		const candidate = _rapierDrawAdmitRecipe(draft, true);
-		if (!candidate) throw Object.assign(new RangeError('Erasing this much exceeds the drawing limit. Erase a smaller part.'), { code: 'drawing_geometry_limit' });
+		if (!candidate) throw Object.assign(new RangeError('Too much to erase. Erase a smaller part.'), { code: 'drawing_geometry_limit' });
 		return _rapierDrawCommand(() => { state.recipe = candidate; _rapierDrawSetSelection([]); });
 	} catch (error) { showToast(String(error.message || error), 'error'); return false; }
 }
@@ -3007,7 +3007,7 @@ function _rapierDrawShapeFromDrag(kind, a, b, options = _rapierDrawState.gesture
 }
 function _rapierDrawAdmitCreation(candidate) {
 	const admitted = _rapierDrawAdmitRecipe(candidate, true);
-	if (!admitted) showToast('This drawing is at its limit; that mark was not added', 'error');
+	if (!admitted) showToast('Drawing full. Mark not added.', 'error');
 	return admitted;
 }
 function _rapierDrawCommitShapeDrag(pts, dragged = true, options) {
@@ -3418,7 +3418,7 @@ function _rapierDrawLetterGlyph(set) {
 	const sample = set && globalThis.RapierDrawLetterPreviews.LETTER_PREVIEWS[set.id];
 	return sample ? '<svg class="rapier-draw-glyph" viewBox="0 0 ' + sample.glyph[0] + ' ' + sample.em + '" aria-hidden="true"><path fill="currentColor" transform="translate(' + sample.bearing + ',0)" d="' + sample.glyph[1] + '"/></svg>' : '';
 }
-const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.36/letters/';
+const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.37/letters/';
 const _rapierDrawLettersDoor = { allowed: false, asking: null, providers: new Map(), bringing: new Map() };
 function _rapierDrawLettersProvider(set) {
 	const door = _rapierDrawLettersDoor;
@@ -3645,7 +3645,7 @@ function _rapierDrawSetTextDefault(key, value, asked = false) {
 	else if (key === 'labelAlign' && ['start', 'middle', 'end'].includes(value)) style.labelAlign = value;
 	_rapierDrawRemember('textDefaults', JSON.stringify(style));
 	_rapierDrawSyncTextPanels();
-	if (key === 'textFont') { state.fontReady = _rapierDrawLoadFonts(state.recipe, state.session); state.fontReady.catch(error => showToast(String(error.message || error), 'error')); }
+	if (key === 'textFont') { state.fontReady = _rapierDrawLoadFonts(state.recipe, state.session); state.fontReady.catch(error => showToast('Couldn’t load the font.', 'error', null, error)); }
 }
 
 function _rapierDrawEraseSoftness() { return _rapierDrawClamp(Math.round(Number(_rapierDrawState.eraseSoftness) || 0), 0, 100); }
@@ -3866,7 +3866,7 @@ async function _rapierDrawOpenDropper(scope, found = null) {
 		} else await globalThis.RapierDrawAgentPaint.withSVGImage(text, sample);
 		if (!sheet) return;
 	} catch (error) {
-		if (state.dropper === session) { close(false); showToast('That drawing could not be sampled: ' + String(error.message || error), 'error'); }
+		if (state.dropper === session) { close(false); showToast('Couldn’t pick a color here.', 'error', null, error); }
 		return;
 	}
 	pad = document.createElement('div');
@@ -3885,7 +3885,7 @@ async function _rapierDrawOpenDropper(scope, found = null) {
 	const sample = (clientX, clientY) => {
 		const { rect, dpr, paper, data } = sheet, now = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
 		if (['left', 'top', 'width', 'height'].some(key => now[key] !== rect[key]) || [v.x, v.y, v.width, v.height].some((n, i) => n !== sheet.view[i])) {
-			close(false); showToast('The canvas moved. Open the color sampler again.', 'info'); return;
+			close(false); showToast('Canvas moved. Try again.', 'info'); return;
 		}
 		const x = Math.round((clientX - rect.left) * dpr), y = Math.round((clientY - rect.top) * dpr);
 		if (x < 0 || y < 0 || x >= data.width || y >= data.height) return;
@@ -3951,7 +3951,7 @@ async function _rapierDrawCopyHex(hex, button, say) {
 		if (say) { say.textContent = ok ? '' : 'Could not copy'; say.hidden = ok; }
 		if (ok) button._rapierCopied = setTimeout(() => { if (button.dataset.copied === 'yes') { delete button.dataset.copied; button.setAttribute('aria-label', 'Copy ' + hex); } }, RAPIER_DRAW_COPIED_MS);
 	}
-	showToast(ok ? 'Copied ' + hex : 'Could not copy ' + hex + ': the clipboard refused', ok ? 'success' : 'error');
+	showToast(ok ? 'Copied ' + hex : 'Couldn’t copy ' + hex, ok ? 'success' : 'error');
 }
 const RAPIER_DRAW_PROP_WORD = {
 	textSize: v => String(Math.round(Number(v))),
@@ -4151,7 +4151,7 @@ function _rapierDrawViewBaseReset(rect = _rapierDrawState.svgRoot?.getBoundingCl
 	const canvas = _rapierDrawPaperView(state.recipe);
 	const W = Math.max(1, rect?.width || canvas.w), H = Math.max(1, (rect?.height || canvas.h) + bars), inset = Math.min(state.viewInset || 0, H / 2);
 	const scale = Math.max(1e-6, Math.min(W / canvas.w, (H - inset) / canvas.h));
-	state.viewBase = { w: W / scale, h: H / scale }; state.viewFit = { w: W, h: H };
+	state.viewBase = { w: W / scale, h: H / scale }; state.viewFit = { w: W, h: H }; state.viewContent = { ...state.viewBase };
 	const v = _rapierDrawView();
 	v.k = 1;
 	v.x = canvas.x + (canvas.w - state.viewBase.w) / 2;
@@ -4161,11 +4161,12 @@ function _rapierDrawViewFollowStage(rect = _rapierDrawState.svgRoot?.getBounding
 	const state = _rapierDrawState, base = state.viewBase, fit = state.viewFit;
 	if (!base || !rect?.width || !rect.height || fit && fit.w === rect.width && fit.h === rect.height) return false;
 	const v = _rapierDrawView();
-	if (fit && Math.abs(fit.w - rect.width) < .5) base.h = base.w * rect.height / rect.width;
+	const content = state.viewContent || (state.viewContent = { ...base });
+	if (fit && Math.abs(fit.w - rect.width) < .5) { content.h += base.w * rect.height / rect.width - base.h; base.h = base.w * rect.height / rect.width; }
 	else {
-		const span = { w: base.w / v.k, h: base.h / v.k }, t = Math.min(rect.width / span.w, rect.height / span.h);
-		v.x -= (rect.width - span.w * t) / 2 / t; v.y -= (rect.height - span.h * t) / 2 / t;
+		const cx = v.x + base.w / v.k / 2, cy = v.y + base.h / v.k / 2, span = { w: content.w / v.k, h: content.h / v.k }, t = Math.min(rect.width / span.w, rect.height / span.h);
 		base.w = rect.width / t * v.k; base.h = rect.height / t * v.k;
+		v.x = cx - base.w / v.k / 2; v.y = cy - base.h / v.k / 2;
 	}
 	state.viewFit = { w: rect.width, h: rect.height };
 	return true;
@@ -4460,7 +4461,7 @@ function _rapierDrawUpdateHandles() {
 
 function _rapierDrawStartTransform() {
 	const state = _rapierDrawState, gesture = state.gesture;
-	if (_rapierDrawSelectionLocked()) throw new Error('Unlock the selected drawing first');
+	if (_rapierDrawSelectionLocked()) throw new Error('Unlock the drawing first.');
 	if (gesture.changed) return;
 	gesture.changed = true;
 	_rapierDrawHidePressRing();
@@ -4650,6 +4651,14 @@ function _rapierDrawZoomAt(clientX, clientY, factor) {
 	_rapierDrawApplyView();
 	_rapierDrawUpdateHandles();
 }
+function _rapierDrawPanBy(dx, dy) {
+	const state = _rapierDrawState, v = state.view, rect = state.svgRoot?.getBoundingClientRect();
+	if (!v || !rect?.width || !rect.height || !(dx || dy)) return;
+	const base = _rapierDrawViewBase(), t = Math.min(rect.width / (base.w / v.k), rect.height / (base.h / v.k));
+	v.x += dx / t; v.y += dy / t;
+	_rapierDrawApplyView();
+	_rapierDrawUpdateHandles();
+}
 function _rapierDrawEndGesture(cancel = false) {
 	const state = _rapierDrawState, gesture = state.gesture, pointers = [state.pointerId, state.secondPointerId];
 	if (gesture) {
@@ -4702,7 +4711,7 @@ function _rapierDrawCommand(change, snapshot = true, menu = true, historyContext
 		_rapierDrawRerouteBoundArrows(state.recipe);
 		const grown = _rapierDrawGrowCanvasToContent(state.recipe);
 		const admitted = _rapierDrawAdmitRecipe(state.recipe, true);
-		if (!admitted) throw new Error('Drawing change exceeds its limits');
+		if (!admitted) throw new Error('Drawing full. Change not made.');
 		const markup = _rapierDrawDisplayMarkup(_rapierDrawSceneMarkup(admitted, false, true, {sourceOnly: true}));
 		state.recipe = admitted;
 		if (snapshot && !_rapierDrawSameRecipe(before)) {
@@ -5059,7 +5068,7 @@ function _rapierDrawSetProperty(key, value, asked = false) {
 	_rapierDrawCommand(() => {
 		if (key === 'textFont' && !['sans', 'serif', 'mono'].includes(value) && !_rapierDrawLetterFont(value) && !state.recipe.fonts?.some(font => font.id === value)) {
 			const font = _rapierDrawOfferedFonts().find(font => font.id === value);
-			if (!font) throw new Error('That custom font is no longer available.');
+			if (!font) throw new Error('That font isn’t available.');
 			state.recipe.fonts = globalThis.RapierDrawFonts.admitFonts([...(state.recipe.fonts || []), font]);
 		}
 
@@ -5069,7 +5078,7 @@ function _rapierDrawSetProperty(key, value, asked = false) {
 			globalThis.RapierDrawEdit.setProperties(shape, state.recipe, {[key]: next, ...(key === 'textEffect' && value === 'garden' ? _rapierDrawGardenProperties(shape, _rapierDrawTextDefaults()) : {})});
 		}
 	});
-	if (key === 'textFont') { state.fontReady = _rapierDrawLoadFonts(state.recipe, state.session); state.fontReady.catch(error => showToast(String(error.message || error), 'error')); }
+	if (key === 'textFont') { state.fontReady = _rapierDrawLoadFonts(state.recipe, state.session); state.fontReady.catch(error => showToast('Couldn’t load the font.', 'error', null, error)); }
 }
 function _rapierDrawMenuAction(evt) {
 	const state = _rapierDrawState;
@@ -5121,7 +5130,7 @@ function _rapierDrawMenuAction(evt) {
 		globalThis.RapierDrawEdit.setProperties(shape, state.recipe, {brush: value});
 	} else if (act === 'angle') globalThis.RapierDrawEdit.setProperties(shape, state.recipe, {angle: !shape.angle});
 	else if (act === 'len') globalThis.RapierDrawEdit.setProperties(shape, state.recipe, {len: !shape.len});
-	if ((shape.border || shape.style === 'solid' && shape.authorStyle?.stroke) && !_rapierDrawBorderActive(shape)) throw new Error('A border needs a solid shape in the Ink look, not an as-drawn stroke');
+	if ((shape.border || shape.style === 'solid' && shape.authorStyle?.stroke) && !_rapierDrawBorderActive(shape)) throw new Error('Borders need a solid shape in the Ink look.');
 	for (const selected of _rapierDrawSelectedShapes()) globalThis.RapierDrawEdit._rapierDrawFitText(selected, state.recipe);
 	});
 }
@@ -5148,10 +5157,10 @@ function _rapierDrawCopyEvent(evt) {
 			const sources = refractionSourceShapes(state.recipe, target.effect[key]);
 			return !sources || sources.some(shape => !ids.has(shape.id));
 		}));
-		const includeSources = 'Include the lens and matte sources in the selection before copying.';
+		const includeSources = 'Select the lens and matte sources too.';
 		if (missingSource(recipe)) { showToast(includeSources, 'error'); return; }
 		const clipboard = globalThis.navigator?.clipboard, Clipboard = globalThis.ClipboardItem;
-		const refused = error => showToast('This drawing could not be copied. Use ' + (globalThis.RapierPlatform?.environment.native === true ? 'Save. ' : 'Download. ') + String(error?.message || error || ''), 'error');
+		const refused = error => showToast('Couldn’t copy. Use ' + (globalThis.RapierPlatform?.environment.native === true ? 'Save.' : 'Download.'), 'error', null, error);
 		if (typeof clipboard?.write !== 'function' || typeof Clipboard !== 'function' || typeof globalThis.RapierDrawRefraction?.prepare !== 'function') {
 			refused('The browser does not support copying prepared drawings.'); return;
 		}
@@ -5159,12 +5168,12 @@ function _rapierDrawCopyEvent(evt) {
 		const current = () => _rapierDrawState === state && state.open && !state.finishing && !state.gesture && !state.replay && state.session === drawing && JSON.stringify(_rapierDrawSelection()) === selection;
 		let captured;
 		const data = Promise.resolve(waiting).then(async () => {
-			if (!current()) throw new Error('The drawing changed during copying.');
+			if (!current()) throw new Error('Drawing changed. Copy again.');
 			captured = JSON.stringify(state.recipe);
 			const source = selectedRecipe();
 			if (missingSource(source)) throw new Error(includeSources);
 			const prepared = await globalThis.RapierDrawRefraction.prepare(source, {displayRaster: url => _rapierPaintShownAs.get(url)});
-			if (!current() || JSON.stringify(state.recipe) !== captured) throw new Error('The drawing changed during copying.');
+			if (!current() || JSON.stringify(state.recipe) !== captured) throw new Error('Drawing changed. Copy again.');
 			return new Blob([_rapierDrawBuildSVG(prepared)], {type: 'text/plain'});
 		});
 		void data.catch(() => {});
@@ -5173,7 +5182,7 @@ function _rapierDrawCopyEvent(evt) {
 				if (evt.type !== 'cut') return;
 				const flushing = _rapierPaintFlushRevision(); if (flushing) await flushing;
 				if (!current() || JSON.stringify(state.recipe) !== captured) {
-					showToast('Copied. The drawing changed, so Cut kept the source.', 'info'); return;
+					showToast('Copied, not cut. The drawing changed.', 'info'); return;
 				}
 				_rapierDrawEditSelection({type: 'delete'}, [...ids]);
 			}).catch(refused);
@@ -5192,8 +5201,8 @@ function _rapierDrawPasteRecipe(incoming) {
 	const waiting = _rapierPaintFlushRevision();
 	if (waiting) return waiting.then(() => _rapierDrawPasteRecipe(incoming));
 	incoming = _rapierDrawAdmitRecipe(incoming, true);
-	if (!incoming) throw new Error('This drawing cannot be pasted.');
-	if (incoming.effect?.type === 'refraction') throw new Error('Paste this SVG into the document to keep its whole-drawing effect and editable source.');
+	if (!incoming) throw new Error('Can’t paste this drawing.');
+	if (incoming.effect?.type === 'refraction') throw new Error('Paste this into the document to keep its effect.');
 	const state = _rapierDrawState, fonts = globalThis.RapierDrawFonts, joinedFonts = [...(state.recipe.fonts || [])];
 	for (const font of incoming.fonts || []) {
 		const prior = joinedFonts.find(saved => saved.id === font.id);
@@ -5234,10 +5243,10 @@ function _rapierDrawPasteRecipe(incoming) {
 		if (shape.effect) shape.effect = remapRefractionSources(shape.effect, ids);
 	}
 	const recipe = _rapierDrawAdmitRecipe({ ...state.recipe, fonts: admittedFonts, shapes: state.recipe.shapes.concat(incoming.shapes), strokes: state.recipe.strokes.concat(incoming.strokes) }, true);
-	if (!recipe) throw new Error('Drawing is too large to paste here');
+	if (!recipe) throw new Error('Too large to paste here.');
 	_rapierDrawSceneMarkup(recipe, false, true, {sourceOnly: true});
 	_rapierDrawSnapshot(); state.recipe = recipe; _rapierDrawSetSelection([...ids.values()]); _rapierDrawRenderAll(); _rapierDrawSealHistory();
-	state.fontReady = _rapierDrawLoadFonts(recipe, state.session); state.fontReady.catch(error => showToast(String(error.message || error), 'error'));
+	state.fontReady = _rapierDrawLoadFonts(recipe, state.session); state.fontReady.catch(error => showToast('Couldn’t load the font.', 'error', null, error));
 }
 function _rapierDrawRasterDataURL(bytes, mime) {
 	return 'data:' + mime + ';base64,' + RapierBundleIO.toBase64(bytes);
@@ -5253,12 +5262,12 @@ async function _rapierDrawReadImage(file, session, work = {}) {
 	const wantsJxl = typeof _rapierDefaultImageProfile !== 'function' || _rapierDefaultImageProfile() === 'jxl';
 	if (wantsJxl && input.isJxl) {
 		const url = _rapierDrawRasterDataURL(input.bytes, 'image/jxl');
-		if (!core._rapierDrawValidRaster(url)) throw new Error('This image is too large for the drawing canvas.');
+		if (!core._rapierDrawValidRaster(url)) throw new Error('Picture too large for the canvas.');
 		return { url, width: input.info.width, height: input.info.height };
 	}
 	if (!wantsJxl && input.mime === 'image/png') {
 		const url = _rapierDrawRasterDataURL(input.bytes, 'image/png');
-		if (!core._rapierDrawValidRaster(url)) throw new Error('This image is too large for the drawing canvas.');
+		if (!core._rapierDrawValidRaster(url)) throw new Error('Picture too large for the canvas.');
 		return { url, width: input.info.displayWidth || input.info.width, height: input.info.displayHeight || input.info.height };
 	}
 	if (input.mime === 'image/jpeg' && wantsJxl && _rapierJxlEncoderPresent()) {
@@ -5285,10 +5294,10 @@ async function _rapierDrawReadImage(file, session, work = {}) {
 		}
 		if (!state.open || state.session !== session || state.finishing) return null;
 		const width = decoded.naturalWidth || decoded.width, height = decoded.naturalHeight || decoded.height;
-		if (!globalThis.RapierImageAssets.validAssetDimensions(width, height)) throw new Error('This image exceeds the 24 megapixel image limit.');
+		if (!globalThis.RapierImageAssets.validAssetDimensions(width, height)) throw new Error('Picture too large (24 MP max).');
 		canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
 		const context = canvas.getContext('2d', { alpha: input.mime !== 'image/jpeg' });
-		if (!context) throw new Error('Image conversion is unavailable.');
+		if (!context) throw new Error('Can’t convert this picture.');
 		context.drawImage(decoded, 0, 0, width, height); releaseDecoded();
 		let url;
 		if (wantsJxl && _rapierJxlEncoderPresent()) {
@@ -5298,11 +5307,11 @@ async function _rapierDrawReadImage(file, session, work = {}) {
 			url = _rapierDrawRasterDataURL(encoded.bytes || encoded, 'image/jxl');
 		} else {
 			const blob = await _rapierCanvasBlob(canvas, 'image/png');
-			if (!blob) throw new Error('Image conversion failed.');
+			if (!blob) throw new Error('Couldn’t convert this picture.');
 			url = await _rapierBlobDataUrl(blob);
 		}
 		if (!state.open || state.session !== session || state.finishing) return null;
-		if (!core._rapierDrawValidRaster(url)) throw new Error('This image is too large for the drawing canvas.');
+		if (!core._rapierDrawValidRaster(url)) throw new Error('Picture too large for the canvas.');
 		return { url, width, height };
 	} finally {
 		releaseDecoded();
@@ -5332,12 +5341,12 @@ async function _rapierDrawImportImages(files) {
 			return { id: 'image' + (index + 1), recognized: 'paint', geom: { cx: vb.x + vb.width / 2 + step, cy: vb.y + vb.height / 2 + step, w, h }, raster: row.url, paint: { px: [row.width, row.height], scale: 1 } };
 		});
 		const incoming = _rapierDrawAdmitRecipe({ version: RAPIER_DRAW_VERSION, canvas: { w: state.recipe.canvas.w, h: state.recipe.canvas.h }, strokes: [], shapes });
-		if (!incoming) throw new Error('These images are too large to place in one drawing.');
+		if (!incoming) throw new Error('Pictures too large for one drawing.');
 		await _rapierDrawSetTool('select');
 		if (!state.open || state.session !== session || state.finishing || _rapierDrawTool() !== 'select') return;
 		_rapierDrawPasteRecipe(incoming);
 	} catch (error) {
-		if (error?.name !== 'AbortError' && state.open && state.session === session) showToast('Image could not be added: ' + String(error?.message || error), 'error');
+		if (error?.name !== 'AbortError' && state.open && state.session === session) showToast('Couldn’t add the picture.', 'error', null, error);
 	} finally { popup.end(); if (state.session === session) state.imageImporting = false; }
 }
 function _rapierDrawGalleryOffered() { return typeof _rapierPartAvailable === 'function' && (!!_rapierPresetPart || _rapierPartAvailable('presets')); }
@@ -5367,7 +5376,7 @@ async function _rapierDrawPlaceOrnament(piece, session) {
 	const shape = { id: 'ornament', recognized: 'ornament', geom: { cx: vb.x + vb.width / 2, cy: vb.y + vb.height / 2, w: piece.w * scale, h: piece.h * scale }, ornament: { d: piece.d, w: piece.w, h: piece.h, ...(piece.layers ? { layers: piece.layers } : {}) } };
 	if (state.ink) shape.ink = state.ink;
 	const incoming = _rapierDrawAdmitRecipe({ version: RAPIER_DRAW_VERSION, canvas: { w: state.recipe.canvas.w, h: state.recipe.canvas.h }, strokes: [], shapes: [shape] });
-	if (!incoming) { showToast(piece.name + ' is too large to place in a drawing.', 'error'); return; }
+	if (!incoming) { showToast(piece.name + ' is too large for a drawing.', 'error'); return; }
 	await _rapierPaintFlushRevision();
 	state.lastTap = null;
 	await _rapierDrawPasteRecipe(incoming);
@@ -5380,14 +5389,14 @@ async function _rapierDrawPasteEvent(evt) {
 	evt.preventDefault();
 	const state = _rapierDrawState, session = state.session;
 	try {
-		if (Math.max(data.length, plain.length) > 16 * 1024 * 1024) throw new Error('Clipboard drawing is too large');
+		if (Math.max(data.length, plain.length) > 16 * 1024 * 1024) throw new Error('Too large to paste.');
 		const recipe = data ? _rapierDrawAdmitRecipe(JSON.parse(data)) : _rapierDrawReadSVGRecipe(plain);
-		if (data && !recipe) throw new Error('Clipboard drawing could not be read');
+		if (data && !recipe) throw new Error('Couldn’t read the copied drawing.');
 		await _rapierDrawSetTool('select');
 		if (!state.open || state.session !== session || state.finishing || _rapierDrawTool() !== 'select') return;
 		if (recipe) _rapierDrawPasteRecipe(recipe);
 		else {
-			if (plain.length > RAPIER_DRAW_LABEL_MAX) throw new Error('Drawing text is limited to ' + RAPIER_DRAW_LABEL_MAX + ' characters');
+			if (plain.length > RAPIER_DRAW_LABEL_MAX) throw new Error('Text is ' + RAPIER_DRAW_LABEL_MAX + ' characters max');
 			const state = _rapierDrawState, vb = state.svgRoot.viewBox.baseVal, point = state.lastTap?.point || [vb.x + vb.width / 2, vb.y + vb.height / 2];
 			_rapierDrawCreateText(point, point, plain);
 		}
@@ -5841,10 +5850,22 @@ function _rapierDrawBuildSurface() {
 		if (id && !_rapierDrawSelection().includes(id)) void _rapierDrawSelectCanvasShape(id);
 	});
 	surface.addEventListener('wheel', evt => {
-		if (!(evt.ctrlKey || evt.metaKey) || !state.open || state.finishing) return;
+		if (!state.open || state.finishing) return;
+		if (evt.ctrlKey || evt.metaKey) { evt.preventDefault(); _rapierDrawZoomAt(evt.clientX, evt.clientY, Math.exp(-evt.deltaY * 0.0015)); return; }
+		if (!_rapierDrawIsCanvasTouch(evt.target, surface) || evt.target.closest('.rapier-draw-menu') || state.gesture) return;
 		evt.preventDefault();
-		_rapierDrawZoomAt(evt.clientX, evt.clientY, Math.exp(-evt.deltaY * 0.0015));
+		const line = evt.deltaMode === 1 ? 16 : evt.deltaMode === 2 ? innerHeight : 1, dx = evt.deltaX * line, dy = evt.deltaY * line;
+		_rapierDrawPanBy(evt.shiftKey && !dx ? dy : dx, evt.shiftKey && !dx ? 0 : dy);
 	}, { passive: false });
+	surface.addEventListener('pointerdown', evt => {
+		if (evt.pointerType !== 'mouse' || evt.button !== 1 || !state.open || state.finishing || state.gesture || !_rapierDrawIsCanvasTouch(evt.target, surface)) return;
+		evt.preventDefault();
+		let x = evt.clientX, y = evt.clientY;
+		const move = e => { if (e.pointerId !== evt.pointerId) return; _rapierDrawPanBy(x - e.clientX, y - e.clientY); x = e.clientX; y = e.clientY; };
+		const end = e => { if (e.pointerId !== evt.pointerId) return; surface.removeEventListener('pointermove', move); surface.removeEventListener('pointerup', end); surface.removeEventListener('pointercancel', end); };
+		try { surface.setPointerCapture(evt.pointerId); } catch (_) {}
+		surface.addEventListener('pointermove', move); surface.addEventListener('pointerup', end); surface.addEventListener('pointercancel', end);
+	});
 	surface.addEventListener('keydown', async evt => {
 		evt.stopPropagation();
 		if (evt.defaultPrevented || evt.isComposing || evt.keyCode === 229) return;
@@ -5868,6 +5889,7 @@ function _rapierDrawBuildSurface() {
 			state.svgRoot.focus({preventScroll: true});
 			_rapierDrawSetSelection(_rapierDrawGroupSelection(state.recipe, state.recipe.shapes.map(shape => shape.id))); _rapierDrawRenderAll(); return;
 		}
+		if (!state.finishing && !evt.target.closest('input:not([type="range"]),textarea,select') && _rapierDrawCanvasKey(chord)) { evt.preventDefault(); return; }
 		if ((chord === 'Delete' || chord === 'Backspace') && !state.finishing && !evt.target.closest('input:not([type="range"]),textarea,select') && _rapierDrawTool() === 'select' && _rapierDrawSelection().length && !_rapierDrawSelectionLocked()) { evt.preventDefault(); _rapierDrawEditSelection({ type: 'delete' }); return; }
 		if (chord === 'Escape' && evt.target.closest('[data-draw-panel]')) {
 			evt.preventDefault();
@@ -5936,6 +5958,19 @@ function _rapierDrawBuildSurface() {
 		if (handle) state.handlesLayer.querySelector('[data-draw-handle="' + handle.id + '"]')?.focus({ preventScroll: true });
 	});
 }
+function _rapierDrawCanvasKey(chord) {
+	const state = _rapierDrawState, rect = state.svgRoot?.getBoundingClientRect();
+	if (!rect) return false;
+	if (['Mod+=', 'Mod++', 'Mod+Shift++', 'Mod+-'].includes(chord)) { _rapierDrawZoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, chord === 'Mod+-' ? 0.8 : 1.25); return true; }
+	if (chord === 'Mod+0') { _rapierDrawViewBaseReset(rect, _rapierDrawBarsRoom()); _rapierDrawApplyView(); _rapierDrawUpdateHandles(); return true; }
+	const tool = _rapierDrawTool();
+	if ((chord !== '[' && chord !== ']') || tool === 'select' || !(RAPIER_DRAW_TOOL_SETTINGS[tool] || []).includes('nib') || state.gesture) return false;
+	const up = chord === ']';
+	if (tool === 'paint') _rapierDrawSetSetting('nib', _rapierPaintSize() + (up ? 5 : -5));
+	else if (tool === 'water') _rapierDrawSetSetting('nib', _rapierDrawClamp(_rapierWaterEngine().waterHandUi(_rapierWaterState().size) + (up ? 5 : -5), 0, 100));
+	else _rapierDrawSetSetting('nib', _rapierDrawNibLevel(tool === 'erase' ? state.eraseNib ?? state.nib : state.nib) + (up ? 1 : -1));
+	return true;
+}
 function _rapierDrawFreshSession() {
 	return {
 		pasteStreak: null, heldPress: null, ink: null, inkChosen: false, colourOpen: false, snap: true, repeat: false,
@@ -5971,12 +6006,12 @@ function _rapierDrawOpenSurface(options) {
 	if (!_rapierDrawState.surface) _rapierDrawBuildSurface();
 	const state = _rapierDrawState, opts = options || {};
 	if (state.finishing) { opts.onReady?.(false); return; }
-	if (state.open) { opts.onReady?.(false); state.surface.focus({ preventScroll: true }); showToast('Finish or close this drawing before opening another. Your work is still here.', 'info'); return; }
+	if (state.open) { opts.onReady?.(false); state.surface.focus({ preventScroll: true }); showToast('Finish this drawing first.', 'info'); return; }
 	state.dropper?.close(false);
 	_rapierDrawReplayEnd();
 	_rapierDrawCancelGesture(); _rapierDrawCloseLabelInput(); _rapierDrawFontFacesClear();
 	const recipe = opts.recipe ? _rapierDrawAdmitRecipe(opts.recipe, opts.keepRasters === true) : _rapierDrawNewRecipe(1, 1);
-	if (!recipe) { opts.onReady?.(false); showToast('This drawing could not be opened', 'error'); return; }
+	if (!recipe) { opts.onReady?.(false); showToast('Couldn’t open this drawing.', 'error'); return; }
 	void _rapierDrawBackupRelease();
 	state.recipe = recipe; state.undoStack = []; state.redoStack = []; state.session = (state.session || 0) + 1; state.paintFastSources = new Map();
 	if(typeof _rapierPaintTrimHistory==='function')_rapierPaintTrimHistory();
@@ -6060,7 +6095,7 @@ function _rapierDrawOpenSurface(options) {
 	_rapierDrawApplyView();
 	_rapierDrawRenderAll();
 	state.openSnapshot = state.undoStack.length ? opening : _rapierDrawHistoryRecipe(baseline || state.recipe);
-	state.fontReady = _rapierDrawLoadFonts(recipe, session).then(() => { if (state.open && state.session === session) _rapierDrawRenderAll(); }).catch(error => { if (state.open && state.session === session) showToast('Font could not load: ' + String(error.message || error), 'error'); throw error; });
+	state.fontReady = _rapierDrawLoadFonts(recipe, session).then(() => { if (state.open && state.session === session) _rapierDrawRenderAll(); }).catch(error => { if (state.open && state.session === session) showToast('Couldn’t load the font.', 'error', null, error); throw error; });
 	state.fontReady.catch(() => {});
 	_rapierDrawLettersWake();
 	requestAnimationFrame(() => {
@@ -6150,7 +6185,7 @@ async function _rapierDrawClose({ recover = false, landed = false } = {}) {
 			await state.backupIO;
 			if (state.backupDirty || !state.open || state.session !== session) return;
 		} catch (error) {
-			showToast('This drawing could not be backed up, so it stays open: ' + String(error?.message || error), 'error');
+			showToast('Couldn’t back up. Drawing stays open.', 'error', null, error);
 			return;
 		} finally { state.finishing = false; }
 	}
@@ -6420,7 +6455,7 @@ function _rapierDrawBackupTouch(soon = false, delay = RAPIER_DRAW_BACKUP_MS) {
 	const state = _rapierDrawState;
 	if (!state.open) return;
 	state.backupDirty = true;
-	if (!_rapierDrawBackupHere()) { _rapierDrawBackupProblem('This drawing can’t be backed up here. Add it or ' + (globalThis.RapierPlatform?.environment.native === true ? 'save' : 'download') + ' it before you leave.'); return; }
+	if (!_rapierDrawBackupHere()) { _rapierDrawBackupProblem('Not backed up here. Add or ' + (globalThis.RapierPlatform?.environment.native === true ? 'save' : 'download') + ' it.'); return; }
 	_rapierDrawBackupOwner().change++;
 	if (soon) {
 		if (state.backupTimer) { clearTimeout(state.backupTimer); state.backupTimer = 0; }
@@ -6441,7 +6476,7 @@ async function _rapierDrawBackupRemove(store, files, owner, { quiet = false } = 
 		try { await store.remove(name); owner?.files.delete(name); }
 		catch (_) { ok = false; }
 	}
-	if (!ok && !quiet) _rapierDrawBackupProblem('An older drawing backup could not be removed.');
+	if (!ok && !quiet) _rapierDrawBackupProblem('Couldn’t remove an old backup.');
 	return ok;
 }
 async function _rapierDrawBackupWrite(closing = false, sealed = false) {
@@ -6508,7 +6543,7 @@ async function _rapierDrawBackupWrite(closing = false, sealed = false) {
 		});
 	} catch (_) {
 		state.backupDirty = true;
-		_rapierDrawBackupProblem('This drawing could not be backed up. Add it or ' + (globalThis.RapierPlatform?.environment.native === true ? 'save' : 'download') + ' it before you leave.');
+		_rapierDrawBackupProblem('Not backed up. Add or ' + (globalThis.RapierPlatform?.environment.native === true ? 'save' : 'download') + ' it.');
 		return false;
 	}
 	const name = 'pending.' + record.drawing + '.' + record.revision + '.json', previous = [...owner.files];
@@ -6539,7 +6574,7 @@ async function _rapierDrawBackupWrite(closing = false, sealed = false) {
 				if (!urgent && readoutEpoch !== (state.backupReadoutEpoch || 0)) throw Object.assign(new Error('Recovery readout superseded by an urgent checkpoint'), {code: 'PAINT_CAPTURE_CHANGED'});
 				await _rapierPaintKeepAsJXL(record.recipe, !urgent);
 				if (!_rapierDrawAdmitRecipe({ ...record.recipe, fonts: record.fonts || record.recipe.fonts })) {
-					failure = 'This drawing is too large for its backup copy. ' + (globalThis.RapierPlatform?.environment.native === true ? 'Save' : 'Download') + ' it before you leave.';
+					failure = 'Too large to back up. ' + (globalThis.RapierPlatform?.environment.native === true ? 'Save' : 'Download') + ' it.';
 					throw new Error(failure);
 				}
 			}
@@ -6547,7 +6582,7 @@ async function _rapierDrawBackupWrite(closing = false, sealed = false) {
 				try { record.editing.sourceHash = await globalThis.RapierImageAssets.hashAsset(globalThis.RapierImageAssets.decodeDataImage(editing.sourceUrl)); }
 				catch (_) {}
 			}
-			failure = 'This drawing could not be backed up: storage is full or unavailable. Add it or ' + (globalThis.RapierPlatform?.environment.native === true ? 'save' : 'download') + ' it before you leave.';
+			failure = 'Storage full. Add or ' + (globalThis.RapierPlatform?.environment.native === true ? 'save' : 'download') + ' it.';
 			store = _rapierDrawBackupStore();
 			await store.write(name, record, { background: !urgent, remove: previous });
 		} catch (error) {
@@ -6567,7 +6602,7 @@ async function _rapierDrawBackupWrite(closing = false, sealed = false) {
 		if (state.session === owner.session) state.backupAt = record.at;
 		for (const older of previous) owner.files.delete(older);
 		if (state.session === owner.session && state.backupError) {
-			state.backupError = null; showToast('Drawings are backed up again', 'info');
+			state.backupError = null; showToast('Backed up', 'info');
 		}
 		return true;
 	});
@@ -6614,7 +6649,7 @@ async function _rapierDrawBackupClear(ticket = _rapierDrawBackupTicket()) {
 	}
 	const io = state.backupIO = (state.backupIO || Promise.resolve()).then(async () => {
 		try { return await _rapierDrawBackupRemove(_rapierDrawBackupStore(), files, owner); }
-		catch (_) { _rapierDrawBackupProblem('This drawing\'s backup could not be removed.'); return false; }
+		catch (_) { _rapierDrawBackupProblem('Couldn’t remove the backup.'); return false; }
 	});
 	const ok = await io;
 	if (owner && (!state.open || state.session !== owner.session)) await _rapierDrawBackupRelease(owner);
@@ -6622,12 +6657,12 @@ async function _rapierDrawBackupClear(ticket = _rapierDrawBackupTicket()) {
 	return ok;
 }
 async function _rapierDrawBackupRead() {
-	if (!_rapierDrawBackupHere()) { _rapierDrawBackupProblem('Drawings can’t be backed up in this window.'); return null; }
+	if (!_rapierDrawBackupHere()) { _rapierDrawBackupProblem('Drawings aren’t backed up in this window.'); return null; }
 	if (!_rapierDrawState.open) await _rapierDrawBackupRelease();
 	await _rapierDrawState.backupIO;
 	let kept;
 	try { kept = await _rapierDrawBackupStore().list(); }
-	catch (_) { _rapierDrawBackupProblem('Unfinished drawings could not be read. Their backups are kept.'); return null; }
+	catch (_) { _rapierDrawBackupProblem('Couldn’t read unfinished drawings.'); return null; }
 	const groups = new Map();
 	for (const row of kept) {
 		const match = /^pending\.([0-9a-f-]{36})\.([1-9]\d*)\.json$/.exec(row.name);
@@ -6659,10 +6694,10 @@ async function _rapierDrawBackupRead() {
 					consider(record);
 					break;
 				} catch (error) {
-					if (error.name !== 'NotFoundError') _rapierDrawBackupProblem('An unfinished drawing could not be read. Its backup is kept.');
+					if (error.name !== 'NotFoundError') _rapierDrawBackupProblem('Couldn’t read an unfinished drawing.');
 				}
 			}
-		}); } catch (_) { _rapierDrawBackupProblem('Unfinished drawings could not be read. Their backups are kept.'); }
+		}); } catch (_) { _rapierDrawBackupProblem('Couldn’t read unfinished drawings.'); }
 	}
 	if (best) best.waiting = count - 1;
 	return best;
@@ -6678,11 +6713,11 @@ async function _rapierDrawOfferRecovery(chosen = false) {
 		const record = await _rapierDrawBackupRead();
 		if (!record || (state.open && !blank()) || state.finishing || loadToken !== rapier.identity.loadToken || !_rapierMutationStampIsCurrent(stamp)) return;
 		if (state.open) {
-			if (!chosen) { showToast('Your unfinished drawing is kept.', 'info', { label: 'Open', fn: () => { void _rapierDrawOfferRecovery(true); } }); return; }
+			if (!chosen) { showToast('Unfinished drawing kept', 'info', { label: 'Open', fn: () => { void _rapierDrawOfferRecovery(true); } }); return; }
 			await _rapierDrawClose();
 			if (state.open || state.finishing) return;
 		}
-		if (!chosen) { showToast('Your unfinished drawing is kept.', 'info', { label: 'Open', fn: () => { void _rapierDrawOfferRecovery(true); } }); return; }
+		if (!chosen) { showToast('Unfinished drawing kept', 'info', { label: 'Open', fn: () => { void _rapierDrawOfferRecovery(true); } }); return; }
 		const same = record.authority === String(rapier.identity.authority || '');
 		let editing = null, baselineRecipe = null;
 		if (same && record.editing?.sourceHash) {
@@ -6711,9 +6746,9 @@ async function _rapierDrawOfferRecovery(chosen = false) {
 		if (state.open) {
 			const owner = _rapierDrawBackupOwner(); owner.files = new Set(record.files); owner.recovered = true;
 			state.backupAt = record.at;
-			const back = 'Your unfinished drawing' + (!same && record.filename ? ' from ' + record.filename : '') + ' is back' + (record.waiting ? ' (' + record.waiting + ' more waiting)' : '');
+			const back = 'Unfinished drawing' + (!same && record.filename ? ' from ' + record.filename : '') + ' restored' + (record.waiting ? ' (' + record.waiting + ' more)' : '');
 			showToast(record.overKeepLimit
-				? back + '. Its paintings together are over what one document picture can hold: Set a painting or remove one before Add, or ' + (globalThis.RapierPlatform?.environment.native === true ? 'save' : 'download') + ' the drawing.'
+				? back + '. Too large to add. ' + (globalThis.RapierPlatform?.environment.native === true ? 'Save' : 'Download') + ' it.'
 				: back, 'info');
 			_rapierDrawBackupTouch(); void _rapierDrawBackupWrite();
 		}
@@ -6739,7 +6774,7 @@ if (typeof window !== 'undefined' && RAPIER_DRAW_DOOR_AT_BIRTH) {
 			}
 			_rapierDrawState.painterNext = RAPIER_DRAW_DOOR_AT_BIRTH === 'watercolor';
 			try { rapierOpenDraw(null, RAPIER_DRAW_DOOR_AT_BIRTH === 'watercolor' ? 'water' : null); } finally { _rapierDrawState.painterNext = false; }
-		} }).catch(error => showToast(String(error?.message || error), 'error')).finally(() => _rapierDrawStartClass(false));
+		} }).catch(error => showToast('Couldn’t open Draw.', 'error', null, error)).finally(() => _rapierDrawStartClass(false));
 	};
 	door();
 }
@@ -6766,13 +6801,13 @@ function _rapierDrawPlacement(recipe, editing, svgText) {
 async function _rapierDrawRemoveEditedEmpty(editing) {
 	const record = _rapierImageRecord(editing.blockId, editing.imageIndex);
 	const span = record && _rapierExcerptCanonicalBlockSpans().get(record.block.id);
-	if (!span) throw new Error('Drawing is no longer available');
+	if (!span) throw new Error('Drawing not found.');
 	const source = _rapierSourceText(), start = span.start + record.image.start, end = span.start + record.image.end;
 	if (!(Number.isSafeInteger(start) && Number.isSafeInteger(end) && start >= 0 && end >= start && end <= source.length)) {
-		throw new Error('Drawing is no longer available');
+		throw new Error('Drawing not found.');
 	}
 	const splices = [{ pos: start, removed: source.slice(start, end), inserted: '' }];
-	if (!await _rapierCommitSourceProjection(splices, 'document.remove-image')) throw new Error('Document changed; try Draw again');
+	if (!await _rapierCommitSourceProjection(splices, 'document.remove-image')) throw new Error('Document changed. Try again.');
 }
 function _rapierDrawAssetBudget() {
 	const test = typeof window !== 'undefined' ? window.__rapierDrawAssetMaxTest : undefined;
@@ -6788,11 +6823,6 @@ async function _rapierDrawWhileKeeping(work, controller = new AbortController(),
 		const kept = await Promise.race([work({ progress: fraction => popup?.set(row ? Math.min(.99, fraction) : fraction), signal: controller.signal }), new Promise((_, no) => controller.signal.addEventListener('abort', () => no(Object.assign(new Error('Saving canceled'), { code: 'DRAW_KEEP_GIVEN_UP' })), { once: true }))]);
 		return kept;
 	} finally { if (!row) popup?.end(); }
-}
-function _rapierDrawSaySplit(split) {
-	if (!split?.length) return;
-	const pieces = split.reduce((n, row) => n + row.pieces, 0);
-	showToast((split.length === 1 ? 'One painting was' : split.length + ' paintings were') + ' too large for one picture, so ' + (split.length === 1 ? 'it is' : 'they are') + ' kept at full quality in ' + pieces + ' JPEG XL pieces. Nothing was lost from the drawing.', 'info');
 }
 function _rapierDrawFinishIdle(asset, sources) {
 	const embedded = globalThis.RapierEmbeddedImages;
@@ -6842,7 +6872,7 @@ async function _rapierDrawFinishWith(row) {
 	const waitingSession = state.session, pending = _rapierPaintPendingStroke();
 	if (pending) { await pending; if (!state.open || state.session !== waitingSession || state.finishing) return; }
 	try { const settled = _rapierPaintSettleOverflow(); if (settled) await settled; }
-	catch (error) { _rapierDrawShowCloseOnFailure(); showToast('The painting could not be kept. It is still open: ' + String(error?.message || error), 'error'); return; }
+	catch (error) { _rapierDrawShowCloseOnFailure(); showToast('Couldn’t save the painting. It’s still open.', 'error', null, error); return; }
 	if (!state.open || state.session !== waitingSession || state.finishing) return;
 	const effects = state.effectsPendingChange && _rapierDrawEffectsFlush();
 	if (effects) { await effects; if (!state.open || state.session !== waitingSession || state.finishing) return; }
@@ -6877,7 +6907,7 @@ async function _rapierDrawFinishWith(row) {
 	};
 	const keep = async handoff => {
 		const belongs = () => sameSession() && state.open && _rapierMutationStampSharesDocument(handoff.documentStamp);
-		if (!belongs() || !handoff.stamp || (!_rapierMutationStampIsCurrent(handoff.stamp) && !refreshHandoff(handoff))) throw new Error('The document changed before it kept the drawing');
+		if (!belongs() || !handoff.stamp || (!_rapierMutationStampIsCurrent(handoff.stamp) && !refreshHandoff(handoff))) throw new Error('Document changed. Try Done again.');
 		let kept;
 		if (_rapierNotesOwnTheDocument()) {
 			const note = _rapierNotes?.current, currentNote = () => typeof _rapierNotes === 'object' && note && _rapierNotes.current === note &&
@@ -6911,12 +6941,12 @@ async function _rapierDrawFinishWith(row) {
 	};
 	try {
 		if (state.finishHandoff && _rapierDrawSameRecipe(state.finishHandoff.recipe)) { await keep(state.finishHandoff); return; }
-		if (state.finishHandoff && !refreshHandoff(state.finishHandoff)) throw new Error('The drawing is no longer bound to its place in the document. ' + (globalThis.RapierPlatform?.environment.native === true ? 'Save' : 'Download') + ' it or close it for recovery.');
+		if (state.finishHandoff && !refreshHandoff(state.finishHandoff)) throw new Error('Its place in the document is gone. ' + (globalThis.RapierPlatform?.environment.native === true ? 'Save' : 'Download') + ' it.');
 		if (notes?.fresh && notes.ready) {
 			const ok = await notes.ready;
 			if (!sameSession() || !state.open) return;
 			if (!ok) {
-				const choice = await rapierConfirm({ title: 'unsaved drawing', message: 'The note could not be written. ' + (globalThis.RapierPlatform?.environment.native === true ? 'Save' : 'Download') + ' the drawing as a file?', confirmLabel: globalThis.RapierPlatform?.environment.native === true ? 'Save' : 'Download' });
+				const choice = await rapierConfirm({ title: 'couldn’t save the note', message: (globalThis.RapierPlatform?.environment.native === true ? 'Save' : 'Download') + ' the drawing as a file?', confirmLabel: globalThis.RapierPlatform?.environment.native === true ? 'Save' : 'Download' });
 				if (!sameSession() || !state.open) return;
 				if (choice === true) await _rapierDrawDownload(session);
 				return;
@@ -6925,7 +6955,7 @@ async function _rapierDrawFinishWith(row) {
 		}
 		const deadline = Date.now() + 650;
 		while (_rapierUserMutationBlocked(false) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 40));
-		if (_rapierUserMutationBlocked(false)) throw new Error('Document is still busy; try Done again');
+		if (_rapierUserMutationBlocked(false)) throw new Error('Still working. Try Done again.');
 		editing = state.editing;
 		if (!notes?.fresh) {
 			insertTarget = state.insertTarget;
@@ -6951,7 +6981,7 @@ async function _rapierDrawFinishWith(row) {
 		const idleSources = new Map(state.paintFastSources || []);
 		if (typeof _rapierPaintKeepAsJXL === 'function') {
 			try {
-				_rapierDrawSaySplit(await keeping(work => _rapierPaintKeepAsJXL(recipe, false, null, {...work, sources: idleSources})));
+				await keeping(work => _rapierPaintKeepAsJXL(recipe, false, null, {...work, sources: idleSources}));
 			} catch (error) {
 				if (error?.code === 'DRAW_KEEP_GIVEN_UP') throw error;
 				console.warn('[rapier] paint keep', error);
@@ -6968,7 +6998,7 @@ async function _rapierDrawFinishWith(row) {
 		given();
 		let svgText = await _rapierPainterSVG(recipe, undefined, {paperImage});
 		given();
-		if (!svgText) throw new Error('The complete drawing could not be prepared');
+		if (!svgText) throw new Error('Couldn’t prepare the drawing.');
 		let svgBytes = new TextEncoder().encode(svgText);
 		if (svgBytes.length > _rapierDrawAssetBudget() && (typeof _rapierDefaultImageProfile !== 'function' || _rapierDefaultImageProfile() === 'jxl')) {
 			const before = svgBytes.length;
@@ -6990,7 +7020,6 @@ async function _rapierDrawFinishWith(row) {
 				return;
 			}
 			svgText = smallerText; svgBytes = smallerBytes;
-			showToast('This drawing was too large for one picture at full quality, so its painting is kept at quality 95 instead (' + Math.round(smallerBytes.length / 1024) + ' KiB).', 'info');
 		}
 		if (svgBytes.length > _rapierDrawAssetBudget()) {
 			await _rapierDrawTooLarge(session);
@@ -6999,7 +7028,7 @@ async function _rapierDrawFinishWith(row) {
 		const assetTitle = editing?.title || _rapierDrawNextName();
 		given();
 		const asset = await globalThis.RapierImageInspection.createDrawingAsset(svgText, {title: assetTitle});
-		if (loadToken !== rapier.identity.loadToken || !sameSession()) throw new Error('Document changed; try Draw again');
+		if (loadToken !== rapier.identity.loadToken || !sameSession()) throw new Error('Document changed. Try again.');
 		const previousAlt = editing?.title || '', generatedAlt = _rapierDrawTextAlternative(state.openSnapshot?.recipe);
 		const alt = editing && previousAlt && _rapierEscapeImageAlt(previousAlt) !== _rapierEscapeImageAlt(generatedAlt) ? previousAlt : _rapierDrawTextAlternative(recipe, notes?.alt || 'Drawing');
 		const raw = '![' + _rapierEscapeImageAlt(alt) + '][' + asset.label + ']' + (notes ? '' : _rapierDrawPlacement(recipe, editing, svgText));
@@ -7007,7 +7036,7 @@ async function _rapierDrawFinishWith(row) {
 		const normalized = { asset, reference: asset.label, dataUrl: asset.url, width: asset.width, height: asset.height };
 		given();
 		const inserted = await globalThis.RapierEmbeddedImages.insert(normalized, raw, target, stamp, { receipt: true });
-		if (!inserted?.committed) throw new Error('Document changed; try Draw again');
+		if (!inserted?.committed) throw new Error('Document changed. Try again.');
 		if (!sameSession() || !state.open) return;
 		const occurrence = inserted.occurrence;
 		const handoff = state.finishHandoff = { recovery, recipe: drawn, documentStamp: inserted.documentStamp, stamp: inserted.stamp,
@@ -7018,8 +7047,8 @@ async function _rapierDrawFinishWith(row) {
 		}
 		await keep(handoff);
 	} catch (error) {
-		if (error?.code === 'DRAW_KEEP_GIVEN_UP') { if (sameSession()) showToast('Saving canceled. The drawing is still open.', 'info'); }
-		else if (sameSession()) { _rapierDrawShowCloseOnFailure(); showToast((state.finishHandoff ? 'Drawing could not be kept: ' : 'Drawing could not be placed: ') + String(error.message || error), 'error'); }
+		if (error?.code === 'DRAW_KEEP_GIVEN_UP') { if (sameSession()) showToast('Saving canceled', 'info'); }
+		else if (sameSession()) { _rapierDrawShowCloseOnFailure(); showToast(state.finishHandoff ? 'Couldn’t save the drawing.' : 'Couldn’t place the drawing.', 'error', null, error); }
 	} finally {
 		state.finishing = false; state.surface.removeAttribute('aria-busy');
 		for (const control of state.surface.querySelectorAll(':is(button:not(.rapier-dial),input,textarea,select):not(#toast-root *)')) control.disabled = false;
@@ -7039,7 +7068,7 @@ function _rapierDrawReadyForWords(label) {
 	if (wrapper) enterBlockEdit(line, wrapper, { charOffset: 0, preserveScroll: true });
 }
 async function _rapierDrawTooLarge(session) {
-	showToast('This drawing is too large for the document, so it is saved as a file instead.', 'info');
+	showToast('Too large for the document. Saving as a file.', 'info');
 	await _rapierDrawDownload(session);
 }
 async function _rapierDrawDownload(session) {
@@ -7062,11 +7091,7 @@ async function _rapierDrawDownload(session) {
 		if (!state.open || state.session !== session) return;
 		if (typeof _rapierPaintKeepAsJXL === 'function') {
 			try {
-				const split = await _rapierPaintKeepAsJXL(recipe);
-				if (split?.length) {
-					const pieces = split.reduce((n, row) => n + row.pieces, 0);
-					showToast((split.length === 1 ? 'One painting was' : split.length + ' paintings were') + ' too large for one picture, so ' + (split.length === 1 ? 'it is' : 'they are') + ' kept at full quality in ' + pieces + ' JPEG XL pieces. Nothing was lost from the drawing.', 'info');
-				}
+				await _rapierPaintKeepAsJXL(recipe);
 			} catch (error) { console.warn('[rapier] paint keep', error); }
 		}
 		if (!state.open || state.session !== session) return;
@@ -7074,7 +7099,7 @@ async function _rapierDrawDownload(session) {
 		if (!state.open || state.session !== session) return;
 		const svgText = await _rapierPainterSVG(recipe, undefined, {paperImage});
 		check();
-		if (!svgText) throw new Error('The complete drawing could not be prepared');
+		if (!svgText) throw new Error('Couldn’t prepare the drawing.');
 		const svgBytes = new TextEncoder().encode(svgText);
 		const blob = new Blob([svgBytes], { type: 'image/svg+xml' });
 		let receipt, saved;
@@ -7100,9 +7125,9 @@ async function _rapierDrawDownload(session) {
 			}
 			if (state.open && state.session === session) _rapierDrawClose();
 		}
-		else if (saved !== false && state.open && state.session === session) { _rapierDrawShowCloseOnFailure(); showToast('The drawing could not be saved as a file. It is still open; try Done again.', 'error'); }
+		else if (saved !== false && state.open && state.session === session) { _rapierDrawShowCloseOnFailure(); showToast('Couldn’t save the file. Try Done again.', 'error'); }
 	} catch (error) {
-		if (state.open && state.session === session) { _rapierDrawShowCloseOnFailure(); showToast('The drawing could not be saved as a file. It is still open: ' + String(error?.message || error), 'error'); }
+		if (state.open && state.session === session) { _rapierDrawShowCloseOnFailure(); showToast('Couldn’t save the file. Try Done again.', 'error', null, error); }
 	}
 }
 function _rapierPainterOver(dst, src, opacity, multiply) {
@@ -7146,7 +7171,7 @@ async function _rapierPainterLayers(recipe, svg, signal, keepLayers = true) {
 	const big = paints.reduce((a, shape) => !a || shape.paint.px[0] * shape.paint.px[1] > a.paint.px[0] * a.paint.px[1] ? shape : a, null), frame = big && _rapierDrawShapePolygon(big, recipe);
 	const scale = big ? big.paint.px[0] / Math.hypot(frame[1][0] - frame[0][0], frame[1][1] - frame[0][1]) : 2;
 	const W = Math.round(view[2] * scale), H = Math.round(view[3] * scale);
-	if (!(W * H <= _rapierPaintPNG.pixelLimit)) throw new Error('This painting is too large to save as a picture.');
+	if (!(W * H <= _rapierPaintPNG.pixelLimit)) throw new Error('Painting too large to save as a picture.');
 	const render = async sub => {
 		const text = _rapierDrawBuildSVG(sub, _rapierDrawMeasuredView, true).replace(/prefers-color-scheme:\s*dark/g, 'not all').replace(/viewBox="[^"]*" width="[^"]*" height="[^"]*"/, 'viewBox="' + view.join(' ') + '" width="' + W + '" height="' + H + '"');
 		const board = await globalThis.RapierDrawAgentPaint.rasterizeSVG(text, W, H, {signal});
@@ -7168,12 +7193,12 @@ async function _rapierPainterLayers(recipe, svg, signal, keepLayers = true) {
 		const placed = Math.abs(x - Math.round(x)) < 1e-3 && Math.abs(y - Math.round(y)) < 1e-3 && Math.abs(f[1][1] - f[0][1]) < 1e-6 && Math.abs(f[3][0] - f[0][0]) < 1e-6 &&
 			Math.abs((f[1][0] - f[0][0]) * scale - w) < 1e-3 && Math.abs((f[3][1] - f[0][1]) * scale - h) < 1e-3;
 		const px = await decode(shape.raster);
-		if (!px || px.width !== w || px.height !== h) throw new Error('This browser cannot read the painting\'s exact pixels.');
+		if (!px || px.width !== w || px.height !== h) throw new Error('This browser can’t read the painting.');
 		let pixels;
 		if (placed && !shape.effect) {
 			pixels = {width: w, height: h, x: Math.round(x), y: Math.round(y), data: px.data};
 		} else pixels = {...full, data: await render({...bare(authored), shapes: [{...shape, opacity: undefined, raster: _rapierPaintPNG.encode(px)}]})};
-		layers.push({name: (shape.paint.mode === 'water' ? 'Water ' : 'Paint ') + (layers.length + 1), ...pixels, opacity: shape.opacity ?? 1,
+		layers.push({name: (shape.paint.mode === 'water' ? 'Watercolor ' : 'Paint ') + (layers.length + 1), ...pixels, opacity: shape.opacity ?? 1,
 			multiply: shape.paint.mode === 'water' && recipe.background?.kind === 'paper'});
 	}
 	await flush();
@@ -7236,7 +7261,7 @@ async function _rapierDrawSavePainting(leaving = false) {
 		const effects = live() && state.effectsPendingChange && _rapierDrawEffectsFlush(); if (effects) await effects;
 		const flushing = live() && _rapierPaintFlushRevision(undefined, true); if (flushing) await flushing;
 		if (live() && state.agentQueue?.length) { _rapierDrawDrainAgentPatches(true); _rapierDrawReplayEnd(); }
-	} catch (error) { if (live()) showToast('The painting could not be prepared. It is still open: ' + String(error?.message || error), 'error'); return; }
+	} catch (error) { if (live()) showToast('Couldn’t prepare the painting.', 'error', null, error); return; }
 	finally { preparing.end(); if (state.painterOpening === opening) state.painterOpening = null; }
 	if (!live()) return;
 	const untouched = () => !state.finishHandoff && (state.editing ? !_rapierDrawChangedSinceOpen() : !_rapierDrawHasContent(state.recipe));
@@ -7263,7 +7288,7 @@ async function _rapierDrawSavePainting(leaving = false) {
 		const target = event.target.closest?.('button');
 		if (!target || work) return;
 		if (target.hasAttribute('data-info')) { const info = overlay.querySelector('#rapier-save-info'), open = info.hidden; info.hidden = !open; target.setAttribute('aria-expanded', String(open)); return; }
-		if (target.dataset.act === 'add' && !_rapierDrawHasPlace(state.notes)) { say('This document is plain text, so it cannot hold a drawing. ' + (native ? 'Save' : 'Download') + ' keeps your drawing.'); return; }
+		if (target.dataset.act === 'add' && !_rapierDrawHasPlace(state.notes)) { say('Plain text can’t hold a drawing. ' + (native ? 'Save' : 'Download') + ' it.'); return; }
 		if (target.dataset.act === 'add') { dialog.cancel(false); if (live()) await _rapierDrawFinish(); return; }
 		if (target.dataset.act === 'exit') {
 			dialog.cancel(false);
@@ -7287,7 +7312,7 @@ async function _rapierDrawSavePainting(leaving = false) {
 			recipe = await _rapierDrawEffectStills(recipe, task => task({signal: controller.signal, progress: f => row.set(f * .5)}));
 			controller.signal.throwIfAborted(); if (!live()) return;
 			const svg = await _rapierPainterSVG(recipe, controller.signal);
-			if (!svg) throw new Error('The painting could not be prepared.');
+			if (!svg) throw new Error('Couldn’t prepare the painting.');
 			const out = await _rapierPainterLayers(recipe, svg, controller.signal, format === 'ora');
 			controller.signal.throwIfAborted();
 			let bytes, type = 'image/' + format;
@@ -7299,9 +7324,9 @@ async function _rapierDrawSavePainting(leaving = false) {
 			const blob = new Blob([bytes], {type});
 			const saved = reserved ? _rapierExportOutcome(await reserved(blob, {check: () => controller.signal.throwIfAborted()})) : await _download(blob, name);
 			if (RAPIER_WATER_CAPTURE) await _rapierWaterCaptureSave();
-			if (live() && !controller.signal.aborted) { if (saved === true) say(name + (native ? ' saved' : ' sent to downloads')); else if (saved !== false) say('Not saved: the file could not be written.', true); }
+			if (live() && !controller.signal.aborted) { if (saved === true) say(name + (native ? ' saved' : ' sent to downloads')); else if (saved !== false) say('Couldn’t save the file.', true); }
 		} catch (error) {
-			if (live() && !controller.signal.aborted) say('Not saved: ' + String(error?.message || error), true);
+			if (live() && !controller.signal.aborted) (console.error(error), say('Couldn’t save the file.', true));
 		} finally {
 			row.end(); work = null;
 			for (const control of overlay.querySelectorAll('.rapier-draw-save button')) control.disabled = false;
@@ -7375,9 +7400,9 @@ async function _rapierDrawPictureRecipe(imageEl, work = {}) {
 	const {signal, progress} = work;
 	signal?.throwIfAborted();
 	const w = imageEl.naturalWidth, h = imageEl.naturalHeight;
-	if (!(w > 0 && h > 0)) throw new Error('This picture has not finished loading');
-	if (w * h > RAPIER_PAINT_AREA_MAX * 2) throw new Error('This picture is larger than the 12-megapixel painting surface. Use a smaller copy to draw on.');
-	if (w > 16384 || h > 16384) throw new Error('This picture is too wide or tall for the painting surface. Use a smaller copy to draw on.');
+	if (!(w > 0 && h > 0)) throw new Error('Picture still loading. Try again.');
+	if (w * h > RAPIER_PAINT_AREA_MAX * 2) throw new Error('Picture too large (12 MP max).');
+	if (w > 16384 || h > 16384) throw new Error('Picture too large (16,384 px max).');
 	const recipe = raster => ({version: RAPIER_DRAW_VERSION, canvas: {w, h}, strokes: [],
 		shapes: [{id: 's1', recognized: 'paint', geom: {cx: w / 2, cy: h / 2, w, h, rot: 0}, raster, paint: {px: [w, h], scale: 1}}]});
 	const original = _rapierDrawImageDataUrl(imageEl) || imageEl.currentSrc || imageEl.getAttribute('src');
@@ -7393,11 +7418,11 @@ async function _rapierDrawPictureRecipe(imageEl, work = {}) {
 	};
 	try {
 		const ctx = canvas.getContext('2d');
-		if (!ctx) throw new Error('This browser could not read the picture');
+		if (!ctx) throw new Error('Couldn’t read the picture.');
 		ctx.drawImage(imageEl, 0, 0, w, h);
 		let px;
 		try { px = ctx.getImageData(0, 0, w, h); }
-		catch (_) { throw new Error('This picture comes from another site, so the browser will not let Rapier read its pixels to draw on'); }
+		catch (_) { throw new Error('Can’t draw on pictures from other sites.'); }
 		let raster;
 		try {
 			const out = await globalThis.RapierEmbeddedImages.codec('encode',
@@ -7408,7 +7433,7 @@ async function _rapierDrawPictureRecipe(imageEl, work = {}) {
 			raster = canvas.toDataURL('image/png');
 		}
 		signal?.throwIfAborted();
-		if (!globalThis.RapierDrawCore._rapierDrawValidRaster(raster, Infinity)) throw new Error('The complete picture could not be kept for drawing');
+		if (!globalThis.RapierDrawCore._rapierDrawValidRaster(raster, Infinity)) throw new Error('Couldn’t prepare the picture.');
 		return recipe(raster);
 	} finally { canvas.width = 0; canvas.height = 0; popup?.end(); }
 }
@@ -7417,7 +7442,7 @@ async function _rapierDrawOnPicture() {
 	const blockId = _rapierImageRuntime.blockId, imageIndex = _rapierImageRuntime.imageIndex;
 	const record = _rapierImageRecord(blockId, imageIndex);
 	const imageEl = _rapierImageRuntime.image;
-	if (!record || !imageEl) { showToast('That picture is no longer available', 'info'); return; }
+	if (!record || !imageEl) { showToast('Picture not found.', 'info'); return; }
 	const stamp = Object.freeze(_rapierMutationStamp());
 	const sourceUrl = _rapierDrawImageDataUrl(imageEl) || imageEl.currentSrc || imageEl.getAttribute('src');
 	let recipe;
@@ -7432,7 +7457,7 @@ async function _rapierDrawOnPicture() {
 	if (!_rapierMutationStampIsCurrent(stamp) ||
 		(_rapierDrawImageDataUrl(imageEl) || imageEl.currentSrc || imageEl.getAttribute('src')) !== sourceUrl ||
 		_rapierImageRuntime.image !== imageEl || _rapierImageRuntime.blockId !== blockId || _rapierImageRuntime.imageIndex !== imageIndex) {
-		showToast('That picture changed while it was being read; press the brush again', 'info'); return;
+		showToast('Picture changed. Try again.', 'info'); return;
 	}
 	const currentAlt = _rapierRenderModule('render-markdown')._rapierImageAltText(_rapierRenderModule('render-markdown')._rapierImageAltSourceParts(record.image.altSource).alt);
 	const asset = imageEl.getAttribute('data-rapier-asset') || record.image.reference || '';
@@ -7443,7 +7468,7 @@ async function _rapierDrawOnPicture() {
 async function _rapierEditDrawing() {
 	const record = _rapierImageRecord(_rapierImageRuntime.blockId, _rapierImageRuntime.imageIndex);
 	const imageEl = _rapierImageRuntime.image;
-	if (!record || !imageEl) { showToast('Drawing is no longer available', 'info'); return; }
+	if (!record || !imageEl) { showToast('Drawing not found.', 'info'); return; }
 	const drawing = _rapierDrawImageRecipe(imageEl), stamp = _rapierMutationStamp();
 	if (drawing?.pending && !drawing.ready) await drawing.pending;
 	if (!_rapierMutationStampIsCurrent(stamp) || _rapierImageRuntime.image !== imageEl ||

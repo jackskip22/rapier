@@ -741,10 +741,10 @@ async function _rapierNotesLibraryLinkMention(target, hit) {
 	const was = hit.was;
 	const now = L.markdownLink(was, target);
 	const next = _rapierNotesLibraryRefit(text, [{start: hit.start, end: hit.end, was, now}]);
-	if (next == null) { if (typeof showToast === 'function') showToast('That mention has changed since it was read; nothing was written.', 'info'); return; }
-	if (hit.file === state.current) { if (typeof showToast === 'function') showToast('That note is open: close it first and the mention can be linked.', 'info'); return; }
+	if (next == null) { if (typeof showToast === 'function') showToast('Mention changed. Nothing written.', 'info'); return; }
+	if (hit.file === state.current) { if (typeof showToast === 'function') showToast('Close that note to link it.', 'info'); return; }
 	try { await _rapierNotesStore.write(hit.file, next); }
-	catch (error) { if (typeof showToast === 'function') showToast('The link was not written to the notes folder: ' + String((error && error.message) || error), 'error'); return; }
+	catch (error) { if (typeof showToast === 'function') showToast('Couldn’t save the link.', 'error', null, error); return; }
 	state.texts.set(hit.file, next);
 	const entry = state.index && state.index.notes[hit.file];
 	if (entry) entry.modified = Date.now();
@@ -945,7 +945,7 @@ async function _rapierNotesPickerChoose(index) {
 		const state = _rapierNotes, text = '# ' + name + '\n', from = state.current;
 		picker.creating = true;
 		try { file = await _rapierNotesWriteNew(text, _rapierNotesModel().noteFileName(text, Object.keys(state.index.notes)), _rapierNotesPlaceFirst()); }
-		catch (error) { showToast('The note could not be written: ' + String(error?.message || error), 'error'); return; }
+		catch (error) { showToast('Couldn’t save the note.', 'error', null, error); return; }
 		finally { picker.creating = false; }
 		_rapierNotesAdmit(file, text);
 		if (lib.picker !== picker || picker.rows[at] !== null || picker.create !== name || state.current !== from) return;
@@ -1081,14 +1081,14 @@ globalThis.RapierOriginalFolder = Object.freeze({
   async rename(name, {signal} = {}) {
     const original = globalThis.RapierPlatform?.files.original(String(rapier.identity.authority || ''));
     if (!original?.rename || name === original.name) return false;
-    if (_rapierMutationBarrierActive() || _rapierIsDirty()) { showToast('Save the document before renaming it', 'info'); return true; }
+    if (_rapierMutationBarrierActive() || _rapierIsDirty()) { showToast('Save before renaming.', 'info'); return true; }
     const expectedMutationStamp = Object.freeze(_rapierMutationStamp());
     let prepared;
     try { prepared = await original.rename(name, {signal}); }
     catch (error) {
       const code = String(error?.code || '');
       if (/unavailable$|^unknown_operation$/.test(code)) return false;
-      showToast(code === 'destination_exists' ? 'A file named ' + name + ' is already there' : 'The file was not renamed', 'error');
+      showToast(code === 'destination_exists' ? name + ' already exists' : 'Couldn’t rename the file.', 'error');
       return true;
     }
     let opened = false;
@@ -1113,7 +1113,7 @@ globalThis.RapierOriginalFolder = Object.freeze({
       let opened = false;
       try { opened = await rapierOpenPlatformPayload(prepared.payload, {signal, expectedMutationStamp}); return true; }
       finally { if (!opened) await prepared.release(); }
-    } catch (error) { showToast('The note could not be created', 'error'); return true; }
+    } catch (error) { showToast('Couldn’t create the note.', 'error'); return true; }
     finally { if (entry) await folder.release(entry); if (directory !== folder.root) await folder.release(directory); }
   },
   leaveView() { _rapierOriginalFolderView.cancel?.abort(); _rapierOriginalFolderView.cancel = null; },
@@ -1133,15 +1133,15 @@ function _rapierOriginalFolderAvailable() {
 async function _rapierOriginalFolderOpen() {
 	let result;
 	try { result = await globalThis.RapierOriginalFolder.choose(); }
-	catch (_) { showToast('That folder did not open.', 'error'); return; }
-	if (result?.status === 'unavailable') { showToast('Open a folder in Chrome or Edge on a computer.', 'info'); return; }
+	catch (_) { showToast('Couldn’t open that folder.', 'error'); return; }
+	if (result?.status === 'unavailable') { showToast('Folders open in Chrome or Edge on a computer.', 'info'); return; }
 	if (result?.status === 'selected') await _rapierOriginalFolderShow(null, []);
 }
 function _rapierOriginalFolderRow(name, meta, act) {
 	const row = _rapierNotesEl('span', 'rapier-attachment-row'), details = _rapierNotesEl('span', 'rapier-attachment-details');
 	details.append(_rapierNotesEl('strong', 'rapier-attachment-name', name), _rapierNotesEl('span', 'rapier-attachment-meta', meta));
 	row.appendChild(details); row.setAttribute('role', 'button'); row.tabIndex = 0;
-	const go = event => { event.preventDefault(); event.stopPropagation(); void Promise.resolve(act()).catch(() => showToast('That did not open.', 'error')); };
+	const go = event => { event.preventDefault(); event.stopPropagation(); void Promise.resolve(act()).catch(() => showToast('Couldn’t open that.', 'error')); };
 	row.addEventListener('click', go);
 	row.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') go(event); });
 	return row;
@@ -1163,7 +1163,7 @@ async function _rapierOriginalFolderShow(path, trail) {
 		entries.sort((a, b) => (a.kind === 'directory' ? 0 : 1) - (b.kind === 'directory' ? 0 : 1) || a.name.localeCompare(b.name));
 		for (const entry of entries) d.insertBefore(entry.kind === 'directory'
 			? _rapierOriginalFolderRow(entry.name, 'Folder', () => { d.close(); return _rapierOriginalFolderShow(entry.displayPath, [...trail, path]); })
-			: _rapierOriginalFolderRow(entry.name, 'Markdown', async () => { d.close(); if (!await globalThis.RapierOriginalFolder.open(entry.displayPath)) showToast('That file did not open.', 'error'); }), more);
+			: _rapierOriginalFolderRow(entry.name, 'Markdown', async () => { d.close(); if (!await globalThis.RapierOriginalFolder.open(entry.displayPath)) showToast('Couldn’t open that file.', 'error'); }), more);
 		shown += entries.length;
 		more.hidden = next.done || next.value.complete;
 		status.textContent = shown ? '' : more.hidden ? 'No Markdown files here.' : 'Reading the folder';
@@ -1174,7 +1174,7 @@ async function _rapierOriginalFolderShow(path, trail) {
 window.addEventListener('rapier:original-file-result', event => {
 	const detail = event.detail || {};
 	if (detail.status === 'retained-draft' && detail.copyVerified && detail.destinationName)
-		showToast('Changed outside Rapier. Your edits are saved beside it as ' + detail.destinationName + '.', 'info');
-	else if (detail.status === 'retained-draft') showToast('Changed outside Rapier. Your edits are kept here; save again to choose where.', 'warning');
-	else if (detail.status === 'refused') showToast('That file did not open.', 'error');
+		showToast('File changed elsewhere. Yours saved as ' + detail.destinationName, 'info');
+	else if (detail.status === 'retained-draft') showToast('File changed elsewhere. Save again to keep yours.', 'warning');
+	else if (detail.status === 'refused') showToast('Couldn’t open that file.', 'error');
 });

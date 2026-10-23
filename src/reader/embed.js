@@ -22,8 +22,8 @@ _rapierEmbed.fileOpen = globalThis.RapierEmbedContract.createFilePicker({
 	settle: () => true,
 	post: (...args) => _rapierEmbedPost(...args),
 	open: (file, ticket) => readerOpenFile(file, {ticket, generation: ticket.generation}),
-	notify: code => readerToast(code === 'open_stale' ? 'The document changed; open the file again' : 'Could not open a file here', 'info'),
-	error: error => { if (error?.name !== 'AbortError') readerToast(String(error?.message || error), 'error'); },
+	notify: code => readerToast(code === 'open_stale' ? 'Document changed. Open the file again.' : 'Can’t open a file here.', 'info'),
+	error: error => { if (error?.name !== 'AbortError') (console.error(error), readerToast('Couldn’t open that file.', 'error')); },
 });
 const READER_GRANTS = ['open', 'changes'];
 const READER_FEATURES = ['find', 'readAloud', 'share'];

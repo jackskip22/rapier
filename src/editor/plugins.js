@@ -10,7 +10,7 @@ const RAPIER_PLUGIN_DELETE = Object.freeze({
 	pdf: {name: 'PDF import', what: 'the PDF reader', after: 'Importing a PDF asks to download it again.',
 		held: () => { const state = globalThis.RapierPdfPlugin?.state(); return !!state?.installed && state.deletable; },
 		async forget() { await globalThis.RapierPdfPlugin.forget(); if (typeof _rapierPdfSettingsRefresh === 'function') _rapierPdfSettingsRefresh(); }},
-	drawing: {name: 'Drawing', what: 'the Drawing part kept on this device', after: 'Draw, Paint and Water download it again when you next open them. Your drawings stay in your documents.',
+	drawing: {name: 'Drawing', what: 'the Drawing part kept on this device', after: 'Draw, Paint and watercolor download it again when you next open them. Your drawings stay in your documents.',
 		held: () => RapierParts.status('drawing')?.status === 'stored' || RapierParts.status('drawing')?.status === 'ready' && RapierParts.deletable('drawing'),
 		async forget() { await RapierParts.forget('drawing'); _rapierDrawingRowPaint(); }},
 	notes: {name: 'Notes', what: 'the Notes part kept on this device', after: 'Notes downloads it again when you next open it. Your notes stay where they are.',

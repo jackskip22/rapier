@@ -27,8 +27,8 @@ async function _rapierRecorderMicrophoneSettings() {
 	try { await open(); }
 	catch (_) {
 		if (R.draft === d && d.phase === 'idle' && d.refused) showToast(_rapierRecorderApp() === 'android'
-			? 'App settings could not open. In Settings, choose Apps, Rapier, Permissions, then Microphone.'
-			: 'Microphone settings could not open. Open Windows Settings and search for Microphone privacy settings.', 'error');
+			? 'Open Settings > Apps > Rapier > Permissions.'
+			: 'Open Windows Settings > Privacy > Microphone.', 'error');
 	} finally { d.openingSettings = false; if (R.draft === d) _rapierRecorderRender(); }
 }
 function _rapierRecorderOpen(fresh) {
@@ -37,9 +37,9 @@ function _rapierRecorderOpen(fresh) {
 	if (R.dialog?.open) return;
 	let start = false;
 	if (!R.draft) {
-		if (!globalThis.MediaRecorder || typeof MediaRecorder.isTypeSupported !== 'function') { showToast(_rapierNotesWords().Device + ' cannot record audio', 'info'); return; }
-		if (!navigator.mediaDevices?.getUserMedia || !globalThis.isSecureContext) { showToast(_rapierNotesWords().native ? 'This device cannot open a microphone.' : 'This page cannot open a microphone. Open it in a secure browser window.', 'info'); return; }
-		if (!fresh && !_rapierRecorderOwner()) { showToast('Open a note before adding a recording', 'info'); return; }
+		if (!globalThis.MediaRecorder || typeof MediaRecorder.isTypeSupported !== 'function') { showToast(_rapierNotesWords().Device + ' can’t record audio.', 'info'); return; }
+		if (!navigator.mediaDevices?.getUserMedia || !globalThis.isSecureContext) { showToast(_rapierNotesWords().native ? 'No microphone available.' : 'No microphone here. Open Rapier over https.', 'info'); return; }
+		if (!fresh && !_rapierRecorderOwner()) { showToast('Open a note first.', 'info'); return; }
 		R.draft = {fresh, owner: fresh ? '' : _rapierRecorderOwner(), note: fresh ? _rapierNotesModel().noteFileName('Recording', Object.keys(_rapierNotes.index.notes)) : _rapierNotes.current, phase: 'idle', chunks: [], held: [], pending: [], session: null, entry: null, saved: 0, custody: '', streamFault: '', blob: null, duration: null, stream: null, recorder: null, timer: 0, name: '', file: '', linked: false, fault: ''};
 		start = true;
 	}
@@ -248,7 +248,7 @@ async function _rapierRecorderStart() {
 		catch (error) { d.session = null; d.custody = String(error?.message || error); }
 		if (R.draft !== d || d.phase !== 'requesting') { for (const t of stream.getTracks()) t.stop(); await _rapierRecorderDropSession(d, {abandon: true}); return; }
 		recorder.ondataavailable = e => { if (!e.data?.size || d.discarded) return; if (d.session && !d.streamFault) _rapierRecorderAppend(d, e.data); else d.chunks.push(e.data); };
-		recorder.onerror = e => { d.captureFault = true; d.fault = 'The microphone stopped unexpectedly. Keep the audio captured so far or save its file.'; showToast(d.fault, 'error'); _rapierRecorderStop(); };
+		recorder.onerror = e => { d.captureFault = true; d.fault = 'Microphone stopped. Recording kept so far.'; showToast(d.fault, 'error'); _rapierRecorderStop(); };
 		recorder.onstop = () => {
 			if (d.completed) return; d.completed = true;
 			if (d.discarded) return;
@@ -256,7 +256,7 @@ async function _rapierRecorderStart() {
 			_rapierRecorderReleaseMic(d);
 			void _rapierRecorderConclude(d, recorder.mimeType || mime);
 		};
-		for (const track of stream.getAudioTracks()) track.addEventListener('ended', () => { if (d.phase === 'recording' || d.phase === 'paused') { d.fault = 'The microphone disconnected. Keep the audio captured so far.'; _rapierRecorderStop(); } }, {once: true});
+		for (const track of stream.getAudioTracks()) track.addEventListener('ended', () => { if (d.phase === 'recording' || d.phase === 'paused') { d.fault = 'Microphone disconnected. Recording kept so far.'; _rapierRecorderStop(); } }, {once: true});
 		recorder.start(1000); d.started = performance.now(); d.elapsed = 0; d.duration = 0; d.phase = 'recording';
 		_rapierRecorderLifetime(d);
 		_rapierRecorderMeter(d);
@@ -279,7 +279,7 @@ function _rapierRecorderAppend(d, blob) {
 		error => {
 			if (d.streamFault || d.discarded) return;
 			d.streamFault = String(error?.message || error);
-			d.fault = 'The notes folder stopped keeping this recording (' + d.streamFault + '). The audio captured so far is still here.';
+			d.fault = 'Couldn’t keep saving. Recording kept so far.';
 			if (d.phase === 'recording' || d.phase === 'paused') _rapierRecorderStop();
 		});
 }
@@ -294,25 +294,25 @@ async function _rapierRecorderConclude(d, type) {
 		const session = d.session;
 		if (!d.saved) {
 			d.session = null; try { await session.abandon(); } catch (_) {}
-			d.phase = 'idle'; d.fault = 'No sound was recorded.'; render(); return;
+			d.phase = 'idle'; d.fault = 'No sound recorded.'; render(); return;
 		}
 		try {
 			d.entry = await session.finish(d.duration, {stopped: d.completed && !d.captureFault}); d.session = null;
 			d.name = d.entry.name; d.phase = 'review'; render(); return;
 		} catch (error) {
 			d.session = null; d.phase = 'idle';
-			d.fault = 'The recording could not be finished here: ' + String(error?.message || error) + ' The audio kept so far stays in the notes folder and is offered back when Notes opens.';
+			console.error(error); d.fault = 'Couldn’t finish. Notes offers it back next time.';
 			render(); return;
 		}
 	}
 	let prefix = null;
 	if (d.session && d.saved) {
 		try { const bytes = await d.session.read(); prefix = bytes && bytes.length >= d.saved ? bytes.subarray(0, d.saved) : null; } catch (_) { prefix = null; }
-		if (!prefix) d.fault = 'The audio kept so far could not be read back; it stays in the notes folder and is offered back when Notes opens. The rest of what was captured can be saved as a file, though it may not play without its beginning.';
+		if (!prefix) d.fault = 'Couldn’t read the start back. Notes offers it next time.';
 	}
 	d.blob = new Blob([...(prefix ? [prefix] : []), ...d.held, ...d.chunks], {type}); d.held = []; d.chunks = [];
 	d.phase = d.blob.size ? 'review' : 'idle';
-	if (!d.blob.size) { d.blob = null; d.fault = d.fault || 'No sound was recorded.'; await _rapierRecorderDropSession(d, {abandon: true}); }
+	if (!d.blob.size) { d.blob = null; d.fault = d.fault || 'No sound recorded.'; await _rapierRecorderDropSession(d, {abandon: true}); }
 	render();
 }
 async function _rapierRecorderDropSession(d, {abandon = false} = {}) {
@@ -325,7 +325,7 @@ function _rapierRecorderStop() {
 	if (!d || d.phase !== 'recording' && d.phase !== 'paused') return;
 	d.duration = Math.max(1, Math.round(_rapierRecorderElapsed(d) / 1000)); d.phase = 'stopping'; clearInterval(d.timer);
 	try { if (d.recorder.state !== 'inactive') d.recorder.stop(); }
-	catch (error) { d.captureFault = true; d.fault = 'The recorder could not finish: ' + String(error?.message || error); d.recorder.onstop?.(); }
+	catch (error) { d.captureFault = true; console.error(error); d.fault = 'Couldn’t finish the recording.'; d.recorder.onstop?.(); }
 	_rapierRecorderReleaseMic(d); _rapierRecorderRender();
 }
 async function _rapierRecorderDiscardLive() {
@@ -352,7 +352,7 @@ function _rapierRecorderDismiss() {
 	if (d.asking) { d.asking = false; _rapierRecorderRender(); return; }
 	if (d.phase === 'idle' || d.phase === 'requesting') { _rapierRecorderFinish(); return; }
 	if (d.phase === 'recording' || d.phase === 'paused') { _rapierRecorderStop(); return; }
-	showToast('Keep or discard this recording before closing it', 'info');
+	showToast('Keep or discard the recording first.', 'info');
 }
 function _rapierRecorderStampWords(d) {
 	const {stamp, clock} = _rapierRecorder.parts || {}, words = _rapierRecorderModel().durationWords(Math.floor(_rapierRecorderElapsed(d) / 1000));
@@ -367,7 +367,7 @@ function _rapierRecorderStamp() {
 	if (!d || d.fresh || !_rapierRecorderOwner()) return;
 	const seconds = Math.floor(_rapierRecorderElapsed(d) / 1000), words = _rapierRecorderModel().durationWords(seconds);
 	const node = getSelection()?.focusNode, host = node && (node.nodeType === 1 ? node : node.parentElement)?.closest('.block-edit');
-	if (!host?.isContentEditable) { showToast('Tap in the note where the time goes, then tap the time.', 'info'); return; }
+	if (!host?.isContentEditable) { showToast('Tap where the time goes, then tap the time.', 'info'); return; }
 	d.stamps = true;
 	if (typeof _rangeInsertHTML === 'function' && !host.closest('.block-wrapper--source-edit')) { _rangeInsertHTML('<a href="#t=' + seconds + '">' + words + '</a>'); document.execCommand('insertText', false, ' '); }
 	else document.execCommand('insertText', false, '[' + words + '](#t=' + seconds + ') ');
@@ -378,15 +378,15 @@ function _rapierRecorderPlayAt(href) {
 	const R = _rapierRecorder, p = R.sound?.key === k.key ? null : [..._rapierRecorder.players.values()].find(view => view.key === k.key);
 	const view = p || Object.assign(_rapierRecorderView(R.sound?.key === k.key ? R.sound.label : 'the recording', k.source, R.sound?.key === k.key ? R.sound.duration : null, k.key), {name: k.name, file: _rapierNotes.current || ''});
 	void (async () => {
-		if (R.speech) { showToast('Finish transcription before playing another recording', 'info'); return; }
+		if (R.speech) { showToast('Wait for the transcript to finish.', 'info'); return; }
 		const audio = await _rapierRecorderLoad(view); _rapierRecorderQuiet(view); R.sound.kept = true;
 		audio.currentTime = Number(m[2]); await audio.play();
-	})().catch(error => showToast(String(error?.message || error), 'error'));
+	})().catch(error => showToast('Couldn’t play the recording.', 'error', null, error));
 	return true;
 }
 async function _rapierRecorderEdit(owner, transform) {
 	await _rapierNotesFlush();
-	if (!owner || _rapierRecorderOwner() !== owner) throw new Error('The original note is no longer open. Save the file to keep this work separately.');
+	if (!owner || _rapierRecorderOwner() !== owner) throw new Error('Note closed. Save the file to keep it.');
 	const text = _rapierSourceText(), next = transform(text);
 	if (next !== text && !await _rapierNotesApplyText(next, 'notes.recording', 'Recording')) throw new Error('The note changed while the recording was being added. Try again.');
 	await _rapierNotesAutosave(); await _rapierNotesFlush(); _rapierRecorderInit();
@@ -417,7 +417,7 @@ async function _rapierRecorderKeep() {
 		else await _rapierRecorderDropSession(d, {abandon: true});
 		_rapierRecorderFinish(); _rapierRecorderSay(words);
 	} catch (error) {
-		d.phase = 'review'; d.fault = 'The recording is still here. ' + String(error?.message || error);
+		d.phase = 'review'; console.error(error); d.fault = 'Couldn’t save. The recording is still here.';
 		if (d.linked && !d.fresh && _rapierRecorderOwner() === d.owner) d.linked = A.recordingsOf(_rapierSourceText()).some(r => r.name === d.name);
 		_rapierRecorderRender(); if (R.dialog && !R.dialog.open) R.dialog.showModal(); showToast(d.fault, 'error');
 	}
@@ -433,15 +433,15 @@ async function _rapierRecorderDiscard() {
 		else { if (d.name) await _rapierNotesStore.removeAudio(d.name); await _rapierRecorderDropSession(d, {abandon: true}); }
 		_rapierRecorderFinish();
 	}
-	catch (error) { d.phase = 'review'; d.fault = 'The recording file could not be discarded: ' + String(error?.message || error); _rapierRecorderRender(); }
+	catch (error) { d.phase = 'review'; console.error(error); d.fault = 'Couldn’t discard the recording.'; _rapierRecorderRender(); }
 }
 async function _rapierRecorderSaveFile() {
 	const d = _rapierRecorder.draft, A = _rapierRecorderModel();
 	if (!d) return;
 	try {
-		if (d.entry) { const bytes = await _rapierNotesStore.readRecording(d.entry); if (!bytes) throw new Error('The recording could not be read from the notes folder'); _rapierRecorderDownload(new Blob([bytes], {type: d.entry.mime || d.mime || ''}), d.entry.name); }
+		if (d.entry) { const bytes = await _rapierNotesStore.readRecording(d.entry); if (!bytes) throw new Error('Couldn’t read the recording.'); _rapierRecorderDownload(new Blob([bytes], {type: d.entry.mime || d.mime || ''}), d.entry.name); }
 		else _rapierRecorderDownload(d.blob, d.name || A.recordingName('Recording.md', [], d.blob?.type));
-	} catch (error) { showToast(String(error?.message || error), 'error'); }
+	} catch (error) { showToast('Couldn’t save the recording.', 'error', null, error); }
 }
 function _rapierRecorderDownload(blob, name) {
 	if (!blob) return;
@@ -496,7 +496,7 @@ async function _rapierRecorderLoad(view) {
 		view.url = URL.createObjectURL(file.type ? file : new Blob([file], {type: _rapierRecorderModel().audioMime('', view.name || '')}));
 		audio.preload = 'metadata'; audio.src = view.url;
 		for (const type of ['timeupdate', 'durationchange', 'play', 'pause', 'ended', 'seeked']) audio.addEventListener(type, () => _rapierRecorderPaintView(view));
-		audio.addEventListener('error', () => { if (!view.gone) showToast(_rapierNotesWords().Device + ' cannot play this recording. Save its audio file to open it elsewhere.', 'error'); });
+		audio.addEventListener('error', () => { if (!view.gone) showToast(_rapierNotesWords().Device + ' can’t play this. Save the file instead.', 'error'); });
 		return audio;
 	})().finally(() => { view.loading = null; });
 	return view.loading;
@@ -512,14 +512,22 @@ async function _rapierRecorderSoundFor(view) {
 	_rapierRecorderSoundClose();
 	const s = R.sound = {key: view.key, name: view.name || view.key.replace(/^[^/]*\//, ''), label: view.label, file: view.file || _rapierNotes.current || '', duration: view.duration, source: view.source, audio: null, url: '', blob: null, loading: null, kept: true};
 	s.loading = (async () => {
-		const file = await view.source();
-		if (R.sound !== s) throw new Error('The recording was closed');
-		if (!file) throw new Error('The recording file is missing. Import or restore it with the note.');
-		const audio = new Audio(), speed = _rapierRecorderSpeed();
-		s.url = URL.createObjectURL(file.type ? file : new Blob([file], {type: _rapierRecorderModel().audioMime('', s.name)}));
-		s.blob = file; audio.preload = 'metadata'; audio.defaultPlaybackRate = speed; audio.playbackRate = speed; audio.src = s.url;
+		const native = globalThis.RapierPlatform?.media?.createAudio;
+		let audio;
+		if (native) {
+			audio = await native({key: s.key, title: s.label || s.name});
+			if (R.sound !== s) { audio.removeAttribute('src'); audio.load(); throw new Error('The recording was closed'); }
+		} else {
+			const file = await view.source();
+			if (R.sound !== s) throw new Error('The recording was closed');
+			if (!file) throw new Error('The recording file is missing. Import or restore it with the note.');
+			audio = new Audio();
+			s.url = URL.createObjectURL(file.type ? file : new Blob([file], {type: _rapierRecorderModel().audioMime('', s.name)}));
+			s.blob = file; audio.preload = 'metadata'; audio.src = s.url;
+		}
+		const speed = _rapierRecorderSpeed(); audio.defaultPlaybackRate = speed; audio.playbackRate = speed;
 		for (const type of ['timeupdate', 'durationchange', 'play', 'pause', 'ended', 'seeked', 'ratechange']) audio.addEventListener(type, () => { if (R.sound === s) _rapierRecorderSoundPaint(type); });
-		audio.addEventListener('error', () => { if (R.sound === s) showToast(_rapierNotesWords().Device + ' cannot play this recording. Save its audio file to open it elsewhere.', 'error'); });
+		audio.addEventListener('error', () => { if (R.sound === s) showToast(_rapierNotesWords().Device + ' can’t play this. Save the file instead.', 'error'); });
 		s.audio = audio; _rapierRecorderSession(s);
 		return audio;
 	})();
@@ -553,7 +561,7 @@ async function _rapierRecorderSkip(view, seconds) {
 	try {
 		const audio = await _rapierRecorderLoad(view), total = Number.isFinite(audio.duration) ? audio.duration : view.duration ?? Infinity;
 		audio.currentTime = Math.max(0, Math.min(total, (audio.currentTime || 0) + seconds));
-	} catch (error) { if (!view.gone || view.key) showToast(String(error?.message || error), 'error'); }
+	} catch (error) { if (!view.gone || view.key) showToast('Couldn’t play the recording.', 'error', null, error); }
 }
 const RAPIER_RECORDER_SPEEDS = ['1', '1.25', '1.5', '2', '0.75'];
 function _rapierRecorderSpeedNext() {
@@ -566,7 +574,7 @@ function _rapierRecorderStampNow(view) {
 	const s = _rapierRecorder.sound, audio = s?.key === view.key ? s.audio : null, A = _rapierRecorderModel();
 	const seconds = Math.floor(audio?.currentTime || 0), words = A.durationWords(seconds);
 	const node = getSelection()?.focusNode, host = node && (node.nodeType === 1 ? node : node.parentElement)?.closest('.block-edit');
-	if (!host?.isContentEditable || !_rapierRecorderOwner()) { showToast('Tap in the note where the time goes, then tap the time.', 'info'); return; }
+	if (!host?.isContentEditable || !_rapierRecorderOwner()) { showToast('Tap where the time goes, then tap the time.', 'info'); return; }
 	const href = (view.key.startsWith('audio/') ? A.recordingHref(s?.name || view.name) : globalThis.RapierNotesAttachments.attachmentHref(s?.name || view.name)) + '#t=' + seconds;
 	if (typeof _rangeInsertHTML === 'function' && !host.closest('.block-wrapper--source-edit')) { _rangeInsertHTML('<a href="' + href.replace(/&/g, '&amp;').replace(/"/g, '&quot;') + '">' + words + '</a>'); document.execCommand('insertText', false, ' '); }
 	else document.execCommand('insertText', false, '[' + words + '](' + href + ') ');
@@ -626,7 +634,7 @@ function _rapierRecorderKebab(rows) {
 	return b;
 }
 function _rapierRecorderMenuRows() { return (_rapierRecorder.menu || []).map(([word, icon]) => [word, icon]); }
-function _rapierRecorderMenuRow(index) { const R = _rapierRecorder, row = R.menu?.[index]; R.menu = null; if (row) Promise.resolve().then(row[2]).catch(error => showToast(String(error?.message || error), 'error')); }
+function _rapierRecorderMenuRow(index) { const R = _rapierRecorder, row = R.menu?.[index]; R.menu = null; if (row) Promise.resolve().then(row[2]).catch(error => showToast('Couldn’t do that. Try again.', 'error', null, error)); }
 function _rapierRecorderLinkPlace() {
 	const R = _rapierRecorder, owner = _rapierRecorderOwner();
 	R.linkAt = null;
@@ -656,7 +664,7 @@ async function _rapierRecorderLinkNow() {
 			const before = text.slice(0, place.at), gap = before && !/\s$/.test(before) ? ' ' : '';
 			return before + gap + '[' + A.durationWords(seconds) + '](' + href + ')' + (/^\s/.test(text.slice(place.at)) ? '' : ' ') + text.slice(place.at);
 		});
-	} catch (error) { showToast(String(error?.message || error), 'error'); }
+	} catch (error) { showToast('Couldn’t add the time.', 'error', null, error); }
 }
 function _rapierRecorderPaintView(view) {
 	const A = _rapierRecorderModel(), audio = view.audio;
@@ -721,18 +729,18 @@ function _rapierRecorderShelfView(name, seconds) { const view = Object.assign(_r
 function _rapierRecorderShelfClose() { const R = _rapierRecorder; for (const view of R.shelf) _rapierRecorderDrop(view); R.shelf.clear(); }
 async function _rapierRecorderToggle(view) {
 	try {
-		if (_rapierRecorder.speech) { showToast('Finish transcription before playing another recording', 'info'); return; }
+		if (_rapierRecorder.speech) { showToast('Wait for the transcript to finish.', 'info'); return; }
 		const audio = await _rapierRecorderLoad(view);
 		if (!audio.paused && !audio.ended) { audio.pause(); if (view.key && view !== _rapierRecorder.bar?.view && _rapierRecorderInSight(view)) _rapierRecorder.sound.kept = false; return; }
 		_rapierRecorderQuiet(view);
 		if (view.key && _rapierRecorder.sound) _rapierRecorder.sound.kept = true;
 		if (audio.ended || view.duration > 0 && audio.currentTime >= view.duration - 0.05) audio.currentTime = 0;
 		await audio.play();
-	} catch (error) { if (!view.gone || view.key) showToast(String(error?.message || error), 'error'); }
+	} catch (error) { if (!view.gone || view.key) showToast('Couldn’t play the recording.', 'error', null, error); }
 }
 async function _rapierRecorderSeek(view, seconds) {
 	try { const audio = await _rapierRecorderLoad(view); audio.currentTime = seconds; _rapierRecorderPaintView(view); }
-	catch (error) { if (!view.gone || view.key) showToast(String(error?.message || error), 'error'); }
+	catch (error) { if (!view.gone || view.key) showToast('Couldn’t play the recording.', 'error', null, error); }
 }
 function _rapierRecorderShelfWatch(view) {
 	const R = _rapierRecorder;
@@ -809,9 +817,10 @@ async function _rapierRecorderGoBack() {
 		const id = state.index?.notes?.[s.file]?.id;
 		const opened = state.open || state.mode ? await _rapierNotesOpenNote(s.file) : id ? await _rapierNotesOpenById(id) : false;
 		if (opened !== false) requestAnimationFrame(() => requestAnimationFrame(show));
-	} catch (error) { showToast(String(error?.message || error), 'error'); }
+	} catch (error) { showToast('Couldn’t open the note.', 'error', null, error); }
 }
 function _rapierRecorderSession(s) {
+	if (globalThis.RapierPlatform?.media?.createAudio) return;
 	const M = navigator.mediaSession;
 	if (!M) return;
 	const R = _rapierRecorder, act = fn => details => { const audio = R.sound?.audio; if (audio) fn(audio, details || {}); };
@@ -830,6 +839,7 @@ function _rapierRecorderSession(s) {
 	} catch (_) {}
 }
 function _rapierRecorderSessionState() {
+	if (globalThis.RapierPlatform?.media?.createAudio) return;
 	const M = navigator.mediaSession, audio = _rapierRecorder.sound?.audio;
 	if (!M || !audio) return;
 	try {
@@ -882,7 +892,7 @@ function _rapierRecorderRelease(view) {
 async function _rapierRecorderReviewBytes(d) {
 	if (!d.entry) return d.blob;
 	const bytes = await _rapierNotesStore.readRecording(d.entry);
-	if (!bytes) throw new Error('The recording could not be read from the notes folder');
+	if (!bytes) throw new Error('Couldn’t read the recording.');
 	return new Blob([bytes], {type: d.entry.mime || d.mime || ''});
 }
 function _rapierRecorderLocalSpeech() {
@@ -919,9 +929,9 @@ async function _rapierRecorderDelete(p) {
 	try {
 		let removed = false;
 		await _rapierRecorderEdit(owner, text => { const next = A.removeRecordingLine(text, row); removed = next !== text; return next; });
-		if (!removed) throw new Error('The recording moved in the note before it could be deleted. Try again.');
-		showToast('Recording deleted from this note. Its audio file stays in Saved files.', 'info');
-	} catch (error) { showToast(String(error?.message || error), 'error'); }
+		if (!removed) throw new Error('Recording moved. Try again.');
+		showToast('Removed. The file stays in Saved files.', 'info');
+	} catch (error) { showToast('Couldn’t remove the recording. Try again.', 'error', null, error); }
 }
 function _rapierRecorderLoneBlock(block) {
 	const A = _rapierRecorderModel(), raw = String(block?.raw || '').trim();
@@ -983,7 +993,7 @@ function _rapierRecorderScan() {
 async function _rapierRecorderTranscribe(p) {
 	const R = _rapierRecorder, C = _rapierRecorderLocalSpeech(), owner = _rapierRecorderOwner();
 	if (!C || !owner) return;
-	if (R.speech) { showToast('A recording is already being transcribed', 'info'); return; }
+	if (R.speech) { showToast('Already transcribing.', 'info'); return; }
 	if (R.transcript) { _rapierRecorderRecoverTranscript(); return; }
 	const job = R.speech = {owner, epoch: R.epoch, cancelled: false, recognition: null, cleanup: null};
 	try {
@@ -1015,17 +1025,17 @@ async function _rapierRecorderTranscribe(p) {
 				if (e.results[i].isFinal) final.set(i, {at: began.get(i), text: e.results[i][0].transcript.trim()});
 			} };
 			const said = () => [...final.values()].filter(line => line.text);
-			recognition.onerror = e => { cleanup(); const partial = said(); if (partial.length) { showToast('Transcription stopped. Keeping the words recognized so far.', 'info'); resolve(partial); } else reject(new Error('On-device transcription stopped: ' + e.error)); };
+			recognition.onerror = e => { cleanup(); const partial = said(); if (partial.length) { showToast('Transcription stopped. Words so far kept.', 'info'); resolve(partial); } else reject(Object.assign(new Error('Transcription stopped.'), {cause: e.error})); };
 			recognition.onend = () => { cleanup(); resolve(said()); };
 			audio.addEventListener('ended', endAudio, {once: true});
 			timer = setTimeout(() => { recognition.abort(); }, Math.max(30000, ((p.row.duration || 600) + 30) * 1000));
 			try { recognition.start(track); audio.play().catch(error => { recognition.abort(); cleanup(); reject(error); }); } catch (error) { cleanup(); reject(error); }
 		});
 		if (job.cancelled) return;
-		if (!words.length) { showToast('No words were recognized', 'info'); return; }
+		if (!words.length) { showToast('No words recognized.', 'info'); return; }
 		R.transcript = {owner, name: p.row.name, raw: p.row.raw, line: p.row.line, words: words.map(line => line.text).join(' '), lines: words};
 		await _rapierRecorderKeepTranscript();
-	} catch (error) { if (!job.cancelled) showToast(String(error?.message || error), 'error'); }
+	} catch (error) { if (!job.cancelled) showToast('Couldn’t transcribe.', 'error', null, error); }
 	finally { job.cleanup?.(); if (R.speech === job) R.speech = null; }
 }
 async function _rapierRecorderKeepTranscript() {
@@ -1043,8 +1053,8 @@ async function _rapierRecorderKeepTranscript() {
 			if (text.slice(at, at + addition.length) === addition) return text;
 			return text.slice(0, at) + addition + text.slice(at);
 		});
-		R.transcript = null; R.recovery?.close(); R.recovery?.remove(); R.recovery = null; showToast('Recognized words added beneath the recording', 'success');
-	} catch (error) { showToast('The recognized words are still here. ' + String(error?.message || error), 'error'); _rapierRecorderRecoverTranscript(); }
+		R.transcript = null; R.recovery?.close(); R.recovery?.remove(); R.recovery = null; showToast('Words added below the recording', 'success');
+	} catch (error) { showToast('Couldn’t add the words. They’re still here.', 'error', null, error); _rapierRecorderRecoverTranscript(); }
 }
 function _rapierRecorderRecoverTranscript() {
 	const R = _rapierRecorder, draft = R.transcript;
@@ -1054,7 +1064,7 @@ function _rapierRecorderRecoverTranscript() {
 	sheet.append(_rapierNotesEl('div', 'rapier-notes-sheet-name', 'Recognized words'), text);
 	const retry = _rapierRecorderButton('Retry save to note', 'retry'), save = _rapierRecorderButton('Save text file', 'save'), discard = _rapierRecorderButton('Discard words', 'discard');
 	retry.addEventListener('click', () => void _rapierRecorderKeepTranscript());
-	save.addEventListener('click', () => { try { _rapierRecorderDownload(new Blob([draft.words + '\n'], {type: 'text/plain'}), 'Recognized words.txt'); } catch (error) { showToast(String(error?.message || error), 'error'); } });
+	save.addEventListener('click', () => { try { _rapierRecorderDownload(new Blob([draft.words + '\n'], {type: 'text/plain'}), 'Recognized words.txt'); } catch (error) { showToast('Couldn’t save the words.', 'error', null, error); } });
 	discard.addEventListener('click', () => { R.transcript = null; sheet.close(); sheet.remove(); R.recovery = null; });
 	sheet.addEventListener('cancel', () => { sheet.remove(); R.recovery = null; });
 	sheet.append(retry, save, discard); document.body.appendChild(sheet); sheet.showModal();
@@ -1128,21 +1138,21 @@ async function _rapierRecorderOfferKeep(offer, row) {
 		_rapierRecorderSay('Recording kept in ' + String(file).replace(/\.md$/i, ''));
 	} catch (error) {
 		_rapierRecorderOfferBusy(row, false);
-		showToast('The recording is still kept. ' + String(error?.message || error), 'error');
+		showToast('Couldn’t save. The recording is still kept.', 'error', null, error);
 	}
 }
 async function _rapierRecorderOfferSave(offer) {
 	const A = _rapierRecorderModel();
 	try {
 		const bytes = await _rapierNotesStore.readRecording(offer);
-		if (!bytes) throw new Error('The recording could not be read from the notes folder');
+		if (!bytes) throw new Error('Couldn’t read the recording.');
 		_rapierRecorderDownload(new Blob([bytes], {type: offer.mime || ''}), offer.name || A.recordingName(offer.originalNote || 'Recording.md', [], offer.mime));
-	} catch (error) { showToast(String(error?.message || error), 'error'); }
+	} catch (error) { showToast('Couldn’t save the recording.', 'error', null, error); }
 }
 async function _rapierRecorderOfferDiscard(offer, row) {
 	const R = _rapierRecorder, sheet = R.offers;
 	if (sheet?.open) sheet.close();
-	const yes = await rapierConfirm({title: 'Discard this recording?', message: 'Its kept audio is removed from the notes folder. This cannot be undone.', confirmLabel: 'Discard', cancelLabel: 'Keep it', destructive: true});
+	const yes = await rapierConfirm({title: 'Discard this recording?', message: 'No undo.', confirmLabel: 'Discard', cancelLabel: 'Keep it', destructive: true});
 	if (!yes) { if (sheet && sheet.isConnected && !sheet.open) sheet.showModal(); return; }
 	_rapierRecorderOfferBusy(row, true);
 	try {
@@ -1152,7 +1162,7 @@ async function _rapierRecorderOfferDiscard(offer, row) {
 	} catch (error) {
 		_rapierRecorderOfferBusy(row, false);
 		if (sheet && sheet.isConnected && !sheet.open) sheet.showModal();
-		showToast('The recording was kept: ' + String(error?.message || error), 'error');
+		showToast('Couldn’t discard. The recording is kept.', 'error', null, error);
 	}
 }
 window.addEventListener('beforeunload', e => { const R = _rapierRecorder; if (R.transcript || R.draft && !['idle', 'requesting'].includes(R.draft.phase)) { e.preventDefault(); e.returnValue = ''; } });

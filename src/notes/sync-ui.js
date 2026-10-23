@@ -8,7 +8,7 @@ const _rapierNotesSyncUi = (() => {
 	const api = () => globalThis.RapierNotesSyncSession;
 	const platformId = () => globalThis.RapierPlatform?.environment.id;
 	const environment = () => ({url: location.href, native: ['android', 'windows'].includes(platformId()), framed: window.top !== window});
-	const oauthGate = () => api()?.syncAvailability(environment()) || {ready: false, reason: 'sync did not load. backup saves your notes to a file.'};
+	const oauthGate = () => api()?.syncAvailability(environment()) || {ready: false, reason: 'Sync didn’t load. Use Backup for now.'};
 	const keyGate = () => api()?.r2KeyAvailability(environment()) || {ready: false, reason: oauthGate().reason};
 	const providerGate = () => api()?.providerGate(providerId, environment()) || {ready: false, reason: oauthGate().reason};
 	const signsIn = id => !!api()?.providerUsesSignIn(id);
@@ -16,12 +16,12 @@ const _rapierNotesSyncUi = (() => {
 	const labelOf = id => api()?.PROVIDERS?.[id]?.label || api()?.KEY_PLAIN_LABELS?.[id] || String(id);
 	const providerPendingKey = () => 'rapier:provider:pending' + RapierStorage.scope;
 	const COMPANION_ABSENT = Object.freeze({
-		absent: 'Rapier Sync is coming soon. Use BACKUP for now.',
-		impostor: 'An app using Rapier Sync\'s name is installed, but it is not signed by Rapier\'s certificate. Rapier will not open it.',
-		unsigned: 'The Rapier Sync on this phone has no readable signature, so Rapier cannot tell whether it is the real one. It was not opened.'});
+		absent: 'Rapier Sync is coming soon. Use Backup for now.',
+		impostor: 'This Rapier Sync isn’t ours. Not opened.',
+		unsigned: 'Can’t verify this Rapier Sync. Not opened.'});
 	const COMPANION_ABSENT_LISTED = Object.freeze({
-		absent: 'Rapier Sync is not installed. Get it on Google Play. Until then, use BACKUP.',
-		impostor: COMPANION_ABSENT.impostor + ' Remove that app, then install Rapier Sync from Google Play.',
+		absent: 'Get Rapier Sync on Google Play. Until then, use Backup.',
+		impostor: COMPANION_ABSENT.impostor + ' Remove it and install ours from Google Play.',
 		unsigned: COMPANION_ABSENT.unsigned});
 	const PRO_REQUIRED = 'Rapier Pro is required to sync your notes.';
 	const proRefusal = error => error?.code === 'pro_required' || /\(PRO_REQUIRED\)$/.test(String(error?.message || ''));
@@ -134,7 +134,7 @@ const _rapierNotesSyncUi = (() => {
 		view++;
 		if (session && !status().hasConnection) {
 			void session.cancelSetup().then(state => { if (state.revocationPending) showToast(state.notice, 'error'); })
-				.catch(error => showToast(String(error?.message || error), 'error'));
+				.catch(error => showToast('Couldn’t cancel sign-in.', 'error', null, error));
 		}
 		visible = false; conflicts = null; message = '';
 		if (providerId && plainKept?.provider !== providerId && !status().authorized) { providerId = null; session = null; }
@@ -159,7 +159,7 @@ const _rapierNotesSyncUi = (() => {
 	const comingSoon = gate => { showToast(gate.reason, 'info'); };
 	function paintStart() {
 		const gate = oauthGate();
-		choice('sign in with cloudflare', 'available soon', () => comingSoon(gate.ready ? {reason: 'cloudflare sign-in does not keep plain files yet. use a storage key.'} : gate),
+		choice('sign in with cloudflare', 'available soon', () => comingSoon(gate.ready ? {reason: 'Cloudflare sign-in isn’t ready. Use a storage key.'} : gate),
 			{enabled: !acting, cloudflare: true, key: 'cloudflare'});
 		paragraph('your notes stay on this device.');
 		if (keyGate().ready && keyReachable('r2'))
@@ -181,7 +181,7 @@ const _rapierNotesSyncUi = (() => {
 	function paintConflicts(own) {
 		choice('review conflicts', 'read both versions and choose one', async () => { conflicts = await own.conflicts(); }, {key: 'conflicts'});
 		if (!conflicts) return;
-		paragraph(conflicts.length ? 'read both before you choose; the note’s history keeps the other.' : 'nothing to choose here. conflicts edited by hand stay in the note: open it in the editor.');
+		paragraph(conflicts.length ? 'read both before you choose; the note’s history keeps the other.' : 'nothing to choose. open the note to fix it by hand.');
 		for (const row of conflicts) {
 			paragraph(row.file);
 			const versions = row.conflict.variants;
@@ -234,7 +234,7 @@ const _rapierNotesSyncUi = (() => {
 			paintConflicts(session);
 			choice('stop syncing plain files', 'your notes and the files stay', async () => { await session.plainForget(); plainKept = null; conflicts = null; automatic = false; await _rapierNotesFolderChanged(); }, {key: 'plain-forget'});
 		} else {
-			paragraph('not private: one markdown file per note in this folder. any app or person with access to the folder can read and change them.');
+			paragraph('not private: anyone with access to this folder can read and change your notes.');
 			const place = input('folder name', {value: plainPlace});
 			place.addEventListener('input', () => { plainPlace = place.value; });
 			choice('connect plain files', '', async () => {
@@ -344,7 +344,7 @@ const _rapierNotesSyncUi = (() => {
 			return;
 		}
 		if (plainKept?.provider === 'companion') {
-			paragraph('plain files in the folder rapier sync chose. not private: any app or person with access to that folder can read them.');
+			paragraph('plain files in the folder rapier sync chose. anyone with access to it can read them.');
 			choice('sync now', '', async () => { const run = await runSync(); automatic = true; schedule(60000); if (visible) message = plainWords(run); }, {key: 'sync'});
 			paintConflicts(plainThroughCompanion());
 			choice('rapier sync', 'opens rapier sync; it holds the folder and its sign-in or key', openCompanion, {enabled: true});

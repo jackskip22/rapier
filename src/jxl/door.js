@@ -12,7 +12,7 @@ const _rapierJxlDoor = (() => {
 		_rapierPartWait('jxl').catch(error => {
 			document.documentElement.classList.remove('rapier-jxl-start');
 			document.querySelector('[data-rapier-early-part="jxl"]')?.remove();
-			showToast(String(error?.message || error), 'error');
+			showToast(_rapierErrorWords(error, 'Couldn’t open the JPEG XL converter.'), 'error');
 		});
 	}
 	return Object.freeze({born});

@@ -9,7 +9,7 @@ async function _rapierCommitSourceProjection(splices, operation, selection = nul
   if (!splices.length) return true;
   const measured = _rapierSourceText();
   if (!_rapierSettlePendingDocumentChange()) return false;
-  if (_rapierSourceText() !== measured) { showToast('The document changed; try the action again', 'error'); return false; }
+  if (_rapierSourceText() !== measured) { showToast('Document changed. Try again.', 'error'); return false; }
   const textarea = document.getElementById('source-textarea');
   const mode = rapier.view.mode;
   const selectionContext = mode !== 'source' && _rapierSelectionContext(window.getSelection());
@@ -31,7 +31,7 @@ async function _rapierCommitSourceProjection(splices, operation, selection = nul
       selection = _rapierAfterImageRetirement(selection, retired);
     }
   } catch (error) {
-    showToast(error?.code === 'target_changed' ? 'The document changed; try the action again' :
+    showToast(error?.code === 'target_changed' ? 'Document changed. Try again.' :
       String(error?.message || 'That change cannot be applied'), 'error');
     return false;
   }
@@ -43,7 +43,7 @@ async function _rapierCommitSourceProjection(splices, operation, selection = nul
       catch (_) { return 0; }
     };
     if (badMarkers(candidate) > badMarkers(before)) {
-      showToast('The document changed; try the action again', 'error');
+      showToast('Document changed. Try again.', 'error');
       return false;
     }
   }
@@ -77,10 +77,10 @@ async function _rapierCommitSourceProjection(splices, operation, selection = nul
   try {
   if (!loaded) {
     if (cancelled && !failure) { _rapierRestoreEditorViewport(viewport); return committed; }
-    showToast(committed ? 'The change is applied, but the view could not refresh' :
-      !_rapierMutationStampIsCurrent(stamp) ? 'The document changed; try the action again' :
-      /(?:limit|budget)$/.test(String(failure?.code || '')) ? 'This change is too big for this view; use source view' :
-      'The change could not be displayed; your document is unchanged', 'error');
+    showToast(committed ? 'Done. Reopen to see the change.' :
+      !_rapierMutationStampIsCurrent(stamp) ? 'Document changed. Try again.' :
+      /(?:limit|budget)$/.test(String(failure?.code || '')) ? 'Too large here. Use source view.' :
+      'Couldn’t show the change. Nothing changed.', 'error');
     _rapierRestoreEditorViewport(viewport);
     return committed;
   }
@@ -194,12 +194,12 @@ async function _rapierEditLayout(patch, operation, onEmptyLine, after) {
     const source = _rapierSourceText();
     const range = {start: _rapierAbsPos(textarea.selectionStart), end: _rapierAbsPos(textarea.selectionEnd)};
     const opening = _rapierSplitOpeningFrontmatter(source), offset = opening.bodyOffset;
-    if (range.start < offset) { showToast('Choose document text below its metadata', 'info'); return false; }
+    if (range.start < offset) { showToast('Select text below the metadata.', 'info'); return false; }
     const part = _rapierSourceLayoutWindow(opening.body, range.start - offset, range.end - offset);
     const at = offset + part.start;
     const plan = layout.editLayout(part.text, md, {start: range.start - at, end: range.end - at},
       patch, globalThis.RapierImageAssets.imageEnvironment(source));
-    if (plan.reason) { showToast('This layout cannot be changed without altering its source', 'info'); return false; }
+    if (plan.reason) { showToast('Can’t change this layout here.', 'info'); return false; }
     for (const edit of plan.edits) { edit.start += at; edit.end += at; }
     const map = point => plan.edits.reduce((at, edit) => at + (edit.end <= point ? edit.text.length - (edit.end - edit.start) : 0), point);
     const committed = await _rapierCommitSourceProjection(plan.edits.slice().sort((a,b) => b.start-a.start)
@@ -235,13 +235,13 @@ async function _rapierEditLayout(patch, operation, onEmptyLine, after) {
         range.endContainer, range.endOffset, span);
       if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end)) {
         const targets = layout.layoutTargets(raw, md, _rapierMarkdownEnvironment());
-        if (targets.length !== 1) { showToast('Select the paragraph again to align it', 'info'); return false; }
+        if (targets.length !== 1) { showToast('Select the paragraph again.', 'info'); return false; }
         start = targets[0].start; end = targets[0].end;
       }
     }
     const plan = layout.editLayout(raw, md, {start, end}, patch, _rapierMarkdownEnvironment());
     if (plan.reason === 'no_layout_target') { next.push(raw); continue; }
-    if (plan.reason) { showToast('This layout cannot be changed without altering its source', 'info'); return false; }
+    if (plan.reason) { showToast('Can’t change this layout here.', 'info'); return false; }
     let value = raw;
     for (const edit of plan.edits.slice().sort((a,b) => b.start-a.start))
       value = value.slice(0, edit.start) + edit.text + value.slice(edit.end);

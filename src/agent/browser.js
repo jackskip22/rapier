@@ -567,10 +567,10 @@
       const version = preferenceVersions.get(request.preference);
       const fact = editorPublish(record, editorFact(request, 'applied', {value: request.value, previous}), false);
       if (request.preference === 'defaultDocumentFont') {
-        showToast('default font changed', 'info');
+        showToast('Default font changed', 'info');
         return fact;
       }
-      showToast('view changed', 'info', {label: 'Undo', fn: () => {
+      showToast('View changed', 'info', {label: 'Undo', fn: () => {
         if (preferenceVersions.get(request.preference) === version && RapierPreferences.read(request.preference) === request.value)
           RapierPreferences.write(request.preference, previous);
       }});

@@ -37,11 +37,11 @@ async function _rapierTodoPersist(file, next) {
 	const before = _rapierTodoText(), intent = _rapierMutationStamp();
 	if (before == null || _rapierNotesCurrentFile() !== file) return false;
 	try { if (typeof _rapierNotesFlush === 'function') await _rapierNotesFlush(); } catch (_) { return false; }
-	if (!_rapierMutationStampSharesDocument(intent) || _rapierNotesCurrentFile() !== file || _rapierTodoText() !== before) { if (typeof showToast === 'function') showToast('The list changed. Try again.', 'info'); return false; }
+	if (!_rapierMutationStampSharesDocument(intent) || _rapierNotesCurrentFile() !== file || _rapierTodoText() !== before) { if (typeof showToast === 'function') showToast('List changed. Try again.', 'info'); return false; }
 	if (typeof _rapierNotesApplyText === 'function' && typeof _rapierNotes !== 'undefined' && _rapierNotes.current === file) {
 		return await _rapierNotesApplyText(next, 'notes.checklist', 'List', {settle: true});
 	}
-	if (typeof showToast === 'function') showToast('The list could not be saved: this note is not the open one', 'error');
+	if (typeof showToast === 'function') showToast('Couldn’t save the list. Open its note.', 'error');
 	return false;
 }
 
@@ -638,7 +638,7 @@ async function _rapierTodoDragEnd(evt) {
 	if (evt?.type !== 'pointerup') return;
 	const changed = drag.axis === 'x' ? typeof drag.indent === 'boolean' : drag.fromIndex !== drag.currentIndex;
 	if (!changed) return;
-	if (!drag.wrapper.isConnected || !_rapierMutationStampSharesDocument(drag.intent) || _rapierNotesCurrentFile() !== drag.file || _rapierTodoText() !== drag.text) { showToast('The list changed during the drag. Try again.', 'info'); return; }
+	if (!drag.wrapper.isConnected || !_rapierMutationStampSharesDocument(drag.intent) || _rapierNotesCurrentFile() !== drag.file || _rapierTodoText() !== drag.text) { showToast('List changed. Try again.', 'info'); return; }
 	if (drag.axis === 'x') { if (typeof drag.indent === 'boolean') await _rapierTodoIndentLine(drag.group[drag.fromIndex].line, drag.indent); return; }
 	if (drag.fromIndex === drag.currentIndex) return;
 	await _rapierTodoCommitMove(drag);
@@ -726,7 +726,7 @@ async function _rapierTodoHandleKey(event) {
 		}
 		host?.focus({preventScroll: true});
 	} catch (_) {
-		if (typeof showToast === 'function') showToast('The list could not be changed. Try again.', 'error');
+		if (typeof showToast === 'function') showToast('Couldn’t change the list. Try again.', 'error');
 	} finally { _rapierTodo.keyBusy = false; }
 }
 

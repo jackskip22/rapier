@@ -89,7 +89,7 @@ export function decodeFrame(data, {current = null} = {}) {
 	return accept(head, head.payload ?? null, 'text');
 }
 
-export const NATIVE_BYTE_OPS = Object.freeze(['notes.store.read.chunk', 'notes.store.write.chunk', 'notes.store.recording.append', 'notes.backup.read.chunk', 'transfer.chunk', 'intake.chunk',
+export const NATIVE_BYTE_OPS = Object.freeze(['notes.store.read.chunk', 'notes.store.write.chunk', 'notes.store.recording.append', 'notes.backup.read.chunk', 'recovery.store.read.chunk', 'recovery.store.write.chunk', 'transfer.chunk', 'intake.chunk',
 	'sync.put.chunk', 'sync.get.chunk', 'sync.plain.put.chunk', 'sync.plain.get.chunk', 'shares.read.chunk']);
 
 export function createNativeTransport({host, origin, binary = false, generation = () => null} = {}) {

@@ -67,7 +67,7 @@ export async function syncVersion({check = false, absent = 'refuse', root = ROOT
 		const authored = await readFile(skill, 'utf8');
 		const manifest = await readFile(resolve(root, 'packages/rapier-embed/rapier-plugins.json'), 'utf8').then(JSON.parse).catch(() => null);
 		const reader = await stat(resolve(root, 'rapier-reader.html')).then(info => info.size).catch(() => 0);
-		const tabled = withPluginTable(authored, manifest, reader);
+		const tabled = withPluginTable(authored, manifest && {...manifest, release: VERSION}, reader);
 		if (tabled !== authored) { drifted.push('skills/embed-rapier/SKILL.md'); location('skills/embed-rapier/SKILL.md', authored, tabled); if (!check) await writeFile(skill, tabled); }
 		if (absent !== 'skip' || existsSync(readme)) {
 			const body = tabled.replace(/^---\n[\s\S]*?\n---\n\s*/, '');

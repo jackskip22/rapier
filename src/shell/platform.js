@@ -217,7 +217,7 @@ const _rapierBootstrapRuntime = Object.seal({ pendingIntake: null, complete: fal
 let _rapierPublishBootFacts;
 const _rapierBootFactsPublished = new Promise(resolve => { _rapierPublishBootFacts = resolve; });
 const RAPIER_PLATFORM_FACETS = Object.freeze([
-	'environment', 'preferences', 'pro', 'water', 'files',
+	'environment', 'preferences', 'pro', 'water', 'media', 'files',
 	'recovery', 'resources', 'host', 'installation', 'operations',
 ]);
 const _rapierPlatformPortRuntime = (function () {
@@ -595,6 +595,14 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 	}
 
 	function _nativeHostEvent(name, detail) {
+		if (name === 'clipboard.capture') {
+			window.dispatchEvent(new CustomEvent('rapier:native-paste', {detail: {phase: 'capture', pasteToken: String(detail?.pasteToken || '')}}));
+			return;
+		}
+		if (name === 'media.changed') {
+			window.dispatchEvent(new CustomEvent('rapier:native-media', {detail}));
+			return;
+		}
 		if (name === 'reminders.actionsChanged') {
 			if (typeof window.rapierNotesReceiveReminderActions === 'function') window.rapierNotesReceiveReminderActions();
 			return;
@@ -774,6 +782,10 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 	function _nativeIntakeFinish(payload, error) {
 		_nativeIntakeRuntime.transfer = null;
 		_nativeHostRuntime.state.pendingIntake = false;
+		if (payload?.purpose === 'clipboard') {
+			window.dispatchEvent(new CustomEvent('rapier:native-paste', {detail: {phase: 'deliver', payload}}));
+			return;
+		}
 		_nativeIntakeRuntime.last = payload || null;
 		var waiters = _nativeIntakeRuntime.waiters.splice(0);
 		var surfaceError = !!(error && waiters.length === 0 && _rapierBootstrapRuntime.complete);
@@ -853,6 +865,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 				documentAuthority: message.documentAuthority == null ? '' : String(message.documentAuthority),
 				fileGeneration: message.fileGeneration == null ? null : message.fileGeneration,
 				purpose: message.purpose,
+				pasteToken: message.pasteToken == null ? null : String(message.pasteToken),
 				transient: message.transient === true,
 				contentType: String(message.contentType || ''),
 				decoder: message.binary === true ? null : new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }),
@@ -883,6 +896,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 					fileGeneration: finished.fileGeneration,
 					nativeIntakeId: finished.id,
 					purpose: finished.purpose,
+					pasteToken: finished.pasteToken,
 					transient: finished.transient === true,
 					contentType: finished.contentType,
 					admittedBytes: finished.receivedBytes,
@@ -1990,7 +2004,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 		} catch (_) {}
 	}
 
-	function _applyNativeResources(value) {
+	function _applyNativeResources(value, silent = false) {
 		if (!value || typeof value !== 'object') return;
 		var held = _nativeHostRuntime.state.resources, said = Array.isArray(value.packs) ? value.packs : [value];
 		if (Array.isArray(value.packs)) _nativeHostRuntime.state.resources = { packs: value.packs.slice() };
@@ -1999,6 +2013,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			if (at < 0) packs.push(value); else packs[at] = value;
 			_nativeHostRuntime.state.resources = { packs: packs };
 		} else _nativeHostRuntime.state.resources = value;
+		if (silent) return;
 		said.forEach(function (row) {
 			if (!row || typeof row !== 'object') return;
 			try {
@@ -2932,6 +2947,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			get ownsWriterBoundary() { return raw.ownsRecoveryWriterBoundary === true; },
 			get persist() { return method('persistRecovery'); },
 			get clear() { return method('clearRecovery'); },
+			get binaryStore() { return raw.binaryRecoveryStore || null; },
 		});
 		var resources = Object.freeze({
 			get installMessage() { return method('resourceInstallMessage'); },
@@ -3004,7 +3020,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 		var operations = Object.freeze({
 			get register() { return method('registerOperations'); },
 		});
-		return Object.freeze({ environment: environment, preferences: preferences, pro: pro, water: water, files: files,
+		return Object.freeze({ media: Object.freeze({get createAudio() { return method('createAudio'); }}), environment: environment, preferences: preferences, pro: pro, water: water, files: files,
 			recovery: recovery, resources: resources, host: host, installation: installation, operations: operations });
 	}
 
@@ -3097,14 +3113,124 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 
 	var _nativeReportedGenerations = new Map();
 
+	function _nativeDrawGestureExclusion() {
+		if (!_nativeCapability('gestureExclusion')) return;
+		var canvas = null, last = '', pending = false;
+		var resize = new ResizeObserver(update);
+		function update() {
+			if (pending) return;
+			pending = true;
+			requestAnimationFrame(function () {
+				pending = false;
+				var next = document.body.classList.contains('rapier-draw-open') ? document.querySelector('.rapier-draw-canvas') : null;
+				if (canvas !== next) { resize.disconnect(); canvas = next; if (canvas) resize.observe(canvas); }
+				var rect = canvas?.getBoundingClientRect();
+				var value = {width: innerWidth, rect: rect && rect.width > 0 && rect.height > 0 ?
+					{left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom} : null};
+				var key = JSON.stringify(value);
+				if (key !== last) { last = key; _nativeHostNotify('window.gestureExclusion', value); }
+			});
+		}
+		new MutationObserver(update).observe(document.body, {attributes: true, attributeFilter: ['class']});
+		window.addEventListener('resize', update);
+		update();
+	}
+
+	async function _nativeCreateAudio(options) {
+		var state = await _nativeHostCall('media.prepare', options, 20000), stamp = performance.now(), chain = Promise.resolve(), closed = false;
+		var audio = new EventTarget(), id = state.id;
+		function apply(next) {
+			if (closed || next?.id !== id) return;
+			var previous = state; state = next; stamp = performance.now();
+			for (var type of ['timeupdate', ...(previous.duration !== state.duration ? ['durationchange'] : []),
+				...(previous.paused !== state.paused ? [state.paused ? 'pause' : 'play'] : []),
+				...(!previous.ended && state.ended ? ['ended'] : []), ...(previous.speed !== state.speed ? ['ratechange'] : []),
+				...(!previous.error && state.error ? ['error'] : [])]) audio.dispatchEvent(new Event(type));
+		}
+		function call(operation, args = {}) {
+			var request = chain.catch(() => {}).then(() => _nativeHostCall('media.' + operation, {id, ...args})).then(result => {
+				apply(result); if (!closed && operation === 'seek') audio.dispatchEvent(new Event('seeked')); return result;
+			});
+			chain = request;
+			return request;
+		}
+		function changed(event) { apply(event.detail); }
+		function changedAsync(operation, args) { void call(operation, args).catch(error => { if (!closed) { state.error = error; audio.dispatchEvent(new Event('error')); } }); }
+		window.addEventListener('rapier:native-media', changed);
+		Object.defineProperties(audio, {
+			currentTime: {get: () => Math.min(state.duration / 1000, state.position / 1000 + (state.paused ? 0 : (performance.now() - stamp) / 1000 * state.speed)),
+				set: value => { if (!Number.isFinite(value) || closed) return; state.position = Math.max(0, value * 1000); stamp = performance.now(); changedAsync('seek', {position: Math.round(state.position)}); }},
+			duration: {get: () => state.duration / 1000}, paused: {get: () => state.paused}, ended: {get: () => state.ended},
+			error: {get: () => state.error}, playbackRate: {get: () => state.speed, set: value => { if (Number.isFinite(value) && !closed) changedAsync('speed', {speed: value}); }},
+		});
+		audio.src = '/' + options.key.split('/').map(encodeURIComponent).join('/');
+		audio.play = () => closed ? Promise.reject(new Error('This audio session has ended')) : call('play').then(() => {});
+		audio.pause = () => { if (!closed) changedAsync('pause'); };
+		audio.removeAttribute = name => { if (name !== 'src' || closed) return; closed = true; window.removeEventListener('rapier:native-media', changed); void call('stop').catch(() => {}); };
+		audio.load = () => {};
+		return audio;
+	}
+
+	function _nativeBinaryRecoveryStore() {
+		var prepared = null;
+		var call = function (operation, args) { return _nativeHostCall('recovery.store.' + operation, args || {}, 30000); };
+		var prepare = function () {
+			if (!prepared) prepared = call('prepare').then(function (result) {
+				if (result?.writable !== true) throw new Error(result?.reason || 'Recovery storage is unavailable. Previous copies are kept.');
+			}).catch(function (error) { prepared = null; throw error; });
+			return prepared;
+		};
+		return Object.freeze({
+			async list() { var value = await call('list'); if (!Array.isArray(value.names)) throw new Error('Recovery listing was incomplete'); return value.names; },
+			async read(name) {
+				var id = crypto.randomUUID(), parts = [], opened = false;
+				try {
+					var value = await call('read.begin', {id, name});
+					if (value?.missing === true) return null;
+					opened = true;
+					if (!Number.isSafeInteger(value.size) || value.size < 0 || value.size > 128 * 1048576) throw new Error('Recovery size was refused');
+					for (var offset = 0; offset < value.size;) {
+						var size = Math.min(32768, value.size - offset), part = await call('read.chunk', {id, offset, size});
+						if (!(part.bytes instanceof Uint8Array) || part.bytes.length !== size || part.offset !== offset) throw new Error('Recovery bytes were incomplete');
+						parts.push(part.bytes); offset += size;
+					}
+					return new Blob(parts, {type: 'application/json'});
+				} finally { if (opened) await call('read.close', {id}); }
+			},
+			async write(name, blob, options = {}) {
+				if (!(blob instanceof Blob) || blob.size > 128 * 1048576) throw new Error('Recovery bytes were refused');
+				await prepare();
+				var proof = await _blobFingerprint(blob), id = crypto.randomUUID(), begun = false;
+				try {
+					begun = true;
+					await call('write.begin', {id, name, size: blob.size, digest: proof.digest,
+						...(Object.hasOwn(options, 'expectedDigest') ? {expectedDigest: options.expectedDigest} : {})});
+					for (var offset = 0; offset < blob.size;) {
+						var bytes = new Uint8Array(await blob.slice(offset, offset + 32768).arrayBuffer());
+						var reply = await call('write.chunk', {id, offset, bytes}); offset += bytes.length;
+						if (reply.offset !== offset) throw new Error('Recovery did not keep the complete byte range');
+					}
+					var result = await call('write.commit', {id}); begun = false;
+					if (result?.written !== true) throw Object.assign(new Error('A newer recovery was kept. This copy cannot replace it.'), {code: 'recovery_changed'});
+					return proof.digest;
+				} finally { if (begun) await call('write.abort', {id}).catch(function () {}); }
+			},
+			async remove(name) { await prepare(); await call('remove', {name}); },
+			fingerprint: _blobFingerprint,
+		});
+	}
+
 	function _createNativePlatform() {
+		var binaryRecovery = null;
 		var preferencesReady;
 		return {
 			get id() { return _nativeHostRuntime.state.platformId; },
 			native: true,
+			get createAudio() { return _nativeCapability('nativeMedia') ? _nativeCreateAudio : null; },
 			get recoveryAutoResume() { return _nativeHostRuntime.state.recoveryAutoResume === true; },
 			ready: function () {
 				if (!preferencesReady) preferencesReady = _nativeHostRuntime.ready.then(function (state) {
+					_nativeDrawGestureExclusion();
 					if (!_nativeCapability('notesBackup')) return;
 					try { if (state?.notesBackupSettings) RapierPreferences.restoreAndroid(state.notesBackupSettings.values); }
 					catch (error) { console.warn('[rapier] Android settings restore', error); }
@@ -3113,6 +3239,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			},
 			ownsPreferenceStore: false,
 			get ownsRecoveryStore() { return _nativeCapability('lockedNotes'); },
+			get binaryRecoveryStore() { return _nativeCapability('binaryRecovery') ? binaryRecovery ||= _nativeBinaryRecoveryStore() : null; },
 			get persistRecovery() { return _nativeCapability('lockedNotes') ? function () {
 				return Promise.reject(Object.assign(new Error('Locked notes use their encrypted Notes store.'), {code: 'notes_locked'}));
 			} : null; },
@@ -3330,7 +3457,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 					_nativeHostRuntime.state.pendingIntake = !!_nativeIntakeRuntime.transfer;
 				}
 				if (lastMatches || shareMatches || transferMatches) _nativeIntakeRuntime.failure = null;
-				if (_rapierExternalIntakeReleaseDeferred(payload)) return true;
+				if (payload.purpose !== 'clipboard' && _rapierExternalIntakeReleaseDeferred(payload)) return true;
 				_nativeHostNotify('intake.clear', { intakeId: intakeId });
 			},
 			getRecentFiles: function () {
@@ -3373,7 +3500,9 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 				} : null;
 			},
 			get resourceStatus() {
-				return _nativeCapability('resources') ? function (id) { return _nativeHostCall('resources.status', { id: String(id || '') }); } : null;
+				return _nativeCapability('resources') ? function (id) {
+					return _nativeHostCall('resources.status', { id: String(id || '') }).then(function (state) { _applyNativeResources(state, true); return state; });
+				} : null;
 			},
 			get resourceRead() { return _nativeCapability('resources') ? _nativeResourceRead : null; },
 			get resourceEnsure() {
@@ -3514,7 +3643,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 				return _nativeCapability('notesPin') ? function (id) { _nativeHostNotify('notes.gone', {id: String(id)}); } : null;
 			},
 			get mediaPlaying() {
-				return _nativeCapability('mediaPlaying') ? function (playing) { _nativeHostNotify('media.playing', {playing: playing === true}); } : null;
+				return _nativeCapability('mediaPlaying') && !_nativeCapability('nativeMedia') ? function (playing) { _nativeHostNotify('media.playing', {playing: playing === true}); } : null;
 			},
 			get requestNotesRole() {
 				return _nativeCapability('notesRole') ? function () {

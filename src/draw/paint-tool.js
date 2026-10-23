@@ -156,7 +156,7 @@ function _rapierPaintStoreOwn(rows) {
 	}
 	catch (_) { showToast("Couldn't save brush changes.", 'error'); return false; }
 	_rapierDrawState.paintOwn = null;
-	void _rapierPersonal.brushes(rows, before).catch(error => showToast(String(error.message || error), 'error'));
+	void _rapierPersonal.brushes(rows, before).catch(error => showToast("Couldn't sync brush changes.", 'error', null, error));
 	return true;
 }
 function _rapierPaintAdoptBrushes(keep, brushes) {
@@ -950,7 +950,7 @@ async function _rapierPaintLosslessPieces(encodeBox, box, budget, depth = 0, sin
 	if (single) {
 		const kept = await encodeBox(box);
 		if (kept && kept.url.length <= budget) return [{box,url:kept.url,shown:kept.shown || null}];
-		throw Object.assign(new Error('This Water picture is too large to set. The painting remains open.'), {code:'WATER_BUDGET',recoverable:true});
+		throw Object.assign(new Error('Too large to set. Painting stays open.'), {code:'WATER_BUDGET',recoverable:true});
 	}
 	let kept = null;
 	try { kept = await encodeBox(box); }
@@ -992,7 +992,7 @@ async function _rapierPaintEncodeCanvasBox(canvas, box, options = {lossless: tru
 	return {url: 'data:image/jxl;base64,' + RapierBundleIO.toBase64(out.bytes || out), options};
 }
 function _rapierPaintSplitShapeSync(shapes, shape, pieces) {
-	if (shape.paint?.mode === 'water' && pieces.length > 1) throw Object.assign(new Error('This Water layer must stay one picture. The painting remains open.'), {code:'WATER_BUDGET',recoverable:true});
+	if (shape.paint?.mode === 'water' && pieces.length > 1) throw Object.assign(new Error('Too large to set. Painting stays open.'), {code:'WATER_BUDGET',recoverable:true});
 	const state = _rapierDrawState, geom = shape.geom || {}, [pw, ph] = shape.paint?.px || [0, 0];
 	if (!(pw > 0 && ph > 0)) return null;
 	const sourcePaint = shape.paint || {};
@@ -1109,9 +1109,9 @@ async function _rapierPaintOfferQuality95(beforeBytes, afterBytes) {
 	if (typeof rapierConfirm !== 'function') return false;
 	const toKiB = n => Math.round(n / 1024);
 	return await rapierConfirm({
-		title: 'A very large drawing',
-		message: 'At full quality this drawing is ' + toKiB(beforeBytes) + ' KiB, more than one picture can hold. Quality 95 would keep it at ' + toKiB(afterBytes) + ' KiB instead. Save this drawing’s painting at quality 95?',
-		confirmLabel: 'quality 95',
+		title: 'Save at quality 95?',
+		message: 'Full quality is ' + toKiB(beforeBytes) + ' KiB, too large. Quality 95 is ' + toKiB(afterBytes) + ' KiB.',
+		confirmLabel: 'Quality 95',
 	}) === true;
 }
 async function _rapierPaintSetLayer({ auto = false, kib = 0 } = {}) {
@@ -2060,7 +2060,7 @@ function _rapierPaintOpenLayer(scale = _rapierPaintLayerScale(), atShapeId = nul
 		w = Math.max(1, Math.round(union.w * scale)); h = Math.max(1, Math.round(union.h * scale));
 	}
 	if (!emptyUnion && w * h > RAPIER_PAINT_AREA_MAX * 2) { union = { x0: 0, y0: 0, w: recipe.canvas.w, h: recipe.canvas.h }; w = Math.max(1, Math.round(union.w * scale)); h = Math.max(1, Math.round(union.h * scale)); }
-	if (w * h > RAPIER_PAINT_AREA_MAX * 2) throw new Error('Canvas is too large to paint on');
+	if (w * h > RAPIER_PAINT_AREA_MAX * 2) throw new Error('Canvas too large to paint on.');
 	if (mode === 'water' && typeof _rapierWaterPaperFrame === 'function') material = {...material, ..._rapierWaterPaperFrame(union.x0 * scale, union.y0 * scale, h, scale)};
 	const initial = waterMaterial ? {replay:waterMaterial.replay, session:waterMaterial.session, offset:[Math.round((waterMaterial.origin[0] - union.x0) * scale), Math.round((waterMaterial.origin[1] - union.y0) * scale)]} : null;
 	const {surface, canvas, ctx} = _rapierPaintBlankSheet(w, h, scale, prepared, mode, material, initial);
@@ -2081,7 +2081,7 @@ function _rapierPaintOpenLocalLayer(frame, atShapeId = null, mode = _rapierPaint
 	_rapierPaintCloseLayer();
 	const pad = _rapierPaintFramePad(frame.pw, frame.ph, frame.scale);
 	const w = Math.max(1, Math.round(frame.pw + pad * 2)), h = Math.max(1, Math.round(frame.ph + pad * 2));
-	if (w * h > RAPIER_PAINT_AREA_MAX * 2) throw new Error('Painting is too large to reopen for painting');
+	if (w * h > RAPIER_PAINT_AREA_MAX * 2) throw new Error('Painting too large to reopen.');
 	const initial = waterMaterial ? {replay:waterMaterial.replay, session:waterMaterial.session, offset:[pad,pad]} : null;
 	const {surface, canvas, ctx} = _rapierPaintBlankSheet(w, h, frame.scale, null, mode, mode === 'water' && typeof _rapierWaterPaperFrame === 'function' ? {..._rapierWaterPaperFrame(0, 0, h, frame.scale), paperOrigin: [0, 0]} : null, initial);
 	canvas.style.visibility = 'hidden';
@@ -3043,12 +3043,12 @@ function _rapierPaintRehydrateFor(target, pendingGesture = null) {
 			if (restoring) await restoring;
 			for (const g of waiters) await _rapierPaintApplyQueued(g).catch(() => {});
 		} catch (error) { state.paintRehydrateFailed = key; try { _rapierPaintCloseLayer(); } catch (_) {}
-			if (target.paint?.mode === 'water') { for (const g of waiters) _rapierPaintDiscardChangedTarget(g); if (!_rapierPaintLossSaid(error)) (console.error(error), showToast("Couldn't reopen this Water layer.", 'error')); }
+			if (target.paint?.mode === 'water') { for (const g of waiters) _rapierPaintDiscardChangedTarget(g); if (!_rapierPaintLossSaid(error)) (console.error(error), showToast("Couldn't reopen this watercolor layer.", 'error')); }
 			else for (const g of waiters) _rapierPaintQueueFallback(g); }
 	};
 	task = state.paintRehydrateTask = Promise.all([_rapierPaintStartPainter(mode), load(target), ...group.map(load)]).then(([, ...loaded]) => { decoded(); return adopt(loaded); }, error => {
 		decoded(); state.paintRehydrateFailed = key;
-		if (mode === 'water') { for (const g of waiters) _rapierPaintDiscardChangedTarget(g); if (!_rapierPaintLossSaid(error)) (console.error(error), showToast("Couldn't reopen this Water layer.", 'error')); }
+		if (mode === 'water') { for (const g of waiters) _rapierPaintDiscardChangedTarget(g); if (!_rapierPaintLossSaid(error)) (console.error(error), showToast("Couldn't reopen this watercolor layer.", 'error')); }
 		else for (const g of waiters) _rapierPaintQueueFallback(g);
 	}).finally(() => finished(task));
 }
@@ -3311,12 +3311,12 @@ function _rapierPaintGrowToHold(layer, paint, p) {
 			const x = Math.floor(p.x * k), y = Math.floor(p.y * k);
 			L = Math.max(0, -x + 1); T = Math.max(0, -y + 1); R = Math.max(0, x + 2 - surface.width); B = Math.max(0, y + 2 - surface.height);
 			if (!(L || T || R || B)) return layer;
-			if (!shows(L, T, R, B)) throw Object.assign(new Error('This Water layer cannot grow further. Set it and paint on a new layer.'), {code:'WATER_BUDGET',recoverable:true});
+			if (!shows(L, T, R, B)) throw Object.assign(new Error('Layer full. Set it to keep painting.'), {code:'WATER_BUDGET',recoverable:true});
 		}
 	}
 	const w = surface.width + L + R, h = surface.height + T + B;
 	if (w * h > RAPIER_PAINT_AREA_MAX * 2) {
-		if (layer.mode === 'water') throw Object.assign(new Error('This Water layer cannot grow further. Set it and paint on a new layer.'), {code:'WATER_BUDGET',recoverable:true});
+		if (layer.mode === 'water') throw Object.assign(new Error('Layer full. Set it to keep painting.'), {code:'WATER_BUDGET',recoverable:true});
 		return _rapierPaintFlipAtCap(layer, paint, p);
 	}
 	const { dx, dy } = surface.grow(L, T, R, B);
@@ -3710,7 +3710,7 @@ function _rapierPaintPublish(layer, keep, kept, custody, synced = false, record 
 			const already = layer.pendingOverflow;
 			layer.pendingOverflow = true;
 			if (record) surface.restoreReplay?.(record);
-			if (!already) showToast('This drawing is full. Set this painting, or download the drawing and start a new one.', 'info');
+			if (!already) showToast('Drawing full. Set this painting or start a new drawing.', 'info');
 			return null;
 		}
 	}

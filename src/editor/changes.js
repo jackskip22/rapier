@@ -576,7 +576,7 @@
     const intent = {documentId, revision, generation, source: _rapierSourceText()};
     close();
     const result = await _rapierDecideWordChange(intent, place.wordId, accept);
-    if (result.outcome !== 'applied') showToast(result.message || 'The document changed. Open this change again.', 'info');
+    if (result.outcome !== 'applied') showToast(result.message || 'Document changed. Open the change again.', 'info');
     dirty = true; await refresh(); return result;
   }
   async function undo(key = active?.key) {
@@ -627,7 +627,7 @@
       close(); dirty = true; await refresh();
     } else {
       if (active?.controls) for (const control of active.controls.querySelectorAll('button')) control.disabled = false;
-      showToast(result?.reason === 'drawing_open' ? 'Close Draw to undo this turn.' : 'This change could not be undone.', 'info');
+      showToast(result?.reason === 'drawing_open' ? 'Close Draw to undo this turn.' : 'Couldn’t undo this change.', 'info');
     }
     return result;
   }

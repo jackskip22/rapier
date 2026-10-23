@@ -85,7 +85,7 @@ const _rapierLive = (() => {
           read.value.epoch !== Number(rapier.identity.epoch || 0) || !noteResumeCurrent(candidate)) { cancelResume(); return; }
       resumeCandidate = null;
       await join({...candidate, name: personName()}, candidate.documentId);
-    } catch (error) { clearResume(candidate); cancelResume(); showToast(error.message, 'error'); }
+    } catch (error) { clearResume(candidate); cancelResume(); showToast(_rapierErrorWords(error, 'Couldn’t rejoin the live document.'), 'error'); }
     finally { resumeOpening = false; }
   }
   function restored(id, opened) {
@@ -273,7 +273,7 @@ const _rapierLive = (() => {
       if (epoch === currentEpoch) {
         state = {...state, state: 'stopped', error: error.message};
         send({type: 'projected', id: value.id, ok: false, reason: error.message});
-        showToast('Live changes are kept. ' + error.message, 'error');
+        showToast('Live changes are kept. Sharing stopped.', 'error', null, error);
       }
     } finally {
       if (epoch === currentEpoch && own()) {
@@ -321,7 +321,7 @@ const _rapierLive = (() => {
       const authority = value.documentId || binding.requestedId;
       if (typeof authority !== 'string' || !authority) throw new Error('Live document identity is missing.');
       if (binding.resumeAuthority && (value.documentId !== binding.resumeAuthority || String(rapier.identity.authority) !== binding.resumeAuthority))
-        throw new Error('The open document changed before its live session could resume.');
+        throw new Error('Document changed. Join again.');
       const filename = value.filename || binding.filename || 'Shared.md';
       const carriedLedger = value.ledger || (value.history ? globalThis.RapierAgentBrowser.remoteLedger({
         documentId: authority, text: value.source, filename, docKind: value.docKind || 'markdown',
@@ -331,7 +331,7 @@ const _rapierLive = (() => {
         const recovery = value.recovery;
         if (String(rapier.identity.authority) !== authority || _rapierSourceText() !== recovery.before ||
             rapier.revision.settled !== recovery.revision || rapier.document.source.rootId !== recovery.root)
-          throw new Error('The open document changed before its live history could be recovered.');
+          throw new Error('Document changed. Join again.');
         const rows = recovery.records.flatMap(row => row.splices);
         const last = recovery.records.at(-1).transaction;
         const result = await projectSource(recovery.before, value.source, rows,
@@ -341,27 +341,27 @@ const _rapierLive = (() => {
         if (epoch !== currentEpoch) return;
         if (!result) {
           _rapierSettlePendingDocumentChange();
-          throw new Error('The open document changed before its live history could be recovered.');
+          throw new Error('Document changed. Join again.');
         }
         movePresence(rows);
         act(recovery.acts); _rapierArmAutosave();
       } else if (value.initial) {
         if (String(rapier.identity.authority) !== authority || binding.baseline?.documentId !== authority)
-          throw new Error('The open document changed while joining.');
+          throw new Error('Document changed. Join again.');
       } else if (!same) {
-        if (String(rapier.identity.authority) === authority) throw new Error('Live history is unavailable for the open draft. Your changes are kept.');
+        if (String(rapier.identity.authority) === authority) throw new Error('Live history unavailable. Your changes are kept.');
         const guard = _rapierMutationStamp();
-        if (_rapierIsDirty() && !await _rapierSetAsideOutgoing(guard)) throw new Error('The open document could not be kept.');
+        if (_rapierIsDirty() && !await _rapierSetAsideOutgoing(guard)) throw new Error('Couldn’t back up the document.');
         if (epoch !== currentEpoch) return;
         const loaded = await rapierLoad(value.source, filename, {documentAuthority: authority,
           expectedMutationStamp: guard, appsSnapshot: true, ...(carriedLedger ? {carriedLedger, restore: true,
             documentKind: carriedLedger.head.metadata.docKind} : {})});
-        if (!loaded) throw new Error('The open document changed while joining. Join again.');
+        if (!loaded) throw new Error('Document changed. Join again.');
       } else if (carriedLedger && _rapierLedgerCapture().sha256 !== carriedLedger.sha256) {
         const result = await projectSource(value.source, value.source, [],
           () => epoch === currentEpoch && String(rapier.identity.authority) === authority,
           {actor: {kind: 'system', id: 'live'}, transport: 'platform', operation: 'document.remote_edit'}, {carriedLedger});
-        if (!result) throw new Error('The open document changed while its history was joining.');
+        if (!result) throw new Error('Document changed. Join again.');
       }
       if (epoch !== currentEpoch) return;
       binding.authority = authority; keepResume();
@@ -378,7 +378,7 @@ const _rapierLive = (() => {
       loading = false; rejectJoin?.(error); resolveJoin = rejectJoin = null; joining = null;
       await leave();
       state = {...state, state: 'stopped', error: error.message}; publish();
-      showToast(error.message, 'error');
+      showToast(_rapierErrorWords(error, 'Couldn’t join the live document.'), 'error');
     }
   }
   async function join(options, resumeAuthority = null) {
@@ -398,7 +398,7 @@ const _rapierLive = (() => {
     await leave();
     await globalThis.RapierAgentBrowser.ready;
     if (resumeAuthority && (!addressOwned() || String(rapier.identity.authority) !== resumeAuthority))
-      throw new Error('The open document changed before its live session could resume.');
+      throw new Error('Document changed. Join again.');
     if (!_rapierSettlePendingDocumentChange()) throw new Error('Finish composing, then join the live document.');
     const currentEpoch = ++epoch;
     binding = {url: url.href, key: options.key, name: personName(options.name),
@@ -699,7 +699,7 @@ const _rapierLive = (() => {
     const url = new URL(globalThis.RAPIER_DOOR || 'https://mcp.rapier.website/mcp');
     if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password ||
         url.protocol === 'http:' && !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname))
-      throw new Error('The live document service is unavailable.');
+      throw new Error('Live sharing is unavailable right now.');
     return url.origin;
   }
   function publicPage() {
@@ -733,7 +733,7 @@ const _rapierLive = (() => {
         source: globalThis.RapierLiveSession.workerSource});
       const requestId = crypto.randomUUID();
       const finish = (value, error) => { clearTimeout(timeout); creator.terminate(); error ? reject(error) : resolve(value); };
-      const timeout = setTimeout(() => finish(null, new Error('The live link could not be prepared. Try again.')), 30000);
+      const timeout = setTimeout(() => finish(null, new Error('Couldn’t make the link. Try again.')), 30000);
       creator.onerror = event => finish(null, new Error(event.message || 'The live link could not be prepared.'));
       creator.onmessage = event => {
         const value = event.data;
@@ -752,7 +752,7 @@ const _rapierLive = (() => {
       const captured = {documentId: String(rapier.identity.authority), filename: rapier.document.filename,
         docKind: rapier.document.docKind, source: _rapierSourceText(), ledger: _rapierLedgerCapture()};
       const prepared = await invitation(captured), origin = endpoint();
-      if (String(rapier.identity.authority) !== captured.documentId) throw new Error('The open document changed. Share it again.');
+      if (String(rapier.identity.authority) !== captured.documentId) throw new Error('Document changed. Share again.');
       const response = await fetch(new URL('/live/' + prepared.id + '/create', origin), {method: 'POST',
         credentials: 'omit', cache: 'no-store', redirect: 'error', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(prepared.request), signal: AbortSignal.timeout(30000)});
@@ -764,7 +764,7 @@ const _rapierLive = (() => {
         private: {id: prepared.id, key: prepared.key, owner: prepared.owner}, documentId: captured.documentId,
         filename: captured.filename, baseline: {documentId: captured.documentId, gen: 0, source: captured.source, ledger: captured.ledger}, joinUrl: publicPage()});
       people(); return joined;
-    })().catch(error => { showToast(error.message, 'error'); throw error; }).finally(() => {shareFlight = null;});
+    })().catch(error => { showToast(_rapierErrorWords(error, 'Couldn’t start sharing.'), 'error'); throw error; }).finally(() => {shareFlight = null;});
     return shareFlight;
   }
   async function stop() {
@@ -774,7 +774,7 @@ const _rapierLive = (() => {
       stopRequests.set(id, resolve);
       if (!send({type: 'stop', id})) {stopRequests.delete(id); resolve({stopped: false, reason: 'live_unavailable'});}
     });
-    if (!result.stopped) { showToast(result.reason || 'Sharing could not be stopped. Try again.', 'error'); return false; }
+    if (!result.stopped) { showToast('Couldn’t stop sharing. Try again.', 'error', null, result.reason); return false; }
     await leave(); showToast('Sharing stopped', 'success'); return true;
   }
   function rename(value) {
@@ -845,7 +845,7 @@ const _rapierLive = (() => {
       if (fragment.has('private') && !privateKey) throw new Error('Use a live document link.');
       return join({url, key: fragment.get('key'), name: personName(),
         ...(privateKey ? {private: {id: /\/live\/([a-f0-9]{32})\/socket$/.exec(new URL(url).pathname)?.[1], key: privateKey}} : {})});
-    })().catch(error => showToast(error.message, 'error'));
+    })().catch(error => showToast(_rapierErrorWords(error, 'Couldn’t join the live document.'), 'error'));
   });
   function check() { if (own() && state.ready) send({type: 'check'}); }
   function doorContext(args) {

@@ -493,7 +493,7 @@ function rapierFindRun() {
 		} catch (error) {
 			if (error?.name !== 'AbortError') {
 				console.warn('[rapier] Find failed', error);
-				showToast('Could not finish finding', 'error');
+				showToast('Couldn’t finish searching.', 'error');
 			}
 			return false;
 		} finally {
@@ -610,7 +610,7 @@ async function rapierReplaceAll(currentOnly = false) {
 	const query = findInput ? findInput.value : '';
 	const replacement = replaceInput ? replaceInput.value : '';
 	if (!query) {
-		showToast('enter text to find first', 'error');
+		showToast('Enter text to find.', 'error');
 		return;
 	}
 
@@ -629,7 +629,7 @@ async function rapierReplaceAll(currentOnly = false) {
 			splice.inserted + before.slice(splice.pos + splice.removed.length) : before };
 	} else result = _rapierReplaceAllOccurrences(before, query, replacement, rapier.document.docKind === 'markdown', projection);
 	if (!result.count || result.value === before) {
-		showToast('no replacements', 'error');
+		showToast('No matches', 'error');
 		return;
 	}
 
@@ -647,11 +647,11 @@ async function rapierReplaceAll(currentOnly = false) {
 			);
 		} catch (error) {
 			try { console.warn('[rapier] Replace All transaction failed', error); } catch (_) {}
-			showToast('Replace all could not be applied safely', 'error');
+			showToast('Couldn’t replace all.', 'error');
 			return;
 		}
 		if (!replacement.result) {
-			showToast('Document changed; replace all was canceled', 'error');
+			showToast('Document changed. Nothing replaced.', 'error');
 			return;
 		}
 	} else {
@@ -659,7 +659,7 @@ async function rapierReplaceAll(currentOnly = false) {
 	}
 
 	rapierFindRun();
-	showToast(result.count + (result.count === 1 ? ' replacement' : ' replacements'), 'success');
+	showToast(result.count + ' replaced', 'success');
 }
 
 function rapierReplaceOne() { return rapierReplaceAll(true); }

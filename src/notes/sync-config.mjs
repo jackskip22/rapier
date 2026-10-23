@@ -28,21 +28,21 @@ export function syncVerified(config = CLOUDFLARE_SYNC) { return config.browserRo
 const VERIFY_DOOR = '#sync-verify';
 const SITE_PAGE = /^\/(?:rapier\.html|notes\/?|draw\/?)?$/;
 export function syncAvailability({url, native = false, framed = false} = {}, config = CLOUDFLARE_SYNC) {
-	if (native) return {ready: false, reason: 'this app does not connect to cloudflare: on android, open rapier sync; on a computer, use rapier in a browser.'};
+	if (native) return {ready: false, reason: 'On Android, use Rapier Sync. On a computer, use rapier.website.'};
 	if (!registrationReady(config)) return {ready: false, reason: SYNC_UNAVAILABLE};
 	try {
 		const here = new URL(url), redirect = new URL(config.redirectUri);
 		if (!syncVerified(config) && here.hash !== VERIFY_DOOR) return {ready: false, reason: SYNC_UNAVAILABLE};
 		if (framed || here.protocol !== 'https:' || redirect.protocol !== 'https:' || here.origin !== redirect.origin || !SITE_PAGE.test(here.pathname) || !SITE_PAGE.test(redirect.pathname) || here.username || here.password || redirect.search || redirect.hash || redirect.username || redirect.password) throw new Error();
-	} catch { return {ready: false, reason: 'sign in from https://rapier.website/: this copy cannot receive the cloudflare sign-in.'}; }
+	} catch { return {ready: false, reason: 'Sign in at rapier.website.'}; }
 	return {ready: true, reason: ''};
 }
 
 export function r2KeyAvailability({url, native = false, framed = false} = {}) {
-	if (native) return {ready: false, reason: 'this app does not connect to cloudflare: on android, open rapier sync; on a computer, use rapier in a browser.'};
+	if (native) return {ready: false, reason: 'On Android, use Rapier Sync. On a computer, use rapier.website.'};
 	try {
 		const here = new URL(url);
 		if (framed || here.origin !== 'https://rapier.website' || !SITE_PAGE.test(here.pathname) || here.username || here.password) throw new Error();
-	} catch { return {ready: false, reason: 'open https://rapier.website/ to connect your r2 bucket.'}; }
+	} catch { return {ready: false, reason: 'Connect your R2 bucket at rapier.website.'}; }
 	return {ready: true, reason: ''};
 }

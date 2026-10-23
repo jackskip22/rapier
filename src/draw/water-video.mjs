@@ -107,7 +107,7 @@ export async function exportDrawingVideo({steps=[],ground,final,framing='square'
  try{
   encoder=new VideoEncoder({output(chunk,metadata){
    if(error||signal?.aborted)return;
-   try{if(chunk.byteLength+65536>WATER_VIDEO_MAX_BYTES-muxer.bytes)throw failure('water_video_budget','The video exceeds the app’s share limit. Choose a shorter duration.');const data=new Uint8Array(chunk.byteLength);chunk.copyTo(data);muxer.add(data,{timestamp:chunk.timestamp,key:chunk.type==='key',description:metadata?.decoderConfig?.description});encoded++;}
+   try{if(chunk.byteLength+65536>WATER_VIDEO_MAX_BYTES-muxer.bytes)throw failure('water_video_budget','Video too long to share. Choose a shorter one.');const data=new Uint8Array(chunk.byteLength);chunk.copyTo(data);muxer.add(data,{timestamp:chunk.timestamp,key:chunk.type==='key',description:metadata?.decoderConfig?.description});encoded++;}
    catch(cause){error=cause;abort();}
   },error(cause){error=cause;}});
   signal?.addEventListener('abort',abort,{once:true});check();encoder.configure(config);progress('preparing');

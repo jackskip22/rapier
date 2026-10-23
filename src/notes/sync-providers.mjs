@@ -58,14 +58,14 @@ export function providerConnectOrigins({registrations = OTHER_SYNC, listed = []}
 }
 
 export function providerAvailability(provider, {environment = {}, registration = OTHER_SYNC[provider], listed = []} = {}) {
-	if (!isOtherProvider(provider)) return {ready: false, soon: false, reason: 'choose one of the storage services rapier carries.'};
+	if (!isOtherProvider(provider)) return {ready: false, soon: false, reason: 'Choose a storage service.'};
 	const row = listed.find(entry => entry.id === provider), signs = PROVIDERS[provider].oauth;
 	const registered = !signs || clientRegistered(registration);
 	if (!row || row.ready !== true || !registered) return {ready: false, soon: true, reason: PROVIDERS[provider].soon};
-	if (environment.native) return {ready: false, soon: false, reason: 'this app does not connect to ' + PROVIDERS[provider].label + ': on android, open rapier sync; on a computer, use rapier in a browser.'};
+	if (environment.native) return {ready: false, soon: false, reason: 'On Android, use Rapier Sync. On a computer, use rapier.website.'};
 	try {
 		const here = new URL(environment.url), site = new URL(signs ? registration.redirectUri : 'https://rapier.website/');
 		if (environment.framed || here.protocol !== 'https:' || here.origin !== site.origin || here.username || here.password) throw new Error();
-	} catch { return {ready: false, soon: false, reason: 'sign in from https://rapier.website/: this copy cannot connect ' + PROVIDERS[provider].label + '.'}; }
+	} catch { return {ready: false, soon: false, reason: 'Sign in at rapier.website.'}; }
 	return {ready: true, soon: false, reason: ''};
 }

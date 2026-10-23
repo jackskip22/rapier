@@ -224,6 +224,10 @@ select{
 .toast-container[data-rapier-transient-state="waiting"]{visibility:hidden}
 .toast-container > *{flex:none;clip-path:inset(0);pointer-events:auto}
 .toast-container[data-rapier-notice-scroll] > *{touch-action:pan-y}
+@media (hover:hover) and (pointer:fine){
+	.toast-container{align-items:center}
+	.toast-container > .toast,.toast-container > .restore-notice,.toast-container > .rapier-progress{align-self:center;width:100%;max-width:var(--md-measure,39.6rem)}
+}
 .toast,
 .restore-notice{
 	transform:translate3d(0,0,0);
@@ -274,7 +278,7 @@ html[data-pasting="on"] body::after{
 
 .toast,.restore-notice,.rapier-notes-snack,.rapier-progress{
 	background:rgb(0 0 0 / .5);color:#fff;border:0;border-radius:0;box-shadow:none;
-	font:var(--fw-semibold) var(--text-sm)/1.4 var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;
+	font:var(--fw-regular) var(--text-sm)/1.4 var(--font-sans);letter-spacing:normal;text-transform:none;
 }
 body.light .toast,body.light .restore-notice,body.light .rapier-notes-snack,body.light .rapier-progress{background:rgb(255 255 255 / .5);color:#000}
 @media(prefers-reduced-motion:reduce){.toast,.restore-notice{animation:none}.toast-container,.toast,.restore-notice{transition:none}}
@@ -298,7 +302,7 @@ body.light .toast,body.light .restore-notice,body.light .rapier-notes-snack,body
 	white-space:normal;overflow-wrap:anywhere;
 	color:inherit}
 .restore-notice__line--sub{
-	opacity:.72;font-size:var(--text-xs);letter-spacing:var(--track-caps)}
+	opacity:.72;font-size:var(--text-xs)}
 .restore-notice__actions{
 	flex:0 0 auto;display:flex;align-items:center;align-self:stretch}
 .restore-notice__timer{

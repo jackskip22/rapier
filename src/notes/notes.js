@@ -35,7 +35,7 @@ async function _rapierNotesUnlock() {
 	if (!_rapierNotes.unlocking) _rapierNotes.unlocking = Promise.resolve().then(unlock).then(result => {
 		if (result?.unlocked !== true) return false;
 		_rapierNotes.captureToken = null; return true;
-	}).catch(error => { showToast('Could not unlock. Your note stays open.', 'error'); console.warn('[rapier] notes', error); return false; })
+	}).catch(error => { showToast('Couldn’t unlock. Your note stays open.', 'error'); console.warn('[rapier] notes', error); return false; })
 		.finally(() => { _rapierNotes.unlocking = null; });
 	return _rapierNotes.unlocking;
 }
@@ -55,7 +55,7 @@ function _rapierNotesBesideLeave() {
 	const busy = () => {
 		if (R.draft) _rapierRecorderDismiss();
 		if (R.transcript) _rapierRecorderRecoverTranscript();
-		else if (R.speech && !R.draft) showToast('Notes is still listening to a recording.', 'info');
+		else if (R.speech && !R.draft) showToast('Still recording.', 'info');
 		return !!(R.draft || R.transcript || R.speech);
 	};
 	const leaving = state.besideLeaving = (async () => {
@@ -75,7 +75,7 @@ function _rapierNotesBesideLeave() {
 }
 async function _rapierNotesEditor() {
 	if (!await _rapierNotesUnlock()) {
-		showToast('Unlock your phone to go back to Rapier. Your note stays open.', 'info');
+		showToast('Unlock your phone to return to Rapier.', 'info');
 		return false;
 	}
 	const state = _rapierNotes;
@@ -117,7 +117,7 @@ async function _rapierNotesEditor() {
 			return true;
 		} catch (error) {
 			if (state.returnRefused) { rapier.access.notesReadOnly = true; rapierSetReadOnly(false); }
-			showToast('Rapier could not be reopened: ' + String(error?.message || error), 'error');
+			showToast('Couldn’t reopen Rapier.', 'error', null, error);
 			return false;
 		}
 	})().finally(() => { state.returning = null; });
@@ -255,7 +255,7 @@ const _rapierNotesPending = {
 			const captured = this.text();
 			return this.retain(proof, _rapierMutationStamp(), captured.text, false, captured.paste);
 		} catch (error) {
-			showToast('This note could not be kept for restart: ' + String(error?.message || error) + '. Keep this page open until the note is saved.', 'error', {outlive: 'save-failed'});
+			showToast('Note not saved yet. Keep this page open.', 'error', {outlive: 'save-failed'}, error);
 			return false;
 		}
 	},
@@ -309,7 +309,7 @@ const _rapierNotesPending = {
 			if (digest === proof.digest && historySaved && expectedDigest.every(value => value === digest)) this.forget(proof, stamp, digest, proof.ledger);
 			return true;
 		} catch (error) {
-			showToast('This note could not be kept for restart: ' + String(error?.message || error) + '. Keep this page open until the note is saved.', 'error', {outlive: 'save-failed'});
+			showToast('Note not saved yet. Keep this page open.', 'error', {outlive: 'save-failed'}, error);
 			return false;
 		}
 	},
@@ -378,13 +378,13 @@ const _rapierNotesPending = {
 						const saved = await _rapierNotesStore.folder.save({...record, text, ledger});
 						changed = true;
 						if (_rapierNotesDraftStorage().getItem(key) === serial) _rapierNotesDraftStorage().removeItem(key);
-						if (saved.copied) showToast('An unfinished edit of ' + record.file + ' met a changed note. Your words were kept as ' + saved.file + '.', 'info');
+						if (saved.copied) showToast('Note changed elsewhere. Yours saved as ' + saved.file, 'info');
 					};
 					if (typeof record.owner !== 'string' || !/^[a-f0-9-]{36}$/.test(record.owner) || !navigator.locks?.request)
 						throw new Error('The unfinished note\'s owner could not be checked.');
 					await navigator.locks.request('rapier-notes-pending-owner:' + record.owner,
 						{mode: 'exclusive', ifAvailable: true}, lock => lock ? recover() : undefined);
-				} catch (error) { showToast('An unfinished note could not be recovered yet: ' + String(error?.message || error) + '. Its restart copy was kept.', 'error', {outlive: 'save-failed'}); }
+				} catch (error) { showToast('Couldn’t recover a note. Its copy is kept.', 'error', {outlive: 'save-failed'}, error); }
 			}
 			return changed;
 		})().finally(() => { this.replaying = null; });
@@ -411,12 +411,12 @@ const _rapierNotesStore = {
 				_rapierNotes.androidRestoreSessions = [];
 				if (results.length) {
 					const omitted = results.reduce((count, result) => count + result.omitted, 0);
-					showToast('Android restored your notes and history.' + (omitted ? ' ' + omitted + ' media files exceeded the cloud limit; keep your full backup.' : ''), omitted ? 'info' : 'success');
+					showToast('Notes restored.' + (omitted ? ' ' + omitted + ' media files were too large. Keep your backup.' : ''), omitted ? 'info' : 'success');
 				}
 			} catch (error) {
 				_rapierNotes.androidRestoreError = String(error?.message || error);
 				_rapierNotes.androidRestoreSessions = (error.held || []).map(row => ({id: row.session}));
-				showToast((error.restored?.length ? 'Other Android backups were restored. ' : '') + 'Android kept this backup: ' + _rapierNotes.androidRestoreError + ' Use Export restored backup in Notes settings.', 'error');
+				showToast((error.restored?.length ? 'Some notes restored. ' : '') + 'Export the backup from Notes settings.', 'error', null, _rapierNotes.androidRestoreError);
 			}
 		})().finally(() => { this.androidRestore = null; });
 		return this.androidRestore;
@@ -780,7 +780,7 @@ async function _rapierNotesSave(file, text, ledger, {input = false, exact = fals
 		throw error;
 	}
 	state.attempted.delete(file); state.attemptedLedger.delete(file);
-	if (snapshot.copied) showToast(file + ' was changed elsewhere while you wrote. Its newer words stay; yours are kept as ' + snapshot.file + ', which this document now saves to.', 'info');
+	if (snapshot.copied) showToast(file + ' changed elsewhere. Yours saved as ' + snapshot.file, 'info');
 	if (state.current === file && state.currentProof === proof) {
 		state.current = snapshot.file;
 		state.currentProof = Object.freeze({...proof, file: snapshot.file, id: snapshot.id ?? state.index?.notes?.[snapshot.file]?.id, text, digest: snapshot.digest, ledger: snapshot.ledger.sha256});
@@ -828,7 +828,7 @@ function _rapierNotesAndroidBackupSentence() {
 		: android?.state === 'limited' ? 'Android cloud: text and history first; ' + android.omittedCount + ' media files need your full backup. Device transfer keeps everything.'
 		: android?.lastAttempt === 'encryption-required' ? 'Android cloud backup needs a screen lock.'
 		: android?.state === 'pending-write' ? 'Android backup waits for your notes to finish saving.'
-		: android?.state === 'unreadable' ? 'Android could not prepare a complete cloud backup. Keep a full Backup of your original files.'
+		: android?.state === 'unreadable' ? 'Android’s cloud backup is incomplete. Keep a full Backup.'
 		: 'Android backup follows your phone settings. Cloud limit: 25 MB; device transfer keeps everything.';
 }
 function _rapierNotesStorageSentence() {
@@ -936,7 +936,7 @@ async function _rapierNotesLoad() {
 	const syncState = snapshot.syncState ?? null;
 	const index = snapshot.index, files = snapshot.files;
 	state.recordingOffers = Array.isArray(snapshot.recordings) ? snapshot.recordings : [];
-	for (const row of snapshot.kept || []) showToast('An interrupted save of ' + row.file + ' met a changed file. Your words were kept as ' + row.name + '.', 'info');
+	for (const row of snapshot.kept || []) showToast(row.file + ' changed elsewhere. Yours saved as ' + row.name, 'info');
 	const dropped = Object.keys(index.missingFiles || {}).filter(file => !(state.indexBase?.missingFiles || {})[file]);
 	const stampsAt = Date.now();
 	const stamps = await store.stamps(Object.keys(index.notes));
@@ -972,8 +972,8 @@ async function _rapierNotesLoad() {
 		if (state.loadRequest !== request) return;
 		return _rapierNotesReadRest();
 	};
-	if (damaged) showToast('Rapier couldn’t read its list of your notes, so it made a new one from the notes; pins, colors, sections and order start over. The unreadable copy is kept in the notes folder as ' + damaged + '.', 'error');
-	if (dropped.length) showToast(dropped.length === 1 ? 'One note on Rapier’s list is not in the notes folder, so it was taken off the list.' : dropped.length + ' notes on Rapier’s list are not in the notes folder, so they were taken off the list.', 'info');
+	if (damaged) showToast('Note list rebuilt. Pins, colors and sections were reset.', 'error', null, damaged);
+	if (dropped.length) showToast(dropped.length === 1 ? 'A missing note was removed from the list.' : dropped.length + ' missing notes removed from the list.', 'info');
 }
 
 function _rapierNotesIndexingBegin() { const begin = _rapierNotes.indexing; if (begin) return begin(); }
@@ -1015,7 +1015,7 @@ async function _rapierNotesReadFile(row) {
 	const failed = error => {
 		if (!live()) return;
 		if (error?.code === 'unreadable') { _rapierNotesHold(file, ''); state.unreadable.add(file); return; }
-		if (!state.readFailed.has(file)) showToast('A note could not be read: ' + file + '. ' + String(error?.message || error), 'error');
+		if (!state.readFailed.has(file)) showToast('Couldn’t read ' + file, 'error', null, error);
 		state.readFailed.set(file, 'could not be read');
 	};
 	try {
@@ -1034,7 +1034,7 @@ async function _rapierNotesReadFile(row) {
 		}
 		if (!live()) return;
 		if (bracket && state.readBracket) state.readBracket.set(file, bracket);
-		if (source === null) { if (!state.readFailed.has(file)) showToast('A note the folder listed is not there any more: ' + file + '. Nothing was rebuilt; open Notes again.', 'error'); state.readFailed.set(file, 'not in the folder any more'); return; }
+		if (source === null) { if (!state.readFailed.has(file)) showToast(file + ' is gone. Open Notes again.', 'error'); state.readFailed.set(file, 'not in the folder any more'); return; }
 		let exact = typeof source === 'string' ? source : undefined, published = false;
 		const decode = bytes => {
 			try { return new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(bytes); }
@@ -1096,7 +1096,7 @@ function _rapierNotesReadRest() {
 		if (state.loadGen !== gen) return;
 		reading.complete = true;
 		const bad = state.unreadable;
-		if (bad.size) showToast((bad.size === 1 ? 'One file in the notes folder is not text' : bad.size + ' files in the notes folder are not text') + ' (' + [...bad].slice(0, 3).join(', ') + (bad.size > 3 ? ', \u2026' : '') + '): shown, not opened, and left as ' + (bad.size === 1 ? 'it is' : 'they are') + '.', 'error');
+		if (bad.size) showToast((bad.size === 1 ? '1 file isn’t text: ' : bad.size + ' files aren’t text: ') + [...bad].slice(0, 3).join(', ') + (bad.size > 3 ? ', \u2026' : ''), 'error');
 		if (typeof _rapierNotesLibraryTextsComplete === 'function') _rapierNotesLibraryTextsComplete();
 		if (typeof _rapierOcrWalkAll === 'function') _rapierOcrWalkAll();
 		if (state.open && state.query) _rapierNotesRender();
@@ -1427,7 +1427,7 @@ function _rapierNotesSyncPress(options = {}) {
 		else if (typeof _rapierUiSyncOpen === 'function') _rapierUiSyncOpen();
 		return;
 	}
-	if (navigator.onLine === false) { showToast('This device is not connected to the internet.', 'info'); return; }
+	if (navigator.onLine === false) { showToast('You’re offline.', 'info'); return; }
 	if (typeof _rapierCfToggle === 'function') _rapierCfToggle(options);
 }
 function _rapierNotesSettingsEl() {
@@ -1640,7 +1640,7 @@ function _rapierNotesBinPaint() {
 	body.replaceChildren();
 	const files = _rapierNotesBinFiles();
 	body.appendChild(_rapierNotesEl('p', 'rapier-notes-bin-note',
-		'Notes and their unshared recordings are deleted from here after 7 days.'));
+		'Deleted after 7 days.'));
 	if (!files.length) {
 		body.appendChild(_rapierNotesEl('p', 'rapier-notes-empty', 'The recycle bin is empty.'));
 		state.binPicked = new Set();
@@ -1734,7 +1734,7 @@ function _rapierNotesReorderWrite(ids) {
 	const state = _rapierNotes, was = state.index;
 	state.index = {...state.index, sectionOrder: ids.slice()};
 	_rapierNotesRender();
-	void _rapierNotesWriteIndex().catch(error => { state.index = was; _rapierNotesRender(); showToast('The section order was not written to the notes folder: ' + String(error?.message || error), 'error'); });
+	void _rapierNotesWriteIndex().catch(error => { state.index = was; _rapierNotesRender(); showToast('Couldn’t save the section order.', 'error', null, error); });
 }
 function _rapierNotesReorderDown(evt) {
 	const state = _rapierNotes;
@@ -1812,7 +1812,7 @@ function _rapierNotesKeyMove(target, direction) {
 	const keep = () => { const el = state.surface?.querySelector('.rapier-notes-card[data-notes-file="' + CSS.escape(file) + '"]'); if (el && document.activeElement !== el && (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected)) el.focus({preventScroll: true}); };
 	state.surface.querySelector('.rapier-notes-card[data-notes-file="' + CSS.escape(file) + '"]')?.focus({preventScroll: true});
 	requestAnimationFrame(() => requestAnimationFrame(keep));
-	void written.then(() => requestAnimationFrame(keep), error => { _rapierNotesRender(); showToast('The new place was not written to the notes folder: ' + String(error?.message || error), 'error'); });
+	void written.then(() => requestAnimationFrame(keep), error => { _rapierNotesRender(); showToast('Couldn’t save the new order.', 'error', null, error); });
 	return true;
 }
 function _rapierNotesReorderBarPaint() {
@@ -1894,7 +1894,7 @@ async function _rapierNotesToggleSection(id) {
 	state.index = M.setCollapsed(state.index, id, !_rapierNotesClosed(id));
 	_rapierNotesRender();
 	try { await _rapierNotesWriteIndex(); }
-	catch (error) { state.index = was; _rapierNotesRender(); showToast('The section\'s state was not written to the notes folder: ' + String(error?.message || error), 'error'); }
+	catch (error) { state.index = was; _rapierNotesRender(); showToast('Couldn’t save the section.', 'error', null, error); }
 }
 function _rapierNotesEnsure() { return _rapierNotes.surface || _rapierNotesBuildSurface(); }
 
@@ -2003,7 +2003,7 @@ function _rapierNotesCard(file) {
 				action.addEventListener('click', event => {
 					event.stopPropagation();
 					void _rapierNotesReminderChange([file], {kind}, Date.now(), expected).catch(error =>
-						showToast('The reminder was not written to the notes folder: ' + String(error?.message || error), 'error'));
+						showToast('Couldn’t save the reminder.', 'error', null, error));
 				});
 				chip.appendChild(action);
 			}
@@ -2876,7 +2876,7 @@ const _rapierNotesFields = (() => {
 				if (_rapierCrossBlockReplace(event.inputType, '') || _rapierApplyExactCut()) return;
 			}
 			_rapierNotesPending.keep({settle: false});
-			showToast('The selection stops at the field boundary. Try the edit again.', 'info');
+			showToast('Select within one field.', 'info');
 			return;
 		}
 		if (event.type === 'keydown' && (event.ctrlKey || event.metaKey) && !event.altKey && String(event.key).toLowerCase() === 'a') {
@@ -3257,7 +3257,7 @@ async function _rapierNotesOpenById(id) {
 		if (!state.open || !state.index) return false;
 		if (state.current || state.mode || state.liftOpen || state.liftBack) return 'yielded';
 		const file = Object.keys(state.index.notes).find(f => state.index.notes[f]?.id === id && !state.index.notes[f]?.trashed);
-		if (!file) { showToast('That note is not in this notes folder.', 'info'); return 'missing'; }
+		if (!file) { showToast('Note not found.', 'info'); return 'missing'; }
 		return opened = await _rapierNotesOpenNote(file, false, id, null, null, true) === true;
 	} finally { _rapierLive.restored(id, opened); }
 }
@@ -3310,7 +3310,7 @@ async function _rapierNotesOpenNoteNow(file, capture = false, expectedId = null,
 	if (!current()) { under?.drop(); return false; }
 	const focusFrom = document.activeElement;
 	if (state.returning) return false;
-	if (state.returnRefused) { showToast('Return to Rapier again to finish restoring your document.', 'error'); return false; }
+	if (state.returnRefused) { showToast('Return to Rapier to finish restoring.', 'error'); return false; }
 	if (typeof rapierLoad !== 'function') return;
 	const from = state.openFrom && state.openFrom.file === file ? state.openFrom : null; state.openFrom = null;
 	if (typeof _rapierNotesLiftCancel === 'function') _rapierNotesLiftCancel();
@@ -3322,7 +3322,7 @@ async function _rapierNotesOpenNoteNow(file, capture = false, expectedId = null,
 	let opened;
 	try { opened = await folder.readCanonical({file, id: expectedId || state.index.notes[file]?.id}); }
 	catch (error) {
-		lift?.drop(); showToast('This note could not be opened with its history: ' + String(error?.message || error), 'error');
+		lift?.drop(); showToast('Couldn’t open this note.', 'error', null, error);
 		if (throwReadError) throw error;
 		return false;
 	}
@@ -3335,22 +3335,22 @@ async function _rapierNotesOpenNoteNow(file, capture = false, expectedId = null,
 		try { kept = await rapierFlushDirty({ snapshot: true, durable: true }) === true; } catch (_) {}
 		if (!kept && _rapierIsDirty()) {
 			lift?.drop();
-			showToast('Your document could not be kept. Save it, then open the note again.', 'error');
+			showToast('Save your document, then open the note.', 'error');
 			return false;
 		}
-		if (!current() || !_rapierMutationStampIsCurrent(guard)) { lift?.drop(); showToast('The open document changed; open the note again when ready', 'info'); return; }
+		if (!current() || !_rapierMutationStampIsCurrent(guard)) { lift?.drop(); showToast('Document changed. Open the note again.', 'info'); return; }
 	}
 	if (!state.current && typeof _rapierCommitPendingHistory === 'function') { try { _rapierCommitPendingHistory(); } catch (_) {} }
 	let suspended;
 	try { suspended = _rapierNotesRemember(); }
-	catch (error) { lift?.drop(); showToast('The open document could not be kept for return: ' + String(error?.message || error), 'error'); return false; }
+	catch (error) { lift?.drop(); showToast('Save your document, then open the note.', 'error', null, error); return false; }
 	const already = _rapierNotesDocumentBound() && state.current === file && state.currentProof.ledger === opened.ledger.sha256 && _rapierSourceText() === text;
-	if (!current() || !_rapierMutationStampIsCurrent(guard)) { lift?.drop(); showToast('The open document changed; open the note again when ready', 'info'); return; }
+	if (!current() || !_rapierMutationStampIsCurrent(guard)) { lift?.drop(); showToast('Document changed. Open the note again.', 'info'); return; }
 	if (!already) {
 		const checked = await folder.readCanonical({file, id: proof.id});
 		if (!current() || !_rapierMutationStampIsCurrent(guard) || store.folder !== folder || store.bytes !== bytes || checked.ledger.sha256 !== proof.ledger) { lift?.drop(); return false; }
 		const loaded = await rapierLoad(text, opened.metadata.filename, {expectedMutationStamp: guard, returnReceipt: true, deferFlush: true, restore: true, documentAuthority: opened.documentAuthority, carriedLedger: opened.ledger, documentKind: opened.metadata.docKind});
-		if (!loaded || !_rapierLoadReceiptIsCurrent(loaded) || openingScope && !openingScope()) { lift?.drop(); showToast('This note could not be opened', 'error'); return; }
+		if (!loaded || !_rapierLoadReceiptIsCurrent(loaded) || openingScope && !openingScope()) { lift?.drop(); showToast('Couldn’t open this note.', 'error'); return; }
 		transitioned = true;
 		state.cameFrom = suspended;
 		state.current = file; state.currentProof = Object.freeze({...proof, epoch: Number(rapier.identity.epoch || 0)}); state.savingGen = -1; state.savingText = state.savingDigest = null;
@@ -3376,7 +3376,7 @@ async function _rapierNotesOpenNoteNow(file, capture = false, expectedId = null,
 	_rapierNotesHistory('note');
 	_rapierNotesPublishUrl(file);
 	if (lift) await lift.grown;
-	if (!current() || !_rapierMutationStampIsCurrent(guard)) { lift?.drop(); if (!access) _rapierNotesMode(false); showToast('The open document changed; open the note again when ready', 'info'); return; }
+	if (!current() || !_rapierMutationStampIsCurrent(guard)) { lift?.drop(); if (!access) _rapierNotesMode(false); showToast('Document changed. Open the note again.', 'info'); return; }
 	state.scrollKept = state.scroll ? state.scroll.scrollTop : 0;
 	_rapierNotesClose(true, true);
 	if (document.activeElement === focusFrom || document.activeElement === document.body) {
@@ -3396,7 +3396,7 @@ async function _rapierNotesOpenAsDocument(file) {
 	_rapierNotesCloseSheet();
 	try { await _rapierNotesFlush(); } catch (_) { return false; }
 	const text = (await _rapierNotesTexts([file], {hold: false})).get(file);
-	if (typeof text !== 'string') { showToast('The note could not be read. Nothing was opened.', 'error'); return false; }
+	if (typeof text !== 'string') { showToast('Couldn’t read the note.', 'error'); return false; }
 	const host = _rapierNotesBesideHost();
 	if (!host && !await _rapierNotesEditor()) return false;
 	const open = host ? host.open : rapierOpenPlatformPayload;
@@ -3420,8 +3420,8 @@ globalThis.RapierNotesKeep = Object.freeze({
 	},
 	ask(purpose) {
 		return purpose === 'open'
-			? rapierConfirm({title: 'open', message: 'Open a document from your cloud storage, or one from this device?', confirmLabel: 'cloud storage', secondaryLabel: 'this device'})
-			: rapierConfirm({title: 'save', message: 'Save to your cloud storage, beside your notes, or on this device?', confirmLabel: 'cloud storage', secondaryLabel: 'this device'});
+			? rapierConfirm({title: 'open from', message: '', confirmLabel: 'Cloud storage', secondaryLabel: 'This device'})
+			: rapierConfirm({title: 'save to', message: '', confirmLabel: 'Cloud storage', secondaryLabel: 'This device'});
 	},
 	async keep(text, name) {
 		await _rapierNotesReady();
@@ -3443,7 +3443,7 @@ globalThis.RapierNotesKeep = Object.freeze({
 		}
 		_rapierNotesHold(saved.file, text);
 		if (typeof _rapierNotesLibraryTouch === 'function') _rapierNotesLibraryTouch(saved.file);
-		if (saved.copied) showToast(bound.file + ' was changed elsewhere while you wrote. Its newer words stay; yours are kept as ' + saved.file + ', which this document now saves to.', 'info');
+		if (saved.copied) showToast(bound.file + ' changed elsewhere. Yours saved as ' + saved.file, 'info');
 		return {file: saved.file, id: saved.id, digest: saved.digest};
 	},
 	async read(file) { await _rapierNotesStore.kind(); return _rapierNotesStore.read(file); },
@@ -3562,26 +3562,26 @@ async function _rapierNotesHistoryTidy() {
 	const H = globalThis.RapierNotesHistory;
 	let held;
 	try { held = await _rapierNotesHistoryInventory(); }
-	catch (error) { showToast('History could not be read: ' + String(error?.message || error), 'error'); return; }
+	catch (error) { showToast('Couldn’t read history.', 'error', null, error); return; }
 	if (held.unreadable.length) {
-		showToast('History cannot be tidied while ' + (held.unreadable.length === 1 ? 'one note\'s history cannot be read' : held.unreadable.length.toLocaleString('en') + ' notes\' histories cannot be read') + '. Nothing was removed.', 'error');
+		showToast('Couldn’t read some history. Nothing removed.', 'error');
 		return;
 	}
-	if (!held.list.length) { showToast('There are no earlier versions to tidy.', 'info'); return; }
+	if (!held.list.length) { showToast('Nothing to tidy.', 'info'); return; }
 	let plan, before;
 	const now = Date.now();
 	try {
 		before = H.storage(held.list);
 		plan = H.thin(held.list, undefined, {now, dayOf: _rapierNotesLocalDay, complete: true});
-	} catch (error) { showToast('History could not be checked for tidying: ' + String(error?.message || error), 'error'); return; }
+	} catch (error) { showToast('Couldn’t check history.', 'error', null, error); return; }
 	if (!plan.removes.length) {
-		showToast('Nothing is old enough to tidy. History holds ' + before.versions.toLocaleString('en') + (before.versions === 1 ? ' version' : ' versions') + ' in ' + _rapierNotesBytesWords(before.bytes) + '.', 'info');
+		showToast('Nothing old enough to tidy.', 'info');
 		return;
 	}
 	const notes = new Set(plan.removes.map(row => row.noteId)).size, freed = Math.max(0, before.bytes - plan.storage.bytes);
 	const sure = typeof rapierConfirm === 'function' ? await rapierConfirm({
 		title: 'tidy history?',
-		message: '• Removes ' + plan.removes.length.toLocaleString('en') + (plan.removes.length === 1 ? ' old version' : ' old versions') + ' and frees ' + _rapierNotesBytesWords(freed) + '.\n• Keeps recent history.\n• No undo.',
+		message: '• Removes ' + plan.removes.length.toLocaleString('en') + (plan.removes.length === 1 ? ' old version' : ' old versions') + ', ' + _rapierNotesBytesWords(freed) + '.\n• Keeps recent history.\n• No undo.',
 		confirmLabel: 'Tidy', secondaryLabel: '', destructive: true}) : true;
 	if (!sure) return;
 	try {
@@ -3589,11 +3589,11 @@ async function _rapierNotesHistoryTidy() {
 		_rapierNotesTake(snapshot);
 		const stuck = snapshot.stuck;
 		void _rapierNotesStorageAnswer(false, {measure: false});
-		showToast('History tidied: ' + plan.removes.length.toLocaleString('en') + (plan.removes.length === 1 ? ' version' : ' versions') + ' removed from ' + notes.toLocaleString('en') + (notes === 1 ? ' note' : ' notes') + (stuck ? '; ' + stuck.toLocaleString('en') + (stuck === 1 ? ' file' : ' files') + ' could not be removed and stay in the folder' : '') + '.', 'info');
+		showToast('Removed ' + plan.removes.length.toLocaleString('en') + (plan.removes.length === 1 ? ' old version' : ' old versions') + (stuck ? '. ' + stuck.toLocaleString('en') + ' couldn’t be removed.' : ''), 'info');
 		if (_rapierNotes.sheetMode === 'history' || _rapierNotes.sheetMode === 'version') { _rapierNotes.historyRows = null; _rapierNotes.historyOne = null; _rapierNotesCloseSheet(); }
 	} catch (error) {
-		if (error?.code === 'history_changed') showToast('History changed while Tidy was open, so nothing was removed: open Tidy history again.', 'info');
-		else showToast('History could not be tidied: ' + String(error?.message || error), 'error');
+		if (error?.code === 'history_changed') showToast('History changed. Nothing removed. Try again.', 'info');
+		else showToast('Couldn’t tidy history.', 'error', null, error);
 	}
 
 }
@@ -3612,16 +3612,16 @@ async function _rapierNotesHistoryRestore(file, id) {
 	const H = globalThis.RapierNotesHistory, state = _rapierNotes;
 	let guard;
 	try { guard = await _rapierNotesFlush(); } catch (_) { return false; }
-	if (state.current !== file || !_rapierNotesDocumentBound()) { showToast('This note is not the open one, so its history was not changed', 'error'); return false; }
+	if (state.current !== file || !_rapierNotesDocumentBound()) { showToast('Open this note first.', 'error'); return false; }
 	const read = await _rapierNotesHistoryRead(file);
-	if (read.kind !== 'read') { showToast(read.kind === 'unreadable' ? 'This note\'s past could not be read, so nothing was changed' : 'This note has no past to go back to yet', 'error'); return false; }
+	if (read.kind !== 'read') { showToast(read.kind === 'unreadable' ? 'Couldn’t read this note’s history.' : 'No earlier versions yet.', 'error'); return false; }
 	const entry = state.index?.notes[file], now = state.texts.get(file) ?? _rapierSourceText();
 	try {
 		const media = {names: text => [...RapierNotesAudio.recordingsOf(text).map(row => 'audio/' + row.name), ...RapierNotesAttachments.attachmentsOf(text).map(row => 'attachments/' + row.name)],
 			digest: async path => { await _rapierNotesStore.kind(); return RapierNotesIntegrity.storedFileDigest(_rapierNotesStore.bytes, path); }};
 		const plan = await H.restorePlan(read.manifest, id, {file, text: now, entry}, path => _rapierNotesStore.readHistory(path), media);
 		if (state.current !== file || !_rapierNotesDocumentBound() || !_rapierMutationStampIsCurrent(guard)) {
-			showToast('The open note changed while its history was read; nothing was restored', 'info');
+			showToast('Note changed. Nothing restored.', 'info');
 			return false;
 		}
 		state.restoring = {id: entry?.id, from: id, text: plan.text};
@@ -3635,17 +3635,17 @@ async function _rapierNotesHistoryRestore(file, id) {
 			}
 			const inEditor = _rapierSourceText() === plan.text;
 			showToast(inEditor
-				? 'The words are back in the note, but the notes folder did not keep them'
-				: 'The note could not be changed, so nothing was restored', 'error');
+				? 'Restored, but not saved yet.'
+				: 'Couldn’t restore.', 'error');
 			return false;
 		}
 		if (state.restoring) {
 			_rapierNotesTake(await _rapierNotesStore.folder.recordHistory({file, id: entry.id, expectedDigest: await globalThis.RapierNotesIntegrity.sha256(plan.text), reason: 'restore', restoredFrom: id}));
 			state.restoring = null;
 		}
-		showToast('Put back the words from ' + _rapierNotesWhen(read.versions.find(v => v.id === id)?.time), 'info');
+		showToast('Restored from ' + _rapierNotesWhen(read.versions.find(v => v.id === id)?.time), 'info');
 		return true;
-	} catch (error) { showToast(/^notes_media_/.test(error?.code) ? 'Not restored: ' + error.message + '.' : 'Nothing was restored: ' + String(error?.message || error), 'error'); return false; }
+	} catch (error) { showToast('Couldn’t restore.', 'error', null, error); return false; }
 	finally { state.restoring = null; }
 }
 const RAPIER_NOTES_REASON_WORDS = {save: 'edited', import: 'brought in', rename: 'named', restore: 'version put back', trash: 'moved to the recycle bin', untrash: 'taken out of the recycle bin', 'import-undo': 'import undone', merge: 'merged', capture: 'captured', 'edit-card': 'edited on the card'};
@@ -3678,7 +3678,7 @@ async function _rapierNotesAdmitInverse(inverse) {
 		}
 		return false;
 	} catch (error) {
-		showToast('This edit cannot be restored: ' + String(error?.message || error), 'error');
+		showToast('Can’t undo this edit.', 'error', null, error);
 		return false;
 	}
 }
@@ -3709,7 +3709,7 @@ function _rapierNotesInputChanged(event) {
 				await _rapierNotesAutosave({input});
 			}
 		} catch (error) {
-			if (!state.saveFailed) showToast('This note is not being saved to the notes folder: ' + String(error?.message || error), 'error', {outlive: 'save-failed'});
+			if (!state.saveFailed) showToast('This note isn’t saving. Keep this page open.', 'error', {outlive: 'save-failed'}, error);
 			state.saveFailed = true;
 		} finally { state.inputSaveTask = null; }
 	});
@@ -3749,7 +3749,7 @@ async function _rapierNotesAutosaveNow({settle = false, input = null, replacing 
 		if (!input && state.untitled.has(file) && state.current === file && !state.renaming) {
 			try { await _rapierNotesNameByWords(file, text, {settle}); }
 			catch (error) {
-				if (!state.saveFailed) showToast('This note is not being saved to the notes folder: ' + String(error?.message || error), 'error', {outlive: 'save-failed'});
+				if (!state.saveFailed) showToast('This note isn’t saving. Keep this page open.', 'error', {outlive: 'save-failed'}, error);
 				state.saveFailed = true;
 			}
 		}
@@ -3784,10 +3784,10 @@ async function _rapierNotesAutosaveNow({settle = false, input = null, replacing 
 		_rapierNotesMarkClean(captured); _rapierNotesHold(kept, text); state.saveFailed = false;
 		_rapierNotesPending.forget(proof, stamp, saved.digest, saved.ledger?.sha256);
 		if (typeof _rapierNotesLibraryTouch === 'function') _rapierNotesLibraryTouch(kept);
-		if (revived && !saved.copied) showToast('This note was in the recycle bin; writing in it has put it back.', 'info');
+		if (revived && !saved.copied) showToast('Note restored from the recycle bin', 'info');
 		if (!input && state.untitled.has(kept) && state.current === kept && !state.renaming) await _rapierNotesNameByWords(kept, text, {settle});
 	} catch (error) {
-		if (!state.saveFailed) showToast('This note is not being saved to the notes folder: ' + String(error?.message || error), 'error', {outlive: 'save-failed'});
+		if (!state.saveFailed) showToast('This note isn’t saving. Keep this page open.', 'error', {outlive: 'save-failed'}, error);
 		state.saveFailed = true;
 	} finally { state.savingGen = -1; state.savingText = state.savingDigest = state.savingLedger = null; }
 }
@@ -3817,7 +3817,7 @@ async function _rapierNotesFlush({replacing = false} = {}) {
 		}
 		return Object.freeze(_rapierMutationStamp());
 	} catch (error) {
-		if (!state.saveFailed) showToast('The notes folder has not kept every change: ' + String(error?.message || error), 'error', {outlive: 'save-failed'});
+		if (!state.saveFailed) showToast('Some changes aren’t saved. Keep this page open.', 'error', {outlive: 'save-failed'}, error);
 		throw error;
 	}
 }
@@ -3920,7 +3920,7 @@ async function _rapierNotesCardAction(card, act) {
 		const available = [...state.surface.querySelectorAll('.rapier-notes-card')];
 		const target = returnTo.map(name => available.find(el => el.dataset.notesFile === name)).find(Boolean);
 		(target || state.surface).focus({preventScroll: true}); target?.scrollIntoView({block: 'nearest'});
-	} catch (_) { showToast('The note could not be changed. Try again.', 'error'); }
+	} catch (_) { showToast('Couldn’t change the note. Try again.', 'error'); }
 	finally { state.keyBusy = false; }
 }
 function _rapierNotesLocalDateTimeValue(date) {
@@ -4182,7 +4182,7 @@ function _rapierNotesOpenSheet(file, mode) {
 		}
 	} else if (state.sheetMode === 'tags') {
 		const tags = _rapierNotesTagsOf(files[0]);
-		if (!tags.length) sheet.appendChild(_rapierNotesEl('div', 'rapier-notes-remind-label', 'This note has no tags. A tag is written into the note itself, so it travels with the file.'));
+		if (!tags.length) sheet.appendChild(_rapierNotesEl('div', 'rapier-notes-remind-label', 'No tags yet.'));
 		else for (const tag of tags) { const b = button('tag-remove', '#' + tag); b.dataset.notesTag = tag; b.setAttribute('aria-label', 'Remove tag ' + tag); sheet.appendChild(b); }
 		const form = _rapierNotesEl('form', 'rapier-notes-label-form');
 		const input = _rapierNotesEl('input', 'rapier-notes-search'); input.type = 'text'; input.placeholder = 'Add a tag'; input.maxLength = 48; input.autocomplete = 'off'; input.setAttribute('aria-label', 'new tag');
@@ -4282,7 +4282,7 @@ async function _rapierNotesImportUndoReview(id) {
 		state.importUndoReview = {receipt: preview.receipt, files: preview.plan.remove.slice(), face: globalThis.RapierNotesImportReceipt.describeImportUndo(preview.receipt, preview.plan)};
 	} catch (error) {
 		state.importUndoReview = null;
-		showToast(String(error?.message || 'Import Undo could not be checked. Reopen Notes and try again.'), 'error');
+		showToast('Couldn’t undo the import. Reopen Notes.', 'error', null, error);
 	} finally { state.importUndoBusy = false; _rapierNotesImportsSheet(); }
 }
 async function _rapierNotesImportUndoConfirm() {
@@ -4296,7 +4296,7 @@ async function _rapierNotesImportUndoConfirm() {
 		outcome = await _rapierNotesStore.folder.undoImport(review.receipt, {files: review.files, keep: state.current ? [state.current] : []});
 		_rapierNotesTake(outcome);
 	} catch (error) {
-		showToast('Import Undo did not finish. Reopen Notes to check the folder before trying another action.', 'error');
+		showToast('Undo didn’t finish. Reopen Notes.', 'error');
 	} finally { state.importUndoBusy = false; }
 	if (!outcome) { state.importUndoReview = null; _rapierNotesImportsSheet(); return; }
 	for (const file of outcome.result.removed) {
@@ -4304,7 +4304,7 @@ async function _rapierNotesImportUndoConfirm() {
 		if (typeof _rapierNotesLibraryTouch === 'function') _rapierNotesLibraryTouch(file, true);
 	}
 	const r = outcome.result;
-	showToast(r.alreadyUndone ? 'This import was already undone; nothing else was removed.' : r.removed.length ? (r.removed.length === 1 ? 'One note removed' : r.removed.length + ' notes removed') + (r.kept.length ? '; ' + r.kept.length + ' kept' : '') + '.' : 'Undo recorded; no notes removed.', 'info');
+	showToast(r.alreadyUndone ? 'Already undone.' : r.removed.length ? (r.removed.length === 1 ? '1 note removed' : r.removed.length + ' notes removed') + (r.kept.length ? ', ' + r.kept.length + ' kept' : '') : 'No notes removed.', 'info');
 	state.importUndoReview = null;
 	_rapierNotesRender(); _rapierNotesImportsSheet();
 }
@@ -4494,7 +4494,7 @@ async function _rapierNotesSnackActivate(act) {
 			}).state;
 			const msg = snack.el?.querySelector('span');
 			if (msg) msg.textContent = String(snack.message || 'Undo') + ' — ' + String(error?.message || error);
-			showToast('The undo was not written to the notes folder: ' + String(error?.message || error), 'error');
+			showToast('Couldn’t save the undo.', 'error', null, error);
 			return;
 		}
 	}
@@ -4540,7 +4540,7 @@ async function _rapierNotesSectionEdit(act, arg) {
 		const to = M.cutText(String(arg || '').trim().replace(/\s+/g, ' '), 48);
 		if (!to || to === from) { _rapierNotesHideSheet(); return; }
 		const renamed = M.renameSection(state.index, from, to);
-		if (renamed === state.index) { showToast('That section name cannot be used: it is empty, taken, or one of the built-in words.', 'info'); return; }
+		if (renamed === state.index) { showToast('Choose another section name.', 'info'); return; }
 		state.index = Array.isArray(renamed.sectionOrder) ? {...renamed, sectionOrder: renamed.sectionOrder.map(id => id === from ? to : id)} : renamed;
 		if (state.reorderWasClosed && from in state.reorderWasClosed) { state.reorderWasClosed[to] = state.reorderWasClosed[from]; delete state.reorderWasClosed[from]; }
 		undo = () => {
@@ -4575,7 +4575,7 @@ async function _rapierNotesSectionEdit(act, arg) {
 	state.sheetSection = null; _rapierNotesHideSheet();
 	_rapierNotesRender();
 	try { await _rapierNotesWriteIndex(); }
-	catch (error) { undo(); _rapierNotesRender(); showToast('The section change was not written to the notes folder: ' + String(error?.message || error), 'error'); return; }
+	catch (error) { undo(); _rapierNotesRender(); showToast('Couldn’t save the section.', 'error', null, error); return; }
 	if (snack) _rapierNotesSnack(snack, undo);
 }
 const _rapierNotesInputLockName = id => 'rapier-notes-input:' + _rapierNotesStore.folder.scope + ':' + id;
@@ -4668,7 +4668,7 @@ async function _rapierNotesResumeLock() {
 		await call('notes.store.seal.commit', {id: pending.transfer});
 		});
 	} catch (error) {
-		showToast('Not locked. ' + String(error?.message || error), 'error');
+		showToast('Couldn’t lock the note.', 'error', null, error);
 		await call('notes.store.seal.cancel', {}).catch(() => {});
 	} finally { _rapierNotes.locking = false; }
 	return true;
@@ -4718,7 +4718,7 @@ async function _rapierNotesOpenLocked(id) {
 	const open = globalThis.RapierPlatform?.host?.openLockedNote;
 	if (typeof open !== 'function' || !id) return;
 	try { await open(id); }
-	catch (error) { if (!/cancel/i.test(String(error?.message || error))) showToast('This note did not open. Try again.', 'error'); }
+	catch (error) { if (!/cancel/i.test(String(error?.message || error))) showToast('Couldn’t open the note. Try again.', 'error'); }
 }
 
 async function _rapierNotesLock() {
@@ -4754,7 +4754,7 @@ async function _rapierNotesLock() {
 		await call('notes.store.seal.commit', {id: transfer});
 		void _rapierNotesLockedLoad();
 	} catch (error) {
-		showToast('Not locked. ' + String(error?.message || error), 'error');
+		showToast('Couldn’t lock the note.', 'error', null, error);
 		if (transfer) await call('notes.store.seal.cancel', {id: transfer}).catch(() => {});
 		void _rapierNotesLoad();
 	} finally { state.locking = false; }
@@ -4847,7 +4847,7 @@ async function _rapierNotesAct(act, arg) {
 				await _rapierNotesReminderChange([file], {kind: act === 'remind-done' ? 'done' : 'snooze'}, Date.now(), snack.reminderTargets);
 				_rapierNotesSnackHide();
 			} catch (error) {
-				showToast('The reminder was not written to the notes folder: ' + String(error?.message || error), 'error');
+				showToast('Couldn’t save the reminder.', 'error', null, error);
 				return;
 			}
 		} else _rapierNotesSnackHide();
@@ -4866,7 +4866,7 @@ async function _rapierNotesAct(act, arg) {
 			await _rapierNotesReminderEdit(files, act, arg);
 			if (act === 'remind-pick' || act === 'remind-remove') _rapierNotesCloseSheet();
 			else _rapierNotesOpenSheet(null, 'remind');
-		} catch (error) { showToast('The reminder was not written to the notes folder: ' + String(error?.message || error), 'error'); }
+		} catch (error) { showToast('Couldn’t save the reminder.', 'error', null, error); }
 		return;
 	}
 	const entries = files.map(f => state.index.notes[f]), every = key => entries.every(e => e[key]);
@@ -4875,7 +4875,7 @@ async function _rapierNotesAct(act, arg) {
 	if (act === 'share') { if (files.length === 1) await _rapierNotesShareAsDocument(files[0]); return; }
 	if (act === 'home-pin') {
 		const entry = files.length === 1 ? state.index.notes[files[0]] : null;
-		if (entry && !await globalThis.RapierPlatform?.host?.pinNote?.(files[0], entry.id)) showToast('This home screen cannot add notes', 'info');
+		if (entry && !await globalThis.RapierPlatform?.host?.pinNote?.(files[0], entry.id)) showToast('Your home screen can’t add notes.', 'info');
 		return;
 	}
 	const flight = act === 'pin' ? _rapierNotesPinFlightFrom(files, !every('pinned')) : null;
@@ -4891,7 +4891,7 @@ async function _rapierNotesAct(act, arg) {
 	else if (act === 'section-new') {
 		const name = M.cutText(String(arg || '').trim().replace(/\s+/g, ' '), 48); if (!name) return;
 		const grown = M.addSection(state.index, name);
-		if (grown === state.index || !(grown.sections || []).some(x => x.name === name)) { showToast('That section name cannot be used: it is empty, taken, or one of the built-in words.', 'info'); return; }
+		if (grown === state.index || !(grown.sections || []).some(x => x.name === name)) { showToast('Choose another section name.', 'info'); return; }
 		state.index = grown;
 		for (const f of files) state.index = M.setCategory(state.index, f, name);
 	}
@@ -4904,7 +4904,7 @@ async function _rapierNotesAct(act, arg) {
 			text = captured.value;
 		}
 		if (text == null) text = (await _rapierNotesTexts([file])).get(file);
-		if (typeof text !== 'string') { showToast('The note could not be read. No copy was made.', 'error'); return; }
+		if (typeof text !== 'string') { showToast('Couldn’t read the note.', 'error'); return; }
 		const names = Object.keys(state.index.notes), from = state.index.notes[file], place = {};
 		for (const key of ['pinned', 'skill', 'colour', 'category']) if (from?.[key] !== undefined) place[key] = from[key];
 		if (from) place.order = M.orderAfter(from.order);
@@ -4923,18 +4923,18 @@ async function _rapierNotesAct(act, arg) {
 			for (const [file, digest] of proofs) state.index = T.markTrashed(state.index, file, {digest, now});
 			for (const [file] of proofs) { const id = state.index.notes[file]?.id; if (id) globalThis.RapierPlatform?.host?.noteGone?.(id); }
 			snack = 'Deleted' + count;
-		} catch (error) { showToast('The notes could not be moved to the recycle bin: ' + String(error?.message || error), 'error'); return; }
+		} catch (error) { showToast('Couldn’t move to the recycle bin.', 'error', null, error); return; }
 	}
 	else if (act === 'restore') { for (const e of entries) { e.trashed = false; delete e.trashedAt; delete e.trashDigest; delete e.trashRevision; } }
 	else if (act === 'delete-forever') {
 		try {
 			if (typeof rapierConfirm !== 'function') throw new Error('The deletion question could not open. Nothing was removed.');
 			const expected = await _rapierNotesDeletionProof(files);
-			const sure = await rapierConfirm({ title: files.length === 1 ? 'Delete this note forever?' : 'Delete these ' + files.length + ' notes forever?', message: files.length === 1 ? '• The note and its own recordings are deleted.\n• No undo.' : '• The notes and their own recordings are deleted.\n• No undo.', confirmLabel: 'Delete', secondaryLabel: '', destructive: true });
+			const sure = await rapierConfirm({ title: files.length === 1 ? 'Delete this note forever?' : 'Delete these ' + files.length + ' notes forever?', message: files.length === 1 ? 'Its recordings go too. No undo.' : 'Their recordings go too. No undo.', confirmLabel: 'Delete', secondaryLabel: '', destructive: true });
 			if (!sure) return;
 			await _rapierNotesDeleteForeverFiles(files, 'confirmed', expected);
 		}
-		catch (error) { showToast('The change was not written to the notes folder: ' + String(error?.message || error), 'error'); _rapierNotesRender(); return; }
+		catch (error) { showToast('Couldn’t save the change.', 'error', null, error); _rapierNotesRender(); return; }
 		_rapierNotesCloseSheet(); _rapierNotesRender();
 		return;
 	}
@@ -4952,7 +4952,7 @@ async function _rapierNotesAct(act, arg) {
 	}
 	catch (error) {
 		for (const [f, e] of whole) if (state.index.notes[f]) state.index.notes[f] = e;
-		showToast('The change was not written to the notes folder: ' + String(error?.message || error), 'error');
+		showToast('Couldn’t save the change.', 'error', null, error);
 		_rapierNotesRender(); return;
 	}
 	if (typeof _rapierNotesLibraryTouch === 'function') for (const f of files) _rapierNotesLibraryTouch(f);
@@ -5154,16 +5154,16 @@ async function _rapierNotesDeleteForeverFiles(files, mode = 'confirmed', expecte
 	const outcome = _rapierNotesTake(await store.folder.trash({files, mode, expected}));
 	const result = outcome.result, removed = result.deleted.filter(file => targets.has(file));
 	if (retirement) _rapierNotesRetiredAddress.retire(retirement, identities.filter(row => removed.includes(row.file) && !outcome.index.notes[row.file]));
-	if (mode === 'confirmed' && result.revived.length) showToast(result.revived.length === 1 ? 'A selected note changed and was kept. Review it before deleting.' : result.revived.length + ' selected notes changed and were kept. Review them before deleting.', 'info');
+	if (mode === 'confirmed' && result.revived.length) showToast(result.revived.length === 1 ? 'A note changed, so it was kept.' : result.revived.length + ' notes changed, so they were kept.', 'info');
 	for (const file of removed) { state.texts.delete(file); state.titles.delete(file); if (typeof _rapierNotesLibraryTouch === 'function') _rapierNotesLibraryTouch(file, true); }
 	if (typeof _rapierNotesLibraryTouch === 'function') for (const file of result.revived) _rapierNotesLibraryTouch(file);
-	if (unreadable) showToast(unreadable === 1 ? 'A file in the notes folder could not be read as text, so every recording was kept in case it names one.' : unreadable + ' files in the notes folder could not be read as text, so every recording was kept in case one of them names it.', 'info');
+	if (unreadable) showToast('Couldn’t check every note. Recordings kept.', 'info');
 	else for (const name of owned) if (!shared.has(name) && removed.length) {
 		try { _rapierNotesTake(await store.folder.discardAudio(name)); }
 		catch (error) {
 			if (error.code === 'referenced') continue;
 			if (!['unreadable', 'changed'].includes(error.code)) throw error;
-			showToast('A recording was kept because the remaining notes could not all be checked: ' + name + '.', 'info');
+			showToast('Couldn’t check every note. ' + name + ' kept.', 'info');
 		}
 	}
 	void _rapierNotesStorageAnswer(false, {measure: false});
@@ -5185,11 +5185,9 @@ async function _rapierNotesSweepTrash() {
 	if (!acts) return;
 	let outcome;
 	try { outcome = await _rapierNotesDeleteForeverFiles(candidates, 'expiry'); }
-	catch (error) { showToast('Notes past seven days could not be removed from the recycle bin: ' + String(error?.message || error), 'error'); return; }
+	catch (error) { showToast('Couldn’t empty the recycle bin.', 'error', null, error); return; }
 	const {removed, revived, missing} = outcome;
-	if (revived.length) showToast(revived.length === 1 ? 'A note in the recycle bin had changed since it was thrown away, so it was put back instead of deleted.' : revived.length + ' notes in the recycle bin had changed since they were thrown away, so they were put back instead of deleted.', 'info');
-	if (missing.length) showToast(missing.length === 1 ? 'A note in the recycle bin is no longer in the notes folder, so its entry was dropped.' : missing.length + ' notes in the recycle bin are no longer in the notes folder, so their entries were dropped.', 'info');
-	if (removed.length) showToast(removed.length === 1 ? '1 note deleted from the recycle bin after 7 days' : removed.length + ' notes deleted from the recycle bin after 7 days', 'info');
+	if (revived.length) showToast(revived.length === 1 ? 'A changed note was put back.' : revived.length + ' changed notes were put back.', 'info');
 	if (removed.length || revived.length || missing.length) _rapierNotesRender();
 }
 
@@ -5321,7 +5319,7 @@ async function _rapierNotesDropSection(file, id, x, y, height) {
 		_rapierNotesCloseSheet();
 		const at = _rapierNotesDropIndex(id, place, file);
 		try { await _rapierNotesMove(file, at); }
-		catch (error) { showToast('The new place was not written to the notes folder: ' + String(error?.message || error), 'error'); }
+		catch (error) { showToast('Couldn’t save the new order.', 'error', null, error); }
 	} finally { state.dropping = false; state.renderAfterDrag = false; }
 	if (Number.isFinite(x) && Number.isFinite(y)) state.landing = {file, x, y, at: performance.now()};
 	_rapierNotesRender();
@@ -5466,14 +5464,14 @@ async function _rapierNotesPointerUp(evt, cancelled = false) {
 	if (drag.sortedStill && !drag.reordered && !state.sortedStillSaid) {
 		state.sortedStillSaid = true;
 		const said = RAPIER_NOTES_SORT_WORDS[RapierPreferences.read('notesSort')] || 'this order';
-		showToast('Sorted by ' + said + ', so the cards keep that order. Choose Custom in the menu to arrange them by hand.', 'info');
+		showToast('Sorted by ' + said + '. Choose Custom to move cards.', 'info');
 	}
 	if (drag.reordered && grid) {
 		const shown = [...grid.children].filter(c => c.classList.contains('rapier-notes-card')).map(c => c.dataset.notesFile);
 		const at = _rapierNotesPlaceAmong(drag.file, shown);
 		if (at >= 0) {
 			try { await _rapierNotesMove(drag.file, at); }
-			catch (error) { showToast('The new order was not written to the notes folder: ' + String(error?.message || error), 'error'); _rapierNotesRender(); return; }
+			catch (error) { showToast('Couldn’t save the new order.', 'error', null, error); _rapierNotesRender(); return; }
 		}
 		if (!deferred) return;
 	}
@@ -5503,7 +5501,7 @@ async function _rapierNotesApplyText(next, operation, label, {settle = false} = 
 			const start = row.pos, end = row.pos + row.inserted.length;
 			for (const [id, span] of _rapierExcerptCanonicalBlockSpans()) if (start === end ? span.start <= start && span.end >= end : span.start < end && span.end > start) compound.affectedBlockIds.add(id);
 		}, { changeSet });
-	} catch (error) { showToast('The note could not be changed right now: ' + String(error?.message || error), 'error'); return false; }
+	} catch (error) { showToast('Couldn’t change the note.', 'error', null, error); return false; }
 	if (settle) {
 		try { await _rapierNotesAutosave({settle: true}); } catch (_) {}
 		const notes = _rapierNotes.index?.notes || {}, file = settlingId && Object.keys(notes).find(name => notes[name].id === settlingId);
@@ -5519,20 +5517,20 @@ function _rapierNotesTagsOf(file) {
 }
 async function _rapierNotesWriteTags(file, tags) {
 	const state = _rapierNotes, F = globalThis.RapierNotesFrontMatter;
-	if (!F || typeof F.setTags !== 'function') { showToast('This build cannot write a note\'s tags.', 'error'); return false; }
-	if (_rapierNotesModel().isCodeFile(file)) { showToast('A code file keeps no tags: its words are left as they are.', 'info'); return false; }
+	if (!F || typeof F.setTags !== 'function') { showToast('Tags aren’t available here.', 'error'); return false; }
+	if (_rapierNotesModel().isCodeFile(file)) { showToast('Code files can’t have tags.', 'info'); return false; }
 	if (state.current === file) { try { await _rapierNotesFlush(); } catch (_) { return false; } }
 	await _rapierNotesTexts([file]);
 	const text = state.texts.get(file); if (text == null) return false;
 	let next;
 	try { next = F.setTags(text, tags); }
-	catch (error) { showToast('That tag could not be written into the note: ' + String(error?.message || error), 'error'); return false; }
+	catch (error) { showToast('Couldn’t add the tag.', 'error', null, error); return false; }
 	if (next === text) return true;
 	if (state.current === file) { if (!await _rapierNotesApplyText(next, 'notes.tags', 'Tags', {settle: true})) return false; }
 	else {
 		let saved;
 		try { saved = await _rapierNotesSave(file, next, undefined, {reason: 'edit-card'}); }
-		catch (error) { showToast('The tag could not be written to the notes folder: ' + String(error?.message || error), 'error'); return false; }
+		catch (error) { showToast('Couldn’t save the tag.', 'error', null, error); return false; }
 		await _rapierNotesHoldCardSave(file, saved.file, next);
 		return true;
 	}
@@ -5552,7 +5550,7 @@ async function _rapierNotesTagAdd(file, given) {
 	const name = String(given || '').trim().replace(/^#+/, '').trim();
 	if (!name) return;
 	const held = _rapierNotesTagsOf(file);
-	if (held.some(tag => tag.toLowerCase() === name.toLowerCase())) { showToast('This note already has that tag.', 'info'); return; }
+	if (held.some(tag => tag.toLowerCase() === name.toLowerCase())) { showToast('Already tagged.', 'info'); return; }
 	if (await _rapierNotesWriteTags(file, [...held, name])) _rapierNotesOpenSheet(null, 'tags');
 }
 async function _rapierNotesTagRemove(file, name) {
@@ -5573,7 +5571,7 @@ async function _rapierNotesToggleCheck(file, n) {
 	} else {
 		let saved;
 		try { saved = await _rapierNotesSave(file, next, undefined, {reason: 'edit-card'}); }
-		catch (error) { showToast('The box could not be ticked in the notes folder: ' + String(error?.message || error), 'error'); return; }
+		catch (error) { showToast('Couldn’t save the check.', 'error', null, error); return; }
 		await _rapierNotesHoldCardSave(file, saved.file, next);
 		if (saved.file !== file) { _rapierNotesRender(); return; }
 	}
@@ -5600,7 +5598,7 @@ function _rapierNotesInk(file, n) {
 
 const RAPIER_NOTES_RESTORE_ACCEPT = '.zip,application/zip';
 async function _rapierNotesImport() {
-	try { await _rapierNotesReady(); } catch (error) { showToast('Notes could not open for import. Reopen Notes and try again.', 'error'); return; }
+	try { await _rapierNotesReady(); } catch (error) { showToast('Couldn’t open Notes. Try again.', 'error'); return; }
 	const overlay = document.getElementById('notes-import-overlay');
 	if (!overlay) { void _rapierNotesImportPick('any'); return; }
 	_rapierNotesMarkupGlyphs();
@@ -5626,7 +5624,7 @@ function _rapierNotesImportQueued(files, source) {
 	state.capturing = (state.capturing || Promise.resolve()).then(async () => {
 		const popup = _rapierProgressOpen({label: source === 'restore' ? 'Restoring notes' : 'Importing notes', after: 500});
 		try { await _rapierNotesImportFiles(files, source); } finally { popup.end(); }
-	}).catch(error => { state.importFaults++; console.warn('[rapier] notes import', error); showToast('The import did not finish. Keep the source export and check Notes before trying again.', 'error'); });
+	}).catch(error => { state.importFaults++; console.warn('[rapier] notes import', error); showToast('Import didn’t finish. Keep your export.', 'error'); });
 }
 function _rapierNotesEmptyLibraryDrop(event) {
 	const state = _rapierNotes;
@@ -5694,7 +5692,7 @@ async function _rapierNotesImportFiles(files, source) {
 		const snapshot = await _rapierNotesStore.folder.restoreSnapshot({parts});
 		_rapierNotesTake(snapshot);
 		await _rapierNotesLoad(); _rapierNotesIndexingBegin();
-		showToast('Restored ' + snapshot.files.length + (snapshot.files.length === 1 ? ' note' : ' notes') + (snapshot.verification.status === 'verified' ? ' and every file in the backup, exactly, each checked against it.' : ' and the archive’s other files; the backup could not be verified. Keep the archive.'), 'info');
+		showToast('Restored ' + snapshot.files.length + (snapshot.files.length === 1 ? ' note' : ' notes') + (snapshot.verification.status === 'verified' ? '' : '. Couldn’t verify the backup. Keep it.'), 'info');
 		if (state.open) _rapierNotesRender();
 		return;
 	}
@@ -5736,7 +5734,7 @@ async function _rapierNotesImportFiles(files, source) {
 		...(flavour ? {flavour} : {}),
 		...(typeof P?.importPictures === 'function' ? {pictureImporter: P.importPictures} : {}) }, _rapierNotesImporters());
 	const { notes, skipped, sections, sources, unoffered } = result;
-	if (result.alreadyImported) { showToast('This export is already in Notes. Nothing changed.', 'info'); return; }
+	if (result.alreadyImported) { showToast('Already imported.', 'info'); return; }
 	if (result.repeatConflict) { showToast(result.skipped.map(row => row.name + ': ' + row.why).join('\n'), 'error'); return; }
 	const Landing = globalThis.RapierNotesImportPlan, Receipt = globalThis.RapierNotesImportReceipt;
 	if (!Landing || typeof Landing.planImportLanding !== 'function' || !Receipt?.createImportReceipt) throw new Error('The import landing and its record must load before any files can be written.');
@@ -5942,7 +5940,7 @@ async function _rapierNotesImportFiles(files, source) {
 		} catch (error) {
 			console.warn('[rapier] notes import receipt', error);
 			receiptError = receiptError || error;
-			showToast(importVerified ? 'Imported notes were read back, but their record could not be saved. Keep the export and reopen Notes to check the folder.' : 'The imported notes could not all be verified. Keep the export and reopen Notes to check the folder before closing.', 'error');
+			showToast(importVerified ? 'Imported, but not fully saved. Keep your export.' : 'Couldn’t verify every note. Keep your export.', 'error');
 		}
 	} else if (landed.length || (sections && sections.length)) await _rapierNotesWriteIndex();
 	void _rapierNotesStorageAnswer(false, {measure: false});
@@ -5960,33 +5958,33 @@ async function _rapierNotesImportFiles(files, source) {
 		pastFailed ? pastFailed + (pastFailed === 1 ? ' note history' : ' note histories') + ' not saved' : '',
 		unplaced ? unplaced + (unplaced === 1 ? ' file' : ' files') + ' left in the backup' : '',
 		pathsRenamed ? 'some files renamed; check their links' : ''].filter(Boolean);
-	if (pastObjectsFailed) showToast(pastObjectsFailed + (pastObjectsFailed === 1 ? ' history file' : ' history files') + ' could not be verified. Keep the original backup.', 'error');
+	if (pastObjectsFailed) showToast(pastObjectsFailed + (pastObjectsFailed === 1 ? ' history file' : ' history files') + ' couldn’t be verified. Keep your backup.', 'error');
 	if (stopped) {
 		const verified = landing.position?.landedVerified.length || 0;
-		const where = landing.stop?.kind === 'verify' ? 'The imported notes could not all be verified.' : 'The import stopped; ' + verified + (verified === 1 ? ' note was verified.' : ' notes were verified.');
-		showToast(where + ' Keep the export and check Imports in Notes settings before closing.', 'error');
+		const where = landing.stop?.kind === 'verify' ? 'Couldn’t verify every note.' : 'Import stopped after ' + verified + (verified === 1 ? ' note.' : ' notes.');
+		showToast(where + ' Keep your export.', 'error');
 	} else if (!receiptError) {
 		let message;
 		if (notes.length) {
 			const lead = 'Imported ' + count + (short.length || noted ? '' : said) + (keptFiles ? ' and ' + keptFiles + (keptFiles === 1 ? ' saved file' : ' saved files') : '') + '.';
-			const detail = short.length ? short.join('; ').replace(/^./, c => c.toUpperCase()) + '; keep the export and see Imports in Notes settings.' : noted ? 'Check Imports in Notes settings for details; keep the export.' : '';
+			const detail = short.length ? short.join('; ').replace(/^./, c => c.toUpperCase()) + '. See Imports in Notes settings.' : noted ? 'See Imports in Notes settings.' : '';
 			message = lead + (detail ? ' ' + detail : '');
-			if (message.length > 150) message = lead + ' Some items need checking; keep the export and see Imports in Notes settings.';
+			if (message.length > 80) message = lead + ' See Imports in Notes settings.';
 		} else if (keptFiles) {
-			message = 'Kept ' + keptFiles + (keptFiles === 1 ? ' file' : ' files') + ' in Saved files.' + (skipped.length ? ' Keep the export and check skipped files in Imports in Notes settings.' : '');
+			message = 'Kept ' + keptFiles + (keptFiles === 1 ? ' file' : ' files') + ' in Saved files.' + (skipped.length ? ' Some were skipped.' : '');
 		} else if (unoffered?.length) {
-			message = 'Nothing imported; a selected format could not be read. Keep the export and choose another export format.';
+			message = 'Nothing imported. Try another export format.';
 		} else if (skipped.length) {
-			message = 'Nothing imported; ' + skipped.length + (skipped.length === 1 ? ' selected file' : ' selected files') + ' could not be read. Keep the export and try the files separately.';
-		} else message = 'Nothing imported; no notes were found. Pick a notes export or Markdown files.';
+			message = 'Nothing imported. Couldn’t read ' + (skipped.length === 1 ? 'the file.' : skipped.length + ' files.');
+		} else message = 'No notes found. Pick an export or Markdown files.';
 		showToast(message, notes.length || keptFiles ? 'info' : 'error');
 	}
 	for (const backup of result.backups || []) if (backup.verification?.complete === false) {
 		const missing = backup.verification.missingParts || [], omitted = backup.verification.omitted || [];
-		let detail = missing.length ? 'Missing parts: ' + missing.slice(0, 3).join(', ') + (missing.length > 3 ? ' and ' + (missing.length - 3) + ' more' : '') : '';
-		if (omitted.length) detail += (detail ? '; ' : '') + omitted.length + (omitted.length === 1 ? ' file was' : ' files were') + ' not included in this backup';
-		if (!detail) detail = 'This is not a full restore';
-		const next = (omitted.length ? ' Keep the original files and backup' : ' Keep every part of the source backup') + (record ? '; check Imports in Notes settings.' : '.');
+		let detail = missing.length ? 'Missing parts: ' + missing.slice(0, 3).join(', ') + (missing.length > 3 ? ' +' + (missing.length - 3) : '') : '';
+		if (omitted.length) detail += (detail ? '; ' : '') + omitted.length + (omitted.length === 1 ? ' file' : ' files') + ' not in this backup';
+		if (!detail) detail = 'Partly restored';
+		const next = ' Keep the backup.';
 		if (detail.length + next.length + 1 > 150) detail = (missing.length ? missing.length + (missing.length === 1 ? ' backup part missing' : ' backup parts missing') : '') + (missing.length && omitted.length ? '; ' : '') + (omitted.length ? omitted.length + (omitted.length === 1 ? ' file omitted' : ' files omitted') : '');
 		showToast(detail + '.' + next, 'info');
 	}
@@ -6036,7 +6034,7 @@ async function _rapierNotesExportPreparedBackup() {
 	if (state.backupBusy) return;
 	state.backupBusy = true; let release;
 	try { release = await _rapierNotesBackupLease(); await _rapierNotesSendPreparedBackup(); }
-	catch (error) { showToast('The export did not complete. The backup copy was not discarded: ' + String(error?.message || error), 'error'); }
+	catch (error) { showToast('Export didn’t finish. Backup kept.', 'error', null, error); }
 	finally { await release?.(); state.backupBusy = false; }
 }
 async function _rapierNotesExportAndroidBackup(session) {
@@ -6060,8 +6058,8 @@ async function _rapierNotesExportAndroidBackup(session) {
 				if (outcome.status === 'cancelled') return false;
 				outcomes.push(outcome); await part.sink.discard(); return true;
 			}});
-		if (result.completed) showToast((outcomes.every(row => row.status === 'confirmed') ? 'Exported' : 'Sent') + ' the restored ' + (result.recovery ? 'recovery files' : 'backup') + '. The original Android snapshot is still kept.' + (result.recovery ? ' The ZIP contains the original files; this reader cannot merge their history.' : ''), 'info');
-	} catch (error) { showToast('The restored backup is still kept: ' + String(error?.message || error), 'error'); }
+		if (result.completed) showToast((outcomes.every(row => row.status === 'confirmed') ? 'Exported' : 'Sent') + ' the restored ' + (result.recovery ? 'files' : 'backup'), 'info');
+	} catch (error) { showToast('Couldn’t export. Backup kept.', 'error', null, error); }
 	finally {
 		for (const stage of stages) if (stage.sink.state === 'sealed') try { await stage.sink.discard(); } catch (_) {}
 		progress?.close(); await release?.(); state.backupBusy = false; state.backupController = null;
@@ -6145,16 +6143,16 @@ async function _rapierNotesDiscardUnfinishedBackup() {
 	const state = _rapierNotes, unfinished = state.unfinishedBackup;
 	if (!unfinished || state.backupBusy) return;
 	state.backupBusy = true; let release;
-	try { release = await _rapierNotesBackupLease(); if (!await rapierConfirm({title:'Discard unfinished backup?', message:'• Discards the unfinished backup.\n• Parts already sent stay.\n• Your notes are unchanged.', confirmLabel:'Discard', cancelLabel:'Keep', destructive: true})) return;
-	await unfinished.remove(); state.unfinishedBackup = null; showToast('The unfinished backup was discarded. The notes are unchanged.', 'info'); }
-	catch (error) { showToast('The unfinished backup was kept: ' + String(error?.message || error), 'error'); }
+	try { release = await _rapierNotesBackupLease(); if (!await rapierConfirm({title:'Discard unfinished backup?', message:'Parts already sent stay. Notes are unchanged.', confirmLabel:'Discard', cancelLabel:'Keep', destructive: true})) return;
+	await unfinished.remove(); state.unfinishedBackup = null; showToast('Unfinished backup discarded', 'info'); }
+	catch (error) { showToast('Couldn’t discard the backup.', 'error', null, error); }
 	finally { await release?.(); state.backupBusy = false; }
 }
 async function _rapierNotesContinueBackupSet(prepared, {again = false, inventory, assertCurrent, onProgress, signal, snapshot} = {}) {
 	try {
 	const state = _rapierNotes, B = globalThis.RapierNotesBackup, count = prepared.plan.parts.length;
 	const early = again ? 'This is the earlier copy, not a new backup. ' : '';
-	if (again && prepared.sent.length < count) showToast(early + 'Part ' + (prepared.sent.length + 1) + ' of ' + count + ' is next; keep the parts already sent.', 'info');
+	if (again && prepared.sent.length < count) showToast(early + 'Part ' + (prepared.sent.length + 1) + ' of ' + count + ' is next.', 'info');
 	const persist = candidate => _rapierNotesSealBackupStage(candidate);
 	const pendingSink = () => { const pending = prepared.pending; return prepared.pendingSink || B.retainedBackupSink({
 		file: async () => new File([await (await prepared.directory.getFileHandle('part-' + pending.number + '.partial')).getFile()], pending.name, {type:'application/zip'}),
@@ -6178,7 +6176,7 @@ async function _rapierNotesContinueBackupSet(prepared, {again = false, inventory
 	}
 	if (prepared.pending) {
 		const sink = pendingSink();
-		if (!await send(await sink.file({onProgress, signal}), sink)) { showToast(early + 'Stopped after ' + prepared.sent.length + ' of ' + count + ' backup parts: part ' + (prepared.sent.length + 1) + ' is kept here; keep the parts already sent.', 'info'); return; }
+		if (!await send(await sink.file({onProgress, signal}), sink)) { showToast(early + 'Stopped at part ' + (prepared.sent.length + 1) + ' of ' + count + '.', 'info'); return; }
 	}
 	if (prepared.sent.length < count) {
 		if (typeof navigator.storage?.estimate === 'function') {
@@ -6225,13 +6223,13 @@ async function _rapierNotesContinueBackupSet(prepared, {again = false, inventory
 			}
 		});
 	}
-	if (prepared.sent.length !== count) { showToast(early + 'Stopped after ' + prepared.sent.length + ' of ' + count + ' backup parts: part ' + (prepared.sent.length + 1) + ' is next; keep the parts already sent.', 'info'); return; }
+	if (prepared.sent.length !== count) { showToast(early + 'Stopped at part ' + (prepared.sent.length + 1) + ' of ' + count + '.', 'info'); return; }
 	await snapshot?.release();
 	const outcomes = prepared.sent, confirmed = outcomes.every(outcome => outcome.status === 'confirmed');
 	const route = outcomes.every(outcome => (outcome.route || 'file') === (outcomes[0].route || 'file')) ? outcomes[0].route || 'file' : 'mixed';
 	await _rapierNotesRememberBackup({name:prepared.name, names:outcomes.map(outcome => outcome.name), setId:prepared.setId, parts:count, files:prepared.files, bytes:prepared.bytes, stamp:prepared.stamp, confirmed, route, omitted:prepared.omitted});
 	const omitted = prepared.omitted.length ? ' Not included: ' + prepared.omitted.map(row => row.name).join(', ') + '; keep their originals, and restore this copy with Add backup.' : ' Keep the parts together to restore.';
-	showToast((confirmed ? 'Backed up ' : 'Backup sent to destinations: ') + count + (count === 1 ? ' part' : ' parts') + ', ' + _rapierNotesBytesWords(prepared.bytes) + '.' + omitted + (again ? ' This is the earlier copy, not a new backup.' : ''), confirmed && !prepared.omitted.length ? 'success' : 'info');
+	showToast((confirmed ? 'Backed up ' : 'Backup sent: ') + count + (count === 1 ? ' part' : ' parts') + ', ' + _rapierNotesBytesWords(prepared.bytes) + '.' + omitted + (again ? ' Earlier copy.' : ''), confirmed && !prepared.omitted.length ? 'success' : 'info');
 	_rapierNotesStorageLines();
 	} finally { await snapshot?.release(); }
 }
@@ -6247,7 +6245,7 @@ async function _rapierNotesRememberBackup(backup) {
 		state.index = {...state.index, lastBackup: state.lastBackup};
 		return true;
 	} catch (_) {
-		showToast('The backup was sent, but its date could not be kept. Check the file on your device.', 'info');
+		showToast('Backup sent. Check the file on your device.', 'info');
 		return false;
 	}
 }
@@ -6262,18 +6260,18 @@ async function _rapierNotesSendPreparedBackup({again = false, verifiedFile, onPr
 	await _rapierNotesRememberBackup({name: outcome.name, files: prepared.files, bytes: prepared.bytes, stamp: prepared.stamp, confirmed: outcome.status === 'confirmed', route: outcome.route || 'file'});
 	const word = prepared.files === 1 ? '1 file' : prepared.files.toLocaleString('en') + ' files';
 	const message = outcome.status === 'confirmed' ? 'Backed up ' + word + ' as ' + outcome.name
-		: outcome.route === 'share' ? 'Backup sent to share destination: ' + outcome.name : 'Backup download started: ' + outcome.name;
-	showToast(message + '.' + (again ? ' This is the earlier copy, prepared ' + new Date(prepared.stamp).toLocaleString('en') + ', not a new backup.' : ''), outcome.status === 'confirmed' ? 'success' : 'info');
+		: outcome.route === 'share' ? 'Backup sent: ' + outcome.name : 'Backup downloading: ' + outcome.name;
+	showToast(message + (again ? '. Earlier copy from ' + new Date(prepared.stamp).toLocaleString('en') : ''), outcome.status === 'confirmed' ? 'success' : 'info');
 	_rapierNotesStorageLines();
 }
 async function _rapierNotesDiscardPreparedBackup() {
 	const state = _rapierNotes, prepared = state.preparedBackup;
 	if (!prepared || state.backupBusy) return;
 	state.backupBusy = true; let release;
-	try { release = await _rapierNotesBackupLease(); const yes = await rapierConfirm({title: 'Discard backup copy?', message: 'Discard only the backup copy prepared here on ' + new Date(prepared.stamp).toLocaleString('en') + '? Your notes and any exported copy are unchanged.', confirmLabel: 'Discard', cancelLabel: 'Keep', destructive: true});
+	try { release = await _rapierNotesBackupLease(); const yes = await rapierConfirm({title: 'Discard backup copy?', message: 'From ' + new Date(prepared.stamp).toLocaleString('en') + '. Notes are unchanged.', confirmLabel: 'Discard', cancelLabel: 'Keep', destructive: true});
 	if (!yes) return;
-	await prepared.sink.discard(); state.preparedBackup = null; showToast('The backup copy was discarded. The notes are unchanged.', 'info'); }
-	catch (error) { showToast('The backup copy could not be removed: ' + String(error?.message || error), 'error'); }
+	await prepared.sink.discard(); state.preparedBackup = null; showToast('Backup copy discarded', 'info'); }
+	catch (error) { showToast('Couldn’t discard the backup copy.', 'error', null, error); }
 	finally { await release?.(); state.backupBusy = false; }
 }
 function _rapierNotesBackupProgress(controller) {
@@ -6319,7 +6317,7 @@ async function _rapierNotesBackup() {
 		if (!B) throw new Error('the backup writer did not load');
 		release = await _rapierNotesBackupLease();
 		await _rapierNotesRecoverBackupStage();
-		if (state.unfinishedBackup) { showToast('An unfinished backup is kept here: discard it in Notes settings, then try again.', 'error'); return; }
+		if (state.unfinishedBackup) { showToast('Finish or discard the last backup in Notes settings.', 'error'); return; }
 		const prepared = state.preparedBackup;
 		if (prepared?.sequence && prepared.sent.length < prepared.plan.parts.length) { await _rapierNotesSendPreparedBackup({again: true, onProgress: progress.update, signal}); return; }
 		earlier = prepared || null;
@@ -6328,7 +6326,7 @@ async function _rapierNotesBackup() {
 		const indexText = _rapierNotesModel().serializeIndex(snapshot.index);
 		progress.update({phase: 'Reading folder', files: 0});
 		const inventory = await B.backupInventory(_rapierNotesStore, {signal, onProgress: progress.update, concurrency: (await _rapierNotesStore.port()) ? 1 : 4});
-		if (!inventory.length) { showToast('The notes folder is empty; nothing to back up', 'info'); return; }
+		if (!inventory.length) { showToast('No notes to back up.', 'info'); return; }
 		const stamp = new Date(), name = _rapierNotesBackupName(stamp, [earlier?.stamp, state.lastBackup?.stamp]);
 		const backupOptions = {appVersion: document.querySelector('meta[name="rapier-version"]')?.content || 'unknown', stamp: stamp.getTime(),
 			comment: 'Rapier notes backup, ' + inventory.length + ' files, ' + stamp.toISOString()};
@@ -6374,7 +6372,7 @@ async function _rapierNotesBackup() {
 				state.preparedBackup = {...stage, name, files: inventory.length, bytes: outcome.record.bytes, stamp: stamp.toISOString()};
 				await _rapierNotesSealBackupStage(state.preparedBackup);
 				await _rapierNotesRetireBackup(earlier);
-				if (outcome.status === 'cancelled' || signal.aborted) { showToast('Backup canceled; nothing was sent. The backup copy is kept: export it from Notes settings.', 'info'); return; }
+				if (outcome.status === 'cancelled' || signal.aborted) { showToast('Backup canceled. Copy kept in Notes settings.', 'info'); return; }
 				state.backupController = null;
 				progress.close();
 				await snapshot.release();
@@ -6389,7 +6387,7 @@ async function _rapierNotesBackup() {
 		state.preparedBackup = {...stage, name, files: inventory.length, bytes: result.bytes, stamp: stamp.toISOString()};
 		await _rapierNotesSealBackupStage(state.preparedBackup);
 		await _rapierNotesRetireBackup(earlier);
-		if (signal.aborted) { showToast('Backup canceled; nothing was sent. The backup copy is kept: export it from Notes settings.', 'info'); return; }
+		if (signal.aborted) { showToast('Backup canceled. Copy kept in Notes settings.', 'info'); return; }
 		state.backupController = null;
 		progress.close();
 		await snapshot.release();
@@ -6402,8 +6400,8 @@ async function _rapierNotesBackup() {
 			return;
 		}
 		const made = state.preparedBackup === earlier ? null : state.preparedBackup;
-		const words = _rapierNotesWords(), full = error?.name === 'QuotaExceededError' ? words.storage + ' is full; free some space (the backup copies in Notes settings, ' + words.others + ') and press Backup again' : '';
-		showToast('The backup did not complete: ' + (full || String(error?.message || error).replace(/[.\s]+$/, '')) + (made?.sequence ? (made.sent.length === made.plan.parts.length ? '. All parts were sent: press Backup again to finish.' : '. Part ' + (made.sent.length + 1) + ' is next; keep the parts already sent.') : stage?.sink.state === 'sealed' ? '. The completed backup copy was kept.' : '. The notes are unchanged.'), 'error');
+		const words = _rapierNotesWords(), full = error?.name === 'QuotaExceededError' ? words.storage + ' is full. Free some space' : '';
+		showToast((full ? full + '. ' : 'Backup didn’t finish. ') + (made?.sequence ? (made.sent.length === made.plan.parts.length ? 'Press Backup again.' : 'Part ' + (made.sent.length + 1) + ' is next.') : stage?.sink.state === 'sealed' ? 'Copy kept.' : 'Notes are unchanged.'), 'error', null, error);
 	} finally { progress?.close(); await snapshot?.release(); await release?.(); state.backupBusy = false; state.backupController = null; }
 }
 
@@ -6475,10 +6473,10 @@ async function _rapierNotesSectionAdd(given) {
 	const state = _rapierNotes, M = _rapierNotesModel();
 	const name = M.cutText(String(given || '').trim().replace(/\s+/g, ' '), 48); if (!name) return;
 	const grown = M.addSection(state.index, name);
-	if (grown === state.index) { showToast('That section name cannot be used: it is taken, or one of the built-in words.', 'info'); return; }
+	if (grown === state.index) { showToast('Choose another section name.', 'info'); return; }
 	_rapierNotesCloseSheet();
 	const was = state.index; state.index = grown; _rapierNotesRender();
-	try { await _rapierNotesWriteIndex(); } catch (error) { state.index = was; _rapierNotesRender(); showToast('The section was not written to the notes folder: ' + String(error?.message || error), 'error'); }
+	try { await _rapierNotesWriteIndex(); } catch (error) { state.index = was; _rapierNotesRender(); showToast('Couldn’t save the section.', 'error', null, error); }
 }
 function _rapierNotesPlaceFirst() {
 	const state = _rapierNotes, M = _rapierNotesModel();
@@ -6504,7 +6502,7 @@ async function _rapierNotesNewDrawing(lift, tool = null) {
 	let file = null, outcome = null, gone = false;
 	const ready = (async () => {
 		try { file = await _rapierNotesWriteNew('', M.noteFileName('Note', names), _rapierNotesPlaceFirst()); }
-		catch (error) { outcome = false; showToast('The note could not be written: ' + String(error?.message || error), 'error'); return false; }
+		catch (error) { outcome = false; showToast('Couldn’t save the note.', 'error', null, error); return false; }
 		if (gone) { outcome = false; await _rapierNotesDiscardUnseen(file); return false; }
 		_rapierNotesAdmit(file, ''); state.untitled.add(file);
 		const opened = await _rapierNotesOpenNote(file, false, null, null);
@@ -6524,7 +6522,7 @@ async function _rapierNotesDiscardUnseen(file) {
 	try {
 		const snapshot = await _rapierNotesStore.folder.discardEmpty({file, id: state.indexBase?.notes?.[file]?.id, expectedDigest: await globalThis.RapierNotesIntegrity.sha256('')});
 		_rapierNotesTake(snapshot);
-	} catch (error) { showToast('The empty note could not be removed: ' + String(error?.message || error), 'error'); }
+	} catch (error) { showToast('Couldn’t remove the empty note.', 'error', null, error); }
 }
 let _rapierNotesCatcher = null;
 const RAPIER_NOTES_OPENING_PREFIX = 'rapier-notes-opening:';
@@ -6547,7 +6545,7 @@ function _rapierNotesCatchKeep(held) {
 		_rapierNotesDraftStorage().setItem(held.key, serial); held.serial = serial;
 		return true;
 	} catch (error) {
-		showToast('Your opening note is still in this page. Keep it open until the note can be saved: ' + String(error?.message || error), 'error', {outlive: 'save-failed'});
+		showToast('Note not saved yet. Keep this page open.', 'error', {outlive: 'save-failed'}, error);
 		return false;
 	}
 }
@@ -6604,7 +6602,7 @@ function _rapierNotesCatchEnd(deliver) {
 			if (!globalThis.RapierNotesHistory?.recordVersion) throw new Error('The note history is not ready to acknowledge these words.');
 			const saved = await _rapierNotesFlush();
 			if (_rapierMutationStampSharesDocument(delivered) && _rapierMutationStampIsCurrent(saved)) _rapierNotesCatchRelease(held, true);
-		} catch (error) { showToast('Your opening words are kept for retry: ' + String(error?.message || error), 'error', {outlive: 'save-failed'}); }
+		} catch (error) { showToast('Note not saved yet. Keep this page open.', 'error', {outlive: 'save-failed'}, error); }
 		finally { _rapierNotesCatchRelease(held); }
 	}, 0);
 }
@@ -6643,7 +6641,7 @@ async function _rapierNotesCatchResume() {
 				else await navigator.locks.request('rapier-notes-pending-owner:' + record.owner,
 					{mode: 'exclusive', ifAvailable: true}, lock => lock ? resume() : undefined);
 				if (_rapierNotesCatcher) return;
-			} catch (error) { showToast('Your opening words are kept: ' + String(error?.message || error), 'error', {outlive: 'save-failed'}); }
+			} catch (error) { showToast('Note not saved yet. Keep this page open.', 'error', {outlive: 'save-failed'}, error); }
 		}
 	} catch (_) {  }
 	finally { state.catchingUp = false; }
@@ -6678,7 +6676,7 @@ async function _rapierNotesNew(kind, capture = false, lift = null, captured = fa
 			admit();
 		}
 	}
-	catch (error) { _rapierNotesCatchEnd(false); lift?.drop(); showToast('The note could not be written: ' + String(error?.message || error), 'error'); return; }
+	catch (error) { _rapierNotesCatchEnd(false); lift?.drop(); showToast('Couldn’t save the note.', 'error', null, error); return; }
 	_rapierNotesAdmit(file, text); state.untitled.add(file);
 	const id = state.index.notes[file]?.id; if (captured && id) (state.captured ||= new Set()).add(id);
 	if (!await _rapierNotesOpenNote(file, capture, null, lift, held ? {stamp: held.guard, cards: held.fromCards} : null) || state.current !== file) { _rapierNotesCatchEnd(false); lift?.drop(); return false; }
@@ -6705,7 +6703,7 @@ async function _rapierNotesToday() {
 	if (!file) {
 		const text = '# ' + day + '\n';
 		try { file = await _rapierNotesWriteNew(text, M.noteFileName(text, Object.keys(state.index.notes)), _rapierNotesPlaceFirst()); }
-		catch (error) { showToast('The note could not be written: ' + String(error?.message || error), 'error'); return; }
+		catch (error) { showToast('Couldn’t save the note.', 'error', null, error); return; }
 		_rapierNotesAdmit(file, text);
 	}
 	if (!await _rapierNotesOpenNote(file) || state.current !== file) return;
@@ -6738,7 +6736,7 @@ function _rapierNotesTrigger(kind, fresh = false) {
 	if (kind === 'picture' && typeof rapierInsertImage === 'function') { rapierInsertImage(); return; }
 	const el = document.querySelector(kind === 'drawing' ? '[data-command="insert.draw"]' : '[data-command="insert.image"]');
 	if (el && !el.disabled) { el.click(); return; }
-	showToast(kind === 'drawing' ? 'The note is open: tap Draw in the toolbar to draw in it.' : 'The note is open: tap Image in the toolbar to add one.', 'info');
+	showToast(kind === 'drawing' ? 'Tap Draw to draw in this note.' : 'Tap Image to add a picture.', 'info');
 }
 function _rapierNotesJump(id) {
 	const state = _rapierNotes, section = state.grids[id]?.parentElement; if (!section) return;
@@ -6998,7 +6996,14 @@ function _rapierNotesBind(surface, search) {
 		else if (!state.find.hidden) _rapierNotesSearchToggle();
 		else void _rapierNotesEditor();
 	});
-	surface.addEventListener('contextmenu', evt => { if (evt.target.closest('.rapier-notes-card, [data-notes-act="adds"]')) evt.preventDefault(); });
+	surface.addEventListener('contextmenu', evt => {
+		if (!evt.target.closest('.rapier-notes-card, [data-notes-act="adds"]')) return;
+		evt.preventDefault();
+		const card = evt.target.closest('.rapier-notes-card'), file = card?.dataset.notesFile;
+		if (!file || card.dataset.notesLocked || state.drag || evt.pointerType === 'touch' || evt.pointerType === 'pen' || !state.index.notes[file]) return;
+		if (!state.selected.has(file)) { state.selected.clear(); _rapierNotesSelect(file, false); }
+		_rapierNotesOpenSheet(null, 'actions');
+	});
 	surface.addEventListener('pointerdown', evt => {
 		state.todayPress = false;
 		const plus = evt.target.closest?.('[data-notes-act="adds"]');
@@ -7480,7 +7485,7 @@ async function _rapierNotesOpen(capture = false, {unseen = false, guard, departu
 	await _rapierNotesStore.kind();
 	if (guard && !guard()) return false;
 	const surface = _rapierNotesEnsure();
-	try { await _rapierNotesReady(); } catch (error) { lift?.end(); _rapierNotesStartClass(false); showToast(String(error.message || error), 'error'); return; }
+	try { await _rapierNotesReady(); } catch (error) { lift?.end(); _rapierNotesStartClass(false); showToast('Couldn’t open Notes.', 'error', null, error); return; }
 	if (guard && !guard()) return false;
 	if (!kept) { try { await _rapierNotesFlush({replacing: back}); } catch (_) { lift?.end(); _rapierNotesStartClass(false); return; } }
 	if (state.loading) await state.loading;
@@ -7488,7 +7493,7 @@ async function _rapierNotesOpen(capture = false, {unseen = false, guard, departu
 	const warm = back && !!state.index && state.loadGen > 0 && !state.reloading;
 	if (warm) { state.loading = null; _rapierNotesReadsReset(); }
 	else {
-		state.loading = _rapierNotesLoad().then(() => true).catch(error => { console.warn('[rapier] notes', error); showToast('The notes folder could not be read: ' + String(error?.message || error), 'error'); return false; });
+		state.loading = _rapierNotesLoad().then(() => true).catch(error => { console.warn('[rapier] notes', error); showToast('Couldn’t read your notes folder.', 'error', null, error); return false; });
 		const loaded = await state.loading; state.loading = null;
 		if (!loaded || !state.index) { lift?.end(); _rapierNotesIndexingBegin(); return; }
 		let releaseBackup;
@@ -7547,8 +7552,7 @@ async function _rapierNotesDiscardEmpty(unseen = false) {
 		}
 		if (state.current === file) { _rapierNotesLeaveNote(); _rapierNotesMarkClean(); }
 		state.untitled.delete(file); state.texts.delete(file); state.titles.delete(file);
-		if (!unseen) showToast('Empty note discarded', 'info');
-	} catch (error) { showToast('The empty note could not be removed: ' + String(error?.message || error), 'error'); }
+	} catch (error) { showToast('Couldn’t remove the empty note.', 'error', null, error); }
 }
 function _rapierNotesLayout() {
 	const state = _rapierNotes; if (!state.surface) return;
@@ -7987,11 +7991,11 @@ globalThis.rapierNotesHost = Object.freeze({
 async function _rapierNotesRequestRole() {
 	try {
 		const result = await RapierPlatform.host.requestNotesRole();
-		if (result?.held) showToast('Rapier is your notes app. Add the Note-taking shortcut in your lock screen settings', 'info');
-		else if (result?.settings) showToast('Choose Rapier under Default notes app', 'info');
-		else if (!result?.available) showToast('This phone does not offer a notes app setting', 'info');
-		else showToast('Open Android Settings, then Apps, Default apps, and choose Rapier as the notes app', 'info');
-	} catch (error) { showToast('The notes app request could not be sent: ' + String(error?.message || error), 'error'); }
+		if (result?.held) showToast('Done. Add Note-taking to your lock screen.', 'info');
+		else if (result?.settings) showToast('Choose Rapier as the notes app.', 'info');
+		else if (!result?.available) showToast('This phone has no notes app setting.', 'info');
+		else showToast('Open Settings > Apps > Default apps > Notes.', 'info');
+	} catch (error) { showToast('Couldn’t set the notes app.', 'error', null, error); }
 }
 function _rapierNotesInstall() {
 	if (globalThis.RapierBenchSession?.active === true) return;
@@ -8084,10 +8088,10 @@ globalThis.rapierNotesWidgetOpen = function rapierNotesWidgetOpen(file, id = nul
 			if (!_rapierNotesModel().isNoteFile(file) || typeof id !== 'string') return false;
 			const fresh = await _rapierNotesStore.folder.read();
 			const matches = Object.keys(fresh.index.notes).filter(name => fresh.index.notes[name].id === id && !fresh.index.notes[name].trashed);
-			if (matches.length !== 1) { showToast('This note moved or was removed. Refresh the widget.', 'info'); return false; }
+			if (matches.length !== 1) { showToast('Note not found. Refresh the widget.', 'info'); return false; }
 			if (_rapierNotes.index.notes[matches[0]]?.id !== id) { await _rapierNotesLoad(); _rapierNotesIndexingBegin(); }
 			return await _rapierNotesOpenNote(matches[0], false, id);
-		} catch (error) { showToast('This note could not be opened. Your current work was kept.', 'error'); return false; }
+		} catch (error) { showToast('Couldn’t open this note.', 'error'); return false; }
 	});
 	_rapierNotes.captureChain = run; return run;
 };
@@ -8144,7 +8148,7 @@ globalThis.rapierNotesReceiveShares = function rapierNotesReceiveShares() {
 			}
 			return true;
 		} catch (error) {
-			showToast('The share could not finish. Its original is kept for another try.', 'error');
+			showToast('Couldn’t share. Try again.', 'error');
 			console.warn('[rapier] share', error); return false;
 		}
 	});
@@ -8196,7 +8200,7 @@ function _rapierNotesRemindSync() {
 	}).catch(error => {
 		if (_rapierNotes.remindSyncedKey === key) {
 			_rapierNotes.remindSyncedKey = undefined;
-			showToast('The device could not update these reminders. Rapier will retry while Notes is open.', 'error');
+			showToast('Couldn’t update reminders. Retrying.', 'error');
 		}
 		console.warn('[rapier] notes', error);
 	});
@@ -8319,17 +8323,17 @@ async function _rapierNotesRemindConfirm(at, files) {
         if (!live()) return;
         if (typeof answer?.notificationsAllowed !== 'boolean' || typeof answer?.exact !== 'boolean') throw new Error('Reminder permission state is unavailable');
         const kind = !answer.notificationsAllowed || answer.blocked ? 'notifications' : !answer.exact ? 'exact' : null;
-        const message = kind === 'notifications' ? 'Reminder saved, but notifications are off. Allow Rapier notifications in Settings.'
-            : kind === 'exact' ? 'Reminder saved, but it may be delayed. Allow alarms for Rapier in Settings.' : set;
+        const message = kind === 'notifications' ? 'Reminder set. Turn on notifications.'
+            : kind === 'exact' ? 'Reminder may be late. Allow alarms.' : set;
         const open = host.openReminderSettings;
         const action = kind && typeof open === 'function' ? {label:'Settings', fn:async () => {
             try { await open(kind); }
-            catch (_) { showToast(kind === 'notifications' ? 'Open Android Settings, then Rapier’s notifications.' : 'Open Android Settings, then Rapier’s alarms and reminders.', 'error'); }
+            catch (_) { showToast(kind === 'notifications' ? 'Open Settings > Rapier > Notifications.' : 'Open Settings > Rapier > Alarms & reminders.', 'error'); }
         }} : null;
         showToast(message, 'info', action);
     } catch (_) {
         if (!live()) return;
-        showToast('Reminder saved, but Android could not check its alerts. Check Rapier’s notification and alarm settings.', 'info');
+        showToast('Reminder set. Check Rapier’s notifications.', 'info');
     }
 }
 const RAPIER_NOTES_PICTURE_TYPES = Object.freeze({svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',

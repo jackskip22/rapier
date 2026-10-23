@@ -26,6 +26,9 @@ const _RAPIER_CODE_STRING_PREFIXES = new Set('r b u f rb br fr rf u8 l n e x'.sp
 const _RAPIER_CODE_DEFINERS = new Set('def fn func fun function'.split(' '));
 const _RAPIER_CODE_LABELLERS = new Set('break continue where dyn impl'.split(' '));
 const _RAPIER_CODE_OPERATORS = new Set([...'+-*/%=<>!&|^~?:'].map(ch => ch.charCodeAt(0)));
+const _RAPIER_CODE_REGEX_BEFORE = new Set([...'(,=:[!&|?{;+-*%<>~^'].map(ch => ch.charCodeAt(0)));
+const _RAPIER_CODE_REGEX_AFTER = new Set('return typeof case in of delete void throw new yield await'.split(' '));
+const _RAPIER_CODE_REGEX_FLAGS = new Set([...'dgimsuvy'].map(ch => ch.charCodeAt(0)));
 const _RAPIER_CODE_CLASS = [[1, _RAPIER_CODE_WORDS], [2, _RAPIER_CODE_CONSTANTS], [4, _RAPIER_CODE_TYPES]].reduce((table, [bit, words]) => {
 	for (const word of words) table.set(word, (table.get(word) || 0) | bit);
 	return table;
@@ -174,6 +177,32 @@ function _rapierCodeSpanRuns(text) {
 		return n;
 	};
 	const closedBy = (from, mark, open) => { const at = next(mark, from); return at < 0 ? lineEnd(open) : at + mark.length; };
+	const regexEnd = at => {
+		const k = significantBefore(at), p = text.charCodeAt(k);
+		if (k >= 0 && p !== 10) {
+			if (p === 41 || p === 93 || p === 34 || p === 39 || p === 96 || p >= 48 && p <= 57) return -1;
+			if (_rapierCodeWordChar(p)) {
+				let w = k;
+				while (w > 0 && _rapierCodeWordChar(text.charCodeAt(w - 1))) w--;
+				if (!_RAPIER_CODE_REGEX_AFTER.has(text.slice(w, k + 1)) || text.charCodeAt(w - 1) === 46) return -1;
+			} else if (!_RAPIER_CODE_REGEX_BEFORE.has(p)) return -1;
+		}
+		let i = at + 1, inClass = false;
+		const first = text.charCodeAt(i);
+		if (first === 42 || first === 47 || first === 10 || i >= n) return -1;
+		for (; i < n; i++) {
+			const t = text.charCodeAt(i);
+			if (t === 92) i++;
+			else if (t === 10) return -1;
+			else if (t === 91) inClass = true;
+			else if (t === 93) inClass = false;
+			else if (t === 47 && !inClass) break;
+		}
+		if (i >= n) return -1;
+		i++;
+		while (i < n && _RAPIER_CODE_REGEX_FLAGS.has(text.charCodeAt(i))) i++;
+		return _rapierCodeWordChar(text.charCodeAt(i)) ? -1 : i;
+	};
 	let tickMissing = n + 1, wordStart = 0, wordStop = 0, wordEnd = -1, lifetimeEnd = -1, angle = null, wordClass = 0;
 	for (let at = 0; at < n;) {
 		const c = text.charCodeAt(at);
@@ -276,7 +305,9 @@ function _rapierCodeSpanRuns(text) {
 					}
 					while (end < n && _rapierCodeWordChar(text.charCodeAt(end))) end++;
 					type = 'number';
-				} else if (c < 128 && _RAPIER_CODE_OPERATOR_TABLE[c] === 1) type = 'operator';
+				} else if (c === 47 && (end = regexEnd(at)) > 0) {
+					type = 'string';
+				} else if (c < 128 && _RAPIER_CODE_OPERATOR_TABLE[c] === 1) { end = at + 1; type = 'operator'; }
 			}
 		}
 		if (type !== 'plain') colour(at, end, type);
@@ -453,7 +484,7 @@ function _rapierCodeHtml(source, language) {
 
 export { RAPIER_CODE_COLOUR_MAX_CHARS, _RAPIER_HIGHLIGHT_SLAB_MAX_CHARS, _RAPIER_HIGHLIGHT_LINE_MAX_CHARS,
 	_rapierHighlightLinesAdmitted, _rapierHighlightAdmitted, _RAPIER_CODE_WORDS, _RAPIER_CODE_SQL_WORDS, _RAPIER_CODE_CONSTANTS, _RAPIER_CODE_TYPES, _RAPIER_CODE_PLAIN, _RAPIER_CODE_STRING_PREFIXES,
-	_RAPIER_CODE_DEFINERS, _RAPIER_CODE_LABELLERS, _RAPIER_CODE_OPERATORS, _RAPIER_CODE_CLASS, _RAPIER_CODE_CLASS_WORDS, _RAPIER_CODE_CLASS_BITS,
+	_RAPIER_CODE_DEFINERS, _RAPIER_CODE_LABELLERS, _RAPIER_CODE_OPERATORS, _RAPIER_CODE_REGEX_BEFORE, _RAPIER_CODE_REGEX_AFTER, _RAPIER_CODE_REGEX_FLAGS, _RAPIER_CODE_CLASS, _RAPIER_CODE_CLASS_WORDS, _RAPIER_CODE_CLASS_BITS,
 	_RAPIER_CODE_CLASS_SLOTS, _rapierCodeWordHash, _RAPIER_CODE_CLASS_LENGTHS, _rapierCodeWordClass, _RAPIER_CODE_OPERATOR_TABLE, _RAPIER_CODE_PLAIN_TABLE,
 	_RAPIER_TOKEN_TYPES, _RAPIER_TOKEN_KIND, _rapierCodeReading, tokenizeCode, _rapierCodeRuns, _rapierRunSpans, _rapierCodeSpanList, _rapierCodeWordChar, _rapierCodeBreakChar,
 	_rapierCodeCommentMarks, _rapierCodeSpans, _rapierCodeSpanRuns, _rapierDiffTokens, _rapierDiffRuns, _rapierMarkdownTokens, _rapierMarkdownRuns,

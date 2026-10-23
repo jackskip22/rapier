@@ -1346,7 +1346,7 @@ const _rapierImageFlow = (() => {
     try { projectDocument(anchorWrapper?.isConnected ? anchorWrapper : null); }
     catch (error) {
       restore();
-      if (moving) { cancel(); showToast('image layout is unavailable for this passage', 'info'); }
+      if (moving) { cancel(); showToast('Can’t lay out a picture here.', 'info'); }
       console.warn('[rapier] image layout', error);
     } finally {
       if (moving) moving.anchor = null; watch();
@@ -1857,7 +1857,7 @@ const _rapierImageFlow = (() => {
     const record = _rapierImageRecord(_rapierImageRuntime.blockId, _rapierImageRuntime.imageIndex);
     if (!record || _rapierUserMutationBlocked() || !_rapierCommitPendingHistory()) { previewFade(null); return false; }
     const occurrence = sourceOccurrence(record), opacity = 100 - clamp(Math.round(value), 0, FADE_MAX);
-    if (occurrence.reason) { previewFade(null); showToast('This picture cannot be faded without altering its source', 'info'); return false; }
+    if (occurrence.reason) { previewFade(null); showToast('Can’t fade this picture here.', 'info'); return false; }
     if ((occurrence.layout.opacity ?? 100) === opacity) { previewFade(null); return true; }
     const layout = {...occurrence.layout};
     if (opacity < 100) layout.opacity = opacity; else delete layout.opacity;
@@ -1873,7 +1873,7 @@ const _rapierImageFlow = (() => {
     const record = _rapierImageRecord(_rapierImageRuntime.blockId, _rapierImageRuntime.imageIndex);
     if (!record || _rapierUserMutationBlocked() || !_rapierCommitPendingHistory()) return false;
     const occurrence = sourceOccurrence(record);
-    if (occurrence.reason) { showToast('This picture cannot be locked without altering its source', 'info'); return false; }
+    if (occurrence.reason) { showToast('Can’t lock this picture here.', 'info'); return false; }
     if ((occurrence.layout.lock === 'on') === on) return true;
     const layout = {...occurrence.layout};
     if (on) layout.lock = 'on'; else delete layout.lock;
@@ -2052,7 +2052,7 @@ const _rapierImageFlow = (() => {
         !selected.naturalHeight || !_rapierCommitPendingHistory()) return null;
     layoutNow();
     if (!selected?.isConnected) return null;
-    if (hasSelection()) { showToast('clear the text selection to move an image', 'info'); return null; }
+    if (hasSelection()) { showToast('Clear the selection to move a picture.', 'info'); return null; }
     if (selected.closest('.block-edit')) {
       if (!_rapierSettleSelectedImage() || !selected?.isConnected || !selected.naturalWidth) return null;
       if (frame) { cancelAnimationFrame(frame); frame = 0; layout(); }
@@ -2072,7 +2072,7 @@ const _rapierImageFlow = (() => {
   }
 
   function beginRotate() {
-    const ready = readyGesture('This picture cannot be rotated without altering its source');
+    const ready = readyGesture('Can’t rotate this picture here.');
     if (!ready) return;
     const {record, occurrence} = ready;
     const image = selected;
@@ -2108,10 +2108,10 @@ const _rapierImageFlow = (() => {
 
   function begin(kind = 'move', corner = 'se') {
     if (kind === 'rotate') { beginRotate(); return; }
-    const ready = readyGesture('This image layout cannot be moved without altering its source');
+    const ready = readyGesture('Can’t move this picture here.');
     if (!ready) return;
     const {record, occurrence} = ready;
-    if (selected.closest('a') && !occurrence.standalone) { showToast('Move a linked image in its own paragraph', 'info'); return; }
+    if (selected.closest('a') && !occurrence.standalone) { showToast('Put the picture on its own line to move it.', 'info'); return; }
 
     const image = selected, bounds = rect(image), area = rect(host), wrapper = image.closest('.block-wrapper');
     const read = image.closest('.block-read');
@@ -2412,7 +2412,7 @@ const _rapierImageFlow = (() => {
     } else {
       const plan = _rapierPlanImageLayoutChange(record, value);
       if (!plan || plan.refuse) {
-        showToast(plan?.refuse === 'link' ? 'Resize a linked image in its own paragraph' : 'Resize an image in its own paragraph', 'info');
+        showToast(plan?.refuse === 'link' ? 'Put the picture on its own line to resize it.' : 'Put the picture on its own line to resize it.', 'info');
         return false;
       }
       edits = plan.edits; reselectIndex = 0; pictureAt = plan.pictureOffset;
@@ -2429,7 +2429,7 @@ const _rapierImageFlow = (() => {
       const before = _rapierSourceText();
       posters = await _rapierDocumentObjects.posterSplices(before, splices, replacement);
       if (before !== _rapierSourceText() || intent !== userIntent) return false;
-      if (!posters) { posters = []; showToast('No still image could be made for this animation; it is kept without one', 'info'); }
+      if (!posters) { posters = []; showToast('Couldn’t make a still. Animation kept.', 'info'); }
     }
     armSettle(releaseTop, targetPosition, reselectIndex);
 
@@ -2576,7 +2576,7 @@ const _rapierImageFlow = (() => {
   }
 
   function beginShape(hit) {
-    const ready = readyGesture('This drawing cannot be changed without altering its source');
+    const ready = readyGesture('Can’t change this drawing here.');
     if (!ready) return;
     const {record, occurrence} = ready;
     const image = selected, recipe = hit.recipe, bounds = rect(image), area = rect(host), view = recipeView(recipe);
@@ -2854,7 +2854,7 @@ const _rapierImageFlow = (() => {
     closeShapeField();
     if (value === before || !edit?.editDrawing || !selected?.isConnected || selected !== open.image || typeof _rapierDrawRecipeFromImage !== 'function') return false;
     const base = _rapierDrawRecipeFromImage(open.image);
-    if (!base || !base.shapes.some(row => row.id === open.shapeId)) { showToast('That box is no longer in the drawing.', 'info'); return false; }
+    if (!base || !base.shapes.some(row => row.id === open.shapeId)) { showToast('That box is gone.', 'info'); return false; }
     let recipe;
     try {
       const result = open.step
@@ -2863,11 +2863,11 @@ const _rapierImageFlow = (() => {
       if (!result.changed) return false;
       recipe = result.recipe;
     } catch (error) {
-      showToast(error.code === 'drawing_label_invalid' ? (open.step ? 'A step number is 1 to 99.' : 'Those words cannot go in this box.')
-        : error.code === 'drawing_route_blocked' ? 'Those words leave a connector no way, so the drawing was kept.' : String(error.message || error), 'error');
+      showToast(error.code === 'drawing_label_invalid' ? (open.step ? 'A step number is 1 to 99.' : 'Those words can’t go in this box.')
+        : error.code === 'drawing_route_blocked' ? 'Those words block a connector.' : _rapierErrorWords(error, 'Couldn’t change the box.'), 'error');
       return false;
     }
-    const ready = readyGesture('This drawing cannot be changed without altering its source');
+    const ready = readyGesture('Can’t change this drawing here.');
     if (!ready) return false;
     const image = selected, releaseTop = rect(image).top - rect(host).top;
     const gesture = {image, stamp: Object.freeze(_rapierMutationStamp()), candidateUrl: null};
@@ -2893,7 +2893,7 @@ const _rapierImageFlow = (() => {
     const record = _rapierImageRecord(_rapierImageRuntime.blockId, _rapierImageRuntime.imageIndex);
     if (!record) return false;
     const occurrence = sourceOccurrence(record);
-    if (occurrence.reason) { showToast('This image layout cannot be changed without altering its source', 'info'); return false; }
+    if (occurrence.reason) { showToast('Can’t change this layout here.', 'info'); return false; }
     if (positioned(occurrence.layout)) {
       if (occurrence.layout.wrap === mode) return false;
       return commitLayout(record, occurrence, {...occurrence.layout, wrap: mode});
@@ -2906,7 +2906,7 @@ const _rapierImageFlow = (() => {
       return true;
     }
     if (!wrapOwner(selected?.closest('.block-wrapper'))) {
-      if (!mountedWrappers().some(prose)) showToast('There is no text nearby to wrap the image around', 'info');
+      if (!mountedWrappers().some(prose)) showToast('No text nearby to wrap around.', 'info');
       return false;
     }
     const {align, ...layout} = occurrence.layout;
@@ -2914,7 +2914,7 @@ const _rapierImageFlow = (() => {
     const owner = wrapOwner(selected.closest('.block-wrapper')), paragraph = owner && prose(owner);
     if (paragraph && (mode === 'around' || mode === 'box') &&
         rect(paragraph).width - rect(selected).width < narrowestColumn(parseFloat(getComputedStyle(paragraph).fontSize)) + 24)
-      showToast('Make the picture smaller to wrap words beside it', 'info');
+      showToast('Make the picture smaller to wrap text.', 'info');
     return commitLayout(record, occurrence, {...layout, wrap: mode});
   }
 
@@ -2944,24 +2944,24 @@ const _rapierImageFlow = (() => {
       (!gesture.owner || (gesture.owner.isConnected && !!_rapierBoundBlock(gesture.owner)));
     if (intact) { gesture.stamp = Object.freeze(_rapierMutationStamp()); gesture.source = _rapierSourceText(); gesture.record = record; return true; }
     cancel();
-    showToast('The document changed while the picture was held, so it went back where it was. Move it again.', 'info');
+    showToast('Document changed. Move it again.', 'info');
     return false;
   }
 
   async function finish(force = false) {
     const gesture = moving;
     if (!gesture || gesture.committing) return false;
-    if (_rapierUserMutationBlocked()) { cancel(); showToast('The document is still finishing an edit, so the picture went back where it was. Move it again.', 'info'); return false; }
+    if (_rapierUserMutationBlocked()) { cancel(); showToast('Still working. Move it again.', 'info'); return false; }
     if (!rebaseGesture(gesture, true)) return false;
     if (force) activateMove();
     if (frame) { cancelAnimationFrame(frame); frame = 0; layout(); }
     if (moving !== gesture) return false;
     const sourceRecord = _rapierImageRecord(gesture.blockId, gesture.imageIndex);
     const spans = _rapierExcerptCanonicalBlockSpans(), from = sourceRecord && spans.get(sourceRecord.block.id);
-    if (!from || sourceRecord.image.source !== gesture.record.image.source) { cancel(); showToast('The picture\'s own block changed while it was held, so it went back where it was. Move it again.', 'info'); return false; }
+    if (!from || sourceRecord.image.source !== gesture.record.image.source) { cancel(); showToast('Picture changed. Move it again.', 'info'); return false; }
     const occurrence = sourceOccurrence(sourceRecord);
     if (occurrence.reason || occurrence.source !== gesture.occurrence.source) {
-      cancel(); showToast('The picture\'s own line changed while it was held, so it went back where it was. Move it again.', 'info'); return false;
+      cancel(); showToast('Picture changed. Move it again.', 'info'); return false;
     }
     if (gesture.kind === 'resize') {
       if (Math.abs(gesture.box.width - gesture.start.width) <= .5) { cancel(); return true; }
@@ -2973,7 +2973,7 @@ const _rapierImageFlow = (() => {
       const recipe = gesture.previewRecipe;
       if (!gesture.offset || (!gesture.offset.dx && !gesture.offset.dy)) {
         const refused = gesture.refused; cancel();
-        if (refused) showToast('That move leaves a connector no way, so the box stayed where it was.', 'info');
+        if (refused) showToast('That move blocks a connector.', 'info');
         return !refused;
       }
       const releaseTop = rect(gesture.image).top - rect(host).top, viewport = admitGesture(gesture);
@@ -3216,7 +3216,7 @@ const _rapierImageFlow = (() => {
   new ResizeObserver(() => {
     const width = host.clientWidth, height = host.clientHeight;
     if (width !== lastWidth || height !== lastHeight) {
-      if (lastWidth && width !== lastWidth && moving) { cancel(); showToast('The page changed width while the picture was held, so it went back where it was. Move it again.', 'info'); }
+      if (lastWidth && width !== lastWidth && moving) { cancel(); showToast('Page resized. Move it again.', 'info'); }
       lastWidth = width; lastHeight = height; schedule();
     }
   }).observe(host);
@@ -3718,7 +3718,7 @@ const _rapierImageFlow = (() => {
     if (name === 'lostpointercapture' && event.target !== moving.pointerOwner) return;
     const moved = !!moving.drag?.moved;
     cancel();
-    if (moved) showToast('The browser took over that touch, so the picture went back where it was. Hold it and move it again.', 'info');
+    if (moved) showToast('Touch interrupted. Move it again.', 'info');
   }, true);
   host.addEventListener('dragstart', event => {
     if (event.target === selected) event.preventDefault();

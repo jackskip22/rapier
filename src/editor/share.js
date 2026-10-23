@@ -155,11 +155,6 @@ async function _rapierPortableChoices(source, options = {}) {
   return {choices, assemble, needs: new Set(choices.filter(choice => choice.needed || options.also?.includes(choice.id)).map(choice => choice.id))};
 }
 
-async function _rapierPortableTemplate(source, options = {}) {
-  const portable = await _rapierPortableChoices(source, options);
-  return portable.assemble(options.include ? new Set(options.include) : portable.needs);
-}
-
 function _rapierPandocDialectEnabled() {
 	try { return localStorage.getItem('rapier:export.pandocDialect') === '1'; } catch (_) { return false; }
 }
@@ -284,7 +279,7 @@ function _rapierReadableWithoutScripts(captured) {
 
 function _rapierPortableLacks(name) {
 	if (typeof RapierParts === 'undefined' || !RapierParts.sealed()) return false;
-	showToast('This file was saved without ' + name + '. Open it at rapier.website to see it.', 'info');
+	showToast('This file has no ' + name + '. Open it at rapier.website.', 'info');
 	return true;
 }
 
@@ -393,7 +388,7 @@ async function _rapierShareFile(options) {
 				const file = new File([blob], filename, { type: mime });
 				if (navigator.canShare({ files: [file] })) {
 					if (navigator.userActivation?.isActive === false && !await rapierConfirm({
-						title: 'ready to share', message: filename, confirmLabel: 'share',
+						title: 'ready to share', message: filename, confirmLabel: 'Share',
 					})) return false;
 					await navigator.share({ files: [file], title: filename });
 					_rapierAnnounceShared(filename, blob);
@@ -409,10 +404,10 @@ async function _rapierShareFile(options) {
 	const place = {};
 	const saved = await _download(blob, filename, place);
 	if (saved === true) {
-		showToast('Saved ' + _rapierShareProduced(place.name || filename, blob) + (place.where || '') + '. Send this file to anyone.', 'success');
+		showToast('Saved ' + _rapierShareProduced(place.name || filename, blob) + (place.where || ''), 'success');
 		return true;
 	}
-	if (saved === null) showToast('Could not save ' + filename + '.', 'error');
+	if (saved === null) showToast('Couldn’t save ' + filename + '.', 'error');
 	return false;
 }
 
@@ -425,8 +420,8 @@ function _rapierCarriedKeepHint() {
 	_rapierCarriedKeep.hinted = true;
 	const name = String(rapier.document.filename);
 	showToast(files?.savesChosenType === true
-		? 'To keep your changes, press Save and choose ' + name + ', the file you opened.'
-		: 'To keep your changes, press Save. It downloads ' + name.replace(/\.rapier\.html$/i, '-2.rapier.html') + '.',
+		? 'Press Save and choose ' + name + ' to keep changes.'
+		: 'Press Save to keep changes.',
 		'info', {label: 'Save', fn: () => rapierSave()});
 }
 
@@ -441,7 +436,7 @@ function _rapierShareSize(bytes) {
 function _rapierAnnounceShared(filename, blob) {
 	const produced = _rapierShareProduced(filename, blob);
 	try { if (typeof srAnnounce === 'function') srAnnounce('shared ' + produced); } catch (_) {}
-	try { showToast('shared ' + produced, 'success'); } catch (_) {}
+	try { showToast('Shared ' + produced, 'success'); } catch (_) {}
 }
 
 const _rapierPageReturn = {address: null, expiresAt: null, stamp: null, state: 'ready', message: '', timer: null};
@@ -600,7 +595,7 @@ async function rapierShare(kind) {
 		task.check(); task.end();
 		return await _rapierShareFile({...page, mime: 'text/html'});
 	} catch (error) {
-		if (error?.name !== 'AbortError' && error?.code !== 'cancelled') showToast('Could not share: ' + error.message, 'error');
+		if (error?.name !== 'AbortError' && error?.code !== 'cancelled') showToast('Couldn’t share.', 'error', null, error);
 		return false;
 	} finally { task.end(); _rapierShareLedgerReset(); }
 }
@@ -771,7 +766,7 @@ async function _rapierShareQuoteCard() {
 		task.check(); task.end();
 		return await _rapierShareFile({blob, filename: held.name + '-quote.png', mime: 'image/png'});
 	} catch (error) {
-		if (error?.name !== 'AbortError') showToast('Could not make the quote card: ' + error.message, 'error');
+		if (error?.name !== 'AbortError') showToast('Couldn’t make the quote card.', 'error', null, error);
 		return false;
 	} finally { task.end(); frame?.remove(); }
 }
@@ -872,11 +867,11 @@ function _rapierReturnedActs(incoming) {
 	return {ledger: incoming, ids: acts.map(row => row.transaction.id), by: new Intl.ListFormat('en').format([...names])};
 }
 function _rapierOfferReturnedCompare(returned) {
-	showToast('New edits by ' + returned.by, 'info', {label: 'Compare changes', fn: async () => {
+	showToast('New edits by ' + returned.by, 'info', {label: 'Compare', fn: async () => {
 		const {ledger, ids} = returned, head = RapierLedger.readLedger(ledger);
 		const before = RapierLedger.selectiveUndo({source: head.text, metadata: head.metadata, records: ledger.records,
 			revision: ledger.head.revision, earliestRevision: ledger.start.revision, complete: ledger.complete}, ids);
-		if (!before.ok) return showToast('Could not compare these edits', 'error');
+		if (!before.ok) return showToast('Couldn’t compare these edits.', 'error');
 		const c = rapier.compare;
 		c.lens = 'file'; c.changeId = null;
 		if (!c.active) c.snapshot = _rapierCompareCaptureView();

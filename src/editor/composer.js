@@ -43,7 +43,7 @@ function _rapierComposerOpen(title, fill, onClose) {
 	return state;
 }
 
-const RAPIER_ORNAMENTS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.36/';
+const RAPIER_ORNAMENTS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.37/';
 const _rapierOrnamentDoor = {providers: new Map(), allowed: new Set(), held: new Map(), bringing: new Map(), hubs: new Map(), plugins: new Map()};
 const RAPIER_ORNAMENT_FORMAT = 1;
 const _RAPIER_ORNAMENT_KINDS = Object.freeze({
@@ -106,15 +106,15 @@ const _rapierGalleryAnnounce = (id, status, progress = 0) => { try { window.disp
 async function _rapierGalleryAsk(id, retry, reason, required = null) {
 	const plugin = _RAPIER_GALLERY_PLUGINS[id];
 	if (required && !retry) {
-		const size = _rapierPluginSize(required.bytes), words = plugin.name + ' need an update to work with this Rapier \u00b7 ' + size;
-		return await rapierConfirm({title: 'Update ' + plugin.name + '?', message: words, confirmLabel: 'update', plain: true}) === true;
+		const size = _rapierPluginSize(required.bytes), words = 'Needed for this version \u00b7 ' + size;
+		return await rapierConfirm({title: 'Update ' + plugin.name + '?', message: words, confirmLabel: 'Update', plain: true}) === true;
 	}
 	const mb = value => value >= 1e6 ? (value / 1e6).toFixed(1) + ' MB' : Math.round(value / 1e3) + ' KB';
 	const kinds = [...new Set(plugin.slots.map(row => row.kind))];
 	const host = [...new Set(kinds.map(kind => window.RapierPlatform?.resources.installMessage?.(kind, retry ? 'error' : 'prompt') || '').filter(Boolean))].join('\n');
-	const words = retry ? host || reason || 'Rapier could not reach or verify ' + plugin.name + '. Try again.'
+	const words = retry ? host || reason || 'Couldn’t download ' + plugin.name + '. Try again.'
 		: host || '• ' + mb(_rapierGalleryBytes(id)) + ', once, from jsDelivr.\n• ' + _rapierGalleryPins(id).length + ' files of ' + _RAPIER_ORNAMENT_KINDS[kinds[0]].what + '.\n• Works offline after.';
-	return await rapierConfirm({title: retry ? plugin.name + ' did not arrive' : 'Download ' + plugin.name + '?', message: words, confirmLabel: retry ? 'retry' : 'download', plain: true}) === true;
+	return await rapierConfirm({title: retry ? 'Couldn’t download ' + plugin.name : 'Download ' + plugin.name + '?', message: words, confirmLabel: retry ? 'Retry' : 'Download', plain: true}) === true;
 }
 function _rapierOrnamentHub(after = 0, words = 'Downloading') {
 	const rows = new Set(), now = {fraction: null, words};
@@ -137,7 +137,7 @@ function _rapierGalleryEnsure(id) {
 			const needed = providers.filter(provider => provider.status !== 'ready' && provider.update?.required);
 			const required = needed.length ? {bytes: needed.reduce((sum, provider) => sum + provider.update.bytes, 0)} : null;
 			if ((!door.allowed.has(id) || required && !retry) && !await _rapierGalleryAsk(id, retry, providers.find(provider => provider.status === 'error')?.error || '', required)) {
-				showToast(required ? plugin.name + ' wait for the update' : 'Download canceled', 'info');
+				showToast(required ? plugin.name + ' need the update' : 'Download canceled', 'info');
 				throw Object.assign(new Error('canceled'), {canceled: true});
 			}
 			door.allowed.add(id);
@@ -193,7 +193,7 @@ function _rapierGalleryUpdate(id) {
 			}
 			await _rapierGalleryMark.write(id);
 		} catch (error) {
-			showToast(String(error?.message || error), 'error');
+			showToast(_rapierErrorWords(error, 'Couldn’t download ' + plugin.name + '.'), 'error');
 			throw error;
 		} finally { hub.end(); door.hubs.delete(id); _rapierGalleryAnnounce(id, 'ready'); }
 	})().finally(() => { door.plugins.delete(id); }));
@@ -370,34 +370,34 @@ async function _rapierComposerAdd(item, options, target, stamp) {
 }
 async function _rapierComposerPlace(svg, title, layout, target) {
 	if (_rapierUserMutationBlocked() || !svg) return false;
-	if (rapier.document.docKind !== 'markdown') { showToast('Letters go in Markdown documents', 'info'); return false; }
+	if (rapier.document.docKind !== 'markdown') { showToast('Letters work only in Markdown.', 'info'); return false; }
 	const settled = await _rapierWithSettledExternalDocument(() => Object.freeze(_rapierMutationStamp()), {quiet: true});
 	if (!settled.settled) return false;
 	try {
 		const asset = await RapierImageAssets.createAsset(new TextEncoder().encode(svg), null, {codec: 'image/svg+xml', title});
 		const raw = '![' + _rapierEscapeImageAlt(title) + '][' + asset.label + '] <!--md-layout:v1 ' + layout + '-->';
 		const done = await RapierEmbeddedImages.insert({asset, reference: asset.label, dataUrl: asset.url, width: asset.width, height: asset.height}, raw, target || _rapierImageInsertionTarget(), settled.value);
-		if (!done) showToast('Document changed; choose the letter again', 'info');
+		if (!done) showToast('Document changed. Choose the letter again.', 'info');
 		return !!done;
-	} catch (error) { showToast(String(error.message || error), 'error'); return false; }
+	} catch (error) { showToast(_rapierErrorWords(error, 'Couldn’t add that.'), 'error'); return false; }
 }
 async function _rapierComposerInsert(request = {}) {
 	if (_rapierUserMutationBlocked()) return false;
-	if (rapier.document.docKind !== 'markdown') { showToast('Elements go in Markdown documents', 'info'); return false; }
+	if (rapier.document.docKind !== 'markdown') { showToast('Elements work only in Markdown.', 'info'); return false; }
 	const target = request.target || _rapierImageInsertionTarget();
 	const settled = await _rapierWithSettledExternalDocument(() => Object.freeze(_rapierMutationStamp()), {quiet: true});
 	if (!settled.settled) return false;
 	try {
 		const done = await _rapierComposerAdd(request.item, {ink: request.ink || RapierOrnaments.ELEMENT_INK, ...(request.tiles ? {tiles: request.tiles} : null)}, target, settled.value);
-		if (!done) showToast('Document changed; choose the element again', 'info');
+		if (!done) showToast('Document changed. Choose the element again.', 'info');
 		return !!done;
-	} catch (error) { showToast(String(error.message || error), 'error'); return false; }
+	} catch (error) { showToast(_rapierErrorWords(error, 'Couldn’t add that.'), 'error'); return false; }
 }
 async function _rapierComposerElements() {
-	if (rapier.document.docKind !== 'markdown') { showToast('Elements go in Markdown documents', 'info'); return; }
+	if (rapier.document.docKind !== 'markdown') { showToast('Elements work only in Markdown.', 'info'); return; }
 	const target = _rapierImageInsertionTarget();
 	try { await _rapierGalleryEnsure('elements'); }
-	catch (error) { if (!error?.canceled) showToast(String(error?.message || error), 'error'); return; }
+	catch (error) { if (!error?.canceled) showToast(_rapierErrorWords(error, 'Couldn’t open the Gallery.'), 'error'); return; }
 	_rapierComposerOpen('Elements', state => {
 		const body = _rapierComposerEl('div', 'rapier-composer__groups');
 		let open = null, wanted = null, groups = _rapierElementGroups();
@@ -412,7 +412,7 @@ async function _rapierComposerElements() {
 			wanted = group.name;
 			if (!group.items) {
 				try { await _rapierOrnamentBring('elements', group.family); }
-				catch (error) { if (!error?.canceled) showToast(String(error.message || error), 'error'); return; }
+				catch (error) { if (!error?.canceled) showToast(_rapierErrorWords(error, 'Couldn’t add that.'), 'error'); return; }
 				if (!body.isConnected) return;
 				groups = _rapierElementGroups();
 			}
@@ -475,7 +475,7 @@ function _rapierComposerBorders() {
 			}
 			return parts;
 		});
-	}, error => { if (!error?.canceled) showToast(String(error.message || error), 'error'); });
+	}, error => { if (!error?.canceled) showToast(_rapierErrorWords(error, 'Couldn’t add that.'), 'error'); });
 }
 
 function _rapierComposerRecolor() {
@@ -497,8 +497,8 @@ function _rapierComposerRecolor() {
 			const asset = await RapierImageAssets.createAsset(new TextEncoder().encode(svg), null, {codec: 'image/svg+xml', title: record.image.title || ''});
 			const alt = record.image.alt ?? title.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
 			const normalized = {asset, reference: asset.label, dataUrl: asset.url, width: asset.width, height: asset.height};
-			if (!await RapierEmbeddedImages.insert(normalized, '![' + _rapierEscapeImageAlt(alt) + '][' + asset.label + ']', target, settled.value)) showToast('Document changed; choose the color again', 'info');
-		} catch (error) { showToast(String(error.message || error), 'error'); }
+			if (!await RapierEmbeddedImages.insert(normalized, '![' + _rapierEscapeImageAlt(alt) + '][' + asset.label + ']', target, settled.value)) showToast('Document changed. Choose the color again.', 'info');
+		} catch (error) { showToast(_rapierErrorWords(error, 'Couldn’t change the color.'), 'error'); }
 	})]);
 }
 

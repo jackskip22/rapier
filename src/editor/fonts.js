@@ -80,7 +80,7 @@ const _rapierDocumentFonts = (() => {
 		if (!active()) return false;
 		if (/^f[0-9a-f]{24}$/.test(value)) {
 			const chosen = available().find(font => font.id === value);
-			if (!chosen) throw new Error('That font is unavailable. Add its original file to your library.');
+			if (!chosen) throw new Error('Font missing. Add its file to your fonts.');
 			const font = fonts.admitFonts([chosen], [value])[0];
 			await preview(font);
 			if (!active()) return false;
@@ -91,10 +91,10 @@ const _rapierDocumentFonts = (() => {
 		}
 		if (!active()) return false;
 		RapierPreferences.write(preference, value);
-		if (RapierPreferences.read(preference) !== value) throw new Error('The default font could not be saved on this device.');
+		if (RapierPreferences.read(preference) !== value) throw new Error('Couldn’t save the default font.');
 		const appliedState = stateKey();
 		try { await _rapierPersonalStore.set('preference/' + preference, value); }
-		catch (_) { throw new Error('The default font is kept on this device, but its personal profile could not be saved. Try again.'); }
+		catch (_) { throw new Error('Font kept here, but not synced. Try again.'); }
 		if (stateKey() !== appliedState) { preferenceChanged(); _rapierApplyDocumentSettings(); renderSettings(); }
 		return true;
 	}
@@ -175,7 +175,7 @@ const _rapierDocumentFonts = (() => {
 				const font = library.find(font => font.id === selected);
 				if (font) await preview(fonts.admitFonts([font], [selected])[0]);
 				else if (!assets.some(asset => asset.family === 'rapier-' + selected && asset.sourceId === selected))
-					throw new Error('The default font is unavailable. Add its original file to your library before saving.');
+					throw new Error('Font missing. Add its file to your fonts.');
 			}
 			if (!active()) return;
 			for (const face of nextFaces) document.fonts.add(face);
@@ -183,7 +183,7 @@ const _rapierDocumentFonts = (() => {
 			documentFaces = nextFaces; documentFonts = records;
 			prunePreviews();
 		} catch (error) {
-			if (active()) { refreshSource = null; showToast(String(error.message || error), 'error'); }
+			if (active()) { refreshSource = null; showToast(_rapierErrorWords(error, 'Couldn’t load the font.'), 'error'); }
 		}
 	}
 	function isPrepared(source) {
@@ -413,7 +413,7 @@ const _rapierFontPicker = (() => {
 	async function choose() {
 		const held = session, control = select();
 		if (!held || held.busy || control.selectedOptions[0]?.disabled || _rapierUserMutationBlocked()) return false;
-		if (!current(held)) { showToast('The document changed. Open Fonts again.', 'error'); return false; }
+		if (!current(held)) { showToast('Document changed. Open Fonts again.', 'error'); return false; }
 		const family = control.value || null, fontState = _rapierDocumentFonts.stateKey();
 		held.busy = true; control.disabled = true; control.setAttribute('aria-busy', 'true');
 		if (held.whole) try {
@@ -430,7 +430,7 @@ const _rapierFontPicker = (() => {
 			if (_rapierSourceText() === portable) _rapierDocumentFonts.prepared(portable);
 			_rapierRestoreEditorViewport(held.viewport);
 			return true;
-		} catch (error) { if (_rapierMutationStampSharesDocument(held.stamp)) showToast(String(error.message || error), 'error'); return false; }
+		} catch (error) { if (_rapierMutationStampSharesDocument(held.stamp)) showToast(_rapierErrorWords(error, 'Couldn’t change the font.'), 'error'); return false; }
 		finally { if (session === held) { held.busy = false; control.disabled = false; control.removeAttribute('aria-busy'); } }
 		try {
 			const splices = [], spans = _rapierCurrentBodyBlockSpans();
@@ -441,7 +441,7 @@ const _rapierFontPicker = (() => {
 					: _rapierPlanFont(block.raw, family, segment.start, segment.end);
 				if (changed == null) throw new Error('Select the words within one paragraph or table cell.');
 				const span = spans.find(row => row.id === block.id);
-				if (!span) throw new Error('The document changed. Open Fonts again.');
+				if (!span) throw new Error('Document changed. Open Fonts again.');
 				if (changed !== block.raw) splices.push({pos: _rapierCanonicalOffsetOfBody(span.start), removed: block.raw, inserted: changed});
 			}
 			splices.sort((a, b) => b.pos - a.pos);
@@ -462,7 +462,7 @@ const _rapierFontPicker = (() => {
 				_rapierRestoreEditorViewport(held.viewport);
 			}
 			return true;
-		} catch (error) { if (_rapierMutationStampSharesDocument(held.stamp)) showToast(String(error.message || error), 'error'); return false; }
+		} catch (error) { if (_rapierMutationStampSharesDocument(held.stamp)) showToast(_rapierErrorWords(error, 'Couldn’t change the font.'), 'error'); return false; }
 		finally { if (session === held) { held.busy = false; control.disabled = false; control.removeAttribute('aria-busy'); } }
 	}
 	return Object.freeze({open, choose, cancel, selectionChanged, ownsFocus: () => !!session && _rapierUi.picker === 'font' &&
@@ -499,7 +499,7 @@ function _rapierFontSheetOpen(options = null) {
 	done.addEventListener('click', close);
 	async function choose(family) {
 		if (busy) return;
-		if (!_rapierMutationStampIsCurrent(stamp) || _rapierSourceText() !== before) { note('The document changed. Open Fonts again.'); return; }
+		if (!_rapierMutationStampIsCurrent(stamp) || _rapierSourceText() !== before) { note('Document changed. Open Fonts again.'); return; }
 		busy = true; panel.setAttribute('aria-busy', 'true');
 		const progress = _rapierProgressOver(overlay), popup = progress.open({label: 'Preparing font', after: 500});
 		try {
@@ -507,7 +507,7 @@ function _rapierFontSheetOpen(options = null) {
 				_rapierMutationStampIsCurrent(stamp) && _rapierSourceText() === before});
 			if (changed) dialog.close(false);
 			else note('The document changed. Open Default document font again.');
-		} catch (error) { if (overlay.isConnected) note(String(error.message || error)); else showToast(String(error.message || error), 'error'); }
+		} catch (error) { if (overlay.isConnected) note(_rapierErrorWords(error, 'Couldn’t add the font.')); else showToast(_rapierErrorWords(error, 'Couldn’t add the font.'), 'error'); }
 		finally { busy = false; panel.removeAttribute('aria-busy'); popup.end(); progress.release(); }
 	}
 	function paint() {

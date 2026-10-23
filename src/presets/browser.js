@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 _rapierPresetPart = (() => {
   const owner = globalThis.RapierPresets, shelf = _rapierPersonalStore;
-  const requireCurrent = current => { if (!current()) throw new Error('The document or selection changed. Open the Gallery again.'); };
+  const requireCurrent = current => { if (!current()) throw new Error('Document changed. Open the Gallery again.'); };
   const allowed = agent => agent || _rapierFeatureAllowed('presets');
   const sync = () => _rapierNotesPart?.sync?.changed?.('settings');
   const captureAllowed = () => {
     if (rapier.document.docKind !== 'markdown') throw new Error('Starters use Markdown documents.');
     if (globalThis.RapierPlatform?.host?.lockedNotes === true || _rapierNotesPart && !_rapierNotesPart.presetCaptureAllowed())
-      throw new Error('This private note cannot be transferred to the starter library.');
+      throw new Error('Locked notes can’t be starters.');
   };
   function range(capture) {
     const exact = _rapierResolveExactCanonicalSelection(capture);
@@ -26,20 +26,20 @@ _rapierPresetPart = (() => {
     requireCurrent(current);
     await shelf.putAsset(key, copy, next => {
       requireCurrent(current);
-      if (!allowed(agent)) throw new Error('Personal starters need Rapier Pro on this device.');
+      if (!allowed(agent)) throw new Error('Starters need Rapier Pro.');
       captureAllowed();
       if (previous && JSON.stringify(next.blobs[next.records[key]?.value?.content]) !== JSON.stringify(previous)) throw new Error('This saved starter changed in another window.');
       if (!next.records[key]?.value && Object.entries(next.records).filter(([id, row]) => id.startsWith('preset/') && row.value).length >= owner.PRESET_LIMIT)
-        throw new Error('Keep at most 128 personal starters. Export or remove one first.');
+        throw new Error('You have 128 starters. Remove one first.');
     });
     sync(); return copy;
   }
   async function save(name, kind, capture, current, agent = false) {
     requireCurrent(current); captureAllowed();
     const exact = kind === 'selection' ? range(capture) : null;
-    if (kind === 'selection' && (!exact || exact.end <= exact.start)) throw new Error('Select a passage, then open the Gallery.');
+    if (kind === 'selection' && (!exact || exact.end <= exact.start)) throw new Error('Select some text first.');
     const captured = await _rapierCaptureSettledExternalDocument(); requireCurrent(current);
-    if (!captured) throw new Error('Finish the current edit before saving a starter.');
+    if (!captured) throw new Error('Finish your edit first.');
     const original = globalThis.RapierLedgerCarried.readDocument(captured.canonical).text;
     let source = original;
     if (exact) {
@@ -77,7 +77,7 @@ _rapierPresetPart = (() => {
     if (action === 'style') splice = _rapierPrefixSuffixDiff(before, owner.applyPresentation(before, preset.presentation, md));
     else {
       const target = range(capture);
-      if (!target) throw new Error('Place the caret or select a passage, then open the Gallery.');
+      if (!target) throw new Error('Place the cursor first.');
       splice = owner.insertPassage(before, preset.content.text, target.start, target.end, md);
     }
     return _rapierCommitSourceProjection([splice], action === 'style' ? 'Apply saved style' : 'Insert passage',
@@ -92,11 +92,11 @@ _rapierPresetPart = (() => {
   };
   async function startPage(row, stamp) {
     const text = globalThis.RapierOrnaments.templateMarkdown(row, {paper: globalThis.RapierOrnaments.paperFor(globalThis.navigator?.language)});
-    if (!text) throw new Error('That border could not be made into a page.');
+    if (!text) throw new Error('Couldn’t make a page from that border.');
     stamp = await leaveLine(stamp);
     const record = {version: 1, id: owner.newId(), name: owner.presetName(row.name), content: {scope: 'document', text}};
     try { return await use(record, 'new', null, () => _rapierMutationStampIsCurrent(stamp), true); }
-    catch (error) { showToast(String(error?.message || error), 'error'); return false; }
+    catch (error) { showToast(_rapierErrorWords(error, 'Couldn’t add that.'), 'error'); return false; }
   }
   const BLANK_PAGE = '---\ntemplate: page\npapersize: a4\ngeometry: margin=1in\n---\n';
   const isPage = text => globalThis.RapierMarkdownSpec.isTemplatePage(text);
@@ -109,7 +109,7 @@ _rapierPresetPart = (() => {
     stamp = await leaveLine(stamp);
     const record = {version: 1, id: owner.newId(), name: owner.presetName(name), content: {scope: 'document', text}};
     try { return await use(record, 'new', null, () => _rapierMutationStampIsCurrent(stamp), true); }
-    catch (error) { showToast(String(error?.message || error), 'error'); return false; }
+    catch (error) { showToast(_rapierErrorWords(error, 'Couldn’t add that.'), 'error'); return false; }
   }
   const nameOf = (text, fallback) => (String(text || '').replace(/\.[^.]*$/, '').replace(/[\x00-\x1f\x7f/\\<>:"|?*]/g, ' ').trim().slice(0, 80)) || fallback;
   async function savePageTemplate() {
@@ -118,7 +118,7 @@ _rapierPresetPart = (() => {
       const stamp = Object.freeze(_rapierMutationStamp()), settings = globalThis.RapierMarkdownSpec.readDocumentSettings(_rapierSourceText());
       await save(nameOf(settings.title || rapier.document.filename, 'Page'), 'document', null, () => _rapierMutationStampIsCurrent(stamp));
       showToast('Page template saved', 'info'); return true;
-    } catch (error) { showToast(String(error?.message || error), 'error'); return false; }
+    } catch (error) { showToast(_rapierErrorWords(error, 'Couldn’t save that.'), 'error'); return false; }
   }
   async function keepElement(bytes, name) {
     const title = nameOf(name, 'Element'), asset = await RapierImageAssets.createAsset(bytes, null, {codec: 'image/svg+xml', title});
@@ -134,7 +134,7 @@ _rapierPresetPart = (() => {
       const url = image && _rapierDrawImageDataUrl(image);
       if (!url || !/^data:image\/svg\+xml;base64,/i.test(url)) throw new Error('Only an SVG picture can be an Element.');
       return await keepElement(Uint8Array.from(atob(url.slice(url.indexOf(',') + 1)), character => character.charCodeAt(0)), name);
-    } catch (error) { showToast(String(error?.message || error), 'error'); return false; }
+    } catch (error) { showToast(_rapierErrorWords(error, 'Couldn’t save that.'), 'error'); return false; }
   }
   const chooseFile = (accept, then) => {
     const input = document.createElement('input'); input.type = 'file'; input.accept = accept; input.hidden = true;
@@ -160,7 +160,7 @@ _rapierPresetPart = (() => {
       busy = true;
       for (const input of box.querySelectorAll('button,input')) if (!input.closest('.rapier-gallery__head')) input.disabled = true;
       try { await work(); }
-      catch (error) { if (!error?.canceled) showToast(String(error?.message || error), 'error'); }
+      catch (error) { if (!error?.canceled) showToast(_rapierErrorWords(error, 'That didn’t work. Try again.'), 'error'); }
       finally { busy = false; for (const input of box.querySelectorAll('button,input')) input.disabled = false; }
     };
     const button = (text, action) => { const node = element('button', 'settings-action-btn', text); node.type = 'button'; node.addEventListener('click', () => void run(action)); box.append(node); return node; };

@@ -30,7 +30,7 @@ function _rapierFrontmatterSource(offset = 0) {
 function _rapierFrontmatterBodySource() {
 	const header = rapier.document.frontmatter;
 	if (!header || /[\r\n]$/.test(header)) return false;
-	if (_rapierFrontmatterSource(header.length)) showToast('Add a new line after the metadata to write below it.', 'info');
+	if (_rapierFrontmatterSource(header.length)) showToast('Add a line after the metadata first.', 'info');
 	return true;
 }
 
@@ -86,7 +86,7 @@ function _rapierFrontmatterOpen() {
 				void _rapierPartReady('presets').then(ready => ready && _rapierPresetPart.savePageTemplate());
 			}}] : []],
 		prepare() {
-			if (_rapierSourceText() !== before) throw new Error('The document changed. Open Metadata again.');
+			if (_rapierSourceText() !== before) throw new Error('Document changed. Open Metadata again.');
 			const next = lines.slice(), eol = /\r\n/.test(header) ? '\r\n' : '\n';
 			shown.forEach((entry, index) => {
 				const typed = dialog.inputs[index].value;
@@ -102,7 +102,7 @@ function _rapierFrontmatterOpen() {
 		async onOk(_, next) {
 			if (next === before) return;
 			if (_rapierSourceText() !== before || !await _rapierCommitSourceProjection([_rapierPrefixSuffixDiff(before, next)], 'document.metadata', null, null,
-				_rapierCaptureEditorViewport(), null, () => _rapierSourceText() === before)) showToast('The document changed. Open Metadata again.', 'error');
+				_rapierCaptureEditorViewport(), null, () => _rapierSourceText() === before)) showToast('Document changed. Open Metadata again.', 'error');
 		}});
 	shown.forEach((entry, index) => { if (entry.block) dialog.inputs[index].style.height = 'calc(' + (value(entry).split('\n').length + 1) + 'lh + 20px)'; });
 	if (rapier.access.readOnly) for (const input of dialog.inputs) { input.readOnly = true; if (input.tagName === 'SELECT') input.disabled = true; }

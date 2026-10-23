@@ -40,7 +40,7 @@ async function _rapierEnsurePdfImportPlugin(run, tapped = false) {
     _rapierImportProgress(run, 'Updating PDF reader');
     await plugin.install({signal: run.controller.signal, onProgress: fraction => _rapierImportProgress(run, 'Updating PDF reader', fraction)});
   } else if (!here && waiting?.required && !_rapierUiAndroid()) {
-    if (!tapped && await rapierConfirm({title: 'Update PDF import?', message: 'PDF import needs an update to work with this Rapier \u00b7 ' + _rapierPluginSize(waiting.bytes), confirmLabel: 'update', plain: true}) !== true) { showToast('PDF import waits for the update', 'info'); return false; }
+    if (!tapped && await rapierConfirm({title: 'Update PDF import?', message: 'Needed for this version \u00b7 ' + _rapierPluginSize(waiting.bytes), confirmLabel: 'Update', plain: true}) !== true) { showToast('PDF import needs the update', 'info'); return false; }
     _rapierImportProgress(run, 'Updating PDF reader');
     await plugin.install({signal: run.controller.signal, onProgress: fraction => _rapierImportProgress(run, 'Updating PDF reader', fraction)});
   } else if (!here) {
@@ -48,14 +48,14 @@ async function _rapierEnsurePdfImportPlugin(run, tapped = false) {
       const resources = globalThis.RapierPlatform?.resources;
       if (typeof resources?.ensure !== 'function') throw new Error('Google Play cannot bring the PDF reader on this device.');
       const sized = resources.installMessage?.('pdf', 'prompt') || "Google Play downloads Rapier's plug-ins pack once; they then all work offline.";
-      if (!await rapierConfirm({title: 'PDF import plugin', message: sized + ' Your document stays on this device.', confirmLabel: 'download'})) return false;
+      if (!await rapierConfirm({title: 'Download PDF import?', message: sized + ' Your file stays here.', confirmLabel: 'Download'})) return false;
       _rapierImportProgress(run, 'Downloading PDF reader');
       await resources.ensure('rapier-pdf');
-      if (!await plugin.checkInstalled()) throw new Error('Google Play brought the plug-ins, but the PDF reader in them is not complete. Tap retry.');
+      if (!await plugin.checkInstalled()) throw new Error('PDF reader incomplete. Tap Retry.');
     } else {
-    const accepted = await rapierConfirm({title: 'PDF import plugin',
+    const accepted = await rapierConfirm({title: 'Download PDF import?',
       message: '• ' + (plugin.downloadBytes / 1e6).toFixed(1) + ' MB PDF reader, once.\n• Works offline.\n• Your file stays here.',
-      confirmLabel: 'download'});
+      confirmLabel: 'Download'});
     if (!accepted) return false;
     _rapierImportProgress(run, 'Downloading PDF reader');
     await plugin.install({signal: run.controller.signal, onProgress: fraction => _rapierImportProgress(run, 'Downloading PDF reader', fraction)});
@@ -68,14 +68,14 @@ async function _rapierEnsurePdfImportPlugin(run, tapped = false) {
 }
 
 async function _rapierInstallPdfImportPlugin() {
-  if (_rapierDocumentImport.active) { showToast('Another import is already running', 'info'); return false; }
+  if (_rapierDocumentImport.active) { showToast('Already importing.', 'info'); return false; }
   const run = {controller: new AbortController(), banner: null};
   _rapierDocumentImport.active = run;
   try {
     if (await _rapierEnsurePdfImportPlugin(run, true)) showToast(globalThis.RapierPdfPlugin.state().persistent
-      ? 'PDF import plugin installed' : 'PDF import plugin ready for this session; offline storage is unavailable', 'success');
+      ? 'PDF import installed' : 'PDF import ready until you close Rapier.', 'success');
   } catch (error) {
-    if (error.name !== 'AbortError') showToast('PDF import plugin: ' + String(error.message || error), 'error');
+    if (error.name !== 'AbortError') showToast('Couldn’t install PDF import.', 'error', null, error);
   } finally {
     run.controller.abort(); run.banner?.end();
     if (_rapierDocumentImport.active === run) _rapierDocumentImport.active = null;
@@ -263,8 +263,8 @@ function _rapierAcceptDocumentImport(result) {
   if (result.imageStorage) RapierPreferences.write('imageStorage', result.imageStorage);
   const said = result.importSummary || 'Document imported', warnings = result.warnings || [];
   if (!warnings.length) { showToast(said, 'success'); return; }
-  showToast(said + ' · ' + warnings.length + (warnings.length === 1 ? ' note' : ' notes') + ' on what the copy keeps', 'info',
-    {label: 'SHOW', stay: true, fn: () => _rapierInfoSheetShow('import notes', warnings)});
+  showToast(said + ' · ' + warnings.length + (warnings.length === 1 ? ' note' : ' notes'), 'info',
+    {label: 'Show', stay: true, fn: () => _rapierInfoSheetShow('import notes', warnings)});
 }
 
 async function _rapierOpenImportedFile(file, name = file?.name || '', options = {}) {
@@ -272,7 +272,7 @@ async function _rapierOpenImportedFile(file, name = file?.name || '', options = 
     const result = await _rapierReadImportedDocument(file, name);
     if (!result) return false;
     if (options.expectedMutationStamp && !_rapierMutationStampIsCurrent(options.expectedMutationStamp)) {
-      showToast('The document changed; open the file again', 'info'); return false;
+      showToast('Document changed. Open the file again.', 'info'); return false;
     }
     const bom = result.text.charCodeAt(0) === 0xFEFF;
     if (result.pdfCopy) {
@@ -291,7 +291,7 @@ async function _rapierOpenImportedFile(file, name = file?.name || '', options = 
     if (opened) _rapierAcceptDocumentImport(result);
     return !!opened;
   } catch (error) {
-    if (error.name !== 'AbortError') showToast('Import failed: ' + String(error.message || error), 'error');
+    if (error.name !== 'AbortError') showToast(_rapierErrorWords(error, 'Couldn’t import.'), 'error');
     return false;
   }
 }

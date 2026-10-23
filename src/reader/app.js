@@ -128,7 +128,7 @@ async function readerRenderDocument() {
 		renderer._rapierAnnotateExportBoxPolygons(styled);
 	} catch (error) {
 		try { console.error('[rapier-reader] could not show the document', error); } catch (_) {}
-		readerToast('this document could not be shown', 'error');
+		readerToast('Couldn’t show this document.', 'error');
 		if (generation === reader.render) reader.unshown = true;
 		return false;
 	}
@@ -242,7 +242,7 @@ function readerFenceControl() {
 async function readerCopyFence(button) {
 	const code = button.parentElement.querySelector('pre > code');
 	if (!code) return;
-	try { await navigator.clipboard.writeText((code.textContent || '').replace(/\n$/, '')); } catch (_) { readerToast('could not copy', 'error'); return; }
+	try { await navigator.clipboard.writeText((code.textContent || '').replace(/\n$/, '')); } catch (_) { readerToast('Couldn’t copy.', 'error'); return; }
 	button.setAttribute('data-copied', '');
 	clearTimeout(button._copied);
 	button._copied = setTimeout(() => button.removeAttribute('data-copied'), 1500);
@@ -987,13 +987,13 @@ async function readerEnsurePdf(signal, progress) {
 }
 
 async function readerWithImport(work, what, signal) {
-	if (readerPdf.run) { readerToast('Another PDF is still being read', 'info'); return false; }
+	if (readerPdf.run) { readerToast('Still reading a PDF.', 'info'); return false; }
 	const run = readerPdf.run = {controller: new AbortController()};
 	const cancel = () => run.controller.abort(signal.reason);
 	if (signal?.aborted) cancel(); else signal?.addEventListener('abort', cancel, {once: true});
 	readerRenderPdfRow();
 	try { return await work(run); }
-	catch (error) { if (error?.name !== 'AbortError') readerToast(what + ': ' + String(error?.message || error), 'error'); return false; }
+	catch (error) { if (error?.name !== 'AbortError') (console.error(error), readerToast('Couldn’t open it. Try again.', 'error')); return false; }
 	finally {
 		signal?.removeEventListener('abort', cancel);
 		run.controller.abort();
@@ -1099,7 +1099,7 @@ function readerSpeechFollow(block) {
 function readerSpeechFail(utterance, reason) {
 	if (utterance && (readerSpeech.utterance !== utterance || !readerSpeech.active || readerSpeech.paused)) return;
 	readerStopReading();
-	readerToast(reason === 'no-offline-voice' ? 'read-aloud needs an offline voice: install one for your language in your device\'s text-to-speech settings' : 'read-aloud failed', 'error');
+	readerToast(reason === 'no-offline-voice' ? 'Install an offline voice in text-to-speech settings.' : 'Couldn’t read aloud.', 'error');
 }
 
 function readerAdvanceReading() {
@@ -1154,7 +1154,7 @@ function readerSpeakBlock(block, from) {
 
 function readerReadAloud() {
 	if (!_rapierEmbedFeatureAllowed('readAloud')) return;
-	if (typeof speechSynthesis === 'undefined' || typeof SpeechSynthesisUtterance !== 'function') { readerToast('this browser can’t read aloud', 'error'); return; }
+	if (typeof speechSynthesis === 'undefined' || typeof SpeechSynthesisUtterance !== 'function') { readerToast('This browser can’t read aloud.', 'error'); return; }
 	if (readerSpeech.active) {
 		if (readerSpeech.paused) {
 			readerSpeech.paused = false;
@@ -1164,7 +1164,7 @@ function readerReadAloud() {
 		return;
 	}
 	const blocks = [...$('editor-blocks').children].filter(block => !block.hidden && !block.matches('.rapier-ink-layer,.diagram-block,.reader-open-prompt') && _readTextProjection(block).text.trim());
-	if (!blocks.length) { readerToast('nothing to read', 'error'); return; }
+	if (!blocks.length) { readerToast('Nothing to read.', 'error'); return; }
 	if (!readerSpeech.armed) {
 		readerSpeech.armed = true;
 		const release = () => { if (readerSpeech.active) readerSpeech.follow = false; };
@@ -1211,7 +1211,7 @@ function readerPlainText() {
 }
 
 async function readerCopy(kind) {
-	const markdown = reader.docKind === 'markdown', say = (ok, words) => { readerToast(ok ? words : 'copy failed — try selecting all and copying manually', ok ? 'success' : 'error'); return ok; };
+	const markdown = reader.docKind === 'markdown', say = (ok, words) => { readerToast(ok ? words : 'Couldn’t copy. Select all and copy.', ok ? 'success' : 'error'); return ok; };
 	if (kind === 'markdown') return say(await _rapierWriteTextClipboard(markdown && readerPandoc() ? _rapierPandocDialectExportText(reader.source) : reader.source), markdown ? 'copied Markdown' : 'copied source');
 	if (kind === 'plain' || !markdown) return say(await _rapierWriteTextClipboard(readerPlainText()), 'copied plain text');
 	const root = _rapierRenderModule('render-markdown')._rapierProjectPortableRoot(_rapierRenderModule('render-markdown')._rapierRenderSemanticRoot(reader.source, readerMetadata()), {baseName: readerBaseName()});
@@ -1243,14 +1243,14 @@ async function readerShare() {
 	try {
 		if (navigator.canShare?.({files: [file]})) {
 			await navigator.share({files: [file], title: reader.filename});
-			readerToast('shared ' + reader.filename, 'success');
+			readerToast('Shared ' + reader.filename, 'success');
 			return true;
 		}
 	} catch (error) {
 		if (error?.name === 'AbortError') return false;
 	}
 	readerDownload(blob, reader.filename);
-	readerToast('share unavailable — saved ' + reader.filename + ' instead', 'info');
+	readerToast('Saved ' + reader.filename, 'info');
 	return true;
 }
 
@@ -1275,7 +1275,7 @@ function readerPrintPrepare() {
 	}, {once: true});
 }
 function readerPrint() {
-	try { print(); } catch (_) { readerToast('printing is unavailable', 'error'); }
+	try { print(); } catch (_) { readerToast('Printing isn’t available.', 'error'); }
 }
 
 function readerOpenSheet(overlay) {
@@ -1381,7 +1381,7 @@ async function readerOpenFile(file, opening = {generation: reader.generation}) {
 		const record = await RapierTextCodec.readDocumentRecord(file), text = (record.bom ? '\ufeff' : '') + record.text;
 		const carried = /\.html?$/i.test(file.name) ? await readerCarriedDocument(text, file.name) : null;
 		return await readerCommitOpen(carried ? carried.source : text, carried ? carried.filename : file.name, opening, carried?.kind);
-	} catch (error) { if (error?.code !== 'document_unshowable') readerToast(String(error?.message || error), 'error'); return false; }
+	} catch (error) { if (error?.code !== 'document_unshowable') (console.error(error), readerToast('Couldn’t open this file.', 'error')); return false; }
 }
 
 async function readerOpenLicenses() {
@@ -1393,7 +1393,7 @@ async function readerOpenLicenses() {
 		}
 		readerCloseDialog($('settings-overlay'));
 		readerOpenDialog($('licenses-overlay'), '.licenses-panel');
-	} catch (error) { readerToast('Could not open the licenses: ' + String(error?.message || error), 'error'); }
+	} catch (error) { (console.error(error), readerToast('Couldn’t open the licenses.', 'error')); }
 }
 
 // Settings gives way to the sheet and comes back when the licenses close.

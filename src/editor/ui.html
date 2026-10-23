@@ -10,7 +10,7 @@
 </div>
 
 <div class="embed-refused" id="embed-refused" hidden role="alert"><template data-rapier-later>
-	<strong>Rapier could not open in this frame.</strong>
+	<strong>Rapier can’t open in this frame.</strong>
 	<span id="embed-refused-message">A site that hosts Rapier frames rapier.html?embed=1 and connects to it.</span>
 </template></div>
 
@@ -2406,11 +2406,11 @@ SOFTWARE.</pre>
 				<!-- The navigator's own close glyph, taken as the sheet opens (notes/notes.js _rapierNotesMarkupGlyphs). -->
 				<button type="button" class="navigator-close" data-action="notes-import-close" aria-label="close import"></button>
 			</div>
-			<template data-rapier-later><p class="export-choice__description" id="notes-import-lead" style="margin:0 0 var(--space-3)">pick the app you’re coming from, then the files it exported. nothing already in your notes is touched.</p>
+			<template data-rapier-later><p class="export-choice__description" id="notes-import-lead" style="margin:0 0 var(--space-3)">pick the app, then the files it exported. your notes stay.</p>
 			<div class="export-choice-list export-choice-list--compact" id="notes-import-choices">
 				<button type="button" class="export-choice export-choice--compact" data-action="notes-import-pick" data-value="keep"><span class="export-choice__label">google keep</span><span class="export-choice__description">choose your Google Takeout zip, or all the files in its Keep folder</span></button>
-				<button type="button" class="export-choice export-choice--compact" data-action="notes-import-pick" data-value="rapier"><span class="export-choice__label">add a rapier backup</span><span class="export-choice__description">bring its notes into this folder, keeping the notes already here</span></button>
-				<button type="button" class="export-choice export-choice--compact" data-action="notes-import-pick" data-value="restore"><span class="export-choice__label">restore an empty folder</span><span class="export-choice__description">one backup zip, or all its numbered parts: every file and the original folder settings, exactly</span></button>
+				<button type="button" class="export-choice export-choice--compact" data-action="notes-import-pick" data-value="rapier"><span class="export-choice__label">add a rapier backup</span><span class="export-choice__description">adds its notes beside yours</span></button>
+				<button type="button" class="export-choice export-choice--compact" data-action="notes-import-pick" data-value="restore"><span class="export-choice__label">restore an empty folder</span><span class="export-choice__description">one backup zip, or all its numbered parts</span></button>
 				<button type="button" class="export-choice export-choice--compact" data-action="notes-import-pick" data-value="obsidian"><span class="export-choice__label">obsidian</span><span class="export-choice__description">your vault as a zip, or its .md files and pictures</span></button>
 				<button type="button" class="export-choice export-choice--compact" data-action="notes-import-pick" data-value="logseq"><span class="export-choice__label">logseq</span><span class="export-choice__description">your graph folder as a zip, or its pages</span></button>
 				<button type="button" class="export-choice export-choice--compact" data-action="notes-import-pick" data-value="roam"><span class="export-choice__label">roam research</span><span class="export-choice__description">the json export</span></button>

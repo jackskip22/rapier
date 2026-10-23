@@ -68,7 +68,7 @@ export function createWaterWorker({postMessage}={}){
   }catch(error){restored?.surface.dispose();throw error;}
  };
  const lostCapture=()=>waterCapture.on?{capture:waterCapture.rows.slice()}:{};
- const watchDevice=next=>{if(device===next)return;device=next;next.lost.then(()=>{if(!closed&&device===next)postMessage({failure:{name:'Error',code:'WATER_DEVICE_LOST',message:'The GPU stopped. The last published painting is safe; reopen Water to continue.'},...lostCapture()});});};
+ const watchDevice=next=>{if(device===next)return;device=next;next.lost.then(()=>{if(!closed&&device===next)postMessage({failure:{name:'Error',code:'WATER_DEVICE_LOST',message:'Watercolor stopped. Painting saved. Reopen to continue.'},...lostCapture()});});};
  const releaseDisplay=(display,keepShown=false)=>{if(display){if(waterCapture.on)waterNote({ev:'release',generation:display.generation,keepShown});display.context.unconfigure();display.canvas.width=display.canvas.height=0;display.gpu?._reservePresentation(keepShown?display.shown?.bytes||0:0);}};
  const dropDisplay=id=>{releaseDisplay(displays.get(id));displays.delete(id);};
  const reserveDisplay=(bound,gpu,bytes)=>{gpu._reservePresentation(bytes);if(bound.gpu!==gpu)bound.gpu?._reservePresentation(0);bound.gpu=gpu;};

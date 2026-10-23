@@ -8,7 +8,7 @@ const _rapierEmbeddedImages = (() => {
   const JXL_PROBE = '/woAELASCAgQAJwCSxibnHGEAziAAzggSsA5BQEAIESACBABIkDk/5F7+h5aZ1dVVVUlSZIQUHd3d3d3////v1VvZmZmBv7fv+e/h8acc661z71JkiQEVFVVVVVV////z72vu7u7G/7fv+e/h8acc661z71JkiQEVFVVVVVV////z72vu7u7G/7fv+e/h8acc661z71JkiQEVFVVVVVV////z72vu7u7+wIiAHhAelzgYWg=';
   let jxlReadable = false, jxlProbeSettled = false, damagedWarned = false;
   const here = () => globalThis.RapierPlatform?.environment.here || 'This browser';
-  const jxlRemedy = () => globalThis.RapierPlatform?.environment.updateEngine || 'Use a browser that supports JPEG XL.';
+  const jxlRemedy = () => globalThis.RapierPlatform?.environment.updateEngine || 'Try another browser.';
   const jxlProbed = (async () => {
     try {
       const image = new Image();
@@ -363,12 +363,12 @@ const _rapierEmbeddedImages = (() => {
     const told = String(RapierPreferences.read('jxlNoticeShown') || '').split(' ').filter(Boolean);
     if (told.includes(mark)) return;
     try { RapierPreferences.write('jxlNoticeShown', [...told.slice(-31), mark].join(' ')); } catch (_) {}
-    showToast(here() + ' cannot show JPEG XL pictures. ' + jxlRemedy() + ' Your pictures are unchanged.', 'info');
+    showToast(here() + ' can’t show JPEG XL. ' + jxlRemedy(), 'info');
   }
   function notifyDamaged() {
     if (damagedWarned) return;
     damagedWarned = true;
-    showToast('A JPEG XL picture in this document is damaged and cannot be shown. Its bytes are kept unchanged.', 'info');
+    showToast('A picture is damaged and can’t be shown.', 'info');
   }
 
   async function prepare(normalized, {signal} = {}) {
@@ -381,10 +381,10 @@ const _rapierEmbeddedImages = (() => {
   }
   async function portable(source, id, {png = false} = {}) {
     const row = await rasterRecord(source, id, indexForSource(source));
-    if (row.damaged) throw Object.assign(new Error('This JPEG XL picture is damaged and cannot be converted. Its bytes are kept unchanged.'), {code: 'IMAGE_DAMAGED'});
+    if (row.damaged) throw Object.assign(new Error('This picture is damaged and can’t be converted.'), {code: 'IMAGE_DAMAGED'});
     if (!png && !row.animated && assets.dataImage(row.signature)?.codec === 'image/jxl')
       return smallestPortable({...row, type: 'image/jxl', url: row.signature});
-    if (row.undisplayable) throw Object.assign(new Error(here() + ' cannot read JPEG XL, so this picture cannot be converted. ' + jxlRemedy() + ' The picture is unchanged.'), {code: 'IMAGE_JXL_UNREADABLE'});
+    if (row.undisplayable) throw Object.assign(new Error(here() + ' can’t read JPEG XL. ' + jxlRemedy()), {code: 'IMAGE_JXL_UNREADABLE'});
     const nested = nestedJxl(row);
     if (nested) return portableSvg(row, nested);
     if (row.type === 'image/png' || !png && row.type !== 'image/jxl') return row;
@@ -402,7 +402,7 @@ const _rapierEmbeddedImages = (() => {
   }
   async function portableSvg(row, text) {
     await jxlProbed;
-    if (!jxlDisplayable()) throw Object.assign(new Error(here() + ' cannot read JPEG XL, so the paint inside this drawing cannot be converted. ' + jxlRemedy() + ' The drawing is unchanged.'), {code: 'IMAGE_JXL_UNREADABLE'});
+    if (!jxlDisplayable()) throw Object.assign(new Error(here() + ' can’t read JPEG XL. ' + jxlRemedy()), {code: 'IMAGE_JXL_UNREADABLE'});
     const converted = new Map();
     for (const match of text.matchAll(NESTED_JXL_RE)) {
       const url = match[3];
@@ -595,7 +595,7 @@ const _rapierEmbeddedImages = (() => {
         if (error.code === 'IMAGE_CANCELLED' || error.code === 'IMAGE_VANISHED' || error.name === 'AbortError') { image.removeAttribute('data-rapier-asset-state'); schedule(); return; }
         image.dataset.rapierAssetState = 'error';
         image.setAttribute('aria-description', 'Embedded image unavailable: ' + error.message);
-        if (!warned) { warned = true; showToast('An embedded image could not be displayed. Its saved bytes are intact.', 'error'); }
+        if (!warned) { warned = true; showToast('Couldn’t show a picture. It’s still saved.', 'error'); }
       } finally { if (revealing.get(image) === request) revealing.delete(image); }
     })();
     return request.done;
@@ -778,7 +778,7 @@ const _rapierEmbeddedImages = (() => {
         } catch (_) {}
       }
     }
-    if (!result && row.type === 'image/jxl') throw Object.assign(new Error(here() + ' cannot read JPEG XL, so this picture cannot be converted. ' + jxlRemedy() + ' The picture is unchanged.'), {code: 'IMAGE_JXL_UNREADABLE'});
+    if (!result && row.type === 'image/jxl') throw Object.assign(new Error(here() + ' can’t read JPEG XL. ' + jxlRemedy()), {code: 'IMAGE_JXL_UNREADABLE'});
     if (!result) result = row;
     const entry = {value: result, used: ++clock, cost: result.url === key ? 0 : result.url.length};
     portableCache.delete(key);
@@ -809,7 +809,7 @@ const _rapierEmbeddedImages = (() => {
         const named = error => { if (error && typeof error === 'object' && /^IMAGE_/.test(error.code || '')) Object.assign(error, {picture: imageKey(image) || '', alt: image.getAttribute('alt') || ''}); return error; };
         if (jxl && !row.damaged) shown = await smallestPortable(assets.dataImage(row.signature)?.codec === 'image/jxl' ? {...row, type: 'image/jxl', url: row.signature} : row).catch(error => { throw named(error); });
         else if (row.undisplayable || row.damaged) {
-          if (jxl) throw named(Object.assign(new Error(row.damaged ? 'This JPEG XL picture is damaged and cannot be converted. Its bytes are kept unchanged.' : here() + ' cannot read JPEG XL, so this picture cannot be converted. ' + jxlRemedy() + ' The picture is unchanged.'), {code: row.damaged ? 'IMAGE_DAMAGED' : 'IMAGE_JXL_UNREADABLE'}));
+          if (jxl) throw named(Object.assign(new Error(row.damaged ? 'This picture is damaged and can’t be converted.' : here() + ' can’t read JPEG XL. ' + jxlRemedy()), {code: row.damaged ? 'IMAGE_DAMAGED' : 'IMAGE_JXL_UNREADABLE'}));
           shown = row.animated ? row : {...row, url: row.signature};
         } else shown = row;
         resolved.set(id, shown);
@@ -1116,7 +1116,7 @@ const _rapierEmbeddedImages = (() => {
         normalized = {...normalized, hostAsset: normalized.asset, asset: null};
       } else if (answer?.code && !['asset_not_granted', 'asset_rejected'].includes(answer.code)) {
         _rapierEmbedPost('protocol-error', {code: answer.code});
-        showToast('Host picture storage was unavailable. The picture is kept in the document.', 'info');
+        showToast('Picture kept in the document.', 'info');
       }
     }
     if (normalized.asset) {
@@ -1208,7 +1208,7 @@ const _rapierEmbeddedImages = (() => {
       const posters = await _rapierDocumentObjects.posterSplices(source, splices, suffix ? raw + '\n\n' + suffix : appended.source);
       if (!_rapierMutationStampIsCurrent(stamp) || source !== _rapierSourceText()) return false;
       if (posters) splices.unshift(...posters);
-      else showToast('No still image could be made for this animation; it is kept without one', 'info');
+      else showToast('Couldn’t make a still. Animation kept.', 'info');
     }
     primed = row || null;
     const revealAt = text.indexOf(raw);
@@ -1276,7 +1276,7 @@ const _rapierEmbeddedImages = (() => {
     const id = image?.getAttribute('data-rapier-asset') || image?.getAttribute('data-rapier-image-url') ||
       record.image.reference || record.image.destination || '';
     const row = recordFor(id, documentIndex().index);
-    if (!row) { showToast('This picture is not stored in the document, so it cannot be downloaded', 'info'); return; }
+    if (!row) { showToast('This picture isn’t saved in the document.', 'info'); return; }
     let bytes;
     let mime = row.codec || assets.dataImage(row.url)?.codec || '';
     try {
@@ -1290,7 +1290,7 @@ const _rapierEmbeddedImages = (() => {
         if (!text) throw new Error('Choose a valid SVG image.');
         bytes = new TextEncoder().encode(text);
       }
-    } catch (error) { showToast('Picture could not be read: ' + String(error.message || error), 'error'); return; }
+    } catch (error) { showToast('Couldn’t read the picture.', 'error', null, error); return; }
     const ext = mime === 'image/jxl' ? 'jxl' : mime === 'image/svg+xml' ? 'svg' : mime === 'image/jpeg' ? 'jpg' :
       mime === 'image/webp' ? 'webp' : mime === 'image/gif' ? 'gif' : 'png';
     let position = 0;

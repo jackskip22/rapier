@@ -31,13 +31,13 @@ async function _rapierPartReady(id, said = '') {
 	}
 	catch (error) {
 		if (error?.cause?.code === 'part_not_carried') void _rapierFullEditorOnly(said || (id === 'drawing' ? 'Draw' : RapierParts.pin(id)?.label || id));
-		else showToast(String(error?.message || error), 'error');
+		else showToast(_rapierErrorWords(error, 'Couldn’t load that part of Rapier.'), 'error');
 		return false;
 	}
 }
 async function _rapierFullEditorOnly(feature) {
-	const answer = await rapierConfirm({title: feature, plain: true, confirmLabel: 'open rapier.website',
-		message: 'This file carries the editor without ' + feature + '. Open the file at rapier.website to use it.'});
+	const answer = await rapierConfirm({title: feature, plain: true, confirmLabel: 'Open rapier.website',
+		message: 'This file has no ' + feature + '. Open it at rapier.website.'});
 	if (answer === true) window.open('https://rapier.website/', '_blank', 'noopener');
 }
 function _rapierSealedMark() {
@@ -53,13 +53,13 @@ async function _rapierPartUpdateRun(id, said = '') {
 	const follow = ({detail: {id: part, status, progress}}) => { if (part === id && status === 'downloading') popup.set(progress > 0 ? progress : null, 'Updating ' + noun + (progress > 0 ? ' \u00b7 ' + Math.floor(progress * 100) + '%' : '')); };
 	addEventListener('rapier:part', follow);
 	try { await RapierParts.update(id); return true; }
-	catch (error) { showToast(String(error?.message || error), 'error'); return false; }
+	catch (error) { showToast(_rapierErrorWords(error, 'Couldn’t update.'), 'error'); return false; }
 	finally { removeEventListener('rapier:part', follow); popup.end(); }
 }
 async function _rapierPartUpdateAsk(id, said = '') {
 	const noun = said || RapierParts.pin(id)?.label || id, update = RapierParts.status(id).update;
-	const answer = await rapierConfirm({title: 'Update ' + noun + '?', message: noun + ' needs an update to work with this Rapier \u00b7 ' + _rapierPluginSize(update.bytes), confirmLabel: 'update', plain: true});
-	if (answer !== true) { showToast(noun + ' waits for the update', 'info'); return false; }
+	const answer = await rapierConfirm({title: 'Update ' + noun + '?', message: 'Needed for this version \u00b7 ' + _rapierPluginSize(update.bytes), confirmLabel: 'Update', plain: true});
+	if (answer !== true) { showToast(noun + ' needs the update', 'info'); return false; }
 	return await _rapierPartUpdateRun(id, said);
 }
 function _rapierOpenDrawPart() {
@@ -145,7 +145,7 @@ async function _rapierGalleryRowsCheck() {
 async function _rapierGalleryInstall(id) {
 	if (!await _rapierPartReady('presets', RAPIER_GALLERY_ROWS.find(row => row.id === id)?.noun)) return;
 	try { await _rapierComposerPart.gallery[_rapierGalleryRows.get(id)?.update ? 'update' : 'install'](id); }
-	catch (error) { if (!error?.canceled) showToast(String(error?.message || error), 'error'); }
+	catch (error) { if (!error?.canceled) showToast(_rapierErrorWords(error, 'Couldn’t download.'), 'error'); }
 	await _rapierGalleryRowsCheck();
 }
 function _rapierGalleryRowsBuild() {

@@ -168,7 +168,7 @@ async function _rapierAgentUndoSpell() {
 			_rapierAgentSpell.undo = acts.slice(index).reverse();
 			_rapierAgentSpellFinished();
 			showToast('Finish typing, then Undo again.', 'info');
-		} else showToast('This change could not be undone.', 'info');
+		} else showToast('Couldn’t undo this change.', 'info');
 		break;
 	}
 	globalThis.RapierChanges?.schedule();

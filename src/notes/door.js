@@ -25,7 +25,7 @@ const _rapierNotesDoor = (() => {
 		_rapierPartWait('notes').catch(error => {
 			_rapierNotesStartClass(false);
 			document.querySelector('[data-rapier-early-part="notes"]')?.remove();
-			showToast(String(error?.message || error), 'error');
+			showToast('Couldn’t open Notes.', 'error', null, error);
 		});
 	}
 	for (const name of ['rapierNotesStart', 'rapierNotesWidgetOpen', 'rapierNotesReceiveShares', 'rapierNotesReceiveReminderActions']) {

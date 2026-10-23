@@ -1213,7 +1213,7 @@ function _rapierHandleTableAction(event, button) {
 	const editDiv = wrapper.querySelector(':scope > .block-edit');
 	if (button.dataset.tableAction === 'copy') {
 		_rapierCopyTable(block.id, button.dataset.tableFormat).catch(() => {
-			showToast('table could not be copied', 'error');
+			showToast('Couldn’t copy the table.', 'error');
 		});
 		return;
 	}
@@ -1478,7 +1478,7 @@ function _tableApply(blockId, newRaw, caretTarget) {
 
 async function _rapierCopyTable(blockId, format) {
 	if (_rapierPersistenceCaptureBlocked()) {
-		showToast('finish the current edit, then copy the table', 'info');
+		showToast('Finish your edit, then copy again.', 'info');
 		return false;
 	}
 	const raw = _tableRawForCopy(blockId);
@@ -1490,7 +1490,7 @@ async function _rapierCopyTable(blockId, format) {
 		const cells = info.lines.filter((line, index) => index !== info.sepIdx).map(_tableSplitRow).filter(Boolean);
 		const tsv = cells.map(row => row.map(value => String(value || '').replace(/[\t\r\n]+/g, ' ').trim()).join('\t')).join('\n');
 		const copied = await _rapierWriteFormattedClipboard(renderBlock(raw), tsv, raw);
-		showToast(copied ? 'table copied' : 'table could not be copied', copied ? 'success' : 'error');
+		showToast(copied ? 'Table copied' : 'Couldn’t copy the table.', copied ? 'success' : 'error');
 		return copied;
 	}
 	if (format === 'csv' || format === 'tsv') {
@@ -1517,7 +1517,7 @@ async function _rapierCopyTable(blockId, format) {
 	}
 	const copied = await _rapierWriteTextClipboard(text);
 	if (copied === null) return false;
-	showToast(copied ? 'table copied as ' + label : 'table could not be copied', copied ? 'success' : 'error');
+	showToast(copied ? 'Table copied as ' + label : 'Couldn’t copy the table.', copied ? 'success' : 'error');
 	return copied;
 }
 
@@ -1533,7 +1533,7 @@ function _tableSetAlignment(blockId, alignment, position) {
 		? Math.max(0, Math.min(fallback, position.cellIndex)) : 0;
 	const next = Array.from({ length: info.cols }, (_unused, index) => info.alignments[index] || '');
 	next[activeCol] = next[activeCol] === alignment ? '' : alignment;
-	const lines = info.lines.slice();
+	const lines = String(raw).split('\n');
 	let seen = -1;
 	const line = lines[info.sepIdx].replace(/:?-+:?/g, marker => {
 		if (++seen !== activeCol) return marker;
@@ -1541,7 +1541,7 @@ function _tableSetAlignment(blockId, alignment, position) {
 		return next[activeCol] === 'center' ? ':' + dashes + ':' : next[activeCol] === 'left' ? ':' + dashes
 			: next[activeCol] === 'right' ? dashes + ':' : dashes;
 	});
-	lines[info.sepIdx] = seen >= activeCol ? line : _tableSeparator(info.cols, next);
+	lines[info.sepIdx] = seen >= activeCol ? line : _tableSeparator(info.cols, next) + (/\r$/.test(lines[info.sepIdx]) ? '\r' : '');
 	_tableApply(blockId, lines.join('\n'), {
 		rowIndex: Math.max(0, Number(position?.rowIndex) || 0),
 		cellIndex: activeCol,

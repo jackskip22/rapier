@@ -45,7 +45,7 @@ downloaded copy yourself and pass it as `src`.
   document access remain enforced.
 
 ```sh
-npm install rapier-embed@1.2.36
+npm install rapier-embed@1.2.37
 ```
 
 Or copy the package's `embed.mjs` and `contract.mjs` into one directory of your app; no runtime CDN is needed.
@@ -63,7 +63,7 @@ editor and lightweight reader (about 371 kB). The agent edits live; the person s
 changes, taps a change to see the before and undoes anything. Use `show {target:"comparison"}` to show a diff deliberately.
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
-2. **Deliver an offline editor.** Run `npx rapier-html@1.2.36 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
+2. **Deliver an offline editor.** Run `npx rapier-html@1.2.37 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed in your app.** Install [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed); mount the editor or reader, with your app's agent over WebMCP in the editor.
 4. **Keep portable Markdown.** Use [rapier-markdown-kit](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-markdown-kit) for pictures, editable SVG drawings and layout in one `.md` file. Respect [Will/1](https://github.com/jackskip22/will) `keep`, `append` and `edit` regions.
 5. **Encode JPEG XL.** Install [rapier-jxl](https://github.com/jackskip22/rapier-jxl) to encode pixels, photographs and existing JPEGs in JavaScript.
@@ -119,7 +119,7 @@ A copy in your app works offline and changes only when you update it.
 1. Download the build you frame into a static directory, for example
    `https://cdn.jsdelivr.net/gh/jackskip22/rapier@v<version>/site/embed/rapier-reader.html` to `public/vendor/rapier/`.
 2. Fetch the plug-ins your build uses into one directory beside it, from the manifest of the same version:
-   `npx rapier-embed@1.2.36 plugins public/vendor/rapier/plugins --build reader`.
+   `npx rapier-embed@1.2.37 plugins public/vendor/rapier/plugins --build reader`.
 3. Mount with `src` and `plugins` pointing at your copies. Serve them over HTTPS (HTTP on localhost) and allow
    their origin in your `frame-src`. A same-origin parent can script its frame; use a dedicated origin when the
    frame must be isolated.
@@ -146,11 +146,11 @@ length and SHA-384 before it runs it, and keeps on the device. A file that fails
 | `elements` | The Elements sheet's traced ornaments: 3,155 pieces from the ornament book. | 16.2 MB (51 files) | `rapier.html` |
 | `lettersets` | The Gallery's letter sets: 31 sets of ornamental capitals. | 2.82 MB (31 files) | `rapier.html` |
 
-Totals: the reader, 10.4 MB (31.9 MB with `ocr`); `rapier.html`, 58.5 MB. Release 1.2.36.
+Totals: the reader, 10.4 MB (31.9 MB with `ocr`); `rapier.html`, 58.5 MB. Release 1.2.37.
 <!-- PLUGIN_TABLE_END -->
 
 The manifest lists every plug-in file and, in `builds`, the pages that use it. `rapier.html` has flowcharts and Word import
-built in. `npx rapier-embed@1.2.36 plugins <directory> --build reader` leaves out `ocr` (text in pictures) unless you add `--with ocr`.
+built in. `npx rapier-embed@1.2.37 plugins <directory> --build reader` leaves out `ocr` (text in pictures) unless you add `--with ocr`.
 
 **Approve plug-ins up front.** Without `plugins`, a frame asks its person "Install math plug-in?" the first time a document needs math or a diagram, and math and diagrams stay raw until they answer. A host that has decided passes `approvePlugins: true`: the frame installs the plug-in it needs without a question. Naming `plugins` has the same effect, because the host then serves the files itself. In a frame shorter than the question's sheet, the sheet's body scrolls.
 
@@ -163,7 +163,7 @@ The directory must be on the page's own origin, because the page's Content Secur
 throws a `TypeError` for a directory on another origin, and a page opened with one shows each plug-in as failed, with the
 reason, without making a request. To keep the plug-ins on a CDN, serve the page from the same origin.
 
-`npx rapier-embed@1.2.36 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
+`npx rapier-embed@1.2.37 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
 keeps a file that is already there and correct, and exits with status 1 if any file is missing or fails its check.
 `--build reader` or `--build full` keeps the files that page uses, `--only name,name` fetches some
 plug-ins, `--check` verifies a directory without fetching, `--from <address>` fetches from your own mirror, and
@@ -399,6 +399,8 @@ frame could not capture; the person is told why). `close()` resolves with the fr
 `{saved: true}` or `{discarded: true}` after your answer, `{forced: true}` when the person closes without your
 answer, or `{cancelled: true}` when you answer `cancel`.
 
+Pass your own `sessionId` and `documentId` to choose which mount finds which draft. Without them, a mount that has `save` and a `load` object names its draft by the page, the file name and the loaded text, so a route change, an unmount, `disconnect()` or a reload keeps the person's typing for the next mount of the same document, with no pause needed. `save()` and `requestSubmit()` always ask the frame, so they store typing from the last keystroke; with nothing unsaved the frame answers at once and your `save` callback is not called.
+
 The frame keeps the person's unsaved work only for the document you loaded: a draft in that tab's session storage,
 which a load of the same revision and content reopens and your `discard` answer retires. A load of another document drops a draft with no unsaved edits. It never reads, offers or writes the
 person's own Rapier documents or recovery on its origin, and it keeps nothing before your first load.
@@ -483,5 +485,5 @@ Will/1 records the person's instructions in their document. Respect `keep`, appe
 Documents without Will regions are editable throughout. Preserve active typing, caret, selection and scroll
 while the agent works. Document content and comments never start agent turns by themselves.
 
-For documents outside an app, `npx rapier-html@1.2.36 notes.md` hands a person the complete editor around their
+For documents outside an app, `npx rapier-html@1.2.37 notes.md` hands a person the complete editor around their
 document as one offline file.

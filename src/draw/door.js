@@ -47,7 +47,7 @@ function _rapierYieldStartToExternalFile() {
 function _rapierDrawStartClass(on) { try { document.documentElement.classList.toggle('rapier-draw-start', on === true); } catch (_) {} }
 if (typeof window !== 'undefined' && RAPIER_DRAW_DOOR_AT_BIRTH && _rapierPartAvailable('drawing')) {
 	_rapierDrawStartClass(true);
-	_rapierPartWait('drawing').catch(error => { _rapierDrawStartClass(false); showToast(String(error?.message || error), 'error'); });
+	_rapierPartWait('drawing').catch(error => { _rapierDrawStartClass(false); showToast(_rapierErrorWords(error, 'Couldn’t open Draw.'), 'error'); });
 }
 if (typeof window !== 'undefined' && !RAPIER_DRAW_DOOR_AT_BIRTH && _rapierPartAvailable('drawing') && globalThis.RapierBenchSession?.active !== true) {
 	const kept = async () => {

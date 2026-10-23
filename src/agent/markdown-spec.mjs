@@ -46,7 +46,7 @@ const RAPIER_HIGHLIGHT_COLORS = Object.freeze({
 	purple: '🟣',
 });
 const RAPIER_MARKDOWN_SPEC = Object.freeze({
-	options: Object.freeze({ html: true, linkify: true, typographer: false }),
+	options: Object.freeze({ html: true, linkify: true, typographer: false, maxNesting: 1000 }),
 	linkify: Object.freeze({ fuzzyLink: true }),
 	core: Object.freeze({ retainReferenceDefinitions: true }),
 	highlights: RAPIER_HIGHLIGHT_COLORS,
@@ -158,6 +158,20 @@ function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 	}
 
 	tuneMarkdownEngine(instance);
+	if (!instance.__rapierDeepFlat) {
+		instance.block.ruler.before('table', 'rapier_deep_flat', (state, startLine, endLine, silent) => {
+			if (silent || state.level < state.md.options.maxNesting - 2) return false;
+			const content = state.getLines(startLine, endLine, state.blkIndent, false).trim();
+			if (!content) return false;
+			state.push('paragraph_open', 'p', 1).map = [startLine, endLine];
+			const inline = state.push('inline', '', 0);
+			inline.content = content; inline.map = [startLine, endLine]; inline.children = [];
+			state.push('paragraph_close', 'p', -1);
+			state.line = endLine;
+			return true;
+		});
+		instance.__rapierDeepFlat = true;
+	}
 	for (const pluginSpec of pluginSpecs) {
 		const plugin = root[pluginSpec.global];
 		if (pluginSpec.options) instance.use(plugin, pluginSpec.options);

@@ -1,46 +1,46 @@
 {
   "schema": "rapier-linux/1",
-  "version": "1.2.36",
+  "version": "1.2.37",
   "file": "rapier-linux",
-  "bytes": 44935920,
-  "sha256": "727c525fd0e4510521be06aef21ad3e1725eb22be8ee6d2904750405314f9597",
-  "payload": "32c0ddb8ef38370da99c3c42fcf169b54ee1aa328982f723ab77bd07a8cef450",
-  "pageCertificate": "d52239292976e1a04eea7d127546567fc537efbcd7f3287aaaba7e1fea94e6aa",
+  "bytes": 44936176,
+  "sha256": "bcd9a75366e0474e0e3ee67d5b9ced13bf3a35046c192c34ef5389835dad8710",
+  "payload": "19a5e23e4b7c286051a39e14fb6737ff392bee9656c7ba666bfcb6b45f218621",
+  "pageCertificate": "97cf445a743633370ea0f6af20eb99abd6631a30c7f792f130237dfd6a59d560",
   "page": [
     [
       "rapier.html",
-      1809498,
-      "78433e2b04b99aefdbd6179752d600da7e241e5d1b960b318cd0fbdf274bed81"
+      1813817,
+      "e27bedc4b61d86434b76ec38920abe8cc7aa61fb4658acb9f69743508b158afb"
     ],
     [
-      "parts/rapier-document-99b3477b3d64e0a5.txt",
-      903385,
-      "99b3477b3d64e0a552e6604b0d9e8c4b68cf1e22b2f5dcd37164eba13054c2bc"
+      "parts/rapier-document-bde878b37aecc855.txt",
+      903371,
+      "bde878b37aecc8559e8daa32ad65f2734cc81bb53edcf399fdb57eb87dbed180"
     ],
     [
-      "parts/rapier-presets-7c344240d503c75b.txt",
-      252250,
-      "7c344240d503c75b72381ff768474ff8a69ae99a96b6aa0a0da6ddd42a443d69"
+      "parts/rapier-presets-22e6181b6ef284ce.txt",
+      252243,
+      "22e6181b6ef284ce72abd01ebe8914a0d39133cef903b21e43890d541e0fdaef"
     ],
     [
-      "parts/rapier-drawing-5c77c93295b32f7c.txt",
-      343463,
-      "5c77c93295b32f7c1b01d63d31a42dfb158f6342174a09660784a8dc1c35b7dd"
+      "parts/rapier-drawing-7e9293464517e9b4.txt",
+      342700,
+      "7e9293464517e9b43b48b7046631042272d24463517bf7399fe2cf036f00a4d5"
     ],
     [
-      "parts/rapier-jxl-230fb50b7b164a27.txt",
-      18808,
-      "230fb50b7b164a2733001afc9f0ad30b797783986833389394b40ca1cf241470"
+      "parts/rapier-jxl-a39d956348889277.txt",
+      18780,
+      "a39d9563488892777b89dd879f21dea167dc510d04ad282e319d72b0bd78d5d8"
     ],
     [
-      "parts/rapier-jxlcomplete-8a043d8ff675d8d2.txt",
-      156621,
-      "8a043d8ff675d8d2e0be5390fc42d373b3f3e440a7019115700b4dac2ad1ad81"
+      "parts/rapier-jxlcomplete-96a39166d18d1b87.txt",
+      156523,
+      "96a39166d18d1b8767a1b1943ec387eacb24deccf2c2e22812d85d37d5213a90"
     ],
     [
-      "parts/rapier-notes-c8f88562f4984fc1.txt",
-      391134,
-      "c8f88562f4984fc136f9514480aba30a0b87a41a924705c2f8350f3dac246178"
+      "parts/rapier-notes-826c1905059e6f74.txt",
+      389517,
+      "826c1905059e6f742dc8127bbc6339e71aed590ec856d26830d8e0c7e5a344e0"
     ]
   ],
   "resources": [

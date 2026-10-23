@@ -30,7 +30,7 @@ function _rapierAttachmentsDownload(file, name) {
 	const url = URL.createObjectURL(file), a = document.createElement('a');
 	a.href = url; a.download = name; a.rel = 'noopener'; a.hidden = true;
 	document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000);
-	showToast('Download started. Open the saved file with an app on your device.', 'info');
+	showToast('Download started', 'info');
 }
 async function _rapierAttachmentsOpen(name) {
 	if (!await _rapierNotesUnlock()) return;
@@ -45,7 +45,7 @@ async function _rapierAttachmentsOpen(name) {
 	const d = _rapierAttachmentsDialog(name), status = _rapierNotesEl('p', '', 'Preparing the file on this device.'); d.appendChild(status);
 	try {
 		const source = await _rapierNotesStore.readAttachment(name);
-		if (!source) throw new Error('This file disappeared. Its link was kept; restore the file from a backup.');
+		if (!source) throw new Error('File missing. Restore it from a backup.');
 		if (!d.open) return;
 		const file = new File([source], name, {type: _rapierAttachmentsModel().attachmentMime(name)});
 		let share = false;
@@ -53,20 +53,20 @@ async function _rapierAttachmentsOpen(name) {
 		status.textContent = share ? 'Choose an app through your device’s share menu, or save a copy to open from Files. The original stays in Notes.' : _rapierNotesWords().Device + ' cannot hand this file directly to an app. Save a copy, then open it from Files. The original stays in Notes.';
 		if (share) d.appendChild(_rapierAttachmentsButton('Open or share', async () => {
 			try { await navigator.share({files: [file], title: name}); d.close(); }
-			catch (error) { if (error?.name !== 'AbortError') throw new Error('The device did not accept the file. Use Save file instead.'); }
+			catch (error) { if (error?.name !== 'AbortError') throw new Error('Couldn’t open. Use Save file.'); }
 		}));
 		d.appendChild(_rapierAttachmentsButton('Save file', () => _rapierAttachmentsDownload(file, name)));
 	} catch (error) { if (d.open) status.textContent = String(error?.message || error); else throw error; }
 }
 async function _rapierAttachmentsEdit(owner, transform) {
 	await _rapierNotesFlush();
-	if (!owner || owner !== _rapierAttachmentsOwner()) throw new Error('The original note is no longer open, so no link was added.');
+	if (!owner || owner !== _rapierAttachmentsOwner()) throw new Error('Note closed. Add the file again.');
 	const source = _rapierSourceText(), next = transform(source);
-	if (next !== source && !await _rapierNotesApplyText(next, 'notes.attachment', 'File link')) throw new Error('The note changed before its file link could be written, so no link was added.');
+	if (next !== source && !await _rapierNotesApplyText(next, 'notes.attachment', 'File link')) throw new Error('Note changed. Add the file again.');
 	await _rapierNotesAutosave(); await _rapierNotesFlush(); _rapierAttachmentsInit();
 }
 async function _rapierAttachmentsLink(name, owner) {
-	if (!await _rapierNotesStore.attachmentStat(name)) throw new Error('This file is missing. Nothing was linked.');
+	if (!await _rapierNotesStore.attachmentStat(name)) throw new Error('File missing.');
 	await _rapierAttachmentsEdit(owner, text => _rapierAttachmentsModel().addAttachmentLine(text, {name}));
 	showToast('File linked', 'success');
 }
@@ -84,7 +84,7 @@ async function _rapierAttachmentsDelete(name, row) {
 			view.ui.remove(); link.classList.remove('rapier-attachment-link'); _rapierAttachments.rows.delete(link);
 		}
 		_rapierAttachmentsInit();
-		showToast(name + ' deleted forever. Notes and their earlier versions were not changed.', 'info');
+		showToast(name + ' deleted', 'info');
 	} finally { if (sheet) await _rapierAttachmentsShelf(); }
 }
 function _rapierAttachmentsRow(entry, {owner = '', unlink = false, link = false, deletion = false, references = null, player = true} = {}) {
@@ -96,13 +96,13 @@ function _rapierAttachmentsRow(entry, {owner = '', unlink = false, link = false,
 	details.append(name, meta); row.appendChild(details);
 	const audio = player && A.attachmentKind(entry.name) === 'Audio' && typeof _rapierRecorderFileView === 'function' ? _rapierRecorderFileView(entry.name, entry.label, unlink && owner ? () => [
 		['Open', RAPIER_NOTES_ICONS.page, () => _rapierAttachmentsOpen(entry.name)],
-		unlink && owner ? ['Unlink', RAPIER_NOTES_ICONS.link, async () => { await _rapierAttachmentsEdit(owner, text => A.removeAttachmentLink(text, entry)); showToast('Link removed. The file remains in Saved files.', 'info'); }] : null] : null) : null;
+		unlink && owner ? ['Unlink', RAPIER_NOTES_ICONS.link, async () => { await _rapierAttachmentsEdit(owner, text => A.removeAttachmentLink(text, entry)); showToast('Link removed. File stays in Saved files.', 'info'); }] : null] : null) : null;
 	const kebab = !!audio && unlink && !!owner;
 	const open = _rapierAttachmentsButton('Open', () => _rapierAttachmentsOpen(entry.name)); if (!kebab) row.appendChild(open);
 	if (link && owner) row.appendChild(_rapierAttachmentsButton('Link', () => _rapierAttachmentsLink(entry.name, owner)));
 	if (unlink && owner && !kebab) row.appendChild(_rapierAttachmentsButton('Unlink', async () => {
 		await _rapierAttachmentsEdit(owner, text => A.removeAttachmentLink(text, entry));
-		showToast('Link removed. The file remains in Saved files.', 'info');
+		showToast('Link removed. File stays in Saved files.', 'info');
 	}));
 	if (deletion) {
 		details.appendChild(_rapierNotesEl('span', 'rapier-attachment-meta', A.attachmentReferenceWords(references)));
@@ -174,10 +174,10 @@ async function _rapierAttachmentsDeleteRecording(name, row) {
 	try {
 		const past = review.history.length, notes = [...new Set(review.history.map(h => h.file.replace(/\.md$/i, '')))].join(', ');
 		const plays = past ? ' ' + (past === 1 ? 'An earlier version of ' + notes + ' plays it; it' : past + ' earlier versions of ' + notes + ' play it; they') + ' will open without it.' : '';
-		if (!await rapierConfirm({title: 'Delete this recording forever?', message: '• ' + name + ', ' + _rapierAttachmentsModel().attachmentSizeWords(review.size) + ', is deleted.' + plays + '\n• No undo.', confirmLabel: 'Delete forever', destructive: true})) return;
+		if (!await rapierConfirm({title: 'Delete this recording forever?', message: name + ', ' + _rapierAttachmentsModel().attachmentSizeWords(review.size) + '.' + plays + ' No undo.', confirmLabel: 'Delete forever', destructive: true})) return;
 		await _rapierNotesFlush();
 		await _rapierNotesStore.deleteRecording(review, {confirmed: true});
-		showToast(name + ' deleted forever.', 'info');
+		showToast(name + ' deleted', 'info');
 		void _rapierNotesStorageAnswer(false);
 	} finally { if (sheet) await _rapierAttachmentsShelf(); }
 }
@@ -187,9 +187,9 @@ async function _rapierAttachmentsAdd(files, {fresh = false, owner = _rapierAttac
 	if (!await _rapierNotesUnlock()) return;
 	await _rapierNotesReady();
 	const kind = await _rapierNotesStorageKind();
-	if (kind === 'fault') throw new Error('The Notes folder could not be opened. Nothing was added; keep the original files.');
+	if (kind === 'fault') throw new Error('Couldn’t open your notes folder.');
 	if (kind === 'memory') throw new Error('This ' + _rapierNotesWords().pane + '’s storage is temporary, so it cannot keep files. Nothing was added.');
-	if (!fresh && (!owner || _rapierAttachmentsOwner() !== owner)) throw new Error('Open the intended note before adding a file. Nothing was copied.');
+	if (!fresh && (!owner || _rapierAttachmentsOwner() !== owner)) throw new Error('Open the note first.');
 	const kept = [], controller = new AbortController();
 	const sheet = _rapierAttachmentsDialog('Keeping files'), status = _rapierNotesEl('p', '', 'Preparing the file copy');
 	const progress = _rapierNotesEl('progress', ''); sheet.append(status, progress);
@@ -198,10 +198,10 @@ async function _rapierAttachmentsAdd(files, {fresh = false, owner = _rapierAttac
 	sheet.addEventListener('cancel', event => { event.preventDefault(); cancel(); });
 	sheet.addEventListener('close', cancel);
 	sheet.appendChild(_rapierAttachmentsButton('Cancel', cancel));
-	const check = () => { if (controller.signal.aborted) throw new Error('File copy canceled. No link was added.'); };
+	const check = () => { if (controller.signal.aborted) throw new Error('Canceled'); };
 	try {
 		for (const file of decision.files) {
-			if (!fresh && _rapierAttachmentsOwner() !== owner) throw new Error('The original note closed.');
+			if (!fresh && _rapierAttachmentsOwner() !== owner) throw new Error('Note closed. Add the file again.');
 			check();
 			const name = await _rapierNotesStore.createAttachment(file.name, file, {signal: controller.signal, onProgress: state => {
 				check();
@@ -218,7 +218,7 @@ async function _rapierAttachmentsAdd(files, {fresh = false, owner = _rapierAttac
 			const file = await _rapierNotesWriteNew(source, wanted, _rapierNotesPlaceFirst()); _rapierNotesAdmit(file, source);
 			await _rapierNotesOpenNote(file);
 		} else await _rapierAttachmentsEdit(owner, text => kept.reduce((source, entry) => A.addAttachmentLine(source, entry), text));
-		showToast(kept.length + (kept.length === 1 ? ' file kept' : ' files kept') + (decision.large ? ' (' + A.attachmentSizeWords(decision.bytes) + '). ' + (kept.length === 1 ? 'It stays' : 'They stay') + ' in Saved files if the note is deleted.' : ''), 'success');
+		showToast(kept.length + (kept.length === 1 ? ' file added' : ' files added') + (decision.large ? ' (' + A.attachmentSizeWords(decision.bytes) + ')' : ''), 'success');
 	} catch (error) {
 		throw new Error(String(error?.message || error) + (kept.length ? ' ' + (kept.length === 1 ? '1 copied file stays' : kept.length + ' copied files stay') + ' in Saved files.' : ''));
 	} finally { settled = true; if (sheet.open) sheet.close(); }
@@ -231,7 +231,7 @@ async function _rapierAttachmentsPick() {
 	try {
 		if (!await _rapierNotesUnlock()) return;
 		const owner = _rapierAttachmentsOwner();
-		if (!owner) throw new Error('Open a note before adding a file.');
+		if (!owner) throw new Error('Open a note first.');
 		const input = document.createElement('input'); input.type = 'file'; input.multiple = true; input.hidden = true;
 		document.body.appendChild(input);
 		input.addEventListener('cancel', () => input.remove(), {once: true});
@@ -246,7 +246,7 @@ function _rapierAttachmentsTransferEvent(event) {
 	const files = _rapierAttachmentsModel()?.attachmentTransfer(transfer) || [];
 	if (!directory && !files.length) return;
 	event.preventDefault(); event.stopImmediatePropagation();
-	if (directory) { showToast('Folders cannot be pasted or dropped: pick their files with + → Add file, or import an export ZIP from Notes settings. Nothing was added.', 'info'); return; }
+	if (directory) { showToast('Can’t add folders. Add their files instead.', 'info'); return; }
 	void _rapierAttachmentsQueue(files, {fresh: _rapierNotes.open, owner: _rapierAttachmentsOwner()});
 }
 function _rapierAttachmentsClose() {

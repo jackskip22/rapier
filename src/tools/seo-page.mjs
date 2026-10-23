@@ -196,9 +196,9 @@ export function guideSection(markdown, path) {
 	return section;
 }
 
-const WATERCOLOR_GUIDE = `Paint watercolor online with Rapier Water. Blend pigments, lay transparent washes and let wet color spread across textured paper. Use a mouse, a finger or a pen. The editor is free, with no account or installation required.
+const WATERCOLOR_GUIDE = `Paint watercolor online with Rapier. Blend pigments, lay transparent washes and let wet color spread across textured paper. Use a mouse, a finger or a pen. The editor is free, with no account or installation required.
 
-Water needs a compatible browser with WebGPU; the editor reports whether it is available.
+Watercolor needs a browser with WebGPU; the editor tells you if it's available.
 
 #### Start a watercolor painting
 

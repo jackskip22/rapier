@@ -16,9 +16,9 @@ const _rapierPersonal = globalThis.__rapierServerRenderHost === true ? null : ((
 					if (name === 'defaultDocumentFont' && value.startsWith('f')) {
 						const key = 'font/' + value, asset = profile.records[key]?.value;
 						try {
-							if (!asset) throw new Error('The default document font is missing from your fonts.');
+							if (!asset) throw new Error('Default font missing from your fonts.');
 							_rapierPersonalStore.validateAsset(key, profile.blobs[asset.content]);
-						} catch (error) { showToast(String(error.message || error), 'error'); continue; }
+						} catch (error) { showToast(_rapierErrorWords(error, 'Couldn’t apply the default font.'), 'error'); continue; }
 					}
 					if (RapierPreferences.read(name) !== value) RapierPreferences.write(name, value);
 				} else if (key.startsWith('drawing/') && _rapierDrawPart) {
@@ -40,7 +40,7 @@ const _rapierPersonal = globalThis.__rapierServerRenderHost === true ? null : ((
 	const owner = _rapierPersonalStore;
 	owner.subscribe(async profile => { await apply(profile); plugins.scan(); plugins.fulfil(); });
 	const travels = globalThis.RapierPersonal.personalTravels;
-	const report = error => showToast(String(error?.message || 'Personal settings could not be saved.'), 'error');
+	const report = error => showToast(_rapierErrorWords(error, 'Couldn’t save your settings.'), 'error');
 	const plugins = (() => {
 		const KEYS = ['math', 'mermaid', 'ocr', 'letters-field', 'letters-relief', 'letters-leaf', 'letters-arabesque', 'pdf'], DECLINED = 'rapier:plugin:declined';
 		const declined = () => { try { return new Set(JSON.parse(localStorage.getItem(DECLINED) || '[]')); } catch (_) { return new Set(); } };

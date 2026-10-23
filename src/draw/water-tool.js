@@ -108,8 +108,8 @@ function _rapierWaterToolbarHTML() {
 
 function _rapierWaterPanelsHTML() {
 	const metric = (key, word) => '<div class="rapier-draw-metric"><label for="rapier-water-' + key + '">' + word + '</label><input id="rapier-water-' + key + '" data-water-control="' + key + '" type="range" min="0" max="100" step="1"><output data-water-output="' + key + '"></output></div>';
-	return '<div class="rapier-draw-brushes rapier-draw-water-brushes" data-draw-panel="waterBrushes" role="group" aria-label="Water brushes" hidden></div>' +
-		'<div class="rapier-draw-brushes rapier-draw-water-tools" data-draw-panel="waterTools" role="group" aria-label="Water tools" hidden></div>' +
+	return '<div class="rapier-draw-brushes rapier-draw-water-brushes" data-draw-panel="waterBrushes" role="group" aria-label="Watercolor brushes" hidden></div>' +
+		'<div class="rapier-draw-brushes rapier-draw-water-tools" data-draw-panel="waterTools" role="group" aria-label="Watercolor tools" hidden></div>' +
 		'<div class="rapier-draw-brushes rapier-draw-water-paper" data-draw-panel="waterPaper" role="group" aria-label="Paper" hidden></div>' +
 		'<div class="rapier-draw-colours rapier-draw-water-pigments" data-draw-panel="waterPigments" role="group" aria-label="Pigments" hidden></div>' +
 		'<div class="rapier-draw-dip rapier-draw-water-load" data-draw-panel="waterLoad" role="group" aria-label="Water and pigment load" hidden>' +
@@ -268,7 +268,7 @@ function _rapierWaterTextDialog() {
 function _rapierWaterActionWanted() { const settings = _rapierWaterState(); return settings.sampling || ['fill','trace','text'].includes(settings.tool); }
 async function _rapierWaterLayer(material = true) {
 	const state = _rapierDrawState, session = state.session;
-	const current = () => { if (!state.open || state.session !== session) throw Object.assign(new Error('The drawing changed before the Water action was ready.'),{name:'AbortError'}); };
+	const current = () => { if (!state.open || state.session !== session) throw Object.assign(new Error('Drawing changed. Try again.'),{name:'AbortError'}); };
 	current();
 	await _rapierPaintStartPainter('water');
 	current();
@@ -277,12 +277,12 @@ async function _rapierWaterLayer(material = true) {
 	if (target) { _rapierPaintRehydrateFor(target); if (state.paintRehydrateTask) await state.paintRehydrateTask; }
 	current();
 	if (_rapierPaintLayerValid(material)) return state.paintLayer;
-	if (target?.paint?.mode === 'water') throw new Error('This Water layer could not be reopened. Its saved painting is unchanged.');
+	if (target?.paint?.mode === 'water') throw new Error('Couldn’t reopen this layer. Painting unchanged.');
 	await _rapierPaintCloseLayer(); current();
 	let scale = _rapierPaintLayerScale();
 	const nominal = _rapierPaintStageUnion(state.recipe);
 	while (scale > 1 && nominal.w * nominal.h * scale * scale > RAPIER_WATER_SHEET_PIXELS) scale--;
-	if (Math.round(nominal.w * scale) * Math.round(nominal.h * scale) > RAPIER_WATER_SHEET_PIXELS) throw new Error('This Water action needs a smaller canvas.');
+	if (Math.round(nominal.w * scale) * Math.round(nominal.h * scale) > RAPIER_WATER_SHEET_PIXELS) throw new Error('Canvas too large for this.');
 	return _rapierPaintOpenLayer(scale,null,nominal,null,'water');
 }
 function _rapierWaterToLayer(point, layer) {
@@ -297,11 +297,11 @@ async function _rapierWaterActionAt(event, gesture) {
 	if (settings.sampling) {
 		try { const layer = await _rapierWaterLayer(), p = _rapierWaterToLayer(point,layer), sample = await layer.surface.samplePigment(p[0],p[1]);
 			if (!state.open || state.session !== session || _rapierDrawTool() !== 'water' || state.waterSettings !== selected || !selected.sampling) return;
-			if (!sample || !sample.coefficients?.some(value => value !== 0)) { showToast('There is no pigment here to pick.', 'info'); return; }
+			if (!sample || !sample.coefficients?.some(value => value !== 0)) { showToast('No paint here to pick.', 'info'); return; }
 			const pigment = {coefficients:sample.coefficients,granulation:sample.granulation,staining:sample.staining,...(sample.source ? {source:sample.source} : {}),...(sample.finish ? {finish:sample.finish} : {})};
 			if (!await _rapierWaterProChoose('pigment',pigment)) return;
 			_rapierWaterState().sampling = false; _rapierWaterUpdate();
-		} catch (error) { if (state.open && state.session === session && error.name !== 'AbortError' && !_rapierDrawWaterUnavailable(error)) showToast(String(error.message || error),'error'); }
+		} catch (error) { if (state.open && state.session === session && error.name !== 'AbortError' && !_rapierDrawWaterUnavailable(error)) showToast(_rapierErrorWords(error, 'That didn’t work. Try again.'),'error'); }
 		return;
 	}
 	try {
@@ -315,7 +315,7 @@ async function _rapierWaterActionAt(event, gesture) {
 			Object.assign(action,{kind:'stroke',tool:'brush',brush:settings.brush,source:settings.tool,paths:captured.paths});
 		}
 		await _rapierWaterRunAction(action,true,settings.tip ? {brush:settings.brush,tip:settings.tip} : null);
-	} catch (error) { if (!_rapierDrawWaterUnavailable(error)) showToast(String(error.message || error),'error'); }
+	} catch (error) { if (!_rapierDrawWaterUnavailable(error)) showToast(_rapierErrorWords(error, 'That didn’t work. Try again.'),'error'); }
 }
 function _rapierWaterRunAction(action, world = false, tip = null) {
 	const state = _rapierDrawState; if (state.waterAction || state.finishing || !state.open) return Promise.resolve(false);
@@ -338,7 +338,7 @@ function _rapierWaterRunAction(action, world = false, tip = null) {
 		_rapierPaintShowLive(true); if (admittedTip) await layer.surface.applyWater({kind:'tip',brush:admittedTip}); await layer.surface.applyWater(admitted); await _rapierWaterPreflight(layer); _rapierPaintReleaseStroke(gesture);
 		layer.brushId = brushId; layer.paintVersion = (layer.paintVersion || 0) + 1;
 		const held = _rapierPaintLiftHold(layer); await layer.surface.sync(); _rapierPaintEndDecide(layer,held); await held.promise; _rapierDrawBackupTouch(); return true;
-	})().catch(error => { if (state.open && state.session === session) { _rapierPaintReleaseStroke(gesture,true); if (error.name !== 'AbortError' && !_rapierDrawWaterUnavailable(error)) showToast(String(error.message || error),'error'); } return false; }).finally(() => { if (state.waterAction === task) state.waterAction = null; });
+	})().catch(error => { if (state.open && state.session === session) { _rapierPaintReleaseStroke(gesture,true); if (error.name !== 'AbortError' && !_rapierDrawWaterUnavailable(error)) showToast(_rapierErrorWords(error, 'That didn’t work. Try again.'),'error'); } return false; }).finally(() => { if (state.waterAction === task) state.waterAction = null; });
 	state.waterAction = task; return task;
 }
 async function _rapierWaterPreflight(layer) {
@@ -346,7 +346,7 @@ async function _rapierWaterPreflight(layer) {
 	if (!result.box) return;
 	const sheet = result.waterSheet, replay = _rapierPaintWaterReplay(layer,result.waterReplay,result.box,sheet);
 	const id = globalThis.RapierDrawAgentPaint.waterReplayEntryId(sheet), reserved = {...replay, entries: replay.entries.map(row => row.id === id ? {...row, actions: [...row.actions, {kind:'advance',ticks:Number.MAX_SAFE_INTEGER}, {kind:'dry'}]} : row)};
-	if (!globalThis.RapierDrawAgentPaint.paintReplayFits(reserved)) throw Object.assign(new Error('This Water layer is full. Set it and paint on a new layer.'),{code:'paint_history_full',recoverable:true});
+	if (!globalThis.RapierDrawAgentPaint.paintReplayFits(reserved)) throw Object.assign(new Error('Layer full. Set it, then paint on a new layer.'),{code:'paint_history_full',recoverable:true});
 }
 async function _rapierWaterAddBrush(file) {
 	const state = _rapierDrawState, session = state.session;
@@ -354,7 +354,7 @@ async function _rapierWaterAddBrush(file) {
 		let tip, imported = null, name = file.name.replace(/\.[^.]+$/,'');
 		if (/\.json$/i.test(file.name)) {
 			const raw = JSON.parse(await file.text()); imported = _rapierWaterEngine().admitWaterBrush(raw.definition);
-			if (!imported) throw new Error('This file does not contain a Water brush.');
+			if (!imported) throw new Error('Not a watercolor brush.');
 			if (_rapierWaterEngine().isWaterSpecialtyPigment(imported.pigment)) await _rapierWaterProAuthorize('pigments');
 			if (_rapierWaterEngine().waterPaperById(imported.paper)?.pro) await _rapierWaterProAuthorize('papers');
 			tip = imported.tip || null; name = typeof raw.name === 'string' ? raw.name : name;
@@ -362,7 +362,7 @@ async function _rapierWaterAddBrush(file) {
 		else {
 			const image = await createImageBitmap(file);
 			try {
-				if (image.width * image.height > _rapierWaterEngine().WATER_TIP_MAX_PIXELS) throw new Error('This brush picture is too large. Use a picture of at most 1,048,576 pixels.');
+				if (image.width * image.height > _rapierWaterEngine().WATER_TIP_MAX_PIXELS) throw new Error('Brush picture too large (1 MP max).');
 				const canvas = document.createElement('canvas'); canvas.width=image.width; canvas.height=image.height;
 				const ctx=canvas.getContext('2d',{willReadFrequently:true}); ctx.drawImage(image,0,0);
 				const pixels=ctx.getImageData(0,0,image.width,image.height).data, mask=[];
@@ -370,17 +370,17 @@ async function _rapierWaterAddBrush(file) {
 				tip={width:image.width,height:image.height,mask};
 			} finally { image.close(); }
 		}
-		if (tip) tip = _rapierWaterEngine().admitWaterTip(tip); if (!tip && !imported) throw new Error('The picture must contain a visible brush mark.');
+		if (tip) tip = _rapierWaterEngine().admitWaterTip(tip); if (!tip && !imported) throw new Error('The picture has no visible mark.');
 		if (!state.open || state.session !== session) return;
 		const settings=_rapierWaterState(); if (imported) { for (const key of ['brush','pigment','paper','size','water','load','angle','follow','flow','bleed','edge','granulation','dry']) if (imported[key] != null) settings[key]=imported[key]; settings.size=_rapierWaterEngine().waterHandSize(settings.size); settings.strength=imported.firm ? 'firm' : 'light'; }
 		settings.tip=tip; settings.tipKey=tip ? _rapierPaintDigest(JSON.stringify(tip)) : null; settings.tipName=name; settings.tool=imported?.tool || 'brush'; if (!imported) settings.brush='water/round';
 		if (tip) {
 			settings.brush='water/own-' + settings.tipKey;
 			const water=_rapierWaterDefinition(settings).water, rows=_rapierWaterOwn().filter(row=>row.id!==settings.brush); rows.push({id:settings.brush,name,water}); state.waterBrushes=rows;
-			try { localStorage.setItem(RAPIER_WATER_KEY + '.brushes',JSON.stringify(rows)); } catch (_) { showToast('The brush is ready. Save it to keep a separate copy.', 'info'); }
+			try { localStorage.setItem(RAPIER_WATER_KEY + '.brushes',JSON.stringify(rows)); } catch (_) { showToast('Brush ready. Save it to keep a copy.', 'info'); }
 		}
 		_rapierWaterSave(); _rapierWaterOpen('waterBrushes',true);
-	} catch(error) { if(state.session===session) showToast('The brush could not be added: '+String(error.message||error),'error'); }
+	} catch(error) { if(state.session===session) showToast('Couldn’t add the brush.','error',null,error); }
 }
 function _rapierWaterSaveBrush() {
 	const settings=_rapierWaterState(), text=JSON.stringify({name:settings.tipName || _rapierWaterEngine().WATER_BRUSHES.find(row=>row.id===settings.brush)?.name,definition:_rapierWaterDefinition(),tip:settings.tip});

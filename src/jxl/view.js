@@ -93,7 +93,7 @@
 			if (self.declined) throw Object.assign(new Error('Not converted: needs JPEG XL complete'), {shown: true});
 			self.asking ||= (async () => {
 				const bytes = RapierParts.pin(PART)?.bytes || 0;
-				const yes = await rapierConfirm({title: 'Download JPEG XL complete?', message: '• ' + size(bytes) + ', once.\n• Converts videos and animations.\n• Works offline after.', confirmLabel: 'download', plain: true}) === true;
+				const yes = await rapierConfirm({title: 'Download JPEG XL complete?', message: '• ' + size(bytes) + ', once.\n• Converts videos and animations.\n• Works offline after.', confirmLabel: 'Download', plain: true}) === true;
 				if (!yes) { self.declined = true; return false; }
 				const popup = _rapierProgressOpen({label: 'Downloading JPEG XL complete'});
 				const follow = ({detail: {id, status, progress}}) => {
@@ -239,7 +239,7 @@
 		if (view) return;
 		if (!_rapierJxlEncoderPresent()) {
 			document.querySelector('[data-rapier-early-part="jxl"]')?.remove();
-			showToast('This copy of Rapier has no JPEG XL encoder.', 'error');
+			showToast('This copy has no JPEG XL encoder.', 'error');
 			return;
 		}
 		view = adopt(build());

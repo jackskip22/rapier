@@ -10,7 +10,7 @@ export function backupLimitError(names, reason) {
 	const notes = names.filter(name => !name.includes('/') && isNoteFile(name)).length;
 	if (notes === 1) reason = reason.replace(/^need /, 'needs ').replace(/^have /, 'has ');
 	return Object.assign(new Error('Your ' + notes.toLocaleString('en') + (notes === 1 ? ' note ' : ' notes ') + reason
-		+ '. No backup was made, and your notes are unchanged.'), {name: 'BackupLimitError'});
+		+ '. No backup was made.'), {name: 'BackupLimitError'});
 }
 
 async function recoveryBytes(store, name) {

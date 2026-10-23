@@ -38,9 +38,9 @@ export function attachmentLine({name, label = name}) {
 export function addAttachmentLine(text, entry) { return addSiblingLinkLine(text, attachmentLine(entry)); }
 export function removeAttachmentLink(text, entry) {
 	const s = String(text ?? ''), row = attachmentsOf(s).find(r => r.name === entry.name && r.start === entry.start && r.raw === entry.raw);
-	if (!row) throw new Error('This file link changed. Its words and file were kept.');
+	if (!row) throw new Error('Link changed. Nothing removed.');
 	const end = linkRemovalEnd(s, row);
-	if (end === null) throw new Error('This file link is incomplete. Edit it in Source; its file was kept.');
+	if (end === null) throw new Error('Broken link. Fix it in Source.');
 	return s.slice(0, row.start) + s.slice(end);
 }
 export function rewriteAttachmentNames(text, mapping) {
@@ -101,8 +101,8 @@ export function attachmentDeletionQuestion(report) {
 	const names = rows => [...new Set(rows.map(row => row.file))].join(', ');
 	const where = [live.length ? names(live) : '', trash.length ? 'the recycle bin’s ' + names(trash) : '',
 		history.length ? history.length + (history.length === 1 ? ' earlier version of ' : ' earlier versions of ') + names(history) : ''].filter(Boolean);
-	return {title: 'delete ' + name + ' forever?',
-		message: name + ' (' + attachmentSizeWords(size) + ') leaves saved files' + (where.length ? ', and its links stop working in ' + where.join('; ') + '.' : '; no note links to it.') + ' backups made before still hold it. there is no undo.',
+	return {title: 'Delete ' + name + '?',
+		message: attachmentSizeWords(size) + '.' + (where.length ? ' Links break in ' + where.join('; ') + '.' : '') + ' No undo.',
 		cancelLabel: 'Keep file', confirmLabel: 'Delete forever', destructive: true};
 }
 export function attachmentReferenceWords(refs) {
