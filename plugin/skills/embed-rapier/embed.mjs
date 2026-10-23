@@ -241,6 +241,10 @@ function createAssetBroker({current, send}) {
 return {FEATURES, LIMITS, ASSET_TYPES, refusal, normalizeSettings, snapshotSettings, pickDeviceFile, createFilePicker, assetURL, assetBytes, bytesHash, externalImage, createAssetBroker};
 })();
 const BUILDS = Object.freeze({full: 'https://rapier.website/embed/rapier.html', reader: 'https://rapier.website/embed/rapier-reader.html'});
+const PACKAGE_VERSION = '1.2.34';
+const OPTIONS = ['build', 'src', 'plugins', 'sessionId', 'documentId', 'agent', 'agentName', 'theme', 'save', 'assets', 'openFile', 'load',
+  'onState', 'compare', 'onClose', 'settings', 'style', 'title', 'onError', 'timeout'];
+const READER_FEATURES = ['find', 'readAloud', 'share'];
 const DEFAULT_SRC = BUILDS.full;
 const revision = value => Number.isSafeInteger(value) && value >= 0 || typeof value === 'string' && value.length > 0 && value.length <= 256;
 const identifier = value => typeof value === 'string' && value.length > 0 && value.length <= 256;
@@ -273,9 +277,11 @@ function readerStyle(value) {
 function mount(target, options = {}) {
   const document = target?.ownerDocument;
   if (!document) throw new TypeError('Mount needs an iframe or a container element');
+  const unknown = Object.keys(options).filter(key => !OPTIONS.includes(key));
+  if (unknown.length) throw Object.assign(new TypeError('Unknown option: ' + unknown.join(', ') + '. Mount takes ' + OPTIONS.join(', ')), {code: 'option_unknown'});
   const build = options.build === undefined || options.build === 'document' ? 'full' : options.build;
   if (!Object.hasOwn(BUILDS, build)) throw new TypeError('build must be full or reader');
-  const reader = build === 'reader';
+  const reader = build === 'reader', noun = reader ? 'reader' : 'editor';
   if (reader && ['save', 'compare', 'onClose', 'agent', 'agentName', 'assets'].some(key => options[key] !== undefined && options[key] !== false))
     throw new TypeError('The reader takes load, onState, theme, settings, style and plugins');
   if (!reader && options.style !== undefined) throw new TypeError('style restyles the reader build');
@@ -287,6 +293,9 @@ function mount(target, options = {}) {
   const source = new URL(options.src || BUILDS[build], host.location.href);
   if (source.username || source.password || !(source.protocol === 'https:' || source.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(source.hostname)))
     throw new TypeError('The editor needs HTTPS, or HTTP on localhost');
+  const page = source.pathname.split('/').pop();
+  if (reader ? page === 'rapier.html' : page === 'rapier-reader.html')
+    throw Object.assign(new TypeError('build ' + build + ' cannot frame ' + page + '; set build: \'' + (reader ? 'full' : 'reader') + '\' or src to ' + (reader ? 'rapier-reader.html' : 'rapier.html')), {code: 'build_mismatch'});
   source.searchParams.set('embed', '1');
   if (options.plugins !== undefined) {
     let directory;
@@ -305,7 +314,11 @@ function mount(target, options = {}) {
   if (options.save !== undefined && typeof options.save !== 'function') throw new TypeError('save must be a durable storage callback');
   if (options.assets !== undefined && typeof options.assets !== 'function') throw new TypeError('assets must be a picture storage callback');
   if (options.openFile !== undefined && typeof options.openFile !== 'function') throw new TypeError('openFile must choose a File or null');
+  if (options.timeout !== undefined && !(Number.isSafeInteger(options.timeout) && options.timeout > 0)) throw new TypeError('timeout is a whole number of milliseconds');
+  const bootTimeout = options.timeout ?? 15000;
   const settings = snapshotSettings(options.settings), policy = normalizeSettings(settings), storeAsset = options.assets;
+  const unread = reader ? (settings?.features || []).filter(name => !READER_FEATURES.includes(name)) : [];
+  if (unread.length) throw Object.assign(new TypeError('The reader has no ' + unread.join(', ') + '; its features are ' + READER_FEATURES.join(', ')), {code: 'settings_feature_unavailable'});
   const assetAnswers = new Map();
   let assetPending = '', assetAbort = new AbortController();
   const chooseFile = options.openFile || (({signal}) => pickDeviceFile(document, signal)), openAnswers = new Map();
@@ -319,7 +332,8 @@ function mount(target, options = {}) {
     throw new TypeError('Agent access needs both load and save');
   const ids = {sessionId, documentId}, answers = new Map(), waiting = new Map(), listeners = new Map();
   let port = null, posted = false, connected = false, ended = false, sawLoad = false, seq = 0, activeSave = null, activeClose = null;
-  let currentTheme = options.theme, lastSaved = null, readOnly = false, connectedWait = deferred(), boot;
+  let currentTheme = options.theme, lastSaved = null, readOnly = false, connectedWait = deferred(), boot, bootTimer = 0, settled = null, frameFacts = {};
+  let held = null;
   const ready = deferred();
   const emit = (type, value) => { for (const fn of listeners.get(type) || []) fn(value); };
   const fail = error => { emit('error', error); options.onError?.(error); };
@@ -328,8 +342,8 @@ function mount(target, options = {}) {
     waiting.clear(); activeSave?.reject(error); activeSave = null; activeClose?.reject(error); activeClose = null;
   };
   function send(type, payload, baseRevision, quiet = false) {
-    if (ended || !connected || !port) return Promise.reject(new Error('The editor connection has ended or is not connected'));
-    if (type === 'load') cancelOpen('open_stale');
+    if (ended || !connected || !port) return Promise.reject(new Error('The ' + noun + ' connection has ended or is not connected'));
+    if (type === 'load') { cancelOpen('open_stale'); settled = null; }
     const requestId = 'host-' + ++seq;
     const message = {type, ...ids, requestId, ...(baseRevision !== undefined ? {baseRevision} : {}), ...(payload !== undefined ? {payload} : {})};
     const pending = deferred();
@@ -379,7 +393,7 @@ function mount(target, options = {}) {
     if (ended || channel !== port) return;
     channel.postMessage(reply);
     if (reply.type === 'save-ack') {
-      lastSaved = reply.payload;
+      lastSaved = reply.payload; held = {revision: reply.payload.revision, content: payload.content};
       if (activeSave) activeSave.acknowledged = true;
     } else if (activeSave) { activeSave.reject(refused(reply.payload)); activeSave = null; }
   }
@@ -495,7 +509,9 @@ function mount(target, options = {}) {
     }
     if (type === 'connected') {
       if (connected) return;
-      connected = true; connectedWait.resolve(); emit('connected', payload); return;
+      clearTimeout(bootTimer);
+      connected = true; frameFacts = {version: typeof payload.appVersion === 'string' ? payload.appVersion : null, contract: payload.contract ?? null};
+      connectedWait.resolve(); emit('connected', payload); return;
     }
     if (!connected) return;
     if (type === 'open-request' || type === 'open-cancel') { answerOpen(message, channel); return; }
@@ -505,6 +521,7 @@ function mount(target, options = {}) {
       if (!['loaded', 'dirty', 'saving', 'closing', 'readOnly'].every(key => typeof payload[key] === 'boolean')
         || Object.keys(payload).some(key => !['loaded', 'dirty', 'saving', 'closing', 'readOnly', 'filename', 'docKind'].includes(key))) return;
       readOnly = payload.readOnly; emit('state', payload); options.onState?.(payload);
+      settled = payload.loaded && !payload.dirty && !payload.saving && revision(message.baseRevision) ? {revision: message.baseRevision} : null;
       if (activeSave?.acknowledged && !payload.saving && message.baseRevision === lastSaved?.revision) {
         if (payload.dirty) { activeSave.acknowledged = false; requestCapture(); }
         else { activeSave.resolve(lastSaved); activeSave = null; }
@@ -530,7 +547,10 @@ function mount(target, options = {}) {
     }
     if (pending && ['load-ack', 'load-nack', 'compare-ack', 'compare-nack'].includes(type)) {
       waiting.delete(requestId);
-      if (type === 'load-ack') readOnly = payload.readOnly === true;
+      if (type === 'load-ack') {
+        readOnly = payload.readOnly === true;
+        settled = payload.recoveredDraft === false && revision(payload.revision) ? {revision: payload.revision} : null;
+      }
       if (type.endsWith('-nack')) pending.reject(refused(payload)); else pending.resolve(payload);
     }
   }
@@ -541,6 +561,7 @@ function mount(target, options = {}) {
         const value = typeof options.load === 'function' ? await options.load() : options.load;
         if (!record(value) || typeof value.content !== 'string' || !revision(value.revision)) throw new TypeError('load needs content and its revision');
         await send('load', value, null);
+        held = {revision: value.revision, content: value.content};
       }
       ready.resolve(handle);
     });
@@ -553,24 +574,41 @@ function mount(target, options = {}) {
     port.onmessage = event => onPortMessage(event, channel.port1);
     port.onmessageerror = () => {
       if (channel.port1 !== port || ended) return;
-      cancelOpen('open_disconnected'); assetAbort.abort(); rejectPending(new Error('The editor connection was lost'));
+      cancelOpen('open_disconnected'); assetAbort.abort(); rejectPending(new Error('The ' + noun + ' connection was lost'));
     };
     try { iframe.contentWindow.postMessage({type: 'rapier-connect', ...ids, capabilities, contract: 1, ...(settings ? {settings} : {}), ...(agentName ? {agent: {name: agentName}} : {}), ...(currentTheme ? {theme: currentTheme} : {})}, origin, [channel.port2]); }
     catch (error) { port.close(); port = null; posted = false; fail(error); }
   }
+  function bootFailed(code, reason) {
+    clearTimeout(bootTimer);
+    if (connected || ended) return;
+    connectedWait.reject(refusal(code, reason));
+  }
   function onLoad() {
     if (sawLoad && posted) {
       cancelOpen('open_disconnected');
-      rejectPending(new Error('The editor reconnected')); port?.close();
+      rejectPending(new Error('The ' + noun + ' reconnected')); port?.close();
       assetAbort.abort(refusal('asset_disconnected')); assetAbort = new AbortController();
-      connected = false; posted = false; readOnly = false; connectedWait = deferred(); prepareBoot();
+      connected = false; posted = false; readOnly = false; settled = null; connectedWait = deferred(); prepareBoot();
     }
     sawLoad = true;
+    clearTimeout(bootTimer);
+    if (!connected) bootTimer = setTimeout(() => bootFailed('connect_timeout', 'The ' + noun + ' did not connect within ' + bootTimeout / 1000 + ' seconds'), bootTimeout);
     connect();
+  }
+  function focusBeside(forward) {
+    const order = forward ? host.Node.DOCUMENT_POSITION_FOLLOWING : host.Node.DOCUMENT_POSITION_PRECEDING;
+    const controls = [...document.querySelectorAll('a[href],button,input,select,textarea,iframe,summary,[tabindex],[contenteditable=""],[contenteditable="true"]')]
+      .filter(element => element !== iframe && element.tabIndex >= 0 && !element.disabled && !element.closest('[inert]') && element.getClientRects().length &&
+        iframe.compareDocumentPosition(element) & order);
+    const next = forward ? controls[0] : controls.at(-1);
+    if (next) next.focus(); else iframe.blur();
   }
   function onWindowMessage(event) {
     if (event.source !== iframe.contentWindow || event.origin !== origin) return;
     if (event.data?.type === 'rapier-ready') connect();
+    else if (event.data?.type === 'rapier-boot-failed') bootFailed('boot_failed', 'The ' + noun + ' could not start');
+    else if (event.data?.type === 'rapier-focus-leave' && connected) focusBeside(event.data.backward !== true);
     else if (event.data?.type === 'close-ready' && event.data.sessionId === sessionId && event.data.documentId === documentId && options.onClose) {
       activeClose?.resolve(event.data.payload); activeClose = null; emit('closed', event.data.payload);
     }
@@ -578,16 +616,25 @@ function mount(target, options = {}) {
   const handle = Object.freeze({
     iframe, ready: ready.promise,
     get connected() { return connected && !ended; },
+    get version() { return frameFacts.version ?? null; },
+    get contract() { return frameFacts.contract ?? null; },
     async load(content, {filename, revision: version, readOnly, title} = {}) {
       cancelOpen('open_stale');
       await boot;
-      return send('load', {content, revision: version, ...(filename !== undefined ? {filename} : {}), ...(readOnly !== undefined ? {readOnly} : {}), ...(title !== undefined ? {title} : {})}, null);
+      if (held && typeof version === 'number' && typeof held.revision === 'number' && version < held.revision)
+        throw Object.assign(new Error('Revision ' + version + ' is older than the frame\'s ' + held.revision), {code: 'revision_stale', currentRevision: held.revision});
+      if (held && version === held.revision && held.content !== null && content !== held.content)
+        throw Object.assign(new Error('Revision ' + version + ' already names other content'), {code: 'revision_conflict', currentRevision: held.revision});
+      const loaded = await send('load', {content, revision: version, ...(filename !== undefined ? {filename} : {}), ...(readOnly !== undefined ? {readOnly} : {}), ...(title !== undefined ? {title} : {})}, null);
+      held = {revision: version, content};
+      return loaded;
     },
     async save() {
       await boot;
       if (!options.save) throw new Error('No save callback was granted');
-      if (ended) throw new Error('The editor connection has ended');
+      if (ended) throw new Error('The ' + noun + ' connection has ended');
       if (readOnly) throw new Error('The document is read-only');
+      if (!activeSave && settled) return {...settled};
       if (!activeSave) activeSave = {...deferred(), acknowledged: false};
       const promise = activeSave.promise;
       requestCapture(); return promise;
@@ -611,10 +658,10 @@ function mount(target, options = {}) {
     disconnect() {
       if (ended) return;
       if (connected) send('disconnect', undefined, undefined, true).catch(() => {});
-      ended = true; connected = false;
+      ended = true; connected = false; clearTimeout(bootTimer);
       cancelOpen('open_disconnected'); openAnswers.clear();
       assetAbort.abort(refusal('asset_disconnected')); assetAnswers.clear();
-      const error = new Error('The editor connection has ended');
+      const error = new Error('The ' + noun + ' connection has ended');
       rejectPending(error); connectedWait.reject(error); ready.reject(error);
       host.removeEventListener('message', onWindowMessage); iframe.removeEventListener('load', onLoad);
       port?.close(); port = null; listeners.clear();
@@ -636,7 +683,7 @@ function mount(target, options = {}) {
   return handle;
 }
 
-export const Rapier = Object.freeze({mount, conflict});
+export const Rapier = Object.freeze({mount, conflict, version: PACKAGE_VERSION, contract: 1});
 
 const forms = new WeakMap();
 function joinForm(field, form) {
@@ -646,7 +693,7 @@ function joinForm(field, form) {
     group = {fields: new Set(), pending: false, releasing: false};
     group.submit = async event => {
       if (group.releasing) return;
-      event.preventDefault();
+      event.preventDefault(); event.stopImmediatePropagation();
       if (group.pending) return;
       group.pending = true;
       const submitter = event.submitter;

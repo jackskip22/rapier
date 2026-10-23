@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {copyFile, mkdtemp, mkdir, readFile, rm, stat, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {spawnSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {stageLinuxPublic, stageLinuxPackage, verifyLinuxArtifact} from '../../../tools/stage-linux.mjs';
@@ -57,11 +58,17 @@ try {
       note('changed '+path+' refuses same-version artifact');
     } finally {await writeFile(full,bytes);}
   }
-  await stageLinuxPackage(join(dir,'arch'));
+  const licenseHash=createHash('sha256').update(await readFile(join(repo,'LICENSE'))).digest('hex');
+  const servedAs=hashes=>async url=>{const hit=Object.entries(hashes).find(([name])=>url.endsWith('/'+name));if(!hit)throw new Error('refused: '+url+' answers HTTP 404');return hit[1];};
+  await assert.rejects(stageLinuxPackage(join(dir,'refused'),{served:servedAs({LICENSE:licenseHash})}),/rapier-linux answers HTTP 404/);
+  await assert.rejects(stageLinuxPackage(join(dir,'refused'),{served:servedAs({'rapier-linux':'0'.repeat(64),LICENSE:licenseHash})}),/not the pinned/);
+  note('no package recipe until its tag serves the pinned executable and license');
+  await stageLinuxPackage(join(dir,'arch'),{served:servedAs({'rapier-linux':built.sha256,LICENSE:licenseHash})});
   const pkg=await readFile(join(dir,'arch/aur/rapier-bin/PKGBUILD'),'utf8');
   assert(pkg.includes("arch=('x86_64')"));
   assert(pkg.includes("'glibc>="+built.runtime.glibc+"'"));
-  assert(pkg.includes("'chromium' 'perl-file-mimeinfo'"));
+  assert(pkg.includes("'gcc-libs' 'perl-file-mimeinfo'")&&/^optdepends=\('chromium: /m.test(pkg)&&pkg.includes("'brave-bin: ")&&pkg.includes("'google-chrome: "));
+  assert(pkg.includes('pkgver='+built.version+'\n')&&pkg.includes('_tag=v${pkgver}'));
   assert(pkg.includes(built.sha256));assert(!pkg.includes('python'));
   assert(pkg.includes('$pkgdir/opt/rapier/rapier-linux')&&pkg.includes('hicolor/scalable/apps/rapier.svg'));
   assert.equal(await readFile(join(dir,'arch/omarchy-pkgs/rapier-bin/PKGBUILD'),'utf8'),pkg);
@@ -79,7 +86,7 @@ try {
     assert.match(await readFile(join(pkgdir,'usr/share/applications/chrome-rapier.local__rapier.html-Default.desktop'),'utf8'),/^NoDisplay=true$/m);
     assert.match(await readFile(join(pkgdir,'usr/bin/rapier'),'utf8'),/exec \/opt\/rapier\/rapier-linux "\$@"/);
   }
-  note('AUR and omarchy-pkgs recipes pin the exact ELF, /opt and /usr/bin, chromium and perl-file-mimeinfo, without Python');
+  note('AUR and omarchy-pkgs recipes pin the exact ELF and its tag from one version, /opt and /usr/bin, perl-file-mimeinfo, a choice of browser, without Python');
   await verifyLinuxArtifact();
   note('restored original inputs verify');
   console.log(JSON.stringify({elf:built.sha256,checks:report}));

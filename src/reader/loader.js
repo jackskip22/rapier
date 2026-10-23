@@ -46,6 +46,7 @@ async function readerBoot() {
 	} catch (error) {
 		document.body.classList.add('rapier-boot-failed');
 		try { console.error('[rapier-reader] startup failed', error); } catch (_) {}
+		if (window.self !== window.top) try { window.parent.postMessage({type: 'rapier-boot-failed'}, '*'); } catch (_) {}
 	}
 }
 void readerBoot();

@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MIT
 import {next, weight, exceptions, maximum} from '../agent/vendor/hyphen-en-us/patterns.js';
 
+export const hyphenMinimums = {left: 2, right: 3, word: 5};
+
 export function englishCuts(word) {
   if (!/^[A-Za-z]+$/.test(word)) return null;
-  if (word.length < 6) return [];
+  if (word.length < hyphenMinimums.word) return [];
   const cuts = [];
   let offset = 0, before = 0;
   for (const part of word.match(/[A-Z]+(?![a-z])|[A-Z]?[a-z]+/g)) {
@@ -11,11 +13,11 @@ export function englishCuts(word) {
     for (const at of partCuts(part)) cuts.push(offset+at);
     offset += part.length; before = part.length;
   }
-  return cuts.filter(at => at >= 3 && at <= word.length-3).sort((a, b) => a-b).filter((at, index, all) => at !== all[index-1]);
+  return cuts.filter(at => at >= hyphenMinimums.left && at <= word.length-hyphenMinimums.right).sort((a, b) => a-b).filter((at, index, all) => at !== all[index-1]);
 }
 
 function partCuts(word) {
-  if (word.length < 6) return [];
+  if (word.length < hyphenMinimums.word) return [];
   const lower = word.toLowerCase(), known = exceptions[lower];
   if (Array.isArray(known)) return known;
   const source = '.'+lower+'.', weights = new Uint8Array(source.length+1);
@@ -30,7 +32,7 @@ function partCuts(word) {
     }
   }
   const cuts = [];
-  for (let at = 3; at <= word.length-3; at++) if (weights[at+1]&1) cuts.push(at);
+  for (let at = hyphenMinimums.left; at <= word.length-hyphenMinimums.right; at++) if (weights[at+1]&1) cuts.push(at);
   return cuts;
 }
 

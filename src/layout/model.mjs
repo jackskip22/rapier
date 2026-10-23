@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import {layoutNextRichInlineLineRange, materializeRichInlineLineRange} from '../agent/vendor/pretext/rich-inline.js';
 import {validLayout} from '../spec/md-layout.mjs';
-import {linePlan} from './line-plan.mjs';
+import {linePlan, slotSequence, columnsFilled} from './line-plan.mjs';
 import {captureFontAuthority, createPreparationScope, fontReady, invalidateRichMetrics, paragraphItems,
   prepareRichParagraph, supportsRichStyle} from './preparation.mjs';
 export {captureFontAuthority, createPreparationScope, invalidateRichMetrics, prepareRichParagraph, supportsRichStyle};
@@ -309,6 +309,7 @@ export function pictureSlices(profile, x, y, width, height, scale = 1) {
   return slices;
 }
 
+export {slotSequence, columnsFilled};
 export function slotsForBand(width, obstacles, top, height, minWidth = 40) {
   if (!finite(width) || width <= 0 || !finite(top) || !finite(height) || height <= 0 ||
       !finite(top + height) || !finite(minWidth) || minWidth <= 0 || !Array.isArray(obstacles)) return null;

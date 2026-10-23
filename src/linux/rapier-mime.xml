@@ -10,7 +10,7 @@
   </mime-type>
   <mime-type type="application/x-rapier-html">
     <sub-class-of type="text/html"/>
-    <comment>rapier document</comment>
-    <glob pattern="*.rapier.html" weight="60"/>
+    <comment>Rapier document</comment>
+    <glob pattern="*.rapier.html" weight="90"/>
   </mime-type>
 </mime-info>

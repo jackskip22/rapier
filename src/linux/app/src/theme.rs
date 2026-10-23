@@ -16,8 +16,12 @@ pub struct Palette {
     selection: Option<String>,
 }
 
+/// Omarchy's current theme: ~/.local/state/omarchy/current/theme on current Omarchy, ~/.config/omarchy/current/theme on
+/// Omarchy 3.x. The first that holds colors.toml is the theme.
 fn colors_path() -> PathBuf {
-    crate::home().join(".local/state/omarchy/current/theme/colors.toml")
+    let home = crate::home();
+    let paths = [".local/state/omarchy/current/theme/colors.toml", ".config/omarchy/current/theme/colors.toml"].map(|p| home.join(p));
+    paths.iter().find(|p| p.is_file()).unwrap_or(&paths[0]).clone()
 }
 
 fn fonts_path() -> PathBuf {

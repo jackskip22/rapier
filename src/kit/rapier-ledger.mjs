@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-import {exportLedger, replaceLedgerText, readLedger, ledgerWithStart, textRoot, rootAfter, historyEnvelope, agentActorId} from './ledger/format.mjs';
-export {exportLedger, replaceLedgerText, readLedger, ledgerWithStart, textRoot, rootAfter, historyEnvelope, agentActorId};
+import {exportLedger, prepareLedgerAsync, replaceLedgerText, readLedger, ledgerWithStart, textRoot, rootAfter, historyEnvelope, agentActorId} from './ledger/format.mjs';
+export {exportLedger, prepareLedgerAsync, replaceLedgerText, readLedger, ledgerWithStart, textRoot, rootAfter, historyEnvelope, agentActorId};
 import {authorship, readAuthorship, ledgerFromAuthorship} from './ledger/authorship.mjs';
 export {authorship, readAuthorship, ledgerFromAuthorship};
 import {merge, transportInterval, transportTouchedInterval} from './ledger/merge.mjs';

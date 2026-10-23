@@ -10,7 +10,7 @@ const READER_VERSION = document.querySelector('meta[name="rapier-version"]')?.co
 
 const reader = {
 	source: '', filename: 'untitled.md', docKind: 'markdown', codeLang: '', title: '', bom: false,
-	loaded: false, generation: 0, render: 0, flowchartTried: -1, layout: null, hostTheme: '', hostAccent: '',
+	loaded: false, unshown: false, generation: 0, render: 0, flowchartTried: -1, layout: null, hostTheme: '', hostAccent: '',
 	folded: new Set(), allowedRemote: false,
 	find: {ranges: [], current: 0, overflow: false},
 };
@@ -71,6 +71,7 @@ function readerAccentOwner() {
 
 async function readerLoad(source, filename, title, kind) {
 	const generation = ++reader.generation;
+	const before = {source: reader.source, filename: reader.filename, title: reader.title, docKind: reader.docKind, codeLang: reader.codeLang, bom: reader.bom};
 	reader.bom = source.charCodeAt(0) === 0xFEFF;
 	reader.source = reader.bom ? source.slice(1) : source;
 	reader.filename = filename || 'untitled.md';
@@ -82,6 +83,10 @@ async function readerLoad(source, filename, title, kind) {
 	_rapierRemoteContent.allowed = false;
 	const shown = await readerRenderDocument();
 	if (generation !== reader.generation) return false;
+	if (reader.unshown) {
+		Object.assign(reader, before);
+		throw Object.assign(new Error('This document could not be shown'), {code: 'document_unshowable'});
+	}
 	reader.loaded = true;
 	readerRenderFilename();
 	readerRenderEmpty();
@@ -113,6 +118,7 @@ async function readerRenderDocument() {
 	readerParser();
 	const markdown = _rapierRenderModule('render-markdown'), renderer = _rapierRenderModule('render');
 	let styled = null;
+	reader.unshown = false;
 	try {
 		const semantic = markdown._rapierRenderSemanticRoot(reader.source, metadata, {imagePresentation: true});
 		if (_rapierPlainLayout()) _rapierStripPlainLayoutFacts(semantic);
@@ -123,6 +129,7 @@ async function readerRenderDocument() {
 	} catch (error) {
 		try { console.error('[rapier-reader] could not show the document', error); } catch (_) {}
 		readerToast('this document could not be shown', 'error');
+		if (generation === reader.render) reader.unshown = true;
 		return false;
 	}
 	if (generation !== reader.render) return false;
@@ -1370,7 +1377,7 @@ async function readerOpenFile(file, opening = {generation: reader.generation}) {
 		const record = await RapierTextCodec.readDocumentRecord(file), text = (record.bom ? '\ufeff' : '') + record.text;
 		const carried = /\.html?$/i.test(file.name) ? await readerCarriedDocument(text, file.name) : null;
 		return await readerCommitOpen(carried ? carried.source : text, carried ? carried.filename : file.name, opening, carried?.kind);
-	} catch (error) { readerToast(String(error?.message || error), 'error'); return false; }
+	} catch (error) { if (error?.code !== 'document_unshowable') readerToast(String(error?.message || error), 'error'); return false; }
 }
 
 async function readerOpenLicenses() {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 const RapierParts = (() => {
 	const PINS = /* RAPIER_PARTS */ null;
-	const CDN = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.33/';
+	const CDN = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.34/';
 	const PART_DIRECTORY = 'parts/';
 	const pins = new Map((PINS || []).map((pin, order) => [pin.id, {...pin, order}]));
 	const runs = new Map(), states = new Map(), kept = new Set(), updates = new Map(), noted = new Set();
@@ -135,8 +135,11 @@ const RapierParts = (() => {
 		}, error => {
 			if (!pin.started) runs.delete(id);
 			if (error?.code === 'part_update_required') { say(id, 'absent'); throw error; }
-			say(id, 'error', error);
-			try { console.error('[rapier] the ' + id + ' part did not start', error); } catch (_) {}
+			if (error?.code === 'part_not_carried') say(id, 'absent');
+			else {
+				say(id, 'error', error);
+				try { console.error('[rapier] the ' + id + ' part did not start', error); } catch (_) {}
+			}
 			const noun = id === 'drawing' ? 'Draw' : pin.label;
 			throw Object.assign(new Error(pin.started ? 'The ' + pin.label + ' part could not start. Reload Rapier.'
 				: /^Google Play /.test(String(error?.message)) ? error.message

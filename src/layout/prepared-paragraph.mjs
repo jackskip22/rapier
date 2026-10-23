@@ -152,6 +152,7 @@ export function* prepareParagraphCandidateSteps(items, options) {
       for (const cut of word.breaks) {
         if (cut.kind === 'soft' || cut.kind === 'auto') {
           cut.glyph = '-';
+          if (options.hanging && !word.protected) cut.protrude = parseFontSize(items[units[word.first].itemIndex].font) * .25;
         }
         let before = cut.at, after = cut.at + 1;
         if (cut.kind === 'auto') {

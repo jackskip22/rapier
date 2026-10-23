@@ -17,7 +17,10 @@ const endpoint='http://127.0.0.1:'+port;
 const shellQuote=s=>"'"+s.replaceAll("'","'\\''")+"'";
 await writeFile(join(root,'browser'),'#!/bin/sh\nexec '+shellQuote(browserBin)+' --headless --no-sandbox --disable-dev-shm-usage --remote-debugging-port='+port+' "$@"\n');
 await chmod(join(root,'browser'),0o755);
-const env={...process.env,PORTAL_FIXTURE:join(root,'portal'),RAPIER_BROWSER:join(root,'browser'),
+const {createServer}=await import('node:net');
+const waylandSocket=join(root,'wayland-test');
+await new Promise(done=>createServer(c=>c.end()).listen(waylandSocket,done).unref());
+const env={...process.env,WAYLAND_DISPLAY:waylandSocket,PORTAL_FIXTURE:join(root,'portal'),RAPIER_BROWSER:join(root,'browser'),
   XDG_DATA_HOME:join(root,'data'),XDG_CACHE_HOME:join(root,'cache'),XDG_CONFIG_HOME:join(root,'config'),RAPIER_RUNTIME:root,RAPIER_CDP:endpoint};
 const elf=join(repo,'dist/linux/rapier-linux'),built=JSON.parse(await readFile(join(repo,'dist/linux/BUILT.json')));
 const hash=b=>createHash('sha256').update(b).digest('hex');

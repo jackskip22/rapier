@@ -55,9 +55,105 @@ function laterWholeWord(flow, cursor, line, items, bands, slot, next, materializ
   return false;
 }
 
+export function slotSequence(width, top, obstacles, lineHeight, minWidth, slotsForBand, direction = 'ltr', order = 'columns') {
+  const bottom = obstacles.length ? Math.max(...obstacles.map(item => item.y + item.height)) - top : 0, rows = [];
+  let y = 0;
+  while (y < bottom && rows.length < 768) {
+    const bands = slotsForBand(width, obstacles, top + y, lineHeight, Math.min(minWidth, width));
+    if (!bands) return null;
+    if (bands.length) { rows.push({y, bands}); y += lineHeight; continue; }
+    let next = Infinity;
+    for (const obstacle of obstacles) if (obstacle.x < width && obstacle.x + obstacle.width > 0 &&
+        obstacle.y < top + y + lineHeight && obstacle.y + obstacle.height > top + y) next = Math.min(next, obstacle.y + obstacle.height - top);
+    if (!Number.isFinite(next) || next <= y) return null;
+    y = next;
+  }
+  const multiple = rows.some(row => row.bands.length > 1);
+  if (!multiple) return {slots: rows.flatMap(row => row.bands.map(band => ({...band, y: row.y}))), end: y, multiple};
+  const free = row => row.bands.length === 1 && row.bands[0].x < .5 && row.bands[0].width > width - .5;
+  const slots = [];
+  let block = 0;
+  for (let at = 0; at < rows.length;) {
+    if (free(rows[at])) { slots.push({...rows[at].bands[0], y: rows[at].y}); at++; continue; }
+    let stop = at;
+    while (stop < rows.length && !free(rows[stop])) stop++;
+    block++;
+    const channels = [];
+    for (let index = at; index < stop; index++) for (const band of rows[index].bands) {
+      const owner = channels.find(channel => channel.row === index - 1 &&
+        Math.min(channel.last.x + channel.last.width, band.x + band.width) - Math.max(channel.last.x, band.x) > 0);
+      const slot = {...band, y: rows[index].y};
+      if (owner) { owner.slots.push(slot); owner.row = index; owner.last = slot; }
+      else channels.push({slots: [slot], row: index, last: slot, x: band.x});
+    }
+    channels.sort((a, b) => direction === 'rtl' ? b.x - a.x : a.x - b.x);
+    const gaps = rows.slice(at, stop).filter(row => row.bands.length > 1).map(row => row.bands[1].x - row.bands[0].x - row.bands[0].width).sort((a, b) => a - b);
+    const thin = gaps[gaps.length >> 1] < .15 * width;
+    if (!thin) channels.forEach((channel, index) => { for (const slot of channel.slots) { slot.block = block; slot.channel = index; } });
+    if (order === 'rows' || thin) slots.push(...channels.flatMap(channel => channel.slots).sort((a, b) => a.y - b.y || (direction === 'rtl' ? b.x - a.x : a.x - b.x)));
+    else for (const channel of channels) slots.push(...channel.slots);
+    at = stop;
+  }
+  return {slots, end: y, multiple};
+}
+
+function channelPlan(flow, width, lineHeight, sequence, layoutNextRichInlineLineRange, materializeRichInlineLineRange, items) {
+  const lines = [], slots = sequence.slots;
+  let cursor, previous = null;
+  const place = (band, later) => {
+    let range = layoutNextRichInlineLineRange(flow, band.width, cursor);
+    if (!range) return 'end';
+    if (!Number.isFinite(range.width) || range.width > width + .5) return 'fail';
+    if (range.width > band.width + .5) return 'skip';
+    let line = materializeRichInlineLineRange(flow, range);
+    if (!afterSource(lastSource(line), previous)) return 'fail';
+    if (laterWholeWord(flow, cursor, line, items, [band, ...later], 0, layoutNextRichInlineLineRange, materializeRichInlineLineRange)) return 'skip';
+    if (later.some(other => other.y === band.y) && insideChip(items, line)) {
+      const whole = beforeChip(flow, range, line, cursor, items, layoutNextRichInlineLineRange, materializeRichInlineLineRange);
+      if (whole) { range = whole.range; line = whole.line; }
+    }
+    if (!afterSource(lastSource(line), previous) || lines.length === 4096) return 'fail';
+    lines.push({...line, ...band});
+    previous = lastSource(line); cursor = range.end;
+    return 'placed';
+  };
+  const done = () => lines.length ? {lines, height: Math.max(lineHeight, ...lines.map(line => line.y + lineHeight))} : null;
+  for (let index = 0; index < slots.length; index++) {
+    const result = place(slots[index], [...slots.slice(index + 1, index + 9), {x: 0, width, y: sequence.end}]);
+    if (result === 'end') return done();
+    if (result === 'fail') return null;
+  }
+  for (let row = 0; row < 768; row++) {
+    const result = place({x: 0, width, y: sequence.end + row * lineHeight}, []);
+    if (result === 'end') return done();
+    if (result !== 'placed') return null;
+  }
+  return null;
+}
+
+export function columnsFilled(slots, placed) {
+  const total = new Map(), used = new Map(), reached = new Set();
+  for (const slot of slots) if (slot.block) total.set(slot.block + ':' + slot.channel, (total.get(slot.block + ':' + slot.channel) || 0) + 1);
+  for (const slot of placed) if (slot.block) { used.set(slot.block + ':' + slot.channel, (used.get(slot.block + ':' + slot.channel) || 0) + 1); reached.add(slot.block); }
+  for (const count of total.values()) if (count < 4) return false;
+  for (const block of reached) {
+    let last = -1;
+    for (const slot of slots) if (slot.block === block && slot.channel > last) last = slot.channel;
+    if ((used.get(block + ':' + last) || 0) < .6 * total.get(block + ':' + last)) return false;
+  }
+  return true;
+}
+
 export function linePlan(flow, width, top, obstacles, lineHeight, minWidth, direction, balance,
   slotsForBand, layoutNextRichInlineLineRange, materializeRichInlineLineRange, items = null) {
   if (!flow || balance) return null;
+  const sequence = obstacles.length ? slotSequence(width, top, obstacles, lineHeight, minWidth, slotsForBand, direction) : null;
+  if (sequence?.multiple) {
+    const columns = channelPlan(flow, width, lineHeight, sequence, layoutNextRichInlineLineRange, materializeRichInlineLineRange, items);
+    if (!columns || columnsFilled(sequence.slots, columns.lines)) return columns;
+    return channelPlan(flow, width, lineHeight, slotSequence(width, top, obstacles, lineHeight, minWidth, slotsForBand, direction, 'rows'),
+      layoutNextRichInlineLineRange, materializeRichInlineLineRange, items);
+  }
   const lines = [];
   let cursor, previous = null, y = 0, bottom = 0, rows = 0;
   for (let step = 0; step < 4096 && rows < 768; step++) {

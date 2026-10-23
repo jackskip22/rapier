@@ -212,7 +212,7 @@ export async function buildReader({root = here, unchecked = [], toolchainCanonic
 	}
 	report.unresolved = linked.unresolved.filter(name => !BROWSER.has(name));
 	const PROVIDED = ['DOMPurify', 'IDBKeyRange', 'URIError', 'RapierImageAssets', 'RapierPictureMarks', 'RapierPluginLoader', 'RapierUnpack', 'modules'];
-	const GUARDED = ['_rapierDrawReadSVGRecipe', '_rapierDrawShapeProfileFor', 'RapierBundledPlugins', 'RapierLexer'];
+	const GUARDED = ['_rapierDrawReadSVGRecipe', '_rapierDrawShapeProfileFor', 'RapierBundledPlugins', 'RapierLexer', 'RapierParts'];
 	const UNREACHED = ['RapierLedgerCarried'];
 	const known = new Set([...PROVIDED, ...GUARDED, ...UNREACHED]);
 	const missing = report.unresolved.filter(name => !known.has(name));

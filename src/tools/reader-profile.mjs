@@ -114,7 +114,12 @@ export function readerBlocks(ui) {
 	const markup = BLOCKS.filter(key => key !== 'licenses-overlay').map(pick).join('\n') + '\n' + pick('mermaid-plugin-overlay').replaceAll('mermaid-', 'pdf-');
 	const present = new Set(elements(markup).map(row => row.id));
 	const cut = dropElements(withoutIds(markup, CUT.filter(id => present.has(id))), (row, text) => /\bexport-choice-card\b/.test(row.cls) || /\bsettings-info-btn\b/.test(row.cls) || /\bexport-choice-toggle\b/.test(row.cls) && /data-(?:action="share-image-compat"|ledger-choice)/.test(text));
-	return {markup: cut, licenses: pick('licenses-overlay'), sprite: spriteOf(ui)};
+	const named = cut.replace(/<button type="button" class="filename-btn" id="filename-btn" data-action="rename"\s+aria-label="rename file">([^<]*)<\/button>/,
+		'<span class="filename-btn" id="filename-btn">$1</span>')
+		.replace(/<button type="button" class="filename-ext-btn" id="filename-ext-btn" data-action="change-extension"\s+aria-label="change extension">([\s\S]*?<\/span>)<\/button>/,
+			'<span class="filename-ext-btn" id="filename-ext-btn">$1</span>');
+	if (/data-action="(?:rename|change-extension)"/.test(named)) throw new Error('Reader profile: the file name controls in editor/ui.html changed form');
+	return {markup: named, licenses: pick('licenses-overlay'), sprite: spriteOf(ui)};
 }
 
 function spriteOf(ui) {

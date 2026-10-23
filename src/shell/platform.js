@@ -238,8 +238,13 @@ const RAPIER_STORAGE_SCOPE = (function () {
 		return dir === '/' ? '' : '@' + dir;
 	} catch (_) { return ''; }
 })();
+const RAPIER_RECOVERY_SCOPE = RAPIER_STORAGE_SCOPE + (function () {
+	try { var slot = window.__RAPIER_NATIVE_WINDOW; return Number.isInteger(slot) && slot > 1 && slot < 1000 ? '#' + slot : ''; }
+	catch (_) { return ''; }
+})();
 const RapierStorage = Object.freeze({
 	scope: RAPIER_STORAGE_SCOPE,
+	recoveryScope: RAPIER_RECOVERY_SCOPE,
 	preferences: Object.freeze({
 		...globalThis.RapierPreferenceDefinitions.PREFERENCE_DEFINITIONS,
 		notesPersistAsked: Object.freeze({ key: 'rapier:preference:notes-persist-asked', fallback: false }),
@@ -248,14 +253,14 @@ const RapierStorage = Object.freeze({
 	webFileHandlesDb: 'rapier:file-handles' + RAPIER_STORAGE_SCOPE,
 	webGenerationPrefix: 'web:',
 	keptBindings: 'rapier:kept-bindings' + RAPIER_STORAGE_SCOPE,
-	recoveryDb: 'rapier:recovery:6' + RAPIER_STORAGE_SCOPE,
-	recoverySnapshot: 'rapier:recovery:snapshot:6' + RAPIER_STORAGE_SCOPE,
-	nativeSaveIntents: 'rapier:native:save-intents' + RAPIER_STORAGE_SCOPE,
-	restoreCursor: 'rapier:recovery:restore-cursor' + RAPIER_STORAGE_SCOPE,
-	bootAttempt: 'rapier:recovery:boot-attempt' + RAPIER_STORAGE_SCOPE,
-	writerPromotion: 'rapier:recovery:writer-promotion' + RAPIER_STORAGE_SCOPE,
+	recoveryDb: 'rapier:recovery:6' + RAPIER_RECOVERY_SCOPE,
+	recoverySnapshot: 'rapier:recovery:snapshot:6' + RAPIER_RECOVERY_SCOPE,
+	nativeSaveIntents: 'rapier:native:save-intents' + RAPIER_RECOVERY_SCOPE,
+	restoreCursor: 'rapier:recovery:restore-cursor' + RAPIER_RECOVERY_SCOPE,
+	bootAttempt: 'rapier:recovery:boot-attempt' + RAPIER_RECOVERY_SCOPE,
+	writerPromotion: 'rapier:recovery:writer-promotion' + RAPIER_RECOVERY_SCOPE,
 	readingPoints: 'rapier:recovery:reading-points' + RAPIER_STORAGE_SCOPE,
-	writerLease: 'rapier:recovery:writer:v1' + RAPIER_STORAGE_SCOPE,
+	writerLease: 'rapier:recovery:writer:v1' + RAPIER_RECOVERY_SCOPE,
 	embedDraftPrefix: 'rapier:embed:draft' + RAPIER_STORAGE_SCOPE + ':',
 });
 
@@ -636,6 +641,12 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 		if (name === 'file.check') {
 			try {
 				if (typeof _rapierCheckExternalBoundFile === 'function') _rapierCheckExternalBoundFile();
+			} catch (_) {}
+			return;
+		}
+		if (name === 'document.new') {
+			try {
+				if (typeof _rapierHostNewDocument === 'function') void _rapierHostNewDocument(detail || {});
 			} catch (_) {}
 			return;
 		}
@@ -1567,7 +1578,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			verified: detail.verified === true, bytes: detail.payloadLength, fingerprint: detail.payloadDigest,
 			fileGeneration: detail.fileGeneration == null ? null : detail.fileGeneration,
 			destinationName: String(detail.destinationName || ''), destinationSelected: detail.destinationSelected === true,
-			savedWhere: String(detail.savedWhere || ''),
+			savedWhere: String(detail.savedWhere || ''), noChooser: detail.noChooser === true,
 			bindingPublished: detail.bindingPublished === true,
 			applyBinding: function () { _nativeSaveBinding(detail); },
 			acknowledge: function (applied) { return _nativeAcknowledgeSave(detail, applied); },
@@ -2892,6 +2903,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			get defersBrowserPrintCleanup() { return raw.defersBrowserPrintCleanup === true; },
 			get clipboardWrite() { return method('clipboardWrite'); },
 			get externalOpen() { return method('externalOpen'); },
+			get newWindow() { return method('newWindow'); },
 			get share() { return method('share'); },
 			get printArtifact() { return method('printArtifact'); },
 			get printCurrentDocument() { return method('printCurrentDocument'); },
@@ -3218,6 +3230,11 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 				} : null;
 			},
 			get share() { return _nativeCapability('share') ? _nativeShare : null; },
+			get newWindow() {
+				return _nativeCapability('newWindow') ? function () {
+					return _nativeHostCall('window.new', {}).then(function (result) { return !!(result && result.opened); }, function () { return false; });
+				} : null;
+			},
 			publishTheme: function (dark) {
 				if (_nativeCapability('windowTheme')) _nativeHostNotify('window.theme', { dark: !!dark });
 			},

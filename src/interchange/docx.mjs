@@ -40,6 +40,12 @@ const NS = Object.freeze({
   thm15: ['http://schemas.microsoft.com/office/thememl/2012/main'],
   w16cid: ['http://schemas.microsoft.com/office/word/2016/wordml/cid'],
   w16cex: ['http://schemas.microsoft.com/office/word/2018/wordml/cex'],
+  wps: ['http://schemas.microsoft.com/office/word/2010/wordprocessingShape'],
+  wpg: ['http://schemas.microsoft.com/office/word/2010/wordprocessingGroup'],
+  wpc: ['http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas'],
+  a14: ['http://schemas.microsoft.com/office/drawing/2010/main'],
+  cp: ['http://schemas.openxmlformats.org/package/2006/metadata/core-properties'],
+  dc: ['http://purl.org/dc/elements/1.1/'],
   v: ['urn:schemas-microsoft-com:vml'], o: ['urn:schemas-microsoft-com:office:office']
 });
 const utf8 = new TextEncoder();
@@ -567,8 +573,71 @@ function groupCommand(node) {
   const harpoon = {__proto__: null, '⇀': 'overrightharpoon', '↼': 'overleftharpoon'}[symbol];
   return harpoon && !below ? '\\' + harpoon : null;
 }
-function mathTex(node) {
-  const text = value => String(value).replace(/[\\{}$%#&_^~\u2002\u2003\u2005\u205f\u2009]/g, c => ({'\\':'\\backslash{}',
+const MATH_UNSTYLE_RANGES = [
+  ['bold', 0x1d400, 0x1d41a, 0x1d7ce],
+  ['italic', 0x1d434, 0x1d44e, null],
+  ['bold-italic', 0x1d468, 0x1d482, null],
+  ['script', 0x1d49c, 0x1d4b6, null],
+  ['bold-script', 0x1d4d0, 0x1d4ea, null],
+  ['fraktur', 0x1d504, 0x1d51e, null],
+  ['double-struck', 0x1d538, 0x1d552, 0x1d7d8],
+  ['bold-fraktur', 0x1d56c, 0x1d586, null],
+  ['sans-serif', 0x1d5a0, 0x1d5ba, 0x1d7e2],
+  ['bold-sans-serif', 0x1d5d4, 0x1d5ee, 0x1d7ec],
+  ['sans-serif-italic', 0x1d608, 0x1d622, null],
+  ['sans-serif-bold-italic', 0x1d63c, 0x1d656, null],
+  ['monospace', 0x1d670, 0x1d68a, 0x1d7f6]
+];
+const MATH_UNSTYLE_LEGACY = new Map([
+  [0x210e, ['italic', 104]],
+  [0x212c, ['script', 66]], [0x2130, ['script', 69]], [0x2131, ['script', 70]], [0x210b, ['script', 72]],
+  [0x2110, ['script', 73]], [0x2112, ['script', 76]], [0x2133, ['script', 77]], [0x211b, ['script', 82]],
+  [0x212f, ['script', 101]], [0x210a, ['script', 103]], [0x2134, ['script', 111]],
+  [0x212d, ['fraktur', 67]], [0x210c, ['fraktur', 72]], [0x2111, ['fraktur', 73]], [0x211c, ['fraktur', 82]], [0x2128, ['fraktur', 90]],
+  [0x2102, ['double-struck', 67]], [0x210d, ['double-struck', 72]], [0x2115, ['double-struck', 78]],
+  [0x2119, ['double-struck', 80]], [0x211a, ['double-struck', 81]], [0x211d, ['double-struck', 82]], [0x2124, ['double-struck', 90]]
+]);
+const MATH_UNSTYLE_GREEK = [
+  ['bold', 0x1d6a8], ['italic', 0x1d6e2], ['bold-italic', 0x1d71c],
+  ['bold-sans-serif', 0x1d756], ['sans-serif-bold-italic', 0x1d790]
+];
+const MATH_GREEK_SPECIAL_CP = [0x2207, 0x2202, 0x3f5, 0x3d1, 0x3f0, 0x3d5, 0x3f1, 0x3d6];
+
+function mathUnstyleCodePoint(cp) {
+  if (MATH_UNSTYLE_LEGACY.has(cp)) {
+    const [variant, base] = MATH_UNSTYLE_LEGACY.get(cp);
+    return {variant, text: String.fromCodePoint(base)};
+  }
+  for (const [variant, upper, lower, digit] of MATH_UNSTYLE_RANGES) {
+    if (cp >= upper && cp < upper + 26) return {variant, text: String.fromCodePoint(65 + cp - upper)};
+    if (cp >= lower && cp < lower + 26) return {variant, text: String.fromCodePoint(97 + cp - lower)};
+    if (digit && cp >= digit && cp < digit + 10) return {variant, text: String.fromCodePoint(48 + cp - digit)};
+  }
+  for (const [variant, base] of MATH_UNSTYLE_GREEK) {
+    if (cp >= base && cp < base + 25) return {variant, text: String.fromCodePoint(0x391 + cp - base)};
+    if (cp === base + 25) return {variant, text: String.fromCodePoint(0x2207)};
+    if (cp >= base + 26 && cp < base + 51) return {variant, text: String.fromCodePoint(0x3b1 + cp - (base + 26))};
+    if (cp >= base + 51 && cp < base + 58) return {variant, text: String.fromCodePoint(MATH_GREEK_SPECIAL_CP[cp - (base + 50)])};
+  }
+  return null;
+}
+
+function mathUnstyleRunText(str) {
+  const chars = Array.from(String(str || ''));
+  if (!chars.length) return null;
+  let variant = null, out = '';
+  for (const ch of chars) {
+    const res = mathUnstyleCodePoint(ch.codePointAt(0));
+    if (!res) return null;
+    if (variant === null) variant = res.variant;
+    else if (variant !== res.variant) return null;
+    out += res.text;
+  }
+  return variant ? {variant, text: out} : null;
+}
+
+function mathTex(node, inEqArr = false) {
+  const text = value => String(value).replace(inEqArr ? /[\\{}$%#_^~\u2002\u2003\u2005\u205f\u2009]/g : /[\\{}$%#&_^~\u2002\u2003\u2005\u205f\u2009]/g, c => ({'\\':'\\backslash{}',
     '^':'\\text{\\textasciicircum}', '~':'\\text{\\textasciitilde}', '\u2003':'\\quad ', '\u2002':'\\enspace ', '\u2005':'\\;',
     '\u205f':'\\:', '\u2009':'\\,'}[c] || '\\' + c));
   const property = (name, key, fallback = null) => attr(child(child(node, 'm', name + 'Pr'), 'm', key), 'm', 'val') ?? fallback;
@@ -576,35 +645,62 @@ function mathTex(node) {
     const bit = child(child(node, 'm', name + 'Pr'), 'm', key);
     return bit ? !['0', 'false', 'off'].includes(attr(bit, 'm', 'val')) : false;
   };
-  const contents = parent => Array.from(parent?.children || []).filter(n =>
-    !(is(n, 'm') && n.localName.endsWith('Pr')) && !(is(n, 'w') && (n.localName === 'rPr' || MARKERS.includes(n.localName)))).map(mathTex).join('');
+  const contents = (parent, eqArrCtx = inEqArr) => Array.from(parent?.children || []).filter(n =>
+    !(is(n, 'm') && n.localName.endsWith('Pr')) && !(is(n, 'w') && (n.localName === 'rPr' || MARKERS.includes(n.localName)))).map(n => mathTex(n, eqArrCtx)).join('');
   const part = name => contents(child(node, 'm', name));
   if (is(node, 'm', 't') || is(node, 'w', 't')) return text(node.textContent);
-  if (is(node, 'w', 'br') || is(node, 'w', 'cr')) return '\\\\';
+  if (is(node, 'w', 'br') || is(node, 'w', 'cr') || is(node, 'm', 'brk')) return ' \\\\ ';
+  if (is(node, 'm', 'aln')) return ' & ';
+  if (is(node, 'w', 'r')) return contents(node);
   if (!is(node, 'm')) return fail('DOCX contains unsupported equation content: ' + node.localName, 'docx_math_unsupported');
   const name = node.localName;
   if (['oMath', 'oMathPara', 'e', 'num', 'den', 'sub', 'sup', 'deg', 'lim', 'fName', 'box'].includes(name)) return contents(node);
   if (name === 'r') {
     const word = child(node, 'w', 'rPr');
-    if (['vanish', 'strike', 'dstrike'].some(key => on(child(word, 'w', key))) || child(word, 'w', 'rStyle'))
-      return fail('DOCX contains unsupported equation run formatting.', 'docx_math_unsupported');
+    if (on(child(word, 'w', 'vanish'))) return '';
+    const hasAln = hidden(name, 'aln'), hasBrk = hidden(name, 'brk');
+    const prefix = (hasAln ? ' & ' : '') + (hasBrk ? ' \\\\ ' : '');
+    let rawText = Array.from(node.children || []).filter(n => is(n, 'm', 't') || is(n, 'w', 't')).map(n => n.textContent).join('');
     let value = contents(node);
+    if (!value) return prefix;
     const paint = attr(child(word, 'w', 'color'), 'w', 'val'), colored = tex => /^[0-9A-Fa-f]{6}$/.test(paint || '') ? '\\textcolor[HTML]{' + paint.toUpperCase() + '}{' + tex + '}' : tex;
     const half = Number(val(child(word, 'w', 'sz'))), ratio = half > 0 ? half / mathTexHalfPoints : 1,
       size = Math.abs(ratio - 1) < 0.04 ? null : MATH_TEX_SIZES.reduce((best, row) => Math.abs(Math.log(row[1] / ratio)) < Math.abs(Math.log(best[1] / ratio)) ? row : best)[0],
-      painted = tex => size && size !== 'normalsize' ? '{\\' + size + ' ' + colored(tex) + '}' : colored(tex);
+      struck = tex => ['strike', 'dstrike'].some(key => on(child(word, 'w', key))) ? '\\enclose{horizontalstrike}{' + tex + '}' : tex,
+      painted = tex => prefix + (size && size !== 'normalsize' ? '{\\' + size + ' ' + colored(struck(tex)) + '}' : colored(struck(tex)));
     if (hidden(name, 'nor')) {
       const shape = property(name, 'sty', ''), bold = /b/.test(shape) || on(child(word, 'w', 'b')), italic = /i/.test(shape) || on(child(word, 'w', 'i'));
       const inner = bold && italic ? '\\textbf{\\textit{' + value + '}}' : bold ? '\\textbf{' + value + '}' : italic ? '\\textit{' + value + '}' : '\\text{' + value + '}';
       return painted(inner);
     }
-    const script = property(name, 'scr', 'roman'), scripts = {roman:'', 'double-struck':'mathbb', script:'mathcal',
+    let script = property(name, 'scr', 'roman');
+    const scripts = {roman:'', 'double-struck':'mathbb', script:'mathcal',
       fraktur:'mathfrak', 'sans-serif':'mathsf', monospace:'mathtt'};
     if (!Object.hasOwn(scripts, script)) return fail('DOCX contains an unsupported equation alphabet.', 'docx_math_unsupported');
-    const style = property(name, 'sty') || (on(child(word, 'w', 'b')) ? (on(child(word, 'w', 'i')) ? 'bi' : 'b') : 'i');
+    let style = property(name, 'sty') || (on(child(word, 'w', 'b')) ? (on(child(word, 'w', 'i')) ? 'bi' : 'b') : 'i');
     if (!['p', 'b', 'i', 'bi'].includes(style)) return fail('DOCX contains unsupported equation run formatting.', 'docx_math_unsupported');
+    const unstyled = script === 'roman' ? mathUnstyleRunText(rawText) : null;
+    if (unstyled) {
+      value = text(unstyled.text);
+      const mapVariant = {
+        'double-struck': ['p', 'double-struck'],
+        script: ['p', 'script'],
+        'bold-script': ['b', 'script'],
+        fraktur: ['p', 'fraktur'],
+        'bold-fraktur': ['b', 'fraktur'],
+        bold: ['b', 'roman'],
+        italic: ['i', 'roman'],
+        'bold-italic': ['bi', 'roman'],
+        'sans-serif': ['p', 'sans-serif'],
+        'bold-sans-serif': ['b', 'sans-serif'],
+        'sans-serif-italic': ['i', 'sans-serif'],
+        'sans-serif-bold-italic': ['bi', 'sans-serif'],
+        monospace: ['p', 'monospace']
+      }[unstyled.variant];
+      if (mapVariant) [style, script] = mapVariant;
+    }
     if (scripts[script]) value = '\\' + scripts[script] + '{' + value + '}';
-    const command = style === 'bi' ? 'boldsymbol' : style === 'b' ? 'mathbf' : style === 'p' && !scripts[script] ? 'mathrm' : '';
+    const command = style === 'bi' ? 'boldsymbol' : style === 'b' ? 'mathbf' : style === 'p' && !scripts[script] ? (/^[0-9.,+\-=*/()\[\]<>|&: !?]+$/.test(rawText) ? '' : 'mathrm') : '';
     return painted(command ? '\\' + command + '{' + value + '}' : value);
   }
   if (name === 'phant') {
@@ -679,11 +775,11 @@ function mathTex(node) {
       align.push(...Array(Number(count)).fill(value[0]));
     }
     while (align.length < columns) align.push('c');
-    const body = rows.map(row => row.map(mathTex).join(' & ')).join(' \\\\ ');
+    const body = rows.map(row => row.map(n => mathTex(n, false)).join(' & ')).join(' \\\\ ');
     return align.slice(0, columns).every(value => value === 'c') ? '\\begin{matrix}' + body + '\\end{matrix}' :
       '\\begin{array}{' + align.slice(0, columns).join('') + '}' + body + '\\end{array}';
   }
-  if (name === 'eqArr') return '\\begin{aligned}' + children(node, 'm', 'e').map(mathTex).join(' \\\\ ') + '\\end{aligned}';
+  if (name === 'eqArr') return '\\begin{aligned}' + children(node, 'm', 'e').map(n => mathTex(n, true)).join(' \\\\ ') + '\\end{aligned}';
   if (name === 'func') return '\\operatorname{' + part('fName') + '}{' + part('e') + '}';
   if (name === 'limLow' || name === 'limUpp') {
     const base = Array.from(child(node, 'm', 'e')?.children || []).filter(n => !(is(n, 'm') && n.localName.endsWith('Pr')));
@@ -1003,10 +1099,69 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       val(child(node, 'w', 'name')) === STRUCTURAL_EMPHASIS_NAME && parent === 'Normal' ||
       id.toLowerCase() === 'rapiertableheader' && attr(node, 'w', 'type') === 'character' && val(child(node, 'w', 'name')) === 'Rapier table header' && !parent;
     const structuralBold = structuralStyle && own.bold === true && Object.keys(own).length === 1 && !child(node, 'w', 'pPr')?.children.length;
-    const result = {p: mergeParagraphProperties(base.p, paragraphProperties(child(node, 'w', 'pPr'))), r: mergeRunStyle(base.r, own),
-      structuralBold: structuralBold || base.structuralBold && !Object.hasOwn(own, 'bold')};
+    const pPrNode = child(node, 'w', 'pPr'), rPrNode = child(node, 'w', 'rPr');
+    const keepNext = on(child(pPrNode, 'w', 'keepNext')) ?? base.keepNext;
+    const styleHalfPoints = integer(val(child(rPrNode, 'w', 'sz') || child(rPrNode, 'w', 'szCs')), null, 1, 3276) ?? base.styleHalfPoints ?? null;
+    const result = {p: mergeParagraphProperties(base.p, paragraphProperties(pPrNode)), r: mergeRunStyle(base.r, own),
+      keepNext, styleHalfPoints, structuralBold: structuralBold || base.structuralBold && !Object.hasOwn(own, 'bold')};
     styleCache.set(id, result);
     return result;
+  };
+  const headingFromStyleToken = token => {
+    if (!token) return null;
+    const s = String(token).trim();
+    const numbered = /^(?:Heading|Heading_20_|Titre|Überschrift|Ueberschrift|T[íi]tulo|Titolo|Kop|Rubrik|Nagłówek|Заголовок|标题|見出し|제목)[ _-]*([1-9])$/i.exec(s);
+    if (numbered) return Number(numbered[1]);
+    if (/^(?:Title|Document[ _-]*Title|Cover[ _-]*Title|Book[ _-]*Title|Chapter(?:[ _-]*(?:Heading|Title))?|Part(?:[ _-]*(?:Heading|Title))?|Heading|Header|Titel)$/i.test(s)) return 1;
+    if (/^(?:Subtitle|Sub[ _-]*title|Subheading|Sub[ _-]*heading|Section(?:[ _-]*(?:Heading|Title))?|Major[ _-]*Heading|Custom[ _-]*Heading(?:[ _-]*1)?|Untertitel|Sous[ _-]*titre)$/i.test(s)) return 2;
+    if (/^(?:Subsection|Sub[ _-]*section(?:[ _-]*(?:Heading|Title))?|Minor[ _-]*Heading|Custom[ _-]*Heading[ _-]*2)$/i.test(s)) return 3;
+    const customNum = /^Custom[ _-]*Heading[ _-]*([1-9])$/i.exec(s);
+    if (customNum) return Number(customNum[1]);
+    return null;
+  };
+  const semanticHeadingLevel = (id, effectiveProps, warnOnDeep = false) => {
+    const rawOutline = integer(effectiveProps?.outline, null, 0, 9);
+    if (rawOutline !== null && rawOutline < 6) return rawOutline + 1;
+    if (rawOutline !== null && rawOutline >= 6 && rawOutline < 9) {
+      if (warnOnDeep) warn('Headings deeper than level six became ordinary paragraphs.');
+      return null;
+    }
+    const visited = new Set();
+    for (let cur = id; cur && !visited.has(cur) && visited.size < 32;) {
+      visited.add(cur);
+      const node = styles.get(cur), name = val(child(node, 'w', 'name'));
+      const matched = headingFromStyleToken(cur) ?? headingFromStyleToken(name);
+      if (matched !== null) {
+        if (matched > 6) {
+          if (warnOnDeep) warn('Headings deeper than level six became ordinary paragraphs.');
+          return null;
+        }
+        return matched;
+      }
+      cur = val(child(node, 'w', 'basedOn'));
+    }
+    if ((canonical === null && base === null) && id && styles.has(id) &&
+        !/^(?:Normal|Body[ _-]*Text|Default|List[ _-]*Paragraph|Quote|Intense[ _-]*Quote|Caption|Header|Footer|Footnote[ _-]*Text|Endnote[ _-]*Text|Comment[ _-]*Text|TOC[ _-]*\d+)$/i.test(id)) {
+      const resolved = style(id);
+      if (resolved.keepNext && resolved.r.bold && resolved.styleHalfPoints >= 28 && !resolved.p.numId) {
+        return resolved.styleHalfPoints >= 44 ? 1 : resolved.styleHalfPoints >= 36 ? 2 : resolved.styleHalfPoints >= 30 ? 3 : 4;
+      }
+    }
+    return null;
+  };
+  const namedHeading = id => {
+    const visited = new Set();
+    for (let cur = id; cur && !visited.has(cur) && visited.size < 32; cur = val(child(styles.get(cur), 'w', 'basedOn'))) {
+      visited.add(cur);
+      if (headingFromStyleToken(cur) !== null || headingFromStyleToken(val(child(styles.get(cur), 'w', 'name'))) !== null) return true;
+    }
+    return false;
+  };
+  const tocLevelOf = id => {
+    if (!id) return null;
+    const node = styles.get(id), name = val(child(node, 'w', 'name'));
+    const m = /^TOC[ _-]*([1-9])$/i.exec(id) || /^toc[ _-]*([1-9])$/i.exec(name || '');
+    return m ? Math.min(6, Number(m[1])) : null;
   };
   const abstracts = new Map(), numbers = new Map(), counts = new Map(), restarted = new Set(), levelCache = new Map();
   if (numberingPath) {
@@ -1129,10 +1284,10 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
   };
   const chooseAlternate = node => {
     for (const choice of children(node, 'mc', 'Choice')) {
-      const required = (choice.getAttribute('Requires') || '').trim().split(/\s+/);
-      if (required.length && required.every(prefix => ['w','a','wp','pic'].some(family => NS[family].includes(choice.lookupNamespaceURI(prefix))))) return choice;
+      const required = (choice.getAttribute('Requires') || '').trim().split(/\s+/).filter(Boolean);
+      if (required.length && required.every(prefix => ['w','a','wp','pic','wps','wpg','wpc','a14','w14','w15'].some(family => NS[family]?.includes(choice.lookupNamespaceURI?.(prefix))))) return choice;
     }
-    return child(node, 'mc', 'Fallback') || fail('DOCX contains unsupported alternate content.');
+    return child(node, 'mc', 'Fallback') || children(node, 'mc', 'Choice')[0] || fail('DOCX contains unsupported alternate content.');
   };
   const quoteControl = node => is(node, 'w', 'sdt') && val(child(child(node, 'w', 'sdtPr'), 'w', 'tag')) === 'rapier:quote';
   const sequence = async container => {
@@ -1219,10 +1374,18 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     const transform = {crop: {left:0, top:0, right:0, bottom:0}, rotation:0, flipH:false, flipV:false};
     if (is(node, 'w', 'drawing')) {
       const drawing = child(node, 'wp', 'inline') || child(node, 'wp', 'anchor');
-      const graphic = child(drawing, 'a', 'graphic'), data = child(graphic, 'a', 'graphicData'), image = child(data, 'pic', 'pic');
-      if (!drawing || !image) return fail('DOCX contains a drawing that is not an embedded raster picture.');
-      const fill = child(image, 'pic', 'blipFill'), blip = child(fill, 'a', 'blip'), crop = child(fill, 'a', 'srcRect');
-      const shape = child(image, 'pic', 'spPr'), drawingTransform = child(shape, 'a', 'xfrm');
+      const graphic = child(drawing, 'a', 'graphic'), data = child(graphic, 'a', 'graphicData');
+      const wsp = child(data, 'wps', 'wsp') || [...descendants(data || node, 'wps', 'wsp')][0];
+      let image = child(data, 'pic', 'pic') || [...descendants(data || node, 'pic', 'pic')][0];
+      if (!image && wsp) {
+        const spPr = child(wsp, 'wps', 'spPr'), geom = child(spPr, 'a', 'prstGeom')?.getAttribute('prst');
+        if (geom === 'line' || geom === 'straightConnector1') return {rule: true, semantic: true};
+        if (!child(spPr, 'a', 'blipFill')) { warn('Decorative shapes without text were not imported.'); return {html: ''}; }
+      }
+      if (!drawing || (!image && !wsp)) return fail('DOCX contains a drawing that is not an embedded raster picture.');
+      const fill = image ? child(image, 'pic', 'blipFill') : child(child(wsp, 'wps', 'spPr'), 'a', 'blipFill');
+      const blip = child(fill, 'a', 'blip'), crop = child(fill, 'a', 'srcRect');
+      const shape = image ? child(image, 'pic', 'spPr') : child(wsp, 'wps', 'spPr'), drawingTransform = child(shape, 'a', 'xfrm');
       for (const [source, target] of [['l','left'], ['t','top'], ['r','right'], ['b','bottom']]) transform.crop[target] = cropFraction(crop?.getAttribute(source));
       transform.rotation = ((integer(drawingTransform?.getAttribute('rot'), 0, -2147483647) / 60000) % 360 + 360) % 360;
       for (const name of ['flipH','flipV']) transform[name] = ['1','true','on'].includes(drawingTransform?.getAttribute(name));
@@ -1234,7 +1397,8 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       const fillRect = child(child(fill, 'a', 'stretch'), 'a', 'fillRect');
       if (fillRect && ['l','t','r','b'].some(key => cropFraction(fillRect.getAttribute(key)) !== 0)) return fail('DOCX inset picture fills are not supported.');
       const geometry = child(shape, 'a', 'prstGeom');
-      if (child(shape, 'a', 'custGeom') || geometry && geometry.getAttribute('prst') !== 'rect') return fail('DOCX shaped picture masks are not supported.');
+      if (child(shape, 'a', 'custGeom')) return fail('DOCX shaped picture masks are not supported.');
+      if (geometry && geometry.getAttribute('prst') && geometry.getAttribute('prst') !== 'rect') warn('Shaped picture masks became rectangular images.');
       if (child(shape, 'a', 'effectDag')) return fail('DOCX picture effect diagrams are not supported.');
       const line = child(shape, 'a', 'ln');
       if (child(shape, 'a', 'effectLst')?.children.length || line && !child(line, 'a', 'noFill')) warn('Picture borders and shadows were not imported.');
@@ -1247,7 +1411,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       id = plain && attr(vectors[0], 'r', 'embed') || plain && kept?.kind === 'image' && !kept.external && entries.has(kept.path) && original || attr(blip, 'r', 'embed');
       if (!id && attr(blip, 'r', 'link')) { warn('Linked pictures were not imported; their files are not inside the document.'); return {html: ''}; }
       if (!id || attr(blip, 'r', 'link')) return fail('DOCX contains a linked picture without self-contained image bytes.');
-      const properties = child(drawing, 'wp', 'docPr'), nonVisual = child(child(image, 'pic', 'nvPicPr'), 'pic', 'cNvPr');
+      const properties = child(drawing, 'wp', 'docPr'), nonVisual = image ? child(child(image, 'pic', 'nvPicPr'), 'pic', 'cNvPr') : child(wsp, 'wps', 'cNvPr');
       alt = properties?.getAttribute('descr') ?? nonVisual?.getAttribute('descr') ?? properties?.getAttribute('title') ?? nonVisual?.getAttribute('title') ?? null;
       title = properties?.getAttribute('title') ?? nonVisual?.getAttribute('title') ?? null;
       const equation = mathSourceParts(alt || ''), display = equation?.display;
@@ -1280,9 +1444,12 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         }
       }
     } else {
-      const shape = child(node, 'v', 'shape') || child(node, 'v', 'rect'), image = child(shape, 'v', 'imagedata');
+      if (child(node, 'v', 'line')) return {rule: true, semantic: true};
+      const shape = child(node, 'v', 'shape') || child(node, 'v', 'rect') || child(node, 'v', 'oval') || child(node, 'v', 'roundrect') ||
+        [...descendants(node, 'v')].find(candidate => child(candidate, 'v', 'imagedata'));
+      const image = child(shape, 'v', 'imagedata');
       if (!image && ['t','true'].includes(attr(shape, 'o', 'hr'))) return {rule: true, semantic: true};
-      if (!image) return fail('DOCX contains an unsupported legacy drawing.');
+      if (!image) { warn('Decorative shapes without text were not imported.'); return {html: ''}; }
       for (const key of ['left','top','right','bottom']) transform.crop[key] = cropFraction(image.getAttribute('crop' + key), true);
       const styleText = shape.getAttribute('style') || '';
       const rotation = /(?:^|;)\s*rotation\s*:\s*(-?\d+(?:\.\d+)?)\s*(?:;|$)/i.exec(styleText);
@@ -1479,13 +1646,26 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     }
     return project ? parts.join('') : text ? ' ' : '';
   };
-  const bookmarkTargets = new Map(), bookmarkSpans = new WeakMap(), headingSlugs = Object.create(null), headingTargets = new WeakMap();
+  const coreProps = {title: null, subtitle: null, author: null};
+  const corePath = await related('', 'metadata/core-properties') || (entries.has('docProps/core.xml') ? 'docProps/core.xml' : null);
+  if (corePath && entries.has(corePath)) {
+    try {
+      const coreRoot = await readXml(corePath, 'cp', 'coreProperties');
+      coreProps.title = child(coreRoot, 'dc', 'title')?.textContent?.trim() || null;
+      coreProps.subtitle = child(coreRoot, 'dc', 'subject')?.textContent?.trim() || null;
+      coreProps.author = child(coreRoot, 'dc', 'creator')?.textContent?.trim() || null;
+    } catch (_) { work.check(); }
+  }
+  const bookmarkTargets = new Map(), bookmarkTexts = new Map(), bookmarkSpans = new WeakMap(), headingSlugs = Object.create(null), headingTargets = new WeakMap(), headingList = [];
   for (const node of descendants(body, 'w', 'p')) {
     const properties = child(node, 'w', 'pPr'), id = val(child(properties, 'w', 'pStyle')) || defaultStyle;
-    const outline = integer(paragraphProperties(properties).outline ?? style(id).p.outline, null, 0, 9);
-    if (!(outline !== null && outline < 6 || outline === null && /^Heading[1-6]$/i.test(id || ''))) continue;
-    const words = [...descendants(node, 'w', 't')].map(part => part.textContent).join('');
-    headingTargets.set(node, _rapierNextHeadingSlug(_rapierHeadingSlugBase(words), headingSlugs));
+    const effective = {...defaultParagraph, ...style(id).p, ...paragraphProperties(properties)};
+    const level = semanticHeadingLevel(id, effective, false);
+    if (!level) continue;
+    const words = [...descendants(node, 'w', 't')].map(part => part.textContent).join('').trim();
+    const slug = _rapierNextHeadingSlug(_rapierHeadingSlugBase(words), headingSlugs);
+    headingTargets.set(node, slug);
+    headingList.push({level, words, slug});
   }
   for (const mark of descendants(body, 'w', 'bookmarkStart')) {
     const name = attr(mark, 'w', 'name');
@@ -1494,12 +1674,49 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     while (paragraph && !is(paragraph, 'w', 'p')) paragraph = paragraph.parentNode;
     const heading = headingTargets.get(paragraph), target = heading || _rapierNextHeadingSlug(name, headingSlugs);
     bookmarkTargets.set(name, '#' + encodeURIComponent(target));
+    if (paragraph) {
+      const pWords = [...descendants(paragraph, 'w', 't')].map(part => part.textContent).join('').trim();
+      if (pWords) bookmarkTexts.set(name, pWords);
+    }
     if (!heading) bookmarkSpans.set(mark, target);
   }
-  const fieldLink = instruction => {
-    const field = wordHyperlink(instruction);
-    if (field?.href.startsWith('#')) return {...field, href: bookmarkTargets.get(field.href.slice(1)), internal: true};
-    return field;
+  const seqCounters = new Map();
+  const resolveFieldInstruction = instruction => {
+    const link = wordHyperlink(instruction);
+    if (link) {
+      if (link.href.startsWith('#')) {
+        const bkm = link.href.slice(1);
+        return {...link, href: bookmarkTargets.get(bkm) || null, fallbackText: bookmarkTexts.get(bkm) || null, internal: true};
+      }
+      return link;
+    }
+    const tokens = String(instruction || '').trim().split(/\s+/).filter(Boolean);
+    const kind = (tokens[0] || '').toUpperCase();
+    if (['REF', 'PAGEREF', 'NOTEREF'].includes(kind)) {
+      const target = tokens.slice(1).find(tok => !tok.startsWith('\\'))?.replace(/^["']|["']$/g, '');
+      const href = target ? bookmarkTargets.get(target) || ('#' + encodeURIComponent(_rapierHeadingSlugBase(target))) : null;
+      return {kind, href, internal: true, fallbackText: (target && bookmarkTexts.get(target)) || (kind === 'PAGEREF' ? '1' : target || '')};
+    }
+    if (kind === 'SEQ') {
+      const seqId = (tokens[1] || 'default').replace(/^["']|["']$/g, '');
+      let nextVal = (seqCounters.get(seqId) || 0) + 1;
+      for (let i = 2; i < tokens.length; i++) {
+        if (tokens[i].toLowerCase() === '\\r' && /^\d+$/.test(tokens[i + 1] || '')) nextVal = Number(tokens[++i]);
+        else if (tokens[i].toLowerCase() === '\\c') nextVal = seqCounters.get(seqId) || 1;
+      }
+      seqCounters.set(seqId, nextVal);
+      return {kind: 'SEQ', resolvedText: String(nextVal)};
+    }
+    if (kind === 'TITLE' || (kind === 'DOCPROPERTY' && /^"?title"?$/i.test(tokens[1] || '')))
+      return {kind: 'DOCPROPERTY', resolvedText: coreProps.title || ''};
+    if (kind === 'SUBJECT' || (kind === 'DOCPROPERTY' && /^"?subject"?$/i.test(tokens[1] || '')))
+      return {kind: 'DOCPROPERTY', resolvedText: coreProps.subtitle || ''};
+    if (kind === 'AUTHOR' || (kind === 'DOCPROPERTY' && /^"?author"?$/i.test(tokens[1] || '')))
+      return {kind: 'DOCPROPERTY', resolvedText: coreProps.author || ''};
+    if (kind === 'TOC') {
+      return {kind: 'TOC', tocItems: headingList};
+    }
+    return null;
   };
   let inlineSteps = 0;
   const foreignPresentation = canonical === null && base === null;
@@ -1545,6 +1762,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         if ((context.structuralBold || context.wordHeading || context.tableHeader && named.structuralBold) &&
             (!Object.hasOwn(named.r, 'bold') || named.structuralBold) && !Object.hasOwn(direct, 'bold')) projected.bold = false;
         if (context.wordHeadingTheme && !Object.hasOwn(named.r, 'color') && !Object.hasOwn(direct, 'color')) projected.color = null;
+        if (foreignPresentation && projected.color === '#000000' && (!Object.hasOwn(direct, 'color') || !defaultRun.color || defaultRun.color === '#000000')) projected.color = null;
         let field = context.fields?.findLast(field => field.href), href = field?.href, title = field?.title;
         const linkFormatting = href => {
           const result = {...projected};
@@ -1579,9 +1797,12 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         if (project) pieces.push({html: sourceToken('<span id="' + attributeText(bookmarkSpans.get(node)) + '"></span>'), semantic: true});
       } else if (is(node, 'w', 't') || is(node, 'w', 'delText')) {
         if (context.fields?.some(field => field.inInstruction)) { context.fields.at(-1).instruction += node.textContent; continue; }
+        if (context.tocLevel && context.fields?.some(field => field.kind === 'PAGEREF')) continue;
+        for (const f of context.fields || []) if (!f.inInstruction) f.emitted = (f.emitted || 0) + 1;
         pieces.push(fieldText(await imported(node.textContent)));
       }
       else if (is(node, 'w', 'tab') || is(node, 'w', 'ptab')) {
+        if (context.tocLevel) continue;
         pieces.push(fieldText(project ? sourceToken('&#9;') : 'x')); warn('Tab characters were retained; custom tab stops became ordinary text flow.');
       }
       else if (is(node, 'w', 'sym')) {
@@ -1646,9 +1867,14 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         if (project) pieces.push({html: sourceToken(reviewMarker + row.id + 'E' + reviewMarker), semantic: true});
       }
       else if (is(node, 'w', 'fldSimple')) {
-        const field = fieldLink(attr(node, 'w', 'instr'));
+        const field = resolveFieldInstruction(attr(node, 'w', 'instr'));
         if (!field) warn('Fields became their stored displayed text.');
-        await inline(node, field ? {...context, fields: [...(context.fields || []), field]} : context, inherited, pieces);
+        const activeField = field ? {...field, emitted: 0} : null;
+        await inline(node, activeField ? {...context, fields: [...(context.fields || []), activeField]} : context, inherited, pieces);
+        if (activeField && !activeField.emitted) {
+          const fallback = field.resolvedText ?? field.fallbackText;
+          if (fallback) pieces.push({html: field.href ? linkOpen(field.href, false, field.title) + escape(fallback) + '</a>' : escape(fallback), href: field.href, title: field.title});
+        }
       }
       else if (is(node, 'w') && ['smartTag','customXml'].includes(node.localName)) {
         await inline(node, context, inherited, pieces);
@@ -1667,12 +1893,26 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       else if (is(node, 'w') && ['footnoteReference','endnoteReference','commentReference'].includes(node.localName)) pieces.push({html: await noteReference(node, context), semantic: true});
       else if (is(node, 'w') && ['instrText','delInstrText','fldChar'].includes(node.localName)) {
         const fields = context.fields || [], type = attr(node, 'w', 'fldCharType'), field = fields.at(-1);
-        if (type === 'begin') fields.push({instruction: '', inInstruction: true});
-        else if (type === 'end') { if (field?.inInstruction) warn('Fields became their stored displayed text.'); fields.pop(); }
+        if (type === 'begin') fields.push({instruction: '', inInstruction: true, emitted: 0});
+        else if (type === 'end') {
+          if (field) {
+            if (field.inInstruction) {
+              field.inInstruction = false;
+              const resolved = resolveFieldInstruction(field.instruction);
+              if (resolved) Object.assign(field, resolved);
+              else warn('Fields became their stored displayed text.');
+            }
+            if (field.kind !== 'PAGEREF' && !field.emitted) {
+              const fallback = field.resolvedText ?? field.fallbackText;
+              if (fallback) pieces.push(fieldText(escape(fallback)));
+            }
+          }
+          fields.pop();
+        }
         else if (field && type === 'separate') {
           field.inInstruction = false;
-          const link = fieldLink(field.instruction);
-          if (link) Object.assign(field, link);
+          const resolved = resolveFieldInstruction(field.instruction);
+          if (resolved) Object.assign(field, resolved);
           else warn('Fields became their stored displayed text.');
         } else if (field && !type) field.instruction += node.textContent;
       }
@@ -1691,7 +1931,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       return {html: () => '', list: null, transparent: true};
     const definition = !context.tableCell && !context.note && Object.hasOwn(DEFINITION_NAMES, id || '') && val(child(styles.get(id), 'w', 'name')) === DEFINITION_NAMES[id] ? id : null;
     const named = style(id), direct = paragraphProperties(properties), base = mergeParagraphProperties(defaultParagraph, context.p, named.p, direct);
-    const list = numbering(base, id), effective = mergeParagraphProperties(defaultParagraph, context.p, list?.p, named.p, direct);
+    let list = numbering(base, id), effective = mergeParagraphProperties(defaultParagraph, context.p, list?.p, named.p, direct);
     const indents = child(properties, 'w', 'numPr') ? mergeParagraphProperties(defaultParagraph, context.p, named.p, list?.p, direct) : effective;
     for (const key of ['leftIndent', 'firstIndent', 'tabs']) if (Object.hasOwn(indents, key)) effective[key] = indents[key];
     if (definition === 'RapierDefinition' && effective.leftIndent === DEFINITION_INDENT && !Object.hasOwn(direct, 'leftIndent')) delete effective.leftIndent;
@@ -1699,10 +1939,12 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     const quoteDepth = quoteDepthOf(id) || (!context.tableCell && (quoteRule(properties) || quoteRule(child(styles.get(id), 'w', 'pPr'))) ?
       1 + Math.max(0, Math.floor(((effective.leftIndent || 0) - (list ? (list.level + 1) * (list.tag === 'ol' ? 660 : 300) : 0)) / QUOTE_STEP)) : 0);
     const quote = Math.max(0, quoteDepth - (context.quoteDepth || 0));
-    const align = alignment(effective), outline = integer(effective.outline, null, 0, 9);
-    if (outline !== null && outline >= 6 && outline < 9) warn('Headings deeper than level six became ordinary paragraphs.');
-    const heading = outline !== null && outline < 6 ? outline + 1 : null;
-    const inferredHeading = !heading && outline === null && /^Heading[1-6]$/i.test(id || '') ? Number(id.slice(-1)) : heading;
+    const align = alignment(effective);
+    const inferredHeading = semanticHeadingLevel(id, effective, true);
+    const tocLevel = !inferredHeading && !list ? tocLevelOf(id) : null;
+    if (tocLevel && !list) {
+      list = {id: 'toc-list', level: tocLevel - 1, tag: 'ul', ordinal: 1, unmarked: false, delimiter: '.', p: {}};
+    }
     if (inferredHeading && effective.firstIndent) warn('First-line indentation on headings was not retained; the Markdown standard ignores it.');
     const tag = inferredHeading ? 'h' + inferredHeading : 'p';
     const runs = children(node, 'w', 'r');
@@ -1720,9 +1962,9 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       }
     }
     const inherited = mergeRunStyle(defaultRun, named.r);
-    const wordHeading = foreignPresentation && /^Heading[1-6]$/i.test(id || '') && !['1', 'true', 'on'].includes(attr(styles.get(id), 'w', 'customStyle'));
-    const wordHeadingTheme = wordHeading && !!attr(child(child(styles.get(id), 'w', 'rPr'), 'w', 'color'), 'w', 'themeColor');
-    const pieces = await inline(node, {...context, fields: [], initial: !!effective.dropLines, wordHeading, wordHeadingTheme,
+    const wordHeading = foreignPresentation && !!inferredHeading && namedHeading(id);
+    const wordHeadingTheme = wordHeading;
+    const pieces = await inline(node, {...context, fields: [], initial: !!effective.dropLines, wordHeading, wordHeadingTheme, tocLevel,
       structuralBold: !!named.structuralBold && !!inherited.bold && !!(inferredHeading || context.tableHeader)}, inherited), output = [];
     if (project) {
       const runs = pieces.filter(piece => piece.formatting);
@@ -2029,7 +2271,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         const html = is(node, 'w', 'tbl') ? await table(node, active) : commentBoundary(node);
         if (previous) yield previous;
         const tableQuote = is(node, 'w', 'tbl') && [...descendants(node, 'w', 'p')].length > 0 && [...descendants(node, 'w', 'p')].every(paragraph => quoteRule(child(paragraph, 'w', 'pPr')));
-        const inset = integer(attr(child(child(node, 'w', 'tblPr'), 'w', 'tblInd'), 'w', 'w'), 0, 0);
+        const inset = Math.max(0, integer(attr(child(child(node, 'w', 'tblPr'), 'w', 'tblInd'), 'w', 'w'), 0, -2147483647));
         const title = is(node, 'w', 'tbl') && descendants(node, 'w', 'p').next().value;
         const depth = title && calloutKind(title) ? quoteDepthOf(val(child(child(title, 'w', 'pPr'), 'w', 'pStyle'))) : tableQuote ? 1 + Math.floor(inset / QUOTE_STEP) : 0;
         previous = {html: () => html, list: null, quote: Math.max(0, depth - (active.quoteDepth || 0))};
@@ -2098,13 +2340,26 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     for (const row of rows) {
       await work.checkpoint();
       if (child(child(row, 'w', 'trPr'), 'w', 'del')) { warn('Revision history was removed; current text was retained.'); continue; }
-      const cells = await tableParts(row, 'tc', ['trPr','tblPrEx',...MARKERS]), rendered = []; let column = 0;
+      const rawCells = await tableParts(row, 'tc', ['trPr','tblPrEx',...MARKERS]), rendered = []; let column = 0;
       const before = integer(val(child(child(row, 'w', 'trPr'), 'w', 'gridBefore')), 0, 0, DOCX_LIMITS.tableColumns);
       for (; column < before; column++) { rendered.push({html:'', span:1, rows:1}); spanning.delete(column); }
-      for (const cell of cells) {
-        const p = child(cell, 'w', 'tcPr'), span = integer(val(child(p, 'w', 'gridSpan')), 1, 1, DOCX_LIMITS.tableColumns);
+      const cells = [];
+      for (const cell of rawCells) {
+        const p = child(cell, 'w', 'tcPr'), baseSpan = integer(val(child(p, 'w', 'gridSpan')), 1, 1, DOCX_LIMITS.tableColumns);
+        const hMerge = child(p, 'w', 'hMerge');
+        if (hMerge && val(hMerge) !== 'restart') {
+          const prev = cells.at(-1);
+          if (!prev || !prev.hMergeActive) return fail('DOCX contains an invalid merged table cell.');
+          const contBlocks = await sequence(cell);
+          const contHtml = await renderBlocks(contBlocks, {...context, quoteDepth: 0, tableCell: true, rapierTable, width: context.width, p: mergeParagraphProperties(context.p, named.p)});
+          if (contHtml.replace(/<[^>]*>/g, '').trim() || /<img\b/.test(contHtml)) return fail('DOCX contains content inside a continued merged cell.');
+          prev.span += baseSpan;
+          continue;
+        }
+        cells.push({cell, p, span: baseSpan, hMergeActive: !!hMerge});
+      }
+      for (const {cell, p, span} of cells) {
         if (child(p, 'w', 'cellDel') || child(p, 'w', 'cellMerge')) return fail('DOCX tracked table-cell changes must be resolved before importing.');
-        if (child(p, 'w', 'hMerge')) return fail('DOCX legacy horizontal cell merges must be converted to grid spans before importing.');
         if (column + span > DOCX_LIMITS.tableColumns) return fail('DOCX table exceeds the column limit.');
         const vertical = child(p, 'w', 'vMerge'), continuation = vertical && val(vertical) !== 'restart';
         const cellWidth = child(p, 'w', 'tcW'), widthType = attr(cellWidth, 'w', 'type'), widthValue = integer(attr(cellWidth, 'w', 'w'), null, 0, 3168000);
@@ -2131,12 +2386,25 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       for (const key of [...spanning.keys()]) if (key >= column) spanning.delete(key);
       output.push({cells: rendered, header: on(child(child(row, 'w', 'trPr'), 'w', 'tblHeader'))});
     }
-    let content = '', picture = '', complex = !output[0]?.header;
+    const structuralComplex = output.some((row, idx) => (idx > 0 && row.header) || row.cells.some(cell => {
+      const paragraphs = /<p(?: |>)/g;
+      return cell.span > 1 || cell.rows > 1 || cell.html.includes(' data-md-layout=') ||
+        (paragraphs.test(cell.html) && paragraphs.test(cell.html)) || /<(?:table|[ou]l|h[1-6])(?: |>)/.test(cell.html);
+    }));
+    const boldHeader = !rapierTable && foreignPresentation && !output[0]?.header && !structuralComplex && (() => {
+      const filled = output[0]?.cells.filter(c => c.html.replace(/<[^>]*>/g, '').trim()) || [];
+      return filled.length && filled.every(c => /^<p><strong>[\s\S]*<\/strong><\/p>$/.test(c.html) && !/<\/strong>[\s\S]*<strong>/.test(c.html)) ? filled : null;
+    })();
+    if (boldHeader) {
+      output[0].header = true;
+      for (const c of boldHeader) c.html = c.html.replace(/^<p><strong>([\s\S]*)<\/strong><\/p>$/, '<p>$1</p>');
+    }
+    let content = '', picture = '', complex = !output[0]?.header || structuralComplex;
     const parts = project ? ['<table><tbody>'] : [];
     for (let index = 0; index < output.length; index++) {
       if ((index & 127) === 0) await work.checkpoint();
       const row = output[index];
-      if (project) { parts.push('<tr>'); complex ||= index > 0 && row.header; }
+      if (project) { parts.push('<tr>'); }
       for (const cell of row.cells) {
         if (!project) {
           if (cell.html.replace(/<[^>]*>/g, '').trim()) content = 'x';
@@ -2146,9 +2414,6 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         const tag = row.header ? 'th' : 'td';
         parts.push('<' + tag + (cell.span > 1 ? ' colspan="' + cell.span + '"' : '') + (cell.rows > 1 ? ' rowspan="' + cell.rows + '"' : '') +
           (cell.align && cell.align !== 'justify' ? ' style="text-align:' + cell.align + '"' : '') + '>' + cell.html + '</' + tag + '>');
-        const paragraphs = /<p(?: |>)/g;
-        complex ||= cell.span > 1 || cell.rows > 1 || cell.html.includes(' data-md-layout=') ||
-          paragraphs.test(cell.html) && paragraphs.test(cell.html) || /<(?:table|[ou]l|h[1-6])(?: |>)/.test(cell.html);
       }
       if (project) parts.push('</tr>');
     }
@@ -2328,12 +2593,26 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
   const acceptedHtml = html;
   for (const row of revisions) for (const edge of ['S', 'E']) html = html.split(sourceToken(reviewMarker + row.id + edge + reviewMarker)).join('');
   progress(1, 'complete');
+  const finalSect = child(body, 'w', 'sectPr'), pgSz = child(finalSect, 'w', 'pgSz'), pgMar = child(finalSect, 'w', 'pgMar');
+  const pgW = integer(attr(pgSz, 'w', 'w'), 12240, 1, 31680), pgH = integer(attr(pgSz, 'w', 'h'), 15840, 1, 31680);
+  const PAPERS = {letter: [12240, 15840], legal: [12240, 20160], tabloid: [15840, 24480], a3: [16838, 23811], a4: [11906, 16838], a5: [8391, 11906]};
+  const papersize = Object.entries(PAPERS).find(([name, [w, h]]) => name !== 'letter' && Math.abs(pgW - w) <= 20 && Math.abs(pgH - h) <= 20)?.[0] ?? null;
+  const marTop = integer(attr(pgMar, 'w', 'top'), 1440, 0, 31680), marRight = integer(attr(pgMar, 'w', 'right'), 1440, 0, 31680),
+    marBottom = integer(attr(pgMar, 'w', 'bottom'), 1440, 0, 31680), marLeft = integer(attr(pgMar, 'w', 'left'), 1440, 0, 31680);
+  const geometry = (marTop !== 1440 || marRight !== 1440 || marBottom !== 1440 || marLeft !== 1440)
+    ? (marTop === marRight && marRight === marBottom && marBottom === marLeft
+      ? `margin=${+(marTop / 1440).toFixed(2)}in`
+      : `top=${+(marTop / 1440).toFixed(2)}in, right=${+(marRight / 1440).toFixed(2)}in, bottom=${+(marBottom / 1440).toFixed(2)}in, left=${+(marLeft / 1440).toFixed(2)}in`)
+    : null;
   return {html, warnings: [...warnings], stats, ...(comments.threads.length ? {comments} : {}),
     ...(wordStyle ? {wordStyle} : {}), ...(revisions.length ? {review: {marker: reviewMarker, changes: revisions, html: rejectedHtml, acceptedHtml}} : {}),
     ...(guardedDetails ? {detailsOpen} : {}),
     ...(mathFences.tails.length ? {mathFences} : {}),
     ...(fontAssets.length ? {fontAssets} : {}),
-    ...(nativeLanguage ? {language: nativeLanguage} : {}), ...(mainfont ? {mainfont} : {}), ...(base !== null ? {base} : {})};
+    ...(nativeLanguage ? {language: nativeLanguage} : {}), ...(mainfont ? {mainfont} : {}),
+    ...(papersize ? {papersize} : {}), ...(geometry ? {geometry} : {}),
+    ...(coreProps.title ? {title: coreProps.title} : {}), ...(coreProps.subtitle ? {subtitle: coreProps.subtitle} : {}),
+    ...(base !== null ? {base} : {})};
   } finally { files.close(); }
 }
 
@@ -2647,7 +2926,12 @@ function finishDocxText(source, result, {convertHtml} = {}) {
     return writeFontAssets(value, result.fontAssets.filter(font => usage.has(font.family.toLowerCase())));
   };
   const language = languageTag(result?.language), settings = readDocumentSettings(source);
-  const fields = (language && !settings.lang ? 'lang: ' + language + '\n' : '') + (result?.mainfont && !settings.mainfont ? 'mainfont: ' + result.mainfont + '\n' : '');
+  const fields = (result?.title && !settings.title ? 'title: ' + JSON.stringify(result.title) + '\n' : '') +
+    (result?.subtitle && !settings.subtitle ? 'subtitle: ' + JSON.stringify(result.subtitle) + '\n' : '') +
+    (language && !settings.lang ? 'lang: ' + language + '\n' : '') +
+    (result?.mainfont && !settings.mainfont ? 'mainfont: ' + result.mainfont + '\n' : '') +
+    (result?.papersize && !settings.papersize ? 'papersize: ' + result.papersize + '\n' : '') +
+    (result?.geometry && !settings.geometry ? 'geometry: ' + result.geometry + '\n' : '');
   if (fields && typeof source === 'string') {
     const frame = frontMatterFrame(source);
     source = frame.closing ? source.slice(0, frame.closing.start) + fields + source.slice(frame.closing.start) : '---\n' + fields + '---\n\n' + source;

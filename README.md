@@ -12,7 +12,7 @@ Free and offline, with no ads, tracking or Rapier account.
 - **On Android:** get Rapier on [Google Play](https://play.google.com/store/apps/details?id=app.rapier). The app
   has no Internet permission. Optional Google Play asset packs download on first use, then work offline.
 - **On Windows:** download [Rapier.exe](https://github.com/jackskip22/rapier/raw/main/Rapier.exe) (version 1.2.30), the whole app in one file, and run it. It is not code-signed yet, so Windows SmartScreen may warn the first time: choose **More info**, then **Run anyway**.
-- **On Linux (x86_64):** download [rapier-linux](https://github.com/jackskip22/rapier/raw/main/rapier-linux) (version 1.2.32), the whole app in one file. Run `chmod +x rapier-linux && ./rapier-linux --install` once to add Rapier to your launcher; it opens as an app window in your Chromium-based browser. [Requirements](src/linux/README.md).
+- **On Linux (x86_64):** download [rapier-linux](https://github.com/jackskip22/rapier/raw/main/rapier-linux) (version 1.2.34), the whole app in one file. Run `chmod +x rapier-linux && ./rapier-linux --install` once to add Rapier to your launcher; it opens as an app window in your Chromium-based browser. [Requirements](src/linux/README.md).
 - **With an agent:** the Claude plugin, ChatGPT or another MCP client at `https://mcp.rapier.website/mcp`.
 
 ## What it does

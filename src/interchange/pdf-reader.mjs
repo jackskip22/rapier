@@ -94,11 +94,22 @@ function inline(line, {code = false, strip = 0, heading = false} = {}) {
   return {html:html.trim(),text:text.trim()};
 }
 
-function paragraph(lines, strip = 0, heading = false) {
+function lexicon(pages) {
+  const whole=new Set(),hyphenated=new Set();
+  for(const page of pages)for(const run of page.runs)for(const word of run.str.toLowerCase().match(/\p{L}+(?:-\p{L}+)*-?/gu)||[])
+    if(!word.endsWith('-'))(word.includes('-')?hyphenated:whole).add(word);
+  return {whole,hyphenated};
+}
+
+function paragraph(lines, strip = 0, heading = false, words = null) {
   let html='',text='';
   for (let i=0;i<lines.length;i++) {
     const part=inline(lines[i],{strip:i?0:strip,heading});
     const glue=separator(text,part.text,true);
+    const stem=!glue&&words&&/(\p{L}+)-$/u.exec(text)?.[1].toLowerCase(),rest=stem&&/^\p{Ll}+/u.exec(part.text)?.[0];
+    if(rest&&stem.length>1&&!words.hyphenated.has(stem+'-'+rest)&&(words.whole.has(stem+rest)||!(words.whole.has(stem)&&words.whole.has(rest)))){
+      html=html.replace(/-((?:<\/[a-z]+>)*)$/,'$1');text=text.slice(0,-1);
+    }
     html+=glue+part.html;text+=glue+part.text;
   }
   return html;
@@ -290,18 +301,36 @@ function geometricBlocks(runs, pictures, width, height) {
     if(first.length<2 || first.length>12 || first.some(l=>listMarker(inline(l).text) || plain([l]).length>48 || plain([l]).split(/\s+/).length>7))continue;
     first.sort((a,b)=>a.x-b.x);
     const grid=[first];let y=first[0].y;
+    const column=(l,from)=>{
+      let best=-1,distance=Infinity;
+      for(let c=from;c<first.length;c++){
+        const h=first[c],left=c?first[c-1].x+first[c-1].w:-Infinity,right=first[c+1]?.x??Infinity;
+        if(l.x<left-h.size*.5||l.x+l.w>right+h.size*.5)continue;
+        const d=Math.min(Math.abs(l.x-h.x),Math.abs(l.x+l.w-h.x-h.w),Math.abs(l.x+l.w/2-h.x-h.w/2));
+        if(d<distance){best=c;distance=d;}
+      }
+      return best;
+    };
+    let pitch=0;
     for(const candidate of lines){
       if(candidate.y<=y+first[0].size*.6 || candidate.y>y+first[0].size*3.2)continue;
+      if(pitch&&Math.abs(candidate.y-y-pitch)>pitch*.35)break;
       const row=lines.filter(l=>!taken.has(l)&&Math.abs(l.y-candidate.y)<l.size*.4).sort((a,b)=>a.x-b.x);
-      if(row.length!==first.length || row.some((l,c)=>Math.abs(l.x-first[c].x)>first[0].size || plain([l]).length>48 || plain([l]).split(/\s+/).length>7))break;
-      grid.push(row);y=row[0].y;
+      if(row.length>first.length || row.length<(first.length>2?2:first.length) ||
+        row.some(l=>plain([l]).length>48 || plain([l]).split(/\s+/).length>7))break;
+      const cells=Array(first.length).fill(null);let from=0;
+      for(const l of row){const c=column(l,from);if(c<0)break;cells[c]=l;from=c+1;}
+      if(cells.filter(Boolean).length!==row.length)break;
+      pitch||=row[0].y-y;
+      grid.push(cells);y=row[0].y;
     }
     if(grid.length<3)continue;
     let flowing=0;
-    for(let r=1;r<grid.length;r++)for(let c=0;c<grid[r].length;c++)if(/[\p{Ll},;]$/u.test(plain([grid[r-1][c]]))&&/^\p{Ll}/u.test(plain([grid[r][c]])))flowing++;
-    if(flowing*2>(grid.length-1)*first.length)continue;
-    grid.flat().forEach(l=>taken.add(l));
-    tables.push({type:'table',cells:grid.map(row=>row.map(l=>({lines:[l]}))),lines:grid.flat(),y:grid[0][0].y,h:0});
+    for(let r=1;r<grid.length;r++)for(let c=0;c<first.length;c++)if(grid[r-1][c]&&grid[r][c]&&/[\p{Ll},;-]$/u.test(plain([grid[r-1][c]]))&&/^\p{Ll}/u.test(plain([grid[r][c]])))flowing++;
+    if(flowing*2>=(grid.length-1)*first.length)continue;
+    const cellLines=grid.flat().filter(Boolean);
+    cellLines.forEach(l=>taken.add(l));
+    tables.push({type:'table',cells:grid.map(row=>row.map(l=>({lines:l?[l]:[]}))),lines:cellLines,y:grid[0][0].y,h:0});
   }
   const tabled=new Set(tables.flatMap(t=>t.lines.flatMap(l=>l.runs)));
   lines=segmentRows(runs.filter(r=>!tabled.has(r)),1.1);
@@ -350,10 +379,11 @@ function geometricBlocks(runs, pictures, width, height) {
 }
 
 function documentStyles(pages) {
-  const counts=new Map(),sizes=new Set();
-  for(const page of pages)for(const run of page.runs){const size=Math.round(run.size*2)/2;counts.set(size,(counts.get(size)||0)+run.str.length);sizes.add(size);}
+  const counts=new Map(),sizes=new Set(),bold=new Set();
+  for(const page of pages)for(const run of page.runs){const size=Math.round(run.size*2)/2;counts.set(size,(counts.get(size)||0)+run.str.length);sizes.add(size);if(run.bold&&/\p{L}{3}/u.test(run.str))bold.add(size);}
   const body=[...counts].sort((a,b)=>b[1]-a[1])[0]?.[0]||12;
-  return {body,headings:[...sizes].filter(n=>n>body*1.1).sort((a,b)=>b-a)};
+  const headings=[...sizes].filter(n=>n>body*1.1).sort((a,b)=>b-a);
+  return {body,headings,boldHeadings:headings.filter(n=>bold.has(n))};
 }
 
 function dropCaps(runs) {
@@ -409,7 +439,7 @@ function renderBlocks(blocks, styles) {
     if(b.type==='image'){closeLists();flushCode();output.push('<p'+(b.rotate?' data-md-layout="'+encodeURIComponent('<!--md-layout:v1 rotate='+b.rotate+'deg-->')+'"':'')+'><img data-rapier-asset="'+b.reference+'" alt="'+escape(b.alt)+'"></p>');continue;}
     if(!b.lines.length)continue;
     if(b.type==='footnote'){
-      notes.push('<li id="fn'+b.note+'"><p>'+paragraph(b.lines).replace(/\s*\u21a9\ufe0e?\s*$/u,'')+' <a class="footnote-backref" href="#fnref'+b.note+'">↩︎</a></p></li>');continue;
+      notes.push('<li id="fn'+b.note+'"><p>'+paragraph(b.lines,0,false,styles.words).replace(/\s*\u21a9\ufe0e?\s*$/u,'')+' <a class="footnote-backref" href="#fnref'+b.note+'">↩︎</a></p></li>');continue;
     }
     const text=plain(b.lines),size=median(b.lines.map(l=>l.size));
     const mono=b.lines.every(l=>l.runs.every(r=>r.mono));
@@ -427,23 +457,26 @@ function renderBlocks(blocks, styles) {
       if(lists.length===depth&&lists.at(-1).tag!==tag){output.push('</li></'+lists.pop().tag+'>');}
       if(lists.length===depth)output.push('</li><li>');
       else {output.push('<'+tag+(match&&+match[1]!==1?' start="'+Number(match[1])+'"':'')+'><li>');lists.push({tag});}
-      output.push(b.paragraphs?b.paragraphs.map(lines=>'<p>'+paragraph(lines)+'</p>').join(''):paragraph(b.lines,b.strip||0));continue;
+      output.push(b.paragraphs?b.paragraphs.map(lines=>'<p>'+paragraph(lines,0,false,styles.words)+'</p>').join(''):paragraph(b.lines,b.strip||0,false,styles.words));continue;
     }
     closeLists();
     if(b.type==='table'){
-      output.push('<table><thead><tr>'+b.cells[0].map(c=>'<th>'+paragraph(c.lines)+'</th>').join('')+'</tr></thead><tbody>'+b.cells.slice(1).map(r=>'<tr>'+r.map(c=>'<td>'+paragraph(c.lines)+'</td>').join('')+'</tr>').join('')+'</tbody></table>');continue;
+      const amount=c=>b.cells.slice(1).every(r=>!r[c]?.lines.length||/^[-−+(]?[$€£¥]?\s?\d[\d,. ]*%?\)?(?: ?(?:%|[\p{Ll}µ]{1,3}))?$/u.test(plain(r[c].lines)))&&b.cells.slice(1).some(r=>r[c]?.lines.length);
+      output.push('<table><thead><tr>'+b.cells[0].map((c,i)=>'<th'+(amount(i)?' align="right"':'')+'>'+paragraph(c.lines,0,true,styles.words)+'</th>').join('')+'</tr></thead><tbody>'+b.cells.slice(1).map(r=>'<tr>'+r.map(c=>'<td>'+paragraph(c.lines,0,false,styles.words)+'</td>').join('')+'</tr>').join('')+'</tbody></table>');continue;
     }
     let tag=b.type;
     if(tag==='p'&&!b.tagged || tag==='heading'){
-      const short=text.length<180&&b.lines.length<=2;
-      const rank=styles.headings.findIndex(n=>Math.abs(n-size)<.6);
-      if(short&&rank>=0&&(tag==='heading'||b.lines.every(l=>l.runs.every(r=>r.bold))))tag='h'+Math.min(6,rank+1);
-      else if(short&&(b.lines.every(l=>l.runs.every(r=>r.bold))||b.isolated&&/^[A-Z\s.IVX]+$/.test(text))&&/^(?:[IVX]+\.|\d+(?:\.\d+)*\.?\s|[A-Z][A-Z\s]+$)/.test(text))tag='h'+Math.min(6,styles.headings.length+1);
+      const short=text.length<180&&b.lines.length<=2,bold=b.lines.every(l=>l.runs.every(r=>r.bold));
+      const ranks=tag==='heading'?styles.headings:styles.boldHeadings,rank=ranks.findIndex(n=>Math.abs(n-size)<.6);
+      const depth=bold&&/^(\d{1,3}(?:\.\d{1,3}){0,4})\.?\s+\p{Lu}/u.exec(text)?.[1].split('.').length;
+      if(short&&rank>=0&&(tag==='heading'||bold))tag='h'+Math.min(6,depth?depth+1:rank+1);
+      else if(short&&(bold||b.isolated&&/^[A-Z\s.IVX]+$/.test(text)&&/\p{L}{4}/u.test(text))&&/^(?:[IVX]+\.|\d+(?:\.\d+)*\.?\s|[A-Z][A-Z\s]+$)/.test(text))
+        tag='h'+Math.min(6,depth?depth+1:styles.boldHeadings.length+1);
       else tag='p';
     }
     if(tag==='quote')tag='blockquote';
     if(!/^(?:p|h[1-6]|blockquote)$/.test(tag))tag='p';
-    output.push('<'+tag+(b.lines[0].rtl?' dir="rtl"':'')+'>'+paragraph(b.lines,0,tag[0]==='h')+'</'+tag+'>');
+    output.push('<'+tag+(b.lines[0].rtl?' dir="rtl"':'')+'>'+paragraph(b.lines,0,tag[0]==='h',styles.words)+'</'+tag+'>');
   }
   closeLists();flushCode();
   if(notes.length)output.push('<section class="footnotes"><ol>'+notes.join('')+'</ol></section>');
@@ -686,9 +719,9 @@ export async function readPdf(blob, {mode = 'text', embedImage, checkCurrent = (
         softHyphens(runs, operators, session.api);
         for (const run of runs) {
           let font; try { font = page.commonObjs.get(run.font); } catch (_) {}
-          run.mono = /Mono|Courier|Consolas/i.test(font?.name || '') || !font?.name && styles[run.font]?.fontFamily === 'monospace';
-          run.bold = /Bold|Black|Heavy|Demi|Semibold|(?:^|[.+-])(?:B|Bd|Blk)(?:[.+-]|$)/i.test(font?.name || '');
-          run.italic = /Italic|Oblique|(?:^|[.+-])(?:It|Obl)(?:[.+-]|$)/i.test(font?.name || '');
+          run.mono = /Mono|Courier|Consolas|CMTT|SFTT|NimbusMon/i.test(font?.name || '') || !font?.name && styles[run.font]?.fontFamily === 'monospace';
+          run.bold = /Bold|Black|Heavy|Demi|Semibold|CMBX|(?:^|[.+-])(?:B|Bd|Blk)(?:[.+-]|$)|-Medi(?:Ital)?$/i.test(font?.name || '');
+          run.italic = /Italic|Oblique|CMTI|(?:^|[.+-])(?:It|Obl)(?:[.+-]|$)|-(?:Regu|Medi)Ital$/i.test(font?.name || '');
           run.carrier = /RapierWillCarrier/.test(font?.name || '');
         }
         const pictures = await pagePictures(page, viewport, session.api, operators, ids,
@@ -748,7 +781,7 @@ export async function readPdf(blob, {mode = 'text', embedImage, checkCurrent = (
       for (const data of pages) data.runs = data.runs.filter(r => !removed.has(r));
       footnotes(pages);
       for (const data of pages) data.runs = dropCaps(data.runs);
-      const styles = documentStyles(pages);
+      const styles = {...documentStyles(pages), words: lexicon(pages)};
       for (const data of pages) {
         await checkpoint();
         let blocks;

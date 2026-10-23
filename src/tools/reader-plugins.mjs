@@ -38,6 +38,7 @@ export function readerPluginLoader(loader, built) {
 		'\t});',
 		'',
 	].join('\n');
+	loader = replaceOnce(loader, 'var localUrl = file.file && RapierBundleIO.sameOriginUrl(file.file), urls;', 'var localUrl = null, urls;', 'the same-origin plug-in address');
 	return replaceOnce(loader, '\twindow.RapierPluginLoader = Object.freeze({files: _rapierVerifiedFiles, portable, zenumlSource});', built.map(definition).join('') + '\twindow.RapierPluginLoader = Object.freeze({files: _rapierVerifiedFiles, portable, zenumlSource});', 'the loader\'s export');
 }
 

@@ -204,8 +204,13 @@ async function _rapierReadSharedDocument(text, filename) {
 	const template = document.createElement('template');
 	template.innerHTML = String(text);
 	const carriers = Array.from(template.content.querySelectorAll('#rapier-document'));
-	if (carriers.length !== 1 || carriers[0].tagName !== 'SCRIPT' || carriers[0].type !== 'text/markdown')
+	if (carriers.length !== 1 || carriers[0].tagName !== 'SCRIPT' || carriers[0].type !== 'text/markdown') {
+		if (!carriers.length) {
+			const page = await _rapierRenderModule('render')._rapierReadSharedDocument(text, String(filename).replace(/\.rapier\.html$/i, '.html'));
+			if (page) return page;
+		}
 		throw new Error('This HTML editor file has no complete editable document.');
+	}
 	const carrier = carriers[0], name = carrier.getAttribute('data-name') || 'document.md';
 	const kind = carrier.getAttribute('data-kind') || _classifyDocKind(name);
 	if (!_rapierDocumentNameIsAdmissible(filename) || !_rapierDocumentNameIsAdmissible(name) || !['markdown', 'text', 'code'].includes(kind))
@@ -243,12 +248,16 @@ async function _rapierPrepareEditablePage(captured, options = {}) {
 		{docKind: captured.metadata.docKind, base: captured.comparisonBase?.text, also: options.also});
 	const text = (captured.metadata.bom ? '\uFEFF' : '') + captured.canonical;
 	const {filename, codeLang} = captured.metadata, ext = codeLang && Object.keys(EXT_TO_LANG).find(e => EXT_TO_LANG[e] === codeLang);
+	const own = document.getElementById('rapier-document')?.dataset.name;
+	const carrierName = !/\.rapier\.html$/i.test(filename) ? filename
+		: own && !/\.rapier\.html$/i.test(own) && _rapierEditablePageFilename(own) === _rapierEditablePageFilename(filename) && (!ext || own.endsWith('.' + ext)) ? own
+		: filename.replace(/\.rapier\.html$/i, '.' + (ext || (captured.metadata.docKind === 'text' ? 'txt' : 'md')));
 	const carriedParts = new Map();
 	const readable = _rapierReadableWithoutScripts(captured);
 	const write = (ids, carried = captured.carried) => {
 		if (!carriedParts.has(carried)) carriedParts.set(carried, _rapierLedgerParts(text, captured.ledger, carried));
 		const parts = carriedParts.get(carried);
-		const html = globalThis.RapierPortablePage.wrap(portable.assemble(ids), text, ext ? filename.replace(/\.rapier\.html$/i, '.' + ext) : filename, {
+		const html = globalThis.RapierPortablePage.wrap(portable.assemble(ids), text, carrierName, {
 			kind: captured.metadata.docKind, theme, base: captured.comparisonBase || undefined, readable, ...parts,
 		});
 		const blob = new Blob([html], {type: 'text/html; charset=utf-8'});
@@ -277,6 +286,11 @@ function _rapierPortableLacks(name) {
 	if (typeof RapierParts === 'undefined' || !RapierParts.sealed()) return false;
 	showToast('This file was saved without ' + name + '. Open it at rapier.website to see it.', 'info');
 	return true;
+}
+
+function _rapierEditablePageCarries() {
+	if (!document.getElementById('rapier-document')) return 'history';
+	return document.getElementById('rapier-ledger') ? 'history' : document.getElementById('rapier-authorship') ? 'authorship' : 'none';
 }
 
 function _rapierEditablePageKeeps() {
@@ -392,9 +406,10 @@ async function _rapierShareFile(options) {
 		}
 	}
 
-	const saved = await _download(blob, filename);
+	const place = {};
+	const saved = await _download(blob, filename, place);
 	if (saved === true) {
-		showToast('Saved ' + _rapierShareProduced(filename, blob) + '. Send this file to anyone.', 'success');
+		showToast('Saved ' + _rapierShareProduced(place.name || filename, blob) + (place.where || '') + '. Send this file to anyone.', 'success');
 		return true;
 	}
 	if (saved === null) showToast('Could not save ' + filename + '.', 'error');
@@ -618,6 +633,7 @@ function _rapierShareLedgerReset() {
 		liveShare.addEventListener('click', () => {
 			if (_rapierUiAndroid()) return;
 			closeDialog(document.getElementById('share-overlay'));
+			if (typeof RapierParts !== 'undefined' && RapierParts.sealed()) { void _rapierFullEditorOnly('Live document'); return; }
 			_rapierLive.openJoin();
 		});
 	}
@@ -771,6 +787,12 @@ function _rapierLedgerCapture() {
 		records: rapier.undo.ledger.map(_rapierJournalRecord), documentAuthority: String(rapier.identity.authority),
 		revision: Number(rapier.revision.settled), root: rapier.document.source.rootId,
 		complete: _rapierHistoryIsComplete() && !rapier.undo.trimReason});
+}
+function _rapierLedgerInput() {
+	return Object.defineProperty({text: _rapierGetCanonicalText(), metadata: _rapierDocumentMetadata(),
+		records: rapier.undo.ledger.map(_rapierJournalRecord), documentAuthority: String(rapier.identity.authority),
+		revision: Number(rapier.revision.settled), root: rapier.document.source.rootId,
+		complete: _rapierHistoryIsComplete() && !rapier.undo.trimReason}, 'rows', {value: rapier.undo.ledger.slice()});
 }
 function _rapierLedgerParts(text, ledger, choice) {
 	if (!ledger || !['authorship', 'history'].includes(choice)) return {ledger: null, authorship: null};

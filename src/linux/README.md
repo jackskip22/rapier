@@ -28,7 +28,7 @@ The app serves its bundled files through a private browser pipe. It starts with 
 
 Original-folder saves check the pinned file, parent, version, and bytes before replacing it. A detected outside edit keeps the original and creates an exclusive edited copy. This is a checked save, not a filesystem compare-and-swap operation. Never treat a refusal as a successful save.
 
-To build from the source tree, use the Node version in `tools/toolchain.json`, Rust, Cargo, GNU tar, and binutils:
+To build from the source tree, use the Node version in `tools/toolchain.json` (at least Node 22.15: the build and the stager use `module.registerHooks`), Rust, Cargo, GNU tar, and binutils:
 
 ```sh
 RAPIER_PROFILE=reader node tools/build.mjs

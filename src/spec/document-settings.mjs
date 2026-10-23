@@ -129,6 +129,7 @@ function paperOf(value) {
 	return pixels && width <= 10000 && height <= 10000 ? Object.freeze({name, width: width * 15, height: height * 15, css: width + 'px ' + height + 'px'}) : null;
 }
 export const pageSizeOf = settings => settings?.papersize || PAPERS.letter;
+export const paperForLanguage = language => /(?:^|[-_])(?:US|CA|MX|PH|CL|CO|VE|CR|GT)$/i.test(String(language || '')) ? PAPERS.letter : PAPERS.a4;
 export const PAGE_SIZES = Object.freeze(['letter', 'legal', 'tabloid', 'a3', 'a4', 'a5', '1080x1080px', '1080x1350px', '1920x1080px', '1200x630px']);
 const EMPTY = Object.freeze({
 	title: null, subtitle: null, lang: null, fontsize: null, mainfont: null, sansfont: null, monofont: null, defaultfont: null, linestretch: null,

@@ -22,7 +22,7 @@ export function createParagraphFitter() {
     return handle;
   }
 
-  function* solveSteps(handle, width, {indent = 0, left = 0, right = 0, widths = null, shrink = .4, stretch = .8} = {}, known) {
+  function* solveSteps(handle, width, {indent = 0, left = 0, right = 0, widths = null, shrink = .5, stretch = 1.2, hyphenCost = 8} = {}, known) {
     const prepared = indexes.get(handle);
     if (!prepared || ![width, indent, left, right].every(Number.isFinite) || width <= 0) return null;
     const measures = Array.isArray(widths) && widths.every(value => Number.isFinite(value) && value > 0) ? widths : [];
@@ -102,7 +102,7 @@ export function createParagraphFitter() {
           if (!Number.isFinite(natural)) continue;
           const count = lastWord - start.word, gapWidth = gaps[lastWord] - gaps[start.word];
           const opening = start.cut ? 0 : Math.min(Math.max(0, left), words[start.word].opening);
-          const closing = end.cut ? 0 : Math.min(Math.max(0, right), words[lastWord].closing);
+          const closing = end.cut ? Math.min(Math.max(0, right), end.cut.protrude || 0) : Math.min(Math.max(0, right), words[lastWord].closing);
           const priorDiscretionary = start.kind === 'soft' || start.kind === 'auto';
           if (final && priorDiscretionary) continue;
           for (let lineClass = 0; lineClass < classes; lineClass++) {
@@ -120,7 +120,7 @@ export function createParagraphFitter() {
             let local = 1 + 100 * Math.max(0, overflow / target) ** 2;
             if (final && startIndex) local += 100 * Math.max(0, .45 - natural / target) ** 2 + (count === 0 ? 25 : 0);
             else if (!final) local += (ratio < 0 ? 100 : 12.5) * ratio ** 2 + 2400 * (residual / target) ** 2;
-            if (discretionary) local += 12 + (priorDiscretionary ? 12 : 0);
+            if (discretionary) local += hyphenCost + (priorDiscretionary ? hyphenCost : 0);
             const set = !final && count && residual > 0 ? remaining / count : delta;
             const nextClass = Math.min(lineClass + 1, classes - 1);
             for (let active = available; active; active &= active - 1) {
@@ -153,7 +153,7 @@ export function createParagraphFitter() {
         const start = points[startIndex], end = points[endIndex], lastWord = end.cut ? end.word : end.word - 1;
         chosen.push({start: start.next, end: end.end, next: end.next, kind: end.kind, glyph: end.cut?.glyph || '',
           wordSpacing: spacing[best], opening: start.cut ? 0 : Math.min(Math.max(0, left), words[start.word].opening),
-          closing: end.cut ? 0 : Math.min(Math.max(0, right), words[lastWord].closing),
+          closing: end.cut ? Math.min(Math.max(0, right), end.cut.protrude || 0) : Math.min(Math.max(0, right), words[lastWord].closing),
           firstWord: start.word, lastWord, segment: segmentIndex});
         best = priorIndex; endIndex = startIndex;
       }

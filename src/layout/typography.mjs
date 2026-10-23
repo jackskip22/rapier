@@ -464,6 +464,7 @@ export function createTypography() {
   function updateProjection(projection, plan) {
     for (const {node,property,line,sign} of projection.bindings) {
       const value = sign * plan.lines[line][property] + 'px';
+      if (node.hasAttribute(boundary)) { if (node.style.getPropertyValue('--md-fit-protrude') !== value) node.style.setProperty('--md-fit-protrude', value); continue; }
       const name = property === 'opening' ? 'marginInlineStart' : property === 'closing' ? 'marginInlineEnd' : 'wordSpacing';
       if (node.style[name] !== value) node.style[name] = value;
     }
@@ -487,7 +488,7 @@ export function createTypography() {
         add(line.end);
       }
       if (line.kind === 'space') operations.push({start:line.end,end:line.next,boundary:true});
-      else if (line.kind !== 'end') inserts.push({offset:line.end,glyph:line.glyph});
+      else if (line.kind !== 'end') inserts.push({offset:line.end,glyph:line.glyph,line:lineIndex,protrudes:line.closing>0});
       const first = words[line.firstWord], last = words[line.lastWord];
       if (first.opening && line.start === first.start) operations.push({start:first.start,end:first.openEnd,opening:true,line:lineIndex});
       if (last.closing && line.end === last.end) operations.push({start:last.closeStart,end:last.end,closing:true,line:lineIndex});
@@ -538,6 +539,7 @@ export function createTypography() {
       const at=ends.get(insert.offset);
       const marker=paragraph.ownerDocument.createElement('span');marker.setAttribute(boundary,insert.glyph?'hyphen':'');
       if (insert.glyph) marker.style.setProperty('--md-fit-hyphen',JSON.stringify(insert.glyph));
+      if (insert.protrudes) bindings.push({node:marker,property:'closing',line:insert.line,sign:-1});
       at.after(marker);
     }
     const projection = {bindings,topology:topology(plan)};
@@ -689,77 +691,69 @@ export function createTypography() {
     slotPlans.set(paragraph, {key, plan});
     return plan;
   }
-  function slotLines(paragraph, items, options, {width, top, obstacles, lineHeight, minWidth, slotsForBand, justify, hyphenate}) {
+  function slotLines(paragraph, items, options, {width, top, obstacles, lineHeight, minWidth, slotsForBand, slotSequence, columnsFilled, justify, hyphenate}) {
     if (!obstacles.length) return null;
     const doc = paragraph.ownerDocument, words = scope(doc);
     const source = items.map(item => ({...item, hyphenate}));
     const geometry = words.prepare(paragraph, source, {policy: 'paragraph', language: options.language, whiteSpace: 'normal',
       wordBreak: options.wordBreak, hanging: false, paragraphBreaks: [0, source.length]});
     if (!geometry) return null;
-    const sequence = [], bottom = Math.max(...obstacles.map(item => item.y + item.height)) - top;
-    let y = 0, rows = 0;
-    while (y < bottom && rows < 512 && sequence.length < 1024) {
-      const bands = slotsForBand(width, obstacles, top + y, lineHeight, Math.min(minWidth, width));
-      if (!bands) return null;
-      if (bands.length) {
-        for (const band of bands) sequence.push({x: band.x, y, width: band.width});
-        y += lineHeight; rows++; continue;
+    const build = order => {
+      const found = slotSequence(width, top, obstacles, lineHeight, minWidth, slotsForBand, 'ltr', order);
+      if (!found?.multiple) return null;
+      const sequence = found.slots, y = found.end;
+      const prepared = fitter.prepare(geometry);
+      let slots = sequence, plan = null;
+      for (let pass = 0; prepared && pass < 8; pass++) {
+        const measures = slots.map(slot => Math.floor(slot.width * 64) / 64);
+        if (!measures.length) return null;
+        plan = words.fit(paragraph, geometry, known => fitter.solveSteps(prepared, width, {widths: measures, shrink: justify ? undefined : 0}, known));
+        if (!plan) return null;
+        const wide = new Set();
+        plan.lines.forEach((line, index) => {
+          if (index >= slots.length || line.firstWord !== line.lastWord || line.kind === 'soft' || line.kind === 'auto') return;
+          const word = geometry.segments[line.segment].words[line.firstWord];
+          if (line.start === word.start && line.end === word.end && word.width > measures[index] + .5) wide.add(slots[index]);
+        });
+        if (!wide.size) break;
+        slots = slots.filter(slot => !wide.has(slot)); plan = null;
       }
-      let next = Infinity;
-      for (const obstacle of obstacles) if (obstacle.x < width && obstacle.x + obstacle.width > 0 &&
-          obstacle.y < top + y + lineHeight && obstacle.y + obstacle.height > top + y) next = Math.min(next, obstacle.y + obstacle.height - top);
-      if (!Number.isFinite(next) || next <= y) return null;
-      y = next;
-    }
-    const prepared = fitter.prepare(geometry);
-    let slots = sequence, plan = null;
-    for (let pass = 0; prepared && pass < 8; pass++) {
-      const measures = slots.map(slot => Math.floor(slot.width * 64) / 64);
-      if (!measures.length) return null;
-      plan = words.fit(paragraph, geometry, known => fitter.solveSteps(prepared, width, {widths: measures, shrink: justify ? undefined : 0}, known));
-      if (!plan) return null;
-      const wide = new Set();
-      plan.lines.forEach((line, index) => {
-        if (index >= slots.length || line.firstWord !== line.lastWord || line.kind === 'soft' || line.kind === 'auto') return;
-        const word = geometry.segments[line.segment].words[line.firstWord];
-        if (line.start === word.start && line.end === word.end && word.width > measures[index] + .5) wide.add(slots[index]);
-      });
-      if (!wide.size) break;
-      slots = slots.filter(slot => !wide.has(slot)); plan = null;
-    }
-    const perRow = new Map();
-    for (const slot of slots) perRow.set(slot.y, (perRow.get(slot.y) || 0) + 1);
-    if (!plan || ![...perRow.values()].some(count => count > 1)) return null;
-    const lines = [], text = geometry.text, offsets = geometry.offsets, space = /^[\t\n\f\r ]*$/;
-    for (let index = 0; index < plan.lines.length; index++) {
-      const line = plan.lines[index], slot = sequence[index] || {x: 0, y: y + (index - sequence.length) * lineHeight, width};
-      const spacing = justify ? line.wordSpacing : 0, fragments = [];
-      const segment = geometry.segments[line.segment].words.slice(line.firstWord, line.lastWord + 1);
-      let at = 0, previous = null;
-      while (at < source.length - 1 && offsets[at + 1] <= line.start) at++;
-      for (; at < source.length && offsets[at] < line.end; at++) {
-        let from = Math.max(line.start, offsets[at]), to = Math.min(line.end, offsets[at + 1]);
-        if (previous) while (from < to && /[\t\n\f\r ]/.test(text[from])) from++;
-        if (offsets[at + 1] < line.end) while (to > from && /[\t\n\f\r ]/.test(text[to - 1])) to--;
-        if (to <= from) continue;
-        const fragment = {itemIndex: at, sourceStart: from - offsets[at], sourceEnd: to - offsets[at], derive: true, occupiedWidth: 0, gapItemIndex: at, gapBefore: 0};
-        if (previous) {
-          fragment.gapItemIndex = previous.itemIndex;
-          if (previous.end < from) {
-            if (!space.test(text.slice(previous.end, from))) return null;
-            const before = segment.find(word => word.end === previous.end);
-            if (!before?.gap) return null;
-            fragment.gapBefore = before.gap.width + spacing;
-          } else fragment.gapBefore = 0;
+      const perRow = new Map();
+      for (const slot of slots) perRow.set(slot.y, (perRow.get(slot.y) || 0) + 1);
+      if (!plan || ![...perRow.values()].some(count => count > 1)) return null;
+      const lines = [], text = geometry.text, offsets = geometry.offsets, space = /^[\t\n\f\r ]*$/;
+      for (let index = 0; index < plan.lines.length; index++) {
+        const line = plan.lines[index], slot = sequence[index] || {x: 0, y: y + (index - sequence.length) * lineHeight, width};
+        const spacing = justify ? line.wordSpacing : 0, fragments = [];
+        const segment = geometry.segments[line.segment].words.slice(line.firstWord, line.lastWord + 1);
+        let at = 0, previous = null;
+        while (at < source.length - 1 && offsets[at + 1] <= line.start) at++;
+        for (; at < source.length && offsets[at] < line.end; at++) {
+          let from = Math.max(line.start, offsets[at]), to = Math.min(line.end, offsets[at + 1]);
+          if (previous) while (from < to && /[\t\n\f\r ]/.test(text[from])) from++;
+          if (offsets[at + 1] < line.end) while (to > from && /[\t\n\f\r ]/.test(text[to - 1])) to--;
+          if (to <= from) continue;
+          const fragment = {itemIndex: at, sourceStart: from - offsets[at], sourceEnd: to - offsets[at], derive: true, occupiedWidth: 0, gapItemIndex: at, gapBefore: 0};
+          if (previous) {
+            fragment.gapItemIndex = previous.itemIndex;
+            if (previous.end < from) {
+              if (!space.test(text.slice(previous.end, from))) return null;
+              const before = segment.find(word => word.end === previous.end);
+              if (!before?.gap) return null;
+              fragment.gapBefore = before.gap.width + spacing;
+            } else fragment.gapBefore = 0;
+          }
+          fragments.push(fragment); previous = {itemIndex: at, end: to};
         }
-        fragments.push(fragment); previous = {itemIndex: at, end: to};
+        if (!fragments.length) return null;
+        if (line.kind === 'soft' || line.kind === 'auto') fragments.at(-1).glyph = line.glyph || '-';
+        lines.push({x: slot.x, y: slot.y, width: slot.width, fragments, wordSpacing: spacing});
       }
-      if (!fragments.length) return null;
-      if (line.kind === 'soft' || line.kind === 'auto') fragments.at(-1).glyph = line.glyph || '-';
-      lines.push({x: slot.x, y: slot.y, width: slot.width, fragments, wordSpacing: spacing});
-    }
-    const last = lines.at(-1);
-    return {lines, height: last ? Math.max(lineHeight, last.y + lineHeight) : lineHeight};
+      return {plan: {lines, height: Math.max(lineHeight, ...lines.map(line => line.y + lineHeight))}, filled: columnsFilled(slots, slots.slice(0, plan.lines.length))};
+    };
+    const columns = build('columns');
+    if (!columns || columns.filled) return columns?.plan || null;
+    return build('rows')?.plan || columns.plan;
   }
 
   function retire(root, {documentChanged=false}={}) {

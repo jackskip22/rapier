@@ -211,6 +211,7 @@ export function documentFontUsage(markdown, parser, defaultFont) {
 	const inherited = defaultFont === undefined ? settings.defaultfont : documentFont(defaultFont);
 	const main = family(settings.mainfont || inherited || settings.sansfont), sans = family(settings.sansfont || settings.mainfont || inherited), mono = family(settings.monofont);
 	const add = (name, text) => { if (name && !Object.hasOwn(FONT_STACKS, name.toLowerCase()) && text) use.set(name, (use.get(name) || '') + text + '\n'); };
+	if (!main && !sans && !mono && !source.includes('<')) return use;
 	const plain = html => md.utils.unescapeAll(String(html).replace(/<!--[^]*?-->/g, '').replace(/<(script|style)\b[^>]*>[^]*?<\/\1\s*>/gi, '').replace(/<[^>]*>/g, '').replace(/\\/g, '\\\\'));
 	let blockFamily = main;
 	for (const token of md.parse(splitOpeningFrontmatter(source).body, {})) {

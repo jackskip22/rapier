@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import {readFile, writeFile} from 'node:fs/promises';
+import {readFile, stat, writeFile} from 'node:fs/promises';
+import {withPluginTable} from './embed-plugin-table.mjs';
 import {existsSync} from 'node:fs';
 import {dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -50,11 +51,29 @@ export async function syncVersion({check = false, absent = 'refuse', root = ROOT
 		drifted.push(rel); location(rel, text, next);
 		if (!check) await writeFile(path, next);
 	}
+	{
+		const rel = 'packages/rapier-embed/embed.mjs', path = resolve(root, rel);
+		if (absent !== 'skip' || existsSync(path)) {
+			const text = await read(rel);
+			if (text !== null) {
+				if (!/const PACKAGE_VERSION = '[^']*';/.test(text)) problems.push({path: rel, line: 1, message: 'No PACKAGE_VERSION'});
+				const next = text.replace(/(const PACKAGE_VERSION = ')[^']*(';)/, (_, open, close) => open + VERSION + close);
+				if (next !== text) { drifted.push(rel); location(rel, text, next); if (!check) await writeFile(path, next); }
+			}
+		}
+	}
 	const skill = resolve(root, 'skills/embed-rapier/SKILL.md'), readme = resolve(root, 'packages/rapier-embed/README.md');
-	if (existsSync(skill) && (absent !== 'skip' || existsSync(readme))) {
-		const body = (await readFile(skill, 'utf8')).replace(/^---\n[\s\S]*?\n---\n\s*/, '');
-		const current = existsSync(readme) ? await readFile(readme, 'utf8') : '';
-		if (current !== body) { drifted.push('packages/rapier-embed/README.md'); location('packages/rapier-embed/README.md', current, body); if (!check) await writeFile(readme, body); }
+	if (existsSync(skill)) {
+		const authored = await readFile(skill, 'utf8');
+		const manifest = await readFile(resolve(root, 'packages/rapier-embed/rapier-plugins.json'), 'utf8').then(JSON.parse).catch(() => null);
+		const reader = await stat(resolve(root, 'rapier-reader.html')).then(info => info.size).catch(() => 0);
+		const tabled = withPluginTable(authored, manifest, reader);
+		if (tabled !== authored) { drifted.push('skills/embed-rapier/SKILL.md'); location('skills/embed-rapier/SKILL.md', authored, tabled); if (!check) await writeFile(skill, tabled); }
+		if (absent !== 'skip' || existsSync(readme)) {
+			const body = tabled.replace(/^---\n[\s\S]*?\n---\n\s*/, '');
+			const current = existsSync(readme) ? await readFile(readme, 'utf8') : '';
+			if (current !== body) { drifted.push('packages/rapier-embed/README.md'); location('packages/rapier-embed/README.md', current, body); if (!check) await writeFile(readme, body); }
+		}
 	}
 	return {version: VERSION, files: VERSIONED_FILES.length + ROUTE_FILES.length, drifted, absent: missing, problems, locations};
 }

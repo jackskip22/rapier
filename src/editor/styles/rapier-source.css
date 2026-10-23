@@ -1684,6 +1684,13 @@ button.settings-text-action:disabled { opacity: .6; cursor: wait; }
 .settings-plugin-rows .settings-action-row > .settings-text-action { background: var(--color-surface-2); }
 .settings-plugin-rows { display: flex; flex-direction: column; gap: var(--space-2); margin-bottom: var(--space-4); }
 .settings-plugin-rows > .settings-action-row { margin: 0; }
+html[data-rapier-sealed] .settings-action-row:has(> :is(#pdf-plugin-action, #ocr-plugin-action, #notes-plugin-action, [data-action="gallery-install"])),
+html[data-rapier-sealed]:not([data-rapier-carries~="math"]) .settings-action-row:has(> #math-plugin-action),
+html[data-rapier-sealed]:not([data-rapier-carries~="mermaid"]) .settings-action-row:has(> #mermaid-plugin-action),
+html[data-rapier-sealed]:not([data-rapier-carries~="drawing"]) #drawing-plugin-row,
+html[data-rapier-sealed]:not([data-rapier-carries~="jxlcomplete"]) #jxl-complete-plugin-row,
+html[data-rapier-sealed]:not([data-rapier-carries~="math"]):not([data-rapier-carries~="mermaid"]):not([data-rapier-carries~="drawing"]):not([data-rapier-carries~="jxlcomplete"]) #settings-plugins-section { display: none; }
+html[data-rapier-sealed] #settings-start-section, html[data-rapier-sealed] #notes-beside-btn { display: none; }
 .settings-plugin-rows > [hidden] { display: none; }
 .theme-switcher--onoff[data-switch-label] .onoff-btn { justify-content: flex-start; text-align: left; padding-inline: var(--space-4); }
 .settings-text-action--status {

@@ -189,24 +189,35 @@ export async function stageLinuxApp(dir) {
 // the system launcher entry, the MIME types and a hicolor scalable icon. The executable and LICENSE come from this release's
 const WAYLAND_ENTRY = 'chrome-rapier.local__rapier.html-Default.desktop';
 
-export async function stageLinuxPackage(out) {
+async function servedSha256(url) {
+  const response = await fetch(url, {redirect: 'follow'});
+  if (!response.ok) throw new Error('refused: ' + url + ' answers HTTP ' + response.status + '; publish the release before its package');
+  return sha256(Buffer.from(await response.arrayBuffer()));
+}
+
+export async function stageLinuxPackage(out, {served = servedSha256} = {}) {
   const {built} = await recordedLinuxArtifact();
   const own = ['rapier', 'rapier.desktop', 'rapier-mime.xml', 'rapier.svg'];
-  const tag = 'v' + VERSION, raw = 'https://raw.githubusercontent.com/jackskip22/rapier/' + tag + '/';
+  const tag = 'v' + built.version, raw = 'https://raw.githubusercontent.com/jackskip22/rapier/' + tag + '/';
   const fields = {
     pkgname: 'rapier-bin', pkgver: built.version, pkgrel: 1,
     pkgdesc: 'Offline Markdown editor, notes, drawing and painting in one app',
     arch: ['x86_64'], url: 'https://rapier.website', license: ['AGPL-3.0-only'],
-    depends: ['glibc>=' + built.runtime.glibc, 'gcc-libs', 'chromium', 'perl-file-mimeinfo', 'xdg-desktop-portal', 'hicolor-icon-theme'],
-    optdepends: ['xdg-desktop-portal-gtk: file chooser on GTK desktops and Hyprland', 'xdg-desktop-portal-kde: file chooser on KDE',
+    depends: ['glibc>=' + built.runtime.glibc, 'gcc-libs', 'perl-file-mimeinfo', 'xdg-desktop-portal', 'hicolor-icon-theme'],
+    optdepends: ['chromium: the browser rapier opens its window in', 'google-chrome: or this browser', 'brave-bin: or this browser',
+      'xdg-desktop-portal-gtk: file chooser on GTK desktops and Hyprland', 'xdg-desktop-portal-kde: file chooser on KDE',
       'fontconfig: follow the Omarchy monospace font'],
     provides: ['rapier'], conflicts: ['rapier'], options: ['!strip', '!debug'],
   };
   const sources = [
     {name: 'rapier-linux-' + built.version, url: raw + 'rapier-linux', hash: built.sha256},
     {name: 'LICENSE-' + built.version, url: raw + 'LICENSE', hash: sha256(await readFile(join(root, 'LICENSE')))},
-    ...await Promise.all(own.map(async name => ({name, hash: sha256(await readFile(join(root, 'linux', name)))}))),
   ];
+  for (const source of sources) {
+    const hash = await served(source.url);
+    if (hash !== source.hash) throw new Error('refused: ' + source.url + ' serves ' + hash + ', not the pinned ' + source.hash);
+  }
+  sources.push(...await Promise.all(own.map(async name => ({name, hash: sha256(await readFile(join(root, 'linux', name)))}))));
   const quote = value => "'" + String(value).replaceAll("'", "'\\''") + "'";
   const list = values => '(' + values.map(quote).join(' ') + ')';
   const text = `# Maintainer: Rapier <https://rapier.website>
@@ -214,7 +225,7 @@ export async function stageLinuxPackage(out) {
 pkgname=${fields.pkgname}
 pkgver=${fields.pkgver}
 pkgrel=${fields.pkgrel}
-_tag=${tag}
+_tag=v\${pkgver}
 pkgdesc=${quote(fields.pkgdesc)}
 arch=${list(fields.arch)}
 url=${quote(fields.url)}
@@ -234,7 +245,7 @@ package() {
   install -Dm755 rapier "\$pkgdir/usr/bin/rapier"
   install -Dm644 rapier.desktop "\$pkgdir/usr/share/applications/rapier.desktop"
   # On Wayland Chromium names the app window chrome-<app>-<profile>: this hidden entry gives it rapier's name and icon.
-  { grep -v '^MimeType=' rapier.desktop; echo NoDisplay=true; } > ${WAYLAND_ENTRY}
+  { sed -e '/^\\[Desktop Action/,$d' -e '/^MimeType=/d' -e '/^Actions=/d' -e '/^$/d' rapier.desktop; echo NoDisplay=true; } > ${WAYLAND_ENTRY}
   install -Dm644 ${WAYLAND_ENTRY} "\$pkgdir/usr/share/applications/${WAYLAND_ENTRY}"
   install -Dm644 rapier-mime.xml "\$pkgdir/usr/share/mime/packages/rapier.xml"
   install -Dm644 rapier.svg "\$pkgdir/usr/share/icons/hicolor/scalable/apps/rapier.svg"

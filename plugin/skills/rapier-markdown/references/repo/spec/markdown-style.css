@@ -134,7 +134,7 @@
 .md-render p[data-rapier-typography-fit]{text-align:justify!important;text-align-last:start;text-wrap:nowrap;hyphens:none;hanging-punctuation:none}
 .md-render p[data-rapier-typography-fit] :is(a,span,em,i,strong,b,del,s,mark,code,kbd,samp,u,ins,abbr){text-wrap:nowrap;hyphens:none;hanging-punctuation:none}
 .md-render [data-rapier-typography-separator]{font-size:0;line-height:0;word-spacing:0!important;letter-spacing:0!important}
-.md-render [data-rapier-typography-break="hyphen"]::before{content:var(--md-fit-hyphen,'-')}
+.md-render [data-rapier-typography-break="hyphen"]::before{content:var(--md-fit-hyphen,'-');margin-inline-end:var(--md-fit-protrude,0px)}
 .md-render p[data-rapier-typography-ragged]{text-align:start!important}
 .md-render p[data-md-lines]:not([data-rapier-typography-protected-initial])::first-letter{
 	initial-letter:var(--md-drop-lines,normal);

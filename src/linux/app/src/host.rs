@@ -8,6 +8,7 @@ use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::os::fd::{FromRawFd, RawFd};
+use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -16,7 +17,7 @@ use std::sync::mpsc::{Receiver, Sender};
 const CHUNK: usize = 128 * 1024;
 const MAX_MESSAGE: usize = 512 * 1024;
 const BINARY: [&str; 4] = [".docx", ".pdf", ".textpack", ".zip"];
-const CAPABILITIES: [&str; 12] = [
+const CAPABILITIES: [&str; 13] = [
     "documentPicker",
     "saveAs",
     "saveInPlace",
@@ -29,6 +30,7 @@ const CAPABILITIES: [&str; 12] = [
     "resources",
     "originalFolder",
     "exclusiveNewDestination",
+    "newWindow",
 ];
 
 // Runs in every frame before the page. Only the top rapier page keeps the bridge; the host also refuses any binding
@@ -38,6 +40,8 @@ const ADAPTER: &str = r#"(() => {
   try { delete globalThis.__rapierLinux; } catch (_) {}
   if (location.origin !== 'https://rapier.local' || location.pathname !== '/rapier.html' || window.top !== window || typeof send !== 'function') return;
   Object.defineProperty(window, '__RAPIER_NATIVE_PLATFORM_ID', { value: 'linux', configurable: false });
+  // This window's number: its recovery and writer lease are its own (shell/platform.js RAPIER_RECOVERY_SCOPE).
+  Object.defineProperty(window, '__RAPIER_NATIVE_WINDOW', { value: __RAPIER_SLOT__, configurable: false });
   const make = channel => ({ onmessage: null, postMessage(value) { send(JSON.stringify({ channel, payload: String(value == null ? '' : value) })); } });
   const host = make('host'), intake = make('intake');
   Object.defineProperty(window, 'RapierHost', { value: host, configurable: false });
@@ -55,14 +59,24 @@ const ADAPTER: &str = r#"(() => {
     document.title = 'Rapier';
   });
   titled.observe(document, { childList: true, subtree: true });
+  // The title names the folder of the window's file, so two windows on s.md from two folders read differently
+  // The host gives it (Host::label_window); the page's own title is kept before it.
+  let folder = '', added = '';
+  const label = () => {
+    let title = document.title;
+    if (added && title.endsWith(added)) title = title.slice(0, -added.length);
+    added = folder && title.startsWith('Rapier — ') ? ' (' + folder + ')' : '';
+    if (document.title !== title + added) document.title = title + added;
+  };
+  new MutationObserver(label).observe(document, { childList: true, subtree: true, characterData: true });
+  Object.defineProperty(window, '__rapierLinuxFolder', { configurable: false, value: value => { folder = String(value || ''); label(); } });
   addEventListener('DOMContentLoaded', () => { titled.disconnect(); if (searchTitle !== null && document.title === searchTitle) document.title = 'Rapier'; }, { once: true });
-  // The first window never stays taller or wider than the screen's work area: the host resizes it (fit_window).
-  // The window manager's frame is outside outerWidth/outerHeight (xfwm4: 29 px on top, 5 below), so the
-  // window is fitted to the work area less a frame allowance and placed at its corner.
+  // The host keeps every window inside the screen's work area (fit_window, cascade): the page tells it the area and
+  // this window's size.
   const fit = () => {
-    const width = Math.min(outerWidth, screen.availWidth - 16), height = Math.min(outerHeight, screen.availHeight - 64);
-    if (screen.availWidth > 0 && screen.availHeight > 0 && (width < outerWidth || height < outerHeight))
-      send(JSON.stringify({ channel: 'window', payload: JSON.stringify({ width, height, left: screen.availLeft || 0, top: screen.availTop || 0 }) }));
+    if (screen.availWidth > 0 && screen.availHeight > 0)
+      send(JSON.stringify({ channel: 'window', payload: JSON.stringify({ outerWidth, outerHeight,
+        left: screen.availLeft || 0, top: screen.availTop || 0, width: screen.availWidth, height: screen.availHeight }) }));
   };
   addEventListener('load', () => { fit(); setTimeout(fit, 1000); }, { once: true });
   Object.defineProperty(window, '__rapierLinuxDeliver', { configurable: false, value: value => {
@@ -168,6 +182,11 @@ struct Win {
     saved_where: Option<String>,
     window_id: Option<i64>,
     text_held: bool,
+    slot: u32,
+    cascade_to: Option<(i64, i64)>,
+    dirty: bool,
+    origin: Option<PathBuf>,
+    untitled: u32,
 }
 
 pub struct Host {
@@ -196,6 +215,26 @@ pub struct Host {
     window_id: Option<i64>,
     // A new document or text from stdin opened here: the window holds it though no file is bound.
     text_held: bool,
+    // The window's number: the page keeps its recovery under it (shell/platform.js RAPIER_RECOVERY_SCOPE) and the host
+    // keeps the file it is bound to (keep_binding), so a relaunch saves over the same file.
+    slot: u32,
+    // Where a new window goes once its page is ready (cascade).
+    cascade_to: Option<(i64, i64)>,
+    // The page holds unsaved work: a relaunch opens this window again (keep_binding).
+    dirty: bool,
+    // The folder of the file this window last opened, bound or not (a web page it imported): files go beside it.
+    origin: Option<PathBuf>,
+    // The number of this window's untitled document (1 is "untitled"), 0 for none: two windows never share one.
+    untitled: u32,
+    // The newest window, which the next one cascades from.
+    newest: Option<i64>,
+    // The screen's work area (left, top, width, height), as the page last reported it.
+    area: Option<(i64, i64, i64, i64)>,
+    // Until the first page says it is ready: past this, or if the browser closes first, Rapier says so and exits 1
+    // (a browser that exited or hung left rc 0 and no window).
+    launch_deadline: Option<std::time::Instant>,
+    // The browser has answered, so the deadline is the page's (PAGE_WAIT).
+    answered: bool,
     // The other windows, and paths waiting for a window of their own (a second document never replaces the first).
     others: Vec<Win>,
     waiting_paths: VecDeque<String>,
@@ -207,6 +246,49 @@ pub struct Host {
     events: Sender<Event>,
     browser: Child,
 }
+
+/// A tiling window manager places and sizes every window itself.
+fn tiling() -> bool {
+    ["HYPRLAND_INSTANCE_SIGNATURE", "SWAYSOCK", "I3SOCK", "NIRI_SOCKET"].iter().any(|name| std::env::var_os(name).is_some())
+}
+
+/// What a window holds when the next document arrives.
+#[derive(Clone, Copy, Default)]
+struct Holding {
+    file: bool,
+    imported: bool,
+    unsaved: bool,
+    given_text: bool,
+    opening: bool,
+    others_waiting: bool,
+}
+
+/// How the next document arrives: a file (from the command line, xdg-open or a second launch) or a new document (Ctrl+N,
+/// the New button, `--new` to a running Rapier).
+#[derive(Clone, Copy, Debug)]
+enum Route {
+    File,
+    NewDocument,
+}
+
+#[derive(Debug, PartialEq)]
+enum Place {
+    ThisWindow,
+    OwnWindow,
+}
+
+/// Where the next document goes. Only an untouched, empty window takes it, whatever the route: never one holding a file,
+/// an imported web page, unsaved work or text it was given, nor one still opening something or with documents queued
+/// ahead for windows of their own.
+fn goes_to(window: Holding, _route: Route) -> Place {
+    let Holding { file, imported, unsaved, given_text, opening, others_waiting } = window;
+    if file || imported || unsaved || given_text || opening || others_waiting { Place::OwnWindow } else { Place::ThisWindow }
+}
+
+/// How long the browser has to answer at all, and then to show the first page: a browser that hangs is reported soon,
+/// while a slow first start (a cold disk, a new profile) has time to load the page.
+const LAUNCH_WAIT: std::time::Duration = std::time::Duration::from_secs(15);
+const PAGE_WAIT: std::time::Duration = std::time::Duration::from_secs(60);
 
 fn pipe() -> std::io::Result<(RawFd, RawFd)> {
     let mut fds = [0; 2];
@@ -224,6 +306,7 @@ impl Host {
         paths: Vec<String>,
         events: Sender<Event>,
     ) -> Result<Host, String> {
+        let platform = crate::display_platform()?;
         // Snap Chromium may not write hidden folders in home (~/.local): its profile lives in the snap's own area.
         let profile = if browser.starts_with("/snap/") {
             crate::home().join("snap/chromium/common/rapier-browser")
@@ -232,8 +315,12 @@ impl Host {
         };
         std::fs::create_dir_all(&profile).map_err(|e| e.to_string())?;
         // The first document opens in the first window; each other one gets a window of its own.
-        let mut rest: VecDeque<String> = paths.into();
+        // Every other window that held unsaved work opens again, each with its own recovery and file; a file it holds is
+        // not opened a second time.
+        let unsaved = Self::unsaved_windows();
+        let mut rest: VecDeque<String> = paths.into_iter().filter(|p| !unsaved.iter().any(|(_, held)| held == p)).collect();
         let first = rest.pop_front();
+        rest.extend(unsaved.into_iter().map(|(n, _)| format!("{}{n}", crate::SLOT)));
         let (to_browser, out) = pipe().map_err(|e| e.to_string())?;
         let (inp, from_browser) = pipe().map_err(|e| e.to_string())?;
         // The window is named after its first URL (chrome-rapier.local__rapier.html-Default), so it opens the page at
@@ -243,8 +330,11 @@ impl Host {
             format!("--user-data-dir={}", profile.display()),
             format!("--app={PAGE}"),
             "--host-resolver-rules=MAP rapier.local ~NOTFOUND".into(),
-            // The window's class (X11 WM_CLASS, Wayland app_id) is rapier's, matching the launcher's StartupWMClass.
+            // The window's X11 class is rapier's, matching the launcher's StartupWMClass (on Wayland Chromium names it
+            // chrome-rapier.local__rapier.html-Default; payload::WAYLAND_ENTRY).
             "--class=rapier".into(),
+            // A native Wayland window where a Wayland display answers, else X11 (crate::display_platform).
+            format!("--ozone-platform={platform}"),
             "--no-first-run".into(),
             "--no-default-browser-check".into(),
             "--disable-sync".into(),
@@ -262,6 +352,10 @@ impl Host {
         }
         let mut command = Command::new(browser);
         command.args(&args).stdin(Stdio::null());
+        // The browser's own diagnostics (D-Bus, Fontconfig) are not the person's business; RAPIER_BROWSER_LOG=1 keeps them.
+        if std::env::var_os("RAPIER_BROWSER_LOG").is_none() {
+            command.stdout(Stdio::null()).stderr(Stdio::null());
+        }
         // The browser reads commands on fd 3 and writes replies on fd 4; every other descriptor is close-on-exec.
         unsafe {
             command.pre_exec(move || {
@@ -307,6 +401,15 @@ impl Host {
             saved_where: None,
             window_id: None,
             text_held: false,
+            slot: 1,
+            cascade_to: None,
+            dirty: false,
+            origin: None,
+            untitled: 0,
+            newest: None,
+            area: None,
+            launch_deadline: Some(std::time::Instant::now() + LAUNCH_WAIT),
+            answered: false,
             others: Vec::new(),
             waiting_paths: rest,
             new_windows: VecDeque::new(),
@@ -337,6 +440,11 @@ impl Host {
         std::mem::swap(&mut self.saved_where, &mut w.saved_where);
         std::mem::swap(&mut self.window_id, &mut w.window_id);
         std::mem::swap(&mut self.text_held, &mut w.text_held);
+        std::mem::swap(&mut self.slot, &mut w.slot);
+        std::mem::swap(&mut self.cascade_to, &mut w.cascade_to);
+        std::mem::swap(&mut self.dirty, &mut w.dirty);
+        std::mem::swap(&mut self.origin, &mut w.origin);
+        std::mem::swap(&mut self.untitled, &mut w.untitled);
     }
 
     /// Make the window with this DevTools session the one served; false when no window has it.
@@ -353,9 +461,30 @@ impl Host {
         true
     }
 
-    /// A window that holds or is receiving a document: another document gets its own window.
-    fn busy(&self) -> bool {
-        self.current.is_some() || self.text_held || self.candidate.is_some() || self.intake.is_some() || !self.pending_paths.is_empty()
+    /// What this window holds, for the one rule of where the next document goes (`goes_to`).
+    fn holding(&self) -> Holding {
+        Holding {
+            file: self.current.is_some(),
+            imported: self.origin.is_some(),
+            unsaved: self.dirty,
+            given_text: self.text_held,
+            opening: self.candidate.is_some() || self.intake.is_some() || !self.pending_paths.is_empty(),
+            others_waiting: !self.waiting_paths.is_empty(),
+        }
+    }
+
+    /// Every file a person opens (the command line, xdg-open, a second launch, Ctrl+O) comes here. A file open already
+    /// brings its window to the front; otherwise the next-document rule (`goes_to`) picks this window or one of its own.
+    fn open_path(&mut self, path: String) {
+        if let Some(target) = self.window_holding(&path) {
+            self.cdp("Target.activateTarget", json!({"targetId": target}), false);
+        } else if goes_to(self.holding(), Route::File) == Place::OwnWindow {
+            self.waiting_paths.push_back(path);
+            self.spawn_window();
+        } else {
+            self.pending_paths.push_back(path);
+            self.pump();
+        }
     }
 
     /// Ask the running browser for another app window: the same profile hands the request to it (its singleton), which
@@ -372,14 +501,27 @@ impl Host {
 
     /// Attach a new app window and give it the next waiting document.
     fn adopt(&mut self, receiver: &Receiver<Event>, target: String) -> Result<(), String> {
+        // The newest window still open, else this one: a closed window has no place to cascade from.
+        let open = |id: &i64| self.window_id == Some(*id) || self.others.iter().any(|w| w.window_id == Some(*id));
+        let previous = self.newest.filter(open).or(self.window_id);
         let mut parked = Win::default();
         self.exchange(&mut parked);
         self.others.push(parked);
         self.target = target;
+        // A window reopened for its unsaved work takes its old number back; any other takes the lowest free one.
+        let next = self.waiting_paths.pop_front();
+        let wanted = next.as_deref().and_then(|p| p.strip_prefix(crate::SLOT)).and_then(|n| n.parse::<u32>().ok())
+            .filter(|n| *n > 1 && self.others.iter().all(|w| w.slot != *n));
+        self.slot = wanted.unwrap_or_else(|| (2..).find(|n| self.others.iter().all(|w| w.slot != *n)).unwrap_or(2));
+        self.restore_binding();
         let id = self.cdp("Target.attachToTarget", json!({"targetId": self.target, "flatten": true}), false);
         self.session = Some(str_of(&self.wait(receiver, id)?, "sessionId"));
         self.prepare_window(receiver)?;
-        self.pending_paths.extend(self.waiting_paths.pop_front());
+        self.cascade(receiver, previous);
+        self.newest = self.window_id;
+        if !next.as_deref().is_some_and(|p| p.starts_with(crate::SLOT)) {
+            self.pending_paths.extend(next);
+        }
         self.cdp("Page.navigate", json!({"url": PAGE}), true);
         Ok(())
     }
@@ -409,19 +551,44 @@ impl Host {
         self.next_id
     }
 
+    /// The next event. Until the first page is ready the wait is bounded, and the browser closing is a failed launch:
+    /// Err says why. Ok(None) is a closed channel.
+    fn next_event(&mut self, receiver: &Receiver<Event>) -> Result<Option<Event>, String> {
+        let Some(deadline) = self.launch_deadline else { return Ok(receiver.recv().ok()) };
+        match receiver.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())) {
+            Ok(Event::Exit) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) =>
+                Err("the browser closed before Rapier's window opened".into()),
+            Ok(event) => {
+                if !self.answered {
+                    self.answered = true;
+                    self.launch_deadline = Some(std::time::Instant::now() + PAGE_WAIT);
+                }
+                Ok(Some(event))
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) if self.answered =>
+                Err(format!("the browser did not show Rapier's page within {} seconds", PAGE_WAIT.as_secs())),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) =>
+                Err(format!("the browser did not answer within {} seconds", LAUNCH_WAIT.as_secs())),
+        }
+    }
+
     /// Only during start: other events wait their turn in run().
     fn wait(&mut self, receiver: &Receiver<Event>, ident: u64) -> Result<Value, String> {
         let mut held = VecDeque::new();
         let result = loop {
-            match receiver.recv() {
-                Err(_) | Ok(Event::Exit) => std::process::exit(0),
-                Ok(Event::Cdp(message)) if message.get("id") == Some(&json!(ident)) => {
-                    if let Some(error) = message.get("error") {
-                        break Err(str_of(error, "message"));
+            match self.next_event(receiver) {
+                Err(launch) => break Err(launch),
+                Ok(None) => std::process::exit(0),
+                Ok(Some(Event::Exit)) => std::process::exit(0),
+                Ok(Some(event)) => match event {
+                    Event::Cdp(message) if message.get("id") == Some(&json!(ident)) => {
+                        if let Some(error) = message.get("error") {
+                            break Err(str_of(error, "message"));
+                        }
+                        break Ok(message.get("result").cloned().unwrap_or(json!({})));
                     }
-                    break Ok(message.get("result").cloned().unwrap_or(json!({})));
-                }
-                Ok(other) => held.push_back(other),
+                    other => held.push_back(other),
+                },
             }
         };
         self.deferred.extend(held);
@@ -440,7 +607,7 @@ impl Host {
             ("Page.enable", json!({})),
             (
                 "Page.addScriptToEvaluateOnNewDocument",
-                json!({"source": ADAPTER}),
+                json!({"source": ADAPTER.replace("__RAPIER_SLOT__", &self.slot.to_string())}),
             ),
         ] {
             let id = self.cdp(method, params, true);
@@ -450,6 +617,105 @@ impl Host {
         let id = self.cdp("Browser.getWindowForTarget", json!({"targetId": self.target.clone()}), false);
         self.window_id = self.wait(receiver, id).ok().and_then(|w| w.get("windowId").and_then(Value::as_i64));
         Ok(())
+    }
+
+    /// A new window opens down and to the right of the one before it, never exactly over it. A tiling
+    /// window manager places windows itself and ignores this.
+    /// The move waits for the page (page.ready): the browser places a new window itself when it first shows it.
+    /// A new window steps 32 px down and right from the newest one, and starts again at the work area's edge when it
+    /// would leave the area. A tiling window manager places windows itself: no cascade there.
+    fn cascade(&mut self, receiver: &Receiver<Event>, previous: Option<i64>) {
+        let Some(previous) = previous.filter(|_| !tiling()) else { return };
+        let id = self.cdp("Browser.getWindowBounds", json!({"windowId": previous}), false);
+        let Ok(bounds) = self.wait(receiver, id).map(|b| b["bounds"].clone()) else { return };
+        if bounds["windowState"] == "normal" {
+            let of = |key: &str| bounds[key].as_i64().unwrap_or(0);
+            let (left, top) = (of("left") + 32, of("top") + 32);
+            // Each edge wraps on its own, so a new diagonal starts beside the first instead of on top of it.
+            self.cascade_to = Some(match self.area {
+                Some((area_left, area_top, width, height)) => (
+                    if left + of("width") > area_left + width { area_left } else { left },
+                    if top + of("height") > area_top + height { area_top } else { top },
+                ),
+                None => (left, top),
+            });
+        }
+    }
+
+    fn window_holding(&self, path: &str) -> Option<String> {
+        let held = |current: &Option<Bound>| current.as_ref().is_some_and(|c| c.path == path);
+        if held(&self.current) {
+            return Some(self.target.clone());
+        }
+        self.others.iter().find(|w| held(&w.current)).map(|w| w.target.clone())
+    }
+
+    /// Tell the page which folder its window's title names: the bound file's, else the file opened last, else none.
+    fn label_window(&mut self) {
+        let folder = self.beside();
+        let shown = folder.map(|f| files::shown(&f)).unwrap_or_default();
+        if let Some(context) = self.context {
+            self.cdp("Runtime.evaluate", json!({"expression": format!("globalThis.__rapierLinuxFolder && __rapierLinuxFolder({})", json!(shown)),
+                "contextId": context}), true);
+        }
+    }
+
+    fn binding_file(&self) -> PathBuf {
+        crate::data_dir().join("rapier").join(format!("window-{}.json", self.slot))
+    }
+
+    /// The file this window is bound to and whether it holds unsaved work, kept for the next launch (private, 0600): the
+    /// page restores its document, Save writes over that file again, checked against the generation it was bound at, and
+    /// a relaunch opens every window that held unsaved work.
+    fn keep_binding(&self) {
+        let file = self.binding_file();
+        if self.current.is_none() && !self.dirty {
+            let _ = std::fs::remove_file(file);
+            return;
+        }
+        let mut kept = json!({"dirty": self.dirty});
+        if let Some(c) = &self.current {
+            kept = json!({"path": c.path, "authority": c.authority, "generation": c.generation, "dirty": self.dirty});
+        }
+        // A window reopened for its unsaved work saves beside the file it came from (an imported web page included).
+        if let Some(origin) = &self.origin {
+            kept["origin"] = json!(origin.to_string_lossy());
+        }
+        // An untitled document reopened at a relaunch keeps its number, so the next new one is not given it again.
+        if self.untitled > 0 {
+            kept["untitled"] = json!(self.untitled);
+        }
+        let _ = std::fs::create_dir_all(file.parent().unwrap());
+        let staged = file.with_extension("json.new");
+        let written = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&staged)
+            .and_then(|mut f| f.write_all(kept.to_string().as_bytes()));
+        if written.is_ok() {
+            let _ = std::fs::rename(&staged, &file);
+        }
+    }
+
+    /// The windows after the first that held unsaved work when Rapier last closed, with the file each is bound to.
+    fn unsaved_windows() -> Vec<(u32, String)> {
+        let folder = crate::data_dir().join("rapier");
+        let mut slots: Vec<(u32, String)> = std::fs::read_dir(&folder).into_iter().flatten().flatten()
+            .filter_map(|e| e.file_name().to_str()?.strip_prefix("window-")?.strip_suffix(".json")?.parse::<u32>().ok())
+            .filter(|n| *n > 1)
+            .filter_map(|n| {
+                let kept = serde_json::from_slice::<Value>(&std::fs::read(folder.join(format!("window-{n}.json"))).ok()?).ok()?;
+                (kept["dirty"] == json!(true)).then(|| (n, str_of(&kept, "path")))
+            })
+            .collect();
+        slots.sort_unstable();
+        slots
+    }
+
+    fn restore_binding(&mut self) {
+        let kept = std::fs::read(self.binding_file()).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok());
+        self.origin = kept.as_ref().map(|k| PathBuf::from(str_of(k, "origin"))).filter(|o| o.is_absolute() && o.is_dir());
+        self.untitled = kept.as_ref().and_then(|k| k["untitled"].as_u64()).map_or(0, |n| n as u32);
+        self.current = kept
+            .map(|k| Bound { path: str_of(&k, "path"), authority: str_of(&k, "authority"), generation: str_of(&k, "generation") })
+            .filter(|b| !b.authority.is_empty() && Path::new(&b.path).is_absolute() && Path::new(&b.path).is_file());
     }
 
     fn start(&mut self, receiver: &Receiver<Event>) -> Result<(), String> {
@@ -473,6 +739,7 @@ impl Host {
         );
         self.wait(receiver, id)?;
         self.read_theme();
+        self.restore_binding();
         self.prepare_window(receiver)?;
         let sender = self.events.clone();
         // On Omarchy the theme-set and font-set hooks tell rapier (payload::install); elsewhere the files are watched.
@@ -503,11 +770,11 @@ impl Host {
         Ok(())
     }
 
-    pub fn run(&mut self, receiver: Receiver<Event>) {
+    /// Err when the browser never showed the page: the person is told, and rapier exits 1 (never 0 with no window).
+    pub fn run(&mut self, receiver: Receiver<Event>) -> Result<(), String> {
         if let Err(error) = self.start(&receiver) {
-            eprintln!("rapier: the browser did not start the page: {error}");
             let _ = self.browser.kill();
-            return;
+            return Err(format!("the browser did not open Rapier's window ({error})."));
         }
         // Each further document given at launch opens in a window of its own.
         for _ in 0..self.waiting_paths.len() {
@@ -516,30 +783,28 @@ impl Host {
         loop {
             let event = match self.deferred.pop_front() {
                 Some(event) => event,
-                None => match receiver.recv() {
-                    Ok(event) => event,
-                    Err(_) => return,
+                None => match self.next_event(&receiver) {
+                    Ok(Some(event)) => event,
+                    Ok(None) => return Ok(()),
+                    Err(launch) => {
+                        let _ = self.browser.kill();
+                        return Err(launch + ".");
+                    }
                 },
             };
             match event {
-                Event::Exit => return,
+                Event::Exit => return Ok(()),
                 Event::Cdp(message) => self.on_cdp(message),
                 Event::Theme => self.apply_theme(),
                 Event::Open(path) if path == crate::THEME_CHANGED => self.apply_theme(),
-                Event::Open(path) => {
-                    // A window holding a document keeps it: the new one waits for a window of its own.
-                    if self.busy() || !self.waiting_paths.is_empty() {
-                        self.waiting_paths.push_back(path);
-                        self.spawn_window();
-                    } else {
-                        self.pending_paths.push_back(path);
-                        self.pump();
-                    }
+                Event::Open(path) if path == crate::FOCUS => {
+                    self.cdp("Target.activateTarget", json!({"targetId": self.target}), false);
                 }
+                Event::Open(path) => self.open_path(path),
             }
             while let Some(target) = self.new_windows.pop_front() {
                 if let Err(error) = self.adopt(&receiver, target) {
-                    eprintln!("rapier: a new window did not start: {error}");
+                    eprintln!("Rapier: a new window did not start: {error}");
                 }
             }
         }
@@ -628,7 +893,7 @@ impl Host {
     /// Where a file chooser opens: beside the open file, else the last folder chosen (kept across launches), else Documents
     /// (never the process's working directory).
     fn start_folder(&self) -> PathBuf {
-        if let Some(folder) = self.current.as_ref().and_then(|c| Path::new(&c.path).parent().map(Path::to_path_buf)) {
+        if let Some(folder) = self.beside() {
             return folder;
         }
         std::fs::read_to_string(crate::data_dir().join("rapier/last-folder"))
@@ -636,6 +901,15 @@ impl Host {
             .map(|text| PathBuf::from(text.trim_end_matches('\n')))
             .filter(|path| path.is_absolute() && path.is_dir())
             .unwrap_or_else(|| Some(files::documents_dir()).filter(|d| d.is_dir()).unwrap_or_else(crate::home))
+    }
+
+    /// Where a file goes without asking (one rule): beside the file this window opened or saved last
+    /// (`origin`, a web page it imported included), else beside the bound file, else Documents. A binding kept from an
+    /// earlier launch never outranks the file just opened.
+    fn beside(&self) -> Option<PathBuf> {
+        self.origin.clone()
+            .or_else(|| self.current.as_ref().and_then(|c| Path::new(&c.path).parent().map(Path::to_path_buf)))
+            .filter(|folder| folder.is_dir())
     }
 
     /// The folder a person just chose in, for the next chooser.
@@ -649,24 +923,26 @@ impl Host {
         }
     }
 
-    /// The window never stays larger than the screen's work area (945 x 1180 on a 1080p screen hid
-    /// the menu's lower rows). The page reports the sizes once it has loaded and the window is final (ADAPTER); a tiling
-    /// compositor sizes the window itself and ignores this.
+    /// A window is at most 85% of the screen's work area each way, so its frame and the windows cascaded after it stay on
+    /// the screen (945 x 1136 on a 1920 x 1200 screen put the second window's toolbar below the edge). The page reports
+    /// the area and the window's size once it has loaded (ADAPTER). A tiling compositor sizes windows itself.
     fn fit_window(&mut self, sizes: &Value) {
-        let (Some(window_id), Some(width), Some(height)) =
-            (self.window_id, sizes["width"].as_i64(), sizes["height"].as_i64())
+        let number = |key: &str| sizes[key].as_i64();
+        let (Some(window_id), Some(left), Some(top), Some(width), Some(height), Some(outer_width), Some(outer_height)) = (self.window_id,
+            number("left"), number("top"), number("width"), number("height"), number("outerWidth"), number("outerHeight"))
         else {
             return;
         };
         if width < 320 || height < 240 {
             return;
         }
-        self.cdp(
-            "Browser.setWindowBounds",
-            json!({"windowId": window_id, "bounds": {"windowState": "normal", "left": sizes["left"].as_i64().unwrap_or(0),
-                "top": sizes["top"].as_i64().unwrap_or(0), "width": width, "height": height}}),
-            false,
-        );
+        self.area = Some((left, top, width, height));
+        let (fit_width, fit_height) = (outer_width.min(width * 85 / 100), outer_height.min(height * 85 / 100));
+        if tiling() || (fit_width == outer_width && fit_height == outer_height) {
+            return;
+        }
+        self.cdp("Browser.setWindowBounds",
+            json!({"windowId": window_id, "bounds": {"windowState": "normal", "width": fit_width, "height": fit_height}}), false);
     }
 
     // -- Omarchy ------------------------------------------------------------------------------------------------------
@@ -886,7 +1162,10 @@ impl Host {
             "platform.state" => {
                 let mut state = json!({"platformId": "linux", "capabilities": CAPABILITIES.iter().map(|c| (c.to_string(), json!(true))).collect::<Map<_, _>>(),
                     "recents": [], "pendingIntake": self.intake.is_some() || self.candidate.is_some() || !self.pending_paths.is_empty(),
-                    "currentFileBound": self.current.is_some(), "installation": {"state": "standalone", "installed": true}});
+                    "currentFileBound": self.current.is_some(), "installation": {"state": "standalone", "installed": true},
+                    // A relaunch reopens the document where the person left it, as a desktop editor does: no RESUME
+                    // POSITION? offer beside the last-edited notice.
+                    "recoveryAutoResume": true});
                 if let Some(current) = &self.current {
                     state["currentFileAuthority"] = json!(current.authority);
                     state["currentFileGeneration"] = json!(current.generation);
@@ -896,6 +1175,11 @@ impl Host {
             }
             "page.ready" => {
                 self.page_ready = true;
+                self.label_window();
+                self.launch_deadline = None;
+                if let (Some((left, top)), Some(window)) = (self.cascade_to.take(), self.window_id) {
+                    self.cdp("Browser.setWindowBounds", json!({"windowId": window, "bounds": {"left": left, "top": top}}), false);
+                }
                 self.ok(ident, json!({}));
                 for message in self.receipts.clone().into_iter().map(|(_, m)| m) {
                     self.post("host", message);
@@ -987,9 +1271,14 @@ impl Host {
                     return Ok(());
                 }
                 self.remember_folder(&path, false);
-                self.begin_intake(&path, if compare { "compare" } else { "open" })
-                    .map_err(|e| e.to_string())?;
-                self.ok(ident, json!({"started": true}));
+                if compare {
+                    self.begin_intake(&path, "compare").map_err(|e| e.to_string())?;
+                    self.ok(ident, json!({"started": true}));
+                } else {
+                    // The chosen file opens as any other does (open_path): the page's own request has nothing to wait for.
+                    self.ok(ident, json!({"cancelled": true}));
+                    self.open_path(files::normalize(Path::new(&path)).to_string_lossy().into_owned());
+                }
             }
             "file.readCurrent" => {
                 let current = self
@@ -1039,7 +1328,10 @@ impl Host {
                         "opened file changed or became unavailable before acceptance".into(),
                     );
                 }
+                self.origin = Path::new(&bound.path).parent().map(Path::to_path_buf);
                 self.current = Some(bound);
+                self.keep_binding();
+                self.label_window();
                 self.ok(ident, json!({"bound": true}));
                 self.pump();
             }
@@ -1052,6 +1344,8 @@ impl Host {
                         .unwrap_or(false)
                 {
                     self.current = None;
+                    self.keep_binding();
+                    self.label_window();
                 }
                 self.ok(ident, json!({}));
             }
@@ -1123,7 +1417,27 @@ impl Host {
                 }
                 self.ok(ident, json!({}));
             }
-            "document.dirty" | "document.title" | "window.theme" => self.ok(ident, json!({})),
+            "document.dirty" => {
+                let dirty = args.get("dirty") == Some(&json!(true));
+                if dirty != self.dirty {
+                    self.dirty = dirty;
+                    self.keep_binding();
+                }
+                self.ok(ident, json!({}));
+            }
+            "window.new" => {
+                // New from the page (Ctrl+N): a window of its own unless this one is untouched and empty, where the page
+                // starts it itself.
+                // The host names every new document, here too, so no two windows share a name.
+                if goes_to(self.holding(), Route::NewDocument) == Place::OwnWindow {
+                    self.waiting_paths.push_back(crate::NEW_DOCUMENT.to_string());
+                    self.spawn_window();
+                } else {
+                    self.begin_text(Vec::new()).map_err(|e| e.to_string())?;
+                }
+                self.ok(ident, json!({"opened": true}));
+            }
+            "document.title" | "window.theme" => self.ok(ident, json!({})),
             _ => self.respond(ident, false, Value::Null, "unsupported operation"),
         }
         Ok(())
@@ -1261,12 +1575,27 @@ impl Host {
         if self.intake.is_some() || self.candidate.is_some() {
             return Err(std::io::Error::other("another file open is already in progress"));
         }
-        self.text_held = true;
+        // An empty new document leaves the window free for the next one; text from stdin holds it.
+        self.text_held = !data.is_empty();
+        // The window now holds a document with no file: Save asks where, and a relaunch is not bound to the last file.
+        self.current = None;
+        self.origin = None;
+        self.keep_binding();
+        self.label_window();
+        // Two windows of new documents are told apart by their titles.
+        self.untitled = (1..).find(|n| self.others.iter().all(|w| w.untitled != *n)).unwrap_or(1);
+        let name = if self.untitled > 1 { format!("untitled {}.md", self.untitled) } else { "untitled.md".to_string() };
+        // An empty new document is the page's own New, under this name: a document the host delivered with no file
+        // behind it kept the page from opening a file into that window afterwards (Ctrl+O from a `--new` window).
+        if data.is_empty() {
+            self.event("document.new", json!({"name": name}));
+            return Ok(());
+        }
         self.intake_id += 1;
         self.delivery += 1;
         let frame = crate::random_hex(16);
         self.post("intake", json!({"type": "begin", "id": self.intake_id, "deliveryGeneration": self.delivery, "generation": frame,
-            "name": "untitled.md", "path": null, "documentAuthority": "", "fileGeneration": null, "purpose": "external",
+            "name": name, "path": null, "documentAuthority": "", "fileGeneration": null, "purpose": "external",
             "transient": true, "binary": false}));
         self.intake = Some(Intake { id: self.intake_id, delivery: self.delivery, frame, bytes: data, offset: 0, sequence: 0,
             generation: String::new() });
@@ -1292,7 +1621,17 @@ impl Host {
         let path = files::normalize(&std::env::current_dir().unwrap_or_default().join(path))
             .to_string_lossy()
             .into_owned();
-        let (data, generation) = files::read_snapshot(&path)?;
+        // A file that does not exist yet, in a folder that does, opens empty under its name; the first save creates it.
+        let (data, generation) = match files::read_snapshot(&path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound && purpose != "compare"
+                && Path::new(&path).parent().is_some_and(Path::is_dir) => (Vec::new(), String::new()),
+            read => read?,
+        };
+        if purpose != "compare" {
+            self.untitled = 0;
+            self.origin = Path::new(&path).parent().map(Path::to_path_buf);
+            self.label_window();
+        }
         self.intake_id += 1;
         self.delivery += 1;
         let frame = crate::random_hex(16);
@@ -1404,11 +1743,7 @@ impl Host {
             let chosen = match portal::pick(true, &session.name, "Save as", false, &self.start_folder()) {
                 Ok(chosen) => chosen,
                 Err(reason) => {
-                    let folder = self
-                        .current
-                        .as_ref()
-                        .and_then(|c| Path::new(&c.path).parent().map(Path::to_path_buf))
-                        .unwrap_or_else(files::documents_dir);
+                    let folder = self.beside().unwrap_or_else(files::documents_dir);
                     if std::fs::create_dir_all(&folder).is_err() {
                         self.save_result(&session, "failed", false, &reason, "", "", false, false, "no_file_chooser");
                         return Ok(json!({"accepted": true, "picker": true}));
@@ -1455,6 +1790,10 @@ impl Host {
                 return Err(std::io::Error::other(
                     "transferred bytes do not match the intended document",
                 ));
+            }
+            // A read-only file is never written over, in place or by Save As.
+            if !session.exclusive && std::fs::metadata(&destination).is_ok_and(|m| m.permissions().readonly()) {
+                return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "the file is read-only"));
             }
             let actual = files::generation_of(&destination);
             if !picked {
@@ -1503,6 +1842,8 @@ impl Host {
                     } else {
                         "copy_not_created"
                     }
+                } else if error.kind() == std::io::ErrorKind::PermissionDenied {
+                    "read_only"
                 } else {
                     ""
                 };
@@ -1520,6 +1861,11 @@ impl Host {
                 return Ok(json!({"accepted": true, "picker": picked}));
             }
         };
+        // Rapier's own write is never a change made elsewhere: a copy written over the open file moves its binding too.
+        if let Some(current) = self.current.as_mut().filter(|c| c.path == destination) {
+            current.generation = generation.clone();
+            self.keep_binding();
+        }
         let mut published = false;
         if session.purpose != "export" {
             let authority = if session.authority.is_empty() {
@@ -1533,6 +1879,10 @@ impl Host {
                 authority,
                 generation: generation.clone(),
             });
+            self.origin = Path::new(&destination).parent().map(Path::to_path_buf);
+            self.untitled = 0;
+            self.keep_binding();
+            self.label_window();
         }
         self.save_result(
             &session,
@@ -1568,9 +1918,14 @@ impl Host {
         if !code.is_empty() {
             detail["errorCode"] = json!(code);
         }
-        if let Some(folder) = self.saved_where.take() {
-            if status == "confirmed" {
-                detail["savedWhere"] = json!(folder);
+        // Every written file's toast names its folder; one written without a file chooser says so too.
+        let unchosen = self.saved_where.take().is_some();
+        if status == "confirmed" && !path.is_empty() {
+            if let Some(folder) = Path::new(path).parent() {
+                detail["savedWhere"] = json!(files::shown(folder));
+            }
+            if unchosen {
+                detail["noChooser"] = json!(true);
             }
         }
         if !error.is_empty() {
@@ -1625,6 +1980,31 @@ fn read_browser(mut reader: File, events: Sender<Event>) {
                 if events.send(Event::Cdp(message)).is_err() {
                     return;
                 }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Every state a window can be in, by every route a document arrives: only the pristine window takes it.
+    #[test]
+    fn where_the_next_document_goes() {
+        let pristine = Holding::default();
+        let states = [
+            ("pristine", pristine, Place::ThisWindow),
+            ("saved file", Holding { file: true, ..pristine }, Place::OwnWindow),
+            ("imported web page", Holding { imported: true, ..pristine }, Place::OwnWindow),
+            ("unsaved work", Holding { unsaved: true, ..pristine }, Place::OwnWindow),
+            ("text from stdin", Holding { given_text: true, ..pristine }, Place::OwnWindow),
+            ("still opening", Holding { opening: true, ..pristine }, Place::OwnWindow),
+            ("others queued", Holding { others_waiting: true, ..pristine }, Place::OwnWindow),
+        ];
+        for (name, state, place) in states {
+            for route in [Route::File, Route::NewDocument] {
+                assert_eq!(goes_to(state, route), place, "{name} by {route:?}");
             }
         }
     }

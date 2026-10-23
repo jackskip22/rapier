@@ -39,6 +39,7 @@ impl Chooser {
         writeln!(log, "{}", serde_json::json!({
             "method": kind, "chosen": chosen,
             "directory": options.get("directory").and_then(|v| bool::try_from(v).ok()).unwrap_or(false),
+            "currentName": options.get("current_name").and_then(|v| <&str>::try_from(v).ok()),
             "currentFolder": options.get("current_folder").and_then(|v| v.try_clone().ok())
                 .and_then(|v| Vec::<u8>::try_from(v).ok())
                 .map(|bytes| String::from_utf8_lossy(bytes.strip_suffix(&[0]).unwrap_or(&bytes)).into_owned())

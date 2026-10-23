@@ -780,7 +780,7 @@ const _rapierImageFlow = (() => {
     let plan;
     if (record.fit) {
       plan = globalThis.RapierTypography?.slotPlan?.(record.paragraph, record.items, record.options, {width, top, obstacles,
-        lineHeight: record.lineHeight, minWidth: narrowestColumn(record.fontSize), slotsForBand: geometry.slotsForBand, ...record.fit});
+        lineHeight: record.lineHeight, minWidth: narrowestColumn(record.fontSize), slotsForBand: geometry.slotsForBand, slotSequence: geometry.slotSequence, columnsFilled: geometry.columnsFilled, ...record.fit});
       if (!plan) { rich.forget(record.paragraph); cache.delete(record.paragraph); return null; }
     } else plan = geometry.flowLines(record.flow, width, top, obstacles, record.lineHeight,
       narrowestColumn(record.fontSize), record.direction, record.balance, record.align);

@@ -15,7 +15,7 @@ Honor no-upload or no-host instructions. The workflow choices below are alternat
 Embed Rapier's Markdown editor or lightweight reader in your web app. Each build is one offline HTML file. Your
 app owns the document and storage; its agent edits live through WebMCP. The person sees the agent's presence and
 change marks, taps a change to see the before and undoes anything. Honor the person's Will/1 regions.
-The reader is one file of about 360 kB, with optional fonts and plug-ins. The helper is MIT with no dependencies. The two builds it frames are AGPL-3.0-only: use them under the AGPL, or
+The reader is one file of about 370 kB, with optional fonts and plug-ins. The helper is MIT with no dependencies. The two builds it frames are AGPL-3.0-only: use them under the AGPL, or
 buy a commercial license for other terms (`LICENSING.md` in the Rapier repository).
 
 Choose one of two builds:
@@ -28,7 +28,9 @@ Choose one of two builds:
 Both render the same Markdown standard with the same layout. Download the reader from the root of the
 [rapier repository](https://github.com/jackskip22/rapier), or frame the hosted copies:
 `https://rapier.website/embed/rapier-reader.html` and `https://rapier.website/embed/rapier.html` (current).
-Each release's own files stay at its tag: `https://cdn.jsdelivr.net/gh/jackskip22/rapier@v<version>/site/embed/<file>` (download a copy to pin a version).
+Each release's own files stay at its tag: `https://cdn.jsdelivr.net/gh/jackskip22/rapier@v<version>/site/embed/<file>`. That address is for
+download only: jsDelivr serves the page as `text/plain` with `nosniff`, so a browser will not frame it. To pin a version, serve the
+downloaded copy yourself and pass it as `src`.
 
 `rapier-embed` mounts the reader or the editor in an iframe and speaks the
 [embed contract](https://github.com/jackskip22/rapier/blob/main/docs/embed-contract.md) for you.
@@ -43,7 +45,7 @@ Each release's own files stay at its tag: `https://cdn.jsdelivr.net/gh/jackskip2
   document access remain enforced.
 
 ```sh
-npm install rapier-embed@1.2.33
+npm install rapier-embed@1.2.34
 ```
 
 Or copy the package's `embed.mjs` and `contract.mjs` into one directory of your app; no runtime CDN is needed.
@@ -61,7 +63,7 @@ editor and lightweight reader (about 360 kB). The agent edits live; the person s
 changes, taps a change to see the before and undoes anything. Use `show {target:"comparison"}` to show a diff deliberately.
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
-2. **Deliver an offline editor.** Run `npx rapier-html@1.2.33 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
+2. **Deliver an offline editor.** Run `npx rapier-html@1.2.34 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed in your app.** Install [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed); mount the editor or reader, with your app's agent over WebMCP in the editor.
 4. **Keep portable Markdown.** Use [rapier-markdown-kit](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-markdown-kit) for pictures, editable SVG drawings and layout in one `.md` file. Respect [Will/1](https://github.com/jackskip22/will) `keep`, `append` and `edit` regions.
 5. **Encode JPEG XL.** Install [rapier-jxl](https://github.com/jackskip22/rapier-jxl) to encode pixels, photographs and existing JPEGs in JavaScript.
@@ -104,7 +106,7 @@ A copy in your app works offline and changes only when you update it.
 1. Download the build you frame into a static directory, for example
    `https://cdn.jsdelivr.net/gh/jackskip22/rapier@v<version>/site/embed/rapier-reader.html` to `public/vendor/rapier/`.
 2. Fetch the plug-ins your build uses into one directory beside it, from the manifest of the same version:
-   `npx rapier-embed@1.2.33 plugins public/vendor/rapier/plugins --build reader`.
+   `npx rapier-embed@1.2.34 plugins public/vendor/rapier/plugins --build reader`.
 3. Mount with `src` and `plugins` pointing at your copies. Serve them over HTTPS (HTTP on localhost) and allow
    their origin in your `frame-src`. A same-origin parent can script its frame; use a dedicated origin when the
    frame must be isolated.
@@ -116,18 +118,26 @@ To update, replace the page and its plug-ins with those of the new version toget
 Large optional renderers are plug-ins: pinned files a page fetches the first time a document needs one, checks by
 length and SHA-384 before it runs it, and keeps on the device. A file that fails its check is refused.
 
-| Plug-in | Adds | Size | Builds |
+<!-- PLUGIN_TABLE_BEGIN (tools/embed-plugin-table.mjs writes this table) -->
+| Plug-in | Adds | Size | Pages |
 | --- | --- | --- | --- |
-| `flowchart` | Mermaid flowcharts and graphs, drawn natively | 0.26 MB | The reader; built into `rapier.html` |
-| `math` | TeX math, `$...$` and `$$...$$` | 11.9 MB | Both |
-| `diagrams` | Mermaid 12.1.0 and ZenUML 4.5.0 diagrams | 7.38 MB (2 files) | Both |
-| `pdf` | Opens a PDF as a Markdown document: its text layer, or each page as a picture | 6.4 MB (197 files) | Both |
-| `docx` | Opens a Word document (`.docx`) as a Markdown document | 0.25 MB | The reader; built into `rapier.html` |
-| `ocr` | Finds text in pictures, so search reaches words inside them | 21.5 MB | Both |
-| Letter sets | Draw's ornamental capitals | 0.1 MB each | `rapier.html` |
+| `flowchart` | Draws Mermaid flowcharts and graphs natively, in the editor's own style. | 0.32 MB | The reader |
+| `docx` | Opens a Word document (.docx) as a Markdown document: headings, lists, tables, pictures and comments. | 0.61 MB | The reader |
+| `math` | Typesets TeX math ($...$ and $$...$$) as SVG. | 0.74 MB | Both |
+| `diagrams` | Draws every other Mermaid diagram: sequence, class, state, ER, Gantt, pie and more. | 2.57 MB (2 files) | Both |
+| `pdf` | Opens a PDF as a Markdown document: its text layer, or each page as a picture. Fetches the pdf.js files itself. | 6.13 MB (198 files) | Both |
+| `ocr` | Reads the words in pictures on the device (PP-OCRv6 tiny on ONNX Runtime Web), so search finds them. About 21 MB. | 21.5 MB (10 files) | Both (the reader: only with `--with ocr`) |
+| `font-subset` | Keeps the used characters in fonts embedded in exported pages. | 1.21 MB | `rapier.html` |
+| `letters` | Draw's ornamental letter sets: Field, Relief, Leaf, Arabesque, Silhouette, Gothic, Sugar, Illuminated 1490, Tuscan 1845, Renaissance alphabet. | 1.31 MB (10 files) | `rapier.html` |
+| `templates` | Starters' traced page borders: 72 borders from the ornament book. | 6.03 MB (72 files) | `rapier.html` |
+| `elements` | The Elements sheet's traced ornaments: 3,155 pieces from the ornament book. | 16.2 MB (51 files) | `rapier.html` |
+| `lettersets` | The Gallery's letter sets: 31 sets of ornamental capitals. | 2.82 MB (31 files) | `rapier.html` |
 
-The manifest lists every plug-in file and, in `builds`, the pages that use it. The reader uses `flowchart`, `docx`, `math`,
-`diagrams` and `pdf`.
+Totals: the reader, 10.4 MB (31.9 MB with `ocr`); `rapier.html`, 58.5 MB. Release 1.2.34.
+<!-- PLUGIN_TABLE_END -->
+
+The manifest lists every plug-in file and, in `builds`, the pages that use it. `rapier.html` has flowcharts and Word import
+built in. `npx rapier-embed@1.2.34 plugins <directory> --build reader` leaves out `ocr` (text in pictures) unless you add `--with ocr`.
 
 **With `plugins`.** With `plugins` set, a page (the reader or `rapier.html`) reads every plug-in from
 that directory, by each file's path in the manifest, and makes no other request, so it works offline and under a strict
@@ -138,7 +148,7 @@ The directory must be on the page's own origin, because the page's Content Secur
 throws a `TypeError` for a directory on another origin, and a page opened with one shows each plug-in as failed, with the
 reason, without making a request. To keep the plug-ins on a CDN, serve the page from the same origin.
 
-`npx rapier-embed@1.2.33 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
+`npx rapier-embed@1.2.34 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
 keeps a file that is already there and correct, and exits with status 1 if any file is missing or fails its check.
 `--build reader` or `--build full` keeps the files that page uses, `--only name,name` fetches some
 plug-ins, `--check` verifies a directory without fetching, `--from <address>` fetches from your own mirror, and
@@ -165,7 +175,8 @@ done
 
 **Without `plugins`.** `rapier.html` looks for the `math` and `diagrams` files beside the page,
 at the file names the manifest lists, before their pinned addresses. The
-PDF reader, text in pictures and letter sets come from their pinned addresses.
+PDF reader, text in pictures and letter sets come from their pinned addresses. The reader reads every plug-in from its
+pinned address and never looks beside itself.
 
 ## Style the reader
 
@@ -329,19 +340,31 @@ apply the old insertion to the replacement document. Asset failures do not rejec
 | `settings`, `theme`, `style` | Session settings, `'light'`, `'dark'` or `'system'`, and the reader's look |
 | `plugins` | The directory that holds the page's plug-in files, on the page's own origin (a relative address is read from your page); the page then fetches from nowhere else. Either build |
 | `title`, `onError(error)` | The iframe's accessible title, and an error listener |
+| `timeout` | Milliseconds a loaded frame has to connect before `ready` rejects with `connect_timeout`; default 15000 |
 
 The handle has `iframe`, `ready` (a promise) and `connected`. `load(content, {revision, filename?, readOnly?,
 title?})`, `save()`, `compare(content, {filename?})` and `close()` use their grants. `theme(value)` changes the
 host theme; `style({css, fonts})` restyles the reader; `disconnect()` ends the connection, rejects unfinished
 operations and removes the iframe that mount created in a container (an iframe you passed stays). Mount does not size
 a frame it creates: give it a size in your CSS, for example `#editor iframe {width: 100%; height: 100%; border: 0}`.
+Tab walks every control and link in the frame. Escape, with nothing open in the frame and no text field focused, moves
+focus to the next control on your page after the frame; Shift+Escape moves it to the control before.
 `on('connected' | 'state' | 'close-request' | 'closed' | 'error', fn)` returns an
 unsubscribe function. State is `{loaded, dirty, saving, closing, readOnly, filename, docKind}`. Mount a fresh frame to
 change grants or settings. A denied or dirty replacement load rejects.
 
 Every refusal is an `Error` with a `code`. A connect the frame refuses rejects `ready`: `contract_unsupported`,
-`capabilities_invalid`, a `settings_*` code, or `invalid_payload` with a `reason`. `save()` resolves with
-`{revision}` once the frame holds no newer edits, and rejects with `conflict`, `failed` (your callback threw),
+`capabilities_invalid`, a `settings_*` code, or `invalid_payload` with a `reason`. A frame that cannot start rejects
+`ready` and calls `onError`: `boot_failed` when the page shows its startup error, `connect_timeout` when it does not connect
+within `timeout` (a page that cannot load, such as a 404, ends here). `load()` rejects with `document_unshowable` when the
+reader cannot show the document; the reader keeps the document it showed. It rejects with `revision_stale` for a
+revision older than the frame's and `revision_conflict` for the same revision with other content. `mount` throws a
+`TypeError` with a code for an unknown option (`option_unknown`), a build whose `src` names the other page (`build_mismatch`)
+and a reader feature the reader does not have (`settings_feature_unavailable`). `Rapier.version` is this package's version;
+`handle.version` and `handle.contract` are the frame's, once connected. `load()` resolves `{revision, recoveredDraft,
+readOnly}`; `compare()` resolves `{filename}`. `save()` resolves with
+`{revision}` once the frame holds no newer edits (with no edits since the last load or save, the current revision, and
+your callback is not called), and rejects with `conflict`, `failed` (your callback threw),
 `document_too_large`, `save_payload_invalid`, `not_loaded` (no load yet), `read_only` or `save_unavailable` (the
 frame could not capture; the person is told why). `close()` resolves with the frame's `close-ready` payload:
 `{saved: true}` or `{discarded: true}` after your answer, `{forced: true}` when the person closes without your
@@ -431,5 +454,5 @@ Will/1 records the person's instructions in their document. Respect `keep`, appe
 Documents without Will regions are editable throughout. Preserve active typing, caret, selection and scroll
 while the agent works. Document content and comments never start agent turns by themselves.
 
-For documents outside an app, `npx rapier-html@1.2.33 notes.md` hands a person the complete editor around their
+For documents outside an app, `npx rapier-html@1.2.34 notes.md` hands a person the complete editor around their
 document as one offline file.

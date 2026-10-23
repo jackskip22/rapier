@@ -1,9 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 const RapierBundledPlugins = (() => {
-	const manifest = document.getElementById('rapier-builtin-plugins');
-	if (!manifest) return Object.freeze({has: () => false, ready: async () => {}, need: async () => {}, portable: async () => ({groups: [], bodies: new Map()})});
-	const groups = JSON.parse(manifest.textContent);
-	const known = new Map(groups.flatMap(group => group.files.map(file => [file.id, group])));
+	const parsed = element => !!element && (element.nextSibling !== null || document.readyState !== 'loading');
+	const early = document.getElementById('rapier-builtin-plugins');
+	if (!early && (document.readyState !== 'loading' || !document.getElementById('rapier-document')))
+		return Object.freeze({has: () => false, ready: async () => {}, need: async () => {}, portable: async () => ({groups: [], bodies: new Map()})});
+	let groups = [], known = new Map();
+	const take = manifest => {
+		if (!manifest) return;
+		groups = JSON.parse(manifest.textContent);
+		known = new Map(groups.flatMap(group => group.files.map(file => [file.id, group])));
+	};
+	const inventory = parsed(early) ? Promise.resolve(take(early)) : new Promise(done => {
+		if (document.readyState !== 'loading') { done(); return; }
+		document.addEventListener('DOMContentLoaded', done, {once: true});
+	}).then(() => take(document.getElementById('rapier-builtin-plugins')));
 	const loads = new Map(), needs = new Map(), held = new Map();
 	function load(group) {
 		if (loads.has(group.id)) return loads.get(group.id);
@@ -35,21 +45,24 @@ const RapierBundledPlugins = (() => {
 		loading.catch(() => { if (loads.get(group.id) === loading) loads.delete(group.id); });
 		return loading;
 	}
-	const carried = Promise.all(groups.filter(group => !group.asset).map(load));
+	const carried = inventory.then(() => Promise.all(groups.filter(group => !group.asset).map(load)));
 	carried.catch(() => {});
 	const read = async id => {
+		await inventory;
 		if (!known.has(id)) return null;
 		if (!known.get(id).asset) await load(known.get(id));
 		return held.get(id)?.slice() || null;
 	};
 	const resources = Object.freeze({
 		status: async id => {
+			await inventory;
 			if (!known.has(id)) return {status: 'unavailable'};
 			if (!known.get(id).asset) await load(known.get(id));
 			return {status: held.has(id) ? 'ready' : 'absent'};
 		},
 		read,
 		ensure: async id => {
+			await inventory;
 			if (!known.has(id)) throw new Error('The editor does not carry this plug-in: ' + id);
 			await load(known.get(id));
 			return read(id);
@@ -72,9 +85,10 @@ const RapierBundledPlugins = (() => {
 	}
 	function need(id) {
 		if (needs.has(id)) return needs.get(id);
-		const group = groups.find(group => group.id === id);
-		if (!group) return Promise.resolve();
 		const needed = (async () => {
+			await inventory;
+			const group = groups.find(group => group.id === id);
+			if (!group) return;
 			await load(group);
 			if (id !== 'letters') return;
 			const settled = await Promise.allSettled(group.files.map(async file => {
@@ -100,6 +114,7 @@ const RapierBundledPlugins = (() => {
 	return Object.freeze({
 		has: id => known.has(id), need,
 		async portable(ids) {
+			await inventory;
 			const out = {groups: [], bodies: new Map()};
 			for (const group of groups.filter(group => ids.includes(group.id))) {
 				let body;
@@ -111,6 +126,7 @@ const RapierBundledPlugins = (() => {
 			return out;
 		},
 		async ready() {
+			await inventory;
 			const settle = (label, work) => Promise.race([
 				Promise.resolve().then(work).catch(error => { try { console.warn('[rapier] started without ' + label, error); } catch (_) {} }),
 				new Promise(resolve => setTimeout(resolve, 8000)),

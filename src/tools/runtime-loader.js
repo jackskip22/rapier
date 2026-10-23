@@ -415,6 +415,7 @@ function _rapierKeepPortableTemplate() {
     if (detail) detail.textContent = 'The editor could not finish starting. Reload this file. Your document has not been opened or changed. Startup resource: ' + (reasons.join(': ') || 'unknown').slice(0, 240) + '.';
     void _rapierRescueStartup();
     globalThis.RapierStartupRelease?.failed();
+    if (window.self !== window.top) try { window.parent.postMessage({type: 'rapier-boot-failed'}, '*'); } catch (_) {}
     console.error('[rapier] runtime could not load', error);
   }
 })();

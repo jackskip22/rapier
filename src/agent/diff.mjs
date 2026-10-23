@@ -5,10 +5,12 @@ import {toHTML} from '../packages/rapier-diff/html.mjs';
 import {review, OPEN, CLOSE, marked} from '../packages/rapier-diff/review.mjs';
 export {diff, restore, restoreEdits, toHTML, review, OPEN, CLOSE, marked};
 
+const STRUCTURE_CHARS = 1048576;
 export function compare(before, after, options = {}) {
   const stats = {}, code = options.docKind === 'code';
+  const structure = before.length <= STRUCTURE_CHARS && after.length <= STRUCTURE_CHARS ? options.structure : undefined;
   const result = diff(before, after, {as: code ? 'code' : options.docKind === 'text' ? 'prose' : 'auto',
-    structure: options.structure, from: options.from, limit: options.maxWork ?? 2000000, _stats: stats});
+    structure, from: options.from, limit: options.maxWork ?? 2000000, _stats: stats});
   const owners = new Map(result.changes.flatMap(change => change.edits.map(index => [index, change])));
   const transports = result.changes.filter(change => change.kind === 'move').map(change => {
     const range = side => {

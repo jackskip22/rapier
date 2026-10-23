@@ -177,9 +177,12 @@ pub fn install(app: &Path) -> Result<(), String> {
     );
     let entry = fs::read_to_string(app.join("rapier.desktop"))
         .map_err(|e| e.to_string())?
-        .replace("Exec=rapier %F", &format!("Exec={quoted} %F"));
+        .replace("Exec=rapier %F", &format!("Exec={quoted} %F"))
+        .replace("Exec=rapier --new", &format!("Exec={quoted} --new"));
     fs::write(&desktop, &entry).map_err(|e| e.to_string())?;
-    let hidden: String = entry.lines().filter(|l| !l.starts_with("MimeType=")).map(|l| format!("{l}\n")).collect();
+    // The hidden entry names the window only: no file types, no actions.
+    let hidden: String = entry.lines().take_while(|l| !l.starts_with("[Desktop Action"))
+        .filter(|l| !l.starts_with("MimeType=") && !l.starts_with("Actions=") && !l.is_empty()).map(|l| format!("{l}\n")).collect();
     fs::write(&window, hidden + "NoDisplay=true\n").map_err(|e| e.to_string())?;
     refresh_desktop(&data);
     defaults(true);
@@ -191,8 +194,10 @@ pub fn install(app: &Path) -> Result<(), String> {
                 .map_err(|e| e.to_string())?;
         }
     }
-    println!("rapier is in your app launcher and opens Markdown and .rapier.html files.");
-    println!("On Omarchy, `sudo pacman -S perl-file-mimeinfo` lets `xdg-open file.md` open rapier too.");
+    println!("Rapier is in your app launcher and opens Markdown and .rapier.html files.");
+    if crate::home().join(".config/omarchy").is_dir() {
+        println!("On Omarchy, `sudo pacman -S perl-file-mimeinfo` lets `xdg-open file.md` open Rapier too.");
+    }
     println!(
         "Keep this file where it is ({}); after moving it, run it again with --install.",
         me.display()
@@ -211,7 +216,7 @@ pub fn uninstall() {
     for hook in omarchy_hooks() {
         let _ = fs::remove_file(hook);
     }
-    println!("rapier is removed from your app launcher. Your documents and notes are untouched.");
+    println!("Rapier is removed from your app launcher. Your documents and notes are untouched.");
 }
 
 /// The person's own default apps (~/.config/mimeapps.list): --install makes rapier the default for Markdown and

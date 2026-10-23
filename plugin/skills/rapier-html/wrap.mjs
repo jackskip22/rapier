@@ -15,7 +15,7 @@ const OFFLINE_POLICY = "default-src 'none'; script-src 'unsafe-inline' 'wasm-uns
 
 export {encodeCarried, decodeCarried};
 
-const PREVIEW = /<meta (?:name="(?:description|generator)"|property="og:(?:title|description)") content="[^"]*" data-rapier-preview>\n?/g;
+const PREVIEW = /<meta (?:name="(?:description|generator)"|property="og:(?:title|description)") content="[^"]*" data-rapier-preview(?:="")?>\n?/g;
 const APPEARANCE = /<meta name="rapier-appearance" content="(light|dark)">\n?/g;
 const plainWords = text => text.replace(/!\[[^\]]*\]\[[^\]]*\]|!\[[^\]]*\]\([^)]*\)/g, '').replace(/\[([^\]]*)\](?:\([^)]*\)|\[[^\]]*\])/g, '$1')
 	.replace(/<[^>]*>/g, '').replace(/[*_`~=]+|\[\^[^\]]*\]/g, '').replace(/\s+/g, ' ').trim();
@@ -45,6 +45,12 @@ function previewHead(markdown, fallbackTitle) {
 		(description ? meta('property', 'og:description', description) : '') + meta('name', 'generator', 'Rapier (https://rapier.website)');
 }
 
+function readableText(text) {
+	const words = text.replace(/^(\[[^\]\n]+\]:\s*)data:\S+/gm, '$1(embedded picture)').replace(/\((data:[^)\s]+)\)/g, '(embedded picture)')
+		.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+	return '<pre style="white-space:pre-wrap;font:inherit;margin:0">' + words + '</pre>';
+}
+
 function readableBlock(html) {
 	if (typeof html !== 'string' || !html.trim() || /<\/noscript|<!--/i.test(html)) return '';
 	return '\n<noscript id="rapier-readable"><style>html,body{background:#fff;color:#000}a{color:#0000ee}</style><main style="max-width:44rem;margin:0 auto;padding:1rem">' + html + '</main></noscript>';
@@ -61,8 +67,8 @@ export function offlineTemplate(pageHtml, address = null) {
 		const match = new RegExp('\\b' + name + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|([^\\s>]+))', 'i').exec(tag);
 		return match ? match[1] ?? match[2] ?? match[3] : '';
 	};
-	const head = pageHtml.slice(0, end).replace(/<meta\b[^>]*>/gi, tag =>
-		attribute(tag, 'http-equiv').toLowerCase() === 'content-security-policy' ? '' : tag).replace(/<link\b[^>]*>/gi, tag =>
+	const head = pageHtml.slice(0, end).replace(/<meta\b[^>]*>\n?/gi, tag =>
+		attribute(tag, 'http-equiv').toLowerCase() === 'content-security-policy' ? '' : tag).replace(/<link\b[^>]*>\n?/gi, tag =>
 		attribute(tag, 'rel').toLowerCase().split(/\s+/).some(rel => ['icon', 'apple-touch-icon', 'manifest', 'preconnect', 'dns-prefetch'].includes(rel)) ? '' : tag);
 	const anchor = /<meta charset[^>]*>\n?/i.exec(head) || /<head[^>]*>\n?/.exec(head);
 	if (!anchor) throw new Error('not a Rapier page: no <head>');
@@ -169,7 +175,7 @@ export function wrap(pageHtml, text, name, options) {
 	const titled = stripped.replace(/<title>[^<]*<\/title>\n?/, all => '<title>' + docName.replace(/&/g, '&amp;').replace(/</g, '&lt;') + ' — Rapier</title>' +
 		(all.endsWith('\n') ? '\n' : '') + previewHead(text, docName.replace(/\.[^.]*$/, '')));
 	const shift = titled.length - stripped.length;
-	return titled.slice(0, at + shift) + '\n' + block + carriedBlocks + readableBlock(opts.readable) + titled.slice(at + shift);
+	return titled.slice(0, at + shift) + '\n' + block + carriedBlocks + readableBlock(opts.readable === undefined ? readableText(text) : opts.readable) + titled.slice(at + shift);
 }
 export function unwrap(pageHtml) {
 	const theme = Array.from(pageHtml.matchAll(APPEARANCE), match => match[1])[0] || null;

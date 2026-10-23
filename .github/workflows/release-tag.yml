@@ -2,8 +2,7 @@
 # publication commit) creates the lightweight tag v<version> at that commit. An existing tag is never moved: the run
 # passes when it already names this commit and fails when it names another. Every page's jsDelivr routes name this
 # tag, so the publisher pushes release-tag first and moves main (the website, npm) only once the tag exists.
-# A Windows release requires an explicit version-and-hash build attestation in the commit body.
-# Retaining an older executable must not publish it as the newly tagged version.
+# Its GitHub release attaches each app that names this version itself; an app kept from an earlier release is left off.
 name: release-tag
 on:
   push:
@@ -31,13 +30,22 @@ jobs:
             git push origin "refs/tags/$tag"
             echo "tagged $tag at $GITHUB_SHA"
           fi
-          if [ -f Rapier.exe ] && [ -n "${GITHUB_REPOSITORY:-}" ] && [ -n "${GH_TOKEN:-}" ]; then
-            current_hash=$(sha256sum Rapier.exe)
-            expected="Windows build: $version ${current_hash%% *}"
-            if ! git log -1 --format=%b "$GITHUB_SHA" | grep -Fqx "$expected"; then
-              echo "No current Windows build attestation; keeping the existing Windows release"; exit 0
+          # The release lists what this version ships: each app is attached only when it names this version itself, so an
+          # app kept from an earlier release never stands as this one, and the newest release is always "latest".
+          if [ -n "${GITHUB_REPOSITORY:-}" ] && [ -n "${GH_TOKEN:-}" ]; then
+            set --
+            notes="Rapier $version."
+            if [ -f Rapier.exe ] && [ "$(python3 -I -c 'import re,sys; m=re.search("ProductVersion\0".encode("utf-16-le")+rb"(?:\0\0)*((?:[0-9.]\0)+)\0\0",open("Rapier.exe","rb").read()); print(m.group(1).decode("utf-16-le") if m else "")')" = "$version" ]; then
+              set -- "$@" Rapier.exe; notes="$notes Rapier.exe: the portable Windows app (it needs the Microsoft Edge WebView2 Runtime)."
             fi
-            if gh release view "$tag" > /dev/null 2>&1; then echo "release $tag exists"
-            else gh release create "$tag" Rapier.exe --verify-tag --title "Rapier $version" --notes "Rapier $version for Windows: Rapier.exe, the portable app. It needs the Microsoft Edge WebView2 Runtime."
+            if [ -f rapier-linux ] && chmod +x rapier-linux && [ "$(./rapier-linux --version | head -1)" = "Rapier $version" ]; then
+              set -- "$@" rapier-linux; notes="$notes rapier-linux: the Linux app (it opens in Chromium or another Chromium-based browser)."
+            fi
+            if gh release view "$tag" > /dev/null 2>&1; then
+              attached=$(gh release view "$tag" --json assets --jq '.assets[].name')
+              for asset in "$@"; do printf '%s\n' "$attached" | grep -qx "$asset" || gh release upload "$tag" "$asset"; done
+              echo "release $tag lists: $attached $*"
+            else
+              gh release create "$tag" "$@" --verify-tag --latest --title "Rapier $version" --notes "$notes"
             fi
           fi

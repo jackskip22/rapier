@@ -1,12 +1,17 @@
 [Desktop Entry]
 Type=Application
-Name=rapier
+Name=Rapier
 GenericName=Markdown editor
 Comment=Write Markdown offline, in one file
 Exec=rapier %F
 Icon=rapier
 Terminal=false
-Categories=Office;TextEditor;
+Categories=Utility;TextEditor;
 Keywords=markdown;notes;writing;
 MimeType=text/markdown;text/x-markdown;application/x-rapier-html;
 StartupWMClass=rapier
+Actions=new-document;
+
+[Desktop Action new-document]
+Name=New document
+Exec=rapier --new

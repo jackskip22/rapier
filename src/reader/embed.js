@@ -198,7 +198,7 @@ async function readerEmbedLoadRun(data, respond) {
 		respond('load-ack', {revision, recoveredDraft: false, readOnly: true});
 	} catch (error) {
 		try { console.warn('[rapier-embed] document load failed', error); } catch (_) {}
-		respond('load-nack', {reason: 'document could not be loaded'});
+		respond('load-nack', error?.code === 'document_unshowable' ? {code: 'document_unshowable', reason: 'document could not be shown'} : {reason: 'document could not be loaded'});
 	} finally {
 		if (operation === _rapierEmbed.loadToken) { _rapierEmbed.loading = false; readerPublishState(); }
 	}
@@ -234,6 +234,20 @@ function readerHostStyle(data) {
 	}
 }
 
+function readerEmbedEscapeLeaves() {
+	let leave = false;
+	addEventListener('keydown', event => {
+		const active = document.activeElement;
+		leave = event.key === 'Escape' && !event.repeat && !event.isComposing && _rapierEmbed.connected && !readerDialogs.length &&
+			!(active && (active.isContentEditable || /^(?:INPUT|TEXTAREA|SELECT)$/.test(active.tagName)));
+	}, true);
+	addEventListener('keydown', event => {
+		if (!leave || event.key !== 'Escape' || event.defaultPrevented) return;
+		leave = false;
+		window.parent.postMessage({type: 'rapier-focus-leave', backward: event.shiftKey}, _rapierEmbed.hostOrigin || '*');
+	});
+}
+
 function _rapierEmbedStart() {
 	readerEmbedListen();
 	if (_rapierEmbed.refused) {
@@ -243,6 +257,7 @@ function _rapierEmbedStart() {
 		return;
 	}
 	if (!_rapierEmbed.active) return;
+	readerEmbedEscapeLeaves();
 	_rapierEmbed.ready = true;
 	const held = _rapierEmbed.heldConnect;
 	_rapierEmbed.heldConnect = null;

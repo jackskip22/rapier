@@ -10,6 +10,11 @@ export const scope = (() => {
 	try { if (!/^https?:$/.test(location.protocol)) return ''; const dir = new URL('.', location.href).pathname; return dir === '/' ? '' : '@' + dir; }
 	catch (_) { return ''; }
 })();
+// A native window after the first keeps its own recovery (shell/platform.js RAPIER_RECOVERY_SCOPE).
+const recoveryScope = scope + (() => {
+	try { const slot = globalThis.__RAPIER_NATIVE_WINDOW; return Number.isInteger(slot) && slot > 1 && slot < 1000 ? '#' + slot : ''; }
+	catch (_) { return ''; }
+})();
 const encoder = new TextEncoder();
 const message = error => String(error?.message || error);
 const forbidden = error => error?.name === 'SecurityError' || error?.name === 'NotAllowedError';
@@ -106,7 +111,7 @@ function downloadName(value, occupied) {
 async function drafts(errors, publish) {
 	const values = [], embedded = [], artifacts = new Map();
 	try {
-		const key = 'rapier:recovery:snapshot:6' + scope, raw = localStorage.getItem(key);
+		const key = 'rapier:recovery:snapshot:6' + recoveryScope, raw = localStorage.getItem(key);
 		if (raw) {
 			const header = JSON.parse(raw);
 			if (!recoveryHeaderMatches(header) || !header.bodyKey?.startsWith(key + ':body:')) throw new Error('The safety draft failed its stored integrity check.');
@@ -156,7 +161,7 @@ async function drafts(errors, publish) {
 	publish(files());
 	let db;
 	try {
-		db = await openDatabase('rapier:recovery:6' + scope);
+		db = await openDatabase('rapier:recovery:6' + recoveryScope);
 		if (db) {
 			const saved = await readRecords(db, {meta: ['current'], checkpoints: null});
 			for (const [kind, rows] of [['idb', saved.meta], ['checkpoint', saved.checkpoints]]) for (const record of rows.values()) {

@@ -36,6 +36,7 @@
 
 html.rapier-host-accent #accent-swatches,html.rapier-host-accent .settings-section__title:has(+ #accent-swatches){display:none}
 
+#filename-btn{box-sizing:border-box;padding-block:calc((48px - 1.3em) / 2);cursor:default}
 #filename-btn,#filename-ext-btn{pointer-events:none}
 
 #editor-blocks>:is(h1,h2,h3,h4,h5,h6){position:relative}

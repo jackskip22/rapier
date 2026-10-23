@@ -64,7 +64,7 @@
 		files: [{name: MATH_FILE, file: MATH_FILE, version: MATH_VERSION,
 			bytes: 742684,
 			sri: '1rjhOOw690Mr3aVXwRTPlwQO2atMrWHY8Rm3nZ+SZRrm5mB9HK5FkY6ZWCDYtgzv',
-			url: 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.33/math/rapier-math-2.7.0.js'}],
+			url: 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.34/math/rapier-math-2.7.0.js'}],
 		missing: 'Rapier math loaded but its SVG renderer is missing — cache purged',
 		usable: function () { return !!(window.RapierMath && window.RapierMath.version === MATH_VERSION &&
 			typeof window.RapierMath.renderToString === 'function' && typeof window.RapierMath.renderWithMathML === 'function'); },
@@ -288,8 +288,12 @@
 			var frame = document.createElement('iframe');
 			frame.setAttribute('aria-hidden', 'true'); frame.inert = true; frame.tabIndex = -1;
 			frame.style.cssText = 'position:fixed;left:0;top:0;width:100%;height:100%;opacity:0;visibility:hidden;pointer-events:none;border:0;contain:layout style paint';
+			var loaded = new Promise(function (done) { frame.addEventListener('load', done, {once: true}); setTimeout(done, 1000); });
 			document.body.appendChild(frame); _mermaidRealm = frame;
-			var owner = frame.contentDocument, runtime = frame.contentWindow;
+			return loaded;
+		}).then(function () {
+			if (generation !== _mermaidGeneration) throw new Error('The diagram renderer was released');
+			var frame = _mermaidRealm, owner = frame.contentDocument, runtime = frame.contentWindow;
 			var policy = owner.createElement('meta'); policy.httpEquiv = 'Content-Security-Policy';
 			policy.content = "default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval' blob:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'";
 			owner.head.appendChild(policy);
@@ -514,6 +518,7 @@
 				if (force && m.discard) m.discard();
 				return keeper();
 			}).then(function (host) { via = host; return host ? hostInstall(host) : fetchInstall(force); }).catch(function (err) {
+				if (err && err.code === 'plugin_not_carried') { set('absent'); throw err; }
 				try { console.error('[rapier] ' + m.noun + ' plug-in install failed:', err); } catch (_) {}
 				if (holding && holding.old && !via) {
 					Plugin.updateError = _friendly(m, err, via); Plugin.progress = 0;
@@ -527,6 +532,7 @@
 			return pending;
 		}
 		function fetchInstall(force) {
+			if (typeof RapierParts !== 'undefined' && RapierParts.sealed()) return Promise.reject(Object.assign(new Error('not in this file'), {code: 'plugin_not_carried'}));
 			var held = Object.create(null), got = Object.create(null), reused = Object.create(null), next = 0, failure = null, span = total;
 			function tick(file, n) {
 				got[file.name] = n;

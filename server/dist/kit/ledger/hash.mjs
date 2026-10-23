@@ -111,9 +111,9 @@ export function sha256Parts(parts) {
   for (const part of parts) hash.update(part);
   return hash.digest();
 }
-const LONG_TEXT = 65536, DIGESTS = new Map();
+const LONG_TEXT = 65536, DOCUMENT_TEXT = 1048576, DIGESTS = new Map();
 export function sha256(text) {
-  if (typeof text !== 'string' || text.length < LONG_TEXT) return createSHA256().update(text).digest();
+  if (typeof text !== 'string' || text.length < LONG_TEXT || text.length >= DOCUMENT_TEXT) return createSHA256().update(text).digest();
   let digest = DIGESTS.get(text);
   if (digest === undefined) {
     digest = createSHA256().update(text).digest();

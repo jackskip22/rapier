@@ -9,7 +9,8 @@ import {fileURLToPath} from 'node:url';
 const BUILDS = ['reader', 'full'], buildName = build => build === 'document' ? 'full' : build;
 const MANIFEST_BYTES = 1024 * 1024, FILE_BYTES = 64 * 1024 * 1024, TOTAL_BYTES = 512 * 1024 * 1024;
 const NOFOLLOW = constants.O_NOFOLLOW || 0;
-const usage = 'usage: rapier-embed plugins <directory> [--build reader|full] [--only name,name] [--from <address>] [--manifest <file or address>] [--check]';
+const usage = 'usage: rapier-embed plugins <directory> [--build reader|full] [--with ocr] [--only name,name] [--from <address>] [--manifest <file or address>] [--check]';
+const OPTIONAL = {reader: ['ocr']};
 
 function arguments_(argv) {
   const [command, directory, ...rest] = argv, options = {};
@@ -17,7 +18,7 @@ function arguments_(argv) {
   for (let at = 0; at < rest.length; at++) {
     const name = rest[at];
     if (name === '--check') options.check = true;
-    else if (['--build', '--only', '--from', '--manifest'].includes(name) && rest[at + 1] !== undefined) options[name.slice(2)] = rest[++at];
+    else if (['--build', '--with', '--only', '--from', '--manifest'].includes(name) && rest[at + 1] !== undefined) options[name.slice(2)] = rest[++at];
     else throw new Error(usage);
   }
   if (options.build !== undefined) options.build = buildName(options.build);
@@ -60,8 +61,15 @@ async function fetchChecked(address, limit) {
   const url = new URL(address);
   if (url.username || url.password || !(url.protocol === 'https:' || url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)))
     throw new Error('a plug-in address needs HTTPS, or HTTP on localhost, without credentials');
-  const response = await fetch(url, {credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error', signal: AbortSignal.timeout(60000)});
-  if (!response.ok) { await response.body?.cancel(); throw new Error('HTTP ' + response.status + ' from ' + url.origin); }
+  const ask = () => fetch(url, {credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error', signal: AbortSignal.timeout(60000)});
+  let response = await ask();
+  if (response.status === 503 || response.status === 504) {
+    await response.body?.cancel();
+    await new Promise(done => setTimeout(done, 2000));
+    response = await ask();
+    if (!response.ok) { await response.body?.cancel(); throw new Error('HTTP ' + response.status + ' from ' + url.href + ' twice; try again later, or fetch from another address with --from'); }
+  }
+  if (!response.ok) { await response.body?.cancel(); throw new Error('HTTP ' + response.status + ' from ' + url.href); }
   const length = response.headers.get('content-length');
   if (length !== null && (!/^\d+$/.test(length) || !Number.isSafeInteger(Number(length)) || Number(length) > limit)) {
     await response.body?.cancel(); throw new Error('response exceeds the permitted ' + limit + ' bytes');
@@ -102,11 +110,16 @@ export async function plugins(argv) {
   let failed = 0;
   await mkdir(options.directory, {recursive: true});
   const directory = await realpath(options.directory);
-  const uses = (plugin, file) => !options.build || (file.builds || plugin.builds || BUILDS).map(buildName).includes(options.build);
+  const wanted = new Set(options.with ? options.with.split(',') : []);
+  for (const name of wanted) if (!names.has(name)) throw new Error('no plug-in named ' + name + '; the manifest has ' + [...names].join(', '));
+  const optional = plugin => !!options.build && (OPTIONAL[options.build] || []).includes(plugin.name) && !wanted.has(plugin.name) && !only?.has(plugin.name);
+  const uses = (plugin, file) => !options.build || !optional(plugin) && (file.builds || plugin.builds || BUILDS).map(buildName).includes(options.build);
   const jobs = manifest.plugins.filter(plugin => !only || only.has(plugin.name)).flatMap(plugin => plugin.files.filter(file => uses(plugin, file)).map(file => ({plugin, file})));
   if (!jobs.length) throw new Error('nothing in the manifest matches that --build and --only');
   const total = jobs.reduce((sum, {file}) => sum + file.bytes, 0);
-  console.log(jobs.length + ' files, ' + (total / 1048576).toFixed(1) + ' MiB' + (options.build ? ' for the ' + options.build + ' build' : ' for every build; --build reader or full keeps only what that page uses'));
+  const skipped = manifest.plugins.filter(optional).map(plugin => plugin.name);
+  console.log(jobs.length + ' files, ' + (total / 1048576).toFixed(1) + ' MiB' + (options.build ? ' for the ' + options.build + ' build' : ' for every build; --build reader or full keeps only what that page uses') +
+    (skipped.length ? '; without ' + skipped.join(', ') + ' (add --with ' + skipped.join(',') + ')' : ''));
   const work = async ({plugin, file}) => {
     const name = plugin.name + '  ' + file.file;
     let temp = null;

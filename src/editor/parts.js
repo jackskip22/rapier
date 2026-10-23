@@ -29,8 +29,25 @@ async function _rapierPartReady(id, said = '') {
 		if (RapierParts.status(id)?.update?.required && !await _rapierPartUpdateAsk(id, said)) return false;
 		await _rapierPartWait(id, said); return true;
 	}
-	catch (error) { showToast(String(error?.message || error), 'error'); return false; }
+	catch (error) {
+		if (error?.cause?.code === 'part_not_carried') void _rapierFullEditorOnly(said || (id === 'drawing' ? 'Draw' : RapierParts.pin(id)?.label || id));
+		else showToast(String(error?.message || error), 'error');
+		return false;
+	}
 }
+async function _rapierFullEditorOnly(feature) {
+	const answer = await rapierConfirm({title: feature, plain: true, confirmLabel: 'open rapier.website',
+		message: 'This file carries the editor without ' + feature + '. Open the file at rapier.website to use it.'});
+	if (answer === true) window.open('https://rapier.website/', '_blank', 'noopener');
+}
+function _rapierSealedMark() {
+	if (typeof RapierParts === 'undefined' || !RapierParts.sealed()) return;
+	const root = document.documentElement;
+	root.dataset.rapierSealed = '';
+	const name = () => { root.dataset.rapierCarries = [...document.querySelectorAll('script[id^="rapier-part-"], script[id^="rapier-plugin-"]')].map(element => element.id.replace(/^rapier-(?:part|plugin)-/, '')).join(' '); };
+	if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', name, {once: true}); else name();
+}
+_rapierSealedMark();
 async function _rapierPartUpdateRun(id, said = '') {
 	const noun = said || RapierParts.pin(id)?.label || id, popup = _rapierProgressOpen({label: 'Updating ' + noun, after: 0});
 	const follow = ({detail: {id: part, status, progress}}) => { if (part === id && status === 'downloading') popup.set(progress > 0 ? progress : null, 'Updating ' + noun + (progress > 0 ? ' \u00b7 ' + Math.floor(progress * 100) + '%' : '')); };
