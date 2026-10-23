@@ -3,11 +3,16 @@ export const SIZE_BUDGETS = Object.freeze({
 	reader: Object.freeze({warn: 1_200_000, refuse: 1_250_000}),
 });
 
-export function checkProfileSize(profile, bytes, warn = console.warn) {
+// development pack (`RAPIER_PACK=fast`, zlib, refused by every release) is larger by design, so it only warns.
+export function checkProfileSize(profile, bytes, warn = console.warn, {release = true} = {}) {
 	const budget = SIZE_BUDGETS[profile];
 	if (!budget || !Number.isSafeInteger(bytes) || bytes < 0) throw new Error('Invalid page size measurement');
 	if (bytes >= budget.warn) warn(`[build] ${profile} page is ${bytes} bytes: warning at ${budget.warn}; ceiling ${budget.refuse}`);
-	if (bytes > budget.refuse) throw new Error(`[build] ${profile} page is ${bytes} bytes, above its ${budget.refuse}-byte ceiling`);
+	if (bytes > budget.refuse) {
+		const message = `[build] ${profile} page is ${bytes} bytes, above its ${budget.refuse}-byte ceiling`;
+		if (release) throw new Error(message);
+		warn(message + ' (a development pack; release packing is smaller and is the one measured)');
+	}
 }
 
 // `RAPIER_PAINT_GRAIN = 3`, a 200-unit stroke on a 390 × 692

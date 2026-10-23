@@ -212,14 +212,14 @@ function _rapierTemplatePage(canonical, settings, root, darkPaper = false) {
 		const image = paragraph.querySelector('img');
 		const layout = globalThis.RapierMarkdownLayout.parseLayoutAttribute(paragraph.getAttribute('data-md-layout'));
 		const source = image?.getAttribute('src') || '';
-		if (isPageBorderLayout(layout) && /^data:image\/(?:png|jpeg|webp|gif|svg\+xml|jxl);base64,[A-Za-z0-9+/=]+$/i.test(source)) { url = source; paragraph.remove(); break; }
+		if (isPageBorderLayout(layout) && globalThis.RapierImageAssets.dataImage(source)) { url = source; paragraph.remove(); break; }
 	}
 	if (!url) return null;
 	const width = paper.width / 15, height = paper.height / 15;
 	const margins = ['top', 'right', 'bottom', 'left'].map(side => (settings?.geometry?.[side] ?? 1440) / 15);
 	const padding = margins.map(value => value + 'px').join(' ');
 	const ground = 'background:var(--rapier-template-border) 0 0/100% 100% no-repeat';
-	const shown = darkPaper && url.startsWith('data:image/svg+xml;base64,') ? _rapierDarkPaperSvgUrl(url, '#fafafa') : url;
+	const shown = darkPaper && globalThis.RapierImageAssets.dataImage(url)?.codec === 'image/svg+xml' ? _rapierDarkPaperSvgUrl(url, '#fafafa') : url;
 	const css = ':root{--rapier-template-border:url("' + url + '")}\n'
 		+ '@media screen{' + (shown !== url ? ':root{--rapier-template-border:url("' + shown + '")}' : '') + '.rapier-template-border{display:none}body{background:var(--md-color-inset)}.rapier-page{box-sizing:border-box;width:min(100%,' + width + 'px);min-height:' + height + 'px;margin:0 auto;padding:' + padding
 		+ ';background:var(--rapier-template-border) 0 0/100% ' + height + 'px repeat-y,var(--md-color-bg);color:var(--md-color-text)}}\n'
@@ -235,7 +235,7 @@ function _rapierDarkPaperSvgUrl(url, paperInk) {
 	const ink = globalThis.RapierImageInspection?.inkForPaper;
 	if (typeof ink !== 'function') return url;
 	let text;
-	try { text = new TextDecoder('utf-8', {fatal: true}).decode(Uint8Array.from(atob(url.slice(26)), c => c.charCodeAt(0))); }
+	try { text = new TextDecoder('utf-8', {fatal: true}).decode(globalThis.RapierImageAssets.decodeDataImageBytes(url).bytes); }
 	catch (_) { return url; }
 	const inked = ink(text, {dark: true, paperInk});
 	if (inked === text) return url;
@@ -274,7 +274,7 @@ function* _rapierProjectStyledRootSteps(semanticRoot, options) {
 	for (const token of root.querySelectorAll('.rapier-source-token--softbreak')) { yield;
 		if (token.getAttribute('data-rapier-source') !== '%0A') token.replaceWith(...token.childNodes);
 		else if (token.previousSibling?.classList?.contains('callout__label')) token.remove();
-		else token.replaceWith(root.ownerDocument.createTextNode(' '));
+		else token.replaceWith(root.ownerDocument.createTextNode(token.closest('pre') ? '\n' : ' '));
 	}
 	const metadata = opts.metadata || {};
 
@@ -532,10 +532,10 @@ function _rapierAnnotateExportBoxPolygons(root) {
 	for (const image of root.querySelectorAll('img[data-rapier-image-layout]')) {
 		const layout = globalThis.RapierMarkdownLayout.parseLayoutAttribute(image.getAttribute('data-rapier-image-layout'));
 		if (layout?.wrap !== 'box' && layout?.wrap !== 'around') continue;
-		const match = /^data:image\/svg\+xml;base64,([A-Za-z0-9+/]+=*)$/.exec(image.getAttribute('src') || '');
-		if (!match) continue;
+		const url = image.getAttribute('src') || '';
+		if (globalThis.RapierImageAssets.dataImage(url)?.codec !== 'image/svg+xml') continue;
 		let text;
-		try { text = new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(atob(match[1]), c => c.charCodeAt(0))); }
+		try { text = new TextDecoder('utf-8', { fatal: true }).decode(globalThis.RapierImageAssets.decodeDataImageBytes(url).bytes); }
 		catch (_) { continue; }
 		let recipe;
 		try { recipe = _rapierDrawReadSVGRecipe(text); } catch (_) { continue; }
@@ -634,7 +634,7 @@ function _rapierSharedResolve(text, ids, images, definitions) {
 	let broken = false;
 	const src = value => {
 		const found = images.get(value);
-		if (typeof found !== 'string' || !/^data:image\/(?:png|jpeg|webp|gif|svg\+xml|jxl);base64,[A-Za-z0-9+/]+={0,2}$/i.test(found)) { broken = true; return null; }
+		if (!globalThis.RapierImageAssets.dataImage(found)) { broken = true; return null; }
 		return found;
 	};
 	const inline = new RegExp('(\\]\\([ \\t\\r\\n]*(?:&lt;)?)#' + id + '(?=>?[ \\t\\r\\n]*\\)|>?[ \\t\\r\\n]+["\'(])', 'g');
@@ -1741,7 +1741,7 @@ function _rapierArtifactLayoutScript(root, nonce = '', {pictures = true} = {}) {
     throw new Error('Offline typography requires the complete retained MIT layout factories');
   const modules = _rapierArtifactFactoryModules(dependencies, 'layout');
   const script = '/* Rapier export layout: SPDX-License-Identifier: MIT */\n' +
-    '/* Pretext bac1774c0f8b7a92e44b9da43b6d5443d55d0d9b (Unreleased)\n' + dependencies.license + '\n*/\n' +
+    '/* Pretext 1.0.0 + main 0d102a5cd933611e86a7e60bda7b4baa5995c6b0\n' + dependencies.license + '\n*/\n' +
     '(() => {\nconst modules = Object.create(null);\n' + modules +
     (wrapping ? '\n(' + _rapierProjectArtifactLayout.toString() +
     ')(document.querySelector("main.rapier-page"), modules["spec/md-layout.mjs"], modules["layout/model.mjs"], modules["layout/preparation.mjs"]);\n' : '') +

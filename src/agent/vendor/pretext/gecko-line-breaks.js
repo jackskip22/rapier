@@ -1,4 +1,4 @@
-/*! Pretext Unreleased (bac1774c0) | MIT; BSD/Unicode/ICU notices in LICENSE | Copyright (c) 2026 Pretext contributors */
+/*! Pretext 1.0.0 + main (0d102a5cd) | MIT; BSD/Unicode/ICU notices in LICENSE | Copyright (c) 2026 Pretext contributors */
 // Break opportunities as Firefox finds them: a port of how Gecko transforms a text node's
 // white space, sets up its text run and breaks its words with nsLineBreaker over ICU4X's
 // line iterator, with Firefox's baked line data and the Unicode properties Gecko reads,

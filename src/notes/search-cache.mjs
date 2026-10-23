@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import {stampFor, stampsMatch, stampDurable, planIndexReuse} from './search-store.mjs';
+import {stampFor, stampsMatch, stampDurable, planIndexReuse, contentIdFor} from './search-store.mjs';
 import {packSearchProjection, unpackSearchProjection} from './search.mjs';
 import {packLinkProjection, unpackLinkProjection} from './links.mjs';
 
@@ -9,7 +9,7 @@ const DATABASE = 'rapier-notes-search', STORE = 'rows', META = 'account';
 const uint = n => Number.isSafeInteger(n) && n >= 0;
 const validFile = file => typeof file === 'string' && file.length > 0;
 export function searchCacheRowBytes(row) {
-	return 2 * (JSON.stringify(row.key).length + row.scope.length + row.version.length + (row.title || '').length + row.encoded.length) + 24;
+	return 2 * (JSON.stringify(row.key).length + row.scope.length + row.version.length + (row.contentId || '').length + (row.title || '').length + row.encoded.length) + 24;
 }
 
 export function takeSearchCacheProjection(row) {
@@ -177,7 +177,7 @@ export async function openSearchCache({scope, version = SEARCH_CACHE_VERSION,
 				if (!row || row.scope !== scope || !Array.isArray(row.key) || row.key.length !== 2 || row.key[0] !== scope ||
 					!validFile(row.key[1]) || typeof row.encoded !== 'string' || !uint(row.age)) continue;
 				const stamp = stampFor(row), title = row.title;
-				if (row.version !== version || !stamp || title !== null && typeof title !== 'string') { drop(row.key[1]); continue; }
+				if (row.version !== version || !stamp || !contentIdFor(row) || title !== null && typeof title !== 'string') { drop(row.key[1]); continue; }
 				bytes += searchCacheRowBytes(row);
 				if (bytes > bound.bytes) { fail(); return new Map(); }
 				found.set(row.key[1], {...stamp, projection: {encoded: row.encoded, ...(title === null ? {} : {title})}});
@@ -200,7 +200,7 @@ export async function openSearchCache({scope, version = SEARCH_CACHE_VERSION,
 		remember(file, projection, before, after, observedAt) {
 			if (!active || !validFile(file)) return false;
 			const stamp = stampFor(before);
-			if (!stampsMatch(stamp, stampFor(after)) || !stampDurable(stamp, observedAt)) return false;
+			if (!contentIdFor(stamp) || stamp.contentId !== contentIdFor(after) || !stampsMatch(stamp, stampFor(after)) || !stampDurable(stamp, observedAt)) return false;
 			try {
 				const title = typeof projection.title === 'string' ? projection.title : null;
 				if (typeof projection.encoded === 'string')

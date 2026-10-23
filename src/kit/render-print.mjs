@@ -841,7 +841,7 @@ async function writeRasterPdf({pages, textPages, linkPages = [], vectorPages = [
 					const characters = fallbackCharacters(part, run.carrier); if (!characters.length) continue;
 					const {slots, count} = _rapierPrintSlots(part.text, part.rtl);
 					const advance = part.width * .75 / count;
-					const baseline = decimal(height - margins.top - (part.y + part.height * .8) * .75);
+					const baseline = decimal(height - margins.top - (part.baseline ?? part.y + part.height * .8) * .75);
 					for (let letter = 0; letter < characters.length; letter++) {
 						const size = Math.max(.1, advance * 2 * [...characters[letter].replace(/\n/g, '')].length), scaleY = Math.max(.1, part.height * .75) / size;
 						const value = (codes.get(characters[letter]) || codes.get(characters[letter].codePointAt(0))).toString(16).padStart(4, '0');

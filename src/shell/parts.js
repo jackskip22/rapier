@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 const RapierParts = (() => {
 	const PINS = /* RAPIER_PARTS */ null;
-	const CDN = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.34/';
+	const CDN = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.36/';
 	const PART_DIRECTORY = 'parts/';
 	const pins = new Map((PINS || []).map((pin, order) => [pin.id, {...pin, order}]));
 	const runs = new Map(), states = new Map(), kept = new Set(), updates = new Map(), noted = new Set();
@@ -16,8 +16,13 @@ const RapierParts = (() => {
 	const verified = (pin, bytes, source) => RapierBundleIO.verifySha384(bytes, pin.sri,
 		{source, byteLength: pin.bytes, sizeMessage: 'unexpected size from ' + source});
 	const sealed = () => {
-		const policy = /(?:^|;)\s*connect-src([^;]*)/.exec(document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content || '');
-		return !!policy && !/'self'|cdn\.jsdelivr\.net/.test(policy[1]);
+		const policy = document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content || '';
+		const connect = /(?:^|;)\s*connect-src([^;]*)/.exec(policy) || /(?:^|;)\s*default-src([^;]*)/.exec(policy);
+		if (!connect) return false;
+		const sources = connect[1].trim().split(/\s+/);
+		if (sources.includes("'self'") || sources.includes(new URL(CDN).origin)) return false;
+		const hosted = !document.getElementById('rapier-document') && RapierBundleIO.hostedUrl('');
+		return !hosted || !sources.includes(new URL(hosted).origin);
 	};
 	const carried = pin => {
 		const element = document.getElementById('rapier-part-' + pin.id);

@@ -3,7 +3,7 @@ import {_rapierDrawAdmitRecipe, _rapierDrawBuildSVG, _rapierDrawShapeMarkup, ref
 import {renderRefraction} from './refraction-render.mjs';
 import {hasRefraction, refractionRecipeKey, currentRefractionRenditions} from './refraction-rendition.mjs';
 import {createPaintPNGCodec} from './paint-png.mjs';
-import {decodePaintRaster} from '../images/paint-raster.mjs';
+import {decodePaintRaster, rasterizeSVG} from '../images/paint-raster.mjs';
 
 export {hasRefraction, refractionRecipeKey};
 const png = createPaintPNGCodec(), ns = 'http://www.w3.org/2000/svg';
@@ -58,16 +58,9 @@ async function raster(svg, width, height, options) {
 	const root = parse(svg);
 	root.setAttribute('width', String(width)); root.setAttribute('height', String(height));
 	await readable(root, options);
-	const url = URL.createObjectURL(new Blob([root.outerHTML], {type: 'image/svg+xml'}));
-	const image = new Image(), canvas = document.createElement('canvas');
-	try {
-		image.src = url; await image.decode(); check(options);
-		canvas.width = width; canvas.height = height;
-		const context = canvas.getContext('2d', {willReadFrequently: true});
-		context.drawImage(image, 0, 0);
-		const pixels = context.getImageData(0, 0, width, height);
-		return {width, height, data: pixels.data, canvas};
-	} finally { image.removeAttribute('src'); URL.revokeObjectURL(url); }
+	const canvas = await rasterizeSVG(root.outerHTML, width, height, options);
+	const pixels = canvas.getContext('2d').getImageData(0, 0, width, height);
+	return {width, height, data: pixels.data, canvas};
 }
 
 function sourceSVG(root, body, frame) {

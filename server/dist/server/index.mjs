@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import http from 'node:http';
-import {readFile} from 'node:fs/promises';
+import {readFile,lstat,readdir} from 'node:fs/promises';
 import {basename,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash,timingSafeEqual} from 'node:crypto';
@@ -9,7 +9,7 @@ import {FileStore,documentName,refusal} from './store.mjs';
 import {BucketStore} from './bucket-store.mjs';
 import {Renderer} from './chromium.mjs';
 import {FolderSearch,searchFingerprint} from './search.mjs';
-import {handleMcp,handleAuthenticatedMcp,deployment,MAX_RPC_BODY_BYTES} from '../mcp/worker.mjs';
+import {handleMcp,handleAuthenticatedMcp,handleLocalEditor,deployment,MAX_RPC_BODY_BYTES} from '../mcp/worker.mjs';
 import {VERSION} from '../version.mjs';
 import {exportFilename} from '../agent/kernel.mjs';
 import {wrap} from '../skills/rapier-html/wrap.mjs';
@@ -47,6 +47,9 @@ export async function createServer(options={}) {
   if(!Number.isSafeInteger(port) || port<0 || port>65535)throw new TypeError('The port must be an integer from 0 to 65535');
   if(!['127.0.0.1','::1','localhost'].includes(host) && !publicOrigin)throw new TypeError('A non-loopback listener requires its public HTTPS origin');
   const configuredOrigin=publicOrigin ? exactOrigin(publicOrigin) : null;
+  const localDoor=options.localDoor===true;
+  if(localDoor && (!['127.0.0.1','::1','localhost'].includes(host) || publicOrigin || options.bucket!==undefined))
+    throw new TypeError('The local editor requires a loopback listener and a local document folder');
   if(options.bucket!==undefined && options.root!==undefined)throw new TypeError('Choose a document folder or a bucket, not both.');
   if(options.endpoint!==undefined && options.bucket===undefined)throw new TypeError('A bucket endpoint requires a bucket.');
   const store=options.bucket===undefined ? new FileStore(options) : new BucketStore(options);
@@ -69,6 +72,15 @@ export async function createServer(options={}) {
     const app=assets.get('/rapier-app.html').bytes.toString();
     if(!app.includes('globalThis.RAPIER_APPS_HOST = true') && !/globalThis\.RAPIER_APPS_HOST\s*=\s*true/.test(app))throw refusal('SERVER_ASSETS_MISMATCH','The server requires the built MCP App, not an editor-page substitute.',503);
     if(!app.includes('name="rapier-version" content="'+VERSION+'"'))throw refusal('SERVER_ASSETS_MISMATCH','The server and its editor resource have different versions.',503);
+    for(const name of await readdir(resolve(assetsDirectory,'editor-assets'))) {
+      if(!/^rapier-[a-z0-9-]+-[a-f0-9]{16}\.txt$/.test(name))continue;
+      const path=resolve(assetsDirectory,'editor-assets',name),info=await lstat(path);
+      if(!info.isFile() || info.isSymbolicLink())throw refusal('SERVER_ASSETS_MISMATCH','Editor assets must be ordinary files.',503);
+      const bytes=await readFile(path);
+      if(!name.endsWith('-'+createHash('sha256').update(bytes).digest('hex').slice(0,16)+'.txt'))
+        throw refusal('SERVER_ASSETS_MISMATCH','An editor asset differs from its content address.',503);
+      assets.set('/editor-assets/'+name,{bytes,type:'text/plain; charset=utf-8'});
+    }
     const assetBinding={fetch:async request=>{
       const value=assets.get(new URL(request.url).pathname);
       return value ? new Response(value.bytes,{headers:{'Content-Type':value.type,...HEADERS}}) : new Response('Not found',{status:404});
@@ -82,7 +94,7 @@ export async function createServer(options={}) {
       },
     };
     const environment=scope=>{
-      const env={EDITOR_KEY_SECRET:store.credentials.editorKeySecret,UI_ORIGIN:origin,ALLOWED_ORIGINS:origin,
+      const env={EDITOR_KEY_SECRET:store.credentials.editorKeySecret,UI_ORIGIN:origin,ALLOWED_ORIGINS:origin,LOCAL_EDITOR_PAGE:localDoor,
         FILE_DOWNLOAD_ORIGINS:'',RETURN_ORIGIN:origin,ASSETS:assetBinding,...(renderer ? {EXPORT_RENDERER:exportRenderer} : {})};
       env.DOCUMENTS=store.binding('document',env,scope);env.BUDGET=store.binding('budget',env);return env;
     };
@@ -100,6 +112,29 @@ export async function createServer(options={}) {
         if(request.headers.host!==new URL(origin).host)throw refusal('HOST_REFUSED','This Host is not the configured server origin.',403);
         if(!request.url?.startsWith('/') || request.url.startsWith('//'))throw refusal('PATH_REFUSED','Use a local server path.',400);
         const url=new URL(request.url,origin);
+        const localPage=localDoor && /^\/d\/ws_[A-Za-z0-9_-]{43}$/.test(url.pathname);
+        const localEditor=localDoor && /^\/editor\/ws_[A-Za-z0-9_-]{43}(?:\/admit)?$/.test(url.pathname);
+        if(localPage || localEditor) {
+          const methods=localPage ? ['GET','HEAD'] : ['POST'];
+          if(!methods.includes(request.method))return json(response,{error:'METHOD_NOT_ALLOWED'},405,{Allow:methods.join(', ')});
+          const site=request.headers['sec-fetch-site'];
+          if(localEditor ? request.headers.origin!==origin || site && site!=='same-origin'
+            : site && site!=='same-origin' && site!=='none' && !(request.headers['sec-fetch-mode']==='navigate' && request.headers['sec-fetch-dest']==='document'))
+            throw refusal('CROSS_SITE_REFUSED','Another site cannot read or change this local editor.',403);
+          const headers=new Headers();
+          for(const name of ['content-type','accept','origin','sec-fetch-site','mcp-protocol-version'])
+            if(request.headers[name])headers.set(name,request.headers[name]);
+          const bytes=localEditor ? await bodyOf(request,MAX_RPC_BODY_BYTES) : null;
+          const incoming=new Request(url,{method:request.method,headers,...(bytes ? {body:bytes} : {}),signal:control.signal});
+          return forward(response,await handleLocalEditor(incoming,environment(),authority));
+        }
+        if(url.pathname.startsWith('/editor-assets/') && ['GET','HEAD'].includes(request.method)) {
+          const value=assets.get(url.pathname);
+          if(!value)return json(response,{error:'NOT_FOUND'},404);
+          response.writeHead(200,{...HEADERS,'Content-Type':value.type,'Content-Length':value.bytes.length,
+            'Access-Control-Allow-Origin':'*','Cross-Origin-Resource-Policy':'cross-origin','Cache-Control':'public, max-age=31536000, immutable'});
+          return response.end(request.method==='HEAD' ? undefined : value.bytes);
+        }
         const isMcp=url.pathname==='/mcp',isEditor=url.pathname==='/editor',isReturn=url.pathname.startsWith('/return/'),isExport=url.pathname.startsWith('/export/');
         if(isMcp || isEditor || isReturn || isExport) {
           if(request.method!=='OPTIONS' && !isEditor && !authorized(request))return json(response,{error:'AUTHORIZATION_REQUIRED',message:'A server bearer token is required.'},401,{'WWW-Authenticate':'Bearer realm="rapier-server"'});

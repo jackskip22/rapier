@@ -1,4 +1,4 @@
-/*! Pretext Unreleased (bac1774c0) | MIT; BSD/Unicode/ICU notices in LICENSE | Copyright (c) 2026 Pretext contributors */
+/*! Pretext 1.0.0 + main (0d102a5cd) | MIT; BSD/Unicode/ICU notices in LICENSE | Copyright (c) 2026 Pretext contributors */
 // Grapheme clusters as each engine's Intl.Segmenter finds them: ICU's character rules
 // (char.brk) as Chrome and libicucore ship them, which scripts/generate-engine-break-data.ts
 // writes to src/generated/engine-break-data.ts. Firefox's ICU4X data gives the same clusters

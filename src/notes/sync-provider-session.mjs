@@ -53,7 +53,7 @@ export function createProviderSession({folder, fetch: fetchFn, pendingStorage, p
  let stopping = null, locking = null, revoking = null, cancelling = null, forgetting = null;
  let locked = false, needsRevoke = false, rememberDevice = !!device && device.available !== false, deviceInspected = false;
  let explicitLock = false, unresolvedRevocation = false, coveredMarkerRevision = null;
- let stage = 'signed-out', notice = '';
+ let stage = 'signed-out', notice = '', plainTransport = null;
  const credentials = new Map(), transports = new Set(), plains = new Set();
  const busy = () => !!(work || stopping || locking || revoking || cancelling || forgetting);
  const lapsed = () => !!grant && !grant.refreshToken && grant.expiresAt <= now() + 30000;
@@ -180,6 +180,10 @@ export function createProviderSession({folder, fetch: fetchFn, pendingStorage, p
    connectionId: value.connectionId, destination: value.destination, now, guard: () => active(ticket)});
   plains.add(plain); return plain;
  }
+ function discardPlainTransport() {
+  if (!plainTransport) return;
+  plainTransport.store.pause(); transports.delete(plainTransport.store); plainTransport = null;
+ }
  async function plainRun(ticket, place, fn, {connect = false} = {}) {
   if (!other) throw fail('unavailable', 'Cloudflare sign-in has no conditional plain-files transport. Use an R2 bucket key.');
   const kept = connect ? (await readSyncStateBytes(folder.store)).state.plain : await current(ticket);
@@ -187,20 +191,32 @@ export function createProviderSession({folder, fetch: fetchFn, pendingStorage, p
   if (kept) assertBound(kept);
   const where = plainPlace(provider, place), token = await authority(ticket);
   active(ticket);
-  const store = plainStore(provider, {place: where, token, fetch: fetchFn}); transports.add(store);
-  let plain;
+  if (plainTransport && (plainTransport.where !== where || plainTransport.accessToken !== token.accessToken ||
+   plainTransport.family !== grant.family || !kept || plainTransport.connectionId !== kept.connectionId || plainTransport.destination !== kept.destination)) discardPlainTransport();
+  let store = plainTransport?.store, plain;
   try {
-   const identity = provider === 'drive' ? {id: await store.folderId({create: connect && !kept})} : await store.destinationIdentity({create: connect && !kept});
-   active(ticket);
-   const destination = await sha256(JSON.stringify([provider, identity])); active(ticket);
-   if (kept && (kept.place !== where || kept.destination !== destination)) throw fail('connection', 'this sign-in names another plain-files folder. your notes were not sent.');
-   const value = kept || {provider, place: where, destination, device: folder.deviceId && folder.deviceId !== 'files' ? folder.deviceId : 'rapier'};
+   if (!store) {
+    store = plainStore(provider, {place: where, token, fetch: fetchFn}); transports.add(store);
+    const identity = provider === 'drive' ? {id: await store.folderId({create: connect && !kept})} : await store.destinationIdentity({create: connect && !kept});
+    active(ticket);
+    const destination = await sha256(JSON.stringify([provider, identity])); active(ticket);
+    if (kept && (kept.place !== where || kept.destination !== destination)) throw fail('connection', 'this sign-in names another plain-files folder. your notes were not sent.');
+    plainTransport = {store, where, destination, connectionId: kept?.connectionId, accessToken: token.accessToken, family: grant.family};
+   }
+   const value = kept || {provider, place: where, destination: plainTransport.destination, device: folder.deviceId && folder.deviceId !== 'files' ? folder.deviceId : 'rapier'};
    plain = localPlain(value, ticket, store);
    const result = await fn(plain, store); active(ticket);
    await readLocal(); active(ticket); assertBound(connection); bound = {...connection};
-   await keepDevice(ticket); announce('ready'); return result;
-  } finally { plain?.pause(); plains.delete(plain); store.pause(); transports.delete(store); }
+   await keepDevice(ticket); active(ticket);
+   plainTransport.connectionId = connection.connectionId;
+   announce('ready'); return result;
+  } catch (error) {
+   if (store) { store.pause(); transports.delete(store); }
+   if (plainTransport?.store === store) plainTransport = null;
+   throw error;
+  } finally { plains.delete(plain); }
  }
+
  function clearPending() {
   if (!pendingStorage) return;
   pendingStorage.removeItem(pendingKey);
@@ -210,6 +226,7 @@ export function createProviderSession({folder, fetch: fetchFn, pendingStorage, p
   epoch++;
   for (const plain of plains) plain.pause();
   for (const store of transports) store.pause();
+  transports.clear(); plainTransport = null;
  }
  async function keepRevocation() {
   if (!device) return;

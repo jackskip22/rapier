@@ -531,17 +531,22 @@ const freehandNotice = /^\/\*([\s\S]*?)\*\//.exec(await read('draw/freehand.mjs'
 if (!freehandNotice?.includes('MIT License') || !freehandNotice.includes('Copyright (c) 2021 Stephen Ruiz Ltd')) throw new Error('Missing perfect-freehand notice');
 const retainedGroups = Object.fromEntries(Object.keys(RETAINED_GROUPS).map(group => [group, [...MODULES.keys()].filter(path => retainedGroup(path) === group)]));
 // Pretext's licence rides once, as the string the styled export writes; the Licences sheet shows it.
-const codecPaths = new Set(['draw/font-brotli-dictionary.mjs', 'draw/font-brotli.mjs', 'images/crc32.mjs']);
+const codecPaths = new Set(['draw/font-brotli-dictionary.mjs', 'draw/font-brotli.mjs', 'images/crc32.mjs', 'shell/worker-execution.mjs', 'shell/fonts/docx-fonts.mjs']);
+let runtimeLoaderBody = await read('tools/runtime-loader.js');
+const presentationNames = new Set(['_rapierShowFirstEarly', '_rapierShowFirstPaint', '_rapierLoadPaintStyles']);
+const presentationNodes = parse(runtimeLoaderBody).body.filter(node => node.type === 'FunctionDeclaration' && presentationNames.has(node.id?.name));
+if (presentationNodes.length !== presentationNames.size) throw new Error('Startup presentation declarations are missing');
+const presentationSource = presentationNodes.map(node => runtimeLoaderBody.slice(node.start, node.end)).join('\n');
+for (const node of presentationNodes.slice().reverse()) runtimeLoaderBody = runtimeLoaderBody.slice(0, node.start) + runtimeLoaderBody.slice(node.end);
 const codecText = await lean('(() => {\nconst modules = {}, workerFactories = {};\n' +
   [...MODULES].filter(([path]) => codecPaths.has(path)).map(([, source]) => source).join('\n') +
   '\nglobalThis.RapierCodecs = Object.freeze({modules:Object.freeze(modules),factories:Object.freeze(workerFactories),' +
-  'decodeBrotli:modules["draw/font-brotli.mjs"].decodeBrotli,crc32:modules["images/crc32.mjs"].crc32});\n})();', 'rapier-codecs.js');
+  'decodeBrotli:modules["draw/font-brotli.mjs"].decodeBrotli,crc32:modules["images/crc32.mjs"].crc32});\n})();\n' + presentationSource, 'rapier-codecs.js');
 const factoryFontPath = 'shell/fonts/docx-fonts.mjs';
 if (workerPaths.has(factoryFontPath) || (DEPS.get(factoryFontPath) || []).some(path => !codecPaths.has(path)))
   throw new Error('Factory fonts must depend only on the early codecs');
-const factoryFontText = await lean('(() => {\nconst modules = globalThis.RapierCodecs.modules;\n' +
-  MODULES.get(factoryFontPath).replace('modules[' + JSON.stringify(factoryFontPath) + '] = ', 'globalThis.RapierDocxFonts = ') +
-  '\nObject.freeze(globalThis.RapierDocxFonts);\n})();', 'rapier-factory-fonts.js');
+const factoryFontText = await lean('globalThis.RapierDocxFonts = globalThis.RapierCodecs.modules[' +
+  JSON.stringify(factoryFontPath) + ']; Object.freeze(globalThis.RapierDocxFonts);', 'rapier-factory-fonts.js');
 MODULES.set(factoryFontPath, 'modules[' + JSON.stringify(factoryFontPath) + '] = globalThis.RapierDocxFonts;');
 let partOf = new Map();
 if (PROFILE === 'full') {
@@ -606,7 +611,7 @@ const spectralNotice = (await read('draw/vendor-notices/spectral-js-MIT.txt')).t
 if (!spectralNotice.includes('Ronald van Wijnen') || !spectralNotice.includes('Permission is hereby granted')) throw new Error('Missing spectral.js MIT notice');
 if (!ui.includes('<div class="licenses-list"><template data-rapier-later>')) throw new Error('The licenses list has no held-back notices');
 ui = ui.replace('<div class="licenses-list"><template data-rapier-later>', () => '<div class="licenses-list"><template data-rapier-later>\n' +
-    '<details class="license-entry"><summary><span class="license-name">Pretext bac1774c · Unreleased</span><span class="license-id">MIT · BSD · Unicode · ICU</span></summary><pre class="license-text" data-license="pretext"></pre></details>\n' +
+    '<details class="license-entry"><summary><span class="license-name">Pretext 1.0.0 · 0d102a5c</span><span class="license-id">MIT · BSD · Unicode · ICU</span></summary><pre class="license-text" data-license="pretext"></pre></details>\n' +
   '<details class="license-entry"><summary><span class="license-name">perfect-freehand</span><span class="license-id">MIT</span></summary><pre class="license-text">' + escapeHtml(freehandNotice) + '</pre></details>\n' +
   '<details class="license-entry"><summary><span class="license-name">rough.js generator</span><span class="license-id">MIT</span></summary><pre class="license-text">' + escapeHtml(roughNotice) + '</pre></details>\n' +
   '<details class="license-entry"><summary><span class="license-name">libmypaint brush engine (port)</span><span class="license-id">ISC</span></summary><pre class="license-text">' + escapeHtml(mypaintNotice) + '</pre></details>\n' +
@@ -864,7 +869,8 @@ async function realmSources() {
     }));
   return [...raw, ...inline, ...vendors, ...plugins, codecText, factoryFontText, bundleText, ...partShared.values()];
 }
-const realm = await realmNames(await realmSources());
+const realmInputs = await realmSources();
+const realm = await realmNames(realmInputs);
 const compiledEditor = await lean("'use strict';\ndocument.currentScript._rapierMountInterface();\n" + source +
   PARTS.filter((_, index) => partExtensions[index] !== undefined).map((part, index) => partMark(part.id) + partExtensions[index]).join('') +
   (PROFILE === 'full' ? partMark('benchmark') + benchExtensions : ''),
@@ -985,14 +991,19 @@ if (PROFILE === 'full') {
   const unslotted = LETTER_SETS.filter(set => !platformSource.includes("'letters-" + set.id + "': null")).map(set => set.id);
   if (unslotted.length) throw new Error('Letter sets without a plug-in slot in shell/platform.js: ' + unslotted.join(', '));
 }
+const packedReaderSources = (await Promise.all(['tools/text-pack.mjs', 'tools/packed-header.mjs'].map(read)))
+  .map(source => source.replace(/^export /gm, '')).join('\n');
 const runtimeLoaderSource = startupRelease + '\n' + startupRescue + '\n' +
-  'const _rapierBase124 = (() => {\n' + base124Source +
-  '\nreturn Object.freeze({encodeBase124, decodeBase124});\n})();\n' +
-  (await read('tools/text-pack.mjs')).replace(/^export /gm, '') + '\n' +
-  (await read('tools/packed-header.mjs')).replace(/^export /gm, '') + '\n' + await read('tools/runtime-loader.js');
-const runtimeLoader = await lean(fillBuiltinSlot(runtimeLoaderSource,
-  '/* RAPIER_BUILTIN_PLUGINS_READY */', 'try { await RapierBundledPlugins.ready(); } catch (error) { console.warn(\'[rapier] started without its plug-ins\', error); }'), 'rapier-loader.js');
+  fillBuiltinSlot(runtimeLoaderBody, '/* RAPIER_STARTUP_VENDORS */ []', JSON.stringify(vendorIds.filter(id => id !== 'lib-acorn'))).replace('/* RAPIER_PACKED_READER */', () =>
+    base124Source + '\n' + packedReaderSources);
+const loaderRealm = await realmNames([...realmInputs.slice(6), source, ...editorSlices.parts.values()]);
+const foldedRuntimeLoader = await lean(fillBuiltinSlot(runtimeLoaderSource,
+  '/* RAPIER_BUILTIN_PLUGINS_READY */', 'try { await RapierBundledPlugins.ready(); } catch (error) { console.warn(\'[rapier] started without its plug-ins\', error); }'), 'rapier-loader-fold.js');
+const runtimeLoader = await lean(foldedRuntimeLoader, 'rapier-loader.js',
+  {toplevel: true, reserved: [...loaderRealm.read, ...loaderRealm.declared, '_rapierPacked', '_rapierLoadCodecs']});
 new vm.Script(runtimeLoader, {filename: 'rapier-runtime-loader.js'});
+const loaderTaken = topLevelNames([runtimeLoader]).filter(name => loaderRealm.declared.has(name));
+if (loaderTaken.length) throw new Error('The loader takes another script\'s global name: ' + loaderTaken.join(', '));
 const PAINT_STYLE_ORDER = ['rapier-font-style', 'rapier-content-style', 'rapier-app-style', 'rapier-editor-style', 'rapier-highlight-style'];
 const paintStyles = PAINT_STYLE_ORDER.map(id => styles.find(row => row.id === id)).filter(Boolean);
 const restStyles = styles.filter(row => !PAINT_STYLE_ORDER.includes(row.id));
@@ -1074,8 +1085,9 @@ let inlineRuntimeLoader = null;
   const leaned = await Promise.all([...html.matchAll(inline)].map(async ([whole, open, attrs, source, close]) => {
     const type = /\btype\s*=\s*["']([^"']+)["']/i.exec(attrs)?.[1]?.toLowerCase();
     if (type && !['text/javascript', 'application/javascript'].includes(type)) return whole;
-    const compiled = safeScript(await lean(source, 'rapier-inline.js'));
-    if (source.trim() === safeScript(runtimeLoader)) {
+    const isLoader = source.trim() === safeScript(runtimeLoader);
+    const compiled = isLoader ? safeScript(runtimeLoader) : safeScript(await lean(source, 'rapier-inline.js'));
+    if (isLoader) {
       if (inlineRuntimeLoader !== null) throw new Error('The page has more than one runtime loader');
       inlineRuntimeLoader = compiled;
     }
@@ -1093,12 +1105,22 @@ const serviceWorkerSource = PROFILE === 'full' ? stripperFor('shell/service-work
 const bootId = checksum(html + serviceWorkerSource);
 html = html.replace(bootSlot, bootId);
 siteHtml = siteHtml.replace(bootSlot, bootId);
-if (inlineRuntimeLoader) inlineRuntimeLoader = inlineRuntimeLoader.replace(bootSlot, bootId);
+if (inlineRuntimeLoader) {
+  const at = inlineRuntimeLoader.indexOf(bootSlot), map = lean.symbols['rapier-loader.js'];
+  if (checksum(inlineRuntimeLoader) !== map.sha256) throw new Error('The runtime loader differs from its symbol map');
+  inlineRuntimeLoader = inlineRuntimeLoader.replace(bootSlot, bootId);
+  const offsets = [...map.offsets];
+  for (let i = 0, position = 0; i < offsets.length; i += 3) {
+    position += offsets[i];
+    if (position > at) { offsets[i] += bootId.length - bootSlot.length; break; }
+  }
+  lean.symbols['rapier-loader.js'] = {...map, offsets, sha256: checksum(inlineRuntimeLoader)};
+}
 const BUDGET = SIZE_BUDGETS[PROFILE];
 {
   const bytes = Buffer.byteLength(html);
   if (FAST_PACK) console.warn('RAPIER_PACK=fast: zlib packing for iteration only; ' + bytes + ' bytes is not a release measurement');
-  checkProfileSize(PROFILE, bytes);
+  checkProfileSize(PROFILE, bytes, console.warn, {release: !FAST_PACK});
 }
 await writeFile(resolve(root, OUTPUT_FILE), html);
 if (PROFILE === 'full') {

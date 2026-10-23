@@ -40,13 +40,30 @@ export function recoveryRecord(row, text, undo = null, ledger = null, body = nul
   header.headerIntegrity = recoveryHeaderIntegrity(header);
   return header;
 }
-export async function readRecoveryBody(header) {
+export async function readRecoveryBody(header, {yield: yieldWork} = {}) {
   if (!recoveryHeaderMatches(header) || !(header.body instanceof Blob)) throw new Error('Saved recovery header could not be admitted');
-  return parseRecoveryBody(await header.body.text());
+  const raw = await header.body.text();
+  if (!yieldWork) return parseRecoveryBody(raw);
+  const body = recoveryBody(raw);
+  let turn = performance.now();
+  for (let at = 0; at < body.text.length;) {
+    let end = Math.min(body.text.length, at + 65536);
+    if (end < body.text.length && (body.text.charCodeAt(end - 1) & 0xfc00) === 0xd800 &&
+        (body.text.charCodeAt(end) & 0xfc00) === 0xdc00) end--;
+    if (!body.text.slice(at, end).isWellFormed()) throw new Error('Saved recovery body could not be admitted');
+    at = end;
+    if (performance.now() - turn >= 4) { await yieldWork(); turn = performance.now(); }
+  }
+  return body;
+}
+function recoveryBody(raw) {
+  const body = JSON.parse(raw);
+  if (!body || typeof body.text !== 'string' || Object.keys(body).length !== 2 ||
+      !(Object.hasOwn(body, 'undo') !== Object.hasOwn(body, 'ledger'))) throw new Error('Saved recovery body could not be admitted');
+  return body;
 }
 export function parseRecoveryBody(raw) {
-  const body = JSON.parse(raw);
-  if (!body || typeof body.text !== 'string' || /[\uD800-\uDFFF]/u.test(body.text) || Object.keys(body).length !== 2 ||
-      !(Object.hasOwn(body, 'undo') !== Object.hasOwn(body, 'ledger'))) throw new Error('Saved recovery body could not be admitted');
+  const body = recoveryBody(raw);
+  if (!body.text.isWellFormed()) throw new Error('Saved recovery body could not be admitted');
   return body;
 }

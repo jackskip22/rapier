@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {createHTTP, jsonBody, providerError, retryAfter, refuse, tokenFor} from './provider-http.mjs';
+import {plainPoll} from './plain-poll.mjs';
 
 const DROPBOX_API_ORIGIN = 'https://api.dropboxapi.com', DROPBOX_CONTENT_ORIGIN = 'https://content.dropboxapi.com';
 
@@ -7,10 +8,12 @@ const MAX_BYTES = 150000000;
 const conflict = () => Object.assign(new Error('the file changed since it was read; nothing was replaced'), {code: 'conflict'});
 const REV = /^[0-9a-f]{9,64}$/i;
 
-export function createDropboxPlainStore(options = {}) {
+export function createDropboxPlainStore(options = {}) { return dropboxPlainStore(options); }
+
+function dropboxPlainStore(options, shared = null) {
 	const folder = options.folder;
 	if (typeof folder !== 'string' || !/^\/[^/\\\x00-\x1f\x7f]+(?:\/[^/\\\x00-\x1f\x7f]+)*$/.test(folder) || folder.split('/').some(part => part === '.' || part === '..')) refuse('config', 'choose the Dropbox folder that keeps the plain files');
-	const http = createHTTP(options), authorization = tokenFor(options.token, 'dropbox'), lower = folder.toLowerCase();
+	const http = createHTTP({...options, timeoutMs: options.timeoutMs ?? (options.longpoll === true ? 65000 : 30000)}), authorization = tokenFor(options.token, 'dropbox'), lower = folder.toLowerCase();
 	let rootId = options.rootId || null;
 	const relative = options.relative || '';
 	if (rootId !== null && !/^id:[A-Za-z0-9_-]{1,256}$/.test(rootId) || relative && !/^\/(?:[^/\\\x00-\x1f\x7f]+\/?)+$/.test(relative)) refuse('config', 'the Dropbox folder identity is not complete');
@@ -37,8 +40,61 @@ export function createDropboxPlainStore(options = {}) {
 		}
 		return {name: name(row.name), rev: row.rev, size: row.size};
 	}
+	if (!shared) {
+		let rows = new Map(), cursor = null, backoffUntil = 0;
+		const refresh = async () => {
+			http.check();
+			let notificationReset = false;
+			if (cursor && options.longpoll === true && Date.now() >= backoffUntil) {
+				const origin = 'https://notify.dropboxapi.com';
+				const response = await http.request(origin + '/2/files/list_folder/longpoll', {origin, method: 'POST',
+					headers: {'Content-Type': 'application/json'}, body: JSON.stringify({cursor, timeout: 30})});
+				if (response.status === 409 && errorTag(response)[0] === 'reset') notificationReset = true;
+				else {
+				if (response.status !== 200) throw providerError('Dropbox', response);
+				const answer = jsonBody(response);
+				if (typeof answer.changes !== 'boolean' || answer.backoff !== undefined && (!Number.isFinite(answer.backoff) || answer.backoff < 0)) refuse('cursor', 'Dropbox returned an incomplete change notification');
+				backoffUntil = Date.now() + (answer.backoff || 0) * 1000;
+				if (!answer.changes) return;
+				}
+			}
+			let next = notificationReset ? null : cursor, staged = notificationReset ? new Map() : new Map(rows), reset = notificationReset;
+			const seen = new Set();
+			for (let pages = 0; pages <= 1000; pages++) {
+				const response = next
+					? await request(DROPBOX_API_ORIGIN, 'files/list_folder/continue', {cursor: next})
+					: await request(DROPBOX_API_ORIGIN, 'files/list_folder', {path: rootPath(), recursive: true, include_deleted: true, limit: 2000});
+				if (response.status === 409 && errorTag(response)[0] === 'reset' && next && !reset) {
+					staged = new Map(); next = null; reset = true; seen.clear(); continue;
+				}
+				if (response.status === 409 && errorTag(response).join('/') === 'path/not_found' && !next && !rootId && !cursor) { rows = new Map(); return; }
+				if (response.status !== 200) throw providerError('Dropbox', response);
+				const page = jsonBody(response);
+				if (!Array.isArray(page.entries) || typeof page.has_more !== 'boolean' || typeof page.cursor !== 'string' || !page.cursor) refuse('listing', 'Dropbox returned no complete listing');
+				for (const row of page.entries) {
+					const path = row?.path_lower;
+					if (typeof path !== 'string' || !path.startsWith(lower + '/') || path !== path.toLowerCase() ||
+						path.slice(lower.length + 1).split('/').some(part => !part || part === '.' || part === '..' || /[\\\x00-\x1f\x7f]/.test(part)) ||
+						!['file', 'folder', 'deleted'].includes(row['.tag'])) refuse('authority', 'Dropbox returned a file outside the plain-files folder');
+					if (row['.tag'] === 'deleted') {
+						for (const key of staged.keys()) if (key === path || key.startsWith(path + '/')) staged.delete(key);
+					} else {
+						if (path.split('/').at(-1) !== name(row.name).toLowerCase() || row['.tag'] === 'file' && (!REV.test(row.rev || '') || !Number.isSafeInteger(row.size) || row.size < 0)) refuse('listing', 'Dropbox returned incomplete file metadata');
+						if (!cursor || reset) { if (seen.has(path)) refuse('listing', 'Dropbox listed one file twice'); seen.add(path); }
+						staged.set(path, row);
+					}
+				}
+				if (!page.has_more) { http.check(); rows = staged; cursor = page.cursor; return; }
+				if (page.cursor === next || seen.has('cursor:' + page.cursor)) refuse('cursor', 'Dropbox did not supply an advancing cursor');
+				seen.add('cursor:' + page.cursor); next = page.cursor;
+			}
+			refuse('cursor', 'Dropbox did not finish listing the folder');
+		};
+		shared = {poll: plainPoll(refresh), rows: () => rows};
+	}
 	return Object.freeze({
 		pause: http.pause,
+		beginPoll: shared.poll.begin, endPoll: shared.poll.end,
 		async destinationIdentity({create = false} = {}) {
 			let response = await request(DROPBOX_API_ORIGIN, 'files/get_metadata', {path: folder, include_deleted: false});
 			if (create && response.status === 409 && errorTag(response).join('/') === 'path/not_found') {
@@ -52,25 +108,10 @@ export function createDropboxPlainStore(options = {}) {
 			rootId = row.id;
 			return Object.freeze({id: rootId});
 		},
-		area: name => createDropboxPlainStore({...options, folder: folder + '/' + name, rootId, relative: relative + '/' + name}),
+		area: value => { const child = name(value); return dropboxPlainStore({...options, folder: folder + '/' + child, rootId, relative: relative + '/' + child}, shared); },
 		async list() {
-			const out = [], seen = new Set();
-			let response = await request(DROPBOX_API_ORIGIN, 'files/list_folder', {path: rootPath(), recursive: false, include_deleted: false, limit: 2000});
-			for (let pages = 0; ; pages++) {
-				if (response.status === 409 && errorTag(response).join('/') === 'path/not_found') return [];
-				if (response.status !== 200) throw providerError('Dropbox', response);
-				const page = jsonBody(response);
-				if (!Array.isArray(page.entries) || typeof page.has_more !== 'boolean') refuse('listing', 'Dropbox returned no complete listing');
-				for (const row of page.entries) {
-					if (row['.tag'] !== 'file' || String(row.path_lower).split('/').length !== lower.split('/').length + 1) continue;
-					const file = fileRow(row);
-					if (seen.has(file.name.toLowerCase())) refuse('listing', 'Dropbox listed one file twice');
-					seen.add(file.name.toLowerCase()); out.push(file);
-				}
-				if (!page.has_more) return out;
-				if (typeof page.cursor !== 'string' || !page.cursor || pages > 1000) refuse('cursor', 'Dropbox did not supply an advancing cursor');
-				response = await request(DROPBOX_API_ORIGIN, 'files/list_folder/continue', {cursor: page.cursor});
-			}
+			http.check(); await shared.poll.read(); http.check();
+			return [...shared.rows().values()].filter(row => row['.tag'] === 'file' && row.path_lower.slice(0, row.path_lower.lastIndexOf('/')) === lower).map(fileRow);
 		},
 		async get(file) {
 			const response = await request(DROPBOX_CONTENT_ORIGIN, 'files/download', {path: pathOf(file)}, {maxBytes: MAX_BYTES});

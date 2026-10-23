@@ -9,7 +9,7 @@ const occurrence = /^!\[((?:\\.|[^\]\\])*)\]\[([^\]\r\n]+)\](?:[ \t]*<!--md-layo
 const same = (a, b) => canonicalJSON(a) === canonicalJSON(b);
 function recipeAt(assets, label) {
   const asset = assets.assets.get(normalizeLabel(label));
-  if (!asset || !/^data:image\/svg\+xml;base64,/i.test(asset.url)) return null;
+  if (!asset || !/^data:image\/svg\+xml(?:;base64)?,/i.test(asset.url)) return null;
   try {return _rapierDrawReadRecipeFromSVGText(new TextDecoder().decode(decodeDataImage(asset.url)));}
   catch {return null;}
 }

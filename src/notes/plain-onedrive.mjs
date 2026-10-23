@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {createHTTP, jsonBody, providerError, retryAfter, byteCount, refuse, fail, tokenFor, providerId} from './provider-http.mjs';
 import {plainConflict, plainName, plainBytes, plainFolder} from './plain-store.mjs';
+import {plainPoll} from './plain-poll.mjs';
 
 const ONEDRIVE_API_ORIGIN = 'https://graph.microsoft.com';
 const DRIVE = ONEDRIVE_API_ORIGIN + '/v1.0/me/drive';
@@ -8,14 +9,16 @@ const MAX_BYTES = 250000000;
 const FIELDS = 'id,name,size,file,folder,parentReference,eTag,remoteItem,deleted';
 const item = id => DRIVE + '/items/' + encodeURIComponent(id);
 
-export function createOneDrivePlainStore(options = {}) {
+export function createOneDrivePlainStore(options = {}) { return oneDrivePlainStore(options); }
+
+function oneDrivePlainStore(options, shared = null) {
 	const path = plainFolder(options.folder, 'choose a folder inside Apps/Rapier');
 	const http = createHTTP(options), authorization = tokenFor(options.token, 'onedrive');
 	const classify = response => response.status === 429 || response.status >= 500
 		? {error: providerError('OneDrive', response, response.status === 429 ? 'rate' : 'server'), delay: retryAfter(response)} : null;
 	async function request(url, init = {}, safe = true) {
 		const response = await http.retry(() => http.request(url, {...init, origin: ONEDRIVE_API_ORIGIN, headers: {Authorization: authorization, ...init.headers}}), classify, safe);
-		if (response.status >= 400 && ![404, 409, 412].includes(response.status)) throw providerError('OneDrive', response, response.status === 401 ? 'auth' : response.status === 403 ? 'permission' : 'provider');
+		if (response.status >= 400 && ![404, 409, 410, 412].includes(response.status)) throw providerError('OneDrive', response, response.status === 401 ? 'auth' : response.status === 403 ? 'permission' : 'provider');
 		return response;
 	}
 	let folderId = null, driveId = null;
@@ -59,35 +62,69 @@ export function createOneDrivePlainStore(options = {}) {
 			!(/^[a-z0-9.-]+\.files\.1drv\.com$/.test(url.hostname) || /^[a-z0-9-]+\.sharepoint\.com$/.test(url.hostname))) refuse('authority', 'OneDrive returned an unknown download host; nothing was sent there');
 		return url;
 	}
-	const children = parent => item(parent) + '/children?$top=200&$select=' + FIELDS;
-	function nextLink(value, parent) {
-		const url = new URL(value), expected = new URL(children(parent));
-		if (url.origin !== ONEDRIVE_API_ORIGIN || url.pathname !== expected.pathname) refuse('cursor', 'OneDrive\'s next page left the plain-files folder');
-		return url.href;
+	if (!shared) {
+		let rows = new Map(), deltaLink = null;
+		const link = (value, parent) => {
+			let url; try { url = new URL(value); } catch { refuse('cursor', 'OneDrive returned an invalid delta link'); }
+			if (url.origin !== ONEDRIVE_API_ORIGIN || url.username || url.password || url.hash || url.pathname !== new URL(item(parent) + '/delta').pathname) refuse('cursor', 'OneDrive\'s next page left the plain-files folder');
+			return url.href;
+		};
+		const refresh = async () => {
+			const parent = await folder(), initial = item(parent) + '/delta?$select=' + FIELDS;
+			let address = deltaLink || initial, staged = deltaLink ? new Map(rows) : new Map(), reset = false;
+			const seen = new Set();
+			for (let pages = 0; pages <= 1000; pages++) {
+				if (seen.has(address)) refuse('cursor', 'OneDrive did not supply an advancing delta link'); seen.add(address);
+				const response = await request(address);
+				if (response.status === 410 && deltaLink && !reset) { address = initial; staged = new Map(); reset = true; seen.clear(); continue; }
+				if (response.status !== 200) throw providerError('OneDrive', response);
+				const page = jsonBody(response);
+				if (!Array.isArray(page.value) || !!page['@odata.nextLink'] === !!page['@odata.deltaLink']) refuse('listing', 'OneDrive returned no complete delta listing');
+				for (const row of page.value) {
+					const id = providerId(row?.id);
+					if (row.deleted) {
+						if (id === parent) refuse('missing_root', 'the connected OneDrive folder is missing');
+						staged.delete(id); continue;
+					}
+					if (id === parent) continue;
+					if (row.remoteItem || !row.folder && !row.file || !row.parentReference?.id || driveId && row.parentReference.driveId && row.parentReference.driveId !== driveId) refuse('authority', 'OneDrive returned a file outside the plain-files folder');
+					plainName(row.name); providerId(row.parentReference.id);
+					if (row.file) { if (typeof row.eTag !== 'string' || !row.eTag) refuse('listing', 'OneDrive returned no file revision'); byteCount(row.size); }
+					staged.set(id, row);
+				}
+				if (page['@odata.nextLink']) { address = link(page['@odata.nextLink'], parent); continue; }
+				const next = link(page['@odata.deltaLink'], parent);
+				http.check(); rows = staged; deltaLink = next; return;
+			}
+			refuse('cursor', 'OneDrive did not finish listing the folder');
+		};
+		shared = {poll: plainPoll(refresh), rows: () => rows, root: folder};
 	}
 	return Object.freeze({
 		pause: http.pause,
+		beginPoll: shared.poll.begin, endPoll: shared.poll.end,
 		async destinationIdentity({create = false} = {}) {
 			const id = await folder(create);
 			return Object.freeze({driveId: providerId(driveId), id});
 		},
-		area: name => createOneDrivePlainStore({...options, folder: [...path, name].join('/'), parent: async () => ({id: await folder(), driveId})}),
+		area: name => oneDrivePlainStore({...options, folder: [...path, plainName(name)].join('/'), parent: async () => ({id: await folder(), driveId})}, shared),
 		async list() {
-			const parent = await folder(), out = [], seen = new Set();
-			let address = children(parent);
-			for (let pages = 0; address; pages++) {
-				if (pages > 1000) refuse('cursor', 'OneDrive did not finish listing the folder');
-				const response = await request(address);
-				if (response.status !== 200) throw providerError('OneDrive', response);
-				const page = jsonBody(response);
-				if (!Array.isArray(page.value)) refuse('listing', 'OneDrive returned no complete listing');
-				for (const row of page.value) {
-					if (row.folder) continue;
-					const file = fileRow(row, parent);
-					if (seen.has(file.name.toLowerCase())) refuse('listing', 'OneDrive listed one file twice'); seen.add(file.name.toLowerCase());
-					out.push({name: file.name, rev: file.rev, size: file.size});
-				}
-				address = page['@odata.nextLink'] ? nextLink(page['@odata.nextLink'], parent) : null;
+			http.check(); await shared.poll.read(); http.check();
+			let parent;
+			if (options.parent) {
+				const root = await options.parent(); driveId = root.driveId;
+				const matches = [...shared.rows().values()].filter(row => row.folder && row.parentReference?.id === root.id && row.name === path.at(-1));
+				if (matches.length > 1) refuse('listing', 'OneDrive listed one folder twice');
+				folderId = matches[0]?.id || null;
+				if (!folderId) return [];
+				parent = folderId;
+			} else parent = await folder();
+			const seen = new Set(), out = [];
+			for (const row of shared.rows().values()) {
+				if (row.folder || row.parentReference?.id !== parent) continue;
+				const file = fileRow(row, parent), key = file.name.toLowerCase();
+				if (seen.has(key)) refuse('listing', 'OneDrive listed one file twice'); seen.add(key);
+				out.push({name: file.name, rev: file.rev, size: file.size});
 			}
 			return out;
 		},

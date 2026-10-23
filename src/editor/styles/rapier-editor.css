@@ -633,7 +633,7 @@ pre.block-source-only { margin: 0; background: none; padding: 0; }
 	position: relative;
 	width: 100%;
 	min-width: 0;
-	background: linear-gradient(var(--format-toolbar-bg), var(--format-toolbar-bg)), var(--color-bg);
+	background: var(--format-toolbar-bg);
 	border: 0;
 	box-shadow: none;
 	overflow: hidden;
@@ -1360,7 +1360,7 @@ span[data-rapier-markdown-image][data-rapier-remote-src]:not(.rapier-remote-imag
 	position:fixed;z-index:62;inset-inline:0;
 	bottom:var(--native-inset-bottom,env(safe-area-inset-bottom,0px));
 	min-height:56px;display:flex;align-items:stretch;justify-content:center;
-	background:linear-gradient(var(--format-toolbar-bg),var(--format-toolbar-bg)),var(--color-bg);border:0;box-shadow:none;
+	background:var(--format-toolbar-bg);border:0;box-shadow:none;
 	animation:rapier-command-overlay-in var(--dur-enter) var(--ease-out) both;
 }
 .rapier-image-tools[hidden]{display:none!important}

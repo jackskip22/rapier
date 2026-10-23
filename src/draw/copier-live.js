@@ -29,14 +29,10 @@ async function _rapierDrawCopierRender(live, ticket) {
 			const defs = _rapierDrawState.svgRoot?.querySelector('defs')?.innerHTML || '';
 			const svg = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="' + width + '" height="' + height + '" viewBox="' + view +
 				'" preserveAspectRatio="none" color="' + _rapierDrawShapeInk() + '"><defs>' + defs + '</defs>' + _rapierDrawDisplayMarkup(markup) + '</svg>';
-			const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
-			try {
-				const img = new Image();
-				img.src = url;
-				await img.decode();
+			await globalThis.RapierDrawAgentPaint.withSVGImage(svg, img => {
 				if (live.dropped || live.ticket !== ticket) return;
 				live.gpu.resize(width, height); live.gpu.setSource(img);
-			} finally { URL.revokeObjectURL(url); }
+			});
 			live.sourceDrawn = ticket.source;
 		}
 		if (live.dropped || live.ticket !== ticket) return;

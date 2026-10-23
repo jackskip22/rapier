@@ -10,7 +10,7 @@ globalThis.RapierChangesDraw = (() => {
     return keys.length === other.length && keys.every(key => Object.hasOwn(b, key) && same(a[key], b[key]));
   }
   function readDrawing(url, cache) {
-    if (!/^data:image\/svg\+xml;base64,/i.test(url || '')) return null;
+    if (!/^data:image\/svg\+xml(?:;base64)?,/i.test(url || '')) return null;
     if (cache.has(url)) return cache.get(url);
     const assets = globalThis.RapierImageAssets, core = globalThis.RapierDrawCore;
     let drawing = null;
@@ -122,7 +122,7 @@ globalThis.RapierChangesDraw = (() => {
     if (typeof replay.initialSource !== 'string' || replay.revision !== revision) throw failure('history_invalid');
     const chosen = new Set((acts || replay.acts.filter(act => act.actor?.kind === 'agent')).map(act => act.id));
     if (!chosen.size) return [];
-    const svgData = /data:image\/svg\+xml;base64,/i;
+    const svgData = /data:image\/svg\+xml(?:;base64)?,/i;
     if (!svgData.test(source) && !svgData.test(replay.initialSource) && !records.some(record =>
       ledger._rapierRecordSplices(record, records).some(row => svgData.test(row.removed) || svgData.test(row.inserted)))) return [];
     const metadata = new Map(replay.acts.map(act => [act.id, act])), cache = new Map(), tracks = [];

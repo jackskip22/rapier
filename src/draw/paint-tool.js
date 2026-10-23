@@ -154,7 +154,7 @@ function _rapierPaintStoreOwn(rows) {
 		const kept = _rapierPaintStoredBrushes().filter(row => !edited.has(row?.id) || !_rapierPaintOwnBrush(row));
 		localStorage.setItem(RAPIER_PAINT_OWN_KEY, JSON.stringify(kept.concat(rows.map(row => ({ id: row.id, name: row.name, notes: row.notes, myb: row.myb })))));
 	}
-	catch (_) { showToast('The brush changes could not be saved. Your saved brushes were kept.', 'error'); return false; }
+	catch (_) { showToast("Couldn't save brush changes.", 'error'); return false; }
 	_rapierDrawState.paintOwn = null;
 	void _rapierPersonal.brushes(rows, before).catch(error => showToast(String(error.message || error), 'error'));
 	return true;
@@ -191,10 +191,10 @@ function _rapierPaintDigest(text) { let h = 2166136261; for (let i = 0; i < text
 async function _rapierPaintUploadBrush(file) {
 	const state = _rapierDrawState;
 	if (!file) return;
-	if (file.size > RAPIER_PAINT_OWN_FILE_MAX) { showToast('A brush file is 256 KiB or smaller', 'error'); return; }
+	if (file.size > RAPIER_PAINT_OWN_FILE_MAX) { showToast('Brush file too large (256 KiB max)', 'error'); return; }
 	let def, json;
 	try { json = JSON.parse(await file.text()); def = parseBrush(json); }
-	catch (_) { showToast('That is not a MyPaint brush (.myb, version 3)', 'error'); return; }
+	catch (_) { showToast('Not a MyPaint brush (.myb)', 'error'); return; }
 	if (!state.open) return;
 	// array: two valid brushes differing only in `rapier_bristle_load` 1 against 200 must not hash
 	const id = 'own/' + _rapierPaintDigest(JSON.stringify([def.settings, def.wet || 0, def.wetInputs || 0, def.rapier || 0, ...(def.tool ? [def.tool] : [])]));
@@ -513,7 +513,7 @@ function _rapierPaintPainterLost(holder, error) {
 	if (!state.open || state.paintLayer && state.paintLayer.mode !== holder.mode) return;
 	const said = _rapierPaintLossSaid(error);
 	if (holder.mode === 'water' && ['WATER_DEVICE_LOST', 'WATER_GPU_FAILED', 'WATER_GPU_MEMORY'].includes(error?.code)) state.waterLost = {session: state.session, error};
-	if (!said) showToast('The painting could not be kept. It is still open: ' + String(error?.message || error), 'error');
+	if (!said) (console.error(error), showToast("Couldn't save the painting. It's still open.", 'error'));
 	const gesture = state.gesture, saved = gesture?.paintRollback;
 	if (gesture?.kind === 'paint') {
 		if (gesture.paint) gesture.paint.discarded = true;
@@ -701,7 +701,12 @@ function _rapierPaintMixAction(event) {
 	return true;
 }
 function _rapierPaintDipLoadWord(load) {
-	return load >= RAPIER_PAINT_DIP_FULL ? 'full' : load >= 0.7 ? 'well loaded' : load >= 0.45 ? 'half a brushful' : load >= 0.2 ? 'running low' : 'nearly dry';
+	return load >= RAPIER_PAINT_DIP_FULL
+		? 'full'
+		: load >= 0.7 ? 'well loaded'
+		: load >= 0.45 ? 'half a brushful'
+		: load >= 0.2 ? 'running low'
+		: 'nearly dry';
 }
 function _rapierPaintDipWaterWord(water) {
 	return water <= 0.005 ? 'neat' : water <= 0.25 ? 'a touch of water' : water <= 0.55 ? 'thinned' : water <= 0.8 ? 'watery' : 'almost all water';
@@ -932,7 +937,7 @@ async function _rapierPaintEncodeJXL(source, box, options = {lossless: true}, wo
 	if (Array.isArray(globalThis.__rapierPaintEncodeLog)) globalThis.__rapierPaintEncodeLog.push({...options});
 	if (globalThis.__rapierPaintEncodeHold) await globalThis.__rapierPaintEncodeHold;
 	const px = await source.readRGBA8(box);
-	const data = px.shared ? new Uint8Array(px.data) : new Uint8Array(px.data.buffer, px.data.byteOffset, px.data.byteLength);
+	const data = px.shared ? new Uint8Array(px.data.buffer, px.data.byteOffset, px.data.byteLength).slice() : new Uint8Array(px.data.buffer, px.data.byteOffset, px.data.byteLength);
 	const out = await globalThis.RapierEmbeddedImages.codec('encode', {width: px.width, height: px.height, data, options}, work || undefined);
 	return {url: 'data:image/jxl;base64,' + RapierBundleIO.toBase64(out.bytes || out), options};
 }
@@ -1024,43 +1029,6 @@ function _rapierPaintRememberFast(sources, pieces, raster, origin = {x: 0, y: 0}
 		x0: piece.box.x0 - origin.x, y0: piece.box.y0 - origin.y, x1: piece.box.x1 - origin.x, y1: piece.box.y1 - origin.y,
 	}});
 }
-async function _rapierPaintRecompress(raster, source, {signal} = {}) {
-	signal?.throwIfAborted();
-	const make = globalThis.RapierDrawAgentPaint?.paintRecompressionWorker;
-	if (typeof Worker !== 'function' || typeof make !== 'function') return null;
-	const url = URL.createObjectURL(new Blob(['(' + make.toString() + ')(' + globalThis.RapierDrawPaint.createPaintPNGCodec.toString() + ');'], {type: 'text/javascript'}));
-	let worker, pending = null, serial = 0, megapixels = 12;
-	const refuse = error => { if (pending) { clearTimeout(pending.timer); pending.reject(error); pending = null; } };
-	const abort = () => { worker?.terminate(); refuse(signal.reason || new DOMException('Painting canceled', 'AbortError')); };
-	try {
-		worker = new Worker(url);
-		signal?.addEventListener('abort', abort, {once: true});
-		worker.onmessage = ({data}) => {
-			if (!pending || data?.id !== pending.id) return;
-			const held = pending; pending = null; clearTimeout(held.timer);
-			if (data.ok) held.resolve(data); else held.reject(new Error(data.error || 'Painting verification failed'));
-		};
-		worker.onerror = event => { event.preventDefault(); refuse(new Error(event.message || 'Painting verifier failed')); };
-		worker.onmessageerror = () => refuse(new Error('Painting verifier returned unreadable data'));
-		const request = (operation, data, transfer = []) => new Promise((resolve, reject) => {
-			signal?.throwIfAborted();
-			const id = ++serial, timer = setTimeout(() => refuse(new Error('Painting verification took too long')), 45000 + megapixels * 15000);
-			pending = {id, resolve, reject, timer};
-			worker.postMessage({...data, id, operation}, transfer);
-		});
-		const {pixels} = await request('open', {raster, ...source});
-		if (!pixels) return null;
-		megapixels = Math.ceil(pixels.width * pixels.height / 1e6);
-		signal?.throwIfAborted();
-		const out = await globalThis.RapierEmbeddedImages.codec('encode', {width: pixels.width, height: pixels.height, data: pixels.data,
-			options: {lossless: true, losslessProfile: 'painting-search', effort: 7, parallel: false}}, {signal, optional: true});
-		signal?.throwIfAborted();
-		const bytes = out.bytes || out;
-		return (await request('check', {bytes}, [bytes.buffer])).raster;
-	} finally {
-		signal?.removeEventListener('abort', abort); if (pending) clearTimeout(pending.timer); worker?.terminate(); URL.revokeObjectURL(url);
-	}
-}
 function _rapierPaintPixelsSurface(px) {
 	return {width: px.width, height: px.height, readRGBA8(b) {
 		if (!b || (b.x0 === 0 && b.y0 === 0 && b.x1 === px.width - 1 && b.y1 === px.height - 1)) return {...px, shared: true};
@@ -1103,7 +1071,7 @@ async function _rapierPaintKeepAsJXL(recipe, defer = false, frozen = null, work 
 		else {
 			const prepared = work?.preparedPixels?.find(row => row.id === shape.id && row.raster === shape.raster);
 			const exact = shape === frozenShape && frozenPixels ? frozenPixels : prepared
-				? {width: prepared.width, height: prepared.height, data: prepared.data} : await _rapierPaintPNG.decode(shape.raster);
+				? {width: prepared.width, height: prepared.height, data: prepared.data} : await globalThis.RapierDrawAgentPaint.decodePaintRaster(shape.raster, {signal: each?.signal});
 			if (exact) {
 				const surface = _rapierPaintPixelsSurface(exact);
 				pieces = await lossless(b => _rapierPaintEncodeJXL(surface, b, {lossless: true}, each), {x0: 0, y0: 0, x1: exact.width - 1, y1: exact.height - 1});
@@ -1161,7 +1129,7 @@ async function _rapierPaintSetLayer({ auto = false, kib = 0 } = {}) {
 			await _rapierPaintCommit(true, null, false, owns);
 			if (!owns()) return;
 			shape = layer.id != null ? _rapierDrawShapeById(layer.id) : null;
-			if (!shape) { showToast('There is nothing painted to set yet.', 'info'); return; }
+			if (!shape) { showToast('Nothing painted yet.', 'info'); return; }
 		}
 		const budget = _rapierPaintRasterBudget();
 		const asJXL = typeof _rapierDefaultImageProfile !== 'function' || _rapierDefaultImageProfile() === 'jxl';
@@ -1183,8 +1151,7 @@ async function _rapierPaintSetLayer({ auto = false, kib = 0 } = {}) {
 				if (!kept || tries >= 7) {
 					if (!moving) { layer.pendingOverflow = true; await _rapierPaintCommit(true, null, true, owns); if (!owns()) return; layer.pendingOverflow = false; }
 					// the real cap (the flip at RAPIER_PAINT_AREA_MAX * 2 bounds the surface at 12M pixels,
-					showToast(kept ? 'This painting is bigger than one working picture holds; it is kept as it is and saved when you press Done.'
-						: 'This painting is bigger than sixty-four pictures hold; it is kept as it is and saved when you press Done.', 'info');
+					showToast('Large painting. Press Done to save it.', 'info');
 					return;
 				}
 			}
@@ -1215,12 +1182,12 @@ async function _rapierPaintSetLayer({ auto = false, kib = 0 } = {}) {
 					}
 				}
 				if (!kept) {
-					if (state.open && state.session === session) showToast('The painting changed while Set was working. Your work is kept; press Set again to finish the current picture.', 'info');
+					if (state.open && state.session === session) showToast('Painting changed. Press Set again.', 'info');
 					return;
 				}
 			}
 			if (kept) {  } else {
-			if (!pieces) { showToast('This painting is past what even sixty-four pictures can hold. Erase some of it and set it again.', 'info'); return; }
+			if (!pieces) { showToast('Too large to set. Erase some and try again.', 'info'); return; }
 			kept = { url: pieces[0].url, options: { lossless: true } };
 			if (layer.mode === 'water' && pieces.length === 1 && layer.surface.settled && !layer.surface._wetWork &&
 				layer.checkpoint?.revision === layer.surface.revision && layer.checkpoint.raster === shape.raster) {
@@ -1249,11 +1216,11 @@ async function _rapierPaintSetLayer({ auto = false, kib = 0 } = {}) {
 		_rapierPaintOpenLayer();
 		_rapierPaintSyncPaper();
 		const how = (kept.options?.lossless ? 'full quality' : 'quality ' + (kept.options?.quality ?? kept.quality)) + (pieces && pieces.length > 1 ? ', in ' + pieces.length + ' pieces' : '');
-		if (auto) showToast('This painting reached what one working picture holds (' + kib + ' KiB), so it was set as a ' + (asJXL ? 'JPEG XL' : 'PNG') + ' picture (' + how + ', ' + Math.round((pieces ? pieces.reduce((n, piece) => n + piece.url.length, 0) : kept.url.length) / 1024) + ' KiB)' + (kept.fits === false ? ', still larger than one picture usually holds' : '') + '. You are on a clean sheet over it -- keep going.', 'info');
-		else showToast('Set as a picture (' + how + ', ' + Math.round(kept.url.length / 1024) + ' KiB). A clean sheet is open over it.', 'info');
+		if (auto) showToast('Set as a picture. Keep painting on top.', 'info');
+		else showToast('Set as a picture. Keep painting on top.', 'info');
 		if (!auto) laid = shape;
 	} catch (error) {
-		showToast('This painting could not be set: ' + String(error?.message || error), 'error');
+		console.error(error); showToast("Couldn't set the painting.", 'error');
 	} finally {
 		if (state.paintSetting === setting) state.paintSetting = false;
 		_rapierPaintUpdateStrip();
@@ -1371,7 +1338,7 @@ function _rapierPaintPlace(layer) {
 }
 function _rapierPaintNotKept(layer, error) {
 	layer.pendingOverflow = true;
-	if (!_rapierPaintLossSaid(error)) showToast('The painting could not be kept. It is still open: ' + String(error?.message || error), 'error');
+	if (!_rapierPaintLossSaid(error)) (console.error(error), showToast("Couldn't save the painting. It's still open.", 'error'));
 }
 function _rapierPaintGeomOf(layer, box) {
 	const pw = box.x1 - box.x0 + 1, ph = box.y1 - box.y0 + 1, s = layer.scale;
@@ -1925,7 +1892,7 @@ function _rapierPaintCloseNow(synced = false, current = null) {
 		}
 		const closing = {layer}; state.paintClosing = closing;
 		const release = () => { if (state.session === session && state.paintClosing === closing) state.paintClosing = false; };
-		const failed = error => { release(); if (state.session === session && state.paintLayer === layer && (!current || current()) && !_rapierPaintLossSaid(error)) showToast('The painting could not be kept. It is still open: ' + String(error?.message || error), 'error'); throw error; };
+		const failed = error => { release(); if (state.session === session && state.paintLayer === layer && (!current || current()) && !_rapierPaintLossSaid(error)) (console.error(error), showToast("Couldn't save the painting. It's still open.", 'error')); throw error; };
 		let kept;
 		try { kept = _rapierPaintCommit(true, null, false, current); }
 		catch (error) { return failed(error); }
@@ -2603,7 +2570,7 @@ function _rapierPaintDepart() {
 	};
 	departure.promise = Promise.resolve(run).then(end, error => {
 		end();
-		if (state.session === session && state.paintLayer === layer && !_rapierPaintLossSaid(error)) showToast('The painting could not be kept. It is still open: ' + String(error?.message || error), 'error');
+		if (state.session === session && state.paintLayer === layer && !_rapierPaintLossSaid(error)) (console.error(error), showToast("Couldn't save the painting. It's still open.", 'error'));
 	});
 	return departure.promise;
 }
@@ -2752,6 +2719,8 @@ function _rapierPaintPressed(value, from, patch) {
 	_rapierPaintLastPress.value = value; _rapierPaintLastPress.from = from; _rapierPaintLastPress.patch = patch;
 	return value;
 }
+// hand that holds: no sample for RAPIER_PAINT_HOLD_FRAMES frames and RAPIER_PAINT_HOLD_MS since the
+const RAPIER_PAINT_HOLD_FRAMES = 3, RAPIER_PAINT_HOLD_MS = 50;
 function _rapierPaintHoldNeeded(brush) { try { return brush.getBaseValue('dabs_per_second') > 0; } catch (_) { return false; } }
 function _rapierPaintScheduleHold(gesture) {
 	const layer = _rapierPaintLayer(), paint = gesture?.paint;
@@ -2763,6 +2732,10 @@ function _rapierPaintHoldTick(gesture) {
 	if (layer) layer.holdRaf = 0;
 	if (!layer || !paint || paint.pending || paint.holdPending || paint.discarded || state.gesture !== gesture) return;
 	const now = performance.now() - paint.clockOffset, dt = _rapierDrawClamp((now - paint.last) / 1000, 0.001, 0.5);
+	if (layer.mode !== 'water') {
+		const quiet = performance.now() - (paint.movedAt ??= performance.now());
+		if ((paint.still = (paint.still || 0) + 1) < RAPIER_PAINT_HOLD_FRAMES || quiet < RAPIER_PAINT_HOLD_MS) { _rapierPaintScheduleHold(gesture); return; }
+	}
 	paint.last = now;
 	if (layer.mode === 'water') {
 		const frameDt = _rapierDrawClamp((now - (paint.waterFrameAt ?? now - dt * 1000)) / 1000, 0.001, 0.5);
@@ -2808,7 +2781,7 @@ async function _rapierPaintStrokeCheckpoint(gesture, layer, settings = {}) {
 	surface.finishWetWork();
 	if (!surface.settled) await surface.sync();
 	if (layer.dryFinishing && !surface.wetState) { const flushed = _rapierPaintFlushWet(); if (flushed) await flushed; }
-	const flush = _rapierPaintFlushRevision(layer, layer.mode === 'water' || state.paintSetting?.layer === layer);
+	const flush = _rapierPaintFlushRevision(layer, true);
 	if (flush) await flush;
 	if (layer.flipStroke?.entry && surface.revision !== layer.checkpoint?.revision) {
 		await _rapierPaintEncodeRevision(layer).promise;
@@ -2940,6 +2913,7 @@ async function _rapierPaintInitStroke(evt, gesture, settings, geom) {
 	else {
 		brush.strokeTo(layer.surface, p.x * RAPIER_PAINT_GRAIN, p.y * RAPIER_PAINT_GRAIN, seat, p.tiltX, p.tiltY, 0.0001, 1, 0, p.twist, gesture.paint.inputKind, p.t);
 		brush.strokeTo(layer.surface, p.x * RAPIER_PAINT_GRAIN, p.y * RAPIER_PAINT_GRAIN, seat, p.tiltX, p.tiltY, 0.012, 1, 0, p.twist, gesture.paint.inputKind, p.t);
+		gesture.paint.drawn = {p, dt: 0.012, press: seat, at: 0};
 	}
 	if (timing && !timing.seat) timing.seat = performance.now();
 	gesture.paint.mouse = evt.pointerType === 'mouse'; _rapierPaintHeadAt(evt.clientX, evt.clientY);
@@ -2963,7 +2937,7 @@ function _rapierPaintQueueFallback(gesture) {
 	if (!paint?.pending || paint.discarded || !state.open || state.session !== paint.session || _rapierDrawTool() !== paint.tool) { if (gesture?.waterStroke) _rapierPaintWaterFinish(gesture); return; }
 	if (_rapierPaintIsMaterialTool(paint.settings?.brushId)) {
 		_rapierPaintDiscardChangedTarget(gesture);
-		showToast('This browser could not read this painting back, so the stroke was not applied. The painting is unchanged.', 'info');
+		showToast('Stroke not applied. Painting unchanged.', 'info');
 		return;
 	}
 	_rapierPaintOpenLayer();
@@ -3000,7 +2974,7 @@ function _rapierPaintRehydrateFor(target, pendingGesture = null) {
 	const load = async shape => {
 		if(history)return {shape,history};
 		if (native) return {shape, waterMaterial:true};
-		const pixels = await _rapierPaintPNG.decode(shape.raster) || await _rapierPaintDecodeStraight(shape.raster);
+		const pixels = (shape.raster.startsWith('data:image/png;base64,') ? await globalThis.RapierDrawAgentPaint.decodePaintRaster(shape.raster) : null) || await _rapierPaintDecodeStraight(shape.raster);
 		if (pixels) return {shape, pixels};
 		if(shape.paint?.mode==='water')throw Object.assign(new Error('This host cannot reopen the exact Water pixels.'),{code:'paint_raster_decoder_unavailable'});
 		return new Promise((ok, no) => { const image = new Image(); image.onload = () => ok({ shape, image }); image.onerror = () => no(new Error('a painting could not be read back')); image.src = shape.raster; });
@@ -3020,12 +2994,12 @@ function _rapierPaintRehydrateFor(target, pendingGesture = null) {
 						_rapierPaintDiscardChangedTarget(g);
 					}
 				}
-				if (refused) showToast('Some strokes could not be added because the painting changed meanwhile.', 'error');
+				if (refused) showToast("Some strokes didn't apply.", 'error');
 				return state.paintRehydrateTask;
 			}
 			const erasing = waiters.some(g => g.eraseInk && g.paint?.pending && !g.paint.discarded && g.paint.tool === _rapierDrawTool());
 			const material = waiters.some(g => _rapierPaintIsMaterialTool(g.paint?.settings?.brushId, g.paint?.settings));
-			if (!(_rapierPaintToolPaints() || erasing) || _rapierPaintLayerValid(material || erasing, null, mode)) { await Promise.all(waiters.map(g => _rapierPaintApplyQueued(g).catch(() => {}))); return; }
+			if (!(_rapierPaintToolPaints() || erasing) || _rapierPaintLayerValid(material || erasing, null, mode)) { for (const g of waiters) await _rapierPaintApplyQueued(g).catch(() => {}); return; }
 			const closing = _rapierPaintCloseLayer();
 			if (closing) { await closing; return adopt(loaded); }
 			const initial = native ? {replay:again.paint.replay, session:_rapierWaterSession(), origin:frame.c0} : null;
@@ -3067,14 +3041,14 @@ function _rapierPaintRehydrateFor(target, pendingGesture = null) {
 			else if(mode==='water' && !group.length && !native && !history)layer.waterMaterial={replay:_rapierDrawHistoryCopy(layer.paintReplay),session:_rapierWaterSession()};
 			layer.retire = group.map(shape => shape.id);
 			if (restoring) await restoring;
-			await Promise.all(waiters.map(g => _rapierPaintApplyQueued(g).catch(() => {})));
+			for (const g of waiters) await _rapierPaintApplyQueued(g).catch(() => {});
 		} catch (error) { state.paintRehydrateFailed = key; try { _rapierPaintCloseLayer(); } catch (_) {}
-			if (target.paint?.mode === 'water') { for (const g of waiters) _rapierPaintDiscardChangedTarget(g); if (!_rapierPaintLossSaid(error)) showToast('This Water layer could not be reopened: ' + String(error.message || error), 'error'); }
+			if (target.paint?.mode === 'water') { for (const g of waiters) _rapierPaintDiscardChangedTarget(g); if (!_rapierPaintLossSaid(error)) (console.error(error), showToast("Couldn't reopen this Water layer.", 'error')); }
 			else for (const g of waiters) _rapierPaintQueueFallback(g); }
 	};
 	task = state.paintRehydrateTask = Promise.all([_rapierPaintStartPainter(mode), load(target), ...group.map(load)]).then(([, ...loaded]) => { decoded(); return adopt(loaded); }, error => {
 		decoded(); state.paintRehydrateFailed = key;
-		if (mode === 'water') { for (const g of waiters) _rapierPaintDiscardChangedTarget(g); if (!_rapierPaintLossSaid(error)) showToast('This Water layer could not be reopened: ' + String(error.message || error), 'error'); }
+		if (mode === 'water') { for (const g of waiters) _rapierPaintDiscardChangedTarget(g); if (!_rapierPaintLossSaid(error)) (console.error(error), showToast("Couldn't reopen this Water layer.", 'error')); }
 		else for (const g of waiters) _rapierPaintQueueFallback(g);
 	}).finally(() => finished(task));
 }
@@ -3139,7 +3113,7 @@ function _rapierPaintEraseFan(gesture) {
 	if (!trail || trail.fanned || !state.open) return null;
 	trail.fanned = true;
 	const session = state.session, fan = state.paintEraseFan = { session, promise: null };
-	fan.promise = _rapierPaintEraseFanRun(gesture, trail, session).catch(error => { showToast('The erase could not reach every painting: ' + String(error?.message || error), 'error'); })
+	fan.promise = _rapierPaintEraseFanRun(gesture, trail, session).catch(error => { (console.error(error), showToast("Couldn't erase every painting.", 'error')); })
 		.finally(() => { if (state.paintEraseFan === fan) state.paintEraseFan = null; });
 	return fan.promise;
 }
@@ -3241,7 +3215,10 @@ function _rapierPaintBegin(evt, gesture) {
 		const receipt = gesture.waterStroke = {gesture, session: queued.session, tool: queued.tool, before: queue.at(-1)?.promise, promise: new Promise(ok => { resolve = ok; }), resolve: () => resolve(), running: 0, finished: false, ended: false};
 		queue.push(receipt);
 		start = _rapierPaintWaterRun(gesture, () => _rapierPaintStart(evt, gesture, queued, timing));
-	} else start = _rapierPaintStart(evt, gesture, queued, timing);
+	} else {
+		const before = _rapierDrawState.paintStarts;
+		start = _rapierDrawState.paintStarts = (before ? before.catch(() => {}) : Promise.resolve()).then(() => _rapierPaintStart(evt, gesture, queued, timing));
+	}
 	void start.catch(error => _rapierPaintStrokeFailed(gesture, error));
 }
 async function _rapierPaintStart(evt, gesture, queued, timing) {
@@ -3251,7 +3228,7 @@ async function _rapierPaintStart(evt, gesture, queued, timing) {
 	if (!_rapierPaintRemoteNow(settings.mode || 'paint')) { await _rapierPaintStartPainter(settings.mode || 'paint'); if (!live()) return; }
 	for (let departing; (departing = _rapierPaintDeparting());) { await departing; if (!live()) return; }
 	const preceding = _rapierPaintLayer();
-	if (preceding?.previousFlip || preceding?.pendingLift) { const wait = _rapierPaintFlushRevision(preceding, settings.mode === 'water'); if (wait) { await wait; if (!live()) return; } }
+	if (preceding?.previousFlip || preceding?.pendingLift) { const wait = _rapierPaintFlushRevision(preceding, true); if (wait) { await wait; if (!live()) return; } }
 	const drying = _rapierPaintLayer();
 	if (drying?.dryFinishing) {
 		drying.surface.finishWetWork();
@@ -3409,7 +3386,7 @@ function _rapierPaintFlipAtCap(layer, paint, p) {
 		_rapierPaintGrowToHold(fresh, paint, p);
 		_rapierPaintShowLive(true);
 		state.paintFlips = (state.paintFlips || 0) + 1;
-		showToast('This painting reached what memory holds, so it was set as a picture. You are on a clean sheet over it -- keep going.', 'info');
+		showToast('Set as a picture. Keep painting on top.', 'info');
 		return fresh;
 	} catch (error) {
 		console.warn('[rapier] paint flip at cap', error);
@@ -3427,7 +3404,7 @@ async function _rapierPaintEncodeShapeLater(shapeId, was, captured = null, strok
 		if (typeof _rapierDefaultImageProfile === 'function' && _rapierDefaultImageProfile() !== 'jxl') return;
 		task = (async () => {
 			await new Promise(ok => _rapierPaintTask(ok));
-			const pixels = captured || await _rapierPaintPNG.decode(was), surface = pixels ? _rapierPaintPixelsSurface(pixels) : null;
+			const pixels = captured || (was.startsWith('data:image/png;base64,') ? await globalThis.RapierDrawAgentPaint.decodePaintRaster(was) : null), surface = pixels ? _rapierPaintPixelsSurface(pixels) : null;
 			exactSource = !!pixels && !captured;
 			const canvas = surface ? null : await _rapierPaintRasterCanvas(was), source = surface || canvas;
 			const encode = async box => {
@@ -3476,7 +3453,7 @@ function _rapierPaintMove(events, gesture) {
 		const p = _rapierPaintEventPoint(sample, paint.geom, layer), dt = _rapierDrawClamp((p.t - paint.last) / 1000, 0.0005, 0.5);
 		const pressure = paint.pressure = layer.mode === 'water' ? _rapierWaterPointerPressure(sample, paint.inputKind) : _rapierPaintPressure(sample, paint, p);
 		paint.travel += Math.hypot(p.x - paint.x, p.y - paint.y);
-		paint.last = p.t; paint.x = p.x; paint.y = p.y; paint.tiltX = p.tiltX; paint.tiltY = p.tiltY; paint.twist = p.twist; paint.points++;
+		paint.last = p.t; paint.still = 0; paint.movedAt = performance.now(); paint.x = p.x; paint.y = p.y; paint.tiltX = p.tiltX; paint.tiltY = p.tiltY; paint.twist = p.twist; paint.points++;
 		paint.reached = paint.reached || p.reach;
 		if (layer.mode === 'water') {
 			layer = _rapierPaintGrowToHold(layer, paint, p) || layer;
@@ -3582,7 +3559,7 @@ function _rapierPaintWakeLift(layer, held) {
 	_rapierPaintTask(() => {
 		held.queued = false;
 		try { _rapierPaintFlushLift(layer, held); }
-		catch (error) { layer.pendingOverflow = true; if (!_rapierPaintLossSaid(error)) showToast('The painting could not be kept. It is still open: ' + String(error?.message || error), 'error'); }
+		catch (error) { layer.pendingOverflow = true; if (!_rapierPaintLossSaid(error)) (console.error(error), showToast("Couldn't save the painting. It's still open.", 'error')); }
 	});
 }
 function _rapierPaintFlushLift(layer, held = layer?.pendingLift) {
@@ -3595,7 +3572,7 @@ function _rapierPaintFlushLift(layer, held = layer?.pendingLift) {
 	finally { if (layer.pendingLift !== held) held.resolve(); }
 }
 function _rapierPaintRefuseUnreached() {
-	showToast('That stroke landed off the painting -- nothing to paint on there', 'info');
+	showToast('That stroke was outside the painting.', 'info');
 }
 function _rapierPaintSettleOverflow() {
 	const state = _rapierDrawState, layer = state.paintLayer, session = state.session;
@@ -3611,7 +3588,7 @@ function _rapierPaintDiscardOverflow(current = null) {
 	const owns = () => state.open && state.session === session && state.paintLayer === layer && (!current || current());
 	return _rapierPaintAfter(_rapierPaintFlushWet(true, owns), () => {
 		if (!owns() || !layer?.pendingOverflow) return false;
-		if (state.paintSetting) { showToast('Keeping the painting first. Undo is back in a moment.', 'info'); return true; }
+		if (state.paintSetting) { showToast('Saving. Undo is back in a moment.', 'info'); return true; }
 		const was = state.paintClosing, closing = {layer};
 		state.paintClosing = closing;
 		const release = () => { if (state.session === session && state.paintClosing === closing) state.paintClosing = was; };
@@ -3619,7 +3596,7 @@ function _rapierPaintDiscardOverflow(current = null) {
 		try { closed = _rapierPaintCloseLayer(owns); } finally { if (!closed) release(); }
 		const finish = () => {
 			if (!state.open || state.session !== session || state.paintLayer || current && !current()) return false;
-			_rapierPaintSyncPaper(); showToast('Discarded the painting that was too large to keep', 'info'); return true;
+			_rapierPaintSyncPaper(); showToast('Painting too large to save. Discarded.', 'info'); return true;
 		};
 		return closed ? closed.then(finish).finally(release) : finish();
 	});
@@ -3733,7 +3710,7 @@ function _rapierPaintPublish(layer, keep, kept, custody, synced = false, record 
 			const already = layer.pendingOverflow;
 			layer.pendingOverflow = true;
 			if (record) surface.restoreReplay?.(record);
-			if (!already) showToast('This drawing’s paintings together are at what one document picture can hold. Set this painting to keep it, or download the drawing and start another.', 'info');
+			if (!already) showToast('This drawing is full. Set this painting, or download the drawing and start a new one.', 'info');
 			return null;
 		}
 	}

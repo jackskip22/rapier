@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-const {FEATURES, LIMITS, ASSET_TYPES, refusal, normalizeSettings, snapshotSettings, pickDeviceFile, createFilePicker, assetURL, assetBytes, bytesHash, externalImage, createAssetBroker} = (() => {
+const {FEATURES, LIMITS, ASSET_TYPES, refusal, normalizeSettings, snapshotSettings, pickDeviceFile, createFilePicker, assetURL, assetBytes, bytesHash, externalImage, createAssetBroker, pictureBase} = (() => {
 const FEATURES = Object.freeze(['draw', 'paint', 'notes', 'readAloud', 'share', 'find']);
 const LIMITS = Object.freeze({documentBytes: 64 * 1024 * 1024, pictureBytes: 16 * 1024 * 1024});
 const ASSET_TYPES = Object.freeze(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/jxl', 'image/svg+xml']);
@@ -238,11 +238,23 @@ function createAssetBroker({current, send}) {
   function lookup(url) { scope(); return retained.get(url)?.asset || null; }
   return Object.freeze({request, answer, cancel, lookup});
 }
-return {FEATURES, LIMITS, ASSET_TYPES, refusal, normalizeSettings, snapshotSettings, pickDeviceFile, createFilePicker, assetURL, assetBytes, bytesHash, externalImage, createAssetBroker};
+
+function pictureBase(value) {
+  if (value === undefined || value === null) return null;
+  let base;
+  try { base = new URL(assetURL(value)); } catch (_) { throw refusal('invalid_base_url', 'baseUrl is an absolute https address.'); }
+  const vouched = new Set();
+  return Object.assign(src => {
+    const text = String(src || '').trim();
+    if (!text || /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(text)) return null;
+    try { const href = new URL(text, base).href; vouched.add(href); return href; } catch (_) { return null; }
+  }, {vouched});
+}
+return {FEATURES, LIMITS, ASSET_TYPES, refusal, normalizeSettings, snapshotSettings, pickDeviceFile, createFilePicker, assetURL, assetBytes, bytesHash, externalImage, createAssetBroker, pictureBase};
 })();
 const BUILDS = Object.freeze({full: 'https://rapier.website/embed/rapier.html', reader: 'https://rapier.website/embed/rapier-reader.html'});
-const PACKAGE_VERSION = '1.2.34';
-const OPTIONS = ['build', 'src', 'plugins', 'sessionId', 'documentId', 'agent', 'agentName', 'theme', 'save', 'assets', 'openFile', 'load',
+const PACKAGE_VERSION = '1.2.36';
+const OPTIONS = ['build', 'src', 'plugins', 'approvePlugins', 'sessionId', 'documentId', 'agent', 'agentName', 'theme', 'save', 'assets', 'openFile', 'load',
   'onState', 'compare', 'onClose', 'settings', 'style', 'title', 'onError', 'timeout'];
 const READER_FEATURES = ['find', 'readAloud', 'share'];
 const DEFAULT_SRC = BUILDS.full;
@@ -257,7 +269,8 @@ function deferred() {
   promise.catch(() => {});
   return {promise, resolve, reject};
 }
-const refused = payload => Object.assign(new Error(payload?.reason || payload?.code || 'The editor refused the request'), {code: payload?.code, payload});
+const refused = payload => Object.assign(new Error(payload?.reason || payload?.code || 'The editor refused the request'), {code: payload?.code, payload},
+  revision(payload?.currentRevision) ? {currentRevision: payload.currentRevision} : {});
 
 function conflict(currentRevision) {
   if (!revision(currentRevision)) throw new TypeError('A conflict needs the current revision');
@@ -274,6 +287,20 @@ function readerStyle(value) {
   return {...(value.css !== undefined ? {css: value.css} : {}), ...(value.fonts !== undefined ? {fonts: value.fonts.map(row => ({...row}))} : {})};
 }
 
+const HOSTED_ORIGIN = new URL(BUILDS.full).origin;
+function framingProblem(host, source, sandbox, noun) {
+  const here = host.location, local = ['localhost', '127.0.0.1', '[::1]'].includes(here.hostname);
+  if (here.protocol !== 'https:' && here.protocol !== 'http:')
+    return {code: 'host_scheme_unsupported', reason: 'The ' + noun + ' cannot be framed by a ' + here.protocol + ' page: it needs an https page, or http on localhost. Serve your app over one of those.'};
+  if (source.origin === HOSTED_ORIGIN && here.protocol === 'http:' && !local)
+    return {code: 'host_not_secure', reason: 'The hosted ' + noun + ' can be framed by https pages and by http on localhost only. Serve your app over https, or serve a copy of the page yourself and set src.'};
+  if (source.origin === HOSTED_ORIGIN && host.crossOriginIsolated === true)
+    return {code: 'host_cross_origin_isolated', reason: 'This page is cross-origin isolated (COEP), which blocks the hosted ' + noun + '. Serve a copy of the page yourself with the Cross-Origin-Embedder-Policy and Cross-Origin-Resource-Policy headers and set src, or drop COEP.'};
+  if (sandbox) for (const token of ['allow-scripts', 'allow-same-origin']) if (!sandbox.contains(token))
+    return {code: 'sandbox_token_missing', reason: 'The iframe you passed has a sandbox without ' + token + ', which the ' + noun + ' needs. Add the token, or pass a container and let mount create the iframe.'};
+  return null;
+}
+
 function mount(target, options = {}) {
   const document = target?.ownerDocument;
   if (!document) throw new TypeError('Mount needs an iframe or a container element');
@@ -288,6 +315,7 @@ function mount(target, options = {}) {
   if (options.style !== undefined && options.load === undefined) throw new TypeError('Reader styling requires load');
   if (options.plugins !== undefined && (typeof options.plugins !== 'string' || !options.plugins || options.plugins.length > 2048 || /[\u0000-\u001f\u007f]/.test(options.plugins)))
     throw new TypeError('plugins is the address of the directory that holds the plug-in files');
+  if (options.approvePlugins !== undefined && typeof options.approvePlugins !== 'boolean') throw new TypeError('approvePlugins is true or false');
   let currentStyle = options.style === undefined ? undefined : readerStyle(options.style);
   const host = document.defaultView, iframe = target.tagName === 'IFRAME' ? target : document.createElement('iframe');
   const source = new URL(options.src || BUILDS[build], host.location.href);
@@ -306,6 +334,7 @@ function mount(target, options = {}) {
       throw new TypeError('plugins must be on ' + source.origin + ', the origin of the page it configures: the page reads plug-ins only from its own origin. Serve the page and its plug-ins together (set src), or leave plugins out');
     source.searchParams.set('plugins', directory.href);
   }
+  if (options.approvePlugins === true) source.searchParams.set('approvePlugins', '1');
   const origin = source.origin, sessionId = options.sessionId ?? mint('session'), documentId = options.documentId ?? mint('document');
   if (!identifier(sessionId) || !identifier(documentId)) throw new TypeError('Session and document IDs must be nonempty strings of at most 256 code units');
   const agentName = options.agentName;
@@ -393,7 +422,7 @@ function mount(target, options = {}) {
     if (ended || channel !== port) return;
     channel.postMessage(reply);
     if (reply.type === 'save-ack') {
-      lastSaved = reply.payload; held = {revision: reply.payload.revision, content: payload.content};
+      lastSaved = reply.payload; held = {revision: reply.payload.revision, content: payload.content, filename: payload.filename};
       if (activeSave) activeSave.acknowledged = true;
     } else if (activeSave) { activeSave.reject(refused(reply.payload)); activeSave = null; }
   }
@@ -561,7 +590,7 @@ function mount(target, options = {}) {
         const value = typeof options.load === 'function' ? await options.load() : options.load;
         if (!record(value) || typeof value.content !== 'string' || !revision(value.revision)) throw new TypeError('load needs content and its revision');
         await send('load', value, null);
-        held = {revision: value.revision, content: value.content};
+        held = {revision: value.revision, content: value.content, filename: value.filename};
       }
       ready.resolve(handle);
     });
@@ -618,15 +647,20 @@ function mount(target, options = {}) {
     get connected() { return connected && !ended; },
     get version() { return frameFacts.version ?? null; },
     get contract() { return frameFacts.contract ?? null; },
-    async load(content, {filename, revision: version, readOnly, title} = {}) {
+    async load(content, options = {}) {
+      if (record(content)) { options = content; content = options.content; }
+      if (typeof content !== 'string') throw Object.assign(new TypeError('load needs the document text as a string'), {code: 'invalid_payload'});
+      let {filename, revision: version, readOnly, title, baseUrl} = options;
       cancelOpen('open_stale');
       await boot;
-      if (held && typeof version === 'number' && typeof held.revision === 'number' && version < held.revision)
+      if (version === undefined) version = typeof held?.revision === 'number' ? held.revision + 1 : 1;
+      const sameDocument = held && (filename === undefined || held.filename === undefined || filename === held.filename);
+      if (sameDocument && typeof version === 'number' && typeof held.revision === 'number' && version < held.revision)
         throw Object.assign(new Error('Revision ' + version + ' is older than the frame\'s ' + held.revision), {code: 'revision_stale', currentRevision: held.revision});
-      if (held && version === held.revision && held.content !== null && content !== held.content)
+      if (sameDocument && version === held.revision && held.content !== null && content !== held.content)
         throw Object.assign(new Error('Revision ' + version + ' already names other content'), {code: 'revision_conflict', currentRevision: held.revision});
-      const loaded = await send('load', {content, revision: version, ...(filename !== undefined ? {filename} : {}), ...(readOnly !== undefined ? {readOnly} : {}), ...(title !== undefined ? {title} : {})}, null);
-      held = {revision: version, content};
+      const loaded = await send('load', {content, revision: version, ...(filename !== undefined ? {filename} : {}), ...(readOnly !== undefined ? {readOnly} : {}), ...(title !== undefined ? {title} : {}), ...(baseUrl !== undefined ? {baseUrl} : {})}, null);
+      held = {revision: version, content, filename};
       return loaded;
     },
     async save() {
@@ -676,7 +710,14 @@ function mount(target, options = {}) {
   prepareBoot();
   iframe.setAttribute('title', options.title || (reader ? 'Markdown reader' : 'Markdown editor'));
   iframe.setAttribute('allow', options.agent ? 'clipboard-write; tools' : 'clipboard-write');
-  iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-downloads');
+  const ownSandbox = iframe === target && iframe.hasAttribute('sandbox');
+  if (!ownSandbox) iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-downloads');
+  const blocked = framingProblem(host, source, ownSandbox ? iframe.sandbox : null, noun);
+  if (blocked) {
+    if (iframe !== target) target.append(iframe);
+    queueMicrotask(() => bootFailed(blocked.code, blocked.reason));
+    return handle;
+  }
   host.addEventListener('message', onWindowMessage); iframe.addEventListener('load', onLoad);
   iframe.src = source.href;
   if (iframe !== target) target.append(iframe);
@@ -692,7 +733,7 @@ function joinForm(field, form) {
   if (!group) {
     group = {fields: new Set(), pending: false, releasing: false};
     group.submit = async event => {
-      if (group.releasing) return;
+      if (event.target !== form || group.releasing) return;
       event.preventDefault(); event.stopImmediatePropagation();
       if (group.pending) return;
       group.pending = true;
@@ -709,12 +750,12 @@ function joinForm(field, form) {
       } catch (error) { if (current()) for (const {field} of captured) field._error(error); }
       finally { group.pending = false; group.releasing = false; }
     };
-    form.addEventListener('submit', group.submit, true); forms.set(form, group);
+    group.view = form.ownerDocument.defaultView; group.view.addEventListener('submit', group.submit, true); forms.set(form, group);
   }
   group.fields.add(field);
   return () => {
     group.fields.delete(field);
-    if (!group.fields.size) { form.removeEventListener('submit', group.submit, true); forms.delete(form); }
+    if (!group.fields.size) { group.view.removeEventListener('submit', group.submit, true); forms.delete(form); }
   };
 }
 

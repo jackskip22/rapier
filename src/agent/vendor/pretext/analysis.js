@@ -1,4 +1,4 @@
-/*! Pretext Unreleased (bac1774c0) | MIT; BSD/Unicode/ICU notices in LICENSE | Copyright (c) 2026 Pretext contributors */
+/*! Pretext 1.0.0 + main (0d102a5cd) | MIT; BSD/Unicode/ICU notices in LICENSE | Copyright (c) 2026 Pretext contributors */
 import { getGeckoLineBreaks, isDiscardable, isEastAsianSegmentBreak, isJapaneseOrChinese, isSpaceCombiningSequenceTail, isSpaceOrTabOrSegmentBreak } from './gecko-line-breaks.js'
 import { isBidiControl,                    } from './graphemes.js'
 import { BREAK, CLUSTER_START, FORCED_BREAK, ITEM_START, SOFT_HYPHEN_BREAK, getBlinkLineBreaks, getWebKitBreakBetweenItems, getWebKitLineBreaks } from './line-breaks.js'
@@ -49,6 +49,12 @@ export const RETURNABLE = 0x40
 // The engine's clusters don't split the segment, so no emergency break splits it
 // either. Measurement clears it.
 export const ONE_CLUSTER = 0x80
+// In its place on a prepared handle: the zero-width break is a soft hyphen, which the Gecko scan
+// makes one where its break draws no hyphen (classifySegmentUnit). Firefox's text run drops it,
+// so it is a break with nothing there: it stays with the line that ends at it and no line starts
+// with it, where a zero-width space is content (walkPreparedComplexLines in src/line-break.ts).
+// Measurement sets it.
+export const DROPPED = 0x80
                                                                                                          
                                                                                                    
 // Each kind's name by its code, as prepareWithSegments() gives them.
@@ -62,7 +68,8 @@ export const SEGMENT_KINDS                              = [
 // flags byte: its kind, UNBROKEN where the engine's scan gives no break before text, zero-width
 // glue or a control, other than at a line start, and where tabs don't hang before a tab or
 // the spaces after one, RETURNABLE at the other segments of text with such a boundary, which
-// `hasUnbroken` tells, and ONE_CLUSTER where the scan has clusters of its own.
+// `hasUnbroken` tells, and ONE_CLUSTER where the scan has clusters of its own. A zero-width
+// space right after another is UNBROKEN too, which `hasUnbroken` leaves out.
                             
                     
                                   
@@ -268,9 +275,9 @@ function mapSourceLineBreaks(source        , normalizedLength        , sourceBre
 
 // A FORCED_BREAK after U+2028 or U+2029 makes the separator a hard break in every white-space
 // mode, and a SOFT_HYPHEN_BREAK makes a soft hyphen a zero-width break: the line can end there
-// without a hyphen. One with only soft hyphens before it on its chunk stays a soft hyphen, since
-// a zero-width break there holds a line and Firefox, which drops soft hyphens from its text runs,
-// gives it none.
+// without a hyphen, and Firefox, which drops soft hyphens from its text runs, has nothing there
+// (DROPPED). One with only soft hyphens before it on its chunk stays a soft hyphen: no line ends
+// at a chunk's start, and a line's start leaves either out.
 function classifySegmentUnit(normalized        , breaks            , i        , code        , whiteSpace                , scan                                  )                  {
   if ((code === 0x2028 || code === 0x2029) && (breaks[i + 1]  & FORCED_BREAK) !== 0) return HARD_BREAK
   if (code === 0x00AD && (breaks[i + 1]  & SOFT_HYPHEN_BREAK) !== 0 && followsChunkContent(normalized, i)) return ZERO_WIDTH_BREAK
@@ -303,7 +310,8 @@ function isControlSegmentCode(code        )          {
 // closing bracket, or under keep-all, is zero-width glue: it stays its own zero-width
 // segment, takes no letter spacing and doesn't end a line.
 // Combining marks right after it, or after a control, stay apart from the text after
-// them, since they shape on the grapheme before it (measureAnalysis). Where the Gecko
+// them, a segment of their own that measurement measures alone, as it does any text
+// (ENGINE_FOLLOWUPS.md, Canvas answers that differ from the page). Where the Gecko
 // scan marks cluster starts, a segment is ONE_CLUSTER unless one falls inside it.
 //
 // Firefox leaves soft hyphens and bidi controls out of the text run it breaks and maps a line end
@@ -394,6 +402,15 @@ function segmentAtLineBreaks(normalized        , spaceSources                   
   // white space ends the line: Gecko breaks only after the whole run (nsLineBreaker.cpp:
   // 318-330). A soft hyphen before the tab keeps its break (GetHyphenationBreaks,
   // nsTextFrame.cpp:4409-4457).
+  //
+  // No break comes between two zero-width spaces either (UAX #14 LB7), so the second is
+  // marked too: a line that goes back to its last break, as Gecko's does from a tab that
+  // doesn't fit, goes back past both, where the second would hold a line of its own (`M`,
+  // two of them, a tab and `is` in pre-wrap at 24px are three lines in Firefox 157, the
+  // tab on the second). It isn't counted in `hasUnbroken`, which takes a text off the
+  // simple walkers: the second fits wherever the first does, so no line of theirs ends
+  // between the two, and none goes back to a break from it. A soft hyphen that is a
+  // zero-width break (classifySegmentUnit) is left as it was.
   let hasUnbroken = false
   const count = flags.length
   for (let j = count - 2; j >= 0; j--) {
@@ -405,6 +422,7 @@ function segmentAtLineBreaks(normalized        , spaceSources                   
     } else if (next === TEXT || next === ZERO_WIDTH_GLUE || next === CONTROL) {
       if (kind === ZERO_WIDTH_BREAK || kind === SOFT_HYPHEN) flags[j] = flags[j]  & ~KIND_BITS | ZERO_WIDTH_GLUE
     } else {
+      if (next === ZERO_WIDTH_BREAK && kind === ZERO_WIDTH_BREAK && normalized.charCodeAt(starts[j + 1] ) === 0x200B) flags[j + 1] = flags[j + 1]  | UNBROKEN
       continue
     }
     flags[j + 1] = flags[j + 1]  | UNBROKEN

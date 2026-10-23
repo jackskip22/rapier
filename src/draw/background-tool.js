@@ -28,7 +28,7 @@ _rapierBg._rapierDrawPaperListen?.(() => {
 async function _rapierBgPaperLoad(paper, strength = 1, options = {}) {
 	if (!strength) return null;
 	if (!_rapierBg._rapierDrawPaperRequest) throw new Error('The paper texture could not be prepared');
-	const deflate = typeof CompressionStream === 'function' ? async bytes => new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer()) : null;
+	const deflate = bytes => globalThis.RapierDrawAgentPaint.deflateOwnedPaintBytes(bytes.slice());
 	const render = globalThis.navigator?.gpu && globalThis.RapierDrawWater?.paperTileFromGPU ? (id, options) => globalThis.RapierDrawWater.paperTileFromGPU(id, options) : null;
 	return _rapierBg._rapierDrawPaperRequest(paper, {strength, pixelRatio: globalThis.devicePixelRatio || 1, ...options, now: () => performance.now(), pause: () => new Promise(resolve => setTimeout(resolve, 0)), deflate, render});
 }

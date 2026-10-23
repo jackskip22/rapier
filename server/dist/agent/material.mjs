@@ -6,7 +6,7 @@ import {admitWaterPigment} from '../draw/water-data.mjs';
 import {requiredRefractionScopes} from '../draw/core.mjs';
 import {admitRefractionRenditions, refractionRecipeKey} from '../draw/refraction-rendition.mjs';
 
-export const MATERIAL_LIMITS = Object.freeze({bytes: 24 * 1024 * 1024, sampleBytes: 4096, lifetimeMs: 60000});
+export const MATERIAL_LIMITS = Object.freeze({bytes: 24 * 1024 * 1024, sampleBytes: 4096, lifetimeMs: 300000});
 const encoder = new TextEncoder();
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const size = value => encoder.encode(JSON.stringify(value)).byteLength;

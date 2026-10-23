@@ -1,4 +1,4 @@
-/*! Pretext Unreleased (bac1774c0) | MIT; BSD/Unicode/ICU notices in LICENSE | Copyright (c) 2026 Pretext contributors */
+/*! Pretext 1.0.0 + main (0d102a5cd) | MIT; BSD/Unicode/ICU notices in LICENSE | Copyright (c) 2026 Pretext contributors */
 // Prepare text with engine segmentation rules and cached Canvas measurements, then
 // lay it out with arithmetic. Preparation touches the DOM in three places: the emoji
 // correction's span, read once per font where Canvas measures an emoji wider than its
@@ -131,15 +131,12 @@ function prepareInternal(
 //   2. Find break opportunities with the engine's own line-break scan
 //   3. Split the text into segments between them ("better." as one unit)
 //   4. Measure each segment via canvas measureText, cache by (segment, font).
-//      A run of combining marks that glue or a control separates from its grapheme
-//      measures after that grapheme, and WebKit measures a word with the space after it
+//      WebKit measures a word with the space after it
 //   5. Measure where each text segment of two or more graphemes can break under
 //      overflow-wrap: break-word: by graphemes, pairs or prefixes, per engine
 //   6. Correct emoji canvas inflation (probed once per font)
 //   7. Record what changes at a line's edges: Blink's halts of CJK punctuation,
-//      U+3000 hangs, how much narrower a soft hyphen's neighbors measure joined,
-//      fresh-line widths inside segments with invisible characters, and the
-//      characters WebKit keeps after an overflowing first one
+//      U+3000 hangs, and how much narrower a soft hyphen's neighbors measure joined
 export function prepare(text        , font        , options                 )               {
   return prepareInternal(text, font, false, options)                
 }
@@ -279,13 +276,16 @@ export function measureNaturalWidth(prepared              )         {
   return measureLineStats(prepared, Number.POSITIVE_INFINITY).maxLineWidth
 }
 
+// Where a line stream starts without a `start`: the text's first line.
+const TEXT_START_CURSOR               = { segmentIndex: 0, graphemeIndex: 0 }
+
 // Steps one streamed line from `start` into the result's cursors: the
 // normalized line start and the line end. Returns the reported width, or null
 // after the last line.
 function stepNextLine(
   prepared              ,
-  start              ,
   maxWidth        ,
+  start              ,
   lineStart              ,
   lineEnd              ,
 )                {
@@ -300,14 +300,17 @@ function stepNextLine(
   return width === null ? null : Math.max(0, width)
 }
 
+// The line streams take the width before the cursor, as layoutNextRichInlineLineRange()
+// does, and start at the text's first line without one: pass each line's `end` back
+// for the next.
 export function layoutNextLine(
   prepared                          ,
-  start              ,
   maxWidth        ,
+  start               = TEXT_START_CURSOR,
 )                    {
   const lineStart = { segmentIndex: 0, graphemeIndex: 0 }
   const end = { segmentIndex: 0, graphemeIndex: 0 }
-  const width = stepNextLine(prepared, start, maxWidth, lineStart, end)
+  const width = stepNextLine(prepared, maxWidth, start, lineStart, end)
   if (width === null) return null
 
   const text = buildLineTextFromRange(
@@ -322,12 +325,12 @@ export function layoutNextLine(
 
 export function layoutNextLineRange(
   prepared              ,
-  start              ,
   maxWidth        ,
+  start               = TEXT_START_CURSOR,
 )                         {
   const lineStart = { segmentIndex: 0, graphemeIndex: 0 }
   const end = { segmentIndex: 0, graphemeIndex: 0 }
-  const width = stepNextLine(prepared, start, maxWidth, lineStart, end)
+  const width = stepNextLine(prepared, maxWidth, start, lineStart, end)
   return width === null ? null : { width, start: lineStart, end }
 }
 

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import {fields, scalar, plainPrototype} from './data.mjs';
 import {transformText} from './source.mjs';
+import {dataImage} from './md-assets.mjs';
 
 const _RAPIER_TRANSACTION_ACTOR_LIMIT = 160;
 const _RAPIER_TRANSACTION_OPERATION_LIMIT = 96;
@@ -175,10 +176,10 @@ function _rapierPictureFinish(record, original, earlier, lookup) {
 	if (!reference || !/^\]\[[a-z0-9-]+\]$/i.test(reference.inserted) || reference.removed === reference.inserted) return false;
 	const definition = rows.find(row => row !== reference), oldLabel = reference.removed.slice(2, -1), newLabel = reference.inserted.slice(2, -1);
 	const body = (text, label) => {
-		const prefix = '[' + label + ']: data:image/svg+xml;base64,';
+		const prefix = '[' + label + ']: ';
 		if (typeof text !== 'string' || !text.startsWith(prefix)) return null;
 		const value = text.slice(prefix.length), end = value.indexOf(' '), bytes = end < 0 ? value : value.slice(0, end), title = end < 0 ? '' : value.slice(end);
-		return /^[A-Za-z0-9+/]+={0,2}$/.test(bytes) && !/[\r\n]/.test(title) ? title : null;
+		return dataImage(bytes)?.codec === 'image/svg+xml' && !/[\r\n]/.test(title) ? title : null;
 	};
 	const title = body(definition.removed, oldLabel);
 	if (title === null || body(definition.inserted, newLabel) !== title) return false;

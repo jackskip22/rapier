@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {crc32} from './crc32.mjs';
+import {readOpenRasterMembers} from './openraster.mjs';
 export {crc32};
 
 export const ARCHIVE_LIMITS = Object.freeze({bytes: 25 * 1024 * 1024, entries: 1024, nameBytes: 1024, metadataBytes: 65536});
@@ -305,6 +306,12 @@ export async function openArchive(blob, options = {}) {
       source.check();
     }, close() { source.close(); index.clear(); verified.clear(); }});
   } catch (error) { source.close(); throw error; }
+}
+
+export async function readOpenRaster(blob, options = {}) {
+  const work = options.work || createImportWork(options), archive = await openArchive(blob, {...options, work});
+  try { return await readOpenRasterMembers(archive, work); }
+  finally { archive.close(); }
 }
 
 export async function unpackFiles(blob, options = {}) {

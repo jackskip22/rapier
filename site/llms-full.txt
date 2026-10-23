@@ -24,7 +24,7 @@ Free and offline, with no ads, tracking or Rapier account.
 - **On Android:** get Rapier on [Google Play](https://play.google.com/store/apps/details?id=app.rapier). The app
   has no Internet permission. Optional Google Play asset packs download on first use, then work offline.
 - **On Windows:** download [Rapier.exe](https://github.com/jackskip22/rapier/raw/main/Rapier.exe) (version 1.2.30), the whole app in one file, and run it. It is not code-signed yet, so Windows SmartScreen may warn the first time: choose **More info**, then **Run anyway**.
-- **On Linux (x86_64):** download [rapier-linux](https://github.com/jackskip22/rapier/raw/main/rapier-linux) (version 1.2.34), the whole app in one file. Run `chmod +x rapier-linux && ./rapier-linux --install` once to add Rapier to your launcher; it opens as an app window in your Chromium-based browser. [Requirements](src/linux/README.md).
+- **On Linux (x86_64):** download [rapier-linux](https://github.com/jackskip22/rapier/raw/main/rapier-linux) (version 1.2.36), the whole app in one file. Run `chmod +x rapier-linux && ./rapier-linux --install` once to add Rapier to your launcher; it opens as an app window in your Chromium-based browser. [Requirements](src/linux/README.md).
 - **With an agent:** the Claude plugin, ChatGPT or another MCP client at `https://mcp.rapier.website/mcp`.
 
 ## What it does
@@ -887,6 +887,10 @@ its pinned length and SHA-384. The `plugins` option of `rapier-embed` adds it. T
 which is all its Content Security Policy lets it read: `Rapier.mount` throws a `TypeError` for any other, and a page opened with one
 refuses it, in words, before it makes a request.
 
+A host that names `plugins` serves the plug-ins itself, and a host that sets `?approvePlugins=1` (the `approvePlugins` option of `rapier-embed`) answers for its person: in both cases the frame installs math and diagram plug-ins when a document needs one and never asks. Without either, the frame asks the person ("Install math plug-in?") the first time a document needs it. The sheet is the page's own, sized to the frame: in a frame shorter than the sheet, its body scrolls.
+
+Where Rapier cannot be framed the helper refuses before any request, and `ready` rejects with a code: `host_scheme_unsupported` (a `file://` page or a custom scheme: the frame needs an https page, or http on localhost), `host_not_secure` (a plain-http page that is not on localhost, framing the hosted copy), `host_cross_origin_isolated` (a COEP page framing the hosted copy) and `sandbox_token_missing` (an iframe the host passed has a `sandbox` without `allow-scripts` or `allow-same-origin`; the helper never widens a sandbox the host wrote, and sets one only on an iframe it creates). A page framed without the helper opens an empty document in the editor (`rapier.html` with a same-origin parent) or says "No document is loaded." in the reader.
+
 `style` carries `{css?, fonts?}`. `css` is a string of at most 4 MiB, placed after the reader's own sheets and
 replaced by the next `style`. Remote URLs are removed before the stylesheet is applied. Without `open`, the reader
 returns `protocol-error` `capability_denied`. `fonts` is a list of at most 16 `{family, source, descriptors?}` records handed to
@@ -912,7 +916,7 @@ Extra envelope or payload fields refuse. An invalid envelope, wrong identity or 
 
 | Command | Allowed payload | Additional existing owner checks |
 |---|---|---|
-| `load` | Required string `content`; optional `filename`, `revision`, `readOnly`, `title`. A valid revision must come from payload or envelope. | Codec/text limit, loaded identity, dirty document, transition and revision guards |
+| `load` | Required string `content`; optional `filename`, `revision`, `readOnly`, `title`, `baseUrl`. A valid revision must come from payload or envelope (the helper's `load()` supplies one when you give none). `baseUrl` is an absolute https address that relative pictures in this document are read from; anything else is `load-nack` `invalid_base_url`. | Codec/text limit, loaded identity, dirty document, transition and revision guards |
 | `compare` | Required string `content`; optional `filename` | Loaded/available comparison, canonical codec and transaction guards |
 | `save` | Empty/omitted | `read` grant; a loaded, editable document (`not_loaded`, `read_only`); a settled capture within the limit. A save that sends no `save-request` gets `protocol-error` (`document_too_large` or `save_unavailable`) |
 | `save-ack` | Required advancing `revision` | Must match the actual pending **save-request** ID and base revision; saved bookkeeping cannot erase newer edits |
@@ -941,7 +945,9 @@ Every `protocol-error` carries a `code`, and most a `reason`:
 | `not_loaded`, `read_only`, `save_unavailable`, `document_too_large` | A host `save` that sends no `save-request` |
 | `asset_*`, `open_*` | Picture and file-picker exchanges (sections 2.2 and 2.3) |
 
-A `load` of a revision for which this tab still holds the session's unsaved draft opens the draft as the document, with the host's `content` as the saved text: the draft is unsaved work, a save carries it, and nothing is asked. One notice says so, and `load-ack` carries `recoveredDraft: true`. A save replaces the draft with the saved revision's; the host's `discard` close decision removes it, and nothing is kept again until the person edits.
+A `load` whose revision and `content` match the saved text of this tab's session draft opens the draft as the document, with the host's `content` as the saved text: the draft is unsaved work, a save carries it, and nothing is asked. One notice says so, and `load-ack` carries `recoveredDraft: true`. Any other draft belongs to a document the host has replaced: a draft with no unsaved edits is dropped and the host's `content` is the document; a draft holding unsaved edits for another revision is kept and the load is `load-nack` `draft_retained`. The host's load is always the document the frame shows and saves.
+
+Every `load-nack` carries a `code`: `load_busy`, `save_pending`, `edit_pending`, `unsaved_changes` (the person has unsaved edits in the open document), `draft_retained`, `invalid_payload`, `invalid_filename`, `invalid_base_url`, `document_too_large`, `load_superseded`, `history_unavailable` and `load_failed`. A `save-nack` `conflict` carries `currentRevision`, and the helper's rejection carries it too. A save replaces the draft with the saved revision's; the host's `discard` close decision removes it, and nothing is kept again until the person edits.
 
 That `sessionStorage` draft is the frame's only document storage, and only for a document the host loaded. An embedded frame (and a refused one) never reads, offers or writes the person's own Rapier recovery on its origin: no held or set-aside document, local snapshot, restore cursor or recovery record. Before the first load it keeps nothing. The person's device preferences are theirs and remain shared; host settings never write them.
 
@@ -1244,8 +1250,8 @@ keeps the reference scale; below rung 3, exact line breaks are a recommendation,
 
 #### Rich wrapping reference engine
 
-The reference uses one immutable [Pretext snapshot](https://github.com/chenglou/pretext/tree/bac1774c0f8b7a92e44b9da43b6d5443d55d0d9b),
-an unreleased main revision whose package version still reads `0.0.9`. It combines browser-derived break scans and
+The reference uses one immutable [Pretext snapshot](https://github.com/chenglou/pretext/tree/0d102a5cd933611e86a7e60bda7b4baa5995c6b0),
+Pretext 1.0.0 plus the commits of main through pull request #525 (a zero-width space as content of no width). It combines browser-derived break scans and
 tables with Canvas text measurement and JavaScript flow; it doesn't ask the DOM to choose lines. The DOM adapter admits
 Chrome and Chromium. Firefox, WebKit, Chrome on iOS, unsupported shaping and unsupported settings keep selectable
 native text and wrapping, as do complex semantic objects, authored `br` elements, preserved-whitespace DOM blocks,
@@ -2808,7 +2814,7 @@ byte. Paint keeps transparency, and drawings stay readable on light or dark pape
 ## Choose a Rapier workflow
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
-2. **Hand over an offline editor.** `npx rapier-html@1.2.34 notes.md` puts the editor and document in one HTML file.
+2. **Hand over an offline editor.** `npx rapier-html@1.2.36 notes.md` puts the editor and document in one HTML file.
 3. **Embed the editor.** [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed)
    mounts the editor or reader in an app.
 4. **Keep portable Markdown.** Use `rapier-markdown` for pictures, drawings and layout in one `.md` file.
@@ -2850,13 +2856,13 @@ installed page helper with the matching editor HTML. Never quietly run a differe
 you didn't.
 
 ```sh
-npx -- rapier-html@1.2.34 notes.md                          # writes notes.rapier.html: the editor on the document
-npx -- rapier-html@1.2.34 notes.md --include draw,mermaid   # carries Draw and Mermaid (default: what the document needs)
-npx -- rapier-html@1.2.34 notes.md --view draw              # opens on Draw, the document behind it (carries Draw)
-npx -- rapier-html@1.2.34 notes.md --drawing sketch.svg     # opens on Draw with the drawing
-npx -- rapier-html@1.2.34 revised.md --compare original.md --by "Editor" # opens showing what changed
-npx -- rapier-html@1.2.34 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT"   # Send back returns the person's edit to your workspace
-npx -- rapier-html@1.2.34 notes.md out.html                 # a named output
+npx -- rapier-html@1.2.36 notes.md                          # writes notes.rapier.html: the editor on the document
+npx -- rapier-html@1.2.36 notes.md --include draw,mermaid   # carries Draw and Mermaid (default: what the document needs)
+npx -- rapier-html@1.2.36 notes.md --view draw              # opens on Draw, the document behind it (carries Draw)
+npx -- rapier-html@1.2.36 notes.md --drawing sketch.svg     # opens on Draw with the drawing
+npx -- rapier-html@1.2.36 revised.md --compare original.md --by "Editor" # opens showing what changed
+npx -- rapier-html@1.2.36 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT"   # Send back returns the person's edit to your workspace
+npx -- rapier-html@1.2.36 notes.md out.html                 # a named output
 ```
 
 It never overwrites: an existing output is refused, so pick a new name. The first `--` stops npm from taking
@@ -2908,7 +2914,7 @@ Use the surface the host actually provides:
 - **An Artifact tool or HTML preview:** offer the page beside the chat. Also hand over the file when the viewer
   blocks downloads, and use the host's real sharing controls.
 - **A project Browser pane:** write the page into the project and name its path.
-- **A code sandbox with Node and npm:** run `npx -- rapier-html@1.2.34` and hand over the file.
+- **A code sandbox with Node and npm:** run `npx -- rapier-html@1.2.36` and hand over the file.
 - **A host that shows MCP apps, such as ChatGPT:** `open` shows the editor in the chat (`rapier-agent-door`).
 - **A link:** `https://rapier.website` opens the person's own Rapier, with their documents.
 
@@ -2974,7 +2980,7 @@ other Markdown readers show the same words and ignore what they don't know. No i
 particular app is needed.
 
 The standard is [Self-contained Markdown](references/markdown-standard.md), also at
-https://github.com/jackskip22/rapier/blob/main/docs/markdown-standard.md. The MIT reader and writer is `npm install rapier-markdown-kit@1.2.34`.
+https://github.com/jackskip22/rapier/blob/main/docs/markdown-standard.md. The MIT reader and writer is `npm install rapier-markdown-kit@1.2.36`.
 Rapier renders it exactly and writes it back byte for byte; so can any editor.
 
 Rapier has two kinds of diagram, kept apart:
@@ -2995,7 +3001,7 @@ file for Android, the web, Windows and Linux. The agent edits live; the person s
 to see what was there before, and can undo it. Use `show {target:"comparison"}` to show a diff.
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
-2. **Hand over an offline editor.** `npx rapier-html@1.2.34 notes.md` puts the editor and document in one HTML file
+2. **Hand over an offline editor.** `npx rapier-html@1.2.36 notes.md` puts the editor and document in one HTML file
    ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed the editor.** [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed)
    mounts the editor or reader in your app; your app's agent can use the editor over WebMCP.
@@ -3147,10 +3153,10 @@ For embed-only work, start with the supplied application code and the published 
 For an explanation-only request, answer in chat without creating a document. If required content or integration details are missing, ask for them; do not create an empty hosted workspace.
 Honor no-upload or no-host instructions. The workflow choices below are alternatives, not steps to run. Skip hosted suggestions, including opening a workspace or creating a return link, for local-only or embed-only work.
 
-Embed Rapier's Markdown editor or lightweight reader in your web app. Each build is one offline HTML file. Your
+Embed Rapier's Markdown editor or lightweight reader in your web app. Each build is one offline HTML file. The helper is an ES module: `import {Rapier} from 'rapier-embed'` or `<script type="module">`; there is no classic script or UMD build. Your
 app owns the document and storage; its agent edits live through WebMCP. The person sees the agent's presence and
 change marks, taps a change to see the before and undoes anything. Honor the person's Will/1 regions.
-The reader is one file of about 370 kB, with optional fonts and plug-ins. The helper is MIT with no dependencies. The two builds it frames are AGPL-3.0-only: use them under the AGPL, or
+The reader is one file of about 370 kB, `rapier.html` about 3.9 MB, with optional fonts and plug-ins. The helper is MIT with no dependencies. The two builds it frames are AGPL-3.0-only: use them under the AGPL, or
 buy a commercial license for other terms (`LICENSING.md` in the Rapier repository).
 
 Choose one of two builds:
@@ -3162,7 +3168,7 @@ Choose one of two builds:
 
 Both render the same Markdown standard with the same layout. Download the reader from the root of the
 [rapier repository](https://github.com/jackskip22/rapier), or frame the hosted copies:
-`https://rapier.website/embed/rapier-reader.html` and `https://rapier.website/embed/rapier.html` (current).
+`https://rapier.website/embed/rapier-reader.html` and `https://rapier.website/embed/rapier.html` (current). Both live under `/embed/`: `/rapier-reader.html` at the site root is a 404.
 Each release's own files stay at its tag: `https://cdn.jsdelivr.net/gh/jackskip22/rapier@v<version>/site/embed/<file>`. That address is for
 download only: jsDelivr serves the page as `text/plain` with `nosniff`, so a browser will not frame it. To pin a version, serve the
 downloaded copy yourself and pass it as `src`.
@@ -3180,7 +3186,7 @@ downloaded copy yourself and pass it as `src`.
   document access remain enforced.
 
 ```sh
-npm install rapier-embed@1.2.34
+npm install rapier-embed@1.2.36
 ```
 
 Or copy the package's `embed.mjs` and `contract.mjs` into one directory of your app; no runtime CDN is needed.
@@ -3194,11 +3200,11 @@ sends Markdown only when saving; change notifications contain no source.
 Rapier is a phone-first Markdown editor for notes, diagrams, drawing and watercolor painting. It runs offline
 as one HTML file on Android, Web, Windows and Linux.
 Collaborate over MCP and WebMCP, use optional plain-file sync to your own cloud storage, or embed the
-editor and lightweight reader (about 360 kB). The agent edits live; the person sees its presence and
+editor and lightweight reader (about 371 kB). The agent edits live; the person sees its presence and
 changes, taps a change to see the before and undoes anything. Use `show {target:"comparison"}` to show a diff deliberately.
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
-2. **Deliver an offline editor.** Run `npx rapier-html@1.2.34 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
+2. **Deliver an offline editor.** Run `npx rapier-html@1.2.36 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed in your app.** Install [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed); mount the editor or reader, with your app's agent over WebMCP in the editor.
 4. **Keep portable Markdown.** Use [rapier-markdown-kit](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-markdown-kit) for pictures, editable SVG drawings and layout in one `.md` file. Respect [Will/1](https://github.com/jackskip22/will) `keep`, `append` and `edit` regions.
 5. **Encode JPEG XL.** Install [rapier-jxl](https://github.com/jackskip22/rapier-jxl) to encode pixels, photographs and existing JPEGs in JavaScript.
@@ -3234,6 +3240,19 @@ Its `settings` features are `find`, `readAloud` and `share`; pass `settings: {fe
 others out. For a plain iframe, put the options in its address:
 `<iframe src="/vendor/rapier/rapier-reader.html?plugins=/vendor/rapier/plugins/">`.
 
+## Where it can be framed
+
+The frame needs the host page to be an `https` page, or `http` on `localhost`. `Rapier.mount` checks this before it requests anything, and `ready` rejects at once with a code:
+
+| Host page | `ready` rejects with | Why and what to do |
+| --- | --- | --- |
+| `file://`, `app://` or another custom scheme | `host_scheme_unsupported` | The page has no origin the frame can answer. Serve the app over https, or http on localhost. |
+| `http://` on a LAN address or any host but `localhost` | `host_not_secure` | The hosted copies allow https and localhost parents only. Serve the app over https, or serve a copy of the page and set `src`. |
+| Cross-origin isolated (COEP `require-corp`) | `host_cross_origin_isolated` | The hosted copies carry no CORP or COEP header. Serve a copy with those headers and set `src`, or drop COEP. |
+| Your own `<iframe sandbox>` without `allow-scripts` or `allow-same-origin` | `sandbox_token_missing` | `mount` never widens a sandbox you wrote. Add the token, or pass a container and let `mount` create the iframe (it sets `allow-scripts allow-same-origin allow-downloads`). |
+
+A frame that loads but never connects rejects with `connect_timeout`. A plain `<iframe src=".../rapier.html">` with no helper opens an empty document when the parent shares the page's origin. From another origin it stays closed and says why. With `?embed=1` and no helper connected, the reader says "No document is loaded."
+
 ## Keep Rapier in your codebase
 
 A copy in your app works offline and changes only when you update it.
@@ -3241,7 +3260,7 @@ A copy in your app works offline and changes only when you update it.
 1. Download the build you frame into a static directory, for example
    `https://cdn.jsdelivr.net/gh/jackskip22/rapier@v<version>/site/embed/rapier-reader.html` to `public/vendor/rapier/`.
 2. Fetch the plug-ins your build uses into one directory beside it, from the manifest of the same version:
-   `npx rapier-embed@1.2.34 plugins public/vendor/rapier/plugins --build reader`.
+   `npx rapier-embed@1.2.36 plugins public/vendor/rapier/plugins --build reader`.
 3. Mount with `src` and `plugins` pointing at your copies. Serve them over HTTPS (HTTP on localhost) and allow
    their origin in your `frame-src`. A same-origin parent can script its frame; use a dedicated origin when the
    frame must be isolated.
@@ -3268,11 +3287,13 @@ length and SHA-384 before it runs it, and keeps on the device. A file that fails
 | `elements` | The Elements sheet's traced ornaments: 3,155 pieces from the ornament book. | 16.2 MB (51 files) | `rapier.html` |
 | `lettersets` | The Gallery's letter sets: 31 sets of ornamental capitals. | 2.82 MB (31 files) | `rapier.html` |
 
-Totals: the reader, 10.4 MB (31.9 MB with `ocr`); `rapier.html`, 58.5 MB. Release 1.2.34.
+Totals: the reader, 10.4 MB (31.9 MB with `ocr`); `rapier.html`, 58.5 MB. Release 1.2.36.
 <!-- PLUGIN_TABLE_END -->
 
 The manifest lists every plug-in file and, in `builds`, the pages that use it. `rapier.html` has flowcharts and Word import
-built in. `npx rapier-embed@1.2.34 plugins <directory> --build reader` leaves out `ocr` (text in pictures) unless you add `--with ocr`.
+built in. `npx rapier-embed@1.2.36 plugins <directory> --build reader` leaves out `ocr` (text in pictures) unless you add `--with ocr`.
+
+**Approve plug-ins up front.** Without `plugins`, a frame asks its person "Install math plug-in?" the first time a document needs math or a diagram, and math and diagrams stay raw until they answer. A host that has decided passes `approvePlugins: true`: the frame installs the plug-in it needs without a question. Naming `plugins` has the same effect, because the host then serves the files itself. In a frame shorter than the question's sheet, the sheet's body scrolls.
 
 **With `plugins`.** With `plugins` set, a page (the reader or `rapier.html`) reads every plug-in from
 that directory, by each file's path in the manifest, and makes no other request, so it works offline and under a strict
@@ -3283,7 +3304,7 @@ The directory must be on the page's own origin, because the page's Content Secur
 throws a `TypeError` for a directory on another origin, and a page opened with one shows each plug-in as failed, with the
 reason, without making a request. To keep the plug-ins on a CDN, serve the page from the same origin.
 
-`npx rapier-embed@1.2.34 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
+`npx rapier-embed@1.2.36 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
 keeps a file that is already there and correct, and exits with status 1 if any file is missing or fails its check.
 `--build reader` or `--build full` keeps the files that page uses, `--only name,name` fetches some
 plug-ins, `--check` verifies a directory without fetching, `--from <address>` fetches from your own mirror, and
@@ -3312,6 +3333,16 @@ done
 at the file names the manifest lists, before their pinned addresses. The
 PDF reader, text in pictures and letter sets come from their pinned addresses. The reader reads every plug-in from its
 pinned address and never looks beside itself.
+
+## Relative pictures
+
+A relative picture address in a document (`![](images/a.png)`) is read from the address you give in `baseUrl`, an absolute https address, in `load` or `handle.load()`:
+
+```js
+await reader.load(planText, {revision: 2, baseUrl: 'https://example.com/docs/plan/'}); // images/a.png -> https://example.com/docs/plan/images/a.png
+```
+
+The Markdown keeps the address as written; only the displayed address changes, and a save writes it back unchanged. Without `baseUrl`, a relative picture resolves against Rapier's own origin and does not load. Your page's security policy and the picture host's CORS rules still apply. A `baseUrl` that is not an absolute https address is refused with `invalid_base_url`.
 
 ## Style the reader
 
@@ -3386,12 +3417,11 @@ const editor = Rapier.mount(document.querySelector('#editor'), {
 await editor.ready;
 ```
 
-Mount takes a container or an iframe and owns its navigation, title, sandbox (`allow-scripts allow-same-origin
-allow-downloads`) and clipboard permission. It adds `?embed=1`, keeps any other query, binds its listener before
+Mount takes a container or an iframe and owns its navigation, title and clipboard permission. On an iframe it creates it sets the sandbox `allow-scripts allow-same-origin allow-downloads`. On an iframe you pass, a `sandbox` you wrote stays as written, and `ready` rejects with `sandbox_token_missing` if it lacks `allow-scripts` or `allow-same-origin`. It adds `?embed=1`, keeps any other query, binds its listener before
 navigation, and accepts readiness only from that iframe's window and exact origin. HTTPS is required, except HTTP
 on localhost.
 
-`load` is a record or an async callback returning `{content, revision, filename?, readOnly?, title?}`. The `save`
+`load` is a record or an async callback returning `{content, revision, filename?, readOnly?, title?, baseUrl?}`. The `save`
 callback receives `{content, filename, docKind, codeLang, requestId, baseRevision}` and returns `{revision}` only
 after durable storage. A repeated request ID shares the first write and repeats its first answer, even while that
 write is pending. A repeated ID with different source, metadata or base revision is refused as
@@ -3399,6 +3429,10 @@ write is pending. A repeated ID with different source, metadata or base revision
 Oversized source is `document_too_large`; ill-formed Unicode and malformed metadata are `save_payload_invalid`.
 The helper holds answers for its lifetime; your store must also deduplicate IDs across host
 reloads. Keep stable session and document IDs when you intend to recover a session; omitted IDs are generated.
+
+Switch documents with `editor.load(content, {revision, filename})` or `editor.load({content, revision, filename})`. `revision` is optional in `load()`: left out, the helper uses one above the last revision it saw, or 1. `mount`'s `load` needs it. A load always shows and saves the document you gave it. It is refused by code while the person has unsaved edits (`unsaved_changes`; call `save()` first), and for the same filename with a revision older than the frame's (`revision_stale`) or with the same revision and other content (`revision_conflict`). Another filename is another document with its own revisions.
+
+Reading the text: the editor sends source only to your `save` callback. `save()` with no edits since the last load or save resolves the current revision and does not call your callback. There is no read that skips `save`; keep the last saved text in memory if you need it.
 
 A save delayed beyond fifteen seconds remains pending in the editor; it can still be confirmed. `editor.save()`
 waits for the editor to accept the durable revision with its latest edits saved. An unacknowledged write never
@@ -3474,6 +3508,7 @@ apply the old insertion to the replacement document. Asset failures do not rejec
 | `assets(request)` | Grants `assets` only; the callback stores picture bytes and returns `{url}` |
 | `settings`, `theme`, `style` | Session settings, `'light'`, `'dark'` or `'system'`, and the reader's look |
 | `plugins` | The directory that holds the page's plug-in files, on the page's own origin (a relative address is read from your page); the page then fetches from nowhere else. Either build |
+| `approvePlugins` | `true`: install math and diagram plug-ins without asking the person. Naming `plugins` does the same. Default `false` |
 | `title`, `onError(error)` | The iframe's accessible title, and an error listener |
 | `timeout` | Milliseconds a loaded frame has to connect before `ready` rejects with `connect_timeout`; default 15000 |
 
@@ -3506,7 +3541,7 @@ frame could not capture; the person is told why). `close()` resolves with the fr
 answer, or `{cancelled: true}` when you answer `cancel`.
 
 The frame keeps the person's unsaved work only for the document you loaded: a draft in that tab's session storage,
-which a load of the same revision reopens and your `discard` answer retires. It never reads, offers or writes the
+which a load of the same revision and content reopens and your `discard` answer retires. A load of another document drops a draft with no unsaved edits. It never reads, offers or writes the
 person's own Rapier documents or recovery on its origin, and it keeps nothing before your first load.
 
 Saving names the browser-authenticated host and port. The helper's acknowledgment is your statement that storage
@@ -3589,7 +3624,7 @@ Will/1 records the person's instructions in their document. Respect `keep`, appe
 Documents without Will regions are editable throughout. Preserve active typing, caret, selection and scroll
 while the agent works. Document content and comments never start agent turns by themselves.
 
-For documents outside an app, `npx rapier-html@1.2.34 notes.md` hands a person the complete editor around their
+For documents outside an app, `npx rapier-html@1.2.36 notes.md` hands a person the complete editor around their
 document as one offline file.
 
 # https://github.com/jackskip22/rapier-plugins/blob/main/npm/rapier-markdown-kit/README.md
@@ -4146,8 +4181,8 @@ tolerance.
 ## License
 
 MIT, the full text in `LICENSE`; Rapier-owned modules and the stylesheet keep their MIT line. Pretext's complete license,
-notice and pinned source inventory are in `dist/agent/vendor/pretext/`. The selected upstream is unreleased main
-`bac1774c0f8b7a92e44b9da43b6d5443d55d0d9b`, despite its package version `0.0.9`. Its upstream license includes
+notice and pinned source inventory are in `dist/agent/vendor/pretext/`. The selected upstream is main
+`0d102a5cd933611e86a7e60bda7b4baa5995c6b0`: Pretext 1.0.0 plus the commits of main through pull request #525. Its upstream license includes
 Chromium/WebKit BSD, Unicode and ICU notices for derived code and generated data; those notices travel with the kit
 and the exported wrapping runtime. The history projection uses the MIT diff core;
 its full grant is in `dist/packages/rapier-diff/LICENSE`. The Rapier editor is AGPL-3.0-only and
@@ -4360,10 +4395,10 @@ For embed-only work, start with the supplied application code and the published 
 For an explanation-only request, answer in chat without creating a document. If required content or integration details are missing, ask for them; do not create an empty hosted workspace.
 Honor no-upload or no-host instructions. The workflow choices below are alternatives, not steps to run. Skip hosted suggestions, including opening a workspace or creating a return link, for local-only or embed-only work.
 
-Embed Rapier's Markdown editor or lightweight reader in your web app. Each build is one offline HTML file. Your
+Embed Rapier's Markdown editor or lightweight reader in your web app. Each build is one offline HTML file. The helper is an ES module: `import {Rapier} from 'rapier-embed'` or `<script type="module">`; there is no classic script or UMD build. Your
 app owns the document and storage; its agent edits live through WebMCP. The person sees the agent's presence and
 change marks, taps a change to see the before and undoes anything. Honor the person's Will/1 regions.
-The reader is one file of about 370 kB, with optional fonts and plug-ins. The helper is MIT with no dependencies. The two builds it frames are AGPL-3.0-only: use them under the AGPL, or
+The reader is one file of about 370 kB, `rapier.html` about 3.9 MB, with optional fonts and plug-ins. The helper is MIT with no dependencies. The two builds it frames are AGPL-3.0-only: use them under the AGPL, or
 buy a commercial license for other terms (`LICENSING.md` in the Rapier repository).
 
 Choose one of two builds:
@@ -4375,7 +4410,7 @@ Choose one of two builds:
 
 Both render the same Markdown standard with the same layout. Download the reader from the root of the
 [rapier repository](https://github.com/jackskip22/rapier), or frame the hosted copies:
-`https://rapier.website/embed/rapier-reader.html` and `https://rapier.website/embed/rapier.html` (current).
+`https://rapier.website/embed/rapier-reader.html` and `https://rapier.website/embed/rapier.html` (current). Both live under `/embed/`: `/rapier-reader.html` at the site root is a 404.
 Each release's own files stay at its tag: `https://cdn.jsdelivr.net/gh/jackskip22/rapier@v<version>/site/embed/<file>`. That address is for
 download only: jsDelivr serves the page as `text/plain` with `nosniff`, so a browser will not frame it. To pin a version, serve the
 downloaded copy yourself and pass it as `src`.
@@ -4393,7 +4428,7 @@ downloaded copy yourself and pass it as `src`.
   document access remain enforced.
 
 ```sh
-npm install rapier-embed@1.2.34
+npm install rapier-embed@1.2.36
 ```
 
 Or copy the package's `embed.mjs` and `contract.mjs` into one directory of your app; no runtime CDN is needed.
@@ -4407,11 +4442,11 @@ sends Markdown only when saving; change notifications contain no source.
 Rapier is a phone-first Markdown editor for notes, diagrams, drawing and watercolor painting. It runs offline
 as one HTML file on Android, Web, Windows and Linux.
 Collaborate over MCP and WebMCP, use optional plain-file sync to your own cloud storage, or embed the
-editor and lightweight reader (about 360 kB). The agent edits live; the person sees its presence and
+editor and lightweight reader (about 371 kB). The agent edits live; the person sees its presence and
 changes, taps a change to see the before and undoes anything. Use `show {target:"comparison"}` to show a diff deliberately.
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
-2. **Deliver an offline editor.** Run `npx rapier-html@1.2.34 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
+2. **Deliver an offline editor.** Run `npx rapier-html@1.2.36 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed in your app.** Install [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed); mount the editor or reader, with your app's agent over WebMCP in the editor.
 4. **Keep portable Markdown.** Use [rapier-markdown-kit](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-markdown-kit) for pictures, editable SVG drawings and layout in one `.md` file. Respect [Will/1](https://github.com/jackskip22/will) `keep`, `append` and `edit` regions.
 5. **Encode JPEG XL.** Install [rapier-jxl](https://github.com/jackskip22/rapier-jxl) to encode pixels, photographs and existing JPEGs in JavaScript.
@@ -4447,6 +4482,19 @@ Its `settings` features are `find`, `readAloud` and `share`; pass `settings: {fe
 others out. For a plain iframe, put the options in its address:
 `<iframe src="/vendor/rapier/rapier-reader.html?plugins=/vendor/rapier/plugins/">`.
 
+## Where it can be framed
+
+The frame needs the host page to be an `https` page, or `http` on `localhost`. `Rapier.mount` checks this before it requests anything, and `ready` rejects at once with a code:
+
+| Host page | `ready` rejects with | Why and what to do |
+| --- | --- | --- |
+| `file://`, `app://` or another custom scheme | `host_scheme_unsupported` | The page has no origin the frame can answer. Serve the app over https, or http on localhost. |
+| `http://` on a LAN address or any host but `localhost` | `host_not_secure` | The hosted copies allow https and localhost parents only. Serve the app over https, or serve a copy of the page and set `src`. |
+| Cross-origin isolated (COEP `require-corp`) | `host_cross_origin_isolated` | The hosted copies carry no CORP or COEP header. Serve a copy with those headers and set `src`, or drop COEP. |
+| Your own `<iframe sandbox>` without `allow-scripts` or `allow-same-origin` | `sandbox_token_missing` | `mount` never widens a sandbox you wrote. Add the token, or pass a container and let `mount` create the iframe (it sets `allow-scripts allow-same-origin allow-downloads`). |
+
+A frame that loads but never connects rejects with `connect_timeout`. A plain `<iframe src=".../rapier.html">` with no helper opens an empty document when the parent shares the page's origin. From another origin it stays closed and says why. With `?embed=1` and no helper connected, the reader says "No document is loaded."
+
 ## Keep Rapier in your codebase
 
 A copy in your app works offline and changes only when you update it.
@@ -4454,7 +4502,7 @@ A copy in your app works offline and changes only when you update it.
 1. Download the build you frame into a static directory, for example
    `https://cdn.jsdelivr.net/gh/jackskip22/rapier@v<version>/site/embed/rapier-reader.html` to `public/vendor/rapier/`.
 2. Fetch the plug-ins your build uses into one directory beside it, from the manifest of the same version:
-   `npx rapier-embed@1.2.34 plugins public/vendor/rapier/plugins --build reader`.
+   `npx rapier-embed@1.2.36 plugins public/vendor/rapier/plugins --build reader`.
 3. Mount with `src` and `plugins` pointing at your copies. Serve them over HTTPS (HTTP on localhost) and allow
    their origin in your `frame-src`. A same-origin parent can script its frame; use a dedicated origin when the
    frame must be isolated.
@@ -4481,11 +4529,13 @@ length and SHA-384 before it runs it, and keeps on the device. A file that fails
 | `elements` | The Elements sheet's traced ornaments: 3,155 pieces from the ornament book. | 16.2 MB (51 files) | `rapier.html` |
 | `lettersets` | The Gallery's letter sets: 31 sets of ornamental capitals. | 2.82 MB (31 files) | `rapier.html` |
 
-Totals: the reader, 10.4 MB (31.9 MB with `ocr`); `rapier.html`, 58.5 MB. Release 1.2.34.
+Totals: the reader, 10.4 MB (31.9 MB with `ocr`); `rapier.html`, 58.5 MB. Release 1.2.36.
 <!-- PLUGIN_TABLE_END -->
 
 The manifest lists every plug-in file and, in `builds`, the pages that use it. `rapier.html` has flowcharts and Word import
-built in. `npx rapier-embed@1.2.34 plugins <directory> --build reader` leaves out `ocr` (text in pictures) unless you add `--with ocr`.
+built in. `npx rapier-embed@1.2.36 plugins <directory> --build reader` leaves out `ocr` (text in pictures) unless you add `--with ocr`.
+
+**Approve plug-ins up front.** Without `plugins`, a frame asks its person "Install math plug-in?" the first time a document needs math or a diagram, and math and diagrams stay raw until they answer. A host that has decided passes `approvePlugins: true`: the frame installs the plug-in it needs without a question. Naming `plugins` has the same effect, because the host then serves the files itself. In a frame shorter than the question's sheet, the sheet's body scrolls.
 
 **With `plugins`.** With `plugins` set, a page (the reader or `rapier.html`) reads every plug-in from
 that directory, by each file's path in the manifest, and makes no other request, so it works offline and under a strict
@@ -4496,7 +4546,7 @@ The directory must be on the page's own origin, because the page's Content Secur
 throws a `TypeError` for a directory on another origin, and a page opened with one shows each plug-in as failed, with the
 reason, without making a request. To keep the plug-ins on a CDN, serve the page from the same origin.
 
-`npx rapier-embed@1.2.34 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
+`npx rapier-embed@1.2.36 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
 keeps a file that is already there and correct, and exits with status 1 if any file is missing or fails its check.
 `--build reader` or `--build full` keeps the files that page uses, `--only name,name` fetches some
 plug-ins, `--check` verifies a directory without fetching, `--from <address>` fetches from your own mirror, and
@@ -4525,6 +4575,16 @@ done
 at the file names the manifest lists, before their pinned addresses. The
 PDF reader, text in pictures and letter sets come from their pinned addresses. The reader reads every plug-in from its
 pinned address and never looks beside itself.
+
+## Relative pictures
+
+A relative picture address in a document (`![](images/a.png)`) is read from the address you give in `baseUrl`, an absolute https address, in `load` or `handle.load()`:
+
+```js
+await reader.load(planText, {revision: 2, baseUrl: 'https://example.com/docs/plan/'}); // images/a.png -> https://example.com/docs/plan/images/a.png
+```
+
+The Markdown keeps the address as written; only the displayed address changes, and a save writes it back unchanged. Without `baseUrl`, a relative picture resolves against Rapier's own origin and does not load. Your page's security policy and the picture host's CORS rules still apply. A `baseUrl` that is not an absolute https address is refused with `invalid_base_url`.
 
 ## Style the reader
 
@@ -4599,12 +4659,11 @@ const editor = Rapier.mount(document.querySelector('#editor'), {
 await editor.ready;
 ```
 
-Mount takes a container or an iframe and owns its navigation, title, sandbox (`allow-scripts allow-same-origin
-allow-downloads`) and clipboard permission. It adds `?embed=1`, keeps any other query, binds its listener before
+Mount takes a container or an iframe and owns its navigation, title and clipboard permission. On an iframe it creates it sets the sandbox `allow-scripts allow-same-origin allow-downloads`. On an iframe you pass, a `sandbox` you wrote stays as written, and `ready` rejects with `sandbox_token_missing` if it lacks `allow-scripts` or `allow-same-origin`. It adds `?embed=1`, keeps any other query, binds its listener before
 navigation, and accepts readiness only from that iframe's window and exact origin. HTTPS is required, except HTTP
 on localhost.
 
-`load` is a record or an async callback returning `{content, revision, filename?, readOnly?, title?}`. The `save`
+`load` is a record or an async callback returning `{content, revision, filename?, readOnly?, title?, baseUrl?}`. The `save`
 callback receives `{content, filename, docKind, codeLang, requestId, baseRevision}` and returns `{revision}` only
 after durable storage. A repeated request ID shares the first write and repeats its first answer, even while that
 write is pending. A repeated ID with different source, metadata or base revision is refused as
@@ -4612,6 +4671,10 @@ write is pending. A repeated ID with different source, metadata or base revision
 Oversized source is `document_too_large`; ill-formed Unicode and malformed metadata are `save_payload_invalid`.
 The helper holds answers for its lifetime; your store must also deduplicate IDs across host
 reloads. Keep stable session and document IDs when you intend to recover a session; omitted IDs are generated.
+
+Switch documents with `editor.load(content, {revision, filename})` or `editor.load({content, revision, filename})`. `revision` is optional in `load()`: left out, the helper uses one above the last revision it saw, or 1. `mount`'s `load` needs it. A load always shows and saves the document you gave it. It is refused by code while the person has unsaved edits (`unsaved_changes`; call `save()` first), and for the same filename with a revision older than the frame's (`revision_stale`) or with the same revision and other content (`revision_conflict`). Another filename is another document with its own revisions.
+
+Reading the text: the editor sends source only to your `save` callback. `save()` with no edits since the last load or save resolves the current revision and does not call your callback. There is no read that skips `save`; keep the last saved text in memory if you need it.
 
 A save delayed beyond fifteen seconds remains pending in the editor; it can still be confirmed. `editor.save()`
 waits for the editor to accept the durable revision with its latest edits saved. An unacknowledged write never
@@ -4687,6 +4750,7 @@ apply the old insertion to the replacement document. Asset failures do not rejec
 | `assets(request)` | Grants `assets` only; the callback stores picture bytes and returns `{url}` |
 | `settings`, `theme`, `style` | Session settings, `'light'`, `'dark'` or `'system'`, and the reader's look |
 | `plugins` | The directory that holds the page's plug-in files, on the page's own origin (a relative address is read from your page); the page then fetches from nowhere else. Either build |
+| `approvePlugins` | `true`: install math and diagram plug-ins without asking the person. Naming `plugins` does the same. Default `false` |
 | `title`, `onError(error)` | The iframe's accessible title, and an error listener |
 | `timeout` | Milliseconds a loaded frame has to connect before `ready` rejects with `connect_timeout`; default 15000 |
 
@@ -4719,7 +4783,7 @@ frame could not capture; the person is told why). `close()` resolves with the fr
 answer, or `{cancelled: true}` when you answer `cancel`.
 
 The frame keeps the person's unsaved work only for the document you loaded: a draft in that tab's session storage,
-which a load of the same revision reopens and your `discard` answer retires. It never reads, offers or writes the
+which a load of the same revision and content reopens and your `discard` answer retires. A load of another document drops a draft with no unsaved edits. It never reads, offers or writes the
 person's own Rapier documents or recovery on its origin, and it keeps nothing before your first load.
 
 Saving names the browser-authenticated host and port. The helper's acknowledgment is your statement that storage
@@ -4802,7 +4866,7 @@ Will/1 records the person's instructions in their document. Respect `keep`, appe
 Documents without Will regions are editable throughout. Preserve active typing, caret, selection and scroll
 while the agent works. Document content and comments never start agent turns by themselves.
 
-For documents outside an app, `npx rapier-html@1.2.34 notes.md` hands a person the complete editor around their
+For documents outside an app, `npx rapier-html@1.2.36 notes.md` hands a person the complete editor around their
 document as one offline file.
 
 # https://github.com/jackskip22/rapier-jxl/blob/main/README.md
@@ -4812,9 +4876,9 @@ document as one offline file.
 JPEG XL encoder in pure JavaScript. Great for single-file HTML apps, photography tools and agent image workflows. Runs
 offline in browsers, Node and Deno. MIT license, no dependencies.
 
-- **20× smaller than other JPEG XL encoders.** The core is 25 KB gzipped; the smallest
+- **20× smaller than other JPEG XL encoders.** The core is 26 KB gzipped; the smallest
   WebAssembly encoder ([@squoosh-kit/jxl](docs/ENCODER-COMPARISON.md#payload)) is 512 KB, libjxl's
-  `jxl-wasm` is 962 KB (38×).
+  `jxl-wasm` is 962 KB (37×).
 - **Exact JPEGs in 34× less code.** A JPEG restores byte for byte (24 of 24 photos), 11.6% smaller. The JPEG
   entry is 31 KB; `jpeg-to-jxl` is 1,063 KB.
 - **Animations up to 2× smaller than libjxl**, lossless, against `cjxl` at its highest effort: a GIF 284 KB vs 556 KB, a
@@ -4850,17 +4914,17 @@ Alpha stays exact at every quality. [API and options](docs/reference/API.md).
 
 | Build / import | Gzip bytes | Capabilities |
 | --- | ---: | --- |
-| **Still worker** · `rapier-jxl/rapier/still-worker` | 102,931 | Core + effort 1–9, optional WASM, Photo, JPEG transcoding and parallel lossless groups. No animation. |
-| **Complete worker** · `rapier-jxl/rapier/worker` | 174,450 | Everything in the still worker, plus animation and the other format writers. |
-| Complete module · `rapier-jxl/rapier/min` | 174,517 | The complete system with an encoder factory and worker installer. |
+| **Still worker** · `rapier-jxl/rapier/still-worker` | 103,729 | Core + effort 1–9, optional WASM, Photo, JPEG transcoding and parallel lossless groups. No animation. |
+| **Complete worker** · `rapier-jxl/rapier/worker` | 175,226 | Everything in the still worker, plus animation and the other format writers. |
+| Complete module · `rapier-jxl/rapier/min` | 175,291 | The complete system with an encoder factory and worker installer. |
 | Image · `rapier-jxl/image/min` | 1,184 | One call from a page: a file, bitmap, image data or canvas in, an `image/jxl` Blob out, through either worker. |
-| Core · `rapier-jxl/min` | 24,831 | Lossless or lossy typed RGBA, native precision, HDR and exact alpha. |
-| Effort · `rapier-jxl/effort/min` | 50,419 | Core with lossless compression search, efforts 1–9. |
-| WASM · `rapier-jxl/wasm/min` | 60,129 | Effort with inlined WASM and JavaScript fallback. |
-| Photo · `rapier-jxl/photo/min` | 25,190 | Lossy photographs from RGBA pixels. |
-| JPEG · `rapier-jxl/jpeg/min` | 30,616 | Existing JPEGs, preserving admitted coefficients and orientation. |
+| Core · `rapier-jxl/min` | 25,527 | Lossless or lossy typed RGBA, native precision, HDR and exact alpha. |
+| Effort · `rapier-jxl/effort/min` | 51,283 | Core with lossless compression search, efforts 1–9. |
+| WASM · `rapier-jxl/wasm/min` | 61,007 | Effort with inlined WASM and JavaScript fallback. |
+| Photo · `rapier-jxl/photo/min` | 26,043 | Lossy photographs from RGBA pixels. |
+| JPEG · `rapier-jxl/jpeg/min` | 30,781 | Existing JPEGs, preserving admitted coefficients and orientation. |
 | Metadata · `rapier-jxl/metadata/min` | 12,292 | Attach, replace or remove caller-supplied Exif/XMP. |
-| Animation · `rapier-jxl/animation/min` | 58,816 | Animated JPEG XL from frames: only changed rectangles stored, exact timing, lossless or lossy. |
+| Animation · `rapier-jxl/animation/min` | 59,624 | Animated JPEG XL from frames: only changed rectangles stored, exact timing, lossless or lossy. |
 
 Sizes are standalone files gzipped at level 9. [Entry points and embedding](docs/reference/ARCHITECTURE.md).
 

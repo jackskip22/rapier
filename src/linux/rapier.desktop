@@ -8,7 +8,7 @@ Icon=rapier
 Terminal=false
 Categories=Utility;TextEditor;
 Keywords=markdown;notes;writing;
-MimeType=text/markdown;text/x-markdown;application/x-rapier-html;
+MimeType=text/markdown;text/x-markdown;application/x-rapier-html;image/openraster;
 StartupWMClass=rapier
 Actions=new-document;
 

@@ -205,27 +205,27 @@
 :where(.md-render) svg.rapier-native-flowchart{display:block;margin-inline:auto;height:auto}
 :where(.md-render) svg.rapier-diagram{display:block;margin-inline:auto;height:auto;text-rendering:optimizeLegibility}
 :where(.md-render) :is(.diagram-block,.diagram-live-preview){
- --pele-bg:transparent;
- --pele-fg:var(--color-text,var(--md-color-text));
- --pele-line:var(--color-text,var(--md-color-text));
- --pele-muted:var(--color-text-secondary,var(--md-color-text-secondary));
- --pele-surface:var(--color-surface-2,var(--md-color-surface-2));
- --pele-surface-alt:var(--color-surface-hover,var(--md-color-border-focus));
- --pele-border:var(--color-border,var(--color-surface-hover,var(--md-color-border)));
- --pele-accent:var(--color-accent,var(--md-color-accent));
- --pele-font:var(--font-sans,var(--md-font-sans));
- --pele-font-mono:var(--font-mono,var(--md-font-mono));
- --pele-radius:0;
- --pele-heading-weight:var(--md-fw-semibold);
- --pele-title-weight:var(--md-fw-semibold);
- --pele-series-1:var(--pele-accent);
- --pele-series-2:#4f91f7;
- --pele-series-3:#35c57a;
- --pele-series-4:#e6b91e;
- --pele-series-5:#9b6dea;
- --pele-series-6:#f05a62;
- --pele-series-7:color-mix(in srgb,var(--pele-accent) 50%,#4f91f7);
- --pele-series-8:color-mix(in srgb,#9b6dea 50%,#f05a62);
+ --md-pele-bg:transparent;
+ --md-pele-fg:var(--md-color-text);
+ --md-pele-line:var(--md-color-text);
+ --md-pele-muted:var(--md-color-text-secondary);
+ --md-pele-surface:var(--md-color-surface-2);
+ --md-pele-surface-alt:var(--md-color-border-focus);
+ --md-pele-border:var(--md-color-border);
+ --md-pele-accent:var(--md-color-accent);
+ --md-pele-font:var(--md-font-sans);
+ --md-pele-font-mono:var(--md-font-mono);
+ --md-pele-radius:0;
+ --md-pele-heading-weight:var(--md-fw-semibold);
+ --md-pele-title-weight:var(--md-fw-semibold);
+ --md-pele-series-1:var(--md-pele-accent);
+ --md-pele-series-2:#4f91f7;
+ --md-pele-series-3:#35c57a;
+ --md-pele-series-4:#e6b91e;
+ --md-pele-series-5:#9b6dea;
+ --md-pele-series-6:#f05a62;
+ --md-pele-series-7:color-mix(in srgb,var(--md-pele-accent) 50%,#4f91f7);
+ --md-pele-series-8:color-mix(in srgb,#9b6dea 50%,#f05a62);
 }
 
 :where(.md-render) svg.rapier-diagram[aria-roledescription="radar"] :is(.radarTitle,.radarAxisLabel){fill:currentColor}

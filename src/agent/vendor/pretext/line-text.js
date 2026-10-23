@@ -1,4 +1,4 @@
-/*! Pretext Unreleased (bac1774c0) | MIT; BSD/Unicode/ICU notices in LICENSE | Copyright (c) 2026 Pretext contributors */
+/*! Pretext 1.0.0 + main (0d102a5cd) | MIT; BSD/Unicode/ICU notices in LICENSE | Copyright (c) 2026 Pretext contributors */
 import { findGraphemeEnds } from './graphemes.js'
 import { HARD_BREAK, KIND_BITS, SOFT_HYPHEN, ZERO_WIDTH_BREAK, ZERO_WIDTH_GLUE } from './analysis.js'
 import { isDiscretionaryLineEnd,                       } from './line-break.js'
@@ -82,5 +82,5 @@ export function buildLineTextFromRange(
   endGraphemeIndex        ,
 )         {
   const text = buildRangeText(prepared, startSegmentIndex, startGraphemeIndex, endSegmentIndex, endGraphemeIndex)
-  return isDiscretionaryLineEnd(prepared.segmentFlags, endSegmentIndex, endGraphemeIndex) ? text + '-' : text
+  return isDiscretionaryLineEnd(prepared.segmentFlags, prepared.widths.length, endSegmentIndex, endGraphemeIndex) ? text + '-' : text
 }

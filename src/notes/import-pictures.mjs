@@ -57,6 +57,7 @@ export async function importPictures(source, options = {}) {
   const {rootId = '', sourceName = '', pictures = [], convert} = options || {};
   const original = source, warnings = [];
   source = keepImportCharacters(source, warnings, 'picture source');
+	if (!source.includes('!') && !source.includes('<')) return finishImportCharacters({text: source, warnings, embedded: [], unresolved: [], changed: source !== original});
   let pool;
   const unresolved = [], embedded = [], edits = [];
   const ready = new Map(), assets = new Map(), embeddedByKey = new Map(), warned = new Map();

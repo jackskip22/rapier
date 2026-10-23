@@ -1,6 +1,7 @@
 import {createDeleteIntent, deleteIdleScratch, isDeletePrivateName, deleteFrameName, DELETE_RESERVE_FILE} from './delete-intent.mjs';
 import {recoverPressureTrash, admitPressureTrash, deletionFailure} from './trash.mjs';
 import {isImportReceiptFile, readImportReceiptFile, assertImportReferences} from './import-storage.mjs';
+import {mapImportBatch} from './import-concurrency.mjs';
 import {NOTES_INDEX_FILE, emptyIndex, isNoteFile, isCodeFile, codeFileName, validNoteId, noteFileName, attachmentFileName, parseIndex, reconcile, serializeIndex, stampNoteControls, NOTE_CONTROL_GROUPS, admitIdentities} from './model.mjs';
 import {exactBytes, sha256, sha256State, sha256Yielding, storedFileDigest} from './integrity.mjs';
 import {manifestName, createHistoryPreparation, resolveHistoryPreparation} from './history.mjs';
@@ -306,14 +307,17 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			return journal.canonical;
 		};
 		const verifyCanonical = async (journal, index, preparation) => {
-			for (const row of canonicalRows(journal)) {
+			const verify = async row => {
 				if (index.notes[row.file]?.id !== row.id || index.notes[row.file]?.canonicalHistory !== row.ledger) throw fail('changed', 'The note identity changed during canonical publication. Its pending save was kept.');
 				const body = await readBytes(row.file), history = await readBytes(row.history);
 				if (!body || !history) throw fail('changed', 'The note and its history have not both landed. The pending save was kept.');
 				// exact bytes. Neither its lease nor its remembered ledger licenses reuse.
 				const proved = preparation.parseCanonical(history, {noteId: row.id, now: clock(), text: new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(body)});
 				if (proved.ledger.sha256 !== row.ledger) throw fail('changed', 'The canonical history changed during publication. Its pending save was kept.');
-			}
+			};
+			const rows = canonicalRows(journal);
+			if (journal.kind === 'import') await mapImportBatch(rows, verify);
+			else for (const row of rows) await verify(row);
 		};
 		const saveStages = journal => {
 			if (journal.staging === undefined) return [];
@@ -817,9 +821,12 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 					drop(row.file, await digestOf(await readBytes(row.file)));
 					return false;
 				};
-				for (const row of writes) {
+				const importing = journal.kind === 'import' && writes.every(row => row.requires === undefined && row.caseSource === undefined && !syncStateFile(row.file));
+				const checked = importing ? await mapImportBatch(writes, async row => await digestOf(await readBytes(row.file))) : null;
+				for (let at = 0; at < writes.length; at++) {
+					const row = writes[at];
 					if (row.caseSource !== undefined) continue;
-					const digest = await digestOf(await readBytes(row.file));
+					const digest = checked ? checked[at] : await digestOf(await readBytes(row.file));
 					if (digest !== row.before && digest !== row.digest) drop(row.file, digest);
 				}
 				for (const row of journal.removes) { if (caseMoves.some(move => move.caseSource === row.file)) continue; const digest = await removalDigest(row.file); if (digest != null && digest !== row.digest) drop(row.file, digest); }
@@ -840,15 +847,19 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 					if (await readBytes(row.file) !== null) throw fail('changed', 'The rename destination arrived during its move. Both copies were kept.');
 					await writeVerified(row.file, stage, row.digest);
 				}
-				for (const row of writes) {
-					if (syncStateFile(row.file) || row.caseSource !== undefined) continue;
-					if (dropped.includes(row.file) || !await ready(row)) continue;
+				const publishWrite = async row => {
+					if (syncStateFile(row.file) || row.caseSource !== undefined) return;
+					if (dropped.includes(row.file) || !await ready(row)) return;
 					const digest = await digestOf(await readBytes(row.file));
 					if (digest !== row.digest) {
-						if (digest !== row.before) { drop(row.file, digest); continue; }
+						if (digest !== row.before) { drop(row.file, digest); return; }
 						await writeVerified(row.file, row.bytes);
 					}
-				}
+				};
+				if (importing) {
+					const phase = file => isImportReceiptFile(file) ? 4 : file.startsWith('history/manifests/') ? 3 : file.startsWith('history/') ? 2 : isNoteFile(file) ? 1 : 0;
+					for (let step = 0; step < 5; step++) await mapImportBatch(writes.filter(row => phase(row.file) === step), publishWrite);
+				} else for (const row of writes) await publishWrite(row);
 				for (const row of journal.removes) {
 					if (caseMoves.some(move => move.caseSource === row.file)) continue;
 					if (dropped.includes(row.file) || !await ready(row)) continue;
@@ -1030,7 +1041,14 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				if (replacing) for (const row of original) if (!plannedWrites.some(write => write.file === row.file)) await store.assertRemovable(row.file);
 			}
 			const stageSave = !restoring && ['save', 'canonical-save'].includes(plan.kind) && !plan.removes?.length && plannedWrites.every(row => isNoteFile(row.file) || historyRow(row));
-			for (const row of plannedWrites) {
+			let importPrevious = null;
+			if (plan.kind === 'import') {
+				const named = new Set();
+				for (const row of plannedWrites) { fileName(row.file); if (named.has(row.file)) throw fail('plan', 'A transaction names one file twice.'); named.add(row.file); }
+				importPrevious = await mapImportBatch(plannedWrites, row => readBytes(row.file));
+			}
+			for (let at = 0; at < plannedWrites.length; at++) {
+				const row = plannedWrites[at];
 				fileName(row.file, restoring); if (seen.has(row.file)) throw fail('plan', 'A transaction names one file twice.'); seen.add(row.file);
 				if (restoring && store.ascii && /[^\x00-\x7f]/.test(row.file)) throw fail('name', 'This folder cannot keep the exact backup filename: ' + row.file + '. Nothing was restored.');
 				const createOnly = restoring ? !replacing : row.createOnly || plan.kind === 'import' && row.replace !== true;
@@ -1039,7 +1057,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 					caseSource.normalize('NFC').toLowerCase() !== row.file.normalize('NFC').toLowerCase() || !present.has(caseSource) || present.has(row.file)))
 					throw fail('plan', 'A case-only rename needs the exact original spelling and a free destination.');
 				if (createOnly && present.has(row.file)) throw fail('collision', 'The import name ' + row.file + ' is occupied. Allocate a new name while holding the folder owner.');
-				const bytes = restoring ? null : row.bytes, previous = direct && row.file === direct.file ? direct.body : await readBytes(row.file);
+				const bytes = restoring ? null : row.bytes, previous = importPrevious ? importPrevious[at] : direct && row.file === direct.file ? direct.body : await readBytes(row.file);
 				if (bytes) payloads.set(row.file, bytes);
 				if (createOnly && previous != null && !caseMove) throw fail('collision', 'The import name ' + row.file + ' is occupied. Allocate a new name while holding the folder owner.');
 				const previousDigest = direct && row.file === direct.file ? direct.bodyDigest : await digestBytes(previous);

@@ -1,5 +1,6 @@
 import {deleteIdleScratch} from './delete-intent.mjs';
 import {encodeImportReceipt, isImportReceiptFile, importReceiptMembers} from './import-storage.mjs';
+import {mapImportBatch} from './import-concurrency.mjs';
 import {createOwner, OWNER_JOURNAL_FILE} from './owner.mjs';
 import {SYNC_STATE_FILE, readSyncStateBytes, syncStateWrite, decodeSyncState, encodeSyncState} from './sync-state.mjs';
 import {createRecordings} from './recording.mjs';
@@ -705,16 +706,22 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		const entries = new Map([...Object.values(index.missingFiles || {}).map(row => row.entry), ...Object.values(index.notes)]
 			.filter(entry => entry?.id).map(entry => [manifestName(entry.id), entry]));
 		const roots = new Set([...listed, ...entries.keys(), ...Object.keys(index.tombstones || {}).map(manifestName)]);
-		for (const path of roots) {
-			const held = await store.read('history/' + path), entry = entries.get(path); bytes?.set(path, held);
-			if (held == null && !listed.has(path) && !entry?.canonicalHistory) continue;
-			try {
-				const noteId = path.slice('manifests/'.length).replace(/\.json$/, '').replace('!', ':');
-				if (held == null || manifestName(noteId) !== path) throw fail('history', 'History manifest missing or misnamed.');
-				const manifest = parseManifest(held, {noteId, now: clock()});
-				if (entry?.canonicalHistory && manifest.canonical?.sha256 !== entry.canonicalHistory) throw fail('history', 'The indexed history changed.');
-				list.push(manifest);
-			} catch (_) { unreadable.push(path); }
+		const paths = [...roots];
+		for (let at = 0; at < paths.length; at += 16) {
+			const batch = paths.slice(at, at + 16);
+			const read = await Promise.allSettled(batch.map(path => store.read('history/' + path)));
+			const fault = read.find(row => row.status === 'rejected'); if (fault) throw fault.reason;
+			for (let i = 0; i < batch.length; i++) {
+				const path = batch[i], held = read[i].value, entry = entries.get(path); bytes?.set(path, held);
+				if (held == null && !listed.has(path) && !entry?.canonicalHistory) continue;
+				try {
+					const noteId = path.slice('manifests/'.length).replace(/\.json$/, '').replace('!', ':');
+					if (held == null || manifestName(noteId) !== path) throw fail('history', 'History manifest missing or misnamed.');
+					const manifest = parseManifest(held, {noteId, now: clock()});
+					if (entry?.canonicalHistory && manifest.canonical?.sha256 !== entry.canonicalHistory) throw fail('history', 'The indexed history changed.');
+					list.push(manifest);
+				} catch (_) { unreadable.push(path); }
+			}
 		}
 		return {list, unreadable, ...(bytes ? {bytes} : {})};
 	};
@@ -1109,10 +1116,10 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 				if (!note.exactBackup || !writes.has(note.file)) writes.set(note.file, {file: note.file, bytes: (note.exactBackup || isCodeFile(note.file)) && note.bytes ? note.bytes : exactBytes(note.text), createOnly: true});
 			}
 			if (result.notes.length) index = createEntries(index, result.notes.map(note => ({name: note.file, extra: note.entry || {}})));
-			for (const note of result.notes) {
-				const entry = index.notes[note.file], id = entry.id, path = 'history/' + manifestName(id);
+			const prepared = await mapImportBatch(result.notes, async note => {
+				const entry = {...index.notes[note.file]}, id = entry.id, path = 'history/' + manifestName(id);
 				const prior = writes.get(path)?.bytes || await store.read(path), now = clock();
-				let text; try { text = decode(writes.get(note.file).bytes); } catch (_) { continue; }
+				let text; try { text = decode(writes.get(note.file).bytes); } catch (_) { return null; }
 				let manifest, ledger;
 				if (prior != null) {
 					manifest = historyPreparation.parseManifest(prior, {noteId: id, now}); ledger = historyPreparation.readCanonical(manifest, text).ledger;
@@ -1124,16 +1131,21 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 				}
 				entry.canonicalHistory = ledger.sha256; entry.revision = 'sha256:' + await sha256(text);
 				if (entry.trashed && !note.exactBackup) {
-					index = markTrashed(index, note.file, {digest: entry.revision.slice(7), now: entry.trashedAt ?? now});
-					Object.assign(entry, index.notes[note.file]);
+					Object.assign(entry, markTrashed({notes: {[note.file]: entry}}, note.file, {digest: entry.revision.slice(7), now: entry.trashedAt ?? now}).notes[note.file]);
 				}
 				const history = await canonicalWrites(manifest, {file: note.file, text, entry, prior, now, reason: 'import', history: historyPreparation});
+				return {note, entry, history, proof: canonicalProof(note.file, id, ledger)};
+			});
+			for (const preparedNote of prepared) {
+				if (!preparedNote) continue;
+				const {note, entry, history, proof} = preparedNote;
+				index.notes[note.file] = entry;
 				for (const row of history) {
 					writes.set(row.file, {...row, ...(row.expectedDigest === null ? {} : {replace: true})});
 					historyTargets.set(row.file, row);
 					if (row.expectedDigest === null) createdHistory.set(row.file, row);
 				}
-				canonical.push(canonicalProof(note.file, id, ledger));
+				canonical.push(proof);
 			}
 
 			for (const section of result.sectionsAdded || []) if (section?.collapsed === true && !before.index.sections.some(row => row.name === section.name)) index = setCollapsed(index, section.name, true);
@@ -1148,7 +1160,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			return {kind: 'import', index, writes: [...writes.values(), ...(receiptCommit?.writes || [])], removes: receiptCommit?.removes || [], ...(canonical.length ? {canonical, historyPreparation} : {})};
 		});
 		for (const row of writes.values()) if (/^audio\//.test(row.file) && !(snapshot.dropped || []).includes(row.file)) result.createdFiles.push({file: row.file, bytes: row.bytes});
-		result.createdHistory = await Promise.all([...createdHistory.values()].map(async row => ({file: row.file, bytes: row.bytes, actual: await store.read(row.file)})));
+		result.createdHistory = await mapImportBatch([...createdHistory.values()], async row => ({file: row.file, bytes: row.bytes, actual: await store.read(row.file)}));
 		result.createdSections = snapshot.index.sections.filter(section => !before.index.sections.some(old => old.name === section.name));
 		return {...snapshot, result, ...(receiptCommit ? {receiptCheckpoint:receiptCommit.receiptCheckpoint} : {})};
 	});

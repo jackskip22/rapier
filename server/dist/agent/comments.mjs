@@ -435,7 +435,7 @@ function objectPresent(source, anchor, parsed) {
   if (tokens.length !== 1 || tokens[0].type !== 'image' || tokens[0].meta?.mdImage?.source !== occurrence) return false;
   if (anchor.kind === 'image') return true;
   const url = tokens[0].attrGet('src');
-  if (!/^data:image\/svg\+xml;base64,/i.test(url || '')) return false;
+  if (!/^data:image\/svg\+xml(?:;base64)?,/i.test(url || '')) return false;
   let recipe;
   try { recipe = _rapierDrawReadRecipeFromSVGText(new TextDecoder().decode(decodeDataImage(url))); } catch { return false; }
   return !!recipe && (!anchor.objectId || recipe.shapes.some(shape => shape.id === anchor.objectId));

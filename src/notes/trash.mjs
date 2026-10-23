@@ -66,8 +66,96 @@ function alterProof(index, id, opId, change) {
 	if (!index.tombstones[id].length) delete index.tombstones[id];
 }
 const settle = (row, change) => proof => row.sync ? null : change(proof);
-const HEX_NAMES = /[0-9a-f]{64}/g;
-const textOf = bytes => new TextDecoder('utf-8', {fatal: false}).decode(bytes);
+const SCAN_BYTES = 16 * 1024, SCAN_HASHES = 256;
+const scanBytes = value => value instanceof Uint8Array ? value : value instanceof ArrayBuffer ? new Uint8Array(value) : exactBytes(value);
+export function createHistoryReferenceScanner() {
+	let wanted = new Set(), tail = '';
+	return {
+		clear() { wanted = new Set(); tail = ''; },
+		add(hashes) {
+			if (!Array.isArray(hashes) || hashes.length > SCAN_HASHES || hashes.some(hash => !hex(hash))) throw new Error('Invalid history reference candidates');
+			for (const hash of hashes) wanted.add(hash);
+		},
+		reset() { tail = ''; },
+		bytes(bytes) {
+			if (!(bytes instanceof Uint8Array) || bytes.length > SCAN_BYTES) throw new Error('Invalid history reference batch');
+			const found = new Set();
+			for (const byte of bytes) {
+				if (byte >= 48 && byte <= 57 || byte >= 97 && byte <= 102) {
+					tail += String.fromCharCode(byte);
+					if (tail.length === 64) { if (wanted.has(tail)) found.add(tail); tail = ''; }
+				} else tail = '';
+			}
+			return [...found];
+		},
+	};
+}
+function historyScanIdle() {
+	if (typeof document === 'undefined') return Promise.resolve();
+	return new Promise(resolve => {
+		const run = () => {
+			if (globalThis.navigator?.scheduling?.isInputPending?.({includeContinuous: true})) { arm(); return; }
+			resolve();
+		};
+		const arm = () => typeof requestIdleCallback === 'function' ? requestIdleCallback(run) : setTimeout(run, 16);
+		arm();
+	});
+}
+function historyScanWorker() {
+	const source = globalThis.RapierNotesBackupWorker?.workerSource, execution = globalThis.RapierWorkerExecution;
+	if (typeof Worker !== 'function' || typeof source !== 'function' || !execution?.createWorkerExecution) return null;
+	return execution.createWorkerExecution({source, name: 'rapier-notes-history-scan'});
+}
+export function createHistoryReferenceClient({createWorker = historyScanWorker, idle = historyScanIdle} = {}) {
+	let worker = null, scanner = null, sequence = 0, pending = null, closed = false, fault = null;
+	const failScan = error => {
+		fault = error instanceof Error ? error : new Error(String(error));
+		if (pending) { const job = pending; pending = null; job.reject(fault); }
+		worker?.terminate();
+	};
+	const ask = async (action, value = {}) => {
+		await idle();
+		if (closed || fault) throw fault || new Error('History reference scan is closed');
+		if (!worker && !scanner) {
+			worker = createWorker();
+			if (!worker) scanner = createHistoryReferenceScanner();
+			else {
+				worker.onmessage = ({data}) => {
+					if (!pending || data?.operation !== 'history-scan-result' || data.id !== pending.id) return;
+					const job = pending; pending = null;
+					if (data.error) { failScan(new Error(String(data.error))); job.reject(fault); }
+					else if (!Array.isArray(data.found) || data.found.length > SCAN_BYTES / 64 || data.found.some(hash => !hex(hash))) {
+						failScan(new Error('Invalid history reference result')); job.reject(fault);
+					} else job.resolve(data.found);
+				};
+				worker.onerror = event => { event.preventDefault?.(); failScan(event.error || new Error(event.message || 'History reference worker stopped')); };
+				worker.onmessageerror = () => failScan(new Error('History reference worker reply was unreadable'));
+			}
+		}
+		if (scanner) { const result = scanner[action](action === 'add' ? value.hashes : value.bytes); return result || []; }
+		if (pending) throw new Error('History reference scan is busy');
+		return new Promise((resolve, reject) => {
+			const id = ++sequence; pending = {id, resolve, reject};
+			try { worker.postMessage({operation: 'history-scan', id, action, ...value}, value.bytes ? [value.bytes.buffer] : []); }
+			catch (error) { failScan(error); }
+		});
+	};
+	return {
+		async candidates(hashes) {
+			await ask('clear'); let batch = [];
+			for (const hash of hashes) { batch.push(hash); if (batch.length === SCAN_HASHES) { await ask('add', {hashes: batch}); batch = []; } }
+			if (batch.length) await ask('add', {hashes: batch});
+		},
+		async scan(bytes) {
+			await ask('reset'); const found = new Set();
+			for (let at = 0; at < bytes.length; at += SCAN_BYTES) {
+				for (const hash of await ask('bytes', {bytes: bytes.slice(at, at + SCAN_BYTES)})) found.add(hash);
+			}
+			return found;
+		},
+		close() { closed = true; if (pending) failScan(new Error('History reference scan was closed')); worker?.terminate(); },
+	};
+}
 async function listed(store, folder) {
 	try { return (await store.list(folder)).filter(name => !/^\..*\.tmp$/.test(name)); }
 	catch (error) { if (error?.code === 'name') return []; throw error; }
@@ -78,17 +166,36 @@ async function eraseNoteHistory({store, index, noteId} = {}) {
 	if (Object.values(index?.notes || {}).some(entry => entry?.id === noteId)) return {erased: false, kept: 'identity', removed: []};
 	const raw = await store.read(own);
 	if (raw == null) return {erased: true, removed: []};
-	const named = new Set(textOf(exactBytes(raw)).match(HEX_NAMES) || []), shared = new Set();
-	for (const leaf of await listed(store, 'history/manifests')) {
-		const path = 'history/manifests/' + leaf;
-		if (path === own) continue;
-		const other = await store.read(path);
-		if (other == null) continue;
-		for (const hash of textOf(exactBytes(other)).match(HEX_NAMES) || []) shared.add(hash);
+	const shared = new Set(), objects = new Map();
+	let visited = 0;
+	for (const folder of ['history/texts', 'history/blobs']) for (const leaf of await listed(store, folder)) {
+		if (++visited % 256 === 0) await historyScanIdle();
+		if (!hex(leaf)) continue;
+		const paths = objects.get(leaf) || []; paths.push(folder + '/' + leaf); objects.set(leaf, paths);
+	}
+	if (objects.size) {
+		const scan = createHistoryReferenceClient();
+		try {
+			await scan.candidates(objects.keys());
+			const named = await scan.scan(scanBytes(raw));
+			for (const hash of objects.keys()) { if (!named.has(hash)) objects.delete(hash); if (++visited % 256 === 0) await historyScanIdle(); }
+			if (objects.size) {
+				await scan.candidates(objects.keys());
+				for (const leaf of await listed(store, 'history/manifests')) {
+					const path = 'history/manifests/' + leaf;
+					if (path === own) continue;
+					await historyScanIdle();
+					const other = await store.read(path);
+					if (other == null) continue;
+					for (const hash of await scan.scan(scanBytes(other))) shared.add(hash);
+					if (shared.size === objects.size) break;
+				}
+			}
+		} finally { scan.close(); }
 	}
 	const removed = [];
-	for (const hash of [...named].filter(hash => !shared.has(hash)).sort()) {
-		for (const path of ['history/texts/' + hash, 'history/blobs/' + hash]) {
+	for (const hash of [...objects.keys()].filter(hash => !shared.has(hash)).sort()) {
+		for (const path of objects.get(hash)) {
 			if (await store.read(path) == null) continue;
 			await store.remove(path);
 			if (await store.read(path) != null) throw fail('verify', 'The notes folder did not remove a history object of the deleted note. The rest of its history was kept for the next try.');

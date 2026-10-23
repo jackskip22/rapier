@@ -16,41 +16,49 @@ export function createPaintPNGCodec() {
 	}
 	const encodeBytes = (px, deflate = stored) => png(px, new Uint8Array(deflate(rows(px))));
 	const encode = px => url(encodeBytes(px));
-	function filtered(px) {
-		const raw = rows(px), stride = px.width * 4, d = px.data, cost = new Float64Array(5);
-		const paeth = (a, b, c) => { const p = a + b - c, x = Math.abs(p - a), y = Math.abs(p - b), z = Math.abs(p - c); return x <= y && x <= z ? a : y <= z ? b : c; };
-		const predict = (filter, a, b, c) => filter === 0 ? 0 : filter === 1 ? a : filter === 2 ? b : filter === 3 ? (a + b) >> 1 : paeth(a, b, c);
+	async function compressedBytes(px) {
+		const {width, height, data} = px, stride = width * 4;
+		if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width * height > pixelLimit || data.length !== stride * height) throw new Error('Invalid painting pixels');
+		let y = 0;
+		const cost = new Float64Array(5), paeth = (a, b, c) => { const p = a + b - c, x = Math.abs(p - a), z = Math.abs(p - c), v = Math.abs(p - b); return x <= v && x <= z ? a : v <= z ? b : c; };
 		const size = v => (v &= 255) < 128 ? v : 256 - v;
-		for (let y = 0; y < px.height; y++) {
-			const at = y * stride, out = y * (stride + 1) + 1;
-			cost.fill(0);
+		const stream = new ReadableStream({async pull(controller) {
+			if (y === height) { controller.close(); return; }
+			const at = y * stride, row = new Uint8Array(stride + 1); cost.fill(0);
 			for (let x = 0; x < stride; x++) {
-				const v = d[at + x], a = x >= 4 ? d[at + x - 4] : 0, b = y ? d[at + x - stride] : 0, c = y && x >= 4 ? d[at + x - stride - 4] : 0;
+				const v = data[at + x], a = x >= 4 ? data[at + x - 4] : 0, b = y ? data[at + x - stride] : 0, c = y && x >= 4 ? data[at + x - stride - 4] : 0;
 				cost[0] += size(v); cost[1] += size(v - a); cost[2] += size(v - b); cost[3] += size(v - ((a + b) >> 1)); cost[4] += size(v - paeth(a, b, c));
 			}
-			let filter = 0;
-			for (let f = 1; f < 5; f++) if (cost[f] < cost[filter]) filter = f;
-			raw[out - 1] = filter;
-			if (filter) for (let x = 0; x < stride; x++) raw[out + x] = d[at + x] - predict(filter, x >= 4 ? d[at + x - 4] : 0, y ? d[at + x - stride] : 0, y && x >= 4 ? d[at + x - stride - 4] : 0);
-		}
-		return raw;
+			let filter = 0; for (let f = 1; f < 5; f++) if (cost[f] < cost[filter]) filter = f;
+			row[0] = filter;
+			for (let x = 0; x < stride; x++) {
+				const a = x >= 4 ? data[at + x - 4] : 0, b = y ? data[at + x - stride] : 0, c = y && x >= 4 ? data[at + x - stride - 4] : 0;
+				row[x + 1] = data[at + x] - (filter === 0 ? 0 : filter === 1 ? a : filter === 2 ? b : filter === 3 ? (a + b) >> 1 : paeth(a, b, c));
+			}
+			y++; controller.enqueue(row);
+		}}).pipeThrough(new CompressionStream('deflate'));
+		return png(px, new Uint8Array(await new Response(stream).arrayBuffer()));
 	}
-	async function compressed(px) { const raw = filtered(px), stream = new Blob([raw]).stream().pipeThrough(new CompressionStream('deflate')); return url(png(px, new Uint8Array(await new Response(stream).arrayBuffer()))); }
-	async function decode(raster) {
-		if (!raster.startsWith('data:image/png;base64,')) return null;
-		const binary = atob(raster.slice(22)), bytes = new Uint8Array(binary.length);
-		for (let at = 0; at < binary.length; at++) bytes[at] = binary.charCodeAt(at);
-		const v = new DataView(bytes.buffer);
+	async function compressed(px) { return url(await compressedBytes(px)); }
+	async function decode(raster, expected = null) {
+		if (typeof raster === 'string' && !raster.startsWith('data:image/png;base64,')) return null;
+		let bytes = raster;
+		if (typeof raster === 'string') {
+			const binary = atob(raster.slice(22)); bytes = new Uint8Array(binary.length);
+			for (let at = 0; at < binary.length; at++) bytes[at] = binary.charCodeAt(at);
+		}
+		const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 		if (bytes.length < 57 || v.getUint32(0) !== 0x89504e47 || v.getUint32(4) !== 0x0d0a1a0a) throw new Error('Invalid painting PNG');
 		const width = v.getUint32(16), height = v.getUint32(20);
 		const colour = bytes[25], channels = {0: 1, 2: 3, 4: 2, 6: 4}[colour];
 		if (bytes[24] !== 8 || !channels || bytes[26] !== 0 || bytes[27] !== 0 || bytes[28] !== 0) return null;
 		if (!width || !height || width * height > pixelLimit) throw new Error('Painting PNG is too large');
-		const parts = []; let profiled = false, transparent = null;
+		const parts = []; let profiled = false, transparent = null, ended = false;
 		for (let at = 8; at + 12 <= bytes.length;) {
 			const n = v.getUint32(at);
 			if (at + n + 12 > bytes.length || crc(bytes.subarray(at + 4, at + n + 8)) !== v.getUint32(at + n + 8)) throw new Error('Damaged painting PNG');
 			const tag = v.getUint32(at + 4);
+			if (tag === 0x49454e44) { if (n || at + 12 !== bytes.length) throw new Error('Damaged painting PNG'); ended = true; }
 			if ([0x69434350,0x67414d41,0x6348524d,0x65584966].includes(tag) || tag === 0x63494350 && v.getUint32(at + 8) !== 0x010d0001) profiled = true;
 			if (tag === 0x74524e53) {
 				if ((colour !== 0 && colour !== 2) || n !== channels * 2 || transparent) throw new Error('Invalid painting PNG transparency');
@@ -59,13 +67,49 @@ export function createPaintPNGCodec() {
 			if (tag === 0x49444154) parts.push(bytes.subarray(at + 8, at + 8 + n));
 			at += n + 12;
 		}
+		if (!ended) throw new Error('Damaged painting PNG');
 		if (profiled) return null;
-		const limit = (width * channels + 1) * height, reader = new Blob(parts).stream().pipeThrough(new DecompressionStream('deflate')).getReader(), raw = new Uint8Array(limit); let used = 0;
-		try { for (;;) { const {done, value} = await reader.read(); if (done) break; if (used + value.length > limit) throw new Error('Invalid painting PNG size'); raw.set(value, used); used += value.length; } } finally { await reader.cancel(); }
-		if (used !== limit) throw new Error('Truncated painting PNG');
+		const reader = new Blob(parts).stream().pipeThrough(new DecompressionStream('deflate')).getReader();
+		if (expected) {
+			const stride = width * 4, row = new Uint8Array(stride + 1);
+			let previous = new Uint8Array(stride), current = new Uint8Array(stride), used = 0, y = 0;
+			const paeth = (a, b, c) => { const p = a + b - c, x = Math.abs(p - a), v = Math.abs(p - b), z = Math.abs(p - c); return x <= v && x <= z ? a : v <= z ? b : c; };
+			try {
+				if (colour !== 6 || width !== expected.width || height !== expected.height || expected.data.length !== stride * height) return false;
+				for (;;) {
+					const {done, value} = await reader.read(); if (done) break;
+					for (let at = 0; at < value.length;) {
+						const n = Math.min(row.length - used, value.length - at); row.set(value.subarray(at, at + n), used); used += n; at += n;
+						if (used !== row.length) continue;
+						if (y >= height || row[0] > 4) return false;
+						for (let x = 0; x < stride; x++) {
+							const a = x >= 4 ? current[x - 4] : 0, b = previous[x], c = x >= 4 ? previous[x - 4] : 0, f = row[0];
+							current[x] = row[x + 1] + (f === 0 ? 0 : f === 1 ? a : f === 2 ? b : f === 3 ? (a + b) >> 1 : paeth(a, b, c));
+							if (current[x] !== expected.data[y * stride + x]) return false;
+						}
+						[previous, current] = [current, previous]; used = 0; y++;
+					}
+				}
+				return !used && y === height;
+			} finally { await reader.cancel(); }
+		}
 		const stride = width * channels, data = new Uint8ClampedArray(stride * height);
+		const row = new Uint8Array(stride + 1); let used = 0, y = 0;
 		const paeth = (a,b,c) => { const p = a+b-c, x = Math.abs(p-a), y = Math.abs(p-b), z = Math.abs(p-c); return x <= y && x <= z ? a : y <= z ? b : c; };
-		for (let y = 0; y < height; y++) { const filter = raw[y * (stride + 1)]; if (filter > 4) throw new Error('Invalid painting PNG filter'); for (let x = 0; x < stride; x++) { const at = y * stride + x, a = x >= channels ? data[at - channels] : 0, b = y ? data[at - stride] : 0, c = y && x >= channels ? data[at - stride - channels] : 0; data[at] = (raw[y * (stride + 1) + x + 1] + (filter === 0 ? 0 : filter === 1 ? a : filter === 2 ? b : filter === 3 ? (a+b) >> 1 : paeth(a,b,c))) & 255; } }
+		try {
+			for (;;) {
+				const {done, value} = await reader.read(); if (done) break;
+				for (let offset = 0; offset < value.length;) {
+					const n = Math.min(row.length - used, value.length - offset); row.set(value.subarray(offset, offset + n), used); used += n; offset += n;
+					if (used !== row.length) continue;
+					if (y >= height) throw new Error('Invalid painting PNG size');
+					const filter = row[0]; if (filter > 4) throw new Error('Invalid painting PNG filter');
+					for (let x = 0; x < stride; x++) { const at = y * stride + x, a = x >= channels ? data[at - channels] : 0, b = y ? data[at - stride] : 0, c = y && x >= channels ? data[at - stride - channels] : 0; data[at] = (row[x + 1] + (filter === 0 ? 0 : filter === 1 ? a : filter === 2 ? b : filter === 3 ? (a+b) >> 1 : paeth(a,b,c))) & 255; }
+					y++; used = 0;
+				}
+			}
+		} finally { await reader.cancel(); }
+		if (used || y !== height) throw new Error('Truncated painting PNG');
 		if (colour === 6) return {width, height, data};
 		const rgba = new Uint8ClampedArray(width * height * 4);
 		for (let p = 0, q = 0; p < data.length; p += channels, q += 4) {
@@ -91,5 +135,10 @@ export function createPaintPNGCodec() {
 		try { head = atob(raster.slice(22, 86)); } catch (_) { return false; }
 		return head.length === 48 && head.slice(37, 41) === 'IDAT' && head.charCodeAt(41) === 0x78 && head.charCodeAt(42) === 0x01 && (head.charCodeAt(43) & 6) === 0;
 	}
-	return {encode, encodeBytes, compressed, decode, isStored, isOwn, pixelLimit, wrap: png, stored, url};
+	async function verifiedBytes(px) {
+		const bytes = await compressedBytes(px);
+		if (!await decode(bytes, px)) throw new Error('The PNG did not keep the painting exactly.');
+		return bytes;
+	}
+	return {encode, encodeBytes, compressed, compressedBytes, verifiedBytes, decode, isStored, isOwn, pixelLimit, wrap: png, stored, url};
 }

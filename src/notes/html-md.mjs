@@ -333,6 +333,31 @@ function checkbox(li) {
 	const input = first(host.children);
 	return input?.tag === 'input' && (attrText(input, 'type') || '').toLowerCase() === 'checkbox' ? input : null;
 }
+function exportedTasks(node, inCode = false) {
+	if (typeof node === 'string' || node.literal) return;
+	inCode ||= node.tag === 'pre' || node.tag === 'code';
+	for (const child of [...(node.children || [])]) exportedTasks(child, inCode);
+	if (inCode || !['li', 'p'].includes(node.tag)) return;
+	const attrs = node.attrs, tag = (attrs['data-tag'] || '').toLowerCase();
+	let checked = tag === 'to-do:completed' ? true : tag === 'to-do' ? false : null;
+	if (node.tag === 'li' && checked === null) {
+		const flag = (attrs['data-checked'] || '').toLowerCase(), classes = (attrs.class || '').toLowerCase().split(/\s+/);
+		if (flag === 'true' || flag === '1') checked = true;
+		else if (flag === 'false' || flag === '0') checked = false;
+		else if (classes.includes('checked') !== classes.includes('unchecked')) checked = classes.includes('checked');
+	}
+	if (checked === null) return;
+	let item = node;
+	if (node.tag === 'p') {
+		const parent = node.parent, at = parent.children.indexOf(node);
+		const list = {tag: 'ul', attrs: {}, children: [], parent};
+		item = {tag: 'li', attrs: {}, children: [node], parent: list};
+		list.children.push(item); parent.children[at] = list; node.parent = item;
+	}
+	if (checkbox(item)) return;
+	const head = item.children.find(child => typeof child !== 'string' || child.trim()), host = head?.tag === 'p' ? head : item;
+	host.children.unshift({tag: 'input', attrs: {type: 'checkbox', ...(checked ? {checked: ''} : {})}, children: [], parent: host});
+}
 function listItem(li, ordered, index) {
 	const box = checkbox(li), kids = (li.children || []).filter(c => c !== box).map(c =>
 		box && c === box.parent ? {...c, children: c.children.filter(k => k !== box)} : c);
@@ -433,6 +458,7 @@ const TRANSPARENT = new Set('html head body title span font section article main
 function renderLiteral(node) { const f = fence(node.raw || '', 3); return f + 'html\n' + (node.raw || '') + '\n' + f; }
 export function htmlToMarkdown(html, {warnings = [], plainText} = {}) {
 	const source = String(html ?? ''), tree = buildTree(tokenize(source), source), styleWarnings = new Set();
+	exportedTasks(tree);
 	const literalWarnings = new Map(warnings.filter(row => row?.code === 'unsupported_html' && row.literal === true).map(row => [row.tag, row]));
 	let hasStyles = false;
 	const inspect = (node, inCode = false) => {

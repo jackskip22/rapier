@@ -25,6 +25,8 @@ export function nativeTree(hello, request, retire) {
     listStart: row => call('listStart', {id: row.id}),
     listNext: (cursor, limit) => call('listNext', {cursor, limit}),
     listClose: cursor => call('listClose', {cursor}),
+    create: (row, name) => call('create', {id: row.id, name}),
+    rename: (row, name, expected) => call('rename', {id: row.id, name, expected}),
     async save(row, bytes, expected, {signal} = {}) {
       check(signal);
       const digest = (await generation(bytes)).split(':')[1];

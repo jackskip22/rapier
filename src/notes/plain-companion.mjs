@@ -24,7 +24,7 @@ export function createCompanionPlainStore({call, destination, area = 'notes', ca
 	}
 	const run = action => { const ticket = owner.epoch; return track(async () => { guard(ticket); const answer = await action(ticket); guard(ticket); return answer; }); };
 	function pause() {
-		owner.paused = true; owner.epoch++;
+		owner.paused = true; owner.epoch++; owner.resumed = false;
 		const native = owner.pauseFlight || Promise.resolve().then(() => call('pause', {}));
 		const drained = Promise.allSettled([...owner.pending]);
 		owner.pauseFlight = Promise.allSettled([native, drained]).then(([result]) => { if (result.status === 'rejected') throw result.reason; });
@@ -36,8 +36,9 @@ export function createCompanionPlainStore({call, destination, area = 'notes', ca
 		return track(async () => {
 			if (stopped) await stopped;
 			guard(ticket, true); owner.paused = false; owner.pauseFlight = null;
-			const answer = await ask('resume', {}, ticket);
+			const answer = await ask('resume', {area: 'notes'}, ticket);
 			if (!Number.isSafeInteger(answer.verifiedObjects) || answer.verifiedObjects < 0 || !Number.isSafeInteger(answer.keptObjects) || answer.keptObjects < 0) refuse('response', 'rapier sync answered in an unreadable form');
+			owner.resumed = true;
 			return answer;
 		});
 	}
@@ -65,8 +66,11 @@ export function createCompanionPlainStore({call, destination, area = 'notes', ca
 	const transferId = value => typeof value === 'string' && ID.test(value) ? value : refuse('response', 'rapier sync answered in an unreadable form');
 	return Object.freeze({
 		pause, resume,
+		async beginPoll() { if (!owner.resumed) await resume(); owner.polling = true; owner.resumed = false; },
+		endPoll() { owner.polling = false; owner.resumed = false; },
 		area: area === 'notes' ? name => createCompanionPlainStore({call, destination, area: name, cancellation: owner}) : undefined,
 		list: () => run(async ticket => {
+			if (!owner.polling) { if (!owner.resumed) await resume(); owner.resumed = false; }
 			const page = await ask('plain.list', {}, ticket);
 			if (!Array.isArray(page.files) || page.files.length > 100000) refuse('response', 'the listing is not readable');
 			const seen = new Set();

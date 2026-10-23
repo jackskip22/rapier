@@ -1,7 +1,8 @@
 import {Folder, fail} from './core.mjs';
 import {browserTree} from './browser.mjs';
 import {nativeTree} from './native.mjs';
-import {prepareOriginal} from './intake.mjs';
+import {prepareOriginal, currentOriginal} from './intake.mjs';
+export {currentOriginal};
 
 export async function choose(platform = globalThis.RapierPlatform) {
   const host = platform?.host?.originalFolder;

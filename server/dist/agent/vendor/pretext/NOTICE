@@ -1,5 +1,5 @@
-Pretext Unreleased at bac1774c0f8b7a92e44b9da43b6d5443d55d0d9b (2026-10-10T16:55:37-07:00)
-Package metadata version: 0.0.9; this snapshot is not the 0.0.9 release.
+Pretext 1.0.0 plus main to #525 at 0d102a5cd933611e86a7e60bda7b4baa5995c6b0 (2026-10-15T10:02:17-07:00)
+Package metadata version: 1.0.0; this snapshot is the 1.0.0 release (4a98f37b) plus the 16 commits of main through pull request #525.
 Copyright (c) 2026 Pretext contributors
 https://github.com/chenglou/pretext
 

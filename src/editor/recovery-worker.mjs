@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {createWorkerExecution} from '../shell/worker-execution.mjs';
-import {prepareLedgerAsync, readLedger, historyEnvelope, textRoot} from '../kit/ledger/format.mjs';
+import {prepareLedgerAsync, readLedger, historyEnvelope, ledgerWithStart, textRoot} from '../kit/ledger/format.mjs';
 import {jsonParts, plainPrototype} from '../kit/ledger/data.mjs';
 import {_rapierRecoveryBomManifest, _rapierRecoveryStamp} from './recovery-policy.mjs';
-import {recoveryHistoryDigest, recoveryHeaderIntegrity, recoveryHeaderMatches, recoveryBodyParts,
+import {compactRecoveryLedger, recoveryHistoryDigest, recoveryHeaderIntegrity, recoveryHeaderMatches, recoveryBodyParts,
   recoveryRecord, readRecoveryBody, parseRecoveryBody} from './recovery-storage.mjs';
 export {recoveryHistoryDigest, recoveryHeaderIntegrity, recoveryHeaderMatches, recoveryBodyParts,
   recoveryRecord, readRecoveryBody, parseRecoveryBody};
@@ -115,7 +115,20 @@ async function integrityParts(parts, signal) {
   signal?.throwIfAborted();
   return {chars, fnv: (fnv >>> 0).toString(36), adler: (((b << 16) | a) >>> 0).toString(36)};
 }
-async function preparation(core, state, signal) {
+async function recoveryBlob(text, ledger, signal) {
+  const chunks = [];
+  let pending = '', turn = performance.now();
+  for (const part of recoveryBodyParts(text, null, ledger)) {
+    signal?.throwIfAborted(); pending += part;
+    if (pending.length >= 65536) { chunks.push(new Blob([pending])); pending = ''; }
+    if (performance.now() - turn >= 4) { await new Promise(resolve => setTimeout(resolve, 0)); turn = performance.now(); }
+  }
+  signal?.throwIfAborted();
+  if (pending) chunks.push(new Blob([pending]));
+  const body = new Blob(chunks, {type: 'application/json'});
+  signal?.throwIfAborted(); return body;
+}
+async function preparation(core, state, signal, reuseLedger = false) {
   signal?.throwIfAborted();
   if ((state.needLedger || state.undo) && !core.ledger) {
     if (core.input.carriedLedger) {
@@ -131,22 +144,26 @@ async function preparation(core, state, signal) {
       core.utf8Bytes = prepared.utf8Bytes;
     }
   }
+  if (core.ledger && !Object.hasOwn(core.ledger.start, 'text') &&
+      (state.needLedger && !reuseLedger || (state.undo || state.snapshot || state.needBody) && !core.historyDigest))
+    core.ledger = ledgerWithStart(core.ledger, core.input.text);
   core.integrity ||= await integrityParts(textParts(core.input.text), signal);
   const ledger = state.needLedger ? core.ledger : null, integrity = core.integrity;
   const undo = state.undo ? {...state.undo, ledger: core.input.records} : null;
   if (undo) delete undo.integrity;
   const undoIntegrity = undo ? await integrityParts(jsonParts(undo), signal) : null;
-  const historyDigest = undo ? recoveryHistoryDigest(historyEnvelope(core.ledger)) : null;
+  const historyDigest = undo || state.needBody ? (core.historyDigest ??= recoveryHistoryDigest(historyEnvelope(core.ledger))) : null;
   const seenIntegrity = typeof state.seenText === 'string'
     ? state.seenText === core.input.text ? integrity : await integrityParts(textParts(state.seenText), signal) : null;
   const snapshot = state.snapshot ? {...state.snapshot, integrity,
-    historyDigest: recoveryHistoryDigest(historyEnvelope(ledger)),
+    historyDigest: core.historyDigest ??= recoveryHistoryDigest(historyEnvelope(ledger)),
     bomIntegrity: integrityOf(_rapierRecoveryBomManifest({...state.snapshot, integrity})),
     sourceRootId: ledger?.head?.root, checkpointId: String(core.input.documentAuthority || 'document') + ':' +
       Number(core.input.revision || 0).toString(36) + ':' + String(ledger?.head?.root || '')} : null;
   if (snapshot && snapshot.sourceRootId === undefined) delete snapshot.sourceRootId;
   signal?.throwIfAborted();
   return {ledger, integrity, undoIntegrity, historyDigest, seenIntegrity, snapshotHeader: snapshot,
+    ...(state.needBody ? {body: await recoveryBlob(core.input.text, ledger, signal)} : {}),
     encoded: null, parts: snapshot ? recoveryBodyParts(core.input.text, null, ledger) : null};
 }
 const databases = new Map();
@@ -212,9 +229,10 @@ export function installRecoveryWorker(scope) {
       const controller = new AbortController(); running.set(data.id, controller);
       const current = () => running.get(data.id) === controller && !controller.signal.aborted;
       const port = {postMessage: message => { if (current()) scope.postMessage({id: data.id, ...message}); }};
+      let core;
       void (async () => {
         const request = complete.value;
-        let core = revisions.get(request.revisionId);
+        core = revisions.get(request.revisionId);
         if (!core) {
           if (!request.core) throw new Error('Recovery revision expired');
           let input = request.core;
@@ -238,15 +256,22 @@ export function installRecoveryWorker(scope) {
           return;
         }
         const state = request.state.seenCurrent ? {...request.state, seenText: core.input.text} : request.state;
-        const result = await preparation(core, state, controller.signal);
-        const {parts, ...value} = result;
+        const result = await preparation(core, state, controller.signal, request.reuseLedger === true);
+        const {parts, body, ...value} = result;
         if (value.ledger && request.reuseLedger) { value.ledger = null; value.reusedLedger = true; }
         const packed = packet(value);
+        if (body) packed.value.body = body;
         if (parts) packed.strings.push({path: ['encoded'], parts});
         await sendPacket(port, packed, current);
         if (current()) revisions.set(request.revisionId, core);
       })().catch(error => port.postMessage({error: error.message, code: error.code, name: error.name}))
-        .finally(() => { if (running.get(data.id) === controller) running.delete(data.id); });
+        .finally(() => {
+          if (core?.ledger) {
+            core.ledger = compactRecoveryLedger(core.ledger);
+            if (core.input.carriedLedger) core.input = {...core.input, carriedLedger: null};
+          }
+          if (running.get(data.id) === controller) running.delete(data.id);
+        });
     } catch (error) { receiving.delete(data.id); scope.postMessage({id: data.id, error: error.message, code: error.code, name: error.name}); }
   };
   scope.postMessage({ready: true});
@@ -309,6 +334,12 @@ export function preparedIntegrity(value, text) {
   const held = captures.get(value);
   if (!alive(held)) return null;
   return held.entry.input.text === text ? value.integrity : held.seenText === text ? value.seenIntegrity : null;
+}
+export function preparedRecoveryBody(value, text, ledger, metadata) {
+  const held = captures.get(value), input = held?.entry.input;
+  if (!alive(held) || !input || value.ledger !== ledger || !(value.body instanceof Blob) || input.text !== text ||
+      input.metadata.filename !== metadata?.filename || input.metadata.docKind !== metadata?.docKind) return null;
+  return value.body;
 }
 export function preparedSnapshot(value, text, ledger, state, docId) {
   const held = captures.get(value);
@@ -452,13 +483,13 @@ export async function prepareRecoveryCapture(input, options = {}) {
   data = captured(data);
   const reusable = !!descriptor;
   const token = reusable ? descriptor.value : captureRecoveryRevision(Object.fromEntries(
-    Object.entries(data).filter(([key]) => !['undo', 'seenText', 'snapshot', 'needLedger'].includes(key))));
+    Object.entries(data).filter(([key]) => !['undo', 'seenText', 'snapshot', 'needLedger', 'needBody'].includes(key))));
   const entry = revisions.get(token);
   if (!entry) throw new Error('Recovery capture is not owned');
-  if (reusable && Object.keys(data).some(key => !['undo', 'seenText', 'snapshot', 'needLedger'].includes(key)))
+  if (reusable && Object.keys(data).some(key => !['undo', 'seenText', 'snapshot', 'needLedger', 'needBody'].includes(key)))
     throw new Error('A captured recovery revision cannot change');
   const state = {undo: data.undo || null, seenText: data.seenText ?? null,
-    snapshot: data.snapshot || null, needLedger: data.needLedger === true};
+    snapshot: data.snapshot || null, needLedger: data.needLedger === true || data.needBody === true, needBody: data.needBody === true};
   entry.users++;
   const pending = entry.chain.catch(() => undefined).then(() => prepareEntry(entry, state, options));
   entry.chain = pending.then(() => undefined, () => undefined);

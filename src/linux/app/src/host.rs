@@ -16,7 +16,8 @@ use std::sync::mpsc::{Receiver, Sender};
 
 const CHUNK: usize = 128 * 1024;
 const MAX_MESSAGE: usize = 512 * 1024;
-const BINARY: [&str; 4] = [".docx", ".pdf", ".textpack", ".zip"];
+// Opened as their bytes, untouched (an OpenRaster painting goes to the page's own reader).
+const BINARY: [&str; 5] = [".docx", ".pdf", ".textpack", ".zip", ".ora"];
 const CAPABILITIES: [&str; 13] = [
     "documentPicker",
     "saveAs",
@@ -247,9 +248,23 @@ pub struct Host {
     browser: Child,
 }
 
-/// A tiling window manager places and sizes every window itself.
+const READ_ONLY_FOLDER: &str = "the folder is read-only";
+
+/// A copy's suggested name ("five (copy).md", from the page) that a file in the folder already has becomes the next free
+/// one: "five (copy 2).md", then "five (copy 3).md". Any other name is suggested as it is.
+fn free_copy_name(folder: &Path, name: &str) -> String {
+    let split = name.len() - if name.to_ascii_lowercase().ends_with(".rapier.html") { 12 } else { name.rfind('.').map_or(0, |dot| name.len() - dot) };
+    let (stem, extension) = name.split_at(split);
+    let Some(base) = stem.strip_suffix(" (copy)") else { return name.to_string() };
+    std::iter::once(name.to_string())
+        .chain((2..1000).map(|n| format!("{base} (copy {n}){extension}")))
+        .find(|candidate| !folder.join(candidate).exists())
+        .unwrap_or_else(|| name.to_string())
+}
+
+/// A tiling window manager places and sizes every window itself (wm.rs).
 fn tiling() -> bool {
-    ["HYPRLAND_INSTANCE_SIGNATURE", "SWAYSOCK", "I3SOCK", "NIRI_SOCKET"].iter().any(|name| std::env::var_os(name).is_some())
+    crate::wm::tiling()
 }
 
 /// What a window holds when the next document arrives.
@@ -309,9 +324,12 @@ impl Host {
         let platform = crate::display_platform()?;
         // Snap Chromium may not write hidden folders in home (~/.local): its profile lives in the snap's own area.
         let profile = if browser.starts_with("/snap/") {
-            crate::home().join("snap/chromium/common/rapier-browser")
+            // ...per display as well (crate::instance_dir).
+            let display = crate::instance_dir().file_name().filter(|n| n.to_string_lossy().starts_with("display-"))
+                .map(|n| format!("-{}", n.to_string_lossy())).unwrap_or_default();
+            crate::home().join(format!("snap/chromium/common/rapier-browser{display}"))
         } else {
-            crate::data_dir().join("rapier/browser")
+            crate::instance_dir().join("browser")
         };
         std::fs::create_dir_all(&profile).map_err(|e| e.to_string())?;
         // The first document opens in the first window; each other one gets a window of its own.
@@ -339,7 +357,16 @@ impl Host {
             "--no-default-browser-check".into(),
             "--disable-sync".into(),
             "--disable-component-update".into(),
+            // WebGPU (the code highlighter, the paint brushes): Chromium's GPU blocklist turns it off on Linux outside
+            // its own short list of GPUs and drivers. This switch turns on WebGPU alone, in this window's own profile; the
+            // broader --ignore-gpu-blocklist would also lift the blocklist for WebGL, rasterization and video. A machine
+            // with no GPU gets the software adapter, which Rapier's code treats as no GPU (editor/lexer.js).
+            "--enable-unsafe-webgpu".into(),
         ];
+        // Dawn's adapters on Linux are Vulkan's; Chromium composites with Vulkan on X11 only (not on Wayland ozone).
+        if platform == "x11" {
+            args.push("--enable-features=Vulkan".into());
+        }
         if !online {
             args.extend(
                 [
@@ -631,11 +658,13 @@ impl Host {
         if bounds["windowState"] == "normal" {
             let of = |key: &str| bounds[key].as_i64().unwrap_or(0);
             let (left, top) = (of("left") + 32, of("top") + 32);
-            // Each edge wraps on its own, so a new diagonal starts beside the first instead of on top of it.
+            // Each edge wraps on its own, so a new diagonal starts beside the first instead of on top of it. The window
+            // manager's frame is outside these bounds (xfwm4: a 29 px title bar), so room is left for one.
+            let (frame_x, frame_y) = (16, 64);
             self.cascade_to = Some(match self.area {
                 Some((area_left, area_top, width, height)) => (
-                    if left + of("width") > area_left + width { area_left } else { left },
-                    if top + of("height") > area_top + height { area_top } else { top },
+                    if left + of("width") + frame_x > area_left + width { area_left } else { left },
+                    if top + of("height") + frame_y > area_top + height { area_top } else { top },
                 ),
                 None => (left, top),
             });
@@ -652,7 +681,8 @@ impl Host {
 
     /// Tell the page which folder its window's title names: the bound file's, else the file opened last, else none.
     fn label_window(&mut self) {
-        let folder = self.beside();
+        // The title names the file's folder even before its first save makes it.
+        let folder = self.origin.clone().or_else(|| self.beside());
         let shown = folder.map(|f| files::shown(&f)).unwrap_or_default();
         if let Some(context) = self.context {
             self.cdp("Runtime.evaluate", json!({"expression": format!("globalThis.__rapierLinuxFolder && __rapierLinuxFolder({})", json!(shown)),
@@ -661,7 +691,7 @@ impl Host {
     }
 
     fn binding_file(&self) -> PathBuf {
-        crate::data_dir().join("rapier").join(format!("window-{}.json", self.slot))
+        crate::instance_dir().join(format!("window-{}.json", self.slot))
     }
 
     /// The file this window is bound to and whether it holds unsaved work, kept for the next launch (private, 0600): the
@@ -696,7 +726,7 @@ impl Host {
 
     /// The windows after the first that held unsaved work when Rapier last closed, with the file each is bound to.
     fn unsaved_windows() -> Vec<(u32, String)> {
-        let folder = crate::data_dir().join("rapier");
+        let folder = crate::instance_dir();
         let mut slots: Vec<(u32, String)> = std::fs::read_dir(&folder).into_iter().flatten().flatten()
             .filter_map(|e| e.file_name().to_str()?.strip_prefix("window-")?.strip_suffix(".json")?.parse::<u32>().ok())
             .filter(|n| *n > 1)
@@ -937,7 +967,9 @@ impl Host {
             return;
         }
         self.area = Some((left, top, width, height));
-        let (fit_width, fit_height) = (outer_width.min(width * 85 / 100), outer_height.min(height * 85 / 100));
+        // Room for three cascade steps and the window manager's frame, so a smaller screen still steps down as well.
+        let (fit_width, fit_height) = (outer_width.min(width * 85 / 100).min(width - 16 - 3 * 32),
+            outer_height.min(height * 85 / 100).min(height - 64 - 3 * 32));
         if tiling() || (fit_width == outer_width && fit_height == outer_height) {
             return;
         }
@@ -1621,10 +1653,10 @@ impl Host {
         let path = files::normalize(&std::env::current_dir().unwrap_or_default().join(path))
             .to_string_lossy()
             .into_owned();
-        // A file that does not exist yet, in a folder that does, opens empty under its name; the first save creates it.
+        // A file that does not exist yet opens empty under its name; the first save creates it.
         let (data, generation) = match files::read_snapshot(&path) {
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound && purpose != "compare"
-                && Path::new(&path).parent().is_some_and(Path::is_dir) => (Vec::new(), String::new()),
+            // A folder that does not exist yet either: the first save makes it.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound && purpose != "compare" => (Vec::new(), String::new()),
             read => read?,
         };
         if purpose != "compare" {
@@ -1740,7 +1772,8 @@ impl Host {
         // file, or into Documents, under a name nothing has, and the page says where.
         let mut unchosen = false;
         let destination = if picked {
-            let chosen = match portal::pick(true, &session.name, "Save as", false, &self.start_folder()) {
+            let folder = self.start_folder();
+            let chosen = match portal::pick(true, &free_copy_name(&folder, &session.name), "Save as", false, &folder) {
                 Ok(chosen) => chosen,
                 Err(reason) => {
                     let folder = self.beside().unwrap_or_else(files::documents_dir);
@@ -1795,6 +1828,15 @@ impl Host {
             if !session.exclusive && std::fs::metadata(&destination).is_ok_and(|m| m.permissions().readonly()) {
                 return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "the file is read-only"));
             }
+            // Every save writes beside the file and renames it into place, so a read-only folder refuses it, and says so; a
+            // folder a path named that does not exist yet is made first.
+            if let Some(folder) = Path::new(&destination).parent() {
+                let existing = folder.ancestors().find(|f| f.is_dir()).unwrap_or(folder);
+                if std::fs::metadata(existing).is_ok_and(|m| m.permissions().readonly()) {
+                    return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, READ_ONLY_FOLDER));
+                }
+                std::fs::create_dir_all(folder)?;
+            }
             let actual = files::generation_of(&destination);
             if !picked {
                 let expected = self
@@ -1843,7 +1885,7 @@ impl Host {
                         "copy_not_created"
                     }
                 } else if error.kind() == std::io::ErrorKind::PermissionDenied {
-                    "read_only"
+                    if error.to_string() == READ_ONLY_FOLDER { "read_only_folder" } else { "read_only" }
                 } else {
                     ""
                 };
@@ -1988,6 +2030,21 @@ fn read_browser(mut reader: File, events: Sender<Event>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn copy_names() {
+        let folder = std::env::temp_dir().join(format!("rapier-copy-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        assert_eq!(free_copy_name(&folder, "five (copy).md"), "five (copy).md");
+        std::fs::write(folder.join("five (copy).md"), "").unwrap();
+        assert_eq!(free_copy_name(&folder, "five (copy).md"), "five (copy 2).md");
+        std::fs::write(folder.join("five (copy 2).md"), "").unwrap();
+        assert_eq!(free_copy_name(&folder, "five (copy).md"), "five (copy 3).md");
+        std::fs::write(folder.join("a (copy).rapier.html"), "").unwrap();
+        assert_eq!(free_copy_name(&folder, "a (copy).rapier.html"), "a (copy 2).rapier.html");
+        assert_eq!(free_copy_name(&folder, "plain.md"), "plain.md");
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
 
     // Every state a window can be in, by every route a document arrives: only the pristine window takes it.
     #[test]

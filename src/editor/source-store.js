@@ -113,6 +113,35 @@ function rootAfter(root, row) {
 		rowHash(row.removed) + ':' + rowHash(row.inserted));
 }
 
+function spliceBytes(at, oldText, newText, length, readSlice, bytesNow) {
+	if (!Number.isSafeInteger(at) || at < 0 || at + oldText.length > length ||
+			readSlice(at, at + oldText.length) !== oldText) {
+		throw Object.assign(new Error('Canonical splice no longer matches the document.'), {
+			code: 'target_changed',
+		});
+	}
+
+	let byteStart = Math.max(0, at - 1);
+	let byteEnd = Math.min(length, at + oldText.length + 1);
+	const high = code => code >= 0xd800 && code <= 0xdbff;
+	const low = code => code >= 0xdc00 && code <= 0xdfff;
+	if (byteStart > 0 && low(readSlice(byteStart, byteStart + 1).charCodeAt(0)) &&
+			high(readSlice(byteStart - 1, byteStart).charCodeAt(0))) byteStart--;
+	if (byteEnd < length && high(readSlice(byteEnd - 1, byteEnd).charCodeAt(0)) &&
+			low(readSlice(byteEnd, byteEnd + 1).charCodeAt(0))) byteEnd++;
+	const byteBefore = readSlice(byteStart, byteEnd);
+	const leftWitness = readSlice(byteStart, at);
+	const rightWitness = readSlice(at + oldText.length, byteEnd);
+	const nextBytes = bytesNow() - sourceEncoder.encode(byteBefore).length +
+		sourceEncoder.encode(leftWitness + newText + rightWitness).length;
+	if (nextBytes > MAX_BYTES) {
+		throw Object.assign(new Error('document is too large (64 MiB maximum)'), {
+			code: 'document_too_large',
+		});
+	}
+	return nextBytes;
+}
+
 function create(value, restoredRootId = '', snapshot = null, preparation = null) {
 	const initial = String(value == null ? '' : value);
 	const buffers = snapshot ? snapshot.buffers.slice() : [initial];
@@ -513,6 +542,19 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 		initialRoot: restoredRootId || initialRootNow(), cachedIntegrityKey, cachedIntegrityValue,
 		presence: Array.from(presence, ([key, entry]) => [key, {...entry}]),
 	});
+	const preview = () => {
+		let text = read(), bytes = bytesNow();
+		const slice = (start, end) => text.slice(start, end), size = () => bytes;
+		return Object.freeze({
+			read: () => text,
+			splice(start, removed, inserted) {
+				const at = Number(start), oldText = String(removed == null ? '' : removed), newText = String(inserted == null ? '' : inserted);
+				const nextBytes = spliceBytes(at, oldText, newText, text.length, slice, size);
+				text = text.slice(0, at) + newText + text.slice(at + oldText.length); bytes = nextBytes;
+				return {pos: at, removed: oldText, inserted: newText};
+			},
+		});
+	};
 	const sourceOffsetFromProjection = (projectionOffset, start = 0, end = length) => {
 		const from = Math.max(0, Math.min(length, Number(start) || 0));
 		const to = Math.max(from, Math.min(length, Number(end) || 0));
@@ -538,31 +580,7 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 		if (captureToken != null && (!owner || owner.lifecycle.closed || owner.lifecycle.token !== captureToken || owner.key !== cacheKey)) {
 			throw Object.assign(new Error('The captured source no longer owns this splice.'), {code: 'target_changed'});
 		}
-		if (!Number.isSafeInteger(at) || at < 0 || at + oldText.length > length ||
-				readSlice(at, at + oldText.length) !== oldText) {
-			throw Object.assign(new Error('Canonical splice no longer matches the document.'), {
-				code: 'target_changed',
-			});
-		}
-
-		let byteStart = Math.max(0, at - 1);
-		let byteEnd = Math.min(length, at + oldText.length + 1);
-		const high = code => code >= 0xd800 && code <= 0xdbff;
-		const low = code => code >= 0xdc00 && code <= 0xdfff;
-		if (byteStart > 0 && low(readSlice(byteStart, byteStart + 1).charCodeAt(0)) &&
-				high(readSlice(byteStart - 1, byteStart).charCodeAt(0))) byteStart--;
-		if (byteEnd < length && high(readSlice(byteEnd - 1, byteEnd).charCodeAt(0)) &&
-				low(readSlice(byteEnd, byteEnd + 1).charCodeAt(0))) byteEnd++;
-		const byteBefore = readSlice(byteStart, byteEnd);
-		const leftWitness = readSlice(byteStart, at);
-		const rightWitness = readSlice(at + oldText.length, byteEnd);
-		const nextBytes = bytesNow() - sourceEncoder.encode(byteBefore).length +
-			sourceEncoder.encode(leftWitness + newText + rightWitness).length;
-		if (nextBytes > MAX_BYTES) {
-			throw Object.assign(new Error('document is too large (64 MiB maximum)'), {
-				code: 'document_too_large',
-			});
-		}
+		const nextBytes = spliceBytes(at, oldText, newText, length, readSlice, bytesNow);
 		const priorRoot = rootNow();
 		const [left, right] = split(at, at + oldText.length);
 		const insertedPieces = newText ? chunk(addBuffer(newText), 0, newText.length) : [];
@@ -628,7 +646,7 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 		return true;
 	};
 	const store = Object.freeze({
-		read, integrity, integrityAsync, readSlice, contains, splice, capture, fork, lineAt, lineStart, lineStarts, lineEnd, sourceOffsetFromProjection,
+		read, integrity, integrityAsync, readSlice, contains, splice, capture, fork, preview, lineAt, lineStart, lineStarts, lineEnd, sourceOffsetFromProjection,
 		projectionOffsetFromSource, warm, warmAsync,
 		get length() { return length; },
 		get lineCount() { return totalBreaks + 1; },

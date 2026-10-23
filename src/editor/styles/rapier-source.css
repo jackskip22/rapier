@@ -261,7 +261,7 @@ body.rapier-draw-open #navigator-overlay .navigator-title-row { justify-content:
 	transition: opacity var(--dur-enter) var(--ease-out), transform var(--dur-enter) var(--ease-out);
 }
 body.light .scroll-fab-label {
-	background: var(--color-surface);
+	background: color-mix(in srgb, var(--color-surface) 65%, transparent);
 }
 .scroll-fab-label.visible {
 	opacity: 1;
@@ -714,7 +714,7 @@ body.light .compare-mark--add { background: color-mix(in srgb, var(--color-succe
 	position: static;
 	inset: auto;
 	width: 100%;
-	max-height: 90vh;
+	max-height: calc(100dvh - 2 * var(--space-5));
 	border-radius: 0;
 	transform: none;
 	box-shadow: none;
@@ -722,6 +722,7 @@ body.light .compare-mark--add { background: color-mix(in srgb, var(--color-succe
 .restore-modal-overlay.open .settings-panel {
 	transform: none;
 }
+.restore-modal-overlay .settings-panel__body { min-height: 0; }
 
 .pro-status {
 	margin: 0 0 var(--space-4);

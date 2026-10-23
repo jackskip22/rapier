@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { annotateMarkdownLayout } from '../layout/markdown.mjs';
-import { dataImage, markdownParser, markdownBodyOffset, documentAssets } from '../images/assets.mjs';
+import { dataImage, svgDataPrefix, markdownParser, markdownBodyOffset, documentAssets } from '../images/assets.mjs';
 import { FIND_KINDS } from './structure-request.mjs';
 
 function _rapierOutlineHeadingLevel(raw) {
@@ -95,10 +95,7 @@ function imageMetadata(image, assets) {
 }
 
 function isDrawing(url) {
-	if (!/^data:image\/svg\+xml;base64,/i.test(url || '')) return false;
-	const payload = url.slice(url.indexOf(',') + 1, url.indexOf(',') + 1 + 1200);
-	try { return atob(payload.slice(0, payload.length - payload.length % 4)).includes('<metadata id="rapier-draw">'); }
-	catch (_) { return false; }
+	return svgDataPrefix(url).includes('<metadata id="rapier-draw">');
 }
 
 function markdownBlocks(source, parserFactory) {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {createHTTP, jsonBody, providerError, retryAfter, pinnedURL, byteCount, refuse, tokenFor, providerId} from './provider-http.mjs';
 import {plainConflict, plainName, plainBytes, plainFolder} from './plain-store.mjs';
+import {plainPoll} from './plain-poll.mjs';
 
 const DRIVE_API_ORIGIN = 'https://www.googleapis.com';
 const UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024;
@@ -15,7 +16,7 @@ export function createDrivePlainStore(options = {}) {
 	return drivePlainStore(options);
 }
 
-function drivePlainStore(options, parentFolder = null) {
+function drivePlainStore(options, parentFolder = null, shared = null) {
 	const path = plainFolder(options.folder, 'choose a folder name for the plain files');
 	const http = createHTTP(options), authorization = tokenFor(options.token, 'drive');
 	const classify = response => {
@@ -25,7 +26,7 @@ function drivePlainStore(options, parentFolder = null) {
 	};
 	async function request(url, init = {}, safe = true) {
 		const response = await http.retry(() => http.request(url, {...init, origin: DRIVE_API_ORIGIN, headers: {Authorization: authorization, ...init.headers}}), classify, safe);
-		if (response.status >= 400 && ![404, 409].includes(response.status)) throw providerError('Google Drive', response, response.status === 401 ? 'auth' : response.status === 403 ? 'permission' : 'provider');
+		if (response.status >= 400 && ![400, 404, 409, 410].includes(response.status)) throw providerError('Google Drive', response, response.status === 401 ? 'auth' : response.status === 403 ? 'permission' : 'provider');
 		return response;
 	}
 	async function search(q) {
@@ -113,14 +114,86 @@ function drivePlainStore(options, parentFolder = null) {
 		if (![200, 201].includes(response.status)) refuse('upload_unconfirmed', 'Drive did not confirm the upload');
 		return jsonBody(response);
 	}
+	if (!shared) {
+		let scopes = new Map(), token = null;
+		const changes = DRIVE_API_ORIGIN + '/drive/v3/changes';
+		const childFolders = rows => ['attachments', 'audio'].map(name => [...rows.values()]
+			.filter(row => row.mimeType === FOLDER && !row.trashed && row.name === name && row.appProperties?.rapierPlain === '1')
+			.sort((a, b) => a.id < b.id ? -1 : 1)[0]).filter(Boolean);
+		const scan = async parent => new Map((await search(`${quote(parent)} in parents and trashed = false`)).map(row => {
+			providerId(row.id);
+			if (!Array.isArray(row.parents) || !row.parents.includes(parent)) refuse('authority', 'Drive returned a file outside the plain-files folder');
+			if (row.mimeType !== FOLDER) fileRow(row, parent);
+			return [row.id, row];
+		}));
+		const refresh = async () => {
+			const root = await folder(); let cursor = token, staged = new Map([...scopes].map(([key, rows]) => [key, new Map(rows)])), reset = false;
+			const seen = new Set();
+			for (let pages = 0; pages <= 1000; pages++) {
+				if (!cursor) {
+					const response = await request(changes + '/startPageToken?fields=startPageToken');
+					if (response.status !== 200) throw providerError('Google Drive', response);
+					cursor = jsonBody(response).startPageToken;
+					if (typeof cursor !== 'string' || !cursor) refuse('cursor', 'Drive returned no start page token');
+					const identity = await request(FILES + '/' + encodeURIComponent(root) + '?fields=id,mimeType,trashed');
+					if (identity.status === 404) refuse('missing_root', 'the connected Drive folder is missing');
+					if (identity.status !== 200) throw providerError('Google Drive', identity);
+					const bound = jsonBody(identity);
+					if (bound.id !== root || bound.mimeType !== FOLDER || bound.trashed) refuse('missing_root', 'the connected Drive folder is missing');
+					staged = new Map([[root, await scan(root)]]);
+					for (const row of childFolders(staged.get(root))) staged.set(row.id, await scan(row.id));
+				}
+				if (seen.has(cursor)) refuse('cursor', 'Drive did not supply an advancing change token'); seen.add(cursor);
+				const query = new URLSearchParams({pageToken: cursor, pageSize: '1000', spaces: 'drive', includeRemoved: 'true',
+					fields: `nextPageToken,newStartPageToken,changes(fileId,removed,changeType,file(${FIELDS}))`});
+				const response = await request(changes + '?' + query);
+				let expired = response.status === 410;
+				if (response.status === 400) { const errors = jsonBody(response)?.error?.errors; expired = Array.isArray(errors) && errors.some(e => e.location === 'pageToken' && ['invalid', 'invalidPageToken'].includes(e.reason)); }
+				if (expired && token && !reset) { cursor = null; reset = true; seen.clear(); continue; }
+				if (response.status !== 200) throw providerError('Google Drive', response);
+				const page = jsonBody(response);
+				if (!Array.isArray(page.changes) || !!page.nextPageToken === !!page.newStartPageToken) refuse('listing', 'Drive returned no complete changes page');
+				for (const change of page.changes) {
+					if (change.changeType && change.changeType !== 'file') continue;
+					const id = providerId(change.fileId);
+					if (typeof change.removed !== 'boolean') refuse('listing', 'Drive returned an incomplete change');
+					const file = change.file;
+					if (id === root) { if (change.removed || file?.trashed) refuse('missing_root', 'the connected Drive folder is missing'); continue; }
+					if (!change.removed && (!file || file.id !== id || !Array.isArray(file.parents))) refuse('listing', 'Drive returned incomplete file metadata');
+					for (const [parent, rows] of staged) {
+						rows.delete(id);
+						if (!change.removed && !file.trashed && file.parents.includes(parent)) { if (file.mimeType !== FOLDER) fileRow(file, parent); rows.set(id, file); }
+					}
+				}
+				if (page.nextPageToken) { if (typeof page.nextPageToken !== 'string') refuse('cursor', 'Drive returned an invalid page token'); cursor = page.nextPageToken; continue; }
+				if (typeof page.newStartPageToken !== 'string' || !page.newStartPageToken) refuse('cursor', 'Drive returned no saved page token');
+				const children = childFolders(staged.get(root)), keep = new Set([root, ...children.map(row => row.id)]);
+				for (const id of staged.keys()) if (!keep.has(id)) staged.delete(id);
+				for (const row of children) if (!staged.has(row.id)) staged.set(row.id, await scan(row.id));
+				http.check(); scopes = staged; token = page.newStartPageToken; return;
+			}
+			refuse('cursor', 'Drive did not finish listing changes');
+		};
+		shared = {poll: plainPoll(refresh), scopes: () => scopes, childFolders};
+	}
 	return Object.freeze({
 		pause: http.pause,
+		beginPoll: shared.poll.begin, endPoll: shared.poll.end,
 		folderId: ({create = false} = {}) => folder(create === true),
-		area: name => drivePlainStore({...options, folder: name}, folder),
+		area: name => drivePlainStore({...options, folder: plainName(name)}, folder, shared),
 		async list() {
-			const parent = await folder(), rows = (await search(`${quote(parent)} in parents and trashed = false`)).filter(row => row.mimeType !== FOLDER).map(row => fileRow(row, parent)).filter(Boolean);
+			http.check(); await shared.poll.read(); http.check();
+			let parent;
+			if (parentFolder) {
+				const root = await parentFolder(false), children = shared.childFolders(shared.scopes().get(root) || new Map());
+				folderId = children.find(row => row.name === path[0])?.id || null;
+				if (!folderId) return [];
+				parent = folderId;
+			} else parent = await folder();
+			const rows = [...(shared.scopes().get(parent)?.values() || [])].filter(row => row.mimeType !== FOLDER).map(row => fileRow(row, parent)).filter(Boolean);
 			const count = new Map(); for (const row of rows) count.set(row.name, (count.get(row.name) || 0) + 1);
-			return rows.filter(row => count.get(row.name) === 1).map(({name, rev, size}) => ({name, rev, size}));
+			if (rows.some(row => count.get(row.name) > 1)) refuse('listing', 'Drive has two files with one name; rename one to sync them');
+			return rows.map(({name, rev, size}) => ({name, rev, size}));
 		},
 		async get(file) {
 			for (let attempt = 0; attempt < 3; attempt++) {

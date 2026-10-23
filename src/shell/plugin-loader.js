@@ -64,7 +64,7 @@
 		files: [{name: MATH_FILE, file: MATH_FILE, version: MATH_VERSION,
 			bytes: 742684,
 			sri: '1rjhOOw690Mr3aVXwRTPlwQO2atMrWHY8Rm3nZ+SZRrm5mB9HK5FkY6ZWCDYtgzv',
-			url: 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.34/math/rapier-math-2.7.0.js'}],
+			url: 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.36/math/rapier-math-2.7.0.js'}],
 		missing: 'Rapier math loaded but its SVG renderer is missing — cache purged',
 		usable: function () { return !!(window.RapierMath && window.RapierMath.version === MATH_VERSION &&
 			typeof window.RapierMath.renderToString === 'function' && typeof window.RapierMath.renderWithMathML === 'function'); },
@@ -259,7 +259,7 @@
 				if (slice) label.setAttribute('fill', 'contrast-color(' + slice.getAttribute('fill') + ')');
 			}
 		}
-		return new runtime.XMLSerializer().serializeToString(drawing);
+		return new runtime.XMLSerializer().serializeToString(drawing).replaceAll('var(--pele-', 'var(--md-pele-');
 	}
 
 	function _renderPele(runtime, source, id) {

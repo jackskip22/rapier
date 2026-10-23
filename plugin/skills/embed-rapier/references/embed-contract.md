@@ -276,6 +276,10 @@ its pinned length and SHA-384. The `plugins` option of `rapier-embed` adds it. T
 which is all its Content Security Policy lets it read: `Rapier.mount` throws a `TypeError` for any other, and a page opened with one
 refuses it, in words, before it makes a request.
 
+A host that names `plugins` serves the plug-ins itself, and a host that sets `?approvePlugins=1` (the `approvePlugins` option of `rapier-embed`) answers for its person: in both cases the frame installs math and diagram plug-ins when a document needs one and never asks. Without either, the frame asks the person ("Install math plug-in?") the first time a document needs it. The sheet is the page's own, sized to the frame: in a frame shorter than the sheet, its body scrolls.
+
+Where Rapier cannot be framed the helper refuses before any request, and `ready` rejects with a code: `host_scheme_unsupported` (a `file://` page or a custom scheme: the frame needs an https page, or http on localhost), `host_not_secure` (a plain-http page that is not on localhost, framing the hosted copy), `host_cross_origin_isolated` (a COEP page framing the hosted copy) and `sandbox_token_missing` (an iframe the host passed has a `sandbox` without `allow-scripts` or `allow-same-origin`; the helper never widens a sandbox the host wrote, and sets one only on an iframe it creates). A page framed without the helper opens an empty document in the editor (`rapier.html` with a same-origin parent) or says "No document is loaded." in the reader.
+
 `style` carries `{css?, fonts?}`. `css` is a string of at most 4 MiB, placed after the reader's own sheets and
 replaced by the next `style`. Remote URLs are removed before the stylesheet is applied. Without `open`, the reader
 returns `protocol-error` `capability_denied`. `fonts` is a list of at most 16 `{family, source, descriptors?}` records handed to
@@ -301,7 +305,7 @@ Extra envelope or payload fields refuse. An invalid envelope, wrong identity or 
 
 | Command | Allowed payload | Additional existing owner checks |
 |---|---|---|
-| `load` | Required string `content`; optional `filename`, `revision`, `readOnly`, `title`. A valid revision must come from payload or envelope. | Codec/text limit, loaded identity, dirty document, transition and revision guards |
+| `load` | Required string `content`; optional `filename`, `revision`, `readOnly`, `title`, `baseUrl`. A valid revision must come from payload or envelope (the helper's `load()` supplies one when you give none). `baseUrl` is an absolute https address that relative pictures in this document are read from; anything else is `load-nack` `invalid_base_url`. | Codec/text limit, loaded identity, dirty document, transition and revision guards |
 | `compare` | Required string `content`; optional `filename` | Loaded/available comparison, canonical codec and transaction guards |
 | `save` | Empty/omitted | `read` grant; a loaded, editable document (`not_loaded`, `read_only`); a settled capture within the limit. A save that sends no `save-request` gets `protocol-error` (`document_too_large` or `save_unavailable`) |
 | `save-ack` | Required advancing `revision` | Must match the actual pending **save-request** ID and base revision; saved bookkeeping cannot erase newer edits |
@@ -330,7 +334,9 @@ Every `protocol-error` carries a `code`, and most a `reason`:
 | `not_loaded`, `read_only`, `save_unavailable`, `document_too_large` | A host `save` that sends no `save-request` |
 | `asset_*`, `open_*` | Picture and file-picker exchanges (sections 2.2 and 2.3) |
 
-A `load` of a revision for which this tab still holds the session's unsaved draft opens the draft as the document, with the host's `content` as the saved text: the draft is unsaved work, a save carries it, and nothing is asked. One notice says so, and `load-ack` carries `recoveredDraft: true`. A save replaces the draft with the saved revision's; the host's `discard` close decision removes it, and nothing is kept again until the person edits.
+A `load` whose revision and `content` match the saved text of this tab's session draft opens the draft as the document, with the host's `content` as the saved text: the draft is unsaved work, a save carries it, and nothing is asked. One notice says so, and `load-ack` carries `recoveredDraft: true`. Any other draft belongs to a document the host has replaced: a draft with no unsaved edits is dropped and the host's `content` is the document; a draft holding unsaved edits for another revision is kept and the load is `load-nack` `draft_retained`. The host's load is always the document the frame shows and saves.
+
+Every `load-nack` carries a `code`: `load_busy`, `save_pending`, `edit_pending`, `unsaved_changes` (the person has unsaved edits in the open document), `draft_retained`, `invalid_payload`, `invalid_filename`, `invalid_base_url`, `document_too_large`, `load_superseded`, `history_unavailable` and `load_failed`. A `save-nack` `conflict` carries `currentRevision`, and the helper's rejection carries it too. A save replaces the draft with the saved revision's; the host's `discard` close decision removes it, and nothing is kept again until the person edits.
 
 That `sessionStorage` draft is the frame's only document storage, and only for a document the host loaded. An embedded frame (and a refused one) never reads, offers or writes the person's own Rapier recovery on its origin: no held or set-aside document, local snapshot, restore cursor or recovery record. Before the first load it keeps nothing. The person's device preferences are theirs and remain shared; host settings never write them.
 

@@ -2812,7 +2812,11 @@ function mergeDocxBase(edited, base) {
       carriedAbbreviations.set(row.label, abbreviationDefinitions.get(row.label));
     merged += edited.slice(cursor, block.start) + base.slice(kept[index].start, kept[index].stop);
     cursor = block.stop;
-    if (eol && edited[cursor] === '\n') { merged += eol; cursor++; }
+    const separator = /^\n+/.exec(edited.slice(cursor))?.[0];
+    if (eol && separator) {
+      const saved = base.slice(kept[index].stop).match(/^(?:\r\n|\r|\n)+/)[0].match(/\r\n|\r|\n/g);
+      merged += Array.from({length: separator.length}, (_, n) => saved[n] ?? eol).join(''); cursor += separator.length;
+    }
   }
   merged = carryDocxFrontMatter(pruneDocxImageDefinitions(carryDocxDefinitions(merged + edited.slice(cursor), base, baseBlocks, editedEnv, parser), base), base);
   if (carriedAbbreviations.size) {

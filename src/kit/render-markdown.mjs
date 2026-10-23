@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import {htmlPlaceholder, mountHtmlBlocks, materializeObjects, objectPosterLabel, htmlImageRecord, htmlLayoutEdit, htmlModeEdit, mergeHtmlObjectBlocks} from '../spec/html-blocks.mjs';
 import {finish, finishAsync, cloneTree, cleanTree, serializeTree, htmlParts, admitHtml, htmlBoundary, pause, check} from './render-work.mjs';
+import {installWikiParser, wikiAddress} from './wiki.mjs';
 const RAPIER_TABLE_CAPTION_PREFIX_RE = /^(?:Table:|:) /;
 const RAPIER_PORTABLE_HIGHLIGHT_HEX = Object.freeze({
 	green: '#35c57a', red: '#f05a62', blue: '#4f91f7', yellow: '#e6b91e', purple: '#9b6dea',
@@ -9,6 +10,51 @@ const _RAPIER_RTL_SCRIPT = /[\p{Script=Hebrew}\p{Script=Arabic}\p{Script=Syriac}
 function createMarkdownRenderer(runtime) {
   const {Node, _rapierPrefixPortableAnchors, RAPIER_HIGHLIGHT_COLOR_BY_MARKER, RAPIER_MARKDOWN_SPEC, RAPIER_RENDERED_HEADING_SELECTOR, _rapierApplyMarkdownSpec, _rapierChromeOwnsId, _rapierCodeHtml, _rapierDeriveDarkColor, _rapierDormantHeadings, _rapierEmbedAssetSource, _rapierHeadingSlugBase, _rapierNextHeadingSlug, _rapierHighlightAdmitted, _rapierInstallMarkdownMath, _rapierMarkdownPreview, _rapierPlainLayout, _rapierProviders, _rapierRemoteContent, _rapierRemoteImagePlaceholder, _rapierRemoteSubresourceOrigin, _rapierRenderedAnchorOriginalIds, _rapierSourceCharEscaped, _rapierSplitOpeningFrontmatter, _rapierUiDiagram, _rapierUiMath, document, escapeRapierHtmlText, globalThis, sanitizeRapierHtml, window} = runtime;
   let md = runtime.md;
+  let wikiTimer = null, wikiAttempt = 0;
+  const wikiBusy = new WeakSet();
+  function scheduleWikiEmbeds() {
+    if (!globalThis.RapierPlatform || !document || wikiTimer !== null) return;
+    wikiTimer = setTimeout(async () => {
+      wikiTimer = null;
+      const original = globalThis.RapierOriginalFolderCore?.currentOriginal();
+      if (!original) { if (++wikiAttempt < 8) scheduleWikiEmbeds(); return; }
+      wikiAttempt = 0;
+      for (const node of [...document.querySelectorAll('#editor-blocks .rapier-source-token--wiki-embed')].slice(0, 32)) {
+        if (wikiBusy.has(node) || node.hasAttribute('data-rapier-wiki-ready')) continue;
+        wikiBusy.add(node);
+        try {
+          const link = node.querySelector('a'), href = link?.getAttribute('href');
+          if (!href) continue;
+          const before = node.innerHTML;
+          const embedded = await original.embed(href);
+          if (!node.isConnected || node.innerHTML !== before || globalThis.RapierOriginalFolderCore?.currentOriginal() !== original) continue;
+          const holder = _rapierRenderSemanticRoot(embedded.text, {docKind: 'markdown'}, {wikiEmbedding: true});
+          let followed = 0;
+          for (const anchor of holder.querySelectorAll('a[href]')) {
+            const address = anchor.getAttribute('href');
+            if (/^(?:[a-z][a-z0-9+.-]*:|\/)/i.test(address)) continue;
+            try {
+              if (++followed > 64) throw new Error('link limit');
+              anchor.setAttribute('href', await original.addressFrom(embedded.displayPath, address));
+            } catch (_) { anchor.replaceWith(...anchor.childNodes); }
+          }
+          if (!node.isConnected || node.innerHTML !== before || globalThis.RapierOriginalFolderCore?.currentOriginal() !== original) continue;
+          for (const image of holder.querySelectorAll('img,[data-rapier-remote-src]'))
+            image.replaceWith(document.createTextNode(image.getAttribute('alt') || image.textContent || ''));
+          for (const block of [...holder.querySelectorAll('p,h1,h2,h3,h4,h5,h6,div,pre,blockquote,ul,ol,li,table,tr,td,th')].reverse())
+            block.replaceWith(...block.childNodes, document.createElement('br'));
+          node.replaceChildren(...holder.childNodes);
+          node.setAttribute('data-rapier-visible', encodeURIComponent(node.textContent));
+          node.setAttribute('data-rapier-wiki-ready', '');
+          node.contentEditable = 'false';
+        } catch (_) {  }
+        finally { wikiBusy.delete(node); }
+      }
+    }, 125);
+  }
+  window?.addEventListener?.('rapier:original-file-ready', scheduleWikiEmbeds);
+  const wikiMode = options => options.wikiEmbedding ? 'links' : options.wikiLinks !== undefined ? options.wikiLinks
+    : globalThis.RapierOriginalFolderCore?.currentOriginal?.() ? 'label' : false;
 function initMarkdownIt() {
 	if (typeof window.markdownit !== 'function') throw new Error('markdownit');
 	if (typeof _rapierMarkdownPreview === 'function') globalThis.rapierRenderPreview = _rapierMarkdownPreview;
@@ -82,6 +128,21 @@ function initMarkdownIt() {
 	const sourceToken = (source, visible, className) =>
 		'<span class="rapier-source-token ' + className + '" data-rapier-source="' +
 		encodeURIComponent(source) + '" data-rapier-visible="' + encodeURIComponent(visible) + '">' + md.utils.escapeHtml(visible) + '</span>';
+	installWikiParser(md, (token, env) => {
+		const {target, label, embed} = token.meta, href = wikiAddress(target), esc = md.utils.escapeHtml;
+		if (env.rapierWikiLinks === 'label') return esc(label);
+		if (embed && /\.(?:png|jpe?g|gif|webp|jxl)(?:#.*)?$/i.test(target)) {
+			if (!env.rapierWikiEmbedding && globalThis.RapierPlatform?.files.relativeCandidate?.(href) && globalThis.RapierEmbeddedImages?.imageHtml)
+				return globalThis.RapierEmbeddedImages.imageHtml(null, label, '', null, '', label, token.content, href, env.rapierImagePresentation !== false);
+			return '<span data-rapier-remote-src="' + esc(href) + '" data-rapier-remote-alt="' + esc(label) +
+				'" data-rapier-image-source="' + esc(encodeURIComponent(token.content)) + '">' + esc(label) + '</span>';
+		}
+		const note = embed && !env.rapierWikiEmbedding;
+		if (note) scheduleWikiEmbeds();
+		return '<span class="rapier-source-token rapier-source-token--wiki' + (note ? '-embed' : '') +
+			'" data-rapier-source="' + esc(encodeURIComponent(token.content)) + '" data-rapier-visible="' + esc(encodeURIComponent(label)) +
+			'"><a href="' + esc(href) + '">' + esc(label) + '</a></span>';
+	});
 	md.renderer.rules.emoji = (tokens, idx) => {
 		const token = tokens[idx];
 		const source = token.markup ? ':' + token.markup + ':' : token.content;
@@ -114,7 +175,9 @@ function initMarkdownIt() {
 
 	md.renderer.rules.image = (tokens, idx, opts, env, self) => {
 		const token = tokens[idx];
-		const src = token.attrGet('src') || '';
+		const written = token.attrGet('src') || '';
+		const hosted = globalThis.RapierEmbedPictureBase?.(written) ?? null;
+		const src = hosted || written;
 		const title = token.attrGet('title') || '';
 		const rawAlt = String(token.content ?? token.attrGet('alt') ?? '');
 		const size = _rapierImageAltSize(rawAlt);
@@ -140,7 +203,7 @@ function initMarkdownIt() {
 				+ (token.meta?.mdImage?.source ? ' data-rapier-image-source="' + escape(encodeURIComponent(token.meta.mdImage.source)) + '"' : '')
 				+ '>' + escape(alt || src) + '</span>';
 		}
-		if (!env.rapierPage && !_rapierRemoteContent.allowed && _rapierRemoteSubresourceOrigin(src)) {
+		if (!hosted && !env.rapierPage && !_rapierRemoteContent.allowed && _rapierRemoteSubresourceOrigin(src)) {
 			const html = _rapierRemoteImagePlaceholder(src, alt, title, size, layout, rawAlt);
 			return html.replace('<span ', '<span data-rapier-markdown-image="" ' +
 				(token.meta?.mdImage?.source ? 'data-rapier-image-source="' + md.utils.escapeHtml(encodeURIComponent(token.meta.mdImage.source)) + '" ' : ''));
@@ -402,6 +465,9 @@ function _rapierRenderSemanticRoot(canonical, metadata, options = {}) {
 
 	const markdown = _rapierSplitOpeningFrontmatter(canonical).body;
 	const env = {rapierImagePresentation: options.imagePresentation === true, ...(options.page ? {rapierPage: true} : {}), ...(options.providers === false ? {rapierProviders: false} : {})};
+	if (options.wikiEmbedding) env.rapierWikiEmbedding = true;
+	const wikiLinks = wikiMode(options);
+	if (wikiLinks) env.rapierWikiLinks = wikiLinks;
 	if (options.mathEquations) env.rapierMathEquations = options.mathEquations;
 	let rendered = md
 		? md.render(markdown, env)
@@ -435,7 +501,9 @@ async function _rapierRenderSemanticRootAsync(canonical, metadata, options = {})
 	}
 	const markdown = _rapierSplitOpeningFrontmatter(canonical).body;
 	const fallbackEnv = options.page ? {rapierPage: true} : {};
-	let parsed = options.parsed || (runtime.parseAsync ? await runtime.parseAsync(markdown, options) : {tokens: md.parse(markdown, fallbackEnv), env: fallbackEnv});
+	const wikiLinks = markdown.includes('[[') && wikiMode(options);
+	if (wikiLinks) fallbackEnv.rapierWikiLinks = wikiLinks;
+	let parsed = !wikiLinks && options.parsed || (runtime.parseAsync && !wikiLinks ? await runtime.parseAsync(markdown, options) : {tokens: md.parse(markdown, fallbackEnv), env: fallbackEnv});
 	let {tokens, env} = parsed, labels = env.footnotes?.list?.map((item, index) => String(item?.label || ('inline-' + (index + 1))));
 	env = {...env, rapierImagePresentation: options.imagePresentation === true};
 	await pause(work, .3);
@@ -1622,11 +1690,17 @@ async function _rapierPlainTextFileAsync(context) {
 async function _rapierCloneRootAsync(root, work) { return finishAsync(cloneTree(root), work); }
 
 function _rapierSourceTokenValue(node) {
-	if (!node?.hasAttribute('data-rapier-source') || !node.hasAttribute('data-rapier-visible') ||
-			Array.from(node.childNodes).some(child => child.nodeType !== Node.TEXT_NODE)) return null;
+	if (!node?.hasAttribute('data-rapier-source') || !node.hasAttribute('data-rapier-visible')) return null;
 	try {
+		const source = decodeURIComponent(node.getAttribute('data-rapier-source'));
+		if (node.classList.contains('rapier-source-token--wiki') || node.classList.contains('rapier-source-token--wiki-embed')) {
+			const token = md.parseInline(source, {rapierWikiLinks: 'links'})[0]?.children;
+			if (token?.length !== 1 || token[0].type !== 'rapier_wiki') return null;
+			if (!node.hasAttribute('data-rapier-wiki-ready') && (node.children.length !== 1 || node.firstElementChild.tagName !== 'A' ||
+				node.firstElementChild.getAttribute('href') !== wikiAddress(token[0].meta.target))) return null;
+		} else if (Array.from(node.childNodes).some(child => child.nodeType !== Node.TEXT_NODE)) return null;
 		return node.textContent === decodeURIComponent(node.getAttribute('data-rapier-visible'))
-			? decodeURIComponent(node.getAttribute('data-rapier-source')) : null;
+			? source : null;
 	} catch (_) { return null; }
 }
 
@@ -1634,7 +1708,7 @@ function _rapierResolveSoftBreakTokens(root) { return finish(_rapierResolveSoftB
 
 function* _rapierResolveSoftBreakTokensSteps(root) {
 	for (const token of root.querySelectorAll('.rapier-source-token--softbreak')) { yield;
-		if (_rapierSourceTokenValue(token) === '\n') token.replaceWith(document.createTextNode(' '));
+		if (_rapierSourceTokenValue(token) === '\n') token.replaceWith(document.createTextNode(token.closest('pre') ? '\n' : ' '));
 		else token.replaceWith(...token.childNodes);
 	}
 	return root;

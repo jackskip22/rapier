@@ -1,6 +1,8 @@
+import {wikiTarget} from '../../kit/wiki.mjs';
 const MAX_BYTES = 64 * 1024 * 1024;
 const encoder = new TextEncoder();
 export const fail = code => Object.assign(new Error(code), {code});
+export const errorCode = error => typeof error?.code === 'string' ? error.code : error?.name || 'original_unavailable';
 const check = signal => { if (signal?.aborted) throw fail('cancelled'); };
 function pending(work, signal, discard) {
   if (!signal) return work;
@@ -50,7 +52,7 @@ function segments(path) {
       path.includes('\\') || /[\0\ud800-\udfff]/u.test(path)) throw fail('invalid_path');
   if (!path) return [];
   const parts = path.split('/');
-  if (parts.length > 64 || parts.some(p => !p || p === '.' || p === '..' || encoder.encode(p).length > 255))
+  if (parts.length > 64 || parts.some(p => !p || p.startsWith('.') || encoder.encode(p).length > 255))
     throw fail('invalid_path');
   return parts;
 }
@@ -199,8 +201,9 @@ export class Folder {
       catch (error) { await this.revoke(); throw error; }
     }
   }
-  async open(entry, {signal} = {}) {
+  async open(entry, {signal, maxBytes = MAX_BYTES} = {}) {
     this.#current(signal);
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 0 || maxBytes > MAX_BYTES) throw fail('too_large');
     if (!this.capabilities.checkedSave) {
       if (!this.capabilities.pinnedIdentity || !this.capabilities.confinedRead) throw fail('identity_or_confinement_unproven');
       if (!this.capabilities.coherentRead) throw fail('coherent_snapshot_unavailable');
@@ -210,7 +213,7 @@ export class Folder {
     let reserved = 0;
     try {
       this.#current(signal);
-      if (!Number.isSafeInteger(row.size) || row.size < 0 || row.size > MAX_BYTES) throw fail('too_large');
+      if (!Number.isSafeInteger(row.size) || row.size < 0 || row.size > maxBytes) throw fail('too_large');
       if (this.#sourceBytes + this.#sourceReserved + row.size > MAX_BYTES) throw fail('source_limit');
       reserved = row.size; this.#sourceReserved += reserved;
       const metadata = await this.#provider.validate(row);
@@ -237,29 +240,50 @@ export class Folder {
   }
   assertCurrent(snapshot) { this.#current(); this.#state(snapshot); return true; }
   async #retire(snapshot, error) {
-    this.#retired.set(snapshot, error.code || 'original_unavailable');
+    this.#retired.set(snapshot, errorCode(error));
     await this.closeDocument(snapshot);
     throw error;
   }
   async #validateSource(snapshot) {
     const state = this.#state(snapshot);
-    if (state.conflicted) throw fail('external_file_changed');
-    try { return await this.#provider.validate(state.row); }
-    catch (error) { return this.#retire(snapshot, error); }
+    if (state.renamed) throw fail('renamed');
+    try {
+      const metadata = await this.#provider.validate(state.row);
+      if (state.conflicted) throw fail('external_file_changed');
+      return metadata;
+    }
+    catch (error) {
+      if (state.renamed) throw fail('renamed');
+      if (['missing', 'not_found', 'NotFoundError', 'stale_locator'].includes(errorCode(error))) return this.#retire(snapshot, error);
+      throw error;
+    }
   }
   async readCurrent(snapshot, {signal} = {}) {
     this.#current(signal);
     const state = this.#state(snapshot);
     await this.#validateSource(snapshot);
-    const bytes = await this.#provider.read(state.row, {
-      signal: AbortSignal.any([this.#signal(signal), state.cancel.signal]), maxBytes: MAX_BYTES});
+    let bytes;
+    try {
+      bytes = await this.#provider.read(state.row, {
+        signal: AbortSignal.any([this.#signal(signal), state.cancel.signal]), maxBytes: MAX_BYTES});
+    } catch (error) { throw state.renamed ? fail('renamed') : error; }
     this.#current(signal); this.#state(snapshot);
     return bytes;
   }
   async revalidate(snapshot, options) {
     const current = await this.readCurrent(snapshot, options);
-    if (!equal(current, this.#state(snapshot).bytes)) return this.#retire(snapshot, fail('external_file_changed'));
+    if (!equal(current, this.#state(snapshot).bytes)) {
+      this.#state(snapshot).conflicted = true;
+      for (const [url, info] of this.#urls) if (info.snapshot === snapshot) this.#revoke(url);
+      throw fail('external_file_changed');
+    }
     return true;
+  }
+  async refresh(snapshot, {signal} = {}) {
+    this.#current(signal);
+    const state = this.#state(snapshot);
+    await this.#provider.validate(state.row);
+    return this.open(this.#entry(state.row), {signal});
   }
   async save(snapshot, text, {signal} = {}) {
     const intended = snapshot.encode(text);
@@ -279,6 +303,16 @@ export class Folder {
       this.#sourceReserved += growth;
       let saveRow, resultRow;
       try {
+      if (equal(intended, state.bytes)) {
+        const current = state.conflicted ? null : await this.readCurrent(snapshot, {signal});
+        if (current && equal(current, state.bytes)) return Object.freeze({status: 'unchanged', confirmed: true,
+          verified: true, writes: 0, destinationName: snapshot.name});
+        state.conflicted = true;
+        for (const [url, info] of this.#urls) if (info.snapshot === snapshot) this.#revoke(url);
+        return Object.freeze({status: 'retained-draft', confirmed: false, verified: false, writes: 0,
+          originalPreserved: true, reason: 'external_file_changed',
+          recoveryChoices: Object.freeze(['keep-editing', 'save-copy', 'reopen-original'])});
+      }
       if (!this.#provider.save) throw fail('checked_save_unavailable');
       saveRow = await this.#provider.retain(state.row, {forSave: true});
       this.#current(signal); this.#state(snapshot);
@@ -311,16 +345,16 @@ export class Folder {
     state.saving = saving.catch(() => {});
     return saving.finally(() => { this.#saveReserved -= intended.length; });
   }
-  async openRelative(snapshot, authoredURL, {signal} = {}) {
+  async openRelative(snapshot, authoredURL, {signal, maxBytes} = {}) {
     this.#current(signal);
     const source = this.#state(snapshot);
-    const projection = relativeResource(snapshot.displayPath, authoredURL);
+    const projection = await this.#projection(snapshot, authoredURL, signal);
     if (!this.capabilities.parentAnchored || !this.#provider.relative) throw fail('parent_anchor_unavailable');
     const row = await this.#provider.relative(source.row, projection.path);
     const entry = this.#entry(row);
     let opened;
     try {
-      opened = await this.open(entry, {signal});
+      opened = await this.open(entry, {signal, maxBytes});
       await this.#validateSource(snapshot);
       this.#current(signal); this.#state(snapshot);
       return opened;
@@ -329,11 +363,95 @@ export class Folder {
       throw error;
     } finally { await this.release(entry); }
   }
+  async addressFrom(snapshot, documentPath, authoredURL, {signal} = {}) {
+    this.#current(signal); segments(documentPath);
+    const projection = authoredURL.startsWith('#') ? {path: documentPath} :
+      await this.#projection(snapshot, authoredURL, signal, documentPath);
+    await this.#validateSource(snapshot);
+    this.#current(signal); this.#state(snapshot);
+    const fragment = authoredURL.includes('#') ? authoredURL.slice(authoredURL.indexOf('#')) : '';
+    return '../'.repeat(segments(snapshot.displayPath).length - 1) +
+      segments(projection.path).map(encodeURIComponent).join('/') + fragment;
+  }
+  async #projection(snapshot, authoredURL, signal, documentPath = snapshot.displayPath) {
+    const target = wikiTarget(authoredURL);
+    if (target === null) return relativeResource(documentPath, authoredURL);
+    if (!target) return {path: documentPath};
+    segments(target);
+    const names = /\.[^/]+$/.test(target) ? [target] : [target + '.md', target + '.markdown'];
+    const source = this.#state(snapshot), parent = segments(documentPath).slice(0, -1);
+    if (!this.capabilities.parentAnchored || !this.#provider.relative) throw fail('parent_anchor_unavailable');
+    for (const path of new Set([...names.map(name => [...parent, name].join('/')), ...names])) {
+      let row;
+      try { row = await this.#provider.relative(source.row, path); if (row.kind === 'file') return {path}; }
+      catch (error) { if (!['missing', 'not_found', 'NotFoundError'].includes(errorCode(error))) throw error; }
+      finally { if (row) await this.#releaseRows([row]); }
+    }
+    const queue = [''], matches = [], wanted = names.map(name => name.toLowerCase());
+    let seen = 0;
+    for (let at = 0; at < queue.length; at++) {
+      this.#current(signal);
+      if (at >= 4096) throw fail('listing_limit');
+      const directory = await this.#provider.relative(source.row, queue[at]);
+      let cursor;
+      try {
+        cursor = await this.#provider.listStart(directory);
+        while (true) {
+          this.#current(signal);
+          const page = await this.#provider.listNext(cursor, 64);
+          try {
+            for (const row of page.entries) {
+              if (++seen > 100000) throw fail('listing_limit');
+              if (row.name.startsWith('.')) continue;
+              segments(row.displayPath);
+              if (row.kind === 'directory') queue.push(row.displayPath);
+              else if (wanted.some(name => row.displayPath.toLowerCase() === name || row.displayPath.toLowerCase().endsWith('/' + name)))
+                matches.push(row.displayPath);
+            }
+          } finally { await this.#releaseRows(page.entries); }
+          if (page.done) break;
+        }
+      } finally {
+        if (cursor != null) await this.#provider.listClose(cursor);
+        await this.#releaseRows([directory]);
+      }
+    }
+    if (!matches.length) throw fail('not_found');
+    const distance = path => { const parts = segments(path).slice(0, -1); let shared = 0;
+      while (shared < parts.length && shared < parent.length && parts[shared] === parent[shared]) shared++;
+      return parent.length + parts.length - 2 * shared;
+    };
+    const nearest = Math.min(...matches.map(distance)), best = matches.filter(path => distance(path) === nearest);
+    if (best.length !== 1) throw fail('ambiguous_name');
+    return {path: best[0]};
+  }
+  async create(directory, name, {signal} = {}) {
+    this.#current(signal); segments(name);
+    if (name.includes('/') || !/\.md$/i.test(name)) throw fail('invalid_name');
+    if (!this.#provider.create) throw fail('create_unavailable');
+    const row = await this.#provider.create(this.#row(directory), name);
+    try { this.#current(signal); return this.#entry(row); }
+    catch (error) { await this.#releaseRows([row]); throw error; }
+  }
+  async rename(snapshot, name, {signal} = {}) {
+    this.#current(signal); segments(name);
+    if (name.includes('/') || !/\.md$/i.test(name)) throw fail('invalid_name');
+    if (!this.#provider.rename) throw fail('rename_unavailable');
+    await this.revalidate(snapshot, {signal});
+    const state = this.#state(snapshot);
+    state.renamed = true;
+    let row;
+    try { row = await this.#provider.rename(state.row, name, {...state.metadata, digest: (await generation(state.bytes)).split(':')[1]}); }
+    catch (error) { state.renamed = false; throw error; }
+    const entry = this.#entry(row);
+    try { return await this.open(entry, {signal}); }
+    finally { await this.release(entry); }
+  }
   async resource(snapshot, authoredURL, {signal, maxBytes = 16 * 1024 * 1024} = {}) {
     this.#current(signal);
     if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0 || maxBytes > 16 * 1024 * 1024) throw fail('too_large');
     const sourceState = this.#state(snapshot);
-    const projection = relativeResource(snapshot.displayPath, authoredURL);
+    const projection = await this.#projection(snapshot, authoredURL, signal);
     if (this.#urls.size >= 32 || this.#resources + this.#resourceReserved + maxBytes > 32 * 1024 * 1024)
       throw fail('resource_limit');
     this.#resourceReserved += maxBytes;

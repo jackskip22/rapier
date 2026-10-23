@@ -49,6 +49,41 @@ const DIAGRAM_LABEL_CSS = new Set(('color fill stroke background-color font-fami
 	+ 'text-decoration-thickness text-underline-offset align-items align-content justify-content justify-items flex-direction flex-wrap '
 	+ 'width height min-width min-height max-width max-height margin margin-top margin-right margin-bottom margin-left '
 	+ 'padding padding-top padding-right padding-bottom padding-left').split(' '));
+const DOCUMENT_STYLE_PROPERTIES = new Set([...DIAGRAM_LABEL_CSS, ...('background display visibility opacity '
+	+ 'border border-top border-right border-bottom border-left border-color border-style border-width border-collapse border-spacing '
+	+ 'border-top-color border-right-color border-bottom-color border-left-color border-top-width border-right-width border-bottom-width border-left-width '
+	+ 'table-layout caption-side empty-cells list-style-type list-style-position direction unicode-bidi '
+	+ 'stroke-width stroke-opacity stroke-dasharray stroke-dashoffset stroke-linecap stroke-linejoin stroke-miterlimit '
+	+ 'fill-opacity fill-rule clip-rule clip-path filter stop-color stop-opacity text-anchor dominant-baseline alignment-baseline '
+	+ 'paint-order vector-effect shape-rendering color-interpolation color-interpolation-filters').split(' ')]);
+
+function cleanDocumentStyle(tag, value, context, classes = '') {
+	if (context === 'raw' && tag === 'span') return typography.style(typography.parseStyle(value));
+	const names = classes.split(/\s+/), diagram = tag === 'svg' && names.includes('pele') &&
+		(context === 'diagram' || ['render', 'export', 'source'].includes(context) && names.includes('rapier-diagram'));
+	const kept = [];
+	let start = 0, quote = '', depth = 0;
+	const take = end => {
+		const part = value.slice(start, end), colon = part.indexOf(':');
+		if (colon < 0) return;
+		const property = part.slice(0, colon).trim().toLowerCase(), body = part.slice(colon + 1).trim();
+		const diagramProperty = diagram && /^--(?:_[a-z0-9_-]+|pele-[a-z0-9-]+)$/.test(property);
+		if (!DOCUMENT_STYLE_PROPERTIES.has(property) && !/^--md-[a-z0-9-]+$/.test(property) && !diagramProperty && !(diagram && property === 'font')) return;
+		if (!body || /[\\\u0000-\u0008\u000b\u000e-\u001f{}@]|\/\*|\*\//.test(body)) return;
+		const withoutLocal = body.replace(/\burl\(\s*(['"]?)#[a-z0-9_.:-]+\1\s*\)/gi, '');
+		if (/(?:url|image|image-set|-webkit-image-set|element|paint|attr|expression)\s*\(/i.test(withoutLocal)) return;
+		kept.push(part.trim());
+	};
+	for (let at = 0; at <= value.length; at++) {
+		const ch = value[at];
+		if (quote) { if (ch === '\\') at++; else if (ch === quote) quote = ''; }
+		else if (ch === '"' || ch === "'") quote = ch;
+		else if (ch === '(') depth++;
+		else if (ch === ')') { if (--depth < 0) return ''; }
+		else if ((ch === ';' || at === value.length) && !depth) { take(at); start = at + 1; }
+	}
+	return quote || depth ? '' : kept.join(';');
+}
 const DIAGRAM_LABEL_SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 const DIAGRAM_LABEL_HTML_NAMESPACE = 'http://www.w3.org/1999/xhtml';
 const DIAGRAM_LABEL_MATH_NAMESPACE = 'http://www.w3.org/1998/Math/MathML';
@@ -160,7 +195,8 @@ function createInertHtmlSanitizer({parseFragment, serialize, sanitizeHtml, safeR
 							if (!_rapierImageDataAttributeAllowed(tag, key, compact, safeRasterDataUrl)) continue;
 						} else if (!uri.test(compact)) continue;
 					}
-					attribs[name] = selected === 'raw' && tag === 'span' && key === 'style' ? typography.style(typography.parseStyle(value)) : value;
+					const cleaned = key === 'style' ? cleanDocumentStyle(tag, value, selected, input.class || '') : value;
+					if (key !== 'style' || cleaned) attribs[name] = cleaned;
 				}
 				if ((tag === 'a' || tag === 'area') && attribs.target?.trim().toLowerCase() === '_blank') attribs.rel = 'noopener noreferrer';
 				return {tagName, attribs};
@@ -269,7 +305,7 @@ function _rapierInstallSanitizeHooks() {
 		if (_rapierRemoteContent.allowed || !/^(?:paste|render|raw|export)$/.test(_rapierSanitizeRuntime.context)) return;
 		if (!node || node.nodeName !== 'IMG' || node.hasAttribute('data-rapier-remote-src')) return;
 		const src = node.getAttribute('src') || '';
-		if (!src || !_rapierRemoteSubresourceOrigin(src)) return;
+		if (!src || !_rapierRemoteSubresourceOrigin(src) || globalThis.RapierEmbedPictureBase?.vouched?.has(src)) return;
 		node._rapierHeldBack = true;
 		node.setAttribute('data-rapier-remote-src', src);
 		const alt = node.getAttribute('alt');
@@ -301,24 +337,20 @@ function _rapierInstallSanitizeHooks() {
 	});
 	DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
 		const value = String(data.attrValue == null ? '' : data.attrValue);
-		if (_rapierSanitizeRuntime.context === 'raw' && node?.nodeName === 'SPAN' && data.attrName?.toLowerCase() === 'style') {
-			data.attrValue = typography.style(typography.parseStyle(value));
+		if (data.attrName?.toLowerCase() === 'style') {
+			data.attrValue = cleanDocumentStyle(node?.localName?.toLowerCase(), value, _rapierSanitizeRuntime.context, node?.getAttribute('class') || '');
 			data.keepAttr = !!data.attrValue;
 			return;
 		}
 		if (String(data.attrName || '').toLowerCase() === 'id' && _rapierChromeOwnsId(value)) { data.keepAttr = false; return; }
 		if (_rapierRemoteContent.allowed || _rapierSanitizeRuntime.context === 'source') return;
-		if (String(data.attrName || '').toLowerCase() === 'style') {
-			const cleaned = _rapierStyleWithoutRemoteUrls(value);
-			if (cleaned !== value) data.attrValue = cleaned;
-			return;
-		}
 		const attribute = String(data.attrName || '').toLowerCase();
 		if (attribute === 'alt' || attribute === 'title') return;
 		if (/^data-rapier-remote-(?:src|alt|title)$/.test(attribute) && node && node._rapierHeldBack === true) { data.forceKeepAttr = true; return; }
 		if (attribute.startsWith('data-')) return;
 		const element = String(node && node.nodeName || '').toUpperCase();
 		if (attribute === 'href' && (element === 'A' || element === 'AREA')) return;
+		if (attribute === 'src' && element === 'IMG' && globalThis.RapierEmbedPictureBase?.vouched?.has(value)) return;
 		if (_rapierCssPresentationIsRemote(attribute, value) ||
 			value.split(/[\s,]+/).some(token => _rapierRemoteSubresourceOrigin(token))) {
 			data.keepAttr = false;
@@ -414,6 +446,13 @@ function _rapierLinkDestinationToConfirm(href, text = '') {
 }
 
 function _rapierSafeRasterDataUrl(value) {
+	if (/^data:image\/svg\+xml,/i.test(value)) {
+		try {
+			const assets = globalThis.RapierImageAssets;
+			return assets.dataImage(value)?.codec === 'image/svg+xml' &&
+				_rapierVerifyRasterBytes(assets.decodeDataImageBytes(value).bytes, 'image/svg+xml');
+		} catch (_) { return false; }
+	}
 	const match = RAPIER_RASTER_DATA_URL_RE.exec(value);
 	if (!match) return false;
 	try {

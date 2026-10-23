@@ -13,7 +13,7 @@ function _rapierDrawImageDataUrl(imageEl) {
 	const local = _rapierEmbedAssetSource(id);
 	if (local) return local;
 	const assets = globalThis.RapierImageAssets;
-	if (/^data:image\/(?:jxl|png|jpeg|webp|svg\+xml);base64,/i.test(id)) return id;
+	if (assets.dataImage(id)) return id;
 	const record = globalThis.RapierEmbeddedImages.index().index.assets.get(assets.normalizeLabel(id));
 	return record ? record.url : null;
 }
@@ -39,7 +39,7 @@ function _rapierDrawImageRecipe(imageEl) {
 	const record = {url, recipe: null, error: null, pending: null, ready: false};
 	_rapierDrawRecipeCache.set(imageEl, record);
 	const inspect = globalThis.RapierImageInspection?.inspectDrawing;
-	if (!/^data:image\/svg\+xml;base64,/i.test(url || '') || !inspect) return record;
+	if (!/^data:image\/svg\+xml(?:;base64)?,/i.test(url || '') || !inspect) return record;
 	record.pending = inspect(url, {kind: 'recipe'}).then(value => {
 		if (!record.ready && _rapierDrawRecipeCache.get(imageEl) === record && _rapierDrawImageDataUrl(imageEl) === url)
 			_rapierDrawPrimeImageRecipe(imageEl, url, value?.recipe, null, value?.resources);

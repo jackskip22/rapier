@@ -3,6 +3,7 @@ import {folderBackupSource, check} from './backup-folder.mjs';
 import {writeBackupStream} from './backup-stream.mjs';
 import {createBackupSink} from './backup-sink.mjs';
 import {backupStageRecord} from './backup-lifecycle.mjs';
+import {createHistoryReferenceScanner} from './trash.mjs';
 
 const STAGING_WRITE_BYTES = 64 * 1024;
 
@@ -227,6 +228,16 @@ export function createBackupWorkerClient({postMessage, assertCurrent, onProgress
 
 export function installBackupWorker(scope = globalThis) {
 	if (typeof scope.document !== 'undefined') throw new Error('backup sync storage needs a dedicated worker');
-	const receive = createBackupWorker({postMessage: message => scope.postMessage(message)});
-	scope.onmessage = ({data}) => receive(data).catch(error => scope.setTimeout(() => { throw error; }, 0));
+	const receive = createBackupWorker({postMessage: message => scope.postMessage(message)}), scan = createHistoryReferenceScanner();
+	scope.onmessage = ({data}) => {
+		if (data?.operation === 'history-scan') {
+			try {
+				if (!Number.isSafeInteger(data.id) || data.id < 1 || !['clear', 'add', 'reset', 'bytes'].includes(data.action)) throw new Error('Invalid history reference request');
+				const found = scan[data.action](data.action === 'add' ? data.hashes : data.bytes) || [];
+				scope.postMessage({operation: 'history-scan-result', id: data.id, found});
+			} catch (error) { scope.postMessage({operation: 'history-scan-result', id: data.id, error: String(error?.message || error)}); }
+			return;
+		}
+		receive(data).catch(error => scope.setTimeout(() => { throw error; }, 0));
+	};
 }

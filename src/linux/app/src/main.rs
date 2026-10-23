@@ -15,6 +15,7 @@ mod host;
 mod payload;
 mod portal;
 mod theme;
+mod wm;
 
 use std::io::{Read, Write};
 use std::os::linux::net::SocketAddrExt;
@@ -63,6 +64,32 @@ pub fn data_dir() -> PathBuf {
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(|| home().join(".local/share"))
+}
+
+/// The display this Rapier opens its windows on, as a file-name-safe name (Wayland's, else X11's).
+fn display_name() -> String {
+    let raw = ["WAYLAND_DISPLAY", "DISPLAY"].iter().filter_map(|n| std::env::var(n).ok()).find(|v| !v.is_empty()).unwrap_or_default();
+    raw.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '.' { c } else { '_' }).collect()
+}
+
+/// Rapier's own folder for this display: its browser profile (where the recovery of unsaved work lives) and its windows.
+/// The first display a person runs Rapier on keeps `rapier/` itself; each other display has `rapier/display-<name>/`, so a
+/// launch on a second screen opens its windows there instead of on the first one.
+pub fn instance_dir() -> PathBuf {
+    static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| {
+        let base = data_dir().join("rapier");
+        let (name, first) = (display_name(), base.join("first-display"));
+        match std::fs::read_to_string(&first) {
+            Ok(recorded) if recorded.trim() != name => base.join(format!("display-{name}")),
+            Ok(_) => base,
+            Err(_) => {
+                let _ = std::fs::create_dir_all(&base);
+                let _ = std::fs::write(&first, &name);
+                base
+            }
+        }
+    }).clone()
 }
 
 pub fn which(name: &str) -> Option<PathBuf> {
@@ -209,8 +236,34 @@ pub fn display_platform() -> Result<&'static str, String> {
 
 /// One window: a second launch hands its paths to the first and exits.
 fn instance_address() -> SocketAddr {
-    let name = format!("rapier-{}", unsafe { libc::getuid() });
+    // One Rapier per person and display: the first display's keeps the plain name.
+    let uid = unsafe { libc::getuid() };
+    let name = if instance_dir() == data_dir().join("rapier") { format!("rapier-{uid}") } else { format!("rapier-{uid}-{}", display_name()) };
     SocketAddr::from_abstract_name(name.as_bytes()).expect("socket name")
+}
+
+/// Why a path given to open cannot be: a folder, a path through a file, or one that cannot be read. A file that does not
+/// exist yet opens empty (its folders are made by the first save), so it is not refused here.
+fn unopenable(path: &str) -> Option<String> {
+    if path == NEW_DOCUMENT || path.starts_with(STDIN_DOCUMENT) {
+        return None;
+    }
+    let target = Path::new(path);
+    if target.is_dir() {
+        return Some(format!("{path} is a folder; open a file in it."));
+    }
+    let through_file = || target.ancestors().skip(1).find(|a| a.exists()).filter(|a| !a.is_dir())
+        .map(|file| format!("could not open {path}: {} is a file.", file.display()));
+    match std::fs::metadata(target) {
+        Ok(meta) if !meta.is_file() => Some(format!("could not open {path}: it is not a file.")),
+        Ok(_) => std::fs::File::open(target).err().map(|error| format!("could not open {path}: {}.", reason(&error))),
+        Err(error) if matches!(error.kind(), std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory) => through_file(),
+        Err(error) => Some(format!("could not open {path}: {}.", reason(&error))),
+    }
+}
+
+fn reason(error: &std::io::Error) -> String {
+    if error.kind() == std::io::ErrorKind::PermissionDenied { "no permission to read it".into() } else { error.to_string() }
 }
 
 fn single_instance(paths: &[String]) -> UnixListener {
@@ -336,9 +389,16 @@ fn main() {
             _ => absolute(a),
         })
         .collect();
-    // A folder is not a document: say so before anything starts.
-    if let Some(folder) = paths.iter().find(|p| Path::new(p.as_str()).is_dir()) {
-        eprintln!("Rapier: {folder} is a folder; open a file in it.");
+    // A path that cannot open says why in one line and is skipped; the files beside it open. None that can opens nothing.
+    let given = paths.len();
+    let paths: Vec<String> = paths.into_iter().filter(|p| {
+        let why = unopenable(p);
+        if let Some(why) = &why {
+            eprintln!("Rapier: {why}");
+        }
+        why.is_none()
+    }).collect();
+    if given > 0 && paths.is_empty() {
         std::process::exit(2);
     }
     let listener = single_instance(&paths);

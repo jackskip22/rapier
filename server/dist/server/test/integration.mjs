@@ -50,10 +50,10 @@ export async function serverCells({rendering=true}={}) {
     return wire;
   };
   const start = async extra => { server = await createServer({...options, ...extra}); await server.listen(); return server; };
-  const rpc = async (method, params = {}, scope = '') => {
+  const rpc = async (method, params = {}, scope = '', headers = {}) => {
     const response = await fetch(server.origin + '/mcp' + scope, {method:'POST', headers:{
       'Content-Type':'application/json', 'Accept':'application/json, text/event-stream',
-      'MCP-Protocol-Version':'2025-11-25', 'Authorization':'Bearer '+server.token,
+      'MCP-Protocol-Version':'2025-11-25', 'Authorization':'Bearer '+server.token, ...headers,
     }, body:JSON.stringify({jsonrpc:'2.0', id:randomUUID(), method,params})});
     assert.equal(response.status,200,await response.clone().text());
     const wire=await response.json(),result=wire.result || wire.error || wire;
@@ -63,6 +63,19 @@ export async function serverCells({rendering=true}={}) {
       receipt(result);
     }
     return retainTransport(result);
+  };
+  const appsRpc = async (method, params, scope = '') => {
+    const response = await fetch(server.origin + '/mcp', {method:'POST', headers:{
+      'Content-Type':'application/json', 'Accept':'application/json, text/event-stream',
+      'MCP-Protocol-Version':'2025-11-25', 'Authorization':'Bearer '+server.token,
+    }, body:JSON.stringify({jsonrpc:'2.0', id:randomUUID(), method:'initialize', params:{
+      protocolVersion:'2025-11-25', clientInfo:{name:'rapier-server-apps-witness',version:'1'},
+      capabilities:{extensions:{'io.modelcontextprotocol/ui':{mimeTypes:['text/html;profile=mcp-app']}}},
+    }})});
+    assert.equal(response.status,200);
+    const initialized=await response.json(), session=response.headers.get('Mcp-Session-Id');
+    assert(!initialized.error && session,'the real initialize grants the Apps session');
+    return rpc(method,params,scope,{'Mcp-Session-Id':session});
   };
   const receipt = result => parseReply(result.content.find(item=>item.type==='text').text);
   const call = async (name,args={},scope='') => {const wire=await rpc('tools/call',{name,arguments:args},scope);return wire.content ? receipt(wire) : wire;};
@@ -134,11 +147,11 @@ export async function serverCells({rendering=true}={}) {
       if(corpus.codecRefusals.length)console.log('CODEC REFUSAL (not a Word round trip): '+JSON.stringify(corpus.codecRefusals));
     }
     const original='Original agent document.\r\n';
-    const opening=await rpc('tools/call',{name:'open',arguments:{text:original,filename:'agent.md'}});
+    const opening=await appsRpc('tools/call',{name:'open',arguments:{text:original,filename:'agent.md'}});
     const opened=receipt(opening); assert(opened.document,JSON.stringify(opened));
     assert.equal(Object.hasOwn(opened,'editor_url'),false,'the server does not advertise an unavailable top-level editor page');
     assert.equal(await readFile(join(root,'agent.md'),'utf8'),original);
-    const scoped=await call('open',{},'?document=nested%2Fsecond.md'); assert(scoped.document,JSON.stringify(scoped));
+    const scoped=receipt(await appsRpc('tools/call',{name:'open',arguments:{}},'?document=nested%2Fsecond.md')); assert(scoped.document,JSON.stringify(scoped));
     const read=await call('read',named(opened.document)); assert.equal(read.text,original);
     const exported=await rpc('tools/call',{name:'export',arguments:{...named(opened.document),format:'markdown'}});
     const file=exported.content.find(value=>value.type==='resource_link');assert(file,JSON.stringify(exported));
@@ -176,6 +189,9 @@ export async function serverCells({rendering=true}={}) {
     const inverse=(await call('read',{...named(opened.document),history:true})).history?.acts?.find(act=>act.id===undo.act);
     assert.deepEqual(inverse?.reverses,[edit.act],'the inverse names the original committed act');
     assert.equal(await readFile(join(root,'agent.md'),'utf8'),original,'the actual persisted kernel undoes to the exact original');
+    const generic=await rpc('tools/call',{name:'open',arguments:{document:opened.document}});
+    assert.equal(generic._meta?.rapier?.editorKey,undefined,'a generic client receives no private editor key');
+    assert.equal(generic._meta?.rapier?.editorTransport,undefined,'a generic client receives no private editor transport');
     const resource=await rpc('resources/read',{uri:UI_RESOURCE});
     assert.doesNotMatch(resource.contents?.[0]?.text || '',/globalThis\.RAPIER_EDITOR_KEY\s*=\s*["']/,'the served resource grants no editor key');
     const editorKey=opening._meta?.rapier?.editorKey;
@@ -222,7 +238,8 @@ export async function serverCells({rendering=true}={}) {
     const refresh=await (await fetch(server.origin+'/search?q=outside')).json(); assert(refresh.results.some(row=>row.file==='agent.md'));
     const colliding=await call('open',{text:'Do not overwrite',filename:'harbour.md'}); assert(!colliding.document,'a new workspace cannot overwrite a named existing file');
     assert.equal(await readFile(join(root,'harbour.md'),'utf8'),source);
-    const scopedRead=await call('read',{...named(scoped.document),limit:7}); assert.equal(scopedRead.text,'# Other');
+    const scopedRead=await call('read',named(scoped.document));
+    assert.equal(scopedRead.text,await readFile(join(root,'nested','second.md'),'utf8'),'the scoped workspace reads its exact file');
     await assert.rejects(createServer(options),error=>error.code==='ROOT_LOCKED');
     const health=await (await fetch(server.origin+'/health')).json(); assert.equal(health.ready,true);
     const guarded='<!-- will/1 keep -->\nApproved clause.\n<!-- /will -->\n';
@@ -231,7 +248,7 @@ export async function serverCells({rendering=true}={}) {
     const willEdit=await call('edit',{...named(will.document),revision:willRead.revision,changes:[{text:'Unapproved replacement.\n'}]});
     assert.notEqual(willEdit.outcome,'applied','the filesystem door cannot bypass Will keep');
     assert.equal(await readFile(join(root,'governed.md'),'utf8'),guarded);
-    const directOpening=await rpc('tools/call',{name:'open',arguments:{text:'Before edit.\n',filename:'direct.md'}});
+    const directOpening=await appsRpc('tools/call',{name:'open',arguments:{text:'Before edit.\n',filename:'direct.md'}});
     const direct=receipt(directOpening);assert(direct.document);
     const directKey=directOpening._meta?.rapier?.editorKey;assert(directKey);
     assert.equal(directOpening._meta.rapier.editorDocument,direct.document);

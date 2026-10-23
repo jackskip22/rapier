@@ -139,7 +139,9 @@ export async function bucketCells() {
     const release=peer.barrier('parallel.md');
     const edits=await Promise.all([cloud,other].map((server,index)=>call(server,"edit",{...named(opened.document),revision:context.revision,changes:[{text:'Writer '+index+' won.\r\n'}]})));
     release();assert.equal(edits.filter(row=>row.outcome==='applied').length,1,JSON.stringify(edits));
-    assert.match(JSON.stringify(edits.find(row=>row.outcome!=='applied')),/FILE_CONFLICT|WORKSPACE_UNAVAILABLE/);
+    const loser=edits.find(row=>row.outcome!=='applied');
+    assert.deepEqual({outcome:loser.outcome,reason:loser.reason},{outcome:'uncertain',reason:'workspace_unavailable'},
+      'a failed conditional persistence is not acknowledged as an applied edit');
     assert(peer.requests.some(row=>row.key==='parallel.md' && row.status===412),'the loser was refused at S3, not just a local queue');
     const winner=edits.findIndex(row=>row.outcome==='applied');assert.equal((await cloud.store.read('parallel.md')).text,'Writer '+winner+' won.\r\n');
     applied(await call([cloud,other][winner],"undo",{act:edits[winner].act,...named(opened.document)}));
@@ -149,7 +151,7 @@ export async function bucketCells() {
     const newer=await call(other,"read",{...named(opened.document)});
     if(newer.outcome!=='ok')assert.equal((await call(other,"read",{...named(opened.document)})).outcome,"ok");
     const stale=await call(cloud,"read",{...named(opened.document)});
-    assert.match(JSON.stringify(stale),/FILE_CONFLICT|WORKSPACE_UNAVAILABLE/,'state-only publication cannot be overwritten by a cached owner');
+    assert.deepEqual({outcome:stale.outcome,reason:stale.reason},{outcome:'uncertain',reason:'workspace_unavailable'},'state-only publication cannot be overwritten by a cached owner');
 
     const releaseCreate=peer.barrier('create-race.md');
     const creates=await Promise.allSettled([cloud.store.publishDocument('create-race.md','A',null),other.store.publishDocument('create-race.md','B',null)]);

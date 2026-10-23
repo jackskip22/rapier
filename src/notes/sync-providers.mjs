@@ -45,7 +45,7 @@ export async function revokeProviderGrant(provider, {fetch, clientId, redirectUr
 export const PROVIDER_ORIGINS = Object.freeze({
 	drive: Object.freeze(['https://oauth2.googleapis.com', 'https://www.googleapis.com']),
 	onedrive: Object.freeze(['https://login.microsoftonline.com', 'https://graph.microsoft.com', 'https://*.files.1drv.com', 'https://*.sharepoint.com']),
-	dropbox: Object.freeze(['https://api.dropboxapi.com', 'https://content.dropboxapi.com']),
+	dropbox: Object.freeze(['https://api.dropboxapi.com', 'https://content.dropboxapi.com', 'https://notify.dropboxapi.com']),
 });
 export function providerConnectOrigins({registrations = OTHER_SYNC, listed = []} = {}) {
 	const origins = [];

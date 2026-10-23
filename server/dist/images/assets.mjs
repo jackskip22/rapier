@@ -5,7 +5,7 @@ import {inspectRaster, inspectHEIF} from './raster.mjs';
 import {fontCssURL} from '../draw/font.mjs';
 import {
   IMAGE_LIMITS, configureParser, normalizeLabel, assetTitle, installMarkdownImages, markdownParser,
-  markdownBodyOffset, dataImage, parseAssets, documentAssets, blockwiseAssets, packAssetIndex, restoreAssetIndex, projectImageDefinitions, imageEnvironment,
+  markdownBodyOffset, dataImage, imageOnlySourceBlock, parseAssets, documentAssets, blockwiseAssets, packAssetIndex, restoreAssetIndex, projectImageDefinitions, imageEnvironment,
   mayRetireImageDefinitions, retireDeletedImageDefinitions, assetOmissions, isAssetBlock,
   escapeImageAlt, serializeAsset, appendAssetText, appendAsset, referenceOccurs,
 } from '../spec/md-assets.mjs';
@@ -23,7 +23,7 @@ export function imageAnimation(url) {
 }
 export {
   IMAGE_LIMITS, configureParser, normalizeLabel, installMarkdownImages, markdownParser,
-  markdownBodyOffset, dataImage, parseAssets, documentAssets, blockwiseAssets, packAssetIndex, restoreAssetIndex, projectImageDefinitions, imageEnvironment,
+  markdownBodyOffset, dataImage, imageOnlySourceBlock, parseAssets, documentAssets, blockwiseAssets, packAssetIndex, restoreAssetIndex, projectImageDefinitions, imageEnvironment,
   mayRetireImageDefinitions, retireDeletedImageDefinitions, assetOmissions, isAssetBlock,
   escapeImageAlt, serializeAsset, appendAssetText, appendAsset, referenceOccurs,
 };
@@ -619,10 +619,23 @@ export function imageDimensions(bytes, codec, prefix = false) {
 }
 export function imagePlaceholderDimensions(url) {
   if (typeof url !== 'string') return null;
-  const header = /^data:(image\/(?:jxl|png|jpeg|webp|gif|svg\+xml));base64,/i.exec(url);
+  const header = /^data:(image\/(?:jxl|png|jpeg|webp|gif|svg\+xml))(;base64)?,/i.exec(url);
   if (!header) return null;
+  if (!header[2] && header[1].toLowerCase() !== 'image/svg+xml') return null;
   const codec = header[1].toLowerCase(), read = length => {
     length = Math.min(length, url.length - header[0].length);
+    if (!header[2]) {
+      const end = header[0].length + length, bytes = new Uint8Array(length);
+      let size = 0;
+      for (let at = header[0].length; at < end; at++) {
+        if (url[at] === '%') {
+          if (at + 2 >= end) break;
+          if (!/^[\da-f]{2}$/i.test(url.slice(at + 1, at + 3))) throw new Error('image_data_invalid');
+          bytes[size++] = parseInt(url.slice(at + 1, at + 3), 16); at += 2;
+        } else bytes[size++] = url.charCodeAt(at);
+      }
+      return bytes.subarray(0, size);
+    }
     const binary = atob(url.slice(header[0].length, header[0].length + length - length % 4));
     const bytes = new Uint8Array(binary.length);
     for (let at = 0; at < binary.length; at++) bytes[at] = binary.charCodeAt(at);
@@ -643,9 +656,26 @@ export function imagePlaceholderDimensions(url) {
     return imageDimensions(read(349528), codec, true);
   } catch (_) { return null; }
 }
+export function svgDataPrefix(url, length = 1200) {
+  const header = /^data:image\/svg\+xml(;base64)?,/i.exec(url || '');
+  if (!header) return '';
+  try {
+    const payload = url.slice(header[0].length, header[0].length + length);
+    if (header[1]) return atob(payload.slice(0, payload.length - payload.length % 4));
+    return payload.replace(/%([\da-f]{2})/gi, (_, pair) => String.fromCharCode(parseInt(pair, 16)));
+  } catch (_) { return ''; }
+}
 export function decodeDataImageBytes(url) {
   const info = dataImage(url);
   if (!info) return fail('image_data_invalid');
+  if (info.encoding === 'percent') {
+    const bytes = new Uint8Array(info.byteLength);
+    for (let at = info.payloadStart, out = 0; at < url.length; at++, out++) {
+      if (url[at] === '%') { bytes[out] = parseInt(url.slice(at + 1, at + 3), 16); at += 2; }
+      else bytes[out] = url.charCodeAt(at);
+    }
+    return {bytes, codec: info.codec};
+  }
   let text;
   try { text = atob(url.slice(info.payloadStart)); } catch (_) { return fail('image_data_invalid'); }
   const bytes = new Uint8Array(text.length);
@@ -674,6 +704,11 @@ function base64(bytes) {
   return btoa(parts.join(''));
 }
 export {base64 as encodeBase64};
+export function svgDataURL(bytes) {
+  const text = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(bytes);
+  return 'data:image/svg+xml,' + encodeURI(text).replace(/[!'()*#&]/g,
+    character => '%' + character.charCodeAt(0).toString(16).toUpperCase());
+}
 export async function createAsset(value, dimensions, options = {}) {
   let bytes = bytesOf(value);
   if (!bytes.length || bytes.length > IMAGE_LIMITS.bytes) return fail('image_byte_limit');
@@ -683,7 +718,7 @@ export async function createAsset(value, dimensions, options = {}) {
   if (dimensions && (actual.width !== dimensions.width || actual.height !== dimensions.height)) return fail('image_dimensions_invalid');
   const digest = await hashAsset(bytes), title = assetTitle(options.title);
   const label = 'image-' + digest + (title ? '-' + (await hashAsset(new TextEncoder().encode(title))).slice(0, 12) : '');
-  const asset = {id: normalizeLabel(label), label, reference: label, url: 'data:' + codec + ';base64,' + base64(bytes),
+  const asset = {id: normalizeLabel(label), label, reference: label, url: codec === 'image/svg+xml' ? svgDataURL(bytes) : 'data:' + codec + ';base64,' + base64(bytes),
     codec, ...actual, byteLength: bytes.length, bytes, title};
   asset.block = serializeAsset(asset);
   return asset;

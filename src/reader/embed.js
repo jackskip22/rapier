@@ -138,7 +138,7 @@ function readerEmbedMessage(event, port, generation) {
 		return;
 	}
 	const payload = data.payload || {};
-	const fields = {load: ['content', 'filename', 'revision', 'readOnly', 'title'], disconnect: [], theme: ['theme']}[data.type];
+	const fields = {load: ['content', 'filename', 'revision', 'readOnly', 'title', 'baseUrl'], disconnect: [], theme: ['theme']}[data.type];
 	const text = (key, max) => payload[key] === undefined || typeof payload[key] === 'string' && payload[key].length <= max;
 	const valid = fields && Object.keys(payload).every(key => fields.includes(key)) && text('filename', RAPIER_EMBED_FILENAME_MAX_CHARS) && text('title', 240)
 		&& (data.type !== 'load' || typeof payload.content === 'string' && _rapierEmbedValidRevision(payload.revision ?? data.baseRevision))
@@ -183,6 +183,9 @@ async function readerEmbedLoadRun(data, respond) {
 	if (new Blob([payload.content]).size > limit) { respond('load-nack', {code: 'document_too_large', limit}); return; }
 	let content;
 	try { content = RapierTextCodec.normalizeProtocol(payload.content); } catch (_) { respond('load-nack', {reason: 'invalid document payload'}); return; }
+	let pictureBase;
+	try { pictureBase = globalThis.RapierEmbedContract.pictureBase(payload.baseUrl); }
+	catch (error) { respond('load-nack', {code: error.code, reason: error.message}); return; }
 	const filename = typeof payload.filename === 'string' && payload.filename.trim() ? payload.filename : 'document.md';
 	if (filename.length > RAPIER_EMBED_FILENAME_MAX_CHARS || !_rapierDocumentNameIsAdmissible(filename)) { respond('load-nack', {reason: 'invalid document filename'}); return; }
 	const operation = ++_rapierEmbed.loadToken;
@@ -190,6 +193,7 @@ async function readerEmbedLoadRun(data, respond) {
 	_rapierEmbed.fileOpen.cancel('open_stale');
 	try {
 		const title = typeof payload.title === 'string' && payload.title.trim() ? payload.title.trim().slice(0, 240) : '';
+		globalThis.RapierEmbedPictureBase = pictureBase;
 		const shown = await readerLoad(content, filename, title);
 		if (operation !== _rapierEmbed.loadToken) return;
 		if (!shown) { respond('load-nack', {reason: 'a newer document replaced the host load'}); return; }

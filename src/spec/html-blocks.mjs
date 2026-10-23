@@ -425,7 +425,7 @@ export function mountHtmlBlocks(doc, options = {}) {
           const name = attr.name.toLowerCase(), value = attr.value;
           if (name.startsWith('on') || name.startsWith('data-rapier-') || ['nonce','srcdoc','is','autofocus','form','formaction','action','target','download','ping','xmlns:xlink'].includes(name)) el.removeAttribute(attr.name);
           if (['src','srcset','href'].includes(attr.localName.toLowerCase()) && !(name.endsWith('href') && /^#[A-Za-z][\w.-]*$/.test(value) ||
-              (name === 'src' && tag === 'img' || name.endsWith('href') && tag === 'image') && /^data:image\/(?:png|jpeg|webp|gif|jxl|svg\+xml);/i.test(value))) el.removeAttribute(attr.name);
+              (name === 'src' && tag === 'img' || name.endsWith('href') && tag === 'image') && /^data:image\/(?:(?:png|jpeg|webp|gif|jxl|svg\+xml);|svg\+xml,)/i.test(value))) el.removeAttribute(attr.name);
         }
         if (tag.startsWith('animate') || tag === 'set') {
           const attribute = (el.getAttribute('attributeName') || '').trim().toLowerCase().split(':').pop();
@@ -437,13 +437,16 @@ export function mountHtmlBlocks(doc, options = {}) {
           const name = tag === 'img' ? 'src' : el.hasAttribute('href') ? 'href' : 'xlink:href', original = el.getAttribute(name);
           if (original) {
             const match = /^data:(image\/(?:png|jpeg|webp|gif|jxl|svg\+xml));(?:charset=[^;,]+;)?base64,([A-Za-z0-9+/]+={0,2})$/i.exec(original);
-            if (!match || original.length > 24 * 1024 * 1024) throw new Error('Image requires a bounded base64 data URL');
-            const url = 'data:' + match[1].toLowerCase() + ';base64,' + match[2];
-            const bytes = Uint8Array.from(win.atob(match[2]), c => c.charCodeAt(0));
-            const info = match[1].toLowerCase() === 'image/gif' ? media.inspectGIF(bytes) : imageInfo(url) || admitted[url];
-            if (!info && match[1].toLowerCase() !== 'image/svg+xml') {el.removeAttribute(name); continue;}
+            const percent = /^data:image\/svg\+xml,/i.test(original);
+            if ((!match && !percent) || original.length > 24 * 1024 * 1024) throw new Error('Image requires a bounded base64 data URL');
+            const mime = percent ? 'image/svg+xml' : match[1].toLowerCase();
+            const url = percent ? original : 'data:' + mime + ';base64,' + match[2];
+            const bytes = percent ? new win.TextEncoder().encode(decodeURIComponent(original.slice(19)))
+              : Uint8Array.from(win.atob(match[2]), c => c.charCodeAt(0));
+            const info = mime === 'image/gif' ? media.inspectGIF(bytes) : imageInfo(url) || admitted[url];
+            if (!info && mime !== 'image/svg+xml') {el.removeAttribute(name); continue;}
             if (info) {pixels += info.width * info.height; if (pixels > 24000000) throw new Error('HTML image pixel budget'); admitted[url] = {width: info.width, height: info.height, animated: !!info.animated};}
-            if (match[1].toLowerCase() === 'image/svg+xml') {
+            if (mime === 'image/svg+xml') {
               const svgText = new win.TextDecoder('utf-8', {fatal: true}).decode(bytes);
               if (/<!\s*(?:DOCTYPE|ENTITY)\b/i.test(svgText)) throw new Error('SVG declarations are unsupported');
               const parsed = new win.DOMParser().parseFromString(svgText, 'image/svg+xml');

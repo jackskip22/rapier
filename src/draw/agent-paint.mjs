@@ -12,8 +12,8 @@ import {sha256Yielding, sha256TextOffThread} from '../notes/integrity.mjs';
 import {admitWaterActions, admitWaterPigment, waterPaperById, waterRadius, WATER_BRUSHES, WATER_STRENGTHS, WATER_PIGMENTS, WATER_PAPERS, WATER_TOOLS, WATER_CONTROLS, WATER_ACTION_MAX_POINTS, WATER_SOURCE_MAX_BYTES, WATER_TIP_MAX_PIXELS} from './water-data.mjs';
 import {encodePaintingSteps} from '../images/jxl/painting.mjs';
 import {waterTextPaths,waterTracePaths} from './water-paths.mjs';
-import {configurePaintRasterDecoder, decodePaintRaster, decodeNativePaintJXL, validatePaintRaster, paintRecompressionWorker, portablePaintPNG} from '../images/paint-raster.mjs';
-export {configurePaintRasterDecoder, decodePaintRaster, decodeNativePaintJXL, validatePaintRaster, paintRecompressionWorker, portablePaintPNG};
+import {configurePaintRasterDecoder, decodePaintRaster, decodeNativePaintJXL, validatePaintRaster, createPaintRecompressor, portablePaintPNG, withSVGImage, rasterizeSVG, encodeOwnedPaintPNG, deflateOwnedPaintBytes} from '../images/paint-raster.mjs';
+export {configurePaintRasterDecoder, decodePaintRaster, decodeNativePaintJXL, validatePaintRaster, createPaintRecompressor, portablePaintPNG, withSVGImage, rasterizeSVG, encodeOwnedPaintPNG, deflateOwnedPaintBytes};
 
 // The paint tool's own numbers (draw/paint-tool.js: RAPIER_PAINT_GRAIN, RAPIER_PAINT_WET, the Dip's range,
 export const AGENT_PAINT_GRAIN = 3;

@@ -38,6 +38,11 @@ The tools and receipts are the hosted door's. Markdown and HTML exports work wit
 `--chromium <path> --chromium-version <version>` for page, text, Word and PDF. Two hosts on the same folder share one
 door: the second joins the first, and takes it over when the first quits.
 
+`open` returns an `editor_url` on `http://127.0.0.1:<port>/d/<id>`. Open it on the same computer to work beside the
+agent. The page has the local folder owner's authority and uses the same document history and Undo. Its editor parts,
+including Drawing, come from the package. The listener checks its exact Host, refuses cross-site reads, and requires
+the exact local Origin for editor writes. This owner page is available only in the loopback `mcp` mode.
+
 ## Run
 
 Supply Node 22 or later, a local Chromium executable, its exact four-part version, and a service-owned folder or private bucket. Use the deployed release's tested toolchain. The server refuses a different browser version.

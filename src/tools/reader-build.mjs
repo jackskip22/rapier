@@ -108,6 +108,10 @@ async function renderFactorySlice(file, factory, names) {
 			source = source.slice(0, node.start) + 'const {' + names + '} = globalThis.RapierHtmlBlocks;' + source.slice(node.end);
 			continue;
 		}
+		if (node.source.value === './wiki.mjs') {
+			source = source.slice(0, node.start) + 'const installWikiParser = () => {}, wikiAddress = () => \'\';' + source.slice(node.end);
+			continue;
+		}
 		const pooled = node.source.value === './render-work.mjs';
 		if (!pooled && !(file === 'kit/render.mjs' && exportImports.has(node.source.value)) || !node.specifiers.length ||
 			node.specifiers.some(row => row.type !== 'ImportSpecifier' || row.imported.name !== row.local.name)) {
@@ -251,7 +255,7 @@ export async function buildReader({root = here, unchecked = [], toolchainCanonic
 		'markdown-it-sup-2.0.0.min.js', 'markdown-it-emoji-3.1.0-light.min.js', 'markdown-it-abbr-2.0.0.min.js', 'markdown-it-ins-4.0.0.min.js', 'markdown-it-deflist-4.0.0.min.js']);
 	const purify = await vendor(['dompurify-3.4.16.es2024.min.js']);
 
-	const carriesPretext = /agent\/vendor\/pretext\/|Pretext bac1774/.test(scriptPackage);
+	const carriesPretext = /agent\/vendor\/pretext\/|Pretext (?:bac1774|1\.0\.0)/.test(scriptPackage);
 	const lazy = licensesSheet(licenses, carriesPretext ? await read('agent/vendor/pretext/LICENSE') : '', await mitNotice(here), carriesPretext);
 	const sprites = spriteFor(sprite, blocks, lazy, scriptPackage.replace(/['"]#(i-[a-z0-9-]+)['"]/g, 'href="#$1"'));
 	const markup = sprites + '\n' + blocks.replace(/\n\s*\n+/g, '\n');
@@ -284,7 +288,7 @@ export async function buildReader({root = here, unchecked = [], toolchainCanonic
 	const bytes = Buffer.byteLength(html), gz = gzipSync(html, {level: 9}).length;
 	const budget = SIZE_BUDGETS.reader;
 	if (FAST_PACK) console.warn('RAPIER_PACK=fast: zlib packing for iteration only; ' + bytes + ' bytes is not a release measurement');
-	checkProfileSize('reader', bytes);
+	checkProfileSize('reader', bytes, console.warn, {release: !FAST_PACK});
 	await mkdir(resolve(root, 'dist'), {recursive: true});
 	let receipt = null;
 	try { receipt = JSON.parse(await readFile(resolve(root, 'dist/BUILD.json'), 'utf8')); } catch (_) {}
@@ -317,7 +321,7 @@ function licensesSheet(sheet, pretextLicense, notice, includePretext) {
 	let text = dropElements(sheet.replace(/<template data-rapier-later>([\s\S]*?)<\/template>/g, '$1'), (row, markup) => /\blicense-(?:entry|row)\b/.test(row.cls) && drop.test(markup.slice(0, 400)));
 	text = text.replaceAll('<pre class="license-text" data-license="rapier-mit"></pre>', () => '<pre class="license-text">' + escapeHtml(notice) + '</pre>');
 	if (includePretext) {
-		const pretext = '<details class="license-entry"><summary><span class="license-name">Pretext bac1774c · Unreleased</span><span class="license-id">MIT · BSD · Unicode · ICU</span></summary><pre class="license-text">' + escapeHtml(pretextLicense.trim()) + '</pre></details>\n';
+		const pretext = '<details class="license-entry"><summary><span class="license-name">Pretext 1.0.0 · 0d102a5c</span><span class="license-id">MIT · BSD · Unicode · ICU</span></summary><pre class="license-text">' + escapeHtml(pretextLicense.trim()) + '</pre></details>\n';
 		text = text.replace('<div class="licenses-list">', () => '<div class="licenses-list">\n' + pretext);
 	}
 	text = text.replace(/<button type="button" class="licenses-link" data-action="licenses-source">source<\/button>/, '<a class="licenses-link" href="https://github.com/jackskip22/rapier" target="_blank" rel="noopener noreferrer">source</a>');

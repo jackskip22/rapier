@@ -86,6 +86,7 @@ pub fn write_verified(path: &str, data: &[u8], digest: &str) -> std::io::Result<
         .ok()
         .map(|m| m.permissions().mode() & 0o7777);
     let staged = folder.join(format!(".{name}.{}.rapier-save", crate::random_hex(6)));
+    let mut keep_staged = false;
     let result = (|| {
         let mut file = OpenOptions::new()
             .write(true)
@@ -104,10 +105,24 @@ pub fn write_verified(path: &str, data: &[u8], digest: &str) -> std::io::Result<
                 "the staged bytes do not match the document",
             ));
         }
+        // A file with other hard links is written in place, so every link shows the saved text (a rename would leave
+        // the others with the old one). The staged copy, complete and checked, stays beside it until that write is
+        // done; if the write fails it is kept and named.
+        if fs::metadata(&target).is_ok_and(|m| m.nlink() > 1) {
+            let written = OpenOptions::new().write(true).truncate(true).custom_flags(libc::O_CLOEXEC).open(&target)
+                .and_then(|mut file| { file.write_all(data)?; file.sync_all() });
+            if let Err(error) = written {
+                keep_staged = true;
+                return Err(std::io::Error::new(error.kind(), format!("{error}; the saved text is kept in {}", staged.display())));
+            }
+            return fs::remove_file(&staged);
+        }
         fs::rename(&staged, &target)
     })();
     if let Err(error) = result {
-        let _ = fs::remove_file(&staged);
+        if !keep_staged {
+            let _ = fs::remove_file(&staged);
+        }
         return Err(error);
     }
     fsync_dir(&folder)?;

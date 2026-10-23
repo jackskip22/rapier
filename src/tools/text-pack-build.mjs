@@ -5,9 +5,11 @@ export function encodeTextPack(bytes) {
   for (const match of text.matchAll(pattern)) if (match[0].length >= 4 && match[0].length <= 1024) counts.set(match[0], (counts.get(match[0]) || 0) + 1);
   const candidates = [...counts].filter(([word, count]) => count > 1 && (word.length - 3) * count > word.length + 1)
     .sort((a, b) => b[1] - a[1]);
+  candidates.splice(96, candidates.length - 96, ...candidates.slice(96)
+    .sort((a, b) => Math.log2(b[0].length) * b[1] - Math.log2(a[0].length) * a[1]));
   const dictionary = []; let size = 0;
   for (const [word] of candidates) {
-    if (dictionary.length === 5000 || size + word.length + (dictionary.length ? 1 : 0) > 1024 * 1024) break;
+    if (dictionary.length === 4000 || size + word.length + (dictionary.length ? 1 : 0) > 1024 * 1024) break;
     size += word.length + (dictionary.length ? 1 : 0); dictionary.push(word);
   }
   if (!dictionary.length) return null;

@@ -62,7 +62,16 @@ export const IMPORT_SOURCES = Object.freeze(['rapier', 'keep', 'markdown', 'noti
 export const IMPORT_MAX_ENTRIES = ZIP_MAX_ENTRIES;
 export const IMPORT_MAX_BYTES = ZIP_READ_MAX_BYTES;
 export const IMPORT_JSON_MAX_BYTES = 25 * 1024 * 1024;
-const TEXT_EXT = /\.(?:json|md|markdown|txt|text|csv|html?|mht|mhtml|enex|xml|yaml|yml|opml)$/i;
+export function importNames(pool) {
+	const taken = new Set(), suffixes = new Map(); let at = 0;
+	return text => {
+		for (; at < pool.length; at++) taken.add(pool[at].toLowerCase());
+		const file = noteFileName(text, [], {taken, suffixes});
+		pool.push(file); taken.add(file.toLowerCase()); at++;
+		return file;
+	};
+}
+const TEXT_EXT = /\.(?:json|md|markdown|txt|text|csv|html?|mht|mhtml|znote|zoho|enex|xml|yaml|yml|opml)$/i;
 const IMAGE_EXT = /\.(?:png|jpe?g|gif|webp|jxl|bmp|svg|heic|heif|avif|ico)$/i;
 const CONTAINER_EXT = /\.(?:zip|textpack|bear2bk)$/i;
 const SYSTEM_FILE = /(?:^|\/)(?:__MACOSX\/|(?:\.DS_Store|Thumbs\.db|desktop\.ini)$)/i;
@@ -427,6 +436,7 @@ export function sniff(entries, options = {}) {
 		}
 		const shared = list.filter(e => classified.get(e) === 'picture' || (!classified.get(e) && !e.unreadable));
 		const simpleTwin = simplenoteTwins(list, classified);
+		const keepTwins = new Set(list.filter(e => classified.get(e) === 'keep').map(e => e.name.replace(/\.json$/i, '')));
 		const standard = list.filter(e => classified.get(e) === 'standardnotes').flatMap(e => {
 			const items = jsonValue(e).value?.items;
 			return Array.isArray(items) ? items : [];
@@ -441,7 +451,7 @@ export function sniff(entries, options = {}) {
 		for (const e of list) {
 			let source = classified.get(e);
 			const twin = source === 'markdown' && (simpleTwin(e) || standardTwin(e));
-			const htmlTwin = source === 'html' && list.some(j => classified.get(j) === 'keep' && j.name.replace(/\.json$/i, '') === e.name.replace(/\.html?$/i, ''));
+			const htmlTwin = source === 'html' && keepTwins.has(e.name.replace(/\.html?$/i, ''));
 			if (twin || htmlTwin) { unread.push({...e, why: 'duplicate text representation; the richer JSON in this root is authoritative'}); continue; }
 			if (!source || source === 'picture') {
 				if (e.unreadable) unread.push({...e, why: e.unreadable});
@@ -496,7 +506,16 @@ export async function importAny(entries, options = {}, importers = {}) {
 	function recordConsumed(inputId, note) { if (!consumed.has(inputId)) consumed.set(inputId, []); if (note) consumed.get(inputId).push(note); }
 	for (const batch of batches) {
 		const {source, rootId, primary} = batch;
-		const fn = source === 'rapier' ? addBackup : source === 'code' ? importCode : typeof importers[source] === 'function' ? importers[source] : null;
+		const primarySet = new Set(primary), primaryNames = new Map(), primaryIds = new Map();
+		for (let at = 0; at < primary.length; at++) {
+			const entry = primary[at];
+			for (const [map, key] of [[primaryNames, entry.name], [primaryIds, entry.inputId]]) {
+				if (!map.has(key)) map.set(key, []);
+				map.get(key).push(at);
+			}
+		}
+		const format = source === 'zoho' && typeof importers.zoho !== 'function' ? 'html' : source;
+		const fn = source === 'rapier' ? addBackup : source === 'code' ? importCode : typeof importers[format] === 'function' ? importers[format] : null;
 		if (!fn) {
 			if (!unoffered.includes(source)) unoffered.push(source);
 			for (const e of primary) { const why = 'no importer for ' + source + ' in this build'; skipped.push(skippedRow(e, why)); refused.set(e.inputId, why); }
@@ -505,7 +524,7 @@ export async function importAny(entries, options = {}, importers = {}) {
 		let result;
 		try {
 			const input = ['keep', 'simplenote', 'standardnotes', 'dayone', 'roam'].includes(source)
-				? batch.entries.filter(e => primary.includes(e) || extOf(e.name) !== 'json').map(e => primary.includes(e) && typeof e.text === 'string' ? {...e, text: e.text.replace(/^\uFEFF/, '')} : e) : batch.entries;
+				? batch.entries.filter(e => primarySet.has(e) || extOf(e.name) !== 'json').map(e => primarySet.has(e) && typeof e.text === 'string' ? {...e, text: e.text.replace(/^\uFEFF/, '')} : e) : batch.entries;
 			result = await fn(input, {existing: source === 'rapier' ? [...existing, ...backupFiles.map(f => f.name)] : [], index: source === 'rapier' ? backupIndex : undefined,
 				lastOrder, rootId, now, sections: sectionNames(options), flavour: options.flavour, subtle: options.subtle, audioExisting: audioPool});
 		} catch (error) {
@@ -517,7 +536,9 @@ export async function importAny(entries, options = {}, importers = {}) {
 			sourceName: n.sourceName || n.sourcePath || (primary.length === 1 ? primary[0].name : n.file), ...(source === 'rapier' ? {exactBackup: true} : {})}));
 		const backupInputs = source === 'rapier' ? new Map(primary.map(e => [e.name, e])) : null;
 		for (const n of got) {
-			const inputs = backupInputs ? (backupInputs.has(n.sourceName) ? [backupInputs.get(n.sourceName)] : []) : primary.filter(e => e.name === n.sourceName || (n.sourceInputId && e.inputId === n.sourceInputId));
+			const named = primaryNames.get(n.sourceName) || [], identified = n.sourceInputId ? primaryIds.get(n.sourceInputId) || [] : [];
+			const matches = identified.length ? [...new Set([...named, ...identified])].sort((a, b) => a - b) : named;
+			const inputs = backupInputs ? (backupInputs.has(n.sourceName) ? [backupInputs.get(n.sourceName)] : []) : matches.map(at => primary[at]);
 			if (!inputs.length && primary.length === 1) inputs.push(primary[0]);
 			n.sourceInputIds = inputs.map(e => e.inputId);
 			n.warnings = [...(n.warnings || []), ...(source === 'code' ? [] : inputs.flatMap(e => e.characterWarnings || []))];
@@ -538,13 +559,13 @@ export async function importAny(entries, options = {}, importers = {}) {
 		for (const row of result?.consumed || []) {
 			const name = typeof row === 'string' ? row : row.name;
 			const owners = typeof row?.sourceName === 'string' ? got.filter(note => note.sourceName === row.sourceName) : got;
-			for (const e of primary.filter(e => e.name === name)) for (const n of owners) recordConsumed(e.inputId, n);
+			for (const at of primaryNames.get(name) || []) for (const n of owners) recordConsumed(primary[at].inputId, n);
 		}
 		for (const row of result?.skipped || []) {
 			const matching = batch.entries.filter(e => e.name === row.name);
 			const canonical = matching.length === 1 ? matching[0] : null;
 			const normalized = {...row, rootId, ...(canonical ? {inputId: canonical.inputId, byteLength: byteLength(canonical)} : {})};
-			const attachment = row.attachment || (canonical && !primary.includes(canonical));
+			const attachment = row.attachment || (canonical && !primarySet.has(canonical));
 			if (attachment && canonical) Object.assign(normalized, {attachment: true, bytes: canonical.bytes, retainedIn: 'source input'});
 			skipped.push(normalized);
 			if (canonical && !attachment) refused.set(canonical.inputId, row.why || 'the importer refused this input');

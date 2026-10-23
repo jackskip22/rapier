@@ -236,8 +236,8 @@ keeps the reference scale; below rung 3, exact line breaks are a recommendation,
 
 #### Rich wrapping reference engine
 
-The reference uses one immutable [Pretext snapshot](https://github.com/chenglou/pretext/tree/bac1774c0f8b7a92e44b9da43b6d5443d55d0d9b),
-an unreleased main revision whose package version still reads `0.0.9`. It combines browser-derived break scans and
+The reference uses one immutable [Pretext snapshot](https://github.com/chenglou/pretext/tree/0d102a5cd933611e86a7e60bda7b4baa5995c6b0),
+Pretext 1.0.0 plus the commits of main through pull request #525 (a zero-width space as content of no width). It combines browser-derived break scans and
 tables with Canvas text measurement and JavaScript flow; it doesn't ask the DOM to choose lines. The DOM adapter admits
 Chrome and Chromium. Firefox, WebKit, Chrome on iOS, unsupported shaping and unsupported settings keep selectable
 native text and wrapping, as do complex semantic objects, authored `br` elements, preserved-whitespace DOM blocks,

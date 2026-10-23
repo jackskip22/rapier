@@ -2,6 +2,7 @@
 import {createHTTP, refuse} from './provider-http.mjs';
 import {s3Bucket, signV4, encodeObjectKey, canonicalQuery, readS3XML, s3XMLScalar, EMPTY_SHA256} from './s3-wire.mjs';
 import {plainConflict, plainName, plainBytes, plainFolder, PLAIN_MAX_BYTES} from './plain-store.mjs';
+import {plainPoll} from './plain-poll.mjs';
 
 const td = new TextDecoder('utf-8', {fatal: true});
 const hex = bytes => [...new Uint8Array(bytes)].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -9,7 +10,9 @@ const sha256 = async bytes => hex(await crypto.subtle.digest('SHA-256', bytes));
 const CHECK = '.rapier-plain-check';
 const ETAG = /^(?:W\/)?"[^"\x00-\x1f]{1,200}"$/;
 
-export function createS3PlainStore(options = {}) {
+export function createS3PlainStore(options = {}) { return s3PlainStore(options); }
+
+function s3PlainStore(options, shared = null) {
 	const {fetch: fetchFn, accessKeyId, secretAccessKey, sessionToken, region, signal, clock = () => new Date()} = options;
 	if (typeof fetchFn !== 'function') refuse('fetch', 'an injected fetch is required');
 	if (typeof accessKeyId !== 'string' || !accessKeyId || typeof secretAccessKey !== 'string' || !secretAccessKey) refuse('auth', 'a bucket key and its secret are required');
@@ -60,14 +63,13 @@ export function createS3PlainStore(options = {}) {
 		ready.catch(() => { ready = null; });
 		return ready;
 	}
-	return Object.freeze({
-		pause: http.pause, connect, prefix,
-		area: name => createS3PlainStore({...options, folder: prefix + name}),
-		async list() {
+	if (!shared) {
+		let rows = [];
+		const scan = async () => {
 			const out = [], seen = new Set();
 			let cursor = null;
 			for (let pages = 0; pages < 1000; pages++) {
-				const query = [['list-type', '2'], ['encoding-type', 'url'], ['max-keys', '1000'], ['prefix', prefix], ['delimiter', '/']];
+				const query = [['list-type', '2'], ['encoding-type', 'url'], ['max-keys', '1000'], ['prefix', prefix]];
 				if (cursor) query.push(['continuation-token', cursor]);
 				const res = await request('GET', null, {query, max: 4 * 1024 * 1024});
 				if (res.status === 404) refuse('bucket', 'the bucket was not found');
@@ -79,11 +81,12 @@ export function createS3PlainStore(options = {}) {
 					const key = decode(s3XMLScalar(row, 'Key', true));
 					if (!key.startsWith(prefix)) refuse('authority', 'the listing names a file outside the folder');
 					const name = key.slice(prefix.length);
-					if (!name || name.includes('/') || (name === CHECK || /^\.rapier-plain-check-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(name))) continue;
+					if (!name || name.endsWith('/') || (name.split('/').at(-1) === CHECK || /^\.rapier-plain-check-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(name.split('/').at(-1)))) continue;
 					if (seen.has(name)) refuse('listing', 'the listing names one file twice'); seen.add(name);
 					const size = Number(s3XMLScalar(row, 'Size', true)), rev = s3XMLScalar(row, 'ETag', true);
 					if (!Number.isSafeInteger(size) || size < 0 || !ETAG.test(rev)) refuse('response', 'the listing has no size or ETag for ' + name);
-					out.push({name: plainName(name), rev, size});
+					for (const part of name.split('/')) plainName(part);
+					out.push({path: name, rev, size});
 				}
 				const more = s3XMLScalar(xml, 'IsTruncated', true);
 				if (more === 'false') return out;
@@ -92,6 +95,18 @@ export function createS3PlainStore(options = {}) {
 				cursor = next;
 			}
 			refuse('too_large', 'the folder has too many files to list in one sync');
+		};
+		shared = {poll: plainPoll(async () => { const next = await scan(); http.check(); rows = next; }), rows: () => rows, prefix};
+	}
+	const areas = new Map();
+	return Object.freeze({
+		pause: http.pause, connect, prefix,
+		beginPoll: shared.poll.begin, endPoll: shared.poll.end,
+		area: name => { plainName(name); if (!areas.has(name)) areas.set(name, s3PlainStore({...options, folder: prefix + name}, shared)); return areas.get(name); },
+		async list() {
+			http.check(); await shared.poll.read(); http.check();
+			const relative = prefix.slice(shared.prefix.length);
+			return shared.rows().filter(row => row.path.startsWith(relative) && !row.path.slice(relative.length).includes('/')).map(({path, rev, size}) => ({name: path.slice(relative.length), rev, size}));
 		},
 		async get(file) {
 			const res = await request('GET', plainName(file));

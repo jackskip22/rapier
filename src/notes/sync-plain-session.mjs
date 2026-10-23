@@ -113,15 +113,19 @@ export function createPlainSession({folder, store: given, provider, place, devic
 				const guard = connectionGuard(ticket, saved); await guard();
 				if (typeof store.resume === 'function') await store.resume();
 				await guard();
-				const remote = guarded(store, guard), listing = await remote.list();
-				const result = await syncPlainFiles({folder, store: remote, base: {read: base.read, write: value => base.write(value, guard)}, device: record.device, other: 'files', listing, guard, now});
-				if (cards) result.cards = await syncPlainCards({folder, store: remote, base: {read: cardsBase.read, write: value => cardsBase.write(value, guard)}, listing, guard, now});
-				if (media) result.media = await syncPlainMedia({folder, store: guarded(store, guard), base: {read: mediaBase.read, write: value => mediaBase.write(value, guard)}, guard});
-				await guard();
-				const moved = row => ['pushed', 'pulled', 'created', 'renamed', 'trashed', 'removed', 'conflicts'].some(key => row?.[key]);
-				if (moved(result) || moved(result.media) || moved(result.cards) || !(saved.syncedAt > now() - IDLE_STAMP_MS))
-					await updateSyncState(folder, state => state.plain?.provider === record.provider && state.plain.place === record.place ? {...state, plain: {...state.plain, syncedAt: now()}} : null, {guard});
-				return result;
+				const remote = guarded(store, guard);
+				try {
+					await remote.beginPoll?.();
+					const listing = await remote.list();
+					const result = await syncPlainFiles({folder, store: remote, base: {read: base.read, write: value => base.write(value, guard)}, device: record.device, other: 'files', listing, guard, now});
+					if (cards) result.cards = await syncPlainCards({folder, store: remote, base: {read: cardsBase.read, write: value => cardsBase.write(value, guard)}, listing, guard, now});
+					if (media) result.media = await syncPlainMedia({folder, store: guarded(store, guard), base: {read: mediaBase.read, write: value => mediaBase.write(value, guard)}, guard});
+					await guard();
+					const moved = row => ['pushed', 'pulled', 'created', 'renamed', 'trashed', 'removed', 'conflicts'].some(key => row?.[key]);
+					if (moved(result) || moved(result.media) || moved(result.cards) || !(saved.syncedAt > now() - IDLE_STAMP_MS))
+						await updateSyncState(folder, state => state.plain?.provider === record.provider && state.plain.place === record.place ? {...state, plain: {...state.plain, syncedAt: now()}} : null, {guard});
+					return result;
+				} finally { store.endPoll?.(); }
 			})();
 			try { return await running; } finally { running = null; transports.clear(); transports.add(store); }
 		},

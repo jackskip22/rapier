@@ -45,7 +45,7 @@ function _rapierStorageSameReply(current, seen) {
 
 function _rapierTextHasDocumentScalars(value) {
 	const text = String(value == null ? '' : value);
-	return !/[\0\ud800-\udfff]/u.test(text);
+	return text.isWellFormed() && !text.includes('\0');
 }
 
 const RAPIER_DOCUMENT_NAME_MAX_CHARS = 512;
@@ -134,15 +134,27 @@ const RapierTextCodec = Object.freeze({
 	readDocumentBlob: async function (blob) {
 		return (await RapierTextCodec.readDocumentRecord(blob)).text;
 	},
-	documentBlob: function (text, {bom = false, trailer = '', type = 'text/plain'} = {}) {
-		const parts = bom ? ['\uFEFF'] : [];
+	*documentBlobParts(text, {bom = false, trailer = ''} = {}) {
+		if (bom) yield '\uFEFF';
 		for (const value of [text, trailer]) for (let start = 0; start < value.length;) {
 			let end = Math.min(value.length, start + 65536);
 			if (end < value.length && value.charCodeAt(end - 1) >= 0xd800 && value.charCodeAt(end - 1) <= 0xdbff &&
 					value.charCodeAt(end) >= 0xdc00 && value.charCodeAt(end) <= 0xdfff) end++;
-			parts.push(value.slice(start, end)); start = end;
+			yield value.slice(start, end); start = end;
 		}
-		return new Blob(parts, {type});
+	},
+	documentBlob: function (text, options = {}) {
+		return new Blob(Array.from(RapierTextCodec.documentBlobParts(text, options)), {type: options.type === undefined ? 'text/plain' : options.type});
+	},
+	documentBlobAsync: async function (text, options = {}) {
+		const parts = [];
+		for (const part of RapierTextCodec.documentBlobParts(text, options)) {
+			options.signal?.throwIfAborted();
+			parts.push(new Blob([part]));
+			if (parts.length % 16 === 0) await (options.yield ? options.yield() : new Promise(resolve => setTimeout(resolve, 0)));
+		}
+		options.signal?.throwIfAborted();
+		return new Blob(parts, {type: options.type === undefined ? 'text/plain' : options.type});
 	},
 	readDocumentRecord: async function (blob, options = {}) {
 		const size = Number(blob?.size);
@@ -1131,6 +1143,31 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 	}
 
 	async function _blobFingerprint(blob) {
+		if (globalThis.crypto?.subtle && blob.size <= 64 * 1024 * 1024) {
+			if (blob.size >= 1024 * 1024 && globalThis.RapierWorkerExecution) {
+				const install = function (scope) {
+					scope.onmessage = async event => {
+						try {
+							const value = event.data, digest = await globalThis.crypto.subtle.digest('SHA-256', await value.arrayBuffer());
+							scope.postMessage({bytes: value.size, algorithm: 'sha256', digest: Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')});
+						} catch (error) { scope.postMessage({error: String(error.message || error)}); }
+					};
+				};
+				try {
+					const worker = globalThis.RapierWorkerExecution.createWorkerExecution({name: 'rapier-fingerprint',
+						source: '(' + install.toString() + ')(self);', install});
+					try {
+						return await new Promise((resolve, reject) => {
+							worker.onmessage = event => event.data.error ? reject(new Error(event.data.error)) : resolve(event.data);
+							worker.onerror = worker.onmessageerror = event => reject(event.error || new Error(event.message || 'File fingerprint failed'));
+							worker.postMessage(blob);
+						});
+					} finally { worker.terminate(); }
+				} catch (_) {}
+			}
+			var digest = await globalThis.crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+			return { bytes: blob.size, algorithm: 'sha256', digest: Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, '0')).join('') };
+		}
 		var hash = globalThis.RapierLedger.sha256State();
 		for (var at = 0; at < blob.size; at += 1048576) hash.update(new Uint8Array(await blob.slice(at, at + 1048576).arrayBuffer()));
 		return { bytes: blob.size, algorithm: 'sha256', digest: hash.finish() };
@@ -2808,16 +2845,21 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			get readCurrent() { return async function (authority) {
 				var original = _platformOriginal(authority);
 				if (!original) return method('readCurrentDocument')?.(authority) || null;
-				var blob = await original.read(), read = await RapierTextCodec.readDocumentRecord(blob);
-				return {text: read.text, bom: read.bom, admittedBytes: read.bytes, name: original.name,
-					documentAuthority: authority, originalFile: original, fileGeneration: await _webFileGeneration(blob), transient: false};
+				var refreshed = await original.refresh();
+				var {blob, ...payload} = refreshed.payload, read = await RapierTextCodec.readDocumentRecord(blob);
+				return {...payload, text: read.text, bom: read.bom, admittedBytes: read.bytes, documentAuthority: authority};
 			}; },
 			get checkExternalChange() { return async function (authority) {
 				var original = _platformOriginal(authority);
 				if (!original) return method('checkExternalFileChange')?.(authority) || false;
 				try { await original.validate(); return false; }
-				catch (error) { window.dispatchEvent(new CustomEvent('rapier:file-changed', {detail: {
-					documentAuthority: authority, missing: true, reason: error.code || 'original_unavailable'}})); return true; }
+				catch (error) {
+					var reason = typeof error.code === 'string' ? error.code : error.name || 'original_unavailable';
+					var missing = ['missing', 'not_found', 'NotFoundError', 'stale_locator'].includes(reason);
+					if (!missing && reason !== 'external_file_changed') throw error;
+					window.dispatchEvent(new CustomEvent('rapier:file-changed', {detail: {
+						documentAuthority: authority, missing, reason}})); return true;
+				}
 			}; },
 			get acceptOpened() { return async function (payload) {
 				var original = payload?.originalFile, authority = String(payload?.documentAuthority || '');
@@ -2826,6 +2868,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 				await original.validate();
 				if (!_engineOwnsDocumentAuthority(authority)) return {bound: false, persisted: false};
 				_setPlatformFileBinding(authority, payload.fileGeneration, false, original);
+				original.activate(authority, () => _engineOwnsDocumentAuthority(authority));
 				return {bound: true, persisted: false};
 			}; },
 			get detach() { return async function (authority) {

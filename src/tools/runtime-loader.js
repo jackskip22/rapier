@@ -1,29 +1,16 @@
+function _rapierPackedReader() {
+  /* RAPIER_PACKED_READER */
 const _RAPIER_STORED_SPAN_MARKER =
-  /\/\* RAPIER_VENDOR_SPAN (\S+) offset=(\d+) bytes=(\d+) \*\//;
-let _rapierRuntimeReady, _rapierCodecsReady;
-
-function _rapierLoadCodecs() {
-  return _rapierCodecsReady ||= (async () => {
-    await _rapierWhenRuntime('rapier-codec-runtime');
-    const spans = await _rapierInflateVendor('rapier-codec-runtime');
-    if (spans.length !== 1 || spans[0].name !== 'rapier-codecs.js') throw new Error('Packed codec is invalid');
-    _rapierExecuteVendorSource(spans[0].name, spans[0].source);
-    const codecs = globalThis.RapierCodecs;
-    if (typeof codecs?.decodeBrotli !== 'function' || typeof codecs?.crc32 !== 'function') throw new Error('Packed codec did not initialize');
-    return codecs;
-  })();
-}
-
-async function _rapierInflateVendor(id, text = document.getElementById(id)?.textContent) {
+  /\/\* RAPIER_VENDOR_SPAN (\S+) offset=(\d+) bytes=(\d+) \*\//g;
+async function inflate(id, text, codecs) {
   if (!text) throw new Error(id, {cause: new Error('Packed resource is missing')});
   let combined, record;
   try {
     record = packedHeader(text);
     if (id === 'rapier-codec-runtime' && record.compression === 'brotli') throw new Error('Packed codec must not use Brotli');
-    const codecs = record.compression === 'brotli' ? await _rapierLoadCodecs() : null;
     if (record.compression === 'plain') combined = new TextEncoder().encode(packedPlainText(text.slice(record.from, record.to)));
     else {
-      const compressed = _rapierBase124.decodeBase124(text.slice(record.from, record.to), {maxBytes: 64 * 1024 * 1024});
+      const compressed = decodeBase124(text.slice(record.from, record.to), {maxBytes: 64 * 1024 * 1024});
       let transform;
       try { transform = new DecompressionStream(record.compression); }
       catch (error) { if (!codecs) throw error; }
@@ -47,9 +34,9 @@ async function _rapierInflateVendor(id, text = document.getElementById(id)?.text
     if (record.inflated !== null && combined.length !== record.inflated) throw new Error('Packed intermediate length differs');
     if (record.prefilter) combined = decodeTextPack(combined, record.bytes);
     if (combined.length !== record.bytes) throw new Error('Unpacked length does not match');
-    if (codecs && codecs.crc32(combined) !== record.crc32) throw new Error('Packed content differs');
+    if (record.crc32 !== null && codecs.crc32(combined) !== record.crc32) throw new Error('Packed content differs');
   } catch (error) { throw new Error(id, {cause: error}); }
-  const marked = new RegExp(_RAPIER_STORED_SPAN_MARKER.source, 'g');
+  const marked = _RAPIER_STORED_SPAN_MARKER;
   marked.lastIndex = record.to;
   const sources = [];
   let covered = 0;
@@ -66,6 +53,79 @@ async function _rapierInflateVendor(id, text = document.getElementById(id)?.text
   }
   if (!sources.length || covered !== combined.byteLength) throw new Error(id);
   return sources;
+}
+  function install(scope, codecs) {
+    scope.onmessage = async ({data}) => {
+      try {
+        const spans = await inflate(data.name, data.text, codecs);
+        const fonts = data.name === 'rapier-styles-runtime'
+          ? codecs.modules['shell/fonts/docx-fonts.mjs'].DOCX_FONTS.map(font => { try { return font.read(); } catch (_) { return null; } }) : [];
+        if (fonts.length) spans[0].fonts = fonts;
+        if (data.bytesOnly) for (const span of spans) if (span.name.endsWith('.js')) delete span.source;
+        scope.postMessage({id: data.id, spans}, [...new Set([...spans.map(span => span.bytes.buffer), ...fonts.filter(Boolean).map(bytes => bytes.buffer)])]);
+      } catch (error) {
+        scope.postMessage({id: data.id, error: error.cause?.message || error.message});
+      }
+    };
+  }
+  return {inflate, encodeBase124, decodeBase124, install};
+}
+const _rapierPacked = _rapierPackedReader();
+const _rapierBase124 = _rapierPacked;
+let _rapierRuntimeReady, _rapierCodecsReady, _rapierCodecsSource;
+let _rapierUnpackWorker = null, _rapierUnpackSerial = 0, _rapierUnpackIdle = 0;
+const _rapierUnpackRequests = new Map();
+const _rapierStoredVendorsPending = new Map();
+
+function _rapierLoadCodecs() {
+  return _rapierCodecsReady ||= (async () => {
+    await _rapierWhenRuntime('rapier-codec-runtime');
+    const spans = await _rapierPacked.inflate('rapier-codec-runtime', document.getElementById('rapier-codec-runtime')?.textContent, null);
+    if (spans.length !== 1 || spans[0].name !== 'rapier-codecs.js') throw new Error('Packed codec is invalid');
+    _rapierCodecsSource = spans[0].source;
+    _rapierExecuteVendorSource(spans[0].name, spans[0].source);
+    const codecs = globalThis.RapierCodecs;
+    if (typeof codecs?.decodeBrotli !== 'function' || typeof codecs?.crc32 !== 'function') throw new Error('Packed codec did not initialize');
+    return codecs;
+  })();
+}
+
+async function _rapierInflateVendor(id, text, bytesOnly = false) {
+  if (text === undefined) {
+    const pending = !bytesOnly && _rapierStoredVendorsPending.get(id);
+    if (pending) { _rapierStoredVendorsPending.delete(id); return pending; }
+    text = document.getElementById(id)?.textContent;
+  }
+  const codecs = await _rapierLoadCodecs();
+  clearTimeout(_rapierUnpackIdle);
+  if (!_rapierUnpackWorker) {
+    const worker = _rapierUnpackWorker = codecs.modules['shell/worker-execution.mjs'].createWorkerExecution({
+      name: 'rapier-unpack',
+      source: () => _rapierCodecsSource + '\n(' + _rapierPackedReader.toString() + ')().install(self, globalThis.RapierCodecs);',
+      install: scope => _rapierPacked.install(scope, codecs),
+    });
+    worker.onmessage = ({data}) => {
+      const pending = _rapierUnpackRequests.get(data.id);
+      if (!pending) return;
+      _rapierUnpackRequests.delete(data.id);
+      if (data.error) pending.reject(new Error(pending.name, {cause: new Error(data.error)}));
+      else pending.resolve(data.spans);
+      if (!_rapierUnpackRequests.size) _rapierUnpackIdle = setTimeout(() => {
+        worker.terminate(); if (_rapierUnpackWorker === worker) _rapierUnpackWorker = null;
+      }, 30000);
+    };
+    worker.onerror = worker.onmessageerror = event => {
+      worker.terminate(); if (_rapierUnpackWorker === worker) _rapierUnpackWorker = null;
+      for (const pending of _rapierUnpackRequests.values()) pending.reject(new Error(pending.name, {cause: event.error || new Error(event.message)}));
+      _rapierUnpackRequests.clear();
+    };
+  }
+  const worker = _rapierUnpackWorker, request = ++_rapierUnpackSerial;
+  return new Promise((resolve, reject) => {
+    _rapierUnpackRequests.set(request, {resolve, reject, name: id});
+    try { worker.postMessage({id: request, name: id, text, bytesOnly}); }
+    catch (error) { _rapierUnpackRequests.delete(request); reject(error); }
+  });
 }
 
 function _rapierExecuteVendorSource(name, source, mountInterface) {
@@ -176,10 +236,9 @@ function _rapierStyleElements(source, anchor) {
   return sheets;
 }
 
-async function _rapierLoadPaintStyles(mountScreen = true) {
-  await _rapierLoadCodecs();
+async function _rapierLoadPaintStyles(mountScreen = true, pending = null) {
   await _rapierWhenRuntime('rapier-styles-runtime');
-  const styles = await _rapierInflateVendor('rapier-styles-runtime');
+  const styles = await (pending || _rapierInflateVendor('rapier-styles-runtime'));
   if (styles.length !== 3 || styles[0].name !== 'rapier-factory-fonts.js' || styles[1].name !== 'rapier-styles.json' ||
       styles[2].name !== 'rapier-first-screen.html')
     throw new Error('Editor interface records are invalid');
@@ -191,8 +250,9 @@ async function _rapierLoadPaintStyles(mountScreen = true) {
     if (!screen) throw new Error('Editor first screen is missing');
     screen.innerHTML = styles[2].source;
   }
-  const fonts = Promise.allSettled(globalThis.RapierDocxFonts.DOCX_FONTS.map(async font => {
-    const face = new FontFace(font.family, font.read(), {weight: String(font.weight), display: 'swap'});
+  const fonts = Promise.allSettled(globalThis.RapierDocxFonts.DOCX_FONTS.map(async (font, index) => {
+    if (!styles[0].fonts[index]) throw new Error('Bundled font unavailable');
+    const face = new FontFace(font.family, styles[0].fonts[index], {weight: String(font.weight), display: 'swap'});
     document.fonts.add(face);
     return face.load();
   }));
@@ -367,14 +427,22 @@ function _rapierKeepPortableTemplate() {
       return;
     }
     if (globalThis.RapierBenchSession?.active === true) await globalThis.RapierBenchSession.startEditor?.();
-    for (const {name, source} of await _rapierInflateVendor('rapier-platform-runtime')) _rapierExecuteVendorSource(name, source);
-    const {sheets, fonts} = await _rapierLoadPaintStyles();
-    const editorPending = _rapierWhenRuntime('rapier-editor-runtime').then(() => _rapierInflateVendor('rapier-editor-runtime'));
+    const unpack = (id, bytesOnly = false) => {
+      const pending = _rapierWhenRuntime(id).then(() => _rapierInflateVendor(id, document.getElementById(id)?.textContent, bytesOnly));
+      pending.catch(() => {});
+      return pending;
+    };
+    const platformPending = unpack('rapier-platform-runtime');
+    const stylesPending = unpack('rapier-styles-runtime');
+    const editorPending = unpack('rapier-editor-runtime', globalThis.RAPIER_APPS_HOST !== true);
+    for (const {name, source} of await platformPending) _rapierExecuteVendorSource(name, source);
+    const {sheets, fonts} = await _rapierLoadPaintStyles(true, stylesPending);
     if (document.getElementById('rapier-first-early')) _rapierShowFirstEarly(fonts).catch(error => console.warn('[rapier] early first screen skipped', error));
     else _rapierShowFirstPaint(fonts).catch(error => console.warn('[rapier] first picture skipped', error));
     const editor = await editorPending;
     if (editor.length !== 3 || editor[0].name !== 'rapier-ui.html' || editor[1].name !== 'rapier-shared.js' || editor[2].name !== 'rapier-editor.js')
       throw new Error('Editor runtime records are invalid');
+    for (const id of /* RAPIER_STARTUP_VENDORS */ []) _rapierStoredVendorsPending.set(id, unpack(id));
     await _rapierExecuteBootSource(editor[1]);
     /* RAPIER_BUILTIN_PLUGINS_READY */
     const template = document.createElement('template');

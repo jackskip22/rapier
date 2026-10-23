@@ -614,6 +614,7 @@ const _rapierEmbeddedImages = (() => {
     if (frame) cancelAnimationFrame(frame);
     frame = 0;
     if (suspended) return;
+    if (host.hasAttribute('data-rapier-early-source')) return;
     const current = documentIndex();
     const mountedRelative = new Set([...host.querySelectorAll('img[data-rapier-image-url]')].map(imageKey));
     for (const [key, row] of cache) if (row.relative && (originalViewHidden() || !mountedRelative.has(key))) {
@@ -1214,7 +1215,7 @@ const _rapierEmbeddedImages = (() => {
     const viewport = target.viewport || _rapierCaptureEditorViewport(null, true, false, start + (revealAt >= 0 ? revealAt + 1 : 1), start - 1);
     let proof = null;
     if (options.receipt) {
-      const preview = rapier.document.source.fork();
+      const preview = rapier.document.source.preview();
       let position = start + imageOffset;
       for (const row of splices) {
         if (row !== occurrenceSplice && row.pos < start) position += row.inserted.length - row.removed.length;
@@ -1257,7 +1258,8 @@ const _rapierEmbeddedImages = (() => {
     const grown = occurrence.inserted.length - occurrence.removed.length, {pos: at, removed} = orphaned[0];
     const pos = at >= occurrence.pos + occurrence.inserted.length ? at - grown : at + removed.length <= occurrence.pos ? at : -1;
     if (pos < 0 || source.slice(pos, pos + removed.length) !== removed) return null;
-    const definition = {pos, removed, inserted: line};
+    const leading = /^(?:\r\n|\r|\n)*/.exec(removed)[0], trailing = /(?:\r\n|\r|\n)*$/.exec(removed)[0];
+    const definition = {pos, removed, inserted: leading + line + trailing};
     return pos > occurrence.pos ? [definition, occurrence] : [occurrence, definition];
   }
   function stats() {

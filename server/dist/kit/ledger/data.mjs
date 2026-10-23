@@ -17,7 +17,7 @@ export function fields(value, depth, active, sorted = true) {
 }
 export function scalar(value) {
   if (value === null || typeof value === 'boolean') return true;
-  if (typeof value === 'string') { if (/[\uD800-\uDFFF]/u.test(value)) throw fault('unpaired surrogate'); return true; }
+  if (typeof value === 'string') { if (!value.isWellFormed()) throw fault('unpaired surrogate'); return true; }
   return typeof value === 'number' && Number.isFinite(value) && !Object.is(value, -0);
 }
 export function plainData(value) {
@@ -39,7 +39,7 @@ function* quoted(text, whole = true) {
     let end = Math.min(text.length, at + 16384);
     if (end < text.length && (text.charCodeAt(end - 1) & 0xfc00) === 0xd800 && (text.charCodeAt(end) & 0xfc00) === 0xdc00) end--;
     const part = text.slice(at, end);
-    if (whole && /[\uD800-\uDFFF]/u.test(part)) throw fault('unpaired surrogate');
+    if (whole && !part.isWellFormed()) throw fault('unpaired surrogate');
     yield JSON.stringify(part).slice(1, -1); at = end;
   }
   yield '"';

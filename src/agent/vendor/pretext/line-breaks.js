@@ -1,4 +1,4 @@
-/*! Pretext Unreleased (bac1774c0) | MIT; BSD/Unicode/ICU notices in LICENSE | Copyright (c) 2026 Pretext contributors */
+/*! Pretext 1.0.0 + main (0d102a5cd) | MIT; BSD/Unicode/ICU notices in LICENSE | Copyright (c) 2026 Pretext contributors */
 // Break opportunities as Chrome and Safari find them: ports of Blink's and WebKit's
 // line-break scans over their own pair tables and ICU line rules, which
 // scripts/generate-engine-break-data.ts writes to src/generated/engine-break-data.ts.
@@ -883,10 +883,4 @@ export function getWebKitBreakBetweenItems(previous        , next        , keepA
   f.last = n > 0 ? previous.charCodeAt(n - 1) : 0
   f.priorLength = f.last === 0 ? 0 : f.secondToLast === 0 ? 1 : 2
   return nextBreakablePosition(pairs, f, 0) === 0
-}
-
-// canBreakBefore, InlineContentBreaker.cpp:124-137, for line-break auto: whether a line
-// that holds only an overflowing first character ends before this code unit.
-export function canWebKitLineStartWith(unit        )          {
-  return unit === 0x5c || (unit !== 0xa0 && unit !== 0x2010 && unit !== 0x2013 && !hasProperty(unit, PUNCTUATION_BUT_DASH_OR_CONNECTOR))
 }

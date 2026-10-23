@@ -10,7 +10,7 @@ import { createKernel, createState, canonicalJson, serializeJson, admissibleText
 import {fencedBlocks} from '../agent/text-surface.mjs';
 import {prepareDoorLetters} from './letters.mjs';
 import {inputErrorResult, modelReply, parseReply} from '../agent/page-result.mjs';
-import {normalizeLabel, encodeBase64} from '../images/assets.mjs';
+import {normalizeLabel, encodeBase64, svgDataPrefix} from '../images/assets.mjs';
 import { sourceEdits, mergeSource, replay } from '../kernel/live-merge.mjs';
 import { paintAgentStrokes, agentPaintSheetHolds, agentPaintBrushRegistry, agentStrokesFault, replayAgentPainting, sampleAgentPainting, validatePaintRaster } from '../draw/agent-paint.mjs';
 import { VERSION } from '../version.mjs';
@@ -181,7 +181,7 @@ function deliverHumanMessage(row, state, extra = {}) {
 const EXPORT_LEASE_MS = 90000;
 const DAY = 86400000;
 const REQUEST_LEASE_MS = 300000;
-const MATERIAL_RETRY_WAIT_MS = 20000;
+const MATERIAL_RETRY_WAIT_MS = 15000;
 const CLOCK_SKEW_MS = 60000;
 const REQUEST_SESSION = CLIENT_SESSION_PATTERN;
 const TASK_HANDLE = /^rptask_[A-Za-z0-9_-]{43}$/;
@@ -223,8 +223,8 @@ async function digest(value) {
 
 function holdsDrawing(text) {
   if (/<metadata id="rapier-draw"/.test(text)) return true;
-  for (const match of text.matchAll(/data:image\/svg\+xml;base64,([A-Za-z0-9+/=]{16,})/g)) {
-    try { if (atob(match[1].slice(0, 16384)).includes('<metadata id="rapier-draw"')) return true; } catch {}
+  for (const match of text.matchAll(/data:image\/svg\+xml(?:;base64)?,[^\s"'<>)]{16,}/gi)) {
+    if (svgDataPrefix(match[0], 16384).includes('<metadata id="rapier-draw"')) return true;
   }
   return false;
 }
@@ -241,8 +241,10 @@ async function exportFile(env, { format, filename, docKind, text, base, file: su
       const page = await readTextBody(response, MAX_EXPORT_BYTES, 'export page', 'EXPORT_PAGE_TOO_LARGE', false, signal);
       const carries = docKind === 'markdown' ? [...(holdsDrawing(text) ? ['drawing'] : []),
         ...portableNeeds(text, {base: typeof base === 'string' ? base : base?.text, flowchart: fence => parseFlowchart(fence).ok === true})] : [];
-      file = { name: exportFilename(filename, format), mimeType: 'text/html', bytes: encoder.encode(wrap(carry(page, carries), text, filename, base ? {base} : undefined)),
-        fidelity: {...exportFidelity(format, docKind), carries} };
+      const carried = carry(page, carries), options = base ? {base} : {};
+      let bytes = encoder.encode(wrap(carried, text, filename, options));
+      if (bytes.byteLength > MAX_EXPORT_BYTES) bytes = encoder.encode(wrap(carried, text, filename, {...options, readable: ''}));
+      file = { name: exportFilename(filename, format), mimeType: 'text/html', bytes, fidelity: {...exportFidelity(format, docKind), carries} };
     } catch (error) {
       return error?.code === 'EXPORT_PAGE_TOO_LARGE' ? { reason: 'export_too_large', limitBytes: MAX_EXPORT_BYTES } : { reason: 'export_page_unavailable' };
     }
@@ -692,6 +694,7 @@ async function editorProofVerdict(env, args, authority, editorProof, documentAdd
 }
 
 async function takeToolBudget(request, env, authority, name, args, door, editorProof) {
+  if (authority.source === 'page' && ![PAIR_STATUS, ROTATE].includes(name)) return null;
   const bound = !!(env.BUDGET?.get && env.BUDGET?.idFromName), limited = typeof env.MODEL_CALLS?.limit === 'function' && typeof env.EDITOR_CALLS?.limit === 'function';
   if (!bound && !limited && env.ALLOW_UNMETERED_CREATE === 'true') return null;
   const unavailable = () => ({status: 503, code: 'TOOL_BUDGET_UNAVAILABLE',
@@ -719,6 +722,16 @@ async function takeToolBudget(request, env, authority, name, args, door, editorP
       if (!(await editorProofVerdict(env, proofArgs, authority, editorProof, documentAddress)).ok) return null;
       editor = true;
     }
+    return await takeVerifiedToolBudget(env, editor, principal);
+  } catch { return unavailable(); }
+}
+
+async function takeVerifiedToolBudget(env, editor, principal) {
+  const bound = !!(env.BUDGET?.get && env.BUDGET?.idFromName), limited = typeof env.MODEL_CALLS?.limit === 'function' && typeof env.EDITOR_CALLS?.limit === 'function';
+  if (!bound && !limited && env.ALLOW_UNMETERED_CREATE === 'true') return null;
+  const unavailable = () => ({status: 503, code: 'TOOL_BUDGET_UNAVAILABLE',
+    message: 'Tool invocation admission is unavailable. Retry when the service is available.'});
+  try {
     const key = (editor ? 'tool-editor:' : 'tool-model:') + await digest(principal);
     if (limited) {
       const {success} = await (editor ? env.EDITOR_CALLS : env.MODEL_CALLS).limit({key});
@@ -892,6 +905,8 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   if (name === ROTATE && !successor) return toolError(failure('PAIRING_REQUIRED', 'This browser is not paired with this workspace. Open its editor link and give the assistant the code the page shows.'));
   const requestKey = mintId('request_'), requestExpiresAt = Date.now() + REQUEST_LEASE_MS;
   const payload = { operation: name === 'show' && args.target === 'pair' ? PAIR_BROWSER : name, args: name === 'show' && args.target === 'pair' ? {code: input.code} : input, create, ...(name === 'show' && args.target === 'ask' ? {waitBound: door === '/muse' ? MUSE_WAIT_MS : 120000} : {}), ...(door === '/muse' && ['edit', 'undo'].includes(name) ? {holdBound: MUSE_WAIT_MS} : {}), ...(file ? {hostFileBinding: await digest(JSON.stringify(file))} : {}), ...(page ? {page: {...page.authority, ...(pageRotation ? {rotationEpoch: pageRotation.epoch, rotationRetry: pageRotation.retry} : {})}} : {ownerKey, capabilityHash, ...(connectionKey ? {connectionKey, oauthGrant: authority.grant} : {})}), ...(create ? {prefix: document.slice(0, ADDRESS_CHARS), ...(anonymous ? {bearer: true} : {})} : {}), ...(hostAgent ? {hostAgent} : {}), ...(humanTool ? {humanTool: true} : {}), ...(EDITOR_ONLY_TOOLS.has(name) || humanTool ? {editorAuthorized: true} : {}), ...(editorSource === 'page' && editorActivity === true && ['document.commit', 'document.human_context'].includes(name) ? {editorActivity: true} : {}), ...(name === 'show' && args.target === 'return' ? { returnAddress: documentAddress } : {}), ...(name === 'export' ? { exportAddress: documentAddress, exportOrigin: new URL(request.url).origin } : {}), ...(createBudget ? { createBudget } : {}), ...(successor ? { rotateToHash: await digest(successor) } : {}), ...(operationName !== undefined ? { operationId: operationName } : {}), requestKey, requestExpiresAt, ...(task ? {task} : {}), ...(peek ? {peek: true} : {}), ...(wait ? {waitFor: wait} : {}), ...(ownerLink ? {ownerLink: true} : {}), ...(connectionKey ? {workspaceAddress: documentAddress} : {}) };
+  if (page && ![PAIR_STATUS, ROTATE].includes(name))
+    payload.pageBudgetAddress = request.headers.get('CF-Connecting-IP') || 'unknown';
   if (name === 'document.visual_ack' && editorSource === 'page' && visualObservation !== null)
     payload.visualObservation = visualObservation;
   if (env.ACCESS_PROFILE === true) payload.access = authority.access;
@@ -924,6 +939,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
       {retryable, ...(identity ? {retryIdentity: identity} : {})}));
   }
   const result = await parseJsonStream(response, {inlineBytes: 65536});
+  if (result.toolAdmission) throw failure('TOOL_INVOCATION_ADMISSION', 'Tool invocation admission refused.', result.toolAdmission);
   if (!page && authority.source !== 'server' && ['show', 'export', 'read'].includes(name) && ['editor_unavailable', 'editor_not_present'].includes(result.structuredContent?.reason)) {
     const editor_url = new URL('/d/' + pageId(documentAddress), request.url).href, pairing = result.structuredContent.pairing;
     result.structuredContent = {...result.structuredContent, reason: 'editor_unavailable', editor_url,
@@ -933,7 +949,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   }
   if (result.isError && !(create && result.structuredContent?.created === true)) return result;
   const writer = authority.scopes?.includes('rapier:write') === true;
-  if ((authority.source === 'server' || !writer || env.ACCESS_PROFILE === true && authority.access?.kind !== 'browser') && result._meta?.rapier) delete result._meta.rapier.live;
+  if ((authority.source === 'server' || env.LOCAL_EDITOR_PAGE === true || !writer || env.ACCESS_PROFILE === true && authority.access?.kind !== 'browser') && result._meta?.rapier) delete result._meta.rapier.live;
   if (result._meta?.rapier?.live?.key) {
     const url = new URL('/live/' + pageId(documentAddress), request.url); url.protocol = url.protocol === 'http:' ? 'ws:' : 'wss:';
     const join = new URL('/rapier.html', request.url);
@@ -954,7 +970,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     ...(file ? {hydration: {status: result._meta?.rapier?.fileHydration?.status || 'unavailable', destination: 'host_file'}} : {}),
     presentation: {status: door === '/muse' ? 'link_available' : 'requested', acknowledged: false}};
   if (page) { if (result.structuredContent) delete result.structuredContent.pairing; return result; }
-  const editorUrl = authority.source === 'server' ? null : new URL('/d/' + pageId(documentAddress), request.url).href;
+  const editorUrl = authority.source === 'server' && env.LOCAL_EDITOR_PAGE !== true ? null : new URL('/d/' + pageId(documentAddress), request.url).href;
   result.structuredContent = { ...result.structuredContent, document, revision: result.structuredContent.revision ?? result.structuredContent.documentRevision, ...(editorUrl ? {editor_url: editorUrl} : {}) };
   if (name === 'read' && typeof result.structuredContent.next_cursor === 'string' && result.structuredContent.next_cursor) {
     const sealed = await sealCursor(env, document, result.structuredContent.next_cursor);
@@ -1200,10 +1216,23 @@ function handleMcpRequest(request, env, ctx, route) {
 }
 
 export function handleAuthenticatedMcp(request, env, authority) {
+  requireServerAuthority(authority);
+  return withOrigin(request, env, () => handleRequest(request, env, authority));
+}
+
+function requireServerAuthority(authority) {
   if (authority?.source !== 'server' || !/^owner_[A-Za-z0-9_-]{43}$/.test(authority.ownerId || '') ||
       !Array.isArray(authority.scopes) || !['rapier:read', 'rapier:write'].every(scope => authority.scopes.includes(scope)))
     throw new TypeError('Verified server authority is required');
-  return withOrigin(request, env, () => handleRequest(request, env, authority));
+}
+
+export function handleLocalEditor(request, env, authority) {
+  requireServerAuthority(authority);
+  const url = new URL(request.url);
+  if (env.LOCAL_EDITOR_PAGE !== true || url.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) ||
+      !/^\/(?:d\/ws_[A-Za-z0-9_-]{43}|editor\/ws_[A-Za-z0-9_-]{43}(?:\/admit)?)$/.test(url.pathname))
+    throw new TypeError('A loopback editor route is required');
+  return withOrigin(request, env, () => handleRequest(request, env, {...authority, source: 'browser'}));
 }
 
 export async function handleAccessMcp(request, env, authority) {
@@ -1731,6 +1760,12 @@ async function handleRequest(request, env, authority, route) {
   } catch (error) {
     if (request.signal.aborted || error?.name === 'AbortError') return rpcError(id, REQUEST_CANCELLED, 'Request canceled.');
     if ((TASK_METHODS.has(message.method) || message.method === 'tools/call') && Number.isSafeInteger(error?.code)) return rpcError(id, error.code, error.message, 200, error.data);
+    if (error?.[PUBLIC_FAILURE] && error.code === 'TOOL_INVOCATION_ADMISSION') {
+      const admission = error.details;
+      return json({error: {code: admission.code, message: admission.message,
+        ...(admission.retryAfter ? {retryAfter: admission.retryAfter} : {})}}, admission.status,
+        admission.retryAfter ? {'Retry-After': String(admission.retryAfter)} : {});
+    }
     if (error?.[PUBLIC_FAILURE] && error.code === 'REQUEST_ID_IN_USE') return rpcError(id, -32600, error.message);
     if (error?.[PUBLIC_FAILURE] && error.code === 'UNKNOWN_TOOL') return rpcError(id, -32602, error.message);
     if (error?.[PUBLIC_FAILURE] && error.code === 'RESOURCE_NOT_FOUND') return rpcError(id, modern || /^skill:/i.test(params.uri) ? -32602 : -32002, error.message, 200,
@@ -2582,6 +2617,13 @@ export class RapierDocument {
         if (!head || head.expiresAt <= Date.now() || !this.admits(head, input.page) && !replaying ||
             input.operation === ROTATE && input.page.rotationEpoch !== (replaying ? head.rotation.pageEpoch : head.pairEpoch || 0))
           return json(toolError(failure('PAIRING_REQUIRED', 'This browser is not paired with this workspace. Open its editor link and give the assistant the code the page shows.')));
+        if (input.pageBudgetAddress !== undefined) {
+          if (typeof input.pageBudgetAddress !== 'string') return new Response(null, {status: 400});
+          const admission = await takeVerifiedToolBudget(this.env, true,
+            head.bearer ? 'address:' + input.pageBudgetAddress : 'page-owner:' + head.ownerKey);
+          delete input.pageBudgetAddress;
+          if (admission) return json({toolAdmission: admission});
+        }
         Object.assign(input, { capabilityHash: replaying ? head.rotation.predecessorHash : head.capabilityHash, ownerKey: head.ownerKey,
           ...(input.operation === ROTATE ? {pageRetry: input.page.rotationRetry, ...(input.page.pairSessionHash ? {pageSessionHash: input.page.pairSessionHash} : {})} : {}) });
       }

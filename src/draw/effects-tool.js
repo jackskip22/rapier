@@ -228,12 +228,7 @@ async function _rapierDrawEffectsPreviewRaster() {
 		canvas = rendered.canvas;
 	} else {
 		const imageSource = source.replace('<svg ', '<svg width="' + width + '" height="' + height + '" ');
-		const url = URL.createObjectURL(new Blob([imageSource], {type: 'image/svg+xml'}));
-		try {
-			const img = new Image(); img.src = url; await img.decode();
-			canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
-			canvas.getContext('2d').drawImage(img, 0, 0);
-		} finally { URL.revokeObjectURL(url); }
+		canvas = await globalThis.RapierDrawAgentPaint.rasterizeSVG(imageSource, width, height, {signal: controller.signal});
 	}
 	if (!_rapierDrawEffectsPreviewWanted() || state.session !== session || state.effectsPreviewEpoch !== epoch ||
 		state.svgRoot !== root || root.getAttribute('viewBox') !== view) return;

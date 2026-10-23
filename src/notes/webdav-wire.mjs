@@ -25,7 +25,7 @@ function entities(value) {
 		return String.fromCodePoint(n);
 	});
 }
-export function parseWebDAVMultistatus(input, {maxBytes = XML_LIMIT, maxResponses = ROW_LIMIT} = {}) {
+export function parseWebDAVMultistatus(input, {maxBytes = XML_LIMIT, maxResponses = ROW_LIMIT, sync = false} = {}) {
 	integer(maxBytes, XML_LIMIT); integer(maxResponses, ROW_LIMIT);
 	let text;
 	try { text = typeof input === 'string' ? input : td.decode(bytes(input)); } catch { xmlError(); }
@@ -85,8 +85,8 @@ export function parseWebDAVMultistatus(input, {maxBytes = XML_LIMIT, maxResponse
 	const one = (n, local, required = false) => { const found = children(n, local); if (found.length > 1 || required && !found.length) xmlError(); return found[0]; };
 	const scalar = n => { if (n.children.length) xmlError(); return n.text.trim(); };
 	const status = n => { const m = /^HTTP\/\d+(?:\.\d+)?[ \t]+([1-5]\d\d)(?:[ \t]+[^\r\n]*)?$/.exec(scalar(n)); if (!m) xmlError(); return Number(m[1]); };
-	const responses = children(root, 'response'); if (!responses.length || responses.length > maxResponses) xmlError();
-	return responses.map(response => {
+	const responses = children(root, 'response'); if (!sync && !responses.length || responses.length > maxResponses) xmlError();
+	const rows = responses.map(response => {
 		if (response.text.trim()) xmlError();
 		const href = scalar(one(response, 'href', true)); if (!href) xmlError();
 		const directStatus = one(response, 'status'), propstats = children(response, 'propstat');
@@ -97,6 +97,8 @@ export function parseWebDAVMultistatus(input, {maxBytes = XML_LIMIT, maxResponse
 			const code = status(one(ps, 'status', true)), prop = one(ps, 'prop', true);
 			if (code < 200 || code >= 300) { failures.push(code); continue; } successes++;
 			for (const p of prop.children) {
+				if (p.uri === 'http://calendarserver.org/ns/' && p.local === 'getctag') { if (Object.hasOwn(row, 'ctag')) xmlError(); row.ctag = scalar(p) || null; continue; }
+				if (p.uri === DAV && p.local === 'sync-token') { if (Object.hasOwn(row, 'syncToken')) xmlError(); row.syncToken = scalar(p) || null; continue; }
 				if (p.uri !== DAV || !['resourcetype', 'getetag', 'getcontentlength'].includes(p.local)) continue;
 				if (seen.has(p.local)) xmlError(); seen.add(p.local);
 				if (p.local === 'resourcetype') { if (p.text.trim()) xmlError(); row.collection = children(p, 'collection').length > 0; }
@@ -107,6 +109,8 @@ export function parseWebDAVMultistatus(input, {maxBytes = XML_LIMIT, maxResponse
 		if (propstats.length && !successes) row.status = failures[0];
 		return row;
 	});
+	const token = one(root, 'sync-token');
+	return sync ? {rows, syncToken: token ? scalar(token) : null} : rows;
 }
 function segments(path) {
 	if (!path.startsWith('/') || /[\\\x00-\x20\x7f?#]/.test(path)) refuse('authority', 'The destination path is not unambiguous.');

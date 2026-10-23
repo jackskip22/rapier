@@ -2,6 +2,7 @@ const _rapierDocumentImport = {active: null};
 
 function _rapierImportKind(name, mime = '') {
   mime = String(mime).toLowerCase().split(';')[0].trim();
+  if (/\.ora$/i.test(String(name)) || mime === 'image/openraster') return 'ora';
   if (/\.do[ct]x$/i.test(String(name)) || mime === RAPIER_DOCX_MIME || mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.template') return 'docx';
   if (/\.pdf$/i.test(String(name)) || mime === 'application/pdf') return 'pdf';
   if (/\.(textpack|zip)$/i.test(String(name)) || ['application/zip', 'application/x-zip-compressed'].includes(mime)) return 'textpack';
@@ -101,7 +102,7 @@ async function _rapierReadImportedDocument(file, name = file?.name || '') {
     }
   };
   try {
-    const words = kind === 'textpack' ? 'Importing TextPack' : kind === 'pdf' ? 'Importing PDF' : 'Importing Word';
+    const words = kind === 'ora' ? 'Opening document' : kind === 'textpack' ? 'Importing TextPack' : kind === 'pdf' ? 'Importing PDF' : 'Importing Word';
     const onProgress = progress => _rapierImportProgress(run, words,
       typeof progress === 'number' ? progress : Number.isFinite(progress?.fraction) ? progress.fraction :
         progress?.pages > 0 ? (progress.page - 1) / progress.pages : null);
@@ -122,6 +123,16 @@ async function _rapierReadImportedDocument(file, name = file?.name || '') {
       work.check();
       return bytes;
     };
+    if (kind === 'ora') {
+      _rapierImportProgress(run, words);
+      const picture = await RapierImageArchive.readOpenRaster(file, {work});
+      const asset = await RapierImageAssets.createAsset(picture.bytes, undefined, {codec: picture.codec});
+      checkCurrent();
+      const base = String(name).replace(/\.ora$/i, '').replace(/[\u0000-\u001f\u007f/\\]/g, '_').slice(0, 180) || 'imported';
+      const occurrence = '![' + RapierImageAssets.escapeImageAlt(base) + '][' + asset.label + ']';
+      const text = RapierImageAssets.appendAssetText(occurrence, asset).source;
+      return {text, filename: base + '.md', admittedBytes: await textBytes(text), importStamp: run.stamp, warnings: []};
+    }
     if (kind === 'pdf') {
       const original = await globalThis.RapierPdf.readAttachedSource(file, {checkCurrent, signal: run.controller.signal});
       if (original) {

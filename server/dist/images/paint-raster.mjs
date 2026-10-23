@@ -5,6 +5,66 @@ import {inspectRaster} from './raster.mjs';
 import {readJXL, jxlRefused, codestreamComplete} from './jxl-native.mjs';
 
 const png = createPaintPNGCodec(), JXL = 'data:image/jxl;base64,';
+
+export async function withSVGImage(svg, consume, {signal} = {}) {
+	signal?.throwIfAborted();
+	const url = URL.createObjectURL(new Blob([svg], {type: 'image/svg+xml'})), image = new Image();
+	let aborted;
+	try {
+		image.src = url;
+		const decoded = image.decode();
+		await (signal ? Promise.race([decoded, new Promise((_, reject) => {
+			aborted = () => reject(signal.reason || new DOMException('Canceled', 'AbortError'));
+			signal.addEventListener('abort', aborted, {once: true});
+			if (signal.aborted) aborted();
+		})]) : decoded);
+		signal?.throwIfAborted();
+		return await consume(image);
+	} finally {
+		if (aborted) signal.removeEventListener('abort', aborted);
+		image.removeAttribute('src'); URL.revokeObjectURL(url);
+	}
+}
+export function rasterizeSVG(svg, width, height, options = {}) {
+	return withSVGImage(svg, image => {
+		const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
+		try { canvas.getContext('2d', {willReadFrequently: true}).drawImage(image, 0, 0, width, height); return canvas; }
+		catch (error) { canvas.width = 0; throw error; }
+	}, options);
+}
+
+function paintPNGWork(makePNG) {
+	const codec = makePNG();
+	globalThis.onmessage = async ({data: {operation, value}}) => {
+		try {
+			const result = await (operation === 'encode' ? codec.verifiedBytes(value) : operation === 'deflate'
+				? new Response(new Blob([value]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer().then(bytes => new Uint8Array(bytes)) : codec.decode(value));
+			globalThis.postMessage({result}, result ? [operation === 'decode' ? result.data.buffer : result.buffer] : []);
+		} catch (error) { globalThis.postMessage({error: String(error.message || error)}); }
+	};
+}
+async function paintPNGJob(operation, value, signal) {
+	signal?.throwIfAborted();
+	if (typeof Worker !== 'function') {
+		if (operation === 'deflate') throw new Error('Paper compression worker unavailable');
+		return operation === 'encode' ? png.verifiedBytes(value) : png.decode(value);
+	}
+	const url = URL.createObjectURL(new Blob(['(' + paintPNGWork.toString() + ')(' + createPaintPNGCodec.toString() + ');'], {type: 'text/javascript'}));
+	let worker, abort;
+	try {
+		worker = new Worker(url);
+		return await new Promise((resolve, reject) => {
+			abort = () => reject(signal.reason || new DOMException('Canceled', 'AbortError'));
+			signal?.addEventListener('abort', abort, {once: true});
+			worker.onmessage = ({data}) => data.error ? reject(new Error(data.error)) : resolve(data.result);
+			worker.onerror = event => reject(new Error(event.message || 'Painting encoder failed'));
+			worker.postMessage({operation, value}, operation === 'encode' ? [value.data.buffer] : operation === 'deflate' ? [value.buffer] : []);
+			if (signal?.aborted) abort();
+		});
+	} finally { signal?.removeEventListener('abort', abort); worker?.terminate(); URL.revokeObjectURL(url); }
+}
+export function deflateOwnedPaintBytes(bytes, {signal} = {}) { return paintPNGJob('deflate', bytes, signal); }
+export function encodeOwnedPaintPNG(pixels, {signal} = {}) { return paintPNGJob('encode', pixels, signal); }
 let hostedDecoder = null;
 const check = signal => { if (signal?.aborted) { const error = new Error('Painting canceled'); error.name = 'AbortError'; throw error; } };
 export function configurePaintRasterDecoder(decoder) {
@@ -46,7 +106,7 @@ export async function decodeNativePaintJXL(raster, {signal} = {}) {
 async function readPaintRaster(raster, signal, bytes) {
 	check(signal);
 	if (typeof raster !== 'string') return null;
-	if (raster.startsWith('data:image/png;base64,')) { const pixels = await png.decode(raster); check(signal); return pixels && {pixels, whole: true}; }
+	if (raster.startsWith('data:image/png;base64,')) { const pixels = await paintPNGJob('decode', raster, signal); check(signal); return pixels && {pixels, whole: true}; }
 	const read = jxlBytes(raster, bytes); if (!read) return null;
 	let got = null, failed = null;
 	try { got = await readNative(read, signal); }
@@ -93,6 +153,49 @@ export async function validatePaintRaster(raster, {signal, nativeRead} = {}) {
 	throw Object.assign(new Error('This host cannot fully decode this painting raster.'), {code: 'paint_raster_decoder_unavailable'});
 }
 
+
+export function createPaintRecompressor({signal, encode} = {}) {
+	signal?.throwIfAborted();
+	if (typeof Worker !== 'function') return null;
+	const url = URL.createObjectURL(new Blob(['(' + paintRecompressionWorker.toString() + ')(' + createPaintPNGCodec.toString() + ');'], {type: 'text/javascript'}));
+	let worker, pending = null, serial = 0, megapixels = 12, closed = false;
+	const close = (error = new DOMException('Painting canceled', 'AbortError')) => {
+		if (closed) return;
+		closed = true; signal?.removeEventListener('abort', abort);
+		worker?.terminate(); URL.revokeObjectURL(url);
+		if (pending) { const held = pending; pending = null; clearTimeout(held.timer); held.reject(error); }
+	};
+	const abort = () => close(signal.reason || new DOMException('Painting canceled', 'AbortError'));
+	try {
+		worker = new Worker(url);
+		signal?.addEventListener('abort', abort, {once: true});
+		worker.onmessage = ({data}) => {
+			if (!pending || data?.id !== pending.id) return;
+			const held = pending; pending = null; clearTimeout(held.timer);
+			if (data.ok) held.resolve(data); else { const error = new Error(data.error || 'Painting verification failed'); held.reject(error); close(error); }
+		};
+		worker.onerror = event => { event.preventDefault(); close(new Error(event.message || 'Painting verifier failed')); };
+		worker.onmessageerror = () => close(new Error('Painting verifier returned unreadable data'));
+	} catch (error) { close(error); throw error; }
+	const request = (operation, data, transfer = []) => new Promise((resolve, reject) => {
+		signal?.throwIfAborted();
+		if (closed) throw new DOMException('Painting canceled', 'AbortError');
+		const id = ++serial, timer = setTimeout(() => close(new Error('Painting verification took too long')), 45000 + megapixels * 15000);
+		pending = {id, resolve, reject, timer};
+		try { worker.postMessage({...data, id, operation}, transfer); } catch (error) { close(error); }
+	});
+	return {close, async recompress(raster, source) {
+		const {pixels} = await request('open', {raster, ...source});
+		if (!pixels) return null;
+		megapixels = Math.ceil(pixels.width * pixels.height / 1e6);
+		signal?.throwIfAborted();
+		const out = await encode({width: pixels.width, height: pixels.height, data: pixels.data,
+			options: {lossless: true, losslessProfile: 'painting-search', effort: 7, parallel: false}}, {signal, optional: true});
+		signal?.throwIfAborted();
+		const bytes = out.bytes || out;
+		return (await request('check', {bytes}, [bytes.buffer])).raster;
+	}};
+}
 
 export function paintRecompressionWorker(makePNG) {
 	const png = makePNG();

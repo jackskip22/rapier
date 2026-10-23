@@ -20,7 +20,7 @@ async function _rapierCommitSourceProjection(splices, operation, selection = nul
   } : null;
   let candidate, retired;
   try {
-    const preview = rapier.document.source.fork();
+    const preview = rapier.document.source.preview();
     for (const row of splices) preview.splice(row.pos, row.removed, row.inserted);
     candidate = preview.read();
     retired = rapier.document.docKind === 'markdown'

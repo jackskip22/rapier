@@ -111,6 +111,47 @@ export function sha256Parts(parts) {
   for (const part of parts) hash.update(part);
   return hash.digest();
 }
+export async function sha256PartsAsync(parts, {yield: yieldWork, signal, byteLength} = {}) {
+  const encoder = new TextEncoder(), chunks = [];
+  let bytes = byteLength === undefined ? null : new Uint8Array(byteLength);
+  let high = '', length = 0;
+  const write = text => {
+    if (bytes) {
+      const result = encoder.encodeInto(text, bytes.subarray(length));
+      if (result.read !== text.length) throw new RangeError('SHA-256 byte length differs');
+      length += result.written;
+    } else {
+      const chunk = encoder.encode(text); chunks.push(chunk); length += chunk.length;
+    }
+  };
+  for (const value of parts) {
+    let text = high + String(value === undefined ? '' : value); high = '';
+    if (text.length && (text.charCodeAt(text.length - 1) & 0xfc00) === 0xd800) {
+      high = text.slice(-1); text = text.slice(0, -1);
+    }
+    for (let at = 0; at < text.length;) {
+      signal?.throwIfAborted();
+      let end = Math.min(text.length, at + 32768);
+      if (end < text.length && (text.charCodeAt(end - 1) & 0xfc00) === 0xd800 &&
+          (text.charCodeAt(end) & 0xfc00) === 0xdc00) end--;
+      write(text.slice(at, end)); at = end;
+      const pending = yieldWork?.(); if (pending) await pending;
+    }
+  }
+  if (high) write(high);
+  if (bytes && length !== bytes.length) throw new RangeError('SHA-256 byte length differs');
+  bytes ||= new Uint8Array(length);
+  let at = 0;
+  for (const chunk of chunks) {
+    signal?.throwIfAborted(); bytes.set(chunk, at); at += chunk.length;
+    const pending = yieldWork?.(); if (pending) await pending;
+  }
+  chunks.length = 0;
+  signal?.throwIfAborted();
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+  signal?.throwIfAborted();
+  return Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, '0')).join('');
+}
 const LONG_TEXT = 65536, DOCUMENT_TEXT = 1048576, DIGESTS = new Map();
 export function sha256(text) {
   if (typeof text !== 'string' || text.length < LONG_TEXT || text.length >= DOCUMENT_TEXT) return createSHA256().update(text).digest();

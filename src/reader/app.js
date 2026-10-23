@@ -190,11 +190,12 @@ function readerRenderFilename() {
 function readerRenderEmpty() {
 	const host = $('editor-blocks');
 	let prompt = $('reader-open-prompt');
-	if (reader.loaded || _rapierEmbed.active) { prompt?.remove(); return; }
+	if (reader.loaded) { prompt?.remove(); return; }
 	if (prompt) return;
 	prompt = document.createElement('div');
 	prompt.id = 'reader-open-prompt';
 	prompt.className = 'reader-open-prompt visible';
+	if (_rapierEmbed.active) { prompt.textContent = 'No document is loaded.'; host.append(prompt); return; }
 	const open = document.createElement('button');
 	open.type = 'button';
 	open.className = 'settings-action-btn';
@@ -830,6 +831,7 @@ function readerInstallSheetGesture() {
 }
 
 
+const readerPluginSize = bytes => bytes >= 1e6 ? (bytes / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(bytes / 1e3)) + ' KB';
 function readerPlugin(key, label, noun) {
 	const view = {
 		status: 'checking', error: null, dismissed: false,
@@ -846,6 +848,8 @@ function readerPlugin(key, label, noun) {
 		},
 		request() {
 			if (this.installed() || this.dismissed) return;
+			const query = new URLSearchParams(location.search);
+			if (_rapierEmbed.active && !this.busy() && this.status !== 'error' && (query.has('plugins') || query.get('approvePlugins') === '1')) { this.install(); return; }
 			this.render();
 			readerOpenDialog($(key + '-plugin-overlay'));
 		},
@@ -861,7 +865,7 @@ function readerPlugin(key, label, noun) {
 		render() {
 			const status = this.status, name = noun[0].toUpperCase() + noun.slice(1);
 			$(key + '-plugin-title').textContent = status === 'downloading' ? name + ' plug-in downloading' : status === 'installing' ? name + ' plug-in installing' : status === 'error' ? name + ' plug-in unavailable' : 'Install ' + noun + ' plug-in?';
-			$(key + '-plugin-body').textContent = status === 'error' ? 'Rapier could not reach or verify the ' + noun + ' renderer. Check your internet connection and tap retry.' : '• Shows the ' + (key === 'math' ? 'math' : 'diagrams') + ' in this document.\n• ' + (key === 'math' ? '1.8 MB, once.' : 'Downloads once.') + '\n• Works offline.';
+			$(key + '-plugin-body').textContent = status === 'error' ? 'Rapier could not reach or verify the ' + noun + ' renderer. Check your internet connection and tap retry.' : '• Shows the ' + (key === 'math' ? 'math' : 'diagrams') + ' in this document.\n• ' + (readerPluginSize(_rapierProviders[key]?.downloadBytes) + ', once.') + '\n• Works offline.';
 			$(key + '-plugin-body').style.whiteSpace = 'pre-line';
 			$(key + '-plugin-progress').hidden = !this.busy();
 			$(key + '-plugin-progress').textContent = status === 'downloading' ? 'Downloading the ' + noun + ' renderer…' : 'Installing the renderer…';

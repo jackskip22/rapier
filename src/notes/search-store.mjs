@@ -7,8 +7,9 @@ export function stampsMatch(a, b) {
 }
 export function stampFor(file) {
 	const size = file?.size, modified = file?.lastModified ?? file?.modified;
-	return integer(size) && integer(modified) ? {size, modified} : null;
+	return integer(size) && integer(modified) ? {size, modified, ...(contentIdFor(file) ? {contentId: file.contentId} : {})} : null;
 }
+export function contentIdFor(row) { return /^sha256:[a-f0-9]{64}$/.test(row?.contentId || '') ? row.contentId : null; }
 export function stampDurable(stamp, observedAt) {
 	return !!stamp && integer(stamp.size) && integer(stamp.modified) && integer(observedAt) && stamp.modified < observedAt;
 }
@@ -23,7 +24,8 @@ export function planIndexReuse(folder, stored) {
 		if (seen.has(file)) throw new TypeError('the folder walk repeats a file: ' + file);
 		seen.add(file);
 		const row = rows.get(file);
-		if (row && row.projection && stampsMatch(entry, row)) reuse.push({file, projection: row.projection, size: row.size, modified: row.modified});
+		if (row && row.projection && contentIdFor(entry) && entry.contentId === contentIdFor(row) && stampsMatch(entry, row))
+			reuse.push({file, projection: row.projection, size: row.size, modified: row.modified, contentId: row.contentId});
 		else reread.push(file);
 	}
 	const drop = [];

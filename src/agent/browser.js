@@ -19,6 +19,7 @@
   let comparisonOwner = null, comparisonKernelId = null, comparisonGeneration = -1, remoteComparison = null;
   let contextSequence = 0, humanSequence = 0, checkpointedSequence = -1, contextQueued = false, contextTimer = 0, lastInputAt = 0, lastPointerAt = 0;
   let retainedPointer = null, projecting = 0, viewFlight = null;
+  let pointerFrame = 0;
   let visualFlight = null, materialFlight = null;
   let drawingNavigationSequence = 0;
   let pendingView = null, viewTimer = 0;
@@ -118,7 +119,16 @@
     };
   }
 
-  function rememberPointer() {
+  function rememberPointer(automatic = false) {
+    if (automatic) {
+      const observed = () => contextSubscribers.size > 0 || _rapierAgentConnected();
+      if (pointerFrame || !observed()) return;
+      pointerFrame = requestAnimationFrame(() => {
+        pointerFrame = 0;
+        if (observed()) rememberPointer();
+      });
+      return;
+    }
     if (!readyDone || !visible() || projecting || replacing || composing() || _rapierMutationBarrierActive()) return;
     const value = livePointer();
     if (!value.selection && !value.focus) return;
@@ -201,9 +211,9 @@
       materialFlight?.abort();
       lastInputAt = Date.now();
       clearTimeout(contextTimer);
-      contextTimer = setTimeout(() => { rememberPointer(); contextChanged('settled'); }, 950);
+      contextTimer = setTimeout(() => { rememberPointer(true); contextChanged('settled'); }, 950);
     }
-    queueMicrotask(() => { rememberPointer(); contextChanged(event.type); });
+    queueMicrotask(() => { rememberPointer(true); contextChanged(event.type); });
   }
 
   function drawingContext() {
@@ -1248,7 +1258,7 @@
       if (!match) return refuse('visual_target_missing');
       const assets = globalThis.RapierImageAssets;
       const asset = assets.documentAssets(before.text).assets.get(assets.normalizeLabel(match[2]));
-      if (!asset || !/^data:image\/svg\+xml;base64,/i.test(asset.url)) return refuse('visual_target_unavailable');
+      if (!asset || !/^data:image\/svg\+xml(?:;base64)?,/i.test(asset.url)) return refuse('visual_target_unavailable');
       let recipe = globalThis.RapierDrawCore._rapierDrawReadRecipeFromSVGText(new TextDecoder().decode(assets.decodeDataImage(asset.url)));
       if (!recipe?.view) return refuse('visual_target_unavailable');
       let state = recipe.shapes.some(shape => shape.paint?.mode === 'water') ? 'stored' : 'settled', projection = 'stored';
@@ -1957,7 +1967,7 @@
           try { notify({actor: entry.actor, principal: entry.principal, snapshot: value}); } catch (_) {}
         }
         if (value.documentId !== prior.documentId || !pointerCurrent()) retainedPointer = null;
-        if (events.some(entry => entry.actor === 'human') && Date.now() - lastPointerAt < 1500) rememberPointer();
+        if (events.some(entry => entry.actor === 'human') && Date.now() - lastPointerAt < 1500) rememberPointer(true);
         contextChanged('document');
       }
       await register();

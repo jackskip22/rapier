@@ -113,17 +113,22 @@ export function createByteStore({directory, memory = null, token = () => crypto.
 		try { const at = await locate(name); return stampFor(await (await at.dir.getFileHandle(at.name)).getFile()); }
 		catch (error) { if (missing(error)) return null; throw error; }
 	};
-	const statAll = async (prefix = '') => {
+	const statAll = async (prefix = '', names) => {
 		if (!FOLDERS.has(prefix)) throw fail('name', 'This folder is not part of Notes.');
+		const wanted = names ? new Set(names) : null;
 		if (memory) {
 			const out = new Map();
 			for (const [name, value] of memory) if (prefix ? name.startsWith(prefix + '/') : !name.includes('/'))
-				out.set(prefix ? name.slice(prefix.length + 1) : name, {size: value instanceof Blob ? value.size : value.length, modified: null});
+				if (!wanted || wanted.has(prefix ? name.slice(prefix.length + 1) : name)) out.set(prefix ? name.slice(prefix.length + 1) : name, {size: value instanceof Blob ? value.size : value.length, modified: null});
 			return out;
 		}
 		try {
-			const entries = await walk(prefix);
-			const stats = await Promise.all(entries.map(async ([name, handle]) => [name, stampFor(await handle.getFile())]));
+			const entries = (await walk(prefix)).filter(([name]) => !wanted || wanted.has(name)), stats = [];
+			for (let at = 0; at < entries.length; at += 64) {
+				const settled = await Promise.allSettled(entries.slice(at, at + 64).map(async ([name, handle]) => [name, stampFor(await handle.getFile())]));
+				const failed = settled.find(result => result.status === 'rejected'); if (failed) throw failed.reason;
+				stats.push(...settled.map(result => result.value));
+			}
 			return new Map(stats);
 		} catch (error) { if (prefix && missing(error)) return new Map(); throw error; }
 	};

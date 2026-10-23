@@ -1,8 +1,8 @@
-import {noteFileName, orderAfter} from './model.mjs';
+import {orderAfter} from './model.mjs';
 import {readZipEntries, zipOversizeSkip} from './zip.mjs';
 import {headingAnchors, linkMask} from './links.mjs';
 import {propertiesOf, tagsOf, parseFrontMatter} from './frontmatter.mjs';
-import {importTags, importDate, literalInline, literalBlock} from './import.mjs';
+import {importTags, importDate, literalInline, literalBlock, importNames} from './import.mjs';
 import {readImportText, reportCharacterChange, finishImportCharacters} from './import-characters.mjs';
 
 const ENCODER = new TextEncoder();
@@ -77,6 +77,7 @@ function convertBear(text, tags) {
 export async function importMarkdown(entries, options) {
 	const list = Array.isArray(entries) ? entries : [], opts = options && typeof options === 'object' ? options : {};
 	const pool = Array.isArray(opts.existing) ? opts.existing.filter(n => typeof n === 'string').slice() : [];
+	const allocate = importNames(pool);
 	const lastOrder = typeof opts.lastOrder === 'string' ? opts.lastOrder : '';
 	const notes = [], skipped = [], pictures = [], sections = [], spelled = new Map(), formatWarnings = [];
 	for (const value of Array.isArray(opts.sections) ? opts.sections : []) { const name = typeof value === 'string' ? value : value?.name; if (typeof name === 'string' && name && !spelled.has(name.toLowerCase())) spelled.set(name.toLowerCase(), name); }
@@ -134,7 +135,7 @@ export async function importMarkdown(entries, options) {
 				}
 			}
 			const title = projectionTitle || (plain ? '' : headingAnchors(raw)[0]?.text) || fileTitle;
-			const file = noteFileName('# ' + title, pool); pool.push(file);
+			const file = allocate('# ' + title);
 			const entry = {order: '', pinned: false, skill: false, archived: false, trashed: false, colour: ''};
 			const category = labelsOf(tags)[0] || leftoverFolder(name);
 			if (category) {

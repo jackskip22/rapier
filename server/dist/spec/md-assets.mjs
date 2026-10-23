@@ -17,9 +17,9 @@ export function installMarkdownImages(md) {
   if (md.__rapierImagesInstalled) return md;
   md.__rapierImagesInstalled = true;
   const validate = md.validateLink;
-  md.validateLink = url => /^data:image\/(?:jxl|svg\+xml);base64,[A-Za-z0-9+/]+={0,2}$/i.test(url) || validate(url);
+  md.validateLink = url => !!dataImage(url) || validate(url);
   const normalize = md.normalizeLink;
-  md.normalizeLink = url => /^data:image\/(?:jxl|png|jpeg|webp|gif|svg\+xml);base64,[A-Za-z0-9+/]+={0,2}$/i.test(url) ? url : normalize(url);
+  md.normalizeLink = url => dataImage(url) ? url : normalize(url);
   const reference = md.block.ruler.__rules__.find(row => row.name === 'reference').fn;
   md.block.ruler.at('reference', (state, start, end, silent) => {
     if (silent) return reference(state, start, end, silent);
@@ -182,7 +182,22 @@ export function* blockWindows(source, bodyOffset, parser, env, keepNul = false) 
 export function dataImage(url) {
   if (typeof url !== 'string' || url.length > IMAGE_LIMITS.sourceChars) return null;
   const prepared = preparedDefinitions.find(row => row.image.url === url)?.image;
-  if (prepared) return {codec: prepared.codec, byteLength: prepared.byteLength, payloadStart: url.indexOf(',') + 1};
+  if (prepared) return {codec: prepared.codec, byteLength: prepared.byteLength, payloadStart: url.indexOf(',') + 1,
+    ...(prepared.encoding ? {encoding: prepared.encoding} : {})};
+  if (/^data:image\/svg\+xml,/i.test(url)) {
+    const payloadStart = 19;
+    let byteLength = 0;
+    for (let at = payloadStart; at < url.length; at++, byteLength++) {
+      const code = url.charCodeAt(at);
+      if (code === 37) {
+        if (!/^[\da-f]{2}$/i.test(url.slice(at + 1, at + 3))) return null;
+        at += 2;
+      } else if (!(code >= 48 && code <= 57 || code >= 65 && code <= 90 || code >= 97 && code <= 122 ||
+          '-._~:/?@+$,;='.includes(url[at]))) return null;
+    }
+    return byteLength && byteLength <= IMAGE_LIMITS.bytes
+      ? {codec: 'image/svg+xml', byteLength, payloadStart, encoding: 'percent'} : null;
+  }
   const match = /^data:(image\/(?:jxl|png|jpeg|webp|gif|svg\+xml));base64,([A-Za-z0-9+/]+={0,2})$/i.exec(url);
   if (!match || match[2].length % 4) return null;
   const padding = match[2].endsWith('==') ? 2 : match[2].endsWith('=') ? 1 : 0;
@@ -291,7 +306,8 @@ export function restoreAssetIndex(source, packet, {offset = 0, bodyOffset = 0, f
   preparedDefinitions = blocks.filter(row => row.topLevel).map(row => {
     const local = {...row, start: 0, end: row.source.length, active: true, status: 'unverified'};
     for (const key of positions.slice(2)) if (Number.isSafeInteger(local[key])) local[key] -= row.start;
-    const image = Object.freeze({url: row.url, codec: row.codec, byteLength: row.byteLength});
+    const image = Object.freeze({url: row.url, codec: row.codec, byteLength: row.byteLength,
+      ...(row.encoding ? {encoding: row.encoding} : {})});
     return {source: row.source, factory, image, index: {assets: new Map([[row.id, local]]), blocks: [local],
       references: Object.assign(Object.create(null), {[row.id]: {href: row.url, title: row.title}}),
       duplicateLabels: new Set(), appendixStart: 0}};
@@ -314,7 +330,7 @@ export function projectImageDefinitions(source, index) {
   const references = Object.create(null);
   for (const [label, definition] of Object.entries(index.references)) {
     const image = index.assets.get(label);
-    references[label] = {href: image?.url === definition.href ? 'data:' + image.codec + ';base64,AA==' : definition.href,
+    references[label] = {href: image?.url === definition.href ? image.url.slice(0, image.url.indexOf(',') + 1) + 'AA==' : definition.href,
       title: definition.title};
   }
   return {source: records.length ? parts.join('') : source, records, references};
@@ -513,12 +529,17 @@ export function retireDeletedImageDefinitions(before, after, splices, factory) {
         !remaining.includes('[' + row.id) && !now.html.includes(row.id) && !now.html.includes(row.url.toUpperCase());
     });
     return retired.sort((a, b) => b.start - a.start).map(row => {
-      const gap = /(?:\r\n\r\n|\n\n|\r\r)$/.exec(after.slice(Math.max(0, row.start - 4), row.start));
+      const gap = /(?:\r\n|\r(?!\n)|(?<!\r)\n){2}$/.exec(after.slice(Math.max(0, row.start - 5), row.start));
       let tail = after.slice(row.end);
       const last = /^(?:\r\n|\n|\r)?$/.test(tail);
       for (const other of retired) if (other.start >= row.end) tail = tail.replace(other.source, '');
       const whole = gap && !/\S/.test(tail) && row.start - gap[0].length > markdownBodyOffset(after);
-      return whole ? {pos: row.start - gap[0].length, removed: gap[0] + row.source + (last ? after.slice(row.end) : ''), inserted: ''} : {pos: row.start, removed: row.source, inserted: ''};
+      if (whole) {
+        const [first, second] = gap[0].match(/\r\n|\r|\n/g), padding = first === second ? gap[0] : second;
+        return {pos: row.start - padding.length, removed: padding + row.source + (last ? after.slice(row.end) : ''), inserted: ''};
+      }
+      const between = gap && /^(?:\r\n|\r(?!\n)|(?<!\r)\n){2}/.test(tail) && row.start - gap[0].length >= markdownBodyOffset(after);
+      return between ? {pos: row.start - gap[0].length, removed: gap[0] + row.source, inserted: ''} : {pos: row.start, removed: row.source, inserted: ''};
     });
   } catch (_) { return []; }
 }
@@ -551,7 +572,7 @@ function previousOmissions(view, kind) {
     rows = rows.flatMap(row => {
       const permitted = kind === 'asset' ? /^[A-Za-z0-9+/=\\;&%#._~-]*$/
         : row.profile === 'base64' ? /^[A-Za-z0-9+/=\s]*$/ : /^[A-Za-z0-9\-._~!$&*+;=:@/?%]*$/;
-      if (change.pos >= row.payloadStart && end <= row.end && permitted.test(change.text)) {
+      if (!row.percent && change.pos >= row.payloadStart && end <= row.end && permitted.test(change.text)) {
         const next = {...row, end: row.end + delta, chars: row.chars + delta};
         if (kind === 'asset') {
           const was = payloadFacts(change.before.deref().slice(change.pos, end)), now = payloadFacts(change.text);
@@ -575,6 +596,7 @@ function dataMatches(source, kind, envelopes = []) {
   const prior = previousOmissions(view, kind), rows = new Map();
   const pattern = kind === 'asset' ? /data:(image\/[a-z0-9.+-]+);base64,[A-Za-z0-9+/=\\;&%#._~-]*/iy
     : /data:([a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+)(?:;[^,\s"'<>)]*)?,/iy;
+  const svgPattern = /data:(image\/svg\+xml),[A-Za-z0-9%\-._~:/?@+$,;=]*/iy;
   let end = 0, envelopeIndex = 0;
   for (const at of measured.markers) {
     if (kind === 'asset' && at < end) continue;
@@ -583,15 +605,19 @@ function dataMatches(source, kind, envelopes = []) {
     let row = prior.get(at);
     if (!row) {
       pattern.lastIndex = at;
-      const match = pattern.exec(source);
+      let match = pattern.exec(source), percent = false;
+      if (!match && kind === 'asset') {
+        svgPattern.lastIndex = at; match = svgPattern.exec(source); percent = !!match;
+        if (percent) pattern.lastIndex = svgPattern.lastIndex;
+      }
       if (!match) continue;
       if (kind === 'asset') {
         const value = match[0], payload = value.slice(value.indexOf(',') + 1);
         const {bad, equals} = payloadFacts(payload);
-        const bytes = payloadBytes(payload.length, bad, equals, equals <= 2 ? payload.slice(payload.length - equals) : '');
+        const bytes = percent ? dataImage(value)?.byteLength ?? null : payloadBytes(payload.length, bad, equals, equals <= 2 ? payload.slice(payload.length - equals) : '');
         row = {start: at, end: pattern.lastIndex, chars: value.length,
           domain: 'image_bytes', reason: 'embedded_asset', profile: 'embedded', type: match[1].toLowerCase(), bytes,
-          payloadStart: pattern.lastIndex - payload.length, bad, equals};
+          payloadStart: pattern.lastIndex - payload.length, bad, equals, ...(percent ? {percent} : {})};
       } else {
         const payloadStart = pattern.lastIndex, base64 = /;base64,/i.test(match[0]);
         let to = payloadStart;
@@ -608,7 +634,7 @@ function dataMatches(source, kind, envelopes = []) {
 }
 export function assetOmissions(source) {
   if (typeof source !== 'string') return [];
-  return [...dataMatches(source, 'asset').values()].map(({payloadStart, bad, equals, ...row}) => row);
+  return [...dataMatches(source, 'asset').values()].map(({payloadStart, bad, equals, percent, ...row}) => row);
 }
 
 export function dataOmissions(source) {
@@ -667,3 +693,5 @@ export function appendAssetText(source, asset, lineEnding, {preserveLabel = fals
   return {source: nextSource, id: asset.id, reference: asset.label, added: true, suffix};
 }
 export async function appendAsset(source, asset) { return appendAssetText(source, asset); }
+
+export const imageOnlySourceBlock = source => /^(?:!\[[^\]\n]*\]\(data:image\/(?:(?:png|jpeg|webp|gif|jxl|svg\+xml);base64,[A-Za-z0-9+\/=]+|svg\+xml,[A-Za-z0-9%\-._~:/?@+$,;=]+)(?: "[^"\n]*")?\)(?:[ \t]*<!--md-layout:v1 [^>\r\n]{1,180}-->)?\s*)+$/.test(source);

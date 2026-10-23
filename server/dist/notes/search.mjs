@@ -82,6 +82,56 @@ export function projectSearchBytes(input, {file = '', parser, decode = bytes => 
 const WEIGHT = {title: 8, headings: 4, tags: 3, body: 1, pictures: 1}, FIELDS = ['title', 'headings', 'tags', 'body'];
 const PICTURE_FIELDS = [...FIELDS, 'pictures'];
 const fieldsOf = (bag, pictures = true) => pictures && bag.pictures ? PICTURE_FIELDS : FIELDS;
+const vocabularies = new WeakMap();
+const wordRanks = new Map([1, 0.5, 0.25].map(weight => [weight, Object.fromEntries(PICTURE_FIELDS.map(field => [field, {field, weight, score: WEIGHT[field] * weight}]))]));
+function vocabulary(postings) {
+	let words = vocabularies.get(postings);
+	if (!words) { words = [...postings.keys()].sort(); vocabularies.set(postings, words); }
+	return words;
+}
+function firstWord(words, prefix) {
+	let low = 0, high = words.length;
+	while (low < high) { const middle = (low + high) >>> 1; if (words[middle] < prefix) low = middle + 1; else high = middle; }
+	return low;
+}
+function oneEdit(a, b) {
+	if (a === b) return false;
+	if (/[\uD800-\uDBFF]/.test(a + b)) { a = [...a]; b = [...b]; }
+	if (a.length < 4 || Math.abs(a.length - b.length) > 1) return false;
+	let i = 0; while (i < a.length && a[i] === b[i]) i++;
+	let j = i;
+	if (a.length < b.length) j++;
+	else if (a.length > b.length) i++;
+	else if (a[i] === b[i + 1] && a[i + 1] === b[i]) { i += 2; j += 2; }
+	else { i++; j++; }
+	while (i < a.length && j < b.length && a[i] === b[j]) { i++; j++; }
+	return i === a.length && j === b.length;
+}
+function wordStrength(word, token, prefix) { return word === token ? 1 : prefix && token.startsWith(word) ? 0.5 : oneEdit(word, token) ? 0.25 : 0; }
+function bestWord(bag, word, prefix, pictures) {
+	let best = null;
+	for (const field of fieldsOf(bag, pictures)) for (const token of bag[field].keys()) {
+		const weight = wordStrength(word, token, prefix), score = WEIGHT[field] * weight;
+		if (score && (!best || score > best.score)) best = {field, weight, score};
+	}
+	return best;
+}
+function wordMatches(postings, word, prefix, pictures) {
+	const found = new Map(), words = vocabulary(postings);
+	const take = (token, weight) => {
+		const ranks = wordRanks.get(weight);
+		for (const [file, counts] of postings.get(token)) {
+			const old = found.get(file);
+			if (old && old.score >= ranks.title.score) continue;
+			const match = counts.title ? ranks.title : counts.headings ? ranks.headings : counts.tags ? ranks.tags : counts.body ? ranks.body : pictures && counts.pictures ? ranks.pictures : null;
+			if (match && (!old || match.score > old.score)) found.set(file, match);
+		}
+	};
+	if (prefix) { for (let i = firstWord(words, word); i < words.length && words[i].startsWith(word); i++) take(words[i], words[i] === word ? 1 : 0.5); }
+	else if (postings.has(word)) take(word, 1);
+	if (word.length >= 4) for (const token of words) if (!(prefix && token.startsWith(word)) && oneEdit(word, token)) take(token, 0.25);
+	return found;
+}
 export const SEARCH_EXCERPT_CHARS = 80;
 function copyText(s) { return s.split('').join(''); }
 function boundedExcerpt(text) { return copyText(cutText(String(text ?? ''), SEARCH_EXCERPT_CHARS, SEARCH_EXCERPT_CHARS)); }
@@ -373,12 +423,31 @@ export function unpackSearchProjection(value) {
 		...(media & 1 ? {hasRecording: true} : {}), ...(media & 2 ? {hasFile: true} : {}), ...(seen ? {pictures: seen[0]} : {}), excerpt, bag};
 }
 
+const lexicalLines = new Map();
+let lexicalCharge = 0;
+function* uncachedWords(line) { for (const part of wordParts(line)) yield [copyText(fold(part)), 1]; }
+function lineWords(line) {
+	if (line.length > 4096) return uncachedWords(line);
+	const prior = lexicalLines.get(line);
+	if (prior) return prior;
+	const counts = new Map();
+	for (const part of wordParts(line)) {
+		const word = fold(part), count = counts.get(word);
+		if (count === undefined) counts.set(copyText(word), 1); else counts.set(word, count + 1);
+	}
+	const rows = [...counts], charge = line.length + rows.reduce((n, [word]) => n + word.length + 16, 0);
+	if (charge <= 8192) {
+		while (lexicalLines.size && (lexicalLines.size >= 2048 || lexicalCharge + charge > 262144)) {
+			const [key, value] = lexicalLines.entries().next().value;
+			lexicalCharge -= key.length + value.reduce((n, [word]) => n + word.length + 16, 0); lexicalLines.delete(key);
+		}
+		lexicalLines.set(copyText(line), rows); lexicalCharge += charge;
+	}
+	return rows;
+}
 function counted(texts) {
 	const m = new Map();
-	for (const text of texts) for (const part of wordParts(text)) {
-		const w = fold(part), count = m.get(w);
-		if (count === undefined) m.set(copyText(w), 1); else m.set(w, count + 1);
-	}
+	for (const text of texts) for (const line of text.split('\n')) for (const [word, count] of lineWords(line)) m.set(word, (m.get(word) || 0) + count);
 	return m;
 }
 function* tokenBagWalk(proj) {
@@ -387,9 +456,8 @@ function* tokenBagWalk(proj) {
 	let walked = 0;
 	for (const field of Object.keys(texts)) {
 		const words = new Map();
-		for (const text of texts[field]) for (const part of wordParts(text)) {
-			const word = fold(part), count = words.get(word);
-			if (count === undefined) words.set(copyText(word), 1); else words.set(word, count + 1);
+		for (const text of texts[field]) for (const line of text.split('\n')) for (const [word, count] of lineWords(line)) {
+			words.set(word, (words.get(word) || 0) + count);
 			if (++walked % 128 === 0) yield;
 		}
 		if (field !== 'pictures' || words.size) bag[field] = words;
@@ -399,6 +467,7 @@ function* tokenBagWalk(proj) {
 function tokenBag(proj) { const walk = tokenBagWalk(proj); let row; do { row = walk.next(); } while (!row.done); return row.value; }
 
 function addPostings(postings, file, bag, owned) {
+	searchChanged(postings);
 	for (const field of fieldsOf(bag)) {
 		for (const [tok, count] of bag[field]) {
 			let inner = postings.get(tok);
@@ -415,6 +484,7 @@ function addPostings(postings, file, bag, owned) {
 }
 
 function removeFilePostings(postings, file, bag, owned) {
+	searchChanged(postings);
 	if (!bag) return;
 	const seen = new Set();
 	for (const field of fieldsOf(bag)) {
@@ -501,6 +571,7 @@ export function searchIndexProgress(state) {
 export const SEARCH_INDEX_CHARS = 8192;
 export const SEARCH_WORKER_CHARS = 16384, SEARCH_WORKER_WORDS = 4096, SEARCH_WORKER_LINKS = 1024;
 const SEARCH_INDEX_ROWS = 128;
+const SEARCH_BATCH_NOTES = 32, SEARCH_BATCH_CHARS = 16384, SEARCH_BATCH_NOTE_CHARS = 4096;
 function* searchStringRows(kind, value) {
 	const text = String(value || '');
 	if (!text.length) { yield [kind, '', true]; return; }
@@ -509,8 +580,8 @@ function* searchStringRows(kind, value) {
 function* searchValueRows(value) {
 	if (typeof value === 'string') { yield* searchStringRows('valueString', value); return; }
 	if (value && typeof value === 'object') {
-		yield [Array.isArray(value) ? 'array' : 'object'];
-		if (Array.isArray(value)) { for (const part of value) yield* searchValueRows(part); }
+		yield [Array.isArray(value) || value instanceof Map ? 'array' : 'object'];
+		if (Array.isArray(value) || value instanceof Map) { for (const part of value) yield* searchValueRows(part); }
 		else for (const key of Object.keys(value)) { yield ['key', key]; yield* searchValueRows(value[key]); }
 		yield ['end']; return;
 	}
@@ -534,6 +605,7 @@ export function installSearchWorker(scope) {
 	installMarkdownMath(parser, RAPIER_MARKDOWN_SPEC.rules.mathBlock); installMarkdownImages(parser);
 	configureParser(parser, splitOpeningFrontmatter);
 	let job = null, serial = 0;
+	const queryMessage = installSearchQueries(scope);
 	const send = (operation, value = {}) => scope.postMessage({id: job.id, operation, ...value});
 	const pause = () => new Promise(resolve => setTimeout(resolve, 0));
 	const finish = async own => {
@@ -566,7 +638,24 @@ export function installSearchWorker(scope) {
 		} catch (error) { if (job === own) send('error', {message: String(error?.message || error).slice(0, 1024), ...(error?.code === 'unreadable' ? {code: 'unreadable'} : {})}); }
 	};
 	scope.addEventListener('message', ({data}) => {
+		if (queryMessage(data)) return;
 		try {
+			if (data?.operation === 'batch') {
+				if (!Number.isSafeInteger(data.id) || data.id <= serial || !Array.isArray(data.notes) || data.notes.length > SEARCH_BATCH_NOTES) return;
+				serial = data.id; job = null;
+				let chars = 0;
+				const rows = data.notes.map(({file, text, pictures}) => {
+					if (typeof file !== 'string' || typeof text !== 'string' || typeof pictures !== 'string' ||
+						text.length + pictures.length > SEARCH_BATCH_NOTE_CHARS || (chars += text.length + pictures.length) > SEARCH_BATCH_CHARS) throw new Error('Invalid search batch');
+					try {
+						const proj = withPictures(projectText(text, {}, file), pictures), bag = tokenBag(proj), note = indexNote(proj, file, bag);
+						const links = isCodeFile(file) ? null : projectLinks(text), title = projectCard(file, text).title || '';
+						const encoded = links ? JSON.stringify([packSearchProjection(note), packLinkProjection(links, new TextEncoder().encode(text).length)]) : null;
+						return {file, note, links, title, encoded};
+					} catch (error) { return {file, error: String(error?.message || error).slice(0, 1024)}; }
+				});
+				scope.postMessage({id: data.id, operation: 'batch', rows}); return;
+			}
 			if (data?.operation === 'begin') {
 				if (!Number.isSafeInteger(data.id) || data.id <= serial || typeof data.file !== 'string') return;
 				serial = data.id; job = {id: data.id, file: data.file, source: [], bytes: [], byteLength: 0, pictures: [], ranges: []}; send('input'); return;
@@ -599,8 +688,14 @@ export function installSearchWorker(scope) {
 }
 
 export function createSearchIndexRunner({getState, setState, getLinks, setLinks, createWorker, wake, live = () => true, completed = () => {}, unreadable = () => {}, streaming = () => false}) {
-	let active = null, worker = null, sequence = 0, stopped = false, resolving = false, resolution = null, resolutionOf = null;
+	let active = null, worker = null, batch = null, batchUnavailable = false, sequence = 0, stopped = false, resolving = false, resolution = null, resolutionOf = null;
+	const largeFolder = Object.keys(getState().index.sidecar?.notes || {}).length > 200 || getState().pending.size > 200;
 	const retired = [], failed = new Map(), linkDirty = new Set(), linkRemovals = new Set();
+	const linksAlreadyCurrent = (file, projection) => {
+		const links = getLinks?.();
+		return !linkDirty.has(file) && links?.out.has(file) &&
+			JSON.stringify(packLinkProjection(projection)) === JSON.stringify(packLinkProjection({out: links.out.get(file), aliases: links.aliases.get(file) || []}));
+	};
 	const refresh = () => {
 		const state = getState(), next = slicedState(state.index, state.pending);
 		if (next.index.partial && failed.size === state.pending.size) next.index.progress.unread = true;
@@ -623,12 +718,7 @@ export function createSearchIndexRunner({getState, setState, getLinks, setLinks,
 	};
 	const accept = (own, rows) => {
 		const note = own.note, index = getState().index;
-		const addValue = value => {
-			const top = own.values.at(-1);
-			if (!top) own.links = value;
-			else if (Array.isArray(top.value)) top.value.push(value);
-			else { top.value[top.key] = value; top.key = null; }
-		};
+		searchChanged(index.postings);
 		for (const row of rows) {
 			const [kind, value, end] = row;
 			if (kind === 'facts') { note.tasks = {open: row[1], done: row[2]}; note.hasPicture = row[3]; note.hasDrawing = row[4]; note.hasLink = row[5]; if (row[6]) note.hasRecording = true; if (row[7]) note.hasFile = true; }
@@ -646,22 +736,24 @@ export function createSearchIndexRunner({getState, setState, getLinks, setLinks,
 				}
 			} else if (kind === 'cardTitle') own.cardTitle += value;
 			else if (kind === 'encoded') own.encoded += value;
-			else if (kind === 'array' || kind === 'object') { const part = kind === 'array' ? [] : {}; addValue(part); own.values.push({value: part}); }
-			else if (kind === 'key') own.values.at(-1).key = value;
-			else if (kind === 'end') own.values.pop();
-			else if (kind === 'value') addValue(value);
-			else if (kind === 'valueString') { own.valueText += value; if (end) { addValue(own.valueText); own.valueText = ''; } }
+			else if (searchReadValueRow(own, row)) {}
 			else if (kind === 'title' || kind === 'excerpt' || kind === 'pictures') note[kind] = (note[kind] || '') + value;
 			else throw new Error('Invalid search result packet');
 		}
 	};
-	const start = (file, text) => {
-		const own = active = {id: ++sequence, file, text, pictures: picturesOf(getState().index, file) || '', at: 0, field: text?.searchBytes ? 'bytes' : 'source', input: false, ready: false, packet: null,
-			note: {file, title: '', headings: [], tags: [], excerpt: '', bag: {title: new Map(), headings: new Map(), tags: new Map(), body: new Map()}}, tag: '', cardTitle: '', encoded: '', values: [], valueText: ''};
-		try {
+	const batchFailed = error => {
+		if (!batch) return;
+		for (const row of batch.notes) if (getState().pending.get(row.file) === row.text) failed.set(row.file, row.text);
+		batch = null; dispose(); refresh(); wake();
+	};
+	const ensureWorker = () => {
 			if (!worker) {
 				const made = worker = createWorker();
 				made.onmessage = ({data}) => {
+					if (batch && data?.id === batch.id && data.operation === 'batch') {
+						if (!Array.isArray(data.rows) || data.rows.length !== batch.notes.length) { batchFailed(new Error('Invalid search batch result')); return; }
+						batch.rows = data.rows; wake(); return;
+					}
 					const job = active;
 					if (!job || !valid(job) || data?.id !== job.id) return;
 					if (data.operation === 'error') { reject(job, Object.assign(new Error(data.message), data.code === 'unreadable' ? {code: 'unreadable'} : {})); return; }
@@ -670,9 +762,16 @@ export function createSearchIndexRunner({getState, setState, getLinks, setLinks,
 					else if (data.operation === 'result') job.packet = data;
 					wake();
 				};
-				made.onerror = event => { event.preventDefault?.(); const job = active; if (worker === made) dispose(); if (job) reject(job, event.error || new Error(event.message || 'Search worker stopped')); };
-				made.onmessageerror = () => { const job = active; if (worker === made) dispose(); if (job) reject(job, new Error('Search worker result could not be read')); };
+				made.onerror = event => { event.preventDefault?.(); const job = active; if (batch) batchFailed(event.error); if (worker === made) dispose(); if (job) reject(job, event.error || new Error(event.message || 'Search worker stopped')); };
+				made.onmessageerror = () => { const job = active; if (batch) batchFailed(); if (worker === made) dispose(); if (job) reject(job, new Error('Search worker result could not be read')); };
 			}
+			return worker;
+	};
+	const start = (file, text) => {
+		const own = active = {id: ++sequence, file, text, pictures: picturesOf(getState().index, file) || '', at: 0, field: text?.searchBytes ? 'bytes' : 'source', input: false, ready: false, packet: null,
+			note: {file, title: '', headings: [], tags: [], excerpt: '', bag: {title: new Map(), headings: new Map(), tags: new Map(), body: new Map()}}, tag: '', cardTitle: '', encoded: '', values: [], valueText: ''};
+		try {
+			ensureWorker();
 			own.worker = worker;
 			worker.postMessage({id: own.id, operation: 'begin', file});
 		} catch (error) { reject(own, error); }
@@ -681,10 +780,25 @@ export function createSearchIndexRunner({getState, setState, getLinks, setLinks,
 		const source = typeof text === 'string' ? text : text.searchText;
 		return !text?.searchBytes && source.length + (picturesOf(state.index, file) || '').length <= SEARCH_WORKER_CHARS && (!text.payloadRanges || text.payloadRanges.length <= 32);
 	};
+	const batchText = text => typeof text === 'string' ? text : !text?.payloadRanges?.length && typeof text?.searchText === 'string' ? text.searchText : null;
+	const batchable = (file, text, state) => (largeFolder || state.index.notes.size + state.pending.size > 200) && !batchUnavailable && batchText(text) !== null && batchText(text).length + (picturesOf(state.index, file) || '').length <= SEARCH_BATCH_NOTE_CHARS;
+	const startBatch = state => {
+		const notes = []; let chars = 0;
+		for (const [file, text] of state.pending) {
+			if (failed.get(file) === text || !batchable(file, text, state)) continue;
+			const pictures = picturesOf(state.index, file) || '', size = batchText(text).length + pictures.length;
+			if (notes.length === SEARCH_BATCH_NOTES || chars + size > SEARCH_BATCH_CHARS) break;
+			notes.push({file, text, pictures}); chars += size;
+		}
+		batch = {id: ++sequence, notes, rows: null, at: 0};
+		try { ensureWorker().postMessage({id: batch.id, operation: 'batch', notes: notes.map(row => ({...row, text: batchText(row.text)}))}); }
+		catch (_) { batch = null; batchUnavailable = true; dispose(); wake(); }
+	};
 	const step = () => {
 		if (stopped || !live()) return false;
 		const state = getState();
 		if (retired.length) {
+			searchChanged(state.index.postings);
 			for (let count = 0; count < SEARCH_INDEX_ROWS && retired.length; count++) {
 				const next = retired[0].walk.next(); if (next.done) { retired.shift(); continue; }
 				const [file, word] = next.value, inner = state.index.postings.get(word);
@@ -700,6 +814,17 @@ export function createSearchIndexRunner({getState, setState, getLinks, setLinks,
 			return true;
 		}
 		if (!active) {
+			if (batch) {
+				if (!batch.rows) return false;
+				const before = batch.notes[batch.at], row = batch.rows[batch.at++];
+				if (batch.at === batch.notes.length) batch = null;
+				if (!before || row?.file !== before.file) { if (before) failed.set(before.file, before.text); refresh(); return true; }
+				if (state.pending.get(before.file) !== before.text || (picturesOf(state.index, before.file) || '') !== before.pictures) return true;
+				if (row.error) { failed.set(before.file, before.text); refresh(); return true; }
+				active = {...before, note: row.note, links: row.links, cardTitle: row.title, encoded: row.encoded, done: true,
+					linksCurrent: linksAlreadyCurrent(before.file, row.links)};
+				addPostings(state.index.postings, before.file, row.note.bag); return true;
+			}
 			let next; for (const row of state.pending) if (failed.get(row[0]) !== row[1]) { next = row; break; }
 			if (!next) {
 				if (!resolving || !getLinks?.()) return false;
@@ -710,6 +835,7 @@ export function createSearchIndexRunner({getState, setState, getLinks, setLinks,
 			}
 			const [file, text] = next, source = typeof text === 'string' ? text : text.searchText;
 			const pictures = picturesOf(state.index, file) || '';
+			if (batchable(file, text, state)) { startBatch(state); return false; }
 			if (small(file, text, state)) {
 				try {
 					const proj = withPictures(projectText(text, state.index.sidecar.notes?.[file] || {}, file), pictures), bag = tokenBag(proj);
@@ -727,7 +853,7 @@ export function createSearchIndexRunner({getState, setState, getLinks, setLinks,
 		const own = active;
 		if (!valid(own)) { if (!own.done) dispose(); retire(own.file, own.note); active = null; return true; }
 		if (own.done) {
-			if (getLinks?.() && own.links) {
+			if (getLinks?.() && own.links && !own.linksCurrent) {
 				if (!own.stage || own.stageOf !== getLinks()) { own.stageOf = getLinks(); own.streamed = streaming(); own.stage = stageLinkNote(own.stageOf, {file: own.file, projection: own.links, stream: own.streamed}); }
 				try {
 					const part = own.stage.next(); if (!part.done) return true;
@@ -783,16 +909,18 @@ export function createSearchIndexRunner({getState, setState, getLinks, setLinks,
 			state.index = {...state.index, sidecar: updatedSidecar(state.index.sidecar, file, text, entry, true)};
 			refresh(); wake();
 		},
-		cancel() { if (stopped) return; stopped = true; dispose(); active = null; retired.length = 0; failed.clear(); linkDirty.clear(); linkRemovals.clear(); resolution = null; resolving = false; },
+		cancel() { if (stopped) return; stopped = true; dispose(); active = null; batch = null; retired.length = 0; failed.clear(); linkDirty.clear(); linkRemovals.clear(); resolution = null; resolving = false; },
 		resolve() { resolving = true; resolution = null; wake(); },
-		owns(file) { return active?.file === file || linkDirty.has(file) || linkRemovals.has(file) || retired.some(row => row.file === file); },
+		owns(file) { return active?.file === file || batch?.notes.some(row => row.file === file) || linkDirty.has(file) || linkRemovals.has(file) || retired.some(row => row.file === file); },
 		get linksPending() { return resolving || linkRemovals.size > 0 || !!active?.done; },
-		get waiting() { return !!active && !active.done && !active.input && !active.ready && !active.packet; },
+		get waiting() { return !!batch && !batch.rows || !!active && !active.done && !active.input && !active.ready && !active.packet; },
 		get cheap() {
-			if (stopped || !live() || active) return false;
+			if (stopped || !live()) return false;
+			if (active) return active.done ? 'short' : false;
+			if (batch) return batch.rows ? 'short' : false;
 			if (retired.length || (linkRemovals.size && getLinks?.())) return 'short';
 			const state = getState();
-			for (const [file, text] of state.pending) if (failed.get(file) !== text) return small(file, text, state) ? 'note' : false;
+			for (const [file, text] of state.pending) if (failed.get(file) !== text) return !batchable(file, text, state) && small(file, text, state) ? 'note' : false;
 			return resolving && !!getLinks?.() ? 'short' : false;
 		},
 	};
@@ -938,21 +1066,6 @@ function inSection(proj, file, sidx, want) {
 	return false;
 }
 
-function fieldHasPrefix(bag, prefix, pictures = true, before = '') {
-	for (const field of fieldsOf(bag, pictures)) {
-		if (field === before) break;
-		for (const tok of bag[field].keys()) if (tok.startsWith(prefix)) return field;
-	}
-	return '';
-}
-
-function fieldHasWord(bag, word, pictures = true) {
-	for (const field of fieldsOf(bag, pictures)) {
-		if (bag[field].has(word)) return field;
-	}
-	return '';
-}
-
 function bodyLiteral(proj, p, bodyReady) {
 	if (bodyReady) return fold(proj.body).includes(p);
 	if (!p) return true;
@@ -979,15 +1092,15 @@ function phraseIn(proj, phrase, bodyReady, pictures = true) {
 }
 
 const FILTER_FIELDS = ['is', 'has', 'colour', 'tag', 'in'];
-function matchesFilter(proj, file, sidx, key, value) {
+function matchesFilter(proj, file, sidx, key, value, meta = proj) {
 	switch (key) {
 		case 'is':
 			switch (value) {
 				case 'todo': return proj.tasks.open > 0;
 				case 'done': return proj.tasks.done > 0 && proj.tasks.open === 0;
-				case 'pinned': return proj.pinned;
-				case 'archived': return proj.archived;
-				case 'trash': case 'trashed': return proj.trashed;
+				case 'pinned': return meta.pinned;
+				case 'archived': return meta.archived;
+				case 'trash': case 'trashed': return meta.trashed;
 				default: return false;
 			}
 		case 'has':
@@ -996,28 +1109,28 @@ function matchesFilter(proj, file, sidx, key, value) {
 				case 'drawing': return proj.hasDrawing;
 				case 'recording': return !!proj.hasRecording;
 				case 'file': return !!proj.hasFile;
-				case 'remind': return !!proj.remind;
+				case 'remind': return !!meta.remind;
 				case 'link': return proj.hasLink;
 				case 'tags': return proj.tags.length > 0;
 				case 'list': return proj.tasks.open + proj.tasks.done > 0;
 				default: return false;
 			}
-		case 'colour': { const want = fold(value); return want === 'none' ? !proj.colour : fold(proj.colour) === want; }
+		case 'colour': { const want = fold(value); return want === 'none' ? !meta.colour : fold(meta.colour) === want; }
 		case 'tag': return proj.tags.some(t => fold(t) === fold(value) || fold(t).startsWith(fold(value) + '/'));
-		case 'in': return inSection(proj, file, sidx, value);
+		case 'in': return inSection(meta, file, sidx, value);
 		default: return false;
 	}
 }
-function passesFilters(proj, file, sidx, f, excluded, allSections) {
+function passesFilters(proj, file, sidx, f, excluded, allSections, meta = proj) {
 	if (allSections) {
-		if (proj.trashed && proj.archived) return false;
+		if (meta.trashed && meta.archived) return false;
 	} else {
-		if (proj.trashed && !f.is.some(x => x === 'trash' || x === 'trashed')) return false;
-		if (proj.archived && !f.is.includes('archived')) return false;
+		if (meta.trashed && !f.is.some(x => x === 'trash' || x === 'trashed')) return false;
+		if (meta.archived && !f.is.includes('archived')) return false;
 	}
-	for (const key of FILTER_FIELDS) for (const value of f[key]) if (!matchesFilter(proj, file, sidx, key, value)) return false;
-	for (const [key, value] of excluded) if (matchesFilter(proj, file, sidx, key, value)) return false;
-	const when = proj.modified != null ? proj.modified : proj.created;
+	for (const key of FILTER_FIELDS) for (const value of f[key]) if (!matchesFilter(proj, file, sidx, key, value, meta)) return false;
+	for (const [key, value] of excluded) if (matchesFilter(proj, file, sidx, key, value, meta)) return false;
+	const when = meta.modified != null ? meta.modified : meta.created;
 	if (f.before) {
 		const t = parseDay(f.before);
 		if (t == null || when == null || when >= t) return false;
@@ -1056,14 +1169,27 @@ function foldedRange(field, needle) {
 	}
 	return null;
 }
+function wordRange(field, needle, prefix) {
+	const wanted = fold(needle); let best = null;
+	for (const {segment, index, isWordLike} of wordSegments(field)) {
+		if (!isWordLike) continue;
+		const weight = wordStrength(wanted, fold(segment), prefix);
+		if (!weight || best && best.weight >= weight) continue;
+		const span = weight === 0.5 ? foldedRange(segment, needle) : {from: 0, to: segment.length};
+		if (span) best = {from: index + span.from, to: index + span.to, weight};
+		if (weight === 1) break;
+	}
+	return best;
+}
 export function snippetFor(note, query, text) {
 	if (typeof text !== 'string') throw new TypeError('Snippet needs exact text for ' + note.file);
 	const q = searchQuery(query);
-	const needles = [...q.phrases, ...q.words];
+	const needles = [...q.phrases.map(text => ({text, phrase: true})), ...q.words.map((text, i) => ({text, prefix: i === q.words.length - 1}))];
 	const proj = projectText(text, {}, note.file, true);
-	const fields = [proj.title, proj.headings.map(h => h.text).join(' · '), proj.body.replaceAll(ASSET_TOKEN, ' ').replace(/\r\n?/g, '\n')].filter(Boolean);
+	const fields = [proj.title, proj.headings.map(h => h.text).join(' · '), proj.tags.join(' '), proj.body.replaceAll(ASSET_TOKEN, ' ').replace(/\r\n?/g, '\n')].filter(Boolean);
+	const range = (field, needle) => needle.phrase ? foldedRange(field, needle.text) : wordRange(field, needle.text, needle.prefix);
 	for (const needle of needles) for (const field of fields) {
-		const hit = foldedRange(field, needle);
+		const hit = range(field, needle);
 		if (!hit) continue;
 		const [from0, to0] = snippetWindow(field, hit.from, hit.to - hit.from), prefix = from0 > 0 ? 1 : 0;
 		return {text: copyText((prefix ? '…' : '') + field.slice(from0, to0) + (to0 < field.length ? '…' : '')),
@@ -1072,7 +1198,7 @@ export function snippetFor(note, query, text) {
 	if (note.pictures && q.filters.pictures !== 'off') {
 		const field = note.pictures.replace(/\s+/g, ' ');
 		for (const needle of needles) {
-			const hit = foldedRange(field, needle);
+			const hit = range(field, needle);
 			if (!hit) continue;
 			const [from0, to0] = snippetWindow(field, hit.from, hit.to - hit.from), prefix = from0 > 0 ? 1 : 0;
 			return {text: copyText((prefix ? '…' : '') + field.slice(from0, to0) + (to0 < field.length ? '…' : '')),
@@ -1083,9 +1209,9 @@ export function snippetFor(note, query, text) {
 	return {text: snippet, from: 0, to: 0};
 }
 
-function rankNote(proj, file, sidx, q, bodyReady, words) {
-	const f = q.filters, pictures = f.pictures !== 'off';
-	if (!passesFilters(proj, file, sidx, f, q.excludedFilters, q.allSections)) return null;
+function rankNote(proj, file, sidx, q, bodyReady, words, matches, entry) {
+	const f = q.filters, pictures = f.pictures !== 'off', meta = entry ? searchEntry(entry) : proj;
+	if (!passesFilters(proj, file, sidx, f, q.excludedFilters, q.allSections, meta)) return null;
 	let pending = false;
 	for (const n of q.negations) {
 		const field = phraseIn(proj, n, bodyReady, pictures);
@@ -1101,21 +1227,14 @@ function rankNote(proj, file, sidx, q, bodyReady, words) {
 		if (field === null) pending = true;
 		else add(field, 4);
 	}
-	const last = words.at(-1);
-	for (let i = 0; i < words.length - 1; i++) {
-		const field = fieldHasWord(proj.bag, words[i], pictures);
-		if (!field) return null;
-		add(field, 1);
-	}
-	if (last !== undefined) {
-		const exact = fieldHasWord(proj.bag, last, pictures), prefix = fieldHasPrefix(proj.bag, last, pictures, exact);
-		if (prefix && !(exact && WEIGHT[exact] >= WEIGHT[prefix] / 2)) add(prefix, 0.5);
-		else if (exact) add(exact, 1);
-		else return null;
+	for (let i = 0; i < words.length; i++) {
+		const match = matches ? matches[i].get(file) : bestWord(proj.bag, words[i], i === words.length - 1, pictures);
+		if (!match) return null;
+		add(match.field, match.weight);
 	}
 	if (!q.words.length && !q.phrases.length) score = 1;
-	const modified = proj.modified != null ? proj.modified : (proj.created != null ? proj.created : 0);
-	return {pending, row: {file, score, matched, _mod: modified, ...(q.allSections ? {_group: proj.trashed ? 2 : proj.archived ? 1 : 0} : {})}};
+	const modified = meta.modified != null ? meta.modified : (meta.created != null ? meta.created : 0);
+	return {pending, row: {file, score, matched, _mod: modified, ...(q.allSections ? {_group: meta.trashed ? 2 : meta.archived ? 1 : 0} : {})}};
 }
 
 const compareRank = (a, b) => (a._group || 0) - (b._group || 0) || b.score - a.score || b._mod - a._mod || (a.file < b.file ? -1 : a.file > b.file ? 1 : 0);
@@ -1140,35 +1259,14 @@ export function search(sidx, query, {limit = 50, now, candidateOrder = false, in
 	if (includeArchivedTrash && !q.filters.is.some(x => x === 'archived' || x === 'trash' || x === 'trashed')) q.allSections = true;
 	if (limit === 0) return rankedAnswer([], [], q, limit, [], sidx);
 	const wordList = q.words.map(fold);
-	const last = wordList.at(-1);
-	const intersect = (a, b) => {
-		if (!a) return b;
-		const out = new Set();
-		const [small, big] = a.size < b.size ? [a, b] : [b, a];
-		for (const x of small) if (big.has(x)) out.add(x);
-		return out;
-	};
-	const consider = (tok, prefix) => {
-		const files = new Set();
-		if (!prefix) {
-			const inner = sidx.postings.get(tok);
-			if (inner) for (const file of inner.keys()) files.add(file);
-			return files;
-		}
-		for (const [t, inner] of sidx.postings) {
-			if (t.startsWith(tok)) for (const file of inner.keys()) files.add(file);
-		}
-		return files;
-	};
-	let candidates = null;
-	for (const w of wordList.slice(0, -1)) candidates = intersect(candidates, consider(w, false));
-	if (last !== undefined) candidates = intersect(candidates, consider(last, true));
+	const matches = wordList.map((word, i) => wordMatches(sidx.postings, word, i === wordList.length - 1, q.filters.pictures !== 'off'));
+	const candidates = matches.length ? matches.reduce((a, b) => a.size <= b.size ? a : b) : null;
 	const rows = [], pending = [], ordered = candidateOrder ? [] : null;
 	for (const file of (candidates || sidx.notes).keys()) {
 		const note = sidx.notes.get(file);
 		if (!note) continue;
-		const entry = sidx.sidecar?.notes?.[file], proj = entry ? {...note, ...searchEntry(entry)} : note;
-		const ranked = rankNote(proj, file, sidx, q, false, wordList);
+		const entry = sidx.sidecar?.notes?.[file], proj = note;
+		const ranked = rankNote(proj, file, sidx, q, false, wordList, matches, entry);
 		if (!ranked) continue;
 		if (ranked.pending) {
 			if (ordered) ordered.push(ranked.row);
@@ -1200,6 +1298,19 @@ export function confirmSearch(answer, texts) {
 	const confirmed = rankedAnswer(rows, remaining, query, limit, sections, answer);
 	if (answer.candidates) confirmed.candidates = answer.candidates;
 	return confirmed;
+}
+
+export function everywhere(query, {index, document = null, texts = new Map(), limit = 50, includeArchivedTrash = false} = {}) {
+	const notes = index ? confirmSearch(search(index, query, {limit, includeArchivedTrash}), texts) : {results: [], confirm: []};
+	if (!document || typeof document.text !== 'string') return {notes, document: null};
+	const file = document.file || 'Open.md', source = new Map([[file, document.text]]), current = buildSearchIndex(source);
+	const answer = confirmSearch(search(current, query, {limit: 1}), source), hit = answer.results[0];
+	if (!hit) return {notes, document: null};
+	const parsed = searchQuery(query), words = parsed.words.map(fold), projection = current.notes.get(file);
+	const headings = projection.headings.filter(heading => parsed.phrases.some(phrase => foldedRange(heading.text, phrase)) ||
+		words.some((word, i) => wordRange(heading.text, word, i === words.length - 1)));
+	return {notes, document: {...hit, id: document.id ?? file, revision: document.revision ?? null,
+		headings: headings.map(heading => ({...heading})), snippet: snippetFor(projection, parsed, document.text)}};
 }
 
 export const SWITCHER_LIMIT = 8;
@@ -1307,4 +1418,204 @@ export function rankSwitcher(catalogue, query) {
 	const out = [];
 	for (let i = 0; i < hits.length && i < SWITCHER_LIMIT; i++) out.push(hits[i].row);
 	return out;
+}
+
+function searchReadValueRow(own, row) {
+	const [kind, value, end] = row;
+	const add = value => {
+		const top = own.values.at(-1);
+		if (!top) own.links = value;
+		else if (Array.isArray(top.value)) top.value.push(value);
+		else { Object.defineProperty(top.value, top.key, {value, writable: true, enumerable: true, configurable: true}); top.key = null; }
+	};
+	if (kind === 'array' || kind === 'object') { const part = kind === 'array' ? [] : {}; add(part); own.values.push({value: part}); }
+	else if (kind === 'key') own.values.at(-1).key = value;
+	else if (kind === 'end') own.values.pop();
+	else if (kind === 'value') add(value);
+	else if (kind === 'valueString') { own.valueText += value; if (end) { add(own.valueText); own.valueText = ''; } }
+	else return false;
+	return true;
+}
+function searchValuePacket(walk) {
+	const rows = []; let chars = 0;
+	while (rows.length < SEARCH_INDEX_ROWS && chars < SEARCH_INDEX_CHARS) {
+		const part = walk.carry || walk.next(); walk.carry = null; if (part.done) return {rows, done: true};
+		const size = typeof part.value[1] === 'string' ? part.value[1].length : 0;
+		if (rows.length && chars + size > SEARCH_INDEX_CHARS) {walk.carry = part; break;}
+		rows.push(part.value); chars += size;
+	}
+	return {rows, done: false};
+}
+function queryCopyCharge(note, entry) {
+	let charge = 256, nodes = 0;
+	const metadata = [entry];
+	while (metadata.length) {
+		const value = metadata.pop(); if (++nodes > 64) return null;
+		if (typeof value === 'string') charge += value.length + 16;
+		else if (value && typeof value === 'object') {
+			const keys = Object.keys(value); if (keys.length > 32) return null;
+			for (const key of keys) {charge += key.length + 16; metadata.push(value[key]);}
+		} else charge += 16;
+		if (charge > SEARCH_BATCH_CHARS) return null;
+	}
+	if (note.headings.length > 32 || note.tags.length > 32) return null;
+	for (const value of [note.file, note.title, note.excerpt, note.pictures, ...note.tags]) charge += (value?.length || 0) + 16;
+	for (const head of note.headings) charge += head.text.length + head.slug.length + 64;
+	for (const field of fieldsOf(note.bag)) {
+		if (note.bag[field].size > 256) return null;
+		for (const word of note.bag[field].keys()) {charge += word.length + 24; if (charge > SEARCH_BATCH_CHARS) return null;}
+	}
+	return charge <= SEARCH_BATCH_CHARS ? charge : null;
+}
+function searchRankView(order, scores, marks, names, ids) {
+	const rank = new Int32Array(names.length).fill(-1);
+	for (let i = 0; i < order.length; i++) rank[order[i]] = i;
+	const position = file => {const id = ids.get(file); return id === undefined || id >= rank.length ? -1 : rank[id];};
+	const get = file => {
+		const at = position(file); if (at < 0) return undefined;
+		const matched = []; let value = marks[at];
+		while (value) {matched.push(PICTURE_FIELDS[(value & 15) - 1]); value >>>= 4;}
+		return {file, rank: at, score: scores[at], matched};
+	};
+	return {
+		size: order.length, has: file => position(file) >= 0, get,
+		*keys() {for (const id of order) yield names[id];},
+		*entries() {for (const id of order) {const file = names[id]; yield [file, get(file)];}},
+		ranked(files) {
+			const wanted = new Uint8Array(names.length), result = [];
+			for (const file of files) {const id = ids.get(file); if (id !== undefined) wanted[id] = 1;}
+			for (const id of order) if (wanted[id]) result.push(names[id]);
+			return result;
+		}
+	};
+}
+const searchChanges = new WeakMap();
+function searchChanged(postings) { vocabularies.delete(postings); searchChanges.set(postings, (searchChanges.get(postings) || 0) + 1); }
+const queryIdentity = index => [index.notes, index.postings, searchChanges.get(index.postings), index.sidecar, index.partial, index.progress];
+const sameQueryIdentity = (a, b) => a && b && a.every((part, i) => part === b[i]);
+
+export function createSearchQueryRunner({createWorker, schedule = run => {const id = setTimeout(run, 0); return () => clearTimeout(id);}}) {
+	let worker, cancel, active, walk, identity, checked, stopped = false, serial = 0;
+	const known = new Map(), ids = new Map(), names = [];
+	const ordinal = file => {if (!ids.has(file)) {ids.set(file, names.length); names.push(file);} return ids.get(file);};
+	const wake = () => {if (!cancel && !stopped) cancel = schedule(step);};
+	const fail = error => {const job = active; active = null; walk = null; checked = null; known.clear(); try {worker?.terminate();} catch (_) {} worker = null; job?.reject(error || new Error('Search worker stopped'));};
+	const open = () => {
+		if (worker) return;
+		worker = createWorker();
+		worker.onerror = event => {event.preventDefault?.(); fail(event.error || new Error(event.message || 'Search worker stopped'));};
+		worker.onmessageerror = () => fail(new Error('Search worker result could not be read'));
+		worker.onmessage = ({data}) => {
+			if (!active || data?.id !== active.id) return;
+			if (data.operation === 'query-error') {fail(new Error(data.message)); return;}
+			if (data.operation === 'query-compact') {const job = active; active = null; job.resolve({...data.answer, found: searchRankView(data.order, data.scores, data.marks, names, ids)}); return;}
+			if (data.operation === 'query-ready') {active.receiving = {values: [], valueText: ''}; worker.postMessage({operation: 'query-pull', id: active.id});}
+			else if (data.operation === 'query-result') {active.packet = data; wake();}
+		};
+	};
+	function* sync(index) {
+		let batch = [], charge = 0;
+		const take = () => {const rows = batch; batch = []; charge = 0; for (const row of rows) known.set(row.file, {note: row.note, entry: row.entry}); return {operation: 'query-notes', rows};};
+		for (const file of known.keys()) if (!index.notes.has(file)) {yield {operation: 'query-drop', file}; known.delete(file);}
+		for (const [file, note] of index.notes) {
+			const entry = index.sidecar?.notes?.[file], old = known.get(file);
+			if (old?.note === note && old.entry === entry) {if (batch.length) yield take(); yield null; continue;}
+			const bytes = queryCopyCharge(note, entry);
+			if (bytes !== null) {
+				if (batch.length && (batch.length === SEARCH_BATCH_NOTES || charge + bytes > SEARCH_BATCH_CHARS)) yield take();
+				batch.push({file, ordinal: ordinal(file), note, entry}); charge += bytes;
+				continue;
+			}
+			if (batch.length) yield take();
+			yield {operation: 'query-note', file, ordinal: ordinal(file)};
+			const values = searchValueRows({note, entry});
+			for (;;) {const packet = searchValuePacket(values); yield {operation: 'query-data', ...packet}; if (packet.done) break;}
+			known.set(file, {note, entry});
+		}
+		if (batch.length) yield take();
+		yield {operation: 'query-state', sections: index.sections, partial: !!index.partial, progress: index.progress};
+	}
+	function step() {
+		cancel = null; const job = active; if (!job || stopped) return;
+		try {
+			open();
+			if (job.packet) {
+				const packet = job.packet; job.packet = null;
+				for (const row of packet.rows) if (!searchReadValueRow(job.receiving, row)) throw new Error('Invalid search query result');
+				if (packet.done) {active = null; job.resolve(job.receiving.links);}
+				else worker.postMessage({operation: 'query-pull', id: job.id});
+				return;
+			}
+			if (job.sent) return;
+			if (!walk && !sameQueryIdentity(checked, queryIdentity(job.index))) {identity = queryIdentity(job.index); walk = sync(job.index);}
+			if (walk) {
+				const start = performance.now(); let part;
+				do {part = walk.next(); if (part.value) worker.postMessage({...part.value, id: job.id});} while (!part.done && performance.now() - start < 4);
+				if (!part.done) {wake(); return;}
+				walk = null;
+				if (!sameQueryIdentity(identity, queryIdentity(job.index))) {wake(); return;}
+				checked = identity;
+			}
+			if (job.prepare) {active = null; job.resolve(true); return;}
+			job.sent = true; worker.postMessage({operation: 'query-run', id: job.id, query: job.query, options: job.options});
+		} catch (error) {fail(error);}
+	}
+	return {
+		prepare(index) {
+			if (stopped) return Promise.reject(new Error('Search query runner is closed'));
+			if (active && !active.prepare) return Promise.resolve(false);
+			active?.resolve(null); walk = null;
+			const promise = new Promise((resolve, reject) => {active = {id: ++serial, index, prepare: true, resolve, reject};});
+			wake(); return promise;
+		},
+		query(index, query, options = {}) {
+			if (stopped) return Promise.reject(new Error('Search query runner is closed'));
+			active?.resolve(null); walk = null;
+			const promise = new Promise((resolve, reject) => {active = {id: ++serial, index, query, options, resolve, reject};});
+			wake(); return promise;
+		},
+		close() {stopped = true; cancel?.(); cancel = null; active?.resolve(null); active = null; walk = null; known.clear(); worker?.terminate(); worker = null;},
+	};
+}
+
+function installSearchQueries(scope) {
+	const index = buildSearchIndex(new Map(), {notes: Object.create(null), sections: []}), ids = new Map(); let incoming = null, outgoing = null;
+	const put = (file, ordinal, note, entry) => {
+		const prior = index.notes.get(file); if (prior) removeFilePostings(index.postings, file, prior.bag);
+		for (const field of Object.keys(note.bag)) if (!(note.bag[field] instanceof Map)) note.bag[field] = new Map(note.bag[field]);
+		ids.set(file, ordinal); index.notes.set(file, note); index.sidecar.notes[file] = entry; addPostings(index.postings, file, note.bag);
+	};
+	return data => {
+		if (!data?.operation?.startsWith('query-')) return false;
+		try {
+			if (data.operation === 'query-note') incoming = {file: data.file, ordinal: data.ordinal, values: [], valueText: ''};
+			else if (data.operation === 'query-notes') {for (const row of data.rows) put(row.file, row.ordinal, row.note, row.entry);}
+			else if (data.operation === 'query-data') {
+				if (!incoming) throw new Error('Search projection has no owner');
+				for (const row of data.rows) if (!searchReadValueRow(incoming, row)) throw new Error('Invalid search projection');
+				if (data.done) {
+					const {file, ordinal, links: {note, entry}} = incoming; put(file, ordinal, note, entry); incoming = null;
+				}
+			} else if (data.operation === 'query-drop') {
+				const prior = index.notes.get(data.file); if (prior) removeFilePostings(index.postings, data.file, prior.bag);
+				index.notes.delete(data.file); delete index.sidecar.notes[data.file];
+			} else if (data.operation === 'query-state') {index.sections = data.sections || []; index.sidecar.sections = index.sections; index.partial = data.partial; index.progress = data.progress;}
+			else if (data.operation === 'query-run') {
+				const answer = search(index, data.query, data.options);
+				if (data.options?.compact && !answer.continuation) {
+					const order = new Uint32Array(answer.results.length), scores = new Float64Array(order.length), marks = new Uint32Array(order.length);
+					for (let i = 0; i < order.length; i++) {
+						const row = answer.results[i]; order[i] = ids.get(row.file); scores[i] = row.score;
+						for (let j = row.matched.length - 1; j >= 0; j--) marks[i] = (marks[i] << 4) | (PICTURE_FIELDS.indexOf(row.matched[j]) + 1);
+					}
+					const {results, candidates, ...metadata} = answer;
+					outgoing = null; scope.postMessage({operation: 'query-compact', id: data.id, answer: metadata, order, scores, marks}, [order.buffer, scores.buffer, marks.buffer]);
+				} else {outgoing = {id: data.id, walk: searchValueRows(answer)}; scope.postMessage({operation: 'query-ready', id: data.id});}
+			}
+			else if (data.operation === 'query-pull' && outgoing?.id === data.id) {
+				const packet = searchValuePacket(outgoing.walk); scope.postMessage({operation: 'query-result', id: data.id, ...packet}); if (packet.done) outgoing = null;
+			}
+		} catch (error) {scope.postMessage({operation: 'query-error', id: data.id, message: String(error?.message || error).slice(0, 1024)});}
+		return true;
+	};
 }

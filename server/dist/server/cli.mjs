@@ -77,7 +77,7 @@ export async function localDoor(argv,{input=process.stdin,output=process.stdout,
   await mkdir(root,{recursive:true,mode:0o700});
   let server=null,forget=async()=>{};
   const start=async()=>{
-    server=await createServer({root,port:0,...options,...(options.chromium ? {} : {renderer:false})});
+    server=await createServer({root,port:0,...options,localDoor:true,...(options.chromium ? {} : {renderer:false})});
     await server.listen();forget=await recordDoor(root,server.origin);
     log('Rapier local Door: documents in '+root+(options.chromium ? '' : '; no Chromium, so page, txt, docx and pdf exports are unavailable')+'.');
     return {origin:server.origin,token:server.token};

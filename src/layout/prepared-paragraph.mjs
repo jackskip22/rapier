@@ -2,8 +2,24 @@
 import {paragraphHyphens} from './hyphenation.mjs';
 import {prepareRichInlineSegments} from '../agent/vendor/pretext/rich-inline.js';
 import {getEngineProfile, getPreparationLanguage, getFontMeasurement, parseFontSize,
-  getTextWidth, getEmojiCorrection, textMayContainEmoji, measureWithLetterSpacing} from '../agent/vendor/pretext/measurement.js';
+  getTextWidth, getEmojiCorrection, textMayContainEmoji, getSegmentMetrics, getContext} from '../agent/vendor/pretext/measurement.js';
 import {KIND_BITS, TEXT, SPACE, SOFT_HYPHEN, ZERO_WIDTH_BREAK, ZERO_WIDTH_GLUE, OBJECT, SPACED, UNBROKEN} from '../agent/vendor/pretext/analysis.js';
+
+function measureWithLetterSpacing(text, letterSpacing, emojiCorrection, measurement) {
+  if (!measurement.state.takesLetterSpacing) return null;
+  const base = getTextWidth(text, measurement, emojiCorrection);
+  if (letterSpacing === 0) return base;
+  const corrected = getSegmentMetrics(text, measurement).width - base;
+  const context = getContext(measurement), previous = context.letterSpacing;
+  try {
+    context.letterSpacing = `${letterSpacing}px`;
+    if (Number.parseFloat(context.letterSpacing) !== letterSpacing) return null;
+    const width = context.measureText(text).width - corrected;
+    return Number.isFinite(width) ? width : null;
+  } finally {
+    context.letterSpacing = previous;
+  }
+}
 
 const opening = /^[\p{Ps}\p{Pi}\p{Pf}"']+/u;
 const closing = /[\p{Pe}\p{Pi}\p{Pf}"'.,;:!?]+$/u;
@@ -141,7 +157,7 @@ export function* prepareParagraphCandidateSteps(items, options) {
       if (joined) {
         for (let at = word.first; at <= word.last; at++) {
           const unit = units[at];
-          if (unit.kind !== TEXT || /^\p{M}+$/u.test(text.slice(unit.start, unit.end))) continue;
+          if (unit.kind !== TEXT) continue;
           const delta = unit.width - measure(unit.start, unit.end);
           if (delta !== 0) contexts.push(Object.freeze({start: unit.start, end: unit.end, delta}));
           if (++measuredEdges % 8 === 0) yield;

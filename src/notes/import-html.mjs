@@ -1,9 +1,9 @@
-import {noteFileName, orderAfter} from './model.mjs';
+import {orderAfter} from './model.mjs';
 import {scanLinks} from './links.mjs';
 import {addSiblingLinkLine} from './sibling-links.mjs';
 import {zipOversizeSkip} from './zip.mjs';
 import {htmlToMarkdown} from './html-md.mjs';
-import {expandImportZips, literalInline, literalBlock, uniquePictureName, importMetadata} from './import.mjs';
+import {expandImportZips, literalInline, literalBlock, uniquePictureName, importMetadata, importDate, importNames} from './import.mjs';
 import {readImportText, reportCharacterChange, finishImportCharacters, literalImportSource} from './import-characters.mjs';
 
 const trimHtmlSpace = text => text.replace(/^[ \t\r\n\f]+|[ \t\r\n\f]+$/g, '');
@@ -29,6 +29,18 @@ function resolveImages(html, findByRef) {
 
 const HEAD_PART = /<!--[\s\S]*?(?:-->|$)|<(style|script|noscript|template|title|xml)\b(?:"[^"]*"|'[^']*'|[^'">])*>[\s\S]*?(?:<\/\1\s*>|$)|<(?:"[^"]*"|'[^']*'|[^'">])*>?|[^<]+/gi;
 const headAttr = (tag, name) => new RegExp('\\s' + name + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|([^\\s"\'>]+))', 'i').exec(tag)?.slice(1).find(v => v !== undefined);
+function pageDates(html, warnings) {
+	const head = /<head\b[^>]*>([\s\S]*?)<\/head>/i.exec(html)?.[1] || '', dates = {};
+	for (const [part] of head.matchAll(HEAD_PART)) {
+		if (!/^<meta\s/i.test(part)) continue;
+		const name = (headAttr(part, 'name') || headAttr(part, 'property') || '').toLowerCase();
+		const field = /^(?:created|creation-date|date)$/.test(name) ? 'created' : /^(?:updated|modified|last-modified)$/.test(name) ? 'modified' : null;
+		if (!field) continue;
+		const value = headAttr(part, 'content'), parsed = importDate(value, typeof value === 'string' ? Date.parse(value) : NaN, warnings, field);
+		if (parsed !== undefined && dates[field] === undefined) dates[field] = parsed;
+	}
+	return dates;
+}
 function headParts(head, warnings) {
 	const parts = [], used = new Set();
 	let titled = false;
@@ -139,7 +151,7 @@ function noteFromText(text) {
 }
 
 function detectKind(name, sniff) {
-	if (/\.html?$/i.test(name)) return 'html';
+	if (/\.(?:html?|znote|zoho)$/i.test(name)) return 'html';
 	if (/\.mht(ml)?$/i.test(name)) return 'mht';
 	if (/\.txt$/i.test(name)) return 'txt';
 	const head = String(sniff || '').slice(0, 512);
@@ -153,6 +165,7 @@ export async function importHtml(entries, options) {
 	const existing = Array.isArray(options && options.existing) ? options.existing.filter(n => typeof n === 'string') : [];
 	const lastOrder = typeof (options && options.lastOrder) === 'string' ? options.lastOrder : '';
 	const skipped = [], built = [], pool = existing.slice();
+	const allocate = importNames(pool);
 	const sections = [];
 	const attachments = [], pictures = [], usedPictureNames = new Set();
 
@@ -176,16 +189,17 @@ export async function importHtml(entries, options) {
 				if (!text.trim()) { skipped.push({name: f.name, why: 'empty file'}); continue; }
 				const noteText = noteFromText(text);
 				reportCharacterChange(text, noteText, warnings, 'plain-text body');
-				const file = noteFileName(noteText, pool); pool.push(file);
+				const file = allocate(noteText);
 				built.push({file, text: noteText, sourceName: f.name, rootId: f.rootId ?? '', warnings, entry: {order: '', pinned: false, skill: false, archived: false, trashed: false, colour: ''}, created: -Infinity});
 				continue;
 			}
 			if (kind === 'html') {
 				if (!text.trim()) { skipped.push({name: f.name, why: 'empty file'}); continue; }
-				const fallback = basenameOf(f.name).replace(/\.html?$/i, '');
+				const fallback = basenameOf(f.name).replace(/\.(?:html?|znote|zoho)$/i, '');
 				const noteText = noteFromHtml(text, fallback, () => null, warnings);
-				const file = noteFileName(noteText, pool); pool.push(file);
-				built.push({file, text: noteText, sourceName: f.name, rootId: f.rootId ?? '', warnings, entry: {order: '', pinned: false, skill: false, archived: false, trashed: false, colour: ''}, created: -Infinity});
+				const file = allocate(noteText);
+				const dates = pageDates(text, warnings);
+				built.push({file, text: noteText, sourceName: f.name, rootId: f.rootId ?? '', warnings, entry: {order: '', pinned: false, skill: false, archived: false, trashed: false, colour: '', ...dates}, created: dates.created ?? -Infinity});
 				continue;
 			}
 			const parts = parseMht(text, warnings);
@@ -204,7 +218,8 @@ export async function importHtml(entries, options) {
 				return candidates.length === 1 ? candidates[0] : null;
 			};
 			const fallback = basenameOf(f.name).replace(/\.mht(ml)?$/i, '');
-			let noteText = noteFromHtml(textOfPart(htmlPart, warnings), fallback, ref => {
+			const page = textOfPart(htmlPart, warnings), dates = pageDates(page, warnings);
+			let noteText = noteFromHtml(page, fallback, ref => {
 				const part = findPartByRef(ref);
 				if (!part) return null;
 				if (!partsUsed.has(part)) {
@@ -226,11 +241,11 @@ export async function importHtml(entries, options) {
 				if (!references.length) noteText = addSiblingLinkLine(noteText, '[' + name.replace(/[\\`*_{}\[\]<>!|]/g, '\\$&') + '](' + encodeURIComponent(name).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16)) + ')');
 			}
 
-			const file = noteFileName(noteText, pool); pool.push(file);
+			const file = allocate(noteText);
 			const headDate = new Date(headerValue(text.slice(0, 2000), 'Date')).getTime();
-			const mhtEntry = {order: '', pinned: false, skill: false, archived: false, trashed: false, colour: ''};
-			if (Number.isFinite(headDate)) { mhtEntry.modified = headDate; warnings.push({code: 'mime_date', message: 'The MIME archive date is used for this note. The export does not establish its original creation or edit time.'}); }
-			built.push({file, text: noteText, sourceName: f.name, rootId: f.rootId ?? '', warnings, entry: mhtEntry, created: Number.isFinite(headDate) ? headDate : -Infinity});
+			const mhtEntry = {order: '', pinned: false, skill: false, archived: false, trashed: false, colour: '', ...dates};
+			if (mhtEntry.modified === undefined && Number.isFinite(headDate)) { mhtEntry.modified = headDate; warnings.push({code: 'mime_date', message: 'The MIME archive date is used for this note. The export does not establish its original creation or edit time.'}); }
+			built.push({file, text: noteText, sourceName: f.name, rootId: f.rootId ?? '', warnings, entry: mhtEntry, created: dates.created ?? (Number.isFinite(headDate) ? headDate : -Infinity)});
 		} catch (_) {
 			built.push({...literalImportSource({...f, text, bytes: undefined}, pool, 'The HTML or MIME structure could not be converted.', warnings, kind === 'html' ? 'html' : 'text'), created: -Infinity});
 		}

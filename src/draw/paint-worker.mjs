@@ -5,6 +5,7 @@ import {AgentPaintRun, admitAgentStrokes, prepareAgentPainting, prepareAgentLaye
 import {sha256Yielding} from '../notes/integrity.mjs';
 import {createPaintRowPool, PAINT_SPLIT_PIXELS} from './paint-parallel.mjs';
 import {createWorkerClient} from './worker-client.mjs';
+import {_rapierDrawBuildSVG} from './core.mjs';
 export {createWorkerClient};
 const hash = data => sha256Yielding(new Uint8Array(data.buffer,data.byteOffset,data.byteLength));
 const surfaceMethods = new Set(['clear','fromRGBA8','grow','tilt','settleWet','_finishWetWork','stepWet','composeWet','advanceWet']);
@@ -80,6 +81,10 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
  }
  async function execute(request) {
   const {operation}=request;
+  if(operation==='drawingSVG') {
+   if(!request.recipe?.frame) throw new Error('A framed drawing is required');
+   return _rapierDrawBuildSVG(request.recipe,undefined,true,request.renderOptions);
+  }
   if(operation==='configure') {
    if(pool || surfaces.size) throw new Error('Configure the painter before opening a surface');
    pool=await createPaintRowPool({count:request.helpers || 0,threshold:request.threshold ?? PAINT_SPLIT_PIXELS,isolated,spawn:init=>spawnRows(init,request.helperSource)});
@@ -272,7 +277,7 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
     const value=await execute(request); postMessage({id,value},transfer(value));
    } catch(error) {
     const cancelled=error.name==='AbortError'&&agentJobs.get(id)?.signal.aborted;
-    const recoverable=observing||cancelled||error.code==='paint_history_full';
+    const recoverable=observing||cancelled||request.operation==='drawingSVG'||error.code==='paint_history_full';
     if(!recoverable)failed=error;
     postMessage({id,error:{name:error.name,message:String(error.message||error),...(typeof error.code==='string'?{code:error.code}:{})},...(recoverable?{recoverable:true}:{})});
    } finally {agentJobs.delete(id);}

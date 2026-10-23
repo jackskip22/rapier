@@ -92,6 +92,9 @@ function covered(block, rows, side, text) {
   return !text.slice(at, block.to).trim();
 }
 
+const PREFIX = /^[ \t]*(?:>[ \t]?)*[ \t]*(?:(?:[-+*]|\d{1,9}[.)])(?:[ \t]+(?:\[[ xX]\](?:[ \t]+|$))?|$)|#{1,6}(?:[ \t]+|$)|\|)?/;
+const RULE = /^[ \t>]*[|:=*_ \t-]*[-=*_][|:=*_ \t-]*$/;
+
 function marksIn(text, block, edits, side) {
   if (block.kind === 'frontmatter' || block.kind === 'fence' && PICTURES.has(block.language)) return [];
   const source = text.slice(block.from, block.to);
@@ -101,9 +104,20 @@ function marksIn(text, block, edits, side) {
     const from = Math.max(edit[side][0], block.from) - block.from, to = Math.min(edit[side][1], block.to) - block.from;
     if (to <= from || !source.slice(from, to).trim()) continue;
     if (unsafe.some(([start, end]) => from < end && to > start)) continue;
-    const previous = out.at(-1);
-    if (previous && !source.slice(previous[1], from).trim()) previous[1] = to;
-    else out.push([from, to]);
+    for (let at = from; at < to;) {
+      const lineStart = source.lastIndexOf('\n', at - 1) + 1, newline = source.indexOf('\n', at);
+      const lineEnd = newline < 0 ? source.length : newline, line = source.slice(lineStart, lineEnd).replace(/\r$/, '');
+      let start = at, end = Math.min(to, lineStart + line.length);
+      if (block.kind !== 'fence') {
+        if (RULE.test(line)) start = end;
+        else start = Math.max(start, lineStart + PREFIX.exec(line)[0].length);
+      }
+      at = newline < 0 ? to : Math.max(newline + 1, at + 1);
+      if (end <= start || !source.slice(start, end).trim()) continue;
+      const previous = out.at(-1);
+      if (previous && previous[1] <= start && !/\S|\n/.test(source.slice(previous[1], start))) previous[1] = end;
+      else out.push([start, end]);
+    }
   }
   return out;
 }

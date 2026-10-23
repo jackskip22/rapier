@@ -195,7 +195,7 @@ function _rapierComposerAct(name) { void _rapierPartReady('presets', name === 'b
 function _rapierComposerOffered() { return !!_rapierComposerPart || _rapierPartAvailable('presets'); }
 function _rapierElementImage(image) {
 	const url = (image && _rapierDrawImageDataUrl(image)) || '';
-	return url.startsWith('data:image/svg+xml;base64,') && atob(url.slice(26, 1226)).includes('id="rapier-element"');
+	return RapierImageAssets.svgDataPrefix(url).includes('id="rapier-element"');
 }
 function _rapierComposerPaint() {
 	const bar = document.getElementById('fmt-btn-elements');

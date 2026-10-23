@@ -106,7 +106,14 @@ setTimeout(_rapierPluginDeleteBind, 0);
 
 function _rapierPluginRequired(provider) { return provider && provider.status !== 'ready' && provider.update && provider.update.required ? provider.update : null; }
 function _rapierPluginRequiredWords(noun, update, plural = false) { return noun + (plural ? ' need' : ' needs') + ' an update to work with this Rapier \u00b7 ' + _rapierPluginSize(update.bytes); }
-function _rapierPluginSize(bytes) { return bytes >= 1e6 ? (bytes / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(bytes / 1e3)) + ' KB'; }
+function _rapierPluginSize(bytes) {
+	if (bytes >= 1e6) {
+		const mb = (bytes / 1e6).toFixed(1);
+		return mb + ' MB';
+	}
+	const kb = Math.round(bytes / 1e3);
+	return Math.max(1, kb) + ' KB';
+}
 const RAPIER_PLUGIN_TOLD = 'rapier:plugin:told';
 addEventListener('rapier:plugin-update', event => {
 	const {key, noun, plural, version, bytes} = event.detail || {};

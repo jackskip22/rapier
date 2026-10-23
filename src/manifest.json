@@ -159,6 +159,9 @@
     {
       "action": "./rapier.html",
       "accept": {
+        "image/openraster": [
+          ".ora"
+        ],
         "application/pdf": [
           ".pdf"
         ],

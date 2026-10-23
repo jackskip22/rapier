@@ -61,7 +61,10 @@ async function _rapierBlockSpacingOpen(wrapper) {
 	if (!block || _rapierUserMutationBlocked() || rapier.document.docKind !== 'markdown') return false;
 	const raw = String(block.raw || ''), id = block.id;
 	const targets = layout.layoutTargets(raw, md, _rapierMarkdownEnvironment()).filter(target => !target.reason);
-	if (targets.length !== 1 || _rapierListItemTree(raw).list) { showToast('This block follows the document\'s spacing.', 'info'); return false; }
+	if (targets.length !== 1 || _rapierListItemTree(raw).list) {
+		showToast(_rapierRawIsBlank(raw) ? 'An empty line follows the document\'s spacing.' : 'This block follows the document\'s spacing.', 'info');
+		return false;
+	}
 	const authored = spec.readDocumentSettings(_rapierSourceText());
 	const settings = _rapierWordPage() ? spec.wordDocumentSettings(authored) : authored;
 	const kind = wrapper._rapierRhythmType || (block.type === 'heading' ? 'h' + (wrapper.dataset.headingLevel || 1) : 'paragraph');

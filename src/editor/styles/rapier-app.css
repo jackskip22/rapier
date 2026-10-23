@@ -273,10 +273,10 @@ html[data-pasting="on"] body::after{
 
 
 .toast,.restore-notice,.rapier-notes-snack,.rapier-progress{
-	background:rgb(0 0 0 / .94);color:#fff;border:0;border-radius:0;box-shadow:none;
+	background:rgb(0 0 0 / .5);color:#fff;border:0;border-radius:0;box-shadow:none;
 	font:var(--fw-semibold) var(--text-sm)/1.4 var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;
 }
-body.light .toast,body.light .restore-notice,body.light .rapier-notes-snack,body.light .rapier-progress{background:rgb(255 255 255 / .94);color:#000}
+body.light .toast,body.light .restore-notice,body.light .rapier-notes-snack,body.light .rapier-progress{background:rgb(255 255 255 / .5);color:#000}
 @media(prefers-reduced-motion:reduce){.toast,.restore-notice{animation:none}.toast-container,.toast,.restore-notice{transition:none}}
 
 .restore-notice{
@@ -682,3 +682,14 @@ body.rapier-notes-beside{width:calc(100vw - var(--notes-beside));contain:layout}
 .rapier-draw-seek input[type="range"]::-moz-range-thumb{width:44px;height:48px;border:0;border-radius:0;background:transparent}
 .rapier-draw-seek input[type="range"]:focus-visible{outline:0}
 @media(prefers-reduced-motion:reduce){.rapier-draw-seek-head{transition:none}}
+.md-render :is(.diagram-block,.diagram-live-preview){
+	--md-pele-fg:var(--color-text,var(--md-color-text));
+	--md-pele-line:var(--color-text,var(--md-color-text));
+	--md-pele-muted:var(--color-text-secondary,var(--md-color-text-secondary));
+	--md-pele-surface:var(--color-surface-2,var(--md-color-surface-2));
+	--md-pele-surface-alt:var(--color-surface-hover,var(--md-color-border-focus));
+	--md-pele-border:var(--color-border,var(--color-surface-hover,var(--md-color-border)));
+	--md-pele-accent:var(--color-accent,var(--md-color-accent));
+	--md-pele-font:var(--font-sans,var(--md-font-sans));
+	--md-pele-font-mono:var(--font-mono,var(--md-font-mono));
+}

@@ -39,15 +39,16 @@ html[data-highlights="accent"] .tok-number { color: color-mix(in srgb, var(--col
 }
 
 html[data-highlights="standard"] {
-	--tok-comment: #7a7a7a; --tok-keyword: #c678dd; --tok-string: #98c379; --tok-number: #d19a66; --tok-type: #61afef;
+	--tok-comment: #929292; --tok-name: #bd97fd; --tok-string: #52bab3; --tok-value: #f785b4;
 }
 html[data-highlights="standard"] body.light {
-	--tok-comment: #6a737d; --tok-keyword: #a626a4; --tok-string: #50a14f; --tok-number: #986801; --tok-type: #4078f2;
+	--tok-comment: #6c6c6c; --tok-name: #940dff; --tok-string: #34716e; --tok-value: #c12275;
 }
 html[data-highlights="standard"] .tok-comment { color: var(--tok-comment); font-style: italic; }
-html[data-highlights="standard"] .tok-keyword,
-html[data-highlights="standard"] .tok-constant { color: var(--tok-keyword); font-weight: var(--md-fw-semibold); }
+html[data-highlights="standard"] .tok-operator { color: var(--tok-comment); }
+html[data-highlights="standard"] .tok-keyword { font-weight: var(--md-fw-semibold); }
 html[data-highlights="standard"] .tok-string { color: var(--tok-string); }
-html[data-highlights="standard"] .tok-number { color: var(--tok-number); }
+html[data-highlights="standard"] .tok-number,
+html[data-highlights="standard"] .tok-constant { color: var(--tok-value); }
 html[data-highlights="standard"] .tok-type,
-html[data-highlights="standard"] .tok-function { color: var(--tok-type); font-weight: var(--md-fw-semibold); }
+html[data-highlights="standard"] .tok-function { color: var(--tok-name); font-weight: 600; }

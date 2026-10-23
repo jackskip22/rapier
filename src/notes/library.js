@@ -1,6 +1,6 @@
 const RAPIER_NOTES_LIB_RECENT = 8, RAPIER_NOTES_LIB_MENTION_MIN = 4;
 const _rapierNotesLib = {
-	sidx: null, lidx: null, from: null, generation: null, sidecar: null, query: null, results: null, build: null, slice: null, runner: null, hydrate: null, partial: null, painted: 0, job: null, snips: null,
+	sidx: null, lidx: null, from: null, generation: null, sidecar: null, query: null, results: null, build: null, slice: null, runner: null, queryWorker: null, hydrate: null, partial: null, painted: 0, job: null, snips: null,
 	chips: null, bar: null, picker: null, connections: null, secs: null, trustedPaint: false,
 	run: null, runs: 0, hit: false, said: null,
 };
@@ -99,7 +99,7 @@ function _rapierNotesLibraryBacklog() { const b = _rapierNotesLib.build; return 
 function _rapierNotesLibraryFresh() {
 	const state = _rapierNotes, lib = _rapierNotesLib;
 	if (lib.from === state.texts && lib.generation === state.loadGen) return true;
-	lib.slice?.cancel?.(); lib.runner?.cancel(); lib.hydrate?.stop();
+	lib.slice?.cancel?.(); lib.runner?.cancel(); lib.queryWorker?.close(); lib.queryWorker = null; lib.hydrate?.stop();
 	lib.from = state.texts; lib.generation = state.loadGen; lib.sidecar = null; lib.slice = null; lib.runner = null; lib.sidx = null; lib.lidx = null; lib.build = null; lib.partial = null; lib.results = null; lib.query = null; lib.job = null; lib.snips = null; lib.secs = null;
 	return false;
 }
@@ -176,6 +176,11 @@ function _rapierNotesLibraryScheduleSlice() {
 			more = runner.step();
 		}
 		if (more) _rapierNotesLibraryScheduleSlice();
+		else if (lib.build.done && large && !state.query && (!state.reading || state.reading.complete) && typeof Worker === 'function' &&
+			typeof _rapierNotesSearchModule().createSearchQueryRunner === 'function') {
+			if (!lib.queryWorker) lib.queryWorker = _rapierNotesSearchModule().createSearchQueryRunner({createWorker: _rapierNotesLibraryWorker});
+			void lib.queryWorker.prepare(lib.build.index).catch(() => {});
+		}
 		const now = Date.now();
 		if (state.open && state.query && ((lib.build.done && (!state.reading || state.reading.complete)) || now - lib.painted > 250) &&
 			!(typeof _rapierNotesBackgroundBlocked === 'function' && _rapierNotesBackgroundBlocked())) { lib.painted = now; lib.trustedPaint = true; try { _rapierNotesRender(); } finally { lib.trustedPaint = false; } }
@@ -298,7 +303,7 @@ function _rapierNotesLibraryRun() {
 	const query = String(state.query || '').trim();
 	if (lib.sidecar !== state.index) { lib.sidecar = state.index; lib.results = null; lib.job = null; lib.snips = null; }
 	if (lib.results && lib.query === query) return lib.results;
-	if (lib.job && lib.job.query === query) return lib.job.found;
+	if (lib.job && lib.query === query && lib.job.query === query) return lib.job.found;
 	if (lib.query !== query) lib.snips = null;
 	lib.query = query; lib.job = null; lib.hit = false; lib.run = 'q' + (++lib.runs) + ':' + state.loadGen;
 	if (!query) { lib.results = null; lib.partial = null; lib.run = null; return null; }
@@ -306,9 +311,13 @@ function _rapierNotesLibraryRun() {
 	if (!sidx) { lib.results = null; return null; }
 	const asked = state.searchPictures ? query : 'pictures:off ' + query;
 	const total = Object.keys(state.index.notes).length;
+	if (total > 200 && typeof Worker === 'function' && typeof S.createSearchQueryRunner === 'function')
+		return _rapierNotesLibraryQueryWorker(sidx, asked, query, total);
 	const answers = [S.search(sidx, asked, {limit: total, candidateOrder: true, includeArchivedTrash: true})];
-	const found = _rapierNotesLibraryCompose(answers);
-	const confirm = new Set(answers.flatMap(a => a.confirm));
+	return _rapierNotesLibraryAnswer(answers, query, total, sidx);
+}
+function _rapierNotesLibraryAnswer(answers, query, total, sidx, found = _rapierNotesLibraryCompose(answers), confirm = new Set(answers.flatMap(a => a.confirm))) {
+	const lib = _rapierNotesLib, state = _rapierNotes;
 	lib.partial = state.reading && (!state.reading.complete || sidx.notes.size < total) ? {done: sidx.notes.size, total, ...(state.reading.complete && (lib.build.done || sidx.progress?.unread) ? {unread: true} : {})} : answers[0].partial ? answers[0].progress : null;
 	lib.hit = found.size > 0;
 	if (confirm.size && (!lib.partial || lib.partial.unread)) {
@@ -320,6 +329,38 @@ function _rapierNotesLibraryRun() {
 	}
 	lib.results = found;
 	return found;
+}
+function _rapierNotesLibraryQueryWorker(sidx, asked, query, total) {
+	const lib = _rapierNotesLib, state = _rapierNotes, S = _rapierNotesSearchModule();
+	if (!lib.queryWorker) lib.queryWorker = S.createSearchQueryRunner({createWorker: _rapierNotesLibraryWorker});
+	const job = lib.job = {query, id: lib.run, gen: state.loadGen, sidecar: state.index, found: new Map(),
+		answers: [], confirm: new Set(), coverage: {done: 0, total}, awaiting: true};
+	const live = () => lib.job === job && lib.query === query && String(state.query || '').trim() === query &&
+		state.index === job.sidecar && state.loadGen === job.gen && lib.from === state.texts;
+	const pause = () => new Promise(resolve => _rapierNotesLibraryIdle(resolve));
+	lib.partial = sidx.partial ? {...sidx.progress} : {done: 0, total};
+	void (async () => {
+		let answer;
+		try {answer = await lib.queryWorker.query(sidx, asked, {limit: total, candidateOrder: true, includeArchivedTrash: true, compact: true});}
+		catch (_) {
+			await pause(); if (!live()) return;
+			answer = S.search(sidx, asked, {limit: total, candidateOrder: true, includeArchivedTrash: true});
+		}
+		if (!answer || !live()) return;
+		const found = answer.found || new Map(), confirm = new Set();
+		for (const [rows, add] of [[answer.results || [], row => found.set(row.file, {...row, rank: found.size})], [answer.confirm, file => confirm.add(file)]]) {
+			let at = 0;
+			while (at < rows.length) {
+				const started = performance.now();
+				do {add(rows[at++]);} while (at < rows.length && performance.now() - started < 4);
+				if (at < rows.length) {await pause(); if (!live()) return;}
+			}
+		}
+		if (!live()) return;
+		lib.job = null; _rapierNotesLibraryAnswer([answer], query, total, sidx, found, confirm);
+		if (state.open) {lib.trustedPaint = true; try {_rapierNotesRender();} finally {lib.trustedPaint = false;}}
+	})();
+	return job.found;
 }
 function _rapierNotesLibraryCompose(answers) {
 	const found = new Map();
@@ -372,6 +413,7 @@ function _rapierNotesLibraryWordy() {
 function _rapierNotesLibraryRanked(files) {
 	const found = _rapierNotesLibraryRun();
 	if (!found || !_rapierNotesLibraryWordy()) return files;
+	if (typeof found.ranked === 'function') return found.ranked(files);
 	return files.slice().sort((a, b) => (found.get(a)?.rank ?? 1e9) - (found.get(b)?.rank ?? 1e9));
 }
 function _rapierNotesLibraryHit(file) {
@@ -1034,6 +1076,46 @@ globalThis.RapierOriginalFolder = Object.freeze({
       return opened;
     } finally { if (!opened) await prepared.release(); }
   },
+  hasRename: () => !!globalThis.RapierPlatform?.files.original(String(rapier.identity.authority || ''))?.rename,
+  inFolder: () => !!_rapierOriginalFolderView.folder && !!globalThis.RapierOriginalFolderCore.currentOriginal(),
+  async rename(name, {signal} = {}) {
+    const original = globalThis.RapierPlatform?.files.original(String(rapier.identity.authority || ''));
+    if (!original?.rename || name === original.name) return false;
+    if (_rapierMutationBarrierActive() || _rapierIsDirty()) { showToast('Save the document before renaming it', 'info'); return true; }
+    const expectedMutationStamp = Object.freeze(_rapierMutationStamp());
+    let prepared;
+    try { prepared = await original.rename(name, {signal}); }
+    catch (error) {
+      const code = String(error?.code || '');
+      if (/unavailable$|^unknown_operation$/.test(code)) return false;
+      showToast(code === 'destination_exists' ? 'A file named ' + name + ' is already there' : 'The file was not renamed', 'error');
+      return true;
+    }
+    let opened = false;
+    try { opened = await rapierOpenPlatformPayload(prepared.payload, {signal, expectedMutationStamp}); }
+    finally { if (!opened) await prepared.release(); }
+    return true;
+  },
+  async create({signal} = {}) {
+    const folder = _rapierOriginalFolderView.folder, original = globalThis.RapierPlatform?.files.original(String(rapier.identity.authority || ''));
+    if (!folder || !original || !globalThis.RapierOriginalFolderCore.currentOriginal()) return false;
+    const path = String(original.displayPath || ''), parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+    const directory = parent ? await folder.lookup(parent, {signal}) : folder.root;
+    let entry = null;
+    try {
+      for (let n = 1; n < 1000 && !entry; n++) {
+        try { entry = await folder.create(directory, n === 1 ? 'Note.md' : 'Note ' + n + '.md', {signal}); }
+        catch (error) { if (error?.code === 'destination_exists') continue; if (/unavailable$|^unknown_operation$/.test(String(error?.code))) return false; throw error; }
+      }
+      if (!entry) throw new Error('name_limit');
+      const expectedMutationStamp = Object.freeze(_rapierMutationStamp());
+      const prepared = await globalThis.RapierOriginalFolderCore.prepare(folder, entry, globalThis.RapierPlatform.files, {signal});
+      let opened = false;
+      try { opened = await rapierOpenPlatformPayload(prepared.payload, {signal, expectedMutationStamp}); return true; }
+      finally { if (!opened) await prepared.release(); }
+    } catch (error) { showToast('The note could not be created', 'error'); return true; }
+    finally { if (entry) await folder.release(entry); if (directory !== folder.root) await folder.release(directory); }
+  },
   leaveView() { _rapierOriginalFolderView.cancel?.abort(); _rapierOriginalFolderView.cancel = null; },
   async close() {
     ++_rapierOriginalFolderView.choosing;
@@ -1043,6 +1125,8 @@ globalThis.RapierOriginalFolder = Object.freeze({
   },
 });
 window.addEventListener('pagehide', () => { void globalThis.RapierOriginalFolder.close(); });
+for (const event of ['rapier:original-file-ready', 'rapier:original-file-closed'])
+	window.addEventListener(event, () => { try { _rapierRerenderBlocks(rapier.document.blocks || [], block => String(block.raw || '').includes('[[')); } catch (_) {} });
 function _rapierOriginalFolderAvailable() {
 	return typeof globalThis.showDirectoryPicker === 'function' && globalThis.RapierPlatform?.environment?.id === 'web' || !!globalThis.RapierPlatform?.host?.originalFolder;
 }

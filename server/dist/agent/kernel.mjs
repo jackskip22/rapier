@@ -316,7 +316,7 @@ const canonicalDigest = value => sha256Parts(jsonValueParts(value, true));
 
 function sourceDrawing(text, label) {
   const asset = documentAssets(text).assets.get(normalizeLabel(label));
-  if (!asset || !/^data:image\/svg\+xml;base64,/i.test(asset.url)) return null;
+  if (!asset || !/^data:image\/svg\+xml(?:;base64)?,/i.test(asset.url)) return null;
   try {
     const recipe = _rapierDrawReadRecipeFromSVGText(new TextDecoder().decode(decodeDataImage(asset.url)));
     return recipe ? {asset, recipe} : null;
@@ -1774,7 +1774,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   }
   function storedRecipe(assetLabel) {
     const row = documentAssets(state.text).assets.get(normalizeLabel(assetLabel));
-    if (!row || !/^data:image\/svg\+xml;base64,/i.test(row.url)) return null;
+    if (!row || !/^data:image\/svg\+xml(?:;base64)?,/i.test(row.url)) return null;
     try { return _rapierDrawReadRecipeFromSVGText(new TextDecoder().decode(decodeDataImage(row.url))); }
     catch (_) { return null; }
   }
@@ -1815,7 +1815,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
 
   function svgInspection(assetLabel) {
     const asset = documentAssets(state.text).assets.get(normalizeLabel(assetLabel));
-    if (!asset || !/^data:image\/svg\+xml;base64,/i.test(asset.url)) return null;
+    if (!asset || !/^data:image\/svg\+xml(?:;base64)?,/i.test(asset.url)) return null;
     try { return JSON.stringify(inspectSVG(decodeDataImage(asset.url), {nodes: true})); }
     catch (_) { return null; }
   }
@@ -1836,7 +1836,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const match = DRAW_OCCURRENCE.exec(slice.trim());
     if (!match) return null;
     const row = documentAssets(state.text).assets.get(normalizeLabel(match[2]));
-    if (!row || !/^data:image\/svg\+xml;base64,/i.test(row.url)) return null;
+    if (!row || !/^data:image\/svg\+xml(?:;base64)?,/i.test(row.url)) return null;
     let recipe;
     try { recipe = _rapierDrawReadRecipeFromSVGText(new TextDecoder().decode(decodeDataImage(row.url))); }
     catch (_) { return null; }
@@ -3431,7 +3431,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (plan.ok && plan.unchanged) return {outcome: 'unchanged', reason: 'nothing_to_undo', act: null, sourceChanged: false, editCount: 0,
       hint: 'This act\'s changes are no longer in the text: it was already undone, or later work replaced them.'};
     let splices = plan.ok ? plan.splices : plan, painting = null, drawingTracks = [];
-    if (plan.ok && (state.text.includes('data:image/svg+xml;base64,') || (group || [entry]).some(row => row.drawingPatch))) {
+    if (plan.ok && (/data:image\/svg\+xml(?:;base64)?,/i.test(state.text) || (group || [entry]).some(row => row.drawingPatch))) {
       try { drawingTracks = drawingHistory(group || [entry]); painting = await drawingInverse(group || [entry], drawingTracks, who, context, commentOptions); }
       catch (error) { cancelled(context); return failure(error?.message === 'paint_replay_unavailable' ? error.message : 'drawing_history_unavailable', 'conflict'); }
       if (painting?.outcome) return painting;
@@ -4722,13 +4722,13 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       const label = /^\[([^\]\r\n]+)\]:/.exec(row.source)?.[1] || row.id;
       replacements.push({...row, definitionStart: row.start, label, kind: 'asset', hidden: true, text: '', marker: '<!-- rapier-asset:' + row.id + ' -->'});
     }
-    const images = [...assets.assets.values()].some(asset => /^data:image\/svg\+xml;base64,/i.test(asset.url))
+    const images = [...assets.assets.values()].some(asset => /^data:image\/svg\+xml(?:;base64)?,/i.test(asset.url))
       ? structureMarkdown({source, kinds: ['image'], matchLimit: 2048}, markdownParser()) : {matches: []};
     for (const item of images.matches || []) {
       const raw = source.slice(item.start, item.end), match = DRAW_OCCURRENCE.exec(raw);
       if (!match) continue;
       const asset = assets.assets.get(normalizeLabel(match[2]));
-      if (!asset || !/^data:image\/svg\+xml;base64,/i.test(asset.url)) continue;
+      if (!asset || !/^data:image\/svg\+xml(?:;base64)?,/i.test(asset.url)) continue;
       let recipe; try {recipe = _rapierDrawReadRecipeFromSVGText(new TextDecoder().decode(decodeDataImage(asset.url)));} catch {continue;}
       const marker = /<!-- rapier-block:([A-Za-z0-9_-]+) (rapier-(?:draw|water|paint|svg)) -->\n\n$/.exec(source.slice(0, item.start));
       let id = marker?.[1];

@@ -673,22 +673,45 @@ function _rapierDrawPatchShapeNodes(ids) {
 		if (shape.bind && Object.values(shape.bind).some(anchor => patch.has(anchor.to))) patch.add(shape.id);
 	}
 	for (const id of _rapierDrawRouteChanges(state.recipe, ids, !!state.gesture)) patch.add(id);
+	const markup = _rapierDrawShapeCache();
 	for (const shape of state.recipe.shapes) {
 		if (!patch.has(shape.id)) continue;
-		const html = _rapierDrawShapeMarkup(_rapierDrawDisplayShape(shape), state.recipe, {sourceOnly: true});
+		const cached = markup(shape), html = cached.html;
 		_rapierDrawNoteColours(html);
+		const existing = host.querySelector('[data-shape-id="' + shape.id + '"]');
+		if (existing && cached.node === existing && !shape.effect) continue;
 		const next = _rapierDrawParseSvgNode(html);
 		if (!next) continue;
-		const existing = host.querySelector('[data-shape-id="' + shape.id + '"]');
-		if (existing) { if (!_rapierDrawUpdatePicture(existing, next)) existing.replaceWith(next); } else host.appendChild(next);
+		if (existing && _rapierDrawUpdatePicture(existing, next)) cached.node = existing;
+		else { if (existing) existing.replaceWith(next); else host.appendChild(next); cached.node = next; }
 	}
 	_rapierDrawDarkStyleSync();
 	_rapierDrawMarkSelection();
+}
+function _rapierDrawShapeCache() {
+	const state = _rapierDrawState, {shapes, strokes, ...head} = state.recipe;
+	let cache = state.shapeMarkupCache;
+	if (!cache || cache.session !== state.session || !_rapierDrawHistoryEqual(head, cache.head))
+		cache = state.shapeMarkupCache = {session: state.session, head: _rapierDrawHistoryCopy(head), rows: new Map()};
+	const ids = new Set(shapes.map(shape => shape.id));
+	for (const id of cache.rows.keys()) if (!ids.has(id)) cache.rows.delete(id);
+	return shape => {
+		const shown = _rapierDrawDisplayShape(shape);
+		const related = shape.bind || shape.effect || ['line', 'arrow'].includes(shape.recognized) || ['ray', 'light', 'lens'].includes(shape.brush);
+		const input = {shape: shown, stroke: strokes[shape.stroke], related: related ? shapes : undefined};
+		let row = cache.rows.get(shape.id);
+		if (!row || !_rapierDrawHistoryEqual(input, row.input)) {
+			row = {input: _rapierDrawHistoryCopy(input), html: _rapierDrawShapeMarkup(shown, state.recipe, {sourceOnly: true})};
+			cache.rows.set(shape.id, row);
+		}
+		return row;
+	};
 }
 function _rapierDrawAdoptShapeNodes() {
 	const state = _rapierDrawState, host = state.svg;
 	_rapierDrawRerouteBoundArrows(state.recipe);
 	if (state.recipe.effect || state.recipe.shapes.some(shape => shape.effect && shape.paint?.group) || host.querySelector('[data-rapier-effect-scene],[data-rapier-effect-layer]')) {
+		state.shapeMarkupCache = null;
 		const display = { ...state.recipe, shapes: state.recipe.shapes.map(_rapierDrawDisplayShape) };
 		const html = _rapierDrawSceneMarkup(display, false, true, {sourceOnly: true});
 		const scene = _rapierDrawParseSvgNode('<g>' + html + '</g>');
@@ -698,7 +721,7 @@ function _rapierDrawAdoptShapeNodes() {
 		_rapierDrawNoteColours(html); _rapierDrawDarkStyleSync(); _rapierDrawSyncFonts(); _rapierDrawMarkSelection();
 		return;
 	}
-	const previous = new Map();
+	const previous = new Map(), markup = _rapierDrawShapeCache();
 	for (const node of [...host.children]) {
 		const id = node.getAttribute('data-shape-id');
 		if (id) previous.set(id, node);
@@ -707,17 +730,17 @@ function _rapierDrawAdoptShapeNodes() {
 	let prev = null;
 	const kept = new Set(state.recipe.shapes.map(shape => String(shape.id)));
 	for (const shape of state.recipe.shapes) {
-		const html = _rapierDrawShapeMarkup(_rapierDrawDisplayShape(shape), state.recipe, {sourceOnly: true});
+		const cached = markup(shape), html = cached.html;
 		_rapierDrawNoteColours(html);
 		let node = previous.get(shape.id);
-		const current = node?.outerHTML.replace(/^<g\b[^>]*>/, head => head.replace(/ (?:id|role|tabindex|aria-label|aria-pressed)="[^"]*"/g, ''));
-		if (!node || current !== html) {
+		if (!node || cached.node !== node || shape.effect) {
 			const fresh = _rapierDrawParseSvgNode(html);
 			if (!fresh) continue;
 			if (!node || !_rapierDrawUpdatePicture(node, fresh)) {
 				if (node) node.replaceWith(fresh);
 				node = fresh;
 			}
+			cached.node = node;
 		}
 		let place = prev ? prev.nextSibling : host.firstChild;
 		while (place && place !== node && !kept.has(place.getAttribute?.('data-shape-id'))) place = place.nextSibling;
@@ -2577,6 +2600,8 @@ async function _rapierDrawSetTool(name, remember = true) {
 	const current = () => state.open && state.session === change.session && state.toolChange === change;
 	_rapierDrawSetToolMenu(false); _rapierDrawShowTool(name);
 	try {
+		const paint = state.paintLayer;
+		if (paint?.mode !== 'water' && paint?.surface?._wetWork) paint.surface.finishWetWork();
 		const pending = _rapierPaintPendingStroke();
 		if (pending) { await pending; if (!current()) return; }
 		_rapierDrawCancelGesture();
@@ -3393,7 +3418,7 @@ function _rapierDrawLetterGlyph(set) {
 	const sample = set && globalThis.RapierDrawLetterPreviews.LETTER_PREVIEWS[set.id];
 	return sample ? '<svg class="rapier-draw-glyph" viewBox="0 0 ' + sample.glyph[0] + ' ' + sample.em + '" aria-hidden="true"><path fill="currentColor" transform="translate(' + sample.bearing + ',0)" d="' + sample.glyph[1] + '"/></svg>' : '';
 }
-const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.34/letters/';
+const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.36/letters/';
 const _rapierDrawLettersDoor = { allowed: false, asking: null, providers: new Map(), bringing: new Map() };
 function _rapierDrawLettersProvider(set) {
 	const door = _rapierDrawLettersDoor;
@@ -3820,28 +3845,26 @@ async function _rapierDrawOpenDropper(scope, found = null) {
 		if (state.dropper !== session || !state.open || state.session !== drawing) { close(false); return; }
 		const source = JSON.stringify(state.recipe), refracted = state.recipe.effect?.type === 'refraction' || state.recipe.shapes.some(shape => shape.effect?.type === 'refraction');
 		const text = _rapierPaintShowable(_rapierDrawBuildSVG(state.recipe, _rapierDrawMeasuredView, true, refracted ? {sourceOnly: true} : undefined));
-		let image;
+		const sample = image => {
+			if (state.dropper !== session || !state.open || state.session !== drawing || JSON.stringify(state.recipe) !== source) { close(false); return; }
+			const rect = svg.getBoundingClientRect(), dpr = Math.min(2, globalThis.devicePixelRatio || 1);
+			const c = document.createElement('canvas');
+			c.width = Math.max(1, Math.round(rect.width * dpr)); c.height = Math.max(1, Math.round(rect.height * dpr));
+			const ctx = c.getContext('2d', { willReadFrequently: true });
+			ctx.fillStyle = _rapierDrawReplayPaper(); ctx.fillRect(0, 0, 1, 1);
+			const paper = ctx.getImageData(0, 0, 1, 1).data;
+			ctx.clearRect(0, 0, 1, 1);
+			const view = (/viewBox="([^"]+)"/.exec(text)?.[1] || '').trim().split(/[\s,]+/).map(Number), ctm = svg.getScreenCTM(), v = svg.viewBox.baseVal;
+			if (view.length !== 4 || !view.every(Number.isFinite) || !ctm) throw new Error('the drawing has no place on the stage');
+			const a = new DOMPoint(view[0], view[1]).matrixTransform(ctm), b = new DOMPoint(view[0] + view[2], view[1] + view[3]).matrixTransform(ctm);
+			ctx.drawImage(image, (a.x - rect.left) * dpr, (a.y - rect.top) * dpr, (b.x - a.x) * dpr, (b.y - a.y) * dpr);
+			sheet = { rect, dpr, paper, view: [v.x, v.y, v.width, v.height], data: ctx.getImageData(0, 0, c.width, c.height) };
+		};
 		if (refracted) {
 			const rendered = await globalThis.RapierDrawRefraction.renderSVG(text, state.recipe, {backend: 'webgpu', displayRaster: url => _rapierPaintShownAs.get(url)});
-			image = rendered.canvas;
-		} else {
-			image = new Image();
-			image.src = 'data:image/svg+xml;base64,' + RapierBundleIO.toBase64(new TextEncoder().encode(text));
-			await image.decode();
-		}
-		if (state.dropper !== session || !state.open || state.session !== drawing || JSON.stringify(state.recipe) !== source) { close(false); return; }
-		const rect = svg.getBoundingClientRect(), dpr = Math.min(2, globalThis.devicePixelRatio || 1);
-		const c = document.createElement('canvas');
-		c.width = Math.max(1, Math.round(rect.width * dpr)); c.height = Math.max(1, Math.round(rect.height * dpr));
-		const ctx = c.getContext('2d', { willReadFrequently: true });
-		ctx.fillStyle = _rapierDrawReplayPaper(); ctx.fillRect(0, 0, 1, 1);
-		const paper = ctx.getImageData(0, 0, 1, 1).data;
-		ctx.clearRect(0, 0, 1, 1);
-		const view = (/viewBox="([^"]+)"/.exec(text)?.[1] || '').trim().split(/[\s,]+/).map(Number), ctm = svg.getScreenCTM(), v = svg.viewBox.baseVal;
-		if (view.length !== 4 || !view.every(Number.isFinite) || !ctm) throw new Error('the drawing has no place on the stage');
-		const a = new DOMPoint(view[0], view[1]).matrixTransform(ctm), b = new DOMPoint(view[0] + view[2], view[1] + view[3]).matrixTransform(ctm);
-		ctx.drawImage(image, (a.x - rect.left) * dpr, (a.y - rect.top) * dpr, (b.x - a.x) * dpr, (b.y - a.y) * dpr);
-		sheet = { rect, dpr, paper, view: [v.x, v.y, v.width, v.height], data: ctx.getImageData(0, 0, c.width, c.height) };
+			try { sample(rendered.canvas); } finally { rendered.canvas.width = 0; }
+		} else await globalThis.RapierDrawAgentPaint.withSVGImage(text, sample);
+		if (!sheet) return;
 	} catch (error) {
 		if (state.dropper === session) { close(false); showToast('That drawing could not be sampled: ' + String(error.message || error), 'error'); }
 		return;
@@ -6166,7 +6189,7 @@ async function _rapierDrawClose({ recover = false, landed = false } = {}) {
 	}
 	focus?.focus({preventScroll: true});
 	globalThis.RapierDrawAgentPaint?.forgetWaterSession?.(globalThis.RapierDrawAgentPaint.waterSession(state.session));
-	state.paintFastSources?.clear(); state.finishHandoff = null;
+	state.paintFastSources?.clear(); state.finishHandoff = null; state.shapeMarkupCache = null;
 	state.open = false; state.painter = false; state.pencil = false; state.session = (state.session || 0) + 1; state.editing = null; state.insertTarget = null; state.notes = null; state.openSnapshot = null;
 	if(typeof _rapierPaintTrimHistory==='function')_rapierPaintTrimHistory();
 	_rapierDrawLiquidStop(); _rapierDrawCopierStop();
@@ -6208,10 +6231,11 @@ function _rapierDrawBackupPublished() {
 }
 function _rapierDrawBackupHere() {
 	if (globalThis.RapierBenchSession?.active === true) return false;
-	return !!(navigator.locks?.request && typeof indexedDB !== 'undefined');
+	return !!(navigator.locks?.request && (globalThis.RapierPlatform?.recovery?.binaryStore || typeof indexedDB !== 'undefined'));
 }
 function _rapierDrawBackupStore() {
-	return _rapierDrawState.backupStore ||= _rapierDrawBackupIDB();
+	const native = globalThis.RapierPlatform?.recovery?.binaryStore;
+	return _rapierDrawState.backupStore ||= native ? _rapierDrawBackupNative(native) : _rapierDrawBackupIDB();
 }
 const RAPIER_DRAW_BACKUP_WORKER = `
 let opened = null;
@@ -6224,7 +6248,9 @@ const open = () => opened ||= new Promise((ok, no) => {
 onmessage = async ({ data }) => {
 	const { id, name, record, remove } = data;
 	try {
-		const text = typeof record === 'string' ? record : JSON.stringify(record), db = await open();
+		const text = typeof record === 'string' ? record : JSON.stringify(record);
+		if (data.operation === 'serialize') { postMessage({id, blob: new Blob([text], {type: 'application/json'})}); return; }
+		const db = await open();
 		await new Promise((ok, no) => {
 			const tx = db.transaction('pending', 'readwrite', { durability: 'strict' }), store = tx.objectStore('pending');
 			tx.oncomplete = ok; tx.onerror = tx.onabort = () => no(tx.error || new Error('IndexedDB refused the drawing recovery'));
@@ -6266,6 +6292,40 @@ async function _rapierDrawBackupWorkerCall(message) {
 		catch (error) { client.pending.delete(id); clearTimeout(timer); reject(error); }
 	});
 }
+function _rapierDrawBackupNative(store) {
+	const filename = name => {
+		const match = /^pending\.([0-9a-f-]{36})\.([1-9]\d*)\.json$/.exec(name);
+		if (!match || !Number.isSafeInteger(Number(match[2]))) throw new Error('Invalid drawing recovery name');
+		return 'drawing-' + match[1] + '-' + match[2] + '.body';
+	};
+	return {
+		async list() {
+			return (await store.list()).flatMap(name => {
+				const match = /^drawing-([0-9a-f-]{36})-([1-9]\d*)\.body$/.exec(name);
+				if (!match || !Number.isSafeInteger(Number(match[2]))) return [];
+				return [{name: 'pending.' + match[1] + '.' + match[2] + '.json', text: async () => (await store.read(name))?.text() || ''}];
+			});
+		},
+		async write(name, record, {background = false, remove = []} = {}) {
+			const target = filename(name), previous = remove.filter(older => older !== name).map(filename);
+			let blob;
+			if (background) {
+				try { ({blob} = await _rapierDrawBackupWorkerCall({operation: 'serialize', record})); }
+				catch (error) { if (error.code !== 'worker_startup_refused') throw error; }
+			}
+			blob ||= new Blob([typeof record === 'string' ? record : JSON.stringify(record)], {type: 'application/json'});
+			try {
+				const digest = await store.write(target, blob);
+				if (!/^[0-9a-f]{64}$/.test(digest)) throw new Error('Drawing recovery was not verified');
+				for (const older of previous) await store.remove(older);
+			} catch (error) {
+				throw Object.assign(new Error(String(error?.message || error)), {cause: error, mayHaveCommitted: true});
+			}
+		},
+		remove(name) { return store.remove(filename(name)); },
+	};
+}
+
 function _rapierDrawBackupIDB() {
 	let opened = null;
 	const open = () => {
@@ -6736,7 +6796,7 @@ function _rapierDrawSaySplit(split) {
 }
 function _rapierDrawFinishIdle(asset, sources) {
 	const embedded = globalThis.RapierEmbeddedImages;
-	if (!sources?.size || !embedded?.canFinishLater?.() || typeof _rapierPaintRecompress !== 'function') return Promise.resolve('kept');
+	if (!sources?.size || !embedded?.canFinishLater?.() || typeof globalThis.RapierDrawAgentPaint?.createPaintRecompressor !== 'function') return Promise.resolve('kept');
 	return embedded.finishLater({
 		asset, title: asset.title, optional: true,
 		busy: () => _rapierDrawState.open || !!_rapierDrawState.paintSetting || !!_rapierDrawState.finishing,
@@ -6753,15 +6813,19 @@ function _rapierDrawFinishIdle(asset, sources) {
 			const pause = async () => { await new Promise(resolve => setTimeout(resolve, 0)); work.signal.throwIfAborted(); };
 			await pause();
 			const text = new TextDecoder().decode(asset.bytes);
-			let next = text;
-			for (const [raster, source] of sources) {
-				await pause();
-				if (!next.includes('href="' + raster + '"')) continue;
-				const fresh = await _rapierPaintRecompress(raster, source, work);
-				await pause();
-				if (fresh) next = next.split('href="' + raster + '"').join('href="' + fresh + '"');
-			}
-			return next === text ? null : next;
+			let next = text, verifier;
+			try {
+				for (const [raster, source] of sources) {
+					await pause();
+					if (!next.includes('href="' + raster + '"')) continue;
+					verifier ||= globalThis.RapierDrawAgentPaint.createPaintRecompressor({signal: work.signal, encode: (value, options) => embedded.codec('encode', value, options)});
+					if (!verifier) return null;
+					const fresh = await verifier.recompress(raster, source);
+					await pause();
+					if (fresh) next = next.split('href="' + raster + '"').join('href="' + fresh + '"');
+				}
+				return next === text ? null : next;
+			} finally { verifier?.close(); }
 		},
 	});
 }
@@ -6885,7 +6949,6 @@ async function _rapierDrawFinishWith(row) {
 		const paperImage = await _rapierBgPaperSnapshot(recipe);
 		if (!state.open || !sameSession()) return;
 		const idleSources = new Map(state.paintFastSources || []);
-		const measure = typeof _rapierDrawMeasuredView === 'function' ? _rapierDrawMeasuredView : undefined;
 		if (typeof _rapierPaintKeepAsJXL === 'function') {
 			try {
 				_rapierDrawSaySplit(await keeping(work => _rapierPaintKeepAsJXL(recipe, false, null, {...work, sources: idleSources})));
@@ -6903,7 +6966,8 @@ async function _rapierDrawFinishWith(row) {
 		if (!state.open || !sameSession()) return;
 		if (row) { row.cancel = null; row.set(null); }
 		given();
-		let svgText = _rapierDrawBuildSVG(recipe, measure, true, {paperImage});
+		let svgText = await _rapierPainterSVG(recipe, undefined, {paperImage});
+		given();
 		if (!svgText) throw new Error('The complete drawing could not be prepared');
 		let svgBytes = new TextEncoder().encode(svgText);
 		if (svgBytes.length > _rapierDrawAssetBudget() && (typeof _rapierDefaultImageProfile !== 'function' || _rapierDefaultImageProfile() === 'jxl')) {
@@ -6915,7 +6979,8 @@ async function _rapierDrawFinishWith(row) {
 			}
 			await _rapierDrawLiquidStills(recipe);
 			if (globalThis.RapierDrawRefraction.hasRefraction(recipe)) recipe = await keeping(work => globalThis.RapierDrawRefraction.prepare(recipe, {...work, displayRaster: url => _rapierPaintShownAs.get(url)}), false);
-			const smallerText = _rapierDrawBuildSVG(recipe, _rapierDrawMeasuredView, true, {paperImage}), smallerBytes = new TextEncoder().encode(smallerText);
+			const smallerText = await _rapierPainterSVG(recipe, undefined, {paperImage}), smallerBytes = new TextEncoder().encode(smallerText);
+			given();
 			if (smallerBytes.length > _rapierDrawAssetBudget()) {
 				await _rapierDrawTooLarge(session);
 				return;
@@ -6933,7 +6998,7 @@ async function _rapierDrawFinishWith(row) {
 		}
 		const assetTitle = editing?.title || _rapierDrawNextName();
 		given();
-		const asset = await globalThis.RapierImageAssets.createAsset(svgBytes, null, { codec: 'image/svg+xml', title: assetTitle });
+		const asset = await globalThis.RapierImageInspection.createDrawingAsset(svgText, {title: assetTitle});
 		if (loadToken !== rapier.identity.loadToken || !sameSession()) throw new Error('Document changed; try Draw again');
 		const previousAlt = editing?.title || '', generatedAlt = _rapierDrawTextAlternative(state.openSnapshot?.recipe);
 		const alt = editing && previousAlt && _rapierEscapeImageAlt(previousAlt) !== _rapierEscapeImageAlt(generatedAlt) ? previousAlt : _rapierDrawTextAlternative(recipe, notes?.alt || 'Drawing');
@@ -7007,7 +7072,8 @@ async function _rapierDrawDownload(session) {
 		if (!state.open || state.session !== session) return;
 		recipe = await _rapierDrawEffectStills(recipe);
 		if (!state.open || state.session !== session) return;
-		const svgText = _rapierDrawBuildSVG(recipe, _rapierDrawMeasuredView, true, {paperImage});
+		const svgText = await _rapierPainterSVG(recipe, undefined, {paperImage});
+		check();
 		if (!svgText) throw new Error('The complete drawing could not be prepared');
 		const svgBytes = new TextEncoder().encode(svgText);
 		const blob = new Blob([svgBytes], { type: 'image/svg+xml' });
@@ -7050,7 +7116,32 @@ function _rapierPainterOver(dst, src, opacity, multiply) {
 		dst[q + 3] = oa * 255;
 	}
 }
-async function _rapierPainterLayers(recipe, svg, signal) {
+async function _rapierPainterMerge(W, H, layers, signal, keepLayers) {
+	signal?.throwIfAborted();
+	const first = layers[0], whole = first?.opacity === 1 && !first.multiply;
+	const reuse = whole && first.width === W && first.height === H && !first.x && !first.y && (!keepLayers || layers.length === 1);
+	const merged = reuse ? new Uint8ClampedArray(first.data.buffer, first.data.byteOffset, first.data.length) : new Uint8ClampedArray(W * H * 4);
+	let until = performance.now() + 8;
+	for (let index = reuse ? 1 : 0; index < layers.length; index++) {
+		const layer = layers[index], {width, height, x, y, data} = layer;
+		const left = Math.max(0, x), right = Math.min(W, x + width);
+		if (right <= left) continue;
+		for (let row = Math.max(0, -y); row < Math.min(height, H - y); row++) {
+			const src = data.subarray((row * width + left - x) * 4, (row * width + right - x) * 4);
+			const dst = merged.subarray(((y + row) * W + left) * 4, ((y + row) * W + right) * 4);
+			if (!index && whole) dst.set(src);
+			else _rapierPainterOver(dst, src, layer.opacity, layer.multiply);
+			if (performance.now() >= until) {
+				await new Promise(resolve => setTimeout(resolve, 0));
+				signal?.throwIfAborted(); until = performance.now() + 8;
+			}
+		}
+	}
+	signal?.throwIfAborted();
+	return merged;
+}
+async function _rapierPainterLayers(recipe, svg, signal, keepLayers = true) {
+	signal?.throwIfAborted();
 	const view = /viewBox="([^"]+)"/.exec(svg)[1].split(' ').map(Number), paints = recipe.shapes.filter(shape => shape.recognized === 'paint' && shape.raster);
 	const big = paints.reduce((a, shape) => !a || shape.paint.px[0] * shape.paint.px[1] > a.paint.px[0] * a.paint.px[1] ? shape : a, null), frame = big && _rapierDrawShapePolygon(big, recipe);
 	const scale = big ? big.paint.px[0] / Math.hypot(frame[1][0] - frame[0][0], frame[1][1] - frame[0][1]) : 2;
@@ -7058,17 +7149,18 @@ async function _rapierPainterLayers(recipe, svg, signal) {
 	if (!(W * H <= _rapierPaintPNG.pixelLimit)) throw new Error('This painting is too large to save as a picture.');
 	const render = async sub => {
 		const text = _rapierDrawBuildSVG(sub, _rapierDrawMeasuredView, true).replace(/prefers-color-scheme:\s*dark/g, 'not all').replace(/viewBox="[^"]*" width="[^"]*" height="[^"]*"/, 'viewBox="' + view.join(' ') + '" width="' + W + '" height="' + H + '"');
-		const url = URL.createObjectURL(new Blob([text], {type: 'image/svg+xml'})), image = new Image(), board = document.createElement('canvas');
-		try { image.src = url; await image.decode(); board.width = W; board.height = H; const context = board.getContext('2d', {willReadFrequently: true}); context.drawImage(image, 0, 0, W, H); return context.getImageData(0, 0, W, H).data; }
-		finally { URL.revokeObjectURL(url); board.width = 0; }
+		const board = await globalThis.RapierDrawAgentPaint.rasterizeSVG(text, W, H, {signal});
+		try { return board.getContext('2d').getImageData(0, 0, W, H).data; }
+		finally { board.width = 0; }
 	};
 	const decode = async raster => await globalThis.RapierDrawAgentPaint.decodePaintRaster(raster, {signal}) || (_rapierPaintShownAs.get(raster) ? globalThis.RapierDrawAgentPaint.decodePaintRaster(_rapierPaintShownAs.get(raster), {signal}) : null);
 	const bare = ({background, ...rest}) => rest;
 	const {effect, ...authored} = recipe;
 	const layers = [];
-	if (recipe.background) layers.push({name: 'Canvas', data: await render({...authored, shapes: []}), opacity: 1});
+	const full = {width: W, height: H, x: 0, y: 0};
+	if (recipe.background) layers.push({name: 'Canvas', ...full, data: await render({...authored, shapes: []}), opacity: 1});
 	let vectors = [];
-	const flush = async () => { if (vectors.length) layers.push({name: 'Drawing', data: await render({...bare(authored), shapes: vectors}), opacity: 1}); vectors = []; };
+	const flush = async () => { if (vectors.length) layers.push({name: 'Drawing', ...full, data: await render({...bare(authored), shapes: vectors}), opacity: 1}); vectors = []; };
 	for (const shape of recipe.shapes) {
 		if (shape.recognized !== 'paint' || !shape.raster) { vectors.push(shape); continue; }
 		await flush();
@@ -7077,30 +7169,31 @@ async function _rapierPainterLayers(recipe, svg, signal) {
 			Math.abs((f[1][0] - f[0][0]) * scale - w) < 1e-3 && Math.abs((f[3][1] - f[0][1]) * scale - h) < 1e-3;
 		const px = await decode(shape.raster);
 		if (!px || px.width !== w || px.height !== h) throw new Error('This browser cannot read the painting\'s exact pixels.');
-		let data;
+		let pixels;
 		if (placed && !shape.effect) {
-			data = new Uint8ClampedArray(W * H * 4);
-			for (let row = 0, X = Math.round(x), Y = Math.round(y); row < h; row++) {
-				const top = Y + row, left = Math.max(0, X), right = Math.min(W, X + w);
-				if (top >= 0 && top < H && right > left) data.set(px.data.subarray((row * w + left - X) * 4, (row * w + right - X) * 4), (top * W + left) * 4);
-			}
-		} else data = await render({...bare(authored), shapes: [{...shape, opacity: undefined, raster: _rapierPaintPNG.encode(px)}]});
-		layers.push({name: (shape.paint.mode === 'water' ? 'Water ' : 'Paint ') + (layers.length + 1), data, opacity: shape.opacity ?? 1,
+			pixels = {width: w, height: h, x: Math.round(x), y: Math.round(y), data: px.data};
+		} else pixels = {...full, data: await render({...bare(authored), shapes: [{...shape, opacity: undefined, raster: _rapierPaintPNG.encode(px)}]})};
+		layers.push({name: (shape.paint.mode === 'water' ? 'Water ' : 'Paint ') + (layers.length + 1), ...pixels, opacity: shape.opacity ?? 1,
 			multiply: shape.paint.mode === 'water' && recipe.background?.kind === 'paper'});
 	}
 	await flush();
 	let composite = layers;
 	if (effect) { const exact = []; for (const shape of recipe.shapes) exact.push(shape.recognized === 'paint' && shape.raster ? {...shape, raster: _rapierPaintPNG.encode(await decode(shape.raster))} : shape);
-		composite = [{data: await render({...recipe, shapes: exact}), opacity: 1}]; }
-	const merged = new Uint8ClampedArray(W * H * 4), [first] = composite, whole = first?.opacity === 1 && !first.multiply;
-	if (whole) merged.set(first.data);
-	for (const layer of composite.slice(whole ? 1 : 0)) _rapierPainterOver(merged, layer.data, layer.opacity, layer.multiply);
-	return {W, H, layers, merged};
+		composite = [{...full, data: await render({...recipe, shapes: exact}), opacity: 1}]; }
+	const merged = await _rapierPainterMerge(W, H, composite, signal, keepLayers);
+	return {W, H, layers: keepLayers ? layers : [], merged};
 }
-async function _rapierPainterPNG(width, height, data) {
-	const url = await _rapierPaintPNG.compressed({width, height, data}), back = await _rapierPaintPNG.decode(url);
-	if (!back || back.data.length !== data.length || back.data.some((v, i) => v !== data[i])) throw new Error('The PNG did not keep the painting exactly.');
-	return Uint8Array.from(atob(url.slice(22)), c => c.charCodeAt(0));
+async function _rapierPainterPNG(width, height, data, signal) {
+	return globalThis.RapierDrawAgentPaint.encodeOwnedPaintPNG({width, height, data}, {signal});
+}
+async function _rapierPainterSVG(recipe, signal, renderOptions) {
+	signal?.throwIfAborted();
+	if (!recipe.frame) return _rapierDrawBuildSVG(recipe, _rapierDrawMeasuredView, true, renderOptions);
+	const client = await _rapierDrawPaintClient();
+	signal?.throwIfAborted();
+	const svg = client ? await client.request('drawingSVG', {recipe, renderOptions}, [], null, {signal}) : _rapierDrawBuildSVG(recipe, undefined, true, renderOptions);
+	signal?.throwIfAborted();
+	return svg;
 }
 function _rapierPngSoftware(png) {
 	const word = new TextEncoder().encode('Software\0Rapier'), out = new Uint8Array(png.length + 12 + word.length), view = new DataView(out.buffer);
@@ -7112,19 +7205,23 @@ function _rapierPngSoftware(png) {
 	out.set(png.subarray(33), 45 + word.length);
 	return out;
 }
-async function _rapierPainterORA(out, svg) {
+async function _rapierPainterORA(out, svg, signal) {
 	await RapierParts.need('notes');
 	const entries = [{name: 'mimetype', bytes: 'image/openraster'}], stack = [];
-	for (const [i, layer] of out.layers.entries()) {
-		entries.push({name: 'data/layer' + i + '.png', bytes: await _rapierPainterPNG(out.W, out.H, layer.data)});
-		stack.unshift('<layer name="' + layer.name + '" src="data/layer' + i + '.png" x="0" y="0" opacity="' + layer.opacity + '" visibility="visible" composite-op="svg:' + (layer.multiply ? 'multiply' : 'src-over') + '"/>');
-	}
 	const k = Math.min(1, 256 / Math.max(out.W, out.H)), w = Math.max(1, Math.round(out.W * k)), h = Math.max(1, Math.round(out.H * k)), full = document.createElement('canvas'), thumb = document.createElement('canvas');
 	full.width = out.W; full.height = out.H; full.getContext('2d').putImageData(new ImageData(out.merged, out.W, out.H), 0, 0);
 	thumb.width = w; thumb.height = h; const context = thumb.getContext('2d'); context.drawImage(full, 0, 0, w, h);
 	const small = context.getImageData(0, 0, w, h).data; full.width = thumb.width = 0;
+	let merged;
+	for (const [i, layer] of out.layers.entries()) {
+		const bytes = await _rapierPainterPNG(layer.width, layer.height, layer.data, signal);
+		if (layer.data === out.merged) merged = bytes;
+		entries.push({name: 'data/layer' + i + '.png', bytes});
+		stack.unshift('<layer name="' + layer.name + '" src="data/layer' + i + '.png" x="' + layer.x + '" y="' + layer.y + '" opacity="' + layer.opacity + '" visibility="visible" composite-op="svg:' + (layer.multiply ? 'multiply' : 'src-over') + '"/>');
+	}
+	merged ||= await _rapierPainterPNG(out.W, out.H, out.merged, signal);
 	entries.push({name: 'stack.xml', bytes: '<?xml version="1.0" encoding="UTF-8"?>\n<image version="0.0.3" w="' + out.W + '" h="' + out.H + '"><stack>' + stack.join('') + '</stack></image>\n'},
-		{name: 'mergedimage.png', bytes: _rapierPngSoftware(await _rapierPainterPNG(out.W, out.H, out.merged))}, {name: 'Thumbnails/thumbnail.png', bytes: await _rapierPainterPNG(w, h, small)}, {name: 'drawing.svg', bytes: svg});
+		{name: 'mergedimage.png', bytes: _rapierPngSoftware(merged)}, {name: 'Thumbnails/thumbnail.png', bytes: await _rapierPainterPNG(w, h, small, signal)}, {name: 'drawing.svg', bytes: svg});
 	return globalThis.RapierZipRecords.zipStored(entries);
 }
 async function _rapierDrawSavePainting(leaving = false) {
@@ -7189,14 +7286,14 @@ async function _rapierDrawSavePainting(leaving = false) {
 			await _rapierDrawLoadFonts(recipe, session);
 			recipe = await _rapierDrawEffectStills(recipe, task => task({signal: controller.signal, progress: f => row.set(f * .5)}));
 			controller.signal.throwIfAborted(); if (!live()) return;
-			const svg = _rapierDrawBuildSVG(recipe, _rapierDrawMeasuredView, true);
+			const svg = await _rapierPainterSVG(recipe, controller.signal);
 			if (!svg) throw new Error('The painting could not be prepared.');
-			const out = await _rapierPainterLayers(recipe, svg, controller.signal);
+			const out = await _rapierPainterLayers(recipe, svg, controller.signal, format === 'ora');
 			controller.signal.throwIfAborted();
 			let bytes, type = 'image/' + format;
 			if (format === 'jxl') bytes = (await globalThis.RapierEmbeddedImages.codec('encode', {width: out.W, height: out.H, data: new Uint8Array(out.merged.buffer), options: {lossless: true, losslessProfile: 'painting'}}, {signal: controller.signal, progress: f => row.set(f * .95)})).bytes;
-			else if (format === 'png') bytes = _rapierPngSoftware(await _rapierPainterPNG(out.W, out.H, out.merged));
-			else { bytes = await _rapierPainterORA(out, svg); type = 'image/openraster'; }
+			else if (format === 'png') bytes = _rapierPngSoftware(await _rapierPainterPNG(out.W, out.H, out.merged, controller.signal));
+			else { bytes = await _rapierPainterORA(out, svg, controller.signal); type = 'image/openraster'; }
 			controller.signal.throwIfAborted(); if (!live()) return;
 			row.end();
 			const blob = new Blob([bytes], {type});

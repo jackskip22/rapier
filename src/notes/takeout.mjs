@@ -1,7 +1,7 @@
-import {noteFileName, orderAfter, NOTE_COLOURS, isBuiltinSectionName} from './model.mjs';
+import {orderAfter, NOTE_COLOURS, isBuiltinSectionName} from './model.mjs';
 import {resolveAssetPath, scanLinks} from './links.mjs';
 import {audioMime, appendImportedRecording, findAudioAttachment} from './audio.mjs';
-import {importTags, literalInline, literalBlock, literalDestination, importMetadata, importTrash, importClock} from './import.mjs';
+import {importTags, literalInline, literalBlock, literalDestination, importMetadata, importTrash, importClock, importNames} from './import.mjs';
 import {readImportText, reportCharacterChange, finishImportCharacters, literalImportSource} from './import-characters.mjs';
 import {htmlToMarkdown} from './html-md.mjs';
 
@@ -85,6 +85,7 @@ export function importTakeout(files, options) {
 	const lastOrder = typeof (options && options.lastOrder) === 'string' ? options.lastOrder : '';
 	const now = importClock(options);
 	const skipped = [], built = [], pool = existing.slice(), audio = [], audioPool = [...(options?.audioExisting || [])];
+	const allocate = importNames(pool);
 	const jpegPaths = new Map(), paths = new Set(list.map(f => f.name));
 	for (const file of list) if (file.bytes && /\.jpe?g$/i.test(file.name)) {
 		const key = file.name.replace(/\.jpe?g$/i, '.jpg'), rows = jpegPaths.get(key) || [];
@@ -118,8 +119,7 @@ export function importTakeout(files, options) {
 			}
 			const hasAttachment = Array.isArray(data.attachments) && data.attachments.some(a => a && typeof a.filePath === 'string' && a.filePath);
 			if (!text.trim() && !hasAttachment) { skipped.push({name: f.name, why: 'empty note'}); continue; }
-			const file = noteFileName(text, pool);
-			pool.push(file);
+			const file = allocate(text);
 			for (const a of Array.isArray(data.attachments) ? data.attachments : []) {
 				const mime = audioMime(a?.mimetype || a?.mimeType, a?.filePath);
 				if (!mime || !a?.filePath) continue;

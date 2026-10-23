@@ -1,9 +1,9 @@
-import {noteFileName, orderAfter} from './model.mjs';
+import {orderAfter} from './model.mjs';
 import {zipOversizeSkip} from './zip.mjs';
 import {scanLinks} from './links.mjs';
 import {htmlToMarkdown} from './html-md.mjs';
 import {audioMime, appendImportedRecording} from './audio.mjs';
-import {expandImportZips, importTags, literalInline, literalDestination, importMetadata, importAlarm, uniquePictureName} from './import.mjs';
+import {expandImportZips, importTags, literalInline, literalDestination, importMetadata, importAlarm, uniquePictureName, importNames} from './import.mjs';
 import {readImportText, reportCharacterChange, finishImportCharacters} from './import-characters.mjs';
 
 const trimHtmlSpace = text => text.replace(/^[ \t\r\n\f]+|[ \t\r\n\f]+$/g, '');
@@ -229,6 +229,7 @@ export async function importEnex(entries, options) {
 	const existing = Array.isArray(options && options.existing) ? options.existing.filter(n => typeof n === 'string') : [];
 	const lastOrder = typeof (options && options.lastOrder) === 'string' ? options.lastOrder : '';
 	const skipped = [], built = [], pool = existing.slice(), titles = new Map();
+	const allocate = importNames(pool);
 	const sections = [], seenSections = new Set();
 	const pictures = [], attachments = [], usedPictureNames = new Set(), audio = [], audioPool = [...(Array.isArray(options?.audioExisting) ? options.audioExisting : [])];
 
@@ -301,8 +302,7 @@ export async function importEnex(entries, options) {
 					importMetadata(attrs, ['source-url','reminder-time','reminder-done-time'], warnings, 'Evernote fields', {labels: {'application-data': 'app data'}});
 					let noteText = blocks.join('\n\n').replace(/\r\n?/g, '\n').replace(/[ \t\r\n\f]+$/, '') + '\n';
 
-					const file = noteFileName(noteText, pool);
-					pool.push(file);
+					const file = allocate(noteText);
 					for (const source of resources.values()) {
 						if (!audioMime(source.mime, source.name)) continue;
 						const mapped = appendImportedRecording(noteText, file, source, audioPool);

@@ -1,4 +1,4 @@
-import {fail, generation} from './core.mjs';
+import {fail, generation, errorCode} from './core.mjs';
 
 export async function browserTree(rootHandle) {
   if (!rootHandle || rootHandle.kind !== 'directory') throw fail('not_directory');
@@ -21,7 +21,7 @@ export async function browserTree(rootHandle) {
   function pathParts(path) {
     if(typeof path!=='string'||path.length>8192||path.includes('\\'))throw fail('invalid_path');
     const parts=path?path.split('/'):[];
-    if(parts.length>64||parts.some(p=>!p||p==='.'||p==='..'||/[\0\ud800-\udfff]/u.test(p)))throw fail('invalid_path');
+    if(parts.length>64||parts.some(p=>!p||p.startsWith('.')||/[\0\ud800-\udfff]/u.test(p)))throw fail('invalid_path');
     return parts;
   }
   async function exactChild(parent,name) {
@@ -97,6 +97,7 @@ export async function browserTree(rootHandle) {
           if(next.done){done=true;break;}
           const [name,handle]=next.value;
           if(name!==handle.name)throw fail('ambiguous_name');
+          if(name.startsWith('.'))continue;
           pathParts(name);
           const entry=await pin(handle,[cursor.row.displayPath,name].filter(Boolean).join('/'));
           if(cursor.closed){pins.delete(entry.id);throw fail('cancelled');}
@@ -143,7 +144,7 @@ export async function browserTree(rootHandle) {
       };
       let handle,matched=false;
       try{handle=await validate(row);matched=await matches(handle,expected);}
-      catch(error){if(!['stale_locator','NotFoundError','NotReadableError'].includes(error.code||error.name))throw error;}
+      catch(error){if(!['stale_locator','NotFoundError','NotReadableError'].includes(errorCode(error)))throw error;}
       const digest=(await generation(bytes)).split(':')[1];
       if(matched&&digest===expected.digest)return {status:'unchanged',metadata:expected};
       let stream;
@@ -151,7 +152,7 @@ export async function browserTree(rootHandle) {
         if(matched){
           stream=await handle.createWritable({mode:'exclusive'});
           try{matched=await matches(await validate(row),expected);}
-          catch(error){if(!['stale_locator','NotFoundError','NotReadableError'].includes(error.code||error.name))throw error;matched=false;}
+          catch(error){if(!['stale_locator','NotFoundError','NotReadableError'].includes(errorCode(error)))throw error;matched=false;}
           if(!matched){await stream.abort();stream=null;}
         }
         let name=row.name;
@@ -181,6 +182,33 @@ export async function browserTree(rootHandle) {
         return {status:'saved',metadata:metadata(file),destinationName:name};
       }finally{if(stream)await stream.abort().catch(()=>{});}
     },
+    async create(row,name){
+      await current('readwrite');
+      const parent=await validate(row);if(parent.kind!=='directory')throw fail('not_directory');
+      pathParts(name);
+      try{await parent.getFileHandle(name);throw fail('destination_exists');}
+      catch(error){if(error.name==='TypeMismatchError')throw fail('destination_exists');if(error.name!=='NotFoundError')throw error;}
+      const handle=await parent.getFileHandle(name,{create:true});
+      if(handle.name!==name||(await handle.getFile()).size!==0)throw fail('destination_exists');
+      await current('readwrite');
+      return pin(handle,[row.displayPath,name].filter(Boolean).join('/'));
+    },
+    async rename(row,name,expected){
+      await current('readwrite');
+      const saved=pins.get(row.id);if(!saved)throw fail('stale_locator');
+      const parent=await parentOf(row),handle=await validate(row);
+      if(handle.kind!=='file'||typeof handle.move!=='function')throw fail('rename_unavailable');
+      pathParts(name);
+      const file=await handle.getFile();
+      if(file.size!==expected.size||metadata(file).version!==expected.version||
+        (await generation(new Uint8Array(await file.arrayBuffer()))).split(':')[1]!==expected.digest)throw fail('external_file_changed');
+      try{await parent.getFileHandle(name);throw fail('destination_exists');}
+      catch(error){if(error.name==='TypeMismatchError')throw fail('destination_exists');if(error.name!=='NotFoundError')throw error;}
+      await handle.move(name);
+      const path=[...saved.path.split('/').slice(0,-1),name].join('/'),now=await resolve(path);
+      if(!await now.isSameEntry(handle)||(await generation(new Uint8Array(await (await now.getFile()).arrayBuffer()))).split(':')[1]!==expected.digest)throw fail('rename_unverified');
+      return pin(now,path);
+    },
     stats(){return {...metrics,pins:pins.size,cursors:cursors.size,pendingBodyBytes:bodyReserved,pendingRequests:inflight};},
     async close(){
       if(!active)return;active=false;pins.clear();
@@ -188,7 +216,7 @@ export async function browserTree(rootHandle) {
       for(const c of all){c.closed=true;Promise.resolve(c.iterator.return?.()).catch(()=>{});if(!c.busy)listingWork.delete(c);}
     }
   };
-  for (const name of ['lookup','retain','validate','relative','listStart','listNext','read','save']) api[name] = bounded(api[name]);
+  for (const name of ['lookup','retain','validate','relative','listStart','listNext','read','save','create','rename']) api[name] = bounded(api[name]);
   return Object.freeze(api);
 }
 

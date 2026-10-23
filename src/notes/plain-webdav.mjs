@@ -2,12 +2,15 @@
 import {createHTTP, refuse} from './provider-http.mjs';
 import {parseWebDAVMultistatus, isStrongWebDAVETag, checkedWebDAVURL, webDAVLanHost} from './webdav-wire.mjs';
 import {plainConflict, plainName, plainBytes, PLAIN_MAX_BYTES} from './plain-store.mjs';
+import {plainPoll} from './plain-poll.mjs';
 
 const te = new TextEncoder();
-const PROP = '<?xml version="1.0" encoding="utf-8"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/><d:getetag/><d:getcontentlength/></d:prop></d:propfind>';
+const PROP = '<?xml version="1.0" encoding="utf-8"?><d:propfind xmlns:d="DAV:" xmlns:c="http://calendarserver.org/ns/"><d:prop><d:resourcetype/><d:getetag/><d:getcontentlength/><c:getctag/></d:prop></d:propfind>';
 const CHECK = '.rapier-plain-check';
 
-export function createWebDAVPlainStore(options = {}) {
+export function createWebDAVPlainStore(options = {}) { return webDAVPlainStore(options); }
+
+function webDAVPlainStore(options, shared = null) {
 	const {fetch: fetchFn, endpoint, username, password, authorizeEndpoint, signal} = options;
 	if (typeof fetchFn !== 'function' || typeof authorizeEndpoint !== 'function') refuse('config', 'an injected HTTP client and an endpoint authorization check are required');
 	if (typeof endpoint !== 'string' || !/^https?:\/\//i.test(endpoint)) refuse('config', 'enter the WebDAV folder that keeps the plain files');
@@ -32,9 +35,9 @@ export function createWebDAVPlainStore(options = {}) {
 			},
 			inspect: response => {
 				if (response.status === 401) refuse('auth', 'the WebDAV server refused the username or app password');
-				if (response.status === 403) refuse('permission', 'the WebDAV server does not allow this folder');
+				if (response.status === 403 && method !== 'REPORT') refuse('permission', 'the WebDAV server does not allow this folder');
 				return read && response.status >= 200 && response.status < 300;
-			}}), classify, method === 'GET' || method === 'PROPFIND');
+			}}), classify, method === 'GET' || method === 'PROPFIND' || method === 'REPORT');
 	}
 	const unconfirmed = status => refuse(status === 507 ? 'quota' : 'http', `the WebDAV server did not confirm the change (HTTP ${status}); the note is kept`);
 	async function listing(parts, depth) {
@@ -93,22 +96,82 @@ export function createWebDAVPlainStore(options = {}) {
 		if (!isStrongWebDAVETag(etag)) refuse('etag', 'the WebDAV server gave no strong ETag for this file; it cannot be changed safely');
 		return {bytes: res.bytes, rev: etag};
 	}
+	const files = rows => {
+		const out = [];
+		for (const row of rows) {
+			if (row.parts.length !== folder.length + 1 || row.collection !== false) continue;
+			const name = row.parts.at(-1); if (name === CHECK) continue;
+			const etag = /^[\x21\x23-\x7e\x80-\xff]+$/.test(row.etag || '') ? '"' + row.etag + '"' : row.etag;
+			if (!isStrongWebDAVETag(etag)) refuse('etag', 'the WebDAV listing gave no strong ETag for ' + name + '; it cannot be synced safely');
+			out.push({name: plainName(name), rev: etag, ...(Number.isSafeInteger(row.size) ? {size: row.size} : {})});
+		}
+		return out;
+	};
+	if (!shared) {
+		let rows = new Map(), token = null, reports = true, fallback = new Map();
+		const xml = value => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+		const refresh = async () => {
+			if (reports) {
+				let cursor = token, staged = token ? new Map(rows) : new Map(), reset = false;
+				const seen = new Set();
+				for (let pages = 0; pages <= 1000; pages++) {
+					const body = '<?xml version="1.0" encoding="utf-8"?><d:sync-collection xmlns:d="DAV:"><d:sync-token>' + xml(cursor || '') + '</d:sync-token><d:sync-level>infinite</d:sync-level><d:prop><d:resourcetype/><d:getetag/><d:getcontentlength/></d:prop></d:sync-collection>';
+					const response = await request('REPORT', folder, {collection: true, headers: {Depth: '0', 'Content-Type': 'application/xml; charset=utf-8'}, body, read: true, max: 8 * 1024 * 1024});
+					if (response.status === 403 && cursor && !reset) { cursor = null; staged = new Map(); reset = true; continue; }
+					if ([403, 405, 501].includes(response.status)) { reports = false; break; }
+					if (response.status !== 207) unconfirmed(response.status);
+					const page = parseWebDAVMultistatus(response.bytes, {sync: true});
+					if (typeof page.syncToken !== 'string' || !page.syncToken || page.syncToken.length > 8192) refuse('cursor', 'the WebDAV server returned no sync token');
+					let more = false;
+					for (const row of page.rows) {
+						const href = checkedWebDAVURL(row.href, origin);
+						if (href.parts.length < folder.length || folder.some((part, i) => href.parts[i] !== part)) refuse('authority', 'the WebDAV listing names a file outside the plain-files folder');
+						const key = href.parts.join('/'); row.parts = href.parts;
+						if (row.status === 507 && href.parts.length === folder.length) { more = true; continue; }
+						if (row.status === 404) {
+							if (href.parts.length === folder.length) refuse('missing_root', 'the connected WebDAV folder is missing');
+							for (const path of staged.keys()) if (path === key || path.startsWith(key + '/')) staged.delete(path);
+						} else {
+							if (row.status < 200 || row.status >= 300 || row.collection === null) refuse('listing', 'part of the WebDAV listing failed; it was not read as complete');
+							if (row.collection === false && !isStrongWebDAVETag(row.etag)) refuse('etag', 'the WebDAV listing gave no strong ETag');
+							staged.set(key, row);
+						}
+					}
+					if (!more) { http.check(); rows = staged; token = page.syncToken; return; }
+					if (page.syncToken === cursor || seen.has(page.syncToken)) refuse('cursor', 'the WebDAV server did not advance its sync token');
+					seen.add(page.syncToken); cursor = page.syncToken;
+				}
+				if (reports) refuse('cursor', 'the WebDAV server did not finish its sync report');
+			}
+			const next = new Map(), staged = new Map();
+			for (const parts of [folder, [...folder, 'attachments'], [...folder, 'audio']]) {
+				const key = parts.join('/'), was = fallback.get(key);
+				let found, ctag;
+				if (was?.ctag) {
+					const self = (await listing(parts, 0))?.find(row => row.parts.length === parts.length);
+					ctag = self?.ctag;
+					if (ctag && ctag === was.ctag) found = was.rows;
+				}
+				if (!found) {
+					found = await listing(parts, 1);
+					if (!found && parts === folder) refuse('missing_root', 'the connected WebDAV folder is missing');
+					found ||= []; ctag = found.find(row => row.parts.length === parts.length)?.ctag;
+				}
+				for (const row of found) staged.set(row.parts.join('/'), row);
+				next.set(key, {rows: found, ctag});
+			}
+			http.check(); fallback = next; rows = staged;
+		};
+		shared = {poll: plainPoll(refresh), rows: () => rows};
+	}
+	const areas = new Map();
 	return Object.freeze({
 		pause: http.pause, connect,
-		area: name => createWebDAVPlainStore({...options, endpoint: urlFor([...folder, name], true)}),
+		beginPoll: shared.poll.begin, endPoll: shared.poll.end,
+		area: name => { plainName(name); if (!areas.has(name)) areas.set(name, webDAVPlainStore({...options, endpoint: urlFor([...folder, name], true)}, shared)); return areas.get(name); },
 		async list() {
-			const rows = await listing(folder, 1);
-			if (!rows) return [];
-			const out = [];
-			for (const row of rows) {
-				if (row.parts.length !== folder.length + 1 || row.collection !== false) continue;
-				const name = row.parts.at(-1);
-				if (name === CHECK) continue;
-				const etag = /^[\x21\x23-\x7e\x80-\xff]+$/.test(row.etag || '') ? '"' + row.etag + '"' : row.etag;
-				if (!isStrongWebDAVETag(etag)) refuse('etag', 'the WebDAV listing gave no strong ETag for ' + name + '; it cannot be synced safely');
-				out.push({name: plainName(name), rev: etag, ...(Number.isSafeInteger(row.size) ? {size: row.size} : {})});
-			}
-			return out;
+			http.check(); await shared.poll.read(); http.check();
+			return files([...shared.rows().values()].filter(row => folder.every((part, i) => row.parts[i] === part)));
 		},
 		get: read,
 		async put(file, bytes, condition = {}) {

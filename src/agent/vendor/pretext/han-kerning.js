@@ -1,4 +1,4 @@
-/*! Pretext Unreleased (bac1774c0) | MIT; BSD/Unicode/ICU notices in LICENSE | Copyright (c) 2026 Pretext contributors */
+/*! Pretext 1.0.0 + main (0d102a5cd) | MIT; BSD/Unicode/ICU notices in LICENSE | Copyright (c) 2026 Pretext contributors */
 // Blink's HanKerning under the default text-spacing-trim: normal (han_kerning.cc/.h,
 // han_kerning_char_type.h and shaping_line_breaker.cc at Chrome 153). Blink halts a fullwidth
 // opening mark after an opening, middle, closing or narrow opening mark, and a closing mark
