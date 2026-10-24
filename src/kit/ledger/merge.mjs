@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 import {readLedger, exportLedger, rootAfter} from './format.mjs';
 import {_rapierTransformSplices, _rapierTransformMetadata, _rapierMetadataDelta, _rapierHistoryEffects, _rapierMetadataState} from './journal-records.mjs';
-import {mergeText} from './text-merge.mjs';
+import {mergeText, willMergeConflict} from './text-merge.mjs';
 import {transposeAuthored, authoredPlacements} from './transport.mjs';
-import {parseWill, stripOneTerminator} from '../../agent/will.mjs';
 import {sha256} from './hash.mjs';
 import {canonicalJSON, fault} from './data.mjs';
 export function transportInterval(start, end, splices) {
@@ -57,17 +56,6 @@ function checkpointList(read) {
       identity: recordKey(records[i]), index: i + 1});
   }
   return list;
-}
-function kept(text) {
-  const will = parseWill(text);
-  if (will.fault) return {fault: will.fault, text};
-  return will.regions.filter(region => region.law !== 'edit').map(({law, intent, start, end}) =>
-    law === 'keep' ? {law, intent, text: text.slice(start, end)} : {law, intent});
-}
-function appended(from, to) {
-  const regions = text => parseWill(text).regions.filter(region => region.law === 'append');
-  const was = regions(from), now = regions(to), core = (text, region) => stripOneTerminator(text.slice(region.start, region.end));
-  return was.length === now.length && was.every((region, index) => core(to, now[index]).startsWith(core(from, region)));
 }
 function expandRetainedStart(shorter, longer) {
   if (shorter.ledger.documentAuthority !== longer.ledger.documentAuthority ||
@@ -191,10 +179,8 @@ export function merge(first, second) {
     const local = localIds.get(record.transaction.id);
     if (local) mappedIds.set(record.transaction.id, local.transaction.id);
   }
-  const incomingKept = canonicalJSON(kept(theirs.text));
-  const keepDiffers = incomingKept !== canonicalJSON(kept(ours.text)) && incomingKept !== canonicalJSON(kept(common.text)) ||
-    !appended(common.text, theirs.text) && !appended(ours.text, theirs.text);
-  let conflicted = keepDiffers && unseen.length > 0, incomingSource = common.text;
+  const keepDiffers = willMergeConflict(common.text, ours.text, theirs.text);
+  let conflicted = keepDiffers, incomingSource = common.text;
   if (!conflicted) for (const record of incoming) {
     const beforeSource = incomingSource;
     incomingSource = _rapierTransformSplices(incomingSource, record.splices);

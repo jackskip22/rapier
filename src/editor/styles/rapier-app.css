@@ -431,6 +431,7 @@ body.light .restore-notice__resume{background:rgb(0 0 0 / .07)}
 
 
 
+.format-toolbar__tip{display:none}
 @media (hover:hover) and (pointer:fine){
 	[data-tip]{position:relative}
 	[data-tip]::after{
@@ -444,6 +445,20 @@ body.light .restore-notice__resume{background:rgb(0 0 0 / .07)}
 		transition:opacity var(--dur-micro) var(--ease-micro),transform var(--dur-micro) var(--ease-micro)}
 	[data-tip]:hover::after,[data-tip]:focus-visible::after{
 		opacity:1;transform:translateX(-50%) translateY(0)}
+	.top-bar [data-tip]::after{top:calc(100% + 6px);bottom:auto;transform:translateX(-50%) translateY(-3px)}
+	.top-bar [data-tip]:hover::after,.top-bar [data-tip]:focus-visible::after{transform:translateX(-50%) translateY(0)}
+	.top-bar :is(#btn-overflow,#btn-notes-kebab)::after{left:auto;right:0;transform:translateY(-3px)}
+	.top-bar :is(#btn-overflow,#btn-notes-kebab):is(:hover,:focus-visible)::after{transform:translateY(0)}
+	.format-toolbar [data-tip]::after{display:none}
+	.format-toolbar__tip{
+		display:block;position:absolute;top:var(--tip-y,0);left:var(--tip-x,0);
+		transform:translate(-50%,calc(-100% - 3px));
+		background:var(--color-surface-2);
+		color:var(--color-text);font:var(--fw-regular) var(--text-xs) var(--font-sans);
+		letter-spacing:0;padding:5px var(--space-2);white-space:nowrap;
+		opacity:0;pointer-events:none;z-index:400;
+		transition:opacity var(--dur-micro) var(--ease-micro),transform var(--dur-micro) var(--ease-micro)}
+	.format-toolbar__tip--on{opacity:1;transform:translate(-50%,calc(-100% - 6px))}
 }
 
 

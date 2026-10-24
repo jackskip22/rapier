@@ -1,4 +1,4 @@
-import {mixPaintPigment, preparePaintPigment, mixPreparedPaintPigment, mixPaintHex, writePaintPigment, paintPigmentRGB, writePaintRGB, readPaintRGB, PAINT_PIGMENT_CHANNELS} from './paint-pigment.mjs';
+import {mixPaintPigment, preparePaintPigment, mixPreparedPaintPigment, mixPaintHex, writePaintPigment, paintPigmentRGB, writePaintRGB, readPaintRGB, PAINT_PIGMENT_CHANNELS, PAINT_WET_CHANNELS, writePaintWet, paintWetRGB} from './paint-pigment.mjs';
 export {mixPaintHex};
 import { createPaintPNGCodec } from './paint-png.mjs';
 export { createPaintPNGCodec };
@@ -10,8 +10,8 @@ export {PAINT_BRUSH_CONTROLS, PAINT_SIZE_DEFAULTS, paintSizeDefault, PAINT_DIP_M
 import {paper as makePaper, wetBytes, createWetState, deposit, suspend, stepWork, settle, settleWork, finishWetWork as finishWetIterator, rewindowWetState, setGravity, toothAt, createBrushStore, loadBrush, holdAmount, HOLD_N, HOLD_TRAVEL} from './paper.mjs';
 
 const GRID_SIZE = 256;
-const RAPIER_WET_STEP_MAX = 60000;
-const WET_SETTLE_CELLS = 2000;
+export const RAPIER_WET_STEP_MAX = 60000;
+export const WET_SETTLE_CELLS = 2000;
 const RAPIER_HOLD_PICKUP = 0.08;
 const ACTUAL_RADIUS_MIN = 0.2, ACTUAL_RADIUS_MAX = 1000;
 const WGM_EPSILON = 0.001;
@@ -228,16 +228,44 @@ const WET_KEYS = ['rapier_water', 'rapier_pigment_load'];
 // file is one artefact, but never read by anything in this module. `rapier_touch` shifts a preset's two strength positions up the
 // tool's own touch scale -- 1 means its Firm is everyone else's Light, and its Light is lighter again. `rapier_lift` is how many
 const TOOL_KEYS = {rapier_touch: [0, 2], rapier_lift: [1, 4]};
-const RAPIER_KEYS = {rapier_pressure: [.5, 2],rapier_bristles: [0, 40], rapier_bristle_width: [.05, 1], rapier_bristle_depth: [0, 1], rapier_bristle_jitter: [0, 1], rapier_bristle_load: [0, 400], rapier_hold: [0, 1], rapier_bristle_lean: [0, 1], rapier_bristle_turn: [0, 1], rapier_bristle_axis: [0, 1], rapier_tooth: [0, 1], rapier_tooth_fill: [0, 1], rapier_thinners: [0, 1], rapier_body: [0, 2], rapier_load: [0, 400], rapier_op: [0, 8], rapier_carry: [0, 20], rapier_comb: [0, 1], rapier_soft: [0, 1], rapier_blade: [0, 1], rapier_pickup: [0, 1], rapier_feed: [0, 1]};
+const RAPIER_CAP_TINT = .3;
+const RAPIER_BLADE_SPLAY = 1, RAPIER_BLADE_LIFT = 1;
+const RAPIER_RIBBON_FEATHER = .3;
+// its whole RAPIER_RIBBON_FEATHER.
+const RAPIER_RIBBON_DRAG_IN = [8, 20];
+const RAPIER_RIBBON_TAIL = 1.2;
+const RAPIER_RIBBON_FLICK = [10, 28];
+const RAPIER_RIBBON_STEP = 1.5;
+// on a point); its paint comes in over its first lengths instead (each lane's own, `rapier_ragged`).
+const RAPIER_RIBBON_VALUE = .08;
+const RAPIER_RIBBON_EXPOSED = .4;
+const RAPIER_RIBBON_THIN = .12;
+const RAPIER_RIBBON_LIFT = [.03, .75];
+// Blade lengths over which a ribbon blade's paint follows a falling press (its length follows at RAPIER_BLADE_LIFT): the page's lift
+const RAPIER_RIBBON_PAINT_LIFT = .33;
+const RAPIER_RIBBON_FILM = .5, RAPIER_RIBBON_BREAK = .3;
+const RAPIER_RIBBON_SOFT = 0;
+const RAPIER_RIBBON_ALONG = .25;
+const RAPIER_RIBBON_EDGE = 4;
+const RAPIER_RIBBON_BODY = .95;
+const RAPIER_RIBBON_DRY = .4;
+const RAPIER_RIBBON_AIM = 2.5;
+const RAPIER_BLADE_PRESS_COVER = .7;
+const RAPIER_RIBBON_PICK_STREAK = .9;
+const RAPIER_RIBBON_SMUDGE_REACH = .7, RAPIER_RIBBON_SMUDGE_HOLD = .6;
+const RAPIER_RIBBON_SMUDGE_UNDER = .1;
+const RAPIER_RIBBON_SMUDGE_LOAD = .85;
+const RAPIER_KEYS = {rapier_pressure: [.5, 2],rapier_bristles: [0, 40], rapier_bristle_width: [.05, 1], rapier_bristle_depth: [0, 1], rapier_bristle_jitter: [0, 1], rapier_bristle_load: [0, 400], rapier_hold: [0, 1], rapier_bristle_lean: [0, 1], rapier_bristle_turn: [0, 1], rapier_bristle_axis: [0, 1], rapier_tooth: [0, 1], rapier_tooth_fill: [0, 1], rapier_thinners: [0, 1], rapier_body: [0, 2], rapier_load: [0, 400], rapier_op: [0, 8], rapier_carry: [0, 20], rapier_comb: [0, 1], rapier_soft: [0, 1], rapier_blade: [0, 1], rapier_pickup: [0, 1], rapier_feed: [0, 1], rapier_feather: [0, 1], rapier_ragged: [0, 1], rapier_stroke_cap: [0, 1], rapier_tap_stamp: [0, 1], rapier_bell: [0, 1], rapier_airbrush: [0, 1], rapier_ribbon: [0, 1], rapier_wet: [0, 1], rapier_ribbon_smudge: [0, 1]};
 const RAPIER_OPS = ['', 'water', 'smear', 'erase', 'blend', 'dissolve', 'erode', 'pull', 'posterize'];
 const RAPIER_TOOTH_GRAIN = 2.5, RAPIER_TOOTH_CONTRAST = 2.2, RAPIER_TOOTH_TILE = 64;
-const RAPIER_WET_FRONT = 0.055, RAPIER_WET_TIDE = 0.55;
+export const RAPIER_WET_FRONT = 0.055, RAPIER_WET_TIDE = 0.55;
 const RAPIER_SMUDGE_MOVER = 0.7;
-const RAPIER_WET_RIM = 0.9, RAPIER_WET_RIM_SPAN = 3, RAPIER_WET_BELLY_MAX = 0.35;
+const GPU_DAB = Object.freeze({COLOUR: 1, RESAMPLE: 2, LEGACY: 4, MOVER: 8, SMUDGE_ONLY: 16, LINEAR: 32, HSV: 64, HSL: 128, UPDATE: 256, SMUDGE: 512, BODY: 1024, REF: 2048, NO_STAMP: 4096, HOLD_STEP: 8192, HOLD_COLOUR: 16384});
+export const RAPIER_WET_RIM = 0.9, RAPIER_WET_RIM_SPAN = 3, RAPIER_WET_BELLY_MAX = 0.35;
 const RAPIER_THIN_K = 3.5, RAPIER_THIN_BLEND = 0.65;
 const RAPIER_DRY_TOOTH = 0.55, RAPIER_DRY_FLOOR = 0.18;
 // window, and the one every painter's eye already reads as relief. RAPIER_BODY_UNIT is how much
-const RAPIER_LIGHT = [-0.52, -0.62, 0.59], RAPIER_BODY_UNIT = 46, RAPIER_RELIEF = 1.0, RAPIER_GLOSS = 0.45;
+export const RAPIER_LIGHT = [-0.52, -0.62, 0.59], RAPIER_BODY_UNIT = 46, RAPIER_RELIEF = 1.0, RAPIER_GLOSS = 0.45;
 const RAPIER_OIL_UNIT = 64;
 const RAPIER_OIL_KEYS = {rapier_oil: [0, 64], rapier_ridge: [0, 8], rapier_oil_pickup: [0, 1], rapier_oil_feed: [0, 1]};
 const OIL_WEAVE = (() => { const t = new Float32Array(4096), hash = (a, b) => { let n = Math.imul(a, 374761393) ^ Math.imul(b, 668265263); n = Math.imul(n ^ n >>> 13, 1274126177); return ((n ^ n >>> 16) >>> 0) / 4294967295; };
@@ -403,14 +431,17 @@ export class PaintBrush {
 	reset() { this.resetRequested = true; }
 	rebase(dx, dy) {
 		if (!(dx || dy)) return;
+		if (this.capMap && !(dx & 63) && !(dy & 63)) { const moved = new Map(); for (const [key, tile] of this.capMap) moved.set(key + (dy >> 6) * 65536 + (dx >> 6), tile); this.capMap = moved; }
+		else this.capMap = null;
 		const ST_ = this.states;
 		ST_[ST.x] += dx; ST_[ST.y] += dy; ST_[ST.actual_x] += dx; ST_[ST.actual_y] += dy;
 		if (this.skip > 0.001) { this.skipLastX += dx; this.skipLastY += dy; }
 		for (const at of [this.holdAt, this.loadAt, this.oilAt, this.bristleAt]) if (at) { at[0] += dx; at[1] += dy; }
 		if (this.opHas) { this.opX += dx; this.opY += dy; }
-		if (this.blade?.has || this.blade?.seen) { this.blade.cx += dx; this.blade.cy += dy; for (const c of this.blade.hairs) if (c.has) { c.px += dx; c.py += dy; } }
+		if (this.blade?.has || this.blade?.seen) { this.blade.cx += dx; this.blade.cy += dy; for (const c of this.blade.hairs) if (c.has) { c.px += dx; c.py += dy; } for (const k of this.blade.knots || []) { k.x += dx; k.y += dy; } if (this.blade.at && !this.blade.knots?.includes(this.blade.at)) { this.blade.at.x += dx; this.blade.at.y += dy; } for (const e of this.blade.edges || []) { e[0] += dx; e[1] += dy; } }
 	}
 	newStroke() {
+		this.capMap = null;
 		this.strokeCurrentIdlingTime = 0; this.strokeTotalPaintingTime = 0;
 		const anyWater = this.wet ? Math.max(this.wet.rapier_water || 0,
 			...Object.values(this.wetInputs?.rapier_water || {}).flat().map(q => (this.wet.rapier_water || 0) + q[1])) : 0;
@@ -477,7 +508,7 @@ export class PaintBrush {
 				full: i < 2 || i >= count - 2 ? RAPIER_BLADE_EDGE[0] + rng.next() * (RAPIER_BLADE_EDGE[1] - RAPIER_BLADE_EDGE[0]) : RAPIER_BLADE_FULL[0] + rng.next() * (RAPIER_BLADE_FULL[1] - RAPIER_BLADE_FULL[0]),
 				wob: jitter * 2.4 * u2 * Math.abs(u) * (.6 + rng.next() * .8), wobPhase: rng.next() * Math.PI * 2, wobRate: .35 + rng.next() * .7,
 				dry: rng.next() < RAPIER_BLADE_DRY_SHARE ? depth * (.5 + .7 * rng.next()) : 0, phase: rng.next() * Math.PI * 2, rate: .5 + rng.next(),
-				tint: [1 + (rng.next() * 2 - 1) * depth * .2, 1 + (rng.next() * 2 - 1) * depth * .2, 1 + (rng.next() * 2 - 1) * depth * .2],
+				tint: (v => (rng.next(), rng.next(), [v, v, v]))(1 + (rng.next() * 2 - 1) * depth * .2),
 				fuel: 1, spend: load ? 1 / (load * (.7 + rng.next() * .6)) : 0,
 				col: null, base: null, px: 0, py: 0, has: false, lit: false, heading: undefined
 			};
@@ -485,17 +516,30 @@ export class PaintBrush {
 		this.blade = {hairs, travel: 0, cx: 0, cy: 0, theta: 0, has: false, seen: false, dir: null, landed: false};
 	}
 	_drawBlade(surface, x, y, L, cr, cg, cb, opaque, hardness, softness, targetAlpha, ratio, angle, lockAlpha, colorize, posterize, posterizeNum, paintFactor) {
+		surface = this._ribbonSurface(surface);
 		const blade = this.blade, hairs = blade.hairs, ST_ = this.states, R = this.rapier;
-		const pick = this.erasing ? 0 : clamp(R.rapier_pickup || 0, 0, 1), feed = clamp(R.rapier_feed || 0, 0, 1);
+		const pick = this.erasing ? 0 : clamp(R.rapier_pickup || 0, 0, 1), feed = clamp(R.rapier_feed || 0, 0, 1), feather = this.erasing ? 0 : clamp(R.rapier_feather || 0, 0, 1), ragged = this.erasing ? 0 : clamp(R.rapier_ragged || 0, 0, 1);
+		const featherOf = (c, i) => {
+			if (c.feather === undefined) { let h = Math.imul(i + 1, 374761393) ^ Math.imul(this.paperSeed | 0, 668265263); h = Math.imul(h ^ h >>> 13, 1274126177); c.featherRate = .35 + 1.1 * (((h ^ h >>> 16) >>> 0) / 4294967295); c.featherPhase = (h & 1023) / 163; c.feather = Math.pow(clamp((1 - Math.abs(c.u)) / feather, 0, 1), .8); }
+			if (c.feather >= 1) return 1;
+			const wave = .5 + .5 * Math.sin(blade.travel * c.featherRate * 2.1 + c.featherPhase) * Math.sin(blade.travel * c.featherRate * .77 + c.featherPhase * 1.7);
+			return clamp((c.feather - wave) * 6 + .5, 0, 1);
+		};
 		// RAPIER_BLADE_AIM blade lengths), so the first mark is already across the stroke; nothing is laid before there is a way.
 		if (this.bladeFollowTurn) {
 			const dm = blade.seen ? Math.hypot(x - blade.cx, y - blade.cy) : 0;
 			if (dm > 1e-6) {
 				const ux = (x - blade.cx) / dm, uy = (y - blade.cy) / dm;
 				if (!blade.dir) blade.dir = [ux, uy];
-				else { const k = 1 - Math.exp(-dm / Math.max(.5, RAPIER_BLADE_AIM * L)); blade.dir[0] += (ux - blade.dir[0]) * k; blade.dir[1] += (uy - blade.dir[1]) * k; const n = Math.hypot(blade.dir[0], blade.dir[1]) || 1; blade.dir[0] /= n; blade.dir[1] /= n; }
+				else { const k = 1 - Math.exp(-dm / Math.max(.5, (R.rapier_ribbon > 0 ? RAPIER_RIBBON_AIM : RAPIER_BLADE_AIM) * L)); blade.dir[0] += (ux - blade.dir[0]) * k; blade.dir[1] += (uy - blade.dir[1]) * k; const n = Math.hypot(blade.dir[0], blade.dir[1]) || 1; blade.dir[0] /= n; blade.dir[1] /= n; }
 			}
-			if (!blade.dir) { blade.seen = true; blade.cx = x; blade.cy = y; return false; }
+			if (!blade.dir) {
+				if (R.rapier_tap_stamp > 0 && !(R.rapier_ribbon > 0) && !blade.stamped && !this.erasing && ST_[ST.pressure] > .05 && (blade.rest = (blade.rest || 0) + 1) >= 2) {
+					blade.stamped = true; surface.bite = this._bite(opaque); surface.body = R.rapier_body || 0;
+					surface.drawDab(x, y, L, cr, cg, cb, opaque, .9, 0, targetAlpha, Math.max(1, ratio), angle, lockAlpha, colorize, posterize, posterizeNum, paintFactor);
+				}
+				blade.seen = true; blade.cx = x; blade.cy = y; return false;
+			}
 			angle = DEGREES(Math.atan2(blade.dir[1], blade.dir[0])) + 90;
 		}
 		let theta = RADIANS(angle), turns = 1, from = theta, cx0 = x, cy0 = y;
@@ -505,10 +549,27 @@ export class PaintBrush {
 		} else if (blade.seen) { cx0 = blade.cx; cy0 = blade.cy; }
 		const step = blade.has || blade.seen ? Math.hypot(x - blade.cx, y - blade.cy) / Math.max(.5, L) : 0;
 		blade.travel += Math.min(4, step);
+		// Closing follows at the same pace (RAPIER_BLADE_LIFT): a press that wavers between touch events would otherwise scallop the sides,
+		const ribbon = R.rapier_ribbon > 0;
+		if (ribbon) { blade.L = blade.L === undefined ? L : blade.L + (L - blade.L) * (1 - Math.exp(-Math.min(4, step) / (RAPIER_BLADE_SPLAY * (L < blade.L ? RAPIER_BLADE_LIFT : 1)))); L = blade.L; }
 		const press = ST_[ST.pressure];
 		if (!blade.landed && (press >= RAPIER_BLADE_LANDED || blade.travel >= RAPIER_BLADE_LANDED_TRAVEL)) blade.landed = true;
-		const dry = R.rapier_load > 0 ? 1 - clamp(this.loadFuel ?? 1, 0, 1) : 0, eff = blade.landed ? press * (1 - .6 * dry) : 1;
+		if (ribbon) blade.P = blade.P === undefined ? press : blade.P + (press - blade.P) * (1 - Math.exp(-Math.min(4, step) / (RAPIER_BLADE_SPLAY * (press < blade.P ? RAPIER_RIBBON_PAINT_LIFT : 1))));
+		const dry = R.rapier_load > 0 ? 1 - clamp(this.loadFuel ?? 1, 0, 1) : 0, eff = blade.landed ? (ribbon ? Math.pow(blade.P, RAPIER_BLADE_PRESS_COVER) : press) * (1 - .6 * dry) : 1;
 		let painted = false;
+		// blade is laid once as a stamp at its angle, so a tap leaves the blade's mark (`rapier_tap_stamp`). A stroke that moves lays over it.
+		if (R.rapier_tap_stamp > 0 && !(R.rapier_ribbon > 0) && !blade.stamped && !this.erasing && blade.travel < .02 && press > .05 && (blade.rest = (blade.rest || 0) + 1) >= 2) {
+			blade.stamped = true;
+			surface.bite = this._bite(opaque); surface.body = R.rapier_body || 0;
+			if (surface.drawDab(x, y, L, cr, cg, cb, opaque, .9, 0, targetAlpha, Math.max(1, ratio), DEGREES(theta), lockAlpha, colorize, posterize, posterizeNum, paintFactor)) painted = true;
+		}
+		if (R.rapier_ribbon > 0) {
+			if (!(press > 0) && !this.erasing) return painted;
+			blade.ratio = Math.max(1, ratio);
+			if (this._drawRibbon(surface, x, y, L, theta, from, turns, cx0, cy0, step, eff, opaque, targetAlpha, paintFactor, pick, feed, ragged, cr, cg, cb)) painted = true;
+			blade.cx = x; blade.cy = y; blade.theta = theta; blade.has = true;
+			return painted;
+		}
 		for (let i = 0; i < hairs.length; i++) {
 			const c = hairs[i], rad = Math.max(.1, L / hairs.length), reach = L - rad, lane = 2 / hairs.length;
 			if (c.spend && step) c.fuel = Math.max(0, c.fuel - Math.min(4, step) * c.spend);
@@ -517,6 +578,11 @@ export class PaintBrush {
 			const at = k => { const t = from + (theta - from) * k / turns, mx = cx0 + (x - cx0) * k / turns, my = cy0 + (y - cy0) * k / turns; const along = (c.u + (c.wob ? c.wob * Math.sin(blade.travel * c.wobRate + c.wobPhase) * lane : 0)) * reach; return [mx + Math.cos(t) * along, my + Math.sin(t) * along]; };
 			const end = at(turns), begin = c.has ? null : at(0);
 			if (c.has && Math.hypot(end[0] - c.px, end[1] - c.py) * surface.scale < RAPIER_BLADE_MIN_RUN) continue;
+			// A ragged blade (`rapier_ragged`) lands lane by lane: each lane touches down after its own stretch of travel, so the
+			if (!c.has && ragged > 0) {
+				if (c.lands === undefined) { let q = Math.imul(i + 7, 2246822519) ^ Math.imul(this.paperSeed | 0, 3266489917); q = Math.imul(q ^ q >>> 15, 668265263); c.lands = (((q ^ q >>> 13) >>> 0) / 4294967295) * (.4 + .6 * Math.abs(c.u)); }
+				if (blade.travel < c.lands * ragged) continue;
+			}
 			let ox = c.has ? c.px : begin[0], oy = c.has ? c.py : begin[1];
 			if (cover > 0 && c.has && (pick > 0 || feed > 0)) {
 				const run = Math.hypot(end[0] - ox, end[1] - oy), travelled = 1 - Math.exp(-Math.min(3, run / rad));
@@ -532,7 +598,8 @@ export class PaintBrush {
 					c.col[0] = m[0]; c.col[1] = m[1]; c.col[2] = m[2];
 				}
 			}
-			const a = opaque * cover;
+			// A feathered blade (`rapier_feather`, the share of its width from each edge in) lays less paint toward its edges, each lane
+			const a = opaque * cover * (feather > 0 ? featherOf(c, i) : 1);
 			if (a > .004) {
 				surface.bite = this._bite(a); surface.body = this.erasing ? 0 : R.rapier_body || 0;
 				for (let k = 1; k <= turns; k++) {
@@ -559,15 +626,193 @@ export class PaintBrush {
 		blade.cx = x; blade.cy = y; blade.theta = theta; blade.has = true;
 		return painted;
 	}
+	_ribbonSurface(surface) { return surface.gpu && this.rapier?.rapier_ribbon > 0 ? surface.engine('flat') : surface; }
+	// A ribbon blade (`rapier_ribbon`): the blade is swept, not stamped. Its lanes tile the blade's length exactly, and each lane lays the
+	// A lane lands after its own stretch of travel, on a slow wave across the blade (`rapier_ragged`), and comes in over a length of its
+	// The paint is wet (`rapier_wet`): each pixel's colour mixes with the paint under it in proportion to that paint's coverage.
+	_drawRibbon(surface, x, y, L, theta, from, turns, cx0, cy0, step, eff, opaque, targetAlpha, paintFactor, pick, feed, ragged, cr, cg, cb) {
+		const blade = this.blade, hairs = blade.hairs, n = hairs.length, wet = this.erasing ? 0 : clamp(this.rapier.rapier_wet || 0, 0, 1);
+		if (!blade.wave) { const h = k => { let q = Math.imul(k + 13, 2654435761) ^ Math.imul(this.paperSeed | 0, 2246822519); q = Math.imul(q ^ q >>> 15, 668265263); return ((q ^ q >>> 13) >>> 0) / 4294967295; }; blade.wave = [h(1) * 6.283, h(2) * 6.283, 1 + h(3), 2.6 + h(4) * 1.4]; blade.hash = h; }
+		const [ph1, ph2, f1, f2] = blade.wave;
+		const Lk = L;
+		const knot = {x, y, theta, L: Lk, full: L, travel: blade.travel, ca: null, speed: this.states[ST.norm_speed1_slow], a: new Float32Array(n), v: new Float32Array(n), col: new Float32Array(3 * n), wet, alpha: targetAlpha};
+		// (`rapier_load`) lays less again.
+		const press = blade.landed ? blade.P : 1, dryDip = this.rapier.rapier_load > 0 ? 1 - clamp(this.loadFuel ?? 1, 0, 1) : 0;
+		const landing = (t => t * t * (3 - 2 * t))(clamp((press - RAPIER_RIBBON_LIFT[0]) / (RAPIER_RIBBON_LIFT[1] - RAPIER_RIBBON_LIFT[0]), 0, 1)) * (1 - .6 * dryDip);
+		const ends = (cx, cy, t, len) => { const ex = Math.cos(t) * len, ey = Math.sin(t) * len, out = new Array(n + 1); for (let j = 0; j <= n; j++) { const u = -1 + 2 * j / n; out[j] = [cx + ex * u, cy + ey * u]; } return out; };
+		// A smudging blade (`rapier_ribbon_smudge`, the video's smudge pass: the same flat tip dragged through the paint) lays no paint of
+		// over RAPIER_RIBBON_SMUDGE_HOLD: near the paint's end the lane carries less, so the end is thinned from inside and pulled out into
+		const smudge = this.erasing ? 0 : clamp(this.rapier.rapier_ribbon_smudge || 0, 0, 1);
+		if (smudge > 0) {
+			const prior = blade.knots?.at(-1), run = prior ? Math.hypot(x - prior.x, y - prior.y) : 0, rate = 1 - Math.exp(-run / Math.max(.5, L * RAPIER_RIBBON_SMUDGE_HOLD));
+			const fx = run > 1e-6 ? (x - prior.x) / run : 0, fy = run > 1e-6 ? (y - prior.y) / run : 0, at = ends(x + fx * L * RAPIER_RIBBON_SMUDGE_REACH, y + fy * L * RAPIER_RIBBON_SMUDGE_REACH, theta, L), under = ends(x + fx * L * RAPIER_RIBBON_SMUDGE_UNDER, y + fy * L * RAPIER_RIBBON_SMUDGE_UNDER, theta, L), w = Math.max(.3, L / n);
+			if (surface.flatKnot) knot.smudge = {at, under, w, rate};
+			else knot.ca = new Float32Array(n);
+			const read = (P, i) => surface.getColor((P[i][0] + P[i + 1][0]) / 2, (P[i][1] + P[i + 1][1]) / 2, w * 1.5, paintFactor > 0 ? paintFactor : -1, this.rng);
+			for (let i = 0; i < n && knot.ca; i++) {
+				const c = hairs[i]; c.carry ??= 0; c.sm ??= [cr, cg, cb];
+				const below = read(under, i).slice(), ahead = read(at, i), su = clamp(below[3], 0, 1), sh = clamp(ahead[3], 0, 1);
+				const thin = (t => t * t * (3 - 2 * t))(clamp((su - sh) / .2, 0, 1)), sa = su + (sh - su) * thin, sample = thin > .5 ? ahead : below;
+				const k = !prior ? 1 : rate + ((sa > c.carry ? Math.max(rate, RAPIER_RIBBON_SMUDGE_LOAD) : rate) - rate) * (1 - thin);
+				if (sa > .02) { const m = mixColors(sample[0], sample[1], sample[2], 1, c.sm[0], c.sm[1], c.sm[2], 1, c.carry > .02 ? k * sa / Math.max(.02, c.carry + k * (sa - c.carry)) : 1, paintFactor); c.sm[0] = m[0]; c.sm[1] = m[1]; c.sm[2] = m[2]; }
+				c.carry += (sa - c.carry) * k; knot.ca[i] = c.carry;
+			}
+			blade.smRun = (prior ? blade.smRun || 0 : 0) + run; knot.sk = smudge * (t => t * t * (3 - 2 * t))(clamp(blade.smRun / Math.max(.5, L * .5), 0, 1));
+		}
+		for (let i = 0; i < n; i++) {
+			const c = hairs[i];
+			if (c.spend && step) c.fuel = Math.max(0, c.fuel - Math.min(4, step) * (c.even ??= (this.rapier.rapier_bristle_load ? 1 / this.rapier.rapier_bristle_load : 0) * (.9 + .2 * blade.hash(i + 1100))));
+			if (!c.col) {
+				c.base = [cr, cg, cb]; c.col = c.base.slice();
+				const w = .5 + .5 * (.6 * Math.sin(c.u * f1 * 3.1416 + ph1) + .4 * Math.sin(c.u * f2 * 3.1416 + ph2));
+				c.lands = ragged * (.55 * w + .45 * blade.hash(i + 100));
+				c.comes = RAPIER_RIBBON_FEATHER * (.6 + .8 * blade.hash(i + 300));
+			}
+			// A dry lane still lays a share of its paint (RAPIER_RIBBON_DRY), and the lanes spend their load at nearly one rate: running out
+			const fuel = 1 - (1 - c.fuel) * (1 - RAPIER_RIBBON_DRY);
+			const dip = c.dry ? Math.pow(Math.max(0, Math.sin(blade.travel * c.rate + c.phase)), 6) * c.dry * .5 * (1 - landing * fuel) : 0;
+			const s = this.erasing ? 0 : this._ribbonStreak(c.u, i), paint = this.erasing ? 1 : landing * fuel * (1 + RAPIER_RIBBON_THIN * Math.min(0, s));
+			if (c.need === undefined) { c.need = .04 + .2 * Math.pow(Math.abs(c.u), 2) + .08 * blade.hash(i + 1300); c.needRate = .6 + .9 * blade.hash(i + 1400); c.needPhase = 6.283 * blade.hash(i + 1450); }
+			const need = c.need + .12 * Math.sin(blade.travel * c.needRate + c.needPhase);
+			const film = Math.min(1, paint / RAPIER_RIBBON_FILM) * clamp((paint - need + RAPIER_RIBBON_BREAK) / RAPIER_RIBBON_BREAK, 0, 1);
+			knot.a[i] = opaque * film * (1 - dip) * (smudge > 0 ? knot.sk : 1);
+			knot.v[i] = smudge > 0 ? 1 : 1 - RAPIER_RIBBON_VALUE * s;
+			c.pickBy = Math.max(0, 1 - RAPIER_RIBBON_PICK_STREAK * s);
+		}
+		const last = blade.knots?.at(-1);
+		if (surface.flatKnot) {
+			const run = last ? Math.hypot(x - last.x, y - last.y) : 0, mixing = !!last && (pick > 0 || feed > 0) && run > 1e-6, sm = knot.smudge;
+			const ahead = sm ? sm.at : mixing ? ends(x + (x - last.x) / run * L * .3, y + (y - last.y) / run * L * .3, theta, L) : null, w = Math.max(.3, L / n);
+			knot.slot = blade.slots = ((blade.slots ?? -1) + 1) % 8;
+			if (sm) surface.flatKnot({slot: knot.slot, first: !last, mixing: false, smudge: true, base: [cr, cg, cb], pigment: paintFactor, lanes: hairs.map((c, i) => ({
+				active: true, x: (ahead[i][0] + ahead[i + 1][0]) / 2, y: (ahead[i][1] + ahead[i + 1][1]) / 2, radius: sm.w * 1.5, pick: (sm.under[i][0] + sm.under[i + 1][0]) / 2, feed: (sm.under[i][1] + sm.under[i + 1][1]) / 2, v: knot.v[i], rate: sm.rate}))});
+			else surface.flatKnot({slot: knot.slot, first: !last, mixing, base: [cr, cg, cb], pigment: paintFactor, lanes: hairs.map((c, i) => ({
+				active: knot.a[i] > 0, x: ahead ? (ahead[i][0] + ahead[i + 1][0]) / 2 : 0, y: ahead ? (ahead[i][1] + ahead[i + 1][1]) / 2 : 0, radius: w * 1.5,
+				pick: mixing && pick > 0 ? pick * (c.pickBy ?? 1) * (1 - Math.exp(-run / Math.max(.5, L * .5))) : 0, feed: mixing && feed > 0 ? feed * (.3 + .7 * c.fuel) : 0, v: knot.v[i]}))});
+		} else if (last && (pick > 0 || feed > 0)) {
+			const run = Math.hypot(x - last.x, y - last.y);
+			if (run > 1e-6) {
+				const ahead = ends(x + (x - last.x) / run * L * .3, y + (y - last.y) / run * L * .3, theta, L), w = Math.max(.3, L / n);
+				for (let i = 0; i < n; i++) {
+					const c = hairs[i]; if (!(knot.a[i] > 0)) continue;
+					if (pick > 0) {
+						const mx = (ahead[i][0] + ahead[i + 1][0]) / 2, my = (ahead[i][1] + ahead[i + 1][1]) / 2, sample = surface.getColor(mx, my, w * 1.5, paintFactor > 0 ? paintFactor : -1, this.rng);
+						if (sample[3] > .02) { const m = mixColors(sample[0], sample[1], sample[2], 1, c.col[0], c.col[1], c.col[2], 1, pick * (c.pickBy ?? 1) * (1 - Math.exp(-run / Math.max(.5, L * .5))) * clamp(sample[3], 0, 1), paintFactor); c.col[0] = m[0]; c.col[1] = m[1]; c.col[2] = m[2]; }
+					}
+					if (feed > 0) { const m = mixColors(c.base[0], c.base[1], c.base[2], 1, c.col[0], c.col[1], c.col[2], 1, feed * (.3 + .7 * c.fuel), paintFactor); c.col[0] = m[0]; c.col[1] = m[1]; c.col[2] = m[2]; }
+				}
+				for (let pass = 0; pass < 2; pass++) {
+					const was = hairs.map(c => c.col.slice());
+					for (let i = 0; i < n; i++) { const l = was[Math.max(0, i - 1)], m = was[i], r = was[Math.min(n - 1, i + 1)]; for (let ch = 0; ch < 3; ch++) hairs[i].col[ch] = (l[ch] + 2 * m[ch] + r[ch]) / 4; }
+				}
+			}
+		}
+		for (let i = 0; i < n; i++) { const c = hairs[i], v = knot.v[i], col = smudge > 0 && c.sm ? c.sm : c.col; knot.col[3 * i] = clamp(col[0] * v, 0, 1); knot.col[3 * i + 1] = clamp(col[1] * v, 0, 1); knot.col[3 * i + 2] = clamp(col[2] * v, 0, 1); }
+		const knots = blade.knots || (blade.knots = []);
+		if (!knots.length) { blade.edges = ends(x, y, theta, L); blade.at = knot; }
+		knots.push(knot); if (knots.length > 4) knots.shift();
+		return knots.length >= 3 ? this._ribbonSegment(surface, knots.length >= 4 ? knots[0] : null, knots.at(-3), knots.at(-2), knots.at(-1)) : false;
+	}
+	_ribbonInto(k, i) {
+		if (this.erasing) return 1;
+		const blade = this.blade, c = blade.hairs[i], land = clamp(((blade.landSpeed || 0) / Math.max(.5, k.full) - RAPIER_RIBBON_DRAG_IN[0]) / (RAPIER_RIBBON_DRAG_IN[1] - RAPIER_RIBBON_DRAG_IN[0]), .05, 1);
+		const t = clamp((k.travel - c.lands * land) / (c.comes * land), 0, 1);
+		return t * t * (3 - 2 * t);
+	}
+	// the overlap from laying twice). Moving along its own length (`along`, under RAPIER_RIBBON_ALONG of the motion across it) the
+	_ribbonThick(prev, cur, th, len) {
+		const n = prev.length - 1, pmx = (prev[0][0] + prev[n][0]) / 2, pmy = (prev[0][1] + prev[n][1]) / 2, cmx = (cur[0][0] + cur[n][0]) / 2, cmy = (cur[0][1] + cur[n][1]) / 2;
+		const mvx = cmx - pmx, mvy = cmy - pmy, mv = Math.hypot(mvx, mvy), ex = Math.cos(th), ey = Math.sin(th), half = len / (this.blade.ratio || 10);
+		let nx = -ey, ny = ex; if (nx * mvx + ny * mvy < 0) { nx = -nx; ny = -ny; }
+		const across = mv > 1e-9 ? Math.abs(mvx * ey - mvy * ex) / mv : 1;
+		return [nx * half, ny * half, across < RAPIER_RIBBON_ALONG];
+	}
+	_ribbonStreak(u, i) {
+		const blade = this.blade, t = blade.travel, n = blade.hairs.length;
+		if (!blade.streak) {
+			blade.streak = [0, 1].map(k => 6.283 * blade.hash(k + 1500));
+			let f = Array.from({length: n}, (_, j) => blade.hash(j + 1700) * 2 - 1);
+			for (let pass = 0; pass < 2; pass++) f = f.map((v, j) => (f[Math.max(0, j - 1)] + 2 * v + f[Math.min(n - 1, j + 1)]) / 4);
+			const top = Math.max(...f.map(Math.abs)) || 1; blade.fine = f.map(v => v / top);
+		}
+		const [a, b] = blade.streak;
+		return clamp(.6 * Math.sin(4.6 * u + a + .09 * t) + .25 * Math.sin(10.3 * u + b - .06 * t) + .1 * blade.fine[i], -1, 1);
+	}
+	// reflected), in steps of at most RAPIER_RIBBON_STEP layer pixels of travel or of the blade's ends turning.
+	_ribbonSegment(surface, k0, k1, k2, k3) {
+		const blade = this.blade, hairs = blade.hairs, n = hairs.length, sc = surface.scale || 1;
+		const P1 = [k1.x, k1.y], P2 = [k2.x, k2.y], P0 = k0 && Math.hypot(k0.x - k1.x, k0.y - k1.y) > 1e-6 ? [k0.x, k0.y] : [2 * k1.x - k2.x, 2 * k1.y - k2.y];
+		const P3 = k3 && Math.hypot(k3.x - k2.x, k3.y - k2.y) > 1e-6 ? [k3.x, k3.y] : [2 * k2.x - k1.x, 2 * k2.y - k1.y];
+		const d12 = Math.hypot(P2[0] - P1[0], P2[1] - P1[1]);
+		if (!(d12 > 1e-6) && Math.abs(k2.theta - k1.theta) < 1e-6 && Math.abs(k2.L - k1.L) < 1e-6) { blade.at = k2; return false; }
+		const t0 = 0, t1 = t0 + Math.sqrt(Math.max(1e-9, Math.hypot(P1[0] - P0[0], P1[1] - P0[1]))), t2 = t1 + Math.sqrt(Math.max(1e-9, d12)), t3 = t2 + Math.sqrt(Math.max(1e-9, Math.hypot(P3[0] - P2[0], P3[1] - P2[1])));
+		const lerp = (A, B, ta, tb, t) => { const w = tb - ta > 1e-12 ? (t - ta) / (tb - ta) : 0; return [A[0] + (B[0] - A[0]) * w, A[1] + (B[1] - A[1]) * w]; };
+		const at = t => { const A1 = lerp(P0, P1, t0, t1, t), A2 = lerp(P1, P2, t1, t2, t), A3 = lerp(P2, P3, t2, t3, t), B1 = lerp(A1, A2, t0, t2, t), B2 = lerp(A2, A3, t1, t3, t); return lerp(B1, B2, t1, t2, t); };
+		const steps = clamp(Math.ceil(Math.max(d12, Math.abs(k2.theta - k1.theta) * Math.max(k1.L, k2.L), Math.abs(k2.L - k1.L)) * sc / RAPIER_RIBBON_STEP), 1, 64);
+		const a0 = blade.drawnA || (blade.drawnA = new Float32Array(n)), col0 = blade.drawnCol || (blade.drawnCol = Float32Array.from(k1.col)), gpu = !!surface.flatKnot;
+		const c0 = [0, 0, 0], c1 = [0, 0, 0];
+		let painted = false;
+		for (let k = 1; k <= steps; k++) {
+			const w = k / steps, [mx, my] = at(t1 + (t2 - t1) * w), th = k1.theta + (k2.theta - k1.theta) * w, len = k1.L + (k2.L - k1.L) * w, ex = Math.cos(th) * len, ey = Math.sin(th) * len;
+			const cur = new Array(n + 1); for (let j = 0; j <= n; j++) { const u = -1 + 2 * j / n; cur[j] = [mx + ex * u, my + ey * u]; }
+			const prev = blade.edges, wet = k1.wet + (k2.wet - k1.wet) * w, soft = Math.max(.5, RAPIER_RIBBON_SOFT * len * sc);
+			const [nx, ny, along] = this._ribbonThick(prev, cur, th, len);
+			const laneA = i => i < 0 || i >= n ? 0 : k1.a[i] * this._ribbonInto(k1, i) + (k2.a[i] * this._ribbonInto(k2, i) - k1.a[i] * this._ribbonInto(k1, i)) * w;
+			for (let i = 0; i < n; i++) {
+				const a = laneA(i), from = a0[i];
+				// A lane whose neighbour has broken (laid under RAPIER_RIBBON_EXPOSED of its paint) shows its side: it is softened like the
+				const open0 = !along && laneA(i - 1) < RAPIER_RIBBON_EXPOSED * Math.max(a, from), open1 = !along && laneA(i + 1) < RAPIER_RIBBON_EXPOSED * Math.max(a, from);
+				for (let ch = 0; ch < 3; ch++) { c0[ch] = col0[3 * i + ch]; c1[ch] = k1.col[3 * i + ch] + (k2.col[3 * i + ch] - k1.col[3 * i + ch]) * w; }
+				if ((a > .002 || from > .002) && surface.drawQuad([prev[i][0] - nx, prev[i][1] - ny], [prev[i + 1][0] - nx, prev[i + 1][1] - ny], [cur[i + 1][0] + nx, cur[i + 1][1] + ny], [cur[i][0] + nx, cur[i][1] + ny], c0, c1, from, a, open0, open1, !(from > .002), k2.smudge && gpu ? -1 : k2.ca ? (k1.ca || k2.ca)[i] + (k2.ca[i] - (k1.ca || k2.ca)[i]) * w : k2.alpha, wet, soft, along ? null : [i > 0 ? [prev[0], cur[0]] : null, i < n - 1 ? [prev[n], cur[n]] : null], gpu && {lane: i, sa: k1.slot, sb: k2.slot, wf: (k - 1) / steps, wt: w})) painted = true;
+				a0[i] = a; col0[3 * i] = c1[0]; col0[3 * i + 1] = c1[1]; col0[3 * i + 2] = c1[2];
+			}
+			blade.edges = cur;
+		}
+		blade.at = k2; blade.exit = d12 > 1e-6 ? (([qx, qy]) => { const m = Math.hypot(qx, qy) || 1; return [qx / m, qy / m]; })([P2[0] - at(t1 + (t2 - t1) * .9)[0], P2[1] - at(t1 + (t2 - t1) * .9)[1]]) : blade.exit;
+		return painted;
+	}
+	// length, as far as its last speed carries it (none for a slow lift, RAPIER_RIBBON_TAIL blade widths at most); each lane gives out
+	_ribbonTail(surface) {
+		const blade = this.blade, hairs = blade.hairs, n = hairs.length; blade.tailed = true;
+		const knots = blade.knots || [];
+		let painted = false;
+		if (knots.length >= 2) painted = this._ribbonSegment(surface, knots.length >= 3 ? knots.at(-3) : null, knots.at(-2), knots.at(-1), null);
+		const k = blade.at;
+		if (!this.erasing && this.rapier.rapier_tap_stamp > 0 && blade.travel < .05 && knots.length) {
+			const q = knots.at(-1), col = q.col, mid = 3 * (n >> 1);
+			if (surface.drawDab(q.x, q.y, q.full, col[mid], col[mid + 1], col[mid + 2], Math.max(...q.a, .6), .55, 0, 1, 6, DEGREES(q.theta), 0, 0, 0, 0, 0)) painted = true;
+			return painted;
+		}
+		if (this.erasing || !k || !blade.exit || !(k.L > 0) || knots.length < 2) return painted;
+		const speed = Math.max(...knots.slice(-3).map(q => q.speed || 0)) / Math.max(.5, k.full);
+		const T = 2 * k.L * RAPIER_RIBBON_TAIL * clamp((speed - RAPIER_RIBBON_FLICK[0]) / (RAPIER_RIBBON_FLICK[1] - RAPIER_RIBBON_FLICK[0]), 0, 1), cos = Math.cos(k.theta), sin = Math.sin(k.theta), N = clamp(Math.ceil(T * (surface.scale || 1) / RAPIER_RIBBON_STEP), 4, 48);
+		if (!(T * (surface.scale || 1) > 1)) return painted;
+		const a0 = blade.drawnA, col0 = blade.drawnCol; if (!a0) return painted;
+		const held = Float32Array.from(a0), c = [0, 0, 0];
+		for (let i = 0; i < n; i++) if (hairs[i].tail === undefined) hairs[i].tail = .08 + .92 * Math.pow(clamp(.5 + .45 * this._ribbonStreak(hairs[i].u, i) + .35 * (blade.hash(i + 500) - .5), 0, 1), 2.2) * (1 - .4 * Math.abs(hairs[i].u));
+		for (let s = 1; s <= N; s++) {
+			const sK = s / N, L = k.L, mx = k.x + blade.exit[0] * T * sK, my = k.y + blade.exit[1] * T * sK, cur = new Array(n + 1);
+			for (let j = 0; j <= n; j++) { const u = -1 + 2 * j / n; cur[j] = [mx + cos * L * u, my + sin * L * u]; }
+			const prev = blade.edges, wet = k.wet + (1 - k.wet) * .6 * sK, [nx, ny, along] = this._ribbonThick(prev, cur, k.theta, L);
+			for (let i = 0; i < n; i++) {
+				const from = a0[i], a = held[i] * (q => q * q * (3 - 2 * q))(clamp((hairs[i].tail - sK) / (.12 + .25 * hairs[i].tail), 0, 1));
+				c[0] = col0[3 * i]; c[1] = col0[3 * i + 1]; c[2] = col0[3 * i + 2];
+				if ((from > .002 || a > .002) && surface.drawQuad([prev[i][0] - nx, prev[i][1] - ny], [prev[i + 1][0] - nx, prev[i + 1][1] - ny], [cur[i + 1][0] + nx, cur[i + 1][1] + ny], [cur[i][0] + nx, cur[i][1] + ny], c, c, from, a, !along && i === 0, !along && i === n - 1, false, knots.at(-1).smudge && surface.flatKnot ? -1 : knots.at(-1).ca?.[i] ?? 1, wet, Math.max(.5, RAPIER_RIBBON_SOFT * L * (surface.scale || 1)), along ? null : [i > 0 ? [prev[0], cur[0]] : null, i < n - 1 ? [prev[n], cur[n]] : null], surface.flatKnot && {lane: i, sa: knots.at(-1).slot, sb: knots.at(-1).slot, wf: 1, wt: 1})) painted = true;
+				a0[i] = a;
+			}
+			blade.edges = cur;
+		}
+		return painted;
+	}
 	// IMPaSTo hold: paint on the brush, two-way per dab. rapier_hold 0 (or absent) leaves
 	_newHold() {
 		const hold = this.rapier?.rapier_hold || 0;
 		if (!(hold > 0) || this.erasing) { this.holdStore = null; this.holdAt = null; this.holdVelocity = 0; return; }
-		const bands = this.mappings[S.paint_mode].base > 0 ? PAINT_PIGMENT_CHANNELS : 3;
+		const bands = this.mappings[S.paint_mode].base > 0 ? PAINT_WET_CHANNELS : 3;
 		this.holdStore = createBrushStore(HOLD_N, bands);
 		const color = hsvToRgb(this.mappings[S.color_h].base, this.mappings[S.color_s].base, this.mappings[S.color_v].base);
 		const logs = new Float64Array(bands);
-		if (bands === PAINT_PIGMENT_CHANNELS) writePaintPigment(...color, logs); else writePaintRGB(...color, logs);
+		if (bands === PAINT_WET_CHANNELS) writePaintWet(...color, logs); else writePaintRGB(...color, logs);
 		loadBrush(this.holdStore, { mass: hold * HOLD_N * HOLD_N * .85, water: 0, logs });
 		const n = HOLD_N, cx = (n - 1) / 2, store = this.holdStore, mass = hold * n * n * .85;
 		let sum = 0;
@@ -768,9 +1013,16 @@ export class PaintBrush {
 			if (!Number.isFinite(dtime) || dtime > 60) throw new RangeError('Wet event time');
 			this.wetRemaining = Math.max(.0001, dtime) * 1000;
 		}
+		const rb = this.rapier?.rapier_ribbon > 0 ? this.blade : null;
+		if (rb) { if (pressure > 0 && rb.hand && dtime > 0 && rb.travel < RAPIER_RIBBON_FEATHER) rb.landSpeed = Math.max(rb.landSpeed || 0, Math.hypot(x - rb.hand[0], y - rb.hand[1]) / dtime); rb.hand = [x, y]; }
 		const result = yield* this._strokeToWork(surface, x, y, Math.pow(clamp(pressure, 0, 1), this.rapier?.rapier_pressure || 1), xtilt, ytilt, dtime, viewzoom, viewrotation, barrel, linear);
 		if (this.wetStroke && this.wetRemaining > 0) surface.wetPending = (surface.wetPending || 0) + this.wetRemaining;
 		if (this.op && surface.opComposeOwed) surface.opCompose();
+		if (!(pressure > 0) && this.blade?.knots && !this.blade.tailed && this.rapier?.rapier_ribbon > 0) {
+			surface.strokeCap = this.rapier.rapier_stroke_cap > 0 && !this.erasing ? (this.capMap || (this.capMap = new Map())) : null; surface.capPile = 1;
+			this._ribbonTail(this._ribbonSurface(surface));
+			surface.strokeCap = null;
+		}
 		return result;
 	}
 	_prepareWetDab(surface, linear, dt) {
@@ -787,6 +1039,7 @@ export class PaintBrush {
 		return painted;
 	}
 	_reset() {
+		this.bucketEpoch = (this.bucketEpoch || 0) + 1;
 		this.skip = 0; this.skipLastX = 0; this.skipLastY = 0; this.skippedDtime = 0;
 		this.states.fill(0);
 		this.states[ST.flip] = -1;
@@ -1047,6 +1300,7 @@ export class PaintBrush {
 		}
 		const paintFactor = V[S.paint_mode], paintConstant = M[S.paint_mode].constant, legacy = paintFactor <= 0 && paintConstant;
 		const color = hsvToRgb(M[S.color_h].base, M[S.color_s].base, M[S.color_v].base, this.dabColor);
+		if (surface.gpu) return this._gpuDab(surface, linear, x, y, radius, opaque, color, paintFactor, legacy, thin);
 		const smudgeLength = V[S.smudge_length];
 		if (smudgeLength < 1 && (V[S.smudge] !== 0 || !M[S.smudge].constant)) {
 			const at = this._bucket();
@@ -1102,14 +1356,110 @@ export class PaintBrush {
 			const box = surface._renderMask(x * sc, y * sc, radius * sc, hardness, softness, ST_[ST.actual_elliptical_dab_ratio], ST_[ST.actual_elliptical_dab_angle]);
 			if (box && surface.hold) { surface._holdStep(box, opaque); surface.hold.stepped = true; }
 		}
-		if (this.blade) return this._drawBlade(surface, x, y, radius, cr, cg, cb, opaque, hardness, softness, targetAlpha, ST_[ST.actual_elliptical_dab_ratio], ST_[ST.actual_elliptical_dab_angle], V[S.lock_alpha], V[S.colorize], V[S.posterize], V[S.posterize_num], paintFactor);
+		if (this.blade) {
+			surface.strokeCap = this.rapier?.rapier_stroke_cap > 0 && !this.erasing ? (this.capMap || (this.capMap = new Map())) : null; surface.capPile = 1;
+			const laid = this._drawBlade(surface, x, y, radius, cr, cg, cb, opaque, hardness, softness, targetAlpha, ST_[ST.actual_elliptical_dab_ratio], ST_[ST.actual_elliptical_dab_angle], V[S.lock_alpha], V[S.colorize], V[S.posterize], V[S.posterize_num], paintFactor);
+			surface.strokeCap = null;
+			return laid;
+		}
 		if (this.bristles) return this._drawBristles(surface, x, y, radius, cr, cg, cb, opaque, hardness, softness, targetAlpha,
 			ST_[ST.actual_elliptical_dab_ratio], ST_[ST.actual_elliptical_dab_angle], V[S.lock_alpha], V[S.colorize], V[S.posterize], V[S.posterize_num], paintFactor);
 		surface.bite = this._bite(opaque); surface.body = this.erasing ? 0 : this.rapier?.rapier_body || 0;
-		const painted = surface.drawDab(x, y, radius, cr, cg, cb, opaque, hardness, softness, targetAlpha,
+		// Stroke opacity (`rapier_stroke_cap`): within one stroke a pixel's coverage is the most any one dab gave it, never the sum,
+		surface.strokeCap = this.rapier?.rapier_stroke_cap > 0 && !this.erasing ? (this.capMap || (this.capMap = new Map())) : null;
+		// An airbrush (`rapier_airbrush`) caps at one dab's own coverage: a stroke is the bell's profile at the press, and only
+		surface.capPile = this.rapier?.rapier_airbrush > 0 ? 1 : Math.max(1, 2 * (ST_[ST.dabs_per_actual_radius] + ST_[ST.dabs_per_basic_radius]));
+		surface.bell = this.rapier?.rapier_bell > 0;
+		const painted = surface.drawDab(x, y, radius, cr, cg, cb, opaque, hardness, softness, surface.strokeCap && targetAlpha > 0 ? 1 : targetAlpha,
 			ST_[ST.actual_elliptical_dab_ratio], ST_[ST.actual_elliptical_dab_angle], V[S.lock_alpha], V[S.colorize], V[S.posterize], V[S.posterize_num], paintFactor);
+		surface.strokeCap = null; surface.bell = false;
 		if (surface.hold) surface.hold = null;
 		return painted;
+	}
+	get gpuCapable() { return (!this.op || ['erase', 'dissolve', 'erode', 'smear', 'blend', 'posterize'].includes(this.op) && !this.bristles) && (!this.blade || this.rapier?.rapier_ribbon > 0) && !(this.rapier?.rapier_oil > 0) && !this.wet && !this.wetStroke && !(this.holdStore && !this.bristles); }
+	get gpuWetCapable() { return !!this.wetStroke && !this.op && !this.bristles && !this.blade && !this.holdStore && !(this.rapier?.rapier_oil > 0); }
+	_gpuDab(surface, linear, x, y, radius, opaque, color, paintFactor, legacy, thin) {
+		const V = this.values, M = this.mappings, ST_ = this.states;
+		let flags = 0, update = 0, px = 0, py = 0, pr = 0, bucket = 0;
+		const smudgeLength = V[S.smudge_length];
+		if (smudgeLength < 1 && (V[S.smudge] !== 0 || !M[S.smudge].constant)) {
+			const at = this._bucket(), B = this.buckets; bucket = at / SMUDGE_BUCKET_SIZE;
+			let updateFactor = Math.max(0.01, smudgeLength);
+			const recentness = B[at + PREV_COL_RECENTNESS] * updateFactor;
+			B[at + PREV_COL_RECENTNESS] = recentness;
+			flags |= GPU_DAB.UPDATE;
+			if (recentness < Math.min(1, Math.pow(0.5 * updateFactor, V[S.smudge_length_log]) + 1e-16)) {
+				if (recentness === 0) updateFactor = 0;
+				B[at + PREV_COL_RECENTNESS] = 1;
+				flags |= GPU_DAB.RESAMPLE; px = Math.round(x); py = Math.round(y);
+				pr = clamp(radius * Math.exp(V[S.smudge_radius_log]), ACTUAL_RADIUS_MIN, ACTUAL_RADIUS_MAX);
+				if (!legacy) { const n = paintProbeCount(surface, px, py, pr), scaled = Math.max(1, pr * (surface.scale || 1)), interval = scaled <= 2 ? 1 : Math.trunc(scaled * 7);
+					for (let k = n - Math.ceil(n / interval); k > 0; k--) this.rng.next(); }
+			}
+			update = updateFactor;
+		}
+		const smudgeValue = thin ? V[S.smudge] + (1 - V[S.smudge]) * thin * RAPIER_THIN_BLEND : V[S.smudge];
+		if (smudgeValue > 0) { bucket = this._bucket() / SMUDGE_BUCKET_SIZE; if (this.rapier && M[S.smudge].base < RAPIER_SMUDGE_MOVER) flags |= GPU_DAB.MOVER; }
+		const erase = this.erasing ? 1 : V[S.eraser];
+		let targetAlpha = 1, cr = color[0], cg = color[1], cb = color[2];
+		if (flags & GPU_DAB.UPDATE || smudgeValue > 0) {
+			flags |= GPU_DAB.COLOUR | (legacy ? GPU_DAB.LEGACY : 0) | (linear ? GPU_DAB.LINEAR : 0) | (this.smudgeOnly ? GPU_DAB.SMUDGE_ONLY : 0);
+			if (V[S.change_color_h] || V[S.change_color_hsv_s] || V[S.change_color_v]) flags |= GPU_DAB.HSV;
+			if (V[S.change_color_l] || V[S.change_color_hsl_s]) flags |= GPU_DAB.HSL;
+		} else {
+			targetAlpha = this._colourDab(color, 0, legacy, paintFactor, linear); cr = color[0]; cg = color[1]; cb = color[2];
+			if (this.smudgeOnly && !(targetAlpha > 0)) return false;
+		}
+		let hardness = clamp(V[S.hardness], 0, 1);
+		const softness = clamp(V[S.softness], 0, 1);
+		const currentFadeout = radius * (1 - hardness), minFadeout = V[S.anti_aliasing];
+		if (currentFadeout < minFadeout) {
+			const optical = radius - (1 - hardness) * radius / 2;
+			const hardnessNew = (optical - minFadeout / 2) / (optical + minFadeout / 2);
+			radius = minFadeout / (1 - hardnessNew);
+			hardness = hardnessNew;
+		}
+		const snap = V[S.snap_to_pixel];
+		if (snap > 0) {
+			x += (Math.floor(x) + 0.5 - x) * snap; y += (Math.floor(y) + 0.5 - y) * snap;
+			let snapped = Math.round(radius * 2) / 2;
+			if (snapped < 0.5) snapped = 0.5;
+			if (snap > 0.9999) snapped -= 0.0001;
+			radius += (snapped - radius) * snap;
+		}
+		const only = this.smudgeOnly && !(flags & GPU_DAB.COLOUR);
+		if (this.op) {
+			const ax = ST_[ST.actual_x], ay = ST_[ST.actual_y];
+			const ddx = this.opHas ? ax - this.opX : 0, ddy = this.opHas ? ay - this.opY : 0;
+			this.opX = ax; this.opY = ay; this.opHas = true;
+			return surface.applyOp(this.op, x, y, radius, hardness, softness, ST_[ST.actual_elliptical_dab_ratio], ST_[ST.actual_elliptical_dab_angle], opaque, ddx, ddy, this.paperSeed,
+				this.opBucket || (this.opBucket = this._opLoad()));
+		}
+		if (this.blade) return this._drawBlade(surface, x, y, radius, cr, cg, cb, opaque, hardness, softness, targetAlpha, ST_[ST.actual_elliptical_dab_ratio], ST_[ST.actual_elliptical_dab_angle], V[S.lock_alpha], V[S.colorize], V[S.posterize], V[S.posterize_num], paintFactor);
+		if (this.bristles) {
+			surface.reserve(this.bristles.length + 1);
+			const resolved = flags & GPU_DAB.COLOUR, held = !!this.holdStore;
+			if (held) { this._holdBegin(x, y); this._holdOn(surface); }
+			const kit = {x, y, radius, hardness, softness, aspect: ST_[ST.actual_elliptical_dab_ratio], angle: ST_[ST.actual_elliptical_dab_angle], opaque, r: cr, g: cg, b: cb, alpha: targetAlpha,
+				lockAlpha: V[S.lock_alpha], colorize: 0, posterize: 0, posterizeNum: V[S.posterize_num], paint: paintFactor, bite: 0, body: 0,
+				flags: flags | GPU_DAB.NO_STAMP | (held ? GPU_DAB.HOLD_STEP | GPU_DAB.LEGACY * legacy | GPU_DAB.LINEAR * linear : 0), bucket, smudge: smudgeValue, update, lim: V[S.smudge_transparency], erase,
+				chH: V[S.change_color_h], chS: V[S.change_color_hsv_s], chV: V[S.change_color_v], chL: V[S.change_color_l], chHslS: V[S.change_color_hsl_s],
+				px, py, pr, samplePaint: legacy ? -1 : paintFactor, holdVel: this.holdVelocity};
+			if (held) { kit.flags |= (V[S.change_color_h] || V[S.change_color_hsv_s] || V[S.change_color_v] ? GPU_DAB.HSV : 0) | (V[S.change_color_l] || V[S.change_color_hsl_s] ? GPU_DAB.HSL : 0); surface.holdKit = kit; }
+			surface.hairRef = resolved || held ? surface.queueDab(this, kit) : -1;
+			if (held) { surface.holdRef = surface.hairRef; surface.hairRef = -1; }
+			try {
+				return this._drawBristles(surface, x, y, radius, resolved ? .5 : cr, resolved ? .5 : cg, resolved ? .5 : cb, opaque, hardness, softness, targetAlpha,
+					ST_[ST.actual_elliptical_dab_ratio], ST_[ST.actual_elliptical_dab_angle], V[S.lock_alpha], V[S.colorize], V[S.posterize], V[S.posterize_num], paintFactor);
+			} finally { surface.hairRef = -1; surface.holdKit = null; if (surface.hold) surface.hold = null; }
+		}
+		return surface.queueDab(this, {x, y, radius, hardness, softness, aspect: ST_[ST.actual_elliptical_dab_ratio], angle: ST_[ST.actual_elliptical_dab_angle],
+			opaque: only ? opaque * targetAlpha : opaque, r: cr, g: cg, b: cb, alpha: only ? 1 : targetAlpha,
+			lockAlpha: this.smudgeOnly ? 1 : V[S.lock_alpha], colorize: this.smudgeOnly ? 0 : V[S.colorize], posterize: this.smudgeOnly ? 0 : V[S.posterize], posterizeNum: V[S.posterize_num], paint: paintFactor,
+			bite: this._bite(opaque), body: this.erasing ? 0 : this.rapier?.rapier_body || 0,
+			flags, bucket, smudge: smudgeValue, update, lim: V[S.smudge_transparency], erase,
+			chH: V[S.change_color_h], chS: V[S.change_color_hsv_s], chV: V[S.change_color_v], chL: V[S.change_color_l], chHslS: V[S.change_color_hsl_s],
+			px, py, pr, samplePaint: legacy ? -1 : paintFactor});
 	}
 	_countDabsTo(x, y, dt) {
 		const ST_ = this.states, baseRadius = clamp(Math.exp(this.mappings[S.radius_logarithmic].base), ACTUAL_RADIUS_MIN, ACTUAL_RADIUS_MAX);
@@ -1154,8 +1504,10 @@ export class PaintBrush {
 				const noise = Math.exp(M[S.radius_logarithmic].base) * trackingNoise;
 				if (noise > 0.001) { this.skip = 0.5 * noise; this.skipLastX = x; this.skipLastY = y; x += noise * this.rng.gauss(); y += noise * this.rng.gauss(); }
 			}
-			const fac = 1 - expDecay(M[S.slow_tracking].base, 100 * dtime);
-			x = ST_[ST.x] + (x - ST_[ST.x]) * fac; y = ST_[ST.y] + (y - ST_[ST.y]) * fac;
+			if (!(dtime > maxDtime || this.resetRequested)) {
+				const fac = 1 - expDecay(M[S.slow_tracking].base, 100 * dtime);
+				x = ST_[ST.x] + (x - ST_[ST.x]) * fac; y = ST_[ST.y] + (y - ST_[ST.y]) * fac;
+			}
 		}
 		if (dtime > maxDtime || this.resetRequested) {
 			this.resetRequested = false;
@@ -1231,6 +1583,30 @@ function copyPaintMaterial(value, seen = new Map()) {
 	for (const key of Object.keys(value)) out[key] = copyPaintMaterial(value[key], seen);
 	return out;
 }
+export function paintProbeCount(surface, x, y, radius) {
+	const sc = surface.scale || 1; x *= sc; y *= sc; radius *= sc; if (radius < 1) radius = 1;
+	const W = surface.width, H = surface.height, fringe = radius + 1;
+	const x0 = Math.max(0, Math.floor(x - fringe)), y0 = Math.max(0, Math.floor(y - fringe)), x1 = Math.min(W - 1, Math.floor(x + fringe)), y1 = Math.min(H - 1, Math.floor(y + fringe));
+	if (x1 < x0 || y1 < y0) return 0;
+	if (radius < 3) {
+		const rec = surface.record || surface, keep = rec.strokeCheckpoint; rec.strokeCheckpoint = null;
+		try { const box = rec._renderMask(x, y, radius, .5, .5, 1, 0); if (!box) return 0; let n = 0; for (let i = 0; i < box.w * box.h; i++) if (box.mask[i]) n++; return n; }
+		finally { rec.strokeCheckpoint = keep; }
+	}
+	const oneOverR2 = 1 / (radius * radius);
+	const covered = (xp, yy) => { const xx = xp + 0.5 - x, yyr = (yy * 1 - xx * 0) * 1, xxr = yy * 0 + xx * 1, rr = (yyr * yyr + xxr * xxr) * oneOverR2; if (rr > 1) return false; const opa = rr <= .5 ? .5 + rr * -.5 : .5 + rr * -.5; return !(opa < 1 / 32768); };
+	let n = 0;
+	for (let yp = y0; yp <= y1; yp++) {
+		const yy = yp + 0.5 - y, reach2 = radius * radius - yy * yy;
+		if (reach2 < -2 * radius) continue;
+		const reach = Math.sqrt(Math.max(0, reach2));
+		let a = Math.max(x0, Math.ceil(x - 0.5 - reach)), b = Math.min(x1, Math.floor(x - 0.5 + reach));
+		while (a > x0 && covered(a - 1, yy)) a--; while (a <= b && !covered(a, yy)) a++;
+		while (b < x1 && covered(b + 1, yy)) b++; while (b >= a && !covered(b, yy)) b--;
+		if (b >= a) n += b - a + 1;
+	}
+	return n;
+}
 export class PaintSurface {
 	constructor(width, height, {wet = {}, trackedGrowth = false} = {}) {
 		this.width = Math.max(1, Math.trunc(width)); this.height = Math.max(1, Math.trunc(height));
@@ -1251,7 +1627,7 @@ export class PaintSurface {
 		this.bite = 0; this.toothSeed = 0x5eed1e; this.toothTiles = null; this.toothTilesW = 0; this.weaveTiles = null;
 		this.toothOX = 0; this.toothOY = 0;
 		this.body = 0; this.volume = null; this.pigment = true;
-		this.oil = null; this.oilTop = 0; this.oilPool = 0;
+		this.oil = null; this.oilTop = 0; this.oilPool = 0; this.strokeCap = null; this.bell = false;
 		this.scale = 1;
 	}
 	beginStroke() {
@@ -1306,7 +1682,7 @@ export class PaintSurface {
 		x1 = Math.min(Math.ceil(this.width / C) * C, Math.ceil(x1 / C) * C); y1 = Math.min(Math.ceil(this.height / C) * C, Math.ceil(y1 / C) * C);
 		return { x0, y0, w: x1 - x0, h: y1 - y0, cw: (x1 - x0) / C, ch: (y1 - y0) / C };
 	}
-	_wetBytes(win) { return wetBytes(win.cw, win.ch, this.pigment ? PAINT_PIGMENT_CHANNELS : 3) + win.cw * win.ch * 20 + win.w * win.h * 20; }
+	_wetBytes(win) { return wetBytes(win.cw, win.ch, this.pigment ? PAINT_WET_CHANNELS : 3) + win.cw * win.ch * 20 + win.w * win.h * 20; }
 	wetBudgetFor(box) { return this._wetBytes(this._wetWindowFor(box, null)); }
 	wetToothField() {
 		const out = new Float32Array(this.width * this.height), state = this.wetState, win = this.wetWindow, C = this.wetCell;
@@ -1346,8 +1722,8 @@ export class PaintSurface {
 		const C = this.wetCell, kept = carry ? { x0: (carryWin.x0 - next.x0) / C, y0: (carryWin.y0 - next.y0) / C, x1: (carryWin.x0 - next.x0) / C + carryWin.cw - 1, y1: (carryWin.y0 - next.y0) / C + carryWin.ch - 1 } : null;
 		const pixels = this._wetDownsample(next, rasterBase, kept);
 		const created = createWetState(makePaper(seed, next.cw, next.ch, { ...options, originX: next.x0 / C, originY: next.y0 / C, within: carry && carry.paper.seed === seed ? carry.paper : null }), {
-			...options, pixels, maxBytes, reservedBytes: 0, mixing, bands: this.pigment ? PAINT_PIGMENT_CHANNELS : 3, film: false,
-			toSpectral: this.pigment ? writePaintPigment : writePaintRGB, fromSpectral: this.pigment ? paintPigmentRGB : readPaintRGB
+			...options, pixels, maxBytes, reservedBytes: 0, mixing, bands: this.pigment ? PAINT_WET_CHANNELS : 3, film: false,
+			toSpectral: this.pigment ? writePaintWet : writePaintRGB, fromSpectral: this.pigment ? paintWetRGB : readPaintRGB
 		});
 		if (carry) rewindowWetState(carry, created, (carryWin.x0 - next.x0) / this.wetCell, (carryWin.y0 - next.y0) / this.wetCell);
 		const cover = new Float32Array(next.w * next.h), deposited = new Float32Array(next.cw * next.ch);
@@ -1798,6 +2174,90 @@ export class PaintSurface {
 		else this.sinceRead = { x0, y0, x1, y1 };
 	}
 	takeDirty() { const d = this.dirty; this.dirty = null; return d; }
+	drawQuad(p0, p1, q1, q0, colFrom, colTo, aFrom, aTo, soft0, soft1, softStart, alpha = 1, wet = 0, edge = .5, outer = null) {
+		const sc = this.scale, A = [p0[0] * sc, p0[1] * sc], B = [p1[0] * sc, p1[1] * sc], C = [q1[0] * sc, q1[1] * sc], Dq = [q0[0] * sc, q0[1] * sc];
+		const tris = [[A, B, C, [softStart, soft1, false], [0, 0, 0]], [A, C, Dq, [false, false, soft0], [1, 1, 0]]];
+		let lx = Infinity, ly = Infinity, hx = -Infinity, hy = -Infinity;
+		for (const [px, py] of [A, B, C, Dq]) { lx = Math.min(lx, px); ly = Math.min(ly, py); hx = Math.max(hx, px); hy = Math.max(hy, py); }
+		const pad = 1 + (soft0 || soft1 ? edge + RAPIER_RIBBON_EDGE * wet : 0);
+		const x0 = Math.max(0, Math.floor(lx - pad)), y0 = Math.max(0, Math.floor(ly - pad)), x1 = Math.min(this.width - 1, Math.ceil(hx + pad)), y1 = Math.min(this.height - 1, Math.ceil(hy + pad));
+		if (x1 < x0 || y1 < y0) return false;
+		const T = [];
+		for (const [P0, P1, P2, soft, open] of tris) {
+			const area = (P1[0] - P0[0]) * (P2[1] - P0[1]) - (P2[0] - P0[0]) * (P1[1] - P0[1]);
+			if (!(Math.abs(area) > 1e-9)) continue;
+			const sgn = area > 0 ? 1 : -1, V = [P0, P1, P2], E = [];
+			for (let e = 0; e < 3; e++) {
+				const a = V[e], b = V[(e + 1) % 3], dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
+				if (len < 1e-9) { E.push(null); continue; }
+				const nx = -dy / len * sgn, ny = dx / len * sgn; E.push([nx, ny, -(nx * a[0] + ny * a[1]), soft[e], open[e]]);
+			}
+			T.push(E);
+		}
+		if (!T.length) return false;
+		const across = (P0, P1, Q0, Q1) => { const dx = P1[0] - P0[0], dy = P1[1] - P0[1], len = Math.hypot(dx, dy); if (len < 1e-9) return null; let nx = -dy / len, ny = dx / len; const mx = (Q0[0] + Q1[0]) / 2, my = (Q0[1] + Q1[1]) / 2; if (nx * (mx - P0[0]) + ny * (my - P0[1]) < 0) { nx = -nx; ny = -ny; } return [nx, ny, -(nx * P0[0] + ny * P0[1])]; };
+		const bandStart = soft0 || soft1 ? across(A, B, C, Dq) : null, bandEnd = soft0 || soft1 ? across(C, Dq, A, B) : null;
+		const mid = [(A[0] + B[0] + C[0] + Dq[0]) / 4, (A[1] + B[1] + C[1] + Dq[1]) / 4];
+		const sides = [...(outer || []), soft0 ? [q0, p0] : null, soft1 ? [p1, q1] : null].filter(Boolean).map(([F, G]) => { const Fs = [F[0] * sc, F[1] * sc], Gs = [G[0] * sc, G[1] * sc], dx = Gs[0] - Fs[0], dy = Gs[1] - Fs[1], len = Math.hypot(dx, dy); if (len < 1e-9) return null; let nx = -dy / len, ny = dx / len; if (nx * (mid[0] - Fs[0]) + ny * (mid[1] - Fs[1]) < 0) { nx = -nx; ny = -ny; } return [nx, ny, -(nx * Fs[0] + ny * Fs[1])]; }).filter(Boolean);
+		this._keepStrokePixels(x0, y0, x1, y1);
+		const sx = (A[0] + B[0]) / 2, sy = (A[1] + B[1]) / 2, vx = (C[0] + Dq[0]) / 2 - sx, vy = (C[1] + Dq[1]) / 2 - sy, vv = vx * vx + vy * vy || 1;
+		const D = this.data, W = this.width, ea = clamp(alpha, 0, 1), cap = this.strokeCap;
+		let any = false, capTile = null, capAt = -1;
+		const Q = [A, B, C, Dq];
+		for (let yp = y0; yp <= y1; yp++) {
+			const cy = yp + .5, bl = cy - pad, bh = cy + pad;
+			let rx0 = Infinity, rx1 = -Infinity;
+			for (let i = 0; i < 4; i++) {
+				const P = Q[i]; if (P[1] >= bl && P[1] <= bh) { if (P[0] < rx0) rx0 = P[0]; if (P[0] > rx1) rx1 = P[0]; }
+				for (let j = i + 1; j < 4; j++) {
+					const R = Q[j], dy = R[1] - P[1]; if (!(Math.abs(dy) > 1e-12)) continue;
+					let t = (bl - P[1]) / dy; if (t >= 0 && t <= 1) { const x = P[0] + (R[0] - P[0]) * t; if (x < rx0) rx0 = x; if (x > rx1) rx1 = x; }
+					t = (bh - P[1]) / dy; if (t >= 0 && t <= 1) { const x = P[0] + (R[0] - P[0]) * t; if (x < rx0) rx0 = x; if (x > rx1) rx1 = x; }
+				}
+			}
+			if (!(rx1 >= rx0)) continue;
+			const sx0 = Math.max(x0, Math.floor(rx0 - pad)), sx1 = Math.min(x1, Math.ceil(rx1 + pad));
+			for (let xp = sx0; xp <= sx1; xp++) {
+				const cx = xp + .5, under = wet > 0 ? D[(yp * W + xp) * 4 + 3] : 0;
+				const half = edge + RAPIER_RIBBON_EDGE * wet * clamp(under, 0, 1), inv = 1 / (2 * half);
+				let cov = 0;
+				for (let ti = 0; ti < T.length; ti++) {
+					const E = T[ti];
+					let c = 1;
+					for (let e = 0; e < 3 && c > 0; e++) {
+						const ed = E[e]; if (!ed) continue;
+						const d = ed[0] * cx + ed[1] * cy + ed[2];
+						if (ed[3]) { if (e === 0 && ti === 0) c = Math.min(c, clamp(d + .5, 0, 1)); else if (d < -half) c = 0; }
+						else if (ed[4] ? d <= 0 : d < 0) c = 0;
+					}
+					if (c > cov) cov = c;
+				}
+				for (let si = 0; si < sides.length; si++) { const sd = sides[si], d = sd[0] * cx + sd[1] * cy + sd[2]; if (d < half) cov *= clamp(d * inv + .5, 0, 1); }
+				if (!(cov > 0)) continue;
+				if (bandStart && bandStart[0] * cx + bandStart[1] * cy + bandStart[2] < (softStart ? -.5 : 0)) continue;
+				if (bandEnd && !(bandEnd[0] * cx + bandEnd[1] * cy + bandEnd[2] > 0)) continue;
+				const t = clamp(((cx - sx) * vx + (cy - sy) * vy) / vv, 0, 1);
+				let o = cov * (aFrom + (aTo - aFrom) * t);
+				if (!(o > 1 / 4096)) continue;
+				if (cap) {
+					const key = (yp >> 6) * 65536 + (xp >> 6);
+					if (key !== capAt) { capAt = key; capTile = cap.get(key); if (!capTile) cap.set(key, capTile = new Float32Array(4096)); }
+					const k = (yp & 63) * 64 + (xp & 63), was = capTile[k];
+					if (o <= was) continue;
+					capTile[k] = o; o = was > 0 ? (o - was) / (1 - was) : o;
+				}
+				const p = (yp * W + xp) * 4, da = D[p + 3];
+				let tr = colFrom[0] + (colTo[0] - colFrom[0]) * t, tg = colFrom[1] + (colTo[1] - colFrom[1]) * t, tb = colFrom[2] + (colTo[2] - colFrom[2]) * t;
+				if (wet > 0 && da > 0) { const w = wet * clamp(da, 0, 1) * (1 - RAPIER_RIBBON_BODY * o); tr += (D[p] / da - tr) * w; tg += (D[p + 1] / da - tg) * w; tb += (D[p + 2] / da - tb) * w; }
+				const keep = 1 - o, lay = o * ea;
+				D[p] = D[p] * keep + lay * tr; D[p + 1] = D[p + 1] * keep + lay * tg; D[p + 2] = D[p + 2] * keep + lay * tb; D[p + 3] = da * keep + lay;
+				if (this.oil) this.oil[p >> 2] *= keep; if (this.volume) this.volume[p >> 2] *= keep;
+				any = true;
+			}
+		}
+		if (any) this._touch(x0, y0, x1, y1);
+		return any;
+	}
 	drawStrip(ax, ay, bx, by, half, r, g, b, opaque, alpha, softLeft = true, softRight = true, softStart = false, shear = 0, opaqueFrom = opaque, extra = 0, paint = 0) {
 		const sc = this.scale; ax *= sc; ay *= sc; bx *= sc; by *= sc; half *= sc;
 		opaque = clamp(opaque, 0, 1); opaqueFrom = clamp(opaqueFrom, 0, 1); alpha = clamp(alpha, 0, 1);
@@ -1829,8 +2289,10 @@ export class PaintSurface {
 		}
 		if (!any) return false;
 		const box = this.maskBox; box.x0 = x0; box.y0 = y0; box.w = w; box.h = h; box.mask = mask; box.spans = null;
+		const capped = this.strokeCap && alpha === 1 && this._capStroke(box, top);
 		if (paint > 0) this._blendPigment(box, r, g, b, alpha, top, false);
 		else if (alpha === 1) this._blendNormal(box, r, g, b, top); else this._blendNormalEraser(box, r, g, b, alpha, top);
+		if (capped) this._tintCapped(box, r, g, b);
 		this._touch(x0, y0, x1, y1);
 		return true;
 	}
@@ -1839,6 +2301,9 @@ export class PaintSurface {
 		if (aspect < 1) aspect = 1;
 		const seg1Offset = 1 * (1 - softness), seg1Slope = -(1 / hardness - 1) * (1 - softness);
 		const seg2Offset = hardness / (1 - hardness) * (1 - softness), seg2Slope = -hardness / (1 - hardness) * (1 - softness);
+		// A bell tip (`rapier_bell`): MyPaint's falloff is two straight pieces in r^2 that meet at the hardness with a bend, and a
+		const bell = this.bell, bellPeak = 1 - softness, bellSpan = 1 / Math.max(1e-6, 1 - hardness);
+		const tip = rr => { if (rr > 1) return 0; if (!bell) return rr <= hardness ? seg1Offset + rr * seg1Slope : seg2Offset + rr * seg2Slope; const t = Math.min(1, (1 - Math.sqrt(rr)) * bellSpan); return bellPeak * t * t * (3 - 2 * t); };
 		const rad = angle / 360 * 2 * Math.PI, cs = Math.cos(rad), sn = Math.sin(rad);
 		const fringe = radius + 1;
 		const x0 = Math.max(0, Math.floor(x - fringe)), y0 = Math.max(0, Math.floor(y - fringe));
@@ -1876,8 +2341,7 @@ export class PaintSurface {
 					if (rFar < rAaStart) rr = (rrFar + rrNear) * 0.5;
 					else { const delta = rrFar - rrNear; rr = 1 - (1 - rrNear) / (1 + delta); }
 				}
-				let opa = rr <= hardness ? seg1Offset + rr * seg1Slope : seg2Offset + rr * seg2Slope;
-				if (rr > 1) opa = 0;
+				let opa = tip(rr);
 				if (opa < 1 / 32768) opa = 0; else any = true;
 				mask[(yp - y0) * w + (xp - x0)] = opa;
 			}
@@ -1898,8 +2362,7 @@ export class PaintSurface {
 				spans[j * 2] = ia; spans[j * 2 + 1] = ib;
 				for (let xp = x0 + ia; xp < x0 + ib; xp++) {
 					const xx = xp + 0.5 - x, yyr = (yy * cs - xx * sn) * aspect, xxr = yy * sn + xx * cs, rr = (yyr * yyr + xxr * xxr) * oneOverR2;
-					let opa = rr <= hardness ? seg1Offset + rr * seg1Slope : seg2Offset + rr * seg2Slope;
-					if (rr > 1) opa = 0;
+					let opa = tip(rr);
 					if (opa < 1 / 32768) opa = 0; else any = true;
 					mask[row + (xp - x0)] = opa;
 				}
@@ -2398,6 +2861,7 @@ export class PaintSurface {
 			this.hold.adjust?.(rgb);
 			r = clamp(rgb[0], 0, 1); g = clamp(rgb[1], 0, 1); b = clamp(rgb[2], 0, 1); opaque = rgb[3];
 		}
+		const capped = this.strokeCap && alpha === 1 && normal === 1 && opaque > 0 && this._capStroke(box, opaque);
 		if (paint < 1) {
 			if (normal) {
 				if (alpha === 1) this._blendNormal(box, r, g, b, normal * opaque * (1 - paint));
@@ -2412,10 +2876,42 @@ export class PaintSurface {
 			}
 			if (lockAlpha && alpha !== 0) this._blendLockAlphaPaint(box, r, g, b, lockAlpha * opaque * (1 - colorize) * (1 - posterize) * paint);
 		}
+		if (capped) this._tintCapped(box, r, g, b);
 		if (colorize) this._blendColor(box, r, g, b, colorize * opaque);
 		if (posterize) this._blendPosterize(box, posterize * opaque, posterizeNum);
 		this._touch(box.x0, box.y0, box.x0 + box.w - 1, box.y0 + box.h - 1);
 		return true;
+	}
+	_capStroke(box, opaque) {
+		const {x0, y0, w, h, mask, spans} = box, cap = this.strokeCap;
+		if (!this.capTint || this.capTint.length < w * h) this.capTint = new Float32Array(Math.max(w * h, 4096));
+		const tint = this.capTint, pile = this.capPile || 1;
+		let tile = null, at = -1;
+		for (let j = 0; j < h; j++) {
+			const y = y0 + j, from = spans ? spans[j * 2] : 0, to = spans ? spans[j * 2 + 1] : w;
+			for (let i = from, m = j * w + from; i < to; i++, m++) {
+				const o = mask[m]; if (!o) { tint[m] = 0; continue; }
+				const x = x0 + i, key = (y >> 6) * 65536 + (x >> 6);
+				if (key !== at) { at = key; tile = cap.get(key); if (!tile) cap.set(key, tile = new Float32Array(4096)); }
+				const k = (y & 63) * 64 + (x & 63), was = tile[k], now = 1 - Math.pow(1 - o * opaque, pile);
+				tint[m] = was > 0 ? o * RAPIER_CAP_TINT : 0;
+				if (now <= was) { mask[m] = 0; continue; }
+				tile[k] = now; mask[m] = (now - was) / (1 - was) / opaque;
+			}
+		}
+		return true;
+	}
+	// own smooth tip and a fraction (`RAPIER_CAP_TINT`), without any paint: the colour moves as a gradient and the coverage stays.
+	_tintCapped(box, r, g, b) {
+		const {x0, y0, w, h, spans} = box, tint = this.capTint, D = this.data, W = this.width;
+		for (let j = 0; j < h; j++) {
+			const from = spans ? spans[j * 2] : 0, to = spans ? spans[j * 2 + 1] : w;
+			for (let i = from, m = j * w + from; i < to; i++, m++) {
+				const t = tint[m]; if (!t) continue;
+				const p = ((y0 + j) * W + x0 + i) * 4, a = D[p + 3]; if (!(a > 0)) continue;
+				D[p] += t * (r * a - D[p]); D[p + 1] += t * (g * a - D[p + 1]); D[p + 2] += t * (b * a - D[p + 2]);
+			}
+		}
 	}
 	_holdStep(box, opacity) {
 		const H = this.hold, store = H.store, n = store.n, vel = H.velocity;

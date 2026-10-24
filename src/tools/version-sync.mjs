@@ -15,7 +15,19 @@ export const ROUTE_FILES = ['draw/draw.js', 'editor/composer.js', 'shell/parts.j
 	'shell/font-subset-resources.json', 'shell/mermaid-resources.json'];
 const ROUTE = /(https:\/\/cdn\.jsdelivr\.net\/gh\/jackskip22\/rapier(?:-plugins)?@)[^/'"\s]+/g;
 
-export async function syncVersion({check = false, absent = 'refuse', root = ROOT} = {}) {
+const EMBED_README_HEAD = `Put Rapier's Markdown editor or reader in your web app, each one offline HTML file.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jackskip22/rapier-plugins/main/assets/write-1280-dark.png">
+  <img src="https://raw.githubusercontent.com/jackskip22/rapier-plugins/main/assets/write-1280-light.png" alt="The Rapier editor on a computer: a launch plan with an agent's change marked" width="960">
+</picture>
+
+Try the editor at [rapier.website](https://rapier.website).
+Install: \`npm install rapier-embed\`.
+
+`;
+
+export async function syncVersion({check = false, absent = 'refuse', root = ROOT, artifacts = true} = {}) {
 	const drifted = [], missing = [], problems = [], locations = {};
 	const read = async rel => {
 		try { return await readFile(resolve(root, rel), 'utf8'); }
@@ -65,12 +77,12 @@ export async function syncVersion({check = false, absent = 'refuse', root = ROOT
 	const skill = resolve(root, 'skills/embed-rapier/SKILL.md'), readme = resolve(root, 'packages/rapier-embed/README.md');
 	if (existsSync(skill)) {
 		const authored = await readFile(skill, 'utf8');
-		const manifest = await readFile(resolve(root, 'packages/rapier-embed/rapier-plugins.json'), 'utf8').then(JSON.parse).catch(() => null);
-		const reader = await stat(resolve(root, 'rapier-reader.html')).then(info => info.size).catch(() => 0);
-		const tabled = withPluginTable(authored, manifest && {...manifest, release: VERSION}, reader);
+		const manifest = artifacts ? await readFile(resolve(root, 'packages/rapier-embed/rapier-plugins.json'), 'utf8').then(JSON.parse).catch(() => null) : null;
+		const reader = artifacts ? await stat(resolve(root, 'rapier-reader.html')).then(info => info.size).catch(() => 0) : 0;
+		const tabled = artifacts ? withPluginTable(authored, manifest && {...manifest, release: VERSION}, reader) : authored;
 		if (tabled !== authored) { drifted.push('skills/embed-rapier/SKILL.md'); location('skills/embed-rapier/SKILL.md', authored, tabled); if (!check) await writeFile(skill, tabled); }
 		if (absent !== 'skip' || existsSync(readme)) {
-			const body = tabled.replace(/^---\n[\s\S]*?\n---\n\s*/, '');
+			const body = tabled.replace(/^---\n[\s\S]*?\n---\n\s*/, '').replace(/^(# [^\n]*\n\n)/, (_, title) => title + EMBED_README_HEAD);
 			const current = existsSync(readme) ? await readFile(readme, 'utf8') : '';
 			if (current !== body) { drifted.push('packages/rapier-embed/README.md'); location('packages/rapier-embed/README.md', current, body); if (!check) await writeFile(readme, body); }
 		}
@@ -80,7 +92,7 @@ export async function syncVersion({check = false, absent = 'refuse', root = ROOT
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
 	const check = process.argv.includes('--check');
-	const result = await syncVersion({check});
+	const result = await syncVersion({check, artifacts: !process.argv.includes('--source-only')});
 	console.log(JSON.stringify({law: 'one version', ...result, mode: check ? 'check' : 'write'}));
 	if (check && (result.drifted.length || result.problems.length)) { console.error('version drift: ' + result.drifted.join(', ') + ' do not say ' + VERSION); process.exit(1); }
 }

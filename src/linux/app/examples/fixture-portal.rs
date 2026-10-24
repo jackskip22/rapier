@@ -12,6 +12,7 @@ impl Chooser {
     fn answer(
         &self,
         kind: &str,
+        parent: &str,
         options: HashMap<String, OwnedValue>,
         header: Header<'_>,
         connection: &zbus::Connection,
@@ -37,7 +38,7 @@ impl Chooser {
         let mut log = std::fs::OpenOptions::new()
             .create(true).append(true).open(self.0.join("requests.jsonl")).unwrap();
         writeln!(log, "{}", serde_json::json!({
-            "method": kind, "chosen": chosen,
+            "method": kind, "chosen": chosen, "parent": parent,
             "directory": options.get("directory").and_then(|v| bool::try_from(v).ok()).unwrap_or(false),
             "currentName": options.get("current_name").and_then(|v| <&str>::try_from(v).ok()),
             "currentFolder": options.get("current_folder").and_then(|v| v.try_clone().ok())
@@ -68,18 +69,18 @@ impl Chooser {
 #[zbus::interface(name = "org.freedesktop.portal.FileChooser")]
 impl Chooser {
     fn open_file(
-        &self, _parent: &str, _title: &str, options: HashMap<String, OwnedValue>,
+        &self, parent: &str, _title: &str, options: HashMap<String, OwnedValue>,
         #[zbus(header)] header: Header<'_>,
         #[zbus(connection)] connection: &zbus::Connection,
     ) -> zbus::fdo::Result<OwnedObjectPath> {
-        self.answer("OpenFile", options, header, connection)
+        self.answer("OpenFile", parent, options, header, connection)
     }
     fn save_file(
-        &self, _parent: &str, _title: &str, options: HashMap<String, OwnedValue>,
+        &self, parent: &str, _title: &str, options: HashMap<String, OwnedValue>,
         #[zbus(header)] header: Header<'_>,
         #[zbus(connection)] connection: &zbus::Connection,
     ) -> zbus::fdo::Result<OwnedObjectPath> {
-        self.answer("SaveFile", options, header, connection)
+        self.answer("SaveFile", parent, options, header, connection)
     }
 }
 

@@ -25,11 +25,12 @@ function _rapierPlainLayout() { return readerPreference('layout') === 'plain'; }
 
 function readerParser() {
 	if (md) return md;
-	const markdown = _rapierRenderModule('render-markdown');
-	markdown.initMarkdownIt();
+	const markdownRender = _rapierRenderModule('render-markdown');
+	_rapierRenderModule('render-sanitize')._rapierInstallDocumentSanitizeHooks();
+	markdownRender.initMarkdownIt();
 	globalThis.RapierHtmlBlocks.mountHtmlBlocks(document, {identity: () => reader.generation, source: () => reader.source,
 		imageInfo: url => {const {bytes, codec} = RapierImageAssets.decodeDataImageBytes(url); return {...(codec === 'image/jxl' ? RapierImageAssets.inspectJPEGXL(bytes) : {}), ...RapierImageAssets.imageDimensions(bytes, codec)};}});
-	md = markdown.parser();
+	md = markdownRender.parser();
 	return md;
 }
 

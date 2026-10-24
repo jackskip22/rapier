@@ -48,7 +48,7 @@ import {prefixSymbols} from './runtime-symbols.mjs';
 if (!buildObservationActive()) process.exit(runObservedBuild());
 buildPhase('prepare');
 
-const versionSync = await syncVersion({absent: 'skip'});
+const versionSync = await syncVersion({absent: 'skip', artifacts: false});
 await buildExportAssets();
 
 if (process.argv.includes('--ledger')) {
@@ -210,6 +210,9 @@ const {pack: packedSpans, prepack} = createGroupPacker(packedRecord);
 if (PROFILE === 'full') builtinPlugins(root, prepack).catch(() => {});
 if (PROFILE === 'reader') {
   await (await import('./reader-build.mjs')).buildReader({root, unchecked, toolchainCanonical});
+  buildPhase('gates');
+  await syncVersion({absent: 'skip'});
+  await captureBuildGateOutputs({root, paths: [...VERSIONED_FILES, 'packages/rapier-embed/README.md', 'mcp/render-assets.mjs']});
   await finishBuildReuse({root, profile: PROFILE});
   process.exit(0);
 }

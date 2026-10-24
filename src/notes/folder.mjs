@@ -420,22 +420,24 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		return historyWrites(recorded, {entry, prior, history});
 	};
 	const canonicalProof = (file, id, ledger) => ({file, id, history: 'history/' + manifestName(id), ledger: ledger.sha256});
-	const planCanonicalChange = async (index, {file, current, next, operation, now = clock()}) => {
+	const planCanonicalChange = async (index, {file, current, next, operation, now = clock(), wholeReferences = false}) => {
 		const entry = index.notes[file], path = 'history/' + manifestName(entry.id), prior = await store.read(path);
 		if (prior == null) throw fail('notes_history_unavailable', 'This note has no canonical history. Its bytes were kept.');
 		const proved = parseCanonical(prior, {noteId: entry.id, now, text: current});
 		if (proved.ledger.sha256 !== entry.canonicalHistory) throw fail('notes_history_unavailable', 'The note identity does not prove this history.');
-		const appended = appendCanonical(proved.manifest, {text: next, metadata: proved.metadata, author: canonicalAuthor(), operation, now});
+		const appended = appendCanonical(proved.manifest, {text: next, metadata: proved.metadata, author: canonicalAuthor(), operation, now,
+			...(wholeReferences ? {spans: source => [...attachmentsOf(source), ...recordingsOf(source)].map(row => [row.start, row.end])} : {})});
 		const source = exactBytes(appended.text ?? next);
 		index.notes[file] = {...entry, revision: 'sha256:' + await sha256(source), modified: now, canonicalHistory: appended.ledger.sha256};
 		const writes = await canonicalWrites(appended.manifest, {file, text: next, entry: index.notes[file], prior, now, reason: 'merge'});
 		return {writes, canonical: [canonicalProof(file, entry.id, appended.ledger)]};
 	};
 	const readCanonicalOwned = async (lease, {file, id, checkpoint = false}, history = createHistoryPreparation()) => {
-		const snapshot = await lease.read({bodies: [file]});
+		const snapshot = await lease.readNote?.(file) || await lease.read({bodies: [file]});
 		if (!snapshot.index.notes[file] || id && snapshot.index.notes[file].id !== id || !snapshot.bodies.has(file)) throw fail('notes_changed', 'This note moved or changed.');
 		id = snapshot.index.notes[file].id;
-		const indexBytes = await store.read(NOTES_INDEX_FILE), liveIndex = parseIndex(indexBytes == null ? null : decodeIndex(indexBytes));
+		const indexBytes = await store.read(NOTES_INDEX_FILE);
+		const liveIndex = indexBytes != null && snapshot.indexBytes && sameBytes(indexBytes, snapshot.indexBytes) ? snapshot.index : parseIndex(indexBytes == null ? null : decodeIndex(indexBytes));
 		if (liveIndex.notes[file]?.id !== id || liveIndex.notes[file]?.canonicalHistory !== snapshot.index.notes[file].canonicalHistory) throw fail('notes_changed', 'The note identity changed while it was read.');
 		const body = snapshot.bodies.get(file), path = 'history/' + manifestName(id);
 		let bytes;
@@ -853,11 +855,12 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		if (revivals.size) index.assetRevivals = [...revivals].sort();
 		return index;
 	};
-	const createAudio = (note, mime, bytes, wanted = '', {exact = false} = {}) => owned(async lease => {
+	const createAudio = (note, mime, bytes, wanted = '', {exact = false, guard} = {}) => owned(async lease => {
+		await guard?.();
 		const name = audioName(note, mime, wanted, await store.list('audio'));
 		if (exact && name !== wanted) throw fail('collision', 'The planned recording name is not available in this folder: ' + wanted + '. This recording was not written. Keep the backup and retry Import.');
 		const path = 'audio/' + name, content = await digest(bytes);
-		const snapshot = await lease.transact(({index}) => ({kind: 'recording', index: reviveMedia(index, path, content), writes: [{file: path, bytes, createOnly: true}]}));
+		const snapshot = await lease.transact(({index}) => ({kind: 'recording', index: reviveMedia(index, path, content), writes: [{file: path, bytes, createOnly: true}]}), {admissionGuard: guard});
 		const rescued = snapshot.kept?.find(row => row.file === path), landed = rescued?.name || path;
 		if (snapshot.dropped?.includes(path) && !rescued || await digest(await store.read(landed)) !== content)
 			throw fail('verify', 'The recording copy could not be verified. Keep the original and retry saving.');

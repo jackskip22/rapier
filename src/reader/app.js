@@ -12,6 +12,7 @@ const reader = {
 	source: '', filename: 'untitled.md', docKind: 'markdown', codeLang: '', title: '', bom: false,
 	loaded: false, unshown: false, generation: 0, render: 0, flowchartTried: -1, layout: null, hostTheme: '', hostAccent: '',
 	folded: new Set(), allowedRemote: false,
+	base: '',
 	find: {ranges: [], current: 0, overflow: false},
 };
 
@@ -108,6 +109,7 @@ function readerFragment() {
 	if (element) readerScrollTo(element);
 }
 
+const READER_MAX_NESTING = 400;
 async function readerRenderDocument() {
 	const generation = ++reader.render;
 	const host = $('editor-blocks');
@@ -116,33 +118,54 @@ async function readerRenderDocument() {
 	if (reader.docKind === 'markdown' && READER_FLOWCHART.test(reader.source)) await readerFlowchart();
 	if (generation !== reader.render) return false;
 	readerParser();
-	const markdown = _rapierRenderModule('render-markdown'), renderer = _rapierRenderModule('render');
+	const markdownRender = _rapierRenderModule('render-markdown'), renderer = _rapierRenderModule('render');
 	let styled = null;
 	reader.unshown = false;
+	const streaming = reader.source.length > READER_STREAM_CHARS;
+	const work = streaming ? {yield: readerTurn, check() { if (generation !== reader.render) throw Object.assign(new Error('replaced'), {name: 'AbortError'}); }} : null;
 	try {
-		const semantic = markdown._rapierRenderSemanticRoot(reader.source, metadata, {imagePresentation: true});
+		const semantic = streaming ? await markdownRender._rapierRenderSemanticRootAsync(reader.source, metadata, {imagePresentation: true, maxNesting: READER_MAX_NESTING, closeDetails: true, work})
+			: markdownRender._rapierRenderSemanticRoot(reader.source, metadata, {imagePresentation: true, maxNesting: READER_MAX_NESTING, closeDetails: true});
 		if (_rapierPlainLayout()) _rapierStripPlainLayoutFacts(semantic);
 		for (const diagram of semantic.querySelectorAll('.diagram-block[data-diagram-src]')) await _rapierFillDiagram(diagram, true);
 		if (generation !== reader.render) return false;
-		styled = renderer._rapierProjectStyledRoot(semantic, {metadata, print: false, sourceCode: false, baseName: readerAnchorBase()});
+		const options = {metadata, print: false, sourceCode: false, baseName: readerAnchorBase()};
+		styled = streaming ? await renderer._rapierProjectStyledRootAsync(semantic, {...options, work}) : renderer._rapierProjectStyledRoot(semantic, options);
 		renderer._rapierAnnotateExportBoxPolygons(styled);
+		readerInertControls(styled);
+		readerPlaceRelativePictures(styled);
 	} catch (error) {
+		if (generation !== reader.render) return false;
 		try { console.error('[rapier-reader] could not show the document', error); } catch (_) {}
 		readerToast('Couldn’t show this document.', 'error');
-		if (generation === reader.render) reader.unshown = true;
+		reader.unshown = true;
 		return false;
 	}
 	if (generation !== reader.render) return false;
 	const focusInside = host.contains(document.activeElement);
 	reader.layout?.destroy({documentChanged: true});
 	reader.layout = null;
-	host.replaceChildren(...styled.childNodes);
-	for (const image of host.querySelectorAll('img[data-rapier-image-geometry]')) _rapierRenderModule('render-markdown')._rapierApplyImageGeometry(image);
-	for (const input of host.querySelectorAll('input[type="checkbox"]')) { input.disabled = true; input.removeAttribute('title'); }
-	for (const link of host.querySelectorAll('a[href]')) if (/^https?:/i.test(link.getAttribute('href'))) { link.target = '_blank'; link.rel = 'noopener noreferrer'; }
+	const blocks = [...styled.childNodes];
+	let at = streaming ? readerFirstScreen(blocks) : blocks.length;
+	const first = document.createDocumentFragment();
+	for (let index = 0; index < at; index++) first.append(blocks[index]);
+	host.replaceChildren(first);
+	readerPrepareBlocks(host);
 	readerDocumentStyle();
 	readerShapeOverflow(host);
 	readerFoldControls();
+	for (let size = READER_STREAM_PART * 4; at < blocks.length; size *= 2) {
+		await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
+		if (generation !== reader.render) return false;
+		const part = document.createDocumentFragment();
+		for (let chars = 0; at < blocks.length && chars < size;) { chars += blocks[at].textContent.length; part.append(blocks[at++]); }
+		readerPrepareBlocks(part);
+		readerWrapOverflow(part);
+		globalThis.RapierMath?.observe(part);
+		host.append(part);
+		if (reader.folded.size) readerApplyFolds();
+	}
+	if (streaming) readerFoldControls();
 	if (!_rapierPlainLayout()) {
 		const wraps = [...host.querySelectorAll('p[data-md-layout]')].some(element => ['around', 'box', 'behind', 'front'].includes(globalThis.RapierMarkdownLayout.parseLayoutAttribute(element.getAttribute('data-md-layout'))?.wrap)) ||
 			[...host.querySelectorAll('img[data-rapier-image-layout]')].some(image => globalThis.RapierMarkdownLayout.parseLayoutAttribute(image.getAttribute('data-rapier-image-layout'))?.rotate);
@@ -152,6 +175,35 @@ async function readerRenderDocument() {
 	readerFindRun(true);
 	if (focusInside) readerRecoverFocus();
 	return true;
+}
+
+const READER_STREAM_CHARS = 1 << 20, READER_STREAM_PART = 16384;
+const readerTurns = new MessageChannel();
+const readerTurn = () => new Promise(resolve => { readerTurns.port1.addEventListener('message', resolve, {once: true}); readerTurns.port1.start(); readerTurns.port2.postMessage(0); });
+function readerFirstScreen(blocks) {
+	let at = 0;
+	for (let chars = 0; at < blocks.length && chars < READER_STREAM_PART; at++) chars += blocks[at].textContent.length;
+	return Math.max(1, at);
+}
+const readerRelativeAddress = value => !!value && !/^[a-z][a-z0-9+.-]*:/i.test(value) && !/^[\\/]{2}/.test(value) && !value.startsWith('#');
+function readerPlaceRelativePictures(root) {
+	if (!reader.base && location.protocol === 'file:') return;
+	for (const image of root.querySelectorAll('img[src]')) {
+		const src = image.getAttribute('src').trim();
+		if (!readerRelativeAddress(src)) continue;
+		if (reader.base) image.setAttribute('src', new URL(src, reader.base).href);
+		else image.removeAttribute('src');
+		image.removeAttribute('srcset');
+	}
+}
+function readerInertControls(root) {
+	for (const control of root.querySelectorAll('button,select,textarea,input:not([type="checkbox"])'))
+		if (![...control.attributes].some(attribute => attribute.name.startsWith('data-rapier')) && !/\brapier-/.test(control.className)) control.inert = true;
+}
+function readerPrepareBlocks(root) {
+	for (const image of root.querySelectorAll('img[data-rapier-image-geometry]')) _rapierRenderModule('render-markdown')._rapierApplyImageGeometry(image);
+	for (const input of root.querySelectorAll('input[type="checkbox"]')) { input.disabled = true; input.removeAttribute('title'); }
+	for (const link of root.querySelectorAll('a[href]')) if (/^https?:/i.test(link.getAttribute('href'))) { link.target = '_blank'; link.rel = 'noopener noreferrer'; }
 }
 
 const READER_FLOWCHART = /^ {0,3}(?:`{3,}|~{3,})[ \t]*mermaid[^\n]*\n(?:[ \t]*(?:%%[^\n]*)?\n)*[ \t]*(?:flowchart|graph)\b/im;
@@ -250,6 +302,10 @@ async function readerCopyFence(button) {
 
 function readerShapeOverflow(host) {
 	readerOverflow.disconnect();
+	readerWrapOverflow(host);
+	globalThis.RapierMath?.observe(host);
+}
+function readerWrapOverflow(host) {
 	for (const surface of host.querySelectorAll('.table-scroll-wrap, pre, .math-display-wrap, .diagram-block')) {
 		if (surface.closest('.rapier-hscroll') || surface.tagName === 'PRE' && surface.closest('.diagram-block')) continue;
 		const kind = surface.classList.contains('table-scroll-wrap') ? 'table' : surface.classList.contains('math-display-wrap') ? 'math' : surface.classList.contains('diagram-block') ? 'diagram' : 'code';
@@ -263,7 +319,6 @@ function readerShapeOverflow(host) {
 		surface.addEventListener('scroll', () => requestAnimationFrame(() => readerUpdateOverflow(shell)), {passive: true});
 	}
 	for (const shell of host.querySelectorAll('.rapier-hscroll')) { readerOverflow.observe(shell); readerUpdateOverflow(shell); }
-	globalThis.RapierMath?.observe(host);
 }
 
 
@@ -595,7 +650,10 @@ function readerFindRun(keep) {
 	const skipped = node => { const out = node.parentElement?.closest('script,style,.diagram-cache[hidden],[hidden],.section-fold-btn,.rapier-ink-layer'); return out && !(out.parentElement === host && out.matches('[hidden]:not(.diagram-cache,.rapier-ink-layer)')); };
 	const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT, {acceptNode: node => skipped(node) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT});
 	for (let node; (node = walker.nextNode());) { nodes.push({node, start: text.length}); text += node.data; }
-	const escape = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	const lang = host.lang, original = text.length, {folded, origin} = readerFindFold(text, lang);
+	text = folded;
+	const back = (at, end) => !origin ? at : at < text.length ? origin[at] : end ? original : origin[at];
+	const escape = value => readerFindFold(value, lang).folded.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 	const separators = String.raw`[\t  _.:/\\\-‐-―]+`;
 	const hits = pattern => {
 		const found = [];
@@ -612,7 +670,8 @@ function readerFindRun(keep) {
 	reader.find.overflow = found.length > READER_FIND_LIMIT;
 	found.length = Math.min(found.length, READER_FIND_LIMIT);
 	const where = offset => { let low = 0, high = nodes.length - 1; while (low < high) { const middle = (low + high + 1) >> 1; if (nodes[middle].start <= offset) low = middle; else high = middle - 1; } return nodes[low]; };
-	reader.find.ranges = found.map(([start, end]) => {
+	reader.find.ranges = found.map(([foldedStart, foldedEnd]) => {
+		const start = back(foldedStart), end = Math.max(back(foldedEnd, true), back(foldedEnd - 1) + 1);
 		const from = where(start), to = where(end - 1), range = new Range();
 		range.setStart(from.node, start - from.start);
 		range.setEnd(to.node, end - to.start);
@@ -624,6 +683,46 @@ function readerFindRun(keep) {
 	reader.find.current = kept >= 0 ? kept : keep ? Math.min(previous, Math.max(0, merged.ranges.length - 1)) : 0;
 	readerFindPaint(!keep);
 	readerPictureFind.schedule();
+}
+
+// lowered by the document's language (Turkish İ and I), and dotless ı reads as i. So "café" finds an NFD "café" and "cafe", "istanbul"
+const READER_FIND_MARKS = /\p{M}/gu, readerFindFolds = {lang: null, characters: new Map(), text: null, result: null};
+function readerFindFold(text, lang) {
+	let locale = lang || undefined;
+	try { 'i'.toLocaleLowerCase(locale); } catch (_) { locale = undefined; }
+	if (!/[^\x00-\x7f]/.test(text)) return {folded: text.toLowerCase(), origin: null};
+	const cache = readerFindFolds;
+	if (cache.lang !== (locale || '')) { cache.lang = locale || ''; cache.characters.clear(); cache.text = cache.result = null; }
+	if (cache.text === text) return cache.result;
+	const fold = character => {
+		let piece = cache.characters.get(character);
+		if (piece === undefined) cache.characters.set(character, piece = character.normalize('NFKD').replace(READER_FIND_MARKS, '').toLocaleLowerCase(locale).normalize('NFKD').replace(READER_FIND_MARKS, '').replace(/ı/g, 'i'));
+		return piece;
+	};
+	let origin = new Int32Array(text.length + 16), folded = '', length = 0, run = 0;
+	const put = (piece, at) => {
+		if (length + piece.length > origin.length) { const grown = new Int32Array(Math.max(origin.length * 2, length + piece.length)); grown.set(origin); origin = grown; }
+		for (let index = 0; index < piece.length; index++) origin[length++] = at;
+	};
+	for (let at = 0; at < text.length;) {
+		const code = text.charCodeAt(at);
+		if (code < 0x80) {
+			run = at;
+			while (at < text.length && text.charCodeAt(at) < 0x80) at++;
+			const piece = text.slice(run, at).toLowerCase();
+			if (length + piece.length > origin.length) { const grown = new Int32Array(Math.max(origin.length * 2, length + piece.length)); grown.set(origin); origin = grown; }
+			for (let index = 0; index < piece.length; index++) origin[length++] = run + index;
+			folded += piece;
+			continue;
+		}
+		const width = code >= 0xd800 && code < 0xdc00 && at + 1 < text.length ? 2 : 1, piece = fold(text.slice(at, at + width));
+		put(piece, at);
+		folded += piece;
+		at += width;
+	}
+	const result = {folded, origin: origin.subarray(0, length)};
+	if (text.length > 256) { cache.text = text; cache.result = result; }
+	return result;
 }
 
 function readerFindPaint(reveal) {
@@ -685,7 +784,7 @@ function readerOpenDialog(overlay, panelSelector) {
 	if (readerDialogs.some(row => row.overlay === overlay)) return;
 	_rapierUiRaise(overlay);
 	const panel = overlay.querySelector(panelSelector || '.settings-panel') || overlay;
-	const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+	const active = document.activeElement, opener = active instanceof HTMLElement && active !== document.body ? active : null;
 	const trap = event => _rapierTrapModalTab(event, panel);
 	overlay.addEventListener('keydown', trap);
 	readerDialogs.push({overlay, panel, opener, trap});
@@ -710,6 +809,7 @@ function readerCloseDialog(overlay, restoreFocus = true) {
 	const top = readerDialogs.at(-1);
 	if (row.opener?.isConnected && !row.opener.closest('[hidden],[inert]') &&
 			(!top || top.panel.contains(row.opener)) && readerFocusHere(row.opener)) return;
+	if (!row.opener && !top && reader.loaded && readerFocusHere($('editor-blocks'))) return;
 	readerRecoverFocus();
 }
 
@@ -725,9 +825,21 @@ function readerCloseTop() {
 	return true;
 }
 
-// one on top, when it is a question Escape may answer (licences, privacy, deleting a plug-in). A plug-in prompt is answered with its own buttons.
+const READER_PAGE_KEYS = {PageDown: 0.875, PageUp: -0.875, ' ': 0.875, ArrowDown: 40, ArrowUp: -40, Home: -Infinity, End: Infinity};
+function readerPageKeys(event) {
+	const step = READER_PAGE_KEYS[event.key], active = document.activeElement;
+	if (step === undefined || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || readerDialogs.length || !reader.loaded ||
+			active && active !== document.body && active !== document.documentElement) return;
+	const host = $('editor-blocks'), back = event.key === ' ' && event.shiftKey ? -1 : 1;
+	event.preventDefault();
+	if (Math.abs(step) === Infinity) host.scrollTop = step > 0 ? host.scrollHeight : 0;
+	else host.scrollBy({top: back * (Math.abs(step) < 1 ? step * host.clientHeight : step)});
+}
+
+// one on top, when it is a question Escape may answer (licences, privacy, deleting a plug-in). On a plug-in prompt, Escape answers "not now".
 function readerEscape() {
 	const open = id => readerDialogs.some(row => row.overlay.id === id);
+	if (READER_ANSWER_ONLY.has(readerDialogs.at(-1)?.overlay.id)) return readerCloseTop();
 	const top = ['math-plugin-overlay', 'mermaid-plugin-overlay', 'ocr-plugin-overlay', 'pdf-plugin-overlay', 'plugin-delete-overlay', 'copy-overlay', 'share-overlay', 'licenses-overlay', 'privacy-overlay', 'navigator-overlay', 'settings-overlay'].find(open);
 	if (!top) return false;
 	let closed = false;
@@ -872,7 +984,7 @@ function readerPlugin(key, label, noun) {
 			$(key + '-plugin-error').hidden = status !== 'error';
 			$(key + '-plugin-error').textContent = 'Last attempt failed: ' + (this.error || 'unknown error');
 			$(key + '-plugin-install').disabled = this.busy();
-			$(key + '-plugin-install').textContent = status === 'downloading' ? 'downloading…' : status === 'installing' ? 'installing…' : 'install now';
+			$(key + '-plugin-install').textContent = status === 'downloading' ? 'downloading…' : status === 'installing' ? 'installing…' : status === 'error' ? 'retry' : 'install now';
 		},
 	};
 	return view;
@@ -1206,8 +1318,8 @@ function readerRenderPandoc() {
 
 function readerPlainText() {
 	if (reader.docKind !== 'markdown') return reader.source;
-	const markdown = _rapierRenderModule('render-markdown'), root = markdown._rapierRenderSemanticRoot(reader.source, readerMetadata());
-	return _rapierRenderModule('render-markdown')._rapierPortablePlainText(_rapierRenderModule('render-markdown')._rapierProjectPortableRoot(markdown._rapierHeldPicturesAsWords(root), {baseName: readerBaseName()}));
+	const markdownRender = _rapierRenderModule('render-markdown'), root = markdownRender._rapierRenderSemanticRoot(reader.source, readerMetadata());
+	return _rapierRenderModule('render-markdown')._rapierPortablePlainText(_rapierRenderModule('render-markdown')._rapierProjectPortableRoot(markdownRender._rapierHeldPicturesAsWords(root), {baseName: readerBaseName()}));
 }
 
 async function readerCopy(kind) {
@@ -1378,10 +1490,21 @@ async function readerOpenFile(file, opening = {generation: reader.generation}) {
 			const text = assets.appendAssetText('![' + alt + '][' + asset.label + ']', asset).source;
 			return readerCommitOpen(text, 'untitled.md', opening);
 		}
-		const record = await RapierTextCodec.readDocumentRecord(file), text = (record.bom ? '\ufeff' : '') + record.text;
+		const record = await readerUtf16Record(file) || await RapierTextCodec.readDocumentRecord(file), text = (record.bom ? '\ufeff' : '') + record.text;
 		const carried = /\.html?$/i.test(file.name) ? await readerCarriedDocument(text, file.name) : null;
 		return await readerCommitOpen(carried ? carried.source : text, carried ? carried.filename : file.name, opening, carried?.kind);
 	} catch (error) { if (error?.code !== 'document_unshowable') (console.error(error), readerToast('Couldn’t open this file.', 'error')); return false; }
+}
+
+async function readerUtf16Record(file) {
+	const head = new Uint8Array(await file.slice(0, 2).arrayBuffer());
+	const encoding = head[0] === 0xff && head[1] === 0xfe ? 'utf-16le' : head[0] === 0xfe && head[1] === 0xff ? 'utf-16be' : '';
+	if (!encoding) return null;
+	if (file.size > 2 * RapierTextCodec.maxDocumentBytes) throw new Error('document is too large for Rapier (max 64 MiB)');
+	let text;
+	try { text = new TextDecoder(encoding, {fatal: true}).decode(await file.arrayBuffer()); }
+	catch (_) { throw new Error('document is not plain UTF-16 text'); }
+	return {text: RapierTextCodec.normalizeDocument(text), bom: false};
 }
 
 async function readerOpenLicenses() {
@@ -1480,7 +1603,7 @@ function readerBind() {
 		}
 	});
 	$('editor-blocks').addEventListener('click', readerSeekReading);
-	$('file-input').addEventListener('change', event => { const [file] = event.target.files; event.target.value = ''; void readerOpenFile(file); });
+	$('file-input').addEventListener('change', event => { const [file] = event.target.files; event.target.value = ''; reader.base = ''; void readerOpenFile(file); });
 	$('find-input').addEventListener('input', () => readerFindRun());
 	$('find-input').addEventListener('keydown', event => {
 		if (event.key === 'Enter') { event.preventDefault(); readerFindStep(event.shiftKey ? -1 : 1); }
@@ -1490,8 +1613,9 @@ function readerBind() {
 	addEventListener('keydown', event => {
 		if (event.key === 'Escape' && !event.defaultPrevented && !event.isComposing && readerEscape()) { event.preventDefault(); return; }
 		if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'f' && !readerDialogs.length) { event.preventDefault(); readerFindOpen(true); }
+		else readerPageKeys(event);
 	});
-	addEventListener('hashchange', readerFragment);
+	addEventListener('hashchange', () => { if (/^#src=/.test(location.hash)) void readerOpenFromHash(); else readerFragment(); });
 	addEventListener('beforeprint', readerPrintPrepare);
 	addEventListener('dragover', event => {
 		if (_rapierEmbed.active || !Array.from(event.dataTransfer?.types || []).includes('Files')) return;
@@ -1502,11 +1626,30 @@ function readerBind() {
 		const file = event.dataTransfer?.files?.[0];
 		if (_rapierEmbed.active || !file) return;
 		event.preventDefault();
+		reader.base = '';
 		void readerOpenFile(file);
 	});
 	matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', () => readerApplyView());
 	for (const key of ['math', 'mermaid']) addEventListener('rapier:' + key + 'plugin', event => (key === 'math' ? _rapierUiMath : _rapierUiDiagram).apply(event.detail || {}));
 	for (const [key, view] of [['math', _rapierUiMath], ['mermaid', _rapierUiDiagram]]) if (_rapierProviders[key]) { view.status = _rapierProviders[key].status || 'checking'; view.error = _rapierProviders[key].error || null; }
+}
+
+async function readerOpenFromHash() {
+	if (_rapierEmbed.active) return;
+	const query = new URLSearchParams(location.search), asked = query.get('src') ?? query.get('url');
+	const match = /^#src=(.+)$/.exec(location.hash) || (asked ? [null, encodeURIComponent(asked)] : null);
+	if (!match) return;
+	const say = words => readerToast(words, 'error');
+	let url;
+	try { url = new URL(decodeURIComponent(match[1]), location.href); } catch (_) { say('the document address in the link is not valid'); return; }
+	if (location.origin === 'null' || url.origin !== location.origin) { say('only a document on this page’s own address opens from a link'); return; }
+	try {
+		const response = await fetch(url.href, {credentials: 'omit', referrerPolicy: 'no-referrer'});
+		if (!response.ok) { say('the document could not be fetched (' + response.status + ')'); return; }
+		const name = decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() || '') || 'document.md';
+		reader.base = url.href;
+		await readerOpenFile(new File([await response.blob()], name, {type: response.headers.get('content-type') || ''}));
+	} catch (error) { say('the document could not be fetched'); }
 }
 
 function readerStart() {
@@ -1523,6 +1666,7 @@ function readerStart() {
 	$('settings-share-btn').hidden = !_rapierEmbedFeatureAllowed('share');
 	$('rapier-first-screen')?.classList.add('rapier-first-ready');
 	_rapierEmbedStart();
+	void readerOpenFromHash();
 }
 
 readerStart();

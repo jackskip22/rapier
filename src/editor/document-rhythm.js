@@ -64,6 +64,7 @@ function _rapierReadBlockRhythm(wrapper, readDiv) {
 
 function _rapierBlockSpacing(block) {
 	if (!block || !['paragraph', 'heading'].includes(block.type)) return {};
+	if (!String(block.raw || '').includes('<!--md-layout:v1')) return {};
 	const raw = String(block.raw || '').replace(/\s+$/, '').replace(/\r?\n[ \t]*(?:=+|-+)[ \t]*$/, '').replace(/[ \t]+#+[ \t]*$/, '');
 	const last = raw.slice(raw.lastIndexOf('\n') + 1);
 	const marker = !_rapierListItemTree(raw).list && /<!--md-layout:v1[ \t][^\r\n]*?-->$/.exec(last);

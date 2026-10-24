@@ -103,7 +103,8 @@ export function textTargets(text) {
 export function fencedBlocks(text, all = false) {
   if (!text.includes('```') && !text.includes('~~~')) return [];
   const result = []; let offset = 0, line = 0;
-  const lineEnd = start => {const next = text.indexOf('\n', start); return next < 0 ? text.length : next + 1;};
+  const lineBreak = /\r\n|\r|\n/g;
+  const lineEnd = start => {lineBreak.lastIndex = start; return lineBreak.exec(text) ? lineBreak.lastIndex : text.length;};
   while (offset < text.length) {
     const openingEnd = lineEnd(offset), openingLine = ++line;
     const opening = /^( {0,3})(`{3,}|~{3,})([^\r\n]*)\r?\n?$/.exec(text.slice(offset, openingEnd));
@@ -124,7 +125,7 @@ export function fencedBlocks(text, all = false) {
         if (object?.marker) {end = next; line++;}
         const id = attrs.id || 'html-line-' + openingLine;
         if (result.some(row => row.id === id)) throw new TypeError('Block ids must be unique.');
-        result.push({id, kind: 'html', attrs, body: text.slice(bodyStart, bodyEnd).replace(/\r?\n$/, ''), start, end, text: text.slice(start, end)});
+        result.push({id, kind: 'html', attrs, body: text.slice(bodyStart, bodyEnd).replace(/(?:\r\n|\r|\n)$/, ''), start, end, text: text.slice(start, end)});
       }
     }
     if (/^rapier-(draw|water|paint|comment|svg)(?:\s|$)/.test(info)) {
@@ -139,13 +140,13 @@ export function fencedBlocks(text, all = false) {
       if (result.some(row => row.id === attrs.id)) throw new TypeError('Rapier block ids must be unique.');
       if (!closed) throw new TypeError('Close the Rapier block fence.');
       const next = lineEnd(end), layout = kind !== 'rapier-comment' && /^(<!--md-layout:v1 [^>\r\n]{1,180}-->)[ \t]*\r?\n?$/.exec(text.slice(end, next))?.[1];
-      const bodyText = text.slice(bodyStart, bodyEnd).replace(/\r?\n$/, '');
+      const bodyText = text.slice(bodyStart, bodyEnd).replace(/(?:\r\n|\r|\n)$/, '');
       if (layout) {end = next; line++;}
       result.push({id: attrs.id, kind, attrs, body: bodyText, start, end, text: text.slice(start, end), ...(layout ? {layout} : {})});
     }
     if (all && !result.some(row => row.start === start) && !/^rapier-(draw|water|paint|comment|svg)(?:\s|$)/.test(info) && closed) {
       const id = /(?:^|[\s{])#([A-Za-z][\w-]*)|(?:^|\s)id=([A-Za-z][\w-]*)/.exec(info);
-      if (id) {const value = id[1] || id[2]; if (result.some(row => row.id === value)) throw new TypeError('Block ids must be unique.'); result.push({id:value,kind:info.split(/\s/,1)[0],attrs:{id:value},body:text.slice(bodyStart,bodyEnd).replace(/\r?\n$/, ''),start,end,text:text.slice(start,end)});}
+      if (id) {const value = id[1] || id[2]; if (result.some(row => row.id === value)) throw new TypeError('Block ids must be unique.'); result.push({id:value,kind:info.split(/\s/,1)[0],attrs:{id:value},body:text.slice(bodyStart,bodyEnd).replace(/(?:\r\n|\r|\n)$/, ''),start,end,text:text.slice(start,end)});}
     }
     offset = end;
   }

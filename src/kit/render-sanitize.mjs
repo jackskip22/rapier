@@ -290,6 +290,23 @@ function diagramLabelContained(node) {
 }
 
 function _rapierInstallSanitizeHooks() {
+	_rapierInstallDocumentSanitizeHooks();
+	DOMPurify.addHook('uponSanitizeElement', node => {
+		if (_rapierSanitizeRuntime.context !== 'paste' || !node || !/^(?:P|LI|H[1-6]|SPAN)$/.test(node.nodeName)) return;
+		node.removeAttribute('data-rapier-word-level');
+		node.removeAttribute('data-rapier-word-marker');
+		const style = node.getAttribute('style');
+		if (!style || !/mso-list/i.test(style)) return;
+		const spec = globalThis.RapierMarkdownSpec;
+		if (!spec) return;
+		const {wordListLevel, wordListIsMarker} = spec;
+		const level = /^(?:P|LI|H[1-6])$/.test(node.nodeName) ? wordListLevel(style) : 0;
+		if (level) node.setAttribute('data-rapier-word-level', String(level));
+		else if (node.nodeName === 'SPAN' && wordListIsMarker(style)) node.setAttribute('data-rapier-word-marker', '1');
+	});
+}
+
+function _rapierInstallDocumentSanitizeHooks() {
 	DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
 		if (!/^(?:src|href|xlink:href)$/i.test(data.attrName || '')) return;
 		const compact = String(data.attrValue || '').replace(/[\u0000-\u0020\u00a0]+/g, '');
@@ -321,19 +338,6 @@ function _rapierInstallSanitizeHooks() {
 			node._rapierHeldBack = true;
 			node.setAttribute('data-rapier-remote-src', href);
 		}
-	});
-	DOMPurify.addHook('uponSanitizeElement', node => {
-		if (_rapierSanitizeRuntime.context !== 'paste' || !node || !/^(?:P|LI|H[1-6]|SPAN)$/.test(node.nodeName)) return;
-		node.removeAttribute('data-rapier-word-level');
-		node.removeAttribute('data-rapier-word-marker');
-		const style = node.getAttribute('style');
-		if (!style || !/mso-list/i.test(style)) return;
-		const spec = globalThis.RapierMarkdownSpec;
-		if (!spec) return;
-		const {wordListLevel, wordListIsMarker} = spec;
-		const level = /^(?:P|LI|H[1-6])$/.test(node.nodeName) ? wordListLevel(style) : 0;
-		if (level) node.setAttribute('data-rapier-word-level', String(level));
-		else if (node.nodeName === 'SPAN' && wordListIsMarker(style)) node.setAttribute('data-rapier-word-marker', '1');
 	});
 	DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
 		const value = String(data.attrValue == null ? '' : data.attrValue);
@@ -543,7 +547,7 @@ function _rapierVerifyRasterBytes(bytes, mime) {
 	return false;
 }
 
-  return {_rapierVerifyRasterBytes, _rapierInstallSanitizeHooks, sanitizeRapierHtml,
+  return {_rapierVerifyRasterBytes, _rapierInstallSanitizeHooks, _rapierInstallDocumentSanitizeHooks, sanitizeRapierHtml,
     sanitizeRapierFragment: typeof DOMPurify?.sanitize === 'function' ? sanitizeRapierFragment : undefined,
     diagramLabelStyle, escapeRapierHtmlText, _rapierChromeOwnsId, _rapierLinkDestinationToConfirm, _rapierSafeRasterDataUrl, _rapierCssPresentationIsRemote, _rapierRemoteSubresourceOrigin, _rapierStyleWithoutRemoteUrls, _rapierStylesheetWithoutRemoteUrls, _rapierDropRemoteRules};
 }

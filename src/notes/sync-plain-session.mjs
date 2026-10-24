@@ -2,7 +2,7 @@
 import {syncPlainFiles} from './sync-plain.mjs';
 import {plainConflicts, writePlainNote} from './sync-plain-conflicts.mjs';
 import {readSyncState, readSyncStateBytes, updateSyncState} from './sync-state.mjs';
-import {syncPlainMedia} from './sync-plain-media.mjs';
+import {syncPlainMedia, plainMediaChoice, resolvePlainMedia} from './sync-plain-media.mjs';
 import {syncPlainCards} from './sync-plain-cards.mjs';
 import {withWikiPictures} from './plain-wiki-pictures.mjs';
 
@@ -81,6 +81,23 @@ export function createPlainSession({folder, store: given, provider, place, devic
 			return {...state, plain: {...state.plain, media: value}};
 		}, {guard}); },
 	};
+	const chooseMedia = (target, resolve = false) => {
+		if (running) return Promise.reject(fail('busy', 'let the current sync finish.'));
+		target = structuredClone(target);
+		const ticket = epoch;
+		running = (async () => {
+			const saved = (await readSyncStateBytes(folder.store)).state.plain;
+			if (!saved || saved.provider !== record.provider || saved.place !== record.place || saved.destination !== record.destination ||
+				boundConnectionId !== undefined && saved.connectionId !== boundConnectionId || resolve && target.connectionId !== saved.connectionId)
+				throw fail('connection', 'the plain-files connection changed.');
+			const guard = connectionGuard(ticket, saved); await guard();
+			await store.resume?.(); await guard();
+			const remote = guarded(store, guard);
+			if (resolve) return resolvePlainMedia({folder, store: remote, choice: target, guard, now});
+			return {...await plainMediaChoice({...target, folder, store: remote, guard}), connectionId: saved.connectionId};
+		})();
+		return running.finally(() => { running = null; transports.clear(); transports.add(store); });
+	};
 	return Object.freeze({
 		record,
 		async connect() {
@@ -150,7 +167,9 @@ export function createPlainSession({folder, store: given, provider, place, devic
 			await store.pause?.();
 		},
 		conflicts() { const ticket = epoch; return plainConflicts(folder, () => active(ticket)); },
+		mediaChoice(target) { return chooseMedia(target); },
 		resolve(choice) {
+			if (choice?.kind === 'media') return chooseMedia(choice, true);
 			if (running) return Promise.reject(fail('busy', 'let the current sync finish.'));
 			const ticket = epoch;
 			running = (async () => {

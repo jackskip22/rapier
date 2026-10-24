@@ -31,11 +31,11 @@ pub const NO_CHOOSER: &str =
 
 /// A path, '' when the person cancelled, or an error when no portal answers: never a silent cancel.
 /// The chooser opens in `start` (the portal's current_folder).
-pub fn pick(save: bool, name: &str, title: &str, directory: bool, start: &std::path::Path) -> Result<String, String> {
-    pick_inner(save, name, title, directory, start).map_err(|_| NO_CHOOSER.to_string())
+pub fn pick(save: bool, name: &str, title: &str, directory: bool, start: &std::path::Path, parent: &str) -> Result<String, String> {
+    pick_inner(save, name, title, directory, start, parent).map_err(|_| NO_CHOOSER.to_string())
 }
 
-fn pick_inner(save: bool, name: &str, title: &str, directory: bool, start: &std::path::Path) -> zbus::Result<String> {
+fn pick_inner(save: bool, name: &str, title: &str, directory: bool, start: &std::path::Path, parent: &str) -> zbus::Result<String> {
     let connection = Connection::session()?;
     let sender = connection
         .unique_name()
@@ -43,13 +43,15 @@ fn pick_inner(save: bool, name: &str, title: &str, directory: bool, start: &std:
         .unwrap_or_default();
     let token = format!("rapier{}", crate::random_hex(8));
     let handle = format!("/org/freedesktop/portal/desktop/request/{sender}/{token}");
-    let request = Proxy::new(
-        &connection,
-        "org.freedesktop.portal.Desktop",
-        handle.as_str(),
-        "org.freedesktop.portal.Request",
-    )?;
-    let mut responses = request.receive_signal("Response")?;
+    // Subscribed before the call, so an answer can never come first. The signal is waited for on a thread of its own, and
+    // the Request object is checked while we wait (below).
+    let rule = zbus::MatchRule::builder()
+        .msg_type(zbus::message::Type::Signal)
+        .interface("org.freedesktop.portal.Request")?
+        .member("Response")?
+        .path(handle.as_str())?
+        .build();
+    let mut responses = zbus::blocking::MessageIterator::for_match_rule(rule, &connection, Some(1))?;
     let mut options: HashMap<&str, Value> = HashMap::new();
     options.insert("handle_token", Value::from(token.as_str()));
     options.insert("modal", Value::from(true));
@@ -71,12 +73,38 @@ fn pick_inner(save: bool, name: &str, title: &str, directory: bool, start: &std:
         "/org/freedesktop/portal/desktop",
         "org.freedesktop.portal.FileChooser",
     )?;
-    let _: OwnedObjectPath = chooser.call(
+    let request: OwnedObjectPath = chooser.call(
         if save { "SaveFile" } else { "OpenFile" },
-        &("", title, options),
+        &(parent, title, options),
     )?;
-    let Some(message) = responses.next() else {
-        return Ok(String::new());
+    let (answer, answered) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = answer.send(responses.next());
+    });
+    let message = loop {
+        match answered.recv_timeout(std::time::Duration::from_secs(2)) {
+            Ok(Some(Ok(message))) => break message,
+            Ok(_) => return Ok(String::new()),
+            Err(_) => {
+                // The person may browse for minutes; but a Request the portal no longer has (its backend died or showed
+                // nothing) never answers, and that is told, never left silent.
+                // A portal that does not answer at all (hung, or restarting) is as gone as a Request it no longer has.
+                let (asked, replied) = std::sync::mpsc::channel();
+                let (peer, path) = (connection.clone(), request.to_string());
+                std::thread::spawn(move || {
+                    let _ = asked.send(Proxy::new(&peer, "org.freedesktop.portal.Desktop", path.as_str(), "org.freedesktop.DBus.Introspectable")
+                        .and_then(|p| p.call::<_, _, String>("Introspect", &()))
+                        .is_ok());
+                });
+                let alive = replied.recv_timeout(std::time::Duration::from_secs(3)).unwrap_or(false);
+                if !alive {
+                    match answered.recv_timeout(std::time::Duration::from_millis(500)) {
+                        Ok(Some(Ok(message))) => break message,
+                        _ => return Err(zbus::Error::Failure("the file chooser went away".into())),
+                    }
+                }
+            }
+        }
     };
     let (code, results): (u32, HashMap<String, OwnedValue>) = message.body().deserialize()?;
     if code != 0 {
@@ -122,4 +150,52 @@ pub fn tell(summary: &str, body: &str) {
             }
         }
     }
+}
+
+/// The portal's `parent_window` for the Rapier window of this browser process on an X11 display: "x11:<xid in hex>", so the chooser is
+/// transient for it (modal over the window, never hidden behind it). Of several windows of the process the one with the input focus,
+/// else the first; "" when no display answers or no window is found. On Wayland the parent would have to be exported by the browser
+/// itself (xdg-foreign), which another process cannot do, so the host passes "" there.
+pub fn x11_parent(pid: u32) -> String {
+    use x11rb::connection::Connection;
+    use x11rb::protocol::xproto::{AtomEnum, ConnectionExt, MapState, Window};
+    let Ok((conn, screen)) = x11rb::connect(None) else { return String::new() };
+    let root = conn.setup().roots[screen].root;
+    let atom = |name: &str| conn.intern_atom(false, name.as_bytes()).ok().and_then(|c| c.reply().ok()).map(|r| r.atom);
+    let Some(pid_atom) = atom("_NET_WM_PID") else { return String::new() };
+    let owned = |window: Window| -> bool {
+        let pid_ok = conn.get_property(false, window, pid_atom, AtomEnum::CARDINAL, 0, 1).ok().and_then(|c| c.reply().ok())
+            .and_then(|r| r.value32().and_then(|mut v| v.next())) == Some(pid);
+        let class_ok = conn.get_property(false, window, AtomEnum::WM_CLASS, AtomEnum::STRING, 0, 64).ok().and_then(|c| c.reply().ok())
+            .is_some_and(|r| String::from_utf8_lossy(&r.value).split('\0').any(|part| part == "rapier"));
+        let mapped = conn.get_window_attributes(window).ok().and_then(|c| c.reply().ok()).is_some_and(|a| a.map_state == MapState::VIEWABLE);
+        pid_ok && class_ok && mapped
+    };
+    // The windows of this process: top-level, or one level down where a window manager has put a frame around them.
+    let mut found: Vec<Window> = Vec::new();
+    for top in conn.query_tree(root).ok().and_then(|c| c.reply().ok()).map(|r| r.children).unwrap_or_default() {
+        if owned(top) {
+            found.push(top);
+        } else {
+            for child in conn.query_tree(top).ok().and_then(|c| c.reply().ok()).map(|r| r.children).unwrap_or_default() {
+                if owned(child) {
+                    found.push(child);
+                }
+            }
+        }
+    }
+    // The focus may be the window or a child of it.
+    let focus = conn.get_input_focus().ok().and_then(|c| c.reply().ok()).map(|r| r.focus);
+    let chosen = focus
+        .and_then(|mut w| {
+            for _ in 0..4 {
+                if found.contains(&w) {
+                    return Some(w);
+                }
+                w = conn.query_tree(w).ok()?.reply().ok()?.parent;
+            }
+            None
+        })
+        .or_else(|| found.first().copied());
+    chosen.map(|w| format!("x11:{w:x}")).unwrap_or_default()
 }

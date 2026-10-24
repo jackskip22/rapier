@@ -1608,7 +1608,8 @@ async function handleRequest(request, env, authority, route) {
     appsClient = declaresAppsUi({ capabilities: meta[META_CLIENT] });
   } else {
     if (message.method !== 'initialize' && header !== null && !LEGACY_VERSIONS.includes(header)) return rpcError(id ?? null, -32600, `MCP-Protocol-Version must be one of ${LEGACY_VERSIONS.join(', ')}.`, 400);
-    appsClient = await clientSessionApps(editorSecret(env), request.headers.get('Mcp-Session-Id'), clientSessionBinding(request, authority, door));
+    const session = request.headers.get('Mcp-Session-Id');
+    appsClient = session ? await clientSessionApps(editorSecret(env), session, clientSessionBinding(request, authority, door)) : false;
   }
   const scope = requestScope(request, authority, door, modern);
   if (!Object.hasOwn(message, 'id')) {

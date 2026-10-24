@@ -1,5 +1,5 @@
 {
-  "release": "1.2.37",
+  "release": "1.2.40",
   "core": [
     {
       "name": "open",
@@ -74,7 +74,7 @@
     {
       "name": "read",
       "title": "Read Rapier",
-      "description": "Read exact text, a heading/fence map (as:\"outline\") or a PNG (as:\"image\") of the page or of the named block, heading or lines. query finds lines here; search lists Notes. Continue next_cursor with cursor alone. Check human context and omissions before editing. state:true reports pending work and the person’s presence; after_revision with wait_ms waits for their next change. guide returns instructions; guide resource URIs are not document IDs.",
+      "description": "Read exact text, a heading/fence map (as:\"outline\") or a PNG (as:\"image\") of the page or of the named block, heading or lines; a drawing's block gives it at full detail, even while it is open in Draw. query finds lines here; search lists Notes. Continue next_cursor with cursor alone. Check human context and omissions before editing. state:true reports pending work and the person’s presence; after_revision with wait_ms waits for their next change. guide returns instructions; guide resource URIs are not document IDs.",
       "effect": "read",
       "class": "read",
       "inputSchema": {
@@ -246,7 +246,7 @@
     {
       "name": "edit",
       "title": "Edit Rapier",
-      "description": "Apply unique exact-text changes atomically as one undoable act (act is its id string), rename with filename, or set Note fields with note. At a moved numeric revision, literal edits apply if untouched since; whole-document replacement needs the current revision. A conflict returns current context; decide afresh. Drawings, painting, Water, comments and HTML objects use fenced text; painting needs an open editor and an operation_id.",
+      "description": "Apply unique exact-text changes atomically as one undoable act (act is its id string), rename with filename, or set Note fields with note. At a moved numeric revision, literal edits apply if untouched since; whole-document replacement needs the current revision. A conflict returns current context; decide afresh. Drawings, painting, Water, comments and HTML objects use fenced text; a rapier-draw diagram stays live for the person, who drags its boxes and retypes its labels in the document; painting needs an open editor and an operation_id, and its result shows the painting.",
       "effect": "write",
       "class": "write",
       "inputSchema": {
@@ -682,7 +682,7 @@
     {
       "name": "export",
       "title": "Save or export Rapier",
-      "description": "to:\"file\" (default) delivers markdown, html (the offline editor), page, txt, docx or pdf; to:\"save\" saves to the bound destination; to:\"clipboard\" copies a passage as plain, markdown, formatted or complete. to:\"sync\" alone syncs the Notes store and can replace files. On the hosted Door, page, docx and pdf need the person's paired, open editor; a self-hosted server can provide a renderer. Inspect delivery; export never publishes a website.",
+      "description": "to:\"file\" (default) delivers markdown, html, page, txt, docx or pdf (html is the whole editor with the document inside, editable offline); to:\"save\" saves to the bound destination; to:\"clipboard\" copies a passage as plain, markdown, formatted or complete. to:\"sync\" alone syncs the Notes store and can replace files. On the hosted Door, page, docx and pdf need the person's paired, open editor; a self-hosted server can provide a renderer. Inspect delivery; export never publishes a website.",
       "effect": "durable",
       "class": "sensitive-write",
       "inputSchema": {
@@ -892,7 +892,7 @@
     {
       "name": "read",
       "title": "Read Rapier",
-      "description": "Read exact text, a heading/fence map (as:\"outline\") or a PNG (as:\"image\") of the page or of the named block, heading or lines. query finds lines here; search lists Notes. Continue next_cursor with cursor alone. Check human context and omissions before editing. state:true reports pending work and the person’s presence; after_revision with wait_ms waits for their next change. guide returns instructions; guide resource URIs are not document IDs.",
+      "description": "Read exact text, a heading/fence map (as:\"outline\") or a PNG (as:\"image\") of the page or of the named block, heading or lines; a drawing's block gives it at full detail, even while it is open in Draw. query finds lines here; search lists Notes. Continue next_cursor with cursor alone. Check human context and omissions before editing. state:true reports pending work and the person’s presence; after_revision with wait_ms waits for their next change. guide returns instructions; guide resource URIs are not document IDs.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1057,7 +1057,7 @@
     {
       "name": "edit",
       "title": "Edit Rapier",
-      "description": "Apply unique exact-text changes atomically as one undoable act (act is its id string), rename with filename, or set Note fields with note. At a moved numeric revision, literal edits apply if untouched since; whole-document replacement needs the current revision. A conflict returns current context; decide afresh. Drawings, painting, Water, comments and HTML objects use fenced text; painting needs an open editor and an operation_id.",
+      "description": "Apply unique exact-text changes atomically as one undoable act (act is its id string), rename with filename, or set Note fields with note. At a moved numeric revision, literal edits apply if untouched since; whole-document replacement needs the current revision. A conflict returns current context; decide afresh. Drawings, painting, Water, comments and HTML objects use fenced text; a rapier-draw diagram stays live for the person, who drags its boxes and retypes its labels in the document; painting needs an open editor and an operation_id, and its result shows the painting.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1531,7 +1531,7 @@
       "annotations": {
         "title": "Show or ask in Rapier",
         "readOnlyHint": false,
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": true
       },
@@ -1558,7 +1558,7 @@
     {
       "name": "export",
       "title": "Save or export Rapier",
-      "description": "to:\"file\" (default) delivers markdown, html (the offline editor), page, txt, docx or pdf; to:\"save\" saves to the bound destination; to:\"clipboard\" copies a passage as plain, markdown, formatted or complete. to:\"sync\" alone syncs the Notes store and can replace files. On the hosted Door, page, docx and pdf need the person's paired, open editor; a self-hosted server can provide a renderer. Inspect delivery; export never publishes a website.",
+      "description": "to:\"file\" (default) delivers markdown, html, page, txt, docx or pdf (html is the whole editor with the document inside, editable offline); to:\"save\" saves to the bound destination; to:\"clipboard\" copies a passage as plain, markdown, formatted or complete. to:\"sync\" alone syncs the Notes store and can replace files. On the hosted Door, page, docx and pdf need the person's paired, open editor; a self-hosted server can provide a renderer. Inspect delivery; export never publishes a website.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1643,7 +1643,7 @@
       "annotations": {
         "title": "Save or export Rapier",
         "readOnlyHint": false,
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": true
       },

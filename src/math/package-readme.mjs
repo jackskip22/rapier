@@ -4,6 +4,13 @@ export function mathReadme(resources) {
 
 Offline TeX formulas as SVG or structured MathML. Embedded Latin Modern outlines for SVG; font-free native MathML. Synchronous, with no runtime downloads.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jackskip22/rapier-math/main/docs/formula-dark.svg">
+  <img src="https://raw.githubusercontent.com/jackskip22/rapier-math/main/docs/formula-light.svg" alt="The quadratic formula, rendered by rapier-math" width="360">
+</picture>
+
+Try it: write \\$x^2\\$ in [Rapier](https://rapier.website).
+
 ## Use
 
 \`\`\`sh

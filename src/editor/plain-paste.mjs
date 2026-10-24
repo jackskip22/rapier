@@ -37,8 +37,9 @@ function _rapierPasteLooksProse(text, minimumLength = 240) {
 	const compactScript = /[\u3040-\u30ff\u3400-\u9fff\u0e00-\u0eff\u1780-\u17ff]/u.test(s);
 	const requiredLength = compactScript ? Math.min(minimumLength, 12) : minimumLength;
 	if (s.length < requiredLength) return false;
-	const letters = (s.match(/[\p{L}\p{N}]/gu) || []).length;
-	const spaces  = (s.match(/\s/g) || []).length;
+	const kept = s.replace(/[^\p{L}\p{N}]+/gu, '');
+	const letters = kept.length - (kept.match(/[\uD800-\uDBFF]/g) || []).length;
+	const spaces  = s.length - s.replace(/\s+/g, '').length;
 	return letters / Math.max(1, s.length) > 0.52 &&
 		(spaces / Math.max(1, s.length) > 0.08 || compactScript);
 }
@@ -242,10 +243,13 @@ function _rapierPasteContent(decision, payload, converted = '') {
 }
 
 function _rapierPasteInsideFence(before) {
-	const lines = String(before == null ? '' : before).split(/\r\n|\r|\n/);
-	lines.pop();
-	let fence = null;
-	for (const line of lines) {
+	const text = String(before == null ? '' : before);
+	if (text.indexOf('```') < 0 && text.indexOf('~~~') < 0) return false;
+	const breaks = /\r\n|\r|\n/g;
+	let fence = null, at = 0, end;
+	while ((end = breaks.exec(text))) {
+		const line = text.slice(at, end.index);
+		at = end.index + end[0].length;
 		if (fence) {
 			const close = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(line);
 			if (close && close[1][0] === fence[0] && close[1].length >= fence.length) fence = null;

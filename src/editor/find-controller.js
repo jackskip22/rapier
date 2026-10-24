@@ -16,8 +16,7 @@ function rapierSetFindOpen(open) {
 		}
 		catch (_) { input._rapierFindWarm = null; }
 	};
-	if (typeof requestIdleCallback === 'function') requestIdleCallback(warm, { timeout: 1000 });
-	else setTimeout(warm, 200);
+	setTimeout(() => { if (typeof requestIdleCallback === 'function') requestIdleCallback(warm, { timeout: 1000 }); else warm(); }, 400);
 }
 
 function _setFindCount(cur, total) {

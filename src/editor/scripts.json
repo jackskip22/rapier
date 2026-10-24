@@ -58,5 +58,6 @@
   "notes/attachments.js",
   "editor/composer.js",
   "editor/changes-draw.js",
-  "editor/changes.js"
+  "editor/changes.js",
+  "editor/seen-margin.js"
 ]

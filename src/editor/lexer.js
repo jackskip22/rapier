@@ -13,7 +13,7 @@ function softwareAdapter(adapter) {
 
 function create(now = () => Date.now()) {
 	const state = Object.seal({ spans: null, failed: false, stale: false, executed: null, refusedAt: 0, refusals: 0, episode: 0, asks: 0, answers: 0,
-		adapter: '', admission: null, cache: new Map(), cacheUnits: 0, hits: 0 });
+		adapter: '', admission: null, cache: new Map(), cacheUnits: 0, hits: 0, warmed: false });
 
 	function store(spans) {
 		if (!Array.isArray(spans) || !spans.length || !spans.every(span => span && typeof span.name === 'string' && typeof span.source === 'string')) throw new Error('gpu-lexer');
@@ -101,9 +101,15 @@ function create(now = () => Date.now()) {
 		}
 	}
 
+	function warm(globalLike, ready, refused = null) {
+		if (state.warmed || !ready()) return;
+		state.warmed = true;
+		ask(globalLike, 'x', refused).catch(() => {});
+	}
+
 	function retry() { state.refusedAt = 0; }
 
-	return Object.freeze({ store, stored, failed, refusal, counts, adapter, available, retry, ensure, ask, cached });
+	return Object.freeze({ store, stored, failed, refusal, counts, adapter, available, retry, ensure, ask, cached, warm });
 }
 
 function codeHoldsSelection(code, documentLike) {

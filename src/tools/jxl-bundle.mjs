@@ -7,9 +7,13 @@ import {createHash} from 'node:crypto';
 import {gzipSync, brotliCompressSync, constants} from 'node:zlib';
 import vm from 'node:vm';
 import acorn from '../agent/vendor/acorn.mjs';
+import {codeIdentity, runtimeIdentity, sha256} from './build-cache.mjs';
+import {cachedBundle} from './jxl-bundle-cache.mjs';
 const require = createRequire(import.meta.url);
 const {minify_sync} = require('./vendor/terser/bundle.min.js');
 export const TERSER = require('./vendor/terser/package.json').version;
+const bundleIdentity = sha256(JSON.stringify([await codeIdentity([new URL(import.meta.url),
+  new URL('./vendor/terser/bundle.min.js', import.meta.url)]), await runtimeIdentity(), process.execArgv, process.env.NODE_OPTIONS || '']));
 export const PRIVATE_PROPERTIES = new RegExp('^(' + [
 	'alphabetSize|lengths|codes|simple|treeSelect|splitToken|msb|lsb|contextMap|histograms',
 	'predictor|multiplier|context|splitval|property|offset|left|right|channel',
@@ -75,8 +79,33 @@ function scopedModules(texts, names, bindings, {classic = false, suffix = ''} = 
     (classic ? '\n' + suffix : '');
 }
 
+export function bundleNameClashes(texts, names) {
+	const owner = new Map(), clashes = [];
+	const declare = (id, name) => {
+		if (!id) return;
+		if (id.type === 'Identifier') {
+			const first = owner.get(id.name);
+			if (first && first !== name) clashes.push(id.name + ' (' + first + ', ' + name + ')'); else owner.set(id.name, name);
+		} else if (id.type === 'ObjectPattern') for (const p of id.properties) declare(p.type === 'RestElement' ? p.argument : p.value, name);
+		else if (id.type === 'ArrayPattern') for (const e of id.elements) declare(e && (e.type === 'RestElement' ? e.argument : e), name);
+		else if (id.type === 'AssignmentPattern') declare(id.left, name);
+	};
+	for (const name of names) {
+		for (let node of acorn.parse(texts[name], {ecmaVersion: 'latest', sourceType: 'module'}).body) {
+			if (node.type === 'ExportNamedDeclaration' || node.type === 'ExportDefaultDeclaration') node = node.declaration;
+			if (!node) continue;
+			if (node.type === 'VariableDeclaration') for (const d of node.declarations) declare(d.id, name);
+			else if (node.type === 'FunctionDeclaration' || node.type === 'ClassDeclaration') declare(node.id, name);
+		}
+	}
+	if (clashes.length) throw new Error('refused: modules bundled in one scope declare the same name: ' + clashes.join(', '));
+}
+
 export function bundle(texts, names, exportsList, banner, {classic = false, suffix = "", scoped = null, reserved = []} = {}) {
+	if (!scoped) bundleNameClashes(texts, names);
 	const code = scoped ? scopedModules(texts, names, scoped, {classic, suffix}) : names.map(name => texts[name].replace(/^import .*;\n/gm, '').replace(/^export \{[^\n]+\};\n/gm, '').replace(/^export /gm, '')).join('\n') + (classic ? '\n' + suffix : '\nexport {' + exportsList.join(', ') + '};\n');
+	const key = sha256(JSON.stringify({bundleIdentity, code, banner, classic, reserved, properties: PRIVATE_PROPERTIES.source, flags: PRIVATE_PROPERTIES.flags}));
+	return cachedBundle(key, () => {
 	let best = null;
 	for (const compress of [{passes: 2}, {passes: 2, inline: 1}, {passes: 2, hoist_funs: true, hoist_vars: true}]) {
 		const properties = {regex: PRIVATE_PROPERTIES, reserved};
@@ -87,6 +116,7 @@ export function bundle(texts, names, exportsList, banner, {classic = false, suff
 	}
 	const brotli = brotliCompressSync(best.bytes, {params: {[constants.BROTLI_PARAM_QUALITY]: 11, [constants.BROTLI_PARAM_MODE]: constants.BROTLI_MODE_TEXT}});
 	return {bytes: best.bytes, gzip: best.gzip.length, brotli: brotli.length, compress: best.compress};
+	});
 }
 
 

@@ -50,9 +50,9 @@ function _rapierPaintPatch(evt) {
 }
 const RAPIER_PAINT_BRUSH_KEY = 'rapier:draw.paintbrush', RAPIER_PAINT_OWN_KEY = 'rapier:draw.paintbrushes' + RapierStorage.scope;
 const RAPIER_PAINT_STRENGTH_KEY = 'rapier:draw.paintstrength';
-const RAPIER_PAINT_PINNED = ['rapier/oil', 'rapier/acrylic', 'rapier/bristle', 'rapier/flat', 'rapier/scumble', 'rapier/pencil', 'rapier/pen', 'rapier/watercolour',
+const RAPIER_PAINT_PINNED = ['rapier/flat', 'rapier/round', 'rapier/gouache', 'rapier/soft', 'rapier/oil', 'rapier/acrylic', 'rapier/scumble', 'rapier/pencil', 'rapier/pen', 'rapier/watercolour',
 	'rapier/smudge', 'rapier/smear', 'rapier/blend', 'rapier/eraser', 'rapier/dissolve', 'rapier/erode'];
-const RAPIER_PAINT_DEFAULT_ID = 'rapier/scumble';
+const RAPIER_PAINT_DEFAULT_ID = 'rapier/flat';
 const RAPIER_PAINT_SIZES_KEY = 'rapier:draw.paintsizes';
 function _rapierPaintSizeDefault(id) { return paintSizeDefault(id); }
 function _rapierPaintSizesRead() { try { const raw = JSON.parse(localStorage.getItem(RAPIER_PAINT_SIZES_KEY) || '{}'); return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}; } catch (_) { return {}; } }
@@ -82,7 +82,7 @@ const RAPIER_PAINT_TOOL_WORDS = Object.freeze({ 'rapier/smudge': 'Smudge', 'rapi
 function _rapierPaintToolWord(id, name) { return RAPIER_PAINT_TOOL_WORDS[id] || name; }
 const RAPIER_PAINT_BRUSH_WORDS = Object.freeze({ 'dieterle/fountain-sf-1': 'Fountain', 'dieterle/fount-offset-1': 'Offset pen', 'dieterle/pencil-left-handed': 'Left pencil',
 	'dieterle/flight-feathers': 'Feathers', 'dieterle/tail-feathers': 'Tail feather', 'dieterle/tail-feathers2': 'Tail plume',
-	'dieterle/wateryflatbrush': 'Watery flat', 'dieterle/dissolver': 'Dissolver', 'dieterle/flat2-1': 'Flat 2' });
+	'dieterle/wateryflatbrush': 'Watery flat', 'dieterle/dissolver': 'Dissolver', 'dieterle/flat2-1': 'Flat 2', 'dieterle/round-1': 'Round 2' });
 function _rapierPaintBrushWord(id, name) { return RAPIER_PAINT_BRUSH_WORDS[id] || name; }
 // the credits and licences are in Settings, Licenses. A person's own brush carries the words they wrote.
 const RAPIER_PAINT_BRUSH_HINTS = Object.freeze({ 'dieterle/8b-pencil-1': 'soft, dark graphite', 'dieterle/flat2-1': 'broad flat edge', 'dieterle/halftonecmy-1': 'colored print dots',
@@ -90,7 +90,7 @@ const RAPIER_PAINT_BRUSH_HINTS = Object.freeze({ 'dieterle/8b-pencil-1': 'soft, 
 	'dieterle/fount-offset-1': 'ink with a slight wobble', 'dieterle/halftone-1': 'print dots', 'dieterle/pencil-left-handed': 'graphite angled for the left hand',
 	'dieterle/blender': 'blends colors', 'dieterle/dissolver': 'dissolves paint away', 'dieterle/eraser': 'wears paint away', 'dieterle/splash': 'scattered splashes',
 	'dieterle/flight-feathers': 'feathered streaks', 'dieterle/tail-feathers2': 'soft feathered streaks', 'dieterle/tail-feathers': 'feathered streaks',
-	'dieterle/wateryflatbrush': 'wet, flowing color', 'rapier/oil': 'thick, smooth paint', 'rapier/bristle': 'streaks and gaps', 'rapier/scumble': 'broken, scattered paint',
+	'dieterle/wateryflatbrush': 'wet, flowing color', 'rapier/oil': 'thick, smooth paint', 'rapier/bristle': 'streaks and gaps', 'rapier/round': 'smooth, solid round', 'rapier/gouache': 'flat, matte and opaque', 'rapier/soft': 'a soft edge that builds up', 'rapier/scumble': 'broken, scattered paint',
 	'rapier/pencil': 'soft graphite', 'rapier/pen': 'a bold line that swells',
 	'rapier/smudge': 'drags paint with a finger', 'rapier/smear': 'drags paint in streaks', 'rapier/posterize': 'reduces color to bands',
 	'rapier/blend': 'mixes paint in place', 'rapier/eraser': 'takes paint off', 'rapier/dissolve': 'breaks paint up', 'rapier/erode': 'wears paint from its edges' });
@@ -169,8 +169,9 @@ function _rapierPaintAdoptFits(value) {
 	for (const [id, on] of Object.entries(fits)) if (/^[A-Za-z0-9_./-]+$/.test(id) && typeof on === 'boolean') { if (on) localStorage.removeItem(RAPIER_PAINT_FIT_KEY + id); else localStorage.setItem(RAPIER_PAINT_FIT_KEY + id, 'off'); }
 }
 // Every brush the strip can show: Rapier's own finger set first (RAPIER_PAINT_PINNED), then the
+const RAPIER_PAINT_RETIRED = new Set(['rapier/bristle']);
 function _rapierPaintEntries() {
-	const all = RAPIER_PAINT_BRUSHES.concat(_rapierPaintOwnBrushes());
+	const all = RAPIER_PAINT_BRUSHES.filter(entry => !RAPIER_PAINT_RETIRED.has(entry.id)).concat(_rapierPaintOwnBrushes());
 	const pinned = RAPIER_PAINT_PINNED.map(id => all.find(entry => entry.id === id)).filter(Boolean);
 	const pinnedIds = new Set(pinned.map(entry => entry.id));
 	return pinned.concat(all.filter(entry => !pinnedIds.has(entry.id)));
@@ -219,7 +220,7 @@ function _rapierPaintExportBrush(id) {
 	void _download(new Blob([JSON.stringify(serializeBrush(paintBrushFeel(parseBrush(entry.myb), _rapierPaintFeelOptions(id, true)), {description: entry.myb.description, notes: entry.myb.notes, parent_brush_name: entry.myb.parent_brush_name}), null, 4) + '\n'], { type: 'application/json' }), file);
 }
 function _rapierPaintRememberedBrush() {
-	try { const id = localStorage.getItem(RAPIER_PAINT_BRUSH_KEY); return _rapierPaintEntry(id) ? id : _rapierPaintDefaultId(); } catch (_) { return _rapierPaintDefaultId(); }
+	try { const id = localStorage.getItem(RAPIER_PAINT_BRUSH_KEY); return _rapierPaintEntry(id) && !RAPIER_PAINT_RETIRED.has(id) ? id : _rapierPaintDefaultId(); } catch (_) { return _rapierPaintDefaultId(); }
 }
 function _rapierPaintRememberedSize() {
 	try { return _rapierPaintSizeFor(_rapierPaintRememberedBrush()); } catch (_) { return RAPIER_PAINT_SIZE_DEFAULT; }
@@ -244,17 +245,24 @@ function _rapierPaintSetSize(value) {
 }
 function _rapierPaintSizeWord(size = _rapierPaintSize()) { return Math.round(Math.exp((size - 50) / 50 * Math.log(8)) * 100) + '%'; }
 
-const RAPIER_PAINT_HEAD_KEY = 'rapier:draw.painthead', RAPIER_PAINT_HEAD_ANGLE = 45;
+// instead. Until the person chooses, each brush keeps its own default: Rapier's flat heads (a `rapier_blade`, Flat and Acrylic)
+const RAPIER_PAINT_HEAD_KEY = 'rapier:draw.painthead', RAPIER_PAINT_HEAD_ANGLE = 120;
 function _rapierPaintHeadRead() {
 	let raw = null;
 	try { raw = JSON.parse(localStorage.getItem(RAPIER_PAINT_HEAD_KEY) || 'null'); } catch (_) { raw = null; }
 	const angle = Number(raw?.angle);
-	return { angle: Number.isFinite(angle) ? ((Math.round(angle) % 180) + 180) % 180 : RAPIER_PAINT_HEAD_ANGLE, follow: raw?.follow === true || (raw?.follow !== false && !Number.isFinite(angle)), clear: raw?.clear === true };
+	const head = { angle: Number.isFinite(angle) ? ((Math.round(angle) % 180) + 180) % 180 : RAPIER_PAINT_HEAD_ANGLE, kept: typeof raw?.follow === 'boolean' ? raw.follow : null, clear: raw?.clear === true };
+	return Object.defineProperty(head, 'follow', { enumerable: true, get() { return _rapierPaintFollowsFor(head); }, set(on) { head.kept = !!on; } });
+}
+function _rapierPaintFollowsFor(head, id = _rapierPaintBrushId()) {
+	if (head.kept !== null) return head.kept;
+	if (String(id).startsWith('own/')) return true;
+	try { return !(_rapierPaintDefFor(id).rapier?.rapier_blade > 0); } catch (_) { return true; }
 }
 function _rapierPaintHead() { if (_rapierDrawTool() === 'water') return _rapierWaterState(); return _rapierDrawState.paintHead || (_rapierDrawState.paintHead = _rapierPaintHeadRead()); }
 function _rapierPaintHeadSave() {
 	if (_rapierDrawTool() === 'water') { _rapierWaterSave(); return; }
-	const head = _rapierPaintHead(), text = JSON.stringify({ angle: head.angle, follow: head.follow, clear: head.clear });
+	const head = _rapierPaintHead(), text = JSON.stringify({ angle: head.angle, ...(head.kept === null || head.kept === undefined ? {} : { follow: head.kept }), clear: head.clear });
 	try { localStorage.setItem(RAPIER_PAINT_HEAD_KEY, text); } catch (_) {}
 	_rapierPersonal.rememberDrawing('paintHead', text);
 }
@@ -266,7 +274,7 @@ function _rapierPaintHeadClear(on) {
 }
 function _rapierPaintHeadSettings(id) {
 	const head = _rapierPaintHead();
-	return paintBrushHead({angle: head.angle, follow: head.follow, erase: head.clear}, _rapierPaintIsTool(id));
+	return paintBrushHead({angle: head.angle, follow: 'kept' in head ? _rapierPaintFollowsFor(head, id) : head.follow, erase: head.clear}, _rapierPaintIsTool(id));
 }
 function _rapierPaintHeadOval(head, rx, ry) {
 	return '<ellipse rx="' + rx + '" ry="' + ry + '" transform="rotate(' + head.angle + ')"' + (head.follow ? ' stroke-dasharray="3 2"' : '') + '></ellipse>';
@@ -368,9 +376,10 @@ function _rapierPaintHeadAt(clientX, clientY) {
 	const state = _rapierDrawState, el = state.headEl;
 	if (!el || !state.svgRoot) return;
 	state.headAt = [clientX, clientY];
-	const fp = _rapierPaintHeadFootprint();
+	let fp = _rapierPaintHeadFootprint();
 	if (!fp) { el.style.visibility = 'hidden'; return; }
 	const geom = _rapierDrawPointerGeometry(), scale = _rapierDrawViewTransform(geom.rect, geom.vb).scale;
+	fp = _rapierPaintHeadFollowing(fp, clientX, clientY, fp.radius / RAPIER_PAINT_GRAIN * scale);
 	const overlay = el.parentElement, half = fp.radius / RAPIER_PAINT_GRAIN + 4 / scale, size = 2 * half * scale;
 	const path = _rapierPaintHeadPath(0, 0, fp);
 	if (el.getAttribute('d') !== path) el.setAttribute('d', path);
@@ -380,6 +389,27 @@ function _rapierPaintHeadAt(clientX, clientY) {
 	}
 	overlay.style.transform = 'translate3d(' + (clientX - geom.rect.left - size / 2) + 'px,' + (clientY - geom.rect.top - size / 2) + 'px,0)';
 	el.style.visibility = '';
+}
+// RAPIER_PAINT_HEAD_AIM of its own lengths as the engine eases a following blade (draw/paint.mjs RAPIER_RIBBON_AIM), so the
+const RAPIER_PAINT_HEAD_AIM = 2.5;
+function _rapierPaintHeadFollowing(fp, clientX, clientY, radiusPx) {
+	const state = _rapierDrawState, gesture = state.gesture?.paint ? state.gesture : null;
+	if (!gesture || !_rapierPaintHead().follow || !(fp.ratio > 1)) return fp;
+	let turns = false;
+	try { turns = !!_rapierPaintDefFor(_rapierPaintBrushId()).settings[RAPIER_PAINT_SETTING_AT.elliptical_dab_angle]?.inputs?.direction; } catch (_) {}
+	if (!turns) return fp;
+	const last = gesture.headLast;
+	if (last) {
+		const dx = clientX - last[0], dy = clientY - last[1], dm = Math.hypot(dx, dy);
+		if (dm > .5) {
+			const ux = dx / dm, uy = dy / dm, d = gesture.headDir;
+			if (!d) gesture.headDir = [ux, uy];
+			else { const k = 1 - Math.exp(-dm / Math.max(1, RAPIER_PAINT_HEAD_AIM * radiusPx)); d[0] += (ux - d[0]) * k; d[1] += (uy - d[1]) * k; const n = Math.hypot(d[0], d[1]) || 1; d[0] /= n; d[1] /= n; }
+		}
+	}
+	gesture.headLast = [clientX, clientY];
+	if (!gesture.headDir) return fp;
+	return {...fp, angle: fp.angle + Math.atan2(gesture.headDir[1], gesture.headDir[0]) * 180 / Math.PI};
 }
 function _rapierPaintHeadFootprint() {
 	if (_rapierDrawTool() === 'water') return null;
@@ -2212,21 +2242,37 @@ function _rapierWaterFixSwitch() { const name = RAPIER_WATER_PARAMS.get('water-f
 const RAPIER_WATER_GUARD_LIMIT = 240;
 const _rapierWaterGuardSeen = {frames: 0, dropped: 0, last: null};
 let _rapierWaterGuardProbe = null;
-function _rapierWaterInk(bitmap) {
-	if (!_rapierWaterGuardProbe) { const c = document.createElement('canvas'); c.width = c.height = 32; _rapierWaterGuardProbe = c.getContext('2d'); }
-	const c = _rapierWaterGuardProbe;
-	c.globalCompositeOperation = 'copy'; c.drawImage(bitmap, 0, 0, 32, 32);
-	const d = c.getImageData(0, 0, 32, 32).data;
+function _rapierWaterInkOf(d) {
 	let ink = 0;
 	for (let i = 0; i < d.length; i += 4) ink += d[i + 3] / 255 * (1 - (.2126 * d[i] + .7152 * d[i + 1] + .0722 * d[i + 2]) / 255);
 	return ink / 1024;
 }
-function _rapierWaterGuardDrops(layer, bitmap, meta) {
+function _rapierWaterInk(bitmap) {
+	if (!_rapierWaterGuardProbe) { const c = document.createElement('canvas'); c.width = c.height = 32; _rapierWaterGuardProbe = c.getContext('2d', RAPIER_WATER_PARAMS.get('water-ink') === 'cpu' ? {willReadFrequently: true} : undefined); }
+	const c = _rapierWaterGuardProbe;
+	c.globalCompositeOperation = 'copy'; c.drawImage(bitmap, 0, 0, 32, 32);
+	return _rapierWaterInkOf(c.getImageData(0, 0, 32, 32).data);
+}
+const RAPIER_WATER_INK_ASYNC = RAPIER_WATER_PARAMS.get('water-ink') === 'worker' && typeof Worker === 'function' && typeof OffscreenCanvas === 'function';
+let _rapierWaterInkWorker = null;
+const _rapierWaterInkWaiting = new Map();
+function _rapierWaterInkAsync(bitmap) {
+	if (!_rapierWaterInkWorker) {
+		const source = 'let c, x; onmessage = e => { const {id, bitmap} = e.data; try { if (!c) { c = new OffscreenCanvas(32, 32); x = c.getContext("2d", {willReadFrequently: true}); } x.globalCompositeOperation = "copy"; x.drawImage(bitmap, 0, 0, 32, 32); postMessage({id, data: x.getImageData(0, 0, 32, 32).data}); } catch (error) { postMessage({id, error: String(error)}); } finally { bitmap.close(); } };';
+		const url = URL.createObjectURL(new Blob([source], {type: 'text/javascript'}));
+		const worker = new Worker(url); URL.revokeObjectURL(url);
+		worker.onmessage = e => { const wait = _rapierWaterInkWaiting.get(e.data.id); _rapierWaterInkWaiting.delete(e.data.id); if (wait) e.data.data ? wait.ok(_rapierWaterInkOf(e.data.data)) : wait.no(new Error(e.data.error)); };
+		worker.onerror = () => { for (const wait of _rapierWaterInkWaiting.values()) wait.no(new Error('ink worker')); _rapierWaterInkWaiting.clear(); };
+		_rapierWaterInkWorker = worker;
+	}
+	return new Promise((ok, no) => { const id = (_rapierWaterInkAsync.next = (_rapierWaterInkAsync.next || 0) + 1); _rapierWaterInkWaiting.set(id, {ok, no}); try { _rapierWaterInkWorker.postMessage({id, bitmap}); } catch (error) { _rapierWaterInkWaiting.delete(id); no(error); } });
+}
+function _rapierWaterGuardDrops(layer, bitmap, meta, known) {
 	const state = _rapierDrawState, seen = _rapierWaterGuardSeen;
 	seen.frames++;
 	if (!RAPIER_WATER_GUARD && !RAPIER_WATER_PROBE) return false;
 	let ink;
-	try { ink = _rapierWaterInk(bitmap); } catch (_) { return false; }
+	try { ink = known ?? _rapierWaterInk(bitmap); } catch (_) { return false; }
 	const redo = state.redoStack.length, shapes = state.recipe?.shapes.length ?? 0, sheet = layer.surface?.id, guard = layer.waterGuard;
 	const lowers = !!state.gesture && (_rapierDrawTool() === 'erase' || ['lift', 'water'].includes(_rapierWaterState().tool) || !!state.gesture.paint?.erasing);
 	const acted = !guard || lowers || state.paintSetting || guard.redo !== redo || shapes < guard.shapes || guard.sheet !== sheet;
@@ -2300,9 +2346,15 @@ function _rapierPaintWaterDirect(layer, reply) {
 	} finally { surface.adoptDisplay(display.canvasGeneration, display.frame, accepted); }
 }
 function _rapierPaintWaterFrame(layer, reply) {
-	const surface = layer.surface, display = reply.display, bitmap = display?.bitmap, meta = reply.meta;
+	const display = reply.display, bitmap = display?.bitmap;
 	if (display?.direct) { _rapierPaintWaterDirect(layer, reply); return; }
 	if (!bitmap) return;
+	if (!RAPIER_WATER_INK_ASYNC || !RAPIER_WATER_GUARD && !RAPIER_WATER_PROBE) { _rapierPaintWaterFrameShow(layer, reply); return; }
+	_rapierWaterInkAsync(bitmap).then(ink => ink, () => undefined).then(ink => _rapierPaintWaterFrameShow(layer, reply, ink));
+}
+function _rapierPaintWaterFrameShow(layer, reply, ink) {
+	const surface = layer.surface, display = reply.display, bitmap = display?.bitmap, meta = reply.meta;
+	if (!surface) { try { bitmap.close(); } catch (_) {} return; }
 	let accepted = false;
 	try {
 		if (!display.complete || display.generation !== surface.displayGeneration || reply.surfaceId !== surface.id ||
@@ -2311,7 +2363,7 @@ function _rapierPaintWaterFrame(layer, reply) {
 			_rapierPaintOverlayLost(layer)) return;
 		const kept = layer.checkpoint;
 		if (layer.raster && (!meta.revision || kept?.raster === layer.raster && meta.revision < kept.revision)) return;
-		if (_rapierWaterGuardDrops(layer, bitmap, meta)) return;
+		if (_rapierWaterGuardDrops(layer, bitmap, meta, ink)) return;
 		const canvas = layer.canvas, context = canvas.getContext('2d');
 		if (!context) return;
 		if (canvas.width !== meta.width) canvas.width = meta.width;

@@ -1,46 +1,46 @@
 {
   "schema": "rapier-linux/1",
-  "version": "1.2.37",
+  "version": "1.2.39",
   "file": "rapier-linux",
-  "bytes": 44936176,
-  "sha256": "bcd9a75366e0474e0e3ee67d5b9ced13bf3a35046c192c34ef5389835dad8710",
-  "payload": "19a5e23e4b7c286051a39e14fb6737ff392bee9656c7ba666bfcb6b45f218621",
-  "pageCertificate": "97cf445a743633370ea0f6af20eb99abd6631a30c7f792f130237dfd6a59d560",
+  "bytes": 45185520,
+  "sha256": "0be24d4d755bb87038b4f6e7ef149d7f2eaa0a721b42069e5dbf8e21daaa4ce7",
+  "payload": "5c4a74bafb55aac0160bdfc1e3f115da9cd3a6216b15f2b7dfa2ddc2eb1ba552",
+  "pageCertificate": "999100a5ac4c92166aa4977ad95b426b38e25086d0292c0f55fced6e77c34f15",
   "page": [
     [
       "rapier.html",
-      1813817,
-      "e27bedc4b61d86434b76ec38920abe8cc7aa61fb4658acb9f69743508b158afb"
+      1857950,
+      "d7e4ce8e0aba1391448f9ab6c3e28869b8f6a541e35c5bae9d8c5f8300f0276c"
     ],
     [
-      "parts/rapier-document-bde878b37aecc855.txt",
-      903371,
-      "bde878b37aecc8559e8daa32ad65f2734cc81bb53edcf399fdb57eb87dbed180"
+      "parts/rapier-document-bfe8915f74aa23c4.txt",
+      903350,
+      "bfe8915f74aa23c48b95d37fb34e882f00401240387fcb95242f0e50582f07b6"
     ],
     [
-      "parts/rapier-presets-22e6181b6ef284ce.txt",
-      252243,
-      "22e6181b6ef284ce72abd01ebe8914a0d39133cef903b21e43890d541e0fdaef"
+      "parts/rapier-presets-70084511ea5ea18c.txt",
+      252215,
+      "70084511ea5ea18cfc7bd5bce1e747f692dcee74ef015142c463f28cffc2715f"
     ],
     [
-      "parts/rapier-drawing-7e9293464517e9b4.txt",
-      342700,
-      "7e9293464517e9b43b48b7046631042272d24463517bf7399fe2cf036f00a4d5"
+      "parts/rapier-drawing-22f6217100420782.txt",
+      395130,
+      "22f6217100420782b20f2e57e50f64049994e79f8148779f5d70a14e3147af94"
     ],
     [
-      "parts/rapier-jxl-a39d956348889277.txt",
-      18780,
-      "a39d9563488892777b89dd879f21dea167dc510d04ad282e319d72b0bd78d5d8"
+      "parts/rapier-jxl-935f2fcc8cc15a26.txt",
+      18850,
+      "935f2fcc8cc15a26d0ced85b7157dfdbbd9b74181aa2507181cfcab1841127c4"
     ],
     [
-      "parts/rapier-jxlcomplete-96a39166d18d1b87.txt",
-      156523,
-      "96a39166d18d1b8767a1b1943ec387eacb24deccf2c2e22812d85d37d5213a90"
+      "parts/rapier-jxlcomplete-e00d70cc1ad5511a.txt",
+      189906,
+      "e00d70cc1ad5511ad87a8e33598c3ade395693781877b7c63d49751ce2cd75a3"
     ],
     [
-      "parts/rapier-notes-826c1905059e6f74.txt",
-      389517,
-      "826c1905059e6f742dc8127bbc6339e71aed590ec856d26830d8e0c7e5a344e0"
+      "parts/rapier-notes-7bff2468211190ad.txt",
+      391106,
+      "7bff2468211190ad0d9713a7e4a0acc6d9ea88197de283d7f4119cad2124f603"
     ]
   ],
   "resources": [
@@ -1920,25 +1920,25 @@
       "6befaf9c8e95c01da9b1062ab29da837154e493234df18527cf0c5a7c2f64dfa"
     ]
   ],
-  "sourceDigest": "da1cd90b134773888396331e6372249215609de03091631c9bbc675da4b2e1fa",
+  "sourceDigest": "8af72a69722ec07ffbf7f3516ffaa35d090475d757db6ce35c81df5dcfc33e32",
   "sources": [
     [
       "linux/app/Cargo.lock",
       420,
-      25937,
-      "62e3a448e2f74bb670e0796faeb29886d9ec0ed2faa35379d8f2edabef3d80b0"
+      26643,
+      "c861ad1a89262f8a9eab7f6fddeba92bae5c38fe970f66d568c6e378238876c0"
     ],
     [
       "linux/app/Cargo.toml",
       420,
-      626,
-      "f8ee7fc6ef40b93b41185cb1256edb45d7460d12a6a4ddd31a4700a190960a82"
+      681,
+      "f98183bfd48a66d484fe530193f3aafa5b03092cc9d38ed422c0587d28c6cf4c"
     ],
     [
       "linux/app/src/files.rs",
       420,
-      9220,
-      "7853a857ef0059a2f766bbaafe9dcc1be0838c57374d0b64ad8dcffacec4c8d8"
+      9474,
+      "890b534c9ebe3b8a04b0767d9903499e77c61e598bf68e07b7c952600ceab434"
     ],
     [
       "linux/app/src/folder.rs",
@@ -1949,26 +1949,26 @@
     [
       "linux/app/src/host.rs",
       420,
-      91787,
-      "d10311c2eb130ba91dd3acabab4c9c2fc72228d4426b19cb74d4744aeafc5eb7"
+      105069,
+      "a28cd0eed94af8b6b19385eaf3fff26c309bf0dfc17be36d96f5034a60dafe55"
     ],
     [
       "linux/app/src/main.rs",
       420,
-      19141,
-      "8b00b15d3debbbd0818de654f8727968574957d354838fa1917b270cebf23c23"
+      22406,
+      "695a4a21bd0553787d2959167f636e6f5d919f0f6d98c35216c34d215fd7abac"
     ],
     [
       "linux/app/src/payload.rs",
       420,
-      11145,
-      "8ba5c61957f87f564d781b8fece836d68557f963248fc0a76cf93d13205fae95"
+      11583,
+      "87bd34116af5c4dd907fb237acb654f7207ffa75879ac337641de9bc102b146b"
     ],
     [
       "linux/app/src/portal.rs",
       420,
-      5000,
-      "eed5e24d027cb26796bdca82b52bfcd8e0bb6e785e8dfb4ae347a9c3dd45d985"
+      9617,
+      "44400dd109f81445d7ba00b6357ed4d236ca4c18b0efd81a10684df7f10a3a34"
     ],
     [
       "linux/app/src/theme.rs",
@@ -1997,14 +1997,14 @@
     [
       "linux/rapier.desktop",
       420,
-      417,
-      "cbaca61ef0b1115b77b02c10f6d4697a0909b45d24406b6d39ff71e034fbac6b"
+      663,
+      "4e1096a28a231424fec6d830046d796bf1ad943686f84a9b3299f7790b120e8f"
     ],
     [
       "tools/stage-linux.mjs",
       420,
-      19315,
-      "2e5c9c89026e2ac24a9866d21b8142db49bc88d57d370828a4d81ac6e2b90210"
+      19953,
+      "eb3e858222da4100b499c444023fb8799a3bdeb6a27da70451dcb5b22024061c"
     ]
   ],
   "runtime": {

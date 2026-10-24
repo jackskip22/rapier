@@ -41,6 +41,7 @@
 .rapier-notes-popup-title{padding:var(--space-2) var(--space-3) var(--space-1);font:var(--fw-semibold) var(--text-xs) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;color:var(--color-text-secondary)}
 .rapier-notes-add{appearance:none;display:flex;align-items:center;justify-content:center;min-width:0;min-height:48px;padding:0 var(--space-1);border:0;border-radius:0;background:var(--color-surface-2);color:var(--color-text);font:var(--fw-semibold) 11px/1 var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;cursor:pointer;touch-action:manipulation}
 @media (hover:hover) and (pointer:fine){.rapier-notes-add:hover{background:var(--color-surface-hover)}}
+@media (hover:hover) and (pointer:fine){.rapier-notes-card:not(.rapier-notes-card--held):hover{--notes-card-bg:color-mix(in srgb,var(--color-text) 7%,var(--notes-tint,var(--color-surface-2)))}}
 .rapier-notes-add[disabled]{opacity:.32;cursor:default}
 .rapier-notes-card p{display:-webkit-box;-webkit-line-clamp:8;-webkit-box-orient:vertical;overflow:hidden}
 .rapier-notes-section{position:relative;margin-top:0}

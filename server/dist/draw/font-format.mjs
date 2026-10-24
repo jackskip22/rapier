@@ -68,10 +68,10 @@ export function writeSfnt(flavor, input) {
 	return bytes;
 }
 export async function fontCompression(bytes, format, compress = false, length = FONT_FILE_BYTES) {
+	if (!compress && format === 'brotli') return decodeBrotli(bytes, length);
 	let transform;
 	try { transform = new (compress ? CompressionStream : DecompressionStream)(format); }
 	catch (_) {
-		if (!compress && format === 'brotli') return decodeBrotli(bytes, length);
 		fontError('This browser cannot ' + (compress ? 'write' : 'read') + ' this compression format.', 'font_compression_unavailable');
 	}
 	const reader = new Blob([bytes]).stream().pipeThrough(transform).getReader(), parts = [];

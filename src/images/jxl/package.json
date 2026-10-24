@@ -1,6 +1,6 @@
 {
   "name": "rapier-jxl",
-  "version": "5.3.0",
+  "version": "6.0.1",
   "description": "JPEG XL encoder in pure JavaScript. Great for single-file HTML apps, photography tools and agent image workflows.",
   "keywords": ["jpeg-xl", "jxl", "jpegxl", "encoder", "image-compression", "lossless", "lossy", "jpeg", "hdr", "webassembly", "browser"],
   "license": "MIT",
@@ -15,6 +15,7 @@
     "./jpeg": {"types": "./jpeg.d.mts", "default": "./jpeg.mjs"},
     "./jpeg/min": {"types": "./jpeg.d.mts", "default": "./jpeg.min.mjs"},
     "./photo": {"types": "./photo.d.mts", "default": "./photo.mjs"},
+    "./score": {"types": "./score.d.mts", "default": "./score.mjs"},
     "./photo/min": {"types": "./photo.d.mts", "default": "./photo.min.mjs"},
     "./photo-advanced": {"types": "./photo-advanced.d.mts", "default": "./photo-advanced.mjs"},
     "./photo-advanced/min": {"types": "./photo-advanced.d.mts", "default": "./photo-advanced.min.mjs"},

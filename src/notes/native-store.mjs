@@ -126,6 +126,14 @@ export function createNativeByteStore({call, privateStore = false, token = () =>
 		});
 		return out;
 	};
+	const statMany = async names => {
+		if (!Array.isArray(names)) throw new TypeError('A size read needs explicit file names.');
+		const wanted = [...new Set(names)]; wanted.forEach(parts);
+		const out = new Map(), top = wanted.filter(name => !name.includes('/'));
+		if (top.length) { const all = await statAll(''); for (const name of top) if (all.has(name)) out.set(name, all.get(name)); }
+		for (const name of wanted) if (name.includes('/')) { const info = await stat(name); if (info) out.set(name, info); }
+		return out;
+	};
 	const recording = {
 		async begin(name) {
 			if (!isRecordingPartial(name)) throw fail('name', 'This is not an unfinished recording.');
@@ -213,7 +221,7 @@ export function createNativeByteStore({call, privateStore = false, token = () =>
 		},
 		async checkpoint(value, baseDigest) { const bytes = pressureBytes(value); pressureDigest(baseDigest); return pressureWrite('notes.json', baseDigest, bytes); },
 	};
-	return {deviceOnly: privateStore, read, readChunks, write, writeBlob, remove, list, stat, statAll, prepare, recording, deletePressure: privateStore ? null : deletePressure, get streamingAttachments() { return writable === true; }, get writable() { return writable; }, get ascii() { return false; }, get reason() { return reason; }, async removeThumbnails() {}};
+	return {deviceOnly: privateStore, read, readChunks, write, writeBlob, remove, list, stat, statAll, statMany, prepare, recording, deletePressure: privateStore ? null : deletePressure, get streamingAttachments() { return writable === true; }, get writable() { return writable; }, get ascii() { return false; }, get reason() { return reason; }, async removeThumbnails() {}};
 }
 
 export function createNativeNotesLocks({call, token = () => crypto.randomUUID()}) {

@@ -7,13 +7,13 @@ const SHELL_URLS = [
   './icon-192.png',
   './icon-512.png',
 ];
-const SHELL_RELEASE_SHA256 = 'fd8ebb259db464d98296e8f1662fca3ba973deb719c1cecd909e659ed9e4c1ce';
-const SHELL_PAGE_SHA256 = 'e27bedc4b61d86434b76ec38920abe8cc7aa61fb4658acb9f69743508b158afb';
-const SHELL_BOOT_ID = 'c0dbc03bd852af75766bdc2beba643d6f6c455a8d29b3f8cc8c8d4f1d79cf2aa';
-const SHELL_DOOR_SHA256 = {"/":"ff7bf8d6c83a560d53cfd20a98c9ad9f452d867f345262796420cf04f7dd010d","/privacy":"70e4fbd62a3c77639d50889bcd2ece92278d33066bab670ca54d242cb5517144","/commercial":"b93cfe283f0751d929a1b8e71cc793dbfcbb4591e67fe78eca4f07a1346b8d01","/notes":"adcb889cc11836b051e37b0980c55735edc43b3add00ce55648a369415c53361","/draw":"afcbe678293a567cc5fed908523bf11f08bc05f32ff690f33a55b318df8ea6f2","/watercolor":"cf0e412e5c80e3d671503a574302c857c2ebc261c8050261f412172bac769d12","/paint":"b147669b1dac5e3b5045d9adb9b0d52a95fd43105163e22da2da320faa2e7579","/jxl":"6ea84ccd9590128a8d95e8d4e00e97d1c0db3e71d7185c7dbc7a7f78c8c8a59e","/markdown-to-pdf":"ba9192714a74a53d574ca0775ae31fd5ca9beeb845ba7ccc32ed049ad099de21","/markdown-to-word":"dfc8b2c6199694666d61fee05b4a653a2d7a3208afdc200d2771d7df6e00d0ef","/word-to-markdown":"d67dbb2a766991a751ce070c931a1db8eaf0a99c4ec36c9abfd04971e1bb412f","/mermaid-editor":"c6b8e80ca5218c8ab285f5ac52f0ef3da15604bb7c3411beb9cf6046a182c2e3"};
+const SHELL_RELEASE_SHA256 = '6fd89523850a43d7d1b8c95fcc5bb7edff8c7e61547b11353c379cbb5c14c563';
+const SHELL_PAGE_SHA256 = '9bbfff8680e0cb6ef407dc2a7f48aa566bbacd818395e156918953c6ec9bff06';
+const SHELL_BOOT_ID = 'e0c52f50490068938673a1d05731404a2e4a4b4c97702d0f2f7b9e386f6b1d26';
+const SHELL_DOOR_SHA256 = {"/":"79444b23c32b90df196118e6e9c1df5290f86fac2057a668dc25f7264cfc2727","/privacy":"b6e0d0e405a957649034e076fbbae364c0be78d9ad813a6ebfaee6479847cff9","/commercial":"1b9639057f9a35a7ecf87d272d54b6992ad4ea23c710a7d1924d31c196a1da45","/notes":"0bb349a3cd3d097f2bfadb0248262d14bda549a667f49433dcbe1a872a49ce7f","/draw":"5c61bd7978a6b60d44abafc518b8027f714a4fc306e1e72434f704863021bbd2","/watercolor":"ed21caea607cf896987a1ac3b306f73adc55654baf8a4a1a8c20eeff1445c910","/paint":"612cf1985db7664f3b6b9ecf097e9a8f6faf750878fdfffeede036a397363ed1","/jxl":"d3bc0c3bec4187af88c7cc8768eea84ee6968a5a4d0f7be03d2f343c2728861d","/markdown-to-pdf":"24926c6218aeb110a03ccf8d8f3058f931eb8c24f763477653ce00ee9de3193f","/markdown-to-word":"e938b1179bbe1ec67ecec6c8976dda2247259ebc19011e4df39b1590dbf38a44","/word-to-markdown":"c0cbf6113cbcb51fcd81e264e3dc88a1340699c957f0ac84cd3ccb15a6cf7338","/pdf-to-markdown":"22259a04a261ba1a611e99f81cd662dfefdd0bb08b3d9ffcfd81db42e4d83bf9","/markdown-diff":"369c1e3100bdec59513357c2f0df5b9e2137ff15e17fc5af7bdacb5b7e12b078","/mermaid-editor":"34ca289fd49c69607fbc30b3ddbfa0340fe713e738ff1c3bf6e7550ab45a4735"};
 const SHELL_SITE_PAGES = ["/gallery"];
 const SITE_PAGE_CACHE = `rapier-pages:${CACHE_SCOPE}:v1`;
-const SHELL_PARTS = [{"id":"document","file":"rapier-document-bde878b37aecc855.txt","bytes":903371,"sri":"ZCMHonHV4X9X8iB0pOHYEAUQUAp6fdVGw8SGXvK73RddUJsiV9q7qbcORi+CZTyu"},{"id":"presets","file":"rapier-presets-22e6181b6ef284ce.txt","bytes":252243,"sri":"YjHrs12nvPJPVQy3u/evSywToLpTiZQlXsC3oxprcqwrdwmXrSQcDdKxZSDMxmg8"},{"id":"drawing","file":"rapier-drawing-7e9293464517e9b4.txt","bytes":342700,"sri":"23KNOgB0RQ7+O7QcdDkXkFiAoJtVCZO0Ttpy48SJCFepfZyAX+OcpjSIH5T7XOzt"},{"id":"jxl","file":"rapier-jxl-a39d956348889277.txt","bytes":18780,"sri":"1qItfMEZzn4R10CodfaauGfte5EKmanBsL24YY1Ok4HKkD9mkZtFORpmB3q7zpkR"},{"id":"jxlcomplete","file":"rapier-jxlcomplete-96a39166d18d1b87.txt","bytes":156523,"sri":"Eu3TUKQdtMsk88ULzNcg3CH0cHQO9V4sYUhsjZ+263j9A48e5qsx5JMeKqm+PVHv"},{"id":"notes","file":"rapier-notes-826c1905059e6f74.txt","bytes":389517,"sri":"WsCs3FAr7OhThzvEo1wiNr4q7ts8JzGT8Z/Qxj0vZwJBq1Ra6VG9IoIUJ1i9tE86"}];
+const SHELL_PARTS = [{"id":"document","file":"rapier-document-11e070fc77a9e48f.txt","bytes":902195,"sri":"fXZhBEaM2+spIiztvLDdw5bMeEB8ntPt3KBiGPEFKdBMz37/GDRjktDhFHYhshlR"},{"id":"presets","file":"rapier-presets-6ce793b80c88dc5f.txt","bytes":252215,"sri":"3Q17J+Gech2Tk+clARW8qnHl+oRYGBa1pB3neko7ZvpeKBwI/xfOWv9WnLreRw1o"},{"id":"drawing","file":"rapier-drawing-88e990615a087a0b.txt","bytes":396187,"sri":"LrUxwtFXMx+CQflf2CtYEWFA1nI66ceSsAz7MhXG1XOkSKglLVeC1ZfXp+5OEBz8"},{"id":"jxl","file":"rapier-jxl-6ffd21c47332bf39.txt","bytes":18773,"sri":"OkE3Z0Z909VoCD8muaItOMhc92ygXIbZbWaJyffDaAafzVV0VxsEpdH8xDQcgerO"},{"id":"jxlcomplete","file":"rapier-jxlcomplete-b43df6f59e840c53.txt","bytes":190144,"sri":"/w+StsKCsQtKwcPffGKow5lwg3ETvowxoPwNRKmvW7iaRE7nnN4bdZUTU2JnEDJo"},{"id":"notes","file":"rapier-notes-24a6a1cdd97ec94b.txt","bytes":391127,"sri":"wD0sPJyrxYYRyhxHOKYGAr2+vX1Evlqqep4M+pfJIfKc+IL9fP0TDFVtZ5A9vv8o"}];
 const PART_DIRECTORY = 'parts/';
 const SHELL_GENERATION = SHELL_CACHE_PREFIX + SHELL_RELEASE_SHA256.slice(0, 32);
 const SHELL_PAGE_URL = new URL('./rapier.html', self.location).href;
@@ -183,18 +183,20 @@ function matchesPage(url, digest) {
   return digest === SHELL_PAGE_SHA256 || digest === SHELL_DOOR_SHA256[path];
 }
 
+const checkedPages = new WeakMap();
 async function cachedNavigationResponse(request, release = null) {
   if (!isShellDoor(request.url)) return null;
   const cache = release ? await caches.open(release.cache) : await shellCache();
   const copy = (await cache.match(request)) || await cache.match(SHELL_PAGE_URL);
   if (!copy?.ok || !/^text\/html(?:;|$)/i.test((copy.headers.get('Content-Type') || '').trim())) return null;
-  const digest = toHex(await crypto.subtle.digest('SHA-256', await copy.clone().arrayBuffer()));
-  if (digest !== (release?.page || SHELL_PAGE_SHA256)) return null;
   const canonical = new URL(request.url);
   if (canonical.pathname !== new URL(SHELL_ROOT_URL).pathname && canonical.pathname.endsWith('/')) {
     canonical.pathname = canonical.pathname.slice(0, -1);
     return Response.redirect(canonical.href, 308);
   }
+  const digest = toHex(await crypto.subtle.digest('SHA-256', await copy.clone().arrayBuffer()));
+  if (digest !== (release?.page || SHELL_PAGE_SHA256)) return null;
+  checkedPages.set(copy, digest);
   return copy;
 }
 
@@ -337,7 +339,7 @@ async function rememberNavigation(event, response) {
       !/^text\/html(?:;|$)/i.test((response.headers.get('Content-Type') || '').trim())) return response;
   await updateStartup(async state => {
     if (state.ready || state.rollback) return null;
-    const page = toHex(await crypto.subtle.digest('SHA-256', await response.clone().arrayBuffer()));
+    const page = checkedPages.get(response) || toHex(await crypto.subtle.digest('SHA-256', await response.clone().arrayBuffer()));
     state.clients[event.resultingClientId] = {url: event.request.url, page, attempt: '', result: ''};
     return {changed: true};
   }).catch(() => {});

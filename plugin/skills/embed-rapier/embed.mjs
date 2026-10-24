@@ -242,7 +242,11 @@ function createAssetBroker({current, send}) {
 function pictureBase(value) {
   if (value === undefined || value === null) return null;
   let base;
-  try { base = new URL(assetURL(value)); } catch (_) { throw refusal('invalid_base_url', 'baseUrl is an absolute https address.'); }
+  try {
+    if (typeof value !== 'string' || !value || value.length > 4096 || /[\s\u0000-\u001f\u007f<>\\]/u.test(value)) throw 0;
+    base = new URL(value);
+    if (base.username || base.password || !(base.protocol === 'https:' || base.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(base.hostname))) throw 0;
+  } catch (_) { throw refusal('invalid_base_url', 'baseUrl is an absolute https address, or http on localhost.'); }
   const vouched = new Set();
   return Object.assign(src => {
     const text = String(src || '').trim();
@@ -253,7 +257,7 @@ function pictureBase(value) {
 return {FEATURES, LIMITS, ASSET_TYPES, refusal, normalizeSettings, snapshotSettings, pickDeviceFile, createFilePicker, assetURL, assetBytes, bytesHash, externalImage, createAssetBroker, pictureBase};
 })();
 const BUILDS = Object.freeze({full: 'https://rapier.website/embed/rapier.html', reader: 'https://rapier.website/embed/rapier-reader.html'});
-const PACKAGE_VERSION = '1.2.37';
+const PACKAGE_VERSION = '1.2.40';
 const OPTIONS = ['build', 'src', 'plugins', 'approvePlugins', 'sessionId', 'documentId', 'agent', 'agentName', 'theme', 'save', 'assets', 'openFile', 'load',
   'onState', 'compare', 'onClose', 'settings', 'style', 'title', 'onError', 'timeout'];
 const READER_FEATURES = ['find', 'readAloud', 'share'];
@@ -627,6 +631,7 @@ function mount(target, options = {}) {
     if (connected || ended) return;
     connectedWait.reject(refusal(code, reason));
   }
+  const connectTimeoutReason = () => 'The ' + noun + ' did not connect within ' + bootTimeout / 1000 + ' seconds. A page that does not allow this parent (frame-ancestors) is blocked and never connects; the hosted pages allow https, localhost and 127.0.0.1 parents.';
   function onLoad() {
     if (sawLoad && posted) {
       cancelOpen('open_disconnected');
@@ -636,7 +641,7 @@ function mount(target, options = {}) {
     }
     sawLoad = true;
     clearTimeout(bootTimer);
-    if (!connected) bootTimer = setTimeout(() => bootFailed('connect_timeout', 'The ' + noun + ' did not connect within ' + bootTimeout / 1000 + ' seconds'), bootTimeout);
+    if (!connected) bootTimer = setTimeout(() => bootFailed('connect_timeout', connectTimeoutReason()), bootTimeout);
     connect();
   }
   function focusBeside(forward) {
@@ -735,6 +740,7 @@ function mount(target, options = {}) {
   host.addEventListener('message', onWindowMessage); iframe.addEventListener('load', onLoad);
   iframe.src = source.href;
   if (iframe !== target) target.append(iframe);
+  bootTimer = setTimeout(() => bootFailed('connect_timeout', connectTimeoutReason()), bootTimeout);
   return handle;
 }
 

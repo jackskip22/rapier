@@ -1,4 +1,28 @@
 // SPDX-License-Identifier: MIT
+import {parseWill, stripOneTerminator} from '../../agent/will.mjs';
+
+export function willMergeConflict(base, ours, theirs) {
+	const snapshot = text => {
+		const will = parseWill(text);
+		return {fault: will.fault, regions: will.regions.filter(region => region.law !== 'edit').map(region => ({
+			law: region.law, intent: region.intent, text: text.slice(region.start, region.end),
+		}))};
+	};
+	const a = snapshot(ours), b = snapshot(theirs);
+	if (a.fault || b.fault) return ours !== theirs;
+	const kept = value => JSON.stringify(value.regions.map(({law, intent, text}) => ({law, intent, ...(law === 'keep' ? {text} : {})})));
+	if (kept(a) !== kept(b)) return true;
+	if (base === null) return false;
+	const prior = snapshot(base);
+	if (prior.fault) return base !== ours || base !== theirs;
+	const appended = value => {
+		const before = prior.regions.filter(region => region.law === 'append'), after = value.regions.filter(region => region.law === 'append');
+		return before.length === after.length && before.every((region, index) =>
+			stripOneTerminator(after[index].text).startsWith(stripOneTerminator(region.text)));
+	};
+	return !appended(a) || !appended(b);
+}
+
 function textFault(code, message) { return Object.assign(new Error(message), {code}); }
 export function canonicalNote(text) {
 	if (typeof text !== 'string') throw textFault('note_text', 'A note must be text');
@@ -430,8 +454,9 @@ export function mergeText(base, ours, theirs, options = {}) {
 	canonicalNote(ours); canonicalNote(theirs); if (base !== null) canonicalNote(base);
 	const unchanged = value => ({text: value, clean: !value.includes(TEXT_CONFLICT), conflicts: value.includes(TEXT_CONFLICT) ? [{kind: 'existing-conflict', advisory: true}] : []});
 	if (ours === theirs) return unchanged(ours);
-	if (base === ours) return unchanged(theirs);
-	if (base === theirs) return unchanged(ours);
+	const willConflict = willMergeConflict(base, ours, theirs);
+	if (!willConflict && base === ours) return unchanged(theirs);
+	if (!willConflict && base === theirs) return unchanged(ours);
 	const conflicts = []; let text = '', a, b;
 	const conflict = (before, a, b, kind) => {
 		const ab = inspectTextConflicts(a), bb = inspectTextConflicts(b);
@@ -468,6 +493,7 @@ export function mergeText(base, ours, theirs, options = {}) {
 	const [units, oursUnits, theirsUnits] = base === null ? [] : [base, ours, theirs].map(textUnits);
 	const declared = base !== null && textDeclarations(units);
 	if (base === null) conflict(null, ours, theirs, 'no-ancestor');
+	else if (willConflict) conflict(base, ours, theirs, 'will');
 	else if (textDeclarations(oursUnits) !== declared || textDeclarations(theirsUnits) !== declared) conflict(base, ours, theirs, 'document-bindings');
 	else {
 		const reordered = textPermuted(units, oursUnits, theirsUnits);

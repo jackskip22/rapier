@@ -10,14 +10,14 @@ import {RAPIER_MARKDOWN_SPEC, applyMarkdownSpec} from '../agent/markdown-spec.mj
 import {installMarkdownLayout} from '../layout/markdown.mjs';
 import {installMarkdownImages} from '../spec/md-assets.mjs';
 import {DOORS, GUIDES, SITE_PAGES} from '../door-worker.js';
-import {HOME_H1, PLAY_URL, CURRENT_DOOR, MUSE_DOOR} from './discovery.mjs';
+import {HOME_H1, PLAY_URL, CURRENT_DOOR} from './discovery.mjs';
 
 const sitePage = path => 'https://rapier.website' + path;
 const SUMMARY = `Rapier is a free online Markdown editor and viewer. Open a .md file to read it formatted. Write on the formatted page or in the Markdown source; there is no split preview. The file stays plain Markdown. Free and open source (AGPL-3.0-only); no account, ads or tracking; works offline.
 
 ## Free online Markdown editor
 
-Headings, lists, checklists, tables, footnotes, callouts, syntax-colored code, LaTeX math and Mermaid diagrams, with find and replace, text-to-speech and undo. Paste cells from a spreadsheet and they become a Markdown table. PNG, JPEG, WebP and SVG pictures live inside the Markdown file, and text wraps around their real shape. Rapier keeps a draft as you work, and Save writes a .md file.
+Headings, lists, checklists, tables, footnotes, callouts, syntax-colored code, LaTeX math and Mermaid diagrams, with find and replace, text-to-speech and undo. Paste cells from a spreadsheet and they become a Markdown table. PNG, JPEG, WebP, JPEG XL and SVG pictures live inside the Markdown file, and text wraps around their real shape. Rapier keeps a draft as you work, and Save writes a .md file.
 
 ## Free online Markdown viewer
 
@@ -35,6 +35,14 @@ Tap ••• at the top right, then .docx under export, for an editable Word do
 
 Tap ••• at the top right, then open, and pick a .docx file. It becomes an editable Markdown page, pictures included, and Save writes the .md file. [Word to Markdown](${sitePage('/word-to-markdown')})
 
+## PDF to Markdown
+
+Tap ••• at the top right, then open, and pick a .pdf file. Choose Editable text and it becomes Markdown you can edit, pictures included. [PDF to Markdown](${sitePage('/pdf-to-markdown')})
+
+## Compare Markdown files
+
+Open the older file, then tap ••• and compare, and pick the newer one. A moved paragraph shows as a move. [Compare Markdown files](${sitePage('/markdown-diff')})
+
 ## Mermaid diagram editor
 
 Write a mermaid code block and the diagram is drawn on the page. Flowcharts draw at once; sequence diagrams, Gantt charts and the rest use the free diagram plug-in, which downloads once. [Mermaid diagram editor](${sitePage('/mermaid-editor')})
@@ -45,15 +53,15 @@ Rapier also opens text, code, TextPack and PDF (PDF import is a free plug-in), a
 
 ## Notes, drawing and painting
 
-[Notes](${sitePage('/notes')}) are Markdown files with colors, pins, checklists, voice recordings, tags, history and search; import from Google Keep, Evernote, Notion, Obsidian and 15+ other apps. [Draw](${sitePage('/draw')}) freehand or build diagrams with connected arrows, kept as editable SVG inside your file. [Paint](${sitePage('/paint')}) with MyPaint brushes, or [watercolor](${sitePage('/watercolor')}) with flowing pigments on textured paper. The [Gallery](${sitePage('/gallery')}) holds thousands of free ornaments, borders and decorative letters, and the [JPEG XL converter](${sitePage('/jxl')}) makes JXL pictures on your device.
+[Notes](${sitePage('/notes')}) are Markdown files with colors, pins, checklists, voice recordings, tags, history and search; import from Google Keep, Evernote, Notion, Obsidian and 15+ other apps. [Draw](${sitePage('/draw')}) freehand or build diagrams with connected arrows, kept as editable SVG inside your file. [Paint](${sitePage('/paint')}) with oil, pencil, marker and MyPaint brushes, or [watercolor](${sitePage('/watercolor')}) with flowing pigments on textured paper. The [Gallery](${sitePage('/gallery')}) holds thousands of free ornaments, borders and decorative letters, and the [JPEG XL converter](${sitePage('/jxl')}) makes JXL pictures on your device.
 
 ## AI agents
 
-An AI agent can edit with you live, and you see its changes and undo any of them. Connect Claude, Cursor or another MCP client to ${CURRENT_DOOR} with no account, Muse to ${MUSE_DOOR}, or use WebMCP in the browser. See the [agent guide](${sitePage('/agents')}).
+An AI agent can edit with you live, and you see its changes and undo any of them. Connect Claude, ChatGPT, Grok Bot, Cursor or another MCP client to ${CURRENT_DOOR} with no account, or use WebMCP in the browser. See the [agent guide](${sitePage('/agents')}).
 
 ## Where it runs
 
-In a browser, on Android ([Google Play](${PLAY_URL})) and Windows, or as one HTML file that you keep in a folder. The Android app has no internet permission.
+In a browser, on Android ([Google Play](${PLAY_URL})), Windows and Linux, or as one HTML file that you keep in a folder. The Android app has no internet permission.
 
 [Rapier](https://rapier.website/) · [Source](https://github.com/jackskip22/rapier) · [llms.txt](https://rapier.website/llms.txt) · [Privacy and terms](https://rapier.website/privacy) · [Commercial license](https://rapier.website/commercial)
 `;
@@ -130,13 +138,13 @@ function welcomeGuidePart(source, heading, {omitTitle = false, omitSpecimens = f
 	}
 	if (omitSpecimens) for (let index = start + 3; index < end; index++) {
 		const token = tokens[index], layout = token.meta?.mdLayout;
-		if (token.type !== 'inline' || !layout?.imageOnly || layout.layout.wrap !== 'around') continue;
+		if (token.type !== 'inline' || !layout?.imageOnly) continue;
 		const picture = token.children.find(child => child.type === 'image');
 		if (!picture || [...picture.content].length <= 1) continue;
 		omit(tokens[index - 1]);
 		const subject = new Set(picture.content.toLowerCase().match(/[a-z]{4,}/g) || []);
 		for (let other = start + 3; other < end; other++) {
-			const named = tokens[other].type === 'inline' && tokens[other].level === 1 && /^This ([a-z]+)\b/i.exec(tokens[other].content)?.[1];
+			const named = tokens[other].type === 'inline' && tokens[other].level === 1 && /^(?:This|The) ([a-z]+)\b/i.exec(tokens[other].content)?.[1];
 			if (named && subject.has(named.toLowerCase()) && tokens[other - 1].level === 0) omit(tokens[other - 1]);
 		}
 	}
@@ -198,11 +206,11 @@ export function guideSection(markdown, path) {
 
 const WATERCOLOR_GUIDE = `Paint watercolor online with Rapier. Blend pigments, lay transparent washes and let wet color spread across textured paper. Use a mouse, a finger or a pen. The editor is free, with no account or installation required.
 
-Watercolor needs a browser with WebGPU; the editor tells you if it's available.
+Watercolor needs WebGPU; without it, Rapier paints with Brushes.
 
 #### Start a watercolor painting
 
-[Rapier Watercolor](https://rapier.website/watercolor) opens Draw with Water selected. You can also choose **Water** inside any drawing. Choose a brush and a pigment, set the brush size, and paint on the canvas. Change the water and paint load for a light wash or a stronger mark. Add another color while the first is wet to mix them on the paper.
+[Rapier Watercolor](https://rapier.website/watercolor) opens Draw with watercolor selected. You can also choose **Watercolor** inside any drawing. Choose a brush and a pigment, set the brush size, and paint on the canvas. Change the water and paint load for a light wash or a stronger mark. Add another color while the first is wet to mix them on the paper.
 
 #### Water, pigment and paper
 
@@ -224,6 +232,21 @@ Add a watercolor sketch to a field journal, illustrate a garden plan, paint a st
 
 Painting runs on your device, with no account or ads. After the editor has loaded, you can keep working offline.
 `;
+
+const IMPORT_NAMES = {keep: 'Google Keep', obsidian: 'Obsidian', logseq: 'Logseq', roam: 'Roam Research', bear: 'Bear', textbundle: 'TextBundle',
+	joplin: 'Joplin', notion: 'Notion', evernote: 'Evernote', simplenote: 'Simplenote', standardnotes: 'Standard Notes', dayone: 'Day One',
+	zoho: 'Zoho Notebook', craft: 'Craft', upnote: 'UpNote', amplenote: 'Amplenote', nextcloud: 'Nextcloud Notes', apple: 'Apple Notes',
+	paper: 'Dropbox Paper', onenote: 'OneNote', samsung: 'Samsung Notes'};
+const NOT_APPS = new Set(['rapier', 'restore', 'any']);
+function notesImportGuide(uiMarkup, escape) {
+	const rows = [...uiMarkup.matchAll(/data-action="notes-import-pick" data-value="([a-z]+)"><span class="export-choice__label">[^<]*<\/span><span class="export-choice__description">([^<]*)<\/span>/g)]
+		.filter(([, value]) => !NOT_APPS.has(value));
+	if (rows.length < 10 || rows.some(([, value]) => !IMPORT_NAMES[value])) throw new Error('Every import sheet row needs its name in tools/seo-page.mjs IMPORT_NAMES');
+	const proper = {json: 'JSON', html: 'HTML', csv: 'CSV', markdown: 'Markdown', textbundle: 'TextBundle', word: 'Word', google: 'Google', takeout: 'Takeout', keep: 'Keep'};
+	const sentence = text => (text = text.replace(/&amp;/g, '&').replace(/\b[a-z]+\b/g, word => proper[word] || word)).charAt(0).toUpperCase() + text.slice(1) + '.';
+	return '<h2>Import notes from other apps</h2>\n<p>In Notes, tap Import and pick the app you are coming from, then the files it exported. Rapier reads them on your device and makes each one a Markdown note. Nothing already in your notes changes.</p>\n' +
+		rows.map(([, value, text]) => '<h3>Import from ' + escape(IMPORT_NAMES[value]) + '</h3>\n<p>' + escape(sentence(text)) + '</p>\n').join('');
+}
 
 export function seoDoorSections(engineSource, uiMarkup) {
 	const parser = applyMarkdownSpec(markdownit(RAPIER_MARKDOWN_SPEC.options), markdownPlugins);
@@ -248,12 +271,14 @@ export function seoDoorSections(engineSource, uiMarkup) {
 		'<h2>Questions</h2>\n' + door.faq.map(([question, answer]) => '<h3>' + escape(question) + '</h3>\n<p>' + escape(answer) + '</p>\n').join('') +
 		(door.sections || []).map(([heading, text, links]) => '<h2>' + escape(heading) + '</h2>\n<p>' + escape(text) + '</p>\n' +
 			(links?.length ? '<p>' + links.map(([label, href]) => '<a href="' + escape(href) + '">' + escape(label) + '</a>').join(' · ') + '</p>\n' : '')).join('');
+	bodies['/notes'] += notesImportGuide(uiMarkup, escape);
 	return Object.fromEntries(Object.entries(DOORS).map(([path, door]) => {
 		if (!bodies[path] && !door.h1) throw new Error('The site door has no guide: ' + path);
+		if (door.picture && !door.pictureCaption) throw new Error('A door picture needs its caption: ' + path);
 		if (door.h1 && (!door.lead || !door.faq?.length || !door.view || door.related?.some(other => other !== '/' && !SITE_PAGES[other]))) throw new Error('A searched door needs its paragraph, questions, view and known pages: ' + path);
 		const links = pageLinks(path, escape);
 		const picture = door.picture ? '<figure><img src="https://rapier.website/' + escape(door.picture) + '" alt="' + escape(door.imageAlt) +
-			'" width="1200" height="630" style="display:block;max-width:100%;height:auto;background:#fff"><figcaption>Overlapping pigment washes painted with Rapier Water.</figcaption></figure>\n' : '';
+			'" width="1200" height="630" style="display:block;max-width:100%;height:auto;background:#fff"><figcaption>' + escape(door.pictureCaption) + '</figcaption></figure>\n' : '';
 		const section = '<section id="rapier-seo">\n<h1>' + escape(door.h1 || door.name) + '</h1>\n' + picture + searched(door) + (bodies[path] || '') + '<nav aria-label="Rapier pages"><p>' + links + '</p></nav>\n</section>';
 		if (/<(?:svg|script|style|iframe|form|input|button|!--)|data:|RAPIER_/i.test(section) ||
 			[...section.matchAll(/<img\b[^>]*>/g)].some(image => !picture.includes(image[0]))) throw new Error('The door guide must contain only its authored picture, text and links');

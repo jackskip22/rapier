@@ -91,10 +91,10 @@ export class RemotePaintSurface {
 			if (box) this.replay.crop = [box.x0, box.y0, box.x1, box.y1];
 			this.replayQueue.push(this.replay); this.replay = null;
 		}
-		if (record) this.replay = {id: this.sheetId + '-' + token.id, actor: 'human',
+		if (record) this.replay = {id: this.sheetId + '-' + token.id, actor: 'human', ...(this.meta?.gpu ? {gpu: true} : {}),
 			sheet: {id: this.sheetId, width: this.width, height: this.height, options: structuredClone(this.options), offset: this.importOffset.slice(), scale: this.scale, toothOX: this.toothOX, toothOY: this.toothOY, paper: structuredClone(this.paper)},
 			brushes: [], commands: [{target: 'surface', id: this.id, method: 'tilt', args: this.gravity.slice()}]};
-		this._push({target: 'surface', id: this.id, method: 'beginStroke', args: [token.id], ...(history ? {history:{...structuredClone(history),paperKey:JSON.stringify({sheet:this.sheetId,paper:this.paper,options:this.options,scale:this.scale,tooth:[this.toothOX,this.toothOY]})}} : {})}, {mutates: false});
+		this._push({target: 'surface', id: this.id, method: 'beginStroke', args: [token.id], ...(this.meta?.gpu ? {gpu: true} : {}), ...(history ? {history:{...structuredClone(history),paperKey:JSON.stringify({sheet:this.sheetId,paper:this.paper,options:this.options,scale:this.scale,tooth:[this.toothOX,this.toothOY]})}} : {})}, {mutates: false});
 		return token;
 	}
  startHistory(input) {

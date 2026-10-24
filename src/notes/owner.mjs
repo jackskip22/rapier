@@ -951,6 +951,16 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			await tryArmDeletion(index);
 			return {index, files, listing, bodies, generation: folderGeneration(index), readOnly: false, notice: dirty, dropped: reported, kept: keptReported};
 		};
+		const readNote = async file => {
+			if (pressureOnly) return null;
+			const index = await readIndex();
+			if (await readJournal() || index.transaction || Object.keys(index.deletions || {}).length) return null;
+			if (deletion) { const state = await deletion.read(index); if (state.record && state.record.phase !== 'idle') return null; }
+			if (!index.notes[file]?.id) return null;
+			const bytes = await readBytes(file);
+			if (bytes == null) return null;
+			return {index, indexBytes: indexReceipt, bodies: new Map([[file, bytes]]), generation: folderGeneration(index), readOnly: false, notice: dirty};
+		};
 		const rebuildIndex = async backup => {
 			active();
 			let damaged = null;
@@ -1248,7 +1258,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				throw fail('corrupt', 'The pending restore writer is unreadable. Its files were kept.');
 			return index.folderDeviceId;
 		};
-		return {restoreWriter: serial(restoreWriter), pressureDelete: pressureDelete && serial(pressureDelete), read: serial(read), readImportReceipt: serial(async id => receiptFrom((await read()).index, id)), rebuildIndex: serial(rebuildIndex), recover: serial(async () => (await recover()).index), commitIndex: serial(commitIndex), transact: serial(transact), release: () => {
+		return {restoreWriter: serial(restoreWriter), pressureDelete: pressureDelete && serial(pressureDelete), read: serial(read), readNote: serial(readNote), readImportReceipt: serial(async id => receiptFrom((await read()).index, id)), rebuildIndex: serial(rebuildIndex), recover: serial(async () => (await recover()).index), commitIndex: serial(commitIndex), transact: serial(transact), release: () => {
 			if (releasePromise) return releasePromise;
 			releaseStarted = true;
 			releasePromise = (async () => { await jobs.catch(() => {}); released = true; unlock(); await settled; })();

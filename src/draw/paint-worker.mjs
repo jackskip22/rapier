@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {PaintSurface, PaintBrush, paintStroke} from './paint.mjs';
 import {PaintStrokeHistory, copyPaintState, snapshotPaintState} from './paint-history.mjs';
-import {AgentPaintRun, admitAgentStrokes, prepareAgentPainting, prepareAgentLayerPainting, encodeAgentPainting, agentPaintReplayRun, replayAgentPainting} from './agent-paint.mjs';
+import {AgentPaintRun, admitAgentStrokes, prepareAgentPainting, prepareAgentLayerPainting, encodeAgentPainting, agentPaintReplayRun, replayAgentPainting, setPaintReplayGpu} from './agent-paint.mjs';
 import {sha256Yielding} from '../notes/integrity.mjs';
 import {createPaintRowPool, PAINT_SPLIT_PIXELS} from './paint-parallel.mjs';
 import {createWorkerClient} from './worker-client.mjs';
 import {_rapierDrawBuildSVG} from './core.mjs';
+import {openPaintDevice, GpuPaintSurface, writeCommit, paintGpuFits, warmPaintEngines} from './paint-gpu.mjs';
+import './paint-gpu-flat.mjs';
+import {installWetState, wetProgramsReady, wetBandsFor} from './paint-gpu-wet.mjs';
 export {createWorkerClient};
 const hash = data => sha256Yielding(new Uint8Array(data.buffer,data.byteOffset,data.byteLength));
 const surfaceMethods = new Set(['clear','fromRGBA8','grow','tilt','settleWet','_finishWetWork','stepWet','composeWet','advanceWet']);
@@ -23,6 +26,10 @@ const yieldPaint = () => new Promise(resolve => {
 export function createPaintWorker({postMessage, spawnRows, isolated = false} = {}) {
  const surfaces=new Map(), brushes=new Map(), runs=new Map(), checkpoints=new Map();
  const agentJobs=new Map(), displays=new Map(), histories=new Map(), definitions=new Map(), historyBrushes=new Map(), resumedBrushes=new Map();
+ const gpuSheets=new Map(); let gpuMode='off', gpuDevice=null, gpuTask=null;
+ const gpuReady=(attempt=0)=>{ if(gpuMode==='off')return Promise.resolve(null); return gpuTask??=openPaintDevice({software:gpuMode==='software',timeoutMs:20000}).then(d=>{gpuDevice=d;setPaintReplayGpu(d);d.lost?.then(()=>{gpuDevice=null;setPaintReplayGpu(null);for(const g of gpuSheets.values())g.lost=true;});return d;},error=>{
+  if(attempt>=3||gpuMode==='off'||['No WebGPU.','Only a software adapter.'].includes(error?.message))return null;
+  return new Promise(r=>setTimeout(r,2000*(attempt+1))).then(()=>{gpuTask=null;return gpuReady(attempt+1);}); }); };
  const copyState=value=>{
   const out=copyPaintState(value);
   for(const brush of [...out.brushes.values(),...(out.resumed?[out.resumed.brush]:[])]) {
@@ -36,6 +43,8 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
    apply:(state,c)=>{
     const s=state.surface,a=c.args||[];
     if(c.target==='read'){s.readCommitted(c.box);return;}
+    if(c.target==='commit'){if(c.covered)throw new Error('The painting history checkpoint is no longer retained');if(s.wetFromGpu){s.wetState=null;s.wetWindow=null;s.wetRasterBase=null;s.wetCover=null;s.wetDeposited=null;s.wetTouched=null;s.wetPending=0;s.wetFromGpu=false;delete s.drawDab;}writeCommit(s,c);return;}
+    if(c.target==='wash'){installWetState(s,c.snapshot);return;}
     if(c.target==='define'){state.brushes.set(c.id,c.restore?state.resumed.brush:new PaintBrush(c.definition));if(c.restore)state.resumed=null;state.definitions.set(c.id,c.definition);return;}
     if(c.target==='brush'){state.brushes.get(c.id)[c.method](...a);return;}
     if(c.target==='stroke'){state.brushes.get(c.brushId).strokeTo(s,...a);state.brushId=c.brushId;return;}
@@ -49,6 +58,25 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
   }));
   return histories.get(id);
  };
+ const wetMethods=new Set(['settleWet','_finishWetWork','stepWet','composeWet','advanceWet','dryWet','tilt']);
+ function wetOnSheet(id,method,args){const g=gpuSheets.get(id);if(!g||g.lost||!(g.wetState||g.wetPending))return false;return wetMethods.has(method);}
+ function sheetFor(id,surface){let sheet=gpuSheets.get(id);if(!sheet&&gpuDevice&&!gpuDevice.paintError&&paintGpuFits(gpuDevice,surface.width,surface.height)){sheet=new GpuPaintSurface(gpuDevice,surface);gpuSheets.set(id,sheet);warmPaintEngines(gpuDevice,surface);}return sheet;}
+ async function settleSheet(id){
+  const sheet=gpuSheets.get(id); if(!sheet?.stroke)return;
+  let commit;
+  try{commit=await sheet.settle();}
+  catch(error){ if(error?.code!=='paint_gpu_lost')throw error; sheet.cancel(); gpuSheets.delete(id); return; }
+  globalThis.rapierPaintGpuStrokes=(globalThis.rapierPaintGpuStrokes||0)+1;
+  const h=histories.get(id); if(!commit||!h)return;
+  const last=h.checkpoints.at(-1)?.at??-1;
+  for(let i=0;i<h.commands.length;i++){const k=h.commands[i],at=h.offset+i;if(k.target!=='commit'||!k.tiles)continue;
+   const next=h.strokes.find(st=>st.at>at)?.at; if(next===undefined)continue;
+   if(h.checkpoints.some(cp=>cp.at>at&&cp.at<=next)){k.tiles=null;k.covered=true;}}
+  const fresh=new Set((commit.tiles||[]).map(t=>t.x+','+t.y+','+t.w+','+t.h));
+  const stepStart=Math.max(last,h.strokes.at(-1)?.at??0);
+  for(let i=Math.max(0,stepStart-h.offset);i<h.commands.length;i++){const k=h.commands[i];if(k.target==='commit'&&k.tiles)k.tiles=k.tiles.filter(t=>!fresh.has(t.x+','+t.y+','+t.w+','+t.h));}
+  h.commands.push({target:'commit',box:commit.box,tiles:commit.tiles});
+ }
  let lastId=0, failed=null, pool=null, chain=Promise.resolve();
  const releaseDisplay=bound=>{if(bound){bound.canvas.width=bound.canvas.height=0;}};
  const dropDisplay=id=>{const bound=displays.get(id);if(bound){releaseDisplay(bound.previous);releaseDisplay(bound);displays.delete(id);}};
@@ -62,9 +90,11 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
   const replace=bound?.submitted&&(bound.invalid||bound.width!==surface.width||bound.height!==surface.height||bound.toothOX!==surface.toothOX||bound.toothOY!==surface.toothOY);
   const unavailable=bound&&(bound.lost||replace)?{generation:bound.generation,canvasGeneration:bound.canvasGeneration,submitted:false,...(bound.lost?{lost:true}:{replace:true})}:null;
   if(unavailable&&!final)return {surfaceId:id,meta:metaOf(surface),patch:null,display:unavailable};
-  const box=surface.takeDirty();
+  const sheet=gpuSheets.get(id), live=sheet?.stroke&&!full&&!final;
+  const box=live?sheet.takeDirty():surface.takeDirty();
   const change = (full || final) ? {x0:0,y0:0,x1:surface.width-1,y1:surface.height-1} : box && {x0:Math.max(0,box.x0-1),y0:Math.max(0,box.y0-1),x1:Math.min(surface.width-1,box.x1+1),y1:Math.min(surface.height-1,box.y1+1)};
-  const patch = change ? {...surface.toRGBA8(change,true,final ? 'final' : 'live'),box:change} : null;
+  const shown = live && change ? await sheet.readDisplay(change) : null;
+  const patch = change ? live ? shown && {...shown,box:change} : {...surface.toRGBA8(change,true,final ? 'final' : 'live'),box:change} : null;
   const result={surfaceId:id,meta:metaOf(surface),patch,...(final ? {digest:await hash(patch.data)} : {})};
   if(unavailable)return {...result,display:unavailable};
   if(bound){
@@ -76,8 +106,9 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
   return result;
  }
  function metaOf(surface) {
-  return {width:surface.width,height:surface.height,revision:surface.revision,bounds:surface.bounds(),growBox:surface.growBox,
-   toothOX:surface.toothOX,toothOY:surface.toothOY,wetState:!!surface.wetState,wet:!!surface.wet,_wetWork:!!surface._wetWork,wetPending:surface.wetPending,opStats:surface.opStats || null};
+  const sheet=[...gpuSheets].find(([id,g])=>surfaces.get(id)===surface&&!g.lost)?.[1]||null, wetSheet=sheet?.wetState?sheet:null;
+  return {width:surface.width,height:surface.height,revision:surface.revision,bounds:surface.bounds(),growBox:surface.growBox,gpu:!!sheet,
+   toothOX:surface.toothOX,toothOY:surface.toothOY,wetState:!!(surface.wetState||wetSheet),wet:!!(surface.wet||wetSheet?.wet),_wetWork:!!surface._wetWork,wetPending:(surface.wetPending||0)+(sheet?.wetPending||0),opStats:surface.opStats || null};
  }
  async function execute(request) {
   const {operation}=request;
@@ -88,12 +119,16 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
   if(operation==='configure') {
    if(pool || surfaces.size) throw new Error('Configure the painter before opening a surface');
    pool=await createPaintRowPool({count:request.helpers || 0,threshold:request.threshold ?? PAINT_SPLIT_PIXELS,isolated,spawn:init=>spawnRows(init,request.helperSource)});
+   gpuMode=['on','software'].includes(request.gpu)?request.gpu:'off';
+   if(gpuMode!=='off')void gpuReady().then(()=>{globalThis.rapierPaintGpu={mode:gpuMode,device:!!gpuDevice,adapter:gpuDevice?.paintAdapter||null};for(const [id,surface]of surfaces)sheetFor(id,surface);});
+   globalThis.rapierPaintGpu={mode:gpuMode,device:!!gpuDevice,adapter:gpuDevice?.paintAdapter||null};
    return {helpers:isolated ? request.helpers || 0 : 0};
   }
   if(operation==='create') {
    const id=idOf(request.surfaceId), {width,height}=request;
    if(surfaces.has(id)||!Number.isSafeInteger(width)||!Number.isSafeInteger(height)||width<1||height<1||width*height>12000000) throw new Error('Invalid paint surface');
    const surface=new PaintSurface(width,height,request.options); surfaces.set(id,surface); pool?.attach(surface);
+   sheetFor(id,surface);
    return state(id);
   }
   if(operation==='brush') {
@@ -144,20 +179,45 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
     if(c.target==='brush') { if(!brushMethods.has(c.method)) throw new Error('Unknown brush command'); need(brushes,c.id)[c.method](...args); for(const [id,h]of histories)if(surfaces.has(id))h.record(c); return; }
     if(c.target==='stroke') {
      if(args.length<3||args.length>11||args.some((v,i)=> i<10 ? !Number.isFinite(v) : typeof v!=='boolean')) throw new Error('Invalid input sample');
-     const surface=need(surfaces,c.surfaceId); need(brushes,c.brushId).strokeTo(surface,...args); changed.set(c.surfaceId,changed.get(c.surfaceId)||false); used.add(c.brushId);historyBrushes.set(c.surfaceId,c.brushId); histories.get(c.surfaceId)?.record(c); return;
+     const surface=need(surfaces,c.surfaceId), brush=need(brushes,c.brushId), sheet=gpuSheets.get(c.surfaceId);
+     const onGpu=!!sheet&&!sheet.lost&&checkpoints.get(c.surfaceId)?.gpu===true&&(brush.gpuCapable||brush.gpuWetCapable&&!surface.wetState&&wetProgramsReady(sheet.device,wetBandsFor(surface)))&&!(brush.op==='posterize'&&(surface.volume||surface.oil));
+     if(!onGpu&&sheet?.wetState){sheet.attach(surface);sheet.open();sheet.settleWet();await settleSheet(c.surfaceId);}
+     if(onGpu&&surface.wetState&&!brush.wetStroke){surface.settleWet();histories.get(c.surfaceId)?.record({target:'surface',id:c.surfaceId,method:'settleWet',args:[]});}
+     let onGpuNow=onGpu;
+     if(onGpu){try{sheet.attach(surface);sheet.open();}catch(error){if(error?.code!=='paint_gpu_lost')throw error;sheet.lost=true;onGpuNow=false;}}
+     else if(sheet?.stroke)await settleSheet(c.surfaceId);
+     brush.strokeTo(onGpuNow?sheet:surface,...args); changed.set(c.surfaceId,changed.get(c.surfaceId)||false); used.add(c.brushId);historyBrushes.set(c.surfaceId,c.brushId); if(!onGpuNow)histories.get(c.surfaceId)?.record(c); return;
     }
     if(c.target!=='surface') throw new Error('Unknown paint command target');
+    if(gpuSheets.get(c.id)?.stroke&&!['endStroke','set'].includes(c.method))await settleSheet(c.id);
+    {const ws=gpuSheets.get(c.id); if(ws?.wetState){
+     if(['fromHistory','clear'].includes(c.method))ws.discardWet();
+     else if(c.method==='fromRGBA8'){ws.attach(need(surfaces,c.id));ws.open();ws.settleWet();await settleSheet(c.id);}
+     else if(c.method==='grow')ws._wetEngine.shift(Math.max(0,Math.ceil(args[0]||0)),Math.max(0,Math.ceil(args[1]||0)));
+    }}
     const surface=need(surfaces,c.id); let full=changed.get(c.id)||false, value, recorded=null;
     if(c.method==='historyStart'){await historyFor(c.id).begin(args[0],c.history);values.push(null);replayWork.push(null);return;}
     if(c.method==='set') { if(!properties.has(args[0])) throw new Error('Unknown paint property'); surface[args[0]]=args[1]; }
-    else if(c.method==='fromHistory') {const restored=await need(histories,args[0]).material(args[1]);pool?.detach(surface);surfaces.set(c.id,restored.surface);pool?.attach(restored.surface);restored.surface.revision=Math.max(restored.surface.revision,surface.revision+1);const held=restored.resumed||(restored.brushId!=null?{brush:restored.brushes.get(restored.brushId),definition:restored.definitions.get(restored.brushId)}:null);if(held)resumedBrushes.set(c.id,held);value=metaOf(restored.surface);full=true;}
+    else if(c.method==='fromHistory') {const restored=await need(histories,args[0]).material(args[1]);pool?.detach(surface);surfaces.set(c.id,restored.surface);pool?.attach(restored.surface);gpuSheets.get(c.id)?.attach(restored.surface);restored.surface.revision=Math.max(restored.surface.revision,surface.revision+1);const held=restored.resumed||(restored.brushId!=null?{brush:restored.brushes.get(restored.brushId),definition:restored.definitions.get(restored.brushId)}:null);if(held)resumedBrushes.set(c.id,held);value=metaOf(restored.surface);full=true;}
     else if(c.method==='beginStroke') {
      if(checkpoints.has(c.id))throw new Error('Stroke already open');
      if(surface._wetWork){surface._finishWetWork();histories.get(c.id)?.record({target:'surface',id:c.id,method:'_finishWetWork',args:[]});}
+     {const ws=gpuSheets.get(c.id); if(ws?.wetState&&!ws.lost){const snap=await ws._wetEngine.snapshot(); if(snap){
+      if(c.history&&histories.has(c.id))histories.get(c.id).record({target:'wash',snapshot:snap});
+      installWetState(surface,snap,false); ws.discardWet();
+     }}}
      if(c.history)await historyFor(c.id).begin(args[0],c.history);
-     checkpoints.set(c.id,{id:args[0],value:surface.beginStroke()});
+     checkpoints.set(c.id,{id:args[0],value:surface.beginStroke(),gpu:c.gpu===true});
     }
-    else if(c.method==='endStroke') { const cp=checkpoints.get(c.id); if(!cp||cp.id!==args[0]) throw new Error('Stroke checkpoint does not match'); value=surface.endStroke(cp.value,args[1]===true); checkpoints.delete(c.id); full=args[1]===true; }
+    else if(c.method==='endStroke') { const cp=checkpoints.get(c.id); if(!cp||cp.id!==args[0]) throw new Error('Stroke checkpoint does not match');
+     const sheet=gpuSheets.get(c.id); if(sheet?.stroke){ if(args[1]===true){sheet.cancel();sheet.discardWet();} else await settleSheet(c.id); } value=surface.endStroke(cp.value,args[1]===true); checkpoints.delete(c.id); full=args[1]===true; }
+    else if(wetOnSheet(c.id,c.method)) {
+     const sheet=gpuSheets.get(c.id); sheet.attach(surface); sheet.open();
+     try{value=c.method==='_finishWetWork'?undefined:await sheet[c.method](...args);}
+     finally{await settleSheet(c.id);}
+     const work=c.method==='dryWet'&&c.record===true?(sheet._wetEngine?.work||[]).map(([method,a])=>({target:'surface',id:c.id,method,args:a})):null;
+     values.push(value); replayWork.push(work); changed.set(c.id,full); return;
+    }
     else if(c.method==='dryWet') {
      if(c.record===true){recorded=[];surface.recordWetWork=(method,args)=>recorded.push({target:'surface',id:c.id,method,args});}
      try {value=surface.dryWet(performance.now()+8,args[0]??8,args[1]??8);}
@@ -184,6 +244,7 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
    return reply(request.final===true,request.final===true || request.materialOnly!==true || request.commands.length!==0);
   }
   if(operation==='read') {
+   if(gpuSheets.get(request.surfaceId)?.stroke)await settleSheet(request.surfaceId);
    if(request.observation===true) {
     const result=need(surfaces,request.surfaceId).observe();
     return {...result,digest:result.pixels ? await hash(result.pixels.data) : null};
@@ -256,7 +317,7 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
    }
    finally { pool?.detach(surface); }
   }
-  if(operation==='drop') { for(const id of request.surfaceIds||[]) { const surface=surfaces.get(id); if(surface) pool?.detach(surface); dropDisplay(id); surfaces.delete(id); checkpoints.delete(id); runs.delete(id);historyBrushes.delete(id);resumedBrushes.delete(id); if(!histories.get(id)?.retained)histories.delete(id); } for(const id of request.brushIds||[]){brushes.delete(id);definitions.delete(id);} return {}; }
+  if(operation==='drop') { for(const id of request.surfaceIds||[]) { const surface=surfaces.get(id); if(surface) pool?.detach(surface); dropDisplay(id); gpuSheets.get(id)?.destroy(); gpuSheets.delete(id); surfaces.delete(id); checkpoints.delete(id); runs.delete(id);historyBrushes.delete(id);resumedBrushes.delete(id); if(!histories.get(id)?.retained)histories.delete(id); } for(const id of request.brushIds||[]){brushes.delete(id);definitions.delete(id);} return {}; }
   throw new Error('Unknown paint operation');
  }
  const receive = request => {

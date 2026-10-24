@@ -309,7 +309,7 @@ function enterBlockEdit(block, wrapper, activation = null) {
 		_setBlockEditability(editDiv, true, rawEditor);
 		if (!rawEditor) _rapierEnsureEditLineBox(editDiv);
 
-		if (!rawEditor) globalThis.RapierImageFlow?.layoutNow?.(wrapper);
+		if (!rawEditor) globalThis.RapierImageFlow?.layoutNow?.(wrapper, true);
 		_rapierFocusEditingHost(editDiv);
 		placeCaret();
 		_rapierSettleCaretIntoText(editDiv);
@@ -372,7 +372,7 @@ function enterBlockEdit(block, wrapper, activation = null) {
 	_rapierResetEditHistoryBurst(editDiv);
 	_syncEmptyClass(wrapper, editDiv);
 
-	if (!rawEditor) globalThis.RapierImageFlow?.layoutNow?.(wrapper);
+	if (!rawEditor) globalThis.RapierImageFlow?.layoutNow?.(wrapper, true);
 	_rapierFocusEditingHost(editDiv);
 	placeCaret();
 	_rapierSettleCaretIntoText(editDiv);
@@ -413,8 +413,6 @@ async function _rapierWithSettledExternalDocument(read, options = null) {
 	}
 }
 function _notifyHistoryState() {
-	const pending = _rapierHasPendingBlockEdit() || !!rapier.undo.flatBurstOpen;
-	void pending;
 	renderHistory();
 	_rapierWebMcpSync();
 	_rapierSinceOpenRefresh();
@@ -797,6 +795,13 @@ function rapierFlushDirty(opts) {
 	if ((_rapierEmbed.active || _rapierEmbed.refused) && (!_rapierEmbed.loaded || _rapierEmbedDiscarded())) return Promise.resolve(false);
 	if (_rapierPersistenceRuntime.recoveryBase === false) {
 		_rapierWarnNewerRecovery(false);
+		return Promise.resolve(false);
+	}
+	if (!opts.persistenceSnapshot && (!_rapierSettlePendingDocumentChange() ||
+			_rapierPersistenceCaptureBlocked(opts.mutationOwner) || !_rapierHistoryIsComplete())) {
+		rapier.autosave.deferred = true;
+		if (opts.durable) rapier.autosave.deferredDurable = true;
+		if (opts.snapshot) rapier.autosave.deferredSnapshot = true;
 		return Promise.resolve(false);
 	}
 	const snapshotSequence = opts.snapshot ? ++_rapierPersistenceRuntime.snapshotSequence : null;
@@ -1761,6 +1766,7 @@ function renderToast(msg, type = 'success', action = null) {
 	toast.dataset.noticeView = notesRaising ? 'notes' : 'editor';
 	if (typeof _rapierNoticeView === 'function') toast.dataset.noticeAt = _rapierNoticeView();
 	if (action && action.outlive === 'save-failed') toast.dataset.noticeKind = 'save-failed';
+	else if (action && action.kind) toast.dataset.noticeKind = String(action.kind);
 
 	const span = document.createElement('span');
 	span.className = 'toast__msg';
@@ -1890,7 +1896,7 @@ function _rapierDialTurn(button, redo, act) {
 }
 function _rapierDialSay(button, label, nothing) {
 	button.setAttribute('aria-label', label);
-	button.dataset.tip = label;
+	button.dataset.tip = _rapierTipWithKeys(label, button.id === 'btn-redo' ? 'Mod+Shift+Z' : button.id === 'btn-undo' ? 'Mod+Z' : '');
 	button.setAttribute('aria-disabled', String(!!nothing));
 }
 
@@ -2121,14 +2127,16 @@ function _rapierApplyReferenceIndex(index) {
 	if (rapier.semantic.referenceDelta.changed) rapier.semantic.referenceRevision++;
 	return rapier.semantic.referenceRevision;
 }
-function rebuildReferenceIndex(blocks, before = null, after = null) {
-	const ordinary = rows => Array.isArray(rows) && rows.every(row => {
+function _rapierRowsHoldNoDefinitions(rows) {
+	return Array.isArray(rows) && rows.every(row => {
 		const raw = String(row?.raw ?? '');
-		return !/[\r\n\[<\\>]/.test(raw) && !/^\s/.test(raw) &&
+		return !/[\r\[<\\>]/.test(raw) && !/^\s/.test(raw) &&
 			!/^([-+*]|\d+[.)])\s|^(`{3,}|~{3,})/.test(raw) &&
 			(row.leading == null || /^\n{2,}$/.test(String(row.leading).replace(/\r\n?/g, '\n')));
 	});
-	if (ordinary(before) && ordinary(after)) {
+}
+function rebuildReferenceIndex(blocks, before = null, after = null) {
+	if (_rapierRowsHoldNoDefinitions(before) && _rapierRowsHoldNoDefinitions(after)) {
 		rapier.semantic.referenceDelta = _rapierReferenceIndexDelta(rapier.semantic.references, rapier.semantic.references);
 		return false;
 	}
@@ -2426,7 +2434,6 @@ function _rapierRenderBlockMarkup(raw, referenceIndex = null) {
 	return { html, batchable: String(toRender == null ? '' : toRender).indexOf('<') < 0 };
 }
 
-const _RAPIER_RTL_SCRIPT = globalThis.RapierRenderMarkdown.rtlScripts;
 
 
 function _rapierFinishSanitizedBlock(sanitizedHtml, raw, retainNodes = false) {
@@ -2857,12 +2864,7 @@ function _rapierRawListOf(parsed) {
 }
 
 const _RAPIER_WYSIWYG_SOURCE_LIMIT = 4 * 1024 * 1024;
-const _RAPIER_WYSIWYG_LIMITS = Object.freeze({
-	blocks: 4096,
-	tokens: 65536,
-	inlineCandidates: 131072,
-	nodes: 160000
-});
+const _RAPIER_WYSIWYG_LIMITS = Object.freeze({blocks: 16384, tokens: 262144, inlineCandidates: 524288, nodes: 655360});
 const _rapierParseRuntime = Object.seal({
 	worker: null, generation: 0, restarts: 0, sequence: 0, pending: new Map(), late: new Map(),
 	markdownSource: '',
@@ -5887,6 +5889,7 @@ function _rapierColourOpenCode(editDiv) {
 	const source = code.textContent || '';
 	const language = _rapierRenderModule('render-markdown')._rapierLanguageClass(code) || 'text';
 	if (!_rapierHighlightAdmitted(source) || _rapierCodeReading(language) !== 'code') return;
+	if (typeof RapierLexer !== 'undefined') RapierLexer.warm(window, () => RapierLexer.available(navigator) && _rapierEnsureLexer(), _rapierLexerRefused);
 	const html = _rapierCodeHtml(source, language);
 	if (!html || code.innerHTML === html) return;
 	const head = document.createRange();
@@ -6656,7 +6659,7 @@ function _rapierUnpackSleepGroup(group, only = null) {
 			? (before ? edge.firstChild : edge.lastChild) : edge;
 		return {target, after: !before};
 	};
-	const ends = selection?.rangeCount && (affected(selection.anchorNode) || affected(selection.focusNode))
+	const ends = !_rapierWysiwygLedger.selectionOutside && selection?.anchorNode && (affected(selection.anchorNode) || affected(selection.focusNode))
 		? [boundary(selection.anchorNode, selection.anchorOffset), boundary(selection.focusNode, selection.focusOffset)] : null;
 	if (only && only === group.lastChild) host.insertBefore(only, group.nextSibling);
 	else {
@@ -6685,7 +6688,7 @@ function _rapierUnpackSleepGroups(host) {
 
 function _rapierGroupSleepingBlocks(host, first, last, held) {
 	const selection = window.getSelection();
-	if (selection?.rangeCount && (!selection.isCollapsed || selection.anchorNode === host ||
+	if (!_rapierWysiwygLedger.selectionOutside && selection?.anchorNode && (!selection.isCollapsed || selection.anchorNode === host ||
 		(selection.anchorNode?.nodeType === 1 ? selection.anchorNode : selection.anchorNode?.parentElement)?.closest('.block-sleep-group'))) return;
 	let group = null, band = -1;
 	for (const node of Array.from(host.children)) {
@@ -6933,8 +6936,8 @@ function _rapierRawEditorReason(raw, referenceIndex = null) {
 	}
 	if (/^[ ]{0,3}(?:(?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,})$/.test(trimmed)) return 'thematic-break';
 	if (/^!\[[^\]]*\]\([^\n]+\)$/.test(trimmed)) return 'standalone-image';
-	if (/(?:^|\n)(?: {4}|\t)\S/.test(value)) {
-		if (hasTopLevelToken('code_block')) return 'indented-code';
+	if (/(?: {4}|\t)/.test(value)) {
+		if (parsedTokens()?.some(token => token.type === 'code_block')) return 'indented-code';
 		if (sourceParseFailed) return 'indented-code';
 	}
 
@@ -7663,9 +7666,8 @@ function _rapierHandleEditInput(editDiv, event) {
 	if (!rawEditor) _rapierRenderModule('render-markdown')._rapierApplyBlockDirection(editDiv);
 	rapierDirty(block.id);
 	_syncEmptyClass(wrapper, editDiv);
-	if (!rawEditor && editDiv.querySelector('pre > code')) {
-		clearTimeout(editDiv._rapierColourTimer);
-		editDiv._rapierColourTimer = setTimeout(() => _rapierColourOpenCode(editDiv), 300);
+	if (!rawEditor && !editDiv._rapierColourTimer && editDiv.querySelector('pre > code')) {
+		editDiv._rapierColourTimer = requestAnimationFrame(() => _rapierColourOpenCode(editDiv));
 	}
 	if (!rapier.composition.block) {
 		if (!editDiv._rapierHistoryBurstStartedAt) editDiv._rapierHistoryBurstStartedAt = _rapierNow();
@@ -8445,10 +8447,30 @@ function _rapierInitBlockInteractionRouter() {
 		if (host._rapierGripFrame) return;
 		host._rapierGripFrame = requestAnimationFrame(() => { host._rapierGripFrame = 0; _rapierSyncItemGrip(); });
 	});
+	window.addEventListener('keydown', e => {
+		if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented || !matchMedia('(pointer: coarse)').matches) return;
+		const editDiv = _rapierActiveEditDiv();
+		if (editDiv && _rapierEnterTouchesEditor(e))
+			_rapierHandleTableTab(editDiv, {key: 'Tab', shiftKey: false, keyCode: 9, preventDefault: () => e.preventDefault(), get defaultPrevented() { return e.defaultPrevented; }});
+	}, true);
+	document.addEventListener('selectionchange', () => {
+		const node = window.getSelection()?.anchorNode, element = node?.nodeType === 1 ? node : node?.parentElement;
+		const next = !!element?.closest?.('.block-wrapper--editing.block-wrapper--table :is(td, th)') && matchMedia('(pointer: coarse)').matches;
+		if ((host.enterKeyHint === 'next') !== next) host.enterKeyHint = next ? 'next' : '';
+	});
+	host.addEventListener('beforeinput', event => {
+		const open = _activeBlockEditContext();
+		if (!open || event.defaultPrevented || event.isComposing || !event.cancelable || rapier.composition.block || _blockUsesRawEditor(open.block.raw)) return;
+		if (event.inputType === 'insertText' && (event.data === '-' || event.data === '.')) _rapierTypographyKey(open.editDiv, event.data, event);
+		else if (event.inputType === 'deleteContentBackward') _rapierTypographyKey(open.editDiv, null, event);
+		else open.editDiv._rapierTypographyLast = null;
+	}, true);
 	host.addEventListener('keydown', event => {
 		_activeBlockEditContext()?.editDiv._rapierFollow?.();
 		const open = _activeBlockEditContext();
 		if (open && (globalThis.RapierTables?.key(open.editDiv, event) || _rapierTableVerticalStep(open, event))) return;
+		if (open && _rapierWholeAccentBackspace(open.editDiv, event)) return;
+		if (open && !event.ctrlKey && !event.metaKey && !event.altKey && !event.isComposing && _rapierWrapChosenWords(open.editDiv, event.key)) { event.preventDefault(); return; }
 		const bare = !event.ctrlKey && !event.metaKey && !event.altKey;
 		if (!event.defaultPrevented && !open && event.target === host && bare && (event.key === 'Enter' || event.key === ' ')) {
 			event.preventDefault();
@@ -9933,8 +9955,8 @@ async function _rapierTraverseHistory(redo, context = null, burst = null) {
 	if (_rapierReadOnlyBlocked() || _rapierMutationBarrierActive() ||
 			rapier.composition.block || rapier.composition.source) return false;
 
-	const visit = redo ? null : _rapierUntouchedEdge();
-	if (visit && (rapier.undo.cursor < 2 || !_rapierLeaveEdgeParagraph() || rapier.undo.ledger.length !== visit.mark.ledger)) return false;
+	const visit = _rapierUntouchedEdge();
+	if (visit && (!redo && rapier.undo.cursor < 2 || !_rapierLeaveEdgeParagraph() || rapier.undo.ledger.length !== visit.mark.ledger)) return false;
 
 	if (!_rapierCommitPendingHistory({ preserveEmptyBlock: true })) return false;
 	const documentAuthority = String(rapier.identity.authority || '');
@@ -10649,7 +10671,9 @@ async function _rapierTraverseBurst(redo) {
 
 function _rapierHasPendingBlockEdit() {
 	if (!Number.isFinite(rapier.view.activeBlockId)) return false;
-	const block = rapier.document.blocks.find(candidate => candidate.id === rapier.view.activeBlockId);
+	const bound = _rapierBoundBlock(rapier.view.activeWrapper);
+	const block = bound?.id === rapier.view.activeBlockId ? bound
+		: rapier.document.blocks.find(candidate => candidate.id === rapier.view.activeBlockId);
 	return !!(block && block.dirty);
 }
 
@@ -13284,6 +13308,10 @@ async function _rapierWithCompoundTransaction(context, action, options = null) {
 			code: 'mutation_in_progress',
 		});
 	}
+	if (!_rapierSettlePendingDocumentChange() || !_rapierHistoryIsComplete() ||
+			(_rapierUntouchedEdge() && !_rapierLeaveEdgeParagraph())) {
+		throw Object.assign(new Error('Another document edit is still finishing.'), {code: 'mutation_in_progress'});
+	}
 	const config = options || {};
 	const carried = config.carriedLedger ? RapierLedger.readLedger(config.carriedLedger) : null;
 	if (carried) {
@@ -13308,6 +13336,7 @@ async function _rapierWithCompoundTransaction(context, action, options = null) {
 		..._rapierDirtyMarkOwner.capture(),
 		nextBlockId: Number(rapier.identity.nextBlockId || 1),
 		ledgerLength: rapier.undo.ledger.length,
+		ledger: rapier.undo.ledger.slice(),
 		branch: rapier.undo.branch.slice(),
 		cursor: rapier.undo.cursor,
 		dirty: new Set(rapier.autosave.dirty),
@@ -13401,7 +13430,7 @@ async function _rapierWithCompoundTransaction(context, action, options = null) {
 		rapier.identity.virtualKind = snapshot.virtualKind;
 		compound.splices.length = 0;
 		if (snapshot.undoWindow) Object.assign(rapier.undo, snapshot.undoWindow);
-		else rapier.undo.ledger.splice(snapshot.ledgerLength);
+		else { const live = rapier.undo.ledger; live.length = 0; for (const row of snapshot.ledger) live.push(row); }
 		_rapierPersistenceRuntime.durable = snapshot.durable;
 		rapier.undo.branch = snapshot.branch;
 		rapier.undo.cursor = snapshot.cursor;
@@ -18063,7 +18092,7 @@ function _rapierPlanExactNestedLink(live, range, beforeRaw, url) {
 	} : null;
 }
 
-function _rapierApplyExactNestedLink(url) {
+function _rapierApplyExactNestedLink(url, trimmed = false) {
 	if (_rapierUserMutationBlocked(false)) return false;
 	const state = _rapierFormatSelectionState();
 	if (!state || state.wrappers.length !== 1 || !_rapierInlineFormatSafe(state)) return false;
@@ -18071,6 +18100,13 @@ function _rapierApplyExactNestedLink(url) {
 	const live = _liveBlockEl(wrapper);
 	const beforeRaw = String(state.blocksBefore[0]?.raw || '');
 	if (!live || _rapierLiveRawForWrapper(wrapper) !== beforeRaw) return false;
+	const words = String(state.range), lead = words.length - words.trimStart().length, trail = words.length - words.trimEnd().length;
+	if (!trimmed && words.trim() && (lead || trail)) {
+		const start = _charOffsetForRangePoint(live, state.range.startContainer, state.range.startOffset);
+		const end = _charOffsetForRangePoint(live, state.range.endContainer, state.range.endOffset);
+		_rapierSetSelectionCharOffsets(live, start + lead, end - trail);
+		return _rapierApplyExactNestedLink(url, true);
+	}
 	const plan = _rapierPlanExactNestedLink(live, state.range, beforeRaw, url);
 	if (!plan) return false;
 
@@ -18601,7 +18637,8 @@ function _rapierInstallModalIsolation(overlay) {
 				_rapierDialogRuntime.isolation[at - 1].classList.contains('open')) at -= 1;
 	}
 	_rapierDialogRuntime.isolation.splice(at, 0, overlay);
-	_rapierApplyModalIsolation();
+	if (overlay.id === 'settings-overlay') requestAnimationFrame(() => setTimeout(() => { if (_rapierDialogRuntime.isolation.includes(overlay)) _rapierApplyModalIsolation(); }, 0));
+	else _rapierApplyModalIsolation();
 	let released = false;
 	return function () {
 		if (released) return;
@@ -20746,24 +20783,7 @@ function _rapierReviewRoot(name, meta = null) {
 	});
 }
 
-function _rapierSeenRecord(text, name, meta = null) {
-	return Object.freeze({ ..._rapierReviewRoot(name, meta), text: String(text == null ? '' : text) });
-}
 
-function _rapierReviewText(root) {
-	if (!root) return null;
-	if (typeof root.text === 'string') return root.text;
-	if (root.stateId && root.stateId === _rapierHistoryStateId()) return _rapierSourceText();
-	const reconstructed = _rapierJournalTextAt(root.revision);
-	if (reconstructed != null) return reconstructed;
-	if (root.integrity) {
-		const current = _rapierSourceText();
-		const actual = _rapierTextIntegrity(current);
-		if (actual.chars === root.integrity.chars && actual.fnv === root.integrity.fnv &&
-				actual.adler === root.integrity.adler) return current;
-	}
-	return null;
-}
 
 function _rapierResetReviewEvidence(text, name) {
 	_rapierSinceOpenClose();
@@ -20854,6 +20874,7 @@ const _rapierDirtyMarkOwner = (function createDirtyMarkOwner() {
 		if (edit && wrapper?.isConnected && edit.closest('.block-wrapper') === wrapper &&
 				wrapper.classList.contains('block-wrapper--editing') && edit._rapierEditEpoch === Number(rapier.identity.epoch || 0)) {
 			const block = _rapierBoundBlock(wrapper), edge = block?._rapierEdge;
+			if (!edge && (liveDirty || this.differs(rootId, _rapierDocumentMetadata(), baseline, contentId))) return true;
 			const raw = edit._rapierCheckpointFresh && !edge ? null : _rapierLiveEditRaw(edit, wrapper);
 			if (_rapierEdgeStands(edge) && !raw) {
 				rootId = edge.mark.source.rootId; contentId = edge.mark.source.contentId;
@@ -22553,6 +22574,8 @@ async function rapierOpenPlatformPayload(payload, opts = {}) {
 					Number(payload.nativeIntakeId) > 0 ? payload : null;
 				let admittedRaster = false, intakeHandedToDialog = false;
 				try {
+					const card = rasterType === 'image/png' ? await _rapierQuoteCardDocument(blob, payload.name) : null;
+					if (card) return admittedRaster = await rapierOpenPlatformPayload({...card, transient: true}, opts) === true;
 					const opened = await rapierOpenPlatformPayload({text: '', name: 'untitled.md', transient: true}, {...opts, pictureFollows: true});
 					if (!opened) return false;
 					const file = blob instanceof File ? blob : new File([blob], String(payload.name || 'picture'), {type: rasterType});
@@ -22708,7 +22731,11 @@ async function rapierOpenPlatformPayload(payload, opts = {}) {
 				...(opts.requireWritable === true ? { requireWritable: true } : {}),
 				returnReceipt: true,
 			});
-			if (openEpoch !== rapier.identity.userLoadEpoch || !loadReceipt) return false;
+			if (openEpoch !== rapier.identity.userLoadEpoch) return false;
+			if (!loadReceipt) {
+				if (!_rapierMutationStampIsCurrent(commitAdmission.value.stamp)) showToast('The current document changed; open the file again', 'info');
+				return false;
+			}
 			const openedState = loadReceipt;
 			openedReceipt = loadReceipt;
 			openedBaseline = rapier.revision.savedBaseline;
@@ -23729,9 +23756,11 @@ async function _rapierPerformSaveWork(options) {
 				code: 'requires_destination',
 			});
 		}
+		let linkedWords = '';
 		const writePage = async () => {
 			const serialized = await _rapierBuildEditablePage({canonical: String(persistenceSnapshot.canonicalText ?? ''),
 				metadata, ledger: await prepareFileLedger(), carried: _rapierEditablePageCarries(), comparisonBase: captured.value.comparisonBase}, {also: _rapierEditablePageKeeps()});
+			linkedWords = serialized.linkedWords || '';
 			if (captured.value.fontState !== _rapierDocumentFonts.stateKey() || serialized.canonical !== String(persistenceSnapshot.canonicalText ?? ''))
 				throw Object.assign(new Error('the document changed while saving'), {code: 'document_changed'});
 			return serialized.blob;
@@ -23814,6 +23843,7 @@ async function _rapierPerformSaveWork(options) {
 			 written, the switch this save is usually guarding (_rapierConfirmDirtyTransition) reads
 			 'downloaded' as license to proceed without a second, unanswerable "are you sure". */
 		if (result.status === 'dispatched') {
+			if (typeof _rapierCarriedKeepSettled === 'function') _rapierCarriedKeepSettled();
 			const draftRetained = await _rapierPersistDownloadDraft(await recoveryWithLedger(), captured.value.recovery.generation, captured.value.recovery.documentRevision);
 			if (!draftRetained) {
 				if (options.quiet !== true) {
@@ -23822,7 +23852,7 @@ async function _rapierPerformSaveWork(options) {
 				return settle('dispatched', false, result);
 			}
 			if (options.quiet !== true) {
-				showToast(rawResult?.downloadName ? 'Downloaded ' + rawResult.downloadName
+				showToast(rawResult?.downloadName ? 'Downloaded ' + rawResult.downloadName + (linkedWords ? '. ' + linkedWords : '')
 					: 'Downloaded. Check the file.', 'info');
 			}
 			return settle('downloaded', false, result, metadata.saveName);
@@ -23835,6 +23865,7 @@ async function _rapierPerformSaveWork(options) {
 		}
 
 		await _rapierClearDownloadDraft(saveAuthority);
+		if (typeof _rapierCarriedKeepSettled === 'function') _rapierCarriedKeepSettled();
 		const reportedDestinationName = String(result.destinationName || '');
 		const destinationName = String(reportedDestinationName || metadata.saveName)
 			|| metadata.saveName;
@@ -23931,7 +23962,7 @@ async function _rapierPerformSaveWork(options) {
 			const where = result?.savedWhere ? ' in ' + result.savedWhere + (result.noChooser ? ' — this desktop has no file chooser' : '') : '';
 			showToast(!saveAsStillOwnsName
 				? 'Saved ' + destinationName + where + '. Use Save As for the new name.'
-				: 'Saved ' + destinationName + where, !saveAsStillOwnsName ? 'warning' : 'success');
+				: 'Saved ' + destinationName + where + (linkedWords ? '. ' + linkedWords : ''), !saveAsStillOwnsName ? 'warning' : 'success');
 		}
 		return settle('confirmed', true, result, destinationName);
 	} catch (error) {
@@ -26505,7 +26536,6 @@ function _rapierTrustedDocumentAuthority(record) {
 	return _rapierIntegrityMatches(record.authorityIntegrity, authority) ? authority : '';
 }
 
-const _RAPIER_SEEN_LOST_LINE = 'changes since your last look could not be recovered';
 
 function _rapierInstallRestoredSeenBaseline(record, candidate) {
 	const authority = String((candidate && candidate.documentAuthority) || '');
@@ -26528,19 +26558,6 @@ function _rapierInstallRestoredSeenBaseline(record, candidate) {
 	return { installed: true, lost: false, written };
 }
 
-function _rapierSeenRestoreNotice(notice, outcome, deltaAvailable, tier) {
-	let value = notice || null;
-	if (tier === 3) return value;
-	if (deltaAvailable) {
-		if (!value) value = { tier: 2, title: 'recovered document', subtitle: '' };
-		value.delta = { available: true };
-	}
-	if (outcome && outcome.lost && tier !== 3) {
-		if (value) value.baselineLost = true;
-		else value = { tier: 2, title: _RAPIER_SEEN_LOST_LINE, subtitle: '' };
-	}
-	return value;
-}
 
 function _rapierCheckpointCandidate(record) {
 	if (!record || record.docId !== RAPIER_DOC_ID
@@ -26789,10 +26806,33 @@ function _rapierHeldSetAsideSlot(integrity, ledger = null) {
 		: [integrity.chars, integrity.fnv, integrity.adler].map(String).join('.'));
 }
 
+function _rapierProveHeldText(record, text = record?.canonicalText) {
+	if (!record || typeof text !== 'string' || !record.integrity) return false;
+	const proof = _rapierPersistenceRuntime.captures.get(record), integrity = record.integrity;
+	if (proof?.heldProof === true && proof.text === text && proof.chars === Number(integrity.chars) && proof.fnv === String(integrity.fnv || '') &&
+			proof.adler === String(integrity.adler || '') && proof.bom === record.bom && proof.bomIntegrity === record.bomIntegrity) return true;
+	if (!_rapierIntegrityMatches(integrity, text)) return false;
+	_rapierPersistenceRuntime.captures.set(record, {heldProof: true, text, chars: Number(integrity.chars), fnv: String(integrity.fnv || ''),
+		adler: String(integrity.adler || ''), bom: record.bom, bomIntegrity: record.bomIntegrity});
+	return true;
+}
+
+function _rapierUtf8ByteLength(text, part = 1048576) {
+	const encoder = new TextEncoder(), buffer = new Uint8Array(3 * part + 3);
+	let bytes = 0;
+	for (let start = 0; start < text.length;) {
+		let end = Math.min(text.length, start + part);
+		if (end < text.length && (text.charCodeAt(end - 1) & 0xfc00) === 0xd800 && (text.charCodeAt(end) & 0xfc00) === 0xdc00) end++;
+		bytes += encoder.encodeInto(text.slice(start, end), buffer).written;
+		start = end;
+	}
+	return bytes;
+}
+
 async function _rapierHeldRead(row) {
 	try {
 		const body = await globalThis.RapierRecoveryWorker.readRecoveryBody(row, {yield: _rapierYieldUserVisibleWork});
-		if (!_rapierIntegrityMatches(row.integrity, body.text)) throw new Error('Saved recovery source could not be admitted');
+		if (!_rapierProveHeldText(row, body.text)) throw new Error('Saved recovery source could not be admitted');
 		row.canonicalText = body.text;
 		try {
 			row.ledger = body.ledger ? RapierLedger.ledgerWithStart(body.ledger, body.text) : null;
@@ -26847,7 +26887,7 @@ async function _rapierParkHeldRecovery(candidate, options = {}) {
 
 function _rapierHeldRecoveries(dbState) {
 	return (dbState && dbState.checkpoints || []).filter(item => item && _rapierIsHeldSlot(item.slot) &&
-		typeof item.canonicalText === 'string' && _rapierIntegrityMatches(item.integrity, item.canonicalText) &&
+		typeof item.canonicalText === 'string' && _rapierProveHeldText(item) &&
 		(item.bom === undefined && item.bomIntegrity === undefined || typeof item.bom === 'boolean' && _rapierIntegrityMatches(item.bomIntegrity, _rapierRecoveryBomManifest(item))))
 		.sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
 }
@@ -26887,10 +26927,11 @@ function _rapierOfferHeldRecovery(record, rest = []) {
 		showToast('Couldn’t check the saved copy. It’s unchanged.', 'error'); return;
 	}
 	const setAside = record.setAside === true;
-	const ledger = record.integritySchema === 6 ? _rapierRecoveryLedger(record, undefined, RapierLedger) : null;
+	const proved = record.integritySchema === 6 ? _rapierRecoveryLedger(record, undefined, RapierLedger) : null;
+	const ledger = proved && record.ledger && typeof record.ledger === 'object' ? record.ledger : proved;
 	const canRestore = !!ledger && typeof record.canonicalText === 'string' && record.docId === RAPIER_DOC_ID && _rapierIsHeldSlot(record.slot) &&
-		text.length <= RapierTextCodec.maxDocumentBytes && new Blob([text]).size <= RapierTextCodec.maxDocumentBytes &&
-		RapierTextCodec.isDocumentFragment(text) && _rapierIntegrityMatches(record.integrity, text);
+		text.length <= RapierTextCodec.maxDocumentBytes && _rapierUtf8ByteLength(text) <= RapierTextCodec.maxDocumentBytes &&
+		RapierTextCodec.isDocumentFragment(text) && _rapierProveHeldText(record, text);
 	for (const close of document.querySelectorAll('#toast-root .toast[data-rapier-held-offer] .toast__close')) close.click();
 	const edited = _fmtRelativeTs(record.updatedAt);
 	const when = edited ? ' (edited ' + edited + ')' : '';
@@ -29513,6 +29554,63 @@ function _rapierCaretBoundary(text, offset) {
 	return new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(value).containing(at).index;
 }
 
+function _rapierWholeAccentBackspace(editDiv, event) {
+	const accent = /^[\u0300-\u036f\u1ab0-\u1aff\u1dc0-\u1dff\u20d0-\u20ff\ufe20-\ufe2f]$/u;
+	if (event.key !== 'Backspace' || event.ctrlKey || event.metaKey || event.altKey || event.isComposing || event.defaultPrevented) return false;
+	const selection = window.getSelection();
+	if (!selection?.rangeCount || !selection.isCollapsed) return false;
+	const node = selection.anchorNode, at = selection.anchorOffset;
+	if (node?.nodeType !== Node.TEXT_NODE || !editDiv.contains(node) || at < 2) return false;
+	const segments = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(node.data.slice(Math.max(0, at - 32), at))];
+	const [base, ...marks] = Array.from(segments.pop()?.segment || '');
+	if (!marks.length || accent.test(base) || !marks.every(mark => accent.test(mark))) return false;
+	selection.setBaseAndExtent(node, at - base.length - marks.join('').length, node, at);
+	return true;
+}
+
+function _rapierWrapChosenWords(editDiv, key) {
+	const close = {'(': ')', '[': ']', '{': '}', '"': '"', "'": "'"}[key];
+	const selection = window.getSelection();
+	if (!close || !editDiv || !selection?.rangeCount || selection.isCollapsed) return false;
+	const range = selection.getRangeAt(0), node = range.startContainer;
+	if (node !== range.endContainer || node.nodeType !== Node.TEXT_NODE || !editDiv.contains(node) ||
+		node.parentElement?.closest('code, pre, a, .rapier-source-token')) return false;
+	const start = _charOffsetForRangePoint(editDiv, node, range.startOffset), end = _charOffsetForRangePoint(editDiv, node, range.endOffset);
+	_rapierCheckpointEdit(editDiv, true);
+	node.insertData(range.endOffset, close);
+	node.insertData(range.startOffset, key);
+	editDiv.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: key }));
+	_rapierSetSelectionCharOffsets(editDiv, start + 1, end + 1);
+	return true;
+}
+
+function _rapierTypographyKey(editDiv, data, event) {
+	const selection = window.getSelection();
+	if (!editDiv || !selection?.rangeCount || !selection.isCollapsed) return false;
+	const node = selection.anchorNode, at = selection.anchorOffset;
+	if (node?.nodeType !== Node.TEXT_NODE || !editDiv.contains(node) || node.parentElement?.closest('code, pre, a, .rapier-source-token')) return false;
+	const before = node.data.slice(0, at), line = before.slice(before.lastIndexOf('\n') + 1);
+	const last = editDiv._rapierTypographyLast;
+	editDiv._rapierTypographyLast = null;
+	if (data === null) {
+		if (!last || last.node !== node || last.at !== at || node.data.slice(at - 1, at) !== last.to) return false;
+		node.replaceData(at - 1, 1, last.from);
+		selection.collapse(node, at - 1 + last.from.length);
+	} else {
+		const swap = data === '-' && /[^\s-]-$/.test(line) ? ['--', '\u2013'] : data === '-' && /[^\s]\u2013$/.test(line) ? ['\u2013-', '\u2014'] :
+			data === '.' && /[^.]\.\.$/.test(line) ? ['...', '\u2026'] : null;
+		if (!swap) return false;
+		const from = swap[0].slice(0, -1);
+		node.replaceData(at - from.length, from.length, swap[1]);
+		const caret = at - from.length + 1;
+		selection.collapse(node, caret);
+		editDiv._rapierTypographyLast = {node, at: caret, to: swap[1], from: swap[0]};
+	}
+	event.preventDefault();
+	editDiv.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: data === null ? 'deleteContentBackward' : 'insertText', data }));
+	return true;
+}
+
 function _rapierSnapEditCaret(editDiv) {
 	const selection = window.getSelection();
 	if (!editDiv || !selection?.rangeCount || !selection.isCollapsed) return false;
@@ -29944,8 +30042,23 @@ function _rapierPasteWordLists(root) {
 		for (const entry of run) {
 			const span = entry.paragraph.querySelector('span[data-rapier-word-marker]');
 			let holder = span && span.parentNode;
-			const text = span ? span.textContent : '';
+			let text = span ? span.textContent : '';
 			if (span) span.remove();
+			else {
+				const walker = root.ownerDocument.createTreeWalker(entry.paragraph, NodeFilter.SHOW_TEXT);
+				const texts = []; let seen = '';
+				for (let node = walker.nextNode(); node && seen.length < 24; node = walker.nextNode()) { texts.push(node); seen += node.data; }
+				const found = /^[\s\u00a0]*([^\p{L}\p{N}\s])[\s\u00a0]{2,}/u.exec(seen);
+				if (found) {
+					let remove = found[0].length; text = found[1];
+					for (const node of texts) {
+						if (remove <= 0) break;
+						const cut = Math.min(remove, node.data.length);
+						node.data = node.data.slice(cut); remove -= cut;
+						if (!node.data) { holder = node.parentNode; node.remove(); }
+					}
+				}
+			}
 			while (holder && holder !== entry.paragraph && !holder.textContent.trim() && !holder.querySelector('img,br')) {
 				const up = holder.parentNode;
 				holder.remove();
@@ -30523,6 +30636,7 @@ function _clipboardReadRange(range, clipboardData) {
 		.forEach(_rapierRenderModule('render-markdown')._rapierUnwrapElement);
 
 	let markdown = exactMarkdown;
+	if (markdown != null) try { markdown = _rapierCompleteImageExcerpt(markdown, _rapierSourceText()); } catch (_) {}
 	if (markdown == null) {
 		markdown = turndown.turndown(_rapierRenderModule('render-sanitize').sanitizeRapierHtml(scratch.innerHTML, 'render'));
 		try { markdown = _rapierCompleteImageExcerpt(markdown, _rapierSourceText()); }
@@ -30714,12 +30828,14 @@ function _rapierBuildPastePlan(context, pastedBlocks, model = null) {
 	let nextBlockId = Number((model ? model.nextBlockId : rapier.identity.nextBlockId) || 1);
 	const usedIds = new Set();
 	const entries = [];
+	let documentIds = null;
 	const takeId = preferred => {
 		if (preferred && Number.isSafeInteger(preferred.id) && !usedIds.has(preferred.id)) {
 			usedIds.add(preferred.id);
 			return preferred.id;
 		}
-		while (usedIds.has(nextBlockId) || documentModel.blocks.some(block => block.id === nextBlockId)) nextBlockId++;
+		if (!documentIds) documentIds = new Set(documentModel.blocks.map(block => block.id));
+		while (usedIds.has(nextBlockId) || documentIds.has(nextBlockId)) nextBlockId++;
 		const id = nextBlockId++;
 		usedIds.add(id);
 		return id;
@@ -30816,7 +30932,11 @@ function _rapierBuildPastePlan(context, pastedBlocks, model = null) {
 	if (!_rapierMarkdownRowsFitDocument(projected, documentModel)) {
 		throw new Error('Too large to open (64 MiB max)');
 	}
-	const referenceIndex = _rapierBuildReferenceIndex(projected, model ? _rapierMarkdownBodyFromRows(projected, model.markdownPrefix, model.markdownTail) : null);
+	const replacedRows = documentModel.blocks.slice(context.startIndex, context.startIndex + context.replaceCount);
+	const referenceIndex = !model && rapier.semantic.references &&
+		_rapierRowsHoldNoDefinitions(replacedRows) && _rapierRowsHoldNoDefinitions(entries)
+		? rapier.semantic.references
+		: _rapierBuildReferenceIndex(projected, model ? _rapierMarkdownBodyFromRows(projected, model.markdownPrefix, model.markdownTail) : null);
 	return {
 		context,
 		blocks: entries,
@@ -31066,7 +31186,8 @@ async function _rapierMountPastePlan(plan, isCurrent) {
 		}
 	}
 
-	_finishBlockDOMSplice(splice.container, insertedWrappers.concat(tail));
+	const placed = insertedWrappers.concat(tail);
+	_finishBlockDOMSplice(splice.container, placed, kept ? null : _rapierBlockSpliceScope([{splice, wrappers: placed, blocks: plan.blocks}]));
 	return true;
 }
 
@@ -31795,7 +31916,7 @@ function _rapierWysiwygHeldWrappers() {
 	};
 	const held = new Set([wrapperOf(document.activeElement), rapier.view.activeWrapper]);
 	const selection = window.getSelection && window.getSelection();
-	if (selection && selection.rangeCount) {
+	if (selection && selection.anchorNode) {
 		held.add(wrapperOf(selection.anchorNode));
 		held.add(wrapperOf(selection.focusNode));
 		if (!selection.isCollapsed) {
@@ -31868,6 +31989,11 @@ document.addEventListener('animationend', event => {
 });
 
 function _rapierWysiwygRenderWindow(centerIndex, approachViewports = _RAPIER_APPROACH_VIEWPORTS) {
+	const host = document.getElementById('editor-blocks'), selection = window.getSelection();
+	_rapierWysiwygLedger.selectionOutside = !!host && !(selection?.anchorNode && (host.contains(selection.anchorNode) || host.contains(selection.focusNode)));
+	try { _rapierWysiwygRenderWindowNow(centerIndex, approachViewports); } finally { _rapierWysiwygLedger.selectionOutside = false; }
+}
+function _rapierWysiwygRenderWindowNow(centerIndex, approachViewports) {
 	const host = document.getElementById('editor-blocks');
 	const count = _rapierWysiwygLedger.order.length;
 	if (!host || !count) return;
@@ -31936,11 +32062,12 @@ function _rapierWysiwygRenderWindow(centerIndex, approachViewports = _RAPIER_APP
 		reachBack += _rapierWysiwygLedgerEntryHeight(entry);
 	}
 	for (const wrapper of globalThis.RapierImageFlow?.windowWrappers?.(first, last) || []) held.add(wrapper);
-	for (const wrapper of Array.from(_rapierWysiwygLedger.materialized)) {
+	const leaving = Array.from(_rapierWysiwygLedger.materialized).filter(wrapper => {
 		const index = _rapierWysiwygLedger.indexById.get(String(wrapper.dataset.blockId));
-		if (index == null || index < first || index > last || wrapper.hidden)
-			_rapierWysiwygSleep(_rapierWysiwygLedger.entries.get(String(wrapper.dataset.blockId)), held);
-	}
+		return index == null || index < first || index > last || wrapper.hidden;
+	});
+	globalThis.RapierImageFlow?.prepareRetire?.(leaving.filter(wrapper => !held.has(wrapper)));
+	for (const wrapper of leaving) _rapierWysiwygSleep(_rapierWysiwygLedger.entries.get(String(wrapper.dataset.blockId)), held);
 	_rapierWysiwygLedger.window = [first, last];
 	const demand = [];
 	for (let index = visibleFirst; index <= visibleLast; index++) demand.push(index);
@@ -31968,6 +32095,7 @@ function _rapierWysiwygRenderWindow(centerIndex, approachViewports = _RAPIER_APP
 let _rapierApproachFrame = 0;
 function _rapierScheduleRenderWindow() {
 	if (_rapierApproachFrame) return;
+	if (document.body?.classList.contains('rapier-draw-open')) return;
 	_rapierApproachFrame = requestAnimationFrame(() => {
 		_rapierApproachFrame = 0;
 		_rapierWysiwygRenderWindow();
@@ -35316,8 +35444,8 @@ async function _rapierEmbedLoadRun(data, respond) {
 			metadata: {filename, docKind: _classifyDocKind(filename)}};
 		let recoveredDraft = false;
 		let draft = _rapierEmbedReadDraft(null);
-		if (draft && !(draft.baseRevision === revision && draft.savedBaseline.contentId === savedBaseline.contentId &&
-				_rapierSameDocumentMetadata(draft.savedBaseline.metadata, savedBaseline.metadata))) {
+		if (draft && !(draft.baseRevision === revision && draft.savedBaseline?.contentId === savedBaseline.contentId &&
+				_rapierSameDocumentMetadata(draft.savedBaseline?.metadata, savedBaseline.metadata))) {
 			const unsaved = _rapierDirtyMarkOwner.differs(draft.ledger.head.root, {filename: draft.filename, docKind: draft.docKind},
 				draft.savedBaseline, RapierSourceStore.contentIdOf(draft.content));
 			if (unsaved) {
@@ -36355,7 +36483,14 @@ async function _rapierBootOpenPayload(context, payload, opts) {
 	finally {
 		context.openingEpoch = 0;
 		if (rapier.identity.userLoadEpoch === openEpoch) context.epoch = openEpoch;
-		if (opened === false && context.lapsed) showToast(_rapierBootSteps().platform, 'error');
+		if (opened === false && context.lapsed) {
+			let landed = false;
+			try {
+				landed = payload?.text != null && String(rapier.document.filename || '') === String(payload.name || '') &&
+					_rapierGetCanonicalText() === String(payload.text).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+			} catch (_) {}
+			if (!landed) showToast(_rapierBootSteps().platform, 'error');
+		}
 	}
 }
 
@@ -36561,15 +36696,20 @@ async function _rapierConsumeShareTarget(context) {
 						? 'File too large (64 MiB max)'
 						: 'Couldn’t read the shared file.', 'error');
 				} else {
-					const text = RapierTextCodec.decodeDocumentUtf8(await response.arrayBuffer());
 					let name = 'shared.md';
 					const encodedName = response.headers.get('X-Rapier-Filename-Encoded');
 					if (encodedName) {
 						try { name = decodeURIComponent(encodedName) || name; } catch (_) {}
 					}
-					if (await _rapierBootOutgoingAtStake(context, text)) context.sharedAsk = {text, name};
+					const bytes = await response.arrayBuffer();
+					const file = new File([bytes], name, {type: response.headers.get('X-Share-Kind') === 'file' ? response.headers.get('Content-Type') || '' : ''});
+					const picture = _rapierLaunchPicture(file);
+					const payload = picture || _rapierImportKind(name, file.type) ? {blob: picture || file, name, transient: true}
+						: {text: RapierTextCodec.decodeDocumentUtf8(bytes), name, transient: true};
+					const text = payload.text ?? null;
+					if (await _rapierBootOutgoingAtStake(context, text)) context.sharedAsk = payload;
 					else if (!_rapierBootSuperseded(context) && !(await _rapierBootSetAside(context, text))) {
-						const opened = await _rapierBootOpenPayload(context, {text, name, transient: true}, {outgoingSettled: true});
+						const opened = await _rapierBootOpenPayload(context, payload, {outgoingSettled: true});
 						if (opened !== false) {
 							context.documentConsumed = true;
 							showToast('Opened ' + name, 'info');
@@ -36589,14 +36729,14 @@ async function _rapierConsumeShareTarget(context) {
 	history.replaceState(null, '', _rapierCleanBootPath());
 }
 
-async function _rapierAskBootShare({text, name}) {
+async function _rapierAskBootShare(payload) {
 	const epoch = rapier.identity.userLoadEpoch;
 	const wanted = await rapierConfirm({
 		title: 'open shared file?',
-		message: name + ' replaces the open document.',
+		message: payload.name + ' replaces the open document.',
 		confirmLabel: 'Open',
 	});
-	if (wanted === true && epoch === rapier.identity.userLoadEpoch) await rapierOpenPlatformPayload({text, name, transient: true});
+	if (wanted === true && epoch === rapier.identity.userLoadEpoch) await rapierOpenPlatformPayload(payload);
 }
 async function _rapierOpenGalleryLink(name) {
 	try { history.replaceState(history.state, '', _rapierCleanBootPath()); } catch (_) {}
@@ -36686,6 +36826,10 @@ function _rapierSearchStarter() {
 			'2. ' + menu + ', then **.docx** under **export**.\n\nHeadings, lists, tables, code and pictures come through. The Word file is written on your device.\n'],
 		'/word-to-markdown': ['document.md', '# Word to Markdown\n\n1. ' + menu + ', then **open**, and pick a `.docx` file.\n' +
 			'2. It becomes an editable Markdown page here, pictures and all. **Save** writes the `.md` file.\n\nThe document is converted on your device.\n'],
+		'/pdf-to-markdown': ['document.md', '# PDF to Markdown\n\n1. ' + menu + ', then **open**, and pick a `.pdf` file.\n' +
+			'2. Choose **Editable text**, then **Import**. It becomes editable Markdown here, pictures and all. **Save** writes the `.md` file.\n\nThe PDF is read on your device.\n'],
+		'/markdown-diff': ['document.md', '# Compare Markdown files\n\n1. ' + menu + ', then **open**, and pick the older `.md` file.\n' +
+			'2. ' + menu + ', then **compare**, and pick the newer file.\n\nA moved paragraph shows as a move. Nothing is uploaded.\n'],
 		'/mermaid-editor': ['diagram.md', '# Mermaid diagram\n\n```mermaid\nflowchart TD\n  A[Idea] --> B[Draft]\n  B --> C{Ready?}\n  C -- yes --> D[Share]\n  C -- no --> B\n```\n\n' +
 			'Change the words in the `mermaid` block and the diagram follows.\n'],
 	};
@@ -36768,17 +36912,16 @@ async function _rapierRestoreBootDocument(context) {
 	}
 	if (restored === 'superseded' || _rapierBootSuperseded(context)) return false;
 	context.workOpened = restored !== 'held' && restored !== 'blocked';
-	await _rapierOfferHeldAtBoot(context);
 	if (restored !== 'opened' && restored !== 'history_unavailable') {
 		if (carried && restored !== 'blocked') {
-			const filename = _rapierEditablePageFilename(carried.name), kind = carried.kind || _classifyDocKind(carried.name);
+			const filename = _rapierOwnPageFilename() || _rapierEditablePageFilename(carried.name), kind = carried.kind || _classifyDocKind(carried.name);
 			const loaded = await rapierLoad(carried.text, filename, {documentKind: kind, ..._rapierLedgerAdmission(carried.text, carried, {filename, docKind: kind}), returnReceipt: true, opensClean: true});
 			if (loaded === false) return false;
 			rapier.document.bom = carried.bom === true;
 			await _markSavedGeneration(loaded.generation, true, carried.text, loaded.documentRevision, filename, {
 				expectedEpoch: loaded.epoch, expectedAuthority: loaded.authority,
 			});
-			if (/\.rapier\.html$/i.test(filename) && typeof _rapierCarriedKeep !== 'undefined') _rapierCarriedKeep.authority = String(loaded.authority || '');
+			if (/\.rapier\.html$/i.test(filename) && typeof _rapierCarriedKeep !== 'undefined') { _rapierCarriedKeep.authority = String(loaded.authority || ''); _rapierCarriedKeep.opened = filename; }
 			_rapierBindPageReturn(carried.return, {documentEpoch: loaded.epoch, documentAuthority: loaded.authority}, carried.return_expires_at);
 		}
 		else {
@@ -36800,6 +36943,7 @@ async function _rapierRestoreBootDocument(context) {
 		}
 		if (_rapierBootSuperseded(context)) return false;
 	}
+	await _rapierOfferHeldAtBoot(context);
 	return true;
 }
 
@@ -36925,16 +37069,20 @@ async function _rapierAcquireWriterLease(take) {
 	_rapierWriterRuntime.attempt = new Promise(resolve => {
 		let settled = false;
 		let relinquish = null;
+		let timer = 0;
 		const finish = value => {
 			if (settled) return;
 			settled = true;
+			clearTimeout(timer);
 			resolve(value);
 		};
+		timer = setTimeout(() => finish(null), 1500);
 		try {
 			navigator.locks.request(
 				RapierStorage.writerLease,
 				take ? { mode: 'exclusive', steal: true } : { mode: 'exclusive', ifAvailable: true },
 				async lock => {
+					if (settled) return;
 					if (!lock) { finish(false); return; }
 
 					if (_rapierBootstrapRuntime.failed) { finish(false); return; }
@@ -36975,7 +37123,7 @@ function _rapierWriterLeaseLost() {
 	}, 10000);
 }
 
-async function _rapierReloadAfterWriterPromotion(why = 'The other Rapier ' + _rapierUiWords().pane + ' closed.') {
+async function _rapierReloadAfterWriterPromotion(why = 'The other Rapier ' + _rapierUiWords().pane + ' closed.', {explicit = false} = {}) {
 	if (_rapierWriterRuntime.promotionReloading || !rapier.access.leaseReadOnly) return false;
 	_rapierWriterRuntime.promotionReloading = true;
 	const release = _rapierWriterRuntime.release;
@@ -36985,18 +37133,34 @@ async function _rapierReloadAfterWriterPromotion(why = 'The other Rapier ' + _ra
 	let reloading = false;
 	const safe = () => {
 		if (!rapier.access.leaseReadOnly || _rapierWriterRuntime.release !== release ||
-				!_rapierMutationStampIsCurrent(stamp) || _rapierIsDirty() || !_rapierGuestQuiescent() ||
+				!_rapierMutationStampIsCurrent(stamp) || !_rapierGuestQuiescent() ||
 				_rapierPersistenceCaptureBlocked() || _rapierPersistenceRuntime.recoveryHeld ||
 				_rapierPersistenceRuntime.chain !== persistence || _rapierWriterRuntime.lostFlush !== lostFlush ||
-				rapier.autosave.dirty.size || rapier.view.activeWrapper || rapier.view.mode === 'source' || _rapierAgentBar.running ||
-				_rapierDrawShown() ||
+				_rapierAgentBar.running || _rapierDrawShown() ||
 				_rapierNotesPart?.state.open || _rapierNotesPart?.state.opening) return false;
+		if (explicit) return true;
+		if (_rapierIsDirty() || rapier.autosave.dirty.size || rapier.view.activeWrapper || rapier.view.mode === 'source') return false;
 		const active = document.activeElement;
 		return !(window.getSelection?.()?.rangeCount || active?.isContentEditable ||
 			/^(INPUT|TEXTAREA|SELECT)$/.test(String(active?.tagName || '')));
 	};
 	try {
-		if (!safe() || (await Promise.all([lostFlush || true, persistence]))[0] !== true || !safe()) return false;
+		if (!safe()) return false;
+		const flushed = (await Promise.all([lostFlush || true, persistence]))[0] === true;
+		if (!safe() || !flushed && !explicit) return false;
+		if (!flushed) {
+			const captured = await _rapierWithSettledExternalDocument(() => {
+				if (!_rapierMutationStampIsCurrent(stamp)) return null;
+				const snapshot = _rapierRecoveryBeforeUntouchedEdge(_rapierCreatePersistenceSnapshot());
+				return {...snapshot, text: snapshot.canonicalText, carriedLedger: _rapierEmbedCaptureLedger(snapshot)};
+			}, { quiet: true });
+			const parked = captured.settled && captured.value ? await _rapierParkHeldRecovery(captured.value, { setAside: true }) : null;
+			if (!parked) {
+				showToast('Couldn’t keep these words. Save them, then try again.', 'error');
+				return false;
+			}
+			if (!safe()) return false;
+		}
 		showToast('Reloading the latest draft…', 'success', null, why);
 		srAnnounce(why + ' Reloading the latest draft before editing.');
 		if (!safe()) return false;
@@ -37023,6 +37187,7 @@ function _rapierScheduleWriterLeaseRetry() {
 		_rapierWriterRuntime.retryTimer = null;
 		if (!rapier.access.leaseReadOnly || document.visibilityState === 'hidden') return;
 		if (!await _rapierAcquireWriterLease() || !rapier.access.leaseReadOnly) return;
+		if (await _rapierWriterLeaseCurrent()) { _rapierBecomeWriter(); return; }
 		await _rapierReloadAfterWriterPromotion();
 	}, 120);
 }
@@ -37187,7 +37352,11 @@ async function _rapierBoot() {
 	let promoted = false;
 	try { promoted = !!window.RapierWriterPromotion?.consume(); } catch (_) {}
 	rapier.access.leaseReadOnly = !await _rapierBootStep(context, 'lease',
-		() => _rapierAcquireWriterLease(document.visibilityState === 'visible' && !(typeof _rapierNotesDoor !== 'undefined' && _rapierNotesDoor?.born) || promoted), true);
+		async () => {
+			const granted = await _rapierAcquireWriterLease(document.visibilityState === 'visible' && !(typeof _rapierNotesDoor !== 'undefined' && _rapierNotesDoor?.born) || promoted);
+			if (granted === null) throw new Error('the writer lease did not answer');
+			return granted;
+		}, true);
 	if (platform?.recovery.ownsStore !== true && !_rapierEmbed.active && globalThis.RAPIER_APPS_HOST !== true) {
 		await _rapierBootStep(context, 'recovery', async view => {
 			if (_rapierBeginBootRecovery(view).held) await _rapierHoldBootRecovery(null);
@@ -38631,7 +38800,10 @@ function _markEditDivDirty(editDiv) {
 		rapierDirty(block.id);
 	}
 	_syncEmptyClass(wrapper, editDiv);
-	updateStats();
+	_notifyDirtyState();
+	_rapierSyncStartersButton();
+	_notifyHistoryState();
+	_scheduleStatsUpdate();
 }
 
 function _markdownListContinuationMarker(editDiv, range) {
@@ -38737,7 +38909,6 @@ function _continueRenderedListItem(editDiv, wrapper, block, range, li) {
 
 	_markEditDivDirty(editDiv);
 	_rapierScheduleEditCheckpoint(editDiv);
-	updateStats();
 	if (!nested && !newLi.textContent.replace(/\u00A0/g, '').trim()) _rapierCarryTypingMarks(editDiv, carry);
 }
 
@@ -39977,9 +40148,20 @@ document.addEventListener('copy', function _rapierCopyDocumentSelection(e) {
 	if (!sel || !sel.rangeCount || sel.isCollapsed) return;
 	const range = sel.getRangeAt(0);
 	if (!_rangeIntersectsEditor(range)) return;
+	if (_rapierSelectionIsWholeEditor(sel, range) && _rapierCopyWholeSource(e)) return;
 	e.preventDefault();
 	_clipboardReadRange(_rapierReadingRange(range), e.clipboardData);
 });
+
+function _rapierSelectionIsWholeEditor(sel, range) {
+	const seated = _rapierSelectionRuntime.reseated;
+	if (seated && sel.anchorNode === seated[0] && sel.anchorOffset === seated[1] && sel.focusNode === seated[2] && sel.focusOffset === seated[3]) return true;
+	const host = document.getElementById('editor-blocks');
+	if (!host) return false;
+	const whole = document.createRange();
+	whole.selectNodeContents(host);
+	return range.compareBoundaryPoints(Range.START_TO_START, whole) <= 0 && range.compareBoundaryPoints(Range.END_TO_END, whole) >= 0;
+}
 
 document.addEventListener('cut', function _rapierCutDocumentSelection(e) {
 	if (!e.clipboardData || e.defaultPrevented || _rapierClipboardOutsideDocument(e)) return;
@@ -40203,9 +40385,14 @@ function _rapierPasteSheetTables(prepared, original) {
 		? String(prepared || '').replace(/<table\b/gi, '<table data-rapier-paste-sheet=""') : prepared;
 }
 
+function _rapierReusePastedAssets(content) {
+	return content && typeof content.markdown === 'string' && content.markdown.includes(']:')
+		? {...content, markdown: _rapierReuseDocumentAssets(content.markdown, _rapierSourceText())} : content;
+}
+
 function _rapierResolvePastePayload(payload) {
 	const value = payload || {};
-	const finish = content => _rapierPasteCellsText(_rapierPrepareInkPasteContent(content, value), value);
+	const finish = content => _rapierReusePastedAssets(_rapierPasteCellsText(_rapierPrepareInkPasteContent(content, value), value));
 	const decision = _rapierPasteDecision(value, () => _rapierPasteHtmlCarriesOnlyWords(value.html));
 	const grid = () => {
 		const plain = String(value.plain || '');
@@ -40323,7 +40510,7 @@ async function _rapierResolveLargePastePayload(payload, job) {
 		if (!await _rapierPartReady('document') || job?.cancelled) return null;
 		value = {...value, html: _rapierDocumentPart.clipboard(value.html, value.rtf)};
 	}
-	const finish = content => _rapierPasteCellsText(_rapierPrepareInkPasteContent(content, value), value);
+	const finish = content => _rapierReusePastedAssets(_rapierPasteCellsText(_rapierPrepareInkPasteContent(content, value), value));
 	const decision = _rapierPasteDecision(value, () => _rapierPasteHtmlCarriesOnlyWords(value.html));
 	if (decision !== 'html') return _rapierResolvePastePayload({...value, html: ''});
 	const markdown = [];
@@ -41764,9 +41951,22 @@ function _rapierSourceClipboardMarkdown(textarea) {
 	return _rapierSourceRangeText(start, end);
 }
 
+function _rapierSourceClipboardWithPictures(markdown, whole) {
+	if (whole) return markdown;
+	try { return _rapierCompleteImageExcerpt(markdown, _rapierSourceText()); } catch (_) { return markdown; }
+}
+
+function _rapierCopyWholeSource(e) {
+	if (!e.clipboardData || rapier.document.source.length <= 1048576) return false;
+	e.preventDefault();
+	e.clipboardData.setData('text/plain', _rapierSourceText());
+	return true;
+}
+
 function _rapierSourceClipboardCopy(e) {
 	const ta = e.currentTarget;
 	const selected = _rapierHeavyRuntime.selection(ta);
+	if (selected.start === 0 && selected.end === rapier.document.source.length && _rapierCopyWholeSource(e)) return;
 	const whole = _rapierSelectionOwnsDocument(ta);
 	const exceeds = _rapierSourceSelectionExceedsWindow(ta);
 	if (rapier.document.docKind !== 'markdown' && !exceeds) _rapierHeavyRuntime.restoreSelection();
@@ -41775,7 +41975,7 @@ function _rapierSourceClipboardCopy(e) {
 	try {
 		e.clipboardData.setData('text/plain', markdown == null
 			? (whole ? _rapierSourceText() : _rapierSourceRangeText(selected.start, selected.end)) : markdown);
-		if (markdown != null) e.clipboardData.setData('text/markdown', markdown);
+		if (markdown != null) e.clipboardData.setData('text/markdown', _rapierSourceClipboardWithPictures(markdown, whole));
 		e.preventDefault();
 	} catch (_) {}
 }
@@ -41791,7 +41991,7 @@ function _rapierSourceClipboardCut(e) {
 	try {
 		e.clipboardData.setData('text/plain', markdown == null
 			? (whole ? _rapierSourceText() : _rapierSourceRangeText(selected.start, selected.end)) : markdown);
-		if (markdown != null) e.clipboardData.setData('text/markdown', markdown);
+		if (markdown != null) e.clipboardData.setData('text/markdown', _rapierSourceClipboardWithPictures(markdown, whole));
 	} catch (_) { return; }
 	e.preventDefault();
 	if (rapier.access.readOnly) return;
@@ -42685,7 +42885,8 @@ function _rapierSyncSingleLineHighlight() {
 		} else if (event.dataTransfer) {
 			try { inserted = event.dataTransfer.getData('text/plain') || ''; } catch (_) {}
 		}
-		_resetFlatBurstState();
+		_closeFlatBurst();
+		if (rapier.undo.flatBurstOpen) return true;
 		_rapierHeavyWindowReplaceAll(inserted);
 		return true;
 	}
@@ -42715,7 +42916,8 @@ function _rapierSyncSingleLineHighlight() {
 		else if (event.dataTransfer) {
 			try { inserted = event.dataTransfer.getData('text/plain') || ''; } catch (_) {}
 		}
-		_resetFlatBurstState();
+		_closeFlatBurst();
+		if (rapier.undo.flatBurstOpen) return true;
 		_rapierReplaceCanonicalSourceRange(selected.start, selected.end, inserted, selected.direction);
 		return true;
 	}
@@ -43295,7 +43497,8 @@ function _rapierSpanForLine(lineIdx) {
 	if (!out || !out.childNodes || out.childNodes.length === 0) return null;
 	const slabIdx = Math.floor(lineIdx / _RAPIER_SLAB_LINES);
 	const inSlab  = lineIdx - slabIdx * _RAPIER_SLAB_LINES;
-	const slab    = out.querySelector('.rapier-slab[data-slab="' + slabIdx + '"]');
+	const at      = out.childNodes[slabIdx];
+	const slab    = at?.dataset?.slab === String(slabIdx) ? at : out.querySelector('.rapier-slab[data-slab="' + slabIdx + '"]');
 	if (!slab || !slab.children) return null;
 	const span = slab.children[inSlab];
 	if (!span || !span.classList || !span.classList.contains('tok-line')) return null;
@@ -45022,10 +45225,6 @@ function _rapierDoorOf(ctx) {
 	return ctx && ctx[_RAPIER_DOOR] === 'webmcp' ? 'webmcp' : 'platform';
 }
 
-function _rapierScopeOwns(scope, actor, transport) {
-	return !!scope && !!actor && scope.kind === actor.kind && scope.id === actor.id &&
-		scope.transport === (transport === 'webmcp' ? 'webmcp' : 'platform');
-}
 
 function _rapierCallerScopeLenient(ctx) {
 	const source = ctx && ctx.actor && typeof ctx.actor === 'object' ? ctx.actor : null;
@@ -46947,451 +47146,37 @@ _rapierBootFactsPublished.then(_rapierRegisterPlatformOperations).catch(error =>
 	throw error;
 });
 
-const _RAPIER_SINCE_OPEN_REFRESH_MS = 250;
-const _rapierSinceOpen = Object.seal({
-	worker: null, timer: null, refreshTimer: 0, jobId: 0,
-	text: '', revision: -1, units: null,
-});
 
-function _rapierSinceOpenAvailable() {
-	return rapier.document.docKind === 'markdown' && rapier.view.mode !== 'source' &&
-		!rapier.compare.active && !!rapier.review.seen;
-}
 
-function _rapierSinceOpenWanted() {
-	return rapier.review.moved.size > 0;
-}
 
-function _rapierSinceOpenClear() {
-	document.querySelectorAll(':is(#editor-blocks, #editor-blocks > .block-sleep-group) > .block-wrapper[data-seen-unit]')
-		.forEach(node => { delete node.dataset.seenUnit; });
-}
 
-function _rapierSinceOpenClose() {
-	if (_rapierSinceOpen.timer) clearTimeout(_rapierSinceOpen.timer);
-	_rapierSinceOpen.timer = null;
-	if (_rapierSinceOpen.refreshTimer) clearTimeout(_rapierSinceOpen.refreshTimer);
-	_rapierSinceOpen.refreshTimer = 0;
-	if (_rapierSinceOpen.worker) _rapierSinceOpen.worker.terminate();
-	_rapierSinceOpen.worker = null;
-	_rapierSinceOpen.jobId++;
-	_rapierSinceOpen.text = '';
-	_rapierSinceOpen.revision = -1;
-	_rapierSinceOpen.units = null;
-	_rapierSeenRelease();
-	_rapierSinceOpenClear();
-}
 
-function _rapierSinceOpenAnchorLine(hunk) {
-	let line = Number(hunk.newStart) || 1;
-	for (const row of hunk.rows) {
-		if (!['context', 'meta', 'omitted'].includes(row.type)) return row.newLine || line;
-		if (row.type === 'context') line++;
-	}
-	return line;
-}
 
-function _rapierSinceOpenLineOffsets(text) {
-	const offsets = [0];
-	for (let index = text.indexOf('\n'); index >= 0; index = text.indexOf('\n', index + 1)) {
-		offsets.push(index + 1);
-	}
-	return offsets;
-}
 
-function _rapierSinceOpenRender(result) {
-	_rapierSinceOpenClear();
-	_rapierSinceOpen.units = result.status === 'same' ? new Map() : null;
-	if (result.status !== 'ok') { _rapierSeenObserve(); return; }
-	if (Number(rapier.revision.settled || 0) !== _rapierSinceOpen.revision) return;
-	const host = document.getElementById('editor-blocks');
-	if (!host) return;
-	const wrappers = _blockWrapperChildren(host);
-	const offsets = _rapierSinceOpenLineOffsets(_rapierSinceOpen.text);
-	const blockIndexOfLine = line => {
-		const at = _rapierBodyOffsetOfCanonical(
-			offsets[Math.max(0, Math.min(offsets.length - 1, line - 1))]);
-		if (at < 0) return 0;
-		const region = _rapierMarkdownRangeBlockIndices(at, at);
-		return region ? region.first : -1;
-	};
-	const blocksOfAddedRow = row => {
-		const text = String(row.text == null ? '' : row.text);
-		if (Number.isInteger(row.afterFrom) && row.afterFrom >= 0) {
-			const start = _rapierBodyOffsetOfCanonical(row.afterFrom);
-			const end = _rapierBodyOffsetOfCanonical(row.afterFrom + text.length);
-			if (end < 0) return null;
-			return _rapierMarkdownRangeBlockIndices(Math.max(0, start), end);
-		}
-		const index = blockIndexOfLine(row.newLine);
-		return index < 0 ? null : {first: index, last: index};
-	};
-	const raw = new Map();
-	for (const hunk of result.hunks) {
-		const rows = hunk.rows.filter(row => !['context', 'meta', 'omitted'].includes(row.type));
-		if (!rows.length) continue;
-		const touched = new Set();
-		let added = false;
-		for (const row of rows) {
-			if (row.type !== 'add' || row.newLine == null) continue;
-			const region = blocksOfAddedRow(row);
-			if (!region) continue;
-			added = true;
-			for (let at = region.first; at <= region.last; at++) touched.add(at);
-		}
-		if (!added) touched.add(blockIndexOfLine(_rapierSinceOpenAnchorLine(hunk)));
-		const change = rows.map(row => row.type + '\u0000' + String(row.text == null ? '' : row.text) + String(row.lineBreak || '')).join('\n');
-		for (const at of touched) {
-			if (at < 0 || at >= wrappers.length) continue;
-			const id = wrappers[at].dataset.blockId;
-			if (!id) continue;
-			raw.set(id, raw.has(id) ? raw.get(id) + '\n' + change : change);
-			if (added) wrappers[at].dataset.seenUnit = id;
-		}
-	}
-	const units = new Map();
-	for (const [id, change] of raw) units.set(id, _rapierSeenDigest(change));
-	_rapierSinceOpen.units = units;
-	_rapierSeenObserve();
-}
 
-async function _rapierSinceOpenProject() {
-	const baseline = rapier.review.seen;
-	const baselineText = _rapierReviewText(baseline);
-	if (baselineText == null) { _rapierSinceOpenClose(); return; }
-	const current = _rapierGetCanonicalText();
-	_rapierSinceOpen.units = null;
-	const jobId = ++_rapierSinceOpen.jobId;
-	_rapierSinceOpen.text = current;
-	_rapierSinceOpen.revision = Number(rapier.revision.settled || 0);
-	const request = { type: 'compare', jobId,
-		currentName: baseline.name, incomingName: String(rapier.document.filename || 'document'),
-		currentText: baselineText, incomingText: current,
-		from: globalThis.RapierJournalRecords.journalOperations(baselineText, current, rapier.undo.ledger),
-		docKind: rapier.document.docKind, language: rapier.document.codeLang || '' };
-	if (_rapierSinceOpen.timer) clearTimeout(_rapierSinceOpen.timer);
-	_rapierSinceOpen.timer = null;
-	const finish = result => {
-		if (jobId !== _rapierSinceOpen.jobId) return;
-		if (_rapierSinceOpen.timer) clearTimeout(_rapierSinceOpen.timer);
-		_rapierSinceOpen.timer = null;
-		_rapierSinceOpenRender(result);
-	};
-	const coarse = () => {
-		if (jobId !== _rapierSinceOpen.jobId) return;
-		if (_rapierSinceOpen.worker) _rapierSinceOpen.worker.terminate();
-		_rapierSinceOpen.worker = null;
-		finish(_rapierCompareWorkerMain(request));
-	};
-	const admission = _rapierCompareAdmission(baselineText, current);
-	const onPage = () => _rapierCompareOnPage(() => jobId === _rapierSinceOpen.jobId, request, finish);
-	if (admission.same) {
-		finish({ status: 'same', oldCount: admission.oldCount, newCount: admission.newCount, additions: 0, deletions: 0,
-			diff: {edits: [], changes: []}, hunks: [], items: [] });
-		return;
-	}
-	_rapierSinceOpen.timer = setTimeout(coarse, _RAPIER_COMPARE_TIMEOUT_MS);
-	if (!_rapierSinceOpen.worker) {
-		let worker;
-		try { worker = await _rapierCompareTakeWorker(); }
-		catch (_) { onPage(); return; }
-		if (jobId !== _rapierSinceOpen.jobId || !_rapierSinceOpen.timer) { _rapierCompareGiveWorker(worker); return; }
-		_rapierSinceOpen.worker = worker;
-	}
-	let answered = false;
-	const worker = _rapierSinceOpen.worker;
-	worker.onmessage = event => {
-		answered = true;
-		const result = event.data || {};
-		if (result.jobId !== 'since:' + jobId) return;
-		if (_rapierSinceOpen.worker === worker) _rapierSinceOpen.worker = null;
-		_rapierCompareGiveWorker(worker);
-		finish(result);
-	};
-	worker.onerror = () => {
-		if (answered) { coarse(); return; }
-		worker.terminate();
-		if (_rapierSinceOpen.worker === worker) _rapierSinceOpen.worker = null;
-		onPage();
-	};
-	worker.postMessage({ ...request, jobId: 'since:' + jobId });
-}
 
-function _rapierSinceOpenRefresh() {
-	if (!_rapierSinceOpenWanted()) return;
-	if (!_rapierSinceOpenAvailable()) { _rapierSinceOpenClose(); return; }
-	if (_rapierSinceOpen.refreshTimer) clearTimeout(_rapierSinceOpen.refreshTimer);
-	_rapierSinceOpen.refreshTimer = setTimeout(() => {
-		_rapierSinceOpen.refreshTimer = 0;
-		if (!_rapierSinceOpenWanted()) return;
-		if (!_rapierSinceOpenAvailable()) { _rapierSinceOpenClose(); return; }
-		if (_rapierMutationBarrierActive() || rapier.composition.block || rapier.composition.source ||
-				!_rapierHistoryIsComplete()) return;
-		_rapierSinceOpenProject();
-	}, _RAPIER_SINCE_OPEN_REFRESH_MS);
-}
 
-const _RAPIER_SEEN_DWELL_MS = 1000;
-const _RAPIER_SEEN_LEDGER_LIMIT = 4096;
 
-const _RAPIER_SEEN_UNNAMED = '';
 
-function _rapierSeenDigest(text) { return _rapierSpliceHash(String(text == null ? '' : text)); }
 
-function _rapierSeenBound(ledger) {
-	while (ledger.size > _RAPIER_SEEN_LEDGER_LIMIT) ledger.delete(ledger.keys().next().value);
-}
 
-function _rapierSeenSpend() {
-	rapier.review.moved.clear();
-	rapier.review.shown.clear();
-	rapier.review.decided = null;
-}
 
-function _rapierSeenWitnessBlocks(ids, digest) {
-	for (const id of ids) {
-		rapier.review.moved.delete(String(id));
-		rapier.review.shown.delete(String(id));
-		rapier.review.shown.set(String(id), { digest: digest == null ? null : String(digest), at: Date.now() });
-	}
-	_rapierSeenBound(rapier.review.shown);
-	globalThis.RapierAgentBrowser?.contextChanged('review');
-}
 
-function _rapierSeenHandSaw(ids) {
-	const root = document.getElementById('editor-blocks');
-	const view = root && root.getBoundingClientRect();
-	if (!view || view.height <= 0) return true;
-	return ids.every(id => {
-		const wrapper = _rapierBlockWrapperById(id, root);
-		if (!wrapper) return false;
-		const shown = _rapierSeenShown(wrapper, view);
-		return _rapierSeenWhole([[shown.lo, shown.hi]], shown.height);
-	});
-}
 
-function _rapierSeenRecordTransaction(transaction) {
-	globalThis.RapierChanges?.schedule();
-	const ids = (transaction.affectedBlockIds || []).map(String);
-	const decided = rapier.review.decided;
-	rapier.review.decided = null;
-	if (transaction.actor.kind === 'human') {
 
-		if (_rapierSeenHandSaw(ids)) _rapierSeenWitnessBlocks(ids, null);
-		return;
-	}
 
-	const admitted = decided ? ids.filter(id => decided.includes(id)) : [];
-	if (admitted.length) _rapierSeenWitnessBlocks(admitted, null);
-	const owner = Object.freeze({
-		actor: transaction.actor,
-		transport: transaction.transport === 'webmcp' ? 'webmcp' : 'platform',
-	});
-	if (ids.length) {
-		for (const id of ids) {
-			if (admitted.includes(id)) continue;
-			rapier.review.shown.delete(id);
-			rapier.review.moved.delete(id);
-			rapier.review.moved.set(id, owner);
-		}
-		_rapierSeenBound(rapier.review.moved);
-	} else {
-		rapier.review.moved.set(_RAPIER_SEEN_UNNAMED, owner);
-	}
 
-	_rapierSinceOpenRefresh();
-	if (transaction.actor.kind === 'agent') srAnnounce('Agent changed the document.');
-}
 
-function _rapierSeenUndelivered(scope = null) {
-	if (!_rapierSinceOpenAvailable()) return null;
-	const units = _rapierSinceOpen.units;
 
-	if (!units) {
-		if (!scope || (rapier.review.seen && rapier.review.seen.restored)) return null;
-		for (const owner of rapier.review.moved.values()) {
-			if (_rapierScopeOwns(scope, owner.actor, owner.transport)) return null;
-		}
-		return 0;
-	}
-	let count = 0;
-	for (const [id, digest] of units) {
-		const witness = rapier.review.shown.get(id);
-		if (witness && (witness.digest === null || witness.digest === digest)) continue;
-		if (scope) {
 
-			const owner = rapier.review.moved.get(id);
 
-			if (!owner) { if (rapier.review.seen && rapier.review.seen.restored) return null; continue; }
-			if (!_rapierScopeOwns(scope, owner.actor, owner.transport)) continue;
-		}
-		count++;
-	}
-	return count;
-}
 
-function _rapierSeenAwaiting() {
-	if (!rapier.review.moved.size) return false;
-	const count = _rapierSeenUndelivered();
-	return count == null ? true : count > 0;
-}
 
-const _rapierSeenDelivery = Object.seal({
-	observer: null, watched: new Map(), timer: 0, moved: false, hands: null,
-});
 
-function _rapierSeenDrop() {
-	for (const cover of _rapierSeenDelivery.watched.values()) cover.since = 0;
-	clearTimeout(_rapierSeenDelivery.timer);
-	_rapierSeenDelivery.timer = 0;
-}
 
-function _rapierSeenViewMovedByAgent() {
-	_rapierSeenDelivery.moved = true;
-	_rapierSeenDrop();
-}
 
-function _rapierSeenShown(element, view) {
-	const box = element.getBoundingClientRect();
-	return {
-		lo: Math.max(box.top, view.top) - box.top,
-		hi: Math.min(box.bottom, view.bottom) - box.top,
-		height: box.height,
-	};
-}
 
-const _RAPIER_SEEN_EDGE_PX = 1;
 
-function _rapierSeenWhole(spans, height) {
-	return spans.some(span => span[0] <= _RAPIER_SEEN_EDGE_PX &&
-		span[1] >= height - _RAPIER_SEEN_EDGE_PX);
-}
-
-function _rapierSeenHeld(cover, lo, hi) {
-	cover.held = cover.held.concat([[lo, hi]]).sort((a, b) => a[0] - b[0])
-		.reduce((held, span) => {
-			const last = held[held.length - 1];
-			if (last && span[0] <= last[1] + _RAPIER_SEEN_EDGE_PX) last[1] = Math.max(last[1], span[1]);
-			else held.push(span.slice());
-			return held;
-		}, []);
-}
-
-function _rapierSeenPending(unit) {
-	const units = _rapierSinceOpen.units;
-	if (!units || !units.has(unit)) return false;
-	const witness = rapier.review.shown.get(unit);
-	return !witness || (witness.digest !== null && witness.digest !== units.get(unit));
-}
-
-function _rapierSeenSweep() {
-	const root = document.getElementById('editor-blocks');
-	if (!root) return;
-	clearTimeout(_rapierSeenDelivery.timer);
-	_rapierSeenDelivery.timer = 0;
-
-	if (document.documentElement.classList.contains('rapier-engine-modal-locked') ||
-			_rapierSeenDelivery.moved) { _rapierSeenDrop(); return; }
-	const view = root.getBoundingClientRect();
-	const now = _rapierNow();
-	const whole = new Map();
-	let wait = 0;
-	for (const [element, cover] of _rapierSeenDelivery.watched) {
-		const unit = element.dataset.seenUnit;
-		if (!element.isConnected || !_rapierSeenPending(unit)) { cover.since = 0; continue; }
-		const shown = _rapierSeenShown(element, view);
-		const digest = _rapierSinceOpen.units.get(unit);
-
-		if (cover.digest !== digest || cover.height !== shown.height) {
-			cover.digest = digest;
-			cover.height = shown.height;
-			cover.held = [];
-			cover.since = 0;
-		}
-		if (shown.hi > shown.lo) {
-			const lo = Math.max(cover.lo, shown.lo);
-			const hi = Math.min(cover.hi, shown.hi);
-			if (cover.since && hi > lo) { cover.lo = lo; cover.hi = hi; }
-			else { cover.lo = shown.lo; cover.hi = shown.hi; cover.since = now; }
-			if (now - cover.since >= _RAPIER_SEEN_DWELL_MS) {
-				_rapierSeenHeld(cover, cover.lo, cover.hi);
-				cover.lo = shown.lo;
-				cover.hi = shown.hi;
-				cover.since = now;
-			}
-		} else {
-			cover.since = 0;
-		}
-		if (_rapierSeenWhole(cover.held, cover.height)) {
-			if (!whole.has(unit)) whole.set(unit, true);
-			continue;
-		}
-		whole.set(unit, false);
-		if (cover.since) {
-			const left = cover.since + _RAPIER_SEEN_DWELL_MS - now;
-			wait = wait ? Math.min(wait, left) : left;
-		}
-	}
-	for (const [unit, covered] of whole) if (covered) _rapierSeenDeliver(unit);
-	if (wait > 0) _rapierSeenDelivery.timer = setTimeout(_rapierSeenSweep, wait);
-}
-
-function _rapierSeenDeliver(unit) {
-	if (!_rapierSeenPending(unit)) return false;
-	rapier.review.moved.delete(unit);
-	rapier.review.shown.delete(unit);
-	rapier.review.shown.set(unit, { digest: _rapierSinceOpen.units.get(unit), at: _rapierNow() });
-	_rapierSeenBound(rapier.review.shown);
-	_rapierAgentBarRender();
-	globalThis.RapierAgentBrowser?.contextChanged('review');
-	return true;
-}
-
-function _rapierSeenObserve() {
-	const host = document.getElementById('editor-blocks');
-	if (!host) return;
-	if (_rapierSeenDelivery.observer && _rapierSeenDelivery.observer.root !== host) {
-		_rapierSeenDelivery.observer.disconnect();
-		_rapierSeenDelivery.observer = null;
-	}
-	if (!_rapierSeenDelivery.observer) {
-		_rapierSeenDelivery.observer = new IntersectionObserver(_rapierSeenSweep,
-			{ root: host, threshold: [0, 0.5] });
-	}
-	if (!_rapierSeenDelivery.hands) {
-
-		const acted = event => {
-			if (event.isTrusted !== true) return;
-			_rapierSeenDelivery.moved = false;
-			_rapierSeenSweep();
-		};
-		const options = { capture: true, passive: true };
-
-		const kinds = ['pointerdown', 'wheel', 'keydown', 'touchstart'];
-		for (const kind of kinds) window.addEventListener(kind, acted, options);
-		_rapierSeenDelivery.hands = () => {
-			for (const kind of kinds) window.removeEventListener(kind, acted, options);
-		};
-	}
-	_rapierSeenDelivery.observer.disconnect();
-
-	const previous = _rapierSeenDelivery.watched;
-	_rapierSeenDelivery.watched = new Map();
-	for (const element of host.querySelectorAll(':scope > [data-seen-unit], :scope > .block-sleep-group > [data-seen-unit]')) {
-		_rapierSeenDelivery.watched.set(element, previous.get(element) ||
-			{ digest: null, height: 0, held: [], lo: 0, hi: 0, since: 0 });
-		_rapierSeenDelivery.observer.observe(element);
-	}
-	_rapierSeenSweep();
-}
-
-function _rapierSeenRelease() {
-	if (_rapierSeenDelivery.observer) _rapierSeenDelivery.observer.disconnect();
-	if (_rapierSeenDelivery.hands) { _rapierSeenDelivery.hands(); _rapierSeenDelivery.hands = null; }
-	_rapierSeenDelivery.moved = false;
-	_rapierSeenDrop();
-	_rapierSeenDelivery.watched.clear();
-}
 
 const _rapierAgentBar = Object.seal({
 	running: 0, invocations: new Set(), symbol: null, renderFrame: 0,
@@ -48666,12 +48451,20 @@ function _rapierUiForcedReadOnly() {
 
 async function _rapierTakeWriterLease() {
 	if (!await _rapierAcquireWriterLease(true)) return;
-	const stamp = await _rapierReadRecoveryStamp();
-	if (stamp !== null && stamp !== _rapierPersistenceRuntime.recoveryBase &&
-			_rapierPersistenceRuntime.recoveryBase !== null && await (_rapierWriterRuntime.lostFlush || true)) {
-		await _rapierReloadAfterWriterPromotion('Another Rapier ' + _rapierUiWords().pane + ' saved newer work.');
+	if (!await _rapierWriterLeaseCurrent()) {
+		await _rapierReloadAfterWriterPromotion('Another Rapier ' + _rapierUiWords().pane + ' saved newer work.', {explicit: true});
 		return;
 	}
+	_rapierBecomeWriter();
+}
+
+async function _rapierWriterLeaseCurrent() {
+	const stamp = await _rapierReadRecoveryStamp(), base = _rapierPersistenceRuntime.recoveryBase;
+	const moved = stamp !== null && base !== null && stamp !== base;
+	return !moved && await (_rapierWriterRuntime.lostFlush || true) === true;
+}
+
+function _rapierBecomeWriter() {
 	_rapierWriterRuntime.lostFlush = null;
 	rapier.access.leaseReadOnly = false;
 	_rapierUiRestore.setLease(false);
@@ -49054,6 +48847,7 @@ function _rapierUiSetSettingsOpen(open, reason = '') {
 	}
 
 	_rapierUiSettingsReturnState = _rapierUiSettingsRemember();
+	_rapierUiShowKeys();
 	_rapierQuoteHold();
 	_rapierNotesPart?.settingsGiveBack();
 	_leaveAllEditingBlocks();
@@ -51238,7 +51032,13 @@ function _rapierUiMount() {
 			.addEventListener('keydown', event => _rapierUiPickerKeydown(kind, event));
 	}
 
-	refs.fontPicker.querySelector('select').addEventListener('change', () => void _rapierFontPicker.choose());
+	const fontSelect = refs.fontPicker.querySelector('select');
+	fontSelect.addEventListener('pointerdown', () => { fontSelect._rapierKeyed = false; });
+	fontSelect.addEventListener('keydown', event => {
+		if (event.key === 'Enter' && fontSelect._rapierKeyed) { event.preventDefault(); fontSelect._rapierKeyed = false; void _rapierFontPicker.choose(); return; }
+		fontSelect._rapierKeyed = !event.altKey && !event.ctrlKey && !event.metaKey && /^(?:Arrow(?:Up|Down|Left|Right)|Home|End|PageUp|PageDown|.)$/u.test(event.key);
+	});
+	fontSelect.addEventListener('change', () => { if (!fontSelect._rapierKeyed) void _rapierFontPicker.choose(); });
 
 	refs.colorCustomInput.addEventListener('change', () => _rapierUiPickCustomColor(refs.colorCustomInput.value));
 
@@ -51364,6 +51164,46 @@ function _rapierUiMount() {
 	renderMathPrompt();
 	renderDocxPrompt();
 	_rapierUiApplyReadOnly();
+	_rapierUiShowKeys();
+	_rapierUiFormatTips();
+}
+
+function _rapierUiFormatTips() {
+	const scroll = document.getElementById('format-toolbar-scroll'), tip = document.getElementById('format-toolbar-tip'), stack = document.getElementById('format-toolbar-stack');
+	if (!scroll || !tip || !stack) return;
+	const show = control => {
+		if (!control?.dataset.tip || !matchMedia('(hover: hover) and (pointer: fine)').matches) { tip.classList.remove('format-toolbar__tip--on'); return; }
+		tip.textContent = control.dataset.tip;
+		const at = control.getBoundingClientRect(), home = stack.getBoundingClientRect(), half = tip.offsetWidth / 2;
+		tip.style.setProperty('--tip-x', Math.round(Math.min(Math.max(at.left + at.width / 2, half + 4), innerWidth - half - 4) - home.left) + 'px');
+		tip.style.setProperty('--tip-y', Math.round(at.top - home.top) + 'px');
+		tip.classList.add('format-toolbar__tip--on');
+	};
+	scroll.addEventListener('pointerover', event => { if (event.pointerType !== 'touch') show(event.target.closest?.('[data-tip]')); });
+	scroll.addEventListener('pointerleave', () => show(null));
+	scroll.addEventListener('pointerdown', () => show(null));
+	scroll.addEventListener('scroll', () => show(null), {passive: true});
+	scroll.addEventListener('focusin', event => show(event.target.matches(':focus-visible') ? event.target.closest('[data-tip]') : null));
+	scroll.addEventListener('focusout', () => show(null));
+}
+
+function _rapierTipWithKeys(words, chord) {
+	return chord && window.matchMedia?.('(pointer: fine)').matches ? words + ' · ' + _rapierChordWords(chord) : words;
+}
+
+function _rapierUiShowKeys() {
+	const table = _rapierChordCommands(), first = id => Object.keys(table).find(key => table[key] === id) || '';
+	for (const control of document.querySelectorAll('[data-tip][data-command], #btn-find, #btn-overflow')) {
+		const id = control.dataset.command || (control.id === 'btn-find' ? 'navigate.find' : 'document.settings');
+		control.dataset.tipWords ??= control.dataset.tip;
+		control.dataset.tip = _rapierTipWithKeys(control.dataset.tipWords, first(id));
+	}
+	for (const [selector, id] of [['[data-action="new-document"]', 'document.new'], ['[data-action="open-document"]', 'document.open'],
+		['#settings-save-btn', 'document.save'], ['#settings-save-as-btn', 'document.save-as']]) {
+		const button = document.querySelector('.settings-primary-actions ' + selector), keys = _rapierChordText(id);
+		if (!button) continue;
+		if (keys) button.dataset.keys = keys; else delete button.dataset.keys;
+	}
 }
 
 function _rapierBootReleaseAuthority() {

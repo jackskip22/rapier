@@ -469,7 +469,16 @@ function _rapierRenderSemanticRoot(canonical, metadata, options = {}) {
 	const wikiLinks = wikiMode(options);
 	if (wikiLinks) env.rapierWikiLinks = wikiLinks;
 	if (options.mathEquations) env.rapierMathEquations = options.mathEquations;
-	let rendered = md
+	const nesting = md && options.maxNesting > 0 ? options.maxNesting : 0;
+	let rendered;
+	if (nesting || md && options.closeDetails) {
+		const saved = md.options.maxNesting;
+		if (nesting) md.options.maxNesting = nesting;
+		try {
+			const tokens = md.parse(markdown, env);
+			rendered = md.renderer.render(options.closeDetails ? _rapierCloseOpenDetails(tokens) : tokens, md.options, env);
+		} finally { md.options.maxNesting = saved; }
+	} else rendered = md
 		? md.render(markdown, env)
 		: '<pre><code>' + escapeRapierHtmlText(markdown) + '</code></pre>';
 	if (md && env.footnotes && Array.isArray(env.footnotes.list) && env.footnotes.list.length) {
@@ -503,8 +512,14 @@ async function _rapierRenderSemanticRootAsync(canonical, metadata, options = {})
 	const fallbackEnv = options.page ? {rapierPage: true} : {};
 	const wikiLinks = markdown.includes('[[') && wikiMode(options);
 	if (wikiLinks) fallbackEnv.rapierWikiLinks = wikiLinks;
-	let parsed = !wikiLinks && options.parsed || (runtime.parseAsync && !wikiLinks ? await runtime.parseAsync(markdown, options) : {tokens: md.parse(markdown, fallbackEnv), env: fallbackEnv});
-	let {tokens, env} = parsed, labels = env.footnotes?.list?.map((item, index) => String(item?.label || ('inline-' + (index + 1))));
+	const nesting = options.maxNesting > 0 ? options.maxNesting : 0, saved = md.options.maxNesting;
+	if (nesting) md.options.maxNesting = nesting;
+	let parsed;
+	try { parsed = !wikiLinks && options.parsed || (runtime.parseAsync && !wikiLinks && !nesting ? await runtime.parseAsync(markdown, options) : {tokens: md.parse(markdown, fallbackEnv), env: fallbackEnv}); }
+	finally { md.options.maxNesting = saved; }
+	let {tokens, env} = parsed;
+	if (options.closeDetails) tokens = _rapierCloseOpenDetails(tokens);
+	let labels = env.footnotes?.list?.map((item, index) => String(item?.label || ('inline-' + (index + 1))));
 	env = {...env, rapierImagePresentation: options.imagePresentation === true};
 	await pause(work, .3);
 	const inert = document.createElement('template').content.ownerDocument;
@@ -795,6 +810,38 @@ function _rapierImageSizeAttributes(size, marker, geometry, automatic = true) {
     return attributes + (style ? ' style="' + style + '"' : '');
 }
 
+function _rapierCloseOpenDetails(tokens) {
+	const opens = /^<details[\t\n\f\r />]/i, closes = /^<\/details[\t\n\f\r ]*>$/i;
+	const tags = token => {
+		const found = [];
+		if (token.type === 'html_inline') found.push(token.content);
+		else if (token.type === 'html_block') _rapierRawHtmlFragment(token.content, tag => { found.push(tag); return tag; }, md);
+		else if (token.type === 'inline') for (const child of token.children || []) if (child.type === 'html_inline') found.push(child.content);
+		return found;
+	};
+	const after = new Map(), add = (index, count) => after.set(index, (after.get(index) || 0) + count);
+	const waiting = [];
+	for (let index = 0; index < tokens.length; index++) {
+		const token = tokens[index];
+		let depth = 0;
+		for (const tag of tags(token)) {
+			if (opens.test(tag)) { if (token.type === 'html_block') waiting.push(index); else depth++; }
+			else if (closes.test(tag)) { if (depth) depth--; else waiting.pop(); }
+		}
+		if (depth) add(index + 1 < tokens.length && tokens[index + 1].nesting === -1 ? index + 1 : index, depth);
+	}
+	for (const index of waiting) add(index, 1);
+	if (!after.size) return tokens;
+	const out = [];
+	tokens.forEach((token, index) => {
+		out.push(token);
+		const count = after.get(index);
+		if (count) out.push({type: 'html_block', tag: '', attrs: null, map: null, nesting: 0, level: token.level || 0, children: null,
+			content: '</details>'.repeat(count) + '\n', markup: '', info: '', meta: null, block: true, hidden: false});
+	});
+	return out;
+}
+
 function _rapierRawHtmlFragment(source, rewrite, parser) {
 	const state = new parser.inline.State(source, parser, {}, []);
 	const htmlRule = parser.inline.ruler.__rules__.find(rule => rule.name === 'html_inline').fn;
@@ -860,7 +907,9 @@ function* _rapierAssignHeadingSlugsSteps(root, selector = RAPIER_RENDERED_HEADIN
 		if (!headingSet.has(element) && element.id) used[element.id] = 0;
 	}
 	for (const heading of headings) { yield;
-		heading.id = _rapierNextHeadingSlug(_rapierHeadingSlugBase(heading.textContent), used);
+		const base = _rapierHeadingSlugBase(heading.textContent);
+		const owned = typeof _rapierChromeOwnsId === 'function' && _rapierChromeOwnsId(base);
+		heading.id = _rapierNextHeadingSlug(owned ? 'heading-' + base : base, used);
 	}
 }
 

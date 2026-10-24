@@ -153,10 +153,11 @@ function blockParser(md, work) {
   const refuse = (reason, observed, limit) => {
     throw Object.assign(new Error(reason), {rapierProjectionRefusal: true, reason, observed, limit});
   };
-  const spend = (dimension, amount, reason) => {
+  const spend = (dimension, amount, reason, counted = false) => {
     if (!budget) return;
     budget.used[dimension] += amount;
     budget.used.nodes += amount;
+    if (counted) return;
     if (budget.used[dimension] > budget.limits[dimension]) refuse(reason, budget.used[dimension], budget.limits[dimension]);
     if (budget.used.nodes > budget.limits.nodes) refuse('wysiwyg_node_limit', budget.used.nodes, budget.limits.nodes);
   };
@@ -168,7 +169,7 @@ function blockParser(md, work) {
   const blockPush = blockState.push;
   blockState.push = function (...args) {
     const token = blockPush.apply(this, args);
-    spend('tokens', 1, 'wysiwyg_token_limit');
+    spend('tokens', 1, 'wysiwyg_token_limit', true);
     return token;
   };
   let inlineDepth = 0;
@@ -188,6 +189,8 @@ function blockParser(md, work) {
     const blocks = state.tokens.reduce((count, token) => count + (token.level === 0 && token.nesting !== -1 && token.map ? 1 : 0), 0);
     budget.used.blocks = blocks;
     if (blocks > budget.limits.blocks) refuse('wysiwyg_block_limit', blocks, budget.limits.blocks);
+    if (budget.used.tokens > budget.limits.tokens) refuse('wysiwyg_token_limit', budget.used.tokens, budget.limits.tokens);
+    if (budget.used.nodes > budget.limits.nodes) refuse('wysiwyg_node_limit', budget.used.nodes, budget.limits.nodes);
   });
   const split = (markdown, env, tokens) => _splitByTokenStream(markdown, md, env, tokens);
   const coordinates = source => {

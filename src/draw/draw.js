@@ -971,11 +971,13 @@ async function _rapierDrawClearAll(session) {
 		if (current()) showToast('Couldn’t clear. Painting unchanged.', 'error', null, error);
 	}
 }
-function _rapierDrawCanvasBlank() {
+function _rapierDrawCanvasBlank(paintMountIsBlank = false) {
 	const state = _rapierDrawState, surface = state.surface;
 	if (!surface || !state.open) return false;
-	if (state.recipe?.shapes?.length || state.paintLayer?.surface?.bounds()) return false;
-	return !surface.querySelector('.rapier-draw-shapes>*,.rapier-draw-preview>*,.rapier-draw-live[d]:not([d=""])');
+	if (state.recipe?.shapes?.length || state.paintLayer?.surface?.settled === false || state.paintLayer?.surface?.bounds()) return false;
+	return !surface.querySelector(paintMountIsBlank
+		? ':is(.rapier-draw-shapes>*,.rapier-draw-preview>*):not(foreignObject:has(>canvas.rapier-draw-paint-live:only-child)),.rapier-draw-live[d]:not([d=""])'
+		: '.rapier-draw-shapes>*,.rapier-draw-preview>*,.rapier-draw-live[d]:not([d=""])');
 }
 function _rapierDrawClearExits() {
 	const state = _rapierDrawState;
@@ -1092,7 +1094,10 @@ function _rapierDrawPaintClient(purpose = 'human', mode = 'paint') {
 			const mode = await worker.ready;
 			const isolated = mode === 'worker' && globalThis.crossOriginIsolated === true && typeof rows?.workerSource === 'function';
 			const helpers = !water && purpose !== 'preview' && isolated ? 4 : 0;
-			await client.request('configure', {preview: water && purpose === 'preview', unfilteredTest: water && (globalThis.__rapierWaterUnfilteredTest === true || purpose === 'human' && _rapierWaterFixSwitch() === 'filter'), fix: water && purpose === 'human' ? _rapierWaterFixSwitch() : '', software: water && globalThis.__rapierWaterSoftwareTest === true, slowTest: water ? globalThis.__rapierWaterSlowTest : undefined, stats: water && purpose === 'human' && new URLSearchParams(location.search).has('waterstats'), capture: water && purpose === 'human' && new URLSearchParams(location.search).has('water-capture'), helpers, ...(helpers ? {helperSource: rows.workerSource()} : {})});
+			let gpuSwitch = null;
+			try { const opened = globalThis.performance?.getEntriesByType?.('navigation')?.[0]?.name; gpuSwitch = new URLSearchParams(new URL(opened || location.href).search + '&' + location.search.slice(1)).get('paint-gpu'); } catch (_) {}
+			const gpu = water || purpose !== 'human' ? 'off' : gpuSwitch === 'software' || globalThis.__rapierPaintSoftwareTest === true ? 'software' : gpuSwitch === '0' ? 'off' : 'on';
+			await client.request('configure', {preview: water && purpose === 'preview', unfilteredTest: water && (globalThis.__rapierWaterUnfilteredTest === true || purpose === 'human' && _rapierWaterFixSwitch() === 'filter'), fix: water && purpose === 'human' ? _rapierWaterFixSwitch() : '', software: water && globalThis.__rapierWaterSoftwareTest === true, slowTest: water ? globalThis.__rapierWaterSlowTest : undefined, stats: water && purpose === 'human' && new URLSearchParams(location.search).has('waterstats'), capture: water && purpose === 'human' && new URLSearchParams(location.search).has('water-capture'), helpers, ...(helpers ? {helperSource: rows.workerSource()} : {}), gpu});
 			return client;
 		} catch (error) { worker.terminate(); throw error; }
 	})().catch(error => { if (_rapierDrawPaintWorkers.get(role) === holder) _rapierDrawPaintWorkers.delete(role); throw error; });
@@ -3418,7 +3423,7 @@ function _rapierDrawLetterGlyph(set) {
 	const sample = set && globalThis.RapierDrawLetterPreviews.LETTER_PREVIEWS[set.id];
 	return sample ? '<svg class="rapier-draw-glyph" viewBox="0 0 ' + sample.glyph[0] + ' ' + sample.em + '" aria-hidden="true"><path fill="currentColor" transform="translate(' + sample.bearing + ',0)" d="' + sample.glyph[1] + '"/></svg>' : '';
 }
-const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.37/letters/';
+const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.40/letters/';
 const _rapierDrawLettersDoor = { allowed: false, asking: null, providers: new Map(), bringing: new Map() };
 function _rapierDrawLettersProvider(set) {
 	const door = _rapierDrawLettersDoor;
@@ -6209,6 +6214,7 @@ async function _rapierDrawClose({ recover = false, landed = false } = {}) {
 	const surface = state.surface;
 	if (surface && notes) surface.classList.add('rapier-draw-surface--closed'); else if (surface) surface.hidden = true;
 	document.body.classList.remove('rapier-draw-open'); document.documentElement?.classList.remove('rapier-draw-open');
+	if (typeof _rapierScheduleRenderWindow === 'function') _rapierScheduleRenderWindow();
 	state.releaseIsolation?.(); state.releaseIsolation = null;
 	if (typeof _rapierAgentNoteHome === 'function') _rapierAgentNoteHome(null);
 	const origin = state.focusBeforeOpen; state.focusBeforeOpen = null;
@@ -6705,7 +6711,7 @@ async function _rapierDrawBackupRead() {
 async function _rapierDrawOfferRecovery(chosen = false) {
 	if (globalThis.RapierBenchSession?.active === true) return;
 	const state = _rapierDrawState;
-	const blank = () => state.open && !state.editing && _rapierDrawCanvasBlank();
+	const blank = () => state.open && !state.editing && !state.undoStack.length && !state.redoStack.length && _rapierDrawCanvasBlank(true);
 	if ((state.open && !blank()) || state.finishing || state.backupOffering) return;
 	state.backupOffering = true;
 	try {
@@ -6910,7 +6916,8 @@ async function _rapierDrawFinishWith(row) {
 		if (!belongs() || !handoff.stamp || (!_rapierMutationStampIsCurrent(handoff.stamp) && !refreshHandoff(handoff))) throw new Error('Document changed. Try Done again.');
 		let kept;
 		if (_rapierNotesOwnTheDocument()) {
-			const note = _rapierNotes?.current, currentNote = () => typeof _rapierNotes === 'object' && note && _rapierNotes.current === note &&
+			const noteId = (notes => notes?.index?.notes[notes.current]?.id)(typeof _rapierNotes === 'object' ? _rapierNotes : null);
+			const currentNote = () => typeof _rapierNotes === 'object' && !!noteId && _rapierNotes.index?.notes[_rapierNotes.current]?.id === noteId &&
 				!_rapierNotes.returnRefused && _rapierNotesDocumentBound();
 			if (!currentNote()) throw new Error('The note is not ready to keep the drawing');
 			const receipt = await _rapierNotesFlush();

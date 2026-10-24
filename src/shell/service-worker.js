@@ -183,18 +183,20 @@ function matchesPage(url, digest) {
   return digest === SHELL_PAGE_SHA256 || digest === SHELL_DOOR_SHA256[path];
 }
 
+const checkedPages = new WeakMap();
 async function cachedNavigationResponse(request, release = null) {
   if (!isShellDoor(request.url)) return null;
   const cache = release ? await caches.open(release.cache) : await shellCache();
   const copy = (await cache.match(request)) || await cache.match(SHELL_PAGE_URL);
   if (!copy?.ok || !/^text\/html(?:;|$)/i.test((copy.headers.get('Content-Type') || '').trim())) return null;
-  const digest = toHex(await crypto.subtle.digest('SHA-256', await copy.clone().arrayBuffer()));
-  if (digest !== (release?.page || SHELL_PAGE_SHA256)) return null;
   const canonical = new URL(request.url);
   if (canonical.pathname !== new URL(SHELL_ROOT_URL).pathname && canonical.pathname.endsWith('/')) {
     canonical.pathname = canonical.pathname.slice(0, -1);
     return Response.redirect(canonical.href, 308);
   }
+  const digest = toHex(await crypto.subtle.digest('SHA-256', await copy.clone().arrayBuffer()));
+  if (digest !== (release?.page || SHELL_PAGE_SHA256)) return null;
+  checkedPages.set(copy, digest);
   return copy;
 }
 
@@ -337,7 +339,7 @@ async function rememberNavigation(event, response) {
       !/^text\/html(?:;|$)/i.test((response.headers.get('Content-Type') || '').trim())) return response;
   await updateStartup(async state => {
     if (state.ready || state.rollback) return null;
-    const page = toHex(await crypto.subtle.digest('SHA-256', await response.clone().arrayBuffer()));
+    const page = checkedPages.get(response) || toHex(await crypto.subtle.digest('SHA-256', await response.clone().arrayBuffer()));
     state.clients[event.resultingClientId] = {url: event.request.url, page, attempt: '', result: ''};
     return {changed: true};
   }).catch(() => {});

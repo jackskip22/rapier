@@ -40,10 +40,10 @@ export const TOOLS = Object.freeze([
     document: string(256), url: string(2048, 'This Door\'s editor_url, through its authorized connection. Use alone; other URLs are not fetched.'), text, filename: string(MAX_FILENAME_CHARS), note: noteRef, title: string(256),
     file: object({name: string(256), resourceUri: string(8192)}, ['name', 'resourceUri']), createToken: string(128),
   }),
-  tool('read', 'Read Rapier', 'Read exact text, a heading/fence map (as:"outline") or a PNG (as:"image") of the page or of the named block, heading or lines. query finds lines here; search lists Notes. Continue next_cursor with cursor alone. Check human context and omissions before editing. state:true reports pending work and the person’s presence; after_revision with wait_ms waits for their next change. guide returns instructions; guide resource URIs are not document IDs.', 'read', {
+  tool('read', 'Read Rapier', 'Read exact text, a heading/fence map (as:"outline") or a PNG (as:"image") of the page or of the named block, heading or lines; a drawing\'s block gives it at full detail, even while it is open in Draw. query finds lines here; search lists Notes. Continue next_cursor with cursor alone. Check human context and omissions before editing. state:true reports pending work and the person’s presence; after_revision with wait_ms waits for their next change. guide returns instructions; guide resource URIs are not document IDs.', 'read', {
     ...readSelection, guide: {...string(32, 'Instructions only; use no other read selectors and no document.'), enum: GUIDE_TOPICS},
   }, [], {allOf: [{if: present('guide'), then: lacking(Object.keys(readSelection))}]}),
-  tool('edit', 'Edit Rapier', 'Apply unique exact-text changes atomically as one undoable act (act is its id string), rename with filename, or set Note fields with note. At a moved numeric revision, literal edits apply if untouched since; whole-document replacement needs the current revision. A conflict returns current context; decide afresh. Drawings, painting, Water, comments and HTML objects use fenced text; painting needs an open editor and an operation_id.', 'write', {
+  tool('edit', 'Edit Rapier', 'Apply unique exact-text changes atomically as one undoable act (act is its id string), rename with filename, or set Note fields with note. At a moved numeric revision, literal edits apply if untouched since; whole-document replacement needs the current revision. A conflict returns current context; decide afresh. Drawings, painting, Water, comments and HTML objects use fenced text; a rapier-draw diagram stays live for the person, who drags its boxes and retypes its labels in the document; painting needs an open editor and an operation_id, and its result shows the painting.', 'write', {
     revision: editRevision, changes: {type: 'array', items: change, minItems: 1, maxItems: 32}, note: noteRef, ...turn,
     fields: {...object({...noteFields, reminder: {type: ['object', 'null'], description: 'App only; {at} in ms.'}}), description: 'Note fields, with note and without changes.'},
     filename: string(MAX_FILENAME_CHARS),
@@ -56,7 +56,7 @@ export const TOOLS = Object.freeze([
     preference: SET_PREFERENCES_SCHEMA.properties.preference, value: {type: ['string', 'boolean'], description: 'preferences: the setting; playback: false pauses, true plays.'}, note: noteRef, code: string(4, 'Browser pairing code (target:"pair").'),
     close: flag, compare_id: string(128), lifetime: integer(1, 30), after_return_id: string(128),
   }, [], {allOf: [{if: {required: ['target'], properties: {target: {type: 'string', const: 'playback'}}}, then: {required: ['revision', 'value'], properties: {value: {type: 'boolean'}}}}]}),
-  tool('export', 'Save or export Rapier', 'to:"file" (default) delivers markdown, html (the offline editor), page, txt, docx or pdf; to:"save" saves to the bound destination; to:"clipboard" copies a passage as plain, markdown, formatted or complete. to:"sync" alone syncs the Notes store and can replace files. On the hosted Door, page, docx and pdf need the person\'s paired, open editor; a self-hosted server can provide a renderer. Inspect delivery; export never publishes a website.', 'durable', {
+  tool('export', 'Save or export Rapier', 'to:"file" (default) delivers markdown, html, page, txt, docx or pdf (html is the whole editor with the document inside, editable offline); to:"save" saves to the bound destination; to:"clipboard" copies a passage as plain, markdown, formatted or complete. to:"sync" alone syncs the Notes store and can replace files. On the hosted Door, page, docx and pdf need the person\'s paired, open editor; a self-hosted server can provide a renderer. Inspect delivery; export never publishes a website.', 'durable', {
     format: {...string(32), enum: ['markdown', 'html', 'page', 'txt', 'docx', 'pdf', 'plain', 'formatted', 'complete']}, to: {...string(32), enum: ['file', 'save', 'clipboard', 'sync']}, text, ...scope, revision, compare_id: string(128),
   }, [], {allOf: [{if: {required: ['to'], properties: {to: {type: 'string', const: 'sync'}}},
     then: lacking(['format', 'text', 'block', 'heading', 'revision', 'compare_id'])}]}),
@@ -103,7 +103,7 @@ function hostedSchema(entry) {
 }
 export function annotations(effect, host = 'mcp', name = '') {
   if (host === 'webmcp') return {readOnlyHint: effect === 'read', untrustedContentHint: true, consequentialHint: effect !== 'read'};
-  return {readOnlyHint: effect === 'read', destructiveHint: !['show', 'export'].includes(name) && (effect === 'write' || effect === 'durable'),
+  return {readOnlyHint: effect === 'read', destructiveHint: name === 'show' || ['write', 'durable', 'destructive'].includes(effect),
     idempotentHint: effect === 'read', openWorldHint: OPEN_WORLD.has(name)};
 }
 export const OPEN_WORLD = new Set(['open', 'show', 'export']);

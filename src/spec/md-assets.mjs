@@ -179,8 +179,19 @@ export function* blockWindows(source, bodyOffset, parser, env, keepNul = false) 
   }
 }
 
+const PERCENT_PAYLOAD = Array.from({length: 128}, (_, code) => code >= 48 && code <= 57 || code >= 65 && code <= 90 ||
+  code >= 97 && code <= 122 || '-._~:/?@+$,;='.includes(String.fromCharCode(code)));
+const isHexUnit = code => code >= 48 && code <= 57 || code >= 65 && code <= 70 || code >= 97 && code <= 102;
+let lastScan = null;
 export function dataImage(url) {
   if (typeof url !== 'string' || url.length > IMAGE_LIMITS.sourceChars) return null;
+  if (url.length > 4096) {
+    if (lastScan?.url !== url) lastScan = {url, image: scanDataImage(url)};
+    return lastScan.image && {...lastScan.image};
+  }
+  return scanDataImage(url);
+}
+function scanDataImage(url) {
   const prepared = preparedDefinitions.find(row => row.image.url === url)?.image;
   if (prepared) return {codec: prepared.codec, byteLength: prepared.byteLength, payloadStart: url.indexOf(',') + 1,
     ...(prepared.encoding ? {encoding: prepared.encoding} : {})};
@@ -190,10 +201,9 @@ export function dataImage(url) {
     for (let at = payloadStart; at < url.length; at++, byteLength++) {
       const code = url.charCodeAt(at);
       if (code === 37) {
-        if (!/^[\da-f]{2}$/i.test(url.slice(at + 1, at + 3))) return null;
+        if (!isHexUnit(url.charCodeAt(at + 1)) || !isHexUnit(url.charCodeAt(at + 2))) return null;
         at += 2;
-      } else if (!(code >= 48 && code <= 57 || code >= 65 && code <= 90 || code >= 97 && code <= 122 ||
-          '-._~:/?@+$,;='.includes(url[at]))) return null;
+      } else if (!(code < 128 && PERCENT_PAYLOAD[code])) return null;
     }
     return byteLength && byteLength <= IMAGE_LIMITS.bytes
       ? {codec: 'image/svg+xml', byteLength, payloadStart, encoding: 'percent'} : null;
