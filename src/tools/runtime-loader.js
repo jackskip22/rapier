@@ -149,7 +149,7 @@ function _rapierExecuteBootSource({name, source, bytes}, mountInterface) {
   return new Promise((resolve, reject) => {
     const element = document.createElement('script');
     element._rapierExecuted = false;
-    const url = URL.createObjectURL(new Blob([bytes, '\n;document.currentScript._rapierExecuted = true;\n//# sourceURL=' + name], {type: 'text/javascript'}));
+    const url = URL.createObjectURL(new Blob([bytes, '\n;document.currentScript._rapierExecuted = true;\n//# sourceURL=' + name], {type: 'text/javascript;charset=utf-8'}));
     let thrown = null;
     const caught = event => {
       if (document.currentScript === element || event.filename === name || event.filename === url)

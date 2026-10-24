@@ -1,11 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import {JsonDepthGuard} from '../kit/json-depth.mjs';
+import {MAX_TEXT_BYTES} from '../agent/operation-contracts.mjs';
+
 const RAPIER_TRANSPORT_VERSION = 1;
 const RAPIER_TRANSPORT_MAGIC = Object.freeze([0x52, 0x50, 0x52, 0x31]);
 const RAPIER_TRANSPORT_HEADER_LIMIT = 64 * 1024;
 const RAPIER_TRANSPORT_PREFIX = 8;
+const RAPIER_TRANSPORT_MESSAGE_LIMIT = MAX_TEXT_BYTES * 3 + 1024 * 1024;
 
 const encoder = new TextEncoder(), decoder = new TextDecoder('utf-8', {fatal: true});
+const parseHeader = text => { new JsonDepthGuard(128).write(text); return JSON.parse(text); };
 
 export function nativeTransportOrigin(origin) {
 	if (typeof origin !== 'string' || !origin || origin.includes('*')) throw new TypeError('the transport binds one exact origin');
@@ -68,16 +73,17 @@ const accept = (head, payload, lane) => Object.freeze({ok: true, lane, frame: Ob
 export function decodeFrame(data, {current = null} = {}) {
 	const bytes = bytesOf(data);
 	if (bytes) {
+		if (bytes.length > RAPIER_TRANSPORT_MESSAGE_LIMIT) return refuse('malformed');
 		if (bytes.length < RAPIER_TRANSPORT_PREFIX || RAPIER_TRANSPORT_MAGIC.some((byte, at) => bytes[at] !== byte)) return refuse('malformed');
 		const length = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(4, true);
 		if (length > RAPIER_TRANSPORT_HEADER_LIMIT || RAPIER_TRANSPORT_PREFIX + length > bytes.length) return refuse('malformed');
 		let head;
-		try { head = JSON.parse(decoder.decode(bytes.subarray(RAPIER_TRANSPORT_PREFIX, RAPIER_TRANSPORT_PREFIX + length))); } catch (_) { return refuse('malformed'); }
+		try { head = parseHeader(decoder.decode(bytes.subarray(RAPIER_TRANSPORT_PREFIX, RAPIER_TRANSPORT_PREFIX + length))); } catch (_) { return refuse('malformed'); }
 		return checkHead(head, current) || accept(head, bytes.subarray(RAPIER_TRANSPORT_PREFIX + length), 'binary');
 	}
-	if (typeof data !== 'string') return refuse('malformed');
+	if (typeof data !== 'string' || data.length > RAPIER_TRANSPORT_MESSAGE_LIMIT) return refuse('malformed');
 	let head;
-	try { head = JSON.parse(data); } catch (_) { return refuse('malformed'); }
+	try { head = parseHeader(data); } catch (_) { return refuse('malformed'); }
 	const refused = checkHead(head, current);
 	if (refused) return refused;
 	if (typeof head.bytes === 'string') {

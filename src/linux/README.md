@@ -20,7 +20,7 @@ On X11 the window's class is `rapier`. On Wayland, Chromium names an app window 
 windowrule = opacity 1 1, match:class ^(chrome-rapier\.local__rapier\.html-Default)$
 ```
 
-On Omarchy, `sudo pacman -S perl-file-mimeinfo` lets `xdg-open file.md` open rapier; without it, `xdg-open` sees a `.md` file as plain text. Your file manager opens `.md` files in rapier either way.
+On Omarchy, `xdg-open file.md` needs `perl-file-mimeinfo` to open rapier; without it, `xdg-open` sees a `.md` file as plain text. The AUR package `rapier-bin` installs it; with the executable alone, run `sudo pacman -S perl-file-mimeinfo`. Your file manager opens `.md` files in rapier either way.
 
 Keep the executable where you installed it. After moving it, run `--install` again. `--uninstall` removes the launcher entry and extracted cache; documents and Notes remain. `--licenses` prints the included license notices.
 

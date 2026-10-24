@@ -340,6 +340,7 @@ function initMarkdownIt() {
 	};
 
 	const _fenceDefault = md.renderer.rules.fence;
+	let _mathPromptedOnce = false;
 	{
 		let _diagramPromptedOnce = false;
 		md.renderer.rules.fence = function (tokens, idx, opts, env, self) {
@@ -366,8 +367,16 @@ function initMarkdownIt() {
 			}
 			const provider = env.rapierProviders === false ? null : _rapierProviders.mermaid;
 			const native = globalThis.RapierFlowchart?.parseFlowchart(src).ok === true;
-			const ready = native || !!(provider && provider.status === 'ready' && typeof provider.renderToString === 'function');
-			if (!ready && !provider?.request?.() && env.rapierProviders !== false && !_diagramPromptedOnce) {
+			const diagramReady = native || !!(provider && provider.status === 'ready' && typeof provider.renderToString === 'function');
+			const mathProvider = env.rapierProviders === false ? null : _rapierProviders.math;
+			const mathNeeded = provider?.requiresMath?.(src) === true;
+			const mathReady = !mathNeeded || mathProvider?.status === 'ready';
+			if (!mathReady && !mathProvider?.request?.() && env.rapierProviders !== false && !_mathPromptedOnce) {
+				_mathPromptedOnce = true;
+				try { _rapierUiMath.request(); } catch (_) {}
+			}
+			const ready = diagramReady && mathReady;
+			if (!diagramReady && !provider?.request?.() && env.rapierProviders !== false && !_diagramPromptedOnce) {
 				_diagramPromptedOnce = true;
 				try { _rapierUiDiagram.request(); } catch (_) {}
 			}
@@ -401,7 +410,6 @@ function initMarkdownIt() {
 	preserveEmphasisMarkup('strong_open', 'data-rapier-strong');
 
 	{
-		let _mathPromptedOnce = false;
 		const _renderMath = (src, displayMode, env, authored) => {
 			const marker = displayMode ? '$$' : '$';
 			const source = authored || marker + src + marker, literal = md.utils.escapeHtml(source);
@@ -444,6 +452,10 @@ function initMarkdownIt() {
 	}
 	globalThis.RapierMarkdownLayout.installMarkdownLayout(md);
 	globalThis.RapierImageAssets.configureParser(md, _rapierSplitOpeningFrontmatter);
+	const render = md.renderer.render;
+	md.renderer.render = function (tokens, options, env) {
+		return render.call(this, _rapierCloseOpenDetails(tokens), options, env);
+	};
 }
 
 function _rapierRenderSemanticRoot(canonical, metadata, options = {}) {
@@ -470,12 +482,13 @@ function _rapierRenderSemanticRoot(canonical, metadata, options = {}) {
 	if (wikiLinks) env.rapierWikiLinks = wikiLinks;
 	if (options.mathEquations) env.rapierMathEquations = options.mathEquations;
 	const nesting = md && options.maxNesting > 0 ? options.maxNesting : 0;
-	let rendered;
+	let cutAt = -1, rendered;
 	if (nesting || md && options.closeDetails) {
 		const saved = md.options.maxNesting;
 		if (nesting) md.options.maxNesting = nesting;
 		try {
 			const tokens = md.parse(markdown, env);
+			if (nesting) cutAt = _rapierNestingCutAt(tokens, nesting);
 			rendered = md.renderer.render(options.closeDetails ? _rapierCloseOpenDetails(tokens) : tokens, md.options, env);
 		} finally { md.options.maxNesting = saved; }
 	} else rendered = md
@@ -487,6 +500,7 @@ function _rapierRenderSemanticRoot(canonical, metadata, options = {}) {
 		rendered = _relabelFootnoteHtml(rendered, labels);
 	}
 	root.innerHTML = sanitizeRapierHtml(rendered, options.page ? 'source' : 'export');
+	if (cutAt >= 0) _rapierAppendNestingCut(root, markdown, cutAt);
 	_rapierApplyBlockDirection(root);
 
 	_rapierAssignHeadingSlugs(root, RAPIER_RENDERED_HEADING_SELECTOR, false);
@@ -500,6 +514,15 @@ function _rapierRenderSemanticRoot(canonical, metadata, options = {}) {
 	return root;
 }
 
+function _rapierAppendNestingCut(root, markdown, cutAt) {
+	const note = root.ownerDocument.createElement('p'), pre = root.ownerDocument.createElement('pre'), code = root.ownerDocument.createElement('code');
+	note.setAttribute('data-rapier-nesting-cut', 'true');
+	note.textContent = 'Nesting is too deep to show here. The rest of the document follows as plain text.';
+	code.textContent = String(markdown).split('\n').slice(cutAt).join('\n');
+	pre.append(code);
+	root.append(note, pre);
+}
+const _rapierNestingCutAt = (tokens, nesting) => { const deepest = tokens.find(token => token.level >= nesting - 1 && token.map); return deepest ? deepest.map[0] + 1 : -1; };
 async function _rapierRenderSemanticRootAsync(canonical, metadata, options = {}) {
 	const work = options.work || options;
 	check(work);
@@ -517,9 +540,9 @@ async function _rapierRenderSemanticRootAsync(canonical, metadata, options = {})
 	let parsed;
 	try { parsed = !wikiLinks && options.parsed || (runtime.parseAsync && !wikiLinks && !nesting ? await runtime.parseAsync(markdown, options) : {tokens: md.parse(markdown, fallbackEnv), env: fallbackEnv}); }
 	finally { md.options.maxNesting = saved; }
-	let {tokens, env} = parsed;
-	if (options.closeDetails) tokens = _rapierCloseOpenDetails(tokens);
-	let labels = env.footnotes?.list?.map((item, index) => String(item?.label || ('inline-' + (index + 1))));
+	let {tokens, env} = parsed, labels = env.footnotes?.list?.map((item, index) => String(item?.label || ('inline-' + (index + 1))));
+	const cutAt = nesting ? _rapierNestingCutAt(tokens, nesting) : -1;
+	tokens = _rapierCloseOpenDetails(tokens);
 	env = {...env, rapierImagePresentation: options.imagePresentation === true};
 	await pause(work, .3);
 	const inert = document.createElement('template').content.ownerDocument;
@@ -546,6 +569,7 @@ async function _rapierRenderSemanticRootAsync(canonical, metadata, options = {})
 			}
 		}
 		if (html) append();
+		if (cutAt >= 0) _rapierAppendNestingCut(root, markdown, cutAt);
 		parsed = tokens = env = labels = null;
 		await finishAsync(_rapierSemanticDecorations(root), work);
 		await pause(work, .6);
@@ -815,7 +839,18 @@ function _rapierCloseOpenDetails(tokens) {
 	const tags = token => {
 		const found = [];
 		if (token.type === 'html_inline') found.push(token.content);
-		else if (token.type === 'html_block') _rapierRawHtmlFragment(token.content, tag => { found.push(tag); return tag; }, md);
+		else if (token.type === 'html_block') {
+			let raw = '';
+			_rapierRawHtmlFragment(token.content, tag => {
+				if (raw) { if (new RegExp('^</' + raw + '[\\t\\n\\f\\r ]*>$', 'i').test(tag)) raw = ''; }
+				else {
+					const literal = /^<(script|style|textarea|title|xmp|iframe|noembed|noframes|plaintext)(?=[\t\n\f\r />])/i.exec(tag);
+					if (literal) raw = literal[1];
+					else found.push(tag);
+				}
+				return tag;
+			}, md);
+		}
 		else if (token.type === 'inline') for (const child of token.children || []) if (child.type === 'html_inline') found.push(child.content);
 		return found;
 	};

@@ -59,5 +59,12 @@
   "editor/composer.js",
   "editor/changes-draw.js",
   "editor/changes.js",
-  "editor/seen-margin.js"
+  "editor/seen-margin.js",
+  "editor/format-toolbar.js",
+  "editor/heavy-window.js",
+  "editor/agent-bar.js",
+  "editor/compare-block.js",
+  "editor/ui-open.js",
+  "editor/plan-exact.js",
+  "editor/will-plate.js"
 ]

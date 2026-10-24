@@ -280,6 +280,12 @@ export function projectInverseSource(prepared, selected, projectedEffects, optio
 					const id = tx.id + '#' + rowIndex + ':' + index;
 					const lineage = new Set([id]);
 					for (const piece of removed) for (const parent of piece.lineage || piece.mark?.lineage || []) lineage.add(parent);
+					if (!row.removed.length && !count && at > 0 && /[\p{L}\p{N}\p{M}]/u.test(row.inserted)) {
+						const left = pieces[at - 1], right = pieces[at];
+						const inner = left?.text && right?.text && left.owner === right.owner ? byId.get(left.owner) : null;
+						if (inner && inner.actId !== tx.id && inner.removed && /[\p{L}\p{N}\p{M}]$/u.test(left.text) && /^[\p{L}\p{N}\p{M}]/u.test(right.text))
+							for (const parent of [inner.id, ...(left.lineage || [])]) lineage.add(parent);
+					}
 					const hunk = {id, actId: tx.id, removed: row.removed, inserted: row.inserted, before: removed, derived,
 						chosen, kept: selected.has(tx.id) && !chosen, lineage: [...lineage], supersededBy: new Set(), active: true,
 						...(coverIdsFor(tx.id) ? {coverIds: coverIdsFor(tx.id)} : {})};

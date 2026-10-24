@@ -4,6 +4,7 @@ export const LIMITS = Object.freeze({documentBytes: 64 * 1024 * 1024, pictureByt
 export const ASSET_TYPES = Object.freeze(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/jxl', 'image/svg+xml']);
 const ACCENTS = Object.freeze(['Teal', 'Blue', 'Amber', 'Green', 'Red', 'Purple', 'Pink', 'Gray']);
 export const refusal = (code, reason = code) => Object.assign(new Error(reason), {code});
+export const coded = (code, Type, message) => Object.assign(new Type(message), {code});
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value) &&
   (Object.getPrototypeOf(value) === null || Object.getPrototypeOf(Object.getPrototypeOf(value)) === null);
 const only = (value, keys) => Object.keys(value).every(key => keys.includes(key));

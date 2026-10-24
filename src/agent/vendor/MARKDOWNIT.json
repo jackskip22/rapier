@@ -1,24 +1,23 @@
 {
   "description": "Unchanged markdown-it release source compiled to native ES2022, bundled with the exact runtime dependencies in its release lockfile. No parser rule or token changes. Ordinary page builds use the pinned generated vendor offline; explicit regeneration is tools/markdown-it-vendor.mjs. tools/entities-vendor.mjs retains the existing compact HTML entity representation.",
   "package": "markdown-it",
-  "version": "15.0.2",
+  "version": "15.0.3",
   "license": "MIT",
   "source": {
-    "commit": "3c51991c32aaa2b002a52c009334ebe5752c84b3",
-    "url": "https://codeload.github.com/markdown-it/markdown-it/tar.gz/3c51991c32aaa2b002a52c009334ebe5752c84b3",
-    "archiveSha256": "61a6e5a2187b1463254e34b102ad2581cab7636b3a388b52d4de4e5ed4afdcd5",
+    "commit": "a8c00d474ec9b304fad9b71c16d6fa8b4909279e",
+    "url": "https://codeload.github.com/markdown-it/markdown-it/tar.gz/a8c00d474ec9b304fad9b71c16d6fa8b4909279e",
+    "archiveSha256": "308907184020e1bc7d8e3f7608376165ba1cf42a7c2ca795ec7a5465071fdc76",
     "published": {
-      "tarball": "https://registry.npmjs.org/markdown-it/-/markdown-it-15.0.2.tgz",
-      "integrity": "sha512-q4IGxMv56jCqT4OCRCADBoDP3LO4MhmTXjFbphHPXs4g3j9Xg5RDnxqN8IF/3vIWEU+VCnUq+7JUg/cfy2E6Qw==",
-      "umdSha256": "635972b985228e8af9f0143647c68616b7a3bb09f6946e7e4a52e43dcf5e7be5"
+      "tarball": "https://registry.npmjs.org/markdown-it/-/markdown-it-15.0.3.tgz",
+      "integrity": "sha512-+Az7Ojz3iRGu8KYMvJ6xVhvrxP3eE+vEtJX75Ow88XBpcQNV/0lGX5ZynIIBftREo4DC2jsveAMDaeltmm8QvQ=="
     }
   },
   "dependencies": [
     {
       "name": "entities",
-      "version": "8.0.0",
-      "tarball": "https://registry.npmjs.org/entities/-/entities-8.0.0.tgz",
-      "integrity": "sha512-zwfzJecQ/Uej6tusMqwAqU/6KL2XaB2VZ2Jg54Je6ahNBGNH6Ek6g3jjNCF0fG9EWQKGZNddNjU5F1ZQn/sBnA=="
+      "version": "8.1.0",
+      "tarball": "https://registry.npmjs.org/entities/-/entities-8.1.0.tgz",
+      "integrity": "sha512-kxL7msIffSuh9aaFAMD7rxAIuTRMAHMeBtgHW2yUdWw732ZNh4MehkF2gdjvtdmikkaIP9bFDDJOPlsvm7avrA=="
     },
     {
       "name": "linkify-it",
@@ -47,7 +46,7 @@
   ],
   "tool": {
     "name": "esbuild",
-    "version": "0.25.12",
+    "version": "0.28.2",
     "options": {
       "bundle": true,
       "format": "cjs",
@@ -65,68 +64,62 @@
     {
       "scope": "dependencies",
       "path": "entities/dist/decode-codepoint.js",
-      "bytes": 1160,
-      "sha256": "f09dbc23d35abbf96718dfdd04def3c1d3444495541d050c69a12706ee76dbb1"
+      "bytes": 2413,
+      "sha256": "dddf76e72987697316e647f046b2755dafe16308fe83159969b3155e0ebf3beb"
     },
     {
       "scope": "dependencies",
       "path": "entities/dist/decode.js",
-      "bytes": 22923,
-      "sha256": "5e3e1c938416abcb354ff4d7808f0a010d27d0e4170195c6f95f2e6895cb081a"
+      "bytes": 49384,
+      "sha256": "6ce0048039ae0f9dab6e21dd1309661bcfe7e3beabfab1f15cdd61adb91e20b7"
     },
     {
       "scope": "dependencies",
       "path": "entities/dist/encode.js",
-      "bytes": 3272,
-      "sha256": "40a788f341a5e60b3a88c24987565a05cd96fb6d5be6e81820a45c6b6deb1a63"
+      "bytes": 12366,
+      "sha256": "af4b217937b364425a6303b2febfda0a2d1282b73e1d7a3e6381ac2072b7d0ea"
     },
     {
       "scope": "dependencies",
       "path": "entities/dist/escape.js",
-      "bytes": 4740,
-      "sha256": "c898ee1bfdaa487bdc4157b318f13dd67e8697fd82a22eefd270ddb7440561ee"
+      "bytes": 6122,
+      "sha256": "880426162e6e6a1c65cb67cca4824c529c37192b51b0571927a81d33074f7302"
     },
     {
       "scope": "dependencies",
       "path": "entities/dist/generated/decode-data-html.js",
-      "bytes": 32453,
-      "sha256": "a845d1bb8e661abad2642088c646031523dc58b6e8bd0453308b0d71c01c8b8f"
+      "bytes": 18811,
+      "sha256": "1ff1226550125bb8976dd032b2dcfc37ba311863dbf9ae69b4b16922f5a38ead"
     },
     {
       "scope": "dependencies",
       "path": "entities/dist/generated/decode-data-xml.js",
-      "bytes": 314,
-      "sha256": "e11599611184b79a44d80cf0c135f4eeaf09e0ccac8845da54333177336a20ed"
+      "bytes": 330,
+      "sha256": "e549a5fd573d540a4652c81fab6655f3418c34c1613a30ed245ca017d9a5b730"
     },
     {
       "scope": "dependencies",
       "path": "entities/dist/generated/encode-html.js",
-      "bytes": 13401,
-      "sha256": "3f5dc85b3f48357d246f54e5be07d4b8d6ccb59757f917a1a063af0cea235440"
+      "bytes": 11333,
+      "sha256": "b5fcf3d4d73f5bd5f6a49c9c9da3cc6b824b2e2e5068f74c108649b1185d0a1c"
     },
     {
       "scope": "dependencies",
       "path": "entities/dist/index.js",
-      "bytes": 3604,
-      "sha256": "442e6496aca70e865e6e9f295a71794e1889d247031e77ea1c58c415d172485b"
+      "bytes": 3530,
+      "sha256": "4ce5bc47aa7a5f3958bc4d42e450d62156efdd043cbad6b7edbdf9604d85dc4f"
     },
     {
       "scope": "dependencies",
       "path": "entities/dist/internal/bin-trie-flags.js",
-      "bytes": 942,
-      "sha256": "4f2d90d78b57cc2549cda4c53c7b5a1ca6176fcf746da1bd4ad4e6e9608ea89d"
+      "bytes": 2847,
+      "sha256": "8bb285f9ab41b9fd2525c83902c99b36e7c36da7cb7fa3be574d68f328183de5"
     },
     {
       "scope": "dependencies",
       "path": "entities/dist/internal/decode-shared.js",
-      "bytes": 617,
-      "sha256": "51a2120afeae660916954be58f323c718b0415b78e9719c0b0279f49f3cc0d96"
-    },
-    {
-      "scope": "dependencies",
-      "path": "entities/dist/internal/encode-shared.js",
-      "bytes": 3618,
-      "sha256": "75c6c0864c91132410350743dfb61ce3bd645cb4aee70961015af6ae70b59ec3"
+      "bytes": 8252,
+      "sha256": "cd26388e8ec3fdc2c4b212883e9ae460a4fe6dd37d80d0dacffd6b0087171b6b"
     },
     {
       "scope": "dependencies",
@@ -185,8 +178,8 @@
     {
       "scope": "source",
       "path": "src/common/html_re.ts",
-      "bytes": 874,
-      "sha256": "826729add35acb2eb25e03e74cc785df8600f4c597df62b82388736bcd8dff14"
+      "bytes": 929,
+      "sha256": "8d9b25595441ed5e833f46f29cc8da5b5884df4e9b4b5d1a1ed84a4abb18c5ea"
     },
     {
       "scope": "source",
@@ -335,8 +328,8 @@
     {
       "scope": "source",
       "path": "src/rules_block/reference.ts",
-      "bytes": 6252,
-      "sha256": "8fd5b9fd98fd6c62e7ad5bc8ca2f8471fa3c1fb63f463913c8d71a30a525c5fc"
+      "bytes": 6955,
+      "sha256": "17e4d1b17df4bd43ff3622713ec92b1f0624e422c87c1f35f4c8a07cd9ca9206"
     },
     {
       "scope": "source",
@@ -449,8 +442,8 @@
     {
       "scope": "source",
       "path": "src/rules_inline/html_inline.ts",
-      "bytes": 1265,
-      "sha256": "31beb177968078d7acf39c766d9b87fa51e6b3f26f7ec17479ac2243a8a5a9e2"
+      "bytes": 2503,
+      "sha256": "386e6c3630b7bba37fd76ea71c6d42fec6355ae8cadbd873a8c0985243eb4546"
     },
     {
       "scope": "source",
@@ -479,8 +472,8 @@
     {
       "scope": "source",
       "path": "src/rules_inline/state_inline.ts",
-      "bytes": 5432,
-      "sha256": "7f828d6690d404ab0bae6d813177ef2bb39a35c924ef4b72928c4edbde7e4d21"
+      "bytes": 5579,
+      "sha256": "d0879fa1d0cb3a7afb1192f4033f7426049201a12e54db513f4db4fa389fd62f"
     },
     {
       "scope": "source",
@@ -502,22 +495,22 @@
     }
   ],
   "output": {
-    "path": "shell/vendor/markdown-it-15.0.2.es2022.umd.js",
-    "bytes": 155422,
-    "sha256": "f397ccdb81dcf0815e719f76af19a423e7b6a784f4a993b1b4631227b63cfb3e"
+    "path": "shell/vendor/markdown-it-15.0.3.es2022.umd.js",
+    "bytes": 144327,
+    "sha256": "ab352b33693b8a4c88c0c0a977f12b30df9aa42bc163f73e59397939e397182a"
   },
   "manifests": [
     {
       "scope": "source",
       "path": "package.json",
       "bytes": 3867,
-      "sha256": "8139a013848ea3354dad52d9e025646e85620fca02805d4db0bacd5c05472946"
+      "sha256": "43e11fe9c0cf180ceb0f6d62ddbb528caa11021af03df7e0d29049f3c628be5a"
     },
     {
       "scope": "source",
       "path": "package-lock.json",
-      "bytes": 237623,
-      "sha256": "60cb18d600352d2cca3d0d6ee11f40ea9159231a0dec720ea684e1bc0eb5f08a"
+      "bytes": 152527,
+      "sha256": "6a552117ab9789bb9c628baf53d865293b6c54900dee7190d8d4ea69683ff0a8"
     },
     {
       "scope": "source",
@@ -528,8 +521,8 @@
     {
       "scope": "dependencies",
       "path": "entities/package.json",
-      "bytes": 2563,
-      "sha256": "86e28ac6361377a9c0a82dc7ce849b16bfcc6b13d862c563bbf9b3fe9267773a"
+      "bytes": 2590,
+      "sha256": "b6ff1175be0fa103f032d52e42af95d95c674e3cba08d93670cc8944697bcc42"
     },
     {
       "scope": "dependencies",

@@ -1,3 +1,4 @@
+import {parseImportJson} from './import.mjs';
 import {orderAfter, NOTE_COLOURS, isBuiltinSectionName} from './model.mjs';
 import {resolveAssetPath, scanLinks} from './links.mjs';
 import {audioMime, appendImportedRecording, findAudioAttachment} from './audio.mjs';
@@ -98,7 +99,7 @@ export function importTakeout(files, options) {
 			if (!f || typeof f.name !== 'string' || !/\.(?:json|txt|text)$/i.test(f.name)) continue;
 			const warnings = [], source = readImportText(f, warnings);
 			let data;
-			try { data = JSON.parse(source.replace(/^\uFEFF/, '')); } catch (_) {
+			try { data = parseImportJson(source.replace(/^\uFEFF/, '')); } catch (_) {
 				skipped.push({name: f.name, why: 'invalid JSON; literal source retained'});
 				built.push({...literalImportSource({...f, text: source, bytes: undefined}, pool, 'Keep JSON was damaged and could not be parsed.', warnings, 'json'), created: -Infinity}); continue;
 			}

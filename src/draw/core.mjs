@@ -19,7 +19,7 @@ import {inspectJPEGXL} from '../images/header.mjs';
 import {inspectRaster} from '../images/raster.mjs';
 import {ornamentPath} from './ornaments.mjs';
 import {hasRefraction, refractionRecipeKey, admitRefractionRenditions, currentRefractionRenditions, stripRefractionRenditions, restoreRefractionRenditions} from './refraction-rendition.mjs';
-import {layoutIncrementalGraph} from './flowchart-layout.mjs';
+import {layoutLayeredGraph, layoutIncrementalGraph, planFlowchartPorts, outsideHullLength, ROUTE_PRICE} from './flowchart-layout.mjs';
 
 const _rapierDrawAssetGenerations = [];
 export function _rapierDrawAssetGeneration(value) {
@@ -2598,7 +2598,7 @@ function _rapierDrawFigurePoint(value) {
 
 function _rapierDrawFigureSeed(figure, index) { return _rapierDrawSeed(index + ':' + JSON.stringify(figure)); }
 
-function _rapierDrawLayered(nodes, edges, across, gap, sibling = gap, compact = false, options = null) {
+function _rapierDrawLayeredLegacy(nodes, edges, across, gap, sibling = gap, compact = false, options = null) {
 	if (options?.prior) return layoutIncrementalGraph(nodes, edges, options.prior, { across, gap, sibling, compact, groups: options.groups });
 	const byId = new Map(nodes.map(node => [node.id, node])), next = new Map(nodes.map(node => [node.id, []]));
 	for (const edge of edges) if (byId.has(edge.from) && byId.has(edge.to)) next.get(edge.from).push(edge);
@@ -2669,6 +2669,12 @@ function _rapierDrawLayered(nodes, edges, across, gap, sibling = gap, compact = 
 	});
 	const span = nodes.length ? most - least : 0;
 	return {w: across ? Math.max(0, cursor - gap) : span, h: across ? span : Math.max(0, cursor - gap), backward};
+}
+
+function _rapierDrawLayered(nodes, edges, across, gap, sibling = gap, compact = false, options = null) {
+	if (options?.flowchart !== true) return _rapierDrawLayeredLegacy(nodes, edges, across, gap, sibling, compact, options);
+	const settings = {across, gap, sibling, compact, groups: options?.groups, flowchart: options?.flowchart === true, written: options?.written};
+	return options?.prior ? layoutIncrementalGraph(nodes, edges, options.prior, settings) : layoutLayeredGraph(nodes, edges, settings);
 }
 
 function _rapierDrawFigureGeometry(shape, x, y, w, h) {
@@ -2830,8 +2836,9 @@ function _rapierDrawFaceFigureBindings(edges, scene) {
 	}
 }
 
-function _rapierDrawChooseReturnSides(edges, alternatives, scene) {
+function _rapierDrawChooseReturnSides(edges, alternatives, scene, hull = null) {
 	const current = new Map(edges.map(shape => [shape, _rapierDrawArrowRoutePoints(shape, scene)]));
+	const price = (route, others) => _rapierDrawRouteCrossings(route, others) * (hull ? ROUTE_PRICE.crossing : 1) + (hull ? outsideHullLength(route, hull) * ROUTE_PRICE.outside : 0);
 	for (const [shape, ports] of alternatives) {
 		if (ports.length !== 2) continue;
 		const others = edges.filter(other => other !== shape).map(other => current.get(other)), crossings = _rapierDrawRouteCrossings(current.get(shape), others);
@@ -2841,7 +2848,7 @@ function _rapierDrawChooseReturnSides(edges, alternatives, scene) {
 		_rapierDrawRerouteBoundArrows(scene);
 		let after;
 		try { after = _rapierDrawFindOrthogonalRoute(shape, scene, others); } catch (error) { if (error.code !== 'drawing_route_blocked') throw error; }
-		if (after && _rapierDrawRouteCrossings(after, others) < crossings) current.set(shape, after);
+		if (after && (hull ? price(after, others) < price(current.get(shape), others) : _rapierDrawRouteCrossings(after, others) < crossings)) current.set(shape, after);
 		else { ports.forEach(({bind}, i) => Object.assign(bind, before[i])); _rapierDrawRerouteBoundArrows(scene); }
 	}
 }
@@ -2864,12 +2871,12 @@ function _rapierDrawLayoutFigures(shapes, automatic, groups, existing, direction
 	for (const {title} of groups) { Object.assign(title, {textFont: 'mono', textCase: 'upper', letterSpacing: .16, textSize: Math.max(11, captionSize)}); delete title.textBold; }
 	const frameShapes = groups.flatMap(group => [group.rule, group.title]);
 	scene.shapes = [...frameShapes, ...existing, ...shapes];
-	const ladder = compact ? [6, 10, 15, 20, 30, 40, 60, 80] : [10, 15, 20, 30, 40, 60, 80];
+	const ladder = options?.flowchart ? [3, 4, 6, 10, 15, 20, 30, 40, 60, 80] : compact ? [6, 10, 15, 20, 30, 40, 60, 80] : [10, 15, 20, 30, 40, 60, 80];
 	const spentAtStart = _RAPIER_DRAW_ROUTE_SPENT.work;
 	for (const unitsGap of ladder) {
 		if (unitsGap !== ladder.at(-1) && _RAPIER_DRAW_ROUTE_SPENT.work - spentAtStart > RAPIER_DRAW_LAYOUT_WORK) continue;
 		scene.routeLabelRails = unitsGap === ladder.at(-1);
-		const gap = 8 * unitsGap, siblingGap = Math.max(compact ? 32 : 64, gap / 2), units = nodes.filter(node => !grouped.has(node.id));
+		const gap = 8 * unitsGap, siblingGap = Math.max(options?.flowchart ? 16 : compact ? 32 : 64, gap / 2), units = nodes.filter(node => !grouped.has(node.id));
 		for (const group of groups) {
 			const words = links.filter(link => link.shape.label && group.members.includes(link.from) && group.members.includes(link.to) && link.from !== link.to)
 				.map(link => Math.ceil((layoutText({...link.shape, labelPos: .5}, {path: [[-512, 0], [512, 0]]}).bounds.w + 64) / 8) * 8);
@@ -2878,7 +2885,7 @@ function _rapierDrawLayoutFigures(shapes, automatic, groups, existing, direction
 			group.unit = {id: group.id, w, h}; units.push(group.unit);
 			for (const node of members) { node.x += (w - inner.w) / 2; node.y += title.bounds.h + 96; }
 		}
-		_rapierDrawLayered(units, links.map(edge => ({from: owner.get(edge.from) || edge.from, to: owner.get(edge.to) || edge.to})).filter(edge => edge.from !== edge.to), across, gap, siblingGap, compact, !groups.length ? options : null);
+		const placed = _rapierDrawLayered(units, links.map(edge => ({from: owner.get(edge.from) || edge.from, to: owner.get(edge.to) || edge.to})).filter(edge => edge.from !== edge.to), across, gap, siblingGap, compact, !groups.length ? options : null);
 		const settled = new Set();
 		for (const group of groups.slice().sort((a, b) => a.unit.y - b.unit.y || a.unit.x - b.unit.x)) {
 			const members = group.members.map(id => nodeMap.get(id)), centre = node => (owner.get(node.id) ? groups.find(g => g.id === owner.get(node.id)).unit.x : 0) + node.x + node.w / 2;
@@ -2897,7 +2904,7 @@ function _rapierDrawLayoutFigures(shapes, automatic, groups, existing, direction
 		}
 		const band = across && groups.length ? Math.min(...groups.map(group => group.unit.y)) : null;
 		for (const group of groups) {
-			const members = group.members.map(id => _rapierDrawShapeBBoxIn(nodeMap.get(id).shape, scene)), minX = Math.min(...members.map(b => b.minX)), maxX = Math.max(...members.map(b => b.maxX));
+			const members = group.members.map(id => _rapierDrawShapeBBoxIn(nodeMap.get(id).shape, scene)), minX = members.length ? Math.min(...members.map(b => b.minX)) : group.unit.x + 72, maxX = members.length ? Math.max(...members.map(b => b.maxX)) : group.unit.x + group.unit.w + 8;
 			const title = layoutText(group.title), top = (band ?? group.unit.y) + bottom + 68, y = Math.round(top - 10);
 			group.title.geom = {cx: minX + title.width / 2, cy: top + title.height / 2};
 			group.rule.geom = {x1: minX, y1: y, x2: maxX, y2: y};
@@ -2950,7 +2957,10 @@ function _rapierDrawLayoutFigures(shapes, automatic, groups, existing, direction
 				if (!alternatives.has(shape)) alternatives.set(shape, []);
 				alternatives.get(shape).push({bind, alternate: _rapierDrawFigurePort(target.shape, scene, across ? .5 : 1 - bind.ax, across ? 1 - bind.ay : .5)});
 			}
-			if (other === target) { bind.ax = end === 'start' ? 1 : .5; bind.ay = end === 'start' ? ['rect', 'text'].includes(target.shape.recognized) ? .2 : .5 : 1; }
+			if (other === target) {
+				const box = ['rect', 'text'].includes(target.shape.recognized);
+				bind.ax = end === 'start' || box ? 1 : .5; bind.ay = end === 'start' ? box ? .2 : .5 : box ? .8 : 1;
+			}
 			Object.assign(bind, _rapierDrawFigurePort(target.shape, scene, bind.ax, bind.ay));
 		}
 		for (const shape of edges) {
@@ -2979,15 +2989,21 @@ function _rapierDrawLayoutFigures(shapes, automatic, groups, existing, direction
 				slide(shape.bind.start, a, value); slide(shape.bind.end, b, value);
 			}
 		}
+		if (options?.flowchart) {
+			const lanes = new Map();
+			if (!groups.length) for (const [link, points] of placed?.corridors || []) lanes.set(link.from + '>' + link.to, points.map(([x, y]) => [x + 40, y + bottom + 40]));
+			planFlowchartPorts(nodes, edges, nodes.map(node => _rapierDrawShapeBBoxIn(node.shape, scene)), across, lanes);
+		}
 		if (reverse) {
 			const boxes = nodes.map(node => _rapierDrawShapeBBoxIn(node.shape, scene));
-			const sum = across ? Math.min(...boxes.map(b => b.minX)) + Math.max(...boxes.map(b => b.maxX)) : Math.min(...boxes.map(b => b.minY)) + Math.max(...boxes.map(b => b.maxY));
+			const bounds = [...boxes, ...groups.filter(group => !group.members.length).map(group => ({minX: group.unit.x + 40, maxX: group.unit.x + group.unit.w + 40, minY: group.unit.y + bottom + 40, maxY: group.unit.y + group.unit.h + bottom + 40}))];
+			const sum = across ? Math.min(...bounds.map(b => b.minX)) + Math.max(...bounds.map(b => b.maxX)) : Math.min(...bounds.map(b => b.minY)) + Math.max(...bounds.map(b => b.maxY));
 			for (const [i, node] of nodes.entries()) { const b = boxes[i]; _rapierDrawFigureGeometry(node.shape, across ? sum - b.maxX : b.minX, across ? b.minY : sum - b.maxY, node.w, node.h); }
 			for (const edge of edges) for (const bind of Object.values(edge.bind || {})) if (nodeMap.has(bind.to)) { if (across) bind.ax = 1 - bind.ax; else bind.ay = 1 - bind.ay; }
 			for (const ports of alternatives.values()) for (const port of ports) { if (across) port.alternate.ax = 1 - port.alternate.ax; else port.alternate.ay = 1 - port.alternate.ay; }
 			for (const group of groups) {
-				const member = group.members.map(id => _rapierDrawShapeBBoxIn(nodeMap.get(id).shape, scene)), minX = Math.min(...member.map(b => b.minX)), maxX = Math.max(...member.map(b => b.maxX)), title = layoutText(group.title);
-				const top = across ? group.title.geom.cy - title.height / 2 : Math.min(...member.map(b => b.minY)) - title.height - 68;
+				const member = group.members.map(id => _rapierDrawShapeBBoxIn(nodeMap.get(id).shape, scene)), minX = member.length ? Math.min(...member.map(b => b.minX)) : across ? sum - group.rule.geom.x2 : group.rule.geom.x1, maxX = member.length ? Math.max(...member.map(b => b.maxX)) : across ? sum - group.rule.geom.x1 : group.rule.geom.x2, title = layoutText(group.title);
+				const top = across ? group.title.geom.cy - title.height / 2 : member.length ? Math.min(...member.map(b => b.minY)) - title.height - 68 : sum - (group.unit.y + bottom + 40 + group.unit.h) + 28;
 				group.title.geom = {cx: minX + title.width / 2, cy: top + title.height / 2}; group.rule.geom = {x1: minX, y1: top - 10, x2: maxX, y2: top - 10};
 			}
 			const minY = Math.min(...[...automatic, ...frameShapes].map(s => _rapierDrawShapeBBoxIn(s, scene).minY)), dy = Math.max(0, bottom + 40 - minY);
@@ -2999,7 +3015,7 @@ function _rapierDrawLayoutFigures(shapes, automatic, groups, existing, direction
 		_rapierDrawFaceFigureBindings(shapes.filter(shape => shape.bind && (!nodeMap.has(shape.bind.start?.to) || !nodeMap.has(shape.bind.end?.to))), scene);
 		_rapierDrawRerouteBoundArrows(scene);
 		try {
-			_rapierDrawChooseReturnSides(edges, alternatives, scene);
+			_rapierDrawChooseReturnSides(edges, alternatives, scene, options?.flowchart ? (boxes => ({x0: Math.min(...boxes.map(b => b.minX)), y0: Math.min(...boxes.map(b => b.minY)), x1: Math.max(...boxes.map(b => b.maxX)), y1: Math.max(...boxes.map(b => b.maxY))}))(nodes.map(node => _rapierDrawShapeBBoxIn(node.shape, scene))) : null);
 			const result = {};
 			if (_rapierDrawPlaceConnectorLabels(edges, scene, [], null, result)) { return [...frameShapes, ...shapes]; }
 		}
@@ -3158,7 +3174,7 @@ function _rapierDrawLowerFiguresOrFault(figures, existing = [], direction = 'dow
 	const groups = [], members = new Set(), autoIds = new Set(automatic.map(shape => shape.id));
 	for (const [figure, index] of groupFigures) {
 		if (typeof figure.title !== 'string' || !figure.title || figure.title.length > DRAW_TEXT_MAX) return fault(index, 'title', 'a nonempty group title');
-		if (!Array.isArray(figure.members) || !figure.members.length) return fault(index, 'members', 'ids or labels of coordinate-free figures, each in one group');
+		if (!Array.isArray(figure.members)) return fault(index, 'members', 'ids or labels of coordinate-free figures, each in one group');
 		const ids = [];
 		for (const name of figure.members) {
 			const id = byId.has(name) ? name : byName.get(name);
@@ -3171,7 +3187,7 @@ function _rapierDrawLowerFiguresOrFault(figures, existing = [], direction = 'dow
 		groups.push({id, members: ids, rule: {id, recognized: 'line', geom: {x1: 0, y1: 0, x2: 1, y2: 0}, style: 'plain', nib: 4, group: id},
 			title: {id: titleId, recognized: 'text', geom: {cx: 0, cy: 0}, textSize: 14, textBold: true, textWrap: 'balance', labelWidth: 224, label: figure.title, group: id}});
 	}
-	if (automatic.length) {
+	if (automatic.length || groups.length) {
 		const steps = _rapierDrawDiagramDress(shapes, automatic, groups, captionSize);
 		try { return {shapes: _rapierDrawDiagramSet(_rapierDrawLayoutFigures(shapes, automatic, groups, existing, direction, captionSize, compact, options), steps, direction)}; }
 		catch (error) { if (/^drawing_(?:geometry_limit|work_limit|route_blocked)/.test(error.code || '')) return fault(-1, 'figures', 'a diagram within the drawing geometry and routing limits'); throw error; }
@@ -3198,19 +3214,19 @@ function _rapierDrawReadRecipeFromSVGText(svg, restored) {
 	}
 }
 
-function _rapierDrawAgentCandidate(input) {
+function _rapierDrawAgentCandidate(input, options = null) {
 	if (input?.shapes?.some?.(shape => shape?.labelBeside != null)) return null;
 	if (!input || typeof input !== 'object') return null;
 	const { figures, prior, version = RAPIER_DRAW_VERSION, ...rest } = input;
-	const shapes = Array.isArray(rest.shapes) ? rest.shapes : Array.isArray(figures) ? _rapierDrawLowerFigures(figures, [], input.direction, 10, false, prior ? {prior} : null) : null;
+	const shapes = Array.isArray(rest.shapes) ? rest.shapes : Array.isArray(figures) ? _rapierDrawLowerFigures(figures, [], input.direction, 10, false, prior || options ? {...options, ...(prior ? {prior} : {})} : null) : null;
 	if (!Array.isArray(shapes) || !shapes.length || shapes.length > 128) return null;
 	if (rest.background !== undefined) rest.background = fillBackground(rest.background);
 	if (rest.effect !== undefined) rest.effect = fillEffect(rest.effect);
 	return { ...rest, shapes: shapes.map(shape => shape?.effect === undefined ? shape : {...shape, effect: fillEffect(shape.effect)}), version, canvas: rest.canvas || { w: 4096, h: 4096 }, strokes: rest.strokes || [] };
 }
 
-function _rapierDrawNormalizeAgentRecipe(input) {
-	const candidate = _rapierDrawAgentCandidate(input);
+function _rapierDrawNormalizeAgentRecipe(input, options = null) {
+	const candidate = _rapierDrawAgentCandidate(input, options);
 	const recipe = candidate && _rapierDrawAdmitRecipe(candidate);
 	if (!recipe) return null;
 	if (!input.canvas) {

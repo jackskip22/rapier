@@ -2,27 +2,6 @@
   "what": "The vendor libraries the page executes as classic scripts, packed by tools/build.mjs (VENDOR_GROUPS). Published modern builds are kept byte for byte; source builds record the exact package/source, compiler, target and rebuild recipe. The build refuses a file whose bytes or SHA-256 differ from this record. The digests here are the identities the packed spans carry.",
   "movedFrom": "These bytes once lived only as the packed groups inside rapier.html, and every build re-read its own output to pack them again.",
   "files": {
-    "dompurify-3.4.16.es2024.min.js": {
-      "package": "dompurify",
-      "version": "3.4.16",
-      "path": "tools/build-import-vendors.mjs; shell/vendor/source/dompurify-3.4.16/SOURCE.json",
-      "license": "Apache-2.0 OR MPL-2.0 (the notice is the file's own first comment)",
-      "bytes": 27452,
-      "sha256": "f6b76cf7310215fb2322ab05d09284713888170ae4cddfbbeadf00380905c1b4",
-      "tarball": "https://registry.npmjs.org/dompurify/-/dompurify-3.4.16.tgz",
-      "integrity": "sha512-sqo+pNp3qRhCIpbgRi1y8Tgk27Bo2Ry7w0dC1NBeNTdZChWjz9Xb/KOoZbRP/R6pQZ80Qw8YhXw13hWWBbMRnQ==",
-      "gitHead": "b9b9d80f7e401771c2ccaef5f45def7eec8f27d7",
-      "build": {
-        "compiler": "esbuild",
-        "version": "0.28.2",
-        "target": "es2024",
-        "strict": "inside IIFE",
-        "strictRecipeSha256": "f17d9757fd29a0adc2faeda9e213eea0ed589d473f9d5815b7c818f32b3ddb14",
-        "npmLockSha256": "fa1f70a5a0db1ac0490f9201be45689bad0c487b6be2731406db4051f972544c"
-      },
-      "note": "Published TypeScript source compiled without Babel; selects native Object.freeze/seal, Reflect.apply/construct and BigInt/Symbol. Captured intrinsics and all sanitizer, DOM, clobbering, capability and hook logic are unchanged.",
-      "gzipBytes": 10584
-    },
     "turndown-7.2.4.es2024.min.js": {
       "package": "turndown",
       "version": "7.2.4",
@@ -149,15 +128,36 @@
       },
       "note": "Native class/accessor source, with Rapier’s existing browser RegExp grammar and Unicode-table admission unchanged; full agent build retains the upstream validator."
     },
-    "markdown-it-15.0.2.es2022.umd.js": {
+    "dompurify-3.4.17.es2024.min.js": {
+      "package": "dompurify",
+      "version": "3.4.17",
+      "path": "tools/build-import-vendors.mjs; shell/vendor/source/dompurify-3.4.17/SOURCE.json",
+      "license": "Apache-2.0 OR MPL-2.0 (the notice is the file's own first comment)",
+      "bytes": 28402,
+      "sha256": "71a80fcb398ce9d3b320ac2a9b46ffee2ab9dd0750aaa6a400d1d6b214838d20",
+      "tarball": "https://registry.npmjs.org/dompurify/-/dompurify-3.4.17.tgz",
+      "integrity": "sha512-B/pSlYVHQ58kqISD/yDjuJ1yfzI34m1gF4lAod2bwSRhiN4K5Cl3H8Af7hqB2PmTL911tdEudnnXn5FnhRoz0w==",
+      "gitHead": "a77a3e78b59f72fa4d1c83f22e121ad9cc7d3575",
+      "build": {
+        "compiler": "esbuild",
+        "version": "0.28.2",
+        "target": "es2024",
+        "strict": "inside IIFE",
+        "strictRecipeSha256": "f17d9757fd29a0adc2faeda9e213eea0ed589d473f9d5815b7c818f32b3ddb14",
+        "npmLockSha256": "fa1f70a5a0db1ac0490f9201be45689bad0c487b6be2731406db4051f972544c"
+      },
+      "note": "Published TypeScript source compiled without Babel; selects native Object.freeze/seal, Reflect.apply/construct and BigInt/Symbol. Captured intrinsics and all sanitizer, DOM, clobbering, capability and hook logic are unchanged.",
+      "gzipBytes": 11018
+    },
+    "markdown-it-15.0.3.es2022.umd.js": {
       "package": "markdown-it",
-      "version": "15.0.2",
+      "version": "15.0.3",
       "path": "src/index.ts (unchanged release source, ES2022 bundle)",
       "license": "MIT (agent/vendor/NOTICE.txt; linkify-it inside it)",
-      "bytes": 155422,
-      "sha256": "f397ccdb81dcf0815e719f76af19a423e7b6a784f4a993b1b4631227b63cfb3e",
-      "tarball": "https://registry.npmjs.org/markdown-it/-/markdown-it-15.0.2.tgz",
-      "integrity": "sha512-q4IGxMv56jCqT4OCRCADBoDP3LO4MhmTXjFbphHPXs4g3j9Xg5RDnxqN8IF/3vIWEU+VCnUq+7JUg/cfy2E6Qw==",
+      "bytes": 144327,
+      "sha256": "ab352b33693b8a4c88c0c0a977f12b30df9aa42bc163f73e59397939e397182a",
+      "tarball": "https://registry.npmjs.org/markdown-it/-/markdown-it-15.0.3.tgz",
+      "integrity": "sha512-+Az7Ojz3iRGu8KYMvJ6xVhvrxP3eE+vEtJX75Ow88XBpcQNV/0lGX5ZynIIBftREo4DC2jsveAMDaeltmm8QvQ==",
       "build": "tools/markdown-it-vendor.mjs",
       "provenance": "agent/vendor/MARKDOWNIT.json"
     }

@@ -3,6 +3,7 @@ import {createWorkerExecution} from '../shell/worker-execution.mjs';
 import {exactBytes, blobByteChunks, checkByteAbort} from './integrity.mjs';
 import {parts, FOLDERS} from './opfs-paths.mjs';
 import {stampFor} from './search-store.mjs';
+import {directoryEntries, directoryStamps} from './opfs-read.mjs';
 import {isRecordingPartial, recordingStorageError} from './recording-files.mjs';
 import {notesHostWords, nativeWorkerName} from './host-words.mjs';
 import {DELETE_FRAME_BYTES, deleteFrameName, isDeletePrivateName} from './delete-intent.mjs';
@@ -94,13 +95,7 @@ export function createByteStore({directory, memory = null, token = () => crypto.
 		return request('writeBlob', {name, blob, token: token()}, {signal, onProgress});
 	};
 
-	const walk = async prefix => {
-		let dir = await directory();
-		for (const part of prefix ? prefix.split('/') : []) dir = await dir.getDirectoryHandle(part);
-		const entries = [];
-		for await (const [name, handle] of dir) if (handle.kind === 'file') entries.push([name, handle]);
-		return entries;
-	};
+	const walk = async prefix => directoryEntries(await directory(), prefix);
 	const list = async (prefix = '') => {
 		if (!FOLDERS.has(prefix)) throw fail('name', 'This folder is not part of Notes.');
 		if (memory) return [...memory.keys()].filter(n => prefix ? n.startsWith(prefix + '/') : !n.includes('/')).map(n => prefix ? n.slice(prefix.length + 1) : n);
@@ -122,15 +117,9 @@ export function createByteStore({directory, memory = null, token = () => crypto.
 				if (!wanted || wanted.has(prefix ? name.slice(prefix.length + 1) : name)) out.set(prefix ? name.slice(prefix.length + 1) : name, {size: value instanceof Blob ? value.size : value.length, modified: null});
 			return out;
 		}
-		try {
-			const entries = (await walk(prefix)).filter(([name]) => !wanted || wanted.has(name)), stats = [];
-			for (let at = 0; at < entries.length; at += 64) {
-				const settled = await Promise.allSettled(entries.slice(at, at + 64).map(async ([name, handle]) => [name, stampFor(await handle.getFile())]));
-				const failed = settled.find(result => result.status === 'rejected'); if (failed) throw failed.reason;
-				stats.push(...settled.map(result => result.value));
-			}
-			return new Map(stats);
-		} catch (error) { if (prefix && missing(error)) return new Map(); throw error; }
+		if (createWorker !== fileWorker || typeof Worker === 'function' && typeof globalThis.RapierNotesOPFSWorker?.workerSource === 'function')
+			return request('statAll', {prefix, names: wanted ? [...wanted] : null});
+		return directoryStamps(await directory(), prefix, names);
 	};
 	const remove = async name => {
 		parts(name); if (!writable) throw fail('read-only', reason || 'These notes are read-only here.');

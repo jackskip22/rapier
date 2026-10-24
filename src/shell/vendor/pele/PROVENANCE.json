@@ -1,12 +1,16 @@
 {
   "package": "pele",
-  "version": "1.6.0",
+  "version": "1.9.0",
   "source": "https://github.com/obsidianmd/pele",
   "path": "dist/pele.js",
-  "sourceSha256": "d1ebc1889f3069d7759fe5db34c4ad4b4823285edbee2b537d0ef3d505a76d8d",
-  "tarball": "https://registry.npmjs.org/pele/-/pele-1.6.0.tgz",
-  "integrity": "sha512-VfAiVItsOGlGhvnBfphdT28VCG7mXMZxQNOwAGsCtxI2ztbUsT39MraEOYjsapLxVETkdUZscm0DdotYDQMLdw==",
+  "sourceSha256": "7c40a25eeaf4370fb56c03d9d8f6780051c9c39b6c6ca36d53239075117097f5",
+  "tarball": "https://registry.npmjs.org/pele/-/pele-1.9.0.tgz",
+  "integrity": "sha512-KUmBt7P5JduVKQaP6FKfXiRgH3LBVIKsmdgPJZU7jD3ye6F+Z8fbms+OjivE7rWY09Qx+5X65VKe/9ywKFJ9Sw==",
   "license": "MIT",
+  "sources": {
+    "shell/mermaid/api.mjs": "24e1c3003317949784f5cb72ba890b91db2fa042eae07ec3d353cda8262f4034",
+    "draw/flowchart-mermaid.mjs": "5cbd73f6901a4974bcf8906561cfa96c9e392e7fc433339b9d78a45851422780"
+  },
   "build": {
     "esbuild": "0.28.2",
     "target": "es2022",
@@ -17,9 +21,9 @@
     "strictIIFE": true
   },
   "strictRecipeSha256": "f17d9757fd29a0adc2faeda9e213eea0ed589d473f9d5815b7c818f32b3ddb14",
-  "npmLockSha256": "52056ea8d3d5974d6e70a86d6087d5043a7b703912453c14747bb692660efb3e",
-  "bytes": 677968,
-  "sha256": "93a62d5c8a9562af512ca572bac99e05af63205a1395aa3541284ddd14475649",
-  "sha384": "wvZ8yi9fl1G4U3tYTRguH7dHJxCgl7Rgu/Bb+sz+ip80toql8Bc0N2aLeJCCtUMS",
+  "npmLockSha256": "a942b5de64c9b3600739a432abde9dd4bbf1d9723149fb8a0f6f34e5e4e1d0b7",
+  "bytes": 720263,
+  "sha256": "4a0e00a55909d5cb8e428f46e7fc941a16da4c2807c61c3ed1d6916f954b8c28",
+  "sha384": "zPE63bYrlp1ZqlwxePk6pclPq6VoxZ7o769Lz109vEo8OEPtvOl1GPrMDj0OhtVB",
   "noticesSha256": "311bccc30de6f7b9cbfb64232bb0c911ccb2191abe316550813ae25b2c7925b9"
 }

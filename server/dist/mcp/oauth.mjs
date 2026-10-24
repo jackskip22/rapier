@@ -4,6 +4,7 @@ import {editorSecretUsable, editorSecretKeyMaterial} from './editor-keys.mjs';
 import {DOOR_LIMITS} from './limits.mjs';
 import {objectStore} from './oauth-store.mjs';
 import {isSignedAccessToken, mintAccessToken, verifyAccessToken, SIGNED_ACCESS_SECONDS} from './oauth-access.mjs';
+import {JsonDepthGuard} from '../kit/json-depth.mjs';
 
 export const OAUTH_SCOPES = Object.freeze(['rapier:read', 'rapier:write', 'offline_access']);
 export const OAUTH_ACCESS_SECONDS = 15 * 60;
@@ -194,19 +195,25 @@ async function boundedRequest(request, limit = 64 * 1024) {
   const signal = request.signal;
   if (!request.body) { signal.throwIfAborted(); return request; }
   const reader = request.body.getReader(), parts = [];
-  let length = 0, cancelled = false;
+  let length = 0, cancelled = false, timer;
   const cancel = reason => {
     if (cancelled) return;
     cancelled = true;
     reader.cancel(reason).catch(() => {});
   };
   const abort = () => cancel(signal.reason);
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const error = Object.assign(new Error('Request input timed out'), {code: 'REQUEST_TIMEOUT'});
+      reject(error); cancel(error);
+    }, 60000);
+  });
   try {
     signal.throwIfAborted();
     if (Number(request.headers.get('Content-Length')) > limit) { cancel(); return null; }
     signal.addEventListener('abort', abort, {once: true});
     for (;;) {
-      const {done, value} = await reader.read();
+      const {done, value} = await Promise.race([reader.read(), deadline]);
       signal.throwIfAborted();
       if (done) break;
       length += value.byteLength;
@@ -221,6 +228,7 @@ async function boundedRequest(request, limit = 64 * 1024) {
     cancel(error);
     throw error;
   } finally {
+    clearTimeout(timer);
     signal.removeEventListener('abort', abort);
     reader.releaseLock();
   }
@@ -247,8 +255,12 @@ function validChallenge(challenge) {
     base64url(fromBase64url(challenge)) === challenge;
 }
 async function publicRegistration(request) {
-  let metadata;
-  try { metadata = await request.clone().json(); } catch { return request; }
+  let metadata, text;
+  try { text = new TextDecoder('utf-8', {fatal: true}).decode(await request.clone().arrayBuffer()); }
+  catch { return json(400, {error: 'invalid_client_metadata', code: 'INVALID_UTF8'}); }
+  try { new JsonDepthGuard(128).write(text); }
+  catch { return json(400, {error: 'invalid_client_metadata', code: 'JSON_TOO_DEEP'}); }
+  try { metadata = JSON.parse(text); } catch { return request; }
   if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return request;
   const method = Object.hasOwn(metadata, 'token_endpoint_auth_method') ? metadata.token_endpoint_auth_method : 'none';
   if (method !== 'none' || Object.hasOwn(metadata, 'client_secret') ||
@@ -457,6 +469,7 @@ export async function handleOAuth(request, env, ctx, next) {
       if (ownerId) authority = browserAuthority(ownerId);
     }
   } catch (error) {
+    if (error?.code === 'REQUEST_TIMEOUT') return json(408, {error: 'request_timeout'});
     if (error?.name === 'AuthorizationError' && typeof error.redirectTo === 'string') {
       return new Response(null, {status: 303, headers: headers({Location: error.redirectTo})});
     }

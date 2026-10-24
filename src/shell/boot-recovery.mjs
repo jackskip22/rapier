@@ -10,8 +10,11 @@ export const scope = (() => {
 	try { if (!/^https?:$/.test(location.protocol)) return ''; const dir = new URL('.', location.href).pathname; return dir === '/' ? '' : '@' + dir; }
 	catch (_) { return ''; }
 })();
-// A native window after the first keeps its own recovery (shell/platform.js RAPIER_RECOVERY_SCOPE).
+// Carried documents and native windows after the first keep their own recovery (shell/platform.js RAPIER_RECOVERY_SCOPE).
 const recoveryScope = scope + (() => {
+	try { return location.protocol === 'file:' && document.getElementById('rapier-document') ? '!' + location.pathname : ''; }
+	catch (_) { return ''; }
+})() + (() => {
 	try { const slot = globalThis.__RAPIER_NATIVE_WINDOW; return Number.isInteger(slot) && slot > 1 && slot < 1000 ? '#' + slot : ''; }
 	catch (_) { return ''; }
 })();

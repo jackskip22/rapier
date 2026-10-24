@@ -543,7 +543,8 @@ function _rapierNotesLibraryChips() {
 		b.setAttribute('aria-label', colour);
 		colours.appendChild(b);
 	}
-	el.replaceChildren(...[kinds, own.childElementCount ? own : null, colours, _rapierNotesLibraryPicturesRow()].filter(Boolean));
+	const rows = [kinds, own.childElementCount ? own : null, colours, _rapierNotesLibraryPicturesRow()].filter(Boolean);
+	if (rows.length !== el.children.length || rows.some((row, i) => !row.isEqualNode(el.children[i]))) el.replaceChildren(...rows);
 	keepFocus();
 }
 

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 const refusals = new WeakMap();
+const sourceBlobs = new Map();
 export function workerStartupRefused(name, constructor = globalThis.Worker) {
   return typeof constructor !== 'function' || refusals.get(constructor)?.has(name) === true;
 }
@@ -88,7 +89,9 @@ export function createWorkerExecution({source, name, install, scope: inputs = {}
     if (workerStartupRefused(name, constructor)) { fallback(); return; }
     try {
       const body = typeof source === 'function' ? source() : source;
-      url = URL.createObjectURL(new Blob([body, '\n;self.postMessage({__rapierWorkerStarted:1});'], {type: 'text/javascript'}));
+      let blob = sourceBlobs.get(body);
+      if (!blob) sourceBlobs.set(body, blob = new Blob([body, '\n;self.postMessage({__rapierWorkerStarted:1});'], {type: 'text/javascript'}));
+      url = URL.createObjectURL(blob);
       const worker = native = new constructor(url, {...workerOptions, name});
       timer = setTimeout(() => fallback(new Error('Worker startup timed out')), startupMs);
       worker.onmessage = event => {

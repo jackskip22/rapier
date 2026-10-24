@@ -207,11 +207,11 @@ export async function stageLinuxPackage(out, {served = servedSha256} = {}) {
     pkgname: 'rapier-bin', pkgver: built.version, pkgrel: 1,
     pkgdesc: 'Offline Markdown editor, notes, drawing and painting in one app',
     arch: ['x86_64'], url: 'https://rapier.website', license: ['AGPL-3.0-only'],
-    depends: ['glibc>=' + built.runtime.glibc, 'gcc-libs', 'xdg-desktop-portal', 'hicolor-icon-theme'],
+    depends: ['glibc>=' + built.runtime.glibc, 'gcc-libs', 'xdg-desktop-portal', 'hicolor-icon-theme', 'shared-mime-info', 'xdg-utils',
+      'perl-file-mimeinfo'],
     optdepends: ['chromium: the browser rapier opens its window in', 'google-chrome: or this browser', 'brave-bin: or this browser',
       'xdg-desktop-portal-gtk: file chooser on GTK desktops and Hyprland', 'xdg-desktop-portal-kde: file chooser on KDE',
-      'fontconfig: follow the Omarchy monospace font',
-      'perl-file-mimeinfo: xdg-open file.md opens Rapier on Hyprland/Omarchy'],
+      'fontconfig: follow the Omarchy monospace font'],
     provides: ['rapier'], conflicts: ['rapier'], options: ['!strip', '!debug'],
   };
   const sources = [

@@ -23,12 +23,14 @@ Rapier is listed in the [MCP Registry](https://registry.modelcontextprotocol.io/
 ## Choose a build
 
 - [rapier.html](https://github.com/jackskip22/rapier/raw/main/rapier.html): the complete app. On the website, Notes and Draw load beside the page; a self-contained copy carries them inline.
-- [rapier-reader.html](https://github.com/jackskip22/rapier/raw/main/rapier-reader.html): read only. Search, text in pictures, headings, reading settings, read aloud, copy, share and print.
-- [Host the files yourself](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed): `npx rapier-embed plugins ./public/rapier` downloads and verifies the plugins. Mount with `build: 'reader'`, your own `src`, and `plugins: '/rapier/'`.
+- [rapier-reader.html](https://github.com/jackskip22/rapier/raw/main/rapier-reader.html): read only. Search, text in pictures, headings, reading settings, read aloud, copy, share and print. The link is the file to save, not a page to open: read in the browser at https://rapier.website/embed/rapier-reader.html (a copy you host opens a file on its own address with `#src=/path.md`).
+- [Embed without hosting anything](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed): `Rapier.mount(element, {build: 'reader', load: {content, filename: 'brief.md', revision: 1}})` frames the hosted reader and its plug-ins, so the versions always agree. The frame fills `element`: give `element` a height.
+- [Host the files yourself](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed): use one version for all three pieces. Install `rapier-embed@<version>` (`npm view rapier-embed version`). Then two steps into one directory: (1) `curl -L -o public/rapier/rapier-reader.html https://cdn.jsdelivr.net/gh/jackskip22/rapier@v<version>/site/embed/rapier-reader.html` (the page; the plug-in command does not fetch it, and without it the frame is a 404 that times out), (2) `npx rapier-embed@<version> plugins ./public/rapier --build reader`. Mount with `build: 'reader'`, `src: '/rapier/rapier-reader.html'` and `plugins: '/rapier/'`.
 
 ```js
 import {Rapier} from 'rapier-embed';
-const reader = Rapier.mount(element, {build: 'reader', src: '/rapier/rapier-reader.html', plugins: '/rapier/', load: {content, filename: 'brief.md', revision: 1}});
+// element needs a height, for example style="height: 70vh"
+const reader = Rapier.mount(element, {build: 'reader', load: {content, filename: 'brief.md', revision: 1}});
 ```
 
 ## Example requests

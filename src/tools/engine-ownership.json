@@ -1,10 +1,10 @@
 {
   "version": 1,
   "limits": {
-    "mutableRoots": 89,
-    "domSinks": 58,
+    "mutableRoots": 81,
+    "domSinks": 56,
     "storageKeys": 7,
-    "remainderBytes": 68909
+    "remainderBytes": 64040
   },
   "engineRoots": {
     "_pendingLeaves@module/iife1": {
@@ -18,18 +18,6 @@
     "_rapierAdmissionRuntime@module/iife1": {
       "name": "_rapierAdmissionRuntime",
       "reason": "The document-admission owner owns its generation fence."
-    },
-    "_rapierAgentBar@module/iife1": {
-      "name": "_rapierAgentBar",
-      "reason": "The agent interaction surface owns its visible state and pending actions."
-    },
-    "_rapierAgentNote@module/iife1": {
-      "name": "_rapierAgentNote",
-      "reason": "The agent note surface owns the unsent text and document identity."
-    },
-    "_rapierAgentNoteComposing@module/iife1": {
-      "name": "_rapierAgentNoteComposing",
-      "reason": "The agent note's input owner tracks IME composition before accepting Enter."
     },
     "_rapierApproachFrame@module/iife1": {
       "name": "_rapierApproachFrame",
@@ -98,18 +86,6 @@
     "_rapierFileLaunchRuntime@module/iife1": {
       "name": "_rapierFileLaunchRuntime",
       "reason": "The Open owner retains the current external file launch."
-    },
-    "_rapierFormatToolbarFadeSurface@module/iife1": {
-      "name": "_rapierFormatToolbarFadeSurface",
-      "reason": "The toolbar owner updates the one fade surface returned by FT."
-    },
-    "_rapierFormatToolbarPan@module/iife1": {
-      "name": "_rapierFormatToolbarPan",
-      "reason": "The toolbar gesture owner retains one active pan and fling state."
-    },
-    "_rapierHeavyRuntime@module/iife1": {
-      "name": "_rapierHeavyRuntime",
-      "reason": "The editor owns deferred heavy-work scheduling and cancellation state."
     },
     "_rapierHighlightRuntime@module/iife1": {
       "name": "_rapierHighlightRuntime",
@@ -247,10 +223,6 @@
       "name": "_rapierToastLiftFrame",
       "reason": "The engine owns the toast position's coalesced layout frame."
     },
-    "_rapierToolbarRuntime@module/iife1": {
-      "name": "_rapierToolbarRuntime",
-      "reason": "The toolbar owner retains its display frame and current editor selection."
-    },
     "_rapierTransactionRuntime@module/iife1": {
       "name": "_rapierTransactionRuntime",
       "reason": "The editor owns one formatting/compound transaction context."
@@ -314,10 +286,6 @@
     "_rapierWillDrafts@module/iife1": {
       "name": "_rapierWillDrafts",
       "reason": "The Will UI owns private unsaved intent drafts while choices change."
-    },
-    "_rapierWillPlateProvenance@module/iife1": {
-      "name": "_rapierWillPlateProvenance",
-      "reason": "The Will presentation owner retains the provenance of its current plate."
     },
     "_rapierWillPopover@module/iife1": {
       "name": "_rapierWillPopover",

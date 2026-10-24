@@ -97,6 +97,7 @@ export function link({own, pools, forbid = []}) {
 	const readNames = new Set();
 	for (const unit of ordered) for (const name of unit.reads) readNames.add(name);
 	for (const node of ownLexical.nodes) if (ownLexical.isReference(node) && !ownLexical.bindingAt(node.name, node)) readNames.add(node.name);
+	for (const pool of pools) for (const [name, owners] of pool.free) if ([...owners].some(owner => kept.has(owner))) readNames.add(name);
 	const unresolved = new Set();
 	for (const pool of pools) for (const [name, owners] of pool.free) if (!ownNames.has(name) && !index.has(name) && [...owners].some(owner => kept.has(owner))) unresolved.add(name);
 	for (const [name] of ownLexical.nodes.filter(node => ownLexical.isReference(node) && !ownLexical.bindingAt(node.name, node)).map(node => [node.name])) if (!index.has(name)) unresolved.add(name);

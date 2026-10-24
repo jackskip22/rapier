@@ -1,3 +1,4 @@
+import {parseImportJson} from './import.mjs';
 import {noteFileName, orderAfter} from './model.mjs';
 import {importTags, literalInline, literalBlock, literalDestination, importMetadata, importDate, importTrash, readJsonInputs as unwrap} from './import.mjs';
 import {htmlToMarkdown} from './html-md.mjs';
@@ -94,7 +95,7 @@ export async function importStandardNotes(entries, options) {
 	for (const e of named) {
 		if (typeof e.text !== 'string') { unread.push({entry: e, why: 'the file carried no readable text'}); continue; }
 		let raw;
-		try { raw = JSON.parse(e.text.replace(/^\uFEFF/, '')); } catch (_) {
+		try { raw = parseImportJson(e.text.replace(/^\uFEFF/, '')); } catch (_) {
 			if (/\.json$/i.test(e.name) || /^\s*\{/.test(e.text)) {
 				skipped.push({name: e.name, why: 'invalid JSON; literal source retained'});
 				built.push({...literalImportSource(e, pool, 'Standard Notes JSON was damaged and could not be parsed.', e.characterWarnings, 'json'), created: -Infinity});
@@ -164,7 +165,7 @@ export async function importStandardNotes(entries, options) {
 			reportCharacterChange(content.title, title.replace(/[ \t\r\n\f]+/g, ' '), warnings, 'Standard Notes title');
 			let body;
 			if (content.noteType === 'super') {
-				let doc = null; try { doc = JSON.parse(raw); } catch (_) {  }
+				let doc = null; try { doc = parseImportJson(raw); } catch (_) {  }
 				let flattened = null;
 				try { flattened = doc && superLines(doc, warnings); }
 				catch (_) { warnings.push({code: 'import-source-retained', message: 'Damaged Super character data was kept as literal source; nested structure could not be converted.'}); }

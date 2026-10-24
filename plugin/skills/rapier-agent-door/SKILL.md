@@ -42,7 +42,7 @@ expire after 30 idle days.
 - Your changes land at once, marked; `undo {act}` takes back yours and keeps theirs.
 - `html` export is the whole editor with the document inside, editable offline.
 - Handing over a draft: give them a `.rapier.html` with Send back. `show {target:"return"}` gives `return_url` and
-  `return_expires_at`; where you have a shell, `npx rapier-html@1.2.40 draft.md --return <return_url> --return-expires-at
+  `return_expires_at`; where you have a shell, `npx rapier-html@1.2.41 draft.md --return <return_url> --return-expires-at
   <return_expires_at>`. Their edited copy comes back once; `read {return_id}` reads it.
 
 ## Each step
@@ -106,8 +106,8 @@ Every painting `edit` needs an `operation_id`: retry the same call with it to co
 retry without it starts a new job. A good first painting is a small watercolor sunset over the sea, with room for
 the person to add a boat. Once it commits, keep its act or turn id for a requested undo, keep the person's later
 marks and report conflicts. Without WebGPU, explain why and offer regular brushes or an editable diagram. After one
-Water refusal or `material_request_expired`, don't send Water again: paint with the Paint brushes (a `rapier-paint`
-fence) instead and say why. A software WebGPU adapter can accept Water and never finish it.
+Water refusal or `material_request_expired`, read the current revision first: keep a painting that already committed.
+Otherwise don't send Water again: paint with the Paint brushes (a `rapier-paint` fence) instead and say why. A software WebGPU adapter can accept Water and never finish it.
 
 ## Notes and delivery
 

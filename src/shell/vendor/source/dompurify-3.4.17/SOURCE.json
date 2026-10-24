@@ -1,0 +1,67 @@
+{
+  "package": "dompurify",
+  "version": "3.4.17",
+  "gitHead": "a77a3e78b59f72fa4d1c83f22e121ad9cc7d3575",
+  "repository": "https://github.com/cure53/DOMPurify",
+  "tarball": "https://registry.npmjs.org/dompurify/-/dompurify-3.4.17.tgz",
+  "integrity": "sha512-B/pSlYVHQ58kqISD/yDjuJ1yfzI34m1gF4lAod2bwSRhiN4K5Cl3H8Af7hqB2PmTL911tdEudnnXn5FnhRoz0w==",
+  "note": "The implementation sources and licenses match the published npm tarball byte for byte; the test fixture is from the same gitHead.",
+  "files": [
+    {
+      "path": "LICENSE",
+      "bytes": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "path": "package.json",
+      "bytes": 6662,
+      "sha256": "e6235e2a233d3f5550e2be3bf826a39f4ff5180a710779c1e16dcdf4b9eb20b9"
+    },
+    {
+      "path": "src/attrs.ts",
+      "bytes": 5421,
+      "sha256": "2c15077a49f25308de8630ec4b29014a3c9eecb3f96cd9b5073809c08200caf4"
+    },
+    {
+      "path": "src/config.ts",
+      "bytes": 7383,
+      "sha256": "55ec2be2396e140ada9572206e08a0fd639b5c2183741b8436b6d1e082a7159b"
+    },
+    {
+      "path": "src/license_header",
+      "bytes": 192,
+      "sha256": "5803fa925ae1703b9c752921c95a321570e6cabf06fcf2de895ddaf1687cebef"
+    },
+    {
+      "path": "src/purify.ts",
+      "bytes": 119728,
+      "sha256": "204ff31c5c71ac9da67bb3bfda85fb3bc27c070144efbe74f2f014c937cc2082"
+    },
+    {
+      "path": "src/regexp.ts",
+      "bytes": 1323,
+      "sha256": "2d2375c6077cba45d1f5ea991d28a88581300e0da1c9b0e7410f1fc5b6771b75"
+    },
+    {
+      "path": "src/tags.ts",
+      "bytes": 3819,
+      "sha256": "959dc7f21ddbf2dbe584f3511c0ae41eed313236e217d099856b7c3dc94e66e8"
+    },
+    {
+      "path": "src/types.ts",
+      "bytes": 8784,
+      "sha256": "4e634256e51e710ad0317833091a91abe27409e1150fdca2f607bb8eaac57110"
+    },
+    {
+      "path": "src/utils.ts",
+      "bytes": 9477,
+      "sha256": "c7cb3c3a37f304be6b52b6ea076ade726d773daf78bde33e6492f104c19d949d"
+    },
+    {
+      "path": "test/fixtures/expect.mjs",
+      "bytes": 82333,
+      "sha256": "6815a3d723f2f73de0ebff870f9947f5e169f2bfa52e4aa60705e527f3f46e79"
+    }
+  ],
+  "testSource": "Pinned upstream test data, from the same gitHead as the implementation; used only by tools/probes/import-vendors.mjs."
+}

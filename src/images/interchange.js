@@ -17,7 +17,10 @@ async function _rapierPrepareInterchangeContext(options, captured, progress = nu
       if (token.type === 'math_inline' || token.type === 'math_block') needed.add('math');
       if (token.type === 'fence' && token.meta?.rapierFenceClosed !== false &&
           String(token.info || '').trim().split(/\s+/)[0].toLowerCase() === 'mermaid' &&
-          globalThis.RapierFlowchart?.parseFlowchart(token.content).ok !== true) needed.add('mermaid');
+          globalThis.RapierFlowchart?.parseFlowchart(token.content).ok !== true) {
+        needed.add('mermaid');
+        if (_rapierProviders.mermaid?.requiresMath?.(token.content)) needed.add('math');
+      }
       if (token.children) visit(token.children);
     }};
     const body = _rapierSplitOpeningFrontmatter(snapshot.canonical).body;

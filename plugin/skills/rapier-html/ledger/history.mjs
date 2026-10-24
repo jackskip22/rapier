@@ -363,7 +363,7 @@ export function selectiveUndo(input, actIds, options = {}) {
 		const result = projectInverseSource(transported ? {...prepared, rows, records: transported.records} : prepared, selected, projectedEffects, options);
 		if (!result.ok) return result;
 		if (options.actor?.kind === 'agent' && prepared.metadata.docKind === 'markdown' &&
-			evaluateWill(prepared.source, result.splices).outcome !== 'applied')
+			evaluateWill(prepared.source, result.splices, {restores: result.splices}).outcome !== 'applied')
 			return historyFailure('will_refused');
 		return {...result, actIds: [...requested], sourceTransactionIds: [...selected], metadata, afterMetadata,
 			effectChanged, unchanged: result.after === prepared.source && !metadata && !effectChanged};

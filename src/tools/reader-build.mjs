@@ -193,7 +193,9 @@ export async function buildReader({root = here, unchecked = [], toolchainCanonic
 	const loaderSource = await read('shell/plugin-loader.js');
 	const pluginParts = (await read('shell/bundle-io.js')) + '\n' + readerPluginLoader(fillMermaidResources(loaderSource), built);
 
-	const pools = [await platformUnits(), await sharedUnits('editor/pop.js'), await sharedUnits('editor/sheet-gesture.js'), await sharedUnits('editor/plugins.js'), await renderWorkUnits(), await engineUnits()];
+	const pools = [await platformUnits(), await sharedUnits('editor/pop.js'), await sharedUnits('editor/sheet-gesture.js'), await sharedUnits('editor/plugins.js'),
+		await sharedUnits('editor/compare-block.js'), await renderWorkUnits(), await engineUnits(),
+		await sharedUnits('editor/plan-exact.js')];
 	const kit = {}, exports = await kitExports();
 	let keep = Object.fromEntries(Object.keys(KIT).map(kind => [kind, new Set()])), linked = null, slices = null, ownScript = '';
 	const forbid = ['rapier', '_rapierUi', 'showToast', 'rapierConfirm', 'renderBlock', '_rapierEmbedPublishState'];
@@ -251,9 +253,9 @@ export async function buildReader({root = here, unchecked = [], toolchainCanonic
 		}
 		return parts.join('\n');
 	};
-	const markdownIt = await vendor(['markdown-it-15.0.2.es2022.umd.js', 'markdown-it-task-lists-2.1.1.min.js', 'markdown-it-footnote-4.0.0.min.js', 'markdown-it-mark-4.0.0.min.js',
+	const markdownIt = await vendor(['markdown-it-15.0.3.es2022.umd.js', 'markdown-it-task-lists-2.1.1.min.js', 'markdown-it-footnote-4.0.0.min.js', 'markdown-it-mark-4.0.0.min.js',
 		'markdown-it-sup-2.0.0.min.js', 'markdown-it-emoji-3.1.0-light.min.js', 'markdown-it-abbr-2.0.0.min.js', 'markdown-it-ins-4.0.0.min.js', 'markdown-it-deflist-4.0.0.min.js']);
-	const purify = await vendor(['dompurify-3.4.16.es2024.min.js']);
+	const purify = await vendor(['dompurify-3.4.17.es2024.min.js']);
 
 	const carriesPretext = /agent\/vendor\/pretext\/|Pretext (?:bac1774|1\.0\.0)/.test(scriptPackage);
 	const lazy = licensesSheet(licenses, carriesPretext ? await read('agent/vendor/pretext/LICENSE') : '', await mitNotice(here), carriesPretext);

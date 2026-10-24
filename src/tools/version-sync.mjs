@@ -12,7 +12,7 @@ export const VERSIONED_FILES = ['.claude-plugin/plugin.json', 'packages/rapier-e
 	'skills/rapier-html/SKILL.md', 'skills/rapier-html/README.md', 'skills/rapier-markdown/SKILL.md',
 	'images/jxl/public/skills/rapier-jxl-photography/SKILL.md', 'images/jxl/public/skills/rapier-jxl-single-file-app/SKILL.md'];
 export const ROUTE_FILES = ['draw/draw.js', 'editor/composer.js', 'shell/parts.js', 'shell/plugin-loader.js', 'interchange/pdf-plugin.js',
-	'shell/font-subset-resources.json', 'shell/mermaid-resources.json'];
+	'shell/font-subset-resources.json', 'shell/mermaid-resources.json', 'images/ocr.mjs'];
 const ROUTE = /(https:\/\/cdn\.jsdelivr\.net\/gh\/jackskip22\/rapier(?:-plugins)?@)[^/'"\s]+/g;
 
 const EMBED_README_HEAD = `Put Rapier's Markdown editor or reader in your web app, each one offline HTML file.

@@ -3,18 +3,35 @@
   "dependencies": {
     "esbuild": "0.28.2",
     "fflate": "0.8.3",
-    "harfbuzzjs": "1.6.3",
-    "wawoff2": "2.0.1"
+    "harfbuzzjs": "1.6.3"
   },
-  "npmLockSha256": "eef83a0b0f152f759753aaa28dcbe6f37766168e6e5708e74566955be33cfa36",
-  "sourceSha256": "167ce32ade3c79f6639a118b74e71f1aff2e1dab5f1738b39e1e7f8aaf1097a3",
+  "decoder": {
+    "woff2": {
+      "version": "1.0.2",
+      "source": "https://github.com/google/woff2/tree/v1.0.2"
+    },
+    "brotli": {
+      "version": "1.2.1",
+      "commit": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+      "source": "https://github.com/google/brotli/tree/v1.2.1"
+    },
+    "compiler": "emscripten/emsdk@sha256:bbe90e2b00acbd1a9596087d88305029f383de1eb71c0cdb20f4e19647265450",
+    "memoryMaximumBytes": 268435456,
+    "fontMaximumBytes": 31457280,
+    "sourceModifications": "None; Rapier owns only the bounded Embind entry in woff2-binding.cpp.",
+    "bindingSha256": "93422959ce2462b43bb0f36ff22f32ae570f337b9c914bed3e169c6cb83a7d52",
+    "moduleSha256": "e1f875c086a3389780daaff9a1e9aeaa82a83ab9301003d4c2bad9b23e6b1c0d",
+    "rebuild": "node shell/font-subset/build-woff2.mjs --sources=<directory matching woff2-sources.json> --check"
+  },
+  "npmLockSha256": "b13feaf7c86be6cc82efd0eac3c7713926cbf27b6d52cefb5cb0aa55ffa1df48",
+  "sourceSha256": "7c52427bfe2e9d53a6ea39b5f1e653b5e704ec360a914d637a7e6e8c66e4fc55",
   "wasm": {
     "bytes": 667183,
     "sha256": "f8989b6c78493626b483d8e82dbfcdff38ac277f75f47a6ba440264dacdcedf1"
   },
-  "noticesSha256": "5ef98f3c629342b504be7dc81a9b8642961c5f2653ec143d0227176a2b3deea7",
-  "bytes": 1214779,
-  "gzipBytes": 499071,
-  "sha256": "78a39a26fb411fbe320f48ab2d876374a7c69e4dfba97a8705a7ffbb3516b2c2",
-  "sha384": "iAjccOClLDb549FPCJnflzsNIlLa4G4N/SRm/GnIvhcUyQd0COW2672AA2Mldcnz"
+  "noticesSha256": "a0ebb84e32739f646b299947a1b374290b1554a4fb2b4882b3697252dbf6dfe5",
+  "bytes": 1207570,
+  "gzipBytes": 496674,
+  "sha256": "68e552cc54bb2cc83b9910647085d4e0a03f7a029d86fd3127e2e2cc94fe15ff",
+  "sha384": "eyBreJCziFoHQdGSPtvd0S2IRcHna191kq83/ps/rafZwWWd6reInBALyPdLQmdL"
 }

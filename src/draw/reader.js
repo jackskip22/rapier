@@ -60,13 +60,16 @@ function _rapierDrawRoundProfile(cx, cy, rx, ry) {
 	return { spanAt(t) { const dy = (t - cy) / ry; if (Math.abs(dy) >= 1) return null; const dx = rx * Math.sqrt(1 - dy * dy); return [cx - dx, cx + dx]; } };
 }
 const RAPIER_DRAW_BANDS = 48;
+const _rapierDrawBrushBoxes = new Map();
 function _rapierDrawBrushExtent(shape, recipe) {
 	if (!shape.brush || shape.brush === 'ink') return null;
 	if (typeof document === 'undefined' || !document.body) return null;
 	let markup;
 	try { markup = _rapierDrawBrushMarkup(shape, recipe); } catch (_) { return null; }
 	if (!markup) return null;
-	let svg;
+	if (_rapierDrawBrushBoxes.has(markup)) return _rapierDrawBrushBoxes.get(markup);
+	if (_rapierDrawBrushBoxes.size >= 64) _rapierDrawBrushBoxes.delete(_rapierDrawBrushBoxes.keys().next().value);
+	let svg, box = null;
 	try {
 		svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
 		svg.setAttribute('style', 'position:absolute;visibility:hidden;width:0;height:0;');
@@ -74,13 +77,15 @@ function _rapierDrawBrushExtent(shape, recipe) {
 		group.innerHTML = markup;
 		svg.appendChild(group);
 		document.body.appendChild(svg);
-		const box = group.getBBox();
-		return box.width >= 0 && box.height >= 0 ? { minX: box.x, minY: box.y, maxX: box.x + box.width, maxY: box.y + box.height } : null;
-	} catch (_) { return null; }
+		const b = group.getBBox();
+		if (b.width >= 0 && b.height >= 0) box = { minX: b.x, minY: b.y, maxX: b.x + b.width, maxY: b.y + b.height };
+	} catch (_) { box = null; }
 	finally { svg?.remove(); }
+	_rapierDrawBrushBoxes.set(markup, box);
+	return box;
 }
-function _rapierDrawCoverPad(shape, recipe, box) {
-	const brush = _rapierDrawBrushExtent(shape, recipe), pad = _rapierDrawPaintPad(shape, recipe);
+function _rapierDrawCoverPad(shape, recipe, box, brush = _rapierDrawBrushExtent(shape, recipe)) {
+	const pad = _rapierDrawPaintPad(shape, recipe);
 	return brush && box ? Math.max(pad, brush.maxX - box.maxX, box.minX - brush.minX, brush.maxY - box.maxY, box.minY - brush.minY) : pad;
 }
 function _rapierDrawRoundReach(shape, recipe, cx, cy, rx, ry) {
@@ -95,8 +100,9 @@ function _rapierDrawShapeCover(shape, recipe) {
 		return { poly: [[b.minX, b.minY], [b.maxX, b.minY], [b.maxX, b.maxY], [b.minX, b.maxY]] };
 	}
 	if (shape.recognized === 'text') return { poly: _rapierDrawTextLayout(shape, recipe).polygon };
+	let brush;
 	return _rapierDrawShapeContours(shape, recipe).filter(points => points.length > 1).map(points => {
-		const pad = _rapierDrawCoverPad(shape, recipe, _rapierDrawBBox(points));
+		const pad = _rapierDrawCoverPad(shape, recipe, _rapierDrawBBox(points), brush === undefined ? (brush = _rapierDrawBrushExtent(shape, recipe)) : brush);
 		const closed = !_rapierDrawShapePaintsInk(shape, recipe) ? ['circle', 'ellipse'].includes(shape.recognized) || !!_rapierDrawShapePolygon(shape, recipe) : _rapierDrawIsClosedStroke(points);
 		return closed ? { poly: _rapierDrawGrowPolygon(_rapierDrawDist(points[0], points.at(-1)) < .01 ? points.slice(0, -1) : points, pad) } : { line: points, half: Math.max(RAPIER_DRAW_OPEN_HALF, pad) };
 	});

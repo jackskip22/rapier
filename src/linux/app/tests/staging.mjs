@@ -67,7 +67,7 @@ try {
   const pkg=await readFile(join(dir,'arch/aur/rapier-bin/PKGBUILD'),'utf8');
   assert(pkg.includes("arch=('x86_64')"));
   assert(pkg.includes("'glibc>="+built.runtime.glibc+"'"));
-  assert(pkg.includes("'gcc-libs' 'xdg-desktop-portal'")&&/^optdepends=\('chromium: /m.test(pkg)&&pkg.includes("'brave-bin: ")&&pkg.includes("'google-chrome: ")&&pkg.includes("'perl-file-mimeinfo: xdg-open file.md opens Rapier on Hyprland/Omarchy'"));
+  assert(pkg.includes("'gcc-libs' 'xdg-desktop-portal'")&&pkg.includes("'shared-mime-info' 'xdg-utils' 'perl-file-mimeinfo')")&&/^optdepends=\('chromium: /m.test(pkg)&&pkg.includes("'brave-bin: ")&&pkg.includes("'google-chrome: ")&&!pkg.includes("'perl-file-mimeinfo: "));
   assert(pkg.includes('pkgver='+built.version+'\n')&&pkg.includes('_tag=v${pkgver}'));
   assert(pkg.includes(built.sha256));assert(!pkg.includes('python'));
   assert(pkg.includes('$pkgdir/opt/rapier/rapier-linux')&&pkg.includes('hicolor/scalable/apps/rapier.svg'));
@@ -86,7 +86,7 @@ try {
     assert.match(await readFile(join(pkgdir,'usr/share/applications/chrome-rapier.local__rapier.html-Default.desktop'),'utf8'),/^NoDisplay=true$/m);
     assert.match(await readFile(join(pkgdir,'usr/bin/rapier'),'utf8'),/exec \/opt\/rapier\/rapier-linux "\$@"/);
   }
-  note('AUR and omarchy-pkgs recipes pin the exact ELF and its tag from one version, /opt and /usr/bin, perl-file-mimeinfo optional, a choice of browser, without Python');
+  note('AUR and omarchy-pkgs recipes pin the exact ELF and its tag from one version, /opt and /usr/bin, perl-file-mimeinfo, shared-mime-info and xdg-utils required, a choice of browser, without Python');
   await verifyLinuxArtifact();
   note('restored original inputs verify');
   console.log(JSON.stringify({elf:built.sha256,checks:report}));

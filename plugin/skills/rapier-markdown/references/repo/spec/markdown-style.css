@@ -334,6 +334,11 @@
 	-webkit-mask: var(--md-glyph-task-box) center / 100% 100% no-repeat;
 	mask: var(--md-glyph-task-box) center / 100% 100% no-repeat;
 }
+.md-render .task-list-item input[type="checkbox"] { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+@media (forced-colors: active) {
+	.md-render .task-list-item input[type="checkbox"] { forced-color-adjust: none; }
+	.md-render .task-list-item input[type="checkbox"]::before,.md-render .task-list-item input[type="checkbox"]:checked::after { background: CanvasText; }
+}
 .md-render .task-list-item input[type="checkbox"]:checked::before {
 	-webkit-mask-image: var(--md-glyph-task-open);
 	mask-image: var(--md-glyph-task-open);

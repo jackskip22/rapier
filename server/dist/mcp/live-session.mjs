@@ -8,6 +8,7 @@ import {resolveCaller, base64url} from '../agent/door-identity.mjs';
 import {mintEditorKey, verifyEditorKey, EDITOR_KEY_LIFETIME_MS} from './editor-keys.mjs';
 import {getTool} from '../agent/catalog.mjs';
 import {validateInput} from '../agent/validate-input.mjs';
+import {JsonDepthGuard} from '../kit/json-depth.mjs';
 
 export const LIVE_PROTOCOL = 'rapier-live-v1';
 export const LIVE_LIMITS = Object.freeze({frameBytes: 32 * 1024 * 1024, replayBytes: 1024 * 1024,
@@ -555,6 +556,7 @@ export class LiveSessions {
       const head = this.owner.ctx.storage.kv.get('head'), attached = this.valid(socket, head);
       if (!attached || attached.grant && !await this.owner.grantCurrent(attached.grant)) {this.close(socket); return;}
       if (typeof raw !== 'string' || raw.length > LIVE_LIMITS.frameBytes || utf8.encode(raw).byteLength > LIVE_LIMITS.frameBytes) throw refused('message_too_large');
+      new JsonDepthGuard(128, {failure: () => refused('message_too_deep')}).write(raw);
       try { message = JSON.parse(raw); } catch { throw refused('invalid_message'); }
       if (!plain(message)) throw refused('invalid_message');
       const state = this.owner.readState(head);

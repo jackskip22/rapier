@@ -25,12 +25,44 @@ _rapierBg._rapierDrawPaperListen?.(() => {
 	if (presets) { presets.dataset.sig = ''; _rapierBgSyncPanel(); }
 });
 
+const _rapierBgPaperStore = (() => {
+	const open = () => new Promise((resolve, reject) => {
+		const request = indexedDB.open('rapier-paper-tiles', 1);
+		request.onupgradeneeded = () => request.result.createObjectStore('tiles');
+		request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+	});
+	const run = async (mode, work) => {
+		const db = await open();
+		try { return await new Promise((resolve, reject) => { const tx = db.transaction('tiles', mode), out = work(tx.objectStore('tiles')); tx.oncomplete = () => resolve(out?.result); tx.onerror = tx.onabort = () => reject(tx.error); }); }
+		finally { db.close(); }
+	};
+	return {
+		get: key => typeof indexedDB === 'undefined' ? null : run('readonly', store => store.get(key)).catch(() => null),
+		set: async (key, value) => {
+			if (typeof indexedDB === 'undefined') return;
+			await run('readwrite', store => {
+				store.put({...value, used: Date.now()}, key);
+				const cursor = store.openCursor();
+				const seen = [];
+				cursor.onsuccess = () => { const row = cursor.result; if (row) { seen.push([row.key, row.value.used || 0]); row.continue(); } else for (const [name] of seen.sort((x, y) => y[1] - x[1]).slice(4)) store.delete(name); };
+				return null;
+			}).catch(() => {});
+		}
+	};
+})();
+
 async function _rapierBgPaperLoad(paper, strength = 1, options = {}) {
 	if (!strength) return null;
 	if (!_rapierBg._rapierDrawPaperRequest) throw new Error('The paper texture could not be prepared');
 	const deflate = bytes => globalThis.RapierDrawAgentPaint.deflateOwnedPaintBytes(bytes.slice());
-	const render = globalThis.navigator?.gpu && globalThis.RapierDrawWater?.paperTileFromGPU ? (id, options) => globalThis.RapierDrawWater.paperTileFromGPU(id, options) : null;
-	return _rapierBg._rapierDrawPaperRequest(paper, {strength, pixelRatio: globalThis.devicePixelRatio || 1, ...options, now: () => performance.now(), pause: () => new Promise(resolve => setTimeout(resolve, 0)), deflate, render});
+	const gpu = globalThis.navigator?.gpu && globalThis.RapierDrawWater?.paperTileFromGPU;
+	const render = async (id, options) => {
+		const made = gpu ? await globalThis.RapierDrawWater.paperTileFromGPU(id, options).catch(() => null) : null;
+		if (made) return made;
+		const client = await _rapierDrawPaintClient('paper').catch(() => null); if (!client) return null;
+		try { return await client.request('paperTile', {paper: id, density: options.density, strength: options.strength}); } finally { _rapierDrawPaintRelease(client); }
+	};
+	return _rapierBg._rapierDrawPaperRequest(paper, {strength, pixelRatio: globalThis.devicePixelRatio || 1, ...options, now: () => performance.now(), pause: () => new Promise(resolve => setTimeout(resolve, 0)), deflate, render, store: _rapierBgPaperStore});
 }
 async function _rapierBgPaperSnapshot(recipe) {
 	if (recipe.background === undefined) return null;

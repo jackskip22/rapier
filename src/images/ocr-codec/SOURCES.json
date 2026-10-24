@@ -1,0 +1,5301 @@
+[
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/LICENSE",
+    "path": "LICENSE",
+    "sha": "c66034b105f23d108a51b45c846d5b5c194cc229"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/CMakeLists.txt",
+    "path": "CMakeLists.txt",
+    "sha": "7c6a7c4ddfab61acc19f27fce2419001c51cd6fe"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/PATENTS",
+    "path": "PATENTS",
+    "sha": "c95b8f4105f210ceb06fe638d033d13b24e227a2"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/cmake_uninstall.cmake.in",
+    "path": "cmake_uninstall.cmake.in",
+    "sha": "4b61f88e3f338ac56897e980b1166e75a7abf183"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/args.h",
+    "path": "tools/args.h",
+    "sha": "8ea4fdde8fc21e96adfd2255db5e0bcac048efef"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/thread_pool_internal.h",
+    "path": "tools/thread_pool_internal.h",
+    "sha": "cfcefeb85603309fa90654026ee0c99daef721c4"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/gauss_blur.h",
+    "path": "tools/gauss_blur.h",
+    "sha": "ffecda99c1433c53dd19d13d0f9d0b10c5ffcb36"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/gauss_blur_gbench.cc",
+    "path": "tools/gauss_blur_gbench.cc",
+    "sha": "99adc3e58f1c36ac41e07a30034882c8048ee4a5"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/xyb_range.cc",
+    "path": "tools/xyb_range.cc",
+    "sha": "e8c0d07e5c1ab6c8ec87d9a749216d2dbb0e108f"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/rans_fuzzer.cc",
+    "path": "tools/rans_fuzzer.cc",
+    "sha": "ee47b35fdc4703b22f4724db8b1f121fde1d928d"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/decode_and_encode.cc",
+    "path": "tools/decode_and_encode.cc",
+    "sha": "0e360e3d7d055b43f9e8e5330b6bc040caaf2ca4"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/no_memory_manager.cc",
+    "path": "tools/no_memory_manager.cc",
+    "sha": "a39daac221cf2ae06dc6ee3ceab3bb9bfcfb9988"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/speed_stats.cc",
+    "path": "tools/speed_stats.cc",
+    "sha": "9c8218a4230b28f1b8aa789bde22c3069dc4e81a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/CMakeLists.txt",
+    "path": "tools/CMakeLists.txt",
+    "sha": "86a7353ebb2de6fce8344b57345555758e68a4af"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/fuzzer_stub.cc",
+    "path": "tools/fuzzer_stub.cc",
+    "sha": "0c6e26bedea297b7c00ab7ec4a29e8f9b102191e"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/tool_version.h",
+    "path": "tools/tool_version.h",
+    "sha": "67c1677e8c5151ba42862f69eb231b51f001b213"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/gauss_blur_test.cc",
+    "path": "tools/gauss_blur_test.cc",
+    "sha": "d0f7b68c3ac3c0e6f97654965e6ba81f620ac6b3"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/cjxl_main.cc",
+    "path": "tools/cjxl_main.cc",
+    "sha": "00b4ac2d8b852203c4e3ec0fbb068a957b004d07"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/djxl_fuzzer_test.cc",
+    "path": "tools/djxl_fuzzer_test.cc",
+    "sha": "bc39fec82837b2e438ceef0995ba6d5a4d7d218d"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/djxl_fuzzer.cc",
+    "path": "tools/djxl_fuzzer.cc",
+    "sha": "6f73dca1c569146e9b7f7da1887c738a153de769"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/jxltran.cc",
+    "path": "tools/jxltran.cc",
+    "sha": "dcf99a0bf7c8eb8907e5f9b3c639f03f11dc65bf"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/fields_fuzzer.cc",
+    "path": "tools/fields_fuzzer.cc",
+    "sha": "8966f3e0013266221fd13801d929f883fc8e6367"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/tracking_memory_manager.cc",
+    "path": "tools/tracking_memory_manager.cc",
+    "sha": "e8c8aa26f1f3d609ec40a9379dce2175dfc5932a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/no_memory_manager.h",
+    "path": "tools/no_memory_manager.h",
+    "sha": "28de15c2702508deeacf6f48f5232413d89fa762"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/jxl_from_tree.cc",
+    "path": "tools/jxl_from_tree.cc",
+    "sha": "d405eea121d419bc6b71a9e56dc62967c734a0d8"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/tool_version.cc",
+    "path": "tools/tool_version.cc",
+    "sha": "152689dbe5344ae5e008170c835fa2b747ef34f5"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/codec_config.h",
+    "path": "tools/codec_config.h",
+    "sha": "8d1c73f79eed2ee79a73b9236967aa18c905f0f5"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/codec_config.cc",
+    "path": "tools/codec_config.cc",
+    "sha": "68eb4648a308d0a7cd992eff9416d61355152bed"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/set_from_bytes_fuzzer.cc",
+    "path": "tools/set_from_bytes_fuzzer.cc",
+    "sha": "bf504e53d157eaf89c9385a40ff0786c21a71944"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/icc_codec_fuzzer.cc",
+    "path": "tools/icc_codec_fuzzer.cc",
+    "sha": "6a936ee405ebbc36aae23463d95266cd52c941d8"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/cmdline.h",
+    "path": "tools/cmdline.h",
+    "sha": "02beb490fd1aeaea2ab1b539be5cd46ea148754b"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/jxlinfo.cc",
+    "path": "tools/jxlinfo.cc",
+    "sha": "6510008a1e0a7083c76a461498705fb8f79dc3a6"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/cmdline.cc",
+    "path": "tools/cmdline.cc",
+    "sha": "0e0feca39e0df1e6da239f4f5a121a7bba9d5fb4"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/djxl_main.cc",
+    "path": "tools/djxl_main.cc",
+    "sha": "0ca9ebcc33ac86073bf25c79e546f9dc325fab2f"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/ssimulacra.cc",
+    "path": "tools/ssimulacra.cc",
+    "sha": "38f31e5e343274ef841a7348c6662146991e1408"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/ssimulacra2_main.cc",
+    "path": "tools/ssimulacra2_main.cc",
+    "sha": "37a8fd028d6965f0160c972e753c234d6f199071"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/speed_stats.h",
+    "path": "tools/speed_stats.h",
+    "sha": "7dea213f920a575888300e497424e048218d8b41"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/decode_basic_info_fuzzer.cc",
+    "path": "tools/decode_basic_info_fuzzer.cc",
+    "sha": "14b71a588f2fde5a85355cdc5d032431c048491b"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/djxl_fuzzer_corpus.cc",
+    "path": "tools/djxl_fuzzer_corpus.cc",
+    "sha": "a681fcdb4e4b2588fc7acfb2b32c4651373a8d47"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/ssimulacra_main.cc",
+    "path": "tools/ssimulacra_main.cc",
+    "sha": "84b3809225c93560616329a80914bc473e0d547e"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/streaming_fuzzer.cc",
+    "path": "tools/streaming_fuzzer.cc",
+    "sha": "de5df91a0cdccd88a10758e1816bfe835cd370e3"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/cjxl_fuzzer.cc",
+    "path": "tools/cjxl_fuzzer.cc",
+    "sha": "7243fc4818bbf5b41172d4c0e5557702875b4ac0"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/ssimulacra2.h",
+    "path": "tools/ssimulacra2.h",
+    "sha": "68337977752419a3c099403788581e0b1e31654a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/file_io.h",
+    "path": "tools/file_io.h",
+    "sha": "9e581222f04cb068dbbae9c4409c45982b2210e7"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/butteraugli_main.cc",
+    "path": "tools/butteraugli_main.cc",
+    "sha": "7afe2dca00cdd02ca7420b6313fdf0f4f0ec0b5d"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/transforms_fuzzer.cc",
+    "path": "tools/transforms_fuzzer.cc",
+    "sha": "78f6149caf4f2597c83c9e9f3ed3313d1c1c61d6"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/color_encoding_fuzzer.cc",
+    "path": "tools/color_encoding_fuzzer.cc",
+    "sha": "a005eeab87d3daf4cb5bea875c8db86a7887793e"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/tracking_memory_manager.h",
+    "path": "tools/tracking_memory_manager.h",
+    "sha": "07ca86fbf7424b1c8995078f5685db169f38e599"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/icc_simplify.cc",
+    "path": "tools/icc_simplify.cc",
+    "sha": "cb630853b04b0b8dd0c8cad5b70ec808d1fd469e"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/ssimulacra.h",
+    "path": "tools/ssimulacra.h",
+    "sha": "fac0b71ea60c3a1e15f106651136c5bcc256eeb3"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/gauss_blur.cc",
+    "path": "tools/gauss_blur.cc",
+    "sha": "64a9ad8615c95486f21d979f9f918a0406e5db14"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/ssimulacra2.cc",
+    "path": "tools/ssimulacra2.cc",
+    "sha": "9d2e95e72953db5d807e4387b60b1a3f805d7e0d"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/cmake/FindBrotli.cmake",
+    "path": "cmake/FindBrotli.cmake",
+    "sha": "503f37c137cb0fd49d24a2a5dcb19324bdab0596"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/cmake/FindLCMS2.cmake",
+    "path": "cmake/FindLCMS2.cmake",
+    "sha": "feba0e3b6b61eaa7103de11226ca28f06713d1e5"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/cmake/FindAtomics.cmake",
+    "path": "cmake/FindAtomics.cmake",
+    "sha": "9a6cdc39ec38d361f632f4f55ed69215e137e46e"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/cmake/FindHWY.cmake",
+    "path": "cmake/FindHWY.cmake",
+    "sha": "2e29c029f2725ffaa0cd306bf6d0df32cee9578b"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/third_party/CMakeLists.txt",
+    "path": "third_party/CMakeLists.txt",
+    "sha": "4647b5e2466f3042451aa43a98291d6700093dd8"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/third_party/testing.cmake",
+    "path": "third_party/testing.cmake",
+    "sha": "e2a19413f4c029e670b19e4a0715dd14e67e8bca"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/third_party/lcms2.cmake",
+    "path": "third_party/lcms2.cmake",
+    "sha": "dec6be9367a8698141a29f1dff168a848a3ebe56"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/third_party/skcms.cmake",
+    "path": "third_party/skcms.cmake",
+    "sha": "1e70c2aa07632d871e97eee671892d3b0ee95af6"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/third_party/sjpeg.cmake",
+    "path": "third_party/sjpeg.cmake",
+    "sha": "f1a69252ba472611ffef5d42c4006806a5d3ebfc"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl_lists.cmake",
+    "path": "lib/jxl_lists.cmake",
+    "sha": "1f2b510e22771a707896b5e62941da28372debea"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/gbench_main.cc",
+    "path": "lib/gbench_main.cc",
+    "sha": "7568c5510d061699c7f800620da1b6cd982e18cc"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/BUILD",
+    "path": "lib/BUILD",
+    "sha": "0aee584130d86376f053c261ec494c37f31b6c90"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/CMakeLists.txt",
+    "path": "lib/CMakeLists.txt",
+    "sha": "b814b33ab00334c65130a52f23cac51fc8ba971e"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl_tests.cmake",
+    "path": "lib/jxl_tests.cmake",
+    "sha": "e2f26621f7189aa97c1ea355540d37b818249644"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl_lists.bzl",
+    "path": "lib/jxl_lists.bzl",
+    "sha": "7a16d1341fac6dc549fe1a350daeffca5227e7fb"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl_extras.cmake",
+    "path": "lib/jxl_extras.cmake",
+    "sha": "0f8df98abfa7ab761e1be4cfa8301e105d15f8a1"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl_vars.bzl",
+    "path": "lib/jxl_vars.bzl",
+    "sha": "f421093ad0769a6eae953488d92db627c2eeca4b"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/nothing.cc",
+    "path": "lib/nothing.cc",
+    "sha": "e65f587da6b33902f8db8b0ecf5fd15f4e57b402"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl.cmake",
+    "path": "lib/jxl.cmake",
+    "sha": "8d962e6344ebe191755d983aba8c8ab5605f449d"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl_cms.cmake",
+    "path": "lib/jxl_cms.cmake",
+    "sha": "582b842a48490e7de6b7d7d20f00d1c6d8198b06"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl_benchmark.cmake",
+    "path": "lib/jxl_benchmark.cmake",
+    "sha": "d7a5a1144e80a569832f2c38937ac8db3bccd32d"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl_threads.cmake",
+    "path": "lib/jxl_threads.cmake",
+    "sha": "a7ed011cc3a233d2a3c79f72056eed8b2c651187"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/lib.gni",
+    "path": "lib/lib.gni",
+    "sha": "14b59b46df8fc9a72e7920fd8afe9b84580c926d"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/conformance/CMakeLists.txt",
+    "path": "tools/conformance/CMakeLists.txt",
+    "sha": "36249048c59209dd0c57166dff5a27305f17da24"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/tools/wasm_demo/CMakeLists.txt",
+    "path": "tools/wasm_demo/CMakeLists.txt",
+    "sha": "08cd8b5289d139e1ba162c2aa7171fc4144e6fdc"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/LICENSE",
+    "path": "LICENSE",
+    "sha": "33b7cdd2dbaeddce1e35aa1a13f63d71154dc42f"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/CMakeLists.txt",
+    "path": "CMakeLists.txt",
+    "sha": "22b21d2905d62392ff731d87e1f5b732273790b3"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/CMakeLists.txt.in",
+    "path": "CMakeLists.txt.in",
+    "sha": "a0260b82f7c09d18eb83153cc385432f622db165"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/LICENSE",
+    "path": "LICENSE",
+    "sha": "f49a4e16e68b128803cc2dcea614603632b04eac"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/CMakeLists.txt",
+    "path": "CMakeLists.txt",
+    "sha": "ea8b330c0d7b0567d56cdc2a999838c9504d513f"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/libhwy-contrib.pc.in",
+    "path": "libhwy-contrib.pc.in",
+    "sha": "89c45f5e42db8312345fffefce4b2f51c51270de"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/libhwy.pc.in",
+    "path": "libhwy.pc.in",
+    "sha": "643989275df8fe1f4c5d3543048b8e61f6225237"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/libhwy-test.pc.in",
+    "path": "libhwy-test.pc.in",
+    "sha": "0416b10df3a6b31f17e122b6576958505dfb68eb"
+  },
+  {
+    "repository": "google/skcms",
+    "ref": "96d9171c94b937a1b5f0293de7309ac16311b722",
+    "local": "libjxl/third_party/skcms/LICENSE",
+    "path": "LICENSE",
+    "sha": "6c7c5be360194ef93331dfb2b0c01114ad9c263f"
+  },
+  {
+    "repository": "google/skcms",
+    "ref": "96d9171c94b937a1b5f0293de7309ac16311b722",
+    "local": "libjxl/third_party/skcms/skcms.cc",
+    "path": "skcms.cc",
+    "sha": "00b19eca7ed3410dae4e5b5b38167a1f902b55c1"
+  },
+  {
+    "repository": "google/skcms",
+    "ref": "96d9171c94b937a1b5f0293de7309ac16311b722",
+    "local": "libjxl/third_party/skcms/test_only.h",
+    "path": "test_only.h",
+    "sha": "90cbb20ff2890286533fb5e57875b88dd4521733"
+  },
+  {
+    "repository": "google/skcms",
+    "ref": "96d9171c94b937a1b5f0293de7309ac16311b722",
+    "local": "libjxl/third_party/skcms/skcms.h",
+    "path": "skcms.h",
+    "sha": "7a9d4c1897b65639a094708bec63c948eb98da62"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/scripts/libbrotlicommon.pc.in",
+    "path": "scripts/libbrotlicommon.pc.in",
+    "sha": "b4861c230b5475052dadd829e15022107793733a"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/scripts/libbrotlienc.pc.in",
+    "path": "scripts/libbrotlienc.pc.in",
+    "sha": "effa6ce7ea058af51c3a8834e226cb5f6beb7a28"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/scripts/libbrotlidec.pc.in",
+    "path": "scripts/libbrotlidec.pc.in",
+    "sha": "419a608c1088f5678481627e32614ca406cd59da"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/common/version.h",
+    "path": "c/common/version.h",
+    "sha": "720a48f938d5d3e3ef3753be35075b8f4b36f1ac"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/common/shared_dictionary.c",
+    "path": "c/common/shared_dictionary.c",
+    "sha": "cef4e20fcd8ac1c5a5fdbb127b8459cef2de9b2d"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/common/context.c",
+    "path": "c/common/context.c",
+    "sha": "d3c910cb1b465fbfbca56b25e1a216c42dfdb6ea"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/common/transform.h",
+    "path": "c/common/transform.h",
+    "sha": "c6176d834049c38158f3a56f2078771d67ac912d"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/common/constants.c",
+    "path": "c/common/constants.c",
+    "sha": "ef5a2e2e046aa62343763e52c1ce47c63c3ce4a5"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/common/constants.h",
+    "path": "c/common/constants.h",
+    "sha": "85e9802c0c87bda1d4f96ae019f27b3a6b7af46b"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/common/platform.c",
+    "path": "c/common/platform.c",
+    "sha": "1e047ced792e171962656422d0aa7b8a0ebc29d0"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/common/platform.h",
+    "path": "c/common/platform.h",
+    "sha": "b59f9b8091c29138def44fc455c5561ed84cecd6"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/common/static_init.h",
+    "path": "c/common/static_init.h",
+    "sha": "12744de8f9847a5ded024784f7274508b7d8c342"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/common/context.h",
+    "path": "c/common/context.h",
+    "sha": "45b57d8c3edf65e32de86a988200eddbd6c5266a"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/common/dictionary.h",
+    "path": "c/common/dictionary.h",
+    "sha": "ed683b0aec8ec2e7d198bf11d8b456b00d878ef6"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/common/transform.c",
+    "path": "c/common/transform.c",
+    "sha": "968b9123870243d1fd6de2c349076224bd02a731"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/common/shared_dictionary_internal.h",
+    "path": "c/common/shared_dictionary_internal.h",
+    "sha": "c6a90fa741599f1869b73ecfb5a12e7f6c56417d"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/common/dictionary_inc.h",
+    "path": "c/common/dictionary_inc.h",
+    "sha": "f40a93eccfe56266a580610ae2da63bae8487587"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/common/dictionary.c",
+    "path": "c/common/dictionary.c",
+    "sha": "ef43af9bfb36b5a940c8f2bc3c208ab3d2399903"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/block_splitter_inc.h",
+    "path": "c/enc/block_splitter_inc.h",
+    "sha": "5e34cb9c994772cff26de95ac38b7dc4656617cc"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/hash_forgetful_chain_inc.h",
+    "path": "c/enc/hash_forgetful_chain_inc.h",
+    "sha": "c44276fa4596204d2719a231071155ca00332c40"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/metablock.h",
+    "path": "c/enc/metablock.h",
+    "sha": "e7d10526d22fbf2ae06df0e858226117fbd4d36e"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/entropy_encode.h",
+    "path": "c/enc/entropy_encode.h",
+    "sha": "0470c16e04ba46c7534c0fea19cb4c461ba71f4a"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/compress_fragment.h",
+    "path": "c/enc/compress_fragment.h",
+    "sha": "462f366b3cfaf637450102ec760a1bfa3172f1ce"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/static_dict.h",
+    "path": "c/enc/static_dict.h",
+    "sha": "bc69b1591b4818a5f064a1f77f13f2cce5d54d4d"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/cluster_inc.h",
+    "path": "c/enc/cluster_inc.h",
+    "sha": "d6215ef06e936a4e18075fae5d7a0525579d1c2d"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/compress_fragment.c",
+    "path": "c/enc/compress_fragment.c",
+    "sha": "14fec4fbf28fa8b08ffd3e25dc93aa9da9fcbd50"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/find_match_length.h",
+    "path": "c/enc/find_match_length.h",
+    "sha": "096be933106efe57d3a944a0700ba131f710e0f7"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/memory.c",
+    "path": "c/enc/memory.c",
+    "sha": "67f81ffde951b7ad9fa99272b2822f8bfe8fbcb9"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/entropy_encode.c",
+    "path": "c/enc/entropy_encode.c",
+    "sha": "1b4eab97f419c876357ff65d785cc42596621f0d"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/command.h",
+    "path": "c/enc/command.h",
+    "sha": "c1cb208e6a1e74c803798712b8da6d19a70cd75a"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/command.c",
+    "path": "c/enc/command.c",
+    "sha": "699fa80985ff7b69c1c21c8e5990adf64f9ddb87"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/fast_log.h",
+    "path": "c/enc/fast_log.h",
+    "sha": "a245443fff4fce4ad29bfaa5025bcb058df3de4a"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/brotli_bit_stream.h",
+    "path": "c/enc/brotli_bit_stream.h",
+    "sha": "7b72bdceeb40b70915a817fe0f9e9cfa20d1649d"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/backward_references.h",
+    "path": "c/enc/backward_references.h",
+    "sha": "17f0c8495b9cb17f4e205ff2c6b0398f15662a71"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/literal_cost.c",
+    "path": "c/enc/literal_cost.c",
+    "sha": "c4e207d09b6900f3f6f3d823cfedf464d8e767ce"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/encoder_dict.h",
+    "path": "c/enc/encoder_dict.h",
+    "sha": "76f037977edaa33ec1a7e4e00fe3db8be9bcdad2"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/write_bits.h",
+    "path": "c/enc/write_bits.h",
+    "sha": "0cdc3372b445bf47fc7d67c6ce66e14841a124d9"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/encoder_dict.c",
+    "path": "c/enc/encoder_dict.c",
+    "sha": "f75ee59845b77036b3049bb59376a221fcff2d4c"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/bit_cost_inc.h",
+    "path": "c/enc/bit_cost_inc.h",
+    "sha": "8e67f2503cd166ab148a15c96eaf4ff777c08b41"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/histogram.h",
+    "path": "c/enc/histogram.h",
+    "sha": "a2accc3313f2a73d068978e3507a72f0557e34f9"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/quality.h",
+    "path": "c/enc/quality.h",
+    "sha": "45d67bf4000b53aa3a6a99276e65a40121bb721b"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/backward_references.c",
+    "path": "c/enc/backward_references.c",
+    "sha": "5d1c0ed63e727d135524f2526d86fb027887a8ae"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/hash_longest_match64_inc.h",
+    "path": "c/enc/hash_longest_match64_inc.h",
+    "sha": "bdbb30aa5ed2544b525bc521efa164c44b3c32e5"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/static_dict.c",
+    "path": "c/enc/static_dict.c",
+    "sha": "85467460072a8d2ba794de9d81ea756d9db6165f"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/metablock_inc.h",
+    "path": "c/enc/metablock_inc.h",
+    "sha": "e7a7bc82193bafd66ee580df3ebdc8c1eb8c4db9"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/hash_base.h",
+    "path": "c/enc/hash_base.h",
+    "sha": "edf1ef020e49e19c41e2698a3a14f322806011e8"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/utf8_util.h",
+    "path": "c/enc/utf8_util.h",
+    "sha": "cae3dba7af11be0b5a6bc2f0271e376153315168"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/bit_cost.h",
+    "path": "c/enc/bit_cost.h",
+    "sha": "90313c4c33fa641fa255df3d6ca31c0cf1eb3e72"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/state.h",
+    "path": "c/enc/state.h",
+    "sha": "325f9f3dd627abdc9980bf91812eea40afc15480"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/hash_rolling_inc.h",
+    "path": "c/enc/hash_rolling_inc.h",
+    "sha": "4c7a6b199adbbb9cfb24ba50fbdac262f4bead4f"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/static_init.h",
+    "path": "c/enc/static_init.h",
+    "sha": "e5cb23916938287b39b636764150bd60dcfd50c5"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/static_dict_lut.h",
+    "path": "c/enc/static_dict_lut.h",
+    "sha": "078f55424e6489e280121eabdd13ce366cead934"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/compress_fragment_two_pass.h",
+    "path": "c/enc/compress_fragment_two_pass.h",
+    "sha": "e98b5e0e2e3dbd56f52a4f2a56fc443243c83771"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/encode.c",
+    "path": "c/enc/encode.c",
+    "sha": "ba21aa2ecff424cdd04ad253226b1c41cda7aada"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/metablock.c",
+    "path": "c/enc/metablock.c",
+    "sha": "dfe8120c83e8d4fa933e765c3c9949a161c7340e"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/block_splitter.c",
+    "path": "c/enc/block_splitter.c",
+    "sha": "13e924f09d6e13577490e8aa73aa9420f41474b6"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/histogram.c",
+    "path": "c/enc/histogram.c",
+    "sha": "43e4b38e38e2446417c5333d7c958dad8f1ab0ca"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/hash_longest_match64_simd_inc.h",
+    "path": "c/enc/hash_longest_match64_simd_inc.h",
+    "sha": "12bd8cffdff99bf0243d263e1b55348be1c21f8b"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/backward_references_hq.h",
+    "path": "c/enc/backward_references_hq.h",
+    "sha": "4aa270674e37f25d80f85e0baacb0d6f1b579e54"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/fast_log.c",
+    "path": "c/enc/fast_log.c",
+    "sha": "7b7ac029502eaf1cb4852ba4e640eef8f07d3f0b"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/block_splitter.h",
+    "path": "c/enc/block_splitter.h",
+    "sha": "c927794ebd6b6f720effe09837bc7bac130b1bf4"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/params.h",
+    "path": "c/enc/params.h",
+    "sha": "fd1de0096cc495bf3172aae2c85ba43beb623e47"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/hash_composite_inc.h",
+    "path": "c/enc/hash_composite_inc.h",
+    "sha": "3923bc72c82ab60d78af8b3c4b14bbdf4686d6e7"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/dictionary_hash.c",
+    "path": "c/enc/dictionary_hash.c",
+    "sha": "193f7a41c4c3aed1fc841bf77b46141b078efeb5"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/prefix.h",
+    "path": "c/enc/prefix.h",
+    "sha": "24c0afc17135a37867417089921bbad282cc144e"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/cluster.c",
+    "path": "c/enc/cluster.c",
+    "sha": "4bf94ab76bfa5314ff09b61d4d45cf5f8e5a001e"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/dictionary_hash.h",
+    "path": "c/enc/dictionary_hash.h",
+    "sha": "dfddc017dfe8cbdf78cb8d92876fcfc9e67dc8a8"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/bit_cost.c",
+    "path": "c/enc/bit_cost.c",
+    "sha": "059f8d9964ecda3d5173b419775e343ffc4bdb7b"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/literal_cost.h",
+    "path": "c/enc/literal_cost.h",
+    "sha": "eb3f3383684aeac8d785ea4841af99e0fd32d669"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/compound_dictionary.c",
+    "path": "c/enc/compound_dictionary.c",
+    "sha": "bf323a4b3a317ca9e2e7593ea34b385a245119a3"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/static_init.c",
+    "path": "c/enc/static_init.c",
+    "sha": "c0dff3a3a78a9947151c84b11965db201215b20c"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/hash_longest_match_simd_inc.h",
+    "path": "c/enc/hash_longest_match_simd_inc.h",
+    "sha": "79b341ae51ebe31cbcba258c83eabc1d76b088a1"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/ringbuffer.h",
+    "path": "c/enc/ringbuffer.h",
+    "sha": "5bb75ed7c25266a477bdce58c87187ae7e8438bd"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/backward_references_hq.c",
+    "path": "c/enc/backward_references_hq.c",
+    "sha": "ab8b12187b3eb6f1689b86d179f3a7702dc03719"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/backward_references_inc.h",
+    "path": "c/enc/backward_references_inc.h",
+    "sha": "752c12e9fd2ff96021eca217fd67a3bf8b89011b"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/memory.h",
+    "path": "c/enc/memory.h",
+    "sha": "d8374815bbaa5d1ba32c32209d081af56f9db163"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/utf8_util.c",
+    "path": "c/enc/utf8_util.c",
+    "sha": "d46c3644e010935e13b0d68a8aed7eef7a62d8d5"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/static_dict_lut_inc.h",
+    "path": "c/enc/static_dict_lut_inc.h",
+    "sha": "fea97f8d7654bc38ce0a03139fb4df7a969f15d6"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/dictionary_hash_inc.h",
+    "path": "c/enc/dictionary_hash_inc.h",
+    "sha": "89e04f0f4a8d956396c001680af91d915af58c74"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/cluster.h",
+    "path": "c/enc/cluster.h",
+    "sha": "6519116c4fd400b270de11e708a74607a9834918"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/brotli_bit_stream.c",
+    "path": "c/enc/brotli_bit_stream.c",
+    "sha": "1e9e946fe1532c6ac760162def87790b11cd890a"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/compound_dictionary.h",
+    "path": "c/enc/compound_dictionary.h",
+    "sha": "686f92fda32a2dcdb73472570ea050524192d964"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/static_dict_lut.c",
+    "path": "c/enc/static_dict_lut.c",
+    "sha": "109366f603f6a3c712ceb00aebc9675a7f108676"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/histogram_inc.h",
+    "path": "c/enc/histogram_inc.h",
+    "sha": "50eaf7468dab47f264eee6ccd5016066c14bb84b"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/hash.h",
+    "path": "c/enc/hash.h",
+    "sha": "d86fa189575b16f7745b63732f2bf647e400ed28"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/hash_to_binary_tree_inc.h",
+    "path": "c/enc/hash_to_binary_tree_inc.h",
+    "sha": "a639d2d4b0d3eec80615da986a166decde5f4a5f"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/block_encoder_inc.h",
+    "path": "c/enc/block_encoder_inc.h",
+    "sha": "8cbd5eac67b2a23579358464b74dab9c6e7e5363"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/hash_longest_match_quickly_inc.h",
+    "path": "c/enc/hash_longest_match_quickly_inc.h",
+    "sha": "57ed586fee406193c09366bc7a4bb41fe25dc3ab"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/entropy_encode_static.h",
+    "path": "c/enc/entropy_encode_static.h",
+    "sha": "5056eaa137c69d73a2b287dd1cd78a5896f0c1f3"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/matching_tag_mask.h",
+    "path": "c/enc/matching_tag_mask.h",
+    "sha": "8a1be1d71080ccda7b75fdfc5de9e11567905d8c"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/compress_fragment_two_pass.c",
+    "path": "c/enc/compress_fragment_two_pass.c",
+    "sha": "01e4794d8b29bb9ee5ecd954ad026757d437db8c"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/enc/hash_longest_match_inc.h",
+    "path": "c/enc/hash_longest_match_inc.h",
+    "sha": "58e88b3a609c42cfdf49a08a24beb0ca023f795f"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/dec/decode.c",
+    "path": "c/dec/decode.c",
+    "sha": "74db1a292b95b535e5a0ed2e7f7ab8ed61b9b55a"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/dec/state.c",
+    "path": "c/dec/state.c",
+    "sha": "dcf61b9eb3a1afeb9c3077f789d52e3113822399"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/dec/huffman.c",
+    "path": "c/dec/huffman.c",
+    "sha": "06486cf8105427b4d3241343771d58b1f0bf97e2"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/dec/prefix_inc.h",
+    "path": "c/dec/prefix_inc.h",
+    "sha": "91d81b846b314de84f9fea1f6ac33bc5e9b4c80c"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/dec/prefix.c",
+    "path": "c/dec/prefix.c",
+    "sha": "ce3998f2412363a2a5539207a710af0810f47038"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/dec/state.h",
+    "path": "c/dec/state.h",
+    "sha": "aa371fba2d82954e7497f1ab754cfba004e45fe2"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/dec/bit_reader.h",
+    "path": "c/dec/bit_reader.h",
+    "sha": "ef6b047ae6e45c7cc8094510bcd2879a949fe832"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/dec/static_init.h",
+    "path": "c/dec/static_init.h",
+    "sha": "4ae063ef5e356e16d071b4fb6149f46a937b5302"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/dec/prefix.h",
+    "path": "c/dec/prefix.h",
+    "sha": "f45b8be404173ddcd8b4429288ac937e0fd9cd9c"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/dec/static_init.c",
+    "path": "c/dec/static_init.c",
+    "sha": "1345052c5415054abd04dc74837976729800d5ae"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/dec/bit_reader.c",
+    "path": "c/dec/bit_reader.c",
+    "sha": "fae034fd8d8926ee8ce700cbf68c854daae8954d"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/dec/huffman.h",
+    "path": "c/dec/huffman.h",
+    "sha": "53daf600efcba83625cbeb175c1d275f5e95281d"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/include/brotli/decode.h",
+    "path": "c/include/brotli/decode.h",
+    "sha": "10d01e3658b521f81e19d7c857bb17063b1cf4d6"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/include/brotli/encode.h",
+    "path": "c/include/brotli/encode.h",
+    "sha": "ac26ea8e62d220cacf89cb821d291a285d4aeed6"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/include/brotli/shared_dictionary.h",
+    "path": "c/include/brotli/shared_dictionary.h",
+    "sha": "2970c2dcc9b5029903b9cdd3a4e26f4fc1dd70b2"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/include/brotli/types.h",
+    "path": "c/include/brotli/types.h",
+    "sha": "2dc61ff407659745c2f38e84f943a6c9be5dbf94"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "local": "libjxl/third_party/brotli/c/include/brotli/port.h",
+    "path": "c/include/brotli/port.h",
+    "sha": "11cefd791e4d910f9205994f71a126ef1aadf271"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/cmake/FindAtomics.cmake",
+    "path": "cmake/FindAtomics.cmake",
+    "sha": "e866b73fac3f1fb57029a2a51a14fd789ed33c8c"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/base.h",
+    "path": "hwy/base.h",
+    "sha": "7b13b0dd6eadf5b20aaa9cba8e3f69492cfa7f86"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/per_target.h",
+    "path": "hwy/per_target.h",
+    "sha": "c600da14b7fd57323a231132aad911601ac8a15e"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/aligned_allocator.h",
+    "path": "hwy/aligned_allocator.h",
+    "sha": "6274c5d1928bcb25a109525e7ea5281f5321e987"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/profiler.h",
+    "path": "hwy/profiler.h",
+    "sha": "57ddbe623f1a43fc41821e25b4af4ac3c5024bed"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/nanobenchmark.cc",
+    "path": "hwy/nanobenchmark.cc",
+    "sha": "ea5549f3d14c53a123289cbd982b18ac8752aff5"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/abort.cc",
+    "path": "hwy/abort.cc",
+    "sha": "82737373356bdd7ff80204311e67d55ddb03cdac"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/targets.cc",
+    "path": "hwy/targets.cc",
+    "sha": "b246f1fdd6108aea174516d5f46e1630aedd95f8"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/foreach_target.h",
+    "path": "hwy/foreach_target.h",
+    "sha": "5219aee28dbe8d9c9dcf8428f99cfa5414749826"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/abort.h",
+    "path": "hwy/abort.h",
+    "sha": "b49d4685d07ec2e803d363fb4aca6a22b2f04b3c"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/detect_targets.h",
+    "path": "hwy/detect_targets.h",
+    "sha": "db4c786489163597e126704b0274015881e36bd2"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/stats.h",
+    "path": "hwy/stats.h",
+    "sha": "8506c217e6b6e13e56de49731e31d130f600bf20"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/print-inl.h",
+    "path": "hwy/print-inl.h",
+    "sha": "46881a29da9e27111675ba534cc043975c925f74"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/print.h",
+    "path": "hwy/print.h",
+    "sha": "e61631e650fedd540638ec748a325812d3c39ef5"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/detect_compiler_arch.h",
+    "path": "hwy/detect_compiler_arch.h",
+    "sha": "94b49cb7284565813ad32d1d2a818039c73f5d90"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/aligned_allocator.cc",
+    "path": "hwy/aligned_allocator.cc",
+    "sha": "b88a64e24e25a86c845922aec5961112a55076b2"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/bit_set.h",
+    "path": "hwy/bit_set.h",
+    "sha": "f8f921becf0515359d1d55adc90d7aa20362f9fc"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/stats.cc",
+    "path": "hwy/stats.cc",
+    "sha": "a00e3797ac3a481fbdae255a88a5a1a2afccb580"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/timer.cc",
+    "path": "hwy/timer.cc",
+    "sha": "4b7f241550aaa25993a0b1766aa9ee9cbaa620df"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/per_target.cc",
+    "path": "hwy/per_target.cc",
+    "sha": "f1a83d4964460e9b7ee40ce109250fb18960faba"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/robust_statistics.h",
+    "path": "hwy/robust_statistics.h",
+    "sha": "d80a2146183b1569e9264def0ba922581298604b"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/cache_control.h",
+    "path": "hwy/cache_control.h",
+    "sha": "bdfa95998c6d188670ba8c2138dcbd3fb00c7258"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/targets.h",
+    "path": "hwy/targets.h",
+    "sha": "b3573dd194d1cf38550973a012ea95895f2f9607"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/nanobenchmark.h",
+    "path": "hwy/nanobenchmark.h",
+    "sha": "46bfc4b0a87b45b43292ebba8e0725a9aa3e0fb4"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/highway_export.h",
+    "path": "hwy/highway_export.h",
+    "sha": "30edc17d0132d1b1a132cd1c5829fe8400a29511"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/print.cc",
+    "path": "hwy/print.cc",
+    "sha": "b2c68b1444559225d4926806b7e9eac1396c37c9"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/highway.h",
+    "path": "hwy/highway.h",
+    "sha": "48359ea4d7a46fcee8b2d187394ac649a7ef5777"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/timer-inl.h",
+    "path": "hwy/timer-inl.h",
+    "sha": "d9a9fa84fbce85965c6c85a3235402063eb77b12"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/hwy.version",
+    "path": "hwy/hwy.version",
+    "sha": "9ff6be6a2d720996b1c9ee97b9fc4a46a3da57ba"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/timer.h",
+    "path": "hwy/timer.h",
+    "sha": "7ac0588f26529e7867e5863d8f0b21779b160144"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/ops/arm_neon-inl.h",
+    "path": "hwy/ops/arm_neon-inl.h",
+    "sha": "6e0c0fb7a65469ec042b3702789f3bca8288f784"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/ops/x86_128-inl.h",
+    "path": "hwy/ops/x86_128-inl.h",
+    "sha": "d0d6e18fa8c4f0de1b6a66dc14a25b1235f54d3a"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/ops/arm_sve-inl.h",
+    "path": "hwy/ops/arm_sve-inl.h",
+    "sha": "855a026da66325dadd9b3468448849afc6e10fda"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/ops/generic_ops-inl.h",
+    "path": "hwy/ops/generic_ops-inl.h",
+    "sha": "0cb83276ea32a2316b7f25e1e6aa2ed5e74f5e6b"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/ops/wasm_256-inl.h",
+    "path": "hwy/ops/wasm_256-inl.h",
+    "sha": "f2bf006b54fa931ee7e94f2f7cad52eccf627cc0"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/ops/x86_256-inl.h",
+    "path": "hwy/ops/x86_256-inl.h",
+    "sha": "2c6350b29ffbc7396c1b8f111eedd9e8888d6575"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/ops/x86_512-inl.h",
+    "path": "hwy/ops/x86_512-inl.h",
+    "sha": "73c07c94f78b2844541c5a817e0a4ecf7c2ac92a"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/ops/rvv-inl.h",
+    "path": "hwy/ops/rvv-inl.h",
+    "sha": "d28893955a60f68917dbd840e61db878eaaec79c"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/ops/shared-inl.h",
+    "path": "hwy/ops/shared-inl.h",
+    "sha": "4f48425b479fe0a1205acc28c3752a311a85b662"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/ops/inside-inl.h",
+    "path": "hwy/ops/inside-inl.h",
+    "sha": "07759afedeecc8d11b701ff9c479010fbe3aefa8"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/ops/ppc_vsx-inl.h",
+    "path": "hwy/ops/ppc_vsx-inl.h",
+    "sha": "ed08e5cf8765ddc8803b42a3ca7422a3d0e2779b"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/ops/set_macros-inl.h",
+    "path": "hwy/ops/set_macros-inl.h",
+    "sha": "467bbd2447a7786f9f7909c5da673317050aaa16"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/ops/emu128-inl.h",
+    "path": "hwy/ops/emu128-inl.h",
+    "sha": "c909e7058737824f7a709b7640754d249b845ac8"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/ops/scalar-inl.h",
+    "path": "hwy/ops/scalar-inl.h",
+    "sha": "4e2c2eda1157e5b772f3390fbc7e967981bae7f5"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/ops/wasm_128-inl.h",
+    "path": "hwy/ops/wasm_128-inl.h",
+    "sha": "0185e3d028df0d881dd3239edf4a824750cb3a7c"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/tests/hwy_gtest.h",
+    "path": "hwy/tests/hwy_gtest.h",
+    "sha": "96c3ae814342f0595d8fbb0ddd936938163aa175"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/tests/test_util-inl.h",
+    "path": "hwy/tests/test_util-inl.h",
+    "sha": "161a04ccb2cefb99ce13d6ba9c365e54efa2a505"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/tests/list_targets.cc",
+    "path": "hwy/tests/list_targets.cc",
+    "sha": "6aa836d93ec3d8c2b2956c4bd5afb50bc86cc182"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/tests/test_util.h",
+    "path": "hwy/tests/test_util.h",
+    "sha": "e8a13a70ff25eba99a5f0bc17cc033971bc0c5c7"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/tests/test_util.cc",
+    "path": "hwy/tests/test_util.cc",
+    "sha": "304405cb19cd8c9021ec225504e5a754692728e5"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/examples/profiler_example.cc",
+    "path": "hwy/examples/profiler_example.cc",
+    "sha": "a4a37ed9c7a5877ea6cc7a8e85748ac9bbd72387"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/examples/skeleton.cc",
+    "path": "hwy/examples/skeleton.cc",
+    "sha": "8ac6f7798641aa9a0125cbd303a10f9fa381ec36"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/examples/skeleton.h",
+    "path": "hwy/examples/skeleton.h",
+    "sha": "134193404add4e100ca237ae57367b0df6d58989"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/examples/skeleton-inl.h",
+    "path": "hwy/examples/skeleton-inl.h",
+    "sha": "8c7c6569e0dcb6b9571249e1db818d46864522a5"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/examples/benchmark.cc",
+    "path": "hwy/examples/benchmark.cc",
+    "sha": "98aae6819baafbac9424e00cd5aebb75c6a65b72"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/image/image.cc",
+    "path": "hwy/contrib/image/image.cc",
+    "sha": "67b37d2711b2b7c40a2a8b96b8fc24126a2e5d80"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/image/image.h",
+    "path": "hwy/contrib/image/image.h",
+    "sha": "4f578aaec42533bd4442a8da1afbec5b63dc23d0"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/math/math-inl.h",
+    "path": "hwy/contrib/math/math-inl.h",
+    "sha": "db9865ab5ac6937c6bb73c84b7c657719c45e675"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/dot/dot-inl.h",
+    "path": "hwy/contrib/dot/dot-inl.h",
+    "sha": "3dde661be5b2be445b3c41b20cb6c6724806b482"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/matvec/matvec-inl.h",
+    "path": "hwy/contrib/matvec/matvec-inl.h",
+    "sha": "a591cc89edbb95260e11342c82b6d6fc2aa0a6ed"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/thread_pool/topology.h",
+    "path": "hwy/contrib/thread_pool/topology.h",
+    "sha": "95b0835bda503cc245d34e6f9ec0b8e10ca57700"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/thread_pool/futex.h",
+    "path": "hwy/contrib/thread_pool/futex.h",
+    "sha": "cd4159484fdc47c911a1b4cb272b1e9336e7461a"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/thread_pool/topology.cc",
+    "path": "hwy/contrib/thread_pool/topology.cc",
+    "sha": "3d24f4f43cd8e815221f8b771cd692d6efeb8889"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/thread_pool/thread_pool.h",
+    "path": "hwy/contrib/thread_pool/thread_pool.h",
+    "sha": "24954bf063b955c34acc5c21adfbdfa1d01da4c9"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/vqsort_u64a.cc",
+    "path": "hwy/contrib/sort/vqsort_u64a.cc",
+    "sha": "cbbd47b5d86cf97ca7312d7892c736ccd635fc74"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/vqsort.cc",
+    "path": "hwy/contrib/sort/vqsort.cc",
+    "sha": "6fab0bbbea28d2a0c73a448f6a70d46386d5d306"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/vqsort_kv64a.cc",
+    "path": "hwy/contrib/sort/vqsort_kv64a.cc",
+    "sha": "9a3e3d45a6ba83e4197ad78b78661a4bde5edb35"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/sorting_networks-inl.h",
+    "path": "hwy/contrib/sort/sorting_networks-inl.h",
+    "sha": "131d9277c3c1a59dc266e78df2fd09b413e1b1c2"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/vqsort_f32d.cc",
+    "path": "hwy/contrib/sort/vqsort_f32d.cc",
+    "sha": "63544279178d551db91af1c9e60a3f6ca1495bc5"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/vqsort_i32a.cc",
+    "path": "hwy/contrib/sort/vqsort_i32a.cc",
+    "sha": "d5af1dad3d9ea220bfa05d33d8140c2d6aa87447"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/vqsort_i32d.cc",
+    "path": "hwy/contrib/sort/vqsort_i32d.cc",
+    "sha": "46670b7c52a4c93eec435f04f5a060aa82f54a98"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/vqsort_i64d.cc",
+    "path": "hwy/contrib/sort/vqsort_i64d.cc",
+    "sha": "9adcbed444e851aa4d7331dd01c6a6bfbad974eb"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/vqsort_u16a.cc",
+    "path": "hwy/contrib/sort/vqsort_u16a.cc",
+    "sha": "63194977f69164baa19194b55b8152259a03f820"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/vqsort-inl.h",
+    "path": "hwy/contrib/sort/vqsort-inl.h",
+    "sha": "fc6e85d176d90c7b413572e4245849d1c2f2144b"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/BUILD",
+    "path": "hwy/contrib/sort/BUILD",
+    "sha": "30c453e7c3275985f26a58471067906898130a82"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/traits-inl.h",
+    "path": "hwy/contrib/sort/traits-inl.h",
+    "sha": "3ca98e37ec159e8e21f5d21e2bc1d6147e8bb1c1"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/vqsort_f32a.cc",
+    "path": "hwy/contrib/sort/vqsort_f32a.cc",
+    "sha": "0fa47e5528c818bcdde92a0eb7bd679b9df619e9"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/algo-inl.h",
+    "path": "hwy/contrib/sort/algo-inl.h",
+    "sha": "4e731b6292e4856e5345e92700f938d9cb0c0bf2"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/order.h",
+    "path": "hwy/contrib/sort/order.h",
+    "sha": "6afb33fd5dfd3ad7f86a10422408e61d60a7ff29"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/vqsort_i16a.cc",
+    "path": "hwy/contrib/sort/vqsort_i16a.cc",
+    "sha": "4683ad5ebe07caa3dae472cfee080d18ae3f8ef3"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/vqsort.h",
+    "path": "hwy/contrib/sort/vqsort.h",
+    "sha": "d99e2e8347d4ac4bb172e7462baef90ec9737059"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/print_network.cc",
+    "path": "hwy/contrib/sort/print_network.cc",
+    "sha": "0760696e79b5bac158f6ab03a66bb90318180cd5"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/vqsort_kv128a.cc",
+    "path": "hwy/contrib/sort/vqsort_kv128a.cc",
+    "sha": "08cf2d384e770486f8d4049ed95786b1621cecc5"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/vqsort_u32d.cc",
+    "path": "hwy/contrib/sort/vqsort_u32d.cc",
+    "sha": "90e6c02b73f7fba4942a357b2c00bc4797fb2c39"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/vqsort_i16d.cc",
+    "path": "hwy/contrib/sort/vqsort_i16d.cc",
+    "sha": "018da17bdaeae4b8badd8028e91b5b4da8f31ada"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/vqsort_f64a.cc",
+    "path": "hwy/contrib/sort/vqsort_f64a.cc",
+    "sha": "04c9c2c3af872ce1a1e3b7915152b2b3b3124c71"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/vqsort_f64d.cc",
+    "path": "hwy/contrib/sort/vqsort_f64d.cc",
+    "sha": "7ac7324886a5f568d4899abe89b8524421e91c9e"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/bench_parallel.cc",
+    "path": "hwy/contrib/sort/bench_parallel.cc",
+    "sha": "731e96c08aed063370d2f50bfa10dbf994eaf8cb"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/vqsort_f16d.cc",
+    "path": "hwy/contrib/sort/vqsort_f16d.cc",
+    "sha": "80619b691880a28dde5fc855a6c0af3b321e4356"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/vqsort_u64d.cc",
+    "path": "hwy/contrib/sort/vqsort_u64d.cc",
+    "sha": "1b94b3ad9f0c83239bb4cd2127141909865fd849"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/vqsort_128a.cc",
+    "path": "hwy/contrib/sort/vqsort_128a.cc",
+    "sha": "ae798e0d8ae092d0d502132eeda624f60aeffeeb"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/vqsort_u16d.cc",
+    "path": "hwy/contrib/sort/vqsort_u16d.cc",
+    "sha": "c3f6874d05c22e552f9401687c4194baf960c87f"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/traits128-inl.h",
+    "path": "hwy/contrib/sort/traits128-inl.h",
+    "sha": "ccaacb9e86644b5d291b148adb28f677ffcf2bff"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/vqsort_f16a.cc",
+    "path": "hwy/contrib/sort/vqsort_f16a.cc",
+    "sha": "8c971b8f9529e4610400123c15a3f759e565f5c5"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/result-inl.h",
+    "path": "hwy/contrib/sort/result-inl.h",
+    "sha": "30bdfc8ca9327dec43bd720cc6009cba8a13c8ab"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/shared-inl.h",
+    "path": "hwy/contrib/sort/shared-inl.h",
+    "sha": "f63072ad6704eb7b0aff8a34517207f77305fe54"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/vqsort_kv64d.cc",
+    "path": "hwy/contrib/sort/vqsort_kv64d.cc",
+    "sha": "5c99cff613e78b44a921898a8154407b411b5405"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/vqsort_i64a.cc",
+    "path": "hwy/contrib/sort/vqsort_i64a.cc",
+    "sha": "397e0033910084aa3d4a1506833b866001112f9d"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/vqsort_u32a.cc",
+    "path": "hwy/contrib/sort/vqsort_u32a.cc",
+    "sha": "3cd9b94e344a1200b4aa1bd644c09b5882a84820"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/vqsort_128d.cc",
+    "path": "hwy/contrib/sort/vqsort_128d.cc",
+    "sha": "39e685c1b23e1750865a0d37c493bb24b1dcd4c0"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/bench_sort.cc",
+    "path": "hwy/contrib/sort/bench_sort.cc",
+    "sha": "dffd5269700825ceb389d2663aae2492fb1b7420"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/vqsort_kv128d.cc",
+    "path": "hwy/contrib/sort/vqsort_kv128d.cc",
+    "sha": "f58acdf51323cf0ff8d737096c77c2a0a57ac87c"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/sort/README.md",
+    "path": "hwy/contrib/sort/README.md",
+    "sha": "800d2cfcdabd5a41def9d8048e2ecf3d89b3d047"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/algo/transform-inl.h",
+    "path": "hwy/contrib/algo/transform-inl.h",
+    "sha": "f48476d15b42298f2f0474b98f0e77e9ceccfd18"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/algo/find-inl.h",
+    "path": "hwy/contrib/algo/find-inl.h",
+    "sha": "dc0a8cac084b243cb678f3ef6f3f8af08bcb6bb7"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/algo/copy-inl.h",
+    "path": "hwy/contrib/algo/copy-inl.h",
+    "sha": "9945132f7298a4110b2da63ff0fd1907d8a529bd"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/random/random-inl.h",
+    "path": "hwy/contrib/random/random-inl.h",
+    "sha": "4779ef5a47bf80a60c32dfa39f0d58d573f737a4"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/unroller/unroller-inl.h",
+    "path": "hwy/contrib/unroller/unroller-inl.h",
+    "sha": "4ed8c25c078adbe885fe2438f5e5aef46bcd55c2"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/unroller/README.md",
+    "path": "hwy/contrib/unroller/README.md",
+    "sha": "396b122db204edafd2980159b10e3a6d1941638b"
+  },
+  {
+    "repository": "google/highway",
+    "ref": "457c891775a7397bdb0376bb1031e6e027af1c48",
+    "local": "libjxl/third_party/highway/hwy/contrib/bit_pack/bit_pack-inl.h",
+    "path": "hwy/contrib/bit_pack/bit_pack-inl.h",
+    "sha": "09d37ac5efe8810d6ca38dac417e0fe85118b35a"
+  },
+  {
+    "repository": "google/skcms",
+    "ref": "96d9171c94b937a1b5f0293de7309ac16311b722",
+    "local": "libjxl/third_party/skcms/src/skcms_internals.h",
+    "path": "src/skcms_internals.h",
+    "sha": "02aa7b77a586c9e0e13e366aa43cdb563a57341b"
+  },
+  {
+    "repository": "google/skcms",
+    "ref": "96d9171c94b937a1b5f0293de7309ac16311b722",
+    "local": "libjxl/third_party/skcms/src/Transform_inl.h",
+    "path": "src/Transform_inl.h",
+    "sha": "0d48337bfc1c452fee07ab80b6817e6f9fce34c7"
+  },
+  {
+    "repository": "google/skcms",
+    "ref": "96d9171c94b937a1b5f0293de7309ac16311b722",
+    "local": "libjxl/third_party/skcms/src/skcms_TransformBaseline.cc",
+    "path": "src/skcms_TransformBaseline.cc",
+    "sha": "706cc2ca219295fb164cb213e7197dcb5751da78"
+  },
+  {
+    "repository": "google/skcms",
+    "ref": "96d9171c94b937a1b5f0293de7309ac16311b722",
+    "local": "libjxl/third_party/skcms/src/skcms_TransformSkx.cc",
+    "path": "src/skcms_TransformSkx.cc",
+    "sha": "8ded464c09ba5f28c369861d362a39b4d1c98d12"
+  },
+  {
+    "repository": "google/skcms",
+    "ref": "96d9171c94b937a1b5f0293de7309ac16311b722",
+    "local": "libjxl/third_party/skcms/src/skcms_Transform.h",
+    "path": "src/skcms_Transform.h",
+    "sha": "868d71a68177e5f0d54099f065f674224c397e11"
+  },
+  {
+    "repository": "google/skcms",
+    "ref": "96d9171c94b937a1b5f0293de7309ac16311b722",
+    "local": "libjxl/third_party/skcms/src/skcms_public.h",
+    "path": "src/skcms_public.h",
+    "sha": "b95e777d35454df83ec10efbc7befbd961c88332"
+  },
+  {
+    "repository": "google/skcms",
+    "ref": "96d9171c94b937a1b5f0293de7309ac16311b722",
+    "local": "libjxl/third_party/skcms/src/skcms_TransformHsw.cc",
+    "path": "src/skcms_TransformHsw.cc",
+    "sha": "7349f524f868760d214957e74489d7fbae6b90a8"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/threads/thread_parallel_runner_internal.cc",
+    "path": "lib/threads/thread_parallel_runner_internal.cc",
+    "sha": "ed32fdc946a2e6c0353b2e63f8d991d1deb52460"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/threads/thread_parallel_runner.cc",
+    "path": "lib/threads/thread_parallel_runner.cc",
+    "sha": "558c9dbe42303c5607a038fe2d56d2b90b3c9a60"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/threads/libjxl_threads.pc.in",
+    "path": "lib/threads/libjxl_threads.pc.in",
+    "sha": "dfbaa3ffb54c7160fed90c9df826d90b27096789"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/threads/resizable_parallel_runner.cc",
+    "path": "lib/threads/resizable_parallel_runner.cc",
+    "sha": "238ccbf20c14cf969bfbc1e714c0378c99f12186"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/threads/thread_parallel_runner_internal.h",
+    "path": "lib/threads/thread_parallel_runner_internal.h",
+    "sha": "7af43191ef23142253761fc74b09b0027427d930"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/exif.h",
+    "path": "lib/extras/exif.h",
+    "sha": "f22b2ccef54f861528b94b538f87edfcd5b3c354"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/hlg.h",
+    "path": "lib/extras/hlg.h",
+    "sha": "f9429be895767db2294b767d96f9d1312827d941"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/packed_image_convert.h",
+    "path": "lib/extras/packed_image_convert.h",
+    "sha": "aea707acd07244a6add7908d82ef9b8aa08096c3"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/time.cc",
+    "path": "lib/extras/time.cc",
+    "sha": "6c4a0956e352cff4095cb13474b142287f7d5395"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/exif.cc",
+    "path": "lib/extras/exif.cc",
+    "sha": "823651caf74765abd4fae6774d96859d846bcbfd"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/tone_mapping_gbench.cc",
+    "path": "lib/extras/tone_mapping_gbench.cc",
+    "sha": "06b34c12d4ac3c769e79815097757af655391333"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/codec.cc",
+    "path": "lib/extras/codec.cc",
+    "sha": "cffb9ea392e6593c33276314618ffb46fbaeaf84"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/mmap.cc",
+    "path": "lib/extras/mmap.cc",
+    "sha": "3bace575aafb418978072a11b72e0596c57b7eb4"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/LICENSE.apngdis",
+    "path": "lib/extras/LICENSE.apngdis",
+    "sha": "eb0ba7c07b180c8b2e84977dcca28e7697c2c34e"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/alpha_blend.cc",
+    "path": "lib/extras/alpha_blend.cc",
+    "sha": "f2cc82790464128b87d52e7105c3bca97211fe37"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/include_jpeglib.h",
+    "path": "lib/extras/include_jpeglib.h",
+    "sha": "c9a0a1c32868ac20d3dfe351b5351d77f4ddc8de"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/packed_image_convert.cc",
+    "path": "lib/extras/packed_image_convert.cc",
+    "sha": "271f00d36b13f0b7b88982dbb4217052dfc62f3b"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/codec_in_out.h",
+    "path": "lib/extras/codec_in_out.h",
+    "sha": "9c7cb4e7a0fad22a6b462834fb6ba18161900584"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/tone_mapping.cc",
+    "path": "lib/extras/tone_mapping.cc",
+    "sha": "aa3f9d0403243087b2b64de0bc8b2ab74b61b6ca"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/size_constraints.h",
+    "path": "lib/extras/size_constraints.h",
+    "sha": "3f31eb1ac7a982272eda358ec1cc66cecdb0352a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/tone_mapping.h",
+    "path": "lib/extras/tone_mapping.h",
+    "sha": "d4188fd42ec5d973dda268a16ff5d3451d7a6fe4"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/common.cc",
+    "path": "lib/extras/common.cc",
+    "sha": "0df9579b5950e85f7d4ddbd4c3bee1d98b16e565"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/common.h",
+    "path": "lib/extras/common.h",
+    "sha": "88ed581af3dc10e2fbdfb6f1b3304cd5f9689034"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/gain_map.cc",
+    "path": "lib/extras/gain_map.cc",
+    "sha": "36adb9c5b9e7032196a12308a9f22ddcea0f4428"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/packed_image.h",
+    "path": "lib/extras/packed_image.h",
+    "sha": "12849aadc1199dccb5b170bc58f78a90feb9ab8d"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/time.h",
+    "path": "lib/extras/time.h",
+    "sha": "c71414b877b84029302327b3e85f05509aab93d9"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/mmap.h",
+    "path": "lib/extras/mmap.h",
+    "sha": "12de2c9fcb9fb6601ce09744dfa985be73359734"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/compressed_icc.cc",
+    "path": "lib/extras/compressed_icc.cc",
+    "sha": "952f9f382092d493f486cae6f6c77761b98fde18"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/alpha_blend.h",
+    "path": "lib/extras/alpha_blend.h",
+    "sha": "b388a5e22aa482c241b57d49b39292bc8bd3dc7d"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/metrics.h",
+    "path": "lib/extras/metrics.h",
+    "sha": "0e7b523b67c758d4ac85f3b5322af6b5dbe7da8e"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/codec.h",
+    "path": "lib/extras/codec.h",
+    "sha": "0ed77c318848ef5a78af8f1b53cbcd22171fbce4"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/metrics.cc",
+    "path": "lib/extras/metrics.cc",
+    "sha": "541c0c4c5d7917167bbf0357f81d04c81e3fc7fb"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/packed_image.cc",
+    "path": "lib/extras/packed_image.cc",
+    "sha": "ed222d76c6e76771f84d520a37a93a8a248c810c"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/hlg.cc",
+    "path": "lib/extras/hlg.cc",
+    "sha": "c3bbf960285e32283141336eb528752264af3fef"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/README.md",
+    "path": "lib/extras/README.md",
+    "sha": "06a9b5ea0782b76854c80aa8a1b561b57f478792"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/test_memory_manager.h",
+    "path": "lib/jxl/test_memory_manager.h",
+    "sha": "2a1ec6a5282b99eede3664d0a13ba8e8a064eaec"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/tf_gbench.cc",
+    "path": "lib/jxl/tf_gbench.cc",
+    "sha": "17f4a5ec052ff8111ec7f90571e83d3c7dacfe10"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_ac_strategy.cc",
+    "path": "lib/jxl/enc_ac_strategy.cc",
+    "sha": "f99cb55c8427a5b23a1baee4e369aa1845ea2825"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_ans.h",
+    "path": "lib/jxl/enc_ans.h",
+    "sha": "8922f3309e304cc9ed71f3ec5368cf4f701ab7de"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/color_encoding_internal.cc",
+    "path": "lib/jxl/color_encoding_internal.cc",
+    "sha": "3a4dbb8f2d42353221d7fd3bb759fd0b50b7575b"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_chroma_from_luma.cc",
+    "path": "lib/jxl/enc_chroma_from_luma.cc",
+    "sha": "b89ff4b1bb170778e3633c79da3d1bce96ad0b03"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/ans_params.h",
+    "path": "lib/jxl/ans_params.h",
+    "sha": "fc7d02c39ee23206b6c6733d12814236573049ac"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_xyb.h",
+    "path": "lib/jxl/dec_xyb.h",
+    "sha": "58cff1de7058a7178dbe9f14d3807ab727e35449"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_icc_codec.h",
+    "path": "lib/jxl/enc_icc_codec.h",
+    "sha": "7141550267b023205283a08d760eb6f82c09cd6e"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_lz77.h",
+    "path": "lib/jxl/enc_lz77.h",
+    "sha": "6f6fdf2179e3c4b94dcb5dbf8c7634cb30137f22"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/libjxl_cms.pc.in",
+    "path": "lib/jxl/libjxl_cms.pc.in",
+    "sha": "deab7367ac0044dfef605dcaf5368af8758d8fea"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/alpha.cc",
+    "path": "lib/jxl/alpha.cc",
+    "sha": "581a2f5688b3ca19245bc2a93c8acc1cc1498f09"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/blending.cc",
+    "path": "lib/jxl/blending.cc",
+    "sha": "5947a00a80614d5c962abd76907cb6740209d9b8"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/image_metadata.h",
+    "path": "lib/jxl/image_metadata.h",
+    "sha": "5e5bf6dc7e0904f6387790128f3d7512658214ad"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/icc_codec.h",
+    "path": "lib/jxl/icc_codec.h",
+    "sha": "046487e6c3570df2cb23508c066284a1503b6a5e"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_cache.h",
+    "path": "lib/jxl/dec_cache.h",
+    "sha": "f728f883f68146bba9a63f5eb9260d3d6fb0d44e"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_frame.cc",
+    "path": "lib/jxl/dec_frame.cc",
+    "sha": "71aea8459d20288fd2f4e93fe99c01c971f56aa0"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_coeff_order.h",
+    "path": "lib/jxl/enc_coeff_order.h",
+    "sha": "6c57a97cd7aad71fc53a06dce8c3c00fb7a15adf"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_transforms.cc",
+    "path": "lib/jxl/enc_transforms.cc",
+    "sha": "a4e7ca88ba2f002d004607c126660ab8101812f5"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_patch_dictionary.cc",
+    "path": "lib/jxl/dec_patch_dictionary.cc",
+    "sha": "dabed4be70aa01692020569090ba6f25563cb699"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_external_image_gbench.cc",
+    "path": "lib/jxl/dec_external_image_gbench.cc",
+    "sha": "419874d15a80356b2396e88f1e214ebb7e6a9749"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dct-inl.h",
+    "path": "lib/jxl/dct-inl.h",
+    "sha": "8f6c76a0449894c41c9cd9efd1403765709d56cc"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/convolve_slow.cc",
+    "path": "lib/jxl/convolve_slow.cc",
+    "sha": "911a5df508e74eec4e258fbffdbac73e8a8ffd5a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_icc_codec.cc",
+    "path": "lib/jxl/enc_icc_codec.cc",
+    "sha": "24d8b3a5f62285459bbbd33c69f6855505f7fc75"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_transforms-inl.h",
+    "path": "lib/jxl/enc_transforms-inl.h",
+    "sha": "7e5e18a4f029cca03c8456d33e025bc3b451f9fa"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/simd_util.cc",
+    "path": "lib/jxl/simd_util.cc",
+    "sha": "68047eee28f4750db591306b1767cae6be444e1c"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_context_map.h",
+    "path": "lib/jxl/dec_context_map.h",
+    "sha": "9f7ac4f87edbf8152240007f96d4f4bd135b3756"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_group.cc",
+    "path": "lib/jxl/enc_group.cc",
+    "sha": "3711047d51138a1d4dc914f888f203e8b0bf173c"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_gamma_correct.h",
+    "path": "lib/jxl/enc_gamma_correct.h",
+    "sha": "0d1b9123e057f850ed5734035d9df98ed8552a7d"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_patch_dictionary.h",
+    "path": "lib/jxl/dec_patch_dictionary.h",
+    "sha": "530a2b205d9d552e426f65427d768fc61c8a4fec"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_cluster.h",
+    "path": "lib/jxl/enc_cluster.h",
+    "sha": "afecafb480d76fc2618849136ed90eae93a002de"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/toc.cc",
+    "path": "lib/jxl/toc.cc",
+    "sha": "1e378d65bb0087d74083cb9aa3c5b15d3f6f87e4"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_group.h",
+    "path": "lib/jxl/dec_group.h",
+    "sha": "9e954ba9914dd1ed81020613df068fe0e9c566a6"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/toc.h",
+    "path": "lib/jxl/toc.h",
+    "sha": "bbc0549e67ab2304a68fc0d6007c80fdd0237fd6"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_toc.h",
+    "path": "lib/jxl/enc_toc.h",
+    "sha": "453baa44f0ea4525c2760cbac2f11e1f4133c0b7"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/fuzztest.h",
+    "path": "lib/jxl/fuzztest.h",
+    "sha": "870ecf1b140dd96565c49b430ad936af3950526d"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/splines.h",
+    "path": "lib/jxl/splines.h",
+    "sha": "3247c18541ac14036cf26eed6da9b654711acfb1"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_fast_lossless.cc",
+    "path": "lib/jxl/enc_fast_lossless.cc",
+    "sha": "04bca255b2d99a36d3708db86731edc08889ec8d"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/image_ops.cc",
+    "path": "lib/jxl/image_ops.cc",
+    "sha": "4d3b4a7122bc78bc1ec9ec1f9c6bbaa8190a6a31"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_butteraugli_comparator.h",
+    "path": "lib/jxl/enc_butteraugli_comparator.h",
+    "sha": "f900503e9246ebefcfad8703458260f480846393"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_huffman.h",
+    "path": "lib/jxl/dec_huffman.h",
+    "sha": "7d1c1fdff5c56807782352c0656dc62ce5f03157"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/field_encodings.h",
+    "path": "lib/jxl/field_encodings.h",
+    "sha": "6da6db3d3935062573a492b4b26e7a5f047654a7"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_chroma_from_luma.h",
+    "path": "lib/jxl/enc_chroma_from_luma.h",
+    "sha": "4bc0f856e35036ac568c5d189aa87cb2cc071de5"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/compressed_dc.cc",
+    "path": "lib/jxl/compressed_dc.cc",
+    "sha": "41e4e03b5464272975b10dae4cc889ae17090e6d"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/image.cc",
+    "path": "lib/jxl/image.cc",
+    "sha": "18d0921986aebb85421f372de8b127e800298ee9"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_debug_image.cc",
+    "path": "lib/jxl/enc_debug_image.cc",
+    "sha": "cbd3daa19481ed20175d6646d77f4bf8ee0a5ffb"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/pack_signed.h",
+    "path": "lib/jxl/pack_signed.h",
+    "sha": "792ae8d14e99d7c49a0fce9371d426fb60e61d46"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/quant_weights.h",
+    "path": "lib/jxl/quant_weights.h",
+    "sha": "66facc2abf6540a4e9b982fff8d3988e1118c079"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/icc_codec_common.cc",
+    "path": "lib/jxl/icc_codec_common.cc",
+    "sha": "fdb0535a8ba658a205d752655dfbf40d621831e9"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_frame.cc",
+    "path": "lib/jxl/enc_frame.cc",
+    "sha": "7e1b92b5862c5f927b81765ef76c7910ff8a921b"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/inverse_mtf-inl.h",
+    "path": "lib/jxl/inverse_mtf-inl.h",
+    "sha": "efa79b9f738cf4ec51b709b4244cff1d06126a3c"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_noise.h",
+    "path": "lib/jxl/enc_noise.h",
+    "sha": "6b4bf73fc4a3171684908b4a36dde10755234ef0"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_splines.cc",
+    "path": "lib/jxl/enc_splines.cc",
+    "sha": "d5072cdf924ed3380965525527602a6b7df9adf0"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_progressive_split.cc",
+    "path": "lib/jxl/enc_progressive_split.cc",
+    "sha": "52d3482aad5e171320205123d46b441a0a2368b7"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_patch_dictionary.cc",
+    "path": "lib/jxl/enc_patch_dictionary.cc",
+    "sha": "333265aa6c6d6c37b969f73ef2213746e4fd5afc"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_heuristics.h",
+    "path": "lib/jxl/enc_heuristics.h",
+    "sha": "a1843410ba1dc4aaf6f1db9ba109a732f29bdba6"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/huffman_table.h",
+    "path": "lib/jxl/huffman_table.h",
+    "sha": "11cdb2fc45961bfd557b1e4d5d89c20bc5b937e4"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_context_map.cc",
+    "path": "lib/jxl/enc_context_map.cc",
+    "sha": "54c9e7d616ba7344d1992af0ca22ce1950b3383d"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/ac_context.h",
+    "path": "lib/jxl/ac_context.h",
+    "sha": "0f98e017998a5cb38b7c6a6feb450357fd06e5cf"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/quantizer.h",
+    "path": "lib/jxl/quantizer.h",
+    "sha": "8a28d627b43e9619f7946f33c363a925ffca1bd1"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/opsin_params.cc",
+    "path": "lib/jxl/opsin_params.cc",
+    "sha": "b4b3e324f49db1b0e1832fd9ce10d6e3948fb413"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/simd_util.h",
+    "path": "lib/jxl/simd_util.h",
+    "sha": "50ec0c43fe9f4878e7b879685497218bf20cc106"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_xyb-inl.h",
+    "path": "lib/jxl/dec_xyb-inl.h",
+    "sha": "598f6d45d4da3771045e6b490642a2d3b2f4af0f"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_frame.h",
+    "path": "lib/jxl/dec_frame.h",
+    "sha": "00ea2b0bc5fbb3afcc03b13a1d83c309d4978d0a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/huffman_table.cc",
+    "path": "lib/jxl/huffman_table.cc",
+    "sha": "c615b9e503cb0ea38ae98036be043e0be4ef8d70"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/image_ops.h",
+    "path": "lib/jxl/image_ops.h",
+    "sha": "52eafe3f801784850a69e36954ba70ba47012d8f"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/opsin_params.h",
+    "path": "lib/jxl/opsin_params.h",
+    "sha": "4ed2124fd7174a4f65c642d4dc886c5de56c9ce9"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_group_border.cc",
+    "path": "lib/jxl/dec_group_border.cc",
+    "sha": "0dbb68ec877186ef9ba5add979db4368b1f74d2f"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/simd_util-inl.h",
+    "path": "lib/jxl/simd_util-inl.h",
+    "sha": "39648446df62262fefe05548d399bcd647a26fd4"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_external_image_gbench.cc",
+    "path": "lib/jxl/enc_external_image_gbench.cc",
+    "sha": "77f4c519d03b8c48b0362d62d5fcc214f20ce2d6"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_ans.cc",
+    "path": "lib/jxl/dec_ans.cc",
+    "sha": "af5a52aebcd4e6ea0268e081bb811ea041fc3b1c"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/patch_dictionary_internal.h",
+    "path": "lib/jxl/patch_dictionary_internal.h",
+    "sha": "8c44bce2e9c5ce8e2e141bc085e378ea82f3bbcf"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_convolve_separable5.cc",
+    "path": "lib/jxl/enc_convolve_separable5.cc",
+    "sha": "4528ebad4a9329ad632342d36738e4380d74abe5"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_xyb.cc",
+    "path": "lib/jxl/enc_xyb.cc",
+    "sha": "6140a25bc4d88686474faee1dfd3b165f61788d8"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/decode_to_jpeg.cc",
+    "path": "lib/jxl/decode_to_jpeg.cc",
+    "sha": "aee361ba9e2e670ee457c038663e0e2fc2c57afa"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_photon_noise.cc",
+    "path": "lib/jxl/enc_photon_noise.cc",
+    "sha": "344be9cdda6c58100ff68227620b24344df536f8"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_cache.h",
+    "path": "lib/jxl/enc_cache.h",
+    "sha": "138a7c8ce897d8ec34b9d24e17ef31362ba50c9a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_cache.cc",
+    "path": "lib/jxl/dec_cache.cc",
+    "sha": "bf505244df28b743c2a93b819b89808290fdf8b6"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/entropy_coder.h",
+    "path": "lib/jxl/entropy_coder.h",
+    "sha": "f66f54840d451f03c58793c3316c5b404be4ad46"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_group.h",
+    "path": "lib/jxl/enc_group.h",
+    "sha": "884e3bdd0eea7577f1718ee1fd9cf60944eaecf1"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_xyb.h",
+    "path": "lib/jxl/enc_xyb.h",
+    "sha": "c24f1255ef78454d61129b93a7801b1243d97730"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_adaptive_quantization.cc",
+    "path": "lib/jxl/enc_adaptive_quantization.cc",
+    "sha": "71ead0ad87691809532739ff2fc97e6bb30ce943"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/decode_to_jpeg.h",
+    "path": "lib/jxl/decode_to_jpeg.h",
+    "sha": "5cf5de9abf63bada293f1755939fe95cbe1b5e7a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_huffman.h",
+    "path": "lib/jxl/enc_huffman.h",
+    "sha": "2787d357059a1455eb5b34bf8e29cd406e267622"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/coeff_order_fwd.h",
+    "path": "lib/jxl/coeff_order_fwd.h",
+    "sha": "e5e72a4913c895b5162d1ae864bd093703effbed"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_frame.h",
+    "path": "lib/jxl/enc_frame.h",
+    "sha": "e5ca6f88fb9de2c902eedc2c9704b96f24efd5d8"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/convolve.h",
+    "path": "lib/jxl/convolve.h",
+    "sha": "38c30d4a4fd05e2a2251e4b05ff8e8eb55ba870b"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_modular.h",
+    "path": "lib/jxl/enc_modular.h",
+    "sha": "f2d5bdeec990e9ef9eaa0a95be59b3ee10735615"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_huffman.cc",
+    "path": "lib/jxl/enc_huffman.cc",
+    "sha": "06ed262605d0861320dadc32bc5cc48dd187b81d"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/coeff_order.cc",
+    "path": "lib/jxl/coeff_order.cc",
+    "sha": "b47ebd3f16fb961a204de5dd570d8642f9abaa95"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/encode_internal.h",
+    "path": "lib/jxl/encode_internal.h",
+    "sha": "2ad0ffb761e1de44c83e532ba661c2ed93e1a8c4"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_context_map.h",
+    "path": "lib/jxl/enc_context_map.h",
+    "sha": "ba770a939bd3e0ec72e51aac20f440bacff4e59b"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_external_image.cc",
+    "path": "lib/jxl/enc_external_image.cc",
+    "sha": "b320afccb8128be93b0ef08d28deee9e8867339a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_cache.cc",
+    "path": "lib/jxl/enc_cache.cc",
+    "sha": "83d9c7e10adcfa7afc36a5f7671e370c8b6f60fd"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/memory_manager_internal.h",
+    "path": "lib/jxl/memory_manager_internal.h",
+    "sha": "1e0a0d738d6f9bcb36e3436ae1ad4932869f9259"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/common.h",
+    "path": "lib/jxl/common.h",
+    "sha": "0e6da43dfab4653e11653db862526888a6105574"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/memory_manager_internal.cc",
+    "path": "lib/jxl/memory_manager_internal.cc",
+    "sha": "ecf430323a851566674901a98d0f20ed4e81ee19"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_huffman_tree.h",
+    "path": "lib/jxl/enc_huffman_tree.h",
+    "sha": "7d716cd3b51f4f985ee0dcfc0bd167a999d2be2b"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/test_utils.h",
+    "path": "lib/jxl/test_utils.h",
+    "sha": "2eb87eedd3ffc45da53bf0c7131d048875d3d54a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/alpha.h",
+    "path": "lib/jxl/alpha.h",
+    "sha": "154fbbc9c2188405ae3d023ba1e1a653ecd4b781"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_patch_dictionary.h",
+    "path": "lib/jxl/enc_patch_dictionary.h",
+    "sha": "36cc6a4b9d264afcf9f8c1b22322f2af1551e13f"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/blending.h",
+    "path": "lib/jxl/blending.h",
+    "sha": "f7933bee2ddadec137778c1ab9ff824b24b00a10"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/image_test_utils.h",
+    "path": "lib/jxl/image_test_utils.h",
+    "sha": "d80e2ac3473fcf00a8d4bd00645105a7a06e818e"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_comparator.cc",
+    "path": "lib/jxl/enc_comparator.cc",
+    "sha": "41cfdd2dea6a9532a20dcdfe1ff5df579a43d562"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/passes_state.h",
+    "path": "lib/jxl/passes_state.h",
+    "sha": "a8e8e38b34bafcdbfad2cbf37dfe159cc8219a37"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_bit_writer.cc",
+    "path": "lib/jxl/enc_bit_writer.cc",
+    "sha": "4820abe2787283a4fa9c56e3813d985986c329d8"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_transforms-inl.h",
+    "path": "lib/jxl/dec_transforms-inl.h",
+    "sha": "87c262f2477b07688814810cab31fa52c82f0096"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_dot_dictionary.h",
+    "path": "lib/jxl/enc_dot_dictionary.h",
+    "sha": "15eecc9853827b2752e4e5d6856ef77bf71b804b"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_xyb.cc",
+    "path": "lib/jxl/dec_xyb.cc",
+    "sha": "68cf3a0e24bd04d95607011bf57063e7e307f705"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/jxl.syms",
+    "path": "lib/jxl/jxl.syms",
+    "sha": "0f398d71519f261803f9566419ca630639b59db3"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dct_for_test.h",
+    "path": "lib/jxl/dct_for_test.h",
+    "sha": "29c189261d2ad2b82ef6a5f3a23067d4c58ff115"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_transforms_testonly.h",
+    "path": "lib/jxl/dec_transforms_testonly.h",
+    "sha": "cbac3cc752234cf5550a167bd996c66b46c40c05"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_noise.cc",
+    "path": "lib/jxl/enc_noise.cc",
+    "sha": "8fd4a565da2ccf67b7b42844a199f9d236cdff99"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_detect_dots.h",
+    "path": "lib/jxl/enc_detect_dots.h",
+    "sha": "91174463f74c6f118814081bf6ad5e5f0b120d5b"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/fields.h",
+    "path": "lib/jxl/fields.h",
+    "sha": "eedaafaff457dee5c264d83e95f785c20e23926c"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_ac_strategy.h",
+    "path": "lib/jxl/enc_ac_strategy.h",
+    "sha": "9d7ec6ca86b2058d331b225dc924418606396324"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_bit_writer.h",
+    "path": "lib/jxl/enc_bit_writer.h",
+    "sha": "41f14b0cce63628ce64e81391ae7ff11f88e47d9"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_external_image.h",
+    "path": "lib/jxl/enc_external_image.h",
+    "sha": "c366a8d6275886ad2df9395d6db26f3069f1bf98"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_progressive_split.h",
+    "path": "lib/jxl/enc_progressive_split.h",
+    "sha": "3d2eb15614847f1d63ff7a84be440cbbf9ba7b34"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_noise.h",
+    "path": "lib/jxl/dec_noise.h",
+    "sha": "8cefba9f08f7ac84c8d620167987a2703010100c"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_debug_image.h",
+    "path": "lib/jxl/enc_debug_image.h",
+    "sha": "98d27e705cdf209df5304256be29dd4517f87e83"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_group_border.h",
+    "path": "lib/jxl/dec_group_border.h",
+    "sha": "ff9a736cfcac596e889190be39f6b719b245b8e6"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_detect_dots.cc",
+    "path": "lib/jxl/enc_detect_dots.cc",
+    "sha": "2e72a3ef1490746b9a60700b4f5caa76bce49b45"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/icc_codec_common.h",
+    "path": "lib/jxl/icc_codec_common.h",
+    "sha": "2779d0687075e10e3914969f94d098676ef4ebec"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/ac_strategy.cc",
+    "path": "lib/jxl/ac_strategy.cc",
+    "sha": "e2bbf1b7641e145f4f5e8c9c2d8965f414ad15b8"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/epf.cc",
+    "path": "lib/jxl/epf.cc",
+    "sha": "cc1d81e842ea0fe932e01de7a9b9e3a75fa2d9df"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_comparator.h",
+    "path": "lib/jxl/enc_comparator.h",
+    "sha": "6ae6913abe8989444689bea9d225ff87d0802391"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_optimize.h",
+    "path": "lib/jxl/enc_optimize.h",
+    "sha": "561aa736a5cf4fb4707b4f271595cba57f48523e"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/transpose-inl.h",
+    "path": "lib/jxl/transpose-inl.h",
+    "sha": "65362a027185ca25727a8ed68392e746a5a7006a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/color_encoding_internal.h",
+    "path": "lib/jxl/color_encoding_internal.h",
+    "sha": "e6641d8c60b97ca8735d6071c61d41d053a40889"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_gaborish.cc",
+    "path": "lib/jxl/enc_gaborish.cc",
+    "sha": "4e24abf3ffd68f91ad19cabcad6bcc6f3a15021e"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/padded_bytes.h",
+    "path": "lib/jxl/padded_bytes.h",
+    "sha": "307fa325a5adf564fd4444168e6c2a390aefe38f"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/libjxl.pc.in",
+    "path": "lib/jxl/libjxl.pc.in",
+    "sha": "0fbdbdba85659fd69b4930845a8557dbe30f39e9"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/xorshift128plus-inl.h",
+    "path": "lib/jxl/xorshift128plus-inl.h",
+    "sha": "1a29d09934fa410d3b2e6bd329a6caa832686931"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/box_content_decoder.cc",
+    "path": "lib/jxl/box_content_decoder.cc",
+    "sha": "e4c960f455154eab3d66fe8feee953f3811913b1"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_ans.h",
+    "path": "lib/jxl/dec_ans.h",
+    "sha": "e6b18dbe3454cfe6d9a389c4ee5db5b509a6b95b"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dct_scales.cc",
+    "path": "lib/jxl/dct_scales.cc",
+    "sha": "da92734e266abcfac7cbe0f2beb52a79a49c228b"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/jxl.version",
+    "path": "lib/jxl/jxl.version",
+    "sha": "26b0e9e54d9b1d2cb2667485172ab9ede0721cb7"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/test_utils.cc",
+    "path": "lib/jxl/test_utils.cc",
+    "sha": "67ac26024a9fea4c492ca5383b4be7bdd8fea8bf"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_transforms_testonly.cc",
+    "path": "lib/jxl/dec_transforms_testonly.cc",
+    "sha": "4e1279fa7a569eae4fdfe10b2ab17e4b405bd2d4"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/headers.cc",
+    "path": "lib/jxl/headers.cc",
+    "sha": "532bf3989b846e74f1be56e9f20faf8da8af10fa"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_photon_noise.h",
+    "path": "lib/jxl/enc_photon_noise.h",
+    "sha": "d3c6d843afee62a97929d26aabe04ac8ce4885f8"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dct_gbench.cc",
+    "path": "lib/jxl/dct_gbench.cc",
+    "sha": "1045f15e21dc39e729a8ffa381ace2158f78ef92"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/headers.h",
+    "path": "lib/jxl/headers.h",
+    "sha": "3cce84dabcd6cddbc9ade04f52b9d4f5398b3fd2"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_modular_simd.h",
+    "path": "lib/jxl/enc_modular_simd.h",
+    "sha": "c63f32a19c35a395b59ed512728a4d94e1f3f7f2"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_params.h",
+    "path": "lib/jxl/enc_params.h",
+    "sha": "f23bf682d080444c6a906cb64e885619ee4f5a90"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/compressed_dc.h",
+    "path": "lib/jxl/compressed_dc.h",
+    "sha": "12e70d84cfd36e4368638de31b210007a4d37f6a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/coeff_order.h",
+    "path": "lib/jxl/coeff_order.h",
+    "sha": "2620d918e3b9af64b986aff7ca675a784642b925"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_quant_weights.cc",
+    "path": "lib/jxl/enc_quant_weights.cc",
+    "sha": "73f4e753f5274b50f9db92a9e5323f191d1dc3e6"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/quant_weights.cc",
+    "path": "lib/jxl/quant_weights.cc",
+    "sha": "9bc94ee6e393926b72e46d07b23c76fa642a718a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/quantizer.cc",
+    "path": "lib/jxl/quantizer.cc",
+    "sha": "184ad5cfcf84d38db54c3962710de6f36946a8f1"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_entropy_coder.h",
+    "path": "lib/jxl/enc_entropy_coder.h",
+    "sha": "2aec6c11405fe81c6afa97e2ffaaa4db1e7a4b8d"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/jxl_osx.syms",
+    "path": "lib/jxl/jxl_osx.syms",
+    "sha": "96bc568025d6b3947031891ca2de437a006dd8ed"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_butteraugli_comparator.cc",
+    "path": "lib/jxl/enc_butteraugli_comparator.cc",
+    "sha": "03a5e1427d84fc2c0c238c8d5f000f173f0fa46a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_huffman.cc",
+    "path": "lib/jxl/dec_huffman.cc",
+    "sha": "d258483dd53e8714ad9df90d53a376c9f61a9aea"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_adaptive_quantization.h",
+    "path": "lib/jxl/enc_adaptive_quantization.h",
+    "sha": "26f6965ac4507ea24311733b02265fcd2e93fbfb"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/noise.h",
+    "path": "lib/jxl/noise.h",
+    "sha": "20669a149f7e4f9aff7296eee1df448a545001f3"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/quantizer-inl.h",
+    "path": "lib/jxl/quantizer-inl.h",
+    "sha": "f02d8525448fb7f88df0568539d83eacecfd3698"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_context_map.cc",
+    "path": "lib/jxl/dec_context_map.cc",
+    "sha": "5dc31dcc643c1a6e59852675ae85143f17a827a2"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_ans_simd.cc",
+    "path": "lib/jxl/enc_ans_simd.cc",
+    "sha": "15305856380a529ef4e1504fb4d8f4d9917f0e6e"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/ans_common.h",
+    "path": "lib/jxl/ans_common.h",
+    "sha": "a459aed440434dba60c8fa1e0117890fa444690f"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/passes_state.cc",
+    "path": "lib/jxl/passes_state.cc",
+    "sha": "9680a7ddefa71a77cb3b618ab2ad85c0649e39d0"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_fast_lossless.h",
+    "path": "lib/jxl/enc_fast_lossless.h",
+    "sha": "581e027b4f8eb3584dab6b5cd0fca2cfca0e8287"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_linalg.h",
+    "path": "lib/jxl/enc_linalg.h",
+    "sha": "04ed188a816d7cee467c3a4a114a5397bf4945c1"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_aux_out.h",
+    "path": "lib/jxl/enc_aux_out.h",
+    "sha": "a5536a605da937860e54008d834161c012aa8f0b"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/splines_gbench.cc",
+    "path": "lib/jxl/splines_gbench.cc",
+    "sha": "2b90ba019059e9e3540e6cb0e282193324c9e0bf"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/version.h.in",
+    "path": "lib/jxl/version.h.in",
+    "sha": "d85ad7fc904f6e9f700de86f209cf5a319d12761"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_modular.cc",
+    "path": "lib/jxl/dec_modular.cc",
+    "sha": "b43a0e241738c5e08cdaaf31f4a2b4468a69266a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_ans_params.h",
+    "path": "lib/jxl/enc_ans_params.h",
+    "sha": "7cb9080ef5a5dee78be52c5f708896085ad889ee"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/testing.h",
+    "path": "lib/jxl/testing.h",
+    "sha": "876f6684cb573f8cf7cf5fb6f7af04f4c2e541ef"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/image_metadata.cc",
+    "path": "lib/jxl/image_metadata.cc",
+    "sha": "a4cefb19283c7682884dcc565e8b295464facdcd"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/fields.cc",
+    "path": "lib/jxl/fields.cc",
+    "sha": "b4f045c332d965d447a68c0787ceada85a8f48fe"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_image_bundle.cc",
+    "path": "lib/jxl/enc_image_bundle.cc",
+    "sha": "5035ab4ef94b868a3a5b954eb2b7638935b08615"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/test_image.h",
+    "path": "lib/jxl/test_image.h",
+    "sha": "48afe886607c5c23517de3f52c716ffe49b4516a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/fake_parallel_runner_testonly.h",
+    "path": "lib/jxl/fake_parallel_runner_testonly.h",
+    "sha": "4ca422e9a48d134ea3956de696013e4f9d6f8044"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_huffman_tree.cc",
+    "path": "lib/jxl/enc_huffman_tree.cc",
+    "sha": "b06307c3ff0f0f766156e9f75093eb190e65e671"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/frame_header.h",
+    "path": "lib/jxl/frame_header.h",
+    "sha": "e9cc8acc16174b75d7ebc4388fa512f60d036aeb"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/epf.h",
+    "path": "lib/jxl/epf.h",
+    "sha": "6e4f056680c33d6fa873dbdcd62ea4e194b521b8"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_toc.cc",
+    "path": "lib/jxl/enc_toc.cc",
+    "sha": "4214461dbcc114aef898b9d58c06d4a245397fd5"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/image.h",
+    "path": "lib/jxl/image.h",
+    "sha": "6211d86137128339034749b185d9055ac2ae513d"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/frame_header.cc",
+    "path": "lib/jxl/frame_header.cc",
+    "sha": "571da5877c9ab6d3f63ab5648aa62a4b55744b56"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_cluster.cc",
+    "path": "lib/jxl/enc_cluster.cc",
+    "sha": "9a46b5ed08d31923f59c7af474d492a38327a6f4"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_group.cc",
+    "path": "lib/jxl/dec_group.cc",
+    "sha": "789459011b0110608ab2cdecf0ae021630b23506"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_quant_weights.h",
+    "path": "lib/jxl/enc_quant_weights.h",
+    "sha": "fac3cde2d8861b5f85aba8f842819ca3af88303a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_gaborish.h",
+    "path": "lib/jxl/enc_gaborish.h",
+    "sha": "ce1c211ffa4a2f5def67bc60a93e155eeb2d4ecc"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/convolve_symmetric5.cc",
+    "path": "lib/jxl/convolve_symmetric5.cc",
+    "sha": "a3921318eecf062c1de4066dce48fd5dc09e80d8"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/test_image.cc",
+    "path": "lib/jxl/test_image.cc",
+    "sha": "e14d313fdc320f0a29c2fa3ed503d47c727d16d6"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/image_bundle.h",
+    "path": "lib/jxl/image_bundle.h",
+    "sha": "1da70e318fb6862354306cdef4468bce5274cb3a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dct_block-inl.h",
+    "path": "lib/jxl/dct_block-inl.h",
+    "sha": "52d12ea37c921ee6c481289873d3e37136caaae4"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_heuristics.cc",
+    "path": "lib/jxl/enc_heuristics.cc",
+    "sha": "6884cc1a6809261bb643df9edbc56f6c81ff88a0"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/chroma_from_luma.cc",
+    "path": "lib/jxl/chroma_from_luma.cc",
+    "sha": "f3388c6db4f1bbb77bb00d850a854d0c64f33d6c"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_lz77.cc",
+    "path": "lib/jxl/enc_lz77.cc",
+    "sha": "19c5024861dc98fd6e84df41b58fce87379d7c29"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_entropy_coder.cc",
+    "path": "lib/jxl/enc_entropy_coder.cc",
+    "sha": "65cfc36c18948ed5191e39ef3508187a6979332f"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/loop_filter.h",
+    "path": "lib/jxl/loop_filter.h",
+    "sha": "dd228f05a83db22a2f9391ac68f410e6bb2f8e36"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dct_util.h",
+    "path": "lib/jxl/dct_util.h",
+    "sha": "a0036db8c0103a8cd2662b3af7eb0b958fa91cf1"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_external_image.h",
+    "path": "lib/jxl/dec_external_image.h",
+    "sha": "7a29981694a565e9daf256a5a264ab5773c5134a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_image_bundle.h",
+    "path": "lib/jxl/enc_image_bundle.h",
+    "sha": "c1180a6da8fbc64f0dbd54f175dd6739b46df702"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_modular_simd.cc",
+    "path": "lib/jxl/enc_modular_simd.cc",
+    "sha": "99382a669059ea8e57fa30bc8b8ef611d45cd50d"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_modular.cc",
+    "path": "lib/jxl/enc_modular.cc",
+    "sha": "bb33182c7d285332fec31644f95e7e8f26000df8"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dct_scales.h",
+    "path": "lib/jxl/dct_scales.h",
+    "sha": "23af03d60ff7e3f7b824ea3940689e6d2ae056a0"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_fields.cc",
+    "path": "lib/jxl/enc_fields.cc",
+    "sha": "6f79389e1e33984663f129e111500088673d5fa3"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_aux_out.cc",
+    "path": "lib/jxl/enc_aux_out.cc",
+    "sha": "4d023882cbe0cc092b7ced472b984cde9bcf2d64"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_ans_simd.h",
+    "path": "lib/jxl/enc_ans_simd.h",
+    "sha": "139667a50185e5dbc525a58243a473deb6caa268"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_coeff_order.cc",
+    "path": "lib/jxl/enc_coeff_order.cc",
+    "sha": "27b5f151acaa871fad0ad694f6ee3c1534fba351"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/frame_dimensions.h",
+    "path": "lib/jxl/frame_dimensions.h",
+    "sha": "a14f4d0d6fc87dc67a847d7e8225da7c6e7b62e9"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_linalg.cc",
+    "path": "lib/jxl/enc_linalg.cc",
+    "sha": "1ca34a9ad5707acdd2aa5c7e4d8c95c22b6ffa03"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/luminance.h",
+    "path": "lib/jxl/luminance.h",
+    "sha": "31815768231baa3e77267bc46c60eb1eeb79641a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_external_image.cc",
+    "path": "lib/jxl/dec_external_image.cc",
+    "sha": "8c2e673cab47396c3f4cd16810190cc5456215c3"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/splines.cc",
+    "path": "lib/jxl/splines.cc",
+    "sha": "c4f40849460919db5f81c04fd91c606172f607d1"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_dot_dictionary.cc",
+    "path": "lib/jxl/enc_dot_dictionary.cc",
+    "sha": "5c05a833fb5c07a4ca2c2767f340daf74d3f3882"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/loop_filter.cc",
+    "path": "lib/jxl/loop_filter.cc",
+    "sha": "aadeab84139e63c524ca557d0f716cba11f480eb"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/entropy_coder.cc",
+    "path": "lib/jxl/entropy_coder.cc",
+    "sha": "3d86546557701629a769256bb78b1a43192ab7f4"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_bit_reader.cc",
+    "path": "lib/jxl/dec_bit_reader.cc",
+    "sha": "32eafc34a872f816ad3be2e88b9a269a99e0c9ea"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/decode.cc",
+    "path": "lib/jxl/decode.cc",
+    "sha": "969b380d3b5e31888b1a838c54883d9e4b836d0d"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/ac_strategy.h",
+    "path": "lib/jxl/ac_strategy.h",
+    "sha": "8c3191c791a903624e4f5a507ed3fc4b1f36542a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_modular.h",
+    "path": "lib/jxl/dec_modular.h",
+    "sha": "f92ac3b8f0cc108be26061150974206598d6cd06"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_transforms.h",
+    "path": "lib/jxl/enc_transforms.h",
+    "sha": "8aae8b65f68afdb8c5f88a133b7ed0b0615eb9f4"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/luminance.cc",
+    "path": "lib/jxl/luminance.cc",
+    "sha": "3937ba57c26cfef8beed8f62bbd45ffbc735a755"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/lehmer_code.h",
+    "path": "lib/jxl/lehmer_code.h",
+    "sha": "0a6607949027b6840399ce0fcc93b5dd4f14139a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/test_memory_manager.cc",
+    "path": "lib/jxl/test_memory_manager.cc",
+    "sha": "ab999e6b6f1c0f11ff428765227af3e2be1445a7"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/image_bundle.cc",
+    "path": "lib/jxl/image_bundle.cc",
+    "sha": "df47074efc5e2798c746e9482792dcf6eece2f38"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/encode.cc",
+    "path": "lib/jxl/encode.cc",
+    "sha": "dcb85f3aa36d448236106cbfce0d50fcd9ff313f"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/convolve-inl.h",
+    "path": "lib/jxl/convolve-inl.h",
+    "sha": "3433631980dd12b66cf728c041adde8995add6c0"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_noise.cc",
+    "path": "lib/jxl/dec_noise.cc",
+    "sha": "c1fd952326fc7722eb27ae98205e5f06baa49ca3"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/icc_codec.cc",
+    "path": "lib/jxl/icc_codec.cc",
+    "sha": "31933f7e806d54d3b02f6ab949073295bb659bda"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/chroma_from_luma.h",
+    "path": "lib/jxl/chroma_from_luma.h",
+    "sha": "304c6d2a85ff15dbd572db7c1c667af51bff0ede"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_splines.h",
+    "path": "lib/jxl/enc_splines.h",
+    "sha": "f4aa4ae53dfe5a608a1459a419a6acd20e4f3358"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/ans_common.cc",
+    "path": "lib/jxl/ans_common.cc",
+    "sha": "a8380ac5cb416b665d77b8bbcb26574ae00e4f01"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_fields.h",
+    "path": "lib/jxl/enc_fields.h",
+    "sha": "79d4eba2574579c3232af49247fee31246d4c4c9"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/enc_ans.cc",
+    "path": "lib/jxl/enc_ans.cc",
+    "sha": "c222a783ea37a7835d693bcc5317216981b0f3fa"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/dec_bit_reader.h",
+    "path": "lib/jxl/dec_bit_reader.h",
+    "sha": "25b2d160e9b6f2873a3e5db442d4690ed271d79a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/box_content_decoder.h",
+    "path": "lib/jxl/box_content_decoder.h",
+    "sha": "536fc90a172e4bc465e76a24346312d85f87e44f"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/include/jxl/memory_manager.h",
+    "path": "lib/include/jxl/memory_manager.h",
+    "sha": "05b4abe90b520ff40c263b9d54cc0d8fe3dc8849"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/include/jxl/thread_parallel_runner.h",
+    "path": "lib/include/jxl/thread_parallel_runner.h",
+    "sha": "fbfe9e20749aa1e7b4a6b679ff502ad310040267"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/include/jxl/cms_interface.h",
+    "path": "lib/include/jxl/cms_interface.h",
+    "sha": "137fb42d8ca9ea16fb20fdf35d9984fa6b722812"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/include/jxl/gain_map.h",
+    "path": "lib/include/jxl/gain_map.h",
+    "sha": "e1b314b56cbd9e60bf054ac6a2f8cc13ff1507ad"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/include/jxl/decode.h",
+    "path": "lib/include/jxl/decode.h",
+    "sha": "3c27bf251e7104411ac4790b9c8ecfbd670a9e93"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/include/jxl/encode.h",
+    "path": "lib/include/jxl/encode.h",
+    "sha": "251f31a7e0c823c10618442499eacb420c681d5c"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/include/jxl/stats.h",
+    "path": "lib/include/jxl/stats.h",
+    "sha": "e88faf048b20ba45e2b598364c19bb61eb36b761"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/include/jxl/thread_parallel_runner_cxx.h",
+    "path": "lib/include/jxl/thread_parallel_runner_cxx.h",
+    "sha": "7f35ca00e28986dcffa28cc00f3cd7170382a381"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/include/jxl/codestream_header.h",
+    "path": "lib/include/jxl/codestream_header.h",
+    "sha": "d74f055c2f3ead5643cc6e9e92a4e9d9d617b919"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/include/jxl/types.h",
+    "path": "lib/include/jxl/types.h",
+    "sha": "1844375f68dacd520fb2479004ad1dae878197cc"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/include/jxl/color_encoding.h",
+    "path": "lib/include/jxl/color_encoding.h",
+    "sha": "14dcdeb0a21233cfd46c61a84c2be42bcf872ecf"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/include/jxl/resizable_parallel_runner.h",
+    "path": "lib/include/jxl/resizable_parallel_runner.h",
+    "sha": "b0bf68091ea21b8b11ab1624ce69b415cded3220"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/include/jxl/resizable_parallel_runner_cxx.h",
+    "path": "lib/include/jxl/resizable_parallel_runner_cxx.h",
+    "sha": "344c96cc9ebf9956b0741f685da4a76a18c86123"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/include/jxl/encode_cxx.h",
+    "path": "lib/include/jxl/encode_cxx.h",
+    "sha": "8e552357ac1c5b651918de4212de7dd6546ad15d"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/include/jxl/parallel_runner.h",
+    "path": "lib/include/jxl/parallel_runner.h",
+    "sha": "742f9598e90a52623da409236a37b16f723c02e1"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/include/jxl/cms.h",
+    "path": "lib/include/jxl/cms.h",
+    "sha": "6616a2681c58f88192498e1f2dec6bf584e0e68c"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/include/jxl/compressed_icc.h",
+    "path": "lib/include/jxl/compressed_icc.h",
+    "sha": "10232794b69d36b8282a123f2db009911464993c"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/include/jxl/decode_cxx.h",
+    "path": "lib/include/jxl/decode_cxx.h",
+    "sha": "6089538dbe76c4f05f20f58f348ad46e28116d22"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/enc/jpg.h",
+    "path": "lib/extras/enc/jpg.h",
+    "sha": "20b37cd168446a12e37d55072ed6c374e3fb45cd"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/enc/pnm.cc",
+    "path": "lib/extras/enc/pnm.cc",
+    "sha": "35c1f974db181411ef67f0e49af20cb797d20356"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/enc/jxl.cc",
+    "path": "lib/extras/enc/jxl.cc",
+    "sha": "36113286fcc29b68de7f28f84c9cfc2aaa2e6f50"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/enc/npy.cc",
+    "path": "lib/extras/enc/npy.cc",
+    "sha": "93a4ed3e0861857d9d1e361706f24459608d5c12"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/enc/apng.cc",
+    "path": "lib/extras/enc/apng.cc",
+    "sha": "0f278057ac19248ebfb40dc1713cf2e25bd6c80c"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/enc/pnm.h",
+    "path": "lib/extras/enc/pnm.h",
+    "sha": "1e0020cdbd88492f72a74045ae5eaa090d914295"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/enc/encode.h",
+    "path": "lib/extras/enc/encode.h",
+    "sha": "72dd2b99726e0f81c527a8bb11fb93f4d1b1c1c6"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/enc/pgx.h",
+    "path": "lib/extras/enc/pgx.h",
+    "sha": "0e8e2aa7b02577f09e013c731e83128fab6d319a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/enc/npy.h",
+    "path": "lib/extras/enc/npy.h",
+    "sha": "3ee6208ec290c35069fb8ceb9c365f4ba87c91e0"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/enc/exr.cc",
+    "path": "lib/extras/enc/exr.cc",
+    "sha": "31b2430f49f9d80ba546724d89727cfa722a8e9f"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/enc/apng.h",
+    "path": "lib/extras/enc/apng.h",
+    "sha": "2a2139c8fac18878415c0ee45f14f42661c99fe0"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/enc/jxl.h",
+    "path": "lib/extras/enc/jxl.h",
+    "sha": "a00423a4bed40ef1eb6199863e6291adcc671e16"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/enc/jpg.cc",
+    "path": "lib/extras/enc/jpg.cc",
+    "sha": "5dbb146313fd2c62209b675ccce543749b47d99a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/enc/exr.h",
+    "path": "lib/extras/enc/exr.h",
+    "sha": "1baaa0272f5eb8213110bac62171dc914cb82a60"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/enc/encode.cc",
+    "path": "lib/extras/enc/encode.cc",
+    "sha": "480a59d8b8e97f5b02e313372a02dbf1c92f8edd"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/enc/pgx.cc",
+    "path": "lib/extras/enc/pgx.cc",
+    "sha": "d90e35f5367f60a7bcddc51818fa5dbe81833c13"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/dec/jpg.h",
+    "path": "lib/extras/dec/jpg.h",
+    "sha": "752639ac9edd2cfdfd72a142615ada3550fcfda1"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/dec/pnm.cc",
+    "path": "lib/extras/dec/pnm.cc",
+    "sha": "2b0badbbb253e4f4d2bba906a476ff5c6929fa58"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/dec/color_description.h",
+    "path": "lib/extras/dec/color_description.h",
+    "sha": "390417f8f0cdc6484d613657305f9975a530339d"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/dec/jxl.cc",
+    "path": "lib/extras/dec/jxl.cc",
+    "sha": "b4a4daf978337ea537c21f9ecdcd51d7faa589f5"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/dec/apng.cc",
+    "path": "lib/extras/dec/apng.cc",
+    "sha": "1b6be68e3bf3dc850794bda8e123dee8d6d7ee69"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/dec/decode.h",
+    "path": "lib/extras/dec/decode.h",
+    "sha": "a2064ca672133c594bc0631cc60a46cedb777b83"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/dec/pnm.h",
+    "path": "lib/extras/dec/pnm.h",
+    "sha": "aaa6566c5719506c379680441918e7e5fc9501b8"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/dec/pgx.h",
+    "path": "lib/extras/dec/pgx.h",
+    "sha": "1ef1ffb740b66a18e9a7faa6640fecd84c989c85"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/dec/gif.h",
+    "path": "lib/extras/dec/gif.h",
+    "sha": "28a0c26da27f8a4bc6a6055487e38d5188135f8c"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/dec/exr.cc",
+    "path": "lib/extras/dec/exr.cc",
+    "sha": "3a7a2b95b80f8df2d9d13290c17a514f2d8049da"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/dec/gif.cc",
+    "path": "lib/extras/dec/gif.cc",
+    "sha": "6697c68e6ea9a105b61d50f394c0a9c25b104230"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/dec/apng.h",
+    "path": "lib/extras/dec/apng.h",
+    "sha": "51cdfaae43542f885b36c0a0c474543bf04ab453"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/dec/color_hints.cc",
+    "path": "lib/extras/dec/color_hints.cc",
+    "sha": "e357d4ecca91649ceeaba3da7fab58f8f050a5b0"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/dec/color_hints.h",
+    "path": "lib/extras/dec/color_hints.h",
+    "sha": "37e4720dc2921e6727ff9bc1396e75c16125780c"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/dec/jxl.h",
+    "path": "lib/extras/dec/jxl.h",
+    "sha": "c2984ae27256e7fe8cdc8424e3a8cf3de6fa6625"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/dec/color_description.cc",
+    "path": "lib/extras/dec/color_description.cc",
+    "sha": "8f6ec9207167f57553244ed7921f2cfb85f9cfd0"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/dec/jpg.cc",
+    "path": "lib/extras/dec/jpg.cc",
+    "sha": "7998e4c215bb80cf1bb15649b787193b4a1aebe8"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/dec/exr.h",
+    "path": "lib/extras/dec/exr.h",
+    "sha": "b990baa8c409a467b0318b1d98b3d52225bcaffd"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/dec/decode.cc",
+    "path": "lib/extras/dec/decode.cc",
+    "sha": "417c0a15ed950717249bbae35680c7cd105fca33"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/extras/dec/pgx.cc",
+    "path": "lib/extras/dec/pgx.cc",
+    "sha": "89ac9fc7e7944a07aecfa079501904ea2e2b8332"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/base/exif.h",
+    "path": "lib/jxl/base/exif.h",
+    "sha": "acaa1a1ce43613bb7ff2bb919f952eab69c8b131"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/base/compiler_specific.h",
+    "path": "lib/jxl/base/compiler_specific.h",
+    "sha": "7ba8280b89e20bcfb377f312fbc59fd470707d74"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/base/os_macros.h",
+    "path": "lib/jxl/base/os_macros.h",
+    "sha": "84d0b82bf5c14f15b37042973791ce6a6df82383"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/base/rect.h",
+    "path": "lib/jxl/base/rect.h",
+    "sha": "3f6632edc9417ecb0cebd1510e422de3084b9b4e"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/base/arch_macros.h",
+    "path": "lib/jxl/base/arch_macros.h",
+    "sha": "a98301915e5b8779f97ccd73b1fcae4b7b9f847e"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/base/random.h",
+    "path": "lib/jxl/base/random.h",
+    "sha": "6922e282e83bc5e81aa5ea6a85cad9d03ab8c709"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/base/matrix_ops.h",
+    "path": "lib/jxl/base/matrix_ops.h",
+    "sha": "d0bea6207eb7b908a8f065c6bbee257137359bf4"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/base/byte_order.h",
+    "path": "lib/jxl/base/byte_order.h",
+    "sha": "cf8d7db082ca231a1392d25531807b6df05f5ab3"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/base/rational_polynomial-inl.h",
+    "path": "lib/jxl/base/rational_polynomial-inl.h",
+    "sha": "bb8c00d060d696ac58a3beeecdeb25b845b68f22"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/base/float.h",
+    "path": "lib/jxl/base/float.h",
+    "sha": "f32d226248867271c44f708e06d295edf666db00"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/base/sanitizer_definitions.h",
+    "path": "lib/jxl/base/sanitizer_definitions.h",
+    "sha": "b52c538bca50f8cff43228ce9c8ceb78b427da9b"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/base/common.h",
+    "path": "lib/jxl/base/common.h",
+    "sha": "53d09594e7ffc72e476e65ba254b183a8efa9b18"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/base/printf_macros.h",
+    "path": "lib/jxl/base/printf_macros.h",
+    "sha": "5da64b9f129d593503e2fa9f7720fbe10c15cea2"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/base/status.h",
+    "path": "lib/jxl/base/status.h",
+    "sha": "6a2c3884ceb236f2e5331b5c04c7e6360cb8587a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/base/scope_guard.h",
+    "path": "lib/jxl/base/scope_guard.h",
+    "sha": "418ce2172321c84fd076ecff54a5d571369a8f50"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/base/data_parallel.h",
+    "path": "lib/jxl/base/data_parallel.h",
+    "sha": "5a2acdee460dd7a3f776730ad6ba50ee61f340bc"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/base/c_callback_support.h",
+    "path": "lib/jxl/base/c_callback_support.h",
+    "sha": "aee0ce5346592ac327a29063790cdfabbd722f4d"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/base/bits.h",
+    "path": "lib/jxl/base/bits.h",
+    "sha": "a79fdc2c991448caa3e8ddc80bf69c188ba58d1f"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/base/sanitizers.h",
+    "path": "lib/jxl/base/sanitizers.h",
+    "sha": "5aaca323e926f39db9765c1a636e2c6ba9133316"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/base/iaca.h",
+    "path": "lib/jxl/base/iaca.h",
+    "sha": "e5732dae5c81c76a8803c3855bc5aaf212d940a5"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/base/override.h",
+    "path": "lib/jxl/base/override.h",
+    "sha": "da070e6e62430e782405f4274368c728670f2215"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/base/span.h",
+    "path": "lib/jxl/base/span.h",
+    "sha": "afda2705495a7eba6ba4c9eaa9c11ed3758cecc1"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/base/fast_math-inl.h",
+    "path": "lib/jxl/base/fast_math-inl.h",
+    "sha": "5dade0a6f1b5a264219bca9cde96914a63349e69"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/options.h",
+    "path": "lib/jxl/modular/options.h",
+    "sha": "adc87a2a61fbfc4d0a9ba97c559bff67bc1d365b"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/modular_image.h",
+    "path": "lib/jxl/modular/modular_image.h",
+    "sha": "1bc7ca2337d11c3bba750346cf1746c64ca67467"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/modular_image.cc",
+    "path": "lib/jxl/modular/modular_image.cc",
+    "sha": "709197a7f3c60ae01907ad7599a1b308e33c018a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/butteraugli/butteraugli.h",
+    "path": "lib/jxl/butteraugli/butteraugli.h",
+    "sha": "823b3ba1acd94e71e1c655d1eb0e7b341c573a9d"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/butteraugli/butteraugli.cc",
+    "path": "lib/jxl/butteraugli/butteraugli.cc",
+    "sha": "0864c1b1e43c70e81332c115a36e726068adb69d"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/cms/transfer_functions-inl.h",
+    "path": "lib/jxl/cms/transfer_functions-inl.h",
+    "sha": "3e61347425eab20c802e9436e5694c4abe575ca1"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/cms/jxl_cms_internal.h",
+    "path": "lib/jxl/cms/jxl_cms_internal.h",
+    "sha": "4bf47548948a6d38fa0343b38d9347a27ba3f20b"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/cms/opsin_params.h",
+    "path": "lib/jxl/cms/opsin_params.h",
+    "sha": "7f4e0f8c9345db8f9a79145c684695abb9aa6a0e"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/cms/tone_mapping.h",
+    "path": "lib/jxl/cms/tone_mapping.h",
+    "sha": "24c8b14c82aa10611cb29c730af0d3760ddbed96"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/cms/tone_mapping-inl.h",
+    "path": "lib/jxl/cms/tone_mapping-inl.h",
+    "sha": "cbb29e8cd9c659e648fbc3ecb4f3b1cbaa9b304f"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/cms/transfer_functions.h",
+    "path": "lib/jxl/cms/transfer_functions.h",
+    "sha": "f0e58bbd26d705a467228cabf37f013bf5e2ec1e"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/cms/color_encoding_cms.h",
+    "path": "lib/jxl/cms/color_encoding_cms.h",
+    "sha": "befc86ecfb8d6098f89594f043d164fee3efdcf5"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/cms/jxl_cms.cc",
+    "path": "lib/jxl/cms/jxl_cms.cc",
+    "sha": "b0c89991dde165241837f2da88141e804b656d78"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/jpeg/dec_jpeg_output_chunk.h",
+    "path": "lib/jxl/jpeg/dec_jpeg_output_chunk.h",
+    "sha": "70aa8df949465201fc78449fbb02fda94208ff66"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/jpeg/dec_jpeg_data_writer.cc",
+    "path": "lib/jxl/jpeg/dec_jpeg_data_writer.cc",
+    "sha": "af23b5a9d480c8b3a94f3a02fd185fefa41b006f"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/jpeg/dec_jpeg_data_writer.h",
+    "path": "lib/jxl/jpeg/dec_jpeg_data_writer.h",
+    "sha": "acd5c58daa2a42b364895e704cf7a4896528602a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/jpeg/jpeg_data.cc",
+    "path": "lib/jxl/jpeg/jpeg_data.cc",
+    "sha": "93817c9eafbf59ba092596fd5288e81625ee49b9"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/jpeg/jpeg_data.h",
+    "path": "lib/jxl/jpeg/jpeg_data.h",
+    "sha": "f510b33cfab02e0f7c15199d6f0d9eb564cb8b6c"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/jpeg/dec_jpeg_serialization_state.h",
+    "path": "lib/jxl/jpeg/dec_jpeg_serialization_state.h",
+    "sha": "b12f17b133e3e5ba1355e94f60c403fde5b13385"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/jpeg/enc_jpeg_huffman_decode.cc",
+    "path": "lib/jxl/jpeg/enc_jpeg_huffman_decode.cc",
+    "sha": "0e8355bcfecb87a34124060ab4af5bd98a176b1c"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/jpeg/enc_jpeg_data.h",
+    "path": "lib/jxl/jpeg/enc_jpeg_data.h",
+    "sha": "753a58377aaa11a68d67921c2ea40290ea850560"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/jpeg/enc_jpeg_huffman_decode.h",
+    "path": "lib/jxl/jpeg/enc_jpeg_huffman_decode.h",
+    "sha": "fc9bd17baa0b8b1ca1952ea8f9a2a550cbe6f0fd"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/jpeg/enc_jpeg_data_reader.h",
+    "path": "lib/jxl/jpeg/enc_jpeg_data_reader.h",
+    "sha": "f89ce6bd8cd8bd68654ed76dea5b1271948dc906"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/jpeg/enc_jpeg_data_reader.cc",
+    "path": "lib/jxl/jpeg/enc_jpeg_data_reader.cc",
+    "sha": "3f87b0b9a1e60012b2ec586ff495d1c9c8f2158f"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/jpeg/dec_jpeg_data.h",
+    "path": "lib/jxl/jpeg/dec_jpeg_data.h",
+    "sha": "1a60121e795ed408689b548fcf9c091d4a4a9729"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/jpeg/dec_jpeg_data.cc",
+    "path": "lib/jxl/jpeg/dec_jpeg_data.cc",
+    "sha": "ac38ffb966d41efa663ef5f79574ca8f02532991"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/jpeg/enc_jpeg_data.cc",
+    "path": "lib/jxl/jpeg/enc_jpeg_data.cc",
+    "sha": "9e771c0fdb5cd5185501d7ba430261babf0e0445"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_noise.h",
+    "path": "lib/jxl/render_pipeline/stage_noise.h",
+    "sha": "06b4cb6bdb5d1e79ea7310bcc7c270b6d88bf62f"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_cms.cc",
+    "path": "lib/jxl/render_pipeline/stage_cms.cc",
+    "sha": "fbd6a1278b3554acdd8bf69a0c2d6df834995f52"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_chroma_upsampling.cc",
+    "path": "lib/jxl/render_pipeline/stage_chroma_upsampling.cc",
+    "sha": "d93df11eb1d6ec4198d76b1474a31e56aea643d5"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_from_linear.cc",
+    "path": "lib/jxl/render_pipeline/stage_from_linear.cc",
+    "sha": "a3fb11d3324ec7b1d9b6726f0f5ff6025bddb697"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_splines.h",
+    "path": "lib/jxl/render_pipeline/stage_splines.h",
+    "sha": "87d5b6d571c59b944eb2521e48bc1c9809ca135f"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/render_pipeline.cc",
+    "path": "lib/jxl/render_pipeline/render_pipeline.cc",
+    "sha": "055b7a51f937e7c0acf87b5d2e35639b258e80b2"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_gaborish.cc",
+    "path": "lib/jxl/render_pipeline/stage_gaborish.cc",
+    "sha": "048d1a6ecf835dcc399658dad227656108d98b8c"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/render_pipeline.h",
+    "path": "lib/jxl/render_pipeline/render_pipeline.h",
+    "sha": "073f377f90d006b64be0a48cae20d315f7e2dbdf"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_cms.h",
+    "path": "lib/jxl/render_pipeline/stage_cms.h",
+    "sha": "964676adf24ce1c4f525bff07ac38201020385d5"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_patches.h",
+    "path": "lib/jxl/render_pipeline/stage_patches.h",
+    "sha": "3280e813e8f91ddc5dd25e7ca7b3f2b6595d1e73"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_epf.h",
+    "path": "lib/jxl/render_pipeline/stage_epf.h",
+    "sha": "0fd7b672b10ae7784dd01833a26e90731d35b121"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_epf.cc",
+    "path": "lib/jxl/render_pipeline/stage_epf.cc",
+    "sha": "6ec202fc2044a7fb854758f506d1120ef1461279"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_ycbcr.h",
+    "path": "lib/jxl/render_pipeline/stage_ycbcr.h",
+    "sha": "e656614410cb1d9e2f31e1d7d6d3be98d5b55c40"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_spot.cc",
+    "path": "lib/jxl/render_pipeline/stage_spot.cc",
+    "sha": "d0ead07b3d3e06373167118e8aaa6cfd15a91aef"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_tone_mapping.h",
+    "path": "lib/jxl/render_pipeline/stage_tone_mapping.h",
+    "sha": "b9cbfe72e72e950de7975b811a771b95e247aec5"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_write.cc",
+    "path": "lib/jxl/render_pipeline/stage_write.cc",
+    "sha": "7b227112c5cebbeb560a9ecd9712af73a5560129"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/render_pipeline_stage.h",
+    "path": "lib/jxl/render_pipeline/render_pipeline_stage.h",
+    "sha": "40b8fd68a124db93e297aa5848b05c90ffcace81"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/test_render_pipeline_stages.h",
+    "path": "lib/jxl/render_pipeline/test_render_pipeline_stages.h",
+    "sha": "3f938cd71727fa99785dd9e99132c2cabd2082c3"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_upsampling.cc",
+    "path": "lib/jxl/render_pipeline/stage_upsampling.cc",
+    "sha": "590a444c52017479635984e01050e80d2b94e496"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/low_memory_render_pipeline.h",
+    "path": "lib/jxl/render_pipeline/low_memory_render_pipeline.h",
+    "sha": "6ed0a9b0ee3978c90073305fe3166976e6b5dd25"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_patches.cc",
+    "path": "lib/jxl/render_pipeline/stage_patches.cc",
+    "sha": "64e62330095c3b6f791dc8acd6894e6fd619054e"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_spot.h",
+    "path": "lib/jxl/render_pipeline/stage_spot.h",
+    "sha": "639e6849530fc0b26e5999b6597b30d8694f9e60"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/simple_render_pipeline.h",
+    "path": "lib/jxl/render_pipeline/simple_render_pipeline.h",
+    "sha": "6ddf0a9c9d196d1a96035ff9657071981a7b3cf6"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_ycbcr.cc",
+    "path": "lib/jxl/render_pipeline/stage_ycbcr.cc",
+    "sha": "7f684d28cb8e1daac73c48ba932270329ad20d2f"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_to_linear.h",
+    "path": "lib/jxl/render_pipeline/stage_to_linear.h",
+    "sha": "a2315dac57fa0e11117e0e2d5f08cd48edbf8513"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_splines.cc",
+    "path": "lib/jxl/render_pipeline/stage_splines.cc",
+    "sha": "61cd43f663241663f8f8b1f550e5b9039169d408"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_xyb.h",
+    "path": "lib/jxl/render_pipeline/stage_xyb.h",
+    "sha": "30382a4c8ce83d02f827115e47cc73ffffabef6f"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_xyb.cc",
+    "path": "lib/jxl/render_pipeline/stage_xyb.cc",
+    "sha": "03f1bf6aa03e9630fdca4b89fcd9b58c0a6fe76b"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/simple_render_pipeline.cc",
+    "path": "lib/jxl/render_pipeline/simple_render_pipeline.cc",
+    "sha": "f1bd6d73c3a4aada403f1d9d94251bd29ae47bcb"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_blending.h",
+    "path": "lib/jxl/render_pipeline/stage_blending.h",
+    "sha": "aedc8c2e9972c5c52e6b9e8f92b6768cb5e0577c"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_chroma_upsampling.h",
+    "path": "lib/jxl/render_pipeline/stage_chroma_upsampling.h",
+    "sha": "db661ef0b76f6409be79c2ad0be4813f87dfa0bf"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_write.h",
+    "path": "lib/jxl/render_pipeline/stage_write.h",
+    "sha": "b09426b641b26351ccea309bec1281f7c1ad0b2f"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_to_linear.cc",
+    "path": "lib/jxl/render_pipeline/stage_to_linear.cc",
+    "sha": "a464a4844fc62a5a74ec7a870c6758a7c47f5966"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_upsampling.h",
+    "path": "lib/jxl/render_pipeline/stage_upsampling.h",
+    "sha": "a40831d1c058564b83e30fbf6657cb69ef3b27b1"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_from_linear.h",
+    "path": "lib/jxl/render_pipeline/stage_from_linear.h",
+    "sha": "7be70ebaf7af7b2bbb13d156ad6b05553fff08b7"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_noise.cc",
+    "path": "lib/jxl/render_pipeline/stage_noise.cc",
+    "sha": "bd72d54e8690d8f6e418809b83825224769860ca"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/render_pipeline_stage.cc",
+    "path": "lib/jxl/render_pipeline/render_pipeline_stage.cc",
+    "sha": "95d34acb6259ed371dfaeb9d331e35c0e1b28811"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_blending.cc",
+    "path": "lib/jxl/render_pipeline/stage_blending.cc",
+    "sha": "36b19ba3b07bcd968fb4ecfd4ee20263d44483d2"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_gaborish.h",
+    "path": "lib/jxl/render_pipeline/stage_gaborish.h",
+    "sha": "76d37ed5162c9a9a680bf0248aa054c714e8342c"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/low_memory_render_pipeline.cc",
+    "path": "lib/jxl/render_pipeline/low_memory_render_pipeline.cc",
+    "sha": "2d7b267cdc2ff2605e73482c898e213f7869e3cc"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/render_pipeline/stage_tone_mapping.cc",
+    "path": "lib/jxl/render_pipeline/stage_tone_mapping.cc",
+    "sha": "a87524708b222c27dc6f0a85455fdf6478c314d5"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/encoding/enc_debug_tree.h",
+    "path": "lib/jxl/modular/encoding/enc_debug_tree.h",
+    "sha": "a87960db228a5b264b8d4afc815faa9b6a085c1a"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/encoding/context_predict.h",
+    "path": "lib/jxl/modular/encoding/context_predict.h",
+    "sha": "992e35460191effc6f9bb5e66fd8d6a6a58df185"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/encoding/enc_ma.h",
+    "path": "lib/jxl/modular/encoding/enc_ma.h",
+    "sha": "6f5e91150b31dff999958065d73efc0c282270a1"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/encoding/enc_ma.cc",
+    "path": "lib/jxl/modular/encoding/enc_ma.cc",
+    "sha": "6ee6e02a896b82f5d7c4fb22a5e7d026da4912b5"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/encoding/enc_debug_tree.cc",
+    "path": "lib/jxl/modular/encoding/enc_debug_tree.cc",
+    "sha": "500b98e11b35a1202785ef93e7367d100f186548"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/encoding/enc_encoding.cc",
+    "path": "lib/jxl/modular/encoding/enc_encoding.cc",
+    "sha": "7bf5dd5752a969fd8bc18ce618d71f1c9db0d169"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/encoding/encoding.h",
+    "path": "lib/jxl/modular/encoding/encoding.h",
+    "sha": "0127d79238778b70c46a9a55afbdc42a3b149b48"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/encoding/ma_common.h",
+    "path": "lib/jxl/modular/encoding/ma_common.h",
+    "sha": "71b78473213f3c5146157423a8ddf27dd0180c73"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/encoding/dec_ma.cc",
+    "path": "lib/jxl/modular/encoding/dec_ma.cc",
+    "sha": "0c3c30cfa42e16ebcec24f6f0dc246d2f31dc0fb"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/encoding/encoding.cc",
+    "path": "lib/jxl/modular/encoding/encoding.cc",
+    "sha": "ef298f88737c2c9dbc36a883762e89eb503306ab"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/encoding/enc_encoding.h",
+    "path": "lib/jxl/modular/encoding/enc_encoding.h",
+    "sha": "8187163424b95d963b9fb26e531727bb8a90c01b"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/encoding/dec_ma.h",
+    "path": "lib/jxl/modular/encoding/dec_ma.h",
+    "sha": "1bce21b32b8332e714cf27e552af3dbd14fc8052"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/transform/enc_squeeze.cc",
+    "path": "lib/jxl/modular/transform/enc_squeeze.cc",
+    "sha": "4d96e4c1b642ec5562ab1c77f1562ae077a65b9f"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/transform/enc_squeeze.h",
+    "path": "lib/jxl/modular/transform/enc_squeeze.h",
+    "sha": "a737a19ee66fe284b142682117d082a904e57202"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/transform/transform.h",
+    "path": "lib/jxl/modular/transform/transform.h",
+    "sha": "c135fdc9484156096c1f850bf9c23337d8b2de79"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/transform/palette.cc",
+    "path": "lib/jxl/modular/transform/palette.cc",
+    "sha": "7d2fe90c279b1b6078345d0237f89737888f93eb"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/transform/palette.h",
+    "path": "lib/jxl/modular/transform/palette.h",
+    "sha": "cab89447eab177b5220f67e1915b395344b1eb01"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/transform/enc_rct.cc",
+    "path": "lib/jxl/modular/transform/enc_rct.cc",
+    "sha": "b9a82688c33e48cbecff2a22428dd808a7489b75"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/transform/squeeze_params.h",
+    "path": "lib/jxl/modular/transform/squeeze_params.h",
+    "sha": "ab092d08e9d9a565700ec7efc6382fea66829ff6"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/transform/enc_rct.h",
+    "path": "lib/jxl/modular/transform/enc_rct.h",
+    "sha": "505a267578cf9bb4aa936d9111bbfcc7bb9fcfd2"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/transform/enc_transform.cc",
+    "path": "lib/jxl/modular/transform/enc_transform.cc",
+    "sha": "a9c6c5298e3557e235f7c38b6d6295872d6d8658"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/transform/rct.h",
+    "path": "lib/jxl/modular/transform/rct.h",
+    "sha": "dfe20ad45d55fb856cbc2249595ff88b99be7b24"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/transform/enc_transform.h",
+    "path": "lib/jxl/modular/transform/enc_transform.h",
+    "sha": "a08a77d7256db45d53b11359167a472743925bf5"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/transform/enc_palette.cc",
+    "path": "lib/jxl/modular/transform/enc_palette.cc",
+    "sha": "8f2b21285de5e34d9f093de436ba378a079f8233"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/transform/squeeze.h",
+    "path": "lib/jxl/modular/transform/squeeze.h",
+    "sha": "d87abc73ae1d8fa08f3f737f9e571edb4f1319cf"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/transform/squeeze.cc",
+    "path": "lib/jxl/modular/transform/squeeze.cc",
+    "sha": "4a1b24323d940004d42293452939e797243839f1"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/transform/squeeze_params.cc",
+    "path": "lib/jxl/modular/transform/squeeze_params.cc",
+    "sha": "e6f45db53a9f9cc7038b0aaa309ba21b39d2f8d7"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/transform/enc_palette.h",
+    "path": "lib/jxl/modular/transform/enc_palette.h",
+    "sha": "ba43d87f230c2b13e7283370e7f5d71b55dd51dd"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/transform/transform.cc",
+    "path": "lib/jxl/modular/transform/transform.cc",
+    "sha": "af090555c0bfbcbac647cc018a8e811830c25c1e"
+  },
+  {
+    "repository": "libjxl/libjxl",
+    "ref": "a7a9c787341cf703dede03c2009fa460cae5e5df",
+    "local": "libjxl/lib/jxl/modular/transform/rct.cc",
+    "path": "lib/jxl/modular/transform/rct.cc",
+    "sha": "2db3b1168d2e523835a9735950956448c6824f78"
+  }
+]

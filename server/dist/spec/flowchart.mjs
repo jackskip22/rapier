@@ -275,8 +275,8 @@ export function parseFlowchart(source, sourceLabels = null) {
         group = {id, title, members: new Set()};
         groups.set(id, group); textChars += title.length; bounds();
       } else if (first === 'end') {
-        if (statement !== 'end' || !group || !group.members.size) flowchartFail('flowchart_group');
-        structure?.statements.push({kind: 'end', start: row.start, end: row.start + statement.length});
+        if (statement !== 'end' || !group) flowchartFail('flowchart_group');
+        structure?.statements.push({kind: 'end', id: group.id, start: row.start, end: row.start + statement.length});
         group = null;
       } else if (first === 'classDef' || first === 'class' || first === 'style') {
         cursor.p = first.length;
@@ -310,10 +310,10 @@ export function parseFlowchart(source, sourceLabels = null) {
           const edge = flowchartEdge(cursor), labelSpan = cursor.labelSpan, specEnd = cursor.specEnd, linkEnd = row.start + cursor.p, to = endpoints(cursor);
           const link = {start: linkStart + (cursor.s.slice(linkStart - row.start).length - cursor.s.slice(linkStart - row.start).trimStart().length), end: linkEnd, specEnd, labelled: !!labelSpan};
           chain.links.push(link); chain.groups.push(to.tokens);
-          for (const a of from) for (const b of to) {
+          for (const [fromIndex, a] of from.entries()) for (const [toIndex, b] of to.entries()) {
             const value = {from: a, to: b, ...edge};
             edges.push(value); if (labelSpan) labels?.edges.set(value, labelSpan);
-            structure?.pairs.set(value, {chain, link: chain.links.length - 1});
+            structure?.pairs.set(value, {chain, link: chain.links.length - 1, fromIndex, toIndex});
             textChars += edge.label?.length || 0; bounds();
           }
           from = to;
@@ -321,7 +321,7 @@ export function parseFlowchart(source, sourceLabels = null) {
       }
     }
     if (group) flowchartFail('flowchart_group');
-    if (!nodes.size) flowchartFail('flowchart_empty');
+    if (!nodes.size && !groups.size) flowchartFail('flowchart_empty');
     if (textChars > FLOWCHART_LIMITS.textChars) flowchartFail('flowchart_text_limit');
     for (const id of new Set([...assignments.keys(), ...styles.keys()])) if (!nodes.has(id)) flowchartFail('flowchart_node_unknown');
     for (const value of nodes.values()) {
@@ -350,6 +350,11 @@ export function parseFlowchart(source, sourceLabels = null) {
 export function editFlowchartLabel(source, target, value) {
   const labels = {}, parsed = parseFlowchart(source, labels);
   if (!parsed.ok) return parsed;
+  if (target?.kind === 'edge') {
+    const where = labels.structure.pairs.get(target.id);
+    if (where && (where.chain.groups[where.link].length > 1 || where.chain.groups[where.link + 1].length > 1))
+      return setFlowchartEdgeLabel(source, target.id, value);
+  }
   const span = labels[target?.kind + 's']?.get(target.id);
   if (!span || typeof value !== 'string' || value.includes('"'))
     return {ok: false, reason: 'Use a plain-text label without double quotes.'};
@@ -417,6 +422,23 @@ const flowchartQuote = label => {
   return '"' + label.replace(/\r\n?|\n/g, '<br>') + '"';
 };
 
+function flowchartWithout(source, tokens, id, index = tokens.findIndex(token => token.id === id)) {
+  if (index < 0) return source.slice(tokens[0].start, tokens.at(-1).end);
+  if (tokens.length === 1) return '';
+  const start = index === tokens.length - 1 ? tokens[index - 1].end : tokens[index].start;
+  const end = index === tokens.length - 1 ? tokens[index].end : tokens[index + 1].start;
+  return source.slice(tokens[0].start, start) + source.slice(end, tokens.at(-1).end);
+}
+
+function flowchartPairRemainder(source, chain, index, from, to, fromIndex, toIndex) {
+  const left = chain.groups[index], right = chain.groups[index + 1];
+  const join = source.slice(left.at(-1).end, right[0].start);
+  const a = flowchartWithout(source, left, from, fromIndex), b = flowchartWithout(source, right, to, toIndex);
+  const token = left[fromIndex ?? left.findIndex(token => token.id === from)];
+  return [a && a + join + source.slice(right[0].start, right.at(-1).end),
+    b && source.slice(token.start, token.end) + join + b].filter(Boolean);
+}
+
 export function addFlowchartBox(source, fromId, label) {
   const info = flowchartAnalyze(source);
   if (!info.ok) return info;
@@ -474,7 +496,7 @@ function flowchartRechain(source, chain, {dropNode = null, dropPair = null, keep
   const pieces = [], mentioned = new Set();
   const run = (from, to) => {
     if (from === to) {
-      for (const token of groups[from]) if (keep.has(token.id)) { pieces.push(text(token)); mentioned.add(token.id); }
+      for (const token of groups[from]) if (keep.has(token.id) || text(token) !== token.id) { pieces.push(text(token)); mentioned.add(token.id); }
       return;
     }
     for (let index = from; index <= to; index++) for (const token of groups[index]) mentioned.add(token.id);
@@ -490,11 +512,9 @@ function flowchartRechain(source, chain, {dropNode = null, dropPair = null, keep
     if (!cut) continue;
     if (groups[from].length) run(from, index);
     if (dropPair && dropPair.link === index && alive[index]) {
-      for (const a of chain.groups[index]) for (const b of chain.groups[index + 1])
-        if (!(a.id === dropPair.from && b.id === dropPair.to)) {
-          pieces.push(text(a) + ' ' + linkText(chain.links[index]) + ' ' + text(b));
-          mentioned.add(a.id); mentioned.add(b.id);
-        }
+      pieces.push(...flowchartPairRemainder(source, chain, index, dropPair.from, dropPair.to, dropPair.fromIndex, dropPair.toIndex));
+      for (const [ai, a] of chain.groups[index].entries()) for (const [bi, b] of chain.groups[index + 1].entries())
+        if (!(ai === dropPair.fromIndex && bi === dropPair.toIndex)) { mentioned.add(a.id); mentioned.add(b.id); }
     }
     from = index + 1;
   }
@@ -532,7 +552,7 @@ function flowchartDrop(source, info, drop, expect) {
   let result = flowchartApplyDrop(source, info, drop, new Set());
   const missing = expect.filter(id => !result.mentioned.has(id));
   if (missing.length) result = flowchartApplyDrop(source, info, drop, new Set(missing));
-  return flowchartAdmit(source, result.next, {splice: result.splices[0]});
+  return flowchartAdmit(source, result.next, {splice: result.splices[0], splices: result.splices});
 }
 
 export function deleteFlowchartBox(source, id) {
@@ -547,7 +567,7 @@ export function deleteFlowchartEdge(source, index) {
   if (!info.ok) return info;
   const edge = info.graph.edges[index], where = info.structure.pairs.get(index);
   if (!edge || !where) return flowchartRefuse('edit_target');
-  return flowchartDrop(source, info, {pair: {chain: where.chain, link: where.link, from: edge.from, to: edge.to}}, info.graph.nodes.map(node => node.id));
+  return flowchartDrop(source, info, {pair: {...where, from: edge.from, to: edge.to}}, info.graph.nodes.map(node => node.id));
 }
 
 export function setFlowchartShape(source, id, shape) {
@@ -587,10 +607,100 @@ export function setFlowchartEdgeLabel(source, index, label) {
   if (!info.ok) return info;
   const where = info.structure.pairs.get(index);
   if (!where) return flowchartRefuse('edit_target');
+  const {chain, link} = where, left = chain.groups[link], right = chain.groups[link + 1];
+  if (left.length > 1 || right.length > 1) {
+    const quoted = flowchartQuote(label);
+    if (quoted === null) return flowchartRefuse('edit_label');
+    const edge = info.graph.edges[index], span = info.spans.edges.get(index), op = chain.links[link];
+    let join = source.slice(left.at(-1).end, right[0].start);
+    const offset = left.at(-1).end;
+    if (span) join = join.slice(0, span.start - offset) + quoted + join.slice(span.end - offset);
+    else join = join.slice(0, op.specEnd - offset) + '|' + quoted + '|' + join.slice(op.specEnd - offset);
+    const a = left[where.fromIndex], b = right[where.toIndex];
+    const selected = source.slice(a.start, a.end) + join + source.slice(b.start, b.end);
+    const before = link ? source.slice(chain.start, left.at(-1).end) : '';
+    const after = link + 1 < chain.links.length ? source.slice(right[0].start, chain.end) : '';
+    const parts = [before, ...flowchartPairRemainder(source, chain, link, edge.from, edge.to, where.fromIndex, where.toIndex), selected, after].filter(Boolean);
+    const splice = {pos: chain.start, removed: source.slice(chain.start, chain.end),
+      inserted: parts.join(flowchartEol(source) + flowchartLineIndent(source, chain.start))};
+    return flowchartAdmit(source, flowchartSplice(source, splice).source, {splice});
+  }
   if (where.chain.links[where.link].labelled) return editFlowchartLabel(source, {kind: 'edge', id: index}, label);
   const quoted = flowchartQuote(label), spec = where.chain.links[where.link].specEnd;
   if (quoted === null) return flowchartRefuse(typeof label === 'string' && !label.trim() ? 'flowchart_empty_label' : 'edit_label');
   if (spec === null) return flowchartRefuse('edit_target');
   const splice = {pos: spec, removed: '', inserted: '|' + quoted + '|'};
   return flowchartAdmit(source, flowchartSplice(source, splice).source, {splice});
+}
+
+function flowchartChanges(source, splices) {
+  let next = source;
+  for (const splice of splices.slice().sort((a, b) => b.pos - a.pos)) {
+    if (source.slice(splice.pos, splice.pos + splice.removed.length) !== splice.removed) return flowchartRefuse('edit_target');
+    next = next.slice(0, splice.pos) + splice.inserted + next.slice(splice.pos + splice.removed.length);
+  }
+  return flowchartAdmit(source, next, {splices, splice: splices[0] || null});
+}
+
+export function deleteFlowchartSubgraph(source, id) {
+  const info = flowchartAnalyze(source);
+  if (!info.ok) return info;
+  if (!info.graph.groups.some(group => group.id === id)) return flowchartRefuse('edit_target');
+  const splices = info.structure.statements.filter(row => row.id === id && ['subgraph', 'end'].includes(row.kind))
+    .map(row => ({...flowchartRemoval(source, row.start, row.end), inserted: ''}));
+  return flowchartChanges(source, splices);
+}
+
+export function renameFlowchartSubgraph(source, id, title) {
+  return editFlowchartLabel(source, {kind: 'group', id}, title);
+}
+
+export function moveFlowchartBoxes(source, ids, target = null) {
+  const info = flowchartAnalyze(source);
+  if (!info.ok) return info;
+  if (!Array.isArray(ids) || !ids.length || new Set(ids).size !== ids.length ||
+      ids.some(id => !info.graph.nodes.some(node => node.id === id)) ||
+      target !== null && !info.graph.groups.some(group => group.id === target)) return flowchartRefuse('edit_target');
+  const moving = new Set(ids), splices = [], lifted = [], eol = flowchartEol(source);
+  const oldGroups = info.graph.groups.filter(group => group.id !== target && group.members.some(id => moving.has(id)));
+  for (const group of oldGroups) {
+    const remaining = group.members.filter(id => !moving.has(id));
+    const rows = info.structure.statements.filter(row => row.kind === 'chain' && row.group === group.id);
+    const affected = rows.filter(row => row.groups.some(tokens => tokens.some(token => moving.has(token.id))));
+    for (const row of affected) {
+      lifted.push(flowchartLineIndent(source, row.start) + source.slice(row.start, row.end));
+      splices.push({...flowchartRemoval(source, row.start, row.end), inserted: ''});
+    }
+    const retained = new Set(rows.filter(row => !affected.includes(row)).flatMap(row => row.groups.flatMap(tokens => tokens.map(token => token.id))));
+    const needed = remaining.filter(id => !retained.has(id));
+    if (needed.length) {
+      const end = info.structure.statements.find(row => row.kind === 'end' && row.id === group.id);
+      splices.push({pos: end.start, removed: '', inserted: needed.join(eol + flowchartLineIndent(source, end.start)) + eol + flowchartLineIndent(source, end.start)});
+    }
+  }
+  if (lifted.length) splices.push({pos: info.structure.header.end, removed: '', inserted: eol + lifted.join(eol)});
+  if (target !== null) {
+    const group = info.graph.groups.find(group => group.id === target), incoming = ids.filter(id => !group.members.includes(id));
+    if (incoming.length) {
+      const end = info.structure.statements.find(row => row.kind === 'end' && row.id === target);
+      splices.push({pos: end.start, removed: '', inserted: incoming.join(eol + flowchartLineIndent(source, end.start)) + eol + flowchartLineIndent(source, end.start)});
+    }
+  }
+  return flowchartChanges(source, splices);
+}
+
+export function addFlowchartSubgraph(source, id, title, members) {
+  const info = flowchartAnalyze(source);
+  if (!info.ok) return info;
+  if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(id) || FLOWCHART_RESERVED.has(id) ||
+      [...info.graph.nodes, ...info.graph.groups].some(node => node.id === id)) return flowchartRefuse('flowchart_id_conflict');
+  const quoted = flowchartQuote(title);
+  if (quoted === null) return flowchartRefuse('edit_label');
+  if (!Array.isArray(members)) return flowchartRefuse('edit_target');
+  const ungrouped = members.length ? moveFlowchartBoxes(source, members, null) : {ok:true, source, splices:[]};
+  if (!ungrouped.ok) return ungrouped;
+  const eol = flowchartEol(source), at = source.length;
+  const inserted = (ungrouped.source.endsWith(eol) ? '' : eol) + 'subgraph ' + id + '[' + quoted + ']' + eol +
+    members.map(member => '    ' + member).join(eol) + eol + 'end' + eol;
+  return flowchartAdmit(source, ungrouped.source + inserted, {id, splices: [...ungrouped.splices, {pos: at, removed: '', inserted}]});
 }

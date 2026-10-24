@@ -1,3 +1,4 @@
+import {JsonDepthGuard} from '../kit/json-depth.mjs';
 import {zipEntries, readZipEntries, zipOversizeSkip, ZIP_MAX_ENTRIES, ZIP_READ_MAX_BYTES, ZIP_WRITE_METADATA_BYTES} from './zip.mjs';
 import {walkZipEntries} from './zip-walk.mjs';
 import {noteFileName, orderAfter, isCodeFile, codeFileName} from './model.mjs';
@@ -62,6 +63,11 @@ export const IMPORT_SOURCES = Object.freeze(['rapier', 'keep', 'markdown', 'noti
 export const IMPORT_MAX_ENTRIES = ZIP_MAX_ENTRIES;
 export const IMPORT_MAX_BYTES = ZIP_READ_MAX_BYTES;
 export const IMPORT_JSON_MAX_BYTES = 25 * 1024 * 1024;
+export function parseImportJson(text) {
+	new JsonDepthGuard(128, {label: 'import JSON'}).write(text);
+	return JSON.parse(text);
+}
+
 export function importNames(pool) {
 	const taken = new Set(), suffixes = new Map(); let at = 0;
 	return text => {

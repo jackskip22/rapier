@@ -49,7 +49,8 @@ if (typeof window !== 'undefined' && RAPIER_DRAW_DOOR_AT_BIRTH && _rapierPartAva
 	_rapierDrawStartClass(true);
 	_rapierPartWait('drawing').catch(error => { _rapierDrawStartClass(false); showToast(_rapierErrorWords(error, 'Couldn’t open Draw.'), 'error'); });
 }
-if (typeof window !== 'undefined' && !RAPIER_DRAW_DOOR_AT_BIRTH && _rapierPartAvailable('drawing') && globalThis.RapierBenchSession?.active !== true) {
+if (typeof window !== 'undefined' && !RAPIER_DRAW_DOOR_AT_BIRTH && _rapierPartAvailable('drawing') && globalThis.RapierBenchSession?.active !== true &&
+		RAPIER_STORAGE_FORBIDDEN !== true) {
 	const kept = async () => {
 		if (_rapierNotesDoor?.born) return false;
 		if (typeof indexedDB.databases === 'function') {

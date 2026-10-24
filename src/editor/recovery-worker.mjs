@@ -75,6 +75,7 @@ function receiver() {
   };
 }
 function* textParts(value) { for (let at = 0; at < value.length; at += 65536) yield value.slice(at, at + 65536); }
+function* sourceParts(source) { for (const part of source.parts()) yield* textParts(part); }
 async function sendPacket(port, packed, current = () => true) {
   if (!current()) return;
   port.postMessage({operation: 'begin', value: packed.value});
@@ -280,16 +281,23 @@ export function installRecoveryWorker(scope) {
 
 const prepared = new WeakMap(), captures = new WeakMap(), revisions = new WeakMap();
 let revisionSequence = 0;
-export function captureRecoveryRevision(input, baseToken = null) {
+export function captureRecoveryRevision(input, baseToken = null, source = null) {
   const value = captured(input), base = baseToken == null ? null : revisions.get(baseToken);
   if (baseToken != null && !base) throw new Error('Recovery capture is not owned');
+  if (source !== null && (value.text !== null || !Object.isFrozen(source) || !Number.isSafeInteger(source.length) ||
+      typeof source.read !== 'function' || typeof source.parts !== 'function' || typeof source.changeFrom !== 'function'))
+    throw new TypeError('Recovery source is not a view');
   const token = Object.freeze({});
-  const deltaBase = base?.remote && base.input.documentAuthority === value.documentAuthority
+  const deltaBase = base?.input && (base.remote || base.preparing > 0) && base.input.documentAuthority === value.documentAuthority
     ? {entry: base, release: retainRecoveryRevision(baseToken)} : null;
-  revisions.set(token, {input: value, id: ++revisionSequence, lifetime: 0, users: 0, base: deltaBase,
+  revisions.set(token, {input: value, source, id: ++revisionSequence, lifetime: 0, users: 0, preparing: 0, base: deltaBase,
     remote: null, ledger: null, local: null, chain: Promise.resolve()});
   return token;
 }
+function dropInput(entry) { entry.input = null; entry.source = null; }
+const revisionText = entry => typeof entry.input.text === 'string' ? entry.input.text : entry.source.read();
+const revisionLength = entry => typeof entry.input.text === 'string' ? entry.input.text.length : entry.source.length;
+const revisionInput = entry => typeof entry.input.text === 'string' ? entry.input : {...entry.input, text: entry.source.read()};
 function releaseBase(entry) {
   const base = entry.base; entry.base = null; base?.release();
 }
@@ -304,7 +312,7 @@ export function retireRecoveryRevision(token) {
   const entry = revisions.get(token);
   if (!entry) return;
   revisions.delete(token); entry.retiring = true;
-  if (!entry.users) { releaseRemote(entry); entry.lifetime++; entry.input = null; }
+  if (!entry.users) { releaseRemote(entry); entry.lifetime++; dropInput(entry); }
 }
 export function retainRecoveryRevision(token) {
   const entry = revisions.get(token);
@@ -314,7 +322,7 @@ export function retainRecoveryRevision(token) {
   return () => {
     if (!held) return;
     held = false; entry.users--;
-    if (!entry.users && entry.retiring) { releaseRemote(entry); entry.lifetime++; entry.input = null; }
+    if (!entry.users && entry.retiring) { releaseRemote(entry); entry.lifetime++; dropInput(entry); }
   };
 }
 function keep(value, entry, state) {
@@ -386,8 +394,8 @@ async function sharedWorker(workerSource) {
 async function prepareEntry(entry, state, {workerSource, signal} = {}) {
   signal?.throwIfAborted();
   if (typeof document === 'undefined') {
-    const core = entry.local || {input: entry.input, ledger: null, integrity: null};
-    const {parts, ...value} = await preparation(core, state, signal);
+    const core = entry.local || {input: revisionInput(entry), ledger: null, integrity: null};
+    const {parts, ...value} = await preparation(core, state.seenCurrent ? {...state, seenText: core.input.text} : state, signal);
     if (parts) {
       let encoded = '', turn = performance.now();
       for (const part of parts) {
@@ -399,6 +407,7 @@ async function prepareEntry(entry, state, {workerSource, signal} = {}) {
     signal?.throwIfAborted(); entry.local = core; releaseBase(entry);
     return keep(value, entry, state);
   }
+  if (entry.base && !entry.base.entry.remote) { await entry.base.entry.chain; signal?.throwIfAborted(); }
   const owner = await sharedWorker(workerSource);
   signal?.throwIfAborted();
   const reuse = entry.remote === owner;
@@ -422,13 +431,15 @@ function textChange(before, after) {
 async function ask(owner, entry, reuse, request, signal, full = false) {
   const id = ++sequence;
   const base = !reuse && !full && entry.base?.entry.remote === owner ? entry.base.entry : null;
-  const change = base && typeof base.input.text === 'string' && typeof entry.input.text === 'string'
-    ? textChange(base.input.text, entry.input.text) : null;
-  const delta = change && change.inserted.length < entry.input.text.length;
-  const state = request.state?.seenText === entry.input.text
+  const change = !base?.input ? null : base.source && entry.source ? entry.source.changeFrom(base.source)
+    : textChange(revisionText(base), revisionText(entry));
+  const delta = change && change.inserted.length < revisionLength(entry);
+  const state = request.state?.seenCurrent === true || (typeof entry.input.text === 'string' && request.state?.seenText === entry.input.text)
     ? {...request.state, seenText: null, seenCurrent: true} : request.state;
-  const packed = packet({revisionId: entry.id, core: reuse ? null : delta ? {...entry.input, text: null} : entry.input,
+  const streamed = !reuse && !delta && typeof entry.input.text !== 'string';
+  const packed = packet({revisionId: entry.id, core: reuse ? null : delta || streamed ? {...entry.input, text: null} : entry.input,
     ...request, ...(state ? {state} : {}), ...(delta ? {baseRevisionId: base.id, textChange: change} : {})});
+  if (streamed) packed.strings.push({path: ['core', 'text'], parts: sourceParts(entry.source)});
   const value = await new Promise((resolve, reject) => {
     let settled = false, timer = 0;
     const cancel = () => finish(abort());
@@ -462,7 +473,7 @@ export async function writeRecoveryRecords(prepared, write, {workerSource, signa
   const held = captures.get(prepared);
   if (!alive(held) || !held.entry.input) throw new Error('Recovery capture is not owned');
   const {entry} = held;
-  if (typeof document === 'undefined') return storeRecords(entry.input.text, write, db, signal);
+  if (typeof document === 'undefined') return storeRecords(revisionText(entry), write, db, signal);
   const owner = await sharedWorker(workerSource);
   signal?.throwIfAborted();
   return (await ask(owner, entry, entry.remote === owner, {write}, signal)).newer;
@@ -483,20 +494,20 @@ export async function prepareRecoveryCapture(input, options = {}) {
   data = captured(data);
   const reusable = !!descriptor;
   const token = reusable ? descriptor.value : captureRecoveryRevision(Object.fromEntries(
-    Object.entries(data).filter(([key]) => !['undo', 'seenText', 'snapshot', 'needLedger', 'needBody'].includes(key))));
+    Object.entries(data).filter(([key]) => !['undo', 'seenText', 'seenCurrent', 'snapshot', 'needLedger', 'needBody'].includes(key))));
   const entry = revisions.get(token);
   if (!entry) throw new Error('Recovery capture is not owned');
-  if (reusable && Object.keys(data).some(key => !['undo', 'seenText', 'snapshot', 'needLedger', 'needBody'].includes(key)))
+  if (reusable && Object.keys(data).some(key => !['undo', 'seenText', 'seenCurrent', 'snapshot', 'needLedger', 'needBody'].includes(key)))
     throw new Error('A captured recovery revision cannot change');
-  const state = {undo: data.undo || null, seenText: data.seenText ?? null,
+  const state = {undo: data.undo || null, seenText: data.seenText ?? null, ...(data.seenCurrent === true ? {seenCurrent: true} : {}),
     snapshot: data.snapshot || null, needLedger: data.needLedger === true || data.needBody === true, needBody: data.needBody === true};
-  entry.users++;
+  entry.users++; entry.preparing++;
   const pending = entry.chain.catch(() => undefined).then(() => prepareEntry(entry, state, options));
   entry.chain = pending.then(() => undefined, () => undefined);
   try { return await pending; }
   finally {
-    entry.users--;
+    entry.users--; entry.preparing--;
     if (!reusable) releaseRemote(entry);
-    else if (!entry.users && entry.retiring) { releaseRemote(entry); entry.lifetime++; entry.input = null; }
+    else if (!entry.users && entry.retiring) { releaseRemote(entry); entry.lifetime++; dropInput(entry); }
   }
 }

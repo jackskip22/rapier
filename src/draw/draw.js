@@ -1076,15 +1076,18 @@ function _rapierDrawReplayRender(replay) {
 	_rapierDrawRenderShapes();
 }
 const _rapierDrawPaintWorkers = new Map();
+const _rapierDrawWorkerSources = new Map();
 function _rapierDrawPaintClient(purpose = 'human', mode = 'paint') {
-	const water = mode === 'water', role = (purpose === 'agent' ? 'agent' : purpose === 'preview' ? 'preview' : 'human') + (water ? '-water' : ''), existing = _rapierDrawPaintWorkers.get(role);
+	const water = mode === 'water', role = (purpose === 'agent' ? 'agent' : purpose === 'preview' ? 'preview' : purpose === 'paper' ? 'paper' : 'human') + (water ? '-water' : ''), existing = _rapierDrawPaintWorkers.get(role);
 	if (existing) return existing.ready;
 	const W = water ? globalThis.RapierDrawWaterWorker : globalThis.RapierDrawPaintWorker, rows = globalThis.RapierDrawPaintRows;
 	const holder = {client: null, ready: null};
 	_rapierDrawPaintWorkers.set(role, holder);
 	if (typeof W?.workerSource !== 'function') return holder.ready = Promise.resolve(null);
 	holder.ready = (async () => {
-		const worker = globalThis.RapierWorkerExecution.createWorkerExecution({source: W.workerSource, name: 'rapier-' + role,
+		await new Promise(resolve => setTimeout(resolve, 0));
+		const source = _rapierDrawWorkerSources.get(W) ?? _rapierDrawWorkerSources.set(W, W.workerSource()).get(W);
+		const worker = globalThis.RapierWorkerExecution.createWorkerExecution({source, name: 'rapier-' + role,
 			install: water ? W.installWaterWorker : W.installPaintWorker});
 		const client = holder.client = W.createWorkerClient({postMessage: (message, transfer) => worker.postMessage(message, transfer), terminate: () => worker.terminate()});
 		worker.onmessage = ({data}) => client.receive(data);
@@ -1093,7 +1096,7 @@ function _rapierDrawPaintClient(purpose = 'human', mode = 'paint') {
 		try {
 			const mode = await worker.ready;
 			const isolated = mode === 'worker' && globalThis.crossOriginIsolated === true && typeof rows?.workerSource === 'function';
-			const helpers = !water && purpose !== 'preview' && isolated ? 4 : 0;
+			const helpers = !water && purpose !== 'preview' && purpose !== 'paper' && isolated ? 4 : 0;
 			let gpuSwitch = null;
 			try { const opened = globalThis.performance?.getEntriesByType?.('navigation')?.[0]?.name; gpuSwitch = new URLSearchParams(new URL(opened || location.href).search + '&' + location.search.slice(1)).get('paint-gpu'); } catch (_) {}
 			const gpu = water || purpose !== 'human' ? 'off' : gpuSwitch === 'software' || globalThis.__rapierPaintSoftwareTest === true ? 'software' : gpuSwitch === '0' ? 'off' : 'on';
@@ -3423,7 +3426,7 @@ function _rapierDrawLetterGlyph(set) {
 	const sample = set && globalThis.RapierDrawLetterPreviews.LETTER_PREVIEWS[set.id];
 	return sample ? '<svg class="rapier-draw-glyph" viewBox="0 0 ' + sample.glyph[0] + ' ' + sample.em + '" aria-hidden="true"><path fill="currentColor" transform="translate(' + sample.bearing + ',0)" d="' + sample.glyph[1] + '"/></svg>' : '';
 }
-const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.40/letters/';
+const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.41/letters/';
 const _rapierDrawLettersDoor = { allowed: false, asking: null, providers: new Map(), bringing: new Map() };
 function _rapierDrawLettersProvider(set) {
 	const door = _rapierDrawLettersDoor;
@@ -4377,15 +4380,23 @@ function _rapierDrawClearHandleSpots(recipe, ids, box, scale, sides = []) {
 		const dx = b[0] - a[0], dy = b[1] - a[1], t = dx || dy ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy))) : 0;
 		return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
 	};
-	const clear = p => !boxes.some(b => p[0] > b.minX - r && p[0] < b.maxX + r && p[1] > b.minY - r && p[1] < b.maxY + r) &&
-		!paths.some(path => path.slice(1).some((q, i) => along(p, path[i], q) < r)) && !taken.some(q => Math.hypot(p[0] - q[0], p[1] - q[1]) < 2 * r);
+	const near = (p, k) => !boxes.some(b => p[0] > b.minX - r * k && p[0] < b.maxX + r * k && p[1] > b.minY - r * k && p[1] < b.maxY + r * k) &&
+		!paths.some(path => path.slice(1).some((q, i) => along(p, path[i], q) < r * k)) && !taken.some(q => Math.hypot(p[0] - q[0], p[1] - q[1]) < 2 * r * k),
+		clear = p => near(p, 1);
 	const pick = candidates => { const spot = candidates.find(clear) || candidates[0]; taken.push(spot); return spot; };
 	const cx = (box.minX + box.maxX) / 2, cy = (box.minY + box.maxY) / 2, px = n => n / scale, quarter = Math.max(px(28), (box.maxX - box.minX) / 4);
 	const spots = { rotate: pick([[cx, box.minY - px(44)], [box.maxX + px(30), box.minY - px(30)], [box.minX - px(30), box.minY - px(30)], [cx, box.maxY + px(44)]]) };
 	for (const [side, [dx, dy]] of sides) {
 		const at = reach => [dx ? (dx > 0 ? box.maxX : box.minX) + dx * px(reach) : cx, dy ? (dy > 0 ? box.maxY : box.minY) + dy * px(reach) : cy];
 		const aside = (reach, k) => { const [x, y] = at(reach); return dx ? [x, y + k * Math.max(px(28), (box.maxY - box.minY) / 4)] : [x + k * quarter, y]; };
-		spots['add-' + side] = pick([...(dy < 0 ? [88, 44, 66] : [44, 66, 88]).map(at), aside(44, 1), aside(44, -1)]);
+		const usual = [...(dy < 0 ? [88, 44, 66] : [44, 66, 88]).map(at), aside(44, 1), aside(44, -1)];
+		const corners = [[box.maxX + px(30), box.minY - px(30)], [box.minX - px(30), box.minY - px(30)], [box.maxX + px(30), box.maxY + px(30)], [box.minX - px(30), box.maxY + px(30)]];
+		const bearing = Math.atan2(dy, dx), ring = [];
+		for (const reach of [30, 40, 56]) for (let k = 0; k < 24; k++) {
+			const a = bearing + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * Math.PI / 12;
+			ring.push([cx + Math.cos(a) * ((box.maxX - box.minX) / 2 + px(reach)), cy + Math.sin(a) * ((box.maxY - box.minY) / 2 + px(reach))]);
+		}
+		const spot = usual.find(clear) || corners.find(clear) || ring.find(clear) || ring.find(p => near(p, .6)) || usual[0]; taken.push(spot); spots['add-' + side] = spot;
 	}
 	return spots;
 }
@@ -4752,6 +4763,12 @@ function _rapierDrawArmHold(gesture, onFire) {
 		onFire();
 	}, RAPIER_DRAW_HOLD_MS);
 }
+function _rapierDrawSoloBox(id, selection) {
+	if (selection.length < 2) return false;
+	const recipe = _rapierDrawState.recipe, shape = recipe.shapes.find(s => s.id === id);
+	if (!shape || shape.locked || shape.recognized === 'arrow' || shape.recognized === 'line') return false;
+	return recipe.shapes.some(s => selection.includes(s.id) && Object.values(s.bind || {}).some(anchor => anchor.to === id));
+}
 function _rapierDrawOnPointerDown(evt) {
 	if (evt.pointerType === 'mouse' && evt.button !== 0) return;
 	evt.stopPropagation(); evt.preventDefault();
@@ -4795,6 +4812,7 @@ function _rapierDrawOnPointerDown(evt) {
 		if (hit && !evt.ctrlKey && !evt.metaKey) {
 			gesture.kind = 'move';
 			if (!selection.includes(hit)) _rapierDrawSetSelection([hit]);
+			else if (_rapierDrawSoloBox(hit, selection)) gesture.solo = hit;
 			_rapierDrawShowPressRing(hit);
 			if (touch) _rapierDrawArmHold(gesture, () => {
 				gesture.kind = 'hold';
@@ -4845,6 +4863,9 @@ function _rapierDrawOnPointerMove(evt, commit = false) {
 		return;
 	}
 	if (gesture.kind === 'handle' || gesture.kind === 'move') {
+		if (gesture.solo && !gesture.changed && travel > RAPIER_DRAW_MOVE_THRESHOLD_PX) {
+			_rapierDrawSetSelection([gesture.solo]); gesture.selection = _rapierDrawSelection(); delete gesture.solo;
+		}
 		if (gesture.changed || travel > RAPIER_DRAW_MOVE_THRESHOLD_PX) gesture.kind === 'handle' ? _rapierDrawApplyHandle(point, evt, commit) : _rapierDrawApplyMove(point, evt);
 		return;
 	}

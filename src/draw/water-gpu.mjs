@@ -507,7 +507,7 @@ export class WaterGPU {
   data.set([0,this.params.flow,this.params.bleed*(paper.spread??1),this.params.edge*1.4],4);data.set(this.brushNow,12);data[15]=this.reach;data[48]=paper.spread??1;return data;
  }
  _draw(name,destinations,inputs=[],data=this._parameters(),rect=null){
-  if(name!=='paperField')this._flushStamps();
+  if(name!=='paperField'&&name!=='paperLight')this._flushStamps();
   if(this.slots===UNIFORM_SLOTS)this._submitEncoder();
   if(name==='paperField'&&!this.library.pipelines.paperField[data[50]]){
    const description=this.library.paperDescription;
@@ -834,13 +834,15 @@ export class WaterGPU {
     for(let top=region[1];top<region[3];top+=rows)bands.push([left,top,right,Math.min(region[3],top+rows)]);
    }
   }
-  for(const band of bands){
-   const x=band[0]-1,y=band[1]-1,right=band[2]+1,bottom=band[3]+1;
-   if(this.pendingRetire.length||bands.length>1)this._submitEncoder();
-   const field=this._texture(right-x,bottom-y,'rgba16float');
-   data.set([x,y,w,h],56);
-   try{this._draw('paperField',field,[],data);this._region('paperLight',target,[field],data,band);keepPaperRegion(settings.regions,band);}finally{this._retire(field);}
-  }
+  let fw=0,fh=0;for(const band of bands){fw=Math.max(fw,band[2]-band[0]+2);fh=Math.max(fh,band[3]-band[1]+2);}
+  const field=this._texture(fw,fh,'rgba16float');
+  try{
+   for(const band of bands){
+    if(this.pendingRetire.length||bands.length>1)this._submitEncoder();
+    data.set([band[0]-1,band[1]-1,w,h],56);data[60]=0;data[61]=0;
+    this._draw('paperField',field,[],data);this._draw('paperLight',target,[field],data,band);keepPaperRegion(settings.regions,band);
+   }
+  }finally{this._retire(field);}
   if(bands.length>1)this._submitEncoder();
   if(requested[0]===0&&requested[1]===0&&requested[2]===w&&requested[3]===h)settings.unknown=false;
  }

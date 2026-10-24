@@ -42,7 +42,8 @@ export async function pluginPackFiles({root = ROOT, loader = null} = {}) {
 	math.manifestUrl = PLUGIN_ORIGIN + 'math/' + math.hostFile;
 	const host = plugin => file => ({...file, plugin, hostFile: file.file.split('/').pop()});
 	return [math, ...mermaidResourceFiles(root).map(host('diagrams')), ...fontSubsetResourceFiles(root).map(host('font-subset')),
-		...OCR_FILES.map(file => ({id: 'rapier-ocr-' + file.name, plugin: 'ocr', hostFile: file.flat, url: file.url, sri: file.sri, bytes: file.bytes})),
+		...OCR_FILES.map(file => ({id: 'rapier-ocr-' + file.name, plugin: 'ocr', hostFile: file.flat, url: file.url, sri: file.sri, bytes: file.bytes,
+			...(file.path ? {path: join(root, file.path)} : {})})),
 		...LETTER_SETS.map(set => ({id: 'rapier-letters-' + set.id, plugin: 'letters', hostFile: 'letters-' + set.id + '.json',
 			url: lettersAt + set.id + '.json', path: join(root, 'draw/letters', set.id + '.json'), sri: set.sha384, bytes: set.bytes})),
 		...BORDER_PINS.map(pin => ({id: 'rapier-templates-' + pin.id, plugin: 'templates', hostFile: 'templates-' + pin.id + '.json.gz',

@@ -1,9 +1,12 @@
 function _rapierSeenRecord(text, name, meta = null) {
+	if (text && typeof text === 'object' && typeof text.read === 'function') return Object.freeze({ ..._rapierReviewRoot(name, meta), view: text });
 	return Object.freeze({ ..._rapierReviewRoot(name, meta), text: String(text == null ? '' : text) });
 }
+
 function _rapierReviewText(root) {
 	if (!root) return null;
 	if (typeof root.text === 'string') return root.text;
+	if (root.view) return root.view.read();
 	if (root.stateId && root.stateId === _rapierHistoryStateId()) return _rapierSourceText();
 	const reconstructed = _rapierJournalTextAt(root.revision);
 	if (reconstructed != null) return reconstructed;
@@ -15,6 +18,7 @@ function _rapierReviewText(root) {
 	}
 	return null;
 }
+
 const _RAPIER_SEEN_LOST_LINE = 'changes since your last look could not be recovered';
 function _rapierSeenRestoreNotice(notice, outcome, deltaAvailable, tier) {
 	let value = notice || null;
@@ -350,13 +354,13 @@ function _rapierSeenSweep() {
 
 	if (document.documentElement.classList.contains('rapier-engine-modal-locked') ||
 			_rapierSeenDelivery.moved) { _rapierSeenDrop(); return; }
-	const view = root.getBoundingClientRect();
-	const now = _rapierNow();
+	let view, now;
 	const whole = new Map();
 	let wait = 0;
 	for (const [element, cover] of _rapierSeenDelivery.watched) {
 		const unit = element.dataset.seenUnit;
 		if (!element.isConnected || !_rapierSeenPending(unit)) { cover.since = 0; continue; }
+		if (!view) { view = root.getBoundingClientRect(); now = _rapierNow(); }
 		const shown = _rapierSeenShown(element, view);
 		const digest = _rapierSinceOpen.units.get(unit);
 

@@ -38,7 +38,7 @@ function parseXmlAttrs(raw, strict = false) {
 }
 function parseXml(src, enml = false) {
 	const s = String(src), n = s.length, root = {tag: '#root', attrs: {}, children: []}, stack = [root];
-	let i = 0;
+	let i = 0, nodes = 0;
 	while (i < n) {
 		const lt = s.indexOf('<', i);
 		if (lt < 0) { if (i < n) stack[stack.length - 1].children.push(decodeXml(s.slice(i), true)); break; }
@@ -64,6 +64,8 @@ function parseXml(src, enml = false) {
 		if (j === n || quote) throw new Error('ENEX element is incomplete');
 		i = j + 1;
 		if (close) { if (stack.length === 1 || stack.at(-1).tag !== name || attrsRaw.trim()) throw new Error('ENEX closing element does not match'); stack.pop(); continue; }
+		if (stack.length > 128) throw Object.assign(new Error('ENEX nesting exceeds the import limit'), {code: 'IMPORT_TOO_DEEP'});
+		if (++nodes > 1000000) throw Object.assign(new Error('ENEX element count exceeds the import limit'), {code: 'IMPORT_TOO_COMPLEX'});
 		const node = {tag: name, attrs: parseXmlAttrs(attrsRaw, true), children: [], start: lt, openEnd: i};
 		stack[stack.length - 1].children.push(node);
 		if (!/\/\s*$/.test(attrsRaw)) stack.push(node);

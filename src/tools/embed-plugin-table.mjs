@@ -27,6 +27,10 @@ export function withPluginTable(text, manifest, readerBytes) {
 	let next = text;
 	const begin = next.indexOf(TABLE_BEGIN), end = next.indexOf(TABLE_END);
 	if (manifest && begin >= 0 && end > begin) next = next.slice(0, begin + TABLE_BEGIN.length) + '\n' + pluginTable(manifest) + '\n' + next.slice(end);
-	if (readerBytes) next = next.replace(/The reader is one file of about \d+ kB/, 'The reader is one file of about ' + Math.round(readerBytes / 10000) * 10 + ' kB');
+	if (readerBytes) {
+		const kb = Math.round(readerBytes / 10000) * 10;
+		next = next.replace(/The reader is one file of about \d+ kB/, 'The reader is one file of about ' + kb + ' kB')
+			.replace(/(lightweight reader \(about )\d+( kB\))/, '$1' + kb + '$2');
+	}
 	return next;
 }

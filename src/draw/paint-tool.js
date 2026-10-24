@@ -24,11 +24,21 @@ function _rapierPaintFeel(q, level) {
 	return t.floor + t.span * Math.pow(q, t.gamma);
 }
 function _rapierPaintTouchOf(id) {
-	try { return _rapierDrawClamp(_rapierPaintDefFor(id).tool?.rapier_touch || 0, 0, 2); } catch (_) { return 0; }
+	try { return _rapierDrawClamp(_rapierPaintToolOf(id).rapier_touch || 0, 0, 2); } catch (_) { return 0; }
+}
+const _rapierPaintTools = new WeakMap();
+function _rapierPaintToolOf(id) {
+	const entry = _rapierPaintEntry(id);
+	if (!entry) return _rapierPaintDefFor(id).tool || {};
+	const key = _rapierPaintFitsFinger(id) + '|' + _rapierPaintDip(id).join(',');
+	let byKey = _rapierPaintTools.get(entry);
+	if (!byKey) _rapierPaintTools.set(entry, byKey = new Map());
+	if (!byKey.has(key)) byKey.set(key, Object.freeze({..._rapierPaintDefFor(id).tool}));
+	return byKey.get(key);
 }
 // How many usual lifts this preset's tail is held back and tapered over (`rapier_lift` in its .myb; a flat's streaks fade over a longer one).
 function _rapierPaintLiftOf(id) {
-	try { return _rapierDrawClamp(_rapierPaintDefFor(id).tool?.rapier_lift || 1, 1, 4); } catch (_) { return 1; }
+	try { return _rapierDrawClamp(_rapierPaintToolOf(id).rapier_lift || 1, 1, 4); } catch (_) { return 1; }
 }
 function _rapierPaintTouchLevel(id, light) {
 	return _rapierDrawClamp((light ? 1 : 0) + _rapierPaintTouchOf(id), 0, RAPIER_PAINT_TOUCH.length - 1);
@@ -1318,12 +1328,23 @@ function _rapierPaintUpdateStrip() {
 	};
 	const focused = row.contains(document.activeElement) ? document.activeElement : null;
 	const wasKey = focused ? (focused.dataset.drawPaintBrush ? 'brush:' + focused.dataset.drawPaintBrush : focused.dataset.drawPaintAct ? 'act:' + focused.dataset.drawPaintAct : '') : '';
-	row.innerHTML = (mode === 'brushes' ? _rapierPaintHeadChipHTML() : '') + entries.map(chip).join('') +
+	const head = mode === 'brushes' ? _rapierPaintHeadChipHTML() : '', chips = entries.map(chip);
+	const tail = '' +
 		(own ? '<button type="button" class="rapier-draw-chip rapier-draw-chip--icon" data-draw-paint-act="fit" role="switch" aria-checked="' + _rapierPaintFitsFinger(chosen) + '" aria-label="' +
 			(_rapierPaintFitsFinger(chosen) ? 'This brush is fitted for a finger. Turn that off to use its authored response' : 'Use finger fitting for this brush') + '">' + (_rapierPaintFitsFinger(chosen) ? RAPIER_PAINT_ICON_GAUGE_FIRM : RAPIER_PAINT_ICON_GAUGE_LIGHT) + '<span class="rapier-draw-chip-name">fit</span></button>' : '') +
 		(own ? '<button type="button" class="rapier-draw-chip rapier-draw-chip--icon rapier-draw-chip--delete" data-draw-paint-act="remove" aria-label="Remove this brush from your set">' + RAPIER_DRAW_ICONS.trash + '<span class="rapier-draw-chip-name">remove</span></button>' : '') +
 		(mode === 'brushes' ? '<button type="button" class="rapier-draw-chip rapier-draw-chip--icon" data-draw-paint-act="upload" aria-label="add a MyPaint brush" data-tip="add brush">' + RAPIER_DRAW_ICONS.upload + '<span class="rapier-draw-chip-name">add</span></button>' +
 			'<button type="button" class="rapier-draw-chip rapier-draw-chip--icon" data-draw-paint-act="export" aria-label="save the selected MyPaint brush" data-tip="save brush">' + RAPIER_DRAW_ICONS.download + '<span class="rapier-draw-chip-name">save</span></button>' : '');
+	const was = row._rapierPaintParts, kept = was && was.head === head && was.tail === tail && was.chips.length === chips.length &&
+		was.els.every(el => el.parentNode === row) ? was : null;
+	const changed = kept ? chips.flatMap((html, i) => html === kept.chips[i] ? [] : [i]) : null;
+	if (!kept || changed.length) {
+		const target = kept ? document.createElement('template') : row;
+		target.innerHTML = kept ? changed.map(i => chips[i]).join('') : head + chips.join('') + tail;
+		if (kept) { const made = [...target.content.children]; changed.forEach((i, k) => { kept.els[i].replaceWith(made[k]); kept.els[i] = made[k]; }); }
+		const els = kept ? kept.els : [...row.querySelectorAll(':scope > [data-draw-paint-brush]')];
+		row._rapierPaintParts = els.length === chips.length ? {head, tail, chips, els} : null;
+	}
 	if (!row.dataset.paintBound) {
 		row.dataset.paintBound = '1';
 		row.addEventListener('keydown', evt => {

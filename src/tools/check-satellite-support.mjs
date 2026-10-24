@@ -40,7 +40,7 @@ function ownerDeclaration(owner, name) {
   const found = declarationIndex(readFileSync(new URL('../kit/' + owner + '.mjs', import.meta.url), 'utf8'), 'module');
   return found.get(name);
 }
-const EXTRACTED_PARTS = ['editor/seen-margin.js'];
+export const EXTRACTED_PARTS = ['editor/seen-margin.js', 'editor/format-toolbar.js', 'editor/heavy-window.js', 'editor/agent-bar.js', 'editor/compare-block.js', 'editor/ui-open.js', 'editor/plan-exact.js', 'editor/will-plate.js'];
 function partDeclaration(name) {
   for (const part of EXTRACTED_PARTS) {
     const found = declarationIndex(readFileSync(new URL('../' + part, import.meta.url), 'utf8')).get(name);

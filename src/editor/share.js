@@ -16,6 +16,7 @@ function _rapierPortableRequiredPlugins(source, options = {}) {
         globalThis.RapierFlowchart?.parseFlowchart(token.content).ok !== true) {
         required.add('mermaid');
         if (globalThis.RapierPluginLoader?.zenumlSource(token.content) != null) required.add('mermaid-zenuml');
+        if (_rapierProviders.mermaid?.requiresMath?.(token.content)) required.add('math');
       }
       else if (token.type === 'image') {
         const url = token.attrGet('src');
@@ -233,7 +234,7 @@ async function _rapierPrepareEditablePage(captured, options = {}) {
 		const base = await _rapierPrepareInterchangeContext({kind: 'page', imageCompat: false, comparison: true, preserveObjects: true}, {...captured, canonical: captured.comparisonBase.text});
 		await keepLinks(base.semanticRoot);
 	}
-	const linkedWords = linked ? (linked === 1 ? '1 web picture stays a link and shows only online.' : linked + ' web pictures stay links and show only online.') : '';
+	const linkedWords = linked ? (linked === 1 ? '1 picture stays a web link.' : linked + ' pictures stay web links.') : '';
 	const portable = await _rapierPortableChoices(captured.canonical,
 		{docKind: captured.metadata.docKind, base: captured.comparisonBase?.text, also: options.also});
 	const text = (captured.metadata.bom ? '\uFEFF' : '') + captured.canonical;
@@ -274,9 +275,18 @@ function _rapierReadableWithoutScripts(captured) {
 
 function _rapierPortableLacks(name) {
 	if (typeof RapierParts === 'undefined' || !RapierParts.sealed()) return false;
-	showToast('This file has no ' + name + '. Open it at rapier.website.', 'info');
+	showToast('No ' + name + ' in this file.', 'info');
 	return true;
 }
+
+function _rapierWithin(work, at) {
+	let timer;
+	return Promise.race([work, new Promise((_, refuse) => {
+		timer = setTimeout(() => refuse(Object.assign(new Error('Save took too long.'), {code: 'save_timeout'})), Math.max(0, at - Date.now()));
+	})]).finally(() => clearTimeout(timer));
+}
+_rapierWithin.limitMs = 120000;
+_rapierWithin.stuck = false;
 
 function _rapierEditablePageCarries() {
 	if (!document.getElementById('rapier-document')) return 'history';
@@ -295,6 +305,7 @@ async function _rapierEditablePageChosen(captured, action, task) {
 	if (!overlay) return page.write(page.needs);
 	const list = overlay.querySelector('.editor-file-choices'), go = overlay.querySelector('[data-editor-file="go"]');
 	const chosen = new Set(page.needs);
+	if (page.choices.some(choice => choice.id === 'drawing')) chosen.add('drawing');
 	let carried = ['authorship', 'history'].includes(captured.carried) && captured.ledger ? captured.carried : 'none';
 	const toggle = (id, words, size) => {
 		const row = document.createElement('button'), text = document.createElement('span'), label = document.createElement('span');
@@ -403,7 +414,11 @@ function _rapierOwnPageFilename() {
 	try {
 		if (!/^(?:file|https?):$/.test(location.protocol)) return '';
 		const base = decodeURIComponent(location.pathname.split('/').pop() || '');
-		return /.\.rapier\.html$/i.test(base) && _rapierDocumentNameIsAdmissible(base) ? _rapierEditablePageFilename(base) : '';
+		if (!/.\.html?$/i.test(base) || !_rapierDocumentNameIsAdmissible(base)) return '';
+		if (/.\.rapier\.html$/i.test(base) && !/\.html?\.html?$/i.test(base)) return _rapierEditablePageFilename(base);
+		if (location.protocol !== 'file:') return '';
+		const stem = base.replace(/(?:\.html?)+$/i, '').replace(/\.rapier$/i, '');
+		return stem ? _rapierEditablePageFilename(stem + '.rapier.html') : '';
 	} catch (_) { return ''; }
 }
 function _rapierCarriedKeepSettled() {
@@ -419,7 +434,7 @@ function _rapierCarriedKeepHint() {
 	_rapierCarriedKeep.hinted = true;
 	const name = String(rapier.document.filename);
 	showToast(files?.savesChosenType === true
-		? 'Press Save and choose ' + name + ' to keep changes.'
+		? 'Save over ' + name + ' to keep changes.'
 		: 'Press Save to keep changes.',
 		'info', {label: 'Save', fn: () => rapierSave(), kind: 'carried-keep'});
 }
@@ -435,7 +450,6 @@ function _rapierShareSize(bytes) {
 function _rapierAnnounceShared(filename, blob) {
 	const produced = _rapierShareProduced(filename, blob);
 	try { if (typeof srAnnounce === 'function') srAnnounce('shared ' + produced); } catch (_) {}
-	try { showToast('Shared ' + produced, 'success'); } catch (_) {}
 }
 
 const _rapierPageReturn = {address: null, expiresAt: null, stamp: null, state: 'ready', message: '', timer: null};
@@ -631,9 +645,11 @@ function _rapierShareLedgerReset() {
 {
 	const liveShare = document.getElementById('share-live-document');
 	if (liveShare) {
-		liveShare.hidden = _rapierUiAndroid();
+		const wear = () => { liveShare.hidden = _rapierUiAndroid() || window.RapierPlatform?.environment.network === false; };
+		wear();
+		window.addEventListener('rapier:platform-state', wear);
 		liveShare.addEventListener('click', () => {
-			if (_rapierUiAndroid()) return;
+			if (liveShare.hidden) return;
 			closeDialog(document.getElementById('share-overlay'));
 			if (typeof RapierParts !== 'undefined' && RapierParts.sealed()) { void _rapierFullEditorOnly('Live document'); return; }
 			_rapierLive.openJoin();

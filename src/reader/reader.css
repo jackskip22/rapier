@@ -52,6 +52,8 @@ html.rapier-host-accent #accent-swatches,html.rapier-host-accent .settings-secti
 
 #editor-blocks>*{max-width:var(--md-measure,39.6rem);margin-inline:auto}
 
+#editor-blocks .rapier-image-missing{display:block;color:var(--color-text-muted);font-size:.875em}
+
 @media print{
 	html[data-rapier-printing="on"],html[data-rapier-printing="on"] body{display:block!important;height:auto!important;min-height:0!important;overflow:visible!important;background:#fff!important}
 	html[data-rapier-printing="on"] body>:not(#document-main){display:none!important}

@@ -99,7 +99,29 @@ const CUT = [
 	'share-image-compat-toggle', 'share-ledger-authors', 'share-send-back',
 	'settings-open-chevron', 'recent-drawer', 'view-mode-toggle', 'settings-pro-section', 'about-review-row',
 	'agent-access', 'agent-row', 'goto-line-form', 'goto-line-range', 'restore-notice',
+	'share-live-document', 'drawing-plugin-row', 'notes-plugin-row',
 ];
+
+const SHARED_ACTIONS = ['ocr-install', 'ocr-install-now', 'ocr-dismiss'];
+const SHARE_VALUES = ['source'];
+const WIRED_BY_ID = ['scroll-fab'];
+export function readerActionTable() {
+	const app = readFileSync(resolve(root, 'reader/app.js'), 'utf8'), start = app.indexOf('const READER_ACTIONS = {');
+	if (start < 0) throw new Error('Reader profile: reader/app.js has no READER_ACTIONS table');
+	const body = app.slice(start, app.indexOf('\n};', start));
+	return new Set([...body.matchAll(/^\t'([a-z0-9-]+)':/gm)].map(match => match[1]));
+}
+export function checkReaderActions(markup) {
+	const table = readerActionTable(), shared = readFileSync(resolve(root, 'images/ocr.js'), 'utf8'), found = [];
+	for (const name of SHARED_ACTIONS) if (!shared.includes("'" + name + "'")) found.push('the shared handler for ' + name + ' is gone');
+	for (const tag of markup.match(/<[a-z]+\b[^>]*\bdata-action="[^"]*"[^>]*>/g) || []) {
+		const action = /data-action="([^"]*)"/.exec(tag)[1], value = /data-value="([^"]*)"/.exec(tag)?.[1];
+		if (!table.has(action) && !SHARED_ACTIONS.includes(action)) found.push('data-action="' + action + '" has no handler in reader/app.js');
+		if (action === 'share-choice' && !SHARE_VALUES.includes(value)) found.push('share choice "' + value + '" is not one the reader can make');
+	}
+	for (const tag of markup.match(/<button\b[^>]*>/g) || []) if (!/data-action=|data-info-close/.test(tag) && !WIRED_BY_ID.some(id => tag.includes('id="' + id + '"'))) found.push('a button with no action: ' + tag.slice(0, 90));
+	if (found.length) throw new Error('Reader profile: controls the reader cannot answer: ' + found.join('; '));
+}
 
 // `ui` is editor/ui.html as it stands. The licences sheet is not here: it is its own packed part (see `licensesSheet`).
 export function readerBlocks(ui) {
@@ -113,12 +135,13 @@ export function readerBlocks(ui) {
 	};
 	const markup = BLOCKS.filter(key => key !== 'licenses-overlay').map(pick).join('\n') + '\n' + pick('mermaid-plugin-overlay').replaceAll('mermaid-', 'pdf-');
 	const present = new Set(elements(markup).map(row => row.id));
-	const cut = dropElements(withoutIds(markup, CUT.filter(id => present.has(id))), (row, text) => /\bexport-choice-card\b/.test(row.cls) || /\bsettings-info-btn\b/.test(row.cls) || /\bexport-choice-toggle\b/.test(row.cls) && /data-(?:action="share-image-compat"|ledger-choice)/.test(text));
+	const cut = dropElements(withoutIds(markup, CUT.filter(id => present.has(id))), (row, text) => /\bexport-choice-card\b/.test(row.cls) || /\bexport-choice\b/.test(row.cls) && /data-action="share-choice"[^>]*data-value="(?:editor|web|card|return)"/.test(text.slice(0, text.indexOf('>') + 1)) || /\bsettings-action-row\b/.test(row.cls) && /data-action="document-spacing"/.test(text) || /\bsettings-info-btn\b/.test(row.cls) || /\bexport-choice-toggle\b/.test(row.cls) && /data-(?:action="share-image-compat"|ledger-choice)/.test(text));
 	const named = cut.replace(/<button type="button" class="filename-btn" id="filename-btn" data-action="rename"\s+aria-label="rename file">([^<]*)<\/button>/,
 		'<span class="filename-btn" id="filename-btn">$1</span>')
 		.replace(/<button type="button" class="filename-ext-btn" id="filename-ext-btn" data-action="change-extension"\s+aria-label="change extension">([\s\S]*?<\/span>)<\/button>/,
 			'<span class="filename-ext-btn" id="filename-ext-btn">$1</span>');
 	if (/data-action="(?:rename|change-extension)"/.test(named)) throw new Error('Reader profile: the file name controls in editor/ui.html changed form');
+	checkReaderActions(named);
 	return {markup: named, licenses: pick('licenses-overlay'), sprite: spriteOf(ui)};
 }
 

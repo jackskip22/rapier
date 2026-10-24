@@ -4,11 +4,11 @@
     {
       "name": "subset",
       "version": "3",
-      "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.40/site/plugins/rapier-font-subset-3.js",
+      "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.41/site/plugins/rapier-font-subset-3.js",
       "file": "plugins/rapier-font-subset-3.js",
       "path": "shell/vendor/font-subset/rapier-font-subset-3.js",
-      "bytes": 1214779,
-      "sri": "iAjccOClLDb549FPCJnflzsNIlLa4G4N/SRm/GnIvhcUyQd0COW2672AA2Mldcnz"
+      "bytes": 1207570,
+      "sri": "eyBreJCziFoHQdGSPtvd0S2IRcHna191kq83/ps/rafZwWWd6reInBALyPdLQmdL"
     }
   ]
 }

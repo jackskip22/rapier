@@ -20,13 +20,31 @@ async function _rapierOcrIdle(current) {
 	while (current() && (document.hidden || _rapierOcrBusy())) await new Promise(resolve => setTimeout(resolve, 250));
 	return current();
 }
-async function _rapierOcrStream(bytes, transform) {
-	return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(transform)).arrayBuffer());
+async function _rapierOcrStream(bytes, transform, limit = Infinity) {
+	const reader = new Blob([bytes]).stream().pipeThrough(transform).getReader(), parts = [];
+	let length = 0, complete = false;
+	try {
+		for (;;) {
+			const {done, value} = await reader.read();
+			if (done) { complete = true; break; }
+			length += value.byteLength;
+			if (length > limit) throw new Error('unexpected text reader size');
+			parts.push(value);
+		}
+		const out = new Uint8Array(length);
+		let at = 0;
+		for (const part of parts) { out.set(part, at); at += part.byteLength; }
+		return out;
+	} finally {
+		if (!complete) void reader.cancel().catch(() => {});
+		reader.releaseLock();
+	}
 }
 function _rapierOcrPack(bytes) { return typeof CompressionStream === 'function' ? _rapierOcrStream(bytes, new CompressionStream('gzip')) : bytes; }
 async function _rapierOcrUnpack(value) {
 	const bytes = RapierBundleIO.bytes(value);
-	return bytes && bytes[0] === 0x1f && bytes[1] === 0x8b && typeof DecompressionStream === 'function' ? _rapierOcrStream(bytes, new DecompressionStream('gzip')) : bytes;
+	return bytes && bytes[0] === 0x1f && bytes[1] === 0x8b && typeof DecompressionStream === 'function'
+		? _rapierOcrStream(bytes, new DecompressionStream('gzip'), Math.max(..._rapierOcrModule().OCR_FILES.map(file => file.bytes))) : bytes;
 }
 function _rapierOcrWorker() {
 	const url = URL.createObjectURL(new Blob([_rapierOcrModule().ocrWorkerSource()], {type: 'text/javascript'}));
@@ -34,15 +52,16 @@ function _rapierOcrWorker() {
 	URL.revokeObjectURL(url);
 	const waiting = new Map();
 	let serial = 0, stopped = null;
-	const fail = error => { stopped = error; for (const [, w] of waiting) w.reject(error); waiting.clear(); worker.terminate(); };
-	worker.onmessage = event => { const w = waiting.get(event.data?.id); if (!w) return; waiting.delete(event.data.id); if (event.data.ok) w.resolve(event.data); else w.reject(new Error(event.data.error || 'The text reader failed')); };
+	const fail = error => { stopped = error; for (const [, w] of waiting) { clearTimeout(w.timer); w.reject(error); } waiting.clear(); worker.terminate(); };
+	worker.onmessage = event => { const w = waiting.get(event.data?.id); if (!w) return; clearTimeout(w.timer); waiting.delete(event.data.id); if (event.data.ok) w.resolve(event.data); else w.reject(new Error(event.data.error || 'The text reader failed')); };
 	worker.onerror = event => { event.preventDefault?.(); fail(new Error(event.message || 'The text reader stopped')); };
 	worker.onmessageerror = () => fail(new Error('The text reader returned an unreadable result'));
 	return {
 		post(message, transfer) { const id = ++serial; return new Promise((resolve, reject) => {
 			if (stopped) { reject(stopped); return; }
-			waiting.set(id, {resolve, reject});
-			try { worker.postMessage({...message, id}, transfer || []); } catch (error) { waiting.delete(id); reject(error); }
+			const timer = setTimeout(() => fail(new Error('The text reader timed out')), 180000);
+			waiting.set(id, {resolve, reject, timer});
+			try { worker.postMessage({...message, id}, transfer || []); } catch (error) { clearTimeout(timer); waiting.delete(id); reject(error); }
 		}); },
 		terminate() { fail(new Error('The text reader was closed')); },
 	};

@@ -114,17 +114,22 @@ fn pieceBatch(@builtin(global_invocation_id) id: vec3u) {
 	let xp = B.x0 + id.x; let yp = B.y0 + id.y;
 	if (xp >= B.W || yp >= B.H) { return; }
 	let p = yp * B.W + xp;
+	let tw = (B.w + TILE - 1u) / TILE; let ti = B.tilesAt + 2u * ((id.y / TILE) * tw + id.x / TILE);
+	let tStart = tiles[ti]; let tCount = tiles[ti + 1u];
+	// Most of a batch's box is empty tiles: no sheet or cap read there.
+	if (tCount == 0u) { return; }
 	var D = sheet[p];
 	var was = cap[p];
 	let c = vec2f(f32(xp) + .5, f32(yp) + .5);
 	var touched = false;
-	let tw = (B.w + TILE - 1u) / TILE; let ti = B.tilesAt + 2u * ((id.y / TILE) * tw + id.x / TILE);
-	let tStart = tiles[ti]; let tCount = tiles[ti + 1u];
 	for (var j = 0u; j < tCount; j++) {
 		let q = B.first + tiles[B.tilesAt + tStart + j];
+		let aFrom = pf(q, 8u); let aTo = pf(q, 9u);
+		// A pixel the stroke's cap already holds at the most this piece can give it is passed over before its coverage is worked out
+		// (it would be passed over after): the blade's thickness covers each pixel with many pieces in turn.
+		if (was >= max(aFrom, aTo)) { continue; }
 		if (f32(xp) < pf(q, 38u) || f32(yp) < pf(q, 39u) || f32(xp) > pf(q, 40u) || f32(yp) > pf(q, 41u)) { continue; }
-		let A = pt(q, 0u); let Bq = pt(q, 2u); let C = pt(q, 4u); let Dq = pt(q, 6u);
-		let aFrom = pf(q, 8u); let aTo = pf(q, 9u); let alpha = pf(q, 10u); let wet = pf(q, 11u); let edge = pf(q, 12u);
+		let A = pt(q, 0u); let Bq = pt(q, 2u); let C = pt(q, 4u); let Dq = pt(q, 6u); let alpha = pf(q, 10u); let wet = pf(q, 11u); let edge = pf(q, 12u);
 		let flags = u32(pf(q, 13u)); let nSides = u32(pf(q, 14u)); let lane = u32(pf(q, 15u));
 		let soft0 = (flags & 1u) != 0u; let soft1 = (flags & 2u) != 0u; let softStart = (flags & 4u) != 0u;
 		let under = select(0., D.w, wet > 0.);
@@ -169,16 +174,36 @@ fn pieceBatch(@builtin(global_invocation_id) id: vec3u) {
 
 // The knot: each lane mixes in what it samples ahead (a disk, every pixel, weighted equally) and its feed back toward the brush
 // colour; the lanes are smoothed across the blade twice (1-2-1); each lane's colour times its value goes to the ring slot.
-// The paint in a disk, every pixel weighted equally: the mean premultiplied color and coverage (0 off the sheet).
-fn diskMean(c: vec2f, r: f32) -> vec4f {
-	var sum = vec4f(0.); var count = 0.;
+// The knot's sampling, before its lanes: a workgroup a lane disk (x the lane; y 0 the knot's first place, 1 its second, a smudging
+// lane's paint under it), its 64 threads sharing the disk's pixels, every pixel weighted equally. The mean premultiplied color and
+// coverage (0 off the sheet) goes to lanes[64 + 2 lane + y]. (One thread reading a whole disk, one lane after another, was half
+// of Flat's GPU time on a T4.)
+var<workgroup> diskSum: array<vec4f, 64>;
+var<workgroup> diskCount: array<f32, 64>;
+@compute @workgroup_size(64)
+fn knotSample(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) t: u32) {
+	let lane = wg.x; let which = wg.y;
+	let a = knot[B.knotAt * 128u + 2u * lane]; let m = knot[B.knotAt * 128u + 2u * lane + 1u];
+	let smudging = (B.flags & 2u) != 0u;
+	// A mixing lane samples only while it lays paint and picks up.
+	let wanted = smudging || (a.w > .5 && m.x > 0.);
+	let c = select(a.xy, m.xy, which == 1u); let r = a.z;
 	let lo = vec2i(floor(c - vec2f(r))); let hi = vec2i(ceil(c + vec2f(r)));
-	for (var y = lo.y; y <= hi.y; y++) { for (var x = lo.x; x <= hi.x; x++) {
+	let bw = u32(max(0, hi.x - lo.x + 1)); let total = select(0u, bw * u32(max(0, hi.y - lo.y + 1)), wanted);
+	var sum = vec4f(0.); var count = 0.;
+	for (var k = t; k < total; k += 64u) {
+		let x = lo.x + i32(k % bw); let y = lo.y + i32(k / bw);
 		if (x < 0 || y < 0 || u32(x) >= B.W || u32(y) >= B.H) { continue; }
 		let d = vec2f(f32(x) + .5, f32(y) + .5) - c; if (dot(d, d) > r * r) { continue; }
 		sum += sheet[u32(y) * B.W + u32(x)]; count += 1.;
-	} }
-	return select(vec4f(0.), sum / count, count > 0.);
+	}
+	diskSum[t] = sum; diskCount[t] = count;
+	workgroupBarrier();
+	for (var step = 32u; step > 0u; step >>= 1u) {
+		if (t < step) { diskSum[t] += diskSum[t + step]; diskCount[t] += diskCount[t + step]; }
+		workgroupBarrier();
+	}
+	if (t == 0u) { lanes[64u + 2u * lane + which] = select(vec4f(0.), diskSum[0] / diskCount[0], diskCount[0] > 0.); }
 }
 var<workgroup> carried: array<vec3f, 64>;
 @compute @workgroup_size(64)
@@ -195,7 +220,7 @@ fn knotLanes(@builtin(local_invocation_index) i: u32) {
 		// The knot's lane: a = (ahead x, y, radius, active), m = (under x, under y, value, rate).
 		let a = knot[B.knotAt * 128u + 2u * i]; let m = knot[B.knotAt * 128u + 2u * i + 1u];
 		let first = B.first == 1u;
-		let below = diskMean(m.xy, a.z); let ahead = diskMean(a.xy, a.z);
+		let below = lanes[64u + 2u * i + 1u]; let ahead = lanes[64u + 2u * i];
 		let su = clamp(below.w, 0., 1.); let sh = clamp(ahead.w, 0., 1.);
 		let thin = smoothstep(0., .2, su - sh);
 		let sa = su + (sh - su) * thin;
@@ -215,15 +240,9 @@ fn knotLanes(@builtin(local_invocation_index) i: u32) {
 		let a = knot[B.knotAt * 128u + 2u * i]; let m = knot[B.knotAt * 128u + 2u * i + 1u];
 		if (a.w > .5) {
 			if (m.x > 0.) {
-				let r = a.z; var sum = vec4f(0.); var count = 0.;
-				let lo = vec2i(floor(a.xy - vec2f(r))); let hi = vec2i(ceil(a.xy + vec2f(r)));
-				for (var y = lo.y; y <= hi.y; y++) { for (var x = lo.x; x <= hi.x; x++) {
-					if (x < 0 || y < 0 || u32(x) >= B.W || u32(y) >= B.H) { continue; }
-					let d = vec2f(f32(x) + .5, f32(y) + .5) - a.xy; if (dot(d, d) > r * r) { continue; }
-					sum += sheet[u32(y) * B.W + u32(x)]; count += 1.;
-				} }
-				if (count > 0. && sum.w > 0.) {
-					let sa = sum.w / count; let sc = sum.xyz / sum.w;
+				let mean = lanes[64u + 2u * i];
+				if (mean.w > 0.) {
+					let sa = mean.w; let sc = mean.xyz / mean.w;
 					if (sa > .02) { let f = m.x * clamp(sa, 0., 1.); col = select(sc * f + col * (1. - f), mixPigment(sc, col, 1. - f), B.base.w > 0.); }
 				}
 			}
@@ -250,18 +269,15 @@ fn knotLanes(@builtin(local_invocation_index) i: u32) {
 export function createFlatEngine(host) {
 	const device = host.device, S = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC;
 	let W = host.width, H = host.height;
-	const module = device.createShaderModule({label: 'Flat', code: FLAT_WGSL});
 	let cap = device.createBuffer({label: 'Flat cap', size: W * H * 4, usage: S});
 	const fit = () => { if (host.width === W && host.height === H) return; W = host.width; H = host.height; recorder.width = W; recorder.height = H; cap.destroy(); cap = device.createBuffer({label: 'Flat cap', size: W * H * 4, usage: S}); device.queue.writeBuffer(cap, 0, new Float32Array(W * H)); };
-	const ring = device.createBuffer({label: 'Flat ring', size: FLAT_RING * 64 * 16, usage: S}), lanes = device.createBuffer({label: 'Flat lanes', size: 64 * 16, usage: S});
+	const ring = device.createBuffer({label: 'Flat ring', size: FLAT_RING * 64 * 16, usage: S}), lanes = device.createBuffer({label: 'Flat lanes', size: 3 * 64 * 16, usage: S});
 	let pieces = device.createBuffer({label: 'Flat pieces', size: 4096 * FLAT_PIECE_FLOATS * 4, usage: S}), piecesCap = 4096, base = 0;
 	let knotBuf = device.createBuffer({label: 'Flat knots', size: 16 * 128 * 16, usage: S}), knotCap = 16;
-	const layout = device.createBindGroupLayout({entries: [0, 1, 2, 3, 4, 5, 6, 7, 8].map(b => ({binding: b, visibility: GPUShaderStage.COMPUTE, buffer: {type: b === 6 || b === 7 ? 'uniform' : b === 2 || b === 5 || b === 8 ? 'read-only-storage' : 'storage'}}))});
+	
 	let tilesBuf = device.createBuffer({label: 'Flat tiles', size: 1 << 16, usage: S}), tilesCap = 1 << 14;
-	const tables = paintPigmentTables(device);
-	const pl = device.createPipelineLayout({bindGroupLayouts: [layout]});
-	const piecePipe = device.createComputePipeline({label: 'Flat pieces', layout: pl, compute: {module, entryPoint: 'pieceBatch'}});
-	const knotPipe = device.createComputePipeline({label: 'Flat knot', layout: pl, compute: {module, entryPoint: 'knotLanes'}});
+	let uniformBuf = device.createBuffer({label: 'Flat uniforms', size: 64 * UNIFORM_STRIDE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST}), uniformCap = 64 * UNIFORM_STRIDE;
+	const tables = paintPigmentTables(device), {layout, piecePipe, knotPipe, samplePipe} = flatPrograms(device);
 	const recorder = new FlatRecorder(W, H, host.scale);
 	const ensure = n => {
 		if (n <= piecesCap) return;
@@ -272,6 +288,7 @@ export function createFlatEngine(host) {
 	let box = null;
 	const engine = {
 		recorder,
+		gpuSplit: {knot: 0, piece: 0, passes: 0},
 		get scale() { return recorder.scale; }, set scale(v) { recorder.scale = v; },
 		get strokeCap() { return null; }, set strokeCap(v) {}, capPile: 1, bite: 0, body: 0,
 		flatKnot: k => recorder.flatKnot(k),
@@ -293,7 +310,8 @@ export function createFlatEngine(host) {
 				knots.forEach((r, q) => r.lanes.forEach((l, j) => k.set([l.x * sc, l.y * sc, l.radius * sc, l.active ? 1 : 0, r.smudge ? l.pick * sc : l.pick, r.smudge ? l.feed * sc : l.feed, l.v, l.rate || 0], (q * 128 + j * 2) * 4)));
 				device.queue.writeBuffer(knotBuf, 0, k);
 			}
-			const uniforms = [], enc = device.createCommandEncoder();
+			if (records.length * UNIFORM_STRIDE > uniformCap) { uniformBuf.destroy(); uniformCap = records.length * UNIFORM_STRIDE * 2; uniformBuf = device.createBuffer({label: 'Flat uniforms', size: uniformCap, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST}); }
+			const uniformData = new ArrayBuffer(records.length * UNIFORM_STRIDE), enc = device.createCommandEncoder();
 			const lists = [], runs = new Map();
 			let words = 0;
 			for (const r of records) {
@@ -312,10 +330,11 @@ export function createFlatEngine(host) {
 			}
 			if (words > tilesCap) { tilesBuf.destroy(); tilesCap = words * 2; tilesBuf = device.createBuffer({label: 'Flat tiles', size: tilesCap * 4, usage: S}); }
 			if (words) { const all = new Uint32Array(words); let p = 0; for (const l of lists) { all.set(l, p); p += l.length; } device.queue.writeBuffer(tilesBuf, 0, all); }
-			const bind = u => device.createBindGroup({layout, entries: [host.sheet, cap, pieces, ring, lanes, knotBuf, u, tables, tilesBuf].map((buffer, binding) => ({binding, resource: {buffer}}))});
+			const group = device.createBindGroup({layout, entries: [host.sheet, cap, pieces, ring, lanes, knotBuf, uniformBuf, tables, tilesBuf].map((buffer, binding) => ({binding, resource: binding === 6 ? {buffer, size: 64} : {buffer}}))});
 			let kq = 0, batches = 0, frameBox = null;
-			for (const r of records) {
-				const u = new ArrayBuffer(64), v = new Uint32Array(u), f = new Float32Array(u);
+			const passes = [];
+			records.forEach((r, ri) => {
+				const v = new Uint32Array(uniformData, ri * UNIFORM_STRIDE, 16), f = new Float32Array(uniformData, ri * UNIFORM_STRIDE, 16);
 				let groups = [1, 1];
 				if (r.kind === 'pieces') {
 					const {x0, y0, w, h, at} = runs.get(r), x1 = x0 + w - 1, y1 = y0 + h - 1;
@@ -323,21 +342,52 @@ export function createFlatEngine(host) {
 					box = box ? {x0: Math.min(box.x0, x0), y0: Math.min(box.y0, y0), x1: Math.max(box.x1, x1), y1: Math.max(box.y1, y1)} : {x0, y0, x1, y1};
 					frameBox = frameBox ? {x0: Math.min(frameBox.x0, x0), y0: Math.min(frameBox.y0, y0), x1: Math.max(frameBox.x1, x1), y1: Math.max(frameBox.y1, y1)} : {x0, y0, x1, y1};
 					host.extendBox?.({x0, y0, x1, y1}); batches++;
-				} else { v.set([W, H, 0, 0, 0, 0, r.first ? 1 : 0, 0, r.slot, (r.mixing ? 1 : 0) | (r.smudge ? 2 : 0), kq++, 0]); f.set([...r.base, r.pigment > 0 ? 1 : 0], 12); }
-				const ub = device.createBuffer({size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST}); device.queue.writeBuffer(ub, 0, u); uniforms.push(ub);
-				const pass = enc.beginComputePass(); pass.setPipeline(r.kind === 'pieces' ? piecePipe : knotPipe); pass.setBindGroup(0, bind(ub)); pass.dispatchWorkgroups(...groups); pass.end();
+				} else { v.set([W, H, 0, 0, 0, 0, r.first ? 1 : 0, 0, r.slot, (r.mixing ? 1 : 0) | (r.smudge ? 2 : 0), kq++, 0]); f.set([...r.base, r.pigment > 0 ? 1 : 0], 12); if (r.mixing || r.smudge) passes.push([samplePipe, ri * UNIFORM_STRIDE, [FLAT_LANES, r.smudge ? 2 : 1]]); }
+				passes.push([r.kind === 'pieces' ? piecePipe : knotPipe, ri * UNIFORM_STRIDE, groups]);
+			});
+			device.queue.writeBuffer(uniformBuf, 0, uniformData);
+			const stamps = host.timing && passes.length ? {set: device.createQuerySet({type: 'timestamp', count: 2 * passes.length}), n: 2 * passes.length} : null;
+			passes.forEach(([pipe, offset, groups], pi) => { const pass = enc.beginComputePass(stamps ? {timestampWrites: {querySet: stamps.set, beginningOfPassWriteIndex: 2 * pi, endOfPassWriteIndex: 2 * pi + 1}} : undefined); pass.setPipeline(pipe); pass.setBindGroup(0, group, [offset]); pass.dispatchWorkgroups(...groups); pass.end(); });
+			if (stamps) {
+				stamps.resolve = device.createBuffer({size: 8 * stamps.n, usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC}); stamps.read = device.createBuffer({size: 8 * stamps.n, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST});
+				enc.resolveQuerySet(stamps.set, 0, stamps.n, stamps.resolve, 0); enc.copyBufferToBuffer(stamps.resolve, 0, stamps.read, 0, 8 * stamps.n);
 			}
 			const t = performance.now(); device.queue.submit([enc.finish()]);
-			if (!wait) { device.queue.onSubmittedWorkDone().then(() => { for (const ub of uniforms) ub.destroy(); }); base += n; return {ms: 0, batches, pieces: n, box: frameBox}; }
+			if (stamps) host.gpuTime(stamps.read.mapAsync(GPUMapMode.READ).then(() => {
+				const q = new BigInt64Array(stamps.read.getMappedRange()); let all = 0;
+				passes.forEach(([pipe], pi) => { const ns = Number(q[2 * pi + 1] - q[2 * pi]); all += ns; engine.gpuSplit[pipe === piecePipe ? 'piece' : 'knot'] += ns; });
+				engine.gpuSplit.passes += passes.length;
+				stamps.read.unmap(); for (const b of [stamps.read, stamps.resolve]) b.destroy(); stamps.set.destroy(); return all;
+			}));
+			if (!wait) { base += n; return {ms: 0, batches, pieces: n, box: frameBox}; }
 			await device.queue.onSubmittedWorkDone(); const ms = performance.now() - t;
-			for (const ub of uniforms) ub.destroy();
 			base += n;
 			return {ms, batches, pieces: n, box: frameBox};
 		},
 		get box() { return box; },
-		destroy() { for (const b of [cap, ring, lanes, pieces, knotBuf, tilesBuf]) b.destroy(); },
+		destroy() { for (const b of [cap, ring, lanes, pieces, knotBuf, tilesBuf, uniformBuf]) b.destroy(); },
 	};
 	return engine;
 }
 
-registerPaintEngine('flat', createFlatEngine);
+const UNIFORM_STRIDE = 256, flatCache = new WeakMap();
+function flatLayout(device) {
+	return device.createBindGroupLayout({entries: [0, 1, 2, 3, 4, 5, 6, 7, 8].map(b => ({binding: b, visibility: GPUShaderStage.COMPUTE, buffer: {type: b === 6 || b === 7 ? 'uniform' : b === 2 || b === 5 || b === 8 ? 'read-only-storage' : 'storage', ...(b === 6 ? {hasDynamicOffset: true} : {})}}))});
+}
+function flatPrograms(device) {
+	let p = flatCache.get(device);
+	if (p && p.samplePipe) return p;
+	const module = p?.module || device.createShaderModule({label: 'Flat', code: FLAT_WGSL}), layout = p?.layout || flatLayout(device), pl = device.createPipelineLayout({bindGroupLayouts: [layout]});
+	p = {module, layout, piecePipe: device.createComputePipeline({label: 'Flat pieces', layout: pl, compute: {module, entryPoint: 'pieceBatch'}}), knotPipe: device.createComputePipeline({label: 'Flat knot', layout: pl, compute: {module, entryPoint: 'knotLanes'}}), samplePipe: device.createComputePipeline({label: 'Flat knot sampling', layout: pl, compute: {module, entryPoint: 'knotSample'}})};
+	flatCache.set(device, p); return p;
+}
+async function warmFlat(device) {
+	if (flatCache.get(device)?.samplePipe) return true;
+	const module = device.createShaderModule({label: 'Flat', code: FLAT_WGSL}), layout = flatLayout(device), pl = device.createPipelineLayout({bindGroupLayouts: [layout]});
+	flatCache.set(device, {module, layout});
+	const [piecePipe, knotPipe, samplePipe] = await Promise.all([['Flat pieces', 'pieceBatch'], ['Flat knot', 'knotLanes'], ['Flat knot sampling', 'knotSample']].map(([label, entryPoint]) => device.createComputePipelineAsync({label, layout: pl, compute: {module, entryPoint}})));
+	if (!flatCache.get(device)?.samplePipe) flatCache.set(device, {module, layout, piecePipe, knotPipe, samplePipe});
+	return true;
+}
+
+registerPaintEngine('flat', createFlatEngine, {warm: warmFlat});

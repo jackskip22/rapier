@@ -9,13 +9,21 @@ const RAPIER_NOTES_DOOR_AT_BIRTH = (() => { try {
 function _rapierNotesStartClass(on) {
 	try { document.documentElement.classList.toggle('rapier-notes-start', on === true); } catch (_) {}
 }
+function _rapierNotesSyncReachable() {
+	const environment = globalThis.RapierPlatform?.environment;
+	return environment?.android === true || environment?.network !== false;
+}
+let _rapierNotesDoorsShown = false;
 function _rapierNotesShowDoors() {
-	for (const id of ['notes-open-btn', 'notes-sync-btn']) { const el = document.getElementById(id); if (el) el.hidden = false; }
+	_rapierNotesDoorsShown = true;
+	const open = document.getElementById('notes-open-btn'); if (open) open.hidden = false;
+	const sync = document.getElementById('notes-sync-btn'); if (sync) sync.hidden = !_rapierNotesSyncReachable();
 	const other = document.getElementById('notes-sync-other-btn');
-	if (other) other.hidden = globalThis.RapierPlatform?.environment?.native === true;
+	if (other) other.hidden = globalThis.RapierPlatform?.environment?.native === true || !_rapierNotesSyncReachable();
 	const start = document.getElementById('settings-start-section');
 	if (start) start.hidden = _rapierEmbed.active || globalThis.RAPIER_APPS_HOST === true || window.self !== window.top || typeof globalThis.RAPIER_PAIRED_DOCUMENT === 'string';
 }
+if (typeof window !== 'undefined') window.addEventListener('rapier:platform-state', () => { if (_rapierNotesDoorsShown) _rapierNotesShowDoors(); });
 const _rapierNotesDoor = (() => {
 	if (!_rapierPartAvailable('notes') || globalThis.RapierBenchSession?.active === true) return;
 	let born = false;

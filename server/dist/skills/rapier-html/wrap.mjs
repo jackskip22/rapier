@@ -91,6 +91,7 @@ export function carry(pageHtml, include = []) {
 	const kept = new Set(include);
 	for (const id of kept) if (!CHOICES.includes(id)) throw new Error('a carried page includes ' + CHOICES.join(', ') + '; not ' + id);
 	if (kept.has('drawing')) kept.add('letters');
+	if (kept.has('mermaid')) kept.add('mermaid-zenuml');
 	let html = pageHtml;
 	const cut = id => { const at = element(html, id); if (at) html = html.slice(0, at.start) + html.slice(at.end); };
 	const parts = new Set([...(kept.has('drawing') ? ['rapier-part-drawing'] : []), ...(kept.has('layout') ? ['rapier-part-document'] : [])]);

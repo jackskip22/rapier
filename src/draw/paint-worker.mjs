@@ -6,6 +6,7 @@ import {sha256Yielding} from '../notes/integrity.mjs';
 import {createPaintRowPool, PAINT_SPLIT_PIXELS} from './paint-parallel.mjs';
 import {createWorkerClient} from './worker-client.mjs';
 import {_rapierDrawBuildSVG} from './core.mjs';
+import {paperTile} from './paper-field.mjs';
 import {openPaintDevice, GpuPaintSurface, writeCommit, paintGpuFits, warmPaintEngines} from './paint-gpu.mjs';
 import './paint-gpu-flat.mjs';
 import {installWetState, wetProgramsReady, wetBandsFor} from './paint-gpu-wet.mjs';
@@ -316,6 +317,10 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
     return surface.toRGBA8();
    }
    finally { pool?.detach(surface); }
+  }
+  if(operation==='paperTile') {
+   const tile=await paperTile(request.paper,{density:request.density,strength:request.strength});
+   return tile&&{width:tile.width,height:tile.height,paper:tile.paper,rgb:tile.rgb,strength:tile.strength};
   }
   if(operation==='drop') { for(const id of request.surfaceIds||[]) { const surface=surfaces.get(id); if(surface) pool?.detach(surface); dropDisplay(id); gpuSheets.get(id)?.destroy(); gpuSheets.delete(id); surfaces.delete(id); checkpoints.delete(id); runs.delete(id);historyBrushes.delete(id);resumedBrushes.delete(id); if(!histories.get(id)?.retained)histories.delete(id); } for(const id of request.brushIds||[]){brushes.delete(id);definitions.delete(id);} return {}; }
   throw new Error('Unknown paint operation');

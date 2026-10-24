@@ -43,7 +43,7 @@ function _rapierComposerOpen(title, fill, onClose) {
 	return state;
 }
 
-const RAPIER_ORNAMENTS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.40/';
+const RAPIER_ORNAMENTS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.41/';
 const _rapierOrnamentDoor = {providers: new Map(), allowed: new Set(), held: new Map(), bringing: new Map(), hubs: new Map(), plugins: new Map()};
 const RAPIER_ORNAMENT_FORMAT = 1;
 const _RAPIER_ORNAMENT_KINDS = Object.freeze({
@@ -209,9 +209,23 @@ function _rapierGalleryNoteUse(id) {
 }
 async function _rapierOrnamentInflate(zipped, pin) {
 	if (typeof DecompressionStream !== 'function') throw new Error('This browser cannot unpack the download.');
-	const out = new Uint8Array(await new Response(new Blob([zipped]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
-	if (out.length > 64e6) throw new Error('unexpected size of ' + pin.id);
-	return out;
+	const reader = new Blob([zipped]).stream().pipeThrough(new DecompressionStream('gzip')).getReader();
+	const parts = []; let length = 0;
+	try {
+		while (true) {
+			const {value, done} = await reader.read();
+			if (done) break;
+			length += value.byteLength;
+			if (length > 64e6) throw new Error('unexpected size of ' + pin.id);
+			parts.push(value);
+		}
+		const out = new Uint8Array(length); let at = 0;
+		for (const part of parts) { out.set(part, at); at += part.byteLength; }
+		return out;
+	} catch (error) {
+		Promise.resolve(reader.cancel(error)).catch(() => {});
+		throw error;
+	} finally { reader.releaseLock(); }
 }
 function _rapierOrnamentBring(kind, family = null) {
 	const door = _rapierOrnamentDoor, slot = _rapierOrnamentSlot(kind, family);

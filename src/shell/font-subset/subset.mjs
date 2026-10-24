@@ -1,7 +1,16 @@
 // SPDX-License-Identifier: MIT
 // Runs while writing the page. The written file carries only the resulting fonts.
-import decodeWoff2 from 'wawoff2/decompress.js';
-import {zlibSync, unzlibSync} from 'fflate';
+import createWoff2 from './woff2-decoder.mjs';
+const MAX_FONT_BYTES = 30 * 1024 * 1024;
+let woff2;
+async function decodeWoff2(bytes) {
+  if (bytes.length > MAX_FONT_BYTES) fail('The page font exceeds its size limit.');
+  woff2 ||= createWoff2();
+  const result = (await woff2).decode(bytes);
+  if (!result) fail('The page font container is invalid.');
+  return result;
+}
+import {zlibSync, Unzlib} from 'fflate';
 
 let engine;
 function harfbuzz() {
@@ -18,6 +27,7 @@ function bytesOf(value) {
   const bytes = value instanceof ArrayBuffer ? new Uint8Array(value) : ArrayBuffer.isView(value)
     ? new Uint8Array(value.buffer, value.byteOffset, value.byteLength) : null;
   if (!bytes || bytes.length < 12) fail('The page contains an invalid font.');
+  if (bytes.length > MAX_FONT_BYTES) fail('The page font exceeds its size limit.');
   return bytes;
 }
 
@@ -26,10 +36,13 @@ function tableDirectory(bytes) {
   if (flavor !== 0x00010000 && flavor !== 0x4f54544f) fail('The page font is not a single TrueType or OpenType face.');
   if (!count || 12 + count * 16 > bytes.length) fail('The page font table directory is invalid.');
   const tables = [], seen = new Set();
+  let total = 12 + count * 16;
   for (let i = 0; i < count; i++) {
     const row = 12 + i * 16, name = tag(bytes, row), offset = view.getUint32(row + 8), length = view.getUint32(row + 12);
     if (seen.has(name) || offset < 12 + count * 16 || offset > bytes.length || length > bytes.length - offset)
       fail('The page font contains an invalid table.');
+    total += aligned(length);
+    if (total > MAX_FONT_BYTES) fail('The page font exceeds its size limit.');
     seen.add(name); tables.push({name, bytes: bytes.slice(offset, offset + length)});
   }
   return {flavor, tables: tables.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)};
@@ -116,17 +129,38 @@ function sfntBytes(flavor, tables) {
   return bytes;
 }
 
+function inflateTable(bytes, length) {
+  const output = new Uint8Array(length);
+  let offset = 0;
+  const stream = new Unzlib(chunk => {
+    if (chunk.length > length - offset) fail('The page font table length changed during decompression.');
+    output.set(chunk, offset); offset += chunk.length;
+  });
+  // Bound each decoder emission as well as the table's retained bytes.
+  for (let at = 0; at < bytes.length; at += 1024)
+    stream.push(bytes.subarray(at, at + 1024), at + 1024 >= bytes.length);
+  if (offset !== length) fail('The page font table length changed during decompression.');
+  return output;
+}
+
 function readWoff(bytes) {
   if (bytes.length < 44) fail('The page font container is invalid.');
   const view = viewOf(bytes), count = view.getUint16(12);
   if (view.getUint32(8) !== bytes.length || !count || 44 + count * 20 > bytes.length) fail('The page font container is invalid.');
+  let total = 12 + count * 16;
+  for (let i = 0; i < count; i++) {
+    const length = view.getUint32(44 + i * 20 + 12);
+    if (length > MAX_FONT_BYTES) fail('The page font exceeds its size limit.');
+    total += aligned(length);
+    if (total > MAX_FONT_BYTES) fail('The page font exceeds its size limit.');
+  }
   const tables = [], seen = new Set();
   for (let i = 0; i < count; i++) {
     const row = 44 + i * 20, name = tag(bytes, row), offset = view.getUint32(row + 4), size = view.getUint32(row + 8), original = view.getUint32(row + 12);
     if (seen.has(name) || offset < 44 + count * 20 || offset > bytes.length || size > bytes.length - offset || size > original)
       fail('The page font container has an invalid table.');
     seen.add(name);
-    const data = size === original ? bytes.slice(offset, offset + size) : unzlibSync(bytes.subarray(offset, offset + size));
+    const data = size === original ? bytes.slice(offset, offset + size) : inflateTable(bytes.subarray(offset, offset + size), original);
     if (data.length !== original) fail('The page font table length changed during decompression.');
     tables.push({name, bytes: data});
   }

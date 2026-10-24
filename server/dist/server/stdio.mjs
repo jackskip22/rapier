@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import {createInterface} from 'node:readline';
 import {readFile, writeFile, rename, rm} from 'node:fs/promises';
 import {join} from 'node:path';
+import {JsonDepthGuard} from '../mcp/incremental-json.mjs';
+import {MAX_RPC_BODY_BYTES, MAX_RPC_DEPTH, RPC_BODY_TIMEOUT_MS} from '../mcp/limits.mjs';
 
 export const DOOR_FILE = 'door.json';
 const LEGACY_VERSION = '2025-11-25';
@@ -27,8 +28,10 @@ export function bridgeStdio({origin, token, reconnect = null, input = process.st
   let version = LEGACY_VERSION, session = null, target = {origin, token}, moving = null;
   const write = message => output.write(JSON.stringify(message) + '\n');
   const failure = (id, message) => { if (id !== undefined && id !== null) write({jsonrpc: '2.0', id, error: {code: -32603, message}}); };
+  const refuse = error => write({jsonrpc: '2.0', id: null, error: {code: -32600, message: error.message, data: {code: error.code}}});
   const relay = async line => {
     let message;
+    try { new JsonDepthGuard(MAX_RPC_DEPTH).write(line); } catch (error) { return refuse(error); }
     try { message = JSON.parse(line); } catch { return write({jsonrpc: '2.0', id: null, error: {code: -32700, message: 'Parse error'}}); }
     if (message?.method === 'initialize' && typeof message.params?.protocolVersion === 'string') version = message.params.protocolVersion;
     const stated = message?.params?._meta?.['io.modelcontextprotocol/protocolVersion'];
@@ -63,11 +66,53 @@ export function bridgeStdio({origin, token, reconnect = null, input = process.st
       write(answer);
     } catch { failure(message?.id, 'The local Rapier Door did not answer.'); }
   };
-  const lines = createInterface({input, crlfDelay: Infinity}), pending = new Set();
-  lines.on('line', line => {
-    if (!line.trim()) return;
-    const task = relay(line).finally(() => pending.delete(task));
-    pending.add(task);
-  });
-  return new Promise(resolve => lines.once('close', () => Promise.allSettled([...pending]).then(() => resolve())));
+  const pending = new Set(); let pendingBytes = 0;
+  return (async () => {
+    let parts = [], length = 0, dropping = false, piece, used = 0, timer;
+    const drop = error => {
+      parts = []; piece = null; used = 0; dropping = true; clearTimeout(timer);
+      refuse(error);
+    };
+    const append = bytes => {
+      for (let at = 0; at < bytes.length;) {
+        piece ??= Buffer.allocUnsafe(65536);
+        const count = Math.min(bytes.length - at, piece.length - used);
+        piece.set(bytes.subarray(at, at + count), used); used += count; at += count;
+        if (used === piece.length) { parts.push(piece); piece = null; used = 0; }
+      }
+    };
+    const flush = async () => {
+      clearTimeout(timer);
+      if (!length || dropping) { parts = []; piece = null; used = length = 0; dropping = false; return; }
+      if (used) parts.push(piece.subarray(0, used));
+      const bytes = length, held = parts;
+      parts = []; piece = null; used = length = 0;
+      while (pending.size >= 64 || pendingBytes + bytes > MAX_RPC_BODY_BYTES) await Promise.race(pending);
+      let line;
+      try { line = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(Buffer.concat(held, bytes)); }
+      catch { write({jsonrpc: '2.0', id: null, error: {code: -32700, message: 'Parse error'}}); return; }
+      if (!line.trim()) return;
+      pendingBytes += bytes;
+      const task = relay(line).finally(() => { pending.delete(task); pendingBytes -= bytes; });
+      pending.add(task);
+    };
+    try {
+      for await (const raw of input) {
+        const chunk = typeof raw === 'string' ? Buffer.from(raw) : raw;
+        for (let at = 0; at < chunk.length;) {
+          const newline = chunk.indexOf(10, at), end = newline < 0 ? chunk.length : newline;
+          if (!dropping && end > at) {
+            if (!length) timer = setTimeout(() => drop({code: 'REQUEST_TIMEOUT', message: 'The JSON request body did not finish in time.'}), RPC_BODY_TIMEOUT_MS);
+            length += end - at;
+            if (length > MAX_RPC_BODY_BYTES) {
+              drop({code: 'REQUEST_TOO_LARGE', message: `The JSON request must be at most ${MAX_RPC_BODY_BYTES} bytes.`});
+            } else append(chunk.subarray(at, end));
+          }
+          at = end + 1;
+          if (newline >= 0) await flush();
+        }
+      }
+      await flush();
+    } finally { clearTimeout(timer); await Promise.allSettled(pending); }
+  })();
 }

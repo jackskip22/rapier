@@ -1,3 +1,4 @@
+import {parseImportJson} from './import.mjs';
 import {scanLinks} from './links.mjs';
 import {noteFileName, orderAfter} from './model.mjs';
 import {importTags, literalBlock, importMetadata, importDate, importTrash, readJsonInputs as unwrap} from './import.mjs';
@@ -42,7 +43,7 @@ export async function importSimplenote(entries, options) {
 		const jsonFile = /\.json$/i.test(e.name), text = e.text.replace(/^\uFEFF/, '');
 		if (!jsonFile && !/^\s*\{/.test(text)) continue;
 		let raw;
-		try { raw = JSON.parse(text); } catch (_) { if (jsonFile) {
+		try { raw = parseImportJson(text); } catch (_) { if (jsonFile) {
 			skipped.push({name: e.name, why: 'invalid JSON; literal source retained'});
 			recovered.push({...literalImportSource(e, pool, 'Simplenote JSON was damaged and could not be parsed.', e.characterWarnings, 'json'), created: -Infinity});
 		} continue; }

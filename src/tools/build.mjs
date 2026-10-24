@@ -479,9 +479,9 @@ const shakenExports = {};
   }
 }
 const VENDOR_GROUPS = {
-  'lib-dompurify': ['dompurify-3.4.16.es2024.min.js'],
+  'lib-dompurify': ['dompurify-3.4.17.es2024.min.js'],
   'lib-turndown': ['turndown-7.2.4.es2024.min.js'],
-  'lib-markdownit': ['markdown-it-15.0.2.es2022.umd.js', 'markdown-it-task-lists-2.1.1.min.js', 'markdown-it-footnote-4.0.0.min.js',
+  'lib-markdownit': ['markdown-it-15.0.3.es2022.umd.js', 'markdown-it-task-lists-2.1.1.min.js', 'markdown-it-footnote-4.0.0.min.js',
     'markdown-it-mark-4.0.0.min.js', 'markdown-it-sup-2.0.0.min.js', 'markdown-it-emoji-3.1.0-light.min.js',
     'markdown-it-abbr-2.0.0.min.js', 'markdown-it-ins-4.0.0.min.js', 'markdown-it-deflist-4.0.0.min.js'],
   'lib-gpu-lexer': ['gpu-lexer-0.0.4.js'],
@@ -601,6 +601,8 @@ if ([...ui.matchAll(commercialMarkup)].length !== 1 || ui.split('<!-- RAPIER_COM
 ui = commercialPage(ui, JSON.parse(await read('commercial-checkout.json')));
 const escapeHtml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 const peleNotice = await read('shell/vendor/pele/LICENSE');
+// Pele is MIT (its npm package and its own LICENSE): the sheet carries that notice, never another project's license text.
+if (!/^MIT License\n/.test(peleNotice) || JSON.parse(await read('shell/vendor/pele/PROVENANCE.json')).license !== 'MIT') throw new Error('Pele\'s vendored notice is not its MIT license');
 ui = ui.replace('<pre class="license-text" data-license="pele"></pre>', () => '<pre class="license-text">' + escapeHtml(peleNotice) + '</pre>');
 const roughNotice = /^\/\*([\s\S]*?)\*\//.exec(await read('draw/rough.mjs'))?.[1].replace(/^ {3}/gm, '').trim();
 if (!roughNotice?.includes('MIT License') || !roughNotice.includes('Copyright (c) 2019 Preet Shihn')) throw new Error('Missing rough.js notice');
@@ -660,8 +662,18 @@ if (!styleSlots.test(html) || !html.includes('<template id="rapier-ui-slot"></te
 html = html.replace(styleSlots, critical => critical.replace(/#rapier-first-screen[^<]*/, ''));
 const bootTheme = '<script id="rapier-boot-theme">globalThis.RapierBenchRoute=!!document.querySelector(\'meta[name="rapier-phone-bench"][content="1"]\')||/^https?:$/.test(location.protocol)&&/^\\/bench\\/?$/.test(location.pathname);document.documentElement.classList.add("rapier-script");try{var t=document.querySelector(\'meta[name="rapier-appearance"]\')?.content;try{if(t!=="light"&&t!=="dark")t=globalThis.RapierBenchRoute||globalThis.RapierBenchSession?.active===true?null:JSON.parse(localStorage.getItem("rapier:preference:theme"))}catch(e){}if(t==="light"||(t!=="dark"&&matchMedia("(prefers-color-scheme: light)").matches))document.documentElement.classList.add("rapier-boot-light")}catch(e){}</script>\n' +
   '<style id="rapier-boot-theme-style">html{background:#000}html.rapier-boot-light{color-scheme:light;background:#fff}html.rapier-script body:not(.rapier-first-ready):not(.rapier-boot-failed)>:not(.settings-overlay):not(dialog):not(#toast-root:has(>.rapier-progress)),html.rapier-script body:not(.rapier-first-ready):not(.rapier-boot-failed) #rapier-first-screen>*{opacity:0;pointer-events:none}html:not(.rapier-script) #rapier-first-screen{display:none}#rapier-first-screen{display:contents}</style>\n';
+const charsetRepair = '<script id="rapier-charset">(function(){var d=document,n=String(d.characterSet||"").toLowerCase();' +
+  'if(n==="utf-8"||globalThis.RapierCharsetRepaired!==undefined)return;var m=new Map,t;' +
+  'try{t=new TextDecoder(n);for(var i=0;i<256;i++){var c=t.decode(new Uint8Array([i]));if(c.length!==1||c==="\\ufffd"||m.has(c)||i<128&&c.charCodeAt(0)!==i)return;m.set(c,i)}}catch(e){return}' +
+  'globalThis.RapierCharsetRepaired=false;d.write("<plaintext hidden>");' +
+  'd.addEventListener("DOMContentLoaded",function(){var r=d.querySelector("plaintext"),h=d.documentElement.outerHTML,' +
+  'head="<!doctype html>"+h.slice(0,h.indexOf("<head"))+d.head.outerHTML.replace(/<\\/head>$/,""),rest=r?r.textContent:"",out=rest;' +
+  'try{var b=new Uint8Array(rest.length),k=0;for(var j=0;j<rest.length;j++){var x=rest.charCodeAt(j),y=x<128?x:m.get(rest[j]);if(y===undefined)throw 0;b[k++]=y}' +
+  'out=new TextDecoder("utf-8",{fatal:true}).decode(b.subarray(0,k));globalThis.RapierCharsetRepaired=true}catch(e){}' +
+  'd.open();d.write(head+out);d.close()})})()</script>\n';
+html = html.replace(/<script id="rapier-charset">[\s\S]*?<\/script>\s*/, '');
 html = html.replace(/<script id="rapier-boot-theme">[\s\S]*?<\/script>\s*<style id="rapier-boot-theme-style">[\s\S]*?<\/style>\s*/, '');
-html = html.replace(/(<meta name="viewport")/, (_, anchor) => bootTheme + anchor);
+html = html.replace(/(<meta name="viewport")/, (_, anchor) => charsetRepair + bootTheme + anchor);
 html = html.replace(/<!-- RAPIER_JXL_BEGIN -->[\s\S]*?<!-- RAPIER_JXL_END -->\s*/g, '');
 html = html.replace(/<!-- RAPIER_BACKUP_WORKER_BEGIN -->[\s\S]*?<!-- RAPIER_BACKUP_WORKER_END -->\s*/g, '');
 html = html.replace(/<!-- RAPIER_SHARED_AGENT_BEGIN -->[\s\S]*?<!-- RAPIER_SHARED_AGENT_END -->\s*/g, '');
@@ -863,7 +875,7 @@ async function realmSources() {
   const raw = await Promise.all(['tools/startup-release.js', 'tools/startup-rescue.js', 'tools/runtime-loader.js', 'tools/text-pack.mjs',
     'tools/packed-header.mjs', 'tools/base124.mjs', 'shell/platform.js', 'shell/bundle-io.js', 'shell/bundled-plugins.js', 'shell/plugin-loader.js',
     'shell/font-subset-plugin.js', 'shell/parts.js', 'agent/apps.js', 'agent/host-files.mjs'].map(async path => (await read(path)).replace(/^export /gm, '')));
-  const inline = [...bootTheme.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map(match => match[1]);
+  const inline = [...(charsetRepair + bootTheme).matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map(match => match[1]);
   const vendors = (await Promise.all(Object.keys(VENDOR_GROUPS).map(deriveVendorGroup))).flat().map(span => span.source);
   const plugins = await Promise.all((await pluginPackFiles()).filter(file => /^rapier-(?:math|mermaid-.*|font-subset|pdf-build-pdf\.mjs)$/.test(file.id))
     .map(async file => {
@@ -898,9 +910,9 @@ for (const id of vendorIds) if (!vendorElement(id).test(html)) throw new Error('
 const vendorGroupSpans = await Promise.all(vendorIds.map(browserVendorSpans));
 const vendorPacks = Promise.all(vendorIds.map((id, at) => packedSpans(id, 'text/rapier-vendor', vendorGroupSpans[at])));
 // (jxl/complete.js), written into its slice at the mark (tools/jxl-bundle.mjs RAPIER_WORKERS).
-const jxlArtifact = await buildJPEGXLArtifact(root, {encoder: true, still: true});
+const jxlArtifact = await buildJPEGXLArtifact(root, {encoder: true, still: true, inline: ['gpu-core']});
 const jxlWorker = jxlArtifact.bytes.toString('utf8');
-const jxlComplete = await buildRapierWorker(resolve(root, 'images/jxl'));
+const jxlComplete = await buildRapierWorker(resolve(root, 'images/jxl'), {inline: ['gpu-core']});
 const jxl = {version: jxlArtifact.version, modules: jxlArtifact.modules.map(name => 'images/jxl/' + name),
   worker: {bytes: jxlArtifact.bytes.length, sha256: jxlArtifact.sha256},
   complete: {modules: jxlComplete.modules.map(name => 'images/jxl/' + name), bytes: jxlComplete.bytes.length, sha256: jxlComplete.sha256}};
@@ -942,7 +954,7 @@ const platformSpans = [];
     const source = await lean(path === 'shell/plugin-loader.js' ? fillBuiltinSlot(fillMermaidResources(input), '/* RAPIER_BUILTIN_FILES_REUSE */', builtinFilesReuse)
       : path === 'shell/font-subset-plugin.js' ? fillFontSubsetResources(input)
       : path === 'shell/parts.js' ? fillBuiltinSlot(input, '/* RAPIER_PARTS */ null', JSON.stringify(partFiles.map(({id, file, bytes, sri}) =>
-        ({id, label: PARTS.find(part => part.id === id).label, file, bytes, sri})))) : input, name);
+        ({id, label: PARTS.find(part => part.id === id).label, file, bytes, sri, release: VERSION})))) : input, name);
     platformSpans.push({name, source});
   }
   const slot = /<!-- RAPIER_PLATFORM_BEGIN -->\n<!-- RAPIER_PLATFORM_END -->\n/;
@@ -1166,7 +1178,7 @@ if (PROFILE === 'full') {
     .replace('__RAPIER_BOOT_ID__', bootId)
     .replace('__RAPIER_DOOR_SHA256__', JSON.stringify(doorHashes))
     .replace('__RAPIER_SITE_PAGES__', JSON.stringify(Object.keys(STANDALONE)))
-    .replace('__RAPIER_PARTS__', JSON.stringify(partFiles.map(({id, file, bytes, sri}) => ({id, file, bytes, sri}))))
+    .replace('__RAPIER_PARTS__', JSON.stringify(partFiles.map(({id, file, bytes, sri}) => ({id, file, bytes, sri, release: VERSION}))))
     .replace(/const SHELL_RELEASE_SHA256 = '[0-9a-f]{64}';/, `const SHELL_RELEASE_SHA256 = '${shellDigest}';`)
     .replace(/const SHELL_PAGE_SHA256 = '[0-9a-f]{64}';/, `const SHELL_PAGE_SHA256 = '${shellPageDigest}';`);
   new vm.Script(worker, {filename: 'sw.js'});
@@ -1244,7 +1256,7 @@ const profileRecord = {path: OUTPUT_FILE, bytes: Buffer.byteLength(html), sha256
   coreHeldPartGlobals: Object.keys(partGlobals).filter(name => !partOf.has(partGlobals[name])), shakenExports, jxl,
   builtAt: BUILT_AT, node: process.version, mode: PACK_MODE, packing: PACKING, codecs: ['gzip', 'brotli'], brotli: {...BROTLI_SETTINGS}, canonical: toolchainCanonical};
 // (`RAPIER_PACK=fast`), 'release' for Zopfli; tools/release-gate.mjs checks it.
-const receipt = {firstPaint: {key: firstPaintKey, current: firstPaintCurrent}, firstScreen: {key: firstScreenKey, current: !!firstScreenRecord}, phoneBench: phoneBenchReceipt, release: VERSION, builtAt: BUILT_AT, node: process.version, mode: PACK_MODE, packing: PACKING, codecs: profileRecord.codecs, brotli: profileRecord.brotli, validation: 'JavaScript syntax and source assembly only; no runtime or host verification', profile: PROFILE, jxl, profiles: {...priorProfiles, [PROFILE]: profileRecord}, editor: {path: OUTPUT_FILE, bytes: Buffer.byteLength(html), sha256: checksum(html)}, apps: PROFILE === 'full' ? {path: 'dist/chatgpt/rapier-app.html', bytes: appHtmlBytes, sha256: appHtmlSha256, spans: appsSpans, plugins: hostedPlugins, assets: appAssets} : priorReceipt?.apps ?? null, offline: PROFILE === 'full' ? {path: 'dist/chatgpt/rapier.html', bytes: Buffer.byteLength(portableHtml), sha256: checksum(portableHtml), plugins: appPlugins} : priorReceipt?.offline ?? null, shell: PROFILE === 'full' ? {sha256: shellDigest} : priorReceipt?.shell ?? null, htmlSinks: {named: htmlSinks.total, files: htmlSinks.files, inventory: 'security/html-sinks.json'}, tools: TOOLS.map(row => row.name), toolchain: {canonical: toolchainCanonical, node: {expected: toolchain.node.version, actual: process.version}}, unchecked};
+const receipt = {firstPaint: {key: firstPaintKey, current: firstPaintCurrent}, firstScreen: {key: firstScreenKey, current: !!firstScreenRecord}, phoneBench: phoneBenchReceipt, release: VERSION, builtAt: BUILT_AT, node: process.version, mode: PACK_MODE, packing: PACKING, codecs: profileRecord.codecs, brotli: profileRecord.brotli, validation: 'JavaScript syntax and source assembly only; no runtime or host verification', profile: PROFILE, jxl, profiles: {...priorProfiles, [PROFILE]: profileRecord}, editor: {path: OUTPUT_FILE, bytes: Buffer.byteLength(html), ceiling: BUDGET.refuse, sha256: checksum(html)}, apps: PROFILE === 'full' ? {path: 'dist/chatgpt/rapier-app.html', bytes: appHtmlBytes, sha256: appHtmlSha256, spans: appsSpans, plugins: hostedPlugins, assets: appAssets} : priorReceipt?.apps ?? null, offline: PROFILE === 'full' ? {path: 'dist/chatgpt/rapier.html', bytes: Buffer.byteLength(portableHtml), sha256: checksum(portableHtml), plugins: appPlugins} : priorReceipt?.offline ?? null, shell: PROFILE === 'full' ? {sha256: shellDigest} : priorReceipt?.shell ?? null, htmlSinks: {named: htmlSinks.total, files: htmlSinks.files, inventory: 'security/html-sinks.json'}, tools: TOOLS.map(row => row.name), toolchain: {canonical: toolchainCanonical, node: {expected: toolchain.node.version, actual: process.version}}, unchecked};
 await mkdir(resolve(root, 'dist'), {recursive: true});
 await writeFile(resolve(root, 'dist/runtime-symbols-' + PROFILE + '.json'), JSON.stringify(lean.symbols) + '\n');
 await writeFile(resolve(root, 'dist/BUILD.json'), JSON.stringify(receipt, null, 2) + '\n');

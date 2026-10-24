@@ -225,15 +225,15 @@ async function keepParts() {
       const bytes = new Uint8Array(await response.arrayBuffer());
       const sri = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest('SHA-384', bytes))));
       if (bytes.byteLength !== pin.bytes || sri !== pin.sri) throw new Error('invalid part: ' + pin.file);
-      const earlier = await Promise.all(keys.filter(key => key.startsWith(stem)).map(async key => [key, (await run('readonly', store => store.get(key)))?.savedAt || 0]));
-      return {pin, bytes, newest: earlier.sort((a, b) => b[1] - a[1])[0][0], earlier};
+      const earlier = await Promise.all(keys.filter(key => key.startsWith(stem)).map(async key => [key, (await run('readonly', store => store.get(key)))?.release]));
+      return {pin, bytes, earlier};
     }));
     const kept = fetched.filter(Boolean);
     if (kept.length) await run('readwrite', store => {
       let last;
-      for (const {pin, bytes, newest, earlier} of kept) {
-        for (const [key] of earlier) if (key !== newest) store.delete(key);
-        last = store.put({bytes, savedAt: Date.now(), format: PART_FORMAT, sri: pin.sri, size: pin.bytes}, 'parts/' + pin.file);
+      for (const {pin, bytes, earlier} of kept) {
+        for (const [key, release] of earlier) if (!release || release.localeCompare(pin.release, undefined, {numeric: true}) < 0) store.delete(key);
+        last = store.put({bytes, savedAt: Date.now(), format: PART_FORMAT, sri: pin.sri, size: pin.bytes, release: pin.release}, 'parts/' + pin.file);
       }
       return last;
     });

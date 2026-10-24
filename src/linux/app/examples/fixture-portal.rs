@@ -9,7 +9,7 @@ use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 
 struct Chooser(PathBuf);
 impl Chooser {
-    fn answer(
+    async fn answer(
         &self,
         kind: &str,
         parent: &str,
@@ -32,7 +32,7 @@ impl Chooser {
         let chosen = std::fs::read_to_string(self.0.join("next"))
             .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
         let chosen = chosen.trim().to_string();
-        if chosen != "CANCEL" && !chosen.starts_with('/') {
+        if !["CANCEL", "STALL_CALL", "STALL_RESPONSE"].contains(&chosen.as_str()) && !chosen.starts_with('/') {
             return Err(zbus::fdo::Error::InvalidArgs("fixture path must be absolute".into()));
         }
         let mut log = std::fs::OpenOptions::new()
@@ -45,6 +45,8 @@ impl Chooser {
                 .and_then(|v| Vec::<u8>::try_from(v).ok())
                 .map(|bytes| String::from_utf8_lossy(bytes.strip_suffix(&[0]).unwrap_or(&bytes)).into_owned())
         })).unwrap();
+        if chosen == "STALL_CALL" { std::future::pending::<()>().await; }
+        if chosen == "STALL_RESPONSE" { return Ok(handle); }
         let signal_handle = handle.clone();
         let connection = zbus::blocking::Connection::from(connection.clone());
         std::thread::spawn(move || {
@@ -68,19 +70,19 @@ impl Chooser {
 
 #[zbus::interface(name = "org.freedesktop.portal.FileChooser")]
 impl Chooser {
-    fn open_file(
+    async fn open_file(
         &self, parent: &str, _title: &str, options: HashMap<String, OwnedValue>,
         #[zbus(header)] header: Header<'_>,
         #[zbus(connection)] connection: &zbus::Connection,
     ) -> zbus::fdo::Result<OwnedObjectPath> {
-        self.answer("OpenFile", parent, options, header, connection)
+        self.answer("OpenFile", parent, options, header, connection).await
     }
-    fn save_file(
+    async fn save_file(
         &self, parent: &str, _title: &str, options: HashMap<String, OwnedValue>,
         #[zbus(header)] header: Header<'_>,
         #[zbus(connection)] connection: &zbus::Connection,
     ) -> zbus::fdo::Result<OwnedObjectPath> {
-        self.answer("SaveFile", parent, options, header, connection)
+        self.answer("SaveFile", parent, options, header, connection).await
     }
 }
 

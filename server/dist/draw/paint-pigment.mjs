@@ -63,13 +63,14 @@ export function paintPigmentRGB(pigment, out, offset = 0) {
 
 const lumOf = (r, g, b) => Math.max(.0001, .2126 * r + .7152 * g + .0722 * b);
 export function writePaintPigment(r, g, b, out, offset = 0) {
-	writePaintWet(r, g, b, out, offset);
+	writePaintKM(r, g, b, out, offset);
 	mixState(r, g, b, out, offset + KM, 1 / lumOf(r, g, b));
 	return out;
 }
 
-export const PAINT_WET_CHANNELS = KM;
-export function writePaintWet(r, g, b, out, offset = 0) {
+export const PAINT_WET_CHANNELS = PAINT_PIGMENT_CHANNELS;
+export function writePaintWet(r, g, b, out, offset = 0) { return writePaintPigment(r, g, b, out, offset); }
+export function writePaintKM(r, g, b, out, offset = 0) {
 	const pigment = paintPigmentCell(Math.round(clamp(r) * GRID), Math.round(clamp(g) * GRID), Math.round(clamp(b) * GRID));
 	for (let i = 0; i < KM; i++) out[offset + i] = pigment[i];
 	out[offset + BANDS] += r - Math.round(clamp(r) * GRID) / GRID;
@@ -77,7 +78,8 @@ export function writePaintWet(r, g, b, out, offset = 0) {
 	out[offset + BANDS + 2] += b - Math.round(clamp(b) * GRID) / GRID;
 	return out;
 }
-export function paintWetRGB(pigment, out, offset = 0) { return kmRGB(pigment, out, offset); }
+export function paintWetRGB(pigment, out, offset = 0) { return paintPigmentRGB(pigment, out, offset); }
+export function paintKMRGB(pigment, out, offset = 0) { return kmRGB(pigment, out, offset); }
 export function paintWetPigment(r, g, b) { return paintPigmentCell(Math.round(clamp(r) * GRID), Math.round(clamp(g) * GRID), Math.round(clamp(b) * GRID)); }
 
 export function writePaintRGB(r, g, b, out) { out[0] = r; out[1] = g; out[2] = b; return out; }

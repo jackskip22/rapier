@@ -10,6 +10,8 @@ import {BucketStore} from './bucket-store.mjs';
 import {Renderer} from './chromium.mjs';
 import {FolderSearch,searchFingerprint} from './search.mjs';
 import {handleMcp,handleAuthenticatedMcp,handleLocalEditor,deployment,MAX_RPC_BODY_BYTES} from '../mcp/worker.mjs';
+import {MAX_RPC_DEPTH} from '../mcp/limits.mjs';
+import {JsonDepthGuard} from '../kit/json-depth.mjs';
 import {VERSION} from '../version.mjs';
 import {exportFilename} from '../agent/kernel.mjs';
 import {wrap} from '../skills/rapier-html/wrap.mjs';
@@ -145,7 +147,15 @@ export async function createServer(options={}) {
           if(isMcp && [...url.searchParams.keys()].some(key=>key!=='document'))throw refusal('QUERY_REFUSED','The MCP URL accepts only a document path.',400);
           let bytes=request.method==='POST' ? await bodyOf(request,MAX_RPC_BODY_BYTES) : null;
           if(scope && bytes) {
-            let message;try{message=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));}catch{throw refusal('INVALID_JSON','The request is not valid UTF-8 JSON.',400);}
+            let message;
+            try {
+              const text=new TextDecoder('utf-8',{fatal:true}).decode(bytes);
+              new JsonDepthGuard(MAX_RPC_DEPTH).write(text);
+              message=JSON.parse(text);
+            } catch(error) {
+              if(error.code==='JSON_TOO_DEEP')throw refusal(error.code,error.message,400);
+              throw refusal('INVALID_JSON','The request is not valid UTF-8 JSON.',400);
+            }
             if(message?.method==='tools/call' && message.params?.name==='open' && !message.params.arguments?.document) {
               const args=message.params.arguments || {};
               if(!args || Array.isArray(args) || typeof args!=='object')throw refusal('INVALID_SCOPE_ARGUMENTS','The scoped open needs an arguments object.',400);

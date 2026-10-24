@@ -251,9 +251,13 @@ const RAPIER_STORAGE_SCOPE = (function () {
 	} catch (_) { return ''; }
 })();
 const RAPIER_RECOVERY_SCOPE = RAPIER_STORAGE_SCOPE + (function () {
+	try { return location.protocol === 'file:' && document.getElementById('rapier-document') ? '!' + location.pathname : ''; }
+	catch (_) { return ''; }
+})() + (function () {
 	try { var slot = window.__RAPIER_NATIVE_WINDOW; return Number.isInteger(slot) && slot > 1 && slot < 1000 ? '#' + slot : ''; }
 	catch (_) { return ''; }
 })();
+const RAPIER_STORAGE_FORBIDDEN = (function () { try { void window.localStorage; return false; } catch (error) { return !!error && error.name === 'SecurityError'; } })();
 const RapierStorage = Object.freeze({
 	scope: RAPIER_STORAGE_SCOPE,
 	recoveryScope: RAPIER_RECOVERY_SCOPE,
@@ -310,7 +314,17 @@ window.RapierBootAttempts = RapierBootAttempts;
 
 const RapierWriterPromotion = (function () {
 	var key = RapierStorage.writerPromotion;
+	var channel = null;
+	function open() {
+		try { return channel || (channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel(key) : null); }
+		catch (_) { return null; }
+	}
 	return Object.freeze({
+		closed: function () { try { var c = open(); if (c) c.postMessage('closed'); } catch (_) {} },
+		onClosed: function (listener) {
+			var c = open();
+			if (c) c.onmessage = function (event) { if (event.data === 'closed') listener(); };
+		},
 		mark: function () { try { sessionStorage.setItem(key, '1'); } catch (_) {} },
 		consume: function () {
 			try { var marked = sessionStorage.getItem(key) === '1'; if (marked) sessionStorage.removeItem(key); return marked; }
@@ -2829,6 +2843,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			get id() { return String(raw.id || 'unknown').toLowerCase(); },
 			get android() { return environment.id === 'android'; },
 			get native() { return raw.native === true; },
+			get network() { return raw.native !== true || raw.network === true; },
 			get here() { return environment.id === 'web' ? 'This browser' : 'This app'; },
 			get updateEngine() { return environment.android ? 'Update Android System WebView in Google Play, then reopen Rapier.'
 				: environment.id === 'windows' ? 'Update Microsoft Edge WebView2 Runtime, then reopen Rapier.' : ''; },
@@ -3240,6 +3255,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 		return {
 			get id() { return _nativeHostRuntime.state.platformId; },
 			native: true,
+			get network() { return _nativeCapability('network'); },
 			get createAudio() { return _nativeCapability('nativeMedia') ? _nativeCreateAudio : null; },
 			get recoveryAutoResume() { return _nativeHostRuntime.state.recoveryAutoResume === true; },
 			ready: function () {
@@ -3363,6 +3379,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 					payload = payload || {};
 					var result = await _nativeHostCall('document.acceptOpened', {
 						path: payload.path || '', documentAuthority: payload.documentAuthority || '',
+						nativeDocumentAuthority: payload.nativeDocumentAuthority || '',
 						fileGeneration: payload.fileGeneration == null ? null : payload.fileGeneration,
 						intakeId: Number(payload.nativeIntakeId) || 0,
 					});

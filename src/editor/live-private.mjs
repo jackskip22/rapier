@@ -5,6 +5,7 @@ import {readLedger} from '../kit/ledger/format.mjs';
 import {_rapierHistoryEffects as historyEffects} from '../kit/ledger/journal-records.mjs';
 import {initialLiveLedger, liveRows} from './live-ledger.mjs';
 import {sha256} from '../kit/ledger/hash.mjs';
+import {JsonDepthGuard} from '../kit/json-depth.mjs';
 import {PRIVATE_LIVE_PROTOCOL, privateId, privatePeer, privateInteger, privateDigest, privateSecret,
   privateCiphertext, privateBase64, privateUnbase64, privateInitialHash, privateRecordHash} from '../kernel/live-private-wire.mjs';
 
@@ -48,7 +49,9 @@ export async function openPrivate(config, kind, ciphertext, client, seq) {
   let bytes;
   try {
     bytes = await open(key, aad, envelope);
-    return JSON.parse(decoder.decode(bytes));
+    const text = decoder.decode(bytes);
+    new JsonDepthGuard(128).write(text);
+    return JSON.parse(text);
   } finally {key.fill(0); envelope.fill(0); bytes?.fill(0);}
 }
 export async function createPrivateInvitation(value) {

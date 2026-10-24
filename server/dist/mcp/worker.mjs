@@ -34,7 +34,8 @@ import {changeSignal, validWait, waitInObject} from './waited-read.mjs';
 import {oauthStoreRequest} from './oauth-store.mjs';
 import {GrantVerdicts, watchGrant, tellRevoked} from './grant-watch.mjs';
 import { PAIRED_PATH, PAIRED_PREVIEW, PAIR_CODE, PAIR_CODE_MS, MAX_PAIRINGS, PAIR_SESSION_MS, PAGE_CSP, sessionCookie, pendingCookie, readCookie, setCookies, newCode, newSecret, mintSession, verifySession, pageFlags, pageFlagText } from './paired.mjs';
-import {DOOR_LIMITS} from './limits.mjs';
+import {DOOR_LIMITS, MAX_RPC_BODY_BYTES, MAX_RPC_DEPTH, RPC_BODY_TIMEOUT_MS} from './limits.mjs';
+export {MAX_RPC_BODY_BYTES} from './limits.mjs';
 import {WritePace, PACED_OPERATIONS, PACE_WORDS} from './write-pace.mjs';
 import {LiveSessions, LIVE_PROTOCOL, LIVE_LIMITS} from './live-session.mjs';
 import {createCommitFence} from '../agent/commit-fence.mjs';
@@ -107,7 +108,6 @@ const CHUNK_CHARS = 32768;
 const WORKSPACE_STATE_FORMAT = 'rapier-workspace/2';
 const MAX_RECEIPTS = 64;
 const MAX_UI_BYTES = 16 * 1024 * 1024;
-export const MAX_RPC_BODY_BYTES = MAX_TEXT_BYTES * 3 + 1024 * 1024;
 const VIEW_LEASE_MS = 15000;
 const HUMAN_MESSAGE_CHARS = 1500;
 const HUMAN_MESSAGE_KEEP = 5;
@@ -546,7 +546,8 @@ const rpcStringLimit = path => path.length === 1 && path[0] === 'id' ||
   path.length === 2 && path[0] === 'params' && path[1] === 'requestId' ? MAX_RPC_ID_BYTES : undefined;
 const oversizedRpcId = value => value === JSON_STRING_LIMIT || jsonStringExceedsBytes(value, MAX_RPC_ID_BYTES);
 const readBody = (request, received) => parseJsonStream(request, {limit: MAX_RPC_BODY_BYTES, received,
-  failure, projectObject: rpcProjection, stringLimit: rpcStringLimit, inlineBytes: 65536});
+  failure, projectObject: rpcProjection, stringLimit: rpcStringLimit, inlineBytes: 65536,
+  maxDepth: MAX_RPC_DEPTH, timeoutMs: RPC_BODY_TIMEOUT_MS});
 
 function allowedOrigin(request, env) {
   const origin = request.headers.get('Origin');
@@ -695,8 +696,9 @@ async function editorProofVerdict(env, args, authority, editorProof, documentAdd
 
 async function takeToolBudget(request, env, authority, name, args, door, editorProof) {
   if (authority.source === 'page' && ![PAIR_STATUS, ROTATE].includes(name)) return null;
+  const pairing = name === 'show' && args.target === 'pair';
   const bound = !!(env.BUDGET?.get && env.BUDGET?.idFromName), limited = typeof env.MODEL_CALLS?.limit === 'function' && typeof env.EDITOR_CALLS?.limit === 'function';
-  if (!bound && !limited && env.ALLOW_UNMETERED_CREATE === 'true') return null;
+  if (!pairing && !bound && !limited && env.ALLOW_UNMETERED_CREATE === 'true') return null;
   const unavailable = () => ({status: 503, code: 'TOOL_BUDGET_UNAVAILABLE',
     message: 'Tool invocation admission is unavailable. Retry when the service is available.'});
   try {
@@ -722,7 +724,34 @@ async function takeToolBudget(request, env, authority, name, args, door, editorP
       if (!(await editorProofVerdict(env, proofArgs, authority, editorProof, documentAddress)).ok) return null;
       editor = true;
     }
+    if (pairing) {
+      if (authority.source === 'anonymous') {
+        if (!WORKSPACE_HANDLE.test(args.document || '')) return null;
+        principal = 'anonymous:' + await digest(args.document);
+      }
+      const refusal = await takePairingAttempt(env, principal);
+      if (refusal) return refusal;
+    }
     return await takeVerifiedToolBudget(env, editor, principal);
+  } catch { return unavailable(); }
+}
+
+async function takePairingAttempt(env, principal) {
+  const unavailable = () => ({status: 503, code: 'PAIRING_ATTEMPTS_UNAVAILABLE',
+    message: 'Pairing admission is unavailable. Retry when the service is available.'});
+  if (!env.BUDGET?.get || !env.BUDGET?.idFromName) return unavailable();
+  try {
+    const key = 'pairing-attempt:' + await digest(principal);
+    const response = await env.BUDGET.get(env.BUDGET.idFromName(key)).fetch(new Request('https://rapier.internal/take', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({limit: DOOR_LIMITS.pairingAttemptsPerMinute, windowMs: DOOR_LIMITS.minuteMs, exactWindow: true}),
+    }));
+    if (!response.ok) return unavailable();
+    const body = await parseJsonStream(response, {limit: 65536, maxDepth: 8, timeoutMs: 5000});
+    if (body.code === 'WORKSPACE_UNAVAILABLE' || typeof body.allowed !== 'boolean') return unavailable();
+    return body.allowed ? null : {status: 429, code: 'PAIRING_ATTEMPTS_EXCEEDED',
+      message: 'This connection has reached its pairing limit. Retry after the current minute window resets.',
+      retryAfter: DOOR_LIMITS.minuteMs / 1000};
   } catch { return unavailable(); }
 }
 
@@ -1557,6 +1586,8 @@ async function handleRequest(request, env, authority, route) {
     if (route?.read && ['BACKING_UNAVAILABLE', 'BACKING_QUOTA'].includes(error?.code))
       return rpcError(null, -32603, 'The request backing is unavailable. Retry later.', 503);
     const oversized = error?.[PUBLIC_FAILURE] && error.code === 'REQUEST_TOO_LARGE';
+    if (error?.[PUBLIC_FAILURE] && error.code === 'JSON_TOO_DEEP') return rpcError(null, -32600, error.message, 400, error.details);
+    if (error?.[PUBLIC_FAILURE] && error.code === 'REQUEST_TIMEOUT') return rpcError(null, -32600, error.message, 408, error.details);
     if (route && !oversized) {
       const response = await route(undefined, received.bytes);
       if (response !== null) return response;
@@ -2033,11 +2064,12 @@ export class RapierBudget {
       if (!allowed) return json({ allowed, remaining: 0, resetAt, ...(takeId ? { takeId } : {}) });
       const count = window.count + 1, remaining = Math.max(0, limit - count), step = Math.max(0, Math.ceil(limit / 10) - 1);
       const base = lease && lease.until > now ? lease : null;
+      const leaseUntil = body.exactWindow === true ? resetAt : Math.max(now + BUDGET_LEASE_MS, resetAt);
       const covered = window.held ? lease?.held?.until >= resetAt && lease.held.reserved >= count && lease.held.start === window.start
         : base && base.until >= resetAt && base.reserved >= count;
       const next = covered ? lease : window.held
-        ? {...(base || {start: window.start, until: now + BUDGET_LEASE_MS, reserved: step}), held: {start: window.start, until: resetAt, reserved: Math.min(limit, count + step)}}
-        : {start: window.start, until: Math.max(now + BUDGET_LEASE_MS, resetAt), reserved: Math.min(limit, Math.max(base ? base.reserved : 0, count + step))};
+        ? {...(base || {start: window.start, until: leaseUntil, reserved: step}), held: {start: window.start, until: resetAt, reserved: Math.min(limit, count + step)}}
+        : {start: window.start, until: leaseUntil, reserved: Math.min(limit, Math.max(base ? base.reserved : 0, count + step))};
       if (!covered || takeId) {
         this.ctx.storage.transactionSync(() => {
           if (!covered) this.ctx.storage.kv.put('lease', next);

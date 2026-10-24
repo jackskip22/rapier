@@ -8,7 +8,7 @@ use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::os::fd::{FromRawFd, RawFd};
-use std::os::unix::fs::OpenOptionsExt;
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -74,10 +74,17 @@ const ADAPTER: &str = r#"(() => {
   const host = make('host'), intake = make('intake');
   // The browser's own shortcuts are not Rapier's: view-source, the developer tools, downloads and the clear-data sheet do nothing in
   // this window. At the end of the bubble, after the page's own handlers (Chrome keeps Ctrl+N, Ctrl+T and Ctrl+Shift+N to itself).
+  // Ctrl+Q quits Rapier, as it does in every Linux application: the host has each window keep its work, then closes them all.
+  window.addEventListener('keydown', event => {
+    if (event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey && String(event.key || '').toLowerCase() === 'q' && !event.defaultPrevented) {
+      event.preventDefault();
+      host.postMessage(JSON.stringify({ id: 'quit', operation: 'app.quit', arguments: {} }));
+    }
+  });
   window.addEventListener('keydown', event => {
     const key = String(event.key || '').toLowerCase(), mod = event.ctrlKey || event.metaKey;
     if (event.defaultPrevented) return;
-    if (key === 'f12' || (mod && !event.altKey && ((!event.shiftKey && (key === 'u' || key === 'j')) || (event.shiftKey && (key === 'i' || key === 'j' || key === 'c' || key === 'delete'))))) event.preventDefault();
+    if (key === 'f12' || (mod && !event.altKey && ((!event.shiftKey && (key === 'u' || key === 'j' || key === 'p')) || (event.shiftKey && (key === 'i' || key === 'j' || key === 'c' || key === 'delete' || key === 't'))))) event.preventDefault();
   });
   Object.defineProperty(window, 'RapierHost', { value: host, configurable: false });
   Object.defineProperty(window, 'RapierIntake', { value: intake, configurable: false });
@@ -96,15 +103,26 @@ const ADAPTER: &str = r#"(() => {
   titled.observe(document, { childList: true, subtree: true });
   // The title names the folder of the window's file, so two windows on s.md from two folders read differently
   // The host gives it (Host::label_window); the page's own title is kept before it.
-  let folder = '', added = '';
+  let folder = '', added = '', shownName = '', realName = '';
   const label = () => {
     let title = document.title;
     if (added && title.endsWith(added)) title = title.slice(0, -added.length);
     added = folder && title.startsWith('Rapier — ') ? ' (' + folder + ')' : '';
-    if (document.title !== title + added) document.title = title + added;
+    // The page holds a name its one filename rule accepts (a zero-width joiner in an emoji name becomes `_`); the title keeps the file's own.
+    const named = realName && shownName && realName !== shownName && title.startsWith('Rapier — ' + shownName) ? 'Rapier — ' + realName + title.slice(('Rapier — ' + shownName).length) : title;
+    if (document.title !== named + added) document.title = named + added;
   };
   new MutationObserver(label).observe(document, { childList: true, subtree: true, characterData: true });
-  Object.defineProperty(window, '__rapierLinuxFolder', { configurable: false, value: value => { folder = String(value || ''); label(); } });
+  // Ctrl+Q: every owner in this window keeps its work (the page's checkpoint, waited for), then the host is told.
+  Object.defineProperty(window, '__rapierLinuxQuit', { configurable: false, value: () => {
+    const kept = [];
+    try {
+      window.dispatchEvent(new CustomEvent('rapier:checkpoint-requested', { detail: { checkpoint: 0,
+        waitUntil: completion => { kept.push(Promise.resolve(completion).then(value => value === true, () => false)); } } }));
+    } catch (_) {}
+    Promise.all(kept).catch(() => {}).finally(() => host.postMessage(JSON.stringify({ id: 'quit-kept', operation: 'app.quitKept', arguments: {} })));
+  } });
+  Object.defineProperty(window, '__rapierLinuxFolder', { configurable: false, value: (value, shown, real) => { folder = String(value || ''); shownName = String(shown || ''); realName = String(real || ''); label(); } });
   addEventListener('DOMContentLoaded', () => { titled.disconnect(); if (searchTitle !== null && document.title === searchTitle) document.title = 'Rapier'; }, { once: true });
   // The host keeps every window inside the screen's work area (fit_window, cascade): the page tells it the area and
   // this window's size.
@@ -168,6 +186,9 @@ fn str_of(value: &Value, key: &str) -> String {
 }
 
 struct Intake {
+    begin: Value,
+    sent_end: bool,
+    restart: bool,
     id: u64,
     delivery: u64,
     frame: String,
@@ -231,6 +252,7 @@ struct Win {
     context: Option<i64>,
     page_ready: bool,
     intake_ready: bool,
+    recovering: bool,
     pending_paths: VecDeque<String>,
     intake: Option<Intake>,
     candidate: Option<Candidate>,
@@ -252,6 +274,8 @@ struct Win {
 
 pub struct Host {
     app: PathBuf,
+    /// Started with --online: the page may reach the network, so it shows what needs it (the `network` capability).
+    online: bool,
     out: File,
     next_id: u64,
     session: Option<String>,
@@ -259,10 +283,14 @@ pub struct Host {
     context: Option<i64>,
     page_ready: bool,
     intake_ready: bool,
+    recovering: bool,
     pending_paths: VecDeque<String>,
     intake: Option<Intake>,
     candidate: Option<Candidate>,
     intake_id: u64,
+    quit_waiting: usize,
+    desktop_dark: Option<bool>,
+    dark_emulated: bool,
     delivery: u64,
     current: Option<Bound>,
     transfer: Option<Transfer>,
@@ -402,17 +430,22 @@ impl Host {
         } else {
             crate::instance_dir().join("browser")
         };
-        std::fs::create_dir_all(&profile).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(&profile).map_err(|e| format!("cannot create {}: {e}. Check write access to this folder.", profile.display()))?;
+        crate::profile::release_foreign_lock(&profile).map_err(|e| e.to_string())?;
         // The first document opens in the first window; each other one gets a window of its own.
         // Every other window that held unsaved work opens again, each with its own recovery and file; a file it holds is
         // not opened a second time.
         let unsaved = Self::unsaved_windows();
-        let mut rest: VecDeque<String> = paths.into_iter().filter(|p| !unsaved.iter().any(|(_, held)| held == p)).collect();
+        let mut rest: VecDeque<String> = paths.into_iter().collect();
+        let mut requested = std::collections::HashSet::new();
+        rest.retain(|path| !Path::new(path).is_absolute() || requested.insert(path.clone()));
         let first = rest.pop_front();
         // A view is no document: the first window opens on it, and no file is handed in.
         let first_view = first.as_deref().and_then(crate::view_of).map(str::to_string);
         let first = first.filter(|_| first_view.is_none());
-        rest.extend(unsaved.into_iter().map(|(n, _)| format!("{}{n}", crate::SLOT)));
+        let slot = starting_slot(first.as_deref(), &unsaved);
+        rest.retain(|p| !unsaved.iter().any(|(_, held)| held == p));
+        rest.extend(unsaved.into_iter().filter(|(n, _)| *n != slot).map(|(n, _)| format!("{}{n}", crate::SLOT)));
         let (to_browser, out) = pipe().map_err(|e| e.to_string())?;
         let (inp, from_browser) = pipe().map_err(|e| e.to_string())?;
         // The window is named after its first URL (chrome-rapier.local__rapier.html-Default), so it opens the page at
@@ -487,10 +520,14 @@ impl Host {
             context: None,
             page_ready: false,
             intake_ready: false,
+            recovering: false,
             pending_paths: first.into_iter().collect(),
             intake: None,
             candidate: None,
             intake_id: 0,
+            quit_waiting: 0,
+            desktop_dark: None,
+            dark_emulated: false,
             delivery: 0,
             current: None,
             transfer: None,
@@ -502,7 +539,7 @@ impl Host {
             saved_where: None,
             window_id: None,
             text_held: false,
-            slot: 1,
+            slot,
             cascade_to: None,
             dirty: false,
             origin: None,
@@ -514,6 +551,7 @@ impl Host {
             others: Vec::new(),
             waiting_paths: rest,
             first_view,
+            online,
             view_jumps: Vec::new(),
             new_windows: VecDeque::new(),
             browser_path: browser.to_path_buf(),
@@ -535,6 +573,7 @@ impl Host {
         std::mem::swap(&mut self.context, &mut w.context);
         std::mem::swap(&mut self.page_ready, &mut w.page_ready);
         std::mem::swap(&mut self.intake_ready, &mut w.intake_ready);
+        std::mem::swap(&mut self.recovering, &mut w.recovering);
         std::mem::swap(&mut self.pending_paths, &mut w.pending_paths);
         std::mem::swap(&mut self.intake, &mut w.intake);
         std::mem::swap(&mut self.candidate, &mut w.candidate);
@@ -552,6 +591,32 @@ impl Host {
         std::mem::swap(&mut self.dirty, &mut w.dirty);
         std::mem::swap(&mut self.origin, &mut w.origin);
         std::mem::swap(&mut self.untitled, &mut w.untitled);
+    }
+
+    /// Ctrl+Q: each window keeps its work (the page's checkpoint, the one it makes as it leaves), then the browser closes after a
+    /// moment (Event::Quit). Unsaved words stay kept and are offered at the next start, as when a window is closed.
+    fn quit_all(&mut self) {
+        let mut sessions: Vec<String> = self.session.iter().cloned().collect();
+        sessions.extend(self.others.iter().filter_map(|w| w.session.clone()));
+        self.quit_waiting = 0;
+        for session in sessions {
+            if self.swap_to(&session) {
+                if let Some(context) = self.context {
+                    // The window answers when every owner in it has kept its work (a big document takes longer than any fixed wait).
+                    self.cdp("Runtime.evaluate", json!({"expression": "globalThis.__rapierLinuxQuit && __rapierLinuxQuit()", "contextId": context}), true);
+                    self.quit_waiting += 1;
+                }
+            }
+        }
+        if self.quit_waiting == 0 {
+            let _ = self.events.send(Event::Quit);
+            return;
+        }
+        let events = self.events.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(4));
+            let _ = events.send(Event::Quit);
+        });
     }
 
     /// Make the window with this DevTools session the one served; false when no window has it.
@@ -589,6 +654,9 @@ impl Host {
             self.spawn_window();
         } else if let Some(target) = self.window_holding(&path) {
             self.cdp("Target.activateTarget", json!({"targetId": target}), false);
+        } else if self.waiting_paths.contains(&path) && Path::new(&path).is_absolute() {
+            // Its window is already being created; the queued request still owns this file.
+            return;
         } else if goes_to(self.holding(), Route::File) == Place::OwnWindow {
             self.waiting_paths.push_back(path);
             self.spawn_window();
@@ -624,7 +692,7 @@ impl Host {
         // free number that holds nobody's draft.
         let next = self.waiting_paths.pop_front();
         let wanted = next.as_deref().and_then(|p| p.strip_prefix(crate::SLOT)).and_then(|n| n.parse::<u32>().ok())
-            .filter(|n| *n > 1 && self.others.iter().all(|w| w.slot != *n));
+            .filter(|n| *n > 0 && self.others.iter().all(|w| w.slot != *n));
         let folder = crate::instance_dir();
         let open: Vec<u32> = self.others.iter().map(|w| w.slot).collect();
         let kept = |n: u32| -> Option<String> {
@@ -676,7 +744,7 @@ impl Host {
         let Some(deadline) = self.launch_deadline else { return Ok(receiver.recv().ok()) };
         match receiver.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())) {
             Ok(Event::Exit) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) =>
-                Err("the browser closed before Rapier's window opened".into()),
+                Err(format!("the browser closed before Rapier's window opened. Check write access to the temporary folder {} (TMPDIR), or run with RAPIER_BROWSER_LOG=1 to see the browser error.", std::env::temp_dir().display())),
             Ok(event) => {
                 if !self.answered {
                     self.answered = true;
@@ -724,6 +792,7 @@ impl Host {
             ("Runtime.addBinding", json!({"name": "__rapierLinux"})),
             ("Runtime.enable", json!({})),
             ("Page.enable", json!({})),
+            ("Inspector.enable", json!({})),
             (
                 "Page.addScriptToEvaluateOnNewDocument",
                 json!({"source": ADAPTER.replace("__RAPIER_SLOT__", &self.slot.to_string())}),
@@ -732,6 +801,7 @@ impl Host {
             let id = self.cdp(method, params, true);
             self.wait(receiver, id)?;
         }
+        self.dark_to_window();
         self.theme_to_window();
         let id = self.cdp("Browser.getWindowForTarget", json!({"targetId": self.target.clone()}), false);
         self.window_id = self.wait(receiver, id).ok().and_then(|w| w.get("windowId").and_then(Value::as_i64));
@@ -765,10 +835,12 @@ impl Host {
 
     fn window_holding(&self, path: &str) -> Option<String> {
         let held = |current: &Option<Bound>| current.as_ref().is_some_and(|c| c.path == path);
-        if held(&self.current) {
+        let entering = |candidate: &Option<Candidate>| candidate.as_ref().is_some_and(|c| c.bound.path == path);
+        let queued = |pending: &VecDeque<String>| Path::new(path).is_absolute() && pending.iter().any(|p| p == path);
+        if held(&self.current) || entering(&self.candidate) || queued(&self.pending_paths) {
             return Some(self.target.clone());
         }
-        self.others.iter().find(|w| held(&w.current)).map(|w| w.target.clone())
+        self.others.iter().find(|w| held(&w.current) || entering(&w.candidate) || queued(&w.pending_paths)).map(|w| w.target.clone())
     }
 
     /// Tell the page which folder its window's title names: the bound file's, else the file opened last, else none.
@@ -776,8 +848,11 @@ impl Host {
         // The title names the file's folder even before its first save makes it.
         let folder = self.origin.clone().or_else(|| self.beside());
         let shown = folder.map(|f| files::shown(&f)).unwrap_or_default();
+        // The name the window's file has, and the form of it the page holds (shown_name).
+        let bound = self.current.as_ref().map(|c| c.path.clone()).or_else(|| self.candidate.as_ref().map(|c| c.bound.path.clone()));
+        let (page_name, real_name) = bound.map(|p| (shown_name(&p), basename(&p))).unwrap_or_default();
         if let Some(context) = self.context {
-            self.cdp("Runtime.evaluate", json!({"expression": format!("globalThis.__rapierLinuxFolder && __rapierLinuxFolder({})", json!(shown)),
+            self.cdp("Runtime.evaluate", json!({"expression": format!("globalThis.__rapierLinuxFolder && __rapierLinuxFolder({}, {}, {})", json!(shown), json!(page_name), json!(real_name)),
                 "contextId": context}), true);
         }
     }
@@ -816,12 +891,12 @@ impl Host {
         }
     }
 
-    /// The windows after the first that held unsaved work when Rapier last closed, with the file each is bound to.
+    /// Every window that held unsaved work when Rapier last closed, with its bound file.
     fn unsaved_windows() -> Vec<(u32, String)> {
         let folder = crate::instance_dir();
         let mut slots: Vec<(u32, String)> = std::fs::read_dir(&folder).into_iter().flatten().flatten()
             .filter_map(|e| e.file_name().to_str()?.strip_prefix("window-")?.strip_suffix(".json")?.parse::<u32>().ok())
-            .filter(|n| *n > 1)
+            .filter(|n| *n > 0)
             .filter_map(|n| {
                 let kept = serde_json::from_slice::<Value>(&std::fs::read(folder.join(format!("window-{n}.json"))).ok()?).ok()?;
                 (kept["dirty"] == json!(true)).then(|| (n, str_of(&kept, "path")))
@@ -864,6 +939,8 @@ impl Host {
         self.restore_binding();
         self.prepare_window(receiver)?;
         let sender = self.events.clone();
+        let dark = self.events.clone();
+        portal::watch_dark(move |value| { let _ = dark.send(Event::Dark(value)); });
         // On Omarchy the theme-set and font-set hooks tell rapier (payload::install); elsewhere the files are watched.
         let hooked = crate::payload::omarchy_hooks().iter().all(|hook| hook.is_file());
         std::thread::spawn(move || {
@@ -931,8 +1008,22 @@ impl Host {
             };
             match event {
                 Event::Exit => return Ok(()),
+                Event::Quit => {
+                    // Gracefully, so the browser finishes what the windows wrote; a browser that does not go in four seconds is stopped.
+                    self.cdp("Browser.close", json!({}), false);
+                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(4);
+                    while self.browser.try_wait().ok().flatten().is_none() {
+                        if std::time::Instant::now() > deadline {
+                            let _ = self.browser.kill();
+                            break;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                    }
+                    return Ok(());
+                }
                 Event::Cdp(message) => self.on_cdp(message),
                 Event::Theme => self.apply_theme(),
+                Event::Dark(dark) => self.apply_dark(dark),
                 Event::Open(path) if path == crate::THEME_CHANGED => self.apply_theme(),
                 Event::Open(path) if path == crate::FOCUS => {
                     self.cdp("Target.activateTarget", json!({"targetId": self.target}), false);
@@ -978,6 +1069,42 @@ impl Host {
         }
         match method.as_str() {
             "Fetch.requestPaused" => self.serve(&params),
+            "Inspector.targetCrashed" if !self.recovering => {
+                self.recovering = true;
+                self.page_ready = false;
+                self.intake_ready = false;
+                self.context = None;
+                self.close_folder();
+                // A transfer not yet ended has written no file. The page's
+                // durable recovery precedes every save transfer.
+                self.transfer = None;
+                // Acceptance can precede the page's clear. Replay still needs
+                // the exact native candidate to retain its overwrite authority.
+                if self.candidate.is_none() {
+                    if let (Some(intake), Some(bound)) = (&self.intake, &self.current) {
+                        if intake.sent_end && str_of(&intake.begin, "purpose") != "compare"
+                            && intake.begin.get("path") == Some(&json!(bound.path))
+                            && intake.begin.get("documentAuthority") == Some(&json!(files::authority_for(&bound.path)))
+                            && intake.begin.get("fileGeneration") == Some(&json!(bound.generation)) {
+                            let mut candidate = bound.clone();
+                            candidate.authority = str_of(&intake.begin, "documentAuthority");
+                            self.candidate = Some(Candidate { id: intake.id, bound: candidate });
+                        }
+                    }
+                }
+                if let Some(intake) = &mut self.intake {
+                    intake.restart = true;
+                    intake.sent_end = false;
+                    intake.offset = 0;
+                    intake.sequence = 0;
+                    intake.frame = crate::random_hex(16);
+                    self.delivery += 1;
+                    intake.delivery = self.delivery;
+                    intake.begin["generation"] = json!(intake.frame);
+                    intake.begin["deliveryGeneration"] = json!(intake.delivery);
+                }
+                self.cdp("Page.reload", json!({}), true);
+            }
             // A view asked of a window already at PAGE (show_page): the jump to PAGE#v/<view> is reloaded so the page is born
             // with it. A load that arrived with the fragment needs nothing. The page's own later #v/notes is no jump of ours.
             "Page.navigatedWithinDocument" | "Page.frameNavigated" => {
@@ -1116,6 +1243,37 @@ impl Host {
             self.exchange(&mut w);
             self.others.push(w);
         }
+    }
+
+    /// No Omarchy theme: the page follows the desktop's dark setting, as the website follows the system's. Light is said only to
+    /// undo a dark this window was given.
+    fn dark_to_window(&mut self) {
+        if theme::palette().is_some() {
+            return;
+        }
+        let value = match self.desktop_dark {
+            Some(true) => "dark",
+            Some(false) if self.dark_emulated => "light",
+            _ => return,
+        };
+        self.cdp("Emulation.setEmulatedMedia", json!({"features": [{"name": "prefers-color-scheme", "value": value}]}), true);
+    }
+
+    /// The desktop's dark setting was learned or changed: every window takes it at once.
+    fn apply_dark(&mut self, dark: bool) {
+        if self.desktop_dark == Some(dark) {
+            return;
+        }
+        self.desktop_dark = Some(dark);
+        self.dark_to_window();
+        for _ in 0..self.others.len() {
+            let mut w = self.others.remove(0);
+            self.exchange(&mut w);
+            self.dark_to_window();
+            self.exchange(&mut w);
+            self.others.push(w);
+        }
+        self.dark_emulated |= dark;
     }
 
     /// Read the theme and font; true when they differ from what the windows have.
@@ -1259,6 +1417,21 @@ impl Host {
         );
     }
 
+    fn notify_linked_windows(&mut self, path: &str, generation: &str) {
+        let Ok(saved) = std::fs::metadata(path) else { return };
+        for _ in 0..self.others.len() {
+            let mut window = self.others.remove(0);
+            self.exchange(&mut window);
+            if let Some(bound) = self.current.clone().filter(|bound| bound.generation != generation) {
+                if std::fs::metadata(&bound.path).is_ok_and(|other| other.dev() == saved.dev() && other.ino() == saved.ino()) {
+                    self.event("file.changed", json!({"path": bound.path, "documentAuthority": bound.authority, "fileGeneration": generation}));
+                }
+            }
+            self.exchange(&mut window);
+            self.others.push(window);
+        }
+    }
+
     // -- the page's messages ------------------------------------------------------------------------------------------
     fn on_page(&mut self, raw: &str) {
         let Ok(outer) = serde_json::from_str::<Value>(raw) else {
@@ -1316,7 +1489,12 @@ impl Host {
         let authority = str_of(args, "documentAuthority");
         match op {
             "platform.state" => {
-                let mut state = json!({"platformId": "linux", "capabilities": CAPABILITIES.iter().map(|c| (c.to_string(), json!(true))).collect::<Map<_, _>>(),
+                let mut capabilities = CAPABILITIES.iter().map(|c| (c.to_string(), json!(true))).collect::<Map<_, _>>();
+                // Offline (the default), the page hides what needs the network: Share's live document, Notes' Sync.
+                if self.online {
+                    capabilities.insert("network".to_string(), json!(true));
+                }
+                let mut state = json!({"platformId": "linux", "capabilities": capabilities,
                     "recents": recents_state(), "pendingIntake": self.intake.is_some() || self.candidate.is_some() || !self.pending_paths.is_empty(),
                     "currentFileBound": self.current.is_some(), "installation": {"state": "standalone", "installed": true},
                     // A relaunch reopens the document where the person left it, as a desktop editor does: no RESUME
@@ -1331,6 +1509,7 @@ impl Host {
             }
             "page.ready" => {
                 self.page_ready = true;
+                self.recovering = false;
                 self.label_window();
                 self.launch_deadline = None;
                 if let (Some((left, top)), Some(window)) = (self.cascade_to.take(), self.window_id) {
@@ -1343,6 +1522,7 @@ impl Host {
                 self.pump();
             }
             "save.choose" => {
+                if self.holding().opening { return Err("a document is still opening".into()); }
                 let folder = self.start_folder();
                 let name = free_copy_name(&folder, &str_of(args, "name"));
                 self.start_pick(Pick::SaveName { ident: ident.to_string(), name: str_of(args, "name") }, true, &name, "Save as", false, folder);
@@ -1424,18 +1604,21 @@ impl Host {
                 .into_owned();
                 if args.get("intakeId") != Some(&json!(candidate.id))
                     || path != candidate.bound.path
-                    || authority != candidate.bound.authority
+                    || str_of(args, "nativeDocumentAuthority") != candidate.bound.authority
+                    || authority.is_empty()
                     || str_of(args, "fileGeneration") != candidate.bound.generation
                 {
                     return Err("opened document does not match native intake authority".into());
                 }
-                let bound = self.candidate.take().unwrap().bound;
+                let mut bound = self.candidate.take().unwrap().bound;
                 if files::generation_of(&bound.path) != bound.generation {
                     self.pump();
                     return Err(
                         "opened file changed or became unavailable before acceptance".into(),
                     );
                 }
+                // The intake owns the file; the admitted history owns subsequent save receipts.
+                bound.authority = authority;
                 self.origin = Path::new(&bound.path).parent().map(Path::to_path_buf);
                 self.current = Some(bound);
                 self.keep_binding();
@@ -1458,8 +1641,13 @@ impl Host {
                 self.ok(ident, json!({}));
             }
             "intake.clear" => {
-                self.intake = None;
-                self.candidate = None;
+                let id = args.get("intakeId").and_then(Value::as_u64);
+                if id.is_none() || self.intake.as_ref().is_some_and(|row| Some(row.id) == id) {
+                    self.intake = None;
+                }
+                if id.is_none() || self.candidate.as_ref().is_some_and(|row| Some(row.id) == id) {
+                    self.candidate = None;
+                }
                 self.ok(ident, json!({}));
                 self.pump();
             }
@@ -1533,6 +1721,18 @@ impl Host {
                 }
                 self.ok(ident, json!({}));
             }
+            "app.quit" => {
+                self.ok(ident, json!({}));
+                self.quit_all();
+            }
+            "app.quitKept" => {
+                if self.quit_waiting > 0 {
+                    self.quit_waiting -= 1;
+                    if self.quit_waiting == 0 {
+                        let _ = self.events.send(Event::Quit);
+                    }
+                }
+            }
             "window.new" => {
                 // New from the page (Ctrl+N): a window of its own unless this one is untouched and empty, where the page
                 // starts it itself.
@@ -1541,7 +1741,7 @@ impl Host {
                     self.waiting_paths.push_back(crate::NEW_DOCUMENT.to_string());
                     self.spawn_window();
                 } else {
-                    self.begin_text(Vec::new()).map_err(|e| e.to_string())?;
+                    self.begin_text(Vec::new(), None).map_err(|e| e.to_string())?;
                 }
                 self.ok(ident, json!({"opened": true}));
             }
@@ -1648,6 +1848,15 @@ impl Host {
         }
         if message.get("type") == Some(&json!("ready")) {
             self.intake_ready = true;
+            if let Some(state) = &mut self.intake {
+                if state.restart {
+                    state.restart = false;
+                    let begin = state.begin.clone();
+                    self.post("intake", begin);
+                    self.send_chunk();
+                    return;
+                }
+            }
             return self.prime();
         }
         let Some(state) = &self.intake else { return };
@@ -1699,7 +1908,7 @@ impl Host {
     }
 
     /// A new document with no file behind it (`--new`, or text read from stdin with `rapier -`): Save asks where.
-    fn begin_text(&mut self, data: Vec<u8>) -> std::io::Result<()> {
+    fn begin_text(&mut self, data: Vec<u8>, origin: Option<PathBuf>) -> std::io::Result<()> {
         if self.intake.is_some() || self.candidate.is_some() {
             return Err(std::io::Error::other("another file open is already in progress"));
         }
@@ -1707,12 +1916,13 @@ impl Host {
         self.text_held = !data.is_empty();
         // The window now holds a document with no file: Save asks where, and a relaunch is not bound to the last file.
         self.current = None;
-        self.origin = None;
+        self.origin = origin;
         self.keep_binding();
         self.label_window();
         // Two windows of new documents are told apart by their titles.
         self.untitled = (1..).find(|n| self.others.iter().all(|w| w.untitled != *n)).unwrap_or(1);
-        let name = if self.untitled > 1 { format!("untitled {}.md", self.untitled) } else { "untitled.md".to_string() };
+        let suffix = if std::str::from_utf8(&data).is_ok_and(|text| text.trim_start_matches('\u{feff}').trim_start().starts_with("<!DOCTYPE html") || text.trim_start_matches('\u{feff}').trim_start().starts_with("<!doctype html")) { "html" } else { "md" };
+        let name = if self.untitled > 1 { format!("untitled {}.{suffix}", self.untitled) } else { format!("untitled.{suffix}") };
         // An empty new document is the page's own New, under this name: a document the host delivered with no file
         // behind it kept the page from opening a file into that window afterwards (Ctrl+O from a `--new` window).
         if data.is_empty() {
@@ -1722,10 +1932,11 @@ impl Host {
         self.intake_id += 1;
         self.delivery += 1;
         let frame = crate::random_hex(16);
-        self.post("intake", json!({"type": "begin", "id": self.intake_id, "deliveryGeneration": self.delivery, "generation": frame,
+        let begin = json!({"type": "begin", "id": self.intake_id, "deliveryGeneration": self.delivery, "generation": frame,
             "name": name, "path": null, "documentAuthority": "", "fileGeneration": null, "purpose": "external",
-            "transient": true, "binary": false}));
-        self.intake = Some(Intake { id: self.intake_id, delivery: self.delivery, frame, bytes: data, offset: 0, sequence: 0,
+            "transient": true, "binary": false});
+        self.post("intake", begin.clone());
+        self.intake = Some(Intake { begin, sent_end: false, restart: false, id: self.intake_id, delivery: self.delivery, frame, bytes: data, offset: 0, sequence: 0,
             generation: String::new() });
         self.send_chunk();
         Ok(())
@@ -1738,13 +1949,16 @@ impl Host {
             ));
         }
         if path == crate::NEW_DOCUMENT {
-            return self.begin_text(Vec::new());
+            return self.begin_text(Vec::new(), None);
         }
         if let Some(text) = path.strip_prefix(crate::STDIN_DOCUMENT) {
             // The text main() set aside from stdin, in a private file that is read once and removed.
-            let data = std::fs::read(text)?;
-            let _ = std::fs::remove_file(text);
-            return self.begin_text(data);
+            let input: Value = serde_json::from_str(text).map_err(std::io::Error::other)?;
+            let file = input["path"].as_str().ok_or_else(|| std::io::Error::other("missing stdin file"))?;
+            let origin = input["folder"].as_str().map(PathBuf::from).filter(|path| path.is_absolute() && path.is_dir());
+            let data = std::fs::read(file)?;
+            let _ = std::fs::remove_file(file);
+            return self.begin_text(data, origin);
         }
         let path = files::normalize(&std::env::current_dir().unwrap_or_default().join(path))
             .to_string_lossy()
@@ -1776,9 +1990,11 @@ impl Host {
         }
         let binary =
             purpose != "compare" && BINARY.iter().any(|ext| path.to_lowercase().ends_with(ext));
-        self.post("intake", json!({"type": "begin", "id": self.intake_id, "deliveryGeneration": self.delivery, "generation": frame,
-            "name": shown_name(&path), "path": path, "documentAuthority": authority, "fileGeneration": generation, "purpose": purpose, "binary": binary}));
+        let begin = json!({"type": "begin", "id": self.intake_id, "deliveryGeneration": self.delivery, "generation": frame,
+            "name": shown_name(&path), "path": path, "documentAuthority": authority, "fileGeneration": generation, "purpose": purpose, "binary": binary});
+        self.post("intake", begin.clone());
         self.intake = Some(Intake {
+            begin, sent_end: false, restart: false,
             id: self.intake_id,
             delivery: self.delivery,
             frame,
@@ -1796,8 +2012,11 @@ impl Host {
             return;
         };
         if state.offset >= state.bytes.len() {
+            if state.sent_end { return; }
             let end = json!({"type": "end", "id": state.id, "deliveryGeneration": state.delivery, "fileGeneration": state.generation});
-            self.intake = None;
+            // Keep the delivered bytes until the page admits or refuses this
+            // intake. A renderer crash before that handoff replays these bytes.
+            state.sent_end = true;
             return self.post("intake", end);
         }
         let end = (state.offset + CHUNK).min(state.bytes.len());
@@ -1810,6 +2029,7 @@ impl Host {
 
     // -- saving -------------------------------------------------------------------------------------------------------
     fn begin_transfer(&mut self, args: &Value) -> Result<Value, String> {
+        if self.holding().opening { return Err("a document is still opening".into()); }
         if self.transfer.is_some() {
             return Err("another transfer is active".into());
         }
@@ -1938,6 +2158,10 @@ impl Host {
                 (files::normalize(Path::new(&path)).to_string_lossy().into_owned(), false)
             }
             Err(reason) => {
+                if reason != portal::NO_CHOOSER {
+                    self.respond(ident, false, Value::Null, &reason);
+                    return;
+                }
                 let folder = self.beside().unwrap_or_else(files::documents_dir);
                 if std::fs::create_dir_all(&folder).is_err() {
                     let message = json!({"type": "response", "id": ident, "ok": false, "error": reason, "code": "no_file_chooser"});
@@ -2016,6 +2240,10 @@ impl Host {
             let chosen = match pick {
                 Ok(chosen) => chosen,
                 Err(reason) => {
+                    if reason != portal::NO_CHOOSER {
+                        self.save_result(&session, "failed", false, &reason, "", "", false, false, "");
+                        return Ok(json!({"accepted": true, "picker": true}));
+                    }
                     let folder = self.beside().unwrap_or_else(files::documents_dir);
                     if std::fs::create_dir_all(&folder).is_err() {
                         self.save_result(&session, "failed", false, &reason, "", "", false, false, "no_file_chooser");
@@ -2068,11 +2296,12 @@ impl Host {
             if !session.exclusive && std::fs::metadata(&destination).is_ok_and(|m| m.permissions().readonly()) {
                 return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "the file is read-only"));
             }
-            // Every save writes beside the file and renames it into place, so a read-only folder refuses it, and says so; a
-            // folder a path named that does not exist yet is made first.
+            // New files need a writable folder. An existing writable file can be
+            // saved in place with a durable recovery copy kept by the host.
             if let Some(folder) = Path::new(&destination).parent() {
                 let existing = folder.ancestors().find(|f| f.is_dir()).unwrap_or(folder);
-                if std::fs::metadata(existing).is_ok_and(|m| m.permissions().readonly()) {
+                if std::fs::metadata(existing).is_ok_and(|m| m.permissions().readonly()) &&
+                    (session.exclusive || !Path::new(&destination).is_file()) {
                     return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, READ_ONLY_FOLDER));
                 }
                 std::fs::create_dir_all(folder)?;
@@ -2115,7 +2344,7 @@ impl Host {
                 }
                 files::write_new_copy(&destination, &session.bytes, &session.digest)
             } else {
-                files::write_verified(&destination, &session.bytes, &session.digest)
+                files::write_verified(&destination, &session.bytes, &session.digest, &crate::instance_dir().join("pending-saves"))
             }
         })();
         let generation = match written {
@@ -2186,6 +2415,7 @@ impl Host {
             picked,
             "",
         );
+        self.notify_linked_windows(&destination, &generation);
         Ok(json!({"accepted": true, "picker": picked}))
     }
 
@@ -2276,9 +2506,18 @@ fn read_browser(mut reader: File, events: Sender<Event>) {
     }
 }
 
-/// The window number a new window takes. A file whose window closed with unsaved work gets that window's number back,
-/// so the page offers the kept draft there; any other window takes the lowest free number from 2 that holds no draft
-/// (`kept(n)` is the file a closed window left unsaved), so one file's draft is never offered over another's.
+/// A new launch must not put its first file over another document's recovery.
+fn starting_slot(path: Option<&str>, kept: &[(u32, String)]) -> u32 {
+    let Some(path) = path else { return 1; };
+    if let Some((slot, _)) = kept.iter().find(|(_, held)| !held.is_empty() &&
+        files::normalize(Path::new(path)) == files::normalize(Path::new(held))) {
+        return *slot;
+    }
+    (1..).find(|slot| kept.iter().all(|(held, _)| held != slot)).unwrap_or(1)
+}
+
+/// A reopened file takes its draft's number; other windows skip every kept draft.
+/// Slot 1 remains reserved for the first window unless its own file asks for it.
 fn next_slot(path: Option<&str>, open: &[u32], kept: impl Fn(u32) -> Option<String>) -> u32 {
     let same = |held: &str| path.is_some_and(|p| files::normalize(Path::new(p)) == files::normalize(Path::new(held)));
     let past = open.iter().copied().max().unwrap_or(1) + (1 << 8);
@@ -2291,6 +2530,17 @@ fn next_slot(path: Option<&str>, open: &[u32], kept: impl Fn(u32) -> Option<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn first_launch_keeps_another_documents_draft_slot() {
+        let kept = vec![(1, "/work/a.md".to_string()), (3, "/work/c.md".to_string())];
+        assert_eq!(starting_slot(None, &kept), 1);
+        assert_eq!(starting_slot(Some("/work/a.md"), &kept), 1);
+        assert_eq!(starting_slot(Some("/work/c.md"), &kept), 3);
+        assert_eq!(starting_slot(Some("/work/b.md"), &kept), 2);
+        assert_eq!(starting_slot(Some(crate::NEW_DOCUMENT), &kept), 2);
+        assert_eq!(starting_slot(Some("/work/b.md"), &[]), 1);
+    }
 
     #[test]
     fn a_reopened_file_takes_its_kept_draft_back() {

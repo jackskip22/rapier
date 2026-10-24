@@ -28,15 +28,26 @@ pub fn percent_decode(text: &str) -> String {
 /// What a person reads when no file chooser answers (no xdg-desktop-portal or no backend for the desktop).
 pub const NO_CHOOSER: &str =
     "No file chooser is available. Open a file from your file manager or run rapier-linux with its path, or install xdg-desktop-portal and its backend for your desktop.";
+pub const CHOOSER_FAILED: &str = "File chooser did not answer. Try again.";
 
 /// A path, '' when the person cancelled, or an error when no portal answers: never a silent cancel.
 /// The chooser opens in `start` (the portal's current_folder).
 pub fn pick(save: bool, name: &str, title: &str, directory: bool, start: &std::path::Path, parent: &str) -> Result<String, String> {
-    pick_inner(save, name, title, directory, start, parent).map_err(|_| NO_CHOOSER.to_string())
+    pick_inner(save, name, title, directory, start, parent).map_err(|error| {
+        let absent = match &error {
+            zbus::Error::MethodError(name, _, _) => matches!(name.as_str(),
+                "org.freedesktop.DBus.Error.ServiceUnknown" | "org.freedesktop.DBus.Error.NameHasNoOwner" |
+                "org.freedesktop.DBus.Error.UnknownMethod" | "org.freedesktop.DBus.Error.UnknownInterface"),
+            zbus::Error::Address(_) | zbus::Error::Connection(_, _) => true,
+            _ => false,
+        };
+        if absent { NO_CHOOSER } else { CHOOSER_FAILED }.to_string()
+    })
 }
 
 fn pick_inner(save: bool, name: &str, title: &str, directory: bool, start: &std::path::Path, parent: &str) -> zbus::Result<String> {
-    let connection = Connection::session()?;
+    let connection = zbus::blocking::connection::Builder::session()?
+        .method_timeout(std::time::Duration::from_secs(10)).build()?;
     let sender = connection
         .unique_name()
         .map(|n| n.trim_start_matches(':').replace('.', "_"))
@@ -100,7 +111,10 @@ fn pick_inner(save: bool, name: &str, title: &str, directory: bool, start: &std:
                 if !alive {
                     match answered.recv_timeout(std::time::Duration::from_millis(500)) {
                         Ok(Some(Ok(message))) => break message,
-                        _ => return Err(zbus::Error::Failure("the file chooser went away".into())),
+                        _ => {
+                            let _ = connection.clone().close();
+                            return Err(zbus::Error::Failure("the file chooser went away".into()));
+                        },
                     }
                 }
             }
@@ -198,4 +212,107 @@ pub fn x11_parent(pid: u32) -> String {
         })
         .or_else(|| found.first().copied());
     chosen.map(|w| format!("x11:{w:x}")).unwrap_or_default()
+}
+
+/// The portal's color-scheme value (org.freedesktop.appearance): Some(true) dark, Some(false) light, None for no preference.
+fn scheme_of(value: OwnedValue) -> Option<bool> {
+    // Read answers a variant holding the variant of the value; SettingChanged carries the inner variant.
+    let mut inner: Value = value.into();
+    while let Value::Value(next) = inner {
+        inner = *next;
+    }
+    match u32::try_from(inner) {
+        Ok(1) => Some(true),
+        Ok(2) => Some(false),
+        _ => None,
+    }
+}
+
+/// GTK_THEME (":dark" suffix or a "-dark" name), then gsettings' color-scheme or a "-dark" gtk-theme. None when nothing says.
+fn desktop_setting() -> Option<bool> {
+    if let Ok(name) = std::env::var("GTK_THEME") {
+        let name = name.to_lowercase();
+        if name.ends_with(":dark") {
+            return Some(true);
+        }
+        if !name.is_empty() {
+            return Some(name.ends_with("-dark"));
+        }
+    }
+    let gsettings = |key: &str| {
+        std::process::Command::new("gsettings")
+            .args(["get", "org.gnome.desktop.interface", key])
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().trim_matches('\'').to_lowercase())
+    };
+    match gsettings("color-scheme").as_deref() {
+        Some("prefer-dark") => return Some(true),
+        Some("prefer-light") => return Some(false),
+        _ => {}
+    }
+    gsettings("gtk-theme").map(|name| name.ends_with("-dark"))
+}
+
+/// The desktop's own dark setting, for a desktop with no Omarchy theme, told to `send` as it is learned and whenever it changes.
+/// Nothing here is waited for: the portal's answer can take seconds where D-Bus must start it, so both the portal (its color-scheme,
+/// read and watched through SettingChanged) and the fallbacks (GTK_THEME, gsettings) run on threads of their own. The portal's word,
+/// once it comes, wins over the fallbacks.
+pub fn watch_dark(send: impl Fn(bool) + Send + Sync + 'static) {
+    let send = std::sync::Arc::new(send);
+    let portal_spoke = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let (send, portal_spoke) = (send.clone(), portal_spoke.clone());
+        std::thread::spawn(move || {
+            if let Some(dark) = desktop_setting() {
+                if !portal_spoke.load(std::sync::atomic::Ordering::SeqCst) {
+                    send(dark);
+                }
+            }
+        });
+    }
+    std::thread::spawn(move || {
+        let _ = (|| -> zbus::Result<()> {
+            let connection = Connection::session()?;
+            // Subscribed before the read, so a change can never fall between the two.
+            let rule = zbus::MatchRule::builder()
+                .msg_type(zbus::message::Type::Signal)
+                .interface("org.freedesktop.portal.Settings")?
+                .member("SettingChanged")?
+                .path("/org/freedesktop/portal/desktop")?
+                .build();
+            let changes = zbus::blocking::MessageIterator::for_match_rule(rule, &connection, None)?;
+            let reader = connection.clone();
+            let (send_read, spoke_read) = (send.clone(), portal_spoke.clone());
+            std::thread::spawn(move || {
+                let read = (|| -> zbus::Result<Option<bool>> {
+                    let settings = Proxy::new(
+                        &reader,
+                        "org.freedesktop.portal.Desktop",
+                        "/org/freedesktop/portal/desktop",
+                        "org.freedesktop.portal.Settings",
+                    )?;
+                    let answer: OwnedValue = settings.call("Read", &("org.freedesktop.appearance", "color-scheme"))?;
+                    Ok(scheme_of(answer))
+                })();
+                if let Ok(Some(dark)) = read {
+                    spoke_read.store(true, std::sync::atomic::Ordering::SeqCst);
+                    send_read(dark);
+                }
+            });
+            for message in changes {
+                let Ok(message) = message else { continue };
+                let Ok((namespace, key, value)) = message.body().deserialize::<(String, String, OwnedValue)>() else { continue };
+                if namespace == "org.freedesktop.appearance" && key == "color-scheme" {
+                    // A change to "no preference" says nothing; the last word stands.
+                    if let Some(dark) = scheme_of(value) {
+                        portal_spoke.store(true, std::sync::atomic::Ordering::SeqCst);
+                        send(dark);
+                    }
+                }
+            }
+            Ok(())
+        })();
+    });
 }

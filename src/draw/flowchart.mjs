@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {parseFlowchart as _specParseFlowchart, editFlowchartLabel as _specEditFlowchartLabel, FLOWCHART_LIMITS, nextFlowchartId, addFlowchartBox, connectFlowchartBoxes, deleteFlowchartBox,
-  deleteFlowchartEdge, setFlowchartShape, setFlowchartDirection, setFlowchartEdgeLabel} from '../spec/flowchart.mjs';
+  deleteFlowchartEdge, setFlowchartShape, setFlowchartDirection, setFlowchartEdgeLabel, addFlowchartSubgraph,
+  deleteFlowchartSubgraph, renameFlowchartSubgraph, moveFlowchartBoxes} from '../spec/flowchart.mjs';
 import {_rapierDrawNormalizeAgentRecipe, _rapierDrawBuildSVG, _rapierDrawReadRecipeFromSVGText, _rapierDrawShapeBBoxIn} from './core.mjs';
 import {FLOWCHART_LAYOUT_LIMITS} from './flowchart-layout.mjs';
+import {flowchartSourceFromRecipe, sameFlowchartDrawing} from './flowchart-raise.mjs';
+import {indexMermaid, editMermaid, annotateMermaidSVG} from './flowchart-mermaid.mjs';
 
 const FLOWCHART_SHAPES = Object.freeze({rect: {kind: 'rect'}, round: {kind: 'rect', corner: .08}, stadium: {kind: 'rect', corner: .5},
   circle: {kind: 'circle'}, diamond: {kind: 'diamond'}, cylinder: {kind: 'cylinder'}, subroutine: {kind: 'subroutine'},
@@ -94,7 +97,7 @@ function lowerFlowchart(graph, options = null) {
   const maxLabelChars = FLOWCHART_LIMITS?.labelChars || FLOWCHART_LAYOUT_LIMITS.labelChars;
   const maxTextChars = FLOWCHART_LIMITS?.textChars || FLOWCHART_LAYOUT_LIMITS.textChars;
   if (!graph || !Object.hasOwn(FLOWCHART_DIRECTIONS, graph.direction) || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges) || !Array.isArray(graph.groups) ||
-      !graph.nodes.length || graph.nodes.length + graph.edges.length + 2 * graph.groups.length > maxFigures || graph.nodes.length + graph.groups.length > maxObstacles) return flowchartFailure();
+      (!graph.nodes.length && !graph.groups.length) || graph.nodes.length + graph.edges.length + 2 * graph.groups.length > maxFigures || graph.nodes.length + graph.groups.length > maxObstacles) return flowchartFailure();
   const ids = new Set(), figures = [], labels = Object.create(null), parts = Object.create(null);
   let text = 0;
   for (const node of graph.nodes) {
@@ -123,12 +126,18 @@ function lowerFlowchart(graph, options = null) {
   if (text > maxTextChars) return flowchartFailure();
   try {
     const autoPrior = options?.prior || (graph._source ? (_editLineage.get(normSource(graph._source)) || _renderedLayouts.get(normSource(graph._source))) : null);
+    const written = new Map();
+    if (typeof graph._source === 'string') {
+      const bare = graph._source.replace(/%%[^\n]*/g, ' ').replace(/^\s*(?:flowchart|graph)\b[^\n;]*/, ' ').replace(/"[^"\n]*"/g, ' ')
+        .replace(/\|[^|\n]*\|/g, ' ').replace(/\[[^\]\n]*\]|\([^)\n]*\)|\{[^}\n]*\}/g, ' ');
+      for (const match of bare.matchAll(/[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*/g)) if (nodes.has(match[0]) && !written.has(match[0])) written.set(match[0], written.size);
+    }
     const lay = prior => _rapierDrawNormalizeAgentRecipe({
       figures,
       direction: FLOWCHART_DIRECTIONS[graph.direction],
       ...(prior ? {prior} : {})
-    });
-    const recipe = (autoPrior && lay(autoPrior)) || lay(null);
+    }, {flowchart: true, written});
+    let recipe = (autoPrior && lay(autoPrior)) || lay(null);
     if (recipe) for (const group of graph.groups) {
       const title = recipe.shapes.find(shape => shape.group === group.id && shape.recognized === 'text');
       if (title) { labels[title.id] = {kind: 'group', id: group.id}; parts[title.id] = {kind: 'group', id: group.id}; }
@@ -182,6 +191,36 @@ const drawable = (edit, keepLayout = true) => (source, ...args) => {
   return lowered.ok ? result : {ok: false, code: lowered.code, reason: lowered.reason};
 };
 const flowchartEdits = Object.freeze({addBox: drawable(addFlowchartBox), connect: drawable(connectFlowchartBoxes), deleteBox: drawable(deleteFlowchartBox),
-  deleteEdge: drawable(deleteFlowchartEdge), shape: drawable(setFlowchartShape), direction: drawable(setFlowchartDirection, false), edgeLabel: drawable(setFlowchartEdgeLabel)});
+  deleteEdge: drawable(deleteFlowchartEdge), shape: drawable(setFlowchartShape), direction: drawable(setFlowchartDirection, false), edgeLabel: drawable(setFlowchartEdgeLabel),
+  addGroup: drawable(addFlowchartSubgraph, false), deleteGroup: drawable(deleteFlowchartSubgraph, false),
+  groupLabel: drawable(renameFlowchartSubgraph), moveGroup: drawable(moveFlowchartBoxes, false)});
 
-export {parseFlowchart, editFlowchartLabel, lowerFlowchart, renderFlowchart, flowchartEdits, nextFlowchartId};
+function raiseFlowchart(recipe, options = null) {
+  const directions = options?.direction ? [options.direction] : ['TD', 'LR', 'BT', 'RL'];
+  let fallback = null;
+  for (const direction of directions) {
+    const result = flowchartSourceFromRecipe(recipe, direction);
+    if (!result.ok) return result;
+    const parsed = _specParseFlowchart(result.source);
+    if (!parsed.ok) return {ok: false, code: 'flowchart_not_representable'};
+    const lowered = lowerFlowchart(parsed.graph);
+    if (!lowered.ok) continue;
+    const rebuilt = _rapierDrawReadRecipeFromSVGText(_rapierDrawBuildSVG(lowered.recipe));
+    if (rebuilt && !fallback && sameFlowchartDrawing(recipe, rebuilt, false)) fallback = {...result, graph: parsed.graph, positionsKept: false};
+    if (rebuilt && sameFlowchartDrawing(recipe, rebuilt)) return {...result, graph: parsed.graph, positionsKept: true};
+  }
+  if (fallback && !options?.direction) {
+    let x = 0, y = 0;
+    const boxes = new Map(recipe.shapes.filter(shape => !['line','arrow','text'].includes(shape.recognized))
+      .map(shape => [shape.id, _rapierDrawShapeBBoxIn(shape, recipe)]));
+    for (const shape of recipe.shapes) {
+      const a = boxes.get(shape.bind?.start?.to), b = boxes.get(shape.bind?.end?.to);
+      if (a && b) { x += b.minX + b.maxX - a.minX - a.maxX; y += b.minY + b.maxY - a.minY - a.maxY; }
+    }
+    const direction = Math.abs(x) > Math.abs(y) ? x < 0 ? 'RL' : 'LR' : y < 0 ? 'BT' : 'TD';
+    if (direction !== fallback.graph.direction) return raiseFlowchart(recipe, {direction});
+  }
+  return fallback || {ok: false, code: 'flowchart_not_representable'};
+}
+
+export {indexMermaid, editMermaid, annotateMermaidSVG, parseFlowchart, editFlowchartLabel, lowerFlowchart, renderFlowchart, raiseFlowchart, flowchartEdits, nextFlowchartId};

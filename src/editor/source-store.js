@@ -645,8 +645,83 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 		rootNow();
 		return true;
 	};
+	let lastView = null;
+	const view = () => {
+		if (lastView?.cacheKey === cacheKey) return lastView;
+		const spans = Object.freeze(pieces.map(piece => Object.freeze([buffers[piece.buffer], piece.start, piece.length])));
+		const viewLength = length, viewKey = cacheKey, viewRoot = rootNow();
+		let text = cached, integrityValue = cachedIntegrityKey === cacheKey ? cachedIntegrityValue : null;
+		const readView = () => {
+			if (text == null) text = cacheKey === viewKey ? read() : spans.map(([buffer, start, count]) => buffer.slice(start, start + count)).join('');
+			return text;
+		};
+		function* parts() {
+			let carry = '';
+			for (const [buffer, start, count] of spans) {
+				let part = carry + buffer.slice(start, start + count);
+				carry = '';
+				if (part.length && (part.charCodeAt(part.length - 1) & 0xfc00) === 0xd800) { carry = part.slice(-1); part = part.slice(0, -1); }
+				if (part) yield part;
+			}
+			if (carry) yield carry;
+		}
+		const charFrom = (index, offset) => spans[index][0].charCodeAt(spans[index][1] + offset);
+		const self = Object.freeze({
+			length: viewLength, rootId: viewRoot, cacheKey: viewKey, spans,
+			read: readView, parts,
+			async integrityAsync({yield: yieldWork, signal} = {}) {
+				if (integrityValue != null) return integrityValue;
+				const state = scanState();
+				let turn = 0;
+				for (const [buffer, start, count] of spans) {
+					for (let at = start, end = start + count; at < end;) {
+						const stop = Math.min(end, at + PIECE_CHARS);
+						scanSpan(buffer, at, stop, state); at = stop;
+						if (++turn % 4 === 0 && yieldWork) await yieldWork();
+						if (signal?.aborted) throw Object.assign(new Error('Canceled'), {name: 'AbortError'});
+					}
+				}
+				return integrityValue = finishIntegrity(viewLength, state);
+			},
+			changeFrom(base) {
+				const other = base.spans, limit = Math.min(base.length, viewLength);
+				let start = 0, i = 0, io = 0, j = 0, jo = 0;
+				while (i < spans.length && j < other.length && start < limit) {
+					const a = spans[i], b = other[j];
+					if (a[0] === b[0] && a[1] + io === b[1] + jo) {
+						const step = Math.min(a[2] - io, b[2] - jo, limit - start);
+						start += step; io += step; jo += step;
+					} else if (charFrom(i, io) === other[j][0].charCodeAt(other[j][1] + jo)) { start++; io++; jo++; }
+					else break;
+					if (io === a[2]) { i++; io = 0; }
+					if (j < other.length && jo === other[j][2]) { j++; jo = 0; }
+				}
+				let end = 0;
+				i = spans.length - 1; io = 0; j = other.length - 1; jo = 0;
+				while (i >= 0 && j >= 0 && end < limit - start) {
+					const a = spans[i], b = other[j];
+					const aEnd = a[1] + a[2] - io, bEnd = b[1] + b[2] - jo;
+					if (a[0] === b[0] && aEnd === bEnd) {
+						const step = Math.min(a[2] - io, b[2] - jo, limit - start - end);
+						end += step; io += step; jo += step;
+					} else if (a[0].charCodeAt(aEnd - 1) === b[0].charCodeAt(bEnd - 1)) { end++; io++; jo++; }
+					else break;
+					if (io === a[2]) { i--; io = 0; }
+					if (j >= 0 && jo === other[j][2]) { j--; jo = 0; }
+				}
+				let inserted = '';
+				for (let at = 0, index = 0; index < spans.length && at < viewLength - end; index++) {
+					const [buffer, from, count] = spans[index], lo = Math.max(at, start), hi = Math.min(at + count, viewLength - end);
+					if (lo < hi) inserted += buffer.slice(from + lo - at, from + hi - at);
+					at += count;
+				}
+				return {start, removed: base.length - start - end, inserted};
+			},
+		});
+		return lastView = self;
+	};
 	const store = Object.freeze({
-		read, integrity, integrityAsync, readSlice, contains, splice, capture, fork, preview, lineAt, lineStart, lineStarts, lineEnd, sourceOffsetFromProjection,
+		read, integrity, integrityAsync, readSlice, contains, splice, capture, view, fork, preview, lineAt, lineStart, lineStarts, lineEnd, sourceOffsetFromProjection,
 		projectionOffsetFromSource, warm, warmAsync,
 		get length() { return length; },
 		get lineCount() { return totalBreaks + 1; },
@@ -658,33 +733,89 @@ function create(value, restoredRootId = '', snapshot = null, preparation = null)
 		get initialRootId() { return initialRootNow(); },
 	});
 	if (!preparation) return store;
-	return (async () => {
-		const check = () => {
-			if (preparation.signal?.aborted) throw Object.assign(new Error('Canceled'), {name: 'AbortError'});
-		};
+	let cursor = 0, finished = false, settled = false, failure = null, resolveComplete, rejectComplete;
+	const state = scanState();
+	const complete = new Promise((resolve, reject) => { resolveComplete = resolve; rejectComplete = reject; });
+	complete.catch(() => {});
+	const aborted = () => Object.assign(new Error('Canceled'), {name: 'AbortError'});
+	const fail = error => {
+		if (settled || failure) return;
+		failure = error; preparation.signal?.removeEventListener('abort', cancel); rejectComplete(error);
+	};
+	const cancel = () => fail(aborted());
+	const check = () => {
+		if (failure) throw failure;
+		if (!finished && preparation.signal?.aborted) { cancel(); throw failure; }
+	};
+	const advance = () => {
 		check();
-		const state = scanState();
-		for (let at = 0; at < initial.length;) {
-			let end = Math.min(initial.length, at + PIECE_CHARS);
-			if (end < initial.length && initial.charCodeAt(end - 1) === 13 && initial.charCodeAt(end) === 10) end++;
-			pieces.push(makePiece(0, at, end - at));
-			scanSpan(initial, at, end, state, true); at = end;
-			if (pieces.length % 4 && at < initial.length) continue;
-			preparation.onProgress?.(at / initial.length);
-			if (preparation.yield) await preparation.yield();
-			check();
-		}
+		let end = Math.min(initial.length, cursor + PIECE_CHARS);
+		if (end < initial.length && initial.charCodeAt(end - 1) === 13 && initial.charCodeAt(end) === 10) end++;
+		pieces.push(makePiece(0, cursor, end - cursor));
+		scanSpan(initial, cursor, end, state, true); cursor = end;
+	};
+	const finish = () => {
+		if (finished) return;
+		check();
 		utf8Bytes = state.bytes;
 		cachedIntegrityKey = cacheKey;
 		cachedIntegrityValue = finishIntegrity(length, state);
 		rootNow();
 		reindex();
-		return store;
-	})();
+		finished = true;
+		preparation.onReady?.(store);
+		check();
+		settled = true; preparation.signal?.removeEventListener('abort', cancel); resolveComplete(store);
+	};
+	const ensureComplete = () => {
+		check();
+		if (finished) return;
+		try { while (cursor < initial.length) advance(); finish(); }
+		catch (error) { fail(error); throw error; }
+	};
+	const before = (name, args) => {
+		check();
+		if (finished || name === 'read' || name === 'length') return;
+		if (name === 'readSlice' && Math.max(0, Math.min(length, Number(args[0]) || 0),
+			Math.min(length, Number(args[1] ?? length) || 0)) <= cursor) return;
+		if (name === 'lineAt' && Math.max(0, Math.min(length, Number(args[0]) || 0)) <= cursor) return;
+		const line = Math.max(0, Math.floor(Number(args[0]) || 0));
+		if (name === 'lineStart' && line <= totalBreaks || name === 'lineEnd' && line < totalBreaks) return;
+		ensureComplete();
+	};
+	const descriptors = {};
+	for (const [name, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(store))) {
+		descriptors[name] = descriptor.get
+			? {enumerable: true, get() { before(name, []); return descriptor.get(); }}
+			: {enumerable: true, value: (...args) => { before(name, args); return descriptor.value(...args); }};
+	}
+	descriptors.complete = {enumerable: true, value: complete};
+	const pending = Object.freeze(Object.defineProperties({}, descriptors));
+	preparation.signal?.addEventListener('abort', cancel, {once: true});
+	try {
+		check();
+		if (cursor < initial.length) advance();
+		if (preparation.pending === true) reindex();
+		if (cursor === initial.length) finish();
+	} catch (error) { fail(error); }
+	Promise.resolve().then(async () => {
+		try {
+			while (!finished) {
+				check();
+				do { advance(); } while (cursor < initial.length && pieces.length % 4);
+				if (preparation.pending === true) reindex();
+				preparation.onProgress?.(cursor / initial.length);
+				if (cursor === initial.length) finish();
+				if (!finished && preparation.yield) await Promise.race([preparation.yield(), complete]);
+			}
+		} catch (error) { fail(error); }
+	});
+	return preparation.pending === true ? pending : complete;
 }
 
 return Object.freeze({
 	create, createAsync: (value, options = {}) => create(value, '', null, options),
+	createPending: (value, options = {}) => create(value, '', null, {...options, pending: true}),
 	textIntegrity, fnv1a32, rootAfter, contentIdOf, PIECE_CHARS, MAX_BYTES,
 	encoder: sourceEncoder,
 });

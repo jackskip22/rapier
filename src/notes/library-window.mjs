@@ -2,15 +2,17 @@
 const finite = (n, min = 0) => typeof n === 'number' && Number.isFinite(n) && n >= min;
 const integer = (n, min = 0) => Number.isSafeInteger(n) && n >= min;
 const freeze = Object.freeze;
+const orders = new WeakSet();
 
 export function createMasonry({items, width, columns = 2, gap = 8, context, epoch = 0, start = 0}) {
 	if (!Array.isArray(items) || !integer(columns, 1) || columns > 8 || !finite(gap) || !finite(width, 1) || width <= gap * (columns - 1)
 		|| typeof context !== 'string' || !context || !integer(epoch) || !integer(start) || start > items.length) throw new TypeError('masonry needs ordered identities and an exact layout context');
-	const seen = new Set(), ordered = items.map(item => {
+	const seen = new Set(), ordered = orders.has(items) ? items : freeze(items.map(item => {
 		if (typeof item?.key !== 'string' || !item.key || seen.has(item.key) || typeof item.revision !== 'string' || !item.revision) throw new TypeError('masonry identities must be unique folder revisions');
 		seen.add(item.key); return freeze({key:item.key, revision:item.revision});
-	});
-	return freeze({items:freeze(ordered), width, columns, gap, context, epoch, start, next:start, columnWidth:(width - gap * (columns - 1)) / columns,
+	}));
+	orders.add(ordered);
+	return freeze({items:ordered, width, columns, gap, context, epoch, start, next:start, columnWidth:(width - gap * (columns - 1)) / columns,
 		heights:freeze(Array(columns).fill(0)), blocks:freeze([]), extent:0});
 }
 

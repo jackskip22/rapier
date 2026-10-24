@@ -11,6 +11,7 @@ import {initialLiveLedger, carriedLiveLedger, appendLiveJournal, liveLedgerPrefi
 import {createPrivateInvitation, sealPrivate, openPrivateInitial, openPrivatePresence, openPrivateRecord, privateAuthor} from './live-private.mjs';
 import {PRIVATE_LIVE_PROTOCOL, privateId, privatePeer, privateInteger, privateSecret} from '../kernel/live-private-wire.mjs';
 import {portSocket} from './port-socket.mjs';
+import {JsonDepthGuard} from '../kit/json-depth.mjs';
 
 function movePresence(source, presence, changes, client) {
   let text = source;
@@ -236,7 +237,7 @@ export function createLiveClient({post, socket: Socket, store, clock, timer, can
     }
     status();
   };
-  const typingBurst = last => {
+  const typingBurst = (last, since = 0) => {
     const history = [...state.log, ...state.pending];
     let index = history.findIndex(row => row.client === last?.client && row.seq === last.seq);
     const typed = row => row?.act?.operation === 'document.edit-block' && row.act.affectedBlockIds?.length === 1 &&
@@ -250,7 +251,7 @@ export function createLiveClient({post, socket: Socket, store, clock, timer, can
       const before = history[index - 1], after = history[index];
       if (before.client !== last.client) break;
       if (!typed(before) || entered(before) || before.act.affectedBlockIds[0] !== after.act.affectedBlockIds[0] ||
-          before.act.author?.id !== after.act.author?.id || !(time(after) - time(before) <= 2000)) break;
+          before.act.author?.id !== after.act.author?.id || !(time(after) - time(before) <= 2000) || time(before) < since) break;
       group.unshift(before); index--;
     }
     return group.length > 1 ? group.map(row => ({client: row.client, seq: row.seq})) : null;
@@ -620,6 +621,9 @@ export function createLiveClient({post, socket: Socket, store, clock, timer, can
     });
     opening.onmessage = event => run(async () => {
       if (ws !== opening || stopped) return;
+      if (typeof event.data !== 'string' || event.data.length > 32 * 1024 * 1024 ||
+          new TextEncoder().encode(event.data).byteLength > 32 * 1024 * 1024) throw new Error('message_too_large');
+      new JsonDepthGuard(128).write(event.data);
       await receive(JSON.parse(event.data));
     });
     opening.onerror = () => {};
@@ -778,7 +782,7 @@ export function createLiveClient({post, socket: Socket, store, clock, timer, can
       const id = state.documentId.slice(0, 48) + ':' + crypto.randomUUID();
       let next = undoQueue(state.base, state.log, state.pending, state.client, state.nextSeq, target, id);
       if (!next) return emit({type: 'undo', id: value.id, changed: false});
-      const group = !target && !value.redo ? typingBurst(next.undoTarget) : null;
+      const group = !target && !value.redo ? typingBurst(next.undoTarget, Number.isSafeInteger(value.since) ? value.since : 0) : null;
       if (group) next = undoQueue(state.base, state.log, state.pending, state.client, state.nextSeq, group, id) || next;
       const history = [...state.log, ...state.pending];
       const originals = (next.undoTargets || [next.undoTarget]).map(ref => history.find(row => row.client === ref.client && row.seq === ref.seq));

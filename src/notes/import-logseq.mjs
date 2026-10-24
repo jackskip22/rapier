@@ -1,3 +1,4 @@
+import {parseImportJson} from './import.mjs';
 // SPDX-License-Identifier: AGPL-3.0-only
 import {noteFileName, orderAfter} from './model.mjs';
 import {parseFrontMatter, serializeFrontMatter, propertiesOf, tagsOf, aliasesOf} from './frontmatter.mjs';
@@ -43,7 +44,7 @@ function pageValues(value) {
     const text = piece.trim();
     if (!text) return [];
     if (/^"(?:[^"\\]|\\.)*"$/.test(text)) {
-      try { return [JSON.parse(text)]; } catch (_) { return [text]; }
+      try { return [parseImportJson(text)]; } catch (_) { return [text]; }
     }
     const refs = [...text.matchAll(/#?\[\[([^\[\]]*)\]\]|#([^\s,\[\]]+)/g)];
     if (refs.length && !text.replace(/#?\[\[([^\[\]]*)\]\]|#([^\s,\[\]]+)/g, '').trim())

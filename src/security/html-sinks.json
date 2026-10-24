@@ -228,11 +228,6 @@
 				"kind": "static-template",
 				"reason": "Dialog markup is built from the internal _RAPIER_PROTECTION_CHOICES/_RAPIER_WILL_LAW_GLYPH constants; the user's free-text intent is set via input.value, never concatenated into HTML."
 			},
-			"_rapierPlanExactNestedLink": {
-				"count": 2,
-				"kind": "probe",
-				"reason": "beforeRendered/afterRendered are detached divs holding renderBlock() (sanitized) output, used only to verify the link plan round-trips before _rapierApplyExactNestedLink commits it; never attached."
-			},
 			"_rapierApplyExactNestedLink": {
 				"count": 3,
 				"kind": "sanitized-document",
@@ -564,6 +559,11 @@
 			}
 		},
 		"shell/plugin-loader.js": {
+			"_prepareOpaqueMermaid": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "The isolated diagram frame receives only fixed bootstrap function source and the existing restrictive diagram CSP. Verified renderer bytes, font bytes and document text arrive later on a private MessagePort; none enter this srcdoc."
+			},
 			"_diagramResourceText": {
 				"count": 1,
 				"kind": "untrusted-parse",
@@ -601,6 +601,13 @@
 				"count": 2,
 				"kind": "untrusted-parse",
 				"reason": "Raw clipboard HTML is parsed only in detached template.content. Local picture addresses are replaced with admitted PNG/JPEG bytes from the same clipboard. The fragment is never attached; the result still passes the existing paste sanitizer."
+			}
+		},
+		"editor/plan-exact.js": {
+			"_rapierPlanExactNestedLink": {
+				"count": 2,
+				"kind": "probe",
+				"reason": "beforeRendered/afterRendered are detached divs holding renderBlock() (sanitized) output, used only to verify the link plan round-trips before _rapierApplyExactNestedLink commits it; never attached."
 			}
 		}
 	}

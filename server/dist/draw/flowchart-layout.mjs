@@ -9,8 +9,163 @@ const FLOWCHART_LAYOUT_LIMITS = Object.freeze({
 	gridCells: 65536
 });
 
+export const ROUTE_PRICE = Object.freeze({crossing: 10000, outside: 30});
+const OUTSIDE_WEIGHT = ROUTE_PRICE.outside, CROSS_WEIGHT = ROUTE_PRICE.crossing;
+export function outsideHullLength(path, hull) {
+	let total = 0;
+	for (let i = 1; i < path.length; i++) {
+		const a = path[i - 1], b = path[i], inside = a[0] === b[0]
+			? (a[0] < hull.x0 || a[0] > hull.x1 ? 0 : Math.max(0, Math.min(Math.max(a[1], b[1]), hull.y1) - Math.max(Math.min(a[1], b[1]), hull.y0)))
+			: (a[1] < hull.y0 || a[1] > hull.y1 ? 0 : Math.max(0, Math.min(Math.max(a[0], b[0]), hull.x1) - Math.max(Math.min(a[0], b[0]), hull.x0)));
+		total += Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) - inside;
+	}
+	return total;
+}
+export function planFlowchartPorts(nodes, edges, boxes, across = false, corridors = null) {
+	const byId = new Map(nodes.map((node, i) => [node.id, {node, box: boxes[i]}]));
+	const placed = [];
+	const hull = boxes.length ? {x0: Math.min(...boxes.map(b => b.minX)), y0: Math.min(...boxes.map(b => b.minY)), x1: Math.max(...boxes.map(b => b.maxX)), y1: Math.max(...boxes.map(b => b.maxY))} : null;
+	const point = (box, bind) => [box.minX + bind.ax * box.w, box.minY + bind.ay * box.h];
+	const clear = (path, ids) => {
+		for (let i = 1; i < path.length; i++) {
+			const a = path[i - 1], b = path[i];
+			for (const [id, {box}] of byId) {
+				if (ids.includes(id)) continue;
+				const pad = 16;
+				if (a[0] === b[0] ? a[0] > box.minX - pad && a[0] < box.maxX + pad && Math.max(a[1], b[1]) > box.minY - pad && Math.min(a[1], b[1]) < box.maxY + pad
+					: a[1] > box.minY - pad && a[1] < box.maxY + pad && Math.max(a[0], b[0]) > box.minX - pad && Math.min(a[0], b[0]) < box.maxX + pad) return false;
+			}
+		}
+		return true;
+	};
+	const crosses = (path, ids) => {
+		let total = 0;
+		for (const other of placed) {
+			if (ids.some(id => other.ids.includes(id))) continue;
+			for (let i = 1; i < path.length; i++) for (let j = 1; j < other.path.length; j++) {
+				const a = path[i - 1], b = path[i], c = other.path[j - 1], d = other.path[j];
+				const between = (x, p, q) => x > Math.min(p, q) && x < Math.max(p, q);
+				if (a[0] === b[0] && c[1] === d[1] && between(a[0], c[0], d[0]) && between(c[1], a[1], b[1]) ||
+					a[1] === b[1] && c[0] === d[0] && between(a[1], c[1], d[1]) && between(c[0], a[0], b[0])) total++;
+			}
+		}
+		return total;
+	};
+	for (const edge of edges) {
+		const from = byId.get(edge.bind?.start?.to), to = byId.get(edge.bind?.end?.to);
+		if (!from || !to || from === to || !['rect', 'text'].includes(from.node.shape.recognized) || !['rect', 'text'].includes(to.node.shape.recognized)) continue;
+		const a = from.box, b = to.box, ids = [from.node.id, to.node.id];
+		const candidates = [], ax = (a.minX + a.maxX) / 2, ay = (a.minY + a.maxY) / 2, bx = (b.minX + b.maxX) / 2, by = (b.minY + b.maxY) / 2;
+		const add = (start, end, corners = []) => {
+			const first = point(a, start), last = point(b, end), path = [first, ...corners, last];
+			if (!clear(path, ids)) return;
+			const length = path.slice(1).reduce((sum, p, i) => sum + Math.abs(p[0] - path[i][0]) + Math.abs(p[1] - path[i][1]), 0);
+			candidates.push({start, end, path, cost: crosses(path, ids) * CROSS_WEIGHT + corners.length * 1000 + length / 100 + (hull ? outsideHullLength(path, hull) * OUTSIDE_WEIGHT : 0)});
+		};
+		const parallel = edges.filter(other => other.bind?.start?.to === ids[0] && other.bind?.end?.to === ids[1] || other.bind?.start?.to === ids[1] && other.bind?.end?.to === ids[0]);
+		const offset = (parallel.indexOf(edge) - (parallel.length - 1) / 2) * 8;
+		for (const vertical of [true, false]) {
+			const low = Math.max(vertical ? a.minX : a.minY, vertical ? b.minX : b.minY) + 8;
+			const high = Math.min(vertical ? a.maxX : a.maxY, vertical ? b.maxX : b.maxY) - 8;
+			const separated = vertical ? a.maxY < b.minY || b.maxY < a.minY : a.maxX < b.minX || b.maxX < a.minX;
+			if (low > high || !separated) continue;
+			for (const at of new Set([Math.max(low, Math.min(high, (vertical ? bx : by) + offset)), low, high, (low + high) / 2])) {
+			add(vertical ? {ax: (at - a.minX) / a.w, ay: by > ay ? 1 : 0} : {ax: bx > ax ? 1 : 0, ay: (at - a.minY) / a.h},
+				vertical ? {ax: (at - b.minX) / b.w, ay: by > ay ? 0 : 1} : {ax: bx > ax ? 0 : 1, ay: (at - b.minY) / b.h});
+			}
+		}
+		if ((bx > a.maxX + 16 || bx < a.minX - 16) && (ay < b.minY - 16 || ay > b.maxY + 16))
+			add({ax: bx > ax ? 1 : 0, ay: .5}, {ax: .5, ay: ay < by ? 0 : 1}, [[bx, ay]]);
+		if ((by > a.maxY + 16 || by < a.minY - 16) && (ax < b.minX - 16 || ax > b.maxX + 16))
+			add({ax: .5, ay: by > ay ? 1 : 0}, {ax: ax < bx ? 0 : 1, ay: .5}, [[ax, by]]);
+		for (const vertical of [true, false]) for (const side of [0, 1]) {
+			const sign = side ? 1 : -1;
+			const first = vertical ? [side ? a.maxX : a.minX, ay] : [ax, side ? a.maxY : a.minY];
+			const last = vertical ? [side ? b.maxX : b.minX, by] : [bx, side ? b.maxY : b.minY];
+			const axis = vertical ? 0 : 1;
+			const outside = side ? Math.max(first[axis], last[axis]) : Math.min(first[axis], last[axis]);
+			const tracks = [outside + sign * 24];
+			for (const [id, {box}] of byId) if (!ids.includes(id)) {
+				const at = vertical ? side ? box.maxX : box.minX : side ? box.maxY : box.minY;
+				if (sign * (at - outside) >= 0) tracks.push(at + sign * 24);
+			}
+			for (const at of tracks) add(vertical ? {ax: side, ay: .5} : {ax: .5, ay: side},
+				vertical ? {ax: side, ay: .5} : {ax: .5, ay: side},
+				vertical ? [[at, ay], [at, by]] : [[ax, at], [bx, at]]);
+		}
+		for (const vertical of [true, false]) {
+			const spans = [...byId.values()].map(({box}) => vertical ? [box.minX, box.maxX] : [box.minY, box.maxY]).sort((p, q) => p[0] - q[0]);
+			const lanes = [];
+			let reach = spans[0][1];
+			for (const [low, high] of spans.slice(1)) {
+				if (low - reach >= 34) lanes.push((reach + low) / 2);
+				reach = Math.max(reach, high);
+			}
+			const near = vertical ? [Math.min(ax, bx), Math.max(ax, bx)] : [Math.min(ay, by), Math.max(ay, by)];
+			const away = at => at < near[0] ? near[0] - at : at > near[1] ? at - near[1] : 0;
+			const own = vertical === !across ? (corridors?.get(ids[0] + '>' + ids[1]) || []).map(point => point[vertical ? 0 : 1]) : [];
+			for (const at of [...new Set(own), ...lanes.sort((p, q) => away(p) - away(q)).slice(0, 6)]) {
+				const ends = [[a, ay, ax, by > ay ? 1 : 0], [b, by, bx, by > ay ? 0 : 1]].map(([box, along, mid, face]) => {
+					const low = vertical ? box.minX : box.minY, high = vertical ? box.maxX : box.maxY, size = high - low;
+					if (at > high || at < low) return {side: at > high ? 1 : 0, along};
+					if (at >= low + 8 && at <= high - 8) return {face, share: (at - low) / size, mid};
+					return null;
+				});
+				if (ends.includes(null) || ends[0].face !== undefined && ends[1].face !== undefined) continue;
+				const [sa, sb] = ends, corners = [];
+				const pointOf = (box, end, other) => vertical
+					? end.side !== undefined ? [end.side ? box.maxX : box.minX, end.along] : [at, end.face ? box.maxY : box.minY]
+					: end.side !== undefined ? [end.along, end.side ? box.maxY : box.minY] : [end.face ? box.maxX : box.minX, at];
+				const first = pointOf(a, sa), last = pointOf(b, sb);
+				if (sa.side !== undefined) corners.push(vertical ? [at, ay] : [ax, at]);
+				if (sb.side !== undefined) corners.push(vertical ? [at, by] : [bx, at]);
+				const port = (end, box) => end.side !== undefined ? (vertical ? {ax: end.side, ay: .5} : {ax: .5, ay: end.side}) : (vertical ? {ax: end.share, ay: end.face} : {ax: end.face, ay: end.share});
+				add(port(sa, a), port(sb, b), corners);
+			}
+		}
+		const best = candidates.sort((a, b) => a.cost - b.cost)[0];
+		if (best && best.cost < 40000) {
+			Object.assign(edge.bind.start, best.start); Object.assign(edge.bind.end, best.end);
+			placed.push({ids, path: best.path});
+		}
+	}
+}
 
-export function findFeedbackArcSet(nodes, edges, idToIdx = null) {
+
+function diagramFeedbackArcs(nodes, edges, written = null) {
+	const ids = new Map(nodes.map((node, at) => [node.id, at])), n = nodes.length;
+	const incoming = Array.from({length: n}, () => []), outgoing = Array.from({length: n}, () => []);
+	const inDegree = new Int32Array(n), outDegree = new Int32Array(n), alive = new Uint8Array(n).fill(1);
+	for (const edge of edges) {
+		const from = ids.get(edge.from), to = ids.get(edge.to);
+		if (from === undefined || to === undefined || from === to) continue;
+		outgoing[from].push(to); incoming[to].push(from); outDegree[from]++; inDegree[to]++;
+	}
+	const reach = new Float64Array(n).fill(Infinity), queue = [];
+	for (let at = 0; at < n; at++) if (!inDegree[at]) { reach[at] = 0; queue.push(at); }
+	for (let head = 0; head < queue.length; head++) for (const to of outgoing[queue[head]]) if (reach[to] === Infinity) { reach[to] = reach[queue[head]] + 1; queue.push(to); }
+	const noSource = !queue.length, rank = at => written?.get(nodes[at].id) ?? n + at;
+	const left = [], right = [];
+	for (let remaining = n; remaining; remaining--) {
+		let sink = -1, source = -1, best = -1;
+		for (let at = 0; at < n; at++) if (alive[at]) {
+			if (sink < 0 && !outDegree[at]) sink = at;
+			if (source < 0 && !inDegree[at]) source = at;
+			if (best < 0 || noSource && rank(at) < rank(best)) best = at;
+			else if (!noSource && (outDegree[at] - inDegree[at] > outDegree[best] - inDegree[best] || outDegree[at] - inDegree[at] === outDegree[best] - inDegree[best] && reach[at] < reach[best])) best = at;
+		}
+		const at = sink >= 0 ? sink : source >= 0 ? source : best;
+		(sink >= 0 ? right : left).push(at); alive[at] = 0;
+		for (const to of outgoing[at]) if (alive[to]) inDegree[to]--;
+		for (const from of incoming[at]) if (alive[from]) outDegree[from]--;
+	}
+	const order = new Int32Array(n);[...left, ...right.reverse()].forEach((at, rank) => { order[at] = rank; });
+	return {backward: new Set(edges.filter(edge => edge.from !== edge.to && order[ids.get(edge.from)] > order[ids.get(edge.to)])),
+		selfLoops: new Set(edges.filter(edge => edge.from === edge.to))};
+}
+
+export function findFeedbackArcSet(nodes, edges, idToIdx = null, diagram = false, written = null) {
+	if (diagram) return diagramFeedbackArcs(nodes, edges, written);
 	const n = nodes.length;
 	if (!idToIdx) {
 		idToIdx = new Map();
@@ -171,6 +326,7 @@ function countBipartiteCrossings(lowerLen, flatPairs, pairCount) {
 }
 
 export function layoutLayeredGraph(nodes, edges, options = {}) {
+	if (!nodes.length) return {w: 0, h: 0, backward: new Set(), selfLoops: new Set(), ranks: new Map(), order: new Map(), positions: new Map(), corridors: new Map(), crossings: 0};
 	const across = !!options.across;
 	const baseGap = options.gap ?? 52;
 	const baseSibling = options.sibling ?? 36;
@@ -187,7 +343,7 @@ export function layoutLayeredGraph(nodes, edges, options = {}) {
 		if (itemIdToIdx.has(e.from) && itemIdToIdx.has(e.to)) validEdges.push(e);
 	}
 
-	const { backward, selfLoops } = findFeedbackArcSet(nodes, validEdges, itemIdToIdx);
+	const { backward, selfLoops } = findFeedbackArcSet(nodes, validEdges, itemIdToIdx, options.flowchart === true, options.written);
 	const ranks = assignRanksNetworkSimplex(nodes, validEdges, backward, { priorRanks: prior?.ranks, idToIdx: itemIdToIdx });
 
 	const groupOf = new Map();
@@ -776,7 +932,7 @@ export function layoutIncrementalGraph(nodes, edges, priorLayout, options = {}) 
 	const nodeMap = new Map();
 	for (let i = 0; i < nodes.length; i++) nodeMap.set(nodes[i].id, nodes[i]);
 
-	const { backward, selfLoops } = findFeedbackArcSet(nodes, edges);
+	const { backward, selfLoops } = findFeedbackArcSet(nodes, edges, null, options.flowchart === true, options.written);
 	const ranks = new Map();
 	const order = new Map();
 	const addedNodes = [];

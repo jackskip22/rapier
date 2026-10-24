@@ -17,6 +17,8 @@ button:focus:not(:focus-visible), [role="button"]:focus:not(:focus-visible) { ou
 .rapier-font-status { margin:var(--space-3) 0; font:var(--text-sm)/1.5 var(--font-mono); color:var(--color-text); white-space:pre-wrap; overflow-wrap:anywhere; }
 .rapier-font-sheet [data-pop-row] { margin-top:var(--space-5); }
 
+#editor-blocks :is(.block-read, .block-edit) { overflow-wrap: break-word; }
+#editor-blocks :is(.block-read, .block-edit) :is(table, pre) { overflow-wrap: normal; }
 .block-wrapper--interactive .block-read { cursor: text; }
 .block-wrapper--interactive .block-read a[href],
 .block-wrapper--interactive .block-read summary,
@@ -430,15 +432,12 @@ html[data-headings="off"] .section-fold-btn { display: none !important; }
 .block-wrapper--editing.block-wrapper--heading > .section-move-btn,
 .block-wrapper--editing > .section-move-btn--block { display: inline-flex; }
 .section-move-btn--block { height: 44px; margin-block-start: calc((var(--md-line, 28px) - 44px) / 2); }
-.section-move-btn--item { width: var(--editor-h-pad); height: 44px; }
-.block-wrapper--editing > .section-move-btn--item:not([hidden]) { display: inline-flex; }
-#editor-blocks li[data-section-moving] { opacity: .37; }
 #editor-blocks .block-wrapper[data-block-picked] > .block-read { background: var(--color-surface-hover); }
 .section-move-btn:focus, .section-move-btn:active { outline: 0; box-shadow: none; background: transparent; }
 .section-move-btn:focus-visible { opacity: 1; color: var(--color-text); }
 .section-move-btn:focus-visible svg { stroke-width: 3; }
 @media (hover:hover) and (pointer:fine) { .section-move-btn:hover { opacity: 1; color: var(--color-text); } }
-@media (hover:hover) and (pointer:fine) { .section-move-btn:not(.section-move-btn--item) { width: var(--editor-h-pad); } }
+@media (hover:hover) and (pointer:fine) { .section-move-btn { width: var(--editor-h-pad); } }
 html[data-section-dragging], html[data-section-dragging] * { cursor: grabbing !important; }
 :is(#editor-blocks, #editor-blocks > .block-sleep-group) > .block-wrapper[data-section-moving] { opacity: .37; }
 .section-move-mark { position: fixed; z-index: 30; height: 4px; background: var(--color-text); pointer-events: none; }

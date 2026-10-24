@@ -52,6 +52,8 @@ export function buildShellSource(source) {
   let text = source;
   for (const name of ['JXL', 'BACKUP_WORKER', 'SHARED_AGENT', 'APPS_BRIDGE', 'RUNTIME', 'PAINT'])
     text = text.replace(new RegExp('<!-- RAPIER_' + name + '_BEGIN -->[\\s\\S]*?<!-- RAPIER_' + name + '_END -->\\s*', 'g'), '');
+  text = text.replace(/<script id="rapier-charset">[\s\S]*?<\/script>\s*/, '');
+  text = text.replace(/<script id="rapier-boot-theme">[\s\S]*?<\/script>\s*<style id="rapier-boot-theme-style">[\s\S]*?<\/style>\s*/, '');
   text = text.replace(/<!-- RAPIER_PLATFORM_BEGIN -->[\s\S]*?<!-- RAPIER_PLATFORM_END -->\n?/g, '<!-- RAPIER_PLATFORM_BEGIN -->\n<!-- RAPIER_PLATFORM_END -->\n');
   for (const id of ['lib-dompurify', 'lib-turndown', 'lib-markdownit', 'lib-gpu-lexer', 'lib-acorn'])
     text = text.replace(new RegExp('(<script (?:id="' + id + '" type="text/rapier-vendor"|type="text/rapier-vendor" id="' + id + '")>)\\n[\\s\\S]*?</script>\\n', 'g'), '$1\n</script>\n');

@@ -124,6 +124,7 @@ async function _rapierNotesEditor() {
 	return state.returning;
 }
 function _rapierNotesIsApp() { return globalThis.RapierPlatform?.environment.android === true; }
+function _rapierNotesSyncShown() { return _rapierNotesIsApp() || globalThis.RapierPlatform?.environment.network !== false; }
 function _rapierNotesIsLocked() { return globalThis.RapierPlatform?.host?.lockedNotes === true; }
 let _rapierNotesPrivateDrafts = null;
 function _rapierNotesDraftStorage() {
@@ -1415,7 +1416,8 @@ function _rapierNotesSyncBoxWear(b) {
 		: facts.plain ? 'plain files on ' + (facts.service || 'your storage') : facts.at ? 'backed up to ' + (facts.service || 'cloudflare') : 'connected to ' + (facts.service || 'cloudflare')));
 	if (facts.connected) b.appendChild(_rapierNotesEl('span', 'rapier-notes-sync__when', facts.at ? _rapierNotesBackupWhen(facts.at) : facts.plain ? 'not synced yet' : 'not backed up yet'));
 	if (facts.connected) b.dataset.active = 'true'; else delete b.dataset.active;
-	for (const other of document.querySelectorAll('.rapier-notes-sync-other')) other.hidden = facts.app || facts.connected;
+	b.hidden = !_rapierNotesSyncShown();
+	for (const other of document.querySelectorAll('.rapier-notes-sync-other')) other.hidden = facts.app || facts.connected || !_rapierNotesSyncShown();
 }
 function _rapierNotesSyncPress(options = {}) {
 	if (_rapierNotesIsLocked()) return;
@@ -1469,9 +1471,9 @@ function _rapierNotesSettingsPaint() {
 	};
 	const row = (...buttons) => { const r = _rapierNotesEl('div', 'settings-action-row'); const pair = _rapierNotesEl('div', 'settings-action-pair'); pair.append(...buttons); r.appendChild(pair); return r; };
 	body.appendChild(_rapierNotesSettingsFirstRow());
-	if (!_rapierNotesIsLocked()) {
+	if (!_rapierNotesIsLocked() && _rapierNotesSyncShown()) {
 	body.appendChild(row(_rapierNotesSyncBox()));
-	{ const other = action('other sync options', 'sync-other'); other.classList.add('rapier-notes-sync-other'); other.hidden = _rapierNotesIsApp(); body.appendChild(row(other)); }
+	{ const other = action('other sync options', 'sync-other'); other.classList.add('rapier-notes-sync-other'); other.hidden = _rapierNotesIsApp() || !_rapierNotesSyncShown(); body.appendChild(row(other)); }
 	}
 	body.appendChild(_rapierNotesSettingsTitle('sort by'));
 	body.appendChild(toggle('sort by', RAPIER_NOTES_SORT_ORDER, 'sort', 'notesSort'));
@@ -2410,8 +2412,12 @@ function _rapierNotesWindowStart(grid, id, files, layout) {
 	const settled = previous && !state.repack && typeof _rapierNotesLib !== 'undefined' && _rapierNotesLib.trustedPaint &&
 		document.fonts?.status === 'loaded' && previous.layout === layout.context && previous.masonry.width === width && previous.masonry.columns === cols;
 	const measurements = settled ? new Map(L.masonryRows(previous.masonry).map(row => [row.key, row])) : new Map();
-	const masonry = L.createMasonry({items: _rapierNotesWindowItems(files), width, columns: cols, gap, context: id + '@' + cols + 'x' + width, epoch});
-	return (state.windows[id] = {epoch, masonry, files, reuse, measurements, cached: new Map(), layout: layout.context});
+	const notes = state.index.notes;
+	const same = previous?.modified && files.length === previous.files.length &&
+		files.every((file, at) => file === previous.files[at] && file === previous.masonry.items[at]?.key && notes[file]?.modified === previous.modified[at]);
+	const modified = same ? previous.modified : files.map(file => notes[file]?.modified);
+	const masonry = L.createMasonry({items: same ? previous.masonry.items : _rapierNotesWindowItems(files), width, columns: cols, gap, context: id + '@' + cols + 'x' + width, epoch});
+	return (state.windows[id] = {epoch, masonry, files, modified, reuse, measurements, cached: new Map(), layout: layout.context});
 }
 function _rapierNotesPlaceCard(card, row) {
 	const land = _rapierNotes.landing;
@@ -2538,6 +2544,8 @@ function _rapierNotesRender() {
 	if (!state.surface || !state.index) return;
 	if (!state.open) return;
 	if (state.drag || state.dropping) { state.renderAfterDrag = true; return; }
+	const found = typeof _rapierNotesLibraryRun === 'function' ? _rapierNotesLibraryRun() : null;
+	const matchesFile = file => !found || found.has(file);
 	const skills = _rapierNotesSkillsWanted(), ids = _rapierNotesSectionIds();
 	const active = document.activeElement, card = active?.closest?.('.rapier-notes-card');
 	const onCard = card && state.scroll.contains(card);
@@ -2546,7 +2554,7 @@ function _rapierNotesRender() {
 		const candidates = [card.dataset.notesFile, card.nextElementSibling?.dataset.notesFile, card.previousElementSibling?.dataset.notesFile];
 		const file = candidates.find(file => {
 			const entry = file && state.index.notes[file], id = entry && M.sectionOf(entry, state.index.sections);
-			return entry && !entry.trashed && ids.includes(id) && (id !== 'skills' || skills) && !_rapierNotesShut(id) && !state.reorder && _rapierNotesMatches(file);
+			return entry && !entry.trashed && ids.includes(id) && (id !== 'skills' || skills) && !_rapierNotesShut(id) && !state.reorder && matchesFile(file);
 		});
 		if (file) keyboard = {file, from: active, restore: true, control: file === card.dataset.notesFile ? _rapierModalFocusables(card).indexOf(active) : -1};
 	}
@@ -2565,7 +2573,7 @@ function _rapierNotesRender() {
 		const word = head.querySelector('.rapier-notes-section-word'), name = RAPIER_NOTES_SECTION_WORDS[id] || id;
 		if (word.textContent !== name) word.textContent = name;
 		if (word.dataset.word !== name) word.dataset.word = name;
-		const files = _rapierNotesWithLocked(id, _rapierNotesSorted((typeof _rapierNotesLibrarySortedSection === 'function' ? _rapierNotesLibrarySortedSection(id) : M.sortedSection(state.index, id))).filter(_rapierNotesMatches));
+		const files = _rapierNotesWithLocked(id, _rapierNotesSorted((typeof _rapierNotesLibrarySortedSection === 'function' ? _rapierNotesLibrarySortedSection(id) : M.sortedSection(state.index, id))).filter(matchesFile));
 		if (id === 'others') othersEmpty = !files.length;
 		const own = !(id in RAPIER_NOTES_SECTION_WORDS);
 		const wanted = id === 'skills' ? skills : id === 'archive' ? files.length > 0 : true;

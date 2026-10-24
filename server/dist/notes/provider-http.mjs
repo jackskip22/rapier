@@ -1,3 +1,4 @@
+import {JsonDepthGuard} from '../kit/json-depth.mjs';
 const LOCAL = Symbol('provider-refusal');
 export const isProviderRefusal = error => !!error && error[LOCAL] === true;
 export const fail = (code, message, detail = {}) => Object.assign(new Error(message), {code, ...detail, [LOCAL]: true});
@@ -35,13 +36,18 @@ export async function untilAbort(signal, run) {
 	finally { signal.removeEventListener('abort', stop); }
 }
 const td = new TextDecoder('utf-8', {fatal: true});
+function responseJson(bytes) {
+	const text = td.decode(bytes);
+	new JsonDepthGuard(128).write(text);
+	return JSON.parse(text);
+}
 export function jsonBody(response) {
-	try { return JSON.parse(td.decode(response.bytes)); }
+	try { return responseJson(response.bytes); }
 	catch { refuse('response', 'the provider returned unreadable JSON; nothing was acknowledged'); }
 }
 export function providerError(provider, response, code = 'provider') {
 	let data;
-	try { data = JSON.parse(td.decode(response.bytes)); } catch {}
+	try { data = responseJson(response.bytes); } catch {}
 	const own = data?.error_description || data?.error_summary || data?.error?.message || (typeof data?.error === 'string' ? data.error : '');
 	return fail(code, `${provider} refused the request (HTTP ${response.status})${own ? ': ' + String(own).slice(0, 4096) : ''}`, {status: response.status});
 }

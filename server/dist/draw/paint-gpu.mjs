@@ -1194,7 +1194,9 @@ export class GpuPaintSurface {
 				get scale() { return surface.record.scale; }, get record() { return surface.record; }, flush: () => surface.flush(), extendBox: box => surface._grow(box),
 				get volume() { return surface.volume; }, get tooth() { return surface.tooth; }, toothFor: box => surface._toothFor(box.x0, box.y0, box.x1, box.y1),
 				plane: (plane, bytes = 4) => surface._plane(name + '.' + plane, bytes),
-				snap: box => surface._snap(box)});
+				snap: box => surface._snap(box),
+				get timing() { return !!surface.timing && surface.device.features.has('timestamp-query'); },
+				gpuTime: ns => { (surface.stamps ??= []).push(Promise.resolve(ns).then(v => { surface.gpuNs = (surface.gpuNs || 0) + v; })); }});
 			this.engines.set(name, e);
 			if (this.stroke) e.begin?.();
 		}

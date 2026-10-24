@@ -14,6 +14,7 @@ mod folder;
 mod host;
 mod payload;
 mod portal;
+mod profile;
 mod theme;
 mod wm;
 
@@ -58,9 +59,13 @@ const BROWSERS: [&str; 8] = [
 pub enum Event {
     Cdp(serde_json::Value),
     Theme,
+    /// The desktop's dark setting, as learned or changed (portal.rs watch_dark): true for dark.
+    Dark(bool),
     Open(String),
     /// A file chooser answered (host.rs start_pick): the result of that pick, or why none could be shown.
     Picked(u64, Result<String, String>),
+    /// Ctrl+Q: every window has been asked to keep its work; the browser closes now (host.rs quit_all).
+    Quit,
     Exit,
 }
 
@@ -96,8 +101,19 @@ pub fn instance_dir() -> PathBuf {
             Ok(_) => base,
             Err(_) => {
                 let _ = std::fs::create_dir_all(&base);
-                let _ = std::fs::write(&first, &name);
-                base
+                // Publish the complete name once: concurrent starts must never read an empty first-display
+                // and choose different instance sockets for the same display.
+                let temporary = base.join(format!(".first-display-{}", random_hex(8)));
+                if let Ok(mut file) = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&temporary) {
+                    if file.write_all(name.as_bytes()).is_ok() {
+                        let _ = std::fs::hard_link(&temporary, &first);
+                    }
+                    let _ = std::fs::remove_file(&temporary);
+                }
+                match std::fs::read_to_string(&first) {
+                    Ok(recorded) if recorded.trim() != name => base.join(format!("display-{name}")),
+                    _ => base,
+                }
             }
         }
     }).clone()
@@ -144,14 +160,14 @@ fn fail(message: &str) -> ! {
 
 /// stdin, set aside in a private file (0600, in XDG_RUNTIME_DIR) for the window to open as a new document.
 fn stdin_document() -> String {
-    let mut text = Vec::new();
-    std::io::stdin().take(64 * 1024 * 1024).read_to_end(&mut text).unwrap_or_else(|error| fail(&error.to_string()));
+    let text = files::read_document(std::io::stdin()).unwrap_or_else(|error| fail(&error.to_string()));
     let folder = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).filter(|d| d.is_dir()).unwrap_or_else(std::env::temp_dir);
     let path = folder.join(format!("rapier-stdin-{}.md", random_hex(8)));
     let mut file = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&path)
         .unwrap_or_else(|error| fail(&error.to_string()));
     file.write_all(&text).unwrap_or_else(|error| fail(&error.to_string()));
-    format!("{STDIN_DOCUMENT}{}", path.display())
+    format!("{STDIN_DOCUMENT}{}", serde_json::json!({"path": path,
+        "folder": std::env::current_dir().ok()}))
 }
 
 /// The installed Chromium-based browser: RAPIER_BROWSER, then each name on PATH, then the usual install paths (a

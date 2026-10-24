@@ -48,7 +48,7 @@
 			return Promise.resolve();
 		}
 		return new Promise(function (resolve, reject) {
-			var url = URL.createObjectURL(new Blob([bytes], {type: 'text/javascript'}));
+			var url = URL.createObjectURL(new Blob([bytes], {type: 'text/javascript;charset=utf-8'}));
 			script.async = false; script.src = url;
 			script.onload = function () { URL.revokeObjectURL(url); resolve(); };
 			script.onerror = function () { URL.revokeObjectURL(url); reject(new Error((window.RapierPlatform?.environment.native === true ? 'this app' : 'this browser') + ' blocked the verified ' + name)); };
@@ -64,7 +64,7 @@
 		files: [{name: MATH_FILE, file: MATH_FILE, version: MATH_VERSION,
 			bytes: 742684,
 			sri: '1rjhOOw690Mr3aVXwRTPlwQO2atMrWHY8Rm3nZ+SZRrm5mB9HK5FkY6ZWCDYtgzv',
-			url: 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.40/math/rapier-math-2.7.0.js'}],
+			url: 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@v1.2.41/math/rapier-math-2.7.0.js'}],
 		missing: 'Rapier math loaded but its SVG renderer is missing — cache purged',
 		usable: function () { return !!(window.RapierMath && window.RapierMath.version === MATH_VERSION &&
 			typeof window.RapierMath.renderToString === 'function' && typeof window.RapierMath.renderWithMathML === 'function'); },
@@ -170,9 +170,13 @@
 
 
 	var _mermaidRealm = null, _mermaidStarting = null, _mermaidGeneration = 0, _mermaidRendering = 0;
-	var _zenumlStarting = null, _mermaidFontFaces = [], _mermaidScriptCancels = new Set();
+	var _zenumlStarting = null, _mermaidFontFaces = [], _mermaidScriptCancels = new Set(), _mermaidRemote = null, _mermaidFontStyle = null;
 	function _disposeMermaid() {
 		_mermaidGeneration++;
+		if (_mermaidRemote) _mermaidRemote.close();
+		_mermaidRemote = null;
+		if (_mermaidFontStyle) _mermaidFontStyle.remove();
+		_mermaidFontStyle = null;
 		_mermaidScriptCancels.forEach(function (cancel) { cancel(); });
 		if (_mermaidRealm) _mermaidRealm.remove();
 		_mermaidRealm = null; _mermaidStarting = null; _zenumlStarting = null;
@@ -204,7 +208,7 @@
 			}
 			_mermaidScriptCancels.add(cancel);
 			try {
-				url = URL.createObjectURL(new Blob([bytes], {type: 'text/javascript'}));
+				url = URL.createObjectURL(new Blob([bytes], {type: 'text/javascript;charset=utf-8'}));
 				script.src = url; script.async = false;
 				script.onload = function () { finish(thrown); };
 				script.onerror = function () { finish(new Error('The verified diagram bundle was blocked by ' + _policy())); };
@@ -262,16 +266,116 @@
 		return new runtime.XMLSerializer().serializeToString(drawing).replaceAll('var(--pele-', 'var(--md-pele-');
 	}
 
-	function _renderPele(runtime, source, id) {
-		const options = {idPrefix: id, fontFamily: MERMAID_FONT_FAMILY, fontSize: MERMAID_FONT_SIZE,
-			padding: 16, limit: MAX_SOURCE_LENGTH, maxEdges: MAX_EDGE_COUNT, images: false};
-		if (runtime.pele.detectType(source) === 'pie') {
-			const model = runtime.pele.parse(source, options);
+	function _peleSvg(runtime, source, options, math) {
+		const model = runtime.pele.parse(source, options);
+		if (model.type === 'pie') {
 			const literal = text => text?.replace(/</g, '&lt;').replace(/>/g, '&gt;');
 			model.sections = new Map([...model.sections].map(([label, value]) => [literal(label), value]));
-			source = model;
 		}
-		return _presentPele(runtime.pele.render(source, options).svg, runtime);
+		const answers = math ? new Map(math) : null;
+		const resolve = (tex, size) => {
+			const svg = answers?.get(tex);
+			if (typeof svg !== 'string') return null;
+			const box = (/viewBox="([^"]+)"/.exec(svg)?.[1] || '').split(/\s+/).map(Number), scale = Number(/font-size:([\d.]+)em/.exec(svg)?.[1] || 1);
+			if (box.length !== 4 || !box.every(Number.isFinite) || box[2] <= 0 || box[3] <= 0 || !(scale > 0)) return null;
+			return {svg, width: box[2] / 1000 * scale * size, height: box[3] / 1000 * scale * size};
+		};
+		const svg = runtime.pele.render(model, answers ? {...options, math: resolve} : options).svg;
+		return ['sequence', 'class', 'state'].includes(model.type) ? runtime.pele.annotateMermaidSVG(svg, source, runtime, model) : svg;
+	}
+
+	function _diagramNeedsMath(source) {
+		const text = String(source ?? '').replace(/^\uFEFF/, '').trimStart()
+			.replace(/^---[ \t]*\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, '')
+			.replace(/^\s*%%[^\n]*(?:\n|$)/gm, '').trimStart();
+		return /\$\$[\s\S]+?\$\$/.test(text);
+	}
+
+	function _diagramMath(source) {
+		const provider = _rapierProviders.math;
+		if (!_diagramNeedsMath(source) || provider?.status !== 'ready') return null;
+		const answers = new Map();
+		for (const match of source.matchAll(/\$\$([\s\S]+?)\$\$/g)) if (!answers.has(match[1])) {
+			let svg; try { svg = provider.renderToString(match[1], {displayMode: true}); } catch (_) {}
+			answers.set(match[1], svg);
+		}
+		return [...answers];
+	}
+
+	function _diagramFrameMain(render) {
+		async function execute(bytes) {
+			const script = document.createElement('script');
+			const url = URL.createObjectURL(new Blob([bytes], {type: 'text/javascript;charset=utf-8'}));
+			try {
+				await new Promise((resolve, reject) => {
+					script.onload = resolve; script.onerror = () => reject(new Error('The verified diagram bundle was blocked'));
+					script.src = url; document.head.appendChild(script);
+				});
+			} finally { script.remove(); URL.revokeObjectURL(url); }
+		}
+		addEventListener('message', function connect(event) {
+			if (event.source !== parent || event.data !== 'rapier-diagram-connect' || !event.ports[0]) return;
+			removeEventListener('message', connect);
+			const port = event.ports[0];
+			port.onmessage = async ({data}) => {
+				try {
+					let value;
+					if (data.type === 'init') {
+						await execute(data.bytes);
+						if (typeof globalThis.pele?.render !== 'function' || typeof globalThis.pele?.annotateMermaidSVG !== 'function') throw new Error('The verified diagram renderer is incomplete');
+						await Promise.all(data.fonts.map(async font => {
+							const face = new FontFace(font.family, font.bytes, {weight: String(font.weight)});
+							await face.load(); document.fonts.add(face);
+						}));
+					} else if (data.type === 'zenuml') {
+						await execute(data.bytes);
+						if (typeof globalThis.RapierZenUML?.render !== 'function') throw new Error('The verified diagram renderer is incomplete');
+						value = globalThis.RapierZenUML.fontCss || '';
+					} else if (data.type === 'render') {
+						value = data.zen ? await globalThis.RapierZenUML.render(data.source) : render(globalThis, data.source, data.options, data.math);
+					} else throw new Error('Unknown diagram request');
+					port.postMessage({id: data.id, value});
+				} catch (error) { port.postMessage({id: data.id, error: String(error.message || error)}); }
+			};
+			port.start();
+		});
+	}
+
+	function _prepareOpaqueMermaid(frame, files) {
+		const channel = new MessageChannel(), pending = new Map();
+		let sequence = 0, closed = false;
+		const remote = {
+			opaque: true, fontCss: '',
+			call(type, payload) {
+				if (closed) return Promise.reject(new Error('The diagram renderer was released'));
+				return new Promise((resolve, reject) => {
+					const id = ++sequence;
+					const timer = setTimeout(() => { pending.delete(id); reject(new Error('The diagram renderer did not answer')); }, 30000);
+					pending.set(id, {resolve, reject, timer}); channel.port1.postMessage({id, type, ...payload});
+				});
+			},
+			close() {
+				closed = true; channel.port1.close(); channel.port2.close();
+				pending.forEach(row => { clearTimeout(row.timer); row.reject(new Error('The diagram renderer was released')); });
+				pending.clear();
+			}
+		};
+		_mermaidRemote = remote;
+		channel.port1.onmessage = ({data}) => {
+			const row = pending.get(data.id); if (!row) return;
+			pending.delete(data.id); clearTimeout(row.timer);
+			if (data.error) row.reject(new Error(data.error)); else row.resolve(data.value);
+		};
+		return new Promise((resolve, reject) => {
+			const timer = setTimeout(() => reject(new Error('The diagram frame did not load')), 10000);
+			frame.addEventListener('load', () => { clearTimeout(timer); resolve(); }, {once: true});
+			frame.srcdoc = '<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src &#39;none&#39;; script-src &#39;unsafe-inline&#39; &#39;wasm-unsafe-eval&#39; blob:; style-src &#39;unsafe-inline&#39;; font-src data:; base-uri &#39;none&#39;; form-action &#39;none&#39;"><script>(' + _diagramFrameMain.toString() + ')(' + _peleSvg.toString() + ');<\/script>';
+		}).then(async () => {
+			if (closed) throw new Error('The diagram renderer was released');
+			frame.contentWindow.postMessage('rapier-diagram-connect', '*', [channel.port2]);
+			const fonts = (globalThis.RapierDocxFonts?.DOCX_FONTS || []).map(font => ({family: font.family, weight: font.weight, bytes: font.read()}));
+			await remote.call('init', {bytes: files.core, fonts}); return remote;
+		});
 	}
 
 	function zenumlSource(source) {
@@ -294,12 +398,13 @@
 		}).then(function () {
 			if (generation !== _mermaidGeneration) throw new Error('The diagram renderer was released');
 			var frame = _mermaidRealm, owner = frame.contentDocument, runtime = frame.contentWindow;
+			if (!owner) return _prepareOpaqueMermaid(frame, files);
 			var policy = owner.createElement('meta'); policy.httpEquiv = 'Content-Security-Policy';
 			policy.content = "default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval' blob:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'";
 			owner.head.appendChild(policy);
-			return _executeDiagramBundle(owner, files.core, 'pele-1.6.0.js').then(function () {
+			return _executeDiagramBundle(owner, files.core, 'pele-1.9.0-native-1.js').then(function () {
 				if (generation !== _mermaidGeneration) throw new Error('The diagram renderer was released');
-				if (typeof runtime.pele?.render !== 'function') throw new Error('The verified diagram renderer is incomplete');
+				if (typeof runtime.pele?.render !== 'function' || typeof runtime.pele?.annotateMermaidSVG !== 'function') throw new Error('The verified diagram renderer is incomplete');
 				return runtime;
 			});
 		}).catch(function (error) { if (generation === _mermaidGeneration) _disposeMermaid(); throw error; });
@@ -316,7 +421,13 @@
 			}
 			var files = await provider.bytes();
 			if (generation !== _mermaidGeneration) throw new Error('The diagram renderer was released');
-			await _executeDiagramBundle(runtime.document, files.zenuml, 'rapier-zenuml-4.5.0-3.js');
+			if (runtime.opaque === true) {
+				runtime.fontCss = await runtime.call('zenuml', {bytes: files.zenuml});
+				_mermaidFontStyle = document.createElement('style'); _mermaidFontStyle.textContent = runtime.fontCss;
+				document.head.appendChild(_mermaidFontStyle);
+				return {render: source => runtime.call('render', {source, zen: true})};
+			}
+			await _executeDiagramBundle(runtime.document, files.zenuml, 'rapier-zenuml-svg-4.5.0-1.js');
 			if (generation !== _mermaidGeneration) throw new Error('The diagram renderer was released');
 			if (typeof runtime.RapierZenUML?.render !== 'function') throw new Error('The verified diagram renderer is incomplete');
 			return runtime.RapierZenUML;
@@ -331,11 +442,12 @@
 			files: [zenuml]});
 		_rapierVerifiedFiles({
 			key: 'mermaid', noun: 'diagram', dash: ' -- ',
+			requiresMath: _diagramNeedsMath,
 			version: core.version, files: [{...core, id: 'rapier-mermaid-core'}],
 			prepare: _prepareMermaid, discard: _disposeMermaid,
 			release: function () { if (_mermaidRendering || !_mermaidRealm) return false; _disposeMermaid(); return true; },
 			presentationPaint: _zenumlPaint,
-			exportFontCss: function () { return _mermaidRealm?.contentWindow.RapierZenUML?.fontCss || ''; },
+			exportFontCss: function () { return _mermaidRemote ? _mermaidRemote.fontCss || '' : _mermaidRealm?.contentWindow.RapierZenUML?.fontCss || ''; },
 			render: function (src, opts, ready) {
 				var hit = _boundHit(src); if (hit) return Promise.reject(new Error(hit));
 				var resourceHit = _diagramResourceHit(src); if (resourceHit) return Promise.reject(new Error(resourceHit));
@@ -346,14 +458,19 @@
 					await document.fonts.load(MERMAID_FONT_SIZE + 'px ' + MERMAID_FONT_FAMILY);
 					await document.fonts.ready;
 					if (generation !== _mermaidGeneration) throw new Error('The diagram renderer was released');
-					document.fonts.forEach(function (face) { if (face.status === 'loaded' && !runtime.document.fonts.has(face)) runtime.document.fonts.add(face); });
+					if (runtime.opaque !== true) document.fonts.forEach(function (face) { if (face.status === 'loaded' && !runtime.document.fonts.has(face)) runtime.document.fonts.add(face); });
 					var source = String(src == null ? '' : src), zen = zenumlSource(source), out;
 					if (zen !== null) {
 						out = await (await _prepareZenUML(runtime)).render(zen);
-						runtime.document.fonts.forEach(function (face) {
+						if (runtime.opaque !== true) runtime.document.fonts.forEach(function (face) {
 							if (face.status === 'loaded' && !document.fonts.has(face)) { document.fonts.add(face); _mermaidFontFaces.push(face); }
 						});
-					} else out = {svg: _renderPele(runtime, source, id)};
+					} else {
+						const options = {idPrefix: id, fontFamily: MERMAID_FONT_FAMILY, fontSize: MERMAID_FONT_SIZE,
+							padding: 16, limit: MAX_SOURCE_LENGTH, maxEdges: MAX_EDGE_COUNT, images: false};
+						out = {svg: runtime.opaque === true ? _presentPele(await runtime.call('render', {source, options, math: _diagramMath(source)}), window)
+							: _presentPele(_peleSvg(runtime, source, options, _diagramMath(source)), runtime)};
+					}
 					if (generation !== _mermaidGeneration) throw new Error('The diagram renderer was released');
 					return out.svg;
 				}).finally(function () { _mermaidRendering--; });
@@ -420,6 +537,7 @@
 			bytes:     function () { noteUse(); return bytes(); },
 			forget:    forget,
 			isNeeded: function () { return Plugin.status !== 'ready'; },
+			requiresMath: m.requiresMath,
 			renderToString: !m.render ? undefined : m.release ? render : function (src, opts) { noteUse(); return m.render(src, opts, Plugin.status === 'ready'); },
 			renderWithMathML: m.renderWithMathML ? function (src, opts) { return m.renderWithMathML(src, opts, Plugin.status === 'ready'); } : undefined,
 			presentationPaint: m.presentationPaint,

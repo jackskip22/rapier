@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 const RapierParts = (() => {
 	const PINS = /* RAPIER_PARTS */ null;
-	const CDN = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.40/';
+	const CDN = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.41/';
 	const PART_DIRECTORY = 'parts/';
 	const pins = new Map((PINS || []).map((pin, order) => [pin.id, {...pin, order}]));
 	const runs = new Map(), states = new Map(), kept = new Set(), updates = new Map(), noted = new Set();
-	const FORMAT = 1, READS = [1];
+	const FORMAT = 1;
 	const local = () => ['android', 'windows', 'linux', 'native'].includes(window.RapierPlatform?.environment.id);
 	let cache = null;
 	const store = () => cache ||= RapierBundleIO.store('parts');
@@ -66,22 +66,27 @@ const RapierParts = (() => {
 		}
 		let bytes = await stored(pin);
 		if (!bytes) {
-			const other = await older(pin);
-			if (other?.readable) { updates.set(pin.id, {bytes: pin.bytes}); kept.add(pin.id); return other.bytes; }
-			if (other && !pin.updating) { updates.set(pin.id, {bytes: pin.bytes, required: true}); throw Object.assign(new Error('The ' + pin.label + ' part needs an update to work with this Rapier'), {code: 'part_update_required'}); }
-		}
-		if (!bytes) {
 			say(pin.id, 'downloading');
 			const early = pin.warmed; pin.warmed = null;
 			bytes = await early?.catch(() => null) || await fetched(pin);
-			if (!await store().put(pin.file, {bytes, savedAt: Date.now(), format: pin.format || FORMAT, sri: pin.sri, size: pin.bytes}).catch(() => false)) return bytes;
+			if (!await store().put(pin.file, {bytes, savedAt: Date.now(), format: pin.format || FORMAT, sri: pin.sri, size: pin.bytes, release: pin.release}).catch(() => false)) return bytes;
 			updates.delete(pin.id);
 		}
 		kept.add(pin.id);
-		const others = (await store().keys().catch(() => [])).filter(key => String(key).startsWith('rapier-' + pin.id + '-') && key !== pin.file);
-		const dated = await Promise.all(others.map(async key => [key, (await store().get(key).catch(() => null))?.savedAt || 0]));
-		for (const [key] of dated.sort((a, b) => b[1] - a[1]).slice(1)) await store().remove(key).catch(() => {});
+		await dropOlder(pin);
 		return bytes;
+	}
+	const num = release => String(release || '').split('.').map(Number);
+	function earlier(a, b) {
+		const x = num(a), y = num(b);
+		for (let at = 0; at < Math.max(x.length, y.length); at++) if ((x[at] || 0) !== (y[at] || 0)) return (x[at] || 0) < (y[at] || 0);
+		return false;
+	}
+	async function dropOlder(pin) {
+		for (const key of (await store().keys().catch(() => [])).filter(key => String(key).startsWith('rapier-' + pin.id + '-') && key !== pin.file)) {
+			const record = await store().get(key).catch(() => null);
+			if (!record?.release || earlier(record.release, pin.release)) await store().remove(key).catch(() => {});
+		}
 	}
 	async function run(pin) {
 		const text = await body(pin);
@@ -100,16 +105,8 @@ const RapierParts = (() => {
 	}
 	async function older(pin) {
 		const keys = (await store().keys().catch(() => [])).filter(key => String(key).startsWith('rapier-' + pin.id + '-') && key !== pin.file);
-		let best = null;
-		for (const key of keys) {
-			const record = await store().get(key).catch(() => null);
-			if (record?.bytes && (!best || (record.savedAt || 0) > (best.record.savedAt || 0))) best = {key, record};
-		}
-		if (!best) return null;
-		const {record} = best;
-		if (!READS.includes(record.format) || !record.sri || !record.size) return {key: best.key, readable: false};
-		try { return {key: best.key, readable: true, bytes: await RapierBundleIO.verifySha384(record.bytes, record.sri, {source: 'stored copy', byteLength: record.size, sizeMessage: 'unexpected size of the stored copy'})}; }
-		catch (error) { if (/secure hash API unavailable/.test(String(error?.message))) throw error; await store().remove(best.key).catch(() => {}); return null; }
+		for (const key of keys) if ((await store().get(key).catch(() => null))?.bytes) return true;
+		return false;
 	}
 	async function update(id) {
 		const pin = pins.get(id);
@@ -120,8 +117,8 @@ const RapierParts = (() => {
 		let bytes;
 		try { bytes = await fetched(pin); }
 		catch (error) { say(id, before, error); throw error; }
-		if (!await store().put(pin.file, {bytes, savedAt: Date.now(), format: pin.format || FORMAT, sri: pin.sri, size: pin.bytes}).catch(() => false)) throw new Error('This device has no room to keep ' + pin.label + '.');
-		for (const key of (await store().keys().catch(() => [])).filter(key => String(key).startsWith('rapier-' + id + '-') && key !== pin.file)) await store().remove(key).catch(() => {});
+		if (!await store().put(pin.file, {bytes, savedAt: Date.now(), format: pin.format || FORMAT, sri: pin.sri, size: pin.bytes, release: pin.release}).catch(() => false)) throw new Error('This device has no room to keep ' + pin.label + '.');
+		await dropOlder(pin);
 		kept.add(id); updates.delete(id); pin.updating = false;
 		pin.held = Promise.resolve(new TextDecoder('utf-8', {fatal: true}).decode(bytes));
 		say(id, runs.has(id) ? 'ready' : 'stored');
@@ -172,11 +169,11 @@ const RapierParts = (() => {
 		const pin = pins.get(id);
 		if (!pin || runs.has(id) || carried(pin)) return RapierParts.status(id);
 		const here = local() ? false : await store().has(pin.file).catch(() => false);
-		if (here) kept.add(id);
+		if (here) kept.add(id); else kept.delete(id);
 		const other = local() || here ? null : await older(pin).catch(() => null);
-		if (other) { updates.set(id, other.readable ? {bytes: pin.bytes} : {bytes: pin.bytes, required: true}); if (other.readable) kept.add(id); }
+		if (other) updates.set(id, {bytes: pin.bytes, required: true});
 		else updates.delete(id);
-		if (!runs.has(id)) say(id, local() ? 'carried' : here ? 'stored' : other?.readable ? 'stored' : 'absent');
+		if (!runs.has(id)) say(id, local() ? 'carried' : here ? 'stored' : 'absent');
 		return states.get(id);
 	}
 	function warm(id) {

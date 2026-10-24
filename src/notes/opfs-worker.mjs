@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {parts} from './opfs-paths.mjs';
+import {directoryStamps} from './opfs-read.mjs';
 import {sha256State, blobByteChunks, checkByteAbort, byteCopyError} from './integrity.mjs';
 import {isRecordingPartial} from './recording-files.mjs';
 import {notesHostWords} from './host-words.mjs';
@@ -274,7 +275,8 @@ export function createOPFSWorker({postMessage}) {
     };
     try {
       let value;
-      if (operation === 'prepare') value = await prepare(request.directory, request.token);
+      if (operation === 'statAll') value = await directoryStamps(request.directory, request.prefix, request.names);
+      else if (operation === 'prepare') value = await prepare(request.directory, request.token);
       else if (operation === 'write') value = await write(request.directory, request.name, request.bytes, request.token);
       else if (operation === 'writeBlob') value = await writeBlob(request, job.controller.signal, progress);
       else if (operation === 'begin' || operation === 'append') value = await recording(request);

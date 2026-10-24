@@ -1,3 +1,4 @@
+import {parseImportJson} from './import.mjs';
 // SPDX-License-Identifier: AGPL-3.0-only
 import {noteFileName, orderAfter} from './model.mjs';
 import {readJsonInputs, literalInline, importDate, importMetadata} from './import.mjs';
@@ -96,7 +97,7 @@ export async function importRoam(entries, options = {}) {
   for (const input of named) {
     if (!/\.json$/i.test(input.name) || typeof input.text !== 'string') continue;
     let pages;
-    try { pages = JSON.parse(input.text.replace(/^\uFEFF/, '')); }
+    try { pages = parseImportJson(input.text.replace(/^\uFEFF/, '')); }
     catch {
       notes.push(literalImportSource(input, pool, 'Roam JSON could not be parsed.', input.characterWarnings, 'json'));
       continue;

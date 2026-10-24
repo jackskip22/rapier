@@ -31,7 +31,7 @@ struct Sub { h: f32, damping: f32, parity: u32, finish: u32, x0: i32, y0: i32, x
 @group(0) @binding(2) var<uniform> wet: Wet;
 @group(0) @binding(3) var<uniform> sub: Sub;
 // The paper's tint in the basis, relative to white (createWetState's tintLog).
-@group(0) @binding(5) var<uniform> tint: array<vec4f, 11>;
+@group(0) @binding(5) var<uniform> tint: array<vec4f, 13>;
 @group(0) @binding(6) var<storage, read_write> rb: array<vec4f>;
 @group(0) @binding(7) var<storage, read_write> cover: array<f32>;
 @group(0) @binding(8) var<storage, read_write> sheet: array<vec4f>;
@@ -219,11 +219,15 @@ ${digital ? `			var ground = vec3f(0.0); if (ba != 0.0) { ground = base.rgb / ba
 				if (ba != 0.0) { m += ground[c] * ba / o; }
 				rgb[c] = m;
 			}` : `			var gb = Basis(0.0, vec4f(0.0), vec2f(0.0)); var gres = vec3f(0.0);
+			var gw = array<f32, 8>(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
 			if (ba != 0.0) {
 				let c = base.rgb / base.a; let q = round(clamp(c, vec3f(0.0), vec3f(1.0)) * 1023.0) / 1023.0;
 				gb = basisOf(q); var dec = vec3f(0.0);
 				for (var k = 0u; k < BANDS; k++) { dec += ksRefl(gb, k).y * display(k); }
 				gres = c - dec;
+				// the ground's wheel numbers, divided by its luminance as writePaintPigment stores them
+				let gz = mixStateWeighted(c, 1.0 / max(0.0001, lum(c)));
+				gw = array<f32, 8>(gz.a.x, gz.a.y, gz.a.z, gz.a.w, gz.b.x, gz.b.y, gz.b.z, gz.b.w);
 			}
 			for (var k = 0u; k < BANDS; k++) {
 				var m = (at(susp(k), i) + at(sett(k), i)) / mass;
@@ -237,7 +241,17 @@ ${digital ? `			var ground = vec3f(0.0); if (ba != 0.0) { ground = base.rgb / ba
 				m = (m + tintAt(k)) * alpha / o;
 				if (ba != 0.0) { m += gres[c] * ba / o; }
 				rgb[c] += m;
-			}`}
+			}
+			// the one mixer's rescue (paint-pigment.mjs paintPigmentRGB): K-M's color pulled toward the wheel where K-M dulled it
+			var zw = array<f32, 8>(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+			for (var j = 0u; j < 8u; j++) {
+				let k = BANDS + 3u + j;
+				var m = (at(susp(k), i) + at(sett(k), i)) / mass;
+				m = (m + tintAt(k)) * alpha / o;
+				if (ba != 0.0) { m += gw[j] * ba / o; }
+				zw[j] = m;
+			}
+			rgb = mixRescue(rgb, MixState(vec4f(zw[0], zw[1], zw[2], zw[3]), vec4f(zw[4], zw[5], zw[6], zw[7])));`}
 			rgb = clamp(rgb, vec3f(0.0), vec3f(1.0));
 			px = vec4f(rgb * o, o);
 		}
@@ -618,7 +632,7 @@ export class WetEngineGpu {
 		this.wetPending = 0; this.wetTouched = null; this.wetOwedBox = false; this.wetSeed = 0;
 		this.subs = this.device.createBuffer({label: 'Paint wet steps', size: PARAM_STRIDE * SLOTS, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST});
 		this.params = this.device.createBuffer({label: 'Paint wet params', size: 128, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST});
-		this.tint = this.device.createBuffer({label: 'Paint wet tint', size: 176, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST});
+		this.tint = this.device.createBuffer({label: 'Paint wet tint', size: 208, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST});
 		this.ctl = this.device.createBuffer({label: 'Paint wet ctl', size: CTL_WORDS * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC});
 		this.aux = null; this.auxBytes = 0;
 		this.slot = 0; this.slotData = new ArrayBuffer(PARAM_STRIDE * SLOTS); this.encoder = null; this.pass = null;
@@ -713,7 +727,7 @@ export class WetEngineGpu {
 		const B = this.bands, toSpectral = B === 3 ? (r, g, b, out) => { out[0] = r; out[1] = g; out[2] = b; return out; } : writePaintWet;
 		const tintLog = new Float32Array(B), white = new Float32Array(B); toSpectral(...paper.tint, tintLog); toSpectral(1, 1, 1, white);
 		for (let k = 0; k < B; k++) tintLog[k] = tintLog[k] - white[k];
-		const tint = new Float32Array(44); tint.set(tintLog.subarray(0, 44)); d.queue.writeBuffer(this.tint, 0, tint);
+		const tint = new Float32Array(52); tint.set(tintLog.subarray(0, 52)); d.queue.writeBuffer(this.tint, 0, tint);
 		const dx = carry ? (carry.win.x0 - next.x0) / C : 0, dy = carry ? (carry.win.y0 - next.y0) / C : 0;
 		const move = new ArrayBuffer(80), mu = new Uint32Array(move), mi = new Int32Array(move);
 		mu[0] = carry ? carry.cw : 0; mu[1] = carry ? carry.ch : 0; mu[2] = next.cw; mu[3] = next.ch; mi[4] = dx; mi[5] = dy; mu[6] = planes; mu[7] = C;
@@ -1003,7 +1017,7 @@ export class WetSolverGpu {
 		put(W_, s.w); put(AMOUNT, s.amount); put(SETTLED, s.settledAmount); put(CLOCK, s.clock); put(VX, s.vx); put(VY, s.vy); put(NEXT, s.nextWater); put(HEIGHT, s.paper.heightField);
 		for (const [from, at] of [[s.suspended, PLANES], [s.settled, PLANES + B]]) for (let k = 0; k < B; k++) { for (let i = 0; i < n; i++) plane[i] = from[i * B + k]; put(at + k, plane); }
 		for (const [from, at] of [[s.base, BASE], [s.pixels, PIX]]) for (let c = 0; c < 4; c++) { for (let i = 0; i < n; i++) plane[i] = from[i * 4 + c]; put(at + c, plane); }
-		const tint = new Float32Array(44); tint.set(s.tintLog.subarray(0, Math.min(44, B))); q.writeBuffer(this.engine.tint, 0, tint);
+		const tint = new Float32Array(52); tint.set(s.tintLog.subarray(0, Math.min(52, B))); q.writeBuffer(this.engine.tint, 0, tint);
 		this.engine._writeParams(); this.engine._writeCtl();
 	}
 	step(dt) { const e = this.engine; e.state.gx = this.state.gx; e.state.gy = this.state.gy; const r = e._step(dt); e._submit(); this.state.elapsed = e.state.elapsed; return r; }

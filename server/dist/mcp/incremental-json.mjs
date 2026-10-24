@@ -1,3 +1,5 @@
+import {JsonDepthGuard} from '../kit/json-depth.mjs';
+export {JsonDepthGuard} from '../kit/json-depth.mjs';
 
 const ARRAY_FIRST = 0, ARRAY_VALUE = 1, ARRAY_NEXT = 2;
 const OBJECT_FIRST = 3, OBJECT_KEY = 4, OBJECT_COLON = 5, OBJECT_VALUE = 6, OBJECT_NEXT = 7;
@@ -369,13 +371,17 @@ export function parseJsonChunks(chunks, options) {
 
 const bodyFailure = (code, message, details) => Object.assign(new Error(message), {code, details});
 
+
 export async function parseJsonStream(input, {limit = Infinity, label = 'JSON request', code = 'REQUEST_TOO_LARGE',
-  preserveBOM = false, received, signal = input?.signal, failure = bodyFailure, projectObject, stringLimit, metrics, inlineBytes = 65536} = {}) {
+  preserveBOM = false, received, signal = input?.signal, failure = bodyFailure, projectObject, stringLimit, metrics, inlineBytes = 65536,
+  maxDepth = Infinity, timeoutMs = 0} = {}) {
   if (!Number.isSafeInteger(inlineBytes) || inlineBytes < 0) throw new TypeError('inlineBytes must be a nonnegative safe integer');
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0) throw new TypeError('timeoutMs must be a nonnegative safe integer');
+  const depth = maxDepth === Infinity ? null : new JsonDepthGuard(maxDepth, {label, failure});
   const stream = typeof input?.getReader === 'function' ? input : input?.body;
   const length = input?.headers?.get('Content-Length');
   const reader = stream?.getReader(), decoder = new TextDecoder('utf-8', {fatal: true, ignoreBOM: preserveBOM});
-  let parser, inline = [], bytes = 0, cancelled = false, syntaxError;
+  let parser, inline = [], bytes = 0, cancelled = false, syntaxError, depthError, timeoutError, timer;
   if (received) received.bytes = 0;
   const cancel = reason => {
     if (cancelled || !reader) return;
@@ -384,6 +390,9 @@ export async function parseJsonStream(input, {limit = Infinity, label = 'JSON re
   };
   const abort = () => cancel(signal.reason);
   const decoded = text => {
+    if (depthError) return;
+    try { depth?.write(text); }
+    catch (error) { if (error?.code !== 'JSON_TOO_DEEP') throw error; depthError = error; parser?.discard(); parser = null; inline = null; return; }
     if (syntaxError) return;
     if (!parser && bytes <= inlineBytes) { inline.push(text); return; }
     try { parser.write(text); }
@@ -393,9 +402,12 @@ export async function parseJsonStream(input, {limit = Infinity, label = 'JSON re
     }
   };
   const beginIncremental = () => {
-    if (parser || bytes <= inlineBytes) return;
+    if (depthError || parser || bytes <= inlineBytes) return;
     parser = new IncrementalJsonParser({projectObject, stringLimit, metrics});
-    for (const text of inline) decoded(text);
+    for (const text of inline) {
+      try { if (!syntaxError) parser.write(text); }
+      catch (error) { if (!(error instanceof SyntaxError)) throw error; syntaxError = error; }
+    }
     inline = null;
   };
   try {
@@ -404,8 +416,13 @@ export async function parseJsonStream(input, {limit = Infinity, label = 'JSON re
       throw failure(code, `The ${label} must be at most ${limit} bytes.`, {limitBytes: limit});
     if (!reader) throw failure('EMPTY_BODY', `The ${label} body is missing.`);
     signal?.addEventListener('abort', abort, {once: true});
+    if (timeoutMs) timer = setTimeout(() => {
+      timeoutError = failure('REQUEST_TIMEOUT', `The ${label} body did not finish in time.`, {timeoutMs});
+      cancel(timeoutError);
+    }, timeoutMs);
     while (true) {
       const {value, done} = await reader.read();
+      if (timeoutError) throw timeoutError;
       signal?.throwIfAborted();
       if (done) break;
       bytes += value.byteLength;
@@ -416,6 +433,7 @@ export async function parseJsonStream(input, {limit = Infinity, label = 'JSON re
         decoded(decoder.decode(value.subarray(offset, offset + DECODE_BYTES), {stream: true}));
     }
     decoded(decoder.decode());
+    if (depthError) throw depthError;
     if (syntaxError) throw syntaxError;
     if (!parser) {
       const text = inline.join('');
@@ -424,5 +442,5 @@ export async function parseJsonStream(input, {limit = Infinity, label = 'JSON re
     }
     return parser.finish();
   } catch (error) { parser?.discard(); cancel(error); throw error; }
-  finally { signal?.removeEventListener('abort', abort); reader?.releaseLock(); }
+  finally { clearTimeout(timer); signal?.removeEventListener('abort', abort); reader?.releaseLock(); }
 }

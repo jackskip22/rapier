@@ -1,0 +1,45 @@
+{
+  "libjxl": {
+    "version": "0.12.0",
+    "commit": "a7a9c787341cf703dede03c2009fa460cae5e5df"
+  },
+  "brotli": {
+    "version": "1.2.1",
+    "commit": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d"
+  },
+  "highway": "457c891775a7397bdb0376bb1031e6e027af1c48",
+  "skcms": "96d9171c94b937a1b5f0293de7309ac16311b722",
+  "bindingSource": {
+    "repository": "jamsinclair/jSquash",
+    "commit": "1b1964194611ece3ec984ab91c04726d1088f05e",
+    "path": "packages/jxl/codec/dec/jxl_dec.cpp",
+    "blob": "e56f4bdb40bf8f5454600c4078db58c54a134646"
+  },
+  "compiler": "emscripten/emsdk@sha256:bbe90e2b00acbd1a9596087d88305029f383de1eb71c0cdb20f4e19647265450",
+  "sourceModifications": "None. Owned binding updates the public API and bounds input, dimensions and ICC before image buffers.",
+  "memoryMaximumBytes": 2147483648,
+  "inputMaximumBytes": 16777216,
+  "bindingInputMaximumBytes": 67108864,
+  "pixelMaximum": 64000000,
+  "edgeMaximum": 16384,
+  "iccMaximumBytes": 4194304,
+  "deadlineMilliseconds": 180000,
+  "bindingSha256": "3555e47d6965dec9b2d011945f3a52c18a3ae35d5a2c534a8719d1b615e76619",
+  "buildSha256": "44881202f0997ffc756bf0a5cb33fd620842c67563569f15a5761c8c7d37a6a7",
+  "sourceManifestSha256": "825d43ecb78b24e4cf6ac801c0e098b6e7879ec1eb577c08cbc27aa6c6df55a6",
+  "outputs": {
+    "jxl_dec.wasm": {
+      "bytes": 1009731,
+      "sha256": "b94b745f2d8f95aafc18ee10e228df1866563c757690059939dfa51499b010e5"
+    },
+    "NOTICES.txt": {
+      "bytes": 15727,
+      "sha256": "733320af069773723ef6f70669402a6666fa9b42f5056c89b91c9ec3a4a090c5"
+    },
+    "jxl_dec.mjs": {
+      "bytes": 27310,
+      "sha256": "9174ef4f42d4d6e8cea149491723d23c0086f73a2579022494f8f8de7679a4a8"
+    }
+  },
+  "rebuild": "node images/ocr-codec/build.mjs --sources=<directory matching SOURCES.json> --check"
+}

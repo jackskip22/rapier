@@ -26,7 +26,6 @@ function _rapierPartWait(id, said = '') {
 async function _rapierPartReady(id, said = '') {
 	try {
 		await RapierParts.check(id).catch(() => {});
-		if (RapierParts.status(id)?.update?.required && !await _rapierPartUpdateAsk(id, said)) return false;
 		await _rapierPartWait(id, said); return true;
 	}
 	catch (error) {
@@ -55,12 +54,6 @@ async function _rapierPartUpdateRun(id, said = '') {
 	try { await RapierParts.update(id); return true; }
 	catch (error) { showToast(_rapierErrorWords(error, 'Couldn’t update.'), 'error'); return false; }
 	finally { removeEventListener('rapier:part', follow); popup.end(); }
-}
-async function _rapierPartUpdateAsk(id, said = '') {
-	const noun = said || RapierParts.pin(id)?.label || id, update = RapierParts.status(id).update;
-	const answer = await rapierConfirm({title: 'Update ' + noun + '?', message: 'Needed for this version \u00b7 ' + _rapierPluginSize(update.bytes), confirmLabel: 'Update', plain: true});
-	if (answer !== true) { showToast(noun + ' needs the update', 'info'); return false; }
-	return await _rapierPartUpdateRun(id, said);
 }
 function _rapierOpenDrawPart() {
 	if (_rapierDrawOffered()) void _rapierPartReady('drawing').then(ready => { if (ready) _rapierDrawPart.open(); });

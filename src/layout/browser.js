@@ -1163,6 +1163,11 @@ const _rapierImageFlow = (() => {
     const raw = String(block.raw || '');
     let facts = neighbourFacts.get(block);
     if (facts?.raw === raw) return facts;
+    if (block.type === 'paragraph' && !_rapierBlockRenderBudgetExceeded(raw) &&
+      /^[A-Za-z][A-Za-z0-9 .,\t]*(?:\r?\n[A-Za-z][A-Za-z0-9 .,\t]*)*(?:\r?\n)?$/.test(raw)) {
+      facts = {raw, prose: true, picture: false, empty: false, layoutImage: false};
+      neighbourFacts.set(block, facts); return facts;
+    }
     const template = document.createElement('template');
     template.innerHTML = renderBlock(raw);
     const surface = template.content;
@@ -1246,6 +1251,11 @@ const _rapierImageFlow = (() => {
       wrappers.add(nextProse(moving.owner || moving.image.closest('.block-wrapper')));
     }
 
+    if (first === 0 && last === ledger.order.length - 1) {
+      wrappers.delete(null); wrappers.delete(undefined);
+      return wrappers;
+    }
+
     for (const wrapper of [...wrappers]) {
       if (!wrapper) continue;
       for (const direction of [1, -1]) {
@@ -1270,7 +1280,9 @@ const _rapierImageFlow = (() => {
     const ledger = _rapierWysiwygLedger, window = ledger.window;
     if (!window) return [];
     const wrappers = demandedWrappers(window[0], window[1]);
-    for (const wrapper of wrappers) _rapierWysiwygWake(wrapper);
+    _rapierWithWysiwygSelection(() => {
+      for (const wrapper of wrappers) _rapierWysiwygWake(wrapper);
+    });
     return [...wrappers].sort((a, b) =>
       ledger.indexById.get(String(a.dataset.blockId)) - ledger.indexById.get(String(b.dataset.blockId)));
   }
@@ -1340,7 +1352,9 @@ const _rapierImageFlow = (() => {
     return null;
   }
 
+  let staleWhileHidden = false;
   function layout(anchorWrapper = null) {
+    if (host && !host.clientWidth) { staleWhileHidden = true; frame = 0; return; }
     laidHeights = new WeakMap();
     syncPreparationDocument();
     const pending = settle;
@@ -1643,12 +1657,28 @@ const _rapierImageFlow = (() => {
 
   let pressed = false, pressedLayout = false;
   const covered = () => document.body.classList.contains('rapier-notes-open') || document.body.classList.contains('rapier-draw-open');
+  function pendingWindow() {
+    if (rapier.document.docKind !== 'markdown' || rapier.view.mode === 'source' || rapier.compare.active ||
+      !host?.classList.contains('editor-area--virtualized')) return false;
+    const ledger = _rapierWysiwygLedger;
+    if (!ledger.window) return false;
+    for (const wrapper of demandedWrappers(ledger.window[0], ledger.window[1])) {
+      const entry = ledger.entries.get(String(wrapper?.dataset.blockId));
+      if (entry?.wrapper !== wrapper) continue;
+      if (!entry?.renderHidden && wrapper?.isConnected && !wrapper.hidden && wrapper._rapierUnrendered) return true;
+    }
+    return false;
+  }
   function schedule() {
     syncPreparationDocument();
     if (pressed && !moving) { pressedLayout = true; return; }
     if (covered() && !moving) { replanWrapper = null; return; }
     if (!frame && host) frame = requestAnimationFrame(() => {
       if (covered() && !moving) { frame = 0; replanWrapper = null; return; }
+      if (!moving && pendingWindow()) {
+        frame = 0; _rapierScheduleRenderWindow(); schedule(); return;
+      }
+      if (!host.clientWidth) { frame = 0; replanWrapper = null; putBack.clear(); staleWhileHidden = true; return; }
       const wrapper = replanWrapper, put = [...putBack]; replanWrapper = null; putBack.clear();
       if (put.length) { frame = 0; if (!put.every(settledOwn)) layout(); return; }
       if (wrapper) laidHeights.delete(wrapper);
@@ -3229,8 +3259,13 @@ const _rapierImageFlow = (() => {
     return target.nodeType === 1 && target._rapierUnrendered === true && target.classList.contains('block-wrapper') &&
       Array.prototype.every.call(record.addedNodes, node => !node.isConnected);
   };
+  let hostGone = false;
   observer = new MutationObserver(records => {
     if (restoring) return;
+    if (records.every(record => record.target === host && record.type === 'attributes' && (record.attributeName === 'hidden' || record.attributeName === 'class'))) {
+      if (!host.clientWidth) { hostGone = true; return; }
+      if (hostGone) { hostGone = false; return; }
+    }
     if (records.every(record => record.type === 'characterData' && record.target.parentElement?.closest('.block-edit'))) return;
     if (records.every(asleep)) return;
     const typed = typedBlock(records);
@@ -3249,6 +3284,8 @@ const _rapierImageFlow = (() => {
 
   new ResizeObserver(() => {
     const width = host.clientWidth, height = host.clientHeight;
+    if (!width) return;
+    if (staleWhileHidden) { staleWhileHidden = false; lastWidth = width; lastHeight = height; schedule(); return; }
     if (width !== lastWidth || height !== lastHeight) {
       if (lastWidth && width !== lastWidth && moving) { cancel(); showToast('Page resized. Move it again.', 'info'); }
       const widthChanged = width !== lastWidth;

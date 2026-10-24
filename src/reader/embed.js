@@ -175,19 +175,19 @@ async function readerEmbedLoad(data) {
 }
 
 async function readerEmbedLoadRun(data, respond) {
-	if (_rapierEmbed.loading) { respond('load-nack', {reason: 'another document is still loading'}); return; }
+	if (_rapierEmbed.loading) { respond('load-nack', {code: 'load_busy', reason: 'another document is still loading'}); return; }
 	const payload = data.payload || {};
 	const revision = payload.revision == null ? data.baseRevision : payload.revision;
-	if (typeof payload.content !== 'string' || !_rapierEmbedValidRevision(revision)) { respond('load-nack', {reason: 'invalid document payload'}); return; }
+	if (typeof payload.content !== 'string' || !_rapierEmbedValidRevision(revision)) { respond('load-nack', {code: 'invalid_payload', reason: 'invalid document payload'}); return; }
 	const limit = _rapierEmbed.settings?.limits.documentBytes || RapierTextCodec.maxDocumentBytes;
 	if (new Blob([payload.content]).size > limit) { respond('load-nack', {code: 'document_too_large', limit}); return; }
 	let content;
-	try { content = RapierTextCodec.normalizeProtocol(payload.content); } catch (_) { respond('load-nack', {reason: 'invalid document payload'}); return; }
+	try { content = RapierTextCodec.normalizeProtocol(payload.content); } catch (_) { respond('load-nack', {code: 'invalid_payload', reason: 'invalid document payload'}); return; }
 	let pictureBase;
 	try { pictureBase = globalThis.RapierEmbedContract.pictureBase(payload.baseUrl); }
 	catch (error) { respond('load-nack', {code: error.code, reason: error.message}); return; }
 	const filename = typeof payload.filename === 'string' && payload.filename.trim() ? payload.filename : 'document.md';
-	if (filename.length > RAPIER_EMBED_FILENAME_MAX_CHARS || !_rapierDocumentNameIsAdmissible(filename)) { respond('load-nack', {reason: 'invalid document filename'}); return; }
+	if (filename.length > RAPIER_EMBED_FILENAME_MAX_CHARS || !_rapierDocumentNameIsAdmissible(filename)) { respond('load-nack', {code: 'invalid_filename', reason: 'invalid document filename'}); return; }
 	const operation = ++_rapierEmbed.loadToken;
 	_rapierEmbed.loading = true;
 	_rapierEmbed.fileOpen.cancel('open_stale');
@@ -196,13 +196,13 @@ async function readerEmbedLoadRun(data, respond) {
 		globalThis.RapierEmbedPictureBase = pictureBase;
 		const shown = await readerLoad(content, filename, title);
 		if (operation !== _rapierEmbed.loadToken) return;
-		if (!shown) { respond('load-nack', {reason: 'a newer document replaced the host load'}); return; }
+		if (!shown) { respond('load-nack', {code: 'load_superseded', reason: 'a newer document replaced the host load'}); return; }
 		_rapierEmbed.baseRevision = revision;
 		_rapierEmbed.loaded = true;
 		respond('load-ack', {revision, recoveredDraft: false, readOnly: true});
 	} catch (error) {
 		try { console.warn('[rapier-embed] document load failed', error); } catch (_) {}
-		respond('load-nack', error?.code === 'document_unshowable' ? {code: 'document_unshowable', reason: 'document could not be shown'} : {reason: 'document could not be loaded'});
+		respond('load-nack', {code: 'document_unshowable', reason: 'document could not be shown'});
 	} finally {
 		if (operation === _rapierEmbed.loadToken) { _rapierEmbed.loading = false; readerPublishState(); }
 	}

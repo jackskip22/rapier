@@ -752,12 +752,15 @@ export class PaintBrush {
 		const a0 = blade.drawnA || (blade.drawnA = new Float32Array(n)), col0 = blade.drawnCol || (blade.drawnCol = Float32Array.from(k1.col)), gpu = !!surface.flatKnot;
 		const c0 = [0, 0, 0], c1 = [0, 0, 0];
 		let painted = false;
+		const A1 = blade.segA1 ||= new Float64Array(n), A2 = blade.segA2 ||= new Float64Array(n), AS = blade.segAS ||= new Float64Array(n);
+		for (let i = 0; i < n; i++) { A1[i] = k1.a[i] * this._ribbonInto(k1, i); A2[i] = k2.a[i] * this._ribbonInto(k2, i); }
 		for (let k = 1; k <= steps; k++) {
 			const w = k / steps, [mx, my] = at(t1 + (t2 - t1) * w), th = k1.theta + (k2.theta - k1.theta) * w, len = k1.L + (k2.L - k1.L) * w, ex = Math.cos(th) * len, ey = Math.sin(th) * len;
 			const cur = new Array(n + 1); for (let j = 0; j <= n; j++) { const u = -1 + 2 * j / n; cur[j] = [mx + ex * u, my + ey * u]; }
 			const prev = blade.edges, wet = k1.wet + (k2.wet - k1.wet) * w, soft = Math.max(.5, RAPIER_RIBBON_SOFT * len * sc);
 			const [nx, ny, along] = this._ribbonThick(prev, cur, th, len);
-			const laneA = i => i < 0 || i >= n ? 0 : k1.a[i] * this._ribbonInto(k1, i) + (k2.a[i] * this._ribbonInto(k2, i) - k1.a[i] * this._ribbonInto(k1, i)) * w;
+			for (let i = 0; i < n; i++) AS[i] = A1[i] + (A2[i] - A1[i]) * w;
+			const laneA = i => i < 0 || i >= n ? 0 : AS[i];
 			for (let i = 0; i < n; i++) {
 				const a = laneA(i), from = a0[i];
 				// A lane whose neighbour has broken (laid under RAPIER_RIBBON_EXPOSED of its paint) shows its side: it is softened like the
@@ -2203,6 +2206,7 @@ export class PaintSurface {
 		const sx = (A[0] + B[0]) / 2, sy = (A[1] + B[1]) / 2, vx = (C[0] + Dq[0]) / 2 - sx, vy = (C[1] + Dq[1]) / 2 - sy, vv = vx * vx + vy * vy || 1;
 		const D = this.data, W = this.width, ea = clamp(alpha, 0, 1), cap = this.strokeCap;
 		let any = false, capTile = null, capAt = -1;
+		const aTop = Math.max(aFrom, aTo);
 		const Q = [A, B, C, Dq];
 		for (let yp = y0; yp <= y1; yp++) {
 			const cy = yp + .5, bl = cy - pad, bh = cy + pad;
@@ -2218,6 +2222,11 @@ export class PaintSurface {
 			if (!(rx1 >= rx0)) continue;
 			const sx0 = Math.max(x0, Math.floor(rx0 - pad)), sx1 = Math.min(x1, Math.ceil(rx1 + pad));
 			for (let xp = sx0; xp <= sx1; xp++) {
+				if (cap) {
+					const key = (yp >> 6) * 65536 + (xp >> 6);
+					if (key !== capAt) { capAt = key; capTile = cap.get(key); if (!capTile) cap.set(key, capTile = new Float32Array(4096)); }
+					if (capTile[(yp & 63) * 64 + (xp & 63)] >= aTop) continue;
+				}
 				const cx = xp + .5, under = wet > 0 ? D[(yp * W + xp) * 4 + 3] : 0;
 				const half = edge + RAPIER_RIBBON_EDGE * wet * clamp(under, 0, 1), inv = 1 / (2 * half);
 				let cov = 0;

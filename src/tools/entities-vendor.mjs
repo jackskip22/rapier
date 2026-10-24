@@ -4,14 +4,15 @@ import {createHash} from 'node:crypto';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createRequire} from 'node:module';
+import {Script} from 'node:vm';
 const {minify_sync} = createRequire(import.meta.url)('./vendor/terser/bundle.min.js');
 
 export const BROWSER_ENTITIES = JSON.parse(readFileSync(new URL('../agent/vendor/BROWSER-ENTITIES.json', import.meta.url), 'utf8'));
 const sha256 = text => createHash('sha256').update(text).digest('hex');
 
-const TRIE = ['function decodeBase64(input){', '})(BinTrieFlags||(BinTrieFlags={}));'];
-const TRIE_DATA = ['var htmlDecodeTree=decodeBase64("', '");var BinTrieFlags;'];
-const DECODER = ['var CharCodes;', 'function decodeHTMLStrict(htmlString){return htmlDecoder(htmlString,DecodingMode.Strict)}'];
+const TRIE = ['var BASE91_INVERSE=', '})(BinTrieFlags||(BinTrieFlags={}));'];
+const TRIE_DATA = ['var BASE91_INVERSE=', ';var BinTrieFlags;'];
+const DECODER = ['var CharCodes;', 'function decodeHTMLStrict(htmlString){return decodeWithTrie(htmlString,true,false)}'];
 function once(text, anchor) {
   const at = text.indexOf(anchor);
   if (at < 0 || text.indexOf(anchor, at + 1) >= 0) throw new Error('markdown-it entity derivation: expected exactly one ' + JSON.stringify(anchor.slice(0, 48)));
@@ -19,9 +20,10 @@ function once(text, anchor) {
 }
 
 export function entityTrie(source) {
-  const from = once(source, TRIE_DATA[0]) + TRIE_DATA[0].length, to = once(source, TRIE_DATA[1]);
-  const bytes = Buffer.from(source.slice(from, to), 'base64'), words = new Uint16Array(bytes.length >> 1);
-  for (let i = 0; i < words.length; i++) words[i] = bytes[2 * i] | bytes[2 * i + 1] << 8;
+  const from = once(source, TRIE_DATA[0]), to = once(source, TRIE_DATA[1]);
+  const words = new Script(source.slice(from, to) + ';htmlDecodeTree').runInNewContext({}, {timeout: 1000});
+  if (Object.prototype.toString.call(words) !== '[object Uint16Array]' || words.length > 65536)
+    throw new Error('markdown-it entity trie: unexpected decoded table');
   return words;
 }
 
@@ -45,15 +47,15 @@ export function entityTable(source) {
     }
     if (size) {
       const value = size === 1 ? String.fromCodePoint(word & 0x1fff) : String.fromCodePoint(node(index + 1)) + (size === 3 ? String.fromCodePoint(node(index + 2)) : '');
-      if (name.endsWith(';')) record(names, name.slice(0, -1), value);
-      else record(word & 0x2000 ? names : legacy, name, value);
+      record(names, name, value);
+      if (!(word & 0x2000)) record(legacy, name, value);
       if (size === 1) return;
     }
     const branches = (word & 0x1f80) >> 7, base = word & 0x7f, start = index + Math.max(1, size);
     if (!branches) { if (base) visit(start, name + String.fromCharCode(base)); return; }
-    if (base) { for (let k = 0; k < branches; k++) { const to = node(start + k); if (to) visit(to - 1, name + String.fromCharCode(base + k)); } return; }
+    if (base) { for (let k = 0; k < branches; k++) { const to = node(start + k); if (to) visit((start + branches + to - 1) & 65535, name + String.fromCharCode(base + k)); } return; }
     const half = (branches + 1) >> 1;
-    for (let k = 0; k < branches; k++) visit(node(start + half + k), name + String.fromCharCode(node(start + (k >> 1)) >> (k & 1) * 8 & 255));
+    for (let k = 0; k < branches; k++) visit((start + half + branches + node(start + half + k)) & 65535, name + String.fromCharCode(node(start + (k >> 1)) >> (k & 1) * 8 & 255));
   };
   visit(0, '');
   for (const [name, value] of legacy) if (names.get(name) !== value) throw new Error('markdown-it entity trie: legacy ' + name + ' has no semicolon twin of the same value');

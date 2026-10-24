@@ -215,7 +215,7 @@ export function willTransition(beforeText, afterText, splices, markerSplices = s
 	return null;
 }
 
-export function evaluateWill(beforeText, splices) {
+export function evaluateWill(beforeText, splices, {restores = null} = {}) {
 	const invalid = rule => ({outcome: 'invalid', reason: 'precondition', rule});
 	if (typeof beforeText !== 'string' || !beforeText.isWellFormed()) return invalid('invalid_unicode');
 	if (!Array.isArray(splices)) return invalid('malformed_splice');
@@ -231,7 +231,7 @@ export function evaluateWill(beforeText, splices) {
 		if (afterText.slice(row.pos, end) !== row.removed) return invalid('source_mismatch');
 		afterText = afterText.slice(0, row.pos) + row.inserted + afterText.slice(end);
 	}
-	const refusal = splices.length && willTransition(beforeText, afterText, splices);
+	const refusal = splices.length && willTransition(beforeText, afterText, splices, splices, {restores});
 	return refusal ? {outcome: 'refused', reason: 'document_law', ...refusal} : {outcome: 'applied'};
 }
 

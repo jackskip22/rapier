@@ -312,7 +312,10 @@ const images = new Map(), pending = new Map(), wanted = new Map(), fields = new 
 let lastField = null, wantedField = '';
 export function paperTileImage(id, strength = 1) { const image = images.get(id); return image?.strength === strength ? image : null; }
 export function paperTileListen(listener) { listeners.add(listener); return () => listeners.delete(listener); }
-export function paperTileRequest(id, {density = 1, pixelRatio = 0, strength = 1, ready: anySize = false, now = null, pause = null, deflate = null, render = null} = {}) {
+export const PAPER_TILE_VERSION = 'paper-tile-1';
+const storedImage = (value, id, size, strength) => value && value.id === id && value.size === size && value.strength === strength && typeof value.url === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(value.url)
+ ? Object.freeze({id, size, density: size / WATER_PAPER_PERIOD, strength, url: value.url}) : null;
+export function paperTileRequest(id, {density = 1, pixelRatio = 0, strength = 1, ready: anySize = false, now = null, pause = null, deflate = null, render = null, store = null} = {}) {
  const size = paperTileSize(pixelRatio > 0 ? Math.max(1, pixelRatio / WATER_PAPER_UNITS) : density);
  if (!paperKindById(id) || !size || !Number.isFinite(strength) || strength < 0 || strength > 1) return Promise.resolve(null);
  const key = id + ':' + size + ':' + strength, fieldKey = id + ':' + size;
@@ -322,6 +325,15 @@ export function paperTileRequest(id, {density = 1, pixelRatio = 0, strength = 1,
  if (ready?.size === size && ready.strength === strength) return Promise.resolve(ready);
  if (pending.has(key)) return pending.get(key);
  const task = (async () => {
+  const storeKey = PAPER_TILE_VERSION + ':' + key;
+  if (store) {
+   let kept = null;
+   try { kept = storedImage(await store.get(storeKey), id, size, strength); } catch (_) {}
+   if (kept) {
+    if (wanted.get(id) === key) { images.set(id, kept); for (const listener of listeners) { try { listener(id); } catch (_) {} } }
+    return kept;
+   }
+  }
   let tile = lastField?.key === fieldKey ? lastField : null;
   if (!tile) {
    let building = fields.get(fieldKey);
@@ -348,6 +360,7 @@ export function paperTileRequest(id, {density = 1, pixelRatio = 0, strength = 1,
   let deflated = null;
   if (deflate) { try { deflated = await deflate(lines); } catch (_) { deflated = null; } }
   const image = Object.freeze({id, size: tile.width, density: tile.width / WATER_PAPER_PERIOD, strength, url: png.url(png.wrap(tile, deflated || png.stored(lines), 2))});
+  if (store) { try { Promise.resolve(store.set(storeKey, {id, size: image.size, strength, url: image.url})).catch(() => {}); } catch (_) {} }
   if (wanted.get(id) === key) {
    images.set(id, image);
    for (const listener of listeners) { try { listener(id); } catch (_) {} }

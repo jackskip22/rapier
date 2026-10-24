@@ -67,7 +67,8 @@ function _rapierBlockSpacing(block) {
 	if (!String(block.raw || '').includes('<!--md-layout:v1')) return {};
 	const raw = String(block.raw || '').replace(/\s+$/, '').replace(/\r?\n[ \t]*(?:=+|-+)[ \t]*$/, '').replace(/[ \t]+#+[ \t]*$/, '');
 	const last = raw.slice(raw.lastIndexOf('\n') + 1);
-	const marker = !_rapierListItemTree(raw).list && /<!--md-layout:v1[ \t][^\r\n]*?-->$/.exec(last);
+	const marker = /<!--md-layout:v1[ \t][^\r\n]*?-->$/.exec(last);
+	if (!marker || _rapierListItemTree(raw).list) return {};
 	const layout = marker && globalThis.RapierMarkdownLayout?.parseLayout(marker[0]);
 	if (!layout) return {};
 	const own = {};

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
-const {FEATURES, LIMITS, ASSET_TYPES, refusal, normalizeSettings, snapshotSettings, pickDeviceFile, createFilePicker, assetURL, assetBytes, bytesHash, externalImage, createAssetBroker, pictureBase} = (() => {
+const {FEATURES, LIMITS, ASSET_TYPES, refusal, coded, normalizeSettings, snapshotSettings, pickDeviceFile, createFilePicker, assetURL, assetBytes, bytesHash, externalImage, createAssetBroker, pictureBase} = (() => {
 const FEATURES = Object.freeze(['draw', 'paint', 'notes', 'readAloud', 'share', 'find']);
 const LIMITS = Object.freeze({documentBytes: 64 * 1024 * 1024, pictureBytes: 16 * 1024 * 1024});
 const ASSET_TYPES = Object.freeze(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/jxl', 'image/svg+xml']);
 const ACCENTS = Object.freeze(['Teal', 'Blue', 'Amber', 'Green', 'Red', 'Purple', 'Pink', 'Gray']);
 const refusal = (code, reason = code) => Object.assign(new Error(reason), {code});
+const coded = (code, Type, message) => Object.assign(new Type(message), {code});
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value) &&
   (Object.getPrototypeOf(value) === null || Object.getPrototypeOf(Object.getPrototypeOf(value)) === null);
 const only = (value, keys) => Object.keys(value).every(key => keys.includes(key));
@@ -254,20 +255,20 @@ function pictureBase(value) {
     try { const href = new URL(text, base).href; vouched.add(href); return href; } catch (_) { return null; }
   }, {vouched});
 }
-return {FEATURES, LIMITS, ASSET_TYPES, refusal, normalizeSettings, snapshotSettings, pickDeviceFile, createFilePicker, assetURL, assetBytes, bytesHash, externalImage, createAssetBroker, pictureBase};
+return {FEATURES, LIMITS, ASSET_TYPES, refusal, coded, normalizeSettings, snapshotSettings, pickDeviceFile, createFilePicker, assetURL, assetBytes, bytesHash, externalImage, createAssetBroker, pictureBase};
 })();
 const BUILDS = Object.freeze({full: 'https://rapier.website/embed/rapier.html', reader: 'https://rapier.website/embed/rapier-reader.html'});
-const PACKAGE_VERSION = '1.2.40';
+const PACKAGE_VERSION = '1.2.41';
 const OPTIONS = ['build', 'src', 'plugins', 'approvePlugins', 'sessionId', 'documentId', 'agent', 'agentName', 'theme', 'save', 'assets', 'openFile', 'load',
   'onState', 'compare', 'onClose', 'settings', 'style', 'title', 'onError', 'timeout'];
 const READER_FEATURES = ['find', 'readAloud', 'share'];
 const DEFAULT_SRC = BUILDS.full;
 const revision = value => Number.isSafeInteger(value) && value >= 0 || typeof value === 'string' && value.length > 0 && value.length <= 256;
-const identifier = value => typeof value === 'string' && value.length > 0 && value.length <= 256;
+const identifier = value => typeof value === 'string' && value.length > 0 && value.length <= 256 && value.isWellFormed();
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const themeValue = value => ['light', 'dark', 'system'].includes(value);
 const mint = prefix => prefix + '-' + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2));
-const autoLive = new Map();
+const autoLive = new Map(), slotLive = new Map();
 const fnv = text => { let h = 0x811c9dc5; for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193); } return (h >>> 0).toString(36); };
 function autoIdentity(options) {
   const load = options.load;
@@ -283,21 +284,21 @@ function deferred() {
   promise.catch(() => {});
   return {promise, resolve, reject};
 }
-const refused = payload => Object.assign(new Error(payload?.reason || payload?.code || 'The editor refused the request'), {code: payload?.code, payload},
+const refused = payload => Object.assign(new Error(payload?.reason || payload?.code || 'The editor refused the request'), {code: payload?.code ?? 'refused', payload},
   revision(payload?.currentRevision) ? {currentRevision: payload.currentRevision} : {});
 
 function conflict(currentRevision) {
-  if (!revision(currentRevision)) throw new TypeError('A conflict needs the current revision');
+  if (!revision(currentRevision)) throw coded('invalid_revision', TypeError, 'A conflict needs the current revision');
   return Object.assign(new Error('The stored document has changed'), {code: 'conflict', currentRevision});
 }
 
 function readerStyle(value) {
-  if (!record(value) || Object.keys(value).some(key => !['css', 'fonts'].includes(key))) throw new TypeError('style takes css and fonts');
-  if (value.css !== undefined && typeof value.css !== 'string') throw new TypeError('style.css must be a stylesheet');
+  if (!record(value) || Object.keys(value).some(key => !['css', 'fonts'].includes(key))) throw coded('invalid_style', TypeError, 'style takes css and fonts');
+  if (value.css !== undefined && typeof value.css !== 'string') throw coded('invalid_style', TypeError, 'style.css must be a stylesheet');
   const face = row => record(row) && typeof row.family === 'string' && row.family.length > 0 &&
     (typeof row.source === 'string' || row.source instanceof ArrayBuffer || ArrayBuffer.isView(row.source)) &&
     (row.descriptors === undefined || record(row.descriptors)) && Object.keys(row).every(key => ['family', 'source', 'descriptors'].includes(key));
-  if (value.fonts !== undefined && (!Array.isArray(value.fonts) || !value.fonts.every(face))) throw new TypeError('style.fonts takes {family, source, descriptors?} faces');
+  if (value.fonts !== undefined && (!Array.isArray(value.fonts) || !value.fonts.every(face))) throw coded('invalid_style', TypeError, 'style.fonts takes {family, source, descriptors?} faces');
   return {...(value.css !== undefined ? {css: value.css} : {}), ...(value.fonts !== undefined ? {fonts: value.fonts.map(row => ({...row}))} : {})};
 }
 
@@ -308,6 +309,12 @@ function framingProblem(host, source, sandbox, noun) {
     return {code: 'host_scheme_unsupported', reason: 'The ' + noun + ' cannot be framed by a ' + here.protocol + ' page: it needs an https page, or http on localhost. Serve your app over one of those.'};
   if (source.origin === HOSTED_ORIGIN && here.protocol === 'http:' && !local)
     return {code: 'host_not_secure', reason: 'The hosted ' + noun + ' can be framed by https pages and by http on localhost only. Serve your app over https, or serve a copy of the page yourself and set src.'};
+  if (source.origin === HOSTED_ORIGIN && host.origin === 'null')
+    return {code: 'host_sandboxed', reason: 'This page has an opaque origin (a sandbox without allow-same-origin), which the hosted ' + noun + ' refuses. Give the page an origin, or serve a copy of the ' + noun + ' yourself and set src.'};
+  if (source.origin === HOSTED_ORIGIN && [...(here.ancestorOrigins || [])].some(origin => /^http:\/\//.test(origin) && !/^http:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::|$)/.test(origin)))
+    return {code: 'host_not_secure', reason: 'A page around this one is served over http, which the hosted ' + noun + ' refuses. Serve the whole page over https, or serve a copy of the ' + noun + ' yourself and set src.'};
+  if (source.origin === HOSTED_ORIGIN && host.navigator?.onLine === false)
+    return {code: 'offline', reason: 'The browser is offline, so the hosted ' + noun + ' cannot be fetched. Mount again when it is back, or serve a copy of the ' + noun + ' yourself and set src.'};
   if (source.origin === HOSTED_ORIGIN && host.crossOriginIsolated === true)
     return {code: 'host_cross_origin_isolated', reason: 'This page is cross-origin isolated (COEP), which blocks the hosted ' + noun + '. Serve a copy of the page yourself with the Cross-Origin-Embedder-Policy and Cross-Origin-Resource-Policy headers and set src, or drop COEP.'};
   if (sandbox) for (const token of ['allow-scripts', 'allow-same-origin']) if (!sandbox.contains(token))
@@ -317,49 +324,61 @@ function framingProblem(host, source, sandbox, noun) {
 
 function mount(target, options = {}) {
   const document = target?.ownerDocument;
-  if (!document) throw new TypeError('Mount needs an iframe or a container element');
+  if (!document || target.nodeType !== 1) throw coded('invalid_target', TypeError, 'Mount needs an iframe or a container element');
+  if (!record(options)) throw coded('invalid_options', TypeError, 'Mount options must be an object');
   const unknown = Object.keys(options).filter(key => !OPTIONS.includes(key));
   if (unknown.length) throw Object.assign(new TypeError('Unknown option: ' + unknown.join(', ') + '. Mount takes ' + OPTIONS.join(', ')), {code: 'option_unknown'});
   const build = options.build === undefined || options.build === 'document' ? 'full' : options.build;
-  if (!Object.hasOwn(BUILDS, build)) throw new TypeError('build must be full or reader');
+  if (!Object.hasOwn(BUILDS, build)) throw coded('invalid_build', TypeError, 'build must be full or reader');
   const reader = build === 'reader', noun = reader ? 'reader' : 'editor';
   if (reader && ['save', 'compare', 'onClose', 'agent', 'agentName', 'assets'].some(key => options[key] !== undefined && options[key] !== false))
-    throw new TypeError('The reader takes load, onState, theme, settings, style and plugins');
-  if (!reader && options.style !== undefined) throw new TypeError('style restyles the reader build');
-  if (options.style !== undefined && options.load === undefined) throw new TypeError('Reader styling requires load');
+    throw coded('reader_option_unsupported', TypeError, 'The reader takes load, onState, theme, settings, style and plugins');
+  if (!reader && options.style !== undefined) throw coded('style_unavailable', TypeError, 'style restyles the reader build');
+  if (options.style !== undefined && options.load === undefined) throw coded('load_required', TypeError, 'Reader styling requires load');
   if (options.plugins !== undefined && (typeof options.plugins !== 'string' || !options.plugins || options.plugins.length > 2048 || /[\u0000-\u001f\u007f]/.test(options.plugins)))
-    throw new TypeError('plugins is the address of the directory that holds the plug-in files');
-  if (options.approvePlugins !== undefined && typeof options.approvePlugins !== 'boolean') throw new TypeError('approvePlugins is true or false');
+    throw coded('invalid_plugins', TypeError, 'plugins is the address of the directory that holds the plug-in files');
+  if (options.approvePlugins !== undefined && typeof options.approvePlugins !== 'boolean') throw coded('invalid_option', TypeError, 'approvePlugins is true or false');
   let currentStyle = options.style === undefined ? undefined : readerStyle(options.style);
   const host = document.defaultView, iframe = target.tagName === 'IFRAME' ? target : document.createElement('iframe');
-  const source = new URL(options.src || BUILDS[build], host.location.href);
+  let source;
+  try {
+    if (options.src !== undefined && typeof options.src !== 'string') throw new TypeError();
+    source = new URL(options.src || BUILDS[build], host.location.href);
+  } catch { throw coded('invalid_src', TypeError, 'src must be a page address'); }
   if (source.username || source.password || !(source.protocol === 'https:' || source.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(source.hostname)))
-    throw new TypeError('The editor needs HTTPS, or HTTP on localhost');
+    throw coded('host_not_secure', TypeError, 'The editor needs HTTPS, or HTTP on localhost');
   const page = source.pathname.split('/').pop();
   if (reader ? page === 'rapier.html' : page === 'rapier-reader.html')
     throw Object.assign(new TypeError('build ' + build + ' cannot frame ' + page + '; set build: \'' + (reader ? 'full' : 'reader') + '\' or src to ' + (reader ? 'rapier-reader.html' : 'rapier.html')), {code: 'build_mismatch'});
   source.searchParams.set('embed', '1');
   if (options.plugins !== undefined) {
     let directory;
-    try { directory = new URL(options.plugins, host.location.href); } catch { throw new TypeError('plugins is not an address'); }
+    try { directory = new URL(options.plugins, host.location.href); } catch { throw coded('invalid_plugins', TypeError, 'plugins is not an address'); }
     if (!(directory.protocol === 'https:' || directory.protocol === 'http:') || directory.username || directory.password || directory.search || directory.hash)
-      throw new TypeError('plugins is an http or https address of a directory, with no query or fragment');
+      throw coded('invalid_plugins', TypeError, 'plugins is an http or https address of a directory, with no query or fragment');
     if (directory.origin !== source.origin)
-      throw new TypeError('plugins must be on ' + source.origin + ', the origin of the page it configures: the page reads plug-ins only from its own origin. Serve the page and its plug-ins together (set src), or leave plugins out');
+      throw coded('invalid_plugins', TypeError, 'plugins must be on ' + source.origin + ', the origin of the page it configures: the page reads plug-ins only from its own origin. Serve the page and its plug-ins together (set src), or leave plugins out');
     source.searchParams.set('plugins', directory.href);
   }
   if (options.approvePlugins === true) source.searchParams.set('approvePlugins', '1');
   const origin = source.origin, auto = options.sessionId === undefined && options.documentId === undefined ? autoIdentity(options) : null;
-  const sessionId = options.sessionId ?? (auto ? 'page-' + auto : mint('session')), documentId = options.documentId ?? (auto ? 'doc-' + auto : mint('document'));
-  if (!identifier(sessionId) || !identifier(documentId)) throw new TypeError('Session and document IDs must be nonempty strings of at most 256 code units');
+  const askedSession = options.sessionId ?? (auto ? 'page-' + auto : mint('session')), askedDocument = options.documentId ?? (auto ? 'doc-' + auto : mint('document'));
+  if (!identifier(askedSession) || !identifier(askedDocument)) throw coded('invalid_id', TypeError, 'Session and document IDs must be nonempty strings of at most 256 code units');
+  let slot = 1, effective;
+  do {
+    const sessionId = askedSession, documentId = slot === 1 ? askedDocument : askedDocument.slice(0, 241 - String(slot).length).replace(/[\uD800-\uDBFF]$/, '') + '~' + Array.prototype.reduce.call(askedDocument, (hash, char) => BigInt.asUintN(64, (hash ^ BigInt(char.charCodeAt(0))) * 1099511628211n), 14695981039346656037n).toString(36) + '~' + slot;
+    effective = {sessionId, documentId};
+    slot++;
+  } while (slotLive.get(JSON.stringify([effective.sessionId, effective.documentId]))?.());
+  const {sessionId, documentId} = effective;
   const agentName = options.agentName;
-  if (agentName !== undefined && (typeof agentName !== 'string' || !agentName.trim() || agentName.length > 96 || /[\u0000-\u001f\u007f]/.test(agentName))) throw new TypeError('agentName must be a host-given name of at most 96 characters');
-  if (options.theme !== undefined && !themeValue(options.theme)) throw new TypeError('Theme must be light, dark or system');
-  if (options.save !== undefined && typeof options.save !== 'function') throw new TypeError('save must be a durable storage callback');
-  if (options.assets !== undefined && typeof options.assets !== 'function') throw new TypeError('assets must be a picture storage callback');
-  if (options.openFile !== undefined && typeof options.openFile !== 'function') throw new TypeError('openFile must choose a File or null');
-  if (options.timeout !== undefined && !(Number.isSafeInteger(options.timeout) && options.timeout > 0)) throw new TypeError('timeout is a whole number of milliseconds');
-  const bootTimeout = options.timeout ?? 15000;
+  if (agentName !== undefined && (typeof agentName !== 'string' || !agentName.trim() || agentName.length > 96 || /[\u0000-\u001f\u007f]/.test(agentName))) throw coded('invalid_option', TypeError, 'agentName must be a host-given name of at most 96 characters');
+  if (options.theme !== undefined && !themeValue(options.theme)) throw coded('invalid_theme', TypeError, 'Theme must be light, dark or system');
+  if (options.save !== undefined && typeof options.save !== 'function') throw coded('invalid_option', TypeError, 'save must be a durable storage callback');
+  if (options.assets !== undefined && typeof options.assets !== 'function') throw coded('invalid_option', TypeError, 'assets must be a picture storage callback');
+  if (options.openFile !== undefined && typeof options.openFile !== 'function') throw coded('invalid_option', TypeError, 'openFile must choose a File or null');
+  if (options.timeout !== undefined && !(Number.isSafeInteger(options.timeout) && options.timeout > 0)) throw coded('invalid_option', TypeError, 'timeout is a whole number of milliseconds');
+  const bootTimeout = options.timeout ?? 15000, loadTimeout = Math.max(bootTimeout, 120000);
   const settings = snapshotSettings(options.settings), policy = normalizeSettings(settings), storeAsset = options.assets;
   const unread = reader ? (settings?.features || []).filter(name => !READER_FEATURES.includes(name)) : [];
   if (unread.length) throw Object.assign(new TypeError('The reader has no ' + unread.join(', ') + '; its features are ' + READER_FEATURES.join(', ')), {code: 'settings_feature_unavailable'});
@@ -373,10 +392,10 @@ function mount(target, options = {}) {
     ...(options.onClose ? ['close'] : []), ...(options.agent ? ['agent'] : []), ...(storeAsset ? ['assets'] : []),
   ];
   if (options.agent && (!capabilities.includes('open') || !capabilities.includes('read')))
-    throw new TypeError('Agent access needs both load and save');
+    throw coded('invalid_option', TypeError, 'Agent access needs both load and save');
   const ids = {sessionId, documentId}, answers = new Map(), waiting = new Map(), listeners = new Map();
-  let port = null, posted = false, connected = false, ended = false, sawLoad = false, seq = 0, activeSave = null, activeClose = null;
-  let currentTheme = options.theme, lastSaved = null, readOnly = false, connectedWait = deferred(), boot, bootTimer = 0, frameFacts = {};
+  let watcher = null, port = null, posted = false, connected = false, ended = false, endError = null, sawLoad = false, seq = 0, activeSave = null, activeClose = null;
+  let currentTheme = options.theme, lastSaved = null, readOnly = false, connectedWait = deferred(), boot, bootTimer = 0, loadTimer = 0, timedOut = false, frameFacts = {};
   let held = null;
   const ready = deferred();
   const emit = (type, value) => { for (const fn of listeners.get(type) || []) fn(value); };
@@ -386,7 +405,7 @@ function mount(target, options = {}) {
     waiting.clear(); activeSave?.reject(error); activeSave = null; activeClose?.reject(error); activeClose = null;
   };
   function send(type, payload, baseRevision, quiet = false) {
-    if (ended || !connected || !port) return Promise.reject(new Error('The ' + noun + ' connection has ended or is not connected'));
+    if (ended || !connected || !port) return Promise.reject(endError || coded('disconnected', Error, 'The ' + noun + ' connection has ended or is not connected'));
     if (type === 'load') cancelOpen('open_stale');
     const requestId = 'host-' + ++seq;
     const message = {type, ...ids, requestId, ...(baseRevision !== undefined ? {baseRevision} : {}), ...(payload !== undefined ? {payload} : {})};
@@ -424,7 +443,7 @@ function mount(target, options = {}) {
         try {
           const result = await options.save({...payload, requestId, baseRevision});
           if (!revision(result?.revision) || result.revision === baseRevision || typeof result.revision === 'number' && typeof baseRevision === 'number' && result.revision <= baseRevision)
-            throw new TypeError('save must return an advancing durable revision');
+            throw coded('save_not_advancing', TypeError, 'save must return an advancing durable revision');
           return {type: 'save-ack', ...ids, requestId, baseRevision, payload: {revision: result.revision}};
         } catch (error) {
           return {type: 'save-nack', ...ids, requestId, baseRevision, payload: error?.code === 'conflict' && revision(error.currentRevision)
@@ -554,7 +573,8 @@ function mount(target, options = {}) {
     }
     if (type === 'connected') {
       if (connected) return;
-      clearTimeout(bootTimer);
+      clearTimeout(bootTimer); clearTimeout(loadTimer);
+      if (timedOut) { timedOut = false; connectedWait = deferred(); prepareBoot(); }
       connected = true; frameFacts = {version: typeof payload.appVersion === 'string' ? payload.appVersion : null, contract: payload.contract ?? null};
       connectedWait.resolve(); emit('connected', payload); return;
     }
@@ -578,7 +598,7 @@ function mount(target, options = {}) {
     }
     if (type === 'close-request' && options.onClose) {
       Promise.resolve().then(() => options.onClose({dirty: !!payload.dirty})).then(decision => {
-        if (!['save', 'discard', 'cancel'].includes(decision)) throw new TypeError('Close needs save, discard or cancel');
+        if (!['save', 'discard', 'cancel'].includes(decision)) throw coded('invalid_option', TypeError, 'Close needs save, discard or cancel');
         if (channel !== port || ended) return;
         channel.postMessage({type: 'close-decision', ...ids, requestId, baseRevision: message.baseRevision, payload: {decision}});
         if (decision === 'cancel') { activeClose?.resolve({cancelled: true}); activeClose = null; }
@@ -606,7 +626,7 @@ function mount(target, options = {}) {
       if (currentStyle) await send('style', currentStyle, undefined, true);
       if (options.load !== undefined) {
         const value = typeof options.load === 'function' ? await options.load() : options.load;
-        if (!record(value) || typeof value.content !== 'string' || !revision(value.revision)) throw new TypeError('load needs content and its revision');
+        if (!record(value) || typeof value.content !== 'string' || !revision(value.revision)) throw coded('invalid_load', TypeError, 'load needs content and its revision');
         await send('load', value, null);
         held = {revision: value.revision, content: value.content, filename: value.filename};
       }
@@ -621,26 +641,27 @@ function mount(target, options = {}) {
     port.onmessage = event => onPortMessage(event, channel.port1);
     port.onmessageerror = () => {
       if (channel.port1 !== port || ended) return;
-      cancelOpen('open_disconnected'); assetAbort.abort(); rejectPending(new Error('The ' + noun + ' connection was lost'));
+      cancelOpen('open_disconnected'); assetAbort.abort(); rejectPending(coded('disconnected', Error, 'The ' + noun + ' connection was lost'));
     };
     try { iframe.contentWindow.postMessage({type: 'rapier-connect', ...ids, capabilities, contract: 1, ...(settings ? {settings} : {}), ...(agentName ? {agent: {name: agentName}} : {}), ...(currentTheme ? {theme: currentTheme} : {})}, origin, [channel.port2]); }
     catch (error) { port.close(); port = null; posted = false; fail(error); }
   }
   function bootFailed(code, reason) {
-    clearTimeout(bootTimer);
+    clearTimeout(bootTimer); clearTimeout(loadTimer);
     if (connected || ended) return;
+    timedOut = code === 'connect_timeout' || code === 'load_timeout';
     connectedWait.reject(refusal(code, reason));
   }
-  const connectTimeoutReason = () => 'The ' + noun + ' did not connect within ' + bootTimeout / 1000 + ' seconds. A page that does not allow this parent (frame-ancestors) is blocked and never connects; the hosted pages allow https, localhost and 127.0.0.1 parents.';
+  const connectTimeoutReason = () => 'The ' + noun + ' page loaded but did not answer within ' + bootTimeout / 1000 + ' seconds. The address may not be a Rapier page (a missing file loads an error page), the page may not allow this parent (frame-ancestors or X-Frame-Options), or the device may be too slow; a slow device that answers later still connects.';
   function onLoad() {
     if (sawLoad && posted) {
       cancelOpen('open_disconnected');
-      rejectPending(new Error('The ' + noun + ' reconnected')); port?.close();
+      rejectPending(coded('disconnected', Error, 'The ' + noun + ' reconnected')); port?.close();
       assetAbort.abort(refusal('asset_disconnected')); assetAbort = new AbortController();
       connected = false; posted = false; readOnly = false; connectedWait = deferred(); prepareBoot();
     }
     sawLoad = true;
-    clearTimeout(bootTimer);
+    clearTimeout(bootTimer); clearTimeout(loadTimer);
     if (!connected) bootTimer = setTimeout(() => bootFailed('connect_timeout', connectTimeoutReason()), bootTimeout);
     connect();
   }
@@ -651,6 +672,19 @@ function mount(target, options = {}) {
         iframe.compareDocumentPosition(element) & order);
     const next = forward ? controls[0] : controls.at(-1);
     if (next) next.focus(); else iframe.blur();
+  }
+  function end(removed) {
+    if (ended) return;
+    if (connected && !removed) send('disconnect', undefined, undefined, true).catch(() => {});
+    ended = true; connected = false; clearTimeout(bootTimer); clearTimeout(loadTimer); watcher?.disconnect();
+    cancelOpen('open_disconnected'); openAnswers.clear();
+    assetAbort.abort(refusal('asset_disconnected')); assetAnswers.clear();
+    const error = removed ? coded('frame_removed', Error, 'The ' + noun + ' was removed from the page') : coded('disconnected', Error, 'The ' + noun + ' connection has ended');
+    if (removed) endError = error;
+    rejectPending(error); connectedWait.reject(error); ready.reject(error);
+    host.removeEventListener('message', onWindowMessage); iframe.removeEventListener('load', onLoad);
+    port?.close(); port = null; listeners.clear();
+    if (!removed && iframe !== target) iframe.remove();
   }
   function onWindowMessage(event) {
     if (event.source !== iframe.contentWindow || event.origin !== origin) return;
@@ -684,9 +718,9 @@ function mount(target, options = {}) {
     },
     async save() {
       await boot;
-      if (!options.save) throw new Error('No save callback was granted');
-      if (ended) throw new Error('The ' + noun + ' connection has ended');
-      if (readOnly) throw new Error('The document is read-only');
+      if (ended) throw endError || coded('disconnected', Error, 'The ' + noun + ' connection has ended');
+      if (!options.save) throw coded('save_unavailable', Error, 'No save callback was granted');
+      if (readOnly) throw coded('read_only', Error, 'The document is read-only');
       if (!activeSave) activeSave = {...deferred(), acknowledged: false, commandId: ''};
       const promise = activeSave.promise;
       requestCapture(); return promise;
@@ -694,39 +728,33 @@ function mount(target, options = {}) {
     async compare(content, {filename} = {}) { await boot; return send('compare', {content, ...(filename !== undefined ? {filename} : {})}); },
     async close() {
       await boot;
-      if (!options.onClose) throw new Error('No close callback was granted');
+      if (ended) throw endError || coded('disconnected', Error, 'The ' + noun + ' connection has ended');
+      if (!options.onClose) throw coded('close_unavailable', Error, 'No close callback was granted');
       if (!activeClose) { activeClose = deferred(); send('close', undefined, undefined, true).catch(error => { activeClose?.reject(error); activeClose = null; }); }
       return activeClose.promise;
     },
     async theme(value) {
-      if (!themeValue(value)) throw new TypeError('Theme must be light, dark or system');
-      currentTheme = value; await boot; return send('theme', {theme: value}, undefined, true);
+      if (!themeValue(value)) throw coded('invalid_theme', TypeError, 'Theme must be light, dark or system');
+      currentTheme = value;
+      try { await boot; return await send('theme', {theme: value}, undefined, true); } catch (error) { if (error?.code === 'disconnected') return; throw error; }
     },
     async style(value) {
-      if (!reader) throw new TypeError('style restyles the reader build');
-      if (!capabilities.includes('open')) throw new TypeError('Reader styling requires load');
-      currentStyle = readerStyle(value); await boot; return send('style', currentStyle, undefined, true);
+      if (!reader) throw coded('style_unavailable', TypeError, 'style restyles the reader build');
+      if (!capabilities.includes('open')) throw coded('load_required', TypeError, 'Reader styling requires load');
+      currentStyle = readerStyle(value);
+      try { await boot; return await send('style', currentStyle, undefined, true); } catch (error) { if (error?.code === 'disconnected') return; throw error; }
     },
-    disconnect() {
-      if (ended) return;
-      if (connected) send('disconnect', undefined, undefined, true).catch(() => {});
-      ended = true; connected = false; clearTimeout(bootTimer);
-      cancelOpen('open_disconnected'); openAnswers.clear();
-      assetAbort.abort(refusal('asset_disconnected')); assetAnswers.clear();
-      const error = new Error('The ' + noun + ' connection has ended');
-      rejectPending(error); connectedWait.reject(error); ready.reject(error);
-      host.removeEventListener('message', onWindowMessage); iframe.removeEventListener('load', onLoad);
-      port?.close(); port = null; listeners.clear();
-      if (iframe !== target) iframe.remove();
-    },
+    disconnect() { end(false); },
     on(type, fn) {
-      if (typeof fn !== 'function') throw new TypeError('An event listener must be a function');
+      if (typeof fn !== 'function') throw coded('invalid_option', TypeError, 'An event listener must be a function');
       if (!listeners.has(type)) listeners.set(type, new Set()); listeners.get(type).add(fn);
       return () => listeners.get(type)?.delete(fn);
     },
   });
   if (auto) autoLive.set(auto, () => iframe.isConnected && !ended);
+  slotLive.set(JSON.stringify([sessionId, documentId]), () => iframe.isConnected && !ended);
   prepareBoot();
+  if (iframe !== target) { iframe.setAttribute('width', '100%'); iframe.setAttribute('height', '100%'); iframe.setAttribute('frameborder', '0'); }
   iframe.setAttribute('title', options.title || (reader ? 'Markdown reader' : 'Markdown editor'));
   iframe.setAttribute('allow', options.agent ? 'clipboard-write; tools' : 'clipboard-write');
   const ownSandbox = iframe === target && iframe.hasAttribute('sandbox');
@@ -740,7 +768,14 @@ function mount(target, options = {}) {
   host.addEventListener('message', onWindowMessage); iframe.addEventListener('load', onLoad);
   iframe.src = source.href;
   if (iframe !== target) target.append(iframe);
-  bootTimer = setTimeout(() => bootFailed('connect_timeout', connectTimeoutReason()), bootTimeout);
+  if (host.MutationObserver) {
+    let attached = iframe.isConnected;
+    watcher = new host.MutationObserver(() => { if (iframe.isConnected) attached = true; else if (attached) end(true); });
+    watcher.observe(host.document, {childList: true, subtree: true});
+    const root = iframe.getRootNode();
+    if (root !== host.document && root.nodeType === 11) watcher.observe(root, {childList: true, subtree: true});
+  }
+  loadTimer = setTimeout(() => bootFailed('load_timeout', 'The ' + noun + ' did not finish loading within ' + loadTimeout / 1000 + ' seconds. Check the address and the network.'), loadTimeout);
   return handle;
 }
 
@@ -885,7 +920,7 @@ export class RapierEditor extends (globalThis.HTMLElement || class {}) {
       src: this.getAttribute('src') || DEFAULT_SRC, theme: this.getAttribute('theme') || 'system',
       load: {content: this._value, filename: this._filename(), revision: this._revision, readOnly: this._disabled},
       save: ({content, baseRevision}) => {
-        if (this._generation !== generation) throw new Error('The form field was replaced');
+        if (this._generation !== generation) throw coded('field_replaced', Error, 'The form field was replaced');
         if (baseRevision !== this._revision) throw conflict(this._revision);
         this._value = content; this._revision++; this._dirty = false; this._updateValue();
         this.dispatchEvent(new Event('change', {bubbles: true, composed: true}));
@@ -921,7 +956,7 @@ export class RapierEditor extends (globalThis.HTMLElement || class {}) {
 }
 
 export function defineRapierEditor(registry = globalThis.customElements) {
-  if (!registry || !globalThis.ElementInternals) throw new Error('rapier-editor needs form-associated custom elements');
+  if (!registry || !globalThis.ElementInternals) throw coded('unsupported_environment', Error, 'rapier-editor needs form-associated custom elements');
   if (!registry.get('rapier-editor')) registry.define('rapier-editor', RapierEditor);
   return RapierEditor;
 }

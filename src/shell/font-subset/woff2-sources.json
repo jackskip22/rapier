@@ -1,0 +1,450 @@
+[
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/LICENSE",
+    "path": "LICENSE",
+    "sha": "33b7cdd2dbaeddce1e35aa1a13f63d71154dc42f"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/common/constants.c",
+    "path": "c/common/constants.c",
+    "sha": "ef5a2e2e046aa62343763e52c1ce47c63c3ce4a5"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/common/constants.h",
+    "path": "c/common/constants.h",
+    "sha": "85e9802c0c87bda1d4f96ae019f27b3a6b7af46b"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/common/context.c",
+    "path": "c/common/context.c",
+    "sha": "d3c910cb1b465fbfbca56b25e1a216c42dfdb6ea"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/common/context.h",
+    "path": "c/common/context.h",
+    "sha": "45b57d8c3edf65e32de86a988200eddbd6c5266a"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/common/dictionary.c",
+    "path": "c/common/dictionary.c",
+    "sha": "ef43af9bfb36b5a940c8f2bc3c208ab3d2399903"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/common/dictionary.h",
+    "path": "c/common/dictionary.h",
+    "sha": "ed683b0aec8ec2e7d198bf11d8b456b00d878ef6"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/common/dictionary_inc.h",
+    "path": "c/common/dictionary_inc.h",
+    "sha": "f40a93eccfe56266a580610ae2da63bae8487587"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/common/platform.c",
+    "path": "c/common/platform.c",
+    "sha": "1e047ced792e171962656422d0aa7b8a0ebc29d0"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/common/platform.h",
+    "path": "c/common/platform.h",
+    "sha": "b59f9b8091c29138def44fc455c5561ed84cecd6"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/common/shared_dictionary.c",
+    "path": "c/common/shared_dictionary.c",
+    "sha": "cef4e20fcd8ac1c5a5fdbb127b8459cef2de9b2d"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/common/shared_dictionary_internal.h",
+    "path": "c/common/shared_dictionary_internal.h",
+    "sha": "c6a90fa741599f1869b73ecfb5a12e7f6c56417d"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/common/static_init.h",
+    "path": "c/common/static_init.h",
+    "sha": "12744de8f9847a5ded024784f7274508b7d8c342"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/common/transform.c",
+    "path": "c/common/transform.c",
+    "sha": "968b9123870243d1fd6de2c349076224bd02a731"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/common/transform.h",
+    "path": "c/common/transform.h",
+    "sha": "c6176d834049c38158f3a56f2078771d67ac912d"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/common/version.h",
+    "path": "c/common/version.h",
+    "sha": "720a48f938d5d3e3ef3753be35075b8f4b36f1ac"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/dec/bit_reader.c",
+    "path": "c/dec/bit_reader.c",
+    "sha": "fae034fd8d8926ee8ce700cbf68c854daae8954d"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/dec/bit_reader.h",
+    "path": "c/dec/bit_reader.h",
+    "sha": "ef6b047ae6e45c7cc8094510bcd2879a949fe832"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/dec/decode.c",
+    "path": "c/dec/decode.c",
+    "sha": "74db1a292b95b535e5a0ed2e7f7ab8ed61b9b55a"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/dec/huffman.c",
+    "path": "c/dec/huffman.c",
+    "sha": "06486cf8105427b4d3241343771d58b1f0bf97e2"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/dec/huffman.h",
+    "path": "c/dec/huffman.h",
+    "sha": "53daf600efcba83625cbeb175c1d275f5e95281d"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/dec/prefix.c",
+    "path": "c/dec/prefix.c",
+    "sha": "ce3998f2412363a2a5539207a710af0810f47038"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/dec/prefix.h",
+    "path": "c/dec/prefix.h",
+    "sha": "f45b8be404173ddcd8b4429288ac937e0fd9cd9c"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/dec/prefix_inc.h",
+    "path": "c/dec/prefix_inc.h",
+    "sha": "91d81b846b314de84f9fea1f6ac33bc5e9b4c80c"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/dec/state.c",
+    "path": "c/dec/state.c",
+    "sha": "dcf61b9eb3a1afeb9c3077f789d52e3113822399"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/dec/state.h",
+    "path": "c/dec/state.h",
+    "sha": "aa371fba2d82954e7497f1ab754cfba004e45fe2"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/dec/static_init.c",
+    "path": "c/dec/static_init.c",
+    "sha": "1345052c5415054abd04dc74837976729800d5ae"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/dec/static_init.h",
+    "path": "c/dec/static_init.h",
+    "sha": "4ae063ef5e356e16d071b4fb6149f46a937b5302"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/include/brotli/decode.h",
+    "path": "c/include/brotli/decode.h",
+    "sha": "10d01e3658b521f81e19d7c857bb17063b1cf4d6"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/include/brotli/encode.h",
+    "path": "c/include/brotli/encode.h",
+    "sha": "ac26ea8e62d220cacf89cb821d291a285d4aeed6"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/include/brotli/port.h",
+    "path": "c/include/brotli/port.h",
+    "sha": "11cefd791e4d910f9205994f71a126ef1aadf271"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/include/brotli/shared_dictionary.h",
+    "path": "c/include/brotli/shared_dictionary.h",
+    "sha": "2970c2dcc9b5029903b9cdd3a4e26f4fc1dd70b2"
+  },
+  {
+    "repository": "google/brotli",
+    "ref": "v1.2.1",
+    "local": "brotli/c/include/brotli/types.h",
+    "path": "c/include/brotli/types.h",
+    "sha": "2dc61ff407659745c2f38e84f943a6c9be5dbf94"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/LICENSE",
+    "path": "LICENSE",
+    "sha": "4f9441b6e1b9c321534f4645db138f2cdec7d845"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/include/woff2/decode.h",
+    "path": "include/woff2/decode.h",
+    "sha": "6ef3b8e76c8ea753a2c5f1e067619acf49893de9"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/include/woff2/encode.h",
+    "path": "include/woff2/encode.h",
+    "sha": "34b7722974959440237491956a69377b2a2bf7f2"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/include/woff2/output.h",
+    "path": "include/woff2/output.h",
+    "sha": "c325f67be7282ab96a5cfece82fb306a493906fd"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/src/buffer.h",
+    "path": "src/buffer.h",
+    "sha": "7240e5181ced595df3c9addc7b54842c6d49ccfe"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/src/convert_woff2ttf_fuzzer.cc",
+    "path": "src/convert_woff2ttf_fuzzer.cc",
+    "sha": "2d977a3ef20e550a0376c764912c13acbfff688a"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/src/convert_woff2ttf_fuzzer_new_entry.cc",
+    "path": "src/convert_woff2ttf_fuzzer_new_entry.cc",
+    "sha": "5ad93364bfd452226b5ba53731fc75c9e28992dc"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/src/file.h",
+    "path": "src/file.h",
+    "sha": "61318776be3b0da89f5fae1190dea51c6b0d8f66"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/src/font.cc",
+    "path": "src/font.cc",
+    "sha": "a45153e9cb09c68b2a803c1542e90f9f92776b9a"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/src/font.h",
+    "path": "src/font.h",
+    "sha": "7b8ddddc5a195553d7ce025db7576461100c6954"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/src/glyph.cc",
+    "path": "src/glyph.cc",
+    "sha": "057174de21932bbc728317a0931581597b09523a"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/src/glyph.h",
+    "path": "src/glyph.h",
+    "sha": "f24056f4c8c86fe53b0d1e161e54934089ed4ab3"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/src/normalize.cc",
+    "path": "src/normalize.cc",
+    "sha": "6685e0875258ee24e16aac2cfc190d0432f6acff"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/src/normalize.h",
+    "path": "src/normalize.h",
+    "sha": "c6fee74db60413aaacf7354de8abef78686bec65"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/src/port.h",
+    "path": "src/port.h",
+    "sha": "8b60fee8bc98ea5fd2976d39e71bbacbc1e18cd2"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/src/round.h",
+    "path": "src/round.h",
+    "sha": "e5b2cb12200eb327d138d6acdb5cc60837a8f1f7"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/src/store_bytes.h",
+    "path": "src/store_bytes.h",
+    "sha": "fff3c62f846b5e297be37ec5c496a26a35c00d0e"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/src/table_tags.cc",
+    "path": "src/table_tags.cc",
+    "sha": "dca3ec8d287578290c4613a940f87408720a9c1b"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/src/table_tags.h",
+    "path": "src/table_tags.h",
+    "sha": "42dc0ae1c44062919dca55bdfcf9e2147dc095a9"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/src/transform.cc",
+    "path": "src/transform.cc",
+    "sha": "999bef37458ea6ab6ac7096bb050528fe7604754"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/src/transform.h",
+    "path": "src/transform.h",
+    "sha": "a4583d16cb2a33cee10a1e28e58b19679307a97e"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/src/variable_length.cc",
+    "path": "src/variable_length.cc",
+    "sha": "4f348d5e504a45af574ed4ec5d21035d9560c376"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/src/variable_length.h",
+    "path": "src/variable_length.h",
+    "sha": "20801065357293a06afdfa826b86a8cca0629778"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/src/woff2_common.cc",
+    "path": "src/woff2_common.cc",
+    "sha": "fe0a3beda7100d6ceb6f8ae185625067fbf24403"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/src/woff2_common.h",
+    "path": "src/woff2_common.h",
+    "sha": "51fd4a7bf8a326350fbce2e651bfe575aefeafd4"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/src/woff2_compress.cc",
+    "path": "src/woff2_compress.cc",
+    "sha": "80e310866764e3b321f787bdb06d3c174f896f94"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/src/woff2_dec.cc",
+    "path": "src/woff2_dec.cc",
+    "sha": "8186c8e5d9e5d42cf749abc2a86bbff161cb0ad1"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/src/woff2_decompress.cc",
+    "path": "src/woff2_decompress.cc",
+    "sha": "de088b9ec0f85e362a6d952b5e2fa70a60f77079"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/src/woff2_enc.cc",
+    "path": "src/woff2_enc.cc",
+    "sha": "ec00878bcd640322f547b8b6f22557fbac9860ed"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/src/woff2_info.cc",
+    "path": "src/woff2_info.cc",
+    "sha": "2b51adcb622145e6fdc2daab32038f8aba52cde3"
+  },
+  {
+    "repository": "google/woff2",
+    "ref": "v1.0.2",
+    "local": "woff2/src/woff2_out.cc",
+    "path": "src/woff2_out.cc",
+    "sha": "8ab32681f1d275e67c624420d5c90007b977198a"
+  }
+]

@@ -109,6 +109,13 @@ function readerFragment() {
 	if (element) readerScrollTo(element);
 }
 
+function readerMissingPicture(image) {
+	const note = image.ownerDocument.createElement('span'), words = (image.getAttribute('alt') || '').trim();
+	note.className = 'rapier-image-missing';
+	note.textContent = 'image not found' + (words ? ': ' + words : '');
+	image.replaceWith(note);
+}
+
 const READER_MAX_NESTING = 400;
 async function readerRenderDocument() {
 	const generation = ++reader.render;
@@ -185,14 +192,14 @@ function readerFirstScreen(blocks) {
 	for (let chars = 0; at < blocks.length && chars < READER_STREAM_PART; at++) chars += blocks[at].textContent.length;
 	return Math.max(1, at);
 }
-const readerRelativeAddress = value => !!value && !/^[a-z][a-z0-9+.-]*:/i.test(value) && !/^[\\/]{2}/.test(value) && !value.startsWith('#');
+const readerRelativeAddress = value => { const address = String(value || '').trim(); return !!address && !/^[a-z][a-z0-9+.-]*:/i.test(address) && !/^[\\/]{2}/.test(address) && !address.startsWith('#'); };
 function readerPlaceRelativePictures(root) {
 	if (!reader.base && location.protocol === 'file:') return;
 	for (const image of root.querySelectorAll('img[src]')) {
 		const src = image.getAttribute('src').trim();
 		if (!readerRelativeAddress(src)) continue;
-		if (reader.base) image.setAttribute('src', new URL(src, reader.base).href);
-		else image.removeAttribute('src');
+		if (!reader.base) { readerMissingPicture(image); continue; }
+		image.setAttribute('src', new URL(src, reader.base).href);
 		image.removeAttribute('srcset');
 	}
 }
@@ -946,7 +953,7 @@ function readerInstallSheetGesture() {
 const readerPluginSize = bytes => bytes >= 1e6 ? (bytes / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(bytes / 1e3)) + ' KB';
 function readerPlugin(key, label, noun) {
 	const view = {
-		status: 'checking', error: null, dismissed: false,
+		key, status: 'checking', error: null, dismissed: false, wanted: false, together: null,
 		installed() { return this.status === 'ready'; },
 		busy() { return this.status === 'downloading' || this.status === 'installing'; },
 		apply(detail) {
@@ -962,11 +969,11 @@ function readerPlugin(key, label, noun) {
 			if (this.installed() || this.dismissed) return;
 			const query = new URLSearchParams(location.search);
 			if (_rapierEmbed.active && !this.busy() && this.status !== 'error' && (query.has('plugins') || query.get('approvePlugins') === '1')) { this.install(); return; }
-			this.render();
-			readerOpenDialog($(key + '-plugin-overlay'));
+			this.wanted = true;
+			readerPluginsAsk();
 		},
-		install() { _rapierProviders[key]?.[this.status === 'error' ? 'reinstall' : 'install']().catch(() => {}); },
-		dismiss() { this.dismissed = true; readerCloseDialog($(key + '-plugin-overlay')); },
+		install() { for (const view of this.together || [this]) _rapierProviders[view.key]?.[view.status === 'error' ? 'reinstall' : 'install']().catch(() => {}); },
+		dismiss() { for (const view of this.together || [this]) { view.dismissed = true; view.together = null; } this.together = null; readerCloseDialog($(key + '-plugin-overlay')); },
 		buttonLabel() {
 			if (this.installed()) return label + ' INSTALLED';
 			if (this.status === 'downloading') return 'DOWNLOADING ' + label + '…';
@@ -975,19 +982,31 @@ function readerPlugin(key, label, noun) {
 			return 'INSTALL ' + label;
 		},
 		render() {
-			const status = this.status, name = noun[0].toUpperCase() + noun.slice(1);
-			$(key + '-plugin-title').textContent = status === 'downloading' ? name + ' plug-in downloading' : status === 'installing' ? name + ' plug-in installing' : status === 'error' ? name + ' plug-in unavailable' : 'Install ' + noun + ' plug-in?';
+			const status = this.status, name = noun[0].toUpperCase() + noun.slice(1), pair = this.together?.length > 1 && status !== 'error';
+			$(key + '-plugin-title').textContent = pair ? (status === 'downloading' ? 'Plug-ins downloading' : status === 'installing' ? 'Plug-ins installing' : 'Install math and diagram plug-ins?') : status === 'downloading' ? name + ' plug-in downloading' : status === 'installing' ? name + ' plug-in installing' : status === 'error' ? name + ' plug-in unavailable' : 'Install ' + noun + ' plug-in?';
 			$(key + '-plugin-body').textContent = status === 'error' ? 'Rapier could not reach or verify the ' + noun + ' renderer. Check your internet connection and tap retry.' : '• Shows the ' + (key === 'math' ? 'math' : 'diagrams') + ' in this document.\n• ' + (readerPluginSize(_rapierProviders[key]?.downloadBytes) + ', once.') + '\n• Works offline.';
+			if (pair) $(key + '-plugin-body').textContent = '• Shows the math and the diagrams in this document.\n• ' + readerPluginSize(this.together.reduce((sum, view) => sum + (_rapierProviders[view.key]?.downloadBytes || 0), 0)) + ', once.\n• Works offline.';
 			$(key + '-plugin-body').style.whiteSpace = 'pre-line';
 			$(key + '-plugin-progress').hidden = !this.busy();
 			$(key + '-plugin-progress').textContent = status === 'downloading' ? 'Downloading the ' + noun + ' renderer…' : 'Installing the renderer…';
 			$(key + '-plugin-error').hidden = status !== 'error';
-			$(key + '-plugin-error').textContent = 'Last attempt failed: ' + (this.error || 'unknown error');
+			$(key + '-plugin-error').textContent = 'Last attempt failed: ' + (this.error || 'the download did not finish. Tap retry.');
 			$(key + '-plugin-install').disabled = this.busy();
 			$(key + '-plugin-install').textContent = status === 'downloading' ? 'downloading…' : status === 'installing' ? 'installing…' : status === 'error' ? 'retry' : 'install now';
 		},
 	};
 	return view;
+}
+let readerAskTimer = 0;
+function readerPluginsAsk() {
+	clearTimeout(readerAskTimer);
+	readerAskTimer = setTimeout(() => {
+		const asking = [_rapierUiMath, _rapierUiDiagram].filter(view => view.wanted && !view.installed() && !view.dismissed && !view.busy());
+		if (!asking.length) return;
+		for (const view of asking) { view.together = asking; view.wanted = false; }
+		asking[0].render();
+		readerOpenDialog($(asking[0].key + '-plugin-overlay'));
+	}, 80);
 }
 const _rapierUiMath = readerPlugin('math', 'MATH', 'math');
 const _rapierUiDiagram = readerPlugin('mermaid', 'MERMAID', 'diagram');
@@ -1602,6 +1621,7 @@ function readerBind() {
 			else open();
 		}
 	});
+	$('editor-blocks').addEventListener('error', event => { if (event.target.tagName === 'IMG' && event.target.isConnected) readerMissingPicture(event.target); }, true);
 	$('editor-blocks').addEventListener('click', readerSeekReading);
 	$('file-input').addEventListener('change', event => { const [file] = event.target.files; event.target.value = ''; reader.base = ''; void readerOpenFile(file); });
 	$('find-input').addEventListener('input', () => readerFindRun());
@@ -1653,6 +1673,7 @@ async function readerOpenFromHash() {
 }
 
 function readerStart() {
+	for (const box of document.querySelectorAll('.rapier-pop [data-pop="cancel"][data-action$="dismiss"]')) box.dataset.pop = 'affirm';
 	readerStampSwatches();
 	_rapierPopArrangeAll(document);
 	readerApplyView();

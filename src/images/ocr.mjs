@@ -2,10 +2,10 @@
 // The reader is PP-OCRv6 tiny (a detector and a recogniser, Apache-2.0) on ONNX Runtime Web (MIT), chosen by measurement. Its
 
 export const OCR_MODEL = 'PP-OCRv6 tiny';
-export const OCR_VERSION = 'ppocrv6-tiny-0.1.0+ort-1.30.0+jxl-1.3.0';
+export const OCR_VERSION = 'ppocrv6-tiny-0.1.0+ort-1.30.0+libjxl-0.12.0-brotli-1.2.1-r2';
 const ORT = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/';
 const TINY = 'https://cdn.jsdelivr.net/npm/@arcships/light-ocr-model-ppocrv6-tiny@0.1.0/';
-const JXL = 'https://cdn.jsdelivr.net/npm/@jsquash/jxl@1.3.0/';
+const JXL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.41/site/plugins/ocr-libjxl-0.12.0/';
 // (`plugins`, shell/bundle-io.js): unique there, which the packages' own file names are not (inference.onnx, LICENSE). The
 // PP-OCRv6_tiny_{det,rec}_onnx_infer archives (paddle-model-ecology, paddle3.0.0), carried on npm by an Apache-2.0 package so
 export const OCR_FILES = Object.freeze([
@@ -16,12 +16,11 @@ export const OCR_FILES = Object.freeze([
 	Object.freeze({name: 'dictionary', flat: 'ppocrv6-tiny-dictionary.json', url: TINY + 'bundle/rec/dictionary.json', bytes: 41009, sri: '6Nf5BNVe1Gq8H53bIq/GGwZ4PJ5P1tLT+9KqYztio4eP/89wv3KPaessREg24wef', licence: 'Apache-2.0'}),
 	Object.freeze({name: 'licence', flat: 'ppocrv6-tiny-LICENSE', url: TINY + 'LICENSE', bytes: 11358, sri: 'II9e1ieUDl5AxyiVq3/FflTua1Sr0kMJ25e6imG7rXg7SiAsA2VemsvEqVsLqM7/', licence: 'Apache-2.0'}),
 	Object.freeze({name: 'notice', flat: 'ppocrv6-tiny-MODEL-NOTICE.md', url: TINY + 'bundle/LICENSES/MODEL-NOTICE.md', bytes: 311, sri: '/xX55A3RRtvPKw3vqFhYH/l7BmQVlADJSGvZA77seZYcqrCvwtqLSJqMJqxo5Xee', licence: 'Apache-2.0'}),
-	// its own decoder (libjxl, BSD-3-Clause, as jSquash builds it, Apache-2.0), run in the reader's worker and nowhere else.
-	Object.freeze({name: 'jxl', flat: 'jxl_dec.js', url: JXL + 'codec/dec/jxl_dec.js', bytes: 36091, sri: 'OVUtDrf9Am51biP6vZWJC1BeSlKKo6nQQPjlB+KF9eWNuazANiijG+IBV4RDRUMA', licence: 'Apache-2.0'}),
-	Object.freeze({name: 'jxlWasm', flat: 'jxl_dec.wasm', url: JXL + 'codec/dec/jxl_dec.wasm', bytes: 849240, sri: 'nJrefhoZ7HToq7VA6kbP3TG/g8+eD4UjhgDkyl0D6a6JtkP/2kj3MlygJWP6k/Ex', licence: 'BSD-3-Clause'}),
-	Object.freeze({name: 'jxlLicence', flat: 'jxl-LICENSE', url: JXL + 'LICENSE', bytes: 11343, sri: 'NsdobH9UxdLqIzcQT8lhpTdu6OKs4LIy8lMm2mLIgqNmNhKUVo+sRy2rJ9oUKQyg', licence: 'Apache-2.0'}),
+	Object.freeze({name: 'jxl', flat: 'jxl_dec.js', url: JXL + 'jxl_dec.mjs', path: 'images/ocr-codec/jxl_dec.mjs', bytes: 27310, sri: '+bpaPLz3kH2feyDHFX4c93XDs/p/sJOFT8HUF9uleBJ1jlvwmZpfNdX4EiEns/gB', licence: 'Apache-2.0'}),
+	Object.freeze({name: 'jxlWasm', flat: 'jxl_dec.wasm', url: JXL + 'jxl_dec.wasm', path: 'images/ocr-codec/jxl_dec.wasm', bytes: 1009731, sri: 'xuUyXI7wcY1DwmdfM+23aWuPi7WAHIZqooeXDmK3KCAaxmPztlprj/P1psk9ck75', licence: 'BSD-3-Clause'}),
+	Object.freeze({name: 'jxlLicence', flat: 'jxl-LICENSE', url: JXL + 'NOTICES.txt', path: 'images/ocr-codec/NOTICES.txt', bytes: 15727, sri: 'VqUfqJtDvW9Cyi8kfgxpyVDRvHyGhoOUNEknTlRUHLXGtw1unRkV9nzfhsGXwN3I', licence: 'BSD-3-Clause, MIT, Apache-2.0'}),
 ]);
-export const OCR_TRANSFER_BYTES = 9142712;
+export const OCR_TRANSFER_BYTES = 9164284;
 export const OCR_READING = Object.freeze({limit: 960, thresh: .2, boxThresh: .4, unclip: 1.4, floor: .5, batch: 6});
 
 export function ocrCore() {
@@ -214,11 +213,21 @@ function ocrWorkerMain(scope, core) {
 	}
 	let ort = null, det = null, rec = null, dict = null, settings = null, jxlCode = null, jxlWasm = null, jxl = null;
 	async function decodeJxl(bytes, max) {
+		if (!bytes || !Number.isSafeInteger(bytes.byteLength) || bytes.byteLength === 0 || bytes.byteLength > 16 * 1024 * 1024)
+			throw new Error('The picture exceeds the image byte limit');
 		if (!jxl) {
-			const url = URL.createObjectURL(new Blob([jxlCode], {type: 'text/javascript'}));
-			try { jxl = await (await import(url)).default({wasmBinary: jxlWasm, locateFile: path => path}); } finally { URL.revokeObjectURL(url); }
+			jxl = (async () => {
+				const url = URL.createObjectURL(new Blob([jxlCode], {type: 'text/javascript'}));
+				try { return {create: (await import(url)).default, module: await WebAssembly.compile(jxlWasm)}; }
+				finally { URL.revokeObjectURL(url); }
+			})().catch(error => { jxl = null; throw error; });
 		}
-		const image = jxl.decode(bytes);
+		const {create, module} = await jxl;
+		const decoder = await create({instantiateWasm(imports, ready) {
+			const instance = new WebAssembly.Instance(module, imports);
+			ready(instance, module); return instance.exports;
+		}});
+		const image = decoder.decode(bytes);
 		if (!image || !(image.width > 0)) throw new Error('The picture could not be decoded');
 		const scale = Math.min(1, max / Math.max(image.width, image.height));
 		if (scale >= 1 || typeof OffscreenCanvas !== 'function') return image;

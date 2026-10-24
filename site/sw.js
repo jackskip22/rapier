@@ -7,13 +7,13 @@ const SHELL_URLS = [
   './icon-192.png',
   './icon-512.png',
 ];
-const SHELL_RELEASE_SHA256 = '6fd89523850a43d7d1b8c95fcc5bb7edff8c7e61547b11353c379cbb5c14c563';
-const SHELL_PAGE_SHA256 = '9bbfff8680e0cb6ef407dc2a7f48aa566bbacd818395e156918953c6ec9bff06';
-const SHELL_BOOT_ID = 'e0c52f50490068938673a1d05731404a2e4a4b4c97702d0f2f7b9e386f6b1d26';
-const SHELL_DOOR_SHA256 = {"/":"79444b23c32b90df196118e6e9c1df5290f86fac2057a668dc25f7264cfc2727","/privacy":"b6e0d0e405a957649034e076fbbae364c0be78d9ad813a6ebfaee6479847cff9","/commercial":"1b9639057f9a35a7ecf87d272d54b6992ad4ea23c710a7d1924d31c196a1da45","/notes":"0bb349a3cd3d097f2bfadb0248262d14bda549a667f49433dcbe1a872a49ce7f","/draw":"5c61bd7978a6b60d44abafc518b8027f714a4fc306e1e72434f704863021bbd2","/watercolor":"ed21caea607cf896987a1ac3b306f73adc55654baf8a4a1a8c20eeff1445c910","/paint":"612cf1985db7664f3b6b9ecf097e9a8f6faf750878fdfffeede036a397363ed1","/jxl":"d3bc0c3bec4187af88c7cc8768eea84ee6968a5a4d0f7be03d2f343c2728861d","/markdown-to-pdf":"24926c6218aeb110a03ccf8d8f3058f931eb8c24f763477653ce00ee9de3193f","/markdown-to-word":"e938b1179bbe1ec67ecec6c8976dda2247259ebc19011e4df39b1590dbf38a44","/word-to-markdown":"c0cbf6113cbcb51fcd81e264e3dc88a1340699c957f0ac84cd3ccb15a6cf7338","/pdf-to-markdown":"22259a04a261ba1a611e99f81cd662dfefdd0bb08b3d9ffcfd81db42e4d83bf9","/markdown-diff":"369c1e3100bdec59513357c2f0df5b9e2137ff15e17fc5af7bdacb5b7e12b078","/mermaid-editor":"34ca289fd49c69607fbc30b3ddbfa0340fe713e738ff1c3bf6e7550ab45a4735"};
+const SHELL_RELEASE_SHA256 = 'a5f825d76581b170cd986c06a28ac982425271c142d7bf206cdffcec8417f8a5';
+const SHELL_PAGE_SHA256 = 'e0ba7e8ac015ddbd88883c2c027cc0bf7736b89f1673130a95e4fea0b1ed966a';
+const SHELL_BOOT_ID = 'fc136661eb6cbc12c8e1c140bcded2d5740de3c4c201864c29ade34f7eaa22c6';
+const SHELL_DOOR_SHA256 = {"/":"ab4b2facbc1900191b8a51268c6379814882c45c105b26b394a750b445a0b7f2","/privacy":"814c1093f914f707bf2950a933686fccd225eae6d6bf69db29a3ec5435c507bd","/commercial":"6ce1e8142a07a7ac35f9dde925396b85656049077db67260ef0c3d1a3924e430","/notes":"e4ae7112c87643b763977bf0b77694f261c19b75d6a50c74296dbd018c523d01","/draw":"9a2321206f28737501d0d282e52aa0ef22e982e425515db5f5d690e86bc55688","/watercolor":"5943a64af883fb57e23e3a1eb028d88611cb778527cec99523a06918e402ea8e","/paint":"deba834ca2763745e6d24abe2e3d1fc3ff09d8ee05820b7b0ddeb7a83c9f3992","/jxl":"47a7225ccbb70d0bb57e5b7c72a3c0fb22f6ecbcc3f3a3ec357df9eb34ba2c80","/markdown-to-pdf":"a3c1d5561385541b96e92c1da7fea1e8350ae73b03ec9cf73ea848617ff033cf","/markdown-to-word":"46942246b894f8e272937b8889bb31e46fab41f02bde715e04c1d316375001b8","/word-to-markdown":"670db3025e46f648cd187c5ac50ba99f3b1ff03c1786192723bdee47696ae4e2","/pdf-to-markdown":"034ae7c88a9c3bea45bdb24200918cfac49996d6483cb568c23d9cc0f14ef6e0","/markdown-diff":"993707be1361c60565c8f79a0b07ebcbca7018b53bd7b24867c401c130ab86e7","/mermaid-editor":"77bb3f188825634bb564b6a6db6fb13383ffb32807ab19e20ddd86d430064e65"};
 const SHELL_SITE_PAGES = ["/gallery"];
 const SITE_PAGE_CACHE = `rapier-pages:${CACHE_SCOPE}:v1`;
-const SHELL_PARTS = [{"id":"document","file":"rapier-document-11e070fc77a9e48f.txt","bytes":902195,"sri":"fXZhBEaM2+spIiztvLDdw5bMeEB8ntPt3KBiGPEFKdBMz37/GDRjktDhFHYhshlR"},{"id":"presets","file":"rapier-presets-6ce793b80c88dc5f.txt","bytes":252215,"sri":"3Q17J+Gech2Tk+clARW8qnHl+oRYGBa1pB3neko7ZvpeKBwI/xfOWv9WnLreRw1o"},{"id":"drawing","file":"rapier-drawing-88e990615a087a0b.txt","bytes":396187,"sri":"LrUxwtFXMx+CQflf2CtYEWFA1nI66ceSsAz7MhXG1XOkSKglLVeC1ZfXp+5OEBz8"},{"id":"jxl","file":"rapier-jxl-6ffd21c47332bf39.txt","bytes":18773,"sri":"OkE3Z0Z909VoCD8muaItOMhc92ygXIbZbWaJyffDaAafzVV0VxsEpdH8xDQcgerO"},{"id":"jxlcomplete","file":"rapier-jxlcomplete-b43df6f59e840c53.txt","bytes":190144,"sri":"/w+StsKCsQtKwcPffGKow5lwg3ETvowxoPwNRKmvW7iaRE7nnN4bdZUTU2JnEDJo"},{"id":"notes","file":"rapier-notes-24a6a1cdd97ec94b.txt","bytes":391127,"sri":"wD0sPJyrxYYRyhxHOKYGAr2+vX1Evlqqep4M+pfJIfKc+IL9fP0TDFVtZ5A9vv8o"}];
+const SHELL_PARTS = [{"id":"document","file":"rapier-document-a2af42b94d88c5f2.txt","bytes":903364,"sri":"V0W2rl4fBKza6x2XawvlPI+UpQwKU+CYjARcexX6DHSKQ6IiY1RCeAKHLKXhOyFt","release":"1.2.41"},{"id":"presets","file":"rapier-presets-035bbb6b65b1da81.txt","bytes":252387,"sri":"zw6JMgkg/LwSyiw1JAGKtwu20VdcCmj+ODkRpkS1BEFYQRb95xsiJxabfroQ7rLi","release":"1.2.41"},{"id":"drawing","file":"rapier-drawing-76d6727c3ae86f5b.txt","bytes":398434,"sri":"I8UoREVEWusGFc1jbfkzxLZwpVabibwu6ULV6GE/wPW66ewoswMTPzhBEbAe6bA3","release":"1.2.41"},{"id":"jxl","file":"rapier-jxl-db0bc4ae4ff69644.txt","bytes":18808,"sri":"1IAnPSqerzEr8E1asdmlq2Yd7WzhigzapgjgGbMend49rGfli7vEG7Tx3oydCjog","release":"1.2.41"},{"id":"jxlcomplete","file":"rapier-jxlcomplete-d521ed58d3f89b2c.txt","bytes":194309,"sri":"Ss/Gt8XjzVJ3oNDU5rBUCliN8f1Y/JEH7sxf1V6H4BQV+0D0EWoQba6mIloJ+1d+","release":"1.2.41"},{"id":"notes","file":"rapier-notes-8b31528610bce208.txt","bytes":391568,"sri":"5Yo1ddLnRdab7YwyfMO4eysaRXlfpJW/1EfnKM6s6kDEMUMXcWbZe0G5/VaLrsXM","release":"1.2.41"}];
 const PART_DIRECTORY = 'parts/';
 const SHELL_GENERATION = SHELL_CACHE_PREFIX + SHELL_RELEASE_SHA256.slice(0, 32);
 const SHELL_PAGE_URL = new URL('./rapier.html', self.location).href;
@@ -225,15 +225,15 @@ async function keepParts() {
       const bytes = new Uint8Array(await response.arrayBuffer());
       const sri = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest('SHA-384', bytes))));
       if (bytes.byteLength !== pin.bytes || sri !== pin.sri) throw new Error('invalid part: ' + pin.file);
-      const earlier = await Promise.all(keys.filter(key => key.startsWith(stem)).map(async key => [key, (await run('readonly', store => store.get(key)))?.savedAt || 0]));
-      return {pin, bytes, newest: earlier.sort((a, b) => b[1] - a[1])[0][0], earlier};
+      const earlier = await Promise.all(keys.filter(key => key.startsWith(stem)).map(async key => [key, (await run('readonly', store => store.get(key)))?.release]));
+      return {pin, bytes, earlier};
     }));
     const kept = fetched.filter(Boolean);
     if (kept.length) await run('readwrite', store => {
       let last;
-      for (const {pin, bytes, newest, earlier} of kept) {
-        for (const [key] of earlier) if (key !== newest) store.delete(key);
-        last = store.put({bytes, savedAt: Date.now(), format: PART_FORMAT, sri: pin.sri, size: pin.bytes}, 'parts/' + pin.file);
+      for (const {pin, bytes, earlier} of kept) {
+        for (const [key, release] of earlier) if (!release || release.localeCompare(pin.release, undefined, {numeric: true}) < 0) store.delete(key);
+        last = store.put({bytes, savedAt: Date.now(), format: PART_FORMAT, sri: pin.sri, size: pin.bytes, release: pin.release}, 'parts/' + pin.file);
       }
       return last;
     });

@@ -65,7 +65,7 @@ export function rewindowWetState(prev, next, dx, dy) {
 	return next;
 }
 export function createWetState(substrate, { pixels, maxBytes, reservedBytes = 0, toSpectral, fromSpectral, bands = BANDS, mixing = 'log', granulation = .05, dryingTime = 1600, edgeDarkening = 1, backrun = 1, film = false, filmGain = 1, flow = 1, settling = 1, pin = 0, bleed = 0 } = {}) {
-	if ({log: 10, pigment: 41, digital: 3}[mixing] !== bands) throw new RangeError('Wet mixing basis');
+	if ({log: 10, pigment: 49, digital: 3}[mixing] !== bands) throw new RangeError('Wet mixing basis');
 	const BANDS = bands;
 	const { width, height } = substrate, bytes = wetBytes(width, height, bands), n = width * height;
 	if (!Number.isFinite(maxBytes) || maxBytes < 0 || !Number.isSafeInteger(reservedBytes) || reservedBytes < 0 || bytes + reservedBytes > maxBytes) refusal();
@@ -297,10 +297,10 @@ export function setGravity(s, gx, gy) {
 export const HOLD_N = 16;
 export const XFER_FRACTION = .1, MAX_XFER_QUANTITY = .008, EQUAL_PAINT_CUTOFF = 1 / 30;
 export const HOLD_TRAVEL = 20;
-const movedLogs = new Float32Array(41), holdLogs = new Float32Array(41);
+const movedLogs = new Float32Array(49), holdLogs = new Float32Array(49);
 
 export function createBrushStore(n = HOLD_N, bands = BANDS) {
-	if (![3, 10, 41].includes(bands)) throw new RangeError('Brush mixing basis');
+	if (![3, 10, 49].includes(bands)) throw new RangeError('Brush mixing basis');
 	const BANDS = bands;
 	if (!Number.isSafeInteger(n) || n < 1 || n > 64) throw new RangeError('Brush store');
 	const cells = n * n;

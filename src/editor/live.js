@@ -589,12 +589,12 @@ const _rapierLive = (() => {
       return globalThis.RapierPageRules.createPageRules({markdownit: window.markdownit, plugins: window, structureJob: _rapierStructureJob});
     } catch (_) { return null; }
   }
-  async function undo(target, redo = false) {
+  async function undo(target, redo = false, since = 0) {
     if (!own() || blocked()) return false;
     _rapierSettlePendingDocumentChange();
     const id = ++undoSequence;
     const promise = new Promise(resolve => undoRequests.set(id, resolve));
-    if (!send({type: 'undo', id, redo, ...(target ? {target} : {})})) {
+    if (!send({type: 'undo', id, redo, ...(target ? {target} : {}), ...(Number.isSafeInteger(since) && since > 0 ? {since} : {})})) {
       undoRequests.get(id)?.(false); undoRequests.delete(id);
     }
     return promise;

@@ -1,3 +1,4 @@
+import {parseImportJson} from './import.mjs';
 // SPDX-License-Identifier: AGPL-3.0-only
 import {noteFileName, noteTitle, orderAfter} from './model.mjs';
 import {scanLinks} from './links.mjs';
@@ -30,7 +31,7 @@ export async function importDayOne(entries, options = {}) {
     if (size > IMPORT_JSON_MAX_BYTES) { skip('Day One JSON exceeds the 25 MiB source bound.'); continue; }
     const sourceWarnings = [...(input.characterWarnings || [])];
     let journal;
-    try { journal = JSON.parse(readImportText(input, sourceWarnings).replace(/^\uFEFF/, '')); }
+    try { journal = parseImportJson(readImportText(input, sourceWarnings).replace(/^\uFEFF/, '')); }
     catch (error) { skip('Day One JSON could not be read: ' + String(error?.message || error)); continue; }
     if (!object(journal) || !Array.isArray(journal.entries)) { skip('Not a Day One entries export.'); continue; }
     const {entries: sourceEntries, ...exportFields} = journal;

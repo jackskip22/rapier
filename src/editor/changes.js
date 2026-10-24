@@ -161,10 +161,12 @@
       live.postMessage(message);
     }) : onPage(before, after, options));
   }
-  async function snapshotPlaces(input, blockRows, id, rev, gen) {
+  async function snapshotPlaces(input, blockRows, id, rev, gen, ownHistory) {
     const before = rapier.review?.seen ? _rapierReviewText(rapier.review.seen) : null, after = input.source;
     if (before == null || before === after) return {review: null, places: []};
-    const blocks = blockRows();
+    if (ownHistory?.complete && ownHistory.acts.length === input.records.length &&
+      ownHistory.acts.every(act => act.operation !== 'document.restore-change') && ownHistory.initialSource === before)
+      return {review: null, places: []};
     if (!comparison || comparison.before !== before || comparison.after !== after || comparison.revision !== rev || comparison.documentId !== id) {
       const options = {docKind: rapier.document.docKind, language: rapier.document.codeLang || '',
         from: globalThis.RapierJournalRecords.journalOperations(before, after, input.records)};
@@ -177,8 +179,7 @@
     if (!lineage.ok) throw new Error(lineage.reason);
     const recorded = new Set(lineage.blocks.filter(block => block.acts.some(act =>
       act.operation !== 'document.restore-change')).map(block => block.id));
-    if (seenKey.text !== before) seenKey = {text: before, key: _rapierSeenDigest(before)};
-    const rows = [], baselineKey = seenKey.key, regionsOf = new Map();
+    const rows = [], regionsOf = new Map();
     for (const region of result.regions) for (const id of new Set(region.changeIds)) {
       if (!regionsOf.has(id)) regionsOf.set(id, []);
       regionsOf.get(id).push(region);
@@ -186,6 +187,9 @@
     for (const change of result.changes) {
       const family = change.kind === 'move' ? result.changes.filter(row => row === change || row.move === change.id) : [change];
       if (change.move || family.some(row => row.edits.some(index => recorded.has(index)))) continue;
+      const blocks = blockRows();
+      if (seenKey.text !== before) seenKey = {text: before, key: _rapierSeenDigest(before)};
+      const baselineKey = seenKey.key;
       const changeKey = [baselineKey, change.kind, family.flatMap(row => row.edits).map(index => {
         const edit = result.edits[index];
         return [edit.before, _rapierSeenDigest(before.slice(...edit.before)), _rapierSeenDigest(after.slice(...edit.after))];
@@ -239,7 +243,7 @@
       if (!projected.ok) return projected;
       const word = rapier.document.source.contains('<!-- rapier-word:v1\n')
         ? globalThis.RapierDocxImport.wordReview(source) : {body: source, changes: []};
-      const fallback = await snapshotPlaces(input, blockRows, id, rev, gen), next = fallback.places.filter(place => place.from < word.body.length);
+      const fallback = await snapshotPlaces(input, blockRows, id, rev, gen, others ? null : projected), next = fallback.places.filter(place => place.from < word.body.length);
       for (const row of word.changes) {
         const block = blockRows().find(block => block.from <= row.from && row.from < block.to)
           || blockRows().find(block => block.from >= row.from) || blockRows().filter(block => block.from < word.body.length).at(-1);

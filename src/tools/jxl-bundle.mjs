@@ -37,8 +37,12 @@ export function graph(texts, roots) {
 	return order;
 }
 
-function scopedModules(texts, names, bindings, {classic = false, suffix = ''} = {}) {
+function scopedModules(texts, names, bindings, {classic = false, suffix = '', inline = []} = {}) {
   const ids = new Map(names.map((name, i) => [name, 'module' + i]));
+  if (inline.length) {
+    texts = {...texts};
+    for (const name of names) for (const module of inline) texts[name] = texts[name].replaceAll("import('./" + module + ".mjs')", 'Promise.resolve(' + ids.get(module) + ')');
+  }
   const asts = new Map(names.map(name => [name, acorn.parse(texts[name], {ecmaVersion: 'latest', sourceType: 'module'})]));
   const needed = new Map(names.map(name => [name, new Set()]));
   for (const [name, module] of Object.entries(bindings)) needed.get(module).add(name);
@@ -51,6 +55,10 @@ function scopedModules(texts, names, bindings, {classic = false, suffix = ''} = 
     : pattern.type === 'ObjectPattern' ? pattern.properties.flatMap(p => declared(p.value || p.argument))
     : pattern.type === 'ArrayPattern' ? pattern.elements.filter(Boolean).flatMap(declared)
     : declared(pattern.left || pattern.argument);
+  for (const module of inline) for (const node of asts.get(module).body) if (node.type === 'ExportNamedDeclaration') {
+    const d = node.declaration;
+    for (const local of d ? (d.type === 'VariableDeclaration' ? d.declarations.flatMap(v => declared(v.id)) : [d.id.name]) : node.specifiers.map(x => x.exported.name)) needed.get(module).add(local);
+  }
   const modules = names.map(name => {
     const source = texts[name], ast = asts.get(name), edits = [], exports = [];
     for (const node of ast.body) {
@@ -101,9 +109,9 @@ export function bundleNameClashes(texts, names) {
 	if (clashes.length) throw new Error('refused: modules bundled in one scope declare the same name: ' + clashes.join(', '));
 }
 
-export function bundle(texts, names, exportsList, banner, {classic = false, suffix = "", scoped = null, reserved = []} = {}) {
+export function bundle(texts, names, exportsList, banner, {classic = false, suffix = "", scoped = null, reserved = [], inline = []} = {}) {
 	if (!scoped) bundleNameClashes(texts, names);
-	const code = scoped ? scopedModules(texts, names, scoped, {classic, suffix}) : names.map(name => texts[name].replace(/^import .*;\n/gm, '').replace(/^export \{[^\n]+\};\n/gm, '').replace(/^export /gm, '')).join('\n') + (classic ? '\n' + suffix : '\nexport {' + exportsList.join(', ') + '};\n');
+	const code = scoped ? scopedModules(texts, names, scoped, {classic, suffix, inline}) : names.map(name => texts[name].replace(/^import .*;\n/gm, '').replace(/^export \{[^\n]+\};\n/gm, '').replace(/^export /gm, '')).join('\n') + (classic ? '\n' + suffix : '\nexport {' + exportsList.join(', ') + '};\n');
 	const key = sha256(JSON.stringify({bundleIdentity, code, banner, classic, reserved, properties: PRIVATE_PROPERTIES.source, flags: PRIVATE_PROPERTIES.flags}));
 	return cachedBundle(key, () => {
 	let best = null;
@@ -129,18 +137,21 @@ export const RAPIER_WORKERS = Object.freeze({
 	still: Object.freeze({root: 'rapier-core', encoder: 'rapier-still', format: 'format-still'}),
 	complete: Object.freeze({root: 'rapier', encoder: 'rapier-encoder', format: 'format-worker'}),
 });
-export async function buildRapierWorker(directory, {encoder = true, still = false} = {}) {
+export async function buildRapierWorker(directory, {encoder = true, still = false, inline = []} = {}) {
   const texts = await jxlModuleTexts(directory), full = encoder !== false;
   const root = full ? RAPIER_WORKERS[still ? 'still' : 'complete'].root : 'worker';
-  const modules = graph(texts, [root]);
+  const graphed = graph(texts, [root]);
+  inline = full ? inline.filter(name => graphed.some(module => texts[module].includes("import('./" + name + ".mjs')"))) : [];
+  const modules = [...graphed, ...graph(texts, inline).filter(name => !graphed.includes(name))];
   if (still) for (const entry of [RAPIER_WORKERS.complete.encoder, RAPIER_WORKERS.complete.format])
     if (modules.includes(entry)) throw new Error('The still worker reaches the complete-only ' + entry + '.mjs');
   const {version} = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
   const license = (await readFile(join(directory, 'LICENSE'), 'utf8')).trim().replace(/\s+/g, ' ');
   const banner = '/*! Rapier JXL ' + version + ' | ' + license + ' */\n';
-  const built = bundle(texts, modules, [], banner, {classic: true, ...(full ? {scoped: {installWorker: root}} : {}),
+  const built = bundle(texts, modules, [], banner, {classic: true, inline, ...(full ? {scoped: {installWorker: root}} : {}),
     suffix: full ? 'installWorker();\n' : 'installJPEGXLWorker({encoderFactory:undefined});\n'});
   new vm.Script(built.bytes.toString('utf8'), {filename: 'rapier-worker.js'});
+  if (inline.length && built.bytes.toString('utf8').includes("import(\"./")) throw new Error('An inlined worker still imports a file beside it');
   return {...built, version, modules: modules.map(name => name + '.mjs'),
     sha256: createHash('sha256').update(built.bytes).digest('hex')};
 }
