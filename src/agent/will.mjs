@@ -162,5 +162,65 @@ function _rapierWillStripOneTerminator(text) {
 		text.charCodeAt(end - 1), end >= 2 ? text.charCodeAt(end - 2) : -1)) : text;
 }
 
+export function willOffsetBefore(rows, offset) {
+	for (let index = rows.length - 1; index >= 0 && offset >= 0; index--) {
+		const {pos, removed, inserted} = rows[index];
+		if (offset >= pos) offset = offset >= pos + inserted.length ? offset - inserted.length + removed.length : -1;
+	}
+	return offset;
+}
+
+export function willTransition(beforeText, afterText, splices, markerSplices = splices) {
+	const before = _rapierWillParse(beforeText), after = _rapierWillParse(afterText);
+	if (!before.present && !after.present) return null;
+	const bounds = region => ({start: region.start, end: region.end});
+	const faults = will => will.faults.slice(0, 4).map(({mode, line}) => ({mode, line}));
+	if (before.faults.length) return {law: 'keep', rule: 'before_faulted', faults: faults(before), start: 0, end: beforeText.length};
+	for (const region of before.regions) {
+		const markers = [[region.openerStart, region.openerEnd], [region.closerStart, region.closerEnd]];
+		for (let index = 0; index < splices.length; index++) {
+			const row = splices[index], end = row.pos + row.removed.length;
+			for (const marker of markers) {
+				if (row.removed.length ? row.pos < marker[1] && marker[0] < end : row.pos > marker[0] && row.pos < marker[1])
+					return {law: region.law, rule: 'marker_span_touched', editIndex: index, region: region.index, ...bounds(region)};
+				if (end <= marker[0]) { const shift = row.inserted.length - row.removed.length; marker[0] += shift; marker[1] += shift; }
+			}
+		}
+	}
+	if (after.faults.length) return {law: 'keep', rule: 'result_faulted', faults: faults(after), start: 0, end: beforeText.length};
+	if (before.markers.length !== after.markers.length || before.markers.some((marker, index) => {
+		const next = after.markers[index];
+		return marker.kind !== next.kind || beforeText.slice(marker.start, marker.end) !== afterText.slice(next.start, next.end) ||
+			willOffsetBefore(markerSplices, next.start) !== marker.start || willOffsetBefore(markerSplices, next.end - 1) !== marker.end - 1;
+	})) return {law: 'keep', rule: 'marker_sequence_mismatch', start: 0, end: beforeText.length};
+	for (const region of before.regions) {
+		const was = beforeText.slice(region.start, region.end), next = after.regions[region.index], now = afterText.slice(next.start, next.end);
+		if (region.law === 'keep' && was !== now || region.law === 'append' &&
+			!_rapierWillStripOneTerminator(now).startsWith(_rapierWillStripOneTerminator(was)))
+			return {law: region.law, rule: 'law_violated', region: region.index, ...bounds(region)};
+	}
+	return null;
+}
+
+export function evaluateWill(beforeText, splices) {
+	const invalid = rule => ({outcome: 'invalid', reason: 'precondition', rule});
+	if (typeof beforeText !== 'string' || !beforeText.isWellFormed()) return invalid('invalid_unicode');
+	if (!Array.isArray(splices)) return invalid('malformed_splice');
+	const boundary = (text, at) => !(at > 0 && at < text.length &&
+		(text.charCodeAt(at - 1) & 0xfc00) === 0xd800 && (text.charCodeAt(at) & 0xfc00) === 0xdc00);
+	let afterText = beforeText;
+	for (const row of splices) {
+		if (!row || !Number.isSafeInteger(row.pos) || row.pos < 0 || Object.is(row.pos, -0) ||
+			typeof row.removed !== 'string' || typeof row.inserted !== 'string' ||
+			!row.removed.isWellFormed() || !row.inserted.isWellFormed()) return invalid('malformed_splice');
+		const end = row.pos + row.removed.length;
+		if (end > afterText.length || !boundary(afterText, row.pos) || !boundary(afterText, end)) return invalid('out_of_range_splice');
+		if (afterText.slice(row.pos, end) !== row.removed) return invalid('source_mismatch');
+		afterText = afterText.slice(0, row.pos) + row.inserted + afterText.slice(end);
+	}
+	const refusal = splices.length && willTransition(beforeText, afterText, splices);
+	return refusal ? {outcome: 'refused', reason: 'document_law', ...refusal} : {outcome: 'applied'};
+}
+
 
 export { hasWillMarkers, _rapierWillParse as parseWill, _rapierWillMarkerOf as willMarkerOf, _rapierWillRegionsIn as willRegionsIn, _rapierWillTouchesMarker as willTouchesMarker, _rapierWillGovern as willGovern, _rapierWillIntentOf as willIntentOf, _rapierWillStripOneTerminator as stripOneTerminator, _rapierWillTerminatorWidth as terminatorWidth };

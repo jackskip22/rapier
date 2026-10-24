@@ -10,7 +10,7 @@ const historyBoundary = (source, at) => Number.isSafeInteger(at) && at >= 0 && !
 	!(at > 0 && at < source.length && (source.charCodeAt(at - 1) & 0xFC00) === 0xD800 &&
 	(source.charCodeAt(at) & 0xFC00) === 0xDC00);
 
-function minimalHistorySplice(before, after, pos = 0) {
+export function minimalHistorySplice(before, after, pos = 0) {
 	let first = 0, a = before.length, b = after.length;
 	while (first < a && first < b && before[first] === after[first]) first++;
 	if (!historyBoundary(before, first) || !historyBoundary(after, first)) first--;

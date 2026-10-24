@@ -28,6 +28,15 @@ pub const ORIGIN: &str = "https://rapier.local";
 /// What a launch asks the window to open besides files: a new document, or text read from stdin (`-`).
 pub const NEW_DOCUMENT: &str = "rapier:new";
 pub const STDIN_DOCUMENT: &str = "rapier:stdin:";
+/// A window opened on one of the page's views (`#v/<view>`): `--notes`, `--draw`, `--paint`, `--jxl`, for the launcher's
+/// actions and a window manager's key bindings.
+pub const VIEW: &str = "rapier:view:";
+pub const VIEWS: [&str; 4] = ["notes", "draw", "paint", "jxl"];
+
+/// The view a path names, if it is one.
+pub fn view_of(path: &str) -> Option<&str> {
+    path.strip_prefix(VIEW).filter(|view| VIEWS.contains(view))
+}
 /// Omarchy's theme-set and font-set hooks (payload::install) send this to a running rapier.
 pub const THEME_CHANGED: &str = "rapier:theme";
 /// A window reopened for the unsaved work it held, by its number (host.rs unsaved_windows).
@@ -50,6 +59,8 @@ pub enum Event {
     Cdp(serde_json::Value),
     Theme,
     Open(String),
+    /// A file chooser answered (host.rs start_pick): the result of that pick, or why none could be shown.
+    Picked(u64, Result<String, String>),
     Exit,
 }
 
@@ -120,7 +131,7 @@ fn say(text: &str) {
     let _ = out.write_all(text.as_bytes()).and_then(|_| out.flush());
 }
 
-const USAGE: &str = "Usage: rapier-linux [--online] [--new] [FILE... | -]";
+const USAGE: &str = "Usage: rapier-linux [--online] [--new | --notes | --draw | --paint | --jxl] [FILE... | -]";
 
 fn fail(message: &str) -> ! {
     eprintln!("Rapier: {message}");
@@ -245,7 +256,7 @@ fn instance_address() -> SocketAddr {
 /// Why a path given to open cannot be: a folder, a path through a file, or one that cannot be read. A file that does not
 /// exist yet opens empty (its folders are made by the first save), so it is not refused here.
 fn unopenable(path: &str) -> Option<String> {
-    if path == NEW_DOCUMENT || path.starts_with(STDIN_DOCUMENT) {
+    if path == NEW_DOCUMENT || path.starts_with(STDIN_DOCUMENT) || view_of(path).is_some() {
         return None;
     }
     let target = Path::new(path);
@@ -256,9 +267,38 @@ fn unopenable(path: &str) -> Option<String> {
         .map(|file| format!("could not open {path}: {} is a file.", file.display()));
     match std::fs::metadata(target) {
         Ok(meta) if !meta.is_file() => Some(format!("could not open {path}: it is not a file.")),
-        Ok(_) => std::fs::File::open(target).err().map(|error| format!("could not open {path}: {}.", reason(&error))),
+        Ok(_) => match std::fs::File::open(target) {
+            Err(error) => Some(format!("could not open {path}: {}.", reason(&error))),
+            Ok(file) => not_text(path, file),
+        },
         Err(error) if matches!(error.kind(), std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory) => through_file(),
         Err(error) => Some(format!("could not open {path}: {}.", reason(&error))),
+    }
+}
+
+/// Types the page opens that are not text (pictures, Word, PDF, zips): they are not looked into.
+const NOT_TEXT: [&str; 21] = [
+    ".docx", ".pdf", ".textpack", ".zip", ".ora", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".heic", ".heif", ".bmp",
+    ".tif", ".tiff", ".jxl", ".ico", ".jp2", ".cr2", ".dng",
+];
+
+/// A file the page would refuse as "not plain UTF-8 text" (a NUL byte, or bytes that are not UTF-8) is refused here, in words that
+/// name it, before it is handed to a window or to the Rapier that is already running (whose own refusal nobody could see).
+/// The first 64 KiB decide: that is where a binary or Latin-1 file shows itself.
+fn not_text(path: &str, file: std::fs::File) -> Option<String> {
+    let lower = path.to_lowercase();
+    if NOT_TEXT.iter().any(|ext| lower.ends_with(ext)) {
+        return None;
+    }
+    let mut head = Vec::new();
+    file.take(64 * 1024).read_to_end(&mut head).ok()?;
+    if head.contains(&0) {
+        return Some(format!("could not open {path}: it is not text (it has a NUL byte)."));
+    }
+    match std::str::from_utf8(&head) {
+        // A multi-byte character cut by the 64 KiB end is not an error.
+        Err(error) if error.error_len().is_some() => Some(format!("could not open {path}: it is not UTF-8 text.")),
+        _ => None,
     }
 }
 
@@ -313,11 +353,15 @@ fn absolute(arg: &str) -> String {
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    // A name that is not UTF-8 cannot travel to the page (it is text there): said at once, never a panic.
+    let args: Vec<String> = std::env::args_os().skip(1).map(|a| a.into_string().unwrap_or_else(|bad| {
+        eprintln!("Rapier: cannot open {}: the name is not valid UTF-8. Rename the file, or open it from the file manager.", bad.to_string_lossy());
+        std::process::exit(2)
+    })).collect();
     match args.first().map(String::as_str) {
         Some("--uninstall") => return payload::uninstall(),
         Some("--version") => {
-            say(&format!("Rapier {}\n", payload::version()));
+            say(&format!("Rapier {}\n", payload::version_line()));
             return;
         }
         Some("--theme-changed") => {
@@ -334,13 +378,14 @@ fn main() {
                  \x20 FILE...      open these files (.md, .markdown, .txt, .rapier.html)\n\
                  \x20 -            open the text on standard input as a new document\n\
                  \x20 --new        open a new document\n\
+                 \x20 --notes      open Notes; --draw, --paint and --jxl open drawing, painting and the JPEG XL converter\n\
                  \x20 --online     let the app use the network (it starts offline)\n\
                  \x20 --install    add Rapier to your app launcher and make it open Markdown\n\
                  \x20 --uninstall  remove the launcher entry and the unpacked cache (documents stay)\n\
                  \x20 --licenses   print the included license notices\n\
                  \x20 --version    print the version\n\
                  \x20 -h, --help   print this help\n",
-                payload::version()
+                payload::version_line()
             ));
             return;
         }
@@ -366,7 +411,7 @@ fn main() {
     for arg in &args {
         if arg == "--" {
             options = false;
-        } else if options && arg.starts_with('-') && arg != "-" && !["--online", "--new"].contains(&arg.as_str()) {
+        } else if options && arg.starts_with('-') && arg != "-" && !["--online", "--new", "--notes", "--draw", "--paint", "--jxl"].contains(&arg.as_str()) {
             eprintln!("Rapier: unknown option {arg}\n{USAGE}\nrapier-linux --help lists every option.");
             std::process::exit(2);
         }
@@ -385,6 +430,7 @@ fn main() {
         .map(|(option, a)| match a.as_str() {
             _ if !option => absolute(a),
             "--new" => NEW_DOCUMENT.to_string(),
+            "--notes" | "--draw" | "--paint" | "--jxl" => format!("{VIEW}{}", &a[2..]),
             "-" => stdin_document(),
             _ => absolute(a),
         })
@@ -395,6 +441,10 @@ fn main() {
         let why = unopenable(p);
         if let Some(why) = &why {
             eprintln!("Rapier: {why}");
+            // A file manager or a launcher has no terminal to show it on.
+            if !std::io::IsTerminal::is_terminal(&std::io::stderr()) {
+                portal::tell("Rapier could not open it", why);
+            }
         }
         why.is_none()
     }).collect();
@@ -413,4 +463,17 @@ fn main() {
         fail(&error);
     }
     host.close_folder();
+}
+
+#[cfg(test)]
+mod tests {
+    // Only the four views the page opens by `#v/<view>` are views; anything else is a path.
+    #[test]
+    fn views() {
+        for view in super::VIEWS {
+            assert_eq!(super::view_of(&format!("{}{view}", super::VIEW)), Some(view));
+        }
+        assert_eq!(super::view_of("rapier:view:settings"), None);
+        assert_eq!(super::view_of("notes"), None);
+    }
 }

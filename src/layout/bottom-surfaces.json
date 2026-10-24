@@ -1447,7 +1447,7 @@
       "role": "overlay",
       "interactive": false,
       "edge": "none",
-      "reason": "Source-offset carets are measured in viewport coordinates and cannot intercept the writer’s pointer."
+      "reason": "Source-offset carets are measured in viewport coordinates and cannot intercept the writer\u2019s pointer."
     },
     {
       "id": "live-presence-selection",
@@ -1674,6 +1674,40 @@
       },
       "owner": "[data-tip]",
       "reason": "The hover-only pseudo-element belongs to its control, has no action, and is not a separate viewport surface."
+    },
+    {
+      "id": "control-tooltip-top-bar",
+      "file": "editor/styles/rapier-app.css",
+      "selector": ".top-bar [data-tip]::after",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [
+          {
+            "name": "media",
+            "params": "(hover:hover) and (pointer:fine)"
+          }
+        ],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "top",
+            "value": "calc(100% + 6px)",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "auto",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "translateX(-50%) translateY(-3px)",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".top-bar [data-tip]",
+      "reason": "The top bar's hover-only tip hangs under its control, has no action, and is not a separate viewport surface."
     },
     {
       "id": "unordered-marker",
@@ -2824,7 +2858,7 @@
         ]
       },
       "owner": ".rapier-live-caret",
-      "reason": "An offscreen collaborator’s upper-edge label stays inside the caret’s right boundary."
+      "reason": "An offscreen collaborator\u2019s upper-edge label stays inside the caret\u2019s right boundary."
     },
     {
       "id": "live-presence-label-down",
@@ -2848,7 +2882,7 @@
         ]
       },
       "owner": ".rapier-live-caret",
-      "reason": "An offscreen collaborator’s lower-edge label stays inside the caret’s right boundary."
+      "reason": "An offscreen collaborator\u2019s lower-edge label stays inside the caret\u2019s right boundary."
     },
     {
       "id": "changes-away-next-reach",

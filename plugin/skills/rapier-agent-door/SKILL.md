@@ -41,6 +41,9 @@ expire after 30 idle days.
 - `rapier-draw` diagrams stay live: the person drags boxes and retypes labels. Use one for anything they rearrange.
 - Your changes land at once, marked; `undo {act}` takes back yours and keeps theirs.
 - `html` export is the whole editor with the document inside, editable offline.
+- Handing over a draft: give them a `.rapier.html` with Send back. `show {target:"return"}` gives `return_url` and
+  `return_expires_at`; where you have a shell, `npx rapier-html@1.2.38 draft.md --return <return_url> --return-expires-at
+  <return_expires_at>`. Their edited copy comes back once; `read {return_id}` reads it.
 
 ## Each step
 

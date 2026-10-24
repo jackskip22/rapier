@@ -214,6 +214,18 @@ function _rapierWhenRuntime(id) {
   });
 }
 
+function _rapierRetireSiteHeading() {
+  const mounted = document.querySelectorAll('#editor-blocks h1');
+  if (!mounted.length) return true;
+  if (mounted.length === 1) for (const node of document.querySelectorAll('#rapier-seo > h1, #rapier-seo > article')) node.remove();
+  return false;
+}
+(function _rapierWatchSiteHeading() {
+  if (!_rapierRetireSiteHeading()) return;
+  const observer = new MutationObserver(() => { if (!_rapierRetireSiteHeading()) observer.disconnect(); });
+  observer.observe(document.documentElement, {childList: true, subtree: true});
+})();
+
 function _rapierRevealFirstScreen() {
   const screen = document.getElementById('rapier-first-screen');
   if (screen?.dataset.rapierEarly !== undefined) { screen.inert = false; delete screen.dataset.rapierEarly; }
@@ -333,6 +345,7 @@ async function _rapierShowFirstEarly(fonts) {
     }
     host.append(early.content);
     host.setAttribute('data-rapier-early-source', view.mark);
+    _rapierRetireSiteHeading();
   }
   screen.inert = true;
   screen.dataset.rapierEarly = '';

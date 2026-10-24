@@ -85,7 +85,9 @@ pub fn write_verified(path: &str, data: &[u8], digest: &str) -> std::io::Result<
     let mode = fs::metadata(&target)
         .ok()
         .map(|m| m.permissions().mode() & 0o7777);
-    let staged = folder.join(format!(".{name}.{}.rapier-save", crate::random_hex(6)));
+    // The staged name stays under the 255 bytes a name may have, whatever the target's: its first 100 bytes, whole characters.
+    let short: String = name.chars().scan(0, |bytes, c| { *bytes += c.len_utf8(); (*bytes <= 100).then_some(c) }).collect();
+    let staged = folder.join(format!(".{short}.{}.rapier-save", crate::random_hex(6)));
     let mut keep_staged = false;
     let result = (|| {
         let mut file = OpenOptions::new()

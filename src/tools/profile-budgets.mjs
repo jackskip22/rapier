@@ -48,6 +48,32 @@ export const PAINT_STROKE_BUDGETS = Object.freeze({
 	'rapier/eraser':               Object.freeze({medianMs: 30,  worstMs: 55}),
 });
 
+export const PAINT_GPU_BUDGETS = Object.freeze({
+	card: 'Tesla T4',
+	brushes: Object.freeze({
+		'dieterle/arrow-1':            Object.freeze({medianMs: 1, p95Ms: 2}),
+		'dieterle/8b-pencil-1':        Object.freeze({medianMs: 8, p95Ms: 22}),
+		'dieterle/round-1':            Object.freeze({medianMs: 10, p95Ms: 20}),
+		'dieterle/flat2-1':            Object.freeze({medianMs: 12, p95Ms: 19}),
+		'dieterle/splash':             Object.freeze({medianMs: 10, p95Ms: 32}),
+		'dieterle/halftone-1':         Object.freeze({medianMs: 1, p95Ms: 2}),
+		'dieterle/blender':            Object.freeze({medianMs: 5, p95Ms: 9}),
+		'dieterle/tail-feathers':      Object.freeze({medianMs: 15, p95Ms: 31}),
+		'dieterle/wateryflatbrush':    Object.freeze({medianMs: 12, p95Ms: 20}),
+		'rapier/pen':                  Object.freeze({medianMs: 1, p95Ms: 2}),
+		'rapier/pencil':               Object.freeze({medianMs: 1, p95Ms: 2}),
+		'rapier/scumble':              Object.freeze({medianMs: 14, p95Ms: 32}),
+		'rapier/bristle':              Object.freeze({medianMs: 8, p95Ms: 21}),
+		'rapier/smudge':               Object.freeze({medianMs: 2, p95Ms: 4}),
+		'rapier/smear':                Object.freeze({medianMs: 2, p95Ms: 3}),
+		'rapier/blend':                Object.freeze({medianMs: 9, p95Ms: 41}),
+		'rapier/eraser':               Object.freeze({medianMs: 1, p95Ms: 2}),
+		'rapier/dissolve':             Object.freeze({medianMs: 1, p95Ms: 2}),
+		'rapier/erode':                Object.freeze({medianMs: 1, p95Ms: 2}),
+		'rapier/posterize':            Object.freeze({medianMs: 1, p95Ms: 2}),
+	}),
+});
+
 export const PAINT_SHEET_FAMILY_BUDGET_MS = Object.freeze({
 	pencil: 21_364,
 	oil: 44_824,

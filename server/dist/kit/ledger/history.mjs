@@ -5,6 +5,7 @@ import {sourceView, HistorySource} from './source.mjs';
 import {textRootParts, rootAfter} from './hash.mjs';
 import {authoredHistory, authoredPlacements} from './transport.mjs';
 import {plainData, canonicalJSON} from './data.mjs';
+import {evaluateWill} from '../../agent/will.mjs';
 
 const historyFailure = reason => ({ok: false, reason});
 const historyInteger = value => Number.isSafeInteger(value) && value >= 0 && !Object.is(value, -0);
@@ -323,6 +324,8 @@ export function selectiveUndo(input, actIds, options = {}) {
 		(options.splitSplice !== undefined && typeof options.splitSplice !== 'function')) return historyFailure('act_invalid');
 	const requested = new Set(actIds), available = prepared.byId;
 	if ([...requested].some(id => !available.has(id))) return historyFailure('act_unavailable');
+	if (options.actor?.kind === 'agent' && [...requested].some(id => available.get(id).record.transaction.actor.kind !== 'agent'))
+		return historyFailure('act_forbidden');
 	const selected = new Set([...requested].filter(id => prepared.effects.active.has(id)));
 	const records = prepared.records;
 	let inverseId = 'planned-inverse'; while (available.has(inverseId)) inverseId += ':';
@@ -359,6 +362,9 @@ export function selectiveUndo(input, actIds, options = {}) {
 			sourceIndices: transported.sourceIndices.get(record.transaction.id)})) : prepared.rows;
 		const result = projectInverseSource(transported ? {...prepared, rows, records: transported.records} : prepared, selected, projectedEffects, options);
 		if (!result.ok) return result;
+		if (options.actor?.kind === 'agent' && prepared.metadata.docKind === 'markdown' &&
+			evaluateWill(prepared.source, result.splices).outcome !== 'applied')
+			return historyFailure('will_refused');
 		return {...result, actIds: [...requested], sourceTransactionIds: [...selected], metadata, afterMetadata,
 			effectChanged, unchanged: result.after === prepared.source && !metadata && !effectChanged};
 	} catch (_) { return historyFailure('history_invalid'); }

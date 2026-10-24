@@ -80,7 +80,9 @@ const _rapierImageFlow = (() => {
     }
   }
 
+  let laidHeights = new WeakMap();
   function restore(wrapper = null) {
+    if (wrapper && !laidHeights.has(wrapper)) laidHeights.set(wrapper, {height: rect(wrapper).height, flowed: !!wrapper.querySelector('[data-rapier-flow="true"]')});
     observer?.disconnect();
     restoring = true;
     for (const [paragraph, record] of projections) {
@@ -505,6 +507,7 @@ const _rapierImageFlow = (() => {
   }
 
   function activation(wrapper, value) {
+    laidHeights.set(wrapper, {height: rect(wrapper).height, flowed: hasFlow(wrapper)});
     if (!hasFlow(wrapper)) return value;
     const viewport = _rapierCaptureEditorViewport(null, false);
     const options = {...(value || {})};
@@ -1333,6 +1336,7 @@ const _rapierImageFlow = (() => {
   }
 
   function layout(anchorWrapper = null) {
+    laidHeights = new WeakMap();
     syncPreparationDocument();
     const pending = settle;
     if (!pending && !moving && !anchorWrapper && !ownedStyles.size && !projections.size && !lastPictures.length &&
@@ -1640,11 +1644,15 @@ const _rapierImageFlow = (() => {
     if (covered() && !moving) { replanWrapper = null; return; }
     if (!frame && host) frame = requestAnimationFrame(() => {
       if (covered() && !moving) { frame = 0; replanWrapper = null; return; }
-      const wrapper = replanWrapper; replanWrapper = null; if (!(wrapper && replan(wrapper))) layout();
+      const wrapper = replanWrapper, put = [...putBack]; replanWrapper = null; putBack.clear();
+      if (put.length) { frame = 0; if (!put.every(settledOwn)) layout(); return; }
+      if (wrapper) laidHeights.delete(wrapper);
+      if (!(wrapper && replan(wrapper))) layout();
     });
   }
 
   let replanWrapper = null;
+  const putBack = new Set();
   function replan(wrapper, previousHeight = null) {
     if (window.__rapierWholeProjection || !wrapper?.isConnected || !host || !geometry || !metadata || !rich || moving || restoring || printing) return false;
     if (hasSelection() || rapier.composition.block || rapier.composition.source) return false;
@@ -1688,9 +1696,18 @@ const _rapierImageFlow = (() => {
     return true;
   }
 
-  function layoutNow(anchorWrapper = null) {
+  function settledOwn(wrapper) {
+    const laid = laidHeights.get(wrapper) ?? null;
+    laidHeights.delete(wrapper);
+    if (!laid || !wrapper.isConnected || wrapper.querySelector('img[data-rapier-image-layout]')) return false;
+    if (laid.flowed || wrappedBlock(wrapper)) return replan(wrapper, laid.height);
+    return !rapier.composition.block && Math.abs(rect(wrapper).height - laid.height) < 0.5;
+  }
+  function layoutNow(anchorWrapper = null, own = false) {
     if (!host) return;
     if (frame) { cancelAnimationFrame(frame); frame = 0; }
+    if (own && anchorWrapper && settledOwn(anchorWrapper)) return;
+    if (anchorWrapper) laidHeights.delete(anchorWrapper);
     layout(anchorWrapper);
   }
 
@@ -3186,6 +3203,16 @@ const _rapierImageFlow = (() => {
     }
     return wrapper;
   }
+  function restoredBlocks(records) {
+    const wrappers = new Set();
+    for (const record of records) {
+      const target = record.target?.nodeType === 1 ? record.target : record.target?.parentElement;
+      const owner = target?.closest?.(':is(#editor-blocks, #editor-blocks > .block-sleep-group) > .block-wrapper');
+      if (!owner || !laidHeights.has(owner)) return null;
+      wrappers.add(owner);
+    }
+    return wrappers.size ? wrappers : null;
+  }
   function wrappedBlock(wrapper) {
     if (wrapper.querySelector('[data-rapier-flow="true"]')) return true;
     for (const map of [floats, floatsRight]) for (const paragraph of map.keys()) if (wrapper.contains(paragraph)) return true;
@@ -3208,6 +3235,8 @@ const _rapierImageFlow = (() => {
       if (typedHeights.get(typed) === height) return;
       typedHeights.set(typed, height);
     }
+    const put = typed ? null : restoredBlocks(records);
+    if (put) { for (const wrapper of put) putBack.add(wrapper); schedule(); return; }
     replanWrapper = null;
     schedule();
   });
@@ -3217,7 +3246,10 @@ const _rapierImageFlow = (() => {
     const width = host.clientWidth, height = host.clientHeight;
     if (width !== lastWidth || height !== lastHeight) {
       if (lastWidth && width !== lastWidth && moving) { cancel(); showToast('Page resized. Move it again.', 'info'); }
-      lastWidth = width; lastHeight = height; schedule();
+      const widthChanged = width !== lastWidth;
+      lastWidth = width; lastHeight = height;
+      if (widthChanged || moving || settle) schedule();
+      else if (host.classList.contains('editor-area--virtualized')) _rapierScheduleRenderWindow();
     }
   }).observe(host);
   const invalidate = () => { cache = new WeakMap(); schedule(); };
@@ -3243,9 +3275,13 @@ const _rapierImageFlow = (() => {
     if (pressedLayout) { pressedLayout = false; schedule(); }
   }, {capture: true, passive: true});
 
+  let caretInHost = true;
   document.addEventListener('selectionchange', () => {
     if (hasSelection()) return;
     const selection = window.getSelection();
+    const inHost = !!selection?.anchorNode && host.contains(selection.anchorNode), wasInHost = caretInHost;
+    caretInHost = inHost;
+    if (!inHost && (!wasInHost || _rapierHostNativeField(document.activeElement))) return;
     if (caretPlaced && selection?.anchorNode === caretPlaced.anchor && selection.anchorOffset === caretPlaced.anchorOffset &&
         selection.focusNode === caretPlaced.focus && selection.focusOffset === caretPlaced.focusOffset) return;
     const anchor = selection?.anchorNode, element = anchor?.nodeType === 1 ? anchor : anchor?.parentElement;

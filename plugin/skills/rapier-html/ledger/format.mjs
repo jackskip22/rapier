@@ -3,8 +3,11 @@ import {_rapierPrepareHistoryRecords, _rapierValidMetadata, _rapierTransformMeta
 import {pictureHistorySplices} from './history.mjs';
 import {HistorySource} from './source.mjs';
 import {authoredHistory} from './transport.mjs';
-import {textRoot, rootAfter, sha256PartsAsync, createSHA256} from './hash.mjs';
+import {textRoot, rootAfter, sha256, sha256PartsAsync, createSHA256} from './hash.mjs';
 import {canonicalJSON, canonicalParts, plainData, documentText, utf8Length, exactKeys, nonnegative, fault} from './data.mjs';
+import {diff} from './diff/diff.mjs';
+import {minimalHistorySplice} from './inverse-source.mjs';
+import {evaluateWill} from './will.mjs';
 export {textRoot, rootAfter};
 const rootShape = value => typeof value === 'string' && /^\d+:[a-z0-9]+:[a-z0-9]+$/.test(value);
 function* checkedRecords(ledger, prepared) {
@@ -54,7 +57,7 @@ function ledgerResult(ledger, proof, expectedText, expectedMetadata) {
   if (expectedMetadata !== undefined && (!_rapierValidMetadata(expectedMetadata) || canonicalJSON(metadata) !== canonicalJSON(expectedMetadata)))
     throw fault('metadata does not describe this document');
   if (expectedText !== undefined && text !== expectedText) throw fault('history does not describe this document');
-  return {value: {ledger, text, metadata: {...metadata}, root, revision, complete: ledger.complete}, prepared, source};
+  return {value: {ledger, text, metadata: {...metadata}, root, revision, complete: ledger.complete}, prepared, source, proof};
 }
 function readLedgerState(input, expectedText, expectedMetadata) {
   const {ledger, shell, proof: held} = ledgerAdmission(input);
@@ -226,8 +229,7 @@ async function finishAsync(producer, {yield: yieldWork, signal} = {}) {
 export function prepareLedgerAsync(input, options = {}) {
   return finishAsync(produceLedger(input, !!globalThis.crypto?.subtle), options);
 }
-export function historyEnvelope(input, segmentIdentity = [], expectedText, expectedMetadata) {
-  const {value: {ledger, text, metadata}, prepared, source} = readLedgerState(input, expectedText, expectedMetadata);
+function historyNavigation(ledger, text, metadata, prepared, source) {
   const {byId, effects: {pictures}} = prepared;
   let branch = [], cursor = 0;
   for (const {transaction: tx} of ledger.records) {
@@ -270,8 +272,13 @@ export function historyEnvelope(input, segmentIdentity = [], expectedText, expec
       if (active === null || !activeMetadata || (i + 1 === cursor && (active.length !== text.length || !active.matches(0, text) || canonicalJSON(activeMetadata) !== canonicalJSON(metadata)))) throw fault('complete branch differs');
     }
   }
+  return {branch, cursor};
+}
+export function historyEnvelope(input, segmentIdentity = [], expectedText, expectedMetadata) {
+  const {value: {ledger, text, metadata}, prepared, source, proof} = readLedgerState(input, expectedText, expectedMetadata);
+  const {branch, cursor} = proof.navigation ??= historyNavigation(ledger, text, metadata, prepared, source);
   return {schemaVersion: 5, documentAuthority: ledger.documentAuthority, documentRevision: ledger.head.revision,
-    ledger: ledger.records, branch, cursor, earliestRevision: ledger.start.revision, earliestHash: ledger.start.root,
+    ledger: ledger.records, branch: branch.slice(), cursor, earliestRevision: ledger.start.revision, earliestHash: ledger.start.root,
     sourceRootId: ledger.head.root, earliestMetadata: {...ledger.start.metadata}, documentMetadata: {...metadata}, segmentIdentity, historyComplete: ledger.complete,
     trimReason: ledger.complete ? '' : 'carried_start', trimmedBytes: 0};
 }
@@ -287,15 +294,14 @@ export function agentActorId(door, agent) {
 export function replaceLedgerText(input, text, {actor = {kind: 'system', id: 'rapier'}, operation = 'document.replace', at} = {}) {
   const current = readLedger(input); documentText(text);
   if (current.text === text) return current.ledger;
-  let start = 0, a = current.text.length, b = text.length;
-  while (start < a && start < b && current.text[start] === text[start]) start++;
-  if (start && /[\uDC00-\uDFFF]/.test(current.text[start] || text[start] || '')) start--;
-  while (a > start && b > start && current.text[a - 1] === text[b - 1]) { a--; b--; }
-  if (/[\uDC00-\uDFFF]/.test(current.text[a] || text[b] || '')) { a++; b++; }
-  const splices = [{pos: start, removed: current.text.slice(start, a), inserted: text.slice(start, b)}];
-  const revision = current.revision + 1, root = rootAfter(current.root, splices[0]);
+  const splices = diff(current.text, text, {_unit: 'word'}).edits.map(edit =>
+    minimalHistorySplice(current.text.slice(...edit.before), text.slice(...edit.after), edit.before[0])).reverse();
+  const revision = current.revision + 1, root = splices.reduce(rootAfter, current.root);
+  if (actor.kind === 'agent' && current.metadata.docKind === 'markdown' && evaluateWill(current.text, splices).outcome !== 'applied')
+    throw fault('will_violation');
+  const identity = sha256(canonicalJSON({before: current.ledger.sha256, text, actor, operation, at: at ?? null}));
   const record = {beforeHash: current.root, afterHash: root, splices, transaction: {
-    id: current.ledger.documentAuthority.slice(0, 48) + ':export:' + revision.toString(36),
+    id: current.ledger.documentAuthority.slice(0, 48) + ':export:' + identity,
     documentAuthority: current.ledger.documentAuthority, baseRevision: current.revision, revision,
     actor, transport: 'platform', operation, requestId: null, sourceTransactionId: null,
     affectedBlockIds: [], parent: current.ledger.records.at(-1)?.transaction.id ?? null,

@@ -2,7 +2,7 @@
  "comment": "MyPaint brush file",
  "version": 3,
  "description": "Flat",
- "notes": "A flat for painting with a finger: an opaque blade held at an angle, laid as a row of bristle lanes. Move it across the blade and the mark is a broad ribbon with straight sides; move it along the blade and it is a line; Follow keeps the blade square to the way the finger goes, so a curve or a turn stays one ribbon. A light or fast pass, and the lift at the end, run into fine streaks that fade into the paper, and where it crosses wet paint of another color it picks that color up and drags it.\nRapier finger preset: the finger's speed is its pressure, and it decides how many lanes lay.\n\nAuthor: Rapier\nLicense: AGPL-3.0-only",
+ "notes": "A flat brush held at the angle the dial sets: dragged across its tip it lays one wide opaque plane with straight sides and ends cut on the tip's slant, dragged along it a thin line. Its paint fades in where it lands and breaks into dry streaks at a fast lift.\n\nAuthor: Rapier\nLicense: AGPL-3.0-only",
  "parent_brush_name": "Rapier/Flat",
  "group": "Rapier",
  "settings": {
@@ -20,7 +20,26 @@
   },
   "radius_logarithmic": {
    "base_value": 3.3,
-   "inputs": {}
+   "inputs": {
+    "pressure": [
+     [
+      0,
+      -0.25
+     ],
+     [
+      0.3,
+      -0.08
+     ],
+     [
+      0.6,
+      0
+     ],
+     [
+      1,
+      0.05
+     ]
+    ]
+   }
   },
   "hardness": {
    "base_value": 0.88,
@@ -43,7 +62,7 @@
    "inputs": {}
   },
   "dabs_per_second": {
-   "base_value": 0,
+   "base_value": 30,
    "inputs": {}
   },
   "gridmap_scale": {
@@ -63,7 +82,7 @@
    "inputs": {}
   },
   "speed1_slowness": {
-   "base_value": 0.04,
+   "base_value": 0.01,
    "inputs": {}
   },
   "speed2_slowness": {
@@ -184,7 +203,7 @@
    "inputs": {}
   },
   "slow_tracking": {
-   "base_value": 0,
+   "base_value": 1.2,
    "inputs": {}
   },
   "slow_tracking_per_dab": {
@@ -306,7 +325,7 @@
    "inputs": {}
   },
   "elliptical_dab_ratio": {
-   "base_value": 10,
+   "base_value": 8,
    "inputs": {}
   },
   "elliptical_dab_angle": {
@@ -353,19 +372,19 @@
    "inputs": {}
   },
   "rapier_bristles": {
-   "base_value": 28,
+   "base_value": 40,
    "inputs": {}
   },
   "rapier_bristle_depth": {
-   "base_value": 0.15,
+   "base_value": 0.3,
    "inputs": {}
   },
   "rapier_bristle_jitter": {
-   "base_value": 0.15,
+   "base_value": 0.12,
    "inputs": {}
   },
   "rapier_bristle_load": {
-   "base_value": 24,
+   "base_value": 120,
    "inputs": {}
   },
   "rapier_blade": {
@@ -373,15 +392,39 @@
    "inputs": {}
   },
   "rapier_pickup": {
-   "base_value": 0.4,
+   "base_value": 0.3,
    "inputs": {}
   },
   "rapier_feed": {
-   "base_value": 0.15,
+   "base_value": 0.02,
    "inputs": {}
   },
   "rapier_lift": {
-   "base_value": 2.4,
+   "base_value": 1,
+   "inputs": {}
+  },
+  "rapier_feather": {
+   "base_value": 0,
+   "inputs": {}
+  },
+  "rapier_ragged": {
+   "base_value": 0.6,
+   "inputs": {}
+  },
+  "rapier_tap_stamp": {
+   "base_value": 1,
+   "inputs": {}
+  },
+  "rapier_stroke_cap": {
+   "base_value": 1,
+   "inputs": {}
+  },
+  "rapier_ribbon": {
+   "base_value": 1,
+   "inputs": {}
+  },
+  "rapier_wet": {
+   "base_value": 0.2,
    "inputs": {}
   }
  }

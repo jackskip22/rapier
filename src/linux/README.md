@@ -4,7 +4,7 @@
 
 The download targets **x86_64 Linux**. Check `rapier-linux.json` beside it for the executable's SHA-256 and minimum glibc version. Original folders require Linux 5.6 or newer and a supported local filesystem: ext, XFS, Btrfs, tmpfs, or overlayfs. Network filesystems and FUSE folders are refused.
 
-Install a current Chromium-compatible browser. File and folder choosers need a session D-Bus, `xdg-desktop-portal`, and a backend for your desktop. Omarchy theme colors and accent are followed automatically, and a theme switch reaches an open window at once through Omarchy's theme hooks; `fontconfig` supplies its chosen monospace font.
+Install a current Chromium-compatible browser. File and folder choosers need a session D-Bus, `xdg-desktop-portal`, and a backend for your desktop. Omarchy theme colors and accent are followed automatically, and a theme switch reaches an open window at once through Omarchy's theme hooks; `fontconfig` supplies its chosen monospace font. Light or dark follows the desktop's color scheme (the portal's `color-scheme`, which GNOME, KDE and Omarchy set); `GTK_THEME=Adwaita:dark` alone does not change it.
 
 ```sh
 chmod +x rapier-linux

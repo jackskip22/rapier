@@ -11,6 +11,10 @@ import {sha256} from '../kit/ledger/hash.mjs';
 import {sha256Yielding, sha256TextOffThread} from '../notes/integrity.mjs';
 import {admitWaterActions, admitWaterPigment, waterPaperById, waterRadius, WATER_BRUSHES, WATER_STRENGTHS, WATER_PIGMENTS, WATER_PAPERS, WATER_TOOLS, WATER_CONTROLS, WATER_ACTION_MAX_POINTS, WATER_SOURCE_MAX_BYTES, WATER_TIP_MAX_PIXELS} from './water-data.mjs';
 import {encodePaintingSteps} from '../images/jxl/painting.mjs';
+import {GpuPaintSurface, paintGpuFits} from './paint-gpu.mjs';
+import './paint-gpu-wet.mjs';
+let replayGpuDevice = null;
+export function setPaintReplayGpu(device) { replayGpuDevice = device || null; }
 import {waterTextPaths,waterTracePaths} from './water-paths.mjs';
 import {configurePaintRasterDecoder, decodePaintRaster, decodeNativePaintJXL, validatePaintRaster, createPaintRecompressor, portablePaintPNG, withSVGImage, rasterizeSVG, encodeOwnedPaintPNG, deflateOwnedPaintBytes} from '../images/paint-raster.mjs';
 export {configurePaintRasterDecoder, decodePaintRaster, decodeNativePaintJXL, validatePaintRaster, createPaintRecompressor, portablePaintPNG, withSVGImage, rasterizeSVG, encodeOwnedPaintPNG, deflateOwnedPaintBytes};
@@ -426,6 +430,7 @@ async function finishRun(run, {signal, onProgress} = {}) {
 	cancelled(signal);
 }
 
+export function replayPaintPixels(replay, options = {}) { const admitted = admitPaintReplay(replay); if (!admitted) throw new Error('Invalid paint replay'); return replayPaintEntries(admitted, options); }
 async function replayPaintEntries(replay, options = {}) {
 	cancelled(options.signal);
 	if(replay.mode==='water'&&!options.observeWater){
@@ -436,6 +441,7 @@ async function replayPaintEntries(replay, options = {}) {
 	if (!pixels || pixels.width !== replay.px[0] || pixels.height !== replay.px[1]) throw new Error('The paint replay base does not match its raster');
 	if (options.requireEmptyBase === true && pixels.data.some(value => value !== 0)) throw new Error('The new paint layer has unrecorded base material');
 	let turn = performance.now(), viewIndex = 0, waterPaper = replay.paper, retainedSurface = null;
+	const gpuSheets = [];
 	try {
 	for (let index = 0; index <= replay.entries.length; index++) {
 		cancelled(options.signal);
@@ -514,6 +520,7 @@ async function replayPaintEntries(replay, options = {}) {
 			live = {id: sheet.id, surface}; brushes = new Map();
 		}
 		const surface = live.surface;
+		const gpu = entry.gpu === true && replayGpuDevice && !replayGpuDevice.paintError && paintGpuFits(replayGpuDevice, surface.width, surface.height) ? (live.gpu ??= (gpuSheets.push(new GpuPaintSurface(replayGpuDevice, surface)), gpuSheets.at(-1))) : null;
 		for (const {id, definition} of entry.brushes) if (!brushes.has(id)) {
 			const admitted = replayBrushDefinition(definition);
 			if (!admitted) throw new Error('The captured paint brush is invalid');
@@ -522,6 +529,12 @@ async function replayPaintEntries(replay, options = {}) {
 		for (const command of entry.commands) {
 			cancelled(options.signal);
 			const args = command.args;
+			if (gpu && command.target === 'surface' && (gpu.wetState || gpu.wetPending) && ['settleWet', '_finishWetWork', 'stepWet', 'composeWet', 'advanceWet', 'dryWet', 'tilt'].includes(command.method) && !entry.removed) {
+				gpu.attach(surface); gpu.open();
+				if (command.method !== '_finishWetWork') await gpu[command.method](...args);
+				await gpu.settle(); continue;
+			}
+			if (gpu?.stroke && command.target === 'surface' && command.method !== 'set') await gpu.settle();
 			if (entry.removed && (command.target === 'stroke' || command.target === 'surface' &&
 				!['set', 'grow'].includes(command.method))) continue;
 			if (command.target === 'brush') {
@@ -529,7 +542,12 @@ async function replayPaintEntries(replay, options = {}) {
 				brush[command.method](...args);
 			} else if (command.target === 'stroke') {
 				const brush = brushes.get(command.brushId); if (!brush) throw new Error('A replay brush is missing');
-				brush.strokeTo(surface, ...args);
+				if (gpu && (brush.gpuCapable || brush.gpuWetCapable && !surface.wetState) && !(brush.op === 'posterize' && (surface.volume || surface.oil))) { gpu.attach(surface); gpu.open(); brush.strokeTo(gpu, ...args); }
+				else {
+					if (gpu?.wetState) { gpu.attach(surface); gpu.open(); gpu.settleWet(); }
+					if (gpu?.stroke) await gpu.settle();
+					brush.strokeTo(surface, ...args);
+				}
 			} else if (command.method === 'set') {
 				if (args[0] === 'scale' && !(finite(args[1]) && args[1] > 0 && args[1] <= 16)) throw new Error('Invalid paint replay scale');
 				surface[args[0]] = args[1];
@@ -539,6 +557,7 @@ async function replayPaintEntries(replay, options = {}) {
 			} else surface[command.method](...args);
 			if (performance.now() - turn >= 12) { await yieldPainting(); turn = performance.now(); }
 		}
+		if (gpu?.stroke) await gpu.settle();
 		const [x0, y0, x1, y1] = entry.crop;
 		if (x1 >= surface.width || y1 >= surface.height) throw new Error('Invalid paint replay publication');
 		pixels = surface.toRGBA8({x0, y0, x1, y1});
@@ -554,7 +573,7 @@ async function replayPaintEntries(replay, options = {}) {
 		return {pixels,surface:retainedSurface,crop:live.crop.slice()};
 	}
 	return options.material ? {pixels,state:null} : pixels;
-	} finally { if (live?.water && live.surface!==retainedSurface) live.surface.dispose(); }
+	} finally { if (live?.water && live.surface!==retainedSurface) live.surface.dispose(); for (const sheet of gpuSheets) sheet.destroy(); }
 }
 
 export async function replayAgentPainting(shape, omitIds, options = {}) {

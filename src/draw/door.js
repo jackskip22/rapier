@@ -3,7 +3,7 @@ const RAPIER_HASH_AT_BIRTH = (() => { try { return String(location.hash || ''); 
 const RAPIER_DRAW_DOOR_AT_BIRTH = (() => { try {
 	const view = document.getElementById('rapier-document')?.dataset.view;
 	if (view === 'draw' || view === 'watercolor') return view;
-	const fragment = /^#v\/(draw|watercolor)\/?$/.exec(String(location.hash || ''));
+	const fragment = /^#v\/(draw|watercolor|paint)\/?$/.exec(String(location.hash || ''));
 	if (fragment) { history.replaceState(history.state, '', location.pathname + location.search); return fragment[1]; }
 	if (/^#v\/notes\/?$/.test(RAPIER_HASH_AT_BIRTH)) return null;
 	const path = /^\/(draw|watercolor|paint)\/?$/.exec(String(location.pathname || ''))?.[1];
@@ -16,7 +16,7 @@ const RAPIER_DRAW_START_IN_PAINT = (() => { try {
 function _rapierBareLaunch() {
 	try {
 		return window.self === window.top && !RAPIER_HASH_AT_BIRTH && !location.search &&
-			!/^\/(?:notes|draw|watercolor|privacy|commercial|agents|paint|jxl|markdown-to-pdf|markdown-to-word|word-to-markdown|mermaid-editor)\/?$/.test(String(location.pathname || '')) &&
+			!/^\/(?:notes|draw|watercolor|privacy|commercial|agents|paint|jxl|markdown-to-pdf|markdown-to-word|word-to-markdown|pdf-to-markdown|markdown-diff|mermaid-editor)\/?$/.test(String(location.pathname || '')) &&
 			!document.getElementById('rapier-document') && globalThis.RAPIER_APPS_HOST !== true &&
 			typeof globalThis.RAPIER_PAIRED_DOCUMENT !== 'string' && !window.RapierPlatform?.files?.hasPendingBoot?.();
 	} catch (_) { return false; }

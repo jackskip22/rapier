@@ -4,7 +4,7 @@
 use crate::{files, folder::Broker, portal, theme, Event, ORIGIN, PAGE};
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use serde_json::{json, Map, Value};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::os::fd::{FromRawFd, RawFd};
@@ -18,7 +18,7 @@ const CHUNK: usize = 128 * 1024;
 const MAX_MESSAGE: usize = 512 * 1024;
 // Opened as their bytes, untouched (an OpenRaster painting goes to the page's own reader).
 const BINARY: [&str; 5] = [".docx", ".pdf", ".textpack", ".zip", ".ora"];
-const CAPABILITIES: [&str; 13] = [
+const CAPABILITIES: [&str; 14] = [
     "documentPicker",
     "saveAs",
     "saveInPlace",
@@ -32,6 +32,7 @@ const CAPABILITIES: [&str; 13] = [
     "originalFolder",
     "exclusiveNewDestination",
     "newWindow",
+    "chooseSave",
 ];
 
 // Runs in every frame before the page. Only the top rapier page keeps the bridge; the host also refuses any binding
@@ -45,6 +46,13 @@ const ADAPTER: &str = r#"(() => {
   Object.defineProperty(window, '__RAPIER_NATIVE_WINDOW', { value: __RAPIER_SLOT__, configurable: false });
   const make = channel => ({ onmessage: null, postMessage(value) { send(JSON.stringify({ channel, payload: String(value == null ? '' : value) })); } });
   const host = make('host'), intake = make('intake');
+  // The browser's own shortcuts are not Rapier's: view-source, the developer tools, downloads and the clear-data sheet do nothing in
+  // this window. At the end of the bubble, after the page's own handlers (Chrome keeps Ctrl+N, Ctrl+T and Ctrl+Shift+N to itself).
+  window.addEventListener('keydown', event => {
+    const key = String(event.key || '').toLowerCase(), mod = event.ctrlKey || event.metaKey;
+    if (event.defaultPrevented) return;
+    if (key === 'f12' || (mod && !event.altKey && ((!event.shiftKey && (key === 'u' || key === 'j')) || (event.shiftKey && (key === 'i' || key === 'j' || key === 'c' || key === 'delete'))))) event.preventDefault();
+  });
   Object.defineProperty(window, 'RapierHost', { value: host, configurable: false });
   Object.defineProperty(window, 'RapierIntake', { value: intake, configurable: false });
   const theme = new CSSStyleSheet();
@@ -109,6 +117,22 @@ fn basename(path: &str) -> String {
         .unwrap_or_default()
 }
 
+/// A file's name as the page may hold it. The page's one filename rule refuses the characters Windows and the file formats
+/// cannot carry (`\ / < > "`, controls, invisible marks) and names over 512 characters; Linux allows them all, so such a file
+/// opens under a name with `_` in their place. Where it is saved is the bound path, never this name.
+fn shown_name(path: &str) -> String {
+    let name: String = basename(path)
+        .chars()
+        .map(|c| match c {
+            '\\' | '/' | '<' | '>' | '"' | '\u{7f}' | '\u{200b}'..='\u{200f}' | '\u{2028}'..='\u{202e}' | '\u{2066}'..='\u{2069}' | '\u{feff}' => '_',
+            c if (c as u32) < 0x20 => '_',
+            c => c,
+        })
+        .take(400)
+        .collect();
+    if name.trim().is_empty() || name == "." || name == ".." { "document.md".to_string() } else { name }
+}
+
 fn str_of(value: &Value, key: &str) -> String {
     match value.get(key) {
         Some(Value::String(s)) => s.clone(),
@@ -137,6 +161,8 @@ struct Candidate {
     bound: Bound,
 }
 struct Transfer {
+    // The destination save.choose gave (its token), or empty: the chooser then comes after the bytes, as before.
+    chosen: String,
     request_id: String,
     purpose: String,
     name: String,
@@ -150,6 +176,14 @@ struct Transfer {
     frame: String,
     sequence: u64,
     bytes: Vec<u8>,
+}
+/// What a file chooser was asked for, kept until its answer arrives (the chooser runs off the host's loop).
+enum Pick {
+    Open { ident: String, compare: bool },
+    Folder { ident: String },
+    Save(Transfer),
+    /// Save As, asked before the bytes exist (save.choose): the page makes them for the type of the name chosen.
+    SaveName { ident: String, name: String },
 }
 struct Folder {
     token: String,
@@ -239,11 +273,22 @@ pub struct Host {
     // The other windows, and paths waiting for a window of their own (a second document never replaces the first).
     others: Vec<Win>,
     waiting_paths: VecDeque<String>,
+    /// The view the first window opens on (`--notes`, `--draw`, `--paint`, `--jxl` at launch), instead of a document.
+    first_view: Option<String>,
+    /// Windows sent to PAGE#v/<view> whose page has not yet been born with that fragment (show_page).
+    view_jumps: Vec<String>,
     new_windows: VecDeque<String>,
     // How the browser was started, to ask it for another app window (spawn_window).
     browser_path: PathBuf,
     browser_args: Vec<String>,
     deferred: VecDeque<Event>,
+    // Choosers shown and not yet answered: the window that asked (its DevTools session) and what for.
+    picks: HashMap<u64, (Option<String>, Pick)>,
+    next_pick: u64,
+    // The window is on an X11 display (the portal's parent window can be named).
+    x11: bool,
+    // Destinations save.choose gave, by token, until their transfer begins: the path and whether no chooser was available.
+    chosen_saves: HashMap<String, (String, bool)>,
     events: Sender<Event>,
     browser: Child,
 }
@@ -338,6 +383,9 @@ impl Host {
         let unsaved = Self::unsaved_windows();
         let mut rest: VecDeque<String> = paths.into_iter().filter(|p| !unsaved.iter().any(|(_, held)| held == p)).collect();
         let first = rest.pop_front();
+        // A view is no document: the first window opens on it, and no file is handed in.
+        let first_view = first.as_deref().and_then(crate::view_of).map(str::to_string);
+        let first = first.filter(|_| first_view.is_none());
         rest.extend(unsaved.into_iter().map(|(n, _)| format!("{}{n}", crate::SLOT)));
         let (to_browser, out) = pipe().map_err(|e| e.to_string())?;
         let (inp, from_browser) = pipe().map_err(|e| e.to_string())?;
@@ -439,10 +487,16 @@ impl Host {
             answered: false,
             others: Vec::new(),
             waiting_paths: rest,
+            first_view,
+            view_jumps: Vec::new(),
             new_windows: VecDeque::new(),
             browser_path: browser.to_path_buf(),
             browser_args: args.iter().filter(|a| a.as_str() != "--remote-debugging-pipe").cloned().collect(),
             deferred: VecDeque::new(),
+            picks: HashMap::new(),
+            next_pick: 0,
+            x11: platform == "x11",
+            chosen_saves: HashMap::new(),
             events,
             browser: child,
         })
@@ -503,7 +557,11 @@ impl Host {
     /// Every file a person opens (the command line, xdg-open, a second launch, Ctrl+O) comes here. A file open already
     /// brings its window to the front; otherwise the next-document rule (`goes_to`) picks this window or one of its own.
     fn open_path(&mut self, path: String) {
-        if let Some(target) = self.window_holding(&path) {
+        // A view (the launcher's Notes, Draw, Paint, JPEG XL converter) always opens a window of its own on it.
+        if crate::view_of(&path).is_some() {
+            self.waiting_paths.push_back(path);
+            self.spawn_window();
+        } else if let Some(target) = self.window_holding(&path) {
             self.cdp("Target.activateTarget", json!({"targetId": target}), false);
         } else if goes_to(self.holding(), Route::File) == Place::OwnWindow {
             self.waiting_paths.push_back(path);
@@ -535,22 +593,30 @@ impl Host {
         self.exchange(&mut parked);
         self.others.push(parked);
         self.target = target;
-        // A window reopened for its unsaved work takes its old number back; any other takes the lowest free one.
+        // A window reopened for its unsaved work takes its old number back, and so does a file reopened after its
+        // window closed with unsaved work (its kept draft is offered in that window only); any other takes the lowest
+        // free number that holds nobody's draft.
         let next = self.waiting_paths.pop_front();
         let wanted = next.as_deref().and_then(|p| p.strip_prefix(crate::SLOT)).and_then(|n| n.parse::<u32>().ok())
             .filter(|n| *n > 1 && self.others.iter().all(|w| w.slot != *n));
-        self.slot = wanted.unwrap_or_else(|| (2..).find(|n| self.others.iter().all(|w| w.slot != *n)).unwrap_or(2));
+        let folder = crate::instance_dir();
+        let open: Vec<u32> = self.others.iter().map(|w| w.slot).collect();
+        let kept = |n: u32| -> Option<String> {
+            let value = serde_json::from_slice::<Value>(&std::fs::read(folder.join(format!("window-{n}.json"))).ok()?).ok()?;
+            (value["dirty"] == json!(true)).then(|| str_of(&value, "path"))
+        };
+        self.slot = wanted.unwrap_or_else(|| next_slot(next.as_deref(), &open, kept));
         self.restore_binding();
         let id = self.cdp("Target.attachToTarget", json!({"targetId": self.target, "flatten": true}), false);
         self.session = Some(str_of(&self.wait(receiver, id)?, "sessionId"));
         self.prepare_window(receiver)?;
         self.cascade(receiver, previous);
         self.newest = self.window_id;
-        if !next.as_deref().is_some_and(|p| p.starts_with(crate::SLOT)) {
+        let view = next.as_deref().and_then(crate::view_of).map(str::to_string);
+        if !next.as_deref().is_some_and(|p| p.starts_with(crate::SLOT)) && view.is_none() {
             self.pending_paths.extend(next);
         }
-        self.cdp("Page.navigate", json!({"url": PAGE}), true);
-        Ok(())
+        self.show_page(receiver, view.as_deref())
     }
 
     /// A window closed: its state goes, and another window is served.
@@ -796,7 +862,22 @@ impl Host {
             false,
         );
         self.wait(receiver, id)?;
-        self.cdp("Page.navigate", json!({"url": PAGE}), true);
+        let view = self.first_view.take();
+        self.show_page(receiver, view.as_deref())
+    }
+
+    /// Load the page in the served window, on one of its views when asked (`#v/<view>`, which the page reads once at its
+    /// birth). A window already at PAGE takes PAGE#v/<view> as a jump within the page; Page.navigatedWithinDocument then
+    /// reloads it (on_cdp), so the page is born with the fragment. Nothing waits here: the load's requests need serving.
+    fn show_page(&mut self, _receiver: &Receiver<Event>, view: Option<&str>) -> Result<(), String> {
+        let url = match view {
+            Some(view) => {
+                self.view_jumps.push(self.target.clone());
+                format!("{PAGE}#v/{view}")
+            }
+            None => PAGE.to_string(),
+        };
+        self.cdp("Page.navigate", json!({"url": url}), true);
         Ok(())
     }
 
@@ -831,6 +912,7 @@ impl Host {
                     self.cdp("Target.activateTarget", json!({"targetId": self.target}), false);
                 }
                 Event::Open(path) => self.open_path(path),
+                Event::Picked(id, result) => self.on_picked(id, result),
             }
             while let Some(target) = self.new_windows.pop_front() {
                 if let Err(error) = self.adopt(&receiver, target) {
@@ -870,6 +952,21 @@ impl Host {
         }
         match method.as_str() {
             "Fetch.requestPaused" => self.serve(&params),
+            // A view asked of a window already at PAGE (show_page): the jump to PAGE#v/<view> is reloaded so the page is born
+            // with it. A load that arrived with the fragment needs nothing. The page's own later #v/notes is no jump of ours.
+            "Page.navigatedWithinDocument" | "Page.frameNavigated" => {
+                let frame = if method == "Page.frameNavigated" { &params["frame"] } else { &params };
+                let url = frame.get("url").and_then(Value::as_str).unwrap_or("");
+                let at = self.view_jumps.iter().position(|t| *t == self.target);
+                if frame.get("id").or(frame.get("frameId")) == Some(&json!(self.target)) && url.starts_with(&format!("{PAGE}#v/")) {
+                    if let Some(at) = at {
+                        self.view_jumps.swap_remove(at);
+                        if method == "Page.navigatedWithinDocument" {
+                            self.cdp("Page.reload", json!({}), true);
+                        }
+                    }
+                }
+            }
             "Runtime.executionContextCreated" => {
                 let context = &params["context"];
                 if context.pointer("/auxData/isDefault") == Some(&json!(true))
@@ -1218,36 +1315,14 @@ impl Host {
                 }
                 self.pump();
             }
+            "save.choose" => {
+                let folder = self.start_folder();
+                let name = free_copy_name(&folder, &str_of(args, "name"));
+                self.start_pick(Pick::SaveName { ident: ident.to_string(), name: str_of(args, "name") }, true, &name, "Save as", false, folder);
+            }
             "folder.choose" => {
-                let path = match portal::pick(false, "", "Open", true, &self.start_folder()) {
-                    Ok(path) => path,
-                    Err(reason) => {
-                        self.ok(ident, json!({"status": "unavailable", "provider": "linux", "reason": reason}));
-                        return Ok(());
-                    }
-                };
-                if path.is_empty() {
-                    self.ok(ident, json!({"cancelled": true}));
-                    return Ok(());
-                }
-                self.remember_folder(&path, true);
-                match self.open_folder(&path).and_then(|mut folder| {
-                    folder
-                        .call("hello", &json!({}))
-                        .map(|hello| (folder, hello))
-                }) {
-                    Ok((folder, hello)) => {
-                        self.close_folder();
-                        let mut result = if hello.is_object() { hello } else { json!({}) };
-                        result["token"] = json!(folder.token);
-                        self.folder = Some(folder);
-                        self.ok(ident, result);
-                    }
-                    Err(reason) => self.ok(
-                        ident,
-                        json!({"status": "unavailable", "provider": "linux", "reason": reason}),
-                    ),
-                }
+                let start = self.start_folder();
+                self.start_pick(Pick::Folder { ident: ident.to_string() }, false, "", "Open", true, start);
             }
             "folder.call" | "folder.close" => {
                 if self.folder.as_ref().map(|f| f.token.as_str())
@@ -1283,34 +1358,8 @@ impl Host {
             }
             "file.open" => {
                 let compare = str_of(args, "purpose") == "compare";
-                let path = match portal::pick(
-                    false,
-                    "",
-                    if compare { "Compare with" } else { "Open" },
-                    false,
-                    &self.start_folder(),
-                ) {
-                    Ok(path) => path,
-                    Err(reason) => {
-                        // The page names this case (no_file_chooser) instead of "could not open that file".
-                        let message = json!({"type": "response", "id": ident, "ok": false, "error": reason, "code": "no_file_chooser"});
-                        self.post("host", message);
-                        return Ok(());
-                    }
-                };
-                if path.is_empty() {
-                    self.ok(ident, json!({"cancelled": true}));
-                    return Ok(());
-                }
-                self.remember_folder(&path, false);
-                if compare {
-                    self.begin_intake(&path, "compare").map_err(|e| e.to_string())?;
-                    self.ok(ident, json!({"started": true}));
-                } else {
-                    // The chosen file opens as any other does (open_path): the page's own request has nothing to wait for.
-                    self.ok(ident, json!({"cancelled": true}));
-                    self.open_path(files::normalize(Path::new(&path)).to_string_lossy().into_owned());
-                }
+                let start = self.start_folder();
+                self.start_pick(Pick::Open { ident: ident.to_string(), compare }, false, "", if compare { "Compare with" } else { "Open" }, false, start);
             }
             "file.readCurrent" => {
                 let current = self
@@ -1595,7 +1644,7 @@ impl Host {
                     let message = error.to_string();
                     self.event(
                         "file.openFailed",
-                        json!({"name": basename(&path), "error": message, "message": message}),
+                        json!({"name": shown_name(&path), "error": message, "message": message}),
                     );
                 }
             }
@@ -1681,7 +1730,7 @@ impl Host {
         let binary =
             purpose != "compare" && BINARY.iter().any(|ext| path.to_lowercase().ends_with(ext));
         self.post("intake", json!({"type": "begin", "id": self.intake_id, "deliveryGeneration": self.delivery, "generation": frame,
-            "name": basename(&path), "path": path, "documentAuthority": authority, "fileGeneration": generation, "purpose": purpose, "binary": binary}));
+            "name": shown_name(&path), "path": path, "documentAuthority": authority, "fileGeneration": generation, "purpose": purpose, "binary": binary}));
         self.intake = Some(Intake {
             id: self.intake_id,
             delivery: self.delivery,
@@ -1740,6 +1789,7 @@ impl Host {
         };
         let frame = crate::random_hex(16);
         self.transfer = Some(Transfer {
+            chosen: str_of(args, "chosenDestination"),
             request_id,
             purpose,
             name,
@@ -1767,13 +1817,156 @@ impl Host {
             return Err("transfer request does not match".into());
         }
         let session = self.transfer.take().unwrap();
-        let picked = session.purpose != "saveInPlace";
+        if session.purpose == "saveInPlace" {
+            return self.complete_transfer(session, None, false);
+        }
+        // The chooser shows off the host's loop; the save finishes when it answers (complete_transfer) and the page hears
+        // it as the save result.
+        // The person already chose (save.choose): the bytes go there, and no second chooser opens.
+        if !session.chosen.is_empty() {
+            return match self.chosen_saves.remove(&session.chosen) {
+                Some((path, unchosen)) => self.complete_transfer(session, Some(Ok(path)), unchosen),
+                None => {
+                    self.save_result(&session, "failed", false, "the chosen destination is no longer known", "", "", false, false, "");
+                    Ok(json!({"accepted": true, "picker": true}))
+                }
+            };
+        }
+        let folder = self.start_folder();
+        let name = free_copy_name(&folder, &session.name);
+        self.start_pick(Pick::Save(session), true, &name, "Save as", false, folder);
+        Ok(json!({"accepted": true, "picker": true}))
+    }
+
+    /// Show the desktop's file chooser on a thread of its own, so one window's open dialog never holds up the others;
+    /// `on_picked` continues with its answer.
+    fn start_pick(&mut self, what: Pick, save: bool, name: &str, title: &'static str, directory: bool, start: PathBuf) {
+        self.next_pick += 1;
+        let id = self.next_pick;
+        self.picks.insert(id, (self.session.clone(), what));
+        let events = self.events.clone();
+        let name = name.to_string();
+        // On X11 the chooser is made transient for this browser's window (on Wayland the parent is the browser's to export: "").
+        let parent = if self.x11 { portal::x11_parent(self.browser.id()) } else { String::new() };
+        std::thread::spawn(move || {
+            let _ = events.send(Event::Picked(id, portal::pick(save, &name, title, directory, &start, &parent)));
+        });
+    }
+
+    fn on_picked(&mut self, id: u64, result: Result<String, String>) {
+        let Some((session, what)) = self.picks.remove(&id) else { return };
+        // The window that asked closed while its chooser was up: nothing is waiting for the answer.
+        let Some(session) = session else { return };
+        if !self.swap_to(&session) {
+            return;
+        }
+        match what {
+            Pick::Open { ident, compare } => {
+                if let Err(error) = self.file_chosen(&ident, compare, result) {
+                    self.respond(&ident, false, Value::Null, &error);
+                }
+            }
+            Pick::Folder { ident } => {
+                if let Err(error) = self.folder_chosen(&ident, result) {
+                    self.respond(&ident, false, Value::Null, &error);
+                }
+            }
+            Pick::Save(transfer) => {
+                let _ = self.complete_transfer(transfer, Some(result), false);
+            }
+            Pick::SaveName { ident, name } => self.name_chosen(&ident, &name, result),
+        }
+    }
+
+    /// The answer to save.choose: where the document goes (a token the transfer names), or that the person canceled. With no file
+    /// chooser on this desktop the copy goes beside the open file, as a save always did, and the page says where.
+    fn name_chosen(&mut self, ident: &str, wanted: &str, result: Result<String, String>) {
+        let (path, unchosen) = match result {
+            Ok(path) if path.is_empty() => {
+                self.ok(ident, json!({"cancelled": true}));
+                return;
+            }
+            Ok(path) => {
+                self.remember_folder(&path, false);
+                (files::normalize(Path::new(&path)).to_string_lossy().into_owned(), false)
+            }
+            Err(reason) => {
+                let folder = self.beside().unwrap_or_else(files::documents_dir);
+                if std::fs::create_dir_all(&folder).is_err() {
+                    let message = json!({"type": "response", "id": ident, "ok": false, "error": reason, "code": "no_file_chooser"});
+                    self.post("host", message);
+                    return;
+                }
+                self.saved_where = Some(files::shown(&folder));
+                (files::unused_name(&folder, wanted).to_string_lossy().into_owned(), true)
+            }
+        };
+        let token = crate::random_hex(16);
+        let name = shown_name(&path);
+        self.chosen_saves.insert(token.clone(), (path, unchosen));
+        self.ok(ident, json!({"token": token, "name": name}));
+    }
+
+    fn folder_chosen(&mut self, ident: &str, result: Result<String, String>) -> Result<(), String> {
+        let path = match result {
+            Ok(path) => path,
+            Err(reason) => {
+                self.ok(ident, json!({"status": "unavailable", "provider": "linux", "reason": reason}));
+                return Ok(());
+            }
+        };
+        if path.is_empty() {
+            self.ok(ident, json!({"cancelled": true}));
+            return Ok(());
+        }
+        self.remember_folder(&path, true);
+        match self.open_folder(&path).and_then(|mut folder| folder.call("hello", &json!({})).map(|hello| (folder, hello))) {
+            Ok((folder, hello)) => {
+                self.close_folder();
+                let mut result = if hello.is_object() { hello } else { json!({}) };
+                result["token"] = json!(folder.token);
+                self.folder = Some(folder);
+                self.ok(ident, result);
+            }
+            Err(reason) => self.ok(ident, json!({"status": "unavailable", "provider": "linux", "reason": reason})),
+        }
+        Ok(())
+    }
+
+    fn file_chosen(&mut self, ident: &str, compare: bool, result: Result<String, String>) -> Result<(), String> {
+        let path = match result {
+            Ok(path) => path,
+            Err(reason) => {
+                // The page names this case (no_file_chooser) instead of "could not open that file".
+                let message = json!({"type": "response", "id": ident, "ok": false, "error": reason, "code": "no_file_chooser"});
+                self.post("host", message);
+                return Ok(());
+            }
+        };
+        if path.is_empty() {
+            self.ok(ident, json!({"cancelled": true}));
+            return Ok(());
+        }
+        self.remember_folder(&path, false);
+        if compare {
+            self.begin_intake(&path, "compare").map_err(|e| e.to_string())?;
+            self.ok(ident, json!({"started": true}));
+        } else {
+            // The chosen file opens as any other does (open_path): the page's own request has nothing to wait for.
+            self.ok(ident, json!({"cancelled": true}));
+            self.open_path(files::normalize(Path::new(&path)).to_string_lossy().into_owned());
+        }
+        Ok(())
+    }
+
+    /// The rest of a save: `pick` is the chooser's answer for a Save As (None for a save in place).
+    fn complete_transfer(&mut self, session: Transfer, pick: Option<Result<String, String>>, forced_unchosen: bool) -> Result<Value, String> {
+        let picked = pick.is_some();
         // No file chooser on this desktop (no xdg-desktop-portal): a person can still save. The copy goes beside the open
         // file, or into Documents, under a name nothing has, and the page says where.
-        let mut unchosen = false;
-        let destination = if picked {
-            let folder = self.start_folder();
-            let chosen = match portal::pick(true, &free_copy_name(&folder, &session.name), "Save as", false, &folder) {
+        let mut unchosen = forced_unchosen;
+        let destination = if let Some(pick) = pick {
+            let chosen = match pick {
                 Ok(chosen) => chosen,
                 Err(reason) => {
                     let folder = self.beside().unwrap_or_else(files::documents_dir);
@@ -1846,7 +2039,10 @@ impl Host {
                     .unwrap_or_default();
                 let named = session.file_generation.as_str().filter(|g| !g.is_empty());
                 if actual != expected || named.map(|g| g != actual).unwrap_or(false) {
-                    if !actual.is_empty() {
+                    // The page says why: changed (it compares or reloads) or moved or deleted (Save As keeps it).
+                    if actual.is_empty() {
+                        self.event("file.changed", json!({"path": destination, "documentAuthority": session.authority, "missing": true}));
+                    } else {
                         self.event("file.changed", json!({"path": destination, "documentAuthority": session.authority, "fileGeneration": actual}));
                     }
                     return Err(std::io::Error::other(if actual.is_empty() {
@@ -1886,6 +2082,12 @@ impl Host {
                     }
                 } else if error.kind() == std::io::ErrorKind::PermissionDenied {
                     if error.to_string() == READ_ONLY_FOLDER { "read_only_folder" } else { "read_only" }
+                } else if !picked && error.to_string() == "the file changed outside Rapier" {
+                    // The page's own words for it (a file changed or deleted since it was opened), not "save failed".
+                    "external_file_changed"
+                } else if !picked && error.to_string().starts_with("could not verify the source") {
+                    // A deleted file: the page's own "File moved or deleted" notice comes with file.changed (missing).
+                    "external_file_changed"
                 } else {
                     ""
                 };
@@ -1956,7 +2158,7 @@ impl Host {
         let mut detail = json!({"requestId": session.request_id, "purpose": session.purpose, "documentAuthority": session.authority,
             "documentGeneration": session.document_generation, "documentRevision": session.document_revision, "payloadLength": session.length,
             "payloadDigest": session.digest, "status": status, "ok": ok, "verified": ok, "bindingPublished": published,
-            "destinationName": if path.is_empty() { String::new() } else { basename(path) }, "destinationSelected": selected});
+            "destinationName": if path.is_empty() { String::new() } else { shown_name(path) }, "destinationSelected": selected});
         if !code.is_empty() {
             detail["errorCode"] = json!(code);
         }
@@ -2027,9 +2229,37 @@ fn read_browser(mut reader: File, events: Sender<Event>) {
     }
 }
 
+/// The window number a new window takes. A file whose window closed with unsaved work gets that window's number back,
+/// so the page offers the kept draft there; any other window takes the lowest free number from 2 that holds no draft
+/// (`kept(n)` is the file a closed window left unsaved), so one file's draft is never offered over another's.
+fn next_slot(path: Option<&str>, open: &[u32], kept: impl Fn(u32) -> Option<String>) -> u32 {
+    let same = |held: &str| path.is_some_and(|p| files::normalize(Path::new(p)) == files::normalize(Path::new(held)));
+    let past = open.iter().copied().max().unwrap_or(1) + (1 << 8);
+    if let Some(n) = (1..past).find(|n| !open.contains(n) && kept(*n).is_some_and(|held| !held.is_empty() && same(&held))) {
+        return n;
+    }
+    (2..).find(|n| !open.contains(n) && kept(*n).is_none()).unwrap_or(2)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_reopened_file_takes_its_kept_draft_back() {
+        let kept = |n: u32| match n {
+            1 => Some("/work/a.md".to_string()),
+            3 => Some("/work/c.md".to_string()),
+            _ => None,
+        };
+        // a.md's window (1) closed with unsaved work and b.md's (2) is open: a.md goes back to 1.
+        assert_eq!(next_slot(Some("/work/a.md"), &[2], kept), 1);
+        // A file with no draft skips the slot holding c.md's (3), and slot 1 is never handed out again.
+        assert_eq!(next_slot(Some("/work/d.md"), &[2], kept), 4);
+        assert_eq!(next_slot(None, &[], |_| None), 2);
+        // A draft whose window is open is not taken.
+        assert_eq!(next_slot(Some("/work/a.md"), &[1, 2], kept), 4);
+    }
 
     #[test]
     fn copy_names() {

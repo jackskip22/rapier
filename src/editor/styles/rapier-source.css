@@ -1604,6 +1604,16 @@ body.light .compare-mark--add { background: color-mix(in srgb, var(--color-succe
 	justify-content: center;
 	text-align: center;
 }
+@media (pointer: fine) {
+	.settings-primary-actions .settings-action-btn[data-keys] { flex-direction: column; justify-content: center; gap: 1px; padding-block: 0; line-height: 1.2; }
+	.settings-primary-actions .settings-action-btn[data-keys]::after {
+		content: attr(data-keys) / "";
+		color: var(--color-text-muted);
+		font-size: 11px;
+		font-weight: var(--fw-regular);
+		letter-spacing: .055em;
+	}
+}
 .settings-action-btn,
 .link-dialog__btn {
 	display: flex;
@@ -1907,7 +1917,8 @@ html[data-rapier-sealed] #settings-start-section, html[data-rapier-sealed] #note
 }
 
 
-.editor-area--read .block-read { cursor: default; border-color: transparent !important; }
+.editor-area--read .block-read { border-color: transparent !important; }
+html[data-readonly="on"] .editor-area--read .block-read { cursor: default; }
 
 
 

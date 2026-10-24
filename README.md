@@ -12,8 +12,13 @@ Free and offline, with no ads, tracking or Rapier account.
 - **On Android:** get Rapier on [Google Play](https://play.google.com/store/apps/details?id=app.rapier). The app
   has no Internet permission. Optional add-ons download from Google Play on first use.
 - **On Windows:** download [Rapier.exe](https://github.com/jackskip22/rapier/raw/main/Rapier.exe) (version 1.2.30), the whole app in one file, and run it. If SmartScreen warns, choose **More info**, then **Run anyway**.
-- **On Linux (x86_64):** download [rapier-linux](https://github.com/jackskip22/rapier/raw/main/rapier-linux) (version 1.2.37), the whole app in one file. Run `chmod +x rapier-linux && ./rapier-linux --install` once to add Rapier to your launcher; it opens as an app window in your Chromium-based browser. [Requirements](src/linux/README.md).
-- **With an agent:** the Claude plugin, ChatGPT or another MCP client at `https://mcp.rapier.website/mcp`.
+- **On Linux (x86_64):** download [rapier-linux](https://github.com/jackskip22/rapier/raw/main/rapier-linux) (version 1.2.38), the whole app in one file. Run `chmod +x rapier-linux && ./rapier-linux --install` once to add Rapier to your launcher; it opens as an app window in your Chromium-based browser. [Requirements](src/linux/README.md).
+- **With an agent:** the Claude plugin, Grok Bot or another MCP client at `https://mcp.rapier.website/door/mcp`; ChatGPT at `https://mcp.rapier.website/openai/mcp`.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/rapier-dark.png">
+  <img src="docs/rapier-light.png" alt="Rapier on a computer: a launch plan with an agent's change marked, a numbered list and a diagram of three connected boxes" width="960">
+</picture>
 
 ## What it does
 
@@ -22,7 +27,7 @@ Free and offline, with no ads, tracking or Rapier account.
 - **Pictures.** Stored inside the `.md` file. New pictures use JPEG XL from
   [Rapier's own encoder](https://github.com/jackskip22/rapier-jxl). Text can wrap around a picture's shape.
 - **Draw.** Editable SVG: pen, brush, shapes, arrows that stay attached, and text.
-- **Paint.** MyPaint brushes, smudge and blend. Water is watercolor that mixes, flows and dries on textured paper.
+- **Paint.** Oil, pencil, marker and MyPaint brushes, smudge and blend. Watercolor mixes, flows and dries on textured paper.
 - **Notes.** One Markdown file per note, with colors, pins, checklists, voice recordings, links, history, and
   search that reads text in pictures. Import from Google Keep, Apple Notes, Evernote, Notion, Obsidian, Joplin and other note apps. Back up
   as a ZIP file, or sync plain Markdown files to your own cloud storage. Android adds reminders and a home-screen
@@ -86,7 +91,8 @@ const editor = Rapier.mount(document.querySelector('#editor'), {
 
 Rapier writes CommonMark plus conventions other editors already read, with pictures inside the file. See
 [the standard](docs/markdown-standard.md), [what other readers show](docs/markdown-profile.md) and
-[adopting it](docs/standard-adoption.md).
+[adopting it](docs/standard-adoption.md). [Examples](examples/): the welcome as a web page.
+Open it in Rapier to edit its Markdown.
 
 ## Source and self-hosting
 

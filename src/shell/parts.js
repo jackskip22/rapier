@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 const RapierParts = (() => {
 	const PINS = /* RAPIER_PARTS */ null;
-	const CDN = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.37/';
+	const CDN = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier@v1.2.38/';
 	const PART_DIRECTORY = 'parts/';
 	const pins = new Map((PINS || []).map((pin, order) => [pin.id, {...pin, order}]));
 	const runs = new Map(), states = new Map(), kept = new Set(), updates = new Map(), noted = new Set();
@@ -38,12 +38,12 @@ const RapierParts = (() => {
 			return null;
 		}
 	}
-	async function fetched(pin) {
+	async function fetched(pin, quiet = false) {
 		const hosted = RapierBundleIO.hostedUrl(pin.file) || RapierBundleIO.pluginUrl(pin.file);
 		const urls = hosted ? [hosted] : [RapierBundleIO.sameOriginUrl(PART_DIRECTORY + pin.file), CDN + PART_DIRECTORY + pin.file].filter(Boolean);
 		let failure = null;
 		for (const url of urls) {
-			const onBytes = at => say(pin.id, 'downloading', null, at / pin.bytes);
+			const onBytes = quiet ? undefined : at => say(pin.id, 'downloading', null, at / pin.bytes);
 			try { return await verified(pin, await RapierBundleIO.fetchBytes(url, 60000, {length: pin.bytes, cache: 'no-store', onBytes}), RapierBundleIO.shortUrl(url)); }
 			catch (error) {
 				if (!/SHA-384|unexpected size/.test(String(failure?.message))) failure = error;
@@ -72,7 +72,8 @@ const RapierParts = (() => {
 		}
 		if (!bytes) {
 			say(pin.id, 'downloading');
-			bytes = await fetched(pin);
+			const early = pin.warmed; pin.warmed = null;
+			bytes = await early?.catch(() => null) || await fetched(pin);
 			if (!await store().put(pin.file, {bytes, savedAt: Date.now(), format: pin.format || FORMAT, sri: pin.sri, size: pin.bytes}).catch(() => false)) return bytes;
 			updates.delete(pin.id);
 		}
@@ -170,13 +171,20 @@ const RapierParts = (() => {
 	async function check(id) {
 		const pin = pins.get(id);
 		if (!pin || runs.has(id) || carried(pin)) return RapierParts.status(id);
-		const record = local() ? null : await store().get(pin.file).catch(() => null);
-		if (record?.bytes) kept.add(id);
-		const other = local() || record?.bytes ? null : await older(pin).catch(() => null);
+		const here = local() ? false : await store().has(pin.file).catch(() => false);
+		if (here) kept.add(id);
+		const other = local() || here ? null : await older(pin).catch(() => null);
 		if (other) { updates.set(id, other.readable ? {bytes: pin.bytes} : {bytes: pin.bytes, required: true}); if (other.readable) kept.add(id); }
 		else updates.delete(id);
-		if (!runs.has(id)) say(id, local() ? 'carried' : record?.bytes ? 'stored' : other?.readable ? 'stored' : 'absent');
+		if (!runs.has(id)) say(id, local() ? 'carried' : here ? 'stored' : other?.readable ? 'stored' : 'absent');
 		return states.get(id);
+	}
+	function warm(id) {
+		const pin = pins.get(id);
+		if (!pin || local() || sealed() || carried(pin) || runs.has(id) || pin.held || pin.warmed || kept.has(id)) return false;
+		pin.warmed = fetched(pin, true);
+		pin.warmed.catch(() => { pin.warmed = null; });
+		return true;
 	}
 	return Object.freeze({
 		has: id => pins.has(id),
@@ -185,6 +193,6 @@ const RapierParts = (() => {
 		ids: () => [...pins.keys()],
 		pin: id => pins.has(id) ? {id, label: pins.get(id).label, file: pins.get(id).file, bytes: pins.get(id).bytes, sri: pins.get(id).sri} : null,
 		deletable: id => kept.has(id),
-		need, check, forget, update, element, sealed,
+		need, check, warm, forget, update, element, sealed,
 	});
 })();

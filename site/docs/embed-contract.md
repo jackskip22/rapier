@@ -305,7 +305,7 @@ Extra envelope or payload fields refuse. An invalid envelope, wrong identity or 
 
 | Command | Allowed payload | Additional existing owner checks |
 |---|---|---|
-| `load` | Required string `content`; optional `filename`, `revision`, `readOnly`, `title`, `baseUrl`. A valid revision must come from payload or envelope (the helper's `load()` supplies one when you give none). `baseUrl` is an absolute https address that relative pictures in this document are read from; anything else is `load-nack` `invalid_base_url`. | Codec/text limit, loaded identity, dirty document, transition and revision guards |
+| `load` | Required string `content`; optional `filename`, `revision`, `readOnly`, `title`, `baseUrl`. A valid revision must come from payload or envelope (the helper's `load()` supplies one when you give none). `baseUrl` is an absolute https address (http on localhost too) that relative pictures in this document are read from; anything else is `load-nack` `invalid_base_url`. | Codec/text limit, loaded identity, dirty document, transition and revision guards |
 | `compare` | Required string `content`; optional `filename` | Loaded/available comparison, canonical codec and transaction guards |
 | `save` | Empty/omitted | `read` grant; a loaded, editable document (`not_loaded`, `read_only`); a settled capture within the limit. A save that sends no `save-request` gets `protocol-error` (`document_too_large` or `save_unavailable`) |
 | `save-ack` | Required advancing `revision` | Must match the actual pending **save-request** ID and base revision; saved bookkeeping cannot erase newer edits |

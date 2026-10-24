@@ -1,0 +1,96 @@
+{
+ "comment": "MyPaint brush file",
+ "version": 3,
+ "description": "Soft",
+ "notes": "A soft round for glazes and light: an airbrush-like edge, and paint that builds up with each pass and with the press.\n\nAuthor: Rapier\nLicense: AGPL-3.0-only",
+ "parent_brush_name": "Rapier/Soft",
+ "group": "Rapier",
+ "settings": {
+  "anti_aliasing": {
+   "base_value": 1,
+   "inputs": {}
+  },
+  "paint_mode": {
+   "base_value": 0,
+   "inputs": {}
+  },
+  "slow_tracking": {
+   "base_value": 1.2,
+   "inputs": {}
+  },
+  "dabs_per_actual_radius": {
+   "base_value": 16,
+   "inputs": {}
+  },
+  "direction_filter": {
+   "base_value": 2,
+   "inputs": {}
+  },
+  "opaque": {
+   "base_value": 1,
+   "inputs": {}
+  },
+  "opaque_multiply": {
+   "base_value": 0,
+   "inputs": {
+    "pressure": [
+     [
+      0,
+      0.25
+     ],
+     [
+      0.5,
+      0.6
+     ],
+     [
+      1,
+      0.85
+     ]
+    ]
+   }
+  },
+  "radius_logarithmic": {
+   "base_value": 3.3,
+   "inputs": {
+    "pressure": [
+     [
+      0,
+      -0.15
+     ],
+     [
+      1,
+      0.1
+     ]
+    ]
+   }
+  },
+  "hardness": {
+   "base_value": 0.05,
+   "inputs": {}
+  },
+  "opaque_linearize": {
+   "base_value": 0,
+   "inputs": {}
+  },
+  "softness": {
+   "base_value": 0,
+   "inputs": {}
+  },
+  "dabs_per_second": {
+   "base_value": 25,
+   "inputs": {}
+  },
+  "rapier_bell": {
+   "base_value": 1,
+   "inputs": {}
+  },
+  "rapier_stroke_cap": {
+   "base_value": 1,
+   "inputs": {}
+  },
+  "rapier_airbrush": {
+   "base_value": 1,
+   "inputs": {}
+  }
+ }
+}

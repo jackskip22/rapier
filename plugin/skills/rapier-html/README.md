@@ -2,7 +2,7 @@
 
 Turn Markdown into one offline HTML file that contains the full Rapier editor. It opens in any browser, on a phone or
 computer, with no account. People read, edit, draw and paint; agents hand over documents, show what changed and get
-the edited copy back. Start with `npx rapier-html@1.2.37 notes.md`.
+the edited copy back. Start with `npx rapier-html@1.2.38 notes.md`.
 
 The file needs no hosted workspace.
 
@@ -17,14 +17,14 @@ The file needs no hosted workspace.
 Needs Node 22 or newer.
 
 ```sh
-npx -- rapier-html@1.2.37 notes.md                          # the editor, notes.md inside it, written beside the file
-npx -- rapier-html@1.2.37 notes.md --view draw              # opens on Draw: sketch and paint, the document behind it
-npx -- rapier-html@1.2.37 notes.md --include draw,math     # carries Draw and Math (default: what the document needs)
-npx -- rapier-html@1.2.37 notes.md --drawing sketch.svg     # carries a drawing, opened on Draw over the document
-npx -- rapier-html@1.2.37 revised.md --compare original.md # opens showing what changed
-npx -- rapier-html@1.2.37 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT" # Send back
-npx -- rapier-html@1.2.37 notes.md out.html                 # a named output
-npm install rapier-html@1.2.37                              # as a library: writePage, unwrap
+npx -- rapier-html@1.2.38 notes.md                          # the editor, notes.md inside it, written beside the file
+npx -- rapier-html@1.2.38 notes.md --view draw              # opens on Draw: sketch and paint, the document behind it
+npx -- rapier-html@1.2.38 notes.md --include draw,math     # carries Draw and Math (default: what the document needs)
+npx -- rapier-html@1.2.38 notes.md --drawing sketch.svg     # carries a drawing, opened on Draw over the document
+npx -- rapier-html@1.2.38 revised.md --compare original.md # opens showing what changed
+npx -- rapier-html@1.2.38 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT" # Send back
+npx -- rapier-html@1.2.38 notes.md out.html                 # a named output
+npm install rapier-html@1.2.38                              # as a library: writePage, unwrap
 ```
 
 The first `--` is for npm, so `--help` reaches the command. It never overwrites a file.
