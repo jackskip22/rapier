@@ -4,11 +4,9 @@ import {coefficientEffortSteps} from '../coefficient-effort.mjs';
 import {coefficientAnsSteps} from '../coefficient-ans.mjs';
 import {complete} from '../bits.mjs';
 import {ssimulacra2, linearFromRGBA} from './ssimulacra2.mjs';
-import {trellisQuantize} from './trellis.mjs';
 
 export function encodeWithField(rgba, width, height, quality, fieldScale, effort = 7, tune, extra = {}) {
-  const image = complete(photoXYBSteps(rgba, width, height, quality, {fieldScale, tune, ...extra, keepValues: !!extra.trellis}));
-  if (extra.trellis) { trellisQuantize(image, extra.trellis); delete image.values; }
+  const image = complete(photoXYBSteps(rgba, width, height, quality, {fieldScale, tune, ...extra}));
   const stride = Math.ceil(width / 8), rows = Math.ceil(height / 8), nonzero = new Uint16Array(stride * rows), cost = new Float32Array(stride * rows);
   for (const comp of image.components) for (let b = 0; b < stride * rows; b++) {
     const at = b * 64;

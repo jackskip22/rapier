@@ -3619,16 +3619,9 @@ function fromBase64(ascii) {
 }
 const animationOf = image => /^data:image\/gif;base64,/i.test(image.getAttribute('data-rapier-animation') || '') ? image.getAttribute('data-rapier-animation') : null;
 function decodeDataUrl(url) {
-  const text = String(url || '').trim(), match = /^data:(image\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/]+=*)$/i.exec(text);
-  if (match) return {type: match[1].toLowerCase(), bytes: fromBase64(match[2])};
-  const info = dataImage(text);
-  if (info?.encoding !== 'percent') return null;
-  const bytes = new Uint8Array(info.byteLength);
-  for (let at = info.payloadStart, out = 0; at < text.length; at++, out++) {
-    if (text[at] === '%') { bytes[out] = parseInt(text.slice(at + 1, at + 3), 16); at += 2; }
-    else bytes[out] = text.charCodeAt(at);
-  }
-  return {type: info.codec, bytes};
+  const match = /^data:(image\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/]+=*)$/i.exec(String(url || '').trim());
+  if (!match) return null;
+  return {type: match[1].toLowerCase(), bytes: fromBase64(match[2])};
 }
 const INLINE_TAGS = new Set(['STRONG', 'B', 'EM', 'I', 'U', 'INS', 'DEL', 'S', 'STRIKE', 'MARK', 'CODE', 'A', 'SPAN', 'SUB', 'SUP', 'ABBR', 'IMG', 'INPUT', 'BR', 'KBD', 'SAMP', 'SMALL', 'MATH', 'math']);
 const wordFamily = value => {

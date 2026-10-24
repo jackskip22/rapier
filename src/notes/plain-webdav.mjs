@@ -143,26 +143,22 @@ function webDAVPlainStore(options, shared = null) {
 				}
 				if (reports) refuse('cursor', 'the WebDAV server did not finish its sync report');
 			}
-			const root = await listing(folder, 1);
-			if (!root?.some(row => row.parts.length === folder.length && row.collection === true))
-				refuse('missing_root', 'the connected WebDAV folder is missing');
-			const next = new Map(), staged = new Map(root.map(row => [row.parts.join('/'), row]));
-			for (const name of ['attachments', 'audio']) {
-				const parts = [...folder, name], key = parts.join('/'), was = fallback.get(key);
-				const child = staged.get(key);
-				if (!child) continue;
-				if (child.collection !== true) refuse('listing', 'a media folder is not a collection');
-				const found = child.ctag && child.ctag === was?.ctag ? was.rows : await listing(parts, 1) || [];
-				const ctag = found.find(row => row.parts.length === parts.length && row.collection === true)?.ctag;
+			const next = new Map(), staged = new Map();
+			for (const parts of [folder, [...folder, 'attachments'], [...folder, 'audio']]) {
+				const key = parts.join('/'), was = fallback.get(key);
+				let found, ctag;
+				if (was?.ctag) {
+					const self = (await listing(parts, 0))?.find(row => row.parts.length === parts.length);
+					ctag = self?.ctag;
+					if (ctag && ctag === was.ctag) found = was.rows;
+				}
+				if (!found) {
+					found = await listing(parts, 1);
+					if (!found && parts === folder) refuse('missing_root', 'the connected WebDAV folder is missing');
+					found ||= []; ctag = found.find(row => row.parts.length === parts.length)?.ctag;
+				}
 				for (const row of found) staged.set(row.parts.join('/'), row);
 				next.set(key, {rows: found, ctag});
-			}
-			for (const row of staged.values()) {
-				if (row.collection === null) refuse('listing', 'the WebDAV listing is incomplete');
-				if (row.collection === false) {
-					const tag = /^[\x21\x23-\x7e\x80-\xff]+$/.test(row.etag || '') ? '"' + row.etag + '"' : row.etag;
-					if (!isStrongWebDAVETag(tag)) refuse('etag', 'the WebDAV listing gave no strong ETag');
-				}
 			}
 			http.check(); fallback = next; rows = staged;
 		};

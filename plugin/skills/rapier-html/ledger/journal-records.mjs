@@ -293,7 +293,6 @@ function _rapierWalkHistoryEffects(records, lookup, visit = null, observe = null
 				}
 			}
 			if (refs.some(id => typeof id !== 'string' || !nodes.has(id) || pictures.has(id))) return {ok: false};
-			if (tx.actor?.kind === 'agent' && refs.some(id => byId.get(id).transaction.actor?.kind !== 'agent')) return {ok: false};
 			nodes.set(tx.id, {active: true, blockers: 0, references: refs, dependents: []}); references.set(tx.id, refs.slice());
 			byId.set(tx.id, record); earlier.push(record);
 			for (const ref of refs) {

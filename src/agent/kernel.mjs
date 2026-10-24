@@ -9,7 +9,7 @@ import {agentActorId} from '../kit/ledger/format.mjs';
 import {transportInterval, transportTouchedInterval} from '../kit/ledger/merge.mjs';
 import {authoredSourceReader} from '../kit/ledger/transport.mjs';
 // Rapier shared document kernel. SPDX-License-Identifier: AGPL-3.0-only.
-import { parseWill, willTransition, willOffsetBefore as markerOffsetBefore, willMarkerOf, willRegionsIn, willTouchesMarker, willGovern, willIntentOf, stripOneTerminator } from './will.mjs';
+import { parseWill, willMarkerOf, willRegionsIn, willTouchesMarker, willGovern, willIntentOf, stripOneTerminator } from './will.mjs';
 import { diff } from '../packages/rapier-diff/index.mjs';
 import { summary as summarize } from '../packages/rapier-diff/summary.mjs';
 import { outlineMarkdown, structureMarkdown } from './markdown.mjs';
@@ -619,6 +619,13 @@ export function inkDeletionSplices(before, after, splices, actor = 'human', mark
   return markerDeletionSplices(before, after, splices, actor, 'ink', markers);
 }
 
+function markerOffsetBefore(rows, offset) {
+  for (let index = rows.length - 1; index >= 0 && offset >= 0; index--) {
+    const { pos, removed, inserted } = rows[index];
+    if (offset >= pos) offset = offset >= pos + inserted.length ? offset - inserted.length + removed.length : -1;
+  }
+  return offset;
+}
 
 function markerTextOffsets(markers) {
   const offsets = new Map();
@@ -719,6 +726,17 @@ function pendingAssetSplices(text, drawAssets) {
   return additions;
 }
 
+export function willRestores(restores, region, splices) {
+  if (!Array.isArray(restores) || region.law !== 'append') return null;
+  const reaching = splices.filter(row => row.pos <= region.end && row.pos + row.removed.length >= region.start && (row.removed || row.inserted))
+    .toSorted((a, b) => a.pos - b.pos);
+  if (!reaching.length || reaching.some((row, i) => row.pos < region.start || row.pos + row.removed.length > region.end ||
+      (i && row.pos !== reaching[i - 1].pos + reaching[i - 1].removed.length) ||
+      !restores.includes(row)) ||
+      !/^(?:\r\n|\r|\n)?$/.test(region.text.slice(reaching.at(-1).pos + reaching.at(-1).removed.length - region.start))) return null;
+  return reaching;
+}
+
 export function enforceWillReferences(beforeText, afterText, {before = parseWill(beforeText), after = parseWill(afterText),
   restored = new Map(), bodyOnly = false, referenceCheck} = {}) {
   const regions = [];
@@ -750,17 +768,47 @@ export function enforceWillReferences(beforeText, afterText, {before = parseWill
 
 const lawBounds = region => ({start: region.start, end: region.end});
 const willFaults = will => will.faults.slice(0, 4).map(fault => ({ mode: fault.mode, line: fault.line }));
-export function enforceWill(beforeText, afterText, splices, {docKind = 'markdown', actor = 'agent', referenceCheck, markerSplices = splices} = {}) {
+export function enforceWill(beforeText, afterText, splices, { docKind = 'markdown', actor = 'agent', restores = null, referenceCheck, markerSplices = splices } = {}) {
   if (actor !== 'agent' || docKind !== 'markdown') return null;
-  const refusal = willTransition(beforeText, afterText, splices, markerSplices);
-  if (refusal) return refusal;
   const before = parseWill(beforeText), after = parseWill(afterText);
   if (!before.present && !after.present) return null;
+  if (before.faults.length) return { law: 'keep', rule: 'before_faulted', faults: willFaults(before), start: 0, end: beforeText.length };
+  let touched = null;
+  for (let index = 0; index < splices.length; index++) {
+    const row = splices[index], marker = willTouchesMarker(before, row.pos, row.pos + row.removed.length);
+    if (marker && (!touched || (marker.index ?? Infinity) < (touched.region ?? Infinity))) {
+      touched = { law: marker.law, rule: 'marker_span_touched', editIndex: index,
+        ...(safeInt(marker.index) ? { region: marker.index } : {}),
+        ...lawBounds(before.regions[marker.index] || marker) };
+    }
+  }
+  if (touched) return touched;
+  if (after.faults.length) return { law: 'keep', rule: 'result_faulted', faults: willFaults(after), start: 0, end: beforeText.length };
+  if (before.markers.length !== after.markers.length || before.markers.some((marker, index) => {
+      const following = after.markers[index];
+      return marker.kind !== following.kind || beforeText.slice(marker.start, marker.end) !==
+        afterText.slice(following.start, following.end) ||
+        (markerOffsetBefore(markerSplices, following.start) !== marker.start ||
+          markerOffsetBefore(markerSplices, following.end - 1) !== marker.end - 1);
+    })) {
+    return { law: 'keep', rule: 'marker_sequence_mismatch', start: 0, end: beforeText.length };
+  }
+  const restored = new Map();
+  for (let index = 0; index < before.regions.length; index++) {
+    const region = before.regions[index];
+    const was = beforeText.slice(region.start, region.end);
+    const now = afterText.slice(after.regions[index].start, after.regions[index].end);
+    if (region.law === 'keep' && was !== now) return { law: 'keep', rule: 'law_violated', region: index, ...lawBounds(region) };
+    if (region.law !== 'append' || stripOneTerminator(now).startsWith(stripOneTerminator(was))) continue;
+    const reaching = willRestores(restores, {...region, text: was}, splices);
+    if (!reaching) return { law: 'append', rule: 'law_violated', region: index, ...lawBounds(region) };
+    restored.set(index, reaching);
+  }
   let framed;
   try { framed = changedWillFraming(beforeText, afterText, before.regions, after.regions); }
   catch (_) { framed = before.regions.find(region => region.law !== 'edit')?.index ?? null; }
   if (framed != null) return { law: before.regions[framed].law, rule: 'law_violated', region: framed, ...lawBounds(before.regions[framed]) };
-  return enforceWillReferences(beforeText, afterText, {before, after, referenceCheck});
+  return enforceWillReferences(beforeText, afterText, {before, after, restored, referenceCheck});
 }
 
 function overlap(range, splice) {
@@ -4882,14 +4930,12 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       }
       if (result.options.drawingPresentation) options.drawingPresentation = result.options.drawingPresentation;
     }
-    const splices = [], hiddenPlacements = [];
+    const splices = [];
     let definitionsTouched = false;
     for (const range of expandedChanges(projection, mappedPlan)) {
-      let inserted = range.inserted, framing = range.framing, hiddenFrames = [];
+      let inserted = range.inserted, framing = range.framing;
       const replace = (from, until, text) => {
-        const splice = {pos: from, removed: inserted.slice(from, until), inserted: text};
-        framing = keptRangesAfterSplice(framing, splice);
-        hiddenFrames = keptRangesAfterSplice(hiddenFrames, splice);
+        framing = keptRangesAfterSplice(framing, {pos: from, removed: inserted.slice(from, until), inserted: text});
         inserted = inserted.slice(0, from) + text + inserted.slice(until);
       };
       const original = projection.text.slice(range.start, range.end), kept = minimalSplice(original, inserted), placed = [];
@@ -4936,9 +4982,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (inserted.includes('<!-- rapier-asset:')) return failure('asset_marker_unknown', 'invalid');
       for (const row of placed) {
         const at = inserted.indexOf(row.sentinel); if (at < 0) continue;
-        const raw = state.text.slice(row.start, row.end);
-        replace(at, at + row.sentinel.length, raw);
-        hiddenFrames.push({start: at, end: at + raw.length});
+        replace(at, at + row.sentinel.length, state.text.slice(row.start, row.end));
       }
       if (projection.segments.some(row => row.hidden && row.start >= range.pos && row.end <= range.until)) definitionsTouched = true;
       const removed = state.text.slice(range.pos, range.until);
@@ -4978,12 +5022,10 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         splices.push({pos: patched.imageStart, removed: patched.raw, inserted: target[0]});
         const prefix = minimalSplice(removed.slice(0, beforeLength), inserted.slice(0, target.index));
         if (prefix.removed || prefix.inserted) splices.push({...prefix, pos: range.pos + prefix.pos});
-      } else {
-        const narrow = minimalSplice(removed, inserted);
-        splices.push({...narrow, pos: range.pos + narrow.pos});
+        continue;
       }
-      if (hiddenFrames.length) hiddenPlacements.push({after: splices.length,
-        ranges: hiddenFrames.map(row => ({start: range.pos + row.start, end: range.pos + row.end}))});
+      const narrow = minimalSplice(removed, inserted);
+      splices.push({...narrow, pos: range.pos + narrow.pos});
     }
     if (hidden.length && splices.length) {
       const text = transformSplices(state.text, splices);
@@ -4996,26 +5038,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         retained.set(row.source, count - 1);
       }
       if (whole) {
-        let retired = imageDeletionSplices(state.text, text, [{pos: 0, removed: state.text, inserted: text}], who.actor);
-        if (retired.length && !documentAssets(transformSplices(text, retired)).blocks.length) {
-          let spans = hidden.map(({start, end}) => ({start, end}));
-          for (const row of splices) spans = keptRangesAfterSplice(spans, row);
-          for (const placement of hiddenPlacements) {
-            let ranges = placement.ranges;
-            for (const row of splices.slice(placement.after)) ranges = keptRangesAfterSplice(ranges, row);
-            spans.push(...ranges);
-          }
-          spans = spans.sort((a, b) => a.start - b.start).reduce((rows, row) => {
-            const last = rows.at(-1);
-            if (last && last.end >= row.start) last.end = Math.max(last.end, row.end);
-            else if (row.end > row.start) rows.push({...row});
-            return rows;
-          }, []);
-          if (documentAssets(text).blocks.some(block => !spans.some(row => row.start <= block.start && row.end >= block.end)))
-            return ambiguous();
-          retired = spans.sort((a, b) => b.start - a.start).map(row =>
-            ({pos: row.start, removed: text.slice(row.start, row.end), inserted: ''}));
-        }
+        const retired = imageDeletionSplices(state.text, text, [{pos: 0, removed: state.text, inserted: text}], who.actor);
         if (retired.length) {options.authoredCount = splices.length; splices.push(...retired);}
       }
     }
@@ -5416,15 +5439,10 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     let next = 0;
     return {...input, changes: input.changes.map(row => {
       if (!row || typeof row !== 'object' || Object.hasOwn(row, 'text')) return row;
-      const at = ranges[next++]?.pos ?? 0;
-      const follow = (value, pos) => value.replace(/\r\n|\r|\n/g, near(pos));
-      if (typeof row.insert === 'string') return {...row, insert: follow(row.insert, at + (row.after?.length || 0))};
-      if (typeof row.old !== 'string' || typeof row.new !== 'string') return row;
-      const edits = diff(row.old, row.new, {_unit: 'char', from: [{pos: 0, removed: row.old, inserted: row.new}]}).edits;
-      let replacement = row.new;
-      for (const edit of edits.toReversed()) if (!edit.coarse)
-        replacement = replacement.slice(0, edit.after[0]) + follow(row.new.slice(...edit.after), at + edit.before[0]) + replacement.slice(edit.after[1]);
-      return {...row, new: replacement};
+      const eol = near(ranges[next++]?.pos ?? 0);
+      const follow = value => typeof value === 'string' ? value.replace(/\r\n|\r|\n/g, eol) : value;
+      return {...row, ...(Object.hasOwn(row, 'new') ? {new: follow(row.new)} : {}), ...(Object.hasOwn(row, 'insert') ? {insert: follow(row.insert)} : {}),
+        ...(Object.hasOwn(row, 'text') ? {text: follow(row.text)} : {})};
     })};
   }
 

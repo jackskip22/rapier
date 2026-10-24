@@ -15,10 +15,6 @@ Build for their hands, and tell them in one line ("Drag any box to rearrange it"
 - Your changes land at once, marked; undo {act} takes back yours and keeps theirs.
   Will marks protect what they want kept.
 - html export is the whole editor with the document inside, editable offline.
-- Handing over a draft: give them a .rapier.html with Send back. show
-  {target:"return"} gives return_url and return_expires_at; where you have a shell,
-  npx rapier-html draft.md --return <return_url> --return-expires-at
-  <return_expires_at>. Their edited copy comes back once; read {return_id} reads it.
 
 Read a guide with read {guide:"draw"}. Topics are overview, draw, water and blocks.
 Don't combine guide with other read selectors; it needs no document. Finish

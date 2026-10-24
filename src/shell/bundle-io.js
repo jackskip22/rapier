@@ -182,7 +182,6 @@ const RapierBundleIO = (function () {
 		}
 		return Object.freeze({
 			get: function (key) { return run('readonly', function (s) { return s.get(prefix + key); }).then(function (value) { return value || null; }); },
-			has: function (key) { return run('readonly', function (s) { return s.count(prefix + key); }).then(function (n) { return n > 0; }); },
 			put: function (key, value) { return run('readwrite', function (s) { return s.put(value, prefix + key); }).then(function () { return true; }); },
 			remove: function (key) { return run('readwrite', function (s) { return s.delete(prefix + key); }).then(function () { return true; }); },
 			keys: function () {

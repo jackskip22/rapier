@@ -585,18 +585,6 @@ function replacementSplices(before, after) {
  if (/[\uDC00-\uDFFF]/.test(before[a] || after[b] || '')) { a++; b++; }
  return [{pos: start, removed: before.slice(start, a), inserted: after.slice(start, b)}];
 }
-function wholeSpanSplices(before, after, splices, spans) {
- if (splices.length !== 1 || !spans?.length) return splices;
- const [{pos, removed, inserted}] = splices;
- let start = pos, end = pos + removed.length, grew = true;
- while (grew) {
-  grew = false;
-  for (const [from, to] of spans) if (from < end && to > start && (from < start || to > end)) { start = Math.min(start, from); end = Math.max(end, to); grew = true; }
- }
- if (start === pos && end === pos + removed.length) return splices;
- const tail = end - (pos + removed.length);
- return [{pos: start, removed: before.slice(start, end), inserted: after.slice(start, pos + inserted.length + tail)}];
-}
 export function canonicalAct(record) {
  if (!record) return null;
  const tx = record.transaction;
@@ -631,7 +619,7 @@ function carryCanonicalIn(state, manifest, ledger, text) {
 }
 export function carryCanonical(manifest, ledger, text) { return carryCanonicalIn(null, manifest, ledger, text); }
 function appendCanonicalIn(state, manifest, {text, metadata, author, transport = 'platform', requestId = null, requestScope = null,
- requestDigest = null, turn_id, label, operation = 'notes.write', now, undo, input = false, id = null, spans = null} = {}) {
+ requestDigest = null, turn_id, label, operation = 'notes.write', now, undo, input = false, id = null} = {}) {
  const admitted = inspectManifest(manifest, state), m = draft(admitted.manifest, state), held = canonicalFrom(admitted);
  const before = input ? withoutInput(held) : canonicalBase(held);
  if (input) operation = INPUT_OPERATION;
@@ -659,7 +647,6 @@ function appendCanonicalIn(state, manifest, {text, metadata, author, transport =
    return canonicalResult(state, m, held, {act: canonicalAct(held.ledger.records.at(-1)), unchanged: true, replayed: true, text});
   }
   splices = replacementSplices(before.text, text);
-  if (spans) splices = wholeSpanSplices(before.text, text, splices, spans(before.text));
   effect = _rapierMetadataDelta(before.metadata, afterMetadata);
  }
  if (!splices.length && !effect && !inverse.length) {

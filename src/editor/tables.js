@@ -780,16 +780,13 @@ function _rapierTablePinchEnd(event, force) {
 }
 
 
-function _tableLf(raw) { return String(raw ?? '').replace(/\r(?!\n)/g, '\n'); }
-
 function _isTableBlock(raw) {
-	const t = _tableLf(raw).trim();
+	const t = raw.trim();
 	if (!t) return false;
 	const lines = t.split('\n');
-	if (lines.length < 2) return false;
-	if (/^\s*\|.*\|\s*$/.test(lines[0]) && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[1])) return true;
-	const head = _tableSplitRow(lines[0]);
-	return !!head && _tableIsSeparator(lines[1]) && _tableSplitRow(lines[1]).length === head.length;
+	return lines.length >= 2 &&
+		/^\s*\|.*\|\s*$/.test(lines[0]) &&
+		/^\s*\|?[\s:|-]+\|?\s*$/.test(lines[1]);
 }
 
 function _tableSplitRow(line, selectionSeparator) {
@@ -865,7 +862,7 @@ function _tableIsSeparator(line) {
 }
 
 function _tableInfo(raw) {
-	const lines = _tableLf(raw).trimEnd().split('\n');
+	const lines = String(raw || '').trimEnd().split('\n');
 	const sepIdx = lines.findIndex(_tableIsSeparator);
 	const rowIdxs = lines.reduce((acc, line, i) => (_tableSplitRow(line) ? acc.concat(i) : acc), []);
 	const dataIdxs = sepIdx >= 0 ? rowIdxs.filter(i => i > sepIdx) : rowIdxs.slice(2);
@@ -922,7 +919,7 @@ function _tableRawFromDom(blockId, table) {
 	const lineOf = info ? info.rowLines : [];
 	if (info && info.cols === cols && lineOf.length === rows.length) {
 		const projected = _rapierRenderedMarkProbe(block.raw, 'bold')?.root.querySelector('table');
-		const beforeRows = projected && readRows(projected), lines = _tableLf(block.raw).split('\n');
+		const beforeRows = projected && readRows(projected), lines = String(block.raw).split('\n');
 		const spans = lineOf.map(at => Number.isInteger(at) ? _rapierTableCellSpans(lines[at]) : []);
 		if (beforeRows?.length === rows.length && spans.every((row, index) => Number.isInteger(lineOf[index]) && row.length <= cols &&
 				rows[index].length === cols && beforeRows[index].length === cols)) {
@@ -979,19 +976,27 @@ function _rapierTableCellMarkdown(cell) {
 function _syncTableBlockFromEdit(blockId) {
 	const currentRaw = _tableRawFromEdit(blockId);
 	const b = rapier.document.blocks.find(b => b.id === blockId);
-	if (!currentRaw || !b || currentRaw === b.raw) return true;
-	const wrapper = document.querySelector('[data-block-id="' + blockId + '"]');
-	const editDiv = wrapper && wrapper.querySelector('.block-edit');
-	if (!editDiv) return false;
-	editDiv._rapierCheckpointFresh = false;
-	_rapierCheckpointEdit(editDiv);
-	return editDiv._rapierCheckpointFresh === true;
+	if (!currentRaw || !b || currentRaw === b.raw) return;
+	b.raw = currentRaw;
+	b.rendered = renderBlock(b.raw);
+	b.dirty = true;
+	rapierDirty(b.id);
 }
 
 function _tableRawFromBlock(blockId) {
-	if (!_syncTableBlockFromEdit(blockId)) return null;
+	_syncTableBlockFromEdit(blockId);
 	const b = rapier.document.blocks.find(b => b.id === blockId);
-	return b ? b.raw : null;
+	if (!b) return null;
+	if (!_isTableBlock(b.raw)) {
+		const fromEdit = _tableRawFromEdit(blockId);
+		if (fromEdit) {
+			b.raw = fromEdit;
+			b.rendered = renderBlock(b.raw);
+			b.dirty = true;
+			rapierDirty(b.id);
+		}
+	}
+	return b.raw;
 }
 
 function _tableRawForCopy(blockId) {
@@ -1298,7 +1303,7 @@ function _rapierExactCellSource(state, node) {
 	const before = String(state.blocksBefore[0].raw || ''), info = _tableInfo(before);
 	if (info.sepIdx < 0) return null;
 	const at = info.rowLines[row];
-	const lines = _tableLf(before).split('\n'), span = Number.isInteger(at) && _rapierTableCellSpans(lines[at])[col];
+	const lines = before.split('\n'), span = Number.isInteger(at) && _rapierTableCellSpans(lines[at])[col];
 	if (!span) return null;
 	const from = lines.slice(0, at).reduce((length, line) => length + line.length + 1, 0) + span[0];
 	const to = from + span[1] - span[0];
@@ -1306,7 +1311,7 @@ function _rapierExactCellSource(state, node) {
 }
 
 function _rapierPlanTableCells(raw, cells, plan) {
-	const source = String(raw || ''), info = _tableInfo(source), lines = _tableLf(source).split('\n');
+	const source = String(raw || ''), info = _tableInfo(source), lines = source.split('\n');
 	if (info.sepIdx < 0) return null;
 	const rowAt = info.rowLines;
 	let changed = false;
@@ -1426,7 +1431,6 @@ function _tableApply(blockId, newRaw, caretTarget) {
 	if (!block) return false;
 	const viewport = _rapierCaptureEditorViewport();
 	const before = block.raw;
-	if (/\r(?!\n)/.test(before) && !before.includes('\n')) newRaw = String(newRaw).replace(/\n/g, '\r');
 	if (!caretTarget?.widen) newRaw = _rapierReconcileMarkdownEditRaw(before, newRaw);
 	if (before !== newRaw && !_rapierCommitBlockEdit(block.id, before, newRaw, {operation: 'document.change-block'})) return false;
 	block.raw = newRaw;

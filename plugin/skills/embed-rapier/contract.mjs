@@ -241,11 +241,7 @@ export function createAssetBroker({current, send}) {
 export function pictureBase(value) {
   if (value === undefined || value === null) return null;
   let base;
-  try {
-    if (typeof value !== 'string' || !value || value.length > 4096 || /[\s\u0000-\u001f\u007f<>\\]/u.test(value)) throw 0;
-    base = new URL(value);
-    if (base.username || base.password || !(base.protocol === 'https:' || base.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(base.hostname))) throw 0;
-  } catch (_) { throw refusal('invalid_base_url', 'baseUrl is an absolute https address, or http on localhost.'); }
+  try { base = new URL(assetURL(value)); } catch (_) { throw refusal('invalid_base_url', 'baseUrl is an absolute https address.'); }
   const vouched = new Set();
   return Object.assign(src => {
     const text = String(src || '').trim();

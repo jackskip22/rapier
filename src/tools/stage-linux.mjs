@@ -19,10 +19,6 @@ const release = 'https://raw.githubusercontent.com/jackskip22/rapier/v' + VERSIO
 const cargo = (...args) => execFileSync('cargo', args, {encoding: 'utf8', maxBuffer: 16 * 1024 * 1024});
 const manifest = join(root, 'linux/app/Cargo.toml');
 const record = file => [file.name, file.bytes.length, sha256(file.bytes)];
-const buildId = payload => {
-  try { return execFileSync('git', ['-C', root, 'rev-parse', '--short=10', 'HEAD'], {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore']}).trim(); }
-  catch { return sha256(payload).slice(0, 10); }
-};
 
 async function pageFiles() {
   const receipt = JSON.parse(await readFile(join(root, 'dist/BUILD.json'), 'utf8'));
@@ -156,7 +152,7 @@ export async function stageLinuxSingle(file) {
     await writeFile(tarball, payload);
     const target = join(root, 'dist/linux/cargo-target');
     execFileSync('cargo', ['build', '--release', '--locked', '--bin', 'rapier-linux', '--manifest-path', manifest], {
-      env: {...process.env, RAPIER_PAYLOAD: tarball, RAPIER_CONTENTS: join(app, 'CONTENTS.json'), RAPIER_VERSION: VERSION, RAPIER_BUILD: buildId(payload), CARGO_TARGET_DIR: target}, stdio: 'inherit'});
+      env: {...process.env, RAPIER_PAYLOAD: tarball, RAPIER_CONTENTS: join(app, 'CONTENTS.json'), RAPIER_VERSION: VERSION, CARGO_TARGET_DIR: target}, stdio: 'inherit'});
     const candidate = join(target, 'release/rapier-linux'), bytes = await readFile(candidate);
     const runtime = elfInfo(bytes);
     const versions = execFileSync('readelf', ['--version-info', candidate], {encoding: 'utf8'});
@@ -207,11 +203,10 @@ export async function stageLinuxPackage(out, {served = servedSha256} = {}) {
     pkgname: 'rapier-bin', pkgver: built.version, pkgrel: 1,
     pkgdesc: 'Offline Markdown editor, notes, drawing and painting in one app',
     arch: ['x86_64'], url: 'https://rapier.website', license: ['AGPL-3.0-only'],
-    depends: ['glibc>=' + built.runtime.glibc, 'gcc-libs', 'xdg-desktop-portal', 'hicolor-icon-theme'],
+    depends: ['glibc>=' + built.runtime.glibc, 'gcc-libs', 'perl-file-mimeinfo', 'xdg-desktop-portal', 'hicolor-icon-theme'],
     optdepends: ['chromium: the browser rapier opens its window in', 'google-chrome: or this browser', 'brave-bin: or this browser',
       'xdg-desktop-portal-gtk: file chooser on GTK desktops and Hyprland', 'xdg-desktop-portal-kde: file chooser on KDE',
-      'fontconfig: follow the Omarchy monospace font',
-      'perl-file-mimeinfo: xdg-open file.md opens Rapier on Hyprland/Omarchy'],
+      'fontconfig: follow the Omarchy monospace font'],
     provides: ['rapier'], conflicts: ['rapier'], options: ['!strip', '!debug'],
   };
   const sources = [

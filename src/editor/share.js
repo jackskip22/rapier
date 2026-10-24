@@ -166,6 +166,17 @@ function _rapierSetPandocDialectEnabled(value) {
 	} catch (_) {   }
 }
 
+
+
+
+
+
+
+
+
+
+
+
 function _rapierEditablePageFilename(name) {
 	const filename = String(name || 'document'), carried = /\.rapier\.html$/i.exec(filename);
 	const stem = (carried ? filename.slice(0, carried.index) : filename.replace(/(.)\.[a-z0-9]+$/i, '$1')) || 'document';
@@ -219,28 +230,22 @@ async function _rapierPrepareEditablePage(captured, options = {}) {
 	if (!globalThis.RapierPortableShell || !globalThis.RapierPortablePage)
 		throw new Error('The offline editor package is unavailable on this host.');
 	const pictured = text => /!\[|<(?:img|image|source)\b/i.test(text);
-	let linked = 0;
-	const keepLinks = async root => {
-		try { await _rapierRenderModule('render')._rapierRequireOfflinePageImages(root); }
-		catch (error) { if (error?.code !== 'offline_image_unavailable') throw error; linked = Math.max(linked, error.missing?.length || 1); }
-	};
 	if (pictured(captured.canonical)) {
 		const current = await _rapierPrepareInterchangeContext({kind: 'page', imageCompat: false, preserveObjects: true}, captured);
-		await keepLinks(current.semanticRoot);
+		await _rapierRenderModule('render')._rapierRequireOfflinePageImages(current.semanticRoot);
 		captured = {...captured, canonical: current.canonical, comparisonBase: current.comparisonBase};
 	} else if (captured.metadata.docKind === 'markdown') captured = await _rapierInterchangeFonts(captured, true);
 	if (captured.comparisonBase && pictured(captured.comparisonBase.text)) {
 		const base = await _rapierPrepareInterchangeContext({kind: 'page', imageCompat: false, comparison: true, preserveObjects: true}, {...captured, canonical: captured.comparisonBase.text});
-		await keepLinks(base.semanticRoot);
+		await _rapierRenderModule('render')._rapierRequireOfflinePageImages(base.semanticRoot);
 	}
-	const linkedWords = linked ? (linked === 1 ? '1 web picture stays a link and shows only online.' : linked + ' web pictures stay links and show only online.') : '';
 	const portable = await _rapierPortableChoices(captured.canonical,
 		{docKind: captured.metadata.docKind, base: captured.comparisonBase?.text, also: options.also});
 	const text = (captured.metadata.bom ? '\uFEFF' : '') + captured.canonical;
 	const {filename, codeLang} = captured.metadata, ext = codeLang && Object.keys(EXT_TO_LANG).find(e => EXT_TO_LANG[e] === codeLang);
 	const own = document.getElementById('rapier-document')?.dataset.name;
 	const carrierName = !/\.rapier\.html$/i.test(filename) ? filename
-		: own && !/\.rapier\.html$/i.test(own) && (_rapierEditablePageFilename(own) === _rapierEditablePageFilename(filename) || _rapierCarriedKeep.opened === filename) && (!ext || own.endsWith('.' + ext)) ? own
+		: own && !/\.rapier\.html$/i.test(own) && _rapierEditablePageFilename(own) === _rapierEditablePageFilename(filename) && (!ext || own.endsWith('.' + ext)) ? own
 		: filename.replace(/\.rapier\.html$/i, '.' + (ext || (captured.metadata.docKind === 'text' ? 'txt' : 'md')));
 	const carriedParts = new Map();
 	const readable = _rapierReadableWithoutScripts(captured);
@@ -252,7 +257,7 @@ async function _rapierPrepareEditablePage(captured, options = {}) {
 		});
 		const blob = new Blob([html], {type: 'text/html; charset=utf-8'});
 		if (blob.size > RapierTextCodec.maxDocumentBytes) throw new Error('This HTML editor file exceeds 64 MiB.');
-		return {blob, linkedWords, filename: _rapierEditablePageFilename(captured.metadata.filename), mime: blob.type, canonical: captured.canonical,
+		return {blob, filename: _rapierEditablePageFilename(captured.metadata.filename), mime: blob.type, canonical: captured.canonical,
 			included: portable.choices.filter(choice => ids.has(choice.id)).map(choice => choice.id)};
 	};
 	return {choices: portable.choices, needs: portable.needs, write};
@@ -350,6 +355,14 @@ async function _rapierEditablePageChosen(captured, action, task) {
 	});
 }
 
+
+
+
+
+
+
+
+
 async function _rapierShareFile(options) {
 	if (!_rapierEmbedFeatureAllowed('share')) return false;
 	const opts = options || {};
@@ -398,19 +411,7 @@ async function _rapierShareFile(options) {
 	return false;
 }
 
-const _rapierCarriedKeep = {authority: '', hinted: false, opened: ''};
-function _rapierOwnPageFilename() {
-	try {
-		if (!/^(?:file|https?):$/.test(location.protocol)) return '';
-		const base = decodeURIComponent(location.pathname.split('/').pop() || '');
-		return /.\.rapier\.html$/i.test(base) && _rapierDocumentNameIsAdmissible(base) ? _rapierEditablePageFilename(base) : '';
-	} catch (_) { return ''; }
-}
-function _rapierCarriedKeepSettled() {
-	for (const toast of document.querySelectorAll('#toast-root .toast[data-notice-kind="carried-keep"]')) {
-		if (typeof toast._rapierDismiss === 'function') toast._rapierDismiss({immediate: true}); else toast.remove();
-	}
-}
+const _rapierCarriedKeep = {authority: '', hinted: false};
 function _rapierCarriedKeepHint() {
 	const authority = String(rapier.identity.authority || '');
 	if (_rapierCarriedKeep.hinted || !authority || _rapierCarriedKeep.authority !== authority) return;
@@ -421,7 +422,7 @@ function _rapierCarriedKeepHint() {
 	showToast(files?.savesChosenType === true
 		? 'Press Save and choose ' + name + ' to keep changes.'
 		: 'Press Save to keep changes.',
-		'info', {label: 'Save', fn: () => rapierSave(), kind: 'carried-keep'});
+		'info', {label: 'Save', fn: () => rapierSave()});
 }
 
 function _rapierShareProduced(filename, blob) {
@@ -472,8 +473,6 @@ function _rapierRenderPageReturn() {
 	button.querySelector('.export-choice__label').textContent = ['expired', 'used'].includes(_rapierPageReturn.state) ? 'Save' : 'Send back';
 	status.textContent = _rapierPageReturn.message || 'send this document back to the agent who gave you this page';
 }
-function _rapierReturnSaid(message) { return Object.assign(new Error(message), {said: true}); }
-function _rapierReturnLost() { return 'Not confirmed. Check your connection. Nothing is retried automatically.'; }
 async function _rapierSendBack() {
 	if (!_rapierPageReturnCurrent()) return false;
 	const saveOffered = ['expired', 'used'].includes(_rapierPageReturn.state);
@@ -487,7 +486,7 @@ async function _rapierSendBack() {
 	try {
 		const address = _rapierPageReturn.address, origin = new URL(address).origin;
 		const popup = window.open(address, '_blank', 'popup');
-		if (!popup) throw _rapierReturnSaid('Open the return page to authorize this upload.');
+		if (!popup) throw new Error('Open the return page to authorize this upload.');
 		const {status, answer} = await new Promise((resolve, reject) => {
 			let started = false, port;
 			const finish = (value, error) => {
@@ -506,7 +505,7 @@ async function _rapierSendBack() {
 					const captured = await _rapierCaptureSettledExternalDocument();
 					if (!captured || !_rapierPageReturnCurrent() || _rapierPageReturn.address !== address ||
 						!_rapierMutationStampSharesDocument(captured.stamp) || _rapierPageReturn.expiresAt <= Date.now())
-						throw _rapierReturnSaid('The document changed or the return expired while settling.');
+						throw new Error('The document changed or the return expired while settling.');
 					const channel = new MessageChannel(); port = channel.port1;
 					port.onmessage = event => {
 						const data = event.data;
@@ -518,8 +517,8 @@ async function _rapierSendBack() {
 				} catch (error) { finish(null, error); }
 			};
 			window.addEventListener('message', ready);
-			const timeout = setTimeout(() => finish(null, _rapierReturnSaid('Return confirmation timed out.')), 5 * 60 * 1000);
-			const closed = setInterval(() => { if (popup.closed) finish(null, _rapierReturnSaid('Return page closed.')); }, 500);
+			const timeout = setTimeout(() => finish(null, new Error('Return confirmation timed out.')), 5 * 60 * 1000);
+			const closed = setInterval(() => { if (popup.closed) finish(null, new Error('Return page closed.')); }, 500);
 		});
 		const accepted = status >= 200 && status < 300 && answer?.accepted === true;
 		_rapierPageReturn.state = accepted ? 'accepted' : status === 410 ? 'expired' : status === 409 ? 'used' : 'ready';
@@ -528,9 +527,9 @@ async function _rapierSendBack() {
 			: _rapierPageReturn.state === 'used' ? 'Return already used. Your work is safe on this page.'
 			: 'Refused: ' + (typeof answer?.reason === 'string' ? answer.reason : 'the worker did not accept this return.');
 		return accepted;
-	} catch (error) {
+	} catch (_) {
 		_rapierPageReturn.state = 'ready';
-		_rapierPageReturn.message = error?.said ? error.message : _rapierReturnLost();
+		_rapierPageReturn.message = 'Not confirmed. Check your connection. Nothing is retried automatically.';
 		return false;
 	} finally { _rapierRenderPageReturn(); }
 }
@@ -545,17 +544,13 @@ async function _rapierSendBackDirect() {
 			_rapierPageReturn.message = 'Not sent. The document changed or is still being edited.';
 			return false;
 		}
-		if (_rapierPageReturn.expiresAt <= Date.now()) {
-			_rapierPageReturn.state = 'expired';
-			_rapierPageReturn.message = 'Return expired. Your work is safe on this page.';
-			return false;
-		}
+		if (_rapierPageReturn.expiresAt <= Date.now()) { _rapierPageReturn.state = 'ready'; return false; }
 		const response = await fetch(_rapierPageReturn.address, {
 			method: 'POST', credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer', cache: 'no-store',
 			headers: {'Content-Type': 'text/markdown;charset=utf-8', 'X-Rapier-Name': encodeURIComponent(captured.metadata.filename)},
 			body: (captured.metadata.bom ? '\uFEFF' : '') + captured.canonical,
 		});
-		const answer = await response.json().catch(() => null);
+		const answer = await response.json();
 		const accepted = response.ok && answer?.accepted === true;
 		_rapierPageReturn.state = accepted ? 'accepted' : response.status === 410 ? 'expired' : response.status === 409 ? 'used' : 'ready';
 		_rapierPageReturn.message = accepted ? 'Accepted. Your document was sent back.'
@@ -565,7 +560,7 @@ async function _rapierSendBackDirect() {
 		return accepted;
 	} catch (_) {
 		_rapierPageReturn.state = 'ready';
-		_rapierPageReturn.message = _rapierReturnLost();
+		_rapierPageReturn.message = 'Not confirmed. Check your connection. Nothing is retried automatically.';
 		return false;
 	} finally { _rapierRenderPageReturn(); }
 }
@@ -598,9 +593,7 @@ async function rapierShare(kind) {
 		const page = await (kind === 'editor' ? _rapierEditablePageChosen(captured, 'share', task) : _rapierRenderModule('render')._rapierBuildSharedPage(captured));
 		if (!page) return false;
 		task.check(); task.end();
-		const shared = await _rapierShareFile({...page, mime: 'text/html'});
-		if (shared && page.linkedWords) showToast(page.linkedWords, 'info');
-		return shared;
+		return await _rapierShareFile({...page, mime: 'text/html'});
 	} catch (error) {
 		if (error?.name !== 'AbortError' && error?.code !== 'cancelled') showToast('Couldn’t share.', 'error', null, error);
 		return false;
@@ -768,7 +761,7 @@ async function _rapierShareQuoteCard() {
 		const rgba = new Uint8ClampedArray(words.width * words.height * 4);
 		for (let at = 0; at < words.alpha.length; at++) rgba.set([words.rgb[at * 3], words.rgb[at * 3 + 1], words.rgb[at * 3 + 2], words.alpha[at]], at * 4);
 		context2d.drawImage(await createImageBitmap(new ImageData(rgba, words.width, words.height)), 0, 0);
-		const blob = await _rapierPngWithText(await _rapierCanvasBlob(canvas, 'image/png'), held.markdown);
+		const blob = await _rapierCanvasBlob(canvas, 'image/png');
 		canvas.width = canvas.height = 0;
 		task.check(); task.end();
 		return await _rapierShareFile({blob, filename: held.name + '-quote.png', mime: 'image/png'});
@@ -776,40 +769,6 @@ async function _rapierShareQuoteCard() {
 		if (error?.name !== 'AbortError') showToast('Couldn’t make the quote card.', 'error', null, error);
 		return false;
 	} finally { task.end(); frame?.remove(); }
-}
-async function _rapierPngWithText(png, text) {
-	const bytes = new Uint8Array(await png.arrayBuffer()), encoder = new TextEncoder();
-	const tail = bytes.length - 12, data = new Uint8Array([...encoder.encode('rapier:markdown\0\0\0\0\0'), ...encoder.encode(text)]);
-	if (String.fromCharCode(...bytes.subarray(tail + 4, tail + 8)) !== 'IEND') return png;
-	const chunk = new Uint8Array(12 + data.length), view = new DataView(chunk.buffer);
-	view.setUint32(0, data.length); chunk.set(encoder.encode('iTXt'), 4); chunk.set(data, 8);
-	view.setUint32(8 + data.length, RapierCodecs.crc32(chunk.subarray(4, 8 + data.length)));
-	return new Blob([bytes.subarray(0, tail), chunk, bytes.subarray(tail)], {type: 'image/png'});
-}
-async function _rapierQuoteCardDocument(blob, name) {
-	const bytes = new Uint8Array(await blob.arrayBuffer()), view = new DataView(bytes.buffer), keyword = 'rapier:markdown\0';
-	if (bytes.length < 8 || bytes[1] !== 0x50 || bytes[2] !== 0x4e || bytes[3] !== 0x47) return null;
-	for (let at = 8; at + 12 <= bytes.length;) {
-		const length = view.getUint32(at), end = at + 12 + length, type = String.fromCharCode(...bytes.subarray(at + 4, at + 8));
-		if (end > bytes.length || type === 'IEND') return null;
-		const data = bytes.subarray(at + 8, at + 8 + length);
-		if (type === 'iTXt' && String.fromCharCode(...data.subarray(0, keyword.length)) === keyword && data[keyword.length] === 0 &&
-			data[keyword.length + 2] === 0 && data[keyword.length + 3] === 0) {
-			let markdown;
-			try { markdown = new TextDecoder('utf-8', {fatal: true}).decode(data.subarray(keyword.length + 4)); } catch (_) { return null; }
-			const card = new Uint8Array(bytes.length - length - 12);
-			card.set(bytes.subarray(0, at)); card.set(bytes.subarray(end), at);
-			let base64 = '';
-			for (let i = 0; i < card.length; i += 32768) base64 += String.fromCharCode(...card.subarray(i, i + 32768));
-			let label = 'quote-card';
-			while (markdown.toLowerCase().includes('[' + label + ']')) label += '-1';
-			const {frontmatter, bodyOffset} = RapierMarkdownSpec.splitOpeningFrontmatter(markdown);
-			return {name: _rapierExportStem(name || 'quote.png') + '.md', text: (frontmatter || '') + '![Quote card][' + label + ']\n\n' +
-				markdown.slice(bodyOffset).replace(/\n*$/, '\n\n') + '[' + label + ']: data:image/png;base64,' + btoa(base64) + '\n'};
-		}
-		at = end;
-	}
-	return null;
 }
 async function _rapierQuotePaper(paper, context2d) {
 	const image = new Image();

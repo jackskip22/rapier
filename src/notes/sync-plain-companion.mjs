@@ -47,12 +47,7 @@ export function createPlainCompanionSession({folder, call, now = Date.now} = {})
 			});
 		},
 		async conflicts() { const kept = await connection(); return kept ? createPlainSession({folder, store: {}, provider: 'companion', place: kept.place, device: device(), now}).conflicts() : []; },
-		mediaChoice(target) { target = structuredClone(target); return once(async ticket => {
-			const kept = await connection(); active(ticket);
-			if (!kept) throw fail('connection', 'connect this folder to its plain files first.');
-			return session(kept.place, () => active(ticket), kept.connectionId).mediaChoice(target);
-		}); },
-		resolve(choice) { choice = structuredClone(choice); return once(async ticket => {
+		resolve(choice) { return once(async ticket => {
 			const kept = await connection(); active(ticket);
 			if (!kept) throw fail('connection', 'connect this folder to its plain files first.');
 			return session(kept.place, () => active(ticket), kept.connectionId).resolve(choice);

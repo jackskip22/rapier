@@ -1,7 +1,7 @@
 {
   "name": "rapier",
   "displayName": "Rapier - Markdown Editor & Art",
-  "version": "1.2.38+skills.fb25f258325d9f39d881a6eab47de8c7fb371b3464a3838201f8f396339b1d6b",
+  "version": "1.2.37+skills.94a4ae3d0c53d4aa9a7d85212d37e2391fbcce9b8fac21f916c43031335ec3d6",
   "description": "Rapier is a Markdown editor and art studio you share with your agent. Write documents together on one live page, draw diagrams you can drag, and paint watercolors that blend and dry. Every agent change is marked and undoable. Keep it as Markdown, Word, PDF or one offline HTML file. Free, no account.",
   "author": {
     "name": "Jack Skipworth",

@@ -16,8 +16,6 @@
 !/door-markdown-to-pdf.html
 !/door-markdown-to-word.html
 !/door-word-to-markdown.html
-!/door-pdf-to-markdown.html
-!/door-markdown-diff.html
 !/door-mermaid-editor.html
 !/door-agents.html
 !/parts/
@@ -56,8 +54,6 @@
 !/og-markdown-to-pdf.png
 !/og-markdown-to-word.png
 !/og-word-to-markdown.png
-!/og-pdf-to-markdown.png
-!/og-markdown-diff.png
 !/og-mermaid-editor.png
 !/og-privacy.png
 !/og-commercial.png

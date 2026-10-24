@@ -1529,7 +1529,6 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			documentRevision: Number(options.documentRevision || 0),
 			fileGeneration: options.fileGeneration == null ? null : options.fileGeneration,
 			exclusiveNewDestination: options.exclusiveNewDestination === true,
-			chosenDestination: String(options.chosenDestination || ''),
 			payloadLength: fingerprint.bytes,
 			payloadDigest: fingerprint.digest,
 		};
@@ -1734,20 +1733,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 		return resultPromise;
 	}
 
-	async function _nativeSaveAs(blob, filename, options) {
-		options = options || {};
-		if (typeof blob === 'function') {
-			if (options.beforeWrite) await options.beforeWrite;
-			if (options.check) options.check();
-			if (_nativeCapability('chooseSave')) {
-				var chosen = await _nativeHostCall('save.choose', {name: filename || 'document.md'}, 3600000);
-				if (!chosen || chosen.cancelled === true || !chosen.token || !chosen.name) return _saveResult('cancelled');
-				options = Object.assign({}, options, {chosenDestination: String(chosen.token)});
-				filename = String(chosen.name);
-				blob = await blob(filename);
-				if (options.nativeSaveResume) options = Object.assign({}, options, {nativeSaveResume: Object.assign({}, options.nativeSaveResume, {editablePage: /\.rapier\.html$/i.test(filename)})});
-			} else blob = await blob(filename || 'document.md');
-		}
+	function _nativeSaveAs(blob, filename, options) {
 		return _nativeSaveRequest('saveAs', blob, filename || 'download', options);
 	}
 
@@ -3266,7 +3252,6 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			allowsBrowserPrintFallback: false,
 			defersBrowserPrintCleanup: false,
 			get canSaveInPlace() { return _nativeCapability('saveInPlace'); },
-			get savesChosenType() { return _nativeCapability('chooseSave'); },
 			get showsRecentFilesUi() { return _nativeCapability('recents'); },
 			showsUploadUi: false,
 			get canShare() { return _nativeCapability('share'); },

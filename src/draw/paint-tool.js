@@ -50,9 +50,9 @@ function _rapierPaintPatch(evt) {
 }
 const RAPIER_PAINT_BRUSH_KEY = 'rapier:draw.paintbrush', RAPIER_PAINT_OWN_KEY = 'rapier:draw.paintbrushes' + RapierStorage.scope;
 const RAPIER_PAINT_STRENGTH_KEY = 'rapier:draw.paintstrength';
-const RAPIER_PAINT_PINNED = ['rapier/flat', 'rapier/round', 'rapier/gouache', 'rapier/soft', 'rapier/oil', 'rapier/acrylic', 'rapier/bristle', 'rapier/scumble', 'rapier/pencil', 'rapier/pen', 'rapier/watercolour',
+const RAPIER_PAINT_PINNED = ['rapier/oil', 'rapier/acrylic', 'rapier/bristle', 'rapier/flat', 'rapier/scumble', 'rapier/pencil', 'rapier/pen', 'rapier/watercolour',
 	'rapier/smudge', 'rapier/smear', 'rapier/blend', 'rapier/eraser', 'rapier/dissolve', 'rapier/erode'];
-const RAPIER_PAINT_DEFAULT_ID = 'rapier/flat';
+const RAPIER_PAINT_DEFAULT_ID = 'rapier/scumble';
 const RAPIER_PAINT_SIZES_KEY = 'rapier:draw.paintsizes';
 function _rapierPaintSizeDefault(id) { return paintSizeDefault(id); }
 function _rapierPaintSizesRead() { try { const raw = JSON.parse(localStorage.getItem(RAPIER_PAINT_SIZES_KEY) || '{}'); return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}; } catch (_) { return {}; } }
@@ -82,7 +82,7 @@ const RAPIER_PAINT_TOOL_WORDS = Object.freeze({ 'rapier/smudge': 'Smudge', 'rapi
 function _rapierPaintToolWord(id, name) { return RAPIER_PAINT_TOOL_WORDS[id] || name; }
 const RAPIER_PAINT_BRUSH_WORDS = Object.freeze({ 'dieterle/fountain-sf-1': 'Fountain', 'dieterle/fount-offset-1': 'Offset pen', 'dieterle/pencil-left-handed': 'Left pencil',
 	'dieterle/flight-feathers': 'Feathers', 'dieterle/tail-feathers': 'Tail feather', 'dieterle/tail-feathers2': 'Tail plume',
-	'dieterle/wateryflatbrush': 'Watery flat', 'dieterle/dissolver': 'Dissolver', 'dieterle/flat2-1': 'Flat 2', 'dieterle/round-1': 'Round 2' });
+	'dieterle/wateryflatbrush': 'Watery flat', 'dieterle/dissolver': 'Dissolver', 'dieterle/flat2-1': 'Flat 2' });
 function _rapierPaintBrushWord(id, name) { return RAPIER_PAINT_BRUSH_WORDS[id] || name; }
 // the credits and licences are in Settings, Licenses. A person's own brush carries the words they wrote.
 const RAPIER_PAINT_BRUSH_HINTS = Object.freeze({ 'dieterle/8b-pencil-1': 'soft, dark graphite', 'dieterle/flat2-1': 'broad flat edge', 'dieterle/halftonecmy-1': 'colored print dots',
@@ -90,7 +90,7 @@ const RAPIER_PAINT_BRUSH_HINTS = Object.freeze({ 'dieterle/8b-pencil-1': 'soft, 
 	'dieterle/fount-offset-1': 'ink with a slight wobble', 'dieterle/halftone-1': 'print dots', 'dieterle/pencil-left-handed': 'graphite angled for the left hand',
 	'dieterle/blender': 'blends colors', 'dieterle/dissolver': 'dissolves paint away', 'dieterle/eraser': 'wears paint away', 'dieterle/splash': 'scattered splashes',
 	'dieterle/flight-feathers': 'feathered streaks', 'dieterle/tail-feathers2': 'soft feathered streaks', 'dieterle/tail-feathers': 'feathered streaks',
-	'dieterle/wateryflatbrush': 'wet, flowing color', 'rapier/oil': 'thick, smooth paint', 'rapier/bristle': 'streaks and gaps', 'rapier/round': 'smooth, solid round', 'rapier/gouache': 'flat, matte and opaque', 'rapier/soft': 'a soft edge that builds up', 'rapier/scumble': 'broken, scattered paint',
+	'dieterle/wateryflatbrush': 'wet, flowing color', 'rapier/oil': 'thick, smooth paint', 'rapier/bristle': 'streaks and gaps', 'rapier/scumble': 'broken, scattered paint',
 	'rapier/pencil': 'soft graphite', 'rapier/pen': 'a bold line that swells',
 	'rapier/smudge': 'drags paint with a finger', 'rapier/smear': 'drags paint in streaks', 'rapier/posterize': 'reduces color to bands',
 	'rapier/blend': 'mixes paint in place', 'rapier/eraser': 'takes paint off', 'rapier/dissolve': 'breaks paint up', 'rapier/erode': 'wears paint from its edges' });
@@ -244,24 +244,17 @@ function _rapierPaintSetSize(value) {
 }
 function _rapierPaintSizeWord(size = _rapierPaintSize()) { return Math.round(Math.exp((size - 50) / 50 * Math.log(8)) * 100) + '%'; }
 
-// instead. Until the person chooses, each brush keeps its own default: Rapier's flat heads (a `rapier_blade`, Flat and Acrylic)
-const RAPIER_PAINT_HEAD_KEY = 'rapier:draw.painthead', RAPIER_PAINT_HEAD_ANGLE = 120;
+const RAPIER_PAINT_HEAD_KEY = 'rapier:draw.painthead', RAPIER_PAINT_HEAD_ANGLE = 45;
 function _rapierPaintHeadRead() {
 	let raw = null;
 	try { raw = JSON.parse(localStorage.getItem(RAPIER_PAINT_HEAD_KEY) || 'null'); } catch (_) { raw = null; }
 	const angle = Number(raw?.angle);
-	const head = { angle: Number.isFinite(angle) ? ((Math.round(angle) % 180) + 180) % 180 : RAPIER_PAINT_HEAD_ANGLE, kept: typeof raw?.follow === 'boolean' ? raw.follow : null, clear: raw?.clear === true };
-	return Object.defineProperty(head, 'follow', { enumerable: true, get() { return _rapierPaintFollowsFor(head); }, set(on) { head.kept = !!on; } });
-}
-function _rapierPaintFollowsFor(head, id = _rapierPaintBrushId()) {
-	if (head.kept !== null) return head.kept;
-	if (String(id).startsWith('own/')) return true;
-	try { return !(_rapierPaintDefFor(id).rapier?.rapier_blade > 0); } catch (_) { return true; }
+	return { angle: Number.isFinite(angle) ? ((Math.round(angle) % 180) + 180) % 180 : RAPIER_PAINT_HEAD_ANGLE, follow: raw?.follow === true || (raw?.follow !== false && !Number.isFinite(angle)), clear: raw?.clear === true };
 }
 function _rapierPaintHead() { if (_rapierDrawTool() === 'water') return _rapierWaterState(); return _rapierDrawState.paintHead || (_rapierDrawState.paintHead = _rapierPaintHeadRead()); }
 function _rapierPaintHeadSave() {
 	if (_rapierDrawTool() === 'water') { _rapierWaterSave(); return; }
-	const head = _rapierPaintHead(), text = JSON.stringify({ angle: head.angle, ...(head.kept === null || head.kept === undefined ? {} : { follow: head.kept }), clear: head.clear });
+	const head = _rapierPaintHead(), text = JSON.stringify({ angle: head.angle, follow: head.follow, clear: head.clear });
 	try { localStorage.setItem(RAPIER_PAINT_HEAD_KEY, text); } catch (_) {}
 	_rapierPersonal.rememberDrawing('paintHead', text);
 }
@@ -273,7 +266,7 @@ function _rapierPaintHeadClear(on) {
 }
 function _rapierPaintHeadSettings(id) {
 	const head = _rapierPaintHead();
-	return paintBrushHead({angle: head.angle, follow: 'kept' in head ? _rapierPaintFollowsFor(head, id) : head.follow, erase: head.clear}, _rapierPaintIsTool(id));
+	return paintBrushHead({angle: head.angle, follow: head.follow, erase: head.clear}, _rapierPaintIsTool(id));
 }
 function _rapierPaintHeadOval(head, rx, ry) {
 	return '<ellipse rx="' + rx + '" ry="' + ry + '" transform="rotate(' + head.angle + ')"' + (head.follow ? ' stroke-dasharray="3 2"' : '') + '></ellipse>';
@@ -375,10 +368,9 @@ function _rapierPaintHeadAt(clientX, clientY) {
 	const state = _rapierDrawState, el = state.headEl;
 	if (!el || !state.svgRoot) return;
 	state.headAt = [clientX, clientY];
-	let fp = _rapierPaintHeadFootprint();
+	const fp = _rapierPaintHeadFootprint();
 	if (!fp) { el.style.visibility = 'hidden'; return; }
 	const geom = _rapierDrawPointerGeometry(), scale = _rapierDrawViewTransform(geom.rect, geom.vb).scale;
-	fp = _rapierPaintHeadFollowing(fp, clientX, clientY, fp.radius / RAPIER_PAINT_GRAIN * scale);
 	const overlay = el.parentElement, half = fp.radius / RAPIER_PAINT_GRAIN + 4 / scale, size = 2 * half * scale;
 	const path = _rapierPaintHeadPath(0, 0, fp);
 	if (el.getAttribute('d') !== path) el.setAttribute('d', path);
@@ -388,27 +380,6 @@ function _rapierPaintHeadAt(clientX, clientY) {
 	}
 	overlay.style.transform = 'translate3d(' + (clientX - geom.rect.left - size / 2) + 'px,' + (clientY - geom.rect.top - size / 2) + 'px,0)';
 	el.style.visibility = '';
-}
-// RAPIER_PAINT_HEAD_AIM of its own lengths as the engine eases a following blade (draw/paint.mjs RAPIER_RIBBON_AIM), so the
-const RAPIER_PAINT_HEAD_AIM = 2.5;
-function _rapierPaintHeadFollowing(fp, clientX, clientY, radiusPx) {
-	const state = _rapierDrawState, gesture = state.gesture?.paint ? state.gesture : null;
-	if (!gesture || !_rapierPaintHead().follow || !(fp.ratio > 1)) return fp;
-	let turns = false;
-	try { turns = !!_rapierPaintDefFor(_rapierPaintBrushId()).settings[RAPIER_PAINT_SETTING_AT.elliptical_dab_angle]?.inputs?.direction; } catch (_) {}
-	if (!turns) return fp;
-	const last = gesture.headLast;
-	if (last) {
-		const dx = clientX - last[0], dy = clientY - last[1], dm = Math.hypot(dx, dy);
-		if (dm > .5) {
-			const ux = dx / dm, uy = dy / dm, d = gesture.headDir;
-			if (!d) gesture.headDir = [ux, uy];
-			else { const k = 1 - Math.exp(-dm / Math.max(1, RAPIER_PAINT_HEAD_AIM * radiusPx)); d[0] += (ux - d[0]) * k; d[1] += (uy - d[1]) * k; const n = Math.hypot(d[0], d[1]) || 1; d[0] /= n; d[1] /= n; }
-		}
-	}
-	gesture.headLast = [clientX, clientY];
-	if (!gesture.headDir) return fp;
-	return {...fp, angle: fp.angle + Math.atan2(gesture.headDir[1], gesture.headDir[0]) * 180 / Math.PI};
 }
 function _rapierPaintHeadFootprint() {
 	if (_rapierDrawTool() === 'water') return null;

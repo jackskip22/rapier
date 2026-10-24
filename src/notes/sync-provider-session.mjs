@@ -386,17 +386,11 @@ export function createProviderSession({folder, fetch: fetchFn, pendingStorage, p
    const value = await current(ticket), plain = localPlain(value, ticket);
    try { return await plain.conflicts(); } finally { plains.delete(plain); }
   }); },
-  mediaChoice(target) { target = structuredClone(target); return run(async ticket => {
-   const value = await current(ticket);
-   return plainRun(ticket, value.place, plain => plain.mediaChoice(target));
-  }, {network: true}); },
-  resolve(choice) { choice = structuredClone(choice); return run(async ticket => {
+  resolve(choice) { return run(async ticket => {
    if (locked) throw fail('auth', 'sign in before choosing a synced version.');
-   const value = await current(ticket);
-   if (choice?.kind === 'media') return plainRun(ticket, value.place, plain => plain.resolve(choice));
-   const plain = localPlain(value, ticket);
+   const value = await current(ticket), plain = localPlain(value, ticket);
    try { return await plain.resolve(choice); } finally { plains.delete(plain); }
-  }, {network: choice?.kind === 'media'}); },
+  }); },
   setRememberDevice(enabled) { return run(async ticket => {
    if (!device || device.available === false || typeof enabled !== 'boolean') throw fail('device', 'this device cannot remember sync.');
    await readLocal(); if (ticket !== epoch) throw fail('cancelled', 'sync stopped.'); await restoreDevice(ticket, true);

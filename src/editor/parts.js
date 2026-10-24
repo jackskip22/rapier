@@ -106,7 +106,8 @@ async function _rapierGalleryHeld(row) {
 		const sets = Array.isArray(mark.sets) ? mark.sets : [];
 		if (sets.length !== row.stores.length) return false;
 		for (const set of sets) {
-			if (!await RapierBundleIO.store(set.slot).has(set.version)) return false;
+			const record = await RapierBundleIO.store(set.slot).get(set.version);
+			if (!record?.files || !set.names.every(name => record.files[name] && (record.files[name].byteLength || record.files[name].length || record.files[name].size))) return false;
 		}
 		return true;
 	} catch (_) { return false; }
@@ -184,11 +185,6 @@ if (_rapierPartAvailable('jxlcomplete')) {
 	document.addEventListener('click', event => { if (event.target.closest?.('[data-action="jxl-complete-install"]')) void _rapierPartRowTap('jxlcomplete', _rapierJxlCompleteRowPaint); });
 	_rapierBootFactsPublished.then(() => RapierParts.check('jxlcomplete')).then(_rapierJxlCompleteRowPaint, () => {});
 }
-if (_rapierPartAvailable('drawing')) _rapierBootFactsPublished.then(() => setTimeout(() => {
-	const link = navigator.connection;
-	if (link?.saveData || /^(?:slow-)?2g$/.test(link?.effectiveType || '') || navigator.onLine === false || !_rapierIsBuiltInWelcomeDocument()) return;
-	RapierParts.warm('drawing');
-}, 1500), () => {});
 addEventListener('pointerdown', event => {
 	const control = event.target instanceof Element ? event.target.closest('[data-command="insert.draw"], [data-action="open-draw"], .rapier-image-tools__draw, [data-action="notes-open"]') : null;
 	const id = !control ? null : control.matches('[data-action="notes-open"]') ? 'notes' : 'drawing';

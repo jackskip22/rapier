@@ -896,7 +896,7 @@ async function _rapierRequireOfflinePageImages(root) {
 	}
 	if (!missing.length) return;
 	throw Object.assign(new Error('Web page not written; embed these pictures and try again. ' + missing.join('; ')),
-		{code: 'offline_image_unavailable', missing});
+		{code: 'offline_image_unavailable'});
 }
 
 function _rapierCssValueUrls(value) {

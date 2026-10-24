@@ -169,45 +169,6 @@ function _rapierCompleteImageExcerpt(excerpt, source) {
   return text;
 }
 
-function _rapierReuseDocumentAssets(markdown, source) {
-  const text = String(markdown ?? '');
-  if (!text.includes(']:')) return text;
-  const owner = globalThis.RapierImageAssets;
-  let pasted, current;
-  try { pasted = owner.parseAssets(text); current = owner.documentAssets(String(source ?? '')); } catch (_) { return text; }
-  if (!pasted?.blocks?.length || !current?.assets?.size) return text;
-  const byBytes = new Map([...current.assets.values()].map(row => [row.url + '\n' + row.title, row]));
-  const used = new Set([...Object.keys(current.references), ...Object.keys(pasted.references)]);
-  const renames = new Map(), edits = [];
-  for (const row of pasted.blocks) {
-    if (!row.active) continue;
-    const same = byBytes.get(row.url + '\n' + row.title);
-    if (same) {
-      if (same.id !== row.id) renames.set(row.id, /^[ \t]*\[((?:\\.|[^\]\\])*)\]:/.exec(same.source)?.[1] ?? same.label);
-      edits.push({start: row.start, end: row.end, drop: true});
-    } else if (current.references[row.id]) {
-      const spelled = /^[ \t]*\[((?:\\.|[^\]\\])*)\]:/.exec(row.source)?.[1] ?? row.label;
-      let n = 2, label = spelled + '-' + n;
-      while (used.has(owner.normalizeLabel(label))) label = spelled + '-' + ++n;
-      used.add(owner.normalizeLabel(label)); renames.set(row.id, label);
-      const open = text.indexOf('[', row.start), close = text.indexOf(']:', open);
-      edits.push({start: open + 1, end: close, text: label});
-    }
-  }
-  let out = text;
-  for (const edit of edits.sort((a, b) => b.start - a.start)) {
-    if (!edit.drop) { out = out.slice(0, edit.start) + edit.text + out.slice(edit.end); continue; }
-    const tail = /^[ \t]*(?:\r\n?|\n)?/.exec(out.slice(edit.end))[0], atEnd = !out.slice(edit.end + tail.length).trim();
-    const blank = atEnd ? /(?:\r\n?|\n){2}$/.exec(out.slice(0, edit.start))?.[0] || '' : '';
-    out = out.slice(0, edit.start - blank.length) + (atEnd ? '' : out.slice(edit.end + tail.length));
-  }
-  if (!renames.size) return out;
-  return out.replace(/!\[((?:\\.|[^\]\\\n])*)\](?:\[((?:\\.|[^\]\\\n])*)\])?(?!\()/g, (all, alt, label) => {
-    const id = owner.normalizeLabel(label == null || label === '' ? alt : label), next = renames.get(id);
-    return next == null ? all : '![' + alt + '][' + next + ']';
-  });
-}
-
 async function _rapierAppendImportedImageAssets(source, pending, work) {
   const owner = globalThis.RapierImageAssets, existing = owner.documentAssets(source);
   const identities = new Set([...existing.assets.values()].map(row => row.url + '\n' + row.title));

@@ -469,13 +469,7 @@ function _rapierRenderSemanticRoot(canonical, metadata, options = {}) {
 	const wikiLinks = wikiMode(options);
 	if (wikiLinks) env.rapierWikiLinks = wikiLinks;
 	if (options.mathEquations) env.rapierMathEquations = options.mathEquations;
-	const nesting = md && options.maxNesting > 0 ? options.maxNesting : 0;
-	let rendered;
-	if (nesting) {
-		const saved = md.options.maxNesting;
-		md.options.maxNesting = nesting;
-		try { rendered = md.render(markdown, env); } finally { md.options.maxNesting = saved; }
-	} else rendered = md
+	let rendered = md
 		? md.render(markdown, env)
 		: '<pre><code>' + escapeRapierHtmlText(markdown) + '</code></pre>';
 	if (md && env.footnotes && Array.isArray(env.footnotes.list) && env.footnotes.list.length) {
@@ -509,11 +503,7 @@ async function _rapierRenderSemanticRootAsync(canonical, metadata, options = {})
 	const fallbackEnv = options.page ? {rapierPage: true} : {};
 	const wikiLinks = markdown.includes('[[') && wikiMode(options);
 	if (wikiLinks) fallbackEnv.rapierWikiLinks = wikiLinks;
-	const nesting = options.maxNesting > 0 ? options.maxNesting : 0, saved = md.options.maxNesting;
-	if (nesting) md.options.maxNesting = nesting;
-	let parsed;
-	try { parsed = !wikiLinks && options.parsed || (runtime.parseAsync && !wikiLinks && !nesting ? await runtime.parseAsync(markdown, options) : {tokens: md.parse(markdown, fallbackEnv), env: fallbackEnv}); }
-	finally { md.options.maxNesting = saved; }
+	let parsed = !wikiLinks && options.parsed || (runtime.parseAsync && !wikiLinks ? await runtime.parseAsync(markdown, options) : {tokens: md.parse(markdown, fallbackEnv), env: fallbackEnv});
 	let {tokens, env} = parsed, labels = env.footnotes?.list?.map((item, index) => String(item?.label || ('inline-' + (index + 1))));
 	env = {...env, rapierImagePresentation: options.imagePresentation === true};
 	await pause(work, .3);
@@ -870,9 +860,7 @@ function* _rapierAssignHeadingSlugsSteps(root, selector = RAPIER_RENDERED_HEADIN
 		if (!headingSet.has(element) && element.id) used[element.id] = 0;
 	}
 	for (const heading of headings) { yield;
-		const base = _rapierHeadingSlugBase(heading.textContent);
-		const owned = typeof _rapierChromeOwnsId === 'function' && _rapierChromeOwnsId(base);
-		heading.id = _rapierNextHeadingSlug(owned ? 'heading-' + base : base, used);
+		heading.id = _rapierNextHeadingSlug(_rapierHeadingSlugBase(heading.textContent), used);
 	}
 }
 

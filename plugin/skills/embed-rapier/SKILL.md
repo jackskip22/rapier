@@ -45,7 +45,7 @@ downloaded copy yourself and pass it as `src`.
   document access remain enforced.
 
 ```sh
-npm install rapier-embed@1.2.38
+npm install rapier-embed@1.2.37
 ```
 
 Or copy the package's `embed.mjs` and `contract.mjs` into one directory of your app; no runtime CDN is needed.
@@ -59,11 +59,11 @@ sends Markdown only when saving; change notifications contain no source.
 Rapier is a phone-first Markdown editor for notes, diagrams, drawing and watercolor painting. It runs offline
 as one HTML file on Android, Web, Windows and Linux.
 Collaborate over MCP and WebMCP, use optional plain-file sync to your own cloud storage, or embed the
-editor and lightweight reader (about 370 kB). The agent edits live; the person sees its presence and
+editor and lightweight reader (about 371 kB). The agent edits live; the person sees its presence and
 changes, taps a change to see the before and undoes anything. Use `show {target:"comparison"}` to show a diff deliberately.
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
-2. **Deliver an offline editor.** Run `npx rapier-html@1.2.38 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
+2. **Deliver an offline editor.** Run `npx rapier-html@1.2.37 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed in your app.** Install [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed); mount the editor or reader, with your app's agent over WebMCP in the editor.
 4. **Keep portable Markdown.** Use [rapier-markdown-kit](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-markdown-kit) for pictures, editable SVG drawings and layout in one `.md` file. Respect [Will/1](https://github.com/jackskip22/will) `keep`, `append` and `edit` regions.
 5. **Encode JPEG XL.** Install [rapier-jxl](https://github.com/jackskip22/rapier-jxl) to encode pixels, photographs and existing JPEGs in JavaScript.
@@ -110,11 +110,7 @@ The frame needs the host page to be an `https` page, or `http` on `localhost`. `
 | Cross-origin isolated (COEP `require-corp`) | `host_cross_origin_isolated` | The hosted copies carry no CORP or COEP header. Serve a copy with those headers and set `src`, or drop COEP. |
 | Your own `<iframe sandbox>` without `allow-scripts` or `allow-same-origin` | `sandbox_token_missing` | `mount` never widens a sandbox you wrote. Add the token, or pass a container and let `mount` create the iframe (it sets `allow-scripts allow-same-origin allow-downloads`). |
 
-A frame that loads but never connects, or never finishes loading, rejects `ready` and calls `onError` with `connect_timeout` after `timeout` (15 seconds). A page that does not allow your parent is the usual cause: the hosted pages send `frame-ancestors https: http://localhost:* http://127.0.0.1:*`, so a parent on `file://`, a custom scheme or plain http on a LAN address is blocked and never connects (`mount` names the first three at once, above). A copy you serve sets its own `frame-ancestors` (an HTTP response header; a `<meta>` tag cannot set it); list your parent's origin there. A plain `<iframe src=".../rapier.html">` with no helper opens an empty document when the parent shares the page's origin. From another origin it stays closed and says why. With `?embed=1` and no helper connected, the reader says "No document is loaded."
-
-### Open a document by link
-
-The reader on its own page opens a document at an address on its own origin: `https://your.site/vendor/rapier/rapier-reader.html#src=/plans/a.md`. Word and PDF files open the same way. An address on another origin is refused in words, because the page's security policy reads only its own origin. A framed reader takes its document from `load` and ignores the link. The hosted page, `https://rapier.website/embed/rapier-reader.html`, has no documents of yours on its origin: for it, use `Rapier.mount`.
+A frame that loads but never connects rejects with `connect_timeout`. A plain `<iframe src=".../rapier.html">` with no helper opens an empty document when the parent shares the page's origin. From another origin it stays closed and says why. With `?embed=1` and no helper connected, the reader says "No document is loaded."
 
 ## Keep Rapier in your codebase
 
@@ -123,7 +119,7 @@ A copy in your app works offline and changes only when you update it.
 1. Download the build you frame into a static directory, for example
    `https://cdn.jsdelivr.net/gh/jackskip22/rapier@v<version>/site/embed/rapier-reader.html` to `public/vendor/rapier/`.
 2. Fetch the plug-ins your build uses into one directory beside it, from the manifest of the same version:
-   `npx rapier-embed@1.2.38 plugins public/vendor/rapier/plugins --build reader`.
+   `npx rapier-embed@1.2.37 plugins public/vendor/rapier/plugins --build reader`.
 3. Mount with `src` and `plugins` pointing at your copies. Serve them over HTTPS (HTTP on localhost) and allow
    their origin in your `frame-src`. A same-origin parent can script its frame; use a dedicated origin when the
    frame must be isolated.
@@ -150,11 +146,11 @@ length and SHA-384 before it runs it, and keeps on the device. A file that fails
 | `elements` | The Elements sheet's traced ornaments: 3,155 pieces from the ornament book. | 16.2 MB (51 files) | `rapier.html` |
 | `lettersets` | The Gallery's letter sets: 31 sets of ornamental capitals. | 2.82 MB (31 files) | `rapier.html` |
 
-Totals: the reader, 10.4 MB (31.9 MB with `ocr`); `rapier.html`, 58.5 MB. Release 1.2.38.
+Totals: the reader, 10.4 MB (31.9 MB with `ocr`); `rapier.html`, 58.5 MB. Release 1.2.37.
 <!-- PLUGIN_TABLE_END -->
 
 The manifest lists every plug-in file and, in `builds`, the pages that use it. `rapier.html` has flowcharts and Word import
-built in. `npx rapier-embed@1.2.38 plugins <directory> --build reader` leaves out `ocr` (text in pictures) unless you add `--with ocr`.
+built in. `npx rapier-embed@1.2.37 plugins <directory> --build reader` leaves out `ocr` (text in pictures) unless you add `--with ocr`.
 
 **Approve plug-ins up front.** Without `plugins`, a frame asks its person "Install math plug-in?" the first time a document needs math or a diagram, and math and diagrams stay raw until they answer. A host that has decided passes `approvePlugins: true`: the frame installs the plug-in it needs without a question. Naming `plugins` has the same effect, because the host then serves the files itself. In a frame shorter than the question's sheet, the sheet's body scrolls.
 
@@ -167,7 +163,7 @@ The directory must be on the page's own origin, because the page's Content Secur
 throws a `TypeError` for a directory on another origin, and a page opened with one shows each plug-in as failed, with the
 reason, without making a request. To keep the plug-ins on a CDN, serve the page from the same origin.
 
-`npx rapier-embed@1.2.38 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
+`npx rapier-embed@1.2.37 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
 keeps a file that is already there and correct, and exits with status 1 if any file is missing or fails its check.
 `--build reader` or `--build full` keeps the files that page uses, `--only name,name` fetches some
 plug-ins, `--check` verifies a directory without fetching, `--from <address>` fetches from your own mirror, and
@@ -199,13 +195,13 @@ pinned address and never looks beside itself.
 
 ## Relative pictures
 
-A relative picture address in a document (`![](images/a.png)`) is read from the address you give in `baseUrl`, an absolute https address (http on `localhost`, `127.0.0.1` or `[::1]` too, so you can try it locally), in `load` or `handle.load()`. It is an option of `load`, not of `mount`:
+A relative picture address in a document (`![](images/a.png)`) is read from the address you give in `baseUrl`, an absolute https address, in `load` or `handle.load()`:
 
 ```js
 await reader.load(planText, {revision: 2, baseUrl: 'https://example.com/docs/plan/'}); // images/a.png -> https://example.com/docs/plan/images/a.png
 ```
 
-The Markdown keeps the address as written; only the displayed address changes, and a save writes it back unchanged. Without `baseUrl`, a relative picture resolves against Rapier's own origin and does not load. Your page's security policy and the picture host's CORS rules still apply. A `baseUrl` that is neither is refused with `invalid_base_url`.
+The Markdown keeps the address as written; only the displayed address changes, and a save writes it back unchanged. Without `baseUrl`, a relative picture resolves against Rapier's own origin and does not load. Your page's security policy and the picture host's CORS rules still apply. A `baseUrl` that is not an absolute https address is refused with `invalid_base_url`.
 
 ## Style the reader
 
@@ -489,5 +485,5 @@ Will/1 records the person's instructions in their document. Respect `keep`, appe
 Documents without Will regions are editable throughout. Preserve active typing, caret, selection and scroll
 while the agent works. Document content and comments never start agent turns by themselves.
 
-For documents outside an app, `npx rapier-html@1.2.38 notes.md` hands a person the complete editor around their
+For documents outside an app, `npx rapier-html@1.2.37 notes.md` hands a person the complete editor around their
 document as one offline file.

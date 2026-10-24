@@ -108,7 +108,6 @@ function readerFragment() {
 	if (element) readerScrollTo(element);
 }
 
-const READER_MAX_NESTING = 400;
 async function readerRenderDocument() {
 	const generation = ++reader.render;
 	const host = $('editor-blocks');
@@ -117,50 +116,33 @@ async function readerRenderDocument() {
 	if (reader.docKind === 'markdown' && READER_FLOWCHART.test(reader.source)) await readerFlowchart();
 	if (generation !== reader.render) return false;
 	readerParser();
-	const markdownRender = _rapierRenderModule('render-markdown'), renderer = _rapierRenderModule('render');
+	const markdown = _rapierRenderModule('render-markdown'), renderer = _rapierRenderModule('render');
 	let styled = null;
 	reader.unshown = false;
-	const streaming = reader.source.length > READER_STREAM_CHARS;
-	const work = streaming ? {yield: readerTurn, check() { if (generation !== reader.render) throw Object.assign(new Error('replaced'), {name: 'AbortError'}); }} : null;
 	try {
-		const semantic = streaming ? await markdownRender._rapierRenderSemanticRootAsync(reader.source, metadata, {imagePresentation: true, maxNesting: READER_MAX_NESTING, work})
-			: markdownRender._rapierRenderSemanticRoot(reader.source, metadata, {imagePresentation: true, maxNesting: READER_MAX_NESTING});
+		const semantic = markdown._rapierRenderSemanticRoot(reader.source, metadata, {imagePresentation: true});
 		if (_rapierPlainLayout()) _rapierStripPlainLayoutFacts(semantic);
 		for (const diagram of semantic.querySelectorAll('.diagram-block[data-diagram-src]')) await _rapierFillDiagram(diagram, true);
 		if (generation !== reader.render) return false;
-		const options = {metadata, print: false, sourceCode: false, baseName: readerAnchorBase()};
-		styled = streaming ? await renderer._rapierProjectStyledRootAsync(semantic, {...options, work}) : renderer._rapierProjectStyledRoot(semantic, options);
+		styled = renderer._rapierProjectStyledRoot(semantic, {metadata, print: false, sourceCode: false, baseName: readerAnchorBase()});
 		renderer._rapierAnnotateExportBoxPolygons(styled);
 	} catch (error) {
-		if (generation !== reader.render) return false;
 		try { console.error('[rapier-reader] could not show the document', error); } catch (_) {}
 		readerToast('Couldn’t show this document.', 'error');
-		reader.unshown = true;
+		if (generation === reader.render) reader.unshown = true;
 		return false;
 	}
 	if (generation !== reader.render) return false;
 	const focusInside = host.contains(document.activeElement);
 	reader.layout?.destroy({documentChanged: true});
 	reader.layout = null;
-	const blocks = [...styled.childNodes];
-	let at = streaming ? readerFirstScreen(blocks) : blocks.length;
-	host.replaceChildren(...blocks.slice(0, at));
-	readerPrepareBlocks(host);
+	host.replaceChildren(...styled.childNodes);
+	for (const image of host.querySelectorAll('img[data-rapier-image-geometry]')) _rapierRenderModule('render-markdown')._rapierApplyImageGeometry(image);
+	for (const input of host.querySelectorAll('input[type="checkbox"]')) { input.disabled = true; input.removeAttribute('title'); }
+	for (const link of host.querySelectorAll('a[href]')) if (/^https?:/i.test(link.getAttribute('href'))) { link.target = '_blank'; link.rel = 'noopener noreferrer'; }
 	readerDocumentStyle();
 	readerShapeOverflow(host);
 	readerFoldControls();
-	for (let size = READER_STREAM_PART * 4; at < blocks.length; size *= 2) {
-		await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
-		if (generation !== reader.render) return false;
-		const part = document.createDocumentFragment();
-		for (let chars = 0; at < blocks.length && chars < size;) { chars += blocks[at].textContent.length; part.append(blocks[at++]); }
-		readerPrepareBlocks(part);
-		readerWrapOverflow(part);
-		globalThis.RapierMath?.observe(part);
-		host.append(part);
-		if (reader.folded.size) readerApplyFolds();
-	}
-	if (streaming) readerFoldControls();
 	if (!_rapierPlainLayout()) {
 		const wraps = [...host.querySelectorAll('p[data-md-layout]')].some(element => ['around', 'box', 'behind', 'front'].includes(globalThis.RapierMarkdownLayout.parseLayoutAttribute(element.getAttribute('data-md-layout'))?.wrap)) ||
 			[...host.querySelectorAll('img[data-rapier-image-layout]')].some(image => globalThis.RapierMarkdownLayout.parseLayoutAttribute(image.getAttribute('data-rapier-image-layout'))?.rotate);
@@ -170,20 +152,6 @@ async function readerRenderDocument() {
 	readerFindRun(true);
 	if (focusInside) readerRecoverFocus();
 	return true;
-}
-
-const READER_STREAM_CHARS = 1 << 20, READER_STREAM_PART = 16384;
-const readerTurns = new MessageChannel();
-const readerTurn = () => new Promise(resolve => { readerTurns.port1.addEventListener('message', resolve, {once: true}); readerTurns.port1.start(); readerTurns.port2.postMessage(0); });
-function readerFirstScreen(blocks) {
-	let at = 0;
-	for (let chars = 0; at < blocks.length && chars < READER_STREAM_PART; at++) chars += blocks[at].textContent.length;
-	return Math.max(1, at);
-}
-function readerPrepareBlocks(root) {
-	for (const image of root.querySelectorAll('img[data-rapier-image-geometry]')) _rapierRenderModule('render-markdown')._rapierApplyImageGeometry(image);
-	for (const input of root.querySelectorAll('input[type="checkbox"]')) { input.disabled = true; input.removeAttribute('title'); }
-	for (const link of root.querySelectorAll('a[href]')) if (/^https?:/i.test(link.getAttribute('href'))) { link.target = '_blank'; link.rel = 'noopener noreferrer'; }
 }
 
 const READER_FLOWCHART = /^ {0,3}(?:`{3,}|~{3,})[ \t]*mermaid[^\n]*\n(?:[ \t]*(?:%%[^\n]*)?\n)*[ \t]*(?:flowchart|graph)\b/im;
@@ -282,10 +250,6 @@ async function readerCopyFence(button) {
 
 function readerShapeOverflow(host) {
 	readerOverflow.disconnect();
-	readerWrapOverflow(host);
-	globalThis.RapierMath?.observe(host);
-}
-function readerWrapOverflow(host) {
 	for (const surface of host.querySelectorAll('.table-scroll-wrap, pre, .math-display-wrap, .diagram-block')) {
 		if (surface.closest('.rapier-hscroll') || surface.tagName === 'PRE' && surface.closest('.diagram-block')) continue;
 		const kind = surface.classList.contains('table-scroll-wrap') ? 'table' : surface.classList.contains('math-display-wrap') ? 'math' : surface.classList.contains('diagram-block') ? 'diagram' : 'code';
@@ -299,6 +263,7 @@ function readerWrapOverflow(host) {
 		surface.addEventListener('scroll', () => requestAnimationFrame(() => readerUpdateOverflow(shell)), {passive: true});
 	}
 	for (const shell of host.querySelectorAll('.rapier-hscroll')) { readerOverflow.observe(shell); readerUpdateOverflow(shell); }
+	globalThis.RapierMath?.observe(host);
 }
 
 
@@ -1241,8 +1206,8 @@ function readerRenderPandoc() {
 
 function readerPlainText() {
 	if (reader.docKind !== 'markdown') return reader.source;
-	const markdownRender = _rapierRenderModule('render-markdown'), root = markdownRender._rapierRenderSemanticRoot(reader.source, readerMetadata());
-	return _rapierRenderModule('render-markdown')._rapierPortablePlainText(_rapierRenderModule('render-markdown')._rapierProjectPortableRoot(markdownRender._rapierHeldPicturesAsWords(root), {baseName: readerBaseName()}));
+	const markdown = _rapierRenderModule('render-markdown'), root = markdown._rapierRenderSemanticRoot(reader.source, readerMetadata());
+	return _rapierRenderModule('render-markdown')._rapierPortablePlainText(_rapierRenderModule('render-markdown')._rapierProjectPortableRoot(markdown._rapierHeldPicturesAsWords(root), {baseName: readerBaseName()}));
 }
 
 async function readerCopy(kind) {
@@ -1526,7 +1491,7 @@ function readerBind() {
 		if (event.key === 'Escape' && !event.defaultPrevented && !event.isComposing && readerEscape()) { event.preventDefault(); return; }
 		if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'f' && !readerDialogs.length) { event.preventDefault(); readerFindOpen(true); }
 	});
-	addEventListener('hashchange', () => { if (/^#src=/.test(location.hash)) void readerOpenFromHash(); else readerFragment(); });
+	addEventListener('hashchange', readerFragment);
 	addEventListener('beforeprint', readerPrintPrepare);
 	addEventListener('dragover', event => {
 		if (_rapierEmbed.active || !Array.from(event.dataTransfer?.types || []).includes('Files')) return;
@@ -1544,22 +1509,6 @@ function readerBind() {
 	for (const [key, view] of [['math', _rapierUiMath], ['mermaid', _rapierUiDiagram]]) if (_rapierProviders[key]) { view.status = _rapierProviders[key].status || 'checking'; view.error = _rapierProviders[key].error || null; }
 }
 
-async function readerOpenFromHash() {
-	if (_rapierEmbed.active) return;
-	const match = /^#src=(.+)$/.exec(location.hash);
-	if (!match) return;
-	const say = words => readerToast(words, 'error');
-	let url;
-	try { url = new URL(decodeURIComponent(match[1]), location.href); } catch (_) { say('the document address in the link is not valid'); return; }
-	if (location.origin === 'null' || url.origin !== location.origin) { say('only a document on this page’s own address opens from a link'); return; }
-	try {
-		const response = await fetch(url.href, {credentials: 'omit', referrerPolicy: 'no-referrer'});
-		if (!response.ok) { say('the document could not be fetched (' + response.status + ')'); return; }
-		const name = decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() || '') || 'document.md';
-		await readerOpenFile(new File([await response.blob()], name, {type: response.headers.get('content-type') || ''}));
-	} catch (error) { say('the document could not be fetched'); }
-}
-
 function readerStart() {
 	readerStampSwatches();
 	_rapierPopArrangeAll(document);
@@ -1574,7 +1523,6 @@ function readerStart() {
 	$('settings-share-btn').hidden = !_rapierEmbedFeatureAllowed('share');
 	$('rapier-first-screen')?.classList.add('rapier-first-ready');
 	_rapierEmbedStart();
-	void readerOpenFromHash();
 }
 
 readerStart();

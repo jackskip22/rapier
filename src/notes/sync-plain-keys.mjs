@@ -93,16 +93,6 @@ export function createPlainKeySession({folder, fetch: fetchFn, device = null, or
 	}
 	const active = ticket => { if (ticket !== epoch) throw fail('cancelled', 'sync stopped. your notes, and what waits to upload, are kept.'); };
 	const once = fn => { if (running || closing) throw fail('busy', 'let the current sync finish.'); const ticket = epoch; running = Promise.resolve().then(() => { active(ticket); return fn(ticket); }).catch(error => { transport?.store.pause(); transport = null; throw error; }).finally(() => { running = null; activePlain = null; }); return running; };
-	const mediaSession = async ticket => {
-		const plain = await kept(); active(ticket);
-		if (!plain) throw fail('connection', 'connect this folder to its plain files first.');
-		await restore(plain); active(ticket);
-		if (locked || !held || held.provider !== plain.provider || held.place !== plain.place || held.connectionId !== plain.connectionId)
-			throw fail('credential', 'type the storage key again: this page does not keep it.');
-		if (await destinationOf(plain.provider, held.settings) !== plain.destination) throw fail('connection', 'the plain-files connection changed.');
-		active(ticket);
-		return session(plain.provider, plain.place.replace(/^\//, ''), held.settings, () => active(ticket), plain.connectionId, plain.destination).plain;
-	};
 	const stop = async () => { epoch++; activePlain?.pause(); transport?.store.pause(); transport = null; if (running) await running.catch(() => {}); };
 	return Object.freeze({
 		async status() {
@@ -153,9 +143,7 @@ export function createPlainKeySession({folder, fetch: fetchFn, device = null, or
 			const plain = await kept();
 			return plain ? createPlainSession({folder, store: {}, provider: plain.provider, place: plain.place, device: plain.device, now, connectionId: plain.connectionId, destination: plain.destination}).conflicts() : [];
 		},
-		mediaChoice(target) { target = structuredClone(target); return once(async ticket => (await mediaSession(ticket)).mediaChoice(target)); },
-		resolve(choice) { choice = structuredClone(choice); return once(async ticket => {
-			if (choice?.kind === 'media') return (await mediaSession(ticket)).resolve(choice);
+		resolve(choice) { return once(async ticket => {
 			const plain = await kept(); active(ticket);
 			if (!plain) throw fail('connection', 'connect this folder to its plain files first.');
 			activePlain = createPlainSession({folder, store: {}, provider: plain.provider, place: plain.place, device: plain.device, now, connectionId: plain.connectionId, destination: plain.destination});

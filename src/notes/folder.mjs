@@ -420,13 +420,12 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		return historyWrites(recorded, {entry, prior, history});
 	};
 	const canonicalProof = (file, id, ledger) => ({file, id, history: 'history/' + manifestName(id), ledger: ledger.sha256});
-	const planCanonicalChange = async (index, {file, current, next, operation, now = clock(), wholeReferences = false}) => {
+	const planCanonicalChange = async (index, {file, current, next, operation, now = clock()}) => {
 		const entry = index.notes[file], path = 'history/' + manifestName(entry.id), prior = await store.read(path);
 		if (prior == null) throw fail('notes_history_unavailable', 'This note has no canonical history. Its bytes were kept.');
 		const proved = parseCanonical(prior, {noteId: entry.id, now, text: current});
 		if (proved.ledger.sha256 !== entry.canonicalHistory) throw fail('notes_history_unavailable', 'The note identity does not prove this history.');
-		const appended = appendCanonical(proved.manifest, {text: next, metadata: proved.metadata, author: canonicalAuthor(), operation, now,
-			...(wholeReferences ? {spans: source => [...attachmentsOf(source), ...recordingsOf(source)].map(row => [row.start, row.end])} : {})});
+		const appended = appendCanonical(proved.manifest, {text: next, metadata: proved.metadata, author: canonicalAuthor(), operation, now});
 		const source = exactBytes(appended.text ?? next);
 		index.notes[file] = {...entry, revision: 'sha256:' + await sha256(source), modified: now, canonicalHistory: appended.ledger.sha256};
 		const writes = await canonicalWrites(appended.manifest, {file, text: next, entry: index.notes[file], prior, now, reason: 'merge'});
@@ -854,12 +853,11 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		if (revivals.size) index.assetRevivals = [...revivals].sort();
 		return index;
 	};
-	const createAudio = (note, mime, bytes, wanted = '', {exact = false, guard} = {}) => owned(async lease => {
-		await guard?.();
+	const createAudio = (note, mime, bytes, wanted = '', {exact = false} = {}) => owned(async lease => {
 		const name = audioName(note, mime, wanted, await store.list('audio'));
 		if (exact && name !== wanted) throw fail('collision', 'The planned recording name is not available in this folder: ' + wanted + '. This recording was not written. Keep the backup and retry Import.');
 		const path = 'audio/' + name, content = await digest(bytes);
-		const snapshot = await lease.transact(({index}) => ({kind: 'recording', index: reviveMedia(index, path, content), writes: [{file: path, bytes, createOnly: true}]}), {admissionGuard: guard});
+		const snapshot = await lease.transact(({index}) => ({kind: 'recording', index: reviveMedia(index, path, content), writes: [{file: path, bytes, createOnly: true}]}));
 		const rescued = snapshot.kept?.find(row => row.file === path), landed = rescued?.name || path;
 		if (snapshot.dropped?.includes(path) && !rescued || await digest(await store.read(landed)) !== content)
 			throw fail('verify', 'The recording copy could not be verified. Keep the original and retry saving.');

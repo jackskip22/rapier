@@ -21,13 +21,11 @@ const BASE = [
 	['form-action', ["'none'"]],
 ];
 
-const LOCAL_IMG = ["'self'", 'data:', 'blob:', 'https:', 'http://localhost:*', 'http://127.0.0.1:*'];
-
 const SURFACES = {
-	web: { 'img-src': LOCAL_IMG, 'frame-src': ["'self'"], 'connect-src': ["'self'", 'https://cdn.jsdelivr.net', 'https://*.r2.cloudflarestorage.com', RETURN_ORIGIN, LIVE_ORIGIN] },
+	web: { 'frame-src': ["'self'"], 'connect-src': ["'self'", 'https://cdn.jsdelivr.net', 'https://*.r2.cloudflarestorage.com', RETURN_ORIGIN, LIVE_ORIGIN] },
 	native: { 'frame-ancestors': ["'self'"], 'media-src': ["'self'", 'blob:'] },
-	reader: { 'img-src': LOCAL_IMG, 'connect-src': ["'self'", 'https://cdn.jsdelivr.net'] },
-	hosted: { 'img-src': LOCAL_IMG, 'frame-src': ["'self'"], 'connect-src': ["'self'", 'https://cdn.jsdelivr.net', 'https://*.r2.cloudflarestorage.com', RETURN_ORIGIN, LIVE_ORIGIN], 'frame-ancestors': ['https:', 'http://localhost:*', 'http://127.0.0.1:*'] },
+	reader: { 'connect-src': ["'self'", 'https://cdn.jsdelivr.net'] },
+	hosted: { 'frame-src': ["'self'"], 'connect-src': ["'self'", 'https://cdn.jsdelivr.net', 'https://*.r2.cloudflarestorage.com', RETURN_ORIGIN, LIVE_ORIGIN], 'frame-ancestors': ['https:', 'http://localhost:*', 'http://127.0.0.1:*'] },
 };
 
 export function csp(surface, syncConfig = CLOUDFLARE_SYNC, others = {registrations: OTHER_SYNC, listed: availability}) {

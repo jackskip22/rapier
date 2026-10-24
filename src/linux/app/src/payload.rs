@@ -9,13 +9,8 @@ static PAYLOAD: &[u8] = include_bytes!(env!("RAPIER_PAYLOAD"));
 static CONTENTS: &[u8] = include_bytes!(env!("RAPIER_CONTENTS"));
 static VERSION: &str = env!("RAPIER_VERSION");
 
-/// What `--version` and `--help` print: the version, and the commit the build was made from (tools/stage-linux.mjs), so two builds
-/// of one version tell themselves apart.
-pub fn version_line() -> String {
-    match option_env!("RAPIER_BUILD").filter(|b| !b.is_empty()) {
-        Some(build) => format!("{VERSION} ({build})"),
-        None => VERSION.to_string(),
-    }
+pub fn version() -> &'static str {
+    VERSION
 }
 
 fn cache_root() -> PathBuf {
@@ -180,12 +175,10 @@ pub fn install(app: &Path) -> Result<(), String> {
             .replace('`', "\\`")
             .replace('$', "\\$")
     );
-    // Every Exec line (the entry and each action) points at this file.
-    let entry: String = fs::read_to_string(app.join("rapier.desktop"))
+    let entry = fs::read_to_string(app.join("rapier.desktop"))
         .map_err(|e| e.to_string())?
-        .lines()
-        .map(|l| match l.strip_prefix("Exec=rapier ") { Some(rest) => format!("Exec={quoted} {rest}\n"), None => format!("{l}\n") })
-        .collect();
+        .replace("Exec=rapier %F", &format!("Exec={quoted} %F"))
+        .replace("Exec=rapier --new", &format!("Exec={quoted} --new"));
     fs::write(&desktop, &entry).map_err(|e| e.to_string())?;
     // The hidden entry names the window only: no file types, no actions.
     let hidden: String = entry.lines().take_while(|l| !l.starts_with("[Desktop Action"))
